@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoverAO · Administración</title>
+<style>
+  :root{
+    --u: clamp(11px, 0.5vw + 0.5vh, 16px);
+    --bg:#0d0a06; --bg2:#120d08; --panel:#17110a; --panel2:#1e1710;
+    --gold-hi:#e8c876; --gold:#c99b3f; --gold-lo:#8a6e2e; --gold-deep:#4d3a12;
+    --ink:#ece5d2; --ink-dim:#9c917a; --line:#2c2214;
+    --danger:#d1663a; --danger-bg:#3a1a10; --good:#7cbf5c; --info:#7fbfe0;
+    --serif: "Cinzel", Georgia, "Times New Roman", serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:
+      radial-gradient(1200px 600px at 50% -10%, #241a0e 0%, transparent 60%),
+      linear-gradient(180deg,var(--bg),#080603);
+    color:var(--ink); font:calc(var(--u)*0.95)/1.5 system-ui,Segoe UI,sans-serif; min-height:100vh;
+    background-attachment:fixed; padding:calc(var(--u)*1.1); }
+  .ornate{ background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--gold-deep); border-radius:calc(var(--u)*0.6);
+    box-shadow:0 2px 14px #0008, inset 0 1px 0 #ffdf9a12; }
+  header{ display:flex; align-items:center; gap:calc(var(--u)*1); flex-wrap:wrap;
+    padding:calc(var(--u)*0.8) calc(var(--u)*1.2); margin-bottom:calc(var(--u)*1); }
+  .brand{ font-family:var(--serif); font-size:calc(var(--u)*1.7); color:var(--gold-hi); letter-spacing:.06em;
+    text-shadow:0 2px 6px #000, 0 0 22px #e8c87633; }
+  .brand small{ display:block; font-family:system-ui; font-size:calc(var(--u)*0.68); letter-spacing:.25em;
+    color:var(--ink-dim); text-transform:uppercase; font-weight:400; }
+  .hspacer{ flex:1 }
+  .pill{ font-size:calc(var(--u)*0.8); color:var(--ink-dim); display:flex; align-items:center; gap:.5em;
+    background:#0a0805; border:1px solid var(--line); border-radius:999px; padding:.35em .9em; }
+  .dot{ width:.7em; height:.7em; border-radius:50%; background:var(--danger); box-shadow:0 0 7px currentColor; color:var(--danger); }
+  .dot.on{ background:var(--good); color:var(--good); }
+
+  /* Tiles */
+  .tiles{ display:grid; grid-template-columns:repeat(auto-fit, minmax(calc(var(--u)*8.5), 1fr));
+    gap:calc(var(--u)*0.7); margin-bottom:calc(var(--u)*1); }
+  .tile{ padding:calc(var(--u)*0.75) calc(var(--u)*0.95); }
+  .tile .k{ font-size:calc(var(--u)*0.72); text-transform:uppercase; letter-spacing:.12em; color:var(--ink-dim); }
+  .tile .v{ font-family:var(--serif); font-size:calc(var(--u)*1.7); color:var(--gold-hi); margin-top:.15em;
+    font-variant-numeric:tabular-nums; line-height:1.1; }
+  .tile .v small{ font-size:calc(var(--u)*0.75); color:var(--ink-dim); font-family:system-ui; }
+
+  /* Layout */
+  .cols{ display:grid; grid-template-columns:1.15fr 1fr; gap:calc(var(--u)*1); align-items:start; }
+  @media (max-width:820px){ .cols{ grid-template-columns:1fr; } }
+  .card{ display:flex; flex-direction:column; overflow:hidden; }
+  .card > h2{ margin:0; font-family:var(--serif); font-size:calc(var(--u)*1.05); color:var(--gold-hi);
+    letter-spacing:.04em; padding:calc(var(--u)*0.7) calc(var(--u)*1); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:.6em; background:linear-gradient(180deg,#241a0e,#1a130b); }
+  .card > h2 .count{ margin-left:auto; font-family:system-ui; font-size:calc(var(--u)*0.85); color:var(--ink-dim); }
+
+  /* Players table */
+  .tblwrap{ overflow:auto; max-height:calc(var(--u)*26); }
+  table{ width:100%; border-collapse:collapse; font-size:calc(var(--u)*0.86); }
+  thead th{ position:sticky; top:0; background:#1a130b; color:var(--ink-dim); font-weight:600; text-align:left;
+    text-transform:uppercase; letter-spacing:.06em; font-size:calc(var(--u)*0.7); padding:.55em .8em; border-bottom:1px solid var(--line); }
+  tbody td{ padding:.5em .8em; border-bottom:1px solid #1c150c; vertical-align:middle; }
+  tbody tr:hover{ background:#ffdf9a08; }
+  td.num{ font-variant-numeric:tabular-nums; color:var(--ink-dim); }
+  .pname{ color:var(--gold-hi); font-weight:600; }
+  .pacc{ color:var(--ink-dim); font-size:calc(var(--u)*0.75); }
+  .badge{ font-size:calc(var(--u)*0.66); padding:.1em .5em; border-radius:4px; margin-left:.4em; vertical-align:middle;
+    border:1px solid; }
+  .badge.gm{ color:var(--info); border-color:#7fbfe066; background:#7fbfe015; }
+  .badge.dead{ color:var(--danger); border-color:#d1663a66; background:#d1663a15; }
+  .hpbar{ width:calc(var(--u)*4); height:calc(var(--u)*0.7); background:#2a0f0a; border:1px solid #3a1a10; border-radius:3px; overflow:hidden; display:inline-block; vertical-align:middle; }
+  .hpbar i{ display:block; height:100%; background:linear-gradient(90deg,#8a2b1e,#d1663a); }
+  button{ font-family:inherit; cursor:pointer; border-radius:calc(var(--u)*0.35); border:1px solid var(--gold-deep);
+    background:linear-gradient(180deg,#3a2a12,#241708); color:var(--gold-hi); padding:.5em 1em;
+    font-size:calc(var(--u)*0.85); transition:border-color .12s, box-shadow .12s; }
+  button:hover{ border-color:var(--gold-hi); box-shadow:inset 0 0 10px #e8c87626; }
+  button:active{ transform:translateY(1px); }
+  button.mini{ padding:.28em .7em; font-size:calc(var(--u)*0.75); }
+  button.danger{ color:#ffd8c8; border-color:#7a2f1a; background:linear-gradient(180deg,#5a1e10,#3a1409); }
+  button.danger:hover{ border-color:var(--danger); box-shadow:inset 0 0 10px #d1663a33; }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+
+  /* Console */
+  #log{ font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:calc(var(--u)*0.78);
+    line-height:1.5; padding:calc(var(--u)*0.6) calc(var(--u)*0.9); overflow:auto; max-height:calc(var(--u)*26);
+    background:#0a0805; white-space:pre-wrap; word-break:break-word; }
+  #log div{ padding:1px 0; border-bottom:1px solid #14100a; color:#cfc6b0; }
+  #log .adm{ color:var(--gold-hi); } #log .ev{ color:var(--info); } #log .err{ color:var(--danger); }
+
+  /* Controls */
+  .controls{ margin-top:calc(var(--u)*1); padding:calc(var(--u)*0.9) calc(var(--u)*1); }
+  .controls h2{ margin:0 0 calc(var(--u)*0.7); font-family:var(--serif); font-size:calc(var(--u)*1.05); color:var(--gold-hi); }
+  .ctl-row{ display:flex; gap:calc(var(--u)*0.6); flex-wrap:wrap; align-items:center; }
+  .ctl-row + .ctl-row{ margin-top:calc(var(--u)*0.7); }
+  input[type=text]{ flex:1; min-width:calc(var(--u)*12); background:#0a0805; border:1px solid var(--gold-deep);
+    color:var(--ink); padding:.55em .8em; border-radius:calc(var(--u)*0.35); font:inherit; font-size:calc(var(--u)*0.9); }
+  input[type=text]:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 8px #e8c87633; }
+  textarea{ width:100%; background:#0a0805; border:1px solid var(--gold-deep); color:var(--ink);
+    padding:.55em .8em; border-radius:calc(var(--u)*0.35); font:inherit; font-size:calc(var(--u)*0.9); resize:vertical; min-height:calc(var(--u)*4.5); }
+  textarea:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 8px #e8c87633; }
+  /* Eventos / mantenimiento / bans */
+  .cols2{ display:grid; grid-template-columns:1fr 1fr; gap:calc(var(--u)*1); margin-top:calc(var(--u)*1); align-items:start; }
+  @media (max-width:820px){ .cols2{ grid-template-columns:1fr; } }
+  .card .section{ padding:calc(var(--u)*0.75) calc(var(--u)*1); border-bottom:1px solid var(--line); }
+  .card .section:last-child{ border-bottom:none; }
+  .card .section.ctl-row{ display:flex; gap:calc(var(--u)*0.6); align-items:center; flex-wrap:wrap; }
+  .lbl{ color:var(--ink-dim); font-size:calc(var(--u)*0.85); display:flex; align-items:center; gap:.4em; }
+  .lbl input{ width:calc(var(--u)*3.4); background:#0a0805; border:1px solid var(--gold-deep); color:var(--ink); padding:.3em .4em; border-radius:4px; font:inherit; text-align:center; }
+  .evrow{ display:flex; align-items:center; gap:calc(var(--u)*0.6); padding:calc(var(--u)*0.32) 0; }
+  .evk{ width:calc(var(--u)*6.2); color:var(--ink-dim); font-size:calc(var(--u)*0.85); }
+  .evmult{ width:calc(var(--u)*2.6); font-family:var(--serif); color:var(--gold-hi); font-size:calc(var(--u)*1.15); text-align:center; }
+  .evbtns{ display:flex; gap:4px; flex-wrap:wrap; }
+  .evbtns button{ padding:.25em .62em; font-size:calc(var(--u)*0.74); }
+  .evbtns button.on{ border-color:var(--gold-hi); color:#fff; background:linear-gradient(180deg,#6a4e18,#3e2c10); box-shadow:inset 0 0 8px #e8c87644; }
+  .nextsave{ color:var(--good); font-size:calc(var(--u)*0.8); }
+  button.act{ border-color:var(--danger); color:#ffd8c8; background:linear-gradient(180deg,#5a1e10,#3a1409); box-shadow:inset 0 0 10px #d1663a33; }
+  .banlist{ display:flex; flex-direction:column; max-height:calc(var(--u)*11); overflow:auto; }
+  .banitem{ display:flex; align-items:center; justify-content:space-between; gap:.6em; padding:.42em calc(var(--u)*1); border-bottom:1px solid #1c150c; font-size:calc(var(--u)*0.86); }
+  .banitem .bn{ color:#ffb499; font-weight:600; }
+  .banlist:empty::after{ content:'Sin cuentas baneadas.'; color:var(--ink-dim); padding:calc(var(--u)*1); font-size:calc(var(--u)*0.85); }
+  .baniplist:empty::after{ content:'Sin IPs baneadas.'; color:var(--ink-dim); padding:calc(var(--u)*1); font-size:calc(var(--u)*0.85); }
+  .subhdr{ color:var(--ink-dim); font-size:calc(var(--u)*0.72); text-transform:uppercase; letter-spacing:.1em;
+    padding:calc(var(--u)*0.5) calc(var(--u)*1) 0; }
+  .toast{ position:fixed; bottom:calc(var(--u)*1.2); left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--panel2); border:1px solid var(--gold); color:var(--gold-hi); padding:.7em 1.4em; border-radius:999px;
+    box-shadow:0 4px 20px #000a; opacity:0; transition:opacity .25s, transform .25s; pointer-events:none; font-size:calc(var(--u)*0.9); z-index:20; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .empty{ padding:calc(var(--u)*1.5); text-align:center; color:var(--ink-dim); font-size:calc(var(--u)*0.9); }
+  .tokengate{ max-width:calc(var(--u)*26); margin:15vh auto; padding:calc(var(--u)*1.5); text-align:center; }
+  .tokengate h1{ font-family:var(--serif); color:var(--gold-hi); }
+</style>
+</head>
+<body>
+  <div id="app" style="display:none">
+    <header class="ornate">
+      <div class="brand">CoverAO<small>Panel de administración</small></div>
+      <div class="hspacer"></div>
+      <span class="pill" id="clock">—</span>
+      <span class="pill"><span class="dot" id="conndot"></span><span id="connlbl">conectando…</span></span>
+    </header>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="cols">
+      <div class="card ornate">
+        <h2>👥 Jugadores online <span class="count" id="pcount"></span></h2>
+        <div class="tblwrap">
+          <table>
+            <thead><tr><th>Personaje</th><th>Nivel</th><th>Clase</th><th>Mapa</th><th>Pos</th><th>Vida</th><th></th></tr></thead>
+            <tbody id="players"></tbody>
+          </table>
+          <div class="empty" id="noplayers" style="display:none">No hay jugadores conectados.</div>
+        </div>
+      </div>
+
+      <div class="card ornate">
+        <h2>🖥️ Consola del servidor</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+
+    <div class="controls ornate">
+      <h2>⚙️ Controles</h2>
+      <div class="ctl-row">
+        <input type="text" id="bcast" placeholder="Mensaje para anunciar a todos los jugadores…" maxlength="200">
+        <button id="btn-bcast">📢 Anunciar</button>
+      </div>
+      <div class="ctl-row">
+        <button id="btn-save">💾 Guardar personajes</button>
+        <button id="btn-backup" title="Copia el mundo entero (cuentas, personajes, clanes, correo) a data/backups">🗄️ Copia de seguridad</button>
+        <button id="btn-kickall" class="danger">🚪 Echar a todos (no-GM)</button>
+        <div class="hspacer" style="flex:1"></div>
+        <button id="btn-shut-b" class="danger">⏻ Apagar guardando</button>
+        <button id="btn-shut" class="danger">⏻ Apagar sin guardar</button>
+      </div>
+    </div>
+
+    <div class="cols2">
+      <div class="card ornate">
+        <h2>⚡ Eventos y mantenimiento</h2>
+        <div class="section">
+          <div class="evrow"><span class="evk">Experiencia</span><span class="evmult" id="ev-exp">×1</span><span class="evbtns" data-ev="exp"></span></div>
+          <div class="evrow"><span class="evk">Oro</span><span class="evmult" id="ev-gold">×1</span><span class="evbtns" data-ev="gold"></span></div>
+          <div class="evrow"><span class="evk">Drop</span><span class="evmult" id="ev-drop">×1</span><span class="evbtns" data-ev="drop"></span></div>
+        </div>
+        <div class="section ctl-row">
+          <label class="lbl">Autosave <input type="number" id="autosave" min="0" max="240" value="0"> min</label>
+          <span class="nextsave" id="nextsave"></span>
+          <button class="mini" id="btn-autosave">Aplicar</button>
+        </div>
+        <div class="section ctl-row">
+          <button id="btn-pause">⏸️ Pausar mundo</button>
+          <button id="btn-onlygms">🔧 Solo GMs</button>
+        </div>
+        <div class="subhdr">Cadencia anti-cheat (0 = sin límite)</div>
+        <div class="section ctl-row">
+          <label class="lbl">Caminar <input type="number" id="walkms" min="0" max="5000" step="10" value="0" style="width:calc(var(--u)*4.4)"> ms</label>
+          <label class="lbl">Golpe <input type="number" id="attackms" min="0" max="20000" step="50" value="0" style="width:calc(var(--u)*4.8)"> ms</label>
+          <button class="mini" id="btn-intervals">Aplicar</button>
+        </div>
+      </div>
+
+      <div class="card ornate">
+        <h2>🔨 Bans <span class="count" id="bancount"></span></h2>
+        <div class="subhdr">Por cuenta</div>
+        <div class="section ctl-row">
+          <input type="text" id="banname" placeholder="Nombre de cuenta…" maxlength="30">
+          <button class="danger mini" id="btn-ban">Banear</button>
+          <button class="mini" id="btn-unban">Desbanear</button>
+        </div>
+        <div class="banlist" id="banlist"></div>
+        <div class="section"><button class="danger mini" id="btn-unbanall">Desbanear todas las cuentas</button></div>
+        <div class="subhdr" style="border-top:1px solid var(--line)">Por IP <span id="banipcount" style="text-transform:none; letter-spacing:0"></span></div>
+        <div class="section ctl-row">
+          <input type="text" id="banip" placeholder="IP (ej 190.1.2.3)…" maxlength="45">
+          <button class="danger mini" id="btn-banip">Banear IP</button>
+          <button class="mini" id="btn-unbanip">Desbanear IP</button>
+        </div>
+        <div class="banlist baniplist" id="baniplist"></div>
+        <div class="section"><button class="danger mini" id="btn-unbanallips">Desbanear todas las IPs</button></div>
+      </div>
+    </div>
+
+    <div class="controls ornate">
+      <h2>📣 Mensajes automáticos</h2>
+      <div class="ctl-row">
+        <textarea id="automsgs" rows="3" placeholder="Un mensaje por línea. Se emiten en rotación a todos los jugadores online."></textarea>
+      </div>
+      <div class="ctl-row">
+        <label class="lbl">Emitir cada <input type="number" id="automin" min="0" max="240" value="0" style="width:calc(var(--u)*4)"> min</label>
+        <span class="nextsave" id="nextautomsg"></span>
+        <div class="hspacer" style="flex:1"></div>
+        <span class="lbl" style="color:var(--ink-dim)">0 = desactivado</span>
+        <button class="mini" id="btn-automsgs">Aplicar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gate" class="tokengate ornate" style="display:none">
+    <h1>🔒 Panel de administración</h1>
+    <p>Falta el token de acceso. Abrí la URL que imprime el servidor al arrancar:<br>
+    <code>http://localhost:&lt;puerto&gt;/?token=…</code></p>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const $ = id => document.getElementById(id);
+if (!TOKEN) { $('gate').style.display = 'block'; }
+else { $('app').style.display = 'block'; boot(); }
+
+let lastOk = 0;
+function toast(msg, ok = true) {
+  const t = $('toast'); t.textContent = msg; t.style.borderColor = ok ? 'var(--gold)' : 'var(--danger)';
+  t.style.color = ok ? 'var(--gold-hi)' : 'var(--danger)'; t.classList.add('show');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+async function api(path, opts) {
+  const r = await fetch(path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN),
+    Object.assign({ headers: { 'X-Admin-Token': TOKEN, 'Content-Type': 'application/json' } }, opts));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+async function cmd(action, extra) {
+  try { const r = await api('/api/cmd', { method: 'POST', body: JSON.stringify(Object.assign({ action }, extra)) });
+    toast(r.msg || (r.ok ? 'ok' : 'error'), r.ok !== false); refresh(); return r; }
+  catch (e) { toast('error: ' + e.message, false); }
+}
+const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;' }[c]));
+const fmtDur = s => { s = Math.floor(s); const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return (d ? d+'d ' : '') + String(h).padStart(2,'0') + 'h ' + String(m).padStart(2,'0') + 'm'; };
+// Refleja el valor del server en un input de comando SIN pisar una edición no aplicada del usuario:
+// se actualiza en la 1ª carga, o cuando el input coincide con el último valor del server (sin cambios).
+function syncField(id, val) {
+  const el = $(id); val = String(val);
+  if (document.activeElement === el) return;
+  if (el._srv === undefined || el.value === el._srv) el.value = val;
+  el._srv = val;
+}
+
+let lastLogLen = 0;
+function render(st) {
+  // conexión
+  $('conndot').classList.add('on'); $('connlbl').textContent = 'en línea';
+  // tiles
+  const s = st.stats;
+  const tiles = [
+    ['Jugadores', s.online, s.peak != null ? 'récord ' + s.peak : ''],
+    ['Uptime', fmtDur(s.uptimeSec), ''],
+    ['Mapas', s.maps.toLocaleString('es'), ''],
+    ['NPCs', s.npcs.toLocaleString('es'), ''],
+    ['Objetos', s.objects.toLocaleString('es'), ''],
+    ['Período', s.period, ''],
+    ['Clima', s.weather, ''],
+    ['Versión', s.version, s.fixture ? 'fixture' : 'mundo real'],
+  ];
+  if (st.config && st.config.nextSaveSec >= 0) tiles.push(['Próx. guardado', fmtDur(st.config.nextSaveSec), '']);
+  $('tiles').innerHTML = tiles.map(([k, v, sub]) =>
+    `<div class="tile ornate"><div class="k">${k}</div><div class="v">${esc(v)}${sub ? ` <small>${esc(sub)}</small>` : ''}</div></div>`).join('');
+  // jugadores
+  const ps = st.players || [];
+  $('pcount').textContent = ps.length ? ps.length + (ps.length === 1 ? ' online' : ' online') : '';
+  $('noplayers').style.display = ps.length ? 'none' : 'block';
+  $('players').innerHTML = ps.map(p => {
+    const hp = p.maxHp > 0 ? Math.round(p.hp / p.maxHp * 100) : 0;
+    return `<tr>
+      <td><span class="pname">${esc(p.name)}</span>${p.gm ? '<span class="badge gm">GM</span>' : ''}${p.dead ? '<span class="badge dead">muerto</span>' : ''}
+        <div class="pacc">${esc(p.account)}${p.guild ? ' · &lt;' + esc(p.guild) + '&gt;' : ''}</div></td>
+      <td class="num">${p.level}</td>
+      <td>${esc(p.clase)}</td>
+      <td class="num">${p.map}</td>
+      <td class="num">${p.x},${p.y}</td>
+      <td><span class="hpbar"><i style="width:${hp}%"></i></span> <span class="num">${p.hp}/${p.maxHp}</span></td>
+      <td style="text-align:right; white-space:nowrap"><button class="mini danger" onclick="cmd('kick',{charIndex:${p.charIndex}})" ${p.gm ? 'disabled title="no se echa a un GM"' : ''}>Echar</button>
+        <button class="mini act" onclick="if(confirm('¿Banear la cuenta ${esc(p.account)}? Se la echa del servidor.'))cmd('ban',{name:'${esc(p.account)}'})" ${p.gm ? 'disabled title="no se banea a un GM"' : ''}>Ban</button>
+        <button class="mini act" onclick="if(confirm('¿Banear la IP de ${esc(p.name)}? Nadie desde esa IP podrá conectarse.'))cmd('banPlayerIp',{charIndex:${p.charIndex}})" ${p.gm ? 'disabled title="no se banea la IP de un GM"' : ''}>Ban IP</button></td>
+    </tr>`;
+  }).join('');
+  // consola (append incremental, autoscroll si estaba abajo)
+  const log = st.log || []; const el = $('log');
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  el.innerHTML = log.map(l => {
+    const cls = /\[admin\]/.test(l) ? 'adm' : /\[evento\]/.test(l) ? 'ev' : /error|no disponible|excep/i.test(l) ? 'err' : '';
+    return `<div class="${cls}">${esc(l)}</div>`;
+  }).join('');
+  if (atBottom || log.length !== lastLogLen) el.scrollTop = el.scrollHeight;
+  lastLogLen = log.length;
+  // config: eventos + autosave + toggles
+  const cf = st.config || {};
+  const setMult = (id, ev, val) => { $(id).textContent = '×' + val; document.querySelectorAll(`.evbtns[data-ev="${ev}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.m === val)); };
+  setMult('ev-exp', 'exp', cf.expMult || 1); setMult('ev-gold', 'gold', cf.goldMult || 1); setMult('ev-drop', 'drop', cf.dropMult || 1);
+  syncField('autosave', cf.autosaveMin || 0);
+  $('nextsave').textContent = cf.nextSaveSec >= 0 ? 'próximo en ' + fmtDur(cf.nextSaveSec) : '';
+  const pb = $('btn-pause'); pb.classList.toggle('act', !!cf.paused); pb.textContent = cf.paused ? '▶️ Reanudar mundo' : '⏸️ Pausar mundo';
+  const gb = $('btn-onlygms'); gb.classList.toggle('act', !!cf.onlyGms); gb.textContent = cf.onlyGms ? '🔓 Abrir a todos' : '🔧 Solo GMs';
+  // cadencia (intervalos en vivo)
+  syncField('walkms', cf.walkMs ?? 0);
+  syncField('attackms', cf.attackMs ?? 0);
+  // mensajes automáticos
+  syncField('automsgs', (cf.autoMessages || []).join('\n'));
+  syncField('automin', cf.autoMsgMin || 0);
+  $('nextautomsg').textContent = cf.nextAutoMsgSec >= 0 ? 'próximo en ' + fmtDur(cf.nextAutoMsgSec) : '';
+  // bans por cuenta
+  const bans = st.banned || [];
+  $('bancount').textContent = bans.length ? bans.length + (bans.length === 1 ? ' cuenta' : ' cuentas') : '';
+  $('banlist').innerHTML = bans.map(n => `<div class="banitem"><span class="bn">${esc(n)}</span><button class="mini" onclick="cmd('unban',{name:'${esc(n)}'})">Desbanear</button></div>`).join('');
+  // bans por IP
+  const banips = st.bannedIps || [];
+  $('banipcount').textContent = banips.length ? '· ' + banips.length : '';
+  $('baniplist').innerHTML = banips.map(ip => `<div class="banitem"><span class="bn">${esc(ip)}</span><button class="mini" onclick="cmd('unbanIp',{ip:'${esc(ip)}'})">Desbanear</button></div>`).join('');
+  // reloj
+  $('clock').textContent = new Date().toLocaleTimeString('es');
+}
+async function refresh() {
+  try { const st = await api('/api/state'); render(st); lastOk = Date.now(); }
+  catch (e) {
+    $('conndot').classList.remove('on'); $('connlbl').textContent = 'sin conexión';
+    if (Date.now() - lastOk > 8000) { /* server caído/apagado */ }
+  }
+}
+function boot() {
+  $('btn-bcast').onclick = () => { const v = $('bcast').value.trim(); if (v) { cmd('broadcast', { message: v }); $('bcast').value = ''; } };
+  $('bcast').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-bcast').click(); });
+  $('btn-save').onclick = () => cmd('save');
+  $('btn-backup').onclick = () => cmd('backup');
+  $('btn-kickall').onclick = () => { if (confirm('¿Echar a TODOS los jugadores no-GM?')) cmd('kickAll'); };
+  $('btn-shut-b').onclick = () => { if (confirm('¿Apagar el servidor guardando a los conectados?')) cmd('shutdown', { backup: true }); };
+  $('btn-shut').onclick = () => { if (confirm('¿Apagar el servidor SIN guardar? Se pierden los cambios de los que están jugando.')) cmd('shutdown', { backup: false }); };
+  // eventos: botones rápidos de multiplicador por evento
+  ['exp', 'gold', 'drop'].forEach(ev => {
+    const host = document.querySelector(`.evbtns[data-ev="${ev}"]`);
+    host.innerHTML = [1, 2, 3, 5, 10].map(m => `<button data-m="${m}">×${m}</button>`).join('');
+    host.querySelectorAll('button').forEach(b => b.onclick = () => cmd('setEvent', { [ev]: +b.dataset.m }));
+  });
+  $('btn-autosave').onclick = () => cmd('setAutosave', { minutes: +$('autosave').value || 0 });
+  $('btn-pause').onclick = () => cmd('togglePause');
+  $('btn-onlygms').onclick = () => cmd('toggleOnlyGms');
+  $('btn-intervals').onclick = () => cmd('setIntervals', { walkMs: +$('walkms').value || 0, attackMs: +$('attackms').value || 0 });
+  $('btn-automsgs').onclick = () => cmd('setAutoMessages', {
+    minutes: +$('automin').value || 0,
+    messages: $('automsgs').value.split('\n').map(s => s.trim()).filter(Boolean),
+  });
+  $('btn-ban').onclick = () => { const n = $('banname').value.trim(); if (n) { cmd('ban', { name: n }); $('banname').value = ''; } };
+  $('btn-unban').onclick = () => { const n = $('banname').value.trim(); if (n) { cmd('unban', { name: n }); $('banname').value = ''; } };
+  $('btn-unbanall').onclick = () => { if (confirm('¿Desbanear TODAS las cuentas?')) cmd('unbanAll'); };
+  $('banname').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-ban').click(); });
+  $('btn-banip').onclick = () => { const ip = $('banip').value.trim(); if (ip && confirm('¿Banear la IP ' + ip + '?')) { cmd('banIp', { ip }); $('banip').value = ''; } };
+  $('btn-unbanip').onclick = () => { const ip = $('banip').value.trim(); if (ip) { cmd('unbanIp', { ip }); $('banip').value = ''; } };
+  $('btn-unbanallips').onclick = () => { if (confirm('¿Desbanear TODAS las IPs?')) cmd('unbanAllIps'); };
+  $('banip').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-banip').click(); });
+  refresh();
+  setInterval(refresh, 2000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,777 @@
+using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+
+namespace CoverAO.Server.Net;
+
+/// <summary>
+/// Drives NPCs on the game-loop tick (runs on the loop thread, so it shares no state races with the
+/// packet handlers). Slice behaviour: spawned NPCs attack an adjacent player, wander/chase/follow con
+/// respetando las paredes del .csm (NpcTileWalkable), y los muertos respawnean en su tile
+/// tras un delay. El MOVIMIENTO lo decide `Npc.Movement` (VB6 TipoAI): 0 = va hacia el usuario que ve
+/// (IrUsuarioCercano), 1 = estatico, 3 = deambula. Las invocaciones expiran por tiempo.
+/// </summary>
+public sealed class NpcSystem
+{
+    private const int AttackEveryTicks = 25;  // NPCs act ~once per second (40ms tick)
+    private const int MoveEveryTicks = 25;    // wander/chase check ~once per second
+    private const int RespawnTicks = 125;     // ~5 seconds
+    private const int AutoReviveTicks = 63;   // ~2500ms (VB6 IntervaloRevive) — delay del revive en arena
+    // VB6 AI_NPC.bas:50-51: la caja de vision de IrUsuarioCercano es RECTANGULAR, no un radio.
+    private const int RangoVisionX = 8;
+    private const int RangoVisionY = 6;
+
+    private readonly World _world;
+    private readonly GameData _data;
+    private readonly Random _rng = new();
+    private readonly List<Spawn> _spawns = new();
+
+    private sealed class Spawn
+    {
+        public required NpcInfo Template;
+        public required WorldPos Pos;
+        public int Movement;
+        public bool Hostile;
+        public short CharIndex;
+        public bool Alive;
+        public long RespawnAtTick;
+    }
+
+    /// <summary>Da de baja el respawn de una criatura (VB6 <c>QuitarNPC</c>, MODULO_NPCs.bas:328): la saca del
+    /// ciclo para siempre, que es lo que distingue a /MATA y /MASSKILL de una muerte normal —en el original el
+    /// respawn vive sólo en <c>MuereNpc</c>, no en QuitarNPC. Sin esto, "matar sin respawn" reaparecía a los 5 s.
+    /// Se MARCA el spawn en vez de sacarlo de la lista a propósito: este método lo llama el hilo de la conexión
+    /// mientras Update() itera <c>_spawns</c> en el hilo del loop, y mutar la colección sería una carrera; escribir
+    /// los dos campos es seguro en cualquier intercalado.</summary>
+    public void CancelRespawn(short charIndex)
+    {
+        foreach (var s in _spawns)
+            if (s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = long.MaxValue; }
+    }
+
+    public NpcSystem(World world, GameData data, bool gmsPerseguibles = false)
+    {
+        _world = world;
+        _data = data;
+        _gmsPerseguibles = gmsPerseguibles;
+    }
+
+    /// <summary>Corrección de una infidelidad del FIXTURE, no del original (mismo caso que el <c>Movement</c>
+    /// que TestFixture le fija a mano a sus NPCs). El VB6 no deja que una criatura persiga ni golpee a un GM
+    /// (<see cref="Player.AdminPerseguible"/>), y el protagonista demo del fixture —Rugura— es Dios, así que con
+    /// el gate fiel el PvE del laboratorio se apagaba entero: ni los flows de combate contra NPCs ni el cliente
+    /// web podían recibir un golpe. En un server de verdad quien juega no es GM, así que esto sólo se prende en
+    /// modo <c>--fixture</c>; en producción el gate corre tal cual la fuente.</summary>
+    private readonly bool _gmsPerseguibles;
+
+    /// <summary>¿Las criaturas pueden ir por este jugador? (VB6 <c>flags.AdminPerseguible</c>.)</summary>
+    private bool Perseguible(Player p) => p.AdminPerseguible || _gmsPerseguibles;
+
+    /// <summary>Registers a spawn point and spawns its NPC immediately.
+    ///
+    /// <paramref name="movement"/> es el <c>TipoAI</c> del VB6 (ver <see cref="Npc.Movement"/>): null = el de su
+    /// ficha, que es lo correcto para el mundo real. El FIXTURE lo fija a mano porque sus NPCs salen de
+    /// plantillas genéricas (Aldeano/Murciélago/Lobo) cuyo Movement es 0 — o sea que, con la IA fiel, un
+    /// "banquero" de test se pondría a caminar hacia el jugador. En la data real los servicios SON Movement=1,
+    /// así que fijarlo no es hacer trampa: es corregir la infidelidad de reusar una plantilla cualquiera.</summary>
+    public void AddSpawn(NpcInfo template, WorldPos pos, bool hostile = false, int? movement = null)
+    {
+        var spawn = new Spawn
+        {
+            Template = template, Pos = pos, Hostile = hostile,
+            Movement = movement ?? template.Movement,
+        };
+        SpawnNow(spawn);
+        _spawns.Add(spawn);
+    }
+
+    /// <summary>
+    /// Spawnea un NPC por comando de GM (VB6 SpawnNpc con FX, MODULO_NPCs.bas:803, disparado por /ACC y /RACC).
+    /// Devuelve el charIndex del NPC creado, o 0 si el template no existe (paridad con SpawnNpc, que ante un
+    /// npcindex inválido devuelve 0 y no emite nada). Como en el original, el NPC queda registrado para
+    /// respawn: /ACC y /RACC son equivalentes en el VB6 —el parámetro `respawn` es código muerto, lo pisa
+    /// `.Respawn = 0`, que en esta variante significa "sí respawnea"—, así que no se distinguen.
+    ///
+    /// Emite, además del CharacterCreate que ya manda AddSpawn, el par de efectos del warp que ve el área:
+    /// PlayWave(SND_WARP=3) + CreateFX(FXWARP=1). El original busca la posición legal más cercana con
+    /// ClosestLegalPos; acá se usa la posición pedida directamente (el caller la valida antes).
+    /// </summary>
+    public int GmSpawn(NpcInfo template, WorldPos pos)
+    {
+        AddSpawn(template, pos);
+        var spawn = _spawns[^1];
+        _world.BroadcastToObservers(pos, ServerMessages.PlayWave(SndWarp, pos.X, pos.Y));
+        _world.BroadcastToObservers(pos, ServerMessages.CreateFX(spawn.CharIndex, FxWarp, 0));
+        return spawn.CharIndex;
+    }
+
+    private const short SndWarp = 3;  // Declares.bas:538
+    private const short FxWarp = 1;   // Declares.bas:222
+
+    /// <summary>Vuelta actual del loop. La guarda <see cref="Update"/> para que los efectos con duración —hoy
+    /// la parálisis de los hechizos de NPC— puedan fijar su vencimiento sin arrastrar el tick por toda la
+    /// cadena de llamadas de la IA.</summary>
+    private long _tick;
+
+    /// <summary>Cuánto dura la parálisis que tira una CRIATURA. El original usa <c>IntervaloParalizado</c>
+    /// (Server.ini, 500 vueltas ≈ 20 s) en <c>NpcLanzaSpellSobreUser</c> (modHechizos.bas:224) — el mismo que
+    /// el PvP, no el reducido que usa el jugador CONTRA una criatura.</summary>
+    private const long ParalisisDeNpcTicks = 500;
+
+    public void Update(long tick)
+    {
+        _tick = tick;
+        // Revive en ARENA con delay (VB6 DoResucitar, mMainLoop.bas:235 + Modulo_UsUaRiOs.bas:33): un jugador que
+        // murió en zona de pelea queda `Resucitando` (lo marca KillPlayer) y DarVida lo levanta recién a los ~2500ms.
+        // Fuera de arena NO hay auto-revive: el muerto queda fantasma hasta un revive manual (sacerdote/hechizo/hogar).
+        foreach (var p in _world.Players)
+        {
+            if (!p.Resucitando) continue;
+            if (p.IsAlive) { p.Resucitando = false; p.ReviveAtTick = 0; continue; }   // ya revivió por otra vía
+            if (p.ReviveAtTick == 0) p.ReviveAtTick = tick + AutoReviveTicks;
+            else if (tick >= p.ReviveAtTick) { PacketDispatcher.RevivePlayer(_world, _data, p); p.Resucitando = false; p.ReviveAtTick = 0; }
+        }
+
+        // Expiración de invocaciones (VB6 Contadores.TiempoExistencia, decrementado hasta 0 → MuereNpc):
+        // las criaturas invocadas se despawnean solas al vencer su tiempo de vida. Se recorre la lista de los
+        // que TIENEN vencimiento (casi siempre vacía) y no los 5404 del mundo: esto corre en cada vuelta del
+        // loop, o sea 25 veces por segundo, y filtrar la población entera para encontrar cero era el precio de
+        // no llevar la cuenta. Se itera al revés para poder remover sin romper el índice.
+        var conVencimiento = _world.NpcsConVencimiento;
+        for (int i = conVencimiento.Count - 1; i >= 0; i--)
+        {
+            var npc = conVencimiento[i];
+            if (tick < npc.ExpireAtTick) continue;
+            _world.RemoveNpc(npc.CharIndex);
+            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+        }
+
+        // Respawn management: notice kills (handler removed the NPC) and respawn after the delay.
+        foreach (var s in _spawns)
+        {
+            if (s.Alive && !_world.HasNpc(s.CharIndex))
+            {
+                s.Alive = false;
+                s.RespawnAtTick = tick + RespawnTicks;
+            }
+            else if (!s.Alive && tick >= s.RespawnAtTick)
+            {
+                SpawnNow(s);
+            }
+        }
+
+        // ORDEN: ataque y DESPUÉS movimiento, como el NPCAI del VB6 (AI_NPC.bas:701 pelea, :718 el
+        // `Select Case .Movement`). No es cosmético: la fase de ataque termina en RestoreOldMovement cuando no
+        // encontró a quién pegarle, y eso le cambia el Movement al NPC — con los barridos al revés, una criatura
+        // en modo /SEGUIR alcanzaba a dar un paso antes de que le revirtieran el estado. Las dos cadencias son
+        // 25, así que las dos fases caen siempre en el mismo tick y el orden entre ellas es lo único que decide.
+        // En CADA vuelta y no sólo en las del barrido de ataque: cuesta 4 tiles por jugador conectado y así el
+        // conjunto nunca puede quedar de un tick viejo, pase lo que pase con las cadencias.
+        RecalcularTilesJuntoAJugador();
+
+        if (tick % AttackEveryTicks == 0)
+            foreach (var npc in _world.Npcs)
+            {
+                if (tick < npc.ParalyzedUntilTick) continue;   // paralizada: tampoco pega
+                NpcTryAttack(npc);
+            }
+
+        if (tick % MoveEveryTicks == 0)
+            foreach (var npc in _world.Npcs)
+            {
+                // Las dos ramas de ataque hacen Exit Sub apenas enganchan a alguien, así que un NPC que está
+                // pegándole a un usuario no se mueve: el de ataque manda mientras haya alguien adyacente.
+                if (tick < npc.ParalyzedUntilTick) continue;   // paralizada: no se mueve (VB6 .flags.Paralizado)
+                // TipoAI.SigueAmo (mascotas). El gate por dueño es un atajo del port —el VB6 distingue por
+                // Movement, que a una mascota se lo pone FollowAmo— y hay que dejar pasar el caso en que /SEGUIR
+                // se lo cambió a NPCDEFENSA: si no, una mascota puesta a seguir al GM igual iría tras su amo.
+                if (npc.OwnerCharIndex != 0 && npc.Movement != GameLimits.TipoAiNpcDefensa)
+                { NpcTryFollowOwner(npc); continue; }
+                if (npc.SinIa) continue;   // NPCAI sale de una para GuardiasCity/facciones/Convertidores
+                switch (npc.Movement)
+                {
+                    case 0: NpcIrUsuarioCercano(npc); break;   // TipoAI.NpcMaloAtacaUsersBuenos
+                    case 3: NpcTryWander(npc); break;          // TipoAI.MueveAlAzar
+                    case GameLimits.TipoAiNpcDefensa: NpcSeguirAgresor(npc); break;
+                    default: break;                            // ESTATICO(1) y los no modelados: quietos
+                }
+            }
+    }
+
+    private static readonly (int dx, int dy, byte heading)[] Steps =
+        { (0, -1, 1), (1, 0, 2), (0, 1, 3), (-1, 0, 4) }; // N, E, S, W
+
+    /// <summary>VB6 <c>Case TipoAI.MueveAlAzar</c> (AI_NPC.bas:719): un paso al azar con probabilidad
+    /// <c>RandomNumber(1, 12) = 3</c>, o sea <b>1/12</b>. Y nada más — el VB6 no frena por tener un jugador cerca
+    /// ni por ser mercader. Antes acá había un 40% y dos gates inventados: el NPC deambulaba 5 veces más de la
+    /// cuenta y se congelaba cuando alguien se le acercaba, cosa que la fuente no hace.</summary>
+    private void NpcTryWander(Npc npc)
+    {
+        if (_rng.Next(1, 13) != 3) return;
+        StepRandom(npc);
+    }
+
+    /// <summary>Un paso al azar (VB6 `MoveNPCChar(npcindex, RandomNumber(NORTH, WEST))`).</summary>
+    private void StepRandom(Npc npc)
+    {
+        var (dx, dy, heading) = Steps[_rng.Next(Steps.Length)];
+        MoveNpc(npc, npc.Pos.X + dx, npc.Pos.Y + dy, heading);
+    }
+
+    /// <summary>Mueve al NPC un tile si el destino es legal (VB6 <c>MoveNPCChar</c> + <c>LegalPosNPC</c>).
+    /// Devuelve si se movió. Un tile con un jugador VIVO o con otro NPC no es legal — pero uno con un jugador
+    /// MUERTO sí: el NPC no lo atraviesa, lo <b>intercambia de lugar</b> (GameLogic.bas:642 `.UserIndex = 0 Or
+    /// IsDeadChar`; el swap en MODULO_NPCs.bas:707). Al cadáver lo empuja al tile del que venía el NPC con un
+    /// <c>ForceCharMove</c> de heading invertido, y avisa al área con un CharacterMove.</summary>
+    private bool MoveNpc(Npc npc, int x, int y, byte heading)
+    {
+        if (!NpcTileWalkable(npc, x, y)) return false;                            // pared/.csm + límites 1..100
+        var dest = new WorldPos(npc.Pos.Map, (byte)x, (byte)y);
+        if (_world.NpcAt(dest) is not null) return false;
+        var enElDestino = _world.PlayerAt(dest);
+        if (enElDestino is not null && enElDestino.IsAlive) return false;         // a un vivo no lo mueve nadie
+        var from = npc.Pos;
+        if (enElDestino is not null)
+        {
+            // Casper: no se lo traslada de agua a tierra ni al revés (MODULO_NPCs.bas:710-714).
+            bool aguaDest = _data.IsWater(from.Map, dest.X, dest.Y), aguaOrig = _data.IsWater(from.Map, from.X, from.Y);
+            if (aguaDest != aguaOrig) return false;
+            enElDestino.Pos = from;
+            _world.BroadcastToObservers(from, ServerMessages.CharacterMove(enElDestino.CharIndex, from.X, from.Y),
+                                        enElDestino.CharIndex);
+            enElDestino.Connection?.Send(ServerMessages.ForceCharMove(InvertirHeading(heading)));
+        }
+        npc.OldPos = from;      // VB6 oldPos: FindDirection lo usa para no volver por donde vino
+        _world.MoveNpc(npc, dest);   // por el World, no `npc.Pos = dest`: mantiene el índice por tile
+        npc.Heading = heading;
+        BroadcastNpcMove(npc, from, dest);
+        return true;
+    }
+
+    /// <summary>Los tiles ORTOGONALMENTE PEGADOS a algún jugador conectado. Lo consume
+    /// <see cref="NpcGolpeaAdyacente"/> como corte rápido; se recalcula al principio de cada vuelta del loop.
+    /// No filtra por estado del jugador a propósito: es un superconjunto, y como tal sólo sirve para negar.</summary>
+    private readonly HashSet<WorldPos> _tilesJuntoAJugador = new();
+
+    private void RecalcularTilesJuntoAJugador()
+    {
+        _tilesJuntoAJugador.Clear();
+        foreach (var p in _world.Players)
+        {
+            var pos = p.Pos;
+            if (pos.X > 1) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, (byte)(pos.X - 1), pos.Y));
+            if (pos.X < 255) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, (byte)(pos.X + 1), pos.Y));
+            if (pos.Y > 1) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, pos.X, (byte)(pos.Y - 1)));
+            if (pos.Y < 255) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, pos.X, (byte)(pos.Y + 1)));
+        }
+    }
+
+    /// <summary>VB6 <c>InvertHeading</c>: N↔S, E↔O.</summary>
+    private static byte InvertirHeading(byte h) => h switch
+        { HNorte => HSur, HSur => HNorte, HEste => HOeste, _ => HEste };
+
+    /// <summary>VB6 <c>PuedeNpc</c> (GameLogic.bas:1136): el tile está libre para un NPC — sin NPC, sin bloqueo y
+    /// sin usuario. OJO: NO mira agua ni terreno; eso lo filtra aparte <c>MoveNPCChar</c>.</summary>
+    private bool PuedeNpc(short map, int x, int y)
+    {
+        if (x <= 0 || y <= 0 || x > 100 || y > 100) return false;
+        var pos = new WorldPos(map, (byte)x, (byte)y);
+        return _world.NpcAt(pos) is null && !_data.IsBlockedTile(map, x, y) && _world.PlayerAt(pos) is null;
+    }
+
+    /// <summary>VB6 <c>Rodeado</c> (GameLogic.bas:1120): los CUATRO ortogonales del OBJETIVO están ocupados.
+    /// <c>FindDirection</c> sale con 0 — no tiene sentido forcejear contra alguien ya encerrado.</summary>
+    private bool Rodeado(WorldPos p) =>
+        !PuedeNpc(p.Map, p.X + 1, p.Y) && !PuedeNpc(p.Map, p.X - 1, p.Y)
+        && !PuedeNpc(p.Map, p.X, p.Y + 1) && !PuedeNpc(p.Map, p.X, p.Y - 1);
+
+    private const byte HNorte = 1, HEste = 2, HSur = 3, HOeste = 4;
+
+    /// <summary>VB6 <c>FindDirection</c> (GameLogic.bas:853): hacia dónde dar UN paso para acercarse al objetivo,
+    /// o 0 = no moverse. <b>No es un paso greedy: esquiva.</b> Convención de signos del VB6:
+    /// <c>X = NPC.X - Target.X</c>, así que <c>Sgn(X)=1</c> = el NPC está al ESTE y quiere ir al OESTE.
+    /// <list type="bullet">
+    /// <item>Objetivo en un eje CARDINAL con el tile directo ocupado → <b>sidestep</b>: tira 50/50 un
+    /// perpendicular y, si ése no se puede, devuelve el otro (aunque tampoco se pueda: el VB6 no re-chequea y el
+    /// movimiento simplemente falla).</item>
+    /// <item>Objetivo en DIAGONAL → mira los dos ejes; si los dos sirven descarta el que lo devolvería a
+    /// <c>oldPos</c> y, si aun así quedan los dos, tira <c>RandomNumber(1,20) &lt; 10</c>. Si no puede por
+    /// ninguno, escapa por el perpendicular.</item>
+    /// </list>
+    /// Antes acá había un paso greedy cuyo fallback para el caso cardinal era <b>inalcanzable</b> (<c>dx == 0</c>),
+    /// así que el NPC quedaba clavado contra la pared en vez de rodearla.</summary>
+    private byte FindDirection(Npc npc, WorldPos target)
+    {
+        var pos = npc.Pos;
+        int x = pos.X - target.X, y = pos.Y - target.Y;
+        if (x == 0 && y == 0) return 0;
+        if (Math.Abs(x) + Math.Abs(y) == 1) return 0;   // Distancia (Manhattan) = 1: ya lo tiene al lado
+        if (Rodeado(target)) return 0;
+
+        // --- Cardinales: comparten eje. Si el tile directo no se puede, esquiva por un perpendicular.
+        if (x == 0)
+        {
+            int paso = y < 0 ? 1 : -1;                      // y<0 → el objetivo está al SUR
+            if (PuedeNpc(pos.Map, pos.X, pos.Y + paso)) return y < 0 ? HSur : HNorte;
+            return _rng.Next(1, 11) > 5
+                ? (PuedeNpc(pos.Map, pos.X - 1, pos.Y) ? HOeste : HEste)
+                : (PuedeNpc(pos.Map, pos.X + 1, pos.Y) ? HEste : HOeste);
+        }
+        if (y == 0)
+        {
+            int paso = x > 0 ? -1 : 1;                      // x>0 → el objetivo está al OESTE
+            if (PuedeNpc(pos.Map, pos.X + paso, pos.Y)) return x > 0 ? HOeste : HEste;
+            return _rng.Next(1, 11) > 5
+                ? (PuedeNpc(pos.Map, pos.X, pos.Y - 1) ? HNorte : HSur)
+                : (PuedeNpc(pos.Map, pos.X, pos.Y + 1) ? HSur : HNorte);
+        }
+
+        // --- Diagonales. `hx`/`hy` son los headings hacia el objetivo por cada eje.
+        int sx = x > 0 ? -1 : 1, sy = y > 0 ? -1 : 1;
+        byte hx = x > 0 ? HOeste : HEste, hy = y > 0 ? HNorte : HSur;
+        bool puedeX = PuedeNpc(pos.Map, pos.X + sx, pos.Y), puedeY = PuedeNpc(pos.Map, pos.X, pos.Y + sy);
+        if (puedeX && puedeY)
+        {
+            // Los dos sirven: descartar el que lo devolvería al tile del que viene (VB6 oldPos).
+            bool okX = npc.OldPos.X != pos.X + sx, okY = npc.OldPos.Y != pos.Y + sy;
+            if (okX && okY) return _rng.Next(1, 21) < 10 ? hx : hy;
+            if (okX) return hx;
+            if (okY) return hy;
+        }
+        else if (puedeX) return hx;
+        else if (puedeY) return hy;
+
+        // "llego aca porque no pudo en nada": escapa por el perpendicular del eje Y.
+        if (!PuedeNpc(pos.Map, pos.X, pos.Y - sy) || npc.OldPos.Y == pos.Y - sy) return x > 0 ? HEste : HOeste;
+        return y > 0 ? HSur : HNorte;
+    }
+
+    /// <summary>VB6 <c>IrUsuarioCercano</c> (AI_NPC.bas:249), el movimiento de los <c>Movement = 0</c>
+    /// (<c>NpcMaloAtacaUsersBuenos</c>) — que en esta data son 186 de los 291 NPCs, incluido todo el que no trae
+    /// la clave (el VB6 lee <c>val("")</c> = 0). Detalles que sólo se ven leyendo la fuente:
+    /// <list type="bullet">
+    /// <item><b>No mira <c>Hostile</c></b>: cualquiera con Movement=0 camina hacia el usuario. Un gallo te sigue.
+    /// Pegar o no es otra cosa (eso sí lo decide Hostile, en NpcTryAttack).</item>
+    /// <item>Visión <b>RECTANGULAR 8×6</b> (<c>RANGO_VISION_X/Y</c>, AI_NPC.bas:50-51), no un radio.</item>
+    /// <item>Se queda con el <b>PRIMERO</b> que encuentra recorriendo los usuarios del mapa, no con el más cercano.</item>
+    /// <item>Paso <b>greedy</b> de a un tile con <c>FindDirection</c>, sin diagonales y <b>sin pathfinding</b> —
+    /// el A* es el modo aparte <c>NpcPathfinding=10</c>, así que estos se traban contra las paredes.</item>
+    /// <item><c>FindDirection</c> devuelve 0 si el objetivo está <b>pegado</b> (Distancia=1): no se mueve, ataca.</item>
+    /// <item>Si no ve a nadie, <b>baila</b>: un paso al azar 1 de cada 11 ticks (AI_NPC.bas:361, "A bailar").</item>
+    /// </list></summary>
+    private void NpcIrUsuarioCercano(Npc npc)
+    {
+        foreach (var p in _world.Players)
+        {
+            if (p.Pos.Map != npc.Pos.Map) continue;
+            int dx = p.Pos.X - npc.Pos.X, dy = p.Pos.Y - npc.Pos.Y;
+            if (Math.Abs(dx) > RangoVisionX || Math.Abs(dy) > RangoVisionY) continue;
+            if (!p.IsAlive || p.Invisible || p.Oculto) continue;   // VB6 filtra Muerto/Invisible/Oculto/protegidos
+            if (!Perseguible(p)) continue;             // …y AdminPerseguible (AI_NPC.bas:344): a un GM tampoco lo persigue
+            byte h = FindDirection(npc, p.Pos);        // decide el paso — y esquiva; ver FindDirection
+            if (h != 0)
+            {
+                var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
+                MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
+            }
+            return;   // el VB6 se queda con el PRIMERO que ve y sale, se haya movido o no
+        }
+        // "Si llega aca es que no habia ningun usuario cercano vivo. A bailar." (AI_NPC.bas:360-363)
+        if (_rng.Next(0, 11) == 0) StepRandom(npc);
+    }
+
+    /// <summary>VB6 <c>SeguirAgresor</c> (AI_NPC.bas:375), la fase de movimiento de un NPC en
+    /// <c>TipoAI.NPCDEFENSA</c>: persigue al usuario cuyo nombre tiene anotado en <c>AttackedBy</c> —el agresor,
+    /// o el GM que le tiró un /SEGUIR— mientras lo vea en la caja 8×6, y lo pierde si está muerto, invisible u
+    /// oculto. Un paso greedy con FindDirection, como todo lo demás.
+    ///
+    /// Acá también PEGA, y no es redundante: <c>NpcTryAttack</c> sale de una para toda criatura con dueño
+    /// (AI_NPC.bas:702 `If .MaestroUser = 0`), y las criaturas con dueño son justamente las únicas que llegan a
+    /// esta rama — a las otras el reset les saca el NPCDEFENSA antes de la fase de movimiento. O sea que
+    /// SeguirAgresor es el ÚNICO lugar por el que golpea una mascota, igual que en el original. Para las que no
+    /// tienen dueño no se repite el golpe (el original ahí sí pega dos veces, una por rama; no se replica).
+    ///
+    /// Si no encuentra a quién seguir, el original cae en <c>RestoreOldMovement</c>. Acá eso lo hace
+    /// NpcTryAttack, que corre en el mismo tick por el mismo motivo — salvo para las criaturas con dueño, a las
+    /// que el original tampoco les restaura nada.</summary>
+    private void NpcSeguirAgresor(Npc npc)
+    {
+        if (string.IsNullOrEmpty(npc.AttackedBy)) return;
+        foreach (var p in _world.Players)
+        {
+            if (p.Pos.Map != npc.Pos.Map) continue;
+            int dx = p.Pos.X - npc.Pos.X, dy = p.Pos.Y - npc.Pos.Y;
+            if (Math.Abs(dx) > RangoVisionX || Math.Abs(dy) > RangoVisionY) continue;
+            if (!string.Equals(p.Name, npc.AttackedBy, StringComparison.OrdinalIgnoreCase)) continue;
+            // Freno de facción (AI_NPC.bas:455-462): una mascota de la ARMADA no persigue a alguien que no sea
+            // renegado. El amo se come un LocaleMsg(8) y la mascota vuelve con él (FollowAmo). Ojo que el gate
+            // mira al AMO, no a la criatura, y sólo aplica a la Armada — el Caos no tiene freno equivalente.
+            if (npc.OwnerCharIndex != 0)
+            {
+                var amo = _world.Players.FirstOrDefault(o => o.CharIndex == npc.OwnerCharIndex);
+                if (amo is not null && !EsRenegado(amo) && !EsRenegado(p) && amo.IsArmada)
+                {
+                    amo.Connection?.Send(ServerMessages.LocaleMsg(8));
+                    npc.AttackedBy = null;
+                    npc.Follow = true; npc.Movement = GameLimits.TipoAiSigueAmo; npc.Hostile = false;   // VB6 FollowAmo
+                    return;
+                }
+            }
+            if (!p.IsAlive || p.Invisible || p.Oculto) continue;
+            // `If Distancia(...) <= 1 Then NpcAtacaUser`: pega ANTES de moverse, y con la Manhattan del original.
+            if (npc.OwnerCharIndex != 0 && Math.Abs(dx) + Math.Abs(dy) <= 1) NpcGolpeaA(npc, p);
+            byte h = FindDirection(npc, p.Pos);
+            if (h != 0)
+            {
+                var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
+                MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
+            }
+            return;
+        }
+    }
+
+    /// <summary>VB6 <c>esRene</c>: el renegado, que en el port es el status criminal (ver Player.FactionStatus).</summary>
+    private static bool EsRenegado(Player p) => p.FactionStatus == Player.StatusCriminal;
+
+    /// <summary>Area-scoped NPC movement: players who still see it get a CharacterMove; players it just
+    /// walked into view of get a CharacterCreate; players it left get a CharacterRemove.</summary>
+    private void BroadcastNpcMove(Npc npc, WorldPos from, WorldPos dest)
+    {
+        foreach (var pl in _world.Players)
+        {
+            bool was = World.InView(pl.Pos, from), now = World.InView(pl.Pos, dest);
+            if (was && now) pl.Connection?.Send(ServerMessages.CharacterMove(npc.CharIndex, dest.X, dest.Y));
+            else if (now) pl.Connection?.Send(ServerMessages.CharacterCreate(npc));
+            else if (was) pl.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex));
+        }
+    }
+
+    /// <summary>VB6 <c>Case TipoAI.SigueAmo</c> (AI_NPC.bas:736): <c>SeguirAmo</c> y DESPUÉS un paso al azar 1/12
+    /// — el `Exit Sub` de SeguirAmo sale de SeguirAmo, no del NPCAI, así que el paso al azar corre igual, haya
+    /// seguido al amo o no (una mascota puede moverse dos tiles en el mismo tick; es lo que hace la fuente).
+    ///
+    /// <c>SeguirAmo</c> (AI_NPC.bas:505) no es "caminar hasta ponerse al lado con A*": tiene **correa de 3**
+    /// (`Distancia > 3`, MANHATTAN — o sea que se queda quieta mientras el amo esté cerca), exige verlo dentro
+    /// de la caja **8×6**, lo filtra por muerto/invisible/oculto, y da UN paso greedy con
+    /// <c>FindDirection</c>, sin pathfinding.</summary>
+    private void NpcTryFollowOwner(Npc npc)
+    {
+        // El dueño se desconectó: OnDisconnect ya despawnea sus invocaciones/mascotas. NO la revertimos a NPC
+        // salvaje (OwnerCharIndex=0): matar una invocación huérfana no debe dar recompensa — el gate en
+        // AttackNpc es OwnerCharIndex==0, así que mantenerlo distinto de 0 evita la canilla de exp/oro via relog.
+        var owner = _world.Players.FirstOrDefault(p => p.CharIndex == npc.OwnerCharIndex);
+        if (owner is not null && owner.Pos.Map == npc.Pos.Map)
+        {
+            int dx = owner.Pos.X - npc.Pos.X, dy = owner.Pos.Y - npc.Pos.Y;
+            if (Math.Abs(dx) <= RangoVisionX && Math.Abs(dy) <= RangoVisionY
+                && owner.IsAlive && !owner.Invisible && !owner.Oculto
+                && Math.Abs(dx) + Math.Abs(dy) > 3)          // la correa: Distancia (Manhattan) > 3
+            {
+                byte h = FindDirection(npc, owner.Pos);
+                if (h != 0)
+                {
+                    var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
+                    MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
+                }
+            }
+        }
+        if (_rng.Next(1, 13) == 3) StepRandom(npc);   // el paso al azar del Case SigueAmo, corra o no SeguirAmo
+    }
+
+    /// <summary>¿Este NPC puede pisar este tile? VB6 MoveNPCChar/LegalPosNPC: dentro del mapa, sin bloqueo del .csm
+    /// (no se atraviesan paredes), y respetando el terreno de la criatura — un NPC terrestre (AguaValida=0) no entra
+    /// al agua, y uno acuático puro (TierraInvalida=1) no pisa tierra.</summary>
+    private bool NpcTileWalkable(Npc npc, int x, int y)
+    {
+        var map = npc.Pos.Map;
+        if (x < 1 || x > 100 || y < 1 || y > 100 || _data.IsBlockedTile(map, x, y)) return false;
+        // VB6 LegalPosNPC (GameLogic.bas:642): `(.Trigger <> eTrigger.POSINVALIDA Or IsPet)` — los NPCs no pisan
+        // un POSINVALIDA, PERO las mascotas SÍ (si no, se le quedarían atrás al amo al cruzar uno).
+        if (npc.OwnerCharIndex == 0 && _data.IsNpcInvalidTile(map, x, y)) return false;
+        bool water = _data.IsWater(map, x, y);
+        if (water && !npc.Template.AguaValida) return false;   // terrestre no entra al agua
+        if (!water && npc.Template.TierraInvalida) return false; // acuático puro no pisa tierra
+        return true;
+    }
+
+
+    private void SpawnNow(Spawn s)
+    {
+        var npc = new Npc
+        {
+            CharIndex = _world.AllocateCharIndex(),
+            Template = s.Template,
+            Hp = s.Template.MaxHp,
+            Pos = s.Pos,
+            StartPos = s.Pos,                // VB6 StartPos: de acá sale si el click le muestra su diálogo
+            Hostile = s.Hostile,
+            OriginallyHostile = s.Hostile,   // VB6 MODULO_NPCs.bas:994: `.flags.OldHostil = .Hostile` al cargarlo
+            Movement = s.Movement,           // VB6 TipoAI: 0 = va al usuario cercano, 1 = estatico, 3 = deambula
+            OriginalMovement = s.Movement,   // VB6 flags.OldMovement: a esto vuelve RestoreOldMovement
+        };
+        // ROL desde la data (VB6 eNPCType / Comercia): los NPCs poblados desde MapSpawns eran inertes — el
+        // Sacerdote no revivía, el Banquero no atendía y los mercaderes no vendían. Ahora cada uno cumple su
+        // función según su ficha del NPCs.dat. (Los NPCs de test de Program.cs siguen fijando sus flags a mano.)
+        if (s.Template.NpcType == 1) npc.IsReviver = true;                       // eNPCType.Revividor
+        if (s.Template.NpcType == 4) npc.IsBanker = true;                        // eNPCType.Banquero
+        // Los NPCs de servicio/guardias (Attackable=0 en el NPCs.dat) no se pueden atacar (VB6 NpcAtacable).
+        // Los NPCs de test de Program.cs quieren ser atacables → sólo los poblados por data respetan el flag.
+        npc.Attackable = s.Template.Attackable;
+        if (s.Template.StockItems is { Count: > 0 } items)                       // Comercia=1 → mercader con su stock
+            npc.Stock = items.Select(it => new MerchantSlot
+            {
+                ObjIndex = (short)it.ObjIndex,
+                Amount = (short)Math.Clamp(it.Amount, 1, short.MaxValue),
+                Price = Math.Max(1, _data.Obj((short)it.ObjIndex)?.Value ?? 1),
+            }).ToList();
+        _world.AddNpc(npc);
+        s.CharIndex = npc.CharIndex;
+        s.Alive = true;
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterCreate(npc)); // only players who can see the tile
+    }
+
+    private void NpcTryAttack(Npc npc)
+    {
+        // VB6 NPCAI (AI_NPC.bas:700) sale ANTES de pelear para GuardiasCity/facciones/Convertidores: no corren
+        // IA, así que ni siquiera devuelven el golpe — ni se les restaura nada.
+        if (npc.SinIa) return;
+        // `If .MaestroUser = 0` (AI_NPC.bas:702): a una criatura CON DUEÑO el original no le corre la fase de
+        // ataque, y por lo tanto tampoco el RestoreOldMovement del final. Su golpe sale de SeguirAgresor.
+        if (npc.OwnerCharIndex != 0) return;
+        // Mercaderes y banqueros no pelean (atajo del port). PERO tienen que llegar igual al reset de abajo: el
+        // original no los excluye de NPCAI, así que un /SEGUIR sobre el herrero se le revierte en el tick
+        // siguiente como a cualquier otro. Con el `return` acá arriba se quedaba en NPCDEFENSA para siempre y se
+        // iba caminando de la ciudad detrás del GM, sin volver nunca a su puesto.
+        if (!npc.IsMerchant && !npc.IsBanker && NpcGolpeaAdyacente(npc)) return;
+        RestoreOldMovement(npc);
+    }
+
+    /// <summary>Busca un jugador adyacente al que pegarle y le pega. Devuelve si enganchó a alguien — el
+    /// <c>Exit Sub</c> de las dos ramas de ataque del original, que es lo que evita que además se le corra el
+    /// RestoreOldMovement.</summary>
+    private bool NpcGolpeaAdyacente(Npc npc)
+    {
+        // Corte barato antes de los cuatro PlayerAt: si este tile no está pegado a NINGÚN jugador, no hay a
+        // quién pegarle y el método iba a devolver false igual. El conjunto se arma una vez por barrido
+        // (4 tiles por jugador) y ahorra 4 barridos de la lista de jugadores por cada uno de los 5404 NPCs.
+        // Es un SUPERCONJUNTO a propósito —se arma sin mirar vivo/invisible/oculto/perseguible— así que sólo
+        // puede decir "seguro que no": los filtros de verdad siguen abajo, intactos.
+        if (!_tilesJuntoAJugador.Contains(npc.Pos)) return false;
+        // Look at the four adjacent tiles for a player to hit.
+        Span<(int dx, int dy)> dirs = stackalloc (int, int)[] { (0, -1), (1, 0), (0, 1), (-1, 0) };
+        foreach (var (dx, dy) in dirs)
+        {
+            int x = npc.Pos.X + dx, y = npc.Pos.Y + dy;
+            if (x is < 0 or > 255 || y is < 0 or > 255) continue;
+            var player = _world.PlayerAt(new WorldPos(npc.Pos.Map, (byte)x, (byte)y));
+            if (player is null)
+            {
+                // `ElseIf NPCI > 0` (AI_NPC.bas:189): sin jugador en el tile, la criatura le pega a la MASCOTA
+                // que tenga al lado. Sólo a las que tienen dueño y no estén paralizadas — las salvajes no se
+                // pelean entre sí. Sin esto una invocación era invulnerable al mundo entero.
+                var otro = _world.NpcAt(new WorldPos(npc.Pos.Map, (byte)x, (byte)y));
+                if (otro is not null && otro.IsAlive && otro.OwnerCharIndex != 0
+                    && otro.CharIndex != npc.CharIndex && _tick >= otro.ParalyzedUntilTick)
+                {
+                    NpcGolpeaA(npc, otro);
+                    return true;
+                }
+                continue;
+            }
+            if (!player.IsAlive || player.Invisible || player.Oculto) continue;   // VB6 NpcAtacaUser: no pega al oculto/invisible
+            if (player.CharIndex == npc.OwnerCharIndex) continue; // summons never attack their summoner
+            // Las TRES ramas de la IA exigen `flags.AdminPerseguible` (AI_NPC.bas:88/160/229), que el original
+            // sólo prende para el usuario común: a un GM ninguna criatura le pega ni lo persigue.
+            if (!Perseguible(player)) continue;
+            // VB6 NPCAI (AI_NPC.bas:705) se bifurca por Hostile: Hostile<>0 -> HostilMalvadoAI, que pega a
+            // CUALQUIER usuario adyacente; Hostile=0 -> HostilBuenoAI (AI_NPC.bas:451), que sólo pega si el
+            // usuario adyacente es `flags.AttackedBy`, o sea su agresor. Sin este gate todo NPC que no fuera
+            // mercader/banquero (aldeanos, sacerdotes, entrenadores) le pegaba sin provocación al que se le
+            // parara al lado.
+            if (!npc.Hostile && !string.Equals(player.Name, npc.AttackedBy, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Los NPCs que saben MAGIA la tiran en vez de pegar (VB6 AI_NPC.bas:169/295 → NpcLanzaUnSpell,
+            // que elige uno al azar de su lista). Son 70 de los 291 del install: sin esto, los Magos, los
+            // Nigromantes y las Banshees peleaban sólo a melee.
+            if (npc.Template.Spells is { Count: > 0 } && NpcLanzaUnHechizo(npc, player)) return true;
+            NpcGolpeaA(npc, player);
+            return true; // one attack per tick
+        }
+        return false;
+    }
+
+
+    /// <summary>
+    /// El NPC tira uno de sus hechizos, elegido al azar (VB6 <c>NpcLanzaUnSpell</c>, AI_NPC.bas:878:
+    /// <c>RandomNumber(1, LanzaSpells)</c>) y aplicado por <c>NpcLanzaSpellSobreUser</c> (modHechizos.bas:7).
+    ///
+    /// Gates del original, en orden: no le tira a un invisible ni a un oculto, y no tira nada en un mapa con
+    /// magia deshabilitada. Devuelve true si lanzó — el caller no pega ese tick.
+    /// </summary>
+    private bool NpcLanzaUnHechizo(Npc npc, Player player)
+    {
+        if (player.Invisible || player.Oculto) return false;
+        if (_data.MapNoMagic(player.Pos.Map)) return false;
+        var lista = npc.Template.Spells!;
+        var spell = _data.Spell((short)lista[_rng.Next(lista.Count)]);
+        if (spell is null) return false;
+
+        var conn = player.Connection;
+        if (spell.SubeHp == 1)          // hechizo que CURA (los sacerdotes se curan entre ellos)
+        {
+            int cura = spell.MaxHp >= spell.MinHp ? _rng.Next(spell.MinHp, spell.MaxHp + 1) : spell.MinHp;
+            player.Hp = Math.Min(player.MaxHp, player.Hp + cura);
+            EmitirFxDeHechizo(npc, player, spell);
+            conn?.Send(ServerMessages.LocaleMsg(34, $"${npc.Template.Index}%{cura}"));
+            conn?.Send(ServerMessages.UpdateHP((short)player.Hp));
+            return true;
+        }
+        // HECHIZOS DE ESTADO (VB6 :208, `ElseIf Paraliza = 1 Or Inmoviliza = 1`). Acá había un
+        // `if (spell.SubeHp != 2) return false` con el comentario "los de estado los cubre la rama de abajo del
+        // original" — pero esa rama no estaba portada, así que el NPC devolvía false y el caller le pegaba a
+        // melee. Quedaban SIN su mecánica: el Dark Ruthnar (602), el Chamán Ártico (603), el Elemental de
+        // tierra (94/129), el Paladín (75/85/114) y el Asesino (78/87/136) —cuyo ÚNICO hechizo es paralizar—,
+        // más la Medusa, el Gran Dragón Verde, el Rey Dragón y el Clérigo, que lo tiran la mitad de las veces.
+        if (spell.IsParalyze || spell.IsImmobilize)
+        {
+            // El original sólo actúa si NO estaba ya paralizado (`If .flags.Paralizado = 0`): no refresca el
+            // contador, así que la parálisis no se puede encadenar indefinidamente.
+            if (player.IsParalyzed(_tick)) return false;
+            player.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
+            player.ParalyzedByCharIndex = 0;                       // lo paralizó una criatura, no un jugador
+            EmitirFxDeHechizo(npc, player, spell);
+            if (!player.ClientParalyzed) { player.ClientParalyzed = true; conn?.Send(ServerMessages.ParalizeOK()); }
+            return true;
+        }
+        // `Estupidez` (:232, WriteDumb) no se porta: el port no modela ese estado, igual que en la magia del
+        // jugador. Ningún NPC del install trae un hechizo con esa bandera.
+        if (spell.SubeHp != 2) return false;
+
+        // Daño: el equipo RESTA su ResistenciaMagica (casco + escudo + armadura + montura + anillo,
+        // modHechizos.bas:136-170). Es la misma suma de cinco slots que ya usa la magia del jugador.
+        int dano = spell.MaxHp >= spell.MinHp ? _rng.Next(spell.MinHp, spell.MaxHp + 1) : spell.MinHp;
+        dano = Math.Max(0, dano - Equipment.MagicResistance(player, _data));
+        EmitirFxDeHechizo(npc, player, spell);
+        player.Hp = Math.Max(0, player.Hp - dano);
+        conn?.Send(ServerMessages.LocaleMsg(34, $"${npc.Template.Index}%{dano}"));
+        conn?.Send(ServerMessages.UpdateHP((short)player.Hp));
+        if (player.Hp < 1) PacketDispatcher.KillPlayer(_world, _data, player);
+        return true;
+    }
+
+    /// <summary>Sonido + FX + partícula del hechizo de un NPC, al área (modHechizos.bas:116-120).</summary>
+    private void EmitirFxDeHechizo(Npc npc, Player player, SpellInfo spell)
+    {
+        if (spell.Wav > 0)
+            _world.BroadcastToObservers(player.Pos, ServerMessages.PlayWave((short)spell.Wav, player.Pos.X, player.Pos.Y));
+        if (spell.FxGrh > 0)
+            _world.BroadcastToObservers(player.Pos, ServerMessages.CreateFX(player.CharIndex, (short)spell.FxGrh, (short)spell.FxLoops));
+        // LA PARTÍCULA (`If Hechizos(Spell).Particle <> 0`, modHechizos.bas:120/178/216 — está en las TRES
+        // ramas). Faltaba, y no es un detalle cosmético menor: 32 NPCs tiran hechizos que son SÓLO partícula,
+        // sin FXgrh — Apocalipsis (25, 7 NPCs), Descarga Flamígera (69), Semillas de fuego (76), Lamento de
+        // las almas (84), Descarga eléctrica (93), Ráfaga ígnea (94) y los trece elementales/fantasmas. Un
+        // Nigromante te bajaba 75 de vida y en pantalla no pasaba absolutamente nada.
+        if (spell.Particle > 0)
+            _world.BroadcastToObservers(player.Pos,
+                ServerMessages.EfectoCharParticula(player.CharIndex, (short)spell.Particle, spell.TimeParticula, false));
+        // El cartel sobre la cabeza del NPC con el nombre del hechizo (ChatOverHeadLocale, modo 1).
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
+    }
+
+    /// <summary>El golpe en sí (VB6 <c>NpcAtacaUser</c>): tirada de impacto contra el poder de evasión del
+    /// jugador, daño absorbido por el equipo, y la muerte si le llega a 0. Separado del barrido porque hay DOS
+    /// caminos que pegan — la fase de ataque y <c>SeguirAgresor</c> (el único por el que golpea una mascota).</summary>
+    /// <summary>
+    /// UNA CRIATURA LE PEGA A OTRA (VB6 <c>NpcAtacaNpc</c>, llamado desde <c>AI_NPC.bas:192</c>). Es la rama
+    /// <c>ElseIf NPCI &gt; 0</c> del barrido de adyacentes: sólo entra cuando en ese tile NO hay un jugador.
+    ///
+    /// <para>Dos condiciones del original, y las dos importan: la víctima tiene que tener <b>dueño</b>
+    /// (<c>MaestroUser &gt; 0</c>, o sea una mascota o invocación — las criaturas salvajes no se pelean entre
+    /// sí) y <b>no estar paralizada</b>. Sin esta rama una invocación era invulnerable a todo el mundo: un
+    /// blanco perfecto para tanquear gratis.</para>
+    ///
+    /// <para>La víctima no lleva equipo, así que no hay absorción por armadura: el daño es el crudo del
+    /// atacante contra la defensa de la plantilla de la víctima, con piso 1 como en el camino del jugador.</para>
+    /// </summary>
+    private void NpcGolpeaA(Npc npc, Npc victima)
+    {
+        if (_rng.Next(1, 101) > Combat.HitChance(npc.Template.PoderAtaque, victima.Template.PoderEvasion))
+            return;   // falló
+        int rawDmg = npc.Template.MaxHit >= npc.Template.MinHit
+            ? _rng.Next(npc.Template.MinHit, npc.Template.MaxHit + 1)
+            : npc.Template.MinHit;
+        int dmg = Math.Max(1, rawDmg - victima.Template.Def);
+        victima.Hp = Math.Max(0, victima.Hp - dmg);
+        _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dmg));
+        if (victima.Hp == 0) MatarNpcSinDueno(victima);
+    }
+
+    /// <summary>Muerte de una criatura a manos de OTRA criatura: no hay jugador al que darle exp, oro ni
+    /// loot, así que sólo se la saca del mundo. El dueño se entera porque deja de verla.</summary>
+    private void MatarNpcSinDueno(Npc victima)
+    {
+        _world.BroadcastToObservers(victima.Pos, ServerMessages.CharacterRemove(victima.CharIndex));
+        _world.RemoveNpc(victima.CharIndex);
+    }
+
+    private void NpcGolpeaA(Npc npc, Player player)
+    {
+        {
+            double evMod = _data.EvasionMod.TryGetValue(player.Class, out var ev) ? ev : 1.0;
+            long pe = Combat.PoderEvasion(player.Skills[GameLimits.SkillTacticas], player.Agility, player.Level, evMod);
+            // NpcImpacto (SistemaCombate.bas:222) adds the shield's block/evasion when one is equipped.
+            if (Equipment.EquippedOfCategory(player, _data, 4) is not null)
+            {
+                double shMod = _data.ShieldMod.TryGetValue(player.Class, out var sm) ? sm : 1.0;
+                pe += Combat.PoderEvasionEscudo(player.Skills[GameLimits.SkillDefensa], shMod);
+            }
+            // The NPC's own attack power (PoderAtaque from NPCs.dat), NOT its evasion, drives its hit chance.
+            if (_rng.Next(1, 101) > Combat.HitChance(npc.Template.PoderAtaque, pe))
+                return; // missed
+
+            int rawDmg = npc.Template.MaxHit >= npc.Template.MinHit
+                ? _rng.Next(npc.Template.MinHit, npc.Template.MaxHit + 1)
+                : npc.Template.MinHit;
+            // The player's equipment absorbs the blow (NpcDaño, SistemaCombate.bas:548-586): head→helmet,
+            // body→armour(+shield). NpcDaño clamps damage below 1 up to 1 (even an exactly-absorbed hit).
+            int zona = _rng.Next(1, 7); // RandomNumber(bCabeza=1, bTorso=6)
+            long afterDef = Combat.AplicarDefensa(rawDmg, zona,
+                Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 3)),
+                Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 2)),
+                Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 4)),
+                (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
+            int dmg = (int)Math.Max(1, afterDef);
+            player.Hp = Math.Max(0, player.Hp - dmg);
+            player.Connection?.Send(ServerMessages.ConsoleMsg($"{npc.Name} te golpea por {dmg}.", 0));
+            // El "-N" flotante sobre la cabeza (VB6 SistemaCombate.bas:590: WriteChatOverHeadLocale con el
+            // charIndex del ATACANTE y modo 2). Va JUNTO al mensaje de texto, no en su lugar.
+            player.Connection?.Send(ServerMessages.DamageOverHead(npc.CharIndex, dmg));
+            // VB6 SistemaCombate.bas:749 (NpcAtacaUser): `Call NpcDaño(...)` y acto seguido `WriteUpdateHP`.
+            // Éste era el ÚLTIMO call site del UpdateUserStats gordo en un camino caliente — y el más caliente
+            // de todos, porque es el PvE: cada golpe que te pega una criatura mandaba 26 bytes en vez de 3.
+            player.Connection?.Send(ServerMessages.UpdateHP((short)player.Hp));
+            if (player.Hp == 0)
+            {
+                // VB6 SistemaCombate.bas:606: "te mató la criatura X" (LocaleMsg 72) + UserDie -> cadáver donde cayó.
+                player.Connection?.Send(ServerMessages.LocaleMsg(72, npc.Name));
+                PacketDispatcher.KillPlayer(_world, _data, player);
+            }
+        }
+    }
+
+    /// <summary>VB6 <c>RestoreOldMovement</c> (AI_NPC.bas:494), al que caen las dos ramas de la IA cuando no
+    /// encontraron a nadie a quien pegarle: el NPC se olvida de su agresor, y su hostilidad y su modo de
+    /// movimiento vuelven a los de su ficha. Por eso el estado "provocado" dura poco — se apaga apenas no le
+    /// queda nadie al lado. Y por eso mismo un /SEGUIR sobre una criatura sin dueño no se llega a notar: esto
+    /// corre antes que la fase de movimiento y le saca el NPCDEFENSA en el mismo tick (ver GmNpcFollow).</summary>
+    private static void RestoreOldMovement(Npc npc)
+    {
+        npc.AttackedBy = null;
+        npc.Hostile = npc.OriginallyHostile;
+        // El Movement se restaura SÓLO si está en el modo que /SEGUIR le puso. Es el único escritor de Movement
+        // en runtime que tiene el port, así que restaurar es exactamente deshacerlo — y así no se le pisa el
+        // modo a ningún NPC armado a mano que no haya declarado su OriginalMovement.
+        if (npc.Movement == GameLimits.TipoAiNpcDefensa) npc.Movement = npc.OriginalMovement;
+    }
+
+}

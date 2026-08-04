@@ -1,0 +1,67 @@
+; Unit de systemd para correr CoverAO como servicio en Linux.
+;
+;   sudo cp coverao.service /etc/systemd/system/
+;   sudo useradd --system --home /opt/coverao --shell /usr/sbin/nologin coverao
+;   sudo chown -R coverao:coverao /opt/coverao
+;   sudo systemctl daemon-reload && sudo systemctl enable --now coverao
+;   journalctl -u coverao -f          # ver el log en vivo
+;
+; Ajustá WorkingDirectory/ExecStart si no lo pusiste en /opt/coverao.
+
+[Unit]
+Description=CoverAO — servidor de Argentum Online
+Documentation=file:/opt/coverao/HOSTING.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=coverao
+Group=coverao
+WorkingDirectory=/opt/coverao
+ExecStart=/opt/coverao/CoverAO.Server
+
+; EL EJECUTABLE ES DE UN SOLO ARCHIVO y extrae sus librerias nativas a un cache en $HOME la primera vez
+; que arranca. Con el endurecimiento de mas abajo (ProtectSystem=strict) /opt/coverao queda de SOLO
+; LECTURA, asi que la extraccion fallaba y el servicio entraba en un bucle de reinicios con
+;   "Default extraction directory [/opt/coverao] ... is not accessible for read/write"
+; Lo encontre instalando la unit y arrancandola de verdad: leyendo el archivo no se ve, porque las dos
+; cosas —el binario de un archivo y el endurecimiento— estan bien por separado.
+;
+; CacheDirectory le pide a systemd /var/cache/coverao, ya creado y con los permisos del servicio. Va ahi y
+; no adentro de data/ a proposito: data/ es lo que se copia en cada backup, y un cache de librerias no
+; tiene por que viajar en el respaldo del servidor.
+CacheDirectory=coverao
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/coverao
+
+# El apagado LIMPIO importa: al recibir SIGTERM el servidor guarda a todos los conectados antes de salir.
+# Con el default de 90 s alcanza de sobra, pero se deja explícito para que se vea que es a propósito, y
+# porque un mundo con muchos jugadores tarda más en persistir que uno vacío.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+Restart=on-failure
+RestartSec=5
+
+# La configuración puede ir por acá en vez de por el Server.ini — es lo mismo que usan los contenedores.
+# Environment=COVERAO_INIT_MAXUSERS=200
+# Environment=COVERAO_INIT_DIOSES=1
+# Environment=COVERAO_DIOSES_DIOS1=TuPersonaje
+
+# --- Endurecimiento. Un servidor de juego expuesto a internet no necesita nada de esto ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/coverao/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# Sólo IPv4/IPv6 por TCP: el juego no usa nada más.
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

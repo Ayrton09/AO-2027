@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "INIT": {
+      "NumArmas": "16"
+    }
+  },
+  "Arma": [
+    {
+      "_index": 1,
+      "Index": "1261"
+    },
+    {
+      "_index": 2,
+      "Index": "740"
+    },
+    {
+      "_index": 3,
+      "Index": "904"
+    },
+    {
+      "_index": 4,
+      "Index": "744"
+    },
+    {
+      "_index": 5,
+      "Index": "747"
+    },
+    {
+      "_index": 6,
+      "Index": "668"
+    },
+    {
+      "_index": 7,
+      "Index": "906"
+    },
+    {
+      "_index": 8,
+      "Index": "1257"
+    },
+    {
+      "_index": 9,
+      "Index": "1243"
+    },
+    {
+      "_index": 10,
+      "Index": "1245"
+    },
+    {
+      "_index": 11,
+      "Index": "1244"
+    },
+    {
+      "_index": 12,
+      "Index": "1148"
+    },
+    {
+      "_index": 13,
+      "Index": "402"
+    },
+    {
+      "_index": 14,
+      "Index": "1181"
+    },
+    {
+      "_index": 15,
+      "Index": "1252"
+    },
+    {
+      "_index": 16,
+      "Index": "1333"
+    }
+  ]
+}

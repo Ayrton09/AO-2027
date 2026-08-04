@@ -1,0 +1,76 @@
+; Unit PLANTILLA de systemd: VARIOS servidores en la misma maquina, cada uno con SU instalacion. El `@` no
+; es decorativo -- systemd trata este archivo como molde y `%i` es el nombre que va despues del arroba.
+;
+; EL MODELO: una instalacion completa por servidor, igual que se hostea cualquier juego. No se comparten
+; binarios ni data del juego a proposito: asi cada servidor tiene SUS mapas, SU obj.dat, SU config y SU
+; version. Uno puede estar vanilla y otro con los mapas modificados, o uno estable y otro probando la
+; version nueva, sin que se toquen.
+;
+;   sudo useradd --system --home /srv/coverao --shell /usr/sbin/nologin coverao
+;   sudo mkdir -p /srv/coverao
+;   # una instalacion completa por servidor (descomprimir el release en cada una):
+;   sudo tar xzf coverao-linux-x64.tar.gz -C /srv/coverao/rojo
+;   sudo tar xzf coverao-linux-x64.tar.gz -C /srv/coverao/azul
+;   # cada uno con su puerto, separados de a 10 (usa StartPort..StartPort+3):
+;   printf '[INIT]\nStartPort=7666\n' | sudo tee /srv/coverao/rojo/Server.ini
+;   printf '[INIT]\nStartPort=7676\n' | sudo tee /srv/coverao/azul/Server.ini
+;   sudo chown -R coverao:coverao /srv/coverao
+;   sudo cp coverao@.service /etc/systemd/system/ && sudo systemctl daemon-reload
+;   sudo systemctl enable --now coverao@rojo coverao@azul
+;
+;   systemctl status 'coverao@*'      # los dos de un vistazo
+;   journalctl -u coverao@rojo -f     # el log de uno solo
+;
+; Para UN SOLO servidor esta el coverao.service de al lado, que es mas simple y no pide el `@nombre`.
+
+[Unit]
+Description=CoverAO — servidor de Argentum Online (%i)
+Documentation=file:/srv/coverao/%i/HOSTING.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=coverao
+Group=coverao
+WorkingDirectory=/srv/coverao/%i
+ExecStart=/srv/coverao/%i/CoverAO.Server
+
+; El ejecutable de un solo archivo extrae sus librerias nativas a un cache la primera vez, y con
+; ProtectSystem=strict no puede escribir en su propia carpeta. CacheDirectory se lo da hecho.
+; UNO POR SERVIDOR (`coverao-%i`) y no compartido: cada instalacion puede estar en una version distinta, que
+; es medio sentido de tener instalaciones separadas, y dos versiones no pueden compartir la extraccion.
+; (Esto rompio la unit simple el 2026-08-02: 28 reinicios con "Default extraction directory ... is not
+; accessible for read/write". Leyendo el archivo no se ve; hay que instalarla y arrancarla.)
+CacheDirectory=coverao-%i
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/coverao-%i
+
+; La config puede ir por variables de entorno en vez del Server.ini, y aca son POR SERVIDOR:
+; Environment=COVERAO_INIT_MAXUSERS=200
+; Environment=COVERAO_DIOSES_DIOS1=TuPersonaje
+
+# Apagado LIMPIO: con SIGTERM el servidor guarda a todos los conectados antes de salir. 90 s es el default y
+# alcanza de sobra; se deja explicito para que se vea que es a proposito y porque un mundo lleno tarda mas.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+Restart=on-failure
+RestartSec=5
+
+# --- Endurecimiento ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# SOLO su propia carpeta: aunque un servidor se volviera loco, systemd no lo deja escribir en la de otro.
+ReadWritePaths=/srv/coverao/%i
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

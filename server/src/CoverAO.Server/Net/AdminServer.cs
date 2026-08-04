@@ -1,0 +1,491 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Collections.Concurrent;
+using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+
+namespace CoverAO.Server.Net;
+
+/// <summary>
+/// Captura las líneas de la consola en un ring buffer para exponerlas en el panel de admin,
+/// sin dejar de escribirlas en la consola real. Se instala con Console.SetOut().
+/// </summary>
+public sealed class LogRing : TextWriter
+{
+    private readonly TextWriter _inner;
+    private readonly ConcurrentQueue<string> _lines = new();
+    private readonly int _cap;
+    public LogRing(TextWriter inner, int cap = 400) { _inner = inner; _cap = cap; }
+    public override Encoding Encoding => _inner.Encoding;
+    public override void WriteLine(string? s) { _inner.WriteLine(s); Push(s ?? ""); }
+    public override void Write(string? s) => _inner.Write(s);
+    public override void Write(char c) => _inner.Write(c);
+    private void Push(string line)
+    {
+        _lines.Enqueue(line);
+        while (_lines.Count > _cap) _lines.TryDequeue(out _);
+        EscribirAlArchivo(line);
+    }
+    public string[] Snapshot() => _lines.ToArray();
+
+    /// <summary>Espejo para <c>Console.Error</c>: sigue escribiendo en stderr y además entra al ring y al
+    /// archivo. Sin esto el log se perdía justo lo que más importa — todos los errores del server salen por
+    /// <c>Console.Error</c>, que no pasa por el <c>Console.SetOut</c>.</summary>
+    public TextWriter EspejoDeError(TextWriter innerErr) => new EspejoErr(this, innerErr);
+
+    private sealed class EspejoErr : TextWriter
+    {
+        private readonly LogRing _ring;
+        private readonly TextWriter _err;
+        public EspejoErr(LogRing ring, TextWriter err) { _ring = ring; _err = err; }
+        public override Encoding Encoding => _err.Encoding;
+        public override void WriteLine(string? s) { _err.WriteLine(s); _ring.Push("[error] " + (s ?? "")); }
+        public override void Write(string? s) => _err.Write(s);
+        public override void Write(char c) => _err.Write(c);
+    }
+
+    // ---- Log a disco, con rotación diaria ----
+    // El ring buffer vive en memoria: sirve para mirar el panel, pero se pierde entero al cerrar la ventana.
+    // Para el que hostea eso significa no poder averiguar NADA de lo que pasó ayer — ni una caída, ni un abuso,
+    // ni por qué se desconectó medio servidor. Un archivo por día, y se borran los de más de N días para que el
+    // remedio no se coma el disco.
+    private readonly object _archivoLock = new();
+    private string? _dirLogs;
+    private int _diasAConservar;
+    private string _diaAbierto = "";
+    private StreamWriter? _archivo;
+
+    /// <summary>Empieza a volcar el log a <c>dir/server-AAAA-MM-DD.log</c>, conservando
+    /// <paramref name="dias"/> días de historia (0 o menos = no escribir nada a disco).</summary>
+    public void AbrirArchivo(string dir, int dias)
+    {
+        if (dias <= 0) return;
+        lock (_archivoLock)
+        {
+            _dirLogs = dir;
+            _diasAConservar = dias;
+            Directory.CreateDirectory(dir);
+            PurgarViejos();
+        }
+    }
+
+    private void EscribirAlArchivo(string line)
+    {
+        if (_dirLogs is null) return;
+        lock (_archivoLock)
+        {
+            if (_dirLogs is null) return;
+            var ahora = DateTime.Now;
+            string dia = ahora.ToString("yyyy-MM-dd");
+            if (dia != _diaAbierto)
+            {
+                _archivo?.Dispose();
+                try
+                {
+                    _archivo = new StreamWriter(Path.Combine(_dirLogs, $"server-{dia}.log"), append: true) { AutoFlush = true };
+                }
+                catch (Exception ex)
+                {
+                    // Sin archivo se sigue jugando: el log a disco es una comodidad del host, no el servidor.
+                    _inner.WriteLine($"[log] no se pudo abrir el archivo del día: {ex.Message}");
+                    _dirLogs = null; _archivo = null; return;
+                }
+                _diaAbierto = dia;
+                PurgarViejos();
+            }
+            try { _archivo!.WriteLine($"{ahora:HH:mm:ss} {line}"); } catch { /* disco lleno: no tirar el server */ }
+        }
+    }
+
+    /// <summary>Borra los <c>server-*.log</c> con más de N días. Se llama al abrir y en cada rotación.</summary>
+    private void PurgarViejos()
+    {
+        if (_dirLogs is null) return;
+        var corte = DateTime.Now.Date.AddDays(-_diasAConservar);
+        foreach (var f in Directory.EnumerateFiles(_dirLogs, "server-*.log"))
+        {
+            var stem = Path.GetFileNameWithoutExtension(f);
+            if (stem.Length != "server-9999-99-99".Length) continue;
+            if (!DateTime.TryParseExact(stem[7..], "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var fecha)) continue;
+            if (fecha >= corte) continue;
+            try { File.Delete(f); } catch { /* lo tiene abierto otro proceso: ya se irá */ }
+        }
+    }
+}
+
+/// <summary>Datos fijos del server para el panel (se calculan al arrancar).</summary>
+public readonly record struct ServerInfo(int Maps, int Npcs, int Objects, string Version, bool Fixture);
+
+/// <summary>
+/// Panel de administración web del servidor (reemplaza el frmMain del server VB6, rediseñado).
+/// Un HttpListener en loopback sirve la UI (admin.html) + una API JSON de estado y comandos:
+/// monitoreo (usuarios online, récord, uptime, día/noche, clima, log), y acciones (echar, echar a
+/// todos, broadcast, guardar chars, backup, apagar). Protegido por token (impreso al arrancar).
+/// </summary>
+public sealed class AdminServer
+{
+    private readonly int _port;
+    private readonly string _token;
+    private readonly World _world;
+    private readonly GameLoop _loop;
+    private readonly Persistence _db;
+    private readonly ServerInfo _info;
+    private readonly Action<bool> _shutdown;   // (backup) => apagar
+    private readonly LogRing? _log;
+    private readonly AdminConfig _admin;
+    private readonly string _bannedIpsPath;    // persistencia de IPs baneadas (data/banned-ips.txt)
+    private readonly Func<string, string>? _backup;   // (motivo) => mensaje; lo provee Program, corre en el loop
+    private readonly string _html;
+    private int _peak;
+    private HashSet<string>? _banned;          // cuentas baneadas (cache; se llena lazy y se sincroniza en ban/unban)
+    private readonly object _banLock = new();
+    // Orden = eClass (Declares.bas:117), NO el del AO clásico: Clérigo es 1 y Mago es 2.
+    private static readonly string[] Clases = {
+        "Clérigo", "Mago", "Guerrero", "Asesino", "Ladrón", "Bardo", "Druida", "Gladiador",
+        "Paladín", "Cazador", "Pescador", "Herrero", "Leñador", "Minero", "Carpintero",
+        "Sastre", "Mercenario", "Nigromante",
+    };
+
+    public AdminServer(int port, string token, World world, GameLoop loop, Persistence db,
+        ServerInfo info, Action<bool> shutdown, LogRing? log, AdminConfig admin, string bannedIpsPath,
+        Func<string, string>? backup = null)
+    {
+        _port = port; _token = token; _world = world; _loop = loop; _db = db; _info = info; _shutdown = shutdown; _log = log; _admin = admin;
+        _bannedIpsPath = bannedIpsPath;
+        _backup = backup;
+        var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "admin.html");
+        _html = File.Exists(path) ? File.ReadAllText(path) : "<h1>admin.html no encontrado</h1>";
+    }
+
+    public async Task RunAsync(CancellationToken token)
+    {
+        // `soloLocal: true` a propósito y para siempre: el panel puede apagar el server, kickear a todos,
+        // banear y bajarse un backup. No se publica ni con urlacl — desde afuera se llega por túnel SSH.
+        // Va por HttpBind igual que los otros dos por el CORTE AL APAGAR: sin él, `GetContextAsync()` deja el
+        // proceso colgado para siempre en el apagado (ver el comentario largo en HttpBind.Abrir).
+        var bind = HttpBind.Abrir(_port, "Panel admin", token, soloLocal: true);
+        if (bind is null) return;
+        var listener = bind.Value.Listener;
+        // La URL con el token va DIRECTO a la consola real, no por Console.Out — que desde que existe el log a
+        // disco está redirigido al LogRing y termina en `data/logs/server-AAAA-MM-DD.log`. Quien lea ese
+        // archivo tiene control total del panel (shutdown, kickAll, ban, banIp, backup), y es justo el archivo
+        // que un host manda "para que le miren el problema". El token es de sesión: se regenera en cada
+        // arranque, así que perderlo de vista no cuesta nada — basta con volver a mirar la consola.
+        var consolaReal = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+        consolaReal.WriteLine($"== Panel de administración: http://localhost:{_port}/?token={_token} ==");
+        Console.WriteLine($"== Panel de administración: http://localhost:{_port}/ (el token va sólo a la consola, no al log) ==");
+
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                HttpListenerContext ctx;
+                try { ctx = await listener.GetContextAsync(); }
+                catch (HttpListenerException) { break; }
+                catch (ObjectDisposedException) { break; }
+                _ = Task.Run(() => HandleAsync(ctx), token);
+            }
+        }
+        finally { try { listener.Stop(); } catch { } }
+    }
+
+    private async Task HandleAsync(HttpListenerContext ctx)
+    {
+        try
+        {
+            var req = ctx.Request; var res = ctx.Response;
+            string path = req.Url?.AbsolutePath ?? "/";
+            // La UI (shell) es pública; la API exige token (el server sólo escucha en loopback igual).
+            if (path == "/" || path == "/admin" || path == "/index.html")
+            {
+                await WriteText(res, _html, "text/html; charset=utf-8");
+                return;
+            }
+            if (req.QueryString["token"] != _token && req.Headers["X-Admin-Token"] != _token)
+            {
+                res.StatusCode = 401; await WriteText(res, "{\"error\":\"token invalido\"}", "application/json");
+                return;
+            }
+            if (path == "/api/state") { await WriteText(res, BuildState(), "application/json"); return; }
+            if (path == "/api/cmd" && req.HttpMethod == "POST")
+            {
+                using var sr = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                string body = await sr.ReadToEndAsync();
+                await WriteText(res, HandleCommand(body), "application/json");
+                return;
+            }
+            res.StatusCode = 404; await WriteText(res, "{\"error\":\"not found\"}", "application/json");
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[admin] error: {ex.Message}"); try { ctx.Response.Abort(); } catch { } }
+    }
+
+    private static async Task WriteText(HttpListenerResponse res, string text, string contentType)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        res.ContentType = contentType; res.ContentLength64 = bytes.Length;
+        res.Headers["Cache-Control"] = "no-store";
+        await res.OutputStream.WriteAsync(bytes);
+        res.OutputStream.Close();
+    }
+
+    private string BuildState()
+    {
+        long tick = _loop.Tick;
+        var players = _world.Players.ToArray();   // ConcurrentDictionary → iteración segura
+        int online = players.Length;
+        if (online > _peak) _peak = online;
+        var period = DayNight.PeriodAt(tick);
+        var weather = Weather.At(tick);
+
+        var playerList = players
+            .OrderByDescending(p => p.Privileges).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(p => new
+            {
+                charIndex = p.CharIndex,
+                name = p.Name,
+                account = p.Account,
+                level = (int)p.Level,
+                clase = p.Class >= 1 && p.Class <= Clases.Length ? Clases[p.Class - 1] : $"Clase {p.Class}",
+                map = (int)p.Pos.Map, x = (int)p.Pos.X, y = (int)p.Pos.Y,
+                hp = p.Hp, maxHp = p.MaxHp,
+                gm = p.IsGm, priv = (int)p.Privileges,
+                guild = p.GuildName,
+                faction = (int)p.FactionStatus,
+                dead = !p.IsAlive,
+            });
+
+        long nextSaveSec = _admin.AutosaveMinutes > 0
+            ? Math.Max(0, (long)_admin.AutosaveMinutes * 60 - (tick - _admin.LastAutosaveTick) * GameLoop.TickMs / 1000) : -1;
+        long nextAutoMsgSec = _admin.AutoMsgMinutes > 0
+            ? Math.Max(0, (long)_admin.AutoMsgMinutes * 60 - (tick - _admin.LastAutoMsgTick) * GameLoop.TickMs / 1000) : -1;
+
+        var state = new
+        {
+            stats = new
+            {
+                online, peak = _peak,
+                uptimeSec = tick * GameLoop.TickMs / 1000,
+                tick,
+                period = DayNight.Announce(period),
+                weather = Weather.Announce(weather),
+                maps = _info.Maps, npcs = _info.Npcs, objects = _info.Objects,
+                version = _info.Version, fixture = _info.Fixture,
+            },
+            config = new
+            {
+                paused = _admin.Paused, onlyGms = _admin.OnlyGms,
+                expMult = _admin.ExpMult, goldMult = _admin.GoldMult, dropMult = _admin.DropMult,
+                autosaveMin = _admin.AutosaveMinutes, nextSaveSec,
+                walkMs = _admin.WalkIntervalMs, attackMs = _admin.AttackIntervalMs,
+                autoMsgMin = _admin.AutoMsgMinutes, autoMessages = _admin.AutoMessages, nextAutoMsgSec,
+            },
+            banned = BannedList(),
+            bannedIps = _admin.BannedIpList(),
+            players = playerList,
+            log = _log?.Snapshot() ?? Array.Empty<string>(),
+        };
+        return JsonSerializer.Serialize(state);
+    }
+
+    private string HandleCommand(string body)
+    {
+        JsonElement cmd;
+        try { cmd = JsonSerializer.Deserialize<JsonElement>(body); }
+        catch { return "{\"ok\":false,\"msg\":\"body invalido\"}"; }
+        string action = cmd.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
+        int charIndex = cmd.TryGetProperty("charIndex", out var ci) && ci.TryGetInt32(out var civ) ? civ : 0;
+        string message = cmd.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+        bool backup = cmd.TryGetProperty("backup", out var b) && b.ValueKind == JsonValueKind.True;
+        string name = cmd.TryGetProperty("name", out var nm) ? nm.GetString()?.Trim() ?? "" : "";
+        int GetInt(string prop, int def) => cmd.TryGetProperty(prop, out var v) && v.TryGetInt32(out var iv) ? iv : def;
+        string GetStr(string prop) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()?.Trim() ?? "" : "";
+        string[] GetStrArray(string prop) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray().Select(x => x.GetString() ?? "").Select(s => s.Trim()).Where(s => s.Length > 0).ToArray()
+            : Array.Empty<string>();
+
+        switch (action)
+        {
+            case "kick":
+                _loop.Enqueue(() =>
+                {
+                    if (_world.TryGet((short)charIndex, out var p) && p is not null)
+                    { Console.WriteLine($"[admin] echando a {p.Name} (char {charIndex})"); p.Connection?.Close("expulsado por el administrador"); }
+                });
+                return Ok($"expulsando char {charIndex}");
+            case "kickAll":
+                _loop.Enqueue(() =>
+                {
+                    int n = 0;
+                    foreach (var p in _world.Players.ToArray()) if (!p.IsGm) { p.Connection?.Close("servidor: expulsion masiva"); n++; }
+                    Console.WriteLine($"[admin] expulsion masiva: {n} usuarios no-GM");
+                });
+                return Ok("expulsando a todos los no-GM");
+            case "broadcast":
+                if (string.IsNullOrWhiteSpace(message)) return Fail("mensaje vacio");
+                _loop.Enqueue(() => { _world.Broadcast(ServerMessages.ConsoleMsg(message, 0)); Console.WriteLine($"[admin] broadcast: {message}"); });
+                return Ok("mensaje enviado a todos");
+            case "save":
+                _loop.Enqueue(() =>
+                {
+                    int n = 0; foreach (var p in _world.Players.ToArray()) { _db.SaveCharacter(p); n++; }
+                    Console.WriteLine($"[admin] guardados {n} personajes");
+                });
+                return Ok("guardando personajes");
+            case "backup":
+                // Copia del almacén ENTERO (cuentas, personajes, clanes, correo), no sólo un save de los online.
+                if (_backup is null) return Fail("backup no disponible");
+                _loop.Enqueue(() => _backup("manual (panel)"));
+                return Ok("haciendo backup del mundo");
+            case "shutdown":
+                _loop.Enqueue(() =>
+                {
+                    if (backup) { foreach (var p in _world.Players.ToArray()) _db.SaveCharacter(p); Console.WriteLine("[admin] guardando a los conectados antes de apagar"); }
+                    _world.Broadcast(ServerMessages.ConsoleMsg("El servidor se está apagando. ¡Hasta la próxima!", 0));
+                    Console.WriteLine($"[admin] APAGANDO el servidor ({(backup ? "guardando" : "sin guardar")})");
+                });
+                _ = Task.Run(async () => { await Task.Delay(800); _shutdown(backup); });
+                return Ok($"apagando ({(backup ? "guardando" : "sin guardar")})");
+
+            // --- Eventos y mantenimiento (frmMain/frmServidor del VB6) ---
+            case "setEvent":
+                _admin.ExpMult = GetInt("exp", _admin.ExpMult);
+                _admin.GoldMult = GetInt("gold", _admin.GoldMult);
+                _admin.DropMult = GetInt("drop", _admin.DropMult);
+                Console.WriteLine($"[admin] eventos: exp x{_admin.ExpMult}, oro x{_admin.GoldMult}, drop x{_admin.DropMult}");
+                return Ok($"eventos: exp x{_admin.ExpMult}, oro x{_admin.GoldMult}, drop x{_admin.DropMult}");
+            case "setAutosave":
+                _admin.AutosaveMinutes = GetInt("minutes", 0);
+                _admin.LastAutosaveTick = _loop.Tick;   // reinicia el countdown
+                return Ok(_admin.AutosaveMinutes > 0 ? $"autosave cada {_admin.AutosaveMinutes} min" : "autosave desactivado");
+            case "togglePause":
+                _admin.Paused = !_admin.Paused;
+                _loop.Enqueue(() => _world.Broadcast(ServerMessages.ConsoleMsg(_admin.Paused ? "El servidor fue pausado por un administrador." : "El servidor se reanudó.", 0)));
+                Console.WriteLine($"[admin] servidor {(_admin.Paused ? "PAUSADO" : "reanudado")}");
+                return Ok(_admin.Paused ? "servidor pausado" : "servidor reanudado");
+            case "toggleOnlyGms":
+                _admin.OnlyGms = !_admin.OnlyGms;
+                Console.WriteLine($"[admin] modo solo-GMs: {(_admin.OnlyGms ? "ON" : "OFF")}");
+                return Ok(_admin.OnlyGms ? "solo GMs pueden entrar (mantenimiento)" : "entrada abierta a todos");
+            case "setIntervals":   // cadencia anti-cheat en vivo (VB6 IntervaloParaCaminar/ParaGolpe)
+                _admin.WalkIntervalMs = GetInt("walkMs", (int)_admin.WalkIntervalMs);
+                _admin.AttackIntervalMs = GetInt("attackMs", (int)_admin.AttackIntervalMs);
+                Console.WriteLine($"[admin] cadencia: caminar {_admin.WalkIntervalMs}ms, golpe {_admin.AttackIntervalMs}ms");
+                return Ok($"cadencia: caminar {_admin.WalkIntervalMs}ms, golpe {_admin.AttackIntervalMs}ms");
+            case "setAutoMessages":   // mensajes automáticos programados (broadcast rotativo)
+                _admin.AutoMessages = GetStrArray("messages");
+                _admin.AutoMsgMinutes = GetInt("minutes", 0);
+                _admin.LastAutoMsgTick = _loop.Tick;   // reinicia el countdown
+                _admin.AutoMsgIndex = 0;
+                Console.WriteLine($"[admin] mensajes automáticos: {_admin.AutoMessages.Length} cada {_admin.AutoMsgMinutes} min");
+                return Ok(_admin.AutoMsgMinutes > 0 && _admin.AutoMessages.Length > 0
+                    ? $"{_admin.AutoMessages.Length} mensaje(s) cada {_admin.AutoMsgMinutes} min"
+                    : "mensajes automáticos desactivados");
+
+            // --- Bans (frmServidor: Unban All; + baneo individual) ---
+            case "ban":
+                if (string.IsNullOrWhiteSpace(name)) return Fail("falta el nombre de cuenta");
+                return SetBanned(name, true);
+            case "unban":
+                if (string.IsNullOrWhiteSpace(name)) return Fail("falta el nombre de cuenta");
+                return SetBanned(name, false);
+            case "unbanAll":
+            {
+                int n = 0;
+                try { foreach (var acct in _db.AllAccountNames().ToArray()) { var ac = _db.LoadAccount(acct); if (ac is { Banned: true }) { ac.Banned = false; _db.SaveAccount(ac); n++; } } }
+                catch (Exception ex) { return Fail("error: " + ex.Message); }
+                lock (_banLock) _banned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                Console.WriteLine($"[admin] unban masivo: {n} cuentas");
+                return Ok($"{n} cuentas desbaneadas");
+            }
+
+            // --- Bans por IP (frmServidor: lista de IPs baneadas + "Unban All") ---
+            case "banIp":
+            {
+                string ip = ConnectionGuard.NormalizeIp(GetStr("ip"));
+                if (string.IsNullOrWhiteSpace(ip) || ip == "?") return Fail("falta una IP válida");
+                bool nuevo = _admin.BanIp(ip); SaveBannedIps();
+                _loop.Enqueue(() => KickIp(ip));
+                Console.WriteLine($"[admin] IP {ip} BANEADA");
+                return Ok(nuevo ? $"IP {ip} baneada" : $"la IP {ip} ya estaba baneada");
+            }
+            case "banPlayerIp":   // banear la IP del jugador online (charIndex) y echarlo
+            {
+                string? ep = _world.TryGet((short)charIndex, out var pl) && pl is not null ? pl.Connection?.RemoteEndpoint : null;
+                string ip = ConnectionGuard.NormalizeIp(ep ?? "");
+                if (string.IsNullOrWhiteSpace(ip) || ip == "?") return Fail("no se pudo determinar la IP del jugador");
+                _admin.BanIp(ip); SaveBannedIps();
+                _loop.Enqueue(() => KickIp(ip));
+                Console.WriteLine($"[admin] IP {ip} BANEADA (char {charIndex})");
+                return Ok($"IP {ip} baneada");
+            }
+            case "unbanIp":
+            {
+                string ip = ConnectionGuard.NormalizeIp(GetStr("ip"));
+                if (string.IsNullOrWhiteSpace(ip)) return Fail("falta la IP");
+                bool había = _admin.UnbanIp(ip); SaveBannedIps();
+                Console.WriteLine($"[admin] IP {ip} desbaneada");
+                return Ok(había ? $"IP {ip} desbaneada" : $"la IP {ip} no estaba baneada");
+            }
+            case "unbanAllIps":
+            {
+                int n = _admin.ClearBannedIps(); SaveBannedIps();
+                Console.WriteLine($"[admin] unban masivo de IPs: {n}");
+                return Ok($"{n} IP(s) desbaneadas");
+            }
+            default:
+                return Fail($"accion desconocida: {action}");
+        }
+    }
+
+    private string SetBanned(string account, bool banned)
+    {
+        var acc = _db.LoadAccount(account);
+        if (acc is null) return Fail($"la cuenta '{account}' no existe");
+        acc.Banned = banned;
+        _db.SaveAccount(acc);
+        lock (_banLock) { _banned ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase); if (banned) _banned.Add(acc.Name); else _banned.Remove(acc.Name); }
+        if (banned)   // echar de inmediato a los personajes online de esa cuenta
+            _loop.Enqueue(() => { foreach (var p in _world.Players.ToArray()) if (string.Equals(p.Account, account, StringComparison.OrdinalIgnoreCase)) p.Connection?.Close("cuenta baneada"); });
+        Console.WriteLine($"[admin] cuenta {acc.Name} {(banned ? "BANEADA" : "desbaneada")}");
+        return Ok($"cuenta {acc.Name} {(banned ? "baneada" : "desbaneada")}");
+    }
+
+    /// <summary>Echa (en el GameLoop) a todo jugador online cuya IP normalizada coincida con <paramref name="ip"/>.</summary>
+    private void KickIp(string ip)
+    {
+        foreach (var p in _world.Players.ToArray())
+            if (ConnectionGuard.NormalizeIp(p.Connection?.RemoteEndpoint ?? "") == ip)
+                p.Connection?.Close("IP baneada");
+    }
+
+    /// <summary>Persiste la lista de IPs baneadas a data/banned-ips.txt (se recarga al arrancar el server).</summary>
+    private void SaveBannedIps()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(_bannedIpsPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);   // el data/ puede no existir aún (server fresco sin logins)
+            File.WriteAllLines(_bannedIpsPath, _admin.BannedIpList());
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[admin] no se pudo guardar {_bannedIpsPath}: {ex.Message}"); }
+    }
+
+    private string[] BannedList()
+    {
+        lock (_banLock)
+        {
+            if (_banned is null)
+            {
+                _banned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try { foreach (var nm in _db.AllAccountNames()) { var ac = _db.LoadAccount(nm); if (ac is { Banned: true }) _banned.Add(ac.Name); } }
+                catch (Exception ex) { Console.Error.WriteLine($"[admin] scan de bans: {ex.Message}"); }
+            }
+            return _banned.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+    }
+
+    private static string Ok(string msg) => JsonSerializer.Serialize(new { ok = true, msg });
+    private static string Fail(string msg) => JsonSerializer.Serialize(new { ok = false, msg });
+}

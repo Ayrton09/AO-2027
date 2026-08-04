@@ -1,0 +1,45 @@
+# CoverAO con docker compose.
+#
+#   docker compose up -d          # levanta el servidor
+#   docker compose logs -f        # ver el log
+#   docker compose down           # apagarlo (limpio: manda SIGTERM y el server guarda a todos)
+#
+# Despues, a jugar en  http://localhost:7669/ .
+
+services:
+  coverao:
+    build: .
+    image: coverao
+    container_name: coverao
+    restart: unless-stopped
+
+    ports:
+      - "7666:7666"   # juego (protocolo AO clasico, para el cliente de Windows)
+      - "7667:7667"   # WebSocket — por aca JUEGA el cliente web. Sin este puerto la pagina carga y no conecta.
+      - "7669:7669"   # cliente web (la URL que abren los jugadores)
+      # El 7668 (panel de administracion) NO se publica a proposito: llegale con un tunel SSH
+      #   ssh -L 7668:localhost:7668 usuario@servidor
+      # y despues abri http://localhost:7668/ en tu maquina.
+
+    volumes:
+      # Las cuentas y los personajes. Es LO UNICO que no se puede volver a generar: sin este volumen,
+      # actualizar la imagen borra el servidor entero.
+      - coverao-data:/app/data
+
+    environment:
+      # Cualquier clave del Server.ini se pisa con COVERAO_<SECCION>_<CLAVE>. Adentro de un contenedor esta
+      # es la forma natural de configurar: no hay que montar un archivo para cambiar un numero.
+      # El servidor imprime al arrancar cuales le llegaron por entorno.
+      - COVERAO_INIT_MAXUSERS=200
+      - COVERAO_INIT_EXP=100          # 100 = x1 (es un porcentaje, como en el Server.ini original)
+      - COVERAO_INIT_ORO=100
+      # PARA SER GM hacen falta las dos: prender la lista y poner tu personaje en ella.
+      # - COVERAO_INIT_DIOSES=1
+      # - COVERAO_DIOSES_DIOS1=TuPersonaje
+
+    # `docker stop` manda SIGTERM y el server guarda a todos los conectados antes de salir. El default de
+    # 10 s puede quedar corto con el mundo lleno, y si vence, Docker manda SIGKILL y se pierde lo no guardado.
+    stop_grace_period: 60s
+
+volumes:
+  coverao-data:

@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "INIT": {
+      "NumCascos": "6"
+    }
+  },
+  "Casco": [
+    {
+      "_index": 1,
+      "Index": "990"
+    },
+    {
+      "_index": 2,
+      "Index": "661"
+    },
+    {
+      "_index": 3,
+      "Index": "1078"
+    },
+    {
+      "_index": 4,
+      "Index": "1079"
+    },
+    {
+      "_index": 5,
+      "Index": "1266"
+    },
+    {
+      "_index": 6,
+      "Index": "1276"
+    }
+  ]
+}

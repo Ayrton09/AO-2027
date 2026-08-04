@@ -1,0 +1,206 @@
+; ============================================================================
+;  Server.ini - configuracion del servidor CoverAO
+; ----------------------------------------------------------------------------
+;  Este archivo va AL LADO del ejecutable (CoverAO.Server.exe). Si no existe,
+;  el servidor arranca igual con los valores por defecto... pero NADIE va a ser
+;  GM y no vas a poder usar los comandos de administracion in-game.
+;
+;  Al arrancar, el servidor imprime que leyo de aca y que staff cargo. Si no
+;  ves esa linea, el archivo no esta donde tiene que estar o se llama distinto.
+;
+;  Los cambios se aplican al REINICIAR el servidor.
+;  Formato heredado del Server.ini original de Argentum Online.
+; ============================================================================
+
+[INIT]
+
+// --- Red: LOS PUERTOS ---------------------------------------------------------
+//
+// Aca se configura UNA sola cosa, StartPort, y de ahi salen los otros tres:
+//
+//     StartPort      el juego            <- lo usa el cliente clasico de Windows
+//     StartPort + 1  WebSocket           <- lo usa el cliente web
+//     StartPort + 2  panel de admin      <- SOLO desde esta misma maquina
+//     StartPort + 3  cliente web         <- la pagina que abren los jugadores
+//
+// Con StartPort=7666 eso es 7666, 7667, 7668 y 7669. El servidor los IMPRIME al arrancar
+// y tambien quedan en el log del dia (data\logs\), asi que no hay que sacar la cuenta.
+//
+// EN EL ROUTER se abren el del juego y el del WebSocket, mas el del cliente web si lo
+// servis desde aca. EL PANEL DE ADMIN NO SE ABRE NUNCA: escucha solo en loopback a
+// proposito, porque desde ahi se puede apagar el servidor, kickear a todos y bajarse un
+// backup. Para entrar de afuera va un tunel SSH.
+//
+// VARIOS SERVIDORES EN LA MISMA MAQUINA: cada uno va en SU PROPIA CARPETA, con su copia
+// completa del juego (su gamedata, sus mapas, su config, incluso su version). Lo unico
+// que hay que cuidar es no repetir puertos: separalos de a 10 y listo.
+//
+//     C:\CoverAO\rojo\   ->  StartPort=7666   (7666..7669)
+//     C:\CoverAO\azul\   ->  StartPort=7676   (7676..7679)
+//     C:\CoverAO\verde\  ->  StartPort=7686   (7686..7689)
+//
+// El primer argumento de linea de comandos PISA este valor y corre los cuatro. Tambien
+// vale la variable de entorno COVERAO_INIT_STARTPORT (util en Docker y en systemd).
+StartPort=7666
+
+// SOLO SI TU HOSTING REMAPEA PUERTOS. Dejalo comentado si no sabes que es.
+//
+// El cliente web no trae la direccion cableada: se baja un coverao-config.json para
+// enterarse por que puerto abrir el WebSocket, y ahi va el puerto REAL del servidor. Si
+// tu proveedor te da el 25000 por afuera y adentro el servidor esta en el 7667, el
+// jugador baja la pagina bien y despues el socket se le va contra un puerto que no esta
+// abierto. Se ve como "carga pero no conecta", y del lado del servidor NO SE NOTA NADA:
+// los logs quedan iguales porque esa conexion nunca llega.
+//
+// Con esta clave le anuncias el puerto de AFUERA. El servidor sigue escuchando en el
+// suyo; lo unico que cambia es lo que se le dice al jugador.
+//
+// El del cliente web no necesita gemelo: ese lo escribe el jugador en la URL, asi que si
+// esta remapeado escribe el de afuera y listo.
+//PuertoWebSocketPublico=25001
+
+; Tope de jugadores conectados a la vez. 0 = sin tope (usa el limite interno).
+MaxUsers=0
+
+; 0 = una sola conexion por direccion IP (util contra multi-cuenta y floods).
+; 1 = varias conexiones por IP (lo normal si la gente entra detras de un router).
+; OJO: esto NO tiene nada que ver con entrar dos veces a la MISMA cuenta; eso
+; esta prohibido siempre, como en el original.
+AllowMultiLogins=1
+
+; Tope de conexiones simultaneas por IP. 0 = usar el valor interno (64).
+LimiteConexionesPorIp=0
+
+; Minutos SIN QUE EL JUGADOR MANDE NADA antes de desconectarlo (lo que le manda
+; el servidor -clima, dia/noche- no cuenta como actividad). 0 = nunca.
+; Sirve para recuperar la ranura del que deja el cliente abierto toda la noche.
+IdleLimit=0
+
+; --- Puertas del servidor ----------------------------------------------------
+; 0 = nadie puede crear personajes nuevos (server cerrado / solo cuentas viejas).
+PuedeCrearPersonajes=1
+
+; 1 = modo mantenimiento: solo entra el staff listado mas abajo.
+ServerSoloGMs=0
+
+; --- Rates -------------------------------------------------------------------
+; PORCENTAJES, igual que el original: 100 = normal, 200 = doble, 300 = triple.
+; (Se redondean hacia abajo al multiplicador entero; 150 queda en x1.)
+Exp=100
+Oro=100
+
+; --- Relojes del mundo: dia/noche y lluvia -----------------------------------
+; OJO: ninguno de los dos existe en el Argentum original -- alla el mundo es
+; siempre de dia y la lluvia solo la conmuta un GM con /LLUVIA. Son un agregado
+; de este servidor, asi que estos numeros son gusto tuyo y no "el valor fiel".
+;
+; Cuanto dura un DIA ENTERO, en minutos: amanecer + dia + atardecer + noche.
+; Cada uno de los cuatro se lleva un cuarto. Cortito se vuelve molesto (el
+; mundo cambia de luz mientras cruzas una plaza y el chat se llena de avisos).
+MinutosDelDia=24
+
+; Cuanto dura un CICLO de clima, en minutos, y que parte de ese ciclo llueve.
+; Con 18 y 18: llueve unos 3 minutos y despues quedan 15 despejados.
+; PorcentajeLluvia=0 -> no llueve nunca.  =100 -> llueve siempre.
+MinutosDeClima=18
+PorcentajeLluvia=18
+
+; --- Operacion: que no se pierda nada ----------------------------------------
+; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo
+; son tambien los que trae el servidor por defecto. Hay que escribir un 0 para
+; APAGARLOS, no para tenerlos. Es a proposito: el servidor arranca sin este ini,
+; y no queremos que borrarlo te deje sin backups sin que te enteres.
+;
+; Cada cuantos minutos guardar a los jugadores conectados. 0 = solo al salir.
+; (Es el "MinutosGuardarUsuarios" del original. El panel de admin lo puede
+;  cambiar en caliente; lo de aca es con que arranca.)
+MinutosGuardarUsuarios=15
+
+; Cada cuantos minutos hacer una COPIA DE SEGURIDAD del mundo entero (cuentas,
+; personajes, clanes, correo) en  data\backups\. 0 = desactivado.
+; La copia se hace con el servidor andando, sin frenar a nadie. Tambien tenes un
+; boton "Copia de seguridad" en el panel de administracion.
+MinutosBackup=30
+
+; Cuantas copias conservar (se borran las mas viejas). 0 = conservarlas todas,
+; OJO con el disco.
+BackupsAConservar=48
+
+; Dias de log a conservar en  data\logs\  (un archivo por dia). 0 = no escribir
+; nada a disco y que el log viva solo en la ventana del servidor.
+LogDias=7
+
+; --- Staff -------------------------------------------------------------------
+; Aca declaras CUANTOS hay de cada rango; los nombres van en las secciones de
+; abajo. El nombre es el del PERSONAJE (no el de la cuenta) y no distingue
+; mayusculas. Se resuelve en cada login: si sacas un nombre de la lista, ese
+; personaje deja de ser GM la proxima vez que entre.
+;
+; Rangos, de mas a menos autoridad:
+;   Admines       todo, incluido apagar el servidor
+;   Dioses        casi todo (el rango habitual del que hostea)
+;   SemiDioses    moderacion (carcel, silenciar, teletransportar)
+;   Consejeros    moderacion basica
+;   RolesMasters  herramientas de rol (crear NPCs, hablar como NPC)
+Admines=0
+Dioses=0
+SemiDioses=0
+Consejeros=0
+RolesMasters=0
+
+; --- Licencia (AGPL): de donde bajar el codigo de ESTE servidor ---------------
+; AO2026 es software libre bajo AGPL-3.0, y esa licencia tiene "clausula de red":
+; a quien se conecta a jugar hay que ofrecerle el codigo de la version que estas
+; corriendo, aunque nunca le des un archivo. Poniendo la URL aca queda cumplido:
+; el juego la muestra en Menu -> Licencia. Si no la completas, el jugador ve el
+; aviso sin enlace.
+;   Si no modificaste nada, sirve el repositorio del que lo bajaste.
+;   Si le hiciste cambios, tiene que apuntar a TU codigo con esos cambios.
+;
+; Va en [INIT], que es la seccion donde el servidor la busca. Antes este bloque
+; estaba al final del archivo, debajo de [INTERVALOS]: el que descomentaba la
+; linea la dejaba en esa otra seccion y la clave no se leia nunca -- el enlace
+; no aparecia y no habia forma de notarlo.
+;CodigoFuente=https://github.com/tu-usuario/tu-fork
+
+; ============================================================================
+;  Listas de staff. La clave se numera desde 1 y tiene que coincidir con el
+;  contador de arriba (si pones Dioses=2 tienen que existir Dios1 y Dios2).
+;
+;  EJEMPLO - para hacerte GM a vos mismo:
+;     en [INIT] pone   Dioses=1
+;     y aca abajo      Dios1=NombreDeTuPersonaje
+; ============================================================================
+
+[Admines]
+;Admin1=
+
+[Dioses]
+;Dios1=
+
+[SemiDioses]
+;SemiDios1=
+
+[Consejeros]
+;Consejero1=
+
+[RolesMasters]
+;RM1=
+
+; ============================================================================
+;  [INTERVALOS] - cadencias de combate, en MILISEGUNDOS. Son las mismas claves
+;  y los mismos nombres que el Server.ini del servidor original, y el server
+;  las lee de aca. Los valores de abajo son los que usa si la seccion no esta.
+;
+;  OJO: tocarlas cambia el BALANCE del juego y lo aleja del original. Si lo
+;  que queres es un server fiel, dejalas como estan (o no pongas la seccion).
+;  Cualquier valor fuera de 0..60000 se recorta a ese rango.
+; ============================================================================
+[INTERVALOS]
+;IntervaloLanzaHechizo=1000      ; entre un hechizo y el siguiente
+;IntervaloUserPuedeAtacar=1000   ; entre un golpe y el siguiente
+;IntervaloMagiaGolpe=400         ; pegar despues de castear
+;IntervaloGolpeMagia=400         ; castear despues de pegar
+;IntervaloGolpeUsar=400          ; usar un objeto despues de pegar
+;IntervaloGuardarUsuarios=15     ; autosave, en MINUTOS (es la clave del original;
+                                 ; equivale a MinutosGuardarUsuarios de [INIT])

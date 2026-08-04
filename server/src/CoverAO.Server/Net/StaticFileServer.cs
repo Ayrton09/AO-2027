@@ -1,0 +1,200 @@
+using System.Collections.Concurrent;
+using System.IO.Compression;
+using System.Net;
+using System.Text;
+
+namespace CoverAO.Server.Net;
+
+/// <summary>
+/// Servidor de archivos estáticos para el cliente web (distribución standalone): un HttpListener que sirve
+/// la carpeta del cliente (index.html + dist + assets) para que el jugador abra una URL y juegue, sin
+/// depender de un http.server externo. Deliberadamente SEPARADO del WebSocketGameServer para no tocar el
+/// transporte de juego verificado. Sanea el path (sin traversal fuera del web root) y sólo atiende GET/HEAD.
+///
+/// COMPRESIÓN Y REVALIDACIÓN. En LAN da igual, pero hosteando de verdad no: el cliente baja 1,8 MB de JSON
+/// antes de dibujar el primer frame —<c>grh.json</c> solo son 1,58 MB— más 75 KB por cada mapa que cruzás, y
+/// hay 863 mapas. Sin nada de esto, cada recarga se los baja enteros otra vez.
+///
+///   - <b>gzip</b> para lo que comprime bien (JSON, JS, HTML, CSS, el .bin del minimapa). Los sprites y el
+///     audio ya vienen comprimidos: gastar CPU en re-comprimirlos los deja iguales o más grandes.
+///   - <b>ETag + 304.</b> El <c>no-cache</c> de antes obligaba a revalidar, pero sin ETag ni Last-Modified el
+///     navegador no tenía con qué preguntar y el servidor no tenía cómo contestar "no cambió": revalidar era
+///     bajar el archivo entero. Se conserva la semántica de revalidar SIEMPRE (que es lo que hace que el
+///     cache-bust <c>?v=N</c> del index.html siga siendo la única fuente de verdad) y sólo se abarata la
+///     respuesta cuando de verdad no cambió nada.
+///
+/// El gzip se cachea en memoria por (ruta, tamaño, fecha): comprimir 1,58 MB en cada request sería peor que
+/// no comprimir. El cache se acota en bytes y se vacía entero al llenarse — es un cache de arranque, no un
+/// CDN, y el juego entra en calor una sola vez.
+/// </summary>
+public sealed class StaticFileServer
+{
+    private readonly int _port;
+    private readonly string _root;
+    private readonly byte[] _config;
+
+    /// <summary>Ruta sintética con la config que el cliente necesita ANTES de conectarse. Hoy es sólo el puerto
+    /// del WebSocket: el cliente lo tenía cableado en 7667 y eso rompía a cualquier host que tocara
+    /// <c>StartPort</c> en su Server.ini —los puertos salen todos de ahí— dejándolo golpeando un puerto de
+    /// nadie, con un cartel que encima lo mandaba a revisar un servidor que estaba andando bien.
+    /// El cliente la pide con <c>fetch</c> y si no está (servido por un http.server de desarrollo o por un
+    /// nginx) se queda con su default. Por eso vale sintetizarla acá y no pedirle nada al que hostea.</summary>
+    private const string RutaConfig = "coverao-config.json";
+
+    private static readonly Dictionary<string, string> Mime = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".html"] = "text/html; charset=utf-8", [".htm"] = "text/html; charset=utf-8",
+        [".js"] = "text/javascript; charset=utf-8", [".mjs"] = "text/javascript; charset=utf-8",
+        [".css"] = "text/css; charset=utf-8", [".json"] = "application/json; charset=utf-8",
+        [".map"] = "application/json", [".txt"] = "text/plain; charset=utf-8", [".wasm"] = "application/wasm",
+        [".png"] = "image/png", [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".gif"] = "image/gif",
+        [".webp"] = "image/webp", [".svg"] = "image/svg+xml", [".ico"] = "image/x-icon", [".bmp"] = "image/bmp",
+        [".mp3"] = "audio/mpeg", [".ogg"] = "audio/ogg", [".wav"] = "audio/wav", [".mid"] = "audio/midi",
+        [".woff"] = "font/woff", [".woff2"] = "font/woff2", [".ttf"] = "font/ttf",
+    };
+
+    /// <summary>Lo que vale la pena comprimir. Todo lo demás (PNG, MP3, OGG, WOFF2…) ya viene comprimido y
+    /// pasarle gzip encima cuesta CPU para no ahorrar un byte — a veces para agrandarlo.</summary>
+    private static readonly HashSet<string> Comprimibles = new(StringComparer.OrdinalIgnoreCase)
+    { ".html", ".htm", ".js", ".mjs", ".css", ".json", ".map", ".txt", ".svg", ".bin", ".wasm" };
+
+    /// <summary>Debajo de esto el gzip no paga: el overhead del formato se come el ahorro y encima suma una
+    /// pasada de CPU por request.</summary>
+    private const int MinimoParaComprimir = 1024;
+
+    private readonly ConcurrentDictionary<string, (long Len, long Mtime, byte[] Gz)> _cacheGz = new();
+    private long _bytesEnCache;
+    private const long TopeCacheBytes = 64L * 1024 * 1024;
+
+    private readonly int _wsPort;
+
+    /// <param name="wsPort">El puerto que abrió DE VERDAD el <see cref="WebSocketGameServer"/>.</param>
+    /// <param name="codigoFuente">URL del código de ESTE servidor (Server.ini [INIT] CodigoFuente). Viaja por
+    /// el mismo canal que el puerto y el cliente la muestra en el menú: es como un host cumple la cláusula de
+    /// red de la AGPL sin tener que armar nada aparte. Vacía = el cliente muestra el aviso sin enlace.</param>
+    /// <param name="wsPortPublico">El puerto que se le ANUNCIA al cliente, cuando no es el real. 0 = el real.
+    ///
+    /// Los dos se separan por los hostings que REMAPEAN puertos: si por afuera entrás por el 25000 y adentro
+    /// el WebSocket está en el 7667, anunciar el interno deja al jugador bajando la página bien y despues
+    /// fallando el socket contra un puerto que no está abierto. Se ve como "carga pero no conecta".
+    ///
+    /// El REAL se sigue usando para todo lo demás —incluido deducir el puerto del juego en el cartel de
+    /// "Como entrar"—, porque eso describe la máquina, no lo que ve el de afuera.</param>
+    public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0)
+    {
+        _port = port;
+        _wsPort = wsPort;
+        _root = Path.GetFullPath(root);
+        int anunciado = wsPortPublico > 0 ? wsPortPublico : wsPort;
+        _config = Encoding.UTF8.GetBytes(
+            $"{{\"wsPort\":{anunciado},\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}}}");
+    }
+
+    /// <summary>El JSON que se baja el cliente, tal cual. Existe para poder testear QUÉ se le anuncia sin
+    /// levantar un servidor HTTP: lo que importa de este archivo es su contenido, no su transporte.</summary>
+    public string ConfigJson => Encoding.UTF8.GetString(_config);
+
+    public async Task RunAsync(CancellationToken token)
+    {
+        var bind = HttpBind.Abrir(_port, "Cliente web", token);   // toda interfaz, con caída a loopback (ver HttpBind)
+        if (bind is null) return;
+        var (listener, publico) = (bind.Value.Listener, bind.Value.Publico);
+        Console.WriteLine($"== Cliente web: http://localhost:{_port}/ (raíz: {_root}) ==");
+        HttpBind.AvisarSiSoloLocal(publico, _port);
+        HttpBind.ImprimirComoEntrar(_port, _wsPort, _wsPort - 1, publico);   // el TCP del juego es ws-1
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                HttpListenerContext ctx;
+                try { ctx = await listener.GetContextAsync(); }
+                catch (HttpListenerException) { break; }
+                catch (ObjectDisposedException) { break; }
+                _ = Task.Run(() => Serve(ctx), token);
+            }
+        }
+        finally { try { listener.Stop(); } catch { } }
+    }
+
+    private void Serve(HttpListenerContext ctx)
+    {
+        try
+        {
+            var req = ctx.Request; var res = ctx.Response;
+            if (req.HttpMethod != "GET" && req.HttpMethod != "HEAD") { res.StatusCode = 405; res.Close(); return; }
+            string rel = Uri.UnescapeDataString(req.Url?.AbsolutePath ?? "/").TrimStart('/');
+            if (rel.Length == 0) rel = "index.html";
+            // La config es SINTÉTICA y gana sobre el disco: si quedara un archivo viejo con ese nombre en la
+            // carpeta del cliente, publicaría un puerto que no es el que este proceso abrió.
+            if (string.Equals(rel, RutaConfig, StringComparison.OrdinalIgnoreCase))
+            {
+                res.ContentType = "application/json; charset=utf-8";
+                res.Headers["Cache-Control"] = "no-store";   // el puerto cambia entre arranques: nunca cachear
+                res.ContentLength64 = _config.Length;
+                if (req.HttpMethod == "GET") res.OutputStream.Write(_config);
+                res.OutputStream.Close();
+                return;
+            }
+            string full = Path.GetFullPath(Path.Combine(_root, rel));
+            // Anti path-traversal: el archivo resuelto debe quedar dentro del web root.
+            if (full != _root && !full.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            { res.StatusCode = 403; res.Close(); return; }
+            if (Directory.Exists(full)) full = Path.Combine(full, "index.html");
+            var info = new FileInfo(full);
+            if (!info.Exists) { res.StatusCode = 404; res.Close(); return; }
+
+            // ETag de (tamaño, fecha de modificación): cambia el archivo, cambia el ETag, y el navegador se
+            // baja el nuevo. No hay forma de que sirva contenido viejo.
+            long mtime = info.LastWriteTimeUtc.Ticks;
+            string etag = $"\"{info.Length:x}-{mtime:x}\"";
+            res.Headers["ETag"] = etag;
+            res.Headers["Cache-Control"] = "no-cache";      // revalidar siempre; el 304 hace que salga barato
+            res.Headers["Last-Modified"] = info.LastWriteTimeUtc.ToString("R");
+            if (string.Equals(req.Headers["If-None-Match"], etag, StringComparison.Ordinal))
+            { res.StatusCode = 304; res.Close(); return; }
+
+            string ext = Path.GetExtension(full);
+            res.ContentType = Mime.TryGetValue(ext, out var m) ? m : "application/octet-stream";
+
+            byte[] cuerpo;
+            bool aceptaGzip = (req.Headers["Accept-Encoding"] ?? "").Contains("gzip", StringComparison.OrdinalIgnoreCase);
+            if (aceptaGzip && info.Length >= MinimoParaComprimir && Comprimibles.Contains(ext))
+            {
+                cuerpo = GzipDe(full, info.Length, mtime);
+                res.Headers["Content-Encoding"] = "gzip";
+                res.Headers["Vary"] = "Accept-Encoding";   // el proxy de por medio no puede servirle esto a un cliente sin gzip
+            }
+            else
+            {
+                cuerpo = File.ReadAllBytes(full);
+            }
+
+            res.ContentLength64 = cuerpo.Length;
+            if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
+            res.OutputStream.Close();
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[web] error: {ex.Message}"); try { ctx.Response.Abort(); } catch { } }
+    }
+
+    /// <summary>El archivo comprimido, cacheado por (tamaño, fecha). Si el archivo cambió, se recomprime.</summary>
+    private byte[] GzipDe(string full, long len, long mtime)
+    {
+        if (_cacheGz.TryGetValue(full, out var e) && e.Len == len && e.Mtime == mtime) return e.Gz;
+
+        var crudo = File.ReadAllBytes(full);
+        using var ms = new MemoryStream(crudo.Length / 3);
+        using (var gz = new GZipStream(ms, CompressionLevel.Optimal, leaveOpen: true)) gz.Write(crudo);
+        var comprimido = ms.ToArray();
+
+        // Cache de arranque, no CDN: al llenarse se vacía entero en vez de andar desalojando por LRU. El
+        // cliente pide sus assets una vez y sigue jugando.
+        long previo = _cacheGz.TryGetValue(full, out var v) ? v.Gz.Length : 0;
+        if (Interlocked.Add(ref _bytesEnCache, comprimido.Length - previo) > TopeCacheBytes)
+        {
+            _cacheGz.Clear();
+            Interlocked.Exchange(ref _bytesEnCache, comprimido.Length);
+        }
+        _cacheGz[full] = (len, mtime, comprimido);
+        return comprimido;
+    }
+}

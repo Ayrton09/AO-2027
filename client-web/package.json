@@ -1,0 +1,16 @@
+{
+  "name": "coverao-web-client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fase 3 — cliente web de CoverAO (TypeScript). Arranca por el codec del protocolo.",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node dist/test/codec.test.js && node check-index.mjs",
+    "smoke": "node ws-smoke.mjs",
+    "smoke:cierre": "node ws-close-reason.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

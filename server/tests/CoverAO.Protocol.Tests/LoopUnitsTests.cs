@@ -1,0 +1,97 @@
+using CoverAO.Server.Game;
+using CoverAO.Server.Net;
+using Xunit;
+
+namespace CoverAO.Protocol.Tests;
+
+/// <summary>
+/// Las UNIDADES de los contadores del game-loop (docs/unidades-del-loop.md).
+///
+/// El original corre su loop cada <c>GAME_TIMER_INTERVAL = 40</c> ms y suma <c>DeltaTick ≈ 1</c> por vuelta, o
+/// sea que los números del <c>Server.ini</c> son VUELTAS, no milisegundos ni segundos. El <c>TickMs</c> del
+/// port es también 40, así que la conversión es 1 a 1 — el número se copia tal cual.
+///
+/// Este archivo existe porque el error era invisible: las constantes "se veían razonables" (100 ticks, 250
+/// ticks, 30000 ticks) y sólo comparándolas contra la fuente se ve que la sed iba 40 veces más rápido y una
+/// poción duraba 25 veces de más. Cada test cita su línea para que corregir "hacia atrás" rompa algo.
+/// </summary>
+public class LoopUnitsTests
+{
+    [Fact]
+    public void El_tick_del_port_mide_lo_mismo_que_la_vuelta_del_original()
+        // frmMain.frm:175 (Timer.Interval = 40) y mMainLoop.bas:7 (GAME_TIMER_INTERVAL = 40). Si esto cambiara,
+        // TODAS las constantes de abajo habría que reescalarlas.
+        => Assert.Equal(40, GameLoop.TickMs);
+
+    [Theory]
+    // Server.ini [INTERVALOS], copiados tal cual. El tiempo real sale de multiplicar por 40 ms.
+    [InlineData(4000, 160)]   // IntervaloSed    -> 160 s por cada -10 de agua
+    [InlineData(4500, 180)]   // IntervaloHambre -> 180 s por cada -10 de comida
+    public void El_hambre_y_la_sed_se_miden_en_vueltas_del_loop(int ticks, int segundos)
+        => Assert.Equal(segundos, ticks * GameLoop.TickMs / 1000);
+
+    [Fact]
+    public void La_sed_tarda_media_hora_en_vaciarse_no_cuarenta_segundos()
+    {
+        // El síntoma que destapó el bug: con los 100 ticks viejos, 100 de agua se iban en 40 segundos.
+        int bajadas = 100 / Survival.DecayStep;                                  // 10 bajadas de 10
+        double segundos = bajadas * Survival.ThirstIntervalTicks * GameLoop.TickMs / 1000.0;
+        Assert.True(segundos > 1500, $"la sed se vacía en {segundos:0} s; el original tarda ~1600");
+        Assert.Equal(4000, Survival.ThirstIntervalTicks);
+        Assert.Equal(4500, Survival.HungerIntervalTicks);
+    }
+
+    [Fact]
+    public void Los_intervalos_de_regeneracion_salen_del_call_site_no_del_ini()
+    {
+        // La trampa de este bloque: el Server.ini define CUATRO constantes y mMainLoop.bas:186-212 usa sólo dos.
+        //   de pie      -> Sanar(SanaIntervaloSinDescansar = 1600), RecStamina(50 literal)
+        //   descansando -> Sanar(StaminaIntervaloSinDescansar = 5), RecStamina(50 literal)
+        // Sí: descansando, la VIDA usa la constante de la ENERGÍA. Es un error de la fuente (el `Else` hasta
+        // tiene el comentario invertido) y se porta igual. SanaIntervaloDescansar=100 y
+        // StaminaIntervaloDescansar=2 nunca se usan: son constantes muertas del .ini.
+        Assert.Equal(1600, Survival.HealIntervalTicks);
+        Assert.Equal(5, Survival.HealRestingIntervalTicks);
+        Assert.Equal(50, Survival.StaminaIntervalTicks);
+        // Descansar cura 320 veces más rápido que estar de pie: es la razón de ser del /DESCANSAR.
+        Assert.Equal(320, Survival.HealIntervalTicks / Survival.HealRestingIntervalTicks);
+    }
+
+    [Fact]
+    public void La_curacion_natural_sale_de_la_energia_maxima_no_de_la_vida()
+    {
+        // VB6 Sanar: mashit = RandomNumber(2, Porcentaje(MaxSta, 5)). Es una rareza de la fuente —la vida se
+        // regenera en función de la ENERGÍA— y se porta tal cual. Con rnd = tomar el techo:
+        Assert.Equal(10, Survival.HealAmount(200, (lo, hi) => hi));   // 5% de 200 = 10
+        Assert.Equal(2, Survival.HealAmount(200, (lo, hi) => lo));    // el piso es 2
+        Assert.Equal(2, Survival.HealAmount(10, (lo, hi) => hi));     // 5% de 10 = 0 -> el piso evita el rango invertido
+    }
+
+    [Fact]
+    public void La_energia_suma_de_a_cinco_por_tirada_con_la_supervivencia_adentro()
+    {
+        // VB6 RecStamina: massta = 5 * RandomNumber(1, Porcentaje(MaxSta + Supervivencia, 5)).
+        Assert.Equal(5 * 15, Survival.StaminaAmount(200, 100, (lo, hi) => hi));   // 5% de 300 = 15
+        Assert.Equal(5, Survival.StaminaAmount(200, 100, (lo, hi) => lo));
+        Assert.Equal(5, Survival.StaminaAmount(1, 0, (lo, hi) => hi));            // piso en 1
+    }
+
+    [Fact]
+    public void Las_duraciones_de_los_buffs_son_segundos_no_minutos()
+    {
+        // modHechizos.bas:1336 (1200) y :1353 (700), en vueltas -> 48 s y 28 s. Antes eran 30000 y 17500
+        // porque se habían leído como segundos: una poción de agilidad duraba veinte minutos.
+        Assert.Equal(48, PacketDispatcher.AttrBuffDurationTicks * GameLoop.TickMs / 1000);
+        Assert.Equal(28, PacketDispatcher.AttrDebuffDurationTicks * GameLoop.TickMs / 1000);
+    }
+
+    [Fact]
+    public void Las_constantes_que_el_port_ya_habia_acertado_siguen_igual()
+    {
+        // No todo estaba mal, y conviene fijarlo: donde el port copió el número del Server.ini acertó.
+        // IntervaloInvocacion = 1001, IntervaloInvisible = 500, IntervaloOculto = 500.
+        Assert.Equal(1001, PacketDispatcher.SummonLifetimeTicks);
+        Assert.Equal(500, PacketDispatcher.InvisibilityDurationTicks);
+        Assert.Equal(500, PacketDispatcher.OcultoDurationTicks);
+    }
+}

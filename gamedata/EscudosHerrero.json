@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "INIT": {
+      "NumEscudos": "9"
+    }
+  },
+  "Escudo": [
+    {
+      "_index": 1,
+      "Index": "658"
+    },
+    {
+      "_index": 2,
+      "Index": "1007"
+    },
+    {
+      "_index": 3,
+      "Index": "1100"
+    },
+    {
+      "_index": 4,
+      "Index": "1003"
+    },
+    {
+      "_index": 5,
+      "Index": "1002"
+    },
+    {
+      "_index": 6,
+      "Index": "1088"
+    },
+    {
+      "_index": 7,
+      "Index": "1267"
+    },
+    {
+      "_index": 8,
+      "Index": "1268"
+    },
+    {
+      "_index": 9,
+      "Index": "1358"
+    }
+  ]
+}

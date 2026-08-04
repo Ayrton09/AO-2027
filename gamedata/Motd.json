@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "INIT": {
+      "NumLines": "3"
+    },
+    "Motd": {
+      "Line1": "CoverAO Server V1.0 Beta ©CoverGames 2011-2021. Conexión aceptada.",
+      "Fuente1": "8",
+      "Line2": "¡Bienvenido a CoverAO!, recordá que el juego está en su versión beta, puede ser común que encuentres errores en el mismo. ¡Ayudanos a reportarlos mediante el comando /GM o /DM!",
+      "Fuente2": "8",
+      "Line3": "Si tienes alguna sugerencia, duda o consulta acude a un Administrador mediante el comando /GM, /DM o /AYUDA",
+      "Fuente3": "8"
+    }
+  }
+}

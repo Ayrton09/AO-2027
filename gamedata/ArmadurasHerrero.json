@@ -1,0 +1,129 @@
+{
+  "meta": {
+    "INIT": {
+      "NumArmaduras": "30"
+    }
+  },
+  "Armadura": [
+    {
+      "_index": 1,
+      "Index": "1139"
+    },
+    {
+      "_index": 2,
+      "Index": "390"
+    },
+    {
+      "_index": 3,
+      "Index": "391"
+    },
+    {
+      "_index": 4,
+      "Index": "392"
+    },
+    {
+      "_index": 5,
+      "Index": "393"
+    },
+    {
+      "_index": 6,
+      "Index": "1093"
+    },
+    {
+      "_index": 7,
+      "Index": "901"
+    },
+    {
+      "_index": 8,
+      "Index": "903"
+    },
+    {
+      "_index": 9,
+      "Index": "485"
+    },
+    {
+      "_index": 10,
+      "Index": "495"
+    },
+    {
+      "_index": 11,
+      "Index": "496"
+    },
+    {
+      "_index": 12,
+      "Index": "872"
+    },
+    {
+      "_index": 13,
+      "Index": "487"
+    },
+    {
+      "_index": 14,
+      "Index": "481"
+    },
+    {
+      "_index": 15,
+      "Index": "482"
+    },
+    {
+      "_index": 16,
+      "Index": "483"
+    },
+    {
+      "_index": 17,
+      "Index": "873"
+    },
+    {
+      "_index": 18,
+      "Index": "874"
+    },
+    {
+      "_index": 19,
+      "Index": "875"
+    },
+    {
+      "_index": 20,
+      "Index": "876"
+    },
+    {
+      "_index": 21,
+      "Index": "877"
+    },
+    {
+      "_index": 22,
+      "Index": "878"
+    },
+    {
+      "_index": 23,
+      "Index": "1214"
+    },
+    {
+      "_index": 24,
+      "Index": "1213"
+    },
+    {
+      "_index": 25,
+      "Index": "1215"
+    },
+    {
+      "_index": 26,
+      "Index": "1217"
+    },
+    {
+      "_index": 27,
+      "Index": "1216"
+    },
+    {
+      "_index": 28,
+      "Index": "1218"
+    },
+    {
+      "_index": 29,
+      "Index": "1211"
+    },
+    {
+      "_index": 30,
+      "Index": "1212"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "INIT": {
+      "NumTriggers": "7"
+    }
+  },
+  "Trig": [
+    {
+      "_index": 1,
+      "Name": "Nada"
+    },
+    {
+      "_index": 2,
+      "Name": "Bajo techo"
+    },
+    {
+      "_index": 3,
+      "Name": "Trigger inútil"
+    },
+    {
+      "_index": 4,
+      "Name": "Posición inválida para NPCs"
+    },
+    {
+      "_index": 5,
+      "Name": "Bajo techo y no combate"
+    },
+    {
+      "_index": 6,
+      "Name": "Anti piquete"
+    },
+    {
+      "_index": 7,
+      "Name": "Combate libre"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "INIT": {
+      "NumObjs": "22"
+    }
+  },
+  "OBJ": [
+    {
+      "_index": 1,
+      "Index": "480"
+    },
+    {
+      "_index": 2,
+      "Index": "551"
+    },
+    {
+      "_index": 3,
+      "Index": "552"
+    },
+    {
+      "_index": 4,
+      "Index": "553"
+    },
+    {
+      "_index": 5,
+      "Index": "1082"
+    },
+    {
+      "_index": 6,
+      "Index": "1086"
+    },
+    {
+      "_index": 7,
+      "Index": "1084"
+    },
+    {
+      "_index": 8,
+      "Index": "1083"
+    },
+    {
+      "_index": 9,
+      "Index": "1085"
+    },
+    {
+      "_index": 10,
+      "Index": "709"
+    },
+    {
+      "_index": 11,
+      "Index": "478"
+    },
+    {
+      "_index": 12,
+      "Index": "666"
+    },
+    {
+      "_index": 13,
+      "Index": "899"
+    },
+    {
+      "_index": 14,
+      "Index": "362"
+    },
+    {
+      "_index": 15,
+      "Index": "469"
+    },
+    {
+      "_index": 16,
+      "Index": "540"
+    },
+    {
+      "_index": 18,
+      "Index": "474"
+    },
+    {
+      "_index": 19,
+      "Index": "475"
+    },
+    {
+      "_index": 20,
+      "Index": "476"
+    },
+    {
+      "_index": 21,
+      "Index": "163"
+    },
+    {
+      "_index": 22,
+      "Index": "167"
+    }
+  ]
+}

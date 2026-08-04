@@ -1,0 +1,50 @@
+{
+  "ACTUALIZACIONES.ini": {},
+  "Anticheat.Dat": {},
+  "apuestas.dat": {},
+  "AreasStats.dat": {
+    "Mapa": 863
+  },
+  "ArmadurasHerrero.dat": {
+    "Armadura": 30
+  },
+  "ArmasHerrero.dat": {
+    "Arma": 16
+  },
+  "Balance.dat": {},
+  "BanIps.dat": {},
+  "CascosHerrero.dat": {
+    "Casco": 6
+  },
+  "Ciudades.Dat": {},
+  "DropGlobal.dat": {
+    "DROP": 30
+  },
+  "EscudosHerrero.dat": {
+    "Escudo": 9
+  },
+  "Hechizos.dat": {
+    "HECHIZO": 113
+  },
+  "Motd.ini": {},
+  "NACIMIENTO.ini": {},
+  "Niveles.dat": {},
+  "NPCs.dat": {
+    "NPC": 291
+  },
+  "obj.dat": {
+    "OBJ": 1520
+  },
+  "ObjCarpintero.dat": {
+    "OBJ": 21
+  },
+  "ObjDruida.dat": {
+    "OBJ": 9
+  },
+  "ObjSastre.dat": {
+    "OBJ": 8
+  },
+  "triggers.dat": {
+    "Trig": 7
+  }
+}

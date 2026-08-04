@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CoverAO.Protocol/CoverAO.Protocol.csproj" />
+    <Project Path="src/CoverAO.Server/CoverAO.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CoverAO.Protocol.Tests/CoverAO.Protocol.Tests.csproj" />
+  </Folder>
+</Solution>
