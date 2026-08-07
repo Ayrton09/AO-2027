@@ -109,20 +109,36 @@ public sealed class World
         return p;
     }
 
-    public IEnumerable<Player> Players => _players.Values;
+    /// <summary>Los jugadores conectados, SIN copiar la colección.
+    ///
+    /// <para>Era <c>_players.Values</c>, y en un <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>
+    /// esa propiedad NO devuelve un enumerador: toma los 4×NumProc locks internos, copia todos los valores a
+    /// una <c>List</c> nueva y la envuelve en un <c>ReadOnlyCollection</c>. Dos asignaciones y una copia O(n)
+    /// POR ACCESO. Y se accede ~10.000 veces por segundo: la IA lo consulta por cada NPC que persigue
+    /// (<c>NpcIrUsuarioCercano</c> corre sobre 5043 de los 5404) más los broadcasts de cada paso y cada golpe.
+    /// El costo de tomar los locks se paga aunque no haya NADIE conectado — de ahí el pico de 1,5 ms medido
+    /// con cero jugadores.</para>
+    ///
+    /// <para>Iterar el diccionario directo usa el enumerador lock-free y no asigna nada. Es válido con
+    /// escrituras concurrentes: puede ver o no una entrada agregada durante el recorrido, que es exactamente
+    /// la garantía que el código ya asumía con la copia.</para></summary>
+    public IEnumerable<Player> Players
+    {
+        get { foreach (var kv in _players) yield return kv.Value; }
+    }
 
     /// <summary>Find an online player by (case-insensitive) name.</summary>
     public Player? PlayerByName(string name)
     {
-        foreach (var p in _players.Values)
-            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p;
+        foreach (var kv in _players)
+            if (string.Equals(kv.Value.Name, name, StringComparison.OrdinalIgnoreCase)) return kv.Value;
         return null;
     }
 
     /// <summary>The player standing on a tile, if any (linear scan — fine at slice scale).</summary>
     public Player? PlayerAt(WorldPos pos)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             if (p.Pos == pos) return p;
         return null;
     }
@@ -195,7 +211,7 @@ public sealed class World
     /// <summary>Online players belonging to the named guild.</summary>
     public IEnumerable<Player> GuildMembersOnline(string guildName)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             if (!string.IsNullOrEmpty(p.GuildName) && string.Equals(p.GuildName, guildName, StringComparison.OrdinalIgnoreCase))
                 yield return p;
     }
@@ -341,14 +357,14 @@ public sealed class World
     /// <summary>Send a prebuilt packet to every connected player (naive broadcast for the slice).</summary>
     public void Broadcast(byte[] packet)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             p.Connection?.Send(packet);
     }
 
     /// <summary>Broadcast to everyone except the given character (e.g. self-originated events).</summary>
     public void BroadcastExcept(short exceptCharIndex, byte[] packet)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             if (p.CharIndex != exceptCharIndex)
                 p.Connection?.Send(packet);
     }
@@ -366,14 +382,14 @@ public sealed class World
     /// <summary>Connected players who can currently see <paramref name="pos"/>.</summary>
     public IEnumerable<Player> Observers(WorldPos pos)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             if (InView(p.Pos, pos)) yield return p;
     }
 
     /// <summary>Send a packet only to players who can see <paramref name="pos"/> (optionally excluding one).</summary>
     public void BroadcastToObservers(WorldPos pos, byte[] packet, short exceptCharIndex = 0)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             if (p.CharIndex != exceptCharIndex && InView(p.Pos, pos))
                 p.Connection?.Send(packet);
     }
@@ -384,7 +400,7 @@ public sealed class World
     /// propio mapa de bloqueos, así que una puerta que se abre le importa aunque esté del otro lado del pueblo.</summary>
     public void BroadcastToMap(short map, byte[] packet)
     {
-        foreach (var p in _players.Values)
+        foreach (var (_, p) in _players)
             if (p.Pos.Map == map) p.Connection?.Send(packet);
     }
 }

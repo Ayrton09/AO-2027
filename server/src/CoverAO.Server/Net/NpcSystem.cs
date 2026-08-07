@@ -407,7 +407,9 @@ public sealed class NpcSystem
             // mira al AMO, no a la criatura, y sólo aplica a la Armada — el Caos no tiene freno equivalente.
             if (npc.OwnerCharIndex != 0)
             {
-                var amo = _world.Players.FirstOrDefault(o => o.CharIndex == npc.OwnerCharIndex);
+                // TryGet es O(1): _players está keyeado por CharIndex. El FirstOrDefault pagaba snapshot +
+                // closure + barrido lineal para leer una clave que el índice ya tiene.
+                _world.TryGet(npc.OwnerCharIndex, out var amo);
                 if (amo is not null && !EsRenegado(amo) && !EsRenegado(p) && amo.IsArmada)
                 {
                     amo.Connection?.Send(ServerMessages.LocaleMsg(8));
@@ -458,7 +460,7 @@ public sealed class NpcSystem
         // El dueño se desconectó: OnDisconnect ya despawnea sus invocaciones/mascotas. NO la revertimos a NPC
         // salvaje (OwnerCharIndex=0): matar una invocación huérfana no debe dar recompensa — el gate en
         // AttackNpc es OwnerCharIndex==0, así que mantenerlo distinto de 0 evita la canilla de exp/oro via relog.
-        var owner = _world.Players.FirstOrDefault(p => p.CharIndex == npc.OwnerCharIndex);
+        _world.TryGet(npc.OwnerCharIndex, out var owner);   // O(1) por índice, no barrido lineal
         if (owner is not null && owner.Pos.Map == npc.Pos.Map)
         {
             int dx = owner.Pos.X - npc.Pos.X, dy = owner.Pos.Y - npc.Pos.Y;
