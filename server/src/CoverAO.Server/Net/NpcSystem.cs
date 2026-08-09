@@ -744,7 +744,10 @@ public sealed class NpcSystem
                 (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
             int dmg = (int)Math.Max(1, afterDef);
             player.Hp = Math.Max(0, player.Hp - dmg);
-            player.Connection?.Send(ServerMessages.ConsoleMsg($"{npc.Name} te golpea por {dmg}.", 0));
+            // CON LA PARTE DEL CUERPO, como el original: la `zona` que acaba de decidir qué armadura absorbe
+            // el golpe viaja al cliente y él arma "La criatura te ha pegado en la cabeza por N". Antes se
+            // mandaba un texto nuestro sin la zona, así que la mecánica corría pero el jugador no la veía.
+            player.Connection?.Send(ServerMessages.GolpeDeCriatura(zona, dmg));
             // El "-N" flotante sobre la cabeza (VB6 SistemaCombate.bas:590: WriteChatOverHeadLocale con el
             // charIndex del ATACANTE y modo 2). Va JUNTO al mensaje de texto, no en su lugar.
             player.Connection?.Send(ServerMessages.DamageOverHead(npc.CharIndex, dmg));

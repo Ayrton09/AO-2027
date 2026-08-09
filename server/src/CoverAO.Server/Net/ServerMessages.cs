@@ -310,6 +310,22 @@ public static class ServerMessages
     /// <summary>El número de daño flotante sobre la cabeza (modo 2 de ChatOverHeadLocale).</summary>
     public static byte[] DamageOverHead(short charIndex, int damage) => ChatOverHeadLocale(charIndex, damage, 2);
 
+    /// <summary>
+    /// El golpe de una CRIATURA, con la parte del cuerpo donde pegó — VB6 SistemaCombate.bas:588,
+    /// <c>WriteLocaleMsg(UserIndex, lugar, daño, 2)</c>.
+    ///
+    /// <para>El modo 2 del <c>LocaleMsg</c> es un formato aparte: el <b>id ES la parte del cuerpo</b> (1..6,
+    /// <c>PartesCuerpo</c>) y el argumento es el daño. El texto no viaja: lo arma el cliente pegando
+    /// <c>locale_gui_es.ind</c> 497 ("La criatura") + 367..372 (la parte) + el número, en fuente 2.</para>
+    ///
+    /// <para>La zona ya se tiraba para decidir QUÉ absorbe el golpe —casco si es la cabeza, armadura y escudo
+    /// si no (<see cref="Game.Combat.AplicarDefensa"/>)— pero se quedaba adentro del servidor: el jugador
+    /// recibía un texto nuestro sin la parte del cuerpo, así que la mecánica estaba pero no se veía.</para>
+    /// </summary>
+    /// <param name="zona">1 cabeza, 2 pierna izq, 3 pierna der, 4 brazo der, 5 brazo izq, 6 torso.</param>
+    public static byte[] GolpeDeCriatura(int zona, int dano) =>
+        LocaleMsg((short)zona, dano.ToString(System.Globalization.CultureInfo.InvariantCulture), mode: 2);
+
     /// <summary>Guild chat line (GuildChat, id 21): a single ASCII string.</summary>
     public static byte[] GuildChat(string chat) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.GuildChat).WriteAsciiString(chat).ToArray();

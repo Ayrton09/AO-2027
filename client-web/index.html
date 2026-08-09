@@ -2729,6 +2729,20 @@
           showCraft('🛡️ Clan', rows, true); break;
         }
         case 'LocaleMsg': {
+          // MODO 2 = EL GOLPE DE UNA CRIATURA, y NO se resuelve contra la tabla de mensajes: ahí el `msgId`
+          // es la PARTE DEL CUERPO (1..6) y el `args` el daño. El cliente original arma la frase pegando
+          // `locale_gui_es.ind` 497 ("La criatura") + 367..372 (la parte) + el número, en fuente 2
+          // (Cliente/Codigo/Protocol.bas:9470). Pasarlo por parseLocaleMsg daría el mensaje 1..6 de la OTRA
+          // tabla, que no tiene nada que ver ("ha sido expulsado del clan...").
+          if (f.mode === 2) {
+            const PARTES = { 1: 'en la cabeza', 2: 'la pierna izquierda', 3: 'la pierna derecha',
+                             4: 'el brazo derecho', 5: 'el brazo izquierdo', 6: 'en el torso' };
+            const donde = PARTES[f.msgId];
+            log(donde ? `La criatura te ha pegado ${donde} por ${f.args}` : 'La criatura te atacó y falló',
+                FUENTES[2]);
+            myHitAt = Date.now();
+            break;
+          }
           // Localized systemic message: resolve the id -> text (like the VB6 client's locale_smg_es.ind),
           // filling #1..#4 from the server's `args` word list (sigils resolve indices to names).
           const t = parseLocaleMsg(f.msgId, f.args, {
