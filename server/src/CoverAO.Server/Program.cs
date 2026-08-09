@@ -164,6 +164,7 @@ Console.WriteLine($"Persistencia en {dataRoot} ({(store is SqliteStore ? "SQLite
 var world = new World();
 world.LoadGuilds(db.LoadGuilds());       // restore persisted clans
 world.LoadMailboxes(db.LoadMailboxes()); // restore pending mail
+world.RecordUsuarios = db.LoadRecordUsuarios();   // el pico historico de conectados, que muestra el /ONLINE
 var loop = new GameLoop(world);
 
 // Estado de administración en caliente (eventos exp/oro/drop, autosave, pausa, solo-GMs, cadencia,

@@ -104,7 +104,12 @@ public class GmCommandTests : IDisposable
         // cierre forzado si el cliente dejó de leer. O sea que el socket cae un instante después, y por eso
         // se comprueban las DOS cosas: la sesión ya, el socket enseguida.
         Assert.True(_session.Cerrada, "un selector desconocido sí debe cerrar: no sabemos cuántos bytes ocupa");
-        SpinWait.SpinUntil(() => _transport.Closed, TimeSpan.FromSeconds(5));
+        // EL PLAZO SALE DE LA CONSTANTE DEL PRODUCTO, no de un número lindo. El socket lo baja el escritor
+        // cuando drena, y si el escritor no llegó a correr lo baja la red de `Close`, que espera
+        // `SendTimeoutMs`. Con 5 s cableados quedaban 2 s de margen sobre ese plazo, y corriendo los 588
+        // tests en paralelo el pool a veces no le da un hilo a la continuación en ese rato: el test daba rojo
+        // en la suite y verde suelto (3 de 3). No es lentitud del producto — es un plazo mal elegido.
+        EsperaDelEscritor.Hasta(() => _transport.Closed);
         Assert.True(_transport.Closed, "y el socket tiene que terminar bajando");
     }
 }

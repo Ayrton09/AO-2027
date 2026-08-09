@@ -94,7 +94,16 @@ public sealed class World
         throw new InvalidOperationException("No quedan CharIndex libres (32767 en uso entre jugadores y NPCs).");
     }
 
-    public void Add(Player p) => _players[p.CharIndex] = p;
+    /// <summary>El PICO histórico de jugadores conectados a la vez (VB6 <c>recordusuarios</c>, que TCP.bas:947
+    /// actualiza con `If NumUsers > recordusuarios`). Se lo muestra el <c>/ONLINE</c> a cualquiera, así que no
+    /// es una métrica interna: es parte de lo que el jugador ve. Persiste en <c>Misc/RECORD.json</c>.</summary>
+    public int RecordUsuarios { get; set; }
+
+    public void Add(Player p)
+    {
+        _players[p.CharIndex] = p;
+        if (_players.Count > RecordUsuarios) RecordUsuarios = _players.Count;
+    }
 
     public bool TryGet(short charIndex, out Player? player)
     {

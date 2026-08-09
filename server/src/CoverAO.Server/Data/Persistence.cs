@@ -44,6 +44,15 @@ public sealed class Persistence
         _store.WriteMisc("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
     }
 
+    /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini;
+    /// acá va con el resto de los records del mundo, en <c>Misc/</c>, así entra en el backup.</summary>
+    public void SaveRecordUsuarios(int record) => _store.WriteMisc("record", record.ToString(
+        System.Globalization.CultureInfo.InvariantCulture));
+
+    public int LoadRecordUsuarios()
+        => int.TryParse(_store.ReadMisc("record"), System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out int r) ? r : 0;
+
     public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
         => _store.WriteMisc("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
 

@@ -159,6 +159,24 @@ public sealed class PacketDispatcher
         });
     }
 
+    // LAS FUENTES DEL `ConsoleMsg`, tal como salen por el cable: son los ordinales del enum
+    // `FontTypeNames` del original (Servidor/Codigo/Protocol.bas:281), que arranca en 0.
+    //
+    // No son decorado: el cliente elige el COLOR con este byte, así que mandar todo con 0 le pintaba de
+    // blanco de charla mensajes que en el original salen celestes (info) o violetas (clan). El oráculo no lo
+    // veía hasta que se lo afinó para comparar el FontIndex además del nombre del paquete.
+
+    /// <summary>`FONTTYPE_INFO`: las respuestas informativas del servidor (la ficha del /EST, /ONLINE,
+    /// /UPTIME, descansar, el correo, los amigos).</summary>
+    private const byte FuenteInfo = 3;
+
+    /// <summary>`FONTTYPE_GUILD`: TODO lo que emite un handler de clan, incluida la rama de rechazo
+    /// "no perteneces a ningún clan".</summary>
+    private const byte FuenteClan = 7;
+
+    /// <summary>`FONTTYPE_INFOBOLD4`: la usa un solo camino, el mensaje a la lista de amigos.</summary>
+    private const byte FuenteAmigos = 24;
+
     /// <summary>
     /// ANTI-SPAM EN EL JUEGO. Distinto del techo de paquetes: acá el que se pasa es un jugador, no un
     /// atacante, así que la acción se DESCARTA y se le avisa — nunca se lo desconecta.
@@ -3947,15 +3965,15 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", 0)); return; }
-            if (string.IsNullOrWhiteSpace(name)) { session.Send(ServerMessages.ConsoleMsg("Nombre de clan inválido.", 0)); return; }
+            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", FuenteClan)); return; }
+            if (string.IsNullOrWhiteSpace(name)) { session.Send(ServerMessages.ConsoleMsg("Nombre de clan inválido.", FuenteClan)); return; }
             var guild = _world.CreateGuild(name, p.Name, desc);
-            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", 0)); return; }
+            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", FuenteClan)); return; }
             guild.Alignment = p.FoundingAlignment; // from the GuildFundation step (0 if founded directly)
             p.FoundingAlignment = 0;
             p.GuildName = guild.Name;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Fundaste el clan <{guild.Name}> y eres su líder.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Fundaste el clan <{guild.Name}> y eres su líder.", FuenteClan));
         });
     }
 
@@ -3991,19 +4009,19 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", 0)); return; }
+            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", FuenteClan)); return; }
             var guild = _world.GuildByName(guildName);
-            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", 0)); return; }
-            if (guild.JoinRequests.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya solicitaste unirte a ese clan; espera la decisión del líder.", 0)); return; }
+            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
+            if (guild.JoinRequests.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya solicitaste unirte a ese clan; espera la decisión del líder.", FuenteClan)); return; }
             // El TEXTO de la solicitud se guarda: es el "Detalle" que el original mete en SOLICITUDES.dat
             // (NuevoAspirante(Nombre, Peticion)) y lo único que transporta ShowUserRequest cuando el líder
             // la mira. Antes se leía del wire y se tiraba, así que no había nada que mostrarle.
             guild.JoinRequests[p.Name] = application;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Enviaste tu solicitud de ingreso al clan <{guild.Name}>. El líder debe aceptarla.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Enviaste tu solicitud de ingreso al clan <{guild.Name}>. El líder debe aceptarla.", FuenteClan));
             foreach (var m in _world.GuildMembersOnline(guild.Name))
                 if (string.Equals(m.Name, guild.LeaderName, StringComparison.OrdinalIgnoreCase))
-                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} solicitó unirse al clan.", 0));
+                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} solicitó unirse al clan.", FuenteClan));
         });
     }
 
@@ -4017,20 +4035,20 @@ public sealed class PacketDispatcher
             if (p is null) return;
             var guild = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
             if (guild is null || !string.Equals(guild.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede aceptar solicitudes.", 0)); return; }
-            if (!guild.JoinRequests.Remove(applicant)) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no tiene una solicitud pendiente.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede aceptar solicitudes.", FuenteClan)); return; }
+            if (!guild.JoinRequests.Remove(applicant)) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no tiene una solicitud pendiente.", FuenteClan)); return; }
             var joiner = _world.PlayerByName(applicant);
             // VB6 a_AceptarAspirante: rechaza si el aspirante ya pertenece a otro clan (evita doble membresía).
             if (joiner is not null && !string.IsNullOrEmpty(joiner.GuildName))
-            { session.Send(ServerMessages.ConsoleMsg($"{applicant} ya pertenece a un clan.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg($"{applicant} ya pertenece a un clan.", FuenteClan)); return; }
             guild.Members.Add(applicant);
             if (joiner is not null) joiner.GuildName = guild.Name;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Aceptaste a {applicant} en el clan.", 0));
-            joiner?.Connection?.Send(ServerMessages.ConsoleMsg($"Fuiste aceptado en el clan <{guild.Name}>.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Aceptaste a {applicant} en el clan.", FuenteClan));
+            joiner?.Connection?.Send(ServerMessages.ConsoleMsg($"Fuiste aceptado en el clan <{guild.Name}>.", FuenteClan));
             foreach (var m in _world.GuildMembersOnline(guild.Name))
                 if (m.CharIndex != p.CharIndex && !string.Equals(m.Name, applicant, StringComparison.OrdinalIgnoreCase))
-                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{applicant} se unió al clan.", 0));
+                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{applicant} se unió al clan.", FuenteClan));
         });
     }
 
@@ -4045,12 +4063,12 @@ public sealed class PacketDispatcher
             if (p is null) return;
             var guild = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
             if (guild is null || !string.Equals(guild.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede rechazar solicitudes.", 0)); return; }
-            if (!guild.JoinRequests.Remove(applicant)) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no tiene una solicitud pendiente.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede rechazar solicitudes.", FuenteClan)); return; }
+            if (!guild.JoinRequests.Remove(applicant)) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no tiene una solicitud pendiente.", FuenteClan)); return; }
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la solicitud de {applicant}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la solicitud de {applicant}.", FuenteClan));
             _world.PlayerByName(applicant)?.Connection?.Send(
-                ServerMessages.ConsoleMsg($"Tu solicitud al clan <{guild.Name}> fue rechazada{(reason.Length > 0 ? $": {reason}" : ".")}", 0));
+                ServerMessages.ConsoleMsg($"Tu solicitud al clan <{guild.Name}> fue rechazada{(reason.Length > 0 ? $": {reason}" : ".")}", FuenteClan));
         });
     }
 
@@ -4079,18 +4097,18 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", 0)); return; }
+            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", FuenteClan)); return; }
             var mine = _world.GuildByName(p.GuildName);
             if (mine is null || !string.Equals(mine.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede declarar la guerra.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede declarar la guerra.", FuenteClan)); return; }
             var enemy = _world.GuildByName(enemyName);
-            if (enemy is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", 0)); return; }
-            if (string.Equals(enemy.Name, mine.Name, StringComparison.OrdinalIgnoreCase)) { session.Send(ServerMessages.ConsoleMsg("No puedes declararte la guerra a ti mismo.", 0)); return; }
+            if (enemy is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
+            if (string.Equals(enemy.Name, mine.Name, StringComparison.OrdinalIgnoreCase)) { session.Send(ServerMessages.ConsoleMsg("No puedes declararte la guerra a ti mismo.", FuenteClan)); return; }
             mine.Enemies.Add(enemy.Name);
             enemy.Enemies.Add(mine.Name);
             PersistGuilds();
             foreach (var m in _world.GuildMembersOnline(mine.Name).Concat(_world.GuildMembersOnline(enemy.Name)))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡GUERRA! Los clanes <{mine.Name}> y <{enemy.Name}> están en guerra.", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡GUERRA! Los clanes <{mine.Name}> y <{enemy.Name}> están en guerra.", FuenteClan));
         });
     }
 
@@ -4687,10 +4705,10 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", 0)); return; }   // VB6 responde por texto
+            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", FuenteInfo)); return; }   // VB6 responde por texto
             var g = _world.GuildByName(p.GuildName);
             if (g is null) return;
-            session.Send(ServerMessages.ConsoleMsg($"Miembros de <{g.Name}>: {string.Join(", ", g.Members)}", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Miembros de <{g.Name}>: {string.Join(", ", g.Members)}", FuenteInfo));
         });
     }
 
@@ -4773,7 +4791,7 @@ public sealed class PacketDispatcher
             var g = RequireGuildLeader(session, session.Player, announceNoGuild: true);
             if (g is null) return;
             g.AllianceOffers.Remove(name);
-            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la alianza con <{name}>.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la alianza con <{name}>.", FuenteClan));
         });
     }
 
@@ -4786,7 +4804,7 @@ public sealed class PacketDispatcher
             var g = RequireGuildLeader(session, session.Player, announceNoGuild: true);
             if (g is null) return;
             g.PeaceOffers.Remove(name);
-            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la paz con <{name}>.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la paz con <{name}>.", FuenteClan));
         });
     }
 
@@ -5067,11 +5085,11 @@ public sealed class PacketDispatcher
             var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
             if (mine is null) return;
             var enemy = _world.GuildByName(enemyName);
-            if (enemy is null || !mine.Enemies.Contains(enemy.Name)) { session.Send(ServerMessages.ConsoleMsg("No estás en guerra con ese clan.", 0)); return; }
+            if (enemy is null || !mine.Enemies.Contains(enemy.Name)) { session.Send(ServerMessages.ConsoleMsg("No estás en guerra con ese clan.", FuenteClan)); return; }
             enemy.PeaceOffers[mine.Name] = proposal;
-            session.Send(ServerMessages.ConsoleMsg($"Ofreciste la paz a <{enemy.Name}>.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Ofreciste la paz a <{enemy.Name}>.", FuenteClan));
             foreach (var m in _world.GuildMembersOnline(enemy.Name))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"<{mine.Name}> ofrece la paz (el líder puede aceptarla).", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"<{mine.Name}> ofrece la paz (el líder puede aceptarla).", FuenteClan));
         });
     }
 
@@ -5083,7 +5101,7 @@ public sealed class PacketDispatcher
         {
             var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
             if (mine is null) return;
-            if (!mine.PeaceOffers.ContainsKey(offeringName)) { session.Send(ServerMessages.ConsoleMsg("Ese clan no te ofreció la paz.", 0)); return; }
+            if (!mine.PeaceOffers.ContainsKey(offeringName)) { session.Send(ServerMessages.ConsoleMsg("Ese clan no te ofreció la paz.", FuenteClan)); return; }
             var other = _world.GuildByName(offeringName);
             if (other is null) return;
             mine.PeaceOffers.Remove(offeringName);
@@ -5091,7 +5109,7 @@ public sealed class PacketDispatcher
             other.Enemies.Remove(mine.Name);
             PersistGuilds();
             foreach (var m in _world.GuildMembersOnline(mine.Name).Concat(_world.GuildMembersOnline(other.Name)))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡PAZ! Los clanes <{mine.Name}> y <{other.Name}> firmaron la paz.", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡PAZ! Los clanes <{mine.Name}> y <{other.Name}> firmaron la paz.", FuenteClan));
         });
     }
 
@@ -5120,14 +5138,14 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.ConsoleMsg("No estás casado.", 0)); return; }
+            if (p is null || string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.ConsoleMsg("No estás casado.", FuenteInfo)); return; }
             var spouse = _world.PlayerByName(p.SpouseName);
             if (spouse is not null && string.Equals(spouse.SpouseName, p.Name, StringComparison.OrdinalIgnoreCase))
             {
                 spouse.SpouseName = "";
-                spouse.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} se ha divorciado de ti.", 0));
+                spouse.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} se ha divorciado de ti.", FuenteInfo));
             }
-            session.Send(ServerMessages.ConsoleMsg($"Te divorciaste de {p.SpouseName}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Te divorciaste de {p.SpouseName}.", FuenteInfo));
             p.SpouseName = "";
         });
     }
@@ -5155,7 +5173,7 @@ public sealed class PacketDispatcher
             g.ElectionsOpen = true;
             g.Votes.Clear();
             foreach (var m in _world.GuildMembersOnline(g.Name))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"Se han abierto elecciones en el clan <{g.Name}>. Usa /VOTO <nombre>.", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"Se han abierto elecciones en el clan <{g.Name}>. Usa /VOTO <nombre>.", FuenteClan));
         });
     }
 
@@ -5191,20 +5209,26 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>Returns the caller's guild iff they are online and its leader; else null (with a message).</summary>
-    private Guild? RequireGuildLeader(ClientSession session, Player? p, bool announceNoGuild = false)
+    /// <summary>Returns the caller's guild iff they are online and its leader; else null (with a message).
+    ///
+    /// La FUENTE viaja desde el llamador y no está fija acá: casi todas las operaciones de clan rechazan con
+    /// <c>FONTTYPE_GUILD</c>, pero el <c>/CERRARCLAN</c> del original (HandleCloseGuild, Protocol.bas:16621)
+    /// contesta con <c>FONTTYPE_INFO</c>. Con la fuente cableada en el helper, ocho acciones seguían saliendo
+    /// del color equivocado aunque sus handlers ya estuvieran corregidos — el rechazo no lo emite el handler.</summary>
+    private Guild? RequireGuildLeader(ClientSession session, Player? p, bool announceNoGuild = false,
+                                      byte fuente = FuenteClan)
     {
         if (p is null) return null;
         if (string.IsNullOrEmpty(p.GuildName))
         {
             // VB6: la mayoria de las ops de clan callan sin pertenecer a uno, pero OpenElections/OfferPeace/
             // AcceptPeace SI responden "No perteneces a ningun clan." (v_AbrirElecciones / v_*Paz).
-            if (announceNoGuild) session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", 0));
+            if (announceNoGuild) session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", fuente));
             return null;
         }
         var g = _world.GuildByName(p.GuildName);
         if (g is null || !string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-        { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede hacer eso.", 0)); return null; }
+        { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede hacer eso.", fuente)); return null; }
         return g;
     }
 
@@ -5219,13 +5243,13 @@ public sealed class PacketDispatcher
             var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
             if (mine is null) return;
             var target = _world.GuildByName(targetName);
-            if (target is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", 0)); return; }
+            if (target is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
             if (string.Equals(target.Name, mine.Name, StringComparison.OrdinalIgnoreCase)) return;
             target.AllianceOffers[mine.Name] = proposal;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Ofreciste una alianza a <{target.Name}>.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Ofreciste una alianza a <{target.Name}>.", FuenteClan));
             foreach (var m in _world.GuildMembersOnline(target.Name))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"<{mine.Name}> te ofrece una alianza (el líder puede aceptarla).", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"<{mine.Name}> te ofrece una alianza (el líder puede aceptarla).", FuenteClan));
         });
     }
 
@@ -5237,15 +5261,15 @@ public sealed class PacketDispatcher
         {
             var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
             if (mine is null) return;
-            if (!mine.AllianceOffers.ContainsKey(offeringName)) { session.Send(ServerMessages.ConsoleMsg("Ese clan no te ofreció una alianza.", 0)); return; }
+            if (!mine.AllianceOffers.ContainsKey(offeringName)) { session.Send(ServerMessages.ConsoleMsg("Ese clan no te ofreció una alianza.", FuenteClan)); return; }
             var other = _world.GuildByName(offeringName);
-            if (other is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan ya no existe.", 0)); return; }
+            if (other is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan ya no existe.", FuenteClan)); return; }
             mine.AllianceOffers.Remove(offeringName);
             mine.Allies.Add(other.Name);
             other.Allies.Add(mine.Name);
             PersistGuilds();
             foreach (var m in _world.GuildMembersOnline(mine.Name).Concat(_world.GuildMembersOnline(other.Name)))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡ALIANZA! Los clanes <{mine.Name}> y <{other.Name}> son aliados.", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡ALIANZA! Los clanes <{mine.Name}> y <{other.Name}> son aliados.", FuenteClan));
         });
     }
 
@@ -5434,7 +5458,7 @@ public sealed class PacketDispatcher
     /// Con <paramref name="forzar"/> escribe sin esperar (apagado, backup).</summary>
     public void VolcarPersistenciaDiferida(bool forzar = false)
     {
-        if (!_clanesSucios && !_correoSucio) return;
+        if (!_clanesSucios && !_correoSucio && _world.RecordUsuarios == _recordGuardado) return;
         long ahora = Environment.TickCount64;
         if (!forzar && ahora - _ultimaPersistenciaMs < IntervaloPersistenciaMs) return;
         _ultimaPersistenciaMs = ahora;
@@ -5450,7 +5474,17 @@ public sealed class PacketDispatcher
             try { _db.SaveMailboxes(_world.AllMailboxes); _correoSucio = false; }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] correo: {ex.Message}"); }
         }
+        // El record de conectados: se escribe sólo cuando SUBIÓ, que es un puñado de veces en la vida de un
+        // servidor. Va por el mismo camino diferido para no meter un write a disco en el hilo del loop.
+        if (_world.RecordUsuarios != _recordGuardado)
+        {
+            try { _db.SaveRecordUsuarios(_world.RecordUsuarios); _recordGuardado = _world.RecordUsuarios; }
+            catch (Exception ex) { Console.Error.WriteLine($"[persistencia] record: {ex.Message}"); }
+        }
     }
+
+    /// <summary>Lo último que se persistió del record, para no reescribirlo en cada vuelta.</summary>
+    private int _recordGuardado = -1;
 
     /// <summary>EnviarCorreo (id 97): recipient, message, ObjIndex, Amount. Consumes the attached item from
     /// the sender and drops it in the recipient's mailbox (delivered now if online, else at their login).</summary>
@@ -5465,16 +5499,16 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (string.IsNullOrWhiteSpace(dest) || !_db.CharacterExists(dest))
-            { session.Send(ServerMessages.ConsoleMsg($"No existe el personaje {dest}.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg($"No existe el personaje {dest}.", FuenteInfo)); return; }
             if (string.Equals(dest, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("No puedes enviarte correo a ti mismo.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg("No puedes enviarte correo a ti mismo.", FuenteInfo)); return; }
             // CASILLA LLENA (VB6 Max_Correos = 10, Declares.bas:1281; el gate en CantSendCorreo,
             // mod_Correos.bas:134). Sin tope, `DeliverMail` acumulaba sin límite — y como cada operación de
             // correo re-serializa el diccionario ENTERO de buzones a JSON dentro del game loop (hilo único),
             // un bucle de envíos a una víctima era un DoS remoto además de un buzón inutilizable: `slot` es un
             // byte, así que a partir de la carta 256 nadie podía volver a tocarlas.
             if (_world.PeekMail(dest).Count >= GameLimits.MaxCorreos)
-            { session.Send(ServerMessages.ConsoleMsg($"{dest} no tiene más espacio en su casilla.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg($"{dest} no tiene más espacio en su casilla.", FuenteInfo)); return; }
             // EL CORREO CUESTA 1750 DE ORO (VB6 mod_Correos.bas:32-48). Es un sumidero de oro de la economía
             // —y de paso el limitador natural del spam— que acá no se cobraba: mandar cartas era gratis.
             // El original chequea ANTES de sacar el ítem y cobra DESPUÉS, con su UpdateGold.
@@ -5483,7 +5517,7 @@ public sealed class PacketDispatcher
             short attachObj = 0, attachAmt = 0;
             if (objIndex > 0 && amount > 0)
             {
-                if (CountItem(p, objIndex) < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes ese ítem para adjuntar.", 0)); return; }
+                if (CountItem(p, objIndex) < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes ese ítem para adjuntar.", FuenteInfo)); return; }
                 ConsumeItem(session, p, objIndex, amount);
                 attachObj = objIndex; attachAmt = amount;
             }
@@ -5491,10 +5525,10 @@ public sealed class PacketDispatcher
             session.Send(ServerMessages.UpdateGold(p.Gold)); // …y su WriteUpdateGold (:48)
             _world.DeliverMail(dest, new MailEntry(p.Name, message, attachObj, attachAmt));
             PersistMail();
-            session.Send(ServerMessages.ConsoleMsg($"Enviaste correo a {dest}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Enviaste correo a {dest}.", FuenteInfo));
             // If they're connected, notify them; they retrieve from the mailbox via Packets_Correo (or at login).
             var online = _world.PlayerByName(dest);
-            online?.Connection?.Send(ServerMessages.ConsoleMsg($"Tienes correo nuevo de {p.Name}. Usa /RETIRAR para recibirlo.", 0));
+            online?.Connection?.Send(ServerMessages.ConsoleMsg($"Tienes correo nuevo de {p.Name}. Usa /RETIRAR para recibirlo.", FuenteInfo));
             // VB6 mod_Correos.bas:68: además del aviso por consola se prende el INDICADOR de correo pendiente
             // (el "tenés carta" del cliente). Se apaga cuando lo retira — es un flag, no un mensaje.
             online?.Connection?.Send(ServerMessages.MensajeSigno(true));
@@ -5952,16 +5986,16 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (amount <= 0) { session.Send(ServerMessages.ConsoleMsg("Monto inválido.", 0)); return; }
-            if (p.Gold < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes suficiente oro.", 0)); return; }
+            if (amount <= 0) { session.Send(ServerMessages.ConsoleMsg("Monto inválido.", FuenteInfo)); return; }
+            if (p.Gold < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes suficiente oro.", FuenteInfo)); return; }
             var target = _world.PlayerByName(targetName);
-            if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("Destinatario inválido.", 0)); return; }
+            if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("Destinatario inválido.", FuenteInfo)); return; }
             p.Gold -= amount;
             target.Gold += amount;
             session.Send(ServerMessages.UpdateGold(p.Gold));                   // acá sólo cambió el oro
             target.Connection?.Send(ServerMessages.UpdateGold(target.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Transferiste {amount} de oro a {target.Name}.", 0));
-            target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te transfirió {amount} de oro.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Transferiste {amount} de oro a {target.Name}.", FuenteInfo));
+            target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te transfirió {amount} de oro.", FuenteInfo));
         });
     }
 
@@ -5994,12 +6028,13 @@ public sealed class PacketDispatcher
     {
         _loop.Enqueue(() =>
         {
-            var g = RequireGuildLeader(session, session.Player, announceNoGuild: true);
+            // El /CERRARCLAN es la excepción: rechaza con FONTTYPE_INFO, no con la del clan.
+            var g = RequireGuildLeader(session, session.Player, announceNoGuild: true, fuente: FuenteInfo);
             if (g is null) return;
             foreach (var member in _world.GuildMembersOnline(g.Name).ToList())
             {
                 member.GuildName = "";
-                member.Connection?.Send(ServerMessages.ConsoleMsg($"El clan <{g.Name}> ha sido disuelto.", 0));
+                member.Connection?.Send(ServerMessages.ConsoleMsg($"El clan <{g.Name}> ha sido disuelto.", FuenteInfo));
             }
             _world.RemoveGuild(g.Name);
             PersistGuilds();
@@ -6041,9 +6076,9 @@ public sealed class PacketDispatcher
             // El VB6 deriva la ciudad del mapa donde está el jugador (junto al sacerdote) con gate de facción;
             // el slice no modela los ejércitos (todo char es ciudadano), así que al menos se valida el rango de
             // ciudad (1..12) en vez de aceptar un id arbitrario del cliente.
-            if (city < 1 || city > 12) { session.Send(ServerMessages.ConsoleMsg("Ciudad invalida.", 0)); return; }
+            if (city < 1 || city > 12) { session.Send(ServerMessages.ConsoleMsg("Ciudad invalida.", FuenteInfo)); return; }
             p.HomeCity = city;
-            session.Send(ServerMessages.ConsoleMsg($"Elegiste la ciudad {city} como tu hogar.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Elegiste la ciudad {city} como tu hogar.", FuenteInfo));
         });
     }
 
@@ -6055,7 +6090,13 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var up = TimeSpan.FromMilliseconds(_loop.Tick * (long)GameLoop.TickMs);
-            session.Send(ServerMessages.ConsoleMsg($"El servidor lleva {(int)up.TotalHours}h {up.Minutes}m {up.Seconds}s en línea.", 0));
+            // El formato es el del original (VB6 HandleUpTime, Protocol.bas:5531): arma la frase de adentro
+            // hacia afuera y omite los tramos que valen cero, con "día" en singular cuando es uno solo.
+            string texto = $"{up.Seconds} segundos.";
+            if (up.TotalMinutes >= 1) texto = $"{up.Minutes} minutos, " + texto;
+            if (up.TotalHours >= 1) texto = $"{up.Hours} horas, " + texto;
+            if (up.TotalDays >= 1) texto = $"{up.Days} {(up.Days == 1 ? "día" : "días")}, " + texto;
+            session.Send(ServerMessages.ConsoleMsg($"Server Online: {texto}", FuenteInfo));
         });
     }
 
@@ -6137,10 +6178,10 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null || !Naming.IsValidName(name)) return;   // rechazo temprano (defensa en profundidad ante el store)
             if (string.Equals(name, p.Name, StringComparison.OrdinalIgnoreCase)) return;
-            if (!_db.CharacterExists(name)) { session.Send(ServerMessages.ConsoleMsg($"No existe {name}.", 0)); return; }
-            if (p.Friends.Any(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase))) { session.Send(ServerMessages.ConsoleMsg($"{name} ya es tu amigo.", 0)); return; }
+            if (!_db.CharacterExists(name)) { session.Send(ServerMessages.ConsoleMsg($"No existe {name}.", FuenteInfo)); return; }
+            if (p.Friends.Any(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase))) { session.Send(ServerMessages.ConsoleMsg($"{name} ya es tu amigo.", FuenteInfo)); return; }
             p.Friends.Add(name);
-            session.Send(ServerMessages.ConsoleMsg($"Agregaste a {name} a tu lista de amigos.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Agregaste a {name} a tu lista de amigos.", FuenteInfo));
         });
     }
 
@@ -6165,7 +6206,7 @@ public sealed class PacketDispatcher
             if (p is null) return;
             var online = p.Friends.Where(f => _world.PlayerByName(f) is not null).ToList();
             session.Send(ServerMessages.ConsoleMsg(online.Count == 0
-                ? "Ninguno de tus amigos está en línea." : $"Amigos en línea: {string.Join(", ", online)}", 0));
+                ? "Ninguno de tus amigos está en línea." : $"Amigos en línea: {string.Join(", ", online)}", FuenteInfo));
         });
     }
 
@@ -6180,9 +6221,9 @@ public sealed class PacketDispatcher
             foreach (var f in p.Friends)
             {
                 var friend = _world.PlayerByName(f);
-                if (friend is not null) { friend.Connection?.Send(ServerMessages.ConsoleMsg($"[Amigo] {p.Name}> {msg}", 0)); sent++; }
+                if (friend is not null) { friend.Connection?.Send(ServerMessages.ConsoleMsg($"[Amigo] {p.Name}> {msg}", FuenteAmigos)); sent++; }
             }
-            session.Send(ServerMessages.ConsoleMsg(sent > 0 ? $"Mensaje enviado a {sent} amigo(s)." : "Ningún amigo en línea.", 0));
+            session.Send(ServerMessages.ConsoleMsg(sent > 0 ? $"Mensaje enviado a {sent} amigo(s)." : "Ningún amigo en línea.", FuenteAmigos));
         });
     }
 
@@ -6224,15 +6265,63 @@ public sealed class PacketDispatcher
     }
 
     /// <summary>RequestStats (id 70): reports a summary of the player's stats.</summary>
+    /// <summary>El <c>/EST</c>: la FICHA del personaje (VB6 <c>SendUserStatsTxt</c>, Modulo_UsUaRiOs.bas:897).
+    ///
+    /// Son DOCE líneas, no una. Acá se mandaba un solo <c>ConsoleMsg</c> resumido —"Nivel N, HP x/y, Maná
+    /// a/b, Oro g, Clan c"— y encima con la fuente 0 en vez de la <c>FONTTYPE_INFO</c> del original, así que
+    /// el jugador veía una línea del color equivocado donde debía ver su hoja entera: golpe con el arma
+    /// puesta, defensa de cuerpo y de cabeza por separado, posición, y los cinco dados.
+    ///
+    /// Lo destapó el barrido del oráculo el 2026-08-08, recién después de afinarlo para que compare la CUENTA
+    /// de paquetes y el FontIndex: hasta ahí, "el VB6 manda 9 ConsoleMsg y nosotros 1" daba OK porque los dos
+    /// mandaban "un ConsoleMsg".</summary>
     private void HandleRequestStats(ClientSession session)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            session.Send(ServerMessages.ConsoleMsg(
-                $"Estadísticas — Nivel {p.Level}, HP {p.Hp}/{p.MaxHp}, Maná {p.Mana}/{p.MaxMana}, " +
-                $"Oro {p.Gold}, Clan {(string.IsNullOrEmpty(p.GuildName) ? "ninguno" : p.GuildName)}.", 0));
+            void Linea(string t) => session.Send(ServerMessages.ConsoleMsg(t, FuenteInfo));
+
+            Linea($"Estadísticas de: {p.Name}");
+            Linea($"Nivel: {p.Level}  EXP: {(long)p.Exp}/{p.Elu}");
+            Linea($"Salud: {p.Hp}/{p.MaxHp}  Maná: {p.Mana}/{p.MaxMana}  Energía: {p.Stamina}/{p.MaxStamina}");
+
+            // El golpe muestra ENTRE PARÉNTESIS el del arma, y sólo si hay una puesta.
+            var arma = Equipment.EquippedOfCategory(p, _data, 1);
+            Linea(arma is not null
+                ? $"Menor Golpe/Mayor Golpe: {p.MinHit}/{p.MaxHit} ({arma.MinHit}/{arma.MaxHit})"
+                : $"Menor Golpe/Mayor Golpe: {p.MinHit}/{p.MaxHit}");
+
+            // Defensa de CUERPO: armadura + escudo si hay escudo, sólo armadura si no, y "0" si va desnudo.
+            // El original imprime literalmente `0` —sin el par min/max— en esa última rama.
+            var armadura = Equipment.EquippedOfCategory(p, _data, 2);
+            var escudo = Equipment.EquippedOfCategory(p, _data, 4);
+            if (armadura is null) Linea("(CUERPO) Mín Def/Máx Def: 0");
+            else if (escudo is not null)
+                Linea($"(CUERPO) Mín Def/Máx Def: {armadura.MinDef + escudo.MinDef}/{armadura.MaxDef + escudo.MaxDef}");
+            else
+                Linea($"(CUERPO) Mín Def/Máx Def: {armadura.MinDef}/{armadura.MaxDef}");
+
+            var casco = Equipment.EquippedOfCategory(p, _data, 3);
+            Linea(casco is not null
+                ? $"(CABEZA) Mín Def/Máx Def: {casco.MinDef}/{casco.MaxDef}"
+                : "(CABEZA) Mín Def/Máx Def: 0");
+
+            // Clan y liderazgo: las dos líneas SÓLO si corresponde, como el original.
+            if (!string.IsNullOrEmpty(p.GuildName))
+            {
+                Linea($"Clan: {p.GuildName}");
+                if (string.Equals(_world.GuildByName(p.GuildName)?.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+                    Linea("Status: Líder");
+            }
+
+            var enLinea = TimeSpan.FromMilliseconds(Environment.TickCount64 - session.ConectadoDesdeMs);
+            Linea($"Logeado hace: {(int)enLinea.TotalHours}:{enLinea.Minutes}:{enLinea.Seconds}");
+            Linea($"Oro: {p.Gold}  Posición: {p.Pos.X},{p.Pos.Y} en mapa {p.Pos.Map}");
+            Linea($"Dados: {p.Attributes[GameLimits.AttrFuerza]}, {p.Attributes[GameLimits.AttrAgilidad]}, " +
+                  $"{p.Attributes[GameLimits.AttrInteligencia]}, {p.Attributes[GameLimits.AttrCarisma]}, " +
+                  $"{p.Attributes[GameLimits.AttrConstitucion]}");
         });
     }
 
@@ -6248,8 +6337,13 @@ public sealed class PacketDispatcher
             // 1 byte y recibía la lista completa de nicks conectados — fuga de datos y amplificación ~2500:1
             // (2,5 KB de salida por byte de entrada), más un string.Join O(n) por paquete en el game loop.
             if (session.Player is null) return;
-            var names = string.Join(", ", _world.Players.Select(pl => pl.Name));
-            session.Send(ServerMessages.ConsoleMsg($"En línea ({_world.OnlineCount}): {names}", 0));
+            // DOS líneas, como el original (VB6 HandleOnline, Protocol.bas:4940): primero el conteo con el
+            // récord, y la lista de nombres SÓLO si hay alguien. Acá iba una sola línea con otro formato y
+            // con la fuente 0 en vez de FONTTYPE_INFO.
+            session.Send(ServerMessages.ConsoleMsg(
+                $"Número de usuarios: {_world.OnlineCount} - Record de usuarios: {_world.RecordUsuarios}", FuenteInfo));
+            if (_world.OnlineCount > 0)
+                session.Send(ServerMessages.ConsoleMsg(string.Join(", ", _world.Players.Select(pl => pl.Name)), FuenteInfo));
         });
     }
 
@@ -6266,15 +6360,15 @@ public sealed class PacketDispatcher
             {
                 p.Resting = !p.Resting;
                 session.Send(ServerMessages.RestOK());
-                session.Send(ServerMessages.ConsoleMsg(p.Resting ? "Te acomodas junto a la fogata y comenzas a descansar." : "Te levantas.", 0));
+                session.Send(ServerMessages.ConsoleMsg(p.Resting ? "Te acomodas junto a la fogata y comenzas a descansar." : "Te levantas.", FuenteInfo));
             }
             else if (p.Resting)
             {
                 p.Resting = false;
                 session.Send(ServerMessages.RestOK());
-                session.Send(ServerMessages.ConsoleMsg("Te levantas.", 0));
+                session.Send(ServerMessages.ConsoleMsg("Te levantas.", FuenteInfo));
             }
-            else session.Send(ServerMessages.ConsoleMsg("No hay ninguna fogata junto a la cual descansar.", 0));
+            else session.Send(ServerMessages.ConsoleMsg("No hay ninguna fogata junto a la cual descansar.", FuenteInfo));
         });
     }
 

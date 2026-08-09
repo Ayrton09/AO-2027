@@ -70,6 +70,10 @@ public sealed class ClientSession : IConnection
         _ = Task.Run(BucleDeSalidaAsync);   // el escritor arranca con la sesión y muere con ella
     }
 
+    /// <summary>Cuándo se conectó esta sesión (<c>Environment.TickCount64</c>). Lo usa el "Logeado hace:" de
+    /// la ficha del /EST, que el original saca de <c>UserList().ConnectionDetails</c>.</summary>
+    public long ConectadoDesdeMs { get; } = Environment.TickCount64;
+
     /// <summary>Switch the inbound XOR key once the session key is negotiated (after Logged).</summary>
     public void SetInboundKey(byte key) => _inboundKey = key;
 

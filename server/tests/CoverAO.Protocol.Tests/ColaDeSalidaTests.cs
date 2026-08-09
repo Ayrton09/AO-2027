@@ -51,7 +51,7 @@ public class ColaDeSalidaTests : IDisposable
         public void EsperarQueTermine()
         {
             Liberar.Set();
-            SpinWait.SpinUntil(() => Cerrado, TimeSpan.FromSeconds(15));
+            SpinWait.SpinUntil(() => Cerrado, EsperaDelEscritor.Plazo);
         }
     }
 
@@ -83,7 +83,7 @@ public class ColaDeSalidaTests : IDisposable
             $"mandar 50 paquetes a un cliente trabado tardó {reloj.ElapsedMilliseconds} ms: alguien está esperando al socket");
         // Y no es que se hayan tirado: en cuanto el cliente drena, salen.
         t.Liberar.Set();
-        SpinWait.SpinUntil(() => t.Enviados == 50, TimeSpan.FromSeconds(10));
+        EsperaDelEscritor.Hasta(() => t.Enviados == 50);
         Assert.Equal(50, t.Enviados);
         sesion.Close("fin del test");
         t.EsperarQueTermine();
@@ -98,7 +98,7 @@ public class ColaDeSalidaTests : IDisposable
         var t = new TransporteOrdenado(recibidos);
         var sesion = new ClientSession(t, _dispatcher);
         for (int i = 0; i < 200; i++) sesion.Send(new byte[] { (byte)i });
-        SpinWait.SpinUntil(() => recibidos.Count == 200, TimeSpan.FromSeconds(10));
+        EsperaDelEscritor.Hasta(() => recibidos.Count == 200);
         Assert.Equal(200, recibidos.Count);
         Assert.Equal(Enumerable.Range(0, 200).Select(i => (byte)i), recibidos);
         sesion.Close("fin del test");
@@ -127,7 +127,11 @@ public class ColaDeSalidaTests : IDisposable
         reloj.Stop();
 
         Assert.True(sesion.Cerrada, "con la cola llena, la sesión tiene que cerrarse");
-        Assert.True(reloj.ElapsedMilliseconds < 2000,
+        // El plazo distingue "no espera" de "espera": lo que este test caza es un `Send` que se bloquee en el
+        // transporte, y ahí cada paquete pagaría `SendTimeoutMs` (3 s) — con 8000 paquetes, horas. Un techo
+        // de 10 s deja pasar cualquier lentitud de máquina cargada y sigue enrojeciendo el defecto real. Con
+        // los 2 s que tenía, el rojo lo podía producir el planificador y no el producto.
+        Assert.True(reloj.ElapsedMilliseconds < 10_000,
             $"llenar la cola tardó {reloj.ElapsedMilliseconds} ms: no debería haber ninguna espera");
         t.EsperarQueTermine();
     }
@@ -147,7 +151,7 @@ public class ColaDeSalidaTests : IDisposable
         // por una sola deja el test leyendo un estado a medio hacer, y de las dos formas da un rojo mentiroso:
         // esperando sólo el cierre, la comparación corre con la lista todavía vacía; esperando sólo la
         // entrega, la bandera de orden se lee en su valor inicial porque el cierre aún no ocurrió.
-        SpinWait.SpinUntil(() => { lock (recibidos) return recibidos.Count == 1 && t.Cerrado; }, TimeSpan.FromSeconds(10));
+        EsperaDelEscritor.Hasta(() => { lock (recibidos) return recibidos.Count == 1 && t.Cerrado; });
         lock (recibidos) Assert.Equal(new byte[] { 42 }, recibidos);
         Assert.True(t.Cerrado, "el socket tiene que terminar bajando");
         Assert.True(t.PrimerCierreTrasMandar, "el último paquete tiene que salir ANTES del cierre");

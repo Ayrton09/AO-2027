@@ -86,7 +86,7 @@ public class FloodTests : IDisposable
         Assert.Equal(1000, t.Entregados);   // cortó en la primera tanda; sin techo habría pedido las 4000
         // El motivo llega por el escritor, más tarde que el corte. Se lo espera con paciencia acotada porque es
         // lo que le dice al operador POR QUÉ se le fue un jugador; el corte en sí ya quedó probado arriba.
-        SpinWait.SpinUntil(() => t.Motivo is not null, TimeSpan.FromSeconds(10));
+        EsperaDelEscritor.Hasta(() => t.Motivo is not null);
         Assert.Contains("flood", t.Motivo ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -100,7 +100,12 @@ public class FloodTests : IDisposable
         // esperas se aplasten a cero, no alcanza para vaciar el cubo. Así el verde no depende del reloj.
         var t = new TransporteQueEntrega(total: 90, porTanda: 3, msEntreTandas: 100);
         var sesion = new ClientSession(t, _dispatcher, paquetesPorSegundo: 50, rafagaDePaquetes: 200);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        // EL PLAZO ES UNA RED CONTRA EL CUELGUE, no algo que se esté afirmando. Son 30 tandas de 100 ms = 3 s
+        // de trabajo nominal, y suelto tarda exactamente eso. Estaba en 15 s y **se agotó corriendo los 588
+        // tests en paralelo**: con el pool saturado cada `Task.Delay(100)` se estira, el token cancela el
+        // bucle a mitad y `Entregados` queda corto — o sea, un rojo por el reloj de la máquina y no por el
+        // techo de cadencia, que es lo único que este test juzga.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await sesion.ReceiveLoopAsync(cts.Token);   // termina al quedarse callado, no por el techo
 
         Assert.Equal(t.Total, t.Entregados);   // el bucle siguió pidiendo hasta el final: nunca se lo cortó

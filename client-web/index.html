@@ -1632,9 +1632,37 @@
     const chatMatch = (t, f) => f === 'all' ? true
       : f === 'combate' ? /golpe|pega|daño|dañas|mueres|matad|fallas|esquiv|crítico|impact|muert|experiencia|nivel|paraliz/i.test(t)
       : /^\s*\[|global|grita/i.test(t);
-    function log(msg, color) {
+    // LAS FUENTES DEL ORIGINAL. El último byte del `ConsoleMsg` (y del `LocaleMsg`) es el COLOR con el que
+    // el juego pinta esa línea: el cliente VB6 lo usa como índice directo en `fonttypes.ind`
+    // (Herramientas/Comprensor/Descomprimido/init/fonttypes.ind → r~g~b~negrita~cursiva), que es de dónde
+    // salen estos 34 valores. Nosotros lo decodificábamos y lo tirábamos, así que el clan, la info del
+    // servidor y el mensaje de un amigo salían todos del mismo blanco de charla.
+    //
+    // OJO EL ÍNDICE: el enum del servidor (`FontTypeNames`, Protocol.bas:281) arranca en 0 y el .ind en 1,
+    // así que la tentación es sumar uno. No va: el byte entra CRUDO. La prueba es el `FONTTYPE_SERVER` = 8,
+    // que es 8 en las dos puntas (el cliente lo compara para anteponer "Servidor> ") y cae en la entrada 8
+    // del .ind, que es verde — y los avisos del servidor en el original son verdes.
+    const FUENTES = [null].concat([
+      [255,255,255,0,0], [255,0,0,1,0],     [32,51,223,1,1],   [65,190,156,0,0], [0,255,0,0,0],
+      [255,255,255,1,0], [255,255,255,0,1], [0,185,0,0,0],     [63,185,0,0,0],   [255,0,0,0,0],
+      [204,193,115,1,0], [204,193,115,0,1], [51,183,247,1,0],  [61,142,36,1,1],  [132,219,130,1,0],
+      [124,167,166,1,0], [228,199,27,0,0],  [171,214,205,1,0], [0,255,0,1,0],    [0,128,128,1,0],
+      [0,128,128,0,0],   [182,226,29,0,0],  [139,248,244,0,1], [3,146,38,0,0],   [191,6,6,0,0],
+      [0,185,0,0,0],     [3,146,38,0,1],    [255,140,4,0,0],   [65,190,156,0,1], [185,105,60,0,0],
+      [100,80,150,0,1],  [128,128,0,0,1],   [251,168,70,0,1],  [75,172,217,0,1],
+    ].map(([r, g, b, n, c]) => ({ c: `rgb(${r},${g},${b})`, n, i: c })));
+
+    function log(msg, estilo) {
       const d = document.createElement('div');
-      d.textContent = msg; if (color) d.style.color = color; d._t = msg;
+      d.textContent = msg; d._t = msg;
+      // Un string sigue siendo un color suelto (lo usan los mensajes que fabrica el cliente); un objeto es
+      // una fuente del original, con su negrita y su cursiva.
+      if (typeof estilo === 'string') d.style.color = estilo;
+      else if (estilo) {
+        d.style.color = estilo.c;
+        if (estilo.n) d.style.fontWeight = 'bold';
+        if (estilo.i) d.style.fontStyle = 'italic';
+      }
       d.style.display = chatMatch(msg, chatFilter) ? '' : 'none';
       chatEl.appendChild(d);
       while (chatEl.childElementCount > 400) chatEl.removeChild(chatEl.firstChild);   // acota memoria
@@ -2710,7 +2738,7 @@
           });
           if (/te (golpea|pega|prod)/i.test(t)) myHitAt = Date.now();
           if (f.msgId === 391) laborando = false;   // "Dejas de trabajar" al cortar la faena con otra accion
-          log(t);
+          log(t, FUENTES[f.font]);
           break;
         }
         // FX de un hechizo de AREA: van a un TILE, no a un personaje, asi que no hay `chars` donde colgarlos.
@@ -2778,7 +2806,7 @@
           { const m = /[Bb][oó]veda:\s*(\d+)/.exec(f.chat); if (m && bankOpen) { bankGold = +m[1]; renderBank(); } }
           // Got hit (an NPC/player struck us) → brief red flash on our tile.
           if (/te (golpea|pega|prod)/i.test(f.chat)) myHitAt = Date.now();
-          log(f.chat);
+          log(f.chat, FUENTES[f.font]);
           break;
       }
     }
