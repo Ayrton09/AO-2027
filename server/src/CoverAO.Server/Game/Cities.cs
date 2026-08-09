@@ -47,6 +47,13 @@ public static class Cities
     public static readonly WorldPos Prision = new(47, 53, 32);
     public static readonly WorldPos Libertad = new(47, 52, 59);
 
+    /// <summary>Intermundia (Ciudades.dat sección INTERMUNDIA; <c>eCiudad.cIntermundia</c> = 15). No es una
+    /// ciudad-hogar: nadie nace ni resucita acá, y por eso no está en las tablas de arriba —las tres últimas
+    /// entradas del enum (Prisión, Libertad, Intermundia) son destinos de warp, no tierras natales. Es adonde
+    /// lleva el Scroll a Intermundia, y el mapa está exceptuado del drop al morir junto con la cárcel
+    /// (General.bas:1879).</summary>
+    public static readonly WorldPos Intermundia = new(49, 50, 50);
+
     /// <summary>Tile donde nace un personaje de esa tierra natal (fallback: Ullathorpe).</summary>
     public static WorldPos SpawnTile(byte city) => Spawn.TryGetValue(city, out var p) ? p : Spawn[Ullathorpe];
 

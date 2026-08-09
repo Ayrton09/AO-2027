@@ -909,6 +909,18 @@ public sealed class PacketDispatcher
                 session.Send(ServerMessages.PosUpdate(from.X, from.Y));
                 return;
             }
+            // ANTI-ESCAPE: recién agredido no se mapea (VB6 Modulo_UsUaRiOs.bas:731). El gate mira el tile DESTINO
+            // y rebota ANTES de mover — el jugador se queda donde estaba, no pisa la salida y vuelve a caer. Un
+            // MUERTO sí pasa: el original mete el aviso adentro de un `If .flags.Muerto = 0`, así que el fantasma
+            // puede irse del mapa donde lo mataron.
+            long faltan = p.MapeoBloqueadoHastaTick - _loop.Tick;
+            if (faltan > 0 && p.IsAlive && _data.MapExits.ContainsKey((destTile.Map, destTile.X, destTile.Y)))
+            {
+                int segundos = (int)Math.Ceiling(faltan * GameLoop.TickMs / 1000.0);
+                session.Send(ServerMessages.LocaleMsg(488, segundos.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                session.Send(ServerMessages.PosUpdate(from.X, from.Y));
+                return;
+            }
             p.Pos = new WorldPos(from.Map, nx, ny);
             session.Send(ServerMessages.PosUpdate(nx, ny));                                  // self
             // Acá había un `RevealHidden(p)` con el comentario "caminar rompe el ocultamiento (VB6
@@ -5178,12 +5190,41 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
     }
 
+    /// <summary>Cabeza al azar para las pociones de cambio de cara y de sexo. La tabla —que NO es la de crear
+    /// personajes— vive en <see cref="Equipment.HeadRangeDePocion"/> con el porqué.</summary>
+    private short CabezaAlAzar(byte race, byte gender)
+    {
+        var (lo, hi) = Equipment.HeadRangeDePocion(race, gender);
+        return (short)_rng.Next(lo, hi + 1);       // RandomNumber del VB6 incluye los dos extremos
+    }
+
+    /// <summary>¿Los dos están peleando DENTRO de la arena? (VB6 <c>TriggerZonaPelea</c> = <c>TRIGGER6_PERMITE</c>,
+    /// SistemaCombate.bas:2065: el permiso sale sólo si el trigger del atacante y el de la víctima son AMBOS
+    /// ZONAPELEA; uno adentro y otro afuera da PROHIBE.) Un duelo de arena no tiene ninguna consecuencia del
+    /// mundo real: no vuelve criminal a nadie, no cuenta frags y no traba las salidas del mapa.</summary>
+    private bool DueloDeArena(Player a, Player b) =>
+        _data.IsArena(a.Pos.Map, a.Pos.X, a.Pos.Y) && _data.IsArena(b.Pos.Map, b.Pos.X, b.Pos.Y);
+
     /// <summary>Atacar a un objetivo LEGAL (ciudadano/Armada) sin provocación te vuelve criminal y te expulsa del
     /// ejército — el "seguro" del AO clásico. Exceptúa a los enemigos de facción sancionados (Armada↔Caos), a los
     /// ya-criminales/Caos y a los clanes en guerra. Se aplica IDÉNTICO en melee y en hechizos de daño: antes vivía
-    /// sólo en el melee, así que matar aliados con magia no penaba (canilla de PK "limpio").</summary>
+    /// sólo en el melee, así que matar aliados con magia no penaba (canilla de PK "limpio").
+    ///
+    /// <para>Es el <c>UsuarioAtacadoPorUsuario</c> del original (SistemaCombate.bas:1442) y por eso hace también
+    /// lo OTRO que ese Sub hace en toda agresión: trabar las salidas de mapa siete segundos a los dos. Va acá y
+    /// no en cada call site justamente porque el original tiene un solo Sub — repartirlo era garantizar que
+    /// alguna de las siete vías de agresión se quedara sin marcar.</para></summary>
     private void FlagCriminalIfLegalTarget(ClientSession session, Player p, Player target)
     {
+        // La arena está exceptuada de TODO el Sub, no sólo de la parte criminal: es el primer `Exit Sub` del
+        // original (:1451), antes que cualquier otra cosa.
+        if (DueloDeArena(p, target)) return;
+        // Anti-escape: ni el agredido ni el agresor pueden mapear por 7 segundos. Se marca ANTES de saber si el
+        // golpe entró — el original llama a este Sub antes de `UsuarioImpacto` (SistemaCombate.bas:1193), así que
+        // errarle también te traba.
+        long trabaMapeo = _loop.Tick + TicksAntiMapeo;
+        p.MapeoBloqueadoHastaTick = trabaMapeo;
+        target.MapeoBloqueadoHastaTick = trabaMapeo;
         // Bandos enfrentados del VB6: Caos ↔ (Armada|Milicia), e Imperio ↔ República (Armada ↔ Milicia). Entre
         // ellos el combate está sancionado y no penaliza.
         bool pEjercito = p.IsArmada || p.IsMilicia, tEjercito = target.IsArmada || target.IsMilicia;
@@ -6844,13 +6885,17 @@ public sealed class PacketDispatcher
         attacker.UsersKilled++;
         // Contadores de facción por bando de la víctima (VB6 ContarMuerte, Modulo_UsUaRiOs.bas:1473). ANTES de contar
         // hay gates anti-farm que hacen Exit Sub: (1) nivel del atacante > víctima+10 → LocaleMsg(330) y no cuenta;
-        // (2) víctima newbie (ELV<=15); (3) víctima desnuda (sin armadura). El gate (4) de arena/TriggerZonaPelea no
-        // aplica: el slice no modela zonas de pelea. La víctima "legal" (ciudadano/Armada) suma a KillsLegales; la
-        // "criminal/caos" a KillsCriminales; el Caos además a KillsCaos (para que el bando del Caos cuente todos menos Caos).
+        // (2) víctima newbie (ELV<=15); (3) víctima desnuda (sin armadura); (4) los dos en la ARENA (:1493). La
+        // víctima "legal" (ciudadano/Armada) suma a KillsLegales; la "criminal/caos" a KillsCriminales; el Caos
+        // además a KillsCaos (para que el bando del Caos cuente todos menos Caos).
+        //
+        // El gate (4) estaba anotado acá como "no aplica: el slice no modela zonas de pelea" — cierto cuando se
+        // escribió y falso desde que se portó ZONAPELEA. Sin él la arena es una fábrica de puntos de facción: dos
+        // amigos se matan por turnos donde morir no cuesta nada y suben el rango del ejército gratis.
         bool farmeoDeNivel = attacker.Level > target.Level + 10;
         if (farmeoDeNivel) attackerSession.Send(ServerMessages.LocaleMsg(330));
         bool victimaDesnuda = Equipment.EquippedOfCategory(target, _data, 2) is null;
-        if (!farmeoDeNivel && target.Level > GameLimits.NewbieMaxLevel && !victimaDesnuda)
+        if (!farmeoDeNivel && target.Level > GameLimits.NewbieMaxLevel && !victimaDesnuda && !DueloDeArena(attacker, target))
         {
             // VB6 ContarMuerte:1496-1503: un contador por bando de la víctima (cada ejército suma un subconjunto).
             if (target.IsCitizen) attacker.CiudadanosMatados++;
@@ -7845,8 +7890,70 @@ public sealed class PacketDispatcher
                     effect = string.Join(", ", aplicados);
                     break;
                 }
+                case 6: // Scroll a Intermundia (VB6 InvUsuario.bas:1644) — objeto 498
+                {
+                    // El original NO avisa nada cuando la traba está puesta: si TiempoDeMapeo > 0 se saltea el
+                    // warp y cae igual al consumo de abajo. O sea que el scroll SE GASTA sin teletransportar.
+                    // Se porta tal cual, incluido el silencio: es la misma traba anti-escape que la baldosa de
+                    // salida, y avisar acá sería mejorar el original a espaldas de quien conoce el bug.
+                    if (p.MapeoBloqueadoHastaTick <= _loop.Tick)
+                        TeleportTo(session, p, Cities.Intermundia);
+                    effect = "Intermundia";
+                    break;
+                }
+                case 7: // Poción mágica de cambio de cara (VB6 ChangeHead, InvUsuario.bas:1650) — objeto 504
+                {
+                    if (p.Navigating) { session.Send(ServerMessages.LocaleMsg(20)); return; }
+                    if (p.Mounted) { session.Send(ServerMessages.LocaleMsg(21)); return; }
+                    // Las DOS cabezas, como el original (:1934-1935). La `OrigChar.Head` no es decoración: es la
+                    // cabeza VIVA, la que se restaura al revivir y la que se escribe en el .chr. Tocando sólo
+                    // `Char.Head` la cara nueva duraba hasta el primer relogueo o la primera muerte.
+                    p.Head = p.OrigHead = CabezaAlAzar(p.Race, p.Gender);
+                    // El VB6 manda el GRANULAR (slot 2 = cabeza), no el CharacterChange entero: el que mira sólo
+                    // cambia la cabeza del muñeco y le quedan el cuerpo y el arma que ya tenía dibujados.
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChangeSlot(p.CharIndex, p.Head, 2));
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.CreateFX(p.CharIndex, 30, 0));
+                    effect = $"cabeza {p.Head}";
+                    break;
+                }
+                case 8: // Poción mágica de cambio de sexo (VB6 DarCuerpoNuevo, InvUsuario.bas:1665) — objeto 505
+                {
+                    if (p.Navigating) { session.Send(ServerMessages.LocaleMsg(20)); return; }
+                    if (p.Mounted) { session.Send(ServerMessages.LocaleMsg(21)); return; }
+                    // Desequipar TODO va primero y no es un detalle de higiene: el cuerpo nuevo es el DESNUDO de
+                    // la raza en el género nuevo, así que dejar la armadura puesta pintaría un cuerpo vestido con
+                    // el gráfico del otro sexo.
+                    UnequipAll(p);
+                    // Las cinco auras se apagan, pero el original DIFUNDE una sola: `AuraToChar(charIndex, 0, 1)`
+                    // por el arma (:1971). Las otras cuatro las pone en 0 en su estructura y no avisa a nadie —
+                    // rareza de la fuente que se porta igual, porque el `CharacterCreate` de más abajo ya manda
+                    // el estado real y quien llegue después las ve bien de todos modos.
+                    p.WeaponAura = 0; p.BodyAura = 0; p.ShieldAura = 0; p.HelmetAura = 0; p.RingAura = 0;
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.AuraToChar(p.CharIndex, 0, 1));
+                    p.Gender = p.Gender == 2 ? (byte)1 : (byte)2;   // eGenero: Hombre=1, Mujer=2
+                    p.Head = p.OrigHead = CabezaAlAzar(p.Race, p.Gender);   // ídem: la cabeza VIVA también
+                    p.Body = Equipment.NakedBody(p.Race, p.Gender);
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));   // VB6 ChangeUserCharTodo
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.CreateFX(p.CharIndex, 30, 0));
+                    effect = p.Gender == 2 ? "ahora es mujer" : "ahora es hombre";
+                    break;
+                }
+                case 9: // Poción mágica de Nhareth (VB6 InvUsuario.bas:1678) — objeto 506
+                {
+                    // Partícula 23 PERMANENTE (el -1 del original), y sólo si no tiene ninguna puesta: con una
+                    // encima el VB6 hace `Exit Sub` y la poción NI SIQUIERA SE GASTA. Por eso es `return` y no
+                    // `break` — un `break` se la comería sin darle nada.
+                    if (p.ParticulaFx != 0) return;
+                    p.ParticulaFx = 23;
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, 23, -1, false));
+                    effect = "aura de Nhareth";
+                    break;
+                }
                 default:
-                    session.Send(ServerMessages.ConsoleMsg("Esa poción todavía no tiene efecto.", FuenteInfo)); return;
+                    // Los SubTipo 10, 11 y 12 del obj.dat (Scroll x2 Experiencia, x2 Oro y del Trueno) caen acá y
+                    // está bien: son data sin código TAMBIÉN en el original —su Select Case salta del 9 al 13—,
+                    // o sea ítems que el servidor de origen tampoco sabía usar. Lo que no se porta es lo muerto.
+                    session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", FuenteInfo)); return;
             }
 
             inv.Amount -= 1;
@@ -8393,6 +8500,14 @@ public sealed class PacketDispatcher
     public const long AttrBuffDurationTicks = 1200;
     public const long AttrDebuffDurationTicks = 700;
     public const long InvisibilityDurationTicks = 500;
+
+    /// <summary>Traba de las salidas de mapa tras un ataque PvP (VB6 <c>TiempoDeMapeo = 7</c>).
+    ///
+    /// <para>Acá el 7 SÍ son segundos, al revés que los de arriba: este contador no lo baja el loop de 40 ms sino
+    /// <c>PasarSegundo</c>, que cuelga del timer <c>Auditoria</c> de frmMain (Interval = 1000). Dos contadores
+    /// del mismo <c>Counters</c> con unidades distintas según quién los decremente — por eso se cita el timer y
+    /// no el número.</para></summary>
+    public const long TicksAntiMapeo = 7 * (1000L / GameLoop.TickMs);   // 7 s → 175 vueltas
 
     // Gráficos de barco (Declares.bas iGraficos): iBarca = 84, iFragataFantasmal = 87 (muerto navegando).
     public const short BoatBody = 84;

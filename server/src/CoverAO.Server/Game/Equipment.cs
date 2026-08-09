@@ -103,6 +103,35 @@ public static class Equipment
         _ => null,
     };
 
+    /// <summary>Rango de cabezas de las POCIONES de cambio de cara y de sexo (VB6 <c>ChangeHead</c>,
+    /// InvUsuario.bas:1886, y el mismo bloque repetido dentro de <c>DarCuerpoNuevo</c>:2007).
+    ///
+    /// <para>Existe aparte de <see cref="HeadRange"/> porque los dos bloques del original NO dicen lo mismo: en
+    /// las cuatro razas masculinas que no son humano ni orco discrepan —elfo 101‑121 al crear contra 101‑120 en
+    /// la poción, drow 202‑212 contra 201‑213, gnomo 401‑409 contra 401‑410, enano 301‑315 contra 301‑313—. O
+    /// sea que la poción puede dar una cabeza que el creador de personajes rechazaría, y al revés. Es una
+    /// inconsistencia de la fuente, no un error de transcripción, y por eso NO se unifican: unificarlas sería
+    /// elegir una de las dos y cambiarle el juego a alguien.</para></summary>
+    public static (short Min, short Max) HeadRangeDePocion(byte race, byte gender) => gender == 2
+        ? race switch                          // Mujer — acá los dos bloques sí coinciden
+        {
+            2 => ((short)170, (short)189),     // Elfo
+            3 => ((short)270, (short)278),     // Drow
+            4 => ((short)470, (short)481),     // gnomo
+            5 => ((short)370, (short)373),     // enano
+            6 => ((short)570, (short)573),     // Orco
+            _ => ((short)70, (short)80),       // Humano
+        }
+        : race switch                          // Hombre
+        {
+            2 => ((short)101, (short)120),     // Elfo
+            3 => ((short)201, (short)213),     // Drow
+            4 => ((short)401, (short)410),     // gnomo
+            5 => ((short)301, (short)313),     // enano
+            6 => ((short)501, (short)514),     // Orco
+            _ => ((short)1, (short)30),        // Humano
+        };
+
     /// <summary>¿La cabeza es válida para esa raza/género? (VB6 <c>ValidarCabeza</c>). El port sólo exigía
     /// <c>head >= 1</c>, así que se podía crear un humano con cabeza de orco — y el cliente lo dibujaba mal o
     /// no lo dibujaba.</summary>

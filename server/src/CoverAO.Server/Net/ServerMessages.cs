@@ -786,7 +786,13 @@ public static class ServerMessages
     /// <summary>The 21-field character spawn packet. Field order &amp; the FXLoops=999 spawn constant
     /// verified byte-identical to VB6 PrepareMessageCharacterCreate (Protocol.bas:14887) and the
     /// player call site MakeUserChar (Modulo_UsUaRiOs.bas:332). The "Privileges" byte is the VB6
-    /// <c>.Faccion.Status</c> (nick colour). Donor/particle/aura fields default to 0 (systems not yet ported).</summary>
+    /// <c>.Faccion.Status</c> (nick colour).
+    ///
+    /// <para>Los siete últimos bytes —partícula y las cinco auras— salían FIJOS EN 0 con la nota "systems not
+    /// yet ported", que dejó de ser cierta cuando se portaron las auras del equipo. El síntoma no era que el
+    /// brillo faltara siempre: <c>AuraToChar</c> se lo manda a los que están mirando en el momento de equipar,
+    /// así que el aura se veía… hasta que alguien salía del área y volvía a entrar. Quien llegaba después veía
+    /// al personaje apagado. Se manda el estado real, que es lo que hace el call site del original.</para></summary>
     public static byte[] CharacterCreate(Player p) =>
         new ByteQueueWriter()
             .WritePacketId(ServerPacketId.CharacterCreate)
@@ -805,13 +811,13 @@ public static class ServerMessages
             .WriteAsciiString(p.ShowName ? p.Name : "")
             .WriteByte(p.FactionStatus)  // byte "Privileges" del VB6 == .Faccion.Status (color de nombre)
             .WriteByte((byte)(p.Donador ? 1 : 0))   // Donador (VB6 MakeUserChar:332 → .Char.FX... = Donador.activo)
-            .WriteByte(0)      // ParticulaFx
-            .WriteByte(0)      // Arma_Aura
-            .WriteByte(0)      // Body_Aura
-            .WriteByte(0)      // Escudo_Aura
-            .WriteByte(0)      // Head_Aura
-            .WriteByte(0)      // Otra_Aura
-            .WriteByte(0)      // Anillo_Aura
+            .WriteByte(p.ParticulaFx)
+            .WriteByte(p.WeaponAura)
+            .WriteByte(p.BodyAura)
+            .WriteByte(p.ShieldAura)
+            .WriteByte(p.HelmetAura)
+            .WriteByte(0)              // Otra_Aura: el VB6 tiene el campo pero NADA se lo asigna nunca
+            .WriteByte(p.RingAura)
             .ToArray();
 
     /// <summary>CharacterCreate for an NPC (same 21-field layout; no weapons/auras).</summary>

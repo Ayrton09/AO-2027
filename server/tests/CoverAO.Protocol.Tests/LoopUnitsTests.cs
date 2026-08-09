@@ -86,6 +86,18 @@ public class LoopUnitsTests
     }
 
     [Fact]
+    public void El_anti_mapeo_de_PvP_son_SIETE_SEGUNDOS_no_siete_vueltas()
+    {
+        // La excepción que confirma por qué este archivo existe: TiempoDeMapeo también vive en `Counters`, pero
+        // no lo baja el loop de 40 ms sino PasarSegundo, que cuelga del timer Auditoria de frmMain
+        // (frmMain.frm:182, Interval = 1000). O sea que su 7 son 7 segundos y no 0,28 — copiarlo "tal cual"
+        // como se hace con los del Server.ini habría dejado la traba en un cuarto de segundo, que es
+        // exactamente igual a no tenerla.
+        Assert.Equal(175, PacketDispatcher.TicksAntiMapeo);
+        Assert.Equal(7, PacketDispatcher.TicksAntiMapeo * GameLoop.TickMs / 1000);
+    }
+
+    [Fact]
     public void Las_constantes_que_el_port_ya_habia_acertado_siguen_igual()
     {
         // No todo estaba mal, y conviene fijarlo: donde el port copió el número del Server.ini acertó.

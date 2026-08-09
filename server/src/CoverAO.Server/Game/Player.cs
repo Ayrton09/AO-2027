@@ -201,6 +201,11 @@ public sealed class Player
     public byte HelmetAura { get; set; }
     public byte RingAura { get; set; }
 
+    /// <summary>Partícula pegada al personaje (VB6 <c>.Char.ParticulaFx</c>). 0 = ninguna. La poción de Nhareth
+    /// la deja fija en 23 y no se puede encimar otra: el original chequea este campo y abandona si ya hay una.
+    /// Byte porque byte es lo que viaja en <c>CharacterCreate</c> (Protocol.bas:14926).</summary>
+    public byte ParticulaFx { get; set; }
+
     /// <summary>Navegando en un barco (VB6 flags.Navegando): sólo se mueve por agua y su cuerpo es la barca.</summary>
     public bool Navigating { get; set; }
     /// <summary>Slot de inventario del barco con el que navega (VB6 Invent.BarcoSlot); 0 = ninguno.</summary>
@@ -288,6 +293,19 @@ public sealed class Player
     // LocaleMsg 307, mientras que la invisibilidad de hechizo/GM no. El aggro de NPCs filtra por ambos.
     public bool Oculto { get; set; }
     public long OcultoUntilTick { get; set; }
+    /// <summary>Tick hasta el que este jugador NO puede usar una salida de mapa (VB6 <c>Counters.TiempoDeMapeo</c>).
+    ///
+    /// <para>Es el anti-escape del PvP, y es hermano del <see cref="SalirSegundos"/>: aquél impide escaparse
+    /// cerrando el cliente, éste impide escaparse pisando la baldosa de salida. <c>UsuarioAtacadoPorUsuario</c>
+    /// (SistemaCombate.bas:1470) se lo pone en 7 <b>a los dos</b> —al que pega y al que recibe, así que tampoco
+    /// se puede tirar un golpe y salir corriendo— y el movimiento lo consulta al pisar un <c>TileExit</c>
+    /// (Modulo_UsUaRiOs.bas:731): rebota con <c>LocaleMsg</c> 488 y un <c>PosUpdate</c>.</para>
+    ///
+    /// <para>El original cuenta 7 y resta 1 por segundo desde <c>PasarSegundo</c> (el timer <c>Auditoria</c> de
+    /// frmMain, Interval = 1000). Acá vence solo contra el tick del loop, que es lo mismo sin gastar una pasada
+    /// por todos los conectados.</para></summary>
+    public long MapeoBloqueadoHastaTick { get; set; }
+
     // Anti-cheat de cadencia (VB6 IntervaloParaCaminar / IntervaloParaGolpe): último desplazamiento/golpe en ms
     // de reloj monótono (Environment.TickCount64). El dispatcher rechaza el que llega antes del intervalo.
     public long LastWalkMs { get; set; }
