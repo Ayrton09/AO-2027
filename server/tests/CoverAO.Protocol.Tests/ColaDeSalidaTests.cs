@@ -42,6 +42,17 @@ public class ColaDeSalidaTests : IDisposable
         }
         // Cerrar el socket es justamente lo que destraba una escritura colgada.
         public void Close(string reason) { Cerrado = true; Liberar.Set(); }
+
+        /// <summary>Espera a que el escritor de esta sesión termine y suelte el hilo del pool.
+        ///
+        /// Sin esto, un test dejaba su escritor trabado en el <c>Wait</c> de arriba y el siguiente arrancaba
+        /// con el pool ocupado: su propio escritor no llegaba a correr en tres segundos y le ganaba el cierre
+        /// forzado. Daba un rojo cada doce corridas que parecía del producto y era de la limpieza del test.</summary>
+        public void EsperarQueTermine()
+        {
+            Liberar.Set();
+            SpinWait.SpinUntil(() => Cerrado, TimeSpan.FromSeconds(15));
+        }
     }
 
     public ColaDeSalidaTests()
@@ -75,6 +86,7 @@ public class ColaDeSalidaTests : IDisposable
         SpinWait.SpinUntil(() => t.Enviados == 50, TimeSpan.FromSeconds(10));
         Assert.Equal(50, t.Enviados);
         sesion.Close("fin del test");
+        t.EsperarQueTermine();
     }
 
     [Fact]
@@ -117,7 +129,7 @@ public class ColaDeSalidaTests : IDisposable
         Assert.True(sesion.Cerrada, "con la cola llena, la sesión tiene que cerrarse");
         Assert.True(reloj.ElapsedMilliseconds < 2000,
             $"llenar la cola tardó {reloj.ElapsedMilliseconds} ms: no debería haber ninguna espera");
-        t.Liberar.Set();
+        t.EsperarQueTermine();
     }
 
     [Fact]
@@ -131,10 +143,14 @@ public class ColaDeSalidaTests : IDisposable
         sesion.Send(new byte[] { 42 });
         sesion.Close("motivo del rechazo");
 
-        SpinWait.SpinUntil(() => t.Cerrado, TimeSpan.FromSeconds(10));
+        // Se espera por las DOS cosas: que el paquete haya salido Y que el socket ya se haya bajado. Esperar
+        // por una sola deja el test leyendo un estado a medio hacer, y de las dos formas da un rojo mentiroso:
+        // esperando sólo el cierre, la comparación corre con la lista todavía vacía; esperando sólo la
+        // entrega, la bandera de orden se lee en su valor inicial porque el cierre aún no ocurrió.
+        SpinWait.SpinUntil(() => { lock (recibidos) return recibidos.Count == 1 && t.Cerrado; }, TimeSpan.FromSeconds(10));
+        lock (recibidos) Assert.Equal(new byte[] { 42 }, recibidos);
         Assert.True(t.Cerrado, "el socket tiene que terminar bajando");
-        Assert.Equal(new byte[] { 42 }, recibidos);
-        Assert.True(t.HabiaMandadoAntesDeCerrar, "el último paquete tiene que salir ANTES del cierre");
+        Assert.True(t.PrimerCierreTrasMandar, "el último paquete tiene que salir ANTES del cierre");
     }
 
     private sealed class TransporteQueRegistraElCierre : ITransport
@@ -143,12 +159,17 @@ public class ColaDeSalidaTests : IDisposable
         public TransporteQueRegistraElCierre(List<byte> destino) => _out = destino;
         public string RemoteEndpoint => "cierre";
         public volatile bool Cerrado;
-        public volatile bool HabiaMandadoAntesDeCerrar;
+        /// <summary>Si al PRIMER cierre ya había salido algo. Sólo el primero: el socket se baja dos veces
+        /// —el escritor cuando termina de drenar y el cierre forzado de red—, y mirar el último diría que
+        /// todo salió a tiempo aunque el primero hubiera llegado con la cola sin vaciar.</summary>
+        public volatile bool PrimerCierreTrasMandar;
+        private int _cierres;
         public ValueTask<int> ReceiveAsync(byte[] buffer, CancellationToken ct) => new(0);
         public void Send(byte[] data) { lock (_out) _out.Add(data[0]); }
         public void Close(string reason)
         {
-            lock (_out) HabiaMandadoAntesDeCerrar = _out.Count > 0;
+            if (Interlocked.Increment(ref _cierres) == 1)
+                lock (_out) PrimerCierreTrasMandar = _out.Count > 0;
             Cerrado = true;
         }
     }

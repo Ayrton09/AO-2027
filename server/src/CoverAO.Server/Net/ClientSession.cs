@@ -247,10 +247,15 @@ public sealed class ClientSession : IConnection
         _motivoDeCierre = reason;
         var charIndex = Player?.CharIndex;
         // El socket NO se baja acá: se cierra la cola y el escritor lo baja cuando termina de drenar, así el
-        // último mensaje (el motivo del rechazo) llega. El cierre forzado a los 500 ms es la red: si el
-        // cliente dejó de leer, el escritor está trabado en un Write y sólo lo destraba cerrarle el socket.
+        // último mensaje (el motivo del rechazo) llega. El cierre forzado es la red: si el cliente dejó de
+        // leer, el escritor está trabado en un Write y sólo lo destraba cerrarle el socket.
+        //
+        // El plazo va atado a SendTimeoutMs y no a un número más chico. Con 500 ms el cierre forzado le
+        // ganaba al escritor cuando el pool de hilos venía cargado, y ahí se perdía justo el mensaje que la
+        // cola existe para que llegue. Acortarlo no adelanta nada: al escritor trabado en un cliente que no
+        // drena lo destraba igual el timeout de escritura del socket, que es este mismo plazo.
         _salida.Writer.TryComplete();
-        _ = Task.Delay(500).ContinueWith(_ => { try { _transport.Close(reason); } catch { /* ignore */ } });
+        _ = Task.Delay(TcpTransport.SendTimeoutMs).ContinueWith(_ => { try { _transport.Close(reason); } catch { /* ignore */ } });
         try { _onClose?.Invoke(); } catch { /* ignore */ }   // libera el slot del ConnectionGuard
         _dispatcher.OnDisconnect(this, reason);
         if (charIndex is short ci)
