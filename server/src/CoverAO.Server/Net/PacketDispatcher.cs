@@ -174,8 +174,27 @@ public sealed class PacketDispatcher
     /// "no perteneces a ningún clan".</summary>
     private const byte FuenteClan = 7;
 
+    /// <summary>`FONTTYPE_GUILDMSG`: sólo el `/ONLINECLAN` (HandleGuildOnline). Es OTRA que la del clan, y la
+    /// diferencia se ve: no hay una "fuente de clan" única.</summary>
+    private const byte FuenteClanMsg = 9;
+
+    /// <summary>`FONTTYPE_FIGHT`. OJO que en este código NO es la del daño —el combate viaja por `LocaleMsg`,
+    /// que sin fuente explícita va con 0—: la usan el apuñalar y el desarmar (Trabajo.bas), el anti-cheat y
+    /// las expulsiones.</summary>
+    private const byte FuenteCombate = 1;
+
     /// <summary>`FONTTYPE_INFOBOLD4`: la usa un solo camino, el mensaje a la lista de amigos.</summary>
     private const byte FuenteAmigos = 24;
+
+    // LO QUE SE QUEDA EN 0 A PROPÓSITO, para que no lo "arregle" el que pase después:
+    //
+    //  - EL COMBATE (fallar, pegar, matar, el efecto de un hechizo). El original no manda eso por
+    //    `ConsoleMsg` sino por `WriteLocaleMsg` (Protocol.bas:17303), cuyo parámetro `fuente` es OPCIONAL y
+    //    vale 0 — y en los caminos de combate se lo omite. O sea que el 0 es la fuente FIEL, no la que
+    //    faltaba poner. (Sí se le pasa fuente en unos pocos: el 391 va con 12, el 47 con 5.)
+    //  - El `/RMSG` y el `/DARPUN`, que el original difunde con `FONTTYPE_TALK` = 0
+    //    (Protocol.bas:8867 y :16583).
+    //  - El motivo de rechazo del login: no es una línea del chat, el cliente lo muestra en el formulario.
 
     /// <summary>
     /// ANTI-SPAM EN EL JUEGO. Distinto del techo de paquetes: acá el que se pasa es un jugador, no un
@@ -202,7 +221,7 @@ public sealed class PacketDispatcher
         long ahora = Environment.TickCount64;
         if (ruidosa ? session.Acciones.PermiteRuidosa(ahora) : session.Acciones.PermiteConsulta(ahora)) return false;
         if (session.Acciones.TocaAvisar(ahora))
-            session.Send(ServerMessages.ConsoleMsg("Esperá un momento antes de volver a hacer eso.", 0));
+            session.Send(ServerMessages.ConsoleMsg("Esperá un momento antes de volver a hacer eso.", FuenteInfo));
         return true;
     }
 
@@ -835,7 +854,7 @@ public sealed class PacketDispatcher
             {
                 p.Resting = false;
                 session.Send(ServerMessages.RestOK());
-                session.Send(ServerMessages.ConsoleMsg("Has dejado de descansar.", 0));
+                session.Send(ServerMessages.ConsoleMsg("Has dejado de descansar.", FuenteInfo));
             }
             // CAMINAR CANCELA EL /SALIR en curso (VB6 CancelExit, Modulo_UsUaRiOs.bas:1908-1921, llamado desde
             // HandleWalk en Protocol.bas:1628). La cuenta regresiva de salida es anti-escape: si te atacan y
@@ -1051,8 +1070,8 @@ public sealed class PacketDispatcher
                     {
                         _world.BroadcastToObservers(target.Pos,
                             ServerMessages.PlayWave(SndEscudo, (byte)target.Pos.X, (byte)target.Pos.Y));
-                        session.Send(ServerMessages.ConsoleMsg("¡El usuario rechazó el ataque con su escudo!", 0));
-                        target.Connection?.Send(ServerMessages.ConsoleMsg("¡Has rechazado el ataque con el escudo!", 0));
+                        session.Send(ServerMessages.ConsoleMsg("¡El usuario rechazó el ataque con su escudo!", FuenteInfo));
+                        target.Connection?.Send(ServerMessages.ConsoleMsg("¡Has rechazado el ataque con el escudo!", FuenteInfo));
                         RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillDefensa);
                     }
                 }
@@ -1112,7 +1131,7 @@ public sealed class PacketDispatcher
                     target.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, false, 0f, 1));
                     if (arma is not null) BroadcastEquipChange(target, arma, equipped: false);
                     if (target.Level < 20)
-                        target.Connection?.Send(ServerMessages.ConsoleMsg("¡Tu oponente te ha desarmado!", 0));
+                        target.Connection?.Send(ServerMessages.ConsoleMsg("¡Tu oponente te ha desarmado!", FuenteCombate));
                 }
             }
         }
@@ -1402,7 +1421,7 @@ public sealed class PacketDispatcher
         else return;                        // con arma y sin orbe el original no hace nada
         if (!paraliza) return;
         npc.ParalyzedUntilTick = now + 30;
-        session.Send(ServerMessages.ConsoleMsg("Tu golpe ha paralizado a la criatura.", 0));
+        session.Send(ServerMessages.ConsoleMsg("Tu golpe ha paralizado a la criatura.", FuenteInfo));
         _world.BroadcastToObservers(npc.Pos, ServerMessages.PlayWave(17, npc.Pos.X, npc.Pos.Y));
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CreateFX(npc.CharIndex, 8, 0));
     }
@@ -1445,8 +1464,8 @@ public sealed class PacketDispatcher
         {
             int dano = (int)Math.Round(danoBase * (p.Class == 4 ? 1.4 : 1.5), MidpointRounding.ToEven);
             victima.Hp = Math.Max(0, victima.Hp - dano);
-            session.Send(ServerMessages.ConsoleMsg($"Has apuñalado a {victima.Name} por {dano}.", 0));
-            victima.Connection?.Send(ServerMessages.ConsoleMsg($"Te ha apuñalado {p.Name} por {dano}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Has apuñalado a {victima.Name} por {dano}.", FuenteCombate));
+            victima.Connection?.Send(ServerMessages.ConsoleMsg($"Te ha apuñalado {p.Name} por {dano}.", FuenteCombate));
             victima.Connection?.Send(ServerMessages.UpdateHP((short)victima.Hp));
             _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dano));
             if (victima.Hp == 0) OnKill(session, p, victima);
@@ -1459,7 +1478,7 @@ public sealed class PacketDispatcher
             // resta en Trabajo.bas:1799 y recién llama a CalcularDarExp en :1803. O sea que la puñalada que
             // MATA tampoco cobra en el goteo — su parte sale del pago del pool al morir.
             CalcularDarExp(session, p, npc, dano);
-            session.Send(ServerMessages.ConsoleMsg($"Has apuñalado la criatura por {dano}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Has apuñalado la criatura por {dano}.", FuenteCombate));
             _world.BroadcastToObservers(npc.Pos, ServerMessages.DamageOverHead(npc.CharIndex, dano));
             if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
         }
@@ -1571,7 +1590,7 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         session.Send(ServerMessages.MontateToggle()); // client toggles its own mounted state
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p)); // observers see the mount appearance
-        session.Send(ServerMessages.ConsoleMsg(p.Mounted ? $"Montas {montura.Name}." : $"Desmontas {montura.Name}.", 0));
+        session.Send(ServerMessages.ConsoleMsg(p.Mounted ? $"Montas {montura.Name}." : $"Desmontas {montura.Name}.", FuenteInfo));
     }
 
     /// <summary>Entrar a caballo a un lugar donde no se puede andar a caballo te BAJA del animal (VB6
@@ -1845,7 +1864,7 @@ public sealed class PacketDispatcher
                 {
                     if (!RequireGm(session, session.Player)) return;
                     session.Send(ServerMessages.UserNameList(_world.Players.Select(pl => pl.Name)));
-                    session.Send(ServerMessages.ConsoleMsg($"Usuarios online: {_world.OnlineCount}.", 0));
+                    session.Send(ServerMessages.ConsoleMsg($"Usuarios online: {_world.OnlineCount}.", FuenteInfo));
                 });
                 break;
             case 25: // ReviveChar — /REVIVIR <name>
@@ -2236,7 +2255,7 @@ public sealed class PacketDispatcher
                     _loop.Enqueue(() =>
                     {
                         if (!RequireGm(session, session.Player)) return;
-                        session.Send(ServerMessages.ConsoleMsg($"Ese comando de GM todavía no está implementado en este servidor (#{cmd}).", 0));
+                        session.Send(ServerMessages.ConsoleMsg($"Ese comando de GM todavía no está implementado en este servidor (#{cmd}).", FuenteInfo));
                     });
                 }
                 else
@@ -2313,7 +2332,7 @@ public sealed class PacketDispatcher
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
-        session.Send(ServerMessages.ConsoleMsg($"Hora del servidor: {DateTime.Now:HH:mm:ss dd/MM/yyyy}", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Hora del servidor: {DateTime.Now:HH:mm:ss dd/MM/yyyy}", FuenteInfo));
     }
 
     private void GmWhere(ClientSession session, string name)
@@ -2323,7 +2342,7 @@ public sealed class PacketDispatcher
         var t = _world.PlayerByName(name);
         session.Send(ServerMessages.ConsoleMsg(t is null
             ? $"{name} no está online."
-            : $"{t.Name} está en el mapa {t.Pos.Map} ({t.Pos.X},{t.Pos.Y}).", 0));
+            : $"{t.Name} está en el mapa {t.Pos.Map} ({t.Pos.X},{t.Pos.Y}).", FuenteInfo));
     }
 
     private void GmWarp(ClientSession session, string name, short map, byte x, byte y)
@@ -2331,7 +2350,7 @@ public sealed class PacketDispatcher
         var p = session.Player;
         if (!RequireGm(session, p)) return;
         var t = string.IsNullOrWhiteSpace(name) ? p : _world.PlayerByName(name);
-        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"{name} no está online.", 0)); return; }
+        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"{name} no está online.", FuenteInfo)); return; }
         short destMap = map <= 0 ? t.Pos.Map : map;
         var from = t.Pos;
         t.Pos = new WorldPos(destMap, x, y);
@@ -2340,7 +2359,7 @@ public sealed class PacketDispatcher
         _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterMove(t.CharIndex, x, y), t.CharIndex);
         session.Send(ServerMessages.LocaleMsg(487, t.Name));
         if (t.CharIndex != p!.CharIndex)
-            t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te teletransportó a ({x},{y}).", 0));
+            t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te teletransportó a ({x},{y}).", FuenteInfo));
     }
 
     private void GmCharInfo(ClientSession session, string name)
@@ -2349,9 +2368,9 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         // /INFO también sobre un personaje OFFLINE (VB6 HandleRequestCharInfo lee su .chr): sólo lectura.
         var t = _world.PlayerByName(name) ?? (_db.CharacterExists(name) ? _db.LoadCharacter(name, 0, "") : null);
-        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {name}", 0)); return; }
+        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {name}", FuenteInfo)); return; }
         session.Send(ServerMessages.CharacterInfo(t)); // structured sheet for the client's /INFO window
-        session.Send(ServerMessages.ConsoleMsg($"Info de {t.Name}: clase {t.Class}, nivel {t.Level}, oro {t.Gold}, clan '{t.GuildName}'.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Info de {t.Name}: clase {t.Class}, nivel {t.Level}, oro {t.Gold}, clan '{t.GuildName}'.", FuenteInfo));
     }
 
     private void GmGoToChar(ClientSession session, string name)
@@ -2365,7 +2384,7 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
         RefreshAreaVisibility(_world, p, from, p.Pos);
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
-        session.Send(ServerMessages.ConsoleMsg($"Te teletransportaste junto a {t.Name}.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Te teletransportaste junto a {t.Name}.", FuenteInfo));
     }
 
     /// <summary>
@@ -2402,13 +2421,13 @@ public sealed class PacketDispatcher
             case 6:  t.NpcsKilled = (int)V(arg1); cambio = $"criminales/NPCs matados = {t.NpcsKilled}"; break;
             case 7:  t.Level = (byte)Math.Clamp(V(arg1), 1, 255); cambio = $"nivel = {t.Level}"; break;
             case 8:  t.Class = (byte)Math.Clamp(V(arg1), 1, 15); cambio = $"clase = {t.Class}"; break;
-            case 9:  { int sk = (int)V(arg1); if (sk < 1 || sk > GameLimits.NumSkills) { session.Send(ServerMessages.ConsoleMsg($"Skill {sk} fuera de rango.", 0)); return; }
+            case 9:  { int sk = (int)V(arg1); if (sk < 1 || sk > GameLimits.NumSkills) { session.Send(ServerMessages.ConsoleMsg($"Skill {sk} fuera de rango.", FuenteInfo)); return; }
                        t.Skills[sk] = (byte)Math.Clamp(V(arg2), 0, 100); cambio = $"skill {sk} = {t.Skills[sk]}"; break; }
             case 10: t.FreeSkillPoints = (short)Math.Clamp(V(arg1), 0, short.MaxValue); cambio = $"skill points = {t.FreeSkillPoints}"; break;
             case 11: t.Gender = (byte)Math.Clamp(V(arg1), 1, 2); cambio = $"sexo = {t.Gender}"; break;
             case 12: t.Race = (byte)Math.Clamp(V(arg1), 1, 6); cambio = $"raza = {t.Race}"; break;
             case 13: t.Gold = (int)Math.Clamp(t.Gold + V(arg1), 0, MaxOroEdit); cambio = $"oro = {t.Gold}"; break;
-            default: session.Send(ServerMessages.ConsoleMsg($"Opción de /MOD desconocida: {opcion}.", 0)); return;
+            default: session.Send(ServerMessages.ConsoleMsg($"Opción de /MOD desconocida: {opcion}.", FuenteInfo)); return;
         }
         // Refrescar lo que el cambio haya tocado: stats siempre; apariencia sólo si cambió body/head/raza/sexo.
         t.Connection?.Send(ServerMessages.UpdateUserStats(t));
@@ -2418,7 +2437,7 @@ public sealed class PacketDispatcher
         if (opcion is 3 or 4 or 11 or 12 && t.CharIndex != 0)
             _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterChange(t));
         _db.SaveCharacter(t);   // el VB6 escribe el .chr en el acto; acá persistimos para que sobreviva a un crash
-        session.Send(ServerMessages.ConsoleMsg($"Charfile alterado: {t.Name} — {cambio}.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Charfile alterado: {t.Name} — {cambio}.", FuenteInfo));
         Console.WriteLine($"[{session.RemoteEndpoint}] /MOD {p!.Name} -> {t.Name}: {cambio}");
     }
 
@@ -2431,10 +2450,10 @@ public sealed class PacketDispatcher
         if (!IsAltoGm(p)) return;   // VB6 HandleDARPUN: sólo Dios/Admin/RoleMaster (bloquea SemiDios), silencio si no
         var t = _world.PlayerByName(nick.Replace('+', ' '));
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // usuario offline/inexistente
-        if (puntos <= 0) { session.Send(ServerMessages.ConsoleMsg("La cantidad de créditos debe ser positiva.", 0)); return; }
+        if (puntos <= 0) { session.Send(ServerMessages.ConsoleMsg("La cantidad de créditos debe ser positiva.", FuenteInfo)); return; }
         t.CreditoDonador += puntos;
         _db.SaveCharacter(t);   // el VB6 escribe el .chr en el acto
-        t.Connection?.Send(ServerMessages.ConsoleMsg($"Recibiste {puntos} créditos de donador. Total: {t.CreditoDonador}.", 0));
+        t.Connection?.Send(ServerMessages.ConsoleMsg($"Recibiste {puntos} créditos de donador. Total: {t.CreditoDonador}.", FuenteInfo));
         _world.Broadcast(ServerMessages.ConsoleMsg($"Servidor> {p!.Name} otorgó {puntos} créditos de donador a {t.Name}.", 0));   // VB6 :16583 (ToAll)
         Console.WriteLine($"[{session.RemoteEndpoint}] /DARPUN {p!.Name} -> {t.Name}: +{puntos} créditos");
     }
@@ -2449,7 +2468,7 @@ public sealed class PacketDispatcher
         var t = _world.PlayerByName(nick.Replace('+', ' '));
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
         var acc = _db.LoadAccount(t.Account);
-        if (acc is null) { session.Send(ServerMessages.ConsoleMsg($"No se encontró la cuenta de {t.Name}.", 0)); return; }
+        if (acc is null) { session.Send(ServerMessages.ConsoleMsg($"No se encontró la cuenta de {t.Name}.", FuenteInfo)); return; }
         acc.Donador = !acc.Donador;   // toggle
         _db.SaveAccount(acc);         // persiste en el .cnt (VB6 :16127)
         t.Donador = acc.Donador;      // reflejar en el char online
@@ -3078,14 +3097,14 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var template = _data.Npc(npcIndex);
         if (npcIndex < 1 || template is null)
-        { session.Send(ServerMessages.ConsoleMsg($"No existe el NPC {npcIndex}.", 0)); return; }   // VB6: SpawnNpc devuelve 0 y calla; acá se avisa por consola
-        if (_npcs is null) { session.Send(ServerMessages.ConsoleMsg("Spawn de NPCs no disponible.", 0)); return; }
+        { session.Send(ServerMessages.ConsoleMsg($"No existe el NPC {npcIndex}.", FuenteInfo)); return; }   // VB6: SpawnNpc devuelve 0 y calla; acá se avisa por consola
+        if (_npcs is null) { session.Send(ServerMessages.ConsoleMsg("Spawn de NPCs no disponible.", FuenteInfo)); return; }
 
         var (tx, ty) = Step(p!.Pos.X, p.Pos.Y, p.Heading);
         var pos = new WorldPos(p.Pos.Map, tx, ty);
         int charIndex = _npcs.GmSpawn(template, pos);
-        if (charIndex == 0) { session.Send(ServerMessages.ConsoleMsg("No se pudo invocar la criatura acá.", 0)); return; }
-        session.Send(ServerMessages.ConsoleMsg($"Invocaste a {template.Name}.", 0));
+        if (charIndex == 0) { session.Send(ServerMessages.ConsoleMsg("No se pudo invocar la criatura acá.", FuenteInfo)); return; }
+        session.Send(ServerMessages.ConsoleMsg($"Invocaste a {template.Name}.", FuenteInfo));
         Console.WriteLine($"[{session.RemoteEndpoint}] /ACC {p.Name} -> NPC {npcIndex} ({template.Name})");
     }
 
@@ -3121,7 +3140,7 @@ public sealed class PacketDispatcher
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
-        const byte Font = 3;   // FontTypeNames.FONTTYPE_INFO en los tres helpers del original
+        const byte Font = FuenteInfo;   // los tres helpers del original contestan con FONTTYPE_INFO
 
         nick = nick.Replace('+', ' ').Trim();
         // VB6 HandleEditChar/RequestCharInfo/SKILLS (Protocol.bas:7538 "todos los comandos se pueden usar aunque el
@@ -3181,7 +3200,7 @@ public sealed class PacketDispatcher
         t.Connection?.Send(ServerMessages.ChangeMap(t.Pos.Map));
         t.Connection?.Send(ServerMessages.LocaleMsg(145, p!.Name));   // "#1 te ha encarcelado"
         _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterMove(t.CharIndex, t.Pos.X, t.Pos.Y), t.CharIndex);
-        session.Send(ServerMessages.ConsoleMsg($"Encarcelaste a {t.Name} por {minutos} minuto(s): {motivo}.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Encarcelaste a {t.Name} por {minutos} minuto(s): {motivo}.", FuenteInfo));
         Console.WriteLine($"[{session.RemoteEndpoint}] /CARCEL {p!.Name} -> {t.Name} ({minutos}m, motivo: {motivo})");
     }
 
@@ -3198,7 +3217,7 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var obj = _data.Obj(objIndex);
         if (objIndex < 1 || obj is null || string.IsNullOrWhiteSpace(obj.Name))
-        { session.Send(ServerMessages.ConsoleMsg($"No existe el objeto {objIndex}.", 0)); return; }
+        { session.Send(ServerMessages.ConsoleMsg($"No existe el objeto {objIndex}.", FuenteInfo)); return; }
         int qty = Math.Clamp((int)amount, 1, GameLimits.MaxInventoryObjs);
         int slot = FindSlotFor(p!, objIndex);
         if (slot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }   // inventario lleno
@@ -3220,10 +3239,10 @@ public sealed class PacketDispatcher
         var from = t.Pos;
         t.Pos = new WorldPos(p!.Pos.Map, p.Pos.X, p.Pos.Y);
         t.Connection?.Send(ServerMessages.PosUpdate(t.Pos.X, t.Pos.Y));
-        t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te ha transportado.", 0));
+        t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te ha transportado.", FuenteInfo));
         RefreshAreaVisibility(_world, t, from, t.Pos);
         _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterMove(t.CharIndex, t.Pos.X, t.Pos.Y), t.CharIndex);
-        session.Send(ServerMessages.ConsoleMsg($"Transportaste a {t.Name} junto a ti.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Transportaste a {t.Name} junto a ti.", FuenteInfo));
     }
 
     private void GmRevive(ClientSession session, string name)
@@ -3234,8 +3253,8 @@ public sealed class PacketDispatcher
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
         t.Hp = t.MaxHp;
         t.Connection?.Send(ServerMessages.UpdateUserStats(t));
-        t.Connection?.Send(ServerMessages.ConsoleMsg("Un GM te ha resucitado.", 0));
-        session.Send(ServerMessages.ConsoleMsg($"Resucitaste a {t.Name}.", 0));
+        t.Connection?.Send(ServerMessages.ConsoleMsg("Un GM te ha resucitado.", FuenteInfo));
+        session.Send(ServerMessages.ConsoleMsg($"Resucitaste a {t.Name}.", FuenteInfo));
     }
 
     private void GmKillNpc(ClientSession session)
@@ -3244,10 +3263,10 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var (tx, ty) = Step(p!.Pos.X, p.Pos.Y, p.Heading);
         var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
-        if (npc is null) { session.Send(ServerMessages.ConsoleMsg("No hay una criatura al frente.", 0)); return; }
+        if (npc is null) { session.Send(ServerMessages.ConsoleMsg("No hay una criatura al frente.", FuenteInfo)); return; }
         _world.RemoveNpc(npc.CharIndex);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
-        session.Send(ServerMessages.ConsoleMsg($"Eliminaste a {npc.Name}.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Eliminaste a {npc.Name}.", FuenteInfo));
     }
 
     /// <summary>/GMSG (VB6 Protocol.bas:6361): chat privado entre staff. Gate Consejero+ (o sea, no un User raso).
@@ -3612,8 +3631,8 @@ public sealed class PacketDispatcher
         if (p is null || (p.Privileges & (PrivAdmin | PrivDios)) == 0) return;   // gate silencioso
         string nombre = clan.Replace("\\", "").Replace('+', ' ').Trim();
         var g = _world.GuildByName(nombre);
-        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"El clan <{nombre}> no existe.", 0)); return; }
-        session.Send(ServerMessages.ConsoleMsg($"Miembros de <{g.Name}>: {string.Join(", ", g.Members)}", 0));
+        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"El clan <{nombre}> no existe.", FuenteInfo)); return; }
+        session.Send(ServerMessages.ConsoleMsg($"Miembros de <{g.Name}>: {string.Join(", ", g.Members)}", FuenteInfo));
     }
 
     /// <summary>/RAJARCLAN &lt;nick&gt; (VB6 HandleRemoveCharFromGuild, Protocol.bas:11145 →
@@ -3631,19 +3650,19 @@ public sealed class PacketDispatcher
         var g = t is not null && !string.IsNullOrEmpty(t.GuildName)
             ? _world.GuildByName(t.GuildName)
             : _world.AllGuilds.FirstOrDefault(x => x.Members.Any(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase)));
-        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"{nombre} no pertenece a ningún clan.", 0)); return; }
+        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"{nombre} no pertenece a ningún clan.", FuenteClan)); return; }
         var miembro = g.Members.FirstOrDefault(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase));
-        if (miembro is null) { session.Send(ServerMessages.ConsoleMsg($"{nombre} no pertenece a ningún clan.", 0)); return; }
+        if (miembro is null) { session.Send(ServerMessages.ConsoleMsg($"{nombre} no pertenece a ningún clan.", FuenteClan)); return; }
         // AL LÍDER NO SE LO ECHA, ni siquiera un GM. Es la última línea de `m_PuedeSalirDeClan`
         // (modGuilds.bas:664): `m_PuedeSalirDeClan = UCase$(GetLeader) <> UCase$(Nombre)` — o sea que el
         // permiso se niega SIEMPRE que el expulsado sea el líder, sin mirar quién lo echa. Acá faltaba y el
         // comando decapitaba el clan: lo destapó el flow, que fundó el clan con el propio objetivo de líder.
         if (string.Equals(miembro, g.LeaderName, StringComparison.OrdinalIgnoreCase))
-        { session.Send(ServerMessages.ConsoleMsg($"No puedes expulsar al líder del clan <{g.Name}>.", 0)); return; }
+        { session.Send(ServerMessages.ConsoleMsg($"No puedes expulsar al líder del clan <{g.Name}>.", FuenteClan)); return; }
         g.Members.Remove(miembro);
         PersistGuilds();
-        if (t is not null) { t.GuildName = ""; t.Connection?.Send(ServerMessages.ConsoleMsg($"Has sido expulsado del clan <{g.Name}>.", 0)); }
-        session.Send(ServerMessages.ConsoleMsg($"Expulsaste a {miembro} del clan <{g.Name}>.", 0));
+        if (t is not null) { t.GuildName = ""; t.Connection?.Send(ServerMessages.ConsoleMsg($"Has sido expulsado del clan <{g.Name}>.", FuenteClan)); }
+        session.Send(ServerMessages.ConsoleMsg($"Expulsaste a {miembro} del clan <{g.Name}>.", FuenteClan));
         Console.WriteLine($"[{session.RemoteEndpoint}] /RAJARCLAN {p.Name} -> {miembro} de <{g.Name}>");
     }
 
@@ -3734,7 +3753,7 @@ public sealed class PacketDispatcher
         if (p is null || (p.Privileges & (PrivUser | PrivRoleMaster)) != 0) return;   // gate silencioso
         var nombres = _world.Players.Where(o => o.Trabajando > 0).Select(o => o.Name).ToList();
         if (nombres.Count == 0) { session.Send(ServerMessages.LocaleMsg(409)); return; }
-        session.Send(ServerMessages.ConsoleMsg($"Usuarios trabajando: {string.Join(", ", nombres)}", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Usuarios trabajando: {string.Join(", ", nombres)}", FuenteInfo));
     }
 
     /// <summary>/OCULTANDO (VB6 Protocol.bas:7258): igual que /TRABAJANDO pero con <c>Counters.Ocultando</c>, y
@@ -3745,7 +3764,7 @@ public sealed class PacketDispatcher
         if (p is null || (p.Privileges & (PrivUser | PrivRoleMaster)) != 0) return;   // gate silencioso
         var nombres = _world.Players.Where(o => o.Ocultando > 0).Select(o => o.Name).ToList();
         if (nombres.Count == 0) { session.Send(ServerMessages.LocaleMsg(410)); return; }
-        session.Send(ServerMessages.ConsoleMsg($"Usuarios ocultandose: {string.Join(", ", nombres)}", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Usuarios ocultandose: {string.Join(", ", nombres)}", FuenteInfo));
     }
 
     /// <summary>/LLUVIA &lt;clima&gt; (VB6 HandleRainToggle, Protocol.bas:9270): fuerza el clima del mundo y lo
@@ -3943,7 +3962,7 @@ public sealed class PacketDispatcher
         // mostrarse lo sube. Sin esto el GM invisible seguía mandando su nick en el UpdateTagAndStatus y en el
         // CharacterCreate de quien entrara a su área, o sea que se delataba solo.
         p.ShowName = !p.Invisible;
-        session.Send(ServerMessages.ConsoleMsg(p.Invisible ? "Ahora eres invisible." : "Ya no eres invisible.", 0));
+        session.Send(ServerMessages.ConsoleMsg(p.Invisible ? "Ahora eres invisible." : "Ya no eres invisible.", FuenteInfo));
         // Observers toggle the GM's visibility (SetInvisible keeps the char so other GMs still see it).
         _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, p.Invisible), p.CharIndex);
     }
@@ -4205,7 +4224,7 @@ public sealed class PacketDispatcher
             p.Inventory[slot] = inv;
             p.CreditoDonador -= puntos;   // se cobra DESPUÉS de meter el ítem con éxito
             session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
-            session.Send(ServerMessages.ConsoleMsg($"Canjeaste {obj.Name} por {puntos} créditos. Te quedan {p.CreditoDonador}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Canjeaste {obj.Name} por {puntos} créditos. Te quedan {p.CreditoDonador}.", FuenteInfo));
         });
     }
 
@@ -4296,8 +4315,8 @@ public sealed class PacketDispatcher
     private void DoRobar(ClientSession session, Player p, Player victima)
     {
         if (p.FactionStatus != Player.StatusCriminal)
-        { session.Send(ServerMessages.ConsoleMsg("Para robar debes ser renegado, escribe /RETIRAR para dejar tu ciudadania.", 0)); return; }
-        if (p.Stamina < 15) { session.Send(ServerMessages.ConsoleMsg("Estas muy cansado para robar.", 0)); return; }
+        { session.Send(ServerMessages.ConsoleMsg("Para robar debes ser renegado, escribe /RETIRAR para dejar tu ciudadania.", FuenteInfo)); return; }
+        if (p.Stamina < 15) { session.Send(ServerMessages.ConsoleMsg("Estas muy cansado para robar.", FuenteInfo)); return; }
         p.Stamina -= 15;
         if (p.Stamina < 0) p.Stamina = 0;
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // VB6 Trabajo.bas → WriteUpdateSta
@@ -4312,7 +4331,7 @@ public sealed class PacketDispatcher
             if (_rng.Next(1, 51) < 25 && p.Class == 5)
             {
                 if (TieneObjetosRobables(victima)) RobarObjeto(session, p, victima);
-                else session.Send(ServerMessages.ConsoleMsg($"{victima.Name} no tiene objetos.", 0));
+                else session.Send(ServerMessages.ConsoleMsg($"{victima.Name} no tiene objetos.", FuenteInfo));
                 RaiseSkill(session, p, GameLimits.SkillRobar);
                 return;
             }
@@ -4324,20 +4343,20 @@ public sealed class PacketDispatcher
                 victima.Gold -= n;
                 n *= 5;                                                   // VB6: el ladrón recibe 5× lo quitado
                 p.Gold = (int)Math.Min((long)p.Gold + n, int.MaxValue);   // (VB6 capea a MAXORO; el robo es de a cientos, nunca llega)
-                session.Send(ServerMessages.ConsoleMsg($"Le has robado {n} monedas de oro a {victima.Name}", 0));
+                session.Send(ServerMessages.ConsoleMsg($"Le has robado {n} monedas de oro a {victima.Name}", FuenteInfo));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
                 victima.Connection?.Send(ServerMessages.UpdateGold(victima.Gold));
             }
             else
             {
-                session.Send(ServerMessages.ConsoleMsg($"{victima.Name} no tiene oro.", 0));
+                session.Send(ServerMessages.ConsoleMsg($"{victima.Name} no tiene oro.", FuenteInfo));
             }
             RaiseSkill(session, p, GameLimits.SkillRobar);
         }
         else
         {
-            session.Send(ServerMessages.ConsoleMsg("¡No has logrado robar nada!", 0));
-            victima.Connection?.Send(ServerMessages.ConsoleMsg($"¡{p.Name} ha intentado robarte!", 0));
+            session.Send(ServerMessages.ConsoleMsg("¡No has logrado robar nada!", FuenteInfo));
+            victima.Connection?.Send(ServerMessages.ConsoleMsg($"¡{p.Name} ha intentado robarte!", FuenteInfo));
         }
     }
 
@@ -4449,7 +4468,7 @@ public sealed class PacketDispatcher
             var o = _data.Obj(inv.ObjIndex);
             if (o is not null && o.IsMineral) { slot = i; mineral = o; break; }
         }
-        if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", 0)); return; }
+        if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", FuenteInfo)); return; }
 
         int modFundicion = p.Class == 3 ? 1 : 3;   // eClass.Guerrero=3 funde con menos skill (÷1); el resto ÷3
         if (mineral.MinSkill > p.Skills[GameLimits.SkillMineria] / modFundicion)
@@ -4464,7 +4483,7 @@ public sealed class PacketDispatcher
         // Buscar el destino del lingote ANTES de consumir el mineral: si no hay espacio, se avisa sin tocar el
         // stock (el VB6 tira el lingote al piso, pero acá preferimos no perder material silenciosamente).
         int lingSlot = FindSlotFor(p, (short)mineral.LingoteIndex);
-        if (lingSlot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio para los lingotes.", 0)); return; }
+        if (lingSlot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio para los lingotes.", FuenteInfo)); return; }
 
         slotInv.Amount -= (short)(perLingote * cantidad);          // consumir minerales
         if (slotInv.Amount < 1) slotInv = default;
@@ -4599,7 +4618,7 @@ public sealed class PacketDispatcher
             {
                 _world.SetGround(spot, m.ObjIndex, m.Amount);
                 _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, m.ObjIndex, m.Amount));
-                session.Send(ServerMessages.ConsoleMsg("No te entra en el inventario: el adjunto quedó en el piso.", 0));
+                session.Send(ServerMessages.ConsoleMsg("No te entra en el inventario: el adjunto quedó en el piso.", FuenteInfo));
             }
             else return;   // ni piso ni inventario: la carta conserva su adjunto para el próximo intento
         }
@@ -4655,7 +4674,7 @@ public sealed class PacketDispatcher
                 ? ServerMessages.AlianceProposalsList(offers)
                 : ServerMessages.PeaceProposalsList(offers)); // structured proposal-list window
             session.Send(ServerMessages.ConsoleMsg(
-                $"Ofertas de {(alliance ? "alianza" : "paz")} pendientes: {(offers.Count == 0 ? "ninguna" : string.Join(", ", offers))}", 0));
+                $"Ofertas de {(alliance ? "alianza" : "paz")} pendientes: {(offers.Count == 0 ? "ninguna" : string.Join(", ", offers))}", FuenteClan));
         });
     }
 
@@ -4695,7 +4714,7 @@ public sealed class PacketDispatcher
             if (g is null) return;
             session.Send(ServerMessages.GuildDetails(g)); // structured clan info window
             session.Send(ServerMessages.ConsoleMsg(
-                $"Clan <{g.Name}> — líder: {g.LeaderName}, miembros: {g.Members.Count}, aliados: {g.Allies.Count}, enemigos: {g.Enemies.Count}.", 0));
+                $"Clan <{g.Name}> — líder: {g.LeaderName}, miembros: {g.Members.Count}, aliados: {g.Allies.Count}, enemigos: {g.Enemies.Count}.", FuenteClan));
         });
     }
 
@@ -4733,7 +4752,7 @@ public sealed class PacketDispatcher
             var g = _world.GuildByName(p.GuildName);
             if (g is null) return;
             session.Send(ServerMessages.GuildNews(g.News ?? "", g.Enemies, g.Allies)); // structured news window
-            session.Send(ServerMessages.ConsoleMsg($"Noticias de <{g.Name}>: {(string.IsNullOrEmpty(g.News) ? "sin novedades." : g.News)}", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Noticias de <{g.Name}>: {(string.IsNullOrEmpty(g.News) ? "sin novedades." : g.News)}", FuenteClan));
         });
     }
 
@@ -4777,7 +4796,7 @@ public sealed class PacketDispatcher
             if (g is null) return;
             g.News = news;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg("Noticias del clan actualizadas.", 0));
+            session.Send(ServerMessages.ConsoleMsg("Noticias del clan actualizadas.", FuenteClan));
         });
     }
 
@@ -4850,7 +4869,7 @@ public sealed class PacketDispatcher
             int other = upwards ? slot - 1 : slot + 1;
             if (slot < 1 || slot > GameLimits.MaxBankSlots || other < 1 || other > GameLimits.MaxBankSlots) return;
             (p.BankInventory[slot], p.BankInventory[other]) = (p.BankInventory[other], p.BankInventory[slot]);
-            session.Send(ServerMessages.ConsoleMsg("Reordenaste la bóveda.", 0));
+            session.Send(ServerMessages.ConsoleMsg("Reordenaste la bóveda.", FuenteInfo));
         });
     }
 
@@ -5069,7 +5088,7 @@ public sealed class PacketDispatcher
         if (esEnemigoDeFaccion || p.IsCaos || !objetivoLegal || AtWar(p, target)) return;
         p.CambiarFaccion(Player.StatusCriminal);
         p.FactionRank = 0;   // atacar a un legal expulsa de la Armada
-        session.Send(ServerMessages.ConsoleMsg("Has atacado a un aliado. Ahora eres CRIMINAL.", 0));
+        session.Send(ServerMessages.ConsoleMsg("Has atacado a un aliado. Ahora eres CRIMINAL.", FuenteInfo));
         // VB6: el recolor del nick viaja en CharStatus (charIndex + status), no en el tag completo.
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus)); // pasa a CRIMINAL
     }
@@ -5127,8 +5146,8 @@ public sealed class PacketDispatcher
             if (!string.IsNullOrEmpty(target.SpouseName)) { session.Send(ServerMessages.LocaleMsg(120)); return; }
             p.SpouseName = target.Name;
             target.SpouseName = p.Name;
-            session.Send(ServerMessages.ConsoleMsg($"¡Te casaste con {target.Name}!", 0));
-            target.Connection?.Send(ServerMessages.ConsoleMsg($"¡Te casaste con {p.Name}!", 0));
+            session.Send(ServerMessages.ConsoleMsg($"¡Te casaste con {target.Name}!", FuenteInfo));
+            target.Connection?.Send(ServerMessages.ConsoleMsg($"¡Te casaste con {p.Name}!", FuenteInfo));
         });
     }
 
@@ -5188,12 +5207,12 @@ public sealed class PacketDispatcher
             if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Voto NO contabilizado: no perteneces a ningún clan.", 7)); return; }
             var g = _world.GuildByName(p.GuildName);
             if (g is null) return;
-            if (!g.ElectionsOpen) { session.Send(ServerMessages.ConsoleMsg("No hay elecciones abiertas.", 0)); return; }
-            if (!g.Members.Contains(candidate)) { session.Send(ServerMessages.ConsoleMsg("Ese personaje no es del clan.", 0)); return; }
+            if (!g.ElectionsOpen) { session.Send(ServerMessages.ConsoleMsg("No hay elecciones abiertas.", FuenteClan)); return; }
+            if (!g.Members.Contains(candidate)) { session.Send(ServerMessages.ConsoleMsg("Ese personaje no es del clan.", FuenteClan)); return; }
             // VB6 v_UsuarioVota (modGuilds.bas:1037): un miembro no puede revotar/cambiar el voto.
-            if (g.Votes.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya has votado, no puedes cambiar tu voto.", 0)); return; }
+            if (g.Votes.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya has votado, no puedes cambiar tu voto.", FuenteClan)); return; }
             g.Votes[p.Name] = candidate;
-            session.Send(ServerMessages.ConsoleMsg($"Votaste por {candidate}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Votaste por {candidate}.", FuenteClan));
 
             // El umbral (mayoría absoluta de los miembros) vive en Guild.GanadorDeLaEleccion, donde se puede
             // testear: es una regla de una línea que si se afloja entrega el clan al primero que vota.
@@ -5204,7 +5223,7 @@ public sealed class PacketDispatcher
                 g.ElectionsOpen = false;   // elección resuelta
                 PersistGuilds();
                 foreach (var m in _world.GuildMembersOnline(g.Name))
-                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{ganador} es ahora el líder del clan <{g.Name}>.", 0));
+                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{ganador} es ahora el líder del clan <{g.Name}>.", FuenteClan));
             }
         });
     }
@@ -5293,8 +5312,8 @@ public sealed class PacketDispatcher
             guild?.Members.Remove(p.Name);
             PersistGuilds();
             foreach (var m in _world.GuildMembersOnline(p.GuildName))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} deja el clan.", 0));
-            session.Send(ServerMessages.ConsoleMsg($"Dejaste el clan <{p.GuildName}>.", 0));
+                m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} deja el clan.", FuenteClan));
+            session.Send(ServerMessages.ConsoleMsg($"Dejaste el clan <{p.GuildName}>.", FuenteClan));
             p.GuildName = "";
         });
     }
@@ -5309,7 +5328,7 @@ public sealed class PacketDispatcher
             if (p is null) return;
             if (string.IsNullOrEmpty(p.GuildName)) return;   // VB6 HandleGuildOnline: fuera de un clan, silencio
             var names = string.Join(", ", _world.GuildMembersOnline(p.GuildName).Select(m => m.Name));
-            session.Send(ServerMessages.ConsoleMsg($"Miembros online de <{p.GuildName}>: {names}", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Miembros online de <{p.GuildName}>: {names}", FuenteClanMsg));
         });
     }
 
@@ -5593,7 +5612,7 @@ public sealed class PacketDispatcher
             { session.Send(ServerMessages.LocaleMsg(254)); return; }
             int puntosDomar = p.Carisma * p.Skills[GameLimits.SkillDomar];
             if (npc.Template.Domable > puntosDomar || _rng.Next(1, 6) != 1)
-            { session.Send(ServerMessages.ConsoleMsg("No has logrado domar la criatura.", 0)); return; }
+            { session.Send(ServerMessages.ConsoleMsg("No has logrado domar la criatura.", FuenteInfo)); return; }
             npc.OwnerCharIndex = p.CharIndex;   // ocupa un slot del cupo compartido (CuentaMascotas)
             npc.Hostile = false;
             npc.OriginallyHostile = false;   // domada: deja de ser fiera para siempre, no sólo hasta el próximo RestoreOldMovement
@@ -5857,7 +5876,7 @@ public sealed class PacketDispatcher
             }
             if (npc.IsReviver)                                              // sacerdote Revividor (VB6 Acciones.bas:304) — atiende ANTES del DeadCheck
             {
-                if (p.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{npc.Name}: aún no necesitas mis servicios.", 0)); return; }
+                if (p.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{npc.Name}: aún no necesitas mis servicios.", FuenteInfo)); return; }
                 if (Math.Max(Math.Abs(p.Pos.X - npc.Pos.X), Math.Abs(p.Pos.Y - npc.Pos.Y)) > 10)
                 { session.Send(ServerMessages.LocaleMsg(8)); return; }      // VB6: distancia <= 10 (LocaleMsg 8 si lejos)
                 RevivePlayer(_world, _data, p);   // HP full + apariencia + LocaleMsg(90)
@@ -5884,7 +5903,7 @@ public sealed class PacketDispatcher
             // se saca y `npc_dialogue_flow` —que hoy lo asserta— se actualiza.
             var desc = npc.Template.Description;
             session.Send(ServerMessages.ConsoleMsg(
-                string.IsNullOrWhiteSpace(desc) ? $"{npc.Name} no tiene nada que decirte." : $"{npc.Name}: {desc}", 0));
+                string.IsNullOrWhiteSpace(desc) ? $"{npc.Name} no tiene nada que decirte." : $"{npc.Name}: {desc}", FuenteInfo));
         });
     }
 
@@ -5898,7 +5917,7 @@ public sealed class PacketDispatcher
             session.Send(ServerMessages.BlacksmithArmors(CraftItems(_data.BlacksmithArmors)));
             session.Send(ServerMessages.BlacksmithHelmets(CraftItems(_data.BlacksmithHelmets)));
             session.Send(ServerMessages.BlacksmithShields(CraftItems(_data.BlacksmithShields)));
-            session.Send(ServerMessages.ConsoleMsg($"{npcName}: aquí puedes forjar armas, armaduras, cascos y escudos. Elige una receta.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"{npcName}: aquí puedes forjar armas, armaduras, cascos y escudos. Elige una receta.", FuenteInfo));
             return;
         }
         byte[]? pkt = trade switch
@@ -5910,7 +5929,7 @@ public sealed class PacketDispatcher
         };
         if (pkt is null) return;
         session.Send(pkt);
-        session.Send(ServerMessages.ConsoleMsg($"{npcName}: aquí puedes fabricar. Elige una receta.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"{npcName}: aquí puedes fabricar. Elige una receta.", FuenteInfo));
     }
 
     private List<Data.ObjInfo> CraftItems(IReadOnlySet<int> set)
@@ -6019,7 +6038,7 @@ public sealed class PacketDispatcher
             }
             if (spent == 0) return;   // VB6: sin puntos asignados, no responde
             session.Send(ServerMessages.SendSkills(p.Skills));
-            session.Send(ServerMessages.ConsoleMsg($"Asignaste {spent} punto(s) de skill. Restantes: {p.FreeSkillPoints}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Asignaste {spent} punto(s) de skill. Restantes: {p.FreeSkillPoints}.", FuenteInfo));
         });
     }
 
@@ -6051,7 +6070,7 @@ public sealed class PacketDispatcher
             if (p is null || string.IsNullOrWhiteSpace(text)) return;
             int gms = 0;
             foreach (var gm in _world.Players.Where(pl => pl.IsGm))
-            { gm.Connection?.Send(ServerMessages.ConsoleMsg($"[DENUNCIA de {p.Name}] {text}", 0)); gms++; }
+            { gm.Connection?.Send(ServerMessages.ConsoleMsg($"[DENUNCIA de {p.Name}] {text}", FuenteClanMsg)); gms++; }
             session.Send(ServerMessages.LocaleMsg(85));   // VB6 HandleDenounce: WriteLocaleMsg(85) siempre (el broadcast a admins va aparte)
         });
     }
@@ -6160,12 +6179,12 @@ public sealed class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
-            if (string.Equals(name, g.LeaderName, StringComparison.OrdinalIgnoreCase)) { session.Send(ServerMessages.ConsoleMsg("No puedes expulsarte a ti mismo.", 0)); return; }
-            if (!g.Members.Remove(name)) { session.Send(ServerMessages.ConsoleMsg("Ese personaje no es del clan.", 0)); return; }
+            if (string.Equals(name, g.LeaderName, StringComparison.OrdinalIgnoreCase)) { session.Send(ServerMessages.ConsoleMsg("No puedes expulsarte a ti mismo.", FuenteClan)); return; }
+            if (!g.Members.Remove(name)) { session.Send(ServerMessages.ConsoleMsg("Ese personaje no es del clan.", FuenteClan)); return; }
             PersistGuilds();
             var kicked = _world.PlayerByName(name);
-            if (kicked is not null) { kicked.GuildName = ""; kicked.Connection?.Send(ServerMessages.ConsoleMsg($"Has sido expulsado del clan <{g.Name}>.", 0)); }
-            session.Send(ServerMessages.ConsoleMsg($"Expulsaste a {name} del clan.", 0));
+            if (kicked is not null) { kicked.GuildName = ""; kicked.Connection?.Send(ServerMessages.ConsoleMsg($"Has sido expulsado del clan <{g.Name}>.", FuenteClan)); }
+            session.Send(ServerMessages.ConsoleMsg($"Expulsaste a {name} del clan.", FuenteClan));
         });
     }
 
@@ -6492,12 +6511,12 @@ public sealed class PacketDispatcher
         {
             case 138 or 881:   // RED_PESCA / CAÑA_PESCA
                 if (!_data.IsWater(p.Pos.Map, x, y))
-                { session.Send(ServerMessages.ConsoleMsg("No hay agua donde pescar. Busca un lago, rio o mar.", 0)); return true; }
+                { session.Send(ServerMessages.ConsoleMsg("No hay agua donde pescar. Busca un lago, rio o mar.", FuenteInfo)); return true; }
                 break;
             case 187:          // PIQUETE_MINERO
                 if (info is null || !info.IsDeposit)
-                { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ningún yacimiento.", 0)); return true; }
-                if (lejos > 2) { session.Send(ServerMessages.ConsoleMsg("Estás demasiado lejos.", 0)); return true; }
+                { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ningún yacimiento.", FuenteInfo)); return true; }
+                if (lejos > 2) { session.Send(ServerMessages.ConsoleMsg("Estás demasiado lejos.", FuenteInfo)); return true; }
                 // El yacimiento queda SELECCIONADO, que es de donde el original saca el mineral en cada vuelta
                 // (`ObjData(.flags.TargetObj).MineralIndex`, Trabajo.bas:2001). Sin esto la faena continua no
                 // tiene forma de saber sobre qué está picando.
@@ -6506,12 +6525,12 @@ public sealed class PacketDispatcher
                 break;
             case 127 or 885:   // HACHA_LEÑADOR / TIJERAS — las dos trabajan sobre un ÁRBOL (leña y raíces)
                 if (info is null || !info.IsTree) return false;      // el original no avisa nada si no hay árbol
-                if (lejos > 2) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado lejos.", 0)); return true; }
+                if (lejos > 2) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado lejos.", FuenteInfo)); return true; }
                 // Sólo en mapa Pk, con el mensaje de cada oficio: `If MapInfo(.Pos.Map).Pk = False Then ...`
                 if (!_data.IsPkMap(p.Pos.Map))
                 {
                     session.Send(ServerMessages.ConsoleMsg(tool.Index == 885
-                        ? "No puedes juntar raices en zona segura." : "No puedes talar en zona segura.", 0));
+                        ? "No puedes juntar raices en zona segura." : "No puedes talar en zona segura.", FuenteInfo));
                     return true;
                 }
                 break;
@@ -6535,7 +6554,7 @@ public sealed class PacketDispatcher
         p.LastWorkMs = nowMs;
         if (p.Stamina < 2)
         {
-            session.Send(ServerMessages.ConsoleMsg("Dejas de trabajar debido a tu poca energía.", 0));
+            session.Send(ServerMessages.ConsoleMsg("Dejas de trabajar debido a tu poca energía.", FuenteInfo));
             p.Laborando = false;
             return;
         }
@@ -6576,20 +6595,20 @@ public sealed class PacketDispatcher
     private bool DoRecolectar(ClientSession session, Player p, int skill, bool avisarSinHerramienta)
     {
         var (tool, resource, name) = OficioDe(skill);
-        if (tool == 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No sabes hacer ese trabajo.", 0)); return false; }
-        if (p.Skills[skill] <= 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No tienes esa habilidad.", 0)); return false; }
+        if (tool == 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No sabes hacer ese trabajo.", FuenteInfo)); return false; }
+        if (p.Skills[skill] <= 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No tienes esa habilidad.", FuenteInfo)); return false; }
         if (Equipment.EquippedOfCategory(p, _data, 6)?.Index != tool)
-        { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("Necesitas la herramienta adecuada.", 0)); return false; }
+        { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("Necesitas la herramienta adecuada.", FuenteInfo)); return false; }
         // VB6 DoPescar/DoTalar/DoMineria: el trabajo CUESTA stamina (QuitarSta — sin energía no se trabaja) y
         // el éxito es una tirada según skill (res = RandomNumber(1,Suerte), sólo rinde a veces). Sin esto el
         // trabajo daba recurso garantizado sin costo → canilla de oro (los recursos se venden a NPCs).
         const int workStaCost = 5;   // VB6 GASTO_ENERGIA_TRABAJADOR/NO_TRABAJADOR (Trabajo.bas:34-35)
-        if (p.Stamina < workStaCost) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado cansado para trabajar.", 0)); return false; }
+        if (p.Stamina < workStaCost) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado cansado para trabajar.", FuenteInfo)); return false; }
         p.Stamina -= workStaCost;
         if (_rng.Next(1, 101) > Math.Max(5, (int)p.Skills[skill]))   // tirada de éxito según skill; fallar igual gasta stamina
         {
             session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // la tirada fallida igual gasta stamina
-            session.Send(ServerMessages.ConsoleMsg("No has conseguido nada esta vez.", 0));
+            session.Send(ServerMessages.ConsoleMsg("No has conseguido nada esta vez.", FuenteInfo));
             return true;   // fallar la tirada NO corta la faena: en el original se sigue intentando
         }
         // MINERÍA: el mineral lo declara el YACIMIENTO, no el oficio (VB6 `MiObj.ObjIndex =
@@ -6605,14 +6624,14 @@ public sealed class PacketDispatcher
         }
         int amount = _rng.Next(1, 6); // RandomNumber(1,5)
         int slot = FindSlotFor(p, (short)resource);
-        if (slot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio en el inventario.", 0)); return false; }
+        if (slot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio en el inventario.", FuenteInfo)); return false; }
         var inv = p.Inventory[slot];
         inv.ObjIndex = (short)resource;
         inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + amount);
         p.Inventory[slot] = inv;
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // reflejar la stamina gastada
-        session.Send(ServerMessages.ConsoleMsg($"Obtuviste {amount}x {name}.", 0));
+        session.Send(ServerMessages.ConsoleMsg($"Obtuviste {amount}x {name}.", FuenteInfo));
         // El oficio mejora con el uso, igual que pegar o castear (VB6 DoPescar/DoTalar/DoMineria:
         // Trabajo.bas:1365/1890/2016 llaman SubirSkill con SU skill al conseguir el recurso).
         RaiseSkill(session, p, skill);
@@ -7472,8 +7491,8 @@ public sealed class PacketDispatcher
                 session.Send(ServerMessages.LocaleMsg(75));
                 return;
             }
-            target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te susurra: {chat}", 0));
-            session.Send(ServerMessages.ConsoleMsg($"Le susurras a {target.Name}: {chat}", 0));
+            target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te susurra: {chat}", FuenteInfo));
+            session.Send(ServerMessages.ConsoleMsg($"Le susurras a {target.Name}: {chat}", FuenteInfo));
         });
     }
 
@@ -7563,7 +7582,7 @@ public sealed class PacketDispatcher
             if (obj is not null && obj.IsBoat) { DoNavega(session, p, slot, obj); return; }
             if (DeadCheck(session, p)) return;   // VB6 UseInvItem: DeadCheck bloquea comida/pociones/etc. estando muerto
             if (inv.IsEmpty) return;
-            if (obj is null) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", 0)); return; }
+            if (obj is null) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", FuenteInfo)); return; }
 
             // Usar un ARCO equipado pone al cliente en modo targeting (VB6 UseInvItem/otWeapon, InvUsuario.bas:1476):
             // Proyectil=1 → WorkRequestTarget(Proyectiles). Gates: stamina > 0 (93), arco equipado (391) y modo
@@ -7642,7 +7661,7 @@ public sealed class PacketDispatcher
                 if (!p.Invisible) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
                 return;
             }
-            if (!obj.IsPotion) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", 0)); return; }
+            if (!obj.IsPotion) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", FuenteInfo)); return; }
 
             // Route the effect by SubTipo (InvUsuario.bas): 1=agility, 2=strength, 3=HP, 4=mana, 5=spell.
             const short SND_BEBER = 135;
@@ -7676,7 +7695,7 @@ public sealed class PacketDispatcher
                 }
                 case 13: // cofre de créditos de donador (VB6 InvUsuario.bas:1683): suma CuantoAumento al crédito.
                 {        // No es una bebida: se consume y avisa con LocaleMsg 470, sin sonido de beber ni UpdateUserStats.
-                    if (obj.CuantoAumento <= 0) { session.Send(ServerMessages.ConsoleMsg("Ese objeto no tiene efecto.", 0)); return; }
+                    if (obj.CuantoAumento <= 0) { session.Send(ServerMessages.ConsoleMsg("Ese objeto no tiene efecto.", FuenteInfo)); return; }
                     p.CreditoDonador += obj.CuantoAumento;
                     inv.Amount -= 1;
                     if (inv.Amount <= 0) inv = default;
@@ -7692,7 +7711,7 @@ public sealed class PacketDispatcher
                     // que hace que la de Metamorfosis y las dos de Desencantar sigan sin efecto —ese Sub no
                     // lee esos campos— y es fiel, no una simplificación nuestra.
                     var hechizo = obj.LanzaHechizo > 0 ? _data.Spell(obj.LanzaHechizo) : null;
-                    if (hechizo is null) { session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", 0)); return; }
+                    if (hechizo is null) { session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", FuenteInfo)); return; }
                     var aplicados = AplicarBuffsDeAtributo(p, hechizo);
                     aplicados.AddRange(AplicarEfectosDeEstado(p, p, hechizo));
                     // SubeHP va al final, como en el original (:1412), y con la misma fórmula que el hechizo.
@@ -7713,7 +7732,7 @@ public sealed class PacketDispatcher
                     if (aplicados.Count == 0)
                     {
                         // Casteo = False. Ni se consume ni se gasta: el frasco sigue en el inventario.
-                        session.Send(ServerMessages.ConsoleMsg("Esa poción no te hace nada.", 0));
+                        session.Send(ServerMessages.ConsoleMsg("Esa poción no te hace nada.", FuenteInfo));
                         return;
                     }
                     EmitSpellFx(p.Pos, p.CharIndex, hechizo);
@@ -7721,7 +7740,7 @@ public sealed class PacketDispatcher
                     break;
                 }
                 default:
-                    session.Send(ServerMessages.ConsoleMsg("Esa poción todavía no tiene efecto.", 0)); return;
+                    session.Send(ServerMessages.ConsoleMsg("Esa poción todavía no tiene efecto.", FuenteInfo)); return;
             }
 
             inv.Amount -= 1;
@@ -7802,7 +7821,7 @@ public sealed class PacketDispatcher
             session.Send(ServerMessages.ChangeInventorySlot((byte)invSlot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
             session.Send(ServerMessages.ChangeNpcInventorySlot(slot, st.Amount, st.Price, st.ObjIndex));
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", FuenteInfo));
             // Regatear entrena: el VB6 sube Comerciar al final de `Sub Comercio` (Comercio.bas:192), que es la
             // MISMA rutina para comprar y para vender, asi que las dos operaciones entrenan.
             RaiseSkill(session, p, GameLimits.SkillComerciar);
@@ -7860,7 +7879,7 @@ public sealed class PacketDispatcher
 
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Vendiste {sell} objeto(s) por {gain} oro.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Vendiste {sell} objeto(s) por {gain} oro.", FuenteInfo));
             RaiseSkill(session, p, GameLimits.SkillComerciar);   // Comercio.bas:192 (misma Sub que la compra)
         });
     }
@@ -7953,7 +7972,7 @@ public sealed class PacketDispatcher
             int move = Math.Clamp(amount, 1, p.Gold);
             p.Gold -= move; p.Bank += move;
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Depositaste {move} oro. Boveda: {p.Bank}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Depositaste {move} oro. Boveda: {p.Bank}.", FuenteInfo));
         });
     }
 
@@ -7969,7 +7988,7 @@ public sealed class PacketDispatcher
             int move = (int)Math.Clamp((long)amount, 1, p.Bank);
             p.Bank -= move; p.Gold += move;
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Retiraste {move} oro. Boveda: {p.Bank}.", 0));
+            session.Send(ServerMessages.ConsoleMsg($"Retiraste {move} oro. Boveda: {p.Bank}.", FuenteInfo));
         });
     }
 
@@ -8124,7 +8143,7 @@ public sealed class PacketDispatcher
             // es la barca, así que arma/armadura no deben re-vestir el cuerpo real.
             if ((!p.Mounted && !p.Navigating) || obj.IsHelmet || obj.IsShield)
                 BroadcastEquipChange(p, obj, inv.Equipped);
-            session.Send(ServerMessages.ConsoleMsg(inv.Equipped ? $"Equipaste {obj.Name}." : $"Desequipaste {obj.Name}.", 0));
+            session.Send(ServerMessages.ConsoleMsg(inv.Equipped ? $"Equipaste {obj.Name}." : $"Desequipaste {obj.Name}.", FuenteInfo));
         });
     }
 
