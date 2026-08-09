@@ -253,6 +253,20 @@ Los personajes y cuentas se guardan en la carpeta  data\  (se crea al arrancar).
                   Se ajusta con MinutosBackup / BackupsAConservar en Server.ini.
   data\logs\      un archivo de log por dia (LogDias en Server.ini)
 
+PARA VOLVER ATRAS CON UNA COPIA (probalo UNA vez antes de necesitarlo):
+  1. Para el servidor (cerra la ventana). Restaurar con el servidor prendido pisa
+     archivos que el servidor esta escribiendo.
+  2. Renombra las tres carpetas de ahora, por las dudas:
+       data\Charfile -> data\Charfile.antes   (y lo mismo con Cuentas y Misc)
+  3. Copia esas mismas tres desde la copia elegida. Cada copia es una carpeta
+     llamada coverao-AAAAMMDD-HHMMSS, asi que se ordenan solas por fecha:
+       data\backups\coverao-20260808-030000\Charfile  ->  data\Charfile
+       ...Cuentas -> data\Cuentas       ...Misc -> data\Misc
+  4. Arranca. Los personajes y las cuentas quedan como estaban en ese momento.
+  Son SOLO esas tres: los mapas y el cliente web salen de la instalacion. Y no
+  alcanza con copiar un .chr suelto: la cuenta que lo lista vive en Cuentas\, asi
+  que sin ella el personaje no aparece al entrar.
+
 Ademas guarda a los conectados cada 15 minutos, asi un corte de luz no se lleva la
 tarde de nadie. Las dos cosas vienen PRENDIDAS aunque borres el Server.ini.
 

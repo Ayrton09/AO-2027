@@ -108,6 +108,42 @@ Antes de cada copia se guarda a los conectados. También hay un botón en el pan
 **Copiando la carpeta `data/` se reconstruye el servidor completo en otra máquina.** Es lo único que no se
 puede volver a generar.
 
+### Volver atrás con un backup
+
+Un backup que nunca se restauró no es un backup. Esto es todo lo que hay que hacer, y conviene probarlo **una
+vez** antes de necesitarlo de verdad:
+
+```sh
+# 1. Parar el servidor. Sin esto se restaura sobre archivos que el servidor está escribiendo.
+#    (cerrar la ventana / Ctrl+C / systemctl stop coverao / docker stop)
+
+# 2. Guardar lo que hay AHORA, por si el backup elegido no era el que uno creía.
+mv data/Charfile data/Charfile.antes && mv data/Cuentas data/Cuentas.antes && mv data/Misc data/Misc.antes
+
+# 3. Poner en su lugar las tres carpetas del backup elegido. Se llaman coverao-AAAAMMDD-HHMMSS,
+#    así que `ls data/backups/` ya las lista de la más vieja a la más nueva.
+cp -r data/backups/coverao-20260808-030000/Charfile data/
+cp -r data/backups/coverao-20260808-030000/Cuentas  data/
+cp -r data/backups/coverao-20260808-030000/Misc     data/
+
+# 4. Arrancar. Los personajes y las cuentas quedan como estaban en ese momento.
+```
+
+Un backup es una carpeta con **exactamente** las tres que importan:
+
+| | |
+|---|---|
+| `Charfile/` | los personajes (`.chr`) |
+| `Cuentas/` | las cuentas (`.cnt`), con sus contraseñas |
+| `Misc/` | clanes, correo, records del mundo |
+
+No hace falta tocar nada más: los mapas, la data del juego y el cliente web se regeneran desde la
+instalación. Y **no** se restaura sólo un personaje copiando su `.chr` suelto: la cuenta que lo lista vive en
+`Cuentas/`, así que si el personaje no existía en ese momento el `.chr` queda huérfano y no aparece al entrar.
+
+Con `COVERAO_DB=sqlite` el almacén es una base y el backup es **un archivo** `coverao-AAAAMMDD-HHMMSS.db`:
+ahí se restaura copiándolo sobre `data/coverao.db` en vez de las tres carpetas.
+
 Al apagarse bien, el servidor guarda a todos los que están jugando. Sirve cualquiera de estas:
 
 - cerrar la ventana, o `Ctrl+C`
