@@ -164,6 +164,35 @@ public sealed class ServerIni
     /// <summary>Nombres de staff por rango, para poder mostrarlos (panel de admin / arranque).</summary>
     public IEnumerable<(string Nombre, byte Priv)> Staff => _staff.Select(kv => (kv.Key, kv.Value));
 
+    /// <summary>
+    /// Los ajustes que NO toman efecto con un <see cref="Recargar"/>, porque el server ya los usó al arrancar
+    /// y quien los consume se quedó con una copia: los puertos ya están escuchando, el tope de conexiones y
+    /// los cupos de cadencia viven en el <c>ConnectionGuard</c> y en cada sesión ya creada, y el archivo de
+    /// log ya está abierto.
+    ///
+    /// La lista existe para poder DECIRLO. Un `/RELOADSINI` que conteste "recargado" y deje el puerto viejo
+    /// escuchando es peor que no tenerlo: el host cambia el número, ve el OK, y descubre que no pasó nada
+    /// recién cuando alguien no puede entrar.
+    /// </summary>
+    public static readonly string[] PidenReiniciar =
+        { "StartPort", "PuertoWebSocketPublico", "MaxUsers", "LimiteConexionesPorIp",
+          "MaxPaquetesPorSegundo", "RafagaDePaquetes", "LogDias" };
+
+    /// <summary>Relee el archivo y actualiza ESTA instancia, para que la vea todo el que guarda la referencia
+    /// (el despachador consulta <c>_ini</c> en caliente en cada login y en cada gate de cadencia).
+    /// Devuelve false si no hay archivo de dónde releer.</summary>
+    public bool Recargar()
+    {
+        if (Ruta is null) return false;
+        var nuevo = Cargar(Ruta);
+        foreach (var prop in typeof(ServerIni).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            if (prop.CanWrite && prop.Name != nameof(Ruta))
+                prop.SetValue(this, prop.GetValue(nuevo));
+        _staff.Clear();
+        foreach (var (nombre, priv) in nuevo.Staff) _staff[nombre] = priv;
+        return true;
+    }
+
     /// <summary>Lee el Server.ini si existe; si no, devuelve los defaults (el server arranca igual).</summary>
     public static ServerIni Cargar(string? ruta)
     {

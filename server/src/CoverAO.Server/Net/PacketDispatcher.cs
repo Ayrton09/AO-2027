@@ -2149,6 +2149,47 @@ public sealed class PacketDispatcher
                 _loop.Enqueue(() => GmCuentaRegresiva(session, segs, mapa));
                 break;
             }
+            // MUERTOS EN EL ORIGINAL, con su case para que no queden en el cajón de "no implementado" — que
+            // es una etiqueta distinta y manda a investigar de nuevo lo que ya tiene veredicto:
+            //   /LIMPIAR (34): HandleCleanWorld (Protocol.bas:908) lee el id, chequea privilegios y NO HACE
+            //                  NADA MÁS. El cuerpo termina ahí.
+            //   /LASTIP  (58): HandleLastIP arma la lista de IPs pero TODAS sus líneas —el armado y el
+            //                  WriteConsoleMsg— están COMENTADAS: el que lo tipea no recibe una sola letra.
+            // Callar es lo fiel en los dos. Los argumentos igual se consumen (el `case` los lee) o el stream
+            // se desincroniza, que es el defecto que este switch existe para no repetir.
+            case 34:
+                break;
+            case 58:
+                r.ReadAsciiString();
+                break;
+
+            // /APASS <personaje> <cuenta> — NO SE PORTA, y se le contesta el motivo en vez de un "todavía no".
+            // El original (HandleAlterPassword, Protocol.bas:1004) COPIA la contraseña de otra cuenta con
+            // `WriteVar(... "Password", Password)`: sólo funciona porque el .cnt guarda la contraseña en
+            // claro. Acá se guarda un PBKDF2, que es irreversible por diseño, así que no hay nada que copiar.
+            // Y el destino que escribe el VB6 es la cuenta del PROPIO GM (`.Account`), no la del personaje
+            // que nombra el comando — o sea que además hace algo distinto de lo que su mensaje dice.
+            case 66:
+            {
+                r.ReadAsciiString(); r.ReadAsciiString();
+                _loop.Enqueue(() =>
+                {
+                    if (!RequireGm(session, session.Player)) return;
+                    session.Send(ServerMessages.ConsoleMsg(
+                        "/APASS no existe acá: las contraseñas se guardan cifradas y no se pueden copiar. " +
+                        "Para dar acceso, que el jugador cree una cuenta nueva.", FuenteInfo));
+                });
+                break;
+            }
+            case 82: // ReloadServerIni — /RELOADSINI (VB6 HandleReloadServerIni: LogGM + LoadSini)
+                _loop.Enqueue(() => GmRecargarIni(session));
+                break;
+            case 85: // SetIniVar — /SETINIVAR <seccion> <clave> <valor> (VB6 HandleSetIniVar: WriteVar al ini)
+            {
+                string sec = r.ReadAsciiString(), clave = r.ReadAsciiString(), valor = r.ReadAsciiString();
+                _loop.Enqueue(() => GmEscribirIni(session, sec, clave, valor));
+                break;
+            }
             case 45: // SetTrigger — /TRIGGER <n>: cambia el trigger del tile donde está parado el GM
             {
                 byte trig = r.ReadByte();
@@ -2756,6 +2797,65 @@ public sealed class PacketDispatcher
     ///
     /// OJO EL TEXTO: éste imprime "en mapa M X,Y" (sin espacio tras la coma) y el de consulta "X, Y" (con
     /// espacio). No es un descuido de lectura: son dos literales distintos en la fuente.</summary>
+    /// <summary>/RELOADSINI (VB6 HandleReloadServerIni, Protocol.bas:1052 → <c>LogGM</c> + <c>LoadSini</c>):
+    /// relee el Server.ini sin reiniciar.
+    ///
+    /// <para>DICE QUÉ NO TOMÓ EFECTO, y eso es la mitad del comando. Varios ajustes ya se consumieron al
+    /// arrancar —los puertos están escuchando, el tope de conexiones vive en el <c>ConnectionGuard</c>, el
+    /// archivo de log ya está abierto—, así que un "recargado" a secas sería mentira: el host cambiaría el
+    /// puerto, vería el OK y se enteraría de que no pasó nada recién cuando un amigo no puede entrar.</para></summary>
+    private void GmRecargarIni(ClientSession session)
+    {
+        var p = session.Player;
+        if (!RequireGm(session, p)) return;
+        if (!_ini.Recargar())
+        {
+            session.Send(ServerMessages.ConsoleMsg("No hay Server.ini de dónde releer (el server anda con los valores por defecto).", FuenteInfo));
+            return;
+        }
+        session.Send(ServerMessages.ConsoleMsg($"Server.ini recargado: {_ini.CantidadStaff} de staff, exp x{_ini.Exp}, oro x{_ini.Oro}.", FuenteInfo));
+        session.Send(ServerMessages.ConsoleMsg(
+            "Piden reiniciar (ya estaban en uso): " + string.Join(", ", Data.ServerIni.PidenReiniciar), FuenteInfo));
+        Console.WriteLine($"[{session.RemoteEndpoint}] /RELOADSINI {p!.Name}: Server.ini releído");
+    }
+
+    /// <summary>/SETINIVAR &lt;sección&gt; &lt;clave&gt; &lt;valor&gt; (VB6 HandleSetIniVar, Protocol.bas:1061 →
+    /// <c>WriteVar</c> sobre el Server.ini + LogGM): escribe una clave del ini desde adentro del juego, y acá
+    /// además la aplica en el acto (el original obliga a un /RELOADSINI aparte).
+    ///
+    /// <para>SÓLO ADMIN, y el original no lo pide. Es la única puerta del juego que ESCRIBE la config del
+    /// host: con ella se pueden editar las listas de staff, o sea repartirse el rango. Dejarla en el mismo
+    /// nivel que /LLUVIA convertía a cualquier SemiDiós en Admin, que es justo lo que el ini existe para
+    /// decidir. Ver la nota de `estado-de-seguridad`: el rango se deriva del ini en CADA login.</para></summary>
+    private void GmEscribirIni(ClientSession session, string seccion, string clave, string valor)
+    {
+        var p = session.Player;
+        if (!RequireGm(session, p)) return;
+        if (_ini.PrivilegioDe(p!.Name) != 16)   // PlayerType.Admin
+        {
+            session.Send(ServerMessages.ConsoleMsg("Sólo un Admin puede escribir el Server.ini.", FuenteInfo));
+            return;
+        }
+        if (_ini.Ruta is null)
+        {
+            session.Send(ServerMessages.ConsoleMsg("No hay Server.ini en disco para escribir.", FuenteInfo));
+            return;
+        }
+        try
+        {
+            var ini = Data.IniFile.Load(_ini.Ruta);
+            ini.Set(seccion, clave, valor);
+            ini.Save(_ini.Ruta);
+            _ini.Recargar();
+            session.Send(ServerMessages.ConsoleMsg($"Modificó {seccion} {clave} a {valor}.", FuenteInfo));
+            Console.WriteLine($"[{session.RemoteEndpoint}] /SETINIVAR {p.Name}: [{seccion}] {clave}={valor}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            session.Send(ServerMessages.ConsoleMsg($"No se pudo escribir el Server.ini: {ex.Message}", FuenteInfo));
+        }
+    }
+
     private void GmSetTrigger(ClientSession session, byte trigger)
     {
         var p = session.Player;
@@ -3138,8 +3238,9 @@ public sealed class PacketDispatcher
     /// no contesta NADA — ni un error. Se respeta ese silencio: es lo que evita que un jugador cualquiera
     /// use el comando para sondear si un personaje existe.
     ///
-    /// Sólo se cubre el personaje ONLINE. El original tiene además una rama offline que lee el .chr crudo
-    /// con GetVar; queda pendiente y NO se finge (devuelve el mismo "Usuario offline" explícito).
+    /// Cubre el personaje OFFLINE igual que el original (que lee el .chr crudo con GetVar): acá se carga del
+    /// store con <c>LoadCharacter</c>, que es la misma foto. El comentario que decía "queda pendiente" quedó
+    /// viejo cuando se agregó esa carga — la deuda ya no existe.
     /// </summary>
     private void GmInspect(ClientSession session, string nick, GmInspectKind kind)
     {
