@@ -3008,7 +3008,11 @@
     document.querySelectorAll('#tab-menu .menubtn').forEach((b) => b.addEventListener('click', () => {
       const m = b.dataset.menu;
       if (m === 'amigos') openSocial('amigos');
-      else if (m === 'clan') { openSocial('clan'); send(W().writeByte(CLIENT.RequestGuildLeaderInfo)); }  // abre panel + pide info
+      // OJO: acá NO se pide la info del clan. La respuesta del servidor (`GuildList` si no tenés clan,
+      // `GuildLeaderInfo` si sos líder) abre su PROPIO panel y le pisa este encima — o sea que el formulario
+      // de "Fundar" aparecía y desaparecía en el mismo segundo, y por el botón Clan no se podía fundar
+      // ninguno. Para ver la lista está el botón "Ver mi clan" de adentro del panel, que manda ese pedido.
+      else if (m === 'clan') openSocial('clan');
       else if (m === 'faccion') openSocial('faccion');
       else if (m === 'correo') openActions('correo');
       else if (m === 'trabajar') openActions('trabajar');
