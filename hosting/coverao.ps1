@@ -38,10 +38,18 @@ param(
   [Parameter(Position = 1)][string]$Nombre,
   [int]$Puerto = 0,
   [string]$Desde = "plantilla",
-  [string]$Raiz = $PSScriptRoot
+  # OJO: el default NO puede ser `$PSScriptRoot`. Adentro de un `param()` esa variable esta VACIA cuando el
+  # script se lanza con `powershell -File coverao.ps1 ...` —que es como lo llama un acceso directo, otro
+  # script o una tarea programada— y solo tiene valor si se lo invoca como `.\coverao.ps1`. Con el default
+  # vacio, el primer `Join-Path $Raiz $n` tiraba "No se puede enlazar el argumento con el parametro 'Path'
+  # porque es una cadena vacia" —un error que no dice nada de lo que pasa— y encima el proceso salia con
+  # codigo 0, o sea que para quien lo automatiza el comando "funciono".
+  [string]$Raiz
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Raiz) { $Raiz = $PSScriptRoot }   # ya en el cuerpo si tiene valor, venga como venga la invocacion
+if (-not $Raiz) { $Raiz = (Get-Location).Path }
 
 function CarpetaDe($n) { Join-Path $Raiz $n }
 function ExeDe($n) { Join-Path (CarpetaDe $n) "CoverAO.Server.exe" }
@@ -187,6 +195,12 @@ switch ($Accion.ToLowerInvariant()) {
     # Control Manager, que es codigo que este servidor no tiene (y agregarlo lo ataria a Windows). La tarea
     # arranca al prender la maquina sin que nadie inicie sesion y reintenta si se cae, que es lo que hace
     # falta. Registrarla a nivel maquina pide PowerShell COMO ADMINISTRADOR.
+    # Se avisa ANTES de intentar: sin esto el usuario recibe "Register-ScheduledTask : Acceso denegado" con
+    # su volcado de CimException, que no dice que hay que reabrir la consola como Administrador.
+    $yo = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $yo.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+      throw "Registrar el arranque automatico pide una consola COMO ADMINISTRADOR. Abri PowerShell con boton derecho -> 'Ejecutar como administrador' y corre de nuevo:  .\coverao.ps1 arranque $Nombre"
+    }
     $d = CarpetaDe $Nombre
     $accionT = New-ScheduledTaskAction -Execute (ExeDe $Nombre) -WorkingDirectory $d
     $disparo = New-ScheduledTaskTrigger -AtStartup
