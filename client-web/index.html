@@ -1331,8 +1331,38 @@
     // Draw a sparse .csm layer (objects/decorations/roofs): each [x,y,grh] bottom-anchored on its
     // tile. `skip(x,y)` optionally hides tiles (used to reveal building interiors under roofs).
     function drawSparseLayer(list, camX, camY, skip, offX = 0, offY = 0) {
-      if (!list) return;
-      for (const e of list) drawSparseTile(e, camX, camY, skip, offX, offY);
+      if (!list || !list.length) return;
+      // Sólo las FILAS que la cámara puede ver. Antes se recorría la capa entera en cada cuadro y el
+      // descarte lo hacía `drawSparseTile` uno por uno: en el peor mapa (364) son 5711 entradas entre
+      // objetos y techos, o sea ~340 mil vueltas por segundo para dibujar las ~40 que están en pantalla.
+      // El índice por fila se arma una sola vez por lista (WeakMap: al cambiar de mapa se va con él).
+      //
+      // El ORDEN DE DIBUJO no cambia: las entradas salen por fila ascendente y, dentro de cada fila, en el
+      // orden en que estaban en la lista. Los 863 mapas vienen ya ordenados por (y, x) desde el transcode,
+      // así que la secuencia es exactamente la de antes. Y si algún día llegara una lista desordenada,
+      // agrupar por fila es el recorrido `For Y / For X` del original, no un orden inventado.
+      const idx = filasDe(list);
+      const y0 = Math.round(camY) - MARGEN_TILES, y1 = Math.round(camY) + VIEW_H + MARGEN_TILES;
+      for (let y = y0; y < y1; y++) {
+        const fila = idx.get(y);
+        if (!fila) continue;
+        for (const e of fila) drawSparseTile(e, camX, camY, skip, offX, offY);
+      }
+    }
+    // Índice fila → entradas de una capa dispersa. La clave es el ARRAY, no el mapa: así no hay que
+    // acordarse de invalidar nada al cambiar de mapa ni ensuciar el objeto que vino del fetch.
+    const _filasPorCapa = new WeakMap();
+    function filasDe(list) {
+      let idx = _filasPorCapa.get(list);
+      if (idx) return idx;
+      idx = new Map();
+      for (const e of list) {
+        let fila = idx.get(e[1]);
+        if (!fila) idx.set(e[1], fila = []);
+        fila.push(e);
+      }
+      _filasPorCapa.set(list, idx);
+      return idx;
     }
     // Un tile suelto de una capa dispersa. Está separado porque la capa 3 NO se dibuja de un saque: se
     // intercala con los personajes, tile por tile, como en el original (ver el bucle de personajes).
@@ -1478,42 +1508,64 @@
       }
       const bg = frameGrh(b.walk[heading - 1], c); if (!bg) return false;  // animated walk frame
       const bsheet = sheets[bg.file]; if (!bsheet) { loadSheet(bg.file); return false; }
-      // Cada parte como closure; el ORDEN de dibujo (z-order) depende del heading, igual que el VB6
-      // (TileEngine.bas Select Case .Heading): al Norte el arma/escudo van DETRÁS del cuerpo, al Sur
-      // delante de todo, y al Este/Oeste uno detrás y el otro delante. head 1=Norte 2=Este 3=Sur 4=Oeste.
       // ALTO REAL DEL SPRITE. Un cuerpo de AO mide bastante más que un tile (32 px): se ancla por los PIES y
       // se extiende hacia arriba, así que el tope está muy por encima de `dy`. Sin este dato, cualquier cosa
       // que quiera ponerse "sobre el personaje" —el nick, el chat— se dibuja en el aire o, peor, encima del
       // pecho. Se registra acá, donde se conocen las alturas de cada parte.
       c._base = dy + TILE;                 // los pies
       c._top = dy + TILE;                  // se va corriendo hacia arriba con cada parte dibujada
-      const raiseTop = (y) => { if (y < c._top) c._top = y; };
-      const drawBody = () => { const bx = dx + (TILE - bg.w) / 2, by = dy + TILE - bg.h; raiseTop(by); dGrh(ctx, bsheet, bg, bx, by, bg.w, bg.h); };
-      const drawWeapon = () => drawGear(weaponsIdx, c.weapon, dx, dy, heading, c, b, 37);
-      const drawShield = () => drawGear(shieldsIdx, c.shield, dx, dy, heading, c, b, heading === 2 ? 36 : 37); // escudo al Este: +36
-      const drawHead = () => {
-        const h = headsIdx && headsIdx[c.head]; if (!h) return;
-        const hg = staticGrh(h.head[heading - 1]); if (!hg) return;
-        if (!sheets[hg.file]) { loadSheet(hg.file); return; }
-        // AO aplica el HeadOffset a la base y LUEGO ancla la cabeza abajo (Grh_Render: y = base+TILE-alto).
-        const hy = dy + TILE + b.head[1] - hg.h; raiseTop(hy);
-        dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
-      };
-      const drawHelmet = () => {
-        const ht = helmetsIdx && c.helmet && helmetsIdx[c.helmet]; if (!ht || !b.head) return;
-        const hg = staticGrh(ht[heading - 1]); if (!hg) return;
-        if (!sheets[hg.file]) { loadSheet(hg.file); return; }
-        const hy = dy + TILE + b.head[1] - hg.h; raiseTop(hy);
-        dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
-      };
-      const order = {
-        1: [drawWeapon, drawShield, drawBody, drawHead, drawHelmet],  // Norte: arma/escudo detrás
-        2: [drawShield, drawBody, drawHead, drawHelmet, drawWeapon],  // Este: escudo detrás, arma delante
-        3: [drawBody, drawHead, drawHelmet, drawShield, drawWeapon],  // Sur: arma/escudo delante de todo
-        4: [drawWeapon, drawBody, drawHead, drawHelmet, drawShield],  // Oeste: arma detrás, escudo delante
-      }[heading] || [drawBody, drawHead, drawHelmet, drawShield, drawWeapon];
-      for (const draw of order) draw();
+      // El ORDEN de dibujo (z-order) depende del heading, igual que el VB6 (TileEngine.bas
+      // Select Case .Heading): al Norte el arma/escudo van DETRÁS del cuerpo, al Sur delante de todo, y al
+      // Este/Oeste uno detrás y el otro delante. head 1=Norte 2=Este 3=Sur 4=Oeste.
+      //
+      // Va con llamadas directas y no con una tabla de closures indexada por heading: aquella armaba 6
+      // funciones + 4 arrays + un objeto POR PERSONAJE Y POR CUADRO. Con Ullathorpe poblada eso son miles
+      // de objetos por segundo que el GC tiene que juntar, y el recolector corre en el mismo hilo que el
+      // render: se paga como tirones.
+      const vEscudo = heading === 2 ? 36 : 37;                 // escudo al Este: +36
+      switch (heading) {
+        case 1:                                                // Norte: arma/escudo detrás
+          drawGear(weaponsIdx, c.weapon, dx, dy, heading, c, b, 37);
+          drawGear(shieldsIdx, c.shield, dx, dy, heading, c, b, vEscudo);
+          dibujarCuerpo(c, dx, dy, bg, bsheet); dibujarCabeza(c, dx, dy, heading, b); dibujarCasco(c, dx, dy, heading, b);
+          break;
+        case 2:                                                // Este: escudo detrás, arma delante
+          drawGear(shieldsIdx, c.shield, dx, dy, heading, c, b, vEscudo);
+          dibujarCuerpo(c, dx, dy, bg, bsheet); dibujarCabeza(c, dx, dy, heading, b); dibujarCasco(c, dx, dy, heading, b);
+          drawGear(weaponsIdx, c.weapon, dx, dy, heading, c, b, 37);
+          break;
+        case 4:                                                // Oeste: arma detrás, escudo delante
+          drawGear(weaponsIdx, c.weapon, dx, dy, heading, c, b, 37);
+          dibujarCuerpo(c, dx, dy, bg, bsheet); dibujarCabeza(c, dx, dy, heading, b); dibujarCasco(c, dx, dy, heading, b);
+          drawGear(shieldsIdx, c.shield, dx, dy, heading, c, b, vEscudo);
+          break;
+        default:                                               // Sur (3) y cualquier heading raro: todo delante
+          dibujarCuerpo(c, dx, dy, bg, bsheet); dibujarCabeza(c, dx, dy, heading, b); dibujarCasco(c, dx, dy, heading, b);
+          drawGear(shieldsIdx, c.shield, dx, dy, heading, c, b, vEscudo);
+          drawGear(weaponsIdx, c.weapon, dx, dy, heading, c, b, 37);
+      }
       return true;
+    }
+    // Las tres partes propias del personaje. Cada una corre el tope (`c._top`) hacia arriba con su alto.
+    function dibujarCuerpo(c, dx, dy, bg, bsheet) {
+      const bx = dx + (TILE - bg.w) / 2, by = dy + TILE - bg.h;
+      if (by < c._top) c._top = by;
+      dGrh(ctx, bsheet, bg, bx, by, bg.w, bg.h);
+    }
+    function dibujarCabeza(c, dx, dy, heading, b) {
+      const h = headsIdx && headsIdx[c.head]; if (!h) return;
+      const hg = staticGrh(h.head[heading - 1]); if (!hg) return;
+      if (!sheets[hg.file]) { loadSheet(hg.file); return; }
+      // AO aplica el HeadOffset a la base y LUEGO ancla la cabeza abajo (Grh_Render: y = base+TILE-alto).
+      const hy = dy + TILE + b.head[1] - hg.h; if (hy < c._top) c._top = hy;
+      dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
+    }
+    function dibujarCasco(c, dx, dy, heading, b) {
+      const ht = helmetsIdx && c.helmet && helmetsIdx[c.helmet]; if (!ht || !b.head) return;
+      const hg = staticGrh(ht[heading - 1]); if (!hg) return;
+      if (!sheets[hg.file]) { loadSheet(hg.file); return; }
+      const hy = dy + TILE + b.head[1] - hg.h; if (hy < c._top) c._top = hy;
+      dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
     }
 
     /**
@@ -2465,7 +2517,10 @@
           c.auras = c.auras || {};
           if (f.aura) c.auras[f.tipo] = f.aura; else delete c.auras[f.tipo];
         } break; }
-        case 'ObjectCreate': ground.set(f.x + ',' + f.y, { objIndex: f.objIndex, amount: f.amount }); break; // dropped item on the ground
+        // x/y van TAMBIÉN adentro del valor. La clave del Map es la cadena "x,y" y el render la partía con
+        // `key.split(',').map(Number)` en cada cuadro y en dos bucles distintos: cuatro arrays por ítem tirado
+        // por cuadro para volver a los dos números que ya teníamos acá.
+        case 'ObjectCreate': ground.set(f.x + ',' + f.y, { objIndex: f.objIndex, amount: f.amount, x: f.x, y: f.y }); break; // dropped item on the ground
         case 'ObjectDelete': ground.delete(f.x + ',' + f.y); break;
         // El teleport reubica sin pasar por la cola: lo que venga después no es confirmación de nada.
         // Teleporte a otro mapa. Además de cambiar el mapa hay que CORTAR el deslizamiento en curso: si no,
@@ -2596,9 +2651,13 @@
         case 'PeaceProposalsList': listaPropuestas('🕊️ Propuestas de paz', f.guilds, CLIENT.GuildPeaceDetails); break;
         case 'GuildDetails': openPanel('🏰 ' + esc(f.name), `Líder: <b>${esc(f.leader)}</b><br>Alineación: ${esc(f.alignment)}<br>Miembros: ${f.memberCount} · Enemigos: ${f.enemies} · Aliados: ${f.allies}${f.electionsOpen ? ' · <b>elecciones abiertas</b>' : ''}<br>${f.url ? ('URL: ' + esc(f.url) + '<br>') : ''}${esc(f.desc || '(sin descripción)')}`); break;
         case 'CommerceInit': commerceItems = {}; renderCommerce(); break;               // merchant window opening
-        case 'ChangeNPCInventorySlot': commerceItems[f.slot] = f; renderCommerce(); break; // stock slot (initial or post-buy)
+        // El stock de un mercader llega SLOT POR SLOT, y cada uno reconstruía la ventana ENTERA: con 40
+        // productos son 40 innerHTML completos, ~1600 <canvas> creados y tirados, y 1600 blits — el tirón de
+        // medio segundo al abrir una tienda. Igual el banco. Se agrupa con el mismo debounce de 120 ms que el
+        // archivo ya usa para los íconos (scheduleIconRefresh): la ráfaga entera termina en UN solo render.
+        case 'ChangeNPCInventorySlot': commerceItems[f.slot] = f; scheduleCommerce(); break; // stock slot (initial or post-buy)
         case 'BankInit': bankItems = {}; bankOpen = true; bankGold = f.gold; renderBank(); break;   // vault window opening
-        case 'ChangeBankSlot': bankItems[f.slot] = { objIndex: f.objIndex, amount: f.amount, value: f.value }; if (bankOpen) renderBank(); break;
+        case 'ChangeBankSlot': bankItems[f.slot] = { objIndex: f.objIndex, amount: f.amount, value: f.value }; if (bankOpen) scheduleBank(); break;
         // Not in a guild: the server answers with the plain list of every clan (VB6 WriteGuildList).
         case 'GuildList': {
           // esc(): los nombres de clan los elige un jugador (CreateNewGuild) y van a innerHTML → sin escapar es XSS.
@@ -2708,43 +2767,72 @@
     let myFood = { cur: 100, max: 100 }, myThirst = { cur: 100, max: 100 }, myAttrs = null;
     const fillEl = { hp: $('f-hp'), mana: $('f-mana'), ener: $('f-ener'), food: $('f-food'), thirst: $('f-thirst') };
     const valEl = { hp: $('v-hp'), mana: $('v-mana'), ener: $('v-ener'), food: $('v-food'), thirst: $('v-thirst') };
+    // syncStats() corre al final de CADA frame de draw(), o sea 60-144 veces por segundo, y el HUD cambia unas
+    // pocas veces por segundo. Escribir al DOM sin mirar si el valor cambió costaba, por frame: 8
+    // getElementById, 5 escrituras de style.width (cada una un string nuevo + invalidación de layout) y DOS
+    // toLocaleString('es-AR') —formateo Intl completo— para el oro y la experiencia. Todo eso para volver a
+    // pintar exactamente lo mismo. Estos helpers escriben SÓLO si el valor es distinto al último; los
+    // elementos se resuelven una vez y se cachean.
+    const _ultimo = new Map();
+    function esc_(el, prop, v) {          // escribe el.<prop> = v sólo si cambió
+      if (!el) return;
+      const k = el.id + '|' + prop;
+      if (_ultimo.get(k) === v) return;
+      _ultimo.set(k, v);
+      if (prop === 'w') el.style.width = v; else el.textContent = v;
+    }
+    const hudEl = {
+      level: $('levelnum'), xpfill: $('xpfill'), xptxt: $('xptxt'), gold: $('v-gold'),
+      str: $('a-str'), agi: $('a-agi'), name: $('charname'), mapa: $('mapname'),
+    };
     function setBar(k, cur, max) {
       const c = Math.max(0, cur | 0), m = Math.max(1, max | 0);
-      fillEl[k].style.width = Math.max(0, Math.min(100, c / m * 100)) + '%';
-      valEl[k].textContent = c + '/' + m;
+      esc_(fillEl[k], 'w', Math.max(0, Math.min(100, c / m * 100)) + '%');
+      esc_(valEl[k], 't', c + '/' + m);
     }
     let fpsAvg = 0;
+    const _expCache = { e: null, l: null };   // para no reformatear la experiencia en cada frame
+    let _goldCache = null, _coordsCache = null, _perfCache = null;
     function syncStats() {
       const s = myStats;
       if (s) {
         if (s.maxHp != null) setBar('hp', s.minHp, s.maxHp);
         if (s.maxMan != null) setBar('mana', s.minMan, s.maxMan);
         if (s.maxSta != null) setBar('ener', s.minSta, s.maxSta);
-        if (s.level != null) $('levelnum').textContent = s.level;
+        if (s.level != null) esc_(hudEl.level, 't', s.level);
         // La barra sola no dice nada: a nivel 1 con 0 de experiencia es un rectángulo negro y el jugador no
         // tiene forma de saber cuánto le falta. Va el número adentro, como en las barras de vida/maná.
         if (s.exp != null && s.elu) {
-          $('xpfill').style.width = Math.max(0, Math.min(100, s.exp / s.elu * 100)) + '%';
-          $('xptxt').textContent = `${(+s.exp).toLocaleString('es-AR')} / ${(+s.elu).toLocaleString('es-AR')}`;
+          esc_(hudEl.xpfill, 'w', Math.max(0, Math.min(100, s.exp / s.elu * 100)) + '%');
+          // El toLocaleString sólo se paga cuando exp o elu cambiaron de verdad, no en cada frame.
+          if (_expCache.e !== s.exp || _expCache.l !== s.elu) {
+            _expCache.e = s.exp; _expCache.l = s.elu;
+            esc_(hudEl.xptxt, 't', `${(+s.exp).toLocaleString('es-AR')} / ${(+s.elu).toLocaleString('es-AR')}`);
+          }
         }
-        if (s.gold != null) $('v-gold').textContent = (+s.gold).toLocaleString('es-AR');
+        if (s.gold != null && _goldCache !== s.gold) {
+          _goldCache = s.gold;
+          esc_(hudEl.gold, 't', (+s.gold).toLocaleString('es-AR'));
+        }
       }
       setBar('food', myFood.cur, myFood.max);
       setBar('thirst', myThirst.cur, myThirst.max);
-      if (myAttrs) { $('a-str').textContent = myAttrs.fuerza; $('a-agi').textContent = myAttrs.agilidad; }
+      if (myAttrs) { esc_(hudEl.str, 't', myAttrs.fuerza); esc_(hudEl.agi, 't', myAttrs.agilidad); }
       const me = chars.get(myCharIndex);
-      if (me && me.name) $('charname').textContent = me.name;
+      if (me && me.name) esc_(hudEl.name, 't', me.name);
       // El NOMBRE del lugar, no su número. Los `map<N>.json` lo traen desde el header del .csm
       // (add_map_names.py), así que decir "Mapa 1" parado en Ullathorpe era tirar el dato que ya estaba.
       // Los mapas sin nombre —dungeons, relleno— caen al número, que es mejor que un renglón vacío.
       const nomMapa = (map && (map.name || '').trim()) || '';
-      $('mapname').textContent = nomMapa || ('Mapa ' + currentMap);
-      coordsEl.textContent = me ? `${currentMap} · ${me.x}, ${me.y}` : '—';
+      esc_(hudEl.mapa, 't', nomMapa || ('Mapa ' + currentMap));
+      const coords = me ? `${currentMap} · ${me.x}, ${me.y}` : '—';
+      if (_coordsCache !== coords) { _coordsCache = coords; coordsEl.textContent = coords; }
       // El FPS lo mide el BUCLE DE RENDER, no este sync del HUD: midiéndolo acá el cartel mostraba el
       // refresco del HUD —un número lindo y estable— mientras el mundo podía estar congelado.
       // Y al lado, la LATENCIA: el round-trip que devuelve el Pong. Son las dos mitades del "va fluido o no":
       // el FPS es de este lado y la latencia del otro, y confundirlas manda a optimizar lo que no es.
-      perfEl.textContent = Math.round(fpsAvg) + ' FPS' + (latenciaMs == null ? '' : ' · ' + latenciaMs + ' ms');
+      const perf = Math.round(fpsAvg) + ' FPS' + (latenciaMs == null ? '' : ' · ' + latenciaMs + ' ms');
+      if (_perfCache !== perf) { _perfCache = perf; perfEl.textContent = perf; }
     }
 
     // --- grilla de inventario (DOM): icono por <canvas>, cantidad, marca de equipado -------------
@@ -2770,6 +2858,11 @@
     }
     let iconRefreshT = 0;
     function scheduleIconRefresh() { clearTimeout(iconRefreshT); iconRefreshT = setTimeout(refreshIcons, 120); }
+    // Mismo agrupado para tienda y banco: el server manda un paquete POR SLOT y sin esto cada uno rearmaba la
+    // ventana completa. El timer se cancela al cerrar el modal para no repintar algo que ya no está.
+    let commerceT = 0, bankT = 0;
+    function scheduleCommerce() { clearTimeout(commerceT); commerceT = setTimeout(() => { if (modalKind === 'commerce') renderCommerce(); }, 120); }
+    function scheduleBank() { clearTimeout(bankT); bankT = setTimeout(() => { if (bankOpen) renderBank(); }, 120); }
     function refreshIcons() {   // re-blit de íconos ya presentes tras cargar una hoja de arte async
       document.querySelectorAll('#invgrid .islot[data-obj], #modalcard .shopcell[data-obj]').forEach((d) => {
         const cv = d.querySelector('canvas'), obj = +d.dataset.obj;
@@ -3112,11 +3205,11 @@
       // Estas van aditivas y no en el light-map a proposito: son un agregado nuestro -- en el original un
       // objeto tirado crea una luz del mismo sistema que las del mapa, sin glow ni parpadeo.
       ctx.globalCompositeOperation = 'lighter';
-      for (const [key, it] of ground) {
+      for (const it of ground.values()) {
         const luz = objLights[it.objIndex];
         if (!luz) continue;
         const [rgb, alcance] = luz;
-        const [gx, gy] = key.split(',').map(Number);
+        const gx = it.x, gy = it.y;
         const lx = (gx - camX) * TILE + TILE / 2, ly = (gy - camY) * TILE + TILE / 2;
         const radio = TILE * (alcance + 0.6);
         if (lx < -radio * 2 || lx > VW + radio * 2 || ly < -radio * 2 || ly > VH + radio * 2) continue;
@@ -3194,8 +3287,8 @@
       // Van con `offX/offY` como todas las capas indexadas por grilla. Sin eso quedaban clavados al tile
       // REDONDEADO: mientras el mundo scrollea de a un píxel, el ítem del suelo se quedaba quieto y saltaba
       // una baldosa entera de golpe — se veía como si la moneda o el cadáver patinaran sobre el piso.
-      for (const [key, it] of ground) {
-        const [gx, gy] = key.split(',').map(Number);
+      for (const it of ground.values()) {
+        const gx = it.x, gy = it.y;
         const sx = gx - Math.round(camX), sy = gy - Math.round(camY);
         if (sx < -MARGEN_TILES || sx >= nW + MARGEN_TILES || sy < -MARGEN_TILES || sy >= nH + MARGEN_TILES) continue;
         const meta = items && items[it.objIndex]; if (!meta) continue;
@@ -3230,13 +3323,15 @@
       // Van en el MISMO recorrido los vivos y los que se están desvaneciendo. El fade de los muertos tenía su
       // propio bucle más abajo, después de la capa 3; ahora que la capa 3 se intercala, dejarlo suelto al
       // final lo dibujaría por encima del follaje.
+      //
+      // La posición interpolada se calcula UNA VEZ por personaje y viaja en la entrada. Antes el comparador
+      // llamaba a `posRender` en cada comparación —O(n log n) arrays nuevos por cuadro— y encima consultaba
+      // `performance.now()` adentro del sort: el criterio de orden se movía mientras se ordenaba, que es
+      // justamente lo que un comparador no puede hacer.
       const aDibujar = [];
-      for (const par of chars) aDibujar.push({ ci: par[0], c: par[1], muriendo: false });
-      for (const par of dying) aDibujar.push({ ci: par[0], c: par[1], muriendo: true });
-      aDibujar.sort((a, b) => {
-        const pa = posRender(a.c), pb = posRender(b.c);
-        return pa[1] - pb[1] || pa[0] - pb[0];
-      });
+      for (const par of chars) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: false, rx: p[0], ry: p[1] }); }
+      for (const par of dying) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: true, rx: p[0], ry: p[1] }); }
+      aDibujar.sort((a, b) => a.ry - b.ry || a.rx - b.rx);
       // CAPA 3 INTERCALADA con los personajes (TileEngine.bas:2116-2197). Dentro de cada tile el original
       // dibuja la capa 3 (:2136) y DESPUÉS el personaje (:2195), y recorre las filas de arriba hacia abajo:
       // o sea que a un personaje lo tapa el follaje de las filas de MÁS ABAJO —el que está delante de él—,
@@ -3249,17 +3344,28 @@
         map._decoOrd = [...map.decorations].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
       }
       const deco = (map && map._decoOrd) || [];
-      let iDeco = 0;
+      // El recorrido se ACOTA A LAS FILAS VISIBLES. Antes arrancaba en 0 y el drenaje final lo llevaba
+      // hasta el final, así que se recorría la capa 3 entera en cada cuadro para dibujar las pocas que
+      // entran en pantalla. Los límites son los mismos que usa `drawSparseTile` para descartar, o sea que
+      // no deja de dibujarse nada: lo que se saltea es lo que igual iba a caer fuera de cámara.
+      const decoY0 = Math.round(camY) - MARGEN_TILES, decoY1 = Math.round(camY) + VIEW_H + MARGEN_TILES;
+      // `_decoOrd` está ordenado por (y, x) —lo ordenamos nosotros—, así que la primera fila visible se
+      // busca por bisección en vez de caminar hasta ella.
+      let iDeco = 0, decoHi = deco.length;
+      while (iDeco < decoHi) {
+        const m = (iDeco + decoHi) >> 1;
+        if (deco[m][1] < decoY0) iDeco = m + 1; else decoHi = m;
+      }
       // Empate (mismo tile): primero la capa 3, para que el personaje parado ahí quede ENCIMA de ella.
       const capa3Hasta = (fy, fx) => {
         while (iDeco < deco.length) {
           const e = deco[iDeco];
+          if (e[1] >= decoY1) break;                                  // ya pasamos el borde de abajo
           if (e[1] > fy || (e[1] === fy && e[0] > fx)) break;
           drawSparseTile(deco[iDeco++], camX, camY, undefined, offX, offY);
         }
       };
-      for (const { ci, c, muriendo } of aDibujar) {
-        const [crx, cry] = posRender(c);
+      for (const { ci, c, muriendo, rx: crx, ry: cry } of aDibujar) {
         capa3Hasta(cry, crx);
         // El descarte por TIEMPO va antes de mirar si está en pantalla: si no, uno que muere fuera de cámara
         // se queda en `dying` para siempre.
@@ -3913,9 +4019,13 @@
     canvas.addEventListener('mousemove', (ev) => {
       const t = tileDelEvento(ev);
       const nx = t ? t.x : -1, ny = t ? t.y : -1;
-      if (nx !== punteroX || ny !== punteroY) { punteroX = nx; punteroY = ny; draw(); }
+      // Sin draw() forzado: el bucle de render ya dibuja continuamente, así que el resaltado del puntero
+      // aparece en el frame siguiente igual. Forzarlo acá disparaba un frame COMPLETO del canvas
+      // supersampleado por cada baldosa que cruzaba el mouse, salteándose el limitador de FPS: mover el
+      // puntero por la pantalla duplicaba la tasa de dibujo.
+      if (nx !== punteroX || ny !== punteroY) { punteroX = nx; punteroY = ny; }
     });
-    canvas.addEventListener('mouseleave', () => { punteroX = -1; punteroY = -1; draw(); });
+    canvas.addEventListener('mouseleave', () => { punteroX = -1; punteroY = -1; });
 
     // Clic en el mundo. DoubleClick = interactuar (NPC/objeto/puerta).
     canvas.addEventListener('click', (ev) => {
