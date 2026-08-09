@@ -7553,6 +7553,41 @@ public sealed class PacketDispatcher
                     session.Send(ServerMessages.LocaleMsg(470, $"{obj.CuantoAumento}%{p.CreditoDonador}"));   // "¡Has abierto cofre de #1 creditos, ahora tienes #2!"
                     return;
                 }
+                case 5: // poción que LANZA UN HECHIZO sobre quien la toma (VB6 InvUsuario.bas:1636)
+                {
+                    // El original pone TargetUser = uno mismo y llama HechizoEstadoUsuario. Si ese Sub no
+                    // aplicó nada devuelve Casteo=False y hace `Exit Sub`: la poción NO se consume. Eso es lo
+                    // que hace que la de Metamorfosis y las dos de Desencantar sigan sin efecto —ese Sub no
+                    // lee esos campos— y es fiel, no una simplificación nuestra.
+                    var hechizo = obj.LanzaHechizo > 0 ? _data.Spell(obj.LanzaHechizo) : null;
+                    if (hechizo is null) { session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", 0)); return; }
+                    var aplicados = AplicarBuffsDeAtributo(p, hechizo);
+                    aplicados.AddRange(AplicarEfectosDeEstado(p, p, hechizo));
+                    // SubeHP va al final, como en el original (:1412), y con la misma fórmula que el hechizo.
+                    if (hechizo.SubeHp == 1 && hechizo.MaxHp > 0)
+                    {
+                        int cura = Combat.EfectoHechizoArea3Pct(_rng.Next(hechizo.MinHp, hechizo.MaxHp + 1), p.Level);
+                        p.Hp = Math.Min(p.MaxHp, p.Hp + cura);
+                        aplicados.Add($"+{cura} HP -> {p.Hp}/{p.MaxHp}");
+                        avisoStat = ServerMessages.UpdateHP((short)p.Hp);
+                    }
+                    if (hechizo.Invisibilidad > 0 && !p.Invisible)
+                    {
+                        p.InvisibleUntilTick = _loop.Tick + InvisibilityDurationTicks;
+                        p.Invisible = true;
+                        _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
+                        aplicados.Add("invisible");
+                    }
+                    if (aplicados.Count == 0)
+                    {
+                        // Casteo = False. Ni se consume ni se gasta: el frasco sigue en el inventario.
+                        session.Send(ServerMessages.ConsoleMsg("Esa poción no te hace nada.", 0));
+                        return;
+                    }
+                    EmitSpellFx(p.Pos, p.CharIndex, hechizo);
+                    effect = string.Join(", ", aplicados);
+                    break;
+                }
                 default:
                     session.Send(ServerMessages.ConsoleMsg("Esa poción todavía no tiene efecto.", 0)); return;
             }
@@ -7903,6 +7938,7 @@ public sealed class PacketDispatcher
             {
                 inv.Equipped = false;
                 ClearEquipAnim(p, obj);
+                AplicarBonusDeSkill(p, obj, poniendose: false);
                 p.Inventory[slot] = inv;
                 // Sacarse la HERRAMIENTA corta la faena en el acto (VB6 `Desequipar`, InvUsuario.bas:767, justo
                 // después de limpiar `AnilloEqpObjIndex`). El loop ya la cortaba solo, pero recién en la vuelta
@@ -7940,11 +7976,13 @@ public sealed class PacketDispatcher
                     {
                         other.Equipped = false; p.Inventory[i] = other;
                         ClearEquipAnim(p, oo);
+                        AplicarBonusDeSkill(p, oo, poniendose: false);   // el que sale devuelve SU bonus
                         session.Send(ServerMessages.ChangeInventorySlot((byte)i, other.ObjIndex, other.Amount, false, 0f, 1));
                     }
                 }
                 inv.Equipped = true;
                 SetEquipAnim(p, obj);
+                AplicarBonusDeSkill(p, obj, poniendose: true);
                 p.Inventory[slot] = inv;
             }
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
@@ -7956,6 +7994,30 @@ public sealed class PacketDispatcher
                 BroadcastEquipChange(p, obj, inv.Equipped);
             session.Send(ServerMessages.ConsoleMsg(inv.Equipped ? $"Equipaste {obj.Name}." : $"Desequipaste {obj.Name}.", 0));
         });
+    }
+
+    /// <summary>
+    /// EL BONUS DE SKILL DE UN ÍTEM EQUIPADO. El original suma <c>CuantoAumento</c> a la skill
+    /// <c>QueSkill</c> al ponérselo y lo resta al sacárselo, las dos ramas adentro de un
+    /// <c>Case eMagicType.ModificaSkill</c> (InvUsuario.bas:973 y :747). Son los anillos y pendientes que
+    /// llevan el número en el nombre: Anillo del Guerrero (+20), Pendiente del Arquero (+30), Anillo de
+    /// Comercio (+30). Sin esto el jugador se pone el ítem que promete +20 y no le cambia nada.
+    ///
+    /// Se llama en los TRES puntos donde cambia el estado equipado, y el tercero es el que se olvida: cuando
+    /// uno se pone un anillo teniendo otro puesto, el que sale tiene que devolver SU bonus. Sin esa resta,
+    /// cambiar de anillo diez veces deja diez bonus sumados — y como la skill se guarda en el <c>.chr</c>,
+    /// queda para siempre.
+    ///
+    /// El clamp a 0..255 es una defensa NUESTRA, no del original: la skill vive en un byte y una resta sobre
+    /// un personaje que ya venía con el ítem puesto de antes daría la vuelta a 241.
+    /// </summary>
+    private static void AplicarBonusDeSkill(Player p, Data.ObjInfo o, bool poniendose)
+    {
+        const int ModificaSkill = 3;   // VB6 eMagicType.ModificaSkill
+        if (o.EfectoMagico != ModificaSkill || o.QueSkill <= 0 || o.CuantoAumento == 0) return;
+        if (o.QueSkill >= p.Skills.Length) return;
+        int valor = p.Skills[o.QueSkill] + (poniendose ? o.CuantoAumento : -o.CuantoAumento);
+        p.Skills[o.QueSkill] = (byte)Math.Clamp(valor, 0, 255);
     }
 
     /// <summary>Difunde al área lo que cambió al equipar o desequipar una pieza, como el original: un
@@ -8001,6 +8063,12 @@ public sealed class PacketDispatcher
             default: p.HelmetAura = aura; break;
         }
         _world.BroadcastToObservers(p.Pos, ServerMessages.AuraToChar(p.CharIndex, aura, tipoAura));
+        // EL SONIDO DEL AURA. El original lo manda en los cuatro caminos de equipar, justo detrás del
+        // AuraToChar y adentro del mismo `If Obj.Aura <> 0` (InvUsuario.bas:1014, 1077, 1181, 1270), así que
+        // va acá y con las mismas dos condiciones: sólo al EQUIPAR —desequipar no suena— y sólo si el ítem
+        // trae aura. Son los 10 ítems de tope del juego; sin esto, ponerse una Espada Mata Dragones era mudo.
+        if (equipped && o.Aura > 0 && o.SndEspecial > 0)
+            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)o.SndEspecial, p.Pos.X, p.Pos.Y));
     }
 
     private static void SetEquipAnim(Player p, Data.ObjInfo o)

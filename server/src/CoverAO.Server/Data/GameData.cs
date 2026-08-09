@@ -83,7 +83,34 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // `Snd1`: el sonido que un INSTRUMENTO (otInstrumentos = 26) hace sonar en el área al usarlo
     // (VB6 InvUsuario.bas:1854). Tambor 48, Laúd 49, Flauta 51. OJO: en el obj.dat la clave va en
     // MAYÚSCULAS ("SND1"); buscarla como "Snd1" da cero y el campo parece muerto.
-    int Snd1 = 0)
+    int Snd1 = 0,
+    // `SndEspecial`: el sonido que suena EN EL ÁREA al equipar un ítem que tiene aura ("Sonido de auras" en
+    // el original). El VB6 lo emite en los cuatro caminos de equipar —arma, armadura, escudo y casco— y
+    // siempre ADENTRO del `If Obj.Aura <> 0`, o sea que un ítem con sonido pero sin aura no suena
+    // (InvUsuario.bas:1014, 1077, 1181, 1270).
+    //
+    // Lo traen 10 objetos, y los 10 tienen aura: son las armas y armaduras de tope —Espada Mata Dragones,
+    // Harbinger Kin, Daga Infernal, Nudillos de Oro, los Báculos de Hechicero, la Armadura de Placas Dorada,
+    // el Escudo de Reflexión, la Espada Saramiana—. Ponerse una de esas y que no suene nada es una diferencia
+    // que se nota: en el original te la escucha toda el área.
+    int SndEspecial = 0,
+    // `QueSkill` (obj.dat): la skill que el ítem SUBE mientras está puesto. El original suma `CuantoAumento`
+    // al equipar y lo resta al desequipar, y las dos ramas están adentro de un `Case eMagicType.ModificaSkill`
+    // (InvUsuario.bas:973 y :747), o sea que el bonus sólo aplica si `EfectoMagico` vale 3.
+    //
+    // Lo traen 11 objetos y 10 tienen el EfectoMagico correcto: los anillos y pendientes que llevan el número
+    // EN EL NOMBRE —Anillo del Guerrero (+20), Pendiente del Arquero (+30), Anillo de Comercio (+30)—. El que
+    // sobra, el Manual de Liderazgo, no tiene EfectoMagico: en el original tampoco da nada, y acá igual.
+    int QueSkill = 0,
+    // `LanzaHechizo` (obj.dat): la poción de SubTipo 5 le lanza este hechizo A QUIEN LA TOMA. El original la
+    // rutea por `HechizoEstadoUsuario` con TargetUser = uno mismo (InvUsuario.bas:1636), y si ese Sub no
+    // aplicó nada devuelve `Casteo = False` y la poción NO SE CONSUME.
+    //
+    // Eso último decide el alcance: ese Sub lee Sanacion, Envenena, Incinera, CuraVeneno, Paraliza,
+    // Inmoviliza, RemoverParalisis, Ceguera, Invisibilidad, SubeHP y los buffs de atributo — pero NO
+    // metamorfosis ni desencantar. Así que de las 8 pociones que traen el campo, la de Metamorfosis: Dragón y
+    // las dos de Desencantar (Anti-Ceguera y Anti-Estupidez) no hacen nada NI EN EL ORIGINAL.
+    int LanzaHechizo = 0)
 {
     /// <summary>VB6 <c>ItemNewbie</c>: un mercader no paga nada por esto. Inalcanzable con esta data (ver arriba).</summary>
     public bool IsNewbie => Newbie == 1;
@@ -796,7 +823,10 @@ public sealed class GameData
                 Int(el, "Aura", "aura"),                   // brillo del ítem equipado (AuraToChar)
                 Int(el, "Apuñala", "apuñala"),             // arma que sirve para apuñalar (13 objetos)
                 Int(el, "Crucial", "crucial"),             // stock infinito en el mercader (casing mezclado en el .dat)
-                Int(el, "SND1", "Snd1"));                  // sonido del instrumento (la clave del .dat va en MAYÚSCULAS)
+                Int(el, "SND1", "Snd1"),                   // sonido del instrumento (la clave del .dat va en MAYÚSCULAS)
+                Int(el, "SndEspecial", "SNDESPECIAL", "sndespecial"),   // sonido al equipar un ítem con aura
+                Int(el, "QueSkill", "Queskill", "queskill"),             // skill que sube el ítem equipado
+                Int(el, "LanzaHechizo", "Lanzahechizo", "lanzahechizo"));  // poción SubTipo 5: hechizo que lanza
         }
         return map;
     }
