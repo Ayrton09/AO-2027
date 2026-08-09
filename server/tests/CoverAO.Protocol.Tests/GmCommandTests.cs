@@ -23,7 +23,7 @@ public class GmCommandTests : IDisposable
     private sealed class FakeTransport : ITransport
     {
         public string RemoteEndpoint => "test";
-        public bool Closed;
+        public volatile bool Closed;   // lo escribe el escritor de salida, que es otro hilo
         public ValueTask<int> ReceiveAsync(byte[] buffer, CancellationToken ct) => new(0);
         public void Send(byte[] data) { }
         public void Close(string reason) { Closed = true; CloseReason = reason; }
@@ -97,6 +97,14 @@ public class GmCommandTests : IDisposable
     public void Truly_unknown_selector_still_closes_to_protect_the_stream()
     {
         Consumed(200, Array.Empty<byte>());   // 200 no existe en eGMCommands (1..91)
-        Assert.True(_transport.Closed, "un selector desconocido sí debe cerrar: no sabemos cuántos bytes ocupa");
+        // Lo que protege al servidor es que la SESIÓN se cierre en el acto: desde ese instante no se despacha
+        // ni un paquete más ni se manda un byte más. Antes esto se medía por el socket, que se bajaba
+        // sincrónicamente adentro de Close; desde que la salida tiene cola, el socket lo baja el escritor
+        // cuando termina de drenar —así el último mensaje llega al cliente en vez de perderse con él—, o el
+        // cierre forzado si el cliente dejó de leer. O sea que el socket cae un instante después, y por eso
+        // se comprueban las DOS cosas: la sesión ya, el socket enseguida.
+        Assert.True(_session.Cerrada, "un selector desconocido sí debe cerrar: no sabemos cuántos bytes ocupa");
+        SpinWait.SpinUntil(() => _transport.Closed, TimeSpan.FromSeconds(5));
+        Assert.True(_transport.Closed, "y el socket tiene que terminar bajando");
     }
 }

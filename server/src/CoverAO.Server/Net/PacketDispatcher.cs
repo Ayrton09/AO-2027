@@ -101,6 +101,64 @@ public sealed class PacketDispatcher
     private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));
     private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.IpOf(session.RemoteEndpoint));
 
+    /// <summary>
+    /// Carga la cuenta y verifica la contraseña FUERA del hilo del game loop, y vuelve a él con el resultado.
+    ///
+    /// PBKDF2 son 210.000 iteraciones: 25,5 ms medidos en esta máquina, contra un presupuesto de tick de 40.
+    /// Las tres rutas de login corrían adentro de un `_loop.Enqueue`, así que cada intento —incluido el
+    /// DummyVerify de una cuenta que NO existe, que cuesta lo mismo a propósito para no delatar por timing si
+    /// la cuenta existe— congelaba media vuelta del mundo para todos los que estaban jugando. Dos intentos en
+    /// la misma vuelta ya la pasaban de largo. Es la amplificación clásica: un paquete de unos pocos bytes le
+    /// compra al atacante decenas de milisegundos de CPU del hilo que no se puede bloquear.
+    ///
+    /// Lo que se mueve es SÓLO leer la cuenta del disco y derivar la clave: ni una línea que toque el mundo.
+    /// El resto —rechazos, baneo, migración del hash viejo, entrada al mundo— sigue corriendo en el loop, en
+    /// el mismo orden que antes. Y el <c>TomarVerificacion</c> de la sesión limita a UNA verificación en vuelo
+    /// por conexión: sin eso, mandar N paquetes de login seguidos compraba N hashes en paralelo, y dos que
+    /// terminaran juntos podían meter al mismo personaje al mundo dos veces.
+    /// </summary>
+    private void VerificarCuenta(ClientSession session, string account, string password,
+                                 Action<Data.Account?, bool, bool> alTerminar)
+    {
+        if (session.Cerrada) return;
+        if (!session.TomarVerificacion())
+        {
+            // Ya hay una verificación en vuelo para esta conexión: pasa cuando el cliente manda
+            // ConnectAccount y LoginExistingChar seguidos, porque las dos arrancan desde el loop y no desde
+            // el despacho del paquete. NO se descarta —descartarla dejaría al cliente esperando para
+            // siempre—: se reintenta en la vuelta siguiente, o sea ~40 ms, contra los 25 que tarda el hash.
+            _loop.Enqueue(() => VerificarCuenta(session, account, password, alTerminar));
+            return;
+        }
+        Task.Run(() =>
+        {
+            Data.Account? acc = null;
+            bool ok = false, migrado = false;
+            try
+            {
+                acc = _db.LoadAccount(account);
+                if (acc is null) PasswordHasher.DummyVerify(password);
+                else ok = acc.VerifyPassword(password, out migrado);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[{session.RemoteEndpoint}] verificacion de cuenta: {ex.Message}");
+            }
+            _loop.Enqueue(() =>
+            {
+                session.SoltarVerificacion();
+                // Entre que arrancó el hash y que terminó, el cliente se pudo haber ido (o lo pudo haber
+                // cerrado el timeout de autenticación). Nada de tocar el mundo por una conexión muerta.
+                if (session.Cerrada) return;
+                try { alTerminar(acc, ok, migrado); }
+                // Lo que el cliente haya mandado DETRÁS del login quedó retenido en el buffer esperando esta
+                // verificación (ver ClientSession.DrainInbound). Se drena pase lo que pase, también si el
+                // login falló: si no, esos bytes se quedan ahí hasta que llegue el próximo segmento TCP.
+                finally { session.ReanudarInbound(); }
+            });
+        });
+    }
+
     public void HandleOne(ClientSession session, ByteQueueReader reader)
     {
         var id = (ClientPacketId)reader.ReadByte();
@@ -284,25 +342,27 @@ public sealed class PacketDispatcher
     {
         if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
         if (!Naming.IsValidName(account)) { Reject(session, "Nombre de cuenta invalido."); return; }   // valida antes de tocar el store (path traversal)
-        var acc = _db.LoadAccount(account);
-        // Mismo mensaje genérico + mismo costo de tiempo (DummyVerify) para cuenta-inexistente y password-malo:
-        // no delatar si la cuenta existe (enumeración por texto o por timing). El baneo se chequea DESPUÉS de
-        // verificar el password (si no, un baneado se puede enumerar sin conocer la contraseña).
-        if (acc is null) { LoginFail(session); PasswordHasher.DummyVerify(password); Reject(session, "Cuenta o contrasena invalida."); return; }
-        if (!acc.VerifyPassword(password, out var upgraded)) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
-        if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }
-        LoginOk(session);
-        if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
+        // Mismo mensaje genérico + mismo costo de tiempo (el DummyVerify que hace VerificarCuenta) para
+        // cuenta-inexistente y password-malo: no delatar si la cuenta existe (enumeración por texto o por
+        // timing). El baneo se chequea DESPUÉS de verificar el password (si no, un baneado se puede enumerar
+        // sin conocer la contraseña).
+        VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
+        {
+            if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
+            if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }
+            LoginOk(session);
+            if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
 
-        var roster = acc.Characters
-            .Select(name => _db.LoadSummary(name))
-            .Where(s => s is not null)
-            .Select(s => s!)
-            .ToList();
+            var roster = acc.Characters
+                .Select(name => _db.LoadSummary(name))
+                .Where(s => s is not null)
+                .Select(s => s!)
+                .ToList();
 
-        session.Send(ServerMessages.AddPj(account, roster));       // char list from the account's .cnt
-        session.Send(ServerMessages.AbrirFormularios(1));          // 1 = account/char-selection form
-        Console.WriteLine($"[{session.RemoteEndpoint}] ACCOUNT account={account} chars={roster.Count}");
+            session.Send(ServerMessages.AddPj(account, roster));       // char list from the account's .cnt
+            session.Send(ServerMessages.AbrirFormularios(1));          // 1 = account/char-selection form
+            Console.WriteLine($"[{session.RemoteEndpoint}] ACCOUNT account={account} chars={roster.Count}");
+        });
     }
 
     private void HandleCreateNewAccount(ClientSession session, ByteQueueReader r)
@@ -364,20 +424,21 @@ public sealed class PacketDispatcher
             if (!Equipment.IsValidHead(race, gender, head))
             { Reject(session, "Esa cara no corresponde a la raza y el genero elegidos."); return; }
             if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
-            var acc = _db.LoadAccount(account);
-            if (acc is null) { LoginFail(session); PasswordHasher.DummyVerify(password); Reject(session, "Cuenta o contrasena invalida."); return; }
-            if (!acc.VerifyPassword(password, out var upgraded)) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
-            if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }   // un baneado tampoco crea personajes nuevos
-            LoginOk(session);
-            if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
-            if (_db.CharacterExists(charName)) { Reject(session, $"El nombre '{charName}' ya esta en uso."); return; }
-            if (acc.Characters.Count >= AccountFile.MaxCharacters) { Reject(session, "Maximo de personajes alcanzado."); return; }
-            // Personaje REAL: nace con el kit de su clase (NACIMIENTO.dat). El kit demo maestro queda sólo para
-            // los personajes sembrados del fixture, de cuyo layout dependen los flows.
-            var player = _db.CreateCharacter(acc, charName, _world.AllocateCharIndex(), race, gender, klass, homeland, head,
-                _data.NewbieKit(klass), _data.ModRaza);
-            Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE CREADO name={charName} cuenta={account}");
-            SpawnIntoWorld(session, player, $"v{verMajor}.{verMinor}.{verRev}");
+            VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
+            {
+                if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
+                if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }   // un baneado tampoco crea personajes nuevos
+                LoginOk(session);
+                if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
+                if (_db.CharacterExists(charName)) { Reject(session, $"El nombre '{charName}' ya esta en uso."); return; }
+                if (acc.Characters.Count >= AccountFile.MaxCharacters) { Reject(session, "Maximo de personajes alcanzado."); return; }
+                // Personaje REAL: nace con el kit de su clase (NACIMIENTO.dat). El kit demo maestro queda sólo para
+                // los personajes sembrados del fixture, de cuyo layout dependen los flows.
+                var player = _db.CreateCharacter(acc, charName, _world.AllocateCharIndex(), race, gender, klass, homeland, head,
+                    _data.NewbieKit(klass), _data.ModRaza);
+                Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE CREADO name={charName} cuenta={account}");
+                SpawnIntoWorld(session, player, $"v{verMajor}.{verMinor}.{verRev}");
+            });
         });
     }
 
@@ -392,12 +453,21 @@ public sealed class PacketDispatcher
     {
         if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
         if (!Naming.IsValidName(account) || !Naming.IsValidName(charName)) { Reject(session, "Nombre invalido."); return; }   // valida antes de tocar el store (path traversal)
-        var acc = _db.LoadAccount(account);
-        if (acc is null) { LoginFail(session); PasswordHasher.DummyVerify(password); Reject(session, "Cuenta o contrasena invalida."); return; }
-        if (!acc.VerifyPassword(password, out var upgraded)) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
-        if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }   // el baneo también aplica al login directo (no solo a ConnectAccount)
-        LoginOk(session);
-        if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
+        VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
+        {
+            if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
+            if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }   // el baneo también aplica al login directo (no solo a ConnectAccount)
+            LoginOk(session);
+            if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
+            EntrarAlMundo(session, acc, account, charName, version);
+        });
+    }
+
+    /// <summary>La segunda mitad de EnterWorld: todo lo que toca el MUNDO, ya con la cuenta verificada.
+    /// Está separada porque la verificación de la contraseña se hace fuera del hilo del game loop (ver
+    /// VerificarCuenta) y ésta corre de vuelta en el loop, que es donde tiene que correr.</summary>
+    private void EntrarAlMundo(ClientSession session, Data.Account acc, string account, string charName, string version)
+    {
         if (!acc.Characters.Contains(charName, StringComparer.OrdinalIgnoreCase))
         { Reject(session, $"El personaje '{charName}' no pertenece a la cuenta."); return; }
 
@@ -3833,7 +3903,7 @@ public sealed class PacketDispatcher
     // --- Guilds (modGuilds slice: create, chat, leave, online) ---
 
     /// <summary>Persists the guild registry after a mutation, so clans survive restarts.</summary>
-    private void PersistGuilds() => _db.SaveGuilds(_world.AllGuilds);
+    private void PersistGuilds() => _clanesSucios = true;
 
     /// <summary>CreateNewGuild (id 28): desc, name, site, codex (4 ASCII strings). Slice: use name+desc,
     /// found the guild with the caller as leader.</summary>
@@ -5305,7 +5375,48 @@ public sealed class PacketDispatcher
     private const int CostoDelCorreo = 1750;
 
     /// <summary>Persists the mailboxes after a change, so pending mail survives restarts.</summary>
-    private void PersistMail() => _db.SaveMailboxes(_world.AllMailboxes);
+    private void PersistMail() => _correoSucio = true;
+
+    // ── PERSISTENCIA DIFERIDA DE CLANES Y CORREO ────────────────────────────────────────────────────────
+    // Las 22 llamadas a PersistGuilds/PersistMail escribían el archivo ENTERO en el acto, en el hilo del game
+    // loop: serializar todos los clanes a JSON y bajarlo a disco. Cualquier acción de clan —pedir entrar,
+    // declarar una guerra, tocar las noticias— lo disparaba, y son acciones que un cliente puede repetir a la
+    // velocidad que quiera. Con un mundo poblado el costo crece con la cantidad de clanes, no con el cambio.
+    //
+    // Ahora se marca sucio y se escribe como mucho una vez cada IntervaloPersistenciaMs. El apagado y el
+    // backup fuerzan el volcado, así que un cierre ordenado no pierde nada.
+    //
+    // 500 ms y no varios segundos, a propósito. Lo que hay que colapsar es la RÁFAGA: una sola acción de clan
+    // dispara varias llamadas seguidas, todas dentro de la misma vuelta. Con medio segundo eso ya queda en una
+    // escritura, y un cliente que spamea acciones pasa de una escritura por paquete a dos por segundo. Estirarlo
+    // más no compra casi nada y sí cuesta: lo que se pierde ante una caída DURA (un kill, un corte de luz) es
+    // exactamente este intervalo. El arnés lo hace explícito — reinicia el server a la fuerza 900 ms después de
+    // fundar un clan y verifica que sobrevivió (persist_guild_flow / persist_mail_flow).
+    private bool _clanesSucios, _correoSucio;
+    private long _ultimaPersistenciaMs;
+    private const long IntervaloPersistenciaMs = 500;
+
+    /// <summary>Vuelca clanes y correo si quedaron sucios y ya pasó el intervalo. La llama el game loop.
+    /// Con <paramref name="forzar"/> escribe sin esperar (apagado, backup).</summary>
+    public void VolcarPersistenciaDiferida(bool forzar = false)
+    {
+        if (!_clanesSucios && !_correoSucio) return;
+        long ahora = Environment.TickCount64;
+        if (!forzar && ahora - _ultimaPersistenciaMs < IntervaloPersistenciaMs) return;
+        _ultimaPersistenciaMs = ahora;
+        // Try por archivo: que falle el de clanes no puede dejar el correo sin escribir. Y la marca de sucio
+        // se limpia sólo si la escritura salió bien, para que el próximo intento lo reintente.
+        if (_clanesSucios)
+        {
+            try { _db.SaveGuilds(_world.AllGuilds); _clanesSucios = false; }
+            catch (Exception ex) { Console.Error.WriteLine($"[persistencia] clanes: {ex.Message}"); }
+        }
+        if (_correoSucio)
+        {
+            try { _db.SaveMailboxes(_world.AllMailboxes); _correoSucio = false; }
+            catch (Exception ex) { Console.Error.WriteLine($"[persistencia] correo: {ex.Message}"); }
+        }
+    }
 
     /// <summary>EnviarCorreo (id 97): recipient, message, ObjIndex, Amount. Consumes the attached item from
     /// the sender and drops it in the recipient's mailbox (delivered now if online, else at their login).</summary>

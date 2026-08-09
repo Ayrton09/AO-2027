@@ -244,6 +244,9 @@ string HacerBackup(string motivo)
         try { db.SaveCharacter(pl); }
         catch (Exception ex) { Console.Error.WriteLine($"[backup] no se pudo guardar '{pl.Name}': {ex.Message}"); }
     }
+    // Por lo mismo que los personajes: si los clanes o el correo quedaron sucios, el snapshot saldría con lo
+    // de hace unos segundos y el backup mentiría sobre lo que había.
+    dispatcher?.VolcarPersistenciaDiferida(forzar: true);
     try
     {
         string ruta = Backups.Crear(store, backupsDir, DateTime.Now, dataRoot);
@@ -274,6 +277,9 @@ loop.OnTickHandler = tick =>
                           $"{excedidas}/256 pasadas de {GameLoop.TickMs} ms · {world.OnlineCount} jugadores, " +
                           $"{world.NpcCount} NPCs · GC {GC.GetTotalAllocatedBytes() / 1048576} MB acumulados");
     }
+    // Clanes y correo: se escriben acá, agrupados, y no una vez por acción de clan (ver
+    // PacketDispatcher.VolcarPersistenciaDiferida). Es barato: si no hay nada sucio, sale en el primer if.
+    dispatcher?.VolcarPersistenciaDiferida();
     // Autosave periódico (config del panel, "MinutosGuardarUsuarios" del VB6). Corre aunque esté pausado.
     if (admin.AutosaveMinutes > 0 && (tick - admin.LastAutosaveTick) * GameLoop.TickMs >= (long)admin.AutosaveMinutes * 60_000)
     {
@@ -749,6 +755,9 @@ foreach (var pl in world.Players.ToArray())
     catch (Exception ex) { Console.Error.WriteLine($"[save] {pl.Name}: {ex.Message}"); }
 }
 if (guardados > 0) Console.WriteLine($"Guardados {guardados} personaje(s) conectado(s).");
+// Clanes y correo van diferidos (una escritura cada 3 s en vez de una por accion): si quedo algo sin
+// volcar, un cierre ORDENADO no lo puede perder.
+dispatcher?.VolcarPersistenciaDiferida(forzar: true);
 Console.WriteLine("Servidor detenido. Hasta la proxima.");
 // Recién ACÁ se libera el handler de señal: hasta este punto el sistema tiene que esperarnos, o nos mata a
 // mitad de escribir los .chr y el guardado de arriba no sirve de nada.
