@@ -55,6 +55,29 @@ En **Windows sin permisos de administrador** los puertos HTTP quedan sólo en `l
 al arrancar y da las dos salidas: abrirlo como Administrador, o reservar la URL una vez con
 `netsh http add urlacl url=http://+:7669/ user=%USERNAME%`. En Linux no hace falta nada.
 
+### Qué está verificado desde OTRA máquina
+
+Medido el 2026-08-09 con el servidor Linux corriendo en una máquina y el navegador en otra:
+
+| lo que hace un jugador | resultado |
+|---|---|
+| abrir `http://<ip-del-server>:StartPort+3/` | la página carga entera (330 KB, con el canvas) |
+| el cliente abre su WebSocket | conecta (el puerto se lo publica el server en `/coverao-config.json`) |
+| poner cuenta y contraseña | el server contesta con la lista de personajes |
+| elegir personaje | entra al mundo, con los personajes de alrededor dibujados |
+| cliente clásico contra `StartPort` | login completo |
+
+Lo único que NO se puede probar sin salir a internet es el **NAT del router**: que el reenvío de puertos
+esté bien hecho. Todo lo demás del camino "un amigo abre la URL y juega" está ejercido.
+
+> **Ojo con las sondas.** Un `connect` TCP a los puertos HTTP en **Windows** da OK aunque el servidor no los
+> tenga registrados: quien acepta la conexión es HTTP.SYS (el kernel), que recién después mira el `Host:` y
+> contesta **400**. Para esos puertos hay que probar con un `GET`, no con un `connect`.
+
+> **El `?auto` / `?char=` del cliente no funciona desde otra máquina, y es a propósito**: son credenciales de
+> prueba cableadas, así que el atajo está limitado a `localhost`. Desde afuera se entra por el formulario,
+> como cualquier jugador.
+
 ## Server.ini
 
 Va al lado del ejecutable. Es opcional, pero sin él **nadie es GM** y los comandos de administración quedan
