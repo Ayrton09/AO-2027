@@ -76,6 +76,26 @@ LimiteConexionesPorIp=0
 ; Sirve para recuperar la ranura del que deja el cliente abierto toda la noche.
 IdleLimit=0
 
+; --- Anti-flood --------------------------------------------------------------
+; Techo de paquetes por segundo de UNA conexion. Al que lo sostiene se lo
+; desconecta: a esa velocidad no es un jugador. La rafaga es cuanto pico se
+; perdona de una vez -el trafico legitimo llega a tirones-. 0 = sin limite.
+; Al cerrar cada sesion el servidor deja en el log el pico que le vio, asi el
+; numero se elige mirando el trafico real y no a ojo.
+MaxPaquetesPorSegundo=150
+RafagaDePaquetes=200
+
+; SPAM DENTRO DEL JUEGO, que es otro problema: con veinte mensajes por segundo
+; uno esta MUY por debajo del techo de arriba y el chat igual queda inusable.
+; Aca no se desconecta a nadie: se descarta la accion y se le avisa.
+; En milisegundos ENTRE acciones. 0 = sin limite.
+;   Mensajes = hablar, susurrar, escribir al clan, /GM  (les llega a otros)
+;   Consultas = /online, /est, /uptime...               (solo te contestan a vos)
+MsEntreMensajes=700
+RafagaDeMensajes=5
+MsEntreConsultas=300
+RafagaDeConsultas=10
+
 ; --- Puertas del servidor ----------------------------------------------------
 ; 0 = nadie puede crear personajes nuevos (server cerrado / solo cuentas viejas).
 PuedeCrearPersonajes=1

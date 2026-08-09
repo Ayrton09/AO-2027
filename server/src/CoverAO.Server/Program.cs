@@ -690,8 +690,14 @@ if (args.Any(a => string.Equals(a, "--relojes-de-test", StringComparison.Ordinal
     Console.WriteLine("[test] relojes de día/noche y clima acelerados a segundos (--relojes-de-test)");
 }
 dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => cts.Cancel(), fixtureMode, serverIni);
-var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin);
-var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, admin); // web client (Fase 3), same world
+var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,
+    paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
+    msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
+    msPorConsulta: serverIni.MsEntreConsultas, rafagaConsultas: serverIni.RafagaDeConsultas);
+var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, admin,
+    paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
+    msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
+    msPorConsulta: serverIni.MsEntreConsultas, rafagaConsultas: serverIni.RafagaDeConsultas); // web client (Fase 3), same world
 
 // Ejemplo de suscripcion al event bus (decoupling de reglas y efectos).
 world.Events.Subscribe<PlayerLoggedIn>(e =>

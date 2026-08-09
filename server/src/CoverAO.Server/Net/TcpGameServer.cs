@@ -20,18 +20,29 @@ public sealed class TcpGameServer
     private readonly List<ClientSession> _sessions = new();
     private readonly ConnectionGuard? _guard;
     private readonly long _authTimeoutMs;
+    private readonly int _paquetesPorSegundo;
+    private readonly int _rafagaDePaquetes;
+    private readonly int _msPorMensaje, _rafagaMensajes, _msPorConsulta, _rafagaConsultas;
     private readonly int _maxInboundBytes;
     private readonly X509Certificate2? _tlsCert;
     private readonly AdminConfig? _admin;   // baneo por IP en vivo (lo muta el panel)
 
     public TcpGameServer(int port, PacketDispatcher dispatcher,
         ConnectionGuard? guard = null, long authTimeoutMs = 0, int maxInboundBytes = 0,
-        X509Certificate2? tlsCert = null, AdminConfig? admin = null)
+        X509Certificate2? tlsCert = null, AdminConfig? admin = null,
+        // AL FINAL a propósito: los argumentos van por POSICIÓN y meterlos en el medio corre todo lo que
+        // viene detrás. Acá el compilador avisó (tipos distintos), pero con dos int seguidos no lo haría.
+        int paquetesPorSegundo = 0, int rafagaDePaquetes = 200,
+        int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10)
     {
         _port = port;
         _dispatcher = dispatcher;
         _guard = guard;
         _authTimeoutMs = authTimeoutMs;
+        _paquetesPorSegundo = paquetesPorSegundo;
+        _rafagaDePaquetes = rafagaDePaquetes;
+        _msPorMensaje = msPorMensaje; _rafagaMensajes = rafagaMensajes;
+        _msPorConsulta = msPorConsulta; _rafagaConsultas = rafagaConsultas;
         _maxInboundBytes = maxInboundBytes;
         _tlsCert = tlsCert;
         _admin = admin;
@@ -89,7 +100,10 @@ public sealed class TcpGameServer
             }
             var transport = new TcpTransport(client, stream);
             session = new ClientSession(transport, _dispatcher, _authTimeoutMs, _maxInboundBytes,
-                onClose: acquired ? () => _guard!.Release(ip) : null);
+                onClose: acquired ? () => _guard!.Release(ip) : null,
+                paquetesPorSegundo: _paquetesPorSegundo, rafagaDePaquetes: _rafagaDePaquetes,
+                msPorMensaje: _msPorMensaje, rafagaMensajes: _rafagaMensajes,
+                msPorConsulta: _msPorConsulta, rafagaConsultas: _rafagaConsultas);
             acquired = false;   // el slot lo libera el onClose de la sesión
             lock (_sessions) _sessions.Add(session);
             Console.WriteLine($"[{session.RemoteEndpoint}] conectado{(_tlsCert is not null ? " (TLS)" : "")}");

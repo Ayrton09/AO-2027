@@ -15,16 +15,25 @@ public sealed class WebSocketGameServer
     private readonly PacketDispatcher _dispatcher;
     private readonly ConnectionGuard? _guard;
     private readonly long _authTimeoutMs;
+    private readonly int _paquetesPorSegundo;
+    private readonly int _rafagaDePaquetes;
+    private readonly int _msPorMensaje, _rafagaMensajes, _msPorConsulta, _rafagaConsultas;
     private readonly int _maxInboundBytes;
     private readonly AdminConfig? _admin;   // baneo por IP en vivo (lo muta el panel)
 
     public WebSocketGameServer(int port, PacketDispatcher dispatcher,
-        ConnectionGuard? guard = null, long authTimeoutMs = 0, int maxInboundBytes = 0, AdminConfig? admin = null)
+        ConnectionGuard? guard = null, long authTimeoutMs = 0, int maxInboundBytes = 0, AdminConfig? admin = null,
+        int paquetesPorSegundo = 0, int rafagaDePaquetes = 200,
+        int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10)
     {
         _port = port;
         _dispatcher = dispatcher;
         _guard = guard;
         _authTimeoutMs = authTimeoutMs;
+        _paquetesPorSegundo = paquetesPorSegundo;
+        _rafagaDePaquetes = rafagaDePaquetes;
+        _msPorMensaje = msPorMensaje; _rafagaMensajes = rafagaMensajes;
+        _msPorConsulta = msPorConsulta; _rafagaConsultas = rafagaConsultas;
         _maxInboundBytes = maxInboundBytes;
         _admin = admin;
     }
@@ -90,7 +99,10 @@ public sealed class WebSocketGameServer
             var wsCtx = await ctx.AcceptWebSocketAsync(subProtocol: null);
             Console.WriteLine($"[ws:{remote}] conectado");
             var session = new ClientSession(new WebSocketTransport(wsCtx.WebSocket, remote), _dispatcher,
-                _authTimeoutMs, _maxInboundBytes, onClose: acquired ? () => _guard!.Release(ip) : null);
+                _authTimeoutMs, _maxInboundBytes, onClose: acquired ? () => _guard!.Release(ip) : null,
+                paquetesPorSegundo: _paquetesPorSegundo, rafagaDePaquetes: _rafagaDePaquetes,
+                msPorMensaje: _msPorMensaje, rafagaMensajes: _rafagaMensajes,
+                msPorConsulta: _msPorConsulta, rafagaConsultas: _rafagaConsultas);
             acquired = false;   // el slot lo libera ahora el onClose de la sesión
             await session.ReceiveLoopAsync(token);
         }

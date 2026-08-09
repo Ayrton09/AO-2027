@@ -32,6 +32,13 @@ public sealed class ClientSession : IConnection
     private readonly int _maxInboundBytes;
     private readonly Action? _onClose;
     private volatile bool _authed;
+    /// <summary>Techo de paquetes por segundo de ESTA conexión (ver <see cref="LimiteDeCadencia"/>). Va acá y
+    /// no en el dispatcher porque el límite es por conexión, no por jugador: el que inunda puede no haberse
+    /// autenticado nunca.</summary>
+    private readonly LimiteDeCadencia _cadencia;
+    /// <summary>Los dos techos del SPAM en el juego (hablar y consultar), distintos del techo de paquetes:
+    /// ver <see cref="CadenciaDeAcciones"/>. Lo consulta el dispatcher según el paquete.</summary>
+    public CadenciaDeAcciones Acciones { get; }
 
     /// <summary>Una verificación de contraseña (PBKDF2) ya está corriendo para esta sesión. Sirve para dos
     /// cosas: que un cliente no compre N hashes de 25 ms mandando N paquetes de login seguidos, y que dos
@@ -48,7 +55,9 @@ public sealed class ClientSession : IConnection
     public Player? Player { get; set; }
 
     public ClientSession(ITransport transport, PacketDispatcher dispatcher,
-        long authTimeoutMs = 0, int maxInboundBytes = 0, Action? onClose = null)
+        long authTimeoutMs = 0, int maxInboundBytes = 0, Action? onClose = null,
+        int paquetesPorSegundo = 0, int rafagaDePaquetes = 200,
+        int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10)
     {
         _transport = transport;
         _dispatcher = dispatcher;
@@ -56,6 +65,8 @@ public sealed class ClientSession : IConnection
         _authTimeoutMs = authTimeoutMs;
         _maxInboundBytes = maxInboundBytes;
         _onClose = onClose;
+        _cadencia = new LimiteDeCadencia(paquetesPorSegundo, rafagaDePaquetes, Environment.TickCount64);
+        Acciones = new CadenciaDeAcciones(msPorMensaje, rafagaMensajes, msPorConsulta, rafagaConsultas, Environment.TickCount64);
         _ = Task.Run(BucleDeSalidaAsync);   // el escritor arranca con la sesión y muere con ella
     }
 
@@ -139,6 +150,16 @@ public sealed class ClientSession : IConnection
             int offset = 0;
             while (offset < buf.Length)
             {
+                // EL TECHO DE CADENCIA VA ANTES DE DESPACHAR, para que cubra también lo que llega SIN estar
+                // autenticado. Se corta la conexión en vez de descartar el paquete: descartar deja al cliente
+                // creyendo que su acción pasó, y al que inunda no lo frena nada.
+                if (!_cadencia.Permite(Environment.TickCount64))
+                {
+                    Console.Error.WriteLine($"[{RemoteEndpoint}] flood: pico de {_cadencia.Pico} paquetes en un segundo");
+                    if (offset > 0) _inbound.RemoveRange(0, offset);
+                    Close("flood: demasiados paquetes por segundo");
+                    return;
+                }
                 var reader = new ByteQueueReader(buf.Slice(offset));
                 try
                 {
@@ -258,9 +279,12 @@ public sealed class ClientSession : IConnection
         _ = Task.Delay(TcpTransport.SendTimeoutMs).ContinueWith(_ => { try { _transport.Close(reason); } catch { /* ignore */ } });
         try { _onClose?.Invoke(); } catch { /* ignore */ }   // libera el slot del ConnectionGuard
         _dispatcher.OnDisconnect(this, reason);
+        // El PICO va en la línea de cierre a propósito: el número con el que hay que elegir el techo sale de
+        // mirar servidores reales, no de estimarlo. Con el límite apagado se sigue midiendo igual.
+        string pico = $" pico={_cadencia.Pico} pkt/s";
         if (charIndex is short ci)
-            Console.WriteLine($"[{RemoteEndpoint}] closed ({reason}) char={ci}");
+            Console.WriteLine($"[{RemoteEndpoint}] closed ({reason}) char={ci}{pico}");
         else
-            Console.WriteLine($"[{RemoteEndpoint}] closed ({reason})");
+            Console.WriteLine($"[{RemoteEndpoint}] closed ({reason}){pico}");
     }
 }

@@ -48,6 +48,31 @@ public sealed class ServerIni
     public int MaxUsers { get; private set; }              // 0 = sin tope
     public bool AllowMultiLogins { get; private set; } = true;
     public int LimiteConexionesPorIp { get; private set; } // 0 = sin tope
+    // TECHO DE CADENCIA por conexión (ver Net/LimiteDeCadencia.cs). El original no tiene control de flood;
+    // hace falta porque el cliente es una página web y cualquiera puede mandar por el WebSocket lo que quiera,
+    // a la velocidad que quiera. `RafagaDePaquetes` es cuánto pico se perdona de una; `MaxPaquetesPorSegundo`
+    // es el ritmo sostenido. 0 = sin límite (se sigue MIDIENDO el pico, que es lo que permite calibrarlo).
+    //
+    // EL 150 ESTÁ MEDIDO, no elegido a ojo. Con el techo apagado se le tiró el tráfico más apurado que hay
+    // —el walker caminando y los 132 flows, que mandan una acción cada 60 ms sin pensar— y sobre 81 sesiones
+    // dio: mediana 2 pkt/s, p90 15, p99 30, MÁXIMO 30. El techo queda 5× arriba de eso.
+    //
+    // El margen es grande a propósito, porque los dos errores no cuestan lo mismo. Si queda corto, echa
+    // jugadores de verdad en medio de una pelea y el que hostea no tiene cómo enterarse de por qué; y hay un
+    // caso que los flows no ejercitan: con Shift+flecha el auto-repeat del teclado manda ~31 ChangeHeading por
+    // segundo él solo, más caminar y clics. Si queda holgado, el que inunda igual baja de los ~1000 pkt/s que
+    // saca un `for` en la consola del navegador a 150, el spam de chat tiene SU PROPIO techo mucho más bajo, y
+    // la cola de salida acotada le pone tope a la amplificación. Errar para el lado holgado es más barato.
+    public int MaxPaquetesPorSegundo { get; private set; } = 150;
+    public int RafagaDePaquetes { get; private set; } = 200;
+    // ANTI-SPAM DEL JUEGO, que es otra cosa que el techo de paquetes: acá el que se pasa es un jugador, así
+    // que la acción se descarta y se le avisa — no se lo desconecta. En MILISEGUNDOS ENTRE ACCIONES, que es
+    // como lo piensa el que hostea. `Ruidosas` = hablar, susurrar, clan, /GM (les llega a otros).
+    // `Consultas` = los comandos que sólo le contestan a quien pregunta. 0 = sin límite.
+    public int MsEntreMensajes { get; private set; } = 700;
+    public int RafagaDeMensajes { get; private set; } = 5;
+    public int MsEntreConsultas { get; private set; } = 300;
+    public int RafagaDeConsultas { get; private set; } = 10;
     public bool PuedeCrearPersonajes { get; private set; } = true;
     public bool ServerSoloGms { get; private set; }
     public int IdleLimitMinutos { get; private set; }      // 0 = sin desconexión por inactividad
@@ -233,6 +258,12 @@ public sealed class ServerIni
         cfg.PuertoWebSocketPublico = wsPublico is >= 1 and <= 65535 ? wsPublico : 0;
         cfg.AllowMultiLogins = ini.GetInt("INIT", "AllowMultiLogins", 1) != 0;
         cfg.LimiteConexionesPorIp = ini.GetInt("INIT", "LimiteConexionesPorIp", 0);
+        cfg.MaxPaquetesPorSegundo = Math.Max(0, ini.GetInt("INIT", "MaxPaquetesPorSegundo", 150));
+        cfg.RafagaDePaquetes = Math.Max(1, ini.GetInt("INIT", "RafagaDePaquetes", 200));
+        cfg.MsEntreMensajes = Math.Max(0, ini.GetInt("INIT", "MsEntreMensajes", 700));
+        cfg.RafagaDeMensajes = Math.Max(1, ini.GetInt("INIT", "RafagaDeMensajes", 5));
+        cfg.MsEntreConsultas = Math.Max(0, ini.GetInt("INIT", "MsEntreConsultas", 300));
+        cfg.RafagaDeConsultas = Math.Max(1, ini.GetInt("INIT", "RafagaDeConsultas", 10));
         cfg.PuedeCrearPersonajes = ini.GetInt("INIT", "PuedeCrearPersonajes", 1) != 0;
         cfg.ServerSoloGms = ini.GetInt("INIT", "ServerSoloGMs", 0) != 0;
         cfg.IdleLimitMinutos = ini.GetInt("INIT", "IdleLimit", 0);

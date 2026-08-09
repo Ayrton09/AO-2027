@@ -159,6 +159,35 @@ public sealed class PacketDispatcher
         });
     }
 
+    /// <summary>
+    /// ANTI-SPAM EN EL JUEGO. Distinto del techo de paquetes: acá el que se pasa es un jugador, no un
+    /// atacante, así que la acción se DESCARTA y se le avisa — nunca se lo desconecta.
+    ///
+    /// Dos listas y no una, porque son dos costos distintos. Las RUIDOSAS le llegan a otros: hablar se
+    /// difunde a toda el área, el clan a todos los miembros, el susurro a un tercero, el /GM les suena a los
+    /// administradores. Las CONSULTAS sólo le hacen contestar el servidor a quien preguntó, así que molestan
+    /// menos y van más sueltas — pero cuestan trabajo, y `/online` recorre la lista entera de conectados.
+    ///
+    /// Lo que NO entra acá a propósito: caminar, pegar y castear, que ya tienen sus propios intervalos del
+    /// original (IntervaloParaCaminar, IntervaloParaGolpe, IntervaloLanzaHechizo) y son reglas del juego, no
+    /// anti-spam. Meterlos también sería aplicar dos gates a lo mismo.
+    /// </summary>
+    /// <summary>true si esta acción hay que descartarla por spam (y ya se le avisó al jugador).
+    ///
+    /// Se llama DESPUÉS de parsear los argumentos del paquete, nunca antes. Cortar antes obligaría a saber de
+    /// memoria cuántos bytes ocupa cada uno para poder saltearlos, y una tabla de layouts paralela al parser
+    /// real se desincroniza sola en cuanto alguien toca un handler — es el mismo problema que los subcomandos
+    /// GM, que necesitó su propio test para no romper el stream. Parseando siempre, el stream queda sano
+    /// pase lo que pase y lo único que se descarta es el EFECTO.</summary>
+    private static bool Frenado(ClientSession session, bool ruidosa)
+    {
+        long ahora = Environment.TickCount64;
+        if (ruidosa ? session.Acciones.PermiteRuidosa(ahora) : session.Acciones.PermiteConsulta(ahora)) return false;
+        if (session.Acciones.TocaAvisar(ahora))
+            session.Send(ServerMessages.ConsoleMsg("Esperá un momento antes de volver a hacer eso.", 0));
+        return true;
+    }
+
     public void HandleOne(ClientSession session, ByteQueueReader reader)
     {
         var id = (ClientPacketId)reader.ReadByte();
@@ -225,6 +254,7 @@ public sealed class PacketDispatcher
             {
                 byte tipo = reader.ReadByte();
                 string consulta = reader.ReadAsciiString();
+                if (Frenado(session, ruidosa: true)) break;   // el /GM les suena a todos los administradores
                 _loop.Enqueue(() =>
                 {
                     var p = session.Player;
@@ -3933,6 +3963,7 @@ public sealed class PacketDispatcher
     private void HandleGuildMessage(ClientSession session, ByteQueueReader r)
     {
         string chat = r.ReadAsciiString();
+        if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -4721,6 +4752,7 @@ public sealed class PacketDispatcher
     private void HandleGuildUpdateNews(ClientSession session, ByteQueueReader r)
     {
         string news = r.ReadAsciiString();
+        if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
             var g = RequireGuildLeader(session, session.Player);
@@ -4776,6 +4808,7 @@ public sealed class PacketDispatcher
     /// kill counters + class/race/gender/faction, plus a human-readable console line for good measure.</summary>
     private void HandleRequestMiniStats(ClientSession session)
     {
+        if (Frenado(session, ruidosa: false)) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -5245,6 +5278,7 @@ public sealed class PacketDispatcher
     /// <summary>GuildOnline (id 79): lists the caller's online guild members.</summary>
     private void HandleGuildOnline(ClientSession session)
     {
+        if (Frenado(session, ruidosa: false)) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -6207,6 +6241,7 @@ public sealed class PacketDispatcher
     /// <summary>Online (id 62): reports the number and names of connected players.</summary>
     private void HandleOnline(ClientSession session)
     {
+        if (Frenado(session, ruidosa: false)) return;
         _loop.Enqueue(() =>
         {
             // Gate de sesión: era el ÚNICO handler de estado que no lo tenía. Un cliente SIN autenticar mandaba
@@ -7276,6 +7311,7 @@ public sealed class PacketDispatcher
     {
         string chat = r.ReadAsciiString();
         byte talkMode = r.ReadByte();
+        if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -7298,6 +7334,7 @@ public sealed class PacketDispatcher
     {
         string targetName = r.ReadAsciiString();
         string chat = r.ReadAsciiString();
+        if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;

@@ -68,6 +68,9 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `AllowMultiLogins` | 0 = una sola conexión por IP |
 | `LimiteConexionesPorIp` | tope de sockets por IP. 0 = 64 |
 | `IdleLimit` | minutos sin actividad antes de desconectar. 0 = nunca |
+| `MaxPaquetesPorSegundo`, `RafagaDePaquetes` | techo de paquetes de una conexión. Al que lo sostiene se lo desconecta. 0 = sin límite |
+| `MsEntreMensajes`, `RafagaDeMensajes` | anti-spam de chat, susurro, clan y `/GM`. En ms entre mensajes |
+| `MsEntreConsultas`, `RafagaDeConsultas` | lo mismo para `/online`, `/est` y los comandos que sólo te contestan a vos |
 | `PuedeCrearPersonajes` | 0 = no se aceptan personajes nuevos |
 | `ServerSoloGMs` | 1 = modo mantenimiento |
 | `Exp`, `Oro` | porcentajes (200 = doble) |
