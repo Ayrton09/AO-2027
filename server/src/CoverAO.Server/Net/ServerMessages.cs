@@ -504,11 +504,13 @@ public static class ServerMessages
     public static byte[] ConsoleMsg(string text, byte fontIndex = 0) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.ConsoleMsg).WriteAsciiString(text).WriteByte(fontIndex).ToArray();
 
-    /// <summary>Cartel modal en el cliente (id 22). Layout: ASCIIString(mensaje) + Boolean + Byte(accion) —
-    /// PrepareMessageShowMessageBox (Protocol.bas:14596). Lo usa /SMSG para avisarle a todo el servidor.</summary>
-    public static byte[] ShowMessageBox(string text) =>
+    /// <summary>Cartel modal en el cliente (id 22). Layout: ASCIIString(mensaje) + Boolean(esPregunta) +
+    /// Byte(accion) — PrepareMessageShowMessageBox (Protocol.bas:14596). Lo usa /SMSG para avisarle a todo el
+    /// servidor, y con <c>("", true, 1)</c> el rechazo a tirar al piso un objeto marcado <c>Destruir</c>
+    /// (Protocol.bas:2058), donde el texto lo pone el cliente según la acción.</summary>
+    public static byte[] ShowMessageBox(string text, bool esPregunta = false, byte accion = 0) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.ShowMessageBox)
-            .WriteAsciiString(text).WriteBoolean(false).WriteByte(0).ToArray();
+            .WriteAsciiString(text).WriteBoolean(esPregunta).WriteByte(accion).ToArray();
 
     /// <summary>Chat shown over a character's head (id 18). Layout: ASCIIString(chat), Integer(charIndex),
     /// Byte(mode) — PrepareMessageChatOverHead (Protocol.bas). The original client renders player chat
@@ -800,7 +802,12 @@ public static class ServerMessages
             .WriteInteger(n.Template.Head)
             .WriteByte(n.Heading)
             .WriteByte(n.Pos.X).WriteByte(n.Pos.Y)
-            .WriteInteger(0).WriteInteger(0).WriteInteger(0) // weapon / shield / helmet
+            // El equipo que se le VE puesto, del NPCs.dat (VB6 MakeNPCChar, MODULO_NPCs.bas:590). Acá iban tres
+            // ceros: 57 de los 291 NPCs salían desarmados —los Guerreros sin espada ni escudo, los Hechiceros
+            // sin casco— aunque su ficha declara los tres.
+            .WriteInteger((short)n.Template.WeaponAnim)
+            .WriteInteger((short)n.Template.ShieldAnim)
+            .WriteInteger((short)n.Template.HelmetAnim)
             .WriteInteger(0).WriteInteger(0)                 // FX / FXLoops
             // El NOMBRE de un NPC no es su nombre: es su NÚMERO de ficha (VB6 MakeNPCChar, MODULO_NPCs.bas:590,
             // manda `Npclist(i).Numero`). El cliente lo resuelve contra su tabla de locale — y de paso usa

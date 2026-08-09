@@ -6365,6 +6365,12 @@ public sealed class PacketDispatcher
                 DoFundir(session, p);
                 return;
             }
+            // El original saca el mineral de `flags.TargetObj`, que le queda seteado del LeftClick previo. Acá
+            // se resuelve del tile que trae ESTE paquete, para no depender de que el cliente haya mandado el
+            // clic de selección antes: el resultado es el mismo y no hay estado de por medio.
+            if (skill == GameLimits.SkillMineria
+                && _world.TryGetGround(new WorldPos(p.Pos.Map, tx, ty), out var tile) && tile.ObjIndex > 0)
+            { p.TargetObj = tile.ObjIndex; p.TargetObjMap = p.Pos.Map; p.TargetObjX = tx; p.TargetObjY = ty; }
             DoRecolectar(session, p, skill, avisarSinHerramienta: true);
         });
     }
@@ -6398,6 +6404,11 @@ public sealed class PacketDispatcher
                 if (info is null || !info.IsDeposit)
                 { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ningún yacimiento.", 0)); return true; }
                 if (lejos > 2) { session.Send(ServerMessages.ConsoleMsg("Estás demasiado lejos.", 0)); return true; }
+                // El yacimiento queda SELECCIONADO, que es de donde el original saca el mineral en cada vuelta
+                // (`ObjData(.flags.TargetObj).MineralIndex`, Trabajo.bas:2001). Sin esto la faena continua no
+                // tiene forma de saber sobre qué está picando.
+                p.TargetObj = (short)enTile.ObjIndex;
+                p.TargetObjMap = pos.Map; p.TargetObjX = pos.X; p.TargetObjY = pos.Y;
                 break;
             case 127 or 885:   // HACHA_LEÑADOR / TIJERAS — las dos trabajan sobre un ÁRBOL (leña y raíces)
                 if (info is null || !info.IsTree) return false;      // el original no avisa nada si no hay árbol
@@ -6455,7 +6466,9 @@ public sealed class PacketDispatcher
     {
         GameLimits.SkillTalar => (127, GameLimits.WoodObj, "Leña"),          // Hacha de Leñador → Leña
         GameLimits.SkillPesca => (881, 545, "Pez Espada"),                    // Caña de Pesca → pez
-        GameLimits.SkillMineria => (187, GameLimits.OreIronObj, "Hierro"),    // Piquete → mineral CRUDO (se funde a lingote)
+        // Minería: el 192 es sólo el RESPALDO. El mineral de verdad sale del yacimiento que se está picando
+        // (ver DoRecolectar); acá quedaba cableado y por eso los yacimientos de Oro y de Plata daban hierro.
+        GameLimits.SkillMineria => (187, GameLimits.OreIronObj, "Hierro"),
         GameLimits.SkillBotanica => (885, 888, "Raíz"),                       // Tijeras → Raíz (el material de la alquimia)
         _ => (0, 0, ""),
     };
@@ -6484,6 +6497,17 @@ public sealed class PacketDispatcher
             session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // la tirada fallida igual gasta stamina
             session.Send(ServerMessages.ConsoleMsg("No has conseguido nada esta vez.", 0));
             return true;   // fallar la tirada NO corta la faena: en el original se sigue intentando
+        }
+        // MINERÍA: el mineral lo declara el YACIMIENTO, no el oficio (VB6 `MiObj.ObjIndex =
+        // ObjData(.flags.TargetObj).MineralIndex`, Trabajo.bas:2001). De los 12 yacimientos del install, 4 son
+        // de Hierro, 4 de Oro y 4 de Plata; con el mineral cableado, los 8 de Oro y Plata daban hierro y toda
+        // esa rama de la fundición era inalcanzable picando. Si el target se perdió, se cae al hierro, que es
+        // lo que hacía antes.
+        if (skill == GameLimits.SkillMineria)
+        {
+            var yacimiento = p.TargetObj > 0 ? _data.Obj(p.TargetObj) : null;
+            if (yacimiento is { IsDeposit: true, MineralIndex: > 0 })
+            { resource = yacimiento.MineralIndex; name = _data.Obj(resource)?.Name ?? name; }
         }
         int amount = _rng.Next(1, 6); // RandomNumber(1,5)
         int slot = FindSlotFor(p, (short)resource);
@@ -6893,6 +6917,15 @@ public sealed class PacketDispatcher
                 && !CombatTiming.PermiteLanzarSpell(p, castMs, _intervaloCastear)) return;
             var spell = _data.Spell(p.Spells[slot]);
             if (spell is null) return;   // VB6: ranura de hechizo vacia -> silencio
+            // EL TILE QUE RECIBE EL HECHIZO. Este port resuelve el objetivo por el tile ENCARADO (el original
+            // lo resuelve con un clic, que su cliente pide aparte); pero los hechizos `autolanzar` se tiran
+            // sobre UNO MISMO y el original ni pregunta (Protocol.bas:2136: `.flags.TargetUser = UserIndex`).
+            // Sin esto, los 19 auto-buffs —Invisibilidad, las doce metamorfosis, Aura sagrada, Golpe certero,
+            // Inspiración, Honor del Paladín— no hacían nada estando solo, y parado al lado de otro jugador se
+            // los aplicaban A ÉL.
+            (byte, byte) TileObjetivo() => spell.EsAutoLanzado
+                ? (p.Pos.X, p.Pos.Y)
+                : Step(p.Pos.X, p.Pos.Y, p.Heading);
             // MAPA SIN MAGIA (VB6 Protocol.bas:2921, el Case eSkill.magia del WorkLeftClick): antes que
             // cualquier otro requisito, y ni un GM se salva. Lo prende /MODMAPINFO MAGIASINEFECTO.
             if (_data.MapNoMagic(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(385)); return; }
@@ -6924,7 +6957,7 @@ public sealed class PacketDispatcher
             // Y no exime al GM: SeguroCheck no mira privilegios (corre después de PuedeLanzar, que sí los mira).
             bool haySobreNpc;
             {
-                var (sx, sy) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+                var (sx, sy) = TileObjetivo();
                 var tile = new WorldPos(p.Pos.Map, sx, sy);
                 bool hayJugador = _world.PlayerAt(tile) is not null;
                 haySobreNpc = spell.Target == 2 || (spell.Target == 3 && !hayJugador && _world.NpcAt(tile) is not null);
@@ -6942,7 +6975,7 @@ public sealed class PacketDispatcher
             {
                 // Hechizo Resucitar (VB6 modHechizos.bas:981): revive al jugador MUERTO al frente. El caster
                 // ya está vivo (HandleCastSpell sale con !p.IsAlive). El slice omite los gates de arena/ModoCombate.
-                var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+                var (tx, ty) = TileObjetivo();
                 var target = _world.PlayerAt(new WorldPos(p.Pos.Map, tx, ty));
                 if (target is null) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
                 if (target.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{target.Name} no está muerto.", 0)); return; }
@@ -6961,7 +6994,7 @@ public sealed class PacketDispatcher
                 // VB6 SubeHP=1 (modHechizos.bas:1412): la curación puede ir sobre un ALIADO, no sólo sobre uno
                 // mismo. El objetivo es el jugador del tile encarado (mismo patrón que la magia de daño); si no
                 // hay nadie, o es uno mismo, se autocura.
-                var (hx, hy) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+                var (hx, hy) = TileObjetivo();
                 var ally = _world.PlayerAt(new WorldPos(p.Pos.Map, hx, hy));
                 var heal = ally is { IsAlive: true } && ally.CharIndex != p.CharIndex ? ally : p;
 
@@ -6992,7 +7025,7 @@ public sealed class PacketDispatcher
             }
             else if (spell.IsDamage)
             {
-                var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+                var (tx, ty) = TileObjetivo();
                 var spellPos = new WorldPos(p.Pos.Map, tx, ty);
                 var target = _world.PlayerAt(spellPos);
                 // PvE: si no hay jugador en el tile encarado, el hechizo va contra el NPC que esté ahí (VB6
@@ -7112,7 +7145,7 @@ public sealed class PacketDispatcher
                 // por el TILE ENCARADO, no por Target. Un DEBUFF (SubeX=2) es una agresión: exige objetivo distinto
                 // y marca criminal como el melee/daño (VB6 HechizoPropUsuario → UsuarioAtacadoPorUsuario). Un BUFF
                 // (SubeX=1) va sobre el aliado encarado (gate PuedeAyudar) o, si no hay nadie, sobre uno mismo.
-                var (bx, by) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+                var (bx, by) = TileObjetivo();
                 bool esDebuff = spell.SubeFuerza == 2 || spell.SubeAgilidad == 2;
                 Player? target = _world.PlayerAt(new WorldPos(p.Pos.Map, bx, by));
                 if (esDebuff)
@@ -7138,7 +7171,7 @@ public sealed class PacketDispatcher
                 // NO "self". Los OFENSIVOS (paralizar/inmovilizar/envenenar/incinerar) van sobre el jugador —o la
                 // criatura— ENCARADO y marcan criminal como cualquier agresión; los de SOPORTE (curar veneno /
                 // remover parálisis) pueden ir sobre uno mismo si no hay nadie al frente.
-                var (sx, sy) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+                var (sx, sy) = TileObjetivo();
                 bool ofensivo = spell.IsParalyze || spell.IsImmobilize || spell.IsPoison || spell.IsIncinerate;
                 Player? target = _world.PlayerAt(new WorldPos(p.Pos.Map, sx, sy));
                 // Si al frente hay una CRIATURA (y el hechizo es ofensivo), el estado va sobre ella (VB6
@@ -7376,6 +7409,11 @@ public sealed class PacketDispatcher
             if (DeadCheck(session, p)) return;   // VB6 HandleDrop: un muerto no puede tirar objetos al suelo
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
+            // `Destruir=1` (obj.dat): el objeto NO se tira al piso. El original corta acá y en vez del DropObj
+            // manda un ShowMessageBox (Protocol.bas:2057). Lo traen 5 ítems —los sacos de créditos, el de tiempo
+            // de donador y el Anillo Dorado—, y son justamente los que uno no quiere perder por un click.
+            if (_data.Obj(inv.ObjIndex) is { NoSeTira: true })
+            { session.Send(ServerMessages.ShowMessageBox("", esPregunta: true, accion: 1)); return; }
             if (_world.TryGetGround(p.Pos, out _)) { session.Send(ServerMessages.LocaleMsg(262)); return; }
 
             short drop = (short)Math.Clamp(amount, 1, inv.Amount);
@@ -7938,7 +7976,7 @@ public sealed class PacketDispatcher
             {
                 inv.Equipped = false;
                 ClearEquipAnim(p, obj);
-                AplicarBonusDeSkill(p, obj, poniendose: false);
+                AplicarBonusDeEquipo(p, obj, poniendose: false);
                 p.Inventory[slot] = inv;
                 // Sacarse la HERRAMIENTA corta la faena en el acto (VB6 `Desequipar`, InvUsuario.bas:767, justo
                 // después de limpiar `AnilloEqpObjIndex`). El loop ya la cortaba solo, pero recién en la vuelta
@@ -7976,13 +8014,13 @@ public sealed class PacketDispatcher
                     {
                         other.Equipped = false; p.Inventory[i] = other;
                         ClearEquipAnim(p, oo);
-                        AplicarBonusDeSkill(p, oo, poniendose: false);   // el que sale devuelve SU bonus
+                        AplicarBonusDeEquipo(p, oo, poniendose: false);   // el que sale devuelve SU bonus
                         session.Send(ServerMessages.ChangeInventorySlot((byte)i, other.ObjIndex, other.Amount, false, 0f, 1));
                     }
                 }
                 inv.Equipped = true;
                 SetEquipAnim(p, obj);
-                AplicarBonusDeSkill(p, obj, poniendose: true);
+                AplicarBonusDeEquipo(p, obj, poniendose: true);
                 p.Inventory[slot] = inv;
             }
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
@@ -7997,11 +8035,12 @@ public sealed class PacketDispatcher
     }
 
     /// <summary>
-    /// EL BONUS DE SKILL DE UN ÍTEM EQUIPADO. El original suma <c>CuantoAumento</c> a la skill
-    /// <c>QueSkill</c> al ponérselo y lo resta al sacárselo, las dos ramas adentro de un
-    /// <c>Case eMagicType.ModificaSkill</c> (InvUsuario.bas:973 y :747). Son los anillos y pendientes que
-    /// llevan el número en el nombre: Anillo del Guerrero (+20), Pendiente del Arquero (+30), Anillo de
-    /// Comercio (+30). Sin esto el jugador se pone el ítem que promete +20 y no le cambia nada.
+    /// EL BONUS QUE DA UN ÍTEM EQUIPADO, de skill o de atributo. El original suma <c>CuantoAumento</c> al
+    /// ponérselo y lo resta al sacárselo, en dos ramas del mismo <c>Select Case Obj.EfectoMagico</c>
+    /// (InvUsuario.bas:967/973 al equipar, :741/747 al sacar): <c>ModificaAtributo</c> toca
+    /// <c>QueAtributo</c> y <c>ModificaSkill</c> toca <c>QueSkill</c>. Son los anillos y pendientes que llevan
+    /// el número en el nombre: Anillo del Guerrero (+20), Pendiente del Arquero (+30), Anillo de Agilidad
+    /// (+5), Botas de Celeridad (+10). Sin esto el jugador se pone el ítem que promete +20 y no le cambia nada.
     ///
     /// Se llama en los TRES puntos donde cambia el estado equipado, y el tercero es el que se olvida: cuando
     /// uno se pone un anillo teniendo otro puesto, el que sale tiene que devolver SU bonus. Sin esa resta,
@@ -8011,13 +8050,29 @@ public sealed class PacketDispatcher
     /// El clamp a 0..255 es una defensa NUESTRA, no del original: la skill vive en un byte y una resta sobre
     /// un personaje que ya venía con el ítem puesto de antes daría la vuelta a 241.
     /// </summary>
-    private static void AplicarBonusDeSkill(Player p, Data.ObjInfo o, bool poniendose)
+    private static void AplicarBonusDeEquipo(Player p, Data.ObjInfo o, bool poniendose)
     {
-        const int ModificaSkill = 3;   // VB6 eMagicType.ModificaSkill
-        if (o.EfectoMagico != ModificaSkill || o.QueSkill <= 0 || o.CuantoAumento == 0) return;
-        if (o.QueSkill >= p.Skills.Length) return;
-        int valor = p.Skills[o.QueSkill] + (poniendose ? o.CuantoAumento : -o.CuantoAumento);
-        p.Skills[o.QueSkill] = (byte)Math.Clamp(valor, 0, 255);
+        const int ModificaAtributo = 2, ModificaSkill = 3;   // VB6 eMagicType
+        if (o.CuantoAumento == 0) return;
+        int delta = poniendose ? o.CuantoAumento : -o.CuantoAumento;
+
+        // Las dos ramas son EL MISMO `Select Case` del original, una debajo de la otra. Acá vivía sólo la de
+        // skill, así que los cuatro ítems de atributo —los únicos con EfectoMagico=2 en todo el install— no
+        // hacían nada, aunque los cuatro llevan el número en el nombre.
+        switch (o.EfectoMagico)
+        {
+            case ModificaSkill when o.QueSkill > 0 && o.QueSkill < p.Skills.Length:
+                p.Skills[o.QueSkill] = (byte)Math.Clamp(p.Skills[o.QueSkill] + delta, 0, 255);
+                break;
+            // Sobre el atributo BASE, como el original (`.Stats.UserAtributos(...)`), y no sobre `AttrBonus`:
+            // ese array es el de los buffs TEMPORALES, tiene vencimiento propio, y un bonus de equipo puesto ahí
+            // se evaporaría solo con el ítem todavía puesto. Además la mitad del código lee el atributo base
+            // directo (nivelar, guardar, el paquete de stats), así que el bonus no llegaría a esos caminos.
+            case ModificaAtributo when o.QueAtributo > 0 && o.QueAtributo < p.Attributes.Length:
+                p.Attributes[o.QueAtributo] =
+                    (byte)Math.Clamp(p.Attributes[o.QueAtributo] + delta, 0, Game.GameLimits.MaxAttribute);
+                break;
+        }
     }
 
     /// <summary>Difunde al área lo que cambió al equipar o desequipar una pieza, como el original: un

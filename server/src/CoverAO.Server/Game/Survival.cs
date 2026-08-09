@@ -65,4 +65,31 @@ public static class Survival
     /// Supervivencia, 5))</c>.</summary>
     public static int StaminaAmount(int maxStamina, int supervivencia, System.Func<int, int, int> rnd)
         => 5 * rnd(1, System.Math.Max(1, (maxStamina + supervivencia) * 5 / 100));
+
+    /// <summary>La SUERTE de meditar: cada cuántas vueltas, en promedio, acierta un tirón de maná. Sale de la
+    /// escalera de <c>DoMeditar</c> (Trabajo.bas:2061-2093), que va de 35 con la skill en 0 a 5 con la skill en
+    /// 100 — o sea que un meditador experto acierta SIETE VECES más seguido que uno que recién empieza.
+    ///
+    /// El original la escribe como once <c>ElseIf</c> encadenados sobre rangos de a diez; acá es la misma tabla
+    /// dada vuelta, que se lee de un vistazo y no se puede desalinear.</summary>
+    public static int SuerteAlMeditar(int skillMeditar) => skillMeditar switch
+    {
+        >= 100 => 5,
+        >= 91 => 7,
+        >= 81 => 10,
+        >= 71 => 15,
+        >= 61 => 18,
+        >= 51 => 20,
+        >= 41 => 22,
+        >= 31 => 24,
+        >= 21 => 28,
+        >= 11 => 30,
+        _ => 35,
+    };
+
+    /// <summary>Cuánto maná devuelve UN acierto de meditación: <c>Porcentaje(MaxMAN, PorcentajeRecuperoMana) /
+    /// 10</c>, con piso 1 (Trabajo.bas:2099-2102). Con el 6 del install eso es el 0,6% del maná máximo — así
+    /// que el tirón CRECE con el personaje en vez de ser una constante.</summary>
+    public static int ManaAlMeditar(int maxMana, int porcentajeRecupero)
+        => System.Math.Max(1, maxMana * porcentajeRecupero / 100 / 10);
 }

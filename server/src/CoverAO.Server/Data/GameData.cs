@@ -110,7 +110,22 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // Inmoviliza, RemoverParalisis, Ceguera, Invisibilidad, SubeHP y los buffs de atributo — pero NO
     // metamorfosis ni desencantar. Así que de las 8 pociones que traen el campo, la de Metamorfosis: Dragón y
     // las dos de Desencantar (Anti-Ceguera y Anti-Estupidez) no hacen nada NI EN EL ORIGINAL.
-    int LanzaHechizo = 0)
+    int LanzaHechizo = 0,
+    // `QueAtributo` (obj.dat): el ATRIBUTO que el ítem sube mientras está puesto — el hermano exacto de
+    // `QueSkill`, en la otra rama del mismo `Select Case Obj.EfectoMagico` del original (InvUsuario.bas:740 al
+    // equipar, :967 al sacar). Lo traen 4 ítems, y los cuatro lo anuncian en el nombre: "Nudillos (+10)",
+    // "Anillo de Agilidad (+5)", "Botas de Celeridad (+10)", "Anillo del Carisma (+10)". Sin esto el jugador
+    // se pone el anillo, lee el +5 en el nombre y no le pasa nada.
+    int QueAtributo = 0,
+    // `MineralIndex` (obj.dat): el mineral crudo que da ESTE yacimiento al picarlo. El original lo lee del
+    // yacimiento que tenés seleccionado (`ObjData(.flags.TargetObj).MineralIndex`, Trabajo.bas:2001) y acá el
+    // mineral estaba CABLEADO a hierro, así que los 4 yacimientos de Oro y los 4 de Plata —8 de los 12 del
+    // install— daban hierro, y la rama de plata y oro de la fundición no se alcanzaba minando.
+    int MineralIndex = 0,
+    // `Destruir` (obj.dat): el objeto NO se puede tirar al piso. El original corta el DropObj y en su lugar
+    // manda un ShowMessageBox (Protocol.bas:2057). Lo traen 5: los sacos de créditos y de tiempo de donador y
+    // el Anillo Dorado. Sin esto se los podía tirar —y perder— en el piso.
+    bool NoSeTira = false)
 {
     /// <summary>VB6 <c>ItemNewbie</c>: un mercader no paga nada por esto. Inalcanzable con esta data (ver arriba).</summary>
     public bool IsNewbie => Newbie == 1;
@@ -218,8 +233,17 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     int Tipo = 0,
     // Sonido y duración de la partícula, que hasta ahora se tiraban. Los usa la emisión al terreno
     // (`PlayWave` con las coords del tile y `EfectoTerrenoParticula` con su Time).
-    int Wav = 0, int TimeParticula = 0)
+    int Wav = 0, int TimeParticula = 0,
+    // `autolanzar` (Hechizos.dat, EN MINÚSCULA en el archivo): el hechizo se lanza sobre UNO MISMO y sin pedir
+    // objetivo. El original no pregunta nada — `If Hechizos(uh).AutoLanzar > 0 Then .flags.TargetUser =
+    // UserIndex : LanzarHechizo(...)` (HandleCastSpell, Protocol.bas:2136) — y recién si vale 0 le pide al
+    // cliente que marque un blanco. Lo traen 19 y son todos auto-buffs: Invisibilidad, las doce metamorfosis,
+    // Aura sagrada, Golpe certero, Inspiración, Honor del Paladín y el Cobijo de Leomundo.
+    int AutoLanzar = 0)
 {
+    /// <summary>El hechizo se tira sobre uno mismo, sin objetivo (Hechizos.dat <c>autolanzar</c>).</summary>
+    public bool EsAutoLanzado => AutoLanzar > 0;
+
     /// <summary>True when the spell has any visual effect worth broadcasting (a grh FX or a particle).</summary>
     public bool HasFx => FxGrh > 0 || Particle > 0;
     public bool IsHeal => SubeHp == 1;
@@ -291,7 +315,12 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // `NpcLanzaUnSpell`, que elige uno al azar de la lista con `RandomNumber(1, LanzaSpells)`).
     //
     // Sin esto esas 70 criaturas peleaban SÓLO a melee, que es una pelea completamente distinta.
-    IReadOnlyList<int>? Spells = null)
+    IReadOnlyList<int>? Spells = null,
+    // EL EQUIPO QUE SE LE VE PUESTO. El original lo manda en su CharacterCreate —`MakeNPCChar`,
+    // MODULO_NPCs.bas:590, pasa `Char.WeaponAnim`, `Char.ShieldAnim` y `Char.CascoAnim`— y acá iban tres ceros
+    // cableados, así que 57 de los 291 NPCs salían desarmados: los Guerreros de las ciudades sin espada ni
+    // escudo, los Hechiceros y Nigromantes sin casco. Es de las cosas que se ven a los dos segundos de entrar.
+    int WeaponAnim = 0, int ShieldAnim = 0, int HelmetAnim = 0)
 {
     /// <summary>¿Este mercader te compra ese objeto? Es la condición de <c>Comercio.bas:123</c> dada vuelta:
     /// el VB6 RECHAZA (LocaleMsg 148) si <c>TipoItems &lt;&gt; OBJType And TipoItems &lt;&gt; otCualquiera</c>,
@@ -348,6 +377,14 @@ public sealed class GameData
                     && int.TryParse(v.GetString(), System.Globalization.NumberStyles.AllowLeadingSign,
                                     System.Globalization.CultureInfo.InvariantCulture, out int bono))
                     data._modRaza[(raza, attr)] = bono;   // los valores vienen con signo ("+1", "-5")
+
+        // Balance.dat §EXTRA: el porcentaje del maná MÁXIMO que devuelve cada acierto de meditación
+        // (VB6 `cant = Porcentaje(MaxMAN, PorcentajeRecuperoMana) / 10`, Trabajo.bas:2099). Vale 6 en el
+        // install. Si el archivo no lo trae, queda el mismo 6 del default.
+        if (BuscarPropiedad(doc.RootElement, "EXTRA") is { } extra
+            && extra.TryGetProperty("PorcentajeRecuperoMana", out var prm)
+            && int.TryParse(prm.GetString(), out int pct) && pct > 0)
+            data.PorcentajeRecuperoMana = pct;
     }
 
     /// <summary>Busca una propiedad por nombre a cualquier profundidad (el transcode anida distinto por archivo).</summary>
@@ -650,6 +687,11 @@ public sealed class GameData
     /// <summary>MODVIDA (Balance.dat): HP promedio que gana por nivel cada clase. Lo usa Leveling.</summary>
     public IReadOnlyDictionary<int, double> LifeMod { get; private set; } = new Dictionary<int, double>();
 
+    /// <summary>Balance.dat §EXTRA <c>PorcentajeRecuperoMana</c>: qué porcentaje del maná MÁXIMO devuelve cada
+    /// acierto de meditación. Vale 6 en el install, y el original todavía lo divide por 10 — o sea que un
+    /// acierto devuelve el 0,6% del maná máximo, con un piso de 1. Ver <c>Survival.ManaAlMeditar</c>.</summary>
+    public int PorcentajeRecuperoMana { get; private set; } = 6;
+
     public IReadOnlyDictionary<int, double> WrestlingMod { get; private set; } = new Dictionary<int, double>();
     /// <summary>Per-class melee damage modifier (weapon), from Balance.dat MODDANOARMAS.</summary>
     public IReadOnlyDictionary<int, double> WeaponMod { get; private set; } = new Dictionary<int, double>();
@@ -826,7 +868,10 @@ public sealed class GameData
                 Int(el, "SND1", "Snd1"),                   // sonido del instrumento (la clave del .dat va en MAYÚSCULAS)
                 Int(el, "SndEspecial", "SNDESPECIAL", "sndespecial"),   // sonido al equipar un ítem con aura
                 Int(el, "QueSkill", "Queskill", "queskill"),             // skill que sube el ítem equipado
-                Int(el, "LanzaHechizo", "Lanzahechizo", "lanzahechizo"));  // poción SubTipo 5: hechizo que lanza
+                Int(el, "LanzaHechizo", "Lanzahechizo", "lanzahechizo"),   // poción SubTipo 5: hechizo que lanza
+                Int(el, "QueAtributo", "QUEATRIBUTO", "queatributo"),      // atributo que sube el ítem equipado
+                Int(el, "MineralIndex", "MINERALINDEX", "mineralindex"),   // mineral que da este yacimiento
+                Int(el, "Destruir", "DESTRUIR", "destruir") == 1);         // no se puede tirar al piso
         }
         return map;
     }
@@ -909,7 +954,9 @@ public sealed class GameData
                 // original NO deja el 0, lo sube a 100 — y en esta data no la trae NINGUNO de los 291.
                 Nivel: MaxOr(Int(el, "Nivel"), 100),
                 Status: Int(el, "Status"),
-                Spells: LeerHechizosDeNpc(el));
+                Spells: LeerHechizosDeNpc(el),
+                WeaponAnim: Int(el, "WeaponAnim"), ShieldAnim: Int(el, "ShieldAnim"),
+                HelmetAnim: Int(el, "CascoAnim"));   // el .dat la llama CascoAnim, el paquete Casco
         }
         return map;
     }
@@ -1038,7 +1085,11 @@ public sealed class GameData
                 Int(el, "SubeAG"), Int(el, "MinAG"), Int(el, "MaxAG"),
                 Int(el, "Invisibilidad"), Int(el, "Inmoviliza"), Int(el, "Incinera"),
                 Int(el, "HechizoDeArea"), Int(el, "AreaEfecto"), Int(el, "Tipo"),
-                Int(el, "WAV", "Wav"), Int(el, "TimeParticula"));
+                Int(el, "WAV", "Wav"), Int(el, "TimeParticula"),
+                // En el Hechizos.dat la clave viene TODA EN MINÚSCULA; el lector del original normaliza con
+                // UCase$ y por eso allá da igual. Se prueban las tres grafías, como con las otras claves
+                // que resultaron tener más de una escritura en este mismo archivo.
+                Int(el, "autolanzar", "AutoLanzar", "AUTOLANZAR"));
         }
         return map;
     }

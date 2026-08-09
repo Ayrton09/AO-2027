@@ -544,8 +544,17 @@ loop.OnTickHandler = tick =>
             // regalaban 5/tick caminando/peleando, debilitando la gestión de recurso del mago. La cadencia de
             // meditar se mantiene en 3 s: es la que verificaron los flujos, y DoMeditar tiene su propia lógica
             // de suerte por skill que no es parte de esta corrección de unidades.
-            if (pl.Meditating && tick % 75 == 0 && pl.Mana < pl.MaxMana)
-            { pl.Mana = Math.Min(pl.MaxMana, pl.Mana + 20); cambioMana = true; }   // VB6: WriteUpdateMana
+            // Y cuánto vuelve NO es una constante: el original tira los dados CADA VUELTA con una suerte que
+            // sale de la skill Meditar (1 de 35 con la skill en 0, 1 de 5 con la skill en 100) y devuelve un
+            // porcentaje del maná MÁXIMO (Trabajo.bas:2094-2103). Acá había un +20 fijo cada 3 s: le regalaba
+            // maná al que recién empieza, se lo escatimaba al mago grande, y dejaba a la skill Meditar sin
+            // ningún efecto — o sea que entrenarla no servía para nada.
+            if (pl.Meditating && pl.Mana < pl.MaxMana
+                && regenRng.Next(1, Survival.SuerteAlMeditar(pl.Skills[GameLimits.SkillMeditar]) + 1) == 1)
+            {
+                pl.Mana = Math.Min(pl.MaxMana, pl.Mana + Survival.ManaAlMeditar(pl.MaxMana, gameData.PorcentajeRecuperoMana));
+                cambioMana = true;   // VB6: WriteUpdateMana
+            }
             // RecStamina (VB6 General.bas:1093): cada 50 vueltas (2 s), descanses o no —el original le pasa ese
             // 50 literal en las dos ramas—, y con un corte que el port no tenía: no recupera NADA mientras
             // estás trabajando.
