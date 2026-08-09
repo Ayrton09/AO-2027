@@ -463,6 +463,11 @@ public static class ServerMessages
     // Combat-state toggles/clears — all ID-only packets (no fields), per fase0/spec + the VB6 enum.
     public static byte[] ParalizeOK() => new ByteQueueWriter().WritePacketId(ServerPacketId.ParalizeOK).ToArray();
     public static byte[] Blind() => new ByteQueueWriter().WritePacketId(ServerPacketId.Blind).ToArray();
+    /// <summary>NADIE LO MANDA, y no es un olvido: la estupidez no se modela porque la clave <c>Estupidez</c>
+    /// no existe en ninguno de los 113 hechizos del <c>Hechizos.dat</c> (ver el veredicto en NpcSystem, donde
+    /// se descartó el <c>WriteDumb</c> del original por la misma razón). Se deja el constructor porque el
+    /// cliente web SÍ decodifica su par <c>DumbNoMore</c>, y el día que aparezca data que lo use, esto es lo
+    /// único que hay que conectar. Si alguien lo cablea, que sea con un hechizo que lo pida de verdad.</summary>
     public static byte[] Dumb() => new ByteQueueWriter().WritePacketId(ServerPacketId.Dumb).ToArray();
     public static byte[] BlindNoMore() => new ByteQueueWriter().WritePacketId(ServerPacketId.BlindNoMore).ToArray();
     public static byte[] DumbNoMore() => new ByteQueueWriter().WritePacketId(ServerPacketId.DumbNoMore).ToArray();
