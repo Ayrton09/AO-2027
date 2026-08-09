@@ -586,6 +586,9 @@
       // Cierre de paridad — comercio/banco explícito, diplomacia de clan, casamiento, requests, premios
       CommerceEnd: 14, BankEnd: 15, CommerceStart: 71, BankStart: 72, LeftClick: 19,
       RequestAtributes: 11, RequestMiniStats: 13,
+      // El paquete de los comandos de GM (eGMCommands va adentro, como primer byte del payload).
+      // Faltaba, y por eso el cliente no podia mandar NINGUNO de los 86 que el servidor implementa.
+      GMCommands: 92,
       ClanCodexUpdate: 40, GuildAcceptPeace: 41, GuildRejectAlliance: 42, GuildRejectPeace: 43, GuildAcceptAlliance: 44,
       GuildAllianceDetails: 47, GuildPeaceDetails: 48, GuildRequestJoinerInfo: 49, GuildAlliancePropList: 50, GuildPeacePropList: 51,
       GuildNewWebsite: 53, GuildMemberInfo: 58, GuildRequestDetails: 61, ShowGuildNews: 94, GuildFundate: 89, CloseGuild: 107,
@@ -1769,6 +1772,13 @@
         }
       });
     window.__mepos = () => { const c = chars.get(myCharIndex); return c ? [c.x, c.y] : null; };  // debug helper
+    // Los personajes que el cliente tiene EN PANTALLA, con lo que le llegó de cada uno. Es la sonda que hacía
+    // falta para contestar "¿esto que el servidor manda, llega y se dibuja?" sin mirar una captura — que ya me
+    // engañó una vez. Devuelve una copia: nadie de afuera toca el estado del render.
+    window.__chars = () => [...chars.entries()].map(([i, c]) => ({
+      i, x: c.x, y: c.y, nombre: c.name ?? null, esNpc: !!c.esNpc,
+      body: c.body, head: c.head, weapon: c.weapon, shield: c.shield, helmet: c.helmet,
+    }));
     // Estado del desvanecido de techos: alpha actual, si el tile pisado es de interior, y cuántos tiles de
     // interior trae el mapa. Sin esto no hay forma de comprobar el fade desde afuera (es una variable local
     // del render), y el fade es justamente lo que se acaba de portar.
@@ -3692,6 +3702,153 @@
       '/gmsg': CLIENT.GuildMessage,     // el nombre que usa el original; /cmsg es alias nuestro
       '/fmsg': CLIENT.MsgAmigos,        // mensaje a todos los amigos conectados
       '/fdel': CLIENT.DelAmigos };
+    // ── LOS COMANDOS DE GM ────────────────────────────────────────────────────────────────────────────
+    //
+    // El servidor implementa 86 subcomandos de `GMCommands` (id 92) y hasta acá el cliente web NO MANDABA
+    // NINGUNO: escribir /TELEP contestaba "comando desconocido". O sea que los ~70 comandos que se portaron
+    // eran inalcanzables para quien hostea, porque el cliente web es el único que repartimos.
+    //
+    // El cliente VB6 los tiene en un FORMULARIO con 87 botones (frmPanelGm.frm). Acá van tipeados, que es lo
+    // que este cliente ya hace con sus otros treinta comandos y con su /ayuda — portar un formulario de VB6
+    // habría sido fiel a la letra y ajeno a la herramienta.
+    //
+    // La tabla es GENERADA de la fuente, no escrita a mano: el id sale del `eGMCommands` del VB6
+    // (Declares.bas:1829) y el layout de argumentos, de la tabla `GmArgLayouts` del propio servidor. Así los
+    // tres no pueden divergir. Layout: s=texto, i=entero(2 bytes), l=long(4), b=byte.
+    const GM_COMANDOS = {
+      '/gmsg': [1, 's'],
+      '/showname': [2, ''],
+      '/ircerca': [3, 's'],
+      '/rem': [4, 's'],
+      '/hora': [5, ''],
+      '/donde': [6, 's'],
+      '/nene': [7, 'i'],
+      '/telep': [8, 'sibb'],
+      '/show sos': [9, ''],
+      '/ira': [11, 's'],
+      '/invisible': [12, ''],
+      '/panelgm': [13, ''],
+      '/trabajando': [15, ''],
+      '/ocultando': [16, ''],
+      '/carcel': [17, 'ssb'],
+      '/rmata': [18, ''],
+      '/advertencia': [19, 'ss'],
+      '/mod': [20, 'sbss'],
+      '/info': [21, 's'],
+      '/inv': [22, 's'],
+      '/bov': [23, 's'],
+      '/skills': [24, 's'],
+      '/revivir': [25, 's'],
+      '/onlinegm': [26, ''],
+      '/onlinemap': [27, 'i'],
+      '/echar': [28, 's'],
+      '/ejecutar': [29, 's'],
+      '/ban': [30, 'sb'],
+      '/seguir': [31, ''],
+      '/sum': [32, 's'],
+      '/resetinv': [33, ''],
+      '/rmsg': [35, 's'],
+      '/nick2ip': [36, 's'],
+      '/ip2nick': [37, 'bbbb'],
+      '/onclan': [38, 's'],
+      '/ct': [39, 'ibb'],
+      '/dt': [40, ''],
+      '/lluvia': [41, 'b'],
+      '/talkas': [42, 's'],
+      '/massdest': [43, ''],
+      '/noestupido': [44, 's'],
+      '/trigger': [45, 'b'],
+      '/baniplist': [47, ''],
+      '/banipreload': [48, ''],
+      '/miembrosclan': [49, 's'],
+      '/banclan': [50, 's'],
+      '/banip': [51, ''],
+      '/unbanip': [52, 'bbbb'],
+      '/ci': [53, 'ii'],
+      '/dest': [54, ''],
+      '/bloq': [55, ''],
+      '/mata': [56, ''],
+      '/masskill': [57, ''],
+      '/smsg': [59, 's'],
+      '/acc': [60, 'i'],
+      '/racc': [61, 'i'],
+      '/nave': [62, ''],
+      '/habilitar': [63, ''],
+      '/apagar': [64, ''],
+      '/rajarclan': [65, 's'],
+      '/centinelaactivado': [67, ''],
+      '/showcmsg': [68, 's'],
+      '/guardamapa': [69, ''],
+      '/modmapinfo pk': [70, 'b'],
+      '/modmapinfo backup': [71, 'b'],
+      '/modmapinfo restringir': [72, 's'],
+      '/modmapinfo magiasinefecto': [73, 'b'],
+      '/modmapinfo invisinefecto': [74, 'b'],
+      '/modmapinfo resusinefecto': [75, 'b'],
+      '/modmapinfo terreno': [76, 's'],
+      '/modmapinfo zona': [77, 's'],
+      '/grabar': [78, ''],
+      '/borrar sos': [79, ''],
+      '/echartodospjs': [80, ''],
+      '/reloadnpcs': [81, ''],
+      '/reloadhechizos': [83, ''],
+      '/reloadobj': [84, ''],
+      '/darpun usuario@cantidad': [86, ''],
+    };
+    // Los argumentos se toman de izquierda a derecha; el ÚLTIMO, si es texto, se lleva el resto de la línea
+    // (así `/rmsg se cae el server en 5` manda la frase entera). Los tres comandos que llevan un texto EN EL
+    // MEDIO se resuelven aparte, porque ahí la regla genérica partiría mal la frase.
+    //
+    // Hay comandos de DOS PALABRAS (`/modmapinfo pk`, `/show sos`): la búsqueda prueba primero con la segunda
+    // palabra pegada y después sin ella. Sin eso, los ocho `/modmapinfo` colapsaban en una sola entrada y
+    // ganaba el último — o sea que siete quedaban inalcanzables y el octavo hacía lo que no era.
+    function buscarComandoGm(cmd, arg) {
+      const sp = arg.search(/\s/);
+      const primera = (sp < 0 ? arg : arg.slice(0, sp)).toLowerCase();
+      if (primera && GM_COMANDOS[cmd + ' ' + primera]) {
+        return { clave: cmd + ' ' + primera, resto: sp < 0 ? '' : arg.slice(sp + 1).trim() };
+      }
+      return GM_COMANDOS[cmd] ? { clave: cmd, resto: arg } : null;
+    }
+    // ESCRIBE EN EL WRITER COMPARTIDO y devuelve si hay algo que mandar. No manda por su cuenta: al final del
+    // bloque de comandos hay UN `ws.send(w)` para todos, y un envío propio dejaba salir además ese buffer
+    // vacío — que del otro lado se lee como fin de stream y le cierra la conexión al GM.
+    function armarComandoGm(w, clave, arg) {
+      const [id, layout] = GM_COMANDOS[clave];
+      w.writeByte(CLIENT.GMCommands).writeByte(id);
+      let piezas;
+      if (clave === '/carcel') {
+        // /carcel <nick> <motivo con espacios> <minutos>: el nick es el primero y los minutos el ÚLTIMO,
+        // así el motivo puede ser una frase — que es como lo escribe un GM.
+        const t = arg.split(/\s+/).filter(Boolean);
+        if (t.length < 3) { log('uso: /carcel <nombre> <motivo> <minutos>', '#b94'); return false; }
+        piezas = [t[0], t.slice(1, -1).join(' '), t[t.length - 1]];
+      } else if (clave === '/mod') {
+        const t = arg.split(/\s+/).filter(Boolean);
+        if (t.length < 3) { log('uso: /mod <nombre> <opcion> <valor> [valor2]', '#b94'); return false; }
+        piezas = [t[0], t[1], t[2], t.slice(3).join(' ')];
+      } else {
+        piezas = [];
+        let resto = arg;
+        for (let k = 0; k < layout.length; k++) {
+          if (layout[k] === 's' && k === layout.length - 1) { piezas.push(resto); break; }
+          const sp = resto.search(/\s/);
+          piezas.push(sp < 0 ? resto : resto.slice(0, sp));
+          resto = sp < 0 ? '' : resto.slice(sp + 1).trim();
+        }
+      }
+      for (let k = 0; k < layout.length; k++) {
+        const v = piezas[k] === undefined ? '' : piezas[k];
+        if (layout[k] === 's') { w.writeAsciiString(String(v)); continue; }
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n)) { log(`uso: ${clave} — el argumento ${k + 1} tiene que ser un número`, '#b94'); return false; }
+        if (layout[k] === 'i') w.writeInteger(n);
+        else if (layout[k] === 'l') w.writeLong(n);
+        else w.writeByte(Math.max(0, Math.min(255, n)));
+      }
+      return true;
+    }
+
     function sendChat(rawText) {                                     // rawText undefined = desde la caja de chat; con valor = desde un macro
       const fromBox = rawText === undefined;
       const text = (fromBox ? chatbox.value : rawText).trim();
@@ -3715,6 +3872,14 @@
         const sp = text.indexOf(' ');
         const cmd = (sp < 0 ? text : text.slice(0, sp)).toLowerCase();
         const arg = sp < 0 ? '' : text.slice(sp + 1).trim();
+        // La ayuda de GM va aparte: son 79 comandos y meterlos en /ayuda ahogaría la lista del jugador.
+        if (cmd === '/ayudagm') {
+          const nombres = Object.keys(GM_COMANDOS).sort();
+          log(`comandos de GM (${nombres.length}): ` + nombres.join(' '), '#8a9');
+          log('los que piden argumentos avisan cómo usarlos si faltan. Un jugador común los puede escribir, ' +
+              'pero el servidor los rechaza: el privilegio se decide allá, no acá.', '#8a9');
+          return;
+        }
         if (cmd === '/ayuda') {
           log('comandos: /online /salir /meditar /descansar /resucitar /est /enlistar /informacion /recompensa /uptime /hogar /salirclan /onlineclan /boveda /comerciar /skin /ping /flist /eventos /cmsg <msg> /gmsg <msg> /desc <txt> /voto <nombre> /denunciar <msg> /apostar <n> /susurrar <nombre> <msg> /ignorar <nombre> /desconectar <nombre> /depositar <n> /retirar <n> /fadd <nombre> /fdel <nombre> /fmsg <msg> /proponer <nombre>', '#8a9');
           // OJO: este texto decía "c descansar" y es falso — `c` abre el panel de CLAN, y descansar no tiene
@@ -3763,7 +3928,8 @@
           const sp2 = arg.indexOf(' ');
           if (sp2 < 0) { log('uso: /susurrar <nombre> <mensaje>', '#b94'); return; }
           w.writeByte(CLIENT.Whisper).writeAsciiString(arg.slice(0, sp2)).writeAsciiString(arg.slice(sp2 + 1));
-        } else { log('comando desconocido: ' + cmd + ' (probá /ayuda)', '#b94'); return; }
+        } else if (buscarComandoGm(cmd, arg)) { const g = buscarComandoGm(cmd, arg); if (!armarComandoGm(w, g.clave, g.resto)) return; }
+        else { log('comando desconocido: ' + cmd + ' (probá /ayuda)', '#b94'); return; }
       } else {
         w.writeByte(CLIENT.Talk).writeAsciiString(text).writeByte(1);   // texto plano → ChatOverHead
       }

@@ -19,5 +19,8 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - Los hechizos que van sobre uno mismo —invisibilidad, las metamorfosis, Aura sagrada, Golpe certero,
   Inspiración, Honor del Paladín— se lanzan solos, sin pedir un objetivo.
 - Los sacos de créditos, el de tiempo de donador y el Anillo Dorado ya no se pueden tirar al piso sin querer.
+- Los comandos de administración se pueden usar desde el cliente web: /telep, /ci, /carcel, /sum,
+  /invisible y 73 más. Se listan con /ayudagm. Antes el cliente contestaba "comando desconocido"
+  a todos, así que quien hosteaba no tenía forma de usarlos.
 - Si cerrás sesión navegando, volvés en tu barco y no a pie en medio del mar.
 - El servidor guarda a todos los conectados al apagarse, aunque se lo cierre desde la ventana.
