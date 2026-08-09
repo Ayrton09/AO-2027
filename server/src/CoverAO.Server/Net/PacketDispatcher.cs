@@ -1054,7 +1054,8 @@ public sealed class PacketDispatcher
         }
         if (_rng.Next(1, 101) > Combat.HitChance(pa, pe))
         {
-            session.Send(ServerMessages.ConsoleMsg($"Fallaste el golpe a {target.Name}.", 0));
+            // El fallo tambien se muestra: un "0" flotante sobre uno mismo (SistemaCombate.bas:1248).
+        session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
             // RECHAZO CON ESCUDO (VB6 SistemaCombate.bas:1136-1151). Segunda tirada, sólo sobre un golpe ya
             // fallado. Y es la ÚNICA vía de entrenamiento de Defensa que tiene el juego: sin esto la skill no
@@ -1088,10 +1089,12 @@ public sealed class PacketDispatcher
             Equipment.DefRange(casco), Equipment.DefRange(armadura), Equipment.DefRange(escudo),
             (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
         target.Hp = Math.Max(0, target.Hp - damage);
-        session.Send(ServerMessages.ConsoleMsg($"Le pegaste a {target.Name} por {damage}.", 0));
-        target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te pego por {damage}.", 0));
+        // Sin linea de consola: el original no narra el golpe, lo muestra (UserDanoUser,
+        // SistemaCombate.bas:1355-1356 — dos `WriteChatOverHeadLocale`, uno a cada participante, y
+        // NINGUN texto). Y va a los DOS que pelean, no al area: `Write*` escribe a un usuario.
         target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));   // VB6 SistemaCombate.bas:749
-        _world.BroadcastToObservers(target.Pos, ServerMessages.DamageOverHead(target.CharIndex, damage));
+        session.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
+        target.Connection?.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
         // El PvP no entrenaba NADA. El VB6 lo hace en UserDañoUser (SistemaCombate.bas:1360-1385), DESPUÉS de
         // aplicar el daño; el gate de hambre/sed ya vive dentro de SubirSkill, así que RaiseSkill lo aplica solo.
         RaiseSkill(session, p, atkSkill);
@@ -1303,7 +1306,7 @@ public sealed class PacketDispatcher
         RevealOnAttack(p);   // disparar a un NPC revela ocultamiento e invisibilidad por hechizo (VB6 UsuarioAtacaNpc)
         npc.AttackedBy = p.Name; npc.Hostile = true;   // provocar (igual que el melee), aun si falla
         if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), npc.Template.PoderEvasion))
-        { session.Send(ServerMessages.ConsoleMsg($"Fallaste el disparo a {npc.Name}.", 0)); return; }
+        { session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0)); return; }   // el fallo, sin texto
         int damage = RangedDamage(p, bow, ammo) - npc.Template.Def;
         // El disparo gotea experiencia igual que la espada, y con el MISMO orden (antes de aplicar el daño):
         // en el original el arco no tiene un camino propio — `UsuarioAtacaNpc` ramifica por proyectil sólo
@@ -1311,8 +1314,8 @@ public sealed class PacketDispatcher
         // `UserDañoNpc` (:932) que el melee, que es quien llama a `CalcularDarExp` en :470.
         CalcularDarExp(session, p, npc, damage);
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
-        session.Send(ServerMessages.ConsoleMsg($"Le disparaste a {npc.Name} por {damage}. (HP {npc.Hp}/{npc.Template.MaxHp})", 0));
-        _world.BroadcastToObservers(npc.Pos, ServerMessages.DamageOverHead(npc.CharIndex, damage));
+        // Sin texto y solo al tirador (UserDanoNpc, SistemaCombate.bas:467).
+        session.Send(ServerMessages.DamageOverHead(npc.CharIndex, damage));
         RaiseSkill(session, p, GameLimits.SkillProyectiles);   // el arco entrena Proyectiles
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
     }
@@ -1324,7 +1327,7 @@ public sealed class PacketDispatcher
         long pe = Combat.PoderEvasion(target.Skills[GameLimits.SkillTacticas], target.Agility, target.Level, evasionMod);
         if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), pe))
         {
-            session.Send(ServerMessages.ConsoleMsg($"Fallaste el disparo a {target.Name}.", 0));
+            session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));   // el fallo, sin texto
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
             return;
         }
@@ -1337,10 +1340,12 @@ public sealed class PacketDispatcher
             Equipment.DefRange(casco), Equipment.DefRange(armadura), Equipment.DefRange(escudo),
             (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
         target.Hp = Math.Max(0, target.Hp - damage);
-        session.Send(ServerMessages.ConsoleMsg($"Le disparaste a {target.Name} por {damage}.", 0));
-        target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te disparó por {damage}.", 0));
+        // Sin linea de consola: el original no narra el golpe, lo muestra (UserDanoUser,
+        // SistemaCombate.bas:1355-1356 — dos `WriteChatOverHeadLocale`, uno a cada participante, y
+        // NINGUN texto). Y va a los DOS que pelean, no al area: `Write*` escribe a un usuario.
         target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));   // VB6 SistemaCombate.bas:749
-        _world.BroadcastToObservers(target.Pos, ServerMessages.DamageOverHead(target.CharIndex, damage));
+        session.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
+        target.Connection?.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
         RaiseSkill(session, p, GameLimits.SkillProyectiles);
         if (target.Hp == 0) OnKill(session, p, target);
     }
@@ -1364,7 +1369,7 @@ public sealed class PacketDispatcher
         long pa = Combat.PoderAtaqueWrestling(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
         if (_rng.Next(1, 101) > Combat.HitChance(pa, npc.Template.PoderEvasion))
         {
-            session.Send(ServerMessages.ConsoleMsg($"Fallaste el golpe a {npc.Name}.", 0));
+            session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));   // el fallo, sin texto
             return;
         }
         // VB6 UserImpactoNpc:216-218: entrena UNA sola skill —la que efectivamente usó— y SÓLO al acertar.
@@ -1383,10 +1388,10 @@ public sealed class PacketDispatcher
         // exceso. Invertir estas dos líneas rompería esa cuenta en silencio.
         CalcularDarExp(session, p, npc, damage);
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
-        session.Send(ServerMessages.ConsoleMsg($"Le pegaste a {npc.Name} por {damage}. (HP {npc.Hp}/{npc.Template.MaxHp})", 0));
-        // Número flotante sobre la criatura golpeada — el área lo ve, no sólo el atacante (VB6 usa
-        // SendData ToPCArea para el ChatOverHeadLocale de daño).
-        _world.BroadcastToObservers(npc.Pos, ServerMessages.DamageOverHead(npc.CharIndex, damage));
+        // Sin texto y solo al que pega (UserDanoNpc, SistemaCombate.bas:467). El comentario que estaba
+        // aca decia que el original difundia con `SendData ToPCArea` y era falso: usa `WriteChat...`,
+        // que escribe a UN usuario.
+        session.Send(ServerMessages.DamageOverHead(npc.CharIndex, damage));
         // APUÑALAR: golpe extra, y SÓLO si la criatura sobrevivió al principal (VB6 SistemaCombate.bas:474-482,
         // `If .Stats.MinHP > 0 Then ... DoApuñalar`). Va con el daño BASE, no con el ya mermado por la defensa.
         if (npc.Hp > 0 && PuedeApunalar(p)) DoApunalar(session, p, npc, null, danoBase);
@@ -1467,7 +1472,7 @@ public sealed class PacketDispatcher
             session.Send(ServerMessages.ConsoleMsg($"Has apuñalado a {victima.Name} por {dano}.", FuenteCombate));
             victima.Connection?.Send(ServerMessages.ConsoleMsg($"Te ha apuñalado {p.Name} por {dano}.", FuenteCombate));
             victima.Connection?.Send(ServerMessages.UpdateHP((short)victima.Hp));
-            _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dano));
+            // El apunalar del original manda SOLO texto (Trabajo.bas:1792): el flotante era agregado nuestro.
             if (victima.Hp == 0) OnKill(session, p, victima);
         }
         else if (npc is not null)
@@ -1479,7 +1484,7 @@ public sealed class PacketDispatcher
             // MATA tampoco cobra en el goteo — su parte sale del pago del pool al morir.
             CalcularDarExp(session, p, npc, dano);
             session.Send(ServerMessages.ConsoleMsg($"Has apuñalado la criatura por {dano}.", FuenteCombate));
-            _world.BroadcastToObservers(npc.Pos, ServerMessages.DamageOverHead(npc.CharIndex, dano));
+            // Idem: Trabajo.bas:1800 manda solo la linea de texto.
             if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
         }
         RaiseSkill(session, p, GameLimits.SkillApunalar);
