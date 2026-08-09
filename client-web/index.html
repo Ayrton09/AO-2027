@@ -591,11 +591,14 @@
       GMCommands: 92,
       ClanCodexUpdate: 40, GuildAcceptPeace: 41, GuildRejectAlliance: 42, GuildRejectPeace: 43, GuildAcceptAlliance: 44,
       GuildAllianceDetails: 47, GuildPeaceDetails: 48, GuildRequestJoinerInfo: 49, GuildAlliancePropList: 50, GuildPeacePropList: 51,
-      GuildNewWebsite: 53, GuildMemberInfo: 58, GuildRequestDetails: 61, ShowGuildNews: 94, GuildFundate: 89, CloseGuild: 107,
+      GuildNewWebsite: 53, GuildMemberInfo: 58, GuildRequestDetails: 61, ShowGuildNews: 94, GuildFundate: 89, GuildFundation: 90, CloseGuild: 107,
       Casamiento: 104, Divorciar: 105, PidePremios: 87, RPremios: 88, HayEventos: 106, GMRequest: 80,
       // Sexto eje (docs/eje-cliente-compuerta.md): los que el server atiende, el cliente ORIGINAL manda y
       // este no tenia. Cinco de ellos son comandos '/' — en el VB6 los parsea clsClientTCP.cls.
-      RequestPositionUpdate: 5, EquiparSkin: 30, Ping: 91, AbrirForms: 112, DesconectarCuenta: 113 };
+      RequestPositionUpdate: 5, EquiparSkin: 30, Ping: 91, AbrirForms: 112, DesconectarCuenta: 113,
+      // El servidor lo atiende entero (difunde la particula al area del objetivo) y el cliente no tenia
+      // como pedirlo. Va como /particula, fuera de la tabla de GM porque es paquete propio, no subcomando.
+      ParticulaUsuario: 100 };
 
     // El byte de "estado" de CharMsgStatus (VB6 WriteCharMsgStatus, Protocol.bas:17094): rango de GM si lo es,
     // y si no el bando. La numeración de facción no es identidad (Caos=4 viaja como 5, Armada=5 como 6…),
@@ -2110,7 +2113,7 @@
           <button class="sbtn ghost" data-act="cl-info">Ver mi clan (miembros / solicitudes / novedades)</button>
           <div class="fsec">Unirse / fundar</div>
           <div class="frow"><input id="cl-join" placeholder="clan al que postular"><button class="sbtn" data-act="cl-join">Postular</button></div>
-          <div class="frow"><input id="cl-found" placeholder="nombre del clan a fundar"><button class="sbtn" data-act="cl-found">Fundar</button></div>
+          <div class="frow"><input id="cl-found" placeholder="nombre del clan a fundar"><select id="cl-align"><option value="0">Neutral</option><option value="1">Armada Real</option><option value="2">Legion Caos</option></select><button class="sbtn" data-act="cl-found">Fundar</button></div>
           <div class="fsec">Liderazgo</div>
           <div class="frow"><input id="cl-accept" placeholder="aspirante a aceptar"><button class="sbtn" data-act="cl-accept">Aceptar</button></div>
           <div class="frow"><input id="cl-reject" placeholder="aspirante a rechazar"><button class="sbtn ghost" data-act="cl-reject">Rechazar</button></div>
@@ -2156,7 +2159,18 @@
         else if (a === 'am-online') send(W().writeByte(CLIENT.OnAmigos));
         else if (a === 'cl-info') send(W().writeByte(CLIENT.RequestGuildLeaderInfo));
         else if (a === 'cl-join') { const g = S('cl-join'); if (g) send(W().writeByte(CLIENT.GuildRequestMembership).writeAsciiString(g).writeAsciiString('Quiero unirme.')); }
-        else if (a === 'cl-found') { const g = S('cl-found'); if (g) send(W().writeByte(CLIENT.CreateNewGuild).writeAsciiString('Fundado desde el cliente web').writeAsciiString(g).writeAsciiString('').writeAsciiString('')); }
+        else if (a === 'cl-found') {
+          const g = S('cl-found');
+          if (g) {
+            // Fundar son DOS paquetes: GuildFundation lleva la ALINEACION elegida y CreateNewGuild los datos.
+            // Acá iba sólo el segundo, así que el servidor tomaba `FoundingAlignment` en 0 y todo clan fundado
+            // desde el cliente web quedaba neutral: nunca se podía fundar uno de la Armada Real ni del Caos.
+            const alin = parseInt((document.getElementById('cl-align') || {}).value, 10) || 0;
+            send(W().writeByte(CLIENT.GuildFundation).writeByte(alin));
+            send(new ByteQueueWriter().writeByte(CLIENT.CreateNewGuild)
+              .writeAsciiString('Fundado desde el cliente web').writeAsciiString(g).writeAsciiString('').writeAsciiString(''));
+          }
+        }
         else if (a === 'cl-accept') { const n = S('cl-accept'); if (n) send(W().writeByte(CLIENT.GuildAcceptNewMember).writeAsciiString(n)); }
         else if (a === 'cl-reject') { const n = S('cl-reject'); if (n) send(W().writeByte(CLIENT.GuildRejectNewMember).writeAsciiString(n).writeAsciiString('Rechazado.')); }
         else if (a === 'cl-kick') { const n = S('cl-kick'); if (n) send(W().writeByte(CLIENT.GuildKickMember).writeAsciiString(n)); }
@@ -3893,7 +3907,7 @@
         }
         // /PING no manda nada: imprime la latencia que ya trajo el ultimo Pong, igual que el original (que la
         // guarda en la variable MSRender). El Ping viaja solo, por temporizador.
-        if (cmd === '/ping') { log('Ping: ' + (latenciaMs == null ? 'midiendo…' : latenciaMs + ' ms'), '#8a9'); return; }
+                if (cmd === '/ping') { log('Ping: ' + (latenciaMs == null ? 'midiendo…' : latenciaMs + ' ms'), '#8a9'); return; }
         // /IGNORAR es LOCAL —el original llama frmOpciones.AgregarIgnorado y no manda ningun paquete—: filtra
         // el chat de ese personaje de este lado.
         if (cmd === '/ignorar') {
@@ -3923,6 +3937,16 @@
         else if (cmd === '/proponer') {
           if (!arg) { log('uso: /proponer <nombre>', '#b94'); return; }
           w.writeByte(CLIENT.Casamiento).writeAsciiString(arg).writeByte(1);
+        }
+        else if (cmd === '/particula') {
+          // Va acá adentro y no antes de la cadena: las ramas de arriba RETORNAN, así que un comando que sólo
+          // escribe en `w` y no retorna se caía al `else` final y salía "comando desconocido" — con el paquete
+          // ya escrito y sin mandar.
+          const sp2 = arg.search(/\s/);
+          const quien = sp2 < 0 ? arg : arg.slice(0, sp2);
+          const cual = parseInt(sp2 < 0 ? '' : arg.slice(sp2 + 1), 10);
+          if (!quien || !Number.isFinite(cual)) { log('uso: /particula <nombre> <numero>', '#b94'); return; }
+          w.writeByte(CLIENT.ParticulaUsuario).writeAsciiString(quien).writeInteger(cual);
         }
         else if (cmd === '/susurrar' || cmd === '/w') {
           const sp2 = arg.indexOf(' ');
