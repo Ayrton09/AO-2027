@@ -191,8 +191,12 @@ configuración y hasta su versión. Lo único que hay que cuidar es no repetir p
 .\coverao.ps1 iniciar rojo
 .\coverao.ps1 estado            # todos, con RAM y puertos
 .\coverao.ps1 detener rojo      # apagado limpio
-.\coverao.ps1 arranque rojo     # que arranque al prender la máquina
+.\coverao.ps1 arranque rojo     # OPCIONAL: que arranque al prender la máquina
 ```
+
+> **El servidor lo abrís vos cuando querés.** Ni `arranque` (Windows) ni `systemctl enable` (Linux) están en
+> el camino recomendado: el juego se levanta a mano y se apaga a mano. Los dos existen para quien tenga un
+> servidor dedicado y los quiera, pero no se registran solos ni hacen falta para jugar con amigos.
 
 **Linux** — [`hosting/coverao@.service`](../hosting/coverao@.service) es una unit plantilla:
 
@@ -200,7 +204,7 @@ configuración y hasta su versión. Lo único que hay que cuidar es no repetir p
 sudo useradd --system --home /srv/coverao --shell /usr/sbin/nologin coverao
 # una instalación por servidor en /srv/coverao/<nombre>, cada una con su StartPort
 sudo cp hosting/coverao@.service /etc/systemd/system/ && sudo systemctl daemon-reload
-sudo systemctl enable --now coverao@rojo coverao@azul
+sudo systemctl start coverao@rojo coverao@azul     # arranca AHORA, y sólo cuando vos lo pidas
 systemctl status 'coverao@*'
 journalctl -u coverao@rojo -f
 ```

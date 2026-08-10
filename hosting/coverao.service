@@ -3,7 +3,11 @@
 ;   sudo cp coverao.service /etc/systemd/system/
 ;   sudo useradd --system --home /opt/coverao --shell /usr/sbin/nologin coverao
 ;   sudo chown -R coverao:coverao /opt/coverao
-;   sudo systemctl daemon-reload && sudo systemctl enable --now coverao
+;   sudo systemctl daemon-reload && sudo systemctl start coverao
+;
+;   `start` y no `enable`: el servidor lo levanta el duenio cuando quiere, no la maquina al bootear.
+;   Quien tenga un servidor dedicado y prefiera lo otro tiene el WantedBy de abajo listo y le alcanza con
+;   `sudo systemctl enable coverao` -- pero no es el camino recomendado ni hace falta para jugar.
 ;   journalctl -u coverao -f          # ver el log en vivo
 ;
 ; Ajustá WorkingDirectory/ExecStart si no lo pusiste en /opt/coverao.
