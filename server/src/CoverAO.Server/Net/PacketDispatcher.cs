@@ -4945,17 +4945,29 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>Resucitate (id 69): si el jugador está muerto, lo revive (VB6 exige un NPC Revividor targeteado,
-    /// que el slice no modela → aquí el propio paquete revive, como si siempre hubiera un sacerdote); si está
-    /// vivo, LocaleMsg(22) (sin NPC targeteado, igual que el VB6 y que la fila Resucitate_vivo del barrido).</summary>
+    /// <summary>Resucitate (id 69) — VB6 HandleResucitate (Protocol.bas:5098). Revivir NO es gratis ni
+    /// automático: hay que estar muerto y tener CLICKEADO a un sacerdote (<c>eNPCType.Revividor</c>) a diez
+    /// baldosas o menos. Al revivir, el sacerdote lo anuncia sobre su cabeza con el locale 11.
+    ///
+    /// <para>Acá antes revivía el propio paquete, "como si siempre hubiera un sacerdote", con la nota de que el
+    /// slice no modelaba el target ni al Revividor. Las dos cosas dejaron de ser ciertas —<c>Player.TargetNpc</c>
+    /// llegó con <c>LookatTile</c> y <c>npc.IsReviver</c> con los roles de NPC— y mientras tanto el atajo dejaba
+    /// la muerte sin costo: cualquier cadáver se levantaba solo, en cualquier lado. Es el gate que hace que
+    /// morir signifique volver caminando hasta un templo.</para></summary>
     private void HandleResucitate(ClientSession session)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            if (p.IsAlive) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+            var npc = TargetNpcDe(p);
+            // Sin nada clickeado avisa; con algo clickeado que no sirva CALLA. Son dos ramas distintas del
+            // original (:5110 avisa, :5116 hace Exit Sub pelado) y se replican tal cual.
+            if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+            if (!npc.IsReviver || p.IsAlive) return;
+            if (DistanciaVB6(p.Pos, npc.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
             RevivePlayer(_world, _data, p);
+            _world.BroadcastToObservers(p.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, 11, 1));
         });
     }
 
@@ -5316,7 +5328,16 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>Gamble (id 83): amount. A 50/50 bet — win doubles the stake, lose forfeits it.</summary>
+    /// <summary>Gamble (id 83) — el casino del original (VB6 HandleGamble, Protocol.bas:5890): se le apuesta oro
+    /// a un NPC <b>Timbero</b> (<c>eNPCType</c> = 12) y se gana o se pierde lo apostado.
+    ///
+    /// <para>La probabilidad es <b>47%</b>, no la mitad: la banca gana. Y las respuestas van todas por la boca
+    /// del NPC (<c>ChatOverHead</c> con SU CharIndex), no por consola — incluidos los rechazos, que es lo que
+    /// hace que un timbero se sienta un personaje y no un formulario.</para>
+    ///
+    /// <para>Acá esto contestaba <c>LocaleMsg(22)</c> pasara lo que pasara: leía el monto y no apostaba nunca.
+    /// El censo de handlers lo contaba como portado porque el <c>case</c> existía — un handler que existe no es
+    /// un handler que hace algo.</para></summary>
     private void HandleGamble(ClientSession session, ByteQueueReader r)
     {
         int amount = r.ReadInteger();
@@ -5324,8 +5345,31 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            // VB6 HandleGamble (Protocol.bas:5872): sin NPC Timbero targeteado -> LocaleMsg(22), sin apostar.
-            session.Send(ServerMessages.LocaleMsg(22));
+            if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
+            var npc = TargetNpcDe(p);
+            if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+            if (DistanciaVB6(p.Pos, npc.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            void Dice(string texto) => session.Send(ServerMessages.ChatOverHead(texto, npc.CharIndex, 0));
+            if (npc.Template.NpcType != NpcTimbero) { Dice("No tengo ningún interés en apostar."); return; }
+            if (amount < 1) { Dice("El mínimo de apuesta es 1 moneda."); return; }
+            if (amount > MaxApuesta) { Dice($"El máximo de apuesta es {MaxApuesta} monedas."); return; }
+            if (p.Gold < amount) { Dice("No tienes esa cantidad."); return; }
+
+            if (_rng.Next(1, 101) <= ProbGanarApuesta)
+            {
+                // El original NO paga si con eso te pasarías del tope de oro, y en ese caso hace `Exit Sub`
+                // ANTES de tocar los contadores: la jugada no cuenta y no se cobra nada.
+                if ((long)p.Gold + amount > int.MaxValue)   // VB6 OroLleno (General.bas:1840): el tope ES 2147483647
+                { session.Send(ServerMessages.ConsoleMsg("Tienes la cantidad máxima de oro que puedes tener. No has obtenido oro", FuenteInfo)); return; }
+                p.Gold += amount;
+                Dice($"¡Felicidades! Has ganado {amount} monedas de oro.");
+            }
+            else
+            {
+                p.Gold -= amount;
+                Dice($"Lo siento, has perdido {amount} monedas de oro.");
+            }
+            session.Send(ServerMessages.UpdateGold(p.Gold));
         });
     }
 
@@ -6231,6 +6275,12 @@ public sealed class PacketDispatcher
     /// ciudadano común no pueda elegir NINGUNA ciudad y que la rama República/Milicia sea inalcanzable. Este
     /// stack deja elegir la ciudad directo de un dropdown (el cliente web manda <c>SeleccionarHogar(cityId)</c>):
     /// más simple, sin los bugs, y el ciclo elegir-hogar → morir → RegresarHogar está verificado (home_flow).
+    ///
+    /// <para>Lo que SÍ se porta es el <b>gate del sacerdote</b>: hay que tener clickeado a un Revividor a cinco
+    /// baldosas o menos (VB6 :16283-16297). No es parte de la divergencia —esa es sobre CÓMO se elige la ciudad,
+    /// no sobre desde dónde— y sin él el hogar se cambiaba desde cualquier punto del mundo, lo que convertía a
+    /// <c>RegresarHogar</c> en un teletransporte gratis a cualquier ciudad. Con el gate, mudarse cuesta el viaje
+    /// hasta el templo de destino, que es la economía que el original quería.</para>
     /// </summary>
     private void HandleSelectHome(ClientSession session, ByteQueueReader r)
     {
@@ -6239,9 +6289,11 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            // El VB6 deriva la ciudad del mapa donde está el jugador (junto al sacerdote) con gate de facción;
-            // el slice no modela los ejércitos (todo char es ciudadano), así que al menos se valida el rango de
-            // ciudad (1..12) en vez de aceptar un id arbitrario del cliente.
+            var npc = TargetNpcDe(p);
+            if (npc is null || !npc.IsReviver)
+            { session.Send(ServerMessages.ConsoleMsg("Primero tienes que seleccionar un sacerdote, haz click izquierdo sobre él.", FuenteInfo)); return; }
+            if (DistanciaVB6(p.Pos, npc.Pos) > 5)
+            { session.Send(ServerMessages.ConsoleMsg("Estás muy lejos del sacerdote.", FuenteInfo)); return; }
             if (city < 1 || city > 12) { session.Send(ServerMessages.ConsoleMsg("Ciudad invalida.", FuenteInfo)); return; }
             p.HomeCity = city;
             session.Send(ServerMessages.ConsoleMsg($"Elegiste la ciudad {city} como tu hogar.", FuenteInfo));
@@ -6393,14 +6445,44 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>Information (id 74): server info — build, online count, day/night period.</summary>
+    /// <summary>Information (id 74) — no es "info del servidor": es <b>pedirle la misión al enlistador de tu
+    /// bando</b> (VB6 HandleInformation, Protocol.bas:5339). Se le hace clic al NPC de facciones y te dice qué
+    /// tenés que hacer para ascender, o te echa si no sos de los suyos.
+    ///
+    /// <para>Las tres misiones y sus topes salen tal cual del original: Armada y Caos ascienden hasta el rango
+    /// <b>10</b>, la Milicia hasta el <b>7</b>; los dos ejércitos legales cazan criminales de a 5 y el Caos mata
+    /// gente de a 10. Todo por la boca del NPC (<c>ChatOverHead</c>), como el resto de sus diálogos.</para>
+    ///
+    /// <para>Acá contestaba <c>LocaleMsg(22)</c> siempre, justificado con un "el slice no modela TargetNPC" que
+    /// dejó de ser cierto cuando se portó <c>LookatTile</c>.</para></summary>
     private void HandleInformation(ClientSession session)
     {
         _loop.Enqueue(() =>
         {
-            // VB6 HandleInformation (Protocol.bas:5339) consulta al NPC de facciones targeteado; el slice
-            // no modela TargetNPC, asi que reproducimos su rama sin target.
-            session.Send(ServerMessages.LocaleMsg(22));
+            var p = session.Player;
+            if (p is null) return;
+            var npc = TargetNpcDe(p);
+            if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+            // Igual que el original: si lo clickeado no es un enlistador —o si estás muerto— calla y sale.
+            if (npc.FactionEnlist == 0 || !p.IsAlive) return;
+            if (DistanciaVB6(p.Pos, npc.Pos) > 4) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            void Dice(string texto) => session.Send(ServerMessages.ChatOverHead(texto, npc.CharIndex, 0));
+
+            // (¿el jugador es de ese bando?, misión, cachetada si no es de los suyos)
+            var (esDelBando, mision, rechazo) = npc.FactionEnlist switch
+            {
+                Player.StatusArmada  => (p.IsArmada, "¡¡Tu deber es combatir criminales, cada 5 criminales te daré una recompensa!!",
+                                         "¡¡No perteneces a las tropas reales!!"),
+                Player.StatusMilicia => (p.IsMilicia, "¡¡Tu deber es combatir criminales, cada 5 criminales te daré una recompensa!!",
+                                         "¡¡No perteneces a la Milicia Real!!"),
+                Player.StatusCaos    => (p.IsCaos, "¡¡Tu deber es eliminar a todo tipo de personas, cada 10 personas muertas te daré una recompensa!!",
+                                         "¡¡No perteneces a las Fuerzas del Caos, largo de aquí!!"),
+                _ => (false, "", ""),
+            };
+            int tope = TopeDeRango(npc.FactionEnlist);
+            if (tope == 0) return;                        // enlistador de un bando que el original no contempla
+            if (!esDelBando) { Dice(rechazo); return; }
+            Dice(p.FactionRank >= tope ? "Ya no tengo trabajo para darte, has alcanzado el rango más alto aquí." : mision);
         });
     }
 
@@ -8500,6 +8582,26 @@ public sealed class PacketDispatcher
     public const long AttrBuffDurationTicks = 1200;
     public const long AttrDebuffDurationTicks = 700;
     public const long InvisibilityDurationTicks = 500;
+
+    // El casino (VB6 HandleGamble, Protocol.bas:5890). El 47 es lo que hace que la banca gane: a la larga el
+    // timbero se queda con el 6% de todo lo apostado. No es 50 y no es redondeo — está escrito así en la fuente.
+    public const int NpcTimbero = 12;          // eNPCType.Timbero (Declares.bas:394)
+    public const int MaxApuesta = 5000;
+    public const int ProbGanarApuesta = 47;    // RandomNumber(1,100) <= 47
+
+    /// <summary>Rango máximo que se puede alcanzar en cada ejército, o 0 si en ese bando no se piden misiones
+    /// (VB6 HandleInformation, Protocol.bas:5374 / :5390 / :5405).
+    ///
+    /// <para>La Milicia corta en <b>7</b> y los otros dos en <b>10</b> — no es el mismo número, aunque las dos
+    /// facciones legales compartan la misión. El 0 del default reproduce que el <c>Select Case</c> del original
+    /// no tiene rama <c>Else</c>: ante un enlistador de otro bando el juego CALLA, no improvisa.</para></summary>
+    public static int TopeDeRango(byte bando) => bando switch
+    {
+        Player.StatusArmada => 10,
+        Player.StatusMilicia => 7,
+        Player.StatusCaos => 10,
+        _ => 0,
+    };
 
     /// <summary>Traba de las salidas de mapa tras un ataque PvP (VB6 <c>TiempoDeMapeo = 7</c>).
     ///

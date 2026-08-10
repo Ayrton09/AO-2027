@@ -225,6 +225,21 @@ public static class TestFixture
             });
             System.Console.WriteLine($"Spawn: sacerdote Revividor en (56,{SvcRow}).");
 
+            // TIMBERO (VB6 eNPCType.Timbero = 12): el casino. Se le apuesta oro con `Gamble` y paga el 47% de las
+            // veces. La data del install SÍ trae uno, pero está en otro mapa, y el fixture necesita el suyo para
+            // que `casino_flow` no dependa de caminar medio mundo.
+            world.AddNpc(new Npc
+            {
+                CharIndex = world.AllocateCharIndex(), Movement = Estatico,
+                Template = merchantTemplate with { NpcType = 12 },
+                Hp = merchantTemplate.MaxHp,
+                // (66,SvcRow) y NO (50,SvcRow): la columna 50 es el PASILLO por el que blocking_flow camina al
+                // norte desde el spawn hasta chocar con la pared, y un NPC ahí lo frena antes — el flow se ponía
+                // rojo culpando a la pared. Tampoco 54, que es del aldeano de npc_dialogue_flow.
+                Pos = new WorldPos(FixtureMap, 66, SvcRow),
+            });
+            System.Console.WriteLine($"Spawn: timbero en (66,{SvcRow}).");
+
             // Enlistadores de facción (VB6 eNPCType.facciones): el NPCs.dat de este install no trae ninguno, así que
             // se agregan al fixture. Doble-clic (o Enlist/Reward de frente) para enlistarse o ascender de rango.
             world.AddNpc(new Npc
