@@ -963,7 +963,7 @@ public sealed class PacketDispatcher
         _world.BroadcastToObservers(from, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
         session.Send(ServerMessages.RemoveDialogs());
         p.Pos = dest;
-        DisembarkIfStranded(session, p);                  // no dejar a un navegante varado en tierra tras el warp
+        DisembarkIfStranded(p);                           // no dejar a un navegante varado en tierra tras el warp
         DesmontarSiEntraBajoTecho(session, p);            // ni a caballo adentro de un interior/dungeon
         if (dest.Map != from.Map) session.Send(ServerMessages.ChangeMap(dest.Map));
         session.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
@@ -971,18 +971,44 @@ public sealed class PacketDispatcher
         _world.Events.Publish(new PlayerMoved(p, from, dest));
     }
 
+    /// <summary>
+    /// El <c>WarpUserChar</c> del original para un jugador que NO es el que mandó el paquete: los dos caminos
+    /// de la cárcel (<c>Encarcelar</c>, Admin.bas:175, y <c>PurgarPenas</c>, Admin.bas:152) lo llaman, y los dos
+    /// acá movían <c>Pos</c> a mano.
+    ///
+    /// Mover la posición sin refrescar el área tiene DOS mitades, y las dos se notan jugando: el preso queda
+    /// DIBUJADO donde estaba para todos los que lo veían —se lo llevaron y para el resto sigue parado en medio
+    /// de la ciudad— y él llega a la cárcel sin ver a nadie de ahí, arrastrando los personajes del lugar que
+    /// dejó. Ninguna de las dos se arregla sola: el cliente dibuja lo que le dijeron hasta que le digan otra cosa.
+    /// </summary>
+    public void WarpOtroJugador(Player t, WorldPos dest)
+    {
+        var from = t.Pos;
+        _world.BroadcastToObservers(from, ServerMessages.RemoveCharDialog(t.CharIndex), t.CharIndex);
+        t.Connection?.Send(ServerMessages.RemoveDialogs());
+        t.Pos = dest;
+        DisembarkIfStranded(t);                           // ni el preso ni el liberado quedan varados a bordo
+        if (dest.Map != from.Map) t.Connection?.Send(ServerMessages.ChangeMap(dest.Map));
+        t.Connection?.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
+        RefreshAreaVisibility(_world, t, from, dest);
+        _world.Events.Publish(new PlayerMoved(t, from, dest));
+    }
+
     /// <summary>Si el jugador quedó navegando sobre TIERRA (tras un teleport/regreso al hogar/revive que no
     /// respeta el barco), lo baja del barco server-side — si no, el gate de agua lo dejaría trabado (a pie
     /// no puede entrar al agua y navegando no puede pisar tierra, pero está en tierra). Fuerza el desembarque
-    /// y re-broadcastea la apariencia.</summary>
-    private void DisembarkIfStranded(ClientSession session, Player p)
+    /// y re-broadcastea la apariencia.
+    ///
+    /// Avisa por <see cref="Player.Connection"/> y no por la sesión que mandó el paquete: hay caminos —la
+    /// cárcel— donde el que se mueve NO es el que pidió nada.</summary>
+    private void DisembarkIfStranded(Player p)
     {
         if (!p.Navigating || _data.IsWater(p.Pos.Map, p.Pos.X, p.Pos.Y)) return;
         p.Navigating = false;
         p.BoatSlot = 0;
         if (p.IsAlive) { p.Head = p.OrigHead; RefreshAppearance(p, _data); }
         else { p.Body = CorpseBody; p.Head = CorpseHead; }
-        session.Send(ServerMessages.NavigateToggle());
+        p.Connection?.Send(ServerMessages.NavigateToggle());
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
     }
 
@@ -3313,11 +3339,8 @@ public sealed class PacketDispatcher
         _db.SaveCharacter(t);   // el VB6 escribe el .chr en el acto: una sanción no se pierde si el server cae
 
         t.JailMinutesLeft = minutos;
-        t.Pos = Cities.Prision;
-        t.Connection?.Send(ServerMessages.PosUpdate(t.Pos.X, t.Pos.Y));
-        t.Connection?.Send(ServerMessages.ChangeMap(t.Pos.Map));
+        WarpOtroJugador(t, Cities.Prision);   // VB6 Encarcelar (Admin.bas:175) llama WarpUserChar
         t.Connection?.Send(ServerMessages.LocaleMsg(145, p!.Name));   // "#1 te ha encarcelado"
-        _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterMove(t.CharIndex, t.Pos.X, t.Pos.Y), t.CharIndex);
         session.Send(ServerMessages.ConsoleMsg($"Encarcelaste a {t.Name} por {minutos} minuto(s): {motivo}.", FuenteInfo));
         Console.WriteLine($"[{session.RemoteEndpoint}] /CARCEL {p!.Name} -> {t.Name} ({minutos}m, motivo: {motivo})");
     }
@@ -6328,7 +6351,7 @@ public sealed class PacketDispatcher
             var from = p.Pos;
             // Al tile Dead de la ciudad-hogar elegida (SeleccionarHogar -> p.HomeCity); Ullathorpe por defecto.
             p.Pos = Cities.DeadTile(p.HomeCity);
-            DisembarkIfStranded(session, p);   // el hogar es tierra: si volvía navegando, se baja del barco
+            DisembarkIfStranded(p);            // el hogar es tierra: si volvía navegando, se baja del barco
             if (p.Pos.Map != from.Map) session.Send(ServerMessages.ChangeMap(p.Pos.Map));   // el hogar puede estar en otro mapa
             session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
             RefreshAreaVisibility(_world, p, from, p.Pos);

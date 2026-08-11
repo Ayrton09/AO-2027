@@ -326,9 +326,7 @@ loop.OnTickHandler = tick =>
             if (pl.JailMinutesLeft <= 0) continue;
             pl.JailMinutesLeft--;
             if (pl.JailMinutesLeft > 0) continue;
-            pl.Pos = Cities.Libertad;
-            pl.Connection?.Send(ServerMessages.ChangeMap(pl.Pos.Map));
-            pl.Connection?.Send(ServerMessages.PosUpdate(pl.Pos.X, pl.Pos.Y));
+            dispatcher?.WarpOtroJugador(pl, Cities.Libertad);     // VB6 PurgarPenas (Admin.bas:152): WarpUserChar
             pl.Connection?.Send(ServerMessages.LocaleMsg(121));   // "Has cumplido tu condena"
             Console.WriteLine($"[carcel] {pl.Name} cumplió su condena y sale libre");
         }
@@ -606,11 +604,40 @@ const int maxInboundBytes = 64 * 1024;
 // El token de cancelación se crea ANTES del dispatcher porque el comando GM /APAGAR necesita el mismo
 // callback de apagado que usa el botón del panel de admin (ver PacketDispatcher.GmTurnOffServer).
 using var cts = new CancellationTokenSource();
+
+// AVISARLE A LA GENTE ANTES DE CORTAR, y por UN solo lugar: todo apagado pasa por acá.
+//
+// El `/APAGAR` del GM avisa (GmTurnOffServer), pero los caminos que usa el HOST —Ctrl+C, cerrar la ventana,
+// `systemctl stop`, el archivo `detener`— cortaban en silencio: al jugador se le cae la conexión sin una
+// palabra y el cliente web se queda reintentando solo, que desde el otro lado se ve igual que quedarse sin
+// internet.
+//
+// El aviso NO puede ir abajo, con el guardado: MEDIDO — para cuando `Task.WhenAll` de los listeners vuelve,
+// las sesiones ya están cerradas y el mensaje no sale por ningún socket (la sonda recibía el cierre y nada
+// más). Tiene que ir ANTES de cancelar, con las conexiones vivas, y hay que darle un respiro a la cola de
+// salida para que lo escriba: 300 ms es imperceptible al apagar y es la diferencia entre avisar y no avisar.
+var yaAviso = new bool[1];
+void PedirApagadoOrdenado()
+{
+    bool avisar = false;
+    lock (yaAviso) { if (!yaAviso[0]) { yaAviso[0] = true; avisar = true; } }
+    if (avisar)
+    {
+        try
+        {
+            world.Broadcast(ServerMessages.ConsoleMsg("El servidor se está apagando. ¡Hasta la próxima!", 1));
+            Thread.Sleep(300);
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[apagado] no se pudo avisar: {ex.Message}"); }
+    }
+    cts.Cancel();
+}
+
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
     Console.WriteLine("\nApagando servidor...");
-    cts.Cancel();
+    PedirApagadoOrdenado();
 };
 // SEÑALES DE APAGADO. `ctx.Cancel = true` frena la terminación por default, y después se ESPERA a que el
 // guardado termine: si el handler vuelve enseguida, el sistema mata el proceso mientras el hilo principal
@@ -630,7 +657,7 @@ void PedirApagado(PosixSignalContext ctx, string quien)
 {
     ctx.Cancel = true;
     Console.WriteLine($"\nApagando servidor ({quien})...");
-    cts.Cancel();
+    PedirApagadoOrdenado();
     // Tope por si el apagado se traba: preferimos morir tarde a colgarnos para siempre.
     apagadoListo.Wait(TimeSpan.FromSeconds(30));
 }
@@ -670,7 +697,7 @@ _ = Task.Run(async () =>
                                         "Borralo a mano o el servidor se va a apagar apenas arranque.");
             }
             Console.WriteLine("\nApagando servidor (pedido con el archivo 'detener')...");
-            cts.Cancel();
+            PedirApagadoOrdenado();
             return;
         }
         // Una vez por segundo: el costo es nulo y un apagado no necesita reaccionar más rápido. Va fuera del
@@ -699,7 +726,7 @@ if (args.Any(a => string.Equals(a, "--relojes-de-test", StringComparison.Ordinal
     Weather.LluviaPorciento = 50;                 // …con 3 s de lluvia y 3 despejado
     Console.WriteLine("[test] relojes de día/noche y clima acelerados a segundos (--relojes-de-test)");
 }
-dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => cts.Cancel(), fixtureMode, serverIni);
+dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => PedirApagadoOrdenado(), fixtureMode, serverIni);
 var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
@@ -724,7 +751,7 @@ if (!sinAdmin)
     string adminToken = (atIdx >= 0 && atIdx + 1 < args.Length) ? args[atIdx + 1]
         : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
     var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, "1.0.0", fixtureMode);
-    var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => cts.Cancel(), logRing, admin, bannedIpsPath, HacerBackup);
+    var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, bannedIpsPath, HacerBackup);
     adminTask = adminServer.RunAsync(cts.Token);
 }
 
