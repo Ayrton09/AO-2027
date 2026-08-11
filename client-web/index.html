@@ -2465,7 +2465,16 @@
         } break; }
         case 'CharacterChange': { const c = chars.get(f.charIndex); if (c) {   // equip/appearance change
           c.body = f.body; c.head = f.head; c.heading = f.heading; c.weapon = f.weapon; c.shield = f.shield; c.helmet = f.helmet;
-        } break; }
+        }
+          // MORIRSE CIERRA LA VENTANA QUE ESTÉ ARRIBA. Con un modal abierto las teclas de juego están apagadas
+          // (ver el keydown de más abajo), así que morir comprando dejaba al jugador sin poder ni caminar hasta
+          // que adivinara la X o el Escape. El server ya da la sesión por terminada al morir (`KillPlayer`:
+          // TradingWith = 0, BankOpen = false) pero no manda ningún paquete, y el original tampoco lo manda:
+          // allá la tienda es una VENTANA APARTE (`frmComerciar.Show , frmMain`, modeless) que no le come el
+          // teclado al juego. La traba es de este cliente, así que el arreglo va acá y no en el protocolo.
+          // Que uno murió se sabe por el CUERPO, como en el resto del cliente (no hay bandera por personaje).
+          if (f.charIndex === myCharIndex && f.body === CUERPO_MUERTO && modalEl.classList.contains('on')) closeModal();
+          break; }
         // Equipar/desequipar NO manda el CharacterChange entero: el server manda un CharacterChangeSlot por
         // cosa que cambio (1 cuerpo, 4 arma, 5 escudo, 6 casco), como el VB6. Sin este case, ponerse una
         // armadura o sacar el arma no se veria.
