@@ -115,6 +115,18 @@ public sealed class SqliteStore : IStore, IDisposable
 {
     private readonly SqliteConnection _conn;
 
+    /// <summary>
+    /// UNA conexión compartida y varios hilos que la usan: el del game loop (autosave, guardado al salir) y los
+    /// del pool (el hasheo de login/creación de cuenta vuelve con el resultado, y el backup del panel). Una
+    /// <c>SqliteConnection</c> NO es segura para eso: dos comandos a la vez sobre la misma conexión pueden
+    /// devolver datos de la consulta del otro o tirar en medio de una escritura.
+    ///
+    /// Se serializa acá y no abriendo una conexión por operación porque el volumen es bajísimo —unas pocas
+    /// escrituras por minuto— y porque una conexión por llamada haría que el backup (`VACUUM INTO`) deje de
+    /// ver la misma base. El candado es por operación, no por transacción: cada método ya es atómico de por sí.
+    /// </summary>
+    private readonly object _puerta = new();
+
     public SqliteStore(string dbPath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dbPath))!);
@@ -127,34 +139,46 @@ public sealed class SqliteStore : IStore, IDisposable
 
     private void Exec(string sql)
     {
-        using var c = _conn.CreateCommand();
-        c.CommandText = sql;
-        c.ExecuteNonQuery();
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = sql;
+            c.ExecuteNonQuery();
+        }
     }
 
     private bool Exists(string table, string name)
     {
-        using var c = _conn.CreateCommand();
-        c.CommandText = $"SELECT 1 FROM {table} WHERE name = $n";
-        c.Parameters.AddWithValue("$n", name.ToUpperInvariant());
-        return c.ExecuteScalar() is not null;
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = $"SELECT 1 FROM {table} WHERE name = $n";
+            c.Parameters.AddWithValue("$n", name.ToUpperInvariant());
+            return c.ExecuteScalar() is not null;
+        }
     }
 
     private string? Read(string table, string name)
     {
-        using var c = _conn.CreateCommand();
-        c.CommandText = $"SELECT ini FROM {table} WHERE name = $n";
-        c.Parameters.AddWithValue("$n", name.ToUpperInvariant());
-        return c.ExecuteScalar() as string;
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = $"SELECT ini FROM {table} WHERE name = $n";
+            c.Parameters.AddWithValue("$n", name.ToUpperInvariant());
+            return c.ExecuteScalar() as string;
+        }
     }
 
     private void Write(string table, string name, string ini)
     {
-        using var c = _conn.CreateCommand();
-        c.CommandText = $"INSERT INTO {table}(name, ini) VALUES($n, $i) ON CONFLICT(name) DO UPDATE SET ini = $i";
-        c.Parameters.AddWithValue("$n", name.ToUpperInvariant());
-        c.Parameters.AddWithValue("$i", ini);
-        c.ExecuteNonQuery();
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = $"INSERT INTO {table}(name, ini) VALUES($n, $i) ON CONFLICT(name) DO UPDATE SET ini = $i";
+            c.Parameters.AddWithValue("$n", name.ToUpperInvariant());
+            c.Parameters.AddWithValue("$i", ini);
+            c.ExecuteNonQuery();
+        }
     }
 
     public bool AccountExists(string n) => Exists("accounts", n);
@@ -162,12 +186,15 @@ public sealed class SqliteStore : IStore, IDisposable
     public void WriteAccount(string n, string t) => Write("accounts", n, t);
     public IEnumerable<string> AllAccountNames()
     {
-        using var c = _conn.CreateCommand();
-        c.CommandText = "SELECT name FROM accounts";
-        using var r = c.ExecuteReader();
-        var names = new List<string>();
-        while (r.Read()) names.Add(r.GetString(0));
-        return names;
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = "SELECT name FROM accounts";
+            using var r = c.ExecuteReader();
+            var names = new List<string>();
+            while (r.Read()) names.Add(r.GetString(0));
+            return names;   // se materializa DENTRO del candado: devolver el lector sería soltarlo a mitad
+        }
     }
     public bool CharacterExists(string n) => Exists("characters", n);
     public string? ReadCharacter(string n) => Read("characters", n);
@@ -182,10 +209,13 @@ public sealed class SqliteStore : IStore, IDisposable
         Directory.CreateDirectory(destDir);
         string dest = Path.Combine(destDir, stem + ".db");
         if (File.Exists(dest)) File.Delete(dest);   // VACUUM INTO falla si el destino ya existe
-        using var c = _conn.CreateCommand();
-        c.CommandText = "VACUUM INTO $dest";
-        c.Parameters.AddWithValue("$dest", dest);
-        c.ExecuteNonQuery();
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = "VACUUM INTO $dest";
+            c.Parameters.AddWithValue("$dest", dest);
+            c.ExecuteNonQuery();
+        }
         return dest;
     }
 

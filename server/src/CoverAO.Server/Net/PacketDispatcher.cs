@@ -451,11 +451,50 @@ public sealed class PacketDispatcher
             // Cuenta ya existente: cuenta como intento fallido. Sin esto el handler era además un oráculo de
             // enumeración gratis — se podía sondear qué cuentas existen sin credenciales y sin costo.
             if (_db.AccountExists(account)) { LoginFail(session); Reject(session, $"La cuenta '{account}' ya existe."); return; }
-            _db.CreateAccount(account, password);
-            Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
-            // Empty character list so the client can proceed to create its first character.
-            session.Send(ServerMessages.AddPj(account, Array.Empty<CharacterSummary>()));
-            session.Send(ServerMessages.AbrirFormularios(1));
+            CrearCuentaFueraDelLoop(session, account, password);
+        });
+    }
+
+    /// <summary>
+    /// Crea la cuenta FUERA del hilo del game loop, igual que <see cref="VerificarCuenta"/>, y vuelve al loop
+    /// con el resultado.
+    ///
+    /// Era el ÚLTIMO camino de autenticación que hasheaba adentro del tick: `CreateAccount` deriva la clave con
+    /// PBKDF2 (210.000 iteraciones, 25,5 ms medidos contra un presupuesto de 40) y encima escribe el .cnt al
+    /// disco. El rate-limit que se le había puesto no alcanzaba, porque <c>LoginThrottle</c> sólo cuenta
+    /// FALLOS: una creación exitosa no suma nada, así que un cliente con nombres válidos distintos podía
+    /// sostener el ritmo sin que el contador se moviera nunca.
+    ///
+    /// Lo que lo frena de verdad no es contar, es <c>TomarVerificacion</c>: deja UNA operación en vuelo por
+    /// conexión y, mientras tanto, la sesión deja de drenar lo que llega (ClientSession.DrainInbound). O sea
+    /// que mandar mil paquetes de creación seguidos ya no compra mil hashes en paralelo — compra uno y el
+    /// resto espera. El reintento se apoya en que <c>Drain</c> ahora corta por vuelta.
+    /// </summary>
+    private void CrearCuentaFueraDelLoop(ClientSession session, string account, string password)
+    {
+        if (session.Cerrada) return;
+        if (!session.TomarVerificacion()) { _loop.Enqueue(() => CrearCuentaFueraDelLoop(session, account, password)); return; }
+        Task.Run(() =>
+        {
+            bool creada = false;
+            try { _db.CreateAccount(account, password); creada = true; }
+            catch (Exception ex) { Console.Error.WriteLine($"[{session.RemoteEndpoint}] crear cuenta: {ex.Message}"); }
+            _loop.Enqueue(() =>
+            {
+                session.SoltarVerificacion();
+                // El cliente se pudo haber ido mientras se hasheaba (o lo cerró el timeout de autenticación).
+                if (session.Cerrada) return;
+                try
+                {
+                    if (!creada) { Reject(session, "No se pudo crear la cuenta."); return; }
+                    LoginOk(session);
+                    Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
+                    // Lista de personajes vacía, para que el cliente siga a crear el primero.
+                    session.Send(ServerMessages.AddPj(account, Array.Empty<CharacterSummary>()));
+                    session.Send(ServerMessages.AbrirFormularios(1));
+                }
+                finally { session.ReanudarInbound(); }
+            });
         });
     }
 

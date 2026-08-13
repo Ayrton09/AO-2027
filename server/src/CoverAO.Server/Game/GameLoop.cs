@@ -92,9 +92,24 @@ public sealed class GameLoop
         }
     }
 
+    /// <summary>
+    /// Ejecuta SÓLO lo que ya estaba encolado al empezar la vuelta. Lo que se encole DURANTE el drenaje espera
+    /// a la vuelta siguiente.
+    ///
+    /// El `while (true)` que había acá vaciaba la cola entera, así que una acción que se re-encola a sí misma
+    /// volvía a salir en el MISMO drenaje y giraba sin fin adentro del tick — el mundo colgado, sin un solo
+    /// error en el log. Y no es hipotético: el reintento de <c>VerificarCuenta</c> hace exactamente eso, y su
+    /// propio comentario ya daba por hecho lo que este método no cumplía ("se reintenta en la vuelta
+    /// siguiente, o sea ~40 ms"). Ahora sí lo cumple.
+    ///
+    /// Tomar el conteo una sola vez también acota el trabajo por vuelta: una ráfaga de paquetes ya no puede
+    /// estirar un tick indefinidamente, se reparte entre varias vueltas.
+    /// </summary>
     private void Drain()
     {
-        while (true)
+        int cuantas;
+        lock (_gate) cuantas = _pending.Count;
+        for (int i = 0; i < cuantas; i++)
         {
             Action? action;
             lock (_gate) action = _pending.Count > 0 ? _pending.Dequeue() : null;
