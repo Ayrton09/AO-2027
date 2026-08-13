@@ -5019,10 +5019,21 @@ public sealed class PacketDispatcher
                              || g.JoinRequests.Keys.Any(a => string.Equals(a, nick, StringComparison.OrdinalIgnoreCase));
             if (!esDelClan)
             { session.Send(ServerMessages.ConsoleMsg("El personaje no es ni aspirante ni miembro del clan.", FuenteInfo)); return; }
-            // El original lee la ficha del .chr, así que contesta igual con el personaje DESCONECTADO.
-            var quien = _world.PlayerByName(nick) ?? (_db.CharacterExists(nick) ? _db.LoadCharacter(nick, 0, "") : null);
-            if (quien is null) return;   // VB6: si el .chr no está, sólo lo deja en el log de errores
-            session.Send(ServerMessages.CharacterInfo(quien));
+            // El original lee la ficha del .chr, así que contesta igual con el personaje DESCONECTADO. Pero
+            // ESE LEER ES DISCO, y acá adentro estamos en el hilo del game loop: leer el .chr de un miembro
+            // offline —peor con SQLite— frena el mundo entero por una ventana de clan. Si está conectado se
+            // contesta en el acto; si no, la lectura se va a otro hilo y vuelve al loop sólo para emitir.
+            var enElMundo = _world.PlayerByName(nick);
+            if (enElMundo is not null) { session.Send(ServerMessages.CharacterInfo(enElMundo)); return; }
+            string pedido = nick;
+            _ = Task.Run(() =>
+            {
+                Player? cargado = null;
+                try { if (_db.CharacterExists(pedido)) cargado = _db.LoadCharacter(pedido, 0, ""); }
+                catch (Exception ex) { Console.Error.WriteLine($"[clan] ficha de {pedido}: {ex.Message}"); }
+                // VB6: si el .chr no está, el original sólo lo deja en el log de errores y no emite nada.
+                if (cargado is not null) _loop.Enqueue(() => session.Send(ServerMessages.CharacterInfo(cargado)));
+            });
         });
     }
 
