@@ -1075,6 +1075,22 @@ public sealed class PacketDispatcher
                 && !CombatTiming.PermiteAtacar(p, nowMs, attackMs)) return;
             RevealHidden(p);   // atacar rompe el ocultamiento (VB6 Protocol.bas:1719, SistemaCombate.bas:899)
 
+            // LA ENERGÍA DEL GOLPE (VB6 UsuarioAtaca, SistemaCombate.bas:990-1006). El port no la descontaba:
+            // `StaRequerido` llegaba en la data de 83 armas y ObjInfo ni siquiera tenía el campo, así que
+            // pelear no cansaba — sin techo de energía el combate no tiene ritmo y no hay por qué descansar.
+            //
+            // El ORDEN es el del original y decide dos cosas: va DESPUÉS de los intervalos (un golpe que la
+            // cadencia rechaza no gasta) y ANTES de resolver el objetivo, así que pegarle al aire cuesta igual.
+            // Sin energía suficiente: LocaleMsg 93 y no se pega.
+            //
+            // Los nudillos son la primera rama del original y acá no están modelados; queda la del arma
+            // equipada, y sin arma la tirada de 1..10 (RandomNumber, que incluye los dos extremos).
+            var armaDelGolpe = Equipment.EquippedOfCategory(p, _data, 1);
+            int energiaGolpe = armaDelGolpe?.StaRequerido ?? _rng.Next(1, 11);
+            if (p.Stamina < energiaGolpe) { session.Send(ServerMessages.LocaleMsg(93)); return; }
+            p.Stamina -= energiaGolpe;
+            session.Send(ServerMessages.UpdateSta((short)p.Stamina));
+
             var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);   // the tile the attacker faces
             var facedPos = new WorldPos(p.Pos.Map, tx, ty);
 

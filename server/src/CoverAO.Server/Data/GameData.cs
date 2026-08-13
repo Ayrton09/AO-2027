@@ -125,7 +125,13 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // `Destruir` (obj.dat): el objeto NO se puede tirar al piso. El original corta el DropObj y en su lugar
     // manda un ShowMessageBox (Protocol.bas:2057). Lo traen 5: los sacos de créditos y de tiempo de donador y
     // el Anillo Dorado. Sin esto se los podía tirar —y perder— en el piso.
-    bool NoSeTira = false)
+    bool NoSeTira = false,
+    // `StaRequerido` (obj.dat): la ENERGIA que cuesta un golpe con esta arma (VB6 UsuarioAtaca,
+    // SistemaCombate.bas:995-999). Lo traen 83 objetos —de 10 la daga a 150 el arma mas pesada— y no se leia:
+    // el campo llegaba en el JSON del transcode y ObjInfo ni lo tenia, asi que pelear no cansaba y el combate
+    // no tenia techo. El default de 10 es del cargador del original (FileIO.bas:999): al objeto que no trae la
+    // clave le pone 10, no 0.
+    int StaRequerido = 10)
 {
     /// <summary>VB6 <c>ItemNewbie</c>: un mercader no paga nada por esto. Inalcanzable con esta data (ver arriba).</summary>
     public bool IsNewbie => Newbie == 1;
@@ -871,7 +877,8 @@ public sealed class GameData
                 Int(el, "LanzaHechizo", "Lanzahechizo", "lanzahechizo"),   // poción SubTipo 5: hechizo que lanza
                 Int(el, "QueAtributo", "QUEATRIBUTO", "queatributo"),      // atributo que sube el ítem equipado
                 Int(el, "MineralIndex", "MINERALINDEX", "mineralindex"),   // mineral que da este yacimiento
-                Int(el, "Destruir", "DESTRUIR", "destruir") == 1);         // no se puede tirar al piso
+                Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
+                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
         }
         return map;
     }
@@ -1195,6 +1202,12 @@ public sealed class GameData
         }
         return 0;
     }
+
+    /// <summary>La energía que cuesta un golpe con este objeto. El cargador del original hace
+    /// <c>If ObjData(Object).StaRequerido &lt; 1 Then ObjData(Object).StaRequerido = 10</c> (FileIO.bas:999):
+    /// el que no trae la clave —o la trae en 0— cuesta 10, no gratis. Va acá y no en el sitio de uso porque
+    /// en el original es una regla del CARGADOR: vale para todos los objetos, no sólo para el arma en la mano.</summary>
+    private static int StaDeGolpe(int leido) => leido < 1 ? 10 : leido;
 
     /// <summary>Parses a RandomDrop field "objIndex,amount,chance" (e.g. "737,1,0.5"). Missing → zeros.</summary>
     /// <summary>Stock de un mercader (NPCs.dat, NPC con Comercia=1): claves <c>Obj1..ObjN</c> con el formato

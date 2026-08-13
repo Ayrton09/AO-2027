@@ -204,7 +204,15 @@ public sealed class Persistence
             Head = head,
             Body = 1,
             Pos = Cities.SpawnTile(homeland),          // nace en la ciudad de su tierra natal (VB6 Ciudades.dat), no en un tile fijo
-            MaxHp = 100, Hp = 100, MaxStamina = 100, Stamina = 100,
+            MaxHp = 100, Hp = 100,
+            // ENERGIA: 100, y NO se sube. Cuando el golpe pasó a costar energía (VB6 UsuarioAtaca) esto se
+            // probó en 500 para que las ráfagas largas de los flows no se quedaran cortas — y rompió
+            // `craft_flow`, que DRENA la energía a propósito para ejercitar la rama "sin energía el oficio no
+            // fabrica". Ese techo bajo es lo que hace alcanzable la rama del agotamiento en todo el arnés, así
+            // que es carga estructural, no un número al azar. El maná (2000) y el oro (5000) sí están inflados
+            // porque nada mide "quedarse sin maná" ni "sin oro". Un personaje REAL nace con 40-60
+            // (`ApplyNewCharacterStats`, 20*mi): 100 ya es holgado.
+            MaxStamina = 100, Stamina = 100,
             MaxMana = 2000, Mana = 2000,
             MinHit = 2, MaxHit = 5,
             // Oro del FIXTURE solamente: un personaje real nace con 0 (`ApplyNewCharacterStats` lo pisa, fiel a
