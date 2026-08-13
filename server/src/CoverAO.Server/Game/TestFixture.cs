@@ -128,6 +128,21 @@ public static class TestFixture
             // del fixture nace pacífico y sólo devuelve el golpe. Acá se quiere que tire magia sin que lo
             // provoquen, que es lo que hacen 31 de los 70 casters del mundo real.
             npcSystem.AddSpawn(hechicero, new WorldPos(FixtureMap, 62, PveRow), hostile: true, movement: Estatico);
+            // INMUNIDAD A LA PARÁLISIS (NPCs.dat "Inmunidad"). Dos criaturas gemelas y ESTÁTICAS, que sólo se
+            // diferencian en ese campo: la de (42,53) se paraliza y la de (40,53) no. Van al fixture y no se
+            // invocan con /ACC porque una criatura recién invocada CAMINA — se la vio salirse del tile de
+            // enfrente entre el spawn y el casteo, y entonces el hechizo no encontraba objetivo y el control
+            // del flow fallaba sin que la inmunidad tuviera nada que ver. Estáticas, la mira no se mueve.
+            // OJO LA COLUMNA: la fila y=53 ya esta poblada (42 el lobo domable de pet_flow, 44 el dummy de XP,
+            // 46 el dropper, 52|54|56 los murcielagos, 60 el bruiser, 62 el hechicero). La primera version puso
+            // esta pareja en la 42 y CHOCO con el lobo: una de las dos no llegaba a spawnear, y el flow medía
+            // "no hay objetivo" creyendo que medía la inmunidad. Se usan la 36 y la 38, que estan libres.
+            var paralizable = npcTemplate with { MaxHp = 300, GiveExp = 0, Inmunidad = 0 };
+            npcSystem.AddSpawn(paralizable, new WorldPos(FixtureMap, 38, PveRow), movement: Estatico);
+            var inmune = npcTemplate with { MaxHp = 300, GiveExp = 0, Inmunidad = 1 };
+            npcSystem.AddSpawn(inmune, new WorldPos(FixtureMap, 36, PveRow), movement: Estatico);
+            System.Console.WriteLine($"Spawn: paralizable en (38,{PveRow}) e INMUNE en (36,{PveRow}).");
+
             var xpDummy = npcTemplate with { MaxHp = 20, Def = 0, GiveExp = 100000 };
             npcSystem.AddSpawn(xpDummy, new WorldPos(FixtureMap, 44, PveRow), movement: Estatico);
             // A TAMEABLE creature for pet_flow: the default bat has no `Domable` in NPCs.dat, and the faithful taming

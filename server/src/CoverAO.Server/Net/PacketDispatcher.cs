@@ -1818,6 +1818,13 @@ public sealed class PacketDispatcher
 
         if (!spell.IsParalyze) { session.Send(ServerMessages.LocaleMsg(298)); return; }
 
+        // INMUNIDAD (VB6 HechizoEstadoNPC, modHechizos.bas:1548): la criatura con `Inmunidad = 1` no se
+        // paraliza ni se inmoviliza — son los 66 bosses del install. El original avisa con LocaleMsg 399
+        // ("¡La criatura es inmune a este hechizo!") y deja `HechizoCasteado = False`, así que NO cobra el
+        // maná: por eso este gate va ANTES de `SpellCasted`. Sin él, congelar a un boss y matarlo sin que se
+        // moviera era gratis.
+        if (npc.Template.Inmunidad != 0) { session.Send(ServerMessages.LocaleMsg(399)); return; }
+
         // VB6 PuedeAtacarNPC: los NPCs de servicio no se tocan — el mismo gate que el daño.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }

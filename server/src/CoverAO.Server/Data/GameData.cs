@@ -305,6 +305,12 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // especial `otCualquiera` (=1000, Declares.bas:498) lo traen 5 y significa "compro de todo".
     // Sin esto un mercader compraba CUALQUIER cosa: se le vendía una armadura al vendedor de manzanas.
     int TipoItems = 0,
+    // NPCs.dat "Inmunidad": la criatura NO se puede paralizar ni inmovilizar. El VB6 lo carga en
+    // `flags.AfectaParalisis` (MODULO_NPCs.bas:1093) y OJO EL NOMBRE, que dice lo contrario de lo que hace:
+    // el hechizo se aplica solo `If .flags.AfectaParalisis = 0`, o sea que 1 = INMUNE. Misma trampa que
+    // `Agarrable`. Lo traen 66 NPCs -- los bosses del install-- y el port ni siquiera tenia el campo: se
+    // podia congelar a cualquiera de ellos y matarlo sin que se moviera.
+    int Inmunidad = 0,
     // NPCs.dat flags de terreno (VB6 MoveNPCChar): AguaValida=1 → la criatura puede andar por agua (peces);
     // TierraInvalida=1 → acuática pura, no pisa tierra. Default terrestre (AguaValida=0, TierraInvalida=0).
     bool AguaValida = false, bool TierraInvalida = false,
@@ -956,6 +962,7 @@ public sealed class GameData
                 NpcType: Int(el, "NpcType"),
                 StockItems: Int(el, "Comercia") == 1 ? ParseStock(el) : null,
                 TipoItems: Int(el, "TipoItems"),
+                Inmunidad: Int(el, "Inmunidad"),
                 AguaValida: Int(el, "AguaValida") == 1, TierraInvalida: Int(el, "TierraInvalida") == 1,
                 // `If Not .Leveles > 0 Then .Leveles = 100` (MODULO_NPCs.bas:973): sin la clave "Nivel" el
                 // original NO deja el 0, lo sube a 100 — y en esta data no la trae NINGUNO de los 291.
