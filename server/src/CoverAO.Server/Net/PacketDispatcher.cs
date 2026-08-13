@@ -3415,7 +3415,7 @@ public sealed class PacketDispatcher
         if (objIndex < 1 || obj is null || string.IsNullOrWhiteSpace(obj.Name))
         { session.Send(ServerMessages.ConsoleMsg($"No existe el objeto {objIndex}.", FuenteInfo)); return; }
         int qty = Math.Clamp((int)amount, 1, GameLimits.MaxInventoryObjs);
-        int slot = FindSlotFor(p!, objIndex);
+        int slot = FindSlotFor(p!, objIndex, qty);
         if (slot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }   // inventario lleno
         var inv = p!.Inventory[slot];
         inv.ObjIndex = objIndex;
@@ -7915,12 +7915,15 @@ public sealed class PacketDispatcher
             // 175 son Agarrable=1 (árboles, puertas, carteles); sin este gate un `g` se lleva un árbol al bolso.
             // El VB6 no manda mensaje: simplemente no lo agarra.
             if (_data.Obj(ground.ObjIndex) is { IsPickable: false }) return;
-            int slot = FindSlotFor(p, ground.ObjIndex);
+            int slot = FindSlotFor(p, ground.ObjIndex, ground.Amount);
             if (slot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
 
             var inv = p.Inventory[slot];
             inv.ObjIndex = ground.ObjIndex;
-            inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + ground.Amount);   // VB6 MeterItemEnInventario: tope MAX_INVENTORY_OBJS (10000), no 32767
+            // El `Math.Min` queda de red de contención y ya no debería recortar nada: `FindSlotFor` recibe la
+            // cantidad y sólo devuelve un slot donde entre (VB6 InvUsuario.bas:548). Antes apilaba a ciegas y
+            // este recorte se comía el excedente sin avisar.
+            inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + ground.Amount);
             p.Inventory[slot] = inv;
             _world.RemoveGround(p.Pos);
             _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectDelete(p.Pos.X, p.Pos.Y));
@@ -8231,7 +8234,7 @@ public sealed class PacketDispatcher
             int buy = Math.Clamp((int)amount, 1, st.Amount);
             long cost = (long)st.Price * buy;
             if (p.Gold < cost) { session.Send(ServerMessages.LocaleMsg(26)); return; }
-            int invSlot = FindSlotFor(p, st.ObjIndex);
+            int invSlot = FindSlotFor(p, st.ObjIndex, buy);
             if (invSlot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
 
             p.Gold -= (int)cost;
@@ -8950,10 +8953,24 @@ public sealed class PacketDispatcher
         return true;
     }
 
-    private static int FindSlotFor(Player p, short objIndex)
+    /// <summary>El slot donde meter <paramref name="cantidad"/> unidades de <paramref name="objIndex"/>
+    /// (VB6 <c>MeterItemEnInventario</c>, InvUsuario.bas:548).
+    ///
+    /// <para>Apila SÓLO si el stack resultante entra en el tope. El original lo pide en la condición misma del
+    /// primer bucle —<c>.Amount + MiObj.Amount &lt;= MAX_INVENTORY_OBJS</c>— así que un slot que se pasaría no
+    /// se elige, y lo que sobra va a OTRO slot. Acá se apilaba sin mirar la capacidad y después se recortaba
+    /// con un <c>Math.Min</c>: el excedente se destruía en silencio. No es sólo levantar del piso — este
+    /// ayudante lo usan diez caminos (minar, talar, fabricar, fundir, comprar, robar, el premio del donador),
+    /// y todos podían comerse ítems.</para>
+    ///
+    /// <para>La rama que TRUNCA sí existe en el original (el <c>Else</c> que fija el tope), pero es inalcanzable:
+    /// para llegar ahí el bucle tuvo que caer en un slot VACÍO, y un slot vacío más una pila que ya viene
+    /// acotada nunca se pasa. Por eso no se replica.</para></summary>
+    private static int FindSlotFor(Player p, short objIndex, int cantidad = 1)
     {
         for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
-            if (!p.Inventory[i].IsEmpty && p.Inventory[i].ObjIndex == objIndex) return i; // stack
+            if (!p.Inventory[i].IsEmpty && p.Inventory[i].ObjIndex == objIndex
+                && p.Inventory[i].Amount + cantidad <= GameLimits.MaxInventoryObjs) return i;   // apila si entra
         for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
             if (p.Inventory[i].IsEmpty) return i;                                          // first empty
         return 0;                                                                          // no room
