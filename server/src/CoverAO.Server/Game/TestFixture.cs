@@ -141,6 +141,17 @@ public static class TestFixture
             npcSystem.AddSpawn(paralizable, new WorldPos(FixtureMap, 38, PveRow), movement: Estatico);
             var inmune = npcTemplate with { MaxHp = 300, GiveExp = 0, Inmunidad = 1 };
             npcSystem.AddSpawn(inmune, new WorldPos(FixtureMap, 36, PveRow), movement: Estatico);
+            // VENENOSA (veneno_criatura_flow): clonada del murciélago —pega de a 1, así que uno se puede quedar
+            // parado al lado— con `Veneno = 1` y hostil para que ataque sola. Va al final de la fila, después
+            // del hechicero: los huecos del medio están sobre el camino que otros flows recorren.
+            var venenosa = npcTemplate with { MaxHp = 300, GiveExp = 0, Veneno = 1 };
+            npcSystem.AddSpawn(venenosa, new WorldPos(FixtureMap, 64, PveRow), hostile: true, movement: Estatico);
+            // AGRESOR para mascota_ataca_flow: hostil DE NACIMIENTO —pega sin que lo provoquen— y con 300 de
+            // vida para que la mascota no lo mate y termine volviendo con el amo. Va una fila más abajo, no en
+            // la PvE: parado en (41,53) uno doma al lobo, y ahí al lado no puede haber nada que pegue, o
+            // pet_flow se comería mordiscones que no pidió.
+            var agresor = npcTemplate with { MaxHp = 300, GiveExp = 0 };
+            npcSystem.AddSpawn(agresor, new WorldPos(FixtureMap, 41, PveRow + 2), hostile: true, movement: Estatico);
             System.Console.WriteLine($"Spawn: paralizable en (38,{PveRow}) e INMUNE en (36,{PveRow}).");
 
             var xpDummy = npcTemplate with { MaxHp = 20, Def = 0, GiveExp = 100000 };

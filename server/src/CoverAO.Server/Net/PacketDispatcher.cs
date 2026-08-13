@@ -289,7 +289,7 @@ public sealed class PacketDispatcher
                 HandleGuildInfo(session, clan);
                 break;
             }
-            case ClientPacketId.GuildMemberInfo: reader.ReadAsciiString(); HandleGuildMemberInfo(session); break; // VB6: ASCIIString(nombre)
+            case ClientPacketId.GuildMemberInfo: HandleGuildMemberInfo(session, reader.ReadAsciiString()); break; // VB6: ASCIIString(nombre)
             case ClientPacketId.ShowGuildNews: HandleShowGuildNews(session); break;
             case ClientPacketId.GuildUpdateNews: HandleGuildUpdateNews(session, reader); break;
             case ClientPacketId.GuildRejectAlliance: HandleGuildRejectAlliance(session, reader); break;
@@ -1196,6 +1196,10 @@ public sealed class PacketDispatcher
     private void AttackPlayer(ClientSession session, Player p, Player target)
     {
         if (!PuedeAtacar(session, p, target)) return;    // VB6 UsuarioAtacaUsuario:1183 — el primer statement
+        // Las mascotas de los DOS se meten en la pelea (VB6 SistemaCombate.bas:1473-1474). Van por
+        // AttackedBy + NPCDEFENSA, que es la rama de IA que el port ya tenía (NpcSeguirAgresor).
+        MascotasAtacanAlUsuario(victima: target, amo: p);
+        MascotasAtacanAlUsuario(victima: p, amo: target);
         FlagCriminalIfLegalTarget(session, p, target);   // atacar a un legal sin provocación → criminal (idéntico en magia)
         // Hit chance: attacker Wrestling power vs target Tacticas evasion (real .chr skills).
         double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
@@ -2631,7 +2635,9 @@ public sealed class PacketDispatcher
             case 1:  t.Gold = (int)Math.Clamp(V(arg1), 0, MaxOroEdit); cambio = $"oro = {t.Gold}"; break;
             case 2:  { long xp = Math.Clamp(V(arg1), 0, MaxExpEdit); int lv = _leveling.Grant(t, xp); cambio = $"+{xp} exp" + (lv > 0 ? $" (+{lv} nivel/es)" : ""); break; }
             case 3:  t.Body = (short)V(arg1); cambio = $"body = {t.Body}"; break;
-            case 4:  t.Head = (short)V(arg1); cambio = $"head = {t.Head}"; break;
+            // La cabeza VIVA también: es la que va al .chr (ver CharacterFile). Sin esto el cambio se veía
+            // en pantalla y se perdía al guardar, para cualquiera que hubiera muerto alguna vez.
+            case 4:  t.Head = t.OrigHead = (short)V(arg1); cambio = $"head = {t.Head}"; break;
             case 5:  t.UsersKilled = (int)V(arg1); cambio = $"ciudadanos matados = {t.UsersKilled}"; break;
             case 6:  t.NpcsKilled = (int)V(arg1); cambio = $"criminales/NPCs matados = {t.NpcsKilled}"; break;
             case 7:  t.Level = (byte)Math.Clamp(V(arg1), 1, 255); cambio = $"nivel = {t.Level}"; break;
@@ -4993,16 +4999,30 @@ public sealed class PacketDispatcher
         });
     }
 
-    private void HandleGuildMemberInfo(ClientSession session)
+    /// <summary>VB6 <c>SendDetallesPersonaje</c> (modGuilds.bas:1978): el LÍDER de un clan pide la ficha de uno
+    /// de sus miembros o aspirantes, POR NOMBRE. El port leía el nick del wire y lo tiraba: a cualquiera que
+    /// preguntara le contestaba la lista de miembros de su propio clan, así que el paquete no servía para lo
+    /// único que existe. Las tres negativas del original son por texto y no mandan ficha.</summary>
+    private void HandleGuildMemberInfo(ClientSession session, string nick)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", FuenteInfo)); return; }   // VB6 responde por texto
+            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", FuenteInfo)); return; }
             var g = _world.GuildByName(p.GuildName);
             if (g is null) return;
-            session.Send(ServerMessages.ConsoleMsg($"Miembros de <{g.Name}>: {string.Join(", ", g.Members)}", FuenteInfo));
+            if (!string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("No eres el líder de tu clan.", FuenteInfo)); return; }
+            nick = (nick ?? "").Replace("\\", "").Replace("/", "").Replace(".", "").Trim();   // VB6 saca \ / . del nick
+            bool esDelClan = g.Members.Any(m => string.Equals(m, nick, StringComparison.OrdinalIgnoreCase))
+                             || g.JoinRequests.Keys.Any(a => string.Equals(a, nick, StringComparison.OrdinalIgnoreCase));
+            if (!esDelClan)
+            { session.Send(ServerMessages.ConsoleMsg("El personaje no es ni aspirante ni miembro del clan.", FuenteInfo)); return; }
+            // El original lee la ficha del .chr, así que contesta igual con el personaje DESCONECTADO.
+            var quien = _world.PlayerByName(nick) ?? (_db.CharacterExists(nick) ? _db.LoadCharacter(nick, 0, "") : null);
+            if (quien is null) return;   // VB6: si el .chr no está, sólo lo deja en el log de errores
+            session.Send(ServerMessages.CharacterInfo(quien));
         });
     }
 
@@ -7963,6 +7983,58 @@ public sealed class PacketDispatcher
         });
     }
 
+    /// <summary>VB6 <c>AllMascotasAtacanUser</c> (SistemaCombate.bas:1482): las mascotas de <paramref name="amo"/>
+    /// salen a pelear contra <paramref name="victima"/>. El original las manda por <c>AttackedBy</c> +
+    /// <c>NPCDEFENSA</c> + <c>Hostile = 1</c>, que es exactamente la rama de IA que el port ya tenía; lo único
+    /// que faltaba era que alguien la encendiera.</summary>
+    private void MascotasAtacanAlUsuario(Player victima, Player amo)
+    {
+        foreach (var mascota in _world.Npcs)
+        {
+            if (mascota.OwnerCharIndex != amo.CharIndex || !mascota.IsAlive) continue;
+            mascota.AttackedBy = victima.Name;
+            mascota.Movement = GameLimits.TipoAiNpcDefensa;
+            mascota.Hostile = true;
+        }
+    }
+
+    /// <summary>El precio que ve y paga ESTE comprador — VB6 <c>Descuento</c> (Comercio.bas:244):
+    /// <c>Valor / (1 + Comerciar/100)</c>, o sea que con la skill al máximo se paga la mitad. Vale para el
+    /// cobro (Comercio.bas:89) y para la vidriera (Comercio.bas:268): el original muestra el precio YA con el
+    /// descuento, así que mostrar el de lista y cobrar otro no es una opción.</summary>
+    private static long PrecioParaElComprador(Player? p, int precioDeLista)
+    {
+        if (p is null) return precioDeLista;
+        double desc = 1 + p.Skills[GameLimits.SkillComerciar] / 100.0;
+        return Math.Max(1, (long)(precioDeLista / desc + 0.5));   // VB6 CLng(... + 0.5)
+    }
+
+    /// <summary>VB6 <c>TirarOro</c> (InvUsuario.bas:154): el oro va al piso como un objeto <c>iORO</c>. El
+    /// original tira montones de a <c>MAX_INVENTORY_OBJS</c> y busca un tile libre alrededor
+    /// (<c>TirarItemAlPiso</c>); acá se tira UN montón —el tope de una tirada ya lo pone el gate de 100.000 del
+    /// handler— en el tile del jugador o, si está ocupado, en uno pegado.</summary>
+    private void TirarOro(ClientSession session, Player p, long cantidad)
+    {
+        if (cantidad > 100_000) return;                       // VB6 Protocol.bas:2026: "Don't drop too much gold"
+        if (cantidad <= 0 || cantidad > p.Gold) return;       // VB6: `If (Cantidad > 0) And (Cantidad <= .Stats.GLD)`
+        short monton = (short)Math.Min(cantidad, GameLimits.MaxInventoryObjs);
+        var donde = p.Pos;
+        if (_world.TryGetGround(donde, out _))
+        {
+            donde = default;
+            foreach (var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) })
+            {
+                var t = new WorldPos(p.Pos.Map, (byte)(p.Pos.X + dx), (byte)(p.Pos.Y + dy));
+                if (!_world.TryGetGround(t, out _) && PosLegal(t, p.Navigating)) { donde = t; break; }
+            }
+            if (donde.Map == 0) { session.Send(ServerMessages.LocaleMsg(262)); return; }
+        }
+        p.Gold -= monton;
+        _world.SetGround(donde, (short)GameLimits.ObjOro, monton);
+        _world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, (short)GameLimits.ObjOro, monton));
+        session.Send(ServerMessages.UpdateGold(p.Gold));
+    }
+
     private void HandleDrop(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte();
@@ -7970,8 +8042,13 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
+            if (p is null || slot < 1) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleDrop: un muerto no puede tirar objetos al suelo
+            // EL ORO VIAJA POR UN SLOT QUE NO EXISTE, a propósito: `FLAGORO = MAX_INVENTORY_SLOTS + 1`
+            // (Declares.bas:576). El port rechazaba todo slot > 25 antes de mirar nada, así que la rama del
+            // oro era inalcanzable y no se podía tirar una moneda al piso. VB6 Protocol.bas:2025.
+            if (slot == GameLimits.MaxInventorySlots + 1) { TirarOro(session, p, amount); return; }
+            if (slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
             // `Destruir=1` (obj.dat): el objeto NO se tira al piso. El original corta acá y en vez del DropObj
@@ -8295,7 +8372,7 @@ public sealed class PacketDispatcher
         for (byte i = 0; i < npc.Stock!.Count; i++)
         {
             var st = npc.Stock[i];
-            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, st.Price, st.ObjIndex));
+            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, (int)PrecioParaElComprador(p, st.Price), st.ObjIndex));
         }
     }
 
@@ -8323,7 +8400,7 @@ public sealed class PacketDispatcher
             var st = npc.Stock[slot - 1];
             if (st.Amount < 1) return;   // slot agotado: sin esto Math.Clamp(_,1,0) lanza ArgumentException (min>max)
             int buy = Math.Clamp((int)amount, 1, st.Amount);
-            long cost = (long)st.Price * buy;
+            long cost = PrecioParaElComprador(p, st.Price) * buy;
             if (p.Gold < cost) { session.Send(ServerMessages.LocaleMsg(26)); return; }
             int invSlot = FindSlotFor(p, st.ObjIndex, buy);
             if (invSlot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
@@ -8336,7 +8413,7 @@ public sealed class PacketDispatcher
             DescontarStockDelMercader(npc, slot - 1, (short)buy);
 
             session.Send(ServerMessages.ChangeInventorySlot((byte)invSlot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
-            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, st.Amount, st.Price, st.ObjIndex));
+            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, st.Amount, (int)PrecioParaElComprador(p, st.Price), st.ObjIndex));
             session.Send(ServerMessages.UpdateGold(p.Gold));
             session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", FuenteInfo));
             // Regatear entrena: el VB6 sube Comerciar al final de `Sub Comercio` (Comercio.bas:192), que es la
@@ -8386,6 +8463,7 @@ public sealed class PacketDispatcher
             // sin matar nada ni esperar cadencia. El 4 además pagaba de menos en los ítems caros: con Valor 5 y
             // cantidad 2 el original da Fix(1,67*2)=3 y el port daba (5/3)*2=2.
             var vendido = _data.Obj(inv.ObjIndex);
+            short objVendido = inv.ObjIndex;   // se guarda ANTES: abajo el slot se vacía y el índice se pierde
             double salePrice = vendido is null || vendido.IsNewbie ? 0.0 : vendido.Value / 3.0;
             int gain = (int)Math.Floor(salePrice * sell);   // Fix(): trunca (todo es positivo acá)
 
@@ -8394,6 +8472,11 @@ public sealed class PacketDispatcher
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
 
+            // LO VENDIDO VA AL STOCK DEL MERCADER (VB6 Comercio.bas:169-180: `SlotEnNPCInv` → suma → tope
+            // MAX_INVENTORY_OBJS → `UpdateNpcInvToAll`). Acá el objeto se DESTRUÍA: salía del inventario del
+            // jugador y no entraba a ningún lado, así que no se podía recomprar lo que uno mismo acababa de
+            // vender — ni ver aparecer en la tienda lo que vendió otro.
+            MeterEnStockDelMercader(session, mercader, objVendido, (short)sell);
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             session.Send(ServerMessages.UpdateGold(p.Gold));
             session.Send(ServerMessages.ConsoleMsg($"Vendiste {sell} objeto(s) por {gain} oro.", FuenteInfo));
@@ -8525,6 +8608,29 @@ public sealed class PacketDispatcher
     /// O sea: no es stock infinito, es <b>auto-restock</b>. Con el gate viejo, comprarle 2 pociones al
     /// alquimista dejaba el stock en 100 donde el original deja 98; y de yapa los objetos NO crucial se
     /// agotaban para siempre, que es exactamente el bug que el gate pretendía evitar, corrido de lugar.</summary>
+    /// <summary>Mete lo que el jugador acaba de vender en el stock del mercader (VB6 Comercio.bas:169-180).
+    /// Apila en un slot del mismo objeto si entra, si no usa uno libre, y acota al tope de la pila. El precio
+    /// del slot nuevo sale del `Valor` del obj.dat, que es lo que el mercader cobra por lo que tiene.</summary>
+    private void MeterEnStockDelMercader(ClientSession session, Npc? npc, short objIndex, short cantidad)
+    {
+        if (npc?.Stock is null || objIndex <= 0 || cantidad <= 0) return;
+        int idx = npc.Stock.FindIndex(st => st.ObjIndex == objIndex && st.Amount + cantidad <= GameLimits.MaxInventoryObjs);
+        if (idx < 0) idx = npc.Stock.FindIndex(st => st.ObjIndex == 0 || st.Amount <= 0);
+        if (idx < 0)
+        {
+            if (npc.Stock.Count >= GameLimits.MaxInventorySlots) return;   // sin lugar: el original tampoco lo mete
+            npc.Stock.Add(new MerchantSlot { ObjIndex = 0, Amount = 0, Price = 0 });
+            idx = npc.Stock.Count - 1;
+        }
+        var slotStock = npc.Stock[idx];
+        slotStock.ObjIndex = objIndex;
+        slotStock.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, slotStock.Amount + cantidad);
+        if (slotStock.Price <= 0) slotStock.Price = Math.Max(1, _data.Obj(objIndex)?.Value ?? 1);
+        npc.Stock[idx] = slotStock;
+        session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(idx + 1), slotStock.Amount,
+            (int)PrecioParaElComprador(session.Player, slotStock.Price), slotStock.ObjIndex));
+    }
+
     private void DescontarStockDelMercader(Npc npc, int idx, short cantidad)
     {
         if (npc.Stock is null || idx < 0 || idx >= npc.Stock.Count) return;

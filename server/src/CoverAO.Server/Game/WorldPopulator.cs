@@ -20,12 +20,18 @@ public static class WorldPopulator
 {
     /// <summary>La fauna y los servicios que cada mapa trae en su .csm. Una criatura cazable (Hostile con
     /// GiveExp&gt;0) persigue al jugador; los guardias y los NPCs de servicio (GiveExp=0) quedan pasivos, así
-    /// los pueblos no son una trampa mortal.</summary>
-    public static (int Placed, int Maps) SpawnNpcs(NpcSystem npcSystem, GameData data)
+    /// los pueblos no son una trampa mortal.
+    /// <para><paramref name="saltearMapa"/> deja un mapa SIN su fauna. Lo usa el modo <c>--fixture</c> para el
+    /// mapa del laboratorio: ahí el fixture arma su propio mundo controlado, pero encima le caían los 28 spawns
+    /// que el mapa 15 trae en su .csm —veinte de ellos Escorpiones hostiles— y uno se paraba en el punto de
+    /// aparición a pegarle al personaje de test mientras el flow medía otra cosa. Ver
+    /// <c>laboratorio_quieto_flow</c>, que fija que el laboratorio esté quieto.</para></summary>
+    public static (int Placed, int Maps) SpawnNpcs(NpcSystem npcSystem, GameData data, short? saltearMapa = null)
     {
         int placed = 0, maps = 0;
         foreach (var (mapNum, spawns) in data.MapSpawns)
         {
+            if (saltearMapa is not null && ToMap(mapNum) == saltearMapa.Value) continue;
             maps++;
             foreach (var sp in spawns)
             {

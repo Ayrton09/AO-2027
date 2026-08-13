@@ -213,7 +213,9 @@ if (fixtureMode)
 // vive la lógica — acá adentro no se podía testear y por eso se comió el truncamiento del nº de mapa a byte).
 int spawnedNpcs, spawnedMaps, spawnedObjs;
 {
-    var (npcs, maps) = WorldPopulator.SpawnNpcs(npcSystem, gameData);
+    // En modo fixture el mapa del laboratorio se puebla SÓLO con el fixture: su propia fauna del .csm queda
+    // afuera. Ver WorldPopulator.SpawnNpcs — un escorpión del mapa 15 se paraba en el punto de aparición.
+    var (npcs, maps) = WorldPopulator.SpawnNpcs(npcSystem, gameData, fixtureMode ? TestFixture.FixtureMap : null);
     Console.WriteLine($"Spawn: {npcs} NPCs poblados desde MapSpawns.json en {maps} mapa(s) (mapa 1 = Ullathorpe).");
     var (objs, doors) = WorldPopulator.PlaceObjects(world, gameData);
     Console.WriteLine($"Spawn: {objs} objetos de mundo poblados desde MapObjects.json ({doors} puertas).");

@@ -134,6 +134,11 @@ public sealed class Npc
     /// <summary>CharIndex of the player who summoned this NPC (0 = none). Summons don't attack their owner.</summary>
     public short OwnerCharIndex { get; set; }
 
+    /// <summary>El NPC al que esta criatura le está pegando (VB6 <c>Npclist().TargetNPC</c>). Se lo pone
+    /// <c>CheckPets</c> (SistemaCombate.bas:630) cuando el AMO ataca a alguien: así una mascota pelea lo
+    /// que pelea su dueño. 0 = ninguno.</summary>
+    public short TargetNpcCharIndex { get; set; }
+
     /// <summary>¿Se puede atacar? (NPCs.dat "Attackable"; VB6 NpcAtacable, SistemaCombate.bas:1737). Los NPCs
     /// de servicio (sacerdote/banquero/guardias/veterinaria…) tienen Attackable=0 y rechazan el ataque.
     /// Las invocaciones son siempre atacables (default true). </summary>

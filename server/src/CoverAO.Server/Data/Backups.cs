@@ -46,12 +46,20 @@ public static class Backups
         return ruta;
     }
 
-    /// <summary>Los backups que hay en el directorio, del más nuevo al más viejo.</summary>
-    public static string[] Listar(string dir)
+    /// <summary>Los backups que hay en el directorio, del más nuevo al más viejo. UNO por backup: con SQLite
+    /// cada backup deja DOS entradas —el <c>.db</c> y la carpeta con los archivos sueltos de <c>data/</c>— y las
+    /// dos empiezan con el mismo prefijo. Contándolas por separado, "conservar 3" guardaba un backup y medio.</summary>
+    public static string[] Listar(string dir) => PorBackup(dir).Select(g => g.First()).ToArray();
+
+    /// <summary>Las partes de cada backup, agrupadas por su nombre y del más nuevo al más viejo. Dentro de cada
+    /// grupo va primero el archivo (el <c>.db</c>, que es lo que se restaura) y después la carpeta.</summary>
+    private static IEnumerable<IGrouping<string, string>> PorBackup(string dir)
     {
-        if (!Directory.Exists(dir)) return Array.Empty<string>();
+        if (!Directory.Exists(dir)) return Array.Empty<IGrouping<string, string>>();
         return Directory.EnumerateFileSystemEntries(dir, Prefijo + "*")
-            .OrderByDescending(p => Path.GetFileNameWithoutExtension(p), StringComparer.Ordinal)
+            .OrderBy(p => Directory.Exists(p) ? 1 : 0)
+            .GroupBy(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Key, StringComparer.Ordinal)
             .ToArray();
     }
 
@@ -62,15 +70,20 @@ public static class Backups
     {
         if (conservar <= 0) return 0;
         int borrados = 0;
-        foreach (var viejo in Listar(dir).Skip(conservar))
+        foreach (var grupo in PorBackup(dir).Skip(conservar))
         {
-            try
+            bool algo = false;
+            foreach (var parte in grupo)   // el .db Y la carpeta de sueltos: dejar la mitad es dejar basura
             {
-                if (Directory.Exists(viejo)) Directory.Delete(viejo, recursive: true);
-                else File.Delete(viejo);
-                borrados++;
+                try
+                {
+                    if (Directory.Exists(parte)) Directory.Delete(parte, recursive: true);
+                    else File.Delete(parte);
+                    algo = true;
+                }
+                catch (Exception ex) { Console.Error.WriteLine($"[backup] no se pudo borrar {parte}: {ex.Message}"); }
             }
-            catch (Exception ex) { Console.Error.WriteLine($"[backup] no se pudo borrar {viejo}: {ex.Message}"); }
+            if (algo) borrados++;
         }
         return borrados;
     }

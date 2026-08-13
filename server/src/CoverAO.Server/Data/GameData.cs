@@ -311,6 +311,10 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // `Agarrable`. Lo traen 66 NPCs -- los bosses del install-- y el port ni siquiera tenia el campo: se
     // podia congelar a cualquiera de ellos y matarlo sin que se moviera.
     int Inmunidad = 0,
+    // NPCs.dat "Veneno": la criatura ENVENENA al que muerde. El VB6 lo tira al final de cada golpe que
+    // acierta (SistemaCombate.bas:752 -> NpcEnvenenarUser), con un 30% de chance. Son 7 criaturas del
+    // install; sin este campo el veneno de criatura no existía y sólo se podía envenenar con un hechizo.
+    int Veneno = 0,
     // NPCs.dat flags de terreno (VB6 MoveNPCChar): AguaValida=1 → la criatura puede andar por agua (peces);
     // TierraInvalida=1 → acuática pura, no pisa tierra. Default terrestre (AguaValida=0, TierraInvalida=0).
     bool AguaValida = false, bool TierraInvalida = false,
@@ -963,6 +967,7 @@ public sealed class GameData
                 StockItems: Int(el, "Comercia") == 1 ? ParseStock(el) : null,
                 TipoItems: Int(el, "TipoItems"),
                 Inmunidad: Int(el, "Inmunidad"),
+                Veneno: Int(el, "Veneno"),
                 AguaValida: Int(el, "AguaValida") == 1, TierraInvalida: Int(el, "TierraInvalida") == 1,
                 // `If Not .Leveles > 0 Then .Leveles = 100` (MODULO_NPCs.bas:973): sin la clave "Nivel" el
                 // original NO deja el 0, lo sube a 100 — y en esta data no la trae NINGUNO de los 291.

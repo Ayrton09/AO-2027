@@ -81,9 +81,12 @@ public static class CharacterFile
         ini.Set("INIT", "Clase", F(p.Class));
         ini.Set("INIT", "Desc", p.Description);
         ini.Set("INIT", "Heading", F(p.Heading));
-        // VB6 FileIO.bas:1720 — guarda la cabeza VIVA (OrigChar.Head), nunca la de cadáver (500): si no, al
-        // reconectar la cabeza de muerto quedaría permanente. Body/anims sí se re-derivan del equipo al entrar.
-        ini.Set("INIT", "Head", F(p.OrigHead > 0 ? p.OrigHead : p.Head));
+        // VB6 FileIO.bas:1719: `If .Char.Head = 0 Then Head = OrigChar.Head Else Head = .Char.Head` — o sea que
+        // el original guarda la cabeza ACTUAL y sólo cae en la viva cuando la actual no vale. Acá la que no
+        // vale es la de CADÁVER, así que el fallback se limita a estar muerto. Prefiriendo SIEMPRE OrigHead
+        // —que queda cargada para siempre después de la primera muerte— un cambio de cabeza de `/MOD` se veía
+        // en pantalla y no llegaba nunca al .chr.
+        ini.Set("INIT", "Head", F(!p.IsAlive && p.OrigHead > 0 ? p.OrigHead : p.Head));
         ini.Set("INIT", "Body", F(p.Body));
         ini.Set("INIT", "Arma", F(p.WeaponAnim));
         ini.Set("INIT", "Escudo", F(p.ShieldAnim));

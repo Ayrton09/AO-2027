@@ -86,4 +86,8 @@ public static class GameLimits
     /// <summary><c>TipoAI.SigueAmo</c> (AI_NPC.bas:39): el modo de una mascota que acompaña a su dueño. Es a lo
     /// que la devuelve <c>FollowAmo</c> cuando el freno de facción le corta la persecución.</summary>
     public const int TipoAiSigueAmo = 8;
+
+    /// <summary><c>TipoAI.NpcAtacaNpc</c> (AI_NPC.bas:40): la mascota va a pelear con el NPC que su amo
+    /// atacó. Se lo pone <c>CheckPets</c> junto con el TargetNPC.</summary>
+    public const int TipoAiNpcAtacaNpc = 9;
 }

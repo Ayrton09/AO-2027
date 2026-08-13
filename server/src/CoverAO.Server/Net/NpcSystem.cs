@@ -184,7 +184,8 @@ public sealed class NpcSystem
                 // TipoAI.SigueAmo (mascotas). El gate por dueño es un atajo del port —el VB6 distingue por
                 // Movement, que a una mascota se lo pone FollowAmo— y hay que dejar pasar el caso en que /SEGUIR
                 // se lo cambió a NPCDEFENSA: si no, una mascota puesta a seguir al GM igual iría tras su amo.
-                if (npc.OwnerCharIndex != 0 && npc.Movement != GameLimits.TipoAiNpcDefensa)
+                if (npc.OwnerCharIndex != 0 && npc.Movement != GameLimits.TipoAiNpcDefensa
+                    && npc.Movement != GameLimits.TipoAiNpcAtacaNpc)
                 { NpcTryFollowOwner(npc); continue; }
                 if (npc.SinIa) continue;   // NPCAI sale de una para GuardiasCity/facciones/Convertidores
                 switch (npc.Movement)
@@ -192,6 +193,7 @@ public sealed class NpcSystem
                     case 0: NpcIrUsuarioCercano(npc); break;   // TipoAI.NpcMaloAtacaUsersBuenos
                     case 3: NpcTryWander(npc); break;          // TipoAI.MueveAlAzar
                     case GameLimits.TipoAiNpcDefensa: NpcSeguirAgresor(npc); break;
+                    case GameLimits.TipoAiNpcAtacaNpc: NpcAtacaANpcObjetivo(npc); break;
                     default: break;                            // ESTATICO(1) y los no modelados: quietos
                 }
             }
@@ -428,6 +430,47 @@ public sealed class NpcSystem
                 MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
             }
             return;
+        }
+    }
+
+    /// <summary>VB6 <c>AiNpcAtacaNpc</c> (AI_NPC.bas:538): la criatura va hasta el NPC que tiene marcado y le
+    /// pega cuando lo alcanza. Es la mitad PvE de las mascotas y no existía: el golpe de una criatura CON
+    /// DUEÑO no sale de la fase de ataque —el original no se la corre (<c>If .MaestroUser = 0</c>)— sino de
+    /// acá. Sin esta rama, una mascota domada o una invocación no le pegaba a nadie NUNCA.</summary>
+    private void NpcAtacaANpcObjetivo(Npc npc)
+    {
+        var blanco = npc.TargetNpcCharIndex != 0 ? _world.NpcByIndex(npc.TargetNpcCharIndex) : null;
+        // `If Not bNoEsta` (AI_NPC.bas:625): si el blanco ya no está, la mascota vuelve con su amo y una
+        // criatura sin dueño recupera el movimiento que traía.
+        if (blanco is null || !blanco.IsAlive || blanco.Pos.Map != npc.Pos.Map || blanco.CharIndex == npc.CharIndex)
+        {
+            npc.TargetNpcCharIndex = 0;
+            npc.Movement = npc.OwnerCharIndex != 0 ? GameLimits.TipoAiSigueAmo : npc.OriginalMovement;
+            return;
+        }
+        int dx = blanco.Pos.X - npc.Pos.X, dy = blanco.Pos.Y - npc.Pos.Y;
+        if (Math.Abs(dx) + Math.Abs(dy) <= 1) { NpcGolpeaA(npc, blanco); return; }   // `If Distancia <= 1 Then NpcAtacaNpc`
+        byte h = FindDirection(npc, blanco.Pos);
+        if (h != 0)
+        {
+            var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
+            MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
+        }
+    }
+
+    /// <summary>VB6 <c>CheckPets</c> (SistemaCombate.bas:630), llamado desde <c>NpcAtacaUser</c>: cuando una
+    /// criatura le pega a alguien, TODAS las mascotas de ese alguien salen a pelear con ella. Ojo el orden
+    /// del original —el blanco se pisa sólo si la mascota no tenía uno (<c>If TargetNPC = 0 Then</c>)— y que
+    /// una mascota no se ataca a sí misma ni a otra del mismo dueño.</summary>
+    private void MascotasDefiendenAlAmo(Player amo, Npc agresor)
+    {
+        if (!agresor.Attackable || agresor.IsMerchant || agresor.IsBanker || agresor.IsReviver) return;   // VB6 PuedeAtacarNPC
+        foreach (var mascota in _world.Npcs)
+        {
+            if (mascota.OwnerCharIndex != amo.CharIndex || !mascota.IsAlive) continue;
+            if (mascota.CharIndex == agresor.CharIndex || agresor.OwnerCharIndex == amo.CharIndex) continue;
+            if (mascota.TargetNpcCharIndex == 0) mascota.TargetNpcCharIndex = agresor.CharIndex;
+            mascota.Movement = GameLimits.TipoAiNpcAtacaNpc;
         }
     }
 
@@ -755,6 +798,16 @@ public sealed class NpcSystem
             // Éste era el ÚLTIMO call site del UpdateUserStats gordo en un camino caliente — y el más caliente
             // de todos, porque es el PvE: cada golpe que te pega una criatura mandaba 26 bytes en vez de 3.
             player.Connection?.Send(ServerMessages.UpdateHP((short)player.Hp));
+            // VB6 SistemaCombate.bas:752: `If Npclist(npcIndex).Veneno > 0 Then Call NpcEnvenenarUser(...)`,
+            // que envenena con un 30% (`RandomNumber(1,100) < 30`, MODULO_NPCs.bas:793) y avisa con el 182.
+            // Son 7 criaturas del install; el port nunca leyó el campo, así que su veneno no existía.
+            if (npc.Template.Veneno > 0 && !player.IsPoisoned(_tick) && _rng.Next(1, 101) < 30)
+            {
+                player.PoisonedUntilTick = long.MaxValue;
+                player.Connection?.Send(ServerMessages.LocaleMsg(182));
+            }
+            // Y acá —no cuando el amo ataca— es donde el original manda a las mascotas a pelear.
+            MascotasDefiendenAlAmo(player, npc);
             if (player.Hp == 0)
             {
                 // VB6 SistemaCombate.bas:606: "te mató la criatura X" (LocaleMsg 72) + UserDie -> cadáver donde cayó.
