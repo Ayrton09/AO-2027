@@ -2023,12 +2023,34 @@
     }
 
     let commerceItems = {};   // slot -> {objIndex, price, amount}; re-rendered in place so a buy updates, not duplicates
+    // La CANTIDAD del original: `frmComerciar` tiene UNA caja `Cantidad` que vale para las dos listas, así que
+    // la misma acota comprar y vender. Se guarda en una variable porque la ventana se rearma entera cada vez
+    // que cambia un slot, y sin eso lo tipeado se perdía en el repintado.
+    let comercioQty = 1;
+    const leerComercioQty = () => {
+      const i = modalCard.querySelector('.comq');
+      const n = i ? parseInt(i.value, 10) : comercioQty;
+      return Math.max(1, Math.min(10000, Number.isFinite(n) ? n : 1));
+    };
     function renderCommerce() {
+      if (modalKind === 'commerce') comercioQty = leerComercioQty();
       modalKind = 'commerce';
       const slots = Object.keys(commerceItems).map(Number).sort((a, b) => a - b).filter((s) => commerceItems[s].amount > 0);
       const cells = slots.map((s) => { const it = commerceItems[s]; return shopCell(it.objIndex, `${Math.round(it.price)} oro · x${it.amount}`, `<span class="buy" data-slot="${s}">comprar</span>`); });
+      // LA LISTA DE VENTA. `frmComerciar` tiene DOS listas —el stock del mercader y el inventario propio— y se
+      // vende desde la segunda. Acá la única rama de venta estaba en el clic del inventario del panel lateral,
+      // que el backdrop del modal TAPA (position:fixed, inset:0, z-index 20): el clic nunca llegaba al slot,
+      // se lo comía el overlay y cerraba la tienda. O sea que no se le podía vender NADA a un mercader.
+      const mios = Object.keys(inventory).map(Number).sort((a, b) => a - b)
+        .filter((s) => inventory[s])
+        .map((s) => { const it = inventory[s]; return shopCell(it.objIndex, `x${it.amount}`, `<span class="buy" data-sellslot="${s}">vender</span>`); });
       modalCard.innerHTML = `<div class="cardT">Comercio<span class="cx" title="cerrar">✕</span></div>`
-        + `<div class="shopgrid">${cells.length ? cells.join('') : '<div class="shopsec">(sin stock)</div>'}</div>`;
+        + `<div class="frow" style="padding:8px 12px">Cantidad por vez <input class="comq" type="number" min="1" max="10000" value="${comercioQty}"`
+        +   ` style="width:5em;background:#1a1408;color:#e8d9a0;border:1px solid #6b5a2a;border-radius:3px;padding:2px 4px;font:inherit"></div>`
+        + `<div class="shopgrid">`
+        +   `<div class="shopsec">El mercader — clic para comprar</div>${cells.length ? cells.join('') : '<div class="fhint" style="grid-column:1/-1">(sin stock)</div>'}`
+        +   `<div class="shopsec">Tu inventario — clic para vender</div>${mios.length ? mios.join('') : '<div class="fhint" style="grid-column:1/-1">(vacío)</div>'}`
+        + `</div>`;
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
     }
     // --- Bank / vault panel (fed by BankInit + ChangeBankSlot) ---
@@ -2102,12 +2124,13 @@
       const w = new ByteQueueWriter();
       if (b.dataset.spell) { selectedSpell = +b.dataset.spell; w.writeByte(CLIENT.CastSpell).writeByte(selectedSpell); }
       else if (b.dataset.craft) w.writeByte(+b.dataset.craft).writeInteger(+b.dataset.obj).writeInteger(craftQty());
+      else if (b.dataset.sellslot) w.writeByte(CLIENT.CommerceSell).writeByte(+b.dataset.sellslot).writeInteger(leerComercioQty());
       else if (b.dataset.bankslot) w.writeByte(CLIENT.BankExtractItem).writeByte(+b.dataset.bankslot).writeInteger(1); // withdraw 1
       else if (b.dataset.depslot) w.writeByte(CLIENT.BankDeposit).writeByte(+b.dataset.depslot).writeInteger(1);       // deposit 1
       else if (b.dataset.depgold) w.writeByte(CLIENT.BankDepositGold).writeLong(+b.dataset.depgold);                   // deposit gold
       else if (b.dataset.extgold) w.writeByte(CLIENT.BankExtractGold).writeLong(+b.dataset.extgold);                   // withdraw gold
       else if (b.dataset.prize) w.writeByte(CLIENT.RPremios).writeInteger(+b.dataset.prize);                          // canjear premio de donador (1-based)
-      else w.writeByte(CLIENT.CommerceBuy).writeByte(+b.dataset.slot).writeInteger(1);
+      else w.writeByte(CLIENT.CommerceBuy).writeByte(+b.dataset.slot).writeInteger(leerComercioQty());
       ws.send(xorBuffer(w.toBytes(), myKey));
     });
 
@@ -2643,6 +2666,7 @@
           inventory[f.slot] = f.objIndex ? { objIndex: f.objIndex, amount: f.amount, equipped: f.equipped } : null;
           buildInv(); buildHotbar();
           if (bankOpen) renderBank();                  // vault window shows live inventory (deposit/withdraw)
+          else if (modalKind === 'commerce') renderCommerce();   // la tienda también lista el inventario (vender)
           break;
         case 'ChangeSpellSlot': spells[f.slot] = f.spell; buildSpellList(); buildHotbar(); break;   // one spellbook slot
         case 'UpdateHambre': myFood.cur = f.minHam; break;   // barra de hambre (0–100)
@@ -2954,7 +2978,9 @@
     }
     // HTML de una celda de tienda/banco: ícono (canvas) + nombre + subtítulo + tag de acción.
     const shopCell = (obj, sub, tag) => `<div class="shopcell" data-obj="${obj}"><canvas width="${Math.round(84 * Math.min(2, dpr))}" height="${Math.round(84 * Math.min(2, dpr))}"></canvas><div class="sn">${esc(itemName(obj))}</div><div class="sp2">${sub}</div>${tag}</div>`;
-    // clic en un ítem: usar / vender (si hay comercio) / equipar (shift) / soltar (ctrl); hover → descripción
+    // clic en un ítem: usar / equipar (shift) / soltar (ctrl); hover → descripción.
+    // Acá había además una rama de VENTA (`modalKind === 'commerce'`) que era inalcanzable: con la tienda
+    // abierta el overlay del modal tapa el panel entero. La venta vive ahora en la propia ventana de comercio.
     invgridEl.addEventListener('click', (ev) => {
       const d = ev.target.closest('.islot'); if (!d || ws.readyState !== 1) return;
       const slot = +d.dataset.slot, it = inventory[slot]; if (!it) return;
@@ -2965,7 +2991,6 @@
       // Shift+clic = equipar a la fuerza. Es un agregado nuestro y se queda: sirve para desequipar un arco
       // sin entrar en modo puntería, que por el ruteo normal no se puede.
       else if (ev.shiftKey) w.writeByte(CLIENT.EquipItem).writeByte(slot);
-      else if (modalKind === 'commerce') w.writeByte(CLIENT.CommerceSell).writeByte(slot).writeInteger(1);
       else { usarItemDelSlot(slot); return; }   // clic pelado: rutea por tipo, como el `UsarItem` del original
       ws.send(xorBuffer(w.toBytes(), myKey));
     });
