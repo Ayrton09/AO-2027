@@ -984,8 +984,52 @@ public sealed class PacketDispatcher
             // OJO con el tipo del mapa: es short, no byte — AO tiene 863 mapas. Acá había un `(byte)DestMap`
             // que truncaba: la salida al mapa 555 dejaba al jugador en el 43 (555 & 255).
             if (_data.MapExits.TryGetValue((p.Pos.Map, p.Pos.X, p.Pos.Y), out var dest) && dest.DestMap > 0)
-                TeleportTo(session, p, new WorldPos((short)dest.DestMap, (byte)dest.DestX, (byte)dest.DestY));
+            {
+                // EL DESTINO SE VALIDA (VB6 GameLogic.bas:104-114). El original no warpea a ciegas: si el tile
+                // de llegada no es legal busca el legal MÁS CERCANO, y si no encuentra ninguno NO TELEPORTA —
+                // el jugador se queda donde está. Acá se saltaba entero: había salidas que dejaban al personaje
+                // adentro de una pared o encima de otro, y de ahí no se sale caminando.
+                var destino = new WorldPos((short)dest.DestMap, (byte)dest.DestX, (byte)dest.DestY);
+                bool puedeAgua = p.Navigating;   // VB6 PuedeAtravesarAgua: Navegando o Vuela (Vuela no existe acá)
+                if (!PosLegal(destino, puedeAgua))
+                {
+                    var alterna = PosLegalMasCercana(destino, puedeAgua);
+                    if (alterna is null) return;   // sin lugar donde caer: el original tampoco mueve a nadie
+                    destino = alterna.Value;
+                }
+                TeleportTo(session, p, destino);
+            }
         });
+    }
+
+    /// <summary>¿Se puede PISAR este tile? (VB6 <c>LegalPos</c>, GameLogic.bas:458.) Cuatro condiciones, las
+    /// mismas del original: dentro de los bordes jugables, no bloqueado, sin nadie encima —ni jugador ni
+    /// criatura— y, salvo que se vaya navegando, que no sea agua.</summary>
+    private bool PosLegal(WorldPos pos, bool puedeAgua)
+    {
+        if (pos.Map <= 0) return false;
+        if (pos.X < GameLimits.MinXBorder || pos.X > GameLimits.MaxXBorder
+            || pos.Y < GameLimits.MinYBorder || pos.Y > GameLimits.MaxYBorder) return false;
+        if (_data.IsBlockedTile(pos.Map, pos.X, pos.Y)) return false;
+        if (_world.PlayerAt(pos) is not null || _world.NpcAt(pos) is not null) return false;
+        return puedeAgua || !_data.IsWater(pos.Map, pos.X, pos.Y);
+    }
+
+    /// <summary>El tile legal más cercano a <paramref name="dest"/> (VB6 <c>ClosestLegalPos</c>,
+    /// GameLogic.bas:243): anillos concéntricos de radio 0 a 12 alrededor del destino, y se toma el primero
+    /// que sirva. <c>null</c> = no hay ninguno en ese radio, y el original entonces NO mueve al jugador (su
+    /// `nPos` queda en 0 y el `If nPos.X &lt;&gt; 0` de arriba no entra).</summary>
+    private WorldPos? PosLegalMasCercana(WorldPos dest, bool puedeAgua)
+    {
+        for (int anillo = 0; anillo <= 12; anillo++)
+            for (int y = dest.Y - anillo; y <= dest.Y + anillo; y++)
+                for (int x = dest.X - anillo; x <= dest.X + anillo; x++)
+                {
+                    if (x is < 0 or > 255 || y is < 0 or > 255) continue;
+                    var cand = new WorldPos(dest.Map, (byte)x, (byte)y);
+                    if (PosLegal(cand, puedeAgua)) return cand;
+                }
+        return null;
     }
 
     /// <summary>Warp a player to a destination map/tile (tile-exits). Sends ChangeMap on a map change and
