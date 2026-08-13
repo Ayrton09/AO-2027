@@ -38,6 +38,10 @@ Type=simple
 User=coverao
 Group=coverao
 WorkingDirectory=/srv/coverao/%i
+; El WorkingDirectory TIENE que existir antes de arrancar: systemd no lo crea y la unit muere con
+; status=200/CHDIR, que leyendo el archivo no se ve. Se crea aca en vez de confiar en que el que instala
+; se acuerde. La instalacion sigue siendo copiar el paquete adentro; esto solo garantiza la carpeta.
+ExecStartPre=/bin/mkdir -p /srv/coverao/%i
 ExecStart=/srv/coverao/%i/CoverAO.Server
 
 ; El ejecutable de un solo archivo extrae sus librerias nativas a un cache la primera vez, y con

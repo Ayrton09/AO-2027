@@ -19,8 +19,11 @@ WebSocket. El objetivo no es un juego nuevo: es una réplica fiel de esa variant
 
 ```sh
 dotnet build CoverAO.slnx -c Release
-dotnet server/src/CoverAO.Server/bin/Release/net10.0/CoverAO.Server.dll
+dotnet server/src/CoverAO.Server/bin/Release/net10.0/CoverAO.Server.dll --web-root client-web
 ```
+
+El `--web-root` no es opcional si querés jugar: sin él el servidor levanta igual, pero el puerto del cliente
+web no sirve nada y el navegador se encuentra con la nada. Apunta a la carpeta del cliente.
 
 Arranca como **mundo real**: los 863 mapas con su fauna auténtica (5404 NPCs) y sin cuenta demo. Un jugador
 crea cuenta y personaje con el flujo normal. Con `--fixture` levanta en su lugar el escenario de pruebas.

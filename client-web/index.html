@@ -1886,6 +1886,11 @@
       modalEl.classList.remove('on');
       endShopIfOpen();
       modalKind = null;
+      // DESARMAR EL REASIGNADOR DE TECLAS. Queda cebado al tocar "reasignar" en el panel de Opciones y se
+      // limpia solo cuando llega una pulsación. Si en vez de apretar una tecla se CIERRA el panel, quedaba
+      // armado: la siguiente tecla que tocara el jugador —caminar, atacar— se la comía el reasignador y
+      // terminaba atada a una acción que nadie pidió.
+      capturandoTecla = null;
     }
     modalEl.addEventListener('click', (ev) => { if (ev.target === modalEl) closeModal(); });   // clic en el backdrop cierra
     /** Cantidad del lote de fabricación: el server acepta 1..1000 (`DoCraft`) y acá se acota igual. */

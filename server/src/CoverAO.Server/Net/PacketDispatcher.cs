@@ -267,11 +267,28 @@ public sealed class PacketDispatcher
             case ClientPacketId.GuildDeclareWar: HandleGuildDeclareWar(session, reader); break;
             case ClientPacketId.GuildOfferPeace: HandleGuildOfferPeace(session, reader); break;
             case ClientPacketId.GuildAcceptPeace: HandleGuildAcceptPeace(session, reader); break;
-            case ClientPacketId.Casamiento: reader.ReadAsciiString(); reader.ReadByte(); HandleCasamiento(session); break; // VB6 HandleCasamiento: ASCIIString(nombre)+Byte(modo)
+            // VB6 HandleCasamiento (Protocol.bas:16376): ASCIIString(nombre) + Byte(modo). El nombre NO es
+            // decorativo — el original resuelve `NameIndex(UserName)` y con eso decide: offline → LocaleMsg 75,
+            // online → PuedeCasarse. Acá se leía y se tiraba, así que uno se casaba con QUIEN TUVIERA ENFRENTE
+            // aunque hubiera pedido casarse con otro. El `modo` sí es código muerto en esta variante.
+            case ClientPacketId.Casamiento:
+            {
+                string conQuien = reader.ReadAsciiString(); reader.ReadByte();
+                HandleCasamiento(session, conQuien);
+                break;
+            }
             case ClientPacketId.divorciar: HandleDivorciar(session); break;
             case ClientPacketId.Gamble: HandleGamble(session, reader); break;
             case ClientPacketId.RequestGuildLeaderInfo: HandleGuildLeaderInfo(session); break;
-            case ClientPacketId.GuildRequestDetails: reader.ReadAsciiString(); HandleGuildInfo(session); break; // VB6: ASCIIString(guild)
+            // VB6 HandleGuildRequestDetails (Protocol.bas:4890): `SendGuildDetails(UserIndex, ReadASCIIString())`
+            // — o sea que contesta con el clan PEDIDO, no con el propio. Acá el nombre se descartaba, así que
+            // pedir la ficha de un clan ajeno devolvía siempre la del de uno.
+            case ClientPacketId.GuildRequestDetails:
+            {
+                string clan = reader.ReadAsciiString();
+                HandleGuildInfo(session, clan);
+                break;
+            }
             case ClientPacketId.GuildMemberInfo: reader.ReadAsciiString(); HandleGuildMemberInfo(session); break; // VB6: ASCIIString(nombre)
             case ClientPacketId.ShowGuildNews: HandleShowGuildNews(session); break;
             case ClientPacketId.GuildUpdateNews: HandleGuildUpdateNews(session, reader); break;
@@ -448,9 +465,6 @@ public sealed class PacketDispatcher
             // este vector ("amplificación de DoS por PBKDF2") y esta ruta se había quedado afuera.
             if (LoginBlocked(session)) return;
             if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
-            // Cuenta ya existente: cuenta como intento fallido. Sin esto el handler era además un oráculo de
-            // enumeración gratis — se podía sondear qué cuentas existen sin credenciales y sin costo.
-            if (_db.AccountExists(account)) { LoginFail(session); Reject(session, $"La cuenta '{account}' ya existe."); return; }
             CrearCuentaFueraDelLoop(session, account, password);
         });
     }
@@ -476,8 +490,16 @@ public sealed class PacketDispatcher
         if (!session.TomarVerificacion()) { _loop.Enqueue(() => CrearCuentaFueraDelLoop(session, account, password)); return; }
         Task.Run(() =>
         {
-            bool creada = false;
-            try { _db.CreateAccount(account, password); creada = true; }
+            bool existia = false, creada = false;
+            try
+            {
+                // La CONSULTA de existencia también toca el disco, y estaba quedando adentro del tick: un
+                // `File.Exists` por paquete de creación. No hashea, así que no congela el mundo como el
+                // PBKDF2 —son microsegundos contra 25 ms—, pero es I/O en el hilo sagrado y no tiene por qué
+                // estar ahí. Se hace acá, junto con la creación, y el veredicto vuelve por el loop.
+                existia = _db.AccountExists(account);
+                if (!existia) { _db.CreateAccount(account, password); creada = true; }
+            }
             catch (Exception ex) { Console.Error.WriteLine($"[{session.RemoteEndpoint}] crear cuenta: {ex.Message}"); }
             _loop.Enqueue(() =>
             {
@@ -486,6 +508,9 @@ public sealed class PacketDispatcher
                 if (session.Cerrada) return;
                 try
                 {
+                    // Cuenta ya existente: cuenta como intento fallido. Sin esto el handler era además un
+                    // oráculo de enumeración gratis — se podía sondear qué cuentas existen sin credenciales.
+                    if (existia) { LoginFail(session); Reject(session, $"La cuenta '{account}' ya existe."); return; }
                     if (!creada) { Reject(session, "No se pudo crear la cuenta."); return; }
                     LoginOk(session);
                     Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
@@ -4951,13 +4976,16 @@ public sealed class PacketDispatcher
         });
     }
 
-    private void HandleGuildInfo(ClientSession session)
+    private void HandleGuildInfo(ClientSession session, string clanPedido = "")
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || string.IsNullOrEmpty(p.GuildName)) return;  // VB6 GuildRequestDetails sin clan: silencio
-            var g = _world.GuildByName(p.GuildName);
+            if (p is null) return;
+            // El clan PEDIDO; si el paquete vino sin nombre se cae al propio, que es el caso que atendía antes.
+            string nombre = string.IsNullOrWhiteSpace(clanPedido) ? p.GuildName : clanPedido;
+            if (string.IsNullOrEmpty(nombre)) return;   // VB6 GuildRequestDetails sin clan: silencio
+            var g = _world.GuildByName(nombre);
             if (g is null) return;
             session.Send(ServerMessages.GuildDetails(g)); // structured clan info window
             session.Send(ServerMessages.ConsoleMsg(
@@ -5468,15 +5496,17 @@ public sealed class PacketDispatcher
     }
 
     /// <summary>Casamiento (id 104): marry the player you face (both must be single). Slice: auto-consent.</summary>
-    private void HandleCasamiento(ClientSession session)
+    private void HandleCasamiento(ClientSession session, string conQuien)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
             if (!string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.LocaleMsg(116)); return; }
-            var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
-            var target = _world.PlayerAt(new WorldPos(p.Pos.Map, tx, ty));
+            // POR NOMBRE, como el original: `tUser = NameIndex(UserName)`. Si no está conectado, LocaleMsg 75.
+            // Antes esto miraba el tile de ENFRENTE e ignoraba el nombre pedido.
+            var target = _world.Players.FirstOrDefault(
+                o => string.Equals(o.Name, conQuien, StringComparison.OrdinalIgnoreCase) && o.CharIndex != p.CharIndex);
             if (target is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // VB6 HandleCasamiento: NameIndex<=0 -> LocaleMsg(75)
             if (!string.IsNullOrEmpty(target.SpouseName)) { session.Send(ServerMessages.LocaleMsg(120)); return; }
             p.SpouseName = target.Name;
@@ -7363,13 +7393,23 @@ public sealed class PacketDispatcher
         const long StateDurationTicks = 500;   // IntervaloParalizado (Server.ini), en vueltas de 40 ms
         long now = _loop.Tick;
         var efectos = new List<string>();
-        if (spell.IsSanacion) { target.PoisonedUntilTick = 0; efectos.Add("sanado"); }
+        if (spell.IsSanacion) { target.PoisonedUntilTick = 0; target.Incinerado = false; efectos.Add("sanado"); }
         // EL VENENO NO SE VA SOLO: en el original es un flag pelado, sin contador de duración. Lo apagan Curar
         // Veneno, la Sanación, el sacerdote (Acciones.bas:317) o la muerte.
-        if (spell.IsPoison || spell.IsIncinerate)
+        if (spell.IsPoison)
         {
             target.PoisonedUntilTick = long.MaxValue; target.PoisonCounter = 0;
-            efectos.Add(spell.IsIncinerate ? "incinerado" : "envenenado");
+            efectos.Add("envenenado");
+        }
+        // INCINERAR NO ES ENVENENAR (VB6 modHechizos.bas:1127). Tiene su propio flag, su propio contador y su
+        // propio efecto: 45-65 de daño por golpe de fuego —contra el 1-5 del veneno— y se apaga solo a las 50
+        // vueltas. Acá prendía el flag del VENENO, así que incinerar a alguien lo dejaba envenenado PARA
+        // SIEMPRE y pegando diez veces menos. Y el original rechaza incinerar a quien ya está ardiendo
+        // (LocaleMsg 326), que era otra rama que no existía.
+        if (spell.IsIncinerate)
+        {
+            if (target.Incinerado) { caster.Connection?.Send(ServerMessages.LocaleMsg(326)); }   // ya está ardiendo
+            else { target.Incinerado = true; target.IncineradoCounter = 0; efectos.Add("incinerado"); }
         }
         if (spell.IsCurePoison) { target.PoisonedUntilTick = 0; efectos.Add("curado del veneno"); }
         if (spell.IsParalyze || spell.IsImmobilize)
@@ -8950,6 +8990,7 @@ public sealed class PacketDispatcher
         p.Body = CorpseBody; p.Head = CorpseHead;
         p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
+        p.Incinerado = false; p.IncineradoGolpes = 0;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego
         // Sincronizá el estado-cliente de parálisis/ceguera al morir (VB6 RemoveParalisis manda el toggle): el
         // reconciliador de Program.cs saltea a los muertos, así que sin esto el fantasma queda trabado / con
         // pantalla negra y arrastra el flag ~3s tras revivir. Condicional para no invertir el toggle ParalizeOK.
@@ -8989,6 +9030,8 @@ public sealed class PacketDispatcher
     {
         p.Hp = p.MaxHp;
         p.Head = p.OrigHead;
+        // El sacerdote apaga el fuego además de revivir (VB6 Acciones.bas:319, `.flags.Incinerado = 0`).
+        p.Incinerado = false; p.IncineradoGolpes = 0;
         RefreshAppearance(p, data);
         p.Connection?.Send(ServerMessages.UpdateUserStats(p));
         p.Connection?.Send(ServerMessages.LocaleMsg(90));   // "¡Has resucitado!"

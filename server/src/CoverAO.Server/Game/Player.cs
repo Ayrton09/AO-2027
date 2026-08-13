@@ -275,6 +275,14 @@ public sealed class Player
     /// tiene la vida llena no acumula curaciones. Se suma 1 por vuelta, que es el <c>DeltaTick</c> del original
     /// (mMainLoop.bas:136). Ver fase5/unidades-del-loop.md.</summary>
     public int ThirstCounter, HungerCounter, HpCounter, StaCounter, PoisonCounter, ColdCounter;
+    /// <summary>INCINERADO (VB6 <c>flags.Incinerado</c> + <c>Counters.Incinerado</c>). NO es veneno, aunque el
+    /// port lo trataba como tal: es un daño por tiempo BRUTAL —45 a 65 por golpe de fuego, contra el 1 a 5 del
+    /// veneno— y ADEMÁS se apaga solo a las 50 vueltas del contador. Metido en el veneno quedaba permanente y
+    /// pegando de menos. Lo apagan también la Sanación, el sacerdote y la muerte.</summary>
+    public bool Incinerado { get; set; }
+    public int IncineradoCounter;
+    /// <summary>Golpes de fuego ya recibidos (VB6 <c>Counters.Incinerado</c>): a los 50 el fuego se apaga.</summary>
+    public int IncineradoGolpes;
 
     // Spell states (Fase 2): paralysis blocks movement; poison deals periodic damage. Both expire by tick.
     public long ParalyzedUntilTick { get; set; }

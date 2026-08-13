@@ -228,10 +228,20 @@ cuando la página se sirve por HTTPS. Con Caddy:
 
 ```
 juego.tudominio.com {
-    reverse_proxy /ws* localhost:7667
     reverse_proxy localhost:7669
 }
+
+ws.juego.tudominio.com {
+    reverse_proxy localhost:7667
+}
 ```
+
+**Ojo con la ruta**: esta receta decia `reverse_proxy /ws* localhost:7667`, y esa regla no puede engancharse
+nunca — el cliente NO pide `/ws`, abre el socket contra la RAIZ del puerto del WebSocket
+(`wss://<host>:<puerto+1>/`, ver `client-web/index.html`). Con la regla vieja el `/ws*` quedaba muerto y el
+WebSocket se iba por el proxy del cliente web, al puerto equivocado. Por eso van dos nombres: uno sirve la
+pagina y el otro el socket. Si preferis un solo nombre, hay que hacer que el cliente pida una ruta y que el
+proxy la mapee; hoy no la pide.
 
 ## Licencia
 

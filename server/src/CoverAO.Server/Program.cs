@@ -528,6 +528,26 @@ loop.OnTickHandler = tick =>
                 if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
                 cambioHp = true;   // VB6 EfectoVeneno: WriteUpdateHP
             }
+            // EfectoIncinerado (VB6 FileIO.bas:2010, llamado desde mMainLoop.bas:170). NO es veneno: pega
+            // RandomNumber(45, 65) por golpe de fuego —contra el 1 a 5 del veneno—, avisa con LocaleMsg 48, y
+            // se APAGA SOLO cuando el contador llega a 50, con el LocaleMsg 389. Puede matar, igual que el
+            // veneno. El original excluye a los GMs (`Privilegios And PlayerType.User`).
+            if (pl.Incinerado && !pl.IsGm && ++pl.IncineradoCounter >= Survival.PoisonIntervalTicks)
+            {
+                pl.IncineradoCounter = 0;
+                if (++pl.IncineradoGolpes >= 50)
+                {
+                    pl.Incinerado = false; pl.IncineradoGolpes = 0;
+                    pl.Connection?.Send(ServerMessages.LocaleMsg(389));   // se apagó
+                }
+                else
+                {
+                    pl.Hp -= regenRng.Next(45, 66);                       // RandomNumber(45, 65), inclusivo
+                    pl.Connection?.Send(ServerMessages.LocaleMsg(48));
+                    if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
+                    cambioHp = true;
+                }
+            }
             // Sanar (VB6 General.bas + mMainLoop.bas:186-206): la curación natural es LENTA de pie (64 s) y
             // rápida descansando (4 s), y devuelve RandomNumber(2, 5% de la energía máxima) avisando con
             // LocaleMsg 389. Sólo si no hay hambre ni sed (mMainLoop.bas:184 envuelve Sanar+RecStamina).

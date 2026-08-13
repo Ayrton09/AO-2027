@@ -57,6 +57,15 @@ public static class CharacterFile
         // VB6 flags.MuertesUsuario (Modulo_UsUaRiOs.bas:1260, +1 en UserDie). La ficha del cliente lo muestra
         // como "Veces que moriste"; el .chr lo llama `Murio` (FileIO.bas:1638).
         ini.Set("FLAGS", "Murio", F(p.Deaths));
+        // [MUERTES] (VB6 FileIO.bas:1774): las dos cuentas que el cliente muestra en la ficha. Vivian SOLO en
+        // memoria — se emitian en MiniStats y se perdian al salir, asi que el jugador veia su historial en cero
+        // cada vez que reconectaba.
+        ini.Set("MUERTES", "UserMuertes", F(p.UsersKilled));
+        ini.Set("MUERTES", "NpcsMuertes", F(p.NpcsKilled));
+        // [CASAMIENTO] (VB6 FileIO.bas:1702). Mismo problema: uno se casaba y al reconectar estaba soltero.
+        // `Casado` es redundante con tener pareja, pero se escribe igual porque es lo que el original guarda.
+        ini.Set("CASAMIENTO", "Pareja", p.SpouseName);
+        ini.Set("CASAMIENTO", "Casado", F(string.IsNullOrEmpty(p.SpouseName) ? 0 : 1));
         ini.Set("GUILD", "GuildName", p.GuildName);
         ini.Set("AMIGOS", "Cantidad", F(p.Friends.Count));
         for (int i = 0; i < p.Friends.Count; i++) ini.Set("AMIGOS", $"Amigo{i + 1}", p.Friends[i]);
@@ -188,6 +197,9 @@ public static class CharacterFile
         p.Mounted = ini.GetInt("FLAGS", "Montando") == 1;       // VB6 TCP.bas:1867 (la línea de abajo)
         p.PoisonedUntilTick = ini.GetInt("FLAGS", "Envenenado") == 1 ? long.MaxValue : 0;   // VB6 TCP.bas:1868
         p.Deaths = Math.Max(0, ini.GetInt("FLAGS", "Murio"));   // VB6 TCP.bas:1869 (.flags.MuertesUsuario)
+        p.UsersKilled = Math.Max(0, ini.GetInt("MUERTES", "UserMuertes"));   // VB6 TCP.bas:2166
+        p.NpcsKilled = Math.Max(0, ini.GetInt("MUERTES", "NpcsMuertes"));    // VB6 TCP.bas:2167
+        p.SpouseName = ini.GetString("CASAMIENTO", "Pareja");
         p.GuildName = ini.GetString("GUILD", "GuildName");
         int friendCount = ini.GetInt("AMIGOS", "Cantidad");
         for (int i = 1; i <= friendCount; i++)
