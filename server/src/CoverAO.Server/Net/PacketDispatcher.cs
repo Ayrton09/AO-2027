@@ -1110,7 +1110,7 @@ public sealed class PacketDispatcher
 
     private void AttackPlayer(ClientSession session, Player p, Player target)
     {
-        if (!target.IsAlive) { session.Send(ServerMessages.LocaleMsg(7)); return; }   // VB6 SistemaCombate.bas:1554: atacar un cadáver → LocaleMsg 7 "¡El usuario está muerto!"
+        if (!PuedeAtacar(session, p, target)) return;    // VB6 UsuarioAtacaUsuario:1183 — el primer statement
         FlagCriminalIfLegalTarget(session, p, target);   // atacar a un legal sin provocación → criminal (idéntico en magia)
         // Hit chance: attacker Wrestling power vs target Tacticas evasion (real .chr skills).
         double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
@@ -1328,7 +1328,7 @@ public sealed class PacketDispatcher
         if (targetPlayer is not null)
         {
             if (targetPlayer.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }   // auto-disparo (VB6 :2840)
-            if (!targetPlayer.IsAlive) { session.Send(ServerMessages.LocaleMsg(7)); return; }                     // cadáver (PuedeAtacar) — no consume
+            if (!PuedeAtacar(session, p, targetPlayer)) return;   // el mismo gate del melee — no consume munición
             RangedHitPlayer(session, p, targetPlayer, bow, ammo);
         }
         else if (targetNpc is not null)
@@ -5279,6 +5279,53 @@ public sealed class PacketDispatcher
     private bool DueloDeArena(Player a, Player b) =>
         _data.IsArena(a.Pos.Map, a.Pos.X, a.Pos.Y) && _data.IsArena(b.Pos.Map, b.Pos.X, b.Pos.Y);
 
+    /// <summary>¿Este jugador puede agredir a este otro? (VB6 <c>PuedeAtacar</c>, SistemaCombate.bas:1504.)
+    ///
+    /// <para>Es LA compuerta del PvP y no estaba portada: el melee sólo miraba que la víctima no fuera un
+    /// cadáver. O sea que se podía matar en el medio de Ullathorpe, a un compañero de clan y al propio cónyuge.
+    /// El original la llama desde <c>UsuarioAtacaUsuario</c> (:1183) y desde las nueve ramas de daño de
+    /// <c>modHechizos</c>, así que acá gatea las tres vías: golpe, disparo y hechizo ofensivo.</para>
+    ///
+    /// <para>El ORDEN es el del original, y no es cosmético: las reglas de clan y de facción van ANTES que la
+    /// arena, así que dos ciudadanos siguen sin poder pelear aunque los dos estén parados en el trigger 6.</para>
+    ///
+    /// <para>Lo que NO se porta, porque en esta variante está comentado en la fuente: el chequeo de ZONASEGURA
+    /// (:1660-1668). En el original, pelear parado en un tile seguro SE PUEDE; lo único que ZONASEGURA impide
+    /// de verdad es invocar. Y la lista de mapas cableada del segundo <c>If</c> también está comentada: la
+    /// protección de las ciudades sale del flag <c>Pk</c> del header del mapa, que da los mismos 82 mapas.</para>
+    ///
+    /// <para>Devuelve false y YA MANDÓ el rechazo que corresponda; el llamador sólo tiene que salir.</para></summary>
+    private bool PuedeAtacar(ClientSession session, Player p, Player victima)
+    {
+        if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return false; }
+        // Mapa sin PvP: los 82 mapas con Pk=False del header (1 Ullathorpe, 34 Nix, 62 Lindos…).
+        if (!_data.IsPkMap(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(100)); return false; }
+        // Al cónyuge no se le pega.
+        if (!string.IsNullOrEmpty(p.SpouseName)
+            && string.Equals(victima.Name, p.SpouseName, StringComparison.OrdinalIgnoreCase))
+        { session.Send(ServerMessages.LocaleMsg(298)); return false; }
+        if (!victima.IsAlive) { session.Send(ServerMessages.LocaleMsg(7)); return false; }
+        // Compañeros de clan: el original sale MUDO acá (su WriteMensajes está comentado).
+        if (!string.IsNullOrEmpty(victima.GuildName)
+            && string.Equals(victima.GuildName, p.GuildName, StringComparison.OrdinalIgnoreCase)) return false;
+        // Los ocho pares de facción que el original prohíbe (LocaleMsg 97). Ciudadano+Ciudadano está entre
+        // ellos: en esta variante dos civiles NO se pueden pelear, hay que hacerse criminal o enlistarse en
+        // bandos opuestos. Es el gate que más cambia el juego y es el que la fuente dice, textual.
+        bool bloqueoDeFaccion =
+               (victima.IsRepublicano && p.IsRepublicano) || (victima.IsMilicia && p.IsMilicia)
+            || (victima.IsRepublicano && p.IsMilicia)     || (victima.IsMilicia && p.IsRepublicano)
+            || (victima.IsCitizen && p.IsCitizen)         || (victima.IsCitizen && p.IsArmada)
+            || (victima.IsArmada && p.IsCitizen)          || (victima.IsArmada && p.IsArmada);
+        if (bloqueoDeFaccion) { session.Send(ServerMessages.LocaleMsg(97)); return false; }
+        // Arena (TriggerZonaPelea): los dos adentro habilita; uno solo adentro prohíbe; ninguno de los dos
+        // deja pasar al último gate, que es el que protege a los GMs fuera de la arena.
+        bool yoEnArena = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y);
+        bool elEnArena = _data.IsArena(victima.Pos.Map, victima.Pos.X, victima.Pos.Y);
+        if (yoEnArena || elEnArena) return yoEnArena == elEnArena;
+        if (victima.IsGm) { session.Send(ServerMessages.LocaleMsg(101)); return false; }
+        return true;
+    }
+
     /// <summary>Atacar a un objetivo LEGAL (ciudadano/Armada) sin provocación te vuelve criminal y te expulsa del
     /// ejército — el "seguro" del AO clásico. Exceptúa a los enemigos de facción sancionados (Armada↔Caos), a los
     /// ya-criminales/Caos y a los clanes en guerra. Se aplica IDÉNTICO en melee y en hechizos de daño: antes vivía
@@ -7445,7 +7492,7 @@ public sealed class PacketDispatcher
                     if (npcTarget is not null && npcTarget.IsAlive) { CastDamageOnNpc(session, p, npcTarget, spell, amount); return; }
                 }
                 if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
-                if (!target.IsAlive) { session.Send(ServerMessages.LocaleMsg(7)); return; }   // VB6 modHechizos.bas:1040: hechizo de daño sobre cadáver → LocaleMsg 7 (no daña ni re-mata: evita farmear XP/kills)
+                if (!PuedeAtacar(session, p, target)) return;    // VB6 modHechizos.bas:1109 — el mismo gate del melee
                 FlagCriminalIfLegalTarget(session, p, target);   // lanzar daño a un legal pena igual que el melee (VB6: el "seguro" aplica a magia ofensiva)
                 SpellCasted(session, p, spell);
                 // MISMA fórmula que el área (VB6 `HechizoPropUsuario` Case 2, modHechizos.bas:1441): bono del 2%
@@ -7559,6 +7606,7 @@ public sealed class PacketDispatcher
                 if (esDebuff)
                 {
                     if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
+                    if (!PuedeAtacar(session, p, target)) return;    // debilitar es agredir: mismo gate (VB6 modHechizos.bas:1269)
                     FlagCriminalIfLegalTarget(session, p, target);   // debilitar a un legal pena igual que pegarle
                 }
                 else
@@ -7592,6 +7640,8 @@ public sealed class PacketDispatcher
                 }
                 if (target is null && (spell.IsCurePoison || spell.IsRemoveParalysis || spell.IsSanacion)) target = p;   // soporte → self
                 if (target is null) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
+                // El gate va ANTES de consumir maná (VB6: los `Exit Sub` de PuedeAtacar están arriba de todo).
+                if (ofensivo && target.CharIndex != p.CharIndex && !PuedeAtacar(session, p, target)) return;
 
                 SpellCasted(session, p, spell);
                 if (ofensivo && target.CharIndex != p.CharIndex) FlagCriminalIfLegalTarget(session, p, target);   // agredir a un legal → criminal

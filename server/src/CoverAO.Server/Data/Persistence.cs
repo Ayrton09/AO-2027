@@ -365,6 +365,17 @@ public sealed class Persistence
         // 100 Flechas (obj 480, otFlechas), pero SIN equipar — ranged_flow los equipa antes de disparar. Van sólo
         // en Rugura (no en el kit común) y desequipados a propósito: equipados serían "un arma", y weapon_skill_flow
         // lo quiere sin arma; el melee de Rugura sigue saliendo de Wrestling. La skill Proyectiles da el acierto.
+        // REPUBLICANO, no ciudadano. Es lo que hace posible todo el PvP del fixture: `PuedeAtacar` prohíbe
+        // ocho pares de facción y ciudadano-contra-ciudadano es uno de ellos, así que con los dos civiles
+        // Rugura no le podía pegar a Merlin y se caían los 25 flows que usan ese par. Republicano contra
+        // ciudadano NO está prohibido, y Merlin sigue siendo objetivo LEGAL — o sea que el "seguro" que lo
+        // vuelve criminal (FlagCriminalIfLegalTarget) se dispara igual y faction_flow/robar_flow siguen
+        // probando lo mismo que probaban.
+        //
+        // No es un valor inventado para el laboratorio: en el original nace republicano el que elige
+        // Illiandor como tierra natal (TCP.bas:497). Acá se fija el status a mano y se le deja la tierra
+        // natal 1, que es de la que dependen otros flows.
+        rugura.FactionStatus = Player.StatusRepublicano;
         rugura.Skills[GameLimits.SkillProyectiles] = 15;
         rugura.Inventory[21] = new InventorySlot { ObjIndex = 989, Amount = 1 };    // Arco Simple (Proyectil=1, [5,8])
         rugura.Inventory[22] = new InventorySlot { ObjIndex = 480, Amount = 100 };  // Flecha (otFlechas, [4,6]) — munición
