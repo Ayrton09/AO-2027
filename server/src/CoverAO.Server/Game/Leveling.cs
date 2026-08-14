@@ -92,8 +92,13 @@ public sealed class Leveling
         p.Elu = EluForLevel(1);
     }
 
-    /// <summary>Awards experience and applies any level-ups. Returns the number of levels gained.</summary>
-    public int Grant(Player p, long xp)
+    /// <summary>Lo que se ganó en UN nivel. El original avisa cada uno por separado y sólo si es &gt; 0
+    /// (locales 197/198/199/200, Modulo_UsUaRiOs.bas:559-573), así que hay que llevarlos discriminados.</summary>
+    public readonly record struct Ganancia(int Hp, int Stamina, int Mana, int Golpe);
+
+    /// <summary>Awards experience and applies any level-ups. Returns the number of levels gained.
+    /// <paramref name="detalle"/> recibe una entrada por nivel, en orden, para poder avisarlas.</summary>
+    public int Grant(Player p, long xp, List<Ganancia>? detalle = null)
     {
         p.Exp += xp;
         int gained = 0;
@@ -103,7 +108,8 @@ public sealed class Leveling
             p.Elu = EluForLevel(p.Level);   // :394  (ELV read BEFORE the increment below)
             p.FreeSkillPoints += 5;         // :396  (Pts = Pts + 5)
             p.Level = (byte)(p.Level + 1);  // :445
-            ApplyLevelGains(p);             // :397-560 — HP/maná/stamina/golpe de este nivel
+            var g = ApplyLevelGains(p);     // :397-560 — HP/maná/stamina/golpe de este nivel
+            detalle?.Add(g);
             gained++;
         }
         if (p.Level >= MaxLevel) { p.Exp = 0; p.Elu = 0; } // :381-384
@@ -120,8 +126,9 @@ public sealed class Leveling
     /// Balance.dat los dos repartos son uniformes (S = 25×4, E = 20×5). Maná = múltiplo de Inteligencia
     /// según la clase, stamina y golpe por tabla. Todo con los topes del original.
     /// </summary>
-    private void ApplyLevelGains(Player p)
+    private Ganancia ApplyLevelGains(Player p)
     {
+        int ganadoHp = 0;
         double modVida = _lifeMod.TryGetValue(p.Class, out var mv) ? mv : 0;
         if (modVida > 0)
         {
@@ -132,14 +139,19 @@ public sealed class Leveling
                 aumentoHp = aux <= 25 ? promedio + 1.5 : aux <= 50 ? promedio + 0.5 : aux <= 75 ? promedio - 0.5 : promedio - 1.5;
             else                                                          // promedio entero → 5 tramos de 20
                 aumentoHp = aux <= 20 ? promedio + 2 : aux <= 40 ? promedio + 1 : aux <= 60 ? promedio : aux <= 80 ? promedio - 1 : promedio - 2;
-            if (aumentoHp > 0) p.MaxHp = Math.Min(MaxHpCap, p.MaxHp + (int)aumentoHp);
+            if (aumentoHp > 0) { ganadoHp = (int)aumentoHp; p.MaxHp = Math.Min(MaxHpCap, p.MaxHp + ganadoHp); }
         }
 
-        p.MaxStamina = Math.Min(MaxStaCap, p.MaxStamina + StaminaGain(p.Class));
+        int ganadoSta = StaminaGain(p.Class);
+        p.MaxStamina = Math.Min(MaxStaCap, p.MaxStamina + ganadoSta);
 
+        int ganadoMana = 0;
         double manaFactor = ManaFactor(p.Class);
         if (manaFactor > 0)
-            p.MaxMana = Math.Min(MaxManaCap, p.MaxMana + (int)(manaFactor * p.Attributes[GameLimits.AttrInteligencia]));
+        {
+            ganadoMana = (int)(manaFactor * p.Attributes[GameLimits.AttrInteligencia]);
+            p.MaxMana = Math.Min(MaxManaCap, p.MaxMana + ganadoMana);
+        }
 
         int hit = HitGain(p.Class, p.Level);
         int hitCap = p.Level < 36 ? MaxHitUnder36 : MaxHitOver36;
@@ -150,5 +162,6 @@ public sealed class Leveling
         p.Hp = p.MaxHp;
         p.Mana = p.MaxMana;
         p.Stamina = p.MaxStamina;
+        return new Ganancia(ganadoHp, ganadoSta, ganadoMana, hit);
     }
 }

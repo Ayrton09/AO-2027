@@ -60,6 +60,11 @@ public sealed class PacketDispatcher
         _admin = admin;
         _content = content ?? ServerContent.Default;
         _npcs = npcs;
+        // El rechazo con escudo contra una CRIATURA entrena Defensa, y la tirada de entrenamiento vive acá.
+        // Se cablea al revés (el sistema de NPCs pide, el dispatcher provee) para no atarlos entre sí.
+        if (_npcs is not null)
+            _npcs.SubirSkillPorUso = (jugador, skill) =>
+                RaiseSkill(jugador.Connection as ClientSession, jugador, skill);
     }
 
     private readonly NpcSystem? _npcs;   // para /ACC /RACC (spawn de NPCs con respawn); null en tests sin mundo vivo
@@ -1709,7 +1714,8 @@ public sealed class PacketDispatcher
     private int OtorgarExp(ClientSession? session, Player p, long exp)
     {
         int puntosAntes = p.FreeSkillPoints;
-        int levels = _leveling.Grant(p, exp);
+        var ganancias = new List<Game.Leveling.Ganancia>();
+        int levels = _leveling.Grant(p, exp, ganancias);
         session?.Send(ServerMessages.UpdateExp((int)p.Exp));
         if (levels > 0)
         {
@@ -1720,6 +1726,13 @@ public sealed class PacketDispatcher
             {
                 _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndNivel, (byte)p.Pos.X, (byte)p.Pos.Y));
                 session?.Send(ServerMessages.LocaleMsg(186));
+                // Y CUÁNTO ganó, uno por stat y sólo si es > 0 (Modulo_UsUaRiOs.bas:559-573). Subir de nivel
+                // avisaba que subiste pero no de cuánto: el jugador veía moverse la barra sin número.
+                var g = i < ganancias.Count ? ganancias[i] : default;
+                if (g.Hp > 0) session?.Send(ServerMessages.LocaleMsg(197, g.Hp.ToString()));
+                if (g.Stamina > 0) session?.Send(ServerMessages.LocaleMsg(198, g.Stamina.ToString()));
+                if (g.Mana > 0) session?.Send(ServerMessages.LocaleMsg(199, g.Mana.ToString()));
+                if (g.Golpe > 0) session?.Send(ServerMessages.LocaleMsg(200, g.Golpe.ToString()));
             }
             session?.Send(ServerMessages.UpdateUserStatsForLevel(p));
             // El VB6 gatea con `If Pts > 0` y manda los puntos GANADOS en esta subida, no el total: el cliente
@@ -1736,6 +1749,22 @@ public sealed class PacketDispatcher
 
     /// <summary>Sonido de subir de nivel (VB6 <c>SND_NIVEL = 6</c>, Declares.bas:540).</summary>
     private const short SndNivel = 6;
+
+    /// <summary>Sonido de beber de un pozo (VB6 <c>SND_BEBER = 135</c>, Declares.bas:555).</summary>
+    private const short SndBeber = 135;
+
+    /// <summary>"Lanzaste un hechizo y no hay a quién": el original manda <b>223</b> ("Sólo afecta usuarios")
+    /// o <b>224</b> ("Sólo afecta NPCs") según a qué apunte el hechizo (modHechizos.bas:904 y :916), no un
+    /// texto genérico. Acá salía un <c>ConsoleMsg</c> inventado en los cuatro sitios.
+    ///
+    /// El mapeo no es literal porque el ruteo tampoco lo es: el original mira <c>flags.TargetUser</c> /
+    /// <c>TargetNPC</c> y este port resuelve por el TILE ENCARADO (divergencia ya documentada más abajo). El
+    /// mensaje sí se puede elegir igual, con el mismo campo <c>Target</c> del hechizo: 2 = sólo NPCs.</summary>
+    private static short SinObjetivo(Data.SpellInfo spell) => spell.Target == 2 ? (short)224 : (short)223;
+
+    /// <summary>Los dos sonidos del casamiento (VB6 <c>snd_casamiento = 161</c> y <c>SND_SANAR = 55</c>,
+    /// Declares.bas:557 y :551). El original manda la marcha a TODO el mapa y el sanar sólo al área.</summary>
+    private const short SndCasamiento = 161, SndSanar = 55;
 
     /// <summary>Montar o desmontar (VB6 <c>DoEquita</c>, Trabajo.bas:2340). Está afuera del handler de equipar
     /// porque hay un SEGUNDO camino que desmonta y que no pasa por ahí: caminar a un tile donde no se puede
@@ -1805,15 +1834,13 @@ public sealed class PacketDispatcher
             long gainExp = npc.ExpCount * (_admin?.ExpMult ?? 1);   // "Evento Experiencia" del panel
             if (p.Donador) gainExp += gainExp / 2;   // VB6 SistemaCombate.bas:2029 — el donador gana +50% de experiencia
             npc.ExpCount = 0;                        // VB6 :142 — el pool se vacía, no se paga dos veces
-            int levels = OtorgarExp(session, p, gainExp);
-            session.Send(ServerMessages.ConsoleMsg(levels > 0
-                ? $"Has matado a {npc.Name}! Ganaste {gainExp} exp y subiste {levels} nivel(es)! Nivel {p.Level}."
-                : $"Has matado a {npc.Name}! Ganaste {gainExp} de experiencia.", 0));
+            OtorgarExp(session, p, gainExp);
         }
-        else
-        {
-            session.Send(ServerMessages.ConsoleMsg($"Has matado a {npc.Name}!", 0));
-        }
+        // "¡Has matado a #1!" con el NOMBRE de la criatura, y va SIEMPRE — el original lo manda afuera del
+        // `If ExpCount > 0` (MODULO_NPCs.bas:141), así que rematar algo que ya no da experiencia igual avisa.
+        // Acá salía un ConsoleMsg con texto nuestro que además metía la experiencia y el nivel adentro de la
+        // frase; el original los manda por separado (140 la experiencia, 186/197-200 el nivel).
+        session.Send(ServerMessages.LocaleMsg(184, npc.Name));
         if (daRecompensa) DropNpcLoot(session, p, npc);
     }
 
@@ -2747,6 +2774,11 @@ public sealed class PacketDispatcher
         // queda escrito en el `.chr` y el gate de baneo corre ANTES de que se apliquen los privilegios del ini,
         // así que el dueño no podía volver a entrar nunca más sin editar la base a mano.
         if (ban && (target.IsGm || _ini.EsStaff(nick))) { session.Send(ServerMessages.LocaleMsg(484)); return; }
+        // El estado PREVIO importa y no se miraba: banear a alguien ya baneado volvía a escribir la pena y a
+        // confirmar como si fuera nuevo, y desbanear a alguien que no lo estaba confirmaba igual. El original
+        // gatea las dos (Admin.bas:468 y :580) y son los únicos dos caminos que devuelven "no hice nada".
+        if (ban && target.Banned) { session.Send(ServerMessages.LocaleMsg(390)); return; }
+        if (!ban && !target.Banned) { session.Send(ServerMessages.LocaleMsg(486)); return; }
 
         target.Banned = ban;
         if (ban)
@@ -2758,11 +2790,14 @@ public sealed class PacketDispatcher
         {
             BroadcastToAdmins(ServerMessages.LocaleMsg(482, $"{p!.Name}%{nick}"));
             online?.Connection?.Close("baneado");   // VB6 CloseSocket(tuser): al baneado se lo echa del mundo
-            session.Send(ServerMessages.ConsoleMsg($"Baneaste a {nick.ToUpperInvariant()}.", 3));
+            // La confirmación al GM es el 481, con el nombre (Admin.bas:472). Su texto dice "está offline, pero
+            // ha sido baneado" porque en el original esta rama es la del personaje offline; el fork la usa para
+            // las dos y se porta igual. Acá salía un ConsoleMsg con texto nuestro.
+            session.Send(ServerMessages.LocaleMsg(481, nick));
         }
         else
         {
-            session.Send(ServerMessages.ConsoleMsg($"Desbaneaste a {nick.ToUpperInvariant()}.", 3));
+            session.Send(ServerMessages.LocaleMsg(485, nick));   // "#1 ha sido desbaneado" (Admin.bas:577)
         }
         Console.WriteLine($"[{session.RemoteEndpoint}] /BAN {(ban ? "ban" : "unban")} {p!.Name} -> {nick}");
     }
@@ -4412,6 +4447,35 @@ public sealed class PacketDispatcher
     /// <summary>Enqueues a simple ConsoleMsg acknowledgement (for packets with no state change).</summary>
     private const short Fogata = 63;   // Declares.bas: Public Const FOGATA As Integer = 63
 
+    /// <summary>La fogata APAGADA (VB6 <c>FOGATA_APAG = 136</c>, Declares.bas:365). En obj.dat se llama
+    /// "Ramitas": es el paso intermedio entre la leña y el fuego, y el que se enciende por doble-clic.</summary>
+    private const short FogataApagada = 136;
+
+    /// <summary>Leña (VB6 <c>Leña = 58</c>) y daga (<c>DAGA = 15</c>), Declares.bas:355 y :364.</summary>
+    private const short Lenia = 58, Daga = 15;
+
+    /// <summary>Partir un montón de leña en fogatas apagadas (VB6 <c>TratarDeHacerFogata</c>, Trabajo.bas:1228).
+    /// Pide TRES troncos —el mensaje del original dice "no mas ni menos de tres" pero el gate es <c>&lt; 3</c>,
+    /// o sea que con seis salen dos fogatas— y la tirada sale de Supervivencia. No consume la daga ni energía.
+    /// El resultado queda como nuevo objetivo del jugador, así se puede encender sin volver a clickear.</summary>
+    private void TratarDeHacerFogata(ClientSession session, Player p)
+    {
+        var pos = new WorldPos(p.TargetObjMap, p.TargetObjX, p.TargetObjY);
+        if (!_world.TryGetGround(pos, out var suelo) || suelo.ObjIndex != Lenia)
+        { session.Send(ServerMessages.LocaleMsg(422)); return; }
+        if (DistanciaVB6(pos, p.Pos) > 2) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+        if (DeadCheck(session, p)) return;                              // LocaleMsg 77
+        if (suelo.Amount < 3) { session.Send(ServerMessages.LocaleMsg(208)); return; }
+        int skill = p.Skills[GameLimits.SkillSupervivencia];
+        int suerte = skill >= 35 ? 1 : skill >= 6 ? 2 : 3;
+        if (_rng.Next(1, suerte + 1) != 1) return;                      // fallar la tirada no avisa nada
+        short cuantas = (short)(suelo.Amount / 3);
+        _world.SetGround(pos, FogataApagada, cuantas);
+        _world.BroadcastToObservers(pos, ServerMessages.ObjectCreate(pos.X, pos.Y, FogataApagada, 0));
+        session.Send(ServerMessages.ConsoleMsg($"Has hecho {cuantas} fogatas.", FuenteInfo));
+        p.TargetObj = FogataApagada;
+    }
+
     /// <summary>VB6 HayOBJarea(.Pos, FOGATA): una fogata encendida en la casilla del jugador o pegada a ella.</summary>
     private bool NearCampfire(Player p)
     {
@@ -5526,24 +5590,59 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>Casamiento (id 104): marry the player you face (both must be single). Slice: auto-consent.</summary>
+    /// <summary>
+    /// Casamiento (id 104), portado de <c>PuedeCasarse</c> (Trabajo.bas:2510). Antes esto casaba de una:
+    /// sin sacerdote, sin distancia, sin género y sin que el otro aceptara. El original es una PROPUESTA:
+    ///
+    /// <list type="number">
+    /// <item>hay que estar los dos vivos, ser de géneros distintos y estar PEGADOS (distancia ≤ 1),</item>
+    /// <item>hay que tener clickeado a un sacerdote (<c>Revividor</c>) a cinco tiles o menos,</item>
+    /// <item>el primero manda la propuesta (<c>EjecutarAccion(3, nombre)</c> abre el cartel en el otro),</item>
+    /// <item>y el casamiento se cierra cuando el OTRO responde con el mismo paquete.</item>
+    /// </list>
+    ///
+    /// Ojo el <b>495</b>: el original lo usa para DOS cosas —"el objetivo está muy lejos" (:16, sin argumento)
+    /// y "le has mandado una propuesta a #1" (:46, con el nombre)— y el texto del catálogo es el segundo.
+    /// Se porta tal cual.
+    /// </summary>
     private void HandleCasamiento(ClientSession session, string conQuien)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.LocaleMsg(116)); return; }
-            // POR NOMBRE, como el original: `tUser = NameIndex(UserName)`. Si no está conectado, LocaleMsg 75.
-            // Antes esto miraba el tile de ENFRENTE e ignoraba el nombre pedido.
+            if (DeadCheck(session, p)) return;                                            // :1
             var target = _world.Players.FirstOrDefault(
                 o => string.Equals(o.Name, conQuien, StringComparison.OrdinalIgnoreCase) && o.CharIndex != p.CharIndex);
-            if (target is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // VB6 HandleCasamiento: NameIndex<=0 -> LocaleMsg(75)
-            if (!string.IsNullOrEmpty(target.SpouseName)) { session.Send(ServerMessages.LocaleMsg(120)); return; }
-            p.SpouseName = target.Name;
-            target.SpouseName = p.Name;
-            session.Send(ServerMessages.ConsoleMsg($"¡Te casaste con {target.Name}!", FuenteInfo));
-            target.Connection?.Send(ServerMessages.ConsoleMsg($"¡Te casaste con {p.Name}!", FuenteInfo));
+            if (target is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // no conectado
+            if (!target.IsAlive) { session.Send(ServerMessages.LocaleMsg(7)); return; }   // :3
+            if (target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(492)); return; }  // :7
+            if (target.Gender == p.Gender) { session.Send(ServerMessages.LocaleMsg(117)); return; }        // :11
+            if (DistanciaVB6(target.Pos, p.Pos) > 1) { session.Send(ServerMessages.LocaleMsg(495)); return; }  // :16
+            if (!string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.LocaleMsg(116)); return; }  // :18
+            if (!string.IsNullOrEmpty(target.SpouseName)) { session.Send(ServerMessages.LocaleMsg(120)); return; }  // :23
+
+            if (string.Equals(target.CandidatoCasamiento, p.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                // El otro ya había propuesto: se cierra. El anuncio va a TODO el servidor con
+                // "mapa%novio%novia", y suenan dos cosas distintas — la marcha a todo el mapa y el sanar al área.
+                p.SpouseName = target.Name; target.SpouseName = p.Name;
+                p.CandidatoCasamiento = target.CandidatoCasamiento = "";
+                string donde = _data.MapName(p.Pos.Map);
+                _world.Broadcast(ServerMessages.LocaleMsg(236, $"{donde}%{p.Name}%{target.Name}"));
+                _world.BroadcastToMap(p.Pos.Map, ServerMessages.PlayWave(SndCasamiento, p.Pos.X, p.Pos.Y));
+                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndSanar, p.Pos.X, p.Pos.Y));
+                return;
+            }
+
+            // Todavía no hay propuesta: hace falta el sacerdote clickeado y cerca.
+            var sacerdote = p.TargetNpc > 0 ? _world.NpcByIndex(p.TargetNpc) : null;
+            if (sacerdote is null) { session.Send(ServerMessages.LocaleMsg(493)); return; }                // :38
+            if (!sacerdote.IsReviver) return;                                                            // :41 silencio
+            if (DistanciaVB6(sacerdote.Pos, p.Pos) > 5) { session.Send(ServerMessages.LocaleMsg(494)); return; }  // :43
+            session.Send(ServerMessages.LocaleMsg(495, target.Name));                                      // :46
+            target.Connection?.Send(ServerMessages.EjecutarAccion(3, p.Name));                             // :47
+            p.CandidatoCasamiento = target.Name;
         });
     }
 
@@ -6201,6 +6300,53 @@ public sealed class PacketDispatcher
             var info = _data.Obj(obj.ObjIndex);
             if (info is null) return;                       // el VB6 entra al Select igual y no matchea ningún Case
             if (info.IsDoor) { AccionParaPuerta(session, p, pos, info); return; }
+            // ENCENDER UNA FOGATA APAGADA (VB6 AccionParaRamita, Acciones.bas:514, llamada desde :348 cuando el
+            // tile tiene FOGATA_APAG = 136 "Ramitas"). Faltaba, y con ella faltaba DESCANSAR: `HandleRest` exige
+            // una fogata ENCENDIDA (63) al lado, en el mundo hay CERO colocadas, y sin este camino no había
+            // forma de crear una. Las 2 ramitas que sí están puestas eran leña que nadie podía prender.
+            if (obj.ObjIndex == FogataApagada)
+            {
+                if (DistanciaVB6(pos, p.Pos) > 2) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                // Ni en tile seguro ni en mapa sin Pk (Acciones.bas:543).
+                if (_data.IsSafeZone(pos.Map, pos.X, pos.Y) || !_data.IsPkMap(pos.Map))
+                { session.Send(ServerMessages.LocaleMsg(191)); return; }
+                // La tirada sale de Supervivencia: 1 en 3 hasta 5, 1 en 2 hasta 10, segura de 10 en adelante.
+                int skill = p.Skills[GameLimits.SkillSupervivencia];
+                int suerte = skill >= 10 ? 1 : skill >= 6 ? 2 : 3;
+                if (_rng.Next(1, suerte + 1) != 1) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                // Y en CIUDAD no prende ni con la tirada ganada (Acciones.bas:560): el original manda el 171
+                // recién acá, después de gastar la tirada.
+                if (_data.MapZone(pos.Map).Equals("CIUDAD", StringComparison.OrdinalIgnoreCase))
+                { session.Send(ServerMessages.LocaleMsg(171)); return; }
+                _world.SetGround(pos, Fogata, 1);
+                _world.BroadcastToObservers(pos, ServerMessages.ObjectCreate(pos.X, pos.Y, Fogata, 0));
+                session.Send(ServerMessages.LocaleMsg(170));
+                RaiseSkill(session, p, GameLimits.SkillSupervivencia);
+                return;
+            }
+            // POZOS (otPozos = 40). VB6 AccionParaPozos (Acciones.bas:410): a más de 3 tiles no hace NADA
+            // —ni avisa— y adentro ramifica por SubTipo: 1 llena el maná, 2 la sed. Los dos gates son "sólo si
+            // falta": estando lleno no pasa nada y no se emite un byte. Faltaba entero, y hay 10 pozos
+            // colocados en 7 mapas del mundo real.
+            if (info.ObjType == 40)
+            {
+                if (DistanciaVB6(pos, p.Pos) > 3) return;
+                if (info.SubType == 1 && p.Mana < p.MaxMana)
+                {
+                    p.Mana = p.MaxMana;
+                    session.Send(ServerMessages.UpdateMana((short)p.Mana));
+                    session.Send(ServerMessages.LocaleMsg(173));
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y));
+                }
+                else if (info.SubType == 2 && p.Thirst < p.MaxThirst)
+                {
+                    p.Thirst = p.MaxThirst;
+                    session.Send(ServerMessages.UpdateSed((byte)p.Thirst));
+                    session.Send(ServerMessages.LocaleMsg(175));
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y));
+                }
+                return;
+            }
             // Buzón de correo (otCorreo = 48). VB6 AccionParaCorreo (Acciones.bas:592): a más de 3 tiles
             // LocaleMsg 8, muerto LocaleMsg 77, y si pasa manda la bandeja + abre el formulario 6 + apaga el
             // indicador de "tenés carta". Es el único camino por el que el original lista el buzón.
@@ -6224,6 +6370,25 @@ public sealed class PacketDispatcher
             if (soloPuertas) return;                        // las 3 sondas extra sólo aceptan otPuertas
             return;                                         // objeto sin acción modelada: el VB6 tampoco hace nada
         }
+    }
+
+    /// <summary>Conmuta la CERRADURA de la puerta clickeada (destrabar / trabar con llave) y deja el target
+    /// apuntando al objeto nuevo, como el original (<c>.flags.TargetObj = ...</c> después del swap: sin eso,
+    /// usar la llave dos veces seguidas operaría sobre el estado viejo).
+    ///
+    /// NO emite NADA al mundo, y eso es deliberado: la rama de la llave del VB6 (InvUsuario.bas:1736-1755)
+    /// sólo escribe <c>MapData(...).ObjInfo.ObjIndex</c> y manda el LocaleMsg al que usó la llave. Ni
+    /// <c>ObjectCreate</c> ni <c>Bloquear</c> — a diferencia de <c>AccionParaPuerta</c>, que sí los manda
+    /// porque ahí la puerta se ABRE y hay que mover el bloqueo. Acá los dos estados están cerrados
+    /// (52 "cerrada" ⇄ 53 "cerrada con llave", las dos con <c>abierta=1</c>), así que no hay nada que
+    /// actualizarle al cliente. Emitir de más es tan infiel como emitir de menos.</summary>
+    private bool CambiarPuerta(Player p, int nuevoIndex)
+    {
+        if (nuevoIndex <= 0 || p.TargetObjMap == 0) return false;
+        if (_data.Obj(nuevoIndex) is null) return false;
+        _world.SetGround(new WorldPos(p.TargetObjMap, p.TargetObjX, p.TargetObjY), (short)nuevoIndex, 1);
+        p.TargetObj = (short)nuevoIndex;
+        return true;
     }
 
     /// <summary>VB6 <c>AccionParaPuerta</c> (Acciones.bas:449). Abrir/cerrar es conmutar el ObjIndex del tile
@@ -7041,6 +7206,18 @@ public sealed class PacketDispatcher
 
     /// <summary>La herramienta que hace falta y el recurso que da, por oficio. Las tres son <c>otAnillo</c>, o sea
     /// que van en el slot de herramienta.</summary>
+    /// <summary>Los ids de <c>LocaleMsg</c> del acierto y del fallo, por oficio. El original NO usa texto
+    /// literal acá: manda el mensaje catalogado (Trabajo.bas 1364/1370 pesca, 1888/1895 talar, 2014/2021
+    /// minería). Botánica es la excepción y sí manda <c>WriteConsoleMsg</c> con el texto armado
+    /// (Trabajo.bas:1940), así que va con 0 y se resuelve con <c>ConsoleMsg</c>.</summary>
+    private static (short Ok, short Fallo) AvisoDelOficio(int skill) => skill switch
+    {
+        GameLimits.SkillPesca => (64, 59),
+        GameLimits.SkillTalar => (65, 61),
+        GameLimits.SkillMineria => (66, 62),
+        _ => (0, 0),
+    };
+
     private static (int Tool, int Resource, string Name) OficioDe(int skill) => skill switch
     {
         GameLimits.SkillTalar => (127, GameLimits.WoodObj, "Leña"),          // Hacha de Leñador → Leña
@@ -7074,7 +7251,9 @@ public sealed class PacketDispatcher
         if (_rng.Next(1, 101) > Math.Max(5, (int)p.Skills[skill]))   // tirada de éxito según skill; fallar igual gasta stamina
         {
             session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // la tirada fallida igual gasta stamina
-            session.Send(ServerMessages.ConsoleMsg("No has conseguido nada esta vez.", FuenteInfo));
+            var fallo = AvisoDelOficio(skill).Fallo;
+            session.Send(fallo > 0 ? ServerMessages.LocaleMsg(fallo)
+                                   : ServerMessages.ConsoleMsg("No has conseguido nada esta vez.", FuenteInfo));
             return true;   // fallar la tirada NO corta la faena: en el original se sigue intentando
         }
         // MINERÍA: el mineral lo declara el YACIMIENTO, no el oficio (VB6 `MiObj.ObjIndex =
@@ -7097,7 +7276,9 @@ public sealed class PacketDispatcher
         p.Inventory[slot] = inv;
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // reflejar la stamina gastada
-        session.Send(ServerMessages.ConsoleMsg($"Obtuviste {amount}x {name}.", FuenteInfo));
+        var acierto = AvisoDelOficio(skill).Ok;
+        session.Send(acierto > 0 ? ServerMessages.LocaleMsg(acierto)
+                                 : ServerMessages.ConsoleMsg($"¡Has obtenido {name.ToLowerInvariant()}!({amount})", FuenteInfo));
         // El oficio mejora con el uso, igual que pegar o castear (VB6 DoPescar/DoTalar/DoMineria:
         // Trabajo.bas:1365/1890/2016 llaman SubirSkill con SU skill al conseguir el recurso).
         RaiseSkill(session, p, skill);
@@ -7442,7 +7623,14 @@ public sealed class PacketDispatcher
             if (target.Incinerado) { caster.Connection?.Send(ServerMessages.LocaleMsg(326)); }   // ya está ardiendo
             else { target.Incinerado = true; target.IncineradoCounter = 0; efectos.Add("incinerado"); }
         }
-        if (spell.IsCurePoison) { target.PoisonedUntilTick = 0; efectos.Add("curado del veneno"); }
+        // Curar veneno a alguien que NO está envenenado: el original refuta con el 451 ("El objetivo no está
+        // bajo el efecto de ese modificador", modHechizos.bas:1160) y NO castea. Acá se aplicaba igual y
+        // salía "curado del veneno" sobre alguien sano.
+        if (spell.IsCurePoison)
+        {
+            if (!target.IsPoisoned(now)) { caster.Connection?.Send(ServerMessages.LocaleMsg(451)); }
+            else { target.PoisonedUntilTick = 0; efectos.Add("curado del veneno"); }
+        }
         if (spell.IsParalyze || spell.IsImmobilize)
         {
             target.ParalyzedUntilTick = now + StateDurationTicks;
@@ -7570,12 +7758,22 @@ public sealed class PacketDispatcher
                 // ya está vivo (HandleCastSpell sale con !p.IsAlive). El slice omite los gates de arena/ModoCombate.
                 var (tx, ty) = TileObjetivo();
                 var target = _world.PlayerAt(new WorldPos(p.Pos.Map, tx, ty));
-                if (target is null) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
+                if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
                 if (target.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{target.Name} no está muerto.", 0)); return; }
                 // MAPA SIN RESURRECCIÓN (VB6 modHechizos.bas:984): se mira el mapa del MUERTO, no el del caster,
                 // y sale LocaleMsg(448) sin cobrar el maná. El original lo clava en la prisión al arrancar
                 // (General.bas:298) para que a un preso no lo saquen resucitándolo desde afuera.
                 if (_data.MapNoResu(target.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
+                // EL MUERTO EN MODO COMBATE NO SE DEJA REVIVIR (VB6 modHechizos.bas:1000). En este fork el modo
+                // combate hace de "seguro de resurrección": el 450 que le llega al muerto dice literalmente
+                // "desactiva el seguro si quieres ser resucitado". Salen DOS mensajes, uno a cada uno, y el
+                // hechizo NO se castea (`HechizoCasteado = False`), así que tampoco se cobra el maná.
+                if (target.CombatMode)
+                {
+                    session.Send(ServerMessages.LocaleMsg(44));
+                    target.Connection?.Send(ServerMessages.LocaleMsg(450, p.Name));
+                    return;
+                }
                 SpellCasted(session, p, spell);
                 EmitSpellFx(target.Pos, target.CharIndex, spell);
                 RevivePlayer(_world, _data, target);                                       // HP full + apariencia + LocaleMsg(90) al target
@@ -7629,7 +7827,7 @@ public sealed class PacketDispatcher
                     var npcTarget = _world.NpcAt(spellPos);
                     if (npcTarget is not null && npcTarget.IsAlive) { CastDamageOnNpc(session, p, npcTarget, spell, amount); return; }
                 }
-                if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
+                if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
                 if (!PuedeAtacar(session, p, target)) return;    // VB6 modHechizos.bas:1109 — el mismo gate del melee
                 FlagCriminalIfLegalTarget(session, p, target);   // lanzar daño a un legal pena igual que el melee (VB6: el "seguro" aplica a magia ofensiva)
                 SpellCasted(session, p, spell);
@@ -7705,6 +7903,10 @@ public sealed class PacketDispatcher
                 // Reusa el mismo estado que el /INVISIBLE de GM (p.Invisible + SetInvisible a observadores), pero con
                 // vencimiento por tick — el game loop lo revierte cuando InvisibleUntilTick pasa. La IA de NPCs y el
                 // filtrado de observadores ya respetan p.Invisible, así que quedar invisible corta el aggro.
+                // YA INVISIBLE (VB6 modHechizos.bas:1078, y va ANTES del chequeo del mapa): LocaleMsg(68) y
+                // `HechizoCasteado = False`, o sea que tampoco se cobra el maná. Faltaba: volver a lanzarla
+                // estando invisible re-casteaba y cobraba, que es una fuga de maná chica pero real.
+                if (p.Invisible) { session.Send(ServerMessages.LocaleMsg(68)); return; }
                 // MAPA SIN INVISIBILIDAD (VB6 modHechizos.bas:1083): LocaleMsg(448) y el hechizo NO se casteó
                 // —o sea que tampoco se cobra el maná, porque el original pone HechizoCasteado = False—.
                 if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
@@ -7743,7 +7945,7 @@ public sealed class PacketDispatcher
                 Player? target = _world.PlayerAt(new WorldPos(p.Pos.Map, bx, by));
                 if (esDebuff)
                 {
-                    if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
+                    if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
                     if (!PuedeAtacar(session, p, target)) return;    // debilitar es agredir: mismo gate (VB6 modHechizos.bas:1269)
                     FlagCriminalIfLegalTarget(session, p, target);   // debilitar a un legal pena igual que pegarle
                 }
@@ -7777,7 +7979,7 @@ public sealed class PacketDispatcher
                     if (npcTarget is not null && npcTarget.IsAlive) { CastStateOnNpc(session, p, npcTarget, spell); return; }
                 }
                 if (target is null && (spell.IsCurePoison || spell.IsRemoveParalysis || spell.IsSanacion)) target = p;   // soporte → self
-                if (target is null) { session.Send(ServerMessages.ConsoleMsg("No hay objetivo para el hechizo.", 0)); return; }
+                if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
                 // El gate va ANTES de consumir maná (VB6: los `Exit Sub` de PuedeAtacar están arriba de todo).
                 if (ofensivo && target.CharIndex != p.CharIndex && !PuedeAtacar(session, p, target)) return;
 
@@ -7789,8 +7991,14 @@ public sealed class PacketDispatcher
                 var efectos = AplicarEfectosDeEstado(p, target, spell);
 
                 EmitSpellFx(target.Pos, target.CharIndex, spell);
-                string what = efectos.Count > 0 ? string.Join(" y ", efectos) : "sin efecto";
-                session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {target.Name} quedó {what}.", 0));
+                // El aviso al LANZADOR. El original (InfoHechizo, modHechizos.bas:1762-1765) tiene dos variantes
+                // para un hechizo SIN daño: 452 "has lanzado #1 sobre #2" cuando el objetivo es otro, y 0 "has
+                // lanzado #1 sobre ti" cuando es uno mismo. Acá salía un ConsoleMsg con texto nuestro, y el 453
+                // que le llega al objetivo quedaba sin su par — el lanzador veía otra frase que el que la recibe.
+                // El `^` y el `=` no son adorno: le dicen al cliente que resuelva el NOMBRE del hechizo por id.
+                session.Send(target.CharIndex != p.CharIndex
+                    ? ServerMessages.LocaleMsg(452, $"^{spell.Index}%{target.Name}")
+                    : ServerMessages.LocaleMsg(0, $"={spell.Index}"));
                 EmitirCostoDelHechizo(session, p);
                 if (target.CharIndex != p.CharIndex)
                     target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}"));
@@ -8150,6 +8358,53 @@ public sealed class PacketDispatcher
                 return;
             }
 
+            // ARMA CUERPO A CUERPO (el `Case Else` del Select por Proyectil, InvUsuario.bas:1498). Sólo hace UNA
+            // cosa: la DAGA sobre un montón de LEÑA clickeado lo parte en fogatas apagadas. Con cualquier otro
+            // objetivo el original manda el 422 ("Necesitas clickear sobre leña para hacer ramitas"), aunque el
+            // arma sea una espada — es ruidoso, pero es lo que manda.
+            if (obj.ObjType == 2)
+            {
+                if (p.TargetObj != Lenia) { session.Send(ServerMessages.LocaleMsg(422)); return; }
+                if (inv.ObjIndex != Daga) return;                       // otra arma sobre leña: silencio
+                if (!inv.Equipped) { session.Send(ServerMessages.LocaleMsg(391)); return; }
+                TratarDeHacerFogata(session, p);
+                return;
+            }
+
+            // LLAVE (otLlaves=9) sobre la puerta que se clickeó (VB6 InvUsuario.bas:1725-1766). Faltaba ENTERO:
+            // la data trae 112 puertas con `llave=1` y 108 llaves, emparejadas por `clave`, y ninguna se podía
+            // abrir — el doble-clic las rebota con el 172 y no había otro camino.
+            //
+            // Las cuatro combinaciones del original, y ojo con los nombres:
+            //   * `Closed` sale de la clave `abierta` del .dat, que el VB6 carga en su campo `Cerrada`
+            //     (FileIO.bas:981). abierta=1 ⇒ ESTÁ CERRADA. Leerlo al revés abre lo que hay que cerrar.
+            //   * `Llave > 0` distingue "cerrada con llave" de "cerrada nomás": con llave la llave correcta la
+            //     ABRE (pasa a IndexCerrada, que es el par sin trabar); sin llave, la llave correcta la TRABA
+            //     (pasa a IndexCerradaLlave). Es un toggle de cerradura, no de puerta.
+            if (obj.IsKey)
+            {
+                if (p.TargetObj <= 0) return;                       // sin objeto clickeado el VB6 no hace nada
+                var puerta = _data.Obj(p.TargetObj);
+                if (puerta is null || puerta.ObjType != 6) return;   // otPuertas
+                // Puerta YA ABIERTA. El original manda el 476, cuyo texto es "¡Está cerrada!" — la frase no
+                // corresponde a la rama, pero es lo que manda (InvUsuario.bas:1762) y se porta tal cual.
+                if (puerta.Closed != 1) { session.Send(ServerMessages.LocaleMsg(476)); return; }
+                bool coincide = puerta.Clave != 0 && puerta.Clave == obj.Clave;
+                if (puerta.Llave > 0)
+                {
+                    if (!coincide) { session.Send(ServerMessages.LocaleMsg(473)); return; }         // "¡La llave no sirve!"
+                    if (!CambiarPuerta(p, puerta.IndexCerrada)) return;
+                    session.Send(ServerMessages.LocaleMsg(472));                                    // "¡Has abierto la puerta!"
+                }
+                else
+                {
+                    if (!coincide) { session.Send(ServerMessages.LocaleMsg(475)); return; }         // "¡La llave no sirve!"
+                    if (!CambiarPuerta(p, puerta.IndexCerradaLlave)) return;
+                    session.Send(ServerMessages.LocaleMsg(474));                                    // "¡Has cerrado con llave la puerta!"
+                }
+                return;
+            }
+
             // Pergamino (otPergaminos=24): un caster aprende su hechizo (VB6 InvUsuario.bas:1819 → AgregarHechizo,
             // modHechizos.bas:230). Sólo casters (MaxMana > 0, silencio si no). Si ya lo tiene → LocaleMsg 396; sin
             // slot libre → 395; si aprende → ocupa el primer slot vacío, lo refleja (ChangeSpellSlot) y consume el
@@ -8379,6 +8634,9 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleCommerceStart:5167 (un muerto no comercia — gatea la apertura directa, no sólo via DoubleClick)
+            // "Ya estás comerciando" (Protocol.bas:5175). Faltaba: abrir la tienda dos veces reabría la
+            // ventana en silencio en vez de avisar.
+            if (p.TradingWith != 0) { session.Send(ServerMessages.LocaleMsg(387)); return; }
             var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
             var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
             if (npc is null || !npc.IsMerchant) return;   // VB6 HandleCommerceStart: sin TargetNPC, silencio
@@ -8390,6 +8648,13 @@ public sealed class PacketDispatcher
     private void OpenCommerce(ClientSession session, Player p, Npc npc)
     {
         p.TradingWith = npc.CharIndex;
+        // Y el mercader queda como TARGET, que en el original es la MISMA cosa: al VB6 sólo se le abre la
+        // tienda haciéndole click al NPC (eso setea `flags.TargetNPC`), y después `HandleCommerceBuy` usa ese
+        // campo tanto para el gate como para saber a quién comprarle (`Comercio(..., .flags.TargetNPC, ...)`).
+        // Acá la tienda se abre por la baldosa que mirás, así que hay que sostener el invariante a mano: sin
+        // esto el gate `TargetNPC < 1` —que es fiel y lo pide el oráculo— deja la compra muerta.
+        p.TargetNpc = npc.CharIndex;
+        p.TargetNpcTipo = (byte)npc.Template.NpcType;
         session.Send(ServerMessages.CommerceInit());
         for (byte i = 0; i < npc.Stock!.Count; i++)
         {
@@ -8416,7 +8681,13 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || p.TradingWith == 0) return;
+            if (p is null) return;
+            // EL ORDEN DE LOS GATES IMPORTA, y el oráculo lo cazó: el original (Protocol.bas:3421-3434) sale
+            // en SILENCIO si no hay NPC clickeado (`TargetNPC < 1`) y sólo DESPUÉS, con un mercader elegido,
+            // avisa "no estás comerciando" con el 388. Poner el 388 primero emite donde el original calla —que
+            // es tan infiel como no emitir— y el barrido en frío, donde nadie tiene target, lo destapa siempre.
+            if (p.TargetNpc < 1) return;
+            if (p.TradingWith == 0) { session.Send(ServerMessages.LocaleMsg(388)); return; }
             var npc = _world.NpcByIndex(p.TradingWith);
             if (npc?.Stock is null || slot < 1 || slot > npc.Stock.Count) return;
             var st = npc.Stock[slot - 1];

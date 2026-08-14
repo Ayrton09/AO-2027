@@ -555,6 +555,10 @@ public sealed class GameData
     public void SetMapZone(int map, string zona) => _mapZone[map] = zona;
     private readonly Dictionary<int, string> _mapZone = new();
 
+    /// <summary>Nombre del mapa (VB6 <c>MapInfo(map).Name</c>), tal como viene del header del .csm.</summary>
+    public string MapName(int map) => _mapName.GetValueOrDefault(map, "");
+    private readonly Dictionary<int, string> _mapName = new();
+
     /// <summary>Terreno del mapa (VB6 MapInfo(map).Terreno: "BOSQUE"/"NIEVE"/"DESIERTO"…). El transcode NO
     /// extrajo este campo del header de los .csm, así que arranca en "BOSQUE" para todos y sólo lo mueve
     /// /MODMAPINFO TERRENO. Su único consumidor en el original es el daño por frío en los mapas de nieve
@@ -580,6 +584,10 @@ public sealed class GameData
             // que el frío saque vida o energía. Ver TerrenoNieve.
             if (m.Value.TryGetProperty("terrain", out var ter) && ter.ValueKind == JsonValueKind.String)
                 data._mapTerrain[map] = (ter.GetString() ?? "BOSQUE").PadRight(16);
+            // El NOMBRE del mapa. Estaba en MapInfo.json desde siempre y no lo leía nadie; lo pide el anuncio
+            // del casamiento, que el original manda a TODO el servidor con "mapa%novio%novia" (Trabajo.bas:32).
+            if (m.Value.TryGetProperty("name", out var nom) && nom.ValueKind == JsonValueKind.String)
+                data._mapName[map] = nom.GetString() ?? "";
         }
     }
 

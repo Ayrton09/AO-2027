@@ -128,6 +128,10 @@ public sealed class Player
 
     // Spouse (casamiento), "" = single.
     public string SpouseName { get; set; } = "";
+    /// <summary>A quién le mandó una propuesta de casamiento (VB6 <c>Casamiento.Candidato</c>). Es estado
+    /// TRANSIENT: el original lo guarda en el UserList y no lo persiste, así que una propuesta no sobrevive
+    /// a la desconexión.</summary>
+    public string CandidatoCasamiento { get; set; } = "";
 
     // Home city id (SeleccionarHogar) — where RegresarHogar sends you. Default Ullathorpe (Cities.Ullathorpe=3),
     // consistente con el fallback de Cities; siempre lo sobreescribe CreateCharacter/FromIni.

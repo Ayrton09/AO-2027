@@ -55,6 +55,12 @@ public sealed class NpcSystem
         _gmsPerseguibles = gmsPerseguibles;
     }
 
+    /// <summary>Cómo sube una skill por uso. Lo pone el dispatcher, que es quien tiene <c>SubirSkill</c> con su
+    /// tirada y su aviso; acá hace falta porque el rechazo con escudo contra una CRIATURA es la vía por la que
+    /// Defensa entrena de verdad. Queda opcional para no atar al sistema de NPCs al dispatcher: si nadie lo
+    /// cablea (tests que instancian NpcSystem suelto), el rechazo igual avisa y sólo no entrena.</summary>
+    public Action<Player, int>? SubirSkillPorUso { get; set; }
+
     /// <summary>Corrección de una infidelidad del FIXTURE, no del original (mismo caso que el <c>Movement</c>
     /// que TestFixture le fija a mano a sus NPCs). El VB6 no deja que una criatura persiga ni golpee a un GM
     /// (<see cref="Player.AdminPerseguible"/>), y el protagonista demo del fixture —Rugura— es Dios, así que con
@@ -106,6 +112,7 @@ public sealed class NpcSystem
 
     private const short SndWarp = 3;  // Declares.bas:538
     private const short FxWarp = 1;   // Declares.bas:222
+    private const short SndEscudo = 37;  // Declares.bas:548 SND_ESCUDO — el clang del rechazo con escudo
 
     /// <summary>Vuelta actual del loop. La guarda <see cref="Update"/> para que los efectos con duración —hoy
     /// la parálisis de los hechizos de NPC— puedan fijar su vencimiento sin arrastrar el tick por toda la
@@ -772,7 +779,27 @@ public sealed class NpcSystem
             }
             // The NPC's own attack power (PoderAtaque from NPCs.dat), NOT its evasion, drives its hit chance.
             if (_rng.Next(1, 101) > Combat.HitChance(npc.Template.PoderAtaque, pe))
+            {
+                // RECHAZO CON ESCUDO contra una CRIATURA (VB6 NpcImpacto, SistemaCombate.bas:254-270). Existía
+                // sólo en el camino PvP; contra NPCs el golpe fallado terminaba en silencio. Son dos cosas que
+                // faltaban: el aviso —y acá el original manda el LocaleMsg 73, no el ConsoleMsg que usa en PvP,
+                // que es la misma asimetría del combate por parte del cuerpo— y el ENTRENAMIENTO de Defensa,
+                // que contra criaturas es donde de verdad sube: nadie entrena la skill dejándose pegar por otro
+                // jugador.
+                if (Equipment.EquippedOfCategory(player, _data, 4) is not null)
+                {
+                    int probRechazo = Combat.ProbabilidadRechazoEscudo(
+                        player.Skills[GameLimits.SkillDefensa], player.Skills[GameLimits.SkillTacticas]);
+                    if (probRechazo > 0 && _rng.Next(1, 101) <= probRechazo)
+                    {
+                        _world.BroadcastToObservers(player.Pos,
+                            ServerMessages.PlayWave(SndEscudo, (byte)player.Pos.X, (byte)player.Pos.Y));
+                        player.Connection?.Send(ServerMessages.LocaleMsg(73));
+                        SubirSkillPorUso?.Invoke(player, GameLimits.SkillDefensa);
+                    }
+                }
                 return; // missed
+            }
 
             int rawDmg = npc.Template.MaxHit >= npc.Template.MinHit
                 ? _rng.Next(npc.Template.MinHit, npc.Template.MaxHit + 1)
