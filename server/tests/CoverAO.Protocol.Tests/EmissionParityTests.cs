@@ -284,4 +284,39 @@ public class EmissionParityTests
         Assert.Equal("Ana", vieja!.Sender);
         Assert.Equal(0, vieja.Leida);   // se asume NO leida
     }
+
+    [Fact]
+    public void CharacterInfo_la_ficha_del_personaje_matches_wire()
+    {
+        // ESTE EMISOR NO LO MIRA NADIE MAS. Sus dos call sites -el /INFO del GM y la ficha de miembro de clan-
+        // quedan los dos FUERA del barrido del oraculo: el barrido manda cada accion EN FRIO y esas dos piden
+        // estado (ser GM / ser lider de un clan). O sea que un campo corrido acá no lo caza ni el oraculo ni
+        // ningun flow: el flow verifica que la ficha LLEGUE y de quien es, no sus bytes.
+        //
+        // Layout del original (VB6 WriteCharacterInfo, Protocol.bas:13843): nombre, raza, clase, genero,
+        // nivel, oro, banco, 3 ASCIIString (pedidos / clan actual / clanes anteriores), 2 Boolean (Armada,
+        // Caos) y 2 Long (ciudadanos y criminales matados).
+        var p = new Player
+        {
+            CharIndex = 1, Name = "Ana", Account = "cuenta_test",
+            Race = 2, Class = 3, Gender = 1, Level = 12,
+            Gold = 258, Bank = 1, GuildName = "Clan",
+        };
+        var esperado = new byte[]
+        {
+            73,                       // id CharacterInfo
+            3, 0, 65, 110, 97,        // ASCIIString "Ana": len 3 LE + bytes
+            2, 3, 1,                  // raza, clase, genero
+            12,                       // nivel
+            2, 1, 0, 0,               // oro 258 = 0x0102 LE en 4 bytes
+            1, 0, 0, 0,               // banco 1
+            0, 0,                     // ASCIIString "" (pedidos)
+            4, 0, 67, 108, 97, 110,   // ASCIIString "Clan" (clan actual)
+            0, 0,                     // ASCIIString "" (clanes anteriores)
+            0, 0,                     // Boolean Armada, Boolean Caos
+            0, 0, 0, 0,               // Long ciudadanos matados
+            0, 0, 0, 0,               // Long criminales matados
+        };
+        Assert.Equal(esperado, ServerMessages.CharacterInfo(p));
+    }
 }
