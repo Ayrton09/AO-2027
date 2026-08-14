@@ -8020,13 +8020,15 @@ public sealed class PacketDispatcher
         return Math.Max(1, (long)(precioDeLista / desc + 0.5));   // VB6 CLng(... + 0.5)
     }
 
+    /// <summary><c>SND_ORO2</c> (Declares.bas:558): el tintineo que el original tira al área al soltar oro.</summary>
+    private const short SndOro = 172;
+
     /// <summary>VB6 <c>TirarOro</c> (InvUsuario.bas:154): el oro va al piso como un objeto <c>iORO</c>. El
     /// original tira montones de a <c>MAX_INVENTORY_OBJS</c> y busca un tile libre alrededor
     /// (<c>TirarItemAlPiso</c>); acá se tira UN montón —el tope de una tirada ya lo pone el gate de 100.000 del
     /// handler— en el tile del jugador o, si está ocupado, en uno pegado.</summary>
     private void TirarOro(ClientSession session, Player p, long cantidad)
     {
-        if (cantidad > 100_000) return;                       // VB6 Protocol.bas:2026: "Don't drop too much gold"
         if (cantidad <= 0 || cantidad > p.Gold) return;       // VB6: `If (Cantidad > 0) And (Cantidad <= .Stats.GLD)`
         short monton = (short)Math.Min(cantidad, GameLimits.MaxInventoryObjs);
         var donde = p.Pos;
@@ -8043,7 +8045,6 @@ public sealed class PacketDispatcher
         p.Gold -= monton;
         _world.SetGround(donde, (short)GameLimits.ObjOro, monton);
         _world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, (short)GameLimits.ObjOro, monton));
-        session.Send(ServerMessages.UpdateGold(p.Gold));
     }
 
     private void HandleDrop(ClientSession session, ByteQueueReader r)
@@ -8058,7 +8059,17 @@ public sealed class PacketDispatcher
             // EL ORO VIAJA POR UN SLOT QUE NO EXISTE, a propósito: `FLAGORO = MAX_INVENTORY_SLOTS + 1`
             // (Declares.bas:576). El port rechazaba todo slot > 25 antes de mirar nada, así que la rama del
             // oro era inalcanzable y no se podía tirar una moneda al piso. VB6 Protocol.bas:2025.
-            if (slot == GameLimits.MaxInventorySlots + 1) { TirarOro(session, p, amount); return; }
+            if (slot == GameLimits.MaxInventorySlots + 1)
+            {
+                // VB6 Protocol.bas:2025-2031. El ORDEN y la INCONDICIONALIDAD son del original: primero corta
+                // por el tope de 100.000, después tira, y el SONIDO al área y el UpdateGold al que tiró salen
+                // IGUAL aunque no haya caído una moneda (TirarOro se guarda sus propios gates adentro).
+                if (amount > 100_000) return;   // "Don't drop too much gold"
+                TirarOro(session, p, amount);
+                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
+                session.Send(ServerMessages.UpdateGold(p.Gold));
+                return;
+            }
             if (slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
