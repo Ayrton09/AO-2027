@@ -60,6 +60,9 @@ public sealed class Npc
     /// <summary>Tameable-creature names a trainer NPC offers (null = not a trainer). Double-clicking it
     /// sends TrainerCreatureList.</summary>
     public List<string>? TrainerCreatures { get; set; }
+    /// <summary>VB6 <c>Npclist(x).MaestroNpc</c>: la criatura que spawneo un ENTRENADOR queda colgada de EL,
+    /// no de un jugador. Sirve para el tope de 7 y para que no cuente en el cupo de nadie.</summary>
+    public short MasterNpcCharIndex { get; set; }
     public bool IsTrainer => TrainerCreatures is not null;
 
     /// <summary>Modo de movimiento, de su ficha de NPCs.dat (VB6 <c>TipoAI</c>, AI_NPC.bas:32 — el

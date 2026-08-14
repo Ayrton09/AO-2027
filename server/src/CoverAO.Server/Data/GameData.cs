@@ -341,7 +341,9 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // practicar. Lo trae UN solo NPC del install -- el "Entrenador", con Murcielago, Lobo, Serpiente,
     // Escorpion y Goblin-- y el campo estaba en el JSON pero NO se cargaba: `Npc.TrainerCreatures` sólo lo
     // llenaba el fixture a mano, así que en el mundo real el entrenador no listaba nada.
-    IReadOnlyList<string>? TrainerCreatures = null)
+    IReadOnlyList<string>? TrainerCreatures = null,
+    // Los `CI1..CIn`: el INDICE de plantilla de cada criatura. Los `CN` son para mostrar, estos para spawnear.
+    IReadOnlyList<int>? TrainerCreatureIndexes = null)
 {
     /// <summary>¿Este mercader te compra ese objeto? Es la condición de <c>Comercio.bas:123</c> dada vuelta:
     /// el VB6 RECHAZA (LocaleMsg 148) si <c>TipoItems &lt;&gt; OBJType And TipoItems &lt;&gt; otCualquiera</c>,
@@ -948,6 +950,16 @@ public sealed class GameData
     /// <summary>Las criaturas de un Entrenador: `NroCriaturas` y los `CN1..CNn` con el NOMBRE de cada una
     /// (VB6 MODULO_NPCs.bas, `tCriaturasEntrenador`). El paquete `TrainerCreatureList` manda los nombres, no
     /// los indices: los `CI1..CIn` son para el spawn, que resuelve por indice.</summary>
+    /// <summary>Los `CI1..CIn` del Entrenador: el indice de plantilla de cada criatura que puede spawnear.</summary>
+    private static IReadOnlyList<int>? LeerIndicesDelEntrenador(JsonElement el)
+    {
+        int n = Int(el, "NroCriaturas");
+        if (n <= 0) return null;
+        var ids = new List<int>(n);
+        for (int i = 1; i <= n; i++) ids.Add(Int(el, $"CI{i}"));
+        return ids;
+    }
+
     private static IReadOnlyList<string>? LeerCriaturasDelEntrenador(JsonElement el)
     {
         int n = Int(el, "NroCriaturas");
@@ -1006,7 +1018,8 @@ public sealed class GameData
                 Spells: LeerHechizosDeNpc(el),
                 WeaponAnim: Int(el, "WeaponAnim"), ShieldAnim: Int(el, "ShieldAnim"),
                 HelmetAnim: Int(el, "CascoAnim"),   // el .dat la llama CascoAnim, el paquete Casco
-                TrainerCreatures: LeerCriaturasDelEntrenador(el));
+                TrainerCreatures: LeerCriaturasDelEntrenador(el),
+                TrainerCreatureIndexes: LeerIndicesDelEntrenador(el));
         }
         return map;
     }

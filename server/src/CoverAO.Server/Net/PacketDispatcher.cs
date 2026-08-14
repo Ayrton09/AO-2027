@@ -367,7 +367,7 @@ public sealed class PacketDispatcher
             case ClientPacketId.WorkLeftClick: HandleWorkLeftClick(session, reader); break;
             case ClientPacketId.EnviarCorreo: HandleEnviarCorreo(session, reader); break;
             case ClientPacketId.DropDestroy: HandleDropDestroy(session, reader); break;
-            case ClientPacketId.Train: reader.ReadByte(); HandleTrain(session); break; // VB6: Byte(petIndex)
+            case ClientPacketId.Train: HandleTrain(session, reader.ReadByte()); break;   // VB6: Byte(petIndex)
             case ClientPacketId.LeftClick: HandleLeftClick(session, reader); break;
             case ClientPacketId.DoubleClick: HandleDoubleClick(session, reader); break;
             case ClientPacketId.RequestSkills: HandleRequestSkills(session); break;
@@ -4456,7 +4456,8 @@ public sealed class PacketDispatcher
 
     /// <summary>Leña (VB6 <c>Leña = 58</c>) y daga (<c>DAGA = 15</c>), Declares.bas:355 y :364.</summary>
     private const short Lenia = 58, Daga = 15;
-    private const int Runa = 38;         // otRuna (Declares.bas:615) — la Runa de teletransportacion
+    private const int Runa = 38;
+    private const int MaxMascotasEntrenador = 7;   // VB6 MAXMASCOTASENTRENADOR (Declares.bas:218)         // otRuna (Declares.bas:615) — la Runa de teletransportacion
 
     /// <summary>Partir un montón de leña en fogatas apagadas (VB6 <c>TratarDeHacerFogata</c>, Trabajo.bas:1228).
     /// Pide TRES troncos —el mensaje del original dice "no mas ni menos de tres" pero el gate es <c>&lt; 3</c>,
@@ -6118,21 +6119,21 @@ public sealed class PacketDispatcher
     private int CuentaMascotasDeTipo(Player p, short tipo) =>
         _world.Npcs.Count(n => n.OwnerCharIndex == p.CharIndex && n.Template.Index == tipo);
 
-    /// <summary>Train (id 33): tame the NPC the player faces into a pet (needs the Domar skill). The pet follows its
-    /// owner and never attacks. VB6 DoDomar: el cupo (3) es COMPARTIDO con la invocación, y no se doman más de 2
-    /// criaturas del mismo tipo. Los mercaderes/banqueros/entrenadores no se pueden domar.</summary>
-    private void HandleTrain(ClientSession session)
+    /// <summary>
+    /// DOMAR una criatura (VB6 <c>DoDomar</c>, Trabajo.bas:1058). El cupo (3) es COMPARTIDO con la invocación
+    /// y no se doman más de 2 del mismo tipo; mercaderes, banqueros y entrenadores no se doman.
+    ///
+    /// <para>ESTO NO ES EL PAQUETE <c>Train</c>, y ahí estaba el mis-port: acá vivía en <c>HandleTrain</c>, o
+    /// sea que para domar había que mandar el paquete que en el original le pide una criatura al ENTRENADOR.
+    /// En el VB6 se doma clickeando a la criatura con la skill Domar (<c>HandleWorkLeftClick</c>,
+    /// <c>Case eSkill.domar</c>, Protocol.bas:3015-3028), que es de donde se llama ahora.</para>
+    /// </summary>
+    private void DoDomar(ClientSession session, Player p, Npc npc)
     {
-        _loop.Enqueue(() =>
         {
-            var p = session.Player;
-            if (p is null || !p.IsAlive) return;
-            if (p.Skills[GameLimits.SkillDomar] <= 0) return;   // VB6 HandleTrain: sin entrenador/skill, silencio
+            if (p.Skills[GameLimits.SkillDomar] <= 0) return;   // sin skill, silencio
             // Cupo compartido domar+invocar (VB6 DoDomar Trabajo.bas:1083 `If .NroMascotas < MAXMASCOTAS`).
             if (CuentaMascotas(p) >= GameLimits.MaxMascotas) { session.Send(ServerMessages.LocaleMsg(254)); return; }
-            var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
-            var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
-            if (npc is null || !npc.IsAlive) return;   // VB6 HandleTrain: sin criatura al frente, silencio
             if (npc.IsMerchant || npc.IsBanker || npc.IsWorkbench || npc.IsTrainer || npc.OwnerCharIndex != 0) { session.Send(ServerMessages.LocaleMsg(300)); return; }
             // VB6 DoDomar (Trabajo.bas:1097-1105): la criatura tiene un costo `Domable` (NPCs.dat) y el jugador
             // puntos = Carisma * skill Domar. Sólo se doma si alcanza los puntos Y sale la tirada 1-en-5.
@@ -6152,8 +6153,56 @@ public sealed class PacketDispatcher
             // su amo. El slice ya rutea por OwnerCharIndex antes del switch, pero se deja el TipoAI fiel.
             npc.Movement = 8;                // TipoAI.SigueAmo
             session.Send(ServerMessages.LocaleMsg(421));
+        }
+    }
+
+    /// <summary>
+    /// Train (id 33) — EL ENTRENADOR (VB6 <c>HandleTrain</c>, Protocol.bas:3327-3375). Le pedís al NPC
+    /// Entrenador que te spawnee una de SUS criaturas para practicar, por índice (el byte del paquete).
+    ///
+    /// <para>Los gates, en el orden del original: sin NPC clickeado sale en silencio; si el clickeado no es
+    /// un Entrenador, silencio; si el entrenador ya tiene sus <c>MAXMASCOTASENTRENADOR</c> = 7 criaturas
+    /// vivas, avisa con el <b>593</b>; y el índice tiene que caer dentro de su lista (fuera de rango es
+    /// silencio, no un error).</para>
+    ///
+    /// <para>La criatura nace en la POSICIÓN DEL ENTRENADOR y queda colgada de él (<c>MaestroNpc</c>), no del
+    /// jugador: no es una mascota tuya, no te sigue y no cuenta para tu cupo. Antes este paquete leía el
+    /// índice y lo tiraba, y en su lugar domaba — ver <see cref="DoDomar"/>.</para>
+    /// </summary>
+    private void HandleTrain(ClientSession session, byte petIndex)
+    {
+        _loop.Enqueue(() =>
+        {
+            var p = session.Player;
+            if (p is null || p.TargetNpc < 1) return;
+            var entrenador = _world.NpcByIndex(p.TargetNpc);
+            if (entrenador?.TrainerCreatures is not { Count: > 0 } criaturas) return;   // no es un Entrenador
+            if (CriaturasDelEntrenador(entrenador) >= MaxMascotasEntrenador)
+            { session.Send(ServerMessages.LocaleMsg(593, "", 1)); return; }
+            if (petIndex < 1 || petIndex > criaturas.Count) return;                     // fuera de rango: silencio
+            var indices = entrenador.Template.TrainerCreatureIndexes;
+            if (indices is null || petIndex > indices.Count) return;
+            short tpl = (short)indices[petIndex - 1];
+            if (tpl <= 0) return;
+            SpawnCriaturaDelEntrenador(entrenador, tpl);
         });
     }
+
+    /// <summary>Crea la criatura EN la posición del entrenador y la deja colgada de él. Se reusa el mismo
+    /// camino que la invocación de un hechizo (`NpcSystem.Spawn`), que ya resuelve tile libre y CharacterCreate.</summary>
+    private void SpawnCriaturaDelEntrenador(Npc entrenador, short plantilla)
+    {
+        var tpl = _data.Npc(plantilla);
+        if (tpl is null || _npcs is null) return;
+        int ci = _npcs.GmSpawn(tpl, entrenador.Pos);
+        var cria = _world.NpcByIndex((short)ci);
+        if (cria is null) return;
+        cria.MasterNpcCharIndex = entrenador.CharIndex;   // VB6 MaestroNpc: es del entrenador, no de un jugador
+    }
+
+    /// <summary>Cuántas criaturas vivas cuelgan de este entrenador (VB6 <c>Npclist(x).Mascotas</c>).</summary>
+    private int CriaturasDelEntrenador(Npc entrenador) =>
+        _world.Npcs.Count(n => n.IsAlive && n.MasterNpcCharIndex == entrenador.CharIndex);
 
     /// <summary>LeftClick (id 19): X, Y. VB6 <c>LookatTile</c> (GameLogic.bas:655). Hace DOS cosas: describe por
     /// consola lo que hay en el tile, y —lo que importa de verdad— deja anotado en el jugador QUÉ clickeó
@@ -7093,6 +7142,21 @@ public sealed class PacketDispatcher
             }
             // Combate a distancia con arco (VB6 HandleWorkLeftClick, Case eSkill.Proyectiles, Protocol.bas:2751).
             if (skill == GameLimits.SkillProyectiles) { RangedShot(session, p, tx, ty); return; }
+            // DOMAR (VB6 HandleWorkLeftClick, `Case eSkill.domar`, Protocol.bas:3015-3028). Se doma CLICKEANDO
+            // a la criatura, no con el paquete `Train` —ese es el Entrenador—. Los tres gates del call site, en
+            // su orden: la criatura tiene que ser domable (si no, 300), estar a <= 2 tiles en Manhattan (si no,
+            // 8 "estas demasiado lejos") y NO estar ya peleando con alguien (si lo esta, 300). Lo que sigue
+            // —cupo, tipo, puntos y tirada— lo resuelve DoDomar, igual que el original.
+            if (skill == GameLimits.SkillDomar)
+            {
+                var objetivo = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
+                if (objetivo is null || !objetivo.IsAlive) return;                       // sin criatura: silencio
+                if (objetivo.Template.Domable <= 0) { session.Send(ServerMessages.LocaleMsg(300)); return; }
+                if (Math.Abs(p.Pos.X - tx) + Math.Abs(p.Pos.Y - ty) > 2) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                if (objetivo.AttackedBy is not null) { session.Send(ServerMessages.LocaleMsg(300)); return; }
+                DoDomar(session, p, objetivo);
+                return;
+            }
             // Robar (VB6 HandleWorkLeftClick, Case eSkill.robar, Protocol.bas:2953): hurtar oro a otro jugador.
             // Gates del call site: mapa PK, víctima viva y distinta, a ≤2 tiles (Manhattan), ni la víctima ni el
             // ladrón parados en ZONASEGURA. Después DoRobar hace el resto (renegado, energía, tirada).
