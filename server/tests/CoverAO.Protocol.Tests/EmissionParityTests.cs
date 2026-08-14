@@ -319,4 +319,64 @@ public class EmissionParityTests
         };
         Assert.Equal(esperado, ServerMessages.CharacterInfo(p));
     }
+
+    // ── Los emisores que no mira NADA ────────────────────────────────────────────────────────────────────
+    // Se barrió qué emisor tiene alguna red de regresión, cruzando los 105 de `ServerMessages` contra (a) los
+    // vectores de este archivo, (b) los paquetes que el oráculo REALMENTE observó en sus 112 acciones
+    // (`parity_rows.jsonl`) y (c) los nombres que asertan los flows. Quedaron QUINCE sin ninguna de las tres.
+    // Los de un solo campo no valen un vector; éstos sí, y `AddPj` sobre todo: catorce campos por personaje y
+    // cero red — un reorden ahí rompe la pantalla de selección de personaje en silencio.
+
+    [Fact]
+    public void AddPj_la_lista_de_personajes_de_la_cuenta_matches_wire()
+    {
+        // Layout del original (VB6 WriteAddPj, Protocol.bas:15311): ASCIIString(cuenta), Byte(cantidad) y por
+        // cada personaje ASCIIString(nombre), 5 Integer (cabeza, cuerpo, casco, arma, escudo), 2 Byte (nivel,
+        // clase), Integer(mapa), Byte(color) y Boolean(GM).
+        var pj = new CharacterSummary("Ana", Head: 3, Body: 4, Helmet: 0, Weapon: 6, Shield: 0,
+                                      Level: 12, Class: 2, Map: 15, Color: 0, GameMaster: true);
+        var esperado = new byte[]
+        {
+            91,                    // id AddPJ
+            2, 0, 111, 107,        // ASCIIString "ok" (la cuenta)
+            1,                     // Byte cantidad de personajes
+            3, 0, 65, 110, 97,     // ASCIIString "Ana"
+            3, 0,                  // cabeza
+            4, 0,                  // cuerpo
+            0, 0,                  // casco
+            6, 0,                  // arma
+            0, 0,                  // escudo
+            12,                    // nivel
+            2,                     // clase
+            15, 0,                 // mapa
+            0,                     // color
+            1,                     // Boolean gameMaster
+        };
+        Assert.Equal(esperado, ServerMessages.AddPj("ok", new[] { pj }));
+    }
+
+    [Fact]
+    public void GuildNews_tres_cadenas_NUL_separadas_matches_wire()
+    {
+        // id 69: ASCIIString(noticias), ASCIIString(enemigos), ASCIIString(aliados) — las dos listas van
+        // NUL-separadas como el resto de las listas del protocolo.
+        var esperado = new byte[]
+        {
+            69,
+            2, 0, 104, 111,        // "ho"
+            3, 0, 65, 0, 66,       // "A\0B"  (enemigos)
+            1, 0, 67,              // "C"     (aliados)
+        };
+        Assert.Equal(esperado, ServerMessages.GuildNews("ho", new[] { "A", "B" }, new[] { "C" }));
+    }
+
+    [Fact]
+    public void Los_emisores_chicos_sin_red_matchean_el_wire()
+    {
+        Assert.Equal(new byte[] { 37, 50, 60 }, ServerMessages.AreaChanged(50, 60));       // id + X + Y
+        Assert.Equal(new byte[] { 28, 3 }, ServerMessages.ForceCharMove(3));               // id + heading
+        Assert.Equal(new byte[] { 104, 77 }, ServerMessages.UpdateSed(77));                // id + MinAGU
+        Assert.Equal(new byte[] { 23, 44, 1 }, ServerMessages.UserIndexInServer(300));     // id + Integer LE (300 = 0x012C)
+        Assert.Equal(new byte[] { 84, 3, 0, 65, 0, 66 }, ServerMessages.ShowSosForm(new[] { "A", "B" }));
+    }
 }
