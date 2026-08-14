@@ -1970,6 +1970,9 @@ public sealed class PacketDispatcher
         if (t.GiveGld > 0)
         {
             int gainGld = t.GiveGld * (_admin?.GoldMult ?? 1);              // "Evento Oro" del panel
+            // Si con esto te pasarias del tope, el original NO paga y avisa con el 378 (MODULO_NPCs.bas:904,
+            // guard `OroLleno`). Aca se sumaba igual y el long se comia el desborde en silencio.
+            if ((long)p.Gold + gainGld > int.MaxValue) { session.Send(ServerMessages.LocaleMsg(378)); return; }
             p.Gold += gainGld;
             session.Send(ServerMessages.LocaleMsg(29, gainGld.ToString()));
             session.Send(ServerMessages.UpdateGold(p.Gold));   // VB6 MODULO_NPCs.bas:910, no el UpdateUserStats gordo
@@ -4453,6 +4456,7 @@ public sealed class PacketDispatcher
 
     /// <summary>Leña (VB6 <c>Leña = 58</c>) y daga (<c>DAGA = 15</c>), Declares.bas:355 y :364.</summary>
     private const short Lenia = 58, Daga = 15;
+    private const int Runa = 38;         // otRuna (Declares.bas:615) — la Runa de teletransportacion
 
     /// <summary>Partir un montón de leña en fogatas apagadas (VB6 <c>TratarDeHacerFogata</c>, Trabajo.bas:1228).
     /// Pide TRES troncos —el mensaje del original dice "no mas ni menos de tres" pero el gate es <c>&lt; 3</c>,
@@ -6727,16 +6731,23 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null || p.IsAlive) return;  // VB6 HandleRegresarHogar: solo con Muerto=1
-            var from = p.Pos;
             // Al tile Dead de la ciudad-hogar elegida (SeleccionarHogar -> p.HomeCity); Ullathorpe por defecto.
-            p.Pos = Cities.DeadTile(p.HomeCity);
-            DisembarkIfStranded(p);            // el hogar es tierra: si volvía navegando, se baja del barco
-            if (p.Pos.Map != from.Map) session.Send(ServerMessages.ChangeMap(p.Pos.Map));   // el hogar puede estar en otro mapa
-            session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
-            RefreshAreaVisibility(_world, p, from, p.Pos);
-            _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
-            // VB6 no emite mensaje al regresar al hogar
+            WarpAlHogar(session, p, Cities.DeadTile(p.HomeCity));
         });
+    }
+
+    /// <summary>El viaje a la ciudad-hogar: lo comparten <c>RegresarHogar</c> y la RUNA, que en el original
+    /// llaman los dos a <c>WarpUserChar(..., True)</c> con el mismo destino. No emite mensaje de llegada
+    /// (el VB6 tampoco) y baja del barco si venía navegando, porque el hogar es tierra.</summary>
+    private void WarpAlHogar(ClientSession session, Player p, WorldPos destino)
+    {
+        var from = p.Pos;
+        p.Pos = destino;
+        DisembarkIfStranded(p);
+        if (p.Pos.Map != from.Map) session.Send(ServerMessages.ChangeMap(p.Pos.Map));
+        session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
+        RefreshAreaVisibility(_world, p, from, p.Pos);
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
     }
 
     /// <summary>MoveSpell (id 38): upwards(byte), slot(byte). Swaps the spell with its neighbour.</summary>
@@ -6749,7 +6760,10 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             int other = upwards ? slot - 1 : slot + 1;
-            if (slot < 1 || slot > GameLimits.MaxUserSpells || other < 1 || other > GameLimits.MaxUserSpells) return;
+            if (slot < 1 || slot > GameLimits.MaxUserSpells) return;
+            // Ya esta en el borde: el original NO calla, avisa con el 10 (modHechizos.bas DesplazarHechizo,
+            // :1872 arriba y :1890 abajo). Aca se salia en silencio y la tecla parecia no responder.
+            if (other < 1 || other > GameLimits.MaxUserSpells) { session.Send(ServerMessages.LocaleMsg(10)); return; }
             if (p.Spells[slot] == 0) return;   // VB6: ranura vacia, nada que reordenar
             (p.Spells[slot], p.Spells[other]) = (p.Spells[other], p.Spells[slot]);
             session.Send(ServerMessages.ChangeSpellSlot(slot, p.Spells[slot]));
@@ -8153,6 +8167,9 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
+            // Tope de largo del original (Protocol.bas:1380): 80 caracteres o mas y NO se dice nada, se avisa
+            // con el 238. El gate va antes de todo, incluso de romper el ocultamiento.
+            if (chat.Length >= 80) { session.Send(ServerMessages.LocaleMsg(238)); return; }
             Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name}: {chat}");
             // HABLAR ROMPE EL OCULTAMIENTO (VB6 HandleTalk, Protocol.bas:1385-1391: `If .flags.Oculto > 0 Then
             // .flags.Oculto = 0 … SetInvisible(False) + WriteLocaleMsg(307)`). Éste es EL call site que la cita
@@ -8405,13 +8422,32 @@ public sealed class PacketDispatcher
                 return;
             }
 
+            // RUNA (otRuna = 38, VB6 InvUsuario.bas:1356-1372). La data trae UNA: la "Runa de teletransportación".
+            // Te devuelve a la ciudad-hogar, y las tres ramas del original son distintas entre sí:
+            //   * muerto → al tile DEAD de la ciudad, el mismo donde te deja RegresarHogar
+            //   * vivo, y estás parado en un tile de ARENA (Trigger 6) o en un mapa NO Pk → al tile normal
+            //   * vivo en cualquier otro lado → NO viaja y avisa con el 468
+            // OJO que el trigger 6 no es "zona segura" (esa es la 4): es el de las arenas. La condición se lee
+            // tal cual está escrita en el VB6 (`Trigger = 6 Or MapInfo(...).Pk = False`), sin interpretarla.
+            //
+            // Acá la Runa no hacía NADA: caía al "No puedes usar ese objeto" del final.
+            if (obj.ObjType == Runa)
+            {
+                if (!p.IsAlive) { WarpAlHogar(session, p, Cities.DeadTile(p.HomeCity)); return; }
+                bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
+                if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }
+                WarpAlHogar(session, p, Cities.SpawnTile(p.HomeCity));
+                return;
+            }
+
             // Pergamino (otPergaminos=24): un caster aprende su hechizo (VB6 InvUsuario.bas:1819 → AgregarHechizo,
             // modHechizos.bas:230). Sólo casters (MaxMana > 0, silencio si no). Si ya lo tiene → LocaleMsg 396; sin
             // slot libre → 395; si aprende → ocupa el primer slot vacío, lo refleja (ChangeSpellSlot) y consume el
             // pergamino. Es LA PALANCA de la magia: sin esto el spellset queda congelado en el inicial.
             if (obj.IsPergamino)
             {
-                if (p.MaxMana <= 0) return;                       // sólo clases mágicas (VB6 If MaxMAN > 0)
+                // Sin maná no se aprende, y el original NO calla: manda el 393 (InvUsuario.bas:1827).
+                if (p.MaxMana <= 0) { session.Send(ServerMessages.LocaleMsg(393)); return; }
                 short hIndex = (short)obj.HechizoIndex;
                 if (hIndex <= 0) return;
                 for (int i = 1; i <= GameLimits.MaxUserSpells; i++)
@@ -8471,6 +8507,19 @@ public sealed class PacketDispatcher
                 return;
             }
             if (!obj.IsPotion) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", FuenteInfo)); return; }
+
+            // CADENCIA PARA TOMAR (VB6 InvUsuario.bas:1559, `Case eOBJType.otPociones`): después de pegar hay
+            // que esperar `IntervaloGolpeUsar` (400 ms en este install) antes de poder tomar una poción, y el
+            // original avisa con el 469. Es lo que impide encadenar golpe + trago en el mismo instante.
+            //
+            // El reloj y su función ya estaban —`CombatTiming.PermiteGolpeUsar`, con el `actualizar: false` que
+            // usa el original, y con tests propios verdes— y no los llamaba NADIE: `_intervaloGolpeUsar` se leía
+            // del ini y no se usaba en ningún camino, así que el gate no existía en el juego.
+            if (!Game.CombatTiming.PermiteGolpeUsar(p, Environment.TickCount64, _intervaloGolpeUsar))
+            {
+                session.Send(ServerMessages.LocaleMsg(469));
+                return;
+            }
 
             // Route the effect by SubTipo (InvUsuario.bas): 1=agility, 2=strength, 3=HP, 4=mana, 5=spell.
             const short SND_BEBER = 135;
