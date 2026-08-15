@@ -42,6 +42,10 @@ public static class Survival
     public const int StaminaIntervalTicks = 50;         // literal en las DOS ramas      -> 2 s
     public const int PoisonIntervalTicks = 500;         // IntervaloVeneno               -> 20 s
     public const int ColdIntervalTicks = 50;            // IntervaloFrio (Server.ini:92) -> 2 s
+    /// <summary>Vueltas del loop que hacen UN SEGUNDO (40 ms cada una). El original tiene efectos colgados de
+    /// un timer de un segundo aparte del loop —el reloj del portal de Lum es el caso vivo—, y acá se cuentan
+    /// en vueltas como todo lo demás.</summary>
+    public const int TicksPorSegundo = 25;
 
     /// <summary>Lo que saca un tick de frío: <c>Porcentaje(máximo, 5)</c> (VB6 <c>EfectoFrio</c>,
     /// General.bas:869/877). En un mapa de NIEVE se lo saca a la VIDA y puede matar; en cualquier otro

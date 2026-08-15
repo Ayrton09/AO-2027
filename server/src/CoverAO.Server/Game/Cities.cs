@@ -5,6 +5,8 @@ namespace CoverAO.Server.Game;
 /// (adonde va un muerto que usa <c>RegresarHogar</c>, InvUsuario.bas:1361).</summary>
 public static class Cities
 {
+    public const byte Nix = 1;          // VB6 cNix — hogar que se le asigna al CIUDADANO que deja de ser newbie
+    public const byte Illiandor = 2;    // VB6 cIlliandor — el mismo reparto, para el republicano
     public const byte Ullathorpe = 3;   // ciudad por defecto (tierra natal newbie)
     public const byte Rinkel = 5;       // VB6 cRinkel (Declares.bas:148) — hogar del renegado al perder la ciudadanía
 

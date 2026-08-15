@@ -519,6 +519,13 @@ loop.OnTickHandler = tick =>
                     cambioSta = true;
                 }
             }
+            // EL RELOJ DEL PORTAL DE LUM (VB6 PasarSegundotelep, General.bas:1855). En el original cuelga de
+            // un timer de UN SEGUNDO aparte del loop; acá se cuenta en vueltas como todo lo demás.
+            if (pl.CreoTeleport && ++pl.PortalTickCounter >= Survival.TicksPorSegundo)
+            {
+                pl.PortalTickCounter = 0;
+                PacketDispatcher.PasoDelPortalDeLum(world, gameData, pl);
+            }
             // EfectoVeneno (VB6 General.bas): cada IntervaloVeneno saca RandomNumber(1,5) y avisa con
             // LocaleMsg 47. OJO que el veneno MATA (`If MinHP < 1 Then UserDie`): el port lo clampaba a 1 con
             // el comentario "poison can't kill directly", que era invención del slice.

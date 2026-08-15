@@ -288,6 +288,28 @@ public sealed class Player
     /// <summary>Golpes de fuego ya recibidos (VB6 <c>Counters.Incinerado</c>): a los 50 el fuego se apaga.</summary>
     public int IncineradoGolpes;
 
+    /// <summary>
+    /// PORTAL DE LUM, el hechizo 53 "Portal planar" (VB6 <c>flags.CasteandoPortal</c>,
+    /// <c>Counters.CreoTeleport</c>, <c>Counters.TimeTeleport</c> y <c>flags.DondeTiro*</c>).
+    ///
+    /// El portal no aparece cuando se lo castea: el original arranca un reloj por SEGUNDO
+    /// (<c>PasarSegundotelep</c>, General.bas:1855) y recién a los <b>5 s</b> revalida el tile y planta el
+    /// objeto; a los <b>15 s</b> lo levanta. O sea que se tarda 5 segundos en abrirlo y dura 10.
+    ///
+    /// <c>CasteandoPortal</c> es "el conjuro está en curso pero el portal todavía no existe", y es lo que
+    /// distingue las dos ramas de <c>ControlarPortalLum</c>: cancelar mientras se castea AVISA (LocaleMsg
+    /// 356), levantar un portal ya abierto no dice nada.
+    /// </summary>
+    public bool CasteandoPortal { get; set; }
+    public bool CreoTeleport { get; set; }
+    /// <summary>Segundos transcurridos desde el casteo. También es el cooldown: mientras no sea 0 no se
+    /// puede volver a tirar, y el aviso 457 informa los <c>15 - TimeTeleport</c> que faltan.</summary>
+    public int TimeTeleport { get; set; }
+    /// <summary>Vueltas del loop acumuladas para el paso de un segundo (25 ticks de 40 ms).</summary>
+    public int PortalTickCounter;
+    /// <summary>El tile donde se tiró el portal (VB6 <c>DondeTiroMap/X/Y</c>).</summary>
+    public WorldPos PortalPos { get; set; }
+
     // Spell states (Fase 2): paralysis blocks movement; poison deals periodic damage. Both expire by tick.
     public long ParalyzedUntilTick { get; set; }
     /// <summary>Quién dejó paralizado a este jugador (VB6 <c>flags.ParalizedByIndex</c> / <c>ParalizedByNpcIndex</c>,

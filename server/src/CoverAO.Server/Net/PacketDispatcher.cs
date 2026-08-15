@@ -867,6 +867,10 @@ public sealed class PacketDispatcher
         // de "tenés carta" (TCP.bas:1172, `If .flags.RecibioCorreo > 0 Then WriteMensajeSigno 1`). Las cartas
         // se leen y los adjuntos se retiran en el buzón, con doble clic sobre el objeto de correo.
         if (_world.PeekMail(player.Name).Count > 0) session.Send(ServerMessages.MensajeSigno(true));
+        // Y avisarle a los amigos que llegó (VB6 ConnectUser → ObtenerIndexAmigos(_, False)). Va al final,
+        // con el jugador ya adentro del mundo: el aviso viaja al socket del OTRO, así que no toca el orden
+        // de paquetes de este login. Sólo el 240 de la despedida estaba portado — la llegada era muda.
+        AvisarAmigosQueLlegue(player);
     }
 
     private void HandleWalk(ClientSession session, ByteQueueReader r)
@@ -1021,6 +1025,18 @@ public sealed class PacketDispatcher
                 // adentro de una pared o encima de otro, y de ahí no se sale caminando.
                 var destino = new WorldPos((short)dest.DestMap, (byte)dest.DestX, (byte)dest.DestY);
                 bool puedeAgua = p.Navigating;   // VB6 PuedeAtravesarAgua: Navegando o Vuela (Vuela no existe acá)
+                // MAPA DE NEWBIES (VB6 GameLogic.bas:93). Si la Zona del mapa de DESTINO es "NEWBIE" y el que
+                // pisó la salida ya dejó de serlo —y no es GM—, el original no lo deja pasar: le avisa con
+                // LocaleMsg 152 y lo reubica en el tile ESTABLE más cercano a donde está. Que sea estable no
+                // es un detalle: cayendo sobre otra salida el rebote no terminaría nunca.
+                if (string.Equals(_data.MapZone(destino.Map).Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase)
+                    && p.Level > GameLimits.NewbieMaxLevel && !p.IsGm)
+                {
+                    session.Send(ServerMessages.LocaleMsg(152, "1%14"));
+                    var estable = PosLegalMasCercana(p.Pos, puedeAgua, soloEstable: true);
+                    if (estable is not null) TeleportTo(session, p, estable.Value);
+                    return;
+                }
                 if (!PosLegal(destino, puedeAgua))
                 {
                     var alterna = PosLegalMasCercana(destino, puedeAgua);
@@ -1049,7 +1065,10 @@ public sealed class PacketDispatcher
     /// GameLogic.bas:243): anillos concéntricos de radio 0 a 12 alrededor del destino, y se toma el primero
     /// que sirva. <c>null</c> = no hay ninguno en ese radio, y el original entonces NO mueve al jugador (su
     /// `nPos` queda en 0 y el `If nPos.X &lt;&gt; 0` de arriba no entra).</summary>
-    private WorldPos? PosLegalMasCercana(WorldPos dest, bool puedeAgua)
+    /// <param name="soloEstable">Pide además que el tile NO tenga salida — el <c>ClosestStablePos</c> del
+    /// original (GameLogic.bas:295), que es el mismo barrido con un <c>TileExit.Map = 0</c> de más. Es lo
+    /// que evita el rebote infinito al sacar a alguien de encima de un portal.</param>
+    private WorldPos? PosLegalMasCercana(WorldPos dest, bool puedeAgua, bool soloEstable = false)
     {
         for (int anillo = 0; anillo <= 12; anillo++)
             for (int y = dest.Y - anillo; y <= dest.Y + anillo; y++)
@@ -1057,7 +1076,9 @@ public sealed class PacketDispatcher
                 {
                     if (x is < 0 or > 255 || y is < 0 or > 255) continue;
                     var cand = new WorldPos(dest.Map, (byte)x, (byte)y);
-                    if (PosLegal(cand, puedeAgua)) return cand;
+                    if (!PosLegal(cand, puedeAgua)) continue;
+                    if (soloEstable && _data.MapExits.ContainsKey((cand.Map, cand.X, cand.Y))) continue;
+                    return cand;
                 }
         return null;
     }
@@ -1521,6 +1542,32 @@ public sealed class PacketDispatcher
         if (target.Hp == 0) OnKill(session, p, target);
     }
 
+    /// <summary>
+    /// El gate FACCIONARIO de <c>PuedeAtacarNPC</c> (VB6 SistemaCombate.bas:1752), el que corre después del
+    /// 298 y del gate de distancia: <b>un Armada Real no puede atacar directamente a una criatura sin
+    /// dueño</b> — LocaleMsg 272 y el ataque no sale. Vale para el melee, la magia y el tiro, porque en el
+    /// original los tres pasan por la misma función.
+    ///
+    /// OJO con el comentario del original ("No era un Guardia, asi que es una criatura No-Hostil común"):
+    /// el <c>If</c> de hostilidad que lo acotaba <b>no está</b> en este código —quedó la sangría huérfana—,
+    /// así que la regla alcanza a TODA criatura sin dueño. El veredicto lo da la línea que corre, no el
+    /// comentario que la acompaña.
+    ///
+    /// El original anida el chequeo bajo <c>If Not esRene</c>, que es redundante (renegado es status 1 y
+    /// Armada 5: nunca los dos a la vez); se deja escrito igual para que se lea como el original.
+    ///
+    /// La OTRA rama que emite 272 —mascota de un Caos atacada por un Caos, :1798— es <b>inalcanzable</b>:
+    /// vive dentro del <c>Else</c> de <c>If Not esRene(dueño)</c>, o sea con el dueño en status 1, y ahí
+    /// pregunta <c>esCaos(dueño)</c>, que es status 4. No se porta.
+    /// </summary>
+    private bool ArmadaPuedeAtacarNpc(ClientSession session, Player p, Npc npc)
+    {
+        if (npc.OwnerCharIndex != 0) return true;                       // VB6: `If .MaestroUser = 0`
+        if (p.FactionStatus == Player.StatusCriminal || !p.IsArmada) return true;
+        session.Send(ServerMessages.LocaleMsg(272));
+        return false;
+    }
+
     private void AttackNpc(ClientSession session, Player p, Npc npc)
     {
         // VB6 NpcAtacable (SistemaCombate.bas:1737): no se atacan los NPCs de servicio. Se rechaza si el NPC
@@ -1528,6 +1575,7 @@ public sealed class PacketDispatcher
         // de servicio (los NPCs de test de Program.cs traen su flag pero el default Attackable=true). LocaleMsg 298.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
+        if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         RevealOnAttack(p);   // golpear a un NPC revela ocultamiento e invisibilidad por hechizo (VB6 UsuarioAtacaNpc, SistemaCombate.bas:898)
         // VB6 NPCAtacado (Modulo_UsUaRiOs.bas:1106), llamado desde UsuarioAtacaNpc (SistemaCombate.bas:906) ANTES
         // de la tirada de acierto — o sea que un golpe FALLADO igual provoca. El NPC recuerda a su agresor y se
@@ -1714,6 +1762,7 @@ public sealed class PacketDispatcher
     private int OtorgarExp(ClientSession? session, Player p, long exp)
     {
         int puntosAntes = p.FreeSkillPoints;
+        bool eraNewbie = p.Level <= GameLimits.NewbieMaxLevel;   // VB6 WasNewbie, tomado ANTES de dar la exp
         var ganancias = new List<Game.Leveling.Ganancia>();
         int levels = _leveling.Grant(p, exp, ganancias);
         session?.Send(ServerMessages.UpdateExp((int)p.Exp));
@@ -1733,6 +1782,18 @@ public sealed class PacketDispatcher
                 if (g.Stamina > 0) session?.Send(ServerMessages.LocaleMsg(198, g.Stamina.ToString()));
                 if (g.Mana > 0) session?.Send(ServerMessages.LocaleMsg(199, g.Mana.ToString()));
                 if (g.Golpe > 0) session?.Send(ServerMessages.LocaleMsg(200, g.Golpe.ToString()));
+            }
+            // DEJAR DE SER NEWBIE ESTANDO EN EL DUNGEON NEWBIE (VB6 Modulo_UsUaRiOs.bas:580-595, adentro del
+            // mismo `Do While` que los avisos de arriba). El original te SACA del mapa de newbies: te fija la
+            // ciudad-hogar según la facción —ciudadano a Nix, republicano a Illiandor, cualquier otro a
+            // Rinkel—, te teletransporta ahí y recién entonces avisa con LocaleMsg 304. Sin esto, el que
+            // subía a 16 adentro del dungeon se quedaba ahí y con el hogar viejo.
+            if (session is not null && eraNewbie && p.Level > GameLimits.NewbieMaxLevel
+                && string.Equals(_data.MapZone(p.Pos.Map).Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase))
+            {
+                p.HomeCity = p.IsCitizen ? Cities.Nix : p.IsRepublicano ? Cities.Illiandor : Cities.Rinkel;
+                TeleportTo(session, p, Cities.SpawnTile(p.HomeCity));
+                session.Send(ServerMessages.LocaleMsg(304));
             }
             session?.Send(ServerMessages.UpdateUserStatsForLevel(p));
             // El VB6 gatea con `If Pts > 0` y manda los puntos GANADOS en esta subida, no el total: el cliente
@@ -1928,6 +1989,7 @@ public sealed class PacketDispatcher
         // VB6 PuedeAtacarNPC: los NPCs de servicio no se tocan — el mismo gate que el daño.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
+        if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
 
         npc.AttackedBy = p.Name;   // NPCAtacado: paralizarla la provoca igual que pegarle
         npc.Hostile = true;
@@ -1943,6 +2005,7 @@ public sealed class PacketDispatcher
         // VB6 PuedeAtacarNPC: los NPCs de servicio no son atacables — mismo gate que AttackNpc.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
+        if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         npc.AttackedBy = p.Name;   // VB6 NPCAtacado: lo provoca y lo vuelve hostil para defenderse
         npc.Hostile = true;
         int damage = Math.Max(0, amount + amount * 3 * p.Level / 100);   // VB6: daño + Porcentaje(daño, 3*ELV), piso 0
@@ -2672,11 +2735,17 @@ public sealed class PacketDispatcher
             case 6:  t.NpcsKilled = (int)V(arg1); cambio = $"criminales/NPCs matados = {t.NpcsKilled}"; break;
             case 7:  t.Level = (byte)Math.Clamp(V(arg1), 1, 255); cambio = $"nivel = {t.Level}"; break;
             case 8:  t.Class = (byte)Math.Clamp(V(arg1), 1, 15); cambio = $"clase = {t.Class}"; break;
-            case 9:  { int sk = (int)V(arg1); if (sk < 1 || sk > GameLimits.NumSkills) { session.Send(ServerMessages.ConsoleMsg($"Skill {sk} fuera de rango.", FuenteInfo)); return; }
-                       t.Skills[sk] = (byte)Math.Clamp(V(arg2), 0, 100); cambio = $"skill {sk} = {t.Skills[sk]}"; break; }
+            // LAS TRES OPCIONES QUE EL ORIGINAL RESUELVE POR NOMBRE, no por número (Protocol.bas:7820, :7886
+            // y :7898). El nombre viaja con `+` en lugar de los espacios y, si no resuelve, el VB6 contesta
+            // LocaleMsg 414 y NO toca nada. El port las tomaba como índices y las clampeaba, así que `/MOD YO
+            // 12 99` te dejaba la raza en 6 en vez de rechazar el comando, y el aviso no salía nunca.
+            case 9:  { int sk = SkillPorNombre(arg1); if (sk == 0) { session.Send(ServerMessages.LocaleMsg(414)); return; }
+                       t.Skills[sk] = (byte)Math.Clamp(V(arg2), 0, 100); cambio = $"skill {SkillNames[sk]} = {t.Skills[sk]}"; break; }
             case 10: t.FreeSkillPoints = (short)Math.Clamp(V(arg1), 0, short.MaxValue); cambio = $"skill points = {t.FreeSkillPoints}"; break;
-            case 11: t.Gender = (byte)Math.Clamp(V(arg1), 1, 2); cambio = $"sexo = {t.Gender}"; break;
-            case 12: t.Race = (byte)Math.Clamp(V(arg1), 1, 6); cambio = $"raza = {t.Race}"; break;
+            case 11: { byte sexo = GeneroPorNombre(arg1); if (sexo == 0) { session.Send(ServerMessages.LocaleMsg(414)); return; }
+                       t.Gender = sexo; cambio = $"sexo = {t.Gender}"; break; }
+            case 12: { byte raza = RazaPorNombre(arg1); if (raza == 0) { session.Send(ServerMessages.LocaleMsg(414)); return; }
+                       t.Race = raza; cambio = $"raza = {t.Race}"; break; }
             case 13: t.Gold = (int)Math.Clamp(t.Gold + V(arg1), 0, MaxOroEdit); cambio = $"oro = {t.Gold}"; break;
             default: session.Send(ServerMessages.ConsoleMsg($"Opción de /MOD desconocida: {opcion}.", FuenteInfo)); return;
         }
@@ -2691,6 +2760,41 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.ConsoleMsg($"Charfile alterado: {t.Name} — {cambio}.", FuenteInfo));
         Console.WriteLine($"[{session.RemoteEndpoint}] /MOD {p!.Name} -> {t.Name}: {cambio}");
     }
+
+    /// <summary>Índice de skill a partir de su NOMBRE, como lo resuelve /MOD (VB6 Protocol.bas:7822:
+    /// <c>UCase$(Replace$(SkillsNames(i), " ", "+")) = UCase$(arg1)</c>). Los espacios viajan como <c>+</c>,
+    /// así que "Tacticas de combate" se pide como <c>TACTICAS+DE+COMBATE</c>. Devuelve 0 si no resuelve —el
+    /// caso que el original contesta con LocaleMsg 414—.</summary>
+    private static int SkillPorNombre(string arg)
+    {
+        for (int i = 1; i <= GameLimits.NumSkills; i++)
+            if (string.Equals(SkillNames[i].Replace(' ', '+'), arg, StringComparison.OrdinalIgnoreCase))
+                return i;
+        return 0;
+    }
+
+    /// <summary>Género a partir de su nombre (VB6 Protocol.bas:7886: sólo "MUJER" y "HOMBRE"; eGenero
+    /// Hombre=1, Mujer=2). 0 = no resuelve.</summary>
+    private static byte GeneroPorNombre(string arg) => arg.Trim().ToUpperInvariant() switch
+    {
+        "HOMBRE" => 1,
+        "MUJER" => 2,
+        _ => 0,
+    };
+
+    /// <summary>Raza a partir de su nombre (VB6 Protocol.bas:7898, el Select Case completo; eRaza Humano=1,
+    /// Elfo=2, Drow=3, Gnomo=4, Enano=5, Orco=6). OJO con el orden: en el enum el GNOMO va antes que el
+    /// ENANO, al revés de como los lista el Select. 0 = no resuelve.</summary>
+    private static byte RazaPorNombre(string arg) => arg.Trim().ToUpperInvariant() switch
+    {
+        "HUMANO" => 1,
+        "ELFO" => 2,
+        "DROW" => 3,
+        "GNOMO" => 4,
+        "ENANO" => 5,
+        "ORCO" => 6,
+        _ => 0,
+    };
 
     /// <summary>DARPUN (/DARPUN nick@puntos): un GM acredita créditos de donador a un jugador online — la vía por
     /// la que se acredita a quien donó dinero real. VB6 Protocol.bas:16539: anuncia el otorgamiento a todo el
@@ -6636,8 +6740,24 @@ public sealed class PacketDispatcher
                              : Player.StatusCriminal);
             p.FactionRank = 0;
             if (eraCivilPuro) p.HomeCity = Cities.Rinkel;   // VB6 Case Else: Hogar = cRinkel al perder la ciudadanía
-            _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));   // VB6 CharStatus
-            session.Send(ServerMessages.UpdateUserStats(p));
+            // EL AVISO DE LA BAJA (LocaleMsg 384). Lo mandan las TRES ramas de expulsión —Real, Caos y
+            // Milicia (ModFacciones.bas:616, :638 y :672)— y NINGUNA de las civiles: al ciudadano puro que
+            // renuncia el original no le contesta nada. Va antes del CharStatus porque adentro del
+            // `Expulsar*` el aviso es la primera línea.
+            //
+            // Lo que esas rutinas hacen además —desequipar la armadura/escudo faccionario y
+            // `QuitarItemsFaccionarios`— es MUERTO POR DATA en este install: ningún objeto del obj.dat trae
+            // las banderas Real/Caos/Milicia (el mismo motivo por el que el LocaleMsg 260 no se porta).
+            if (!eraCivilPuro) session.Send(ServerMessages.LocaleMsg(384));
+            // Y el CharStatus sale DOS VECES cuando la baja es de una facción: uno lo manda `Expulsar*`
+            // (ModFacciones.bas:622) y el otro el propio HandleRetirarFaccion al salir del Select
+            // (Protocol.bas:15570). Emitir de menos es tan infiel como emitir de más, y este es de los que
+            // sólo caza el oráculo.
+            var charStatus = ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus);
+            if (!eraCivilPuro) _world.BroadcastToObservers(p.Pos, charStatus);
+            _world.BroadcastToObservers(p.Pos, charStatus);
+            // Acá había un `UpdateUserStats` que el original NO manda por este camino (el handler termina en
+            // el CharStatus y el bloque de la meditación). Eran ~26 bytes de más en el cable.
         });
     }
 
@@ -7142,6 +7262,24 @@ public sealed class PacketDispatcher
             }
             // Combate a distancia con arco (VB6 HandleWorkLeftClick, Case eSkill.Proyectiles, Protocol.bas:2751).
             if (skill == GameLimits.SkillProyectiles) { RangedShot(session, p, tx, ty); return; }
+            // ARMAS ARROJADIZAS (VB6 HandleWorkLeftClick, `Case eSkill.ArmasArrojadizas`, Protocol.bas:2655).
+            // De todo el case, lo ÚNICO alcanzable con esta data es el RECHAZO: el tiro exige un arma de
+            // `SubTipo = 5` y en el obj.dat no hay ninguna, así que la rama que dispara es código muerto. El
+            // rechazo no lo es —basta mandar el paquete con las manos vacías— y el port se lo comía en
+            // silencio: la tecla no hacía nada y no había forma de saber por qué.
+            //
+            // Las tres ramas del `DummyInt` del original: sin arma equipada o sin unidades → LocaleMsg 125;
+            // arma equipada que no es arrojadiza → sale MUDO. El `Desequipar` que el VB6 hace junto al 125 es
+            // limpieza defensiva de un estado que este stack no alcanza (con `Amount` en 0 el slot ya queda
+            // vacío), el mismo detalle que se omite en el arco por el mismo motivo.
+            if (skill == GameLimits.SkillArmasArrojadizas)
+            {
+                int slotArma = EquippedSlotOfCategory(p, 1);
+                var arrojadiza = slotArma == 0 ? null : _data.Obj(p.Inventory[slotArma].ObjIndex);
+                if (arrojadiza is null || p.Inventory[slotArma].Amount < 1)
+                    session.Send(ServerMessages.LocaleMsg(125));
+                return;
+            }
             // DOMAR (VB6 HandleWorkLeftClick, `Case eSkill.domar`, Protocol.bas:3015-3028). Se doma CLICKEANDO
             // a la criatura, no con el paquete `Train` —ese es el Entrenador—. Los tres gates del call site, en
             // su orden: la criatura tiene que ser domable (si no, 300), estar a <= 2 tiles en Manhattan (si no,
@@ -7495,6 +7633,133 @@ public sealed class PacketDispatcher
     }
 
     /// <summary>Broadcast a spell's visual FX (CreateFX) over a character to everyone who can see it.</summary>
+    /// <summary>El hechizo del portal está cableado por NÚMERO en el original (VB6 <c>HechizoCreateTelep</c>
+    /// abre con <c>If HechizoIndex &lt;&gt; 53 Then Exit Sub</c>, modHechizos.bas:1948): no hay campo en
+    /// Hechizos.dat que lo distinga. En la data es el 53, "Portal planar".</summary>
+    private const short HechizoPortalLum = 53;
+    /// <summary>El objeto que dibuja el portal en el piso (VB6 <c>ET.ObjIndex = 672</c>).</summary>
+    private const short ObjPortalLum = 672;
+    /// <summary>La partícula que marca el tile del portal, al abrirlo y al cerrarlo (VB6: 52).</summary>
+    private const short ParticulaPortalLum = 52;
+    /// <summary>El ciclo, en segundos (VB6 <c>Select Case .Counters.TimeTeleport</c>): a los 5 se abre, a los
+    /// 15 se levanta. O sea que tarda 5 en aparecer y dura 10.</summary>
+    private const int PortalSegundosParaAbrir = 5, PortalSegundosDeVida = 15;
+
+    /// <summary>
+    /// Tira el portal de Lum (VB6 <c>HechizoCreateTelep</c>, modHechizos.bas:1938). NO abre nada todavía:
+    /// anota el tile y arranca el reloj. Los gates, en el orden del original:
+    /// <list type="number">
+    /// <item>prisión, Intermundia o mapa NO-Pk → LocaleMsg 448</item>
+    /// <item>el tile no es legal → sale MUDO</item>
+    /// <item>el tile tiene un objeto, tiene una salida o está bloqueado → LocaleMsg 257, el MISMO id para los tres</item>
+    /// <item>ya hay un portal en curso → LocaleMsg 457 con los segundos que faltan</item>
+    /// </list>
+    /// El 457 es el cooldown y sale de <c>15 - TimeTeleport</c>: mientras el portal viva no se puede tirar otro.
+    /// </summary>
+    private void CrearPortalDeLum(ClientSession session, Player p, Data.SpellInfo spell)
+    {
+        if (p.Pos.Map == Cities.Prision.Map || p.Pos.Map == Cities.Intermundia.Map || !_data.IsPkMap(p.Pos.Map))
+        { session.Send(ServerMessages.LocaleMsg(448)); return; }
+        var destino = new WorldPos(p.Pos.Map, p.TargetX, p.TargetY);
+        if (!PosLegal(destino, p.Navigating)) return;                                          // VB6 LegalPos: sin aviso
+        if (_world.TryGetGround(destino, out _)) { session.Send(ServerMessages.LocaleMsg(257)); return; }
+        if (_data.MapExits.ContainsKey((destino.Map, destino.X, destino.Y))) { session.Send(ServerMessages.LocaleMsg(257)); return; }
+        if (_data.IsBlockedTile(destino.Map, destino.X, destino.Y)) { session.Send(ServerMessages.LocaleMsg(257)); return; }
+        if (p.TimeTeleport != 0)
+        {
+            session.Send(ServerMessages.LocaleMsg(457,
+                (PortalSegundosDeVida - p.TimeTeleport).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            return;
+        }
+        p.PortalPos = destino;
+        if (spell.Particle != 0)
+            _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoParticula((short)spell.Particle, destino.X, destino.Y, -1));
+        p.CasteandoPortal = true;
+        p.CreoTeleport = true;
+        p.TimeTeleport = 0;
+        p.PortalTickCounter = 0;
+        _world.BroadcastToObservers(p.Pos, ServerMessages.LocaleMsg(456, $"{p.Name}%^{spell.Index}"));
+        SpellCasted(session, p, spell);   // VB6 `b = True`: el maná se cobra recién con el hechizo aceptado
+    }
+
+    /// <summary>
+    /// El paso de UN SEGUNDO del portal (VB6 <c>PasarSegundotelep</c>, General.bas:1855), que llama el loop
+    /// del mundo. A los 5 s revalida el tile y planta el objeto; a los 15 s lo levanta.
+    ///
+    /// La revalidación no es paranoia del port: el comentario del autor dice "chequeamos si a la hora de
+    /// crear el TP no pusieron cosas". En cinco segundos alguien puede tirar un ítem justo ahí.
+    /// </summary>
+    public static void PasoDelPortalDeLum(World world, GameData data, Player p)
+    {
+        if (!p.CreoTeleport) return;
+        p.TimeTeleport++;
+        if (p.TimeTeleport == PortalSegundosParaAbrir)
+        {
+            var t = p.PortalPos;
+            bool cancela = p.Pos.Map == Cities.Prision.Map || p.Pos.Map == Cities.Intermundia.Map || !data.IsPkMap(p.Pos.Map);
+            if (cancela) p.Connection?.Send(ServerMessages.LocaleMsg(448));
+            if (world.TryGetGround(t, out _)) { p.Connection?.Send(ServerMessages.LocaleMsg(257)); cancela = true; }
+            if (data.MapExits.ContainsKey((t.Map, t.X, t.Y))) { p.Connection?.Send(ServerMessages.LocaleMsg(257)); cancela = true; }
+            if (data.IsBlockedTile(t.Map, t.X, t.Y)) { p.Connection?.Send(ServerMessages.LocaleMsg(257)); cancela = true; }
+            if (cancela)
+            {
+                world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoParticula(ParticulaPortalLum, t.X, t.Y, 0));
+                ControlarPortalLum(world, data, p, 0);
+                return;
+            }
+            // "Si se va del mapa lo cancela" (el comentario es del original): sólo se abre si el que lo tiró
+            // sigue en el mapa del tile. Y OJO que el VB6 acá NO limpia los contadores: deja el portal en
+            // curso y lo levanta el caso de los 15 s, así que el cooldown corre igual.
+            if (p.Pos.Map != t.Map) return;
+            data.SetMapExit(t.Map, t.X, t.Y, Cities.Intermundia.Map, Cities.Intermundia.X, Cities.Intermundia.Y);
+            world.SetGround(t, ObjPortalLum, 1);
+            world.BroadcastToObservers(t, ServerMessages.ObjectCreate(t.X, t.Y, ObjPortalLum, 1));
+            world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoParticula(ParticulaPortalLum, t.X, t.Y, 0));
+            p.CasteandoPortal = false;
+        }
+        else if (p.TimeTeleport >= PortalSegundosDeVida)
+        {
+            ControlarPortalLum(world, data, p, 1);
+        }
+    }
+
+    /// <summary>
+    /// VB6 <c>ControlarPortalLum</c> (General.bas:1948), con sus dos ramas excluyentes:
+    /// <list type="bullet">
+    /// <item>el portal YA está abierto (<c>CreoTeleport</c> y no <c>CasteandoPortal</c>) → se levanta el
+    /// objeto y su salida, EN SILENCIO.</item>
+    /// <item>todavía se está casteando, o se fuerza con <paramref name="modo"/> 0 → se CANCELA y avisa con
+    /// LocaleMsg 356.</item>
+    /// </list>
+    /// Si no entra en ninguna —no hay portal y no se fuerza— el original no toca nada, y acá tampoco.
+    /// La llaman el reloj, la muerte y la desconexión: un portal huérfano dejaría una salida a Intermundia
+    /// escrita en el mapa para siempre.
+    /// </summary>
+    public static void ControlarPortalLum(World world, GameData data, Player p, byte modo)
+    {
+        var t = p.PortalPos;
+        if (p.CreoTeleport && !p.CasteandoPortal)
+        {
+            if (world.TryGetGround(t, out var obj) && obj.ObjIndex == ObjPortalLum)
+            {
+                world.RemoveGround(t);
+                world.BroadcastToObservers(t, ServerMessages.ObjectDelete(t.X, t.Y));
+            }
+            data.RemoveMapExit(t.Map, t.X, t.Y);
+        }
+        else if (p.CasteandoPortal || modo == 0)
+        {
+            p.Connection?.Send(ServerMessages.LocaleMsg(356));
+            world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoParticula(ParticulaPortalLum, t.X, t.Y, 0));
+            p.CasteandoPortal = false;
+        }
+        else return;
+        p.PortalPos = default;
+        p.TimeTeleport = 0;
+        p.CreoTeleport = false;
+        p.PortalTickCounter = 0;
+    }
+
     private void EmitSpellFx(WorldPos pos, short charIndex, Data.SpellInfo spell)
     {
         // FXgrh spells carry a real FX-index (client resolves it via fx.json → animated grh). Particle-only
@@ -7824,6 +8089,10 @@ public sealed class PacketDispatcher
             if (!haySobreNpc && !p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
 
             RevealHidden(p);   // castear rompe el ocultamiento (VB6: lanzar un hechizo revela al oculto)
+            // EL PORTAL DE LUM va por índice de hechizo, no por un flag del data: el original abre con
+            // `If HechizoIndex <> 53 Then Exit Sub` (modHechizos.bas:1948). Es el único hechizo cableado por
+            // número de todo el subsistema, y por eso no hay campo en Hechizos.dat que lo distinga.
+            if (spell.Index == HechizoPortalLum) { CrearPortalDeLum(session, p, spell); return; }
             int amount = _rng.Next(spell.MinHp, spell.MaxHp + 1); // RandomNumber(MinHP, MaxHP)
             // HECHIZO DE ÁREA: va ANTES de las ramas por SubeHP porque el original lo rutea antes también
             // (`HandleHechizoTerreno` → `HechizoTerrenoEstado`, que resuelve el 3×3 entero y NO pasa por el
@@ -9497,6 +9766,10 @@ public sealed class PacketDispatcher
         // Morir corta la faena: si no, el cadáver seguiría pescando (el loop sólo mira el flag). El original
         // llega a lo mismo porque `DoTrabajar` cuelga de un usuario vivo.
         p.Laborando = false;
+        // Y baja el portal de Lum (VB6 UserDie → ControlarPortalLum(UserIndex, 1), Modulo_UsUaRiOs.bas:1455).
+        // No es cosmético: la salida a Intermundia se escribe en el MAPA, así que un portal huérfano queda
+        // abierto para todos y para siempre.
+        ControlarPortalLum(world, data, p, 1);
         p.Hp = 0;
         p.Deaths++;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1260): justo después de `flags.Muerto = 1`
         p.Body = CorpseBody; p.Head = CorpseHead;
@@ -9604,6 +9877,29 @@ public sealed class PacketDispatcher
         }
     }
 
+    /// <summary>La contracara: avisa a los amigos ONLINE que este jugador ENTRÓ (VB6
+    /// <c>ObtenerIndexAmigos(Usuario, False)</c>, GameLogic.bas:1322-1345) con <c>LocaleMsg(239, nombre)</c>.
+    ///
+    /// Y acá la amistad SÍ tiene que ser MUTUA, al revés que en la despedida: el original exige las dos
+    /// pertenencias —<c>BuscarSlotAmigoName(Usuario, otro)</c> y <c>BuscarSlotAmigoName(otro, Usuario)</c>—
+    /// antes de mandar el aviso. No es simetría por prolijidad: el aviso viaja dentro del <c>If</c> anidado.
+    ///
+    /// El original recorre <c>For i = 1 To MAXAMIGOS</c> sobre la LISTA DE USUARIOS, que es un error suyo
+    /// (debería ser MAXUSERS): sólo mira los primeros slots de conexión. Con la población de un servidor
+    /// real la diferencia no se nota, y replicar el bug ataría el aviso al orden de conexión, así que se
+    /// recorre a todos los conectados.</summary>
+    private void AvisarAmigosQueLlegue(Player p)
+    {
+        foreach (var otro in _world.Players)
+        {
+            if (otro.CharIndex == p.CharIndex || otro.Connection is null) continue;
+            bool loTengoAgendado = p.Friends.Any(f => string.Equals(f, otro.Name, StringComparison.OrdinalIgnoreCase));
+            bool meTieneAgendado = otro.Friends.Any(f => string.Equals(f, p.Name, StringComparison.OrdinalIgnoreCase));
+            if (loTengoAgendado && meTieneAgendado)
+                otro.Connection.Send(ServerMessages.LocaleMsg(239, p.Name));
+        }
+    }
+
     public void OnDisconnect(ClientSession session, string reason)
     {
         var p = session.Player;
@@ -9625,6 +9921,7 @@ public sealed class PacketDispatcher
             }
             // VB6 TCP.bas:1644 — al área, EXCLUYENDO al que se va (ya no está para verlo).
             _world.BroadcastToObservers(p.Pos, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
+            ControlarPortalLum(_world, _data, p, 1);   // VB6 CloseUser, TCP.bas:1629 — el portal se va con él
             AvisarAmigosQueMeVoy(p);     // VB6 CloseUser → ObtenerIndexAmigos(_, True)
             _world.HelpRemove(p.Name);   // VB6 TCP.bas:1661 — al desconectar se le limpia la consulta a los GMs
             _world.Remove(p.CharIndex);

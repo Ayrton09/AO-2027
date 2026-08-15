@@ -349,6 +349,9 @@ public sealed class Persistence
         // en el original se queda en puro efecto visual pese a prometer parálisis.
         p.Spells[12] = 75; // Círculo curativo (ÁREA, cura 25-35, Particle 17 + WAV 18)
         p.Spells[13] = 65; // Tornado (ÁREA, SubeHP=0: sólo FX — la parálisis nunca se aplica, ver CastAreaSpell)
+        // El PORTAL DE LUM. Va por índice cableado (53) y no por ningún campo del data, así que es el único
+        // hechizo que no se puede ejercitar con otro: o está en el libro, o su subsistema no corre nunca.
+        p.Spells[14] = 53; // Portal planar (abre a los 5 s, dura 10, salida a Intermundia)
         SaveCharacter(p);
         if (!acc.Characters.Contains(name)) acc.Characters.Add(name);
         SaveAccount(acc);
