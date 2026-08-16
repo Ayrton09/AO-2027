@@ -2197,7 +2197,9 @@
       const body = openPanel('Social', `
         <div class="subtabs"><span class="st${on('amigos')}" data-p="amigos">Amigos</span><span class="st${on('clan')}" data-p="clan">Clan</span><span class="st${on('faccion')}" data-p="faccion">Facción</span><span class="st${on('otros')}" data-p="otros">Otros</span></div>
         <div class="subpane${on('amigos')}" data-p="amigos">
-          <div class="frow"><input id="am-add" placeholder="agregar amigo (nombre)"><button class="sbtn" data-act="am-add">Agregar</button></div>
+          <div class="fhint">La amistad es de a dos: vos pedís y el otro acepta (o al revés).</div>
+          <div class="frow"><input id="am-add" placeholder="pedir amistad (nombre)"><button class="sbtn" data-act="am-add">Pedir</button></div>
+          <div class="frow"><input id="am-ok" placeholder="aceptar de (nombre)"><button class="sbtn" data-act="am-ok">Aceptar</button></div>
           <div class="frow"><input id="am-del" placeholder="quitar amigo (nombre)"><button class="sbtn ghost" data-act="am-del">Quitar</button></div>
           <div class="frow"><input id="am-msg" placeholder="mensaje a tus amigos"><button class="sbtn" data-act="am-msg">Enviar</button></div>
           <button class="sbtn ghost" data-act="am-online">Ver amigos en línea</button></div>
@@ -2246,7 +2248,10 @@
       body.addEventListener('click', (ev) => {
         const el = ev.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act;
         const S = (id) => { const v = pv(id); return v; };
-        if (a === 'am-add') { const n = S('am-add'); if (n) send(W().writeByte(CLIENT.AddAmigos).writeAsciiString(n).writeByte(0)); }
+        // El byte final es el CASO del original (VB6 HandleAddAmigo): 1 pide, 2 confirma. Mandaba 0 en los
+        // tres lados, que no es ninguno de los dos: con el server fiel, la amistad no se podía cerrar.
+        if (a === 'am-add') { const n = S('am-add'); if (n) send(W().writeByte(CLIENT.AddAmigos).writeAsciiString(n).writeByte(1)); }
+        else if (a === 'am-ok') { const n = S('am-ok'); if (n) send(W().writeByte(CLIENT.AddAmigos).writeAsciiString(n).writeByte(2)); }
         else if (a === 'am-del') { const n = S('am-del'); if (n) send(W().writeByte(CLIENT.DelAmigos).writeAsciiString(n)); }
         else if (a === 'am-msg') { const m = S('am-msg'); if (m) send(W().writeByte(CLIENT.MsgAmigos).writeAsciiString(m)); }
         else if (a === 'am-online') send(W().writeByte(CLIENT.OnAmigos));
@@ -4104,10 +4109,11 @@
           if (!(n > 0)) { log('uso: ' + cmd + ' <cantidad de oro>', '#b94'); return; }
           w.writeByte(cmd === '/depositar' ? CLIENT.BankDepositGold : CLIENT.BankExtractGold).writeLong(n);
         }
-        // /FADD y /FACCEPT mandan el mismo paquete que el panel de amigos (el byte final es el modo).
+        // /FADD y /FACCEPT mandan el mismo paquete, y el byte final los distingue: 1 pide la amistad y 2 la
+        // confirma (VB6 HandleAddAmigo, Protocol.bas:16851). Los dos mandaban 0, que no es ningún caso.
         else if (cmd === '/fadd' || cmd === '/faccept') {
           if (!arg) { log('uso: ' + cmd + ' <nombre>', '#b94'); return; }
-          w.writeByte(CLIENT.AddAmigos).writeAsciiString(arg).writeByte(0);
+          w.writeByte(CLIENT.AddAmigos).writeAsciiString(arg).writeByte(cmd === '/fadd' ? 1 : 2);
         }
         // /PROPONER <nombre>: casamiento. El server pide estar frente al otro y que los dos estén solteros.
         else if (cmd === '/proponer') {

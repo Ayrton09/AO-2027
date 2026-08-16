@@ -126,6 +126,11 @@ public sealed class Player
     // [AMIGOS] friends list (character names).
     public List<string> Friends { get; } = new();
 
+    /// <summary>El <c>QuienAmigo</c> del original (VB6 <c>UserList().QuienAmigo</c>): quién me mandó la última
+    /// solicitud de amistad y está esperando mi <c>/FACCEPT</c>. Vive sólo en la sesión —el original tampoco lo
+    /// guarda en el <c>.chr</c>—, así que una solicitud no sobrevive a la desconexión.</summary>
+    public string QuienAmigo { get; set; } = "";
+
     // Spouse (casamiento), "" = single.
     public string SpouseName { get; set; } = "";
     /// <summary>A quién le mandó una propuesta de casamiento (VB6 <c>Casamiento.Candidato</c>). Es estado

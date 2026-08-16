@@ -382,7 +382,7 @@ public sealed class PacketDispatcher
             case ClientPacketId.CloseGuild: HandleCloseGuild(session); break;
             case ClientPacketId.Denounce: HandleDenounce(session, reader); break;
             case ClientPacketId.SeleccionarHogar: HandleSelectHome(session, reader); break;
-            case ClientPacketId.DesconectarCuenta: reader.ReadAsciiString(); session.Close("desconexion solicitada"); break; // VB6: ASCIIString(personaje)
+            case ClientPacketId.DesconectarCuenta: HandleDesconectarCuenta(session, reader); break;
             case ClientPacketId.UpTime: HandleUpTime(session); break;
             case ClientPacketId.RegresarHogar: HandleRegresarHogar(session); break;
             case ClientPacketId.MoveSpell: HandleMoveSpell(session, reader); break;
@@ -5940,15 +5940,21 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.ConsoleMsg("No estás casado.", FuenteInfo)); return; }
-            var spouse = _world.PlayerByName(p.SpouseName);
+            if (p is null) return;
+            // El original chequea MUERTO primero (Protocol.bas:16421) — un cadáver no se divorcia — y recién
+            // después mira si estás casado. Los tres textos son los suyos.
+            if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
+            if (string.IsNullOrEmpty(p.SpouseName))
+            { session.Send(ServerMessages.ConsoleMsg("No puedes divorciarte porque no estás casado.", FuenteInfo)); return; }
+            string pareja = p.SpouseName;
+            var spouse = _world.PlayerByName(pareja);
             if (spouse is not null && string.Equals(spouse.SpouseName, p.Name, StringComparison.OrdinalIgnoreCase))
             {
                 spouse.SpouseName = "";
-                spouse.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} se ha divorciado de ti.", FuenteInfo));
+                spouse.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} ha decidido divorciarse de ti.", FuenteInfo));
             }
-            session.Send(ServerMessages.ConsoleMsg($"Te divorciaste de {p.SpouseName}.", FuenteInfo));
             p.SpouseName = "";
+            session.Send(ServerMessages.ConsoleMsg($"{pareja} ya no es más tu pareja.", FuenteInfo));
         });
     }
 
@@ -6143,7 +6149,8 @@ public sealed class PacketDispatcher
             if (p is null) return;
             if (string.IsNullOrEmpty(p.GuildName)) return;   // VB6 HandleGuildOnline: fuera de un clan, silencio
             var names = string.Join(", ", _world.GuildMembersOnline(p.GuildName).Select(m => m.Name));
-            session.Send(ServerMessages.ConsoleMsg($"Miembros online de <{p.GuildName}>: {names}", FuenteClanMsg));
+            // El texto es el del original (VB6 Protocol.bas:5647); la fuente GUILDMSG ya coincidía.
+            session.Send(ServerMessages.ConsoleMsg($"Compañeros de tu clan conectados: {names}", FuenteClanMsg));
         });
     }
 
@@ -7211,19 +7218,93 @@ public sealed class PacketDispatcher
         });
     }
 
+    /// <summary>DesconectarCuenta (VB6 HandleDesconectarCuenta, Protocol.bas:17539): un Dios o Admin le corta la
+    /// sesión a OTRO personaje.
+    ///
+    /// <para>Acá el paquete leía el nombre y cerraba la sesión DEL QUE LO MANDABA, sin mirar privilegios: un GM
+    /// que escribía <c>/desconectar Fulano</c> se echaba a sí mismo. El cliente ya documentaba la conducta buena
+    /// ("echa la sesión de ese personaje de la cuenta"), así que el comando estaba roto de punta a punta.</para>
+    ///
+    /// <para>El gate del original es <c>Dios Or Admin</c> —no alcanza con ser SemiDiós ni RoleMaster— y, como
+    /// tantos de este archivo, es SILENCIOSO: al que no tiene rango no le contesta nada.</para></summary>
+    private void HandleDesconectarCuenta(ClientSession session, ByteQueueReader r)
+    {
+        string nombre = r.ReadAsciiString().Replace('+', ' ').Trim();   // VB6: el `+` viaja en lugar del espacio
+        _loop.Enqueue(() =>
+        {
+            var p = session.Player;
+            if (p is null || (p.Privileges & (PrivDios | PrivAdmin)) == 0) return;   // gate silencioso
+            var otro = _world.PlayerByName(nombre);
+            if (otro is null)
+            { session.Send(ServerMessages.ConsoleMsg("Usuario offline o inexistente.", FuenteInfo)); return; }
+            if (string.Equals(otro.Name, p.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("No puedes desconectarte a ti mismo.", FuenteInfo)); return; }
+            otro.Connection?.Close("desconectado por un GM");
+            session.Send(ServerMessages.ConsoleMsg($"Desconectaste a {otro.Name}", FuenteInfo));   // el original no le pone punto
+        });
+    }
+
+    /// <summary><c>MAXAMIGOS</c> (Declares.bas:69): cinco amigos, y el arreglo del original es de ese tamaño fijo.</summary>
+    private const int MaxAmigos = 5;
+
+    /// <summary>Los cinco rechazos de <c>IntentarAgregarAmigo</c> (VB6 GameLogic.bas:1260), en su orden. Devuelve
+    /// el motivo, o <c>null</c> si se puede agregar.</summary>
+    private static string? MotivoParaNoAgregar(Player? yo, Player? otro)
+    {
+        if (otro is null || yo is null) return "Usuario offline.";
+        if (ReferenceEquals(yo, otro)) return "No puedes agregarte a tu propia lista de amigos.";
+        if (yo.Friends.Count >= MaxAmigos) return "La lista de amigos está llena.";
+        if (otro.Friends.Count >= MaxAmigos) return "La lista de amigos del jugador está llena.";
+        if (yo.Friends.Any(f => string.Equals(f, otro.Name, StringComparison.OrdinalIgnoreCase)))
+            return $"{otro.Name} ya está en tu lista de amigos";   // el original no le pone punto final
+        return null;
+    }
+
+    /// <summary>AddAmigos (VB6 HandleAddAmigo, Protocol.bas:16851): nombre(ASCIIString) y un byte de CASO.
+    ///
+    /// <para>La amistad del original es de a DOS: el caso 1 manda una solicitud y el caso 2 la confirma, y recién
+    /// ahí cada uno entra en la lista del otro. Acá el byte de caso se leía y se tiraba, y el que pedía quedaba
+    /// agregado sin que el otro se enterara — o sea que el <c>/FACCEPT</c> que el cliente ya sabe mandar no
+    /// hacía nada distinto que el <c>/FADD</c>.</para>
+    ///
+    /// <para>La confirmación exige que el <see cref="Player.QuienAmigo"/> guardado coincida con quien confirmo;
+    /// si no coincide es "Acción invalida", y si no hay ninguna solicitud pendiente el original NO contesta
+    /// nada (su <c>If LenB(.QuienAmigo) >= 3</c> no tiene else).</para>
+    ///
+    /// <para>El aviso de éxito del original dice que el otro "está jugando en Mohurall (Argentina)" — el nombre
+    /// del servidor de ese install, cableado en el fuente. Eso no se porta literal: se dice lo mismo sin el
+    /// nombre de otro servidor.</para></summary>
     private void HandleAddFriend(ClientSession session, ByteQueueReader r)
     {
         string name = r.ReadAsciiString().Trim();
-        r.ReadByte(); // VB6 HandleAddAmigo (Protocol.bas:16878) lee ademas 1 Byte (caso/Index)
+        byte caso = r.ReadByte();
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null || !Naming.IsValidName(name)) return;   // rechazo temprano (defensa en profundidad ante el store)
-            if (string.Equals(name, p.Name, StringComparison.OrdinalIgnoreCase)) return;
-            if (!_db.CharacterExists(name)) { session.Send(ServerMessages.ConsoleMsg($"No existe {name}.", FuenteInfo)); return; }
-            if (p.Friends.Any(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase))) { session.Send(ServerMessages.ConsoleMsg($"{name} ya es tu amigo.", FuenteInfo)); return; }
-            p.Friends.Add(name);
-            session.Send(ServerMessages.ConsoleMsg($"Agregaste a {name} a tu lista de amigos.", FuenteInfo));
+            var otro = _world.PlayerByName(name);                 // el original resuelve por NameIndex: sólo ONLINE
+            string? motivo = MotivoParaNoAgregar(p, otro);
+            if (motivo is not null) { session.Send(ServerMessages.ConsoleMsg(motivo, FuenteInfo)); return; }
+
+            if (caso == 1)   // pedir
+            {
+                otro!.QuienAmigo = p.Name;
+                session.Send(ServerMessages.ConsoleMsg(
+                    $"{otro.Name} fue agregado a tu lista de amigos, espere confirmación.", FuenteInfo));
+                otro.Connection?.Send(ServerMessages.ConsoleMsg(
+                    $"{p.Name} te agregó a tu lista de amigos, para aceptarlo ingrese /FACCEPT {p.Name}.", FuenteInfo));
+                return;
+            }
+            if (caso != 2) return;
+            if (p.QuienAmigo.Length < 3) return;                  // sin solicitud pendiente el original calla
+            if (!string.Equals(p.QuienAmigo, otro!.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("Acción invalida", FuenteInfo)); return; }
+
+            p.Friends.Add(otro.Name);
+            otro.Friends.Add(p.Name);
+            p.QuienAmigo = "";
+            session.Send(ServerMessages.ConsoleMsg($"{otro.Name} es ahora tu amigo.", FuenteInfo));
+            otro.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} es ahora tu amigo.", FuenteInfo));
         });
     }
 
@@ -7240,15 +7321,31 @@ public sealed class PacketDispatcher
         });
     }
 
+    /// <summary>OnAmigos (VB6 HandleOnAmigo, Protocol.bas:16809): la lista de amigos.
+    ///
+    /// <para>Acá se listaban SÓLO los conectados y con nuestra redacción. El original lista a TODOS y dice de
+    /// cada uno si está o no, y a los conectados les agrega EN QUÉ MAPA están — que es lo que hace útil al
+    /// comando: se usa para encontrar al amigo, no para contarlo.</para>
+    ///
+    /// <para>Los separadores son asimétricos en el original y van tal cual: el offline cierra con <c>","</c> y
+    /// el online con <c>", "</c>; el último de la lista cierra con punto en los dos casos.</para></summary>
     private void HandleFriendsOnline(ClientSession session)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            var online = p.Friends.Where(f => _world.PlayerByName(f) is not null).ToList();
-            session.Send(ServerMessages.ConsoleMsg(online.Count == 0
-                ? "Ninguno de tus amigos está en línea." : $"Amigos en línea: {string.Join(", ", online)}", FuenteInfo));
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < p.Friends.Count; i++)
+            {
+                bool ultimo = i == p.Friends.Count - 1;
+                var amigo = _world.PlayerByName(p.Friends[i]);
+                if (amigo is null) sb.Append(p.Friends[i]).Append("(Offline)").Append(ultimo ? "." : ",");
+                else sb.Append(p.Friends[i]).Append("(Online)(").Append(_data.MapName(amigo.Pos.Map))
+                       .Append(')').Append(ultimo ? "." : ", ");
+            }
+            session.Send(ServerMessages.ConsoleMsg(sb.Length > 0
+                ? "Amigos conectados: " + sb : "Tu lista de amigos está vacía.", FuenteInfo));
         });
     }
 
