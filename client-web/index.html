@@ -790,6 +790,11 @@
       }).join('');
     }
     const ground = new Map();      // "x,y" -> {objIndex, amount}  (dropped items, from ObjectCreate/Delete)
+    // Partículas vivas de cada emisor del mapa: "x,y" -> [{x,y,vx,vy,vida,ang}]. Se declara ACÁ, con el resto
+    // del estado que se tira al cambiar de mapa, y no junto al código que la usa unas dos mil líneas más
+    // abajo: `loadMap` corre mientras el script todavía se está evaluando, así que desde allá una `const`
+    // declarada después queda en zona muerta y el ReferenceError deja el cliente entero sin ejecutar.
+    const emisores = new Map();
     const spells = {};             // slot -> spellId  (from ChangeSpellSlot)
     let selectedSpell = 8;         // spell slot cast by 'f' (default: self-heal in slot 8)
 
@@ -990,7 +995,10 @@
       if (n === currentMap && map) return;                                             // already here
       currentMap = n;
       for (const ci of [...chars.keys()]) if (ci !== myCharIndex) chars.delete(ci);     // drop other-map entities
-      dying.clear(); ground.clear(); map = null;
+      // `emisores` también: su clave es "x,y" SIN el mapa, así que sin vaciarlo la antorcha de una baldosa se
+      // encuentra con las partículas a medio vivir de lo que hubiera en esa misma baldosa del mapa anterior. Y
+      // como nunca se vaciaba, el Map se iba llenando de emisores de mapas que ya no se ven.
+      dying.clear(); ground.clear(); emisores.clear(); map = null;
       fetch(`./assets/map${n}.json`).then((r) => (r.ok ? r.json() : null))
         .then((m) => { if (currentMap === n) { map = m; armarBloqueos(m); mostrarCartelDeMapa(m); ponerMusica(m); draw(); } }).catch(() => {});
       draw();
@@ -2210,6 +2218,7 @@
           <div class="fsec">Info / config</div>
           <div class="frow"><input id="cl-member" placeholder="info de un miembro"><button class="sbtn ghost" data-act="cl-member">Ver</button></div>
           <div class="frow"><input id="cl-details" placeholder="detalles de un clan"><button class="sbtn ghost" data-act="cl-details">Ver</button></div>
+          <div class="frow"><input id="cl-desc" placeholder="descripción del clan"></div>
           <div class="frow"><input id="cl-codex" placeholder="lema / código del clan"><button class="sbtn" data-act="cl-codex">Guardar</button></div>
           <div class="frow"><input id="cl-web" placeholder="sitio web del clan"><button class="sbtn ghost" data-act="cl-web">Guardar</button></div>
           <div class="frow"><button class="sbtn ghost" data-act="cl-fundate">Requisitos p/ fundar</button><button class="sbtn ghost" data-act="cl-shownews">Ver novedades</button></div>
@@ -2271,7 +2280,10 @@
         else if (a === 'cl-proplist') { send(W().writeByte(CLIENT.GuildPeacePropList)); send(W().writeByte(CLIENT.GuildAlliancePropList)); }
         else if (a === 'cl-member') { const n = S('cl-member'); if (n) send(W().writeByte(CLIENT.GuildMemberInfo).writeAsciiString(n)); }
         else if (a === 'cl-details') { const g = S('cl-details'); if (g) send(W().writeByte(CLIENT.GuildRequestDetails).writeAsciiString(g)); }
-        else if (a === 'cl-codex') { const c = S('cl-codex'); send(W().writeByte(CLIENT.ClanCodexUpdate).writeAsciiString(c).writeAsciiString(c)); }
+        // ClanCodexUpdate lleva DOS campos —descripción y códex— y acá se mandaba el códex en los dos, así que
+        // guardar el lema le pisaba al clan su descripción, que es la que ve cualquiera en la ficha
+        // (GuildDetails la manda). El botón guarda los dos juntos, como el formulario del original.
+        else if (a === 'cl-codex') send(W().writeByte(CLIENT.ClanCodexUpdate).writeAsciiString(S('cl-desc')).writeAsciiString(S('cl-codex')));
         else if (a === 'cl-web') { const u = S('cl-web'); if (u) send(W().writeByte(CLIENT.GuildNewWebsite).writeAsciiString(u)); }
         else if (a === 'cl-fundate') send(W().writeByte(CLIENT.GuildFundate));
         else if (a === 'cl-shownews') send(W().writeByte(CLIENT.ShowGuildNews));
@@ -3151,7 +3163,7 @@
     // El sprite se elige AL AZAR de la lista en cada frame: eso es lo que hace titilar el fuego.
     let partDefs = {};
     fetch('./assets/particles.json').then((r) => (r.ok ? r.json() : {})).then((p) => { partDefs = p || {}; }).catch(() => {});
-    const emisores = new Map();     // 'x,y' -> [{x,y,vx,vy,vida,ang}]
+    // `emisores` se declara arriba, con `chars`/`ground`/`dying`: es estado por mapa y `loadMap` lo vacía.
     let partAcum = 0;               // contador del paso (el `frame_counter` del original)
     // dt real entre frames de partículas. Se mide acá y no con el dt del limitador de FPS porque `__draw()`
     // fuerza frames fuera del loop (lo usan las mediciones) y ahí el dt del loop no avanza.
