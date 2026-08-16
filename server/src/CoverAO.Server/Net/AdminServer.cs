@@ -293,7 +293,11 @@ public sealed class AdminServer
     {
         JsonElement cmd;
         try { cmd = JsonSerializer.Deserialize<JsonElement>(body); }
-        catch { return "{\"ok\":false,\"msg\":\"body invalido\"}"; }
+        catch { return Fail("body invalido"); }
+        // `null`, `[]`, `5` y `"x"` son JSON válido y pasan el catch de arriba, pero TryGetProperty sobre algo
+        // que no es un objeto tira InvalidOperationException — que ya no la agarra nadie acá, sube al handler
+        // y le ABORTA la respuesta al panel en vez de contestarle el error que promete.
+        if (cmd.ValueKind != JsonValueKind.Object) return Fail("body invalido");
         string action = cmd.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
         int charIndex = cmd.TryGetProperty("charIndex", out var ci) && ci.TryGetInt32(out var civ) ? civ : 0;
         string message = cmd.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";

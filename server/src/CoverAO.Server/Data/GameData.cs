@@ -798,6 +798,41 @@ public sealed class GameData
     public IReadOnlyList<NewbieItem> NewbieKit(int @class) =>
         NewbieKits.TryGetValue(@class, out var k) ? k : Array.Empty<NewbieItem>();
 
+    /// <summary>Los archivos que el server espera encontrar, y qué se pierde si falta cada uno.
+    ///
+    /// <para>Todos los cargadores devuelven vacío cuando no encuentran su archivo y siguen como si nada. Sin
+    /// <c>Balance.json</c> los modificadores de combate quedan en cero; sin <c>NACIMIENTO.json</c> los
+    /// personajes nuevos nacen desnudos; sin <c>MapTriggers.json</c> no hay un solo interior. Y la línea de
+    /// resumen sólo cuenta cinco de las veinte cosas, así que el resto desaparece sin una palabra: el juego
+    /// arranca roto de un modo que no se parece a un error, se parece a que el original era así.</para>
+    ///
+    /// <para>Es la falla que ve el que RECIBE el paquete, no nosotros — acá los veinte están. Un archivo que
+    /// no viaja en el zip, un <c>.gitignore</c> de más, un transcode a medias, y del otro lado falta medio
+    /// juego. Agregar un cargador nuevo es agregar su renglón acá.</para></summary>
+    public static readonly (string Archivo, string QueSePierde)[] ArchivosDeDatos =
+    {
+        ("obj.json", "todos los objetos del juego"),
+        ("Niveles.json", "la experiencia que pide cada nivel"),
+        ("Balance.json", "los modificadores de combate por clase y los bonos de raza"),
+        ("Hechizos.json", "todos los hechizos"),
+        ("NPCs.json", "todos los NPCs"),
+        ("ArmasHerrero.json", "las armas que forja el herrero"),
+        ("ArmadurasHerrero.json", "las armaduras que forja el herrero"),
+        ("CascosHerrero.json", "los cascos que forja el herrero"),
+        ("EscudosHerrero.json", "los escudos que forja el herrero"),
+        ("ObjCarpintero.json", "lo que fabrica el carpintero"),
+        ("ObjSastre.json", "lo que fabrica el sastre"),
+        ("ObjDruida.json", "lo que prepara el druida"),
+        ("MapTerrain.json", "el agua y el terreno de los mapas"),
+        ("MapTriggers.json", "los interiores y las zonas especiales"),
+        ("MapSpawns.json", "los NPCs que pueblan el mundo"),
+        ("MapObjects.json", "los objetos tirados por el mundo"),
+        ("MapExits.json", "las salidas entre mapas"),
+        ("MapInfo.json", "la ficha de cada mapa: sin esto TODO mapa queda Pk"),
+        ("NACIMIENTO.json", "el equipo inicial de cada clase"),
+        ("NombresInvalidos.json", "el filtro de nombres prohibidos"),
+    };
+
     public static GameData Load()
     {
         var data = new GameData();
@@ -808,6 +843,13 @@ public sealed class GameData
             return data;
         }
         data.SourceDir = dir;
+        var faltantes = ArchivosDeDatos.Where(a => !File.Exists(Path.Combine(dir, a.Archivo))).ToArray();
+        if (faltantes.Length > 0)
+        {
+            Console.Error.WriteLine($"AVISO: faltan {faltantes.Length} archivo(s) de datos en {dir}. El servidor arranca SIN:");
+            foreach (var (archivo, pierde) in faltantes)
+                Console.Error.WriteLine($"  - {archivo}: {pierde}");
+        }
         data.Objects = LoadObjects(Path.Combine(dir, "obj.json"));
         data.LevelExp = LoadLevels(Path.Combine(dir, "Niveles.json"));
         var mods = LoadClassMods(Path.Combine(dir, "Balance.json"));

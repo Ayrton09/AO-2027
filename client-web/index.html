@@ -3934,6 +3934,25 @@
       '/reloadhechizos': [83, ''],
       '/reloadobj': [84, ''],
       '/darpun usuario@cantidad': [86, ''],
+      // LOS DIEZ QUE EL SERVER DESPACHABA Y ACÁ NO SE PODÍAN PEDIR. Esta tabla se escribió a mano y
+      // `buscarComandoGm` devuelve null para todo lo que no esté acá: no hay camino genérico, así que un id
+      // que falte no es "difícil de encontrar", es inalcanzable. Cruzados por ID contra el switch del server
+      // y contra el cliente VB6, donde los ocho que vienen del original están vivos.
+      //
+      // Los dos que más se notaban: el cliente YA traía armado el panel de conectados y la caja con la
+      // respuesta del GM, y nada las pedía — decodificadores vivos que nadie disparaba. Con SOSDONE afuera, el
+      // circuito de /GM era de ida: el jugador pedía ayuda, el GM veía la cola y no podía ni contestar ni
+      // cerrarla.
+      '/listusu': [14, ''],
+      '/sosdone': [10, 's'],
+      '/responder': [87, 'sss'],
+      '/vertrigger': [46, ''],
+      '/reloadsini': [82, ''],
+      '/setinivar': [85, 'sss'],
+      '/donador': [88, 's'],
+      '/oro': [89, 'bb'],
+      '/exp': [90, 'bb'],
+      '/cuentaregresiva': [91, 'bb'],
     };
     // Los argumentos se toman de izquierda a derecha; el ÚLTIMO, si es texto, se lleva el resto de la línea
     // (así `/rmsg se cae el server en 5` manda la frase entera). Los tres comandos que llevan un texto EN EL
@@ -3948,6 +3967,10 @@
       if (primera && GM_COMANDOS[cmd + ' ' + primera]) {
         return { clave: cmd + ' ' + primera, resto: sp < 0 ? '' : arg.slice(sp + 1).trim() };
       }
+      // /TRIGGER es UN comando del original con DOS ids según lleve número o no: con número CAMBIA el trigger
+      // del tile (45) y sin número lo INFORMA (46). La entrada `/vertrigger` existe además por su cuenta para
+      // que el segundo aparezca en la ayuda con un nombre que se explique solo.
+      if (cmd === '/trigger' && !arg) return { clave: '/vertrigger', resto: '' };
       return GM_COMANDOS[cmd] ? { clave: cmd, resto: arg } : null;
     }
     // ESCRIBE EN EL WRITER COMPARTIDO y devuelve si hay algo que mandar. No manda por su cuenta: al final del
@@ -3967,6 +3990,14 @@
         const t = arg.split(/\s+/).filter(Boolean);
         if (t.length < 3) { log('uso: /mod <nombre> <opcion> <valor> [valor2]', '#b94'); return false; }
         piezas = [t[0], t[1], t[2], t.slice(3).join(' ')];
+      } else if (clave === '/responder') {
+        // (nick, mensaje, modo). El modo va FIJO en "Usuario": el original no tiene rama para otro valor y el
+        // server lo rechaza en silencio. El mensaje es el resto de la línea, así que va en el medio y no lo
+        // puede partir la regla genérica.
+        const sp = arg.search(/\s/);
+        if (sp < 0) { log('uso: /responder <nombre> <mensaje>', '#b94'); return false; }
+        piezas = [arg.slice(0, sp), arg.slice(sp + 1).trim(), 'Usuario'];
+        if (!piezas[1]) { log('uso: /responder <nombre> <mensaje>', '#b94'); return false; }
       } else {
         piezas = [];
         let resto = arg;
@@ -4012,7 +4043,8 @@
         const sp = text.indexOf(' ');
         const cmd = (sp < 0 ? text : text.slice(0, sp)).toLowerCase();
         const arg = sp < 0 ? '' : text.slice(sp + 1).trim();
-        // La ayuda de GM va aparte: son 79 comandos y meterlos en /ayuda ahogaría la lista del jugador.
+        // La ayuda de GM va aparte: son casi noventa y meterlos en /ayuda ahogaría la lista del jugador. La
+        // cuenta se saca de la tabla y no se escribe acá, que es como envejece un comentario.
         if (cmd === '/ayudagm') {
           const nombres = Object.keys(GM_COMANDOS).sort();
           log(`comandos de GM (${nombres.length}): ` + nombres.join(' '), '#8a9');
