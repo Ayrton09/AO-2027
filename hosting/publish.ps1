@@ -61,6 +61,10 @@ $web = Join-Path $OutDir "webclient"
 New-Item -ItemType Directory -Force -Path $web | Out-Null
 Copy-Item -Force (Join-Path $Root "client-web\index.html") $web
 Copy-Item -Recurse -Force (Join-Path $Root "client-web\dist") (Join-Path $web "dist")
+# Los TESTS del cliente no son parte del juego: `tsc` los compila al mismo `dist/` que el codigo que corre,
+# asi que se colaban en el paquete. El jugador recibe el juego, no el banco de pruebas.
+$tests = Join-Path $web "dist\test"
+if (Test-Path $tests) { Remove-Item -Recurse -Force $tests }
 Copy-Item -Recurse -Force (Join-Path $Root "client-web\assets") (Join-Path $web "assets")
 
 # Server.ini: la configuración del host (puerto, rates, y sobre todo QUIÉN ES GM). Va al lado del .exe, que es
