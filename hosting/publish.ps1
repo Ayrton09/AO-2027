@@ -78,7 +78,19 @@ if (Test-Path $iniDestino) {
 
 # La guia del host viaja EN EL PAQUETE: el que abre el zip no clona el repo.
 $doc = Join-Path $Root "docs\HOSTING.md"
-if (Test-Path $doc) { Copy-Item -Force $doc (Join-Path $OutDir "HOSTING.md") }
+if (Test-Path $doc) {
+  # El HOSTING.md del repo abre con "## Armar el paquete", que es para QUIEN COMPILA. En el paquete esa
+  # seccion sobra y confunde: quien lo recibe tiene el binario, no el codigo, asi que no puede correr nada
+  # de ahi. Se copia todo lo demas --puertos, Server.ini, backups, varios servidores, HTTPS, licencia--,
+  # que es justo lo que necesita el que hostea.
+  $dentroDeArmado = $false
+  $salida = foreach ($l in Get-Content $doc -Encoding UTF8) {
+    if ($l -match '^##\s') { $dentroDeArmado = ($l -match '^##\s+Armar el paquete') }
+    if (-not $dentroDeArmado) { $l }
+  }
+  Set-Content -Path (Join-Path $OutDir "HOSTING.md") -Value $salida -Encoding UTF8
+  Write-Host "   HOSTING.md: sin la seccion de compilacion (el paquete no lleva codigo fuente)" -ForegroundColor DarkGray
+}
 Copy-Item -Force (Join-Path $Root "CREDITOS.md") (Join-Path $OutDir "CREDITOS.md") -ErrorAction SilentlyContinue
 # Units de systemd: `coverao.service` para un servidor, `coverao@.service` (plantilla) para varios.
 foreach ($u in @("coverao.service", "coverao@.service")) {
