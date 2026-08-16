@@ -583,9 +583,9 @@
     // core of the future Pixi.js client; here it drives a minimal Canvas render as a starting point.
     // ?v= versiona los módulos ES compilados: sin esto el navegador cachea el dist viejo aunque cambie
     // (el cache-bust del index.html NO alcanza a los import). Bumpear al tocar cualquier .ts de dist/.
-    import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=30';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=30';
-    import { parseLocaleMsg } from './dist/src/protocol/localeSmg.js?v=30';
+    import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=31';
+    import { parseLocaleMsg } from './dist/src/protocol/localeSmg.js?v=31';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
     window.addEventListener('unhandledrejection', (e) => { window.__errs.push('reject: ' + (e.reason && e.reason.message || e.reason)); });
@@ -1089,6 +1089,9 @@
     let objLights = {};
     fetch('./assets/obj-lights.json').then((r) => (r.ok ? r.json() : {})).then((l) => { objLights = l || {}; }).catch(() => {});
     let spellNames = null; fetch('./assets/spells.json').then((r) => r.json()).then((s) => { spellNames = s; });
+    // El `PropioMsg` de cada hechizo: el texto de lanzárselo a UNO MISMO. Va aparte de los nombres porque
+    // `spells.json` ya viaja en los paquetes de dist/ y cambiarle la forma dejaría sin lista a una copia vieja.
+    let spellSelf = null; fetch('./assets/spells-propio.json').then((r) => r.json()).then((s) => { spellSelf = s; });
     // idHechizo -> GrhIndex de su pergamino (fase0/transcode/make_spell_icons.py)
     let spellIcons = null;
     fetch('./assets/spellicons.json').then((r) => (r.ok ? r.json() : null))
@@ -2111,6 +2114,7 @@
     }
     const itemName = (oi) => (items && items[oi] && items[oi][1]) || ('objeto ' + oi);
     const spellName = (id) => (spellNames && spellNames[id]) || ('hechizo ' + id);
+    const spellSelfText = (id) => (spellSelf && spellSelf[id]) || undefined;
     // 's' ya no abre un popup: enfoca la pestaña Conjuros del panel (lista + LANZAR).
     function showSpells() { const t = document.querySelector('.p-tabs .tab[data-tab="spells"]'); if (t) t.click(); }
     const craftBtn = (obj, craftId) => `<span class="buy" data-obj="${obj}" data-craft="${craftId}">fabricar</span>`;
@@ -2835,6 +2839,7 @@
           const t = parseLocaleMsg(f.msgId, f.args, {
             charName: (i) => chars.get(i)?.name,
             spellName,
+            spellSelfText,
             itemName,
           });
           if (/te (golpea|pega|prod)/i.test(t)) myHitAt = Date.now();

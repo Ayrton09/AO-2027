@@ -741,6 +741,17 @@ function resolveArg(word, r) {
  * than an empty string, so a wrong id is visible instead of silently blank.
  */
 export function parseLocaleMsg(id, extra = '', r = {}) {
+    // EL SIGILO `=` LE GANA AL ID, y va antes que nada. Significa "el mensaje es el PropioMsg del hechizo",
+    // y el original devuelve ahí mismo sin llegar a mirar el catálogo (modLocales.bas:224). El server lo manda
+    // con el id 0 —que no existe, la tabla arranca en 1— cada vez que te lanzás un hechizo a vos mismo, así que
+    // mirando el id primero un mago leía `[loc 0]` en el chat cada vez que se curaba.
+    for (const w of extra.split('%')) {
+        if (w[0] !== '=')
+            continue;
+        const n = Number.parseInt(w.slice(1), 10);
+        // Los hechizos ofensivos no tienen PropioMsg y el original tampoco escribe nada para ellos.
+        return (Number.isNaN(n) ? undefined : r.spellSelfText?.(n)) ?? '';
+    }
     let text = LOCALE_SMG[id];
     if (text === undefined)
         return `[loc ${id}]`;
