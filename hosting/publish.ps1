@@ -131,7 +131,15 @@ if (Test-Path $changelog) {
       if ($l -match '^##\s+\d') { $enSeccion = $true }   # "## 1.0.0 — fecha" (y no "## Cómo se agrega…")
       continue
     }
-    if ($enSeccion -and $l -match '^\s*-\s+(.*)$') { $lineas += $Matches[1].Trim() }
+    if (-not $enSeccion) { continue }
+    if ($l -match '^\s*-\s+(.*)$') { $lineas += $Matches[1].Trim(); continue }
+    # CONTINUACION de la vinieta anterior. Sin esto se PERDIA: una vinieta escrita en dos lineas -que en
+    # Markdown es una sola frase- llegaba al jugador cortada a la mitad, terminando en "y" o en "de". El
+    # bug no se ve en el paquete ni en el CHANGELOG: se ve en Menu -> Novedades, que es lo ultimo que uno
+    # mira. Se pega con un espacio, que es como lo renderiza cualquier lector de Markdown.
+    if ($lineas.Count -gt 0 -and $l -match '^\s+\S' -and $l -notmatch '^\s*#') {
+      $lineas[$lineas.Count - 1] = ($lineas[$lineas.Count - 1] + " " + $l.Trim())
+    }
   }
   if ($lineas.Count -gt 0) {
     $dataDir = Join-Path $OutDir "data"

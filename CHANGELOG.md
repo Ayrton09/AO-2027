@@ -24,3 +24,11 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
   a todos, así que quien hosteaba no tenía forma de usarlos.
 - Si cerrás sesión navegando, volvés en tu barco y no a pie en medio del mar.
 - El servidor guarda a todos los conectados al apagarse, aunque se lo cierre desde la ventana.
+- El Portal planar abre de verdad: se lo tira sobre una baldosa libre, tarda cinco segundos en aparecer y
+  dura diez. Mientras hay uno abierto el juego te dice cuánto falta para poder tirar otro.
+- Cuando se conecta alguien de tu lista de amigos te avisa, igual que ya avisaba cuando se iba.
+- Dejar tu facción te avisa que la dejaste. Antes te ibas sin que el juego dijera nada.
+- Los mapas de newbies no dejan pasar al que ya dejó de serlo, y el que sube de nivel dentro del dungeon de
+  newbies sale a la ciudad que le toca por su bando.
+- Tirar un arma arrojadiza sin tener ninguna equipada te contesta; antes la tecla no hacía absolutamente nada.
+- Un miembro de la Armada Real no puede atacar de una a las criaturas: primero tiene que hacerse renegado.
