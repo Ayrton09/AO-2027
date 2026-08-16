@@ -336,7 +336,12 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // MODULO_NPCs.bas:590, pasa `Char.WeaponAnim`, `Char.ShieldAnim` y `Char.CascoAnim`— y acá iban tres ceros
     // cableados, así que 57 de los 291 NPCs salían desarmados: los Guerreros de las ciudades sin espada ni
     // escudo, los Hechiceros y Nigromantes sin casco. Es de las cosas que se ven a los dos segundos de entrar.
-    int WeaponAnim = 0, int ShieldAnim = 0, int HelmetAnim = 0)
+    int WeaponAnim = 0, int ShieldAnim = 0, int HelmetAnim = 0,
+    // NPCs.dat "NroCriaturas" + "CN1".."CNn": las criaturas que un ENTRENADOR (NpcType=3) te spawnea para
+    // practicar. Lo trae UN solo NPC del install -- el "Entrenador", con Murcielago, Lobo, Serpiente,
+    // Escorpion y Goblin-- y el campo estaba en el JSON pero NO se cargaba: `Npc.TrainerCreatures` sólo lo
+    // llenaba el fixture a mano, así que en el mundo real el entrenador no listaba nada.
+    IReadOnlyList<string>? TrainerCreatures = null)
 {
     /// <summary>¿Este mercader te compra ese objeto? Es la condición de <c>Comercio.bas:123</c> dada vuelta:
     /// el VB6 RECHAZA (LocaleMsg 148) si <c>TipoItems &lt;&gt; OBJType And TipoItems &lt;&gt; otCualquiera</c>,
@@ -939,6 +944,23 @@ public sealed class GameData
 
     /// <summary>Los hechizos que sabe tirar un NPC: la clave <c>LanzaSpells</c> dice CUÁNTOS y
     /// <c>Sp1</c>..<c>SpN</c> cuáles (VB6 MODULO_NPCs.bas). Devuelve null si no lanza ninguno, que es el caso
+
+    /// <summary>Las criaturas de un Entrenador: `NroCriaturas` y los `CN1..CNn` con el NOMBRE de cada una
+    /// (VB6 MODULO_NPCs.bas, `tCriaturasEntrenador`). El paquete `TrainerCreatureList` manda los nombres, no
+    /// los indices: los `CI1..CIn` son para el spawn, que resuelve por indice.</summary>
+    private static IReadOnlyList<string>? LeerCriaturasDelEntrenador(JsonElement el)
+    {
+        int n = Int(el, "NroCriaturas");
+        if (n <= 0) return null;
+        var nombres = new List<string>(n);
+        for (int i = 1; i <= n; i++)
+        {
+            string nombre = Str(el, $"CN{i}");
+            if (!string.IsNullOrWhiteSpace(nombre)) nombres.Add(nombre);
+        }
+        return nombres.Count > 0 ? nombres : null;
+    }
+
     /// de 221 de los 291 NPCs.</summary>
     private static IReadOnlyList<int>? LeerHechizosDeNpc(JsonElement el)
     {
@@ -983,7 +1005,8 @@ public sealed class GameData
                 Status: Int(el, "Status"),
                 Spells: LeerHechizosDeNpc(el),
                 WeaponAnim: Int(el, "WeaponAnim"), ShieldAnim: Int(el, "ShieldAnim"),
-                HelmetAnim: Int(el, "CascoAnim"));   // el .dat la llama CascoAnim, el paquete Casco
+                HelmetAnim: Int(el, "CascoAnim"),   // el .dat la llama CascoAnim, el paquete Casco
+                TrainerCreatures: LeerCriaturasDelEntrenador(el));
         }
         return map;
     }

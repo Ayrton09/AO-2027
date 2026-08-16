@@ -1,3 +1,4 @@
+using System.Linq;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using Xunit;
@@ -136,6 +137,41 @@ public class DataDescartadaTests
         Assert.Equal(5, r.ReadInteger());    // escudo — iba 0 cableado
         Assert.Equal(30, r.ReadInteger());   // casco  — iba 0 cableado
     }
+    /// <summary>
+    /// EL ENTRENADOR Y SUS CRIATURAS. Este NO era el transcode: las claves <c>NroCriaturas</c> y
+    /// <c>CN1..CN5</c> estaban en el JSON —barrí las 94 claves del <c>NPCs.dat</c> contra el JSON y la única
+    /// ausente es <c>NUMNPCS</c>, que es el contador de cabecera—. El que las tiraba era <c>GameData</c>:
+    /// <c>Npc.TrainerCreatures</c> sólo lo llenaba el fixture a mano, así que el Entrenador del mundo real
+    /// respondía con una lista vacía y la ventana del cliente salía en blanco.
+    ///
+    /// <para>Va con los CINCO nombres duros: el emisor <c>TrainerCreatureList</c> manda los NOMBRES (no los
+    /// índices), así que si alguien lee los <c>CI</c> en vez de los <c>CN</c> el paquete sigue saliendo y
+    /// nadie se entera. Los índices (566, 545, 565, 564, 563) son para el spawn, que es otra cosa.</para>
+    /// </summary>
+    [Fact]
+    public void El_entrenador_trae_sus_criaturas_de_la_ficha()
+    {
+        var npc = Cargar().Npc(60);
+        Assert.NotNull(npc);
+        Assert.Equal(3, npc!.NpcType);                       // eNPCType.Entrenador
+        Assert.NotNull(npc.TrainerCreatures);
+        Assert.Equal(5, npc.TrainerCreatures!.Count);
+        Assert.Contains("Lobo", npc.TrainerCreatures);
+        Assert.Contains("Goblin", npc.TrainerCreatures);
+    }
+
+    /// <summary>Y es el ÚNICO: si aparece otro con criaturas, el que agregó la data se entera acá en vez de
+    /// descubrirlo cuando un jugador le hace clic.</summary>
+    [Fact]
+    public void Solo_un_npc_del_install_tiene_criaturas_de_entrenador()
+    {
+        var conCriaturas = Cargar().Npcs.Values
+            .Where(n => n.TrainerCreatures is { Count: > 0 })
+            .Select(n => n.Index)
+            .OrderBy(i => i)
+            .ToArray();
+        Assert.Equal(new short[] { 60 }, conCriaturas);
+    }
 }
 
 /// <summary>
@@ -183,4 +219,5 @@ public class MeditarTests
         // Sin el piso, un personaje de poco maná meditaría eternamente sin recuperar nada.
         for (int m = 1; m < 200; m++) Assert.True(Survival.ManaAlMeditar(m, 6) >= 1, $"maxMana={m}");
     }
+
 }
