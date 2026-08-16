@@ -4952,7 +4952,7 @@ public sealed class PacketDispatcher
                 if (n > victima.Gold) n = victima.Gold;
                 victima.Gold -= n;
                 n *= 5;                                                   // VB6: el ladrón recibe 5× lo quitado
-                p.Gold = (int)Math.Min((long)p.Gold + n, int.MaxValue);   // (VB6 capea a MAXORO; el robo es de a cientos, nunca llega)
+                p.Gold = (int)Math.Min((long)p.Gold + n, MaxOro);         // VB6 Trabajo.bas:1591, sobre el TOTAL
                 session.Send(ServerMessages.ConsoleMsg($"Le has robado {n} monedas de oro a {victima.Name}", FuenteInfo));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
                 victima.Connection?.Send(ServerMessages.UpdateGold(victima.Gold));
@@ -6806,15 +6806,22 @@ public sealed class PacketDispatcher
             if (npc.IsReviver)                                              // sacerdote Revividor (VB6 Acciones.bas:304) — atiende ANTES del DeadCheck
             {
                 if (p.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{npc.Name}: aún no necesitas mis servicios.", FuenteInfo)); return; }
-                if (Math.Max(Math.Abs(p.Pos.X - npc.Pos.X), Math.Abs(p.Pos.Y - npc.Pos.Y)) > 10)
+                // MANHATTAN, no Chebyshev: `Distancia` (Matematicas.bas:43) suma los dos ejes. Con Chebyshev un
+                // sacerdote en (+10,+10) quedaba a 10 y para el original está a 20 (Acciones.bas:306).
+                if (DistanciaVB6(p.Pos, npc.Pos) > 10)
                 { session.Send(ServerMessages.LocaleMsg(8)); return; }      // VB6: distancia <= 10 (LocaleMsg 8 si lejos)
                 RevivePlayer(_world, _data, p);   // HP full + apariencia + LocaleMsg(90)
                 _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHead("¡Levántate y anda!", npc.CharIndex));  // la frase del sacerdote
                 return;
             }
             if (DeadCheck(session, p)) return;   // un muerto sólo puede acudir al sacerdote (arriba); nada de comercio/banco/oficios
-            // VB6 Sub Accion: interactuar con un NPC (comercio/banco/entrenador/mesa) exige estar a <= 3 tiles.
-            if (Math.Max(Math.Abs(p.Pos.X - npc.Pos.X), Math.Abs(p.Pos.Y - npc.Pos.Y)) > 3)
+            // VB6 Sub Accion: interactuar con un NPC (comercio/banco/entrenador/mesa) exige estar a <= 3 tiles,
+            // medidos con `Distancia` — MANHATTAN (Acciones.bas:174, :208, :220, :239, :279, :295). Acá estaba
+            // en Chebyshev, o sea que un mercader en (+3,+3) contaba como 3 cuando para el original está a 6:
+            // se comerciaba y se usaba el banco en diagonal desde el doble de lejos. El comentario de
+            // `AccionParaPuerta`, treinta líneas más abajo, ya decía "ojo, NO es el Chebyshev que usan los
+            // gates de NPC de acá al lado" — estaba anotado y faltaba sacar la conclusión.
+            if (DistanciaVB6(p.Pos, npc.Pos) > 3)
             { session.Send(ServerMessages.LocaleMsg(8)); return; }
             if (npc.FactionConvert != 0) { DoConvertir(session, p, npc); return; }   // Convertidor: da la ciudadanía
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
@@ -6940,8 +6947,35 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>TransferGOLD (id 102): targetName(ASCIIString) THEN amount(Long). Moves gold to an online player.
-    /// VB6 HandleTransferGOLD (Protocol.bas:15821) reads the name FIRST, then the amount — order matters.</summary>
+    /// <summary><c>MAXORO</c> (Declares.bas:344) = noventa millones: el TECHO del oro en mano.
+    ///
+    /// <para>El original lo aplica sobre el TOTAL después de sumar, en los dos lugares donde entra oro de a
+    /// montones —vender (Comercio.bas:169) y robar (Trabajo.bas:1591)—, y lo usa además como tope de lo que se
+    /// puede transferir de una vez. Acá no existía: el robo tenía anotado "el VB6 capea a MAXORO, el robo es de
+    /// a cientos, nunca llega", que razona sobre lo que ENTRA y no sobre lo que queda. Con noventa millones en
+    /// la billetera el original te devuelve a noventa millones y este port te dejaba pasar.</para></summary>
+    private const long MaxOro = 90_000_000;
+
+    /// <summary>TransferGOLD (id 102): nombre(ASCIIString) y DESPUÉS monto(Long) — el orden importa.
+    ///
+    /// <para>Esto movía la BILLETERA entre dos jugadores CONECTADOS. El original (VB6 HandleTransferGOLD,
+    /// Protocol.bas:15821) mueve la <b>bóveda</b>, y el destinatario <b>no tiene por qué estar conectado</b>: si
+    /// <c>NameIndex</c> no lo encuentra pero el <c>.chr</c> existe, le acredita el saldo escribiendo el archivo.
+    /// Eso es lo que el juego llama "tu cuenta Goliath", y era justamente para lo que sirve: mandarle plata a
+    /// alguien que no está. Nuestro handler le contestaba "Destinatario inválido" a media función.</para>
+    ///
+    /// <para>El orden de las compuertas es parte del contrato, así que va tal cual: existe → no soy yo → monto
+    /// en rango → me alcanza la bóveda. La tercera <b>no tiene rama negativa</b> en el original: un monto de 0 o
+    /// por encima de <see cref="MaxOro"/> se descarta sin decir nada, y el silencio también es una respuesta.</para>
+    ///
+    /// <para>El <c>WriteUpdateGold</c> del original manda <c>Stats.GLD</c> —la billetera, que en esta operación
+    /// no cambió—, no el saldo del banco. Se replica: el paquete sale igual y con el oro de la mano.</para>
+    ///
+    /// <para>La rama offline toca DISCO adentro del game loop, que es lo que en general no se hace acá. Va así
+    /// a propósito: es un <c>.chr</c> (0,75 ms medido) y no se puede martillar, porque el techo de cadencia por
+    /// sesión corre ANTES de despachar cualquier paquete (<c>ClientSession</c>). Diferirlo obligaría a llevar
+    /// un saldo pendiente por nombre y a resolverlo si el tipo se conecta en el medio — más estado y más
+    /// formas de perder oro que el milisegundo que ahorra.</para></summary>
     private void HandleTransferGold(ClientSession session, ByteQueueReader r)
     {
         string targetName = r.ReadAsciiString();
@@ -6950,16 +6984,42 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (amount <= 0) { session.Send(ServerMessages.ConsoleMsg("Monto inválido.", FuenteInfo)); return; }
-            if (p.Gold < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes suficiente oro.", FuenteInfo)); return; }
             var target = _world.PlayerByName(targetName);
-            if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.ConsoleMsg("Destinatario inválido.", FuenteInfo)); return; }
-            p.Gold -= amount;
-            target.Gold += amount;
-            session.Send(ServerMessages.UpdateGold(p.Gold));                   // acá sólo cambió el oro
-            target.Connection?.Send(ServerMessages.UpdateGold(target.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Transferiste {amount} de oro a {target.Name}.", FuenteInfo));
-            target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te transfirió {amount} de oro.", FuenteInfo));
+            // `PersonajeExiste` del original es un FileExist sobre el .chr (Admin.bas:221): vale para el que está
+            // conectado y para el que no.
+            if (target is null && !_db.CharacterExists(targetName))
+            { session.Send(ServerMessages.ConsoleMsg("El personaje no existe.", FuenteInfo)); return; }
+            if (target is not null && target.CharIndex == p.CharIndex)
+            { session.Send(ServerMessages.ConsoleMsg("Objetivo inválido.", FuenteInfo)); return; }
+            if (amount <= 0 || amount > MaxOro) return;                        // sin rama negativa: calla
+            if (p.Bank < amount)
+            { session.Send(ServerMessages.ConsoleMsg("No tienes suficientes monedas de oro depositadas en tu cuenta.", FuenteInfo)); return; }
+
+            // ACREDITAR PRIMERO, DESCONTAR DESPUÉS. Al revés —como lo hace el original— el oro se destruye si la
+            // escritura del `.chr` falla: el `.chr` puede existir para el chequeo y no poder leerse un instante
+            // después (el backup lo está copiando), y ahí la excepción sube con la bóveda ya descontada.
+            if (target is null)
+            {
+                if (_db.AcreditarBovedaOffline(targetName, amount) is null)     // VB6: GetVar + WriteVar sobre el .chr
+                { session.Send(ServerMessages.ConsoleMsg("El personaje no existe.", FuenteInfo)); return; }
+                p.Bank -= amount;
+            }
+            else
+            {
+                p.Bank -= amount;
+                target.Bank += amount;
+                target.Connection?.Send(ServerMessages.UpdateGold(target.Gold));
+                // El espacio que falta entre el nombre y el "ha" es del original (`"¡" & .Name & "ha transferido "`,
+                // Protocol.bas:15847). Va tal cual: no es un typo nuestro.
+                target.Connection?.Send(ServerMessages.ConsoleMsg(
+                    $"¡{p.Name}ha transferido {amount} monedas de oro a tu cuenta Goliath!.", FuenteInfo));
+                target.Connection?.Send(ServerMessages.ConsoleMsg(
+                    "¡Has recibido un nuevo mensaje de Finanzas Goliath, ve a un correo local para leerlo.", FuenteInfo));
+            }
+            session.Send(ServerMessages.UpdateGold(p.Gold));                   // la billetera, como el original
+            session.Send(ServerMessages.ConsoleMsg(
+                $"¡Se ha realizado la transferencia correctamente! Tienes {p.Bank} monedas de oro en tu cuenta.", FuenteInfo));
+            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
         });
     }
 
@@ -7372,7 +7432,8 @@ public sealed class PacketDispatcher
             {
                 p.Resting = !p.Resting;
                 session.Send(ServerMessages.RestOK());
-                session.Send(ServerMessages.ConsoleMsg(p.Resting ? "Te acomodas junto a la fogata y comenzas a descansar." : "Te levantas.", FuenteInfo));
+                // El original vosea y con tilde: `Te acomodás ... comenzás` (byte 0xE1 en Protocol.bas:17194).
+                session.Send(ServerMessages.ConsoleMsg(p.Resting ? "Te acomodás junto a la fogata y comenzás a descansar." : "Te levantas.", FuenteInfo));
             }
             else if (p.Resting)
             {
@@ -9321,7 +9382,7 @@ public sealed class PacketDispatcher
             double salePrice = vendido is null || vendido.IsNewbie ? 0.0 : vendido.Value / 3.0;
             int gain = (int)Math.Floor(salePrice * sell);   // Fix(): trunca (todo es positivo acá)
 
-            p.Gold += gain;
+            p.Gold = (int)Math.Min((long)p.Gold + gain, MaxOro);   // VB6 Comercio.bas:169, sobre el TOTAL
             inv.Amount -= (short)sell;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;

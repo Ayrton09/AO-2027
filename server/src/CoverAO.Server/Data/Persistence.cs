@@ -121,6 +121,27 @@ public sealed class Persistence
     /// —el almacén serializa sus escrituras— y por eso es la que sale del loop.</summary>
     public void GuardarPersonajeSerializado(string nombre, string ini) => _store.WriteCharacter(nombre, ini);
 
+    /// <summary>Suma a la bóveda de un personaje DESCONECTADO, sin cargarlo entero.
+    ///
+    /// <para>Es el <c>GetVar</c>/<c>WriteVar</c> sobre <c>[STATS] BANCO</c> que usa la transferencia de oro del
+    /// original (VB6 Protocol.bas:15832): el destinatario puede no estar en el mundo, y la única forma de
+    /// acreditarle es tocarle el <c>.chr</c>. Se hace por clave y no con <see cref="LoadCharacter"/> +
+    /// <see cref="SaveCharacter"/> porque eso reconstruiría el personaje completo —cien campos, inventario,
+    /// bóveda y hechizos— para mover un número, y la reescritura pisaría con los defaults del parser cualquier
+    /// clave que el archivo tenga y el <see cref="Player"/> no.</para>
+    ///
+    /// <para>Devuelve el saldo que quedó, o <c>null</c> si no existe el personaje.</para></summary>
+    public long? AcreditarBovedaOffline(string nombre, long monto)
+    {
+        string? texto = _store.ReadCharacter(nombre);
+        if (texto is null) return null;
+        var ini = IniFile.Parse(texto);
+        long saldo = ini.GetLong("STATS", "BANCO") + monto;
+        ini.Set("STATS", "BANCO", saldo.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _store.WriteCharacter(nombre, ini.ToText());
+        return saldo;
+    }
+
     /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
     /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el
     /// campo del CreateNewAccount y lo tiraba.</param>
