@@ -100,28 +100,52 @@ public sealed class FileStore : IStore
     public string? ReadCharacter(string n) => File.Exists(CharPath(n)) ? File.ReadAllText(CharPath(n), Codec.Ansi) : null;
     public void WriteCharacter(string n, string t) => EscribirAtomico(CharPath(n), t, Codec.Ansi);
 
-    /// <summary>Copia los tres directorios a <c>destDir/stem/</c>.</summary>
+    /// <summary>Copia los tres directorios a <c>destDir/stem/</c>.
+    ///
+    /// <para>El candado de las escrituras se toma POR ARCHIVO, no una vez para toda la recorrida. Eso es lo que
+    /// permite que el backup haya salido del hilo del game loop: si un guardado cae justo encima, espera lo que
+    /// tarda UNA copia —medio milisegundo— en vez de los cinco segundos del barrido entero.</para>
+    ///
+    /// <para>Y hace falta de verdad, no es prolijidad. En Windows, el <c>File.Move</c> con <c>overwrite</c> con
+    /// el que cierra <see cref="EscribirAtomico"/> se cae con <c>UnauthorizedAccessException</c> si el destino
+    /// está abierto por alguien, y <b>no hay <c>FileShare</c> que lo evite</b> — probadas las cinco
+    /// combinaciones, ni siquiera <c>FileShare.Delete</c>, que en teoría es exactamente para esto. Sin el
+    /// candado el que sale lastimado no es la copia sino el JUEGO: el guardado del personaje se pierde mientras
+    /// el backup pasa por su archivo, y el que hostea lo ve como alguien a quien "se le borró lo de la última
+    /// media hora", cada tanto y sin patrón. Lo encontró un test que mide la ESCRITURA, no la copia.</para>
+    ///
+    /// <para>Se arma bajo <c>parcial-</c> y recién al final se renombra al nombre bueno. Antes se escribía
+    /// derecho sobre el definitivo, así que un backup cortado a la mitad —el proceso que se cierra, el disco que
+    /// se llena— quedaba con el nombre de uno completo, y <see cref="Backups.Podar"/> lo contaba para la
+    /// retención igual que a los buenos: a las N rotaciones no quedaba ninguna copia entera. El prefijo tiene
+    /// que ser OTRO y no una extensión, porque la retención lista con <c>coverao-*</c> y un
+    /// <c>coverao-….parcial</c> le entra igual.</para></summary>
     public string Backup(string destDir, string stem)
     {
         string root = Path.Combine(destDir, stem);
+        string enObra = Path.Combine(destDir, "parcial-" + stem);
+        Directory.CreateDirectory(destDir);
+        // Sobras de intentos cortados (el proceso murió a mitad de copiar): no las mira nadie y ocupan disco.
+        foreach (var viejo in Directory.EnumerateDirectories(destDir, "parcial-*"))
+            try { Directory.Delete(viejo, recursive: true); } catch (Exception ex) { Console.Error.WriteLine($"[backup] no se pudo limpiar {Path.GetFileName(viejo)}: {ex.Message}"); }
         foreach (var (src, sub) in new[] { (_charDir, "Charfile"), (_accountDir, "Cuentas"), (_miscDir, "Misc") })
         {
             if (!Directory.Exists(src)) continue;
-            string dst = Path.Combine(root, sub);
+            string dst = Path.Combine(enObra, sub);
             Directory.CreateDirectory(dst);
             // Try POR ARCHIVO: sin esto, UN solo .chr tomado por el antivirus o por el backup del hosting
-            // tiraba IOException a mitad del recorrido y abortaba la copia entera — pero el directorio ya
-            // quedaba creado con la mitad de los personajes, y Backups.Listar lo contaba igual para la
-            // retención. A las 48 rotaciones no quedaba ninguna copia completa.
+            // tiraba IOException a mitad del recorrido y abortaba la copia entera.
             foreach (var f in Directory.EnumerateFiles(src))
             {
                 if (f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;   // temporal de EscribirAtomico
-                try { File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), overwrite: true); }
+                try { lock (_puerta) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), overwrite: true); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 { Console.Error.WriteLine($"[backup] no se pudo copiar {Path.GetFileName(f)}: {ex.Message}"); }
             }
         }
-        Directory.CreateDirectory(root);   // por si el almacén estaba vacío: el backup existe igual
+        Directory.CreateDirectory(enObra);   // por si el almacén estaba vacío: el backup existe igual
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);   // mismo segundo, backup repetido
+        Directory.Move(enObra, root);
         return root;
     }
 }

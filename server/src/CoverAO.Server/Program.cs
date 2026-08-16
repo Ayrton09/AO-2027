@@ -231,39 +231,77 @@ var regenRng = new Random();   // RandomNumber del regen de stamina (VB6 RecStam
 // captura por referencia y para cuando el loop corra ya está.
 PacketDispatcher? dispatcher = null;
 
-// Backups del almacén (data/backups/coverao-AAAAMMDD-HHMMSS). Corre EN EL HILO DEL LOOP —tanto el tick como el
-// botón del panel entran por acá— así que nadie está escribiendo el mundo mientras se saca la foto.
-long ultimoBackupTick = 0;
-string backupsDir = Path.Combine(dataRoot, "backups");
-string HacerBackup(string motivo)
+// Guardar a los conectados son DOS mitades, y una sola de las dos tiene que estar adentro del game loop:
+// serializar lee unos cien campos del Player vivo (hacerlo desde otro hilo devuelve un personaje partido al
+// medio), escribir es disco. Esto último es lo que se saca afuera.
+List<(string nombre, string ini)> SerializarConectados(string quien)
 {
-    // Guardar a los conectados primero: si no, el snapshot sale con el estado del último save y el backup
-    // miente sobre lo que había. Es la diferencia entre restaurar la partida y restaurar la de hace una hora.
-    // Try POR JUGADOR: un solo .chr que falle (disco lleno, archivo tomado por el antivirus) no puede impedir
-    // que se guarden los demás, y el mensaje tiene que decir DE QUIÉN fue el error. Sin esto la excepción subía
-    // al catch del game loop, que corta el resto del tick.
+    var pendientes = new List<(string, string)>();
     foreach (var pl in world.Players)
     {
-        try { db.SaveCharacter(pl); }
-        catch (Exception ex) { Console.Error.WriteLine($"[backup] no se pudo guardar '{pl.Name}': {ex.Message}"); }
+        try { pendientes.Add((pl.Name, Persistence.SerializarPersonaje(pl))); }
+        catch (Exception ex) { Console.Error.WriteLine($"[{quien}] no se pudo serializar '{pl.Name}': {ex.Message}"); }
     }
+    return pendientes;
+}
+
+// Try POR JUGADOR: un solo .chr que falle (disco lleno, archivo tomado por el antivirus) no puede impedir que
+// se guarden los demás, y el mensaje tiene que decir DE QUIÉN fue el error.
+int EscribirGuardados(List<(string nombre, string ini)> pendientes, string quien)
+{
+    int ok = 0, fallidos = 0;
+    foreach (var (nombre, ini) in pendientes)
+    {
+        try { db.GuardarPersonajeSerializado(nombre, ini); ok++; }
+        catch (Exception ex) { fallidos++; Console.Error.WriteLine($"[{quien}] no se pudo guardar '{nombre}': {ex.Message}"); }
+    }
+    if (ok > 0 || fallidos > 0)
+        Console.WriteLine($"[{quien}] {ok} personajes guardados" + (fallidos > 0 ? $", {fallidos} FALLARON" : ""));
+    return ok;
+}
+
+// Backups del almacén (data/backups/coverao-AAAAMMDD-HHMMSS).
+//
+// La foto se saca AFUERA del hilo del loop. Antes corría adentro, con el argumento de que así nadie escribía el
+// mundo mientras se copiaba — pero eso ya lo garantiza la escritura atómica del almacén (temporal + rename),
+// archivo por archivo, y lo que cuesta se midió sobre el Charfile del servidor original: 9.918 personajes son
+// CINCO SEGUNDOS de mundo congelado, cada backup, para siempre.
+long ultimoBackupTick = 0;
+string backupsDir = Path.Combine(dataRoot, "backups");
+Task tareaBackup = Task.CompletedTask, tareaAutosave = Task.CompletedTask;
+int backupEnCurso = 0;
+
+string HacerBackup(string motivo)
+{
+    // Uno por vez: el timer vuelve a saltar mientras el anterior todavía copia, y dos recorridas simultáneas del
+    // mismo directorio se pisan el destino.
+    if (Interlocked.Exchange(ref backupEnCurso, 1) == 1)
+    {
+        string ocupado = $"[backup] {motivo}: salteado, el anterior sigue en curso";
+        Console.WriteLine(ocupado);
+        return ocupado;
+    }
+    // Guardar a los conectados primero: si no, el snapshot sale con el estado del último save y el backup
+    // miente sobre lo que había. Es la diferencia entre restaurar la partida y restaurar la de hace una hora.
+    var pendientes = SerializarConectados("backup");
     // Por lo mismo que los personajes: si los clanes o el correo quedaron sucios, el snapshot saldría con lo
-    // de hace unos segundos y el backup mentiría sobre lo que había.
+    // de hace unos segundos.
     dispatcher?.VolcarPersistenciaDiferida(forzar: true);
-    try
+    var cuando = DateTime.Now;
+
+    tareaBackup = Task.Run(() =>
     {
-        string ruta = Backups.Crear(store, backupsDir, DateTime.Now, dataRoot);
-        int podados = Backups.Podar(backupsDir, serverIni.BackupsAConservar);
-        string msg = $"[backup] {motivo}: {Path.GetFileName(ruta)}" + (podados > 0 ? $" ({podados} viejo(s) borrado(s))" : "");
-        Console.WriteLine(msg);
-        return msg;
-    }
-    catch (Exception ex)
-    {
-        string m = $"[backup] FALLÓ: {ex.Message}";
-        Console.Error.WriteLine(m);
-        return m;
-    }
+        try
+        {
+            EscribirGuardados(pendientes, "backup");
+            string ruta = Backups.Crear(store, backupsDir, cuando, dataRoot);
+            int podados = Backups.Podar(backupsDir, serverIni.BackupsAConservar);
+            Console.WriteLine($"[backup] {motivo}: {Path.GetFileName(ruta)}" + (podados > 0 ? $" ({podados} viejo(s) borrado(s))" : ""));
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[backup] FALLÓ: {ex.Message}"); }
+        finally { Interlocked.Exchange(ref backupEnCurso, 0); }
+    });
+    return $"[backup] {motivo}: en curso";
 }
 
 // `--perf`: cada 10 s imprime lo que cuesta una vuelta del loop. El presupuesto es TickMs (40 ms) y pasarse no
@@ -287,17 +325,10 @@ loop.OnTickHandler = tick =>
     if (admin.AutosaveMinutes > 0 && (tick - admin.LastAutosaveTick) * GameLoop.TickMs >= (long)admin.AutosaveMinutes * 60_000)
     {
         admin.LastAutosaveTick = tick;
-        // Try POR JUGADOR, por lo mismo que en HacerBackup: sin esto, el primer .chr que falle abortaba el
-        // guardado de TODOS los que venían después, y como LastAutosaveTick ya se había actualizado no había
-        // reintento hasta el próximo ciclo — 15 minutos de juego perdidos para el resto.
-        int saved = 0, fallidos = 0;
-        foreach (var pl in world.Players)
-        {
-            try { db.SaveCharacter(pl); saved++; }
-            catch (Exception ex) { fallidos++; Console.Error.WriteLine($"[autosave] no se pudo guardar '{pl.Name}': {ex.Message}"); }
-        }
-        if (saved > 0 || fallidos > 0)
-            Console.WriteLine($"[autosave] {saved} personajes guardados" + (fallidos > 0 ? $", {fallidos} FALLARON" : ""));
+        // Serializar acá, escribir afuera: medido en este equipo son 0,75 ms por .chr, o sea que con cien
+        // conectados el autosave se comía dos ticks enteros y el mundo se trababa cada quince minutos.
+        var pendientes = SerializarConectados("autosave");
+        if (pendientes.Count > 0) tareaAutosave = Task.Run(() => EscribirGuardados(pendientes, "autosave"));
     }
     // Backup periódico del almacén entero (Server.ini MinutosBackup). Se guarda a los conectados PRIMERO, o el
     // snapshot sale con el estado del último save y el backup miente sobre lo que había.
@@ -820,6 +851,13 @@ try { await loopTask; } catch (OperationCanceledException) { } catch (Exception 
 // ENCOLA en el game loop, y para cuando las sesiones se caen el loop ya está parado, así que la tarea muere
 // sin correr. Resultado: todo lo que hiciste desde el último autosave se perdía. Va acá, después de parar el
 // loop, que es cuando nadie más muta el mundo.
+//
+// Antes que nada hay que esperar al autosave y al backup que puedan estar escribiendo en segundo plano: si no,
+// una foto de hace unos milisegundos aterriza DESPUÉS del guardado final y lo pisa. Y un backup cortado a la
+// mitad deja el almacén copiado a medias.
+try { await Task.WhenAll(tareaAutosave, tareaBackup); }
+catch (Exception ex) { Console.Error.WriteLine($"[apagado] guardado en segundo plano: {ex.Message}"); }
+
 int guardados = 0;
 foreach (var pl in world.Players.ToArray())
 {

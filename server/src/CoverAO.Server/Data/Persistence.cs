@@ -107,6 +107,20 @@ public sealed class Persistence
 
     public void SaveCharacter(Player p) => _store.WriteCharacter(p.Name, CharacterFile.ToIni(p).ToText());
 
+    /// <summary>Las DOS mitades de un guardado, separadas: serializar y escribir.
+    ///
+    /// <para>Guardar a todos los conectados es lo que hacen el autosave y el backup, y hasta acá las dos mitades
+    /// corrían pegadas adentro del game loop. La de arriba TIENE que correr ahí —lee unos cien campos del
+    /// <see cref="Player"/> vivo, y hacerlo desde otro hilo devuelve un personaje partido al medio: el oro ya
+    /// descontado y el ítem todavía sin agregar—. La de abajo no: es disco, y el disco no puede estar adentro de
+    /// una vuelta de 40 ms. Medido en este equipo: 0,75 ms por <c>.chr</c>, o sea que con cien conectados el
+    /// autosave se comía dos ticks enteros.</para></summary>
+    public static string SerializarPersonaje(Player p) => CharacterFile.ToIni(p).ToText();
+
+    /// <summary>La otra mitad: escribe a disco un texto ya serializado. Se puede llamar desde cualquier hilo
+    /// —el almacén serializa sus escrituras— y por eso es la que sale del loop.</summary>
+    public void GuardarPersonajeSerializado(string nombre, string ini) => _store.WriteCharacter(nombre, ini);
+
     /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
     /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el
     /// campo del CreateNewAccount y lo tiraba.</param>
