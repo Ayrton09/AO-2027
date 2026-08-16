@@ -4616,7 +4616,9 @@ public sealed class PacketDispatcher
             // la mira. Antes se leía del wire y se tiraba, así que no había nada que mostrarle.
             guild.JoinRequests[p.Name] = application;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Enviaste tu solicitud de ingreso al clan <{guild.Name}>. El líder debe aceptarla.", FuenteClan));
+            // Protocol.bas:4838, tal cual: el original nombra al clan sin los <> y cierra con punto.
+            session.Send(ServerMessages.ConsoleMsg(
+                $"Tu solicitud ha sido enviada. Espera prontas noticias del líder de {guild.Name}.", FuenteClan));
             foreach (var m in _world.GuildMembersOnline(guild.Name))
                 if (string.Equals(m.Name, guild.LeaderName, StringComparison.OrdinalIgnoreCase))
                     m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} solicitó unirse al clan.", FuenteClan));
@@ -6025,15 +6027,20 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Voto NO contabilizado: no perteneces a ningún clan.", 7)); return; }
+            // El original NO inventa un mensaje por caso: `v_UsuarioVota` (modGuilds.bas:1005) devuelve el motivo
+            // y el handler lo antepone siempre con el mismo prefijo (Protocol.bas:5820). Acá cada rechazo tenía
+            // su propia redacción y sólo el primero llevaba el prefijo, así que el jugador no podía saber si el
+            // voto contó o no. Los cuatro motivos son los suyos, palabra por palabra.
+            void NoContabilizado(string motivo) =>
+                session.Send(ServerMessages.ConsoleMsg("Voto NO contabilizado: " + motivo, FuenteClan));
+            if (string.IsNullOrEmpty(p.GuildName)) { NoContabilizado("Tú no perteneces a ningún clan."); return; }
             var g = _world.GuildByName(p.GuildName);
             if (g is null) return;
-            if (!g.ElectionsOpen) { session.Send(ServerMessages.ConsoleMsg("No hay elecciones abiertas.", FuenteClan)); return; }
-            if (!g.Members.Contains(candidate)) { session.Send(ServerMessages.ConsoleMsg("Ese personaje no es del clan.", FuenteClan)); return; }
-            // VB6 v_UsuarioVota (modGuilds.bas:1037): un miembro no puede revotar/cambiar el voto.
-            if (g.Votes.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya has votado, no puedes cambiar tu voto.", FuenteClan)); return; }
+            if (!g.ElectionsOpen) { NoContabilizado("No hay elecciones abiertas en tu clan."); return; }
+            if (!g.Members.Contains(candidate)) { NoContabilizado($"{candidate} no pertenece al clan."); return; }
+            if (g.Votes.ContainsKey(p.Name)) { NoContabilizado("Ya has votado, no puedes cambiar tu voto."); return; }
             g.Votes[p.Name] = candidate;
-            session.Send(ServerMessages.ConsoleMsg($"Votaste por {candidate}.", FuenteClan));
+            session.Send(ServerMessages.ConsoleMsg("Voto contabilizado.", FuenteClan));
 
             // El umbral (mayoría absoluta de los miembros) vive en Guild.GanadorDeLaEleccion, donde se puede
             // testear: es una regla de una línea que si se afloja entrega el clan al primero que vota.
@@ -7059,6 +7066,14 @@ public sealed class PacketDispatcher
     {
         _loop.Enqueue(() =>
         {
+            var p = session.Player;
+            if (p is null) return;
+            // DOS GATES QUE FALTABAN, y van ANTES del de liderazgo (VB6 Protocol.bas:16632 y :16637): un
+            // cadáver no cierra el clan, y en mapa PK tampoco. Sin ellos, el líder disolvía el clan muerto y
+            // en medio de una pelea. Los dos rechazan con FONTTYPE_INFO, como el resto de este handler.
+            if (!p.IsAlive) { session.Send(ServerMessages.ConsoleMsg("¡¡Estás muerto!!", FuenteInfo)); return; }
+            if (_data.IsPkMap(p.Pos.Map))
+            { session.Send(ServerMessages.ConsoleMsg("¡No puedes cerrar el clan en zona insegura!", FuenteInfo)); return; }
             // El /CERRARCLAN es la excepción: rechaza con FONTTYPE_INFO, no con la del clan.
             var g = RequireGuildLeader(session, session.Player, announceNoGuild: true, fuente: FuenteInfo);
             if (g is null) return;
