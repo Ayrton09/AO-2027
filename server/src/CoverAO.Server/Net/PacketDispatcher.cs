@@ -2999,8 +2999,8 @@ public sealed class PacketDispatcher
     /// <summary>/BANIPRELOAD (VB6 HandleBannedIPReload, Protocol.bas:9598): <c>BanIpGuardar</c> +
     /// <c>BanIpCargar</c>, o sea graba la lista a disco y la vuelve a leer. No emite nada. Gate: Admin o Dios.
     ///
-    /// Estaba catalogado como MUERTO por "cuerpo vacío tras el gate", y eso era un error de mi triaje: el
-    /// cuerpo hace el round-trip completo. Lo que sí es cierto es que no manda un solo byte al cliente.</summary>
+    /// Un triaje anterior lo daba por MUERTO leyendo "cuerpo vacío tras el gate", y está vivo: el cuerpo hace
+    /// el round-trip completo. Lo que sí es cierto es que no manda un solo byte al cliente.</summary>
     private void GmBannedIpReload(ClientSession session)
     {
         var p = session.Player;

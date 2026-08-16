@@ -623,7 +623,7 @@ admin.AttackIntervalMs = attackIntervalMs;
 // jugadores/tests legítimos pero que cortan floods/fuerza bruta.
 // Los topes salen del Server.ini si el host los puso; si no, los de siempre. MaxUsers del original es el
 // cupo de JUGADORES, no de sockets: acá se usa como tope global de conexiones porque es el que el host
-// entiende ("cuánta gente entra a mi server"), y 0 = sin tope, como en el ini.
+// entiende ("cuánta gente entra al servidor"), y 0 = sin tope, como en el ini.
 var connGuard = new ConnectionGuard(
     maxTotal: serverIni.MaxUsers > 0 ? serverIni.MaxUsers : 4000,
     maxPerIp: serverIni.LimiteConexionesPorIp > 0 ? serverIni.LimiteConexionesPorIp : 64);

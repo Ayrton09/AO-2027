@@ -105,7 +105,7 @@ public sealed class WebSocketTransport : ITransport
     }
 
     /// <summary>Cierra mandando el MOTIVO en el frame de cierre. El cliente web lo lee en <c>ev.reason</c> y
-    /// con eso decide si reconectar: un Abort pelado sólo le deja un 1006 y no puede distinguir "me echaron"
+    /// con eso decide si reconectar: un Abort pelado sólo le deja un 1006 y no puede distinguir "lo echaron"
     /// de "se cortó la red", así que se reconectaba SIEMPRE — dos pestañas con el mismo personaje se expulsaban
     /// en bucle infinito, y el /SALIR se deshacía solo. No se espera el close del peer (CloseOutputAsync) ni se
     /// bloquea el game-loop.</summary>
