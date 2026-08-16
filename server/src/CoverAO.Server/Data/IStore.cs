@@ -58,12 +58,28 @@ public sealed class FileStore : IStore
     /// parece corrupción, parece un robo.</para>
     ///
     /// <para>El rename sobre un archivo existente es atómico en NTFS y en ext4: o queda el nuevo entero, o
-    /// queda el viejo entero. Nunca uno a medias.</para></summary>
-    private static void EscribirAtomico(string destino, string texto, System.Text.Encoding enc)
+    /// queda el viejo entero. Nunca uno a medias.</para>
+    ///
+    /// <para>Y SERIALIZADA, que es lo que faltaba. El temporal se llama siempre igual (<c>destino + ".tmp"</c>),
+    /// así que dos escrituras del MISMO archivo abren el mismo temporal: la segunda lo trunca mientras la
+    /// primera lo escribe, y después las dos lo quieren renombrar. Medido con veinte hilos sobre una cuenta:
+    /// dieciséis tiraron <c>IOException</c> y su contenido se perdió — y el que las pidió no se entera, porque
+    /// los llamadores atrapan la excepción y siguen. No hace falta ser administrador para provocarlo: las
+    /// escrituras de cuenta salen de TRES hilos (el game loop, el pool de autenticación con sus <c>Task.Run</c>,
+    /// y el HTTP del panel), y el pool admite una operación en vuelo <b>por conexión</b>, así que veinte
+    /// conexiones pidiendo cambiar la misma contraseña son veinte escrituras simultáneas del mismo <c>.cnt</c>.
+    /// <c>SqliteStore</c> ya serializaba con su propio candado desde siempre; éste, que es el almacén POR
+    /// DEFECTO, no. El costo es nulo: son archivos de unos pocos KB y las escrituras son raras.</para></summary>
+    private readonly object _puerta = new();
+
+    private void EscribirAtomico(string destino, string texto, System.Text.Encoding enc)
     {
-        string tmp = destino + ".tmp";
-        File.WriteAllText(tmp, texto, enc);
-        File.Move(tmp, destino, overwrite: true);
+        lock (_puerta)
+        {
+            string tmp = destino + ".tmp";
+            File.WriteAllText(tmp, texto, enc);
+            File.Move(tmp, destino, overwrite: true);
+        }
     }
 
     private string MiscPath(string k) => Path.Combine(_miscDir, k.ToUpperInvariant() + ".json");

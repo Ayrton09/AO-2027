@@ -155,7 +155,7 @@ public class SpellDataFieldsTests
         var data = CoverAO.Server.Data.GameData.Load();
         if (data.SpellCount == 0) return;
         var json = System.IO.File.ReadAllText(
-            System.IO.Path.Combine(data.SourceDir, "Hechizos.json"));
+            System.IO.Path.Combine(data.SourceDir ?? "", "Hechizos.json"));
         Assert.DoesNotContain("\"Estupidez\"", json);
     }
 }
@@ -249,7 +249,7 @@ public class CiudadesTests
 
     private static System.Text.Json.JsonElement? Data()
     {
-        string ruta = System.IO.Path.Combine(CoverAO.Server.Data.GameData.Load().SourceDir, "Ciudades.json");
+        string ruta = System.IO.Path.Combine(CoverAO.Server.Data.GameData.Load().SourceDir ?? "", "Ciudades.json");
         if (!System.IO.File.Exists(ruta)) return null;
         var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(ruta));
         return doc.RootElement.TryGetProperty("meta", out var m) ? m : doc.RootElement;

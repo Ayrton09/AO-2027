@@ -58,7 +58,10 @@ public static class Backups
         if (!Directory.Exists(dir)) return Array.Empty<IGrouping<string, string>>();
         return Directory.EnumerateFileSystemEntries(dir, Prefijo + "*")
             .OrderBy(p => Directory.Exists(p) ? 1 : 0)
-            .GroupBy(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase)
+            // El `?? p` no es defensa contra nada: `GetFileNameWithoutExtension` sólo devuelve null si la ruta
+            // es null, y `EnumerateFileSystemEntries` nunca la da. Está para que el build quede en CERO avisos,
+            // que es lo que hace que el próximo aviso —uno de verdad— se vea.
+            .GroupBy(p => Path.GetFileNameWithoutExtension(p) ?? p, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Key, StringComparer.Ordinal)
             .ToArray();
     }
