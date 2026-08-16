@@ -9379,11 +9379,16 @@ public sealed class PacketDispatcher
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
             int move = Math.Clamp((int)amount, 1, inv.Amount);
-            int bslot = FindBankSlotFor(p, inv.ObjIndex);
+            int bslot = FindBankSlotFor(p, inv.ObjIndex, move);
             if (bslot == 0) { session.Send(ServerMessages.LocaleMsg(149)); return; }
+            // NO SE MUEVE MAS DE LO QUE ENTRA. El descuento del inventario y la suma a la boveda tienen que
+            // ser el MISMO numero: si la ranura no da para todo, se lleva lo que cabe y el resto se queda
+            // donde estaba. Antes el tope se aplicaba solo del lado que recibia, y la diferencia se perdia.
+            move = Math.Min(move, GameLimits.MaxInventoryObjs - p.BankInventory[bslot].Amount);
+            if (move <= 0) { session.Send(ServerMessages.LocaleMsg(149)); return; }
             short obj = inv.ObjIndex;
             inv.Amount -= (short)move; if (inv.Amount <= 0) inv = default; p.Inventory[slot] = inv;
-            var bk = p.BankInventory[bslot]; bk.ObjIndex = obj; bk.Amount = (short)Math.Min(short.MaxValue, bk.Amount + move); p.BankInventory[bslot] = bk;
+            var bk = p.BankInventory[bslot]; bk.ObjIndex = obj; bk.Amount = (short)(bk.Amount + move); p.BankInventory[bslot] = bk;
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             session.Send(ServerMessages.ChangeBankSlot((byte)bslot, bk.ObjIndex, bk.Amount, _data.Obj(obj)?.Value ?? 0));
             session.Send(ServerMessages.BankOk());
@@ -9400,11 +9405,15 @@ public sealed class PacketDispatcher
             var bk = p.BankInventory[slot];
             if (bk.IsEmpty) return;
             int move = Math.Clamp((int)amount, 1, bk.Amount);
-            int islot = FindSlotFor(p, bk.ObjIndex);
+            int islot = FindSlotFor(p, bk.ObjIndex, move);
             if (islot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
+            // Misma regla que el deposito, del otro lado: lo que sale de la boveda es lo que entra en la
+            // mochila, ni una unidad mas.
+            move = Math.Min(move, GameLimits.MaxInventoryObjs - p.Inventory[islot].Amount);
+            if (move <= 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
             short obj = bk.ObjIndex;
             bk.Amount -= (short)move; if (bk.Amount <= 0) bk = default; p.BankInventory[slot] = bk;
-            var inv = p.Inventory[islot]; inv.ObjIndex = obj; inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + move); p.Inventory[islot] = inv;
+            var inv = p.Inventory[islot]; inv.ObjIndex = obj; inv.Amount = (short)(inv.Amount + move); p.Inventory[islot] = inv;
             session.Send(ServerMessages.ChangeBankSlot(slot, bk.ObjIndex, bk.Amount, _data.Obj(obj)?.Value ?? 0));
             session.Send(ServerMessages.ChangeInventorySlot((byte)islot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
             session.Send(ServerMessages.BankOk());
@@ -9517,10 +9526,24 @@ public sealed class PacketDispatcher
                 };
     }
 
-    private static int FindBankSlotFor(Player p, short objIndex)
+    /// <summary>
+    /// Ranura de la BÓVEDA donde entra <paramref name="cantidad"/> de ese objeto: primero una que ya lo tenga
+    /// y en la que QUEPA, si no la primera vacía, y 0 si no hay ninguna.
+    ///
+    /// <para>El <c>cantidad</c> es el arreglo. Esta función devolvía la primera ranura con el mismo objeto sin
+    /// mirar cuánto tenía, y los dos handlers cerraban la suma con <c>Math.Min(short.MaxValue, actual + move)</c>:
+    /// con 30.000 flechas en la bóveda, depositar 5.000 descontaba las 5.000 del inventario y dejaba la bóveda
+    /// en 32.767 — 2.233 flechas <b>destruidas en silencio</b>. Y de paso se pasaba del tope de 10.000 por
+    /// ranura que el resto del juego sí respeta (<c>FindSlotFor</c> ya lo hacía; ésta era la única que no).</para>
+    ///
+    /// <para>Es <c>public</c> por la misma razón que las constantes de la apuesta: para que un test pueda
+    /// afirmar sobre la regla sin levantar medio servidor.</para>
+    /// </summary>
+    public static int FindBankSlotFor(Player p, short objIndex, int cantidad = 1)
     {
         for (int i = 1; i <= GameLimits.MaxBankSlots; i++)
-            if (!p.BankInventory[i].IsEmpty && p.BankInventory[i].ObjIndex == objIndex) return i;
+            if (!p.BankInventory[i].IsEmpty && p.BankInventory[i].ObjIndex == objIndex
+                && p.BankInventory[i].Amount + cantidad <= GameLimits.MaxInventoryObjs) return i;   // apila si entra
         for (int i = 1; i <= GameLimits.MaxBankSlots; i++)
             if (p.BankInventory[i].IsEmpty) return i;
         return 0;
