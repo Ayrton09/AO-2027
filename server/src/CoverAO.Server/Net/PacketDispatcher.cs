@@ -334,7 +334,14 @@ public sealed class PacketDispatcher
             case ClientPacketId.PidePremios: HandlePidePremios(session); break;
             case ClientPacketId.RPremios: HandleRPremios(session, reader); break;
             case ClientPacketId.EquiparSkin: HandleEquiparSkin(session, reader); break;
-            case ClientPacketId.ParticulaUsuario: { string ptName = reader.ReadAsciiString(); short particle = reader.ReadInteger(); _loop.Enqueue(() => { if (session.Player is null) return; var t = _world.PlayerByName(ptName); if (t is not null) { _world.BroadcastToObservers(t.Pos, ServerMessages.EfectoCharParticula(t.CharIndex, particle, -1f, false)); session.Send(ServerMessages.LocaleMsg(461, t.Name)); } else session.Send(ServerMessages.LocaleMsg(_db.CharacterExists(ptName) ? (short)75 : (short)80)); }); break; } // VB6 HandleParticulaUsuario: inexistente->LocaleMsg(80), offline->75, online->broadcast particula+LocaleMsg(461)
+            // VB6 HandleParticulaUsuario: inexistente->LocaleMsg(80), offline->75, online->broadcast particula+LocaleMsg(461).
+            //
+            // SIN GATE DE PRIVILEGIO, Y ES FIEL. El original parece tenerlo (Protocol.bas:15637) pero no:
+            // `If PlayerType.Admin Or PlayerType.Dios Or PlayerType.SemiDios Then` OR-ea tres CONSTANTES del
+            // enum y nunca las compara contra `.flags.Privilegios`, así que en VB6 es `If <distinto de cero>`
+            // — siempre verdadero. Cualquiera puede ponerle una partícula a cualquiera, allá y acá.
+            // NO agregarle un gate: sería divergir del oráculo en un paquete que el barrido compara.
+            case ClientPacketId.ParticulaUsuario: { string ptName = reader.ReadAsciiString(); short particle = reader.ReadInteger(); _loop.Enqueue(() => { if (session.Player is null) return; var t = _world.PlayerByName(ptName); if (t is not null) { _world.BroadcastToObservers(t.Pos, ServerMessages.EfectoCharParticula(t.CharIndex, particle, -1f, false)); session.Send(ServerMessages.LocaleMsg(461, t.Name)); } else session.Send(ServerMessages.LocaleMsg(_db.CharacterExists(ptName) ? (short)75 : (short)80)); }); break; }
             case ClientPacketId.CentinelReport: reader.ReadInteger(); break; // VB6 CentinelaCheckClave: sin desafio activo, silencio
             // Los dos GUARDAN el dato y no responden nada (VB6 ChangeCodexAndDesc modGuilds.bas:402 y
             // ActualizarWebSite :383). Antes se leían los strings y se tiraban, así que editar la descripción,
@@ -435,17 +442,42 @@ public sealed class PacketDispatcher
             if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
             if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }
             LoginOk(session);
-            if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
 
-            var roster = acc.Characters
-                .Select(name => _db.LoadSummary(name))
-                .Where(s => s is not null)
-                .Select(s => s!)
-                .ToList();
-
-            session.Send(ServerMessages.AddPj(account, roster));       // char list from the account's .cnt
-            session.Send(ServerMessages.AbrirFormularios(1));          // 1 = account/char-selection form
-            Console.WriteLine($"[{session.RemoteEndpoint}] ACCOUNT account={account} chars={roster.Count}");
+            // LA LISTA DE PERSONAJES SALE DEL DISCO: un `.chr` por personaje, hasta DIEZ, y hasta acá se leían
+            // adentro del hilo del game loop —este callback vuelve al loop— cuyo presupuesto por vuelta es de
+            // 40 ms. O sea que cada conexión de cuenta le cobraba al mundo diez lecturas de archivo (diez
+            // consultas con SQLite), y varias personas entrando a la vez las apilan en la misma vuelta.
+            //
+            // Es exactamente el mismo defecto que este archivo ya corrigió dos veces: el `AccountExists` de la
+            // creación de cuentas y la ficha del miembro de clan (:5318, "ESE LEER ES DISCO, y acá adentro
+            // estamos en el hilo del game loop"). Faltaba el tercero, que además es el que corre SIEMPRE.
+            //
+            // El guardado del hash migrado se va al mismo hilo por la misma razón: es una escritura.
+            var nombres = acc.Characters.ToArray();
+            var cuenta = acc;
+            Task.Run(() =>
+            {
+                var roster = new List<CharacterSummary>(nombres.Length);
+                try
+                {
+                    if (upgraded) _db.SaveAccount(cuenta);   // el hash SHA-256 viejo, ya migrado a PBKDF2
+                    foreach (var name in nombres)
+                        if (_db.LoadSummary(name) is { } s) roster.Add(s);
+                }
+                catch (Exception ex)
+                {
+                    // Un `.chr` ilegible no puede dejar al jugador sin pantalla de personajes: se manda lo que
+                    // se pudo leer, que es lo que hacía el `Where(s => s is not null)` de antes.
+                    Console.Error.WriteLine($"[{session.RemoteEndpoint}] roster de {account}: {ex.Message}");
+                }
+                _loop.Enqueue(() =>
+                {
+                    if (session.Cerrada) return;
+                    session.Send(ServerMessages.AddPj(account, roster));       // char list from the account's .cnt
+                    session.Send(ServerMessages.AbrirFormularios(1));          // 1 = account/char-selection form
+                    Console.WriteLine($"[{session.RemoteEndpoint}] ACCOUNT account={account} chars={roster.Count}");
+                });
+            });
         });
     }
 
@@ -772,6 +804,19 @@ public sealed class PacketDispatcher
             return;
         }
 
+        // ESTA LECTURA SE QUEDA EN EL LOOP, A PROPÓSITO. Es disco —un `.chr` entero con inventario, banco,
+        // hechizos y skills— y por eso rompe la regla que este archivo sigue en todos lados (el roster de
+        // personajes y la ficha de clan se leen afuera). La diferencia es lo que hay ARRIBA: los cuatro gates
+        // que acaba de pasar —el personaje pertenece a la cuenta, no está ya conectado, la IP no repite, la
+        // cuenta no tiene otro adentro— miran el estado VIVO del mundo. Sacar la lectura afuera obliga a
+        // volver al loop para spawnear, y entre una cosa y otra el mundo cambió: dos logins del mismo
+        // personaje pueden pasar los dos gates y entrar los dos, que es exactamente lo que ese gate impide y
+        // la forma clásica de duplicar oro e ítems (los dos escriben el mismo .chr y el último pisa).
+        //
+        // O sea que el costo es UNA lectura por entrada al mundo, contra abrir una ventana de carrera en la
+        // compuerta que protege los datos. Se paga la lectura. Si algún día molesta, el arreglo NO es moverla
+        // sino reservar el personaje ANTES de leer (marcarlo como "entrando" en el mundo), y recién ahí se
+        // puede hacer la lectura afuera sin ventana.
         var player = _db.LoadCharacter(charName, _world.AllocateCharIndex(), account);
         if (player is null) { Reject(session, $"No se encontro el personaje '{charName}'."); return; }
         if (player.Banned) { Reject(session, "Este personaje esta baneado."); return; }   // VB6 flags.Ban — baneo por personaje (/BAN)
@@ -1362,7 +1407,7 @@ public sealed class PacketDispatcher
         if (_rng.Next(1, 101) > Combat.HitChance(pa, pe))
         {
             // El fallo tambien se muestra: un "0" flotante sobre uno mismo (SistemaCombate.bas:1248).
-        session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));
+            session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
             // RECHAZO CON ESCUDO (VB6 SistemaCombate.bas:1136-1151). Segunda tirada, sólo sobre un golpe ya
             // fallado. Y es la ÚNICA vía de entrenamiento de Defensa que tiene el juego: sin esto la skill no
