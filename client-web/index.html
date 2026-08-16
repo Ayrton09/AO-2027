@@ -2367,7 +2367,12 @@
     // inventario —T tirar, U usar, E equipar— actúan SOBRE ÉL. Acá no existía: el clic actuaba directo, y por
     // eso el inventario no se podía tocar con el teclado. Ahora el clic hace las dos cosas: selecciona y actúa.
     let slotSel = 0;
-    const SKILLS_MOD = [[1, 'Tácticas'], [3, 'Lucha sin armas'], [7, 'Defensa c/ escudo'], [16, 'Supervivencia'], [12, 'Domar'], [18, 'Pesca'], [19, 'Minería'], [20, 'Talar'], [22, 'Herrería'], [23, 'Carpintería'], [24, 'Alquimia'], [25, 'Sastrería'], [26, 'Navegación']];
+    // LAS 27, derivadas de SKILL_NAMES. Acá había una lista escrita a mano con TRECE, y las que faltaban no
+    // se podían subir de ninguna manera: entre ellas MAGIA, que es la que gatea todos los hechizos (cada uno
+    // pide un mínimo, y el más barato del mago pide 5). Un mago recién creado nacía sin poder lanzar nada y
+    // sin forma de arreglarlo. Es el mismo tropiezo que ya había tenido SKILL_NAMES —una lista paralela
+    // escrita de memoria— así que ahora sale de una sola fuente y no puede volver a desfasarse.
+    const SKILLS_MOD = SKILL_NAMES.map((n, k) => [k + 1, n]);
     function openActions(tab = 'trabajar') {
       const on = (t) => tab === t ? ' on' : '';
       const body = openPanel('Acciones', `
@@ -2387,7 +2392,7 @@
           <div id="mail-box"></div></div>
         <div class="subpane${on('skills')}" data-p="skills">
           <div class="fhint">Puntos libres: <b id="sk-libres">${puntosLibres}</b> — repartilos y aplicá.</div>
-          <div class="skgrid">${SKILLS_MOD.map(([i, n]) => `<div class="kn">${n}</div><button class="sbtn ghost stepbtn" data-skd="${i}">−</button><div class="kv" id="sk-${i}">0</div><button class="sbtn ghost stepbtn" data-ski="${i}">+</button>`).join('')}</div>
+          <div class="skgrid">${SKILLS_MOD.map(([i, n]) => `<div class="kn">${n} <span class="fhint">(${(misSkills && misSkills[i - 1]) || 0})</span></div><button class="sbtn ghost stepbtn" data-skd="${i}">−</button><div class="kv" id="sk-${i}">0</div><button class="sbtn ghost stepbtn" data-ski="${i}">+</button>`).join('')}</div>
           <button class="sbtn" data-act="sk-apply">Aplicar</button></div>
         <div class="subpane${on('varios')}" data-p="varios">
           <div class="fsec">Transferir oro</div>
