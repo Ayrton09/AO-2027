@@ -5027,7 +5027,7 @@ public sealed class PacketDispatcher
         victima.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, vinv.ObjIndex, vinv.Amount,
             vinv.Equipped, 0f, vinv.IsEmpty ? (byte)0 : (byte)1));
 
-        int destino = FindSlotFor(p, objIndex);        // dárselo al ladrón; si no entra, al piso
+        int destino = FindSlotFor(p, objIndex, num);   // dárselo al ladrón; si no entra, al piso
         if (destino == 0)
         {
             // Buscar un tile LIBRE (VB6 TirarItemAlPiso → Tilelibre): escribir directo en p.Pos pisaría lo que ya
@@ -5044,7 +5044,7 @@ public sealed class PacketDispatcher
         {
             var ladronInv = p.Inventory[destino];
             ladronInv.ObjIndex = objIndex;
-            ladronInv.Amount = (short)Math.Min(short.MaxValue, ladronInv.Amount + num);
+            ladronInv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, ladronInv.Amount + num);
             p.Inventory[destino] = ladronInv;
             session.Send(ServerMessages.ChangeInventorySlot((byte)destino, ladronInv.ObjIndex, ladronInv.Amount,
                 ladronInv.Equipped, 0f, 1));
@@ -5096,7 +5096,7 @@ public sealed class PacketDispatcher
 
         // Buscar el destino del lingote ANTES de consumir el mineral: si no hay espacio, se avisa sin tocar el
         // stock (el VB6 tira el lingote al piso, pero acá preferimos no perder material silenciosamente).
-        int lingSlot = FindSlotFor(p, (short)mineral.LingoteIndex);
+        int lingSlot = FindSlotFor(p, (short)mineral.LingoteIndex, cantidad);
         if (lingSlot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio para los lingotes.", FuenteInfo)); return; }
 
         slotInv.Amount -= (short)(perLingote * cantidad);          // consumir minerales
@@ -5106,7 +5106,7 @@ public sealed class PacketDispatcher
 
         var ling = p.Inventory[lingSlot];
         ling.ObjIndex = (short)mineral.LingoteIndex;
-        ling.Amount = (short)Math.Min(short.MaxValue, ling.Amount + cantidad);
+        ling.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, ling.Amount + cantidad);
         p.Inventory[lingSlot] = ling;
         session.Send(ServerMessages.ChangeInventorySlot((byte)lingSlot, ling.ObjIndex, ling.Amount, ling.Equipped, 0f, 1));
         session.Send(ServerMessages.LocaleMsg(207, cantidad.ToString()));   // "¡Has obtenido #1 lingotes!"
@@ -5222,7 +5222,7 @@ public sealed class PacketDispatcher
     {
         var m = box[i];
         if (m.ObjIndex <= 0 || m.Amount <= 0) return;
-        int slot = FindSlotFor(p, m.ObjIndex);
+        int slot = FindSlotFor(p, m.ObjIndex, m.Amount);
         if (slot == 0)
         {
             // VB6 TirarItemAlPiso → Tilelibre: hay que buscar un tile LIBRE, no escribir sobre p.Pos, que
@@ -5240,7 +5240,7 @@ public sealed class PacketDispatcher
         {
             var inv = p.Inventory[slot];
             inv.ObjIndex = m.ObjIndex;
-            inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + m.Amount);
+            inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + m.Amount);
             p.Inventory[slot] = inv;
             session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         }
@@ -5737,7 +5737,7 @@ public sealed class PacketDispatcher
         }
         var inv = p.Inventory[slot];
         inv.ObjIndex = obj;
-        inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + 1);
+        inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + 1);
         p.Inventory[slot] = inv;
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
     }
@@ -6231,7 +6231,7 @@ public sealed class PacketDispatcher
         var needs = materials(obj).Where(m => m.per > 0).Select(m => (m.obj, need: m.per * count)).ToArray();
         foreach (var (mObj, need) in needs)
             if (CountItem(p, mObj) < need) return;
-        int slot = FindSlotFor(p, item);
+        int slot = FindSlotFor(p, item, count);
         if (slot == 0) return;
         // ENERGÍA. Va acá —validado todo, antes de consumir— porque es donde la cobra el original: dentro del
         // `If TieneMateriales And skill And PuedeConstruir And herramienta Then`, justo antes del `QuitarMateriales`.
@@ -6247,7 +6247,7 @@ public sealed class PacketDispatcher
         RaiseSkill(session, p, skillIndex);   // VB6: fabricar sube la skill del oficio (SubirSkill)
         var inv = p.Inventory[slot];
         inv.ObjIndex = item;
-        inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + count);
+        inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + count);
         p.Inventory[slot] = inv;
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         session.Send(ServerMessages.LocaleMsg(431));
@@ -7663,11 +7663,11 @@ public sealed class PacketDispatcher
             { resource = yacimiento.MineralIndex; name = _data.Obj(resource)?.Name ?? name; }
         }
         int amount = _rng.Next(1, 6); // RandomNumber(1,5)
-        int slot = FindSlotFor(p, (short)resource);
+        int slot = FindSlotFor(p, (short)resource, amount);
         if (slot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio en el inventario.", FuenteInfo)); return false; }
         var inv = p.Inventory[slot];
         inv.ObjIndex = (short)resource;
-        inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + amount);
+        inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + amount);
         p.Inventory[slot] = inv;
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // reflejar la stamina gastada
@@ -9262,7 +9262,7 @@ public sealed class PacketDispatcher
             p.Gold -= (int)cost;
             var inv = p.Inventory[invSlot];
             inv.ObjIndex = st.ObjIndex;
-            inv.Amount = (short)Math.Min(short.MaxValue, inv.Amount + buy);
+            inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + buy);
             p.Inventory[invSlot] = inv;
             DescontarStockDelMercader(npc, slot - 1, (short)buy);
 
@@ -10047,7 +10047,15 @@ public sealed class PacketDispatcher
     /// <para>La rama que TRUNCA sí existe en el original (el <c>Else</c> que fija el tope), pero es inalcanzable:
     /// para llegar ahí el bucle tuvo que caer en un slot VACÍO, y un slot vacío más una pila que ya viene
     /// acotada nunca se pasa. Por eso no se replica.</para></summary>
-    private static int FindSlotFor(Player p, short objIndex, int cantidad = 1)
+    /// <summary>La ranura del inventario donde entra <paramref name="cantidad"/> de ese objeto: apila si el
+    /// montón no se pasa del tope del juego, y si no, una vacía. 0 = no hay lugar.
+    ///
+    /// <para><b>HAY QUE PASARLE LA CANTIDAD.</b> El default de 1 está para los llamadores que agregan una
+    /// unidad, y seis lugares lo usaban para después sumar N: el buscador decía que sí porque entraba UNO, y la
+    /// pila terminaba por encima de los 10.000 del original y clampeada en 32.767 — que es el paso previo a que
+    /// se pierda lo que no entra, exactamente el defecto que tenía la bóveda con su gemelo
+    /// <see cref="FindBankSlotFor"/>.</para></summary>
+    public static int FindSlotFor(Player p, short objIndex, int cantidad = 1)
     {
         for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
             if (!p.Inventory[i].IsEmpty && p.Inventory[i].ObjIndex == objIndex
