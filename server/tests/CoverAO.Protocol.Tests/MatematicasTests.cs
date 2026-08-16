@@ -39,6 +39,17 @@ public class MatematicasTests
         Assert.Equal(2, Survival.HealAmount(17, (a, b) => b));
     }
 
+    /// <summary>La otra cara de la misma trampa: guardar un <c>Double</c> en un entero de VB6 también redondea,
+    /// y el cast <c>(int)</c> de C# trunca. Un mago con inteligencia 16 ganaba 44 de maná por nivel en vez de
+    /// 45 — sobre 49 niveles son 49 de maná que no existían.</summary>
+    [Theory]
+    [InlineData(44.8, 45)]      // mago (2,8) con inteligencia 16; truncando: 44
+    [InlineData(37.5, 38)]      // nigromante (2,5) con inteligencia 15: al par sube; truncando: 37
+    [InlineData(42.5, 42)]      // al par BAJA cuando el entero de abajo es par
+    [InlineData(30.0, 30)]      // exacto: los dos coinciden
+    public void Guardar_un_double_en_un_entero_de_vb6_redondea_al_par(double valor, int esperado)
+        => Assert.Equal(esperado, Matematicas.AEntero(valor));
+
     /// <summary>
     /// BARRIDO DEL FUENTE: nadie puede volver a escribir un porcentaje con división entera.
     ///

@@ -149,7 +149,10 @@ public sealed class Leveling
         double manaFactor = ManaFactor(p.Class);
         if (manaFactor > 0)
         {
-            ganadoMana = (int)(manaFactor * p.Attributes[GameLimits.AttrInteligencia]);
+            // `Dim AumentoMANA As Integer` con `2.8 * Inteligencia` (Modulo_UsUaRiOs.bas:361 y :468): el
+            // original REDONDEA al guardar, el cast de C# trunca. Un mago con inteligencia 16 ganaba 44 en vez
+            // de 45, todos los niveles.
+            ganadoMana = (int)Matematicas.AEntero(manaFactor * p.Attributes[GameLimits.AttrInteligencia]);
             p.MaxMana = Math.Min(MaxManaCap, p.MaxMana + ganadoMana);
         }
 

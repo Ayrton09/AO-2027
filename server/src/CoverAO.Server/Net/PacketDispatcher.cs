@@ -5013,7 +5013,11 @@ public sealed class PacketDispatcher
 
         var vinv = victima.Inventory[slot];
         int amount = vinv.Amount;
-        int num = Math.Max(1, _rng.Next((int)(amount * 0.05), (int)(amount * 0.1) + 1));
+        // `RandomNumber(ObjAmount * 0.05, ObjAmount * 0.1)` con los dos parámetros declarados `As Long`
+        // (Matematicas.bas:71): los extremos se REDONDEAN al pasarlos, no se truncan. Con 30 unidades el
+        // original roba entre 2 y 3, y truncando el piso quedaba en 1.
+        int piso = (int)Matematicas.AEntero(amount * 0.05), techo = (int)Matematicas.AEntero(amount * 0.1);
+        int num = Math.Max(1, _rng.Next(piso, techo + 1));
         if (num > amount) num = amount;
         short objIndex = vinv.ObjIndex;
 

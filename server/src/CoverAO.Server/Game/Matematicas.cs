@@ -31,4 +31,12 @@ public static class Matematicas
     /// <summary>Una división de VB6 cuyo resultado se guarda en un entero: redondea al par, no trunca.</summary>
     public static long Dividir(long valor, long divisor) =>
         (long)System.Math.Round(valor / (double)divisor, System.MidpointRounding.ToEven);
+
+    /// <summary>Guardar un <c>Double</c> en un <c>Integer</c>/<c>Long</c> de VB6: redondea al par.
+    ///
+    /// <para>Es la misma trampa que la barra, por el otro lado. El cast <c>(int)</c> de C# TRUNCA, así que
+    /// cada <c>AumentoMANA = 2.8 * Inteligencia</c> del original portado con un cast pierde hasta un punto por
+    /// nivel — sobre 49 niveles, hasta 49 de maná, y justo en las clases que viven de eso.</para></summary>
+    public static long AEntero(double valor) =>
+        (long)System.Math.Round(valor, System.MidpointRounding.ToEven);
 }
