@@ -24,12 +24,14 @@ public class PotionTests
     [Fact]
     public void PorcentajeRoundsHalfToEven()
     {
+        // La cuenta se mudó a `Matematicas`, que es donde el original la tiene: adentro de `Potions` no la
+        // encontraba nadie y por eso se reimplementó con división entera en otros cinco lugares.
         // 50*4/100 = 2.0 (exact) ; 25*4/100 = 1.0 ; 37*4/100 = 1.48 -> 1
-        Assert.Equal(2, Potions.Porcentaje(50, 4));
-        Assert.Equal(1, Potions.Porcentaje(37, 4));
+        Assert.Equal(2, Matematicas.Porcentaje(50, 4));
+        Assert.Equal(1, Matematicas.Porcentaje(37, 4));
         // exact-half: 10*5/100 = 0.5 -> even -> 0 ; 30*5/100 = 1.5 -> even -> 2
-        Assert.Equal(0, Potions.Porcentaje(10, 5));
-        Assert.Equal(2, Potions.Porcentaje(30, 5));
+        Assert.Equal(0, Matematicas.Porcentaje(10, 5));
+        Assert.Equal(2, Matematicas.Porcentaje(30, 5));
     }
 
     [Fact]

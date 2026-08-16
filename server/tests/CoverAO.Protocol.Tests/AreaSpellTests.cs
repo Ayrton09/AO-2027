@@ -127,8 +127,15 @@ public class AreaSpellTests
     // ── La aritmética ──────────────────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    // tirada, nivel, báculo, resistencia → esperado
-    [InlineData(10, 1, 0, 0, 10)]      // nivel 1: 10 + 10*2/100 = 10 (la división entera se come el bono)
+    // tirada, nivel, báculo, resistencia → esperado.
+    //
+    // OJO LOS DOS DEL MEDIO. El bono sale del `Porcentaje` del original (Matematicas.bas:32), que divide en
+    // PUNTO FLOTANTE y devuelve un Long: REDONDEA al par, no trunca. Los tres casos que había acá usaban
+    // números que dan exacto —500/100, 1000/100— así que pasaban igual con la división entera de C#, que da un
+    // punto menos cada vez que la cuenta no cierra. Estos dos son los que separan una cosa de la otra.
+    [InlineData(10, 1, 0, 0, 10)]      // 10*2/100 = 0,2 → 0 en los dos
+    [InlineData(10, 13, 0, 0, 13)]     // 10*26/100 = 2,6 → 3; truncando daría 12
+    [InlineData(7, 25, 0, 0, 11)]      // 7*50/100 = 3,5 → 4 (al par); truncando daría 10
     [InlineData(10, 25, 0, 0, 15)]     // nivel 25: 10 + 500/100 = 15
     [InlineData(10, 50, 0, 0, 20)]     // nivel 50: 10 + 1000/100 = 20
     [InlineData(10, 25, 7, 0, 22)]     // + báculo de DañoMagico
@@ -148,8 +155,8 @@ public class AreaSpellTests
     }
 
     [Theory]
-    [InlineData(30, 1, 30)]      // nivel 1: 30 + 90/100 = 30
-    [InlineData(30, 25, 52)]     // nivel 25: 30 + 2250/100 = 52
+    [InlineData(30, 1, 31)]      // 30*3/100 = 0,9 → 1; truncando daría 30 y la cura de nivel 1 no rendiría nada
+    [InlineData(30, 25, 52)]     // 30*75/100 = 22,5 → 22 (al par), igual que truncando
     [InlineData(30, 50, 75)]     // nivel 50: 30 + 4500/100 = 75
     public void La_cura_de_area_usa_el_3_por_ciento_por_nivel_no_el_2(int tirada, int nivel, int esperado)
         => Assert.Equal(esperado, Combat.EfectoHechizoArea3Pct(tirada, nivel));

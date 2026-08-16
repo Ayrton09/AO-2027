@@ -57,18 +57,18 @@ public static class Survival
     /// original muerde 1 y el truncamiento muerde 0 — o sea que el aviso llegaba para siempre sin bajar un solo
     /// punto de vida. No se notó porque el flow usa a Merlin, que tiene MaxHp 100, el único valor donde
     /// truncar y redondear coinciden.</remarks>
-    public static int ColdBite(int maximo) => (int)Potions.Porcentaje(maximo, 5);
+    public static int ColdBite(int maximo) => (int)Matematicas.Porcentaje(maximo, 5);
 
     /// <summary>Cuánta vida devuelve una curación natural (VB6 <c>Sanar</c>, General.bas): <c>RandomNumber(2,
     /// Porcentaje(MaxSta, 5))</c> — sale de la energía MÁXIMA, no de la vida, que es de las rarezas del
     /// original que conviene no "arreglar". El piso en 2 evita el rango invertido cuando el 5% da menos.</summary>
     public static int HealAmount(int maxStamina, System.Func<int, int, int> rnd)
-        => rnd(2, System.Math.Max(2, maxStamina * 5 / 100));
+        => rnd(2, System.Math.Max(2, (int)Matematicas.Porcentaje(maxStamina, 5)));
 
     /// <summary>Cuánta energía devuelve <c>RecStamina</c>: <c>5 * RandomNumber(1, Porcentaje(MaxSta +
     /// Supervivencia, 5))</c>.</summary>
     public static int StaminaAmount(int maxStamina, int supervivencia, System.Func<int, int, int> rnd)
-        => 5 * rnd(1, System.Math.Max(1, (maxStamina + supervivencia) * 5 / 100));
+        => 5 * rnd(1, System.Math.Max(1, (int)Matematicas.Porcentaje(maxStamina + supervivencia, 5)));
 
     /// <summary>La SUERTE de meditar: cada cuántas vueltas, en promedio, acierta un tirón de maná. Sale de la
     /// escalera de <c>DoMeditar</c> (Trabajo.bas:2061-2093), que va de 35 con la skill en 0 a 5 con la skill en
@@ -93,7 +93,12 @@ public static class Survival
 
     /// <summary>Cuánto maná devuelve UN acierto de meditación: <c>Porcentaje(MaxMAN, PorcentajeRecuperoMana) /
     /// 10</c>, con piso 1 (Trabajo.bas:2099-2102). Con el 6 del install eso es el 0,6% del maná máximo — así
-    /// que el tirón CRECE con el personaje en vez de ser una constante.</summary>
+    /// que el tirón CRECE con el personaje en vez de ser una constante.
+    ///
+    /// <para>Son DOS redondeos y ninguno es truncar: <c>Porcentaje</c> devuelve un <c>Long</c> y el original
+    /// guarda el resultado en <c>Dim cant As Integer</c>, así que la barra vuelve a redondear al par. Con las
+    /// dos divisiones enteras de C# el mago recuperaba la MITAD en los pozos chicos: con 250 de maná máximo el
+    /// original devuelve 2 puntos por acierto y truncando salía 1.</para></summary>
     public static int ManaAlMeditar(int maxMana, int porcentajeRecupero)
-        => System.Math.Max(1, maxMana * porcentajeRecupero / 100 / 10);
+        => System.Math.Max(1, (int)Matematicas.Dividir(Matematicas.Porcentaje(maxMana, porcentajeRecupero), 10));
 }

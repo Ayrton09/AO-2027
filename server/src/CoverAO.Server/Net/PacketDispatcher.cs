@@ -2168,7 +2168,7 @@ public sealed class PacketDispatcher
         if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         npc.AttackedBy = p.Name;   // VB6 NPCAtacado: lo provoca y lo vuelve hostil para defenderse
         npc.Hostile = true;
-        int damage = Math.Max(0, amount + amount * 3 * p.Level / 100);   // VB6: daño + Porcentaje(daño, 3*ELV), piso 0
+        int damage = Combat.EfectoHechizoArea3Pct(amount, p.Level);   // VB6: daño + Porcentaje(daño, 3*ELV), piso 0
         SpellCasted(session, p, spell);
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
         // OJO: acá el goteo de experiencia va DESPUÉS de aplicar el daño, al revés que en el melee. No es un
@@ -8317,7 +8317,7 @@ public sealed class PacketDispatcher
                 if (heal != p && !PuedeAyudar(p, heal)) { session.Send(ServerMessages.LocaleMsg(449)); return; }
 
                 // Bono +3% por nivel DEL LANZADOR (VB6: daño + Porcentaje(daño, 3 * ELV)).
-                int healed = amount + amount * 3 * p.Level / 100;
+                int healed = Combat.EfectoHechizoArea3Pct(amount, p.Level);
                 SpellCasted(session, p, spell);
                 heal.Hp = Math.Min(heal.MaxHp, heal.Hp + healed);
                 EmitSpellFx(heal.Pos, heal.CharIndex, spell);

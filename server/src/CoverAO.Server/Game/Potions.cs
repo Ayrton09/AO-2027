@@ -8,9 +8,10 @@ namespace CoverAO.Server.Game;
 /// </summary>
 public static class Potions
 {
-    /// <summary>Porcentaje(Total, Porc) = (Total * Porc) / 100, returned as a VB6 Long (half-to-even).</summary>
-    public static long Porcentaje(long total, long porc) =>
-        (long)System.Math.Round(total * porc / 100.0, System.MidpointRounding.ToEven);
+    /// <summary>Se mudó a <see cref="Matematicas.Porcentaje"/>. Vivía acá adentro, que es de donde salió que
+    /// otros cinco lugares lo reimplementaran con división entera: nadie busca una cuenta de porcentaje dentro
+    /// del archivo de las pociones.</summary>
+    private static long Porcentaje(long total, long porc) => Matematicas.Porcentaje(total, porc);
 
     /// <summary>
     /// Mana restored by a blue potion (SubTipo 4): MinMAN += Porcentaje(MaxMAN,4) + ELV\2 + 40/ELV.

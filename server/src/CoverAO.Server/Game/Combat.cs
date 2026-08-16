@@ -73,6 +73,13 @@ public static class Combat
     /// la de NPC, <c>:259</c>) y ahí divide por cero; el ErrHandler se traga la excepción y no hay rechazo,
     /// que es exactamente lo que devolver 0 produce, sin la excepción.
     /// </summary>
+    public static int ProbabilidadRechazoEscudo(int defenseSkill, int tacticsSkill)
+    {
+        if (defenseSkill + tacticsSkill <= 0) return 0;
+        long p = Clng(100.0 * defenseSkill / (defenseSkill + tacticsSkill));
+        return (int)Math.Max(10, Math.Min(90, p));
+    }
+
     /// <summary>
     /// Chance de APUÑALAR por la espalda (VB6 <c>DoApuñalar</c>, <c>Trabajo.bas:1766-1780</c>). Cuatro ramas
     /// por clase, tres de ellas polinomios cúbicos sobre la skill Apuñalar y una lineal para el resto.
@@ -117,13 +124,6 @@ public static class Combat
         if (damage <= 0) return 0;
         long exp = Clng(damage * ((double)npcGiveExp / npcMaxHp));
         return exp > 0 ? exp : 0;
-    }
-
-    public static int ProbabilidadRechazoEscudo(int defenseSkill, int tacticsSkill)
-    {
-        if (defenseSkill + tacticsSkill <= 0) return 0;
-        long p = Clng(100.0 * defenseSkill / (defenseSkill + tacticsSkill));
-        return (int)Math.Max(10, Math.Min(90, p));
     }
 
     /// <summary>
@@ -181,7 +181,7 @@ public static class Combat
     /// contra suficiente resistencia mágica se anula por completo.</summary>
     public static int DanoHechizoOfensivo(int tirada, int nivelLanzador, int bonoBaculo, int resistenciaVictima)
     {
-        int dano = tirada + tirada * 2 * nivelLanzador / 100;   // Porcentaje(daño, 2 * ELV)
+        int dano = tirada + (int)Matematicas.Porcentaje(tirada, 2 * nivelLanzador);
         dano += bonoBaculo;
         dano -= resistenciaVictima;
         return dano < 0 ? 0 : dano;
@@ -208,7 +208,7 @@ public static class Combat
     /// :1657). Sin resistencia mágica en el medio: a los NPCs no se les descuenta nada.</summary>
     public static int EfectoHechizoArea3Pct(int tirada, int nivelLanzador, int bonoBaculo = 0)
     {
-        int v = tirada + tirada * 3 * nivelLanzador / 100;
+        int v = tirada + (int)Matematicas.Porcentaje(tirada, 3 * nivelLanzador);
         v += bonoBaculo;
         return v < 0 ? 0 : v;
     }
