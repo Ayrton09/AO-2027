@@ -2807,14 +2807,27 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.ConsoleMsg($"Hora del servidor: {DateTime.Now:HH:mm:ss dd/MM/yyyy}", FuenteInfo));
     }
 
+    /// <summary>/DONDE (VB6 HandleWhere, Protocol.bas:6642): dónde está un jugador.
+    ///
+    /// <para>Faltaba la REGLA DE VISIBILIDAD, que no es un detalle de texto: el original sólo revela la
+    /// posición si el objetivo es User, Consejero o SemiDiós — o si es Dios/Admin <b>y el que pregunta también
+    /// lo es</b>. O sea que un SemiDiós no puede ubicar a un Dios. Acá se la mostrábamos a cualquier GM.</para>
+    ///
+    /// <para>Cuando la regla no deja, el original NO contesta nada: no hay rama negativa. Y el offline va por
+    /// <c>LocaleMsg 75</c>, no por un texto nuestro.</para></summary>
     private void GmWhere(ClientSession session, string name)
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
         var t = _world.PlayerByName(name);
-        session.Send(ServerMessages.ConsoleMsg(t is null
-            ? $"{name} no está online."
-            : $"{t.Name} está en el mapa {t.Pos.Map} ({t.Pos.X},{t.Pos.Y}).", FuenteInfo));
+        if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
+        bool objetivoVisible = (t.Privileges & (PrivUser | PrivConsejero | PrivSemiDios)) != 0
+                               || ((t.Privileges & (PrivDios | PrivAdmin)) != 0
+                                   && (p!.Privileges & (PrivDios | PrivAdmin)) != 0);
+        if (!objetivoVisible) return;   // sin rama negativa: el original calla
+        // El doble espacio tras "Ubicación" es del original (Protocol.bas:6673).
+        session.Send(ServerMessages.ConsoleMsg(
+            $"Ubicación  {name}: {t.Pos.Map}, {t.Pos.X}, {t.Pos.Y}.", FuenteInfo));
     }
 
     private void GmWarp(ClientSession session, string name, short map, byte x, byte y)
@@ -4760,7 +4773,27 @@ public sealed class PacketDispatcher
         return false;
     }
 
-    /// <summary>GuildFundate (id 89): step 1 of founding — checks eligibility and prompts for alignment.</summary>
+    /// <summary><c>ALINEACION_GUILD</c> (modGuilds.bas:36). La alineación del clan NO la elige el jugador: sale
+    /// de su facción.</summary>
+    private const byte AlinRepublicano = 1, AlinImperial = 2, AlinCaotico = 3, AlinRenegado = 4;
+
+    /// <summary>La alineación que le toca a un personaje por su facción (VB6 HandleGuildFundate,
+    /// Protocol.bas:6177-6188). Devuelve 0 si no cae en ninguna de las cuatro, que es el caso que el original
+    /// manda a hablar con un GM.</summary>
+    private static byte AlineacionPorFaccion(Player p) =>
+        p.IsCitizen || p.IsArmada ? AlinImperial
+        : p.IsRepublicano || p.IsMilicia ? AlinRepublicano
+        : p.IsCaos ? AlinCaotico
+        : p.FactionStatus == Player.StatusCriminal ? AlinRenegado
+        : (byte)0;
+
+    /// <summary>GuildFundate (id 89): paso 1 de la fundación.
+    ///
+    /// <para>Acá sólo se abría el formulario. En el original este paso <b>decide la alineación del clan a partir
+    /// de la FACCIÓN</b> del que funda y la guarda; el paso 2 lee un byte del cliente cuyo <c>Select Case</c>
+    /// está COMENTADO en el fuente, o sea que la elección del cliente no se usa. Nuestro port hacía lo
+    /// contrario: se guardaba el byte que mandara el cliente, así que un renegado podía fundar un clan
+    /// Imperial. Es la familia de "qué le creemos al cliente".</para></summary>
     private void HandleGuildFundate(ClientSession session)
     {
         _loop.Enqueue(() =>
@@ -4768,6 +4801,10 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (!string.IsNullOrEmpty(p.GuildName)) return;   // VB6 HandleGuildFundate: HasFound -> Exit Sub, sin mensaje
+            byte alin = AlineacionPorFaccion(p);
+            if (alin == 0)
+            { session.Send(ServerMessages.ConsoleMsg("Hay un error en su faccion, comuniquese con algun GameMaster", FuenteClan)); return; }
+            p.FoundingAlignment = alin;
             session.Send(ServerMessages.AbrirFormularios(7));   // VB6: WriteAbrirFormularios(UserIndex, 7)
         });
     }
@@ -4777,13 +4814,16 @@ public sealed class PacketDispatcher
     /// (abre el form de fundación), NO un texto; si ya fundó un clan (HasFound) hace LogCheating + Exit Sub.</summary>
     private void HandleGuildFundation(ClientSession session, ByteQueueReader r)
     {
-        byte alignment = r.ReadByte();
+        r.ReadByte();   // el byte de ClanType del cliente se LEE y se descarta: ver abajo
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
             if (!string.IsNullOrEmpty(p.GuildName)) return;   // VB6: HasFound -> LogCheating + Exit Sub (silencio)
-            p.FoundingAlignment = alignment;                  // se conserva para el CreateNewGuild posterior
+            // La alineación ya quedó fijada por la FACCIÓN en el paso 1. El original lee este byte y su
+            // `Select Case` está comentado entero (Protocol.bas:6256-6260), así que la elección del cliente no
+            // se usa; acá se estaba guardando, que es dejar que el jugador elija la alineación de su clan.
+            if (p.FoundingAlignment == 0) p.FoundingAlignment = AlineacionPorFaccion(p);
             session.Send(ServerMessages.AbrirFormularios(7));
         });
     }
