@@ -495,6 +495,7 @@
         <span class="lm on" data-m="in">Ingresar</span>
         <span class="lm" data-m="acc">Crear cuenta</span>
         <span class="lm" data-m="char">Crear personaje</span>
+        <span class="lm" data-m="pass">Contraseña</span>
       </div>
 
       <form class="login-form on" id="lf-in" autocomplete="off">
@@ -508,8 +509,28 @@
         <label>Cuenta <input name="acc" required></label>
         <label>Contraseña <input name="pw" type="password" required></label>
         <label>Repetir contraseña <input name="pw2" type="password" required></label>
+        <!-- El CÓDIGO DE RECUPERACIÓN del original (el "UserCodigo" del .cnt). Es lo único que devuelve una
+             cuenta cuya contraseña se perdió, y acá se mandaba un "0000" fijo para todo el mundo. -->
+        <label>Código de recuperación <input name="code" required maxlength="30"></label>
         <button class="goldbtn" type="submit">Crear cuenta</button>
-        <div class="login-hint">Después creá tu personaje en la pestaña «Crear personaje».</div>
+        <div class="login-hint">Anotá el código: es lo único que recupera la cuenta si perdés la contraseña.</div>
+      </form>
+
+      <!-- Las dos operaciones de cuenta del original: frmCambiarContraseña y frmRecuperarCuenta. Las dos
+           mandan el mismo paquete (ProcesosLogin) y se distinguen por el Tipo; lo que cambia es qué secreto
+           se pide, la clave de ahora o el código. -->
+      <form class="login-form" id="lf-pass" autocomplete="off">
+        <label>Cuenta <input name="acc" required></label>
+        <label>Cómo la vas a cambiar
+          <select name="modo">
+            <option value="1">Sé mi contraseña actual</option>
+            <option value="0">La perdí: tengo el código de recuperación</option>
+          </select>
+        </label>
+        <label id="lb-pin">Contraseña actual <input name="pin" type="password" required></label>
+        <label>Contraseña nueva <input name="pw" type="password" required></label>
+        <label>Repetir la nueva <input name="pw2" type="password" required></label>
+        <button class="goldbtn" type="submit">Cambiar contraseña</button>
       </form>
 
       <form class="login-form" id="lf-char" autocomplete="off">
@@ -526,8 +547,11 @@
         </div>
         <div class="login-row">
           <label>Clase <select name="klass"></select></label>
-          <label>Ciudad <select name="home"></select></label>
+          <label>Tierra natal <select name="home"></select></label>
         </div>
+        <!-- El original avisa qué implica la tierra natal con un cartel que cambia al elegir (lstHogar_Click →
+             lblInfo, frmCrearPersonaje.frm:854). No es decoración: es la única pista de que ahí se elige bando. -->
+        <div class="login-hint" id="hogar-info"></div>
         <!-- La cara se elige VIÉNDOLA, como el original: el frmCrearPersonaje del VB6 dibuja la cabeza en un
              PictureBox (HeadView) y la cicla con dos flechas, no con una lista de números. El rango válido
              depende de raza+género (ValidarCabeza), así que las flechas recorren SÓLO ese tramo. -->
@@ -559,9 +583,9 @@
     // core of the future Pixi.js client; here it drives a minimal Canvas render as a starting point.
     // ?v= versiona los módulos ES compilados: sin esto el navegador cachea el dist viejo aunque cambie
     // (el cache-bust del index.html NO alcanza a los import). Bumpear al tocar cualquier .ts de dist/.
-    import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=29';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=29';
-    import { parseLocaleMsg } from './dist/src/protocol/localeSmg.js?v=29';
+    import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=30';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=30';
+    import { parseLocaleMsg } from './dist/src/protocol/localeSmg.js?v=30';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
     window.addEventListener('unhandledrejection', (e) => { window.__errs.push('reject: ' + (e.reason && e.reason.message || e.reason)); });
@@ -573,7 +597,7 @@
       // Chat + comandos '/' (cada comando del AO clasico es su propio paquete):
       Whisper: 4, Online: 62, Quit: 63, GuildLeave: 64, Rest: 65, Resucitate: 69, RequestStats: 70, Enlist: 73,
       Information: 74, Reward: 75, UpTime: 76, GuildMessage: 77, GuildOnline: 79, ChangeDescription: 81, GuildVote: 82,
-      Gamble: 83, Denounce: 86, RegresarHogar: 99,
+      Gamble: 83, Denounce: 86, RegresarHogar: 99, ProcesosLogin: 101,
       // Tanda 3 — social / clan / facción
       AddAmigos: 108, DelAmigos: 109, OnAmigos: 110, MsgAmigos: 111, RetirarFaccion: 98,
       GuildRequestMembership: 60, GuildAcceptNewMember: 54, GuildRejectNewMember: 55, GuildKickMember: 56,
@@ -2545,7 +2569,15 @@
         case 'CommerceEnd': if (modalKind === 'commerce') { modalKind = null; modalEl.classList.remove('on'); } break;
         case 'BankEnd': if (bankOpen) { modalKind = null; modalEl.classList.remove('on'); } bankOpen = false; break;
         // Un cuadro de dialogo del server (MsgBox en el original). Sin case, el texto se perdia entero.
-        case 'SendMsgBox': log('» ' + f.message, '#e8c876'); break;
+        // Con Modo > 0 el cuerpo NO es texto: es el número de línea de `locale_error_es.ind`, y el cliente
+        // original lo resuelve contra su tabla (HandleSendMsgBox, Protocol.bas:3078). Sin resolverlo, el
+        // cambio de contraseña le contestaba al jugador un «» 50» pelado.
+        case 'SendMsgBox': {
+          const texto = f.modo > 0 ? (LOCALE_ERROR[f.message] || 'Aviso ' + f.message) : f.message;
+          log('» ' + texto, '#e8c876');
+          if (!$('login').classList.contains('hidden')) loginErr(texto);
+          break;
+        }
         // Correo pendiente: el original prende el cartelito `frmMain.nuevocorreo`.
         case 'MensajeSigno': correoPendiente = f.recibio === 1; pintarEstados(); break;
         // El server te EMPUJA un tile (un NPC te intercambia de lugar sobre tu cadaver: VB6 MoveNPCChar).
@@ -3798,7 +3830,11 @@
       // FUNCIONALIDAD ya estaba —todas tienen su panel— pero el ALIAS de comando no, y el original se maneja
       // por comando. `/flist` es el `WriteOnAmigoandMapa` del VB6; `/eventos` el `WriteHayEventos`, que sin
       // evento activo no contesta nada (y así es en el original).
-      '/flist': CLIENT.OnAmigos, '/eventos': CLIENT.HayEventos };
+      '/flist': CLIENT.OnAmigos, '/eventos': CLIENT.HayEventos,
+      // Los tres últimos del parser del original que sólo teníamos por BOTÓN. La feature estaba entera —el
+      // panel de clan funda y cierra, el de casamiento divorcia— pero el que viene del AO clásico los tipea,
+      // y tipearlos contestaba "comando desconocido". Mandan exactamente lo mismo que el botón.
+      '/fundarclan': CLIENT.GuildFundate, '/cerrarclan': CLIENT.CloseGuild, '/divorcio': CLIENT.Divorciar };
     const CHAT_ARGSTR = { '/cmsg': CLIENT.GuildMessage, '/desc': CLIENT.ChangeDescription,
       '/voto': CLIENT.GuildVote, '/denunciar': CLIENT.Denounce,
       // /DESCONECTAR <nombre>: echa la sesión de ese personaje de la cuenta (VB6 WriteDesconectarCuenta).
@@ -4389,18 +4425,44 @@
       box.classList.add('hidden');
     }
     function loginErr(msg) { const e = $('login-err'); if (e) e.textContent = msg || ''; }
-    // Los índices son los que valida el server: raza 1-10, género 1-2, clase 1-15, hogar 1-12, cabeza ≥1.
+    // Las líneas de `locale_error_es.ind` que el server manda por número (SendMsgBox con Modo > 0). Sólo las
+    // que puede emitir el stack, textuales del archivo del original; el resto cae al "Aviso N" del handler.
+    const LOCALE_ERROR = {
+      39: 'La cuenta no existe.',
+      49: 'Ingrese una contraseña válida.',
+      50: 'Contraseña restablecida.',
+      51: 'Código incorrecto.',
+      52: 'La contraseña ingresada es incorrecta, intente de nuevo.',
+    };
+    // Los índices son los que valida el server: raza 1-10, género 1-2, clase 1-18, tierra natal 1-2, cabeza ≥1.
     // eRaza del VB6 (Declares.bas:162): Humano=1, Elfo=2, Drow=3, gnomo=4, enano=5, Orco=6. Faltaba el Orco.
     const RAZAS = ['Humano', 'Elfo', 'Elfo Oscuro', 'Gnomo', 'Enano', 'Orco'];
-    const GENEROS = ['Hombre', 'Mujer'];
+    const GENEROS = ['Masculino', 'Femenino'];   // los del original (locale_gui_es.ind, frases 229 y 230)
     // Orden = eClass del servidor (Declares.bas:117-136). NO es el orden del AO clásico: acá Clérigo es 1 y
     // Mago es 2. El índice+1 de esta lista viaja crudo en LoginNewChar y es el que indexa MODVIDA (Balance.dat),
     // el kit de NACIMIENTO.dat y la armadura faccionaria — si se reordena, un Mago nace con el kit del Clérigo.
     const CLASES = ['Clérigo', 'Mago', 'Guerrero', 'Asesino', 'Ladrón', 'Bardo', 'Druida', 'Gladiador', 'Paladín', 'Cazador', 'Pescador', 'Herrero', 'Leñador', 'Minero', 'Carpintero', 'Sastre', 'Mercenario', 'Nigromante'];
-    const CIUDADES = ['Ullathorpe', 'Nix', 'Banderbill', 'Lindos', 'Arghal', 'Arkhein', 'Bilbo Hills', 'Esperanza', 'Hilliard', 'Petriria', 'Ciudad del Este', 'Isla del Padre'];
+    // LAS DOCE CIUDADES REALES de este juego (Ciudades.dat + eCiudad, Declares.bas:142). Acá había una lista
+    // inventada —Arkhein, Bilbo Hills, Esperanza, Hilliard, Petriria, Isla del Padre— que ni siquiera existe en
+    // esta versión, y que además estaba CORRIDA: el índice viaja crudo al server, así que quien elegía
+    // "Ullathorpe" fijaba Nix, y "Arkhein" lo mandaba al Dungeon Newbie. Se usa en el selector de hogar, que es
+    // el que cambia adónde te lleva /HOGAR cuando morís.
+    const CIUDADES = ['Nix', 'Illiandor', 'Ullathorpe', 'Banderbill', 'Rinkel', 'Dungeon Newbie', 'Lindos', 'Arghal', 'Tiama', 'Orac', 'Suramei', 'Nueva'];
+    // La TIERRA NATAL del nacimiento es otra cosa y son sólo DOS: el original carga el combo con NUMCIUDADES = 2
+    // (Declares.bas:102) y el server corta en 2 "porque al nacimiento solo hay Nix o Illi" (TCP.bas:455). Elegir
+    // acá no elige mapa —se nace en el Dungeon Newbie de todas formas— sino BANDO, y de eso salen la ciudadanía
+    // imperial o la republicana, con sus ejércitos y sus enemigos.
+    const TIERRAS_NATALES = ['Nix (Imperial)', 'Illiandor (Republicano)'];
+    const AVISO_NATAL = [
+      'El seleccionar como ciudad natal Nix te hará miembro del IMPERIO. Esto implica varias cosas a tener en cuenta, te recomendamos pensarlo cuidadosamente.',
+      'El seleccionar como ciudad natal Illiandor te hará miembro de la REPÚBLICA. Esto implica varias cosas a tener en cuenta, te recomendamos pensarlo cuidadosamente.',
+    ];
     const fillSelect = (sel, names, start = 1) => { sel.innerHTML = names.map((n, i) => `<option value="${i + start}">${n}</option>`).join(''); };
     const lfChar = $('lf-char'), lfCh = lfChar.elements;
-    fillSelect(lfCh.race, RAZAS); fillSelect(lfCh.gender, GENEROS); fillSelect(lfCh.klass, CLASES); fillSelect(lfCh.home, CIUDADES);
+    fillSelect(lfCh.race, RAZAS); fillSelect(lfCh.gender, GENEROS); fillSelect(lfCh.klass, CLASES); fillSelect(lfCh.home, TIERRAS_NATALES);
+    const pintarAvisoNatal = () => { const d = $('hogar-info'); if (d) d.textContent = AVISO_NATAL[(+lfCh.home.value || 1) - 1] || ''; };
+    lfCh.home.addEventListener('change', pintarAvisoNatal);
+    pintarAvisoNatal();
     // ---- Elegir la cara viéndola (VB6 frmCrearPersonaje: HeadView + flechas) --------------------------
     // Rango de cabezas por raza/género, portado de ValidarCabeza (TCP.bas:125-178). NO es 1..N: cada
     // combinación tiene su tramo propio y son disjuntos. Antes el desplegable ofrecía "Cara 1..10" para
@@ -4462,9 +4524,27 @@
     $('lf-acc').addEventListener('submit', (ev) => {            // Crear cuenta → CreateNewAccount
       ev.preventDefault(); const e = ev.target.elements;
       if (e.pw.value !== e.pw2.value) { loginErr('Las contraseñas no coinciden.'); return; }
-      const w = new ByteQueueWriter().writeByte(CLIENT.CreateNewAccount).writeAsciiString(e.acc.value.trim()).writeAsciiString(e.pw.value).writeAsciiString('0000');
+      const w = new ByteQueueWriter().writeByte(CLIENT.CreateNewAccount).writeAsciiString(e.acc.value.trim()).writeAsciiString(e.pw.value).writeAsciiString(e.code.value);
       V(w); sendLogin(w.toBytes());
       loginErr('Cuenta creada si el nombre estaba libre. Ahora andá a «Crear personaje».');
+    });
+    // Cambiar / recuperar la contraseña → ProcesosLogin. El Tipo decide qué secreto verifica el server: 1 la
+    // contraseña de ahora, 0 el código de recuperación. La etiqueta del campo sigue al desplegable para que
+    // no quede pidiendo "contraseña actual" a quien justamente la perdió.
+    const lfPass = $('lf-pass'), lfPw = lfPass.elements;
+    const pintarEtiquetaPin = () => {
+      $('lb-pin').firstChild.nodeValue = lfPw.modo.value === '1' ? 'Contraseña actual ' : 'Código de recuperación ';
+      lfPw.pin.type = lfPw.modo.value === '1' ? 'password' : 'text';
+    };
+    lfPw.modo.addEventListener('change', pintarEtiquetaPin);
+    pintarEtiquetaPin();
+    lfPass.addEventListener('submit', (ev) => {
+      ev.preventDefault(); const e = ev.target.elements;
+      if (e.pw.value !== e.pw2.value) { loginErr('Las contraseñas no coinciden.'); return; }
+      const w = new ByteQueueWriter().writeByte(CLIENT.ProcesosLogin)
+        .writeAsciiString(e.acc.value.trim()).writeAsciiString(e.pin.value).writeAsciiString(e.pw.value);
+      V(w); w.writeByte(+e.modo.value);
+      loginErr('Cambiando la contraseña…'); sendLogin(w.toBytes());
     });
     lfChar.addEventListener('submit', (ev) => {                // Crear personaje → LoginNewChar (entra al mundo)
       ev.preventDefault(); const e = ev.target.elements;

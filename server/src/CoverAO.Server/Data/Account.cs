@@ -14,9 +14,26 @@ public sealed class Account
     /// <summary>Flag donador a nivel CUENTA (VB6 .cnt "Donador"). Al loguear fuerza Donador=1 en el char
     /// (TCP.bas:1863), así todos los personajes de una cuenta premium heredan el beneficio.</summary>
     public bool Donador { get; set; }
+    /// <summary>Hash del CÓDIGO DE RECUPERACIÓN de la cuenta (VB6 .cnt "UserCodigo"). Es el segundo secreto
+    /// que pide la creación de cuenta y lo único que permite recuperarla si se pierde la contraseña
+    /// (<c>HandleProcesosLogin</c> con Tipo 0, Protocol.bas:15748). Se guarda hasheado igual que la clave: el
+    /// que hostea lee el .cnt, y en texto plano sería una segunda contraseña regalada.</summary>
+    public string UserCodeHash { get; set; } = "";
     public List<string> Characters { get; } = new();
 
     public bool VerifyPassword(string password) => VerifyPassword(password, out _);
+
+    /// <summary>Verifica el código de recuperación. Sin código guardado devuelve false: una cuenta vieja
+    /// —creada antes de que esto existiera— no se recupera, pero tampoco la abre cualquiera mandando "".</summary>
+    public bool VerifyUserCode(string code)
+    {
+        if (string.IsNullOrEmpty(UserCodeHash) || string.IsNullOrEmpty(code)) return false;
+        return PasswordHasher.IsModern(UserCodeHash)
+            ? PasswordHasher.VerifyModern(code, UserCodeHash)
+            : CryptographicOperations.FixedTimeEquals(
+                Encoding.ASCII.GetBytes(PasswordHasher.Hash(code, Salt)),
+                Encoding.ASCII.GetBytes(UserCodeHash));
+    }
 
     /// <summary>Verifies the password. Modern (PBKDF2) hashes verify directly; on a successful LEGACY
     /// (SHA-256) verify the stored hash is upgraded to PBKDF2 in place and <paramref name="upgraded"/>

@@ -330,12 +330,7 @@ public sealed class PacketDispatcher
             case ClientPacketId.Work: HandleWork(session, reader); break;
             case ClientPacketId.HayEventos: break;   // VB6 HandleHayEventos: sin evento activo no emite nada
             case ClientPacketId.AbrirForms: { byte form = reader.ReadByte(); _loop.Enqueue(() => { if (session.Player is null) return; if (form == 1) session.Send(ServerMessages.AbrirFormularios(9)); }); break; } // VB6 HandleAbrirForms: Case 1 -> donador?AbrirForm(10):AbrirForm(9); el slice no modela donador -> 9. Otros forms: silencio.
-            // VB6 HandleProcesosLogin (Protocol.bas:15684): consume 3xASCIIString(cuenta,code,pass) + 4xByte
-            // (major,minor,rev,tipo) y ramifica a SendMsgBox/ShowMessageBox/EjecutarAccion según el subsistema
-            // de recovery/PIN. Ese subsistema no está modelado en este slice y NINGUNA de esas ramas emite un
-            // "Procesos de login completados" — el .NET mandaba ese ConsoleMsg de más. Se consume el payload y
-            // se calla, que es lo más fiel posible sin inventar el flujo de recovery.
-            case ClientPacketId.ProcesosLogin: reader.ReadAsciiString(); reader.ReadAsciiString(); reader.ReadAsciiString(); reader.ReadByte(); reader.ReadByte(); reader.ReadByte(); reader.ReadByte(); break;
+            case ClientPacketId.ProcesosLogin: HandleProcesosLogin(session, reader); break;
             case ClientPacketId.PidePremios: HandlePidePremios(session); break;
             case ClientPacketId.RPremios: HandleRPremios(session, reader); break;
             case ClientPacketId.EquiparSkin: HandleEquiparSkin(session, reader); break;
@@ -470,7 +465,7 @@ public sealed class PacketDispatcher
             // este vector ("amplificación de DoS por PBKDF2") y esta ruta se había quedado afuera.
             if (LoginBlocked(session)) return;
             if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
-            CrearCuentaFueraDelLoop(session, account, password);
+            CrearCuentaFueraDelLoop(session, account, password, userCode);
         });
     }
 
@@ -489,10 +484,10 @@ public sealed class PacketDispatcher
     /// que mandar mil paquetes de creación seguidos ya no compra mil hashes en paralelo — compra uno y el
     /// resto espera. El reintento se apoya en que <c>Drain</c> ahora corta por vuelta.
     /// </summary>
-    private void CrearCuentaFueraDelLoop(ClientSession session, string account, string password)
+    private void CrearCuentaFueraDelLoop(ClientSession session, string account, string password, string userCode)
     {
         if (session.Cerrada) return;
-        if (!session.TomarVerificacion()) { _loop.Enqueue(() => CrearCuentaFueraDelLoop(session, account, password)); return; }
+        if (!session.TomarVerificacion()) { _loop.Enqueue(() => CrearCuentaFueraDelLoop(session, account, password, userCode)); return; }
         Task.Run(() =>
         {
             bool existia = false, creada = false;
@@ -503,7 +498,7 @@ public sealed class PacketDispatcher
                 // PBKDF2 —son microsegundos contra 25 ms—, pero es I/O en el hilo sagrado y no tiene por qué
                 // estar ahí. Se hace acá, junto con la creación, y el veredicto vuelve por el loop.
                 existia = _db.AccountExists(account);
-                if (!existia) { _db.CreateAccount(account, password); creada = true; }
+                if (!existia) { _db.CreateAccount(account, password, userCode); creada = true; }
             }
             catch (Exception ex) { Console.Error.WriteLine($"[{session.RemoteEndpoint}] crear cuenta: {ex.Message}"); }
             _loop.Enqueue(() =>
@@ -522,6 +517,113 @@ public sealed class PacketDispatcher
                     // Lista de personajes vacía, para que el cliente siga a crear el primero.
                     session.Send(ServerMessages.AddPj(account, Array.Empty<CharacterSummary>()));
                     session.Send(ServerMessages.AbrirFormularios(1));
+                }
+                finally { session.ReanudarInbound(); }
+            });
+        });
+    }
+
+    // Los tres subcomandos de ProcesosLogin (VB6 `Cuenta.EsChange`, que el cliente arma en frmRecuperarCuenta,
+    // frmCambiarContraseña y frmPregunta). En los dos primeros el campo `UserCode` del paquete lleva cosas
+    // distintas: con TipoCambiarClave viaja la contraseña ACTUAL, y con TipoRecuperar el código de recuperación.
+    private const byte TipoRecuperarCuenta = 0, TipoCambiarClave = 1, TipoBorrarCuenta = 2;
+    // Los índices de `locale_error_es.ind` que el original manda como cuerpo del SendMsgBox con Modo=1 — el
+    // cliente los resuelve contra su tabla, así que por el cable viaja el NÚMERO como texto.
+    private const string ErrCuentaNoExiste = "39", ErrClaveVacia = "49", ErrClaveRestablecida = "50",
+                         ErrCodigoIncorrecto = "51", ErrClaveIncorrecta = "52";
+    private const byte AccionResultadoLogin = 5;   // WriteEjecutarAccion(5, "1"|"0") — el "salió bien / salió mal"
+
+    /// <summary>
+    /// ProcesosLogin (id 101): cambiar la contraseña y recuperar la cuenta (VB6 HandleProcesosLogin,
+    /// Protocol.bas:15684). Son las dos operaciones de cuenta que el original tiene fuera del juego y que acá
+    /// no existían: el handler leía los siete campos y no hacía nada, así que quien perdía la clave perdía
+    /// la cuenta y sus personajes, y nadie podía cambiarla nunca.
+    ///
+    /// <para>El tercer subcomando —<c>Tipo = 2</c>, borrar— <b>no se porta</b>: en el original esa rama no
+    /// borra nada, contesta <c>EjecutarAccion(5, "0")</c> y sale (Protocol.bas:15743). Está muerta allá, así
+    /// que acá se responde igual.</para>
+    ///
+    /// <para>Que la cuenta no exista se contesta con el aviso 39, como el original, aunque eso deje sondear
+    /// qué cuentas hay: es la misma información que ya suelta la creación de cuentas ("la cuenta X ya
+    /// existe"). Lo que sí se conserva es el rate-limit por IP y el costo constante del hash, para que el
+    /// TIEMPO de respuesta no diga por otro lado lo que el mensaje ya dice.</para>
+    /// </summary>
+    private void HandleProcesosLogin(ClientSession session, ByteQueueReader r)
+    {
+        string account = r.ReadAsciiString();
+        string pin = r.ReadAsciiString();          // clave actual (cambio) o código de recuperación (recuperar)
+        string nuevaClave = r.ReadAsciiString();
+        r.ReadByte(); r.ReadByte(); r.ReadByte();  // versión: este stack no la valida en ningún camino de login
+        byte tipo = r.ReadByte();
+        _loop.Enqueue(() =>
+        {
+            void Falla(string aviso)
+            {
+                session.Send(ServerMessages.SendMsgBox(aviso, 1));
+                session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0"));
+            }
+            if (LoginBlocked(session)) return;
+            if (tipo == TipoBorrarCuenta)
+            { session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0")); return; }
+            // El nombre se valida antes de tocar el disco: es el que arma la ruta del .cnt (path traversal).
+            if (!Naming.IsValidName(account)) { LoginFail(session); Falla(ErrCuentaNoExiste); return; }
+            if (string.IsNullOrEmpty(nuevaClave)) { Falla(ErrClaveVacia); return; }
+            CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo);
+        });
+    }
+
+    /// <summary>La parte cara de <see cref="HandleProcesosLogin"/>: leer el .cnt, verificar el PIN y hashear la
+    /// clave nueva son dos PBKDF2 y dos toques de disco, o sea diez veces el presupuesto de una vuelta del
+    /// game loop. Mismo patrón que <see cref="VerificarCuenta"/>: una operación en vuelo por conexión y el
+    /// veredicto vuelve por el loop.</summary>
+    private void CambiarClaveFueraDelLoop(ClientSession session, string account, string pin, string nuevaClave, byte tipo)
+    {
+        if (session.Cerrada) return;
+        if (!session.TomarVerificacion())
+        { _loop.Enqueue(() => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo)); return; }
+        Task.Run(() =>
+        {
+            Data.Account? acc = null;
+            bool pinOk = false;
+            try
+            {
+                acc = _db.LoadAccount(account);
+                // Sin cuenta se quema el mismo tiempo igual, como en el login (PasswordHasher.DummyVerify).
+                if (acc is null) PasswordHasher.DummyVerify(pin);
+                else
+                {
+                    pinOk = tipo == TipoCambiarClave ? acc.VerifyPassword(pin) : acc.VerifyUserCode(pin);
+                    if (pinOk) { acc.PasswordHash = PasswordHasher.HashModern(nuevaClave); acc.Salt = ""; _db.SaveAccount(acc); }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[{session.RemoteEndpoint}] procesos de login: {ex.Message}");
+            }
+            _loop.Enqueue(() =>
+            {
+                session.SoltarVerificacion();
+                if (session.Cerrada) return;
+                try
+                {
+                    if (acc is null)
+                    {
+                        LoginFail(session);
+                        session.Send(ServerMessages.SendMsgBox(ErrCuentaNoExiste, 1));
+                    }
+                    else if (pinOk)
+                    {
+                        LoginOk(session);
+                        Console.WriteLine($"[{session.RemoteEndpoint}] CLAVE CAMBIADA account={account} tipo={tipo}");
+                        session.Send(ServerMessages.SendMsgBox(ErrClaveRestablecida, 1));
+                    }
+                    else
+                    {
+                        LoginFail(session);
+                        session.Send(ServerMessages.SendMsgBox(
+                            tipo == TipoCambiarClave ? ErrClaveIncorrecta : ErrCodigoIncorrecto, 1));
+                    }
+                    session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, pinOk ? "1" : "0"));
                 }
                 finally { session.ReanudarInbound(); }
             });
@@ -552,7 +654,10 @@ public sealed class PacketDispatcher
             if (!Naming.IsValidName(account)) { Reject(session, "Nombre de cuenta invalido."); return; }
             if (!Naming.IsValidCharName(charName)) { Reject(session, "Nombre de personaje invalido (solo letras y espacios)."); return; }
             // VB6 TCP.bas:383-453: valida los rangos de raza/sexo/clase/tierra al crear (rechaza 0 y fuera de tabla).
-            if (gender is < 1 or > 2 || race is < 1 or > 10 || klass is < 1 or > 18 || homeland is < 1 or > 12)
+            // La TIERRA NATAL admite dos, no doce: el original corta en 2 con el comentario "porque al nacimiento
+            // solo hay Nix o Illi" (TCP.bas:455). Las otras diez son ciudades del mundo a las que se muda el hogar
+            // más tarde, con el sacerdote; aceptarlas acá dejaba nacer en el Dungeon Newbie o en la cárcel.
+            if (gender is < 1 or > 2 || race is < 1 or > 10 || klass is < 1 or > 18 || homeland is < 1 or > Cities.MaxTierraNatal)
             { Reject(session, "Datos de personaje invalidos."); return; }
             // La CABEZA se valida aparte porque su rango depende de raza+género (VB6 ValidarCabeza, TCP.bas:125):
             // no es 1..N sino un tramo propio por combinación. Acá sólo se exigía `head >= 1`, así que se podía
@@ -774,6 +879,9 @@ public sealed class PacketDispatcher
             player.Head = 0;
             player.WeaponAnim = 0; player.ShieldAnim = 0; player.HelmetAnim = 0;
         }
+        // El récord ANTES de sumarlo: `World.Add` lo actualiza solo, así que después de esta línea ya no se
+        // puede saber si el que acaba de entrar fue el que lo rompió.
+        int recordPrevio = _world.RecordUsuarios;
         _world.Add(player);
 
         // In-world login sequence — ORDER matches the original server's ConnectUser (TCP.bas:975),
@@ -825,6 +933,13 @@ public sealed class PacketDispatcher
         // TCP.bas:374 — al staff conectado se le anuncia quién entró (SendTarget.ToADMINS). Un servidor
         // hosteado sin esto deja a los GMs sin ver el movimiento de gente.
         BroadcastToAdmins(ServerMessages.LocaleMsg(489, player.Name));
+        // EL RÉCORD DE CONECTADOS (TCP.bas:376-384). El pico ya se venía guardando y el /ONLINE lo muestra,
+        // pero el original lo ANUNCIA a todo el mundo en el momento en que se rompe, que es lo que lo hace un
+        // evento del servidor y no una estadística. Va después del 489 porque ahí es donde el original ya
+        // sumó al recién llegado a NumUsers. Se compara contra el récord de ANTES de sumarlo, y ése sale del
+        // disco al arrancar: un server que rearranca no vuelve a cantar un récord que ya había cantado.
+        if (_world.OnlineCount > recordPrevio)
+            _world.Broadcast(ServerMessages.LocaleMsg(6, _world.OnlineCount.ToString()));
 
         // FINAL packet: Logged carries the session XOR key. Switch the inbound key only now, since
         // the client won't XOR with it until after this packet is received.
@@ -5436,13 +5551,29 @@ public sealed class PacketDispatcher
             Say("¡Para realizar esta acción no debes pertenecer a ningún clan!.");
             return;
         }
+        // LA CIUDADANÍA CUESTA (VB6 ModFacciones.bas:37-41 y :88-92, `Private Const PERDON As Long = 100000`).
+        // Acá se daba GRATIS, que es un agujero de economía: entrar a una facción es lo que abre el ejército,
+        // su armadura y su tabla de rangos, y el precio es justamente lo que hace que volverse renegado tenga
+        // consecuencia. El gate del original es `Not .Stats.GLD > PERDON`: con exactamente 100.000 NO alcanza,
+        // hacen falta 100.001. Se replica tal cual, rareza incluida.
+        if (p.Gold <= PrecioDelPerdon)
+        { session.Send(ServerMessages.LocaleMsg(383, PrecioDelPerdon.ToString())); return; }
+        p.Gold -= PrecioDelPerdon;
         p.CambiarFaccion(npc.FactionConvert);
+        // Y el hogar pasa a ser NIX en las dos ramas. No es un descuido de este porte: el original escribe
+        // `.Hogar = cNix` también en EntrarRepublica (:42), así que el republicano recién convertido vuelve a
+        // la capital imperial. Es raro, pero es lo que hace el juego que estamos copiando.
+        p.HomeCity = Cities.Nix;
         // El comentario de acá ya decía "VB6 CharStatus" y se mandaba UpdateTagAndStatus: ahora va el paquete
         // que el original manda de verdad (ModFacciones.bas:44/98).
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
+        session.Send(ServerMessages.UpdateGold(p.Gold));   // VB6 WriteUpdateGold — el oro que acaba de pagar
         session.Send(ServerMessages.UpdateUserStats(p));
         Say(imperial ? "Bienvenido al Imperio." : "Bienvenido a la República.");
     }
+
+    /// <summary>Lo que cobra el Convertidor por la ciudadanía (VB6 <c>PERDON</c>, ModFacciones.bas:10).</summary>
+    private const int PrecioDelPerdon = 100_000;
 
     /// <summary>NPC en el tile de enfrente del jugador (patrón de HandleTrain/Enlist/Reward — el VB6 usa TargetNPC).</summary>
     private Npc? NpcInFront(Player p)
@@ -9924,6 +10055,10 @@ public sealed class PacketDispatcher
             ControlarPortalLum(_world, _data, p, 1);   // VB6 CloseUser, TCP.bas:1629 — el portal se va con él
             AvisarAmigosQueMeVoy(p);     // VB6 CloseUser → ObtenerIndexAmigos(_, True)
             _world.HelpRemove(p.Name);   // VB6 TCP.bas:1661 — al desconectar se le limpia la consulta a los GMs
+            // El PAR del 489 de la entrada (VB6 TCP.bas:1684). Estaba media puerta puesta: a los GMs les
+            // llegaba quién entraba y nunca quién se iba, así que la lista que se armaban mirando la consola
+            // sólo crecía.
+            BroadcastToAdmins(ServerMessages.LocaleMsg(490, p.Name));
             _world.Remove(p.CharIndex);
             _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterRemove(p.CharIndex)); // tell observers it left view
             _world.Events.Publish(new PlayerDisconnected(p.CharIndex));

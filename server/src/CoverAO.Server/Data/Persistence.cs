@@ -107,10 +107,19 @@ public sealed class Persistence
 
     public void SaveCharacter(Player p) => _store.WriteCharacter(p.Name, CharacterFile.ToIni(p).ToText());
 
-    public Account CreateAccount(string name, string password)
+    /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
+    /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el
+    /// campo del CreateNewAccount y lo tiraba.</param>
+    public Account CreateAccount(string name, string password, string userCode = "")
     {
         // New accounts use the modern slow KDF (PBKDF2); the salt is embedded in the hash string.
-        var acc = new Account { Name = name, Salt = "", PasswordHash = PasswordHasher.HashModern(password) };
+        var acc = new Account
+        {
+            Name = name,
+            Salt = "",
+            PasswordHash = PasswordHasher.HashModern(password),
+            UserCodeHash = string.IsNullOrEmpty(userCode) ? "" : PasswordHasher.HashModern(userCode),
+        };
         SaveAccount(acc);
         return acc;
     }
@@ -200,10 +209,21 @@ public sealed class Persistence
             Gender = gender,
             Class = @class,
             Homeland = homeland,
-            HomeCity = homeland,                       // la tierra natal es el hogar inicial (SeleccionarHogar lo cambia)
+            // La tierra natal NO es el hogar, y el recién nacido tampoco aparece en ella. El original manda a
+            // todos al Dungeon Newbie —`.Hogar = cDungeonNewbie` y `.Pos = tCiudades.DungeonNewbie`,
+            // TCP.bas:502 y :573— y la ciudad elegida sirve para una sola cosa: el bando (ver más abajo).
+            // Acá se hacía lo intuitivo, hogar y spawn en la tierra natal, y con eso el jugador nuevo se
+            // salteaba entero el dungeon de aprendizaje que el juego usa como tutorial.
+            HomeCity = Cities.DungeonNewbie,
+            // El BANDO CON EL QUE SE NACE (VB6 ConnectNewUser, TCP.bas:494-500): ResetFacciones y después
+            // Illiandor → Status 3 (Republicano), cualquier otra → Status 2 (Ciudadano Imperial). La pantalla
+            // de creación del original lo dice sin vueltas: "elegir Nix te hará miembro del IMPERIO".
+            // Faltaba, así que TODO el que se creaba un personaje nacía imperial y la mitad republicana del
+            // mundo —su ciudad, su ejército (la Milicia), sus enemigos— no tenía forma de existir.
+            FactionStatus = homeland == Cities.Illiandor ? Player.StatusRepublicano : Player.StatusCiudadano,
             Head = head,
             Body = 1,
-            Pos = Cities.SpawnTile(homeland),          // nace en la ciudad de su tierra natal (VB6 Ciudades.dat), no en un tile fijo
+            Pos = Cities.SpawnTile(Cities.DungeonNewbie),
             MaxHp = 100, Hp = 100,
             // ENERGIA: 100, y NO se sube. Cuando el golpe pasó a costar energía (VB6 UsuarioAtaca) esto se
             // probó en 500 para que las ráfagas largas de los flows no se quedaran cortas — y rompió
@@ -425,6 +445,11 @@ public sealed class Persistence
         rebelde.Level = 25;
         rebelde.FactionStatus = Player.StatusCriminal;
         rebelde.CiudadanosMatados = 15;
+        // ORO PARA PAGAR LA CIUDADANÍA. Desde que el Convertidor cobra las 100.000 del original, los 5.000 con
+        // los que nace un char del fixture ya no alcanzan, y sin esto la rama republicana entera —convertirse,
+        // enlistarse en la Milicia, ascender— quedaba inalcanzable para `faction_milicia_flow`. Es carga
+        // estructural del laboratorio, como el techo de 100 de energía: el número sale del gate, no del aire.
+        rebelde.Gold = 150_000;
         SaveCharacter(rebelde);
         // OJO: acá NO se puede agregar un personaje más. La cuenta demo ya tiene los DIEZ que caben
         // (`AccountFile.MaxCharacters = 10`, fiel al [PJS] PJ1..PJ10 del VB6, Cuentas.bas:100). Un char extra

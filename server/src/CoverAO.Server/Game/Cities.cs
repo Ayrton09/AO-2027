@@ -9,6 +9,12 @@ public static class Cities
     public const byte Illiandor = 2;    // VB6 cIlliandor — el mismo reparto, para el republicano
     public const byte Ullathorpe = 3;   // ciudad por defecto (tierra natal newbie)
     public const byte Rinkel = 5;       // VB6 cRinkel (Declares.bas:148) — hogar del renegado al perder la ciudadanía
+    public const byte DungeonNewbie = 6;   // VB6 cDungeonNewbie — donde nace y adonde vuelve TODO personaje nuevo
+
+    /// <summary>Las dos únicas tierras natales que ofrece la creación de personajes (VB6 <c>NUMCIUDADES = 2</c>,
+    /// Declares.bas:102 del cliente, y el gate <c>Hogar &gt; 2</c> de ConnectNewUser). No es una elección de mapa:
+    /// Nix es la capital del Imperio e Illiandor la de la República, y con ella se elige el bando.</summary>
+    public const byte MaxTierraNatal = 2;
 
     /// <summary>Tile de spawn (vivo) por ciudad — Ciudades.dat X/Y/MAPA.</summary>
     private static readonly IReadOnlyDictionary<byte, WorldPos> Spawn = new Dictionary<byte, WorldPos>

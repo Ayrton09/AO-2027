@@ -10,7 +10,7 @@ export enum ServerPacketId {
   UserIndexInServer = 23, UserCharIndexInServer = 24, CharacterCreate = 25, CharacterRemove = 26,
   CharacterMove = 27, ForceCharMove = 28, CharacterChange = 29, ObjectCreate = 31, ObjectDelete = 32, BlockPosition = 33, ChangeInventorySlot = 44, ChangeSpellSlot = 46, UpdateUserStats = 41,
   PlayMidi = 34, PlayWave = 35, Pong = 81, UpdateTagAndStatus = 82, RainToggle = 39, CreateFX = 40,
-  DumbNoMore = 66, AreaChanged = 37, LevelUp = 62, ChatOverHead = 18, Atributes = 47,
+  Dumb = 58, DumbNoMore = 66, AreaChanged = 37, LevelUp = 62, ChatOverHead = 18, Atributes = 47,
   MeditateToggle = 64, LocaleMsg = 83, EfectoCharParticula = 90,
   ChangeInventorySlotUser = 102, UpdateSed = 104, UpdateHambre = 105, UpdateHungerAndThirst = 60,
   // Actualizaciones de UN stat. El original las usa en los caminos calientes (cada golpe, cada vuelta de
@@ -88,6 +88,11 @@ function readOne(r: ByteQueueReader, id: number): Record<string, unknown> | null
     case ServerPacketId.PlayWave: return { wave: r.readInteger(), x: r.readByte(), y: r.readByte() };
     case ServerPacketId.RainToggle: return { clima: r.readByte() };
     case ServerPacketId.CreateFX: return { charIndex: r.readInteger(), fx: r.readInteger(), fxLoops: r.readInteger() };
+    // El par Dumb/DumbNoMore. El EFECTO no se modela (ningún hechizo de esta data trae `Estupidez = 1`, ver la
+    // nota del handler en index.html), pero el id igual tiene que decodificarse: sin `case`, `readOne` devuelve
+    // null y el bucle CORTA EL FRAME y tira todo lo que venga detrás — la contracara del protocolo sin
+    // length-prefix. Los dos son cuerpo vacío, así que salen gratis y el par queda simétrico.
+    case ServerPacketId.Dumb: return {};
     case ServerPacketId.DumbNoMore: return {};
     // `index` esta sobrecargado: con modo 2 ES el numero de dano (el "-N" flotante de AO);
     // con modo 1/4 es un id de locale.

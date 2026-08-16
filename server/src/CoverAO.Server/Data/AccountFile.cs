@@ -20,6 +20,7 @@ public static class AccountFile
             Salt = ini.GetString(section, "Salt"),
             Banned = ini.GetBool(section, "Ban"),
             Donador = ini.GetBool(section, "Donador"),   // VB6 Cuentas.bas:117 — flag premium de la cuenta
+            UserCodeHash = ini.GetString(section, "UserCodigo"),   // código de recuperación (HandleProcesosLogin Tipo 0)
         };
         int n = ini.GetInt("PJS", "NumPjs");
         for (int i = 1; i <= Math.Min(n, MaxCharacters); i++)
@@ -41,6 +42,7 @@ public static class AccountFile
         ini.Set(section, "Salt", acc.Salt);
         ini.Set(section, "Ban", acc.Banned ? "1" : "0");
         ini.Set(section, "Donador", acc.Donador ? "1" : "0");   // VB6 Protocol.bas:16127 — /DONADOR persiste acá
+        ini.Set(section, "UserCodigo", acc.UserCodeHash);
 
         ini.Set("PJS", "NumPjs", acc.Characters.Count.ToString());
         for (int i = 1; i <= MaxCharacters; i++)

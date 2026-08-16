@@ -4,6 +4,18 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.0 — 2026-08-01
 
+- Al crear el personaje se elige bando: Nix te hace del Imperio e Illiandor de la República. Antes la
+  pantalla ofrecía doce ciudades que no existen y todos nacían imperiales.
+- Los personajes nuevos aparecen en el Dungeon Newbie, con su sacerdote, su tabernero y sus salidas a las
+  ciudades, como en el original.
+- Se puede cambiar la contraseña de la cuenta, y recuperarla con el código que se elige al crearla. Antes,
+  perder la contraseña era perder la cuenta y todos sus personajes.
+- El Convertidor cobra las 100.000 monedas de oro que cuesta la ciudadanía. Antes la regalaba.
+- El selector de hogar lista las doce ciudades que existen de verdad. Las que ofrecía antes no existen en
+  este juego, y elegir una te mandaba a otra.
+- Cuando se rompe el récord de jugadores conectados a la vez, el servidor lo anuncia.
+- Los administradores ven quién se desconecta, no sólo quién entra.
+- `/fundarclan`, `/cerrarclan` y `/divorcio` andan escribiéndolos, además de por su botón.
 - Ya se puede reconfigurar cualquier tecla: engranaje ⚙ → Opciones → Configuración de controles.
 - Opciones nuevas: volumen de la música, tope de FPS, zoom y escalado del mundo. Todo se guarda.
 - El teclado es el del original: C combate, E equipar, R robar, S seguro, A agarrar, T tirar, U usar, D domar.

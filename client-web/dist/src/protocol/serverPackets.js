@@ -30,6 +30,7 @@ export var ServerPacketId;
     ServerPacketId[ServerPacketId["UpdateTagAndStatus"] = 82] = "UpdateTagAndStatus";
     ServerPacketId[ServerPacketId["RainToggle"] = 39] = "RainToggle";
     ServerPacketId[ServerPacketId["CreateFX"] = 40] = "CreateFX";
+    ServerPacketId[ServerPacketId["Dumb"] = 58] = "Dumb";
     ServerPacketId[ServerPacketId["DumbNoMore"] = 66] = "DumbNoMore";
     ServerPacketId[ServerPacketId["AreaChanged"] = 37] = "AreaChanged";
     ServerPacketId[ServerPacketId["LevelUp"] = 62] = "LevelUp";
@@ -156,6 +157,11 @@ function readOne(r, id) {
         case ServerPacketId.PlayWave: return { wave: r.readInteger(), x: r.readByte(), y: r.readByte() };
         case ServerPacketId.RainToggle: return { clima: r.readByte() };
         case ServerPacketId.CreateFX: return { charIndex: r.readInteger(), fx: r.readInteger(), fxLoops: r.readInteger() };
+        // El par Dumb/DumbNoMore. El EFECTO no se modela (ningún hechizo de esta data trae `Estupidez = 1`, ver la
+        // nota del handler en index.html), pero el id igual tiene que decodificarse: sin `case`, `readOne` devuelve
+        // null y el bucle CORTA EL FRAME y tira todo lo que venga detrás — la contracara del protocolo sin
+        // length-prefix. Los dos son cuerpo vacío, así que salen gratis y el par queda simétrico.
+        case ServerPacketId.Dumb: return {};
         case ServerPacketId.DumbNoMore: return {};
         // `index` esta sobrecargado: con modo 2 ES el numero de dano (el "-N" flotante de AO);
         // con modo 1/4 es un id de locale.
