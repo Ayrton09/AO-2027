@@ -2824,11 +2824,12 @@ public sealed class PacketDispatcher
         var t = string.IsNullOrWhiteSpace(name) ? p : _world.PlayerByName(name);
         if (t is null) { session.Send(ServerMessages.ConsoleMsg($"{name} no está online.", FuenteInfo)); return; }
         short destMap = map <= 0 ? t.Pos.Map : map;
-        var from = t.Pos;
-        t.Pos = new WorldPos(destMap, x, y);
-        t.Connection?.Send(ServerMessages.PosUpdate(x, y));
-        RefreshAreaVisibility(_world, t, from, t.Pos);
-        _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterMove(t.CharIndex, x, y), t.CharIndex);
+        // Por `WarpOtroJugador` y no a mano: mover `Pos` de a pedacitos se olvidaba del `ChangeMap`, así que
+        // teletransportar a alguien a OTRO mapa le dejaba el cliente dibujando el mapa viejo — con la gente
+        // del nuevo apareciendo encima del escenario que ya no estaba. El helper ya existía (lo escribió la
+        // cárcel, que tropezó con esto mismo) y hace la secuencia entera: limpia los diálogos de las dos
+        // puntas, baja del barco al que quedó varado, manda el ChangeMap si cambió el mapa y refresca el área.
+        WarpOtroJugador(t, new WorldPos(destMap, x, y));
         session.Send(ServerMessages.LocaleMsg(487, t.Name));
         if (t.CharIndex != p!.CharIndex)
             t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te teletransportó a ({x},{y}).", FuenteInfo));
@@ -2851,11 +2852,9 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var t = _world.PlayerByName(name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        var from = p!.Pos;
-        p!.Pos = new WorldPos(t.Pos.Map, t.Pos.X, t.Pos.Y);
-        session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
-        RefreshAreaVisibility(_world, p, from, p.Pos);
-        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
+        // Mismo helper que /TELEP: sin el ChangeMap, un GM que iba hacia alguien de otro mapa se quedaba
+        // mirando el suyo. Y es el comando que más se usa, así que era el más visible de los tres.
+        WarpOtroJugador(p!, new WorldPos(t.Pos.Map, t.Pos.X, t.Pos.Y));
         session.Send(ServerMessages.ConsoleMsg($"Te teletransportaste junto a {t.Name}.", FuenteInfo));
     }
 
@@ -3816,12 +3815,9 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var t = _world.PlayerByName(name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        var from = t.Pos;
-        t.Pos = new WorldPos(p!.Pos.Map, p.Pos.X, p.Pos.Y);
-        t.Connection?.Send(ServerMessages.PosUpdate(t.Pos.X, t.Pos.Y));
+        // Y el tercero: traer a alguien de otro mapa sin ChangeMap lo dejaba viendo el mapa del que vino.
+        WarpOtroJugador(t, new WorldPos(p!.Pos.Map, p.Pos.X, p.Pos.Y));
         t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te ha transportado.", FuenteInfo));
-        RefreshAreaVisibility(_world, t, from, t.Pos);
-        _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterMove(t.CharIndex, t.Pos.X, t.Pos.Y), t.CharIndex);
         session.Send(ServerMessages.ConsoleMsg($"Transportaste a {t.Name} junto a ti.", FuenteInfo));
     }
 
@@ -3831,8 +3827,11 @@ public sealed class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var t = _world.PlayerByName(name) ?? (string.IsNullOrWhiteSpace(name) ? p : null);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        t.Hp = t.MaxHp;
-        t.Connection?.Send(ServerMessages.UpdateUserStats(t));
+        // `RevivePlayer` y no `Hp = MaxHp` a secas: acá se subían los puntos de vida y nada más, así que el
+        // resucitado por un GM quedaba vivo pero DIBUJADO COMO CADÁVER para todos —incluido él— y seguía
+        // incinerado si lo estaba. El helper restaura la cabeza viva, apaga el fuego, refresca la apariencia
+        // y la DIFUNDE, que es la mitad que faltaba. Es el mismo que usa el sacerdote.
+        RevivePlayer(_world, _data, t);
         t.Connection?.Send(ServerMessages.ConsoleMsg("Un GM te ha resucitado.", FuenteInfo));
         session.Send(ServerMessages.ConsoleMsg($"Resucitaste a {t.Name}.", FuenteInfo));
     }
