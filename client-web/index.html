@@ -2870,11 +2870,19 @@
         // The aura itself is server-driven (EfectoCharParticula); this only marks the meditating state.
         case 'MeditateToggle': break;
         case 'ChatOverHead': {
-          // Player chat renders over the speaker's head (fades), and is also echoed to the console log.
+          // El texto va sobre la cabeza del que habla (se desvanece) y, SEGUN EL MODO, además al log.
           const c = chars.get(f.charIndex);
           if (c && c.name && ignorados.has(c.name.toLowerCase())) break;   // /ignorar: filtro LOCAL, como el original
           if (c) { c.chatText = f.chat; c.chatAt = Date.now(); }
-          log((c && c.name ? c.name + ': ' : '') + f.chat);
+          // SOLO EL MODO 1 ESCRIBE EN LA CONSOLA. El cliente VB6 (Cliente/Codigo/Protocol.bas:1267) tiene un
+          // `Select Case ModeChat` donde únicamente el `Case 1` llama a `AddtoRichTextBox`; los casos 2
+          // (gritar), 3 (global) y 4 (privado) asignan el color y NO lo usan, así que esos sólo se dibujan
+          // sobre la cabeza. Acá se logueaba SIEMPRE, y con el susurro eso duplicaba la línea: el server ya
+          // manda su propio ConsoleMsg `[Nombre] texto` para el privado.
+          // El formato también es del original —`"[" & Name & "] " & chat`, no `Nombre: texto`— y va con la
+          // fuente 7. El `IIf(priv > 6, 14, 7)` del original no se puede portar: el server no manda el
+          // privilegio de cada personaje (ver la nota de los pasos de los GMs, más arriba).
+          if (f.mode === 1) log('[' + (c && c.name ? c.name : '') + '] ' + f.chat, FUENTES[7]);
           break;
         }
         // Respuesta al click izquierdo. El server manda DATOS, no una frase: la línea se arma acá, que es

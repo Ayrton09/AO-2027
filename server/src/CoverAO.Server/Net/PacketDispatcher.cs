@@ -191,6 +191,10 @@ public sealed class PacketDispatcher
     /// <summary>`FONTTYPE_INFOBOLD4`: la usa un solo camino, el mensaje a la lista de amigos.</summary>
     private const byte FuenteAmigos = 24;
 
+    /// <summary>`FONTTYPE_INFOBOLD2`: el SUSURRO, en sus dos líneas —la del que lo manda y la del que lo
+    /// recibe—, que en el original llevan el mismo texto y la misma fuente (Protocol.bas:1495).</summary>
+    private const byte FuenteSusurro = 22;
+
     // LO QUE SE QUEDA EN 0 A PROPÓSITO, para que no lo "arregle" el que pase después:
     //
     //  - EL COMBATE (fallar, pegar, matar, el efecto de un hechizo). El original no manda eso por
@@ -6690,6 +6694,7 @@ public sealed class PacketDispatcher
             var info = _data.Obj(obj.ObjIndex);
             if (info is null) return;                       // el VB6 entra al Select igual y no matchea ningún Case
             if (info.IsDoor) { AccionParaPuerta(session, p, pos, info); return; }
+            if (info.ObjType == ObjTipoPozo) { AccionParaPozo(session, p, pos, info); return; }
             // ENCENDER UNA FOGATA APAGADA (VB6 AccionParaRamita, Acciones.bas:514, llamada desde :348 cuando el
             // tile tiene FOGATA_APAG = 136 "Ramitas"). Faltaba, y con ella faltaba DESCANSAR: `HandleRest` exige
             // una fogata ENCENDIDA (63) al lado, en el mundo hay CERO colocadas, y sin este camino no había
@@ -6786,6 +6791,41 @@ public sealed class PacketDispatcher
     /// (X,Y) y (X-1,Y)— porque la puerta ocupa dos. El estado sale del objeto QUE ESTÁ en el tile: al abrir queda
     /// el del par abierto (cuyo Cerrada=0) y el próximo doble-clic lo cierra. No hay timer que las vuelva a
     /// cerrar: el estado vive en RAM hasta reiniciar.</summary>
+    /// <summary><c>otPozos</c> (Declares.bas:618). El <c>SND_BEBER</c> ya está arriba, con las pociones.</summary>
+    private const int ObjTipoPozo = 40;
+
+    /// <summary>Los POZOS del mundo (VB6 <c>AccionParaPozos</c>, Acciones.bas:404), que no estaban portados.
+    ///
+    /// <para>Hay DIEZ puestos en el mapa —3 "Pozo Mágico" y 7 "Pozo de Agua"— y hasta ahora el doble clic no
+    /// hacía nada con ellos. El <c>Subtipo</c> los distingue: 1 llena el maná ENTERO, 2 llena la sed. La data
+    /// ya lo traía; lo que faltaba era esta rama.</para>
+    ///
+    /// <para>Dos detalles que parecen de estilo y no lo son: la distancia es EUCLÍDEA (<c>Distance</c>,
+    /// Matematicas.bas:55), que en radio 3 NO es lo mismo que la Manhattan de los otros gates —la diagonal
+    /// (2,2) entra—; y si ya estás lleno el original NO emite NADA, ni aviso ni sonido. El rebote por lejanía
+    /// sí avisa.</para></summary>
+    private void AccionParaPozo(ClientSession session, Player p, WorldPos pos, Data.ObjInfo info)
+    {
+        int dx = p.Pos.X - pos.X, dy = p.Pos.Y - pos.Y;
+        if (dx * dx + dy * dy > 9) { session.Send(ServerMessages.LocaleMsg(8)); return; }   // `Distance > 3`
+        if (info.SubType == 1)          // pozo de maná
+        {
+            if (p.Mana >= p.MaxMana) return;
+            p.Mana = p.MaxMana;
+            session.Send(ServerMessages.UpdateMana((short)p.Mana));
+            session.Send(ServerMessages.LocaleMsg(173));
+        }
+        else if (info.SubType == 2)     // pozo de agua
+        {
+            if (p.Thirst >= p.MaxThirst) return;
+            p.Thirst = p.MaxThirst;
+            session.Send(ServerMessages.UpdateSed(p.Thirst));
+            session.Send(ServerMessages.LocaleMsg(175));
+        }
+        else return;                    // otro subtipo: el Select del original no matchea y no hace nada
+        _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y));
+    }
+
     private void AccionParaPuerta(ClientSession session, Player p, WorldPos pos, Data.ObjInfo info)
     {
         // VB6: `If Not (Distance(...) > 2)`. Distance (Matematicas.bas:55) es EUCLÍDEA — ojo, NO es el Chebyshev
@@ -6880,7 +6920,7 @@ public sealed class PacketDispatcher
             if (npc.FactionConvert != 0) { DoConvertir(session, p, npc); return; }   // Convertidor: da la ciudadanía
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
             if (npc.IsMerchant) { OpenCommerce(session, p, npc); return; }  // double-click a merchant → trade window
-            if (npc.IsBanker) { OpenBank(session, p); return; }             // double-click a banker → bank window
+            if (npc.IsBanker) { OpenBank(session, p, npc); return; }        // double-click a banker → bank window
             // Sólo la lista: la rama Entrenador del original (Acciones.bas:271) manda `WriteTrainerCreatureList`
             // y nada más. Acá iba además un ConsoleMsg ("estas son las criaturas que puedo entrenar") que el VB6
             // no emite — el mismo patrón de mensaje espurio que el barrido del oráculo cerró 16 veces.
@@ -7797,14 +7837,8 @@ public sealed class PacketDispatcher
             p.Laborando = false;
             return;
         }
-        int skill = Equipment.EquippedOfCategory(p, _data, 6)?.Index switch
-        {
-            138 or 881 => GameLimits.SkillPesca,
-            187 => GameLimits.SkillMineria,
-            127 => GameLimits.SkillTalar,
-            885 => GameLimits.SkillBotanica,
-            _ => 0,
-        };
+        var herramienta = Equipment.EquippedOfCategory(p, _data, 6);
+        int skill = herramienta is null ? 0 : SkillDeLaHerramienta(herramienta.Index);
         // Sin herramienta que matchee, el `Select Case` del original no entra a ningún Case y la vuelta pasa en
         // blanco — el flag queda prendido. Acá se corta, que es lo mismo desde afuera pero no deja al loop
         // trabajando de gusto sobre un jugador que ya no puede producir.
@@ -7812,8 +7846,6 @@ public sealed class PacketDispatcher
         if (!DoRecolectar(session, p, skill, avisarSinHerramienta: false)) p.Laborando = false;
     }
 
-    /// <summary>La herramienta que hace falta y el recurso que da, por oficio. Las tres son <c>otAnillo</c>, o sea
-    /// que van en el slot de herramienta.</summary>
     /// <summary>Los ids de <c>LocaleMsg</c> del acierto y del fallo, por oficio. El original NO usa texto
     /// literal acá: manda el mensaje catalogado (Trabajo.bas 1364/1370 pesca, 1888/1895 talar, 2014/2021
     /// minería). Botánica es la excepción y sí manda <c>WriteConsoleMsg</c> con el texto armado
@@ -7829,13 +7861,58 @@ public sealed class PacketDispatcher
     private static (int Tool, int Resource, string Name) OficioDe(int skill) => skill switch
     {
         GameLimits.SkillTalar => (127, GameLimits.WoodObj, "Leña"),          // Hacha de Leñador → Leña
-        GameLimits.SkillPesca => (881, 545, "Pez Espada"),                    // Caña de Pesca → pez
+        // Pesca: el recurso es sólo el RESPALDO. El pez lo decide la HERRAMIENTA (ver DoRecolectar), porque la
+        // caña y la red no sacan lo mismo.
+        GameLimits.SkillPesca => (881, PezDeCana, "Pargo"),
         // Minería: el 192 es sólo el RESPALDO. El mineral de verdad sale del yacimiento que se está picando
         // (ver DoRecolectar); acá quedaba cableado y por eso los yacimientos de Oro y de Plata daban hierro.
         GameLimits.SkillMineria => (187, GameLimits.OreIronObj, "Hierro"),
         GameLimits.SkillBotanica => (885, 888, "Raíz"),                       // Tijeras → Raíz (el material de la alquimia)
         _ => (0, 0, ""),
     };
+
+    // Las cuatro clases con oficio propio (secciones de NACIMIENTO.dat; la lista entera está en Leveling.cs).
+    private const int ClaseDruida = 7, ClasePescador = 11, ClaseLenador = 13, ClaseMinero = 14;
+
+    /// <summary>Los dos aparejos de pesca y lo que saca cada uno. La CAÑA da siempre Pargo (VB6
+    /// <c>MiObj.ObjIndex = Pescado</c>, y <c>Pescado = 139</c> en Declares.bas:451); la RED saca uno al azar de
+    /// los cuatro del enum <c>PECES_POSIBLES</c> (Trabajo.bas:1429-1432). Acá estaba cableado el 545 para las
+    /// dos, así que tres de los cuatro peces del juego no salían nunca y la caña daba el pez de la red.</summary>
+    private const int RedDePesca = 138, PezDeCana = 139;
+    private static readonly int[] PecesDeRed = { 139, 544, 545, 546 };   // Pargo, Lisa, Pez Espada, Merluza
+
+    /// <summary>El oficio lo declara la HERRAMIENTA equipada, no la skill que diga el cliente. Las dos de pesca
+    /// dan el mismo oficio: con la red puesta este mapeo faltaba y <see cref="DoRecolectar"/> la rechazaba por
+    /// "herramienta inadecuada", o sea que la red no pescaba nada ni con el clic ni con la faena continua.</summary>
+    private static int SkillDeLaHerramienta(int tool) => tool switch
+    {
+        127 => GameLimits.SkillTalar,                    // Hacha de Leñador
+        RedDePesca or 881 => GameLimits.SkillPesca,      // Red de Pesca / Caña de Pesca
+        187 => GameLimits.SkillMineria,                  // Piquete de Minero
+        885 => GameLimits.SkillBotanica,                 // Tijeras
+        _ => 0,
+    };
+
+    /// <summary>El esfuerzo de UNA vuelta, por oficio y clase (VB6 <c>Esfuerzo*</c>, Declares.bas:311-321). La
+    /// clase del oficio paga entre la mitad y un tercio que el resto, y ese descuento es el beneficio concreto
+    /// de ser Pescador, Leñador, Minero o Druida: con un costo plano las cuatro no se distinguían de nadie.</summary>
+    private static int EsfuerzoDelOficio(int skill, int clase) => skill switch
+    {
+        GameLimits.SkillPesca => clase == ClasePescador ? 1 : 3,
+        GameLimits.SkillTalar => clase == ClaseLenador ? 2 : 4,
+        GameLimits.SkillMineria => clase == ClaseMinero ? 2 : 5,
+        GameLimits.SkillBotanica => clase == ClaseDruida ? 2 : 4,
+        _ => 0,
+    };
+
+    /// <summary>La tirada del acierto, idéntica en los cuatro oficios (VB6 Trabajo.bas 1337/1860/1925/1992):
+    /// <code>Suerte = Int(-0.00125 * Skill * Skill - 0.3 * Skill + 49)
+    /// res    = RandomNumber(1, Suerte)</code>
+    /// y acierta si <c>res</c> no pasa el umbral. La curva NO es lineal y esa es toda la gracia: con la skill en
+    /// 0 acierta 6/49 (12%), en 50 son 6/30 (20%) y recién en 100 llega a 6/6 (100%) — el oficio rinde de verdad
+    /// al final. Antes acá había un <c>skill%</c> pelado, que daba 50% donde el original da 20%.
+    /// El <c>Int</c> de VB6 redondea hacia abajo, que es <see cref="Math.Floor(double)"/>.</summary>
+    private static int SuerteDelOficio(int skill) => (int)Math.Floor(-0.00125 * skill * skill - 0.3 * skill + 49);
 
     /// <summary>UNA unidad de recolección (VB6 <c>DoPescar</c>/<c>DoTalar</c>/<c>DoMineria</c>). Lo llaman los dos
     /// caminos: el click puntual y —desde que existe el trabajo continuo— cada vuelta del loop.
@@ -7848,15 +7925,22 @@ public sealed class PacketDispatcher
         var (tool, resource, name) = OficioDe(skill);
         if (tool == 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No sabes hacer ese trabajo.", FuenteInfo)); return false; }
         if (p.Skills[skill] <= 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No tienes esa habilidad.", FuenteInfo)); return false; }
-        if (Equipment.EquippedOfCategory(p, _data, 6)?.Index != tool)
+        // La herramienta se acepta por el OFICIO que declara, no por un índice único: la pesca tiene dos
+        // aparejos y exigir sólo la caña dejaba la red sin hacer nada.
+        var puesta = Equipment.EquippedOfCategory(p, _data, 6);
+        if (puesta is null || SkillDeLaHerramienta(puesta.Index) != skill)
         { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("Necesitas la herramienta adecuada.", FuenteInfo)); return false; }
         // VB6 DoPescar/DoTalar/DoMineria: el trabajo CUESTA stamina (QuitarSta — sin energía no se trabaja) y
         // el éxito es una tirada según skill (res = RandomNumber(1,Suerte), sólo rinde a veces). Sin esto el
         // trabajo daba recurso garantizado sin costo → canilla de oro (los recursos se venden a NPCs).
-        const int workStaCost = 5;   // VB6 GASTO_ENERGIA_TRABAJADOR/NO_TRABAJADOR (Trabajo.bas:34-35)
-        if (p.Stamina < workStaCost) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado cansado para trabajar.", FuenteInfo)); return false; }
-        p.Stamina -= workStaCost;
-        if (_rng.Next(1, 101) > Math.Max(5, (int)p.Skills[skill]))   // tirada de éxito según skill; fallar igual gasta stamina
+        int esfuerzo = EsfuerzoDelOficio(skill, p.Class);
+        if (p.Stamina < esfuerzo) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado cansado para trabajar.", FuenteInfo)); return false; }
+        p.Stamina -= esfuerzo;
+        // El umbral del acierto: 6 en tala, botánica y pesca CON CAÑA; 5 en minería (Trabajo.bas:1996) y en
+        // pesca CON RED, porque el original escribe `res < 6` ahí (:1425) y `res <= 6` en la caña (:1341).
+        int suerte = SuerteDelOficio(p.Skills[skill]);
+        int umbral = skill == GameLimits.SkillMineria || puesta.Index == RedDePesca ? 5 : 6;
+        if (suerte <= 0 || _rng.Next(1, suerte + 1) > umbral)   // RandomNumber(1, Suerte); fallar igual gasta stamina
         {
             session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // la tirada fallida igual gasta stamina
             var fallo = AvisoDelOficio(skill).Fallo;
@@ -7875,14 +7959,40 @@ public sealed class PacketDispatcher
             if (yacimiento is { IsDeposit: true, MineralIndex: > 0 })
             { resource = yacimiento.MineralIndex; name = _data.Obj(resource)?.Name ?? name; }
         }
-        int amount = _rng.Next(1, 6); // RandomNumber(1,5)
+        // PESCA: el pez sale de la HERRAMIENTA, no del oficio (VB6 DoPescar vs DoPescarRed).
+        if (skill == GameLimits.SkillPesca)
+        {
+            resource = puesta.Index == RedDePesca ? PecesDeRed[_rng.Next(PecesDeRed.Length)] : PezDeCana;
+            name = _data.Obj(resource)?.Name ?? name;
+        }
+        // La cantidad del original: `MiObj.Amount = RandomNumber(10, 30)` en pesca, tala y minería. El bono por
+        // clase que el VB6 calcula al lado (`CantidadItems`) es CÓDIGO MUERTO —las dos ramas del `If Clase`
+        // asignan el mismo RandomNumber(10,30)—, así que no se porta. Botánica sí reparte por clase: el Druida
+        // saca 1..6 y el resto 1..2 (Trabajo.bas:1934-1936). Acá había un 1..5 plano para los cuatro oficios,
+        // o sea entre un cuarto y un sexto de lo que rinde el original.
+        int amount = skill == GameLimits.SkillBotanica
+            ? (p.Class == ClaseDruida ? _rng.Next(1, 7) : _rng.Next(1, 3))
+            : _rng.Next(10, 31);
         int slot = FindSlotFor(p, (short)resource, amount);
-        if (slot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio en el inventario.", FuenteInfo)); return false; }
-        var inv = p.Inventory[slot];
-        inv.ObjIndex = (short)resource;
-        inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + amount);
-        p.Inventory[slot] = inv;
-        session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
+        if (slot == 0)
+        {
+            // Mochila llena: el original NO corta el trabajo ni avisa, tira el montón al piso y sigue
+            // (`If Not MeterItemEnInventario(...) Then Call TirarItemAlPiso(...)`). Cortar acá hacía que una
+            // faena continua se apagara sola en cuanto se llenaba la mochila.
+            if (FreeGroundNear(_world, p.Pos) is { } spot)
+            {
+                _world.SetGround(spot, (short)resource, (short)amount);
+                _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, (short)resource, (short)amount));
+            }
+        }
+        else
+        {
+            var inv = p.Inventory[slot];
+            inv.ObjIndex = (short)resource;
+            inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + amount);
+            p.Inventory[slot] = inv;
+            session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
+        }
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // reflejar la stamina gastada
         var acierto = AvisoDelOficio(skill).Ok;
         session.Send(acierto > 0 ? ServerMessages.LocaleMsg(acierto)
@@ -8090,6 +8200,15 @@ public sealed class PacketDispatcher
             var t = p.PortalPos;
             bool cancela = p.Pos.Map == Cities.Prision.Map || p.Pos.Map == Cities.Intermundia.Map || !data.IsPkMap(p.Pos.Map);
             if (cancela) p.Connection?.Send(ServerMessages.LocaleMsg(448));
+            // `If Not LegalPos(Mapa, X, Y) Then Cancelo = True` (:1884) y `If Not MapaValido(Mapa) Or Not
+            // InMapBounds(...)` (:1903), los dos SILENCIOSOS. Faltaban los dos. El que se alcanza de verdad es
+            // la OCUPACIÓN: en los cinco segundos que el portal tarda en abrir alguien se para en el tile, y
+            // donde el original cancela nosotros lo abríamos igual, debajo de sus pies. El resto de LegalPos
+            // —agua y los bordes del mapa— entra por el mismo `If`.
+            if (t.Map <= 0 || t.X < GameLimits.MinXBorder || t.X > GameLimits.MaxXBorder
+                || t.Y < GameLimits.MinYBorder || t.Y > GameLimits.MaxYBorder) cancela = true;
+            if (world.PlayerAt(t) is not null || world.NpcAt(t) is not null) cancela = true;
+            if (data.IsWater(t.Map, t.X, t.Y)) cancela = true;
             if (world.TryGetGround(t, out _)) { p.Connection?.Send(ServerMessages.LocaleMsg(257)); cancela = true; }
             if (data.MapExits.ContainsKey((t.Map, t.X, t.Y))) { p.Connection?.Send(ServerMessages.LocaleMsg(257)); cancela = true; }
             if (data.IsBlockedTile(t.Map, t.X, t.Y)) { p.Connection?.Send(ServerMessages.LocaleMsg(257)); cancela = true; }
@@ -8919,13 +9038,30 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             var target = _world.PlayerByName(targetName);
-            if (target is null || !target.IsAlive)
+            // El único rechazo del original es que no esté conectado. El gate de VIVO era invención nuestra: a
+            // un muerto se le susurra sin problema.
+            if (target is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
+            // `If UserIndex <> targetUserIndex`: susurrarse a uno mismo no hace absolutamente nada, en silencio.
+            if (target.CharIndex == p.CharIndex) return;
+            // La MISMA línea para los dos, con FONTTYPE_INFOBOLD2. Acá salían dos frases inventadas ("te
+            // susurra" / "le susurras") y con la fuente de info, o sea otro color.
+            var linea = ServerMessages.ConsoleMsg($"[{p.Name}] {chat}", FuenteSusurro);
+            if (World.InView(p.Pos, target.Pos))   // VB6 EstaPCarea
             {
-                session.Send(ServerMessages.LocaleMsg(75));
+                // El `If LenB(chat) <> 0` del original cubre SÓLO esta rama: un susurro vacío a alguien que está
+                // lejos sí emite las dos líneas, y de cerca no emite nada. La asimetría es de la fuente.
+                if (chat.Length == 0) return;
+                // De cerca el susurro además se DIBUJA sobre la cabeza (modo 4) a los dos, y se le copia a los
+                // administradores. El port no mandaba ningún ChatOverHead: un susurro no se veía en pantalla.
+                BroadcastToAdmins(ServerMessages.ChatOverHead(chat, p.CharIndex, 4));
+                session.Send(linea);
+                target.Connection?.Send(linea);
+                session.Send(ServerMessages.ChatOverHead(chat, p.CharIndex, 4));
+                target.Connection?.Send(ServerMessages.ChatOverHead(chat, p.CharIndex, 4));
                 return;
             }
-            target.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te susurra: {chat}", FuenteInfo));
-            session.Send(ServerMessages.ConsoleMsg($"Le susurras a {target.Name}: {chat}", FuenteInfo));
+            session.Send(linea);
+            target.Connection?.Send(linea);
         });
     }
 
@@ -9216,7 +9352,12 @@ public sealed class PacketDispatcher
                 p.Inventory[slot] = inv;
                 session.Send(hungerPkt);
                 session.Send(ServerMessages.PlayWave(snd, (byte)p.Pos.X, (byte)p.Pos.Y));
-                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(snd, (byte)p.Pos.X, (byte)p.Pos.Y), p.CharIndex);
+                // "Los admin invisibles solo producen sonidos a si mismos" — pero SÓLO en la BEBIDA
+                // (InvUsuario.bas:1709). La COMIDA no lleva ese gate (:1444-1449) y suena al área igual estando
+                // invisible: la asimetría es de la fuente y se porta tal cual. Acá no se gateaba ninguna de las
+                // dos, así que un GM invisible se delataba tomando agua.
+                if (!(obj.IsDrink && p.Invisible))
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(snd, (byte)p.Pos.X, (byte)p.Pos.Y), p.CharIndex);
                 session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, inv.Amount));
                 return;
             }
@@ -9392,7 +9533,10 @@ public sealed class PacketDispatcher
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
             session.Send(ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y));      // drink sound (SND_BEBER)
-            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y), p.CharIndex);
+            // Mismo gate que la bebida: los cuatro Case de poción del original lo traen (InvUsuario.bas:1578,
+            // 1596, 1613 y 1628). Sin él, un GM invisible tomando una poción se escucha en toda el área.
+            if (!p.Invisible)
+                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y), p.CharIndex);
             // El original manda el granular del stat que tocó la poción, no el UpdateUserStats gordo: cada
             // Case de InvUsuario.bas:1567-1626 elige su propio Write (Dexterity / Strenght / HP / Mana).
             if (avisoStat is not null) session.Send(avisoStat);
@@ -9561,15 +9705,20 @@ public sealed class PacketDispatcher
             var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
             var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
             if (npc is null || !npc.IsBanker) { session.Send(ServerMessages.LocaleMsg(22)); return; }  // VB6: rama sin TargetNPC
-            OpenBank(session, p);
+            OpenBank(session, p, npc);
         });
     }
 
     /// <summary>Opens the vault for a player: BankInit (gold + item count) then one ChangeBankSlot per slot.
     /// Shared by HandleBankStart (BankStart packet) and the DoubleClick-on-banker path.</summary>
-    private void OpenBank(ClientSession session, Player p)
+    private void OpenBank(ClientSession session, Player p, Npc banquero)
     {
         p.BankOpen = true;
+        // SOSTENER EL INVARIANTE DEL ORIGINAL. El VB6 lee el banquero de `.flags.TargetNPC`, que le queda
+        // seteado del clic con el que se abre la ventana; nuestro port la abre por la baldosa encarada y nunca
+        // llenaba ese campo. Los handlers de oro lo necesitan para colgarle el globo de diálogo al banquero y
+        // para medir la distancia, así que se setea acá — el mismo arreglo que se le hizo a OpenCommerce.
+        p.TargetNpc = banquero.CharIndex;
         byte count = 0;
         for (int i = 1; i <= GameLimits.MaxBankSlots; i++) if (!p.BankInventory[i].IsEmpty) count++;
         session.Send(ServerMessages.BankInit(p.Bank, count));
@@ -9636,6 +9785,20 @@ public sealed class PacketDispatcher
         });
     }
 
+    /// <summary>El banquero con el que se está operando (VB6 <c>Npclist(.flags.TargetNPC)</c>). Devuelve null si
+    /// no hay ninguno targeteado o si el que hay no es banquero — las dos ramas en que el original sale sin
+    /// hacer nada.</summary>
+    private Npc? BanqueroDelTarget(Player p) =>
+        _world.NpcByIndex(p.TargetNpc) is { IsBanker: true } b ? b : null;
+
+    /// <summary>Depositar oro (VB6 <c>HandleBankDepositGold</c>, Protocol.bas:6027). Le faltaban los dos gates
+    /// de entrada —MUERTO (77) y LEJOS (8, con la <c>Distancia</c> Manhattan del original)— así que con la
+    /// bóveda abierta se podía caminar hasta la otra punta del mapa y seguir operando, y un cadáver también.
+    ///
+    /// Y la emisión no era la del original: acá salía un <c>ConsoleMsg</c> con texto nuestro. El VB6 cuelga el
+    /// saldo en el <b>GLOBO DE DIÁLOGO DEL BANQUERO</b> (<c>WriteChatOverHead</c> sobre su CharIndex) y tira el
+    /// tintineo del oro al área (:6078-6081). Además NO recorta: pedir más de lo que tenés RECHAZA con "No
+    /// tenés esa cantidad."; con el <c>Clamp</c> que había, pedir de más depositaba todo.</summary>
     private void HandleBankDepositGold(ClientSession session, ByteQueueReader r)
     {
         int amount = r.ReadLong();
@@ -9643,15 +9806,27 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
+            if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
             if (!p.BankOpen) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6: sin banquero targeteado
-            if (p.Gold < 1) return;   // sin oro en mano: evita Math.Clamp(_,1,0) (min>max → ArgumentException)
-            int move = Math.Clamp(amount, 1, p.Gold);
-            p.Gold -= move; p.Bank += move;
-            session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Depositaste {move} oro. Boveda: {p.Bank}.", FuenteInfo));
+            var banquero = BanqueroDelTarget(p);
+            if (banquero is null) return;                                              // NPCtype <> Banquero: silencio
+            if (DistanciaVB6(p.Pos, banquero.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            if (amount <= 0 || amount > p.Gold)
+            { session.Send(ServerMessages.ChatOverHead("No tenés esa cantidad.", banquero.CharIndex, 0)); return; }
+            p.Gold -= amount; p.Bank += amount;
+            session.Send(ServerMessages.ChatOverHead($"Tenés {p.Bank} monedas de oro en tu cuenta.", banquero.CharIndex, 0));
+            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
+            session.Send(ServerMessages.UpdateGold(p.Gold));   // DENTRO del éxito, como el original (:6082)
         });
     }
 
+    /// <summary>Retirar oro (VB6 <c>HandleBankExtractGold</c>, Protocol.bas:5955). Los mismos gates y la misma
+    /// emisión que el depósito, con dos diferencias que están en la fuente y se portan tal cual: el rechazo dice
+    /// <b>"No tienes esa cantidad."</b> (el depósito dice "No tenés") y el <c>WriteUpdateGold</c> va <b>FUERA</b>
+    /// del If/Else (:6016), o sea que se manda aunque no se haya movido una moneda.
+    ///
+    /// El <c>OroLleno</c> del original no se porta: es un guardia roto —compara un <c>Long</c> contra
+    /// 2.147.483.647— y ya está anotado como tal.</summary>
     private void HandleBankExtractGold(ClientSession session, ByteQueueReader r)
     {
         int amount = r.ReadLong();
@@ -9659,12 +9834,20 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
+            if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
             if (!p.BankOpen) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6: sin banquero targeteado
-            if (p.Bank < 1) return;   // bóveda vacía: evita Math.Clamp(_,1,0) (min>max → ArgumentException)
-            int move = (int)Math.Clamp((long)amount, 1, p.Bank);
-            p.Bank -= move; p.Gold += move;
-            session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Retiraste {move} oro. Boveda: {p.Bank}.", FuenteInfo));
+            var banquero = BanqueroDelTarget(p);
+            if (banquero is null) return;                                              // NPCtype <> Banquero: silencio
+            if (DistanciaVB6(p.Pos, banquero.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            if (amount <= 0 || amount > p.Bank)
+                session.Send(ServerMessages.ChatOverHead("No tienes esa cantidad.", banquero.CharIndex, 0));
+            else
+            {
+                p.Bank -= amount; p.Gold += amount;
+                session.Send(ServerMessages.ChatOverHead($"Tenés {p.Bank} monedas de oro en tu cuenta.", banquero.CharIndex, 0));
+                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
+            }
+            session.Send(ServerMessages.UpdateGold(p.Gold));   // FUERA del If/Else, como el original (:6016)
         });
     }
 
@@ -9856,7 +10039,12 @@ public sealed class PacketDispatcher
             // es la barca, así que arma/armadura no deben re-vestir el cuerpo real.
             if ((!p.Mounted && !p.Navigating) || obj.IsHelmet || obj.IsShield)
                 BroadcastEquipChange(p, obj, inv.Equipped);
-            session.Send(ServerMessages.ConsoleMsg(inv.Equipped ? $"Equipaste {obj.Name}." : $"Desequipaste {obj.Name}.", FuenteInfo));
+            // ACÁ NO VA NINGUNA LÍNEA DE CONSOLA. Salía un "Equipaste X." / "Desequipaste X." nuestro, y el
+            // original no manda nada: `InvUsuario.bas` tiene UN SOLO `WriteConsoleMsg` en todo el archivo (:644,
+            // el del oro que no entra), y ni `EquiparInvItem` ni `Desequipar` lo usan. Todo lo que el jugador
+            // ve del cambio viaja por los granulares que ya se mandan arriba —el slot y el CharacterChangeSlot—,
+            // que es justamente por qué el original usa esos paquetes. Es emisión DE MÁS, la clase que sólo caza
+            // el oráculo y sólo si el barrido pasa por equipar.
         });
     }
 
