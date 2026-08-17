@@ -99,6 +99,9 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `Exp`, `Oro` | porcentajes (200 = doble) |
 | `MinutosDelDia` | duración del ciclo día/noche |
 | `MinutosDeClima`, `PorcentajeLluvia` | ciclo de lluvia |
+| `OroAlSubirNivel` | oro de regalo por nivel. **0 = como el original**, que no regala nada |
+| `CuraAlSubirNivel` | 1 = subir de nivel cura del todo. **0 = como el original**, que sube los máximos y deja los mínimos |
+| `QuitarEquipoNovato` | 1 = el equipo `(Newbies)` desaparece al pasar el nivel 15. **0 = como el original**, que no lo saca |
 | `MinutosGuardarUsuarios` | autosave. 0 = sólo al salir |
 | `MinutosBackup` | copia del mundo. 0 = desactivado |
 | `BackupsAConservar` | cuántas copias guardar. 0 = todas |

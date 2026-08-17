@@ -125,6 +125,21 @@ MinutosDelDia=24
 MinutosDeClima=18
 PorcentajeLluvia=18
 
+; ── REGLAS DE LA CASA ────────────────────────────────────────────────────────────────────────────────
+; Tres cosas que el ORIGINAL NO HACE. Estan implementadas y probadas, y vienen APAGADAS: prenderlas cambia
+; el balance del juego, asi que es una decision de quien hostea y no del servidor. Con estos valores el
+; server se comporta exactamente como el CoverAO original.
+;
+; OroAlSubirNivel: oro de regalo por cada nivel que se sube. 0 = como el original (no regala nada).
+;                  Tope 1000000; un negativo se lee como 0.
+OroAlSubirNivel=0
+; CuraAlSubirNivel: 1 = subir de nivel deja la vida, el mana y la energia al maximo. 0 = como el original,
+;                   que sube los MAXIMOS y deja los minimos donde estaban (se sube de nivel herido).
+CuraAlSubirNivel=0
+; QuitarEquipoNovato: 1 = al pasar el nivel 15 desaparecen los objetos "(Newbies)" del inventario.
+;                     0 = como el original, que no los saca nunca.
+QuitarEquipoNovato=0
+
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo
 ; son tambien los que trae el servidor por defecto. Hay que escribir un 0 para

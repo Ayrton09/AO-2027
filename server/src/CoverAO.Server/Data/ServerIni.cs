@@ -153,6 +153,27 @@ public sealed class ServerIni
     public int MinutosDeClima { get; private set; } = 18;     // ciclo entero de clima (llueve una fracción)
     public int PorcentajeLluvia { get; private set; } = 18;   // qué parte del ciclo llueve
 
+    // ── REGLAS DE LA CASA ────────────────────────────────────────────────────────────────────────────
+    // Tres cosas que el tester pidió y que el ORIGINAL NO HACE. No son arreglos: cambian el balance del juego,
+    // así que la decisión no es del port — es de quien hostea. Por eso vienen APAGADAS: con el ini por defecto
+    // el server se comporta exactamente como el VB6, y prenderlas es una línea.
+    //
+    // Están implementadas y probadas igual, para que decidir cueste cambiar un número y no escribir código.
+
+    /// <summary>Oro que se regala AL SUBIR DE NIVEL, por nivel (informe del tester, 2.12). El original da
+    /// CERO: `SubirNivel` (Modulo_UsUaRiOs.bas:387) reparte vida, maná, energía, golpe y skillpoints, y no
+    /// toca el oro. 0 = como el original.</summary>
+    public int OroAlSubirNivel { get; private set; }
+
+    /// <summary>¿Subir de nivel CURA del todo? (informe del tester, 2.13). El original sube los MÁXIMOS y deja
+    /// los mínimos donde estaban: se sube de nivel herido y se sigue herido. false = como el original.</summary>
+    public bool CuraAlSubirNivel { get; private set; }
+
+    /// <summary>¿El equipo de novato desaparece al dejar de ser newbie? (informe del tester, 2.2b). El
+    /// original no tiene ningún `QuitarNewbieObj`: los 25 objetos `(Newbies)` se quedan para siempre.
+    /// false = como el original.</summary>
+    public bool QuitarEquipoNovato { get; private set; }
+
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
     public byte PrivilegioDe(string? nombre) =>
@@ -415,6 +436,11 @@ public sealed class ServerIni
         cfg.MinutosDelDia = Math.Clamp(ini.GetInt("INIT", "MinutosDelDia", cfg.MinutosDelDia), 1, 1440);
         cfg.MinutosDeClima = Math.Clamp(ini.GetInt("INIT", "MinutosDeClima", cfg.MinutosDeClima), 1, 1440);
         cfg.PorcentajeLluvia = Math.Clamp(ini.GetInt("INIT", "PorcentajeLluvia", cfg.PorcentajeLluvia), 0, 100);
+        // Las reglas de la casa. El tope del oro es alto a propósito (no es una opinión sobre cuánto está
+        // bien) pero no infinito: un valor absurdo desbalancea el mercado del server sin que nadie lo note.
+        cfg.OroAlSubirNivel = Math.Clamp(ini.GetInt("INIT", "OroAlSubirNivel", 0), 0, 1_000_000);
+        cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
+        cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

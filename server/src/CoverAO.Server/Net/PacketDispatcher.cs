@@ -2059,6 +2059,59 @@ public sealed class PacketDispatcher
                 TeleportTo(session, p, Cities.SpawnTile(p.HomeCity));
                 session.Send(ServerMessages.LocaleMsg(304));
             }
+            // Y LA TERCERA REGLA DE LA CASA (2.2b): que el equipo de novato desaparezca al dejar de serlo. El
+            // original NO tiene ningún `QuitarNewbieObj` — los 25 objetos `(Newbies)` se quedan para siempre—
+            // así que también viene apagada. Va gateada por `eraNewbie`, o sea que corre UNA sola vez: en la
+            // subida que te saca del rango de newbie, no en cada nivel de ahí en adelante.
+            //
+            // OJO que no depende del mapa, a diferencia del bloque de arriba: el que llega a 16 lejos del
+            // dungeon también deja de ser newbie, y su equipo tiene que irse igual.
+            if (session is not null && _ini.QuitarEquipoNovato && eraNewbie && p.Level > GameLimits.NewbieMaxLevel)
+            {
+                int sacados = 0;
+                for (byte slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
+                {
+                    var inv = p.Inventory[slot];
+                    if (inv.IsEmpty || _data.Obj(inv.ObjIndex) is not { IsNewbie: true }) continue;
+                    // Por el MISMO embudo que tirar o vender: si estaba puesto hay que sacarle el bono y el
+                    // gráfico antes de que el slot desaparezca (ver DesequiparSiSeVaEntero).
+                    DesequiparSiSeVaEntero(session, p, slot, inv.Amount);
+                    p.Inventory[slot] = default;
+                    session.Send(ServerMessages.ChangeInventorySlot(slot, 0, 0, false, 0f, 0));
+                    sacados++;
+                }
+                if (sacados > 0)
+                    session.Send(ServerMessages.ConsoleMsg(
+                        $"Dejaste de ser novato: se fueron {sacados} objeto(s) del equipo de novato.", FuenteInfo));
+            }
+            // LAS REGLAS DE LA CASA (informe del tester, 2.12 y 2.13). NINGUNA de las dos es del original —
+            // `SubirNivel` reparte vida, maná, energía, golpe y skillpoints, y ni regala oro ni cura— así que
+            // vienen APAGADAS en el ini: con la config por defecto esto no corre y el server se comporta como
+            // el VB6. Están acá para que prenderlas cueste una línea del Server.ini y no escribir código.
+            //
+            // Van por nivel, dentro del mismo `if (levels > 0)`: subir dos de un saque paga dos veces, que es
+            // lo coherente con los avisos de arriba, que también salen dos veces.
+            if (_ini.OroAlSubirNivel > 0)
+            {
+                long premio = (long)_ini.OroAlSubirNivel * levels;
+                // TOPADO EN MAXORO, como TODA entrada de oro del original (vender: Comercio.bas:169; robar:
+                // Trabajo.bas:1591) — y sobre el TOTAL, no sobre lo que entra. La primera versión de esta línea
+                // topaba contra `int.MaxValue` y el guard de `OroDelOriginalTests` la agarró: con un premio
+                // grande y muchos niveles, el oro podía pasarse de los noventa millones que el original nunca
+                // deja pasar.
+                p.Gold = (int)Math.Min((long)p.Gold + premio, MaxOro);
+                session?.Send(ServerMessages.UpdateGold(p.Gold));
+                session?.Send(ServerMessages.LocaleMsg(29, premio.ToString()));   // "¡Has ganado #1 monedas de oro!"
+            }
+            if (_ini.CuraAlSubirNivel)
+            {
+                // Después del `Grant`, así que los máximos ya son los del nivel nuevo: curar antes dejaría el
+                // HP en el tope VIEJO y la mitad de la gracia se perdería.
+                p.Hp = p.MaxHp; p.Mana = p.MaxMana; p.Stamina = p.MaxStamina;
+                session?.Send(ServerMessages.UpdateHP((short)p.Hp));
+                session?.Send(ServerMessages.UpdateMana((short)p.Mana));
+                session?.Send(ServerMessages.UpdateSta((short)p.Stamina));
+            }
             session?.Send(ServerMessages.UpdateUserStatsForLevel(p));
             // El VB6 gatea con `If Pts > 0` y manda los puntos GANADOS en esta subida, no el total: el cliente
             // original acumula (`SkillPoints = SkillPoints + N`). Mandar el total lo hacía contar de más.
