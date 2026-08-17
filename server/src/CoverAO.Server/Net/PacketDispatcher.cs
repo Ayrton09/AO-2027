@@ -1774,7 +1774,11 @@ public sealed class PacketDispatcher
         // Sin texto y solo al que pega (UserDanoNpc, SistemaCombate.bas:467). El comentario que estaba
         // aca decia que el original difundia con `SendData ToPCArea` y era falso: usa `WriteChat...`,
         // que escribe a UN usuario.
-        session.Send(ServerMessages.DamageOverHead(npc.CharIndex, damage));
+        //
+        // Y VA SOBRE LA CABEZA DEL QUE PEGA, no de la criatura: el original ancla el numero en
+        // `UserList(UserIndex).Char.CharIndex` (:467). Acá iba sobre el NPC, que además era incoherente con
+        // nuestro propio FALLO —tres líneas más arriba— que ya usaba el CharIndex del jugador.
+        session.Send(ServerMessages.DamageOverHead(p.CharIndex, damage));
         // APUÑALAR: golpe extra, y SÓLO si la criatura sobrevivió al principal (VB6 SistemaCombate.bas:474-482,
         // `If .Stats.MinHP > 0 Then ... DoApuñalar`). Va con el daño BASE, no con el ya mermado por la defensa.
         if (npc.Hp > 0 && PuedeApunalar(p)) DoApunalar(session, p, npc, null, danoBase);
@@ -5017,15 +5021,19 @@ public sealed class PacketDispatcher
     }
 
     /// <summary>VB6 <c>ObjEsRobable</c> (Trabajo.bas:1638): qué ítem se puede hurtar. No se roban llaves,
-    /// monturas ni barcos, ni nada que la víctima tenga EQUIPADO. Los gates faccionarios del original
-    /// (<c>Real</c>/<c>Caos</c>/<c>Milicia</c>/<c>Shop</c>) no se replican porque son vacuos en este install:
-    /// ningún objeto del obj.dat trae esos campos.</summary>
+    /// monturas, barcos ni el equipo de NOVATO —los cuatro salen del mismo <c>If</c> de
+    /// <c>TieneObjetosRobables</c> (InvUsuario.bas:52)—, ni nada que la víctima tenga EQUIPADO. Los gates
+    /// faccionarios del original (<c>Real</c>/<c>Caos</c>/<c>Milicia</c>/<c>Shop</c>) no se replican porque son
+    /// vacuos en este install: ningún objeto del obj.dat trae esos campos.
+    ///
+    /// El de novato SÍ vuelve a tener efecto: <see cref="Data.ObjInfo.IsNewbie"/> ya no depende de la clave
+    /// muerta sino del nombre.</summary>
     private bool ObjEsRobable(Player victima, int slot)
     {
         var inv = victima.Inventory[slot];
         if (inv.ObjIndex <= 0 || inv.Amount <= 0 || inv.Equipped) return false;
         var o = _data.Obj(inv.ObjIndex);
-        return o is not null && !o.IsKey && !o.IsMount && !o.IsBoat;
+        return o is not null && !o.IsKey && !o.IsMount && !o.IsBoat && !o.IsNewbie;
     }
 
     /// <summary>¿La víctima lleva algo hurtable? (VB6 TieneObjetosRobables).</summary>
@@ -9164,6 +9172,11 @@ public sealed class PacketDispatcher
             // de donador y el Anillo Dorado—, y son justamente los que uno no quiere perder por un click.
             if (_data.Obj(inv.ObjIndex) is { NoSeTira: true })
             { session.Send(ServerMessages.ShowMessageBox("", esPregunta: true, accion: 1)); return; }
+            // UN NOVATO NO TIRA SU EQUIPO INICIAL (VB6 InvUsuario.bas:440: `If ItemNewbie(...) And Privilegios
+            // And PlayerType.User` → LocaleMsg 260 y Exit Sub). El gate es sólo para el jugador común: un GM sí
+            // puede. Estaba muerto porque la clave `Newbie` no existe en esta data; ver ObjInfo.IsNewbie.
+            if (!p.IsGm && _data.Obj(inv.ObjIndex) is { IsNewbie: true })
+            { session.Send(ServerMessages.LocaleMsg(260)); return; }
             if (_world.TryGetGround(p.Pos, out _)) { session.Send(ServerMessages.LocaleMsg(262)); return; }
 
             short drop = (short)Math.Clamp(amount, 1, inv.Amount);
@@ -10308,6 +10321,18 @@ public sealed class PacketDispatcher
     /// Tampoco se porta el caso especial del carro minero (CARROMINERO) ni el del pirata con galeón: los dos
     /// dependen de subsistemas que este slice no modela.
     /// </summary>
+    /// <summary>REGLA DE LA CASA, no del original: los tipos que NUNCA se caen al morir, los haya marcado o no
+    /// el <c>obj.dat</c>. Son los caros de reponer, donde perderlos de un mordisco arruina la partida:
+    /// <list type="bullet">
+    /// <item><b>otRuna</b> (38) — la Runa de teletransportación, 1 en esta data</item>
+    /// <item><b>otMonturas</b> (44) — las 11 monturas, Huargos incluidos</item>
+    /// <item><b>otBarcos</b> (31) — Barca, Galera y Galeón</item>
+    /// <item><b>otMapa</b> (37) — va por si aparece; esta data no trae ninguno</item>
+    /// </list>
+    /// Va ADEMÁS del <c>NoSeCae</c> del original, que no se toca: los 5 que ya lo traen —los sacos de donador
+    /// y el Anillo Dorado— se siguen respetando por su propio campo.</summary>
+    private static bool NuncaSeCae(Data.ObjInfo o) => o.ObjType is 31 or 37 or 38 or 44;
+
     private static void DropInventoryOnDeath(World world, GameData data, Player p)
     {
         if (!data.IsPkMap(p.Pos.Map)) return;                       // MapInfo(map).Pk = False → no se cae nada
@@ -10319,6 +10344,11 @@ public sealed class PacketDispatcher
             if (inv.ObjIndex <= 0 || inv.Amount <= 0) continue;
             var info = data.Obj(inv.ObjIndex);
             if (info is null || !info.DropsOnDeath) continue;
+            if (NuncaSeCae(info)) continue;   // la regla de la casa, arriba del NoSeCae del obj.dat
+            // El equipo de NOVATO tampoco se cae. Es del original —ahí el `Newbie` del obj.dat lo protege de
+            // que se lo roben y de tirarlo—, y acá vuelve a tener efecto porque `IsNewbie` se deriva del nombre
+            // (ver ObjInfo.IsNewbie): sin esto el que recién empieza perdía el equipo inicial de un mordisco.
+            if (info.IsNewbie) continue;
 
             var spot = FreeGroundNear(world, p.Pos);
             if (spot is not { } drop) continue;   // no hay tile libre alrededor: el ítem se queda (VB6 NuevaPos = 0)

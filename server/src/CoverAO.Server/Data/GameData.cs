@@ -133,8 +133,21 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // clave le pone 10, no 0.
     int StaRequerido = 10)
 {
-    /// <summary>VB6 <c>ItemNewbie</c>: un mercader no paga nada por esto. Inalcanzable con esta data (ver arriba).</summary>
-    public bool IsNewbie => Newbie == 1;
+    /// <summary>
+    /// ÍTEM DE NOVATO. El original lo decide por la clave <c>Newbie</c> del <c>obj.dat</c> (FileIO.bas:819) y con
+    /// eso gatea tres cosas: el mercader paga 0 (<c>SalePrice</c>, Comercio.bas:312), no se puede tirar ni
+    /// comerciar (<c>LocaleMsg 260</c>, InvUsuario.bas:440) y no se puede robar (:52).
+    ///
+    /// EN ESTE INSTALL LA CLAVE NO EXISTE: se grepeó el <c>obj.dat</c> crudo —no nuestro JSON— y no hay un solo
+    /// <c>Newbie=</c>, en ninguna grafía. O sea que las tres reglas del original están vivas en el código y
+    /// MUERTAS por falta de dato, y por eso un novato podía vender su equipo inicial y perderlo al morir.
+    ///
+    /// Lo que la data SÍ trae es la convención del NOMBRE: 25 objetos terminan en <c>(Newbies)</c> —las
+    /// vestimentas, la daga, el arco, el báculo, el martillo, las dos pociones, la manzana, el agua, la flecha,
+    /// los nudillos y el mapa—, que son exactamente el equipo de arranque. Se deriva de ahí, y así las reglas
+    /// del original vuelven a tener a quién aplicarse. La clave se sigue respetando si algún día aparece.
+    /// </summary>
+    public bool IsNewbie => Newbie == 1 || Name.EndsWith("(Newbies)", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Pergamino de hechizo (VB6 otPergaminos=24, Declares.bas:603): al usarlo, un caster aprende HechizoIndex.</summary>
     public bool IsPergamino => ObjType == 24;

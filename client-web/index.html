@@ -2552,7 +2552,13 @@
           // allá la tienda es una VENTANA APARTE (`frmComerciar.Show , frmMain`, modeless) que no le come el
           // teclado al juego. La traba es de este cliente, así que el arreglo va acá y no en el protocolo.
           // Que uno murió se sabe por el CUERPO, como en el resto del cliente (no hay bandera por personaje).
-          if (f.charIndex === myCharIndex && f.body === CUERPO_MUERTO && modalEl.classList.contains('on')) closeModal();
+          if (f.charIndex === myCharIndex && f.body === CUERPO_MUERTO) {
+            if (modalEl.classList.contains('on')) closeModal();
+            // Y APAGA EL INDICADOR DE TRABAJO. El server corta la faena al morir (`KillPlayer`) pero no avisa,
+            // y el original tampoco: los otros cortes se derivan del texto ("Dejas de trabajar") y morir no
+            // manda ninguno, así que el símbolo quedaba pegado en la cabeza hasta el próximo trabajo.
+            laborando = false;
+          }
           break; }
         // Equipar/desequipar NO manda el CharacterChange entero: el server manda un CharacterChangeSlot por
         // cosa que cambio (1 cuerpo, 4 arma, 5 escudo, 6 casco), como el VB6. Sin este case, ponerse una
@@ -2847,6 +2853,10 @@
             spellName,
             spellSelfText,
             itemName,
+            // EL SIGILO `*` ES UNA SKILL, y sin este resolver caía al número crudo: subir Comerciar decía
+            // "has mejorado tu skill 15", que no le dice nada a nadie. SKILL_NAMES está en el orden del enum
+            // eSkill (1..27), así que el índice va -1.
+            skillName: (i) => SKILL_NAMES[i - 1],
           });
           if (/te (golpea|pega|prod)/i.test(t)) myHitAt = Date.now();
           if (f.msgId === 391) laborando = false;   // "Dejas de trabajar" al cortar la faena con otra accion
