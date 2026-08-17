@@ -6584,79 +6584,89 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            // Gate de rango: el RECTÁNGULO 8×6 de RANGO_VISION, no el bloque de área de World.InView (que llega a
-            // ~17 tiles y convertiría el click en un scanner de nombres al doble del alcance del original — y en
-            // un /MATA a esa distancia). Es lo primero que hace LookatTile, y rebota SIN tocar el target.
-            if (Math.Abs(p.Pos.X - x) > RangoVisionX || Math.Abs(p.Pos.Y - y) > RangoVisionY) return;
+            LookatTile(session, p, x, y);
+        });
+    }
 
-            var pos = new WorldPos(p.Pos.Map, x, y);
-            bool foundSomething = false;
-            // OJO: `InMapBounds` (GameLogic.bas:225) NO son los límites del mapa sino los del área jugable —
-            // MinXBorder..MaxXBorder = 9..92 y MinYBorder..MaxYBorder = 7..94 (General.bas:1781). Un click fuera
-            // de eso NO es un no-op: cae en la rama Else, que DESELECCIONA (el bloque `If FoundSomething = 0`).
-            if (x >= GameLimits.MinXBorder && x <= GameLimits.MaxXBorder
-                && y >= GameLimits.MinYBorder && y <= GameLimits.MaxYBorder)
+    /// <summary>VB6 <c>LookatTile</c> (GameLogic.bas:655): resuelve QUÉ hay en un tile y lo deja seleccionado en
+    /// <c>Target*</c>. Es UN helper porque el original lo llama desde varios lados y no sólo desde el clic: el
+    /// <c>Case eSkill.magia</c> del <c>WorkLeftClick</c> (Protocol.bas:2927), robar (:2961), domar, el arco… — todo
+    /// lo que "apunta a un tile" pasa por acá y después lee <c>flags.TargetUser/TargetNPC</c>. Vivía inline en el
+    /// clic, así que el casteo no podía usarlo.</summary>
+    private void LookatTile(ClientSession session, Player p, byte x, byte y)
+    {
+        // Gate de rango: el RECTÁNGULO 8×6 de RANGO_VISION, no el bloque de área de World.InView (que llega a
+        // ~17 tiles y convertiría el click en un scanner de nombres al doble del alcance del original — y en
+        // un /MATA a esa distancia). Es lo primero que hace LookatTile, y rebota SIN tocar el target.
+        if (Math.Abs(p.Pos.X - x) > RangoVisionX || Math.Abs(p.Pos.Y - y) > RangoVisionY) return;
+
+        var pos = new WorldPos(p.Pos.Map, x, y);
+        bool foundSomething = false;
+        // OJO: `InMapBounds` (GameLogic.bas:225) NO son los límites del mapa sino los del área jugable —
+        // MinXBorder..MaxXBorder = 9..92 y MinYBorder..MaxYBorder = 7..94 (General.bas:1781). Un click fuera
+        // de eso NO es un no-op: cae en la rama Else, que DESELECCIONA (el bloque `If FoundSomething = 0`).
+        if (x >= GameLimits.MinXBorder && x <= GameLimits.MaxXBorder
+            && y >= GameLimits.MinYBorder && y <= GameLimits.MaxYBorder)
+        {
+            p.TargetMap = pos.Map; p.TargetX = x; p.TargetY = y;
+            foundSomething = LookatTileObjeto(p, pos);
+
+            // ¿Personaje? El tile de ABAJO primero (ver arriba), y el NPC pisando al usuario en cada uno.
+            Player? user = null; Npc? npc = null;
+            if (y < GameLimits.MaxYBorder)
             {
-                p.TargetMap = pos.Map; p.TargetX = x; p.TargetY = y;
-                foundSomething = LookatTileObjeto(p, pos);
-
-                // ¿Personaje? El tile de ABAJO primero (ver arriba), y el NPC pisando al usuario en cada uno.
-                Player? user = null; Npc? npc = null;
-                if (y < GameLimits.MaxYBorder)
-                {
-                    var abajo = new WorldPos(pos.Map, x, (byte)(y + 1));
-                    user = _world.PlayerAt(abajo);
-                    npc = _world.NpcAt(abajo);
-                }
-                if (user is null && npc is null)
-                {
-                    user = _world.PlayerAt(pos);
-                    npc = _world.NpcAt(pos);
-                }
-
-                if (npc is not null)
-                {
-                    foundSomething = true;
-                    p.TargetNpc = npc.CharIndex; p.TargetNpcTipo = (byte)npc.Template.NpcType;
-                    p.TargetUser = 0; p.TargetObj = 0;   // el Case 2 SÍ borra el target de objeto; el Case 1 no
-                    session.Send(ServerMessages.CharMsgStatusNpc(npc, p, _loop.Tick));
-                    // "Si el NPC se corre mandamos el texto sino lo lee el cliente" (GameLogic.bas:792): a una
-                    // criatura que ya no está en su tile de spawn se le manda además su diálogo sobre la cabeza,
-                    // por índice de locale (el cliente lo resuelve del NPC, por eso viaja el Numero y no el texto).
-                    if (npc.Pos != npc.StartPos && npc.Template.Description.Length > 1)
-                        session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, npc.Template.Index, 4));
-                }
-                else if (user is not null)
-                {
-                    // Gate del Case 1: `AdminInvisible = 0 Or (Privilegios And PlayerType.User)`. En VB el `And`
-                    // liga MÁS FUERTE que el `Or`, así que para un clickeador sin privilegios (Privilegios tiene
-                    // el bit User=1) la segunda mitad ya es verdadera y el gate SIEMPRE pasa: al GM escondido lo
-                    // "targetea" cualquier jugador común, y sólo otro GM se queda sin poder seleccionarlo.
-                    // Y ojo AdminInvisible, que es un flag DISTINTO de Invisible (modHechizos.bas:456 los compara
-                    // por separado): la invisibilidad de GM acá es la permanente, InvisibleUntilTick == 0.
-                    bool adminInvisible = user.Invisible && user.IsGm && user.InvisibleUntilTick == 0;
-                    if (!adminInvisible || (p.Privileges & PrivUser) != 0)
-                    {
-                        foundSomething = true;
-                        p.TargetUser = user.CharIndex; p.TargetNpc = 0; p.TargetNpcTipo = 0;
-                        // `If UserList(tI).showName Then WriteCharMsgStatus` (GameLogic.bas:772): a alguien que
-                        // apagó su nick con /SHOWNAME el click lo TARGETEA igual pero no devuelve su ficha.
-                        if (user.ShowName) session.Send(ServerMessages.CharMsgStatus(user, p, _loop.Tick));
-                    }
-                    // Si el gate NO pasa, el original deja FoundChar = 1: no corre ninguna limpieza y el target
-                    // anterior sobrevive. Por eso acá tampoco se toca nada.
-                }
-                else
-                {
-                    // `If FoundChar = 0`: sin personaje se limpian NPC y usuario, pero NO el objeto.
-                    p.TargetNpc = 0; p.TargetNpcTipo = 0; p.TargetUser = 0;
-                }
+                var abajo = new WorldPos(pos.Map, x, (byte)(y + 1));
+                user = _world.PlayerAt(abajo);
+                npc = _world.NpcAt(abajo);
+            }
+            if (user is null && npc is null)
+            {
+                user = _world.PlayerAt(pos);
+                npc = _world.NpcAt(pos);
             }
 
-            // `If FoundSomething = 0` — el único lugar que limpia. Corre tanto dentro del mapa como en la rama
-            // de fuera de bounds, y deja intacto TargetMap/X/Y: eso es lo que sigue viendo /DT.
-            if (!foundSomething) ClearTarget(p);
-        });
+            if (npc is not null)
+            {
+                foundSomething = true;
+                p.TargetNpc = npc.CharIndex; p.TargetNpcTipo = (byte)npc.Template.NpcType;
+                p.TargetUser = 0; p.TargetObj = 0;   // el Case 2 SÍ borra el target de objeto; el Case 1 no
+                session.Send(ServerMessages.CharMsgStatusNpc(npc, p, _loop.Tick));
+                // "Si el NPC se corre mandamos el texto sino lo lee el cliente" (GameLogic.bas:792): a una
+                // criatura que ya no está en su tile de spawn se le manda además su diálogo sobre la cabeza,
+                // por índice de locale (el cliente lo resuelve del NPC, por eso viaja el Numero y no el texto).
+                if (npc.Pos != npc.StartPos && npc.Template.Description.Length > 1)
+                    session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, npc.Template.Index, 4));
+            }
+            else if (user is not null)
+            {
+                // Gate del Case 1: `AdminInvisible = 0 Or (Privilegios And PlayerType.User)`. En VB el `And`
+                // liga MÁS FUERTE que el `Or`, así que para un clickeador sin privilegios (Privilegios tiene
+                // el bit User=1) la segunda mitad ya es verdadera y el gate SIEMPRE pasa: al GM escondido lo
+                // "targetea" cualquier jugador común, y sólo otro GM se queda sin poder seleccionarlo.
+                // Y ojo AdminInvisible, que es un flag DISTINTO de Invisible (modHechizos.bas:456 los compara
+                // por separado): la invisibilidad de GM acá es la permanente, InvisibleUntilTick == 0.
+                bool adminInvisible = user.Invisible && user.IsGm && user.InvisibleUntilTick == 0;
+                if (!adminInvisible || (p.Privileges & PrivUser) != 0)
+                {
+                    foundSomething = true;
+                    p.TargetUser = user.CharIndex; p.TargetNpc = 0; p.TargetNpcTipo = 0;
+                    // `If UserList(tI).showName Then WriteCharMsgStatus` (GameLogic.bas:772): a alguien que
+                    // apagó su nick con /SHOWNAME el click lo TARGETEA igual pero no devuelve su ficha.
+                    if (user.ShowName) session.Send(ServerMessages.CharMsgStatus(user, p, _loop.Tick));
+                }
+                // Si el gate NO pasa, el original deja FoundChar = 1: no corre ninguna limpieza y el target
+                // anterior sobrevive. Por eso acá tampoco se toca nada.
+            }
+            else
+            {
+                // `If FoundChar = 0`: sin personaje se limpian NPC y usuario, pero NO el objeto.
+                p.TargetNpc = 0; p.TargetNpcTipo = 0; p.TargetUser = 0;
+            }
+        }
+
+        // `If FoundSomething = 0` — el único lugar que limpia. Corre tanto dentro del mapa como en la rama
+        // de fuera de bounds, y deja intacto TargetMap/X/Y: eso es lo que sigue viendo /DT.
+        if (!foundSomething) ClearTarget(p);
     }
 
     /// <summary>La cadena de sondas de OBJETO de <c>LookatTile</c>: deja <c>TargetObj*</c> en el tile que matchea
@@ -7708,6 +7718,11 @@ public sealed class PacketDispatcher
             }
             // Combate a distancia con arco (VB6 HandleWorkLeftClick, Case eSkill.Proyectiles, Protocol.bas:2751).
             if (skill == GameLimits.SkillProyectiles) { RangedShot(session, p, tx, ty); return; }
+            // MAGIA (`Case eSkill.magia`, :2918): el segundo paquete del casteo. `CastSpell` dejó la ranura elegida
+            // y pidió el blanco; este clic lo lanza. Antes no había rama: el paquete caía a los oficios y contestaba
+            // un ConsoleMsg de "no hay nada que trabajar" donde el original lanza el hechizo — así lo midió el
+            // oráculo, y así es como el tester veía que "no deja tirar hechizos".
+            if (skill == GameLimits.SkillMagia) { LanzarHechizoElegido(session, p, tx, ty); return; }
             // ARMAS ARROJADIZAS (VB6 HandleWorkLeftClick, `Case eSkill.ArmasArrojadizas`, Protocol.bas:2655).
             // De todo el case, lo ÚNICO alcanzable con esta data es el RECHAZO: el tiro exige un arma de
             // `SubTipo = 5` y en el obj.dat no hay ninguna, así que la rama que dispara es código muerto. El
@@ -8393,9 +8408,10 @@ public sealed class PacketDispatcher
     /// coordenadas del tile. Y NO hay CreateFX ni los mensajes 497/498 por víctima, porque <c>InfoHechizo</c>
     /// arranca con <c>If Hechizos(spellindex).HechizoDeArea Then Exit Sub</c> (:1741) — un hechizo de área nunca
     /// pasa por el camino de "avisar quién le pegó a quién".</summary>
-    private void CastAreaSpell(ClientSession session, Player p, Data.SpellInfo spell)
+    private void CastAreaSpell(ClientSession session, Player p, Data.SpellInfo spell, byte cx, byte cy)
     {
-        var (cx, cy) = Step(p.Pos.X, p.Pos.Y, p.Heading);
+        // El CENTRO del 3×3 es el tile CLICKEADO (`PosCasteadaX = .flags.TargetX`, modHechizos.bas:397-399),
+        // que LookatTile acaba de dejar. Antes era el tile encarado, porque el casteo no tenía clic.
 
         for (int x = cx - 1; x <= cx + 1; x++)
             for (int y = cy - 1; y <= cy + 1; y++)
@@ -8628,34 +8644,75 @@ public sealed class PacketDispatcher
         return parts;
     }
 
+    /// <summary>EL CASTEO SON DOS PAQUETES, como en el original (Protocol.bas:2142-2186). Este es el primero:
+    /// <c>CastSpell(ranura)</c> NO lanza nada — deja la ranura elegida en <c>flags.Hechizo</c> y le pide al
+    /// cliente que marque un blanco con <c>WorkRequestTarget(magia)</c>. El clic siguiente llega como
+    /// <c>WorkLeftClick(x, y, magia)</c> y ESE es el que resuelve (<see cref="LanzarHechizoElegido"/>).
+    ///
+    /// La única excepción es la de la fuente: un hechizo <c>AutoLanzar</c> se tira sobre uno mismo sin pedir
+    /// nada (:2138-2140), y son los 19 auto-buffs.
+    ///
+    /// Antes el port resolvía TODO acá, contra el tile ENCARADO. Funcionaba a medias — el tester lo reportó como
+    /// "no deja tirar hechizos" (2.6) — y el barrido del oráculo lo midió como dos gaps: nunca se emitía
+    /// <c>WorkRequestTarget</c>, y el rechazo del hechizo salía en el paquete equivocado. También cambia QUÉ se
+    /// valida acá: el original en este paquete sólo mira que el jugador esté vivo y que la ranura tenga algo;
+    /// la cadencia, el mapa sin magia y <c>PuedeLanzar</c> corren recién en el clic.</summary>
     private void HandleCastSpell(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte();
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || !p.IsAlive || slot < 1 || slot > GameLimits.MaxUserSpells) return;
-            // CADENCIA DE CASTEO. El port no tenía NINGUNA: un mago tiraba hechizos a velocidad de red, con el
-            // `IntervaloLanzaHechizo=1000` del Server.ini ahí escrito y sin leer. La forma es la misma del
-            // melee y la misma del original (Servidor/Codigo/Protocol.bas:2939-2945): un OR entre el atajo de
-            // castear-después-de-pegar y la cadencia normal. Rechazo silencioso, como el VB6.
+            if (p is null || !p.IsAlive) return;
+            if (slot < 1 || slot > GameLimits.MaxUserSpells) { p.HechizoElegido = 0; return; }
+            p.HechizoElegido = slot;
+            var spell = _data.Spell(p.Spells[slot]);
+            if (spell is null) return;   // `If uh <> 0`: ranura vacía -> silencio, pero la ranura queda elegida
+            if (spell.EsAutoLanzado)
+            {
+                // `.flags.TargetUser = UserIndex : LanzarHechizo(...)` — sobre uno mismo, sin clic.
+                LanzarHechizoElegido(session, p, p.Pos.X, p.Pos.Y);
+                return;
+            }
+            session.Send(ServerMessages.WorkRequestTarget((byte)GameLimits.SkillMagia));
+        });
+    }
+
+    /// <summary>El segundo paquete del casteo: el <c>Case eSkill.magia</c> del <c>WorkLeftClick</c>
+    /// (Protocol.bas:2918-2951) y de ahí <c>LanzarHechizo</c> (modHechizos.bas:875). Recibe el TILE clickeado
+    /// y resuelve el hechizo que <see cref="HandleCastSpell"/> dejó elegido. Los gates, en el orden de la fuente:
+    /// mapa sin magia (385), <c>LookatTile</c> sobre el tile —que es lo que selecciona al objetivo y manda su
+    /// ficha—, el rango de visión, la cadencia y recién ahí <c>PuedeLanzar</c> y el hechizo en sí.
+    ///
+    /// Se llama con el tile del clic (o el propio, para los <c>AutoLanzar</c>). Adentro, "el objetivo" es lo que
+    /// haya en ese tile: el original lo lee de <c>flags.TargetUser/TargetNPC</c>, que <c>LookatTile</c> acaba de
+    /// dejar, y este port lo lee del tile directamente — es lo mismo, sin pasar por el índice.</summary>
+    private void LanzarHechizoElegido(ClientSession session, Player p, byte clickX, byte clickY)
+    {
+        {
+            byte slot = p.HechizoElegido;
+            p.HechizoElegido = 0;   // `.flags.Hechizo = 0` (:2950): se consume, haya salido o no
+            if (slot < 1 || slot > GameLimits.MaxUserSpells) return;
+            var spell = _data.Spell(p.Spells[slot]);
+            if (spell is null) return;
+            // MAPA SIN MAGIA (VB6 Protocol.bas:2921): antes que cualquier otro requisito, y ni un GM se salva. Lo
+            // prende /MODMAPINFO MAGIASINEFECTO. Y ANTES del LookatTile: en un mapa sin magia el clic no
+            // selecciona nada.
+            if (_data.MapNoMagic(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(385)); return; }
+            // `Call LookatTile(UserIndex, .Pos.Map, X, Y)` (:2927): el clic del hechizo SELECCIONA, igual que un
+            // clic normal — de ahí que el original mande el CharMsgStatus de quien esté en el tile.
+            LookatTile(session, p, clickX, clickY);
+            // Fuera del rango de visión: `LogCheating` y salir, sin avisar (:2930).
+            if (Math.Abs(p.Pos.X - clickX) > RangoVisionX || Math.Abs(p.Pos.Y - clickY) > RangoVisionY) return;
+            // CADENCIA DE CASTEO (:2936-2945). El port no tenía NINGUNA: un mago tiraba hechizos a velocidad de
+            // red, con el `IntervaloLanzaHechizo=1000` del Server.ini ahí escrito y sin leer. La forma es la
+            // misma del melee: un OR entre el atajo de castear-después-de-pegar y la cadencia normal. Rechazo
+            // silencioso, como el VB6.
             long castMs = Environment.TickCount64;
             if (!CombatTiming.PermiteGolpeMagia(p, castMs, _intervaloGolpeMagia)
                 && !CombatTiming.PermiteLanzarSpell(p, castMs, _intervaloCastear)) return;
-            var spell = _data.Spell(p.Spells[slot]);
-            if (spell is null) return;   // VB6: ranura de hechizo vacia -> silencio
-            // EL TILE QUE RECIBE EL HECHIZO. Este port resuelve el objetivo por el tile ENCARADO (el original
-            // lo resuelve con un clic, que su cliente pide aparte); pero los hechizos `autolanzar` se tiran
-            // sobre UNO MISMO y el original ni pregunta (Protocol.bas:2136: `.flags.TargetUser = UserIndex`).
-            // Sin esto, los 19 auto-buffs —Invisibilidad, las doce metamorfosis, Aura sagrada, Golpe certero,
-            // Inspiración, Honor del Paladín— no hacían nada estando solo, y parado al lado de otro jugador se
-            // los aplicaban A ÉL.
-            (byte, byte) TileObjetivo() => spell.EsAutoLanzado
-                ? (p.Pos.X, p.Pos.Y)
-                : Step(p.Pos.X, p.Pos.Y, p.Heading);
-            // MAPA SIN MAGIA (VB6 Protocol.bas:2921, el Case eSkill.magia del WorkLeftClick): antes que
-            // cualquier otro requisito, y ni un GM se salva. Lo prende /MODMAPINFO MAGIASINEFECTO.
-            if (_data.MapNoMagic(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(385)); return; }
+            // EL TILE QUE RECIBE EL HECHIZO es el clickeado. Los `autolanzar` llegan acá con el tile propio.
+            (byte, byte) TileObjetivo() => (clickX, clickY);
             // VB6 PuedeLanzar (modHechizos.bas:319), en su orden: un GM saltea todos los requisitos; si no,
             // primero la skill de magia mínima (221), después la stamina (93) y por último el maná (222).
             // Antes sólo se miraba el maná, así que un nivel 1 podía tirar el hechizo más caro del juego.
@@ -8701,7 +8758,7 @@ public sealed class PacketDispatcher
             // (`HandleHechizoTerreno` → `HechizoTerrenoEstado`, que resuelve el 3×3 entero y NO pasa por el
             // camino de un solo objetivo). Sin esto la Bomba mágica y la Tormenta de fuego le pegaban a UNA
             // sola víctima, y el Círculo curativo curaba a UNO.
-            if (spell.IsArea && spell.IsTerrainState) { CastAreaSpell(session, p, spell); return; }
+            if (spell.IsArea && spell.IsTerrainState) { CastAreaSpell(session, p, spell, clickX, clickY); return; }
             if (spell.IsRevive)
             {
                 // Hechizo Resucitar (VB6 modHechizos.bas:981): revive al jugador MUERTO al frente. El caster
@@ -8980,7 +9037,7 @@ public sealed class PacketDispatcher
             // Piso de maná (VB6 HechizoCasteado: If .Stats.MinMAN < 0 Then .Stats.MinMAN = 0). Un GM saltea el gate
             // de recursos, así que sin este clamp su maná quedaba negativo y se transmitía como short negativo.
             if (p.Mana < 0) p.Mana = 0;
-        });
+        }
     }
 
     private void HandleChangeHeading(ClientSession session, ByteQueueReader r)

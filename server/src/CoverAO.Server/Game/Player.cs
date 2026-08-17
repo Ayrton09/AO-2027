@@ -407,6 +407,11 @@ public sealed class Player
     public byte TargetX { get; set; }
     public byte TargetY { get; set; }
 
+    /// <summary>La RANURA de hechizo elegida y todavía sin lanzar (VB6 <c>flags.Hechizo</c>). El casteo del
+    /// original son DOS paquetes: <c>CastSpell</c> elige y deja esto puesto, y el <c>WorkLeftClick(magia)</c> del
+    /// clic siguiente lo lanza y lo vuelve a 0 (Protocol.bas:2174 y :2948-2950). Transient, no se persiste.</summary>
+    public byte HechizoElegido { get; set; }
+
     /// <summary>¿Los NPCs pueden perseguirlo y pegarle? (VB6 <c>flags.AdminPerseguible</c>). El original lo pone
     /// en <b>True sólo para el usuario común</b> (TCP.bas:1925, la rama <c>Else</c> del reparto de privilegios):
     /// un GM de cualquier rango queda en False y las tres ramas de la IA lo saltean (AI_NPC.bas:88/160/229), así

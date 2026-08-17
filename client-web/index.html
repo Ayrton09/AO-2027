@@ -2398,6 +2398,22 @@
 
     // ---- Tanda 4: Acciones (Trabajar / Correo / Habilidades / Varios) --------------------------
     let workSkill = 0;   // >0 = modo trabajo: el próximo clic en el mundo manda WorkLeftClick(x,y,skill)
+    // EL MODO PUNTERÍA. El server pide el objetivo con `WorkRequestTarget(skill)` y el próximo clic en el mundo
+    // se lo manda como `WorkLeftClick(x, y, skill)`. Lo usa el arco, los oficios, domar, robar — y desde que el
+    // casteo se partió en dos como el original, también la MAGIA (skill 8): apretar LANZAR ya no tira el hechizo,
+    // deja el puntero cargado y el hechizo sale donde se hace clic. Eso es el 2.6 del informe.
+    //
+    // El cursor cambia mientras dura, que es la mitad visible del pedido: sin eso no hay forma de saber que el
+    // juego está esperando un clic.
+    const SKILL_MAGIA_CLIENTE = 8, SKILL_PROYECTILES = 6;
+    function modoPunteria(skill) {
+      workSkill = skill;
+      canvas.style.cursor = 'crosshair';
+      log(skill === SKILL_MAGIA_CLIENTE ? 'Apuntá el hechizo: hacé clic en el objetivo.'
+        : skill === SKILL_PROYECTILES ? 'Apuntá con el arco: hacé clic en el objetivo.'
+        : 'Elegí el objetivo del trabajo.', '#c9a24b');
+    }
+    function salirDePunteria() { workSkill = 0; canvas.style.cursor = ''; }
     const WORK_SKILLS = [[20, 'Talar'], [19, 'Minería'], [18, 'Pesca'], [12, 'Domar'], [14, 'Robar'], [88, 'Fundir metal']];
     // eSkill.Ocultarse (Declares.bas:412). Las seis de arriba piden un tile y van por WorkLeftClick; esta es
     // una self-action y viaja por Work (21), que es el handler que este cliente no usaba.
@@ -2544,7 +2560,7 @@
       const skPend = {};
       body.addEventListener('click', (ev) => {
         const el = ev.target.closest('[data-act],[data-work],[data-ski],[data-skd]'); if (!el) return;
-        if (el.dataset.work) { workSkill = +el.dataset.work; log('Modo trabajo: hacé clic en el recurso.', '#c9a24b'); closeModal(); return; }
+        if (el.dataset.work) { modoPunteria(+el.dataset.work); closeModal(); return; }
         if (el.dataset.ski || el.dataset.skd) { const i = +(el.dataset.ski || el.dataset.skd); skPend[i] = Math.max(0, (skPend[i] || 0) + (el.dataset.ski ? 1 : -1)); modalCard.querySelector('#sk-' + i).textContent = skPend[i]; return; }
         const a = el.dataset.act;
         if (a === 'mail-send') { const to = pv('mail-to'), m = pv('mail-msg'), slot = +pv('mail-slot') || 0; const oi = inventory[slot]?.objIndex || 0; if (to) send(W().writeByte(CLIENT.EnviarCorreo).writeAsciiString(to).writeAsciiString(m).writeInteger(oi).writeInteger(oi ? 1 : 0)); }
@@ -2856,10 +2872,7 @@
 
         // El server pide elegir un objetivo (WorkRequestTarget 43): con un arco equipado y usado, la skill es
         // Proyectiles (6) → entra en modo targeting y el proximo clic en el mundo dispara la flecha.
-        case 'WorkRequestTarget':
-          workSkill = f.skill;
-          log(f.skill === 6 ? 'Apuntá con el arco: hacé clic en el objetivo.' : 'Elegí el objetivo del trabajo.', '#c9a24b');
-          break;
+        case 'WorkRequestTarget': modoPunteria(f.skill); break;
 
         // EL PAQUETE QUE ESCRIBE SOBRE LA CABEZA, y son CUATRO modos distintos: el cliente dibujaba sólo el 2
         // y tiraba los otros tres. El original los reparte así (Cliente/Codigo/Protocol.bas:1304-1380):
@@ -4421,7 +4434,9 @@
       // jugador aprieta la tecla que DICE esa letra, en el teclado que tenga; con `ev.code` un AZERTY tendría
       // que apretar la 'a' para meditar. Las flechas y las F1-F10 no tienen este problema: son las mismas.
       } else if (acc === 'lanzar' && ws.readyState === 1) {
-        // Cast the SELECTED spell (default slot 8 self-heal) → server targets the faced tile / self + CreateFX.
+        // LANZAR sólo ELIGE el hechizo: el server contesta `WorkRequestTarget(magia)` y el hechizo sale con el
+        // clic siguiente (modoPunteria). Es el casteo en dos pasos del original — antes esta tecla lo tiraba al
+        // toque contra la baldosa encarada, y como casi nunca había nadie ahí contestaba "Sólo afecta usuarios".
         ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CastSpell).writeByte(selectedSpell).toBytes(), myKey));
         ev.preventDefault();
       // LAS TECLAS POR DEFECTO DEL ORIGINAL están en `Cliente/Init/Controls.bin`: 128 enteros indexados por
@@ -4437,7 +4452,7 @@
         ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.PickUp).toBytes(), myKey));   // A = agarrar, la del original
         ev.preventDefault();
       } else if (acc === 'domar' && ws.readyState === 1) {
-        workSkill = SKILL_DOMAR; log('Domar: hacé clic en la criatura.', '#c9a24b');
+        modoPunteria(SKILL_DOMAR);
         ev.preventDefault();
       } else if (acc === 'actualizar' && ws.readyState === 1) {
         ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestPositionUpdate).toBytes(), myKey));
@@ -4465,7 +4480,7 @@
         ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestGuildLeaderInfo).toBytes(), myKey)); // clan: se mudó de C
         ev.preventDefault();
       } else if (acc === 'robar' && ws.readyState === 1) {
-        workSkill = SKILL_ROBAR; log('Robar: hacé clic en el objetivo.', '#c9a24b');   // R = robar, la del original
+        modoPunteria(SKILL_ROBAR);   // R = robar, la del original
         ev.preventDefault();
       } else if (acc === 'seguroRes' && ws.readyState === 1) {
         // S = seguro de resurrección (mKeyToggleResuscitationSafe). Los hechizos se mudaron a H.
@@ -4545,7 +4560,7 @@
       if (ws.readyState !== 1 || myCharIndex == null) return;
       const t = tileDelEvento(ev); if (!t) return;
       const wx = t.x, wy = t.y;
-      if (workSkill) { send(W().writeByte(CLIENT.WorkLeftClick).writeByte(wx).writeByte(wy).writeByte(workSkill)); workSkill = 0; return; }  // modo trabajo
+      if (workSkill) { send(W().writeByte(CLIENT.WorkLeftClick).writeByte(wx).writeByte(wy).writeByte(workSkill)); salirDePunteria(); return; }  // modo puntería
       // LeftClick ANTES del DoubleClick: además de describir lo que hay en el tile, es lo que deja anotado el
       // TARGET en el servidor (VB6 LookatTile), y sin eso los comandos GM que operan sobre lo clickeado
       // —/MATA, /SEGUIR, /RESETINV, /TALKAS, /DT— no tendrían nunca sobre qué actuar. El cliente original manda
