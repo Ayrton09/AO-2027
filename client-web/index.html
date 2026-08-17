@@ -503,7 +503,10 @@
       <div class="login-modes">
         <span class="lm on" data-m="in">Ingresar</span>
         <span class="lm" data-m="acc">Crear cuenta</span>
-        <span class="lm" data-m="char">Crear personaje</span>
+        <!-- "Crear personaje" NO va acá: un personaje se crea DENTRO de una cuenta, y en la pantalla inicial
+             todavía no hay ninguna conectada. Se llega por el botón de la lista de personajes, que además ya
+             sabe quién sos. Queda en el DOM porque es la misma pestaña que muestra el formulario. -->
+        <span class="lm" data-m="char" hidden>Crear personaje</span>
         <span class="lm" data-m="pass">Contraseña</span>
       </div>
 
@@ -543,8 +546,14 @@
       </form>
 
       <form class="login-form" id="lf-char" autocomplete="off">
-        <label>Cuenta <input name="acc" required></label>
-        <label>Contraseña <input name="pw" type="password" required></label>
+        <!-- Los dos campos de la cuenta viajan igual en el paquete `LoginNewChar`, pero NO se le muestran a
+             quien ya entró: viene de la lista de personajes, o sea que el server ya sabe quién es. Se
+             precargan y se ocultan (ver el botón de la lista). Quedan visibles sólo si alguien llegara al
+             formulario sin cuenta conectada, que hoy no tiene camino. -->
+        <div id="lf-char-cred">
+          <label>Cuenta <input name="acc" required></label>
+          <label>Contraseña <input name="pw" type="password" required></label>
+        </div>
         <!-- Sólo letras y espacios, como el ValidarNombre del original (TCP.bas:181). El server lo rechaza
              igual; el patrón está acá para avisar ANTES de mandar el paquete. Nada de dígitos: un nombre
              numérico chocaría con el número de ficha con el que viajan los NPCs. -->
@@ -2179,7 +2188,16 @@
         capturandoTecla = (e) => {
           capturandoTecla = null;
           const k = (e.key || '').toLowerCase();
-          if (k.length !== 1 || !/[a-z0-9]/.test(k)) { log('Esa tecla no se puede asignar.', '#b94'); abrirTeclas(); return; }
+          // SE ACEPTAN LAS TECLAS CON NOMBRE, no sólo letras y números: shift, control, alt, supr, fin, inicio,
+          // insert, av/re pág, tab y la barra. Antes sólo entraba un carácter suelto, así que atar "usar" a
+          // SHIFT —para potear con la izquierda sin soltar el mouse— era imposible.
+          //
+          // Quedan afuera las que el juego necesita para sí: las flechas (caminar), Enter (chat), Escape
+          // (cerrar) y F1-F10 (la hotbar). Atar una de ésas dejaría muerta su función y sin forma de volver.
+          const CON_NOMBRE = new Set(['shift', 'control', 'alt', 'delete', 'end', 'home', 'insert',
+                                      'pageup', 'pagedown', 'tab', ' ', 'backspace']);
+          const valida = (k.length === 1 && /[a-z0-9]/.test(k)) || CON_NOMBRE.has(k);
+          if (!valida) { log('Esa tecla no se puede asignar.', '#b94'); abrirTeclas(); return; }
           for (const a in teclas) if (teclas[a] === k && a !== accion) delete teclas[a];
           teclas[accion] = k;
           guardarTeclas();
@@ -2398,7 +2416,9 @@
     try { Object.assign(teclas, JSON.parse(localStorage.getItem('ao_teclas') || '{}')); } catch (e) {}
     // Devuelve la ACCIÓN atada a una tecla, o null. Se compara en minúsculas para que Shift no la cambie.
     const accionDe = (k) => {
-      if (!k || k.length !== 1) return null;
+      // El `k.length !== 1` que había acá dejaba MUERTA cualquier tecla con nombre: se podía asignar Shift y
+      // después no pasaba nada al apretarla. Ahora se compara la tecla entera, sea "a" o "shift".
+      if (!k) return null;
       const kk = k.toLowerCase();
       for (const a in teclas) if (teclas[a] === kk) return a;
       return null;
@@ -3133,12 +3153,22 @@
       if (slotSel !== slot) { slotSel = slot; buildInv(); }   // el clic también SELECCIONA, como en el original
       if (ev.altKey) { if (confirm(`¿Destruir ${itemName(it.objIndex)}${it.amount > 1 ? ' (x' + it.amount + ')' : ''}? No se puede recuperar.`)) send(W().writeByte(CLIENT.DropDestroy).writeByte(slot).writeLong(it.amount || 1)); return; }  // alt+clic → destruir
       if (ev.ctrlKey) { tirarDelSlot(slot); return; }   // mismo cartel que la tecla T
+      // EL CLIC PELADO SÓLO SELECCIONA. Antes CONSUMÍA: querer elegir una poción para la hotbar te la tomaba,
+      // y elegir un pergamino te lo gastaba. Usar es DOBLE CLIC (abajo) o la tecla U sobre lo seleccionado,
+      // que es como se maneja el inventario del original.
+      //
       // Shift+clic = equipar a la fuerza. Es un agregado nuestro y se queda: sirve para desequipar un arco
       // sin entrar en modo puntería, que por el ruteo normal no se puede.
-      if (!ev.shiftKey) { usarItemDelSlot(slot); return; }   // clic pelado: rutea por tipo, como el `UsarItem` del original
+      if (!ev.shiftKey) return;
       const w = new ByteQueueWriter();
       w.writeByte(CLIENT.EquipItem).writeByte(slot);
       ws.send(xorBuffer(w.toBytes(), myKey));
+    });
+    // DOBLE CLIC = usar. La otra vía es U sobre el slot seleccionado; las dos van al mismo ruteo por tipo.
+    invgridEl.addEventListener('dblclick', (ev) => {
+      const d = ev.target.closest('.islot'); if (!d || ws.readyState !== 1) return;
+      const slot = +d.dataset.slot;
+      if (inventory[slot]) usarItemDelSlot(slot);
     });
     invgridEl.addEventListener('contextmenu', (ev) => {   // clic-der → atar a la hotbar
       ev.preventDefault(); const d = ev.target.closest('.islot'); if (!d) return;
@@ -4750,7 +4780,14 @@
       charselEl.classList.remove('hidden'); loginErr('');
     }
     $('cs-back').addEventListener('click', () => selectLoginMode('in'));
-    $('cs-new').addEventListener('click', () => { selectLoginMode('char'); lfCh.acc.value = accName; lfCh.pw.value = accPass; });
+    // Crear personaje DESDE la lista: las credenciales ya las tenemos de la sesión, así que se precargan y se
+    // ESCONDEN. El paquete las sigue llevando; lo que se saca es volver a pedírselas a alguien que ya entró.
+    $('cs-new').addEventListener('click', () => {
+      selectLoginMode('char');
+      lfCh.acc.value = accName; lfCh.pw.value = accPass;
+      const cred = $('lf-char-cred');
+      if (cred) cred.hidden = !!accName;
+    });
 
     // Arranque: construir HUD, medir el stage y conectar.
     buildInv(); buildHotbar();
