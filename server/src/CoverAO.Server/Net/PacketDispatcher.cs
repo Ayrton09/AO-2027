@@ -2140,7 +2140,7 @@ public sealed class PacketDispatcher
             if (npc.OwnerCharIndex != p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }
             npc.ParalyzedUntilTick = 0;
             SpellCasted(session, p, spell);
-            EmitSpellFx(npc.Pos, npc.CharIndex, spell);
+            EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
             session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {npc.Name} quedó liberado de la parálisis.", 0));
             EmitirCostoDelHechizo(session, p);
             return;
@@ -2164,7 +2164,7 @@ public sealed class PacketDispatcher
         npc.Hostile = true;
         npc.ParalyzedUntilTick = _loop.Tick + ParalisisTicks;
         SpellCasted(session, p, spell);
-        EmitSpellFx(npc.Pos, npc.CharIndex, spell);
+        EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
         session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {npc.Name} quedó paralizado.", 0));
         EmitirCostoDelHechizo(session, p);
     }
@@ -2187,8 +2187,11 @@ public sealed class PacketDispatcher
         // La asimetría tiene una consecuencia observable y por eso se porta igual: como el recorte usa el HP
         // que le QUEDA a la criatura, el hechizo que MATA no gotea nada —el HP ya es 0— y toda su experiencia
         // sale del pago del pool al morir. Un golpe de espada que mata sí cobra su parte en el goteo.
+        // El número de daño flotando (VB6 :1690, entre la resta de vida y el goteo de exp): modo 2 y con el
+        // charIndex del LANZADOR. Nukear una criatura no mostraba el número; pegarle con la espada sí.
+        session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, damage, 2));
         CalcularDarExp(session, p, npc, damage);
-        EmitSpellFx(npc.Pos, npc.CharIndex, spell);
+        EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
         session.Send(ServerMessages.LocaleMsg(497, $"^{spell.Index}%{npc.Name}%{damage}"));
         EmitirCostoDelHechizo(session, p);
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
@@ -8134,6 +8137,10 @@ public sealed class PacketDispatcher
     /// al daño contra criaturas. En esta data lo trae uno solo, el Pendiente del Experto (+20).</summary>
     private const int AumentaGolpe = 18;
 
+    /// <summary>VB6 <c>eMagicType.Silencio</c> (Declares.bas): el ítem mágico que hace CALLAR las palabras
+    /// mágicas del portador. En esta data lo trae uno solo, el Amuleto del Silencio (obj 755).</summary>
+    private const int Silencio = 16;
+
     /// <summary>Death handling shared by melee and spells: message, XP award + level-up, respawn.</summary>
     private void OnKill(ClientSession attackerSession, Player attacker, Player target)
     {
@@ -8173,7 +8180,6 @@ public sealed class PacketDispatcher
         KillPlayer(_world, _data, target);   // VB6: el muerto queda como cadáver donde cayó (no respawn instantáneo)
     }
 
-    /// <summary>Broadcast a spell's visual FX (CreateFX) over a character to everyone who can see it.</summary>
     /// <summary>El hechizo del portal está cableado por NÚMERO en el original (VB6 <c>HechizoCreateTelep</c>
     /// abre con <c>If HechizoIndex &lt;&gt; 53 Then Exit Sub</c>, modHechizos.bas:1948): no hay campo en
     /// Hechizos.dat que lo distinga. En la data es el 53, "Portal planar".</summary>
@@ -8213,12 +8219,20 @@ public sealed class PacketDispatcher
             return;
         }
         p.PortalPos = destino;
+        // Los dos paquetes del tile, en el orden del original (:1997-1998) y con sus coordenadas: el sonido
+        // faltaba —abrir un portal era mudo— y va PRIMERO, gateado por `WAV <> 0` (a diferencia del camino de un
+        // solo objetivo, donde no hay gate).
+        if (spell.Wav != 0)
+            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)spell.Wav, destino.X, destino.Y));
         if (spell.Particle != 0)
             _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoParticula((short)spell.Particle, destino.X, destino.Y, -1));
         p.CasteandoPortal = true;
         p.CreoTeleport = true;
         p.TimeTeleport = 0;
         p.PortalTickCounter = 0;
+        // Las palabras mágicas van ANTES del 456 (:2006 contra :2008), y el portal también tiene su propia
+        // llamada: no pasa por `InfoHechizo` — `HandleHechizoTerreno` lo rutea aparte por `Tipo = uCreateTelep`.
+        DecirPalabrasMagicas(p, spell);
         _world.BroadcastToObservers(p.Pos, ServerMessages.LocaleMsg(456, $"{p.Name}%^{spell.Index}"));
         SpellCasted(session, p, spell);   // VB6 `b = True`: el maná se cobra recién con el hechizo aceptado
     }
@@ -8310,17 +8324,51 @@ public sealed class PacketDispatcher
         p.PortalTickCounter = 0;
     }
 
-    private void EmitSpellFx(WorldPos pos, short charIndex, Data.SpellInfo spell)
+    /// <summary>LAS PALABRAS MÁGICAS: el nombre del conjuro flotando sobre la cabeza del que lo lanza
+    /// (VB6 <c>DecirPalabrasMagicas</c>, modHechizos.bas:277 → <c>ChatOverHeadLocale(charIndex, spellIndex, 1)</c>
+    /// al área DEL LANZADOR, no del objetivo).
+    ///
+    /// El port no las decía NUNCA para un jugador: para las criaturas sí (<c>NpcSystem.EmitirFxDeHechizo</c>),
+    /// pero el camino del jugador no tenía la línea. Y el barrido del oráculo no podía verlo: su única acción de
+    /// hechizo castea un slot VACÍO, que muere mucho antes de llegar acá.
+    ///
+    /// El <b>AMULETO DEL SILENCIO</b> (obj 755, <c>EfectoMagico = Silencio = 16</c>) es lo único que las calla, y
+    /// callarlas es su ÚNICO efecto en todo el juego (:283-287). Sin esta función el amuleto no tenía qué callar:
+    /// era un ítem con descripción ("Hace tus hechizos silenciosos") y cero comportamiento.</summary>
+    private void DecirPalabrasMagicas(Player caster, Data.SpellInfo spell)
     {
-        // FXgrh spells carry a real FX-index (client resolves it via fx.json → animated grh). Particle-only
-        // spells have no FX grh: still emit CreateFX (fx = 0) so the client shows its generic burst.
-        if (!spell.HasFx) return;
-        // OJO: el `EfectoTerrenoFX` NO es "el FX de un hechizo con Target 4". Su única emisión vive dentro de
-        // `HechizoTerrenoEstado` (modHechizos.bas:382), que es la rama de los hechizos **DE ÁREA** — la que
-        // recorre el 3×3 alrededor del tile casteado. Emitirlo por `Target == 4` metería el paquete en hechizos
-        // que en el original no lo mandan (la Bomba mágica es Target 4 y de área; la Tormenta de fuego también).
-        // Se emite en la rama de área, no acá. Ver EmitAreaSpell.
-        _world.BroadcastToObservers(pos, ServerMessages.CreateFX(charIndex, (short)spell.FxGrh, (short)spell.FxLoops));
+        if (Equipment.EquippedOfCategory(caster, _data, 8) is { EfectoMagico: Silencio }) return;
+        _world.BroadcastToObservers(caster.Pos, ServerMessages.ChatOverHeadLocale(caster.CharIndex, spell.Index, 1));
+    }
+
+    /// <summary>El bloque de emisión de <c>InfoHechizo</c> (VB6 modHechizos.bas:1743-1749), que es por dónde pasa
+    /// TODO hechizo de un solo objetivo: palabras mágicas primero y después los tres paquetes del objetivo.
+    ///
+    /// Se emitía uno solo de los cuatro, y con el gate equivocado:
+    /// <list type="bullet">
+    /// <item>El <c>CreateFX</c> salía cuando había FX <b>o</b> partícula, así que los <b>48</b> hechizos que son
+    ///   sólo partícula mandaban un <c>CreateFX</c> con fx = 0 —que no dibuja nada— y su partícula no salía
+    ///   nunca. El original los separa: el grh va con <c>If FXgrh &lt;&gt; 0</c> y la partícula con
+    ///   <c>If Particle &lt;&gt; 0</c>, cada una en su línea.</item>
+    /// <item>El <c>PlayWave</c> faltaba entero: la magia del jugador era MUDA. Y va <b>sin gate</b> — en
+    ///   <c>InfoHechizo</c> no hay <c>If WAV &lt;&gt; 0</c>, a diferencia del camino de área (:471) y del de las
+    ///   criaturas, que sí lo tienen. Son 4 hechizos con WAV = 0: el original les manda igual el paquete.</item>
+    /// </list>
+    ///
+    /// OJO: el <c>EfectoTerrenoFX</c> NO es "el FX de un hechizo con Target 4". Su única emisión vive dentro de
+    /// <c>HechizoTerrenoEstado</c> (modHechizos.bas:382), que es la rama de los hechizos DE ÁREA — la que recorre
+    /// el 3×3 alrededor del tile casteado. Emitirlo por <c>Target == 4</c> metería el paquete en hechizos que en
+    /// el original no lo mandan (la Bomba mágica es Target 4 y de área; la Tormenta de fuego también). Se emite
+    /// en la rama de área, no acá. Ver <see cref="CastAreaSpell"/>.</summary>
+    private void EmitSpellFx(Player caster, WorldPos pos, short charIndex, Data.SpellInfo spell)
+    {
+        DecirPalabrasMagicas(caster, spell);
+        if (spell.FxGrh > 0)
+            _world.BroadcastToObservers(pos, ServerMessages.CreateFX(charIndex, (short)spell.FxGrh, (short)spell.FxLoops));
+        _world.BroadcastToObservers(pos, ServerMessages.PlayWave((short)spell.Wav, pos.X, pos.Y));
+        if (spell.Particle > 0)
+            _world.BroadcastToObservers(pos, ServerMessages.EfectoCharParticula(
+                charIndex, (short)spell.Particle, spell.TimeParticula, false));
     }
 
     /// <summary>Hechizo de ÁREA: resuelve el hechizo sobre el 3×3 que rodea al tile casteado, no sobre un solo
@@ -8382,6 +8430,11 @@ public sealed class PacketDispatcher
                 (short)spell.FxGrh, cx, (byte)Math.Min(byte.MaxValue, cy + 1), (short)spell.FxLoops));
         if (spell.Wav > 0)
             _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)spell.Wav, cx, cy));
+        // Y las PALABRAS MÁGICAS al final, después del FX del terreno (:472). Acá el hechizo de área tiene su
+        // propia llamada porque no pasa por `InfoHechizo`: esa función arranca con
+        // `If Hechizos(spellindex).HechizoDeArea Then Exit Sub` (:1741), o sea que un hechizo de área nunca
+        // llega a la línea :1743.
+        DecirPalabrasMagicas(p, spell);
 
         SpellCasted(session, p, spell);                      // el cobro va al final (VB6 `If HechizoCasteado`)
         EmitirCostoDelHechizo(session, p);
@@ -8672,7 +8725,7 @@ public sealed class PacketDispatcher
                     return;
                 }
                 SpellCasted(session, p, spell);
-                EmitSpellFx(target.Pos, target.CharIndex, spell);
+                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
                 RevivePlayer(_world, _data, target);                                       // HP full + apariencia + LocaleMsg(90) al target
                 target.Connection?.Send(ServerMessages.LocaleMsg(532, p.Name));            // "#1 te ha resucitado"
                 EmitirCostoDelHechizo(session, p);
@@ -8695,12 +8748,16 @@ public sealed class PacketDispatcher
                 int healed = Combat.EfectoHechizoArea3Pct(amount, p.Level);
                 SpellCasted(session, p, spell);
                 heal.Hp = Math.Min(heal.MaxHp, heal.Hp + healed);
-                EmitSpellFx(heal.Pos, heal.CharIndex, spell);
+                EmitSpellFx(p, heal.Pos, heal.CharIndex, spell);
                 // Un hechizo de curación puede traer ADEMÁS efectos de estado, y el original los aplica todos:
                 // "Sanar" (32) es SubeHP=1 + RemoverParalisis + Sanacion. Acá sólo se llamaba a ApplyBlind, así
                 // que Sanar curaba y dejaba al jugador paralizado y quemándose.
                 AplicarEfectosDeEstado(p, heal, spell);
                 heal.Connection?.Send(ServerMessages.UpdateHP((short)heal.Hp));   // VB6 modHechizos.bas:1018
+                // El número CURADO flotando, en modo 3 (azul), y como en el resto del original con el charIndex
+                // DEL LANZADOR y sólo a él (:1433, la línea siguiente al UpdateHP). Faltaba: el camino de área ya
+                // lo mandaba y el de un solo objetivo no, así que curar a un aliado no mostraba cuánto.
+                session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, healed, 3));
                 EmitirCostoDelHechizo(session, p);
 
                 if (heal == p)
@@ -8741,7 +8798,7 @@ public sealed class PacketDispatcher
                 // Resistencia MÁGICA de quien lo recibe. Es del camino de un solo objetivo nada más — el 3×3 del
                 // área no la sube (`HechizoTerrenoHP` no llama a SubirSkill), y esa asimetría es de la fuente.
                 RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillResistencia);
-                EmitSpellFx(target.Pos, target.CharIndex, spell);
+                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
                 // Un hechizo de daño puede traer ADEMÁS efectos de estado: "Tormenta ácida" (57) es SubeHP=2 +
                 // Envenena, y "Descarga Flamígera" (69) SubeHP=2 + Incinera. Acá sólo se llamaba a ApplyBlind,
                 // así que los dos pegaban pero nunca envenenaban ni incineraban.
@@ -8749,6 +8806,10 @@ public sealed class PacketDispatcher
                 session.Send(ServerMessages.LocaleMsg(497, $"^{spell.Index}%{target.Name}%{amount}"));
                 target.Connection?.Send(ServerMessages.LocaleMsg(498, $"{p.Name}%^{spell.Index}%{amount}"));
                 target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
+                // El número de DAÑO flotando (:1494, modo 2, rojo). Mismo caso que la cura: el área lo mandaba y
+                // el camino de un solo objetivo no. Va con el charIndex del LANZADOR y sólo a él, igual que en el
+                // melee — el original dibuja el número sobre TU cabeza, no sobre la de la víctima.
+                session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, amount, 2));
                 EmitirCostoDelHechizo(session, p);
                 if (target.Hp == 0) OnKill(session, p, target);
             }
@@ -8790,7 +8851,7 @@ public sealed class PacketDispatcher
                     _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterCreate(npc));
                     summoned++;
                 }
-                EmitSpellFx(p.Pos, p.CharIndex, spell);
+                EmitSpellFx(p, p.Pos, p.CharIndex, spell);
                 session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: invocaste {summoned}x {template.Name}.", 0));
                 EmitirCostoDelHechizo(session, p);
             }
@@ -8815,7 +8876,7 @@ public sealed class PacketDispatcher
                     p.InvisibleUntilTick = _loop.Tick + InvisibilityDurationTicks;
                 p.Invisible = true;
                 _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
-                EmitSpellFx(p.Pos, p.CharIndex, spell);
+                EmitSpellFx(p, p.Pos, p.CharIndex, spell);
                 // "Prevención del mal" (90) es Invisibilidad=1 + SubeAG=1: en el original los dos bloques son
                 // `If` independientes del mismo Sub (:1074 y :1322), así que da invisibilidad Y +35 de agilidad.
                 // Acá la rama de invisibilidad cortaba antes y el bono nunca se aplicaba.
@@ -8853,7 +8914,7 @@ public sealed class PacketDispatcher
                 }
                 SpellCasted(session, p, spell);
                 var parts = AplicarBuffsDeAtributo(target, spell);
-                EmitSpellFx(target.Pos, target.CharIndex, spell);
+                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
                 session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {target.Name} {string.Join(", ", parts)}.", 0));
                 EmitirCostoDelHechizo(session, p);
             }
@@ -8887,7 +8948,7 @@ public sealed class PacketDispatcher
                 // de hechizo, y entre las dos dejaban cinco hechizos del install a medias.
                 var efectos = AplicarEfectosDeEstado(p, target, spell);
 
-                EmitSpellFx(target.Pos, target.CharIndex, spell);
+                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
                 // El aviso al LANZADOR. El original (InfoHechizo, modHechizos.bas:1762-1765) tiene dos variantes
                 // para un hechizo SIN daño: 452 "has lanzado #1 sobre #2" cuando el objetivo es otro, y 0 "has
                 // lanzado #1 sobre ti" cuando es uno mismo. Acá salía un ConsoleMsg con texto nuestro, y el 453
@@ -9505,7 +9566,7 @@ public sealed class PacketDispatcher
                         session.Send(ServerMessages.ConsoleMsg("Esa poción no te hace nada.", FuenteInfo));
                         return;
                     }
-                    EmitSpellFx(p.Pos, p.CharIndex, hechizo);
+                    EmitSpellFx(p, p.Pos, p.CharIndex, hechizo);
                     effect = string.Join(", ", aplicados);
                     break;
                 }

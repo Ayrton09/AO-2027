@@ -182,22 +182,39 @@ public class MapSpawnsTests
         Assert.Equal((5, 9, 93), dest);
     }
 
+    /// <summary>Los dos efectos visuales de un hechizo son CAMPOS DISTINTOS y el original los emite en líneas
+    /// distintas: <c>If FXgrh &lt;&gt; 0</c> manda CreateFX y <c>If Particle &lt;&gt; 0</c> manda
+    /// EfectoCharParticula (InfoHechizo, modHechizos.bas:1747 y :1749). Este test fija la data que hace que la
+    /// diferencia importe: hay hechizos de una clase, de la otra, y 49 de los 113 son SÓLO partícula — que es
+    /// justo el grupo que se veía mal cuando el port emitía un CreateFX por tener partícula.</summary>
     [Fact]
     public void Spell_fx_covers_both_grh_and_particle_effects()
     {
         var data = LoadOrSkip();
-        // Paralizar (9): a grh FX spell (FXgrh 8) → HasFx via the grh path.
+        // Paralizar (9): grh FX (FXgrh 8) y ninguna partícula → sólo CreateFX.
         var paralyze = data.Spell(9);
         Assert.NotNull(paralyze);
         Assert.True(paralyze!.FxGrh > 0);
-        Assert.True(paralyze.HasFx);
-        // Saeta ígnea (6): a particle spell (Particle 35, no FXgrh) → still HasFx via the particle path,
-        // so the server now emits its CreateFX (client shows the generic burst).
+        // Saeta ígnea (6): partícula (35) sin FXgrh → sólo EfectoCharParticula, NADA de CreateFX.
         var arrow = data.Spell(6);
         Assert.NotNull(arrow);
         Assert.Equal(0, arrow!.FxGrh);
         Assert.True(arrow.Particle > 0);
-        Assert.True(arrow.HasFx);
+        // El grupo entero: 48 de los 113 hechizos son sólo partícula. Si el emisor volviera a mandarles un
+        // CreateFX con fx = 0, serían 48 hechizos que en pantalla no hacen absolutamente nada.
+        int soloParticula = data.Spells.Values.Count(s => s.FxGrh == 0 && s.Particle > 0);
+        Assert.Equal(48, soloParticula);
+        Assert.Equal(113, data.SpellCount);
+
+        // LA CLAVE DEL FX VIENE CON TRES GRAFÍAS en Hechizos.dat: `FXgrh` (35 hechizos), `fxgrh` (11, las once
+        // metamorfosis) y `FxGrh` (4: los dos Materializar, Aura sagrada y Arma mágica). El lector del original
+        // normaliza con `UCase$`, y el de acá las cubre porque `Candidatos()` compara sin distinguir mayúsculas.
+        // Se fija con un caso de cada grafía alternativa: si alguien "simplificara" el lector a la clave exacta,
+        // 15 hechizos perderían su FX EN SILENCIO. Aura sagrada es además el que hacía dar 49 en vez de 48 —
+        // tiene FX por la grafía rara Y partícula—, y ese error era del script que contaba, no de la data.
+        Assert.Equal(30, data.Spell(38)!.FxGrh);   // Metamorfosis: Gólem — clave `fxgrh`
+        Assert.Equal(24, data.Spell(70)!.FxGrh);   // Aura sagrada  — clave `FxGrh`
+        Assert.True(data.Spell(70)!.Particle > 0); // y con partícula: por eso no es "sólo partícula"
     }
 
     [Fact]

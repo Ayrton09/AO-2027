@@ -275,8 +275,6 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     /// <summary>El hechizo se tira sobre uno mismo, sin objetivo (Hechizos.dat <c>autolanzar</c>).</summary>
     public bool EsAutoLanzado => AutoLanzar > 0;
 
-    /// <summary>True when the spell has any visual effect worth broadcasting (a grh FX or a particle).</summary>
-    public bool HasFx => FxGrh > 0 || Particle > 0;
     public bool IsHeal => SubeHp == 1;
     /// <summary>Hechizo de ÁREA: se resuelve sobre el 3×3 del tile casteado (VB6 modHechizos.bas:403, los DOS
     /// gates anidados <c>HechizoDeArea</c> y <c>AreaEfecto &lt;&gt; 0</c>).</summary>

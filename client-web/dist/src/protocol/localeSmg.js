@@ -762,3 +762,20 @@ export function parseLocaleMsg(id, extra = '', r = {}) {
         text = text.split(`#${n}`).join(words[n - 1] ?? '');
     return text;
 }
+/**
+ * El texto del NÚMERO FLOTANTE de un `ChatOverHeadLocale` en modo 2 (daño, rojo) o 3 (cura, azul).
+ * Las tres reglas son del cliente original (Cliente/Codigo/Protocol.bas:1348-1360) y ninguna se veía acá:
+ *
+ *  · por encima de **150** el número sale entre signos de admiración — así se distingue de un golpe;
+ *  · **0 o menos es un FALLO**, y el texto depende de quién falló: "*Fallas*" (id 86) si sos vos, "*Falla*"
+ *    (id 92) si es otro. El server manda un 0 de verdad en esos casos (SistemaCombate.bas:756 y :949);
+ *  · el número va **sin signo**: el original no le pone el "-" que este cliente le agregaba, y con la cura
+ *    —que es el mismo paquete en modo 3— ese "-" decía justo lo contrario de lo que pasó.
+ */
+export function textoDelFlotante(valor, esPropio) {
+    if (valor > 150)
+        return `¡${valor}!`;
+    if (valor > 0)
+        return String(valor);
+    return LOCALE_SMG[esPropio ? 86 : 92] ?? '';
+}

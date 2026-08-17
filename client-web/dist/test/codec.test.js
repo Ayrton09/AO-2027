@@ -3,6 +3,7 @@
  * three agree byte-for-byte with the VB6 peer.  Run:  npm test
  */
 import { ByteQueueWriter, ByteQueueReader, xorBuffer, DEFAULT_XOR_KEY, NotEnoughData, } from '../src/codec/bytequeue.js';
+import { textoDelFlotante } from '../src/protocol/localeSmg.js';
 let passed = 0;
 let failed = 0;
 function bytes(...n) { return Uint8Array.from(n); }
@@ -82,6 +83,17 @@ check('composite frame', new ByteQueueWriter().writeByte(3).writeAsciiString('Ho
         threw = e instanceof NotEnoughData;
     }
     assert('underflow throws', threw);
+}
+// El numero flotante de ChatOverHeadLocale (modos 2 y 3). Tres reglas del cliente original que el web no
+// tenia: el "!" arriba de 150, el FALLO en 0 -- con texto distinto segun quien fallo -- y el numero SIN signo.
+{
+    assert('flotante normal', textoDelFlotante(37, false) === '37');
+    assert('flotante sin signo (la cura usa el mismo paquete)', textoDelFlotante(37, true) === '37');
+    assert('flotante 150 todavia no grita', textoDelFlotante(150, false) === '150');
+    assert('flotante > 150 grita', textoDelFlotante(151, false) === '¡151!');
+    assert('fallo propio', textoDelFlotante(0, true) === '*Fallas*');
+    assert('fallo ajeno', textoDelFlotante(0, false) === '*Falla*');
+    assert('fallo con negativo', textoDelFlotante(-3, false) === '*Falla*');
 }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

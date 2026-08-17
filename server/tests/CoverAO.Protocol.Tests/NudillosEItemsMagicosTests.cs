@@ -171,4 +171,33 @@ public class NudillosEItemsMagicosTests
         Assert.True(montura!.IsMount);
         Assert.Equal(0, Equipment.Category(montura));   // sigue sin ser una categoría de equipo
     }
+
+    /// <summary>El AMULETO DEL SILENCIO (obj 755). Su único efecto en todo el juego es que las palabras mágicas
+    /// del portador NO salgan (<c>DecirPalabrasMagicas</c>, modHechizos.bas:283-287), así que el gate lo busca
+    /// por <c>EfectoMagico == Silencio (16)</c> en el slot de ítem mágico — el mismo slot que este archivo
+    /// habilitó. Se fija la data porque de ella depende el gate: si el catálogo tuviera un segundo objeto con
+    /// EfectoMagico 16 el efecto sería de los dos, y si el amuleto dejara de ser <c>otItemsMagicos</c> no habría
+    /// slot donde ponerlo y el gate nunca lo vería.</summary>
+    [Fact]
+    public void El_amuleto_del_silencio_es_el_unico_que_calla_las_palabras()
+    {
+        const int Silencio = 16;
+        var data = LoadOrSkip();
+        var amuleto = data.Obj(755);
+        Assert.True(amuleto is not null, "el Amuleto del Silencio (755) tiene que existir en obj.dat");
+        Assert.Equal(Silencio, amuleto!.EfectoMagico);
+        Assert.True(amuleto.IsMagicItem);
+        Assert.Equal(8, Equipment.Category(amuleto));
+
+        var conSilencio = data.Objects.Values.Where(o => o.EfectoMagico == Silencio).ToList();
+        Assert.Single(conSilencio);
+        Assert.Equal(755, conSilencio[0].Index);
+
+        // Y que el gate lo ENCUENTRE puesto: es la consulta exacta que hace DecirPalabrasMagicas.
+        var p = new Player { CharIndex = 1, Name = "Test", Account = "cuenta_test" };
+        p.Inventory[1] = new InventorySlot { ObjIndex = 755, Amount = 1, Equipped = false };
+        Assert.Null(Equipment.EquippedOfCategory(p, data, 8));      // en la mochila no calla nada
+        p.Inventory[1] = new InventorySlot { ObjIndex = 755, Amount = 1, Equipped = true };
+        Assert.Equal(Silencio, Equipment.EquippedOfCategory(p, data, 8)?.EfectoMagico);
+    }
 }

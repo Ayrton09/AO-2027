@@ -153,6 +153,19 @@ function seUsaElGrh(id) {
   for (const [d, origen] of destinos) if (!hay.has(d)) fallas.push(`el mapa ${origen} tiene una salida al mapa ${d}, que no existe`);
 }
 
+// ── 5. LOS JSON QUE EL CLIENTE PIDE POR fetch() ─────────────────────────────────────────────────────
+// Los bloques de arriba derivan la lista de la data; este la deriva del CÓDIGO, que es el otro lado del
+// mismo agujero: un `fetch('./assets/X.json')` que devuelve 404 no rompe nada visible —el cliente arranca,
+// entra al mundo y pasa el check de errores de JS— y simplemente le falta ESE pedazo del juego, en silencio.
+// Pasó con las palabras mágicas: el paquete llega y sin su archivo no hay texto que dibujar.
+{
+  const html = readFileSync(join(AQUI, 'index.html'), 'utf8');
+  const pedidos = new Set();
+  for (const m of html.matchAll(/fetch\(\s*'\.\/assets\/([^']+)'/g)) pedidos.add(m[1]);
+  linea(`fetch()  : ${pedidos.size} archivos de assets que el cliente pide por nombre`);
+  for (const f of [...pedidos].sort()) if (!existsSync(join(A, f))) fallas.push(`el cliente hace fetch de assets/${f} y ese archivo no está`);
+}
+
 // ── veredicto ───────────────────────────────────────────────────────────────────────────────────────
 console.log();
 for (const a of avisos) console.log(`  aviso: ${a}`);
