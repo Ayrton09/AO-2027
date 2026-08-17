@@ -393,6 +393,15 @@
     .shopcell .sp2 { font-size:calc(var(--u)*0.72); color:var(--gold); font-family:ui-monospace,monospace; }
     .mvb { cursor:pointer; color:var(--gold); opacity:.8; padding:0 1px; } .mvb:hover { opacity:1; }
     .shopsec { grid-column:1/-1; font-family:var(--serif); color:var(--gold); text-transform:uppercase; letter-spacing:.05em; font-size:calc(var(--u)*0.82); border-bottom:1px solid var(--gold-deep); }
+    /* LAS DOS LISTAS, LADO A LADO. Es la disposición del original: `frmComerciar` y `frmBanco` ponen a la
+       IZQUIERDA lo del otro (el stock del mercader / lo guardado en la bóveda) y a la DERECHA tu inventario.
+       Apiladas —como estaban— obligaban a subir y bajar todo el tiempo para comparar. En pantalla angosta
+       vuelven a una sola columna, que es preferible a dos columnas ilegibles. */
+    .shop2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px; max-height:70vh; overflow:auto; align-items:start; }
+    .shop2 > .col { display:grid; grid-template-columns:repeat(auto-fill, minmax(96px,1fr)); gap:8px; align-content:start; }
+    @media (max-width:720px) { .shop2 { grid-template-columns:1fr; } }
+    /* La caja de CANTIDAD: una sola por ventana y vale para las dos listas, como el original. */
+    .cantbox { width:5em; background:#1a1408; color:#e8d9a0; border:1px solid #6b5a2a; border-radius:3px; padding:2px 4px; font:inherit; }
   </style>
 </head>
 <body>
@@ -1939,6 +1948,27 @@
     // arriba de todo: el server ya aceptaba lotes de 1..1000 desde hace rato y el cliente mandaba `1` cableado,
     // así que fabricar 50 flechas eran 50 clicks y el lote era inalcanzable jugando. Sexto eje puro: el server
     // lo soportaba y la compuerta estaba cerrada del lado del cliente.
+    /**
+     * EL CARTEL "CANTIDAD A DEJAR" del original (el que salía al tocar T): campo numérico + `Dejar` y
+     * `Dejar todo`.
+     *
+     * Con UNA SOLA unidad NO pregunta: la tira y listo. Preguntar ahí es puro ruido —no hay nada que
+     * elegir— y era el reclamo concreto. Con más de una, el campo arranca en el montón entero, que es lo
+     * más común: se baja el número sólo si querés dejar una parte.
+     *
+     * Antes T y ctrl+clic mandaban `Drop` con 1 CABLEADO, así que soltar 500 flechas eran 500 clics.
+     */
+    function tirarDelSlot(slot) {
+      const it = inventory[slot];
+      if (!it) { log('Elegí primero un objeto del inventario.', '#b94'); return; }
+      const total = it.amount || 1;
+      if (total <= 1) { send(W().writeByte(CLIENT.Drop).writeByte(slot).writeLong(1)); return; }
+      showModal(`Cantidad a dejar — ${esc(itemName(it.objIndex))}`, [
+        `<input class="dropq cantbox" type="number" min="1" max="${total}" value="${total}">`
+        + ` <span class="buy" data-dropslot="${slot}">Dejar</span>`
+        + ` <span class="buy" data-dropall="${slot}">Dejar todo</span>`,
+      ], true, 'drop');
+    }
     function showCraft(title, rows, fresh) {
       const cantidad = fresh
         ? ['Cantidad por vez <input class="craftq" type="number" min="1" max="1000" value="1" '
@@ -2085,19 +2115,30 @@
       const mios = Object.keys(inventory).map(Number).sort((a, b) => a - b)
         .filter((s) => inventory[s])
         .map((s) => { const it = inventory[s]; return shopCell(it.objIndex, `x${it.amount}`, `<span class="buy" data-sellslot="${s}">vender</span>`); });
+      // El MERCADER a la izquierda y VOS a la derecha, que es como las pone el original.
       modalCard.innerHTML = `<div class="cardT">Comercio<span class="cx" title="cerrar">✕</span></div>`
-        + `<div class="frow" style="padding:8px 12px">Cantidad por vez <input class="comq" type="number" min="1" max="10000" value="${comercioQty}"`
-        +   ` style="width:5em;background:#1a1408;color:#e8d9a0;border:1px solid #6b5a2a;border-radius:3px;padding:2px 4px;font:inherit"></div>`
-        + `<div class="shopgrid">`
-        +   `<div class="shopsec">El mercader — clic para comprar</div>${cells.length ? cells.join('') : '<div class="fhint" style="grid-column:1/-1">(sin stock)</div>'}`
-        +   `<div class="shopsec">Tu inventario — clic para vender</div>${mios.length ? mios.join('') : '<div class="fhint" style="grid-column:1/-1">(vacío)</div>'}`
+        + `<div class="frow" style="padding:8px 12px">Cantidad por vez <input class="comq cantbox" type="number" min="1" max="10000" value="${comercioQty}"></div>`
+        + `<div class="shop2">`
+        +   `<div class="col"><div class="shopsec">El mercader — clic para comprar</div>`
+        +     `${cells.length ? cells.join('') : '<div class="fhint" style="grid-column:1/-1">(sin stock)</div>'}</div>`
+        +   `<div class="col"><div class="shopsec">Tu inventario — clic para vender</div>`
+        +     `${mios.length ? mios.join('') : '<div class="fhint" style="grid-column:1/-1">(vacío)</div>'}</div>`
         + `</div>`;
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
     }
     // --- Bank / vault panel (fed by BankInit + ChangeBankSlot) ---
     let bankItems = {};       // bankSlot -> {objIndex, amount, value}
     let bankGold = 0, bankOpen = false;
+    // Gemela de `comercioQty`: la ventana se rearma entera cada vez que cambia un slot, así que lo tipeado se
+    // guarda acá o se pierde en el repintado.
+    let bancoQty = 1;
+    const leerBancoQty = () => {
+      const i = modalCard.querySelector('.bnkq');
+      const n = i ? parseInt(i.value, 10) : bancoQty;
+      return Math.max(1, Math.min(10000, Number.isFinite(n) ? n : 1));
+    };
     function renderBank() {
+      if (modalKind === 'bank') bancoQty = leerBancoQty();
       modalKind = 'bank';
       const vault = Object.keys(bankItems).map(Number).sort((a, b) => a - b)
         .filter((s) => bankItems[s].objIndex > 0 && bankItems[s].amount > 0)
@@ -2105,10 +2146,16 @@
       const inv = Object.keys(inventory).map(Number).sort((a, b) => a - b)
         .filter((s) => inventory[s])
         .map((s) => { const it = inventory[s]; return shopCell(it.objIndex, `x${it.amount}`, `<span class="buy" data-depslot="${s}">depositar</span>`); });
+      // La BÓVEDA a la izquierda y VOS a la derecha, con UNA caja de cantidad para los dos lados — igual que
+      // el comercio y que el `frmBanco` del original. Antes no había caja y los dos botones movían de a UNA
+      // unidad: depositar un montón era clickear cien veces.
       modalCard.innerHTML = `<div class="cardT">Banco · bóveda ${bankGold} oro / llevás ${(myStats && myStats.gold) || 0}<span class="cx" title="cerrar">✕</span></div>`
-        + `<div class="shopgrid">`
-        +   `<div class="shopsec">Bóveda — clic para retirar</div>${vault.length ? vault.join('') : '<div class="fhint" style="grid-column:1/-1">(vacía)</div>'}`
-        +   `<div class="shopsec">Tu inventario — clic para depositar</div>${inv.length ? inv.join('') : '<div class="fhint" style="grid-column:1/-1">(vacío)</div>'}`
+        + `<div class="frow" style="padding:8px 12px">Cantidad por vez <input class="bnkq cantbox" type="number" min="1" max="10000" value="${bancoQty}"></div>`
+        + `<div class="shop2">`
+        +   `<div class="col"><div class="shopsec">Bóveda — clic para retirar</div>`
+        +     `${vault.length ? vault.join('') : '<div class="fhint" style="grid-column:1/-1">(vacía)</div>'}</div>`
+        +   `<div class="col"><div class="shopsec">Tu inventario — clic para depositar</div>`
+        +     `${inv.length ? inv.join('') : '<div class="fhint" style="grid-column:1/-1">(vacío)</div>'}</div>`
         + `</div>`
         + `<div class="frow" style="padding:0 12px 12px"><span class="buy" data-depgold="100">depositar 100</span><span class="buy" data-extgold="100">retirar 100</span><span class="fhint">oro</span></div>`;
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
@@ -2163,12 +2210,27 @@
       // del original, desde donde el líder decide. Antes la solicitud era un renglón y nada más: no había
       // forma de ver a quién estabas por aceptar.
       if (b.dataset.joiner) { send(W().writeByte(CLIENT.GuildRequestJoinerInfo).writeAsciiString(b.dataset.joiner)); return; }
+      // Los dos botones del cartel "Cantidad a dejar". `Dejar todo` no lee la caja: manda el monton entero,
+      // que es para lo que existe el boton en el original.
+      if (b.dataset.dropslot || b.dataset.dropall) {
+        const slot = +(b.dataset.dropslot || b.dataset.dropall);
+        const it = inventory[slot];
+        const total = (it && it.amount) || 1;
+        const caja = modalCard.querySelector('.dropq');
+        const n = b.dataset.dropall ? total
+          : Math.max(1, Math.min(total, parseInt(caja && caja.value, 10) || 1));
+        send(W().writeByte(CLIENT.Drop).writeByte(slot).writeLong(n));
+        closeModal();
+        return;
+      }
       const w = new ByteQueueWriter();
       if (b.dataset.spell) { selectedSpell = +b.dataset.spell; w.writeByte(CLIENT.CastSpell).writeByte(selectedSpell); }
       else if (b.dataset.craft) w.writeByte(+b.dataset.craft).writeInteger(+b.dataset.obj).writeInteger(craftQty());
       else if (b.dataset.sellslot) w.writeByte(CLIENT.CommerceSell).writeByte(+b.dataset.sellslot).writeInteger(leerComercioQty());
-      else if (b.dataset.bankslot) w.writeByte(CLIENT.BankExtractItem).writeByte(+b.dataset.bankslot).writeInteger(1); // withdraw 1
-      else if (b.dataset.depslot) w.writeByte(CLIENT.BankDeposit).writeByte(+b.dataset.depslot).writeInteger(1);       // deposit 1
+      // Retirar y depositar respetan la CAJA DE CANTIDAD (antes iban de a 1, cableado). El server igual acota
+      // a lo que hay y a lo que entra, así que pasarse no rompe nada: se mueve lo posible.
+      else if (b.dataset.bankslot) w.writeByte(CLIENT.BankExtractItem).writeByte(+b.dataset.bankslot).writeInteger(leerBancoQty());
+      else if (b.dataset.depslot) w.writeByte(CLIENT.BankDeposit).writeByte(+b.dataset.depslot).writeInteger(leerBancoQty());
       else if (b.dataset.depgold) w.writeByte(CLIENT.BankDepositGold).writeLong(+b.dataset.depgold);                   // deposit gold
       else if (b.dataset.extgold) w.writeByte(CLIENT.BankExtractGold).writeLong(+b.dataset.extgold);                   // withdraw gold
       else if (b.dataset.prize) w.writeByte(CLIENT.RPremios).writeInteger(+b.dataset.prize);                          // canjear premio de donador (1-based)
@@ -3070,12 +3132,12 @@
       const slot = +d.dataset.slot, it = inventory[slot]; if (!it) return;
       if (slotSel !== slot) { slotSel = slot; buildInv(); }   // el clic también SELECCIONA, como en el original
       if (ev.altKey) { if (confirm(`¿Destruir ${itemName(it.objIndex)}${it.amount > 1 ? ' (x' + it.amount + ')' : ''}? No se puede recuperar.`)) send(W().writeByte(CLIENT.DropDestroy).writeByte(slot).writeLong(it.amount || 1)); return; }  // alt+clic → destruir
-      const w = new ByteQueueWriter();
-      if (ev.ctrlKey) w.writeByte(CLIENT.Drop).writeByte(slot).writeLong(1);
+      if (ev.ctrlKey) { tirarDelSlot(slot); return; }   // mismo cartel que la tecla T
       // Shift+clic = equipar a la fuerza. Es un agregado nuestro y se queda: sirve para desequipar un arco
       // sin entrar en modo puntería, que por el ruteo normal no se puede.
-      else if (ev.shiftKey) w.writeByte(CLIENT.EquipItem).writeByte(slot);
-      else { usarItemDelSlot(slot); return; }   // clic pelado: rutea por tipo, como el `UsarItem` del original
+      if (!ev.shiftKey) { usarItemDelSlot(slot); return; }   // clic pelado: rutea por tipo, como el `UsarItem` del original
+      const w = new ByteQueueWriter();
+      w.writeByte(CLIENT.EquipItem).writeByte(slot);
       ws.send(xorBuffer(w.toBytes(), myKey));
     });
     invgridEl.addEventListener('contextmenu', (ev) => {   // clic-der → atar a la hotbar
@@ -4332,9 +4394,7 @@
         else usarItemDelSlot(slotSel);
         ev.preventDefault();
       } else if (acc === 'tirar' && ws.readyState === 1) {
-        const it = inventory[slotSel];
-        if (!it) log('Elegí primero un objeto del inventario.', '#b94');
-        else send(W().writeByte(CLIENT.Drop).writeByte(slotSel).writeLong(1));
+        tirarDelSlot(slotSel);   // abre "Cantidad a dejar", o tira directo si hay una sola unidad
         ev.preventDefault();
       } else if ((ev.key === 'g' || ev.key === 'G') && ws.readyState === 1) {
         ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.PickUp).toBytes(), myKey)); // pick up item under us
