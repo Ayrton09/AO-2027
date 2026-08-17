@@ -454,6 +454,13 @@ public sealed class Player
     public short TradingWith { get; set; }
     /// <summary>Whether the bank window is currently open. Transient.</summary>
     public bool BankOpen { get; set; }
+
+    /// <summary>El <c>flags.Comerciando</c> del original, que es UNO SOLO para la tienda y para la bóveda:
+    /// <c>IniciarComercioNPC</c> (Comercio.bas:202) e <c>IniciarDeposito</c> (modBanco.bas:45) prenden el mismo
+    /// campo, y <c>HandleCommerceEnd</c> (Protocol.bas:1951) y <c>HandleBankEnd</c> (:1977) lo apagan. Acá el
+    /// estado está partido en dos —con qué mercader y si la bóveda está abierta—, así que la condición se
+    /// deriva: con una ventana abierta, pedir la otra tiene que rebotar con el 387 igual que en el original.</summary>
+    public bool Comerciando => TradingWith != 0 || BankOpen;
     /// <summary>Whether the player is meditating (faster mana regen). Transient.</summary>
     public bool Meditating { get; set; }
 

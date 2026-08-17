@@ -5052,12 +5052,35 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || !p.IsAlive) return;
-            var npc = NpcInFront(p);
-            // VB6 HandleReward (Protocol.bas:5424) exige un NPC de facciones targeteado del bando propio; sin él
-            // manda LocaleMsg(22) y NO entrega nada. El slice regalaba 100 de oro a cualquiera: canilla de oro.
-            if (npc is null || npc.FactionEnlist == 0 || npc.FactionEnlist != p.FactionStatus) { session.Send(ServerMessages.LocaleMsg(22)); return; }
-            void Say(string t) => _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHead(t, npc.CharIndex));
+            if (p is null) return;
+            // VB6 HandleReward (Protocol.bas:5424) exige un NPC de facciones CLICKEADO; sin él manda
+            // LocaleMsg(22) y NO entrega nada. El slice regalaba 100 de oro a cualquiera: canilla de oro.
+            // Se resolvía por la baldosa encarada, que no es lo que mira el original ni lo que manda el cliente.
+            if (p.TargetNpc < 1) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6 :5436
+            var npc = _world.NpcByIndex(p.TargetNpc);
+            // Y OJO CON EL SILENCIO: el 22 es SÓLO el "no clickeaste a nadie". Con un target que no es de
+            // facciones —o estando muerto— el original sale MUDO (:5442, un `Exit Sub` pelado). Acá el 22 salía
+            // en los tres casos, así que el cliente veía un aviso donde el original no manda nada.
+            if (npc is null || npc.FactionEnlist == 0 || !p.IsAlive) return;
+            if (DistanciaVB6(p.Pos, npc.Pos) > 4) { session.Send(ServerMessages.LocaleMsg(8)); return; }   // VB6 :5444
+            // El NPC te habla A VOS y no a la cuadra: las 32 frases de ModFacciones.bas salen por
+            // `WriteChatOverHead(UserIndex, ...)`, que es al socket del jugador. Acá se emitían al área.
+            void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
+            // El bando equivocado tampoco es un 22: el original lo contesta con el globo del NPC (:5455/:5467/:5478).
+            if (npc.FactionEnlist != p.FactionStatus)
+            {
+                // El `Select Case` del original sólo contempla Armada, Milicia y Caos: cualquier otro bando cae
+                // fuera y sale mudo, así que acá el default también calla en vez de inventar una frase.
+                string? reproche = npc.FactionEnlist switch
+                {
+                    Player.StatusArmada => "¡¡No perteneces a las tropas reales!!",
+                    Player.StatusMilicia => "¡¡No perteneces a la Milicia republicana!!",
+                    Player.StatusCaos => "¡¡No perteneces a la legión oscura!!",
+                    _ => null,
+                };
+                if (reproche is not null) Say(reproche);
+                return;
+            }
 
             if (p.FactionRank >= MaxFactionRank(p)) { Say("Ya no tengo trabajo para darte, has alcanzado el rango más alto aquí."); return; }
             int killsEnemigos = KillsForFaction(p);
@@ -5745,11 +5768,18 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || !p.IsAlive) return;
-            var npc = NpcInFront(p);
-            if (npc is null || npc.FactionEnlist == 0) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6: sin NPC de facciones targeteado
+            if (p is null) return;
+            // Mismo contrato que HandleReward (Protocol.bas:5300): el enlistador es el que CLICKEASTE. El 22 es
+            // sólo el "no clickeaste a nadie"; con un target que no es de facciones —o estando muerto— el
+            // original sale mudo (:5306). Se resolvía por la baldosa encarada y contestaba 22 en los tres casos.
+            if (p.TargetNpc < 1) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+            var npc = _world.NpcByIndex(p.TargetNpc);
+            if (npc is null || npc.FactionEnlist == 0 || !p.IsAlive) return;
+            if (DistanciaVB6(p.Pos, npc.Pos) > 4) { session.Send(ServerMessages.LocaleMsg(8)); return; }   // VB6 :5310
 
-            void Say(string t) => _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHead(t, npc.CharIndex));
+            // El NPC te habla A VOS: las frases de ModFacciones.bas salen por `WriteChatOverHead(UserIndex, ...)`,
+            // que es al socket del jugador. Acá se emitían al área y las escuchaba media ciudad.
+            void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
 
             if (npc.FactionEnlist == Player.StatusArmada)   // Armada Real (VB6 EnlistarArmadaReal:301)
             {
@@ -5792,7 +5822,9 @@ public sealed class PacketDispatcher
     /// admite a nadie de una facción enemiga) y no pertenecer a ningún clan. Todo se avisa por ChatOverHead del NPC.</summary>
     private void DoConvertir(ClientSession session, Player p, Npc npc)
     {
-        void Say(string t) => _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHead(t, npc.CharIndex));
+        // Al socket del jugador y no al área: las 32 frases de ModFacciones.bas salen por
+        // `WriteChatOverHead(UserIndex, ...)`. Ese archivo no tiene ni un solo ChatOverHead de área.
+        void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
         bool imperial = npc.FactionConvert == Player.StatusCiudadano;
 
         if (p.FactionStatus == npc.FactionConvert)
@@ -5835,12 +5867,9 @@ public sealed class PacketDispatcher
     /// <summary>Lo que cobra el Convertidor por la ciudadanía (VB6 <c>PERDON</c>, ModFacciones.bas:10).</summary>
     private const int PrecioDelPerdon = 100_000;
 
-    /// <summary>NPC en el tile de enfrente del jugador (patrón de HandleTrain/Enlist/Reward — el VB6 usa TargetNPC).</summary>
-    private Npc? NpcInFront(Player p)
-    {
-        var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
-        return _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
-    }
+    // (Acá vivía `NpcInFront`, el helper que resolvía el NPC por la baldosa ENCARADA. Lo usaban Enlist y
+    // Reward, y su propio comentario ya admitía que el original usa `flags.TargetNPC`; HandleTrain, que el
+    // comentario nombraba como parte del patrón, hacía rato que leía el target de verdad. Sin usuarios, se fue.)
 
     /// <summary>Título por rango, textual del VB6 (TituloReal :719, TituloCaos :692, TituloMilicia :745).</summary>
     private static string FactionTitle(Player p)
@@ -9965,8 +9994,9 @@ public sealed class PacketDispatcher
             if (p is null) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleCommerceStart:5167 (un muerto no comercia — gatea la apertura directa, no sólo via DoubleClick)
             // "Ya estás comerciando" (Protocol.bas:5175). Faltaba: abrir la tienda dos veces reabría la
-            // ventana en silencio en vez de avisar.
-            if (p.TradingWith != 0) { session.Send(ServerMessages.LocaleMsg(387)); return; }
+            // ventana en silencio en vez de avisar. Y mira la BÓVEDA también, porque el original tiene un solo
+            // flag para las dos ventanas (ver Player.Comerciando).
+            if (p.Comerciando) { session.Send(ServerMessages.LocaleMsg(387)); return; }
             // EL MERCADER ES EL QUE CLICKEASTE, no el que tenés enfrente. El original abre la tienda contra
             // `flags.TargetNPC` (Protocol.bas:5181) y por eso tolera hasta 3 baldosas; acá se resolvía por la
             // baldosa ENCARADA, que además de exigir estar pegado y mirándolo salteaba los tres rechazos de
@@ -10172,9 +10202,16 @@ public sealed class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleBankStart:5250 (un muerto no banquea — gatea la apertura directa, no sólo via DoubleClick)
-            var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
-            var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
-            if (npc is null || !npc.IsBanker) { session.Send(ServerMessages.LocaleMsg(22)); return; }  // VB6: rama sin TargetNPC
+            if (p.Comerciando) { session.Send(ServerMessages.LocaleMsg(387)); return; }   // VB6 :5257 — faltaba entero
+            // EL BANQUERO ES EL QUE CLICKEASTE, igual que el mercader. El original abre la bóveda contra
+            // `flags.TargetNPC` (Protocol.bas:5263) y por eso tolera hasta 3 baldosas; acá se resolvía por la
+            // baldosa ENCARADA, que exigía estar pegado y mirándolo, y además hacía inalcanzables los dos
+            // rechazos de abajo. El cliente web ya manda el LeftClick antes del DoubleClick.
+            if (p.TargetNpc < 1) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6 :5277, la rama Else
+            var npc = _world.NpcByIndex(p.TargetNpc);
+            if (npc is null) return;
+            if (DistanciaVB6(p.Pos, npc.Pos) > 3) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            if (!npc.IsBanker) return;   // VB6: con un target que no es banquero no dice nada, ni siquiera el 22
             OpenBank(session, p, npc);
         });
     }
