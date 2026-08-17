@@ -11,12 +11,31 @@ namespace CoverAO.Server.Game;
 /// </summary>
 public static class Equipment
 {
-    /// <summary>1 weapon, 2 armour, 3 helmet, 4 shield, 5 ammo (flechas), 6 anillo/herramienta; 0 = not
-    /// equippable. La 6 corresponde al <c>AnilloEqpSlot</c> del original, que es donde se lleva la HERRAMIENTA
-    /// de oficio (ver <see cref="ObjInfo.IsRing"/>): sin ella no se puede portar el gate de fabricación del VB6,
-    /// que exige <c>AnilloEqpObjIndex = COSTURERO</c> y no "tener el costurero en la mochila".</summary>
+    /// <summary>1 weapon, 2 armour, 3 helmet, 4 shield, 5 ammo (flechas), 6 anillo/herramienta, 7 nudillos,
+    /// 8 ítem mágico; 0 = not equippable. La 6 corresponde al <c>AnilloEqpSlot</c> del original, que es donde se
+    /// lleva la HERRAMIENTA de oficio (ver <see cref="ObjInfo.IsRing"/>): sin ella no se puede portar el gate de
+    /// fabricación del VB6, que exige <c>AnilloEqpObjIndex = COSTURERO</c> y no "tener el costurero en la mochila".
+    ///
+    /// <para>Las categorías son EXACTAMENTE los siete tipos que el original equipa. <c>EquiparInvItem</c> y
+    /// <c>Desequipar</c> tienen el mismo <c>Select Case</c> con las mismas siete ramas (InvUsuario.bas:692 y
+    /// :934): montura, arma, nudillos, ítems mágicos, flechas, anillo y armadura —el escudo y el casco entran
+    /// por armadura, que los distingue con el SubTipo—. Lo que NO está en esa lista se rechaza en silencio, y
+    /// eso también es fiel: <c>otAnillos</c> (47, que son la Pluma de Águila, el Colmillo de Lobo y los otros
+    /// trofeos de criatura), <c>otAnilloEspec</c> (49, el Manual de Liderazgo) y los <c>otESCUDO</c>/
+    /// <c>otCASCO</c> del enum viejo (16/17 — en esta data el 16 lo ocupan los dos Mapas y del 17 no hay
+    /// ninguno) tampoco se equipan en el original. Devolver 0 para ellos no es un agujero: es la rama que el
+    /// VB6 no tiene.</para></summary>
     public static int Category(ObjInfo o) =>
-        o.IsWeapon ? 1 : o.IsArmor ? 2 : o.IsHelmet ? 3 : o.IsShield ? 4 : o.IsAmmo ? 5 : o.IsRing ? 6 : 0;
+        o.IsWeapon ? 1 : o.IsArmor ? 2 : o.IsHelmet ? 3 : o.IsShield ? 4 : o.IsAmmo ? 5 : o.IsRing ? 6
+        : o.IsKnuckles ? 7 : o.IsMagicItem ? 8 : 0;
+
+    /// <summary>Las categorías que se liberan al ponerse una pieza de <paramref name="cat"/>. Normalmente es
+    /// ella misma —un casco saca el casco—, pero el arma y los nudillos se echan MUTUAMENTE: el original
+    /// desequipa los dos slots en las dos ramas (InvUsuario.bas:991-997 al ponerse nudillos, :1051-1058 al
+    /// ponerse un arma). Sin esto se podría pelear con espada y nudillos a la vez, y como en combate los
+    /// nudillos ganan, el arma quedaría puesta sin hacer nada.</summary>
+    public static bool LiberaCategoria(int cat, int otra) =>
+        cat == otra || ((cat == 1 || cat == 7) && (otra == 1 || otra == 7));
 
     /// <summary>Resistencia mágica TOTAL del equipo puesto — lo que <c>HechizoTerrenoHP</c> descuenta del daño de
     /// un hechizo (modHechizos.bas:530-547). El original suma cinco slots: casco, escudo, armadura, montura y
@@ -52,6 +71,21 @@ public static class Equipment
             if (slot.IsEmpty || !slot.Equipped) continue;
             var o = data.Obj(slot.ObjIndex);
             if (o is not null && Category(o) == category) return o;
+        }
+        return null;
+    }
+
+    /// <summary>La montura que el personaje lleva puesta, o null. No sale por <see cref="Category"/> porque la
+    /// montura no ocupa un slot de equipo: el original la guarda aparte (<c>MonturaObjIndex</c>) y la enciende
+    /// con el flag <c>Montando</c>. Acá se deriva del inventario, como el resto.</summary>
+    public static ObjInfo? MonturaEquipada(Player p, GameData data)
+    {
+        for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
+        {
+            var slot = p.Inventory[i];
+            if (slot.IsEmpty || !slot.Equipped) continue;
+            var o = data.Obj(slot.ObjIndex);
+            if (o is { IsMount: true }) return o;
         }
         return null;
     }

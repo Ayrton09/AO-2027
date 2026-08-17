@@ -198,6 +198,18 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     public bool IsBow => IsWeapon && Proyectil == 1;    // arco/ballesta: dispara a distancia y consume munición
     public bool IsAmmo => ObjType == 32;                // otFlechas (Declares.bas:610) — munición del arco
 
+    /// <summary>Nudillos (VB6 <c>otNudillos = 46</c>). Son un arma con slot PROPIO —<c>NudiEqpObjIndex</c>—,
+    /// excluyente con el arma común: ponerse uno se saca el otro (InvUsuario.bas:995 y :1056). En combate el
+    /// original los mira ANTES que el arma y pelea por <c>Wrestling</c> con el daño de los nudillos
+    /// (SistemaCombate.bas:190 y :403). Son cuatro en la data —Hierro, Plata, Oro y el de novato— y ninguno
+    /// trae la clave <c>Anim</c>, así que se pelea con las manos vacías a la vista.</summary>
+    public bool IsKnuckles => ObjType == 46;
+
+    /// <summary>Ítem mágico (VB6 <c>otItemsMagicos = 21</c>): anillos, pendientes, orbes y amuletos. Tienen su
+    /// propio slot (<c>MagicIndex</c>/<c>MagicSlot</c>), no se ven puestos —no hay <c>CharacterChangeSlot</c>,
+    /// sólo el aura tipo 6— y su efecto sale de <c>EfectoMagico</c>. Son 32 en la data.</summary>
+    public bool IsMagicItem => ObjType == 21;
+
     /// <summary>
     /// ¿El ítem se cae al morir en mapa Pk? (VB6 ItemSeCae, InvUsuario.bas:2175). El original lo escribe así:
     /// <code>(.Real &lt;&gt; 1 Or .NoSeCae = 0) And (.Caos &lt;&gt; 1 Or .NoSeCae = 0) And .OBJType &lt;&gt; otLlaves

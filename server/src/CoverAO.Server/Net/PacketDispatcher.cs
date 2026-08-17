@@ -1342,9 +1342,10 @@ public sealed class PacketDispatcher
             // cadencia rechaza no gasta) y ANTES de resolver el objetivo, así que pegarle al aire cuesta igual.
             // Sin energía suficiente: LocaleMsg 93 y no se pega.
             //
-            // Los nudillos son la primera rama del original y acá no están modelados; queda la del arma
-            // equipada, y sin arma la tirada de 1..10 (RandomNumber, que incluye los dos extremos).
-            var armaDelGolpe = Equipment.EquippedOfCategory(p, _data, 1);
+            // El orden de las tres ramas es el del original: primero los NUDILLOS (SistemaCombate.bas:994),
+            // después el arma equipada, y sin nada la tirada de 1..10 (RandomNumber, que incluye los dos
+            // extremos). Los nudillos de la data cuestan 10, 20 y 30 — pegar con los de oro cansa el triple.
+            var armaDelGolpe = Equipment.EquippedOfCategory(p, _data, 7) ?? Equipment.EquippedOfCategory(p, _data, 1);
             int energiaGolpe = armaDelGolpe?.StaRequerido ?? _rng.Next(1, 11);
             if (p.Stamina < energiaGolpe) { session.Send(ServerMessages.LocaleMsg(93)); return; }
             p.Stamina -= energiaGolpe;
@@ -1375,13 +1376,14 @@ public sealed class PacketDispatcher
     /// el MISMO modificador de clase <c>ModClase.AtaqueArmas</c> y el mismo <c>+2.5 * max(nivel-12, 0)</c>),
     /// así que la fórmula ya portada sirve tal cual: lo único que cambia es de qué skill sale el valor.
     ///
-    /// El original mira PRIMERO los nudillos y recién después el arma. Los nudillos no están modelados en este
-    /// slice, por eso el atajo; si se modelan, Wrestling tiene que ganarle al arma equipada. Las ramas de
-    /// proyectil (arco → Proyectiles, arpón → ArmasArrojadizas) piden el campo <c>proyectil</c> del obj.dat,
-    /// que hoy no existe en ObjInfo: quedan diferidas, no inventadas.
+    /// El original mira PRIMERO los nudillos y recién después el arma, así que con nudillos puestos se pelea
+    /// —y se entrena— por <c>Wrestling</c> aunque haya un arma en la mochila. Las ramas de proyectil (arco →
+    /// Proyectiles, arpón → ArmasArrojadizas) piden el campo <c>proyectil</c> del obj.dat, que hoy no existe en
+    /// ObjInfo: quedan diferidas, no inventadas.
     /// </summary>
     private int AttackSkillOf(Player p) =>
-        Equipment.EquippedOfCategory(p, _data, 1) is not null ? GameLimits.SkillArmas : GameLimits.SkillWrestling;
+        Equipment.EquippedOfCategory(p, _data, 7) is null && Equipment.EquippedOfCategory(p, _data, 1) is not null
+            ? GameLimits.SkillArmas : GameLimits.SkillWrestling;
 
     private void AttackPlayer(ClientSession session, Player p, Player target)
     {
@@ -1435,7 +1437,7 @@ public sealed class PacketDispatcher
             }
             return;
         }
-        int rawDamage = MeleeDamage(p);
+        int rawDamage = MeleeDamage(p, contraNpc: false);
         // Victim's equipment absorbs the blow (UserDañoUser): head→helmet, body→armour(+shield).
         int zona = _rng.Next(1, 7); // RandomNumber(bCabeza=1, bTorso=6)
         var casco = Equipment.EquippedOfCategory(target, _data, 3);
@@ -1763,7 +1765,7 @@ public sealed class PacketDispatcher
         // player's raw damage is below the NPC's defence the result is negative and the NPC heals (VB6 parity).
         // `danoBase` se calcula UNA vez: apuñalar lo reusa, y volver a llamar a MeleeDamage tiraría el dado
         // de nuevo — la puñalada saldría de un golpe distinto del que acaba de pegar.
-        int danoBase = MeleeDamage(p);
+        int danoBase = MeleeDamage(p, contraNpc: true);
         int damage = danoBase - npc.Template.Def;
         // La exp se gotea ANTES de aplicar el daño (VB6 SistemaCombate.bas:470 contra :472), porque el recorte
         // usa el HP que la criatura TODAVÍA tiene: el golpe que remata cobra por lo que quedaba, no por el
@@ -6449,6 +6451,8 @@ public sealed class PacketDispatcher
             if (inv.IsEmpty) return;
             int destroy = Math.Clamp((int)amount, 1, inv.Amount);
             var name = _data.Obj(inv.ObjIndex)?.Name ?? "objeto";
+            DesequiparSiSeVaEntero(session, p, slot, destroy);
+            inv = p.Inventory[slot];
             inv.Amount -= (short)destroy;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
@@ -8077,14 +8081,26 @@ public sealed class PacketDispatcher
                 if (World.InView(from, npc.Pos)) p.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex));
     }
 
-    /// <summary>Melee damage via the ported CalcularDano formula. With a weapon equipped it uses the
-    /// weapon's [MinHit,MaxHit] and the class DañoArmas modifier; unarmed it falls back to the wrestling
-    /// path (RandomNumber(1,3), maxDmg 3, DañoWrestling modifier) — CalcularDano, SistemaCombate.bas:300-412.
-    /// Projectiles/knuckles/dragon-slayer specials are not modeled (melee only).</summary>
-    private int MeleeDamage(Player p)
+    /// <summary>Melee damage via the ported CalcularDano formula (SistemaCombate.bas:300-433). El original
+    /// parte en dos por la condición <c>WeaponEqp &gt; 0 And NudiEqpSlot = 0</c>:
+    ///
+    /// <list type="bullet">
+    /// <item>Con ARMA: su [MinHIT,MaxHIT] y el modificador de clase <c>DañoArmas</c>.</item>
+    /// <item>Sin arma, o con NUDILLOS puestos: siempre <c>DañoWrestling</c>. Los nudillos aportan su propia
+    /// tirada de daño y su MaxHIT, y encima de eso van el <c>+RandomNumber(1,3)</c> y el <c>+3</c> del máximo
+    /// que el original le suma al puño ("hacemos que sea 'tipo' una daga"). A puño limpio esa suma ES todo el
+    /// daño; con nudillos se acumula.</item>
+    /// </list>
+    ///
+    /// Los dos últimos sumandos van DESPUÉS del modificador de clase, sobre el número ya redondeado: la
+    /// montura (:421-427, cualquier objetivo) y el ítem mágico de <c>AumentaGolpe</c> (:429-433, <b>sólo contra
+    /// NPC</b> — el Pendiente del Experto no pega más fuerte en PvP). Los especiales de arma (matadragones,
+    /// arco-demonio) siguen sin modelarse.</summary>
+    private int MeleeDamage(Player p, bool contraNpc)
     {
         long userHit = p.MaxHit >= p.MinHit ? _rng.Next(p.MinHit, p.MaxHit + 1) : p.MinHit;
-        var weapon = Equipment.EquippedOfCategory(p, _data, 1); // 1 = weapon
+        var nudillos = Equipment.EquippedOfCategory(p, _data, 7);
+        var weapon = nudillos is null ? Equipment.EquippedOfCategory(p, _data, 1) : null;   // 1 = weapon
         long weaponRoll, weaponMax;
         double classMod;
         if (weapon is not null)
@@ -8095,12 +8111,28 @@ public sealed class PacketDispatcher
         }
         else
         {
-            weaponRoll = _rng.Next(1, 4);                                                // RandomNumber(1,3)
-            weaponMax = 3;
+            weaponRoll = nudillos is null ? 0
+                       : nudillos.MaxHit >= nudillos.MinHit ? _rng.Next(nudillos.MinHit, nudillos.MaxHit + 1)
+                       : nudillos.MinHit;
+            weaponMax = nudillos?.MaxHit ?? 0;
+            weaponRoll += _rng.Next(1, 4);                                                // RandomNumber(1,3)
+            weaponMax += 3;
             classMod = _data.WrestlingMod.TryGetValue(p.Class, out var m) ? m : 0.4;     // ModClase.DañoWrestling
         }
-        return Math.Max(1, (int)Combat.CalcularDano(weaponRoll, weaponMax, userHit, p.Strength, classMod));
+        long dano = Combat.CalcularDano(weaponRoll, weaponMax, userHit, p.Strength, classMod);
+        // LA MONTURA PEGA. El original le suma la tirada del animal a CUALQUIER golpe dado a caballo
+        // (SistemaCombate.bas:421-427) y acá no se sumaba: montado se pegaba igual que a pie, aunque las 11
+        // monturas de la data traen su [MinHIT,MaxHIT].
+        if (p.Mounted && Equipment.MonturaEquipada(p, _data) is { } montura && montura.MaxHit >= montura.MinHit)
+            dano += _rng.Next(montura.MinHit, montura.MaxHit + 1);
+        if (contraNpc && Equipment.EquippedOfCategory(p, _data, 8) is { EfectoMagico: AumentaGolpe } pendiente)
+            dano += pendiente.CuantoAumento;
+        return Math.Max(1, (int)dano);
     }
+
+    /// <summary>VB6 <c>eMagicType.AumentaGolpe</c> (Declares.bas): el ítem mágico que suma <c>CuantoAumento</c>
+    /// al daño contra criaturas. En esta data lo trae uno solo, el Pendiente del Experto (+20).</summary>
+    private const int AumentaGolpe = 18;
 
     /// <summary>Death handling shared by melee and spells: message, XP award + level-up, respawn.</summary>
     private void OnKill(ClientSession attackerSession, Player attacker, Player target)
@@ -9182,6 +9214,8 @@ public sealed class PacketDispatcher
             _world.SetGround(p.Pos, inv.ObjIndex, drop);
             _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectCreate(p.Pos.X, p.Pos.Y, inv.ObjIndex, drop));
 
+            DesequiparSiSeVaEntero(session, p, slot, drop);
+            inv = p.Inventory[slot];   // el desequipado pudo tocar el slot: releerlo antes de descontar
             inv.Amount -= drop;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
@@ -9508,7 +9542,7 @@ public sealed class PacketDispatcher
                     // Desequipar TODO va primero y no es un detalle de higiene: el cuerpo nuevo es el DESNUDO de
                     // la raza en el género nuevo, así que dejar la armadura puesta pintaría un cuerpo vestido con
                     // el gráfico del otro sexo.
-                    UnequipAll(p);
+                    UnequipAll(p, _data);
                     // Las cinco auras se apagan, pero el original DIFUNDE una sola: `AuraToChar(charIndex, 0, 1)`
                     // por el arma (:1971). Las otras cuatro las pone en 0 en su estructura y no avisa a nadie —
                     // rareza de la fuente que se porta igual, porque el `CharacterCreate` de más abajo ya manda
@@ -9690,6 +9724,12 @@ public sealed class PacketDispatcher
             double salePrice = vendido is null || vendido.IsNewbie ? 0.0 : vendido.Value / 3.0;
             int gain = (int)Math.Floor(salePrice * sell);   // Fix(): trunca (todo es positivo acá)
 
+            // Vender lo que se lleva puesto lo DESEQUIPA, y va acá arriba porque el original saca el objeto
+            // antes de calcular el precio (`QuitarUserInvItem`, Comercio.bas:154, contra el `Fix` de :158 y el
+            // oro de :167). El orden de emisión es parte del contrato: si el CharacterChangeSlot saliera
+            // después del UpdateGold, el oráculo lo vería como una secuencia distinta.
+            DesequiparSiSeVaEntero(session, p, slot, sell);
+            inv = p.Inventory[slot];
             p.Gold = (int)Math.Min((long)p.Gold + gain, MaxOro);   // VB6 Comercio.bas:169, sobre el TOTAL
             inv.Amount -= (short)sell;
             if (inv.Amount <= 0) inv = default;
@@ -9764,6 +9804,8 @@ public sealed class PacketDispatcher
             move = Math.Min(move, GameLimits.MaxInventoryObjs - p.BankInventory[bslot].Amount);
             if (move <= 0) { session.Send(ServerMessages.LocaleMsg(149)); return; }
             short obj = inv.ObjIndex;
+            DesequiparSiSeVaEntero(session, p, slot, move);   // guardar lo puesto en la bóveda también lo saca
+            inv = p.Inventory[slot];
             inv.Amount -= (short)move; if (inv.Amount <= 0) inv = default; p.Inventory[slot] = inv;
             var bk = p.BankInventory[bslot]; bk.ObjIndex = obj; bk.Amount = (short)(bk.Amount + move); p.BankInventory[bslot] = bk;
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
@@ -10018,7 +10060,12 @@ public sealed class PacketDispatcher
                 if (!p.IsGm)
                 {
                     if (obj.MinLevel > 0 && p.Level < obj.MinLevel) { session.Send(ServerMessages.LocaleMsg(268, obj.MinLevel.ToString())); return; }  // nivel
-                    if (obj.ClassForbidden(p.Class)) { session.Send(ServerMessages.LocaleMsg(265)); return; }              // clase prohibida
+                    // El nivel se pide para TODO (está antes del `Select Case`, InvUsuario.bas:925), pero la
+                    // clase no: el `Case otItemsMagicos` es la única rama que NO llama a `ClasePuedeUsarItem`
+                    // (:940 contra :982, :1028 y :1092). Un anillo o un orbe se lo pone cualquiera. En esta data
+                    // ninguno de los 32 trae ClaseProhibida, así que hoy no cambia nada; el gate sigue la fuente
+                    // y no el catálogo, porque un obj.dat editado sí lo notaría.
+                    if (!obj.IsMagicItem && obj.ClassForbidden(p.Class)) { session.Send(ServerMessages.LocaleMsg(265)); return; }   // clase prohibida
                     if (obj.IsArmor && obj.RaceForbidden(p.Race)) { session.Send(ServerMessages.LocaleMsg(266)); return; } // raza prohibida (armadura)
                 }
                 // Conflicto de 2 manos (aplica a todos): arma de 2 manos + escudo equipado -> 263; escudo + arma de 2 manos -> 428.
@@ -10026,12 +10073,14 @@ public sealed class PacketDispatcher
                 { session.Send(ServerMessages.LocaleMsg(263)); return; }
                 if (obj.IsShield && obj.TwoHanded == 0 && Equipment.EquippedOfCategory(p, _data, 1) is { TwoHanded: 1 })
                 { session.Send(ServerMessages.LocaleMsg(428)); return; }
-                for (int i = 1; i <= GameLimits.MaxInventorySlots; i++) // unequip any other item of the SAME category
+                // Saca lo que ocupa el lugar: normalmente la MISMA categoría, y además la contraria en el par
+                // arma/nudillos, que en el original se desequipan mutuamente (ver Equipment.LiberaCategoria).
+                for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
                 {
                     if (i == slot) continue;
                     var other = p.Inventory[i];
                     var oo = other.IsEmpty ? null : _data.Obj(other.ObjIndex);
-                    if (other.Equipped && oo is not null && Equipment.Category(oo) == cat)
+                    if (other.Equipped && oo is not null && Equipment.LiberaCategoria(cat, Equipment.Category(oo)))
                     {
                         other.Equipped = false; p.Inventory[i] = other;
                         ClearEquipAnim(p, oo);
@@ -10049,7 +10098,9 @@ public sealed class PacketDispatcher
             // (el arma va oculta y el body es la montura/barca hasta desmontar/desembarcar); casco y escudo,
             // visibles sobre la montura, sí re-broadcastean montado (InvUsuario.bas:1212/1262). Navegando el body
             // es la barca, así que arma/armadura no deben re-vestir el cuerpo real.
-            if ((!p.Mounted && !p.Navigating) || obj.IsHelmet || obj.IsShield)
+            // Los nudillos y los ítems mágicos tampoco se gatean: sus dos `Case` mandan sin preguntar por
+            // montura ni barca (InvUsuario.bas:1008 y :960).
+            if ((!p.Mounted && !p.Navigating) || obj.IsHelmet || obj.IsShield || obj.IsKnuckles || obj.IsMagicItem)
                 BroadcastEquipChange(p, obj, inv.Equipped);
             // ACÁ NO VA NINGUNA LÍNEA DE CONSOLA. Salía un "Equipaste X." / "Desequipaste X." nuestro, y el
             // original no manda nada: `InvUsuario.bas` tiene UN SOLO `WriteConsoleMsg` en todo el archivo (:644,
@@ -10106,9 +10157,10 @@ public sealed class PacketDispatcher
     /// (con aura 0 al desequipar). Antes acá se mandaba el <c>CharacterChange</c> completo — 17 bytes de
     /// payload y los nueve campos, para avisar que cambió uno.
     ///
-    /// Los números salen de los call sites de <c>InvUsuario.bas</c>: slot 1 cuerpo, 4 arma, 5 escudo, 6 casco;
-    /// y el tipo de aura 1 arma, 2 cuerpo, 3 escudo, 4 casco. El slot 8 (arma equipada como <c>otNudillos</c>)
-    /// no se emite porque este slice no modela esa categoría — los nudillos entran como arma común.</summary>
+    /// Los números salen de los call sites de <c>InvUsuario.bas</c>: slot 1 cuerpo, 4 arma, 5 escudo, 6 casco
+    /// y <b>8 nudillos</b>; y el tipo de aura 1 arma, 2 cuerpo, 3 escudo, 4 casco. Los nudillos mandan el mismo
+    /// <c>WeaponAnim</c> que el arma pero por el slot 8, y su aura es la del ARMA (<c>Arma_Aura</c>, tipo 1),
+    /// no una propia: el original escribe <c>.Char.Arma_Aura</c> en las dos ramas (:1011 y :1074).</summary>
     private void BroadcastEquipChange(Player p, Data.ObjInfo o, bool equipped)
     {
         byte aura = equipped ? (byte)Math.Clamp(o.Aura, 0, 255) : (byte)0;
@@ -10117,13 +10169,14 @@ public sealed class PacketDispatcher
             { IsShield: true } => (p.ShieldAnim, (byte)5, (byte)3),
             { IsHelmet: true } => (p.HelmetAnim, (byte)6, (byte)4),
             { IsWeapon: true } => (p.WeaponAnim, (byte)4, (byte)1),
+            { IsKnuckles: true } => (p.WeaponAnim, (byte)8, (byte)1),
             { IsArmor: true } => (p.Body, (byte)1, (byte)2),
             _ => ((short)0, (byte)0, (byte)0),
         };
         if (slot == 0)
         {
-            // Categoría sin slot propio en el original (anillos/ítems mágicos): sólo cambia el aura, y va
-            // con tipo 6 (Anillo_Aura). Si el ítem tampoco trae aura no hay nada que difundir.
+            // Categoría sin slot propio en el original (ítems mágicos): sólo cambia el aura, y va con tipo 6
+            // (Anillo_Aura, InvUsuario.bas:958-961). Si el ítem tampoco trae aura no hay nada que difundir.
             if (o.Aura > 0 || p.RingAura != 0)
             {
                 p.RingAura = aura;
@@ -10152,6 +10205,44 @@ public sealed class PacketDispatcher
             _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)o.SndEspecial, p.Pos.X, p.Pos.Y));
     }
 
+    /// <summary>
+    /// SACAR UN ÍTEM DEL SLOT LO DESEQUIPA PRIMERO, si se va entero. Es la primera línea de
+    /// <c>QuitarUserInvItem</c> (InvUsuario.bas:283): <c>If .Amount &lt;= Cantidad And .Equipped = 1 Then
+    /// Desequipar</c>. Como esa función es el embudo por el que el original saca objetos del inventario, el
+    /// gate corre en TODOS los caminos —tirar al piso, vender al mercader, destruir— sin que ninguno de ellos
+    /// tenga que acordarse.
+    ///
+    /// <para>Acá no existía, y cada camino sacaba el objeto a mano dejando el estado colgado: tirar la
+    /// armadura puesta te dejaba el cuerpo vestido con el gráfico de una armadura que ya no tenías, y vender
+    /// el casco equipado te dejaba el casco dibujado en la cabeza hasta el próximo login. Con los ítems
+    /// mágicos el agujero pasa de cosmético a permanente: el <c>CuantoAumento</c> del anillo se queda sumado
+    /// a la skill y la skill se guarda en el <c>.chr</c>.</para>
+    ///
+    /// <para>La condición es <c>Amount &lt;= cantidad</c>, no <c>== </c>: sacar 5 de un stack de 3 también lo
+    /// vacía. Y si sobra aunque sea una unidad el ítem sigue puesto, que es lo que hace el original.</para>
+    /// </summary>
+    private void DesequiparSiSeVaEntero(ClientSession session, Player p, byte slot, int cantidad)
+    {
+        var inv = p.Inventory[slot];
+        if (!inv.Equipped || inv.Amount > cantidad) return;
+        if (_data.Obj(inv.ObjIndex) is not { } o) return;
+        if (o.IsMount)                       // VB6 Desequipar Case otMonturas -> DoEquita (te baja del animal)
+        {
+            if (p.Mounted) AlternarMontura(session, p, slot, o);
+            return;
+        }
+        inv.Equipped = false;
+        p.Inventory[slot] = inv;
+        ClearEquipAnim(p, o);
+        AplicarBonusDeEquipo(p, o, poniendose: false);
+        if (o.IsRing && p.Laborando)         // sacarse la herramienta corta la faena (mismo gate que al desequipar)
+        {
+            p.Laborando = false;
+            session.Send(ServerMessages.LocaleMsg(391, "", 1));
+        }
+        BroadcastEquipChange(p, o, equipped: false);
+    }
+
     private static void SetEquipAnim(Player p, Data.ObjInfo o)
     {
         // VB6: casco y escudo siguen visibles SOBRE la montura, así que se actualizan y broadcastean aunque el
@@ -10159,6 +10250,10 @@ public sealed class PacketDispatcher
         // armadura (el cuerpo es la montura) se gatean con Montando y se reflejan al desmontar (RefreshAppearance).
         if (o.IsShield) p.ShieldAnim = (short)o.Anim;
         else if (o.IsHelmet) p.HelmetAnim = (short)o.Anim;
+        // Los NUDILLOS también escriben WeaponAnim, y sin el gate de montura: el original los pone y
+        // broadcastea derecho (InvUsuario.bas:1005-1008), a diferencia del arma, que sí lo envuelve en
+        // `Montando = 0 And Navegando = 0` (:1068). Es una inconsistencia de la fuente y se porta tal cual.
+        else if (o.IsKnuckles) p.WeaponAnim = (short)o.Anim;
         else if (p.Mounted || p.Navigating) return;   // montado/navegando el arma va oculta y el body es la montura/barca
         else if (o.IsWeapon) p.WeaponAnim = (short)o.Anim;
         else if (o.IsArmor && o.Ropaje > 0) p.Body = (short)o.Ropaje;   // VB6 EquiparInvItem: .Char.body = Obj.Ropaje
@@ -10168,6 +10263,7 @@ public sealed class PacketDispatcher
     {
         if (o.IsShield) p.ShieldAnim = 0;
         else if (o.IsHelmet) p.HelmetAnim = 0;
+        else if (o.IsKnuckles) p.WeaponAnim = 0;      // VB6 Desequipar otNudillos: WeaponAnim = NingunArma, sin gate
         else if (p.Mounted || p.Navigating) return;
         else if (o.IsWeapon) p.WeaponAnim = 0;
         else if (o.IsArmor) p.Body = Equipment.NakedBody(p.Race, p.Gender);   // VB6 Desequipar: DarCuerpoDesnudo
@@ -10179,7 +10275,10 @@ public sealed class PacketDispatcher
     public static void RefreshAppearance(Player p, GameData data)
     {
         p.Body = Equipment.BodyFor(p, data);
-        p.WeaponAnim = (short)(Equipment.EquippedOfCategory(p, data, 1)?.Anim ?? 0);
+        // El arma y los nudillos escriben el MISMO campo, y el original resuelve el empate a favor del arma:
+        // pone primero el de los nudillos y después lo pisa con el del arma si la hay (Modulo_UsUaRiOs.bas:93-101).
+        p.WeaponAnim = (short)(Equipment.EquippedOfCategory(p, data, 1)?.Anim
+                            ?? Equipment.EquippedOfCategory(p, data, 7)?.Anim ?? 0);
         p.ShieldAnim = (short)(Equipment.EquippedOfCategory(p, data, 4)?.Anim ?? 0);
         p.HelmetAnim = (short)(Equipment.EquippedOfCategory(p, data, 3)?.Anim ?? 0);
     }
@@ -10352,6 +10451,10 @@ public sealed class PacketDispatcher
             var spot = FreeGroundNear(world, p.Pos);
             if (spot is not { } drop) continue;   // no hay tile libre alrededor: el ítem se queda (VB6 NuevaPos = 0)
 
+            // Si estaba PUESTO, devolvé su bonus antes de que el ítem se vaya: el slot se limpia acá abajo y
+            // después ya no hay de dónde sacar el EfectoMagico. Ver la nota de UnequipAll.
+            if (inv.Equipped) AplicarBonusDeEquipo(p, info, poniendose: false);
+
             world.SetGround(drop, inv.ObjIndex, inv.Amount);
             world.BroadcastToObservers(drop, ServerMessages.ObjectCreate(drop.X, drop.Y, inv.ObjIndex, inv.Amount));
             p.Inventory[slot] = default;
@@ -10360,13 +10463,24 @@ public sealed class PacketDispatcher
     }
 
     /// <summary>Desequipa TODO (VB6 UserDie:1343-1390: armadura, arma, nudillo, casco, herramienta/anillo,
-    /// municiones, ítem mágico y escudo). Corre siempre, incluso en ciudad donde no se dropea nada.</summary>
-    private static void UnequipAll(Player p)
+    /// municiones, ítem mágico y escudo). Corre siempre, incluso en ciudad donde no se dropea nada.
+    ///
+    /// <para>DEVUELVE EL BONUS, y ahí se separa del original a propósito. El VB6 llama a <c>Desequipar</c> por
+    /// cada slot, y esa función resta el <c>CuantoAumento</c> del ítem mágico… salvo que el ítem ya no esté:
+    /// <c>TirarTodo</c> corre ANTES (UserDie:1332) y vacía el slot sin desequipar nada, así que el
+    /// <c>Desequipar</c> de después se topa con <c>ObjIndex = 0</c> y sale por la puerta de atrás
+    /// (InvUsuario.bas:684). Morir en mapa Pk con un Anillo del Guerrero (+20) puesto deja el +20 <b>para
+    /// siempre</b>, y como la skill se guarda en el <c>.chr</c>, morir mil veces con anillos la lleva al tope.
+    /// Es un agujero del original que corrompe estado persistido y que ningún jugador puede leer como "así era
+    /// el juego": acá se cierra, y queda escrito que se cierra.</para></summary>
+    private static void UnequipAll(Player p, GameData data)
     {
         for (int slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
         {
             var inv = p.Inventory[slot];
-            if (inv.Equipped) { inv.Equipped = false; p.Inventory[slot] = inv; }
+            if (!inv.Equipped) continue;
+            if (data.Obj(inv.ObjIndex) is { } o) AplicarBonusDeEquipo(p, o, poniendose: false);
+            inv.Equipped = false; p.Inventory[slot] = inv;
         }
         p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
     }
@@ -10425,7 +10539,7 @@ public sealed class PacketDispatcher
             p.Connection?.Send(ServerMessages.MontateToggle());
         }
         DropInventoryOnDeath(world, data, p);   // VB6 UserDie:1332 TirarTodo — ANTES de desequipar
-        UnequipAll(p);                          // VB6 UserDie:1343-1390 — desequipa todo, siempre
+        UnequipAll(p, data);                    // VB6 UserDie:1343-1390 — desequipa todo, siempre
 
         // Borrar el diálogo del muerto ANTES de cambiarle la apariencia (VB6 UserDie:1248): si dijo algo
         // justo antes de morir, la frase le quedaba flotando sobre el cadáver.

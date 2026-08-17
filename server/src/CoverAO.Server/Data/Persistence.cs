@@ -445,6 +445,10 @@ public sealed class Persistence
         rugura.Skills[GameLimits.SkillProyectiles] = 15;
         rugura.Inventory[21] = new InventorySlot { ObjIndex = 989, Amount = 1 };    // Arco Simple (Proyectil=1, [5,8])
         rugura.Inventory[22] = new InventorySlot { ObjIndex = 480, Amount = 100 };  // Flecha (otFlechas, [4,6]) — munición
+        // Los nudillos y el anillo mágico de `nudillos_flow` NO van acá: se crean con /CI, como en aura_flow.
+        // Se intentó ponerlos en el inventario y salió mal por partida doble — el slot 23 ya tenía las Tijeras
+        // (las pisó y gather_flow se puso rojo) y el 24 era el anteúltimo libre, así que Rugura se quedó sin
+        // lugar para los /CI de donador, mineral, pergamino, aura y stack_tope. El kit no tiene huecos.
         SaveCharacter(rugura);
         var merlin = CreateCharacter(acc, "Merlin", charIndex: 2, race: 1, gender: 1, @class: 2, homeland: 1, head: 2);
         merlin.Pos = demoPos; SaveCharacter(merlin);
