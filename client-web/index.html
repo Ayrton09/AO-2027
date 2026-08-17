@@ -229,6 +229,11 @@
     .fill.thirst { background:linear-gradient(180deg,var(--thirst-hi),var(--thirst) 55%,#1c5a70); }
     .track .val { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
       font-size:calc(var(--u)*0.72); color:#fff; text-shadow:0 1px 2px #000,0 0 3px #000; font-family:ui-monospace,monospace; }
+    /* Fuerza y Agilidad vivían en el pie, al lado del minimapa. La grilla de barras es de dos columnas y
+       Energía queda sola en la última fila, así que la celda de al lado estaba vacía: es el hueco que se
+       pedía. Se le da el alto de un .track para que el renglón cierre parejo con la barra de Energía. */
+    .p-bars .attrs { height:calc(var(--u)*1.25); display:flex; align-items:center; justify-content:center;
+      gap:.4em; font-size:calc(var(--u)*0.78); }
     /* EL ORO NO ES UNA BARRA. Estaba metido en la sexta celda de la grilla, donde todas las vecinas son
        barras con su relleno y su "100/100": quedaba como una barra rota. Va en su propio renglón, ancho
        completo y separado por un filete, que es lo que es — un total, no una proporción. */
@@ -238,13 +243,13 @@
       font-family:ui-monospace,monospace; font-size:calc(var(--u)*0.95); color:var(--gold-hi); }
     .p-gold::before { content:'●'; color:var(--gold); text-shadow:0 0 6px var(--gold); }
 
-    /* pie: mapa + atributos + minimapa */
-    /* pie: mapa + atributos + minimapa. `flex-end` dejaba el nombre del lugar pegado abajo y un hueco
-       muerto arriba, del alto del minimapa; centrado, las dos columnas se miran de igual a igual. */
+    /* pie: mapa + minimapa — los atributos se mudaron a la grilla de barras. `flex-end` dejaba el nombre
+       del lugar pegado abajo y un hueco muerto arriba, del alto del minimapa; centrado, las dos columnas
+       se miran de igual a igual. */
     .p-foot { display:flex; gap:10px; padding:6px 8px; align-items:center; }
     .p-foot .fl { flex:1; min-width:0; }
     #mapname { font-family:var(--serif); font-size:calc(var(--u)*1.05); color:var(--gold-hi); text-align:center;
-      margin-bottom:5px; letter-spacing:.02em; text-shadow:0 1px 3px #000;
+      letter-spacing:.02em; text-shadow:0 1px 3px #000;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }   /* "Ciudad de Ullathorpe" no rompe el pie */
     .attrs { font-size:calc(var(--u)*0.8); color:var(--ink-dim); text-align:center; }
     .attrs b { color:var(--gold-hi); }
@@ -480,13 +485,13 @@
         <div class="stat"><span class="cap">Maná</span><div class="track"><div class="fill mana" id="f-mana"></div><span class="val" id="v-mana">—</span></div></div>
         <div class="stat"><span class="cap">Sed</span><div class="track"><div class="fill thirst" id="f-thirst"></div><span class="val" id="v-thirst">—</span></div></div>
         <div class="stat"><span class="cap">Energía</span><div class="track"><div class="fill ener" id="f-ener"></div><span class="val" id="v-ener">—</span></div></div>
+        <div class="stat"><span class="cap">Atributos</span><div class="attrs">Fuerza <b id="a-str">—</b> · Agilidad <b id="a-agi">—</b></div></div>
         <div class="goldrow"><span class="cap">Oro</span><div class="p-gold" id="v-gold">0</div></div>
       </div>
 
       <div class="p-foot ornate">
         <div class="fl">
           <div id="mapname">—</div>
-          <div class="attrs">Fuerza <b id="a-str">—</b> · Agilidad <b id="a-agi">—</b></div>
         </div>
         <canvas id="minimap" width="64" height="64"></canvas>
       </div>
