@@ -1651,6 +1651,7 @@
         // el juego quedaba congelado y la consola acumulaba miles de errores idénticos. drawSparseLayer ya
         // guardaba estas mismas capas; acá faltaba.
         for (const [ox, oy, g] of (map.objects || [])) pinta(ox, oy, g); // capa 2 tapa el piso
+        for (const [ox, oy, g] of (map.objs || [])) pinta(ox, oy, g);    // objetos del mundo (puertas, carteles)
         for (const [ox, oy, g] of (map.roofs || [])) pinta(ox, oy, g);   // capa 4 tapa todo (la 3 no se pinta)
         bx.putImageData(img, 0, 0);
         map._mini = mc;
@@ -3470,6 +3471,13 @@
       }
       // Layer 2 objects (trees, etc.) — drawn under characters so the player walks in front of them.
       if (map) drawSparseLayer(map.objects, camX, camY, undefined, offX, offY);
+      // LOS OBJETOS DEL MUNDO del .csm (puertas, carteles, yacimientos). Su grafico no esta en ninguna capa:
+      // sale del GrhIndex del obj.dat, y el transcode ahora lo resuelve en `objs`. Sin esto las puertas y los
+      // carteles eran INVISIBLES hasta tocarlos — 176 objetos sin dibujar solo en Ullathorpe.
+      //
+      // Se saltea el tile donde el server ya mando algo: el estado VIVO llega por ObjectCreate (la puerta
+      // abierta tiene otro grafico) y se dibuja abajo. Pintar los dos superpondria la cerrada sobre la abierta.
+      if (map) drawSparseLayer(map.objs, camX, camY, (ox, oy) => ground.has(ox + ',' + oy), offX, offY);
       // Dropped items on the ground (loot from ObjectCreate) — on their tile, under characters.
       // Van con `offX/offY` como todas las capas indexadas por grilla. Sin eso quedaban clavados al tile
       // REDONDEADO: mientras el mundo scrollea de a un píxel, el ítem del suelo se quedaba quieto y saltaba
@@ -4454,6 +4462,9 @@
       if (!map._objPorTile) {
         map._objPorTile = new Map();
         for (const [ox, oy, grh] of map.objects) map._objPorTile.set(ox + ',' + oy, grh);
+        // Los objetos del mundo van DESPUES y pisan: en un tile con arbol de capa 2 y puerta del .csm, lo que
+        // el jugador quiere nombrar es la puerta.
+        for (const [ox, oy, grh] of (map.objs || [])) map._objPorTile.set(ox + ',' + oy, grh);
       }
       const grh = map._objPorTile.get(x + ',' + y);
       if (!grh || !items) return;

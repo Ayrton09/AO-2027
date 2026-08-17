@@ -46,7 +46,10 @@ function seUsaElGrh(id) {
     }
     for (const f of readdirSync(A).filter((x) => /^map\d+\.json$/.test(x))) {
       const m = leer(join(A, f));
-      for (const capa of ['objects', 'decorations', 'roofs']) for (const e of (m[capa] || [])) _usados.add(e[2]);
+      // `objs` va en la lista: es la capa de los OBJETOS DEL MUNDO (puertas, carteles, yacimientos), cuyo grh
+      // sale del obj.dat y no de las capas del .csm. Si no se cuenta acá, un grafico que falte para una puerta
+      // pasa el chequeo y el agujero se ve recien jugando — que es el defecto que este guardia existe para cazar.
+      for (const capa of ['objects', 'decorations', 'roofs', 'objs']) for (const e of (m[capa] || [])) _usados.add(e[2]);
     }
   }
   return _usados.has(id);

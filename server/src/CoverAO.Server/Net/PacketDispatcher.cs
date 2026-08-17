@@ -1617,10 +1617,9 @@ public sealed class PacketDispatcher
             if (RangedNpcAtacable(targetNpc))
                 RangedHitNpc(session, p, targetNpc, bow, ammo);
         }
-        else
-        {
-            session.Send(ServerMessages.PlayWave(6, tx, ty));   // tiro al aire / fuera de visión (VB6: Atacked=True → consume igual)
-        }
+        // TIRO AL AIRE: el original NO hace ruido. Su `Case eSkill.Proyectiles` (Protocol.bas:2751-2870) no tiene
+        // un solo PlayWave — cuando no hay blanco simplemente marca `Atacked` y consume la flecha. Acá salía un
+        // `PlayWave(6)`, que además es SND_NIVEL: errar una flecha sonaba igual que subir de nivel.
 
         // Consumo de munición: 1 flecha DESPUÉS del intento (VB6 Protocol.bas:2870 'If Atacked'). Los early-returns de
         // arriba (visión/auto/cadáver/distancia) NO llegan acá → NO consumen, fiel al VB6.
