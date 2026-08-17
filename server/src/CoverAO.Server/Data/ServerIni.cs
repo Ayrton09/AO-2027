@@ -164,6 +164,82 @@ public sealed class ServerIni
     /// <summary>Nombres de staff por rango, para poder mostrarlos (panel de admin / arranque).</summary>
     public IEnumerable<(string Nombre, byte Priv)> Staff => _staff.Select(kv => (kv.Key, kv.Value));
 
+    /// <summary>El nombre del rango, para mostrarlo ("Dios", "SemiDios"…). Vacío si no es un rango conocido.</summary>
+    public static string NombreDelRango(byte priv) =>
+        Array.Find(Rangos, r => r.Priv == priv).Clave ?? "";
+
+    /// <summary>Los rangos que se pueden otorgar, de mayor a menor autoridad.</summary>
+    public static IEnumerable<(string Clave, byte Priv)> RangosOtorgables =>
+        Rangos.Select(r => (r.Clave, r.Priv));
+
+    /// <summary>
+    /// DAR O SACAR STAFF, escribiendo el <c>Server.ini</c> — que es la ÚNICA autoridad de rango. Se reescribe
+    /// la sección entera del rango (contador + <c>Dios1..DiosN</c>) y se recarga, así que el cambio vale para
+    /// el próximo login de ese personaje, igual que si alguien hubiera editado el archivo a mano.
+    ///
+    /// Va por el ARCHIVO y no por el personaje a propósito: el rango se deriva en cada login y el <c>.chr</c>
+    /// no manda. Guardarlo en el personaje sería exactamente el agujero que <c>AplicarPrivilegiosDeStaff</c>
+    /// cerró — un <c>data/</c> movido a otra máquina llevándose los privilegios adentro.
+    ///
+    /// <paramref name="priv"/> = 1 (User) SACA el nombre de todas las listas. Devuelve false si no hay archivo
+    /// (un server sin ini corre con defaults y no hay dónde escribir) o si el disco no deja.
+    /// </summary>
+    public bool GuardarStaff(string nombre, byte priv)
+    {
+        if (Ruta is null || string.IsNullOrWhiteSpace(nombre)) return false;
+        nombre = nombre.Trim();
+        try
+        {
+            var ini = File.Exists(Ruta) ? IniFile.Load(Ruta) : new IniFile();
+            // El nombre sale de TODAS las listas antes de entrar en la suya: sin esto, subir a un Consejero a
+            // Dios lo dejaría en las dos y el desempate por autoridad taparía el rastro.
+            foreach (var (_, seccion, clave, _) in Rangos)
+            {
+                var quedan = LeerLista(ini, seccion, clave)
+                    .Where(n => !string.Equals(n, nombre, StringComparison.OrdinalIgnoreCase)).ToList();
+                EscribirLista(ini, seccion, clave, quedan);
+            }
+            if (priv != 1)
+            {
+                var rango = Array.Find(Rangos, r => r.Priv == priv);
+                if (rango.Seccion is null) return false;                    // rango desconocido: no se inventa
+                var lista = LeerLista(ini, rango.Seccion, rango.Clave).ToList();
+                lista.Add(nombre);
+                EscribirLista(ini, rango.Seccion, rango.Clave, lista);
+            }
+            ini.Save(Ruta);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Console.Error.WriteLine($"[ini] no se pudo escribir '{Ruta}' ({ex.GetType().Name}: {ex.Message}).");
+            return false;
+        }
+        return Recargar();
+    }
+
+    private static List<string> LeerLista(IniFile ini, string seccion, string clave)
+    {
+        var salida = new List<string>();
+        int n = ini.GetInt(seccion, seccion, 0);
+        for (int i = 1; i <= n; i++)
+        {
+            string v = ini.GetString(seccion, clave + i, "").Trim();
+            if (v.Length > 0) salida.Add(v);
+        }
+        return salida;
+    }
+
+    private static void EscribirLista(IniFile ini, string seccion, string clave, List<string> nombres)
+    {
+        // Se reescriben TODAS las claves viejas en blanco antes de poner las nuevas: si la lista se achica, las
+        // sobrantes (`Dios5=PEPE` con el contador en 4) quedarían en el archivo y volverían al recargar si
+        // alguien sube el contador a mano.
+        int viejo = ini.GetInt(seccion, seccion, 0);
+        for (int i = 1; i <= Math.Max(viejo, nombres.Count); i++)
+            ini.Set(seccion, clave + i, i <= nombres.Count ? nombres[i - 1] : "");
+        ini.Set(seccion, seccion, nombres.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     /// <summary>
     /// Los ajustes que NO toman efecto con un <see cref="Recargar"/>, porque el server ya los usó al arrancar
     /// y quien los consume se quedó con una copia: los puertos ya están escuchando, el tope de conexiones y

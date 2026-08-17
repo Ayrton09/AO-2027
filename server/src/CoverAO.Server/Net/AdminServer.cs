@@ -135,7 +135,10 @@ public sealed class AdminServer
     private readonly Action<bool> _shutdown;   // (backup) => apagar
     private readonly LogRing? _log;
     private readonly AdminConfig _admin;
-    private readonly string _bannedIpsPath;    // persistencia de IPs baneadas (data/banned-ips.txt)
+    private readonly string _bannedIpsPath;   // persistencia de IPs baneadas (data/banned-ips.txt)
+    /// <summary>El Server.ini vivo. Es la ÚNICA autoridad de rango, así que dar o sacar staff desde el panel
+    /// se hace escribiéndolo a él y recargando — nunca tocando el personaje.</summary>
+    private readonly Data.ServerIni? _ini;
     private readonly Func<string, string>? _backup;   // (motivo) => mensaje; lo provee Program, corre en el loop
     private readonly string _html;
     private int _peak;
@@ -150,9 +153,10 @@ public sealed class AdminServer
 
     public AdminServer(int port, string token, World world, GameLoop loop, Persistence db,
         ServerInfo info, Action<bool> shutdown, LogRing? log, AdminConfig admin, string bannedIpsPath,
-        Func<string, string>? backup = null)
+        Func<string, string>? backup = null, Data.ServerIni? ini = null)
     {
         _port = port; _token = token; _world = world; _loop = loop; _db = db; _info = info; _shutdown = shutdown; _log = log; _admin = admin;
+        _ini = ini;
         _bannedIpsPath = bannedIpsPath;
         _backup = backup;
         var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "admin.html");
@@ -283,6 +287,13 @@ public sealed class AdminServer
             },
             banned = BannedList(),
             bannedIps = _admin.BannedIpList(),
+            // El STAFF que hay hoy, leído del ini vivo. `iniEscribible` es lo que le dice al panel si puede
+            // ofrecer el botón: un server arrancado sin Server.ini corre con defaults y no hay dónde escribir.
+            staff = _ini is null ? Array.Empty<object>()
+                : _ini.Staff.OrderByDescending(s => s.Priv).ThenBy(s => s.Nombre, StringComparer.OrdinalIgnoreCase)
+                      .Select(s => (object)new { name = s.Nombre, priv = (int)s.Priv, rango = Data.ServerIni.NombreDelRango(s.Priv) })
+                      .ToArray(),
+            iniEscribible = _ini?.Ruta is not null,
             players = playerList,
             log = _log?.Snapshot() ?? Array.Empty<string>(),
         };
@@ -386,6 +397,28 @@ public sealed class AdminServer
                 return Ok(_admin.AutoMsgMinutes > 0 && _admin.AutoMessages.Length > 0
                     ? $"{_admin.AutoMessages.Length} mensaje(s) cada {_admin.AutoMsgMinutes} min"
                     : "mensajes automáticos desactivados");
+
+            // --- STAFF: dar o sacar rango de GM (el 2.30 del informe) ---
+            //
+            // Escribe el Server.ini y lo recarga. NO toca el personaje, y eso es lo importante: el rango se
+            // deriva del ini en CADA login (`AplicarPrivilegiosDeStaff`), así que guardarlo en el `.chr` sería
+            // reabrir el agujero que esa función cerró — un `data/` copiado a otra máquina llevándose los
+            // privilegios adentro.
+            //
+            // Toma efecto en el PRÓXIMO login del personaje. Al que está conectado no se le cambia el rango en
+            // caliente a propósito: la mitad del estado de staff (el status de facción pisado, el override que
+            // guarda lo civil debajo) se arma al entrar al mundo, y pisarlo a mitad de sesión es justo lo que
+            // dejaba la facción congelada. Si hace falta ya, se lo kickea y vuelve a entrar.
+            case "setStaff":
+            {
+                if (_ini is null) return Fail("este server no tiene Server.ini: el rango no se puede escribir");
+                if (string.IsNullOrWhiteSpace(name)) return Fail("falta el nombre del personaje");
+                byte priv = (byte)Math.Clamp(GetInt("priv", 0), 0, 255);
+                if (priv != 1 && Data.ServerIni.NombreDelRango(priv).Length == 0) return Fail($"rango desconocido: {priv}");
+                if (!_ini.GuardarStaff(name, priv)) return Fail("no se pudo escribir el Server.ini");
+                string comoQueda = priv == 1 ? "jugador común" : Data.ServerIni.NombreDelRango(priv);
+                return Ok($"{name} queda como {comoQueda}. Toma efecto en su próximo login.");
+            }
 
             // --- Bans (frmServidor: Unban All; + baneo individual) ---
             case "ban":

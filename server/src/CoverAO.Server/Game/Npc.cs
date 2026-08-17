@@ -50,6 +50,10 @@ public sealed class Npc
     /// (VB6 eNPCType.Revividor).</summary>
     public bool IsReviver { get; set; }
 
+    /// <summary>El PIRATA que cobra el pasaje (VB6 <c>eNPCType.transportadores</c> = 7). No abre ninguna
+    /// ventana: hay que USAR el pasaje teniéndolo clickeado, y él es el gate. Son 10 en el install.</summary>
+    public bool IsTransportador { get; set; }
+
     /// <summary>Trade of a workbench NPC (a Fragua/carpintería/…): "blacksmith" | "carpenter" | "tailor" |
     /// "alchemy". Double-clicking it sends that trade's craftable list (BlacksmithWeapons/etc). Null = not one.</summary>
     public string? WorkbenchTrade { get; set; }

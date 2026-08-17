@@ -811,7 +811,7 @@ if (!sinAdmin)
     string adminToken = (atIdx >= 0 && atIdx + 1 < args.Length) ? args[atIdx + 1]
         : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
     var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, "1.0.0", fixtureMode);
-    var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, bannedIpsPath, HacerBackup);
+    var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, bannedIpsPath, HacerBackup, serverIni);
     adminTask = adminServer.RunAsync(cts.Token);
 }
 

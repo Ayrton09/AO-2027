@@ -1520,6 +1520,10 @@
         status: status === 1 ? 2 : status === 2 ? 3 : status,
         esNpc: true,
         hostil: !!(ficha && ficha.h),
+        // El NÚMERO de ficha, que hasta acá venía en `name` y se pierde al traducirlo. Lo necesita todo lo que
+        // el cliente resuelve LOCALMENTE contra npcs.json: el rubro `<Armas>` bajo el nombre y el diálogo del
+        // modo 4 de ChatOverHeadLocale.
+        npcIdx: String(Number(nombre)),
       };
     }
 
@@ -1884,6 +1888,15 @@
     // El mapa cargado, para poder medir el render contra data sintética (p.ej. inyectarle 500 luces y
     // comprobar que el costo del light-map NO crece con la cantidad).
     window.__mapaActual = () => map;
+    window.__npcsIdx = () => npcsIdx;   // debug: la tabla de fichas (nombre, hostil, rubro, diálogo)
+    // debug del CLIMA: las tres variables que deciden si la lluvia se dibuja. Sin esto, medir píxeles no
+    // distingue "el gate funciona" de "nunca llegó a llover".
+    window.__clima = () => ({ raining, techoAlpha: +techoAlpha.toFixed(3), zone: map ? map.zone : null,
+                              mapa: map ? map.name : null });
+    // debug: prender/apagar la lluvia LOCALMENTE, sin tocar el server. Es lo que permite medir el overlay
+    // contra su propio control -- la MISMA escena con y sin lluvia-, que es la única forma de distinguir
+    // "el gate funciona" de "la escena no tenía azul".
+    window.__setLluvia = (b) => { raining = !!b; draw(); };
     window.__inv = () => inventory; window.__gold = () => myStats && myStats.gold;                 // debug helpers
     window.__ground = () => [...ground.entries()];
     window.__foundGuild = (name) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CreateNewGuild).writeAsciiString('clan del cliente web').writeAsciiString(name).writeAsciiString('').writeAsciiString('').toBytes(), myKey)); // debug
@@ -2026,9 +2039,31 @@
     }
     window.__skills = () => ({ pedido: pedidoDeSkills, valores: misSkills });
 
-    /** Panel de estadísticas (MiniStats 61): el historial de muertes y facción del personaje. */
+    /** Panel de estadísticas: la FICHA del personaje más el historial de muertes.
+     *
+     *  El tester pidió una ventana en vez del volcado al chat (2.5). El volcado es el `/EST`, y ESO es fiel:
+     *  el original contesta doce `ConsoleMsg` y así se dejó. Lo que se puede hacer sin tocar el protocolo es
+     *  esto — armar la ficha del lado del cliente, con estado que ya tiene: `UpdateUserStats` trae nivel,
+     *  vida, maná, energía, oro y experiencia; las barras de hambre y sed llegan por su propio paquete. Nada
+     *  de esto pide un viaje más al server.
+     *
+     *  El historial de muertes sí viene del paquete `MiniStats` (61), que es lo que dispara la tecla. */
     function showStats(f) {
-      const rows = [
+      const s = myStats || {};
+      const pct = (a, b) => (b > 0 ? ` (${Math.round((a / b) * 100)}%)` : '');
+      const ficha = [
+        `Nivel <b>${s.level ?? '—'}</b> · experiencia <b>${s.exp ?? 0}</b> / ${s.elu ?? '—'}`,
+        `Vida <b>${s.minHp ?? '—'}/${s.maxHp ?? '—'}</b>${pct(s.minHp, s.maxHp)} · Maná <b>${s.minMan ?? '—'}/${s.maxMan ?? '—'}</b>`,
+        `Energía <b>${s.minSta ?? '—'}/${s.maxSta ?? '—'}</b>`,
+        `Hambre <b>${myFood.cur}</b> · Sed <b>${myThirst.cur}</b> · Oro <b>${s.gold ?? 0}</b>`,
+        // Los atributos llegan por su propio paquete (`Atributes`, 47) y los cinco se guardan enteros; el
+        // `UpdateUserStats` gordo trae los suyos como bytes que el decoder descarta. Si todavía no se pidieron
+        // —el bootstrap los manda, pero una reconexión puede no— se dice y listo, en vez de mentir un guión.
+        myAttrs ? `Fuerza <b>${myAttrs.fuerza}</b> · Agilidad <b>${myAttrs.agilidad}</b> · Inteligencia <b>${myAttrs.inteligencia}</b>`
+                : 'Atributos: pedilos con la ficha del personaje',
+      ];
+      const rows = ficha.concat([
+        '—',
         `Clase <b>${esc(CLASES[f.clase - 1] || f.clase)}</b>`,
         `Usuarios matados <b>${f.usuariosMatados}</b>`,
         `Criaturas matadas <b>${f.npcsMuertos}</b>`,
@@ -2036,7 +2071,7 @@
         `Ciudadanos matados <b>${f.ciudadanosMatados}</b>`,
         `Criminales matados <b>${f.renegadosMatados}</b>`,
         `Armada <b>${f.armadaMatados}</b> · Caos <b>${f.caosMatados}</b> · Milicia <b>${f.milicianosMatados}</b>`,
-      ];
+      ]);
       showModal('📊 Estadísticas', rows, true, 'stats');
     }
 
@@ -2892,6 +2927,16 @@
             floaters.push({ x: c.x, y: c.y, at: Date.now(),
                             text: textoDelFlotante(f.index, f.charIndex === myCharIndex),
                             color: f.modo === 3 ? '#5b9bff' : '#ff6b5a' });
+          } else if (f.modo === 4) {
+            // EL DIÁLOGO DE UN NPC. Viaja el NÚMERO de ficha, no el texto (`General_Locale_NPCs(id, 1)`), y el
+            // cliente lo resuelve contra npcs.json — el campo `d`, que traen 139 de las 627 fichas. El original
+            // lo pinta en BLANCO y antes borra los diálogos de los otros NPCs del área (RemoveDialogsNPCArea),
+            // así que no se apilan tres criaturas hablando a la vez.
+            const dicho = npcsIdx && npcsIdx[f.index] && npcsIdx[f.index].d;
+            if (dicho) {
+              for (const otro of chars.values()) if (otro.esNpc && otro !== c) otro.chatAt = 0;
+              c.chatText = dicho; c.chatColor = '#ffffff'; c.chatAt = Date.now();
+            }
           }
           break;
         }
@@ -3722,6 +3767,12 @@
         if (seLeVeElNombre) {
           etiquetas.push({ texto: c.name || '', x: sx + TILE / 2, y: base + 10,
                            color: c.donador ? '#ffd24a' : colorDelNick(c), alpha: 1 });
+          // EL RUBRO, entre `<>` y debajo del nombre (VB6 TileEngine.bas:2529-2532, `General_Locale_NPCs(i, 2)`).
+          // Es lo que distingue de un vistazo al mercader de <Armas> del de <Provisiones> y al guardia de la
+          // <Sagrada Orden> del de la <Milicia Republicana>. Lo traen 85 de las 627 fichas y no se dibujaba.
+          const rubro = c.esNpc && npcsIdx && npcsIdx[c.npcIdx] && npcsIdx[c.npcIdx].s;
+          if (rubro) etiquetas.push({ texto: '<' + rubro + '>', x: sx + TILE / 2, y: base + 22,
+                                      color: colorDelNick(c), alpha: 1 });
         }
         // Chat over the head (ChatOverHead packet): sobre la CABEZA de verdad — el tope real del sprite, que
         // drawCharacterBody deja en `_top`—, no a una distancia fija del tile.
@@ -3802,9 +3853,21 @@
       // Iluminación dinámica: en vez de un wash plano, una viñeta radial de oscuridad centrada en el
       // jugador (el clásico "radio de luz" nocturno de AO) + luces cálidas aditivas (fuego, hechizos).
       drawLighting(camX, camY, me);
-      // Weather: an animated rain overlay while the server's RainToggle set raining = true.
-      if (raining) {
+      // EL CLIMA, y DÓNDE se ve. El server manda `RainToggle` a TODO el mundo y eso es fiel: el original hace
+      // `SendData(SendTarget.ToAll, ...)` (Protocol.bas:9285) sin mirar el mapa. Lo que decide si la lluvia se
+      // VE es el cliente, con `bTecho` — el mismo `Trigger 1/2/4/>=20` que apaga los techos.
+      //
+      // Acá la lluvia es un OVERLAY de pantalla completa y no la partícula de mundo del original, así que sin
+      // este gate llovía adentro de las casas y —lo que reportó el tester— adentro de los 84 mapas DUNGEON,
+      // que son cuevas bajo tierra. Se apaga en los dos casos, y con el MISMO fade que los techos: entrar a un
+      // interior corta la lluvia con la misma transición con la que se abre el techo, no de golpe.
+      //
+      // Un dungeon no tiene capa de techos (es todo interior), así que ahí `techoAlpha` no baja nunca: por eso
+      // la `zone` del mapa va como segunda mitad de la condición y no como adorno.
+      const alCubierto = (map && map.zone === 'DUNGEON') ? 1 : 1 - techoAlpha;
+      if (raining && alCubierto < 0.99) {
         const t = Date.now();
+        ctx.globalAlpha = 1 - alCubierto;
         ctx.fillStyle = 'rgba(20,30,55,0.14)'; ctx.fillRect(0, 0, VW, VH); // overcast darkening
         ctx.strokeStyle = 'rgba(150,180,230,0.40)'; ctx.lineWidth = 1;
         ctx.beginPath();
@@ -3815,6 +3878,7 @@
           ctx.moveTo(x, y); ctx.lineTo(x - 5, y + 14);
         }
         ctx.stroke();
+        ctx.globalAlpha = 1;
       }
       // Numeros de dano flotantes: suben ~26px en 900ms y se desvanecen. Se dibujan DESPUES de los
       // personajes para que queden encima, y antes de la iluminacion/ceguera.

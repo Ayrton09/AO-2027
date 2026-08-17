@@ -565,6 +565,7 @@ public sealed class NpcSystem
         // función según su ficha del NPCs.dat. (Los NPCs de test de Program.cs siguen fijando sus flags a mano.)
         if (s.Template.NpcType == 1) npc.IsReviver = true;                       // eNPCType.Revividor
         if (s.Template.NpcType == 4) npc.IsBanker = true;                        // eNPCType.Banquero
+        if (s.Template.NpcType == 7) npc.IsTransportador = true;                 // eNPCType.transportadores (el pirata del pasaje)
         // eNPCType.Entrenador: sus criaturas salen de la ficha (NroCriaturas + CN1..CNn). `IsTrainer` se
         // deriva de que la lista NO sea nula, asi que con esto el entrenador del mundo por fin lista algo.
         if (s.Template.TrainerCreatures is { Count: > 0 } criaturas)

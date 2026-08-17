@@ -122,6 +122,14 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // mineral estaba CABLEADO a hierro, así que los 4 yacimientos de Oro y los 4 de Plata —8 de los 12 del
     // install— daban hierro, y la rama de plata y oro de la fundición no se alcanzaba minando.
     int MineralIndex = 0,
+    // EL PASAJE del barco (`otPasajes` = 36): a dónde te lleva y desde dónde vale. OJO LAS CLAVES, que no se
+    // llaman como el campo: el cargador del original lee `Desde`, `Map`, `X` e `Y` (FileIO.bas:940-943) y las
+    // guarda en DesdeMap/HastaMap/HastaX/HastaY. Buscar "DesdeMap" en el obj.dat no encuentra nada.
+    //
+    // Los traen los 37 pasajes del install y los 37 tienen destino; `Desde` sólo lo traen algunos —el original
+    // compara `Pos.Map = DesdeMap` y con 0 eso no matchea nunca, así que un pasaje sin `Desde` NO se puede usar
+    // en ningún lado. Es del original: son pasajes muertos en la data, no un error del port.
+    int PasajeDesdeMap = 0, int PasajeHastaMap = 0, int PasajeHastaX = 0, int PasajeHastaY = 0,
     // `Destruir` (obj.dat): el objeto NO se puede tirar al piso. El original corta el DropObj y en su lugar
     // manda un ShowMessageBox (Protocol.bas:2057). Lo traen 5: los sacos de créditos y de tiempo de donador y
     // el Anillo Dorado. Sin esto se los podía tirar —y perder— en el piso.
@@ -967,6 +975,8 @@ public sealed class GameData
                 Int(el, "LanzaHechizo", "Lanzahechizo", "lanzahechizo"),   // poción SubTipo 5: hechizo que lanza
                 Int(el, "QueAtributo", "QUEATRIBUTO", "queatributo"),      // atributo que sube el ítem equipado
                 Int(el, "MineralIndex", "MINERALINDEX", "mineralindex"),   // mineral que da este yacimiento
+                // El pasaje: las claves del .dat son `Desde`/`Map`/`X`/`Y`, no los nombres del campo.
+                Int(el, "Desde", "desde"), Int(el, "Map", "map", "MAP"), Int(el, "X", "x"), Int(el, "Y", "y"),
                 Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
                 StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
         }

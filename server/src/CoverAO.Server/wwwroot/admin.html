@@ -200,6 +200,28 @@
       </div>
 
       <div class="card ornate">
+        <h2>🛡️ Staff</h2>
+        <div class="subhdr">Rango de un personaje</div>
+        <div class="section ctl-row">
+          <input type="text" id="staffname" placeholder="Nombre del personaje…" maxlength="30">
+          <select id="staffpriv">
+            <option value="8">Dios</option>
+            <option value="16">Admin</option>
+            <option value="4">SemiDios</option>
+            <option value="2">Consejero</option>
+            <option value="32">RM</option>
+            <option value="1">Jugador común (sacar staff)</option>
+          </select>
+          <button class="mini" id="btn-staff">Aplicar</button>
+        </div>
+        <div class="section" style="opacity:.75; font-size:.9em">
+          Se escribe en el <b>Server.ini</b>, que es de donde sale el rango en cada login — nunca en el
+          personaje. Toma efecto cuando ese personaje <b>vuelva a entrar</b>.
+        </div>
+        <div class="banlist" id="stafflist"></div>
+      </div>
+
+      <div class="card ornate">
         <h2>🔨 Bans <span class="count" id="bancount"></span></h2>
         <div class="subhdr">Por cuenta</div>
         <div class="section ctl-row">
@@ -279,6 +301,16 @@ function syncField(id, val) {
 }
 
 let lastLogLen = 0;
+// El listado de staff que hay hoy, para no tener que abrir el ini a mano para saber quién es qué.
+function pintarStaff(s) {
+  const box = $('stafflist');
+  if (!box) return;
+  if (!s.iniEscribible) { box.innerHTML = '<div class="banitem"><span class="bn">Este server arrancó sin Server.ini: el rango no se puede cambiar desde acá.</span></div>'; return; }
+  box.innerHTML = (s.staff || []).length
+    ? s.staff.map((x) => `<div class="banitem"><span class="bn">${esc(x.name)}</span><span class="mini">${esc(x.rango || x.priv)}</span></div>`).join('')
+    : '<div class="banitem"><span class="bn">No hay staff en el Server.ini.</span></div>';
+}
+
 function render(st) {
   // conexión
   $('conndot').classList.add('on'); $('connlbl').textContent = 'en línea';
@@ -341,6 +373,7 @@ function render(st) {
   syncField('automin', cf.autoMsgMin || 0);
   $('nextautomsg').textContent = cf.nextAutoMsgSec >= 0 ? 'próximo en ' + fmtDur(cf.nextAutoMsgSec) : '';
   // bans por cuenta
+  pintarStaff(st);
   const bans = st.banned || [];
   $('bancount').textContent = bans.length ? bans.length + (bans.length === 1 ? ' cuenta' : ' cuentas') : '';
   $('banlist').innerHTML = bans.map(n => `<div class="banitem"><span class="bn">${esc(n)}</span><button class="mini" onclick="cmd('unban',{name:'${esc(n)}'})">Desbanear</button></div>`).join('');
@@ -383,6 +416,13 @@ function boot() {
   $('btn-ban').onclick = () => { const n = $('banname').value.trim(); if (n) { cmd('ban', { name: n }); $('banname').value = ''; } };
   $('btn-unban').onclick = () => { const n = $('banname').value.trim(); if (n) { cmd('unban', { name: n }); $('banname').value = ''; } };
   $('btn-unbanall').onclick = () => { if (confirm('¿Desbanear TODAS las cuentas?')) cmd('unbanAll'); };
+  $('btn-staff').onclick = () => {
+    const n = $('staffname').value.trim(), pv = +$('staffpriv').value;
+    if (!n) return;
+    const que = pv === 1 ? `sacarle el staff a ${n}` : `hacer ${$('staffpriv').selectedOptions[0].textContent} a ${n}`;
+    if (confirm(`¿Confirmás ${que}? Se escribe en el Server.ini y vale desde su próximo login.`))
+      cmd('setStaff', { name: n, priv: pv });
+  };
   $('banname').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-ban').click(); });
   $('btn-banip').onclick = () => { const ip = $('banip').value.trim(); if (ip && confirm('¿Banear la IP ' + ip + '?')) { cmd('banIp', { ip }); $('banip').value = ''; } };
   $('btn-unbanip').onclick = () => { const ip = $('banip').value.trim(); if (ip) { cmd('unbanIp', { ip }); $('banip').value = ''; } };

@@ -1900,6 +1900,11 @@ public sealed class PacketDispatcher
         long dar = exp * (_admin?.ExpMult ?? 1);
         if (p.Donador) dar += dar / 2;   // VB6 :2029
         OtorgarExp(session, p, dar);
+        // CUÁNTA experiencia ganó ESTE golpe (VB6 SistemaCombate.bas:2041, la línea que sigue al UpdateExp).
+        // El tester lo pidió (2.19) y es del original: sin esto la barra de experiencia se movía sola y el
+        // jugador no tenía forma de saber cuánto rindió cada golpe. El aviso NO está en `OtorgarExp` porque el
+        // original lo manda desde los sitios de COMBATE y no desde el otorgamiento en sí.
+        session?.Send(ServerMessages.LocaleMsg(140, dar.ToString()));
     }
 
     private void RaiseSkill(ClientSession? session, Player p, int skill)
@@ -2065,6 +2070,7 @@ public sealed class PacketDispatcher
             if (p.Donador) gainExp += gainExp / 2;   // VB6 SistemaCombate.bas:2029 — el donador gana +50% de experiencia
             npc.ExpCount = 0;                        // VB6 :142 — el pool se vacía, no se paga dos veces
             OtorgarExp(session, p, gainExp);
+            session.Send(ServerMessages.LocaleMsg(140, gainExp.ToString()));   // VB6 MODULO_NPCs.bas:136
         }
         // "¡Has matado a #1!" con el NOMBRE de la criatura, y va SIEMPRE — el original lo manda afuera del
         // `If ExpCount > 0` (MODULO_NPCs.bas:141), así que rematar algo que ya no da experiencia igual avisa.
@@ -4747,6 +4753,11 @@ public sealed class PacketDispatcher
     /// <summary>Leña (VB6 <c>Leña = 58</c>) y daga (<c>DAGA = 15</c>), Declares.bas:355 y :364.</summary>
     private const short Lenia = 58, Daga = 15;
     private const int Runa = 38;
+    /// <summary>VB6 <c>eOBJType.otPasajes</c>: el pasaje del barco (viaje rápido entre puertos).</summary>
+    private const int Pasaje = 36;
+    /// <summary>VB6 <c>eOBJType.otAnillo</c> (18): el slot de HERRAMIENTA de este fork — piquete, hacha, caña,
+    /// red, tijeras, costurero, olla y serrucho— además de los anillos mágicos que suben una skill.</summary>
+    private const int Herramienta = 18;
     private const int MaxMascotasEntrenador = 7;   // VB6 MAXMASCOTASENTRENADOR (Declares.bas:218)         // otRuna (Declares.bas:615) — la Runa de teletransportacion
 
     /// <summary>Partir un montón de leña en fogatas apagadas (VB6 <c>TratarDeHacerFogata</c>, Trabajo.bas:1228).
@@ -6951,10 +6962,17 @@ public sealed class PacketDispatcher
             if (npc.TrainerCreatures is not null) { session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
             // DESVIACIÓN DELIBERADA DEL SLICE (decidida, no olvidada). El original CALLA acá: su `Accion` rutea
             // por NPCtype y no tiene rama `Else`, así que un NPC sin rol no contesta nada al doble clic. Se
-            // mantiene el diálogo porque sin él las criaturas quedan mudas: el VB6 lo compensa mostrando la
-            // descripción del lado del cliente ("si el NPC se corre mandamos el texto, sino lo lee el cliente",
-            // GameLogic.bas LookatTile), y ese mecanismo todavía no está portado. Si algún día se porta, esto
-            // se saca y `npc_dialogue_flow` —que hoy lo asserta— se actualiza.
+            // mantiene el diálogo porque sin él las criaturas quedan mudas.
+            //
+            // El mecanismo con el que el VB6 lo compensa está portado A MEDIAS, y la mitad que falta es la que
+            // haría sobrar esta línea. Son dos caminos distintos y sólo uno pasa por la red:
+            //   · el NPC que se CORRIÓ de su spawn: el server manda `ChatOverHeadLocale(..., 4)` desde
+            //     `LookatTile` — eso ya sale de acá y desde el 2026-08-18 el cliente además lo DIBUJA;
+            //   · el NPC quieto en su spawn: "lo lee el cliente" (GameLogic.bas:792). El original lo saca de
+            //     `MapData(x, y).NPCIndex`, o sea de su propio archivo de mapa, y nuestro cliente no tiene los
+            //     índices de NPC por tile.
+            // Mientras esa segunda mitad no esté, sacar este ConsoleMsg dejaría mudo al NPC parado, que es el
+            // caso normal. `npc_dialogue_flow` lo asserta.
             var desc = npc.Template.Description;
             session.Send(ServerMessages.ConsoleMsg(
                 string.IsNullOrWhiteSpace(desc) ? $"{npc.Name} no tiene nada que decirte." : $"{npc.Name}: {desc}", FuenteInfo));
@@ -9462,6 +9480,72 @@ public sealed class PacketDispatcher
                 bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
                 if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }
                 WarpAlHogar(session, p, Cities.SpawnTile(p.HomeCity));
+                return;
+            }
+
+            // LA HERRAMIENTA QUE ABRE SU TALLER (VB6 `Case eOBJType.otAnillo` de UsarInvItem, InvUsuario.bas:1515).
+            // El tester lo reportó como "las herramientas caen en No puedes usar ese objeto" (2.33), y tenía
+            // razón a medias: son TRES las que hacen algo, y lo que hacen es abrir su ventana de fabricación.
+            //
+            //   costurero (886) → sastrería     olla (887) → alquimia     serrucho (198) → carpintería
+            //
+            // Las otras herramientas del slot —piquete, hacha, caña, red, tijeras— caen en el `Select Case` sin
+            // rama y el original NO contesta nada: se usan trabajando, no apretándoles la U. Y el yunque tampoco
+            // está acá: la fragua se abre por el mundo, con doble clic, que es lo que el tester vio.
+            //
+            // EL GATE ES DOBLE Y NO ES REDUNDANTE. El original pide que el ítem del slot esté equipado (el `If
+            // Equipped <> 0` de afuera) Y ADEMÁS que el ítem EQUIPADO en el slot de herramienta sea ese mismo
+            // (`.Invent.AnilloEqpObjIndex = COSTURERO`); si no, LocaleMsg 391. Con un solo costurero en el
+            // inventario da igual, pero con dos —uno puesto y otro no— la diferencia se ve.
+            if (obj.ObjType == Herramienta)
+            {
+                if (!inv.Equipped) return;                                       // `If Equipped <> 0`: mudo
+                string? taller = obj.Index switch
+                {
+                    886 => "tailor",       // COSTURERO   (Declares.bas:374)
+                    887 => "alchemy",      // OLLA        (Declares.bas:372)
+                    198 => "carpenter",    // SERRUCHO_CARPINTERO (Declares.bas:371)
+                    _ => null,
+                };
+                if (taller is null) return;                                      // el resto del Select: silencio
+                if (Equipment.EquippedOfCategory(p, _data, 6)?.Index != obj.Index)
+                { session.Send(ServerMessages.LocaleMsg(391)); return; }
+                SendCraftList(session, taller, obj.Name);
+                return;
+            }
+
+            // EL PASAJE DEL BARCO (otPasajes = 36, VB6 InvUsuario.bas:1381). Es el viaje rápido del original y
+            // caía en "No puedes usar ese objeto": el tester lo reportó (2.25). No abre ninguna ventana — se
+            // clickea al PIRATA, se usa el pasaje, y te lleva.
+            //
+            // Los cinco gates del original, en su orden, y con dos mensajes distintos que conviene no mezclar:
+            // el 22 ("primero hacé clic sobre el personaje") sale TANTO sin nadie clickeado COMO con alguien que
+            // no es pirata, y el 30 ("el marino se muestra enojado…") sale cuando el pasaje no es de este puerto
+            // o su destino no existe. La distancia es la Manhattan del original, no Chebyshev.
+            if (obj.ObjType == Pasaje)
+            {
+                if (!p.IsAlive || p.Meditating) return;                                        // DeadCheck + meditando: mudo
+                var pirata = TargetNpcDe(p);
+                if (pirata is null || !pirata.IsTransportador) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+                if (DistanciaVB6(pirata.Pos, p.Pos) > 3) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                if (p.Pos.Map != obj.PasajeDesdeMap) { session.Send(ServerMessages.LocaleMsg(30)); return; }
+                if (!_data.MapExists(obj.PasajeHastaMap)) { session.Send(ServerMessages.LocaleMsg(30)); return; }
+
+                WarpAlHogar(session, p, new WorldPos((short)obj.PasajeHastaMap,
+                                                     (byte)obj.PasajeHastaX, (byte)obj.PasajeHastaY));
+                session.Send(ServerMessages.LocaleMsg(31));                                    // "viajaste varios días, estás exhausto"
+                // EL VIAJE TE DEJA VACÍO: hambre y sed a CERO, no al máximo (`MinAGU = 0 : MinHam = 0`). Y
+                // devuelve fuerza y agilidad a su valor base, o sea que te corta los buffs — el original usa el
+                // viaje como reset de estado, y las dos cosas son deliberadas.
+                p.Thirst = 0; p.Hunger = 0;
+                session.Send(ServerMessages.UpdateHungerAndThirst((byte)p.Thirst, (byte)p.Hunger));
+                for (int i = 1; i < p.AttrBonus.Length; i++) { p.AttrBonus[i] = 0; p.AttrBonusExpiry[i] = 0; }
+                session.Send(ServerMessages.UpdateStrenght(p.Strength));
+                session.Send(ServerMessages.UpdateDexterity(p.Agility));
+                inv.Amount -= 1;
+                if (inv.Amount <= 0) inv = default;
+                p.Inventory[slot] = inv;
+                session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, inv.IsEmpty ? (byte)0 : (byte)1));
                 return;
             }
 
