@@ -119,4 +119,10 @@ public enum ClientPacketId : byte
     MsgAmigos = 111,
     AbrirForms = 112,
     DesconectarCuenta = 113,
+
+    /// <summary>BORRAR UN PERSONAJE de la cuenta. <b>No existe en el original</b> y por eso arranca en 114, una
+    /// después del último del VB6: el `Tipo = 2` ("Borrar cuenta") de `ProcesosLogin` es una rama MUERTA allá —
+    /// contesta `EjecutarAccion(5, "0")` y no borra nada (Protocol.bas:15742)—, así que no había de dónde
+    /// portarlo. Lo pidió el tester (1b).</summary>
+    BorrarPersonaje = 114,
 }

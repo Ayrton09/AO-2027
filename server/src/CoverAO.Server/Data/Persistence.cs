@@ -21,6 +21,8 @@ public sealed class Persistence
 
     public bool AccountExists(string name) => _store.AccountExists(name);
     public bool CharacterExists(string name) => _store.CharacterExists(name);
+    /// <summary>Aparta el personaje sin destruirlo (borrado de personaje, 1b). Ver <c>IStore</c>.</summary>
+    public bool ArchivarCharacter(string name) => _store.ArchivarCharacter(name);
 
     // --- Guild registry persistence (a single JSON blob under the "guilds" key) ---
     private sealed record GuildDto(string Name, string Leader, string Desc,

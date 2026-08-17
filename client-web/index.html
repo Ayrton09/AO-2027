@@ -638,6 +638,7 @@
       // Sexto eje (docs/eje-cliente-compuerta.md): los que el server atiende, el cliente ORIGINAL manda y
       // este no tenia. Cinco de ellos son comandos '/' — en el VB6 los parsea clsClientTCP.cls.
       RequestPositionUpdate: 5, EquiparSkin: 30, Ping: 91, AbrirForms: 112, DesconectarCuenta: 113,
+      BorrarPersonaje: 114,   // NO existe en el original: el 114 es nuestro (ver ClientPacketId.cs)
       // El servidor lo atiende entero (difunde la particula al area del objetivo) y el cliente no tenia
       // como pedirlo. Va como /particula, fuera de la tabla de GM porque es paquete propio, no subcomando.
       ParticulaUsuario: 100 };
@@ -4874,7 +4875,20 @@
         const info = document.createElement('div'); info.className = 'ci';
         info.innerHTML = `<div class="cn">${esc(c.name)}${c.gm ? '<span class="cgm">GM</span>' : ''}</div><div class="cd">Nivel ${c.level} · ${CLASES[c.clase - 1] || 'Clase ' + c.clase}</div>`;
         const play = document.createElement('span'); play.className = 'play'; play.textContent = '▶';
-        card.append(cv, info, play);
+        // BORRAR (1b del informe). Va con doble confirmación —una pregunta y después escribir el nombre— porque
+        // es irreversible para el jugador. Del lado del server el `.chr` se aparta en vez de destruirse, pero
+        // eso el jugador no lo sabe y no tiene forma de recuperarlo solo.
+        const del = document.createElement('span'); del.className = 'play'; del.textContent = '🗑';
+        del.title = 'Borrar este personaje';
+        del.addEventListener('click', (ev) => {
+          ev.stopPropagation();      // el clic de la tarjeta ENTRA al juego: no puede dispararse también
+          if (!confirm(`¿Borrar a ${c.name}? Se pierde el personaje, su inventario y su banco.`)) return;
+          const escrito = prompt(`Escribí el nombre para confirmar: ${c.name}`);
+          if (!escrito || escrito.trim().toLowerCase() !== c.name.toLowerCase()) return;
+          ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.BorrarPersonaje)
+            .writeAsciiString(accName).writeAsciiString(accPass).writeAsciiString(c.name).toBytes(), myKey));
+        });
+        card.append(cv, info, del, play);
         card.addEventListener('click', () => playChar(c.name));
         charlistEl.appendChild(card);
       }

@@ -61,6 +61,42 @@ public class ProtocolParityTests
     private static Dictionary<int, string> CsEnumByValue<TEnum>() where TEnum : struct, Enum
         => Enum.GetValues<TEnum>().ToDictionary(v => Convert.ToInt32(v), v => v.ToString());
 
+    /// <summary>LOS IDS QUE SON NUESTROS Y NO DEL VB6. El protocolo del original termina en el 113; lo que
+    /// esté por encima es una extensión de este port y tiene que estar declarada acá, con su motivo. La lista
+    /// existe para que agregar un paquete sea una DECISIÓN visible y no un descuido: el guard de paridad sigue
+    /// exigiendo que todo lo que esté en el rango del VB6 coincida nombre por nombre y valor por valor.</summary>
+    private static readonly Dictionary<int, string> ExtensionesPropias = new()
+    {
+        // Borrar un personaje (1b del informe del tester). El original NO tiene borrado: su `Tipo = 2` de
+        // ProcesosLogin es una rama muerta que contesta `EjecutarAccion(5, "0")` y no toca nada
+        // (Protocol.bas:15742), así que no había de dónde portarlo.
+        [114] = "BorrarPersonaje",
+    };
+
+    /// <summary>El último id que usa el protocolo del VB6. Todo lo nuestro va por encima.</summary>
+    private const int UltimoIdDelVb6 = 113;
+
+    [Fact]
+    public void Las_extensiones_propias_estan_declaradas_y_fuera_del_rango_del_vb6()
+    {
+        foreach (var (id, nombre) in ExtensionesPropias)
+        {
+            Assert.True(id > UltimoIdDelVb6, $"el id {id} ({nombre}) pisa el rango del VB6 (0..{UltimoIdDelVb6})");
+            Assert.True(Enum.IsDefined(typeof(ClientPacketId), (byte)id), $"el id {id} está declarado como extensión y no existe en el enum");
+            Assert.Equal(nombre, ((ClientPacketId)(byte)id).ToString());
+        }
+        // Y AL REVÉS, que es la mitad que atrapa el descuido: cualquier miembro del enum por encima del rango
+        // del VB6 tiene que estar en la lista. Agregar un paquete sin declararlo acá pone este test en rojo.
+        foreach (var v in Enum.GetValues<ClientPacketId>())
+        {
+            int id = (int)v;
+            if (id > UltimoIdDelVb6)
+                Assert.True(ExtensionesPropias.ContainsKey(id),
+                    $"{v} ({id}) está por encima del protocolo del VB6 y no figura en ExtensionesPropias: " +
+                    "si es un paquete nuestro, declaralo ahí con el motivo.");
+        }
+    }
+
     private static void AssertEnumParity(string enumName, Dictionary<int, string> cs)
     {
         var path = FindVb6Protocol();
@@ -71,6 +107,10 @@ public class ProtocolParityTests
         var vb6 = ParseVb6Enum(File.ReadAllText(path), enumName);
         // VB6 value -> name
         var vb6ByValue = vb6.ToDictionary(kv => kv.Value, kv => kv.Key);
+        // Las extensiones NUESTRAS se sacan de la comparación: por definición no están en el VB6. Que estén
+        // declaradas, y que no pisen el rango del original, lo verifica el test de arriba.
+        if (enumName == "ClientPacketID")
+            cs = cs.Where(kv => !ExtensionesPropias.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
 
         // Same number of members on both sides.
         Assert.True(vb6ByValue.Count == cs.Count,
@@ -120,7 +160,9 @@ public class ProtocolParityTests
     [Fact]
     public void ClientPacketId_snapshot_pins_ids()
     {
-        Assert.Equal(114, Enum.GetValues<ClientPacketId>().Length);
+        // 114 del VB6 (0..113) + las extensiones nuestras.
+        Assert.Equal(114 + ExtensionesPropias.Count, Enum.GetValues<ClientPacketId>().Length);
+        Assert.Equal(114, (int)ClientPacketId.BorrarPersonaje);   // el primero que es nuestro
         Assert.Equal(0, (int)ClientPacketId.Walk);
         Assert.Equal(17, (int)ClientPacketId.DropDestroy);
         Assert.Equal(20, (int)ClientPacketId.DoubleClick);

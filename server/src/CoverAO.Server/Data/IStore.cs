@@ -19,6 +19,11 @@ public interface IStore
     bool CharacterExists(string name);
     string? ReadCharacter(string name);
     void WriteCharacter(string name, string iniText);
+    /// <summary>APARTA el personaje en vez de borrarlo. Lo pide el borrado de personaje (1b): perder un
+    /// personaje es irreversible para el jugador, así que el archivo se mueve a un rincón —no se destruye— y
+    /// el nombre queda libre. Si algún día alguien se arrepiente, el `.chr` está. Devuelve false si no había
+    /// nada que apartar.</summary>
+    bool ArchivarCharacter(string name);
     /// <summary>Reads/writes a free-form blob by key (guild registry, world state, …).</summary>
     string? ReadMisc(string key);
     void WriteMisc(string key, string text);
@@ -90,6 +95,23 @@ public sealed class FileStore : IStore
     // (los handlers ya validan el nombre, pero esto impide que un nombre sin validar escriba fuera del dir).
     private string CharPath(string n) => Path.Combine(_charDir, Naming.SafeFileStem(n) + ".chr");
     private string AccountPath(string n) => Path.Combine(_accountDir, Naming.SafeFileStem(n) + ".cnt");
+
+    /// <summary>Los personajes borrados: `data/Charfile/Borrados/NOMBRE-<sello>.chr`. El sello es la fecha en
+    /// UTC, así que borrar dos veces el mismo nombre no pisa el archivo anterior.</summary>
+    public bool ArchivarCharacter(string n)
+    {
+        lock (_puerta)
+        {
+            string origen = CharPath(n);
+            if (!File.Exists(origen)) return false;
+            string dir = Path.Combine(_charDir, "Borrados");
+            Directory.CreateDirectory(dir);
+            string destino = Path.Combine(dir,
+                $"{Naming.SafeFileStem(n)}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.chr");
+            File.Move(origen, destino, overwrite: true);
+            return true;
+        }
+    }
 
     public bool AccountExists(string n) => File.Exists(AccountPath(n));
     public string? ReadAccount(string n) => File.Exists(AccountPath(n)) ? File.ReadAllText(AccountPath(n), Codec.Ansi) : null;
@@ -239,6 +261,23 @@ public sealed class SqliteStore : IStore, IDisposable
     public bool CharacterExists(string n) => Exists("characters", n);
     public string? ReadCharacter(string n) => Read("characters", n);
     public void WriteCharacter(string n, string t) => Write("characters", n, t);
+
+    /// <summary>Igual que en el almacén de archivos: se APARTA, no se destruye. Acá el rincón es una fila con
+    /// la clave prefijada, en la misma tabla — así el backup se lo lleva junto con todo lo demás.</summary>
+    public bool ArchivarCharacter(string n)
+    {
+        lock (_puerta)
+        {
+            string? contenido = Read("characters", n);
+            if (contenido is null) return false;
+            Write("characters", $"@borrado/{DateTime.UtcNow:yyyyMMdd-HHmmss}/{n}", contenido);
+            using var c = _conn.CreateCommand();
+            c.CommandText = "DELETE FROM characters WHERE name = $n";
+            c.Parameters.AddWithValue("$n", n.ToUpperInvariant());
+            c.ExecuteNonQuery();
+            return true;
+        }
+    }
     public string? ReadMisc(string k) => Read("misc", k);
     public void WriteMisc(string k, string t) => Write("misc", k, t);
 

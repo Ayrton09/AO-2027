@@ -387,6 +387,7 @@ public sealed class PacketDispatcher
             case ClientPacketId.Denounce: HandleDenounce(session, reader); break;
             case ClientPacketId.SeleccionarHogar: HandleSelectHome(session, reader); break;
             case ClientPacketId.DesconectarCuenta: HandleDesconectarCuenta(session, reader); break;
+            case ClientPacketId.BorrarPersonaje: HandleBorrarPersonaje(session, reader); break;
             case ClientPacketId.UpTime: HandleUpTime(session); break;
             case ClientPacketId.RegresarHogar: HandleRegresarHogar(session); break;
             case ClientPacketId.MoveSpell: HandleMoveSpell(session, reader); break;
@@ -584,6 +585,95 @@ public sealed class PacketDispatcher
     /// existe"). Lo que sí se conserva es el rate-limit por IP y el costo constante del hash, para que el
     /// TIEMPO de respuesta no diga por otro lado lo que el mensaje ya dice.</para>
     /// </summary>
+    /// <summary>BORRAR UN PERSONAJE (el 1b del informe). <b>No se porta de ningún lado</b>: el original no
+    /// tiene borrado —su `Tipo = 2` de `ProcesosLogin` contesta que no y no toca nada (Protocol.bas:15742)— así
+    /// que esto es protocolo NUEVO, el id 114, uno después del último del VB6.
+    ///
+    /// Cuatro reglas, y las cuatro existen para que un borrado no sea una desgracia:
+    /// <list type="number">
+    /// <item>Pide la CLAVE DE LA CUENTA. Es el mismo PBKDF2 del login, así que corre fuera del game loop —
+    ///   verificarla adentro congelaría el mundo unos 100 ms por intento.</item>
+    /// <item>El personaje tiene que ser DE ESA CUENTA. Sin esto, cualquiera con una cuenta propia borraría los
+    ///   personajes ajenos mandando el nombre.</item>
+    /// <item>No se borra un personaje CONECTADO: el mundo lo tiene en memoria y el autosave lo volvería a
+    ///   escribir un rato después, así que el borrado no habría servido de nada.</item>
+    /// <item>El `.chr` se APARTA, no se destruye (<c>ArchivarCharacter</c>). Perder un personaje es
+    ///   irreversible para quien lo jugó; que el archivo siga estando no le cuesta nada a nadie.</item>
+    /// </list>
+    /// Al terminar se manda la lista de personajes de nuevo, que es lo que refresca la pantalla de selección.</summary>
+    private void HandleBorrarPersonaje(ClientSession session, ByteQueueReader r)
+    {
+        string cuenta = r.ReadAsciiString();
+        string clave = r.ReadAsciiString();
+        string personaje = r.ReadAsciiString();
+        _loop.Enqueue(() =>
+        {
+            if (LoginBlocked(session)) return;
+            // El nombre arma la ruta del archivo: se valida ANTES de tocar el disco (path traversal).
+            if (!Naming.IsValidName(cuenta) || !Naming.IsValidName(personaje))
+            { LoginFail(session); session.Send(ServerMessages.SendMsgBox(ErrCuentaNoExiste, 1)); return; }
+            // Conectado: no se borra. Se mira en el mundo, que es la autoridad de quién está adentro.
+            if (_world.PlayerByName(personaje) is not null)
+            { session.Send(ServerMessages.SendMsgBox("Ese personaje está conectado. Salí del juego y volvé a intentarlo.", 1)); return; }
+            BorrarPersonajeFueraDelLoop(session, cuenta, clave, personaje);
+        });
+    }
+
+    /// <summary>La parte cara del borrado: verificar la clave es un PBKDF2. Mismo patrón que el cambio de
+    /// clave — una operación en vuelo por conexión y el veredicto vuelve por el loop.</summary>
+    private void BorrarPersonajeFueraDelLoop(ClientSession session, string cuenta, string clave, string personaje)
+    {
+        if (session.Cerrada) return;
+        if (!session.TomarVerificacion())
+        { _loop.Enqueue(() => BorrarPersonajeFueraDelLoop(session, cuenta, clave, personaje)); return; }
+        Task.Run(() =>
+        {
+            Data.Account? acc = null;
+            bool claveOk = false, eraSuyo = false, borrado = false;
+            var roster = new List<CharacterSummary>();
+            try
+            {
+                acc = _db.LoadAccount(cuenta);
+                if (acc is null) PasswordHasher.DummyVerify(clave);
+                else
+                {
+                    claveOk = acc.VerifyPassword(clave);
+                    eraSuyo = acc.Characters.Any(n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase));
+                    if (claveOk && eraSuyo)
+                    {
+                        borrado = _db.ArchivarCharacter(personaje);
+                        acc.Characters.RemoveAll(n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase));
+                        _db.SaveAccount(acc);
+                    }
+                    if (claveOk)
+                        foreach (var n in acc.Characters)
+                            if (_db.LoadSummary(n) is { } s) roster.Add(s);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[{session.RemoteEndpoint}] borrar personaje: {ex.Message}");
+            }
+            _loop.Enqueue(() =>
+            {
+                session.SoltarVerificacion();
+                if (session.Cerrada) return;
+                if (acc is null || !claveOk)
+                {
+                    LoginFail(session);
+                    session.Send(ServerMessages.SendMsgBox(acc is null ? ErrCuentaNoExiste : ErrClaveIncorrecta, 1));
+                    return;
+                }
+                LoginOk(session);
+                if (!eraSuyo)
+                { session.Send(ServerMessages.SendMsgBox("Ese personaje no es de esta cuenta.", 1)); return; }
+                Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
+                session.Send(ServerMessages.AddPj(cuenta, roster));   // la pantalla de seleccion, ya sin el
+                session.Send(ServerMessages.SendMsgBox($"{personaje} fue borrado.", 1));
+            });
+        });
+    }
+
     private void HandleProcesosLogin(ClientSession session, ByteQueueReader r)
     {
         string account = r.ReadAsciiString();
