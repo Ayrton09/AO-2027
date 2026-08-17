@@ -54,6 +54,18 @@ public static class TestFixture
         // gate de blocking contra una pared INTERIOR (el borde del mapa quedaría lejos, a y=7). No es arena.
         gameData.AddBlocked(FixtureMap, 50, 45);
 
+        // CIUDAD DE COMERCIO: el mapa 15 real es "Desierto Rinkel" y trae battle_mode 0, y con ese número los
+        // mercaderes del fixture no le venderían a NADIE — la regla del original es que sólo se comercia en los
+        // mapas battle_mode 2 y 3 (ver Player.MercaderMeAtiende). Sin esto, los flows de comercio medirían el
+        // rechazo en vez del comercio.
+        //
+        // Y se elige el 2 (el de Lindos) y no el 3 A PROPÓSITO, porque los dos umbrales del original NO son el
+        // mismo: en battle_mode 2 el mercader atiende a los imperiales y republicanos —o sea a todo personaje
+        // recién creado, que es lo que usan los flows— pero le sigue cerrando la puerta al CAOS y al renegado.
+        // Como el fixture tiene un enlistador de la Legión del Caos en (60,47), eso deja el rechazo alcanzable
+        // desde un flow: enlistarse y volver al mercader. Con el 3 no habría forma de ejercerlo sin salir del mapa.
+        gameData.SetMapBattleMode(FixtureMap, 2);
+
         // YUNQUE del fixture (obj 384, otYunque) en (44,49): un tile sin tránsito, lejos de la fila de servicios
         // (y=47, ocupada de x=34 a 62 en pares), de la de criaturas (y=53) y de la columna del spawn. Hace falta
         // un yunque REAL en el suelo para ejercer el `Accion` del original: doble clic con el MARTILLO puesto

@@ -597,6 +597,19 @@ public sealed class GameData
     public string MapName(int map) => _mapName.GetValueOrDefault(map, "");
     private readonly Dictionary<int, string> _mapName = new();
 
+    /// <summary>El <c>battle_mode</c> crudo del header <c>tMapDat</c> (VB6 <c>MapInfo(map).battle_mode</c>,
+    /// FileIO.bas:1412). Hasta ahora sólo se usaba DERIVADO —el flag Pk es <c>battle_mode == 0</c>— y el número
+    /// en sí se tiraba, pero hay un gate que lo lee tal cual: el mercader que no le vende a los de una facción
+    /// fuera de su territorio (Protocol.bas:5205 y Acciones.bas:182), donde 2 y 3 son los valores que habilitan.
+    ///
+    /// <para>El reparto del install: 0 = el campo (782 mapas), 1 = las ciudades viejas (Ullathorpe, Nix,
+    /// Banderbill, Arghâl…), 2 = Lindos (12), 3 = Rinkel / Nueva Esperanza / el Dungeon de Newbies (43), 4 = 7
+    /// mapas sueltos. O sea que en este fork el comercio vive en Rinkel y Lindos y las ciudades clásicas
+    /// quedaron cerradas — medido contra el oráculo vivo, no deducido.</para></summary>
+    public int MapBattleMode(int map) => _mapBattleMode.GetValueOrDefault(map, 0);
+    public void SetMapBattleMode(int map, int modo) => _mapBattleMode[map] = modo;
+    private readonly Dictionary<int, int> _mapBattleMode = new();
+
     /// <summary>Terreno del mapa (VB6 MapInfo(map).Terreno: "BOSQUE"/"NIEVE"/"DESIERTO"…). El transcode NO
     /// extrajo este campo del header de los .csm, así que arranca en "BOSQUE" para todos y sólo lo mueve
     /// /MODMAPINFO TERRENO. Su único consumidor en el original es el daño por frío en los mapas de nieve
@@ -626,6 +639,10 @@ public sealed class GameData
             // del casamiento, que el original manda a TODO el servidor con "mapa%novio%novia" (Trabajo.bas:32).
             if (m.Value.TryGetProperty("name", out var nom) && nom.ValueKind == JsonValueKind.String)
                 data._mapName[map] = nom.GetString() ?? "";
+            // El battle_mode CRUDO: el `pk` de arriba ya es su derivado, pero el gate del comercio por facción
+            // compara contra el 2 y el 3, que desde `pk` no se distinguen (los dos son "no Pk"). Ver MapBattleMode.
+            if (m.Value.TryGetProperty("battleMode", out var bm) && bm.TryGetInt32(out int modo))
+                data._mapBattleMode[map] = modo;
         }
     }
 

@@ -88,7 +88,37 @@ public sealed class Player
     public bool IsArmada => FactionStatus == StatusArmada;
     public bool IsMilicia => FactionStatus == StatusMilicia;          // VB6 esMili
     public bool IsCaos => FactionStatus == StatusCaos;
+    public bool IsRenegado => FactionStatus == StatusCriminal;        // VB6 esRene
     public bool IsEnlisted => IsArmada || IsMilicia || IsCaos;
+
+    /// <summary>¿El mercader de este mapa me atiende? (VB6 Protocol.bas:5203-5220, repetido igual en
+    /// Acciones.bas:180-197). Es el gate del <c>ChatOverHeadLocale(592, 4)</c>: "¡Largo de aquí!, no tengo
+    /// ningún interés en comerciar con enemigos".
+    ///
+    /// <para>Los tres <c>If</c> del original, tal cual:</para>
+    /// <code>
+    /// (esCiuda Or esArmada) And battle_mode &lt;&gt; 2 And battle_mode &lt;&gt; 3  -> rechaza
+    /// (esRepu  Or esMili)   And battle_mode &lt;&gt; 2 And battle_mode &lt;&gt; 3  -> rechaza
+    /// (esRene  Or esCaos)   And battle_mode &lt;&gt; 3                            -> rechaza
+    /// </code>
+    ///
+    /// <para>Y como TODO personaje nace con status (2 ciudadano, o 3 republicano si nace en Illiandor —
+    /// TCP.bas:497), en la práctica la regla dice que <b>el comercio sólo existe en los mapas battle_mode 2 y
+    /// 3</b>: Lindos, Rinkel, Nueva Esperanza y el Dungeon de Newbies. En Ullathorpe, que es battle_mode 1, el
+    /// mercader NO te vende. Suena a bug y no lo es: medido contra el oráculo vivo el 2026-08-19 —un ciudadano
+    /// recién nacido caminando del Dungeon de Newbies a Ullathorpe recibe el 592 del Carpintero, mientras que en
+    /// el propio dungeon (battle_mode 3) el mismo personaje compra sin problema.</para>
+    ///
+    /// <para>El único que se salva es el STAFF: el original envuelve los tres <c>If</c> en
+    /// <c>If .flags.Privilegios And PlayerType.User</c>, o sea que sólo gatea al jugador común. Eso lo decide el
+    /// llamador, que es quien tiene los privilegios a mano.</para></summary>
+    public bool MercaderMeAtiende(int battleMode)
+    {
+        if ((IsCitizen || IsArmada) && battleMode != 2 && battleMode != 3) return false;
+        if ((IsRepublicano || IsMilicia) && battleMode != 2 && battleMode != 3) return false;
+        if ((IsRenegado || IsCaos) && battleMode != 3) return false;
+        return true;
+    }
 
     /// <summary>Rango dentro del ejército (VB6 Faccion.Rango, 1..10; sube canjeando kills con el líder). 0 = sin facción.</summary>
     public byte FactionRank { get; set; }

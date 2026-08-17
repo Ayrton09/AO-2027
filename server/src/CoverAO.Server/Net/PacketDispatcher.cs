@@ -7077,13 +7077,32 @@ public sealed class PacketDispatcher
             }
             if (npc.IsReviver)                                              // sacerdote Revividor (VB6 Acciones.bas:304) — atiende ANTES del DeadCheck
             {
-                if (p.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{npc.Name}: aún no necesitas mis servicios.", FuenteInfo)); return; }
                 // MANHATTAN, no Chebyshev: `Distancia` (Matematicas.bas:43) suma los dos ejes. Con Chebyshev un
-                // sacerdote en (+10,+10) quedaba a 10 y para el original está a 20 (Acciones.bas:306).
+                // sacerdote en (+10,+10) quedaba a 10 y para el original está a 20 (Acciones.bas:306). Y va
+                // PRIMERO, antes de mirar si estás vivo: el original gatea la distancia y recién después parte.
                 if (DistanciaVB6(p.Pos, npc.Pos) > 10)
                 { session.Send(ServerMessages.LocaleMsg(8)); return; }      // VB6: distancia <= 10 (LocaleMsg 8 si lejos)
-                RevivePlayer(_world, _data, p);   // HP full + apariencia + LocaleMsg(90)
-                _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHead("¡Levántate y anda!", npc.CharIndex));  // la frase del sacerdote
+                if (!p.IsAlive)
+                {
+                    RevivePlayer(_world, _data, p);   // HP full + apariencia + LocaleMsg(90)
+                    // La frase del sacerdote NO es texto libre: el original manda `ChatOverHeadLocale(charIndex,
+                    // 11, 1)` (Acciones.bas:313), o sea el MODO 1, que el cliente resuelve como las palabras
+                    // mágicas del hechizo 11 — Resucitar. Acá iba un `ChatOverHead` con "¡Levántate y anda!"
+                    // escrito por nosotros: otro paquete y otro texto.
+                    _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, 11, 1));
+                    return;
+                }
+                // VIVO: el sacerdote CURA al que llega herido (Acciones.bas:316-325). Faltaba entero — acá
+                // salía un ConsoleMsg de "aún no necesitas mis servicios" que el original no manda, y el
+                // jugador se quedaba sin la curación. A HP lleno el original calla, y por eso acá también.
+                if (p.Hp >= p.MaxHp) return;
+                p.PoisonedUntilTick = 0;                                    // `.flags.Envenenado = 0`
+                p.Incinerado = false; p.IncineradoCounter = 0; p.IncineradoGolpes = 0;
+                p.Hp = p.MaxHp;
+                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndSanar, p.Pos.X, p.Pos.Y));
+                _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, 28, 100, false));
+                _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, 32, 1));  // palabras de Sanar
+                session.Send(ServerMessages.UpdateHP((short)p.Hp));
                 return;
             }
             if (DeadCheck(session, p)) return;   // un muerto sólo puede acudir al sacerdote (arriba); nada de comercio/banco/oficios
@@ -7097,7 +7116,9 @@ public sealed class PacketDispatcher
             { session.Send(ServerMessages.LocaleMsg(8)); return; }
             if (npc.FactionConvert != 0) { DoConvertir(session, p, npc); return; }   // Convertidor: da la ciudadanía
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
-            if (npc.IsMerchant) { OpenCommerce(session, p, npc); return; }  // double-click a merchant → trade window
+            // Doble clic a un mercader → la tienda, salvo que no te atienda por tu facción (Acciones.bas:180-197,
+            // el mismo bloque que el `CommerceStart`). Es el camino por el que el cliente web abre el comercio.
+            if (npc.IsMerchant) { if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
             if (npc.IsBanker) { OpenBank(session, p, npc); return; }        // double-click a banker → bank window
             // Sólo la lista: la rama Entrenador del original (Acciones.bas:271) manda `WriteTrainerCreatureList`
             // y nada más. Acá iba además un ConsoleMsg ("estas son las criaturas que puedo entrenar") que el VB6
@@ -9946,11 +9967,52 @@ public sealed class PacketDispatcher
             // "Ya estás comerciando" (Protocol.bas:5175). Faltaba: abrir la tienda dos veces reabría la
             // ventana en silencio en vez de avisar.
             if (p.TradingWith != 0) { session.Send(ServerMessages.LocaleMsg(387)); return; }
-            var (tx, ty) = Step(p.Pos.X, p.Pos.Y, p.Heading);
-            var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
-            if (npc is null || !npc.IsMerchant) return;   // VB6 HandleCommerceStart: sin TargetNPC, silencio
+            // EL MERCADER ES EL QUE CLICKEASTE, no el que tenés enfrente. El original abre la tienda contra
+            // `flags.TargetNPC` (Protocol.bas:5181) y por eso tolera hasta 3 baldosas; acá se resolvía por la
+            // baldosa ENCARADA, que además de exigir estar pegado y mirándolo salteaba los tres rechazos de
+            // abajo: sin un NPC targeteado el handler entero era inalcanzable. El cliente web ya manda el
+            // LeftClick antes del DoubleClick, así que el target está puesto igual que en el original.
+            if (p.TargetNpc < 1) return;                   // VB6: sin TargetNPC, silencio
+            var npc = _world.NpcByIndex(p.TargetNpc);
+            if (npc is null) return;
+            if (!npc.IsMerchant) { NoTengoInteresEnComerciar(session, npc, conDescripcion: true); return; }
+            if (DistanciaVB6(p.Pos, npc.Pos) > 3) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            if (!MercaderAtiende(session, p, npc)) return;
             OpenCommerce(session, p, npc);
         });
+    }
+
+    /// <summary>"Lo siento, no tengo ningún interés en comerciar" — el <c>ChatOverHeadLocale(594, 4)</c> con el
+    /// que el original contesta cuando le pedís comerciar a un NPC que no comercia (Protocol.bas:3427, :3541 y
+    /// :5187). Faltaba entero: acá esos tres caminos salían mudos.
+    ///
+    /// <para><paramref name="conDescripcion"/> es la guarda <c>If LenB(Npclist(...).desc) &lt;&gt; 0</c> que el
+    /// original pone SÓLO en el camino de <c>CommerceStart</c>; en el de comprar y el de vender manda el paquete
+    /// sin mirar la descripción.</para>
+    ///
+    /// <para>Y OJO con lo que ve el jugador: el modo 4 resuelve el texto contra la tabla de NPCs
+    /// (<c>General_Locale_NPCs(id, 1)</c>) y el cliente original sólo desvía al texto de GUI cuando el id es
+    /// 592 — el 594 se va a buscar la descripción de la ficha 594, que es una "Gallina Salvaje" SIN descripción.
+    /// O sea que en el original este aviso <b>no se ve</b>: la frase existe, está en <c>locale_gui_es.ind</c>
+    /// línea 594, y el <c>Select Case</c> del cliente no la alcanza. Se porta el paquete, que es el contrato, y
+    /// el cliente web replica el mismo camino en vez de "arreglarle" el bug.</para></summary>
+    private static void NoTengoInteresEnComerciar(ClientSession session, Npc npc, bool conDescripcion)
+    {
+        if (conDescripcion && string.IsNullOrEmpty(npc.Template.Description)) return;
+        session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, 594, 4));
+    }
+
+    /// <summary>El gate de FACCIÓN del comercio (VB6 Protocol.bas:5203-5220 y Acciones.bas:180-197): si no te
+    /// atiende, manda el <c>ChatOverHeadLocale(592, 4)</c> —"¡Largo de aquí!, no tengo ningún interés en
+    /// comerciar con enemigos"— y devuelve false. La regla y su porqué están en
+    /// <see cref="Player.MercaderMeAtiende"/>; acá va la mitad que el original deja afuera del helper: sólo se
+    /// gatea al jugador común (<c>If .flags.Privilegios And PlayerType.User</c>), el staff comercia donde sea.</summary>
+    private bool MercaderAtiende(ClientSession session, Player p, Npc npc)
+    {
+        if ((p.Privileges & PrivUser) == 0) return true;              // GM: el original ni entra al bloque
+        if (p.MercaderMeAtiende(_data.MapBattleMode(p.Pos.Map))) return true;
+        session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, 592, 4));
+        return false;
     }
 
     /// <summary>Opens a merchant's trade window: CommerceInit + one ChangeNpcInventorySlot per stock item.</summary>
@@ -9991,11 +10053,15 @@ public sealed class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            // EL ORDEN DE LOS GATES IMPORTA, y el oráculo lo cazó: el original (Protocol.bas:3421-3434) sale
-            // en SILENCIO si no hay NPC clickeado (`TargetNPC < 1`) y sólo DESPUÉS, con un mercader elegido,
-            // avisa "no estás comerciando" con el 388. Poner el 388 primero emite donde el original calla —que
-            // es tan infiel como no emitir— y el barrido en frío, donde nadie tiene target, lo destapa siempre.
+            // EL ORDEN DE LOS GATES IMPORTA, y el oráculo lo cazó: el original (Protocol.bas:3413-3434) mira
+            // primero si estás MUERTO, después sale en SILENCIO si no hay NPC clickeado (`TargetNPC < 1`),
+            // después le avisa al que le compra a quien no vende, y recién ahí dice "no estás comerciando" con
+            // el 388. Poner el 388 primero emite donde el original calla —que es tan infiel como no emitir— y
+            // el barrido en frío, donde nadie tiene target, lo destapa siempre.
+            if (DeadCheck(session, p)) return;
             if (p.TargetNpc < 1) return;
+            if (_world.NpcByIndex(p.TargetNpc) is { IsMerchant: false } mudo)
+            { NoTengoInteresEnComerciar(session, mudo, conDescripcion: false); return; }
             if (p.TradingWith == 0) { session.Send(ServerMessages.LocaleMsg(388)); return; }
             var npc = _world.NpcByIndex(p.TradingWith);
             if (npc?.Stock is null || slot < 1 || slot > npc.Stock.Count) return;
@@ -10031,7 +10097,14 @@ public sealed class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || p.TradingWith == 0 || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
+            if (p is null) return;
+            // La MISMA cadena de gates que la compra, y por el mismo motivo (VB6 Protocol.bas:3529-3545):
+            // muerto -> 77, sin NPC clickeado -> silencio, NPC que no comercia -> el 594 sobre su cabeza.
+            if (DeadCheck(session, p)) return;
+            if (p.TargetNpc < 1) return;
+            if (_world.NpcByIndex(p.TargetNpc) is { IsMerchant: false } mudo)
+            { NoTengoInteresEnComerciar(session, mudo, conDescripcion: false); return; }
+            if (p.TradingWith == 0 || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
 

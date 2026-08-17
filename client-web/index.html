@@ -1127,6 +1127,10 @@
     // Tabla de NPCs por NÚMERO de ficha (locale_npc_es.ind → fase0/transcode/decode_npc_locale.py):
     // {numero: {n: nombre, h: hostil}}. El server manda el número, no el nombre — igual que el original.
     let npcsIdx = null; fetch('./assets/npcs.json').then((r) => r.json()).then((n) => { npcsIdx = n; draw(); });
+    // La ÚNICA frase de `locale_gui_es.ind` que viaja por ChatOverHeadLocale: la línea 592, con la que el
+    // mercader echa al de una facción que no es de su territorio. El original la desvía a mano dentro del modo 4
+    // (Cliente/Codigo/Protocol.bas:1367) porque todos los demás ids de ese modo son números de ficha de NPC.
+    const FRASE_GUI_592 = '¡Largo de aquí!, no tengo ningún interés en comerciar con enemigos';
     // Colores del MINIMAPA, uno por GrhIndex (fase0/transcode/decode_minimap.py ← minimap.dat del original).
     // Uint32Array de 0xRRGGBB indexado directo por Grh; 130 KB de binario que no hay que parsear.
     let miniColor = null;
@@ -1870,13 +1874,9 @@
         }
       });
     window.__mepos = () => { const c = chars.get(myCharIndex); return c ? [c.x, c.y] : null; };  // debug helper
-    // Los personajes que el cliente tiene EN PANTALLA, con lo que le llegó de cada uno. Es la sonda que hacía
-    // falta para contestar "¿esto que el servidor manda, llega y se dibuja?" sin mirar una captura — que ya me
-    // engañó una vez. Devuelve una copia: nadie de afuera toca el estado del render.
-    window.__chars = () => [...chars.entries()].map(([i, c]) => ({
-      i, x: c.x, y: c.y, nombre: c.name ?? null, esNpc: !!c.esNpc,
-      body: c.body, head: c.head, weapon: c.weapon, shield: c.shield, helmet: c.helmet,
-    }));
+    // (Acá vivía una SEGUNDA definición de `window.__chars`, más pobre y con otros nombres de campo — `i` y
+    // `nombre` en vez de `ci` y `name`. La de más abajo la pisaba, así que nadie la ejecutaba nunca: las
+    // sondas que buscan `c.me` estaban usando la otra. Se borró; la buena está unas líneas más adelante.)
     // Estado del desvanecido de techos: alpha actual, si el tile pisado es de interior, y cuántos tiles de
     // interior trae el mapa. Sin esto no hay forma de comprobar el fade desde afuera (es una variable local
     // del render), y el fade es justamente lo que se acaba de portar.
@@ -1907,7 +1907,11 @@
     window.__dclick = (x, y) => { send(W().writeByte(CLIENT.LeftClick).writeByte(x).writeByte(y));
       ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.DoubleClick).writeByte(x).writeByte(y).toBytes(), myKey)); };
     window.__hb = () => hotbar; window.__hbBind = (b) => bindHotbar(b); window.__hbFire = (i) => fireHotbar(i);  // debug: estado/atar/disparar la hotbar
-    window.__chars = () => [...chars.entries()].map(([ci, c]) => ({ ci, me: ci === myCharIndex, name: c.name, body: c.body, head: c.head, weapon: c.weapon, shield: c.shield, helmet: c.helmet, x: c.x, y: c.y, particle: c.particle ? c.particle.id : null, invisible: !!c.invisible, status: c.status, esNpc: !!c.esNpc, hostil: !!c.hostil }));
+    // Los personajes que el cliente tiene EN PANTALLA, con lo que le llegó de cada uno: la sonda para
+    // contestar "¿esto que el servidor manda, llega y se dibuja?" sin mirar una captura. `chat` es el cartel
+    // VIGENTE sobre la cabeza (los cuatro modos de ChatOverHeadLocale y el chat común), que si no es una
+    // variable del render y desde afuera no se ve.
+    window.__chars = () => [...chars.entries()].map(([ci, c]) => ({ ci, me: ci === myCharIndex, name: c.name, body: c.body, head: c.head, weapon: c.weapon, shield: c.shield, helmet: c.helmet, x: c.x, y: c.y, particle: c.particle ? c.particle.id : null, invisible: !!c.invisible, status: c.status, esNpc: !!c.esNpc, hostil: !!c.hostil, chat: c.chatAt ? (c.chatText ?? null) : null }));
     window.__blind = () => blind;   // debug: estado de ceguera (Blind/BlindNoMore)
     window.__puntero = () => [punteroX, punteroY];   // debug: tile bajo el mouse (regla de nombres de NPC)
     // Historial de los ultimos paquetes decodificados. Permite verificar el cliente sin mirar pixeles:
@@ -2914,7 +2918,7 @@
         // y tiraba los otros tres. El original los reparte así (Cliente/Codigo/Protocol.bas:1304-1380):
         //   1 = PALABRAS MÁGICAS: el conjuro del hechizo, como un diálogo, en verde oliva RGB(128,128,0).
         //   2 = DAÑO (rojo) y 3 = CURA (azul): el número flotante, con el charIndex DEL LANZADOR.
-        //   4 = diálogo de un NPC (blanco). Todavía no: pide la descripción de la ficha, que `npcs.json` no trae.
+        //   4 = diálogo de un NPC (blanco): el número de ficha, que se resuelve contra `npcs.json`.
         // Los modos 2 y 3 comparten formato: `id > 150` sale como "¡N!" y `id <= 0` es un FALLO — y ahí el texto
         // depende de quién falló ("*Fallas*" si sos vos, "*Falla*" si es otro). Nada de esto salía: la cura no
         // mostraba el número, el fallo no se veía y el golpe fuerte no se distinguía del flojo.
@@ -2933,7 +2937,14 @@
             // cliente lo resuelve contra npcs.json — el campo `d`, que traen 139 de las 627 fichas. El original
             // lo pinta en BLANCO y antes borra los diálogos de los otros NPCs del área (RemoveDialogsNPCArea),
             // así que no se apilan tres criaturas hablando a la vez.
-            const dicho = npcsIdx && npcsIdx[f.index] && npcsIdx[f.index].d;
+            //
+            // Con UNA excepción, que el original tiene escrita a mano (Protocol.bas:1367): el id 592 no es una
+            // ficha sino una frase de la GUI, la del mercader que no le vende a los de una facción fuera de su
+            // territorio. El 594 —"Lo siento, no tengo ningún interés en comerciar"— es la MISMA idea y el
+            // original se olvidó de desviarlo: se va a buscar la descripción de la ficha 594, que es una
+            // "Gallina Salvaje" sin descripción, así que en el juego original ese aviso no se ve. Se replica.
+            const dicho = f.index === 592 ? FRASE_GUI_592
+                                          : (npcsIdx && npcsIdx[f.index] && npcsIdx[f.index].d);
             if (dicho) {
               for (const otro of chars.values()) if (otro.esNpc && otro !== c) otro.chatAt = 0;
               c.chatText = dicho; c.chatColor = '#ffffff'; c.chatAt = Date.now();
