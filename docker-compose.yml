@@ -33,6 +33,13 @@ services:
       - COVERAO_INIT_MAXUSERS=200
       - COVERAO_INIT_EXP=100          # 100 = x1 (es un porcentaje, como en el Server.ini original)
       - COVERAO_INIT_ORO=100
+      # LAS REGLAS DE LA CASA. La imagen NO lleva Server.ini a proposito, asi que sin estas dos lineas un
+      # despliegue por Docker arranca con las tres APAGADAS —o sea como el VB6— mientras que el paquete .zip
+      # las trae prendidas: el mismo servidor jugaria distinto segun como lo levantes. Se vio corriendo la
+      # imagen, no leyendo el Dockerfile.
+      - COVERAO_INIT_CURAALSUBIRNIVEL=1     # subir de nivel cura del todo
+      - COVERAO_INIT_QUITAREQUIPONOVATO=1   # al dejar de ser novato desaparece SOLO el equipo de novato
+      # - COVERAO_INIT_OROALSUBIRNIVEL=500  # apagada por decision del autor
       # PARA SER GM hacen falta las dos: prender la lista y poner tu personaje en ella.
       # - COVERAO_INIT_DIOSES=1
       # - COVERAO_DIOSES_DIOS1=TuPersonaje
