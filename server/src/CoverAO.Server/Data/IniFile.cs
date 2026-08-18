@@ -118,9 +118,17 @@ public sealed class IniFile
         return sb.ToString();
     }
 
+    /// <summary>El candado de las escrituras del ini. Al <c>Server.ini</c> lo reescriben DOS hilos: el del
+    /// game loop (<c>/SETINIVAR</c>) y el HTTP del panel (cambiarle el rango a alguien), y los dos hacen
+    /// leer-modificar-guardar sobre el mismo archivo. Sin esto, dos cambios a la vez se pisan.</summary>
+    internal static readonly object PuertaDeEscritura = new();
+
+    /// <summary>Guarda pasando por un temporal: este archivo decide QUIEN ES STAFF, los puertos y las reglas
+    /// de la casa, y con <c>File.WriteAllText</c> derecho quedaba en CERO bytes mientras se reescribia — un
+    /// corte ahi devolvia el servidor sin un solo GM. Esta medido en <see cref="EscrituraAtomica"/>.</summary>
     public void Save(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        File.WriteAllText(path, ToText(), Codec.Ansi);
+        lock (PuertaDeEscritura) EscrituraAtomica.Escribir(path, ToText(), Codec.Ansi);
     }
 }

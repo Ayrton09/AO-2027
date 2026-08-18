@@ -79,12 +79,10 @@ public sealed class FileStore : IStore
 
     private void EscribirAtomico(string destino, string texto, System.Text.Encoding enc)
     {
-        lock (_puerta)
-        {
-            string tmp = destino + ".tmp";
-            File.WriteAllText(tmp, texto, enc);
-            File.Move(tmp, destino, overwrite: true);
-        }
+        // La FORMA de la escritura (temporal + rename + reintento) vive en EscrituraAtomica, que la comparte
+        // con el Server.ini y con la lista de baneados. El CANDADO se queda ACA: es el que excluye al backup
+        // mientras copia, y moverlo afuera cambiaria esa exclusion sin que se note.
+        lock (_puerta) EscrituraAtomica.Escribir(destino, texto, enc);
     }
 
     private string MiscPath(string k) => Path.Combine(_miscDir, k.ToUpperInvariant() + ".json");

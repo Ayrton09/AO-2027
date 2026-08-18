@@ -181,7 +181,9 @@ admin.PersistBannedIps = () =>
     {
         var dir = Path.GetDirectoryName(bannedIpsPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllLines(bannedIpsPath, admin.BannedIpList());
+        CoverAO.Server.Data.EscrituraAtomica.Escribir(bannedIpsPath,
+            string.Concat(admin.BannedIpList().Select(l => l + Environment.NewLine)),
+            System.Text.Encoding.UTF8);
     }
     catch (Exception ex) { Console.Error.WriteLine($"No se pudo guardar {bannedIpsPath}: {ex.Message}"); }
 };

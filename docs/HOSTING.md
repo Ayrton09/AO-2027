@@ -134,6 +134,19 @@ Antes de cada copia se guarda a los conectados. También hay un botón en el pan
 **Copiando la carpeta `data/` se reconstruye el servidor completo en otra máquina.** Es lo único que no se
 puede volver a generar.
 
+### No dejes `data/` adentro de una carpeta que sincroniza sola
+
+En Windows, un `.chr` **abierto por otro programa** no se puede reemplazar: el guardado de ese jugador falla, y
+el que hostea lo ve como alguien a quien "se le borró lo de la última media hora", cada tanto y sin patrón. Los
+sospechosos de siempre son OneDrive o Dropbox sincronizando `Documentos`, el antivirus escaneando al vuelo y el
+agente de backup del hosting.
+
+Está medido: con un solo proceso pidiéndole el **tamaño** a los diez `.chr` de prueba —ni siquiera leyéndolos—
+se perdieron 181 de 10.620 escrituras. El servidor ahora reintenta y eso baja a 0, pero el reintento tiene 31
+ms de presupuesto a propósito (esperar más congelaría el mundo para todos). Si el programa que molesta se queda
+el archivo más tiempo, el guardado se pierde igual — y entonces sí lo vas a ver en la consola, con el nombre
+del archivo. La forma barata de no tener el problema es tener el servidor **fuera** de la carpeta sincronizada.
+
 ### Volver atrás con un backup
 
 Un backup que nunca se restauró no es un backup. Esto es todo lo que hay que hacer, y conviene probarlo **una

@@ -504,7 +504,11 @@ public sealed class AdminServer
         {
             var dir = Path.GetDirectoryName(_bannedIpsPath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);   // el data/ puede no existir aún (server fresco sin logins)
-            File.WriteAllLines(_bannedIpsPath, _admin.BannedIpList());
+            // Atomico igual que el resto: la lista de baneados tambien quedaba en cero mientras se
+            // reescribia, y un corte ahi le devuelve la entrada a todos los que el host habia echado.
+            Data.EscrituraAtomica.Escribir(_bannedIpsPath,
+                string.Concat(_admin.BannedIpList().Select(l => l + Environment.NewLine)),
+                System.Text.Encoding.UTF8);
         }
         catch (Exception ex) { Console.Error.WriteLine($"[admin] no se pudo guardar {_bannedIpsPath}: {ex.Message}"); }
     }
