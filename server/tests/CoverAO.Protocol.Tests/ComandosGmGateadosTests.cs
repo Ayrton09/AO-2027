@@ -114,6 +114,16 @@ public class ComandosGmGateadosTests
         { "GmCreateItem", "IsDios",   "Protocol.bas:9885 — If .flags.Privilegios And PlayerType.Dios" },
         { "GmDonador",    "IsDios",   "Protocol.bas:16116 — sólo Dios" },
         { "GmDarpun",     "IsAltoGm", "Protocol.bas:16564 — Dios/Admin/RoleMaster, bloquea SemiDios" },
+        // Los seis del barrido de tiers del 2026-08-18. El original los reserva a Admin/Dios/SemiDios y deja
+        // AFUERA a Consejero y RoleMaster; este port los tenía con el gate genérico. Dos de ellos lo escriben
+        // al revés —`(Not Privilegios And RoleMaster) <> 0 And (Privilegios And (Admin Or Dios Or SemiDios))`—
+        // que da el mismo conjunto: por eso los seis terminan en el mismo helper.
+        { "GmSummon",     "IsSemiDiosOrHigher", "Protocol.bas:8320" },
+        { "GmCharInfo",   "IsSemiDiosOrHigher", "Protocol.bas:8794" },
+        { "GmRevive",     "IsSemiDiosOrHigher", "Protocol.bas:8290" },
+        { "GmIpToNick",   "IsSemiDiosOrHigher", "Protocol.bas:9001" },
+        { "GmNickToIp",   "IsSemiDiosOrHigher", "Protocol.bas:8899" },
+        { "GmBan",        "IsSemiDiosOrHigher", "Protocol.bas:8617" },
     };
 
     [Theory]

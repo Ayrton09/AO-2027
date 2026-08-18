@@ -3012,7 +3012,7 @@ public sealed class PacketDispatcher
     private void GmCharInfo(ClientSession session, string name)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8794: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         // /INFO también sobre un personaje OFFLINE (VB6 HandleRequestCharInfo lee su .chr): sólo lectura.
         var t = _world.PlayerByName(name) ?? (_db.CharacterExists(name) ? _db.LoadCharacter(name, 0, "") : null);
         if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {name}", FuenteInfo)); return; }
@@ -3197,7 +3197,7 @@ public sealed class PacketDispatcher
     private void GmBan(ClientSession session, string nick, bool ban)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8617: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         nick = nick.Replace('+', ' ').Trim();
         if (string.IsNullOrWhiteSpace(nick)) return;
 
@@ -3818,7 +3818,7 @@ public sealed class PacketDispatcher
     private void GmNickToIp(ClientSession session, string nick)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8899: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         var t = _world.PlayerByName(nick.Replace('+', ' ').Trim());
         if (t is null) { session.Send(ServerMessages.LocaleMsg(80)); return; }
         string ip = IpOfPlayer(t);
@@ -3832,7 +3832,7 @@ public sealed class PacketDispatcher
     private void GmIpToNick(ClientSession session, string ip)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:9001: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         session.Send(ServerMessages.ConsoleMsg($"Los personajes con ip {ip} son: {PlayersFromIp(ip)}", 3));
         Console.WriteLine($"[{session.RemoteEndpoint}] /IP2NICK {p!.Name} -> {ip}");
     }
@@ -3994,7 +3994,7 @@ public sealed class PacketDispatcher
     private void GmSummon(ClientSession session, string name)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8320: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         var t = _world.PlayerByName(name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
         // Y el tercero: traer a alguien de otro mapa sin ChangeMap lo dejaba viendo el mapa del que vino.
@@ -4006,7 +4006,7 @@ public sealed class PacketDispatcher
     private void GmRevive(ClientSession session, string name)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8290: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         var t = _world.PlayerByName(name) ?? (string.IsNullOrWhiteSpace(name) ? p : null);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
         // `RevivePlayer` y no `Hp = MaxHp` a secas: acá se subían los puntos de vida y nada más, así que el
