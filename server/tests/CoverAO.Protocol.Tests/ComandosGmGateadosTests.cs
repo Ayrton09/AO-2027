@@ -124,6 +124,11 @@ public class ComandosGmGateadosTests
         { "GmIpToNick",   "IsSemiDiosOrHigher", "Protocol.bas:9001" },
         { "GmNickToIp",   "IsSemiDiosOrHigher", "Protocol.bas:8899" },
         { "GmBan",        "IsSemiDiosOrHigher", "Protocol.bas:8617" },
+        // Un solo handler nuestro atiende /INV, /BOV y /SKILLS; los tres del VB6 piden lo mismo.
+        { "GmInspect",    "IsSemiDiosOrHigher", "Protocol.bas:8078/8143/8208" },
+        // /MOD no tiene helper porque su conjunto (Admin|Dios) no coincide con ninguno: se escribe
+        // como mascara, igual que /DESCONECTARCUENTA.
+        { "GmEditChar",   "PrivAdmin | PrivDios", "Protocol.bas:7577, el ElseIf (la rama RM es codigo muerto)" },
     };
 
     [Theory]

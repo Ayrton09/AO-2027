@@ -3045,7 +3045,16 @@ public sealed class PacketDispatcher
         const int MaxOroEdit = 5_000_000;      // VB6 MAX_ORO_EDIT
         const long MaxExpEdit = 20_000_000;    // VB6: If val(arg1) > 20000000 Then arg1 = 20000000
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        // GATE POR TIER. El original tiene DOS caminos (Protocol.bas:7577): si sos RoleMaster, un
+        // `Select Case` te da opciones distintas segun el segundo bit que lleves (RM+Consejero edita solo su
+        // head/body/level, RM+SemiDios el head/body de cualquiera, RM+Dios ademas clase/skills/oro); y si no
+        // sos RM, el `ElseIf` pide Admin o Dios y te da acceso TOTAL.
+        //
+        // La rama de RoleMaster es CODIGO MUERTO en esta data: la lista de RolesMasters del Server.ini esta
+        // vacia y el rango no se alcanza nunca (ver GAPS-CODIGO-MUERTO.md §1). Asi que lo unico vivo es el
+        // ElseIf, y eso es lo que se porta. Antes esto pedia solo "ser GM", o sea que un Consejero podia
+        // editarle la clase, las skills y el oro a cualquiera.
+        if (p is null || (p.Privileges & (PrivAdmin | PrivDios)) == 0) return;   // gate silencioso
         nick = nick.Replace('+', ' ');
         // "YO" = el propio GM; si no, el jugador online, o —VB6: "todos los comandos aunque el pj esté offline"—
         // su .chr cargado del store. La mutación corre igual sobre el Player offline y SaveCharacter lo persiste;
@@ -3895,7 +3904,8 @@ public sealed class PacketDispatcher
     private void GmInspect(ClientSession session, string nick, GmInspectKind kind)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsSemiDiosOrHigher(p)) return;   // VB6 :8078/8143/8208: los tres piden Admin/Dios/SemiDios,
+                                              // no un GM cualquiera — un Consejero no le ve la bóveda a nadie
         const byte Font = FuenteInfo;   // los tres helpers del original contestan con FONTTYPE_INFO
 
         nick = nick.Replace('+', ' ').Trim();
