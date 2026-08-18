@@ -95,4 +95,39 @@ public class ComandosGmGateadosTests
         throw new FileNotFoundException(
             $"no encontre '{relativo}' subiendo desde {AppContext.BaseDirectory}: sin el fuente el barrido no prueba nada.");
     }
+    /// <summary>
+    /// LOS QUE EL ORIGINAL GATEA POR TIER, no por "es GM".
+    ///
+    /// <para>El test de arriba exige que cada handler tenga ALGÚN gate; éste exige que tres de ellos tengan
+    /// el que corresponde. La diferencia importa: <c>RequireGm</c> deja pasar a cualquiera de los cuatro
+    /// tiers de staff, y estos tres comandos —crear items de la nada, y acuñar créditos de donador, que es
+    /// la moneda equivalente a dinero real— el original los reserva a los tiers altos.</para>
+    ///
+    /// <para>Por qué no se ve solo: en el install del original <b>sólo la lista de Dios está poblada</b>
+    /// (GAPS-CODIGO-MUERTO.md §1), así que ahí "es GM" y "es Dios" coinciden y aflojar el gate no cambia
+    /// nada. Pero el <c>Server.ini</c> de este port acepta las cinco listas, así que un host que poblara
+    /// <c>SemiDioses</c> le daría a un tier medio un poder que el VB6 le niega. Ya pasó con <c>/DONADOR</c> y
+    /// <c>/DARPUN</c>, y lo destapó una revisión adversarial; <c>/CI</c> se corrigió el 2026-08-17.</para>
+    /// </summary>
+    public static TheoryData<string, string, string> GatesEstrictos => new()
+    {
+        { "GmCreateItem", "IsDios",   "Protocol.bas:9885 — If .flags.Privilegios And PlayerType.Dios" },
+        { "GmDonador",    "IsDios",   "Protocol.bas:16116 — sólo Dios" },
+        { "GmDarpun",     "IsAltoGm", "Protocol.bas:16564 — Dios/Admin/RoleMaster, bloquea SemiDios" },
+    };
+
+    [Theory]
+    [MemberData(nameof(GatesEstrictos))]
+    public void Los_gates_por_tier_no_se_aflojan_al_generico(string handler, string gate, string fuenteVb6)
+    {
+        string fuente = LeerFuente("server/src/CoverAO.Server/Net/PacketDispatcher.cs");
+        var m = Regex.Match(fuente, @"private\s+(?:static\s+)?(?:async\s+)?[\w<>?\[\], ]+\s+" + handler + @"\s*\(");
+        Assert.True(m.Success, $"no encontré el handler {handler}: el test dejó de medir");
+        string cuerpo = CuerpoDelMetodo(fuente, m.Index + m.Length);
+
+        Assert.True(cuerpo.Contains(gate),
+            $"{handler} tiene que gatear con {gate} ({fuenteVb6}), y no lo hace");
+        Assert.False(cuerpo.Contains("RequireGm"),
+            $"{handler} usa el gate GENÉRICO: deja pasar a un SemiDios donde el original exige {gate} ({fuenteVb6})");
+    }
 }

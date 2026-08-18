@@ -4743,7 +4743,12 @@
     // esta versión, y que además estaba CORRIDA: el índice viaja crudo al server, así que quien elegía
     // "Ullathorpe" fijaba Nix, y "Arkhein" lo mandaba al Dungeon Newbie. Se usa en el selector de hogar, que es
     // el que cambia adónde te lleva /HOGAR cuando morís.
-    const CIUDADES = ['Nix', 'Illiandor', 'Ullathorpe', 'Banderbill', 'Rinkel', 'Dungeon Newbie', 'Lindos', 'Arghal', 'Tiama', 'Orac', 'Suramei', 'Nueva'];
+    // Los nombres son los que el JUEGO usa, no las claves del enum. `cARGHAL` y `cNueva` son
+    // identificadores de `Declares.bas`; el contenido las llama «Arghâl» y «Nueva Esperanza» — los
+    // teleports del obj.dat dicen "Teleport a Arghâl", y el locale de NPCs trae al "Herrero Armas Nueva
+    // Esperanza" y al "PirataNuevaEsperanza". El tester las nombró así y tenía razón. El VALOR que se
+    // manda es el ÍNDICE, así que el rótulo se puede corregir sin tocar el protocolo.
+    const CIUDADES = ['Nix', 'Illiandor', 'Ullathorpe', 'Banderbill', 'Rinkel', 'Dungeon Newbie', 'Lindos', 'Arghâl', 'Tiama', 'Orac', 'Suramei', 'Nueva Esperanza'];
     // La TIERRA NATAL del nacimiento es otra cosa y son sólo DOS: el original carga el combo con NUMCIUDADES = 2
     // (Declares.bas:102) y el server corta en 2 "porque al nacimiento solo hay Nix o Illi" (TCP.bas:455). Elegir
     // acá no elige mapa —se nace en el Dungeon Newbie de todas formas— sino BANDO, y de eso salen la ciudadanía

@@ -3962,12 +3962,20 @@ public sealed class PacketDispatcher
     /// al inventario del propio GM. El original valida que el índice exista en ObjData y que tenga nombre
     /// (los huecos del .dat), y avisa con LocaleMsg 446 ("Has creado #1 (#2)"). Si no entra en el inventario
     /// no dice nada, igual que el VB6 (MeterItemEnInventario devuelve False y el mensaje queda adentro del If).
-    /// Nota: el VB6 exige rango Dios; acá alcanza con GM porque el slice todavía no modela los tiers.
+    /// GATE ESTRICTO POR TIER: el original pide el bit <b>Dios</b> (<c>If .flags.Privilegios And
+    /// PlayerType.Dios</c>, Protocol.bas:9885) y calla si no lo tenés — no el genérico "es GM".
+    ///
+    /// <para>Acá decía "alcanza con GM porque el slice todavía no modela los tiers", y esa nota envejeció:
+    /// el <c>Server.ini</c> de este port SÍ tiene las cinco listas, así que un host que poblara
+    /// <c>SemiDioses</c> o <c>Consejeros</c> le daba a un tier medio la capacidad de crear CUALQUIER objeto
+    /// de la nada. En el install del original eso no se notaba porque sólo la lista de Dios está poblada
+    /// (ver GAPS-CODIGO-MUERTO.md §1), pero el port no hereda esa limitación de la data. Es el mismo agujero
+    /// que la revisión adversarial ya había encontrado en <c>/DONADOR</c> y <c>/DARPUN</c>.</para>
     /// </summary>
     private void GmCreateItem(ClientSession session, short objIndex, short amount)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (!IsDios(p)) return;
         var obj = _data.Obj(objIndex);
         if (objIndex < 1 || obj is null || string.IsNullOrWhiteSpace(obj.Name))
         { session.Send(ServerMessages.ConsoleMsg($"No existe el objeto {objIndex}.", FuenteInfo)); return; }
