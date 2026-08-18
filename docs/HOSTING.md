@@ -11,8 +11,13 @@ Queda una carpeta autocontenida: no hace falta .NET instalado en la máquina des
 sobre la misma carpeta se conservan `data/` y `Server.ini`.
 
 Con `-Comprimir` deja además el archivo para publicar, con el formato que corresponde a cada plataforma:
-`.zip` para Windows, y `.tar.gz` para Linux **porque el zip no guarda el permiso de ejecución**. No hay que
-armarlo a mano.
+`.zip` para Windows y `.tar.gz` para Linux. No hay que armarlo a mano.
+
+> **Ojo con el permiso de ejecución.** Antes acá decía que el `.tar.gz` se usa *porque el zip no guarda el
+> permiso de ejecución*, y eso es media verdad: **armado desde Windows, el `.tar.gz` tampoco lo guarda**.
+> Medido sobre el paquete publicado, recién descomprimido en Ubuntu, tanto el binario como `servidor.sh`
+> salen `-rw-rw-rw-`. Lo que hace que igual arranque es el `chmod +x` que `servidor.sh` se hace a sí mismo
+> — y por eso el `bash` de adelante no es un detalle de estilo.
 
 ```powershell
 pwsh hosting/publish.ps1 -Comprimir -Version 1.0.0
