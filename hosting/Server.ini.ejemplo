@@ -125,20 +125,24 @@ MinutosDelDia=24
 MinutosDeClima=18
 PorcentajeLluvia=18
 
-; ── REGLAS DE LA CASA ────────────────────────────────────────────────────────────────────────────────
-; Tres cosas que el ORIGINAL NO HACE. Estan implementadas y probadas, y vienen APAGADAS: prenderlas cambia
-; el balance del juego, asi que es una decision de quien hostea y no del servidor. Con estos valores el
-; server se comporta exactamente como el CoverAO original.
+; -- REGLAS DE LA CASA --------------------------------------------------------------------------------
+; Tres cosas que el ORIGINAL NO HACE. El SERVIDOR las trae apagadas por defecto —si borras este archivo,
+; o si tu ini no las menciona, se comporta exactamente como el CoverAO original— y este archivo es donde
+; el autor de este fork decidio cuales quiere prendidas. Poner un 0 en cualquiera vuelve a lo del VB6.
 ;
 ; OroAlSubirNivel: oro de regalo por cada nivel que se sube. 0 = como el original (no regala nada).
 ;                  Tope 1000000; un negativo se lee como 0.
+;                  DECIDIDO: queda en 0 "por ahora" (2026-08-17).
 OroAlSubirNivel=0
 ; CuraAlSubirNivel: 1 = subir de nivel deja la vida, el mana y la energia al maximo. 0 = como el original,
 ;                   que sube los MAXIMOS y deja los minimos donde estaban (se sube de nivel herido).
-CuraAlSubirNivel=0
-; QuitarEquipoNovato: 1 = al pasar el nivel 15 desaparecen los objetos "(Newbies)" del inventario.
-;                     0 = como el original, que no los saca nunca.
-QuitarEquipoNovato=0
+;                   DECIDIDO: PRENDIDA (2026-08-17).
+CuraAlSubirNivel=1
+; QuitarEquipoNovato: 1 = al pasar el nivel 15 desaparecen los objetos "(Newbies)" del inventario, y SOLO
+;                     esos: lo que juntaste, compraste o fabricaste no se toca. Corre una sola vez, en la
+;                     subida que te saca del rango de novato. 0 = como el original, que no los saca nunca.
+;                     DECIDIDO: PRENDIDA (2026-08-17).
+QuitarEquipoNovato=1
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo

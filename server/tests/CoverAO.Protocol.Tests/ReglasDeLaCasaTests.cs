@@ -64,4 +64,36 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.Equal(0, Cargar("OroAlSubirNivel=-9999\r\n").OroAlSubirNivel);
         Assert.Equal(1_000_000, Cargar("OroAlSubirNivel=99999999\r\n").OroAlSubirNivel);
     }
+    /// <summary>Ubica un archivo del repo subiendo directorios desde donde corre el test (bin/…).</summary>
+    private static string BuscarEnElRepo(string relativo)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var cand = Path.Combine(dir.FullName, relativo);
+            if (File.Exists(cand)) return cand;
+        }
+        throw new FileNotFoundException($"no encontré '{relativo}' subiendo desde {AppContext.BaseDirectory}");
+    }
+
+    /// <summary>
+    /// LO QUE ELIGIÓ EL AUTOR, fijado aparte del default del SERVIDOR.
+    ///
+    /// <para>Los tests de arriba fijan que el server, sin ini o con un ini que no las menciona, se comporte
+    /// como el VB6 — y eso no cambia. Este fija la otra mitad: qué trae el <c>Server.ini</c> que se
+    /// distribuye, que es lo que decide cómo se juega en un servidor recién instalado. El 2026-08-17 el autor
+    /// pidió curarse al subir y que el equipo de novato desaparezca al dejar de serlo, y dejar el oro
+    /// apagado.</para>
+    ///
+    /// <para>Existe porque las dos cosas se leen parecido y la de arriba dice "el default tiene que ser 0":
+    /// sin este test, alguien que viniera a "arreglar" la plantilla la devolvería a ceros creyendo que
+    /// corrige una infidelidad, y se llevaría puesta una decisión tomada.</para>
+    /// </summary>
+    [Fact]
+    public void El_ini_de_ejemplo_trae_lo_que_eligio_el_autor()
+    {
+        var cfg = ServerIni.Cargar(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo")));
+        Assert.True(cfg.CuraAlSubirNivel);        // pedido del tester 2.13, aprobado
+        Assert.True(cfg.QuitarEquipoNovato);      // 2.2b, y saca SÓLO los "(Newbies)"
+        Assert.Equal(0, cfg.OroAlSubirNivel);     // 2.12: "por ahora lo dejamos off"
+    }
 }
