@@ -39,6 +39,12 @@ services:
       # imagen, no leyendo el Dockerfile.
       - COVERAO_INIT_CURAALSUBIRNIVEL=1     # subir de nivel cura del todo
       - COVERAO_INIT_QUITAREQUIPONOVATO=1   # al dejar de ser novato desaparece SOLO el equipo de novato
+      # SER GM. Van las dos: el contador vive en [INIT] y el nombre en [Dioses], igual que en el archivo,
+      # y es el nombre del PERSONAJE, no el de la cuenta. Toma efecto al reiniciar el contenedor: sin
+      # Server.ini en disco el server no tiene donde escribir, asi que ni el panel ni /SETINIVAR pueden dar
+      # rangos aca -- si hace falta cambiarlos en caliente, monta tu propio archivo en /app/Server.ini.
+      # - COVERAO_INIT_DIOSES=1
+      # - COVERAO_DIOSES_DIOS1=NombreDeTuPersonaje
       # - COVERAO_INIT_OROALSUBIRNIVEL=500  # apagada por decision del autor
       # PARA SER GM hacen falta las dos: prender la lista y poner tu personaje en ella.
       # - COVERAO_INIT_DIOSES=1

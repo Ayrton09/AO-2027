@@ -238,10 +238,17 @@ public sealed class ServerIni
         return Recargar();
     }
 
+    /// <summary>El CONTADOR vive en <c>[INIT]</c>, no adentro de la sección. Es donde lo pone el formato del
+    /// original y —lo que importa— donde lo lee <see cref="Cargar"/> al arrancar. Acá se leía y se escribía
+    /// dentro de <c>[<paramref name="seccion"/>]</c>, así que el panel de administración escribía
+    /// <c>[Dioses] Dioses=1</c> y el arranque seguía viendo el <c>[INIT] Dioses=0</c>: ascender a alguien
+    /// desde el panel NO le daba el rango —ni en el momento, porque <see cref="Recargar"/> vuelve a pasar por
+    /// <see cref="Cargar"/>— y el panel igual contestaba "queda como Dios. Toma efecto en su próximo login".
+    /// Medido entrando con el personaje después de ascenderlo: seguía sin poder usar comandos de GM.</summary>
     private static List<string> LeerLista(IniFile ini, string seccion, string clave)
     {
         var salida = new List<string>();
-        int n = ini.GetInt(seccion, seccion, 0);
+        int n = ini.GetInt("INIT", seccion, 0);
         for (int i = 1; i <= n; i++)
         {
             string v = ini.GetString(seccion, clave + i, "").Trim();
@@ -255,10 +262,11 @@ public sealed class ServerIni
         // Se reescriben TODAS las claves viejas en blanco antes de poner las nuevas: si la lista se achica, las
         // sobrantes (`Dios5=PEPE` con el contador en 4) quedarían en el archivo y volverían al recargar si
         // alguien sube el contador a mano.
-        int viejo = ini.GetInt(seccion, seccion, 0);
+        int viejo = ini.GetInt("INIT", seccion, 0);
         for (int i = 1; i <= Math.Max(viejo, nombres.Count); i++)
             ini.Set(seccion, clave + i, i <= nombres.Count ? nombres[i - 1] : "");
-        ini.Set(seccion, seccion, nombres.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        // El contador va a [INIT], que es de donde lo lee el arranque (ver la nota de LeerLista).
+        ini.Set("INIT", seccion, nombres.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>
