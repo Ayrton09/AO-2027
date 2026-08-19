@@ -371,8 +371,15 @@ if ($Comprimir) {
   if ($Rid -like "linux*") {
     $arch = Join-Path $padre "CoverAO-$Version-$Rid.tar.gz"
     if (Test-Path $arch) { Remove-Item $arch -Force }
-    & tar -czf $arch -C $padre $nombre
-    if ($LASTEXITCODE -ne 0) { throw "tar fallo con $LASTEXITCODE" }
+    # EL tar DE WINDOWS, POR RUTA COMPLETA. `tar` a secas agarra el primero del PATH, y si la maquina tiene
+    # las herramientas de Git for Windows adelante gana el GNU tar, que lee `C:\...` como si fuera un host
+    # REMOTO: "tar (child): Cannot connect to C: resolve failed" y el .tar.gz no se arma. Paso de verdad al
+    # publicar la 1.0.1 desde una consola con el PATH de Git puesto -- o sea que armar el paquete dependia de
+    # DESDE DONDE se lo llamara. El bsdtar que trae Windows no tiene esa sintaxis y toma la ruta tal cual.
+    $tarExe = Join-Path $env:SystemRoot ("System32" + [char]92 + "tar.exe")
+    if (-not (Test-Path $tarExe)) { $tarExe = "tar" }
+    & $tarExe -czf $arch -C $padre $nombre
+    if ($LASTEXITCODE -ne 0) { throw "tar fallo con $LASTEXITCODE (con $tarExe)" }
   } else {
     $arch = Join-Path $padre "CoverAO-$Version-$Rid.zip"
     if (Test-Path $arch) { Remove-Item $arch -Force }
