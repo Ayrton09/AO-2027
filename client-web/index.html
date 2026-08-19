@@ -3683,7 +3683,16 @@
       if (dibujadas) {
         const q = ctx.imageSmoothingEnabled;
         ctx.imageSmoothingEnabled = false;                      // 1:1, no hay nada que resamplear
+        // LA CAPA SE PEGA ADITIVA, no encima. Las 131 definiciones del original son aditivas y acá se
+        // acumulaban bien en el lienzo aparte... pero después se pegaba con el modo normal, y `lighter` suma
+        // TAMBIÉN EL ALFA: noventa partículas de "Fog" —color (12,12,12), casi negro— saturan el alfa en 1 con
+        // el color oscuro, o sea un manchón OPACO NEGRO sobre la escena. En un mapa con muchos emisores el
+        // efecto tapaba el mapa entero. Pegándola aditiva, ese mismo acumulado suma casi nada y la niebla
+        // vuelve a ser un velo.
+        const modo = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = 'lighter';
         ctx.drawImage(partCv, 0, 0);
+        ctx.globalCompositeOperation = modo;
         ctx.imageSmoothingEnabled = q;
       }
       // El tope NO es silencioso: se avisa una vez por mapa cuál fue el pico y cuánto se recortó.
