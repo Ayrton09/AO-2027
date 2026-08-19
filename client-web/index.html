@@ -927,6 +927,15 @@
     // FOV vertical en tiles (estilo AO); ajustable por zoom (M5) y desde Opciones. Persiste: antes el zoom
     // se perdia en cada recarga y habia que volver a acomodarlo a mano.
     let VTILES_H = Math.min(22, Math.max(9, Number(localStorage.getItem('ao_zoom') ?? 13)));
+    // TECHO DEL SUPERSAMPLING. El render va a una escala ENTERA (ver `resize`), y esa escala sale de la altura
+    // de la ventana: al pasar a pantalla completa el alto crece, la escala cruza un escalón y sube de golpe un
+    // número entero. Medido acá: de una ventana de 420 px de alto a una de 560, los píxeles a dibujar pasan de
+    // 1,58 a 2,67 millones (+69%); de 700 a 840, de 2,14 a 3,16 (+48%). En una placa modesta eso se siente
+    // como que los FPS "se caen de golpe al hacer F11", que es justo como lo reportó el autor.
+    //
+    // El techo NO se toca solo: es una perilla, porque el que la baja cambia nitidez por velocidad y ésa es una
+    // decisión de quien juega, no del cliente.
+    let ssMax = Math.min(4, Math.max(1, Number(localStorage.getItem('ao_ssmax') ?? 4)));
     const canvas = document.getElementById('view');
     const ctx = canvas.getContext('2d');
     const stage = document.getElementById('stage');
@@ -942,7 +951,7 @@
       // SUPERSAMPLING: renderizamos a una escala ENTERA (SS art-px→device-px, nearest-neighbor nítido) y el
       // navegador baja suave del backing al tamaño CSS. Así el pixel-art queda nítido y sin temblor a 1080p
       // (el zoom real 2.6× no es entero). SS ≈ Z·dpr redondeado, capado para no inflar el canvas de más.
-      SS = Math.max(1, Math.min(4, Math.round(Z * dpr)));
+      SS = Math.max(1, Math.min(ssMax, Math.round(Z * dpr)));
       canvas.width = Math.round(VW * SS); canvas.height = Math.round(VH * SS);
       if (renderReady) draw();
     }
@@ -2748,6 +2757,16 @@
         <div class="frow" style="justify-content:space-between"><span>Zoom (alto de la cámara)</span>
           <input type="range" min="9" max="22" value="${VTILES_H}" data-op="zoom" style="flex:1;max-width:12em">
           <span data-op-val="zoom" style="min-width:4em;text-align:right">${VTILES_H} tiles</span></div>
+        <div class="frow" style="justify-content:space-between"><span>Resolución de render</span>
+          <select data-op="resolucion" style="max-width:11em">
+            <option value="4"${ssMax >= 4 ? ' selected' : ''}>Alta (más nítida)</option>
+            <option value="3"${ssMax === 3 ? ' selected' : ''}>Media</option>
+            <option value="2"${ssMax === 2 ? ' selected' : ''}>Baja</option>
+            <option value="1"${ssMax <= 1 ? ' selected' : ''}>Mínima (más rápida)</option>
+          </select></div>
+        <div class="sp2">El mundo se dibuja a más resolución de la que se muestra, para que el pixel-art quede
+          nítido. Cuesta: al agrandar la ventana esa escala sube de a un entero y los píxeles a dibujar pueden
+          crecer casi el doble de golpe. Si al poner pantalla completa se te caen los cuadros, bajala.</div>
 
         <div class="fsec">Juego</div>
         <div class="frow" style="justify-content:space-between"><span>Ver nombres de los jugadores</span>
@@ -4628,6 +4647,11 @@
           VTILES_H = Math.min(22, Math.max(9, Number(el.value) || 13));
           guardarPref('ao_zoom', String(VTILES_H)); resize();
           rot(VTILES_H + ' tiles'); break;
+        }
+        case 'resolucion': {
+          ssMax = Math.min(4, Math.max(1, Number(el.value) || 4));
+          guardarPref('ao_ssmax', String(ssMax)); resize();
+          break;
         }
         // "otro…" no es un tope: DESTAPA el campo para escribirlo. Antes el select mandaba el string
         // "custom" a __setFpsCap, que lo convertía en 0 y encima dejaba el campo escondido — o sea que
