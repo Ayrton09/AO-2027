@@ -52,6 +52,23 @@ public class ClavesConMayusculasTests
         Assert.True(obj.MaxHit >= obj.MinHit, $"obj {objIndex}: MaxHit {obj.MaxHit} < MinHit {obj.MinHit}");
     }
 
+    /// <summary>Los OTROS DOS que escriben <c>objtype</c> en minúscula. Son los tres únicos de todo el
+    /// <c>obj.dat</c> con esa grafía, y hasta ahora sólo el Hacha tenía guardia: quedaban dos sin cubrir, que
+    /// es justo el hueco por el que esta familia de bugs se vuelve a colar.
+    ///
+    /// <para>El 48 es <c>otCorreo</c>, así que hacerles doble clic abre el correo. Suena raro y es de la DATA,
+    /// no del código: los seis objetos con ese tipo en este install son puentes y estandartes (ver la nota del
+    /// buzón en <c>TestFixture</c>).</para></summary>
+    [Theory]
+    [InlineData(1336)]
+    [InlineData(1337)]
+    public void Los_puentes_tienen_su_tipo(int objIndex)
+    {
+        var obj = LoadOrSkip().Obj(objIndex);
+        Assert.NotNull(obj);
+        Assert.Equal(48, obj!.ObjType);
+    }
+
     /// <summary>La Hacha Arrojadiza escribe <c>objtype</c> todo en minúscula. Sin tipo no es un arma para
     /// nada del server — y el propio cliente VB6 la lista entre las arrojadizas (Mod_AutoUsar.esArrojadiza).</summary>
     [Fact]
