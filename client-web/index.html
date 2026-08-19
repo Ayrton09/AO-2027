@@ -310,7 +310,7 @@
     #login { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center;
       background:radial-gradient(120% 120% at 50% 0%, #1a130c 0%, #0a0706 60%, #050404 100%); }
     #login.hidden { display:none; }
-    .login-card { width:min(440px, 92vw); padding:22px 26px 18px; text-align:center; }
+    .login-card { width:min(468px, 92vw); padding:24px 28px 20px; text-align:center; }
     .login-title { font-family:var(--serif); font-size:calc(var(--u)*2.6); letter-spacing:.12em; color:var(--gold-hi);
       text-shadow:0 2px 6px #000, 0 0 22px #e8c87655; }
     .login-sub { font-size:calc(var(--u)*0.8); letter-spacing:.2em; text-transform:uppercase; color:var(--ink-dim); margin-bottom:16px; }
@@ -358,6 +358,121 @@
     .goldbtn.ghost { background:transparent; box-shadow:none; }
     .login-form input:focus, .login-form select:focus { outline:none; border-color:var(--gold); box-shadow:0 0 8px #e8c87655; }
     .login-row { display:flex; gap:9px; } .login-row label { flex:1; }
+
+    /* ====================== Pantallas de antes de entrar, version rica =========================
+       El fondo era un negro plano y la tarjeta una caja chica flotando ahi: la primera impresion del juego.
+       Todo esto es del CLIENTE, que es nuestro, asi que no toca fidelidad ninguna mientras el protocolo no
+       cambie. La trama y el pergamino se hacen con gradientes -sin pedir un archivo mas, que es un `fetch`
+       menos que se puede caer (ver `check-assets`)-. */
+    #login::before { content:''; position:absolute; inset:0; pointer-events:none;
+      background-image:
+        radial-gradient(60% 45% at 50% -5%, #6b4a1e55 0%, transparent 70%),
+        repeating-linear-gradient(115deg, #ffffff05 0 2px, transparent 2px 7px);
+      mix-blend-mode:screen; }
+    /* Vinieta: hunde los bordes para que la tarjeta flote sobre algo y no sobre el vacio. */
+    #login::after { content:''; position:absolute; inset:0; pointer-events:none;
+      background:radial-gradient(75% 70% at 50% 45%, transparent 40%, #000000cc 100%); }
+    #login > * { position:relative; z-index:1; }
+
+    .login-card { position:relative; box-shadow:0 24px 60px #000c, 0 0 0 1px #00000088;
+      max-height:94vh; overflow-y:auto; overscroll-behavior:contain; }
+    /* Filete interior: el marco doble que tiene cualquier ventana del original. */
+    .login-card::before { content:''; position:absolute; inset:5px; border:1px solid #e8c87626; border-radius:5px; pointer-events:none; }
+    .login-title { position:relative; }
+    /* Dos filetes a los costados del titulo, como el encabezado del panel del juego. */
+    .login-title::before, .login-title::after { content:''; position:absolute; top:55%; width:3.2em; height:1px;
+      background:linear-gradient(90deg, transparent, var(--gold-deep)); }
+    .login-title::before { right:calc(50% + 3.6em); } .login-title::after { left:calc(50% + 3.6em); transform:scaleX(-1); }
+
+    /* Creando un personaje la tarjeta se ensancha y va a DOS columnas: a la izquierda lo que se elige, a la
+       derecha lo que eso significa. Con 440 px de ancho no entraba nada de eso. */
+    #login.creando .login-card { width:min(940px, 96vw); }
+    .crear-grid { display:grid; grid-template-columns:1fr; gap:14px; text-align:left; }
+    #login.creando .crear-grid { grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr); }
+    @media (max-width: 860px) { #login.creando .crear-grid { grid-template-columns:1fr; } }
+    .crear-col { display:flex; flex-direction:column; gap:11px; min-width:0; }
+
+    /* Un bloque con titulo, para agrupar (Raza, Clase, Bando...). */
+    .bloque { border:1px solid var(--gold-deep); border-radius:6px; padding:9px 10px 10px; background:#120c0733; }
+    .bloque > h4 { margin:0 0 7px; font-size:calc(var(--u)*0.74); letter-spacing:.14em; text-transform:uppercase;
+      color:var(--ink-dim); font-weight:600; font-family:system-ui,sans-serif; }
+
+    /* FICHAS elegibles. Reemplazan a los `select` nativos, que se veian grises del sistema y rompian el tema.
+       Los `select` siguen EXISTIENDO y son la fuente de verdad: estas fichas les escriben el valor y disparan
+       su `change`, asi que todo lo que ya colgaba de ahi -el rango de caras por raza, el aviso de bando- sigue
+       andando sin tocarlo. */
+    .fichas { display:flex; flex-wrap:wrap; gap:5px; }
+    .ficha { flex:1 1 auto; min-width:0; padding:5px 9px; cursor:pointer; text-align:center; white-space:nowrap;
+      font-size:calc(var(--u)*0.85); color:var(--ink-dim); background:linear-gradient(180deg,#241a10,#150e07);
+      border:1px solid var(--gold-deep); border-radius:5px; transition:color .12s, border-color .12s, background .12s; }
+    .ficha:hover { color:var(--gold); border-color:var(--gold); }
+    .ficha.on { color:var(--gold-hi); border-color:var(--gold-hi);
+      background:linear-gradient(180deg,#4a3416,#2a1b0a); box-shadow:inset 0 1px 0 #ffdf9a55; }
+    .fichas.densa .ficha { flex:0 1 calc(33.333% - 4px); }
+
+    /* Los cinco modificadores de la raza, tal como los trae Balance.json. */
+    .mods { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:8px; font-size:calc(var(--u)*0.8); }
+    .mods span { color:var(--ink-dim); }
+    .mods b { font-variant-numeric:tabular-nums; }
+    .mods b.mas { color:#8fd694; } .mods b.menos { color:#e08b7a; } .mods b.cero { color:var(--ink-dim); }
+
+    /* Las cinco varas de la clase. El ancho es relativo al MAXIMO de esa vara entre las 18 clases, asi que
+       comparar dos clases se hace de un vistazo y no leyendo decimales. */
+    .varas { display:flex; flex-direction:column; gap:5px; margin-top:8px; }
+    .vara { display:grid; grid-template-columns:5.2em 1fr auto; align-items:center; gap:7px; font-size:calc(var(--u)*0.78); }
+    .vara i { font-style:normal; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; }
+    .vara .pista { height:7px; border-radius:4px; background:#0a0705; border:1px solid #00000088; overflow:hidden; }
+    .vara .relleno { height:100%; background:linear-gradient(90deg,#b8891e,#f0d45a); box-shadow:0 0 7px #f0d45a66; }
+    .vara em { font-style:normal; color:var(--ink); font-variant-numeric:tabular-nums; min-width:2.6em; text-align:right; }
+
+    /* Con que arranca la clase (NACIMIENTO.dat). Es lo que mas pregunta el que recien llega. */
+    .kit { display:flex; flex-direction:column; gap:3px; margin-top:8px; font-size:calc(var(--u)*0.78); color:var(--ink-dim); }
+    .kit div { display:flex; justify-content:space-between; gap:8px; }
+    .kit b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
+
+    /* El BANDO no es un desplegable mas: es la decision que menos se puede deshacer de toda la pantalla. */
+    .bandos { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .bando { padding:9px 10px; cursor:pointer; border:1px solid var(--gold-deep); border-radius:6px;
+      background:linear-gradient(180deg,#241a10,#150e07); transition:border-color .12s, box-shadow .12s; }
+    .bando:hover { border-color:var(--gold); }
+    .bando.on { border-color:var(--gold-hi); box-shadow:inset 0 0 14px #e8c87626; }
+    .bando .bn { font-family:var(--serif); color:var(--gold-hi); font-size:calc(var(--u)*1.05); }
+    .bando .bd { color:var(--ink-dim); font-size:calc(var(--u)*0.76); margin-top:2px; }
+
+    /* El retrato, ahora grande. Antes era un sello de 88x104 perdido en el medio del formulario. */
+    .retrato { display:flex; flex-direction:column; align-items:center; gap:8px;
+      border:1px solid var(--gold-deep); border-radius:6px; padding:12px 10px 10px;
+      background:radial-gradient(ellipse at 50% 88%, #3a2a1544 0 45%, transparent 70%), #120c0733; }
+    .retrato canvas { width:112px; height:150px; image-rendering:pixelated; filter:drop-shadow(0 6px 10px #000a); }
+    .retrato .pie { display:flex; align-items:center; gap:10px; color:var(--ink-dim); font-size:calc(var(--u)*0.8); }
+
+    /* Los `select` que quedan de fuente de verdad. Clase propia y no el atributo `hidden` a secas: si maniana
+       alguien le pone `display` a `.login-form select`, un `hidden` dejaria de esconder y la pantalla mostraria
+       los desplegables viejos al lado de las fichas. Ya paso con la pestania "Crear personaje". */
+    .fuente-de-verdad { display:none !important; }
+    /* EL BOTÓN DE CREAR, SIEMPRE A LA VISTA. La pantalla de creación es más alta que el monitor, así que el
+       botón quedaba debajo del pliegue. Con `position:sticky` aparecía, pero FLOTANDO ENCIMA del bloque de
+       tierra natal —peor que no verlo—, porque un sticky se superpone mientras haya contenido debajo sin
+       scrollear; reservarle alto al final de la grilla no lo evita, sólo lo arregla al llegar abajo del todo.
+       Lo que sí funciona es sacarlo del área que scrollea: la tarjeta pasa a ser una columna con CUERPO
+       scrolleable y PIE fijo. */
+    #login.creando .login-card { display:flex; flex-direction:column; overflow:hidden; }
+    #login.creando #lf-char { display:flex; flex-direction:column; flex:1; min-height:0; }
+    #login.creando .crear-grid { overflow-y:auto; overscroll-behavior:contain; flex:1; min-height:0; padding-right:4px; }
+    #login.creando #lf-char > .goldbtn { flex:0 0 auto; margin-top:12px; }
+
+    /* ---- Lista de personajes: tarjetas mas grandes y sin corte seco ---- */
+    #login.eligiendo .login-card { width:min(620px, 94vw); }
+    #charlist { max-height:min(52vh, 380px); }
+    .cscard canvas { width:56px; height:70px; }
+    .cscard .cd { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
+    .cscard .chip { border:1px solid var(--gold-deep); border-radius:4px; padding:0 6px; color:var(--gold);
+      font-size:calc(var(--u)*0.72); letter-spacing:.04em; }
+    /* Degrade al pie: avisa que la lista SIGUE. Con el corte seco parecia que ahi terminaba. */
+    .cs-fade { position:relative; }
+    .cs-fade::after { content:''; position:absolute; left:0; right:9px; bottom:0; height:26px; pointer-events:none;
+      background:linear-gradient(180deg, transparent, #150e07ee); opacity:0; transition:opacity .15s; }
+    .cs-fade.hay-mas::after { opacity:1; }
     /* Elegir la cara mirándola: recuadro con el personaje dibujado y una flecha a cada lado. */
     .cara-fila { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:4px; }
     .cara-fila canvas { width:88px; height:104px; image-rendering:pixelated;
@@ -564,38 +679,83 @@
           <label>Cuenta <input name="acc" required></label>
           <label>Contraseña <input name="pw" type="password" required></label>
         </div>
-        <!-- Sólo letras y espacios, como el ValidarNombre del original (TCP.bas:181). El server lo rechaza
-             igual; el patrón está acá para avisar ANTES de mandar el paquete. Nada de dígitos: un nombre
-             numérico chocaría con el número de ficha con el que viajan los NPCs. -->
-        <label>Nombre del personaje <input name="name" required maxlength="18"
-               pattern="[A-Za-z]+( [A-Za-z]+)*" title="Sólo letras y espacios (sin números)"></label>
-        <div class="login-row">
-          <label>Raza <select name="race"></select></label>
-          <label>Género <select name="gender"></select></label>
+
+        <!-- LOS CUATRO `select` SON LA FUENTE DE VERDAD y siguen acá, escondidos: el envío los lee y todo lo
+             que cuelga de su `change` —el rango de caras por raza+género, el aviso de bando— sigue colgando de
+             ellos. Lo que se ve son fichas que les escriben el valor; así la pantalla cambia de aspecto sin
+             que cambie ni una línea de la lógica que ya estaba probada. -->
+        <select name="race" class="fuente-de-verdad" tabindex="-1" aria-hidden="true"></select>
+        <select name="gender" class="fuente-de-verdad" tabindex="-1" aria-hidden="true"></select>
+        <select name="klass" class="fuente-de-verdad" tabindex="-1" aria-hidden="true"></select>
+        <select name="home" class="fuente-de-verdad" tabindex="-1" aria-hidden="true"></select>
+        <input type="hidden" name="head" value="1">
+
+        <div class="crear-grid">
+          <div class="crear-col">
+            <!-- Sólo letras y espacios, como el ValidarNombre del original (TCP.bas:181). El server lo rechaza
+                 igual; el patrón está acá para avisar ANTES de mandar el paquete. Nada de dígitos: un nombre
+                 numérico chocaría con el número de ficha con el que viajan los NPCs. -->
+            <label>Nombre del personaje <input name="name" required maxlength="18"
+                   pattern="[A-Za-z]+( [A-Za-z]+)*" title="Sólo letras y espacios (sin números)"></label>
+
+            <div class="bloque">
+              <h4>Raza</h4>
+              <div class="fichas" id="pick-raza"></div>
+              <!-- Los cinco modificadores salen de Balance.json [MODRAZA]: son los del juego, no una tabla
+                   escrita a mano acá. Elegir Orco o Gnomo cambia el personaje y hasta ahora no se veía. -->
+              <div class="mods" id="raza-mods"></div>
+            </div>
+
+            <div class="bloque">
+              <h4>Género</h4>
+              <div class="fichas" id="pick-genero"></div>
+            </div>
+
+            <div class="bloque">
+              <h4>Clase</h4>
+              <div class="fichas densa" id="pick-clase"></div>
+            </div>
+
+            <div class="bloque">
+              <h4>Tierra natal · acá elegís bando</h4>
+              <div class="bandos" id="pick-bando"></div>
+              <!-- El original avisa qué implica la tierra natal con un cartel que cambia al elegir
+                   (lstHogar_Click → lblInfo, frmCrearPersonaje.frm:854). No es decoración: es la única pista
+                   de que ahí se elige bando. -->
+              <div class="login-hint" id="hogar-info"></div>
+            </div>
+          </div>
+
+          <div class="crear-col">
+            <!-- La cara se elige VIÉNDOLA, como el original: el frmCrearPersonaje del VB6 dibuja la cabeza en
+                 un PictureBox (HeadView) y la cicla con dos flechas, no con una lista de números. El rango
+                 válido depende de raza+género (ValidarCabeza), así que las flechas recorren SÓLO ese tramo. -->
+            <div class="retrato">
+              <canvas id="cara-preview" width="176" height="234"></canvas>
+              <div class="pie">
+                <button type="button" class="cara-arrow" id="cara-prev" aria-label="Cara anterior">◀</button>
+                <span>Cara <span id="cara-num">1</span></span>
+                <button type="button" class="cara-arrow" id="cara-next" aria-label="Cara siguiente">▶</button>
+              </div>
+            </div>
+            <div class="bloque">
+              <h4>Lo que da la clase</h4>
+              <div class="varas" id="clase-varas"></div>
+            </div>
+            <div class="bloque">
+              <h4>Con qué empezás</h4>
+              <div class="kit" id="clase-kit"></div>
+            </div>
+          </div>
         </div>
-        <div class="login-row">
-          <label>Clase <select name="klass"></select></label>
-          <label>Tierra natal <select name="home"></select></label>
-        </div>
-        <!-- El original avisa qué implica la tierra natal con un cartel que cambia al elegir (lstHogar_Click →
-             lblInfo, frmCrearPersonaje.frm:854). No es decoración: es la única pista de que ahí se elige bando. -->
-        <div class="login-hint" id="hogar-info"></div>
-        <!-- La cara se elige VIÉNDOLA, como el original: el frmCrearPersonaje del VB6 dibuja la cabeza en un
-             PictureBox (HeadView) y la cicla con dos flechas, no con una lista de números. El rango válido
-             depende de raza+género (ValidarCabeza), así que las flechas recorren SÓLO ese tramo. -->
-        <div class="cara-fila">
-          <button type="button" class="cara-arrow" id="cara-prev" aria-label="Cara anterior">◀</button>
-          <canvas id="cara-preview" width="88" height="104"></canvas>
-          <button type="button" class="cara-arrow" id="cara-next" aria-label="Cara siguiente">▶</button>
-          <input type="hidden" name="head" value="1">
-        </div>
-        <div class="cara-pie">Cara <span id="cara-num">1</span></div>
+
         <button class="goldbtn" type="submit">Crear y entrar</button>
       </form>
 
       <div id="charsel" class="hidden">
         <div class="cs-head">Personajes de <b id="cs-acc"></b></div>
-        <div id="charlist"></div>
+        <!-- El degradé del pie avisa que la lista SIGUE: con el corte seco parecía que ahí terminaba. -->
+        <div class="cs-fade" id="cs-fade"><div id="charlist"></div></div>
         <div class="cs-actions">
           <button class="goldbtn" id="cs-new" type="button">＋ Crear personaje</button>
           <button class="goldbtn ghost" id="cs-back" type="button">← Otra cuenta</button>
@@ -4769,6 +4929,100 @@
     const pintarAvisoNatal = () => { const d = $('hogar-info'); if (d) d.textContent = AVISO_NATAL[(+lfCh.home.value || 1) - 1] || ''; };
     lfCh.home.addEventListener('change', pintarAvisoNatal);
     pintarAvisoNatal();
+
+    // ======================= LOS SELECTORES VISUALES DE LA CREACIÓN =======================
+    // Los cuatro `select` de arriba siguen siendo la fuente de verdad y nadie los toca: estas fichas les
+    // escriben el valor y disparan su `change`, así que el rango de caras por raza y el aviso de bando siguen
+    // colgando de donde colgaban. Cambia el aspecto, no la lógica.
+    //
+    // Los NÚMEROS que se muestran salen de `assets/creacion.json`, generado por
+    // `fase0/transcode/make_creacion.py` desde Balance.json y NACIMIENTO.dat. Nada escrito a mano acá: las
+    // listas a mano en este cliente son la fuente número uno de "features del original que no existen".
+    let CREACION = null;
+    const ATRIB_CORTO = { fuerza: 'Fue', agilidad: 'Agi', inteligencia: 'Int', carisma: 'Car', constitucion: 'Con' };
+    const VARA_NOMBRE = { vida: 'Vida', evasion: 'Evasión', ataque: 'Ataque', dano: 'Daño', escudo: 'Escudo' };
+
+    const fichas = (cont, nombres, sel, alElegir) => {
+      cont.innerHTML = '';
+      nombres.forEach((n, i) => {
+        const f = document.createElement('div');
+        f.className = 'ficha'; f.textContent = n; f.dataset.v = String(i + 1);
+        f.addEventListener('click', () => {
+          sel.value = f.dataset.v;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));   // lo que ya escuchaba, sigue escuchando
+          [...cont.children].forEach((x) => x.classList.toggle('on', x === f));
+          if (alElegir) alElegir(+f.dataset.v);
+        });
+        cont.appendChild(f);
+      });
+      const marcar = () => [...cont.children].forEach((x) => x.classList.toggle('on', x.dataset.v === String(sel.value)));
+      marcar();
+      return marcar;
+    };
+
+    const pintarModsDeRaza = (id) => {
+      const d = $('raza-mods'); if (!d) return;
+      const r = CREACION && CREACION.razas.find((x) => x.id === id);
+      if (!r) { d.textContent = ''; return; }
+      d.innerHTML = Object.keys(ATRIB_CORTO).map((k) => {
+        const v = r.mods[k] || 0;
+        const cls = v > 0 ? 'mas' : v < 0 ? 'menos' : 'cero';
+        return '<span>' + ATRIB_CORTO[k] + ' <b class="' + cls + '">' + (v > 0 ? '+' : '') + v + '</b></span>';
+      }).join('');
+    };
+
+    const pintarClase = (id) => {
+      const varas = $('clase-varas'), kit = $('clase-kit');
+      const c = CREACION && CREACION.clases.find((x) => x.id === id);
+      if (!c) { if (varas) varas.innerHTML = ''; if (kit) kit.innerHTML = ''; return; }
+      // La barra se mide contra el MÁXIMO de esa vara entre las 18 clases: así comparar dos clases se hace
+      // mirando, no leyendo decimales. Con un máximo fijo todas se verían casi iguales.
+      if (varas) varas.innerHTML = Object.keys(VARA_NOMBRE).map((k) => {
+        const max = Math.max.apply(null, CREACION.clases.map((x) => x[k] || 0)) || 1;
+        const pct = Math.max(3, Math.round(((c[k] || 0) / max) * 100));
+        return '<div class="vara"><i>' + VARA_NOMBRE[k] + '</i><div class="pista">'
+             + '<div class="relleno" style="width:' + pct + '%"></div></div><em>' + (c[k] || 0) + '</em></div>';
+      }).join('');
+      if (kit) kit.innerHTML = c.kit.length
+        ? c.kit.map((it) => '<div><span>' + esc(it[1]) + '</span><b>' + it[2] + '</b></div>').join('')
+        : '<div><span>Sin equipo inicial.</span></div>';
+    };
+
+    const pintarBandos = () => {
+      const cont = $('pick-bando'); if (!cont) return;
+      cont.innerHTML = '';
+      TIERRAS_NATALES.forEach((n, i) => {
+        const b = document.createElement('div');
+        b.className = 'bando'; b.dataset.v = String(i + 1);
+        // El nombre corto arriba y el bando abajo: "Nix (Imperial)" ya trae las dos cosas pegadas.
+        const m = /^(.*?)\s*\((.*)\)$/.exec(n);
+        b.innerHTML = '<div class="bn">' + esc(m ? m[1] : n) + '</div><div class="bd">'
+                    + esc(m ? m[2] : '') + '</div>';
+        b.addEventListener('click', () => {
+          lfCh.home.value = b.dataset.v;
+          lfCh.home.dispatchEvent(new Event('change', { bubbles: true }));
+          [...cont.children].forEach((x) => x.classList.toggle('on', x === b));
+        });
+        cont.appendChild(b);
+      });
+      [...cont.children].forEach((x) => x.classList.toggle('on', x.dataset.v === String(lfCh.home.value)));
+    };
+
+    fichas($('pick-raza'), RAZAS, lfCh.race, pintarModsDeRaza);
+    fichas($('pick-genero'), GENEROS, lfCh.gender);
+    fichas($('pick-clase'), CLASES, lfCh.klass, pintarClase);
+    pintarBandos();
+    pintarModsDeRaza(+lfCh.race.value || 1);
+    pintarClase(+lfCh.klass.value || 1);
+
+    // Los datos van por `fetch` y NO bloquean: si el archivo no está —un paquete viejo—, las fichas siguen
+    // eligiendo igual y lo único que falta son los números. Una pantalla sin adornos es mejor que una rota.
+    fetch('./assets/creacion.json').then((r) => r.ok ? r.json() : null).then((d) => {
+      if (!d) return;
+      CREACION = d;
+      pintarModsDeRaza(+lfCh.race.value || 1);
+      pintarClase(+lfCh.klass.value || 1);
+    }).catch(() => {});
     // ---- Elegir la cara viéndola (VB6 frmCrearPersonaje: HeadView + flechas) --------------------------
     // Rango de cabezas por raza/género, portado de ValidarCabeza (TCP.bas:125-178). NO es 1..N: cada
     // combinación tiene su tramo propio y son disjuntos. Antes el desplegable ofrecía "Cara 1..10" para
@@ -4873,15 +5127,24 @@
     const charselEl = $('charsel'), charlistEl = $('charlist'), csAccEl = $('cs-acc');
     function selectLoginMode(m) {                               // volver a los formularios (in/acc/char)
       charselEl.classList.add('hidden');
-      document.querySelector('#login .login-modes').style.display = '';
+      // Las pestañas de arriba NO van cuando ya estás adentro de una cuenta creando un personaje: desde ahí
+      // llevan a "Ingresar", o sea a salirse sin querer. Se llega por el botón de la lista y se vuelve por él.
+      document.querySelector('#login .login-modes').style.display = m === 'char' ? 'none' : '';
       document.querySelectorAll('#login .lm').forEach((x) => x.classList.toggle('on', x.dataset.m === m));
       document.querySelectorAll('.login-form').forEach((f) => f.classList.toggle('on', f.id === 'lf-' + m));
+      // La tarjeta se ensancha para la creación (dos columnas) y para la lista. El CSS cuelga de estas clases.
+      $('login').classList.toggle('creando', m === 'char');
+      $('login').classList.remove('eligiendo');
       loginErr('');
     }
     // Mini-preview del personaje (cuerpo + cabeza, de frente) en la tarjeta, anclado al piso del recuadro.
     // Misma fórmula de anclaje que el mundo (cabeza = base + b.head[1] - alto), escalada al canvas.
     function drawCharPreview(cv, c) {
-      const cx = cv.getContext('2d'); cx.clearRect(0, 0, cv.width, cv.height); cx.imageSmoothingEnabled = true;
+      const cx = cv.getContext('2d'); cx.clearRect(0, 0, cv.width, cv.height);
+      // Suavizar tiene sentido en el sello de 56 px de la lista, donde el sprite se ACHICA. En el retrato de
+      // la creación el mismo sprite se agranda cinco veces, y ahí suavizar lo vuelve una mancha: va nearest,
+      // igual que el mundo. El corte va por ancho porque es lo único que distingue a los dos usos.
+      cx.imageSmoothingEnabled = cv.width < 120;
       const b = bodies && bodies[c.body]; if (!b || !atlas) return false;
       const bg = staticGrh(b.walk[2]); if (!bg) return false;   // heading 3 = sur (de frente)
       const sc = Math.min(cv.width / 26, cv.height / 48), cw = cv.width, ch = cv.height;
@@ -4906,7 +5169,9 @@
         const cv = document.createElement('canvas'); cv.width = 44 * 2; cv.height = 52 * 2;
         if (!drawCharPreview(cv, c)) pending.push([cv, c]);      // la hoja aún no cargó → re-pintar luego
         const info = document.createElement('div'); info.className = 'ci';
-        info.innerHTML = `<div class="cn">${esc(c.name)}${c.gm ? '<span class="cgm">GM</span>' : ''}</div><div class="cd">Nivel ${c.level} · ${CLASES[c.clase - 1] || 'Clase ' + c.clase}</div>`;
+        info.innerHTML = `<div class="cn">${esc(c.name)}${c.gm ? '<span class="cgm">GM</span>' : ''}</div>`
+          + `<div class="cd"><span class="chip">Nivel ${c.level}</span>`
+          + `<span class="chip">${esc(CLASES[c.clase - 1] || 'Clase ' + c.clase)}</span></div>`;
         const play = document.createElement('span'); play.className = 'play'; play.textContent = '▶';
         // BORRAR (1b del informe). Va con doble confirmación —una pregunta y después escribir el nombre— porque
         // es irreversible para el jugador. Del lado del server el `.chr` se aparta en vez de destruirse, pero
@@ -4929,6 +5194,15 @@
       document.querySelectorAll('.login-form').forEach((f) => f.classList.remove('on'));
       document.querySelector('#login .login-modes').style.display = 'none';
       charselEl.classList.remove('hidden'); loginErr('');
+      $('login').classList.add('eligiendo');
+      $('login').classList.remove('creando');
+      // El degradé del pie sólo tiene sentido si de verdad hay más abajo: con seis personajes la lista entra
+      // entera y un degradé permanente sería un adorno que MIENTE. Se recalcula al scrollear.
+      const fade = $('cs-fade');
+      const revisarFade = () => { if (fade) fade.classList.toggle('hay-mas',
+        charlistEl.scrollHeight - charlistEl.clientHeight - charlistEl.scrollTop > 4); };
+      charlistEl.onscroll = revisarFade;
+      setTimeout(revisarFade, 0);
     }
     $('cs-back').addEventListener('click', () => selectLoginMode('in'));
     // Crear personaje DESDE la lista: las credenciales ya las tenemos de la sesión, así que se precargan y se
