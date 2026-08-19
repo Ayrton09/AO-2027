@@ -4,6 +4,11 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.0 — 2026-08-01
 
+- **Crear personaje pasó a estar dentro de tu cuenta.** La pantalla de inicio ofrece sólo conectarse y crear
+  cuenta; al crear la cuenta entrás directo a tu lista de personajes, y el botón de crear ya no te vuelve a
+  pedir la cuenta ni la contraseña. Y **borrar un personaje funciona** también con una cuenta recién creada:
+  antes se quedaba sin hacer nada.
+
 - **La fragua y el yunque del herrero funcionan.** Para hacer lingotes: usá el mineral que tenés en el
   inventario y hacé clic en la fragua. Para forjar: equipate el martillo y hacé doble clic en el yunque. Fundir
   pide skill de Minería, así que si te rebota es que todavía te falta oficio.
