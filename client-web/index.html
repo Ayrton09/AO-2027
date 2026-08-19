@@ -374,6 +374,10 @@
       background:radial-gradient(75% 70% at 50% 45%, transparent 40%, #000000cc 100%); }
     #login > * { position:relative; z-index:1; }
 
+    .login-crest { display:block; width:calc(var(--u)*3.4); height:auto; margin:0 auto 6px;
+      filter:drop-shadow(0 2px 6px #000) drop-shadow(0 0 12px #e8c87633); }
+    /* En la creación la tarjeta ya está llena: el escudo ahí sería ruido. */
+    #login.creando .login-crest { display:none; }
     .login-card { position:relative; box-shadow:0 24px 60px #000c, 0 0 0 1px #00000088;
       max-height:94vh; overflow-y:auto; overscroll-behavior:contain; }
     /* Filete interior: el marco doble que tiene cualquier ventana del original. */
@@ -623,6 +627,23 @@
   <!-- Pantalla de ingreso / creación (reemplaza el login hardcodeado). Se oculta al entrar al mundo. -->
   <div id="login">
     <div class="login-card ornate">
+      <!-- Escudo heráldico. En SVG en línea a propósito: no agrega un archivo que pueda faltar, hereda el
+           dorado del tema y escala sin pixelarse. La pantalla de ingreso era un formulario y nada más. -->
+      <svg class="login-crest" viewBox="0 0 64 72" aria-hidden="true">
+        <defs>
+          <linearGradient id="crestOro" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffdf9a"/><stop offset="55%" stop-color="#e8c876"/>
+            <stop offset="100%" stop-color="#8a5f1c"/>
+          </linearGradient>
+        </defs>
+        <path d="M32 2 L60 11 V36 C60 53 47 64 32 70 C17 64 4 53 4 36 V11 Z"
+              fill="#1a120a" stroke="url(#crestOro)" stroke-width="2.4"/>
+        <path d="M32 8 L54 15 V36 C54 49 44 58 32 63 C20 58 10 49 10 36 V15 Z"
+              fill="none" stroke="url(#crestOro)" stroke-width="1" opacity=".55"/>
+        <path d="M32 17 L34.6 27.6 L45 30 L34.6 32.4 L32 43 L29.4 32.4 L19 30 L29.4 27.6 Z"
+              fill="url(#crestOro)" opacity=".92"/>
+        <path d="M23 47 H41 M26 52 H38" stroke="url(#crestOro)" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
+      </svg>
       <div class="login-title">CoverAO</div>
       <div class="login-sub">Argentum · cliente web</div>
       <div class="login-modes">
