@@ -300,9 +300,14 @@
     .islot, .hbslot { box-shadow:inset 0 0 0 1px #00000088, inset 0 2px 6px #0006; }
     .islot:hover, .hbslot:hover { box-shadow:inset 0 0 0 1px #e8c87655, inset 0 0 10px #e8c87633; }
     /* Scrollbars temáticas. */
-    .tabpane::-webkit-scrollbar, #spelllist::-webkit-scrollbar, .card::-webkit-scrollbar { width:9px; }
-    .tabpane::-webkit-scrollbar-thumb, #spelllist::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb { background:linear-gradient(180deg,var(--gold-lo),var(--gold-deep)); border-radius:5px; }
-    .tabpane::-webkit-scrollbar-track, #spelllist::-webkit-scrollbar-track, .card::-webkit-scrollbar-track { background:#0a0705; }
+    .tabpane::-webkit-scrollbar, #spelllist::-webkit-scrollbar, .card::-webkit-scrollbar,
+    .login-card::-webkit-scrollbar, .crear-grid::-webkit-scrollbar, #charlist::-webkit-scrollbar { width:9px; }
+    .tabpane::-webkit-scrollbar-thumb, #spelllist::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb,
+    .login-card::-webkit-scrollbar-thumb, .crear-grid::-webkit-scrollbar-thumb, #charlist::-webkit-scrollbar-thumb
+    { background:linear-gradient(180deg,var(--gold-lo),var(--gold-deep)); border-radius:5px; }
+    .tabpane::-webkit-scrollbar-track, #spelllist::-webkit-scrollbar-track, .card::-webkit-scrollbar-track,
+    .login-card::-webkit-scrollbar-track, .crear-grid::-webkit-scrollbar-track, #charlist::-webkit-scrollbar-track
+    { background:#0a0705; }
     /* Foco accesible en botones. */
     .goldbtn:focus-visible, .menubtn:focus-visible { outline:2px solid var(--gold-hi); outline-offset:1px; }
 
@@ -379,7 +384,7 @@
     /* En la creación la tarjeta ya está llena: el escudo ahí sería ruido. */
     #login.creando .login-crest { display:none; }
     .login-card { position:relative; box-shadow:0 24px 60px #000c, 0 0 0 1px #00000088;
-      max-height:94vh; overflow-y:auto; overscroll-behavior:contain; }
+      max-height:94vh; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
     /* Filete interior: el marco doble que tiene cualquier ventana del original. */
     .login-card::before { content:''; position:absolute; inset:5px; border:1px solid #e8c87626; border-radius:5px; pointer-events:none; }
     .login-title { position:relative; }
@@ -463,7 +468,10 @@
     #login.creando .login-card { display:flex; flex-direction:column; overflow:hidden; }
     #login.creando #lf-char { display:flex; flex-direction:column; flex:1; min-height:0; }
     #login.creando .crear-grid { overflow-y:auto; overscroll-behavior:contain; flex:1; min-height:0; padding-right:4px; }
-    #login.creando #lf-char > .goldbtn { flex:0 0 auto; margin-top:12px; }
+    #login.creando #lf-char > .crear-pie { flex:0 0 auto; margin-top:12px; }
+    .crear-pie { display:flex; gap:8px; }
+    .crear-pie .goldbtn { flex:1; }
+    .crear-pie .goldbtn.ghost { flex:0 0 auto; min-width:9em; }
 
     /* ---- Lista de personajes: tarjetas mas grandes y sin corte seco ---- */
     #login.eligiendo .login-card { width:min(620px, 94vw); }
@@ -770,7 +778,13 @@
           </div>
         </div>
 
-        <button class="goldbtn" type="submit">Crear y entrar</button>
+        <!-- SALIR DE ACÁ. Las pestañas de arriba se esconden mientras creás —desde adentro de una cuenta
+             llevan a "Ingresar", o sea a salirte sin querer— y eso dejaba la pantalla sin puerta: no había
+             forma de volver a la lista si te arrepentías. -->
+        <div class="crear-pie">
+          <button class="goldbtn ghost" type="button" id="cs-volver">← Volver</button>
+          <button class="goldbtn" type="submit">Crear y entrar</button>
+        </div>
       </form>
 
       <div id="charsel" class="hidden">
@@ -5066,17 +5080,23 @@
       return m ? 39 : 21;                                   // Humano / Elfo
     };
     const caraCv = $('cara-preview');
-    let caraReintentos = 0;
     const rangoCaraActual = () => (RANGO_CARA[+lfCh.race.value] || RANGO_CARA[1])[+lfCh.gender.value] || [1, 30];
-    function pintarCara() {
+    // EL PRESUPUESTO DE REINTENTOS ES POR DIBUJO, no del cliente entero. Antes era un contador global que no se
+    // reiniciaba: los reintentos del arranque se lo comían y, agotado, la cara cuya hoja de sprites todavía no
+    // había bajado quedaba en blanco PARA SIEMPRE. Se veía como "a veces aparece y a veces no" —aparecían las
+    // que ya estaban en memoria— y no había forma de que volviera sola.
+    //
+    // Cada cabeza vive en su propia hoja, así que pasar de cara casi siempre pide una hoja nueva: el reintento
+    // no es un caso raro de arranque, es el camino NORMAL de mirar caras.
+    function pintarCara(reintento) {
       const [min, max] = rangoCaraActual();
       let cara = +lfCh.head.value;
       if (!(cara >= min && cara <= max)) { cara = min; lfCh.head.value = String(cara); }   // al cambiar raza/género
       $('cara-num').textContent = `${cara}  (${min}–${max})`;
       // Devuelve false si la hoja de sprites todavía no bajó (dispara su carga y hay que volver a pintar).
-      // Sin este reintento el recuadro queda vacío justo al abrir la pantalla, que es cuando se lo mira.
+      const n = typeof reintento === 'number' ? reintento : 0;
       if (!drawCharPreview(caraCv, { body: CUERPO_DESNUDO(+lfCh.race.value, +lfCh.gender.value), head: cara })
-          && caraReintentos < 20) { caraReintentos++; setTimeout(pintarCara, 150); }
+          && n < 25) setTimeout(() => pintarCara(n + 1), 120);
     }
     function moverCara(paso) {
       const [min, max] = rangoCaraActual();
@@ -5086,8 +5106,8 @@
     }
     $('cara-prev').addEventListener('click', () => moverCara(-1));
     $('cara-next').addEventListener('click', () => moverCara(1));
-    lfCh.race.addEventListener('change', pintarCara);
-    lfCh.gender.addEventListener('change', pintarCara);
+    lfCh.race.addEventListener('change', () => pintarCara());
+    lfCh.gender.addEventListener('change', () => pintarCara());
     pintarCara();
     document.querySelectorAll('#login .lm').forEach((t) => t.addEventListener('click', () => {
       document.querySelectorAll('#login .lm').forEach((x) => x.classList.toggle('on', x === t));
@@ -5161,28 +5181,50 @@
     // Mini-preview del personaje (cuerpo + cabeza, de frente) en la tarjeta, anclado al piso del recuadro.
     // Misma fórmula de anclaje que el mundo (cabeza = base + b.head[1] - alto), escalada al canvas.
     function drawCharPreview(cv, c) {
-      const cx = cv.getContext('2d'); cx.clearRect(0, 0, cv.width, cv.height);
-      // Suavizar tiene sentido en el sello de 56 px de la lista, donde el sprite se ACHICA. En el retrato de
-      // la creación el mismo sprite se agranda cinco veces, y ahí suavizar lo vuelve una mancha: va nearest,
-      // igual que el mundo. El corte va por ancho porque es lo único que distingue a los dos usos.
-      cx.imageSmoothingEnabled = cv.width < 120;
       const b = bodies && bodies[c.body]; if (!b || !atlas) return false;
       const bg = staticGrh(b.walk[2]); if (!bg) return false;   // heading 3 = sur (de frente)
-      const sc = Math.min(cv.width / 26, cv.height / 48), cw = cv.width, ch = cv.height;
-      let ok = true;
-      const blit = (g, ox, oy) => { const sh = sheets[g.file]; if (!sh) { loadSheet(g.file); ok = false; return; }
-        cx.drawImage(sh, g.x * HD, g.y * HD, g.w * HD, g.h * HD, ox, oy, g.w * sc, g.h * sc); };
-      blit(bg, (cw - bg.w * sc) / 2, ch - bg.h * sc);           // cuerpo bottom-anchored
       const h = headsIdx && headsIdx[c.head];
-      if (h && b.head) { const hg = staticGrh(h.head[2]); if (hg) blit(hg, (cw - hg.w * sc) / 2 + b.head[0] * sc, ch + (b.head[1] - hg.h) * sc); }
-      return ok;
+      const hg = (h && b.head) ? staticGrh(h.head[2]) : null;
+      // NO SE BORRA HASTA PODER DIBUJAR. Cada cabeza vive en su propia hoja de sprites, así que pasar de cara
+      // casi siempre pide una hoja que todavía no bajó. Borrando primero, el recuadro parpadeaba a VACÍO y la
+      // cara nueva aparecía un instante después: se veía como "a veces no aparece, y después sí". Dejando lo
+      // anterior en pantalla hasta que la hoja está, el cambio es limpio y nadie ve un hueco.
+      const faltan = [];
+      if (!sheets[bg.file]) faltan.push(bg.file);
+      if (hg && !sheets[hg.file]) faltan.push(hg.file);
+      if (faltan.length) { faltan.forEach(loadSheet); return false; }
+
+      const cx = cv.getContext('2d'); cx.clearRect(0, 0, cv.width, cv.height);
+      // Suavizar tiene sentido en el sello de 56 px de la lista, donde el sprite se ACHICA. En el retrato de
+      // la creación el mismo sprite se agranda cuatro veces, y ahí suavizar lo vuelve una mancha: va nearest,
+      // igual que el mundo. El corte va por ancho porque es lo único que distingue a los dos usos.
+      cx.imageSmoothingEnabled = cv.width < 120;
+      // LA ESCALA SALE DE LO QUE HAY QUE DIBUJAR, no de un 26x48 fijo. Ese 48 es el alto del CUERPO, y la
+      // cabeza se ancla por encima de él (`b.head[1]` es un desplazamiento hacia arriba): con la escala atada
+      // al cuerpo, el pelo se salía del lienzo y la cabeza aparecía CORTADA arriba. Se mide el alto real
+      // —cuerpo, o cabeza si sobresale— y el ancho real, y se deja un 6% de aire para que no roce el borde.
+      const altoU = Math.max(bg.h, hg ? hg.h - b.head[1] : 0);
+      const anchoU = Math.max(bg.w, hg ? hg.w + Math.abs(b.head[0]) * 2 : 0);
+      const sc = Math.min(cv.width / anchoU, cv.height / altoU) * 0.94;
+      const cw = cv.width, ch = cv.height;
+      // El piso también baja un poco, para repartir el aire arriba y abajo en vez de pegar los pies al borde.
+      const piso = ch - (ch - altoU * sc) / 2;
+      const blit = (g, ox, oy) =>
+        cx.drawImage(sheets[g.file], g.x * HD, g.y * HD, g.w * HD, g.h * HD, ox, oy, g.w * sc, g.h * sc);
+      blit(bg, (cw - bg.w * sc) / 2, piso - bg.h * sc);         // cuerpo anclado al piso
+      if (hg) blit(hg, (cw - hg.w * sc) / 2 + b.head[0] * sc, piso + (b.head[1] - hg.h) * sc);
+      return true;
     }
     function playChar(name) {                                   // elegir un PJ → LoginExistingChar con las credenciales guardadas
       const w = new ByteQueueWriter().writeByte(CLIENT.LoginExistingChar).writeAsciiString(accName).writeAsciiString(accPass);
       V(w); w.writeAsciiString(name).writeAsciiString('web').writeLong(1);
       loginErr('Entrando como ' + name + '…'); sendLogin(w.toBytes());
     }
+    // La última lista que mandó el server. Se guarda para que "Volver" pueda repintarla sin pedirla otra vez:
+    // pedirla significaría re-loguear, y eso es un viaje de ida y vuelta para deshacer un clic.
+    let ultimoRoster = null;
     function showCharList(account, list) {
+      ultimoRoster = { account, list };
       csAccEl.textContent = account; charlistEl.innerHTML = '';
       const pending = [];
       for (const c of (list || [])) {
@@ -5214,6 +5256,12 @@
       if (pending.length) { let n = 0; const t = setInterval(() => { let left = false; for (const [cv, c] of pending) if (!drawCharPreview(cv, c)) left = true; if (!left || ++n > 15) clearInterval(t); }, 200); }
       document.querySelectorAll('.login-form').forEach((f) => f.classList.remove('on'));
       document.querySelector('#login .login-modes').style.display = 'none';
+      // SI ESTÁS CREANDO UN PERSONAJE, NO SE TE SACA DE AHÍ. La lista se reconstruye igual —queda lista para
+      // cuando vuelvas— pero la pantalla no cambia. Esto llega solo, sin que toques nada: el server cierra el
+      // socket de quien todavía no entró (`auth timeout`) y el cliente reconecta y se re-loguea calladito, con
+      // lo cual el `AddPJ` de la cuenta aterriza en medio del formulario. Se veía como que el menú "se vuelve
+      // atrás" mientras elegías, y lo tipeado se perdía.
+      if ($('login').classList.contains('creando')) { loginErr(''); return; }
       charselEl.classList.remove('hidden'); loginErr('');
       $('login').classList.add('eligiendo');
       $('login').classList.remove('creando');
@@ -5228,6 +5276,13 @@
     $('cs-back').addEventListener('click', () => selectLoginMode('in'));
     // Crear personaje DESDE la lista: las credenciales ya las tenemos de la sesión, así que se precargan y se
     // ESCONDEN. El paquete las sigue llevando; lo que se saca es volver a pedírselas a alguien que ya entró.
+    $('cs-volver').addEventListener('click', () => {
+      // Sale del modo creación ANTES de repintar: si no, el guardia que impide que la lista te saque del
+      // formulario -el que arregla el salto por `auth timeout`- también impediría volver a propósito.
+      $('login').classList.remove('creando');
+      if (ultimoRoster) showCharList(ultimoRoster.account, ultimoRoster.list);
+      else selectLoginMode('in');
+    });
     $('cs-new').addEventListener('click', () => {
       selectLoginMode('char');
       lfCh.acc.value = accName; lfCh.pw.value = accPass;
