@@ -4,6 +4,14 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.0 — 2026-08-01
 
+- **La fragua y el yunque del herrero funcionan.** Para hacer lingotes: usá el mineral que tenés en el
+  inventario y hacé clic en la fragua. Para forjar: equipate el martillo y hacé doble clic en el yunque. Fundir
+  pide skill de Minería, así que si te rebota es que todavía te falta oficio.
+- Darle rango de GM a alguien desde el panel de administración ahora tiene efecto. Antes el panel decía que sí
+  y la persona seguía sin poder usar los comandos.
+- Ya no se pierde lo que hiciste si otro programa toca la carpeta del servidor mientras jugás — el antivirus,
+  una copia de seguridad o una carpeta sincronizada alcanzaban para que un guardado se perdiera en silencio.
+
 - Al crear el personaje se elige bando: Nix te hace del Imperio e Illiandor de la República. Antes la
   pantalla ofrecía doce ciudades que no existen y todos nacían imperiales.
 - Los personajes nuevos aparecen en el Dungeon Newbie, con su sacerdote, su tabernero y sus salidas a las
