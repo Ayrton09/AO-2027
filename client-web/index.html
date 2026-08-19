@@ -323,6 +323,11 @@
       font-family:var(--serif); font-size:calc(var(--u)*0.8); padding:6px 4px; cursor:pointer;
       color:var(--ink-dim); background:linear-gradient(180deg,#241a10,#150e07); border:1px solid var(--gold-deep);
       border-radius:5px; text-transform:uppercase; letter-spacing:.02em; transition:color .15s, background .15s; }
+    /* Y `hidden` TIENE QUE ESCONDER. El atributo funciona por el `display:none` de la hoja del navegador, y
+       la regla de arriba fija `display:flex`, que le gana por ser de autor: la pestaña "Crear personaje"
+       quedaba VISIBLE en la pantalla inicial pese a estar marcada `hidden` -- con el comentario al lado
+       diciendo que no iba ahi. Lo reporto el tester con una captura. */
+    .login-modes .lm[hidden] { display:none; }
     .login-modes .lm:hover { color:var(--gold); }
     .login-modes .lm.on { color:var(--gold-hi); background:linear-gradient(180deg,#3e2c14,#241708); box-shadow:inset 0 1px 0 #ffdf9a55; }
     .login-form { display:none; flex-direction:column; gap:9px; text-align:left; }
@@ -4825,9 +4830,16 @@
     $('lf-acc').addEventListener('submit', (ev) => {            // Crear cuenta → CreateNewAccount
       ev.preventDefault(); const e = ev.target.elements;
       if (e.pw.value !== e.pw2.value) { loginErr('Las contraseñas no coinciden.'); return; }
-      const w = new ByteQueueWriter().writeByte(CLIENT.CreateNewAccount).writeAsciiString(e.acc.value.trim()).writeAsciiString(e.pw.value).writeAsciiString(e.code.value);
+      // LA CUENTA RECIÉN CREADA QUEDA CONECTADA. El server contesta con la lista de personajes VACÍA, o sea
+      // que el jugador aterriza en la pantalla de selección — y ahí todo lo que hay depende de saber quién es:
+      // el botón de crear personaje esconde el pedido de credenciales con `!!accName`, y borrar un personaje
+      // las manda al server. Sin esto quedaban en blanco: te volvía a pedir cuenta y contraseña para crear, y
+      // el borrado salía con la cuenta vacía y el server lo rechazaba con un "esa cuenta no existe" que no
+      // decía nada. Lo reportó el tester como "no deja borrar personaje".
+      accName = e.acc.value.trim(); accPass = e.pw.value;
+      const w = new ByteQueueWriter().writeByte(CLIENT.CreateNewAccount).writeAsciiString(accName).writeAsciiString(e.pw.value).writeAsciiString(e.code.value);
       V(w); sendLogin(w.toBytes());
-      loginErr('Cuenta creada si el nombre estaba libre. Ahora andá a «Crear personaje».');
+      loginErr('Creando la cuenta…');
     });
     // Cambiar / recuperar la contraseña → ProcesosLogin. El Tipo decide qué secreto verifica el server: 1 la
     // contraseña de ahora, 0 el código de recuperación. La etiqueta del campo sigue al desplegable para que
