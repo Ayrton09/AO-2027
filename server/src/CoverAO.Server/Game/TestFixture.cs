@@ -83,6 +83,11 @@ public static class TestFixture
         // mapas (4 en Ullathorpe), así que el buzón es perfectamente alcanzable jugando.
         world.SetGround(new WorldPos(FixtureMap, 45, 49), 1491, 1, esFijo: true);
 
+        // FRAGUA del fixture (obj 385, otFragua) en (43,49), del otro lado del yunque. Es la que ejerce fundir:
+        // usar un mineral crudo pide objetivo y el clic ACÁ lo convierte en lingotes. Va pegada al yunque a
+        // propósito, porque el par fragua+yunque es lo que arma la herrería y así un solo flow recorre los dos.
+        world.SetGround(new WorldPos(FixtureMap, 43, 49), 385, 1, esFijo: true);
+
         // ZONA SEGURA de FIXTURE (47..48 × 51..52): el mapa 15 no trae tiles ZONASEGURA propios. Es un recuadro
         // chico al sudoeste del spawn, accesible por la columna hueca 47. En zona segura NO se puede invocar (VB6
         // HechizoInvocacion) — el único efecto de ZONASEGURA que esta variante realmente aplica (su chequeo en

@@ -5328,12 +5328,21 @@ public sealed class PacketDispatcher
     private void DoFundir(ClientSession session, Player p)
     {
         int slot = 0; ObjInfo? mineral = null;
-        for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
+        // PRIMERO, EL QUE ELIGIÓ: la ranura que dejó anotada al usar el mineral (VB6 flags.Lingoteando). Recién
+        // si esa ranura ya no sirve —la gastó, la movió— se busca en el inventario, que es lo único que había
+        // antes: con hierro y oro encima, elegía el server y no el jugador.
+        if (p.Lingoteando >= 1 && p.Lingoteando <= GameLimits.MaxInventorySlots)
+        {
+            var elegido = p.Inventory[p.Lingoteando];
+            var o = elegido.ObjIndex > 0 && elegido.Amount > 0 ? _data.Obj(elegido.ObjIndex) : null;
+            if (o is not null && o.IsMineral) { slot = p.Lingoteando; mineral = o; }
+        }
+        for (int i = 1; slot == 0 && i <= GameLimits.MaxInventorySlots; i++)
         {
             var inv = p.Inventory[i];
             if (inv.ObjIndex <= 0 || inv.Amount <= 0) continue;
             var o = _data.Obj(inv.ObjIndex);
-            if (o is not null && o.IsMineral) { slot = i; mineral = o; break; }
+            if (o is not null && o.IsMineral) { slot = i; mineral = o; }
         }
         if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", FuenteInfo)); return; }
 
@@ -6987,6 +6996,15 @@ public sealed class PacketDispatcher
                 if (Equipment.EquippedOfCategory(p, _data, 6)?.Index == 389) SendCraftList(session, "blacksmith", "Yunque");
                 return;
             }
+            // LA FRAGUA, clickeada de una: no funde: el orden es al revés (primero se elige el mineral, y el
+            // clic acá lo funde). Es el primer reflejo de cualquiera —el tester la clickeó y no pasó nada— así
+            // que en vez de quedarse muda dice qué falta. No cambia ninguna regla: sólo explica el rechazo.
+            if (info.IsForge)
+            {
+                session.Send(ServerMessages.ConsoleMsg(
+                    "Para fundir: usá el mineral en tu inventario y después hacé clic en la fragua.", FuenteInfo));
+                return;
+            }
             if (soloPuertas) return;                        // las 3 sondas extra sólo aceptan otPuertas
             return;                                         // objeto sin acción modelada: el VB6 tampoco hace nada
         }
@@ -8012,6 +8030,23 @@ public sealed class PacketDispatcher
             // en lingotes. HandleWork ya pidió el objetivo con WorkRequestTarget(88); el WorkLeftClick lo ejecuta.
             if (skill == GameLimits.SkillFundir)
             {
+                // LA FRAGUA ES OBLIGATORIA, y antes no lo era: se fundía parado en cualquier lado. El original
+                // pretende que se funda EN la fragua —su rama de `Accion` la exige (Acciones.bas:116) y el
+                // mensaje "Ahí no hay ninguna fragua" existe justamente para eso—, sólo que allá esa rama es
+                // inalcanzable: pide el mineral EQUIPADO en la ranura de herramienta, y `EquiparInvItem` no
+                // tiene caso para `otMinerales`. O sea que en el VB6 no hay forma de fundir, y por eso el
+                // yunque queda decorativo: ningún NPC vende ni suelta lingotes.
+                //
+                // Acá se porta la INTENCIÓN: el mineral pide objetivo (como el original) y el clic sobre la
+                // fragua funde. Es la interacción que el tester describe y la que el mundo tiene armada.
+                var posFragua = new WorldPos(p.Pos.Map, tx, ty);
+                var enFragua = _world.TryGetGround(posFragua, out var tileF) && tileF.ObjIndex > 0
+                    ? _data.Obj(tileF.ObjIndex) : null;
+                if (enFragua is null || !enFragua.IsForge)
+                { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ninguna fragua.", FuenteInfo)); return; }
+                // Manhattan, como todas las acciones de herramienta del original (Acciones.bas:53).
+                if (Math.Abs(p.Pos.X - tx) + Math.Abs(p.Pos.Y - ty) > 2)
+                { session.Send(ServerMessages.ConsoleMsg("Estás demasiado lejos.", FuenteInfo)); return; }
                 DoFundir(session, p);
                 return;
             }
@@ -9691,6 +9726,21 @@ public sealed class PacketDispatcher
                 bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
                 if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }
                 WarpAlHogar(session, p, Cities.SpawnTile(p.HomeCity));
+                return;
+            }
+
+            // EL MINERAL CRUDO PIDE OBJETIVO (VB6 `Case eOBJType.otMinerales` de UsarInvItem,
+            // InvUsuario.bas:1830): usar un mineral no funde nada por sí solo, contesta
+            // `WriteWorkRequestTarget(FundirMetal)` y se anota la RANURA en `flags.Lingoteando`. El clic que
+            // viene después —sobre la fragua— es el que funde.
+            //
+            // Faltaba entero: acá el mineral caía en el "No puedes usar ese objeto" del final, y el tester lo
+            // reportó como que la fragua no anda. Medido contra el server: `usar_mineral` devolvía ese texto.
+            if (obj.IsMineral)
+            {
+                if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }   // VB6 DeadCheck
+                p.Lingoteando = slot;
+                session.Send(ServerMessages.WorkRequestTarget(GameLimits.SkillFundir));
                 return;
             }
 
