@@ -278,10 +278,20 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     // UserIndex : LanzarHechizo(...)` (HandleCastSpell, Protocol.bas:2136) — y recién si vale 0 le pide al
     // cliente que marque un blanco. Lo traen 19 y son todos auto-buffs: Invisibilidad, las doce metamorfosis,
     // Aura sagrada, Golpe certero, Inspiración, Honor del Paladín y el Cobijo de Leomundo.
-    int AutoLanzar = 0)
+    int AutoLanzar = 0,
+    // `ResucitaFamiliar` (Hechizos.dat): lo trae UN solo hechizo, el #79 "Resucitar familiar o mascota". El
+    // sistema de familiares no existe en esta variante —el propio original comenta la rama con un "Solo damos
+    // la animacion xd"— pero la rama SE EJECUTA y da el hechizo por lanzado, que es lo que cobra el maná y
+    // saca las palabras mágicas. Sin leer esta clave el hechizo caía en el "aún no está implementado" y salía
+    // gratis. Ver modHechizos.bas:1066.
+    int ResucitaFamiliar = 0)
 {
     /// <summary>El hechizo se tira sobre uno mismo, sin objetivo (Hechizos.dat <c>autolanzar</c>).</summary>
     public bool EsAutoLanzado => AutoLanzar > 0;
+
+    /// <summary>VB6 <c>ResucitaFamiliar</c>: el hechizo se da por lanzado —con todo lo que eso emite y cuesta—
+    /// pero no tiene efecto, porque el familiar al que resucitaría no existe en esta variante.</summary>
+    public bool EsResucitaFamiliar => ResucitaFamiliar > 0;
 
     public bool IsHeal => SubeHp == 1;
     /// <summary>Hechizo de ÁREA: se resuelve sobre el 3×3 del tile casteado (VB6 modHechizos.bas:403, los DOS
@@ -1244,7 +1254,8 @@ public sealed class GameData
                 // En el Hechizos.dat la clave viene TODA EN MINÚSCULA; el lector del original normaliza con
                 // UCase$ y por eso allá da igual. Se prueban las tres grafías, como con las otras claves
                 // que resultaron tener más de una escritura en este mismo archivo.
-                Int(el, "autolanzar", "AutoLanzar", "AUTOLANZAR"));
+                Int(el, "autolanzar", "AutoLanzar", "AUTOLANZAR"),
+                Int(el, "ResucitaFamiliar"));
         }
         return map;
     }

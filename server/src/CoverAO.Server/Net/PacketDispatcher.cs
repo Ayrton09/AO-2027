@@ -1356,6 +1356,7 @@ public sealed class PacketDispatcher
         if (dest.Map != from.Map) session.Send(ServerMessages.ChangeMap(dest.Map));
         session.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
         RefreshAreaVisibility(_world, p, from, dest);     // remove old-area chars, create new-area chars (map-aware)
+        WarpMascotas(p);                                  // las mascotas viajan con vos (VB6 WarpUserChar:1657)
         _world.Events.Publish(new PlayerMoved(p, from, dest));
     }
 
@@ -1379,6 +1380,7 @@ public sealed class PacketDispatcher
         if (dest.Map != from.Map) t.Connection?.Send(ServerMessages.ChangeMap(dest.Map));
         t.Connection?.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
         RefreshAreaVisibility(_world, t, from, dest);
+        WarpMascotas(t);                                  // también al preso y al liberado
         _world.Events.Publish(new PlayerMoved(t, from, dest));
     }
 
@@ -2197,7 +2199,7 @@ public sealed class PacketDispatcher
         _world.RemoveNpc(npc.CharIndex);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
         p.NpcsKilled++;
-        // El slot de mascota de su dueño se libera solo: CuentaMascotas() cuenta NPCs vivos con OwnerCharIndex, y
+        // El lugar de mascota de su dueño se libera solo: lo hace World.RemoveNpc, por donde pasa esta muerte, y
         // RemoveNpc (arriba) ya sacó a este NPC del mundo. No hay que tocar ningún contador aparte (cupo compartido).
         // Las invocaciones y mascotas (OwnerCharIndex != 0) NO otorgan exp/oro/loot: el VB6 HechizoInvocacion
         // pone GiveGLD=0 en cada invocado (modHechizos.bas:656) y son mascotas sin exp. Sin este gate, matar
@@ -6673,16 +6675,14 @@ public sealed class PacketDispatcher
         });
     }
 
-    /// <summary>Cantidad de mascotas vivas del jugador — cupo COMPARTIDO entre domar e invocar (VB6 NroMascotas,
-    /// MAXMASCOTAS=3). Se cuenta por NPCs vivos con <c>OwnerCharIndex</c> del jugador: es robusto (un NPC que deja
-    /// el mundo —muere, expira, el dueño desconecta— libera el cupo solo, sin leaks de slot). No modela el slot que
-    /// el VB6 conserva para una mascota domada que quedó fuera del mundo en zona segura (divergencia acotada,
-    /// documentada en fase5/GAPS-CODIGO-MUERTO.md — requeriría persistir el array + WarpMascotas entre mapas).</summary>
-    private int CuentaMascotas(Player p) => _world.Npcs.Count(n => n.OwnerCharIndex == p.CharIndex);
+    /// <summary>Las mascotas del jugador — cupo COMPARTIDO entre domar e invocar (VB6 <c>NroMascotas</c>,
+    /// <c>MAXMASCOTAS</c> = 3). Cuenta LUGARES OCUPADOS y no criaturas en el mundo: una mascota que espera afuera
+    /// (domada en zona segura, o dejada atrás al entrar a una ciudad) sigue siendo tuya y sigue ocupando el suyo.
+    /// Ver el bloque de mascotas de <see cref="Player"/>.</summary>
+    private static int CuentaMascotas(Player p) => p.NroMascotas;
 
-    /// <summary>Mascotas vivas del jugador de una plantilla dada (VB6 PuedeDomarMascota cuenta MascotasType).</summary>
-    private int CuentaMascotasDeTipo(Player p, short tipo) =>
-        _world.Npcs.Count(n => n.OwnerCharIndex == p.CharIndex && n.Template.Index == tipo);
+    /// <summary>Mascotas del jugador de una ficha dada (VB6 <c>PuedeDomarMascota</c> cuenta <c>MascotasType</c>).</summary>
+    private static int CuentaMascotasDeTipo(Player p, short tipo) => p.MascotasDeTipo(tipo);
 
     /// <summary>
     /// DOMAR una criatura (VB6 <c>DoDomar</c>, Trabajo.bas:1058). El cupo (3) es COMPARTIDO con la invocación
@@ -6710,7 +6710,8 @@ public sealed class PacketDispatcher
             int puntosDomar = p.Carisma * p.Skills[GameLimits.SkillDomar];
             if (npc.Template.Domable > puntosDomar || _rng.Next(1, 6) != 1)
             { session.Send(ServerMessages.ConsoleMsg("No has logrado domar la criatura.", FuenteInfo)); return; }
-            npc.OwnerCharIndex = p.CharIndex;   // ocupa un slot del cupo compartido (CuentaMascotas)
+            npc.OwnerCharIndex = p.CharIndex;
+            p.OcuparSlotDeMascota(p.PrimerSlotLibre(), npc.CharIndex, npc.Template.Index);   // VB6 FreeMascotaIndex
             npc.Hostile = false;
             npc.OriginallyHostile = false;   // domada: deja de ser fiera para siempre, no sólo hasta el próximo RestoreOldMovement
             npc.AttackedBy = null;           // y se le perdona al domador el golpe que le dio para amansarla
@@ -6718,7 +6719,126 @@ public sealed class PacketDispatcher
             // su amo. El slice ya rutea por OwnerCharIndex antes del switch, pero se deja el TipoAI fiel.
             npc.Movement = 8;                // TipoAI.SigueAmo
             session.Send(ServerMessages.LocaleMsg(421));
+
+            // LA CRIATURA DOMADA EN ZONA SEGURA ESPERA AFUERA (VB6 DoDomar, Trabajo.bas:1114-1124: `CanStay =
+            // MapInfo(.Pos.Map).Pk`). No es que se pierda: se la saca del mundo y se le vuelve a poner el TYPE
+            // que `RemoveNpc` acaba de borrar, con lo que el lugar queda ocupado pero VACÍO. De ahí la saca
+            // WarpMascotas cuando el amo pisa un mapa inseguro. Este par —sacarla acá y traerla allá— es una
+            // sola mecánica; portar la mitad deja mascotas que desaparecen para siempre al entrar a una ciudad.
+            if (!_data.IsPkMap(p.Pos.Map)) DejarMascotaEsperandoAfuera(p, npc);
         }
+    }
+
+    /// <summary>Saca la criatura del mundo pero le conserva el lugar: la mascota sigue siendo del jugador y
+    /// vuelve con <see cref="WarpMascotas"/>. Es el `QuitarNPC` + restaurar `MascotasType` que hacen tanto
+    /// <c>DoDomar</c> (Trabajo.bas:1118-1123) como <c>WarpMascotas</c> (Modulo_UsUaRiOs.bas:1729-1741).</summary>
+    private void DejarMascotaEsperandoAfuera(Player amo, Npc npc)
+    {
+        int slot = SlotDeMascota(amo, npc.CharIndex);
+        if (slot == 0) return;
+        short ficha = amo.MascotasType[slot];
+        var donde = npc.Pos;
+        _world.RemoveNpc(npc.CharIndex);              // esto le borra el lugar (World.RemoveNpc → QuitarMascota)
+        _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(npc.CharIndex));
+        amo.MascotasType[slot] = ficha;               // …y acá se lo devolvemos, vacío. El lugar FANTASMA.
+        amo.NroMascotas++;
+    }
+
+    /// <summary>En qué lugar (1..3) está esa criatura, o 0.</summary>
+    private static int SlotDeMascota(Player amo, short charIndexNpc)
+    {
+        for (int i = 1; i <= GameLimits.MaxMascotas; i++)
+            if (amo.MascotasIndex[i] == charIndexNpc) return i;
+        return 0;
+    }
+
+    /// <summary>
+    /// LAS MASCOTAS VIAJAN CON EL AMO (VB6 <c>WarpMascotas</c>, Modulo_UsUaRiOs.bas:1695).
+    ///
+    /// <para>El original la llama en CADA warp —<c>WarpUserChar</c>, con <c>If .NroMascotas Then</c> y FUERA del
+    /// bloque de cambio de mapa, o sea también en un salto dentro del mismo mapa— y siempre DESPUÉS de mover la
+    /// posición, así que lo que mira es el destino. Hace dos cosas distintas según qué llevabas atrás:</para>
+    /// <list type="bullet">
+    ///   <item>la INVOCADA (la que tiene tiempo de vida) se MATA y no vuelve: el viaje te la cuesta;</item>
+    ///   <item>la DOMADA se saca del mapa viejo —siempre— y se vuelve a poner al lado tuyo en el destino
+    ///         conservándole la vida que traía, sólo si el destino es mapa inseguro.</item>
+    /// </list>
+    /// <para>Que se la saque SIEMPRE del mapa viejo es la mitad que más se nota: sin esto, cruzar de mapa te
+    /// dejaba la mascota plantada donde estabas, viva, todavía tuya y ocupándote un lugar de los tres.</para>
+    /// <para>Y si el destino es zona segura, la mascota no se pierde: queda en su lugar FANTASMA (con
+    /// <c>MascotasType</c> puesto y <c>MascotasIndex</c> en 0) esperando afuera, y la próxima vez que pises un
+    /// mapa inseguro esta misma función la trae de vuelta por la rama del <c>ficha != 0</c>.</para>
+    /// </summary>
+    private void WarpMascotas(Player amo)
+    {
+        if (amo.NroMascotas == 0) return;   // VB6 `If .NroMascotas Then Call WarpMascotas`
+        bool puedenVenir = _data.IsPkMap(amo.Pos.Map);   // canWarp = MapInfo(.Pos.Map).Pk, ya con el destino puesto
+
+        for (int i = 1; i <= GameLimits.MaxMascotas; i++)
+        {
+            short ficha = amo.MascotasType[i];
+            short viva = amo.MascotasIndex[i];
+            int vidaQueTraia = 0;
+
+            var npc = viva != 0 ? _world.NpcByIndex(viva) : null;
+            if (npc is not null)
+            {
+                bool esInvocada = npc.ExpireAtTick > 0;   // VB6 Contadores.TiempoExistencia > 0
+                vidaQueTraia = npc.Hp;
+                var donde = npc.Pos;
+                _world.RemoveNpc(viva);                   // libera el lugar (World.RemoveNpc → QuitarMascota)
+                _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(viva));
+
+                if (esInvocada) { ficha = 0; continue; }  // muere y el lugar queda libre de verdad
+                amo.MascotasType[i] = ficha;              // la domada conserva el lugar…
+                amo.NroMascotas++;                        // …y el contador, que RemoveNpc acaba de bajar
+                amo.MascotasIndex[i] = 0;
+            }
+            else if (viva != 0)
+            {
+                // El lugar apuntaba a una criatura que ya no está (murió sin pasar por acá). Se limpia.
+                amo.MascotasIndex[i] = 0;
+            }
+
+            if (ficha == 0 || !puedenVenir) continue;
+
+            var libre = TileLibreParaMascota(amo.Pos);
+            // Sin lugar donde ponerla (agua, todo ocupado) se la deja esperando afuera y se sigue con las
+            // otras, que es lo que hace el original cuando su SpawnNpc devuelve 0: no toca MascotasType, así
+            // que la mascota no se pierde — vuelve en el próximo warp que encuentre lugar.
+            if (libre is null) continue;
+            var plantilla = _data.Npc(ficha);
+            if (plantilla is null) continue;
+
+            var traida = new Npc
+            {
+                CharIndex = _world.AllocateCharIndex(),
+                Template = plantilla,
+                // "Nos aseguramos de que conserve el hp, si estaba daniado" (Modulo_UsUaRiOs.bas:1766): el
+                // original sólo lo pisa si el guardado era 0, o sea que una mascota herida cruza herida.
+                // DIVERGENCIA CHICA Y A PROPÓSITO: allá la variable del hp se declara UNA vez para todo el
+                // barrido de los tres lugares y no se limpia entre vueltas, así que con más de una mascota la
+                // segunda puede heredar la vida de la primera. Acá se lee por vuelta. No se replica el
+                // arrastre: es una variable sin inicializar, no una regla del juego.
+                Hp = vidaQueTraia > 0 ? vidaQueTraia : plantilla.MaxHp,
+                Pos = libre.Value,
+                OwnerCharIndex = amo.CharIndex,
+                Hostile = false,
+                OriginallyHostile = false,
+                Movement = GameLimits.TipoAiSigueAmo,   // VB6 FollowAmo
+            };
+            _world.AddNpc(traida);
+            _world.BroadcastToObservers(traida.Pos, ServerMessages.CharacterCreate(traida));
+            amo.MascotasIndex[i] = traida.CharIndex;     // el lugar ya estaba contado: acá sólo se le pone la criatura
+        }
+    }
+
+    /// <summary>Un tile donde poner la mascota que llega, empezando por el del amo (VB6 <c>SpawnNpc</c> con la
+    /// posición del amo busca el primer lugar legal alrededor).</summary>
+    private WorldPos? TileLibreParaMascota(WorldPos junto)
+    {
+        foreach (var pos in FreeTilesAround(junto, 1)) return pos;
+        return null;
     }
 
     /// <summary>
@@ -7528,6 +7648,7 @@ public sealed class PacketDispatcher
         if (p.Pos.Map != from.Map) session.Send(ServerMessages.ChangeMap(p.Pos.Map));
         session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
         RefreshAreaVisibility(_world, p, from, p.Pos);
+        WarpMascotas(p);
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
     }
 
@@ -9149,10 +9270,9 @@ public sealed class PacketDispatcher
                 // original perdió al comentar la llamada. Consecuencia: el oráculo VB6 no puede validar este
                 // camino, así que un barrido que lo compare lo verá como divergencia, no como gap.
                 //
-                // Cupo COMPARTIDO domar+invocar: MAXMASCOTAS = 3 (Declares.bas:444). CuentaMascotas() cuenta las
-                // mascotas vivas del jugador (domadas + invocadas) → domar e invocar comparten el mismo tope. En el
-                // VB6 el cupo persiste por jugador (una mascota domada en zona segura conserva slot aunque no esté en
-                // el mundo); acá se cuenta por NPCs vivos, más flojo en ese borde pero robusto (sin leaks de slot).
+                // Cupo COMPARTIDO domar+invocar: MAXMASCOTAS = 3 (Declares.bas:444). Se cuenta por LUGARES
+                // ocupados, así que una domada que espera afuera de una ciudad te sigue ocupando el suyo — igual
+                // que en el original, y a diferencia de como estaba acá antes (conteo de NPCs vivos).
                 int current = CuentaMascotas(p);
                 if (current >= GameLimits.MaxMascotas) { session.Send(ServerMessages.ConsoleMsg("No puedes controlar más criaturas.", 0)); return; }
                 SpellCasted(session, p, spell);
@@ -9169,6 +9289,9 @@ public sealed class PacketDispatcher
                         ExpireAtTick = _loop.Tick + SummonLifetimeTicks,  // VB6 TiempoExistencia = IntervaloInvocacion
                     };
                     _world.AddNpc(npc);
+                    // La invocación ocupa un lugar igual que la domada: el cupo de 3 es UNO SOLO y en el
+                    // original lo escriben los dos (VB6 HechizoInvocacion, modHechizos.bas:646-651).
+                    p.OcuparSlotDeMascota(p.PrimerSlotLibre(), npc.CharIndex, npc.Template.Index);
                     _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterCreate(npc));
                     summoned++;
                 }
@@ -9240,7 +9363,7 @@ public sealed class PacketDispatcher
                 EmitirCostoDelHechizo(session, p);
             }
             else if (spell.IsParalyze || spell.IsRemoveParalysis || spell.IsPoison || spell.IsCurePoison
-                     || spell.IsImmobilize || spell.IsIncinerate || spell.IsSanacion)
+                     || spell.IsImmobilize || spell.IsIncinerate || spell.IsSanacion || spell.EsResucitaFamiliar)
             {
                 // Hechizos de estado. OJO con Target (igual que en IsAttrBuff): `Target=1` = "apunta a un usuario",
                 // NO "self". Los OFENSIVOS (paralizar/inmovilizar/envenenar/incinerar) van sobre el jugador —o la
@@ -9258,6 +9381,13 @@ public sealed class PacketDispatcher
                     if (npcTarget is not null && npcTarget.IsAlive) { CastStateOnNpc(session, p, npcTarget, spell); return; }
                 }
                 if (target is null && (spell.IsCurePoison || spell.IsRemoveParalysis || spell.IsSanacion)) target = p;   // soporte → self
+                // "Resucitar familiar o mascota" (#79) entra por acá. En el original NO tiene efecto —el
+                // comentario de la fuente es literal: 'Solo damos la animacion xd'— pero la rama SÍ corre y da
+                // el hechizo por lanzado (modHechizos.bas:1066), que es lo que emite las palabras mágicas, el
+                // sonido y el aviso, y lo que cobra los 600 de maná y los 120 de stamina. Con `autolanzar=1`
+                // el tile casteado es el propio, así que el `If UserIndex = targetIndex` del original se cumple
+                // siempre; si aun así hubiera OTRO parado ahí, el original no lo daría por lanzado.
+                if (spell.EsResucitaFamiliar && target?.CharIndex != p.CharIndex) return;
                 if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
                 // El gate va ANTES de consumir maná (VB6: los `Exit Sub` de PuedeAtacar están arriba de todo).
                 if (ofensivo && target.CharIndex != p.CharIndex && !PuedeAtacar(session, p, target)) return;
@@ -11196,6 +11326,11 @@ public sealed class PacketDispatcher
                 _world.RemoveNpc(summon.CharIndex);
                 _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex));
             }
+            // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
+            // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres
+            // lugares y termina con `.NroMascotas = 0`). Las mascotas no sobreviven a la sesión.
+            for (int i = 1; i <= GameLimits.MaxMascotas; i++) { p.MascotasIndex[i] = 0; p.MascotasType[i] = 0; }
+            p.NroMascotas = 0;
             // VB6 TCP.bas:1644 — al área, EXCLUYENDO al que se va (ya no está para verlo).
             _world.BroadcastToObservers(p.Pos, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
             ControlarPortalLum(_world, _data, p, 1);   // VB6 CloseUser, TCP.bas:1629 — el portal se va con él

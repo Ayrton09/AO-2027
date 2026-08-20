@@ -302,11 +302,19 @@ public sealed class World
         if (npc.ExpireAtTick > 0) _npcsConVencimiento.Add(npc);
     }
 
+    /// <summary>Saca una criatura del mundo.
+    ///
+    /// <para>Si tenía dueño le libera el lugar de mascota, y va acá a propósito y no en cada uno de los siete
+    /// lugares que sacan criaturas: el original hace lo mismo —<c>ResetNpcMainInfo</c> (MODULO_NPCs.bas:289)
+    /// llama a <c>QuitarMascota</c>, y por ahí pasan tanto <c>QuitarNPC</c> como <c>MuereNpc</c>—, así que la
+    /// muerte, el vencimiento de una invocación y el despawn liberan el cupo por la MISMA línea. Repartir la
+    /// limpieza entre los call sites es la forma segura de olvidarse de uno.</para></summary>
     public void RemoveNpc(short charIndex)
     {
         if (!_npcs.Remove(charIndex, out var npc)) return;
         DesindexarNpc(npc);
         if (npc.ExpireAtTick > 0) _npcsConVencimiento.Remove(npc);
+        if (npc.OwnerCharIndex != 0 && TryGet(npc.OwnerCharIndex, out var amo)) amo!.QuitarMascota(charIndex);
     }
 
     /// <summary>Mueve un NPC a otro tile manteniendo el índice. <b>Es el único camino legítimo</b>: asignarle

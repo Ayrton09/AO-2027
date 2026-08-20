@@ -194,9 +194,70 @@ public sealed class Player
     public byte FoundingAlignment { get; set; }
     public HashSet<int> ClaimedPrizes { get; } = new();
 
-    // Mascotas: el cupo COMPARTIDO domar+invocar (VB6 MAXMASCOTAS=3) se lleva por conteo en vivo de NPCs con
-    // OwnerCharIndex del jugador (PacketDispatcher.CuentaMascotas), no por un campo acá — así un NPC que deja el
-    // mundo (muere/expira/dueño desconecta) libera el cupo solo, sin leaks. Antes había un PetCharIndex (1 slot).
+    // ---- MASCOTAS ----------------------------------------------------------------------------------------
+    // El original lleva las mascotas del jugador en DOS arreglos paralelos de 3 lugares más un contador
+    // (VB6 Declares.bas:1431-1433), y la distinción entre los dos es la que hace andar todo lo demás:
+    //
+    //   MascotasType[i]  = la FICHA de la criatura que ocupa el lugar i. Distinto de 0 quiere decir "tenés esa
+    //                      mascota", esté o no puesta en el mundo.
+    //   MascotasIndex[i] = el charIndex de la criatura VIVA. En 0 quiere decir que la mascota existe pero no
+    //                      está en ningún mapa: es el lugar FANTASMA, que el original usa a propósito para la
+    //                      que se doma en zona segura (`DoDomar` Trabajo.bas:1116) y para la que espera afuera
+    //                      mientras su amo camina por una ciudad. Cuando el amo vuelve a un mapa inseguro,
+    //                      `WarpMascotas` la trae de vuelta desde ese lugar.
+    //   NroMascotas      = cuántos lugares están ocupados (por TYPE, no por criaturas en el mundo).
+    //
+    // Acá antes se contaban los NPCs vivos con `OwnerCharIndex` del jugador. Era más simple y no perdía lugares,
+    // pero no podía representar una mascota que existe y no está en el mundo — y sin eso `WarpMascotas` no se
+    // puede portar: cruzar de mapa te dejaba la mascota tirada en el mapa viejo para siempre.
+    public readonly short[] MascotasType = new short[GameLimits.MaxMascotas + 1];   // 1..3, el 0 no se usa
+    public readonly short[] MascotasIndex = new short[GameLimits.MaxMascotas + 1];  // 1..3, el 0 no se usa
+    public int NroMascotas { get; set; }
+
+    /// <summary>El primer lugar LIBRE, o 0 si están los tres ocupados. Mira los TYPE y no los índices, como el
+    /// original (VB6 <c>FreeMascotaIndex</c>, Trabajo.bas:1038, con el comentario de ZaMa que aclara justamente
+    /// eso): un lugar con una mascota fuera del mundo sigue ocupado.</summary>
+    public int PrimerSlotLibre()
+    {
+        for (int i = 1; i <= GameLimits.MaxMascotas; i++)
+            if (MascotasType[i] == 0) return i;
+        return 0;
+    }
+
+    /// <summary>Cuántas mascotas de esa ficha tenés (VB6 <c>PuedeDomarMascota</c>, Trabajo.bas:1162).</summary>
+    public int MascotasDeTipo(short ficha)
+    {
+        int n = 0;
+        for (int i = 1; i <= GameLimits.MaxMascotas; i++)
+            if (MascotasType[i] == ficha) n++;
+        return n;
+    }
+
+    /// <summary>Ocupa un lugar con una criatura recién domada o invocada.</summary>
+    public void OcuparSlotDeMascota(int slot, short charIndexNpc, short ficha)
+    {
+        if (slot is < 1 || slot > GameLimits.MaxMascotas) return;
+        MascotasIndex[slot] = charIndexNpc;
+        MascotasType[slot] = ficha;
+        NroMascotas++;
+    }
+
+    /// <summary>La criatura salió del mundo: se le libera el lugar (VB6 <c>QuitarMascota</c>,
+    /// MODULO_NPCs.bas:46). Ojo que el original lo llama desde <c>ResetNpcMainInfo</c>, o sea desde CUALQUIER
+    /// salida del mundo —muerte, despawn, vencimiento—, y borra el TYPE además del índice. Los dos caminos que
+    /// quieren conservar la mascota fuera del mundo (domar en zona segura y <c>WarpMascotas</c>) vuelven a poner
+    /// el TYPE a mano DESPUÉS de sacarla, y eso es lo que crea el lugar fantasma.</summary>
+    public void QuitarMascota(short charIndexNpc)
+    {
+        for (int i = 1; i <= GameLimits.MaxMascotas; i++)
+        {
+            if (MascotasIndex[i] != charIndexNpc) continue;
+            MascotasIndex[i] = 0;
+            MascotasType[i] = 0;
+            NroMascotas--;
+            return;   // el original corta en la primera (Exit For)
+        }
+    }
 
     /// <summary>Whether the player is mounted (equitación). Changes appearance + (client-side) speed.</summary>
     public bool Mounted { get; set; }
