@@ -112,4 +112,10 @@ public enum ServerPacketId : byte
     UpdateSed = 104,
     UpdateHambre = 105,
     EjecutarAccion = 106,
+
+    /// <summary>LA FICHA DEL FAMILIAR. <b>No existe en el original</b>: es el primer paquete SC que agregamos,
+    /// y arranca en 107 —uno después del último del VB6— con el mismo criterio que el `BorrarPersonaje = 114`
+    /// del lado del cliente. El original tenía el panel dibujado en `frmEstadisticas` y ningún paquete que lo
+    /// alimentara; ésta es esa pieza que faltaba.</summary>
+    FamiliarInfo = 107,
 }

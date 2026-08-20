@@ -505,6 +505,44 @@ public sealed class NpcSystem
     /// (`Distancia > 3`, MANHATTAN — o sea que se queda quieta mientras el amo esté cerca), exige verlo dentro
     /// de la caja **8×6**, lo filtra por muerto/invisible/oculto, y da UN paso greedy con
     /// <c>FindDirection</c>, sin pathfinding.</summary>
+    /// <summary>
+    /// EL FAMILIAR QUE SABE CURAR le tira una curación a su dueño cuando lo ve herido.
+    ///
+    /// <para>Es la habilidad que el Ely aprende al nivel 10 y la única de las trece que hoy tiene efecto — las
+    /// otras se aprenden, se guardan y se muestran en el panel, y están anotadas como pendientes en
+    /// <c>fase5/familiares-plan.md</c>. Se prefirió dejarlas visibles y sin efecto antes que esconder que el
+    /// familiar sube de nivel.</para>
+    ///
+    /// <para>La habilidad número 5 ES el hechizo 5, "Curar heridas graves" (15 a 25 puntos): el enum de
+    /// habilidades del módulo de referencia usa índices de hechizo. Así que se cura con el mismo camino que
+    /// usa un sacerdote para curar a otro NPC, y sale con su sonido y su efecto.</para>
+    ///
+    /// <para>Va acá, en el barrido de las criaturas que siguen a su dueño, porque a una criatura CON DUEÑO el
+    /// original no le corre la fase de ataque — que es donde vive <c>NpcLanzaUnHechizo</c>. Sin esto la
+    /// habilidad no tendría ningún tick donde ocurrir.</para>
+    /// </summary>
+    private void FamiliarCuraAlAmo(Npc npc, Player amo)
+    {
+        var fam = amo.Familiar;
+        if (fam.CharIndexEnElMundo != npc.CharIndex || !fam.Sabe(Familiar.HabCurar)) return;
+        if (!amo.IsAlive || amo.Hp >= amo.MaxHp) return;
+        if (_data.MapNoMagic(amo.Pos.Map)) return;
+        // Una de cada cuatro vueltas, y la vuelta de las mascotas es una por segundo: cura de a ratos, no
+        // todo el tiempo. La proporción sale de medir y no de copiar — el módulo de referencia tira 30 de 100
+        // POR GOLPE, que acá no significa nada porque este barrido no es el de los golpes. Con una de veinte
+        // salía una cura cada veinte segundos y no se notaba que el familiar estuviera haciendo algo.
+        if (_rng.Next(4) != 0) return;
+        var spell = _data.Spell(Familiar.HabCurar);
+        if (spell is null) return;
+
+        int cura = spell.MaxHp >= spell.MinHp ? _rng.Next(spell.MinHp, spell.MaxHp + 1) : spell.MinHp;
+        amo.Hp = Math.Min(amo.MaxHp, amo.Hp + cura);
+        EmitirFxDeHechizo(npc, amo, spell);
+        var conn = amo.Connection;
+        conn?.Send(ServerMessages.ConsoleMsg($"{fam.Nombre} te cura {cura} puntos de vida.", 0));
+        conn?.Send(ServerMessages.UpdateHP((short)amo.Hp));
+    }
+
     private void NpcTryFollowOwner(Npc npc)
     {
         // El dueño se desconectó: OnDisconnect ya despawnea sus invocaciones/mascotas. NO la revertimos a NPC
@@ -513,6 +551,8 @@ public sealed class NpcSystem
         _world.TryGet(npc.OwnerCharIndex, out var owner);   // O(1) por índice, no barrido lineal
         if (owner is not null && owner.Pos.Map == npc.Pos.Map)
         {
+            FamiliarCuraAlAmo(npc, owner);
+
             int dx = owner.Pos.X - npc.Pos.X, dy = owner.Pos.Y - npc.Pos.Y;
             if (Math.Abs(dx) <= RangoVisionX && Math.Abs(dy) <= RangoVisionY
                 && owner.IsAlive && !owner.Invisible && !owner.Oculto
@@ -564,6 +604,7 @@ public sealed class NpcSystem
         // Sacerdote no revivía, el Banquero no atendía y los mercaderes no vendían. Ahora cada uno cumple su
         // función según su ficha del NPCs.dat. (Los NPCs de test de Program.cs siguen fijando sus flags a mano.)
         if (s.Template.NpcType == 1) npc.IsReviver = true;                       // eNPCType.Revividor
+        if (s.Template.NpcType == 11) npc.IsVeterinaria = true;                  // eNPCType.Veterinarias
         if (s.Template.NpcType == 4) npc.IsBanker = true;                        // eNPCType.Banquero
         if (s.Template.NpcType == 7) npc.IsTransportador = true;                 // eNPCType.transportadores (el pirata del pasaje)
         // eNPCType.Entrenador: sus criaturas salen de la ficha (NroCriaturas + CN1..CNn). `IsTrainer` se

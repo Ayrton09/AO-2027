@@ -71,10 +71,26 @@ public class ProtocolParityTests
         // ProcesosLogin es una rama muerta que contesta `EjecutarAccion(5, "0")` y no toca nada
         // (Protocol.bas:15742), así que no había de dónde portarlo.
         [114] = "BorrarPersonaje",
+        // Elegir el familiar (tipo + nombre). El subsistema entero es un agregado nuestro: el original trae la
+        // data —las 9 fichas 'FAMILIAR, los hechizos 59 y 79, la Veterinaria— y le arrancó el código. Va como
+        // paquete aparte y no como campos nuevos de `LoginNewChar` para no sacar de la paridad de bytes al
+        // paquete de creación, que sí es del original.
+        [115] = "ElegirFamiliar",
     };
 
-    /// <summary>El último id que usa el protocolo del VB6. Todo lo nuestro va por encima.</summary>
+    /// <summary>Lo mismo, del lado del SERVIDOR. Va aparte porque el techo del VB6 no es el mismo en las dos
+    /// direcciones: el protocolo del original llega al 113 en los paquetes del cliente y al 106 en los del
+    /// servidor.</summary>
+    private static readonly Dictionary<int, string> ExtensionesPropiasDelServidor = new()
+    {
+        // La ficha del familiar. El original tenía el panel dibujado en `frmEstadisticas` —con las etiquetas
+        // de nivel, vida y experiencia ya puestas, todas en Visible = 0— y ningún paquete que lo alimentara.
+        [107] = "FamiliarInfo",
+    };
+
+    /// <summary>El último id que usa el protocolo del VB6 en cada dirección. Todo lo nuestro va por encima.</summary>
     private const int UltimoIdDelVb6 = 113;
+    private const int UltimoIdDelVb6Servidor = 106;
 
     [Fact]
     public void Las_extensiones_propias_estan_declaradas_y_fuera_del_rango_del_vb6()
@@ -95,6 +111,22 @@ public class ProtocolParityTests
                     $"{v} ({id}) está por encima del protocolo del VB6 y no figura en ExtensionesPropias: " +
                     "si es un paquete nuestro, declaralo ahí con el motivo.");
         }
+
+        // Y LAS DEL SERVIDOR, con la misma regla en las dos direcciones. Esta mitad faltaba: la lista existía
+        // sólo para los paquetes del cliente, así que un paquete SC nuestro entraba sin declararse.
+        foreach (var (id, nombre) in ExtensionesPropiasDelServidor)
+        {
+            Assert.True(id > UltimoIdDelVb6Servidor, $"el id {id} ({nombre}) pisa el rango del VB6 (0..{UltimoIdDelVb6Servidor})");
+            Assert.True(Enum.IsDefined(typeof(ServerPacketId), (byte)id), $"el id {id} está declarado como extensión y no existe en el enum");
+            Assert.Equal(nombre, ((ServerPacketId)(byte)id).ToString());
+        }
+        foreach (var v in Enum.GetValues<ServerPacketId>())
+        {
+            int id = (int)v;
+            if (id > UltimoIdDelVb6Servidor)
+                Assert.True(ExtensionesPropiasDelServidor.ContainsKey(id),
+                    $"{v} ({id}) está por encima del protocolo del VB6 y no figura en ExtensionesPropiasDelServidor.");
+        }
     }
 
     private static void AssertEnumParity(string enumName, Dictionary<int, string> cs)
@@ -111,6 +143,8 @@ public class ProtocolParityTests
         // declaradas, y que no pisen el rango del original, lo verifica el test de arriba.
         if (enumName == "ClientPacketID")
             cs = cs.Where(kv => !ExtensionesPropias.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        if (enumName == "ServerPacketID")
+            cs = cs.Where(kv => !ExtensionesPropiasDelServidor.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
 
         // Same number of members on both sides.
         Assert.True(vb6ByValue.Count == cs.Count,
@@ -141,7 +175,9 @@ public class ProtocolParityTests
     [Fact]
     public void ServerPacketId_snapshot_pins_ids()
     {
-        Assert.Equal(107, Enum.GetValues<ServerPacketId>().Length);
+        // 107 del VB6 (0..106) + las extensiones nuestras.
+        Assert.Equal(107 + ExtensionesPropiasDelServidor.Count, Enum.GetValues<ServerPacketId>().Length);
+        Assert.Equal(107, (int)ServerPacketId.FamiliarInfo);   // el primero que es nuestro
         Assert.Equal(0, (int)ServerPacketId.LoggedSuccessful);
         Assert.Equal(9, (int)ServerPacketId.CommerceInit);
         Assert.Equal(10, (int)ServerPacketId.BankInit);
@@ -163,6 +199,7 @@ public class ProtocolParityTests
         // 114 del VB6 (0..113) + las extensiones nuestras.
         Assert.Equal(114 + ExtensionesPropias.Count, Enum.GetValues<ClientPacketId>().Length);
         Assert.Equal(114, (int)ClientPacketId.BorrarPersonaje);   // el primero que es nuestro
+        Assert.Equal(115, (int)ClientPacketId.ElegirFamiliar);
         Assert.Equal(0, (int)ClientPacketId.Walk);
         Assert.Equal(17, (int)ClientPacketId.DropDestroy);
         Assert.Equal(20, (int)ClientPacketId.DoubleClick);

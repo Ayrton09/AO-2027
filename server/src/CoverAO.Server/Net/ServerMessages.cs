@@ -684,6 +684,36 @@ public static class ServerMessages
     public static byte[] UpdateSed(byte minAgu) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.UpdateSed).WriteByte(minAgu).ToArray();
 
+    /// <summary>LA FICHA DEL FAMILIAR (id 107). <b>Paquete nuestro</b>, no del original — ver
+    /// <see cref="ServerPacketId.FamiliarInfo"/>. Se manda al entrar al mundo, al elegir familiar, al llamarlo
+    /// o retirarlo, cuando sube de nivel y cuando muere o revive: o sea, cada vez que algo de lo que el panel
+    /// muestra pudo cambiar. Con <c>tipo = 0</c> le dice al cliente que este personaje no lleva familiar, que
+    /// es lo que le pasa a quince de las dieciocho clases.</summary>
+    public static byte[] FamiliarInfo(Game.Familiar f)
+    {
+        // Un byte para los dos estados en vez de dos bytes: el panel los usa juntos y nunca por separado.
+        byte estado = (byte)((f.Invocado ? 1 : 0) | (f.Muerto ? 2 : 0));
+        var w = new ByteQueueWriter().WritePacketId(ServerPacketId.FamiliarInfo)
+            .WriteByte(f.Tipo)
+            .WriteAsciiString(f.Nombre)
+            .WriteByte(f.Nivel)
+            // El `Long` del protocolo son 4 bytes con signo: en el modelo se llevan en 64 bits para que la
+            // experiencia no se desborde al sumar, y se recortan acá, que es donde entran al cable.
+            .WriteLong((int)f.Exp).WriteLong((int)f.Elu)
+            .WriteLong((int)f.Vida).WriteLong((int)f.VidaMaxima)
+            .WriteLong((int)f.GolpeMinimo).WriteLong((int)f.GolpeMaximo)
+            .WriteByte(estado)
+            // Las cuatro ranuras van ESCRITAS UNA POR UNA y no con un bucle, aunque el bucle diga lo mismo: el
+            // guard que compara este emisor contra el decoder del cliente lee el codigo, y un `foreach` le
+            // aparece como "un largo variable" contra los cuatro campos fijos del otro lado. El paquete no
+            // tiene length-prefix, asi que ese guard es lo unico que ata las dos puntas.
+            .WriteInteger((short)f.Habilidades[0])
+            .WriteInteger((short)f.Habilidades[1])
+            .WriteInteger((short)f.Habilidades[2])
+            .WriteInteger((short)f.Habilidades[3]);
+        return w.ToArray();
+    }
+
     /// <summary>
     /// El buzón entero (id 86). Layout: Byte(cantidad) y por cada carta
     /// ASCIIString(Emisor), ASCIIString(Carta), Byte(Leida), Integer(ObjetoCantidad), Integer(ObjetoIndex)

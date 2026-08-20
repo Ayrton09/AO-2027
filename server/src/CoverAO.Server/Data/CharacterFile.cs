@@ -143,6 +143,24 @@ public static class CharacterFile
         for (int i = 1; i <= GameLimits.MaxUserSpells; i++)
             ini.Set("HECHIZOS", "H" + i, F(p.Spells[i]));
 
+        // [FAMILIAR] -- seccion NUESTRA, el .chr del original no la tiene. Se escribe siempre, aunque el
+        // personaje no lleve familiar, para que un archivo viejo y uno nuevo se lean igual: `Tipo=0` es "no
+        // tiene". Lo que NO se guarda es si estaba llamado: el familiar entra al mundo cuando el jugador lo
+        // llama, igual que las mascotas, que tampoco sobreviven a la sesion.
+        var fam = p.Familiar;
+        ini.Set("FAMILIAR", "Tipo", F(fam.Tipo));
+        ini.Set("FAMILIAR", "Nombre", fam.Nombre);
+        ini.Set("FAMILIAR", "Nivel", F(fam.Nivel));
+        ini.Set("FAMILIAR", "Exp", F((int)fam.Exp));
+        ini.Set("FAMILIAR", "ELU", F((int)fam.Elu));
+        ini.Set("FAMILIAR", "MinHP", F((int)fam.Vida));
+        ini.Set("FAMILIAR", "MaxHP", F((int)fam.VidaMaxima));
+        ini.Set("FAMILIAR", "MinHIT", F((int)fam.GolpeMinimo));
+        ini.Set("FAMILIAR", "MaxHIT", F((int)fam.GolpeMaximo));
+        ini.Set("FAMILIAR", "Muerto", F(fam.Muerto ? 1 : 0));
+        for (int i = 0; i < fam.Habilidades.Length; i++)
+            ini.Set("FAMILIAR", "Hab" + (i + 1), F(fam.Habilidades[i]));
+
         for (int i = 1; i <= GameLimits.NumSkills; i++)
         {
             ini.Set("SKILLS", "SK" + i, F(p.Skills[i]));
@@ -268,6 +286,25 @@ public static class CharacterFile
 
         for (int i = 1; i <= GameLimits.MaxBankSlots; i++)
             p.BankInventory[i] = ParseInventory(ini.GetString("BancoInventory", "Obj" + i)); // 2-part ok (equipped defaults false)
+
+        // El familiar. Un .chr de antes de que existiera la seccion devuelve vacio en todo y queda con Tipo=0,
+        // que es exactamente "no eligio familiar": no hace falta migrar nada.
+        var fam = p.Familiar;
+        fam.Tipo = ini.GetByte("FAMILIAR", "Tipo", 0);
+        if (fam.Tipo != 0)
+        {
+            fam.Nombre = ini.GetString("FAMILIAR", "Nombre");
+            fam.Nivel = ini.GetByte("FAMILIAR", "Nivel", 1);
+            fam.Exp = ini.GetLong("FAMILIAR", "Exp");
+            fam.Elu = ini.GetLong("FAMILIAR", "ELU");
+            fam.Vida = ini.GetLong("FAMILIAR", "MinHP");
+            fam.VidaMaxima = ini.GetLong("FAMILIAR", "MaxHP");
+            fam.GolpeMinimo = ini.GetLong("FAMILIAR", "MinHIT");
+            fam.GolpeMaximo = ini.GetLong("FAMILIAR", "MaxHIT");
+            fam.Muerto = ini.GetInt("FAMILIAR", "Muerto") != 0;
+            for (int i = 0; i < fam.Habilidades.Length; i++)
+                fam.Habilidades[i] = ini.GetInt("FAMILIAR", "Hab" + (i + 1));
+        }
 
         for (int i = 1; i <= GameLimits.MaxUserSpells; i++)
             p.Spells[i] = ini.GetShort("HECHIZOS", "H" + i);

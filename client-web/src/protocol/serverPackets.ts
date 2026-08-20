@@ -37,6 +37,10 @@ export enum ServerPacketId {
   EfectoTerrenoFX = 93, EfectoTerrenoParticula = 92, MensajeSigno = 95,
   AlianceProposalsList = 71, PeaceProposalsList = 72, GuildDetails = 76,
   AddPJ = 91, AbrirFormularios = 101, EjecutarAccion = 106, CorreoList = 86,
+  // LA FICHA DEL FAMILIAR. AGREGADO NUESTRO: no existe en el original, arranca en 107 -- uno despues del
+  // ultimo id del VB6-- por el mismo criterio que el `BorrarPersonaje = 114` del lado del cliente. El original
+  // tenia el panel dibujado en frmEstadisticas y ningun paquete que lo alimentara.
+  FamiliarInfo = 107,
   // El cuadro de dialogo del server. Es EL paquete de los rechazos de login (personaje ya conectado, otra
   // sesion de la misma cuenta): sin decodificarlo, el cliente quedaba en "logueando..." para siempre y ademas
   // se le desincronizaba el stream, porque no sabia cuantos bytes comerse.
@@ -270,6 +274,17 @@ function readOne(r: ByteQueueReader, id: number): Record<string, unknown> | null
     // EjecutarAccion (VB6): Byte(Accion) + ASCIIString(Extra). Al login llega con Accion=4 (línea de novedades,
     // SendUpdate). Sin este case el stream se DESINCRONIZA (protocolo sin length-prefix).
     case ServerPacketId.EjecutarAccion: return { accion: r.readByte(), extra: r.readAsciiString() };
+    // La ficha del familiar. `estado` trae los dos bits juntos: 1 = esta puesto en el mundo, 2 = muerto.
+    case ServerPacketId.FamiliarInfo: {
+      const tipo = r.readByte(), nombre = r.readAsciiString(), nivel = r.readByte();
+      const exp = r.readLong(), elu = r.readLong();
+      const minHp = r.readLong(), maxHp = r.readLong();
+      const minHit = r.readLong(), maxHit = r.readLong();
+      const estado = r.readByte();
+      const habilidades = [r.readInteger(), r.readInteger(), r.readInteger(), r.readInteger()];
+      return { tipo, nombre, nivel, exp, elu, minHp, maxHp, minHit, maxHit,
+               invocado: (estado & 1) !== 0, muerto: (estado & 2) !== 0, habilidades };
+    }
     case ServerPacketId.UpdateGold: return { gold: r.readLong() };
     case ServerPacketId.ChangeNPCInventorySlot: return { slot: r.readByte(), amount: r.readInteger(), price: r.readSingle(), objIndex: r.readInteger() };
     case ServerPacketId.Pong: return { time: r.readLong() };

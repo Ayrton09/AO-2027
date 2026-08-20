@@ -309,12 +309,34 @@ public sealed class World
     /// llama a <c>QuitarMascota</c>, y por ahí pasan tanto <c>QuitarNPC</c> como <c>MuereNpc</c>—, así que la
     /// muerte, el vencimiento de una invocación y el despawn liberan el cupo por la MISMA línea. Repartir la
     /// limpieza entre los call sites es la forma segura de olvidarse de uno.</para></summary>
+    /// <summary>Se dispara cuando el estado del familiar de alguien cambio por algo que paso en el mundo (hoy:
+    /// su criatura salio de el). Lo engancha el despachador para mandarle la ficha al dueño.</summary>
+    public System.Action<Player>? CambioElFamiliar;
+
     public void RemoveNpc(short charIndex)
     {
         if (!_npcs.Remove(charIndex, out var npc)) return;
         DesindexarNpc(npc);
         if (npc.ExpireAtTick > 0) _npcsConVencimiento.Remove(npc);
-        if (npc.OwnerCharIndex != 0 && TryGet(npc.OwnerCharIndex, out var amo)) amo!.QuitarMascota(charIndex);
+        if (npc.OwnerCharIndex != 0 && TryGet(npc.OwnerCharIndex, out var amo))
+        {
+            amo!.QuitarMascota(charIndex);
+            // Y si lo que salió del mundo era el FAMILIAR se le anota acá, por el mismo motivo: es el único
+            // paso por el que una criatura deja el mundo, muera, la retiren o venza. Lo que distingue morir de
+            // que te guarden es la vida con la que se fue — un familiar retirado sale entero.
+            var fam = amo.Familiar;
+            if (fam.CharIndexEnElMundo == charIndex)
+            {
+                fam.CharIndexEnElMundo = 0;
+                if (npc.Hp <= 0) { fam.Muerto = true; fam.Vida = 0; }
+                else fam.Vida = npc.Hp;
+                // Y SE LE AVISA. Sin esto el dueño se enteraba de que su familiar habia muerto recien la
+                // proxima vez que intentara llamarlo: el panel seguia mostrandolo vivo y en el mundo. El
+                // aviso sale por un enganche y no llamando al emisor de paquetes desde aca, para que `World`
+                // siga sin saber nada del protocolo.
+                CambioElFamiliar?.Invoke(amo);
+            }
+        }
     }
 
     /// <summary>Mueve un NPC a otro tile manteniendo el índice. <b>Es el único camino legítimo</b>: asignarle

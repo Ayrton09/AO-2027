@@ -268,6 +268,24 @@ public static class TestFixture
             });
             System.Console.WriteLine($"Spawn: sacerdote Revividor en (56,{SvcRow}).");
 
+            // VETERINARIA (eNPCType.Veterinarias = 11): doble-clic revive el familiar muerto y cura al herido.
+            // La data trae 27 en el mundo pero ninguna en el mapa 15, y `familiar_progreso_flow` no puede
+            // cruzar medio mapa para llegar a una.
+            //
+            // EN 68 Y NO EN 50, y el hueco del 50 no era casualidad: la columna x=50 es el PASILLO que sale
+            // del punto de aparicion, y `blocking_flow` camina por ahi al norte para chocar contra la pared
+            // de (50,45). Con la veterinaria en (50,47) chocaba contra ELLA cuatro baldosas antes. La fila de
+            // servicios esta ocupada de 34 a 66 de a dos; 68 esta libre y fuera de todo carril.
+            world.AddNpc(new Npc
+            {
+                CharIndex = world.AllocateCharIndex(), Movement = Estatico,
+                Template = merchantTemplate,
+                Hp = merchantTemplate.MaxHp,
+                Pos = new WorldPos(FixtureMap, 68, SvcRow),
+                IsVeterinaria = true,
+            });
+            System.Console.WriteLine($"Spawn: veterinaria en (68,{SvcRow}).");
+
             // TIMBERO (VB6 eNPCType.Timbero = 12): el casino. Se le apuesta oro con `Gamble` y paga el 47% de las
             // veces. La data del install SÍ trae uno, pero está en otro mapa, y el fixture necesita el suyo para
             // que `casino_flow` no dependa de caminar medio mundo.

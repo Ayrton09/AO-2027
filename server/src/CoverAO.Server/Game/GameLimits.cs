@@ -27,6 +27,12 @@ public static class GameLimits
     public const int MinXBorder = 9, MaxXBorder = 92, MinYBorder = 7, MaxYBorder = 94;
 
     // eSkill indices used by combat/crafting (Declares.bas eSkill enum)
+    // Las clases, por su numero de `eClass` (Declares.bas:117). Estaban sueltas en Persistence como privadas;
+    // el subsistema de familiares necesita las tres que llevan uno, asi que viven aca.
+    public const byte ClaseClerigo = 1, ClaseMago = 2, ClaseGuerrero = 3, ClaseAsesino = 4, ClaseLadron = 5,
+                      ClaseBardo = 6, ClaseDruida = 7, ClaseGladiador = 8, ClasePaladin = 9, ClaseCazador = 10,
+                      ClaseNigromante = 18;
+
     public const int SkillTacticas = 1;
     public const int SkillMagia = 8;    // Declares.bas eSkill.magia
     public const int SkillResistencia = 9;

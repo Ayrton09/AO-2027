@@ -14,7 +14,10 @@ public struct MerchantSlot
 public sealed class Npc
 {
     public required short CharIndex { get; init; }
-    public required NpcInfo Template { get; init; }
+    /// <summary>La ficha de la criatura. Tiene SET y no sólo init porque el familiar sube de nivel: sus barras
+    /// salen de la plantilla, así que crecer es cambiarle la ficha por una con los números nuevos (un `with`
+    /// sobre el record). Para cualquier otra criatura se fija una vez y no se toca.</summary>
+    public required NpcInfo Template { get; set; }
 
     /// <summary>
     /// POOL DE EXPERIENCIA de esta criatura (VB6 <c>flags.ExpCount</c>, nace en <c>MODULO_NPCs.bas:998</c> con
@@ -49,6 +52,12 @@ public sealed class Npc
     /// <summary>True for a Revividor (sacerdote): al hacerle doble-clic, revive al jugador muerto cercano
     /// (VB6 eNPCType.Revividor).</summary>
     public bool IsReviver { get; set; }
+
+    /// <summary>VETERINARIA (<c>NPCs.dat NpcType = 11</c>, <c>eNPCType.Veterinarias</c>). En el original el rol
+    /// está declarado y no lo usa NADIE: la constante aparece una sola vez en todo el servidor, en su propia
+    /// línea del enum. Pero el NPC existe, tiene 27 apariciones en el mundo y su descripción ya dice para qué
+    /// era — "Si tu familiar o mascota se encuentra en mal estado, acércamelo". Acá se le da ese trabajo.</summary>
+    public bool IsVeterinaria { get; set; }
 
     /// <summary>El PIRATA que cobra el pasaje (VB6 <c>eNPCType.transportadores</c> = 7). No abre ninguna
     /// ventana: hay que USAR el pasaje teniéndolo clickeado, y él es el gate. Son 10 en el install.</summary>

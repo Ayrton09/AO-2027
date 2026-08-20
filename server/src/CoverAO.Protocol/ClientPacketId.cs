@@ -125,4 +125,13 @@ public enum ClientPacketId : byte
     /// contesta `EjecutarAccion(5, "0")` y no borra nada (Protocol.bas:15742)—, así que no había de dónde
     /// portarlo. Lo pidió el tester (1b).</summary>
     BorrarPersonaje = 114,
+
+    /// <summary>ELEGIR EL FAMILIAR: tipo (byte 1..9) + nombre. <b>No existe en el original</b> — sigue al 114
+    /// por la misma razón, y el subsistema entero es un agregado nuestro (ver <c>Game/Familiar</c>). Se manda
+    /// UNA vez por personaje, apenas entra al mundo; después el familiar es el que es.
+    ///
+    /// <para>Va como paquete aparte y NO como campos nuevos de <c>LoginNewChar</c> a propósito: ese paquete es
+    /// del original y agregarle campos lo sacaría de la paridad de bytes, con lo que el oráculo dejaría de
+    /// poder medir la creación de personajes — que es de las cosas que más nos importa que no se mueva.</para></summary>
+    ElegirFamiliar = 115,
 }

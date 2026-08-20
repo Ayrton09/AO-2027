@@ -745,6 +745,17 @@
               <div class="fichas densa" id="pick-clase"></div>
             </div>
 
+            <!-- EL FAMILIAR. Aparece SOLO para las tres clases que llevan uno; para las otras quince el bloque
+                 no esta. Eso es lo mismo que decia la imagen que el cliente original tenia preparada y nunca
+                 llego a mostrar, "NO DISPONIBLE PARA ESTA CLASE". -->
+            <div class="bloque" id="bloque-familiar" hidden>
+              <h4>Familiar</h4>
+              <div class="fichas" id="pick-familiar"></div>
+              <label>Nombre del familiar <input id="fam-nombre" maxlength="20"
+                     pattern="[A-Za-z]+( [A-Za-z]+)*" title="Solo letras y espacios"></label>
+              <div class="login-hint" id="familiar-info"></div>
+            </div>
+
             <div class="bloque">
               <h4>Tierra natal · acá elegís bando</h4>
               <div class="bandos" id="pick-bando"></div>
@@ -844,6 +855,7 @@
       // este no tenia. Cinco de ellos son comandos '/' — en el VB6 los parsea clsClientTCP.cls.
       RequestPositionUpdate: 5, EquiparSkin: 30, Ping: 91, AbrirForms: 112, DesconectarCuenta: 113,
       BorrarPersonaje: 114,   // NO existe en el original: el 114 es nuestro (ver ClientPacketId.cs)
+      ElegirFamiliar: 115,    // tampoco existe en el original: el subsistema de familiares es un agregado
       // El servidor lo atiende entero (difunde la particula al area del objetivo) y el cliente no tenia
       // como pedirlo. Va como /particula, fuera de la tabla de GM porque es paquete propio, no subcomando.
       ParticulaUsuario: 100 };
@@ -975,6 +987,9 @@
     const chars = new Map();       // charIndex -> {x,y,name,status}
     const dying = new Map();       // charIndex -> char being faded out after a CharacterRemove (death/leave-view)
     let myCharIndex = null, myKey = DEFAULT_XOR_KEY, myStats = null, raining = false, period = 'dia';
+    // La ficha del familiar, tal como la manda el server (paquete 107, agregado nuestro). `tipo` en 0 quiere
+    // decir que este personaje no lleva -- le pasa a quince de las dieciocho clases.
+    let miFamiliar = null;
     let myHitAt = 0;               // timestamp of the last time we got hit (drives a brief red flash)
     let blind = false;             // ceguera por hechizo (Blind 57 / BlindNoMore 65): pantalla en negro
     const floaters = [];           // numeros de dano flotantes: {x, y, text, at}
@@ -2290,8 +2305,33 @@
         `Ciudadanos matados <b>${f.ciudadanosMatados}</b>`,
         `Criminales matados <b>${f.renegadosMatados}</b>`,
         `Armada <b>${f.armadaMatados}</b> · Caos <b>${f.caosMatados}</b> · Milicia <b>${f.milicianosMatados}</b>`,
-      ]);
+      ]).concat(filasDelFamiliar());
       showModal('📊 Estadísticas', rows, true, 'stats');
+    }
+
+    // Los nombres de las habilidades, para el panel. Son los del enum de referencia; el server manda el
+    // numero y el texto lo pone el cliente, igual que con los hechizos.
+    const HAB_FAMILIAR = { 5: 'Cura al amo', 9: 'Paraliza', 10: 'Paraliza con los golpes',
+      11: 'Entorpece con los golpes', 12: 'Desarma con los golpes', 13: 'Ciega con los golpes',
+      14: 'Envenena con los golpes', 15: 'Tormenta de fuego', 22: 'Desencanta al amo', 24: 'Inmoviliza',
+      62: 'Detecta invisibles', 92: 'Lanza misiles magicos', 93: 'Lanza descargas' };
+    const TIPO_FAMILIAR = { 1: 'Elemental de fuego', 2: 'Elemental de agua', 3: 'Elemental de tierra',
+      4: 'Fuego fatuo', 5: 'Ely', 6: 'Ent', 7: 'Tigre', 8: 'Lobo', 9: 'Oso pardo' };
+
+    /** El panel del familiar, dentro de la ficha de estadisticas. Va ahi y no en una ventana propia porque es
+     *  donde el cliente ORIGINAL lo tenia: los controles muertos de su panel viven en `frmEstadisticas`, con
+     *  las etiquetas de nivel, vida y experiencia ya puestas y en Visible = 0. */
+    function filasDelFamiliar() {
+      if (!miFamiliar) return [];
+      const f = miFamiliar;
+      const estado = f.muerto ? 'muerto' : f.invocado ? 'con vos' : 'guardado';
+      const habs = (f.habilidades || []).filter(Boolean).map((h) => HAB_FAMILIAR[h] || ('#' + h));
+      return ['—',
+        `Familiar <b>${esc(f.nombre)}</b> · ${esc(TIPO_FAMILIAR[f.tipo] || f.tipo)} · ${estado}`,
+        `Nivel <b>${f.nivel}</b> · experiencia <b>${f.exp}</b> / ${f.elu}`,
+        `Vida <b>${f.minHp}/${f.maxHp}</b> · golpe <b>${f.minHit}-${f.maxHit}</b>`,
+        habs.length ? `Habilidades: <b>${esc(habs.join(', '))}</b>` : 'Todavia no aprendio ninguna habilidad',
+      ];
     }
 
     /** Ficha de personaje (CharacterInfo 73): la respuesta a /INFORMACION y a pedir la ficha de un aspirante
@@ -2862,6 +2902,13 @@
       const f = e.fields;
       switch (e.name) {
         case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = false; hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
+          // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
+          // original y no se le agregan campos. Va una sola vez.
+          if (familiarPendiente) {
+            ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ElegirFamiliar)
+              .writeByte(familiarPendiente.tipo).writeAsciiString(familiarPendiente.nombre).toBytes(), myKey));
+            familiarPendiente = null;
+          }
           send(W().writeByte(CLIENT.RequestAtributes));   // pide Fuerza/Agilidad para el panel (llega por 'Atributes')
           // El inventario y los hechizos llegan durante el bootstrap, así que el autollenado de la hotbar
           // se agenda para cuando ya estén todos: si corriera acá encontraría las dos listas vacías.
@@ -3080,6 +3127,7 @@
         case 'UpdateTagAndStatus': { const c = chars.get(f.charIndex); if (c) c.status = f.status; break; }
         case 'CorreoList': cartas = f.cartas; renderCartas(); break;   // la bandeja del buzon
         case 'UpdateUserStats': myStats = f; break;   // HP/mana/level for the HUD
+        case 'FamiliarInfo': miFamiliar = f.tipo ? f : null; break;
         // Actualizaciones de UN stat: el server manda solo el valor que cambio y el HUD lo aplica sobre lo
         // que ya tiene. Es el camino caliente (cada golpe, cada vuelta de regeneracion, cada tick de oficio),
         // asi que el original manda 3-5 bytes en vez del UpdateUserStats de ~26. Si todavia no llego ningun
@@ -5039,6 +5087,38 @@
       }).join('');
     };
 
+    // LOS FAMILIARES, por clase. Los cinco del Mago son los de la lamina del original -- Elemental de Fuego,
+    // de Tierra, de Agua, Ely y Fuego Fatuo -- y las cuatro bestias van para Druida y Cazador. Las otras
+    // quince clases no llevan. Los numeros son los del `eTipoFamily` que viaja en el paquete.
+    const FAMILIARES = {
+      2:  [[5, 'Ely'], [1, 'Elemental de fuego'], [3, 'Elemental de tierra'], [2, 'Elemental de agua'], [4, 'Fuego fatuo']],
+      7:  [[6, 'Ent'], [9, 'Oso pardo'], [7, 'Tigre'], [8, 'Lobo']],
+      10: [[6, 'Ent'], [9, 'Oso pardo'], [7, 'Tigre'], [8, 'Lobo']],
+    };
+    let familiarPendiente = null;   // lo elegido en la creacion, para mandarlo cuando el personaje entre
+
+    const pintarFamiliar = (clase) => {
+      const bloque = $('bloque-familiar'), cont = $('pick-familiar'), info = $('familiar-info');
+      const lista = FAMILIARES[clase];
+      if (!bloque || !cont) return;
+      // `hidden` NO alcanza por si solo: cualquier regla de autor con `display` lo pisa. Se apaga tambien el
+      // display, que es lo que ya me mordio con las solapas del login.
+      bloque.hidden = !lista;
+      bloque.style.display = lista ? '' : 'none';
+      cont.innerHTML = '';
+      if (!lista) return;
+      lista.forEach(([v, n]) => {
+        const f = document.createElement('div');
+        f.className = 'ficha'; f.textContent = n; f.dataset.v = String(v);
+        f.addEventListener('click', () => {
+          [...cont.children].forEach((x) => x.classList.toggle('on', x === f));
+        });
+        cont.appendChild(f);
+      });
+      cont.firstChild.classList.add('on');
+      if (info) info.textContent = 'Te acompaña, pelea con vos y sube de nivel. Se elige una sola vez.';
+    };
+
     const pintarClase = (id) => {
       const varas = $('clase-varas'), kit = $('clase-kit');
       const c = CREACION && CREACION.clases.find((x) => x.id === id);
@@ -5078,10 +5158,13 @@
 
     fichas($('pick-raza'), RAZAS, lfCh.race, pintarModsDeRaza);
     fichas($('pick-genero'), GENEROS, lfCh.gender);
-    fichas($('pick-clase'), CLASES, lfCh.klass, pintarClase);
+    // El familiar NO sale de creacion.json: la lista es del cliente, asi que se pinta aunque ese archivo
+    // falte -- por eso cuelga del mismo `change` de la clase y no de `pintarClase`, que sin datos sale antes.
+    fichas($('pick-clase'), CLASES, lfCh.klass, (id) => { pintarClase(id); pintarFamiliar(id); });
     pintarBandos();
     pintarModsDeRaza(+lfCh.race.value || 1);
     pintarClase(+lfCh.klass.value || 1);
+    pintarFamiliar(+lfCh.klass.value || 1);
 
     // Los datos van por `fetch` y NO bloquean: si el archivo no está —un paquete viejo—, las fichas siguen
     // eligiendo igual y lo único que falta son los números. Una pantalla sin adornos es mejor que una rota.
@@ -5193,6 +5276,12 @@
       V(w); w.writeAsciiString(e.name.value.trim())
         .writeByte(+e.race.value).writeByte(+e.gender.value).writeByte(+e.klass.value).writeByte(+e.home.value)
         .writeInteger(+e.head.value).writeAsciiString('web').writeLong(1);
+      // La eleccion de familiar NO viaja en este paquete: `LoginNewChar` es del original y agregarle campos
+      // lo sacaria de la paridad de bytes. Se guarda y se manda aparte apenas el personaje entra al mundo.
+      familiarPendiente = null;
+      const tipoFam = +($('pick-familiar').querySelector('.ficha.on') || {}).dataset?.v || 0;
+      const nomFam = ($('fam-nombre').value || '').trim();
+      if (tipoFam && nomFam.length >= 2) familiarPendiente = { tipo: tipoFam, nombre: nomFam };
       loginErr('Creando personaje…'); sendLogin(w.toBytes());
     });
 

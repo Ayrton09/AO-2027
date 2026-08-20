@@ -13,7 +13,7 @@ namespace CoverAO.Server.Net;
 /// Handlers read ALL their fields up front, then act — mirroring the AO invariant that a truncated
 /// packet (NotEnoughData) leaves no partial side effect.
 /// </summary>
-public sealed class PacketDispatcher
+public sealed partial class PacketDispatcher
 {
     private readonly World _world;
     private readonly GameLoop _loop;
@@ -65,6 +65,7 @@ public sealed class PacketDispatcher
         if (_npcs is not null)
             _npcs.SubirSkillPorUso = (jugador, skill) =>
                 RaiseSkill(jugador.Connection as ClientSession, jugador, skill);
+        EngancharAvisosDelFamiliar();
     }
 
     private readonly NpcSystem? _npcs;   // para /ACC /RACC (spawn de NPCs con respawn); null en tests sin mundo vivo
@@ -243,6 +244,7 @@ public sealed class PacketDispatcher
             case ClientPacketId.ConnectAccount: HandleConnectAccount(session, reader); break;
             case ClientPacketId.CreateNewAccount: HandleCreateNewAccount(session, reader); break;
             case ClientPacketId.LoginNewChar: HandleLoginNewChar(session, reader); break;
+            case ClientPacketId.ElegirFamiliar: HandleElegirFamiliar(session, reader); break;
             case ClientPacketId.Walk: HandleWalk(session, reader); break;
             case ClientPacketId.ChangeHeading: HandleChangeHeading(session, reader); break;
             case ClientPacketId.attack: HandleAttack(session); break;
@@ -1055,6 +1057,10 @@ public sealed class PacketDispatcher
         // SendMOTD + SendUpdate (VB6 ConnectUser, TCP.bas:296-298): el mensaje del día como líneas ConsoleMsg
         // (FontIndex 8) y las novedades como EjecutarAccion(4). Reemplaza el ConsoleMsg único genérico; el
         // contenido viene de ServerContent (data/motd.txt + data/updates.txt, o el default de CoverAO).
+        // La ficha del familiar, para que el panel del cliente arranque poblado. Va aunque el personaje no
+        // lleve familiar: con `tipo = 0` el cliente sabe que tiene que esconder el panel, y sin el paquete no
+        // podría distinguir "no tiene" de "todavía no llegó".
+        session.Send(ServerMessages.FamiliarInfo(player.Familiar));
         foreach (var line in _content.Motd) session.Send(ServerMessages.ConsoleMsg(line, ServerContent.MotdFont));   // SendMOTD
         foreach (var line in _content.Updates) session.Send(ServerMessages.EjecutarAccion(4, line));                 // SendUpdate
         // Preso que reloguea: el VB6 (TCP.bas:368) le recuerda la condena que le queda con LocaleMsg 146.
@@ -1357,6 +1363,7 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
         RefreshAreaVisibility(_world, p, from, dest);     // remove old-area chars, create new-area chars (map-aware)
         WarpMascotas(p);                                  // las mascotas viajan con vos (VB6 WarpUserChar:1657)
+        WarpFamiliar(p);                                  // y el familiar también (agregado nuestro)
         _world.Events.Publish(new PlayerMoved(p, from, dest));
     }
 
@@ -1381,6 +1388,7 @@ public sealed class PacketDispatcher
         t.Connection?.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
         RefreshAreaVisibility(_world, t, from, dest);
         WarpMascotas(t);                                  // también al preso y al liberado
+        WarpFamiliar(t);
         _world.Events.Publish(new PlayerMoved(t, from, dest));
     }
 
@@ -1992,6 +2000,7 @@ public sealed class PacketDispatcher
         long dar = exp * (_admin?.ExpMult ?? 1);
         if (p.Donador) dar += dar / 2;   // VB6 :2029
         OtorgarExp(session, p, dar);
+        RepartirExperienciaAlFamiliar(session, p, dar);
         // CUÁNTA experiencia ganó ESTE golpe (VB6 SistemaCombate.bas:2041, la línea que sigue al UpdateExp).
         // El tester lo pidió (2.19) y es del original: sin esto la barra de experiencia se movía sola y el
         // jugador no tenía forma de saber cuánto rindió cada golpe. El aviso NO está en `OtorgarExp` porque el
@@ -2215,6 +2224,7 @@ public sealed class PacketDispatcher
             if (p.Donador) gainExp += gainExp / 2;   // VB6 SistemaCombate.bas:2029 — el donador gana +50% de experiencia
             npc.ExpCount = 0;                        // VB6 :142 — el pool se vacía, no se paga dos veces
             OtorgarExp(session, p, gainExp);
+            RepartirExperienciaAlFamiliar(session, p, gainExp);
             session.Send(ServerMessages.LocaleMsg(140, gainExp.ToString()));   // VB6 MODULO_NPCs.bas:136
         }
         // "¡Has matado a #1!" con el NOMBRE de la criatura, y va SIEMPRE — el original lo manda afuera del
@@ -7260,6 +7270,7 @@ public sealed class PacketDispatcher
                 TryAccionParaObjeto(session, p, x, y);        // si no, puede haber una PUERTA (o un yunque)
                 return;
             }
+            if (npc.IsVeterinaria) { AtenderVeterinaria(session, p, npc); return; }
             if (npc.IsReviver)                                              // sacerdote Revividor (VB6 Acciones.bas:304) — atiende ANTES del DeadCheck
             {
                 // MANHATTAN, no Chebyshev: `Distancia` (Matematicas.bas:43) suma los dos ejes. Con Chebyshev un
@@ -7649,6 +7660,7 @@ public sealed class PacketDispatcher
         session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
         RefreshAreaVisibility(_world, p, from, p.Pos);
         WarpMascotas(p);
+        WarpFamiliar(p);
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
     }
 
@@ -9388,6 +9400,9 @@ public sealed class PacketDispatcher
                 // el tile casteado es el propio, así que el `If UserIndex = targetIndex` del original se cumple
                 // siempre; si aun así hubiera OTRO parado ahí, el original no lo daría por lanzado.
                 if (spell.EsResucitaFamiliar && target?.CharIndex != p.CharIndex) return;
+                // Y ACÁ el agregado nuestro: si el que lo tira tiene el familiar muerto, lo revive. Va después
+                // del guard para no cambiar nada de lo que emite el original en el caso sin familiar.
+                if (spell.EsResucitaFamiliar) RevivirFamiliarSiHay(session, p);
                 if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
                 // El gate va ANTES de consumir maná (VB6: los `Exit Sub` de PuedeAtacar están arriba de todo).
                 if (ofensivo && target.CharIndex != p.CharIndex && !PuedeAtacar(session, p, target)) return;
@@ -9411,6 +9426,13 @@ public sealed class PacketDispatcher
                 EmitirCostoDelHechizo(session, p);
                 if (target.CharIndex != p.CharIndex)
                     target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}"));
+            }
+            else if (spell.Index == HechizoLlamadoAlFamiliar)
+            {
+                // "Llamado al familiar": trae o retira. El subsistema entero es un agregado nuestro
+                // (PacketDispatcher.Familiar.cs); el hechizo existe en el .dat del original y cae en el vacío
+                // porque su `Tipo = 6` (uFamiliar) no tiene `Case` que lo atienda en ningún handler.
+                LlamarORetirarFamiliar(session, p, spell);
             }
             else
             {
@@ -11326,6 +11348,9 @@ public sealed class PacketDispatcher
                 _world.RemoveNpc(summon.CharIndex);
                 _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex));
             }
+            // El familiar se guarda solo (RemoveNpc le pone CharIndexEnElMundo en 0 y le conserva la vida),
+            // así que al reconectar vuelve entero y hay que volver a llamarlo. Igual que las mascotas: nada
+            // del jugador queda suelto en el mundo cuando se va.
             // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
             // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres
             // lugares y termina con `.NroMascotas = 0`). Las mascotas no sobreviven a la sesión.

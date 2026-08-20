@@ -194,6 +194,11 @@ public sealed class Player
     public byte FoundingAlignment { get; set; }
     public HashSet<int> ClaimedPrizes { get; } = new();
 
+    /// <summary>El familiar del personaje (Mago, Druida y Cazador; el resto lo tiene vacio). Es un AGREGADO
+    /// nuestro, no un port: ver <see cref="Familiar"/>. Va aparte de las mascotas a proposito -- ocupa su
+    /// propio lugar y no come del cupo de tres, porque no se doma ni se invoca, es tuyo desde que lo elegis.</summary>
+    public Familiar Familiar { get; } = new();
+
     // ---- MASCOTAS ----------------------------------------------------------------------------------------
     // El original lleva las mascotas del jugador en DOS arreglos paralelos de 3 lugares más un contador
     // (VB6 Declares.bas:1431-1433), y la distinción entre los dos es la que hace andar todo lo demás:
