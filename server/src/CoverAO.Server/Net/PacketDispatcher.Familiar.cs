@@ -147,6 +147,9 @@ public sealed partial class PacketDispatcher
             MaxHit = (int)fam.GolpeMaximo,
             GiveExp = 0,     // matar al familiar de otro no puede pagar experiencia
             GiveGld = 0,
+            // Sus habilidades mágicas viajan en la ficha como los hechizos de cualquier criatura que sabe
+            // magia: así las tira por el MISMO camino que ya existe, con su daño, su resistencia y su efecto.
+            Spells = fam.HechizosQueTira(),
         };
         var criatura = new Npc
         {
@@ -235,11 +238,34 @@ public sealed partial class PacketDispatcher
             criatura.Template = criatura.Template with
             {
                 MaxHp = (int)fam.VidaMaxima, MinHit = (int)fam.GolpeMinimo, MaxHit = (int)fam.GolpeMaximo,
+                Spells = fam.HechizosQueTira(),   // la habilidad que acaba de aprender entra en la pelea que está dando
             };
             criatura.Hp = (int)fam.VidaMaxima;
         }
         foreach (var aviso in avisos) session?.Send(ServerMessages.ConsoleMsg(aviso, FuenteInfo));
         EnviarFichaDelFamiliar(session, p);
+    }
+
+    /// <summary>
+    /// LE SACA EL ARMA a quien acaba de recibir un mordisco del familiar: es la habilidad "Desarma con los
+    /// golpes" que aprenden el Ent y el Oso al nivel 30.
+    ///
+    /// <para>Vive acá y no en el sistema de criaturas porque desequipar toca el inventario, las animaciones y
+    /// tres paquetes, y todo eso ya está escrito para el desarme del jugador — el del Ladrón, el Bardo y el
+    /// Gladiador. La tirada la hizo el que llama; esto sólo aplica.</para>
+    /// </summary>
+    private void DesarmarPorElFamiliar(Player victima)
+    {
+        int slot = EquippedSlotOfCategory(victima, 1);   // el arma equipada
+        if (slot <= 0) return;
+        var inv = victima.Inventory[slot];
+        inv.Equipped = false;
+        victima.Inventory[slot] = inv;
+        var arma = _data.Obj(inv.ObjIndex);
+        if (arma is not null) ClearEquipAnim(victima, arma);
+        victima.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, false, 0f, 1));
+        if (arma is not null) BroadcastEquipChange(victima, arma, equipped: false);
+        victima.Connection?.Send(ServerMessages.ConsoleMsg("¡Te han desarmado!", FuenteCombate));
     }
 
     /// <summary>

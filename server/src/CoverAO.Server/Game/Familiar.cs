@@ -105,10 +105,18 @@ public sealed class Familiar
     };
 
     // ---- HABILIDADES ------------------------------------------------------------------------------------
-    // Los números son los del enum de referencia. Sólo dos hacen algo hoy en nuestro motor -CURAR y
-    // PARALIZA_AL_GOLPE-; el resto se aprende, se guarda y se muestra, y está anotado en
-    // fase5/familiares-plan.md como pendiente. Se prefirió dejarlas visibles y sin efecto antes que inventar
-    // un efecto que no se parezca a nada, y antes que esconder que el familiar sube de nivel.
+    // Los números son los del enum de referencia y se reparten en dos familias que NO se tratan igual:
+    //
+    //   * las de GOLPE (envenena, entorpece, desarma, ciega, paraliza al golpear) son banderas, y las aplica
+    //     el sistema de criaturas después de que el golpe entra -- ver NpcSystem.FamiliarGolpeoA;
+    //   * las MÁGICAS son ÍNDICES DE HECHIZO de verdad, y viajan en la ficha de la criatura para que las tire
+    //     por el mismo camino que cualquier NPC que sabe magia -- ver HechizosQueTira().
+    //
+    // Confundirlas es fácil y caro: los números se pisan. La 11 como bandera es "entorpece" y como hechizo es
+    // "Resucitar"; la 10 es "paraliza al golpear" y "Remover parálisis".
+    //
+    // Dos no hacen nada, y es fiel: Desencantar (22) y Detectar invisibilidad (62) cargan su bandera en el
+    // original y no las consulta NADIE, ni siquiera cuando las tira un jugador.
 
     public const int HabCurar = 5, HabParaliza = 9, HabGolpeParaliza = 10, HabGolpeEntorpece = 11,
                      HabGolpeDesarma = 12, HabGolpeCiega = 13, HabGolpeEnvenena = 14, HabTormenta = 15,
@@ -158,6 +166,25 @@ public sealed class Familiar
     };
 
     public bool Sabe(int habilidad) => System.Array.IndexOf(Habilidades, habilidad) >= 0;
+
+    /// <summary>Las habilidades que el familiar TIRA COMO HECHIZO sobre su enemigo, por índice de hechizo.
+    ///
+    /// <para>Y acá hay una trampa que conviene tener escrita: en el enum de referencia las habilidades mágicas
+    /// SON índices de hechizo —la 5 es "Curar heridas graves", la 92 "Misil mágico", la 93 "Descarga
+    /// eléctrica"— pero las de GOLPE no. La 10 sería "Remover parálisis" y la 11 "Resucitar": pasarlas por acá
+    /// haría que el Ent reviviera a su víctima de un mordisco. Por eso la lista es explícita.</para>
+    ///
+    /// <para>Quedan afuera, además, las dos que el ORIGINAL tampoco resuelve: Desencantar (22) y Detectar
+    /// invisibilidad (62) cargan su bandera y no las consulta nadie, ni siquiera para un jugador. Se aprenden
+    /// y se muestran, como allá.</para></summary>
+    public System.Collections.Generic.List<int> HechizosQueTira()
+    {
+        var lista = new System.Collections.Generic.List<int>();
+        foreach (var h in Habilidades)
+            if (h is HabParaliza or HabTormenta or HabInmoviliza or HabMisil or HabDescarga)
+                lista.Add(h);
+        return lista;
+    }
 
     // ---- CICLO DE VIDA ----------------------------------------------------------------------------------
 

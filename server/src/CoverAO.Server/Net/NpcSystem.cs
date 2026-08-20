@@ -791,8 +791,90 @@ public sealed class NpcSystem
     /// <para>La víctima no lleva equipo, así que no hay absorción por armadura: el daño es el crudo del
     /// atacante contra la defensa de la plantilla de la víctima, con piso 1 como en el camino del jugador.</para>
     /// </summary>
+    /// <summary>Le saca el arma a la víctima. Lo resuelve el DESPACHADOR y no acá: desequipar toca el
+    /// inventario, las animaciones y tres paquetes, y todo eso ya está escrito allá para el desarme del
+    /// jugador. Se cablea igual que <see cref="SubirSkillPorUso"/>.</summary>
+    public System.Action<Player>? DesarmarPorFamiliar;
+
+    /// <summary>El familiar de alguien, si esta criatura lo es. Devuelve null para cualquier otra — incluidas
+    /// las mascotas domadas y las invocaciones, que tienen dueño pero no habilidades.</summary>
+    private Familiar? FamiliarDe(Npc npc)
+    {
+        if (npc.OwnerCharIndex == 0) return null;
+        _world.TryGet(npc.OwnerCharIndex, out var amo);
+        var fam = amo?.Familiar;
+        return fam is not null && fam.CharIndexEnElMundo == npc.CharIndex ? fam : null;
+    }
+
+    /// <summary>Cada cuánto sale una habilidad de golpe. El módulo de referencia no da un número para éstas;
+    /// se usa el que el original usa para el veneno de una criatura (<c>RandomNumber(1,100) &lt; 30</c>,
+    /// MODULO_NPCs.bas:793), que es la mecánica más parecida que hay en la fuente.</summary>
+    private const int ProbHabilidadDeGolpe = 30;
+
+    /// <summary>
+    /// LAS HABILIDADES DE GOLPE del familiar, sobre un JUGADOR. Son las cinco que aprenden el Ent, el Oso, el
+    /// Tigre y el Lobo, y se aplican después de que el golpe entró.
+    ///
+    /// <para>OJO con los números: en el enum de referencia las habilidades MÁGICAS son índices de hechizo
+    /// —la 5 es "Curar heridas graves"— pero las de golpe NO lo son. La 11 sería "Resucitar" y la 10
+    /// "Remover parálisis": tratarlas como hechizos haría que el Ent reviviera a su víctima. Son banderas.</para>
+    /// </summary>
+    private void FamiliarGolpeoA(Npc npc, Player victima)
+    {
+        var fam = FamiliarDe(npc);
+        if (fam is null || !victima.IsAlive) return;
+
+        if (fam.Sabe(Familiar.HabGolpeEnvenena) && !victima.IsPoisoned(_tick) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+        {
+            victima.PoisonedUntilTick = long.MaxValue;   // el veneno del original no caduca solo: se cura
+            victima.Connection?.Send(ServerMessages.LocaleMsg(182));
+        }
+        if (fam.Sabe(Familiar.HabGolpeParaliza) && !victima.IsParalyzed(_tick) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+        {
+            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
+            victima.ParalyzedByCharIndex = 0;
+            if (!victima.ClientParalyzed) { victima.ClientParalyzed = true; victima.Connection?.Send(ServerMessages.ParalizeOK()); }
+        }
+        if (fam.Sabe(Familiar.HabGolpeCiega) && !victima.IsBlinded(_tick) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+        {
+            victima.BlindedUntilTick = _tick + CegueraDeFamiliarTicks;
+            victima.Connection?.Send(ServerMessages.Blind());
+        }
+        if (fam.Sabe(Familiar.HabGolpeDesarma) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+            DesarmarPorFamiliar?.Invoke(victima);
+        if (fam.Sabe(Familiar.HabGolpeEntorpece) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+        {
+            // "Entorpecer" en el original es bajarle la AGILIDAD, que es lo que hace el hechizo Torpeza. Se
+            // reusa el mismo mecanismo de bonos temporales que usan los hechizos de atributo, en vez de
+            // inventar un estado nuevo: así caduca solo por el mismo camino que todo lo demás.
+            victima.ApplyAttrBonus(GameLimits.AttrAgilidad, -EntorpecerPuntos, _tick, EntorpecerTicks);
+            victima.Connection?.Send(ServerMessages.UpdateDexterity(victima.Agility));
+        }
+    }
+
+    /// <summary>Las mismas habilidades, sobre otra CRIATURA. De las cinco, la única que una criatura puede
+    /// sufrir en este motor es la parálisis: no tiene inventario que desarmar, ni agilidad, ni ceguera, ni
+    /// veneno. Las otras cuatro no se fingen.</summary>
+    private void FamiliarGolpeoA(Npc npc, Npc victima)
+    {
+        var fam = FamiliarDe(npc);
+        if (fam is null || !victima.IsAlive) return;
+        if (fam.Sabe(Familiar.HabGolpeParaliza) && _tick >= victima.ParalyzedUntilTick
+            && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
+    }
+
+    /// <summary>Cuánto dura la ceguera que tira un familiar: lo mismo que la del hechizo de ceguera del
+    /// jugador (<c>IntervaloParalizado / 3</c>, modHechizos.bas:1309).</summary>
+    private const long CegueraDeFamiliarTicks = 166;
+    /// <summary>Y el entorpecimiento: seis puntos de agilidad por unos veinte segundos.</summary>
+    private const int EntorpecerPuntos = 6;
+    private const long EntorpecerTicks = 500;
+
     private void NpcGolpeaA(Npc npc, Npc victima)
     {
+        if (npc.Template.Spells is { Count: > 0 } && FamiliarDe(npc) is not null
+            && _rng.Next(1, 101) < ProbHabilidadDeGolpe && FamiliarLanzaSobreCriatura(npc, victima)) return;
         if (_rng.Next(1, 101) > Combat.HitChance(npc.Template.PoderAtaque, victima.Template.PoderEvasion))
             return;   // falló
         int rawDmg = npc.Template.MaxHit >= npc.Template.MinHit
@@ -801,7 +883,41 @@ public sealed class NpcSystem
         int dmg = Math.Max(1, rawDmg - victima.Template.Def);
         victima.Hp = Math.Max(0, victima.Hp - dmg);
         _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dmg));
+        FamiliarGolpeoA(npc, victima);
         if (victima.Hp == 0) MatarNpcSinDueno(victima);
+    }
+
+    /// <summary>El familiar le tira uno de sus hechizos a otra CRIATURA. Es la versión corta de
+    /// <see cref="NpcLanzaUnHechizo"/>: una criatura no tiene equipo que le absorba magia ni cliente al que
+    /// avisarle, así que queda el daño y la parálisis. Devuelve false —y entonces pega a mano— si el hechizo
+    /// que salió no tiene efecto modelable sobre una criatura.</summary>
+    private bool FamiliarLanzaSobreCriatura(Npc npc, Npc victima)
+    {
+        var lista = npc.Template.Spells!;
+        var spell = _data.Spell((short)lista[_rng.Next(lista.Count)]);
+        if (spell is null) return false;
+
+        if (spell.IsParalyze || spell.IsImmobilize)
+        {
+            if (_tick < victima.ParalyzedUntilTick) return false;   // no se encadena, como en el original
+            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
+            if (spell.Wav > 0)
+                _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)spell.Wav, victima.Pos.X, victima.Pos.Y));
+            return true;
+        }
+        if (spell.SubeHp != 2) return false;
+
+        int dano = spell.MaxHp >= spell.MinHp ? _rng.Next(spell.MinHp, spell.MaxHp + 1) : spell.MinHp;
+        victima.Hp = Math.Max(0, victima.Hp - dano);
+        _world.BroadcastToObservers(victima.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
+        if (spell.FxGrh > 0)
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.CreateFX(victima.CharIndex, (short)spell.FxGrh, (short)spell.FxLoops));
+        if (spell.Wav > 0)
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)spell.Wav, victima.Pos.X, victima.Pos.Y));
+        _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dano));
+        if (victima.Hp == 0) MatarNpcSinDueno(victima);
+        return true;
     }
 
     /// <summary>Muerte de una criatura a manos de OTRA criatura: no hay jugador al que darle exp, oro ni
@@ -815,6 +931,12 @@ public sealed class NpcSystem
     private void NpcGolpeaA(Npc npc, Player player)
     {
         {
+            // EL FAMILIAR QUE SABE MAGIA la tira en vez de pegar, como cualquier criatura con hechizos: sus
+            // habilidades viajan en la ficha (`Template.Spells`), asi que el camino es el MISMO que ya usan
+            // los NPCs magos -- con su dano, la resistencia del equipo y el efecto de estado. Va acá y no en
+            // la fase de ataque porque a una criatura CON DUEÑO el original no le corre esa fase.
+            if (npc.Template.Spells is { Count: > 0 } && FamiliarDe(npc) is not null
+                && _rng.Next(1, 101) < ProbHabilidadDeGolpe && NpcLanzaUnHechizo(npc, player)) return;
             double evMod = _data.EvasionMod.TryGetValue(player.Class, out var ev) ? ev : 1.0;
             long pe = Combat.PoderEvasion(player.Skills[GameLimits.SkillTacticas], player.Agility, player.Level, evMod);
             // NpcImpacto (SistemaCombate.bas:222) adds the shield's block/evasion when one is equipped.
@@ -879,6 +1001,7 @@ public sealed class NpcSystem
                 player.PoisonedUntilTick = long.MaxValue;
                 player.Connection?.Send(ServerMessages.LocaleMsg(182));
             }
+            FamiliarGolpeoA(npc, player);
             // Y acá —no cuando el amo ataca— es donde el original manda a las mascotas a pelear.
             MascotasDefiendenAlAmo(player, npc);
             if (player.Hp == 0)

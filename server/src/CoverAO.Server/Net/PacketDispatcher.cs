@@ -66,6 +66,7 @@ public sealed partial class PacketDispatcher
             _npcs.SubirSkillPorUso = (jugador, skill) =>
                 RaiseSkill(jugador.Connection as ClientSession, jugador, skill);
         EngancharAvisosDelFamiliar();
+        if (_npcs is not null) _npcs.DesarmarPorFamiliar = DesarmarPorElFamiliar;
     }
 
     private readonly NpcSystem? _npcs;   // para /ACC /RACC (spawn de NPCs con respawn); null en tests sin mundo vivo
