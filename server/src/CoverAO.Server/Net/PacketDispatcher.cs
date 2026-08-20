@@ -1058,10 +1058,13 @@ public sealed partial class PacketDispatcher
         // SendMOTD + SendUpdate (VB6 ConnectUser, TCP.bas:296-298): el mensaje del día como líneas ConsoleMsg
         // (FontIndex 8) y las novedades como EjecutarAccion(4). Reemplaza el ConsoleMsg único genérico; el
         // contenido viene de ServerContent (data/motd.txt + data/updates.txt, o el default de CoverAO).
-        // La ficha del familiar, para que el panel del cliente arranque poblado. Va aunque el personaje no
-        // lleve familiar: con `tipo = 0` el cliente sabe que tiene que esconder el panel, y sin el paquete no
-        // podría distinguir "no tiene" de "todavía no llegó".
-        session.Send(ServerMessages.FamiliarInfo(player.Familiar));
+        // La ficha del familiar, para que el panel del cliente arranque poblado. SÓLO si el personaje lleva
+        // uno, y esa condición es lo importante: el paquete es una extensión nuestra, así que mandarlo siempre
+        // le agregaría un paquete AL BOOTSTRAP DE TODOS LOS LOGINS — y el bootstrap es lo primero que compara
+        // el oráculo VB6, con lo que las 113 acciones del barrido pasarían a acusar "emite de más". Con este
+        // gate, quince de las dieciocho clases entran byte por byte como el original. El cliente arranca con
+        // la ficha vacía, así que la ausencia del paquete ya significa "no tiene familiar".
+        if (player.Familiar.Existe) session.Send(ServerMessages.FamiliarInfo(player.Familiar));
         foreach (var line in _content.Motd) session.Send(ServerMessages.ConsoleMsg(line, ServerContent.MotdFont));   // SendMOTD
         foreach (var line in _content.Updates) session.Send(ServerMessages.EjecutarAccion(4, line));                 // SendUpdate
         // Preso que reloguea: el VB6 (TCP.bas:368) le recuerda la condena que le queda con LocaleMsg 146.

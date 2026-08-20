@@ -18,9 +18,19 @@ public static class Weather
     ///     La lluvia ha cesado. / Es de día. / El sol comienza a ponerse. / Comienza a llover.
     /// todo en menos de un minuto. La lluvia tiene que ser un evento, no un parpadeo.
     ///
-    /// Igual que el día/noche: <b>el original no tiene reloj de clima</b>. `Lloviendo` (Admin.bas:90) es una
-    /// global que sólo conmuta el comando GM <c>/LLUVIA</c> (Protocol.bas:9282). El reloj es un agregado del
-    /// port, así que estos números son decisión de producto y el host los ajusta desde el Server.ini.</summary>
+    /// Igual que el día/noche: <b>en el original el clima no lo mueve nada</b>. `Lloviendo` (Admin.bas:90) es
+    /// una global que sólo conmuta el comando GM <c>/LLUVIA</c> (Protocol.bas:9282). El reloj es un agregado
+    /// del port, así que estos números son decisión de producto y el host los ajusta desde el Server.ini.
+    ///
+    /// <para>PRECISIÓN, porque el archivo con esta rutina ya llegó dos veces de afuera y va a volver: el
+    /// original <b>sí trae escrito</b> un reloj de lluvia — <c>tLluviaEvent</c>, en <c>frmMain.frm:1039</c>, que
+    /// cuenta minutos y sortea: a partir del minuto 15 sin lluvia tira 2 de 100 por minuto para que empiece, a
+    /// las 1440 la fuerza, y una vez lloviendo corta a los 5 minutos o antes con otro 2 de 100. Lo que pasa es
+    /// que <b>no lo llama nadie</b>: su único call site, en <c>frmMain.frm:752</c>, está COMENTADO
+    /// (<c>'Call tLluviaEvent</c>), y el control Timer que lo dispararía ni siquiera existe en el formulario.
+    /// Código muerto, igual que <c>HechizoInvocacion</c>. Portarlo sería revivir algo que allá no corre — y de
+    /// paso los números que circulan por ahí no son ni los de acá: la versión que anda dando vueltas espera 30
+    /// minutos en vez de 15 y llama a un <c>SortearClima</c> que este fork no tiene.</para></summary>
     public static int LluviaPorciento { get; set; } = 18;
 
     /// <summary>El clima del RELOJ, función pura del tick. Es lo que decide el clima mientras nadie lo fuerce;
