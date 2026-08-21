@@ -56,8 +56,10 @@ public sealed partial class PacketDispatcher
             // con dígitos se confundiría con una criatura del mundo en la barra de nombres, que es exactamente
             // el motivo por el que el original le prohíbe los dígitos a los personajes (TCP.bas:181).
             nombre = nombre.Trim();
-            if (nombre.Length is < 2 or > 20 || !Naming.IsValidCharName(nombre))
-            { session.Send(ServerMessages.ConsoleMsg("Nombre de familiar invalido (solo letras y espacios, 2 a 20).", FuenteInfo)); return; }
+            // El techo sale de `Naming`, que es donde vive: acá decía 20 y el helper corta en 18, así que el
+            // `or > 20` era inerte y el mensaje le mentía al jugador sobre lo que podía escribir.
+            if (nombre.Length < 2 || !Naming.IsValidCharName(nombre))
+            { session.Send(ServerMessages.ConsoleMsg($"Nombre de familiar invalido (solo letras y espacios, 2 a {Naming.MaxCharNameLength}).", FuenteInfo)); return; }
 
             var ficha = _data.Npc(Familiar.FichaDe(tipo));
             if (ficha is null) { session.Send(ServerMessages.ConsoleMsg("Ese familiar no existe.", FuenteInfo)); return; }
@@ -122,7 +124,10 @@ public sealed partial class PacketDispatcher
         if (!TraerFamiliar(p))
         { session.Send(ServerMessages.ConsoleMsg($"No hay lugar aca para {fam.Nombre}.", FuenteInfo)); return; }
 
-        SpellCasted(session, p, spell);
+        // SIN `SpellCasted`, y no es un olvido: el 59 cuesta 0 de maná y 0 de stamina (Hechizos.dat), así que
+        // lo único que esa llamada hacía de verdad era subir la skill de Magia y pagar su experiencia — o sea
+        // que el bucle llamar/retirar era una canilla de skill y exp gratis. Es exactamente la canilla que el
+        // comentario del `else` de los hechizos sin efecto dice haber cerrado, entrando por otra puerta.
         EmitSpellFx(p, p.Pos, p.CharIndex, spell);
         EnviarFichaDelFamiliar(session, p);
     }

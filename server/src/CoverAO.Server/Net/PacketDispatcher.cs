@@ -7274,7 +7274,12 @@ public sealed partial class PacketDispatcher
                 TryAccionParaObjeto(session, p, x, y);        // si no, puede haber una PUERTA (o un yunque)
                 return;
             }
-            if (npc.IsVeterinaria) { AtenderVeterinaria(session, p, npc); return; }
+            // EL `p.Familiar.Existe` NO ES DECORACIÓN: esta rama corre ANTES del DeadCheck y del gate de
+            // distancia, así que sin él un jugador cualquiera —de las quince clases que no llevan familiar—
+            // que le hacía doble clic a una Veterinaria (hay 27 en el mundo) recibía "no tenés ningún
+            // familiar" en vez de caer por el camino de siempre. Era el único lugar donde el subsistema se le
+            // notaba a quien no lo usa.
+            if (npc.IsVeterinaria && p.Familiar.Existe) { AtenderVeterinaria(session, p, npc); return; }
             if (npc.IsReviver)                                              // sacerdote Revividor (VB6 Acciones.bas:304) — atiende ANTES del DeadCheck
             {
                 // MANHATTAN, no Chebyshev: `Distancia` (Matematicas.bas:43) suma los dos ejes. Con Chebyshev un
@@ -11343,18 +11348,21 @@ public sealed partial class PacketDispatcher
             // La muerte AHORA PERSISTE entre sesiones (VB6 FileIO.bas:1626 guarda Muerto=1): si te desconectás
             // muerto, reconectás muerto. CharacterFile guarda la cabeza VIVA (OrigHead) para que la de cadáver
             // (500) no quede pegada, y SpawnIntoWorld re-aplica la apariencia de cadáver al entrar sin vida.
-            try { _db.SaveCharacter(p); }
-            catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
-            // Despawnear las invocaciones/mascotas del jugador al desconectar: si quedan huérfanas, matarlas
-            // tras reconectar daría recompensa (exp/oro/loot) = canilla via relog. (.ToList antes de remover.)
+            // DESPAWNEAR PRIMERO Y GUARDAR DESPUÉS, y el orden es el arreglo: al revés, el `.chr` se escribía
+            // con la vida que el familiar tenía al ser INVOCADO —porque es `RemoveNpc` quien le copia la vida
+            // real de la criatura— y desconectarse y volver a entrar lo curaba gratis, salteando a la
+            // Veterinaria, que es el único sumidero del diseño. El comentario que estaba acá decía que el
+            // familiar "se guarda solo": era cierto salvo por el orden, que es justo lo que importaba.
+            //
+            // Y el motivo original de despawnear sigue en pie: una invocación huérfana, matada tras reconectar,
+            // daría exp/oro/loot. (.ToList antes de remover.)
             foreach (var summon in _world.Npcs.Where(n => n.OwnerCharIndex == p.CharIndex).ToList())
             {
                 _world.RemoveNpc(summon.CharIndex);
                 _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex));
             }
-            // El familiar se guarda solo (RemoveNpc le pone CharIndexEnElMundo en 0 y le conserva la vida),
-            // así que al reconectar vuelve entero y hay que volver a llamarlo. Igual que las mascotas: nada
-            // del jugador queda suelto en el mundo cuando se va.
+            try { _db.SaveCharacter(p); }
+            catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
             // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
             // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres
             // lugares y termina con `.NroMascotas = 0`). Las mascotas no sobreviven a la sesión.

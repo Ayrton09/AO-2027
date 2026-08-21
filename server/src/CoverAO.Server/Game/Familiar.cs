@@ -53,6 +53,12 @@ public sealed class Familiar
     public const byte NivelMaximo = 50;
     /// <summary>Techo de vida (VB6 <c>STAT_MAXHP</c>).</summary>
     public const long VidaTope = 999;
+    /// <summary>Techo de golpe. Sale del original igual que el de vida: <c>STAT_MAXHIT_OVER36 = 999</c>
+    /// (Declares.bas:670), que es el tope que allá se le aplica a un personaje pasado el nivel 36. Faltaba, y
+    /// el hermano —el de vida— sí estaba: la vida se clampeaba y el golpe crecía sin fin, así que un familiar
+    /// muy subido terminaba pegando más que cualquier criatura del mundo (la más fuerte de las 291 llega a
+    /// 670).</summary>
+    public const long GolpeTope = 999;
     /// <summary>Lo que le falta para el nivel 2 al nacer.</summary>
     public const long EluInicial = 300;
 
@@ -240,8 +246,8 @@ public sealed class Familiar
 
             var (masVida, masGolpe) = AumentoPorNivel(Tipo);
             VidaMaxima = System.Math.Min(VidaTope, VidaMaxima + masVida);
-            GolpeMaximo += masGolpe;
-            GolpeMinimo += masGolpe;
+            GolpeMaximo = System.Math.Min(GolpeTope, GolpeMaximo + masGolpe);
+            GolpeMinimo = System.Math.Min(GolpeMaximo, GolpeMinimo + masGolpe);   // nunca por encima del máximo
             Vida = VidaMaxima;   // subir de nivel lo cura del todo
 
             avisos.Add($"{Nombre} subio al nivel {Nivel}.");

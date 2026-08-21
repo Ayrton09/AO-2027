@@ -191,6 +191,15 @@ public sealed class NpcSystem
                 // TipoAI.SigueAmo (mascotas). El gate por dueño es un atajo del port —el VB6 distingue por
                 // Movement, que a una mascota se lo pone FollowAmo— y hay que dejar pasar el caso en que /SEGUIR
                 // se lo cambió a NPCDEFENSA: si no, una mascota puesta a seguir al GM igual iría tras su amo.
+                if (npc.OwnerCharIndex != 0)
+                {
+                    // LA CURA VA ANTES DEL GATE DE MOVEMENT y no adentro de NpcTryFollowOwner, que es donde
+                    // estaba: ahí sólo corría con el familiar en modo SEGUIR, o sea que dejaba de curar
+                    // justo cuando entraba en combate —que es cuando hace falta—, porque pelear le cambia el
+                    // Movement a NPCDEFENSA o NpcAtacaNpc.
+                    _world.TryGet(npc.OwnerCharIndex, out var duenio);
+                    if (duenio is not null && duenio.Pos.Map == npc.Pos.Map) FamiliarCuraAlAmo(npc, duenio);
+                }
                 if (npc.OwnerCharIndex != 0 && npc.Movement != GameLimits.TipoAiNpcDefensa
                     && npc.Movement != GameLimits.TipoAiNpcAtacaNpc)
                 { NpcTryFollowOwner(npc); continue; }
@@ -527,6 +536,12 @@ public sealed class NpcSystem
         if (fam.CharIndexEnElMundo != npc.CharIndex || !fam.Sabe(Familiar.HabCurar)) return;
         if (!amo.IsAlive || amo.Hp >= amo.MaxHp) return;
         if (_data.MapNoMagic(amo.Pos.Map)) return;
+        // TIENE QUE VERLO. Sin esto el único límite era "el mismo mapa", y eso convertía la habilidad en lo
+        // contrario de lo que quiere ser: al familiar te convenía ESCONDERLO en un rincón —donde nadie puede
+        // matarlo— y seguía curándote gratis desde el otro extremo del mapa. Es la misma caja 8×6 con la que
+        // el original decide si una criatura ve a alguien.
+        if (Math.Abs(amo.Pos.X - npc.Pos.X) > RangoVisionX
+            || Math.Abs(amo.Pos.Y - npc.Pos.Y) > RangoVisionY) return;
         // Una de cada cuatro vueltas, y la vuelta de las mascotas es una por segundo: cura de a ratos, no
         // todo el tiempo. La proporción sale de medir y no de copiar — el módulo de referencia tira 30 de 100
         // POR GOLPE, que acá no significa nada porque este barrido no es el de los golpes. Con una de veinte
@@ -551,8 +566,6 @@ public sealed class NpcSystem
         _world.TryGet(npc.OwnerCharIndex, out var owner);   // O(1) por índice, no barrido lineal
         if (owner is not null && owner.Pos.Map == npc.Pos.Map)
         {
-            FamiliarCuraAlAmo(npc, owner);
-
             int dx = owner.Pos.X - npc.Pos.X, dy = owner.Pos.Y - npc.Pos.Y;
             if (Math.Abs(dx) <= RangoVisionX && Math.Abs(dy) <= RangoVisionY
                 && owner.IsAlive && !owner.Invisible && !owner.Oculto
@@ -842,7 +855,11 @@ public sealed class NpcSystem
         }
         if (fam.Sabe(Familiar.HabGolpeDesarma) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
             DesarmarPorFamiliar?.Invoke(victima);
-        if (fam.Sabe(Familiar.HabGolpeEntorpece) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
+        // El `AttrBonus[Agilidad] >= 0` es la guarda de "todavía no está entorpecido", igual que las tres
+        // hermanas de arriba miran su propio estado. Sin ella cada mordisco apilaba otro -6 y la agilidad se
+        // hundía sin piso — un familiar de nivel 30 dejaba a su víctima en cero.
+        if (fam.Sabe(Familiar.HabGolpeEntorpece) && victima.AttrBonus[GameLimits.AttrAgilidad] >= 0
+            && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
         {
             // "Entorpecer" en el original es bajarle la AGILIDAD, que es lo que hace el hechizo Torpeza. Se
             // reusa el mismo mecanismo de bonos temporales que usan los hechizos de atributo, en vez de
