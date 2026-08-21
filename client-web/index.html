@@ -1128,6 +1128,12 @@
         equipar = !(usaEnMano || it.objIndex === 15);
       } else if (tipo === 18) {   // anillo / herramienta
         equipar = !it.equipped;
+        // EL SEGUNDO PASO NO SE VE. De los tres puntos que el tester marcó como importantes, DOS eran de
+        // descubrimiento, y éste es uno: no sabía que al serrucho hay que equiparlo y recién después usarlo.
+        // El clic ya hace las dos cosas —equipa si no está puesto, trabaja si ya lo está—, pero el primer clic
+        // no muestra nada y se lee como que no pasó nada.
+        if (equipar) pista('herramienta', `Herramienta equipada. Volvé a hacerle clic (o apretá ` +
+          `${(teclas.usar || 'u').toUpperCase()}) para ponerte a trabajar.`);
       }
       const w = new ByteQueueWriter();
       w.writeByte(equipar ? CLIENT.EquipItem : CLIENT.UseItem).writeByte(slot);
@@ -1968,6 +1974,44 @@
       while (chatEl.childElementCount > 400) chatEl.removeChild(chatEl.firstChild);   // acota memoria
       chatEl.scrollTop = chatEl.scrollHeight;
     }
+
+    // ---- PISTAS: explicar los rechazos que SON FIELES ------------------------------------------
+    //
+    // El tester reportó CINCO cosas como bugs y las cinco eran correctas: la parálisis sobre una criatura que
+    // sigue moviéndose, el "primero hacé clic" estando pegado al mercader, no poder tirar el kit de novato, el
+    // mercader que paga 0 por ese kit, y las cosas del suelo que "desaparecen". Cada una costó una
+    // investigación contra el VB6 para terminar en "es fiel". Un jugador que no es el autor choca con las
+    // mismas cinco y no tiene a quién preguntarle.
+    //
+    // Acá viven CUATRO. La quinta —el suelo— no se explica, se arregla: es la regla de la casa
+    // `PersistirSuelo`, porque ahí lo que molestaba no era no entender, era perder las cosas.
+    //
+    // Esto NO toca el protocolo ni el server: es el cliente agregando una línea de contexto al ver ciertos
+    // ids. El server sigue mandando exactamente los mismos bytes que el original, que es lo que mide el
+    // oráculo. Y se dice UNA VEZ por sesión: la segunda vez ya es ruido arriba de un mensaje que el jugador
+    // ahora entiende.
+    const pistasDadas = new Set();
+    function pista(clave, texto) {
+      if (pistasDadas.has(clave)) return;
+      pistasDadas.add(clave);
+      log('💡 ' + texto, '#8ab4d8');
+    }
+    // id de locale → el texto, o una función si depende de algo que puede cambiar (las teclas se reconfiguran).
+    const PISTAS_DE_RECHAZO = {
+      8: 'Para el banco, el enlistador o el mercader hay que estar a tres o cuatro baldosas. Acercate y volvé a hacerle clic.',
+      22: 'No alcanza con estar al lado y mirándolo: hay que hacerle clic izquierdo primero. Así funciona el original.',
+      102: () => `Apretá ${(teclas.combate || 'c').toUpperCase()} para entrar en modo combate.`,
+      // No dice qué pasa con ellos al dejar de ser novato A PROPÓSITO: eso depende de la regla de la casa
+      // `QuitarEquipoNovato`, que cada server prende o apaga. Una pista que afirme lo que el ini decide es una
+      // pista que miente en la mitad de los servidores.
+      260: 'Los objetos "(Newbies)" no se pueden tirar ni vender: son del kit inicial. El mercader tampoco te los compra, te ofrece 0.',
+    };
+    // EL 2.18 DEL INFORME: *"tu golpe paralizó a la criatura"* y la criatura se sigue moviendo. Los números son
+    // vueltas del game loop, de 40 ms cada una, y salen del server: el golpe deja a la criatura en 30 (1,2 s) y
+    // el hechizo Paralizar en 37 (1,5 s), contra las 150 (6 s) que dura sobre una PERSONA. O sea que el mensaje
+    // dice la verdad y la criatura arranca de nuevo enseguida; el original hace exactamente lo mismo.
+    const PISTA_PARALISIS = 'Sobre una criatura la parálisis dura poco más de un segundo, sea de un golpe o del '
+      + 'hechizo; sobre una persona dura bastante más. Por eso la ves moverse enseguida: el original es igual.';
 
     // WebSocket + flujo de login por formulario. El login ya NO está hardcodeado: la pantalla #login
     // arma el paquete (LoginExistingChar / CreateNewAccount / LoginNewChar) y `loginBytes` guarda el
@@ -3307,6 +3351,10 @@
           if (/te (golpea|pega|prod)/i.test(t)) myHitAt = Date.now();
           if (f.msgId === 391) laborando = false;   // "Dejas de trabajar" al cortar la faena con otra accion
           log(t, FUENTES[f.font]);
+          // La pista va DESPUÉS del mensaje del server, nunca en su lugar: la línea del original se lee igual
+          // que siempre y esto es un renglón más abajo.
+          const p = PISTAS_DE_RECHAZO[f.msgId];
+          if (p) pista(f.msgId, typeof p === 'function' ? p() : p);
           break;
         }
         // FX de un hechizo de AREA: van a un TILE, no a un personaje, asi que no hay `chars` donde colgarlos.
@@ -3383,6 +3431,11 @@
           // Got hit (an NPC/player struck us) → brief red flash on our tile.
           if (/te (golpea|pega|prod)/i.test(f.chat)) myHitAt = Date.now();
           log(f.chat, FUENTES[f.font]);
+          // LA PARÁLISIS DE UNA CRIATURA sale por ACÁ, no por un id de locale. La primera versión de esta
+          // pista colgaba del `LocaleMsg 136` ("¡Tu ataque paralizó a la criatura!") porque ese es el texto que
+          // está en el catálogo — pero el servidor NO manda ese id en este camino: manda este ConsoleMsg. La
+          // pista no se habría mostrado nunca y nadie se hubiera enterado.
+          if (f.chat.startsWith('Tu golpe ha paralizado a la criatura')) pista('paralisis', PISTA_PARALISIS);
           break;
       }
     }

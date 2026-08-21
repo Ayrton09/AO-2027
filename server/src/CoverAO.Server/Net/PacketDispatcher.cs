@@ -6584,11 +6584,18 @@ public sealed partial class PacketDispatcher
     private long _ultimaPersistenciaMs;
     private const long IntervaloPersistenciaMs = 500;
 
+    /// <summary>El valor de <see cref="World.SueloCambios"/> que ya está en el disco. Arranca en -1 —y no en 0—
+    /// para que un mundo cuyo suelo todavía no cambió igual se vuelque una vez: si no, un server que restaura
+    /// el suelo y se apaga sin que nadie toque nada no reescribiría el archivo, y esa vuelta en falso sólo se
+    /// nota cuando el archivo se borró a mano y nadie lo repone.</summary>
+    private long _sueloGuardado = -1;
+
     /// <summary>Vuelca clanes y correo si quedaron sucios y ya pasó el intervalo. La llama el game loop.
     /// Con <paramref name="forzar"/> escribe sin esperar (apagado, backup).</summary>
     public void VolcarPersistenciaDiferida(bool forzar = false)
     {
-        if (!_clanesSucios && !_correoSucio && _world.RecordUsuarios == _recordGuardado) return;
+        bool sueloSucio = _ini.PersistirSuelo && _world.SueloCambios != _sueloGuardado;
+        if (!_clanesSucios && !_correoSucio && !sueloSucio && _world.RecordUsuarios == _recordGuardado) return;
         long ahora = Environment.TickCount64;
         if (!forzar && ahora - _ultimaPersistenciaMs < IntervaloPersistenciaMs) return;
         _ultimaPersistenciaMs = ahora;
@@ -6610,6 +6617,24 @@ public sealed partial class PacketDispatcher
         {
             try { _db.SaveRecordUsuarios(_world.RecordUsuarios); _recordGuardado = _world.RecordUsuarios; }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] record: {ex.Message}"); }
+        }
+        // EL SUELO (regla de la casa). El contador se toma ANTES de serializar y se guarda DESPUÉS: así lo que
+        // queda anotado como "ya está en el disco" es exactamente lo que se escribió. Hoy todo esto corre en el
+        // hilo del game loop y nada puede colarse en el medio, o sea que da lo mismo — pero si algún día el
+        // volcado se saca de este hilo, esta forma sigue siendo correcta y la otra empieza a perder drops.
+        if (sueloSucio)
+        {
+            long enEsteVolcado = _world.SueloCambios;
+            // LAS PUERTAS NO VAN. El .csm las deja no-fijas porque su estado cambia en runtime, así que caen en
+            // el mismo saco que un drop — pero `WorldPopulator` las repone en cada arranque, y restaurarlas
+            // encima haría que una puerta abierta quedara abierta para siempre. Eso no lo pidió nadie y el
+            // original no lo hace.
+            try
+            {
+                _db.SaveSuelo(_world.SueloNoFijo().Where(t => _data.Obj(t.ObjIndex)?.IsDoor != true));
+                _sueloGuardado = enEsteVolcado;
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"[persistencia] suelo: {ex.Message}"); }
         }
     }
 

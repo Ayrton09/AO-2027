@@ -25,10 +25,28 @@ public sealed class World
     /// área: los dibuja de su propia copia del mapa. Las puertas SÍ, porque su estado cambia en runtime.</summary>
     private readonly HashSet<WorldPos> _groundFijo = new();
 
+    /// <summary>El complemento de <see cref="_groundFijo"/>: los tiles con objeto que NO son decorado del .csm
+    /// —lo que dejaron los jugadores, más las puertas—. Se mantiene al día en los dos mutadores en vez de
+    /// derivarse recorriendo <c>_ground</c>, y no es microoptimización: son ~540 tiles contra 30.694, el
+    /// volcado corre en el HILO DEL GAME LOOP y puede dispararse dos veces por segundo mientras haya gente
+    /// tirando y levantando cosas. Medido en esta máquina con el mundo real: derivarlo costaba <b>2,535 ms</b>
+    /// por volcado —el 58 % del total, más que serializar y escribir juntos— contra <b>0,097 ms</b> leyendo
+    /// este índice. El presupuesto del tick es 40 ms y el peor tick medido en la sesión larga fue 4,1.</summary>
+    private readonly HashSet<WorldPos> _groundNoFijo = new();
+
     /// <summary>Tiles con objeto, agrupados por mapa. El mundo entero tiene ~30 mil objetos y las dos consultas
     /// de abajo son SIEMPRE por mapa, así que sin este índice cada login y cada teleport recorría los treinta mil
     /// para quedarse con los del pueblo donde caés. Un jugador cruzando fronteras lo paga en cada salida.</summary>
     private readonly Dictionary<short, HashSet<WorldPos>> _groundPorMapa = new();
+
+    /// <summary>Cuántas veces cambió el suelo desde que arrancó el proceso. Lo usa la regla de la casa
+    /// <c>PersistirSuelo</c> para saber si hay algo nuevo que volcar sin comparar el mapa entero.
+    ///
+    /// Va acá y no en un `_sueloSucio` del despachador A PROPÓSITO: <see cref="SetGround"/> y
+    /// <see cref="RemoveGround"/> son los DOS únicos mutadores del suelo, y tienen entre los dos una decena de
+    /// call sites (tirar, levantar, el drop de una criatura, las puertas, los teleports, /MASSDEST). Marcar el
+    /// sucio en cada uno es la forma segura de que el próximo call site que se agregue no lo marque.</summary>
+    public long SueloCambios { get; private set; }
 
     public bool TryGetGround(WorldPos pos, out (short ObjIndex, short Amount) item) => _ground.TryGetValue(pos, out item);
     /// <summary>Pone un objeto en el suelo. <paramref name="esFijo"/> = decorado del .csm (VB6 ObjEsFijo).</summary>
@@ -37,15 +55,36 @@ public sealed class World
         _ground[pos] = (objIndex, amount);
         if (!_groundPorMapa.TryGetValue(pos.Map, out var delMapa)) _groundPorMapa[pos.Map] = delMapa = new HashSet<WorldPos>();
         delMapa.Add(pos);
-        if (esFijo) _groundFijo.Add(pos); else _groundFijo.Remove(pos);
+        // Los dos conjuntos se tocan SIEMPRE, en las dos ramas: `SetGround` es el mismo camino para el drop de
+        // un jugador y para el decorado del .csm, y la bandera se pisa en cada llamada. Actualizar sólo el que
+        // corresponde dejaría el tile en los dos a la vez la próxima vez que cambie de bando.
+        if (esFijo) { _groundFijo.Add(pos); _groundNoFijo.Remove(pos); }
+        else { _groundFijo.Remove(pos); _groundNoFijo.Add(pos); }
+        SueloCambios++;
     }
     public void RemoveGround(WorldPos pos)
     {
         _ground.Remove(pos);
         _groundFijo.Remove(pos);
+        _groundNoFijo.Remove(pos);
         if (_groundPorMapa.TryGetValue(pos.Map, out var delMapa) && delMapa.Remove(pos) && delMapa.Count == 0)
             _groundPorMapa.Remove(pos.Map);
+        SueloCambios++;
     }
+
+    /// <summary>El suelo que NO es decorado fijo del .csm: lo que tiraron los jugadores, lo que se le cayó a un
+    /// muerto, el drop de una criatura — y las puertas, que el .csm también deja no-fijas porque su estado
+    /// cambia en runtime. Filtrar las puertas es del que llama, que es el único que tiene el <c>obj.dat</c>.</summary>
+    public IEnumerable<(WorldPos Pos, short ObjIndex, short Amount)> SueloNoFijo()
+    {
+        foreach (var pos in _groundNoFijo)
+            if (_ground.TryGetValue(pos, out var item)) yield return (pos, item.ObjIndex, item.Amount);
+    }
+
+    /// <summary>¿Este tile tiene algo? Para restaurar el suelo persistido sin pisar el decorado que
+    /// <c>WorldPopulator</c> ya colocó — el .csm manda, porque puede haber cambiado entre dos arranques.</summary>
+    public bool HayAlgoEnElSuelo(WorldPos pos) => _ground.ContainsKey(pos);
+
     /// <summary>Los objetos del suelo que este jugador debería ver desde donde está: los de su área que NO son
     /// decorado fijo del mapa (VB6 ModAreas.bas:274).</summary>
     /// <summary>Todos los ítems del suelo de un mapa, INCLUIDO el decorado colocado por el .csm. A diferencia de

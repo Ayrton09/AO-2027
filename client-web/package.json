@@ -6,7 +6,7 @@
   "description": "Fase 3 — cliente web de CoverAO (TypeScript). Arranca por el codec del protocolo.",
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node dist/test/codec.test.js && node check-index.mjs && node check-comandos-gm.mjs && node check-emisores.mjs && node check-assets.mjs && node check-fuentes.mjs",
+    "test": "tsc && node dist/test/codec.test.js && node check-index.mjs && node check-comandos-gm.mjs && node check-emisores.mjs && node check-assets.mjs && node check-fuentes.mjs && node check-pistas.mjs",
     "smoke": "node ws-smoke.mjs",
     "smoke:cierre": "node ws-close-reason.mjs"
   },

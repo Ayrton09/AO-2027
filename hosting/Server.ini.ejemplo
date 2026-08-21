@@ -143,6 +143,14 @@ CuraAlSubirNivel=1
 ;                     subida que te saca del rango de novato. 0 = como el original, que no los saca nunca.
 ;                     DECIDIDO: PRENDIDA (2026-08-17).
 QuitarEquipoNovato=1
+; PersistirSuelo: 1 = lo que queda tirado en el suelo sobrevive a un reinicio del servidor. 0 = como el
+;                 original, que tiene el suelo solo en RAM y lo repuebla del mapa en cada arranque.
+;                 No toca el decorado del mundo ni las puertas: solo lo que dejo o se le cayo a la gente,
+;                 y si el mapa cambio y ahora hay un arbol en ese tile, gana el arbol.
+;                 PUESTA EN 1 ACA, no por el autor: en una beta el servidor se reinicia para actualizarlo
+;                 y cada reinicio le borra a los jugadores lo que se les cayo al morir. Poner 0 si preferis
+;                 lo del original, o si reiniciar seguido te llena el mundo de cosas viejas.
+PersistirSuelo=1
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo

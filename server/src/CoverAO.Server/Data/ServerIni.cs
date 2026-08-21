@@ -174,6 +174,17 @@ public sealed class ServerIni
     /// false = como el original.</summary>
     public bool QuitarEquipoNovato { get; private set; }
 
+    /// <summary>¿Lo que queda tirado en el suelo sobrevive a un reinicio? (informe del tester, 2.27). El
+    /// original tiene el suelo SÓLO en RAM —`MapData().ObjInfo`, que se repuebla del .csm en cada arranque—,
+    /// así que un reinicio se lleva puesto todo lo que la gente dejó o se le cayó al morir. false = como el
+    /// original.
+    ///
+    /// El tester lo reportó como si el drop estuviera roto (*"me mató una araña, se me cayó todo, cuando volví
+    /// desapareció"*) y no lo estaba: se estaba reiniciando el server entre medio. Es fiel y es una pérdida
+    /// real igual — en una beta el server se reinicia para actualizarlo, y cada reinicio le borra a la gente
+    /// su mochila. Por eso está acá y no cableado: quien hostea decide.</summary>
+    public bool PersistirSuelo { get; private set; }
+
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
     public byte PrivilegioDe(string? nombre) =>
@@ -449,6 +460,7 @@ public sealed class ServerIni
         cfg.OroAlSubirNivel = Math.Clamp(ini.GetInt("INIT", "OroAlSubirNivel", 0), 0, 1_000_000);
         cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
         cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
+        cfg.PersistirSuelo = ini.GetInt("INIT", "PersistirSuelo", 0) != 0;
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

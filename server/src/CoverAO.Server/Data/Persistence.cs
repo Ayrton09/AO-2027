@@ -58,6 +58,56 @@ public sealed class Persistence
     public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
         => _store.WriteMisc("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
 
+    /// <summary>El suelo de los jugadores, cuando la regla de la casa <c>PersistirSuelo</c> está prendida.
+    ///
+    /// El formato es el mismo de <c>MapObjects.json</c> —<c>{"&lt;mapa&gt;": [[x,y,objIndex,amount], ...]}</c>—
+    /// a propósito: son el mismo concepto (objetos colocados en un tile) y así los dos archivos se pueden
+    /// mirar uno al lado del otro. El del .csm trae el decorado del mundo; éste, lo que dejó la gente.</summary>
+    public void SaveSuelo(IEnumerable<(Game.WorldPos Pos, short ObjIndex, short Amount)> suelo)
+    {
+        var porMapa = new Dictionary<string, List<int[]>>();
+        foreach (var (pos, obj, amount) in suelo)
+        {
+            string k = pos.Map.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!porMapa.TryGetValue(k, out var lista)) porMapa[k] = lista = new List<int[]>();
+            lista.Add(new[] { pos.X, pos.Y, (int)obj, (int)amount });
+        }
+        _store.WriteMisc("suelo", System.Text.Json.JsonSerializer.Serialize(porMapa));
+    }
+
+    /// <summary>Lo guardado por <see cref="SaveSuelo"/>. Un archivo ausente, vacío o ilegible devuelve la lista
+    /// vacía y NO tira: perder el suelo de un reinicio es molesto; no arrancar el servidor por un JSON roto es
+    /// mucho peor, y este archivo no es autoridad de nada — el mundo se puebla igual del .csm.</summary>
+    public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
+    {
+        var result = new List<(Game.WorldPos, short, short)>();
+        string? json = _store.ReadMisc("suelo");
+        if (string.IsNullOrWhiteSpace(json)) return result;
+        Dictionary<string, List<int[]>>? porMapa;
+        try { porMapa = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<int[]>>>(json); }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Console.Error.WriteLine($"[suelo] el archivo guardado no se pudo leer, se arranca sin él: {ex.Message}");
+            return result;
+        }
+        if (porMapa is null) return result;
+        foreach (var (mapa, objs) in porMapa)
+        {
+            if (!short.TryParse(mapa, System.Globalization.NumberStyles.Integer,
+                                System.Globalization.CultureInfo.InvariantCulture, out short m) || m <= 0) continue;
+            foreach (var o in objs)
+            {
+                // Una fila corta o con valores fuera de rango se saltea sola. El archivo lo escribe el server,
+                // así que esto no debería pasar nunca — pero es texto en el disco del host y se puede editar.
+                if (o.Length < 4) continue;
+                if (o[0] is < 0 or > byte.MaxValue || o[1] is < 0 or > byte.MaxValue) continue;
+                if (o[2] is <= 0 or > short.MaxValue || o[3] is <= 0 or > short.MaxValue) continue;
+                result.Add((new Game.WorldPos(m, (byte)o[0], (byte)o[1]), (short)o[2], (short)o[3]));
+            }
+        }
+        return result;
+    }
+
     public Dictionary<string, List<Game.MailEntry>> LoadMailboxes()
     {
         var json = _store.ReadMisc("mailboxes");

@@ -222,6 +222,15 @@ int spawnedNpcs, spawnedMaps, spawnedObjs;
     var (objs, doors) = WorldPopulator.PlaceObjects(world, gameData);
     Console.WriteLine($"Spawn: {objs} objetos de mundo poblados desde MapObjects.json ({doors} puertas).");
     spawnedNpcs = npcs; spawnedMaps = maps; spawnedObjs = objs;
+
+    // EL SUELO DE LOS JUGADORES, y va DESPUÉS del .csm a propósito (ver WorldPopulator.RestoreSuelo). Regla de
+    // la casa apagada por defecto: sin ella el suelo vive en RAM y se repuebla del mapa, como el original.
+    if (serverIni.PersistirSuelo)
+    {
+        var (puestos, descartados) = WorldPopulator.RestoreSuelo(world, db.LoadSuelo());
+        Console.WriteLine($"Suelo: {puestos} objetos restaurados de lo que dejaron los jugadores" +
+                          (descartados > 0 ? $" ({descartados} descartados, el mapa ya tenía algo en ese tile)." : "."));
+    }
 }
 
 // Tick systems: day/night clock + NPC AI + slow HP/mana/stamina regeneration for living players.

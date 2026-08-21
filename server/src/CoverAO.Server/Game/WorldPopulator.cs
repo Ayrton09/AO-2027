@@ -66,6 +66,30 @@ public static class WorldPopulator
         return (placed, doors);
     }
 
+    /// <summary>Vuelve a poner lo que los jugadores habían dejado en el suelo (regla de la casa
+    /// <c>PersistirSuelo</c>). Corre DESPUÉS de <see cref="PlaceObjects"/> y devuelve cuántos entraron y
+    /// cuántos se descartaron.
+    ///
+    /// <para><b>El decorado del .csm manda.</b> Si el mapa cambió entre dos arranques y ahora hay un árbol
+    /// donde alguien había dejado una espada, gana el árbol: el mundo tiene UN objeto por tile, y restaurar
+    /// encima dejaría un agujero en el decorado del propio mapa que ya no se arregla solo. Perder la espada es
+    /// molesto y acotado; que a un pueblo le falte un pedazo es permanente.</para>
+    ///
+    /// <para>Vive acá y no en <c>Program.cs</c> a propósito: lo de allá arriba no se puede testear, y este
+    /// archivo existe justamente porque el truncamiento del número de mapa se coló por ese camino.</para></summary>
+    public static (int Puestos, int Descartados) RestoreSuelo(
+        World world, IEnumerable<(WorldPos Pos, short ObjIndex, short Amount)> suelo)
+    {
+        int puestos = 0, descartados = 0;
+        foreach (var (pos, obj, amount) in suelo)
+        {
+            if (world.HayAlgoEnElSuelo(pos)) { descartados++; continue; }
+            world.SetGround(pos, obj, amount);
+            puestos++;
+        }
+        return (puestos, descartados);
+    }
+
     /// <summary>El número de mapa como lo guarda <see cref="WorldPos"/>: short, nunca byte. Un mapa fuera de
     /// rango es data corrupta y se prefiere el fallo ruidoso al truncamiento silencioso.</summary>
     private static short ToMap(int mapNum) =>

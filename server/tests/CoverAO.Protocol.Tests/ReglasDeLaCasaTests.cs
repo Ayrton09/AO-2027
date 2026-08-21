@@ -34,6 +34,7 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.Equal(0, cfg.OroAlSubirNivel);       // `SubirNivel` del VB6 no toca el oro
         Assert.False(cfg.CuraAlSubirNivel);         // sube los MÁXIMOS y deja los mínimos donde estaban
         Assert.False(cfg.QuitarEquipoNovato);       // no existe ningún `QuitarNewbieObj`
+        Assert.False(cfg.PersistirSuelo);           // el suelo del VB6 vive en RAM y se repuebla del .csm
     }
 
     [Fact]
@@ -45,15 +46,17 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.Equal(0, cfg.OroAlSubirNivel);
         Assert.False(cfg.CuraAlSubirNivel);
         Assert.False(cfg.QuitarEquipoNovato);
+        Assert.False(cfg.PersistirSuelo);
     }
 
     [Fact]
     public void Los_interruptores_encienden_de_verdad()
     {
-        var cfg = Cargar("OroAlSubirNivel=500\r\nCuraAlSubirNivel=1\r\nQuitarEquipoNovato=1\r\n");
+        var cfg = Cargar("OroAlSubirNivel=500\r\nCuraAlSubirNivel=1\r\nQuitarEquipoNovato=1\r\nPersistirSuelo=1\r\n");
         Assert.Equal(500, cfg.OroAlSubirNivel);
         Assert.True(cfg.CuraAlSubirNivel);
         Assert.True(cfg.QuitarEquipoNovato);
+        Assert.True(cfg.PersistirSuelo);
     }
 
     [Fact]
@@ -95,5 +98,9 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.True(cfg.CuraAlSubirNivel);        // pedido del tester 2.13, aprobado
         Assert.True(cfg.QuitarEquipoNovato);      // 2.2b, y saca SÓLO los "(Newbies)"
         Assert.Equal(0, cfg.OroAlSubirNivel);     // 2.12: "por ahora lo dejamos off"
+        // 2.27, y ésta NO la eligió el autor: la puso quien la implementó, porque en una beta el server se
+        // reinicia y cada reinicio le borra a la gente lo que se le cayó. El comentario del ini lo dice con
+        // todas las letras. Si el autor prefiere lo del original, acá se cambia el true por false.
+        Assert.True(cfg.PersistirSuelo);
     }
 }
