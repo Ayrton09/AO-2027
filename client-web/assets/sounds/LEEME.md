@@ -29,12 +29,14 @@ del autor y prefirió el sonido clásico.
 **No toca el protocolo ni la paridad.** El server sigue mandando `PlayWave(20)`; lo único distinto es qué
 reproduce el cliente al recibirlo. El oráculo VB6 no ve ninguna diferencia.
 
-## Si alguien quiere revisar el resto
+## El resto NO se toca — decidido el 2026-08-21
 
 De los 181 `.wav`, **157 son byte por byte iguales** a la librería del AO clásico y sólo **24 difieren**:
 
     1, 2, 4, 10, 17, 25, 32, 49, 92, 124, 129, 205, 208, 299, 300, 301, 305, 329, 330, 331, 346, 350, 351, 352
 
-Los ids altos (299+) son casi seguro contenido propio de CoverAO y no tienen equivalente clásico. Los bajos
-valdría escucharlos uno por uno antes de decidir: **que un archivo esté en 44 kHz no prueba que esté mal**, así
-que la comparación es de oído, no de formato.
+**El autor decidió cambiar SÓLO el 20 y dejar estos veinticuatro como están.** La lista queda anotada por si
+algún día alguien quiere revisarlos, no como una tarea pendiente.
+
+Y si se retoma, la comparación es **de oído, no de formato**: que un archivo esté en 44 kHz no prueba que esté
+mal. Los ids altos (299+) son casi seguro contenido propio de CoverAO y no tienen equivalente clásico.
