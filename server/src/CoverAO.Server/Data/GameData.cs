@@ -384,7 +384,23 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // llenaba el fixture a mano, así que en el mundo real el entrenador no listaba nada.
     IReadOnlyList<string>? TrainerCreatures = null,
     // Los `CI1..CIn`: el INDICE de plantilla de cada criatura. Los `CN` son para mostrar, estos para spawnear.
-    IReadOnlyList<int>? TrainerCreatureIndexes = null)
+    IReadOnlyList<int>? TrainerCreatureIndexes = null,
+    // LOS TRES SONIDOS PROPIOS DE LA CRIATURA (NPCs.dat Snd1/Snd2/Snd3, MODULO_NPCs.bas:1095-1097). Los traen
+    // 66 de los 291 NPCs y el port no tenía el campo, así que pelear contra criaturas era MUDO: el rugido al
+    // atacar, el quejido al recibir el golpe y el grito al morir no sonaban nunca.
+    //
+    // No lo veía ningún control, y por dos motivos distintos que conviene recordar. El barrido de assets
+    // deriva los ids de sonido de los hechizos y de los objetos y **nunca miraba `NPCs.dat`**. Y el oráculo no
+    // podía verlo porque su acción `Attack` pega AL AIRE — no hay criatura enfrente del personaje del barrido,
+    // así que estas líneas no se ejecutan ni una vez en las 115 acciones.
+    //
+    //   Snd1 = la criatura ATACA        (SistemaCombate.bas:730 contra un usuario, :843 contra otra criatura)
+    //   Snd2 = LA GOLPEAN               (:849 y :909 a melee, modHechizos.bas:438 con un hechizo)
+    //   Snd3 = LA MATA UN JUGADOR       (MODULO_NPCs.bas:101, dentro de MuereNpc y sólo si `UserIndex > 0`)
+    //
+    // La clave del .dat viene en las dos grafías —`SND1` en 50 fichas y `Snd1` en 3—, así que se leen las dos:
+    // buscar sólo una da cero en la mayoría y el campo parece muerto. Es la misma trampa de `obj.dat`.
+    int Snd1 = 0, int Snd2 = 0, int Snd3 = 0)
 {
     /// <summary>¿Este mercader te compra ese objeto? Es la condición de <c>Comercio.bas:123</c> dada vuelta:
     /// el VB6 RECHAZA (LocaleMsg 148) si <c>TipoItems &lt;&gt; OBJType And TipoItems &lt;&gt; otCualquiera</c>,
@@ -1121,7 +1137,16 @@ public sealed class GameData
                 WeaponAnim: Int(el, "WeaponAnim"), ShieldAnim: Int(el, "ShieldAnim"),
                 HelmetAnim: Int(el, "CascoAnim"),   // el .dat la llama CascoAnim, el paquete Casco
                 TrainerCreatures: LeerCriaturasDelEntrenador(el),
-                TrainerCreatureIndexes: LeerIndicesDelEntrenador(el));
+                TrainerCreatureIndexes: LeerIndicesDelEntrenador(el),
+                // Las dos grafías: `SND1` en 50 fichas del install y `Snd1` en 3. Con una sola, 3 criaturas
+                // quedaban mudas sin que nada avisara.
+                // Las dos grafías —`SND1` en 50 fichas del install y `Snd1` en 3 (los tres Lobos y el Demonio
+                // Abisal)— se nombran para que se vean, pero el que las resuelve es `Candidatos`, que compara
+                // sin distinguir mayúsculas. O sea que acá el segundo nombre es documentación, no mecanismo:
+                // sacarlo NO rompe nada, y por eso ningún test puede fijarlo. Lo que sí hay que cuidar es que
+                // `Candidatos` conserve ese barrido — es lo que evita la trampa que en `obj.dat` nos costó 92
+                // precios y un hechizo de área.
+                Snd1: Int(el, "SND1", "Snd1"), Snd2: Int(el, "SND2", "Snd2"), Snd3: Int(el, "SND3", "Snd3"));
         }
         return map;
     }

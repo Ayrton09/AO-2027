@@ -84,7 +84,27 @@ function seUsaElGrh(id) {
       const p = join(d, e.name);
       if (e.isDirectory()) recorrerCs(p);
       else if (e.name.endsWith('.cs')) {
-        for (const m of readFileSync(p, 'utf8').matchAll(/PlayWave\(\s*(\d+)/g)) ids.add(Number(m[1]));
+        // SIN LOS COMENTARIOS. El regex no distingue código de prosa, y un comentario que EXPLICA el sonido
+        // —"emitir un PlayWave(0) sería un paquete de más"— le inventaba al barrido un id 0 que el juego no
+        // pide nunca, o sea un FALTA falso. Pasó apenas se escribió ese comentario. Se sacan las líneas `//`
+        // y `///` enteras y los bloques `/* */`; alcanza, porque acá el código real nunca lleva un `//` antes.
+        const fuente = readFileSync(p, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, ' ')
+          .replace(/^\s*\/\/.*$/gm, ' ');
+        for (const m of fuente.matchAll(/PlayWave\(\s*(\d+)/g)) ids.add(Number(m[1]));
+        // Y LOS QUE VAN POR CONSTANTE, que son la mayoría de los del servidor: `PlayWave(SndNivel, …)`,
+        // `SndEscudo`, `SndBeber`, `SwingWave`… El regex de literales no ve NINGUNO, así que el barrido
+        // contaba de menos y no lo notaba nadie. Se resuelven leyendo las `const` del mismo archivo.
+        const consts = new Map();
+        for (const m of fuente.matchAll(/\bconst\s+(?:short|int|byte)\s+(\w+)\s*=\s*(\d+)/g))
+          consts.set(m[1], Number(m[2]));
+        // Una misma línea puede declarar varias (`const short A = 1, B = 2;`).
+        for (const m of fuente.matchAll(/,\s*(\w+)\s*=\s*(\d+)\s*[;,]/g))
+          if (!consts.has(m[1])) consts.set(m[1], Number(m[2]));
+        for (const m of fuente.matchAll(/PlayWave\(\s*\(?\s*(?:short\)\s*)?(\w+)/g)) {
+          const v = consts.get(m[1]);
+          if (v > 0) ids.add(v);
+        }
       }
     }
   };
@@ -106,7 +126,26 @@ function seUsaElGrh(id) {
     rec(leer(p));
   };
   deLaData('Hechizos.json', ['wav']);
-  deLaData('obj.json', ['snd1', 'sndespecial']);   // instrumentos y el sonido del aura al equipar
+  deLaData('obj.json', ['snd1', 'snd2', 'snd3', 'sndespecial']);   // instrumentos y el sonido del aura al equipar
+  // LAS CRIATURAS, que faltaban y son la mayoría de los sonidos del juego. Cada NPC trae hasta tres —Snd1 al
+  // atacar, Snd2 al recibir el golpe, Snd3 al morir (MODULO_NPCs.bas:1095-1097)— y este barrido no miraba
+  // `NPCs.dat` en absoluto. Los traen 66 de los 291 NPCs y apuntan a 107 archivos distintos: más ids que
+  // hechizos y objetos juntos. El agujero se descubrió porque un jugador comparó carpetas de sonidos, no
+  // porque lo dijera un control.
+  deLaData('npcs.json', ['snd1', 'snd2', 'snd3']);
+
+  // Y EL CLIENTE, que toca sonidos por su cuenta sin que el server se los mande. Hoy son los PASOS
+  // (`PASOS_POR_TERRENO`, siete ids según el terreno que se pisa): el server no manda nada, el cliente decide
+  // solo mirando la hoja de gráficos del tile. Un barrido que sólo mire el servidor no ve ni uno.
+  {
+    const idx = readFileSync(join(AQUI, 'index.html'), 'utf8');
+    const tabla = /const PASOS_POR_TERRENO = \{([^}]*)\}/.exec(idx);
+    if (!tabla) fallas.push('no encontré PASOS_POR_TERRENO en index.html (¿lo renombraron?)');
+    else for (const m of tabla[1].matchAll(/\d+/g)) {
+      const n = Number(m[0]);
+      if (n > 10) ids.add(n);      // las claves de la tabla son el TIPO de terreno (1..5), no un sonido
+    }
+  }
 
   const presentes = numerosDe('sounds', '.wav');
   const faltan = [...ids].filter((i) => !presentes.has(i)).sort((a, b) => a - b);

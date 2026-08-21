@@ -1864,6 +1864,11 @@ public sealed partial class PacketDispatcher
         // Antes esto subía Wrestling Y Tácticas, siempre, incluso al fallar. Tácticas no es basura: el VB6 la
         // sube en NpcAtacaUser:759, o sea que la entrena el DEFENSOR cuando un NPC le pega, no el atacante.
         RaiseSkill(session, p, atkSkill);
+        // EL QUEJIDO DE LA CRIATURA AL RECIBIR EL GOLPE (VB6 SistemaCombate.bas:909). Va acá y no en otro lado:
+        // el original lo emite apenas `UserImpactoNpc` devuelve verdadero —o sea después de la tirada de
+        // acierto y del entrenamiento de skill, que viven adentro de esa función— y ANTES del golpe que
+        // paraliza (:930) y del daño. El orden de las emisiones es parte del contrato que mide el oráculo.
+        SonidoDeCriatura(npc, npc.Template.Snd2);
         GolpeParalizaNpc(session, p, npc);   // VB6 SistemaCombate.bas:930, entre el impacto y el daño
         // UserDañoNpc (SistemaCombate.bas:465): daño = dañoBase - npc.def, WITHOUT a floor at 0 — when the
         // player's raw damage is below the NPC's defence the result is negative and the NPC heals (VB6 parity).
@@ -1888,6 +1893,16 @@ public sealed partial class PacketDispatcher
         // `If .Stats.MinHP > 0 Then ... DoApuñalar`). Va con el daño BASE, no con el ya mermado por la defensa.
         if (npc.Hp > 0 && PuedeApunalar(p)) DoApunalar(session, p, npc, null, danoBase);
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
+    }
+
+    /// <summary>El sonido propio de una criatura, al área donde está (VB6 <c>SendTarget.ToNPCArea</c>).
+    ///
+    /// <para>El gate <c>&gt; 0</c> es del original y no es decorativo: sólo 66 de los 291 NPCs traen las claves
+    /// <c>Snd1/Snd2/Snd3</c>, así que la mayoría tiene cero y no suena nada. Emitir un <c>PlayWave(0)</c> sería
+    /// un paquete de más — justo lo que el oráculo caza.</para></summary>
+    private void SonidoDeCriatura(Game.Npc npc, int snd)
+    {
+        if (snd > 0) _world.BroadcastToObservers(npc.Pos, ServerMessages.PlayWave((short)snd, npc.Pos.X, npc.Pos.Y));
     }
 
     /// <summary>
@@ -2211,6 +2226,15 @@ public sealed partial class PacketDispatcher
     {
         _world.RemoveNpc(npc.CharIndex);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+        // EL GRITO AL MORIR (VB6 MODULO_NPCs.bas:101), y va justo acá: el original lo emite apenas `QuitarNPC`
+        // sacó la criatura del mundo —o sea después del CharacterRemove— y antes de repartir experiencia.
+        //
+        // Dos detalles del original que no se ven leyendo por arriba. Va SÓLO si la mató un jugador (`If
+        // UserIndex > 0`): una criatura que mata a otra no suena. Y el área es la DEL JUGADOR (`ToPCArea,
+        // UserIndex`) aunque las coordenadas del sonido sean las de la criatura — que muerta ya no está en el
+        // mundo, así que su área no existiría.
+        if (npc.Template.Snd3 > 0)
+            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)npc.Template.Snd3, npc.Pos.X, npc.Pos.Y));
         p.NpcsKilled++;
         // El lugar de mascota de su dueño se libera solo: lo hace World.RemoveNpc, por donde pasa esta muerte, y
         // RemoveNpc (arriba) ya sacó a este NPC del mundo. No hay que tocar ningún contador aparte (cupo compartido).
@@ -8937,6 +8961,14 @@ public sealed partial class PacketDispatcher
     /// asimetría con los jugadores, que es de la fuente: acá el bono es del <b>3%</b> por nivel en las dos
     /// direcciones y no hay resistencia mágica que descontar. Curar sólo funciona sobre una criatura NO hostil
     /// (<c>If Npclist(npcindex).Hostile > 0 Then ... Exit Sub</c>), o sea las mascotas.</summary>
+    /// <summary>NO SE PORTA ACÁ EL <c>Snd2</c> DE LA CRIATURA, y es deliberado. El original lo emite en el
+    /// barrido de área de <c>HechizoTerrenoEstado</c> (modHechizos.bas:438), justo después de
+    /// <c>HechizoPropNPC</c> y para CUALQUIER criatura que caiga en el área — mientras que este método sale
+    /// temprano en tres casos (cura sobre hostil, hechizo sin daño, NPC de servicio) y sólo modela daño y cura.
+    /// Meter el sonido en una estructura que no es la misma emitiría donde el original calla, que es la clase
+    /// de error que sólo caza el oráculo… y que el oráculo NO cazaría acá, porque su barrido nunca lanza un
+    /// hechizo de área sobre una criatura. Los otros cinco sitios del original sí están portados: el rugido al
+    /// atacar, el quejido al recibirlo a melee (jugador→criatura y criatura→criatura) y el grito al morir.</summary>
     private void AreaSpellOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell)
     {
         if (spell.IsHeal)
