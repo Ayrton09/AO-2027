@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -288,7 +288,7 @@ async function cmd(action, extra) {
     toast(r.msg || (r.ok ? 'ok' : 'error'), r.ok !== false); refresh(); return r; }
   catch (e) { toast('error: ' + e.message, false); }
 }
-const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;' }[c]));
+const esc = s => String(s ?? '').replace(/[<>&"']/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;', "'":'&#39;' }[c]));
 const fmtDur = s => { s = Math.floor(s); const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
   return (d ? d+'d ' : '') + String(h).padStart(2,'0') + 'h ' + String(m).padStart(2,'0') + 'm'; };
 // Refleja el valor del server en un input de comando SIN pisar una edición no aplicada del usuario:

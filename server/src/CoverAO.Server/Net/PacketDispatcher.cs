@@ -3552,7 +3552,7 @@ public sealed partial class PacketDispatcher
         _data.SetTileTrigger(p.Pos.Map, p.Pos.X, p.Pos.Y, trigger);
         string texto = $"Trigger {trigger} en mapa {p.Pos.Map} {p.Pos.X},{p.Pos.Y}";
         session.Send(ServerMessages.ConsoleMsg(texto, 3));
-        Console.WriteLine($"[{session.RemoteEndpoint}] /TRIGGER {p.Name}: {texto}");
+        Console.WriteLine($"[{session.RemoteEndpoint}] /TRIGGER {p.Name}: {ParaElLog(texto)}");
     }
 
     /// <summary>/TRIGGER sin argumento (VB6 HandleAskTrigger, Protocol.bas:9531): informa el trigger del tile
@@ -7433,6 +7433,9 @@ public sealed partial class PacketDispatcher
             // VB6 exige AsciiValidos (sólo a-z + espacio). Acá basta con rechazar los caracteres de control
             // (< 32, incluye CR/LF) para cerrar la inyección de INI en el .chr; IniFile.Set ya es la red final.
             if (desc.Any(c => c < ' ')) { session.Send(ServerMessages.LocaleMsg(392)); return; }
+            // Tope de largo NUESTRO, no del original: el VB6 no acota (confía en la caja de su UI). Sin esto,
+            // un cliente modificado persiste hasta 32 KB en el .chr y se los hace servir a quien mire la ficha.
+            if (desc.Length > 255) { session.Send(ServerMessages.LocaleMsg(392)); return; }
             p.Description = desc;
             session.Send(ServerMessages.LocaleMsg(111));
         });
@@ -9631,6 +9634,18 @@ public sealed partial class PacketDispatcher
         });
     }
 
+    /// <summary>Texto del cliente listo para el LOG: los caracteres de control (CR/LF, ESC, DEL) se
+    /// colapsan a espacio. Cierra la forja de líneas en el log del panel y del disco, y las secuencias de
+    /// escape en la terminal del host. Toca SÓLO lo que se imprime: el paquete que viaja a los jugadores va
+    /// intacto, así que el oráculo no ve diferencia.</summary>
+    private static string ParaElLog(string s)
+    {
+        if (!s.Any(c => c < ' ' || c == '')) return s;
+        var a = s.ToCharArray();
+        for (int i = 0; i < a.Length; i++) if (a[i] < ' ' || a[i] == '') a[i] = ' ';
+        return new string(a);
+    }
+
     private void HandleTalk(ClientSession session, ByteQueueReader r)
     {
         string chat = r.ReadAsciiString();
@@ -9643,7 +9658,7 @@ public sealed partial class PacketDispatcher
             // Tope de largo del original (Protocol.bas:1380): 80 caracteres o mas y NO se dice nada, se avisa
             // con el 238. El gate va antes de todo, incluso de romper el ocultamiento.
             if (chat.Length >= 80) { session.Send(ServerMessages.LocaleMsg(238)); return; }
-            Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name}: {chat}");
+            Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name}: {ParaElLog(chat)}");
             // HABLAR ROMPE EL OCULTAMIENTO (VB6 HandleTalk, Protocol.bas:1385-1391: `If .flags.Oculto > 0 Then
             // .flags.Oculto = 0 … SetInvisible(False) + WriteLocaleMsg(307)`). Éste es EL call site que la cita
             // del `RevealHidden` de HandleWalk señalaba — y estaba en el handler equivocado: el port revelaba
@@ -10446,7 +10461,9 @@ public sealed partial class PacketDispatcher
             var vendido = _data.Obj(inv.ObjIndex);
             short objVendido = inv.ObjIndex;   // se guarda ANTES: abajo el slot se vacía y el índice se pierde
             double salePrice = vendido is null || vendido.IsNewbie ? 0.0 : vendido.Value / 3.0;
-            int gain = (int)Math.Floor(salePrice * sell);   // Fix(): trunca (todo es positivo acá)
+            // Fix(): trunca. En LONG y con techo: 10.000 unidades de un Valor alto desbordan un int y el
+            // cast desde double dejaba la ganancia negativa — el vendedor se destruía su propio oro.
+            long gain = Math.Min((long)Math.Floor(salePrice * sell), MaxOro);
 
             // Vender lo que se lleva puesto lo DESEQUIPA, y va acá arriba porque el original saca el objeto
             // antes de calcular el precio (`QuitarUserInvItem`, Comercio.bas:154, contra el `Fix` de :158 y el

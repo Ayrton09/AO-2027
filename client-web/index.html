@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
@@ -978,7 +978,7 @@
     const $ = (id) => document.getElementById(id);
     const W = () => new ByteQueueWriter();                          // atajo: nuevo writer
     const send = (w) => { if (ws && ws.readyState === 1) ws.send(xorBuffer(w.toBytes(), myKey)); };  // manda un paquete ya armado
-    const esc = (s) => String(s == null ? '' : s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));  // sanitiza texto de usuario en HTML
+    const esc = (s) => String(s == null ? '' : s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));  // sanitiza texto de usuario en HTML (la comilla simple: que un atributo inline nunca se abra solo)
     const statusEl = $('status');
     const coordsEl = $('coords');
     const perfEl = $('perf');

@@ -245,7 +245,10 @@ para que el guardado del apagado llegue a terminar.
 
 ## Con dominio y HTTPS
 
-Terminar TLS en un reverse-proxy delante del cliente web y del WebSocket. El cliente pasa solo a `wss://`
+Terminar TLS en un reverse-proxy delante del cliente web y del WebSocket. No es sólo cosmética: sin TLS,
+la contraseña de cada jugador viaja legible para cualquiera que mire la red (el cifrado XOR del protocolo
+original no protege nada — la clave se anuncia en el propio protocolo). En una LAN de confianza da igual;
+abierto a Internet, esta sección es la diferencia. El cliente pasa solo a `wss://`
 cuando la página se sirve por HTTPS. Con Caddy:
 
 ```

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
@@ -156,21 +156,28 @@ public sealed class StaticFileServer
             string ext = Path.GetExtension(full);
             res.ContentType = Mime.TryGetValue(ext, out var m) ? m : "application/octet-stream";
 
-            byte[] cuerpo;
             bool aceptaGzip = (req.Headers["Accept-Encoding"] ?? "").Contains("gzip", StringComparison.OrdinalIgnoreCase);
             if (aceptaGzip && info.Length >= MinimoParaComprimir && Comprimibles.Contains(ext))
             {
-                cuerpo = GzipDe(full, info.Length, mtime);
+                byte[] cuerpo = GzipDe(full, info.Length, mtime);
                 res.Headers["Content-Encoding"] = "gzip";
                 res.Headers["Vary"] = "Accept-Encoding";   // el proxy de por medio no puede servirle esto a un cliente sin gzip
+                res.ContentLength64 = cuerpo.Length;
+                if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
             }
             else
             {
-                cuerpo = File.ReadAllBytes(full);
+                // STREAMEADO, no File.ReadAllBytes: este es el camino de los archivos grandes (los MP3 de
+                // hasta 8 MB no se comprimen) y cargarlos enteros por request era amplificación de memoria —
+                // N descargas paralelas eran N archivos completos en el heap. Así viajan de a bloques y la
+                // contrapresión del socket manda.
+                res.ContentLength64 = info.Length;
+                if (req.HttpMethod == "GET")
+                {
+                    using var fs = File.OpenRead(full);
+                    fs.CopyTo(res.OutputStream);
+                }
             }
-
-            res.ContentLength64 = cuerpo.Length;
-            if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
             res.OutputStream.Close();
         }
         catch (Exception ex) { Console.Error.WriteLine($"[web] error: {ex.Message}"); try { ctx.Response.Abort(); } catch { } }
