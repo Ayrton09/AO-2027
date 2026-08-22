@@ -4,6 +4,31 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.0 — 2026-08-01
 
+- **Los Magos, Druidas y Cazadores tienen familiar.** Se elige al crear el personaje y se le pone nombre: el
+  Mago puede llevar un Fuego Fatuo, un Elemental, un Ely, un Duende o un Hada; el Druida y el Cazador, bestias
+  —Ent, Lobo, Tigre u Oso—. Al elegirlo te entra al libro el hechizo **Llamado al familiar**, que no vende
+  nadie: lanzalo para sacarlo y lanzalo otra vez para guardarlo. Pelea con vos, gana la misma experiencia que
+  vos mientras está afuera, sube de nivel y va aprendiendo habilidades — envenenar, paralizar, desarmar, cegar,
+  o tirar hechizos si es de los mágicos. El Ely aprende a **curarte a vos** cuando te ve herido. Si lo matan
+  queda muerto y hay que llevarlo a la **Veterinaria**, que también lo cura. Su ficha está en el panel de
+  estadísticas.
+
+- **Tus mascotas viajan con vos.** Antes se quedaban tiradas en el mapa anterior cuando cruzabas una salida o
+  te teletransportabas. Y el hechizo **Resucitar familiar o mascota** ahora resucita de verdad: antes decía que
+  sí y no pasaba nada.
+
+- **Las criaturas hacen ruido.** Rugen cuando te atacan, se quejan cuando les pegás y gritan al morir. El
+  combate contra bichos era completamente mudo. También suena el escudo cuando alcanzás a bloquear un golpe, y
+  el hechizo *Resucitar* volvió a su sonido clásico.
+
+- **Lo que se te cae al morir sigue ahí aunque el servidor se reinicie.** Antes, cada reinicio limpiaba el
+  suelo y te quedabas sin la mochila. (Quien hostea puede apagarlo con `PersistirSuelo=0`.)
+
+- **El juego te explica los rechazos que confunden.** Cuando el servidor te frena por algo que parece un bug y
+  no lo es —"estás muy lejos" del banquero, "primero hacé clic" estando al lado del mercader, no poder tirar el
+  equipo de novato— te aparece una línea de contexto abajo, una sola vez por sesión. Y al equipar una
+  herramienta te avisa que todavía falta usarla para ponerte a trabajar.
+
 - **Crear personaje pasó a estar dentro de tu cuenta.** La pantalla de inicio ofrece sólo conectarse y crear
   cuenta; al crear la cuenta entrás directo a tu lista de personajes, y el botón de crear ya no te vuelve a
   pedir la cuenta ni la contraseña. Y **borrar un personaje funciona** también con una cuenta recién creada:
