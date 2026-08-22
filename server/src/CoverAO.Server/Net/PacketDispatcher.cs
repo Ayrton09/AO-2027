@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using CoverAO.Protocol;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
@@ -1868,7 +1868,7 @@ public sealed partial class PacketDispatcher
         // el original lo emite apenas `UserImpactoNpc` devuelve verdadero —o sea después de la tirada de
         // acierto y del entrenamiento de skill, que viven adentro de esa función— y ANTES del golpe que
         // paraliza (:930) y del daño. El orden de las emisiones es parte del contrato que mide el oráculo.
-        SonidoDeCriatura(npc, npc.Template.Snd2);
+        NpcSystem.SonidoDeCriatura(_world, npc, npc.Template.Snd2);
         GolpeParalizaNpc(session, p, npc);   // VB6 SistemaCombate.bas:930, entre el impacto y el daño
         // UserDañoNpc (SistemaCombate.bas:465): daño = dañoBase - npc.def, WITHOUT a floor at 0 — when the
         // player's raw damage is below the NPC's defence the result is negative and the NPC heals (VB6 parity).
@@ -1893,16 +1893,6 @@ public sealed partial class PacketDispatcher
         // `If .Stats.MinHP > 0 Then ... DoApuñalar`). Va con el daño BASE, no con el ya mermado por la defensa.
         if (npc.Hp > 0 && PuedeApunalar(p)) DoApunalar(session, p, npc, null, danoBase);
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
-    }
-
-    /// <summary>El sonido propio de una criatura, al área donde está (VB6 <c>SendTarget.ToNPCArea</c>).
-    ///
-    /// <para>El gate <c>&gt; 0</c> es del original y no es decorativo: sólo 66 de los 291 NPCs traen las claves
-    /// <c>Snd1/Snd2/Snd3</c>, así que la mayoría tiene cero y no suena nada. Emitir un <c>PlayWave(0)</c> sería
-    /// un paquete de más — justo lo que el oráculo caza.</para></summary>
-    private void SonidoDeCriatura(Game.Npc npc, int snd)
-    {
-        if (snd > 0) _world.BroadcastToObservers(npc.Pos, ServerMessages.PlayWave((short)snd, npc.Pos.X, npc.Pos.Y));
     }
 
     /// <summary>

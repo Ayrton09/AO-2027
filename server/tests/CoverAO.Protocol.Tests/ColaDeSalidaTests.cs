@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using CoverAO.Server.Net;
@@ -62,7 +62,7 @@ public class ColaDeSalidaTests : IDisposable
         var world = new World();
         var leveling = new Leveling(data.LevelExp);
         var db = new Persistence(new FileStore(_root), leveling);
-        _dispatcher = new PacketDispatcher(world, new GameLoop(world), db, data, leveling);
+        _dispatcher = new PacketDispatcher(world, new GameLoop(), db, data, leveling);
     }
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }

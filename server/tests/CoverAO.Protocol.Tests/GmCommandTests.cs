@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CoverAO.Protocol;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
@@ -39,7 +39,7 @@ public class GmCommandTests : IDisposable
         var world = new World();
         var leveling = new Leveling(data.LevelExp);
         var db = new Persistence(new FileStore(_root), leveling);
-        _dispatcher = new PacketDispatcher(world, new GameLoop(world), db, data, leveling);
+        _dispatcher = new PacketDispatcher(world, new GameLoop(), db, data, leveling);
         _session = new ClientSession(_transport, _dispatcher);
     }
 

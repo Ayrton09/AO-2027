@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 
 namespace CoverAO.Server.Game;
 
@@ -437,14 +437,6 @@ public sealed class World
     {
         foreach (var (_, p) in _players)
             p.Connection?.Send(packet);
-    }
-
-    /// <summary>Broadcast to everyone except the given character (e.g. self-originated events).</summary>
-    public void BroadcastExcept(short exceptCharIndex, byte[] packet)
-    {
-        foreach (var (_, p) in _players)
-            if (p.CharIndex != exceptCharIndex)
-                p.Connection?.Send(packet);
     }
 
     // --- Area-scoped visibility (ModAreas.bas). The world is tiled into 9×9 "areas"; a character sees

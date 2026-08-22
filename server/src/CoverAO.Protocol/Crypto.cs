@@ -1,4 +1,4 @@
-namespace CoverAO.Protocol;
+﻿namespace CoverAO.Protocol;
 
 /// <summary>
 /// Wire "encryption": a symmetric single-byte XOR over the whole packet buffer
@@ -6,27 +6,11 @@ namespace CoverAO.Protocol;
 /// is plaintext. XOR is symmetric, so encrypt == decrypt.
 ///
 /// The key starts at <see cref="DefaultKey"/> and becomes a random per-session byte that
-/// the server announces in the <c>Logged</c> packet (the <c>redundance</c> field).
-///
-/// NOTE: the exact bootstrap (whether the very first login packet is already XOR'd with 13)
-/// must be confirmed against a real client capture via the parity harness before relying on
-/// it in production. The transform itself is verified.
+/// the server announces in the <c>Logged</c> packet (the <c>redundance</c> field). The
+/// transform itself is applied inline where the bytes arrive (ClientSession), so this
+/// class only carries the bootstrap key.
 /// </summary>
 public static class Crypto
 {
     public const byte DefaultKey = 13;
-
-    public static void XorInPlace(Span<byte> data, byte key)
-    {
-        for (int i = 0; i < data.Length; i++)
-            data[i] ^= key;
-    }
-
-    public static byte[] Xor(ReadOnlySpan<byte> data, byte key)
-    {
-        var outBuf = new byte[data.Length];
-        for (int i = 0; i < data.Length; i++)
-            outBuf[i] = (byte)(data[i] ^ key);
-        return outBuf;
-    }
 }

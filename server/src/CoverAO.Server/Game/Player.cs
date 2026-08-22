@@ -1,4 +1,4 @@
-namespace CoverAO.Server.Game;
+﻿namespace CoverAO.Server.Game;
 
 /// <summary>A tile position in the world.</summary>
 public readonly record struct WorldPos(short Map, byte X, byte Y);
@@ -89,7 +89,6 @@ public sealed class Player
     public bool IsMilicia => FactionStatus == StatusMilicia;          // VB6 esMili
     public bool IsCaos => FactionStatus == StatusCaos;
     public bool IsRenegado => FactionStatus == StatusCriminal;        // VB6 esRene
-    public bool IsEnlisted => IsArmada || IsMilicia || IsCaos;
 
     /// <summary>¿El mercader de este mapa me atiende? (VB6 Protocol.bas:5203-5220, repetido igual en
     /// Acciones.bas:180-197). Es el gate del <c>ChatOverHeadLocale(592, 4)</c>: "¡Largo de aquí!, no tengo
@@ -190,9 +189,8 @@ public sealed class Player
     // Un char con esto en true no puede entrar al mundo, aunque su cuenta esté limpia. Lo pone /BAN.
     public bool Banned { get; set; }
 
-    // Guild-fundation flow: chosen alignment (0 = not founding), and claimed level-milestone prizes.
+    // Guild-fundation flow: chosen alignment (0 = not founding).
     public byte FoundingAlignment { get; set; }
-    public HashSet<int> ClaimedPrizes { get; } = new();
 
     /// <summary>El familiar del personaje (Mago, Druida y Cazador; el resto lo tiene vacio). Es un AGREGADO
     /// nuestro, no un port: ver <see cref="Familiar"/>. Va aparte de las mascotas a proposito -- ocupa su

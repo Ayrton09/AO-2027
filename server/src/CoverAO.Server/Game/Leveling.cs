@@ -1,4 +1,4 @@
-namespace CoverAO.Server.Game;
+﻿namespace CoverAO.Server.Game;
 
 /// <summary>
 /// Level progression, ported faithfully from CheckUserLevel (Modulo_UsUaRiOs.bas:357) — the
@@ -37,7 +37,7 @@ public sealed class Leveling
     // Sastre=16, Mercenario=17, Nigromante=18.
     private const int Clerigo = 1, Mago = 2, Guerrero = 3, Asesino = 4, Ladron = 5, Bardo = 6, Druida = 7,
         Gladiador = 8, Paladin = 9, Cazador = 10, Pescador = 11, Herrero = 12, Lenador = 13, Minero = 14,
-        Carpintero = 15, Mercenario = 17, Nigromante = 18;
+        Carpintero = 15, Sastre = 16, Mercenario = 17, Nigromante = 18;
 
     /// <summary>
     /// Stamina que gana por nivel (el <c>AumentoSTA</c> del Select Case de CheckUserLevel,

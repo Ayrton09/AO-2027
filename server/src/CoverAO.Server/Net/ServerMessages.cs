@@ -1,5 +1,4 @@
-using System.Linq;
-using CoverAO.Protocol;
+﻿using CoverAO.Protocol;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;

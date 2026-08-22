@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 
 namespace CoverAO.Protocol;
 
@@ -25,7 +25,6 @@ public sealed class ByteQueueReader
     }
 
     public int Consumed => _pos;
-    public int Remaining => _buf.Length - _pos;
     public bool AtEnd => _pos >= _buf.Length;
 
     private ReadOnlySpan<byte> Take(int n)
@@ -55,8 +54,6 @@ public sealed class ByteQueueReader
         if (length < 0) throw new InvalidOperationException($"negative string length: {length}");
         return Codec.Ansi.GetString(Take(length));
     }
-
-    public string ReadAsciiStringFixed(int length) => Codec.Ansi.GetString(Take(length));
 
     public string ReadUnicodeString()
     {

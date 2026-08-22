@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using CoverAO.Protocol;
 using Xunit;
 
@@ -87,16 +87,6 @@ public class ByteQueueTests
         Assert.Equal("hi", r.ReadAsciiString());
         Assert.Equal(1, r.ReadByte());
         Assert.Equal(frame.Length, r.Consumed);
-    }
-
-    [Fact]
-    public void XorIsSymmetricAndMatchesClsSecurity()
-    {
-        var payload = W(w => w.WriteByte(0).WriteAsciiString("secret"));
-        var enc = Crypto.Xor(payload, 200);
-        Assert.NotEqual(payload, enc);
-        Assert.Equal(payload, Crypto.Xor(enc, 200));
-        Assert.Equal(new byte[] { 0 ^ 13, 1 ^ 13, 2 ^ 13 }, Crypto.Xor(new byte[] { 0, 1, 2 }, Crypto.DefaultKey));
     }
 
     [Fact]

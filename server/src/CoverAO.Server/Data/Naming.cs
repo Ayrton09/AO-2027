@@ -1,5 +1,4 @@
-using System.Linq;
-
+﻿
 namespace CoverAO.Server.Data;
 
 /// <summary>Validación de nombres de cuenta/personaje (inspirada en el VB6 AsciiValidos TCP.bas:210 +

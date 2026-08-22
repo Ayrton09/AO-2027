@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace CoverAO.Server.Game;
 
@@ -13,7 +13,6 @@ public sealed class GameLoop
 {
     public const int TickMs = 40; // 25 ticks/second, as in the original server
 
-    private readonly World _world;
     private readonly Queue<Action> _pending = new();
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
@@ -47,8 +46,6 @@ public sealed class GameLoop
 
     /// <summary>Invoked every tick with the current tick number (e.g. NPC AI). Runs on the loop thread.</summary>
     public Action<long>? OnTickHandler { get; set; }
-
-    public GameLoop(World world) => _world = world;
 
     /// <summary>Queue work to run on the next tick (thread-safe entry point from I/O threads).</summary>
     public void Enqueue(Action action)

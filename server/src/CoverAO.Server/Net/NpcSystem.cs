@@ -1,4 +1,4 @@
-using CoverAO.Server.Data;
+﻿using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;
@@ -119,9 +119,9 @@ public sealed class NpcSystem
     /// <para>Los traen 66 de los 291 NPCs del install: <c>Snd1</c> al atacar, <c>Snd2</c> al recibir el golpe,
     /// <c>Snd3</c> al morir. El gate <c>&gt; 0</c> es del original — la mayoría de las criaturas no trae la
     /// clave y no suena, y emitir un <c>PlayWave(0)</c> sería un paquete de más.</para></summary>
-    private void SonidoDeCriatura(Npc npc, int snd)
+    internal static void SonidoDeCriatura(World world, Npc npc, int snd)
     {
-        if (snd > 0) _world.BroadcastToObservers(npc.Pos, ServerMessages.PlayWave((short)snd, npc.Pos.X, npc.Pos.Y));
+        if (snd > 0) world.BroadcastToObservers(npc.Pos, ServerMessages.PlayWave((short)snd, npc.Pos.X, npc.Pos.Y));
     }
 
     /// <summary>Vuelta actual del loop. La guarda <see cref="Update"/> para que los efectos con duración —hoy
@@ -904,10 +904,10 @@ public sealed class NpcSystem
             && _rng.Next(1, 101) < ProbHabilidadDeGolpe && FamiliarLanzaSobreCriatura(npc, victima)) return;
         // Criatura contra criatura: el rugido del atacante ANTES de la tirada (VB6 SistemaCombate.bas:843) y el
         // quejido de la víctima sólo si el golpe entra (:849).
-        SonidoDeCriatura(npc, npc.Template.Snd1);
+        SonidoDeCriatura(_world, npc, npc.Template.Snd1);
         if (_rng.Next(1, 101) > Combat.HitChance(npc.Template.PoderAtaque, victima.Template.PoderEvasion))
             return;   // falló
-        SonidoDeCriatura(victima, victima.Template.Snd2);
+        SonidoDeCriatura(_world, victima, victima.Template.Snd2);
         int rawDmg = npc.Template.MaxHit >= npc.Template.MinHit
             ? _rng.Next(npc.Template.MinHit, npc.Template.MaxHit + 1)
             : npc.Template.MinHit;
@@ -972,7 +972,7 @@ public sealed class NpcSystem
             // la criatura ruge igual cuando erra — que es lo que hace el original y lo que se escucha en el
             // juego. Va después de la rama del familiar mago a propósito: en el VB6 el hechizo sale por otra
             // función y nunca pasa por `NpcAtacaUser`, o sea que una criatura que castea no ruge.
-            SonidoDeCriatura(npc, npc.Template.Snd1);
+            SonidoDeCriatura(_world, npc, npc.Template.Snd1);
             double evMod = _data.EvasionMod.TryGetValue(player.Class, out var ev) ? ev : 1.0;
             long pe = Combat.PoderEvasion(player.Skills[GameLimits.SkillTacticas], player.Agility, player.Level, evMod);
             // NpcImpacto (SistemaCombate.bas:222) adds the shield's block/evasion when one is equipped.

@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Text;
 using CoverAO.Protocol;
 using CoverAO.Server.Data;
@@ -36,7 +36,7 @@ public class ParseConsumptionTests : IDisposable
         var leveling = new Leveling(new Dictionary<int, long>());
         var db = new Persistence(new FileStore(_root), leveling);
         var data = GameData.Load();                 // empty if data dir absent — parsing is data-independent
-        var loop = new GameLoop(world);
+        var loop = new GameLoop();
         _dispatcher = new PacketDispatcher(world, loop, db, data, leveling);
         _session = new ClientSession(new FakeTransport(), _dispatcher);
     }

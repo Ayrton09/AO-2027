@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using CoverAO.Protocol;
 using CoverAO.Server.Game;
 
@@ -14,8 +14,8 @@ namespace CoverAO.Server.Net;
 /// parse one message from the front; a <see cref="NotEnoughDataException"/> means "wait for more".
 ///
 /// Inbound XOR: client-&gt;server bytes are XOR'd with a one-byte key (Crypto). Key starts at 13 and
-/// switches to the per-session <c>redundance</c> after we send <c>Logged</c>. The exact bootstrap is
-/// marked for parity-harness verification against a real client.
+/// switches to the per-session <c>redundance</c> after we send <c>Logged</c> — the same bootstrap the
+/// parity flows exercise against the VB6 oracle on every run.
 /// </summary>
 public sealed class ClientSession : IConnection
 {

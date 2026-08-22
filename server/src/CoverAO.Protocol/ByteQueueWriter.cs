@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 
 namespace CoverAO.Protocol;
 
@@ -90,12 +90,6 @@ public sealed class ByteQueueWriter
         WriteInteger((short)value.Length);
         if (value.Length > 0)
             _buf.AddRange(System.Text.Encoding.Unicode.GetBytes(value));
-        return this;
-    }
-
-    public ByteQueueWriter WriteBytes(ReadOnlySpan<byte> data)
-    {
-        _buf.AddRange(data);
         return this;
     }
 

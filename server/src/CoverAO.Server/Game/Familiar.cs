@@ -1,4 +1,4 @@
-namespace CoverAO.Server.Game;
+﻿namespace CoverAO.Server.Game;
 
 /// <summary>
 /// EL FAMILIAR: la criatura propia de un Mago, Druida o Cazador — se elige una vez, se llama y se retira con
@@ -77,10 +77,6 @@ public sealed class Familiar
         Oso => 131,          // Oso pardo
         _ => 0,
     };
-
-    /// <summary>Un familiar MÁGICO pelea con hechizos y uno FÍSICO a los golpes. Decide qué habilidades puede
-    /// aprender.</summary>
-    public static bool EsMagico(byte tipo) => tipo is Fuego or Agua or Tierra or FuegoFatuo or Ely;
 
     /// <summary>Las clases que llevan familiar, con su lista. El Mago se queda con los elementales, el Ely y el
     /// fuego fatuo; el Druida y el Cazador con las bestias. El resto de las clases no lleva ninguno — y eso es

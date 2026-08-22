@@ -1,4 +1,4 @@
-using CoverAO.Server.Data;
+﻿using CoverAO.Server.Data;
 
 namespace CoverAO.Protocol.Tests;
 
@@ -90,7 +90,7 @@ public class PanelDeStaffTests
             ini.GuardarStaff("Merlin", 2);    // ahora Consejero
             var despues = ServerIni.Cargar(ruta);
             Assert.Equal(2, despues.PrivilegioDe("Merlin"));
-            Assert.Single(despues.Staff.Where(s => string.Equals(s.Nombre, "Merlin", StringComparison.OrdinalIgnoreCase)));
+            Assert.Single(despues.Staff, s => string.Equals(s.Nombre, "Merlin", StringComparison.OrdinalIgnoreCase));
         }
         finally { Limpiar(ruta); }
     }

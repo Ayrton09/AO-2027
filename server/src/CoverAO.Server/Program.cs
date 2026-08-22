@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;   // PosixSignalRegistration — apagado ordenado ante SIGTERM
+﻿using System.Runtime.InteropServices;   // PosixSignalRegistration — apagado ordenado ante SIGTERM
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using CoverAO.Server.Net;
@@ -165,7 +165,7 @@ var world = new World();
 world.LoadGuilds(db.LoadGuilds());       // restore persisted clans
 world.LoadMailboxes(db.LoadMailboxes()); // restore pending mail
 world.RecordUsuarios = db.LoadRecordUsuarios();   // el pico historico de conectados, que muestra el /ONLINE
-var loop = new GameLoop(world);
+var loop = new GameLoop();
 
 // Estado de administración en caliente (eventos exp/oro/drop, autosave, pausa, solo-GMs, cadencia,
 // mensajes automáticos, bans por IP); lo muta el panel. Las IPs baneadas se persisten en data/banned-ips.txt.
