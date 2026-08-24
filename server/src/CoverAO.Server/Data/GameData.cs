@@ -174,8 +174,37 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     public bool IsPickable => Agarrable != 1;
     /// <summary>¿La clase (eClass) tiene prohibido este ítem? (obj.dat ClasesProhibidas, lista separada por comas).</summary>
     public bool ClassForbidden(byte cls) => InCsv(ForbiddenClasses, cls);
-    /// <summary>¿La raza (eRaza) tiene prohibido este ítem? (obj.dat RazasProhibidas).</summary>
-    public bool RaceForbidden(byte race) => InCsv(ForbiddenRaces, race);
+    /// <summary>¿La raza (eRaza) tiene prohibido este ítem? (obj.dat RazasProhibidas).
+    ///
+    /// OJO: los números de <c>RazasProhibidas</c> NO son los del <c>eRaza</c> de este server. El obj.dat
+    /// viene de Imperium, que ordena las razas distinto, y el VB6 los TRADUCE al cargar con
+    /// <c>QueRazaEs</c> (FileIO.bas:1028 y 2447). Acá se comparaba el número crudo, y el resultado era que
+    /// las restricciones quedaban rotadas: al Elfo (eRaza 2) le caía la ropa de razas ALTAS —que lleva
+    /// <c>2,5</c>, o sea "prohibida a enano y gnomo"— y le quedaba permitida la de BAJAS. Un elfo sólo se
+    /// podía vestir de enano.</summary>
+    public bool RaceForbidden(byte race)
+    {
+        if (string.IsNullOrEmpty(ForbiddenRaces)) return false;
+        foreach (var part in ForbiddenRaces.Split(','))
+            if (int.TryParse(part.Trim(), out var n) && RazaDelDat(n) == race) return true;
+        return false;
+    }
+
+    /// <summary>La traducción de <c>QueRazaEs</c> (FileIO.bas:2447): número del obj.dat → <c>eRaza</c> del
+    /// server. El .dat ordena Humano, Enano, Elfo, Drow, Gnomo, Orco; el server, Humano, Elfo, Drow, gnomo,
+    /// enano, Orco. (Los comentarios de esa función en el VB6 están mal escritos y nombran otra raza que la
+    /// que devuelven; el que manda es el mapeo, y cierra con la data: los 145 ítems con <c>2,5</c> son la
+    /// ropa de altos y los 95 con <c>1,3,4,6</c> la de bajos.)</summary>
+    private static byte RazaDelDat(int n) => n switch
+    {
+        1 => 1,   // Humano → Humano
+        2 => 5,   // Enano  → enano
+        3 => 2,   // Elfo   → Elfo
+        4 => 3,   // Drow   → Drow
+        5 => 4,   // Gnomo  → gnomo
+        6 => 6,   // Orco   → Orco
+        _ => 0,
+    };
     private static bool InCsv(string csv, int v)
     {
         if (string.IsNullOrEmpty(csv)) return false;
@@ -183,6 +212,12 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
             if (int.TryParse(part.Trim(), out var n) && n == v) return true;
         return false;
     }
+
+    /// <summary>Monedas de oro sueltas (<c>otGuita</c> = 5, Declares.bas:585). No es un objeto de inventario
+    /// como los demás: el original las manda derecho a la billetera cuando se levantan del piso
+    /// (<c>' Oro directo a la billetera!</c>, InvUsuario.bas:632) y también si igual llegan al inventario y se
+    /// usan (:1455).</summary>
+    public bool IsGold => ObjType == 5;
 
     public bool IsPotion => ObjType == 11;
     /// <summary>Instrumento musical (VB6 <c>otInstrumentos</c> = 26): al usarlo suena su <see cref="Snd1"/> en

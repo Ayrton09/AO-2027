@@ -165,6 +165,21 @@ public sealed class ServerIni
     /// toca el oro. 0 = como el original.</summary>
     public int OroAlSubirNivel { get; private set; }
 
+    /// <summary>¿Corre el CENTINELA anti-macro? (reporte del tester, 2026-08-24). El módulo del original está
+    /// completo pero DESENCHUFADO: sus dos llamadas están comentadas en la fuente (frmMain.frm:749 y
+    /// mMainLoop.bas:21), así que en el install no aparece nunca. false = como el original. Prendido, un NPC
+    /// se le planta al que está trabajando y le pide una clave; el que no contesta en dos minutos se come
+    /// quince de cárcel. Un Dios también lo conmuta en vivo con /CENTINELAACTIVADO.</summary>
+    public bool Centinela { get; private set; }
+
+    /// <summary>¿El familiar SALE A BUSCAR enemigo solo? (reporte del tester, 2026-08-24). El original no: la
+    /// IA de mascota es <c>TipoAI.SigueAmo</c> (AI_NPC.bas:736) —te sigue y se mueve al azar— y sólo pelea
+    /// contra lo que ya tenga de objetivo, que se lo pone el dueño atacando o el bicho atacándolo. false =
+    /// como el original. Prendido, el familiar se va contra el hostil más cercano a su dueño, y el bicho que
+    /// recibe el golpe se queda peleando con él. <b>Cambia el balance del combate</b>: un domador con familiar
+    /// deja de tener que abrir cada pelea.</summary>
+    public bool FamiliarBusca { get; private set; }
+
     /// <summary>¿Subir de nivel CURA del todo? (informe del tester, 2.13). El original sube los MÁXIMOS y deja
     /// los mínimos donde estaban: se sube de nivel herido y se sigue herido. false = como el original.</summary>
     public bool CuraAlSubirNivel { get; private set; }
@@ -461,6 +476,8 @@ public sealed class ServerIni
         cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
         cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
         cfg.PersistirSuelo = ini.GetInt("INIT", "PersistirSuelo", 0) != 0;
+        cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
+        cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

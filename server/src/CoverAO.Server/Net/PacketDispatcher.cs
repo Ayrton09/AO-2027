@@ -349,7 +349,10 @@ public sealed partial class PacketDispatcher
             // — siempre verdadero. Cualquiera puede ponerle una partícula a cualquiera, allá y acá.
             // NO agregarle un gate: sería divergir del oráculo en un paquete que el barrido compara.
             case ClientPacketId.ParticulaUsuario: { string ptName = reader.ReadAsciiString(); short particle = reader.ReadInteger(); _loop.Enqueue(() => { if (session.Player is null) return; var t = _world.PlayerByName(ptName); if (t is not null) { _world.BroadcastToObservers(t.Pos, ServerMessages.EfectoCharParticula(t.CharIndex, particle, -1f, false)); session.Send(ServerMessages.LocaleMsg(461, t.Name)); } else session.Send(ServerMessages.LocaleMsg(_db.CharacterExists(ptName) ? (short)75 : (short)80)); }); break; }
-            case ClientPacketId.CentinelReport: reader.ReadInteger(); break; // VB6 CentinelaCheckClave: sin desafio activo, silencio
+            // /CENTINELA <clave>. Con el centinela apagado —el default, y lo que hace el original— se lee el
+            // entero y no se contesta nada, exactamente como antes. Ver PacketDispatcher.Centinela.cs.
+            case ClientPacketId.CentinelReport:
+            { int clave = reader.ReadInteger(); _loop.Enqueue(() => { if (session.Player is not null) CentinelaRecibirClave(session.Player, clave); }); break; }
             // Los dos GUARDAN el dato y no responden nada (VB6 ChangeCodexAndDesc modGuilds.bas:402 y
             // ActualizarWebSite :383). Antes se leían los strings y se tiraban, así que editar la descripción,
             // el códex o la web del clan no tenía ningún efecto: GuildDetails los mandaba siempre vacíos.
@@ -5347,15 +5350,20 @@ public sealed partial class PacketDispatcher
     };
 
     /// <summary>DoFundir (VB6 FundirMineral + DoLingotes, Trabajo.bas:211/825): funde mineral crudo en lingotes.
-    /// Gate de skill: el MinSkill del mineral debe ser ≤ Minería / ModFundicion(clase) (Guerrero ÷1, resto ÷3,
-    /// Trabajo.bas:948). Cantidad por tanda: CantidadItems = max(1, (nivel-4)/5), acotada a lo que alcance el
+    /// Gate de skill: el MinSkill del mineral debe ser ≤ Minería / factor de clase (Minero ÷1, Herrero ÷1,5,
+    /// resto ÷3 — ver la nota larga abajo, el install nombra la clase equivocada).
+    /// Cantidad por tanda: CantidadItems = max(1, (nivel-4)/5), acotada a lo que alcance el
     /// stock; consume MineralesParaLingote·CantidadItems minerales y entrega CantidadItems lingotes (LingoteIndex).
     ///
     /// El VB6 funde el mineral del TargetObjInvSlot (el que el cliente seleccionó); acá se funde el PRIMER mineral
     /// crudo del inventario — equivalente cuando el jugador lleva un solo tipo, divergencia acotada si lleva varios.
     /// Tampoco se modela el "trabajo continuo" (flag Lingoteando + DoTrabajar): un WorkLeftClick = una tanda, igual
     /// que la minería/tala/pesca de este slice.</summary>
-    private void DoFundir(ClientSession session, Player p)
+    /// <returns>true si esta vuelta produjo lingotes. El trabajo continuo lo usa para saber cuándo parar: la
+    /// primera tanda que no sale (sin minerales, sin skill, sin lugar) apaga la faena en vez de repetir el
+    /// mismo aviso cada 700 ms, que es lo que haría el original —su <c>DoLingotes</c> avisa y sale, pero deja
+    /// el flag prendido—.</returns>
+    private bool DoFundir(ClientSession session, Player p)
     {
         int slot = 0; ObjInfo? mineral = null;
         // PRIMERO, EL QUE ELIGIÓ: la ranura que dejó anotada al usar el mineral (VB6 flags.Lingoteando). Recién
@@ -5374,22 +5382,29 @@ public sealed partial class PacketDispatcher
             var o = _data.Obj(inv.ObjIndex);
             if (o is not null && o.IsMineral) { slot = i; mineral = o; }
         }
-        if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", FuenteInfo)); return; }
+        if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", FuenteInfo)); return false; }
+        // DEJAR ANOTADA LA RANURA QUE SE ESTÁ FUNDIENDO. Es lo que mira la faena continua para saber que lo
+        // que sigue es fundir y no un oficio de herramienta, y no puede depender de que el jugador haya usado
+        // el mineral antes: el clic sobre la fragua alcanza para fundir, así que también tiene que alcanzar
+        // para seguir fundiendo. Sin esto la primera tanda salía y la faena se apagaba en la vuelta siguiente.
+        p.Lingoteando = (byte)slot;
 
-        int modFundicion = p.Class == 3 ? 1 : 3;   // eClass.Guerrero=3 funde con menos skill (÷1); el resto ÷3
-        if (mineral.MinSkill > p.Skills[GameLimits.SkillMineria] / modFundicion)
-        { session.Send(ServerMessages.LocaleMsg(194)); return; }   // "No tenés conocimientos de minería suficientes"
+        // EL FACTOR DE FUNDICIÓN POR CLASE. Acá había una copia literal del install (`Guerrero ÷1, resto ÷3`),
+        // que está ROTO: nombra la clase equivocada. La regla —y por qué la data la decide— está entera en
+        // Oficios.ModFundicion, con su test al lado.
+        if (!Oficios.PuedeFundir(mineral.MinSkill, p.Skills[GameLimits.SkillMineria], p.Class))
+        { session.Send(ServerMessages.LocaleMsg(194)); return false; }   // "No tenés conocimientos de minería suficientes"
 
         int perLingote = MineralesParaLingote(mineral.Index);
         int cantidad = Math.Max(1, (p.Level - 4) / 5);             // VB6 CantidadItems = MaximoInt(1, (ELV-4)/5)
         var slotInv = p.Inventory[slot];
         while (cantidad > 0 && slotInv.Amount < perLingote * cantidad) cantidad--;
-        if (cantidad <= 0 || slotInv.Amount < perLingote) { session.Send(ServerMessages.LocaleMsg(206)); return; }   // "No tenés suficientes materiales"
+        if (cantidad <= 0 || slotInv.Amount < perLingote) { session.Send(ServerMessages.LocaleMsg(206)); return false; }   // "No tenés suficientes materiales"
 
         // Buscar el destino del lingote ANTES de consumir el mineral: si no hay espacio, se avisa sin tocar el
         // stock (el VB6 tira el lingote al piso, pero acá preferimos no perder material silenciosamente).
         int lingSlot = FindSlotFor(p, (short)mineral.LingoteIndex, cantidad);
-        if (lingSlot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio para los lingotes.", FuenteInfo)); return; }
+        if (lingSlot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio para los lingotes.", FuenteInfo)); return false; }
 
         slotInv.Amount -= (short)(perLingote * cantidad);          // consumir minerales
         if (slotInv.Amount < 1) slotInv = default;
@@ -5407,6 +5422,7 @@ public sealed partial class PacketDispatcher
         // la misma canilla de skill que se cerró en la magia (tarea #71). Por eso NO se llama RaiseSkill acá.
         // El CRÉDITO del centinela sí sube: DoLingotes/DoFundir lo hacen (Trabajo.bas:880/939) aunque no suban skill.
         p.Trabajando++;
+        return true;
     }
 
     /// <summary>Revela a un jugador oculto (VB6 Protocol.bas:1387/1719, SistemaCombate.bas:899): caminar, atacar o
@@ -7019,6 +7035,7 @@ public sealed partial class PacketDispatcher
                 // por índice de locale (el cliente lo resuelve del NPC, por eso viaja el Numero y no el texto).
                 if (npc.Pos != npc.StartPos && npc.Template.Description.Length > 1)
                     session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, npc.Template.Index, 4));
+                FichaDelFamiliarPropio(session, p, npc);
             }
             else if (user is not null)
             {
@@ -7050,6 +7067,30 @@ public sealed partial class PacketDispatcher
         // `If FoundSomething = 0` — el único lugar que limpia. Corre tanto dentro del mapa como en la rama
         // de fuera de bounds, y deja intacto TargetMap/X/Y: eso es lo que sigue viendo /DT.
         if (!foundSomething) ClearTarget(p);
+    }
+
+    /// <summary>Clickearse el PROPIO familiar devuelve su ficha: nivel, vida, golpe y qué habilidades sabe.
+    ///
+    /// <para>NO es del original —el VB6 sólo manda el <c>CharMsgStatusNPC</c> con la vida y la descripción de
+    /// la plantilla— y por eso está acotado a lo mínimo: sólo se ve el familiar de UNO MISMO, y sólo lo ve su
+    /// dueño. La ficha de una criatura ajena sigue siendo la del original.</para>
+    ///
+    /// <para>Vale la pena porque el familiar es el único subsistema que sube de nivel por su cuenta: el
+    /// jugador lo ve pelear pero no tiene forma de saber en qué nivel va, cuánto pega ni qué aprendió. El
+    /// <c>CharMsgStatusNPC</c> le muestra el porcentaje de vida de la PLANTILLA, que para un familiar que
+    /// creció no dice nada.</para></summary>
+    private void FichaDelFamiliarPropio(ClientSession session, Player p, Npc npc)
+    {
+        var fam = p.Familiar;
+        if (!fam.Existe || fam.CharIndexEnElMundo != npc.CharIndex) return;
+        string nombre = string.IsNullOrWhiteSpace(fam.Nombre) ? npc.Name : fam.Nombre;
+        session.Send(ServerMessages.ConsoleMsg(
+            $"{nombre} — nivel {fam.Nivel}, {fam.Vida}/{fam.VidaMaxima} de vida, golpe {fam.GolpeMinimo}-{fam.GolpeMaximo}.",
+            FuenteInfo));
+        var sabe = fam.Habilidades.Where(h => h != 0).Select(Familiar.NombreDeHabilidad).ToArray();
+        session.Send(ServerMessages.ConsoleMsg(
+            sabe.Length > 0 ? "Sabe: " + string.Join(", ", sabe) + "." : "Todavía no aprendió ninguna habilidad.",
+            FuenteInfo));
     }
 
     /// <summary>La cadena de sondas de OBJETO de <c>LookatTile</c>: deja <c>TargetObj*</c> en el tile que matchea
@@ -8231,7 +8272,14 @@ public sealed partial class PacketDispatcher
                 // Manhattan, como todas las acciones de herramienta del original (Acciones.bas:53).
                 if (Math.Abs(p.Pos.X - tx) + Math.Abs(p.Pos.Y - ty) > 2)
                 { session.Send(ServerMessages.ConsoleMsg("Estás demasiado lejos.", FuenteInfo)); return; }
-                DoFundir(session, p);
+                // Y LA FUNDICIÓN TAMBIÉN ES CONTINUA. Es del original y faltaba: la PRIMERA rama de
+                // `DoTrabajar` (Trabajo.bas:2484) es `If .flags.Lingoteando Then DoLingotes`, o sea que el
+                // que arranca a fundir sigue fundiendo solo, igual que el que mina o pesca. Acá el clic hacía
+                // una sola tanda y había que volver a clickear la fragua por cada puñado de lingotes.
+                if (!DoFundir(session, p)) return;             // la primera tanda falló: no hay faena que abrir
+                p.Laborando = true;
+                p.LastWorkMs = Environment.TickCount64;         // la tanda del clic ya salió: la próxima, en un intervalo
+                session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", 2));
                 return;
             }
             // El original saca el mineral de `flags.TargetObj`, que le queda seteado del LeftClick previo. Acá
@@ -8293,6 +8341,10 @@ public sealed partial class PacketDispatcher
             default:
                 return false;   // martillo/serrucho/costurero/olla no abren faena: son de fabricar
         }
+        // Empezar una faena de HERRAMIENTA cancela la de fundición. El original no lo hace y arrastra el bug:
+        // `flags.Lingoteando` sólo se limpia al desconectarse (TCP.bas:1452), y como la rama de fundir va
+        // primera en DoTrabajar, el que fundió una vez no volvía a minar en toda la sesión.
+        p.Lingoteando = 0;
         p.Laborando = true;
         p.LastWorkMs = 0;   // que la primera vuelta salga ya, sin esperar el intervalo
         session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", 2));
@@ -8312,6 +8364,14 @@ public sealed partial class PacketDispatcher
         {
             session.Send(ServerMessages.ConsoleMsg("Dejas de trabajar debido a tu poca energía.", FuenteInfo));
             p.Laborando = false;
+            return;
+        }
+        // FUNDIR VA PRIMERO, como en el original (`If .flags.Lingoteando Then DoLingotes` es la primera rama de
+        // DoTrabajar). Es la única faena que NO cuelga de una herramienta equipada, así que el ruteo por
+        // herramienta de abajo nunca la alcanzaría.
+        if (p.Lingoteando > 0)
+        {
+            if (!DoFundir(session, p)) p.Laborando = false;
             return;
         }
         var herramienta = Equipment.EquippedOfCategory(p, _data, 6);
@@ -9842,6 +9902,18 @@ public sealed partial class PacketDispatcher
             // 175 son Agarrable=1 (árboles, puertas, carteles); sin este gate un `g` se lleva un árbol al bolso.
             // El VB6 no manda mensaje: simplemente no lo agarra.
             if (_data.Obj(ground.ObjIndex) is { IsPickable: false }) return;
+            // EL ORO NO VA AL INVENTARIO. El original le da su propia rama, con comentario y todo:
+            // `' Oro directo a la billetera!` (InvUsuario.bas:632). Suma a GLD, borra el montón del piso y
+            // manda UpdateGold — sin gastar un slot y sin límite de 10.000 por pila. Acá caía por el camino
+            // común y las monedas quedaban en la mochila como un objeto más, que es lo que reportó el tester.
+            if (_data.Obj(ground.ObjIndex) is { IsGold: true })
+            {
+                p.Gold = (int)Math.Min((long)p.Gold + ground.Amount, MaxOro);
+                _world.RemoveGround(p.Pos);
+                _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectDelete(p.Pos.X, p.Pos.Y));
+                session.Send(ServerMessages.UpdateGold(p.Gold));
+                return;
+            }
             int slot = FindSlotFor(p, ground.ObjIndex, ground.Amount);
             if (slot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
 
@@ -9897,6 +9969,20 @@ public sealed partial class PacketDispatcher
                 if (inv.ObjIndex != Daga) return;                       // otra arma sobre leña: silencio
                 if (!inv.Equipped) { session.Send(ServerMessages.LocaleMsg(391)); return; }
                 TratarDeHacerFogata(session, p);
+                return;
+            }
+
+            // MONEDAS DE ORO EN EL INVENTARIO (VB6 `Case eOBJType.otGuita` de UsarInvItem, InvUsuario.bas:1455).
+            // Usarlas las pasa a la billetera y vacía la ranura. Es el par del pickup: con el oro yendo derecho
+            // a GLD esta rama casi nunca hace falta, pero el original la tiene y sigue habiendo caminos que
+            // meten monedas al inventario (un /CI, un intercambio, un guardado viejo). Sin ella el jugador se
+            // queda con un montón de oro que no puede gastar.
+            if (obj.IsGold)
+            {
+                p.Gold = (int)Math.Min((long)p.Gold + inv.Amount, MaxOro);
+                p.Inventory[slot] = default;
+                session.Send(ServerMessages.ChangeInventorySlot(slot, 0, 0, false, 0f, 0));
+                session.Send(ServerMessages.UpdateGold(p.Gold));
                 return;
             }
 
@@ -11164,8 +11250,8 @@ public sealed partial class PacketDispatcher
     ///
     /// El original ramifica newbie (TirarTodosLosItems vs ...NoNewbies), pero en ESTA data ningún objeto trae
     /// la clave `Newbie`, así que las dos ramas sueltan exactamente el mismo conjunto y se implementa una sola.
-    /// Tampoco se porta el caso especial del carro minero (CARROMINERO) ni el del pirata con galeón: los dos
-    /// dependen de subsistemas que este slice no modela.
+    /// El caso especial del pirata con galeón sigue sin portarse (depende de un subsistema que este slice no
+    /// modela). El del CARRO MINERO sí está, ver <see cref="CarroMinero"/>.
     /// </summary>
     /// <summary>REGLA DE LA CASA, no del original: los tipos que NUNCA se caen al morir, los haya marcado o no
     /// el <c>obj.dat</c>. Son los caros de reponer, donde perderlos de un mordisco arruina la partida:
@@ -11179,10 +11265,27 @@ public sealed partial class PacketDispatcher
     /// y el Anillo Dorado— se siguen respetando por su propio campo.</summary>
     private static bool NuncaSeCae(Data.ObjInfo o) => o.ObjType is 31 or 37 or 38 or 44;
 
+    /// <summary>El "Carro de Minería" (VB6 <c>CARROMINERO</c>, Trabajo.bas:32). Su propio texto en el obj.dat
+    /// promete "Salva un 70% de tus minerales al morir", y el original lo cumple en
+    /// <c>TirarTodosLosItems</c> (InvUsuario.bas:2289): teniéndolo, cada pila de minerales suelta
+    /// <c>Amount × 30 / 100</c> en vez de entera.
+    ///
+    /// El install tiene ADEMÁS un segundo bloque encimado (:2211-2251) que reparte lo que tira dividiendo por
+    /// la cantidad de minerales DISTINTOS que se llevan encima, así que con tres tipos de mineral cada uno
+    /// tiraba menos — es la parte que el tester describió como rota, y no se porta. Se porta la regla que el
+    /// ítem anuncia y que se aplica por pila.</summary>
+    private const int CarroMinero = 880;
+
     private static void DropInventoryOnDeath(World world, GameData data, Player p)
     {
         if (!data.IsPkMap(p.Pos.Map)) return;                       // MapInfo(map).Pk = False → no se cae nada
         if (data.IsSafeZone(p.Pos.Map, p.Pos.X, p.Pos.Y)) return;   // MapData(...).Trigger = ZONASEGURA
+
+        // El carro se mira UNA vez, antes de empezar a tirar. El original lo consulta adentro del loop
+        // (`TieneObjetos(880, 1, UserIndex)`), y como el carro también se cae, si le tocaba una ranura
+        // anterior a la del mineral dejaba de proteger a la mitad del inventario: la misma muerte salvaba o
+        // no según en qué bolsillo estuviera guardado. Acá se decide antes y vale para todas las pilas.
+        bool tieneCarro = CountItem(p, CarroMinero) > 0;
 
         for (int slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
         {
@@ -11196,6 +11299,16 @@ public sealed partial class PacketDispatcher
             // (ver ObjInfo.IsNewbie): sin esto el que recién empieza perdía el equipo inicial de un mordisco.
             if (info.IsNewbie) continue;
 
+            // CUÁNTO se cae de esta pila. Normalmente todo; con el carro minero, sólo el 30% de cada pila de
+            // minerales. El porcentaje va por `Matematicas.Porcentaje` y no por división entera, porque la
+            // barra de VB6 redondea al par: con 5 minerales el original tira 2, no 1.
+            short cae = inv.Amount;
+            if (tieneCarro && info.IsMineral)
+            {
+                cae = (short)Matematicas.Porcentaje(inv.Amount, 30);
+                if (cae <= 0) continue;   // pila tan chica que el 30% redondea a cero: se salva entera
+            }
+
             var spot = FreeGroundNear(world, p.Pos);
             if (spot is not { } drop) continue;   // no hay tile libre alrededor: el ítem se queda (VB6 NuevaPos = 0)
 
@@ -11203,10 +11316,12 @@ public sealed partial class PacketDispatcher
             // después ya no hay de dónde sacar el EfectoMagico. Ver la nota de UnequipAll.
             if (inv.Equipped) AplicarBonusDeEquipo(p, info, poniendose: false);
 
-            world.SetGround(drop, inv.ObjIndex, inv.Amount);
-            world.BroadcastToObservers(drop, ServerMessages.ObjectCreate(drop.X, drop.Y, inv.ObjIndex, inv.Amount));
-            p.Inventory[slot] = default;
-            p.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, 0, 0, false, 0f, 0));   // slot vacío
+            world.SetGround(drop, inv.ObjIndex, cae);
+            world.BroadcastToObservers(drop, ServerMessages.ObjectCreate(drop.X, drop.Y, inv.ObjIndex, cae));
+            inv.Amount -= cae;
+            p.Inventory[slot] = inv.Amount > 0 ? inv : default;
+            p.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, p.Inventory[slot].ObjIndex,
+                p.Inventory[slot].Amount, p.Inventory[slot].Equipped, 0f, p.Inventory[slot].IsEmpty ? (byte)0 : (byte)1));
         }
     }
 

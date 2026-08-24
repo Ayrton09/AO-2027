@@ -61,6 +61,13 @@ public sealed class NpcSystem
     /// cablea (tests que instancian NpcSystem suelto), el rechazo igual avisa y sólo no entrena.</summary>
     public Action<Player, int>? SubirSkillPorUso { get; set; }
 
+    /// <summary>REGLA DE LA CASA <c>FamiliarBusca</c> del Server.ini (reporte del tester, 2026-08-24), apagada
+    /// por defecto. El original NO la tiene: la mascota es <c>TipoAI.SigueAmo</c> (AI_NPC.bas:736), te sigue y
+    /// se mueve al azar, y sólo pelea contra el objetivo que le ponen —el dueño atacando algo, o el bicho
+    /// atacándolo—. Prendida, el familiar ocioso se va contra el hostil más cercano a su dueño y el que recibe
+    /// el golpe se queda peleando con él en vez de seguir con lo suyo. Lo pone Program.cs desde el ini.</summary>
+    public bool FamiliarBuscaEnemigo { get; set; }
+
     /// <summary>Corrección de una infidelidad del FIXTURE, no del original (mismo caso que el <c>Movement</c>
     /// que TestFixture le fija a mano a sus NPCs). El VB6 no deja que una criatura persiga ni golpee a un GM
     /// (<see cref="Player.AdminPerseguible"/>), y el protagonista demo del fixture —Rugura— es Dios, así que con
@@ -212,7 +219,13 @@ public sealed class NpcSystem
                 }
                 if (npc.OwnerCharIndex != 0 && npc.Movement != GameLimits.TipoAiNpcDefensa
                     && npc.Movement != GameLimits.TipoAiNpcAtacaNpc)
-                { NpcTryFollowOwner(npc); continue; }
+                {
+                    // La regla de la casa: el familiar ocioso se busca pelea solo. Si engancha una, este mismo
+                    // tick ya no sigue al amo — le quedó puesto el Movement de atacar y entra por el switch de
+                    // abajo en la próxima vuelta.
+                    if (FamiliarBuscaEnemigo && npc.TargetNpcCharIndex == 0 && FamiliarBuscaPresa(npc)) continue;
+                    NpcTryFollowOwner(npc); continue;
+                }
                 if (npc.SinIa) continue;   // NPCAI sale de una para GuardiasCity/facciones/Convertidores
                 switch (npc.Movement)
                 {
@@ -463,6 +476,38 @@ public sealed class NpcSystem
     /// pega cuando lo alcanza. Es la mitad PvE de las mascotas y no existía: el golpe de una criatura CON
     /// DUEÑO no sale de la fase de ataque —el original no se la corre (<c>If .MaestroUser = 0</c>)— sino de
     /// acá. Sin esta rama, una mascota domada o una invocación no le pegaba a nadie NUNCA.</summary>
+    /// <summary>El familiar ocioso elige presa (regla de la casa <see cref="FamiliarBuscaEnemigo"/>). Busca el
+    /// hostil más cercano <b>a su dueño</b> y no a sí mismo: el tester lo pidió con esas palabras —"que vaya a
+    /// pelear contra el animal que esté más cerca mío"— y la diferencia es real, porque el familiar se aleja
+    /// persiguiendo y desde su posición el "más cercano" iría corriéndose cada vez más lejos del jugador.
+    ///
+    /// <para>Sólo se mete con lo que el dueño podría atacar: nada de mercaderes, banqueros, sacerdotes ni de
+    /// otras mascotas —ni la propia ni la de un tercero, que sería empezar una pelea entre jugadores sin que
+    /// nadie la haya pedido—. El alcance es el rectángulo de visión del original (8×6) medido desde el dueño.
+    /// Devuelve true si enganchó a alguien.</para></summary>
+    private bool FamiliarBuscaPresa(Npc npc)
+    {
+        _world.TryGet(npc.OwnerCharIndex, out var amo);
+        if (amo is null || !amo.IsAlive || amo.Pos.Map != npc.Pos.Map) return false;
+        Npc? mejor = null; int mejorDist = int.MaxValue;
+        foreach (var otro in _world.NpcsOnMap(npc.Pos.Map))
+        {
+            if (!otro.IsAlive || otro.CharIndex == npc.CharIndex) continue;
+            if (otro.OwnerCharIndex != 0) continue;                 // mascotas ajenas y la propia, afuera
+            if (!otro.Hostile || !otro.Attackable) continue;         // sólo lo que de verdad es una amenaza
+            if (otro.IsMerchant || otro.IsBanker || otro.IsReviver) continue;
+            int dx = Math.Abs(otro.Pos.X - amo.Pos.X), dy = Math.Abs(otro.Pos.Y - amo.Pos.Y);
+            if (dx > RangoVisionX || dy > RangoVisionY) continue;
+            int dist = dx + dy;
+            if (dist >= mejorDist) continue;
+            mejor = otro; mejorDist = dist;
+        }
+        if (mejor is null) return false;
+        npc.TargetNpcCharIndex = mejor.CharIndex;
+        npc.Movement = GameLimits.TipoAiNpcAtacaNpc;
+        return true;
+    }
+
     private void NpcAtacaANpcObjetivo(Npc npc)
     {
         var blanco = npc.TargetNpcCharIndex != 0 ? _world.NpcByIndex(npc.TargetNpcCharIndex) : null;
@@ -915,6 +960,16 @@ public sealed class NpcSystem
         victima.Hp = Math.Max(0, victima.Hp - dmg);
         _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dmg));
         FamiliarGolpeoA(npc, victima);
+        // Y el que recibe el golpe se queda peleando con el familiar (regla de la casa FamiliarBusca). Sin
+        // esto la presa cobraba sin enterarse y seguía con su IA de siempre — normalmente yendo hacia el
+        // DUEÑO, que es justo lo que el familiar tenía que evitarle. Sólo se le pone objetivo al que no tiene
+        // (`If TargetNPC = 0`, el mismo orden que usa CheckPets para no pisarle la pelea a nadie).
+        if (FamiliarBuscaEnemigo && npc.OwnerCharIndex != 0 && victima.OwnerCharIndex == 0
+            && victima.Hp > 0 && victima.TargetNpcCharIndex == 0)
+        {
+            victima.TargetNpcCharIndex = npc.CharIndex;
+            victima.Movement = GameLimits.TipoAiNpcAtacaNpc;
+        }
         if (victima.Hp == 0) MatarNpcSinDueno(victima);
     }
 

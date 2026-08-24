@@ -170,6 +170,9 @@ var loop = new GameLoop();
 // Estado de administración en caliente (eventos exp/oro/drop, autosave, pausa, solo-GMs, cadencia,
 // mensajes automáticos, bans por IP); lo muta el panel. Las IPs baneadas se persisten en data/banned-ips.txt.
 var admin = new CoverAO.Server.Game.AdminConfig();
+// El centinela anti-macro arranca como diga el Server.ini (apagado por defecto, como el original). En vivo
+// lo conmuta /CENTINELAACTIVADO, que escribe en este mismo campo.
+admin.CentinelActive = serverIni.Centinela;
 var bannedIpsPath = Path.Combine(dataRoot, "banned-ips.txt");
 try { if (File.Exists(bannedIpsPath)) admin.LoadBannedIps(File.ReadAllLines(bannedIpsPath)); }
 catch (Exception ex) { Console.Error.WriteLine($"No se pudo leer {bannedIpsPath}: {ex.Message}"); }
@@ -204,6 +207,8 @@ var serverContent = CoverAO.Server.Game.ServerContent.Load(dataRoot, gameData.So
 // gmsPerseguibles sólo en fixture: el protagonista demo (Rugura) es Dios, y el gate fiel AdminPerseguible
 // dejaría al laboratorio sin PvE — ninguna criatura lo perseguiría ni lo golpearía. Ver NpcSystem.
 var npcSystem = new NpcSystem(world, gameData, gmsPerseguibles: fixtureMode);
+// Regla de la casa: ¿el familiar sale a buscar pelea solo? Apagada = como el original (te sigue y nada más).
+npcSystem.FamiliarBuscaEnemigo = serverIni.FamiliarBusca;
 
 // El fixture de test (NPCs + arena + zonas seguras + paredes en el mapa 15) SÓLO en modo --fixture; en
 // producción el mapa 15 es mundo real. Se puebla ANTES que el mundo real para no correrle los char index
@@ -361,10 +366,16 @@ loop.OnTickHandler = tick =>
             Console.WriteLine($"[auto-msg] {msg}");
         }
     }
+    // EL CENTINELA ANTI-MACRO, si el host lo prendió. Es el `Call modCentinela.CallUserAttention` que el
+    // original tiene COMENTADO en esta misma línea de su loop (mMainLoop.bas:21): el ruido y el destello que
+    // le llaman la atención al que está trabajando. Con el interruptor apagado no hace nada.
+    dispatcher?.CentinelaLlamarAtencion(Environment.TickCount64);
     // Condenas de /CARCEL (VB6 PurgarPenas, Admin.bas:138): una vez por minuto se descuenta un minuto a cada
     // preso y, al llegar a 0, sale libre en Libertad con LocaleMsg 121.
     if (tick % (60_000 / GameLoop.TickMs) == 0)
     {
+        // Y la vuelta de minuto del centinela (el otro `Call` comentado del original, frmMain.frm:749).
+        dispatcher?.PasarMinutoCentinela();
         foreach (var pl in world.Players)
         {
             if (pl.JailMinutesLeft <= 0) continue;

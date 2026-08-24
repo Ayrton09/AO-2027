@@ -57,10 +57,13 @@ public sealed class AdminConfig
     { foreach (var ip in ips) if (!string.IsNullOrWhiteSpace(ip)) _bannedIps.TryAdd(ip.Trim(), 1); }
 
     /// <summary>¿El centinela (anti-macro) está activado? (VB6 <c>centinelaActivado</c>, Declares.bas). Lo
-    /// conmuta el comando GM /CENTINELAACTIVADO. No gatea nada — y <b>tampoco en el original</b>: el subsistema
-    /// modCentinela.bas está entero pero DESCONECTADO, sus dos puntos de entrada están comentados
-    /// (frmMain.frm:749 y mMainLoop.bas:21). El flag existe para que el comando y su aviso a los admins sean
-    /// fieles, no como deuda pendiente. Ver fase5/GAPS-CODIGO-MUERTO.md §4l.</summary>
+    /// conmuta el comando GM /CENTINELAACTIVADO y arranca con lo que diga <c>Centinela</c> en el Server.ini.
+    ///
+    /// <para>Desde el 2026-08-24 este flag GATEA el subsistema de verdad (ver
+    /// <c>PacketDispatcher.Centinela.cs</c>). En el original no gatea nada porque modCentinela.bas está entero
+    /// pero DESCONECTADO —sus dos puntos de entrada están comentados, frmMain.frm:749 y mMainLoop.bas:21—, y
+    /// por eso acá el default es <b>apagado</b>: prendido es una regla de la casa, apagado es el install.</para>
+    /// </summary>
     public bool CentinelActive { get; set; }
 
     /// <summary>Volcado de la lista a disco. Lo engancha Program.cs (data/banned-ips.txt) y lo llaman los dos

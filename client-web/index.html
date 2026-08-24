@@ -891,6 +891,10 @@
     // 30% por defecto: la música es de fondo y compite con los 164 efectos, que van al 50%. Arranca sonando
     // (como el original), así que el default tiene que poder dejarse puesto sin molestar. Ajustable en Opciones.
     let volMusica = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volmusica') ?? 0.30)));
+    // Y LOS EFECTOS. El 50% era una constante escrita en `playWave` y no había forma de moverla: el jugador
+    // sólo podía apagarlos del todo. Un golpe, un hechizo y el ruido del oficio suenan todo el tiempo, así
+    // que el que quiere bajarlos sin quedarse en silencio necesitaba este deslizador. Mismo default que antes.
+    let volEfectos = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volefectos') ?? 0.50)));
     // localStorage tira en modo privado con las cookies bloqueadas: una preferencia que no se puede guardar
     // no puede tumbar el juego. Se declaran acá arriba porque los usan tanto los botones del encabezado como
     // el panel de Opciones, y se asignan más abajo, cuando ya existe el DOM.
@@ -917,7 +921,10 @@
       // conteo (es emisión real) pero no pedir un `0.wav` que no existe. Los hooks se actualizan igual.
       if (!id || muted) return;
       let a = audioCache[id];
-      if (!a) { a = new Audio(`./assets/sounds/${id}.wav`); a.volume = 0.5; audioCache[id] = a; }
+      if (!a) { a = new Audio(`./assets/sounds/${id}.wav`); audioCache[id] = a; }
+      // El volumen se pone en CADA reproducción, no al crear el objeto: los `Audio` quedan cacheados por id,
+      // así que fijarlo una sola vez dejaba al deslizador sin efecto sobre todo sonido que ya hubiera sonado.
+      a.volume = volEfectos;
       try { a.currentTime = 0; a.play().catch(() => {}); } catch (e) {}
     }
     // --- Modelo de tamaño responsive / multi-resolución ------------------------------------------
@@ -1354,6 +1361,11 @@
     // (modLocales.bas:539). 90 de los 113 hechizos tienen palabras; los otros no dibujan nada, como en el VB6.
     let spellWords = null;
     fetch('./assets/spells-palabras.json').then((r) => (r.ok ? r.json() : null)).then((s) => { spellWords = s; }).catch(() => {});
+    // La FICHA de cada hechizo (daño/cura, maná, energía y skill), para el "?" del libro de conjuros. Va
+    // con `r.ok` y `catch` como las palabras: si una copia vieja de `dist/` no trae el archivo, el botón
+    // sigue diciendo el nombre en vez de romper la carga entera del cliente.
+    let spellInfo = null;
+    fetch('./assets/spells-info.json').then((r) => (r.ok ? r.json() : null)).then((s) => { spellInfo = s; }).catch(() => {});
     // idHechizo -> GrhIndex de su pergamino (fase0/transcode/make_spell_icons.py)
     let spellIcons = null;
     fetch('./assets/spellicons.json').then((r) => (r.ok ? r.json() : null))
@@ -2826,6 +2838,9 @@
           <span data-op-val="volmusica" style="min-width:3em;text-align:right">${Math.round(volMusica * 100)}%</span></div>
         <div class="frow" style="justify-content:space-between"><span>Efectos de sonido</span>
           <button class="sbtn ghost" data-op="sonido" style="min-width:5em">${muted ? 'apagados' : 'encendidos'}</button></div>
+        <div class="frow" style="justify-content:space-between"><span>Volumen de los efectos</span>
+          <input type="range" min="0" max="100" step="5" value="${Math.round(volEfectos * 100)}" data-op="volefectos" style="flex:1;max-width:12em">
+          <span data-op-val="volefectos" style="min-width:3em;text-align:right">${Math.round(volEfectos * 100)}%</span></div>
 
         <div class="fsec">Video</div>
         <div class="frow" style="justify-content:space-between"><span>Tope de FPS</span>
@@ -2861,7 +2876,7 @@
           <span class="fhint">reasignar cualquier tecla</span></div>`, true, 'opciones');
     }
     window.__abrirOpciones = abrirOpciones;
-    window.__opciones = () => ({ musicaOff, muted, volMusica, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres });
+    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres });
     const SKILL_ROBAR = 14;        // la tecla R del original (mKeySteal); tambien pide objetivo
     // ÍTEM SELECCIONADO del inventario. El original lo tiene (`Inventario.SelectedItem`) y sus teclas de
     // inventario —T tirar, U usar, E equipar— actúan SOBRE ÉL. Acá no existía: el clic actuaba directo, y por
@@ -3627,7 +3642,49 @@
     $('btn-cast').addEventListener('click', () => {
       if (ws.readyState === 1) ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CastSpell).writeByte(selectedSpell).toBytes(), myKey));
     });
-    $('btn-castinfo').addEventListener('click', () => log('Hechizo elegido: ' + spellName(spells[selectedSpell] || 0), '#c9a6ff'));
+    // EL "?" DEL LIBRO DE CONJUROS. Antes repetía el nombre del hechizo, que es justo lo que el jugador ya
+    // está leyendo en la lista. Ahora dice lo que cuesta y lo que hace, que es lo que pidió el tester:
+    // daño o cura, maná, energía y skill de Magia requerida (`spells-info.json`, de Hechizos.dat).
+    //
+    // El daño NO es el par MinHP/MaxHP pelado: el server lo escala con el nivel del que lanza
+    // (`DanoHechizoOfensivo` = tirada + tirada × 2 × nivel / 100). Sabiendo el nivel se muestra el número de
+    // verdad y el base entre paréntesis; sin él —antes del primer UpdateUserStats— sólo el base, dicho como
+    // tal. Lo que NO se puede anticipar es el báculo del que lanza ni la resistencia mágica del objetivo,
+    // así que el número es "sin contar defensas" y se aclara.
+    function fichaDelHechizo(id) {
+      const info = spellInfo && spellInfo[id];
+      const nombre = spellName(id);
+      if (!info) return nombre;
+      const partes = [];
+      if (info.min || info.max) {
+        const rango = (a, b) => (a === b ? String(a) : a + '–' + b);
+        const nivel = myStats && myStats.level > 0 ? myStats.level : 0;
+        const esc2 = (v) => v + Math.round(v * 2 * nivel / 100);
+        const base = rango(info.min, info.max);
+        const conNivel = rango(esc2(info.min), esc2(info.max));
+        const que = info.cura ? 'Cura' : 'Daño';
+        // En nivel 1 el escalado es cero, así que "(base 7–14)" repetía el mismo número que venía de decir.
+        // Se muestra sólo cuando aporta algo.
+        partes.push(!nivel ? `${que} ${base} de base, y sube con el nivel`
+                  : conNivel === base ? `${que} ${base}`
+                  : `${que} ${conNivel} a tu nivel ${nivel} (base ${base})`);
+      } else if (info.desc) {
+        partes.push(info.desc);
+      }
+      if (info.area) partes.push('Afecta un área');
+      const costo = [];
+      if (info.mana) costo.push(info.mana + ' de maná');
+      if (info.sta) costo.push(info.sta + ' de energía');
+      if (costo.length) partes.push('Cuesta ' + costo.join(' y '));
+      if (info.sk) partes.push('Requiere ' + info.sk + ' de Magia');
+      return nombre + ' — ' + partes.join('. ') + '.';
+    }
+    $('btn-castinfo').addEventListener('click', () => {
+      const id = spells[selectedSpell] || 0;
+      if (!id) { log('Elegí un hechizo de la lista primero.', '#c9a6ff'); return; }
+      log(fichaDelHechizo(id), '#c9a6ff');
+      if (!spellInfo) log('(la ficha completa todavía se está cargando)', '#c9a6ff');
+    });
 
     // --- pestañas del panel (Inventario / Conjuros / Menú) --------------------------------------
     document.querySelectorAll('.p-tabs .tab').forEach((t) => t.addEventListener('click', () => {
@@ -4743,6 +4800,14 @@
           guardarPref('ao_volmusica', String(volMusica));
           if (musicaAudio) musicaAudio.volume = volMusica;      // en vivo, sin cortar la pista
           rot(Math.round(volMusica * 100) + '%'); break;
+        }
+        case 'volefectos': {
+          volEfectos = Math.min(1, Math.max(0, Number(el.value) / 100));
+          guardarPref('ao_volefectos', String(volEfectos));
+          // Un efecto de muestra al soltar el valor, para oír dónde queda sin tener que salir a pegarle a
+          // algo. El 6 es el sonido de subir de nivel: corto y reconocible.
+          if (!muted) playWave(6);
+          rot(Math.round(volEfectos * 100) + '%'); break;
         }
         case 'zoom': {
           VTILES_H = Math.min(22, Math.max(9, Number(el.value) || 13));

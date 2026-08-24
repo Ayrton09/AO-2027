@@ -151,6 +151,20 @@ QuitarEquipoNovato=1
 ;                 y cada reinicio le borra a los jugadores lo que se les cayo al morir. Poner 0 si preferis
 ;                 lo del original, o si reiniciar seguido te llena el mundo de cosas viejas.
 PersistirSuelo=1
+; Centinela: 1 = corre el centinela anti-macro. Un NPC se le planta al que esta trabajando y le pide que
+;            escriba /CENTINELA <clave>; el que no contesta en dos minutos se come quince de carcel y lo
+;            desconecta. 0 = como el original, que trae el modulo entero pero con sus dos llamadas
+;            COMENTADAS, asi que no aparece nunca.
+;            APAGADA por defecto. Prendela si vas a dejar el trabajo continuo suelto y no queres que la
+;            gente deje el personaje minando toda la noche. Un Dios tambien lo conmuta en vivo con
+;            /CENTINELAACTIVADO.
+Centinela=0
+; FamiliarBusca: 1 = el familiar sale a pelear solo contra el hostil mas cercano a su dueno, y el bicho que
+;                recibe el golpe se queda peleando con el. 0 = como el original, donde la mascota te sigue y
+;                solo pelea contra lo que ya tenga de objetivo.
+;                APAGADA por defecto porque CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir
+;                cada pelea.
+FamiliarBusca=0
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo

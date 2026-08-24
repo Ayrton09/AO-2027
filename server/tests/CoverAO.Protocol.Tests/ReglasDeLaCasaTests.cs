@@ -4,8 +4,10 @@ using Xunit;
 namespace CoverAO.Protocol.Tests;
 
 /// <summary>
-/// LAS TRES REGLAS DE LA CASA que el tester pidió y que el ORIGINAL NO HACE: oro al subir de nivel (2.12),
-/// curarse al subir (2.13) y que el equipo de novato desaparezca al pasar el nivel 15 (2.2b).
+/// LAS REGLAS DE LA CASA que el tester pidió y que el ORIGINAL NO HACE: oro al subir de nivel (2.12),
+/// curarse al subir (2.13), que el equipo de novato desaparezca al pasar el nivel 15 (2.2b), que el suelo
+/// sobreviva a un reinicio, el CENTINELA anti-macro y que el FAMILIAR salga a buscar pelea solo (las dos
+/// últimas, del reporte del 2026-08-24).
 ///
 /// <para>Están implementadas, pero <b>apagadas</b>: cambian el balance del juego y esa decisión no es del
 /// port. Lo que fija este test es justamente eso — que <b>el default sea el comportamiento del VB6</b>. Es la
@@ -35,6 +37,10 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.False(cfg.CuraAlSubirNivel);         // sube los MÁXIMOS y deja los mínimos donde estaban
         Assert.False(cfg.QuitarEquipoNovato);       // no existe ningún `QuitarNewbieObj`
         Assert.False(cfg.PersistirSuelo);           // el suelo del VB6 vive en RAM y se repuebla del .csm
+        // El módulo del centinela existe entero en el VB6 pero sus dos llamadas están COMENTADAS
+        // (frmMain.frm:749 y mMainLoop.bas:21): en el install no aparece nunca.
+        Assert.False(cfg.Centinela);
+        Assert.False(cfg.FamiliarBusca);            // la mascota del VB6 es SigueAmo: no busca enemigo sola
     }
 
     [Fact]
