@@ -109,8 +109,20 @@ switch ($Accion.ToLowerInvariant()) {
     $destino = CarpetaDe $Nombre
     if (Test-Path $destino) { throw "Ya existe '$Nombre' en $destino" }
     $origen = if ([IO.Path]::IsPathRooted($Desde)) { $Desde } else { Join-Path $Raiz $Desde }
+    # SI NO HAY `plantilla`, SE USA LA UNICA INSTALACION QUE HAYA. El default se llama asi, pero lo que el
+    # jugador descomprime se llama `CoverAO-win-x64`: siguiendo el LEEME al pie de la letra
+    # (`.\coverao.ps1 nueva rojo`) el comando fallaba pidiendo una carpeta que nadie le dijo que creara.
     if (-not (Test-Path (Join-Path $origen "CoverAO.Server.exe"))) {
-      throw "No encuentro una instalacion en '$origen'. Descomprimi ahi el release, o pasa -Desde <carpeta>."
+      $candidatas = @(Get-ChildItem -Directory $Raiz -ErrorAction SilentlyContinue | Where-Object { EsServidor $_ })
+      if ($candidatas.Count -eq 1) {
+        $origen = $candidatas[0].FullName
+        Write-Host "No hay carpeta '$Desde'; uso la unica instalacion que encontre: $($candidatas[0].Name)" -ForegroundColor Yellow
+      } elseif ($candidatas.Count -gt 1) {
+        throw ("Hay varias instalaciones ({0}) y ninguna carpeta '{1}'. Deci cual copiar con -Desde <carpeta>." -f
+               (($candidatas | ForEach-Object { $_.Name }) -join ', '), $Desde)
+      } else {
+        throw "No encuentro una instalacion en '$origen'. Descomprimi ahi el release, o pasa -Desde <carpeta>."
+      }
     }
     if ($Puerto -le 0) {
       # Elegir puertos a mano es de donde salen los choques, y un choque se ve como "no arranca" sin decir

@@ -331,6 +331,7 @@ estan jugando en ese momento. Hay tres formas y todas sirven:
   - cerra la ventana del servidor (o Ctrl+C si lo abriste desde una consola)
   - el boton "Apagar" del panel de administracion
   - crea un archivo vacio llamado  detener  en esta misma carpeta
+    (si Windows te esconde las extensiones y te queda  detener.txt , tambien sirve)
 
 La tercera es la que sirve cuando el servidor corre DE FONDO -sin ventana-, que es lo
 normal si lo dejas prendido como servicio o con una tarea programada. En ese caso NO

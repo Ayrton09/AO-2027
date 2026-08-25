@@ -177,7 +177,11 @@ public sealed class AdminServer
         // archivo tiene control total del panel (shutdown, kickAll, ban, banIp, backup), y es justo el archivo
         // que un host manda "para que le miren el problema". El token es de sesión: se regenera en cada
         // arranque, así que perderlo de vista no cuesta nada — basta con volver a mirar la consola.
-        var consolaReal = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+        // CON LA CODIFICACION DE LA CONSOLA, no la de .NET. Un StreamWriter recien hecho escribe en UTF-8, y
+        // la consola de Windows en castellano muestra CP850: esta linea -la UNICA que lleva el token, o sea
+        // justo la que los documentos le dicen al host que mire- salia con el acento roto
+        // ("administraci?n") mientras todo el resto de la consola se veia bien.
+        var consolaReal = new StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true };
         consolaReal.WriteLine($"== Panel de administración: http://localhost:{_port}/?token={_token} ==");
         Console.WriteLine($"== Panel de administración: http://localhost:{_port}/ (el token va sólo a la consola, no al log) ==");
 

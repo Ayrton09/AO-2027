@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CoverAO — Argentum Online</title>
+  <!-- EL ICONO DE LA PESTAÑA, embebido. El navegador pide /favicon.ico en CADA carga y se comía un 404 por
+       partida, con la pestaña quedando con el ícono genérico. Va como data: URI y no como archivo para que
+       no dependa de que el armador lo copie ni de que el servidor de estáticos lo sirva. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23281a0a'/%3E%3Cpath d='M16 5l3 8h8l-6.5 5 2.5 8-7-5-7 5 2.5-8L5 13h8z' fill='%23e8c876'/%3E%3C/svg%3E" />
   <style>
     /* ============================================================================================
        CoverAO — cliente web · UI remasterizada, multi-resolución (720p/1080p+).
@@ -2159,6 +2163,12 @@
     }
     // Auto-login de conveniencia para testing: ?auto (cuenta_test/Rugura) o ?char=<nombre>.
     const qs = new URLSearchParams(location.search);
+    // EL ATAJO DE AUTO-LOGIN SOLO VALE EN ESTA MAQUINA: lleva credenciales de prueba cableadas. La condicion
+    // vive ACA, una sola vez, porque estaba escrita en dos lugares y sólo uno la miraba: el que manda el
+    // login la respetaba, pero el que ESCONDE la pantalla de login no. Desde otra maquina, un `?char=` —una
+    // URL compartida, un favorito viejo— tapaba el formulario y no logueaba a nadie: pantalla muerta.
+    const atajoDeLoginPermitido = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname)
+                               && (qs.has('auto') || qs.has('char'));
     // Averiguar el puerto ANTES de abrir el socket, si el server nos lo publica. Un 404 (desarrollo con
     // http.server, o un nginx sirviendo la carpeta) deja el 7667 por defecto y conecta igual.
     //
@@ -2175,8 +2185,7 @@
         // fixture (cuenta_test/hash_password), así que servido desde un host público era una puerta: abrir
         // http://tu-server/?auto entraba directo. Gateado a loopback: un server hosteado (dominio o IP) tiene
         // otro hostname y NO lo dispara, así que el cliente que se reparte no anuncia ni usa esas credenciales.
-        const esLocal = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname);
-        if (esLocal && (qs.has('auto') || qs.has('char'))) {
+        if (atajoDeLoginPermitido) {
           const who = qs.get('char') || 'Rugura';
           sendLogin(new ByteQueueWriter().writeByte(CLIENT.LoginExistingChar)
             .writeAsciiString('cuenta_test').writeAsciiString('hash_password')
@@ -5598,7 +5607,7 @@
     // Arranque: construir HUD, medir el stage y conectar.
     buildInv(); buildHotbar();
     renderReady = true; resize();
-    if (qs.has('auto') || qs.has('char')) hideLogin();   // auto-login: saltar la pantalla
+    if (atajoDeLoginPermitido) hideLogin();   // auto-login: saltar la pantalla (sólo desde esta máquina)
     log('Conectando al servidor…', '#8a9');
   </script>
 </body>

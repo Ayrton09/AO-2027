@@ -109,7 +109,12 @@ Console.WriteLine($"Instalado en: {AppContext.BaseDirectory}");
 Console.WriteLine($"Puertos: {port} juego (cliente clasico)  |  {port + 1} WebSocket (cliente web)  |  " +
                   $"{(sinAdmin ? "sin panel de admin" : adminPort + " panel de admin (solo local)")}  |  " +
                   $"{(habraWeb ? webPort + " cliente web" : "sin cliente web (esta instalacion no lo trae)")}");
-Console.WriteLine($"         Se configuran con StartPort={port} en el Server.ini: los otros tres salen de ahi (+1, +2, +3).");
+// SIN MENTIR SOBRE DE DONDE SALIO EL NUMERO. Si el puerto vino por linea de comandos, el Server.ini dice
+// OTRA COSA, y el host que abre el archivo buscando ese numero no lo encuentra.
+Console.WriteLine(port == serverIni.StartPort
+    ? $"         Se configuran con StartPort={port} en el Server.ini: los otros tres salen de ahi (+1, +2, +3)."
+    : $"         El {port} vino por linea de comandos y pisa al StartPort={serverIni.StartPort} del Server.ini; " +
+      "los otros tres salen de ahi (+1, +2, +3).");
 Console.WriteLine("         Con varios servidores en la misma maquina, separalos de a 10 (7666, 7676, 7686...).");
 // Si el anuncio no es el puerto real, TIENE que verse. Un remapeo mal puesto se manifiesta como "el juego
 // carga pero no conecta" del lado del jugador, y del lado del server no se nota nada: los logs quedan
@@ -767,12 +772,19 @@ using var sighup = PosixSignalRegistration.Create(PosixSignal.SIGHUP, ctx => Ped
 // queda donde corresponde: quien puede escribir en la carpeta del servidor puede apagarlo, que es
 // exactamente quien es dueño de esos personajes. Se borra ANTES de apagar para que no quede pidiendo
 // apagado en el próximo arranque. Medido igual: 841 ms, con el guardado hecho.
-var pedidoDeApagado = Path.Combine(AppContext.BaseDirectory, "detener");
+// SE ACEPTA TAMBIEN `detener.txt`. El Explorador de Windows viene con las extensiones conocidas OCULTAS,
+// asi que quien sigue el LEEME al pie de la letra —"crea un archivo vacio llamado detener"— con el menu
+// derecho > Nuevo > Documento de texto termina con `detener.txt` y ve el nombre "detener" en pantalla. El
+// servidor lo ignoraba y el host no tenia forma de darse cuenta de por que no se apagaba.
+string[] nombresDeApagado = { "detener", "detener.txt" };
+string? PedidoDeApagadoEnDisco() =>
+    nombresDeApagado.Select(n => Path.Combine(AppContext.BaseDirectory, n)).FirstOrDefault(File.Exists);
 _ = Task.Run(async () =>
 {
     while (!cts.IsCancellationRequested)
     {
-        if (File.Exists(pedidoDeApagado))
+        var pedidoDeApagado = PedidoDeApagadoEnDisco();
+        if (pedidoDeApagado is not null)
         {
             try { File.Delete(pedidoDeApagado); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -866,6 +878,17 @@ if (habraWeb)
     webTask = new CoverAO.Server.Net.StaticFileServer(
         webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico).RunAsync(cts.Token);
 }
+
+// UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se
+// reinicia en cada arranque, asi que quien reinicia seguido —que es lo que hace cualquiera mientras ajusta
+// el Server.ini para ser GM— podia jugar toda la tarde y no tener NUNCA una copia, con el LEEME
+// prometiendole "una cada media hora". Esta es la barata y la que de verdad salva: guarda el estado con el
+// que ARRANCA esta sesion, antes de que pase nada.
+//
+// Va en segundo plano para no demorar el arranque -en el Charfile del servidor original la copia son unos
+// segundos- y todavia no hay nadie conectado, asi que no congela a nadie. `HacerBackup` ya se protege de
+// correr dos veces a la vez.
+if (serverIni.BackupMinutos > 0) _ = Task.Run(() => HacerBackup(motivo: "al arrancar"));
 
 var loopTask = loop.RunAsync(cts.Token);
 try

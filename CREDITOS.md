@@ -6,8 +6,7 @@ Este archivo dice qué viene de dónde, para que quien reciba una copia lo sepa 
 
 ## De dónde sale el juego
 
-**CoverAO-2021**, la variante de Argentum Online que este repo replica. Su propio `README.md` (incluido en el
-árbol fuente `CoverAO-2021/`, gitignoreado por tamaño) la describe como *"un Alkon 13.0 dx7, pasado a dx8"*,
+**CoverAO-2021**, la variante de Argentum Online que este repo replica. Su propio `README.md` la describe como *"un Alkon 13.0 dx7, pasado a dx8"*,
 publicada por su autor en GitHub bajo la organización **Comunidad-Winter**, y agradece por nombre a quienes
 trabajaron en esa versión: Grihilwen, Blandix, Juzenav, Merhak, Avk, shermie80, y a los GMs Valkyria, Eurora
 y Avk. El texto de ese README es la única declaración de intención que acompaña al código, y dice que la
@@ -20,16 +19,16 @@ comunidad que lo forkeó, lo tradujo y lo mantuvo vivo.
 
 ## Qué aporta este repositorio
 
-Lo que sí es trabajo propio de AO2026:
+Lo que sí es trabajo propio de este port:
 
-- El **servidor en C#/.NET 10** (`server/`), reescrito desde cero hablando el protocolo AO byte a byte.
-- El **cliente web** (`client-web/`) en TypeScript sobre canvas — el original es un cliente VB6/DirectX8.
+- El **servidor en C#/.NET 10**, reescrito desde cero hablando el protocolo AO byte a byte.
+- El **cliente web** en TypeScript sobre canvas — el original es un cliente VB6/DirectX8.
 - La **conversión de los datos y los assets** de los formatos binarios del install original a JSON, PNG,
   WAV y MP3 abiertos.
 
 ## Los assets
 
-Los `client-web/assets/graficos/`, `sounds/` y `music/`, y todo `gamedata/`, son **el contenido del
+Los gráficos, los sonidos, la música y todo `gamedata/` son **el contenido del
 CoverAO original**, decodificado a formatos abiertos. Cambió el envase, no la obra: los dibujó, los grabó y
 los diseñó otra gente. Redistribuirlos es redistribuir su trabajo.
 
@@ -65,13 +64,13 @@ Tres consecuencias, y la tercera es la que importa para este proyecto:
 
 ## La decisión — 2026-08-02
 
-**AO2026 se publica bajo [AGPL-3.0](LICENSE)**, que es la licencia libre coherente con la evidencia de arriba.
+**Este port se publica bajo [AGPL-3.0](LICENSE)**, que es la licencia libre coherente con la evidencia de arriba.
 No es una elección entre varias licencias libres: el "or any later version" del encabezado Affero permite
 subir de versión, pero **no** permite bajar a una permisiva como MIT o BSD. El copyleft viene con el material.
 
 Lo que eso implica para quien hostee esto, y es la parte que suele sorprender: **la AGPL tiene cláusula de
 red**. A los jugadores que se conecten a tu servidor les tenés que ofrecer el código de la versión que estás
-corriendo, aunque nunca les des un binario. Un servidor público de AO2026 no es "uso interno".
+corriendo, aunque nunca les des un binario. Un servidor público de este juego no es "uso interno".
 
 Se conservan intactos los encabezados de copyright del árbol VB6 (`CoverAO-2021/`): la licencia nueva se suma,
 no los reemplaza.
@@ -79,7 +78,7 @@ no los reemplaza.
 **Sobre [`aoweb`](https://github.com/dcatanzaro/aoweb)**, que se usó como referencia de contraste para el
 cliente: ese repositorio **no declara licencia**. Por eso no se copió ni una línea suya — lo que salió de ahí
 fueron *pistas* sobre dónde mirar en el VB6 (el `velocidadMontando`, el margen de culling), y lo que se portó
-se portó desde el VB6 original, citando el archivo y la línea. La licencia de AO2026 no depende de la suya.
+se portó desde el VB6 original, citando el archivo y la línea. La licencia de este port no depende de la suya.
 
 Queda igual una pregunta que el código no contesta: **los assets** (gráficos, sonidos, música, mapas) no
 llevan encabezado de licencia — el copyleft del código no dice nada sobre ellos, y parte del arte viene, según
