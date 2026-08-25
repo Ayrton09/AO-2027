@@ -1366,6 +1366,11 @@
     // sigue diciendo el nombre en vez de romper la carga entera del cliente.
     let spellInfo = null;
     fetch('./assets/spells-info.json').then((r) => (r.ok ? r.json() : null)).then((s) => { spellInfo = s; }).catch(() => {});
+    // La FICHA de cada objeto (qué da, qué nivel pide, quién no lo puede usar). Mismo trato que la de los
+    // hechizos: `r.ok` y `catch`, para que una copia vieja de `dist/` sin el archivo siga mostrando el nombre
+    // en vez de romper la carga entera.
+    let itemInfo = null;
+    fetch('./assets/items-info.json').then((r) => (r.ok ? r.json() : null)).then((s) => { itemInfo = s; }).catch(() => {});
     // idHechizo -> GrhIndex de su pergamino (fase0/transcode/make_spell_icons.py)
     let spellIcons = null;
     fetch('./assets/spellicons.json').then((r) => (r.ok ? r.json() : null))
@@ -2017,6 +2022,29 @@
       // `QuitarEquipoNovato`, que cada server prende o apaga. Una pista que afirme lo que el ini decide es una
       // pista que miente en la mitad de los servidores.
       260: 'Los objetos "(Newbies)" no se pueden tirar ni vender: son del kit inicial. El mercader tampoco te los compra, te ofrece 0.',
+      // LAS QUE SIGUEN salieron del segundo reporte del tester (2026-08-24). Cada una dice algo que el
+      // mensaje del server NO dice: el mensaje te frena, la pista te explica por qué y qué hacer. Una pista
+      // que sólo repita la línea de arriba es ruido, y por eso varios rechazos obvios no tienen ninguna.
+      //
+      // "Tu raza no puede usar este objeto" — el caso exacto que reportó: le compró ropa a un elfo y no se
+      // la pudo poner. El mensaje no dice que la ropa venga en dos familias.
+      266: 'La ropa viene en dos familias: la de razas ALTAS (humano, elfo, drow, orco) y la de BAJAS '
+         + '(enano, gnomo). Pasá el mouse por el objeto y la ficha te dice quiénes no lo usan.',
+      265: 'Cada clase tiene sus armas y armaduras. La ficha del objeto —pasando el mouse por él— dice a qué '
+         + 'clases les está prohibido, así te enterás antes de comprarlo.',
+      268: 'La ficha del objeto te muestra el nivel que pide, y también si todavía no lo alcanzás.',
+      // "No tenés conocimientos de minería suficientes" — el punto 1 del reporte. Cuánta minería hace falta
+      // depende de la CLASE, y eso no está escrito en ningún lado del juego.
+      194: 'Cuánta minería hace falta depende de tu clase: el MINERO funde con el mínimo del mineral '
+         + '(hierro 30, plata 60, oro 80), el HERRERO necesita la mitad más (45 y 90, y el oro no puede), '
+         + 'y cualquier otra clase el triple (90 para el hierro, y nada más).',
+      // El 206 es tramposo y es del original: la misma línea sale por dos motivos distintos.
+      206: 'Ojo con este mensaje: sale tanto cuando faltan materiales como cuando falta ENERGÍA. Si venís '
+         + 'trabajando hace rato, probá comer y tomar algo antes de buscar más material.',
+      93: 'La energía baja al trabajar y al pelear. Se recupera comiendo y bebiendo; llevá siempre algo '
+        + 'encima antes de salir a laburar.',
+      25: 'Tenés el inventario lleno. Tirá algo con Ctrl+clic, o vendéselo al mercader. El oro no ocupa '
+        + 'ranura: va directo a la bolsa.',
     };
     // EL 2.18 DEL INFORME: *"tu golpe paralizó a la criatura"* y la criatura se sigue moviendo. Los números son
     // vueltas del game loop, de 40 ms cada una, y salen del server: el golpe deja a la criatura en 30 (1,2 s) y
@@ -3574,7 +3602,8 @@
       });
     }
     // HTML de una celda de tienda/banco: ícono (canvas) + nombre + subtítulo + tag de acción.
-    const shopCell = (obj, sub, tag) => `<div class="shopcell" data-obj="${obj}"><canvas width="${Math.round(84 * Math.min(2, dpr))}" height="${Math.round(84 * Math.min(2, dpr))}"></canvas><div class="sn">${esc(itemName(obj))}</div><div class="sp2">${sub}</div>${tag}</div>`;
+    // El `title` lleva la ficha: la tienda es JUSTO donde el tester compró ropa que después no se pudo poner.
+    const shopCell = (obj, sub, tag) => `<div class="shopcell" data-obj="${obj}" title="${esc(fichaDeObjeto(obj) || itemName(obj))}"><canvas width="${Math.round(84 * Math.min(2, dpr))}" height="${Math.round(84 * Math.min(2, dpr))}"></canvas><div class="sn">${esc(itemName(obj))}</div><div class="sp2">${sub}</div>${tag}</div>`;
     // clic en un ítem: usar / equipar (shift) / soltar (ctrl); hover → descripción.
     // Acá había además una rama de VENTA (`modalKind === 'commerce'`) que era inalcanzable: con la tienda
     // abierta el overlay del modal tapa el panel entero. La venta vive ahora en la propia ventana de comercio.
@@ -3605,9 +3634,45 @@
       ev.preventDefault(); const d = ev.target.closest('.islot'); if (!d) return;
       const it = inventory[+d.dataset.slot]; if (it) bindHotbar({ kind: 'item', obj: it.objIndex });
     });
+    /**
+     * LA FICHA DE UN OBJETO, en una línea: qué es, qué da, qué nivel pide y quién NO lo puede usar
+     * (`items-info.json`, derivado del obj.dat).
+     *
+     * Existe porque todo eso estaba en la data desde el principio y el jugador se enteraba PROBANDO. Es lo
+     * que reportó el tester: le compró ropa a un elfo y descubrió a los golpes que no se la podía poner.
+     *
+     * El NIVEL se personaliza —"pide nivel 20 (tenés 12)"— porque el cliente sabe el tuyo. La RAZA y la
+     * CLASE no: el server no se las manda a este cliente, así que la ficha nombra a quiénes les está
+     * prohibido y deja que el jugador se ubique. Decir "vos no podés" sin saber quién sos sería adivinar.
+     */
+    function fichaDeObjeto(obj) {
+      const info = itemInfo && itemInfo[obj];
+      if (!info) return '';
+      const partes = [];
+      if (info.t) partes.push(info.t);
+      if (info.def && (info.def[0] || info.def[1])) partes.push(`defensa ${rangoTexto(info.def)}`);
+      if (info.hit && (info.hit[0] || info.hit[1])) partes.push(`daño ${rangoTexto(info.hit)}`);
+      if (info['2m']) partes.push('a dos manos');
+      if (info.ham) partes.push(`+${info.ham} de hambre`);
+      if (info.agu) partes.push(`+${info.agu} de sed`);
+      if (info.lvl) {
+        const mio = myStats && myStats.level > 0 ? myStats.level : 0;
+        partes.push(mio && mio < info.lvl ? `pide nivel ${info.lvl} (tenés ${mio})` : `pide nivel ${info.lvl}`);
+      }
+      if (info.raz) partes.push(`no la usan: ${info.raz.join(', ')}`);
+      if (info.cls) partes.push(`prohibida a ${info.cls.join(', ')}`);
+      if (info.txt) partes.push(info.txt);
+      return partes.join(' · ');
+    }
+    const rangoTexto = (r) => (r[0] === r[1] || !r[1] ? String(r[0] || r[1]) : `${r[0]}-${r[1]}`);
+
     invgridEl.addEventListener('mouseover', (ev) => {
       const d = ev.target.closest('.islot'); if (!d) return; const it = inventory[+d.dataset.slot];
-      $('itemdesc').textContent = it ? itemName(it.objIndex) + (it.amount > 1 ? ` (x${it.amount})` : '') + (it.equipped ? ' · equipado' : '') : '—';
+      if (!it) { $('itemdesc').textContent = '—'; return; }
+      const cabecera = itemName(it.objIndex) + (it.amount > 1 ? ` (x${it.amount})` : '')
+                     + (it.equipped ? ' · equipado' : '');
+      const ficha = fichaDeObjeto(it.objIndex);
+      $('itemdesc').textContent = ficha ? `${cabecera} — ${ficha}` : cabecera;
     });
     // Arrastrar y soltar para reordenar el inventario → SwapObjects(origen, destino).
     let dragSlot = 0;
