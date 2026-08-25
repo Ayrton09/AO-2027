@@ -126,7 +126,7 @@ MinutosDeClima=18
 PorcentajeLluvia=18
 
 ; -- REGLAS DE LA CASA --------------------------------------------------------------------------------
-; Tres cosas que el ORIGINAL NO HACE. El SERVIDOR las trae apagadas por defecto —si borras este archivo,
+; Seis cosas que el ORIGINAL NO HACE. El SERVIDOR las trae apagadas por defecto —si borras este archivo,
 ; o si tu ini no las menciona, se comporta exactamente como el CoverAO original— y este archivo es donde
 ; el autor de este fork decidio cuales quiere prendidas. Poner un 0 en cualquiera vuelve a lo del VB6.
 ;
@@ -162,9 +162,9 @@ Centinela=0
 ; FamiliarBusca: 1 = el familiar sale a pelear solo contra el hostil mas cercano a su dueno, y el bicho que
 ;                recibe el golpe se queda peleando con el. 0 = como el original, donde la mascota te sigue y
 ;                solo pelea contra lo que ya tenga de objetivo.
-;                APAGADA por defecto porque CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir
-;                cada pelea.
-FamiliarBusca=0
+;                CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir cada pelea.
+;                DECIDIDO: PRENDIDA (2026-08-25). El servidor la trae en 0 si borras este archivo.
+FamiliarBusca=1
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo
