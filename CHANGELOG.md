@@ -4,6 +4,36 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.0 — 2026-08-01
 
+- **Cada raza usa la ropa que le corresponde.** El elfo, el humano, el drow y el orco son razas altas y visten
+  igual; el enano y el gnomo son bajos y tienen su propia ropa. Antes el elfo y el gnomo estaban cambiados: al
+  elfo sólo le entraba ropa de bajos.
+
+- **Pasá el mouse por un objeto y te dice todo.** Qué es, cuánta defensa o daño da, qué nivel pide —y si
+  todavía no lo alcanzás— y a qué clases y razas les está prohibido. También en la tienda, así te enterás
+  ANTES de comprarlo.
+
+- **Los lingotes se hacen solos.** Usá el mineral, hacé clic en la fragua y el personaje sigue fundiendo sin
+  que le toques nada más, igual que al minar o al pescar. Y cuánta Minería hace falta depende de tu oficio: el
+  **minero** funde con el mínimo del mineral (hierro 30, plata 60, oro 80), el **herrero** necesita la mitad
+  más (45 y 90, y el oro no lo puede hacer) y cualquier otra clase el triple. (Quien hostea puede poner un
+  guardia anti-macro que te pida una clave mientras trabajás, con `Centinela=1`.)
+
+- **El Carro de Minería cumple lo que promete**: si lo llevás encima, al morir salvás el 70% de cada mineral.
+
+- **Las monedas de oro del piso van directo a tu bolsa.** Antes te ocupaban una ranura del inventario como un
+  objeto cualquiera.
+
+- **El "?" del libro de conjuros dice cuánto pega y cuánto cuesta**: el daño o la cura calculados para tu
+  nivel, el maná, la energía y la Magia que pide.
+
+- **Tocá a tu familiar y te muestra su ficha**: nivel, vida, golpe y las habilidades que fue aprendiendo.
+  (Quien hostea puede además hacer que salga a pelear solo, con `FamiliarBusca=1`.)
+
+- **Volumen de los efectos**, en Opciones, aparte del de la música. Antes sólo se podían apagar del todo.
+
+- **Más avisos cuando el juego te frena**: por qué no podés usar esa ropa, cuánta Minería te falta, o que el
+  cartel de "no tenés materiales" a veces significa que te quedaste sin energía.
+
 - **Los Magos, Druidas y Cazadores tienen familiar.** Se elige al crear el personaje y se le pone nombre: el
   Mago puede llevar un Fuego Fatuo, un Elemental, un Ely, un Duende o un Hada; el Druida y el Cazador, bestias
   —Ent, Lobo, Tigre u Oso—. Al elegirlo te entra al libro el hechizo **Llamado al familiar**, que no vende

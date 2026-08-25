@@ -1,4 +1,4 @@
-<#
+﻿<#
   publish.ps1 — Arma la distribución PORTABLE de CoverAO: un servidor self-contained (.exe sin .NET
   instalado) que trae su data de juego, el panel de admin y el cliente web, listo para copiar y correr.
 
@@ -66,6 +66,11 @@ Copy-Item -Recurse -Force (Join-Path $Root "client-web\dist") (Join-Path $web "d
 $tests = Join-Path $web "dist\test"
 if (Test-Path $tests) { Remove-Item -Recurse -Force $tests }
 Copy-Item -Recurse -Force (Join-Path $Root "client-web\assets") (Join-Path $web "assets")
+# Las NOTAS INTERNAS no viajan. En `assets/sounds` hay un LEEME.md que le habla a quien mantiene el
+# repo -cita fase0/, los checks de npm y que decidio el autor- y el servidor lo PUBLICA por HTTP junto
+# al resto de los assets, asi que cualquier jugador se lo puede bajar. El paquete lleva el juego, no
+# la bitacora de como se hizo.
+Get-ChildItem $web -Recurse -Filter *.md -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
 # Server.ini: la configuración del host (puerto, rates, y sobre todo QUIÉN ES GM). Va al lado del .exe, que es
 # donde el servidor lo busca. Se copia comentado y con las listas de staff vacías: el server arranca igual, y el
@@ -87,10 +92,22 @@ if (Test-Path $doc) {
   # seccion sobra y confunde: quien lo recibe tiene el binario, no el codigo, asi que no puede correr nada
   # de ahi. Se copia todo lo demas --puertos, Server.ini, backups, varios servidores, HTTPS, licencia--,
   # que es justo lo que necesita el que hostea.
-  $dentroDeArmado = $false
+  # SE SACAN DOS SECCIONES, las dos por el mismo motivo: le hablan a quien tiene el CODIGO y no a quien
+  # recibio el zip. "Armar el paquete" es para el que compila, y "Docker" manda a correr `docker compose`
+  # con un docker-compose.yml que vive solo en el repo: seguirla al pie de la letra termina en un error.
+  $fuera = $false
   $salida = foreach ($l in Get-Content $doc -Encoding UTF8) {
-    if ($l -match '^##\s') { $dentroDeArmado = ($l -match '^##\s+Armar el paquete') }
-    if (-not $dentroDeArmado) { $l }
+    if ($l -match '^##\s') { $fuera = ($l -match '^##\s+Armar el paquete') }
+    if ($l -match '^\*\*Docker\*\*') { $fuera = $true }
+    elseif ($fuera -and $l -match '^\*\*') { $fuera = $false }
+    if (-not $fuera) {
+      # LAS RUTAS DEL REPO NO EXISTEN EN LA CAJA: los cuatro archivos que HOSTING.md enlaza como
+      # hosting/... estan en la RAIZ del paquete, al lado del propio HOSTING.md. Copiadas tal cual, el
+      # "sudo cp hosting/coverao@.service ..." falla y los enlaces no llevan a ningun lado.
+      # Sin ancla: el nombre de la carpeta tambien aparece DENTRO del texto del enlace
+      # (``hosting/Server.ini.ejemplo``), y ahi tampoco existe.
+      $l -replace '\.\./hosting/', '' -replace 'hosting/', ''
+    }
   }
   Set-Content -Path (Join-Path $OutDir "HOSTING.md") -Value $salida -Encoding UTF8
   Write-Host "   HOSTING.md: sin la seccion de compilacion (el paquete no lleva codigo fuente)" -ForegroundColor DarkGray
@@ -103,7 +120,10 @@ foreach ($u in @("coverao.service", "coverao@.service")) {
     # Se normaliza a LF igual que el servidor.sh, y por el mismo motivo: la lee systemd en Linux, y con CRLF
     # se queja del retorno de carro al final de cada valor. El .gitattributes ya lo fija en el repo; esto
     # cubre el caso de que alguien arme la distribucion desde una copia que no vino de git.
-    $txt = (Get-Content -Raw $unit) -replace "`r`n", "`n"
+    # -Encoding UTF8 NO es opcional: sin el, Windows PowerShell 5.1 lee este archivo con la codepage
+    # ANSI y cada raya y cada acento salen doble-codificados en el paquete -- incluido el `Description=`
+    # que muestra `systemctl status`.
+    $txt = (Get-Content -Raw -Encoding UTF8 $unit) -replace "`r`n", "`n"
     [IO.File]::WriteAllText((Join-Path $OutDir $u), $txt, (New-Object Text.UTF8Encoding $false))
   }
 }
@@ -112,7 +132,7 @@ foreach ($u in @("coverao.service", "coverao@.service")) {
 $gestor = Join-Path $PSScriptRoot "coverao.ps1"
 if (Test-Path $gestor) { Copy-Item -Force $gestor (Join-Path $OutDir "coverao.ps1") }
 
-# La MUSICA ya viene en el repo (13 pistas), asi que esto deberia dar siempre 13 y el aviso no deberia
+# La MUSICA ya viene en el repo (14 pistas), asi que esto deberia dar siempre 14 y el aviso no deberia
 # saltar nunca. Se deja igual: hasta el 2026-08-03 la carpeta estaba gitignoreada y cualquiera que clonara
 # armaba un paquete MUDO de musica sin enterarse -- el mismo agujero que el septimo eje, donde el juego
 # sonaba a 3 efectos de 164 y ningun test lo veia. Un contador que confirma lo que ya deberia estar cuesta
@@ -137,6 +157,18 @@ else { Write-Host "   OJO: no hay LICENSE en la raiz; el paquete NO se puede dis
 # escriben en data/updates.txt, que tiene PRIORIDAD sobre lo que venga en el paquete: así el que hostea las
 # puede cambiar sin recompilar. Sin esto, el jugador veía el placeholder que los autores de CoverAO nunca
 # completaron ("12/8/21: 1", "16/8/21: 2"…), que es lo que trae el ACTUALIZACIONES.ini del install original.
+# EL JUGADOR NO LEE MARKDOWN. Estas lineas van a Menu -> Novedades tal cual, DENTRO del juego: los
+# asteriscos de la negrita y las comillas invertidas del codigo se le muestran crudos en pantalla
+# ("**Cada raza usa la ropa que le corresponde.**"). El CHANGELOG.md se sigue escribiendo en Markdown
+# porque tambien se lee en GitHub; lo que se limpia es la copia que viaja al juego.
+function Limpiar-Markdown([string]$t) {
+  $t = $t -replace '\*\*([^*]+)\*\*', '$1'
+  $t = $t -replace '(?<!\*)\*([^*]+)\*', '$1'
+  $t = $t -replace '`([^`]+)`', '$1'
+  $t = $t -replace '\[([^\]]+)\]\([^)]+\)', '$1'
+  return $t.Trim()
+}
+
 $changelog = Join-Path $Root "CHANGELOG.md"
 if (Test-Path $changelog) {
   $lineas = @()
@@ -148,13 +180,13 @@ if (Test-Path $changelog) {
       continue
     }
     if (-not $enSeccion) { continue }
-    if ($l -match '^\s*-\s+(.*)$') { $lineas += $Matches[1].Trim(); continue }
+    if ($l -match '^\s*-\s+(.*)$') { $lineas += (Limpiar-Markdown $Matches[1]); continue }
     # CONTINUACION de la vinieta anterior. Sin esto se PERDIA: una vinieta escrita en dos lineas -que en
     # Markdown es una sola frase- llegaba al jugador cortada a la mitad, terminando en "y" o en "de". El
     # bug no se ve en el paquete ni en el CHANGELOG: se ve en Menu -> Novedades, que es lo ultimo que uno
     # mira. Se pega con un espacio, que es como lo renderiza cualquier lector de Markdown.
     if ($lineas.Count -gt 0 -and $l -match '^\s+\S' -and $l -notmatch '^\s*#') {
-      $lineas[$lineas.Count - 1] = ($lineas[$lineas.Count - 1] + " " + $l.Trim())
+      $lineas[$lineas.Count - 1] = ($lineas[$lineas.Count - 1] + " " + (Limpiar-Markdown $l))
     }
   }
   if ($lineas.Count -gt 0) {
