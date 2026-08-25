@@ -825,6 +825,9 @@ var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxIn
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
     msPorConsulta: serverIni.MsEntreConsultas, rafagaConsultas: serverIni.RafagaDeConsultas);
+// Cuantos servidores HTTP van a reportar como quedaron: el WebSocket siempre, el cliente web solo si esta
+// instalacion lo trae. Del aviso de loopback depende que el host sepa que URL reservar.
+CoverAO.Server.Net.HttpBind.PuertosHttpEsperados = habraWeb ? 2 : 1;
 var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,

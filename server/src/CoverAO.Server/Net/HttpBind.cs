@@ -72,20 +72,52 @@ internal static class HttpBind
         }
     }
 
-    /// <summary>Aviso ÚNICO cuando algún puerto quedó en loopback: si no, el host se entera cuando un jugador
-    /// no puede entrar. Se imprime una sola vez aunque caigan los dos puertos, con el comando exacto.</summary>
+    /// <summary>Los puertos HTTP que quedaron en loopback. Se ACUMULAN y el aviso sale una sola vez con
+    /// TODOS, que es lo que arregla el defecto que tenía este aviso: era único —bien— pero nombraba un solo
+    /// puerto, y los que caen a loopback son DOS (el WebSocket y el cliente web). El host reservaba el que
+    /// le dijimos, abría la página desde otra máquina, veía el login… y el WebSocket seguía en loopback, así
+    /// que no podía conectarse nunca. Peor: el bloque "Como entrar" le decía que sí.</summary>
+    private static readonly System.Collections.Generic.List<int> _enLoopback = new();
     private static bool _yaAviso;
+    private static int _reportados;
+
+    /// <summary>Cuántos servidores HTTP van a reportar cómo quedaron (el WebSocket siempre, el cliente web
+    /// si esta instalación lo trae; el panel de admin NO, que nace loopback a propósito). Lo fija Program.cs.
+    ///
+    /// <para>Hace falta un contador y no alcanza con imprimir desde el último que se abre, porque el ORDEN
+    /// no es el que parece: el cliente web arranca en su línea (`webTask = ... RunAsync`) y el WebSocket
+    /// recién adentro del `Task.WhenAll` de más abajo, o sea que el que se enlaza ÚLTIMO es el WebSocket.
+    /// Atar el aviso a ese orden lo dejaría roto en silencio el día que alguien mueva una de las dos
+    /// líneas.</para></summary>
+    public static int PuertosHttpEsperados = 2;
+
+    /// <summary>¿Quedó algún puerto HTTP accesible sólo desde esta máquina?</summary>
+    public static bool HayPuertosEnLoopback => _enLoopback.Count > 0;
 
     public static void AvisarSiSoloLocal(bool publico, int puerto)
     {
-        if (publico || _yaAviso) return;
+        if (!publico && !_enLoopback.Contains(puerto)) _enLoopback.Add(puerto);
+        // Se cuenta al que reporta, se haya quedado en loopback o no: el aviso sale cuando ya reportaron
+        // TODOS, para poder nombrar de una vez cada URL que hay que reservar.
+        if (++_reportados >= PuertosHttpEsperados) AvisarLoopbackPendiente();
+    }
+
+    /// <summary>Imprime el aviso —una vez— con la reserva de CADA puerto que quedó en loopback.</summary>
+    public static void AvisarLoopbackPendiente()
+    {
+        if (_yaAviso || _enLoopback.Count == 0) return;
         _yaAviso = true;
         Console.WriteLine();
         Console.WriteLine("!! Los puertos HTTP quedaron accesibles SOLO DESDE ESTA MAQUINA.");
         Console.WriteLine("   Para jugar vos solo alcanza. Para que entren desde otra computadora, en Windows:");
         Console.WriteLine("     - abri el servidor como Administrador, o");
-        Console.WriteLine($"     - reserva la URL una sola vez (como Administrador):");
-        Console.WriteLine($"         netsh http add urlacl url=http://+:{puerto}/ user=%USERNAME%");
+        Console.WriteLine("     - reserva las URL una sola vez (como Administrador). Son " + _enLoopback.Count + ":");
+        foreach (var p in _enLoopback)
+            // EL USUARIO VA RESUELTO, no como `%USERNAME%`: en Windows 11 la consola de Administrador que se
+            // abre por defecto es PowerShell, y ahí esa variable de cmd.exe NO se expande — el host pegaba la
+            // línea que el servidor le dictó y no reservaba nada.
+            Console.WriteLine($"         netsh http add urlacl url=http://+:{p}/ user={Environment.UserName}");
+        Console.WriteLine("   Hacen falta LAS DOS: con una sola, la pagina abre desde otra maquina pero el juego no conecta.");
         Console.WriteLine("   En Linux no hace falta nada de esto.");
         Console.WriteLine();
     }
@@ -127,9 +159,13 @@ internal static class HttpBind
         Console.WriteLine("== Como entrar ==");
         Console.WriteLine($"   Vos, en esta maquina : http://localhost:{puertoWeb}/");
         var ip = IpDeRedLocal();
-        if (publico && ip is not null)
+        // Alcanza con que UNO de los dos puertos HTTP haya quedado en loopback para que desde otra maquina
+        // no se pueda jugar, asi que esta linea mira los DOS y no solo el del cliente web: antes, con la
+        // pagina publica y el WebSocket local, prometia una URL que abria el login y no conectaba nunca.
+        bool desdeLaRed = publico && !HayPuertosEnLoopback;
+        if (desdeLaRed && ip is not null)
             Console.WriteLine($"   Desde tu red (WiFi)  : http://{ip}:{puertoWeb}/     <- pasale ESTA a tus amigos");
-        else if (!publico)
+        else if (!desdeLaRed)
             Console.WriteLine("   Desde tu red (WiFi)  : (no disponible, ver el aviso de arriba)");
         Console.WriteLine($"   Desde internet       : abri en tu router los puertos {puertoWeb} y {puertoWs} hacia esta maquina");
         Console.WriteLine($"                          (y el {puertoJuego} si alguien usa el cliente clasico de Windows)");

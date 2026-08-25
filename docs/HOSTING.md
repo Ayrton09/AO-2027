@@ -57,8 +57,17 @@ panel de administración no se abre nunca**: desde ahí se puede apagar el servi
 backup. Para llegar de afuera, un túnel SSH: `ssh -L 7668:localhost:7668 usuario@servidor`.
 
 En **Windows sin permisos de administrador** los puertos HTTP quedan sólo en `localhost`. El servidor lo avisa
-al arrancar y da las dos salidas: abrirlo como Administrador, o reservar la URL una vez con
-`netsh http add urlacl url=http://+:7669/ user=%USERNAME%`. En Linux no hace falta nada.
+al arrancar y da las dos salidas: abrirlo como Administrador, o reservar **las dos URL** —son dos puertos
+HTTP, el del cliente web y el del WebSocket— una sola vez, en una consola de **cmd** como Administrador:
+
+```
+netsh http add urlacl url=http://+:7669/ user=%USERNAME%
+netsh http add urlacl url=http://+:7667/ user=%USERNAME%
+```
+
+Con una sola, la página abre desde otra máquina y el juego no conecta. En **PowerShell** `%USERNAME%`
+no se expande: usá `$env:USERNAME` o escribí tu usuario. El servidor imprime al arrancar las líneas
+exactas, con tu usuario ya resuelto. En Linux no hace falta nada.
 
 ### Qué está verificado desde OTRA máquina
 
