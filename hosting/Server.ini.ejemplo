@@ -163,8 +163,8 @@ Centinela=0
 ;                recibe el golpe se queda peleando con el. 0 = como el original, donde la mascota te sigue y
 ;                solo pelea contra lo que ya tenga de objetivo.
 ;                CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir cada pelea.
-;                DECIDIDO: PRENDIDA (2026-08-25). El servidor la trae en 0 si borras este archivo.
-FamiliarBusca=1
+;                DECIDIDO: APAGADA (2026-08-25). Ponele un 1 aca si la queres, y reinicia el servidor.
+FamiliarBusca=0
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo
