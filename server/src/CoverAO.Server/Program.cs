@@ -372,10 +372,13 @@ loop.OnTickHandler = tick =>
     dispatcher?.CentinelaLlamarAtencion(Environment.TickCount64);
     // Condenas de /CARCEL (VB6 PurgarPenas, Admin.bas:138): una vez por minuto se descuenta un minuto a cada
     // preso y, al llegar a 0, sale libre en Libertad con LocaleMsg 121.
+    // La vuelta de minuto del centinela (el otro `Call` comentado del original, frmMain.frm:749). Va en su
+    // PROPIA cadencia y no dentro del bloque de abajo porque `centinela_flow` la acelera con
+    // `--relojes-de-test`, y las condenas de /CARCEL y el IdleLimit tienen que seguir contando minutos de
+    // verdad aunque el centinela vaya a un segundo.
+    if (tick % PacketDispatcher.TicksEntreVueltas == 0) dispatcher?.PasarMinutoCentinela();
     if (tick % (60_000 / GameLoop.TickMs) == 0)
     {
-        // Y la vuelta de minuto del centinela (el otro `Call` comentado del original, frmMain.frm:749).
-        dispatcher?.PasarMinutoCentinela();
         foreach (var pl in world.Players)
         {
             if (pl.JailMinutesLeft <= 0) continue;
@@ -806,7 +809,16 @@ if (args.Any(a => string.Equals(a, "--relojes-de-test", StringComparison.Ordinal
     DayNight.PeriodTicks = 75;                    // 3 s por período → un día de 12 s
     Weather.CicloTicks = 150;                     // 6 s de ciclo…
     Weather.LluviaPorciento = 50;                 // …con 3 s de lluvia y 3 despejado
-    Console.WriteLine("[test] relojes de día/noche y clima acelerados a segundos (--relojes-de-test)");
+    // El "minuto" del centinela, a TRES segundos: su primer paso tarda una vuelta y el plazo para contestar
+    // son dos, o sea tres minutos de reloj por corrida. `centinela_flow` prueba justo lo que un test unitario
+    // no puede —que el NPC aparezca, hable por el socket y encarcele al que no contesta—, y para eso hay que
+    // esperarlo. Con el flag ausente vale el minuto de verdad.
+    //
+    // TRES y no uno: con un segundo el plazo entero son dos, y una sonda que lee tres sockets no alcanza a
+    // contestar — medido, encarcelaba a los dos antes de que el flow mandara la clave. El caso "no contesta"
+    // daba verde por la razón equivocada y el caso "contesta" no se podía probar.
+    PacketDispatcher.TicksEntreVueltas = 3_000 / GameLoop.TickMs;
+    Console.WriteLine("[test] relojes de día/noche, clima y centinela acelerados a segundos (--relojes-de-test)");
 }
 dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => PedirApagadoOrdenado(), fixtureMode, serverIni);
 var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,

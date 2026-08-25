@@ -34,6 +34,15 @@ public sealed partial class PacketDispatcher
     private const int CentinelaMinutos = 2;
     /// <summary>Minutos de cárcel al que no contesta (<c>Encarcelar(..., 15)</c>, modCentinela.bas:159).</summary>
     private const byte CentinelaCondena = 15;
+    /// <summary>Cada cuántas vueltas del game-loop corre <see cref="PasarMinutoCentinela"/>. Un minuto, que
+    /// es la cadencia del original (su llamador era el timer de un minuto del formulario).
+    ///
+    /// <para>Es mutable por la misma razón que <c>DayNight.PeriodTicks</c>: <c>centinela_flow</c> prueba una
+    /// cosa que un test unitario no puede —que el NPC aparezca, hable por el socket y encarcele al que no
+    /// contesta— y para verlo hay que ESPERARLO. Con el reloj de verdad son tres minutos por corrida.
+    /// <c>--relojes-de-test</c> lo baja a un segundo; con el flag ausente vale el minuto y nadie lo toca.</para></summary>
+    public static long TicksEntreVueltas = 60_000 / Game.GameLoop.TickMs;
+
     /// <summary>Cada cuántos minutos se olvida quién ya contestó y todos vuelven a ser candidatos. El
     /// original no fija el número (ver la nota en <see cref="PasarMinutoCentinela"/>); quince es lo que
     /// separa dos interrogatorios seguidos al mismo jugador sin dejar de ser un control real.</summary>
