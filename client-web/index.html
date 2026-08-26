@@ -265,6 +265,15 @@
       background:#05040799; backdrop-filter:blur(2px); }
     #modal.on { display:flex; }
     .card { width:min(520px,86vw); max-height:82vh; overflow:auto; padding:0; }
+    /* EL COMERCIO Y EL BANCO VAN MÁS ANCHOS. Los 520px alcanzan para un formulario, pero esas dos ventanas
+       parten el ancho en DOS columnas —el mercader y vos, la bóveda y vos— y cada mitad entraba dos objetos
+       por fila: había que arrastrar la barra para mirar un inventario que el jugador conoce de memoria.
+
+       Va por `:has()` y no por una clase que ponga el JS a propósito: las dos ventanas escriben su
+       `innerHTML` DIRECTO, sin pasar por `showModal`, así que un enganche allá no corría nunca para
+       justamente las dos que había que ensanchar. En CSS no se puede saltear, y si algún navegador viejo no
+       soporta `:has()` lo único que pasa es que sigue angosto. */
+    .card:has(.shop2) { width:min(940px,94vw); }
     .cardT { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between;
       padding:8px 12px; font-family:var(--serif); font-size:calc(var(--u)*1.1); letter-spacing:.03em; color:var(--gold-hi);
       background:linear-gradient(180deg,#3a2814,#211608); border-bottom:1px solid var(--gold-lo); }
@@ -526,7 +535,6 @@
     .skgrid { display:grid; grid-template-columns:1fr auto auto auto; gap:4px 8px; align-items:center; max-height:46vh; overflow:auto; }
     .skgrid .kn { font-size:calc(var(--u)*0.88); } .skgrid .kv { font-family:ui-monospace,monospace; color:var(--gold-hi); text-align:right; min-width:2.4em; }
     .stepbtn { width:1.7em; height:1.7em; line-height:1; padding:0; text-align:center; }
-    .shopgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(96px,1fr)); gap:8px; padding:12px; max-height:70vh; overflow:auto; }
     .shopcell { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px; text-align:center;
       background:linear-gradient(180deg,#160f08,#0c0804); border:1px solid var(--gold-deep); border-radius:5px; }
     .shopcell canvas { width:48px; height:48px; image-rendering:auto; }
