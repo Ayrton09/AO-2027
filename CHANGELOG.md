@@ -12,6 +12,9 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
   todavía no lo alcanzás— y a qué clases y razas les está prohibido. También en la tienda, así te enterás
   ANTES de comprarlo.
 
+- **Las ventanas del comercio y del banco son más anchas.** Entran cuatro objetos por fila en vez de dos, así
+  se ve el stock del mercader y tu inventario de una sola mirada, sin tanto scroll.
+
 - **Los lingotes se hacen solos.** Usá el mineral, hacé clic en la fragua y el personaje sigue fundiendo sin
   que le toques nada más, igual que al minar o al pescar. Y cuánta Minería hace falta depende de tu oficio: el
   **minero** funde con el mínimo del mineral (hierro 30, plata 60, oro 80), el **herrero** necesita la mitad
