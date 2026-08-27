@@ -1428,6 +1428,12 @@
     // NO se inventa una constante en milisegundos ni se copia la de otro port: la unidad la define esta
     // cadena, y de ella depende que el agua se mueva como en el original y no al doble o a la mitad.
     const ENGINE_BASE_SPEED = 0.018;
+    // El factor FIJO con que `Draw_Grh` anima las piezas de un personaje (TileEngine.bas:4637). Va aparte de
+    // la `speed` del gráfico a propósito: para un personaje el original nunca la mira.
+    const PASO_ANIM_PERSONAJE = 0.5;
+    let _cuadroMio = null;
+    /** Sonda: identificador del cuadro que se esta dibujando ahora de mi propio cuerpo. */
+    window.__cuadroDelPersonaje = () => _cuadroMio;
     /** Resuelve un Grh a su cuadro ACTUAL. Los del mundo estaban congelados en el primero. */
     function animGrh(grhIndex) {
       const g = atlas && atlas[grhIndex];
@@ -1461,11 +1467,21 @@
     function frameGrh(grhIndex, char) {
       let g = atlas && atlas[grhIndex]; if (!g) return null;
       if (g.frames) {
-        // CADENCIA DE LA ANIMACIÓN, como el resto del motor: `FrameCounter += timerTicksPerFrame * speed`
-        // (TileEngine.bas:1788), o sea `ENGINE_BASE_SPEED * speed` cuadros por ms. Acá había un `/ 90`
-        // CABLEADO que además ignoraba la `speed` del propio Grh — el original da 69,4 ms por cuadro con
-        // speed 0,8, no 90. Las animaciones del mapa (línea 1093) ya usaban la fórmula buena; sólo la de
-        // los personajes se había quedado con el número mágico.
+        // CADENCIA DE LA ANIMACIÓN DE UN PERSONAJE, y NO es la misma que la del mapa.
+        //
+        // Las cinco piezas de un personaje —cuerpo, cabeza, casco, arma, escudo— las dibuja `CharRender`
+        // con `Draw_Grh` (TileEngine.bas:2444-2472, veintiuna llamadas, todas a la misma rutina), y
+        // `Draw_Grh` avanza `FrameCounter + (timerTicksPerFrame * 0.5)` (TileEngine.bas:4637): un 0,5
+        // CABLEADO que NO lee la `speed` del gráfico. La que sí la lee es `DrawGrhtoSurface` (:1788), que
+        // es otra rutina y dibuja los FX y las baldosas del mapa — no los personajes.
+        //
+        // Acá se multiplicaba por `g.speed`, citando justamente el :1788, y eso rompía dos cosas a la vez:
+        //   * con speed 1 (los 1785 cuerpos animados) la caminata salía al DOBLE de velocidad — 55,6 ms
+        //     por cuadro contra los 111,1 del original—, así que las piernas patinaban contra el paso;
+        //   * y los pocos cuerpos con speed grande estroboscopiaban: las cuatro túnicas del Caos
+        //     (cuerpo 155, speed 277 y 333) cambiaban de cuadro cada 0,17 ms, o sea en CADA refresco.
+        //
+        // Con el 0,5 del original las dos cosas se arreglan juntas, porque eran la misma línea.
         //
         // Y la FASE es de cada personaje, anclada a cuando EMPEZÓ a caminar (`animT0`). Antes salía de un
         // reloj global (`Date.now()/90`): todos los personajes del mapa animaban al unísono y las piernas
@@ -1476,7 +1492,7 @@
         let idx = 0;
         if (moving) {
           const t = performance.now() - (char.animT0 || 0);
-          idx = Math.floor(t * ENGINE_BASE_SPEED * (g.speed || 1)) % g.frames.length;
+          idx = Math.floor(t * ENGINE_BASE_SPEED * PASO_ANIM_PERSONAJE) % g.frames.length;
         }
         g = atlas[g.frames[idx]];
       }
@@ -1847,6 +1863,10 @@
         } else { c.attackAt = 0; }
       }
       const bg = frameGrh(b.walk[heading - 1], c); if (!bg) return false;  // animated walk frame
+      // SONDA: que cuadro se esta dibujando de MI cuerpo, para poder medir la cadencia de la animacion
+      // desde afuera. Se registra el grafico concreto que sale al canvas y no la formula, que es lo unico
+      // que sirve para verificar un arreglo de animacion (medir la formula desde afuera es tautologico).
+      if (c === chars.get(myCharIndex)) _cuadroMio = bg.file * 100000 + bg.x * 100 + bg.y;
       const bsheet = sheets[bg.file]; if (!bsheet) { loadSheet(bg.file); return false; }
       // ALTO REAL DEL SPRITE. Un cuerpo de AO mide bastante más que un tile (32 px): se ancla por los PIES y
       // se extiende hacia arriba, así que el tope está muy por encima de `dy`. Sin este dato, cualquier cosa
