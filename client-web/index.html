@@ -1483,6 +1483,9 @@
     window.__colorAura = (g) => colorDominante(g, null);
     /** Sonda: forzar la ceguera, por la misma variable que escribe el paquete Blind. */
     window.__setCiego = (v) => { blind = !!v; return blind; };
+    /** Sonda: el alfa del latido de mi personaje, 0..255 (VB6 charlist().AlphaX). */
+    window.__alfaLatido = () => { const c = chars.get(myCharIndex); return c && c._alfa !== undefined ? +c._alfa.toFixed(1) : null; };
+    /** Sonda: a que pixel de la pantalla cae una posicion del mundo (para recortar ahi y medir). */
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
     window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
     let _ultimoFx = null;
@@ -1924,31 +1927,78 @@
     }
 
     // Draw a full character: body + weapon/shield overlays (bottom-anchored) + head + helmet (head-anchored).
+    // EL LATIDO DEL MUERTO Y DEL INVISIBLE. En el original los dos caen en la MISMA rama —
+    // `If Not .Invisible And Not .Muerto Then ... Else RoofAlphaCalculateToAlpha` (TileEngine.bas:2420)— y
+    // esa rutina (:3881) sube y baja el alfa del personaje entre 0 y 255 de forma continua: aparece y se
+    // desvanece. El ritmo es `AlphaX += timerTicksPerFrame * 6.7` por cuadro, o sea 0,1206 por ms → unos
+    // 2,1 s por rampa y ~4,2 s el ciclo entero; y por debajo de 30 la suma se divide por diez, así que se
+    // demora cerca de la transparencia (que es lo que lo hace difícil de ver, no imposible).
+    const ALFA_POR_MS = 0.1206;
+    function alfaDelLatido(c) {
+      const ahora = performance.now();
+      if (c._alfa === undefined) { c._alfa = 0; c._alfaSube = true; c._alfaT = ahora; }
+      let paso = (ahora - c._alfaT) * ALFA_POR_MS;
+      c._alfaT = ahora;
+      if (c._alfa < 30) paso /= 10;                    // el freno del original cerca del cero
+      c._alfa += c._alfaSube ? paso : -paso;
+      if (c._alfa >= 255) { c._alfa = 255; c._alfaSube = false; }
+      else if (c._alfa <= 0) { c._alfa = 0; c._alfaSube = true; }
+      return c._alfa / 255;
+    }
+
     function drawCharacter(c, dx, dy) {
-      // GM invisible (SetInvisible 63): no se dibuja. El propio jugador SÍ se ve a sí mismo -semitransparente-
-      // para saber que sigue en modo invisible, igual que el cliente clásico.
-      if (c.invisible) {
-        if (chars.get(myCharIndex) !== c) return false;   // el char no guarda su índice: es la clave del Map
-        ctx.globalAlpha = 0.4;
+      // MUERTO O INVISIBLE: se dibuja LATIENDO, no se borra.
+      //
+      // Acá al invisible que no eras vos NO se lo dibujaba: desaparecía del todo. Eso no es lo que hace el
+      // original —ni el cliente, que lo sigue dibujando con el alfa pulsante, ni el servidor, que le manda
+      // `SetInvisible` a los que están mirando (ModAreas.bas:232 y :245) justamente para que lo vean así—.
+      // Ocultarse en el original te hace difícil de ver, no invisible.
+      //
+      // OJO: esto CAMBIA EL JUEGO respecto de como venia. Un jugador oculto pasa a ser una silueta que
+      // aparece y se va, y eso debilita bastante ocultarse y la invisibilidad en PvP. Es lo fiel.
+      if (c.invisible || c.body === CUERPO_MUERTO) {
+        const previo = ctx.globalAlpha;
+        ctx.globalAlpha = previo * alfaDelLatido(c);
         const drawn = drawCharacterBody(c, dx, dy);
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = previo;
         return drawn;
       }
+      // Vivo y visible: el latido se reinicia, así el próximo arranca de cero como en el original
+      // (`.AlphaX = 0` en la rama de arriba).
+      if (c._alfa !== undefined) { c._alfa = 0; c._alfaSube = true; }
       return drawCharacterBody(c, dx, dy);
+    }
+
+    /** El resplandor del equipo, DETRÁS del personaje y aditivo (VB6 `Renderizar_Aura`, TileEngine.bas:2585,
+     *  llamado desde CharRender:2427 ANTES del cuerpo). Son hasta cinco a la vez: cuerpo, arma, escudo,
+     *  anillo y "otra". El original las dibuja todas, no la mayor. */
+    function drawAuras(c, dx, dy) {
+      if (!c.auras) return;
+      const previo = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = 'lighter';
+      for (const tipo in c.auras) {
+        const def = auraDefs[c.auras[tipo]];
+        if (!def) continue;
+        const g = staticGrh(def.grh);
+        if (!g) continue;
+        const hoja = sheets[g.file];
+        if (!hoja) { loadSheet(g.file); continue; }
+        dGrh(ctx, hoja, g, anclaX(dx, g.w) + def.off[0], anclaY(dy, g.h) + def.off[1], g.w, g.h);
+      }
+      ctx.globalCompositeOperation = previo;
     }
 
     function drawCharacterBody(c, dx, dy) {
       const b = bodies && bodies[c.body]; if (!b) return false;
       const heading = c.heading || 3;
-      // Attack lunge: a quick out-and-back step in the facing direction for ~220ms after attacking.
-      if (c.attackAt) {
-        const adt = Date.now() - c.attackAt;
-        if (adt < 220) {
-          const push = Math.sin((adt / 220) * Math.PI) * 7;      // 0→7→0 px
-          const dir = [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]][heading] || [0, 0];
-          dx += dir[0] * push; dy += dir[1] * push;
-        } else { c.attackAt = 0; }
-      }
+      drawAuras(c, dx, dy);
+      // SIN SALTO AL ATACAR. Acá el sprite se corría 7 px hacia adelante y volvía en cada golpe, y era
+      // invento nuestro: `CharRender` no tiene más corrección de posición que el `MoveOffsetX/Y` de la
+      // caminata (TileEngine.bas:2413) — el original muestra el golpe con el sonido, el FX y la barra de
+      // vida, y no mueve al muñeco. Encima el salto se le aplicaba al SPRITE y no a la etiqueta del nombre,
+      // que se calcula con la posición sin corregir: pegando al este o al oeste el nombre quedaba descolgado
+      // del cuerpo. Y sólo le pasaba a TU personaje, porque `attackAt` sólo se setea para el propio.
+      if (c.attackAt && Date.now() - c.attackAt >= 220) c.attackAt = 0;
       const bg = frameGrh(b.walk[heading - 1], c); if (!bg) return false;  // animated walk frame
       // SONDA: que cuadro se esta dibujando de MI cuerpo, para poder medir la cadencia de la animacion
       // desde afuera. Se registra el grafico concreto que sale al canvas y no la formula, que es lo unico
@@ -3951,6 +4001,11 @@
     // El sprite se elige AL AZAR de la lista en cada frame: eso es lo que hace titilar el fuego.
     let partDefs = {};
     fetch('./assets/particles.json').then((r) => (r.ok ? r.json() : {})).then((p) => { partDefs = p || {}; }).catch(() => {});
+    // AURAS del equipo de tope (auras.ini del install → assets/auras.json). Quince objetos del obj.dat traen
+    // la clave `Aura`; el server ya mandaba `AuraToChar` al equiparlos y el cliente lo guardaba sin dibujar
+    // nada, porque este archivo no existía: el dato de origen nunca se había transcodeado.
+    let auraDefs = {};
+    fetch('./assets/auras.json').then((r) => (r.ok ? r.json() : {})).then((a) => { auraDefs = (a && a.auras) || {}; }).catch(() => {});
     // `emisores` se declara arriba, con `chars`/`ground`/`dying`: es estado por mapa y `loadMap` lo vacía.
     let partAcum = 0;               // contador del paso (el `frame_counter` del original)
     // dt real entre frames de partículas. Se mide acá y no con el dt del limitador de FPS porque `__draw()`
@@ -4418,18 +4473,8 @@
         if (c.fxAt && !drawFx(c, sx, sy)) c.fxAt = 0;
         // Persistent aura (EfectoCharParticula): meditation, faction glow…
         if (c.particle && !drawParticle(c, sx, sy)) delete c.particle;
-        // Attack slash: a short white arc sweeping in front of the attacker during the lunge.
-        if (c.attackAt) {
-          const adt = Date.now() - c.attackAt;
-          if (adt < 220) {
-            const p = adt / 220, heading = c.heading || 3;
-            const dir = [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]][heading] || [0, 1];
-            const cx = sx + TILE / 2 + dir[0] * TILE * 0.6, cy = sy + TILE / 2 + dir[1] * TILE * 0.6;
-            const base = Math.atan2(dir[1], dir[0]);
-            ctx.strokeStyle = `rgba(255,255,235,${(1 - p) * 0.9})`; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(cx, cy, 13, base - 1 + p * 2, base - 0.2 + p * 2); ctx.stroke();
-          }
-        }
+        // Acá se dibujaba un ARCO BLANCO delante del atacante. También era nuestro: el original no traza
+        // nada al golpear (ver la nota del salto, arriba).
         // Hit flash: a red wash over our own tile the moment something strikes us.
         if (ci === myCharIndex && myHitAt && Date.now() - myHitAt < 260) {
           ctx.fillStyle = `rgba(210,60,45,${(1 - (Date.now() - myHitAt) / 260) * 0.5})`;

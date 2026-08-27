@@ -105,6 +105,17 @@ for (const [archivo, clave, nombre, quienUsa] of [
 for (const [i, e] of Object.entries(leer('fx.json').fx))
   verGrh(Array.isArray(e) ? e[0] : e, `efecto ${i}`, usa.efecto.has(+i));
 
+// AURAS del equipo (auras.ini → auras.json). Alcanzables todas: cada una la nombra un objeto del obj.dat
+// por su clave `Aura`, y el server manda AuraToChar al equiparlo.
+const aurasUsadas = new Set();
+for (const o of leerGd('obj.json').OBJ) {
+  if (!o || typeof o !== 'object') continue;
+  const a = ent(baja(o).aura);
+  if (a) aurasUsadas.add(a);
+}
+for (const [i, a] of Object.entries(leer('auras.json').auras))
+  verGrh(a.grh, `aura ${i}`, aurasUsadas.has(+i));
+
 // --- VEREDICTO ----------------------------------------------------------------------------------------
 console.log(`check-graficos: ${mirados} referencias miradas, ${laminas.size} láminas en disco`);
 if (muertas.length) console.log(`  (${muertas.length} rotas en data que NO usa nadie — están rotas en el original también)`);
