@@ -15,6 +15,14 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - **Las ventanas del comercio y del banco son más anchas.** Entran cuatro objetos por fila en vez de dos, así
   se ve el stock del mercader y tu inventario de una sola mirada, sin tanto scroll.
 
+- **Tres habilidades que no subían nunca ahora suben usándolas.** **Tácticas** la entrena el que RECIBE los
+  golpes de una criatura —acierte o falle el bicho—, que es como se sube la evasión; **Supervivencia** ahora
+  también sube al hacer fogatas, no sólo al encenderlas; y **Domar** sube cada vez que domás una criatura.
+  (Recordá que con hambre o sed en cero no sube ninguna habilidad, y viajar en barco te deja las dos en cero.)
+
+- **Los pases del pirata de Rinkel ya se pueden usar.** Te los vendía y después no te los aceptaba: decían
+  salir de la ciudad, cuando el pirata está en el puerto. Ahora te llevan a Nueva Esperanza y a Tiama.
+
 - **Los lingotes se hacen solos.** Usá el mineral, hacé clic en la fragua y el personaje sigue fundiendo sin
   que le toques nada más, igual que al minar o al pescar. Y cuánta Minería hace falta depende de tu oficio: el
   **minero** funde con el mínimo del mineral (hierro 30, plata 60, oro 80), el **herrero** necesita la mitad
