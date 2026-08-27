@@ -1434,6 +1434,11 @@
     let _cuadroMio = null;
     /** Sonda: identificador del cuadro que se esta dibujando ahora de mi propio cuerpo. */
     window.__cuadroDelPersonaje = () => _cuadroMio;
+    /** Sonda: fila del canvas donde estan los PIES de mi personaje, para medir contra que se ancla un FX. */
+    window.__piesDelPersonaje = () => { const c = chars.get(myCharIndex); return c ? c._base : null; };
+    let _ultimoFx = null;
+    /** Sonda: el rectangulo REAL con que se bliteo el ultimo FX, y donde estaban los pies de su dueno. */
+    window.__ultimoFx = () => _ultimoFx;
     /** Resuelve un Grh a su cuadro ACTUAL. Los del mundo estaban congelados en el primero. */
     function animGrh(grhIndex) {
       const g = atlas && atlas[grhIndex];
@@ -1741,8 +1746,22 @@
     // Spell FX: render the REAL AO FX animation (fxs.ind → fx.json: index → [grh, offX, offY]) over the
     // character, cycling the grh's frames for `loops` passes. Falls back to a generic ring burst when the
     // FX index doesn't resolve (e.g. particle-only spells that carry no FX grh). Returns false when done.
+    // DÓNDE SE ANCLA UN SPRITE MÁS GRANDE QUE SU BALDOSA (VB6 `DrawGrhtoSurface` con Center=1,
+    // TileEngine.bas:1815-1826). El original NO lo centra en la baldosa: lo apoya por el borde de ABAJO y lo
+    // centra sólo en horizontal —`X - ancho/2 + 16`, `Y - alto + 32`—, o sea que un efecto alto crece hacia
+    // arriba, envolviendo al personaje, y no hacia los dos lados.
+    //
+    // Acá el FX se centraba en el centro de la baldosa, así que salía `alto/2 - 16` px MÁS ABAJO: 48 px en
+    // los quince efectos de 128, 69 en los de 170 y 112 —tres baldosas y media— en el de 256. Se veía en el
+    // destello de aparición al entrar al mundo, hundido en el piso, y en cada hechizo.
+    //
+    // Las dos fórmulas dan lo mismo cuando el sprite mide una baldosa exacta (32 px), que es el caso que el
+    // original saltea con su `If TileWidth <> 1`: por eso los tres FX de 32 px caían bien y tapaban el bug.
+    const anclaX = (sx, w) => sx - w / 2 + TILE / 2;
+    const anclaY = (sy, h) => sy - h + TILE;
+
     function drawFx(c, sx, sy) {
-      const dt = Date.now() - c.fxAt, cx = sx + TILE / 2, cy = sy + TILE / 2;
+      const dt = Date.now() - c.fxAt;
       const entry = fxIdx && c.fxIndex && fxIdx[c.fxIndex];
       const anim = entry && atlas && atlas[entry[0]];
       if (anim && anim.frames && anim.frames.length) {
@@ -1750,10 +1769,17 @@
         const dur = Math.min(1400, anim.frames.length * frameMs * loops);
         if (dt >= dur) return false;
         const g = staticGrh(anim.frames[Math.floor(dt / frameMs) % anim.frames.length]);
-        if (g && sheets[g.file]) dGrh(ctx, sheets[g.file], g, cx - g.w / 2 + entry[1], cy - g.h / 2 + entry[2], g.w, g.h);
+        if (g && sheets[g.file]) {
+          const fx = anclaX(sx, g.w) + entry[1], fy = anclaY(sy, g.h) + entry[2];
+          _ultimoFx = { x: Math.round(fx), y: Math.round(fy), w: g.w, h: g.h, pies: sy + TILE };
+          dGrh(ctx, sheets[g.file], g, fx, fy, g.w, g.h);
+        }
         else if (g) loadSheet(g.file);
         return true;
       }
+      // El estallido genérico —para el FX que la data del install deja sin gráfico, como el del Tornado—
+      // sí va al centro de la baldosa: no es un sprite, es un círculo dibujado a mano.
+      const cx = sx + TILE / 2, cy = sy + TILE / 2;
       if (dt >= 700) return false;                                   // generic fallback burst
       const p = dt / 700;
       ctx.strokeStyle = `rgba(190,120,255,${(1 - p) * 0.9})`; ctx.lineWidth = 3;
