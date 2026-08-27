@@ -193,6 +193,23 @@ public sealed class Npc
     /// </summary>
     public long ParalyzedUntilTick { get; set; }
 
+    /// <summary>
+    /// Tick del game-loop a partir del cual esta criatura puede volver a ATACAR — de un golpe o de un
+    /// hechizo, que en el original comparten el mismo contador (VB6 <c>Contadores.Ataque</c>, consumido por
+    /// <c>IntervaloPermiteAtacarNpc</c> en modNuevoTimer.bas:52, que exige 3000 ms).
+    ///
+    /// <para>Es POR CRIATURA, y esa es la diferencia que importa: el port sólo tenía una cadencia global
+    /// —la fase de ataque del loop, una vez por segundo— así que cada criatura pegaba cada 1000 ms en vez
+    /// de cada 3000. El triple de golpes es el triple de daño recibido en todo el PvE, y desde que ser
+    /// atacado entrena Tácticas también era el triple de paquetes de subida de habilidad.</para>
+    ///
+    /// <para>Lo comparten el melee y el casteo porque en el VB6 lo consumen los tres call sites del mismo
+    /// contador: <c>NpcAtacaUser</c> (SistemaCombate.bas:713), <c>NpcAtacaNpc</c> (:831) y los dos de
+    /// <c>modHechizos.bas</c> (:100 y :145). Con contadores separados una criatura maga castearía Y pegaría
+    /// en la misma vuelta, cosa que el original no hace nunca.</para>
+    /// </summary>
+    public long NextAttackTick { get; set; }
+
     /// <summary>NPCs a los que el VB6 NO les corre la IA: ni pelean ni se mueven. <c>NPCAI</c> sale de una en su
     /// PRIMERA línea (AI_NPC.bas:700) para tres <c>eNPCType</c> — <b>GuardiasCity(2)</b>, <b>facciones(5)</b> y
     /// <b>Convertidores(18)</b> — con el comentario "Mermas temporal para que los bichos nose muevan".

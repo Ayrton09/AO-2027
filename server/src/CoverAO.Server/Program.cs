@@ -215,6 +215,14 @@ var npcSystem = new NpcSystem(world, gameData, gmsPerseguibles: fixtureMode);
 // Regla de la casa: ¿el familiar sale a buscar pelea solo? Apagada = como el original (te sigue y nada más).
 npcSystem.FamiliarBuscaEnemigo = serverIni.FamiliarBusca;
 
+// Regla de la casa: ¿los pases del pirata de Rinkel se pueden usar? Apagada = como el install, donde el
+// pirata te los cobra y después no te los acepta porque su `Desde` apunta a un mapa sin transportador.
+if (serverIni.PasesDeRinkel)
+{
+    gameData.ArreglarPasesDeRinkel();
+    Console.WriteLine("Regla de la casa: los pases del pirata de Rinkel salen de su puerto (PasesDeRinkel=1).");
+}
+
 // El fixture de test (NPCs + arena + zonas seguras + paredes en el mapa 15) SÓLO en modo --fixture; en
 // producción el mapa 15 es mundo real. Se puebla ANTES que el mundo real para no correrle los char index
 // (belt-and-braces: los flows resuelven los NPCs dinámicamente). Ver Game/TestFixture.cs.

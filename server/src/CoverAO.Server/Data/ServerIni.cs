@@ -200,6 +200,25 @@ public sealed class ServerIni
     /// su mochila. Por eso está acá y no cableado: quien hostea decide.</summary>
     public bool PersistirSuelo { get; private set; }
 
+    /// <summary>
+    /// REGLA DE LA CASA — <c>PasesDeRinkel</c> (default 0 = como el install). Hace usables los dos pases que
+    /// vende el pirata de Rinkel.
+    ///
+    /// <para>En la data del install esos dos pases (595 "a Nueva Esperanza" y 1053 "a Tiama") traen
+    /// <c>Desde=20</c>, la ciudad de Rinkel; pero el único transportador del lugar está en el mapa 99, el
+    /// puerto. Como usar un pase exige estar en su mapa de origen Y al lado de un transportador
+    /// (InvUsuario.bas:1404), esos dos no se pueden usar en ningún lado — el pirata te los cobra y nunca te
+    /// los honra. Es así también en el VB6: es un bug de la data, no del port. Los otros nueve
+    /// transportadores sí coinciden con el <c>Desde</c> de sus pases.</para>
+    ///
+    /// <para>Va como regla de la casa y apagada por defecto por la misma razón que las otras: prendido es
+    /// una decisión nuestra, apagado es el install. El proyecto ya deja a propósito otros bugs de la data
+    /// sin tocar (las pistas 3-1 de los mapas Arena, el 896.png huérfano), y arreglar éste cableado dejaba
+    /// dos bugs iguales con políticas opuestas. Prendida, el server también diverge del oráculo VB6 para
+    /// esa acción — que es exactamente lo que una regla de la casa declara.</para>
+    /// </summary>
+    public bool PasesDeRinkel { get; private set; }
+
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
     public byte PrivilegioDe(string? nombre) =>
@@ -478,6 +497,7 @@ public sealed class ServerIni
         cfg.PersistirSuelo = ini.GetInt("INIT", "PersistirSuelo", 0) != 0;
         cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
+        cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

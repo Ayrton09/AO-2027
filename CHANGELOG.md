@@ -20,8 +20,13 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
   también sube al hacer fogatas, no sólo al encenderlas; y **Domar** sube cada vez que domás una criatura.
   (Recordá que con hambre o sed en cero no sube ninguna habilidad, y viajar en barco te deja las dos en cero.)
 
-- **Los pases del pirata de Rinkel ya se pueden usar.** Te los vendía y después no te los aceptaba: decían
-  salir de la ciudad, cuando el pirata está en el puerto. Ahora te llevan a Nueva Esperanza y a Tiama.
+- **Las criaturas pegan a su ritmo.** Cada una vuelve a atacar recién cuando le toca, como en el original;
+  antes te pegaban mucho más seguido, así que el mundo era bastante más duro de lo que debía. También suena
+  el golpe que entra, se ve la sangre, y el que te erra te lo muestra.
+
+- **Los pases del pirata de Rinkel.** Te los vende y después no te los acepta: su ficha dice que salen de la
+  ciudad y él está en el puerto. Es un error de los datos del juego original, así que por fidelidad quedan
+  como están; quien hostea puede hacerlos funcionar con `PasesDeRinkel=1`.
 
 - **Los lingotes se hacen solos.** Usá el mineral, hacé clic en la fragua y el personaje sigue fundiendo sin
   que le toques nada más, igual que al minar o al pescar. Y cuánta Minería hace falta depende de tu oficio: el

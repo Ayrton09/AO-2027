@@ -1059,19 +1059,44 @@ public sealed class GameData
                 StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
         }
 
-        // EL PIRATA DE RINKEL VENDE PASES QUE ÉL MISMO NO COBRA — bug de la DATA del install, no del port.
-        // Cada transportador está parado en el mapa del que salen sus pases (Nix en el 34, Banderbill en el
-        // 61, Orac en el 181...) y usarlos valida `Pos.Map = DesdeMap` (InvUsuario.bas:1394). El de Rinkel es
-        // el ÚNICO desparejo: spawnea en el Puerto de Rinkel (mapa 99) y sus dos pases (595 y 1053) traen
-        // Desde=20 —la ciudad, donde no hay ningún transportador—, así que comprárselos y usarlos al lado
-        // suyo contesta "el marino se muestra enojado", también en el VB6. Reporte del tester (2026-08-26).
-        // Se corrige el Desde al mapa del vendedor y el destino no se toca; el guard deja la corrección
-        // inerte si algún día la data viene arreglada de origen. PasajesCoherentesTests fija el invariante.
-        foreach (var idx in new[] { 595, 1053 })
-            if (map.TryGetValue(idx, out var pase) && pase.ObjType == 36 && pase.PasajeDesdeMap == 20)
-                map[idx] = pase with { PasajeDesdeMap = 99 };
-
         return map;
+    }
+
+    /// <summary>Los dos pases que vende el pirata de Rinkel (NPC 116), y el mapa donde ese pirata está
+    /// parado. Ver <see cref="ArreglarPasesDeRinkel"/>.</summary>
+    private static readonly int[] PasesDeRinkel = { 595, 1053 };
+    private const int PuertoDeRinkel = 99;
+    private const int TipoPasaje = 36;   // eOBJType.otPasajes (Declares.bas:614)
+
+    /// <summary>
+    /// REGLA DE LA CASA <c>PasesDeRinkel</c>: hace usables los dos pases del pirata de Rinkel.
+    ///
+    /// <para>En la data del install los dos traen <c>Desde=20</c> (la ciudad) y el único transportador del
+    /// lugar está en el 99 (el puerto). Como usar un pase pide estar en su mapa de origen Y al lado de un
+    /// transportador (VB6 InvUsuario.bas:1404), esos dos no se pueden usar en ningún lado: el pirata los
+    /// cobra y nunca los honra. Pasa igual en el VB6 — es la data, no el port.</para>
+    ///
+    /// <para>NO se compara contra el 20 sino contra "el mapa donde está su vendedor": si la data se arregla
+    /// del otro lado —moviendo el spawn del pirata a la ciudad, que es adonde llegan los otros nueve pases
+    /// "a Rinkel"— esto no la vuelve a romper, se apaga solo. El destino no se toca nunca.</para>
+    /// </summary>
+    public void ArreglarPasesDeRinkel()
+    {
+        var mapasDelPirata = new HashSet<int>();
+        foreach (var (mapa, spawns) in MapSpawns)
+            foreach (var s in spawns)
+                if (Npcs.TryGetValue(s.NpcIndex, out var n) && n.NpcType == 7
+                    && n.StockItems is { } stock && stock.Any(it => PasesDeRinkel.Contains(it.ObjIndex)))
+                    mapasDelPirata.Add(mapa);
+        if (mapasDelPirata.Count != 1) return;   // no está poblado, o está en varios: no se toca
+        int donde = mapasDelPirata.First();
+
+        var objetos = new Dictionary<int, ObjInfo>(Objects);
+        foreach (var idx in PasesDeRinkel)
+            if (objetos.TryGetValue(idx, out var pase) && pase.ObjType == TipoPasaje
+                && pase.PasajeDesdeMap != donde)
+                objetos[idx] = pase with { PasajeDesdeMap = donde };
+        Objects = objetos;
     }
 
     /// <summary>Loads a crafting recipe list ({ "&lt;section&gt;": [ { _index, Index } ] }) into a set

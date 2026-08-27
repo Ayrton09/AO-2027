@@ -2023,9 +2023,15 @@ public sealed partial class PacketDispatcher
     private void RaiseSkill(ClientSession? session, Player p, int skill)
     {
         if (!SkillProgression.TryRaise(p, skill, _rng)) return;
+        // EL ORDEN ES EL DE `SubirSkill`, NO EL DEL COMBATE. VB6 Modulo_UsUaRiOs.bas:1211-1220:
+        // LocaleMsg 454 -> (suma la exp en silencio) -> LocaleMsg 140 -> WriteUpdateExp -> CheckUserLevel.
+        // Esto mandaba el 140 AL FINAL, copiando la secuencia de `SistemaCombate.bas:2039` —que es la de la
+        // exp por matar, otra cosa—, y si la subida disparaba un nivel los paquetes del nivel se le
+        // adelantaban al 140. Con un solo call site raro no se notaba; ahora que cada golpe recibido de una
+        // criatura pasa por acá, es el camino más caliente del juego.
         session?.Send(ServerMessages.LocaleMsg(454, $"*{skill}%{p.Skills[skill]}"));
-        OtorgarExp(session, p, SkillProgression.ExpPerSkillUp);
         session?.Send(ServerMessages.LocaleMsg(140, SkillProgression.ExpPerSkillUp.ToString()));
+        OtorgarExp(session, p, SkillProgression.ExpPerSkillUp);
     }
 
     /// <summary>
@@ -4968,11 +4974,27 @@ public sealed partial class PacketDispatcher
         if (suelo.Amount < 3) { session.Send(ServerMessages.LocaleMsg(208)); return; }
         int skill = p.Skills[GameLimits.SkillSupervivencia];
         int suerte = skill >= 35 ? 1 : skill >= 6 ? 2 : 3;
-        if (_rng.Next(1, suerte + 1) != 1) return;                      // fallar la tirada no avisa nada
+        if (_rng.Next(1, suerte + 1) != 1)
+        {
+            // FALLAR LA TIRADA SÍ AVISA (VB6 Trabajo.bas:1303-1309): manda el 171 "No has podido hacer
+            // fuego", con el anti-spam de `UltimoMensaje` para no repetirlo en cada intento de la racha.
+            // Con Supervivencia baja la tirada falla una de cada dos o tres veces, así que el jugador del
+            // original ve el aviso seguido y el nuestro no veía nada.
+            if (p.UltimoMensaje != UltimoMensajeSinFuego)
+            {
+                session.Send(ServerMessages.LocaleMsg(171));
+                p.UltimoMensaje = UltimoMensajeSinFuego;
+            }
+            return;
+        }
         short cuantas = (short)(suelo.Amount / 3);
         _world.SetGround(pos, FogataApagada, cuantas);
-        _world.BroadcastToObservers(pos, ServerMessages.ObjectCreate(pos.X, pos.Y, FogataApagada, 0));
+        // EL ORDEN Y LA CANTIDAD son los del original: primero el texto (Trabajo.bas:1295) y RECIÉN después
+        // el `MakeObj` que emite el ObjectCreate (:1297) —y `SendToAreaByPos` incluye al propio jugador, así
+        // que en su stream el texto va primero—; y el ObjectCreate lleva la CANTIDAD de fogatas, no 0. Era el
+        // único call site del port que mandaba 0 ahí.
         session.Send(ServerMessages.ConsoleMsg($"Has hecho {cuantas} fogatas.", FuenteInfo));
+        _world.BroadcastToObservers(pos, ServerMessages.ObjectCreate(pos.X, pos.Y, FogataApagada, cuantas));
         // Hacer fogatas entrena Supervivencia (VB6 TratarDeHacerFogata, Trabajo.bas:1302), igual que
         // encenderlas (Acciones.bas:576). Estaba sólo el segundo camino.
         RaiseSkill(session, p, GameLimits.SkillSupervivencia);
@@ -6769,9 +6791,19 @@ public sealed partial class PacketDispatcher
     {
         {
             if (p.Skills[GameLimits.SkillDomar] <= 0) return;   // sin skill, silencio
+            // LA PRIMERA SALIDA DEL ORIGINAL, y va ANTES del cupo (VB6 Trabajo.bas:1075-1079): clickear TU
+            // PROPIA mascota contesta el 421 y se va. Faltaba, así que caía en la guarda de "ya tiene amo" y
+            // salía el 300 — o el 254 si además tenías el cupo lleno, porque el port miraba el cupo primero.
+            if (npc.OwnerCharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(421)); return; }
             // Cupo compartido domar+invocar (VB6 DoDomar Trabajo.bas:1083 `If .NroMascotas < MAXMASCOTAS`).
             if (CuentaMascotas(p) >= GameLimits.MaxMascotas) { session.Send(ServerMessages.LocaleMsg(254)); return; }
-            if (npc.IsMerchant || npc.IsBanker || npc.IsWorkbench || npc.IsTrainer || npc.OwnerCharIndex != 0) { session.Send(ServerMessages.LocaleMsg(300)); return; }
+            // "Ya tiene amo" son DOS campos en el original (Trabajo.bas:1085: `MaestroNpc > 0 Or MaestroUser
+            // > 0`). El port miraba sólo el del dueño-jugador, así que una criatura de otra criatura —las que
+            // trae el Entrenador— se podía domar. Hoy la frena el gate de `Domable`, pero era un agujero que
+            // se abría solo con que alguien le pusiera esa clave en la data.
+            if (npc.IsMerchant || npc.IsBanker || npc.IsWorkbench || npc.IsTrainer
+                || npc.OwnerCharIndex != 0 || npc.MasterNpcCharIndex != 0)
+            { session.Send(ServerMessages.LocaleMsg(300)); return; }
             // VB6 DoDomar (Trabajo.bas:1097-1105): la criatura tiene un costo `Domable` (NPCs.dat) y el jugador
             // puntos = Carisma * skill Domar. Sólo se doma si alcanza los puntos Y sale la tirada 1-en-5.
             // (Antes se domaba cualquier criatura, siempre: gate faltante del code-review.)
@@ -6781,7 +6813,17 @@ public sealed partial class PacketDispatcher
             { session.Send(ServerMessages.LocaleMsg(254)); return; }
             int puntosDomar = p.Carisma * p.Skills[GameLimits.SkillDomar];
             if (npc.Template.Domable > puntosDomar || _rng.Next(1, 6) != 1)
-            { session.Send(ServerMessages.ConsoleMsg("No has logrado domar la criatura.", FuenteInfo)); return; }
+            {
+                // UNA VEZ POR RACHA, no en cada intento (VB6 Trabajo.bas:1135-1137: `If Not
+                // .flags.UltimoMensaje = 5`). Con la tirada 1-en-5 del original, el port mandaba ~4 avisos
+                // de más por cada domado que salía bien.
+                if (p.UltimoMensaje != UltimoMensajeDomarFallado)
+                {
+                    session.Send(ServerMessages.ConsoleMsg("No has logrado domar la criatura.", FuenteInfo));
+                    p.UltimoMensaje = UltimoMensajeDomarFallado;
+                }
+                return;
+            }
             npc.OwnerCharIndex = p.CharIndex;
             p.OcuparSlotDeMascota(p.PrimerSlotLibre(), npc.CharIndex, npc.Template.Index);   // VB6 FreeMascotaIndex
             npc.Hostile = false;
@@ -9955,9 +9997,15 @@ public sealed partial class PacketDispatcher
             // Usar un ARCO equipado pone al cliente en modo targeting (VB6 UseInvItem/otWeapon, InvUsuario.bas:1476):
             // Proyectil=1 → WorkRequestTarget(Proyectiles). Gates: stamina > 0 (93), arco equipado (391) y modo
             // combate (102, SeguroCheck). Después el cliente clickea un tile y manda WorkLeftClick(X,Y,Proyectiles).
+            // LA ENERGÍA LA PIDE TODA ARMA, no sólo el arco. El VB6 pone el gate ANTES del `Select Case
+            // Obj.proyectil` (InvUsuario.bas:1469-1473), o sea que cubre por igual al arco y al cuerpo a
+            // cuerpo. Acá vivía adentro de la rama del arco, así que con 0 de energía la daga igual partía
+            // la leña —y desde que eso entrena Supervivencia, encima emitía la subida de habilidad donde el
+            // original manda el 93 y se va.
+            if (obj.IsWeapon && p.Stamina <= 0) { session.Send(ServerMessages.LocaleMsg(93)); return; }
+
             if (obj.IsBow)
             {
-                if (p.Stamina <= 0) { session.Send(ServerMessages.LocaleMsg(93)); return; }
                 if (!inv.Equipped) { session.Send(ServerMessages.LocaleMsg(391)); return; }
                 if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
                 session.Send(ServerMessages.WorkRequestTarget(GameLimits.SkillProyectiles));
@@ -11279,6 +11327,12 @@ public sealed partial class PacketDispatcher
     /// la cantidad de minerales DISTINTOS que se llevan encima, así que con tres tipos de mineral cada uno
     /// tiraba menos — es la parte que el tester describió como rota, y no se porta. Se porta la regla que el
     /// ítem anuncia y que se aplica por pila.</summary>
+    // Los códigos de `flags.UltimoMensaje` del original (VB6 Trabajo.bas / Protocol.bas): cada aviso que se
+    // repetiría en cada intento de una racha lleva el suyo, y el flag no se limpia nunca — sólo lo pisa el
+    // aviso siguiente, así que se manda UNA vez por racha.
+    private const byte UltimoMensajeDomarFallado = 5;    // Trabajo.bas:1135
+    private const byte UltimoMensajeSinFuego = 10;       // Trabajo.bas:1306
+
     private const int CarroMinero = 880;
 
     private static void DropInventoryOnDeath(World world, GameData data, Player p)

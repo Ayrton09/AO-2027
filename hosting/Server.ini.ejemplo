@@ -165,6 +165,14 @@ Centinela=0
 ;                CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir cada pelea.
 ;                DECIDIDO: APAGADA (2026-08-25). Ponele un 1 aca si la queres, y reinicia el servidor.
 FamiliarBusca=0
+; PasesDeRinkel: 1 = los dos pases que vende el pirata del Puerto de Rinkel se pueden usar. 0 = como el
+;                install, donde NO se pueden usar en ningun lado: su ficha dice que salen de la ciudad
+;                (mapa 20) y el unico transportador de Rinkel esta en el puerto (mapa 99), asi que el
+;                pirata te los cobra y despues te contesta que se muestra enojado. Es un bug de la data
+;                del install: pasa igual en el servidor original.
+;                APAGADA por defecto, como toda regla de la casa. Prendela si preferis que el viaje en
+;                barco funcione desde Rinkel en vez de ser fiel al bug.
+PasesDeRinkel=0
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo

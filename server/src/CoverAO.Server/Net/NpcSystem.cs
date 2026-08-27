@@ -12,6 +12,9 @@ namespace CoverAO.Server.Net;
 /// </summary>
 public sealed class NpcSystem
 {
+    // El barrido de la fase de ataque. NO es el que decide cada cuánto pega una criatura: eso lo fija el
+    // contador POR CRIATURA de `IntervaloAtaqueTicks` (3 s, como el original). Este sólo dice cada cuánto se
+    // revisa quién tiene a alguien al lado.
     private const int AttackEveryTicks = 25;  // NPCs act ~once per second (40ms tick)
     private const int MoveEveryTicks = 25;    // wander/chase check ~once per second
     private const int RespawnTicks = 125;     // ~5 seconds
@@ -120,6 +123,40 @@ public sealed class NpcSystem
     private const short SndWarp = 3;  // Declares.bas:538
     private const short FxWarp = 1;   // Declares.bas:222
     private const short SndEscudo = 37;  // Declares.bas:548 SND_ESCUDO — el clang del rechazo con escudo
+    private const short SndImpacto = 86; // Declares.bas:553 SND_IMPACTO — el golpe que entra
+    private const short FxSangre = 14;   // Declares.bas:67 FXSANGRE
+    private const short ElementalSinMelee = 92;  // AI_NPC.bas:433 — el elemental no pega cuerpo a cuerpo
+
+    /// <summary>
+    /// Vueltas del loop entre ataque y ataque de UNA criatura: los 3000 ms de
+    /// <c>IntervaloPermiteAtacarNpc</c> (VB6 modNuevoTimer.bas:52) sobre ticks de 40 ms.
+    /// </summary>
+    private const long IntervaloAtaqueTicks = 3000 / Game.GameLoop.TickMs;
+
+    /// <summary>
+    /// ¿Puede atacar esta criatura AHORA? Consume el intervalo si puede (VB6
+    /// <c>IntervaloPermiteAtacarNpc(npcIndex)</c> con <c>Actualizar=True</c>, modNuevoTimer.bas:38).
+    /// Lo comparten el golpe y el hechizo, igual que el <c>Contadores.Ataque</c> del original.
+    /// </summary>
+    private bool IntervaloPermiteAtacar(Npc npc)
+    {
+        if (_tick < npc.NextAttackTick) return false;
+        npc.NextAttackTick = _tick + IntervaloAtaqueTicks;
+        return true;
+    }
+
+    /// <summary>
+    /// Las CUATRO salidas tempranas con que arranca <c>NpcAtacaUser</c> (VB6 SistemaCombate.bas:700-707),
+    /// que valen para los dos caminos por los que una criatura pega: el barrido de adyacentes y el de la
+    /// mascota que sigue a su agresor.
+    ///
+    /// <para>Vivían en UN solo call site (<see cref="NpcGolpeaAdyacente"/>), así que por el otro camino
+    /// —<c>NpcSeguirAgresor</c>— una criatura con dueño le pegaba a un GM no perseguible, que en el
+    /// original sale por la segunda guarda sin emitir un byte. En el VB6 las cuatro están DENTRO de
+    /// <c>NpcAtacaUser</c>: por eso las aplica siempre, la llame quien la llame.</para>
+    /// </summary>
+    private bool PuedeSerAtacado(Player p) =>
+        p.IsAlive && !p.Invisible && !p.Oculto && Perseguible(p);
 
     /// <summary>El sonido propio de una criatura, al área donde está (VB6 <c>SendTarget.ToNPCArea</c>).
     ///
@@ -460,8 +497,17 @@ public sealed class NpcSystem
                 }
             }
             if (!p.IsAlive || p.Invisible || p.Oculto) continue;
-            // `If Distancia(...) <= 1 Then NpcAtacaUser`: pega ANTES de moverse, y con la Manhattan del original.
-            if (npc.OwnerCharIndex != 0 && Math.Abs(dx) + Math.Abs(dy) <= 1) NpcGolpeaA(npc, p);
+            // CASTEA O PEGA, NUNCA LAS DOS (VB6 AI_NPC.bas:428-436). Es un If/Else excluyente: la criatura
+            // con hechizos SÓLO castea y no llega nunca al melee, y el NPC 92 —el elemental— está excluido
+            // del cuerpo a cuerpo con nombre y apellido. El port pegaba en los dos casos: el corte de
+            // familiar mago de `NpcGolpeaA` exige `FamiliarDe(npc) is not null`, y eso da null justamente
+            // para las domadas y las invocadas, que son las que llegan por acá.
+            if (npc.OwnerCharIndex != 0)
+            {
+                if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, p);
+                else if (Math.Abs(dx) + Math.Abs(dy) <= 1 && npc.Template.Index != ElementalSinMelee)
+                    NpcGolpeaA(npc, p);
+            }
             byte h = FindDirection(npc, p.Pos);
             if (h != 0)
             {
@@ -778,6 +824,10 @@ public sealed class NpcSystem
     {
         if (player.Invisible || player.Oculto) return false;
         if (_data.MapNoMagic(player.Pos.Map)) return false;
+        // EL MISMO CONTADOR QUE EL GOLPE (VB6 modHechizos.bas:100: `If Not IntervaloPermiteAtacarNpc(...)
+        // Then Exit Sub`). Se consume acá y no en el caller, igual que en el original, así que una criatura
+        // maga castea O pega en una vuelta, nunca las dos cosas.
+        if (!IntervaloPermiteAtacar(npc)) return false;
         var lista = npc.Template.Spells!;
         var spell = _data.Spell((short)lista[_rng.Next(lista.Count)]);
         if (spell is null) return false;
@@ -947,6 +997,9 @@ public sealed class NpcSystem
     {
         if (npc.Template.Spells is { Count: > 0 } && FamiliarDe(npc) is not null
             && _rng.Next(1, 101) < ProbHabilidadDeGolpe && FamiliarLanzaSobreCriatura(npc, victima)) return;
+        // El intervalo de 3 s también entre criaturas (VB6 `NpcAtacaNpc`, SistemaCombate.bas:831): es el
+        // MISMO `Contadores.Ataque`, así que pegarle a otra criatura le consume el turno igual.
+        if (!IntervaloPermiteAtacar(npc)) return;
         // Criatura contra criatura: el rugido del atacante ANTES de la tirada (VB6 SistemaCombate.bas:843) y el
         // quejido de la víctima sólo si el golpe entra (:849).
         SonidoDeCriatura(_world, npc, npc.Template.Snd1);
@@ -1017,16 +1070,24 @@ public sealed class NpcSystem
     private void NpcGolpeaA(Npc npc, Player player)
     {
         {
+            // LAS CUATRO GUARDAS DEL ORIGINAL, adentro y no en el caller (VB6 SistemaCombate.bas:700-707).
+            if (!PuedeSerAtacado(player)) return;
             // EL FAMILIAR QUE SABE MAGIA la tira en vez de pegar, como cualquier criatura con hechizos: sus
             // habilidades viajan en la ficha (`Template.Spells`), asi que el camino es el MISMO que ya usan
             // los NPCs magos -- con su dano, la resistencia del equipo y el efecto de estado. Va acá y no en
             // la fase de ataque porque a una criatura CON DUEÑO el original no le corre esa fase.
+            //
+            // Va ANTES del intervalo porque `NpcLanzaUnHechizo` lo consume él mismo, igual que en el VB6
+            // (modHechizos.bas:100): el contador es UNO SOLO para golpe y hechizo, así que la criatura que
+            // castea no pega también en la misma vuelta.
             if (npc.Template.Spells is { Count: > 0 } && FamiliarDe(npc) is not null
                 && _rng.Next(1, 101) < ProbHabilidadDeGolpe && NpcLanzaUnHechizo(npc, player)) return;
+            // EL INTERVALO DE 3 SEGUNDOS (VB6 SistemaCombate.bas:713: `If IntervaloPermiteAtacarNpc(...)
+            // ... Else NpcAtacaUser = False : Exit Function`). Sale MUDA: ni rugido, ni tirada, ni skill.
+            if (!IntervaloPermiteAtacar(npc)) return;
             // EL RUGIDO AL ATACAR (VB6 SistemaCombate.bas:730). Suena ANTES de la tirada de acierto, así que
             // la criatura ruge igual cuando erra — que es lo que hace el original y lo que se escucha en el
-            // juego. Va después de la rama del familiar mago a propósito: en el VB6 el hechizo sale por otra
-            // función y nunca pasa por `NpcAtacaUser`, o sea que una criatura que castea no ruge.
+            // juego.
             SonidoDeCriatura(_world, npc, npc.Template.Snd1);
             double evMod = _data.EvasionMod.TryGetValue(player.Class, out var ev) ? ev : 1.0;
             long pe = Combat.PoderEvasion(player.Skills[GameLimits.SkillTacticas], player.Agility, player.Level, evMod);
@@ -1057,6 +1118,10 @@ public sealed class NpcSystem
                         SubirSkillPorUso?.Invoke(player, GameLimits.SkillDefensa);
                     }
                 }
+                // EL "FALLAS" (VB6 SistemaCombate.bas:756: `WriteChatOverHeadLocale(UserIndex,
+                // Npclist(npcIndex).Char.CharIndex, 0, 2)`) — el cuerpo del `Else` del impacto, que no
+                // estaba portado: la criatura que erra le pone un 0 flotante sobre la cabeza al jugador.
+                player.Connection?.Send(ServerMessages.DamageOverHead(npc.CharIndex, 0));
                 // SER ATACADO ENTRENA TÁCTICAS (VB6 NpcAtacaUser, SistemaCombate.bas:759): el SubirSkill va
                 // DESPUÉS del If/Else de impacto, o sea que el defensor entrena tanto si el golpe entra como
                 // si lo esquiva. Es LA manera de subir la evasión — el atacante nunca la sube (:218 entrena
@@ -1064,6 +1129,14 @@ public sealed class NpcSystem
                 SubirSkillPorUso?.Invoke(player, GameLimits.SkillTacticas);
                 return; // missed
             }
+
+            // EL GOLPE QUE ENTRA SUENA Y SANGRA (VB6 SistemaCombate.bas:740-747): `PlayWave(SND_IMPACTO)` al
+            // área y, si el jugador no está meditando ni navegando ni montado, `CreateFX(FXSANGRE)`. Los dos
+            // faltaban: el PvE era mudo en el impacto y no salpicaba.
+            _world.BroadcastToObservers(player.Pos,
+                ServerMessages.PlayWave(SndImpacto, (byte)player.Pos.X, (byte)player.Pos.Y));
+            if (!player.Meditating && !player.Navigating && !player.Mounted)
+                _world.BroadcastToObservers(player.Pos, ServerMessages.CreateFX(player.CharIndex, FxSangre, 0));
 
             int rawDmg = npc.Template.MaxHit >= npc.Template.MinHit
                 ? _rng.Next(npc.Template.MinHit, npc.Template.MaxHit + 1)
