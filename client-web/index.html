@@ -97,8 +97,12 @@
       border-radius:0 4px 4px 4px; transition:background .18s, border-color .18s, box-shadow .18s;
       scrollbar-width:none; pointer-events:none; }
     #chat::-webkit-scrollbar{ width:0 }
+    /* Con el chat ABIERTO va la barra: el historial del original es un RichTextBox con ScrollBars=2
+       (frmMain.frm:783), o sea barra vertical visible. El `scrollbar-width:none` de arriba es para el chat
+       en REPOSO, que es sólo texto sobre el mundo. */
     #chat.escribiendo { background:#08060699; backdrop-filter:blur(1.5px);
-      border-color:var(--gold-deep); box-shadow:inset 0 0 20px #000a; pointer-events:auto; }
+      border-color:var(--gold-deep); box-shadow:inset 0 0 20px #000a; pointer-events:auto;
+      scrollbar-width:thin; }
     #chat.escribiendo::-webkit-scrollbar{ width:8px }
     /* Las pestañas (TODO/COMBATE/GLOBAL) tampoco hacen falta mientras no estas leyendo el chat. */
     #chattabs { opacity:0; transition:opacity .18s; pointer-events:none; }
@@ -561,7 +565,9 @@
       background:linear-gradient(180deg,#160f08,#0c0804); border:1px solid var(--gold-deep); border-radius:5px; }
     .shopcell canvas { width:48px; height:48px; image-rendering:auto; }
     .shopcell .sn { font-size:calc(var(--u)*0.78); color:var(--ink); line-height:1.15; }
-    .shopcell .sp2 { font-size:calc(var(--u)*0.72); color:var(--gold); font-family:ui-monospace,monospace; }
+    /* `.sp2` se usa TAMBIÉN fuera de una celda de tienda: son las notas de ayuda de Opciones y de Teclas.
+       Escrita como descendiente, ahí no aplicaba y esos textos salían con letra de cuerpo normal. */
+    .sp2 { font-size:calc(var(--u)*0.72); color:var(--gold); font-family:ui-monospace,monospace; }
     .mvb { cursor:pointer; color:var(--gold); opacity:.8; padding:0 1px; } .mvb:hover { opacity:1; }
     .shopsec { grid-column:1/-1; font-family:var(--serif); color:var(--gold); text-transform:uppercase; letter-spacing:.05em; font-size:calc(var(--u)*0.82); border-bottom:1px solid var(--gold-deep); }
     /* LAS DOS LISTAS, LADO A LADO. Es la disposición del original: `frmComerciar` y `frmBanco` ponen a la
@@ -1596,7 +1602,11 @@
         // no arrancaban con el paso, así que el muñeco patinaba. El original arranca la animación al
         // ponerse en movimiento (`.body.Walk(.Heading).Started = 1`, con `FrameCounter = 1`) y la deja
         // correr continua mientras camina — no la reinicia en cada baldosa.
-        const moving = char && (Date.now() - (char.movedAt || 0) < PASO_MS + 60);
+        // LAS PIERNAS PARAN CUANDO PARA EL PASO, no 60 ms despues. `CharRender` apaga la animacion en el
+        // instante en que el deslizamiento llega a 0 (`Moving = False`, `Started = 0`, `FrameCounter = 1`,
+        // TileEngine.bas:2395-2410). Aca habia +60 ms cableados, que a caballo se volvian +95 porque el paso
+        // dura menos: el muñeco seguia moviendo las piernas quieto.
+        const moving = char && (Date.now() - (char.movedAt || 0) < pasoMs(char));
         let idx = 0;
         if (moving) {
           const t = performance.now() - (char.animT0 || 0);
@@ -2065,6 +2075,19 @@
      * PALABRAS y se corta cuando la línea pasaría de 18 caracteres. Una palabra más larga que el tope se
      * deja sola en su renglón, igual que allá.
      */
+    // LOS COLORES DEL DIALOGO son los del original (Protocol.bas:1325-1338), no aproximaciones:
+    //   modo 1 palabras magicas -> D3DColorXRGB(128,128,0)   oliva
+    //   modo 2 golpe            -> -65536 = 0xFFFF0000       rojo puro
+    //   modo 3 cura             -> D3DColorXRGB(50,100,200)  azul
+    const COLOR_PALABRAS = '#808000', COLOR_GOLPE = '#ff0000', COLOR_CURA = '#3264c8';
+    // El color del globo por MODO de habla. Los índices son los de `FontTypes` del original: 1 hablar (7),
+    // 2 gritar (25), 3 global (23), 4 privado (22). `null` = el crema por defecto del chat.
+    //
+    // Va como FUNCIÓN y no como objeto literal: `FUENTES` se declara más abajo con `const`, así que
+    // resolverlo acá arriba tiraría un ReferenceError al cargar la página — y `check-index` no lo vería,
+    // porque sólo comprueba que el archivo parsee.
+    const FUENTE_DEL_MODO = { 2: 25, 3: 23, 4: 22 };
+    const colorPorModo = (modo) => { const f = FUENTE_DEL_MODO[modo]; return f ? FUENTES[f] : null; };
     const ANCHO_DIALOGO = 18;
     // 1 / (ENGINE_BASE_SPEED * 0.8): el `Grh.speed` que InitGrh le pone a todo FX (TileEngine.bas:1104).
     const FX_MS_POR_CUADRO = 1 / (0.018 * 0.8);
@@ -3557,7 +3580,7 @@
           if (!c) break;
           if (f.modo === 1) {
             const palabras = spellWords && spellWords[f.index];
-            if (palabras) { c.chatText = palabras; c.chatColor = '#a8a832'; c.chatAt = Date.now(); }
+            if (palabras) { c.chatText = palabras; c.chatColor = COLOR_PALABRAS; c.chatAt = Date.now(); }
           } else if (f.modo === 2 || f.modo === 3) {
             // EL NÚMERO DE DAÑO ES UN DIÁLOGO, no un flotante suelto. El original llama a
             // `Char_Dialog_Create(charIndex, daño, color, 3)` (Protocol.bas:1345) y lo dibuja DENTRO de
@@ -3566,7 +3589,7 @@
             // a un bicho que camina, el número se despegaba hasta una baldosa entera y desaparecía en menos
             // de un segundo.
             c.chatText = textoDelFlotante(f.index, f.charIndex === myCharIndex);
-            c.chatColor = f.modo === 3 ? '#5b9bff' : '#ff6b5a';
+            c.chatColor = f.modo === 3 ? COLOR_CURA : COLOR_GOLPE;
             c.chatAt = Date.now();
           } else if (f.modo === 4) {
             // EL DIÁLOGO DE UN NPC. Viaja el NÚMERO de ficha, no el texto (`General_Locale_NPCs(id, 1)`), y el
@@ -3697,7 +3720,11 @@
           // El texto va sobre la cabeza del que habla (se desvanece) y, SEGUN EL MODO, además al log.
           const c = chars.get(f.charIndex);
           if (c && c.name && ignorados.has(c.name.toLowerCase())) break;   // /ignorar: filtro LOCAL, como el original
-          if (c) { c.chatText = f.chat; c.chatColor = null; c.chatAt = Date.now(); }   // null = el crema del chat
+          // EL COLOR DEPENDE DEL MODO DE HABLA (VB6 HandleChatOverHead, Protocol.bas:1263): el original lee
+          // `ModeChat` y elige la fuente — 7 al hablar, 25 al gritar, 23 en el global, 22 en el privado— y
+          // le pasa ESE color a `Char_Dialog_Create`. Acá el globo salía siempre del mismo crema, así que un
+          // grito no se distinguía de un susurro.
+          if (c) { c.chatText = f.chat; c.chatColor = colorPorModo(f.mode); c.chatAt = Date.now(); }
           // SOLO EL MODO 1 ESCRIBE EN LA CONSOLA. El cliente VB6 (Cliente/Codigo/Protocol.bas:1267) tiene un
           // `Select Case ModeChat` donde únicamente el `Case 1` llama a `AddtoRichTextBox`; los casos 2
           // (gritar), 3 (global) y 4 (privado) asignan el color y NO lo usan, así que esos sólo se dibujan
@@ -5820,6 +5847,13 @@
       // display, que es lo que ya me mordio con las solapas del login.
       bloque.hidden = !lista;
       bloque.style.display = lista ? '' : 'none';
+      // Y EL CAMPO ESCONDIDO SE DESHABILITA. Un `<input>` con `pattern` sigue VALIDÁNDOSE aunque su
+      // contenedor esté oculto, y el navegador no puede enfocarlo para mostrar el globo de error: el submit
+      // se cancela y el botón "Crear y entrar" no hace absolutamente nada, sin decir por qué. Pasa con
+      // escribir un nombre de familiar y después cambiar a una clase que no tiene. Deshabilitado queda
+      // fuera de la validación (y de paso no se manda).
+      const nom = $('fam-nombre');
+      if (nom) { nom.disabled = !lista; if (!lista) nom.value = ''; }
       cont.innerHTML = '';
       if (!lista) return;
       lista.forEach(([v, n]) => {
