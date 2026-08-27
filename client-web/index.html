@@ -1303,17 +1303,44 @@
     function armarBloqueos(m) {
       bloqueados = new Set();
       for (const [x, y] of (m && m.blocked) || []) bloqueados.add(claveTile(x, y));
+      // La capa 2 del mapa: `HayAgua` exige que esté VACÍA, así que un tile de agua con un objeto encima
+      // (un puente, un muelle) deja de contar como agua y se puede pisar.
+      capa2 = new Set();
+      for (const o of (m && m.objects) || []) capa2.add(claveTile(o[0], o[1]));
+    }
+    // AGUA, con la regla EXACTA del original (`HayAgua`, General.bas:138): el gráfico de la CAPA 1 cae en uno
+    // de los tres rangos y la CAPA 2 está vacía. Es la misma que usa el transcode para el bitmap del server
+    // (fase0/transcode/extract_terrain.py:16), así que las dos puntas deciden lo mismo y no hay dos verdades.
+    const RANGOS_DE_AGUA = [[1505, 1520], [5665, 5680], [13547, 13562]];
+    let capa2 = new Set();   // los tiles con algo en la capa 2, que dejan de ser agua
+    function hayAgua(x, y) {
+      if (!map || !map.ground) return false;
+      const fila = map.ground[y - map.ymin];
+      const g = fila && fila[x - map.xmin];
+      if (!g) return false;
+      if (!RANGOS_DE_AGUA.some(([a, b]) => g >= a && g <= b)) return false;
+      return !capa2.has(claveTile(x, y));
     }
     /**
      * `LegalPos` del original (TileEngine.bas:1719), con los mismos gates y en el mismo orden: límites del
-     * mapa, un personaje VIVO parado en el tile, y el bloqueo. El gate de AGUA no está acá: el cliente no
-     * sabe qué tile es agua —eso lo decide el server con su `IsWater`— y para ese caso alcanza con la
-     * corrección, que es justo lo que el original nunca necesita y nosotros sí. Es la única diferencia.
+     * mapa, un personaje VIVO parado en el tile, el AGUA y el bloqueo.
+     *
+     * El gate de agua faltaba, con el argumento de que "lo decide el server y alcanza con la corrección".
+     * No alcanzaba: contra una orilla el cliente predecía el paso, arrancaba el deslizamiento, el server lo
+     * rechazaba con un PosUpdate y el `saltarA` lo traía de vuelta —y encima dejaba el paso listo para
+     * repetirse a los 110 ms en vez de a los 209—. El resultado era un tironeo de unas nueve veces por
+     * segundo que, como la cámara sale de la posición del personaje, hacía temblar la pantalla entera. Hay
+     * 63.992 baldosas de tierra pisable pegadas a agua en 297 mapas: no es un rincón.
+     *
+     * La comparación es contra `navegando` y no un "no entrar al agua" a secas, porque el original usa el
+     * MISMO gate para las dos mitades (`If UserNavegando <> HayAgua(X, Y)`, TileEngine.bas:1746): a pie no
+     * se entra al agua, y en barca no se sale a tierra.
      */
     function posLegal(x, y) {
       if (!map) return false;
       if (x < map.xmin || y < map.ymin || x > map.xmin + map.w - 1 || y > map.ymin + map.h - 1) return false;
       for (const [ci, c] of chars) if (ci !== myCharIndex && c.x === x && c.y === y && c.body !== CUERPO_MUERTO) return false;
+      if (navegando !== hayAgua(x, y)) return false;
       return !bloqueados.has(claveTile(x, y));
     }
     /**
@@ -1446,6 +1473,10 @@
     window.__piesDelPersonaje = () => { const c = chars.get(myCharIndex); return c ? c._base : null; };
     window.__paralizado = () => paralizado;
     window.__setParalizado = (v) => { paralizado = !!v; pintarEstados(); return paralizado; };
+    /** Sonda: la posicion RENDERIZADA de mi personaje (con el desplazamiento sub-baldosa del deslizamiento). */
+    window.__posRender = () => { const c = chars.get(myCharIndex); return c ? posRender(c) : null; };
+    /** Sonda: si el cliente considera agua esa baldosa (la regla HayAgua del original). */
+    window.__hayAgua = (x, y) => hayAgua(x, y);
     let _ultimoFx = null;
     /** Sonda: el rectangulo REAL con que se bliteo el ultimo FX, y donde estaban los pies de su dueno. */
     window.__ultimoFx = () => _ultimoFx;
