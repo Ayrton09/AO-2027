@@ -1485,6 +1485,11 @@
     window.__setCiego = (v) => { blind = !!v; return blind; };
     /** Sonda: el alfa del latido de mi personaje, 0..255 (VB6 charlist().AlphaX). */
     window.__alfaLatido = () => { const c = chars.get(myCharIndex); return c && c._alfa !== undefined ? +c._alfa.toFixed(1) : null; };
+    /** Sonda: los objetos que hay tirados en el piso a la vista, con su indice y posicion. */
+    window.__suelo = () => [...ground.values()].map((o) => [o.objIndex, o.x, o.y]);
+    /** Sondas del inventario: en que ranura esta ese objeto, y tirarlo por el camino del jugador. */
+    window.__slotDe = (obj) => { for (const s in inventory) if (inventory[s] && inventory[s].objIndex === obj) return +s; return null; };
+    window.__tirar = (slot) => tirarDelSlot(slot);
     /** Sonda: a que pixel de la pantalla cae una posicion del mundo (para recortar ahi y medir). */
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
     window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
@@ -4208,7 +4213,16 @@
       const luces = (map && map.luces) || [];
       if (amb || luces.length) {
         const x0 = Math.floor(camX) - 1, y0 = Math.floor(camY) - 1;
-        const lw = VIEW_W + 3, lh = VIEW_H + 3;
+        // EL LIGHT-MAP VA EN BALDOSAS ENTERAS. `VIEW_W` es FRACCIONARIO (sale de VW/TILE, que depende del
+        // aspecto de la ventana: 22,29 en una de 1200x700), así que `lightCv.width = lw` truncaba a 25 y
+        // después el blit lo estiraba a 25,29 baldosas: cada píxel del mapa de luz terminaba midiendo 32,4 px
+        // en vez de 32 y el error se ACUMULABA hacia la derecha — el cuadrado iluminado se despegaba de su
+        // farol, cada vez más cuanto más a la derecha de la pantalla. En vertical no pasaba porque VIEW_H sale
+        // entero por construcción.
+        //
+        // Y la comparación `lightCv.width !== lw` (22 !== 22,29) NUNCA era falsa, así que además se creaba un
+        // canvas nuevo en CADA cuadro.
+        const lw = Math.ceil(VIEW_W) + 3, lh = Math.ceil(VIEW_H) + 3;
         if (!lightCv || lightCv.width !== lw || lightCv.height !== lh) {
           lightCv = document.createElement('canvas'); lightCv.width = lw; lightCv.height = lh;
           lightCx = lightCv.getContext('2d');
@@ -4226,6 +4240,22 @@
           // decidir si vale la pena el blit. De los 3.549 del mundo, 2.595 son blancas.
           if (rgb !== 0xFFFFFF) algunaLuz = true;
         }
+        // LOS OBJETOS TIRADOS ILUMINAN CON EL MISMO SISTEMA. En el original, un objeto con luz propia llama
+        // a `Light_Create` (Map_Obj_Create, TileEngine.bas:4372): la misma luz CUADRADA que multiplica, no
+        // un resplandor aparte. Acá se dibujaban como un halo redondo aditivo con alfa 0,18 fijo, así que
+        // una fogata tirada a pleno día mostraba un círculo de color que el original no dibuja —una luz
+        // blanca multiplicada por blanco es invisible de día— y encima titilaba, cosa que ninguna luz del
+        // original hace.
+        for (const it of ground.values()) {
+          const luz = objLights[it.objIndex];
+          if (!luz) continue;
+          const [rgbO, alcO] = luz;
+          const px = it.x - x0, py = it.y - y0;
+          if (px + alcO < 0 || px - alcO > lw || py + alcO < 0 || py - alcO > lh) continue;
+          lightCx.fillStyle = `rgb(${rgbO >> 16},${(rgbO >> 8) & 255},${rgbO & 255})`;
+          lightCx.fillRect(px - alcO, py - alcO, alcO * 2 + 1, alcO * 2 + 1);
+          if (rgbO !== 0xFFFFFF) algunaLuz = true;
+        }
         // De dia y sin ninguna luz de COLOR a la vista el light-map es blanco entero: multiplicar por blanco
         // no hace nada, asi que se saltea el blit -- que es la parte cara (medido: 9,3 ms contra 5,3).
         if (amb || algunaLuz) {
@@ -4240,25 +4270,9 @@
           ctx.imageSmoothingQuality = q;
         }
       }
-      // 2) Luces de los OBJETOS del suelo, aditivas encima del ambiente. El color y el alcance salen de la
-      // data (obj-lights.json): son los 17 que el original marca en `locale_obj_es.ind` -- la fogata, los
-      // teleports, los pozos y el equipo legendario que brilla. Aca habia UN objIndex cableado (63, la
-      // fogata) con un naranja fijo, asi que una Espada Argentum tirada en el piso no brillaba.
-      //
-      // Estas van aditivas y no en el light-map a proposito: son un agregado nuestro -- en el original un
-      // objeto tirado crea una luz del mismo sistema que las del mapa, sin glow ni parpadeo.
+      // (Las luces de los objetos del suelo ya entraron al light-map, arriba: en el original son una luz
+      // cuadrada más del mismo sistema, no un resplandor aparte.)
       ctx.globalCompositeOperation = 'lighter';
-      for (const it of ground.values()) {
-        const luz = objLights[it.objIndex];
-        if (!luz) continue;
-        const [rgb, alcance] = luz;
-        const gx = it.x, gy = it.y;
-        const lx = (gx - camX) * TILE + TILE / 2, ly = (gy - camY) * TILE + TILE / 2;
-        const radio = TILE * (alcance + 0.6);
-        if (lx < -radio * 2 || lx > VW + radio * 2 || ly < -radio * 2 || ly > VH + radio * 2) continue;
-        const flick = it.objIndex === FOGATA ? 0.82 + 0.18 * Math.sin(t * 0.011 + gx * 7.1 + gy * 3.3) : 1;
-        warmGlow(lx, ly, radio * flick, rgb >> 16, (rgb >> 8) & 255, rgb & 255, (0.18 + 0.45 * night) * flick);
-      }
       for (const [ci, c] of chars) {               // 3) hechizos (CreateFX): fogonazo breve, siempre visible
         if (!c.fxAt) continue;
         const dt = t - c.fxAt; if (dt < 0 || dt > 520) continue;
