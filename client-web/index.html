@@ -1049,7 +1049,10 @@
     // Desvanecido de los techos al entrar a un interior. El original va de 255 a 0 de 5 en 5 cada 18 ms
     // (RoofAlphaCalculate, TileEngine.bas:3845), o sea 51 pasos = ~918 ms para el barrido completo.
     const TECHO_FADE_MS = 918;
-    let techoAlpha = 1;            // 1 = techos opacos (afuera), 0 = invisibles (adentro)
+    // ARRANCA ABIERTO. El original nunca inicializa `AlphaY` (TileEngine.bas:20), o sea que vale 0, y el
+    // bucle de la capa 4 está detrás de `If AlphaY <> 0`: al conectarte no hay techo dibujado, y si entrás
+    // adentro de un edificio no aparece nunca. Acá arrancaba en 1 y te tapaba ~0,9 s antes de abrirse.
+    let techoAlpha = 0;            // 1 = techos opacos (afuera), 0 = invisibles (adentro)
     let techoT = 0;                // timestamp del último frame, para avanzar el fade por tiempo real
     let estupido = false;          // Dumb 58 / DumbNoMore 66 — el par del hechizo Estupidez
     // MODO COMBATE. Es una bandera del CLIENTE, no del server: el original la lleva en `IScombate`
@@ -1396,8 +1399,21 @@
      * tiene sentido cartelear "" al cruzar cada frontera.
      */
     let cartelT = 0;
+    /**
+     * EL CARTEL DEL LUGAR, y la condición es `letter_grh <> 0`, no «el mapa tiene nombre».
+     *
+     * El original sólo lo muestra cuando el header del `.csm` trae un gráfico de rótulo (General.bas:843:
+     * `If MapDat.letter_grh <> 0 Then Map_Letter_Fade_Set`); el `map_name` es otro campo y no gatilla nada.
+     * Acá la condición era tener nombre, y los 863 mapas lo tienen: salía un cartel en 139 mapas donde el
+     * original no muestra ninguno — Rinkel y Banderbill entre ellos.
+     *
+     * El dibujo en sí sigue siendo texto del DOM y no el rótulo pintado de 450x75 que blitea el original
+     * (TileEngine.bas:2262). Es una diferencia conocida y se deja: el rótulo trae el nombre EN LA IMAGEN, y
+     * con el texto del DOM el mismo cartel se lee en cualquier resolución y se puede traducir.
+     */
     function mostrarCartelDeMapa(m) {
-      const nombre = m && (m.name || '').trim(); if (!nombre) return;
+      if (!m || !m.letterGrh) return;
+      const nombre = (m.name || '').trim(); if (!nombre) return;
       const el = document.getElementById('cartelmapa'); if (!el) return;
       el.querySelector('.cm-n').textContent = nombre;
       el.querySelector('.cm-z').textContent = (m.zone || '').trim().toLowerCase();
@@ -1518,7 +1534,7 @@
     /** Sonda: el rectangulo REAL con que se bliteo el ultimo FX, y donde estaban los pies de su dueno. */
     window.__ultimoFx = () => _ultimoFx;
     /** Resuelve un Grh a su cuadro ACTUAL. Los del mundo estaban congelados en el primero. */
-    function animGrh(grhIndex) {
+    function animGrh(grhIndex, tx = 0, ty = 0) {
       const g = atlas && atlas[grhIndex];
       if (!g) return null;
       if (!g.frames) return g.file != null ? g : null;
@@ -1527,7 +1543,16 @@
       // El VB6 lleva un contador por Grh, pero los del mapa nacen todos juntos al cargarlo, así que
       // comparten fase: un reloj global es equivalente para las capas del mundo (no para personajes,
       // que aparecen en momentos distintos — esos siguen con su propio contador en `frameGrh`).
-      const idx = Math.floor(performance.now() * ENGINE_BASE_SPEED * (g.speed || 1)) % n;
+      // CADA BALDOSA LLEVA SU PROPIA FASE. En el original cada `MapData(x,y).Graphic(n)` es un Grh con su
+      // `FrameCounter`, que avanza SOLO cuando esa baldosa se dibuja (Draw_Grh la recibe ByRef,
+      // TileEngine.bas:4636), así que una columna de agua no late toda junta. Acá un reloj global las hacía
+      // cambiar de cuadro EXACTAMENTE al mismo tiempo, y el agua se veía como un parpadeo de bloque.
+      //
+      // La fase sale de LA BALDOSA (x,y) y no del índice de gráfico: todas las de agua comparten el mismo
+      // grh, así que derivarla de él las dejaría igual de sincronizadas. Con un hash de la posición es
+      // estable entre cuadros, no cuesta guardar nada, y las vecinas caen en momentos distintos.
+      const fase = ((tx * 73856093) ^ (ty * 19349663)) % 1000;
+      const idx = Math.floor((performance.now() + fase) * ENGINE_BASE_SPEED * (g.speed || 1)) % n;
       const f = atlas[g.frames[idx]];
       return f && f.file != null ? f : null;
     }
@@ -1615,6 +1640,10 @@
     // clsClientTCP.cls:397): la baldosa pasa de 209 a 174 ms, y afecta al scroll de la cámara Y al propio
     // personaje. Al revivir vuelve a 8,5 px por cuadro (:408). Acá el fantasma caminaba igual que un vivo.
     const VELOCIDAD_MUERTO = 1.2;
+    // CUANTO TARDA EN IRSE el que sale de la vista. El original copia el sprite a un "fantasma" y le baja el
+    // alfa con `AlphaB - timerTicksPerFrame * 6` (TileEngine.bas:2147): 255 / (0,018*6) = 2361 ms. Aca eran
+    // 450, cinco veces mas rapido.
+    const FADE_FANTASMA_MS = 2361;
     const pasoMs = (c) => {
       const propio = c === chars.get(myCharIndex);
       let ms = propio && montando ? PASO_MS / VELOCIDAD_MONTANDO : PASO_MS;
@@ -1817,7 +1846,7 @@
       const sx = ox - Math.round(camX), sy = oy - Math.round(camY);
       if (sx < -MARGEN_TILES || sx >= VIEW_W + MARGEN_TILES ||
           sy < -MARGEN_TILES || sy >= VIEW_H + MARGEN_TILES) return;
-      const g = animGrh(grh); if (!g) return;   // objetos/decorado/techos: animados si el Grh lo es
+      const g = animGrh(grh, ox, oy); if (!g) return;   // objetos/decorado/techos: animados si el Grh lo es
       const sheet = sheets[g.file]; if (!sheet) { loadSheet(g.file); return; }
       dGrh(destino || ctx, sheet, g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
     }
@@ -2681,6 +2710,7 @@
       if (montando) chips.push('montado');
       if (navegando) chips.push('navegando');
       if (estupido) chips.push('aturdido');
+      if (laborando) chips.push('trabajando');   // el "Trabajando" del estado del original
       if (enCombate) chips.push('combate');
       if (yo && yo.invisible) chips.push('oculto');
       if (correoPendiente) chips.push('✉ correo');
@@ -4239,6 +4269,39 @@
     let _luzDbg = { vueltas: 0, amb: null, muerto: null, base: null };
     /** Sonda: que hizo la ultima pasada de iluminacion (para no adivinar por que no tine). */
     window.__luzDbg = () => _luzDbg;
+    /**
+     * Una luz del mapa en el light-map. NO es un cuadrado macizo: el original (`Light_Render`,
+     * TileEngine.bas:3469) le pone el color a los CUATRO vértices sólo del interior —de (min+1) a (max-1),
+     * o sea (2·alcance−1)²—, al anillo exterior le pone 2 de 4 y a las esquinas 1 de 4, así que ese anillo
+     * DEGRADA de la luz al ambiente. Acá se pintaba el cuadrado entero a color pleno y una baldosa más
+     * grande de lo que corresponde: el borde salía duro y el charco de luz se veía más ancho.
+     */
+    // El ambiente que se está mostrando AHORA, que persigue al del período de a una unidad por cuadro.
+    // `null` = sin tinte (día pleno o mapa que nunca oscurece); se representa como blanco para poder
+    // interpolar, y se devuelve null cuando llegó y el destino era null.
+    let _ambActual = null;
+    function ambienteHacia(destino) {
+      const d = destino || [255, 255, 255];
+      if (!_ambActual) _ambActual = d.slice();
+      let llego = true;
+      for (let i = 0; i < 3; i++) {
+        if (_ambActual[i] < d[i]) { _ambActual[i]++; llego = false; }
+        else if (_ambActual[i] > d[i]) { _ambActual[i]--; llego = false; }
+      }
+      return (!destino && llego) ? null : _ambActual.slice();
+    }
+
+    function pintarLuz(px, py, alcance, rgb) {
+      const color = `rgb(${rgb >> 16},${(rgb >> 8) & 255},${rgb & 255})`;
+      // el anillo exterior, a media mezcla con lo que ya hay (los 2 de 4 vértices del original)
+      lightCx.globalAlpha = 0.5;
+      lightCx.fillStyle = color;
+      lightCx.fillRect(px - alcance, py - alcance, alcance * 2 + 1, alcance * 2 + 1);
+      // el interior, a color pleno
+      lightCx.globalAlpha = 1;
+      if (alcance >= 1) lightCx.fillRect(px - alcance + 1, py - alcance + 1, alcance * 2 - 1, alcance * 2 - 1);
+    }
+
     function drawLighting(camX, camY, me) {
       _luzDbg.vueltas++;
       if (luzApagada) return;                     // window.__sinLuces(): A/B del costo del frame
@@ -4250,8 +4313,12 @@
       // Sin este campo el cliente le aplicaba el ciclo a los 863: un dungeon se aclaraba de día y el pueblo se
       // ponía azul de noche, dos cosas que en el original no pasan.
       const fija = map && map.baseLight;
-      let amb = fija ? (fija === 0xFFFFFF ? null : [fija >> 16, (fija >> 8) & 255, fija & 255])
-                     : AMBIENTE[period];
+      const destino = fija ? (fija === 0xFFFFFF ? null : [fija >> 16, (fija >> 8) & 255, fija & 255])
+                           : AMBIENTE[period];
+      // EL CAMBIO DE PERIODO ES UN FUNDIDO, no un corte. `Meteo_Render` (modMeteo.bas:94, llamada una vez
+      // por cuadro) mueve `ambientLight` de a UNA unidad por canal hacia el color destino: de día (255) a
+      // noche (170) son 85 pasos, ~1,4 s a 60 fps. Acá el tinte saltaba de un cuadro al siguiente.
+      let amb = ambienteHacia(destino);
       // EL MUNDO DEL MUERTO SE APAGA. En el original está adentro de `Directx_Render_Texture`, o sea en la
       // rutina por la que pasa CADA sprite: `If CurrentUser.Muerto Then Engine_Long_To_RGB_List light_value,
       // D3DColorXRGB(67, 67, 67)` (TileEngine.bas:3025). 67/255 = 0,26: el suelo, los personajes, los techos
@@ -4300,8 +4367,7 @@
         for (const [lx0, ly0, rgb, alcance] of luces) {
           const px = lx0 - x0, py = ly0 - y0;
           if (px + alcance < 0 || px - alcance > lw || py + alcance < 0 || py - alcance > lh) continue;
-          lightCx.fillStyle = `rgb(${rgb >> 16},${(rgb >> 8) & 255},${rgb & 255})`;
-          lightCx.fillRect(px - alcance, py - alcance, alcance * 2 + 1, alcance * 2 + 1);
+          pintarLuz(px, py, alcance, rgb);
           // Una luz BLANCA sobre un light-map blanco (o sea de dia) no cambia un pixel: no cuenta para
           // decidir si vale la pena el blit. De los 3.549 del mundo, 2.595 son blancas.
           if (rgb !== 0xFFFFFF) algunaLuz = true;
@@ -4318,8 +4384,7 @@
           const [rgbO, alcO] = luz;
           const px = it.x - x0, py = it.y - y0;
           if (px + alcO < 0 || px - alcO > lw || py + alcO < 0 || py - alcO > lh) continue;
-          lightCx.fillStyle = `rgb(${rgbO >> 16},${(rgbO >> 8) & 255},${rgbO & 255})`;
-          lightCx.fillRect(px - alcO, py - alcO, alcO * 2 + 1, alcO * 2 + 1);
+          pintarLuz(px, py, alcO, rgbO);
           if (rgbO !== 0xFFFFFF) algunaLuz = true;
         }
         // De dia y sin ninguna luz de COLOR a la vista el light-map es blanco entero: multiplicar por blanco
@@ -4395,7 +4460,7 @@
           const grh = map.ground[gy][gx]; if (!grh) continue;
           // El SUELO es el que más se nota: el agua, la lava y las cataratas de los 863 mapas estaban
           // congeladas en su primer cuadro porque acá se resolvía con `staticGrh`.
-          const g = animGrh(grh);
+          const g = animGrh(grh, gx, gy);
           if (g && sheets[g.file]) dGrh(ctx, sheets[g.file], g, sx * TILE + offX, sy * TILE + offY, g.w, g.h);
           else if (g) loadSheet(g.file);
         }
@@ -4487,7 +4552,7 @@
         const sx = it.x - Math.round(camX), sy = it.y - Math.round(camY);
         if (sx < -MARGEN_TILES || sx >= nW + MARGEN_TILES || sy < -MARGEN_TILES || sy >= nH + MARGEN_TILES) return;
         const meta = items && items[it.objIndex]; if (!meta) return;
-        const g = animGrh(meta[0]);   // ítems del suelo: hay objetos con Grh animado (antorchas, monedas)
+        const g = animGrh(meta[0], it.x, it.y);   // ítems del suelo: hay objetos con Grh animado (antorchas, monedas)
         // ANCLAJE POR LOS PIES, como todo lo demás del mapa (VB6 `Draw_Grh` con Center=1, TileEngine.bas:4654:
         // centrado en X, por el borde de abajo en Y). Con el centrado en los dos ejes, una puerta —que mide
         // dos de alto— quedaba 16 px metida en el piso.
@@ -4532,7 +4597,7 @@
         capa3Hasta(cry, crx);
         // El descarte por TIEMPO va antes de mirar si está en pantalla: si no, uno que muere fuera de cámara
         // se queda en `dying` para siempre.
-        if (muriendo && Date.now() - c.diedAt >= 450) { dying.delete(ci); continue; }
+        if (muriendo && Date.now() - c.diedAt >= FADE_FANTASMA_MS) { dying.delete(ci); continue; }
         const sx = (crx - camX) * TILE, sy = (cry - camY) * TILE;
         // Un personaje mide bastante más de una baldosa (cuerpo + cabeza + casco, y el arma sobresale), así
         // que con un margen de una sola se le cortaba la cabeza al que estaba entrando por el borde de abajo.
@@ -4540,7 +4605,7 @@
         const margen = MARGEN_TILES * TILE;
         if (sx < -margen || sx > VW + margen || sy < -margen || sy > VH + margen) continue;
         if (muriendo) {   // fade de ~450 ms tras un CharacterRemove: sólo el cuerpo, sin etiqueta ni efectos
-          ctx.globalAlpha = 1 - (Date.now() - c.diedAt) / 450;
+          ctx.globalAlpha = 1 - (Date.now() - c.diedAt) / FADE_FANTASMA_MS;
           drawCharacter(c, sx, sy);   // sin cuadrado de relleno (ver la nota de abajo)
           ctx.globalAlpha = 1;
           continue;
@@ -4648,7 +4713,10 @@
         const ahora = performance.now();
         const dtTecho = techoT ? Math.min(200, ahora - techoT) : 16;   // clamp: volver de una pestaña oculta no debe saltar el fade
         techoT = ahora;
-        techoAlpha = Math.max(0, Math.min(1, techoAlpha + (adentro ? -1 : 1) * dtTecho / TECHO_FADE_MS));
+        // AL MORIR EL TECHO SE ABRE DE GOLPE, sin fundido: `If CurrentUser.Muerto And AlphaY <> 0 Then
+        // AlphaY = 0 : Exit Sub` (TileEngine.bas:3840). Si te matan bajo techo, el muerto ve a través.
+        if (estoyMuerto() && adentro) techoAlpha = 0;
+        else techoAlpha = Math.max(0, Math.min(1, techoAlpha + (adentro ? -1 : 1) * dtTecho / TECHO_FADE_MS));
       }
       // Iluminación dinámica: el ambiente del ciclo día/noche y las luces del mapa, en un light-map que
       // MULTIPLICA la escena.
@@ -4735,13 +4803,16 @@
       // que son cuevas bajo tierra. Se apaga en los dos casos, y con el MISMO fade que los techos: entrar a un
       // interior corta la lluvia con la misma transición con la que se abre el techo, no de golpe.
       //
-      // Un dungeon no tiene capa de techos (es todo interior), así que ahí `techoAlpha` no baja nunca: por eso
-      // la `zone` del mapa va como segunda mitad de la condición y no como adorno.
-      const alCubierto = (map && map.zone === 'DUNGEON') ? 1 : 1 - techoAlpha;
-      if (raining && alCubierto < 0.99) {
+      // LA LLUVIA SE VE TAMBIEN ADENTRO. El original dibuja la particula del clima SIN condicion
+      // (`If meteo_particle Then Particle_Group_Render`, TileEngine.bas:2295), despues de la capa 4; lo que
+      // decide el techo es que WAV suena —lluviain.wav o lluviaout.wav (:4217)—, no si se ve. Aca se
+      // apagaba bajo techo y en los 84 mapas DUNGEON.
+      if (raining) {
         const t = Date.now();
-        ctx.globalAlpha = 1 - alCubierto;
-        ctx.fillStyle = 'rgba(20,30,55,0.14)'; ctx.fillRect(0, 0, VW, VH); // overcast darkening
+        ctx.globalAlpha = 1;
+        // ACA HABIA UN VELO AZUL de pantalla completa mientras llueve. Es invento nuestro: lo unico que
+        // hace el original al empezar a llover es crear el grupo de particulas (HandleRainToggle,
+        // Protocol.bas:2428) y dibujarlo; el ambiente no mira el clima.
         ctx.strokeStyle = 'rgba(150,180,230,0.40)'; ctx.lineWidth = 1;
         ctx.beginPath();
         for (let i = 0; i < 160; i++) {
@@ -4755,24 +4826,12 @@
       }
       // Numeros de dano flotantes: suben ~26px en 900ms y se desvanecen. Se dibujan DESPUES de los
       // personajes para que queden encima, y antes de la iluminacion/ceguera.
-      // FAENA EN CURSO (trabajo continuo): mientras el server produce solo, el personaje muestra que esta
-      // trabajando. Sin esto la unica pista es el chorro de "Obtuviste..." en la consola, y no se sabe si la
-      // faena sigue viva o ya se corto por falta de energia.
-      if (laborando && myCharIndex != null) {
-        const yo = chars.get(myCharIndex);
-        if (yo) {
-          const sx = (yo.x - camX) * TILE, sy = (yo.y - camY) * TILE;
-          const t = Date.now() / 1000;
-          const pulso = 0.55 + 0.45 * Math.sin(t * 4);
-          ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'center';
-          ctx.globalAlpha = pulso;
-          ctx.lineWidth = 3; ctx.strokeStyle = '#000';
-          ctx.strokeText('⚒', sx + TILE / 2, sy - 20);
-          ctx.fillStyle = '#ffd98a';
-          ctx.fillText('⚒', sx + TILE / 2, sy - 20);
-          ctx.globalAlpha = 1;
-        }
-      }
+      // LA FAENA SE AVISA EN EL HUD, no con un simbolo sobre la cabeza. Aca se dibujaba un ⚒ pulsante en el
+      // mundo: es un agregado nuestro —el original no dibuja NADA sobre el que trabaja— y encima estaba
+      // anclado a la posicion LOGICA, asi que se despegaba del personaje mientras caminaba. La informacion
+      // sigue haciendo falta (sin ella no se sabe si la faena sigue viva o se corto por falta de energia),
+      // asi que va donde la pone el original: como estado, en la lista de chips del panel — el
+      // "Trabajando" de `Generate_Char_Status` (General.bas:1702).
 
       // FX DE LOS HECHIZOS DE AREA (EfectoTerrenoFX / EfectoTerrenoParticula), anclados a un TILE y no a un
       // personaje. El original dibuja LA MISMA ANIMACION que un FX sobre un personaje: `SetFXMAP`
@@ -4929,6 +4988,13 @@
       // verdad te teletransportaba de golpe toda la distancia recorrida en falso.
       //
       // El giro SÍ sale, como en el original: cambiar de dirección paralizado es legal.
+      // DESCANSANDO, LA PRIMERA FLECHA SOLO TE LEVANTA. `If Not CurrentUser.UserDescansar Then ... Else
+      // WriteRest` (General.bas:544): sentado, la pulsación manda únicamente el Rest y el personaje se para
+      // en el lugar; recién la siguiente camina. Acá te levantabas Y avanzabas una baldosa de una.
+      if (descansando) {
+        send(W().writeByte(CLIENT.Rest));
+        return;
+      }
       if (paralizado) {
         if (me.heading !== h) {
           me.heading = h;
