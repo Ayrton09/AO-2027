@@ -44,6 +44,13 @@
       box-shadow: inset 0 0 0 1px #000, inset 0 0 14px #000a, 0 2px 8px #000a; border-radius:3px; }
     .ornate::before { content:''; position:absolute; inset:3px; border:1px solid var(--gold-deep);
       border-radius:2px; pointer-events:none; box-shadow: inset 0 0 10px #0006; }
+    /* EL FILETE DE UNA VENTANA CON SCROLL NO SE DIBUJA CON position:absolute. Un absolute dentro de un
+       contenedor con `overflow:auto` se posiciona contra el padding box pero VIAJA con el contenido: al
+       bajar en el comercio o en el banco, el filete dorado se despegaba del marco y quedaba como una línea
+       cruzando el texto. El marco de una ventana no puede scrollear —en el original es el borde del Form—,
+       así que en las tarjetas se reemplaza por un borde real, que se queda quieto. */
+    .card.ornate::before { display:none; }
+    .card.ornate { outline:1px solid var(--gold-deep); outline-offset:-3px; }
 
     /* ---- TOP overlay (coords / fps / modo) sobre el mundo -------------------------------------- */
     #topbar { position:absolute; top:8px; left:8px; right:8px; display:flex; gap:8px; align-items:center;
@@ -147,6 +154,13 @@
     .p-head { display:flex; align-items:center; justify-content:space-between; padding:5px 10px;
       font-family:var(--serif); font-size:calc(var(--u)*1.25); letter-spacing:.04em; color:var(--gold-hi);
       text-shadow:0 1px 2px #000, 0 0 10px #e8c87644; }
+    /* Los tres botones (♪ 🔊 ⚙) van JUNTOS a la derecha. `space-between` con cuatro hijos reparte el
+       espacio en los TRES huecos y los desparrama a lo ancho del panel; la regla se escribió cuando había
+       dos. `margin-left:auto` en el primero de los tres los empuja como grupo. */
+    /* Por ID y no por `:first-of-type`: el nombre del personaje también es un <span>, así que
+       `.x:first-of-type` matcheaba a ÉL y no al primer botón — medido, los botones seguían a 74 px. */
+    .p-head #btn-musica { margin-left:auto; }
+    .p-head .x + .x { margin-left:6px; }
     /* El engranaje de opciones estaba en el mismo gris apagado que un texto secundario y a nadie se le ocurría
        tocarlo. Va con su caja, como el botón que es, y se enciende al pasar por encima. */
     .p-head .x { display:inline-flex; align-items:center; justify-content:center;
@@ -1495,6 +1509,8 @@
     let _orden = null;
     window.__ordenDeDibujo = () => { _orden = []; return new Promise((r) => setTimeout(() => { const o = _orden; _orden = null; r(o); }, 120)); };
     window.__tirar = (slot) => tirarDelSlot(slot);
+    /** Sonda: como parte el motor un dialogo en renglones (VB6 FormatChat). */
+    window.__renglones = (s) => cortarEnRenglones(s);
     /** Sonda: a que pixel de la pantalla cae una posicion del mundo (para recortar ahi y medir). */
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
     window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
@@ -1594,7 +1610,17 @@
     //
     // El gate anti-speedhack del server son 130 ms, así que 174 pasa holgado y no hay goma elástica.
     const VELOCIDAD_MONTANDO = 1.2;
-    const pasoMs = (c) => (c === chars.get(myCharIndex) && montando) ? PASO_MS / VELOCIDAD_MONTANDO : PASO_MS;
+    // EL MUERTO CAMINA MAS RAPIDO. Al llegar a 0 de vida el original acelera el scroll a
+    // `scroll_pixels_per_frame * VelocidadMuerto` con VelocidadMuerto = 1,2 (TileEngine.bas:461, aplicado en
+    // clsClientTCP.cls:397): la baldosa pasa de 209 a 174 ms, y afecta al scroll de la cámara Y al propio
+    // personaje. Al revivir vuelve a 8,5 px por cuadro (:408). Acá el fantasma caminaba igual que un vivo.
+    const VELOCIDAD_MUERTO = 1.2;
+    const pasoMs = (c) => {
+      const propio = c === chars.get(myCharIndex);
+      let ms = propio && montando ? PASO_MS / VELOCIDAD_MONTANDO : PASO_MS;
+      if (c.body === CUERPO_MUERTO) ms /= VELOCIDAD_MUERTO;
+      return ms;
+    };
     // `IntervaloCaminar` del original (General.bas:1149): el techo de cuán seguido se puede PEDIR un paso.
     const INTERVALO_CAMINAR = 110;
     function moverA(c, nx, ny) {
@@ -1827,7 +1853,14 @@
       const entry = fxIdx && c.fxIndex && fxIdx[c.fxIndex];
       const anim = entry && atlas && atlas[entry[0]];
       if (anim && anim.frames && anim.frames.length) {
-        const frameMs = 55, loops = Math.max(1, c.fxLoops || 1);
+        // LA CADENCIA DE UN FX ES LA DEL GRH, con la `speed` que le pone `InitGrh`: 0,8
+        // (TileEngine.bas:1104), y `DrawGrhtoSurface` avanza `timerTicksPerFrame * speed` (:1788) → 1 /
+        // (0,018 * 0,8) = 69,44 ms por cuadro. Acá estaban cableados 55, que equivalen a speed 1: los
+        // efectos corrían un 26% más rápido.
+        //
+        // Y las pasadas son `Loops + 1`, no `Loops`: el original descuenta recién DESPUÉS de completar una
+        // vuelta y apaga cuando ya estaba en cero (:1793-1799), así que con Loops=1 se ven dos.
+        const frameMs = FX_MS_POR_CUADRO, loops = Math.max(1, (c.fxLoops || 0) + 1);
         const dur = Math.min(1400, anim.frames.length * frameMs * loops);
         if (dt >= dur) return false;
         const g = staticGrh(anim.frames[Math.floor(dt / frameMs) % anim.frames.length]);
@@ -1996,6 +2029,26 @@
         dGrh(ctx, hoja, g, anclaX(dx, g.w) + def.off[0], anclaY(dy, g.h) + def.off[1], g.w, g.h);
       }
       ctx.globalCompositeOperation = previo;
+    }
+
+    /**
+     * Parte un diálogo en renglones, como `FormatChat` del original (Mod_Textos.bas:187): se acumulan
+     * PALABRAS y se corta cuando la línea pasaría de 18 caracteres. Una palabra más larga que el tope se
+     * deja sola en su renglón, igual que allá.
+     */
+    const ANCHO_DIALOGO = 18;
+    // 1 / (ENGINE_BASE_SPEED * 0.8): el `Grh.speed` que InitGrh le pone a todo FX (TileEngine.bas:1104).
+    const FX_MS_POR_CUADRO = 1 / (0.018 * 0.8);
+    function cortarEnRenglones(texto) {
+      const palabras = String(texto || '').split(' ').filter((p) => p.length);
+      if (!palabras.length) return [];
+      const lineas = [palabras[0]];
+      for (let i = 1; i < palabras.length; i++) {
+        const ultima = lineas[lineas.length - 1];
+        if (ultima.length + palabras[i].length + 1 > ANCHO_DIALOGO) lineas.push(palabras[i]);
+        else lineas[lineas.length - 1] = ultima + ' ' + palabras[i];
+      }
+      return lineas;
     }
 
     function drawCharacterBody(c, dx, dy) {
@@ -3172,7 +3225,7 @@
       recentPackets.push(e.name); if (recentPackets.length > 60) recentPackets.shift();
       const f = e.fields;
       switch (e.name) {
-        case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = false; hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
+        case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = false; cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
           // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
           // original y no se le agregan campos. Va una sola vez.
           if (familiarPendiente) {
@@ -3476,9 +3529,15 @@
             const palabras = spellWords && spellWords[f.index];
             if (palabras) { c.chatText = palabras; c.chatColor = '#a8a832'; c.chatAt = Date.now(); }
           } else if (f.modo === 2 || f.modo === 3) {
-            floaters.push({ x: c.x, y: c.y, at: Date.now(),
-                            text: textoDelFlotante(f.index, f.charIndex === myCharIndex),
-                            color: f.modo === 3 ? '#5b9bff' : '#ff6b5a' });
+            // EL NÚMERO DE DAÑO ES UN DIÁLOGO, no un flotante suelto. El original llama a
+            // `Char_Dialog_Create(charIndex, daño, color, 3)` (Protocol.bas:1345) y lo dibuja DENTRO de
+            // CharRender, así que va pegado al sprite y se mueve con él; dura `5000 + 100 * largo` ms
+            // (Mod_Textos.bas:416). Acá se clavaba a la baldosa LÓGICA y se borraba a los 900 ms: pegándole
+            // a un bicho que camina, el número se despegaba hasta una baldosa entera y desaparecía en menos
+            // de un segundo.
+            c.chatText = textoDelFlotante(f.index, f.charIndex === myCharIndex);
+            c.chatColor = f.modo === 3 ? '#5b9bff' : '#ff6b5a';
+            c.chatAt = Date.now();
           } else if (f.modo === 4) {
             // EL DIÁLOGO DE UN NPC. Viaja el NÚMERO de ficha, no el texto (`General_Locale_NPCs(id, 1)`), y el
             // cliente lo resuelve contra npcs.json — el campo `d`, que traen 139 de las 627 fichas. El original
@@ -4482,14 +4541,15 @@
         if (sx < -margen || sx > VW + margen || sy < -margen || sy > VH + margen) continue;
         if (muriendo) {   // fade de ~450 ms tras un CharacterRemove: sólo el cuerpo, sin etiqueta ni efectos
           ctx.globalAlpha = 1 - (Date.now() - c.diedAt) / 450;
-          if (!drawCharacter(c, sx, sy)) { ctx.fillStyle = '#c7cabb'; ctx.fillRect(sx, sy, TILE, TILE); }
+          drawCharacter(c, sx, sy);   // sin cuadrado de relleno (ver la nota de abajo)
           ctx.globalAlpha = 1;
           continue;
         }
-        if (!drawCharacter(c, sx, sy)) {   // real body+head sprite, else colored-square fallback
-          ctx.fillStyle = ci === myCharIndex ? '#2a7a65' : colorDelNick(c);   // fallback sin sprite: el color de su alineamiento
-          ctx.fillRect(sx, sy, TILE, TILE);
-        }
+        // SI LA HOJA NO CARGO TODAVIA, NO SE DIBUJA NADA. El original hace `If .body.Walk(.Heading).GrhIndex
+        // Then` (TileEngine.bas:2417): sin gráfico, CharRender no pinta ni un cuadro ni un marcador. Acá se
+        // pintaba un cuadrado de color macizo del tamaño de la baldosa, que es lo que se ve como un bloque
+        // liso donde debería haber un personaje mientras baja la hoja de arte.
+        drawCharacter(c, sx, sy);
         // Distintivo de donador (VB6: un byte donador en CharacterCreate/UpdateTagAndStatus alimenta un aura
         // client-side): acá se marca con el nick en dorado. Prevalece sobre el color de facción.
         // EL NICK VA DEBAJO DE LOS PIES, como en el cliente original de AO — y no encima del tile, que es
@@ -4503,8 +4563,19 @@
         // "Portero" y "Banquero" quedaban uno al lado del otro y se leía "PorteroBanquero".
         const seLeVeElNombre = !c.esNpc || (!c.hostil && punteroX === c.x && (punteroY === c.y || punteroY === c.y - 1));
         if (seLeVeElNombre) {
-          etiquetas.push({ texto: c.name || '', x: sx + TILE / 2, y: base + 10,
+          // EL TAG TRAE EL CLAN: el server manda `"Nick <Clan>"` (Modulo_UsUaRiOs.bas:215) y el original lo
+          // PARTE —`getTagPosition`, General.bas:1324— para dibujar el nombre arriba y el clan 15 px más
+          // abajo, en el mismo color de facción (TileEngine.bas:2505). Acá se pintaba el tag entero como
+          // nombre, así que el `<Clan>` iba pegado al nick en el mismo renglón (o directamente no llegaba,
+          // porque nuestro server mandaba el nick pelado).
+          const tag = c.name || '';
+          const abre = tag.indexOf(' <');
+          const soloNombre = abre > 0 ? tag.slice(0, abre) : tag;
+          const clan = abre > 0 ? tag.slice(abre + 1) : '';
+          etiquetas.push({ texto: soloNombre, x: sx + TILE / 2, y: base + 10,
                            color: c.donador ? '#ffd24a' : colorDelNick(c), alpha: 1 });
+          if (clan) etiquetas.push({ texto: clan, x: sx + TILE / 2, y: base + 25,
+                                     color: colorDelNick(c), alpha: 1 });
           // EL RUBRO, entre `<>` y debajo del nombre (VB6 TileEngine.bas:2529-2532, `General_Locale_NPCs(i, 2)`).
           // Es lo que distingue de un vistazo al mercader de <Armas> del de <Provisiones> y al guardia de la
           // <Sagrada Orden> del de la <Milicia Republicana>. Lo traen 85 de las 627 fichas y no se dibujaba.
@@ -4516,11 +4587,26 @@
         // drawCharacterBody deja en `_top`—, no a una distancia fija del tile.
         if (c.chatAt) {
           const cdt = Date.now() - c.chatAt;
-          if (cdt < 5000) {
-            etiquetas.push({ texto: c.chatText || '', x: sx + TILE / 2, y: (c._top != null ? c._top : sy) - 4,
-                             // El color va POR DIÁLOGO (el original lo recibe en el paquete y lo pasa a
-                             // Char_Dialog_Create): el chat es crema y las palabras mágicas verde oliva.
-                             color: c.chatColor || '#fff8c0', alpha: cdt < 4000 ? 1 : 1 - (cdt - 4000) / 1000, esChat: true });
+          // LA VIDA DEL DIÁLOGO DEPENDE DEL LARGO: `dialogLife = 5000 + 100 * Len(chat)` (VB6
+          // Mod_Textos.bas:416). Acá eran 5000 fijos para todo, así que una frase larga se cortaba a la
+          // mitad de leerla y un número de daño duraba lo mismo que un párrafo.
+          const vida = 5000 + 100 * (c.chatText || '').length;
+          if (cdt < vida) {
+            // Y SE PARTE EN RENGLONES. `FormatChat` (Mod_Textos.bas:187) corta por PALABRAS con un tope de
+            // 18 caracteres por línea, y TileEngine.bas:2574 las apila de abajo hacia arriba separadas 13 px,
+            // arrancando 13*(N-1) más alto para que el bloque crezca hacia el cielo. Acá salía todo en UNA
+            // línea: una frase de 79 caracteres —el máximo que acepta el server— medía trece baldosas de
+            // ancho y pisaba a todos los personajes de al lado.
+            const renglones = cortarEnRenglones(c.chatText || '');
+            const arriba = (c._top != null ? c._top : sy) - 4;
+            const alfa = cdt < vida - 1000 ? 1 : 1 - (cdt - (vida - 1000)) / 1000;
+            renglones.forEach((linea, i) => {
+              etiquetas.push({ texto: linea, x: sx + TILE / 2,
+                               y: arriba - (renglones.length - 1 - i) * 13,
+                               // El color va POR DIÁLOGO (el original lo recibe en el paquete y lo pasa a
+                               // Char_Dialog_Create): el chat es crema y las palabras mágicas verde oliva.
+                               color: c.chatColor || '#fff8c0', alpha: alfa, esChat: true });
+            });
           } else { c.chatAt = 0; }
         }
         // Spell FX (from a CreateFX packet): the real AO FX animation over the char, else a generic burst.
@@ -4540,14 +4626,6 @@
       //
       // Con los nombres apagados (tecla N) se salta la pasada entera, pero el CHAT sigue: el original apaga
       // `Nombres` y sigue mostrando el dialogo sobre la cabeza (son dos cosas distintas en frmMain).
-      for (const et of etiquetas) {
-        if (!mostrarNombres && !et.esChat) continue;
-        if (!et.texto) continue;
-        ctx.globalAlpha = et.alpha;
-        ctx.fillStyle = et.color;
-        outlinedText(et.texto, et.x, et.y);
-      }
-      ctx.globalAlpha = 1;
       // Lo que queda de la capa 3: las filas que están por DEBAJO de todos los personajes. Va acá, y no
       // apenas termina el bucle, para no cambiar de paso el orden contra las etiquetas —que hoy quedan
       // tapadas por el follaje de adelante, igual que el personaje.
@@ -4555,9 +4633,6 @@
       // más abajo, la mitad sur del mapa se quedaría sin objetos.
       capa2Hasta(Infinity, Infinity);
       capa3Hasta(Infinity, Infinity);
-      // Partículas del mapa: van acá porque el original las dibuja DENTRO del recorrido de tiles, después de
-      // la capa 3 y antes de los techos (TileEngine.bas:2226).
-      dibujarParticulas(camX, camY, offX, offY, dtParticulas());
       // Capa 4, los TECHOS: van al final, sobre todo. Y se DESVANECEN cuando el jugador entra a un interior.
       //
       // La decisión es del TRIGGER del tile donde estás, no de si hay un techo dibujado ahí: el original
@@ -4578,6 +4653,15 @@
       // Iluminación dinámica: el ambiente del ciclo día/noche y las luces del mapa, en un light-map que
       // MULTIPLICA la escena.
       drawLighting(camX, camY, me);
+      // LAS PARTÍCULAS Y LOS TEXTOS TAMPOCO LOS TOCA EL AMBIENTE, y por eso van después de la luz.
+      //
+      // En el original el ambiente sólo entra donde el color de vértice es CERO
+      // (`If light_value(i) = 0 Then light_value(i) = AmbientColor`, TileEngine.bas:3035). Un grupo de
+      // partículas trae sus propios ColorSet —el fuego es (255,128,0)— y el texto se dibuja con el color del
+      // personaje, así que ninguno de los dos cae nunca en esa rama: la llama de una antorcha se ve igual de
+      // noche que de día, y un nick azul sigue azul. Acá los dos se dibujaban ANTES del multiply, así que de
+      // noche las partículas se apagaban y viraban, y el nick de un ciudadano (#2051FB) salía (18,45,90).
+      dibujarParticulas(camX, camY, offX, offY, dtParticulas());
       // LOS TECHOS VAN DESPUÉS DE LA LUZ, y con el ambiente solamente.
       //
       // El original dibuja la capa 4 con el array `Techos`, que lleva ÚNICAMENTE el color de ambiente
@@ -4633,6 +4717,15 @@
         ctx.globalAlpha = previoA;
         ctx.setTransform(SS, 0, 0, SS, 0, 0);
       }
+      // Los NOMBRES y el CHAT, al final y sin teñir (ver la nota de las partículas).
+      for (const et of etiquetas) {
+        if (!mostrarNombres && !et.esChat) continue;
+        if (!et.texto) continue;
+        ctx.globalAlpha = et.alpha;
+        ctx.fillStyle = et.color;
+        outlinedText(et.texto, et.x, et.y);
+      }
+      ctx.globalAlpha = 1;
       // EL CLIMA, y DÓNDE se ve. El server manda `RainToggle` a TODO el mundo y eso es fiel: el original hace
       // `SendData(SendTarget.ToAll, ...)` (Protocol.bas:9285) sin mirar el mapa. Lo que decide si la lluvia se
       // VE es el cliente, con `bTecho` — el mismo `Trigger 1/2/4/>=20` que apaga los techos.
@@ -4695,7 +4788,7 @@
       // server barrió, que en el original se deduce de dónde cayó el daño.
       {
         const now = Date.now();
-        const FRAME_MS = 55;
+        const FRAME_MS = FX_MS_POR_CUADRO;
         for (let i = groundFx.length - 1; i >= 0; i--) {
           const g = groundFx[i];
           const dt = now - g.at;
@@ -5527,7 +5620,25 @@
     });
 
     // ---- Pantalla de login: catálogos, pestañas y submit --------------------------------------
-    function showLogin() { $('login').classList.remove('hidden'); }
+    /**
+     * Vuelve a la pantalla de ingreso EN SU ESTADO INICIAL. Antes sólo le sacaba el `hidden`, así que la
+     * tarjeta reaparecía tal como había quedado: si te habías ido después de crear un personaje, volvías al
+     * formulario de creación y sin las pestañas de arriba (que `selectLoginMode('char')` esconde con un
+     * `style.display` inline). En el original cada pantalla es un Form aparte y volver es mostrar ESE form,
+     * no reusar el anterior con las clases puestas.
+     *
+     * Y se cierra cualquier ventana modal abierta: el banco o el comercio sobrevivían a la reconexión y
+     * quedaban tapando el mundo con datos viejos, comiéndose además todo el teclado del juego.
+     */
+    function showLogin() {
+      cerrarModalSiHay();
+      selectLoginMode('in');
+      $('login').classList.remove('hidden', 'creando', 'eligiendo');
+    }
+    /** Cierra la ventana modal si hay alguna abierta. Se usa al volver al login y al reconectar. */
+    function cerrarModalSiHay() {
+      if (modalEl && modalEl.classList.contains('on')) closeModal();
+    }
     // Al entrar al mundo hay que SOLTAR EL FOCO, no sólo esconder la tarjeta: se entra apretando Enter dentro
     // de un <input> (o eligiendo una <select> de creación), y el submit deja ese campo enfocado aunque su
     // contenedor pase a `hidden`. El handler de teclas del juego ignora todo mientras el foco esté en un
@@ -5845,13 +5956,19 @@
       const bg = staticGrh(b.walk[2]); if (!bg) return false;   // heading 3 = sur (de frente)
       const h = headsIdx && headsIdx[c.head];
       const hg = (h && b.head) ? staticGrh(h.head[2]) : null;
+      // Casco, arma y escudo: los tres llegan en el AddPJ y se estaban descartando.
+      const deTabla = (tabla, idx) => { const e = tabla && idx && tabla[idx]; const a = e && (e.head || e.walk || e.anims || e);
+                                        return Array.isArray(a) ? staticGrh(a[2]) : null; };
+      const cascoG = deTabla(helmetsIdx, c.helmet);
+      const armaG = deTabla(weaponsIdx, c.weapon);
+      const escudoG = deTabla(shieldsIdx, c.shield);
       // NO SE BORRA HASTA PODER DIBUJAR. Cada cabeza vive en su propia hoja de sprites, así que pasar de cara
       // casi siempre pide una hoja que todavía no bajó. Borrando primero, el recuadro parpadeaba a VACÍO y la
       // cara nueva aparecía un instante después: se veía como "a veces no aparece, y después sí". Dejando lo
       // anterior en pantalla hasta que la hoja está, el cambio es limpio y nadie ve un hueco.
       const faltan = [];
       if (!sheets[bg.file]) faltan.push(bg.file);
-      if (hg && !sheets[hg.file]) faltan.push(hg.file);
+      for (const g of [hg, cascoG, armaG, escudoG]) if (g && !sheets[g.file]) faltan.push(g.file);
       if (faltan.length) { faltan.forEach(loadSheet); return false; }
 
       const cx = cv.getContext('2d'); cx.clearRect(0, 0, cv.width, cv.height);
@@ -5863,16 +5980,28 @@
       // cabeza se ancla por encima de él (`b.head[1]` es un desplazamiento hacia arriba): con la escala atada
       // al cuerpo, el pelo se salía del lienzo y la cabeza aparecía CORTADA arriba. Se mide el alto real
       // —cuerpo, o cabeza si sobresale— y el ancho real, y se deja un 6% de aire para que no roce el borde.
-      const altoU = Math.max(bg.h, hg ? hg.h - b.head[1] : 0);
-      const anchoU = Math.max(bg.w, hg ? hg.w + Math.abs(b.head[0]) * 2 : 0);
-      const sc = Math.min(cv.width / anchoU, cv.height / altoU) * 0.94;
+      // LA ESCALA ES FIJA, no la del sprite de turno. Atada al alto del cuerpo actual, un enano —que mide
+      // menos— se agrandaba hasta llenar el recuadro y salía un 17% MÁS GRANDE que un humano; y al cambiar
+      // de raza en la creación el retrato pegaba un salto de tamaño. El original blitea 1:1 en un punto fijo
+      // (`DrawPJ`, TileEngine.bas:4092: init_x=25, init_y=40, sin escalar), así que la diferencia de altura
+      // entre razas se ve como lo que es. Acá se conserva el escalado —el recuadro es más chico que el
+      // sprite— pero contra una caja de referencia CONSTANTE.
+      const ALTO_REF = 54, ANCHO_REF = 34;   // la caja del cuerpo más alto del juego, con aire para el pelo
+      const sc = Math.min(cv.width / ANCHO_REF, cv.height / ALTO_REF) * 0.94;
       const cw = cv.width, ch = cv.height;
-      // El piso también baja un poco, para repartir el aire arriba y abajo en vez de pegar los pies al borde.
-      const piso = ch - (ch - altoU * sc) / 2;
+      const piso = ch - (ch - ALTO_REF * sc) / 2;
       const blit = (g, ox, oy) =>
         cx.drawImage(sheets[g.file], g.x * HD, g.y * HD, g.w * HD, g.h * HD, ox, oy, g.w * sc, g.h * sc);
       blit(bg, (cw - bg.w * sc) / 2, piso - bg.h * sc);         // cuerpo anclado al piso
-      if (hg) blit(hg, (cw - hg.w * sc) / 2 + b.head[0] * sc, piso + (b.head[1] - hg.h) * sc);
+      // LAS CINCO PIEZAS, como `DrawPJ` (TileEngine.bas:4092-4112): cuerpo, cabeza, CASCO, ARMA y ESCUDO,
+      // todas de frente. Acá se dibujaban sólo las dos primeras, así que un personaje con armadura completa
+      // aparecía desarmado en su propia lista — y los tres campos ya venían en el paquete y se tiraban.
+      const cabeza = (g) => { if (g) blit(g, (cw - g.w * sc) / 2 + b.head[0] * sc, piso + (b.head[1] - g.h) * sc); };
+      const mano = (g) => { if (g) blit(g, (cw - g.w * sc) / 2, piso - g.h * sc); };
+      cabeza(hg);
+      cabeza(cascoG);
+      mano(armaG);
+      mano(escudoG);
       return true;
     }
     function playChar(name) {                                   // elegir un PJ → LoginExistingChar con las credenciales guardadas

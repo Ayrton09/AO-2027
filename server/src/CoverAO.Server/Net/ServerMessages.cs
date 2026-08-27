@@ -423,10 +423,20 @@ public static class ServerMessages
     /// <summary>VB6 <c>RefreshCharStatus</c> (Modulo_UsUaRiOs.bas:222-227): con <c>showName</c> en false NO manda
     /// el nick sino cadena VACÍA, y además status y donador en 0 — o sea que el personaje pierde el nombre Y el
     /// color del bando. Es lo que hace el <c>/SHOWNAME</c> de un GM. El layout no cambia, sólo los valores.</summary>
+    /// <summary>
+    /// EL TAG QUE VE EL RESTO: <c>"Nick &lt;Clan&gt;"</c>, no el nick pelado. El original lo arma así
+    /// (Modulo_UsUaRiOs.bas:215-223: <c>ClanTag = " &lt;" &amp; GuildName &amp; "&gt;"</c>) y el cliente lo
+    /// parte para dibujar el clan como segundo renglón debajo del nombre. Acá se mandaba sólo
+    /// <c>p.Name</c>, así que el clan no aparecía sobre la cabeza de nadie — que es la señal con la que se
+    /// reconoce a un aliado de un enemigo antes de que empiece la pelea.
+    /// </summary>
+    private static string TagDe(Player p) =>
+        string.IsNullOrEmpty(p.GuildName) ? p.Name : $"{p.Name} <{p.GuildName}>";
+
     public static byte[] UpdateTagAndStatus(Player p) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.UpdateTagAndStatus)
             .WriteInteger(p.CharIndex)
-            .WriteAsciiString(p.ShowName ? p.Name : "")
+            .WriteAsciiString(p.ShowName ? TagDe(p) : "")
             .WriteByte(p.ShowName ? p.FactionStatus : (byte)0)
             .WriteByte((byte)(p.ShowName && p.Donador ? 1 : 0)).ToArray();   // VB6 UpdateTagAndStatus field Donador (PROTOCOLO §82)
 
@@ -837,7 +847,7 @@ public static class ServerMessages
             .WriteInteger(999)   // FXLoops: constante de spawn de jugador del VB6 (MakeUserChar:332)
             // Nick VACÍO si tiene showName en false (VB6 MakeUserChar, Modulo_UsUaRiOs.bas:309): así el GM que
             // usó /SHOWNAME aparece sin nombre también para quien entra a su área DESPUÉS del toggle.
-            .WriteAsciiString(p.ShowName ? p.Name : "")
+            .WriteAsciiString(p.ShowName ? TagDe(p) : "")
             .WriteByte(p.FactionStatus)  // byte "Privileges" del VB6 == .Faccion.Status (color de nombre)
             .WriteByte((byte)(p.Donador ? 1 : 0))   // Donador (VB6 MakeUserChar:332 → .Char.FX... = Donador.activo)
             .WriteByte(p.ParticulaFx)
