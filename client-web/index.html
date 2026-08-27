@@ -1477,6 +1477,10 @@
     window.__posRender = () => { const c = chars.get(myCharIndex); return c ? posRender(c) : null; };
     /** Sonda: si el cliente considera agua esa baldosa (la regla HayAgua del original). */
     window.__hayAgua = (x, y) => hayAgua(x, y);
+    /** Sonda: el Base_Light del mapa actual — 0 = sigue el ciclo dia/noche. */
+    window.__baseLight = () => (map ? map.baseLight : null);
+    /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
+    window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
     let _ultimoFx = null;
     /** Sonda: el rectangulo REAL con que se bliteo el ultimo FX, y donde estaban los pies de su dueno. */
     window.__ultimoFx = () => _ultimoFx;
@@ -4070,8 +4074,30 @@
     // no lleva una linterna, la noche es un ambiente UNIFORME. Se saca por dos razones: no es fiel, y sumar
     // luces encima de ella dejaba la escena lavada (medido y visto en captura — el aditivo blanco sobre un
     // degradado oscuro no se parece a multiplicar).
-    const AMBIENTE = { amanecer: [255, 205, 165], dia: null, atardecer: [240, 175, 130], noche: [92, 108, 152] };
+    // LOS CUATRO COLORES SON LOS DEL ORIGINAL, no una paleta elegida a ojo (VB6 `Meteo_Init_Time`,
+    // modMeteo.bas:153-179). El original tiñe MUY poco y casi sin color:
+    //
+    //     Día     255,255,255   (no tiñe nada)
+    //     Noche   170,170,170   gris NEUTRO y parejo — 0,667 en los tres canales
+    //     Tarde   230,200,200   apenas cálida
+    //     Mañana  200,200,230   FRÍA, azulada
+    //
+    // Acá estaban inventados y erraban de las dos formas: la noche multiplicaba el rojo por 0,36 y el azul
+    // por 0,60 —o sea casi el doble de oscura que el original y teñida de azul— y la mañana CALENTABA
+    // (255,205,165) donde el original enfría. El nombre `amanecer` se conserva porque es el que usa el
+    // reloj del server; el color es el `m_Color_Manana` de la fuente.
+    const AMBIENTE = { amanecer: [200, 200, 230], dia: null, atardecer: [230, 200, 200], noche: [170, 170, 170] };
+    /** ¿Mi personaje está muerto? El server lo dice cambiando el cuerpo al del fantasma (VB6
+     *  `MakeChar`: `.Muerto = (Head = CASPER_HEAD)`); acá el equivalente es el cuerpo del cadáver. */
+    function estoyMuerto() {
+      const c = chars.get(myCharIndex);
+      return !!c && c.body === CUERPO_MUERTO;
+    }
+    let _luzDbg = { vueltas: 0, amb: null, muerto: null, base: null };
+    /** Sonda: que hizo la ultima pasada de iluminacion (para no adivinar por que no tine). */
+    window.__luzDbg = () => _luzDbg;
     function drawLighting(camX, camY, me) {
+      _luzDbg.vueltas++;
       if (luzApagada) return;                     // window.__sinLuces(): A/B del costo del frame
       // El ciclo día/noche NO se aplica a todos los mapas. Si el `.csm` trae `Base_Light` distinto de 0, ese
       // mapa se queda con ESE color de ambiente y el clima no lo toca (General.bas:826-841: el `Else` setea
@@ -4081,8 +4107,18 @@
       // Sin este campo el cliente le aplicaba el ciclo a los 863: un dungeon se aclaraba de día y el pueblo se
       // ponía azul de noche, dos cosas que en el original no pasan.
       const fija = map && map.baseLight;
-      const amb = fija ? (fija === 0xFFFFFF ? null : [fija >> 16, (fija >> 8) & 255, fija & 255])
-                       : AMBIENTE[period];
+      let amb = fija ? (fija === 0xFFFFFF ? null : [fija >> 16, (fija >> 8) & 255, fija & 255])
+                     : AMBIENTE[period];
+      // EL MUNDO DEL MUERTO SE APAGA. En el original está adentro de `Directx_Render_Texture`, o sea en la
+      // rutina por la que pasa CADA sprite: `If CurrentUser.Muerto Then Engine_Long_To_RGB_List light_value,
+      // D3DColorXRGB(67, 67, 67)` (TileEngine.bas:3025). 67/255 = 0,26: el suelo, los personajes, los techos
+      // y los efectos, todo al 26% de brillo, y PISANDO el ambiente y las luces —no multiplicándose con
+      // ellos—, así que una antorcha no te ilumina mientras estás muerto.
+      //
+      // Acá no existía: morirse no cambiaba nada de la escena salvo tu propio dibujo. Se aplica en el
+      // ambiente, que es el único punto por el que pasa todo el mundo en este motor.
+      if (estoyMuerto()) amb = [67, 67, 67];
+      _luzDbg.amb = amb; _luzDbg.muerto = estoyMuerto(); _luzDbg.base = fija;
       const t = Date.now();
       const night = amb ? 1 - (amb[0] + amb[1] + amb[2]) / 765 : 0;   // 0 de día, ~0.55 de noche
       // 1) EL AMBIENTE + LAS LUCES AUTORADAS, en un solo light-map que MULTIPLICA.
@@ -4531,7 +4567,7 @@
       // CEGUERA (Blind 57 / BlindNoMore 65): el mundo se apaga hasta que el server manda el fin. Va DESPUES
       // de la iluminación y ANTES del minimapa, que sigue visible — igual que en el cliente clásico, donde
       // la ceguera tapa la vista del mundo pero no la interfaz.
-      if (blind) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH); }
+      if (blind) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH); }   // (ver nota sobre la ceguera)
 
       drawMinimap();   // minimapa (canvas del DOM); las entidades/viewport se actualizan cada frame
       ctx.setTransform(1, 0, 0, 1, 0, 0);   // restaura el transform (por si alguien dibuja fuera)
