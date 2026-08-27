@@ -1481,6 +1481,8 @@
     window.__baseLight = () => (map ? map.baseLight : null);
     /** Sonda: con que color pinta el motor el aura/particula de ese grupo (tiene que ser el de la data). */
     window.__colorAura = (g) => colorDominante(g, null);
+    /** Sonda: forzar la ceguera, por la misma variable que escribe el paquete Blind. */
+    window.__setCiego = (v) => { blind = !!v; return blind; };
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
     window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
     let _ultimoFx = null;
@@ -4528,35 +4530,40 @@
         }
       }
 
-      // FX de los hechizos de AREA (EfectoTerrenoFX / EfectoTerrenoParticula). Van anclados a un TILE y no a un
-      // personaje, y como el hechizo resuelve el 3x3 que rodea a ese tile, el efecto se dibuja cubriendo los 9
-      // tiles: asi se VE el area que el server acaba de barrer, que es justamente lo que un hechizo de area
-      // tiene de distinto. Antes estos dos paquetes se decodificaban y se tiraban (no habia nada que dibujar
-      // porque el server nunca los mandaba).
+      // FX DE LOS HECHIZOS DE AREA (EfectoTerrenoFX / EfectoTerrenoParticula), anclados a un TILE y no a un
+      // personaje. El original dibuja LA MISMA ANIMACION que un FX sobre un personaje: `SetFXMAP`
+      // (General.bas:1424) hace `InitGrh MapData(X,Y).fX, FxData(fx).Animacion` con sus Loops, RenderScreen
+      // la blitea sobre la baldosa con `DrawGrhtoSurface(..., Center=1, ...)` (TileEngine.bas:2201) y la borra
+      // cuando termina (`If .fX.Started = 0 Then .FxIndex = 0`).
+      //
+      // Acá se pintaba un invento: un cuadrado 3x3 teñido, un anillo que se expandía y doce motitas, todo con
+      // un color que salía de una tabla que ni siquiera tenía claves de FX —o sea SIEMPRE el mismo naranja—.
+      // Un hechizo de área mostraba eso en vez de su explosión de quince cuadros. Ahora sale el sprite real,
+      // con el mismo anclaje por el borde de abajo que los FX de personaje, y el 3x3 se marca sólo como un
+      // tinte tenue por debajo: eso sí es agregado nuestro y se deja porque es lo que hace VER el área que el
+      // server barrió, que en el original se deduce de dónde cayó el daño.
       {
         const now = Date.now();
-        const AREA_MS = 700;
+        const FRAME_MS = 55;
         for (let i = groundFx.length - 1; i >= 0; i--) {
           const g = groundFx[i];
           const dt = now - g.at;
-          if (dt > AREA_MS) { groundFx.splice(i, 1); continue; }
-          const k = 1 - dt / AREA_MS;                                  // 1 -> 0
-          const cx = (g.x - camX) * TILE + TILE / 2, cy = (g.y - camY) * TILE + TILE / 2;
-          if (cx < -TILE * 3 || cx > VW + TILE * 3 || cy < -TILE * 3 || cy > VH + TILE * 3) continue;
-          const [r, gr, b] = PARTICLE_COLORS[g.id] || (g.kind === 'part' ? [150, 255, 190] : [255, 190, 120]);
-          // El 3x3 teñido, que se apaga; mas un anillo que se expande hasta el borde del area.
-          ctx.fillStyle = `rgba(${r},${gr},${b},${0.20 * k})`;
-          ctx.fillRect(cx - TILE * 1.5, cy - TILE * 1.5, TILE * 3, TILE * 3);
-          ctx.strokeStyle = `rgba(${r},${gr},${b},${0.85 * k})`; ctx.lineWidth = 2 + 2 * k;
-          ctx.beginPath(); ctx.arc(cx, cy, TILE * 1.5 * (1 - k), 0, Math.PI * 2); ctx.stroke();
-          // Y motas: hacia arriba si es particula, disparadas hacia afuera si es un grh de impacto.
-          for (let n = 0; n < 12; n++) {
-            const ang = n * (Math.PI * 2 / 12) + (g.kind === 'part' ? 0 : dt * 0.004);
-            const rad = g.kind === 'part' ? TILE * 1.1 : TILE * 1.5 * (1 - k);
-            const px = cx + Math.cos(ang) * rad;
-            const py = cy + Math.sin(ang) * rad * 0.7 - (g.kind === 'part' ? (1 - k) * TILE : 0);
-            ctx.fillStyle = `rgba(${r},${gr},${b},${0.9 * k})`;
-            ctx.beginPath(); ctx.arc(px, py, 2.2 * k + 0.8, 0, Math.PI * 2); ctx.fill();
+          const cx = (g.x - camX) * TILE, cy = (g.y - camY) * TILE;
+          const entry = fxIdx && g.id && fxIdx[g.id];
+          const anim = entry && atlas && atlas[entry[0]];
+          const cuadros = anim && anim.frames ? anim.frames.length : 0;
+          const dur = cuadros ? Math.min(1400, cuadros * FRAME_MS) : 700;
+          if (dt > dur) { groundFx.splice(i, 1); continue; }
+          if (cx < -TILE * 4 || cx > VW + TILE * 4 || cy < -TILE * 4 || cy > VH + TILE * 4) continue;
+          const k = 1 - dt / dur;
+          // El área barrida, tenue y por debajo del sprite.
+          ctx.fillStyle = `rgba(255,235,200,${0.10 * k})`;
+          ctx.fillRect(cx - TILE, cy - TILE, TILE * 3, TILE * 3);
+          if (cuadros) {
+            const gr = staticGrh(anim.frames[Math.floor(dt / FRAME_MS) % cuadros]);
+            if (gr && sheets[gr.file]) {
+              dGrh(ctx, sheets[gr.file], gr, anclaX(cx, gr.w) + entry[1], anclaY(cy, gr.h) + entry[2], gr.w, gr.h);
+            } else if (gr) loadSheet(gr.file);
           }
         }
       }
@@ -4579,10 +4586,33 @@
         }
       }
 
-      // CEGUERA (Blind 57 / BlindNoMore 65): el mundo se apaga hasta que el server manda el fin. Va DESPUES
-      // de la iluminación y ANTES del minimapa, que sigue visible — igual que en el cliente clásico, donde
-      // la ceguera tapa la vista del mundo pero no la interfaz.
-      if (blind) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH); }   // (ver nota sobre la ceguera)
+      // CEGUERA (Blind 57 / BlindNoMore 65): todo negro MENOS vos y lo que tenés pegado al lado.
+      //
+      // Los dos extremos que había que descartar, y ninguno servía. El cliente de ESTE install no oscurece
+      // nada: `UserCiego` se declara en Declares.bas:338 y sus únicos usos son asignaciones (Protocol.bas:3128
+      // y :3371, frmMain.frm:2971 y :2980) — `RenderScreen` nunca la consulta, o sea que ahí cegar a alguien
+      // no le tapa absolutamente nada y el hechizo es decorativo. (El `Ciego` de General.bas:1710 es otra
+      // cosa: el texto "| Ciego" del estado del personaje, no el dibujo.) Y acá se pintaba la pantalla 100%
+      // negra, que es lo contrario y deja al jugador sin poder hacer nada.
+      //
+      // El que conoce el juego lo describió así: "te ponía todo negro, sólo veías tu pj y lo que tenías
+      // literalmente al lado, tenías que pegarte al tipo para que te vea". Eso es el AO clásico, y es lo que
+      // se porta: el install se apartó del original en este punto —ya nos pasó con un sonido— y quedarse con
+      // su versión sería hacer fiel un hechizo que no hace nada.
+      //
+      // Se hace con un degradado radial y no con un círculo duro para que el borde no se vea como un recorte.
+      if (blind) {
+        const me2 = chars.get(myCharIndex);
+        const p = me2 ? posRender(me2) : null;
+        const cx = p ? (p[0] - camX) * TILE + TILE / 2 : VW / 2;
+        const cy = p ? (p[1] - camY) * TILE + TILE / 2 : VH / 2;
+        const g = ctx.createRadialGradient(cx, cy, TILE * 1.1, cx, cy, TILE * 2.6);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(0.55, 'rgba(0,0,0,0.86)');
+        g.addColorStop(1, '#000');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, VW, VH);
+      }
 
       drawMinimap();   // minimapa (canvas del DOM); las entidades/viewport se actualizan cada frame
       ctx.setTransform(1, 0, 0, 1, 0, 0);   // restaura el transform (por si alguien dibuja fuera)
