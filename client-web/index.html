@@ -57,7 +57,15 @@
     /* ---- CHAT overlay (abajo-izquierda del mundo) con pestañas --------------------------------- */
     /* bottom atado a la altura del hotbar (slot --u*2.9 + padding/margen) para que el chat quede SIEMPRE por
        encima de los macros y no se le encime, en cualquier resolución. */
-    #chatwrap { position:absolute; left:10px; bottom:calc(var(--u)*2.9 + 54px); width:min(46%, 560px); z-index:5; }
+    /* `pointer-events:none` EN EL CONTENEDOR, y no sólo en los hijos. Un div transparente que flota sobre el
+       canvas SIGUE siendo blanco del clic: los hijos con `pointer-events:none` dejan de serlo, pero el hit
+       test cae en el padre. Medido: se comía 4 de las 48 celdas del mundo —media fila, abajo a la izquierda—
+       y ahí no funcionaba nada: ni nombrar lo que hay en el piso, ni abrir una puerta, ni hablarle a un
+       mercader, ni talar. Los hijos que SÍ tienen que recibir clics (el chat abierto, las pestañas y la línea
+       de entrada) se lo devuelven con `pointer-events:auto` cuando están activos. Es la misma regla que ya
+       llevaba `#cartelmapa`, que se puso ahí justamente "para que nunca tape un clic". */
+    #chatwrap { position:absolute; left:10px; bottom:calc(var(--u)*2.9 + 54px); width:min(46%, 560px); z-index:5;
+      pointer-events:none; }
     /* CARTEL DEL LUGAR — el rótulo que anuncia la ciudad al entrar. Centrado arriba, sin fondo: sólo
        letras doradas con sombra, como el original. `pointer-events:none` para que nunca tape un clic. */
     #cartelmapa { position:absolute; top:11%; left:50%; transform:translateX(-50%) translateY(-8px);
