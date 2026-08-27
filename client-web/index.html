@@ -1749,7 +1749,7 @@
     window.__draw = () => { const t0 = performance.now(); draw(); return +(performance.now() - t0).toFixed(2); };
     // Draw a sparse .csm layer (objects/decorations/roofs): each [x,y,grh] bottom-anchored on its
     // tile. `skip(x,y)` optionally hides tiles (used to reveal building interiors under roofs).
-    function drawSparseLayer(list, camX, camY, skip, offX = 0, offY = 0) {
+    function drawSparseLayer(list, camX, camY, skip, offX = 0, offY = 0, destino = null) {
       if (!list || !list.length) return;
       // Sólo las FILAS que la cámara puede ver. Antes se recorría la capa entera en cada cuadro y el
       // descarte lo hacía `drawSparseTile` uno por uno: en el peor mapa (364) son 5711 entradas entre
@@ -1765,7 +1765,7 @@
       for (let y = y0; y < y1; y++) {
         const fila = idx.get(y);
         if (!fila) continue;
-        for (const e of fila) drawSparseTile(e, camX, camY, skip, offX, offY);
+        for (const e of fila) drawSparseTile(e, camX, camY, skip, offX, offY, destino);
       }
     }
     // Índice fila → entradas de una capa dispersa. La clave es el ARRAY, no el mapa: así no hay que
@@ -1785,7 +1785,7 @@
     }
     // Un tile suelto de una capa dispersa. Está separado porque la capa 3 NO se dibuja de un saque: se
     // intercala con los personajes, tile por tile, como en el original (ver el bucle de personajes).
-    function drawSparseTile(entry, camX, camY, skip, offX = 0, offY = 0) {
+    function drawSparseTile(entry, camX, camY, skip, offX = 0, offY = 0, destino = null) {
       const [ox, oy, grh] = entry;
       if (skip && skip(ox, oy)) return;
       const sx = ox - Math.round(camX), sy = oy - Math.round(camY);
@@ -1793,7 +1793,7 @@
           sy < -MARGEN_TILES || sy >= VIEW_H + MARGEN_TILES) return;
       const g = animGrh(grh); if (!g) return;   // objetos/decorado/techos: animados si el Grh lo es
       const sheet = sheets[g.file]; if (!sheet) { loadSheet(g.file); return; }
-      dGrh(ctx, sheet, g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
+      dGrh(destino || ctx, sheet, g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
     }
     // A full-height equipped-gear overlay (weapon/shield): walk animation like the body, pero anclado con
     // el HeadOffset del cuerpo + un delta vertical (VB6 TileEngine.bas: arma/escudo se dibujan en
@@ -4000,6 +4000,8 @@
     window.__sinLuces = (on = true) => { luzApagada = on; return !luzApagada; };
     // Light-map de las luces autoradas: 1 píxel por tile del área visible, reusado entre frames.
     let lightCv = null, lightCx = null;
+    let techoCv = null, techoCx = null;   // capa aparte para teñir los techos SOLO con el ambiente
+    let mascaraCv = null, mascaraCx = null;   // la silueta del techo, para que el tinte no se derrame
 
     // ---- PARTICULAS del mapa: los FX de ambiente (fuentes, antorchas, humo, nieve, cataratas) -------------
     // 131 grupos definidos en particles.ini y 1.874 colocados por tile en 133 mapas. El transcode salteaba las
@@ -4572,16 +4574,65 @@
         const dtTecho = techoT ? Math.min(200, ahora - techoT) : 16;   // clamp: volver de una pestaña oculta no debe saltar el fade
         techoT = ahora;
         techoAlpha = Math.max(0, Math.min(1, techoAlpha + (adentro ? -1 : 1) * dtTecho / TECHO_FADE_MS));
-        if (techoAlpha > 0.01) {
-          const previo = ctx.globalAlpha;
-          ctx.globalAlpha = previo * techoAlpha;
-          drawSparseLayer(map.roofs, camX, camY, null, offX, offY);
-          ctx.globalAlpha = previo;
-        }
       }
-      // Iluminación dinámica: en vez de un wash plano, una viñeta radial de oscuridad centrada en el
-      // jugador (el clásico "radio de luz" nocturno de AO) + luces cálidas aditivas (fuego, hechizos).
+      // Iluminación dinámica: el ambiente del ciclo día/noche y las luces del mapa, en un light-map que
+      // MULTIPLICA la escena.
       drawLighting(camX, camY, me);
+      // LOS TECHOS VAN DESPUÉS DE LA LUZ, y con el ambiente solamente.
+      //
+      // El original dibuja la capa 4 con el array `Techos`, que lleva ÚNICAMENTE el color de ambiente
+      // (TileEngine.bas:3852 y :3870) y nunca el `MapData(X,Y).light_value` por baldosa que sí usan las
+      // capas 1, 2, 3 y los objetos. O sea: una antorcha encendida adentro de una casa NO ilumina su propio
+      // techo. Acá los techos se dibujaban ANTES del light-map, así que se los comía el multiply de las
+      // luces de adentro: de noche los techos de las ciudades mostraban cuadrados brillantes —Banderbill
+      // tiene 66 faroles debajo de techo— que en el original no existen.
+      //
+      // Se pintan en una capa aparte para poder teñirlos con el ambiente y sólo con él: `source-atop` limita
+      // el tinte a los píxeles del propio techo, sin tocar lo que hay debajo.
+      if (map && map.roofs && techoAlpha > 0.01) {
+        if (!techoCv || techoCv.width !== ctx.canvas.width || techoCv.height !== ctx.canvas.height) {
+          techoCv = document.createElement('canvas');
+          techoCv.width = ctx.canvas.width; techoCv.height = ctx.canvas.height;
+          techoCx = techoCv.getContext('2d');
+        }
+        techoCx.setTransform(1, 0, 0, 1, 0, 0);
+        techoCx.clearRect(0, 0, techoCv.width, techoCv.height);
+        techoCx.setTransform(SS, 0, 0, SS, 0, 0);
+        drawSparseLayer(map.roofs, camX, camY, null, offX, offY, techoCx);
+        // el ambiente del momento, igual que el que usa drawLighting (incluye el apagón del muerto)
+        const fijaT = map.baseLight;
+        let ambT = fijaT ? (fijaT === 0xFFFFFF ? null : [fijaT >> 16, (fijaT >> 8) & 255, fijaT & 255])
+                         : AMBIENTE[period];
+        if (estoyMuerto()) ambT = [67, 67, 67];
+        if (ambT) {
+          // EL TINTE NECESITA UNA MASCARA. `multiply` sobre un lienzo TRANSPARENTE no deja el píxel
+          // transparente: lo pinta con el color de origen, así que un fillRect de pantalla completa
+          // convertía el techo en un rectángulo opaco del color del ambiente sobre TODA la escena —de
+          // noche la pantalla salía más clara que de día—. Se guarda la silueta antes de teñir y se la
+          // vuelve a aplicar con `destination-in`, que sí recorta por alfa.
+          if (!mascaraCv || mascaraCv.width !== techoCv.width || mascaraCv.height !== techoCv.height) {
+            mascaraCv = document.createElement('canvas');
+            mascaraCv.width = techoCv.width; mascaraCv.height = techoCv.height;
+            mascaraCx = mascaraCv.getContext('2d');
+          }
+          mascaraCx.setTransform(1, 0, 0, 1, 0, 0);
+          mascaraCx.clearRect(0, 0, mascaraCv.width, mascaraCv.height);
+          mascaraCx.drawImage(techoCv, 0, 0);
+          techoCx.setTransform(1, 0, 0, 1, 0, 0);
+          techoCx.globalCompositeOperation = 'multiply';
+          techoCx.fillStyle = `rgb(${ambT[0]},${ambT[1]},${ambT[2]})`;
+          techoCx.fillRect(0, 0, techoCv.width, techoCv.height);
+          techoCx.globalCompositeOperation = 'destination-in';
+          techoCx.drawImage(mascaraCv, 0, 0);
+          techoCx.globalCompositeOperation = 'source-over';
+        }
+        const previoA = ctx.globalAlpha;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = previoA * techoAlpha;
+        ctx.drawImage(techoCv, 0, 0);
+        ctx.globalAlpha = previoA;
+        ctx.setTransform(SS, 0, 0, SS, 0, 0);
+      }
       // EL CLIMA, y DÓNDE se ve. El server manda `RainToggle` a TODO el mundo y eso es fiel: el original hace
       // `SendData(SendTarget.ToAll, ...)` (Protocol.bas:9285) sin mirar el mapa. Lo que decide si la lluvia se
       // VE es el cliente, con `bTecho` — el mismo `Trigger 1/2/4/>=20` que apaga los techos.
