@@ -1444,6 +1444,8 @@
     window.__cuadroDelPersonaje = () => _cuadroMio;
     /** Sonda: fila del canvas donde estan los PIES de mi personaje, para medir contra que se ancla un FX. */
     window.__piesDelPersonaje = () => { const c = chars.get(myCharIndex); return c ? c._base : null; };
+    window.__paralizado = () => paralizado;
+    window.__setParalizado = (v) => { paralizado = !!v; pintarEstados(); return paralizado; };
     let _ultimoFx = null;
     /** Sonda: el rectangulo REAL con que se bliteo el ultimo FX, y donde estaban los pies de su dueno. */
     window.__ultimoFx = () => _ultimoFx;
@@ -3195,6 +3197,10 @@
         // Toggles de estado SIN payload: el server manda "cambio", no el valor. Se espejan como el original.
         case 'RestOK': descansando = !descansando; pintarEstados(); break;
         case 'ParalizeOK': paralizado = !paralizado; pintarEstados(); break;
+        // Sonda: leer y forzar el estado de parálisis, por la MISMA variable que escribe el paquete de
+        // arriba. Es lo que permite verificar desde afuera que paralizado no se camina, sin tener que
+        // arreglar que una Medusa te agarre.
+
         case 'MontateToggle': montando = !montando; pintarEstados(); break;
         case 'NavigateToggle': navegando = !navegando; pintarEstados(); break;   // subir/bajar de la barca
         // El par de este (Dumb 58, el aturdimiento del hechizo Estupidez) NO se modela, y el veredicto lo dio
@@ -4559,6 +4565,21 @@
       const ahora = performance.now();
       if (ahora - ultimoPasoT < INTERVALO_CAMINAR) return;
       ultimoPasoT = ahora;
+      // PARALIZADO SE GIRA, NO SE CAMINA (VB6 General.bas:542: `If LegalOk And Not UserParalizado And Not
+      // CurrentUser.TiempoSalida Then` — si no se cumple, cae al Else de :570 y a lo sumo manda un
+      // ChangeHeading). Acá no se miraba, así que estando paralizado el muñeco y la cámara recorrían el mapa
+      // mientras el server te tenía clavado donde te paralizaron: caminabas por un mundo vacío —la
+      // visibilidad la calcula el server con tu posición REAL— y al soltarse la parálisis el primer paso de
+      // verdad te teletransportaba de golpe toda la distancia recorrida en falso.
+      //
+      // El giro SÍ sale, como en el original: cambiar de dirección paralizado es legal.
+      if (paralizado) {
+        if (me.heading !== h) {
+          me.heading = h;
+          ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ChangeHeading).writeByte(h).toBytes(), myKey));
+        }
+        return;
+      }
       me.heading = h;
       const nx = me.x + (h === 2 ? 1 : h === 4 ? -1 : 0);
       const ny = me.y + (h === 3 ? 1 : h === 1 ? -1 : 0);
