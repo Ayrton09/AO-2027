@@ -214,6 +214,7 @@ var serverContent = CoverAO.Server.Game.ServerContent.Load(dataRoot, gameData.So
 var npcSystem = new NpcSystem(world, gameData, gmsPerseguibles: fixtureMode);
 // Regla de la casa: ¿el familiar sale a buscar pelea solo? Apagada = como el original (te sigue y nada más).
 npcSystem.FamiliarBuscaEnemigo = serverIni.FamiliarBusca;
+npcSystem.ParalisisDeNpcTicks = serverIni.IntervaloParalizado;   // [INTERVALOS] IntervaloParalizado
 
 // Regla de la casa: ¿los pases del pirata de Rinkel se pueden usar? Apagada = como el install, donde el
 // pirata te los cobra y después no te los acepta porque su `Desde` apunta a un mapa sin transportador.

@@ -9127,7 +9127,7 @@ public sealed partial class PacketDispatcher
     /// <c>RemoverEstupidez=1</c> y esa bandera sigue sin efecto, igual que antes.</summary>
     private List<string> AplicarEfectosDeEstado(Player caster, Player target, Data.SpellInfo spell)
     {
-        const long StateDurationTicks = 500;   // IntervaloParalizado (Server.ini), en vueltas de 40 ms
+        long StateDurationTicks = _ini.IntervaloParalizado;   // [INTERVALOS] IntervaloParalizado, en vueltas de 40 ms
         long now = _loop.Tick;
         var efectos = new List<string>();
         if (spell.IsSanacion) { target.PoisonedUntilTick = 0; target.Incinerado = false; efectos.Add("sanado"); }

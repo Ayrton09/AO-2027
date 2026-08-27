@@ -175,8 +175,11 @@ public sealed class NpcSystem
 
     /// <summary>Cuánto dura la parálisis que tira una CRIATURA. El original usa <c>IntervaloParalizado</c>
     /// (Server.ini, 500 vueltas ≈ 20 s) en <c>NpcLanzaSpellSobreUser</c> (modHechizos.bas:224) — el mismo que
-    /// el PvP, no el reducido que usa el jugador CONTRA una criatura.</summary>
-    private const long ParalisisDeNpcTicks = 500;
+    /// el PvP, no el reducido que usa el jugador CONTRA una criatura.
+    ///
+    /// Lo pone el arranque desde el Server.ini, como el original: estaba cableado y quien hostea no lo podía
+    /// tocar aunque la clave exista en la fuente.</summary>
+    public long ParalisisDeNpcTicks { get; set; } = 500;
 
     public void Update(long tick)
     {

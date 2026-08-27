@@ -145,6 +145,20 @@ public sealed class ServerIni
     public int IntervaloGolpeUsar { get; private set; } = 400;     // usar un objeto después de pegar
     public int IntervaloAtacar { get; private set; } = 1000;        // IntervaloUserPuedeAtacar
 
+    /// <summary>
+    /// <c>[INTERVALOS] IntervaloParalizado</c> — cuánto dura una parálisis, en VUELTAS del game-loop de 40 ms
+    /// (500 = 20 s, que es lo que trae el Server.ini del install).
+    ///
+    /// <para>Es la del HECHIZO Paralizar y la de las criaturas que paralizan. NO es la del golpe que paraliza
+    /// —el del gladiador y el bardo a mano limpia—, que el original clava en 150 vueltas (6 s) dentro de
+    /// <c>GolpeParalizaUsuario</c> (SistemaCombate.bas:2289) y no sale de ninguna clave. Ni la de paralizar a
+    /// una CRIATURA, que usa el <c>IntervaloParalizadoReducido</c> de Admin.bas:58, cableado en 37 (1,5 s).</para>
+    ///
+    /// <para>Estaba cableada en dos lugares del port, así que quien hostea no la podía tocar aunque el
+    /// original le dé la perilla.</para>
+    /// </summary>
+    public int IntervaloParalizado { get; private set; } = 500;
+
     // Relojes del mundo (día/noche y clima). Se declaran en MINUTOS y no en vueltas del game-loop porque
     // quien hostea no tiene por qué saber que el loop corre a 40 ms; la conversión la hace AplicarRelojes.
     // Ninguno de los dos relojes existe en el original —el mundo VB6 es siempre de día y la lluvia sólo se
@@ -476,6 +490,7 @@ public sealed class ServerIni
         // CADENCIA DE GOLPE. La lee el VB6 en FileIO.bas:1495 y el ini del install dice 1000; el port la tenía
         // CABLEADA en 1200 (Program.cs), o sea que se peleaba un 20% más lento que el original.
         cfg.IntervaloAtacar = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloUserPuedeAtacar", 1000), 0, 60_000);
+        cfg.IntervaloParalizado = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloParalizado", 500), 1, 100_000);
         // `IntervaloMover` (=200) está en el ini y NO se lee — pero acá el veredicto es distinto: tiene CERO
         // lecturas en todo el servidor VB6, igual que `IntervaloWS`. Es una clave decorativa. Y va más lejos:
         // el original NO tiene ningún gate de cadencia de caminata (no existen IntervaloPermiteCaminar,

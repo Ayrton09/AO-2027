@@ -271,5 +271,9 @@ RolesMasters=0
 ;IntervaloMagiaGolpe=400         ; pegar despues de castear
 ;IntervaloGolpeMagia=400         ; castear despues de pegar
 ;IntervaloGolpeUsar=400          ; usar un objeto despues de pegar
+;IntervaloParalizado=500         ; cuanto dura una PARALISIS, en vueltas de 40 ms (500 = 20 s). Vale para el
+                                ;   hechizo Paralizar y para las criaturas que paralizan. NO es la del golpe
+                                ;   que paraliza del gladiador y el bardo (6 s) ni la de paralizar a una
+                                ;   criatura (1,5 s): esas dos el original las clava y no son configurables.
 ;IntervaloGuardarUsuarios=15     ; autosave, en MINUTOS (es la clave del original;
                                  ; equivale a MinutosGuardarUsuarios de [INIT])
