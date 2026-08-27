@@ -1479,6 +1479,8 @@
     window.__hayAgua = (x, y) => hayAgua(x, y);
     /** Sonda: el Base_Light del mapa actual — 0 = sigue el ciclo dia/noche. */
     window.__baseLight = () => (map ? map.baseLight : null);
+    /** Sonda: con que color pinta el motor el aura/particula de ese grupo (tiene que ser el de la data). */
+    window.__colorAura = (g) => colorDominante(g, null);
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
     window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
     let _ultimoFx = null;
@@ -1836,18 +1838,30 @@
     // Persistent particle aura (EfectoCharParticula). The server picks the id via ParticleToLevel:
     // by meditation level (42 → 81 → 41), then by faction (citizen 40/113 · criminal 37/108),
     // 107 at level 50, and 128 for GMs. Unknown ids fall back to a pale white aura.
-    const PARTICLE_COLORS = {
-      42: [120, 190, 255], 81: [190, 130, 255], 41: [255, 170, 60],
-      40: [130, 210, 255], 113: [90, 170, 255],      // ciudadano
-      37: [255, 110, 90], 108: [230, 60, 60],        // criminal
-      107: [255, 225, 130], 128: [255, 245, 210],    // nivel 50 · GM
+    // EL COLOR SALE DE LA DATA, no de una lista a mano. Cada grupo de partículas de `particles.ini` trae sus
+    // tres ColorSet, y el original los reparte en los cuatro vértices del sprite así (mod_Particulas.bas:597):
+    //
+    //     temp_rgb(0) = rgb_list(1)     temp_rgb(1) = rgb_list(1)
+    //     temp_rgb(2) = rgb_list(2)     temp_rgb(3) = rgb_list(0)
+    //
+    // O sea que el ColorSet2 va en DOS vértices de cuatro y es el que domina; el ColorSet1 aparece en UNO
+    // solo. Acá se pintaba con el ColorSet1 —el menos presente— y, para las auras, ni siquiera con eso: con
+    // una lista escrita a mano en la que cinco de los nueve grupos no tenían nada que ver con la data (el
+    // aura de meditación 25-34 es VERDE (0,255,0) y salía naranja; la de 15-24 es blanca y salía violeta).
+    //
+    // Se usa el dominante y plano: este motor tiñe el sprite entero de un color, no puede interpolar cuatro
+    // vértices como el Gouraud del original. Es la aproximación más cercana con la data real.
+    const colorDominante = (grupo, porDefecto) => {
+      const def = partDefs && partDefs[grupo];
+      const c = def && def.colores;
+      return (c && (c[1] || c[0])) || porDefecto;
     };
     // Motes swirling up from the character's feet. Deterministic in `t` so frames don't jitter.
     // Returns false once a timed particle expires (time < 0 means "until removed").
     function drawParticle(c, sx, sy) {
       const p = c.particle, now = Date.now();
       if (now > p.until) return false;
-      const [r, g, b] = PARTICLE_COLORS[p.id] || [230, 230, 255];
+      const [r, g, b] = colorDominante(p.id, [230, 230, 255]);
       const cx = sx + TILE / 2, base = sy + TILE - 4, t = (now - p.startedAt) / 1000;
       for (let i = 0; i < 8; i++) {
         const rise = (t * 0.8 + i / 8) % 1;
@@ -4006,7 +4020,8 @@
         if (!ps) { ps = []; for (let i = 0; i < def.n; i++) ps.push({ vida: 0 }); emisores.set(clave, ps); }
         const paso = partAcum > def.speed;
         const bx = sx * TILE + offX + TILE / 2, by = sy * TILE + offY + TILE;
-        const color = `rgb(${def.colores[0][0]},${def.colores[0][1]},${def.colores[0][2]})`;
+        const dom = colorDominante(grupo, [255, 255, 255]);
+        const color = `rgb(${dom[0]},${dom[1]},${dom[2]})`;
         partCx.globalCompositeOperation = def.alpha ? 'lighter' : 'source-over';
         for (const p of ps) {
           if (paso) {
