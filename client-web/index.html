@@ -1489,6 +1489,11 @@
     window.__suelo = () => [...ground.values()].map((o) => [o.objIndex, o.x, o.y]);
     /** Sondas del inventario: en que ranura esta ese objeto, y tirarlo por el camino del jugador. */
     window.__slotDe = (obj) => { for (const s in inventory) if (inventory[s] && inventory[s].objIndex === obj) return +s; return null; };
+    // SONDA DEL ORDEN DE DIBUJO. Que un objeto tape a un personaje no se puede medir por pixeles -detras de
+    // una puerta hay MAS dibujo, no menos, asi que cualquier metrica de "cuanto hay" sube en vez de bajar-.
+    // Lo que decide es el ORDEN: en el original, lo que esta en una fila mas al sur se dibuja despues.
+    let _orden = null;
+    window.__ordenDeDibujo = () => { _orden = []; return new Promise((r) => setTimeout(() => { const o = _orden; _orden = null; r(o); }, 120)); };
     window.__tirar = (slot) => tirarDelSlot(slot);
     /** Sonda: a que pixel de la pantalla cae una posicion del mundo (para recortar ahi y medir). */
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
@@ -4346,28 +4351,18 @@
       //
       // Se saltea el tile donde el server ya mando algo: el estado VIVO llega por ObjectCreate (la puerta
       // abierta tiene otro grafico) y se dibuja abajo. Pintar los dos superpondria la cerrada sobre la abierta.
-      if (map) drawSparseLayer(map.objs, camX, camY, (ox, oy) => ground.has(ox + ',' + oy), offX, offY);
-      // Dropped items on the ground (loot from ObjectCreate) — on their tile, under characters.
-      // Van con `offX/offY` como todas las capas indexadas por grilla. Sin eso quedaban clavados al tile
-      // REDONDEADO: mientras el mundo scrollea de a un píxel, el ítem del suelo se quedaba quieto y saltaba
-      // una baldosa entera de golpe — se veía como si la moneda o el cadáver patinaran sobre el piso.
-      for (const it of ground.values()) {
-        const gx = it.x, gy = it.y;
-        const sx = gx - Math.round(camX), sy = gy - Math.round(camY);
-        if (sx < -MARGEN_TILES || sx >= nW + MARGEN_TILES || sy < -MARGEN_TILES || sy >= nH + MARGEN_TILES) continue;
-        const meta = items && items[it.objIndex]; if (!meta) continue;
-        const g = animGrh(meta[0]);   // ítems del suelo: hay objetos con Grh animado (antorchas, monedas)
-        // ANCLAJE POR LOS PIES, como todo lo demás del mapa. El original centra en horizontal pero NO en
-        // vertical (TileEngine.bas:4654-4658, dentro de `Draw_Grh` con Center=1):
-        //     X = X - Int(TileWidth  * 16) + 16     ' centrado
-        //     Y = Y - Int(TileHeight * 32) + 32     ' por los PIES
-        // Acá se centraba en los dos ejes. Para un sprite de UNA baldosa las dos fórmulas dan lo mismo
-        // —por eso pasó desapercibido—, pero todo lo que mide más se hunde media baldosa: una PUERTA, que
-        // mide dos de alto, quedaba 16 px metida en el piso y se veía pegoteada contra la pared.
-        // Y por acá entran las puertas: son objetos del mundo que el server manda con ObjectCreate.
-        if (g && sheets[g.file]) dGrh(ctx, sheets[g.file], g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
-        else if (g) loadSheet(g.file);
-      }
+      // LA CAPA 2 Y LOS OBJETOS DEL SUELO SE INTERCALAN CON LOS PERSONAJES, fila por fila.
+      //
+      // Acá eran dos pasadas COMPLETAS que corrían antes del bucle de personajes, así que un objeto alto
+      // —una puerta de 3x3, un estandarte de 4,4 baldosas— nunca podía tapar a nadie: el muñeco quedaba
+      // flotando por encima del frente de la casa. El original los dibuja DENTRO del mismo `For Y / For X`
+      // que el personaje (TileEngine.bas:2129 el objeto, :2195 el personaje), de modo que lo que está en una
+      // fila más al sur se dibuja después y tapa a quien está más arriba. Son 5.355 baldosas pisables
+      // cubiertas por un objeto de más de una baldosa de alto, en 104 mapas.
+      //
+      // El mecanismo es el mismo que ya tenía la capa 3 (`capa3Hasta`): las dos listas vienen ordenadas por
+      // (y, x) —`map.objs` desde el transcode y las del suelo se ordenan acá, que son un puñado— y se
+      // avanzan hasta la fila del personaje que toca dibujar.
       ctx.font = '10px system-ui'; ctx.textAlign = 'center';
       // Los NOMBRES y el chat se juntan acá y se pintan DESPUÉS de todos los personajes (ver más abajo). Si se
       // dibujaran junto a cada uno, el sprite del que viene después —el de la fila de abajo, que se dibuja
@@ -4420,6 +4415,47 @@
         const m = (iDeco + decoHi) >> 1;
         if (deco[m][1] < decoY0) iDeco = m + 1; else decoHi = m;
       }
+      // La capa 2 (objetos del mundo) y los objetos TIRADOS, mezclados y ordenados por (y, x). Los del
+      // suelo se rearman en cada cuadro a propósito: son pocos y cambian solos (los tira y los junta la
+      // gente), así que cachearlos costaría más de lo que ahorra.
+      const objsMapa = (map && map.objs) || [];
+      let iObj = 0;
+      const delSuelo = [...ground.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+      let iSuelo = 0;
+      const pintarObjetoDelSuelo = (it) => {
+        const sx = it.x - Math.round(camX), sy = it.y - Math.round(camY);
+        if (sx < -MARGEN_TILES || sx >= nW + MARGEN_TILES || sy < -MARGEN_TILES || sy >= nH + MARGEN_TILES) return;
+        const meta = items && items[it.objIndex]; if (!meta) return;
+        const g = animGrh(meta[0]);   // ítems del suelo: hay objetos con Grh animado (antorchas, monedas)
+        // ANCLAJE POR LOS PIES, como todo lo demás del mapa (VB6 `Draw_Grh` con Center=1, TileEngine.bas:4654:
+        // centrado en X, por el borde de abajo en Y). Con el centrado en los dos ejes, una puerta —que mide
+        // dos de alto— quedaba 16 px metida en el piso.
+        if (g && sheets[g.file]) dGrh(ctx, sheets[g.file], g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
+        else if (g) loadSheet(g.file);
+      };
+      // Avanza las dos listas hasta la fila/columna del personaje que se va a dibujar. El empate (mismo
+      // tile) va PRIMERO el objeto, para que el personaje parado encima quede por delante — igual que el
+      // original, que dibuja el ObjGrh antes que el char dentro del mismo tile.
+      const capa2Hasta = (fy, fx) => {
+        while (iObj < objsMapa.length) {
+          const e = objsMapa[iObj];
+          if (e[1] > fy || (e[1] === fy && e[0] > fx)) break;
+          // se saltea el tile donde el server ya mandó algo: el estado VIVO (la puerta abierta tiene otro
+          // gráfico) llega por ObjectCreate y se dibuja por la otra lista.
+          if (!ground.has(e[0] + ',' + e[1])) {
+            drawSparseTile(e, camX, camY, undefined, offX, offY);
+            if (_orden) _orden.push(['obj', e[1], e[0]]);
+          }
+          iObj++;
+        }
+        while (iSuelo < delSuelo.length) {
+          const it = delSuelo[iSuelo];
+          if (it.y > fy || (it.y === fy && it.x > fx)) break;
+          pintarObjetoDelSuelo(it);
+          if (_orden) _orden.push(['suelo', it.y, it.x]);
+          iSuelo++;
+        }
+      };
       // Empate (mismo tile): primero la capa 3, para que el personaje parado ahí quede ENCIMA de ella.
       const capa3Hasta = (fy, fx) => {
         while (iDeco < deco.length) {
@@ -4430,6 +4466,8 @@
         }
       };
       for (const { ci, c, muriendo, rx: crx, ry: cry } of aDibujar) {
+        capa2Hasta(cry, crx);
+        if (_orden) _orden.push(['char', Math.round(cry), Math.round(crx)]);
         capa3Hasta(cry, crx);
         // El descarte por TIEMPO va antes de mirar si está en pantalla: si no, uno que muere fuera de cámara
         // se queda en `dying` para siempre.
@@ -4511,6 +4549,9 @@
       // Lo que queda de la capa 3: las filas que están por DEBAJO de todos los personajes. Va acá, y no
       // apenas termina el bucle, para no cambiar de paso el orden contra las etiquetas —que hoy quedan
       // tapadas por el follaje de adelante, igual que el personaje.
+      // DRENAJE FINAL: lo que quedó por debajo del último personaje. Sin esto, en una pantalla sin nadie
+      // más abajo, la mitad sur del mapa se quedaría sin objetos.
+      capa2Hasta(Infinity, Infinity);
       capa3Hasta(Infinity, Infinity);
       // Partículas del mapa: van acá porque el original las dibuja DENTRO del recorrido de tiles, después de
       // la capa 3 y antes de los techos (TileEngine.bas:2226).
