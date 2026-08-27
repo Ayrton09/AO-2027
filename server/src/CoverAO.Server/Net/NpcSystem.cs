@@ -1057,6 +1057,11 @@ public sealed class NpcSystem
                         SubirSkillPorUso?.Invoke(player, GameLimits.SkillDefensa);
                     }
                 }
+                // SER ATACADO ENTRENA TÁCTICAS (VB6 NpcAtacaUser, SistemaCombate.bas:759): el SubirSkill va
+                // DESPUÉS del If/Else de impacto, o sea que el defensor entrena tanto si el golpe entra como
+                // si lo esquiva. Es LA manera de subir la evasión — el atacante nunca la sube (:218 entrena
+                // la skill del arma, y sólo al acertar). Faltaba en las dos salidas de esta rutina.
+                SubirSkillPorUso?.Invoke(player, GameLimits.SkillTacticas);
                 return; // missed
             }
 
@@ -1101,6 +1106,9 @@ public sealed class NpcSystem
                 player.Connection?.Send(ServerMessages.LocaleMsg(72, npc.Name));
                 PacketDispatcher.KillPlayer(_world, _data, player);
             }
+            // El cierre de NpcAtacaUser (:759): el golpe recibido entrena Tácticas — incluso el que mata,
+            // que en el original también pasa por acá. La otra salida (el fallo) tiene su gemelo arriba.
+            SubirSkillPorUso?.Invoke(player, GameLimits.SkillTacticas);
         }
     }
 

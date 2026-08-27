@@ -4973,6 +4973,9 @@ public sealed partial class PacketDispatcher
         _world.SetGround(pos, FogataApagada, cuantas);
         _world.BroadcastToObservers(pos, ServerMessages.ObjectCreate(pos.X, pos.Y, FogataApagada, 0));
         session.Send(ServerMessages.ConsoleMsg($"Has hecho {cuantas} fogatas.", FuenteInfo));
+        // Hacer fogatas entrena Supervivencia (VB6 TratarDeHacerFogata, Trabajo.bas:1302), igual que
+        // encenderlas (Acciones.bas:576). Estaba sólo el segundo camino.
+        RaiseSkill(session, p, GameLimits.SkillSupervivencia);
         p.TargetObj = FogataApagada;
     }
 
@@ -6795,6 +6798,8 @@ public sealed partial class PacketDispatcher
             // WarpMascotas cuando el amo pisa un mapa inseguro. Este par —sacarla acá y traerla allá— es una
             // sola mecánica; portar la mitad deja mascotas que desaparecen para siempre al entrar a una ciudad.
             if (!_data.IsPkMap(p.Pos.Map)) DejarMascotaEsperandoAfuera(p, npc);
+            // Domar con éxito entrena Domar (VB6 DoDomar, Trabajo.bas:1131) — el intento fallido no.
+            RaiseSkill(session, p, GameLimits.SkillDomar);
         }
     }
 

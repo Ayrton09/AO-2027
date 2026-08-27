@@ -1058,6 +1058,19 @@ public sealed class GameData
                 Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
                 StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
         }
+
+        // EL PIRATA DE RINKEL VENDE PASES QUE ÉL MISMO NO COBRA — bug de la DATA del install, no del port.
+        // Cada transportador está parado en el mapa del que salen sus pases (Nix en el 34, Banderbill en el
+        // 61, Orac en el 181...) y usarlos valida `Pos.Map = DesdeMap` (InvUsuario.bas:1394). El de Rinkel es
+        // el ÚNICO desparejo: spawnea en el Puerto de Rinkel (mapa 99) y sus dos pases (595 y 1053) traen
+        // Desde=20 —la ciudad, donde no hay ningún transportador—, así que comprárselos y usarlos al lado
+        // suyo contesta "el marino se muestra enojado", también en el VB6. Reporte del tester (2026-08-26).
+        // Se corrige el Desde al mapa del vendedor y el destino no se toca; el guard deja la corrección
+        // inerte si algún día la data viene arreglada de origen. PasajesCoherentesTests fija el invariante.
+        foreach (var idx in new[] { 595, 1053 })
+            if (map.TryGetValue(idx, out var pase) && pase.ObjType == 36 && pase.PasajeDesdeMap == 20)
+                map[idx] = pase with { PasajeDesdeMap = 99 };
+
         return map;
     }
 
