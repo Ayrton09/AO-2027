@@ -3508,7 +3508,14 @@
           break;
         }
         case 'CharacterRemove': { const c = chars.get(f.charIndex);   // fade out on death / leave-view instead of popping
-          if (c) { c.diedAt = Date.now(); c.attackAt = 0; dying.set(f.charIndex, c); }
+          // EL FANTASMA ES UNA FOTO QUIETA. `CrearFantasma` (TileEngine.bas:4293) copia sólo el `GrhIndex` de
+          // cada pieza: el Grh queda con `Started = 0`, así que ni `Draw_Grh` ni `DrawGrhtoSurface` le avanzan
+          // el contador aunque se los llame con Animate = 1 (:1790, :4636). Y lo cuelga de
+          // `MapData(Pos.X, Pos.Y)`, o sea del TILE, no de una posición que siga interpolando.
+          //
+          // Acá seguía saliendo de `frameGrh` y de `posRender`, así que el que moría caminando seguía moviendo
+          // las piernas y deslizándose mientras se apagaba.
+          if (c) { c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
           chars.delete(f.charIndex); break; }
         case 'UpdateTagAndStatus': { const c = chars.get(f.charIndex); if (c) c.status = f.status; break; }
         case 'CorreoList': cartas = f.cartas; renderCartas(); break;   // la bandeja del buzon
@@ -3707,10 +3714,19 @@
         }
         // FX de un hechizo de AREA: van a un TILE, no a un personaje, asi que no hay `chars` donde colgarlos.
         // Los emite el 3x3 de HechizoTerrenoEstado (Bomba magica, Tormenta de fuego, Circulo curativo...).
-        // OJO EL -1 EN Y del FX: el server manda `PosCasteadaY + 1` a proposito (el sprite del FX se ancla por
-        // abajo), asi que para saber el tile REAL hay que restarlo de nuevo.
-        case 'EfectoTerrenoFX': groundFx.push({ x: f.x, y: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx }); break;
-        case 'EfectoTerrenoParticula': groundFx.push({ x: f.x, y: f.y, at: Date.now(), kind: 'part', id: f.particula }); break;
+        // EL `+1` EN Y ES DEL SERVER Y SE DIBUJA TAL CUAL. El original manda `PosCasteadaY + 1`
+        // (Servidor/Codigo/modHechizos.bas:470) y su cliente lo pasa derecho a `SetFXMAP` (Cliente/Codigo/
+        // General.bas:1424), que lo guarda en `MapData(X, Y).fX` sin restar nada: en el original el FX del
+        // área queda una baldosa al SUR del centro casteado. Acá se le restaba 1 "para saber el tile real", y
+        // eso corrige dos veces — el sprite salía una baldosa al norte de donde lo pone el original.
+        //
+        // La partícula hermana viaja SIN el `+1` (modHechizos.bas:469), así que los dos casos no son el mismo.
+        // `yArea` es el centro que el server barrió de verdad, y lo usa el tinte del 3x3, que es agregado
+        // nuestro y no tiene por qué moverse con el sprite.
+        case 'EfectoTerrenoFX':
+          groundFx.push({ x: f.x, y: f.y, yArea: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx }); break;
+        case 'EfectoTerrenoParticula':
+          groundFx.push({ x: f.x, y: f.y, yArea: f.y, at: Date.now(), kind: 'part', id: f.particula }); break;
         case 'EfectoCharParticula': {
           // Persistent aura attached to a character. time < 0 = until an explicit remove.
           const c = chars.get(f.charIndex);
@@ -4359,8 +4375,9 @@
       //
       // Acá no existía: morirse no cambiaba nada de la escena salvo tu propio dibujo. Se aplica en el
       // ambiente, que es el único punto por el que pasa todo el mundo en este motor.
-      if (estoyMuerto()) amb = [67, 67, 67];
-      _luzDbg.amb = amb; _luzDbg.muerto = estoyMuerto(); _luzDbg.base = fija;
+      const muerto = estoyMuerto();
+      if (muerto) amb = [67, 67, 67];
+      _luzDbg.amb = amb; _luzDbg.muerto = muerto; _luzDbg.base = fija;
       const t = Date.now();
       const night = amb ? 1 - (amb[0] + amb[1] + amb[2]) / 765 : 0;   // 0 de día, ~0.55 de noche
       // 1) EL AMBIENTE + LAS LUCES AUTORADAS, en un solo light-map que MULTIPLICA.
@@ -4375,7 +4392,12 @@
       // luces llevaban el frame nocturno de 12,1 a 14,6 ms) y hay mapas con 1.700 luces. Asi son unos
       // fillRect sobre un canvas de ~20x16 px mas un blit: con 4 luces cuesta 14,0 ms y con 504 cuesta 14,3
       // -verificado inyectando 500 sinteticas-, o sea que el costo NO crece con la cantidad.
-      const luces = (map && map.luces) || [];
+      // MIENTRAS ESTÁS MUERTO NO HAY NINGUNA LUZ. `Directx_Render_Texture` no mezcla el gris con nada: pisa el
+      // `light_value` que recibe —el de la baldosa, con las luces del .csm ya aplicadas— y lo reemplaza entero
+      // por 67,67,67 (TileEngine.bas:3024). Acá se teñía el ambiente y después las luces se pintaban ENCIMA,
+      // así que un farol o una fogata te seguían iluminando de fantasma y el gris quedaba lleno de agujeros
+      // a plena luz. Vale para las del mapa y para las de los objetos tirados, que van por el mismo camino.
+      const luces = (muerto ? [] : (map && map.luces)) || [];
       if (amb || luces.length) {
         const x0 = Math.floor(camX) - 1, y0 = Math.floor(camY) - 1;
         // EL LIGHT-MAP VA EN BALDOSAS ENTERAS. `VIEW_W` es FRACCIONARIO (sale de VW/TILE, que depende del
@@ -4410,7 +4432,7 @@
         // una fogata tirada a pleno día mostraba un círculo de color que el original no dibuja —una luz
         // blanca multiplicada por blanco es invisible de día— y encima titilaba, cosa que ninguna luz del
         // original hace.
-        for (const it of ground.values()) {
+        if (!muerto) for (const it of ground.values()) {
           const luz = objLights[it.objIndex];
           if (!luz) continue;
           const [rgbO, alcO] = luz;
@@ -4636,7 +4658,7 @@
         // El original los recorre en la misma banda ampliada que las capas transparentes (TileEngine.bas:2115).
         const margen = MARGEN_TILES * TILE;
         if (sx < -margen || sx > VW + margen || sy < -margen || sy > VH + margen) continue;
-        if (muriendo) {   // fade de ~450 ms tras un CharacterRemove: sólo el cuerpo, sin etiqueta ni efectos
+        if (muriendo) {   // el fantasma: sólo el cuerpo, quieto, apagándose (ver el handler de CharacterRemove)
           ctx.globalAlpha = 1 - (Date.now() - c.diedAt) / FADE_FANTASMA_MS;
           drawCharacter(c, sx, sy);   // sin cuadrado de relleno (ver la nota de abajo)
           ctx.globalAlpha = 1;
@@ -4891,9 +4913,11 @@
           if (dt > dur) { groundFx.splice(i, 1); continue; }
           if (cx < -TILE * 4 || cx > VW + TILE * 4 || cy < -TILE * 4 || cy > VH + TILE * 4) continue;
           const k = 1 - dt / dur;
-          // El área barrida, tenue y por debajo del sprite.
+          // El área barrida, tenue y por debajo del sprite. Va sobre `yArea` —el tile que el server casteó—
+          // y no sobre el del sprite, que en el FX viaja corrido una baldosa al sur.
+          const cyArea = ((g.yArea != null ? g.yArea : g.y) - camY) * TILE;
           ctx.fillStyle = `rgba(255,235,200,${0.10 * k})`;
-          ctx.fillRect(cx - TILE, cy - TILE, TILE * 3, TILE * 3);
+          ctx.fillRect(cx - TILE, cyArea - TILE, TILE * 3, TILE * 3);
           if (cuadros) {
             const gr = staticGrh(anim.frames[Math.floor(dt / FRAME_MS) % cuadros]);
             if (gr && sheets[gr.file]) {
