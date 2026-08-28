@@ -185,7 +185,7 @@ public sealed partial class PacketDispatcher
             fam.Vida = System.Math.Max(1, criatura.Hp);   // se lleva la vida con la que estaba peleando
             var donde = criatura.Pos;
             _world.RemoveNpc(criatura.CharIndex);          // esto ya le pone CharIndexEnElMundo en 0
-            _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(criatura.CharIndex));
+            _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(criatura.CharIndex, faded: true));
         }
         fam.CharIndexEnElMundo = 0;
         if (porGusto) amo.Connection?.Send(ServerMessages.ConsoleMsg($"{fam.Nombre} se retira.", FuenteInfo));

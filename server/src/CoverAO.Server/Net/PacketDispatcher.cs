@@ -868,7 +868,7 @@ public sealed partial class PacketDispatcher
             if (yaOnline.Connection is null)
             {
                 _world.Remove(yaOnline.CharIndex);
-                _world.BroadcastToObservers(yaOnline.Pos, ServerMessages.CharacterRemove(yaOnline.CharIndex));
+                _world.BroadcastToObservers(yaOnline.Pos, ServerMessages.CharacterRemove(yaOnline.CharIndex, faded: false));
                 Console.WriteLine($"[{session.RemoteEndpoint}] LOGIN: '{charName}' estaba en el mundo sin conexión; se lo saca y se deja entrar");
             }
             else if (yaOnline.Saliendo)
@@ -2224,7 +2224,7 @@ public sealed partial class PacketDispatcher
     private void NpcKilledByPlayer(ClientSession session, Player p, Npc npc)
     {
         _world.RemoveNpc(npc.CharIndex);
-        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         // EL GRITO AL MORIR (VB6 MODULO_NPCs.bas:101), y va justo acá: el original lo emite apenas `QuitarNPC`
         // sacó la criatura del mundo —o sea después del CharacterRemove— y antes de repartir experiencia.
         //
@@ -4075,7 +4075,7 @@ public sealed partial class PacketDispatcher
         var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
         if (npc is null) { session.Send(ServerMessages.ConsoleMsg("No hay una criatura al frente.", FuenteInfo)); return; }
         _world.RemoveNpc(npc.CharIndex);
-        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         session.Send(ServerMessages.ConsoleMsg($"Eliminaste a {npc.Name}.", FuenteInfo));
     }
 
@@ -4181,7 +4181,7 @@ public sealed partial class PacketDispatcher
         {
             _npcs?.CancelRespawn(npc.CharIndex);   // VB6 QuitarNPC: tampoco respawnean las de /MASSKILL
             _world.RemoveNpc(npc.CharIndex);
-            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
         Console.WriteLine($"[{session.RemoteEndpoint}] /MASSKILL {p!.Name}: {victimas.Count} criaturas");
     }
@@ -4231,7 +4231,7 @@ public sealed partial class PacketDispatcher
         if (npc is null) return;   // el VB6 sale en silencio si no hay target
         _npcs?.CancelRespawn(npc.CharIndex);   // "sin respawn" de verdad: si no, reaparecía a los 5 s
         _world.RemoveNpc(npc.CharIndex);
-        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         Console.WriteLine($"[{session.RemoteEndpoint}] /MATA {p!.Name} -> {npc.Name}");
     }
 
@@ -6855,7 +6855,7 @@ public sealed partial class PacketDispatcher
         short ficha = amo.MascotasType[slot];
         var donde = npc.Pos;
         _world.RemoveNpc(npc.CharIndex);              // esto le borra el lugar (World.RemoveNpc → QuitarMascota)
-        _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(npc.CharIndex));
+        _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         amo.MascotasType[slot] = ficha;               // …y acá se lo devolvemos, vacío. El lugar FANTASMA.
         amo.NroMascotas++;
     }
@@ -6903,7 +6903,7 @@ public sealed partial class PacketDispatcher
                 vidaQueTraia = npc.Hp;
                 var donde = npc.Pos;
                 _world.RemoveNpc(viva);                   // libera el lugar (World.RemoveNpc → QuitarMascota)
-                _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(viva));
+                _world.BroadcastToObservers(donde, ServerMessages.CharacterRemove(viva, faded: true));
 
                 if (esInvocada) { ficha = 0; continue; }  // muere y el lugar queda libre de verdad
                 amo.MascotasType[i] = ficha;              // la domada conserva el lugar…
@@ -8632,8 +8632,8 @@ public sealed partial class PacketDispatcher
             }
             else if (was && !now)
             {
-                p.Connection?.Send(ServerMessages.CharacterRemove(other.CharIndex)); // p loses sight of other
-                other.Connection?.Send(ServerMessages.CharacterRemove(p.CharIndex));
+                p.Connection?.Send(ServerMessages.CharacterRemove(other.CharIndex, faded: true)); // p loses sight of other
+                other.Connection?.Send(ServerMessages.CharacterRemove(p.CharIndex, faded: true));
             }
         }
         // SÓLO los NPCs del mapa donde está pasando algo. `InView` ya exige mismo mapa, así que los de los
@@ -8647,11 +8647,11 @@ public sealed partial class PacketDispatcher
         {
             bool was = World.InView(from, npc.Pos), now = World.InView(to, npc.Pos);
             if (now && !was) p.Connection?.Send(ServerMessages.CharacterCreate(npc));
-            else if (was && !now) p.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex));
+            else if (was && !now) p.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
         if (from.Map != to.Map)
             foreach (var npc in world.NpcsOnMap(from.Map))
-                if (World.InView(from, npc.Pos)) p.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex));
+                if (World.InView(from, npc.Pos)) p.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
     }
 
     /// <summary>Melee damage via the ported CalcularDano formula (SistemaCombate.bas:300-433). El original
@@ -11597,7 +11597,7 @@ public sealed partial class PacketDispatcher
             foreach (var summon in _world.Npcs.Where(n => n.OwnerCharIndex == p.CharIndex).ToList())
             {
                 _world.RemoveNpc(summon.CharIndex);
-                _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex));
+                _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex, faded: true));
             }
             try { _db.SaveCharacter(p); }
             catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
@@ -11616,7 +11616,7 @@ public sealed partial class PacketDispatcher
             // sólo crecía.
             BroadcastToAdmins(ServerMessages.LocaleMsg(490, p.Name));
             _world.Remove(p.CharIndex);
-            _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterRemove(p.CharIndex)); // tell observers it left view
+            _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterRemove(p.CharIndex, faded: false)); // se va de golpe, sin fantasma
             _world.Events.Publish(new PlayerDisconnected(p.CharIndex));
             // Soltar el Player de la sesión muerta. Sin esto quedaba colgado del ClientSession —con sus 20
             // slots de inventario, 40 de banco y los arrays de skills y hechizos— y encima cualquier paquete

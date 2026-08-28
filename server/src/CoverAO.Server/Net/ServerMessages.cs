@@ -414,8 +414,23 @@ public static class ServerMessages
         new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterMove)
             .WriteInteger(charIndex).WriteByte(x).WriteByte(y).ToArray();
 
-    /// <summary>A character left view / disconnected. Layout: CharIndex, Desvanecido(bool).</summary>
-    public static byte[] CharacterRemove(short charIndex, bool faded = false) =>
+    /// <summary>Se saca un personaje de la pantalla. Layout: CharIndex, Desvanecido(bool).
+    ///
+    /// <para><b>El booleano decide si el cliente hace el FANTASMA</b>: <c>HandleCharacterRemove</c>
+    /// (Cliente/Codigo/Protocol.bas:1822) sólo llama a <c>CrearFantasma</c> si viene en <c>True</c>; con
+    /// <c>False</c> el personaje desaparece de golpe. En el original vale <c>True</c> en todos lados salvo
+    /// uno: <c>EraseNPCChar</c> lo manda en <c>True</c> (MODULO_NPCs.bas:672) y <c>EraseUserChar</c> lo
+    /// recibe de quien lo llame — <c>True</c> al cambiar de mapa (Modulo_UsUaRiOs.bas:1597) y <c>False</c>
+    /// al desconectar, después de guardar (TCP.bas:1650).</para>
+    ///
+    /// <para>El parámetro NO tiene default a propósito. Lo tenía —en <c>false</c>— y las 18 emisiones se
+    /// escribieron sin pensarlo, así que el mundo entero mandaba lo contrario de lo que manda el original.
+    /// El oráculo no puede verlo: compara QUÉ paquetes vuelven, no sus bytes.</para>
+    ///
+    /// <para>Los avisos de que algo salió de VISTA son nuestros: el original no los manda desde su sistema
+    /// de áreas (no hay un solo <c>PrepareMessageCharacterRemove</c> en ModAreas.bas). Van en <c>true</c>,
+    /// que es lo que el cliente ya venía dibujando.</para></summary>
+    public static byte[] CharacterRemove(short charIndex, bool faded) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterRemove)
             .WriteInteger(charIndex).WriteBoolean(faded).ToArray();
 

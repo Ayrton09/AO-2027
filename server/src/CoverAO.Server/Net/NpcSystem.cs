@@ -206,7 +206,7 @@ public sealed class NpcSystem
             var npc = conVencimiento[i];
             if (tick < npc.ExpireAtTick) continue;
             _world.RemoveNpc(npc.CharIndex);
-            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex));
+            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
 
         // Respawn management: notice kills (handler removed the NPC) and respawn after the delay.
@@ -606,7 +606,7 @@ public sealed class NpcSystem
             bool was = World.InView(pl.Pos, from), now = World.InView(pl.Pos, dest);
             if (was && now) pl.Connection?.Send(ServerMessages.CharacterMove(npc.CharIndex, dest.X, dest.Y));
             else if (now) pl.Connection?.Send(ServerMessages.CharacterCreate(npc));
-            else if (was) pl.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex));
+            else if (was) pl.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
     }
 
@@ -1066,7 +1066,7 @@ public sealed class NpcSystem
     /// loot, así que sólo se la saca del mundo. El dueño se entera porque deja de verla.</summary>
     private void MatarNpcSinDueno(Npc victima)
     {
-        _world.BroadcastToObservers(victima.Pos, ServerMessages.CharacterRemove(victima.CharIndex));
+        _world.BroadcastToObservers(victima.Pos, ServerMessages.CharacterRemove(victima.CharIndex, faded: true));
         _world.RemoveNpc(victima.CharIndex);
     }
 

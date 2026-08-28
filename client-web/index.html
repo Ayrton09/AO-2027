@@ -2006,6 +2006,15 @@
     const COLOR_NICK = { 1: '#72736c', 2: '#2051fb', 3: '#cc6b00', 4: '#c40005', 5: '#2051fb', 6: '#cc6b00' };
     const colorDelNick = (c) => COLOR_NICK[c.status] || '#72736c';
 
+    /** Parte el tag `"Nick <Clan>"` que manda el server (Modulo_UsUaRiOs.bas:215) en sus dos renglones, como
+     *  hace `getTagPosition` (General.bas:1324). Va en un solo lugar porque lo necesitan el personaje vivo y
+     *  el fantasma, y dos copias de la misma regla se separan en cuanto alguien toca una. */
+    const partirTag = (tag) => {
+      const t = tag || '';
+      const abre = t.indexOf(' <');
+      return abre > 0 ? { nombre: t.slice(0, abre), clan: t.slice(abre + 1) } : { nombre: t, clan: '' };
+    };
+
     /** Texto del mundo con contorno negro. Los nicks van sobre pasto, arena, piedra y agua, y un gris claro
      *  plano se pierde en la mitad de esos fondos; el contorno lo hace legible en todos sin cambiarle el
      *  color, que codifica alineamiento (ver COLOR_NICK) y donador (dorado). */
@@ -3511,7 +3520,12 @@
           saltarA(c, f.x, f.y);   // el server manda: se OBEDECE de una, sin deslizar (ver `saltarA`)
           break;
         }
-        case 'CharacterRemove': { const c = chars.get(f.charIndex);   // fade out on death / leave-view instead of popping
+        case 'CharacterRemove': { const c = chars.get(f.charIndex);
+          // EL PAQUETE DICE SI HAY FANTASMA. Trae un booleano `Desvanecido` y `HandleCharacterRemove`
+          // (Protocol.bas:1822) sólo llama a `CrearFantasma` cuando viene en True; con False el personaje
+          // desaparece en el mismo cuadro. El original manda False en un solo caso —al desconectarse, después
+          // de guardar (TCP.bas:1650)— y True en el resto. Acá el flag se decodificaba y no lo miraba nadie:
+          // el que se deslogueaba se quedaba 2,4 s desvaneciéndose en la pantalla de los demás.
           // EL FANTASMA ES UNA FOTO QUIETA. `CrearFantasma` (TileEngine.bas:4293) copia sólo el `GrhIndex` de
           // cada pieza: el Grh queda con `Started = 0`, así que ni `Draw_Grh` ni `DrawGrhtoSurface` le avanzan
           // el contador aunque se los llame con Animate = 1 (:1790, :4636). Y lo cuelga de
@@ -3519,7 +3533,7 @@
           //
           // Acá seguía saliendo de `frameGrh` y de `posRender`, así que el que moría caminando seguía moviendo
           // las piernas y deslizándose mientras se apagaba.
-          if (c) { c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
+          if (c && f.faded) { c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
           chars.delete(f.charIndex); break; }
         case 'UpdateTagAndStatus': { const c = chars.get(f.charIndex); if (c) c.status = f.status; break; }
         case 'CorreoList': cartas = f.cartas; renderCartas(); break;   // la bandeja del buzon
@@ -4666,6 +4680,21 @@
           ctx.globalAlpha = 1 - (Date.now() - c.diedAt) / FADE_FANTASMA_MS;
           drawCharacter(c, sx, sy);   // sin cuadrado de relleno (ver la nota de abajo)
           ctx.globalAlpha = 1;
+          // EL FANTASMA LLEVA EL NOMBRE Y EL CLAN, y sólo si es un USUARIO. `CrearFantasma` se los copia
+          // (TileEngine.bas:4325, :4328-4329) junto con el color, y `RenderScreen` los dibuja detrás de un
+          // `If .CharFantasma.EsUsuario` (:2160-2163) — la criatura que matás se apaga sin etiqueta.
+          //
+          // Y van con el color de facción, NO con el alfa del desvanecido: `Engine_Text_Render` recibe
+          // `.CharFantasma.color` mientras las cinco piezas del cuerpo reciben `TempColor`, que es el único
+          // que lleva el `AlphaB`. O sea que el texto se mantiene entero mientras el cuerpo se apaga.
+          if (!c.esNpc) {
+            const pie = c._base != null ? c._base : sy + TILE;
+            const { nombre, clan } = partirTag(c.name);
+            etiquetas.push({ texto: nombre, x: sx + TILE / 2, y: pie + 10,
+                             color: c.donador ? '#ffd24a' : colorDelNick(c), alpha: 1 });
+            if (clan) etiquetas.push({ texto: clan, x: sx + TILE / 2, y: pie + 25,
+                                       color: colorDelNick(c), alpha: 1 });
+          }
           continue;
         }
         // SI LA HOJA NO CARGO TODAVIA, NO SE DIBUJA NADA. El original hace `If .body.Walk(.Heading).GrhIndex
@@ -4691,10 +4720,7 @@
           // abajo, en el mismo color de facción (TileEngine.bas:2505). Acá se pintaba el tag entero como
           // nombre, así que el `<Clan>` iba pegado al nick en el mismo renglón (o directamente no llegaba,
           // porque nuestro server mandaba el nick pelado).
-          const tag = c.name || '';
-          const abre = tag.indexOf(' <');
-          const soloNombre = abre > 0 ? tag.slice(0, abre) : tag;
-          const clan = abre > 0 ? tag.slice(abre + 1) : '';
+          const { nombre: soloNombre, clan } = partirTag(c.name);
           etiquetas.push({ texto: soloNombre, x: sx + TILE / 2, y: base + 10,
                            color: c.donador ? '#ffd24a' : colorDelNick(c), alpha: 1 });
           if (clan) etiquetas.push({ texto: clan, x: sx + TILE / 2, y: base + 25,

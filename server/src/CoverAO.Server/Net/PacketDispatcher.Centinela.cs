@@ -233,7 +233,7 @@ public sealed partial class PacketDispatcher
         _npcs?.CancelRespawn(_centinelaNpcCharIndex);
         _world.RemoveNpc(_centinelaNpcCharIndex);
         if (npc is not null)
-            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(_centinelaNpcCharIndex));
+            _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(_centinelaNpcCharIndex, faded: true));
         _centinelaNpcCharIndex = 0;
     }
 
