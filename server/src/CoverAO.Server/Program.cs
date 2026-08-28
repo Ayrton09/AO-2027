@@ -652,6 +652,7 @@ loop.OnTickHandler = tick =>
             {
                 pl.Mana = Math.Min(pl.MaxMana, pl.Mana + Survival.ManaAlMeditar(pl.MaxMana, gameData.PorcentajeRecuperoMana));
                 cambioMana = true;   // VB6: WriteUpdateMana
+                dispatcher?.MeditarSubeSkill(pl);   // Trabajo.bas:2113, adentro del mismo `If res = 1`
             }
             // RecStamina (VB6 General.bas:1093): cada 50 vueltas (2 s), descanses o no —el original le pasa ese
             // 50 literal en las dos ramas—, y con un corte que el port no tenía: no recupera NADA mientras

@@ -1867,7 +1867,30 @@
           sy < -MARGEN_TILES || sy >= VIEW_H + MARGEN_TILES) return;
       const g = animGrh(grh, ox, oy); if (!g) return;   // objetos/decorado/techos: animados si el Grh lo es
       const sheet = sheets[g.file]; if (!sheet) { loadSheet(g.file); return; }
-      dGrh(destino || ctx, sheet, g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
+      const dx = sx * TILE + offX + (TILE - g.w) / 2, dy = sy * TILE + offY + TILE - g.h;
+      dGrh(destino || ctx, sheet, g, dx, dy, g.w, g.h);
+      // Sólo lo que va al canvas del mundo tapa un nombre. La capa 4 pasa por acá con `destino` puesto
+      // (se arma aparte para poder desvanecerla) y NO tiene que borrar nada: el techo se compone DESPUÉS
+      // de las etiquetas, así que las tapa solo cuando está visible — si las borrara acá, seguirían
+      // borradas estando adentro, con el techo en alpha 0.
+      if (!destino) borrarDeLasEtiquetas(sheet, g, dx, dy);
+    }
+
+    /**
+     * Un objeto del mundo TAPA el nombre que quedó debajo, igual que tapa al personaje: se lo borra de la
+     * capa de etiquetas. Es lo que hace el original por puro orden de dibujo — el nombre sale dentro de
+     * `CharRender` y la pared de una fila más al sur se dibuja después (TileEngine.bas:2129 y :2486).
+     *
+     * Se paga sólo cuando el sprite pisa la caja de las etiquetas de este cuadro, que es un rectángulo
+     * chico: en una pantalla con dos o tres nombres, casi ningún objeto entra.
+     */
+    function borrarDeLasEtiquetas(sheet, g, dx, dy) {
+      const c = cajaEtiquetas;
+      if (!c || !etiquetasCx) return;
+      if (dx > c.x1 || dx + g.w < c.x0 || dy > c.y1 || dy + g.h < c.y0) return;
+      etiquetasCx.globalCompositeOperation = 'destination-out';
+      dGrh(etiquetasCx, sheet, g, dx, dy, g.w, g.h);
+      etiquetasCx.globalCompositeOperation = 'source-over';
     }
     // A full-height equipped-gear overlay (weapon/shield): walk animation like the body, pero anclado con
     // el HeadOffset del cuerpo + un delta vertical (VB6 TileEngine.bas: arma/escudo se dibujan en
@@ -2018,12 +2041,13 @@
     /** Texto del mundo con contorno negro. Los nicks van sobre pasto, arena, piedra y agua, y un gris claro
      *  plano se pierde en la mitad de esos fondos; el contorno lo hace legible en todos sin cambiarle el
      *  color, que codifica alineamiento (ver COLOR_NICK) y donador (dorado). */
-    function outlinedText(text, x, y) {
+    function outlinedText(text, x, y, destino) {
       if (!text) return;
-      const fill = ctx.fillStyle;
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineJoin = 'round';
-      ctx.strokeText(text, x, y);
-      ctx.fillStyle = fill; ctx.fillText(text, x, y);
+      const d = destino || ctx;
+      const fill = d.fillStyle;
+      d.lineWidth = 3; d.strokeStyle = 'rgba(0,0,0,0.85)'; d.lineJoin = 'round';
+      d.strokeText(text, x, y);
+      d.fillStyle = fill; d.fillText(text, x, y);
     }
 
     // Draw a full character: body + weapon/shield overlays (bottom-anchored) + head + helmet (head-anchored).
@@ -4157,6 +4181,20 @@
     let lightCv = null, lightCx = null;
     let techoCv = null, techoCx = null;   // capa aparte para teñir los techos SOLO con el ambiente
     let mascaraCv = null, mascaraCx = null;   // la silueta del techo, para que el tinte no se derrame
+    // LOS NOMBRES Y EL CHAT VIVEN EN SU PROPIA CAPA, y es por dos exigencias que se contradicen en un motor
+    // de canvas. El original dibuja el nombre y el globo DENTRO de `CharRender` (TileEngine.bas:2486 y
+    // :2560), o sea adentro del `For Y / For X`: una pared o una puerta de una fila más al sur se dibuja
+    // después y los TAPA — eso es lo que reportó el tester. Pero además los dibuja con el color del
+    // personaje, no con el `light_value` de la baldosa, así que la noche no los oscurece.
+    //
+    // Acá la luz es un multiply de pantalla completa al final, así que "dentro del bucle" y "sin teñir" no
+    // pueden salir los dos del mismo orden: pintarlos con el mundo los tiñe, y pintarlos después de la luz
+    // los deja flotando sobre las paredes. La salida es esta capa: se pinta el texto acá durante el bucle,
+    // los objetos que vienen DESPUÉS lo van borrando (`destination-out`), y al final se apoya entera sobre
+    // la escena ya iluminada. Mismo orden que el original, sin el tinte.
+    let etiquetasCv = null, etiquetasCx = null;
+    /** El rectángulo que ocupan las etiquetas de este cuadro: fuera de ahí no hace falta borrar nada. */
+    let cajaEtiquetas = null;
 
     // ---- PARTICULAS del mapa: los FX de ambiente (fuentes, antorchas, humo, nieve, cataratas) -------------
     // 131 grupos definidos en particles.ini y 1.874 colocados por tile en 133 mapas. El transcode salteaba las
@@ -4566,7 +4604,42 @@
       // dibujaran junto a cada uno, el sprite del que viene después —el de la fila de abajo, que se dibuja
       // encima— le tapa el nombre al de arriba: con el nick a los pies eso pasa entre dos personajes
       // adyacentes, y se veía en Ullathorpe con un gallo parado justo debajo del jugador.
-      const etiquetas = [];
+      // LA CAPA DE ETIQUETAS de este cuadro (ver su declaración). Se pinta durante el bucle de filas y los
+      // objetos que se dibujan DESPUÉS la van borrando, que es como el original la tapa con las paredes.
+      if (!etiquetasCv || etiquetasCv.width !== canvas.width || etiquetasCv.height !== canvas.height) {
+        etiquetasCv = document.createElement('canvas');
+        etiquetasCv.width = canvas.width; etiquetasCv.height = canvas.height;
+        etiquetasCx = etiquetasCv.getContext('2d');
+      }
+      etiquetasCx.setTransform(1, 0, 0, 1, 0, 0);
+      etiquetasCx.clearRect(0, 0, etiquetasCv.width, etiquetasCv.height);
+      etiquetasCx.setTransform(SS, 0, 0, SS, 0, 0);
+      etiquetasCx.font = ctx.font; etiquetasCx.textAlign = ctx.textAlign;
+      cajaEtiquetas = null;
+      /**
+       * Pinta una etiqueta en su capa, en el momento del bucle en que el original la dibujaría, y agranda la
+       * caja que después decide qué objetos hay que borrar. El filtro de `mostrarNombres` va acá y no al
+       * final: si no se pinta, tampoco hay nada que tapar.
+       */
+      const pintarEtiqueta = (et) => {
+        if (!et.texto) return;
+        if (!mostrarNombres && !et.esChat) return;
+        etiquetasCx.globalAlpha = et.alpha;
+        etiquetasCx.fillStyle = et.color;
+        outlinedText(et.texto, et.x, et.y, etiquetasCx);
+        etiquetasCx.globalAlpha = 1;
+        // Ancho generoso a propósito: el texto va centrado y no se mide acá (medirlo por etiqueta cuesta más
+        // que agrandar la caja). Con pasarse, lo único que pasa es que se borran objetos de más — y borrar
+        // donde no hay texto no se ve.
+        const x0 = et.x - 90, x1 = et.x + 90, y0 = et.y - 16, y1 = et.y + 6;
+        if (!cajaEtiquetas) cajaEtiquetas = { x0, y0, x1, y1 };
+        else {
+          if (x0 < cajaEtiquetas.x0) cajaEtiquetas.x0 = x0;
+          if (y0 < cajaEtiquetas.y0) cajaEtiquetas.y0 = y0;
+          if (x1 > cajaEtiquetas.x1) cajaEtiquetas.x1 = x1;
+          if (y1 > cajaEtiquetas.y1) cajaEtiquetas.y1 = y1;
+        }
+      };
       // ORDEN POR FILA. El original no "ordena" personajes: los dibuja dentro de un `For Y / For X`
       // (TileEngine.bas:2116-2195), así que salen naturalmente de arriba hacia abajo y el de más abajo tapa
       // al de más arriba. Acá se recorría el `Map` en ORDEN DE INSERCIÓN —o sea el orden en que el server
@@ -4628,8 +4701,11 @@
         // ANCLAJE POR LOS PIES, como todo lo demás del mapa (VB6 `Draw_Grh` con Center=1, TileEngine.bas:4654:
         // centrado en X, por el borde de abajo en Y). Con el centrado en los dos ejes, una puerta —que mide
         // dos de alto— quedaba 16 px metida en el piso.
-        if (g && sheets[g.file]) dGrh(ctx, sheets[g.file], g, sx * TILE + offX + (TILE - g.w) / 2, sy * TILE + offY + TILE - g.h, g.w, g.h);
-        else if (g) loadSheet(g.file);
+        if (g && sheets[g.file]) {
+          const dx = sx * TILE + offX + (TILE - g.w) / 2, dy = sy * TILE + offY + TILE - g.h;
+          dGrh(ctx, sheets[g.file], g, dx, dy, g.w, g.h);
+          borrarDeLasEtiquetas(sheets[g.file], g, dx, dy);
+        } else if (g) loadSheet(g.file);
       };
       // Avanza las dos listas hasta la fila/columna del personaje que se va a dibujar. El empate (mismo
       // tile) va PRIMERO el objeto, para que el personaje parado encima quede por delante — igual que el
@@ -4690,9 +4766,9 @@
           if (!c.esNpc) {
             const pie = c._base != null ? c._base : sy + TILE;
             const { nombre, clan } = partirTag(c.name);
-            etiquetas.push({ texto: nombre, x: sx + TILE / 2, y: pie + 10,
+            pintarEtiqueta({ texto: nombre, x: sx + TILE / 2, y: pie + 10,
                              color: c.donador ? '#ffd24a' : colorDelNick(c), alpha: 1 });
-            if (clan) etiquetas.push({ texto: clan, x: sx + TILE / 2, y: pie + 25,
+            if (clan) pintarEtiqueta({ texto: clan, x: sx + TILE / 2, y: pie + 25,
                                        color: colorDelNick(c), alpha: 1 });
           }
           continue;
@@ -4721,15 +4797,15 @@
           // nombre, así que el `<Clan>` iba pegado al nick en el mismo renglón (o directamente no llegaba,
           // porque nuestro server mandaba el nick pelado).
           const { nombre: soloNombre, clan } = partirTag(c.name);
-          etiquetas.push({ texto: soloNombre, x: sx + TILE / 2, y: base + 10,
+          pintarEtiqueta({ texto: soloNombre, x: sx + TILE / 2, y: base + 10,
                            color: c.donador ? '#ffd24a' : colorDelNick(c), alpha: 1 });
-          if (clan) etiquetas.push({ texto: clan, x: sx + TILE / 2, y: base + 25,
+          if (clan) pintarEtiqueta({ texto: clan, x: sx + TILE / 2, y: base + 25,
                                      color: colorDelNick(c), alpha: 1 });
           // EL RUBRO, entre `<>` y debajo del nombre (VB6 TileEngine.bas:2529-2532, `General_Locale_NPCs(i, 2)`).
           // Es lo que distingue de un vistazo al mercader de <Armas> del de <Provisiones> y al guardia de la
           // <Sagrada Orden> del de la <Milicia Republicana>. Lo traen 85 de las 627 fichas y no se dibujaba.
           const rubro = c.esNpc && npcsIdx && npcsIdx[c.npcIdx] && npcsIdx[c.npcIdx].s;
-          if (rubro) etiquetas.push({ texto: '<' + rubro + '>', x: sx + TILE / 2, y: base + 22,
+          if (rubro) pintarEtiqueta({ texto: '<' + rubro + '>', x: sx + TILE / 2, y: base + 22,
                                       color: colorDelNick(c), alpha: 1 });
         }
         // Chat over the head (ChatOverHead packet): sobre la CABEZA de verdad — el tope real del sprite, que
@@ -4750,7 +4826,7 @@
             const arriba = (c._top != null ? c._top : sy) - 4;
             const alfa = cdt < vida - 1000 ? 1 : 1 - (cdt - (vida - 1000)) / 1000;
             renglones.forEach((linea, i) => {
-              etiquetas.push({ texto: linea, x: sx + TILE / 2,
+              pintarEtiqueta({ texto: linea, x: sx + TILE / 2,
                                y: arriba - (renglones.length - 1 - i) * 13,
                                // El color va POR DIÁLOGO (el original lo recibe en el paquete y lo pasa a
                                // Char_Dialog_Create): el chat es crema y las palabras mágicas verde oliva.
@@ -4791,6 +4867,9 @@
       // 1/2/4 pero sí 1.074 con valores 20..38— la regla del original no se aplicaba nunca.
       //
       // Y es un FADE, no un corte: el original baja el alpha de 5 en 5 cada 18 ms (255 → 0 en ~0,9 s).
+      // El techo se ARMA acá pero se APOYA más abajo, después de las etiquetas: el original dibuja la capa 4
+      // al final del cuadro y por eso tapa también los nombres.
+      let techosListos = false;
       if (map && map.roofs) {
         if (!map._bajoTecho) map._bajoTecho = new Set((map.bajoTecho || []).map(([x, y]) => x + ',' + y));
         const adentro = me ? map._bajoTecho.has(me.x + ',' + me.y) : false;
@@ -4862,20 +4941,24 @@
           techoCx.drawImage(mascaraCv, 0, 0);
           techoCx.globalCompositeOperation = 'source-over';
         }
+        techosListos = true;
+      }
+      // LOS NOMBRES Y EL CHAT, ya con las paredes recortadas, y ANTES del techo. Van después de la luz para
+      // que la noche no los tiña —el original los dibuja con el color del personaje, no con el de la
+      // baldosa— y antes de la capa 4 porque el original la dibuja al final del cuadro (TileEngine.bas:2249),
+      // después de todo `CharRender`: parado dentro de una casa, al de afuera no se le ve el nombre.
+      if (etiquetasCv && cajaEtiquetas) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(etiquetasCv, 0, 0);
+        ctx.setTransform(SS, 0, 0, SS, 0, 0);
+      }
+      if (techosListos) {
         const previoA = ctx.globalAlpha;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = previoA * techoAlpha;
         ctx.drawImage(techoCv, 0, 0);
         ctx.globalAlpha = previoA;
         ctx.setTransform(SS, 0, 0, SS, 0, 0);
-      }
-      // Los NOMBRES y el CHAT, al final y sin teñir (ver la nota de las partículas).
-      for (const et of etiquetas) {
-        if (!mostrarNombres && !et.esChat) continue;
-        if (!et.texto) continue;
-        ctx.globalAlpha = et.alpha;
-        ctx.fillStyle = et.color;
-        outlinedText(et.texto, et.x, et.y);
       }
       ctx.globalAlpha = 1;
       // EL CLIMA, y DÓNDE se ve. El server manda `RainToggle` a TODO el mundo y eso es fiel: el original hace

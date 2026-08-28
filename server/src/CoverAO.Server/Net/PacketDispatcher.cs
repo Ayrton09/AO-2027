@@ -2035,6 +2035,23 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>
+    /// MEDITAR SUBE SU PROPIA SKILL, y sólo en la vuelta que ACIERTA. El original la sube en la última línea
+    /// de <c>DoMeditar</c> (Trabajo.bas:2113), adentro del <c>If res = 1</c> — o sea junto con el maná que
+    /// recuperás, no en cada vuelta del contador.
+    ///
+    /// <para>Acá no subía. Había estado puesta al ACTIVAR la meditación, que es una canilla —apretar la tecla
+    /// daba skill y experiencia gratis— y al sacarla de ahí se sacó del todo, con un comentario que decía que
+    /// ninguno de los <c>SubirSkill</c> del original es Meditar. Ese comentario estaba mal: es el de
+    /// Trabajo.bas:2113. Lo reportó el tester y lo confirma el fuente.</para>
+    ///
+    /// <para>Y el lugar importa: enganchada al acierto hereda la cadencia y la suerte por skill de la
+    /// meditación (1 de 35 con la skill en 0, 1 de 5 con la skill en 100), así que entrenarla es cada vez más
+    /// rápido — que es lo que hace que la skill sirva para algo.</para>
+    /// </summary>
+    internal void MeditarSubeSkill(Player p) =>
+        RaiseSkill(p.Connection as ClientSession, p, GameLimits.SkillMeditar);
+
+    /// <summary>
     /// Otorga experiencia y avisa al cliente como lo hace el original. Devuelve los niveles que subió.
     ///
     /// La secuencia es la de <c>SistemaCombate.bas:2036</c>: <c>WriteUpdateExp</c> SIEMPRE, y después
@@ -2409,10 +2426,9 @@ public sealed partial class PacketDispatcher
             if (d.ObjIndex <= 0 || d.Amount <= 0) continue;
             bool cae = d.ProbTirar >= 100 || _rng.NextDouble() < Math.Min(1.0, 0.5 * (_admin?.DropMult ?? 1));  // "Evento Drop" del panel
             if (!cae) continue;
-            var pos = FindFreeGround(npc.Pos);
+            var pos = FindFreeGround(npc.Pos, (short)d.ObjIndex, (short)d.Amount);
             if (pos is not { } drop) continue;
-            _world.SetGround(drop, (short)d.ObjIndex, (short)d.Amount);
-            _world.BroadcastToObservers(drop, ServerMessages.ObjectCreate(drop.X, drop.Y, (short)d.ObjIndex, (short)d.Amount));
+            DejarEnElPiso(drop, (short)d.ObjIndex, (short)d.Amount);
             var name = _data.Obj(d.ObjIndex)?.Name ?? $"obj {d.ObjIndex}";
             session.Send(ServerMessages.ConsoleMsg($"{npc.Name} dejó caer {d.Amount}x {name}.", 0));
         }
@@ -2436,15 +2452,64 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>The NPC's tile if free of ground items, else the first free 4-neighbour, else null.</summary>
-    private WorldPos? FindFreeGround(WorldPos at)
+    /// <summary>Hasta dónde busca <c>Tilelibre</c> antes de rendirse (<c>If loopc &gt; 15 Then Exit Do</c>).</summary>
+    private const int RadioTileLibre = 15;
+
+    /// <summary>
+    /// LA BALDOSA DONDE CAE UN OBJETO. Es la regla de <c>Tilelibre</c> (Modulo_UsUaRiOs.bas:1511), por donde
+    /// pasa todo <c>TirarItemAlPiso</c> del original — el botín de una criatura incluido
+    /// (<c>NPC_TIRAR_ITEMS</c>, Modulo_InventANDobj.bas:72).
+    ///
+    /// <para>Acá se miraba UNA sola cosa —que la baldosa no tuviera ya un ítem— y se probaban los cuatro
+    /// vecinos. Por eso el botín aparecía dentro de una pared, que es lo que reportó el tester. El original
+    /// pide cuatro cosas más:</para>
+    /// <list type="bullet">
+    ///   <item><c>LegalPos</c> con <c>PuedeAgua</c> y <c>PuedeTierra</c> en True: la baldosa no está
+    ///     bloqueada y no hay ni jugador ni criatura parados encima. El mar SÍ es un destino válido —el
+    ///     objeto se hunde y se pierde, pero es lo que hace el original.</item>
+    ///   <item>No es una SALIDA (<c>MapData(...).TileExit.Map = 0</c>): sobre un teleport el objeto queda
+    ///     inalcanzable.</item>
+    ///   <item>O está vacía, o tiene EL MISMO objeto y la pila entra: el original APILA
+    ///     (<c>hayobj</c> mira el índice y el tope <c>MAX_INVENTORY_OBJS</c>).</item>
+    ///   <item>Y busca en cuadrados crecientes hasta 15 baldosas, en orden de fila, no en cuatro vecinos.</item>
+    /// </list>
+    /// </summary>
+    private WorldPos? FindFreeGround(WorldPos at, short objIndex, short amount)
     {
-        if (!_world.TryGetGround(at, out _)) return at;
-        foreach (var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) })
-        {
-            var n = new WorldPos(at.Map, (byte)(at.X + dx), (byte)(at.Y + dy));
-            if (!_world.TryGetGround(n, out _)) return n;
-        }
+        for (int radio = 0; radio <= RadioTileLibre; radio++)
+            for (int y = at.Y - radio; y <= at.Y + radio; y++)
+                for (int x = at.X - radio; x <= at.X + radio; x++)
+                {
+                    if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder) continue;
+                    if (y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder) continue;
+                    var n = new WorldPos(at.Map, (byte)x, (byte)y);
+                    if (LaBaldosaRecibeElItem(n, objIndex, amount)) return n;
+                }
         return null;
+    }
+
+    /// <summary>
+    /// Deja el objeto en la baldosa que eligió <see cref="FindFreeGround"/>, APILANDO si ya está el mismo.
+    /// <c>MakeObj</c> (Modulo_InventANDobj.bas) suma sobre la pila que hay en vez de pisarla, y el
+    /// <c>ObjectCreate</c> que manda lleva el TOTAL, no lo que acaba de caer.
+    /// </summary>
+    private void DejarEnElPiso(WorldPos donde, short objIndex, short amount)
+    {
+        short total = amount;
+        if (_world.TryGetGround(donde, out var hay) && hay.ObjIndex == objIndex)
+            total = (short)Math.Min(GameLimits.MaxInventoryObjs, hay.Amount + amount);
+        _world.SetGround(donde, objIndex, total);
+        _world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, objIndex, total));
+    }
+
+    /// <summary>Las condiciones de <c>Tilelibre</c> sobre UNA baldosa. Ver <see cref="FindFreeGround"/>.</summary>
+    private bool LaBaldosaRecibeElItem(WorldPos p, short objIndex, short amount)
+    {
+        if (_data.IsBlockedTile(p.Map, p.X, p.Y)) return false;
+        if (_world.PlayerAt(p) is not null || _world.NpcAt(p) is not null) return false;
+        if (_data.MapExits.ContainsKey((p.Map, p.X, p.Y))) return false;
+        if (!_world.TryGetGround(p, out var hay)) return true;
+        return hay.ObjIndex == objIndex && hay.Amount + amount <= GameLimits.MaxInventoryObjs;
     }
 
     /// <summary>GM commands (GMCommands packet, id 92): a subcommand byte (eGMCommands) + its args.
@@ -6067,10 +6132,9 @@ public sealed partial class PacketDispatcher
         int slot = FindSlotFor(p, obj);
         if (slot == 0)                                                          // sin lugar → al piso
         {
-            if (FindFreeGround(p.Pos) is { } spot)
+            if (FindFreeGround(p.Pos, obj, 1) is { } spot)
             {
-                _world.SetGround(spot, obj, 1);
-                _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, obj, 1));
+                DejarEnElPiso(spot, obj, 1);
             }
             return;
         }
