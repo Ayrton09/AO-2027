@@ -1493,15 +1493,22 @@
     }
     // La velocidad de animación del motor original: `FrameCounter += timerTicksPerFrame * Grh.speed` con
     // `timerTicksPerFrame = msTranscurridos * engineBaseSpeed` y `engineBaseSpeed = 0.018`
-    // (TileEngine.bas:1788, :3163 y :2846). O sea 0,018 frames por milisegundo por unidad de `speed`:
-    // con speed 1 son ~55,6 ms por cuadro, y el agua de 4 cuadros cierra su ciclo en ~222 ms.
+    // (TileEngine.bas:1788, :3163 y :2846). O sea 0,018 cuadros por milisegundo por unidad de factor.
     //
     // NO se inventa una constante en milisegundos ni se copia la de otro port: la unidad la define esta
     // cadena, y de ella depende que el agua se mueva como en el original y no al doble o a la mitad.
     const ENGINE_BASE_SPEED = 0.018;
-    // El factor FIJO con que `Draw_Grh` anima las piezas de un personaje (TileEngine.bas:4637). Va aparte de
-    // la `speed` del gráfico a propósito: para un personaje el original nunca la mira.
-    const PASO_ANIM_PERSONAJE = 0.5;
+    // EL 0,5 DE `Draw_Grh`, Y VALE PARA TODO EL MUNDO — no sólo para los personajes (TileEngine.bas:4637):
+    // `Grh.FrameCounter + (timerTicksPerFrame * 0.5)`, cableado, sin mirar nunca la `speed` del gráfico.
+    // Por `Draw_Grh` pasan la capa 1 (:2080), la capa 2 (:2102), el objeto del mundo (:2129), la capa 3
+    // (:2136), los techos (:2249) y las piezas de cada personaje (:2444-2478): todo salvo los FX. Da
+    // 1/(0,018*0,5) = 111,1 ms por cuadro parejo, y el agua de 4 cuadros cierra su ciclo en 444 ms.
+    //
+    // La `speed` del gráfico NO entra acá. La lee `DrawGrhtoSurface` (:1788), que dibuja SÓLO los FX y el
+    // fantasma, y a la que `InitGrh` (:1104) le deja 0,8 fijo igual para todos. Acá se multiplicaba por la
+    // `speed` del atlas y eso ponía el mundo entero al doble (los 2109 grh animados con speed 1 — el agua,
+    // las antorchas, la lava, las cataratas), a 4x los 42 con speed 2 y a 6x el único con speed 3.
+    const PASO_DRAW_GRH = 0.5;
     let _cuadroMio = null;
     /** Sonda: identificador del cuadro que se esta dibujando ahora de mi propio cuerpo. */
     window.__cuadroDelPersonaje = () => _cuadroMio;
@@ -1533,7 +1540,6 @@
     window.__tirar = (slot) => tirarDelSlot(slot);
     /** Sonda: como parte el motor un dialogo en renglones (VB6 FormatChat). */
     window.__renglones = (s) => cortarEnRenglones(s);
-    /** Sonda: a que pixel de la pantalla cae una posicion del mundo (para recortar ahi y medir). */
     /** Sonda: forzar el cuerpo de mi personaje al del cadaver, para medir el mundo del muerto. */
     window.__setMuerto = (v) => { const c = chars.get(myCharIndex); if (c) c.body = v ? CUERPO_MUERTO : c.body; return !!c; };
     let _ultimoFx = null;
@@ -1546,9 +1552,6 @@
       if (!g.frames) return g.file != null ? g : null;
       const n = g.frames.length;
       if (!n) return null;
-      // El VB6 lleva un contador por Grh, pero los del mapa nacen todos juntos al cargarlo, así que
-      // comparten fase: un reloj global es equivalente para las capas del mundo (no para personajes,
-      // que aparecen en momentos distintos — esos siguen con su propio contador en `frameGrh`).
       // CADA BALDOSA LLEVA SU PROPIA FASE. En el original cada `MapData(x,y).Graphic(n)` es un Grh con su
       // `FrameCounter`, que avanza SOLO cuando esa baldosa se dibuja (Draw_Grh la recibe ByRef,
       // TileEngine.bas:4636), así que una columna de agua no late toda junta. Acá un reloj global las hacía
@@ -1558,7 +1561,7 @@
       // grh, así que derivarla de él las dejaría igual de sincronizadas. Con un hash de la posición es
       // estable entre cuadros, no cuesta guardar nada, y las vecinas caen en momentos distintos.
       const fase = ((tx * 73856093) ^ (ty * 19349663)) % 1000;
-      const idx = Math.floor((performance.now() + fase) * ENGINE_BASE_SPEED * (g.speed || 1)) % n;
+      const idx = Math.floor((performance.now() + fase) * ENGINE_BASE_SPEED * PASO_DRAW_GRH) % n;
       const f = atlas[g.frames[idx]];
       return f && f.file != null ? f : null;
     }
@@ -1571,11 +1574,12 @@
       for (const k in atlas) if (atlas[k] && atlas[k].frames) animados++;
       const g = grhIndex && atlas[grhIndex];
       const cuadro = g && g.frames
-        ? Math.floor(performance.now() * ENGINE_BASE_SPEED * (g.speed || 1)) % g.frames.length
+        ? Math.floor(performance.now() * ENGINE_BASE_SPEED * PASO_DRAW_GRH) % g.frames.length
         : null;
+      // `speed` se informa para poder VER que la data la trae y que igual no se usa: el original tampoco.
       return { animados, grh: grhIndex || null, cuadros: g && g.frames ? g.frames.length : 0,
-               speed: g ? (g.speed || 1) : null, cuadroAhora: cuadro,
-               msPorCuadro: g && g.frames ? +(1 / (ENGINE_BASE_SPEED * (g.speed || 1))).toFixed(1) : null };
+               speedDeLaData: g ? (g.speed || 1) : null, cuadroAhora: cuadro,
+               msPorCuadro: g && g.frames ? +(1 / (ENGINE_BASE_SPEED * PASO_DRAW_GRH)).toFixed(1) : null };
     };
     // Resolve to the CURRENT animation frame — cycles the walk frames while the char is moving.
     function frameGrh(grhIndex, char) {
@@ -1587,7 +1591,8 @@
         // con `Draw_Grh` (TileEngine.bas:2444-2472, veintiuna llamadas, todas a la misma rutina), y
         // `Draw_Grh` avanza `FrameCounter + (timerTicksPerFrame * 0.5)` (TileEngine.bas:4637): un 0,5
         // CABLEADO que NO lee la `speed` del gráfico. La que sí la lee es `DrawGrhtoSurface` (:1788), que
-        // es otra rutina y dibuja los FX y las baldosas del mapa — no los personajes.
+        // es otra rutina y dibuja SÓLO los FX y el fantasma — las baldosas del mapa NO pasan por ahí, van
+        // por `Draw_Grh` igual que el personaje (por eso el 0,5 es uno solo, `PASO_DRAW_GRH`).
         //
         // Acá se multiplicaba por `g.speed`, citando justamente el :1788, y eso rompía dos cosas a la vez:
         //   * con speed 1 (los 1785 cuerpos animados) la caminata salía al DOBLE de velocidad — 55,6 ms
@@ -1610,7 +1615,7 @@
         let idx = 0;
         if (moving) {
           const t = performance.now() - (char.animT0 || 0);
-          idx = Math.floor(t * ENGINE_BASE_SPEED * PASO_ANIM_PERSONAJE) % g.frames.length;
+          idx = Math.floor(t * ENGINE_BASE_SPEED * PASO_DRAW_GRH) % g.frames.length;
         }
         g = atlas[g.frames[idx]];
       }
