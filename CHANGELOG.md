@@ -2,6 +2,60 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.0 — 2026-08-28
+
+Esta tanda es casi toda **dibujo**: se cruzó el cliente entero contra el motor del juego original y se
+corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que más se nota:
+
+- **El mundo se mueve a la velocidad de siempre.** Todo lo animado —la caminata, el oleaje, las antorchas, la
+  lava, las cataratas— iba al doble de rápido, y algunas baldosas hasta seis veces. Por eso el muñeco parecía
+  patinar contra el piso al caminar.
+
+- **Los efectos de los hechizos caen donde tienen que caer.** Salían hasta tres baldosas y media más abajo:
+  el destello con el que aparecés al entrar quedaba hundido en los pies en vez de envolverte. Y los hechizos
+  de área ahora muestran su animación de verdad, no un cuadrado de color.
+
+- **La noche es gris, no azul**, y el amanecer y el atardecer tienen los colores del original. Las luces de
+  adentro de las casas ya no atraviesan el techo: de noche los techos de las ciudades se veían llenos de
+  cuadrados brillantes.
+
+- **Estando muerto el mundo se apaga.** Todo se ve a un cuarto de su brillo mientras sos fantasma, y ninguna
+  luz te ilumina. Además el fantasma aparece y desaparece, en vez de quedarse como un dibujo fijo, y camina
+  más rápido que un vivo.
+
+- **Al que se oculta lo seguís viendo como una silueta que va y viene.** Ocultarse nunca te borró de la
+  pantalla de los demás en el juego original; esto cambia bastante el enfrentamiento entre jugadores.
+
+- **Las puertas, los estandartes y las antorchas de pie tapan al que está detrás.** Antes el personaje —y su
+  nombre— quedaban flotando por delante del frente de la casa. Lo mismo con los objetos tirados en el piso.
+
+- **El equipo de tope tiene su resplandor.** Quince objetos del juego traen aura y no se dibujaba ninguna.
+
+- **El clan aparece sobre la cabeza**, debajo del nombre, que es con lo que se reconoce a un aliado antes de
+  que empiece la pelea.
+
+- **Lo que decís se parte en renglones y dura más**, y el color cambia según cómo hables: susurro, grito,
+  global. Los números de daño ahora acompañan al personaje mientras se mueve en vez de quedarse clavados.
+
+- **El agua es una pared.** Contra la orilla el personaje se metía medio paso en el agua y rebotaba varias
+  veces por segundo, con toda la pantalla temblando. Y **paralizado ahora girás pero no caminás**: antes el
+  muñeco recorría el mapa mientras para el resto seguías quieto donde te paralizaron.
+
+- **El cartel del lugar es el dibujo pintado del original**, y ya no aparece en los 139 mapas que no tienen
+  ninguno.
+
+- **Se sacaron cosas que el juego original no hace**: el salto y el arco blanco al pegar, el halo de los
+  objetos tirados, el velo azul de la lluvia y el símbolo sobre la cabeza al trabajar.
+
+- **Lo que se te cae de una criatura ya no aparece dentro de una pared** ni sobre un teleport: busca una
+  baldosa donde se pueda juntar, y si ahí ya hay algo igual, se apila.
+
+- **Meditar entrena la habilidad Meditar**, cada vez que recuperás maná. Cuanto más alta, más seguido
+  recuperás.
+
+- **El que se desconecta desaparece de golpe.** Se quedaba dos segundos y medio desvaneciéndose en la
+  pantalla de los demás.
+
 ## 1.0.0 — 2026-08-01
 
 - **Cada raza usa la ropa que le corresponde.** El elfo, el humano, el drow y el orco son razas altas y visten
