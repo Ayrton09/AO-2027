@@ -1039,7 +1039,11 @@
     let miFamiliar = null;
     let myHitAt = 0;               // timestamp of the last time we got hit (drives a brief red flash)
     let blind = false;             // ceguera por hechizo (Blind 57 / BlindNoMore 65): pantalla en negro
-    const floaters = [];           // numeros de dano flotantes: {x, y, text, at}
+    // Acá vivía `floaters`, los números de daño como texto suelto anclado al TILE lógico y borrados al
+    // segundo. El daño del original NO es eso: es un diálogo más (`Char_Dialog_Create(charIndex, daño,
+    // color, 3)`, Protocol.bas:1345), dibujado dentro de `CharRender` y por lo tanto pegado al sprite. Al
+    // portarlo al globo quedó el array sin nadie que lo llenara y un bucle de render recorriéndolo vacío en
+    // cada cuadro. Ver el handler de `ChatOverHeadLocale`.
     const groundFx = [];           // FX de hechizos de AREA, anclados a un TILE: {x, y, at, kind:'fx'|'part', id}
     let laborando = false;         // faena en curso (trabajo CONTINUO): el server produce solo cada 700ms
     // Estado que el server informa y el cliente ignoraba. Los cuatro son TOGGLES sin payload: el server no
@@ -4924,24 +4928,6 @@
               dGrh(ctx, sheets[gr.file], gr, anclaX(cx, gr.w) + entry[1], anclaY(cy, gr.h) + entry[2], gr.w, gr.h);
             } else if (gr) loadSheet(gr.file);
           }
-        }
-      }
-
-      {
-        const now = Date.now();
-        ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
-        for (let i = floaters.length - 1; i >= 0; i--) {
-          const fl = floaters[i];
-          const dt = now - fl.at;
-          if (dt > 900) { floaters.splice(i, 1); continue; }
-          const fx = (fl.x - camX) * TILE + TILE / 2;
-          const fy = (fl.y - camY) * TILE - dt / 900 * 26;
-          ctx.globalAlpha = 1 - dt / 900;
-          ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(fl.text, fx, fy);
-          // El COLOR viene con el flotante: rojo el daño, azul la cura. Es la única forma de distinguirlos
-          // (el original usa RGB(50,100,200) para el modo 3), y estaba cableado en rojo para los dos.
-          ctx.fillStyle = fl.color || '#ff6b5a'; ctx.fillText(fl.text, fx, fy);
-          ctx.globalAlpha = 1;
         }
       }
 
