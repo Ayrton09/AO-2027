@@ -4961,19 +4961,18 @@
         ctx.setTransform(SS, 0, 0, SS, 0, 0);
       }
       ctx.globalAlpha = 1;
-      // EL CLIMA, y DÓNDE se ve. El server manda `RainToggle` a TODO el mundo y eso es fiel: el original hace
-      // `SendData(SendTarget.ToAll, ...)` (Protocol.bas:9285) sin mirar el mapa. Lo que decide si la lluvia se
-      // VE es el cliente, con `bTecho` — el mismo `Trigger 1/2/4/>=20` que apaga los techos.
+      // EL CLIMA, y DÓNDE se ve: EN TODOS LADOS, sin ninguna condición.
       //
-      // Acá la lluvia es un OVERLAY de pantalla completa y no la partícula de mundo del original, así que sin
-      // este gate llovía adentro de las casas y —lo que reportó el tester— adentro de los 84 mapas DUNGEON,
-      // que son cuevas bajo tierra. Se apaga en los dos casos, y con el MISMO fade que los techos: entrar a un
-      // interior corta la lluvia con la misma transición con la que se abre el techo, no de golpe.
+      // El server manda `RainToggle` a todo el mundo (`SendData(SendTarget.ToAll, ...)`, Protocol.bas:9285)
+      // sin mirar el mapa, y el cliente original dibuja la partícula igual de incondicionalmente
+      // (`If meteo_particle Then Particle_Group_Render`, TileEngine.bas:2295), después de la capa 4. El
+      // `bTecho` que se calcula en `HandleRainToggle` decide qué WAV suena —lluviain.wav o lluviaout.wav
+      // (:4217)—, NO si la lluvia se ve.
       //
-      // LA LLUVIA SE VE TAMBIEN ADENTRO. El original dibuja la particula del clima SIN condicion
-      // (`If meteo_particle Then Particle_Group_Render`, TileEngine.bas:2295), despues de la capa 4; lo que
-      // decide el techo es que WAV suena —lluviain.wav o lluviaout.wav (:4217)—, no si se ve. Aca se
-      // apagaba bajo techo y en los 84 mapas DUNGEON.
+      // Acá había un gate que la apagaba bajo techo y en los 84 mapas de zona DUNGEON, con el fade de los
+      // techos. Se sacó por fidelidad. Consecuencia práctica, por si vuelve el reporte: llueve también en las
+      // cuevas. Si algún día se quiere apagar, va como OPCIÓN del cliente (al lado de música/sonido/nombres)
+      // y apagada por defecto: es un overlay de pantalla, no toca el juego ni el protocolo.
       if (raining) {
         const t = Date.now();
         ctx.globalAlpha = 1;
