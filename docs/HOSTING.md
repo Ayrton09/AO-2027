@@ -145,6 +145,36 @@ en contenedores y en systemd.
 COVERAO_INIT_MAXUSERS=200 COVERAO_INIT_DIOSES=1 COVERAO_DIOSES_DIOS1=TuPersonaje ./CoverAO.Server
 ```
 
+## Actualizar a una version nueva
+
+**Actualizar no es reinstalar.** El paquete nuevo reemplaza el programa y la data del juego, pero
+`data/` (las cuentas y los personajes) y tu `Server.ini` se conservan.
+
+```bash
+# 1. Parar el servidor. Con el server escribiendo, un update copia archivos a medio guardar.
+# 2. Descomprimir el paquete nuevo SOBRE la carpeta de la instalacion.
+# 3. Arrancar.
+```
+
+Eso es todo. Tres cosas que conviene saber:
+
+**El jugador no hace nada.** El cliente web lo sirve este mismo servidor, asi que no hay nada que
+instalar ni actualizar del lado de quien juega: con recargar la pagina ya tiene la version nueva. El
+navegador revalida cada archivo contra su ETag, o sea que baja solo lo que cambio y no hace falta que
+nadie limpie el cache. El que estaba jugando con la pestaña abierta se reconecta y listo.
+
+**Los personajes viejos abren en la version nueva.** Los guardados son texto y lo que una version agrega
+toma su valor por defecto al leerse. Al arrancar, el servidor deja un sello en `data/version.txt` y avisa
+por consola si el mundo venia de otra version. **Si el aviso dice que venis de una version MAS NUEVA,
+pará y restaurá un backup**: un servidor viejo ignora en silencio lo que no entiende.
+
+**Las opciones nuevas no aparecen solas en tu `Server.ini`.** Como el archivo es tuyo y no se pisa, una
+version que agrega una opcion no te la escribe. El servidor las lista al arrancar, bajo
+`NUEVAS EN ESTA VERSION`, con el aviso de que estan corriendo con su valor por defecto; si querés
+cambiarlas, copiá esas lineas de `Server.ini.ejemplo`.
+
+Antes de actualizar, mirá que haya un backup reciente en `data/backups/` — es el unico "deshacer" que hay.
+
 ## Backups y apagado
 
 Cada 30 minutos se copia el mundo entero a `data/backups/` sin frenar a nadie, conservando las últimas 48.

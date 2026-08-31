@@ -855,8 +855,11 @@
   <script type="module">
     // Reuses the SAME tested codec + SC decoder as the headless smoke test. This is the networking
     // core of the future Pixi.js client; here it drives a minimal Canvas render as a starting point.
-    // ?v= versiona los módulos ES compilados: sin esto el navegador cachea el dist viejo aunque cambie
-    // (el cache-bust del index.html NO alcanza a los import). Bumpear al tocar cualquier .ts de dist/.
+    // ?v= versiona los módulos ES compilados. YA NO ES LO QUE HACE QUE UN UPDATE LLEGUE: el servidor manda
+    // cada archivo con `Cache-Control: no-cache` y un ETag de (tamaño, fecha), así que el navegador revalida
+    // siempre y se baja solo lo que cambió (StaticFileServer.cs:146-153). Cuando este comentario se escribió
+    // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
+    // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
     import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
     import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=31';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';

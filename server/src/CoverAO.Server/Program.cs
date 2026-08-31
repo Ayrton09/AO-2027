@@ -139,6 +139,17 @@ Console.WriteLine($"            MaxUsers={(serverIni.MaxUsers > 0 ? serverIni.Ma
 Console.WriteLine($"            autosave={(serverIni.AutosaveMinutos > 0 ? serverIni.AutosaveMinutos + " min" : "off")}, " +
                   $"backup={(serverIni.BackupMinutos > 0 ? $"cada {serverIni.BackupMinutos} min (se conservan {serverIni.BackupsAConservar})" : "off")}, " +
                   $"log={(serverIni.LogDias > 0 ? serverIni.LogDias + " dias" : "solo consola")}");
+// OPCIONES QUE ESTE Server.ini NO TIENE. Al actualizar, el armador CONSERVA el archivo del host a propósito
+// —ahí están su puerto, sus rates y su lista de GMs—, así que las claves nuevas de la versión no aparecen
+// solas. Sin esta línea, una versión puede traer una regla que cambia el juego y el que hostea nunca se
+// entera de que existe ni de con qué valor está corriendo. Se listan sólo si hubo archivo: sin archivo es
+// TODO default y decirlo no aporta nada.
+if (serverIni.ClavesAusentes.Count > 0)
+{
+    Console.WriteLine($"            NUEVAS EN ESTA VERSION ({serverIni.ClavesAusentes.Count}), corriendo con su valor por " +
+                      "defecto. Copialas de Server.ini.ejemplo si querés cambiarlas:");
+    Console.WriteLine("            " + string.Join(", ", serverIni.ClavesAusentes));
+}
 Console.WriteLine(serverIni.CantidadStaff == 0
     ? "            STAFF: ninguno. Nadie va a poder usar los comandos GM — agregá un nombre a [Dioses]."
     : $"            STAFF ({serverIni.CantidadStaff}): " + string.Join(", ",
@@ -158,6 +169,21 @@ var gameData = GameData.Load();
 gameData.SetMapNoResu(CoverAO.Server.Game.Cities.Prision.Map, true);
 var leveling = new Leveling(gameData.LevelExp, gameData.LifeMod);   // MODVIDA: HP/maná/stamina que se ganan por nivel
 var dataRoot = Path.Combine(AppContext.BaseDirectory, "data");
+// EL SELLO DEL MUNDO: con qué versión se creó lo que hay en `data/`. Ver Build.SellarMundo para el porqué.
+// Va ANTES de abrir la persistencia, que es lo que crea las subcarpetas: después de eso el directorio ya no
+// estaría vacío y un mundo nuevo se confundiría con uno viejo sin sellar.
+switch (CoverAO.Server.Build.SellarMundo(dataRoot, out string versionPrevia))
+{
+    case CoverAO.Server.SelloDelMundo.Distinta:
+        Console.WriteLine($"MUNDO de la version {versionPrevia}; este servidor es la {CoverAO.Server.Build.Version}. " +
+                          "Los personajes se abren igual (lo que no existia toma su valor por defecto). " +
+                          "Si venis de una version MAS NUEVA, pará y restaurá un backup.");
+        break;
+    case CoverAO.Server.SelloDelMundo.SinSello:
+        Console.WriteLine($"MUNDO sin sello de version: lo creó una version anterior a la {CoverAO.Server.Build.Version}. " +
+                          "Queda sellado con ésta.");
+        break;
+}
 IStore store = string.Equals(Environment.GetEnvironmentVariable("COVERAO_DB"), "sqlite", StringComparison.OrdinalIgnoreCase)
     ? new SqliteStore(Path.Combine(dataRoot, "coverao.db"))
     : new FileStore(dataRoot);
@@ -869,7 +895,7 @@ if (!sinAdmin)
     int atIdx = Array.FindIndex(args, a => string.Equals(a, "--admin-token", StringComparison.OrdinalIgnoreCase));
     string adminToken = (atIdx >= 0 && atIdx + 1 < args.Length) ? args[atIdx + 1]
         : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
-    var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, "1.0.0", fixtureMode);
+    var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, CoverAO.Server.Build.Version, fixtureMode);
     var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, bannedIpsPath, HacerBackup, serverIni);
     adminTask = adminServer.RunAsync(cts.Token);
 }

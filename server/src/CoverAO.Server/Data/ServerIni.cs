@@ -80,6 +80,32 @@ public sealed class ServerIni
     public int Oro { get; private set; } = 1;
     public string? Ruta { get; private set; }              // de dónde se leyó (null = defaults)
 
+    /// <summary>
+    /// Las claves de <c>[INIT]</c> que el servidor sabe leer. La lista está a mano y un test la cruza contra
+    /// las llamadas reales de este archivo, así que no puede quedarse vieja sin que algo se ponga rojo.
+    ///
+    /// <para>Existe por un problema concreto de ACTUALIZAR: el host conserva su <c>Server.ini</c> entre
+    /// versiones —el armador no lo pisa, a propósito— así que las opciones nuevas nunca aparecen en su
+    /// archivo. Sin este aviso, una versión puede agregar una regla que cambia el juego y el que hostea no se
+    /// entera de que existe ni de con qué valor está corriendo.</para>
+    /// </summary>
+    public static readonly string[] ClavesConocidas =
+    {
+        "AllowMultiLogins", "BackupsAConservar", "Centinela", "CodigoFuente",
+        "CuraAlSubirNivel", "Exp", "FamiliarBusca", "HipocamposEnMarAbierto",
+        "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo",
+        "MaxUsers", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
+        "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
+        "OroAlSubirNivel", "PasesDeRinkel", "PersistirSuelo", "PorcentajeLluvia",
+        "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
+        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort",
+    };
+
+    /// <summary>Las opciones que el servidor sabe leer y que el <c>Server.ini</c> del host NO menciona: están
+    /// corriendo con su valor por defecto. Vacía si no se leyó ningún archivo (ahí TODO es default y decirlo
+    /// no aporta).</summary>
+    public IReadOnlyList<string> ClavesAusentes { get; private set; } = Array.Empty<string>();
+
     /// <summary>De dónde bajar el código fuente de ESTE servidor. Se le publica al cliente y el jugador lo ve
     /// en el menú.
     ///
@@ -466,6 +492,13 @@ public sealed class ServerIni
     {
         var cfg = new ServerIni();
         cfg.Ruta = ruta;
+        // QUÉ OPCIONES NO TIENE ESTE ARCHIVO. Sólo tiene sentido si hubo archivo: sin él todo es default y
+        // listar las 32 sería ruido. Ver ClavesConocidas para por qué existe esto.
+        if (ruta is not null)
+        {
+            var traidas = new HashSet<string>(ini.Claves("INIT"), StringComparer.OrdinalIgnoreCase);
+            cfg.ClavesAusentes = ClavesConocidas.Where(k => !traidas.Contains(k)).ToArray();
+        }
         // El PUERTO se acota: el server abre `StartPort` y `StartPort + 1` (el WebSocket del cliente web), así
         // que el techo real es 65534. Sin esto un `StartPort=70000` —o un 65535, que empuja el WS a 65536—
         // hacía que `TcpListener` tirara ArgumentOutOfRangeException y el proceso muriera; y un 0 abría un

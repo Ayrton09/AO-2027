@@ -57,7 +57,10 @@ StartPort=7666
 //
 // El del cliente web no necesita gemelo: ese lo escribe el jugador en la URL, asi que si
 // esta remapeado escribe el de afuera y listo.
-//PuertoWebSocketPublico=25001
+// Se deja PUESTA en 0 (= anunciar el puerto real, que es lo normal) y no comentada, para que el
+// aviso de "opciones nuevas" del arranque quede limpio: ahi solo tienen que aparecer las que trae
+// una version nueva, no las que este archivo ya explica.
+PuertoWebSocketPublico=0
 
 ; Tope de jugadores conectados a la vez. 0 = sin tope (usa el limite interno).
 MaxUsers=0
@@ -239,7 +242,9 @@ RolesMasters=0
 ; estaba al final del archivo, debajo de [INTERVALOS]: el que descomentaba la
 ; linea la dejaba en esa otra seccion y la clave no se leia nunca -- el enlace
 ; no aparecia y no habia forma de notarlo.
-;CodigoFuente=https://github.com/tu-usuario/tu-fork
+; Se deja PUESTA y vacia (que es lo mismo que ausente) para que el aviso de "opciones nuevas" del
+; arranque quede limpio. Escribi tu URL a la derecha del =.
+CodigoFuente=
 
 ; ============================================================================
 ;  Listas de staff. La clave se numera desde 1 y tiene que coincidir con el

@@ -85,6 +85,11 @@ public sealed class IniFile
 
     public void Set(string section, string key, int value) => Set(section, key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+    /// <summary>Las claves que TRAE una sección, en el orden del archivo. Lo necesita el aviso de arranque
+    /// que le dice al host qué opciones nuevas no tiene todavía en su <c>Server.ini</c>.</summary>
+    public IReadOnlyList<string> Claves(string section)
+        => _keyOrder.TryGetValue(section, out var l) ? l : (IReadOnlyList<string>)Array.Empty<string>();
+
     public string GetString(string section, string key, string fallback = "")
         => _data.TryGetValue(section, out var s) && s.TryGetValue(key, out var v) ? v : fallback;
 
