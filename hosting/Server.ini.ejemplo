@@ -173,6 +173,15 @@ FamiliarBusca=0
 ;                APAGADA por defecto, como toda regla de la casa. Prendela si preferis que el viaje en
 ;                barco funcione desde Rinkel en vez de ser fiel al bug.
 PasesDeRinkel=0
+; HipocamposEnMarAbierto: 1 = con la RED de pesca en un mapa de mar abierto sacas Hipocampo en vez de
+;                         los cuatro peces de siempre (Pargo, Lisa, Pez Espada, Merluza). La cana no
+;                         cambia: sigue dando Pargo en todos lados.
+;                         0 = como el install, donde el Hipocampo esta definido en la data pero NADA lo
+;                         produce: no lo pesca ninguna herramienta, no lo tira ninguna criatura, no lo
+;                         vende ningun mercader y no esta puesto en ningun mapa.
+;                         ES LA UNICA REGLA DE LA CASA QUE VIENE PRENDIDA (decision del autor).
+;                         Ponele 0 si queres el comportamiento exacto del servidor original.
+HipocamposEnMarAbierto=1
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo

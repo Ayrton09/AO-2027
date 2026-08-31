@@ -41,6 +41,16 @@ public class ReglasDeLaCasaTests : IDisposable
         // (frmMain.frm:749 y mMainLoop.bas:21): en el install no aparece nunca.
         Assert.False(cfg.Centinela);
         Assert.False(cfg.FamiliarBusca);            // la mascota del VB6 es SigueAmo: no busca enemigo sola
+
+        // LA EXCEPCIÓN, Y ES A PROPÓSITO. `HipocamposEnMarAbierto` sale PRENDIDA por decisión del autor: los
+        // cuatro peces de la red ya se usan y el Hipocampo no lo pescaba nadie —en el original NADA lo
+        // produce—, así que prefiere entregarlo puesto. O sea que "sin Server.ini" ya NO es exactamente el
+        // install, y el título de este test tiene una salvedad.
+        //
+        // Queda afirmado acá, y no simplemente omitido, para que se lea como lo que es: una decisión tomada,
+        // no un default que se coló. Si mañana alguien quiere volver a la fidelidad total, este assert es el
+        // que hay que cambiar, y al cambiarlo se entera de por qué estaba así.
+        Assert.True(cfg.HipocamposEnMarAbierto);
     }
 
     [Fact]

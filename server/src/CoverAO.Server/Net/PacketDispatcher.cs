@@ -8529,6 +8529,10 @@ public sealed partial class PacketDispatcher
     private const int RedDePesca = 138, PezDeCana = 139;
     private static readonly int[] PecesDeRed = { 139, 544, 545, 546 };   // Pargo, Lisa, Pez Espada, Merluza
 
+    /// <summary>El Hipocampo (obj 900). NO sale en el original por ningún camino — sólo con la regla de la
+    /// casa <see cref="Data.ServerIni.HipocamposEnMarAbierto"/> prendida. Ver el comentario de esa regla.</summary>
+    private const int Hipocampo = 900;
+
     /// <summary>El oficio lo declara la HERRAMIENTA equipada, no la skill que diga el cliente. Las dos de pesca
     /// dan el mismo oficio: con la red puesta este mapeo faltaba y <see cref="DoRecolectar"/> la rechazaba por
     /// "herramienta inadecuada", o sea que la red no pescaba nada ni con el clic ni con la faena continua.</summary>
@@ -8611,6 +8615,11 @@ public sealed partial class PacketDispatcher
         if (skill == GameLimits.SkillPesca)
         {
             resource = puesta.Index == RedDePesca ? PecesDeRed[_rng.Next(PecesDeRed.Length)] : PezDeCana;
+            // REGLA DE LA CASA `HipocamposEnMarAbierto`, apagada por defecto: con la RED en un mapa de mar
+            // abierto sale Hipocampo en vez de los cuatro de siempre. La CAÑA no cambia, igual que en el
+            // Imperium que la pidió. El original no tiene nada de esto — ver el comentario de la regla.
+            if (_ini.HipocamposEnMarAbierto && puesta.Index == RedDePesca && _data.EsOceanoAbierto(p.Pos.Map))
+                resource = Hipocampo;
             name = _data.Obj(resource)?.Name ?? name;
         }
         // La cantidad del original: `MiObj.Amount = RandomNumber(10, 30)` en pesca, tala y minería. El bono por

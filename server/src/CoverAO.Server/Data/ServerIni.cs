@@ -233,6 +233,36 @@ public sealed class ServerIni
     /// </summary>
     public bool PasesDeRinkel { get; private set; }
 
+    /// <summary>
+    /// REGLA DE LA CASA — <c>HipocamposEnMarAbierto</c> (default 0 = como el install). Con la RED de pesca en
+    /// un mapa de mar abierto se saca <b>Hipocampo</b> (obj 900) en vez de los cuatro peces de siempre.
+    ///
+    /// <para><b>Esto no existe en el original, y el hipocampo tampoco se puede conseguir ahí.</b> El objeto
+    /// está definido en el <c>obj.dat</c> —comida, restaura 100 de hambre— pero NADA lo produce: la caña da
+    /// siempre Pargo (<c>DoPescar</c>, Trabajo.bas:1315), la red sortea entre Pargo, Lisa, Pez Espada y
+    /// Merluza (<c>DoPescarRed</c> con <c>PecesPosibles</c>, :1429-1432), ninguna criatura lo tira, ningún
+    /// mercader lo vende, no está colocado en ninguno de los 863 mapas y el código del servidor VB6 no lo
+    /// nombra ni una vez. Es data muerta del install.</para>
+    ///
+    /// <para>Se agrega porque el tester lo pidió: en Imperium se salía a mar abierto con la red y ahí se
+    /// pescaba sólo hipocampo.</para>
+    ///
+    /// <para><b>ES LA ÚNICA REGLA DE LA CASA QUE SALE PRENDIDA</b>, por decisión del autor: los cuatro peces
+    /// de la red ya se usan y el hipocampo no lo pescaba nadie, así que prefiere que el juego lo entregue.
+    /// Las otras siete salen apagadas para que "sin Server.ini" signifique "como el original", y ésta es la
+    /// excepción a esa regla — está anotada como tal en <c>ReglasDeLaCasaTests</c>. Quien quiera el
+    /// comportamiento del install pone <c>HipocamposEnMarAbierto=0</c>.</para>
+    ///
+    /// <para>Prendida, el server DIVERGE del oráculo VB6 en esa acción. No lo rompe hoy porque el barrido
+    /// pesca en el mapa del fixture y no en mar abierto, pero es la clase de divergencia que una regla de la
+    /// casa declara a propósito.</para>
+    ///
+    /// <para>Qué cuenta como mar abierto lo decide el NOMBRE del mapa (403 se llaman "Océano abierto"), no un
+    /// número cableado: ver <see cref="GameData.EsOceanoAbierto"/>. La CAÑA no cambia — en Imperium era la
+    /// red.</para>
+    /// </summary>
+    public bool HipocamposEnMarAbierto { get; private set; } = true;
+
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
     public byte PrivilegioDe(string? nombre) =>
@@ -513,6 +543,7 @@ public sealed class ServerIni
         cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
+        cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

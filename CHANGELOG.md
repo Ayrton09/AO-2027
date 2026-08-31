@@ -53,6 +53,11 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **Meditar entrena la habilidad Meditar**, cada vez que recuperás maná. Cuanto más alta, más seguido
   recuperás.
 
+- **Los hipocampos se pescan en mar abierto.** Salí al océano con la **red de pesca** y ahí sacás Hipocampo
+  en vez de los cuatro peces de siempre. La caña no cambia: sigue dando Pargo en cualquier agua. (En el juego
+  original el hipocampo existía en los datos pero no había forma de conseguirlo; quien hostea puede volver a
+  ese comportamiento con `HipocamposEnMarAbierto=0`.)
+
 - **El que se desconecta desaparece de golpe.** Se quedaba dos segundos y medio desvaneciéndose en la
   pantalla de los demás.
 

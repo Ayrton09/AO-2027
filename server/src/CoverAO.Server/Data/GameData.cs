@@ -658,6 +658,38 @@ public sealed class GameData
     public string MapName(int map) => _mapName.GetValueOrDefault(map, "");
     private readonly Dictionary<int, string> _mapName = new();
 
+    /// <summary>
+    /// ¿Es un mapa de MAR ABIERTO? Lo decide el NOMBRE, que es el único lugar donde el mundo lo dice: 403 de
+    /// los 863 mapas se llaman "Océano abierto" y son 100&#37; agua. Ningún otro campo sirve — la zona de todos
+    /// ellos es <c>CAMPO</c> y el terreno <c>BOSQUE</c>, igual que la de un bosque cualquiera.
+    ///
+    /// <para>La comparación va SIN acentos y sin distinguir mayúsculas porque el header del .csm trae TRES
+    /// grafías del mismo nombre —"Oceano abierto", "Océano abierto" y "Océano Abierto"—: comparando literal se
+    /// perdían dos de las tres. Es la misma trampa que las claves del <c>obj.dat</c>.</para>
+    ///
+    /// <para>Esto NO es del original: el VB6 no distingue el mar abierto en ninguna parte. Lo usa sólo la regla
+    /// de la casa <see cref="ServerIni.HipocamposEnMarAbierto"/>, y por eso vive acá y no en un gate de pesca.</para>
+    /// </summary>
+    public bool EsOceanoAbierto(int map) => _oceanoAbierto.Contains(map);
+    private readonly HashSet<int> _oceanoAbierto = new();
+
+    /// <summary>Quita acentos y pasa a mayúsculas, para comparar nombres que la data escribe de varias formas.</summary>
+    private static string SinAcentos(string s)
+    {
+        var d = (s ?? "").Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(d.Length);
+        foreach (char c in d)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                != System.Globalization.UnicodeCategory.NonSpacingMark) sb.Append(c);
+        return sb.ToString().ToUpperInvariant().Trim();
+    }
+
+    /// <summary>Marca un mapa como mar abierto (lo necesita el fixture, que no sale de un .csm).</summary>
+    public void SetOceanoAbierto(int map, bool esMar)
+    {
+        if (esMar) _oceanoAbierto.Add(map); else _oceanoAbierto.Remove(map);
+    }
+
     /// <summary>El <c>battle_mode</c> crudo del header <c>tMapDat</c> (VB6 <c>MapInfo(map).battle_mode</c>,
     /// FileIO.bas:1412). Hasta ahora sólo se usaba DERIVADO —el flag Pk es <c>battle_mode == 0</c>— y el número
     /// en sí se tiraba, pero hay un gate que lo lee tal cual: el mercader que no le vende a los de una facción
@@ -699,7 +731,12 @@ public sealed class GameData
             // El NOMBRE del mapa. Estaba en MapInfo.json desde siempre y no lo leía nadie; lo pide el anuncio
             // del casamiento, que el original manda a TODO el servidor con "mapa%novio%novia" (Trabajo.bas:32).
             if (m.Value.TryGetProperty("name", out var nom) && nom.ValueKind == JsonValueKind.String)
+            {
                 data._mapName[map] = nom.GetString() ?? "";
+                // Ver EsOceanoAbierto: el nombre es el único campo que marca el mar abierto, y viene con tres
+                // grafías distintas.
+                if (SinAcentos(data._mapName[map]).Contains("OCEANO ABIERTO")) data._oceanoAbierto.Add(map);
+            }
             // El battle_mode CRUDO: el `pk` de arriba ya es su derivado, pero el gate del comercio por facción
             // compara contra el 2 y el 3, que desde `pk` no se distinguen (los dos son "no Pk"). Ver MapBattleMode.
             if (m.Value.TryGetProperty("battleMode", out var bm) && bm.TryGetInt32(out int modo))
