@@ -1167,6 +1167,24 @@
      * —exactamente el síntoma que el autollenado venía a evitar—. Reportado jugando, 2026-08-01.
      */
     const TIPO_POCION = 11;
+    /*
+     * EL TELEPORT BRILLA Y GIRA, y no por su ficha: el cliente original lo CABLEA por tipo de objeto.
+     * `Map_Obj_Create` (TileEngine.bas:4356-4361) arranca con
+     *
+     *     If fijo = 0 And tipe = 19 Then
+     *         Call SetMapParticle(34, X, Y)
+     *         Light_Create X, Y, &HFFFFFF, 2
+     *
+     * antes de mirar nada de la data. Importa que sea por TIPO y no por la ficha: de los trece teleports del
+     * mundo sólo DOS traen `CreaParticulaPiso`, y sólo esos dos traen `CreaLuz`. Los otros once brillan igual
+     * en el original, y acá no brillaba ninguno — un teleport se veía como un adorno apagado.
+     *
+     * `fijo = 0` son los objetos que manda el servidor (los de la capa de objetos del mapa entran con
+     * `fijo = 1` y no reciben nada de esto).
+     */
+    const TIPO_TELEPORT = 19;
+    const PARTICULA_TELEPORT = 34;
+    const LUZ_TELEPORT = [0xFFFFFF, 2];   // &HFFFFFF, alcance 2
     function autollenarHotbar() {
       if (!hotbarVacia()) return;
       let i = 0;
@@ -1316,7 +1334,7 @@
       ev.preventDefault(); const s = ev.target.closest('.hbslot'); if (!s) return;
       const i = +s.dataset.i;
       if (hotbar[i]) { hotbar[i] = null; saveHotbar(); buildHotbar(); return; }   // slot ocupado → vaciar
-      const text = prompt(`Macro de comando/texto para F${i + 1}\n(ej: /resucitar, /meditar, /est … o texto para decir en voz alta)`);
+      const text = preguntar(`Macro de comando/texto para F${i + 1}\n(ej: /resucitar, /meditar, /est … o texto para decir en voz alta)`);
       if (text && text.trim()) { hotbar[i] = { kind: 'cmd', text: text.trim() }; saveHotbar(); buildHotbar(); }
     });
     let items = null;              // objIndex -> [grhIndex, name, objType]  (from obj.dat)
@@ -2578,6 +2596,9 @@
     window.__setLluvia = (b) => { raining = !!b; draw(); };
     window.__inv = () => inventory; window.__gold = () => myStats && myStats.gold;                 // debug helpers
     window.__ground = () => [...ground.entries()];
+    // Sonda: los emisores de partículas que aporta el SUELO (hoy, los teleports). Sin esto no hay forma de
+    // distinguir "el teleport emite" de "el mapa ya traía una partícula ahí".
+    window.__partSuelo = () => particulasDelSuelo();
     window.__foundGuild = (name) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CreateNewGuild).writeAsciiString('clan del cliente web').writeAsciiString(name).writeAsciiString('').writeAsciiString('').toBytes(), myKey)); // debug
     window.__use = (slot) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.UseItem).writeByte(slot).toBytes(), myKey)); // debug: usar un ítem (p.ej. la barca para navegar)
     // debug: interactuar con un tile por coordenada del MUNDO, sin tener que calcular el píxel del canvas
@@ -3134,7 +3155,7 @@
         else if (a === 'cl-web') { const u = S('cl-web'); if (u) send(W().writeByte(CLIENT.GuildNewWebsite).writeAsciiString(u)); }
         else if (a === 'cl-fundate') send(W().writeByte(CLIENT.GuildFundate));
         else if (a === 'cl-shownews') send(W().writeByte(CLIENT.ShowGuildNews));
-        else if (a === 'cl-close') { if (confirm('¿Cerrar el clan definitivamente?')) send(W().writeByte(CLIENT.CloseGuild)); }
+        else if (a === 'cl-close') { if (confirmar('¿Cerrar el clan definitivamente?')) send(W().writeByte(CLIENT.CloseGuild)); }
         else if (a === 'mar-propose') { const n = S('mar-name'); if (n) send(W().writeByte(CLIENT.Casamiento).writeAsciiString(n).writeByte(1)); }
         else if (a === 'mar-divorce') send(W().writeByte(CLIENT.Divorciar));
         else if (a === 'ev-check') send(W().writeByte(CLIENT.HayEventos));
@@ -4023,7 +4044,7 @@
       const d = ev.target.closest('.islot'); if (!d || ws.readyState !== 1) return;
       const slot = +d.dataset.slot, it = inventory[slot]; if (!it) return;
       if (slotSel !== slot) { slotSel = slot; buildInv(); }   // el clic también SELECCIONA, como en el original
-      if (ev.altKey) { if (confirm(`¿Destruir ${itemName(it.objIndex)}${it.amount > 1 ? ' (x' + it.amount + ')' : ''}? No se puede recuperar.`)) send(W().writeByte(CLIENT.DropDestroy).writeByte(slot).writeLong(it.amount || 1)); return; }  // alt+clic → destruir
+      if (ev.altKey) { if (confirmar(`¿Destruir ${itemName(it.objIndex)}${it.amount > 1 ? ' (x' + it.amount + ')' : ''}? No se puede recuperar.`)) send(W().writeByte(CLIENT.DropDestroy).writeByte(slot).writeLong(it.amount || 1)); return; }  // alt+clic → destruir
       if (ev.ctrlKey) { tirarDelSlot(slot); return; }   // mismo cartel que la tecla T
       // EL CLIC PELADO SÓLO SELECCIONA. Antes CONSUMÍA: querer elegir una poción para la hotbar te la tomaba,
       // y elegir un pergamino te lo gastaba. Usar es DOBLE CLIC (abajo) o la tecla U sobre lo seleccionado,
@@ -4296,10 +4317,29 @@
       tinteCache.set(clave, hecho);
       return hecho;
     }
+    /**
+     * Los emisores que pone el SUELO, además de los que trae el mapa: hoy sólo los teleports, que el original
+     * cablea por tipo (ver TIPO_TELEPORT). Se cachea contra el tamaño del suelo porque `dibujarParticulas`
+     * corre por frame y `ground` casi nunca cambia; con el mapa 23 en pantalla son 1.170 partículas y recorrer
+     * el suelo de nuevo cada vuelta se nota.
+     */
+    let emisoresDeObjetos = [], emisoresDeObjetosSello = -1;
+    function particulasDelSuelo() {
+      if (emisoresDeObjetosSello === ground.size) return emisoresDeObjetos;
+      emisoresDeObjetosSello = ground.size;
+      emisoresDeObjetos = [];
+      for (const it of ground.values()) {
+        const meta = items && items[it.objIndex];
+        if (meta && meta[2] === TIPO_TELEPORT) emisoresDeObjetos.push([it.x, it.y, PARTICULA_TELEPORT]);
+      }
+      return emisoresDeObjetos;
+    }
+
     /** Avanza y dibuja las partículas de los emisores que están en pantalla. */
     function dibujarParticulas(camX, camY, offX, offY, dtMs) {
-      const lista = map && map.particulas;
-      if (!lista || !lista.length) return;
+      const lista = (map && map.particulas) || [];
+      const delSuelo = particulasDelSuelo();
+      if (!lista.length && !delSuelo.length) return;
       // El paso del original no corre todos los frames: `frame_counter += timerTicksPerFrame * 2` y avanza
       // cuando pasa `Speed`. Con los valores reales (0,1 a 2,5) eso es casi siempre un paso por frame; se
       // respeta igual porque los dos grupos con Speed >= 2 se mueven la mitad de seguido.
@@ -4317,7 +4357,8 @@
       partCx.setTransform(1, 0, 0, 1, 0, 0);
       partCx.clearRect(0, 0, VW, VH);
       let dibujadas = 0;
-      for (const [tx, ty, grupo] of lista) {
+      for (const [tx, ty, grupo] of lista.length && delSuelo.length ? lista.concat(delSuelo)
+                                    : (lista.length ? lista : delSuelo)) {
         const sx = tx - cx0, sy = ty - cy0;
         if (sx < -2 || sx >= VIEW_W + 2 || sy < -2 || sy >= VIEW_H + 2) continue;   // fuera de pantalla: ni se simula
         const def = partDefs[grupo];
@@ -4534,7 +4575,11 @@
         // blanca multiplicada por blanco es invisible de día— y encima titilaba, cosa que ninguna luz del
         // original hace.
         if (!muerto) for (const it of ground.values()) {
-          const luz = objLights[it.objIndex];
+          // El teleport lleva su luz por TIPO, como el original, y no por su ficha: once de los trece no
+          // traen `CreaLuz`. Los dos que sí la traen se quedan con la suya, que es la misma.
+          const meta = items && items[it.objIndex];
+          const luz = objLights[it.objIndex]
+                   || (meta && meta[2] === TIPO_TELEPORT ? LUZ_TELEPORT : null);
           if (!luz) continue;
           const [rgbO, alcO] = luz;
           const px = it.x - x0, py = it.y - y0;
@@ -5231,9 +5276,8 @@
       if (i >= 0) dirsApretadas.splice(i, 1);
       if (!dirsApretadas.length) pararPasos();
     });
-    // Si la ventana pierde el foco con una flecha apretada, el `keyup` NUNCA llega y el personaje se queda
-    // caminando solo para siempre. Soltar todo al perder el foco.
-    addEventListener('blur', () => { dirsApretadas.length = 0; pararPasos(); });
+    // Perder el foco con una flecha apretada: el `keyup` no llega nunca. Se suelta en `soltarTeclas`, que
+    // vive más abajo con el macro y cubre además el arrastre y los diálogos nativos.
 
     /*
      * EL MACRO, con estado propio — la misma decisión que la caminata de acá arriba y por la misma razón:
@@ -5303,7 +5347,48 @@
     }
     /** Soltar TODO: al perder el foco, y al apagar el macro desde Opciones estando una tecla apretada. */
     function macroSoltarTodo() { macroApretadas.clear(); pararMacro(); }
-    addEventListener('blur', macroSoltarTodo);
+
+    /*
+     * SOLTAR TODAS LAS TECLAS — el seguro contra el `keyup` que nunca llega.
+     *
+     * Las dos cosas que se mantienen apretadas (caminar y el macro) llevan estado propio a propósito, y ese
+     * estado sólo se limpia con el `keyup`. Si el `keyup` se pierde, el personaje camina o pega SOLO y para
+     * siempre; el único remedio del jugador es volver a apretar y soltar la misma tecla, que no se le ocurre
+     * a nadie.
+     *
+     * Y se pierde más seguido de lo que parece, porque hay cosas que se quedan con el teclado sin que la
+     * ventana pierda el foco:
+     *
+     *   · ARRASTRAR un ítem del inventario. Mientras dura un drag nativo el navegador NO entrega eventos de
+     *     teclado a la página. Es el caso que reportó el tester: ibas caminando, moviste un objeto, soltaste
+     *     la flecha y el muñeco siguió de largo.
+     *   · Los diálogos nativos `prompt` y `confirm`, que bloquean el hilo. Que disparen `blur` o no depende
+     *     del navegador, así que no se les cree.
+     *
+     * `blur` sola no alcanza: un arrastre dentro de la MISMA ventana no la dispara.
+     *
+     * Se suelta al EMPEZAR, no al terminar: cuando el navegador se queda con el teclado, lo que había
+     * apretado ya no se puede saber, y la suposición segura es "nada". El jugador vuelve a apretar la flecha
+     * y sigue; el otro error —seguir caminando— no tiene salida.
+     */
+    function soltarTeclas() {
+      dirsApretadas.length = 0;
+      pararPasos();
+      macroSoltarTodo();
+    }
+    window.__soltarTeclas = soltarTeclas;   // lo usa la sonda que mide este arreglo
+
+    /**
+     * Los diálogos nativos, envueltos. `prompt` y `confirm` bloquean el hilo y se quedan con el teclado, así
+     * que sueltan primero. Van envueltos y no con una llamada suelta en cada sitio para que el que agregue
+     * un diálogo mañana no tenga que acordarse: si usa estos, ya está cubierto.
+     */
+    const preguntar = (texto) => { soltarTeclas(); return prompt(texto); };
+    const confirmar = (texto) => { soltarTeclas(); return confirm(texto); };
+    addEventListener('blur', soltarTeclas);
+    // En CAPTURA y en el documento: cubre cualquier `draggable`, esté donde esté, y corre antes que el
+    // handler del inventario.
+    document.addEventListener('dragstart', soltarTeclas, true);
     addEventListener('keyup', (ev) => {
       if (ev.key === 'Control' || ev.key === ' ') macroSoltar('golpe');
       const fm = /^F([1-9]|10)$/.exec(ev.key);
@@ -6384,8 +6469,8 @@
         del.title = 'Borrar este personaje';
         del.addEventListener('click', (ev) => {
           ev.stopPropagation();      // el clic de la tarjeta ENTRA al juego: no puede dispararse también
-          if (!confirm(`¿Borrar a ${c.name}? Se pierde el personaje, su inventario y su banco.`)) return;
-          const escrito = prompt(`Escribí el nombre para confirmar: ${c.name}`);
+          if (!confirmar(`¿Borrar a ${c.name}? Se pierde el personaje, su inventario y su banco.`)) return;
+          const escrito = preguntar(`Escribí el nombre para confirmar: ${c.name}`);
           if (!escrito || escrito.trim().toLowerCase() !== c.name.toLowerCase()) return;
           ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.BorrarPersonaje)
             .writeAsciiString(accName).writeAsciiString(accPass).writeAsciiString(c.name).toBytes(), myKey));

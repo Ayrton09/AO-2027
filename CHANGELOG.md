@@ -61,6 +61,12 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **El que se desconecta desaparece de golpe.** Se quedaba dos segundos y medio desvaneciéndose en la
   pantalla de los demás.
 
+- **Ya no te quedás caminando solo.** Si movías un objeto del inventario mientras caminabas y soltabas la
+  flecha, el personaje seguía de largo hasta que volvieras a apretar y soltar esa misma tecla. Pasaba lo mismo
+  con los carteles de confirmación, y con el macro: el golpe quedaba repitiéndose.
+
+- **El teleport que planta un GM se ve.** Gira y alumbra, como en el juego original; antes quedaba invisible.
+
 - **Macro: mantené la tecla apretada y la acción se repite.** Sostener **Ctrl** sigue golpeando y sostener
   una **F1–F10** sigue usando lo que tengas atado, a la velocidad del cliente original. Viene puesto; si
   preferís apretar una vez por golpe, se apaga en Opciones → Juego. Los oficios —minar, talar, pescar,
