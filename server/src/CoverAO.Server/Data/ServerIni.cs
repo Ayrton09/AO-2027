@@ -172,6 +172,40 @@ public sealed class ServerIni
     public int IntervaloAtacar { get; private set; } = 1000;        // IntervaloUserPuedeAtacar
 
     /// <summary>
+    /// <c>[INTERVALOS] IntervaloFlechasCazadores</c> (1100 en el install) — la cadencia del ARCO, y la única
+    /// del original que el port no tenía.
+    ///
+    /// <para>Es la más fuerte de todas y además es TRANSVERSAL: disparar sella el reloj, y mientras esté
+    /// caliente el original no deja <b>ni pegar ni castear</b>. Sus cuatro call sites lo dicen —
+    /// <c>Protocol.bas:2661</c> (arrojadizas) y <c>:2760</c> (arco) lo SELLAN; <c>:2936</c> (el clic del
+    /// hechizo) y <c>SistemaCombate.bas:975</c> (<c>UsuarioAtaca</c>) sólo lo CONSULTAN.</para>
+    ///
+    /// <para>Sin ella el camino del disparo no tenía <b>ninguna</b> compuerta de cadencia: los otros dos
+    /// chequeos de ese call site (<c>PermiteAtacar</c> y <c>PermiteLanzarSpell</c>) van con
+    /// <c>Actualizar = False</c>, o sea que ninguno sella nada — el que sella es éste. Un cliente modificado
+    /// disparaba tan rápido como se lo permitiera el techo de paquetes, y el arquero quedaba muy por encima
+    /// de lo que es en el original.</para>
+    /// </summary>
+    public int IntervaloArco { get; private set; } = 1100;
+
+    /// <summary>Las claves de <c>[INTERVALOS]</c> que el archivo trae ESCRITAS, distinguidas de las que están
+    /// tomando su valor por defecto.
+    ///
+    /// <para>Existe por una sola razón, y es de verificación: los relojes de combate se fuerzan a 0 con
+    /// <c>--fixture</c> —si no, los flows que pegan o disparan en ráfaga se caerían por cadencia— y eso deja a
+    /// las compuertas <b>sin nadie que las ejercite de punta a punta</b>. Justo a las de anti-cheat, que son
+    /// las que más importa que estén bien cableadas y no sólo bien escritas.</para>
+    ///
+    /// <para>Con esto, un flow que quiera probar una cadencia la pone en su <c>&lt;flow&gt;_flow.ini</c> y gana
+    /// sobre el 0 del fixture. Los flows que no la mencionan —que hoy son todos— no cambian en nada.</para></summary>
+    public IReadOnlyCollection<string> IntervalosEscritos { get; private set; } = Array.Empty<string>();
+
+    /// <summary>¿El ini escribió esta clave de <c>[INTERVALOS]</c>? Sin distinción de mayúsculas, como el
+    /// <c>clsIniManager</c> del original.</summary>
+    public bool IntervaloEscrito(string clave) =>
+        IntervalosEscritos.Contains(clave, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// <c>[INTERVALOS] IntervaloParalizado</c> — cuánto dura una parálisis, en VUELTAS del game-loop de 40 ms
     /// (500 = 20 s, que es lo que trae el Server.ini del install).
     ///
@@ -635,6 +669,8 @@ public sealed class ServerIni
         // CADENCIA DE GOLPE. La lee el VB6 en FileIO.bas:1495 y el ini del install dice 1000; el port la tenía
         // CABLEADA en 1200 (Program.cs), o sea que se peleaba un 20% más lento que el original.
         cfg.IntervaloAtacar = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloUserPuedeAtacar", 1000), 0, 60_000);
+        cfg.IntervaloArco = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloFlechasCazadores", 1100), 0, 60_000);
+        cfg.IntervalosEscritos = ini.Claves("INTERVALOS").ToArray();
         cfg.IntervaloParalizado = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloParalizado", 500), 1, 100_000);
         // `IntervaloMover` (=200) está en el ini y NO se lee — pero acá el veredicto es distinto: tiene CERO
         // lecturas en todo el servidor VB6, igual que `IntervaloWS`. Es una clave decorativa. Y va más lejos:

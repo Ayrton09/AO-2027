@@ -36,6 +36,7 @@ public sealed partial class PacketDispatcher
     private readonly long _intervaloMagiaGolpe;
     private readonly long _intervaloGolpeMagia;
     private readonly long _intervaloGolpeUsar;
+    private readonly long _intervaloArco;      // IntervaloFlechasCazadores: la del arco, y es transversal
 
     public PacketDispatcher(World world, GameLoop loop, Persistence db, GameData data, Leveling leveling,
         long walkIntervalMs = 0, long attackIntervalMs = 0, LoginThrottle? throttle = null, AdminConfig? admin = null,
@@ -52,10 +53,19 @@ public sealed partial class PacketDispatcher
         _leveling = leveling;
         _walkIntervalMs = walkIntervalMs;
         _attackIntervalMs = attackIntervalMs;
-        _intervaloCastear = fixtureMode ? 0 : _ini.IntervaloCastear;
-        _intervaloMagiaGolpe = fixtureMode ? 0 : _ini.IntervaloMagiaGolpe;
-        _intervaloGolpeMagia = fixtureMode ? 0 : _ini.IntervaloGolpeMagia;
-        _intervaloGolpeUsar = fixtureMode ? 0 : _ini.IntervaloGolpeUsar;
+        // LOS RELOJES DE COMBATE SE APAGAN CON EL FIXTURE, salvo que el ini los ESCRIBA.
+        //
+        // Apagarlos hace falta: los flows pegan, castean y disparan en ráfaga, y con las cadencias puestas se
+        // caerían por tiempo en vez de por lo que están midiendo. Pero apagarlos SIEMPRE dejaba a estas
+        // compuertas sin nadie que las ejercitara de punta a punta — justo a las de anti-cheat, donde importa
+        // que estén bien CABLEADAS y no sólo bien escritas. Con el escape, un flow que quiera probar una
+        // cadencia la pone en su `<flow>_flow.ini` y gana sobre el 0. Los que no la mencionan no cambian.
+        long Cadencia(string clave, int valor) => fixtureMode && !_ini.IntervaloEscrito(clave) ? 0 : valor;
+        _intervaloCastear = Cadencia("IntervaloLanzaHechizo", _ini.IntervaloCastear);
+        _intervaloMagiaGolpe = Cadencia("IntervaloMagiaGolpe", _ini.IntervaloMagiaGolpe);
+        _intervaloGolpeMagia = Cadencia("IntervaloGolpeMagia", _ini.IntervaloGolpeMagia);
+        _intervaloGolpeUsar = Cadencia("IntervaloGolpeUsar", _ini.IntervaloGolpeUsar);
+        _intervaloArco = Cadencia("IntervaloFlechasCazadores", _ini.IntervaloArco);
         _throttle = throttle;
         _admin = admin;
         _content = content ?? ServerContent.Default;
@@ -1437,6 +1447,10 @@ public sealed partial class PacketDispatcher
             // atajo vale una sola vez por casteo y después devuelve false para siempre.
             long nowMs = Environment.TickCount64;
             long attackMs = _admin?.AttackIntervalMs ?? _attackIntervalMs;   // el panel puede ajustarlo en caliente
+            // EL RELOJ DEL ARCO BLOQUEA EL GOLPE, y va PRIMERO (VB6 SistemaCombate.bas:975, la primera línea de
+            // `UsuarioAtaca`). Es un gate seco y aparte del OR de abajo: acabás de disparar, no podés pegar.
+            // Sin esto, el arquero disparaba y remataba a mano en el mismo instante.
+            if (!CombatTiming.PermiteUsarArcos(p, nowMs, _intervaloArco, actualizar: false)) return;
             if (!CombatTiming.PermiteMagiaGolpe(p, nowMs, _intervaloMagiaGolpe)
                 && !CombatTiming.PermiteAtacar(p, nowMs, attackMs)) return;
             RevealHidden(p);   // atacar rompe el ocultamiento (VB6 Protocol.bas:1719, SistemaCombate.bas:899)
@@ -1679,6 +1693,18 @@ public sealed partial class PacketDispatcher
         // port respondía "debés estar en modo combate" y no hacía nada. Leí el `Case eSkill.Proyectiles`
         // entero (Protocol.bas:2751-2916): no hay `SeguroCheck` ni equivalente. El seguro es del MELEE
         // (UsuarioAtaca), no del disparo.
+
+        // LA CADENCIA DEL DISPARO (VB6 Protocol.bas:2754-2761), y el port no tenía NINGUNA: se disparaba a la
+        // velocidad del socket. Van los tres chequeos del original, en su orden y con su modo — los dos
+        // primeros CONSULTAN (`Actualizar = False`) y el del arco es el que SELLA. De ahí que faltando éste no
+        // quedara ninguna cadencia en pie: los relojes que se consultaban no los movía nadie desde acá.
+        //
+        // Y va ANTES del gate de arma/munición, como en el original: si no, la cadencia se podría medir —y
+        // saltear— mandando el paquete sin arco.
+        long tiroMs = Environment.TickCount64;
+        if (!CombatTiming.PermiteAtacar(p, tiroMs, _admin?.AttackIntervalMs ?? _attackIntervalMs, actualizar: false)) return;
+        if (!CombatTiming.PermiteLanzarSpell(p, tiroMs, _intervaloCastear, actualizar: false)) return;
+        if (!CombatTiming.PermiteUsarArcos(p, tiroMs, _intervaloArco)) return;
 
         // Gate arma/munición (VB6 Protocol.bas:2766-2811, DummyInt): sin arma equipada → LocaleMsg 127 (DummyInt=1);
         // arma equipada que NO es arco (Proyectil<>1) → SILENCIO (DummyInt=2, el VB6 sólo desequipa la munición y sale);
@@ -8463,6 +8489,15 @@ public sealed partial class PacketDispatcher
             // vacío), el mismo detalle que se omite en el arco por el mismo motivo.
             if (skill == GameLimits.SkillArmasArrojadizas)
             {
+                // Los MISMOS tres chequeos que el disparo, y en el mismo orden (:2655-2661): el original los
+                // pone antes del `DummyInt`, o sea antes de mirar si hay arma. Con la data del install acá
+                // sólo se llega al rechazo, pero el rechazo también está detrás de la cadencia — si no, este
+                // paquete sería la forma de sellar el reloj del arco sin gastar una flecha.
+                long tiradaMs = Environment.TickCount64;
+                if (!CombatTiming.PermiteAtacar(p, tiradaMs, _admin?.AttackIntervalMs ?? _attackIntervalMs, actualizar: false)) return;
+                if (!CombatTiming.PermiteLanzarSpell(p, tiradaMs, _intervaloCastear, actualizar: false)) return;
+                if (!CombatTiming.PermiteUsarArcos(p, tiradaMs, _intervaloArco)) return;
+
                 int slotArma = EquippedSlotOfCategory(p, 1);
                 var arrojadiza = slotArma == 0 ? null : _data.Obj(p.Inventory[slotArma].ObjIndex);
                 if (arrojadiza is null || p.Inventory[slotArma].Amount < 1)
@@ -9498,6 +9533,10 @@ public sealed partial class PacketDispatcher
             // misma del melee: un OR entre el atajo de castear-después-de-pegar y la cadencia normal. Rechazo
             // silencioso, como el VB6.
             long castMs = Environment.TickCount64;
+            // Y el reloj del arco también bloquea el CASTEO, antes que todo lo demás (VB6 Protocol.bas:2936,
+            // justo después del chequeo de rango). Mismo motivo que en el golpe: disparar y castear en el
+            // mismo instante es lo que el original no deja.
+            if (!CombatTiming.PermiteUsarArcos(p, castMs, _intervaloArco, actualizar: false)) return;
             if (!CombatTiming.PermiteGolpeMagia(p, castMs, _intervaloGolpeMagia)
                 && !CombatTiming.PermiteLanzarSpell(p, castMs, _intervaloCastear)) return;
             // EL TILE QUE RECIBE EL HECHIZO es el clickeado. Los `autolanzar` llegan acá con el tile propio.

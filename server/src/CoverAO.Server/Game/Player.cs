@@ -511,6 +511,10 @@ public sealed class Player
     public long MagiaGolpeMs { get; set; }
     public long GolpeMagiaMs { get; set; }
     public long GolpeUsarMs { get; set; }
+    /// <summary>VB6 <c>Counters.TimerPuedeUsarArco</c>: la última vez que se disparó. Lo SELLA el disparo y lo
+    /// CONSULTAN el golpe y el casteo — mientras esté caliente, el original no deja hacer ninguno de los tres.
+    /// Es el quinto reloj y era el que faltaba: sin él, el disparo no tenía ninguna cadencia.</summary>
+    public long ArcoMs { get; set; }
     public long LastWorkMs { get; set; }   // VB6 IntervaloPermiteTrabajar: cadencia por-usuario de las acciones de trabajo (robar)
 
     /// <summary>La RANURA del mineral que se eligió para fundir (VB6 <c>flags.Lingoteando</c>,

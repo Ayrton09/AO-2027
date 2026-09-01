@@ -85,4 +85,33 @@ public static class CombatTiming
         if (actualizar) p.GolpeUsarMs = now;
         return true;
     }
+
+    /// <summary>
+    /// LA CADENCIA DEL ARCO (<c>IntervaloPermiteUsarArcos</c>, modNuevoTimer.bas:294;
+    /// <c>IntervaloFlechasCazadores = 1100</c>).
+    ///
+    /// <para>No es una cadencia más: es la única <b>transversal</b>. Disparar la SELLA, y mientras esté
+    /// caliente el original tampoco deja pegar ni castear. Los cuatro call sites, con su modo:</para>
+    ///
+    /// <code>
+    ///   Protocol.bas:2661   arrojadizas   SELLA   (Actualizar = True)
+    ///   Protocol.bas:2760   arco          SELLA   (Actualizar = True)
+    ///   Protocol.bas:2936   clic de magia consulta (Actualizar = False)
+    ///   SistemaCombate:975  UsuarioAtaca  consulta (Actualizar = False)
+    /// </code>
+    ///
+    /// <para><b>Y en el camino del disparo es la única que sella algo.</b> Los otros dos chequeos de ese call
+    /// site —<c>PermiteAtacar</c> y <c>PermiteLanzarSpell</c>— van con <c>Actualizar = False</c>. O sea que
+    /// sin esta función el disparo no tenía cadencia NINGUNA: los relojes que consultaba no los movía nadie
+    /// desde ahí. Un cliente modificado disparaba a la velocidad del socket.</para>
+    ///
+    /// <para>Va como GATE y no como atajo, a diferencia de los dos cruzados: sus call sites son
+    /// <c>If Not ... Then Exit Sub</c> secos, sin <c>OR</c>.</para>
+    /// </summary>
+    public static bool PermiteUsarArcos(Player p, long now, long intervalo, bool actualizar = true)
+    {
+        if (intervalo > 0 && now - p.ArcoMs < intervalo) return false;
+        if (actualizar) p.ArcoMs = now;
+        return true;
+    }
 }

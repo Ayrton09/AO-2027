@@ -337,6 +337,8 @@ CodigoFuente=
 ;IntervaloMagiaGolpe=400         ; pegar despues de castear
 ;IntervaloGolpeMagia=400         ; castear despues de pegar
 ;IntervaloGolpeUsar=400          ; usar un objeto despues de pegar
+;IntervaloFlechasCazadores=1100  ; entre un disparo de ARCO y el siguiente. Es la mas fuerte y ademas
+;                                ; es TRANSVERSAL: recien disparado no se puede ni pegar ni castear.
 ;IntervaloParalizado=500         ; cuanto dura una PARALISIS, en vueltas de 40 ms (500 = 20 s). Vale para el
                                 ;   hechizo Paralizar y para las criaturas que paralizan. NO es la del golpe
                                 ;   que paraliza del gladiador y el bardo (6 s) ni la de paralizar a una
