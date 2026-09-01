@@ -51,6 +51,12 @@ public class ReglasDeLaCasaTests : IDisposable
         // no un default que se coló. Si mañana alguien quiere volver a la fidelidad total, este assert es el
         // que hay que cambiar, y al cambiarlo se entera de por qué estaba así.
         Assert.True(cfg.HipocamposEnMarAbierto);
+
+        // Las dos que completan lo que el original dejó a medio hacer. Las dos son NUMÉRICAS y no un sí/no,
+        // porque en las dos el número es lo único que la fuente no dejó escrito: cuán seguido cae un drop
+        // global, y cuánto dura una transformación. Cero apaga.
+        Assert.Equal(0, cfg.DropGlobal);
+        Assert.Equal(0, cfg.MetamorfosisDelDruida);
     }
 
     [Fact]
@@ -63,16 +69,33 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.False(cfg.CuraAlSubirNivel);
         Assert.False(cfg.QuitarEquipoNovato);
         Assert.False(cfg.PersistirSuelo);
+        Assert.Equal(0, cfg.DropGlobal);
+        Assert.Equal(0, cfg.MetamorfosisDelDruida);
     }
 
     [Fact]
     public void Los_interruptores_encienden_de_verdad()
     {
-        var cfg = Cargar("OroAlSubirNivel=500\r\nCuraAlSubirNivel=1\r\nQuitarEquipoNovato=1\r\nPersistirSuelo=1\r\n");
+        var cfg = Cargar("OroAlSubirNivel=500\r\nCuraAlSubirNivel=1\r\nQuitarEquipoNovato=1\r\nPersistirSuelo=1\r\n"
+                       + "DropGlobal=5\r\nMetamorfosisDelDruida=120\r\n");
         Assert.Equal(500, cfg.OroAlSubirNivel);
         Assert.True(cfg.CuraAlSubirNivel);
         Assert.True(cfg.QuitarEquipoNovato);
         Assert.True(cfg.PersistirSuelo);
+        Assert.Equal(5, cfg.DropGlobal);
+        Assert.Equal(120, cfg.MetamorfosisDelDruida);
+    }
+
+    /// <summary>Las dos numéricas se recortan igual que el oro por nivel, y por lo mismo: un valor absurdo
+    /// desbalancea el server sin que nadie lo note. El tope del drop global es 1000 porque es un por mil; el
+    /// de la metamorfosis, una hora — más que eso ya no es "efecto no permanente".</summary>
+    [Fact]
+    public void Las_dos_numericas_tienen_tope_y_no_aceptan_negativos()
+    {
+        Assert.Equal(0, Cargar("DropGlobal=-5\r\n").DropGlobal);
+        Assert.Equal(1000, Cargar("DropGlobal=999999\r\n").DropGlobal);
+        Assert.Equal(0, Cargar("MetamorfosisDelDruida=-1\r\n").MetamorfosisDelDruida);
+        Assert.Equal(3600, Cargar("MetamorfosisDelDruida=99999\r\n").MetamorfosisDelDruida);
     }
 
     [Fact]

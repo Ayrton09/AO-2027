@@ -1151,7 +1151,8 @@ public sealed class NpcSystem
                 Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 3)),
                 Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 2)),
                 Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 4)),
-                (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
+                (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo,
+                player.MetamorfosisExtraDef);   // ExtraDEF de la forma (regla de la casa; 0 si no está transformado)
             int dmg = (int)Math.Max(1, afterDef);
             player.Hp = Math.Max(0, player.Hp - dmg);
             // CON LA PARTE DEL CUERPO, como el original: la `zona` que acaba de decidir qué armadura absorbe

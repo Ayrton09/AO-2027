@@ -459,6 +459,13 @@ public sealed class Persistence
         // El PORTAL DE LUM. Va por índice cableado (53) y no por ningún campo del data, así que es el único
         // hechizo que no se puede ejercitar con otro: o está en el libro, o su subsistema no corre nunca.
         p.Spells[14] = 53; // Portal planar (abre a los 5 s, dura 10, salida a Intermundia)
+        // METAMORFOSIS: MURCIÉLAGO, la más barata de las once (MinSkill 5, 50 de maná, 10 de energía). Es la
+        // única que estos chars pueden lanzar sin ser GM: tienen 15 de Magia, y la que sigue pide 15 justos —
+        // quedarse sin margen ahí es pedir un flow que falla el día que alguien toque la skill inicial.
+        // Sólo hace algo con la regla de la casa `MetamorfosisDelDruida` prendida, que es lo que trae
+        // `metamorfosis_flow.ini`; con la regla apagada esta ranura contesta "aún no está implementado", que
+        // es lo que hace el original.
+        p.Spells[15] = 49; // Metamorfosis: Murciélago (body 9, head 0, +6 al golpe, +20 a la defensa)
         SaveCharacter(p);
         if (!acc.Characters.Contains(name)) acc.Characters.Add(name);
         SaveAccount(acc);

@@ -577,6 +577,9 @@ loop.OnTickHandler = tick =>
                     }
                 }
             }
+            // Metamorfosis vencida → vuelve a su forma (regla de la casa MetamorfosisDelDruida; con la regla
+            // apagada nadie se transforma nunca y este chequeo es un `!= 0` que siempre da falso).
+            dispatcher?.VencerMetamorfosis(pl, tick);
             // DoPermanecerOculto (VB6 Trabajo.bas:37): el ocultamiento vencido revela al jugador (LocaleMsg 307).
             // No pisa la invisibilidad por hechizo/GM: si Invisible sigue activo, no se emite SetInvisible.
             if (pl.OcultoUntilTick != 0 && tick >= pl.OcultoUntilTick)

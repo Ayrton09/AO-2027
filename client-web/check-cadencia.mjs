@@ -108,6 +108,29 @@ if (!mFx) {
   }
 }
 
+// ── 4. Las tres cadencias del MACRO son las del cliente original ──────────────────────────────────────
+// `INT_ATTACK = 1200`, `INT_MACRO_HECHIS = 1400` e `INT_MACRO_TRABAJO = 1000` (Declares.bas:318-320). Las dos
+// últimas están DECLARADAS Y SIN USAR en el original —el macro estaba pensado y no llegó—, así que son la
+// clase de número que se "ajusta a ojo" con toda la buena intención. Que la repetición ande lo mide
+// `fase5/herramientas/medir-macro.js` contra el cliente corriendo; acá se fijan los valores, que es lo que
+// ese medidor no puede distinguir de una decisión nuestra.
+for (const [nombre, esperado, cita] of [
+  ['MACRO_MS_GOLPE', 1200, 'INT_ATTACK'],
+  ['MACRO_MS_HECHIZO', 1400, 'INT_MACRO_HECHIS'],
+  ['MACRO_MS_USAR', 1000, 'INT_MACRO_TRABAJO'],
+]) {
+  const m = cuerpo.match(new RegExp(`const\\s+${nombre}\\s*=\\s*(\\d+)`));
+  if (!m) fallas.push(`no encontré \`${nombre}\`: es la cadencia del macro (VB6 ${cita})`);
+  else if (+m[1] !== esperado)
+    fallas.push(`\`${nombre}\` vale ${m[1]} y el original son ${esperado} (${cita}, Declares.bas:318-320)`);
+}
+// Y que el macro siga saliendo APAGADO: prenderlo por defecto cambia cómo se sube de nivel sin avisarle a
+// nadie, y en el original `AutoUsarActivado` arranca en 0.
+if (!/localStorage\.getItem\('ao_macro'\)\s*===\s*'1'/.test(cuerpo)) {
+  fallas.push('el macro ya no arranca apagado: se espera `localStorage.getItem(\'ao_macro\') === \'1\'`, ' +
+              'que da false cuando el jugador nunca lo prendió');
+}
+
 if (fallas.length) {
   console.error('check-cadencia: la animación NO corre a la velocidad del original');
   for (const f of fallas) console.error(`  - ${f}`);

@@ -61,6 +61,21 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **El que se desconecta desaparece de golpe.** Se quedaba dos segundos y medio desvaneciéndose en la
   pantalla de los demás.
 
+- **Macro: mantené la tecla apretada y la acción se repite.** Está en Opciones → Juego, y viene apagado. Con
+  el macro puesto, sostener **Ctrl** sigue golpeando y sostener una **F1–F10** sigue usando lo que tengas
+  atado, a la velocidad del cliente original. Los oficios —minar, talar, pescar, fundir— siguen repitiéndose
+  solos como siempre, prendas o no el macro.
+
+- **Las metamorfosis del druida funcionan.** Los once hechizos (Murciélago, Lobo, Jabalí, Tigre, Oso Pardo,
+  Tortuga, Araña, Demonio, Árbol, Gólem y Dragón) transforman al druida en la criatura, con los bonos al
+  golpe y a la defensa que dice cada hechizo. Morir o desconectarse corta el efecto. (En el juego original
+  esos pergaminos se vendían hasta por 2.200.000 de oro y lanzarlos no hacía nada. Quien hostea elige cuánto
+  dura con `MetamorfosisDelDruida`, y viene apagado.)
+
+- **Drop global: cualquier criatura puede soltar un accesorio de los buenos.** Viene apagado; quien hostea
+  decide cada cuánto pasa con `DropGlobal`. La lista de los veintiséis objetos y qué tan raro es cada uno son
+  las del juego original, que traía la tabla hecha y nunca la usó.
+
 ## 1.0.0 — 2026-08-01
 
 - **Cada raza usa la ropa que le corresponde.** El elfo, el humano, el drow y el orco son razas altas y visten

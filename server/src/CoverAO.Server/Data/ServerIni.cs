@@ -92,9 +92,9 @@ public sealed class ServerIni
     public static readonly string[] ClavesConocidas =
     {
         "AllowMultiLogins", "BackupsAConservar", "Centinela", "CodigoFuente",
-        "CuraAlSubirNivel", "Exp", "FamiliarBusca", "HipocamposEnMarAbierto",
+        "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca", "HipocamposEnMarAbierto",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo",
-        "MaxUsers", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
+        "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
         "OroAlSubirNivel", "PasesDeRinkel", "PersistirSuelo", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
@@ -288,6 +288,49 @@ public sealed class ServerIni
     /// red.</para>
     /// </summary>
     public bool HipocamposEnMarAbierto { get; private set; } = true;
+
+    /// <summary>
+    /// REGLA DE LA CASA — <c>DropGlobal</c> (default 0 = apagada, como el install). Es la probabilidad EN POR
+    /// MIL de que una criatura muerta suelte, además de su botín propio, UN ítem de la tabla de
+    /// <c>DropGlobal.dat</c>. <c>DropGlobal=5</c> = 0,5 % de las muertes.
+    ///
+    /// <para>La tabla existe en el install —26 entradas activas, todas accesorios de los buenos: el Brazalete
+    /// del Ogro +30, el Anillo de Defensa Mágica +40, las tres Orbes, y dos Pendientes marcados como veinte
+    /// veces más raros— y <b>ningún código del VB6 la abre</b>. La rama del panel que la recargaría es
+    /// <c>MsgBox "Drop Global"</c>. Ver <see cref="Data.DropGlobalItem"/> para el detalle y para el comentario
+    /// donde el autor dejó escrito el diseño que no llegó a existir.</para>
+    ///
+    /// <para><b>Por qué un por mil y no un sí/no.</b> Los porcentajes del archivo no se pueden usar como
+    /// probabilidades independientes: suman 482 %, o sea casi cinco anillos legendarios por rata. Se usan como
+    /// pesos —qué sale cuando sale— y CUÁN SEGUIDO sale lo decide quien hostea, que es la única parte que el
+    /// original no dejó escrita en ningún lado. Un ítem por muerte como máximo.</para>
+    ///
+    /// <para>Prendida, el server DIVERGE del oráculo VB6 al morir una criatura. Es exactamente lo que una regla
+    /// de la casa declara, y por eso sale apagada: sin <c>Server.ini</c>, el juego es el del install.</para>
+    /// </summary>
+    public int DropGlobal { get; private set; }
+
+    /// <summary>
+    /// REGLA DE LA CASA — <c>MetamorfosisDelDruida</c> (default 0 = apagada, como el install). Son los
+    /// SEGUNDOS que dura la transformación; 0 la apaga del todo.
+    ///
+    /// <para>Los once hechizos de metamorfosis (#38-50: Murciélago, Lobo, Jabalí, Tigre, Oso Pardo, Tortuga,
+    /// Araña, Demonio, Árbol, Gólem y Dragón) existen en el <c>Hechizos.dat</c> del install con todo:
+    /// cuerpo, cabeza, FX, sonido, maná, energía, skill mínima y bonos al golpe y a la defensa. Y sus
+    /// pergaminos se VENDEN, de 35.000 a 2.200.000 de oro. <b>Lanzarlos no hace nada</b>: el servidor VB6 lee
+    /// la clave <c>metamorfosis</c> al cargar el archivo y no la usa en ninguna línea. Ver
+    /// <see cref="Data.SpellInfo.EsMetamorfosis"/>.</para>
+    ///
+    /// <para><b>Por qué la duración es la clave y no un número cableado.</b> Es el único dato que el original
+    /// no dejó escrito en ningún lado: la ficha del hechizo dice "efecto no permanente" y ahí se termina. No
+    /// hay campo de duración, ni constante, ni contador. Cablearlo sería inventar un número y esconderlo;
+    /// ponerlo acá lo deja a la vista de quien hostea, que es de quien es la decisión. Todo lo demás —cuánto
+    /// pega cada forma, cuánto cuesta, qué skill pide— sale de la data del install sin tocar nada.</para>
+    ///
+    /// <para>Prendida, el server DIVERGE del oráculo VB6 al lanzar esos once hechizos: donde el original manda
+    /// un "aún no está implementado", el nuestro transforma. Es lo que una regla de la casa declara.</para>
+    /// </summary>
+    public int MetamorfosisDelDruida { get; private set; }
 
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
@@ -577,6 +620,8 @@ public sealed class ServerIni
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
+        cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 0), 0, 1000);
+        cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", 0), 0, 3600);
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

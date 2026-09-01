@@ -1552,7 +1552,7 @@ public sealed partial class PacketDispatcher
         var escudo = Equipment.EquippedOfCategory(target, _data, 4);
         int damage = (int)Combat.AplicarDefensa(rawDamage, zona,
             Equipment.DefRange(casco), Equipment.DefRange(armadura), Equipment.DefRange(escudo),
-            (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
+            (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo, target.MetamorfosisExtraDef);
         target.Hp = Math.Max(0, target.Hp - damage);
         // Sin linea de consola: el original no narra el golpe, lo muestra (UserDanoUser,
         // SistemaCombate.bas:1355-1356 — dos `WriteChatOverHeadLocale`, uno a cada participante, y
@@ -1802,7 +1802,7 @@ public sealed partial class PacketDispatcher
         var escudo = Equipment.EquippedOfCategory(target, _data, 4);
         int damage = (int)Combat.AplicarDefensa(rawDamage, zona,
             Equipment.DefRange(casco), Equipment.DefRange(armadura), Equipment.DefRange(escudo),
-            (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo);
+            (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo, target.MetamorfosisExtraDef);
         target.Hp = Math.Max(0, target.Hp - damage);
         // Sin linea de consola: el original no narra el golpe, lo muestra (UserDanoUser,
         // SistemaCombate.bas:1355-1356 — dos `WriteChatOverHeadLocale`, uno a cada participante, y
@@ -2048,6 +2048,13 @@ public sealed partial class PacketDispatcher
     /// meditación (1 de 35 con la skill en 0, 1 de 5 con la skill en 100), así que entrenarla es cada vez más
     /// rápido — que es lo que hace que la skill sirva para algo.</para>
     /// </summary>
+    /// <summary>El game loop pregunta por cada jugador vivo si se le venció la metamorfosis. Vive acá y no en
+    /// <c>Player</c> porque revertir emite paquetes al área, y eso lo sabe hacer el dispatcher.</summary>
+    internal void VencerMetamorfosis(Player p, long tick)
+    {
+        if (p.MetamorfosisHastaTick != 0 && tick >= p.MetamorfosisHastaTick) RevertirMetamorfosis(p);
+    }
+
     internal void MeditarSubeSkill(Player p) =>
         RaiseSkill(p.Connection as ClientSession, p, GameLimits.SkillMeditar);
 
@@ -2331,6 +2338,67 @@ public sealed partial class PacketDispatcher
         RaiseSkill(session, p, GameLimits.SkillMagia);                                         // VB6 SubirSkill(magia)
     }
 
+    /// <summary>
+    /// REGLA DE LA CASA <c>MetamorfosisDelDruida</c>: convierte al lanzador en la criatura del hechizo.
+    ///
+    /// <para>Todo lo que se aplica sale del <c>Hechizos.dat</c> del install —cuerpo, cabeza, FX, sonido, y los
+    /// bonos <c>ExtraHIT</c>/<c>ExtraDEF</c>—; lo único nuestro es CUÁNTO dura, que es la clave del ini.
+    /// Lanzarla de nuevo (o lanzar otra) re-transforma y reinicia el reloj, sin acumular bonos: el estado es
+    /// uno solo y se pisa entero.</para>
+    ///
+    /// <para>Cobra por <see cref="SpellCasted"/> como cualquier hechizo que SÍ hace algo. En el original esta
+    /// rama sale gratis —la llamada al efecto está comentada, así que <c>HechizoCasteado</c> queda False y no
+    /// se descuenta ni maná ni energía ni sube la skill— pero eso es la contracara de que no haga nada. Si
+    /// transforma, se paga.</para>
+    /// </summary>
+    private void Transformar(ClientSession session, Player p, Data.SpellInfo spell)
+    {
+        // NI EN BARCA NI A CABALLO. No es sabor: el cuerpo de un navegante y el de un jinete NO salen del
+        // equipo —los fija el propio toggle (`BoatBody`, la montura)— y la vuelta pasa por
+        // `RefreshAppearance`, que sólo sabe vestir a alguien parado en tierra. Transformarse arriba de una
+        // barca y esperar los dos segundos te devolvía caminando sobre el agua con el cuerpo de tu armadura.
+        // Se rechaza antes de `SpellCasted`, así que no cuesta maná — el original hace lo mismo con los
+        // casteos que no proceden (`HechizoCasteado` queda en False).
+        if (p.Navigating || p.Mounted)
+        {
+            session.Send(ServerMessages.ConsoleMsg("No puedes transformarte montado ni sobre una embarcación.", 0));
+            return;
+        }
+        SpellCasted(session, p, spell);   // primero el costo, como las ramas hermanas (invisibilidad, buffs…)
+        p.MetamorfosisBody = (short)spell.BodyMetamorfosis;
+        p.MetamorfosisExtraHit = spell.ExtraHit;
+        p.MetamorfosisExtraDef = spell.ExtraDef;
+        // Segundos del ini → ticks del loop (40 ms cada uno). El +1 evita que un valor de 1 segundo caiga
+        // justo en el tick de vencimiento y la transformación no llegue a verse ni un frame.
+        p.MetamorfosisHastaTick = _loop.Tick + (_ini.MetamorfosisDelDruida * 1000L / GameLoop.TickMs) + 1;
+        p.Body = p.MetamorfosisBody;
+        p.Head = 0;                                    // las once traen head=0: la criatura no tiene cabeza humana
+        EmitSpellFx(p, p.Pos, p.CharIndex, spell);
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
+        session.Send(ServerMessages.LocaleMsg(0, $"={spell.Index}"));   // "has lanzado <hechizo> sobre ti"
+        EmitirCostoDelHechizo(session, p);
+    }
+
+    /// <summary>
+    /// Devuelve al jugador a su forma real y avisa al área. Es idempotente y barata cuando no hay nada que
+    /// revertir, así que se puede llamar desde cualquier camino sin preguntar antes.
+    ///
+    /// <para>El vencimiento por tick la llama a ella; la muerte y la desconexión limpian el estado por su
+    /// cuenta (<see cref="Player.OlvidarMetamorfosis"/>), porque ahí la apariencia ya la fija otra cosa —el
+    /// cadáver— o el personaje se va del mundo. Los tres caminos importan: <c>RefreshAppearance</c> respeta
+    /// la metamorfosis mientras el tick esté puesto, así que olvidarse de limpiarlo en alguno deja al druida
+    /// con cuerpo de dragón para siempre.</para>
+    /// </summary>
+    private void RevertirMetamorfosis(Player p, bool avisar = true)
+    {
+        if (p.MetamorfosisHastaTick == 0) return;
+        p.OlvidarMetamorfosis();
+        p.Head = p.OrigHead;
+        RefreshAppearance(p, _data);                   // ya sin metamorfosis: recalcula del equipo
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
+        if (avisar) p.Connection?.Send(ServerMessages.ConsoleMsg("Vuelves a tu forma normal.", 0));
+    }
+
     private void CastStateOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell)
     {
         // Paralizar una CRIATURA dura mucho menos que paralizar a una persona: el original usa
@@ -2432,6 +2500,32 @@ public sealed partial class PacketDispatcher
             var name = _data.Obj(d.ObjIndex)?.Name ?? $"obj {d.ObjIndex}";
             session.Send(ServerMessages.ConsoleMsg($"{npc.Name} dejó caer {d.Amount}x {name}.", 0));
         }
+        SortearDropGlobal(session, npc);
+    }
+
+    /// <summary>
+    /// REGLA DE LA CASA <c>DropGlobal</c>: un ítem de la tabla global, como mucho, encima del botín propio.
+    ///
+    /// <para>Apagada (el default) sale por la primera línea sin tocar el <c>_rng</c>: eso importa, porque
+    /// consumir un número del generador acá correría TODAS las tiradas posteriores y volvería no reproducible
+    /// cualquier corrida sembrada. Con la regla en 0 esta función no existe para el resto del juego.</para>
+    ///
+    /// <para>Dos tiradas: primero SI cae algo (<c>DropGlobal</c> por mil), y recién ahí QUÉ cae, por peso. La
+    /// ruleta camina la lista restando pesos, así que las dos entradas en 1 salen veinte veces menos que las
+    /// de 20 — la única jerarquía que el archivo del original dejó escrita.</para>
+    ///
+    /// <para>Cae por el mismo camino que el botín normal (<see cref="FindFreeGround"/> →
+    /// <see cref="DejarEnElPiso"/>), así que respeta <c>Tilelibre</c> y no aparece dentro de una pared.</para>
+    /// </summary>
+    private void SortearDropGlobal(ClientSession session, Npc npc)
+    {
+        if (_ini.DropGlobal <= 0 || _data.PesoTotalDropGlobal <= 0) return;
+        if (_rng.Next(1000) >= _ini.DropGlobal) return;
+        if (_data.DropGlobalPara(_rng.Next(_data.PesoTotalDropGlobal)) is not { } g) return;
+        if (FindFreeGround(npc.Pos, (short)g.ObjIndex, 1) is not { } donde) return;
+        DejarEnElPiso(donde, (short)g.ObjIndex, 1);
+        var nombre = _data.Obj(g.ObjIndex)?.Name ?? $"obj {g.ObjIndex}";
+        session.Send(ServerMessages.ConsoleMsg($"{npc.Name} dejó caer {nombre}.", 0));
     }
 
     /// <summary>Up to `count` tiles near `center` free of players and NPCs, scanning expanding rings.</summary>
@@ -8773,6 +8867,14 @@ public sealed partial class PacketDispatcher
             dano += _rng.Next(montura.MinHit, montura.MaxHit + 1);
         if (contraNpc && Equipment.EquippedOfCategory(p, _data, 8) is { EfectoMagico: AumentaGolpe } pendiente)
             dano += pendiente.CuantoAumento;
+        // TRANSFORMADO (regla de la casa MetamorfosisDelDruida): el `ExtraHIT` de la forma, plano y sobre el
+        // número ya redondeado, igual que la montura y el pendiente. Va del +6 del murciélago al +50 del
+        // dragón — los números son de la data del install, no nuestros. Contra cualquier objetivo: a
+        // diferencia del pendiente, el hechizo no distingue criatura de persona.
+        //
+        // Sólo al CUERPO A CUERPO: el disparo con arco tiene su propia rutina y no lo suma. Una criatura no
+        // usa arco, y la ficha del hechizo habla del ataque de la forma, no del arma que llevabas puesta.
+        dano += p.MetamorfosisExtraHit;
         return Math.Max(1, (int)dano);
     }
 
@@ -9672,6 +9774,10 @@ public sealed partial class PacketDispatcher
                 // (PacketDispatcher.Familiar.cs); el hechizo existe en el .dat del original y cae en el vacío
                 // porque su `Tipo = 6` (uFamiliar) no tiene `Case` que lo atienda en ningún handler.
                 LlamarORetirarFamiliar(session, p, spell);
+            }
+            else if (_ini.MetamorfosisDelDruida > 0 && spell.EsMetamorfosis)
+            {
+                Transformar(session, p, spell);
             }
             else
             {
@@ -11234,7 +11340,12 @@ public sealed partial class PacketDispatcher
     /// VB6 restaura estos campos desde el inventario en ConnectUser / al desmontar / en DarVida).</summary>
     public static void RefreshAppearance(Player p, GameData data)
     {
-        p.Body = Equipment.BodyFor(p, data);
+        // Transformado (regla de la casa MetamorfosisDelDruida): el cuerpo lo manda la criatura, no la
+        // armadura. Sin esto, equiparse o desequiparse cualquier cosa mientras dura la metamorfosis te
+        // devolvía a humano de golpe y en silencio — el druida se destransformaba solo al ponerse el manto.
+        // Las animaciones de arma/escudo/casco SÍ se siguen recalculando: el original tampoco las esconde,
+        // y son las que el cliente necesita para dibujar lo que el jugador lleva puesto cuando vuelve.
+        p.Body = p.MetamorfosisHastaTick != 0 ? p.MetamorfosisBody : Equipment.BodyFor(p, data);
         // El arma y los nudillos escriben el MISMO campo, y el original resuelve el empate a favor del arma:
         // pone primero el de los nudillos y después lo pisa con el del arma si la hay (Modulo_UsUaRiOs.bas:93-101).
         p.WeaponAnim = (short)(Equipment.EquippedOfCategory(p, data, 1)?.Anim
@@ -11517,6 +11628,10 @@ public sealed partial class PacketDispatcher
         p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
         p.Incinerado = false; p.IncineradoGolpes = 0;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego
+        // Morir deshace la metamorfosis (regla de la casa). El cadáver ya pisa cuerpo y cabeza acá arriba;
+        // lo que hay que soltar son los BONOS y el tick, o al revivir el druida seguiría pegando como dragón
+        // con cuerpo de humano — y RefreshAppearance le devolvería el cuerpo de la criatura.
+        p.OlvidarMetamorfosis();
         // Sincronizá el estado-cliente de parálisis/ceguera al morir (VB6 RemoveParalisis manda el toggle): el
         // reconciliador de Program.cs saltea a los muertos, así que sin esto el fantasma queda trabado / con
         // pantalla negra y arrastra el flag ~3s tras revivir. Condicional para no invertir el toggle ParalizeOK.
@@ -11679,6 +11794,7 @@ public sealed partial class PacketDispatcher
             // lugares y termina con `.NroMascotas = 0`). Las mascotas no sobreviven a la sesión.
             for (int i = 1; i <= GameLimits.MaxMascotas; i++) { p.MascotasIndex[i] = 0; p.MascotasType[i] = 0; }
             p.NroMascotas = 0;
+            p.OlvidarMetamorfosis();   // desconectarse deshace la transformación: no se guarda ni vuelve al entrar
             // VB6 TCP.bas:1644 — al área, EXCLUYENDO al que se va (ya no está para verlo).
             _world.BroadcastToObservers(p.Pos, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
             ControlarPortalLum(_world, _data, p, 1);   // VB6 CloseUser, TCP.bas:1629 — el portal se va con él

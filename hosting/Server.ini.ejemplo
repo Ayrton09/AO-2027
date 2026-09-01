@@ -129,8 +129,9 @@ MinutosDeClima=18
 PorcentajeLluvia=18
 
 ; -- REGLAS DE LA CASA --------------------------------------------------------------------------------
-; Seis cosas que el ORIGINAL NO HACE. El SERVIDOR las trae apagadas por defecto —si borras este archivo,
-; o si tu ini no las menciona, se comporta exactamente como el CoverAO original— y este archivo es donde
+; Diez cosas que el ORIGINAL NO HACE. El SERVIDOR las trae apagadas por defecto (si borras este archivo,
+; o si tu ini no las menciona, se comporta como el CoverAO original; la unica excepcion es
+; HipocamposEnMarAbierto, que sale prendida) y este archivo es donde
 ; el autor de este fork decidio cuales quiere prendidas. Poner un 0 en cualquiera vuelve a lo del VB6.
 ;
 ; OroAlSubirNivel: oro de regalo por cada nivel que se sube. 0 = como el original (no regala nada).
@@ -185,6 +186,29 @@ PasesDeRinkel=0
 ;                         ES LA UNICA REGLA DE LA CASA QUE VIENE PRENDIDA (decision del autor).
 ;                         Ponele 0 si queres el comportamiento exacto del servidor original.
 HipocamposEnMarAbierto=1
+; DropGlobal: probabilidad EN POR MIL de que una criatura muerta suelte, ademas de su botin de siempre,
+;             UN item de la tabla de DropGlobal.dat. 0 = apagado (como el install). 5 = medio por ciento
+;             de las muertes. 1000 seria siempre, pero no lo pongas: son accesorios de los mejores del
+;             juego (Brazalete del Ogro +30, Anillo de Defensa Magica +40, las tres Orbes...).
+;             La tabla viene en el install y ningun codigo del servidor original la abre nunca: quedo a
+;             medio hacer. Los porcentajes del archivo se usan como PESOS (que sale cuando sale), no como
+;             probabilidades: sumadas dan 482%. Cada muerte suelta un item como maximo.
+;             APAGADA por defecto, como toda regla de la casa.
+DropGlobal=0
+; MetamorfosisDelDruida: SEGUNDOS que dura la transformacion. 0 = apagada (como el install).
+;                        Los once hechizos de metamorfosis (Murcielago, Lobo, Jabali, Tigre, Oso Pardo,
+;                        Tortuga, Arania, Demonio, Arbol, Golem y Dragon) estan enteros en la data del
+;                        install (cuerpo, FX, sonido, mana, energia, skill minima y bonos al golpe y a la
+;                        defensa) y sus pergaminos SE VENDEN, de 35.000 a 2.200.000 de oro. En el servidor
+;                        original lanzarlos no hace absolutamente nada: la clave se lee al cargar el
+;                        archivo y no se usa en ninguna linea.
+;                        Con esto en, por ejemplo, 120, el druida se transforma dos minutos: toma el cuerpo
+;                        de la criatura y sus bonos (del +6/+20 del murcielago al +50/+20 del dragon, todos
+;                        numeros del install). Morir o desconectarse la corta.
+;                        La DURACION es lo unico que el original no dejo escrito en ningun lado, por eso es
+;                        esta clave y no un numero escondido en el codigo.
+;                        APAGADA por defecto, como toda regla de la casa.
+MetamorfosisDelDruida=0
 
 ; --- Operacion: que no se pierda nada ----------------------------------------
 ; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo

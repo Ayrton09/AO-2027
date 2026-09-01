@@ -1059,6 +1059,34 @@
     // frmMain.frm). Es lo ultimo que faltaba del censo de teclas del original. El chat sobre la cabeza NO se
     // apaga con esto: son dos cosas distintas en el cliente clasico.
     let mostrarNombres = localStorage.getItem('ao_nombres') !== '0';   // persiste (tecla N u Opciones)
+    /*
+     * MACRO — repetir la acción mientras la tecla sigue apretada.
+     *
+     * El cliente original lo tiene a medias y es el reclamo más viejo del juego: para subir de nivel hay que
+     * apretar Ctrl miles de veces, porque el ataque cuelga de `Form_KeyUp` (frmMain.frm:2102) — una acción por
+     * apretar-y-soltar— y en todo el formulario no hay un solo `Form_KeyDown`. Lo que SÍ tiene es el
+     * `AutoUsar` de Mod_AutoUsar.bas: cada 100 ms mira si la tecla de una F sigue apretada y repite la poción.
+     * Y tiene dos constantes, `INT_MACRO_TRABAJO = 1000` e `INT_MACRO_HECHIS = 1400` (Declares.bas:318-319),
+     * declaradas y NUNCA usadas: el macro de trabajo y el de hechizos estaban pensados y no llegaron.
+     *
+     * Acá se completa: prendido, mantener Ctrl golpea a la cadencia del original y mantener una F repite a la
+     * suya. Los tres números salen del original, ninguno es nuestro.
+     *
+     * APAGADO por defecto, y no es simetría con las reglas de la casa del server: apagado ES el original
+     * —`AutoUsarActivado` arranca en 0 en el `CovAoInit.ini`— y prenderlo cambia cómo se sube de nivel, que
+     * es una decisión del jugador, no nuestra.
+     *
+     * De paso arregla un defecto que estaba de antes: las F1-F10 se disparaban en CADA `keydown`, repeticiones
+     * del sistema operativo incluidas, o sea ~30 paquetes por segundo con la tecla apretada. Ahora, apagado,
+     * es una acción por pulsación; prendido, es la cadencia del original. En ningún caso son treinta.
+     *
+     * El MACRO DE TRABAJO no está acá y no falta: minar, talar, pescar y fundir ya se repiten solos en el
+     * servidor mientras dure la energía (`Laborando` + `TickTrabajo`), que es como lo hace el original.
+     */
+    const MACRO_MS_GOLPE = 1200;     // INT_ATTACK (Declares.bas:320)
+    const MACRO_MS_HECHIZO = 1400;   // INT_MACRO_HECHIS (:318)
+    const MACRO_MS_USAR = 1000;      // INT_MACRO_TRABAJO (:319)
+    let macroOn = localStorage.getItem('ao_macro') === '1';   // persiste; default APAGADO
     // Desvanecido de los techos al entrar a un interior. El original va de 255 a 0 de 5 en 5 cada 18 ms
     // (RoofAlphaCalculate, TileEngine.bas:3845), o sea 51 pasos = ~918 ms para el barrido completo.
     const TECHO_FADE_MS = 918;
@@ -2938,6 +2966,11 @@
                            guardarPref('ao_escalado', smoothWorld ? '1' : '0'); abrirOpciones(); return;
           case 'nombres':  mostrarNombres = !mostrarNombres; guardarPref('ao_nombres', mostrarNombres ? '1' : '0');
                            draw(); abrirOpciones(); return;
+          // Apagarlo suelta lo que estuviera repitiendo: si no, una tecla que quedó apretada seguía
+          // disparando después de apagar la opción, y sólo paraba al soltarla.
+          case 'macro':    macroOn = !macroOn; guardarPref('ao_macro', macroOn ? '1' : '0');
+                           if (!macroOn) { macroSoltarTodo(); }
+                           abrirOpciones(); return;
           case 'teclas':   abrirTeclas(); return;
         }
       }
@@ -3233,13 +3266,19 @@
         <div class="fsec">Juego</div>
         <div class="frow" style="justify-content:space-between"><span>Ver nombres de los jugadores</span>
           <button class="sbtn ghost" data-op="nombres" style="min-width:5em">${mostrarNombres ? 'sí' : 'no'}</button></div>
+        <div class="frow" style="justify-content:space-between"><span>Macro (repetir con la tecla apretada)</span>
+          <button class="sbtn ghost" data-op="macro" style="min-width:5em">${macroOn ? 'sí' : 'no'}</button></div>
+        <div class="sp2">Prendido, mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue
+          usando lo que tenga atado, a la cadencia del cliente original (1,2 s el golpe, 1,4 s un hechizo,
+          1 s un ítem). Apagado es como el original: una acción por cada vez que apretás.
+          Los oficios —minar, talar, pescar, fundir— se repiten solos siempre, no dependen de esto.</div>
 
         <div class="fsec">Controles</div>
         <div class="frow"><button class="sbtn" data-op="teclas">Configuración de controles</button>
           <span class="fhint">reasignar cualquier tecla</span></div>`, true, 'opciones');
     }
     window.__abrirOpciones = abrirOpciones;
-    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres });
+    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, macroOn });
     const SKILL_ROBAR = 14;        // la tecla R del original (mKeySteal); tambien pide objetivo
     // ÍTEM SELECCIONADO del inventario. El original lo tiene (`Inventario.SelectedItem`) y sus teclas de
     // inventario —T tirar, U usar, E equipar— actúan SOBRE ÉL. Acá no existía: el clic actuaba directo, y por
@@ -5192,6 +5231,83 @@
     // Si la ventana pierde el foco con una flecha apretada, el `keyup` NUNCA llega y el personaje se queda
     // caminando solo para siempre. Soltar todo al perder el foco.
     addEventListener('blur', () => { dirsApretadas.length = 0; pararPasos(); });
+
+    /*
+     * EL MACRO, con estado propio — la misma decisión que la caminata de acá arriba y por la misma razón:
+     * no depender del auto-repeat del sistema operativo. Acá pesa todavía más, porque el `Ctrl` es una tecla
+     * modificadora y si repite o no depende del navegador y del sistema; con un reloj propio la cadencia es
+     * la que dice el original, en cualquier máquina.
+     *
+     * Es la forma del `AutoUsar` del original (Mod_AutoUsar.bas:135): un bucle que mira qué teclas siguen
+     * apretadas y dispara la que le toca. Allá cada 100 ms por timer, acá por frame, que es más fino y no
+     * cuesta nada — lo que decide no es cuándo se mira sino la cadencia de cada acción.
+     */
+    const macroApretadas = new Set();      // 'golpe' | 'F1'..'F10'
+    const macroUltimo = new Map();         // clave → performance.now() del último disparo
+    let macroTimer = null;
+    /** Un golpe: exactamente lo que manda la tecla, extraído para que el macro y la pulsación usen el mismo. */
+    function mandarGolpe() {
+      if (ws.readyState !== 1) return;
+      ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.attack).toBytes(), myKey));
+      const me = chars.get(myCharIndex); if (me) me.attackAt = Date.now();   // la embestida local
+      draw();
+    }
+    /** Cada cuánto repite ese slot: un hechizo tiene su cadencia y un ítem la suya, como en el original. */
+    const cadenciaDelSlot = (i) => (hotbar[i] && hotbar[i].kind === 'spell') ? MACRO_MS_HECHIZO : MACRO_MS_USAR;
+    function tickMacro() {
+      // LOS MISMOS PORTONES QUE EL `keydown`. Sin esto, abrir la tienda o ponerse a escribir con la tecla
+      // todavía apretada te dejaba pegando desde adentro del modal: el guard del keydown no alcanza, porque
+      // el que dispara acá es el reloj y no la tecla. No se SUELTA la tecla, sólo se saltea la vuelta — al
+      // cerrar el modal el macro sigue donde estaba, que es lo que espera quien lo tiene apretado.
+      const ae = document.activeElement;
+      if (modalEl.classList.contains('on')) return;
+      if (ae && (ae === chatbox || ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA')) return;
+      const ahora = performance.now();
+      for (const k of macroApretadas) {
+        const esGolpe = k === 'golpe';
+        const i = esGolpe ? -1 : +k.slice(1) - 1;
+        if (ahora - (macroUltimo.get(k) || 0) < (esGolpe ? MACRO_MS_GOLPE : cadenciaDelSlot(i))) continue;
+        macroUltimo.set(k, ahora);
+        if (esGolpe) mandarGolpe(); else fireHotbar(i);
+      }
+    }
+    function arrancarMacro() {
+      if (macroTimer !== null) return;
+      macroTimer = requestAnimationFrame(function tick() {
+        if (macroTimer === null) return;
+        tickMacro();
+        macroTimer = requestAnimationFrame(tick);
+      });
+    }
+    function pararMacro() {
+      if (macroTimer === null) return;
+      cancelAnimationFrame(macroTimer); macroTimer = null;
+    }
+    /**
+     * Arranca a repetir esa tecla. `sello` deja anotado que la acción ACABA de salir por la pulsación, así
+     * que la primera repetición espera el intervalo entero — si no, mantener apretado disparaba dos veces
+     * casi juntas y después sí a cadencia.
+     */
+    function macroApretar(clave) {
+      if (!macroOn) return;
+      macroUltimo.set(clave, performance.now());
+      macroApretadas.add(clave);
+      arrancarMacro();
+    }
+    function macroSoltar(clave) {
+      macroApretadas.delete(clave);
+      if (!macroApretadas.size) pararMacro();
+    }
+    /** Soltar TODO: al perder el foco, y al apagar el macro desde Opciones estando una tecla apretada. */
+    function macroSoltarTodo() { macroApretadas.clear(); pararMacro(); }
+    addEventListener('blur', macroSoltarTodo);
+    addEventListener('keyup', (ev) => {
+      if (ev.key === 'Control' || ev.key === ' ') macroSoltar('golpe');
+      const fm = /^F([1-9]|10)$/.exec(ev.key);
+      if (fm) macroSoltar('F' + fm[1]);
+    });
+    window.__macro = () => ({ on: macroOn, apretadas: [...macroApretadas], corriendo: macroTimer !== null,
+      msGolpe: MACRO_MS_GOLPE, msHechizo: MACRO_MS_HECHIZO, msUsar: MACRO_MS_USAR });
     window.__pasos = () => ({ apretadas: dirsApretadas.slice(), corriendo: pasoTimer !== null,
       pasoMs: +pasoMs(chars.get(myCharIndex)).toFixed(1), montando });   // el EFECTIVO: a caballo es más corto
     // --- Chat + comandos '/' (cada comando del AO clásico es su propio paquete) ---------------------------
@@ -5615,7 +5731,12 @@
       if (ev.key === 'Enter') { abrirChat(true); ev.preventDefault(); return; }   // Enter abre la línea de chat
       const acc = accionDe(ev.key);                                  // qué ACCIÓN tiene atada esta tecla
       const fm = /^F([1-9]|10)$/.exec(ev.key);                       // F1-F10 → disparar el atajo atado
-      if (fm && ws.readyState === 1) { fireHotbar(+fm[1] - 1); ev.preventDefault(); return; }
+      if (fm && ws.readyState === 1) {
+        // Las repeticiones del SO se descartan: si el macro está prendido, el que repite es `tickMacro` a la
+        // cadencia del original. Antes esta línea se disparaba en cada `keydown`, repeticiones incluidas.
+        if (!ev.repeat) { fireHotbar(+fm[1] - 1); macroApretar('F' + fm[1]); }
+        ev.preventDefault(); return;
+      }
       const h = HEADINGS[ev.key];
       if (h && ws.readyState === 1) {
         // El auto-repeat del SO ya no maneja la caminata: la maneja `pasoTimer`. Se descarta acá para que
@@ -5636,9 +5757,11 @@
         // "debes estar en modo combate". Una acción por pulsación.
         ev.preventDefault();
       } else if ((ev.key === ' ' || ev.key === 'Control') && ws.readyState === 1) {
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.attack).toBytes(), myKey));  // attack → swing sound
-        const me = chars.get(myCharIndex); if (me) me.attackAt = Date.now();                 // local attack lunge
-        draw();
+        mandarGolpe();
+        // Con el macro prendido, mantenerla sigue golpeando a los 1200 ms del original (INT_ATTACK). Apagado,
+        // `macroApretar` no hace nada y queda un golpe por pulsación, que es el original tal cual: su ataque
+        // vive en `Form_KeyUp` y no repite nunca.
+        macroApretar('golpe');
         ev.preventDefault();
       // LOS ATAJOS DE LETRA VAN POR `ev.key`, NO POR `ev.code`, y es deliberado. `ev.code` es la tecla FÍSICA
       // —serviría para un WASD, donde lo que importa es la posición— pero estos atajos son MNEMOTÉCNICOS en

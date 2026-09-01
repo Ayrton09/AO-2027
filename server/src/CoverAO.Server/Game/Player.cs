@@ -426,6 +426,36 @@ public sealed class Player
     // LocaleMsg 307, mientras que la invisibilidad de hechizo/GM no. El aggro de NPCs filtra por ambos.
     public bool Oculto { get; set; }
     public long OcultoUntilTick { get; set; }
+
+    // ── METAMORFOSIS (regla de la casa MetamorfosisDelDruida) ─────────────────────────────────────────
+    // Nada de esto se persiste, y es a propósito: si el servidor se cae con un druida hecho dragón, vuelve
+    // druida. El cuerpo real se recalcula del equipo en cada login (RefreshAppearance), así que el estado no
+    // tiene forma de sobrevivir a un reinicio ni aunque quisiera. Es la misma política del rango de seguridad.
+
+    /// <summary>Tick hasta el que dura la transformación. 0 = el jugador NO está transformado, y es la única
+    /// pregunta que hace el resto del código: no hay un bool aparte que pueda quedar desincronizado.</summary>
+    public long MetamorfosisHastaTick { get; set; }
+    /// <summary>El cuerpo de la criatura mientras dura. Lo necesita <c>RefreshAppearance</c>, que si no
+    /// recalcularía el cuerpo desde la armadura y te devolvería a humano al equipar cualquier cosa.</summary>
+    public short MetamorfosisBody { get; set; }
+    /// <summary>Bonos al golpe y a la defensa que da la forma (Hechizos.dat <c>ExtraHIT</c>/<c>ExtraDEF</c>).
+    /// Se guardan copiados y no se releen del hechizo: la transformación ya ocurrió, y el jugador tiene que
+    /// terminarla con los números con los que la empezó aunque el .dat se recargue en el medio.</summary>
+    public int MetamorfosisExtraHit { get; set; }
+    public int MetamorfosisExtraDef { get; set; }
+
+    /// <summary>¿Está transformado ahora mismo? <paramref name="tick"/> es el del game loop.</summary>
+    public bool EstaMetamorfoseado(long tick) => MetamorfosisHastaTick != 0 && tick < MetamorfosisHastaTick;
+
+    /// <summary>Borra el estado de metamorfosis. NO toca la apariencia: eso lo hace quien llama, que es el
+    /// único que sabe si además hay que avisarle al área.</summary>
+    public void OlvidarMetamorfosis()
+    {
+        MetamorfosisHastaTick = 0;
+        MetamorfosisBody = 0;
+        MetamorfosisExtraHit = 0;
+        MetamorfosisExtraDef = 0;
+    }
     /// <summary>Tick hasta el que este jugador NO puede usar una salida de mapa (VB6 <c>Counters.TiempoDeMapeo</c>).
     ///
     /// <para>Es el anti-escape del PvP, y es hermano del <see cref="SalirSegundos"/>: aquél impide escaparse

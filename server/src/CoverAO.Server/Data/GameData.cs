@@ -319,8 +319,32 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     // la animacion xd"— pero la rama SE EJECUTA y da el hechizo por lanzado, que es lo que cobra el maná y
     // saca las palabras mágicas. Sin leer esta clave el hechizo caía en el "aún no está implementado" y salía
     // gratis. Ver modHechizos.bas:1066.
-    int ResucitaFamiliar = 0)
+    int ResucitaFamiliar = 0,
+    // ── METAMORFOSIS ──────────────────────────────────────────────────────────────────────────────────
+    // Los seis campos que traen los once hechizos de metamorfosis (#38-50) y NINGÚN otro. El VB6 lee dos
+    // —`metamorfosis` en FileIO.bas:367 y `extrahit` en :366— y no usa ninguno: la única otra mención de
+    // `.Metamorfosis` en todo el servidor está COMENTADA (Modulo_UsUaRiOs.bas:1255), y no hay un solo
+    // `Char.body = ` que salga de un hechizo. O sea: los pergaminos se venden hasta 2.200.000 de oro, el
+    // druida aprende el hechizo, lo lanza, y no pasa absolutamente nada. Es así en el original.
+    //
+    // La data en cambio está completa y es una progresión pensada: del Murciélago (skill 5, 50 de maná,
+    // +6 al golpe y +20 a la defensa) al Dragón (skill 100, 1300 de maná, +50 y +20). Los once llevan
+    // `head=0` — la criatura no tiene cabeza humana — y un `asusta` de 1 a 10.
+    //
+    // Se leen para la REGLA DE LA CASA `MetamorfosisDelDruida`. Apagada, sobran; encendida, son el hechizo.
+    //
+    // FALTA UNO A PROPÓSITO: `asusta` (1 el murciélago, 10 el dragón). La ficha del hechizo promete que "las
+    // criaturas no te atacarán si aparentas ser más poderoso que ellas", pero ese número no tiene contra qué
+    // compararse: ningún NPC del install trae una escala de poder equivalente, y el VB6 no lee la clave.
+    // Cualquier mapeo contra el HP o la experiencia de la criatura sería inventado, así que no se lee — data
+    // sin lector, como las otras que el proyecto deja anotadas en vez de cargar por las dudas.
+    int Metamorfosis = 0, int BodyMetamorfosis = 0, int HeadMetamorfosis = 0,
+    int ExtraHit = 0, int ExtraDef = 0)
 {
+    /// <summary>Hechizo de metamorfosis con un cuerpo al que transformarse (Hechizos.dat
+    /// <c>metamorfosis=1</c> + <c>body</c>). Sólo lo cumplen los once del bloque #38-50.</summary>
+    public bool EsMetamorfosis => Metamorfosis > 0 && BodyMetamorfosis > 0;
+
     /// <summary>El hechizo se tira sobre uno mismo, sin objetivo (Hechizos.dat <c>autolanzar</c>).</summary>
     public bool EsAutoLanzado => AutoLanzar > 0;
 
@@ -356,6 +380,28 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
 /// <paramref name="ProbTirar"/> es el tercer campo del .dat: el VB6 sólo trata especial el valor 100
 /// (dropea SIEMPRE); con cualquier otro valor tira una moneda al 50% (<c>NPC_TIRAR_ITEMS</c>).</summary>
 public sealed record NpcDrop(int ObjIndex, int Amount, double ProbTirar);
+
+/// <summary>
+/// Una entrada de la TABLA DE DROP GLOBAL (<c>DropGlobal.dat</c>): un ítem que cualquier criatura puede
+/// soltar, además de su propio <c>RandomDrop</c>.
+///
+/// <para><b>En el VB6 esta tabla no la lee nadie.</b> El archivo existe y viaja con el install, y el menú de
+/// recarga del panel lo lista junto a los demás .dat — pero su rama entera es <c>MsgBox "Drop Global"</c>
+/// (frmServidor.frm:520). Ningún módulo lo abre. Quedó a mitad de camino.</para>
+///
+/// <para><see cref="Peso"/> es el <c>PorcentajeDrop</c> crudo del archivo. NO es una probabilidad que se
+/// pueda usar tal cual: las 26 entradas activas suman 482 %, así que tirarlas por separado soltaría cinco
+/// anillos legendarios por rata. Se usa como PESO RELATIVO —las dos entradas en 1 son veinte veces más raras
+/// que las de 20— y quién sortea la tabla lo decide la regla de la casa.</para>
+///
+/// <para>El autor del original dejó escrito qué quería, en un comentario pegado al valor de la entrada 29:
+/// <c>Porcentaje=-1 'le pongo -1, así no cualquiera puede dropear, sólo los que tienen TiraItem=x% +1</c>.
+/// O sea: el porcentaje se SUMABA al del NPC. Ese campo <c>TiraItem</c> <b>no existe</b> en NPCs.dat ni en
+/// una sola línea del servidor, así que el diseño no se puede completar como estaba pensado. Lo que SÍ se
+/// honra es su convención para apagar entradas: las cuatro que dejó en <c>0</c> y <c>-1</c> (las dos de
+/// Resistencia Mágica, el Reflex +30 y la Gema Lunar) no salen nunca.</para>
+/// </summary>
+public sealed record DropGlobalItem(int ObjIndex, int Peso);
 
 /// <summary>Un ítem del kit inicial de una clase (NACIMIENTO.dat, VB6 <c>OBJNacimiento.Clase(i)</c>).
 /// El slot 3 es el arma y el 4 la armadura racial (ver <c>RellenarInventario</c>, TCP.bas:2195).</summary>
@@ -901,6 +947,31 @@ public sealed class GameData
     public IReadOnlySet<int> TailorItems { get; private set; } = new HashSet<int>();
     /// <summary>Object indices an alchemist can brew, from ObjDruida.dat ([INIT] Index list).</summary>
     public IReadOnlySet<int> AlchemyItems { get; private set; } = new HashSet<int>();
+    /// <summary>La tabla de DROP GLOBAL (DropGlobal.dat), ya filtrada: sólo las entradas con peso positivo.
+    /// Vacía si el archivo no está. Ver <see cref="DropGlobalItem"/> — la usa la regla de la casa del mismo
+    /// nombre; con la regla apagada (el default) nadie la mira.</summary>
+    public IReadOnlyList<DropGlobalItem> DropsGlobales { get; private set; } = Array.Empty<DropGlobalItem>();
+    /// <summary>La suma de los pesos de <see cref="DropsGlobales"/>, para sortear sin recorrer dos veces.</summary>
+    public int PesoTotalDropGlobal { get; private set; }
+
+    /// <summary>
+    /// Qué ítem de la tabla global sale para una <paramref name="tirada"/> en <c>[0, PesoTotalDropGlobal)</c>.
+    /// Ruleta por peso: camina la lista restando, así que cada entrada se lleva una franja del tamaño de su
+    /// <c>PorcentajeDrop</c> — las dos que valen 1 salen veinte veces menos que las que valen 20.
+    ///
+    /// <para>Es pura y toma la tirada por parámetro a propósito: así el reparto se puede verificar barriendo
+    /// las <see cref="PesoTotalDropGlobal"/> tiradas posibles, sin azar y sin levantar un servidor.</para>
+    /// </summary>
+    public DropGlobalItem? DropGlobalPara(int tirada)
+    {
+        if (tirada < 0 || tirada >= PesoTotalDropGlobal) return null;
+        foreach (var g in DropsGlobales)
+        {
+            tirada -= g.Peso;
+            if (tirada < 0) return g;
+        }
+        return null;
+    }
     public int ItemCount => Objects.Count;
     public int SpellCount => Spells.Count;
     public int NpcCount => Npcs.Count;
@@ -977,6 +1048,7 @@ public sealed class GameData
         ("MapInfo.json", "la ficha de cada mapa: sin esto TODO mapa queda Pk"),
         ("NACIMIENTO.json", "el equipo inicial de cada clase"),
         ("NombresInvalidos.json", "el filtro de nombres prohibidos"),
+        ("DropGlobal.json", "la tabla del drop global (sólo la usa la regla de la casa DropGlobal)"),
     };
 
     public static GameData Load()
@@ -1021,6 +1093,8 @@ public sealed class GameData
         data.CarpenterItems = LoadRecipeIndexList(Path.Combine(dir, "ObjCarpintero.json"));
         data.TailorItems = LoadRecipeIndexList(Path.Combine(dir, "ObjSastre.json"));
         data.AlchemyItems = LoadRecipeIndexList(Path.Combine(dir, "ObjDruida.json"));
+        data.DropsGlobales = LoadDropsGlobales(Path.Combine(dir, "DropGlobal.json"));
+        data.PesoTotalDropGlobal = data.DropsGlobales.Sum(d => d.Peso);
         data._terrain = LoadTerrain(Path.Combine(dir, "MapTerrain.json"));
         LoadTriggers(data, Path.Combine(dir, "MapTriggers.json"));
         data.MapSpawns = LoadMapSpawns(Path.Combine(dir, "MapSpawns.json"));
@@ -1160,6 +1234,34 @@ public sealed class GameData
     /// en `]`, no abría sección, y los `Index=` terminaban todos apilados dentro de `[INIT]` — el primero como
     /// clave y el resto como `_duplicates`. La lista salía bien de casualidad, cosechando la contaminación.
     /// Arreglado el transcoder, la forma correcta es el array `OBJ`.</summary>
+    /// <summary>
+    /// Lee <c>DropGlobal.json</c>: una sección <c>[DROPn]</c> por ítem, con <c>Index</c> (el objeto) y
+    /// <c>PorcentajeDrop</c> (el peso).
+    ///
+    /// <para>Dos cosas del archivo que hay que respetar. Una: los valores traen comentarios VB6 pegados
+    /// —<c>Index=992 'RM +10</c>, <c>PorcentajeDrop=-1 'le pongo -1...</c>— y por eso se leen con
+    /// <see cref="Int"/>, que corta en el apóstrofo; con un <c>int.Parse</c> pelado las cuatro últimas
+    /// entradas se caían. Dos: el <c>NumDrops=30</c> del encabezado no manda, mandan las secciones que
+    /// realmente están.</para>
+    ///
+    /// <para>Se descartan acá las de peso &lt;= 0, que es como el autor apagó cuatro (ver
+    /// <see cref="DropGlobalItem"/>). Descartarlas en el CARGADOR y no en el sorteo es a propósito: así una
+    /// entrada apagada no puede colarse por un camino nuevo que se agregue después.</para>
+    /// </summary>
+    private static IReadOnlyList<DropGlobalItem> LoadDropsGlobales(string file)
+    {
+        var lista = new List<DropGlobalItem>();
+        if (!File.Exists(file)) return lista;
+        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        if (!doc.RootElement.TryGetProperty("DROP", out var arr) || arr.ValueKind != JsonValueKind.Array) return lista;
+        foreach (var el in arr.EnumerateArray())
+        {
+            int obj = Int(el, "Index"), peso = Int(el, "PorcentajeDrop");
+            if (obj > 0 && peso > 0) lista.Add(new DropGlobalItem(obj, peso));
+        }
+        return lista;
+    }
+
     private static HashSet<int> LoadRecipeIndexList(string file)
     {
         var set = new HashSet<int>();
@@ -1390,7 +1492,12 @@ public sealed class GameData
                 // UCase$ y por eso allá da igual. Se prueban las tres grafías, como con las otras claves
                 // que resultaron tener más de una escritura en este mismo archivo.
                 Int(el, "autolanzar", "AutoLanzar", "AUTOLANZAR"),
-                Int(el, "ResucitaFamiliar"));
+                Int(el, "ResucitaFamiliar"),
+                // Los cinco de la metamorfosis. En este archivo vienen con UNA sola grafía cada uno
+                // (`metamorfosis`, `body` y `head` en minúscula; `ExtraHIT`/`ExtraDEF` en mixta) y sólo en los
+                // once hechizos del bloque — verificado sobre los 113.
+                Int(el, "metamorfosis"), Int(el, "body"), Int(el, "head"),
+                Int(el, "ExtraHIT"), Int(el, "ExtraDEF"));
         }
         return map;
     }
