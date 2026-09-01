@@ -10119,6 +10119,14 @@ public sealed partial class PacketDispatcher
     /// <c>Valor / (1 + Comerciar/100)</c>, o sea que con la skill al máximo se paga la mitad. Vale para el
     /// cobro (Comercio.bas:89) y para la vidriera (Comercio.bas:268): el original muestra el precio YA con el
     /// descuento, así que mostrar el de lista y cobrar otro no es una opción.</summary>
+    /// <summary>El precio de lista de un objeto: su <c>Valor</c>, derivado en cada uso.
+    ///
+    /// <para>Se deriva y no se guarda, que es lo que hace el original (<c>Comercio.bas:89</c>). Guardarlo en
+    /// la ranura del mercader —como hacía este port— dejaba el precio del objeto ANTERIOR pegado cuando la
+    /// ranura se vaciaba, y eso era una impresora de oro: vender algo caro en una ranura barata y recomprarlo.
+    /// Ver <see cref="Game.MerchantSlot"/>.</para></summary>
+    private int PrecioDeLista(short objIndex) => _data.Obj(objIndex)?.Value ?? 0;
+
     private static long PrecioParaElComprador(Player? p, int precioDeLista)
     {
         if (p is null) return precioDeLista;
@@ -10759,7 +10767,7 @@ public sealed partial class PacketDispatcher
         for (byte i = 0; i < npc.Stock!.Count; i++)
         {
             var st = npc.Stock[i];
-            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, (int)PrecioParaElComprador(p, st.Price), st.ObjIndex));
+            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, (int)PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)), st.ObjIndex));
         }
     }
 
@@ -10797,7 +10805,7 @@ public sealed partial class PacketDispatcher
             var st = npc.Stock[slot - 1];
             if (st.Amount < 1) return;   // slot agotado: sin esto Math.Clamp(_,1,0) lanza ArgumentException (min>max)
             int buy = Math.Clamp((int)amount, 1, st.Amount);
-            long cost = PrecioParaElComprador(p, st.Price) * buy;
+            long cost = PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)) * buy;
             if (p.Gold < cost) { session.Send(ServerMessages.LocaleMsg(26)); return; }
             int invSlot = FindSlotFor(p, st.ObjIndex, buy);
             if (invSlot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
@@ -10810,7 +10818,7 @@ public sealed partial class PacketDispatcher
             DescontarStockDelMercader(npc, slot - 1, (short)buy);
 
             session.Send(ServerMessages.ChangeInventorySlot((byte)invSlot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
-            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, st.Amount, (int)PrecioParaElComprador(p, st.Price), st.ObjIndex));
+            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, st.Amount, (int)PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)), st.ObjIndex));
             session.Send(ServerMessages.UpdateGold(p.Gold));
             session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", FuenteInfo));
             // Regatear entrena: el VB6 sube Comerciar al final de `Sub Comercio` (Comercio.bas:192), que es la
@@ -11088,16 +11096,15 @@ public sealed partial class PacketDispatcher
         if (idx < 0)
         {
             if (npc.Stock.Count >= GameLimits.MaxInventorySlots) return;   // sin lugar: el original tampoco lo mete
-            npc.Stock.Add(new MerchantSlot { ObjIndex = 0, Amount = 0, Price = 0 });
+            npc.Stock.Add(new MerchantSlot { ObjIndex = 0, Amount = 0 });
             idx = npc.Stock.Count - 1;
         }
         var slotStock = npc.Stock[idx];
         slotStock.ObjIndex = objIndex;
         slotStock.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, slotStock.Amount + cantidad);
-        if (slotStock.Price <= 0) slotStock.Price = Math.Max(1, _data.Obj(objIndex)?.Value ?? 1);
         npc.Stock[idx] = slotStock;
         session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(idx + 1), slotStock.Amount,
-            (int)PrecioParaElComprador(session.Player, slotStock.Price), slotStock.ObjIndex));
+            (int)PrecioParaElComprador(session.Player, PrecioDeLista(slotStock.ObjIndex)), slotStock.ObjIndex));
     }
 
     private void DescontarStockDelMercader(Npc npc, int idx, short cantidad)
@@ -11131,7 +11138,6 @@ public sealed partial class PacketDispatcher
                 {
                     ObjIndex = (short)items[i].ObjIndex,
                     Amount = (short)Math.Clamp(items[i].Amount, 1, short.MaxValue),
-                    Price = Math.Max(1, _data.Obj((short)items[i].ObjIndex)?.Value ?? 1),
                 };
     }
 

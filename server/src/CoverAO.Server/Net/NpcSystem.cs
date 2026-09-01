@@ -735,7 +735,6 @@ public sealed class NpcSystem
             {
                 ObjIndex = (short)it.ObjIndex,
                 Amount = (short)Math.Clamp(it.Amount, 1, short.MaxValue),
-                Price = Math.Max(1, _data.Obj((short)it.ObjIndex)?.Value ?? 1),
             }).ToList();
         _world.AddNpc(npc);
         s.CharIndex = npc.CharIndex;

@@ -1,13 +1,22 @@
-using CoverAO.Server.Data;
+﻿using CoverAO.Server.Data;
 
 namespace CoverAO.Server.Game;
 
-/// <summary>One slot of a merchant NPC's stock.</summary>
+/// <summary>Una ranura del stock de un mercader: QUÉ y CUÁNTO, y nada más.
+///
+/// <para><b>Acá había un <c>Price</c> y era una impresora de oro.</b> El precio se guardaba en la ranura, y
+/// al agotarse el stock la ranura se vaciaba conservándolo: el siguiente objeto que cayera ahí se vendía al
+/// precio del ANTERIOR. Vender una leña, recomprarla y vender un lingote en esa ranura dejaba el lingote a
+/// precio de leña — medido: +49 monedas por vuelta con el inventario intacto, repetible sin límite.</para>
+///
+/// <para>El original no tiene el campo: la ranura es <c>ObjIndex</c> + <c>Amount</c> y el precio se deriva de
+/// <c>ObjData</c> en cada uso — <c>Precio = CLng((ObjData(...Object(slot).ObjIndex).Valor / Descuento(...)
+/// * Cantidad) + 0.5)</c> (Comercio.bas:89). Un precio que se guarda es un precio que se puede quedar viejo;
+/// derivarlo no.</para></summary>
 public struct MerchantSlot
 {
     public short ObjIndex;
     public short Amount;
-    public int Price;
 }
 
 /// <summary>A live NPC instance in the world, spawned from an <see cref="NpcInfo"/> template.</summary>

@@ -218,8 +218,8 @@ public static class TestFixture
                 Pos = new WorldPos(FixtureMap, 52, SvcRow),
                 Stock = new List<MerchantSlot>
                 {
-                    new() { ObjIndex = 38, Amount = 100, Price = System.Math.Max(1, gameData.Obj(38)?.Value ?? 5) },   // pociones rojas
-                    new() { ObjIndex = 2,  Amount = 10,  Price = System.Math.Max(1, gameData.Obj(2)?.Value ?? 350) },   // espada larga
+                    new() { ObjIndex = 38, Amount = 100 },   // pociones rojas
+                    new() { ObjIndex = 2,  Amount = 10 },    // espada larga
                 },
             });
             System.Console.WriteLine($"Spawn: comerciante en (52,{SvcRow}) con 2 productos.");
@@ -241,7 +241,7 @@ public static class TestFixture
                 Pos = new WorldPos(FixtureMap, 64, SvcRow),
                 Stock = new List<MerchantSlot>
                 {
-                    new() { ObjIndex = 2, Amount = 10, Price = System.Math.Max(1, gameData.Obj(2)?.Value ?? 350) },
+                    new() { ObjIndex = 2, Amount = 10 },
                 },
             });
             System.Console.WriteLine($"Spawn: mercader de armas (TipoItems=2) en (64,{SvcRow}).");
