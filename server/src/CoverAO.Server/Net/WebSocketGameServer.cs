@@ -49,7 +49,9 @@ public sealed class WebSocketGameServer
         if (bind is null) return;
         var (listener, publico) = (bind.Value.Listener, bind.Value.Publico);
         Console.WriteLine($"WebSocket escuchando en ws://{(publico ? "0.0.0.0" : "localhost")}:{_port}/ (cliente web)");
-        HttpBind.AvisarSiSoloLocal(publico, _port);
+        // OPCIONAL cuando el juego ya entra por el puerto del cliente web: este puerto queda de compatibilidad
+        // para un cliente que no conozca `/ws`, así que si cae a loopback no hay nada que avisar ni reservar.
+        HttpBind.AvisarSiSoloLocal(publico, _port, opcional: HttpBind.ElJuegoEntraPorElPuertoWeb);
 
         try
         {
@@ -62,7 +64,7 @@ public sealed class WebSocketGameServer
                     ctx.Response.Close();
                     continue;
                 }
-                _ = Task.Run(() => HandleAsync(ctx, token), token);
+                _ = Task.Run(() => AceptarAsync(ctx, token), token);
             }
         }
         catch (OperationCanceledException) { }
@@ -77,7 +79,18 @@ public sealed class WebSocketGameServer
         finally { try { listener.Stop(); } catch { } }
     }
 
-    private async Task HandleAsync(HttpListenerContext ctx, CancellationToken token)
+    /// <summary>Toma un pedido HTTP ya aceptado, lo sube a WebSocket y lo mete en el mundo.
+    ///
+    /// <para>Es público porque este servidor no es el único que puede recibir ese pedido: el servidor del
+    /// cliente web atiende <c>/ws</c> en SU puerto y se lo pasa acá. Así el jugador baja la página y juega
+    /// por la MISMA dirección, que es lo que reduce a uno los puertos que hay que abrir en el router — el
+    /// defecto más caro que tenía el hosteo era justamente que fueran dos y que faltar uno se viera como
+    /// "carga pero no conecta".</para>
+    ///
+    /// <para>El camino es el mismo pase lo que pase: el ban por IP, el cupo de conexiones y la sesión salen
+    /// de acá, no del llamador. Duplicar esos tres controles en el otro servidor era garantizar que un día
+    /// uno de los dos se quedara sin alguno.</para></summary>
+    public async Task AceptarAsync(HttpListenerContext ctx, CancellationToken token)
     {
         var remote = ctx.Request.RemoteEndPoint?.ToString() ?? "?";
         string ip = ConnectionGuard.NormalizeIp(remote);   // IP canónica (igual forma que el ban del panel)

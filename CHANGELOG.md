@@ -77,6 +77,10 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **`/eventos` contesta.** El comando y el botón "¿Hay eventos?" existían y no decían nada, ni siquiera cuando
   un administrador tenía puesta experiencia, oro o botín multiplicados. Ahora dicen qué está corriendo.
 
+- **Para el que hostea: un solo puerto.** El juego entra por la misma dirección que sirve la página, así que
+  en el router se abre uno en vez de dos. Antes, con uno solo, tus amigos veían la pantalla de ingreso y no
+  podían conectarse nunca. Y con dominio propio, el HTTPS pasa a ser una sola regla del proxy.
+
 - **Macro: mantené la tecla apretada y la acción se repite.** Sostener **Ctrl** sigue golpeando y sostener
   una **F1–F10** sigue usando lo que tengas atado, a la velocidad del cliente original. Viene puesto; si
   preferís apretar una vez por golpe, se apaga en Opciones → Juego. Los oficios —minar, talar, pescar,

@@ -91,12 +91,25 @@ internal static class HttpBind
     /// líneas.</para></summary>
     public static int PuertosHttpEsperados = 2;
 
-    /// <summary>¿Quedó algún puerto HTTP accesible sólo desde esta máquina?</summary>
+    /// <summary>Si el cliente web entra por su propio puerto (<c>/ws</c>), el puerto suelto del WebSocket deja
+    /// de hacer falta para jugar: queda como camino de compatibilidad para un cliente que no conozca la ruta.
+    /// Lo pone Program.cs cuando esta instalación trae cliente web.
+    ///
+    /// <para>Importa para el aviso, y no es cosmético: mientras los dos contaban igual, un WebSocket caído a
+    /// loopback tapaba la línea "Desde tu red (WiFi)" y le pedía al host dos reservas de URL — con lo cual el
+    /// que hacía una sola seguía sin poder jugar y el que las hacía las dos gastaba una de más. Ahora el aviso
+    /// nombra lo que de verdad hay que abrir.</para></summary>
+    public static bool ElJuegoEntraPorElPuertoWeb;
+
+    /// <summary>¿Quedó algún puerto HTTP <b>necesario</b> accesible sólo desde esta máquina?</summary>
     public static bool HayPuertosEnLoopback => _enLoopback.Count > 0;
 
-    public static void AvisarSiSoloLocal(bool publico, int puerto)
+    /// <param name="opcional">Este puerto no hace falta para jugar (hoy: el del WebSocket suelto cuando el
+    /// juego ya entra por el puerto del cliente web). No entra en la lista de reservas ni tapa el "Desde tu
+    /// red", pero sí cuenta como reportado: el aviso sale recién cuando reportaron todos.</param>
+    public static void AvisarSiSoloLocal(bool publico, int puerto, bool opcional = false)
     {
-        if (!publico && !_enLoopback.Contains(puerto)) _enLoopback.Add(puerto);
+        if (!publico && !opcional && !_enLoopback.Contains(puerto)) _enLoopback.Add(puerto);
         // Se cuenta al que reporta, se haya quedado en loopback o no: el aviso sale cuando ya reportaron
         // TODOS, para poder nombrar de una vez cada URL que hay que reservar.
         if (++_reportados >= PuertosHttpEsperados) AvisarLoopbackPendiente();
@@ -108,16 +121,22 @@ internal static class HttpBind
         if (_yaAviso || _enLoopback.Count == 0) return;
         _yaAviso = true;
         Console.WriteLine();
-        Console.WriteLine("!! Los puertos HTTP quedaron accesibles SOLO DESDE ESTA MAQUINA.");
+        bool una = _enLoopback.Count == 1;
+        Console.WriteLine(una
+            ? "!! El puerto HTTP quedo accesible SOLO DESDE ESTA MAQUINA."
+            : "!! Los puertos HTTP quedaron accesibles SOLO DESDE ESTA MAQUINA.");
         Console.WriteLine("   Para jugar vos solo alcanza. Para que entren desde otra computadora, en Windows:");
         Console.WriteLine("     - abri el servidor como Administrador, o");
-        Console.WriteLine("     - reserva las URL una sola vez (como Administrador). Son " + _enLoopback.Count + ":");
+        Console.WriteLine(una
+            ? "     - reserva la URL una sola vez (como Administrador):"
+            : "     - reserva las URL una sola vez (como Administrador). Son " + _enLoopback.Count + ":");
         foreach (var p in _enLoopback)
             // EL USUARIO VA RESUELTO, no como `%USERNAME%`: en Windows 11 la consola de Administrador que se
             // abre por defecto es PowerShell, y ahí esa variable de cmd.exe NO se expande — el host pegaba la
             // línea que el servidor le dictó y no reservaba nada.
             Console.WriteLine($"         netsh http add urlacl url=http://+:{p}/ user={Environment.UserName}");
-        Console.WriteLine("   Hacen falta LAS DOS: con una sola, la pagina abre desde otra maquina pero el juego no conecta.");
+        if (!una)
+            Console.WriteLine("   Hacen falta TODAS: con una sola, la pagina abre desde otra maquina pero el juego no conecta.");
         Console.WriteLine("   En Linux no hace falta nada de esto.");
         Console.WriteLine();
     }
@@ -167,7 +186,11 @@ internal static class HttpBind
             Console.WriteLine($"   Desde tu red (WiFi)  : http://{ip}:{puertoWeb}/     <- pasale ESTA a tus amigos");
         else if (!desdeLaRed)
             Console.WriteLine("   Desde tu red (WiFi)  : (no disponible, ver el aviso de arriba)");
-        Console.WriteLine($"   Desde internet       : abri en tu router los puertos {puertoWeb} y {puertoWs} hacia esta maquina");
+        // UN SOLO PUERTO desde que el juego entra por /ws en el mismo del cliente web. La linea de antes
+        // nombraba dos, y el que abria uno solo veia la pagina y no podia conectarse nunca.
+        Console.WriteLine(ElJuegoEntraPorElPuertoWeb
+            ? $"   Desde internet       : abri en tu router el puerto {puertoWeb} hacia esta maquina"
+            : $"   Desde internet       : abri en tu router los puertos {puertoWeb} y {puertoWs} hacia esta maquina");
         Console.WriteLine($"                          (y el {puertoJuego} si alguien usa el cliente clasico de Windows)");
         Console.WriteLine("                          Con dominio propio conviene un reverse-proxy con HTTPS: ver HOSTING.md");
         Console.WriteLine();

@@ -7,7 +7,8 @@ import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/by
 import { decodeServerStream } from './dist/src/protocol/serverPackets.js';
 
 const URL = process.argv[2] || 'ws://localhost:7667/';
-const CLIENT = { LoginExistingChar: 1, Walk: 0, LeftClick: 19, CombatModeToggle: 8, CastSpell: 18 };
+const CLIENT = { LoginExistingChar: 1, Walk: 0, LeftClick: 19, CombatModeToggle: 8, CastSpell: 18, WorkLeftClick: 27 };
+const SKILL_MAGIA = 8;   // eSkill.magia del lado del cliente: el que viaja en WorkLeftClick al apuntar
 
 const ws = new WebSocket(URL);
 ws.binaryType = 'arraybuffer';
@@ -77,7 +78,16 @@ ws.onopen = async () => {
   await wait(250);
   takeInbox();
   ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CastSpell).writeByte(7).toBytes(), redundance));
-  await wait(600);
+  await wait(400);
+  // Y AHORA HAY QUE APUNTARLO. `CastSpell` no lanza nada: contesta `WorkRequestTarget`, o sea "hace clic en el
+  // objetivo", y el hechizo sale recien con el `WorkLeftClick(x, y, skill)` que manda ese clic -- tambien los de
+  // area, que se tiran sobre una baldosa. Sin esta linea el server contestaba ese pedido de objetivo y nada mas,
+  // asi que el `EfectoTerrenoFX` no llegaba nunca y esta prueba daba FALLO con el servidor sano. No lo vio nadie
+  // porque este archivo no lo corre ni `npm test` ni la puerta: se llama a mano con `npm run smoke`.
+  // El skill tiene que ser el de magia: con otro numero el server contesta "No sabes hacer ese trabajo."
+  ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.WorkLeftClick)
+    .writeByte(cc.fields.x + 3).writeByte(cc.fields.y).writeByte(SKILL_MAGIA).toBytes(), redundance));
+  await wait(700);
   const casted = decodeServerStream(takeInbox());
   const terreno = casted.find((e) => e.name === 'EfectoTerrenoFX');
   if (terreno) console.log(`  hechizo de area: EfectoTerrenoFX fx=${terreno.fields.fx} en (${terreno.fields.x},${terreno.fields.y})`);

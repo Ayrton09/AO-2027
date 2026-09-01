@@ -267,12 +267,11 @@ JUGAR CON AMIGOS:
     - Si el servidor avisa "los puertos HTTP quedaron accesibles SOLO DESDE ESTA
       MAQUINA", segui las instrucciones que imprime ahi mismo.
 
-  POR INTERNET hay que reenviar en el router hacia esta maquina los puertos
-  7669 (la pagina) y 7667 (por donde se juega). Los DOS: con solo el 7669 tus
-  amigos ven la pantalla de login y no pueden conectarse. El 7666 va ademas si
-  alguien usa el cliente clasico de Windows. Y ojo que tu IP de internet suele
-  cambiar sola; para algo estable, un dominio y un reverse-proxy con HTTPS
-  (esta explicado en HOSTING.md).
+  POR INTERNET hay que reenviar en el router hacia esta maquina UN puerto: el
+  7669, que sirve la pagina Y el juego. El 7666 va ademas si alguien usa el
+  cliente clasico de Windows. Y ojo que tu IP de internet suele cambiar sola;
+  para algo estable, un dominio y un reverse-proxy con HTTPS (esta explicado en
+  HOSTING.md, y con un solo puerto es una sola regla).
 
 CONFIGURACION — Server.ini (esta al lado del ejecutable):
   Ahi se ajusta el puerto, el tope de jugadores, los rates de experiencia y oro,
@@ -289,9 +288,9 @@ CONFIGURACION — Server.ini (esta al lado del ejecutable):
 
 PUERTOS (base 7666, configurable con el primer argumento, ej: CoverAO.Server.exe 8000):
   7666  juego (protocolo AO clasico, TCP)
-  7667  WebSocket (cliente web)
+  7667  WebSocket suelto (compatibilidad; ya no hace falta abrirlo)
   7668  panel de administracion (imprime la URL con token al arrancar)
-  7669  cliente web (archivos estaticos)
+  7669  cliente web: la pagina Y el juego (en /ws)  <- el unico que se abre
 
 OPCIONES utiles:
   CoverAO.Server.exe 7666            puerto base (los demas son base+1/+2/+3)

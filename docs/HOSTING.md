@@ -46,28 +46,33 @@ Se configura uno solo, `StartPort`, y de ahí salen los otros tres:
 | puerto | servicio |
 |---|---|
 | `StartPort` | juego (protocolo AO clásico), cliente de Windows |
-| `StartPort + 1` | WebSocket, cliente web |
+| `StartPort + 1` | WebSocket suelto — **compatibilidad**, ya no hace falta abrirlo |
 | `StartPort + 2` | panel de administración — **sólo loopback** |
-| `StartPort + 3` | cliente web (la página) |
+| `StartPort + 3` | cliente web: la página **y el juego**, en `/ws` |
 
 El servidor los imprime al arrancar y quedan en el log del día.
 
-**En el router se abren el del juego y el del WebSocket**, más el del cliente web si se sirve desde ahí. **El
-panel de administración no se abre nunca**: desde ahí se puede apagar el servidor, expulsar a todos y bajar un
-backup. Para llegar de afuera, un túnel SSH: `ssh -L 7668:localhost:7668 usuario@servidor`.
+**En el router se abre UNO: el del cliente web** (`StartPort + 3`). El juego entra por `/ws` en ese mismo
+puerto, así que el jugador baja la página y juega por la misma dirección. Sumale el del juego
+(`StartPort`) sólo si alguien va a entrar con el cliente clásico de Windows.
+
+> Antes hacían falta **dos** —el de la página y el del WebSocket— y ésa era la trampa más cara del hosteo:
+> abriendo uno solo, el amigo veía la página, veía el login, y el socket se moría contra un puerto cerrado.
+> Del lado del servidor no quedaba ni un renglón, porque esa conexión no llegaba nunca.
+
+**El panel de administración no se abre nunca**: desde ahí se puede apagar el servidor, expulsar a todos y
+bajar un backup. Para llegar de afuera, un túnel SSH: `ssh -L 7668:localhost:7668 usuario@servidor`.
 
 En **Windows sin permisos de administrador** los puertos HTTP quedan sólo en `localhost`. El servidor lo avisa
-al arrancar y da las dos salidas: abrirlo como Administrador, o reservar **las dos URL** —son dos puertos
-HTTP, el del cliente web y el del WebSocket— una sola vez, en una consola de **cmd** como Administrador:
+al arrancar y da las dos salidas: abrirlo como Administrador, o reservar la URL una sola vez, en una consola de
+**cmd** como Administrador:
 
 ```
 netsh http add urlacl url=http://+:7669/ user=%USERNAME%
-netsh http add urlacl url=http://+:7667/ user=%USERNAME%
 ```
 
-Con una sola, la página abre desde otra máquina y el juego no conecta. En **PowerShell** `%USERNAME%`
-no se expande: usá `$env:USERNAME` o escribí tu usuario. El servidor imprime al arrancar las líneas
-exactas, con tu usuario ya resuelto. En Linux no hace falta nada.
+En **PowerShell** `%USERNAME%` no se expande: usá `$env:USERNAME` o escribí tu usuario. El servidor imprime al
+arrancar la línea exacta, con tu usuario ya resuelto. En Linux no hace falta nada.
 
 ### Qué está verificado desde OTRA máquina
 
@@ -76,7 +81,7 @@ Medido el 2026-08-09 con el servidor Linux corriendo en una máquina y el navega
 | lo que hace un jugador | resultado |
 |---|---|
 | abrir `http://<ip-del-server>:StartPort+3/` | la página carga entera (330 KB, con el canvas) |
-| el cliente abre su WebSocket | conecta (el puerto se lo publica el server en `/coverao-config.json`) |
+| el cliente abre su WebSocket | conecta (por `/ws` en el mismo puerto; el server lo publica en `/coverao-config.json`) |
 | poner cuenta y contraseña | el server contesta con la lista de personajes |
 | elegir personaje | entra al mundo, con los personajes de alrededor dibujados |
 | cliente clásico contra `StartPort` | login completo |
@@ -291,28 +296,50 @@ para que el guardado del apagado llegue a terminar.
 
 ## Con dominio y HTTPS
 
-Terminar TLS en un reverse-proxy delante del cliente web y del WebSocket. No es sólo cosmética: sin TLS,
-la contraseña de cada jugador viaja legible para cualquiera que mire la red (el cifrado XOR del protocolo
-original no protege nada — la clave se anuncia en el propio protocolo). En una LAN de confianza da igual;
-abierto a Internet, esta sección es la diferencia. El cliente pasa solo a `wss://`
-cuando la página se sirve por HTTPS. Con Caddy:
+**Sin TLS la contraseña de cada jugador viaja legible** para cualquiera que mire la red: el cifrado XOR del
+protocolo original no protege nada, porque la clave se anuncia en el propio protocolo. En una LAN de confianza
+da igual; abierto a Internet, esta sección es la diferencia.
+
+Se termina TLS en un reverse-proxy delante del cliente web. **Es una sola regla y un solo nombre**, porque el
+juego entra por `/ws` en el mismo puerto que sirve la página: el cliente abre su socket contra la dirección
+desde la que se bajó, así que servida por `https://` el socket sale `wss://` solo, sin configurar nada.
+
+Con Caddy (reenvía el upgrade a WebSocket sin que haya que decírselo):
 
 ```
 juego.tudominio.com {
     reverse_proxy localhost:7669
 }
+```
 
-ws.juego.tudominio.com {
-    reverse_proxy localhost:7667
+Con nginx hay que pasarle las cabeceras del upgrade a mano, o la página abre y el juego no conecta:
+
+```
+server {
+    listen 443 ssl;
+    server_name juego.tudominio.com;
+    ssl_certificate     /ruta/fullchain.pem;
+    ssl_certificate_key /ruta/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:7669;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host       $host;
+    }
 }
 ```
 
-**Ojo con la ruta**: esta receta decia `reverse_proxy /ws* localhost:7667`, y esa regla no puede engancharse
-nunca — el cliente NO pide `/ws`, abre el socket contra la RAIZ del puerto del WebSocket
-(`wss://<host>:<puerto+1>/`, ver `client-web/index.html`). Con la regla vieja el `/ws*` quedaba muerto y el
-WebSocket se iba por el proxy del cliente web, al puerto equivocado. Por eso van dos nombres: uno sirve la
-pagina y el otro el socket. Si preferis un solo nombre, hay que hacer que el cliente pida una ruta y que el
-proxy la mapee; hoy no la pide.
+Con el proxy puesto, en el router se abre **el 443 y nada más**: ni el 7669 ni el 7667 tienen que llegar desde
+afuera. El **7666** (cliente clásico de Windows) es aparte y no pasa por el proxy: ése va en claro salvo que
+arranques con `--tls cert.pfx`.
+
+**Verificado ejecutándolo** (2026-09-01), y no sólo leído: con un proxy TLS delante del servidor, la página se
+sirve por `https://`, el cliente abre `wss://<mismo host>/ws` y se juega — login, caminata, clic sobre una
+criatura y hechizo de área, sin desincronizar el stream. La receta anterior pedía **dos** nombres (uno para la
+página y otro para el socket) y traía una regla `reverse_proxy /ws* localhost:7667` que no podía engancharse
+nunca, porque el cliente de entonces no pedía ninguna ruta: abría el socket contra la raíz de otro puerto.
 
 ## Licencia
 

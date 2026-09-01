@@ -46,6 +46,19 @@ public sealed class StaticFileServer
     /// como cualquier ruta que no existe— cuando el host pone <c>PaginaPublica=0</c>.</summary>
     private const string RutaEstado = "api/publico.json";
 
+    /// <summary>Por dónde entra el juego EN ESTE MISMO PUERTO.
+    ///
+    /// <para>El WebSocket tiene además su propio puerto (StartPort+1), y sigue estando: los dos caminos
+    /// terminan en el mismo <see cref="WebSocketGameServer"/>. Lo que cambia es que el cliente ya no necesita
+    /// el otro, y con eso el que hostea abre UN puerto en su router en vez de dos.</para>
+    ///
+    /// <para>Eso no es comodidad. Con dos puertos, olvidarse del segundo no da ningún error visible: la
+    /// página abre, el login aparece, y el socket muere contra un puerto cerrado. Del lado del servidor no se
+    /// registra nada, porque esa conexión nunca llega. Es el defecto que hizo falta un aviso de arranque
+    /// especial para explicar —y por el mismo camino se resuelve el HTTPS, porque una página servida por
+    /// <c>https://</c> abre su socket <c>wss://</c> sobre esa misma dirección sin configurar nada.</para></summary>
+    private const string RutaWs = "/ws";
+
     private static readonly Dictionary<string, string> Mime = new(StringComparer.OrdinalIgnoreCase)
     {
         [".html"] = "text/html; charset=utf-8", [".htm"] = "text/html; charset=utf-8",
@@ -73,6 +86,7 @@ public sealed class StaticFileServer
 
     private readonly int _wsPort;
     private readonly Func<string>? _estadoPublico;
+    private readonly Func<HttpListenerContext, CancellationToken, Task>? _juegoPorWebSocket;
 
     /// <param name="wsPort">El puerto que abrió DE VERDAD el <see cref="WebSocketGameServer"/>.</param>
     /// <param name="codigoFuente">URL del código de ESTE servidor (Server.ini [INIT] CodigoFuente). Viaja por
@@ -88,16 +102,27 @@ public sealed class StaticFileServer
     /// "Como entrar"—, porque eso describe la máquina, no lo que ve el de afuera.</param>
     /// <param name="estadoPublico">De dónde sale <c>/api/publico.json</c>. <c>null</c> = la página pública está
     /// apagada y esa ruta no existe.</param>
+    /// <param name="juegoPorWebSocket">Qué hacer con un pedido de WebSocket a <see cref="RutaWs"/>: es
+    /// <c>WebSocketGameServer.AceptarAsync</c>. Va como delegado y no como referencia al otro servidor para
+    /// que este archivo siga sin saber nada del transporte de juego. <c>null</c> = <c>/ws</c> no existe acá y
+    /// el cliente usa el puerto aparte, como antes.</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
-                            Func<string>? estadoPublico = null)
+                            Func<string>? estadoPublico = null,
+                            Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null)
     {
         _port = port;
         _wsPort = wsPort;
         _estadoPublico = estadoPublico;
+        _juegoPorWebSocket = juegoPorWebSocket;
         _root = Path.GetFullPath(root);
         int anunciado = wsPortPublico > 0 ? wsPortPublico : wsPort;
+        // `wsPath` es lo que hace que el cliente entre por ESTA misma dirección. `wsPort` se sigue publicando
+        // —y sigue siendo el real— para el cliente que no conozca la ruta: un index.html viejo, o una página
+        // servida por un http.server de desarrollo que no pasa por acá.
+        string ruta = juegoPorWebSocket is not null ? System.Text.Json.JsonSerializer.Serialize(RutaWs) : "null";
         _config = Encoding.UTF8.GetBytes(
-            $"{{\"wsPort\":{anunciado},\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}}}");
+            $"{{\"wsPort\":{anunciado},\"wsPath\":{ruta}," +
+            $"\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}}}");
     }
 
     /// <summary>El JSON que se baja el cliente, tal cual. Existe para poder testear QUÉ se le anuncia sin
@@ -120,6 +145,15 @@ public sealed class StaticFileServer
                 try { ctx = await listener.GetContextAsync(); }
                 catch (HttpListenerException) { break; }
                 catch (ObjectDisposedException) { break; }
+                // EL JUEGO, POR ESTE MISMO PUERTO. Va antes que el disco: `/ws` no es un archivo, y sin este
+                // desvío el upgrade termina como un 404 — el cliente vería "no conecta" con el servidor sano.
+                if (_juegoPorWebSocket is not null && ctx.Request.IsWebSocketRequest
+                    && string.Equals(ctx.Request.Url?.AbsolutePath, RutaWs, StringComparison.OrdinalIgnoreCase))
+                {
+                    var pedido = ctx;
+                    _ = Task.Run(() => _juegoPorWebSocket(pedido, token), token);
+                    continue;
+                }
                 _ = Task.Run(() => Serve(ctx), token);
             }
         }

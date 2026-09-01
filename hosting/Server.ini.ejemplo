@@ -19,15 +19,17 @@
 // Aca se configura UNA sola cosa, StartPort, y de ahi salen los otros tres:
 //
 //     StartPort      el juego            <- lo usa el cliente clasico de Windows
-//     StartPort + 1  WebSocket           <- lo usa el cliente web
+//     StartPort + 1  WebSocket suelto    <- compatibilidad; el cliente ya no lo necesita
 //     StartPort + 2  panel de admin      <- SOLO desde esta misma maquina
-//     StartPort + 3  cliente web         <- la pagina que abren los jugadores
+//     StartPort + 3  cliente web         <- la pagina Y el juego: el unico que se abre
 //
 // Con StartPort=7666 eso es 7666, 7667, 7668 y 7669. El servidor los IMPRIME al arrancar
 // y tambien quedan en el log del dia (data\logs\), asi que no hay que sacar la cuenta.
 //
-// EN EL ROUTER se abren el del juego y el del WebSocket, mas el del cliente web si lo
-// servis desde aca. EL PANEL DE ADMIN NO SE ABRE NUNCA: escucha solo en loopback a
+// EN EL ROUTER se abre UNO: el del cliente web, que sirve la pagina Y el juego (en /ws).
+// Sumale el del juego solo si alguien va a entrar con el cliente clasico de Windows; el
+// WebSocket suelto quedo de compatibilidad y ya no hace falta abrirlo.
+// EL PANEL DE ADMIN NO SE ABRE NUNCA: escucha solo en loopback a
 // proposito, porque desde ahi se puede apagar el servidor, kickear a todos y bajarse un
 // backup. Para entrar de afuera va un tunel SSH.
 //
@@ -43,7 +45,10 @@
 // vale la variable de entorno COVERAO_INIT_STARTPORT (util en Docker y en systemd).
 StartPort=7666
 
-// SOLO SI TU HOSTING REMAPEA PUERTOS. Dejalo comentado si no sabes que es.
+// SOLO SI TU HOSTING REMAPEA PUERTOS *Y* el cliente entra por el WebSocket suelto.
+// Desde que el juego entra por /ws en el puerto del cliente web, esto ya casi no hace
+// falta: por ese camino el socket sale contra la MISMA direccion de la que se bajo la
+// pagina, remapeada o no. Queda para el cliente viejo, que usa el puerto aparte.
 //
 // El cliente web no trae la direccion cableada: se baja un coverao-config.json para
 // enterarse por que puerto abrir el WebSocket, y ahi va el puerto REAL del servidor. Si

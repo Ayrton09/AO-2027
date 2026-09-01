@@ -2492,14 +2492,34 @@
      * cae al 7667 de siempre y nada cambia.
      */
     let wsPort = 7667;
+    /**
+     * Y MEJOR TODAVÍA: POR ESTA MISMA DIRECCIÓN. El servidor que sirve esta página atiende también el
+     * WebSocket del juego en `/ws`, y lo anuncia en el mismo `coverao-config.json`. Cuando viene, el socket
+     * se abre contra `location.host` —el mismo host Y EL MISMO PUERTO— en vez de contra el puerto de al lado.
+     *
+     * Lo que arregla es el hosteo. Con dos puertos, el que abría uno solo en su router veía la página, veía
+     * el login, y el socket se moría contra un puerto cerrado; del lado del servidor no quedaba registro,
+     * porque esa conexión nunca llegaba. Y de paso resuelve el HTTPS: una página servida por `https://` abre
+     * su `wss://` sobre la misma dirección, sin que el reverse-proxy necesite una segunda regla.
+     *
+     * Vacío = el servidor no lo ofrece (un `http.server` de desarrollo, un nginx sirviendo la carpeta) y se
+     * usa el puerto de siempre.
+     */
+    let wsPath = '';
     // URL del código de ESTE servidor, publicada por el server (Server.ini [INIT] CodigoFuente). Se
     // muestra en Menú → Licencia: es como el host cumple la cláusula de red de la AGPL sin armar nada.
     let codigoFuente = '';
-    function connect() {
+    function urlDelSocket() {
       // wss:// cuando la página se sirve por HTTPS (TLS terminado en el server WS o en un reverse-proxy);
       // ws:// en http/localhost para desarrollo. Así el transporte del cliente web va cifrado en producción.
       const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${wsProto}//${location.hostname || 'localhost'}:${wsPort}/`);
+      // `location.host` lleva el puerto adentro; `location.hostname` no. Es la diferencia entre entrar por
+      // la misma dirección y entrar por el puerto 80 de un servidor que escucha en otro.
+      if (wsPath) return `${wsProto}//${location.host}${wsPath}`;
+      return `${wsProto}//${location.hostname || 'localhost'}:${wsPort}/`;
+    }
+    function connect() {
+      ws = new WebSocket(urlDelSocket());
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
         statusEl.textContent = loginBytes ? 'conectado — logueando…' : 'conectado';
@@ -2553,7 +2573,9 @@
         statusEl.textContent = 'desconectado — reintentando…';   // caída mid-juego (o pre-login sin rechazo) → reconectar y re-loguear
         setTimeout(connect, 1500);
       };
-      ws.onerror = () => { statusEl.textContent = `error de conexion (¿esta el servidor en :${wsPort}?)`; };
+      // El cartel nombra la dirección QUE SE INTENTÓ, no un puerto supuesto: desde que el socket puede ir por
+      // esta misma dirección (`/ws`), decir ":7667" mandaba a revisar un puerto con el que ya no se cuenta.
+      ws.onerror = () => { statusEl.textContent = `error de conexion (${urlDelSocket()})`; };
     }
     // Auto-login de conveniencia para testing: ?auto (cuenta_test/Rugura) o ?char=<nombre>.
     const qs = new URLSearchParams(location.search);
@@ -2572,6 +2594,7 @@
     // había arreglado en una sola de las dos puertas.
     fetch('./coverao-config.json').then((r) => (r.ok ? r.json() : null))
       .then((cfg) => { if (cfg && cfg.wsPort > 0) wsPort = cfg.wsPort;
+                       if (cfg && cfg.wsPath) wsPath = String(cfg.wsPath);
                        if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente); })
       .catch(() => {})
       .finally(() => {

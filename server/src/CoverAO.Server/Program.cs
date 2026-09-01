@@ -879,6 +879,8 @@ var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxIn
 // Cuantos servidores HTTP van a reportar como quedaron: el WebSocket siempre, el cliente web solo si esta
 // instalacion lo trae. Del aviso de loopback depende que el host sepa que URL reservar.
 CoverAO.Server.Net.HttpBind.PuertosHttpEsperados = habraWeb ? 2 : 1;
+// Con cliente web, el juego entra por SU puerto (/ws) y el del WebSocket suelto queda de compatibilidad.
+CoverAO.Server.Net.HttpBind.ElJuegoEntraPorElPuertoWeb = habraWeb;
 var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
@@ -920,9 +922,13 @@ if (habraWeb)
     Func<string>? estadoPublico = serverIni.PaginaPublica
         ? new CoverAO.Server.Net.EstadoPublico(world, store, loop, serverIni.EsStaff, CoverAO.Server.Build.Version).Json
         : null;
+    // Y el JUEGO entra por este mismo puerto, en /ws. El WebSocket sigue teniendo el suyo (port+1) y los dos
+    // caminos terminan en el mismo aceptador; lo que cambia es que el cliente ya no necesita el otro, así que
+    // el que hostea abre UN puerto en el router en vez de dos. Con dos, olvidarse del segundo no daba ningún
+    // error visible: la página abría, el login aparecía, y el socket moría contra un puerto cerrado.
     webTask = new CoverAO.Server.Net.StaticFileServer(
         webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico,
-        estadoPublico).RunAsync(cts.Token);
+        estadoPublico, wsServer.AceptarAsync).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se
