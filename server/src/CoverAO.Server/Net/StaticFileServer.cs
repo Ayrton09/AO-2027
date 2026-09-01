@@ -41,6 +41,11 @@ public sealed class StaticFileServer
     /// nginx) se queda con su default. Por eso vale sintetizarla acá y no pedirle nada al que hostea.</summary>
     private const string RutaConfig = "coverao-config.json";
 
+    /// <summary>La otra ruta sintética: quién está conectado y la tabla de posiciones, para
+    /// <c>estado.html</c>. Va por acá y no por un archivo porque se arma del mundo vivo. Queda apagada —404,
+    /// como cualquier ruta que no existe— cuando el host pone <c>PaginaPublica=0</c>.</summary>
+    private const string RutaEstado = "api/publico.json";
+
     private static readonly Dictionary<string, string> Mime = new(StringComparer.OrdinalIgnoreCase)
     {
         [".html"] = "text/html; charset=utf-8", [".htm"] = "text/html; charset=utf-8",
@@ -67,6 +72,7 @@ public sealed class StaticFileServer
     private const long TopeCacheBytes = 64L * 1024 * 1024;
 
     private readonly int _wsPort;
+    private readonly Func<string>? _estadoPublico;
 
     /// <param name="wsPort">El puerto que abrió DE VERDAD el <see cref="WebSocketGameServer"/>.</param>
     /// <param name="codigoFuente">URL del código de ESTE servidor (Server.ini [INIT] CodigoFuente). Viaja por
@@ -80,10 +86,14 @@ public sealed class StaticFileServer
     ///
     /// El REAL se sigue usando para todo lo demás —incluido deducir el puerto del juego en el cartel de
     /// "Como entrar"—, porque eso describe la máquina, no lo que ve el de afuera.</param>
-    public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0)
+    /// <param name="estadoPublico">De dónde sale <c>/api/publico.json</c>. <c>null</c> = la página pública está
+    /// apagada y esa ruta no existe.</param>
+    public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
+                            Func<string>? estadoPublico = null)
     {
         _port = port;
         _wsPort = wsPort;
+        _estadoPublico = estadoPublico;
         _root = Path.GetFullPath(root);
         int anunciado = wsPortPublico > 0 ? wsPortPublico : wsPort;
         _config = Encoding.UTF8.GetBytes(
@@ -132,6 +142,20 @@ public sealed class StaticFileServer
                 res.Headers["Cache-Control"] = "no-store";   // el puerto cambia entre arranques: nunca cachear
                 res.ContentLength64 = _config.Length;
                 if (req.HttpMethod == "GET") res.OutputStream.Write(_config);
+                res.OutputStream.Close();
+                return;
+            }
+            // Quién está conectado y la tabla de posiciones. También sintética y también gana sobre el disco,
+            // por el mismo motivo: un archivo viejo con ese nombre publicaría una foto que no es la de este
+            // servidor. El armador ya cachea, así que pedirla en un bucle no cuesta más que pedirla una vez.
+            if (string.Equals(rel, RutaEstado, StringComparison.OrdinalIgnoreCase))
+            {
+                if (_estadoPublico is null) { res.StatusCode = 404; res.Close(); return; }
+                var cuerpo = Encoding.UTF8.GetBytes(_estadoPublico());
+                res.ContentType = "application/json; charset=utf-8";
+                res.Headers["Cache-Control"] = "no-store";
+                res.ContentLength64 = cuerpo.Length;
+                if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
                 res.OutputStream.Close();
                 return;
             }

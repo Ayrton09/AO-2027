@@ -59,7 +59,10 @@ Copy-Item -Recurse -Force (Join-Path $Root "gamedata") (Join-Path $OutDir "gamed
 # cliente web -> webclient (StaticFileServer lo sirve). Sólo lo necesario para correr (no src/tools/node_modules).
 $web = Join-Path $OutDir "webclient"
 New-Item -ItemType Directory -Force -Path $web | Out-Null
-Copy-Item -Force (Join-Path $Root "client-web\index.html") $web
+# TODAS las paginas, no solo el index: el login enlaza a estado.html (quien esta jugando + tabla de
+# posiciones) y copiando el index a mano ese enlace quedaba en 404 SOLO en el paquete, o sea en el unico
+# lugar donde nadie lo prueba. Con el comodin, la pagina que se agregue manana viaja sola.
+Copy-Item -Force (Join-Path $Root "client-web\*.html") $web
 Copy-Item -Recurse -Force (Join-Path $Root "client-web\dist") (Join-Path $web "dist")
 # Los TESTS del cliente no son parte del juego: `tsc` los compila al mismo `dist/` que el codigo que corre,
 # asi que se colaban en el paquete. El jugador recibe el juego, no el banco de pruebas.

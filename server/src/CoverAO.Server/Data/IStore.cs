@@ -19,6 +19,12 @@ public interface IStore
     bool CharacterExists(string name);
     string? ReadCharacter(string name);
     void WriteCharacter(string name, string iniText);
+    /// <summary>Todos los nombres de personaje VIVOS, sin los que <see cref="ArchivarCharacter"/> apartó.
+    /// Lo pide la tabla de posiciones de la página pública, que es lo primero que necesita recorrer el
+    /// almacén entero. Los apartados quedan afuera en los dos backends por caminos distintos —en archivos
+    /// viven en un subdirectorio y en SQLite en la misma tabla con la clave prefijada—, así que la exclusión
+    /// va escrita en cada implementación y no se puede dar por heredada.</summary>
+    IEnumerable<string> AllCharacterNames();
     /// <summary>APARTA el personaje en vez de borrarlo. Lo pide el borrado de personaje (1b): perder un
     /// personaje es irreversible para el jugador, así que el archivo se mueve a un rincón —no se destruye— y
     /// el nombre queda libre. Si algún día alguien se arrepiente, el `.chr` está. Devuelve false si no había
@@ -112,13 +118,38 @@ public sealed class FileStore : IStore
     }
 
     public bool AccountExists(string n) => File.Exists(AccountPath(n));
-    public string? ReadAccount(string n) => File.Exists(AccountPath(n)) ? File.ReadAllText(AccountPath(n), Codec.Ansi) : null;
+
+    /// <summary>LAS LECTURAS TAMBIÉN TOMAN EL CANDADO, y no es prolijidad: es lo que evita que un lector le
+    /// arruine el guardado a un jugador.
+    ///
+    /// <para>El rename que vuelve atómica la escritura es lo único que un tercero puede bloquear —
+    /// <c>File.Move</c> con <c>overwrite</c> se cae si el destino está ABIERTO por alguien, y no hay
+    /// <c>FileShare</c> que lo evite (ver <see cref="EscrituraAtomica.Renombrar"/>)—. Con un proceso ajeno
+    /// pidiéndole el TAMAÑO a diez <c>.chr</c> se perdieron 181 de 10.620 escrituras. Un lector de ADENTRO
+    /// del proceso hace exactamente lo mismo, y desde que la página pública barre el almacén entero para
+    /// armar la tabla de posiciones, ese lector existe y corre seguido.</para>
+    ///
+    /// <para>El candado se toma POR ARCHIVO —igual que en el backup— así que un guardado que caiga encima
+    /// espera lo que tarda UNA lectura, no la recorrida completa. Es reentrante, así que los caminos que ya
+    /// lo tienen tomado (el backup) pueden llamar acá sin trabarse.</para></summary>
+    public string? ReadAccount(string n)
+    { lock (_puerta) return File.Exists(AccountPath(n)) ? File.ReadAllText(AccountPath(n), Codec.Ansi) : null; }
     public void WriteAccount(string n, string t) => EscribirAtomico(AccountPath(n), t, Codec.Ansi);
     public IEnumerable<string> AllAccountNames() => Directory.Exists(_accountDir)
         ? Directory.EnumerateFiles(_accountDir, "*.cnt").Select(f => Path.GetFileNameWithoutExtension(f)) : Enumerable.Empty<string>();
     public bool CharacterExists(string n) => File.Exists(CharPath(n));
-    public string? ReadCharacter(string n) => File.Exists(CharPath(n)) ? File.ReadAllText(CharPath(n), Codec.Ansi) : null;
+    /// <summary>Bajo el mismo candado que <see cref="ReadAccount"/>, y por el mismo motivo.</summary>
+    public string? ReadCharacter(string n)
+    { lock (_puerta) return File.Exists(CharPath(n)) ? File.ReadAllText(CharPath(n), Codec.Ansi) : null; }
     public void WriteCharacter(string n, string t) => EscribirAtomico(CharPath(n), t, Codec.Ansi);
+
+    /// <summary>Los <c>.chr</c> del directorio, SIN recursión: los que se borraron viven en
+    /// <c>Charfile/Borrados/</c> y quedan afuera solos. El día que alguien le ponga <c>AllDirectories</c>,
+    /// los personajes borrados vuelven a la tabla de posiciones.</summary>
+    public IEnumerable<string> AllCharacterNames() => Directory.Exists(_charDir)
+        ? Directory.EnumerateFiles(_charDir, "*.chr", SearchOption.TopDirectoryOnly)
+                   .Select(f => Path.GetFileNameWithoutExtension(f))
+        : Enumerable.Empty<string>();
 
     /// <summary>Copia los tres directorios a <c>destDir/stem/</c>.
     ///
@@ -259,6 +290,23 @@ public sealed class SqliteStore : IStore, IDisposable
     public bool CharacterExists(string n) => Exists("characters", n);
     public string? ReadCharacter(string n) => Read("characters", n);
     public void WriteCharacter(string n, string t) => Write("characters", n, t);
+
+    /// <summary>Los personajes vivos. Acá los apartados están en la MISMA tabla —con la clave
+    /// <c>@borrado/&lt;fecha&gt;/&lt;nombre&gt;</c>, que <c>Write</c> guarda en mayúsculas— así que hay que
+    /// excluirlos a mano. El <c>@</c> alcanza como filtro porque <c>Naming</c> no lo deja entrar en un nombre
+    /// de personaje: ningún nombre legítimo empieza así.</summary>
+    public IEnumerable<string> AllCharacterNames()
+    {
+        lock (_puerta)
+        {
+            using var c = _conn.CreateCommand();
+            c.CommandText = "SELECT name FROM characters WHERE name NOT LIKE '@%'";
+            using var r = c.ExecuteReader();
+            var names = new List<string>();
+            while (r.Read()) names.Add(r.GetString(0));
+            return names;   // materializado DENTRO del candado, igual que AllAccountNames
+        }
+    }
 
     /// <summary>Igual que en el almacén de archivos: se APARTA, no se destruye. Acá el rincón es una fila con
     /// la clave prefijada, en la misma tabla — así el backup se lo lleva junto con todo lo demás.</summary>

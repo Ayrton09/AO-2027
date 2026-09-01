@@ -70,6 +70,13 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **La fogata prendida arde.** Antes era idéntica a las ramitas apagadas —el mismo montón de leña— y sólo la
   prendida sirve para descansar, así que no había forma de saber si te había salido. Ahora se ve el fuego.
 
+- **Podés ver quién está jugando sin entrar.** Hay una página con los conectados y una tabla de posiciones, y
+  se llega desde la pantalla de ingreso. Antes, para saber si había alguien adentro había que entrar. Los
+  administradores no figuran en la tabla, y no se publica dónde está parado nadie.
+
+- **`/eventos` contesta.** El comando y el botón "¿Hay eventos?" existían y no decían nada, ni siquiera cuando
+  un administrador tenía puesta experiencia, oro o botín multiplicados. Ahora dicen qué está corriendo.
+
 - **Macro: mantené la tecla apretada y la acción se repite.** Sostener **Ctrl** sigue golpeando y sostener
   una **F1–F10** sigue usando lo que tengas atado, a la velocidad del cliente original. Viene puesto; si
   preferís apretar una vez por golpe, se apaga en Opciones → Juego. Los oficios —minar, talar, pescar,

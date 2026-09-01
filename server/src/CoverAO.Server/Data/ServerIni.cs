@@ -96,7 +96,7 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo",
         "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
-        "OroAlSubirNivel", "PasesDeRinkel", "PersistirSuelo", "PorcentajeLluvia",
+        "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort",
     };
@@ -288,6 +288,20 @@ public sealed class ServerIni
     /// red.</para>
     /// </summary>
     public bool HipocamposEnMarAbierto { get; private set; } = true;
+
+    /// <summary>
+    /// <c>PaginaPublica</c> (default <b>1</b>, prendida). Publica <c>estado.html</c> en el mismo puerto del
+    /// cliente web: quiénes están conectados y la tabla de posiciones.
+    ///
+    /// <para>No es una regla de la casa —no cambia una sola mecánica del juego, y por eso no está en esa
+    /// cuenta—: es una VENTANA a lo que ya pasa. Existe porque con pocos jugadores lo que decide si alguien
+    /// entra es saber si hay alguien adentro, y <c>/ONLINE</c> sólo se lee estando ya conectado.</para>
+    ///
+    /// <para>Sale nombre, nivel, clase y clan: lo mismo que cualquiera ve parado al lado tuyo en el juego.
+    /// <b>No sale el mapa ni la posición de nadie</b>, que sería regalarle el mapa a quien quiera cazar
+    /// gente, ni cuentas ni IPs. En 0 la ruta directamente no existe (404).</para>
+    /// </summary>
+    public bool PaginaPublica { get; private set; } = true;
 
     /// <summary>
     /// REGLA DE LA CASA — <c>DropGlobal</c> (default <b>10000</b>, o sea PRENDIDA). Es <b>una de cada cuántas</b>
@@ -645,6 +659,7 @@ public sealed class ServerIni
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
+        cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
         // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no
         // desborde: a un millón de criaturas por ítem ya no cae nunca, que es igual que apagarlo.
         cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 10000), 0, 1_000_000);

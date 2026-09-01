@@ -335,7 +335,7 @@ public sealed partial class PacketDispatcher
             }
             case ClientPacketId.InitCrafting: reader.ReadLong(); reader.ReadInteger(); break; // VB6 HandleInitCrafting solo setea el estado interno de fabricación (Cantidad/PorCiclo); no emite ningún paquete
             case ClientPacketId.Work: HandleWork(session, reader); break;
-            case ClientPacketId.HayEventos: break;   // VB6 HandleHayEventos: sin evento activo no emite nada
+            case ClientPacketId.HayEventos: HandleHayEventos(session); break;
             case ClientPacketId.AbrirForms: { byte form = reader.ReadByte(); _loop.Enqueue(() => { if (session.Player is null) return; if (form == 1) session.Send(ServerMessages.AbrirFormularios(9)); }); break; } // VB6 HandleAbrirForms: Case 1 -> donador?AbrirForm(10):AbrirForm(9); el slice no modela donador -> 9. Otros forms: silencio.
             case ClientPacketId.ProcesosLogin: HandleProcesosLogin(session, reader); break;
             case ClientPacketId.PidePremios: HandlePidePremios(session); break;
@@ -7932,6 +7932,56 @@ public sealed partial class PacketDispatcher
             if (up.TotalDays >= 1) texto = $"{up.Days} {(up.Days == 1 ? "día" : "días")}, " + texto;
             session.Send(ServerMessages.ConsoleMsg($"Server Online: {texto}", FuenteInfo));
         });
+    }
+
+    /// <summary>/EVENTOS y el botón "¿Hay eventos?" (VB6 <c>HandleHayEventos</c>, Protocol.bas:16448): qué
+    /// multiplicadores están corriendo ahora mismo.
+    ///
+    /// <para><b>El original no contesta nada, y no por decisión: el cuerpo entero de la función está
+    /// COMENTADO.</b> El autor escribió los tres mensajes —el de experiencia, el de oro y el "No hay eventos
+    /// en curso."— y los dejó tachados. O sea que el botón del cliente y el comando mandan su paquete y
+    /// reciben silencio, que es indistinguible de un botón roto. Es la misma forma que la fogata: algo que el
+    /// autor dejó escrito a medias y que nadie lee.</para>
+    ///
+    /// <para>Y acá pesa más que allá, porque la perilla SÍ existe de este lado: el panel de administración
+    /// tiene los tres multiplicadores del frmMain del VB6 (exp/oro/drop, ×1..50). Sin esto, un GM puede poner
+    /// experiencia ×5 y no hay una sola forma de que el jugador se entere de que está corriendo.</para>
+    ///
+    /// <para><b>El texto es el del autor, sin la DURACIÓN.</b> Sus líneas la sacaban de
+    /// <c>EventosOroandExp</c>, un contador de minutos que este fork no tiene: los multiplicadores del panel
+    /// se prenden y se apagan a mano, no vencen solos. Prometer un plazo que nadie descuenta sería peor que
+    /// no decir nada. El de DROP no está en las líneas comentadas —el original sólo escribió exp y oro— y va
+    /// con la misma forma, porque callarlo dejaría a medias justo lo que esto viene a arreglar.</para>
+    ///
+    /// <para><b>Lo que cuesta:</b> el barrido del oráculo mide esta acción, y el VB6 calla. La fila queda
+    /// declarada como divergencia NUESTRA con su firma exacta (<c>compare_actions.py</c>,
+    /// <c>DIVERGENCIA_ELEGIDA</c>), así que cualquier OTRA diferencia en esta acción sigue contando como
+    /// gap.</para>
+    /// </summary>
+    private void HandleHayEventos(ClientSession session)
+    {
+        _loop.Enqueue(() =>
+        {
+            if (session.Player is null) return;
+            foreach (var linea in LineasDeEventos(_admin?.ExpMult ?? 1, _admin?.GoldMult ?? 1, _admin?.DropMult ?? 1))
+                session.Send(ServerMessages.ConsoleMsg(linea, FuenteInfo));
+        });
+    }
+
+    /// <summary>Las líneas que contesta <c>/EVENTOS</c> para unos multiplicadores dados. Está afuera del
+    /// handler porque es lo único que vale la pena fijar en un test —los textos del autor y la rama vacía— y
+    /// adentro del <c>Enqueue</c> no hay forma de mirarlo sin poner a correr el game loop.
+    ///
+    /// <para>El orden es el del original: experiencia, después oro. El drop va tercero por ser el agregado.</para>
+    /// </summary>
+    public static List<string> LineasDeEventos(int exp, int oro, int drop)
+    {
+        var lineas = new List<string>(3);
+        if (exp > 1) lineas.Add($"¡El evento 'Experiencia x{exp}' se encuentra en curso!");
+        if (oro > 1) lineas.Add($"¡El evento 'Oro x{oro}' se encuentra en curso!");
+        if (drop > 1) lineas.Add($"¡El evento 'Drop x{drop}' se encuentra en curso!");
+        if (lineas.Count == 0) lineas.Add("No hay eventos en curso.");
+        return lineas;
     }
 
     /// <summary>RegresarHogar (id 99): teleport the player back to the spawn/home tile.</summary>

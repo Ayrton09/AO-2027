@@ -62,6 +62,21 @@ StartPort=7666
 // una version nueva, no las que este archivo ya explica.
 PuertoWebSocketPublico=0
 
+// LA PAGINA PUBLICA: quien esta jugando y la tabla de posiciones, en el mismo puerto del
+// cliente web (estado.html, con su enlace en la pantalla de ingreso).
+//
+// No es una regla de la casa: no cambia ninguna mecanica del juego. Existe porque con pocos
+// jugadores lo que decide si alguien entra es saber si hay alguien adentro, y el /ONLINE de
+// adentro del juego solo se lee estando ya conectado.
+//
+// Sale nombre, nivel, clase y clan -- lo mismo que ve cualquiera parado al lado tuyo. NO sale
+// el mapa ni la posicion de nadie (seria regalarle el mapa a quien quiera cazar gente), ni
+// cuentas, ni IPs. Los administradores no entran en la tabla: con /CI se ponen el nivel que
+// quieran y la tabla dejaria de medir nada.
+//
+// PaginaPublica=0 la apaga entera: la direccion deja de existir (404).
+PaginaPublica=1
+
 ; Tope de jugadores conectados a la vez. 0 = sin tope (usa el limite interno).
 MaxUsers=0
 

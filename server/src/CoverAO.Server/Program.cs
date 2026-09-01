@@ -914,8 +914,15 @@ if (habraWeb)
     // `port + 1` es el puerto del WebSocketGameServer. Se le pasa para que se lo publique al cliente en vez
     // de que éste lo tenga cableado: los puertos salen todos de StartPort, y con el 7667 a mano un host que
     // cambiara StartPort servía un cliente que no podía conectarse a su propio servidor.
+    // La página pública (estado.html): conectados + tabla de posiciones, del mundo vivo y del almacén. No
+    // toca el juego —ni un paquete nuevo— y se apaga entera con PaginaPublica=0, que deja la ruta en 404.
+    // `EsStaff` sale del ini VIVO y no del personaje: el rango se deriva en cada login y el .chr no manda.
+    Func<string>? estadoPublico = serverIni.PaginaPublica
+        ? new CoverAO.Server.Net.EstadoPublico(world, store, loop, serverIni.EsStaff, CoverAO.Server.Build.Version).Json
+        : null;
     webTask = new CoverAO.Server.Net.StaticFileServer(
-        webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico).RunAsync(cts.Token);
+        webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico,
+        estadoPublico).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se

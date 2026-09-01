@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
@@ -144,12 +144,6 @@ public sealed class AdminServer
     private int _peak;
     private HashSet<string>? _banned;          // cuentas baneadas (cache; se llena lazy y se sincroniza en ban/unban)
     private readonly object _banLock = new();
-    // Orden = eClass (Declares.bas:117), NO el del AO clásico: Clérigo es 1 y Mago es 2.
-    private static readonly string[] Clases = {
-        "Clérigo", "Mago", "Guerrero", "Asesino", "Ladrón", "Bardo", "Druida", "Gladiador",
-        "Paladín", "Cazador", "Pescador", "Herrero", "Leñador", "Minero", "Carpintero",
-        "Sastre", "Mercenario", "Nigromante",
-    };
 
     public AdminServer(int port, string token, World world, GameLoop loop, Persistence db,
         ServerInfo info, Action<bool> shutdown, LogRing? log, AdminConfig admin, string bannedIpsPath,
@@ -255,7 +249,7 @@ public sealed class AdminServer
                 name = p.Name,
                 account = p.Account,
                 level = (int)p.Level,
-                clase = p.Class >= 1 && p.Class <= Clases.Length ? Clases[p.Class - 1] : $"Clase {p.Class}",
+                clase = GameLimits.NombreDeClase(p.Class),
                 map = (int)p.Pos.Map, x = (int)p.Pos.X, y = (int)p.Pos.Y,
                 hp = p.Hp, maxHp = p.MaxHp,
                 gm = p.IsGm, priv = (int)p.Privileges,

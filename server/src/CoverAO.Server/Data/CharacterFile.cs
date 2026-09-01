@@ -193,6 +193,24 @@ public static class CharacterFile
             GameMaster: false);
     }
 
+    /// <summary>Lo que la tabla de posiciones necesita de un personaje. Todos los campos salen del
+    /// <c>.chr</c> y son del original: nivel y experiencia de <c>[STATS]</c>, los dos contadores de
+    /// <c>[MUERTES]</c> (VB6 TCP.bas:2166-2167) y las veces que murió de <c>[FLAGS] Murio</c>.</summary>
+    public readonly record struct FilaDeRanking(string Nombre, int Nivel, double Exp, byte Clase,
+                                                string Clan, int Usuarios, int Criaturas, int Muertes);
+
+    /// <summary>Lee sólo esos campos, sin construir el <see cref="Player"/> entero. Vive en ESTE archivo, que
+    /// es el que escribe esas claves, para que renombrar una las cambie de los dos lados a la vez.</summary>
+    public static FilaDeRanking RankingFromIni(IniFile ini, string name) => new(
+        Nombre: name,
+        Nivel: ini.GetByte("STATS", "ELV", 1),
+        Exp: double.TryParse(ini.GetString("STATS", "EXP"), NumberStyles.Float, CultureInfo.InvariantCulture, out var xp) ? xp : 0,
+        Clase: ini.GetByte("INIT", "Clase"),
+        Clan: ini.GetString("GUILD", "GuildName"),
+        Usuarios: Math.Max(0, ini.GetInt("MUERTES", "UserMuertes")),
+        Criaturas: Math.Max(0, ini.GetInt("MUERTES", "NpcsMuertes")),
+        Muertes: Math.Max(0, ini.GetInt("FLAGS", "Murio")));
+
     public static Player Load(string path, short charIndex, string name, string account)
         => FromIni(IniFile.Load(path), charIndex, name, account);
 

@@ -535,6 +535,14 @@
     .cara-pie { text-align:center; color:var(--ink-dim); font-size:calc(var(--u)*0.78); margin-top:3px; }
     .login-form .goldbtn { margin-top:6px; padding:9px; font-size:calc(var(--u)*1.05); }
     .login-hint { font-size:calc(var(--u)*0.74); color:var(--ink-dim); text-align:center; }
+    /* El pie del login: el enlace a la página pública. Separado por un filete para que no se lea como parte
+       del formulario. Se esconde mientras se crea un personaje, que es cuando la tarjeta se ensancha y esta
+       línea quedaría suelta abajo de todo. */
+    .login-pie { margin-top:14px; padding-top:11px; border-top:1px solid var(--gold-deep);
+      font-size:calc(var(--u)*0.74); text-align:center; }
+    .login-pie a { color:var(--ink-dim); text-decoration:none; }
+    .login-pie a:hover { color:var(--gold); }
+    #login.creando .login-pie { display:none; }
     #login-err { margin-top:12px; min-height:1.2em; color:#e8654f; font-size:calc(var(--u)*0.86); text-shadow:0 1px 2px #000; }
 
     /* ============================ Paneles (Social / Acciones / Correo / Skills) ================== */
@@ -849,6 +857,12 @@
       </div>
 
       <div id="login-err"></div>
+
+      <!-- LA PUERTA A LA PÁGINA PÚBLICA. Va acá y no en el menú de adentro porque justamente sirve ANTES de
+           entrar: lo que uno quiere saber es si hay alguien jugando, y /ONLINE sólo se lee estando conectado.
+           Es un enlace común —no depende de nada del cliente— así que sigue andando aunque el juego no cargue.
+           Si el host la apagó (PaginaPublica=0), la página abre igual y lo dice. -->
+      <div class="login-pie"><a href="./estado.html">Ver quién está jugando y la tabla de posiciones →</a></div>
     </div>
   </div>
 

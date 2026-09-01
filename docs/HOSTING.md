@@ -129,6 +129,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `LogDias` | días de log a conservar. 0 = sólo consola |
 | `CodigoFuente` | URL del código de este servidor |
 | `PuertoWebSocketPublico` | sólo si el hosting remapea puertos: el que se le anuncia al cliente |
+| `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa** — no cambia ninguna mecánica —, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
 
 **Ser GM**: en `[INIT]` poner `Dioses=1` y agregar la sección:
 

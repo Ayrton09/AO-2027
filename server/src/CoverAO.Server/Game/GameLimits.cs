@@ -33,6 +33,20 @@ public static class GameLimits
                       ClaseBardo = 6, ClaseDruida = 7, ClaseGladiador = 8, ClasePaladin = 9, ClaseCazador = 10,
                       ClaseNigromante = 18;
 
+    /// <summary>El nombre de cada clase, EN EL ORDEN de <c>eClass</c> (Declares.bas:117) y no en el del AO
+    /// clásico: Clérigo es 1 y Mago es 2. Vive acá, junto a los números que nombra, porque hay dos lugares
+    /// que la muestran —el panel de administración y la página pública— y una segunda copia es una copia que
+    /// un día va a divergir.</summary>
+    public static readonly string[] NombresDeClase = {
+        "Clérigo", "Mago", "Guerrero", "Asesino", "Ladrón", "Bardo", "Druida", "Gladiador",
+        "Paladín", "Cazador", "Pescador", "Herrero", "Leñador", "Minero", "Carpintero",
+        "Sastre", "Mercenario", "Nigromante",
+    };
+
+    /// <summary>El nombre de una clase por su número, o <c>"Clase N"</c> si el número no es de ninguna.</summary>
+    public static string NombreDeClase(int clase) =>
+        clase >= 1 && clase <= NombresDeClase.Length ? NombresDeClase[clase - 1] : $"Clase {clase}";
+
     public const int SkillTacticas = 1;
     public const int SkillMagia = 8;    // Declares.bas eSkill.magia
     public const int SkillResistencia = 9;
