@@ -124,11 +124,12 @@ for (const [nombre, esperado, cita] of [
   else if (+m[1] !== esperado)
     fallas.push(`\`${nombre}\` vale ${m[1]} y el original son ${esperado} (${cita}, Declares.bas:318-320)`);
 }
-// Y que el macro siga saliendo APAGADO: prenderlo por defecto cambia cómo se sube de nivel sin avisarle a
-// nadie, y en el original `AutoUsarActivado` arranca en 0.
-if (!/localStorage\.getItem\('ao_macro'\)\s*===\s*'1'/.test(cuerpo)) {
-  fallas.push('el macro ya no arranca apagado: se espera `localStorage.getItem(\'ao_macro\') === \'1\'`, ' +
-              'que da false cuando el jugador nunca lo prendió');
+// Y que el macro salga PRENDIDO, que es la decisión tomada (2026-08-31). El `!== '0'` es lo que hace que la
+// clave AUSENTE —el jugador que nunca la tocó— dé prendido; con `=== '1'` saldría apagado para todo el mundo
+// y nadie se enteraría, porque la opción existe igual y el botón dice lo que corresponda.
+if (!/localStorage\.getItem\('ao_macro'\)\s*!==\s*'0'/.test(cuerpo)) {
+  fallas.push('el macro ya no arranca prendido: se espera `localStorage.getItem(\'ao_macro\') !== \'0\'`, ' +
+              'que da true cuando el jugador nunca lo tocó');
 }
 
 if (fallas.length) {

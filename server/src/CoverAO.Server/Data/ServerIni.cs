@@ -290,9 +290,9 @@ public sealed class ServerIni
     public bool HipocamposEnMarAbierto { get; private set; } = true;
 
     /// <summary>
-    /// REGLA DE LA CASA — <c>DropGlobal</c> (default 0 = apagada, como el install). Es la probabilidad EN POR
-    /// MIL de que una criatura muerta suelte, además de su botín propio, UN ítem de la tabla de
-    /// <c>DropGlobal.dat</c>. <c>DropGlobal=5</c> = 0,5 % de las muertes.
+    /// REGLA DE LA CASA — <c>DropGlobal</c> (default <b>10000</b>, o sea PRENDIDA). Es <b>una de cada cuántas</b>
+    /// criaturas muertas suelta, además de su botín propio, UN ítem de la tabla de <c>DropGlobal.dat</c>.
+    /// <c>DropGlobal=10000</c> = una cada diez mil; <c>DropGlobal=0</c> lo apaga.
     ///
     /// <para>La tabla existe en el install —26 entradas activas, todas accesorios de los buenos: el Brazalete
     /// del Ogro +30, el Anillo de Defensa Mágica +40, las tres Orbes, y dos Pendientes marcados como veinte
@@ -300,26 +300,42 @@ public sealed class ServerIni
     /// <c>MsgBox "Drop Global"</c>. Ver <see cref="Data.DropGlobalItem"/> para el detalle y para el comentario
     /// donde el autor dejó escrito el diseño que no llegó a existir.</para>
     ///
-    /// <para><b>Por qué un por mil y no un sí/no.</b> Los porcentajes del archivo no se pueden usar como
-    /// probabilidades independientes: suman 482 %, o sea casi cinco anillos legendarios por rata. Se usan como
-    /// pesos —qué sale cuando sale— y CUÁN SEGUIDO sale lo decide quien hostea, que es la única parte que el
-    /// original no dejó escrita en ningún lado. Un ítem por muerte como máximo.</para>
+    /// <para><b>Por qué "uno cada N" y no un porcentaje.</b> Los números del archivo no se pueden usar como
+    /// probabilidades: suman 482 %. Se usan como pesos —qué sale cuando sale— y la frecuencia la decide esta
+    /// clave, que es la única parte que el original no dejó escrita. La unidad es "uno cada N" porque
+    /// cualquier porcentaje se queda sin resolución: acá el valor útil está en el orden de los diez mil, y en
+    /// por mil el mínimo (1, o sea uno cada mil) ya es demasiado.</para>
     ///
-    /// <para>Prendida, el server DIVERGE del oráculo VB6 al morir una criatura. Es exactamente lo que una regla
-    /// de la casa declara, y por eso sale apagada: sin <c>Server.ini</c>, el juego es el del install.</para>
+    /// <para><b>De dónde salen los 10.000</b>, con la data del propio juego: <c>Niveles.dat</c> y el
+    /// <c>GiveEXP</c> de las 118 criaturas que dan experiencia dicen que llegar a nivel 30 son ~1.900 muertes,
+    /// a nivel 40 ~12.900 y a nivel 50 ~81.000. Con este valor un personaje encuentra alrededor de UNO en todo
+    /// su camino hasta el 40. Con "uno cada mil" encontraría trece, que para un ítem de tope es una fuente y
+    /// no un hallazgo.</para>
+    ///
+    /// <para><b>Sale PRENDIDA por decisión del autor</b> (2026-08-31): la tabla está escrita en el install y
+    /// son accesorios que de otro modo no salen de ningún lado.</para>
+    ///
+    /// <para>Prendida, el server DIVERGE del oráculo VB6 al morir una criatura. No lo rompe hoy porque el
+    /// barrido manda UN golpe por acción y nunca llega a matar nada, así que <c>DropNpcLoot</c> no corre
+    /// ahí — pero es la clase de divergencia que una regla de la casa declara a propósito.</para>
     /// </summary>
-    public int DropGlobal { get; private set; }
+    public int DropGlobal { get; private set; } = 10000;
 
     /// <summary>
-    /// REGLA DE LA CASA — <c>MetamorfosisDelDruida</c> (default 0 = apagada, como el install). Son los
-    /// SEGUNDOS que dura la transformación; 0 la apaga del todo.
+    /// REGLA DE LA CASA — <c>MetamorfosisDelDruida</c> (default <b>120</b>, o sea PRENDIDA). Son los SEGUNDOS
+    /// que dura la transformación; 0 la apaga del todo.
     ///
     /// <para>Los once hechizos de metamorfosis (#38-50: Murciélago, Lobo, Jabalí, Tigre, Oso Pardo, Tortuga,
     /// Araña, Demonio, Árbol, Gólem y Dragón) existen en el <c>Hechizos.dat</c> del install con todo:
-    /// cuerpo, cabeza, FX, sonido, maná, energía, skill mínima y bonos al golpe y a la defensa. Y sus
-    /// pergaminos se VENDEN, de 35.000 a 2.200.000 de oro. <b>Lanzarlos no hace nada</b>: el servidor VB6 lee
-    /// la clave <c>metamorfosis</c> al cargar el archivo y no la usa en ninguna línea. Ver
-    /// <see cref="Data.SpellInfo.EsMetamorfosis"/>.</para>
+    /// cuerpo, cabeza, FX, sonido, maná, energía, skill mínima, bonos al golpe y a la defensa, y un
+    /// <c>asusta</c> de 1 a 10. Y sus pergaminos se VENDEN, de 35.000 a 2.200.000 de oro. <b>Lanzarlos no
+    /// hace nada</b>: el servidor VB6 lee la clave <c>metamorfosis</c> al cargar el archivo y no la usa en
+    /// ninguna línea. Ver <see cref="Data.SpellInfo.EsMetamorfosis"/>.</para>
+    ///
+    /// <para>Prendida, la transformación hace las tres cosas que promete la ficha: el cuerpo, los bonos, y que
+    /// <b>las criaturas más débiles que la forma dejen de atacar</b> — ver
+    /// <see cref="Game.Player.AsustaAUnaCriaturaDeNivel"/>. Esa tercera es la que hace valer al Árbol, que
+    /// cuesta 900 de maná y pega +6: no sirve para pelear, sirve para pasar desapercibido.</para>
     ///
     /// <para><b>Por qué la duración es la clave y no un número cableado.</b> Es el único dato que el original
     /// no dejó escrito en ningún lado: la ficha del hechizo dice "efecto no permanente" y ahí se termina. No
@@ -327,10 +343,19 @@ public sealed class ServerIni
     /// ponerlo acá lo deja a la vista de quien hostea, que es de quien es la decisión. Todo lo demás —cuánto
     /// pega cada forma, cuánto cuesta, qué skill pide— sale de la data del install sin tocar nada.</para>
     ///
-    /// <para>Prendida, el server DIVERGE del oráculo VB6 al lanzar esos once hechizos: donde el original manda
-    /// un "aún no está implementado", el nuestro transforma. Es lo que una regla de la casa declara.</para>
+    /// <para><b>De dónde salen los 120.</b> No de la fuente: el <c>[INTERVALOS]</c> del <c>Server.ini</c>
+    /// original tiene 34 entradas —veneno, incineración, parálisis, invisibilidad, ocultarse, frío,
+    /// invocación— y <b>ninguna</b> es de metamorfosis ni de mimetismo; el contador <c>Mimetismo</c> de
+    /// <c>UserCounters</c> se pone en 0 al entrar y nadie lo vuelve a tocar. La escala del juego sí sirve de
+    /// ancla: lo más largo que el original sostiene son los 40 s de una invocación, y la invisibilidad dura
+    /// 20. Los 120 son el triple de ese techo, elegidos por el autor (2026-08-31) para que el pergamino del
+    /// Dragón —2.200.000 de oro— valga lo que cuesta. Es una decisión de balance, no un dato.</para>
+    ///
+    /// <para><b>Sale PRENDIDA por decisión del autor.</b> Prendida, el server DIVERGE del oráculo VB6 al
+    /// lanzar esos once hechizos: donde el original manda un "aún no está implementado", el nuestro
+    /// transforma. El barrido no los castea —un personaje recién creado no los tiene—, así que no lo rompe.</para>
     /// </summary>
-    public int MetamorfosisDelDruida { get; private set; }
+    public int MetamorfosisDelDruida { get; private set; } = 120;
 
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
@@ -620,8 +645,10 @@ public sealed class ServerIni
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
-        cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 0), 0, 1000);
-        cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", 0), 0, 3600);
+        // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no
+        // desborde: a un millón de criaturas por ítem ya no cae nunca, que es igual que apagarlo.
+        cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 10000), 0, 1_000_000);
+        cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", 120), 0, 3600);
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

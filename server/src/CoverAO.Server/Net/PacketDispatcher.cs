@@ -2368,6 +2368,7 @@ public sealed partial class PacketDispatcher
         p.MetamorfosisBody = (short)spell.BodyMetamorfosis;
         p.MetamorfosisExtraHit = spell.ExtraHit;
         p.MetamorfosisExtraDef = spell.ExtraDef;
+        p.MetamorfosisAsusta = spell.Asusta;
         // Segundos del ini → ticks del loop (40 ms cada uno). El +1 evita que un valor de 1 segundo caiga
         // justo en el tick de vencimiento y la transformación no llegue a verse ni un frame.
         p.MetamorfosisHastaTick = _loop.Tick + (_ini.MetamorfosisDelDruida * 1000L / GameLoop.TickMs) + 1;
@@ -2510,9 +2511,9 @@ public sealed partial class PacketDispatcher
     /// consumir un número del generador acá correría TODAS las tiradas posteriores y volvería no reproducible
     /// cualquier corrida sembrada. Con la regla en 0 esta función no existe para el resto del juego.</para>
     ///
-    /// <para>Dos tiradas: primero SI cae algo (<c>DropGlobal</c> por mil), y recién ahí QUÉ cae, por peso. La
-    /// ruleta camina la lista restando pesos, así que las dos entradas en 1 salen veinte veces menos que las
-    /// de 20 — la única jerarquía que el archivo del original dejó escrita.</para>
+    /// <para>Dos tiradas: primero SI cae algo (uno de cada <c>DropGlobal</c> muertes), y recién ahí QUÉ cae,
+    /// por peso. La ruleta camina la lista restando pesos, así que las dos entradas en 1 salen veinte veces
+    /// menos que las de 20 — la única jerarquía que el archivo del original dejó escrita.</para>
     ///
     /// <para>Cae por el mismo camino que el botín normal (<see cref="FindFreeGround"/> →
     /// <see cref="DejarEnElPiso"/>), así que respeta <c>Tilelibre</c> y no aparece dentro de una pared.</para>
@@ -2520,7 +2521,7 @@ public sealed partial class PacketDispatcher
     private void SortearDropGlobal(ClientSession session, Npc npc)
     {
         if (_ini.DropGlobal <= 0 || _data.PesoTotalDropGlobal <= 0) return;
-        if (_rng.Next(1000) >= _ini.DropGlobal) return;
+        if (_rng.Next(_ini.DropGlobal) != 0) return;   // uno de cada N: `DropGlobal=1` cae siempre
         if (_data.DropGlobalPara(_rng.Next(_data.PesoTotalDropGlobal)) is not { } g) return;
         if (FindFreeGround(npc.Pos, (short)g.ObjIndex, 1) is not { } donde) return;
         DejarEnElPiso(donde, (short)g.ObjIndex, 1);

@@ -443,6 +443,32 @@ public sealed class Player
     /// terminarla con los números con los que la empezó aunque el .dat se recargue en el medio.</summary>
     public int MetamorfosisExtraHit { get; set; }
     public int MetamorfosisExtraDef { get; set; }
+    /// <summary>Cuán temible se ve la forma (Hechizos.dat <c>asusta</c>, 1 el murciélago y 10 el dragón). Lo
+    /// mira la IA de las criaturas: las que están por debajo no se le acercan. 0 = no da miedo a nadie.</summary>
+    public int MetamorfosisAsusta { get; set; }
+
+    /// <summary>
+    /// ¿Una criatura de ese <paramref name="nivel"/> le tiene MIEDO a este jugador? Es lo que promete la ficha
+    /// de los hechizos de metamorfosis: <i>"las criaturas no te atacarán si aparentas ser más poderoso que
+    /// ellas"</i> — y por eso el Árbol, que pega +6 y cuesta 900 de maná, igual vale: no sirve para pelear,
+    /// sirve para que no te vean.
+    ///
+    /// <para>Las dos escalas salen enteras de la data del install y encajan por los extremos: el
+    /// <c>asusta</c> del hechizo va de 1 (murciélago) a 10 (dragón), y el <c>Nivel</c> de las criaturas va de
+    /// 1 a 100 — el techo lo tienen los doce bichos de tope, el Dragón Legendario entre ellos. El puente es
+    /// <see cref="Data.SpellInfo.EscalaDelAsusta"/>, ×10.</para>
+    ///
+    /// <para>La comparación es ESTRICTA porque la ficha dice "más poderoso QUE ellas": así los de Nivel 100
+    /// no se asustan de nada, ni siquiera de un dragón. Y las tres criaturas hostiles sin la clave
+    /// <c>Nivel</c> quedan en 100 por la regla del propio cargador del original
+    /// (<c>If Not .Leveles &gt; 0 Then .Leveles = 100</c>), así que tampoco se asustan: sale solo, sin un caso
+    /// especial.</para>
+    ///
+    /// <para>Sin transformar es un <c>0 &gt; 0</c> que da false — que es lo que corre siempre con la regla de
+    /// la casa apagada, una comparación de enteros por criatura y por vuelta.</para>
+    /// </summary>
+    public bool AsustaAUnaCriaturaDeNivel(int nivel) =>
+        MetamorfosisAsusta * Data.SpellInfo.EscalaDelAsusta > nivel;
 
     /// <summary>¿Está transformado ahora mismo? <paramref name="tick"/> es el del game loop.</summary>
     public bool EstaMetamorfoseado(long tick) => MetamorfosisHastaTick != 0 && tick < MetamorfosisHastaTick;
@@ -455,6 +481,7 @@ public sealed class Player
         MetamorfosisBody = 0;
         MetamorfosisExtraHit = 0;
         MetamorfosisExtraDef = 0;
+        MetamorfosisAsusta = 0;
     }
     /// <summary>Tick hasta el que este jugador NO puede usar una salida de mapa (VB6 <c>Counters.TiempoDeMapeo</c>).
     ///

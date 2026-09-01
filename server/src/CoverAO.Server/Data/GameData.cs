@@ -333,17 +333,31 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     //
     // Se leen para la REGLA DE LA CASA `MetamorfosisDelDruida`. Apagada, sobran; encendida, son el hechizo.
     //
-    // FALTA UNO A PROPÓSITO: `asusta` (1 el murciélago, 10 el dragón). La ficha del hechizo promete que "las
-    // criaturas no te atacarán si aparentas ser más poderoso que ellas", pero ese número no tiene contra qué
-    // compararse: ningún NPC del install trae una escala de poder equivalente, y el VB6 no lee la clave.
-    // Cualquier mapeo contra el HP o la experiencia de la criatura sería inventado, así que no se lee — data
-    // sin lector, como las otras que el proyecto deja anotadas en vez de cargar por las dudas.
+    // `asusta` (1 el murciélago, 10 el dragón) es CUÁN TEMIBLE se ve la forma, y con eso la ficha cumple lo
+    // que promete: "las criaturas no te atacarán si aparentas ser más poderoso que ellas". Contra qué se
+    // compara está en `NPCs.dat`: la clave **Nivel**, que traen 121 de los 124 hostiles y va de 1 a 100. Las
+    // dos escalas encajan por los extremos —`asusta` 10 es el Dragón y el Nivel más alto del mundo es el 100
+    // del Dragón Legendario—, así que el puente es ×10 y no un número elegido a dedo. Ver
+    // <see cref="EscalaDelAsusta"/>.
     int Metamorfosis = 0, int BodyMetamorfosis = 0, int HeadMetamorfosis = 0,
-    int ExtraHit = 0, int ExtraDef = 0)
+    int ExtraHit = 0, int ExtraDef = 0, int Asusta = 0)
 {
     /// <summary>Hechizo de metamorfosis con un cuerpo al que transformarse (Hechizos.dat
     /// <c>metamorfosis=1</c> + <c>body</c>). Sólo lo cumplen los once del bloque #38-50.</summary>
     public bool EsMetamorfosis => Metamorfosis > 0 && BodyMetamorfosis > 0;
+
+    /// <summary>
+    /// El puente entre el <c>asusta</c> de un hechizo (1..10) y el <c>Nivel</c> de una criatura (1..100).
+    ///
+    /// <para>No es un número a dedo: las dos escalas encajan por los extremos. El <c>asusta</c> más alto es 10
+    /// y lo tienen el Dragón y el Árbol; el <c>Nivel</c> más alto del mundo es 100 y lo tienen los doce
+    /// bichos de tope, el Dragón Legendario entre ellos. Diez por diez, cien.</para>
+    ///
+    /// <para>La comparación es ESTRICTA (<c>asusta * 10 &gt; Nivel</c>), que es lo que dice la ficha:
+    /// "si aparentas ser más poderoso que ellas". Con eso, la forma de Dragón asusta a todo lo que esté por
+    /// debajo del techo y los doce de Nivel 100 siguen atacando a cualquiera.</para>
+    /// </summary>
+    public const int EscalaDelAsusta = 10;
 
     /// <summary>El hechizo se tira sobre uno mismo, sin objetivo (Hechizos.dat <c>autolanzar</c>).</summary>
     public bool EsAutoLanzado => AutoLanzar > 0;
@@ -1493,11 +1507,11 @@ public sealed class GameData
                 // que resultaron tener más de una escritura en este mismo archivo.
                 Int(el, "autolanzar", "AutoLanzar", "AUTOLANZAR"),
                 Int(el, "ResucitaFamiliar"),
-                // Los cinco de la metamorfosis. En este archivo vienen con UNA sola grafía cada uno
-                // (`metamorfosis`, `body` y `head` en minúscula; `ExtraHIT`/`ExtraDEF` en mixta) y sólo en los
-                // once hechizos del bloque — verificado sobre los 113.
+                // Los seis de la metamorfosis. En este archivo vienen con UNA sola grafía cada uno
+                // (`metamorfosis`, `body`, `head` y `asusta` en minúscula; `ExtraHIT`/`ExtraDEF` en mixta) y
+                // sólo en los once hechizos del bloque — verificado sobre los 113.
                 Int(el, "metamorfosis"), Int(el, "body"), Int(el, "head"),
-                Int(el, "ExtraHIT"), Int(el, "ExtraDEF"));
+                Int(el, "ExtraHIT"), Int(el, "ExtraDEF"), Int(el, "asusta"));
         }
         return map;
     }

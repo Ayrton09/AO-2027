@@ -81,7 +81,6 @@ public sealed class NpcSystem
 
     /// <summary>¿Las criaturas pueden ir por este jugador? (VB6 <c>flags.AdminPerseguible</c>.)</summary>
     private bool Perseguible(Player p) => p.AdminPerseguible || _gmsPerseguibles;
-
     /// <summary>Registers a spawn point and spawns its NPC immediately.
     ///
     /// <paramref name="movement"/> es el <c>TipoAI</c> del VB6 (ver <see cref="Npc.Movement"/>): null = el de su
@@ -793,6 +792,7 @@ public sealed class NpcSystem
                 continue;
             }
             if (!player.IsAlive || player.Invisible || player.Oculto) continue;   // VB6 NpcAtacaUser: no pega al oculto/invisible
+            if (player.AsustaAUnaCriaturaDeNivel(npc.Template.Nivel)) continue;   // se transformó en algo que le da miedo a ESTA criatura
             if (player.CharIndex == npc.OwnerCharIndex) continue; // summons never attack their summoner
             // Las TRES ramas de la IA exigen `flags.AdminPerseguible` (AI_NPC.bas:88/160/229), que el original
             // sólo prende para el usuario común: a un GM ninguna criatura le pega ni lo persigue.

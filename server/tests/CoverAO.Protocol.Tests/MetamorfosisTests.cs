@@ -50,12 +50,17 @@ public class MetamorfosisTests : IDisposable
 
     // ── LA REGLA ──────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>PRENDIDA en 120, con archivo y sin archivo. El número son SEGUNDOS, y no sale de la
+    /// fuente: el <c>[INTERVALOS]</c> del <c>Server.ini</c> original tiene 34 entradas y ninguna es de esto.
+    /// Es una decisión de balance del autor, anclada en que el efecto más largo del original —una criatura
+    /// invocada— dura 40 s y la invisibilidad 20.</summary>
     [Fact]
-    public void Viene_apagada_y_el_numero_son_segundos()
+    public void Viene_prendida_en_dos_minutos()
     {
-        Assert.Equal(0, new ServerIni().MetamorfosisDelDruida);
-        Assert.Equal(0, Cargar("MaxUsers=50\r\n").MetamorfosisDelDruida);
-        Assert.Equal(120, Cargar("MetamorfosisDelDruida=120\r\n").MetamorfosisDelDruida);
+        Assert.Equal(120, new ServerIni().MetamorfosisDelDruida);
+        Assert.Equal(120, Cargar("MaxUsers=50\r\n").MetamorfosisDelDruida);
+        Assert.Equal(300, Cargar("MetamorfosisDelDruida=300\r\n").MetamorfosisDelDruida);
+        Assert.Equal(0, Cargar("MetamorfosisDelDruida=0\r\n").MetamorfosisDelDruida);
     }
 
     // ── LA DATA ───────────────────────────────────────────────────────────────────────────────────────
@@ -148,6 +153,62 @@ public class MetamorfosisTests : IDisposable
         Assert.True(p.EstaMetamorfoseado(999));
         Assert.False(p.EstaMetamorfoseado(1000));
         Assert.False(p.EstaMetamorfoseado(1001));
+    }
+
+    // ── EL MIEDO DE LAS CRIATURAS ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// LAS DOS ESCALAS ENCAJAN POR LOS EXTREMOS, y eso es lo que hace que el ×10 no sea un número a dedo: el
+    /// <c>asusta</c> más alto de los once hechizos es 10 y el <c>Nivel</c> más alto de las criaturas del
+    /// mundo es 100. Si mañana la data trajera un asusta de 12 o una criatura de Nivel 150, el puente dejaría
+    /// de estar anclado — y este test se pondría rojo, que es exactamente para lo que está.
+    /// </summary>
+    [Fact]
+    public void El_asusta_y_el_nivel_de_las_criaturas_encajan_por_los_extremos()
+    {
+        var d = Datos();
+        var asustas = Enumerable.Range(1, 200).Select(i => d.Spell(i))
+            .Where(s => s is { EsMetamorfosis: true }).Select(s => s!.Asusta).ToArray();
+        Assert.Equal(11, asustas.Length);
+        Assert.Equal(1, asustas.Min());     // el murciélago
+        Assert.Equal(10, asustas.Max());    // el dragón (y el árbol)
+        Assert.Equal(100, SpellInfo.EscalaDelAsusta * asustas.Max());
+
+        var hostiles = d.Npcs.Values.Where(n => n.Hostile).Select(n => n.Nivel).ToArray();
+        Assert.True(hostiles.Length > 100, $"esperaba muchos hostiles y hay {hostiles.Length}");
+        Assert.Equal(100, hostiles.Max());  // el techo del mundo, que es lo que alcanza el dragón
+    }
+
+    /// <summary>
+    /// El miedo, forma por forma, contra criaturas REALES del mundo. La comparación es estricta —"más
+    /// poderoso QUE ellas"—, así que el techo no se asusta ni del dragón: los doce bichos de Nivel 100 le
+    /// pegan a cualquiera. Eso importa, porque si no la forma de dragón volvería inmune al jugador.
+    /// </summary>
+    [Theory]
+    [InlineData(49, 5, true)]      // murciélago (asusta 1 → 10) vs una Rata (Nivel 5): la rata huye
+    [InlineData(49, 10, false)]    // ...pero un Lobo (10) no: 10 no es MÁS que 10
+    [InlineData(40, 10, true)]     // lobo (asusta 2 → 20) vs ese mismo Lobo: ahora sí
+    [InlineData(40, 26, false)]    // ...y no contra un Tigre (26)
+    [InlineData(47, 42, true)]     // demonio (asusta 9 → 90) vs un Demonio del mundo (42)
+    [InlineData(39, 99, true)]     // dragón (asusta 10 → 100) asusta a todo lo que esté debajo del techo
+    [InlineData(39, 100, false)]   // ...menos al techo: el Dragón Legendario sigue atacando
+    public void Una_criatura_huye_solo_de_una_forma_mas_poderosa(int hechizo, int nivelCriatura, bool huye)
+    {
+        var s = Datos().Spell(hechizo);
+        Assert.NotNull(s);
+        var p = Nuevo();
+        p.MetamorfosisAsusta = s!.Asusta;
+        Assert.Equal(huye, p.AsustaAUnaCriaturaDeNivel(nivelCriatura));
+    }
+
+    /// <summary>Sin transformar no asusta a nada, ni siquiera a lo más débil del mundo. Es el control: sin
+    /// esto, un bug que dejara el multiplicador en 1 igual pasaría los casos de arriba.</summary>
+    [Fact]
+    public void Sin_transformar_no_asusta_ni_a_lo_mas_debil()
+    {
+        var p = Nuevo();
+        Assert.Equal(0, p.MetamorfosisAsusta);
+        Assert.False(p.AsustaAUnaCriaturaDeNivel(1));
     }
 
     // ── LAS DOS PIEZAS QUE SOSTIENEN LA TRANSFORMACIÓN ────────────────────────────────────────────────

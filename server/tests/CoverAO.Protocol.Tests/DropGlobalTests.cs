@@ -42,14 +42,22 @@ public class DropGlobalTests : IDisposable
 
     // ── LA REGLA ──────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Apagada por defecto, con archivo y sin archivo. Es la mitad que hace que "sin Server.ini" siga
-    /// significando "como el original".</summary>
+    /// <summary>
+    /// PRENDIDA en 10000 —una de cada diez mil criaturas—, con archivo y sin archivo. Y el 0 explícito la
+    /// apaga, que es como el host vuelve al install.
+    ///
+    /// <para>El número parece enorme y no lo es: con <c>Niveles.dat</c> y el <c>GiveEXP</c> de las 118
+    /// criaturas que dan experiencia, llegar a nivel 40 son ~12.900 muertes. O sea, alrededor de UN accesorio
+    /// por personaje en todo ese camino. La unidad es "uno cada N" y no un porcentaje justamente porque en
+    /// por mil el mínimo (uno cada mil) ya daría trece.</para>
+    /// </summary>
     [Fact]
-    public void Viene_apagada()
+    public void Viene_prendida_en_uno_cada_diez_mil()
     {
-        Assert.Equal(0, new ServerIni().DropGlobal);
-        Assert.Equal(0, Cargar("MaxUsers=50\r\n").DropGlobal);
-        Assert.Equal(7, Cargar("DropGlobal=7\r\n").DropGlobal);
+        Assert.Equal(10000, new ServerIni().DropGlobal);
+        Assert.Equal(10000, Cargar("MaxUsers=50\r\n").DropGlobal);
+        Assert.Equal(5000, Cargar("DropGlobal=5000\r\n").DropGlobal);
+        Assert.Equal(0, Cargar("DropGlobal=0\r\n").DropGlobal);
     }
 
     // ── EL ARCHIVO ────────────────────────────────────────────────────────────────────────────────────

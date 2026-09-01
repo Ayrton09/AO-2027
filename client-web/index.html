@@ -1072,13 +1072,14 @@
      * Acá se completa: prendido, mantener Ctrl golpea a la cadencia del original y mantener una F repite a la
      * suya. Los tres números salen del original, ninguno es nuestro.
      *
-     * APAGADO por defecto, y no es simetría con las reglas de la casa del server: apagado ES el original
-     * —`AutoUsarActivado` arranca en 0 en el `CovAoInit.ini`— y prenderlo cambia cómo se sube de nivel, que
-     * es una decisión del jugador, no nuestra.
+     * PRENDIDO por defecto, por decisión del autor (2026-08-31), y esto SÍ se aparta del original: allá
+     * `AutoUsarActivado` arranca en 0. Se prende porque apretar Ctrl miles de veces para subir de nivel es el
+     * reclamo más viejo que tiene el juego, y un macro que hay que descubrir en Opciones no se lo saca a
+     * nadie. El que prefiera una acción por pulsación lo apaga ahí mismo.
      *
      * De paso arregla un defecto que estaba de antes: las F1-F10 se disparaban en CADA `keydown`, repeticiones
-     * del sistema operativo incluidas, o sea ~30 paquetes por segundo con la tecla apretada. Ahora, apagado,
-     * es una acción por pulsación; prendido, es la cadencia del original. En ningún caso son treinta.
+     * del sistema operativo incluidas, o sea ~30 paquetes por segundo con la tecla apretada. Ahora repiten a
+     * la cadencia del original, y apagadas es una acción por pulsación. En ningún caso son treinta.
      *
      * El MACRO DE TRABAJO no está acá y no falta: minar, talar, pescar y fundir ya se repiten solos en el
      * servidor mientras dure la energía (`Laborando` + `TickTrabajo`), que es como lo hace el original.
@@ -1086,7 +1087,9 @@
     const MACRO_MS_GOLPE = 1200;     // INT_ATTACK (Declares.bas:320)
     const MACRO_MS_HECHIZO = 1400;   // INT_MACRO_HECHIS (:318)
     const MACRO_MS_USAR = 1000;      // INT_MACRO_TRABAJO (:319)
-    let macroOn = localStorage.getItem('ao_macro') === '1';   // persiste; default APAGADO
+    // El `!== '0'` y no `=== '1'`: con la clave AUSENTE —el jugador que nunca la tocó— tiene que dar
+    // PRENDIDO. Es la misma forma que usa `ao_nombres` acá arriba.
+    let macroOn = localStorage.getItem('ao_macro') !== '0';   // persiste; default PRENDIDO
     // Desvanecido de los techos al entrar a un interior. El original va de 255 a 0 de 5 en 5 cada 18 ms
     // (RoofAlphaCalculate, TileEngine.bas:3845), o sea 51 pasos = ~918 ms para el barrido completo.
     const TECHO_FADE_MS = 918;
@@ -3268,9 +3271,9 @@
           <button class="sbtn ghost" data-op="nombres" style="min-width:5em">${mostrarNombres ? 'sí' : 'no'}</button></div>
         <div class="frow" style="justify-content:space-between"><span>Macro (repetir con la tecla apretada)</span>
           <button class="sbtn ghost" data-op="macro" style="min-width:5em">${macroOn ? 'sí' : 'no'}</button></div>
-        <div class="sp2">Prendido, mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue
+        <div class="sp2">Viene puesto: mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue
           usando lo que tenga atado, a la cadencia del cliente original (1,2 s el golpe, 1,4 s un hechizo,
-          1 s un ítem). Apagado es como el original: una acción por cada vez que apretás.
+          1 s un ítem). Apagalo si preferís una acción por cada vez que apretás, que es como el original.
           Los oficios —minar, talar, pescar, fundir— se repiten solos siempre, no dependen de esto.</div>
 
         <div class="fsec">Controles</div>

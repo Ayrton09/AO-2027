@@ -52,11 +52,16 @@ public class ReglasDeLaCasaTests : IDisposable
         // que hay que cambiar, y al cambiarlo se entera de por qué estaba así.
         Assert.True(cfg.HipocamposEnMarAbierto);
 
-        // Las dos que completan lo que el original dejó a medio hacer. Las dos son NUMÉRICAS y no un sí/no,
-        // porque en las dos el número es lo único que la fuente no dejó escrito: cuán seguido cae un drop
-        // global, y cuánto dura una transformación. Cero apaga.
-        Assert.Equal(0, cfg.DropGlobal);
-        Assert.Equal(0, cfg.MetamorfosisDelDruida);
+        // Y LAS OTRAS DOS EXCEPCIONES (2026-08-31), las que completan lo que el original dejó a medio hacer.
+        // Son NUMÉRICAS y no un sí/no porque en las dos el número es lo único que la fuente no dejó escrito:
+        // una de cada cuántas muertes cae un drop global, y cuánto dura una transformación. Cero apaga las dos.
+        //
+        // Con esto, "sin Server.ini" ya son TRES cosas que no son el install. Quedan afirmadas acá, y no
+        // omitidas, por lo mismo que la de los hipocampos: para que se lean como decisiones tomadas y no como
+        // defaults que se colaron. Quien vuelva a la fidelidad total cambia estos tres asserts y, al hacerlo,
+        // se entera de por qué estaban así.
+        Assert.Equal(10000, cfg.DropGlobal);          // uno cada diez mil criaturas
+        Assert.Equal(120, cfg.MetamorfosisDelDruida); // dos minutos
     }
 
     [Fact]
@@ -69,8 +74,11 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.False(cfg.CuraAlSubirNivel);
         Assert.False(cfg.QuitarEquipoNovato);
         Assert.False(cfg.PersistirSuelo);
-        Assert.Equal(0, cfg.DropGlobal);
-        Assert.Equal(0, cfg.MetamorfosisDelDruida);
+        // Las dos prendidas siguen prendidas con un ini que no las nombra, que es el caso REAL de un host que
+        // actualiza: su Server.ini viejo no las trae. Un default que sólo valiera SIN archivo las dejaría
+        // apagadas justamente en todos los servidores de producción.
+        Assert.Equal(10000, cfg.DropGlobal);
+        Assert.Equal(120, cfg.MetamorfosisDelDruida);
     }
 
     [Fact]
@@ -88,12 +96,17 @@ public class ReglasDeLaCasaTests : IDisposable
 
     /// <summary>Las dos numéricas se recortan igual que el oro por nivel, y por lo mismo: un valor absurdo
     /// desbalancea el server sin que nadie lo note. El tope del drop global es 1000 porque es un por mil; el
-    /// de la metamorfosis, una hora — más que eso ya no es "efecto no permanente".</summary>
+    /// de la metamorfosis, una hora — más que eso ya no es "efecto no permanente". Y el 0 tiene que llegar
+    /// intacto: es la única forma que tiene el host de volver al comportamiento del install.</summary>
     [Fact]
     public void Las_dos_numericas_tienen_tope_y_no_aceptan_negativos()
     {
+        // El 0 EXPLÍCITO tiene que llegar intacto: es la única forma que tiene el host de volver al install,
+        // y las dos vienen prendidas, así que un clamp que lo subiera al default las dejaría sin apagado.
+        Assert.Equal(0, Cargar("DropGlobal=0\r\n").DropGlobal);
+        Assert.Equal(0, Cargar("MetamorfosisDelDruida=0\r\n").MetamorfosisDelDruida);
         Assert.Equal(0, Cargar("DropGlobal=-5\r\n").DropGlobal);
-        Assert.Equal(1000, Cargar("DropGlobal=999999\r\n").DropGlobal);
+        Assert.Equal(1_000_000, Cargar("DropGlobal=99999999\r\n").DropGlobal);
         Assert.Equal(0, Cargar("MetamorfosisDelDruida=-1\r\n").MetamorfosisDelDruida);
         Assert.Equal(3600, Cargar("MetamorfosisDelDruida=99999\r\n").MetamorfosisDelDruida);
     }
