@@ -1,4 +1,4 @@
-using CoverAO.Server.Game;
+﻿using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Data;
 
@@ -96,7 +96,8 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo",
         "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
-        "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo", "PorcentajeLluvia",
+        "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort",
     };
@@ -336,6 +337,19 @@ public sealed class ServerIni
     /// gente, ni cuentas ni IPs. En 0 la ruta directamente no existe (404).</para>
     /// </summary>
     public bool PaginaPublica { get; private set; } = true;
+
+    /// <summary>
+    /// <c>OrigenesPermitidos</c> — dominios EXTRA desde los que se acepta abrir el WebSocket del juego,
+    /// separados por coma. Vacío (el default) = sólo el del propio servidor.
+    ///
+    /// <para>Existe para el único caso legítimo que el chequeo de <c>Origin</c> rompería: servir el cliente
+    /// desde otro dominio que el servidor de juego. Sin esta llave, ese host vería a sus jugadores rebotados
+    /// con un 403 y sin idea de por qué.</para>
+    ///
+    /// <para>Lo que el chequeo evita está en <c>WebSocketGameServer.OrigenAceptable</c>: que una página
+    /// cualquiera abra sockets desde el navegador de un jugador, le gaste el cupo de conexiones y le haga
+    /// bloquear su propia IP con intentos de login fallidos.</para></summary>
+    public string[] OrigenesPermitidos { get; private set; } = Array.Empty<string>();
 
     /// <summary>
     /// REGLA DE LA CASA — <c>DropGlobal</c> (default <b>10000</b>, o sea PRENDIDA). Es <b>una de cada cuántas</b>
@@ -696,6 +710,8 @@ public sealed class ServerIni
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
+        cfg.OrigenesPermitidos = ini.GetString("INIT", "OrigenesPermitidos")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no
         // desborde: a un millón de criaturas por ítem ya no cae nunca, que es igual que apagarlo.
         cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 10000), 0, 1_000_000);

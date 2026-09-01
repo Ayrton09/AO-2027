@@ -82,6 +82,21 @@ PuertoWebSocketPublico=0
 // PaginaPublica=0 la apaga entera: la direccion deja de existir (404).
 PaginaPublica=1
 
+// DE DONDE se acepta abrir el WebSocket del juego, aparte del dominio de este servidor.
+// Separados por coma. Vacio (lo normal) = solo el propio.
+//
+// El navegador declara en `Origin` que pagina abrio el socket. Sin mirarlo, CUALQUIER pagina
+// que un jugador visite puede abrirle sockets a tu servidor desde la maquina de el: gastarle
+// el cupo de conexiones por IP, y disparar logins fallidos hasta que el servidor le bloquee SU
+// IP. O sea, dejar afuera del juego a alguien que no hizo nada.
+//
+// Lo que NO manda `Origin` es un cliente que no es una pagina (una herramienta, el cliente
+// clasico): esos entran igual, y no es un agujero -- quien controla su propio cliente puede
+// escribir el Origin que quiera. La cabecera sirve contra la pagina de un TERCERO.
+//
+// Solo hace falta llenarla si servis el cliente web desde otro dominio que el servidor.
+OrigenesPermitidos=
+
 ; Tope de jugadores conectados a la vez. 0 = sin tope (usa el limite interno).
 MaxUsers=0
 

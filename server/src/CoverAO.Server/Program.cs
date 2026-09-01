@@ -884,7 +884,10 @@ CoverAO.Server.Net.HttpBind.ElJuegoEntraPorElPuertoWeb = habraWeb;
 var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
-    msPorConsulta: serverIni.MsEntreConsultas, rafagaConsultas: serverIni.RafagaDeConsultas); // web client (Fase 3), same world
+    msPorConsulta: serverIni.MsEntreConsultas, rafagaConsultas: serverIni.RafagaDeConsultas,
+    // El Origin que declara el navegador: sin este chequeo, cualquier pagina que abra un jugador
+    // puede abrirle sockets a este servidor desde SU maquina.
+    origenesPermitidos: serverIni.OrigenesPermitidos); // web client (Fase 3), same world
 
 // Ejemplo de suscripcion al event bus (decoupling de reglas y efectos).
 world.Events.Subscribe<PlayerLoggedIn>(e =>

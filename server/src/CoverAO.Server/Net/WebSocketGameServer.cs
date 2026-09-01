@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;
@@ -20,11 +20,13 @@ public sealed class WebSocketGameServer
     private readonly int _msPorMensaje, _rafagaMensajes, _msPorConsulta, _rafagaConsultas;
     private readonly int _maxInboundBytes;
     private readonly AdminConfig? _admin;   // baneo por IP en vivo (lo muta el panel)
+    private readonly string[] _origenesPermitidos;   // dominios extra que pueden abrir el socket (Server.ini)
 
     public WebSocketGameServer(int port, PacketDispatcher dispatcher,
         ConnectionGuard? guard = null, long authTimeoutMs = 0, int maxInboundBytes = 0, AdminConfig? admin = null,
         int paquetesPorSegundo = 0, int rafagaDePaquetes = 200,
-        int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10)
+        int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10,
+        string[]? origenesPermitidos = null)
     {
         _port = port;
         _dispatcher = dispatcher;
@@ -36,6 +38,7 @@ public sealed class WebSocketGameServer
         _msPorConsulta = msPorConsulta; _rafagaConsultas = rafagaConsultas;
         _maxInboundBytes = maxInboundBytes;
         _admin = admin;
+        _origenesPermitidos = origenesPermitidos ?? Array.Empty<string>();
     }
 
     public async Task RunAsync(CancellationToken token)
@@ -100,6 +103,15 @@ public sealed class WebSocketGameServer
             Console.WriteLine($"[ws:{remote}] rechazado (IP baneada)");
             return;
         }
+        // ANTES del cupo de conexiones, y el orden importa: `TryAcquire` TOMA la ranura, así que rechazando
+        // después habría que acordarse de devolverla — y un rechazo que filtra un slot convierte el guardia en
+        // el arma. Acá el drive-by se corta sin gastar nada.
+        if (!OrigenAceptable(ctx.Request))
+        {
+            ctx.Response.StatusCode = 403; ctx.Response.Close();
+            Console.WriteLine($"[ws:{remote}] rechazado (Origin ajeno: {ctx.Request.Headers["Origin"]})");
+            return;
+        }
         if (_guard is not null && !_guard.TryAcquire(ip))   // cap por-IP/global
         {
             ctx.Response.StatusCode = 503; ctx.Response.Close();
@@ -127,5 +139,43 @@ public sealed class WebSocketGameServer
         {
             if (acquired) _guard!.Release(ip);   // falló el upgrade antes de crear la sesión → liberar acá
         }
+    }
+
+    /// <summary>
+    /// ¿DE DÓNDE VIENE ESTE SOCKET? El navegador declara en <c>Origin</c> qué página lo abrió.
+    ///
+    /// <para><b>Qué evita.</b> Sin esto, cualquier página que un jugador abra puede abrirle sockets a este
+    /// servidor desde su navegador, sin que él se entere. No se roba nada —sin credenciales no se entra— pero
+    /// sí alcanza para hacer daño con la máquina de la víctima: gastarle el cupo de conexiones por IP, y
+    /// disparar intentos de login fallidos hasta que el <c>LoginThrottle</c> le bloquee <b>su</b> IP. O sea,
+    /// dejar afuera del juego a alguien que no hizo nada.</para>
+    ///
+    /// <para><b>Sin <c>Origin</c> se ACEPTA, y no es un agujero:</b> esa cabecera la pone el navegador y sólo
+    /// el navegador. Un cliente que no es una página —el arnés, una herramienta, un cliente nativo— no la
+    /// manda, y rechazarlo por eso cortaría todo lo que no sea un browser sin ganar nada: quien controla su
+    /// propio cliente puede escribir el <c>Origin</c> que se le antoje. La cabecera sirve contra la página de
+    /// un tercero abierta en el navegador de la víctima, que es justo el caso donde el atacante NO la puede
+    /// falsear.</para>
+    ///
+    /// <para><b>Se compara sólo el HOST, sin el puerto</b>, porque los puertos son legítimamente distintos:
+    /// la página se sirve en <c>StartPort+3</c> y el WebSocket suelto vive en <c>StartPort+1</c>. Exigiendo
+    /// puerto igual, el camino de compatibilidad quedaba roto para cualquier navegador.</para>
+    ///
+    /// <para>Y hay escape para el que sirva el cliente desde OTRO dominio: <c>OrigenesPermitidos</c> en el
+    /// <c>Server.ini</c>, separados por coma.</para>
+    /// </summary>
+    private bool OrigenAceptable(HttpListenerRequest req)
+    {
+        string origen = req.Headers["Origin"] ?? "";
+        if (origen.Length == 0) return true;                       // no es un navegador
+        if (!Uri.TryCreate(origen, UriKind.Absolute, out var uri)) return false;   // basura: no pasa
+
+        // El host de ESTE pedido, sin el puerto. `Url.Host` ya viene sin puerto; `UserHostName` lo trae.
+        string propio = req.Url?.Host ?? (req.UserHostName ?? "").Split(':')[0];
+        if (string.Equals(uri.Host, propio, StringComparison.OrdinalIgnoreCase)) return true;
+
+        foreach (var permitido in _origenesPermitidos)
+            if (string.Equals(uri.Host, permitido, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 }
