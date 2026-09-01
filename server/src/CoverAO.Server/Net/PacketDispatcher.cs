@@ -9310,6 +9310,18 @@ public sealed partial class PacketDispatcher
         int resistencia = Equipment.MagicResistance(target, _data);
         int damage = Combat.DanoHechizoOfensivo(_rng.Next(spell.MinHp, spell.MaxHp + 1), p.Level, bonoBaculo, resistencia);
 
+        // ¿PUEDE ATACARLO? Acá no había NINGUNA compuerta, y el camino del área es el único del juego que
+        // llega a un jugador sin pasar por una: `HandleCastSpell` rutea el área con un `return` que ocurre
+        // ANTES de los tres `PuedeAtacar` del camino de un solo objetivo. O sea que con una Bomba mágica se
+        // le pegaba —y se lo mataba— a un compañero de clan, al cónyuge, a alguien de la propia facción y en
+        // los 82 mapas donde el PvP está prohibido, incluidas las ciudades.
+        //
+        // El original lo tiene DENTRO de la función que hace el daño: `If Not PuedeAtacar(UserIndex,
+        // TargetUser) Then Exit Sub`, modHechizos.bas:546. Y va exactamente acá —después de calcular el daño
+        // y antes de marcar criminal— porque ése es su orden allá, y el gate EMITE (LocaleMsg 100/298/97…):
+        // moverlo cambia qué paquetes salen.
+        if (!PuedeAtacar(session, p, target)) return;
+
         FlagCriminalIfLegalTarget(session, p, target);    // VB6 UsuarioAtacadoPorUsuario
         target.Hp = Math.Max(0, target.Hp - damage);
         target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));

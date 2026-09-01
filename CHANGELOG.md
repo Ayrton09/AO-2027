@@ -77,6 +77,10 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **`/eventos` contesta.** El comando y el botón "¿Hay eventos?" existían y no decían nada, ni siquiera cuando
   un administrador tenía puesta experiencia, oro o botín multiplicados. Ahora dicen qué está corriendo.
 
+- **Los hechizos de área respetan dónde y a quién.** Eran el único ataque del juego que no preguntaba si se
+  podía: con una Bomba mágica se le pegaba a un compañero de clan, al cónyuge, a alguien de tu propia facción
+  y en las ciudades, donde el PvP está prohibido. Ahora pasan por el mismo control que el resto.
+
 - **El mercader cobra por lo que vende.** Cuando se le agotaba un producto, la ranura se quedaba con el
   precio del anterior, así que el siguiente objeto que entrara ahí se compraba y se vendía a un precio que no
   era el suyo. Ahora el precio sale siempre del objeto, como en el juego original.
