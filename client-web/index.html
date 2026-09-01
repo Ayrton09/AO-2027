@@ -1491,6 +1491,12 @@
     // equipo legendario que brilla. Acá había UNO cableado a mano.
     let objLights = {};
     fetch('./assets/obj-lights.json').then((r) => (r.ok ? r.json() : {})).then((l) => { objLights = l || {}; }).catch(() => {});
+    // PARTICULA de piso propia del objeto (`CreaParticulaPiso` del obj.dat): la fogata prendida y los dos
+    // teleports. Ver fase0/transcode/decode_obj_particles.py — en el original la clave no la lee NADIE, y
+    // se completa a propósito: la fogata prendida y las ramitas son indistinguibles (mismo grh, sin cartel,
+    // y su luz blanca es invisible de día) y sin embargo sólo la prendida sirve para descansar.
+    let objParticulas = {};
+    fetch('./assets/obj-particles.json').then((r) => (r.ok ? r.json() : {})).then((o) => { objParticulas = o || {}; }).catch(() => {});
     let spellNames = null; fetch('./assets/spells.json').then((r) => r.json()).then((s) => { spellNames = s; });
     // El `PropioMsg` de cada hechizo: el texto de lanzárselo a UNO MISMO. Va aparte de los nombres porque
     // `spells.json` ya viaja en los paquetes de dist/ y cambiarle la forma dejaría sin lista a una copia vieja.
@@ -4323,14 +4329,23 @@
      * corre por frame y `ground` casi nunca cambia; con el mapa 23 en pantalla son 1.170 partículas y recorrer
      * el suelo de nuevo cada vuelta se nota.
      */
-    let emisoresDeObjetos = [], emisoresDeObjetosSello = -1;
+    let emisoresDeObjetos = [], emisoresDeObjetosSello = '';
     function particulasDelSuelo() {
-      if (emisoresDeObjetosSello === ground.size) return emisoresDeObjetos;
-      emisoresDeObjetosSello = ground.size;
+      // El sello lleva el tamaño de las DOS tablas que lee, no sólo el del suelo: `objParticulas` y `items`
+      // llegan por `fetch` y pueden estar vacías las primeras vueltas. Sellando sólo con `ground.size`, la
+      // lista quedaba cacheada en cero y la fogata no emitía hasta que el suelo cambiara de tamaño.
+      const sello = ground.size + '/' + Object.keys(objParticulas).length + '/' + (items ? 1 : 0);
+      if (emisoresDeObjetosSello === sello) return emisoresDeObjetos;
+      emisoresDeObjetosSello = sello;
       emisoresDeObjetos = [];
       for (const it of ground.values()) {
+        // La FICHA manda, y el tipo 19 queda de respaldo: así el teleport sigue girando aunque su objeto no
+        // declare partícula —once de los trece no la declaran y el original se la cablea igual— y la fogata
+        // usa la suya, que es la que el install escribió.
         const meta = items && items[it.objIndex];
-        if (meta && meta[2] === TIPO_TELEPORT) emisoresDeObjetos.push([it.x, it.y, PARTICULA_TELEPORT]);
+        const g = objParticulas[it.objIndex]
+              || (meta && meta[2] === TIPO_TELEPORT ? PARTICULA_TELEPORT : 0);
+        if (g) emisoresDeObjetos.push([it.x, it.y, g]);
       }
       return emisoresDeObjetos;
     }
