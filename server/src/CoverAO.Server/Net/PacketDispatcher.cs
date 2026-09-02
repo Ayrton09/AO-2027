@@ -8856,6 +8856,19 @@ public sealed partial class PacketDispatcher
             var inv = p.Inventory[i];
             if (inv.IsEmpty || inv.ObjIndex != objIndex) continue;
             int take = Math.Min(amount, inv.Amount);
+            // SI SE VA ENTERO Y ESTABA PUESTO, PRIMERO HAY QUE SACÁRSELO. Acá se hacía `inv = default`, que
+            // borra el flag `Equipped` sin devolver el bono: el anillo se iba y el +30 se quedaba. Mandarlo
+            // por correo y retirarlo del buzón lo volvía a poner, y el bono se apilaba hasta el techo — con el
+            // cliente de stock, sin tocar un byte. Peor todavía, los skills y atributos se PERSISTEN en el
+            // `.chr`, así que quedaba para siempre.
+            //
+            // El original lo tiene adentro de `QuitarUserInvItem`, que es su equivalente de esta función:
+            // `If .Amount <= Cantidad And .Equipped = 1 Then Call Desequipar` (InvUsuario.bas:283-285), y en
+            // ese mismo orden — desequipar y después descontar.
+            //
+            // Hay que RELEER el slot: desequipar lo muta.
+            DesequiparSiSeVaEntero(session, p, (byte)i, take);
+            inv = p.Inventory[i];
             inv.Amount -= (short)take; amount -= take;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[i] = inv;

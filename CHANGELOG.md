@@ -77,6 +77,10 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **`/eventos` contesta.** El comando y el botón "¿Hay eventos?" existían y no decían nada, ni siquiera cuando
   un administrador tenía puesta experiencia, oro o botín multiplicados. Ahora dicen qué está corriendo.
 
+- **Lo que se va del inventario se desequipa.** Mandar por correo un anillo o un pendiente que tenías puesto
+  se llevaba el objeto y te dejaba su bonus, para siempre y acumulable. Ahora se te saca al irse, como cuando
+  lo tirás o lo vendés.
+
 - **Los hechizos de área respetan dónde y a quién.** Eran el único ataque del juego que no preguntaba si se
   podía: con una Bomba mágica se le pegaba a un compañero de clan, al cónyuge, a alguien de tu propia facción
   y en las ciudades, donde el PvP está prohibido. Ahora pasan por el mismo control que el resto.
