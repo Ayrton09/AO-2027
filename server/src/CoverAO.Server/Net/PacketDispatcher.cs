@@ -255,6 +255,31 @@ public sealed partial class PacketDispatcher
         or ClientPacketId.LoginNewChar or ClientPacketId.ConnectAccount or ClientPacketId.CreateNewAccount
         or ClientPacketId.ProcesosLogin or ClientPacketId.BorrarPersonaje;
 
+    /// <summary>El cliente desactualizado no entra (VB6 <c>VersionOK</c>, Admin.bas:92, y sus CINCO llamadores:
+    /// Protocol.bas:1125, :1287, :15197, :15268 y :15722 — o sea los cinco paquetes que traen la versión). El
+    /// original arma <c>"M.m.r"</c> con los tres bytes y lo compara como TEXTO contra el
+    /// <c>[INIT] Version</c> del <c>Server.ini</c>; si no da, manda el cartel de "juego desactualizado" y
+    /// cierra el socket. Acá los tres bytes se leían y se imprimían, nada más.
+    ///
+    /// <para><b>Sin la clave en el ini no hay control</b>, que es la única diferencia con el original —allá el
+    /// archivo siempre la trae—. La comparación es literal: encenderla con un valor que no sea exactamente el
+    /// del cliente que se repartió deja a todos afuera, así que la enciende quien sabe qué versión desplegó.</para>
+    ///
+    /// <para>Corre en el hilo que lee el socket y no adentro del game loop, a diferencia del resto de los
+    /// rechazos de login. Es a propósito: los tres caminos de login derivan la clave con PBKDF2 fuera del loop,
+    /// y no tiene sentido gastar 25 ms de CPU por una conexión que ya está rechazada.</para></summary>
+    private bool VersionRechazada(ClientSession session, byte mayor, byte menor, byte rev)
+    {
+        string exigida = _ini.VersionRequerida;
+        if (exigida.Length == 0 || $"{mayor}.{menor}.{rev}" == exigida) return false;
+        // `WriteShowMessageBox(UserIndex, 0, True, 7)`: el texto es el literal "0" —el VB6 convierte el número
+        // al pasarlo a un parámetro String— y el cliente arma el cartel a partir de la ACCIÓN, que es la 7.
+        session.Send(ServerMessages.ShowMessageBox("0", esPregunta: true, accion: 7));
+        Console.WriteLine($"[{session.RemoteEndpoint}] version rechazada: mandó {mayor}.{menor}.{rev}, se exige {exigida}");
+        session.Close("version del cliente");
+        return true;
+    }
+
     public void HandleOne(ClientSession session, ByteQueueReader reader)
     {
         var id = (ClientPacketId)reader.ReadByte();
@@ -457,6 +482,7 @@ public sealed partial class PacketDispatcher
         string userName = r.ReadAsciiString();
         string mac = r.ReadAsciiString();
         int hdSerial = r.ReadLong();
+        if (VersionRechazada(session, verMajor, verMinor, verRev)) return;
         _loop.Enqueue(() => EnterWorld(session, account, password, userName, $"v{verMajor}.{verMinor}.{verRev}"));
     }
 
@@ -467,6 +493,7 @@ public sealed partial class PacketDispatcher
         byte verMajor = r.ReadByte(), verMinor = r.ReadByte(), verRev = r.ReadByte();
         string mac = r.ReadAsciiString();
         int hdSerial = r.ReadLong();
+        if (VersionRechazada(session, verMajor, verMinor, verRev)) return;
         // Real AO flow: account connect returns the character list; the client then shows the
         // selection form and sends LoginExistingChar to actually enter the world.
         _loop.Enqueue(() => SendAccountCharList(session, account, password));
@@ -530,6 +557,7 @@ public sealed partial class PacketDispatcher
         string password = r.ReadAsciiString();
         string userCode = r.ReadAsciiString();
         byte verMajor = r.ReadByte(), verMinor = r.ReadByte(), verRev = r.ReadByte();
+        if (VersionRechazada(session, verMajor, verMinor, verRev)) return;
         _loop.Enqueue(() =>
         {
             // RATE-LIMIT, como los otros tres caminos de auth. Era el único que NO lo tenía, y encima es el
@@ -717,8 +745,9 @@ public sealed partial class PacketDispatcher
         string account = r.ReadAsciiString();
         string pin = r.ReadAsciiString();          // clave actual (cambio) o código de recuperación (recuperar)
         string nuevaClave = r.ReadAsciiString();
-        r.ReadByte(); r.ReadByte(); r.ReadByte();  // versión: este stack no la valida en ningún camino de login
+        byte verMajor = r.ReadByte(), verMinor = r.ReadByte(), verRev = r.ReadByte();
         byte tipo = r.ReadByte();
+        if (VersionRechazada(session, verMajor, verMinor, verRev)) return;
         _loop.Enqueue(() =>
         {
             void Falla(string aviso)
@@ -804,6 +833,7 @@ public sealed partial class PacketDispatcher
         short head = r.ReadInteger();
         string mac = r.ReadAsciiString();
         int hd = r.ReadLong();
+        if (VersionRechazada(session, verMajor, verMinor, verRev)) return;
         _loop.Enqueue(() =>
         {
             // La cuenta admite dígitos y guión bajo; el PERSONAJE no (VB6 ValidarNombre, TCP.bas:181 — sólo

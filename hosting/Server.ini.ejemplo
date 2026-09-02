@@ -313,6 +313,21 @@ RolesMasters=0
 ; arranque quede limpio. Escribi tu URL a la derecha del =.
 CodigoFuente=
 
+; ---------------------------------------------------------------------------
+;  Version de cliente que este servidor acepta.
+;
+; Los cinco paquetes de ingreso traen la version del cliente y el servidor la
+; compara COMO TEXTO. Si no coincide: cartel de "juego desactualizado" y se
+; corta la conexion.
+;
+; VACIA (asi, como viene) = SIN CONTROL, que es lo que el servidor hacia hasta
+; ahora. Encendela solo si sabes que cliente repartiste: la comparacion es
+; exacta, y un valor que no sea el del cliente desplegado deja a TODOS afuera.
+;
+; El cliente web que viene con esta version manda 1.0.0, o sea que para
+; encenderla alcanza con escribir eso a la derecha del =.
+Version=
+
 ; ============================================================================
 ;  Listas de staff. La clave se numera desde 1 y tiene que coincidir con el
 ;  contador de arriba (si pones Dioses=2 tienen que existir Dios1 y Dios2).

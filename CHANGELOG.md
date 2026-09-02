@@ -123,6 +123,10 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **Comprar una cantidad imposible de un producto te banea.** Es el único baneo automático que tiene el juego
   original, y se anuncia a todo el servidor.
 
+- **El servidor puede exigir la versión del cliente.** Los cinco paquetes de ingreso siempre trajeron la
+  versión y no la miraba nadie; ahora el que hostea puede pedir una y al que llega con otra le sale el cartel
+  de *juego desactualizado*. Viene apagado: se enciende escribiendo la versión en el `Server.ini`.
+
 - **El arco tiene su cadencia.** Se podía disparar tan rápido como el cliente mandara los clics: el camino del
   disparo no tenía ninguna espera. Ahora respeta el intervalo del juego original, y como allá, recién disparado
   tampoco se puede pegar ni tirar un hechizo.

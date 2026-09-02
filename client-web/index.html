@@ -881,6 +881,11 @@
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
     window.addEventListener('unhandledrejection', (e) => { window.__errs.push('reject: ' + (e.reason && e.reason.message || e.reason)); });
 
+    // LA VERSION DEL CLIENTE, en los tres bytes que llevan los cinco paquetes de login. El server la compara
+    // como texto contra el `[INIT] Version` de su Server.ini y, si no coincide, manda el cartel de "juego
+    // desactualizado" y corta (VB6 VersionOK, Admin.bas:92). Si el host no escribio esa clave no hay control.
+    // Iba cableada en 1.4.5 con un comentario que decia "el server no los valida"; ahora si.
+    const VERSION_CLIENTE = [1, 0, 0];
     const CLIENT = { LoginExistingChar: 1, LoginNewChar: 2, ConnectAccount: 66, CreateNewAccount: 67, Walk: 0, Talk: 3, attack: 6, CastSpell: 18, DoubleClick: 20, CommerceBuy: 34, UseItem: 22, CommerceSell: 36,
       CraftBlacksmith: 23, CraftCarpenter: 24, Craftalquimia: 25, CraftSastre: 26, BankExtractItem: 35, BankDeposit: 37,
       BankExtractGold: 84, BankDepositGold: 85, EquipItem: 29, PickUp: 7, Drop: 16, RequestGuildLeaderInfo: 10, CreateNewGuild: 28,
@@ -2604,9 +2609,11 @@
         // otro hostname y NO lo dispara, así que el cliente que se reparte no anuncia ni usa esas credenciales.
         if (atajoDeLoginPermitido) {
           const who = qs.get('char') || 'Rugura';
+          // De una sola cadena: el guardia del codec sigue la EXPRESIÓN para comparar lo que se escribe acá
+          // contra lo que el server lee, y partirla en dos sentencias lo deja viendo medio paquete.
           sendLogin(new ByteQueueWriter().writeByte(CLIENT.LoginExistingChar)
             .writeAsciiString('cuenta_test').writeAsciiString('hash_password')
-            .writeByte(1).writeByte(4).writeByte(5)
+            .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2])
             .writeAsciiString(who).writeAsciiString('mac').writeLong(1).toBytes());
         } else {
           connect();   // conecta ya; la pantalla #login espera el submit del usuario
@@ -6388,7 +6395,7 @@
       document.querySelectorAll('.login-form').forEach((f) => f.classList.toggle('on', f.id === 'lf-' + t.dataset.m));
       loginErr('');
     }));
-    const V = (w) => w.writeByte(1).writeByte(4).writeByte(5);   // bytes de versión (el server no los valida)
+    const V = (w) => w.writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2]);
     $('lf-in').addEventListener('submit', (ev) => {             // Conectar → ConnectAccount → lista de personajes
       ev.preventDefault(); const e = ev.target.elements;
       accName = e.acc.value.trim(); accPass = e.pw.value;

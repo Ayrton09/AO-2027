@@ -99,7 +99,7 @@ public sealed class ServerIni
         "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
-        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort",
+        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version",
     };
 
     /// <summary>Las opciones que el servidor sabe leer y que el <c>Server.ini</c> del host NO menciona: están
@@ -115,6 +115,17 @@ public sealed class ServerIni
     /// levanta el ejecutable no tiene forma de cumplir eso salvo que el juego lo muestre, y no se le puede
     /// pedir que arme una página aparte. Poniendo una URL acá queda cumplido.</summary>
     public string CodigoFuente { get; private set; } = "";
+
+    /// <summary>La versión de cliente que este servidor acepta (<c>[INIT] Version</c>, VB6 <c>ULTIMAVERSION</c>,
+    /// FileIO.bas:1467). El cliente manda la suya en tres bytes al entrar y el original la compara como texto:
+    /// <c>VersionOK = (Ver = ULTIMAVERSION)</c> (Admin.bas:99). Si no coincide, cartel de "juego desactualizado"
+    /// y a la calle.
+    ///
+    /// <para><b>Vacía = sin control</b>, que es lo que pasa si el host no escribe la clave. El original no
+    /// tiene esa salida —allá el ini SIEMPRE la trae—, y acá hace falta: el gate es una comparación literal, así
+    /// que prenderlo con un valor que no sea exactamente el del cliente desplegado deja a TODO el mundo afuera.
+    /// Que lo encienda quien sabe qué versión repartió.</para></summary>
+    public string VersionRequerida { get; private set; } = "";
 
     /// <summary>Puerto del WebSocket que se le ANUNCIA al cliente web, cuando no es el mismo que el servidor
     /// abrió de verdad. 0 = anunciar el real, que es lo normal.
@@ -638,6 +649,7 @@ public sealed class ServerIni
         cfg.StartPort = puerto is >= 1 and <= 65534 ? puerto : cfg.StartPort;
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
+        cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         // Mismo recorte que StartPort: un valor fuera de rango se ignora y vale el real. Anunciarle al
         // cliente un puerto imposible lo dejaría sin poder conectarse nunca, y el ini se edita a mano.
         int wsPublico = ini.GetInt("INIT", "PuertoWebSocketPublico", 0);
