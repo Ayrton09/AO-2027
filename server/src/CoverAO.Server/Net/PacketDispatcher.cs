@@ -7092,7 +7092,8 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
-            if (DeadCheck(session, p)) return;   // VB6 HandleDropDestroy: Protocol.bas:2161 (un muerto no destruye objetos)
+            // MUDO, igual que el de tirar: es la misma línea del original y tampoco emite (Protocol.bas:2109).
+            if (!p.IsAlive) return;
             // NI NAVEGANDO NI A CABALLO (:2110, la misma linea que el gate del muerto). Destruir el barco en
             // medio del mar dejaba `Navigating` prendido y persistido, o sea navegacion permanente sin barco.
             if (p.Navigating || p.Mounted) return;
@@ -10400,7 +10401,9 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null || slot < 1) return;
-            if (DeadCheck(session, p)) return;   // VB6 HandleDrop: un muerto no puede tirar objetos al suelo
+            // MUDO a propósito: el original corta con un `Exit Sub` pelado y no manda el 77 (Protocol.bas:2018).
+            // Acá salía por `DeadCheck`, que sí lo manda. Ver la nota de las dos familias en ese helper.
+            if (!p.IsAlive) return;
             // TIRAR EN MEDIO DE UN COMERCIO ES TRAMPA y el original corta seco, con su propio comentario:
             // "he can't drop items => He's cheating, we kick him" (:2021). Va antes que la rama del oro.
             if (p.Comerciando) return;
@@ -12032,8 +12035,21 @@ public sealed partial class PacketDispatcher
         world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
     }
 
-    /// <summary>VB6 DeadCheck (InvUsuario.bas:2444): si el jugador está muerto, avisa LocaleMsg(77) y devuelve
-    /// true para que el handler aborte. El muerto (fantasma) sólo puede caminar; todo lo demás se bloquea.</summary>
+    /// <summary>VB6 <c>DeadCheck</c> (InvUsuario.bas:2444): si el jugador está muerto, avisa LocaleMsg(77) y
+    /// devuelve true para que el handler aborte. El muerto (fantasma) sólo puede caminar; todo lo demás se
+    /// bloquea.
+    ///
+    /// <para><b>OJO: el original tiene DOS familias de chequeo de muerto y sólo una emite.</b> Ésta —la del
+    /// helper, que usan Talk, Attack, PickUp, CastSpell, Work, EquipItem y RetirarFaccion— manda el 77. La
+    /// otra es un <c>If .flags.Muerto = 1 Then Exit Sub</c> escrito a mano en el handler, y hay cuatro que
+    /// salen <b>MUDOS</b>: <c>HandleDrop</c> (Protocol.bas:2018), <c>HandleDropDestroy</c> (:2109),
+    /// <c>HandleWorkLeftClick</c> (:2643) y <c>HandleRest</c> (:17185, con su <c>WriteMsg</c> comentado a
+    /// propósito). Una quinta, <c>HandleCloseGuild</c> (:16632), manda un ConsoleMsg propio en vez del 77.</para>
+    ///
+    /// <para>Los demás handlers con el chequeo a mano —los del banco, la tienda, meditar, el casamiento— sí
+    /// emiten el 77, así que para ellos este helper es correcto. La diferencia no se puede deducir del tipo de
+    /// acción: hay que mirar el handler. Emitir donde el original calla es tan infiel como no emitir, y es lo
+    /// único que caza el barrido del oráculo.</para></summary>
     private static bool DeadCheck(ClientSession session, Player p)
     {
         if (p.IsAlive) return false;
