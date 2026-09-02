@@ -3393,7 +3393,19 @@
       body.addEventListener('click', (ev) => {
         const el = ev.target.closest('[data-act],[data-work],[data-ski],[data-skd]'); if (!el) return;
         if (el.dataset.work) { modoPunteria(+el.dataset.work); closeModal(); return; }
-        if (el.dataset.ski || el.dataset.skd) { const i = +(el.dataset.ski || el.dataset.skd); skPend[i] = Math.max(0, (skPend[i] || 0) + (el.dataset.ski ? 1 : -1)); modalCard.querySelector('#sk-' + i).textContent = skPend[i]; return; }
+        // NO SE REPARTEN MAS PUNTOS DE LOS QUE HAY, y el tope va aca porque el server trata el pedido que se
+        // pasa como TRAMPA y corta la conexion (es lo que hace el original: Protocol.bas:3292). El contador de
+        // arriba muestra los que QUEDAN mientras se reparte.
+        const skPuestos = () => Object.keys(skPend).reduce((a, k) => a + (skPend[k] || 0), 0);
+        const refrescarLibresPend = () => { const e = modalCard.querySelector('#sk-libres'); if (e) e.textContent = puntosLibres - skPuestos(); };
+        if (el.dataset.ski || el.dataset.skd) {
+          const i = +(el.dataset.ski || el.dataset.skd), sube = !!el.dataset.ski;
+          if (sube && skPuestos() >= puntosLibres) return;
+          skPend[i] = Math.max(0, (skPend[i] || 0) + (sube ? 1 : -1));
+          modalCard.querySelector('#sk-' + i).textContent = skPend[i];
+          refrescarLibresPend();
+          return;
+        }
         const a = el.dataset.act;
         if (a === 'mail-send') { const to = pv('mail-to'), m = pv('mail-msg'), slot = +pv('mail-slot') || 0; const oi = inventory[slot]?.objIndex || 0; if (to) send(W().writeByte(CLIENT.EnviarCorreo).writeAsciiString(to).writeAsciiString(m).writeInteger(oi).writeInteger(oi ? 1 : 0)); }
         // Acciones por carta (VB6 HandlePacketsCorreo): 1=borrar, 2=marcar leida, 3=retirar el adjunto.
@@ -3403,7 +3415,15 @@
         else if (a === 'mail-del') send(W().writeByte(CLIENT.PacketsCorreo).writeByte(1).writeByte(+el.dataset.slot));
         else if (a === 'mail-read') send(W().writeByte(CLIENT.PacketsCorreo).writeByte(2).writeByte(+el.dataset.slot));
         else if (a === 'mail-take') send(W().writeByte(CLIENT.PacketsCorreo).writeByte(3).writeByte(+el.dataset.slot));
-        else if (a === 'sk-apply') { const w = W().writeByte(CLIENT.ModifySkills); for (let i = 1; i <= 27; i++) w.writeByte(skPend[i] || 0); send(w); }
+        // Y al aplicar se VACIA lo pendiente: sin eso, un segundo clic en Aplicar remandaba el mismo reparto
+        // contra los puntos que ya se gastaron, o sea un pedido de mas -- que ahora es motivo de corte.
+        else if (a === 'sk-apply') {
+          const w = W().writeByte(CLIENT.ModifySkills);
+          for (let i = 1; i <= 27; i++) w.writeByte(skPend[i] || 0);
+          send(w);
+          for (const k of Object.keys(skPend)) { const c = modalCard.querySelector('#sk-' + k); if (c) c.textContent = '0'; delete skPend[k]; }
+          refrescarLibresPend();
+        }
         else if (a === 'xf-send') { const to = pv('xf-to'), amt = +pv('xf-amt') || 0; if (to && amt > 0) send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(to).writeLong(amt)); }
         else if (a === 'home-set') send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(+pv('home-city') || 1));
         else if (a === 'home-go') send(W().writeByte(CLIENT.RegresarHogar));

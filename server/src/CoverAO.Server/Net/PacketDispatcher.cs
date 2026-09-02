@@ -265,7 +265,12 @@ public sealed partial class PacketDispatcher
         // una sesión muerta, `OnDisconnect` sólo atendía al nuevo, y en el login siguiente la rama de rescate
         // —que exige `Connection is null`— no se cumplía: el personaje quedaba inaccesible hasta reiniciar el
         // servidor. Con el cliente de stock no se manda, pero el daño era irreversible en caliente.
-        if (EsDeLaFamiliaDeLogin(id) && session.Player is not null) { session.Close("paquete de login estando adentro"); return; }
+        if (EsDeLaFamiliaDeLogin(id) && session.Player is not null)
+        {
+            LogIntentoDeTrampa(session, session.Player, $"mandó {id} con el personaje ya adentro");
+            session.Close("paquete de login estando adentro");
+            return;
+        }
         switch (id)
         {
             case ClientPacketId.LoginExistingChar: HandleLoginExistingChar(session, reader); break;
@@ -1189,6 +1194,7 @@ public sealed partial class PacketDispatcher
                     p.UltimoMensaje = 1;
                     session.Send(ServerMessages.LocaleMsg(54));           // "No podes moverte porque estas paralizado."
                 }
+                p.Pasos.Olvidar();   // :1640 — paralizado se perdona la marca de speedhack
                 return;
             }
             // MEDITAR SE CORTA AL CAMINAR (VB6 Protocol.bas:1564-1573), y va ANTES del movimiento: el original
@@ -1249,6 +1255,25 @@ public sealed partial class PacketDispatcher
                 return;
             }
             p.LastWalkMs = nowMs;
+            // EL OTRO FRENO, el del original: un piso SOSTENIDO sobre ventanas de 34 pasos. Va con la cadencia
+            // por paso —si esa esta apagada, en fixture, esta tambien— porque los dos miden lo mismo a
+            // distinta escala y en modo test los flows caminan en rafaga a proposito. Ver DetectorDeSpeedHack.
+            if (walkMs > 0)
+            {
+                switch (p.Pasos.Paso(nowMs))
+                {
+                    case DetectorDeSpeedHack.Veredicto.Sospecha:
+                        LogIntentoDeTrampa(session, p, "34 pasos en menos de 5,2 s (primera ventana, sin echar)");
+                        break;
+                    case DetectorDeSpeedHack.Veredicto.Echar:
+                        LogIntentoDeTrampa(session, p, "34 pasos en menos de 5,2 s por segunda vez: SH");
+                        // El original se lo anuncia al staff conectado, no a todo el servidor (:1615).
+                        BroadcastToAdmins(ServerMessages.ConsoleMsg(
+                            $"Servidor> {p.Name} ha sido echado por el servidor por posible uso de SH.", FuenteCombate));
+                        session.Close("anticheat: speedhack");
+                        return;
+                }
+            }
             var from = p.Pos;
             var (nx, ny) = Step(from.X, from.Y, heading);
             p.Heading = heading;
@@ -5287,7 +5312,10 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.GuildName)) return;   // VB6 HandleGuildFundate: HasFound -> Exit Sub, sin mensaje
+            // `HasFound` -> Exit Sub, sin mensaje. Y con constancia: el original lo trata como trampa
+            // (LogCheating, Protocol.bas:6230), porque el cliente no ofrece fundar a quien ya tiene clan.
+            if (!string.IsNullOrEmpty(p.GuildName))
+            { LogIntentoDeTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }
             byte alin = AlineacionPorFaccion(p);
             if (alin == 0)
             { session.Send(ServerMessages.ConsoleMsg("Hay un error en su faccion, comuniquese con algun GameMaster", FuenteClan)); return; }
@@ -5306,7 +5334,8 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.GuildName)) return;   // VB6: HasFound -> LogCheating + Exit Sub (silencio)
+            if (!string.IsNullOrEmpty(p.GuildName))
+            { LogIntentoDeTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }   // :6230
             // La alineación ya quedó fijada por la FACCIÓN en el paso 1. El original lee este byte y su
             // `Select Case` está comentado entero (Protocol.bas:6256-6260), así que la elección del cliente no
             // se usa; acá se estaba guardando, que es dejar que el jugador elija la alineación de su clan.
@@ -7953,14 +7982,32 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            int spent = 0;
-            for (int i = 1; i <= GameLimits.NumSkills && p.FreeSkillPoints > 0; i++)
+            // PEDIR MÁS PUNTOS DE LOS QUE TENÉS ES TRAMPA, no un pedido a recortar. El original suma los 27
+            // bytes y, si pasan de `SkillPts`, loguea y CIERRA EL SOCKET sin tocar una sola skill
+            // (Protocol.bas:3282-3298, bajo su propio cartel "Codigo para prevenir el hackeo de los skills").
+            // Acá se clampeaba con `Math.Min(inc[i], FreeSkillPoints)` y encima se CONTESTABA, donde el
+            // original no emite nada: el cliente que pedía de más se llevaba lo que había y nadie se enteraba.
+            int pedido = 0;
+            for (int i = 1; i <= GameLimits.NumSkills; i++) pedido += inc[i];
+            if (pedido > p.FreeSkillPoints)
             {
-                int add = Math.Min(inc[i], (int)p.FreeSkillPoints);
-                add = Math.Min(add, 100 - p.Skills[i]); // cap skills at 100
-                if (add <= 0) continue;
-                p.Skills[i] = (byte)(p.Skills[i] + add);
-                p.FreeSkillPoints -= (short)add; spent += add;
+                LogIntentoDeTrampa(session, p, $"trató de hackear los skills (pidió {pedido} con {p.FreeSkillPoints})");
+                session.Close("anticheat: skills");
+                return;
+            }
+            int spent = 0;
+            for (int i = 1; i <= GameLimits.NumSkills; i++)
+            {
+                if (inc[i] <= 0) continue;
+                // La suma va en `int` y no en el byte: allá `UserSkills` es un Byte (Declares.bas:1139) y una
+                // skill en 100 más 255 puntos da la vuelta —el VB6 tira overflow y lo tapa su Resume Next; acá
+                // sería una skill que BAJA gastando puntos—. En int no hay vuelta que dar.
+                int sube = p.Skills[i] + inc[i];
+                p.Skills[i] = (byte)Math.Min(sube, 100);
+                // "Client should prevent this, but just in case...": el original devuelve el sobrante en vez
+                // de comérselo (:3305-3308). Los puntos que pasan de 100 vuelven a la bolsa.
+                int gastado = inc[i] - Math.Max(0, sube - 100);
+                p.FreeSkillPoints -= (short)gastado; spent += gastado;
             }
             if (spent == 0) return;   // VB6: sin puntos asignados, no responde
             session.Send(ServerMessages.SendSkills(p.Skills));
@@ -8563,7 +8610,13 @@ public sealed partial class PacketDispatcher
             if (tx < 1 || tx > 100 || ty < 1 || ty > 100) return;   // InMapBounds
             // Fuera del rango de visión el original rechaza con snap-back y NO ejecuta la acción (:2646).
             if (Math.Abs(tx - p.Pos.X) > RangoVisionX || Math.Abs(ty - p.Pos.Y) > RangoVisionY)
-            { session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y)); return; }
+            {
+                // El original loguea este caso en la rama de MAGIA (`Ataque fuera de rango de …`,
+                // Protocol.bas:2931): tirarle a una baldosa que no ves no lo puede pedir un cliente normal.
+                if (skill == GameLimits.SkillMagia)
+                    LogIntentoDeTrampa(session, p, $"ataque fuera de rango a ({p.Pos.Map}/{tx}/{ty}) desde ({p.Pos.X},{p.Pos.Y})");
+                session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y)); return;
+            }
             // CancelExit (:2651): trabajar también cancela la cuenta regresiva del /SALIR.
             CancelarSalida(p);
             // Combate a distancia con arco (VB6 HandleWorkLeftClick, Case eSkill.Proyectiles, Protocol.bas:2751).
@@ -10135,6 +10188,17 @@ public sealed partial class PacketDispatcher
     /// colapsan a espacio. Cierra la forja de líneas en el log del panel y del disco, y las secuencias de
     /// escape en la terminal del host. Toca SÓLO lo que se imprime: el paquete que viaja a los jugadores va
     /// intacto, así que el oráculo no ve diferencia.</summary>
+    /// <summary>Deja constancia de un INTENTO DE TRAMPA. El original tiene dos rutinas para esto —
+    /// <c>LogHackAttemp</c> (General.bas:686, a <c>logs/HackAttemps.log</c>) y <c>LogCheating</c> (:710, a
+    /// <c>logs/CH.log</c>)— y ocho lugares que las llaman. El port no tenía NINGUNA: donde el original loguea
+    /// y echa, acá se clampeaba en silencio, así que el que hostea no se enteraba nunca de nada.
+    ///
+    /// <para>Sale por la consola a propósito y no a un archivo aparte: <c>Console.WriteLine</c> ya está
+    /// redirigido al LogRing, que lo deja en <c>data/logs/server-AAAA-MM-DD.log</c> y lo muestra en vivo en el
+    /// panel. El prefijo <c>[TRAMPA]</c> es para poder grepearlo.</para></summary>
+    internal static void LogIntentoDeTrampa(ClientSession session, Player? p, string motivo)
+        => Console.WriteLine($"[TRAMPA] {p?.Name ?? "(sin personaje)"} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} - {ParaElLog(motivo)}");
+
     private static string ParaElLog(string s)
     {
         if (!s.Any(c => c < ' ' || c == '')) return s;
@@ -10958,6 +11022,19 @@ public sealed partial class PacketDispatcher
             var npc = _world.NpcByIndex(p.TradingWith);
             if (npc?.Stock is null || slot < 1 || slot > npc.Stock.Count) return;
             var st = npc.Stock[slot - 1];
+            // EL ÚNICO BANEO AUTOMÁTICO DEL ORIGINAL (Comercio.bas:66-78). Pedir más de `MAX_INVENTORY_OBJS`
+            // unidades de una no es un número a recortar: el VB6 lo anuncia a TODO el servidor, banea, avisa
+            // con un cartel y cierra. Acá se clampeaba con `Math.Clamp(amount, 1, st.Amount)` y seguía la
+            // compra. Un cliente honesto nunca llega: el tope del pedido son 10.000 y el gate es "más de".
+            if (amount > GameLimits.MaxInventoryObjs)
+            {
+                LogIntentoDeTrampa(session, p, $"quiso comprar {amount} unidades de una");
+                _world.Broadcast(ServerMessages.ConsoleMsg($"{p.Name} ha sido baneado por el sistema anti-cheats.", FuenteCombate));
+                p.Banned = true;
+                session.Send(ServerMessages.SendMsgBox("Has sido baneado por el Sistema AntiCheat."));
+                session.Close("anticheat: comercio");
+                return;
+            }
             if (st.Amount < 1) return;   // slot agotado: sin esto Math.Clamp(_,1,0) lanza ArgumentException (min>max)
             int buy = Math.Clamp((int)amount, 1, st.Amount);
             long cost = PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)) * buy;

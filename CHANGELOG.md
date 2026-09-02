@@ -108,6 +108,21 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **El líder no puede abandonar su propio clan.** Si lo hacía, el clan quedaba sin nadie que pudiera aceptar,
   echar, declarar la guerra o firmar la paz — y no había forma de arreglarlo desde adentro del juego.
 
+- **El servidor deja constancia de los intentos de trampa.** No había ninguno registrado: donde el juego
+  original anota y corta, acá se recortaba el pedido en silencio y el que hostea no se enteraba nunca. Ahora
+  quedan en el registro del servidor y se ven en el panel.
+
+- **Repartir más puntos de habilidad de los que tenés corta la conexión**, y no aplica ninguno — es lo que
+  hace el original. El panel de Habilidades del cliente ahora no te deja pasarte, y te muestra cuántos te
+  quedan mientras repartís.
+
+- **Correr más rápido de lo que el juego permite te saca.** El control que había miraba paso por paso; le
+  faltaba el del juego original, que mira el promedio sostenido y avisa a los administradores conectados. La
+  primera vez no echa a nadie: hace falta repetirlo.
+
+- **Comprar una cantidad imposible de un producto te banea.** Es el único baneo automático que tiene el juego
+  original, y se anuncia a todo el servidor.
+
 - **El arco tiene su cadencia.** Se podía disparar tan rápido como el cliente mandara los clics: el camino del
   disparo no tenía ninguna espera. Ahora respeta el intervalo del juego original, y como allá, recién disparado
   tampoco se puede pegar ni tirar un hechizo.

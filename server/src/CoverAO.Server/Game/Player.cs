@@ -501,6 +501,9 @@ public sealed class Player
     // de reloj monótono (Environment.TickCount64). El dispatcher rechaza el que llega antes del intervalo.
     public long LastWalkMs { get; set; }
     public long LastAttackMs { get; set; }
+    /// <summary>El otro freno de movimiento, el del original: un piso SOSTENIDO sobre ventanas de 34 pasos
+    /// (VB6 <c>flags.TimesWalk</c> / <c>StartWalk</c> / <c>CountSH</c>). Ver <see cref="DetectorDeSpeedHack"/>.</summary>
+    public DetectorDeSpeedHack Pasos { get; } = new();
     // Los CUATRO contadores del original que faltaban (VB6 `Counters`, modNuevoTimer.bas). Junto con
     // LastAttackMs (= TimerPuedeAtacar) forman el juego completo de relojes de combate:
     //   LastCastMs    = TimerLanzarSpell — último casteo
