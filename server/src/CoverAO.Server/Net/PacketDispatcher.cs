@@ -2362,13 +2362,38 @@ public sealed partial class PacketDispatcher
     /// puesta no hace nada.</summary>
     private void BajarDelAnimal(ClientSession session, Player p)
     {
+        byte s = SlotDeLaMonturaPuesta(p);
+        if (s != 0 && _data.Obj(p.Inventory[s].ObjIndex) is { } obj) AlternarMontura(session, p, s, obj);
+    }
+
+    /// <summary>El slot de la montura que tiene PUESTA, o 0 si no hay ninguna. Es el
+    /// <c>.Invent.MonturaSlot</c> del original, que allá se guarda al montar; acá se busca, que da lo mismo
+    /// porque sólo puede haber una equipada.</summary>
+    private byte SlotDeLaMonturaPuesta(Player p)
+    {
         for (byte s = 1; s <= GameLimits.MaxInventorySlots; s++)
         {
             var inv = p.Inventory[s];
             if (inv.IsEmpty || !inv.Equipped) continue;
-            var obj = _data.Obj(inv.ObjIndex);
-            if (obj is not null && obj.IsMount) { AlternarMontura(session, p, s, obj); return; }
+            if (_data.Obj(inv.ObjIndex) is { IsMount: true }) return s;
         }
+        return 0;
+    }
+
+    /// <summary>La montura que estás usando no entra en el comercio (VB6 <c>Comercio</c>, Comercio.bas:57-62).
+    /// El gate está ARRIBA del <c>Select Case Modo</c> del original, o sea que corre para las dos puntas —
+    /// comprar y vender— con el mismo <c>slot</c> que llegó del cliente.
+    ///
+    /// <para>Del lado de VENDER es lo que uno espera. Del lado de COMPRAR el <c>slot</c> es el del mercader y
+    /// no el del inventario, así que comparar contra <c>MonturaSlot</c> es una coincidencia de números: un
+    /// jugador a caballo que compra de la ranura N del mercader, con la montura en la ranura N de SU mochila,
+    /// se come el rechazo. Es un defecto del original y se porta igual — no emitir donde emite es tan infiel
+    /// como emitir donde calla.</para></summary>
+    private bool MonturaEnUso(ClientSession session, Player p, byte slot)
+    {
+        if (!p.Mounted || SlotDeLaMonturaPuesta(p) != slot) return false;
+        session.Send(ServerMessages.ConsoleMsg("No podes vender tu montura mientras lo estes usando.", FuenteInfo));
+        return true;
     }
 
     /// <summary>Entrar a caballo a un lugar donde no se puede andar a caballo te BAJA del animal (VB6
@@ -11053,6 +11078,7 @@ public sealed partial class PacketDispatcher
             if (_world.NpcByIndex(p.TargetNpc) is { IsMerchant: false } mudo)
             { NoTengoInteresEnComerciar(session, mudo, conDescripcion: false); return; }
             if (p.TradingWith == 0) { session.Send(ServerMessages.LocaleMsg(388)); return; }
+            if (MonturaEnUso(session, p, slot)) return;   // el mismo gate, y con el slot DEL MERCADER: ver el helper
             var npc = _world.NpcByIndex(p.TradingWith);
             if (npc?.Stock is null || slot < 1 || slot > npc.Stock.Count) return;
             var st = npc.Stock[slot - 1];
@@ -11108,6 +11134,7 @@ public sealed partial class PacketDispatcher
             if (_world.NpcByIndex(p.TargetNpc) is { IsMerchant: false } mudo)
             { NoTengoInteresEnComerciar(session, mudo, conDescripcion: false); return; }
             if (p.TradingWith == 0 || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
+            if (MonturaEnUso(session, p, slot)) return;   // Comercio.bas:57-62, arriba del Select Case
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
 

@@ -131,6 +131,9 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   original no dice nada. Es un detalle chico, pero de los que se notan: el cartel salía por cosas que allá
   pasan en silencio.
 
+- **La montura que estás usando no se vende.** Se la podías vender al mercader estando arriba: te bajaba del
+  animal y se la llevaba igual. El juego original no te deja y te lo dice.
+
 - **El arco tiene su cadencia.** Se podía disparar tan rápido como el cliente mandara los clics: el camino del
   disparo no tenía ninguna espera. Ahora respeta el intervalo del juego original, y como allá, recién disparado
   tampoco se puede pegar ni tirar un hechizo.
