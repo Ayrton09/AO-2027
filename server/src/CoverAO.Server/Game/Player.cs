@@ -352,6 +352,7 @@ public sealed class Player
     public byte Strength => EffectiveAttr(1);
     public byte Agility => EffectiveAttr(2);
     public byte Carisma => EffectiveAttr(4);   // usado por el gate de domar (VB6 DoDomar: Carisma * SkillDomar)
+    public byte Inteligencia => EffectiveAttr(3);   // entra en el aguante de la meditación (VB6 NpcDaño:595)
 
     /// <summary>Applies a temporary attribute boost (from a potion). Bonuses stack up to the cap and
     /// expire together at now+durationTicks.</summary>

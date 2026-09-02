@@ -67,6 +67,11 @@ public static class GameLimits
     public const int SkillDomar = 12; // taming
     public const int SkillSupervivencia = 16; // Declares.bas eSkill.Supervivencia (entra en el regen de stamina)
     public const int SkillNavegacion = 26;    // Declares.bas eSkill.Navegacion (requerida por los barcos)
+    /// <summary>eSkill.Equitacion (Declares.bas:490), la que piden las MONTURAS. Es la hermana de
+    /// <see cref="SkillNavegacion"/>: las 11 monturas de <c>obj.dat</c> traen su <c>MinSkill</c> (25 la común,
+    /// 50 las reforzadas, 65 la de nigromante) igual que los tres barcos, y el original las gatea con la misma
+    /// función. Faltaba, y por eso montarse no pedía nada.</summary>
+    public const int SkillEquitacion = 27;
     // Gathering skills (eSkill): woodcutting, fishing, mining.
     public const int SkillTalar = 20;
     /// <summary>eSkill.botanica (Declares.bas:488): juntar raíces de los árboles con las TIJERAS (obj 885).

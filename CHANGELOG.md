@@ -89,6 +89,25 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   precio del anterior, así que el siguiente objeto que entrara ahí se compraba y se vendía a un precio que no
   era el suyo. Ahora el precio sale siempre del objeto, como en el juego original.
 
+- **Montar pide saber montar.** Cualquiera se subía a una montura con la habilidad de Equitación en cero, y
+  arriba del animal se pega más fuerte. Ahora cada montura exige los puntos que pide en el juego original —de
+  25 a 65 según cuál sea—, igual que los barcos piden Navegación.
+
+- **Meditar no aguanta que te peguen.** La meditación seguía dándote maná mientras te estaban golpeando. Ahora
+  un jugador te la corta de un golpe y una criatura también, si el golpe es lo bastante fuerte para tu
+  Inteligencia y tu Meditar. Y al que medita le cuesta más esquivar, como allá.
+
+- **El barco no se tira ni se rompe estando arriba.** Soltarlo en medio del mar te dejaba caminando sobre el
+  agua para siempre, sin barco con el que volver a la costa. Lo mismo con la montura: tirarla te baja del
+  animal antes de que se vaya al piso.
+
+- **Con la tienda o la bóveda abierta no se toca el piso.** Tirar, levantar y destruir objetos con una ventana
+  de comercio abierta quedaban fuera de la vista del comerciante, y el doble clic abría una segunda ventana
+  encima de la primera.
+
+- **El líder no puede abandonar su propio clan.** Si lo hacía, el clan quedaba sin nadie que pudiera aceptar,
+  echar, declarar la guerra o firmar la paz — y no había forma de arreglarlo desde adentro del juego.
+
 - **El arco tiene su cadencia.** Se podía disparar tan rápido como el cliente mandara los clics: el camino del
   disparo no tenía ninguna espera. Ahora respeta el intervalo del juego original, y como allá, recién disparado
   tampoco se puede pegar ni tirar un hechizo.

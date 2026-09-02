@@ -1161,6 +1161,20 @@ public sealed class NpcSystem
             // El "-N" flotante sobre la cabeza (VB6 SistemaCombate.bas:590: WriteChatOverHeadLocale con el
             // charIndex del ATACANTE y modo 2). Va JUNTO al mensaje de texto, no en su lugar.
             player.Connection?.Send(ServerMessages.DamageOverHead(npc.CharIndex, dmg));
+            // UN GOLPE FUERTE TE SACA DE LA MEDITACIÓN (VB6 NpcDaño, SistemaCombate.bas:593-601). Acá el
+            // original SÍ pone un umbral —a diferencia del PvP, que la corta siempre—: aguanta mientras el daño
+            // no pase de lo que dan la Inteligencia, la skill Meditar y el HP que te QUEDA. Va después de
+            // descontar el golpe y antes de mirar si moriste, que es su lugar en el original.
+            if (player.Meditating
+                && dmg > Combat.UmbralRompeMeditacion(player.Hp, player.Inteligencia,
+                                                      player.Skills[GameLimits.SkillMeditar], _rng.Next(0, 6)))
+            {
+                player.Meditating = false;
+                player.Connection?.Send(ServerMessages.MeditateToggle());
+                player.Connection?.Send(ServerMessages.LocaleMsg(123));   // "Dejas de meditar."
+                _world.BroadcastToObservers(player.Pos, ServerMessages.EfectoCharParticula(
+                    player.CharIndex, (short)PacketDispatcher.ParticleToLevel(player), 0f, true));
+            }
             // VB6 SistemaCombate.bas:749 (NpcAtacaUser): `Call NpcDaño(...)` y acto seguido `WriteUpdateHP`.
             // Éste era el ÚLTIMO call site del UpdateUserStats gordo en un camino caliente — y el más caliente
             // de todos, porque es el PvE: cada golpe que te pega una criatura mandaba 26 bytes en vez de 3.

@@ -47,9 +47,40 @@ public static class Combat
         return Clng(lTemp + 2.5 * Math.Max(level - 12, 0));
     }
 
-    /// <summary>Hit probability % (UserImpacto*, line 212): clamp(50 + (atk-eva)*0.4, 10, 90).</summary>
-    public static long HitChance(long poderAtaque, long poderEvasion)
-        => Math.Clamp(Clng(50 + (poderAtaque - poderEvasion) * 0.4), 10, 90);
+    /// <summary>Hit probability % (UserImpacto*, line 212): clamp(50 + (atk-eva)*0.4, 10, 90).
+    ///
+    /// <para>Y si la VÍCTIMA está MEDITANDO se le recorta la evasión un 25% (<c>UsuarioImpacto</c>,
+    /// SistemaCombate.bas:1123-1128, con el comentario del propio autor: "Se reduce la evasion un 25%"). Es un
+    /// segundo tramo con su propio techo de 90 y <b>sin</b> el piso de 10, así que con la chance ya en el piso
+    /// meditar la sube de 10 a 32. Faltaba entera: meditar en medio de una pelea no costaba nada.</para>
+    ///
+    /// <para>Es de PvP y sólo de PvP: <c>NpcImpacto</c> (:250) y <c>NpcImpactoNpc</c> (:782) calculan la misma
+    /// línea sin esta rama, así que una criatura no aprovecha que estés meditando.</para>
+    ///
+    /// <para>El <c>ProbEvadir</c> del original es un <c>Long</c>, así que el <c>* 0.75</c> entra al entero con
+    /// el redondeo AL PAR de VB6 y no truncado: con la chance en 10 da 67,5 → <b>68</b>, no 67.</para></summary>
+    public static long HitChance(long poderAtaque, long poderEvasion, bool victimaMeditando = false)
+    {
+        long prob = Math.Clamp(Clng(50 + (poderAtaque - poderEvasion) * 0.4), 10, 90);
+        if (!victimaMeditando) return prob;
+        long probEvadir = Clng((100 - prob) * 0.75);
+        return Math.Min(90, 100 - probEvadir);
+    }
+
+    /// <summary>Cuánto daño aguanta la MEDITACIÓN antes de romperse, cuando el golpe lo da una criatura
+    /// (<c>NpcDaño</c>, SistemaCombate.bas:594-600):
+    /// <c>Fix(MinHP / 100 * Inteligencia * Meditar / 100 * 12 / (RandomNumber(0, 5) + 7))</c>. Se corta si el
+    /// daño es <b>mayor</b> que esto — o sea que con la skill Meditar en 0 el umbral es 0 y la parte cualquier
+    /// golpe.
+    ///
+    /// <para>El <c>MinHP</c> es el de DESPUÉS de descontar el golpe: el original resta en la línea anterior. Y
+    /// el <c>Fix</c> trunca hacia cero, no redondea — es la excepción a la regla de la casa, porque acá no hay
+    /// asignación a un entero de por medio.</para>
+    ///
+    /// <para>Es la mitad PvE de la regla. En PvP no hay umbral que valga: <c>UsuarioAtacadoPorUsuario</c> la
+    /// corta siempre.</para></summary>
+    public static long UmbralRompeMeditacion(int hpDespuesDelGolpe, int inteligencia, int meditar, int dado)
+        => (long)Math.Truncate(hpDespuesDelGolpe / 100.0 * inteligencia * meditar / 100.0 * 12 / (dado + 7));
 
     /// <summary>Shield block/evasion bonus (PoderEvasionEscudo, SistemaCombate.bas): added to a defender's
     /// evasion when a shield is equipped. VB6: (Defensa skill * ModClase.Escudo) / 2, assigned to a Long.</summary>

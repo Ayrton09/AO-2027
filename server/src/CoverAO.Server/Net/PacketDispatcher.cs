@@ -246,9 +246,26 @@ public sealed partial class PacketDispatcher
         return true;
     }
 
+    /// <summary>Los paquetes de la FAMILIA DE LOGIN, los únicos que el original acepta con la sesión sin
+    /// personaje adentro: <c>LoginExistingChar</c>, <c>LoginNewChar</c>, <c>ConnectAccount</c>,
+    /// <c>CreateNewAccount</c> y <c>ProcesosLogin</c> (Protocol.bas:126-131). El <c>BorrarPersonaje</c> es
+    /// nuestro y vive en la misma pantalla —se manda con cuenta y clave, antes de entrar a ningún lado—, así
+    /// que pertenece a la familia aunque el VB6 no lo tenga.</summary>
+    private static bool EsDeLaFamiliaDeLogin(ClientPacketId id) => id is ClientPacketId.LoginExistingChar
+        or ClientPacketId.LoginNewChar or ClientPacketId.ConnectAccount or ClientPacketId.CreateNewAccount
+        or ClientPacketId.ProcesosLogin or ClientPacketId.BorrarPersonaje;
+
     public void HandleOne(ClientSession session, ByteQueueReader reader)
     {
         var id = (ClientPacketId)reader.ReadByte();
+        // UN PAQUETE DE LOGIN DESDE ADENTRO CIERRA LA CONEXIÓN (Protocol.bas:148-156: `If UserLogged Then
+        // CloseSocket`). Acá no había preámbulo de ninguna clase y el agujero era grave: `HandleLoginNewChar`
+        // nunca miraba `session.Player`, así que un LoginNewChar mandado con un personaje ya adentro creaba
+        // OTRO y le pisaba el `session.Player`. El viejo quedaba en el mundo con su `Connection` apuntando a
+        // una sesión muerta, `OnDisconnect` sólo atendía al nuevo, y en el login siguiente la rama de rescate
+        // —que exige `Connection is null`— no se cumplía: el personaje quedaba inaccesible hasta reiniciar el
+        // servidor. Con el cliente de stock no se manda, pero el daño era irreversible en caliente.
+        if (EsDeLaFamiliaDeLogin(id) && session.Player is not null) { session.Close("paquete de login estando adentro"); return; }
         switch (id)
         {
             case ClientPacketId.LoginExistingChar: HandleLoginExistingChar(session, reader); break;
@@ -1015,6 +1032,10 @@ public sealed partial class PacketDispatcher
     /// <summary>Binds a loaded/created character to the session and runs the full world-entry sequence.</summary>
     private void SpawnIntoWorld(ClientSession session, Player player, string version)
     {
+        // SEGUNDO CANDADO, y va acá adentro a propósito: el de `HandleOne` corre en el hilo que lee el socket
+        // y ésta es la línea que pisa `session.Player`, en el game loop, donde todo está serializado. Dos
+        // paquetes de login en la misma lectura pasarían los dos por aquel gate; por éste no pasa el segundo.
+        if (session.Player is not null) { session.Close("segunda entrada al mundo en la misma sesión"); return; }
         player.Connection = session;
         session.Player = player;
         session.MarkAuthed();   // entró al mundo → desarma el timeout de autenticación (SEC-3)
@@ -1209,12 +1230,7 @@ public sealed partial class PacketDispatcher
             // CAMINAR CANCELA EL /SALIR en curso (VB6 CancelExit, Modulo_UsUaRiOs.bas:1908-1921, llamado desde
             // HandleWalk en Protocol.bas:1628). La cuenta regresiva de salida es anti-escape: si te atacan y
             // corrés, el original la cancela. Acá seguía corriendo y te sacaba del mundo igual mientras huías.
-            if (p.Saliendo)
-            {
-                p.Saliendo = false; p.SalirSegundos = 0;
-                session.Send(ServerMessages.EjecutarAccion(1));           // el cliente baja el cartel de salida
-                session.Send(ServerMessages.LocaleMsg(365, "", 1));       // "Se ha cancelado la salida."
-            }
+            CancelarSalida(p);
             // Los tres cortes de arriba (meditar/faena/descansar) y este CancelExit van ANTES del paso, no
             // después como en el original: el VB6 llama `MoveUserChar` —que nunca sale del Sub— y sigue de
             // largo, así que un paso rechazado por una pared CORTA IGUAL. Acá el rechazo hace `return`, de modo
@@ -1509,11 +1525,7 @@ public sealed partial class PacketDispatcher
     private void AttackPlayer(ClientSession session, Player p, Player target)
     {
         if (!PuedeAtacar(session, p, target)) return;    // VB6 UsuarioAtacaUsuario:1183 — el primer statement
-        // Las mascotas de los DOS se meten en la pelea (VB6 SistemaCombate.bas:1473-1474). Van por
-        // AttackedBy + NPCDEFENSA, que es la rama de IA que el port ya tenía (NpcSeguirAgresor).
-        MascotasAtacanAlUsuario(victima: target, amo: p);
-        MascotasAtacanAlUsuario(victima: p, amo: target);
-        FlagCriminalIfLegalTarget(session, p, target);   // atacar a un legal sin provocación → criminal (idéntico en magia)
+        FlagCriminalIfLegalTarget(session, p, target);   // adentro: corta la meditación, despierta mascotas, marca criminal
         // Hit chance: attacker Wrestling power vs target Tacticas evasion (real .chr skills).
         double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
         double evasionMod = _data.EvasionMod.TryGetValue(target.Class, out var ev) ? ev : 1.0;
@@ -1531,7 +1543,8 @@ public sealed partial class PacketDispatcher
             double shMod = _data.ShieldMod.TryGetValue(target.Class, out var sm) ? sm : 1.0;
             pe += Combat.PoderEvasionEscudo(target.Skills[GameLimits.SkillDefensa], shMod);
         }
-        if (_rng.Next(1, 101) > Combat.HitChance(pa, pe))
+        // `target.Meditating` se lee ACA, despues del corte de arriba, que es donde lo lee el original.
+        if (_rng.Next(1, 101) > Combat.HitChance(pa, pe, target.Meditating))
         {
             // El fallo tambien se muestra: un "0" flotante sobre uno mismo (SistemaCombate.bas:1248).
             session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));
@@ -1815,7 +1828,7 @@ public sealed partial class PacketDispatcher
         FlagCriminalIfLegalTarget(session, p, target);
         double evasionMod = _data.EvasionMod.TryGetValue(target.Class, out var ev) ? ev : 1.0;
         long pe = Combat.PoderEvasion(target.Skills[GameLimits.SkillTacticas], target.Agility, target.Level, evasionMod);
-        if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), pe))
+        if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), pe, target.Meditating))
         {
             session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));   // el fallo, sin texto
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
@@ -2223,6 +2236,26 @@ public sealed partial class PacketDispatcher
     /// Declares.bas:557 y :551). El original manda la marcha a TODO el mapa y el sanar sólo al área.</summary>
     private const short SndCasamiento = 161, SndSanar = 55;
 
+    /// <summary>¿Alcanza la skill para usar este ítem? (VB6 <c>PuedeUsarSkill</c>, Trabajo.bas:2310). Compara
+    /// contra el <c>MinSkill</c> del objeto y, si no llega, manda el LocaleMsg 477 con el par
+    /// <c>MinSkill%*Skill</c> que el cliente arma como "necesitás tantos puntos en tal habilidad".
+    ///
+    /// <para>Al STAFF no lo gatea, y no es una excepción nuestra: el original envuelve la comparación entera en
+    /// <c>If .flags.Privilegios And PlayerType.User</c>, y un GM entra con el bit de su rango en vez del de User
+    /// (TCP.bas:1909-1924 arranca de <c>Privilegios = 0</c> y le hace OR de uno solo), así que la condición da
+    /// falso y la función devuelve True sin mirar nada. Por eso <c>IsGm</c> alcanza para expresarlo.</para>
+    ///
+    /// <para>Es de los DOS vehículos: los barcos piden Navegación y las monturas Equitación. Estaba escrita a
+    /// mano y sólo del lado del barco, sin la salvedad del staff; del lado de la montura no había nada.</para>
+    /// </summary>
+    private static bool PuedeUsarSkill(ClientSession session, Player p, int skill, ObjInfo obj)
+    {
+        if (p.IsGm) return true;
+        if (p.Skills[skill] >= obj.MinSkill) return true;
+        session.Send(ServerMessages.LocaleMsg(477, $"{obj.MinSkill}%*{skill}"));
+        return false;
+    }
+
     /// <summary>Montar o desmontar (VB6 <c>DoEquita</c>, Trabajo.bas:2340). Está afuera del handler de equipar
     /// porque hay un SEGUNDO camino que desmonta y que no pasa por ahí: caminar a un tile donde no se puede
     /// andar a caballo (ver <see cref="DesmontarSiEntraBajoTecho"/>).
@@ -2231,6 +2264,24 @@ public sealed partial class PacketDispatcher
     /// restaura la apariencia desde el equipo.</summary>
     private void AlternarMontura(ClientSession session, Player p, byte slot, ObjInfo montura)
     {
+        // LAS TRES GUARDAS DE DoEquita, en el orden del original (Trabajo.bas:2342-2363). Ninguna estaba acá:
+        // la de techo/dungeon vivía en HandleEquipItem —o sea que salía ANTES que la de skill, al revés que el
+        // original— y las otras dos no existían. Van adentro del helper porque hay TRES caminos más que
+        // desmontan (caminar bajo techo, que se vaya el ítem entero, el /DESEQUIPAR) y el original los gatea a
+        // los cuatro por igual: en el VB6 la compuerta vive dentro de DoEquita, no en sus llamadores.
+        if (!PuedeUsarSkill(session, p, GameLimits.SkillEquitacion, montura)) return;
+        // Sólo al SUBIRSE: desmontar adentro tiene que poder hacerse, o el que entra a caballo queda trabado
+        // arriba del animal. El original ordena igual — el `If .flags.Montando = 0` envuelve sólo esa rama.
+        if (!p.Mounted && _data.NoSeMontaAca(p.Pos.Map, p.Pos.X, p.Pos.Y))
+        {
+            session.Send(ServerMessages.LocaleMsg(253));   // "No puedes montar aquí"
+            return;
+        }
+        if (p.Navigating) { session.Send(ServerMessages.LocaleMsg(20)); return; }   // no se monta navegando
+        // Montarse te DELATA. `RevealOnAttack` se llama así por su primer call site (el golpe a una criatura),
+        // pero es el helper que rompe los dos estados —oculto y la invisibilidad por hechizo— que es justo lo
+        // que hace acá el original (:2357-2363, el mismo bloque literal que tiene DoNavega).
+        RevealOnAttack(p);
         var inv = p.Inventory[slot];
         p.Mounted = !p.Mounted;
         inv.Equipped = p.Mounted;
@@ -2250,13 +2301,11 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.ConsoleMsg(p.Mounted ? $"Montas {montura.Name}." : $"Desmontas {montura.Name}.", FuenteInfo));
     }
 
-    /// <summary>Entrar a caballo a un lugar donde no se puede andar a caballo te BAJA del animal (VB6
-    /// <c>Modulo_UsUaRiOs.bas:718</c>, dentro del movimiento: <c>If .flags.Montando = 1 Then If Trigger &gt;= 20
-    /// Or Zona = "DUNGEON" Then DoEquita</c>). Se llama después de mover, con la posición nueva ya aplicada —
-    /// que es lo que hace el original, porque mira <c>.Pos</c> y no el destino.</summary>
-    private void DesmontarSiEntraBajoTecho(ClientSession session, Player p)
+    /// <summary>Lo baja de la montura que tiene PUESTA, sea cual sea el slot (VB6 <c>.Invent.MonturaSlot</c>:
+    /// el original se guarda el slot al montar y lo usa despues, sin volver a buscarlo). Si no hay ninguna
+    /// puesta no hace nada.</summary>
+    private void BajarDelAnimal(ClientSession session, Player p)
     {
-        if (!p.Mounted || !_data.NoSeMontaAca(p.Pos.Map, p.Pos.X, p.Pos.Y)) return;
         for (byte s = 1; s <= GameLimits.MaxInventorySlots; s++)
         {
             var inv = p.Inventory[s];
@@ -2264,6 +2313,16 @@ public sealed partial class PacketDispatcher
             var obj = _data.Obj(inv.ObjIndex);
             if (obj is not null && obj.IsMount) { AlternarMontura(session, p, s, obj); return; }
         }
+    }
+
+    /// <summary>Entrar a caballo a un lugar donde no se puede andar a caballo te BAJA del animal (VB6
+    /// <c>Modulo_UsUaRiOs.bas:718</c>, dentro del movimiento: <c>If .flags.Montando = 1 Then If Trigger &gt;= 20
+    /// Or Zona = "DUNGEON" Then DoEquita</c>). Se llama después de mover, con la posición nueva ya aplicada —
+    /// que es lo que hace el original, porque mira <c>.Pos</c> y no el destino.</summary>
+    private void DesmontarSiEntraBajoTecho(ClientSession session, Player p)
+    {
+        if (!p.Mounted || !_data.NoSeMontaAca(p.Pos.Map, p.Pos.X, p.Pos.Y)) return;
+        BajarDelAnimal(session, p);
         p.Mounted = false;   // por si el flag quedó sin su montura en el inventario: no dejarlo colgado
     }
 
@@ -6342,12 +6401,36 @@ public sealed partial class PacketDispatcher
         // La arena está exceptuada de TODO el Sub, no sólo de la parte criminal: es el primer `Exit Sub` del
         // original (:1451), antes que cualquier otra cosa.
         if (DueloDeArena(p, target)) return;
+        // MEDITAR NO AGUANTA UN GOLPE (:1457-1466). Va acá arriba, primero de todo lo que el Sub hace, y NO
+        // mira si el golpe entró: te cortan la meditación por intentarlo. Faltaba entero — la regeneración de
+        // maná del loop sigue mientras `Meditating` esté prendido, así que meditar era maná gratis bajo fuego.
+        //
+        // Y el orden importa para algo más: el recorte del 25% de evasión vive en `UsuarioImpacto`, que corre
+        // JUSTO DESPUÉS de este Sub (:1193 y :1195). O sea que fuera de la arena el recorte no llega a aplicarse
+        // nunca —la meditación ya está apagada— y adentro sí, porque ahí el Sub salió por la línea de arriba.
+        // Eso no se decide en el llamador: sale solo de leer `Meditating` donde el original lo lee.
+        if (target.Meditating)
+        {
+            target.Meditating = false;
+            target.Connection?.Send(ServerMessages.MeditateToggle());
+            target.Connection?.Send(ServerMessages.LocaleMsg(123));      // "Dejas de meditar."
+            _world.BroadcastToObservers(target.Pos, ServerMessages.CreateFX(target.CharIndex, 0, 0));
+            _world.BroadcastToObservers(target.Pos,
+                ServerMessages.EfectoCharParticula(target.CharIndex, (short)ParticleToLevel(target), 0f, true));
+        }
         // Anti-escape: ni el agredido ni el agresor pueden mapear por 7 segundos. Se marca ANTES de saber si el
         // golpe entró — el original llama a este Sub antes de `UsuarioImpacto` (SistemaCombate.bas:1193), así que
         // errarle también te traba.
         long trabaMapeo = _loop.Tick + TicksAntiMapeo;
         p.MapeoBloqueadoHastaTick = trabaMapeo;
         target.MapeoBloqueadoHastaTick = trabaMapeo;
+        // Las mascotas de los DOS se meten en la pelea (:1473-1474). Van por AttackedBy + NPCDEFENSA, que es la
+        // rama de IA que el port ya tenía. Estaban en el llamador del melee, o sea AFUERA: no se despertaban ni
+        // con un hechizo ni con una flecha —el original llama a este Sub desde los tres caminos— y encima
+        // atacaban dentro de la arena, que es lo único de lo que la línea de arriba exceptúa.
+        MascotasAtacanAlUsuario(victima: target, amo: p);
+        MascotasAtacanAlUsuario(victima: p, amo: target);
+        CancelarSalida(target);   // :1477 — al agredido se le cancela el /SALIR en curso (es anti-escape)
         // Bandos enfrentados del VB6: Caos ↔ (Armada|Milicia), e Imperio ↔ República (Armada ↔ Milicia). Entre
         // ellos el combate está sancionado y no penaliza.
         bool pEjercito = p.IsArmada || p.IsMilicia, tEjercito = target.IsArmada || target.IsMilicia;
@@ -6659,6 +6742,15 @@ public sealed partial class PacketDispatcher
             if (p is null) return;
             if (string.IsNullOrEmpty(p.GuildName)) return;   // VB6 HandleGuildLeave: fuera de un clan, silencio
             var guild = _world.GuildByName(p.GuildName);
+            // EL LÍDER NO SE VA DE SU PROPIO CLAN. Es la última línea de `m_PuedeSalirDeClan`
+            // (modGuilds.bas:668): `GetLeader <> Nombre`. Y es silenciosa, porque cuando devuelve False el
+            // `m_EcharMiembroDeClan` contesta 0 y el `Else` del handler tiene su mensaje comentado.
+            //
+            // No era cosmético: sin líder, el clan quedaba inservible para siempre. Ni el que se fue —ya no
+            // pertenece— ni ningún miembro —no es el líder— pasa `RequireGuildLeader`, así que no se pueden
+            // abrir elecciones, ni aceptar o rechazar a nadie, ni declarar guerra o paz, ni echar. Y se
+            // disparaba con un solo paquete del cliente normal. La compuerta hermana, la de echar, ya estaba.
+            if (guild is not null && string.Equals(p.Name, guild.LeaderName, StringComparison.OrdinalIgnoreCase)) return;
             guild?.Members.Remove(p.Name);
             PersistGuilds();
             foreach (var m in _world.GuildMembersOnline(p.GuildName))
@@ -6941,6 +7033,10 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleDropDestroy: Protocol.bas:2161 (un muerto no destruye objetos)
+            // NI NAVEGANDO NI A CABALLO (:2110, la misma linea que el gate del muerto). Destruir el barco en
+            // medio del mar dejaba `Navigating` prendido y persistido, o sea navegacion permanente sin barco.
+            if (p.Navigating || p.Mounted) return;
+            if (p.Comerciando) return;   // :2113, con el mismo comentario de trampa que el de tirar
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
             int destroy = Math.Clamp((int)amount, 1, inv.Amount);
@@ -7635,12 +7731,17 @@ public sealed partial class PacketDispatcher
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
             // Doble clic a un mercader → la tienda, salvo que no te atienda por tu facción (Acciones.bas:180-197,
             // el mismo bloque que el `CommerceStart`). Es el camino por el que el cliente web abre el comercio.
-            if (npc.IsMerchant) { if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
-            if (npc.IsBanker) { OpenBank(session, p, npc); return; }        // double-click a banker → bank window
+            // CON UNA VENTANA YA ABIERTA, EL DOBLE CLIC NO ABRE OTRA. El original pone `If .flags.Comerciando
+            // Then Exit Sub` —mudo, sin el LocaleMsg 387 de la apertura directa— en TRES de sus ramas de NPC:
+            // mercader (Acciones.bas:170), entrenador (:274) y banquero (:290). En las otras tres —Shop,
+            // Convertidores y facciones— no está, así que el gate va por rama y no arriba de todas. Sin esto se
+            // podía tener la tienda y la bóveda abiertas a la vez: `BankOpen && TradingWith != 0`.
+            if (npc.IsMerchant) { if (p.Comerciando) return; if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
+            if (npc.IsBanker) { if (p.Comerciando) return; OpenBank(session, p, npc); return; }
             // Sólo la lista: la rama Entrenador del original (Acciones.bas:271) manda `WriteTrainerCreatureList`
             // y nada más. Acá iba además un ConsoleMsg ("estas son las criaturas que puedo entrenar") que el VB6
             // no emite — el mismo patrón de mensaje espurio que el barrido del oráculo cerró 16 veces.
-            if (npc.TrainerCreatures is not null) { session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
+            if (npc.TrainerCreatures is not null) { if (p.Comerciando) return; session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
             // DESVIACIÓN DELIBERADA DEL SLICE (decidida, no olvidada). El original CALLA acá: su `Accion` rutea
             // por NPCtype y no tiene rama `Else`, así que un NPC sin rol no contesta nada al doble clic. Se
             // mantiene el diálogo porque sin él las criaturas quedan mudas.
@@ -8464,12 +8565,7 @@ public sealed partial class PacketDispatcher
             if (Math.Abs(tx - p.Pos.X) > RangoVisionX || Math.Abs(ty - p.Pos.Y) > RangoVisionY)
             { session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y)); return; }
             // CancelExit (:2651): trabajar también cancela la cuenta regresiva del /SALIR.
-            if (p.Saliendo)
-            {
-                p.Saliendo = false; p.SalirSegundos = 0;
-                session.Send(ServerMessages.EjecutarAccion(1));
-                session.Send(ServerMessages.LocaleMsg(365, "", 1));
-            }
+            CancelarSalida(p);
             // Combate a distancia con arco (VB6 HandleWorkLeftClick, Case eSkill.Proyectiles, Protocol.bas:2751).
             if (skill == GameLimits.SkillProyectiles) { RangedShot(session, p, tx, ty); return; }
             // MAGIA (`Case eSkill.magia`, :2918): el segundo paquete del casteo. `CastSpell` dejó la ranura elegida
@@ -9972,7 +10068,7 @@ public sealed partial class PacketDispatcher
     /// <summary>Meditation-aura particle id by level/faction (ParticleToLevel, Modulo_UsUaRiOs.bas:2286). Exact
     /// for levels 1-33/50/GM; for 34-49 the VB6 picks by its 6-value faction enum which the slice models as
     /// citizen/criminal only, so those two levels' particle is approximated (citizen→Ciudadano, criminal→Caos).</summary>
-    private static int ParticleToLevel(Player p)
+    internal static int ParticleToLevel(Player p)
     {
         if (p.IsGm) return 128;
         int lvl = p.Level;
@@ -10125,6 +10221,21 @@ public sealed partial class PacketDispatcher
         });
     }
 
+    /// <summary>Cancela la cuenta regresiva del <c>/SALIR</c> (VB6 <c>CancelExit</c>,
+    /// Modulo_UsUaRiOs.bas:1908-1921): baja el cartel del cliente y avisa. Es anti-escape — la salida existe
+    /// para que no te vayas del mundo en medio de una pelea, así que cualquier cosa que demuestre que seguís
+    /// jugando la cancela: caminar, trabajar, y <b>que te ataquen</b>, que era el call site que faltaba.
+    ///
+    /// <para>El original tiene además una rama para el desconectado (<c>ConnIDValida = False</c>) que sólo
+    /// reajusta el contador. Acá un jugador sin conexión ya no está en el mundo.</para></summary>
+    private static void CancelarSalida(Player p)
+    {
+        if (!p.Saliendo) return;
+        p.Saliendo = false; p.SalirSegundos = 0;
+        p.Connection?.Send(ServerMessages.EjecutarAccion(1));       // el cliente baja el cartel de salida
+        p.Connection?.Send(ServerMessages.LocaleMsg(365, "", 1));   // "Se ha cancelado la salida."
+    }
+
     /// <summary>VB6 <c>AllMascotasAtacanUser</c> (SistemaCombate.bas:1482): las mascotas de <paramref name="amo"/>
     /// salen a pelear contra <paramref name="victima"/>. El original las manda por <c>AttackedBy</c> +
     /// <c>NPCDEFENSA</c> + <c>Hostile = 1</c>, que es exactamente la rama de IA que el port ya tenía; lo único
@@ -10195,6 +10306,9 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null || slot < 1) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleDrop: un muerto no puede tirar objetos al suelo
+            // TIRAR EN MEDIO DE UN COMERCIO ES TRAMPA y el original corta seco, con su propio comentario:
+            // "he can't drop items => He's cheating, we kick him" (:2021). Va antes que la rama del oro.
+            if (p.Comerciando) return;
             // EL ORO VIAJA POR UN SLOT QUE NO EXISTE, a propósito: `FLAGORO = MAX_INVENTORY_SLOTS + 1`
             // (Declares.bas:576). El port rechazaba todo slot > 25 antes de mirar nada, así que la rama del
             // oro era inalcanzable y no se podía tirar una moneda al piso. VB6 Protocol.bas:2025.
@@ -10212,6 +10326,20 @@ public sealed partial class PacketDispatcher
             if (slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
+            // TIRAR LA MONTURA ESTANDO ARRIBA TE BAJA PRIMERO (:2042-2046). Y no corta: el original desmonta y
+            // sigue de largo hasta el DropObj, asi que el animal igual se va al piso. Lo que baja es el que
+            // esta PUESTO, no el del slot que se tira — el original usa `.Invent.MonturaSlot`.
+            if (p.Mounted && _data.Obj(inv.ObjIndex) is { IsMount: true })
+            {
+                BajarDelAnimal(session, p);
+                inv = p.Inventory[slot];   // el desmontado toca el slot: releerlo
+            }
+            // EL BARCO NAVEGANDO NO SE TIRA (:2049-2053). Sin esto el barco se iba al piso, `Navigating` quedaba
+            // prendido —`DoNavega` nunca marco el slot como equipado, asi que el desequipado automatico salia en
+            // su primera linea— y el flag se PERSISTE: quedabas caminando sobre el agua para siempre, sin barco
+            // que usar para desembarcar. Y no hacia falta ningun cliente raro: alt+clic sobre el slot.
+            if (p.Navigating && _data.Obj(inv.ObjIndex) is { IsBoat: true })
+            { session.Send(ServerMessages.LocaleMsg(20)); return; }
             // `Destruir=1` (obj.dat): el objeto NO se tira al piso. El original corta acá y en vez del DropObj
             // manda un ShowMessageBox (Protocol.bas:2057). Lo traen 5 ítems —los sacos de créditos, el de tiempo
             // de donador y el Anillo Dorado—, y son justamente los que uno no quiere perder por un click.
@@ -10245,6 +10373,8 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (DeadCheck(session, p)) return;   // VB6 HandlePickUp: Protocol.bas:1751
+            // Y levantar en medio de un comercio tambien es trampa (:1754, mismo comentario que el de tirar).
+            if (p.Comerciando) return;
             if (!_world.TryGetGround(p.Pos, out var ground)) { session.Send(ServerMessages.LocaleMsg(261)); return; }  // VB6 GetObj
             // VB6 InvUsuario.bas:619 (`If ObjData(...).Agarrable <> 1 Then`): el decorado del mundo NO se levanta.
             // El sentido del dato está INVERTIDO — `Agarrable = 1` significa fijo. De los 176 objetos del mapa 1,
@@ -11207,16 +11337,7 @@ public sealed partial class PacketDispatcher
             if (obj is null) return;
             if (obj.IsMount)
             {
-                // No se monta bajo techo ni en un dungeon (VB6 DoEquita, Trabajo.bas:2345). El gate va sólo al
-                // MONTAR: desmontar adentro tiene que poder hacerse, o el jugador que entra a caballo queda
-                // trabado arriba del animal. El original ordena igual — el `If .flags.Montando = 0` envuelve
-                // sólo la rama de subirse.
-                if (!p.Mounted && _data.NoSeMontaAca(p.Pos.Map, p.Pos.X, p.Pos.Y))
-                {
-                    session.Send(ServerMessages.LocaleMsg(253));   // "No puedes montar aquí"
-                    return;
-                }
-                AlternarMontura(session, p, slot, obj);
+                AlternarMontura(session, p, slot, obj);   // los gates viven adentro, como en DoEquita
                 return;
             }
             int cat = Equipment.Category(obj);
@@ -11531,10 +11652,12 @@ public sealed partial class PacketDispatcher
     /// apariencia desde el equipo. Emite NavigateToggle + re-broadcast de apariencia.</summary>
     private void DoNavega(ClientSession session, Player p, byte slot, Data.ObjInfo boat)
     {
+        // El gate de skill es lo PRIMERO y está afuera del if: el original lo pone antes de mirar si embarca o
+        // desembarca. Estaba escrito a mano acá adentro y le faltaba la salvedad del staff, que ahora vive en
+        // el helper compartido con la montura.
+        if (!PuedeUsarSkill(session, p, GameLimits.SkillNavegacion, boat)) return;
         if (!p.Navigating)
         {
-            if (p.Skills[GameLimits.SkillNavegacion] < boat.MinSkill)
-            { session.Send(ServerMessages.LocaleMsg(477, $"{boat.MinSkill}%*{GameLimits.SkillNavegacion}")); return; }
             if (!_data.WaterAdjacent(p.Pos.Map, p.Pos.X, p.Pos.Y))
             { session.Send(ServerMessages.LocaleMsg(394)); return; }   // "¡Debes aproximarte al agua para usar el barco!"
             p.Navigating = true;
@@ -11543,6 +11666,7 @@ public sealed partial class PacketDispatcher
             p.Head = 0;
             p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
             if (p.Mounted) { p.Mounted = false; session.Send(ServerMessages.MontateToggle()); }
+            RevealOnAttack(p);   // embarcar también te delata (:135-142), igual que montarse
         }
         else
         {
