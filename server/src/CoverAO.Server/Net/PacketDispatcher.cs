@@ -2291,9 +2291,10 @@ public sealed partial class PacketDispatcher
     {
         // LAS TRES GUARDAS DE DoEquita, en el orden del original (Trabajo.bas:2342-2363). Ninguna estaba acá:
         // la de techo/dungeon vivía en HandleEquipItem —o sea que salía ANTES que la de skill, al revés que el
-        // original— y las otras dos no existían. Van adentro del helper porque hay TRES caminos más que
-        // desmontan (caminar bajo techo, que se vaya el ítem entero, el /DESEQUIPAR) y el original los gatea a
-        // los cuatro por igual: en el VB6 la compuerta vive dentro de DoEquita, no en sus llamadores.
+        // original— y las otras dos no existían. Van adentro del helper porque hay tres caminos MÁS que llegan
+        // acá —caminar bajo techo, que el ítem se vaya entero del inventario, y tirarlo al piso— y el original
+        // los gatea a los cuatro por igual: en el VB6 la compuerta vive dentro de DoEquita, no en sus
+        // llamadores. Es la misma forma que el mercader, el correo y el hechizo de área.
         if (!PuedeUsarSkill(session, p, GameLimits.SkillEquitacion, montura)) return;
         // Sólo al SUBIRSE: desmontar adentro tiene que poder hacerse, o el que entra a caballo queda trabado
         // arriba del animal. El original ordena igual — el `If .flags.Montando = 0` envuelve sólo esa rama.
