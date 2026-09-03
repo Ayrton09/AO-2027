@@ -159,6 +159,12 @@ public sealed class Npc
     /// <summary>CharIndex of the player who summoned this NPC (0 = none). Summons don't attack their owner.</summary>
     public short OwnerCharIndex { get; set; }
 
+    /// <summary>El jugador que se APROPIÓ de esta criatura por pegarle (VB6 <c>Npclist().Owner</c>). <b>No es
+    /// lo mismo que <see cref="OwnerCharIndex"/></b>, que es el amo de una MASCOTA (<c>MaestroUser</c>): esto
+    /// es la pertenencia temporal de una criatura salvaje, la que decide a quién persigue y a quién le deja
+    /// pegarle. Dura <c>[TIMERS] IntervaloOwnedNpc</c> desde el último golpe y se limpia al morir.</summary>
+    public short ApropiadoPor { get; set; }
+
     /// <summary>El NPC al que esta criatura le está pegando (VB6 <c>Npclist().TargetNPC</c>). Se lo pone
     /// <c>CheckPets</c> (SistemaCombate.bas:630) cuando el AMO ataca a alguien: así una mascota pelea lo
     /// que pelea su dueño. 0 = ninguno.</summary>

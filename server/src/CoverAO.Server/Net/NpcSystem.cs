@@ -180,9 +180,16 @@ public sealed class NpcSystem
     /// tocar aunque la clave exista en la fuente.</summary>
     public long ParalisisDeNpcTicks { get; set; } = 500;
 
+    /// <summary>Cuánto dura la pertenencia de una criatura, en ms (<c>[TIMERS] IntervaloOwnedNpc</c>). Lo pone
+    /// el arranque desde el Server.ini.</summary>
+    public int IntervaloNpcApropiado { get; set; } = PertenenciaDeNpc.IntervaloPorDefectoMs;
+
     public void Update(long tick)
     {
         _tick = tick;
+        // VENCIMIENTO DE LA PERTENENCIA (VB6 ValidarPermanenciaNpc, MODULO_NPCs.bas:1167, desde el loop
+        // principal): al que dejó de golpear su criatura por más del intervalo, se le suelta.
+        PacketDispatcher.VencerPertenencias(_world, Environment.TickCount64, IntervaloNpcApropiado);
         // Revive en ARENA con delay (VB6 DoResucitar, mMainLoop.bas:235 + Modulo_UsUaRiOs.bas:33): un jugador que
         // murió en zona de pelea queda `Resucitando` (lo marca KillPlayer) y DarVida lo levanta recién a los ~2500ms.
         // Fuera de arena NO hay auto-revive: el muerto queda fantasma hasta un revive manual (sacerdote/hechizo/hogar).
@@ -440,6 +447,35 @@ public sealed class NpcSystem
     /// </list></summary>
     private void NpcIrUsuarioCercano(Npc npc)
     {
+        // EL QUE SE LA APROPIÓ TIENE PRIORIDAD (VB6 AI_NPC.bas:307-327: "Tiene prioridad de seguir al usuario
+        // al que le pertenece si esta en el rango de vision"). Es lo que le da sentido a toda la pertenencia:
+        // la criatura que estás peleando te sigue a VOS aunque haya alguien más cerca, así que el que llega
+        // después no te la puede robar quedándose en el medio.
+        //
+        // OJO QUE LOS FILTROS NO SON LOS DEL BUCLE DE ABAJO, y acá se copian los de arriba: el bloque del dueño
+        // mira Invisible y Oculto y NADA MÁS. No pregunta si está MUERTO —o sea que la criatura te sigue
+        // persiguiendo el cadáver hasta que la marca vence— ni si es perseguible, que en este bloque sería
+        // código muerto de todos modos porque un GM nunca se apropia de nada (`ApropioNpc` sale con `EsGm`).
+        // El tercer filtro del original es `flags.Ignorado`, que este port no modela.
+        if (npc.ApropiadoPor != 0 && _world.PlayerByCharIndex(npc.ApropiadoPor) is { } duenio
+            && duenio.Pos.Map == npc.Pos.Map
+            && Math.Abs(duenio.Pos.X - npc.Pos.X) <= RangoVisionX
+            && Math.Abs(duenio.Pos.Y - npc.Pos.Y) <= RangoVisionY
+            && !duenio.Invisible && !duenio.Oculto)
+        {
+            // Y ACÁ TAMBIÉN TIRA MAGIA (`If .flags.LanzaSpells <> 0 Then NpcLanzaUnSpell`, :319). Faltaba: una
+            // criatura maga que te hubiera marcado dejaba de castear justo contra vos, que es a quien el
+            // original le apunta primero. Lanza Y ADEMÁS se mueve — no sale del bloque como en la fase de
+            // ataque, donde castear reemplaza al golpe.
+            if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, duenio);
+            byte hd = FindDirection(npc, duenio.Pos);
+            if (hd != 0)
+            {
+                var (dx0, dy0) = hd switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
+                MoveNpc(npc, npc.Pos.X + dx0, npc.Pos.Y + dy0, hd);
+            }
+            return;
+        }
         foreach (var p in _world.Players)
         {
             if (p.Pos.Map != npc.Pos.Map) continue;

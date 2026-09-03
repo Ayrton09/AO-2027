@@ -668,7 +668,10 @@ public static class ServerMessages
             // así que todos valen 100 por el default del original y el nivel se esconde para casi cualquiera.
             .WriteInteger(quienMira.Level + 10 >= npc.Template.Nivel ? (short)npc.Template.Nivel : (short)255)
             .WriteByte((byte)(npc.OwnerCharIndex != 0 ? 1 : 0))   // MaestroUser: es mascota de alguien
-            .WriteByte((byte)(npc.OwnerCharIndex != 0 ? 1 : 0))   // Owner: el slice no separa amo de dueño
+            // Y el segundo byte es el OTRO dueño, el de la pertenencia temporal por haberle pegado
+            // (`Npclist().Owner`). Acá iba repetido el del amo, con la nota "el slice no separa amo de dueño":
+            // ahora sí los separa, y éste es el único lugar por el que ese estado sale al cliente.
+            .WriteByte((byte)(npc.ApropiadoPor != 0 ? 1 : 0))
             .ToArray();
     }
 

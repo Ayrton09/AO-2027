@@ -1909,29 +1909,140 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>
-    /// El gate FACCIONARIO de <c>PuedeAtacarNPC</c> (VB6 SistemaCombate.bas:1752), el que corre después del
-    /// 298 y del gate de distancia: <b>un Armada Real no puede atacar directamente a una criatura sin
-    /// dueño</b> — LocaleMsg 272 y el ataque no sale. Vale para el melee, la magia y el tiro, porque en el
+    /// La mitad FACCIONARIA y de PERTENENCIA de <c>PuedeAtacarNPC</c> (VB6 SistemaCombate.bas:1697), la que
+    /// corre después del 298 y del gate de distancia. Vale para el melee, la magia y el tiro, porque en el
     /// original los tres pasan por la misma función.
     ///
-    /// OJO con el comentario del original ("No era un Guardia, asi que es una criatura No-Hostil común"):
-    /// el <c>If</c> de hostilidad que lo acotaba <b>no está</b> en este código —quedó la sangría huérfana—,
-    /// así que la regla alcanza a TODA criatura sin dueño. El veredicto lo da la línea que corre, no el
-    /// comentario que la acompaña.
+    /// <para><b>El default del original es PODER.</b> La función termina en <c>PuedeAtacarNPC = True</c>, así
+    /// que cada rama que prohíbe sale con <c>Exit Function</c> sin asignar. Leerlo al revés —suponer que hay
+    /// que habilitar— invertiría medio combate.</para>
     ///
-    /// El original anida el chequeo bajo <c>If Not esRene</c>, que es redundante (renegado es status 1 y
-    /// Armada 5: nunca los dos a la vez); se deja escrito igual para que se lea como el original.
+    /// <para>OJO con el comentario del original ("No era un Guardia, asi que es una criatura No-Hostil
+    /// común"): el <c>If</c> de hostilidad que lo acotaba <b>no está</b> en este código —quedó la sangría
+    /// huérfana—, así que la regla del Armada alcanza a TODA criatura sin dueño.</para>
     ///
-    /// La OTRA rama que emite 272 —mascota de un Caos atacada por un Caos, :1798— es <b>inalcanzable</b>:
-    /// vive dentro del <c>Else</c> de <c>If Not esRene(dueño)</c>, o sea con el dueño en status 1, y ahí
-    /// pregunta <c>esCaos(dueño)</c>, que es status 4. No se porta.
+    /// <para>El original anida el chequeo del Armada bajo <c>If Not esRene</c>, que es redundante (renegado es
+    /// status 1 y Armada 5: nunca los dos a la vez); se deja escrito igual para que se lea como allá.</para>
     /// </summary>
-    private bool ArmadaPuedeAtacarNpc(ClientSession session, Player p, Npc npc)
+    /// <param name="paraliza">El hechizo es de parálisis/inmovilización. El original lo trata distinto: no
+    /// cambia la pertenencia de una criatura que ya tiene dueño, y sobre una que ya está quieta abre su propio
+    /// árbol faccionario.</param>
+    /// <param name="esMascota">Lo tira una MASCOTA y no el jugador: entonces no se apropia de nada
+    /// (el <c>IsPet</c> del original).</param>
+    private bool PuedeAtacarNpc(ClientSession session, Player p, Npc npc, bool paraliza = false, bool esMascota = false)
     {
-        if (npc.OwnerCharIndex != 0) return true;                       // VB6: `If .MaestroUser = 0`
-        if (p.FactionStatus == Player.StatusCriminal || !p.IsArmada) return true;
-        session.Send(ServerMessages.LocaleMsg(272));
-        return false;
+        // --- La criatura NO es mascota de nadie (VB6 `If .MaestroUser = 0`, :1752) -----------------------
+        if (npc.OwnerCharIndex == 0)
+        {
+            if (!p.IsRenegado && p.IsArmada) { session.Send(ServerMessages.LocaleMsg(272)); return false; }
+        }
+        // --- La criatura ES mascota de alguien (:1768) ----------------------------------------------------
+        else if (_world.PlayerByCharIndex(npc.OwnerCharIndex) is { } amo)
+        {
+            if (!amo.IsRenegado)
+            {
+                if (p.IsArmada) return false;        // un Armada no le pega a la mascota de un ciudadano: mudo
+                if (!p.IsRenegado) return true;      // el resto sí, y sale YA: una mascota no se apropia
+            }
+            // La otra rama —mascota de un renegado, con `esCaos(amo)`— es INALCANZABLE: vive dentro del
+            // `Else` de `If Not esRene(amo)`, o sea con el amo en status 1, y ahí pregunta si es status 4.
+        }
+
+        // --- PERTENENCIA: de quién es la criatura por haberle pegado (:1809) ------------------------------
+        var duenio = _world.PlayerByCharIndex(npc.ApropiadoPor);
+        if (duenio is null)
+        {
+            // Sin dueño: se la apropia. Sólo los que tienen bando —o sea, no un renegado suelto— y nunca una
+            // mascota. Si ya tenía otra, con un hechizo inmovilizante NO la cambia.
+            if ((!p.IsRenegado || p.IsCaos) && !esMascota)
+            {
+                if (p.NpcApropiado == 0 || !paraliza) ApropiarNpc(p, npc);
+            }
+            return true;
+        }
+
+        if (duenio.CharIndex == p.CharIndex)          // es MI criatura: puedo, y renuevo el reloj
+        {
+            RenovarPertenencia(p);
+            return true;
+        }
+        if (MismoClan(duenio, p)) return true;        // del mismo clan: pasan, y NO renueva el reloj
+
+        if (SeLeAgotoLaPertenencia(duenio))           // se le acabó el tiempo: se la roba
+        {
+            PerderNpc(duenio);
+            ApropiarNpc(p, npc);
+            return true;
+        }
+
+        if (paraliza)
+        {
+            // Sobre una criatura que YA está quieta el original abre el árbol faccionario; sobre una que no,
+            // deja paralizar siempre (y no cambia el dueño: su `If OwnerUserIndex = 0` de ahí está muerto,
+            // porque en esta rama el dueño existe).
+            if (npc.ParalyzedUntilTick <= _loop.Tick) return true;   // no está quieta: se puede siempre
+            if (!p.IsRenegado && !duenio.IsRenegado)
+            {
+                if (p.IsArmada && duenio.IsArmada) { session.Send(ServerMessages.LocaleMsg(272)); return false; }
+                return true;
+            }
+            if (p.IsCaos && duenio.IsCaos) return false;   // Caos contra Caos: mudo
+            return true;
+        }
+
+        // Golpe normal sobre la criatura de OTRO (:1893)
+        if (!duenio.IsRenegado)
+        {
+            if (p.IsArmada && duenio.IsArmada) { session.Send(ServerMessages.LocaleMsg(272)); return false; }
+            return true;   // ciudadano contra criatura de ciudadano: el original NO lo corta (cae en el True final)
+        }
+        if (p.IsCaos && duenio.IsCaos) return false;       // Caos contra criatura de Caos: mudo
+        return true;
+    }
+
+    /// <summary>Mismo clan y con clan (VB6 <c>SameClan</c>, SistemaCombate.bas:1980: los dos GuildIndex
+    /// iguales y distintos de cero).</summary>
+    private static bool MismoClan(Player a, Player b) =>
+        !string.IsNullOrEmpty(a.GuildName) && string.Equals(a.GuildName, b.GuildName, StringComparison.OrdinalIgnoreCase);
+
+    private void RenovarPertenencia(Player p) => PertenenciaDeNpc.Renovar(p, Environment.TickCount64);
+
+    private bool SeLeAgotoLaPertenencia(Player duenio) =>
+        PertenenciaDeNpc.SeAgoto(duenio, Environment.TickCount64, _ini.IntervaloNpcApropiado);
+
+    private void ApropiarNpc(Player p, Npc npc) => PertenenciaDeNpc.Apropiar(
+        p, npc, Environment.TickCount64, _data.IsSafeZone(p.Pos.Map, p.Pos.X, p.Pos.Y), SoltarLaMarca);
+
+    private void PerderNpc(Player p) => PertenenciaDeNpc.Perder(p, SoltarLaMarca, () => MascotasVuelvenConSuAmo(_world, p));
+
+    private void SoltarLaMarca(short npcCharIndex)
+    {
+        if (_world.NpcByIndex(npcCharIndex) is { } npc) npc.ApropiadoPor = 0;
+    }
+
+    /// <summary>Las mascotas del jugador dejan lo que estaban peleando y vuelven con él (VB6 <c>FollowAmo</c>,
+    /// llamado desde <c>PerdioNpc</c>). Es <c>internal static</c> porque el vencimiento por tiempo lo dispara
+    /// el loop de criaturas, no un paquete.</summary>
+    internal static void MascotasVuelvenConSuAmo(World world, Player p)
+    {
+        foreach (var mascota in world.Npcs)
+            if (mascota.OwnerCharIndex == p.CharIndex && mascota.IsAlive)
+            { mascota.AttackedBy = null; mascota.TargetNpcCharIndex = 0; mascota.Follow = true; }
+    }
+
+    /// <summary>El vencimiento por TIEMPO de la pertenencia (VB6 <c>ValidarPermanenciaNpc</c>,
+    /// MODULO_NPCs.bas:1167, llamado desde el loop principal). Lo corre <c>NpcSystem</c> una vez por vuelta:
+    /// al que se le pasó el intervalo sin volver a golpear, la criatura le queda libre.</summary>
+    internal static void VencerPertenencias(World world, long ahoraMs, int intervaloMs)
+    {
+        foreach (var p in world.Players)
+        {
+            if (p.NpcApropiado == 0) continue;
+            if (!PertenenciaDeNpc.SeAgoto(p, ahoraMs, intervaloMs)) continue;
+            PertenenciaDeNpc.Perder(p,
+                idx => { if (world.NpcByIndex(idx) is { } n) n.ApropiadoPor = 0; },
+                () => MascotasVuelvenConSuAmo(world, p));
+        }
     }
 
     private void AttackNpc(ClientSession session, Player p, Npc npc)
@@ -1941,7 +2052,7 @@ public sealed partial class PacketDispatcher
         // de servicio (los NPCs de test de Program.cs traen su flag pero el default Attackable=true). LocaleMsg 298.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
-        if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
+        if (!PuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         RevealOnAttack(p);   // golpear a un NPC revela ocultamiento e invisibilidad por hechizo (VB6 UsuarioAtacaNpc, SistemaCombate.bas:898)
         // VB6 NPCAtacado (Modulo_UsUaRiOs.bas:1106), llamado desde UsuarioAtacaNpc (SistemaCombate.bas:906) ANTES
         // de la tirada de acierto — o sea que un golpe FALLADO igual provoca. El NPC recuerda a su agresor y se
@@ -2598,7 +2709,7 @@ public sealed partial class PacketDispatcher
         // VB6 PuedeAtacarNPC: los NPCs de servicio no se tocan — el mismo gate que el daño.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
-        if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
+        if (!PuedeAtacarNpc(session, p, npc, paraliza: true)) return;   // el original lo trata aparte   // VB6 PuedeAtacarNPC:1752 — va después del 298
 
         npc.AttackedBy = p.Name;   // NPCAtacado: paralizarla la provoca igual que pegarle
         npc.Hostile = true;
@@ -2614,7 +2725,7 @@ public sealed partial class PacketDispatcher
         // VB6 PuedeAtacarNPC: los NPCs de servicio no son atacables — mismo gate que AttackNpc.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
-        if (!ArmadaPuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
+        if (!PuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         npc.AttackedBy = p.Name;   // VB6 NPCAtacado: lo provoca y lo vuelve hostil para defenderse
         npc.Hostile = true;
         int damage = Combat.EfectoHechizoArea3Pct(amount, p.Level);   // VB6: daño + Porcentaje(daño, 3*ELV), piso 0

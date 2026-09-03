@@ -200,6 +200,15 @@ public sealed class ServerIni
     /// </summary>
     public int IntervaloArco { get; private set; } = 1100;
 
+    /// <summary>Cuánto le dura a un jugador la PERTENENCIA de una criatura que golpeó
+    /// (<c>[TIMERS] IntervaloOwnedNpc</c>, 18.000 ms en el install; VB6 <c>IntervaloPerdioNpc</c>,
+    /// modNuevoTimer.bas:351). Pasado ese rato sin volver a pegarle, la criatura queda libre y otro se la
+    /// puede apropiar.
+    ///
+    /// <para>Es de <c>[TIMERS]</c> y no de <c>[INTERVALOS]</c> — el original tiene las dos secciones y ésta
+    /// era la única de TIMERS que hacía falta leer.</para></summary>
+    public int IntervaloNpcApropiado { get; private set; } = 18_000;
+
     /// <summary>Las claves de <c>[INTERVALOS]</c> que el archivo trae ESCRITAS, distinguidas de las que están
     /// tomando su valor por defecto.
     ///
@@ -650,6 +659,7 @@ public sealed class ServerIni
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
+        cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
         // Mismo recorte que StartPort: un valor fuera de rango se ignora y vale el real. Anunciarle al
         // cliente un puerto imposible lo dejaría sin poder conectarse nunca, y el ini se edita a mano.
         int wsPublico = ini.GetInt("INIT", "PuertoWebSocketPublico", 0);

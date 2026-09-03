@@ -501,6 +501,12 @@ public sealed class Player
     // de reloj monótono (Environment.TickCount64). El dispatcher rechaza el que llega antes del intervalo.
     public long LastWalkMs { get; set; }
     public long LastAttackMs { get; set; }
+    /// <summary>La criatura de la que este jugador se apropió, por charIndex (VB6 <c>flags.OwnedNpc</c>). Es
+    /// UNA sola: apropiarse de otra suelta la anterior.</summary>
+    public short NpcApropiado { get; set; }
+    /// <summary>Cuándo fue el último golpe que renovó esa pertenencia (VB6
+    /// <c>Counters.TimerPerteneceNpc</c>), en ms de reloj monótono.</summary>
+    public long TimerNpcApropiadoMs { get; set; }
     /// <summary>El otro freno de movimiento, el del original: un piso SOSTENIDO sobre ventanas de 34 pasos
     /// (VB6 <c>flags.TimesWalk</c> / <c>StartWalk</c> / <c>CountSH</c>). Ver <see cref="DetectorDeSpeedHack"/>.</summary>
     public DetectorDeSpeedHack Pasos { get; } = new();
