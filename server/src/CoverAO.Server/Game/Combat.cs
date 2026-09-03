@@ -236,8 +236,14 @@ public static class Combat
     /// SistemaCombate.bas:2280 y 2226): <c>RandomNumber(1, 500)</c>, y <c>RandomNumber(1, 300)</c> para
     /// <b>gladiador (8) y bardo (6)</b>, que son los que pelean a mano limpia. La probabilidad contra la que se
     /// compara es la misma de <see cref="ProbabilidadDesarmar"/>, así que paralizar de un golpe es entre 3 y 5
-    /// veces más raro que desarmar (ese usa un dado de 100).</summary>
-    public static int TopeDadoGolpeParaliza(int clase) => clase is 6 or 8 ? 300 : 500;
+    /// veces más raro que desarmar (ese usa un dado de 100).
+    ///
+    /// <para>Los dos dados llegan por parámetro y SIN valor por defecto: quien hostea los puede cambiar desde
+    /// el <c>Server.ini</c> (<c>GolpeParalizanteDado</c> y <c>GolpeParalizanteDadoGladiadorBardo</c>) y un
+    /// default acá dejaría que un call site se olvidara de leerlos sin que se note. Los números del original
+    /// viven en <c>ServerIni</c>, que es de donde salen si el archivo no dice nada.</para></summary>
+    public static int TopeDadoGolpeParaliza(int clase, int dado, int dadoGladiadorBardo)
+        => clase is 6 or 8 ? dadoGladiadorBardo : dado;
 
     /// <summary>Curación de un hechizo de área, y el daño de área sobre una CRIATURA: los dos usan el bono del
     /// <b>3%</b> por nivel (<c>HechizoTerrenoHP</c> con <c>Accion = True</c>, :494; y <c>HechizoPropNPC</c>,

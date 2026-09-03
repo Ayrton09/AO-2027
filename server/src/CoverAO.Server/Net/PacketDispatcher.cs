@@ -1723,10 +1723,11 @@ public sealed partial class PacketDispatcher
         if (target.IsParalyzed(now)) return;                                    // ya paralizado/inmovilizado → sale
         if (Equipment.EquippedOfCategory(p, _data, 1) is not null) return;      // con arma equipada no aplica
         int prob = Combat.ProbabilidadDesarmar(p.Skills[GameLimits.SkillWrestling], p.Level);
-        if (_rng.Next(1, Combat.TopeDadoGolpeParaliza(p.Class) + 1) > prob) return;
+        if (_rng.Next(1, TopeDelDadoQueParaliza(p) + 1) > prob) return;
         // Counters.Paralisis = 150. El original corre su loop cada GAME_TIMER_INTERVAL = 40 ms (mMainLoop.bas:7),
-        // exactamente el TickMs del port, así que los contadores son ticks 1:1: 150 ticks = 6 segundos.
-        target.ParalyzedUntilTick = now + 150;
+        // exactamente el TickMs del port, así que los contadores son ticks 1:1: 150 ticks = 6 segundos. Ese 150
+        // es el DEFAULT de `GolpeParalizanteVueltasPvP`; el host lo puede mover desde el Server.ini.
+        target.ParalyzedUntilTick = now + _ini.GolpeParalizanteVueltasPvP;
         target.ParalyzedByCharIndex = p.CharIndex;
         session.Send(ServerMessages.LocaleMsg(135, target.Name));             // "Has paralizado a #1"
         target.Connection?.Send(ServerMessages.LocaleMsg(134, p.Name));         // "Has sido paralizado por el ataque de #1"
@@ -1737,6 +1738,13 @@ public sealed partial class PacketDispatcher
         _world.BroadcastToObservers(target.Pos, ServerMessages.CreateFX(target.CharIndex, 8, 0));
     }
 
+
+    /// <summary>El dado del golpe que paraliza, con los topes que puso el host (o los del original, que son los
+    /// defaults). Existe para que las DOS puntas —la del jugador y la de la criatura— lean la misma
+    /// configuración: eran dos llamadas idénticas a <c>Combat</c> y cambiar una sola habría dejado el PvP y el
+    /// PvE con reglas distintas sin que nada lo avisara.</summary>
+    private int TopeDelDadoQueParaliza(Player p) =>
+        Combat.TopeDadoGolpeParaliza(p.Class, _ini.GolpeParalizanteDado, _ini.GolpeParalizanteDadoGladiadorBardo);
 
     /// <summary>Slot del inventario con el ítem equipado de esa categoría (o 0). Para consumir munición hace
     /// falta el slot, no sólo el ObjInfo.</summary>
@@ -2188,12 +2196,12 @@ public sealed partial class PacketDispatcher
         if (!orbe && arma is null)          // a mano limpia: misma fórmula que desarmar contra un dado grande
         {
             int prob = Combat.ProbabilidadDesarmar(p.Skills[GameLimits.SkillWrestling], p.Level);
-            paraliza = _rng.Next(1, Combat.TopeDadoGolpeParaliza(p.Class) + 1) <= prob;
+            paraliza = _rng.Next(1, TopeDelDadoQueParaliza(p) + 1) <= prob;
         }
         else if (orbe) paraliza = _rng.Next(1, 36) <= 5;
         else return;                        // con arma y sin orbe el original no hace nada
         if (!paraliza) return;
-        npc.ParalyzedUntilTick = now + 30;
+        npc.ParalyzedUntilTick = now + _ini.GolpeParalizanteVueltas;
         session.Send(ServerMessages.ConsoleMsg("Tu golpe ha paralizado a la criatura.", FuenteInfo));
         _world.BroadcastToObservers(npc.Pos, ServerMessages.PlayWave(17, npc.Pos.X, npc.Pos.Y));
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CreateFX(npc.CharIndex, 8, 0));

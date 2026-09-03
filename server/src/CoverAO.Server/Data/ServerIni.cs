@@ -92,7 +92,9 @@ public sealed class ServerIni
     public static readonly string[] ClavesConocidas =
     {
         "AllowMultiLogins", "BackupsAConservar", "Centinela", "CodigoFuente",
-        "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca", "HipocamposEnMarAbierto",
+        "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
+        "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
+        "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo",
         "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
@@ -239,6 +241,43 @@ public sealed class ServerIni
     /// original le dé la perilla.</para>
     /// </summary>
     public int IntervaloParalizado { get; private set; } = 500;
+
+    // ── EL GOLPE QUE PARALIZA, a pedido del tester (informe del 2026-09-02, punto 2) ────────────────────────
+    //
+    // Las cuatro perillas de abajo son NUESTRAS: el original no tiene claves para esto, lo lleva cableado en
+    // `GolpeParalizaUsuario` y `GolpeParalizaNPC` (SistemaCombate.bas:2254 y 2204). Los DEFAULTS son
+    // exactamente esos números, así que un Server.ini que no las mencione se comporta igual que el original.
+    //
+    // Van en [INIT] con el resto de las reglas de la casa —no en [INTERVALOS], que es una sección del
+    // original— para que se vea de un vistazo qué es fiel y qué agregamos.
+    //
+    // Y OJO CON EL NOMBRE: dicen VUELTAS porque eso miden, vueltas del game-loop de 40 ms. El original cuenta
+    // así (`Contadores.Paralisis`) y su loop corre al mismo intervalo, de modo que son 1:1. Escribir 30
+    // pensando en segundos deja una parálisis de veinte minutos.
+
+    /// <summary><c>[INIT] GolpeParalizanteVueltas</c> — cuánto queda quieta una CRIATURA a la que un golpe a
+    /// mano limpia paralizó. Default 30 = 1,2 s, el <c>Contadores.Paralisis = 30</c> del original
+    /// (SistemaCombate.bas:2234).</summary>
+    public int GolpeParalizanteVueltas { get; private set; } = 30;
+
+    /// <summary><c>[INIT] GolpeParalizanteVueltasPvP</c> — lo mismo contra un JUGADOR. Default 150 = 6 s
+    /// (SistemaCombate.bas:2289). El original le da CINCO VECES más que a una criatura; no es un descuido de
+    /// este port.</summary>
+    public int GolpeParalizanteVueltasPvP { get; private set; } = 150;
+
+    /// <summary><c>[INIT] GolpeParalizanteDado</c> — contra qué se tira. La probabilidad del golpe es
+    /// <c>Fuerza de Wrestling × 0,2 + nivel × 0,66</c> sobre un dado de 1 a este número, así que <b>bajarlo lo
+    /// hace más frecuente</b>. Default 500, el <c>RandomNumber(1, 500)</c> del original.
+    ///
+    /// <para>La fórmula de la probabilidad NO se expone, y a propósito: es la misma que la de DESARMAR
+    /// (<see cref="Game.Combat.ProbabilidadDesarmar"/>), así que tocarle los coeficientes cambiaría las dos
+    /// cosas de una y nadie lo notaría. El dado es de este efecto solo.</para></summary>
+    public int GolpeParalizanteDado { get; private set; } = 500;
+
+    /// <summary><c>[INIT] GolpeParalizanteDadoGladiadorBardo</c> — el dado de las dos clases que pelean a mano
+    /// limpia. Default 300, o sea que les sale ~1,7 veces más seguido que al resto (SistemaCombate.bas:2229).
+    /// La clase cambia la PROBABILIDAD, nunca la duración.</summary>
+    public int GolpeParalizanteDadoGladiadorBardo { get; private set; } = 300;
 
     // Relojes del mundo (día/noche y clima). Se declaran en MINUTOS y no en vueltas del game-loop porque
     // quien hostea no tiene por qué saber que el loop corre a 40 ms; la conversión la hace AplicarRelojes.
@@ -708,6 +747,14 @@ public sealed class ServerIni
         cfg.IntervaloArco = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloFlechasCazadores", 1100), 0, 60_000);
         cfg.IntervalosEscritos = ini.Claves("INTERVALOS").ToArray();
         cfg.IntervaloParalizado = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloParalizado", 500), 1, 100_000);
+        // El mismo techo que la parálisis del hechizo, y piso 1: un 0 dejaría el efecto vencido en el tick
+        // siguiente, que se ve igual que "no anda". El dado tiene piso 1 porque `_rng.Next(1, tope + 1)` con
+        // tope 0 tira siempre 1 — paralizaría en cada golpe, que no es lo que quiere quien escribe un 0.
+        cfg.GolpeParalizanteVueltas = Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteVueltas", 30), 1, 100_000);
+        cfg.GolpeParalizanteVueltasPvP = Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteVueltasPvP", 150), 1, 100_000);
+        cfg.GolpeParalizanteDado = Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteDado", 500), 1, 100_000);
+        cfg.GolpeParalizanteDadoGladiadorBardo =
+            Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteDadoGladiadorBardo", 300), 1, 100_000);
         // `IntervaloMover` (=200) está en el ini y NO se lee — pero acá el veredicto es distinto: tiene CERO
         // lecturas en todo el servidor VB6, igual que `IntervaloWS`. Es una clave decorativa. Y va más lejos:
         // el original NO tiene ningún gate de cadencia de caminata (no existen IntervaloPermiteCaminar,

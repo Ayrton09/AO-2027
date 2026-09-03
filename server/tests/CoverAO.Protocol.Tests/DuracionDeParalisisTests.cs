@@ -74,4 +74,84 @@ public class DuracionDeParalisisTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    // ── EL GOLPE QUE PARALIZA, ahora configurable (pedido del tester) ───────────────────────────────────────
+    //
+    // Las cuatro claves son NUESTRAS: el original lleva estos números cableados. Lo que estos casos protegen no
+    // es que se puedan cambiar —eso es una línea— sino que **el default sea el del original**: si alguien mueve
+    // un default creyendo que "500 es mucho", el server deja de comportarse como el VB6 sin que nada lo avise, y
+    // ninguna otra red lo caza (el oráculo no llega a esta rama y los flows no miden probabilidades).
+
+    /// <summary>Sin archivo, los cuatro valen lo que el original tiene cableado.</summary>
+    [Fact]
+    public void Sin_ini_el_golpe_paralizante_es_el_del_original()
+    {
+        var cfg = ServerIni.Cargar(null);
+        Assert.Equal(30, cfg.GolpeParalizanteVueltas);            // SistemaCombate.bas:2234 — 1,2 s
+        Assert.Equal(150, cfg.GolpeParalizanteVueltasPvP);        // SistemaCombate.bas:2289 — 6 s
+        Assert.Equal(500, cfg.GolpeParalizanteDado);              // RandomNumber(1, 500)
+        Assert.Equal(300, cfg.GolpeParalizanteDadoGladiadorBardo);// RandomNumber(1, 300)
+    }
+
+    /// <summary>Y las cuatro se leen de <c>[INIT]</c>, que es donde viven las reglas de la casa.</summary>
+    [Fact]
+    public void Las_claves_del_ini_mueven_el_golpe_paralizante()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "coverao-paral-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string ruta = Path.Combine(dir, "Server.ini");
+            File.WriteAllText(ruta, "[INIT]\nGolpeParalizanteVueltas=75\nGolpeParalizanteVueltasPvP=250\n"
+                                  + "GolpeParalizanteDado=120\nGolpeParalizanteDadoGladiadorBardo=80\n");
+            var cfg = ServerIni.Cargar(ruta);
+            Assert.Equal(75, cfg.GolpeParalizanteVueltas);
+            Assert.Equal(250, cfg.GolpeParalizanteVueltasPvP);
+            Assert.Equal(120, cfg.GolpeParalizanteDado);
+            Assert.Equal(80, cfg.GolpeParalizanteDadoGladiadorBardo);
+
+            // Y el CONTROL de la sección, igual que arriba: en [INTERVALOS] no las tiene que encontrar.
+            File.WriteAllText(ruta, "[INTERVALOS]\nGolpeParalizanteDado=120\n");
+            Assert.Equal(500, ServerIni.Cargar(ruta).GolpeParalizanteDado);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>Un dado en 0 no puede quedar en 0: <c>Next(1, 0 + 1)</c> devuelve SIEMPRE 1, o sea que
+    /// paralizaría con cada golpe — lo contrario de lo que espera quien escribe un cero.</summary>
+    [Fact]
+    public void El_dado_en_cero_se_acota()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "coverao-paral-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string ruta = Path.Combine(dir, "Server.ini");
+            File.WriteAllText(ruta, "[INIT]\nGolpeParalizanteDado=0\nGolpeParalizanteVueltas=0\n");
+            var cfg = ServerIni.Cargar(ruta);
+            Assert.True(cfg.GolpeParalizanteDado >= 1);
+            Assert.True(cfg.GolpeParalizanteVueltas >= 1);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>El aviso de "claves que no mencionaste" tiene que nombrarlas: una perilla que el host no sabe
+    /// que existe es una perilla que no existe.</summary>
+    [Fact]
+    public void Las_cuatro_claves_salen_en_el_aviso_de_ausentes()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "coverao-paral-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string ruta = Path.Combine(dir, "Server.ini");
+            File.WriteAllText(ruta, "[INIT]\nStartPort=7666\n");
+            var ausentes = ServerIni.Cargar(ruta).ClavesAusentes;
+            Assert.Contains("GolpeParalizanteVueltas", ausentes);
+            Assert.Contains("GolpeParalizanteVueltasPvP", ausentes);
+            Assert.Contains("GolpeParalizanteDado", ausentes);
+            Assert.Contains("GolpeParalizanteDadoGladiadorBardo", ausentes);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }

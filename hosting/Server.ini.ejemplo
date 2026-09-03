@@ -205,6 +205,24 @@ Centinela=0
 ;                CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir cada pelea.
 ;                DECIDIDO: APAGADA (2026-08-25). Ponele un 1 aca si la queres, y reinicia el servidor.
 FamiliarBusca=0
+; GolpeParalizanteVueltas / GolpeParalizanteVueltasPvP: cuanto dura la paralisis que deja un golpe a MANO
+;                LIMPIA -- lo que el original llama artes marciales. Se cuenta en VUELTAS del reloj del juego,
+;                de 40 ms cada una: 30 son 1,2 s y 150 son 6 s. NO son segundos ni milisegundos; un 30 pensado
+;                en segundos te deja a alguien clavado veinte minutos.
+;                La primera es contra una CRIATURA y la segunda contra un JUGADOR, y en el original son
+;                distintas a proposito: al jugador lo deja quieto cinco veces mas.
+;                DEFAULTS = los numeros del original. Sin estas claves el juego se porta igual que el VB6.
+GolpeParalizanteVueltas=30
+GolpeParalizanteVueltasPvP=150
+; GolpeParalizanteDado / GolpeParalizanteDadoGladiadorBardo: cada cuanto SALE el golpe que paraliza. La
+;                chance es (Lucha sin armas x 0,2 + nivel x 0,66) contra un dado de 1 a este numero, asi que
+;                BAJARLO lo hace mas frecuente y subirlo mas raro. El segundo es el dado del Gladiador y el
+;                Bardo, que son los que pelean sin arma: con 300 les sale ~1,7 veces mas seguido.
+;                La formula no se toca desde el ini, y es a proposito: es la MISMA que la de desarmar, asi que
+;                moverla cambiaria las dos cosas de una.
+;                DEFAULTS = los numeros del original.
+GolpeParalizanteDado=500
+GolpeParalizanteDadoGladiadorBardo=300
 ; PasesDeRinkel: 1 = los dos pases que vende el pirata del Puerto de Rinkel se pueden usar. 0 = como el
 ;                install, donde NO se pueden usar en ningun lado: su ficha dice que salen de la ciudad
 ;                (mapa 20) y el unico transportador de Rinkel esta en el puerto (mapa 99), asi que el

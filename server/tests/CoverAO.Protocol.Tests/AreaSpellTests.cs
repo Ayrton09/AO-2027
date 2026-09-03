@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using Xunit;
@@ -191,6 +191,11 @@ public class AreaSpellTests
         Assert.True(Combat.ProbabilidadDesarmar(100, 50) > 50);   // maestro de nivel alto: más de la mitad
     }
 
+    // Los dos dados del original. Se leen de `ServerIni` y no se escriben a mano: asi, si alguien le cambia el
+    // default a la clave del Server.ini, estos casos se caen en vez de seguir midiendo un numero que ya no rige.
+    private static readonly int DadoDelInstall = CoverAO.Server.Data.ServerIni.Cargar(null).GolpeParalizanteDado;
+    private static readonly int DadoChicoDelInstall = CoverAO.Server.Data.ServerIni.Cargar(null).GolpeParalizanteDadoGladiadorBardo;
+
     [Theory]
     // El golpe que paraliza (VB6 GolpeParalizaUsuario:2280 / GolpeParalizaNPC:2226) reusa la probabilidad de
     // desarmar pero la tira contra un dado mucho más grande. Gladiador(8) y bardo(6) tienen el dado chico.
@@ -199,7 +204,7 @@ public class AreaSpellTests
     [InlineData(1, 500)]
     [InlineData(5, 500)]   // el ladrón desarma bien, pero para paralizar es uno más del montón
     public void El_dado_del_golpe_paralizante_favorece_a_gladiador_y_bardo(int clase, int esperado)
-        => Assert.Equal(esperado, Combat.TopeDadoGolpeParaliza(clase));
+        => Assert.Equal(esperado, Combat.TopeDadoGolpeParaliza(clase, DadoDelInstall, DadoChicoDelInstall));
 
     [Fact]
     public void Paralizar_de_un_golpe_es_mucho_mas_raro_que_desarmar()
@@ -208,8 +213,8 @@ public class AreaSpellTests
         // gladiador y bardo). Que las dos fórmulas compartan `ProbabilidadDesarmar` invita a igualarlas de más;
         // esto fija que el dado es lo que las separa.
         int prob = Combat.ProbabilidadDesarmar(100, 50);                                  // 53
-        Assert.Equal(5.0, (prob / 100.0) / (prob / (double)Combat.TopeDadoGolpeParaliza(1)), 6);
-        Assert.Equal(3.0, (prob / 100.0) / (prob / (double)Combat.TopeDadoGolpeParaliza(8)), 6);
+        Assert.Equal(5.0, (prob / 100.0) / (prob / (double)Combat.TopeDadoGolpeParaliza(1, DadoDelInstall, DadoChicoDelInstall)), 6);
+        Assert.Equal(3.0, (prob / 100.0) / (prob / (double)Combat.TopeDadoGolpeParaliza(8, DadoDelInstall, DadoChicoDelInstall)), 6);
     }
 
     [Fact]
