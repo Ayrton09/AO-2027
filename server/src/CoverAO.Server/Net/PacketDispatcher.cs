@@ -1077,6 +1077,18 @@ public sealed partial class PacketDispatcher
         AplicarPrivilegiosDeStaff(player);
         player.OrigHead = player.Head;   // cabeza viva, para restaurarla al revivir (VB6 OrigChar.Head)
         RefreshAppearance(player, _data); // apariencia inicial desde el equipo: Ropaje de armadura / desnudo + anims de arma/escudo/casco
+        // Relogueó A CABALLO. El original no necesita este bloque porque GUARDA el cuerpo (`Char.body` va al
+        // .chr y vuelve tal cual); acá la apariencia se REARMA desde el equipo, así que la línea de arriba
+        // acababa de pisar el Ropaje de la montura con el de la armadura. Con el flag en true y el cuerpo de a
+        // pie, el jugador se veía desmontado y el server lo trataba como montado — el estado al revés que
+        // reportó el tester. El camino normal ya no llega acá (desconectarse baja del caballo, como en
+        // `CloseUser`); esto cubre el .chr que quedó con el flag puesto, por ejemplo tras una caída del server.
+        if (player.Mounted && SlotDeLaMonturaPuesta(player) is var slotMontura && slotMontura != 0
+            && _data.Obj(player.Inventory[slotMontura].ObjIndex) is { Ropaje: > 0 } montura)
+        {
+            player.Body = (short)montura.Ropaje;
+            player.WeaponAnim = 0;   // a caballo el arma no se dibuja, igual que en AlternarMontura
+        }
         if (!player.IsAlive)             // relogueó MUERTO (el .chr guardó Muerto=1): entra como cadáver
         {
             player.Body = CorpseBody; player.Head = CorpseHead;
@@ -3467,11 +3479,25 @@ public sealed partial class PacketDispatcher
             $"Ubicación  {name}: {t.Pos.Map}, {t.Pos.X}, {t.Pos.Y}.", FuenteInfo));
     }
 
+    /// <summary>El nick que llega en un comando de GM, resuelto a un jugador ONLINE. <c>YO</c> es el propio
+    /// GM: <c>If UCase$(UserName) &lt;&gt; "YO" Then tUser = NameIndex(UserName) Else tUser = UserIndex</c>,
+    /// que el original escribe en <c>/TELEP</c> (Protocol.bas:6895), <c>/REVIVIR</c> (:8320) y <c>/MOD</c>
+    /// (:7570). Los tres lo tienen porque su propio cliente manda esa palabra —el GM que se teletransporta
+    /// haciendo clic en el mapa dispara <c>WriteWarpChar("YO", ...)</c> (Cliente/frmMain.frm:2388)—, y acá
+    /// sólo lo tenía <c>/MOD</c>: los otros dos contestaban que "YO no está online".
+    ///
+    /// <para>El nick vacío también devuelve al GM. No es del original —allá el vacío cae en el
+    /// <c>LenB(UserName) &lt;&gt; 0</c> y no hace nada— pero es lo que ya aceptaban estos dos handlers, y
+    /// sacarlo le rompería el comando a quien lo esté usando así.</para></summary>
+    private Player? ObjetivoDeGm(Player? gm, string name) =>
+        string.IsNullOrWhiteSpace(name) || string.Equals(name, "YO", StringComparison.OrdinalIgnoreCase)
+            ? gm : _world.PlayerByName(name);
+
     private void GmWarp(ClientSession session, string name, short map, byte x, byte y)
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
-        var t = string.IsNullOrWhiteSpace(name) ? p : _world.PlayerByName(name);
+        var t = ObjetivoDeGm(p, name);
         if (t is null) { session.Send(ServerMessages.ConsoleMsg($"{name} no está online.", FuenteInfo)); return; }
         short destMap = map <= 0 ? t.Pos.Map : map;
         // Por `WarpOtroJugador` y no a mano: mover `Pos` de a pedacitos se olvidaba del `ChangeMap`, así que
@@ -4493,7 +4519,7 @@ public sealed partial class PacketDispatcher
     {
         var p = session.Player;
         if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8290: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
-        var t = _world.PlayerByName(name) ?? (string.IsNullOrWhiteSpace(name) ? p : null);
+        var t = ObjetivoDeGm(p, name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
         // `RevivePlayer` y no `Hp = MaxHp` a secas: acá se subían los puntos de vida y nada más, así que el
         // resucitado por un GM quedaba vivo pero DIBUJADO COMO CADÁVER para todos —incluido él— y seguía
@@ -12073,12 +12099,33 @@ public sealed partial class PacketDispatcher
     /// siempre</b>, y como la skill se guarda en el <c>.chr</c>, morir mil veces con anillos la lleva al tope.
     /// Es un agujero del original que corrompe estado persistido y que ningún jugador puede leer como "así era
     /// el juego": acá se cierra, y queda escrito que se cierra.</para></summary>
+    /// <summary>Baja el flag de montar y le saca la montura de la mano, sin avisarle a nadie. Es la parte
+    /// silenciosa: el <c>MontateToggle</c> lo manda el que llama, porque el original lo manda al morir
+    /// (Modulo_UsUaRiOs.bas:1422) y no al desconectar (<c>CloseUser</c>, TCP.bas:1602, que sólo desequipa).
+    ///
+    /// <para>Los dos lados tienen que moverse juntos: con el flag en uno y el ítem en el otro, el jugador
+    /// vuelve a entrar a pie y con la montura marcada como puesta — que es exactamente lo que se veía dado
+    /// vuelta en el inventario.</para></summary>
+    private static void SacarLaMontura(Player p, GameData data)
+    {
+        p.Mounted = false;
+        for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
+        {
+            var inv = p.Inventory[i];
+            if (inv.Equipped && data.Obj(inv.ObjIndex)?.IsMount == true) { inv.Equipped = false; p.Inventory[i] = inv; }
+        }
+    }
+
     private static void UnequipAll(Player p, GameData data)
     {
         for (int slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
         {
             var inv = p.Inventory[slot];
             if (!inv.Equipped) continue;
+            // El BARCO no hace falta excluirlo, aunque la lista del original tampoco lo nombre
+            // (Modulo_UsUaRiOs.bas:1346-1389: armadura, nudillos, arma, casco, anillo, munición, mimetismo y
+            // escudo): la ranura del barco nunca lleva el flag de equipada. `DoNavega` se lo anota aparte, en
+            // `BarcoSlot`, y el original hace lo mismo (Trabajo.bas:156-157).
             if (data.Obj(inv.ObjIndex) is { } o) AplicarBonusDeEquipo(p, o, poniendose: false);
             inv.Equipped = false; p.Inventory[slot] = inv;
         }
@@ -12118,8 +12165,17 @@ public sealed partial class PacketDispatcher
         ControlarPortalLum(world, data, p, 1);
         p.Hp = 0;
         p.Deaths++;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1260): justo después de `flags.Muerto = 1`
-        p.Body = CorpseBody; p.Head = CorpseHead;
-        p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
+        // EL QUE MUERE NAVEGANDO NO QUEDA HECHO UN MONTÓN DE HUESOS: queda FRAGATA FANTASMAL y sigue navegando
+        // (VB6 UserDie, Modulo_UsUaRiOs.bas:1411-1419: `If .flags.Navegando = 0 Then` cadáver `Else .Char.body =
+        // iFragataFantasmal`). El original en esa rama toca SÓLO el cuerpo — la cabeza y las tres anims ya se
+        // habían puesto en cero al embarcar, así que no las repite. Bajarse en la costa te devuelve el fantasma
+        // de a pie, y eso ya lo hace DoNavega.
+        if (p.Navigating) p.Body = GhostShipBody;
+        else
+        {
+            p.Body = CorpseBody; p.Head = CorpseHead;
+            p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
+        }
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
         p.Incinerado = false; p.IncineradoGolpes = 0;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego
         // Morir deshace la metamorfosis (regla de la casa). El cadáver ya pisa cuerpo y cabeza acá arriba;
@@ -12134,12 +12190,7 @@ public sealed partial class PacketDispatcher
         p.TradingWith = 0; p.BankOpen = false;   // cierra comercio/banco al morir (un cadáver no comercia ni banquea)
         if (p.Mounted)   // VB6: desmonta al morir (Montando=0 + WriteMontateToggle) y libera el flag de la montura
         {
-            p.Mounted = false;
-            for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
-            {
-                var inv = p.Inventory[i];
-                if (inv.Equipped && data.Obj(inv.ObjIndex)?.IsMount == true) { inv.Equipped = false; p.Inventory[i] = inv; }
-            }
+            SacarLaMontura(p, data);
             p.Connection?.Send(ServerMessages.MontateToggle());
         }
         DropInventoryOnDeath(world, data, p);   // VB6 UserDie:1332 TirarTodo — ANTES de desequipar
@@ -12294,6 +12345,12 @@ public sealed partial class PacketDispatcher
                 _world.RemoveNpc(summon.CharIndex);
                 _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex, faded: true));
             }
+            // DESCONECTARSE TE BAJA DEL CABALLO, y va ANTES de guardar (VB6 CloseUser, TCP.bas:1602:
+            // `If .Invent.MonturaObjIndex > 0 Then Desequipar(.Invent.MonturaSlot)`). Sin esto el `.chr` se
+            // llevaba la montura puesta y el flag de montar, y al volver a entrar la apariencia se rearmaba
+            // desde el equipo: el jugador aparecía a pie con el server convencido de que iba a caballo, y de
+            // ahí en más el inventario le mostraba el estado al revés.
+            if (p.Mounted) SacarLaMontura(p, _data);
             try { _db.SaveCharacter(p); }
             catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
             // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,

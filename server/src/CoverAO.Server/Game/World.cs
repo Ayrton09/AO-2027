@@ -186,9 +186,19 @@ public sealed class World
         return null;
     }
 
-    /// <summary>Find an online player by (case-insensitive) name.</summary>
+    /// <summary>Busca un jugador ONLINE por nombre, sin distinguir mayúsculas (VB6 <c>NameIndex</c>,
+    /// GameLogic.bas:340).
+    ///
+    /// <para><b>EL <c>+</c> VALE POR UN ESPACIO</b>, y se resuelve acá adentro porque es donde lo resuelve el
+    /// original: <c>If InStrB(Name, "+") &lt;&gt; 0 Then Name = UCase$(Replace(Name, "+", " "))</c>
+    /// (GameLogic.bas:361). Un comando de GM llega partido por espacios —el cliente arma los campos así, en
+    /// las dos puntas—, de modo que un nombre de dos palabras sólo puede viajar con el <c>+</c> en el medio.
+    /// Este port lo tenía escrito a mano en los call sites, y los que no lo tenían —<c>/TELEP</c> entre
+    /// ellos— no encontraban nunca a un jugador con espacio en el nombre. Poniéndolo donde el original lo
+    /// pone, lo heredan los cuarenta.</para></summary>
     public Player? PlayerByName(string name)
     {
+        if (name.Contains('+')) name = name.Replace('+', ' ');
         foreach (var kv in _players)
             if (string.Equals(kv.Value.Name, name, StringComparison.OrdinalIgnoreCase)) return kv.Value;
         return null;
