@@ -2077,6 +2077,7 @@ public sealed partial class PacketDispatcher
         long pa = Combat.PoderAtaqueWrestling(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
         if (_rng.Next(1, 101) > Combat.HitChance(pa, npc.Template.PoderEvasion))
         {
+            SonidosDelGolpeAUnaCriatura(session, p, npc, acerto: false);
             session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));   // el fallo, sin texto
             return;
         }
@@ -2089,6 +2090,7 @@ public sealed partial class PacketDispatcher
         // acierto y del entrenamiento de skill, que viven adentro de esa función— y ANTES del golpe que
         // paraliza (:930) y del daño. El orden de las emisiones es parte del contrato que mide el oráculo.
         NpcSystem.SonidoDeCriatura(_world, npc, npc.Template.Snd2);
+        SonidosDelGolpeAUnaCriatura(session, p, npc, acerto: true);
         GolpeParalizaNpc(session, p, npc);   // VB6 SistemaCombate.bas:930, entre el impacto y el daño
         // UserDañoNpc (SistemaCombate.bas:465): daño = dañoBase - npc.def, WITHOUT a floor at 0 — when the
         // player's raw damage is below the NPC's defence the result is negative and the NPC heals (VB6 parity).
@@ -2113,6 +2115,55 @@ public sealed partial class PacketDispatcher
         // `If .Stats.MinHP > 0 Then ... DoApuñalar`). Va con el daño BASE, no con el ya mermado por la defensa.
         if (npc.Hp > 0 && PuedeApunalar(p)) DoApunalar(session, p, npc, null, danoBase);
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
+    }
+
+    // Sonidos del combate (Declares.bas): SND_SWING = 2, SND_IMPACTO3 = 10, SND_IMPACTO = 86,
+    // SND_FALLASFLECHA = 145.
+    private const short SndSwing = 2, SndImpacto3 = 10, SndImpacto = 86, SndFallasFlecha = 145;
+
+    /// <summary>
+    /// EL RUIDO DE PEGARLE A UNA CRIATURA — y de errarle (VB6 <c>UsuarioAtacaNpc</c>,
+    /// SistemaCombate.bas:907-947). Faltaba entero: al acertar sonaba sólo el quejido de la criatura —que la
+    /// mayoría de las fichas no trae— y al errar no sonaba nada, así que pelear era mudo. Lo reportó el tester.
+    ///
+    /// <para>Lo que suena depende del arma, y el original abre las mismas dos ramas para el acierto y para el
+    /// fallo: con ARCO y munición puesta van los sonidos de la flecha; con cualquier otra cosa —o con las manos
+    /// vacías— va el golpe seco al acertar y el silbido al errar. La rama del arpón (<c>Proyectil = 2</c>, con
+    /// sus sonidos 68 y 67) no se porta, por lo mismo que no se porta en el disparo: en esta data no hay un
+    /// solo objeto con ese valor.</para>
+    ///
+    /// <para>Ojo DÓNDE suena cada uno. Los de la flecha van al área de la CRIATURA y los otros al área del
+    /// JUGADOR; y el que suena al errar lo hace en el tile del jugador, mientras que los del acierto suenan en
+    /// el de la criatura. Es una diferencia que sólo se nota cuando hay alguien mirando desde lejos, pero es
+    /// la que tiene el original.</para>
+    /// </summary>
+    private void SonidosDelGolpeAUnaCriatura(ClientSession session, Player p, Npc npc, bool acerto)
+    {
+        var arma = Equipment.EquippedOfCategory(p, _data, 1);
+        int ranuraMunicion = EquippedSlotOfCategory(p, 5);
+        bool conFlecha = arma is { Proyectil: 1 } && ranuraMunicion != 0;
+
+        if (!acerto)
+        {
+            AlAreaDelJugador(session, p, conFlecha ? SndFallasFlecha : SndSwing, p.Pos);
+            return;
+        }
+        if (!conFlecha) { AlAreaDelJugador(session, p, SndImpacto, npc.Pos); return; }
+
+        var municion = _data.Obj(p.Inventory[ranuraMunicion].ObjIndex);
+        NpcSystem.SonidoDeCriatura(_world, npc, municion?.Snd1 ?? 0);
+        if (municion is { Snd2: > 0 })
+            _world.BroadcastToObservers(npc.Pos, ServerMessages.CreateFX(npc.CharIndex, (short)municion.Snd2, 0));
+        AlAreaDelJugador(session, p, SndImpacto3, npc.Pos);
+    }
+
+    /// <summary>Un <c>PlayWave</c> al área del jugador, él incluido (el <c>SendTarget.ToPCArea</c> del
+    /// original, que alcanza al que la manda). <paramref name="donde"/> es el tile que viaja en el paquete y no
+    /// tiene por qué ser el del jugador: el original hace sonar el golpe sobre la criatura.</summary>
+    private void AlAreaDelJugador(ClientSession session, Player p, short wave, WorldPos donde)
+    {
+        session.Send(ServerMessages.PlayWave(wave, donde.X, donde.Y));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(wave, donde.X, donde.Y), p.CharIndex);
     }
 
     /// <summary>
