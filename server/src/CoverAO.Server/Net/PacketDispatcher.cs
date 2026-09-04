@@ -8016,7 +8016,9 @@ public sealed partial class PacketDispatcher
                 // jugador se quedaba sin la curación. A HP lleno el original calla, y por eso acá también.
                 if (p.Hp >= p.MaxHp) return;
                 p.PoisonedUntilTick = 0;                                    // `.flags.Envenenado = 0`
-                p.Incinerado = false; p.IncineradoCounter = 0; p.IncineradoGolpes = 0;
+                // El contador NO se toca: el original apaga el flag (Acciones.bas:319) y deja
+                // `Counters.Incinerado` donde estaba, que es lo que decide cuánto dura la quemadura siguiente.
+                p.Incinerado = false;
                 p.Hp = p.MaxHp;
                 _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndSanar, p.Pos.X, p.Pos.Y));
                 _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, 28, 100, false));
@@ -9862,7 +9864,10 @@ public sealed partial class PacketDispatcher
         if (spell.IsIncinerate)
         {
             if (target.Incinerado) { caster.Connection?.Send(ServerMessages.LocaleMsg(326)); }   // ya está ardiendo
-            else { target.Incinerado = true; target.IncineradoCounter = 0; efectos.Add("incinerado"); }
+            // Prender el fuego NO resetea el contador, y ahí está toda la duración: el original sólo toca el
+            // flag (modHechizos.bas:1150). Acá se lo ponía en 0, con lo cual toda quemadura duraba los 50
+            // ticks enteros y la rareza del azar del original —una de cada cuatro se apaga sola— no existía.
+            else { target.Incinerado = true; efectos.Add("incinerado"); }
         }
         // Curar veneno a alguien que NO está envenenado: el original refuta con el 451 ("El objetivo no está
         // bajo el efecto de ese modificador", modHechizos.bas:1160) y NO castea. Acá se aplicaba igual y
@@ -12269,7 +12274,7 @@ public sealed partial class PacketDispatcher
             p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
         }
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
-        p.Incinerado = false; p.IncineradoGolpes = 0;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego
+        p.Incinerado = false;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego, y no toca el contador
         // Morir deshace la metamorfosis (regla de la casa). El cadáver ya pisa cuerpo y cabeza acá arriba;
         // lo que hay que soltar son los BONOS y el tick, o al revivir el druida seguiría pegando como dragón
         // con cuerpo de humano — y RefreshAppearance le devolvería el cuerpo de la criatura.
@@ -12309,7 +12314,7 @@ public sealed partial class PacketDispatcher
         p.Hp = p.MaxHp;
         p.Head = p.OrigHead;
         // El sacerdote apaga el fuego además de revivir (VB6 Acciones.bas:319, `.flags.Incinerado = 0`).
-        p.Incinerado = false; p.IncineradoGolpes = 0;
+        p.Incinerado = false;
         RefreshAppearance(p, data);
         p.Connection?.Send(ServerMessages.UpdateUserStats(p));
         p.Connection?.Send(ServerMessages.LocaleMsg(90));   // "¡Has resucitado!"

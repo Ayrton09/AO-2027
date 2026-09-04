@@ -638,23 +638,43 @@ loop.OnTickHandler = tick =>
                 cambioHp = true;   // VB6 EfectoVeneno: WriteUpdateHP
             }
             // EfectoIncinerado (VB6 FileIO.bas:2010, llamado desde mMainLoop.bas:170). NO es veneno: pega
-            // RandomNumber(45, 65) por golpe de fuego —contra el 1 a 5 del veneno—, avisa con LocaleMsg 48, y
-            // se APAGA SOLO cuando el contador llega a 50, con el LocaleMsg 389. Puede matar, igual que el
-            // veneno. El original excluye a los GMs (`Privilegios And PlayerType.User`).
-            if (pl.Incinerado && !pl.IsGm && ++pl.IncineradoCounter >= Survival.PoisonIntervalTicks)
+            // RandomNumber(45, 65) por golpe de fuego —contra el 1 a 5 del veneno— y avisa con LocaleMsg 48.
+            // El original excluye a los GMs (`Privilegios And PlayerType.User`).
+            //
+            // SON DOS RELOJES DISTINTOS Y ESA ES LA GRACIA. El contador `Counters.Incinerado` mide la DURACIÓN
+            // y avanza `DeltaTick` —que es (ms transcurridos / 40), o sea ~1 por vuelta— en CADA vuelta, se
+            // pegue o no; a las 50 vueltas (2 s) el fuego se apaga con el LocaleMsg 389. El DAÑO, en cambio,
+            // sale cuando lo deja la cadencia de GOLPE, y se la CONSUME: mientras te quemás no podés pegar.
+            //
+            // Acá el fuego duraba CINCUENTA GOLPES de uno cada 20 s: dieciséis minutos y ~2.700 de daño, contra
+            // los ~110 de dos golpes del original. El 50 estaba leído como "golpes" cuando es "vueltas".
+            //
+            // Y AL APAGARSE EL CONTADOR QUEDA EN UN NÚMERO AL AZAR entre -100 y 100 ("Invi variable :D", dice
+            // la fuente). Como el hechizo NO lo resetea al prender el fuego (modHechizos.bas:1150 sólo toca el
+            // flag), la quemadura SIGUIENTE dura `50 - ese número`: entre 0 y 6 s, y una de cada cuatro se
+            // apaga en el acto sin hacer daño. Es del original y se porta igual.
+            if (pl.Incinerado && !pl.IsGm)
             {
-                pl.IncineradoCounter = 0;
-                if (++pl.IncineradoGolpes >= 50)
+                if (pl.IncineradoCounter < 50)
                 {
-                    pl.Incinerado = false; pl.IncineradoGolpes = 0;
-                    pl.Connection?.Send(ServerMessages.LocaleMsg(389));   // se apagó
+                    pl.IncineradoCounter++;
+                    // La cadencia sale del ini y NO del 0 del fixture: ese apagado existe para que los flows
+                    // manden PAQUETES en ráfaga, y esto no lo manda un cliente. Con 0 el fuego pegaría en cada
+                    // vuelta y mataría a cualquiera en dos segundos.
+                    if (CombatTiming.PermiteAtacar(pl, Environment.TickCount64, serverIni.IntervaloAtacar))
+                    {
+                        pl.Connection?.Send(ServerMessages.LocaleMsg(48));
+                        world.BroadcastToObservers(pl.Pos, ServerMessages.PlayWave(78, pl.Pos.X, pl.Pos.Y));
+                        pl.Hp -= regenRng.Next(45, 66);                   // RandomNumber(45, 65), inclusivo
+                        if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
+                        cambioHp = true;
+                    }
                 }
                 else
                 {
-                    pl.Hp -= regenRng.Next(45, 66);                       // RandomNumber(45, 65), inclusivo
-                    pl.Connection?.Send(ServerMessages.LocaleMsg(48));
-                    if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
-                    cambioHp = true;
+                    pl.IncineradoCounter = regenRng.Next(-100, 101);      // RandomNumber(-100, 100), inclusivo
+                    pl.Incinerado = false;
+                    pl.Connection?.Send(ServerMessages.LocaleMsg(389));   // se apagó
                 }
             }
             // Sanar (VB6 General.bas + mMainLoop.bas:186-206): la curación natural es LENTA de pie (64 s) y

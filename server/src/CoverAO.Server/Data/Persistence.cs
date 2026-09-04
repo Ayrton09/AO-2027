@@ -466,6 +466,12 @@ public sealed class Persistence
         // `metamorfosis_flow.ini`; con la regla apagada esta ranura contesta "aún no está implementado", que
         // es lo que hace el original.
         p.Spells[15] = 49; // Metamorfosis: Murciélago (body 9, head 0, +6 al golpe, +20 a la defensa)
+        // INCINERAR: el único camino por el que se puede prender fuego a alguien, y sin él `EfectoIncinerado`
+        // —que tiene dos relojes distintos y una duración al azar— no lo ejercita nada. Pide MinSkill 90 y 920
+        // de maná: la skill se la saltea el GM y el maná le sobra (arranca con 2000).
+        // Va en el 16 y no desplaza a nadie: el libro tiene 35 ranuras y de la 16 en adelante están libres. La
+        // advertencia de "el fixture no tiene huecos" es del INVENTARIO, donde las ranuras sí se pelean.
+        p.Spells[16] = 56; // Incinerar (Incinera=1)
         SaveCharacter(p);
         if (!acc.Characters.Contains(name)) acc.Characters.Add(name);
         SaveAccount(acc);

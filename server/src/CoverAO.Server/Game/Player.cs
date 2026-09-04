@@ -384,9 +384,15 @@ public sealed class Player
     /// veneno— y ADEMÁS se apaga solo a las 50 vueltas del contador. Metido en el veneno quedaba permanente y
     /// pegando de menos. Lo apagan también la Sanación, el sacerdote y la muerte.</summary>
     public bool Incinerado { get; set; }
+
+    /// <summary>El <c>Counters.Incinerado</c> del original, y mide VUELTAS del game-loop, no golpes de fuego:
+    /// avanza una por vuelta mientras uno se quema y a las 50 el fuego se apaga (~2 s). El daño va por otro
+    /// lado — la cadencia de golpe.
+    ///
+    /// <para>Al apagarse queda en un número AL AZAR entre -100 y 100, y como prender el fuego no lo resetea,
+    /// eso es lo que decide cuánto dura la quemadura siguiente. Acá había además un <c>IncineradoGolpes</c>
+    /// que contaba los golpes hasta 50: ese era el que hacía durar el fuego dieciséis minutos.</para></summary>
     public int IncineradoCounter;
-    /// <summary>Golpes de fuego ya recibidos (VB6 <c>Counters.Incinerado</c>): a los 50 el fuego se apaga.</summary>
-    public int IncineradoGolpes;
 
     /// <summary>
     /// PORTAL DE LUM, el hechizo 53 "Portal planar" (VB6 <c>flags.CasteandoPortal</c>,
