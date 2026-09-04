@@ -184,6 +184,14 @@ public sealed class ServerIni
     public int IntervaloGolpeMagia { get; private set; } = 400;    // castear después de pegar
     public int IntervaloGolpeUsar { get; private set; } = 400;     // usar un objeto después de pegar
     public int IntervaloAtacar { get; private set; } = 1000;        // IntervaloUserPuedeAtacar
+    /// <summary><c>[INTERVALOS] IntervaloTrabajo</c> (700 en el install) — la cadencia de TRABAJAR, y el
+    /// original la usa en dos lados con el MISMO contador: cada vuelta de la faena continua
+    /// (<c>DoTrabajar</c>, Trabajo.bas:2475) y cada intento de ROBAR (Protocol.bas:2959).
+    ///
+    /// <para>La clave estaba en el archivo y no se leía: el host podía escribirla y no pasaba nada. El robo,
+    /// además, se medía con la cadencia de GOLPE, que es otra perilla — dejarlas cruzadas significa que quien
+    /// pone el golpe en 0 para un evento abre el robo en ráfaga sin querer.</para></summary>
+    public int IntervaloTrabajo { get; private set; } = 700;
 
     /// <summary>
     /// <c>[INTERVALOS] IntervaloFlechasCazadores</c> (1100 en el install) — la cadencia del ARCO, y la única
@@ -741,6 +749,7 @@ public sealed class ServerIni
         cfg.IntervaloMagiaGolpe = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloMagiaGolpe", 400), 0, 60_000);
         cfg.IntervaloGolpeMagia = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloGolpeMagia", 400), 0, 60_000);
         cfg.IntervaloGolpeUsar = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloGolpeUsar", 400), 0, 60_000);
+        cfg.IntervaloTrabajo = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloTrabajo", 700), 0, 60_000);
         // CADENCIA DE GOLPE. La lee el VB6 en FileIO.bas:1495 y el ini del install dice 1000; el port la tenía
         // CABLEADA en 1200 (Program.cs), o sea que se peleaba un 20% más lento que el original.
         cfg.IntervaloAtacar = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloUserPuedeAtacar", 1000), 0, 60_000);

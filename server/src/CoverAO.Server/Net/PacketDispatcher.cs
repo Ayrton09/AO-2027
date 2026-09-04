@@ -37,6 +37,7 @@ public sealed partial class PacketDispatcher
     private readonly long _intervaloGolpeMagia;
     private readonly long _intervaloGolpeUsar;
     private readonly long _intervaloArco;      // IntervaloFlechasCazadores: la del arco, y es transversal
+    private readonly long _intervaloRobar;     // IntervaloTrabajo aplicado al ROBO, que es un paquete del cliente
 
     public PacketDispatcher(World world, GameLoop loop, Persistence db, GameData data, Leveling leveling,
         long walkIntervalMs = 0, long attackIntervalMs = 0, LoginThrottle? throttle = null, AdminConfig? admin = null,
@@ -66,6 +67,11 @@ public sealed partial class PacketDispatcher
         _intervaloGolpeMagia = Cadencia("IntervaloGolpeMagia", _ini.IntervaloGolpeMagia);
         _intervaloGolpeUsar = Cadencia("IntervaloGolpeUsar", _ini.IntervaloGolpeUsar);
         _intervaloArco = Cadencia("IntervaloFlechasCazadores", _ini.IntervaloArco);
+        // ROBAR entra en el apagado del fixture y el TICK DE TRABAJO no, aunque los dos salgan de la misma
+        // clave. No es un olvido: el apagado existe para que un flow pueda mandar PAQUETES en rafaga, y el
+        // tick de la faena no lo manda nadie —lo corre el game-loop—, asi que ponerlo en 0 no destrabaria un
+        // flow: le multiplicaria por diecisiete la produccion y le cambiaria la economia a los que la miden.
+        _intervaloRobar = Cadencia("IntervaloTrabajo", _ini.IntervaloTrabajo);
         _throttle = throttle;
         _admin = admin;
         _content = content ?? ServerContent.Default;
@@ -8935,10 +8941,13 @@ public sealed partial class PacketDispatcher
                 if (Math.Abs(p.Pos.X - tx) + Math.Abs(p.Pos.Y - ty) > 2) { session.Send(ServerMessages.LocaleMsg(8)); return; }   // "Estas demasiado lejos"
                 if (_data.IsSafeZone(victima.Pos.Map, victima.Pos.X, victima.Pos.Y)
                     || _data.IsSafeZone(p.Pos.Map, p.Pos.X, p.Pos.Y)) { session.Send(ServerMessages.LocaleMsg(310)); return; }   // zona segura
-                // Cadencia de trabajo (VB6 IntervaloPermiteTrabajar): no se puede robar en ráfaga. Reusa la
-                // cadencia de golpe (misma clase de anti-cheat), desactivada en fixtureMode como las demás.
+                // Cadencia de TRABAJO (VB6 `IntervaloPermiteTrabajar`, Protocol.bas:2959): no se puede robar
+                // en ráfaga. Acá se usaba la cadencia de GOLPE, que es otra perilla del ini — con las dos
+                // cruzadas, un host que baja la del golpe para un evento le abre el robo en ráfaga sin querer.
+                // El CONTADOR sí es compartido con la faena continua, y eso es del original: robar y trabajar
+                // se pisan el mismo `Counters.TimerPuedeTrabajar`.
                 long nowWorkMs = Environment.TickCount64;
-                long workMs = _admin?.AttackIntervalMs ?? _attackIntervalMs;
+                long workMs = _intervaloRobar;
                 if (workMs > 0 && nowWorkMs - p.LastWorkMs < workMs) return;
                 p.LastWorkMs = nowWorkMs;
                 DoRobar(session, p, victima);
@@ -8985,9 +8994,10 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>Intervalo del trabajo continuo: <c>IntervaloTrabajo = 700</c> del Server.ini, que el original
-    /// consulta en <c>IntervaloPermiteTrabajar</c> (modNuevoTimer.bas:249) antes de cada vuelta.</summary>
-    public const long IntervaloTrabajoMs = 700;
+    /// <summary>Intervalo del trabajo continuo: <c>[INTERVALOS] IntervaloTrabajo</c> del Server.ini (700 en el
+    /// install), que el original consulta en <c>IntervaloPermiteTrabajar</c> (modNuevoTimer.bas:249) antes de
+    /// cada vuelta. Era una constante: la clave estaba escrita en el archivo y no la leía nadie.</summary>
+    public long IntervaloTrabajoMs => _ini.IntervaloTrabajo;
 
     /// <summary>Arranca una faena (VB6 <c>Accion</c>, Acciones.bas:32-110). El oficio lo elige la HERRAMIENTA
     /// EQUIPADA, no la skill que diga el cliente: caña o red → pescar, piquete → minar, hacha → talar. Cada uno

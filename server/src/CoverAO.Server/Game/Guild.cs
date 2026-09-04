@@ -17,8 +17,30 @@ public sealed class Guild
     /// original guarda hasta CANTIDADMAXIMACODEX líneas; acá va como un solo texto porque el paquete
     /// GuildDetails lo transporta así.</summary>
     public string Codex { get; set; } = "";
-    /// <summary>Alignment chosen at fundation (1=Real/Armada, 2=Caos, 0=Neutral).</summary>
+    /// <summary>La alineación del clan, que NO la elige el fundador sino su FACCIÓN (VB6
+    /// <c>ALINEACION_GUILD</c>, modGuilds.bas:36-41): <b>1 = Republicano, 2 = Imperial, 3 = Caótico,
+    /// 4 = Renegado</b>. El 0 no lo produce ninguna fundación — el paso 1 rechaza al que no cae en ninguna de
+    /// las cuatro— y sólo aparece en un clan viejo guardado antes de que esto existiera.</summary>
     public byte Alignment { get; set; }
+
+    /// <summary>El nombre de la alineación, como lo escribe el original (VB6 <c>Alineacion2String</c>,
+    /// modGuilds.bas:827). Es lo que viaja en <c>GuildDetails</c> y lo que el jugador lee en la ficha del clan.
+    ///
+    /// <para>Acá decía <c>1 → "Real"</c>, <c>2 → "Caos"</c> y todo lo demás <c>"Neutral"</c>, o sea que las
+    /// CUATRO alineaciones se mostraban mal: un clan Republicano decía "Real" y uno Imperial decía "Caos".
+    /// Venía de una numeración inventada que después se corrigió en la fundación —donde ya usa la del
+    /// original— y el texto se quedó atrás.</para>
+    ///
+    /// <para>El valor desconocido devuelve la cadena VACÍA, y eso también es del original: su
+    /// <c>Select Case</c> no tiene <c>Case Else</c>, así que la función sale sin asignar.</para></summary>
+    public static string NombreDeAlineacion(byte alineacion) => alineacion switch
+    {
+        1 => "Republicano",
+        2 => "Imperial",
+        3 => "Caótico",
+        4 => "Renegado",
+        _ => "",
+    };
     public HashSet<string> Members { get; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>La cola de aspirantes de <c>clsClan</c>: nombre del personaje → <b>texto de su solicitud</b>,
     /// esperando que el líder acepte o rechace (el AO real no admite solo: decide el líder).

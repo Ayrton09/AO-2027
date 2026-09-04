@@ -193,7 +193,7 @@ public static class ServerMessages
             .WriteAsciiString(g.Url)
             .WriteInteger((short)g.Members.Count)
             .WriteBoolean(g.ElectionsOpen)
-            .WriteAsciiString(g.Alignment == 1 ? "Real" : g.Alignment == 2 ? "Caos" : "Neutral")
+            .WriteAsciiString(Game.Guild.NombreDeAlineacion(g.Alignment))
             .WriteInteger((short)g.Enemies.Count)
             .WriteInteger((short)g.Allies.Count)
             .WriteAsciiString("0")                       // antifactionPoints

@@ -1,4 +1,4 @@
-using CoverAO.Server.Game;
+﻿using CoverAO.Server.Game;
 using Xunit;
 
 namespace CoverAO.Protocol.Tests;
@@ -74,5 +74,28 @@ public class GuildTests
     {
         // Borde del entero: 1/2 = 0, así que un voto alcanza. Es lo correcto — el clan es de esa persona.
         Assert.Equal("Ana", Guild.GanadorDeLaEleccion(new[] { "Ana" }, 1));
+    }
+
+    /// <summary>Los cuatro nombres de <c>Alineacion2String</c> (modGuilds.bas:827), con el enum del original
+    /// (modGuilds.bas:36): 1 Republicano, 2 Imperial, 3 Caótico, 4 Renegado.
+    ///
+    /// <para>Estaban los CUATRO mal: el port mostraba "Real" para el 1, "Caos" para el 2 y "Neutral" para el
+    /// resto, con una numeración inventada que la fundación ya no usa. Es la ficha del clan que ve el jugador,
+    /// y ningún flow ni el oráculo la miran — el oráculo compara qué paquetes salen, no su texto.</para></summary>
+    [Theory]
+    [InlineData(1, "Republicano")]
+    [InlineData(2, "Imperial")]
+    [InlineData(3, "Caótico")]
+    [InlineData(4, "Renegado")]
+    public void La_alineacion_se_muestra_con_el_nombre_del_original(byte alineacion, string esperado)
+        => Assert.Equal(esperado, Guild.NombreDeAlineacion(alineacion));
+
+    [Fact]
+    public void Una_alineacion_desconocida_sale_vacia()
+    {
+        // El `Select Case` del original no tiene `Case Else`, así que la función sale sin asignar y devuelve "".
+        // Un clan fundado hoy nunca cae acá —el paso 1 rechaza al que no tiene facción—; sólo un clan viejo.
+        Assert.Equal("", Guild.NombreDeAlineacion(0));
+        Assert.Equal("", Guild.NombreDeAlineacion(9));
     }
 }

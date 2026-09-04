@@ -1,4 +1,4 @@
-using CoverAO.Server.Data;
+﻿using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using Xunit;
 
@@ -371,6 +371,25 @@ public class ServerIniTests
         Assert.Equal(400, cfg.IntervaloGolpeMagia);
         Assert.Equal(400, cfg.IntervaloGolpeUsar);
         Assert.Equal(1000, cfg.IntervaloAtacar);       // IntervaloUserPuedeAtacar (estaba cableado en 1200)
+        Assert.Equal(700, cfg.IntervaloTrabajo);       // IntervaloTrabajo: estaba en el archivo y no se leia
+    }
+
+    /// <summary>La cadencia de TRABAJAR sale del ini, y hasta el 2026-09-03 no salia de ningun lado: la clave
+    /// estaba escrita en el Server.ini del install y el port la ignoraba, con el 700 cableado en el codigo.
+    /// El original la usa en DOS lugares con el mismo contador — la faena continua y el ROBO.</summary>
+    [Fact]
+    public void La_cadencia_de_trabajar_sale_del_ini()
+    {
+        const string conClave = "[INTERVALOS]\nIntervaloTrabajo=1500\n";
+        Assert.Equal(700, ServerIni.Cargar(null).IntervaloTrabajo);              // sin archivo, el del install
+        Assert.Equal(1500, Parse(conClave).IntervaloTrabajo);
+        // El 0 es legal en esta familia: apaga el reloj, como el resto de los intervalos de combate.
+        Assert.Equal(0, Parse("[INTERVALOS]\nIntervaloTrabajo=0\n").IntervaloTrabajo);
+        // Y en [INIT] no la tiene que encontrar: es una seccion del original y la clave vive en [INTERVALOS].
+        Assert.Equal(700, Parse("[INIT]\nIntervaloTrabajo=1500\n").IntervaloTrabajo);
+        // El escape del fixture cuelga de que la clave este ESCRITA, asi que tiene que verse como tal.
+        Assert.True(Parse(conClave).IntervaloEscrito("IntervaloTrabajo"));
+        Assert.False(Parse("[INTERVALOS]\nIntervaloGolpeUsar=400\n").IntervaloEscrito("IntervaloTrabajo"));
     }
 
     [Fact]
