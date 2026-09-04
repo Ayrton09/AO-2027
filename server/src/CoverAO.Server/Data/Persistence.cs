@@ -1,3 +1,4 @@
+﻿using System.Threading.Tasks;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Data;
@@ -172,6 +173,50 @@ public sealed class Persistence
     /// <summary>La otra mitad: escribe a disco un texto ya serializado. Se puede llamar desde cualquier hilo
     /// —el almacén serializa sus escrituras— y por eso es la que sale del loop.</summary>
     public void GuardarPersonajeSerializado(string nombre, string ini) => _store.WriteCharacter(nombre, ini);
+
+    // ── EL GUARDADO DEL QUE SE VA ────────────────────────────────────────────────────────────────────────────
+    //
+    // El autosave y el backup ya usaban las dos mitades de arriba; el de la DESCONEXIÓN se había quedado
+    // llamando a `SaveCharacter`, o sea serializando Y escribiendo adentro del game loop. Medido con el mundo
+    // real y cuatro jugadores: cuando se van los cuatro juntos, el peor tick salta de 1,3 ms a 8,9 — unos 2 ms
+    // de `fsync` por cabeza, porque la escritura atómica baja el archivo al disco de verdad. Con cien
+    // desconectándose a la vez —un reinicio anunciado, un corte de red del host— eso son cinco vueltas
+    // perdidas y el mundo se frena para todos.
+    //
+    // La mitad que serializa SIGUE en el loop, y tiene que seguir: lee el `Player` vivo, y hacerlo desde otro
+    // hilo devuelve un personaje partido al medio.
+
+    private readonly object _candadoEscrituras = new();
+    private readonly List<Task> _escriturasEnVuelo = new();
+
+    /// <summary>Serializa AHORA —llamar desde el game loop— y manda el disco a segundo plano.</summary>
+    public void GuardarEnSegundoPlano(Player p)
+    {
+        string nombre = p.Name;
+        string ini = SerializarPersonaje(p);
+        var escritura = Task.Run(() =>
+        {
+            try { GuardarPersonajeSerializado(nombre, ini); }
+            catch (Exception ex) { Console.Error.WriteLine($"[save] {nombre}: {ex.Message}"); }
+        });
+        lock (_candadoEscrituras)
+        {
+            _escriturasEnVuelo.RemoveAll(t => t.IsCompleted);   // la lista no crece con la sesión
+            _escriturasEnVuelo.Add(escritura);
+        }
+    }
+
+    /// <summary>Espera las escrituras que quedaron en vuelo. La llama el APAGADO: sin esto, el que se
+    /// desconectó un segundo antes de bajar el servidor pierde su partida — el proceso termina y la tarea del
+    /// pool se abandona a medio camino. El plazo es para no colgar el apagado si el disco no responde.</summary>
+    public void EsperarEscriturasPendientes()
+    {
+        Task[] pendientes;
+        lock (_candadoEscrituras) { pendientes = _escriturasEnVuelo.ToArray(); }
+        if (pendientes.Length == 0) return;
+        try { Task.WaitAll(pendientes, TimeSpan.FromSeconds(10)); }
+        catch (Exception ex) { Console.Error.WriteLine($"[save] escrituras pendientes: {ex.Message}"); }
+    }
 
     /// <summary>Suma a la bóveda de un personaje DESCONECTADO, sin cargarlo entero.
     ///

@@ -993,6 +993,9 @@ try { await loopTask; } catch (OperationCanceledException) { } catch (Exception 
 // mitad deja el almacén copiado a medias.
 try { await Task.WhenAll(tareaAutosave, tareaBackup); }
 catch (Exception ex) { Console.Error.WriteLine($"[apagado] guardado en segundo plano: {ex.Message}"); }
+// Y las escrituras de los que se DESCONECTARON hace un momento, que también salieron del loop: sin esperarlas,
+// el que se fue un segundo antes de bajar el servidor pierde la partida.
+db.EsperarEscriturasPendientes();
 
 int guardados = 0;
 foreach (var pl in world.Players.ToArray())

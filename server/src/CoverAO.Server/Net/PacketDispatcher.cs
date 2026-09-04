@@ -12448,7 +12448,9 @@ public sealed partial class PacketDispatcher
             // desde el equipo: el jugador aparecía a pie con el server convencido de que iba a caballo, y de
             // ahí en más el inventario le mostraba el estado al revés.
             if (p.Mounted) SacarLaMontura(p, _data);
-            try { _db.SaveCharacter(p); }
+            // Serializa acá —con el Player vivo— y escribe afuera del loop: el `fsync` de la escritura
+            // atómica son ~2 ms, y multiplicados por los que se van juntos frenan el mundo para todos.
+            try { _db.GuardarEnSegundoPlano(p); }
             catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
             // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
             // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres
