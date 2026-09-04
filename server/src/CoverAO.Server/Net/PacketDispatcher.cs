@@ -5489,6 +5489,9 @@ public sealed partial class PacketDispatcher
     /// <summary>Leña (VB6 <c>Leña = 58</c>) y daga (<c>DAGA = 15</c>), Declares.bas:355 y :364.</summary>
     private const short Lenia = 58, Daga = 15;
     private const int Runa = 38;
+    /// <summary>VB6 <c>eOBJType.otBolsas</c> (39): las bolsas de oro, que al usarlas se abren y dan su
+    /// <c>Valor</c> en monedas. La data trae cuatro —dos "Pequeño Saco de Oro" y dos "Gran Saco de Oro"—.</summary>
+    private const int Bolsa = 39;
     /// <summary>VB6 <c>eOBJType.otPasajes</c>: el pasaje del barco (viaje rápido entre puertos).</summary>
     private const int Pasaje = 36;
     /// <summary>VB6 <c>eOBJType.otAnillo</c> (18): el slot de HERRAMIENTA de este fork — piquete, hacha, caña,
@@ -11027,6 +11030,30 @@ public sealed partial class PacketDispatcher
                 if (!p.Invisible) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
                 return;
             }
+            // BOLSA DE ORO (otBolsas = 39, VB6 InvUsuario.bas:1838). Se abre, suma su `Valor` en monedas y se
+            // consume. Acá caía en el "No puedes usar ese objeto" del final, como antes la Runa, el mineral y
+            // el pasaje: la rama del original estaba viva y del lado del port no había ninguna.
+            //
+            // El orden es el del VB6 —primero el oro, después el aviso, después el `UpdateGold`, y recién ahí
+            // se descuenta— y el 471 lleva los dos argumentos separados por `%`: `Obj.Name & "%" & Obj.Valor`.
+            //
+            // NO LAS REPARTE NADIE en este install: ningún NPC las vende ni las tira, y no hay una sola en el
+            // piso de los 863 mapas, así que hoy sólo llegan por un `/CI` de GM. Eso NO las hace código muerto
+            // —la rama del original se ejecuta y la data existe—, y es la diferencia con `UserIncinera`, que
+            // está muerta porque ninguna data puede abrir su compuerta (ver fase5/GAPS-CODIGO-MUERTO.md §4q).
+            if (obj.ObjType == Bolsa)
+            {
+                p.Gold += obj.Value;
+                session.Send(ServerMessages.LocaleMsg(471, $"{obj.Name}%{obj.Value}"));
+                session.Send(ServerMessages.UpdateGold(p.Gold));
+                inv.Amount -= 1;
+                if (inv.Amount <= 0) inv = default;
+                p.Inventory[slot] = inv;
+                session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
+                Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} abre {obj.Name} (+{obj.Value} oro -> {p.Gold})");
+                return;
+            }
+
             if (!obj.IsPotion) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", FuenteInfo)); return; }
 
             // CADENCIA PARA TOMAR (VB6 InvUsuario.bas:1559, `Case eOBJType.otPociones`): después de pegar hay
