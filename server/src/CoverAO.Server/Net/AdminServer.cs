@@ -157,6 +157,12 @@ public sealed class AdminServer
         _html = File.Exists(path) ? File.ReadAllText(path) : "<h1>admin.html no encontrado</h1>";
     }
 
+    /// <summary>Dónde se deja el token cuando la salida está redirigida y no hay consola donde imprimirlo.
+    /// Va al lado del ejecutable y no adentro de <c>data/</c>: esa carpeta es la que entra en los backups y la
+    /// que se copia para mudar un servidor.</summary>
+    internal static string ArchivoDelToken() =>
+        Path.Combine(AppContext.BaseDirectory, "admin-token.txt");
+
     public async Task RunAsync(CancellationToken token)
     {
         // `soloLocal: true` a propósito y para siempre: el panel puede apagar el server, kickear a todos,
@@ -175,9 +181,43 @@ public sealed class AdminServer
         // la consola de Windows en castellano muestra CP850: esta linea -la UNICA que lleva el token, o sea
         // justo la que los documentos le dicen al host que mire- salia con el acento roto
         // ("administraci?n") mientras todo el resto de la consola se veia bien.
-        var consolaReal = new StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true };
-        consolaReal.WriteLine($"== Panel de administración: http://localhost:{_port}/?token={_token} ==");
-        Console.WriteLine($"== Panel de administración: http://localhost:{_port}/ (el token va sólo a la consola, no al log) ==");
+        //
+        // Y OJO CON "LA CONSOLA REAL": `Console.OpenStandardOutput()` es la consola sólo si nadie la
+        // redirigió. Corriendo como servicio —`systemd`, `nohup`, un envoltorio que hace `> server.log`— esa
+        // salida ES UN ARCHIVO, y el token terminaba ahí igual que si lo hubiéramos escrito en el log: medido
+        // el 2026-09-03 arrancando el server con la salida redirigida. Justamente el host que corre como
+        // servicio es el que después manda ese archivo para que le miren el problema.
+        //
+        // Con la salida redirigida no hay dónde imprimirlo, así que se lo deja en un archivo AL LADO DEL
+        // EJECUTABLE y la línea visible dice dónde. Se reescribe en cada arranque; el token es de sesión, así
+        // que el que quede de una corrida vieja no sirve para nada.
+        if (!Console.IsOutputRedirected)
+        {
+            var consolaReal = new StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true };
+            consolaReal.WriteLine($"== Panel de administración: http://localhost:{_port}/?token={_token} ==");
+            Console.WriteLine($"== Panel de administración: http://localhost:{_port}/ (el token va sólo a la consola, no al log) ==");
+        }
+        else
+        {
+            string dondeQuedo = ArchivoDelToken();
+            string aviso;
+            try
+            {
+                // Por el helper y no con un WriteAllText: la regla de la casa es que ningún archivo que
+                // sobreviva al proceso se escriba truncando (lo fija `GuardadoConLectorAjenoTests`, que me
+                // puso rojo el build en cuanto lo intenté). Un token a medio escribir deja al host sin panel.
+                Data.EscrituraAtomica.Escribir(dondeQuedo,
+                    $"http://localhost:{_port}/?token={_token}{Environment.NewLine}", Encoding.UTF8);
+                aviso = $"la salida está redirigida, así que el token quedó en {dondeQuedo}";
+            }
+            catch (Exception ex)
+            {
+                // Sin el archivo no hay forma de entrar al panel, y callarlo dejaría al host buscando un token
+                // que no existe. No es motivo para no arrancar: el juego anda igual sin panel.
+                aviso = $"la salida está redirigida y el token NO se pudo guardar en {dondeQuedo} ({ex.Message}); el panel queda inaccesible";
+            }
+            Console.WriteLine($"== Panel de administración: http://localhost:{_port}/ ({aviso}) ==");
+        }
 
         try
         {
