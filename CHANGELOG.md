@@ -2,6 +2,44 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.0 — 2026-09-04
+
+Esta tanda es de **juego**: cosas que se sienten peleando, comerciando o entrando al mundo. Varias las
+encontró el tester jugando, y otras salieron de cruzar el servidor contra el original línea por línea.
+
+- **El fuego dejó de ser una condena.** Que te incineraran duraba dieciséis minutos y te sacaba unos dos mil
+  setecientos de vida: no se sobrevivía. En el juego original dura dos segundos y te pega dos veces. Y
+  mientras te estás quemando no podés pegar, que también es del original.
+
+- **Pelear cuerpo a cuerpo hace ruido.** El golpe que entra y el que falla suenan; hasta ahora, salvo el
+  quejido de algunas criaturas, pegar era mudo.
+
+- **Cinco segundos de gracia al entrar.** Las criaturas no te eligen de blanco cuando acabás de conectarte ni
+  cuando un GM te teletransporta. Antes, aparecer en medio de un nido era comerte el primer golpe antes de
+  que la pantalla terminara de dibujarse. Si vos atacás primero, te devuelven el golpe igual.
+
+- **La montura ya no se pierde al salir y volver.** Aparecías a pie pero el inventario decía que estabas
+  montado, y de ahí en más el caballo funcionaba al revés: se veía normal cuando estabas arriba y montado
+  cuando te bajabas. Ahora desconectarte te baja del caballo, como en el original.
+
+- **Si morís navegando quedás hecho un barco fantasma** y podés seguir remando. Al llegar a la costa te bajás
+  y sos un fantasma común. Antes quedabas hecho un montón de huesos arriba del agua.
+
+- **La criatura que estás peleando es tuya por un rato.** Te persigue a vos aunque haya alguien más cerca, así
+  que el que llega después no te la roba parándose en el medio. La marca dura mientras la sigas golpeando.
+
+- **El mercader dice la verdad.** La vitrina mostraba el stock de antes de comprar, algunos precios salían de
+  la ranura y no del objeto, y a los mercaderes que nunca se quedan sin nada —el alquimista, el herrero— se
+  les agotaba la mercadería.
+
+- **Fabricar de más se rechaza en vez de recortarse.** Pedir cien flechas con material para diez te daba diez
+  sin decir nada; ahora te avisa, como en el original. Y la herrería no tiene tope de cantidad.
+
+- **Los comandos de administración aceptan nombres de dos palabras** (escribiéndolos con un `+` en el medio,
+  como en el original) y la palabra `YO` para referirte a vos mismo.
+
+- **La alineación del clan se mostraba mal**: las cuatro salían cambiadas.
+
 ## 1.0.0 — 2026-08-28
 
 Esta tanda es casi toda **dibujo**: se cruzó el cliente entero contra el motor del juego original y se
