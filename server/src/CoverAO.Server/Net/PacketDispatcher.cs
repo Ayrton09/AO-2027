@@ -7076,7 +7076,8 @@ public sealed partial class PacketDispatcher
                 (GameLimits.IngotIronObj, o.IngotIron),
                 (GameLimits.IngotSilverObj, o.IngotSilver),
                 (GameLimits.IngotGoldObj, o.IngotGold),
-            }, staminaCost: 50, craftSound: MartilloHerrero));   // VB6 HerreroConstruirItem (Trabajo.bas:669): 50 de energía, LocaleMsg 206
+            }, staminaCost: 50, craftSound: MartilloHerrero,
+            topeCantidad: 0));   // VB6 HerreroConstruirItem (Trabajo.bas:669): 50 de energía, LocaleMsg 206, y SIN tope de cantidad
     }
 
     /// <summary>CraftCarpenter (id 24): Item, cant. Build from wood (obj.dat Madera).</summary>
@@ -7121,11 +7122,20 @@ public sealed partial class PacketDispatcher
     /// Else ...` cuyas dos ramas son IDÉNTICAS (mismo monto, mismo mensaje), así que acá va un solo gate.</summary>
     private void DoCraft(ClientSession session, short item, short cant, string verb, string pastTense,
         IReadOnlySet<int> recipes, int skillIndex, Func<ObjInfo, int> reqSkill, Func<ObjInfo, (int obj, int per)[]> materials,
-        int requiredTool = 0, int staminaCost = 0, short tiredMsg = 206, short craftSound = LaburoCarpintero)
+        int requiredTool = 0, int staminaCost = 0, short tiredMsg = 206, short craftSound = LaburoCarpintero,
+        int topeCantidad = 1000)
     {
         var p = session.Player;
         if (p is null) return;
-        int count = Math.Clamp((int)cant, 1, 1000);
+        // LA CANTIDAD SE RECHAZA, NO SE RECORTA, y el tope no es el mismo para los cuatro oficios. Carpintería,
+        // sastrería y alquimia salen con `Exit Sub` si `cant > 1000` (Protocol.bas:2513, :2552, :2591); la
+        // HERRERÍA no tiene techo — su gate es sólo `If Item < 1 Or cant < 1` (:2468).
+        //
+        // Acá los cuatro se recortaban a 1000, que es más permisivo que el original en tres y más restrictivo
+        // en el otro. Y la diferencia SE VE: pedir 2000 de algo hacía que el server contestara el 206 de "no
+        // tenés materiales" —porque recortaba y después no alcanzaba— donde el original no contesta NADA.
+        int count = cant;
+        if (count < 1 || (topeCantidad > 0 && count > topeCantidad)) return;
         // VB6: un objeto que no es receta de esta profesión (SkHerreria/etc = 0) -> Exit Sub SILENCIOSO, sin
         // avisar. El barrido en frío (item=1) lo confirma: el VB6 no emite nada mientras el .NET mandaba ConsoleMsg.
         if (!recipes.Contains(item)) return;
