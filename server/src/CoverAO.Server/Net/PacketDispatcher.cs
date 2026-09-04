@@ -11316,7 +11316,15 @@ public sealed partial class PacketDispatcher
             DescontarStockDelMercader(npc, slot - 1, (short)buy);
 
             session.Send(ServerMessages.ChangeInventorySlot((byte)invSlot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
-            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, st.Amount, (int)PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)), st.ObjIndex));
+            // LA VITRINA SE RELEE DESPUÉS DE DESCONTAR. `st` es una copia —`MerchantSlot` es un struct— hecha
+            // ANTES de la compra, así que mandarla acá cantaba el stock viejo: el que compraba 5 de 5 veía la
+            // ranura como si siguiera llena, y sólo se enteraba al reabrir la ventana. Cuando el slot se agota
+            // es peor, porque `ObjIndex` también queda en el valor viejo y el objeto sigue "estando".
+            // El original descuenta con `QuitarNpcInvItem` y recién entonces emite (`UpdateNpcInvToAll`,
+            // Comercio.bas:101-102), que lee la ranura del NPC, no una copia.
+            var trasComprar = npc.Stock![slot - 1];
+            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, trasComprar.Amount,
+                (int)PrecioParaElComprador(p, PrecioDeLista(trasComprar.ObjIndex)), trasComprar.ObjIndex));
             session.Send(ServerMessages.UpdateGold(p.Gold));
             session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", FuenteInfo));
             // Regatear entrena: el VB6 sube Comerciar al final de `Sub Comercio` (Comercio.bas:192), que es la
