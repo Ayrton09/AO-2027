@@ -2469,6 +2469,12 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>Sonido de subir de nivel (VB6 <c>SND_NIVEL = 6</c>, Declares.bas:540).</summary>
+    /// <summary>El sonido de MORIR (VB6 <c>e_SoundIndex.MUERTE_HOMBRE</c>, clsMapSoundManager.cls:53), que
+    /// <c>UserDie</c> manda al área como primera cosa (Modulo_UsUaRiOs.bas:1244).
+    ///
+    /// <para>El enum de al lado declara <c>MUERTE_MUJER = 74</c> y <b>no lo usa nadie</b>: el original le hace
+    /// sonar el de hombre a todo el mundo, sea cual sea el género. Se porta así, con el 11 para todos.</para></summary>
+    private const short SndMuerte = 11;
     private const short SndNivel = 6;
 
     /// <summary>Sonido de beber de un pozo (VB6 <c>SND_BEBER = 135</c>, Declares.bas:555).</summary>
@@ -12283,6 +12289,12 @@ public sealed partial class PacketDispatcher
         // Morir corta la faena: si no, el cadáver seguiría pescando (el loop sólo mira el flag). El original
         // llega a lo mismo porque `DoTrabajar` cuelga de un usuario vivo.
         p.Laborando = false;
+        // MORIR SUENA. Es lo PRIMERO que hace `UserDie` (Modulo_UsUaRiOs.bas:1244,
+        // `SonidosMapas.ReproducirSonido(ToPCArea, UserIndex, MUERTE_HOMBRE)`), y acá no sonaba nada: el port
+        // no emitía este id por ningún camino. Va al área con el propio muerto incluido, que es lo que hace
+        // `SendTarget.ToPCArea`.
+        p.Connection?.Send(ServerMessages.PlayWave(SndMuerte, p.Pos.X, p.Pos.Y));
+        world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndMuerte, p.Pos.X, p.Pos.Y), p.CharIndex);
         // Y baja el portal de Lum (VB6 UserDie → ControlarPortalLum(UserIndex, 1), Modulo_UsUaRiOs.bas:1455).
         // No es cosmético: la salida a Intermundia se escribe en el MAPA, así que un portal huérfano queda
         // abierto para todos y para siempre.

@@ -7,6 +7,16 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 Esta tanda es de **juego**: cosas que se sienten peleando, comerciando o entrando al mundo. Varias las
 encontró el tester jugando, y otras salieron de cruzar el servidor contra el original línea por línea.
 
+- **Morir se escucha.** El original hace sonar un grito cuando un personaje cae, y acá no sonaba nada: te
+  morías en silencio, y el que te mataba tampoco escuchaba nada.
+
+- **Comer y fabricar también.** Morder una manzana, comer cualquier cosa, el martillo del herrero y el laburo
+  del carpintero tenían su sonido en el juego original y acá faltaban los archivos, así que el servidor los
+  pedía y no sonaba nada.
+
+- **Las bolsas de oro se abren.** Los sacos de oro daban su valor en monedas en el original y acá contestaban
+  "No puedes usar ese objeto".
+
 - **El fuego dejó de ser una condena.** Que te incineraran duraba dieciséis minutos y te sacaba unos dos mil
   setecientos de vida: no se sobrevivía. En el juego original dura dos segundos y te pega dos veces. Y
   mientras te estás quemando no podés pegar, que también es del original.
