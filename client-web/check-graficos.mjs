@@ -14,10 +14,23 @@
 // transcode). Ninguna la alcanza un NPC, una raza, un objeto ni un hechizo. Un check que grita por esas 45
 // es un check que nadie mira, así que se listan aparte y sólo se pone rojo lo que un jugador puede ver.
 //
+// QUIÉN ALCANZA UN EFECTO NO SE DECIDE SÓLO EN LA DATA. Los hechizos dicen cuál piden, pero hay cuatro que
+// salen del CÓDIGO —el fogonazo de aparición que se ve en cada login, el del golpe, el de la sangre, el del
+// veneno— y no los nombra ningún hechizo. Contándolos sólo por la data quedaban del lado de "no los usa
+// nadie", así que romperlos NO ponía rojo esto: medido apuntando el efecto 1 a un gráfico inexistente, el
+// check seguía diciendo OK. Ahora los índices del código se derivan leyendo los `CreateFX(...)` del propio
+// servidor, que es la misma lección del extractor de sonidos: una lista a mano se queda vieja justo el día
+// que haría falta.
+//
+// Y SE MIRA EL SENTIDO CONTRARIO, que no lo miraba nada: un índice que el server MANDA y `fx.json` no
+// DEFINE no aparecía por ningún lado, porque el recorrido arranca en `fx.json`. El cliente cae ahí en el
+// estallido genérico y el jugador ve un destello cualquiera en lugar del efecto — mudo, como el `PlayWave`
+// sin su `.wav`.
+//
 // Correr:  node check-graficos.mjs
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const A = join(AQUI, 'assets');
@@ -47,9 +60,70 @@ for (const o of leerGd('obj.json').OBJ) {
   else if (tipo === 3) usa.cuerpo.add(ent(d.numropaje));
 }
 const hech = leerGd('Hechizos.json');
+const fxDeHechizo = new Map();          // índice de efecto -> el hechizo que lo pide
 for (const h of Object.values(hech).find(Array.isArray) || []) {
   if (!h || typeof h !== 'object') continue;
-  usa.efecto.add(ent(baja(h).fxgrh ?? baja(h).fx));
+  const d = baja(h), f = ent(d.fxgrh ?? d.fx);
+  usa.efecto.add(f);
+  if (f && !fxDeHechizo.has(f)) fxDeHechizo.set(f, `el hechizo ${ent(d._index)} "${d.nombre}"`);
+}
+
+// LOS EFECTOS QUE MANDA EL CÓDIGO, derivados del server y NO escritos a mano. Escribirlos a mano es el
+// defecto que dejó el juego mudo: el extractor de sonidos tenía los ids del código cableados, y el del
+// fuego se agregó sin que nadie lo notara. Acá se leen los `CreateFX(...)` del propio servidor.
+//
+// Sin esto, los cuatro efectos que sólo salen del código —entre ellos el FOGONAZO DE APARICIÓN, que se ve
+// en cada login— quedaban clasificados como "no los usa nadie": romperlos no ponía rojo este check.
+const SERVER = join(AQUI, '..', 'server', 'src', 'CoverAO.Server');
+if (!existsSync(SERVER)) {
+  console.error(`FALLO: no está ${SERVER}; el barrido de efectos del código no puede leer nada. Revisá la ruta, no el juego`);
+  process.exit(1);
+}
+const fuentesCs = [];
+(function juntar(dir) {
+  for (const f of readdirSync(dir)) {
+    const ruta = join(dir, f);
+    if (statSync(ruta).isDirectory()) { if (f !== 'obj' && f !== 'bin') juntar(ruta); }
+    else if (f.endsWith('.cs')) fuentesCs.push(ruta);
+  }
+})(SERVER);
+
+const constantes = new Map();
+for (const ruta of fuentesCs) {
+  const t = readFileSync(ruta, 'utf8');
+  for (const m of t.matchAll(/const\s+short\s+(\w+)\s*=\s*(\d+)/g)) constantes.set(m[1], +m[2]);
+  for (const m of t.matchAll(/(\w+)\s*=\s*(\d+)\s*[,;]/g))
+    if (m[1].startsWith('Fx') && !constantes.has(m[1])) constantes.set(m[1], +m[2]);
+}
+
+const fxDelCodigo = new Map();          // índice de efecto -> dónde se manda
+for (const ruta of fuentesCs) {
+  readFileSync(ruta, 'utf8').split('\n').forEach((linea, i) => {
+    const l = linea.trim();
+    if (l.startsWith('//') || !l.includes('CreateFX(')) return;
+    for (const m of l.matchAll(/CreateFX\(\s*[^,]+,\s*(?:\(short\)\s*)?([A-Za-z_]\w*|\d+)/g)) {
+      const tok = m[1];
+      const id = /^\d+$/.test(tok) ? +tok : constantes.get(tok);
+      if (id === undefined) continue;   // sale de la DATA (spell.FxGrh, municion.Snd2): se cubre aparte
+      if (!id) continue;                // 0 = APAGAR el efecto (al dejar de meditar), no es un índice
+      usa.efecto.add(id);
+      if (!fxDelCodigo.has(id)) fxDelCodigo.set(id, `${basename(ruta)}:${i + 1}`);
+    }
+  });
+}
+
+// La MUNICIÓN equipada manda su `Snd2` como índice de efecto, no como sonido (VB6 SistemaCombate.bas:918,
+// `CreateFX(npc, ObjData(Municion).Snd2, 0)`). En este install ninguna de las once flechas lo trae, así que
+// hoy no aporta ninguno; se deriva igual para que entre solo el día que una flecha lo traiga.
+const fxDeMunicion = new Map();
+for (const o of leerGd('obj.json').OBJ) {
+  if (!o || typeof o !== 'object') continue;
+  const d = baja(o);
+  if (ent(d.objtype) !== 32) continue;  // otFlechas (Declares.bas:610)
+  const f = ent(d.snd2);
+  if (!f) continue;
+  usa.efecto.add(f);
+  if (!fxDeMunicion.has(f)) fxDeMunicion.set(f, `la munición "${d.name ?? d.nombre}"`);
 }
 // Lo que puede tener un JUGADOR sale de la pantalla de creación (cuerpos y cabezas por raza y género).
 for (const m of JSON.stringify(leer('creacion.json')).matchAll(/\d+/g)) {
@@ -102,8 +176,35 @@ for (const [archivo, clave, nombre, quienUsa] of [
   }
 }
 
-for (const [i, e] of Object.entries(leer('fx.json').fx))
+const efectos = leer('fx.json').fx;
+for (const [i, e] of Object.entries(efectos))
   verGrh(Array.isArray(e) ? e[0] : e, `efecto ${i}`, usa.efecto.has(+i));
+
+// EL SENTIDO CONTRARIO, que hasta acá no lo miraba nada. El recorrido de arriba va de `fx.json` HACIA
+// AFUERA —"este efecto que está definido, ¿lo usa alguien?"—, así que un índice que el server MANDA y
+// `fx.json` NO DEFINE le pasa por al lado: no está en el recorrido para empezar. El síntoma es mudo, igual
+// que el `PlayWave` sin `.wav`: el cliente cae en el estallido genérico y el jugador ve un destello
+// cualquiera en vez del efecto de verdad.
+//
+// COLGADO EN EL INSTALL, y por eso no pone rojo: el `fxs.ind` del original define 51 efectos y el hechizo
+// 74 ("Animar a la naturaleza") pide el 57. La referencia ya viene rota de la data, no la rompió el
+// transcode. El original además NUNCA la manda —allá la invocación es código muerto, su llamada está
+// comentada (modHechizos.bas:710)—, mientras que acá la invocación se revivió a propósito, así que el 57
+// sí sale. Se deja como está por la misma política que el efecto 44 del Tornado: fidelidad a la data.
+const SIN_DEFINIR_CONOCIDOS = new Map([
+  [57, 'lo pide el hechizo 74 "Animar a la naturaleza"; el fxs.ind del install llega hasta el 51'],
+]);
+
+const emitibles = new Map();            // índice de efecto -> quién lo manda
+for (const [id, donde] of fxDelCodigo) emitibles.set(id, `lo manda ${donde}`);
+for (const [id, quien] of fxDeHechizo) if (!emitibles.has(id)) emitibles.set(id, `lo pide ${quien}`);
+for (const [id, quien] of fxDeMunicion) if (!emitibles.has(id)) emitibles.set(id, `lo pide ${quien}`);
+
+const sinDefinir = [];
+for (const [id, quien] of emitibles) {
+  if (efectos[id] || SIN_DEFINIR_CONOCIDOS.has(id)) continue;
+  sinDefinir.push(`el efecto ${id} no está definido en fx.json y ${quien}`);
+}
 
 // AURAS del equipo (auras.ini → auras.json). Alcanzables todas: cada una la nombra un objeto del obj.dat
 // por su clave `Aura`, y el server manda AuraToChar al equiparlo.
@@ -118,11 +219,29 @@ for (const [i, a] of Object.entries(leer('auras.json').auras))
 
 // --- VEREDICTO ----------------------------------------------------------------------------------------
 console.log(`check-graficos: ${mirados} referencias miradas, ${laminas.size} láminas en disco`);
+console.log(`  efectos que el server puede mandar: ${emitibles.size} `
+  + `(${fxDelCodigo.size} desde el código, ${fxDeHechizo.size} desde hechizos, ${fxDeMunicion.size} desde munición)`);
 if (muertas.length) console.log(`  (${muertas.length} rotas en data que NO usa nadie — están rotas en el original también)`);
 
 // Población de control: un verde sobre cero referencias es el silencio de un guardia que no mira.
 if (mirados < 2000) {
   console.error(`FALLO: sólo ${mirados} referencias miradas; el check no está leyendo la data`);
+  process.exit(1);
+}
+// Y las premisas de los dos barridos nuevos: si el que lee el server deja de resolver índices —le cambian
+// el nombre a la carpeta, o al emisor— este check se queda verde para siempre sin mirar nada. Que falle
+// acusándose a sí mismo y no al juego.
+if (fuentesCs.length < 20) {
+  console.error(`FALLO: sólo ${fuentesCs.length} archivos .cs leídos del server; revisá la ruta, no el juego`);
+  process.exit(1);
+}
+if (fxDelCodigo.size < 3) {
+  console.error(`FALLO: el barrido de CreateFX resolvió sólo ${fxDelCodigo.size} efectos; revisá el patrón, no el juego`);
+  process.exit(1);
+}
+if (sinDefinir.length) {
+  console.error(`FALLO: ${sinDefinir.length} efecto(s) que el server manda y fx.json no define`);
+  for (const f of sinDefinir) console.error('  ' + f);
   process.exit(1);
 }
 if (rotas.length) {
