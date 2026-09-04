@@ -93,7 +93,7 @@ for (const ruta of fuentesCs) {
   const t = readFileSync(ruta, 'utf8');
   for (const m of t.matchAll(/const\s+short\s+(\w+)\s*=\s*(\d+)/g)) constantes.set(m[1], +m[2]);
   for (const m of t.matchAll(/(\w+)\s*=\s*(\d+)\s*[,;]/g))
-    if (m[1].startsWith('Fx') && !constantes.has(m[1])) constantes.set(m[1], +m[2]);
+    if ((m[1].startsWith('Fx') || m[1].startsWith('Particula')) && !constantes.has(m[1])) constantes.set(m[1], +m[2]);
 }
 
 const fxDelCodigo = new Map();          // índice de efecto -> dónde se manda
@@ -200,6 +200,43 @@ for (const [id, donde] of fxDelCodigo) emitibles.set(id, `lo manda ${donde}`);
 for (const [id, quien] of fxDeHechizo) if (!emitibles.has(id)) emitibles.set(id, `lo pide ${quien}`);
 for (const [id, quien] of fxDeMunicion) if (!emitibles.has(id)) emitibles.set(id, `lo pide ${quien}`);
 
+// LAS PARTÍCULAS son el otro efecto que el server manda por índice, y fallan igual de calladas: el cliente
+// no encuentra la definición y no dibuja nada. Los índices salen de tres lados —el `Particle` de un hechizo,
+// los literales de los emisores, y `ParticleToLevel`, que devuelve el aura de meditación por nivel y facción.
+// Los tres se derivan; ninguno se escribe a mano.
+const particulas = leer('particles.json');
+const partEmitibles = new Map();
+for (const o of Object.values(hech).find(Array.isArray) || []) {
+  if (!o || typeof o !== 'object') continue;
+  const d = baja(o), q = ent(d.particle ?? d.particula);
+  if (q && !partEmitibles.has(q)) partEmitibles.set(q, `lo pide el hechizo ${ent(d._index)} "${d.nombre}"`);
+}
+for (const ruta of fuentesCs) {
+  const texto = readFileSync(ruta, 'utf8');
+  texto.split('\n').forEach((linea, i) => {
+    const l = linea.trim();
+    if (l.startsWith('//') || !/Efecto(Char|Terreno)Particula\(/.test(l)) return;
+    for (const m of l.matchAll(/Efecto(?:Char|Terreno)Particula\(\s*[^,]+,\s*(?:\(short\)\s*)?([A-Za-z_]\w*|\d+)/g)) {
+      const tok = m[1];
+      const id = /^\d+$/.test(tok) ? +tok : constantes.get(tok);
+      if (!id) continue;              // sale de la data o de una función: se cubre aparte
+      if (!partEmitibles.has(id)) partEmitibles.set(id, `lo manda ${basename(ruta)}:${i + 1}`);
+    }
+  });
+  // `ParticleToLevel` elige el aura de meditación por nivel y facción: sus índices están en los `return`
+  // del cuerpo, no en el llamador, así que se leen de ahí.
+  const cuerpo = /int ParticleToLevel\(Player p\)\s*\{([\s\S]*?)\n    \}/.exec(texto);
+  if (cuerpo) for (const m of cuerpo[1].matchAll(/return\s+(?:p\.IsCitizen\s*\?\s*(\d+)\s*:\s*(\d+)|lvl == 50 \? (\d+) : (\d+)|(\d+))/g))
+    for (const g of m.slice(1)) {
+      const id = +g;
+      if (g !== undefined && id && !partEmitibles.has(id)) partEmitibles.set(id, 'lo elige ParticleToLevel');
+    }
+}
+
+const partSinDefinir = [];
+for (const [id, quien] of partEmitibles)
+  if (!particulas[id]) partSinDefinir.push(`la partícula ${id} no está definida en particles.json y ${quien}`);
+
 const sinDefinir = [];
 for (const [id, quien] of emitibles) {
   if (efectos[id] || SIN_DEFINIR_CONOCIDOS.has(id)) continue;
@@ -221,6 +258,7 @@ for (const [i, a] of Object.entries(leer('auras.json').auras))
 console.log(`check-graficos: ${mirados} referencias miradas, ${laminas.size} láminas en disco`);
 console.log(`  efectos que el server puede mandar: ${emitibles.size} `
   + `(${fxDelCodigo.size} desde el código, ${fxDeHechizo.size} desde hechizos, ${fxDeMunicion.size} desde munición)`);
+console.log(`  partículas que el server puede mandar: ${partEmitibles.size} de ${Object.keys(particulas).length} definidas`);
 if (muertas.length) console.log(`  (${muertas.length} rotas en data que NO usa nadie — están rotas en el original también)`);
 
 // Población de control: un verde sobre cero referencias es el silencio de un guardia que no mira.
@@ -237,6 +275,15 @@ if (fuentesCs.length < 20) {
 }
 if (fxDelCodigo.size < 3) {
   console.error(`FALLO: el barrido de CreateFX resolvió sólo ${fxDelCodigo.size} efectos; revisá el patrón, no el juego`);
+  process.exit(1);
+}
+if (partEmitibles.size < 20) {
+  console.error(`FALLO: el barrido de partículas resolvió sólo ${partEmitibles.size}; revisá el patrón, no el juego`);
+  process.exit(1);
+}
+if (partSinDefinir.length) {
+  console.error(`FALLO: ${partSinDefinir.length} partícula(s) que el server manda y particles.json no define`);
+  for (const f of partSinDefinir) console.error('  ' + f);
   process.exit(1);
 }
 if (sinDefinir.length) {
