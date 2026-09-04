@@ -205,7 +205,12 @@ public sealed class AdminServer
                 await WriteText(res, _html, "text/html; charset=utf-8");
                 return;
             }
-            if (req.QueryString["token"] != _token && req.Headers["X-Admin-Token"] != _token)
+            // SÓLO POR CABECERA. El `?token=` de la query se aceptaba además, y ese es el camino por el que
+            // un secreto se escapa sin que nadie lo toque: queda en el historial del navegador, en la barra de
+            // direcciones y en la línea de request de cualquier proxy o log intermedio. La URL con el token
+            // sigue siendo la forma de ENTRAR —es lo que imprime la consola—, pero el panel la limpia apenas
+            // la lee y de ahí en más manda `X-Admin-Token`.
+            if (req.Headers["X-Admin-Token"] != _token)
             {
                 res.StatusCode = 401; await WriteText(res, "{\"error\":\"token invalido\"}", "application/json");
                 return;

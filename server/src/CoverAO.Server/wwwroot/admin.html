@@ -266,7 +266,11 @@
   <div class="toast" id="toast"></div>
 
 <script>
+// EL TOKEN SE SACA DE LA BARRA DE DIRECCIONES apenas se lee. Llega por la URL porque es la unica forma de
+// pasarlo desde la consola, pero quedarse ahi lo mete en el historial del navegador, en la barra a la vista de
+// quien pase por atras, y en el `Referer` de cualquier salida. Se lo guarda en memoria y se limpia la URL.
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
+if (TOKEN) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
 const $ = id => document.getElementById(id);
 if (!TOKEN) { $('gate').style.display = 'block'; }
 else { $('app').style.display = 'block'; boot(); }
@@ -278,7 +282,9 @@ function toast(msg, ok = true) {
   clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
 async function api(path, opts) {
-  const r = await fetch(path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN),
+  // Sólo por CABECERA. Antes iba además pegado en la query de CADA pedido, que es donde un token no tiene
+  // nada que hacer: viaja en la linea de request y termina en cualquier log intermedio.
+  const r = await fetch(path,
     Object.assign({ headers: { 'X-Admin-Token': TOKEN, 'Content-Type': 'application/json' } }, opts));
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
