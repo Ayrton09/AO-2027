@@ -81,6 +81,22 @@ public sealed class NpcSystem
 
     /// <summary>¿Las criaturas pueden ir por este jugador? (VB6 <c>flags.AdminPerseguible</c>.)</summary>
     private bool Perseguible(Player p) => p.AdminPerseguible || _gmsPerseguibles;
+
+    /// <summary>LA GRACIA CONTRA LAS CRIATURAS al entrar al mundo y en cada teletransporte: mientras dura, la
+    /// IA no lo elige de blanco (VB6 <c>UserProtected</c>, armado por <c>IntervaloPermiteSerAtacado</c>,
+    /// modNuevoTimer.bas:316). Dura <c>[TIMERS] IntervaloPuedeSerAtacado</c>, 5 s en el install.
+    ///
+    /// <para><b>Va SÓLO en la selección de blanco, no en el golpe.</b> El original la escribe en los seis
+    /// bucles que ELIGEN a quién perseguir (AI_NPC.bas :88, :160, :229, :293, :343, :669) y en ninguno de los
+    /// dos caminos por los que la criatura pega — ni <c>SeguirAgresor</c> ni <c>NpcAtacaUser</c>—. O sea que la
+    /// gracia te salva de que te vengan a buscar, pero si vos le pegás primero, te devuelve el golpe en el
+    /// acto. Ponerla también en el golpe dejaba a un recién llegado invulnerable cinco segundos aunque
+    /// atacara, y lo cazó <c>npc_ai_flow</c>.</para>
+    ///
+    /// <para>De los seis sitios del original, este port sólo tiene el de <c>IrUsuarioCercano</c>: los otros
+    /// cinco son de las IAs de guardia y de objeto, que no se modelan (los guardias salen por
+    /// <see cref="Npc.SinIa"/>).</para></summary>
+    private bool EnGraciaDeEntrada(Player p) => Environment.TickCount64 < p.NoAtacablePorNpcHastaMs;
     /// <summary>Registers a spawn point and spawns its NPC immediately.
     ///
     /// <paramref name="movement"/> es el <c>TipoAI</c> del VB6 (ver <see cref="Npc.Movement"/>): null = el de su
@@ -483,6 +499,7 @@ public sealed class NpcSystem
             if (Math.Abs(dx) > RangoVisionX || Math.Abs(dy) > RangoVisionY) continue;
             if (!p.IsAlive || p.Invisible || p.Oculto) continue;   // VB6 filtra Muerto/Invisible/Oculto/protegidos
             if (!Perseguible(p)) continue;             // …y AdminPerseguible (AI_NPC.bas:344): a un GM tampoco lo persigue
+            if (EnGraciaDeEntrada(p)) continue;        // …y el `UserProtected` de la misma línea (:343)
             byte h = FindDirection(npc, p.Pos);        // decide el paso — y esquiva; ver FindDirection
             if (h != 0)
             {

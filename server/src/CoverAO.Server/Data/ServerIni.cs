@@ -193,6 +193,19 @@ public sealed class ServerIni
     /// pone el golpe en 0 para un evento abre el robo en ráfaga sin querer.</para></summary>
     public int IntervaloTrabajo { get; private set; } = 700;
 
+    /// <summary><c>[TIMERS] IntervaloPuedeSerAtacado</c> (5000 en el install) — LA GRACIA CONTRA LAS CRIATURAS
+    /// al entrar al mundo y en cada teletransporte. Mientras dura, la IA no te ve: no te elige de blanco, no te
+    /// persigue y no te tira magia (VB6 <c>IntervaloPermiteSerAtacado</c>, modNuevoTimer.bas:316, leído en los
+    /// seis bucles de selección de blanco de AI_NPC.bas).
+    ///
+    /// <para>Se arma en dos lugares y nada más: al conectar (<c>ConnectUser</c>, TCP.bas:1199) y en
+    /// <c>WarpUserChar</c> (Modulo_UsUaRiOs.bas:1660), o sea en TODO cambio de posición hecho por el server —
+    /// una salida de mapa, un <c>/TELEP</c>, la cárcel, el hogar—. Caminar no la renueva.</para>
+    ///
+    /// <para>Este port no la tenía: aparecer en medio de un nido de hostiles era comerse el primer golpe en el
+    /// acto. Es de las que sólo se notan jugando.</para></summary>
+    public int IntervaloPuedeSerAtacado { get; private set; } = 5000;
+
     /// <summary>
     /// <c>[INTERVALOS] IntervaloFlechasCazadores</c> (1100 en el install) — la cadencia del ARCO, y la única
     /// del original que el port no tenía.
@@ -707,6 +720,7 @@ public sealed class ServerIni
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
+        cfg.IntervaloPuedeSerAtacado = Math.Clamp(ini.GetInt("TIMERS", "IntervaloPuedeSerAtacado", 5000), 0, 600_000);
         // Mismo recorte que StartPort: un valor fuera de rango se ignora y vale el real. Anunciarle al
         // cliente un puerto imposible lo dejaría sin poder conectarse nunca, y el ini se edita a mano.
         int wsPublico = ini.GetInt("INIT", "PuertoWebSocketPublico", 0);

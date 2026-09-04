@@ -525,7 +525,16 @@ public sealed class Player
     /// CONSULTAN el golpe y el casteo — mientras esté caliente, el original no deja hacer ninguno de los tres.
     /// Es el quinto reloj y era el que faltaba: sin él, el disparo no tenía ninguna cadencia.</summary>
     public long ArcoMs { get; set; }
-    public long LastWorkMs { get; set; }   // VB6 IntervaloPermiteTrabajar: cadencia por-usuario de las acciones de trabajo (robar)
+    public long LastWorkMs { get; set; }   // VB6 IntervaloPermiteTrabajar: cadencia por-usuario del trabajo y del robo
+
+    /// <summary>Hasta cuándo las criaturas no lo ven, en ms de <c>Environment.TickCount64</c> (VB6
+    /// <c>Counters.TimerPuedeSerAtacado</c> + <c>flags.NoPuedeSerAtacado</c>, modNuevoTimer.bas:316). Se arma al
+    /// entrar al mundo y en cada teletransporte; dura <c>[TIMERS] IntervaloPuedeSerAtacado</c>.
+    ///
+    /// <para>El original lo lleva en dos campos —un reloj y un flag— porque su función hace las dos cosas en
+    /// una sola llamada. Acá alcanza el vencimiento: "protegido" es <c>ahora &lt; esto</c>, y un personaje que
+    /// nunca se armó tiene 0, que ya venció.</para></summary>
+    public long NoAtacablePorNpcHastaMs { get; set; }
 
     /// <summary>La RANURA del mineral que se eligió para fundir (VB6 <c>flags.Lingoteando</c>,
     /// InvUsuario.bas:1836). Se prende al usar (U) un mineral crudo, que es cuando el original pide el objetivo

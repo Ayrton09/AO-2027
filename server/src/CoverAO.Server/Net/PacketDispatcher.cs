@@ -1082,6 +1082,10 @@ public sealed partial class PacketDispatcher
         session.MarkAuthed();   // entró al mundo → desarma el timeout de autenticación (SEC-3)
         AplicarPrivilegiosDeStaff(player);
         player.OrigHead = player.Head;   // cabeza viva, para restaurarla al revivir (VB6 OrigChar.Head)
+        // Y la MISMA gracia contra las criaturas que da el teletransporte, porque el original la arma también
+        // al conectar (`ConnectUser`, TCP.bas:1199). Entrar al mundo parado entre hostiles no puede costarte el
+        // primer golpe antes de que el cliente termine de dibujar el mapa.
+        player.NoAtacablePorNpcHastaMs = Environment.TickCount64 + _ini.IntervaloPuedeSerAtacado;
         RefreshAppearance(player, _data); // apariencia inicial desde el equipo: Ropaje de armadura / desnudo + anims de arma/escudo/casco
         // Relogueó A CABALLO. El original no necesita este bloque porque GUARDA el cuerpo (`Char.body` va al
         // .chr y vuelve tal cual); acá la apariencia se REARMA desde el equipo, así que la línea de arriba
@@ -1486,6 +1490,10 @@ public sealed partial class PacketDispatcher
     public void WarpOtroJugador(Player t, WorldPos dest)
     {
         var from = t.Pos;
+        // GRACIA CONTRA LAS CRIATURAS. El original la arma en `WarpUserChar` (Modulo_UsUaRiOs.bas:1660), o sea
+        // en TODO teletransporte del server: una salida de mapa, un /TELEP, la carcel, el hogar. Caminar no
+        // pasa por aca y por eso no la renueva.
+        t.NoAtacablePorNpcHastaMs = Environment.TickCount64 + _ini.IntervaloPuedeSerAtacado;
         _world.BroadcastToObservers(from, ServerMessages.RemoveCharDialog(t.CharIndex), t.CharIndex);
         t.Connection?.Send(ServerMessages.RemoveDialogs());
         t.Pos = dest;
@@ -11629,24 +11637,21 @@ public sealed partial class PacketDispatcher
         if (npc.Stock is null || idx < 0 || idx >= npc.Stock.Count) return;
         var st = npc.Stock[idx];
         short objIndex = st.ObjIndex;
+        // AL CRUCIAL NO SE LE TOCA EL STOCK. El original ni lo descuenta: su `QuitarNpcInvItem` envuelve la
+        // resta entera en `If ObjData(...).Crucial = 0` (Modulo_InventANDobj.bas:217), de modo que el alquimista
+        // y el herrero nunca se quedan sin nada. Acá se descontaba igual y se REPONÍA la ranura al llegar a
+        // cero — un rodeo que llega a un lugar parecido pero pasa por el vacío: entre la compra que agota y la
+        // reposición, la ranura queda sin objeto, y con el precio derivándose de `ObjIndex` eso es una ranura
+        // sin precio. La diferencia estuvo tapada mientras la vitrina se cantaba con el stock viejo.
+        if ((_data.Obj(objIndex)?.Crucial ?? 0) != 0) return;
         st.Amount -= cantidad;
         if (st.Amount > 0) { npc.Stock[idx] = st; return; }
 
         st.ObjIndex = 0; st.Amount = 0;
         npc.Stock[idx] = st;
 
-        // Rama crucial: reponer ESE slot con la cantidad del .dat, si el objeto no quedó en ningún otro.
-        if ((_data.Obj(objIndex)?.Crucial ?? 0) != 0 && !npc.Stock.Any(s => s.ObjIndex == objIndex))
-        {
-            var orig = npc.Template.StockItems?.FirstOrDefault(it => it.ObjIndex == objIndex);
-            if (orig is { Amount: > 0 })
-            {
-                st.ObjIndex = objIndex;
-                st.Amount = (short)Math.Clamp(orig.Value.Amount, 1, short.MaxValue);
-                npc.Stock[idx] = st;
-                return;
-            }
-        }
+        // Acá había una rama que REPONÍA la ranura del crucial al agotarse. Quedó inalcanzable con el gate de
+        // arriba —un crucial ya no llega a cero— y se saca: era la aproximación, no la regla.
         // CargarInvent: con TODOS los slots vacíos se recarga el inventario entero desde el .dat. Va en las dos
         // ramas del original, así que también repone a los no-crucial una vez agotados.
         if (npc.Stock.All(s => s.ObjIndex == 0) && npc.Template.StockItems is { Count: > 0 } items)
