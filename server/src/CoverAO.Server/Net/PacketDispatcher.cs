@@ -1217,19 +1217,9 @@ public sealed partial class PacketDispatcher
         // (`EsObjetoFijo`, Modulo_UsUaRiOs.bas:2277 + el flag ObjEsFijo del tile). Y por cada puerta van además
         // sus DOS BlockPosition, para que el que llega sepa si está abierta — sin esto, un jugador que loguea
         // después de que alguien la abrió la ve cerrada.
-        foreach (var (pos, objIndex, amount) in _world.GroundInView(player.Pos))
-        {
-            var info = _data.Obj(objIndex);
-            if (info is not null && EsObjetoFijo(info.ObjType)) continue;
-            session.Send(ServerMessages.ObjectCreate(pos.X, pos.Y, objIndex, amount));
-            if (info is { IsDoor: true })
-            {
-                session.Send(ServerMessages.BlockPosition(pos.X, pos.Y, _data.IsBlockedTile(pos.Map, pos.X, pos.Y)));
-                if (pos.X >= 1)
-                    session.Send(ServerMessages.BlockPosition((byte)(pos.X - 1), pos.Y,
-                                                              _data.IsBlockedTile(pos.Map, pos.X - 1, pos.Y)));
-            }
-        }
+        // El suelo visible, con el mismo helper que usa el cambio de área: `from` en el mapa 0 es "vengo de
+        // ningún lado", así que manda todo lo que hay a la vista.
+        EnviarSueloQueEntraEnVista(_world, _data, player, default, player.Pos);
         foreach (var npc in _world.NpcsOnMap(player.Pos.Map))   // InView ya exige mismo mapa: los otros 861 sobran
             if (World.InView(player.Pos, npc.Pos))
                 session.Send(ServerMessages.CharacterCreate(npc));
@@ -1388,7 +1378,7 @@ public sealed partial class PacketDispatcher
             // oculto al HABLAR (:1387), al ATACAR (:1719), al robar y al trabajar — pero NUNCA al caminar.
             // `MoveUserChar` sólo le descuenta un crédito al contador del centinela. Con el gate inventado,
             // ocultarse quedaba inservible: un paso y ya te veían.
-            RefreshAreaVisibility(_world, p, from, p.Pos);                                   // enter/leave view diffs
+            RefreshAreaVisibility(_world, _data, p, from, p.Pos);                                   // enter/leave view diffs
             _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, nx, ny), p.CharIndex);
             _world.Events.Publish(new PlayerMoved(p, from, p.Pos));
             // Los créditos del centinela se gastan CAMINANDO, no con el reloj: el VB6 los baja de a 1 dentro de
@@ -1488,7 +1478,7 @@ public sealed partial class PacketDispatcher
         DesmontarSiEntraBajoTecho(session, p);            // ni a caballo adentro de un interior/dungeon
         if (dest.Map != from.Map) session.Send(ServerMessages.ChangeMap(dest.Map));
         session.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
-        RefreshAreaVisibility(_world, p, from, dest);     // remove old-area chars, create new-area chars (map-aware)
+        RefreshAreaVisibility(_world, _data, p, from, dest);     // remove old-area chars, create new-area chars (map-aware)
         WarpMascotas(p);                                  // las mascotas viajan con vos (VB6 WarpUserChar:1657)
         WarpFamiliar(p);                                  // y el familiar también (agregado nuestro)
         _world.Events.Publish(new PlayerMoved(p, from, dest));
@@ -1517,7 +1507,7 @@ public sealed partial class PacketDispatcher
         DisembarkIfStranded(t);                           // ni el preso ni el liberado quedan varados a bordo
         if (dest.Map != from.Map) t.Connection?.Send(ServerMessages.ChangeMap(dest.Map));
         t.Connection?.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
-        RefreshAreaVisibility(_world, t, from, dest);
+        RefreshAreaVisibility(_world, _data, t, from, dest);
         WarpMascotas(t);                                  // también al preso y al liberado
         WarpFamiliar(t);
         _world.Events.Publish(new PlayerMoved(t, from, dest));
@@ -8046,6 +8036,31 @@ public sealed partial class PacketDispatcher
     /// dos veces en el Or; es cosmético.)</summary>
     private static bool EsObjetoFijo(int objType) => objType is 8 or 4 or 22 or 48;
 
+    /// <summary>Manda al jugador los objetos del suelo que ENTRAN en su vista al pasar de <paramref name="from"/>
+    /// a <paramref name="to"/>: los del área nueva que no estaban en la vieja, o todos los visibles si cambió de
+    /// mapa (o si <paramref name="from"/> es el "ningún lado" del login, mapa 0). Los fijos del mapa no viajan
+    /// —el cliente los tiene en su data—, y una puerta va con su bloqueo, como en el login. Lo que SALE de la
+    /// vista no se borra: el cliente lo guarda por mapa y lo vacía al cambiar de mapa, igual que el original.</summary>
+    private static void EnviarSueloQueEntraEnVista(World world, GameData data, Player p, WorldPos from, WorldPos to)
+    {
+        var conn = p.Connection;
+        if (conn is null) return;
+        bool mismoMapa = from.Map == to.Map;
+        foreach (var (pos, objIndex, amount) in world.GroundInView(to))
+        {
+            if (mismoMapa && World.InView(from, pos)) continue;   // ya lo tenía
+            var info = data.Obj(objIndex);
+            if (info is not null && EsObjetoFijo(info.ObjType)) continue;
+            conn.Send(ServerMessages.ObjectCreate(pos.X, pos.Y, objIndex, amount));
+            if (info is { IsDoor: true })
+            {
+                conn.Send(ServerMessages.BlockPosition(pos.X, pos.Y, data.IsBlockedTile(pos.Map, pos.X, pos.Y)));
+                if (pos.X >= 1)
+                    conn.Send(ServerMessages.BlockPosition((byte)(pos.X - 1), pos.Y, data.IsBlockedTile(pos.Map, pos.X - 1, pos.Y)));
+            }
+        }
+    }
+
     /// <summary>VB6 <c>Distancia</c> (Matematicas.bas:44): <b>Manhattan</b> (|dx|+|dy|) más 100 por cada mapa
     /// de diferencia. No confundir con <c>Distance</c> (:55), que es EUCLÍDEA y es la que usan las puertas y
     /// el yunque: el original tiene las dos y las usa en lugares distintos, así que copiar la que estaba a
@@ -8549,7 +8564,7 @@ public sealed partial class PacketDispatcher
         DisembarkIfStranded(p);
         if (p.Pos.Map != from.Map) session.Send(ServerMessages.ChangeMap(p.Pos.Map));
         session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
-        RefreshAreaVisibility(_world, p, from, p.Pos);
+        RefreshAreaVisibility(_world, _data, p, from, p.Pos);
         WarpMascotas(p);
         WarpFamiliar(p);
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
@@ -9407,8 +9422,13 @@ public sealed partial class PacketDispatcher
     /// visibility flipped between <paramref name="from"/> and <paramref name="to"/> are touched — a step
     /// within the same 9×9 area sends nothing here; a teleport across areas refreshes the whole view.
     /// Static + World-based so both the dispatcher (walk/teleport) and NpcSystem (respawn) can call it.</summary>
-    public static void RefreshAreaVisibility(World world, Player p, WorldPos from, WorldPos to)
+    public static void RefreshAreaVisibility(World world, GameData data, Player p, WorldPos from, WorldPos to)
     {
+        // LO QUE HAY EN EL PISO también entra en la vista nueva. Esto sólo mandaba personajes y criaturas; el
+        // suelo se mandaba UNA vez, al entrar al juego, así que lo tirado desaparecía al cambiar de mapa y
+        // volver, y lo que otro tiró fuera de tu área inicial no se veía nunca. El server lo tenía: era el
+        // cliente el que no se enteraba. Lo reportó el tester ("tirás algo, cambiás de mapa, volvés, no está").
+        EnviarSueloQueEntraEnVista(world, data, p, from, to);
         foreach (var other in world.Players)
         {
             if (other.CharIndex == p.CharIndex) continue;
