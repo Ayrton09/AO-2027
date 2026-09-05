@@ -4506,10 +4506,12 @@
         ctx.globalCompositeOperation = modo;
         ctx.imageSmoothingEnabled = q;
       }
-      // El tope NO es silencioso: se avisa una vez por mapa cuál fue el pico y cuánto se recortó.
+      // El tope NO es silencioso: se avisa una vez por mapa. A la CONSOLA del navegador, no al chat: es una
+      // nota técnica para quien mide, y en el chat un jugador que recién empieza la lee como que algo anda
+      // mal (pasó el 2026-09-05, en el primer mapa de una partida nueva).
       if (dibujadas >= MAX_PARTICULAS && !avisoParticulas) {
         avisoParticulas = true;
-        log(`Partículas: tope de ${MAX_PARTICULAS} en pantalla (este mapa pide más).`, '#8a9');
+        console.info(`Partículas: tope de ${MAX_PARTICULAS} en pantalla (este mapa pide más).`);
       }
     }
     // Un glow radial cálido/frío (aditivo): centro opaco → borde transparente.
