@@ -9042,7 +9042,11 @@ public sealed partial class PacketDispatcher
             // ladrón parados en ZONASEGURA. Después DoRobar hace el resto (renegado, energía, tirada).
             if (skill == GameLimits.SkillRobar)
             {
-                if (!_data.IsPkMap(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(246, "", 1)); return; }   // VB6 WriteLocaleMsg(246, "", 1)
+                // El original manda el 246 acá (Protocol.bas:3001), y el 246 del locale del install es "[#1] fue
+                // eliminado de tu lista de amigos": apretar la R en la ciudad decía eso, con el #1 sin resolver.
+                // Es un defecto del install, no del port, y se corrige: el texto de este gate es el 310,
+                // "No puedes robar aquí", que existe en el mismo locale y no lo manda nadie más.
+                if (!_data.IsPkMap(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(310, "", 1)); return; }
                 var vpos = new WorldPos(p.Pos.Map, tx, ty);
                 bool vis = Math.Abs(tx - p.Pos.X) <= RangoVisionX && Math.Abs(ty - p.Pos.Y) <= RangoVisionY;
                 var victima = vis ? _world.PlayerAt(vpos) : null;
