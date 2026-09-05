@@ -532,6 +532,46 @@ public class NpcAiTests
         Assert.True(player.Hp < player.MaxHp, "el mago nunca tiró el hechizo");
     }
 
+    /// <summary>
+    /// Aguantar el hechizo de daño de una criatura entrena la Resistencia mágica (VB6 modHechizos.bas:186).
+    /// El camino PvP ya la subía (:366) y éste no, así que contra las 70 criaturas que tiran magia la skill
+    /// quedaba clavada. La subida en sí la hace el dispatcher por el cableado de SubirSkillPorUso; acá se mide
+    /// que el sistema de NPCs la PIDA, y por la skill correcta.
+    /// </summary>
+    [Fact]
+    public void Aguantar_el_hechizo_de_un_npc_entrena_la_Resistencia()
+    {
+        var world = new World();
+        var data = new GameData();
+        data.AddSpellForTest(new SpellInfo(Index: 36, Name: "Hechizo de NPC", SubeHp: 2,
+            MinHp: 30, MaxHp: 50, ManaCost: 0, Target: 3));
+        var npc = new Npc
+        {
+            CharIndex = world.AllocateCharIndex(), Hp = 1000, Pos = new WorldPos(1, 10, 10), Movement = 1,
+            Hostile = true, OriginallyHostile = true,
+            Template = Template("Mago") with { MinHit = 0, MaxHit = 0, Spells = new[] { 36 } },
+        };
+        world.AddNpc(npc);
+        var player = PlayerAt(world, "Rugura", 10, 11);
+        var sys = new NpcSystem(world, data);
+        var subidas = new System.Collections.Generic.List<int>();
+        sys.SubirSkillPorUso = (_, skill) => subidas.Add(skill);
+        RunRounds(sys);
+
+        Assert.True(player.Hp < player.MaxHp, "el mago nunca tiró el hechizo");
+        Assert.Contains(GameLimits.SkillResistencia, subidas);
+
+        // CONTROL: el golpe cuerpo a cuerpo de una criatura entrena Tácticas, no Resistencia. Sin esto, un
+        // sistema que pidiera Resistencia por CUALQUIER daño pasaría el check de arriba.
+        var (lobo, victima, sysMelee) = Adjacent("Lobo");
+        lobo.AttackedBy = victima.Name;
+        var subidasMelee = new System.Collections.Generic.List<int>();
+        sysMelee.SubirSkillPorUso = (_, skill) => subidasMelee.Add(skill);
+        RunRounds(sysMelee);
+        Assert.True(victima.Hp < victima.MaxHp, "el lobo nunca pegó");
+        Assert.DoesNotContain(GameLimits.SkillResistencia, subidasMelee);
+    }
+
     [Fact]
     public void Un_npc_sin_hechizos_sigue_pegando_a_melee()
     {

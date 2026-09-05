@@ -1627,6 +1627,7 @@ public sealed partial class PacketDispatcher
         // `target.Meditating` se lee ACA, despues del corte de arriba, que es donde lo lee el original.
         if (_rng.Next(1, 101) > Combat.HitChance(pa, pe, target.Meditating))
         {
+            SonidosDelGolpeAUnJugador(session, p, target, acerto: false);
             // El fallo tambien se muestra: un "0" flotante sobre uno mismo (SistemaCombate.bas:1248).
             session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
@@ -1652,6 +1653,7 @@ public sealed partial class PacketDispatcher
             }
             return;
         }
+        SonidosDelGolpeAUnJugador(session, p, target, acerto: true);
         int rawDamage = MeleeDamage(p, contraNpc: false);
         // Victim's equipment absorbs the blow (UserDañoUser): head→helmet, body→armour(+shield).
         int zona = _rng.Next(1, 7); // RandomNumber(bCabeza=1, bTorso=6)
@@ -1897,8 +1899,21 @@ public sealed partial class PacketDispatcher
     {
         RevealOnAttack(p);   // disparar a un NPC revela ocultamiento e invisibilidad por hechizo (VB6 UsuarioAtacaNpc)
         npc.AttackedBy = p.Name; npc.Hostile = true;   // provocar (igual que el melee), aun si falla
+        // EL RUIDO DE LA FLECHA. El original no tiene un camino propio para el disparo: el `Case Proyectiles`
+        // (Protocol.bas:2860) llama al MISMO `UsuarioAtacaNpc` que el melee, y ahí adentro están las dos
+        // ramas de sonido del arco (SistemaCombate.bas:916-919 al acertar, :938 al errar). Acá el disparo
+        // resolvía el daño por su cuenta y no pasaba por el helper, así que tirar con arco era mudo — el
+        // melee sonaba desde el 2026-09-03 y el arco no. Lo reportó el tester.
         if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), npc.Template.PoderEvasion))
-        { session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0)); return; }   // el fallo, sin texto
+        {
+            SonidosDelGolpeAUnaCriatura(session, p, npc, acerto: false);
+            session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0)); return;   // el fallo, sin texto
+        }
+        // Proyectiles sube apenas la tirada acierta (VB6 `UserImpactoNpc`, SistemaCombate.bas:216-218), ANTES
+        // del quejido, de los sonidos y del daño — el mismo orden que ya lleva el melee de arriba.
+        RaiseSkill(session, p, GameLimits.SkillProyectiles);
+        NpcSystem.SonidoDeCriatura(_world, npc, npc.Template.Snd2);   // :909, el quejido de la criatura
+        SonidosDelGolpeAUnaCriatura(session, p, npc, acerto: true);
         int damage = RangedDamage(p, bow, ammo) - npc.Template.Def;
         // El disparo gotea experiencia igual que la espada, y con el MISMO orden (antes de aplicar el daño):
         // en el original el arco no tiene un camino propio — `UsuarioAtacaNpc` ramifica por proyectil sólo
@@ -1908,7 +1923,6 @@ public sealed partial class PacketDispatcher
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
         // Sin texto y solo al tirador (UserDanoNpc, SistemaCombate.bas:467).
         session.Send(ServerMessages.DamageOverHead(npc.CharIndex, damage));
-        RaiseSkill(session, p, GameLimits.SkillProyectiles);   // el arco entrena Proyectiles
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
     }
 
@@ -1919,10 +1933,12 @@ public sealed partial class PacketDispatcher
         long pe = Combat.PoderEvasion(target.Skills[GameLimits.SkillTacticas], target.Agility, target.Level, evasionMod);
         if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), pe, target.Meditating))
         {
+            SonidosDelGolpeAUnJugador(session, p, target, acerto: false);
             session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));   // el fallo, sin texto
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
             return;
         }
+        SonidosDelGolpeAUnJugador(session, p, target, acerto: true);
         int rawDamage = RangedDamage(p, bow, ammo);
         int zona = _rng.Next(1, 7);
         var casco = Equipment.EquippedOfCategory(target, _data, 3);
@@ -2177,6 +2193,49 @@ public sealed partial class PacketDispatcher
         if (municion is { Snd2: > 0 })
             _world.BroadcastToObservers(npc.Pos, ServerMessages.CreateFX(npc.CharIndex, (short)municion.Snd2, 0));
         AlAreaDelJugador(session, p, SndImpacto3, npc.Pos);
+    }
+
+    private const short FxSangre = 14;   // FXSANGRE (Declares.bas:67): el chorro sobre el que recibe el golpe
+
+    /// <summary>
+    /// EL RUIDO DE PEGARLE A OTRO JUGADOR — y de errarle (VB6 <c>UsuarioAtacaUsuario</c>, SistemaCombate.bas
+    /// :1195-1248). Es la misma tabla de sonidos que contra una criatura, con las mismas dos ramas por arma,
+    /// y acá faltaba entera: el PvP se veía —los flotantes de daño— pero no se escuchaba, ni con espada ni con
+    /// arco. Y junto con el sonido falta el chorro de sangre (<c>FXSANGRE</c>, :1211), que el original pone
+    /// sobre la víctima con cada golpe que entra, salvo que esté navegando.
+    ///
+    /// <para>Dos diferencias con la versión contra criaturas, y las dos son del original: los sonidos del
+    /// acierto van al área de la VÍCTIMA (<c>ToPCArea, VictimaIndex</c>) —menos el <c>SND_IMPACTO3</c> de
+    /// la flecha, que va a la del atacante—, y la baldosa que viaja en TODOS es la del atacante, porque el
+    /// <c>.Pos</c> de ese tramo está dentro de <c>With UserList(AtacanteIndex)</c>. El fallo suena en el área
+    /// del atacante, como contra una criatura.</para>
+    /// </summary>
+    private void SonidosDelGolpeAUnJugador(ClientSession session, Player p, Player victima, bool acerto)
+    {
+        var arma = Equipment.EquippedOfCategory(p, _data, 1);
+        int ranuraMunicion = EquippedSlotOfCategory(p, 5);
+        bool conFlecha = arma is { Proyectil: 1 } && ranuraMunicion != 0;
+
+        if (!acerto)
+        {
+            AlAreaDelJugador(session, p, conFlecha ? SndFallasFlecha : SndSwing, p.Pos);
+            return;
+        }
+        if (conFlecha)
+        {
+            var municion = _data.Obj(p.Inventory[ranuraMunicion].ObjIndex);
+            if (municion is { Snd1: > 0 })
+                _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)municion.Snd1, p.Pos.X, p.Pos.Y));
+            if (municion is { Snd2: > 0 })
+                _world.BroadcastToObservers(victima.Pos, ServerMessages.CreateFX(victima.CharIndex, (short)municion.Snd2, 0));
+            AlAreaDelJugador(session, p, SndImpacto3, p.Pos);
+        }
+        else
+        {
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave(SndImpacto, p.Pos.X, p.Pos.Y));
+        }
+        if (!victima.Navigating)
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.CreateFX(victima.CharIndex, FxSangre, 0));
     }
 
     /// <summary>Un <c>PlayWave</c> al área del jugador, él incluido (el <c>SendTarget.ToPCArea</c> del
@@ -11858,9 +11917,11 @@ public sealed partial class PacketDispatcher
             // ese array es el de los buffs TEMPORALES, tiene vencimiento propio, y un bonus de equipo puesto ahí
             // se evaporaría solo con el ítem todavía puesto. Además la mitad del código lee el atributo base
             // directo (nivelar, guardar, el paquete de stats), así que el bonus no llegaría a esos caminos.
+            // Sin el techo de MAXATRIBUTOS: el original no lo aplica al equipar (InvUsuario.bas:968 suma y
+            // listo), sólo al beber la poción. Con el techo acá, unas Botas de Celeridad sobre una agilidad
+            // alta se recortaban al ponerse y se restaban enteras al sacarse: cada vuelta comía un punto.
             case ModificaAtributo when o.QueAtributo > 0 && o.QueAtributo < p.Attributes.Length:
-                p.Attributes[o.QueAtributo] =
-                    (byte)Math.Clamp(p.Attributes[o.QueAtributo] + delta, 0, Game.GameLimits.MaxAttribute);
+                p.Attributes[o.QueAtributo] = (byte)Math.Clamp(p.Attributes[o.QueAtributo] + delta, 0, 255);
                 break;
         }
     }

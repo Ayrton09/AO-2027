@@ -11,7 +11,10 @@ public static class GameLimits
     public const int MaxMascotas = 3;         // Declares.bas:444 MAXMASCOTAS — cupo COMPARTIDO entre domar e invocar
     public const int MaxMascotasMismoTipo = 2; // VB6 PuedeDomarMascota (Trabajo.bas:1162): máx 2 mascotas del mismo NPC
     public const int MaxInventoryObjs = 10000; // MAX_INVENTORY_OBJS (tope por ranura al apilar, InvUsuario.bas)
-    public const int MaxAttribute = 40;       // MAXATRIBUTOS (attribute cap for potion boosts)
+    // MAXATRIBUTOS (Declares.bas:349): el techo que ponen las pociones verde/amarilla y los hechizos de fuerza y
+    // agilidad. Acá decía 40 y el original dice 35 — y el cliente del original pinta el atributo en naranja
+    // justo a partir de 35, así que con 40 el port dejaba subir cinco puntos más de lo que el juego enseña.
+    public const int MaxAttribute = 35;
 
     // Índices de Player.Attributes (VB6 eAtributos): el orden en que viajan en el paquete `atributes`.
     public const int AttrFuerza = 1;

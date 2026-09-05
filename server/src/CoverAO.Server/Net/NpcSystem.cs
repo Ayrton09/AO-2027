@@ -926,6 +926,11 @@ public sealed class NpcSystem
         player.Hp = Math.Max(0, player.Hp - dano);
         conn?.Send(ServerMessages.LocaleMsg(34, $"${npc.Template.Index}%{dano}"));
         conn?.Send(ServerMessages.UpdateHP((short)player.Hp));
+        // AGUANTAR EL HECHIZO ENTRENA LA RESISTENCIA MÁGICA (VB6 modHechizos.bas:186, entre el UpdateHP y el
+        // cartel del hechizo). El camino de jugador contra jugador ya lo tenía (:366) y éste no, así que la
+        // skill sólo subía en PvP: contra las 70 criaturas que tiran magia quedaba clavada. Lo reportó el
+        // tester. Va antes de la muerte, como allá; y el tope por nivel lo pone SubirSkill.
+        SubirSkillPorUso?.Invoke(player, GameLimits.SkillResistencia);
         if (player.Hp < 1) PacketDispatcher.KillPlayer(_world, _data, player);
         return true;
     }

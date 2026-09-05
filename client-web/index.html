@@ -283,6 +283,9 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }   /* "Ciudad de Ullathorpe" no rompe el pie */
     .attrs { font-size:calc(var(--u)*0.8); color:var(--ink-dim); text-align:center; }
     .attrs b { color:var(--gold-hi); }
+    /* El atributo en el tope (35): el original lo pinta de &H40C0& —naranja quemado— para avisar que la
+       poción ya no sube más. */
+    .attrs b.tope { color:#c04000; }
     #minimap { width:calc(var(--u)*7); height:calc(var(--u)*7); image-rendering:pixelated;
       border:1px solid var(--gold-lo); border-radius:3px; background:#0a0f0a; box-shadow:inset 0 0 10px #000; }
 
@@ -3708,8 +3711,12 @@
         case 'UpdateMana': if (myStats) myStats.minMan = f.minMan; break;
         case 'UpdateSta': if (myStats) myStats.minSta = f.minSta; break;
         case 'UpdateExp': if (myStats) myStats.exp = f.exp; break;
-        case 'UpdateStrenght': if (myStats) myStats.fuerza = f.fuerza; break;
-        case 'UpdateDexterity': if (myStats) myStats.agilidad = f.agilidad; break;
+        // Los dos granulares de atributo TAMBIÉN pisan `myAttrs`, que es lo que lee el HUD y la ficha. Acá
+        // sólo se guardaban en `myStats`, que nadie mostraba: la poción verde subía la fuerza en el server
+        // (llegaba el UpdateStrenght con el valor nuevo) y abajo a la derecha seguía el número viejo. El
+        // original los pinta desde el mismo paquete (clsClientTCP.ActualizarEst, `lblStrg = Fuerza`).
+        case 'UpdateStrenght': if (myStats) myStats.fuerza = f.fuerza; if (myAttrs) myAttrs.fuerza = f.fuerza; break;
+        case 'UpdateDexterity': if (myStats) myStats.agilidad = f.agilidad; if (myAttrs) myAttrs.agilidad = f.agilidad; break;
         case 'UpdateUserStatsForLevel':               // al subir de nivel viajan los MAXIMOS, no los actuales
           if (myStats) { myStats.maxHp = f.maxHp; myStats.maxMan = f.maxMan; myStats.maxSta = f.maxSta;
                          myStats.level = f.level; myStats.elu = f.elu; myStats.exp = f.exp; }
@@ -4008,6 +4015,7 @@
       _ultimo.set(k, v);
       if (prop === 'w') el.style.width = v; else el.textContent = v;
     }
+    const ATRIB_TOPE = 35;                // MAXATRIBUTOS del server: de ahí para arriba la cifra cambia de color
     const hudEl = {
       level: $('levelnum'), xpfill: $('xpfill'), xptxt: $('xptxt'), gold: $('v-gold'),
       str: $('a-str'), agi: $('a-agi'), name: $('charname'), mapa: $('mapname'),
@@ -4044,7 +4052,14 @@
       }
       setBar('food', myFood.cur, myFood.max);
       setBar('thirst', myThirst.cur, myThirst.max);
-      if (myAttrs) { esc_(hudEl.str, 't', myAttrs.fuerza); esc_(hudEl.agi, 't', myAttrs.agilidad); }
+      if (myAttrs) {
+        esc_(hudEl.str, 't', myAttrs.fuerza); esc_(hudEl.agi, 't', myAttrs.agilidad);
+        // Al llegar al tope el original cambia el color de la cifra (ActualizarEst: `IIf(Fuerza < 35,
+        // blanco, &H40C0&)`): es la señal de que la poción ya no sube más. ATRIB_TOPE es el MAXATRIBUTOS del
+        // server (Declares.bas:349).
+        hudEl.str.classList.toggle('tope', myAttrs.fuerza >= ATRIB_TOPE);
+        hudEl.agi.classList.toggle('tope', myAttrs.agilidad >= ATRIB_TOPE);
+      }
       const me = chars.get(myCharIndex);
       if (me && me.name) esc_(hudEl.name, 't', me.name);
       // El NOMBRE del lugar, no su número. Los `map<N>.json` lo traen desde el header del .csm
