@@ -49,6 +49,23 @@ public sealed class ClientSession : IConnection
     public void SoltarVerificacion() => Interlocked.Exchange(ref _verificando, 0);
 
     public string RemoteEndpoint { get; }
+
+    /// <summary>Cupo de líneas de log POR ACCIÓN DEL JUGADOR: tirar, agarrar, usar un objeto, abrir una bolsa.
+    /// Cada una escribía una línea al log de disco por paquete, y el tope de paquetes por segundo no alcanza
+    /// como freno: medido, un cliente a 96 pkt/s escribía 96 líneas/s, y con las 64 conexiones que admite una
+    /// IP eso son decenas de GB por día contra el disco del que hostea. Diez líneas cada diez segundos por
+    /// sesión: el jugador normal no las agota nunca, y el que inunda deja de aparecer en el log.</summary>
+    public bool PermiteLog() => PermiteLog(Environment.TickCount64);
+    public bool PermiteLog(long nowMs)
+    {
+        if (nowMs - _logVentanaMs >= LogVentanaMs) { _logVentanaMs = nowMs; _logLineas = 0; }
+        return ++_logLineas <= LogLineasPorVentana;
+    }
+    public const int LogLineasPorVentana = 10;
+    public const long LogVentanaMs = 10_000;
+    private long _logVentanaMs;
+    private int _logLineas;
+
     /// <summary>La sesión ya se cerró. La mira el trabajo diferido (verificación de contraseña) antes de
     /// tocar el mundo: entre que arrancó y que terminó, el cliente se pudo haber ido.</summary>
     public bool Cerrada => _closed;

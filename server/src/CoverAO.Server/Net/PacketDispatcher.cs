@@ -42,8 +42,9 @@ public sealed partial class PacketDispatcher
     public PacketDispatcher(World world, GameLoop loop, Persistence db, GameData data, Leveling leveling,
         long walkIntervalMs = 0, long attackIntervalMs = 0, LoginThrottle? throttle = null, AdminConfig? admin = null,
         ServerContent? content = null, NpcSystem? npcs = null, Action<bool>? shutdown = null,
-        bool fixtureMode = false, Data.ServerIni? serverIni = null)
+        bool fixtureMode = false, Data.ServerIni? serverIni = null, LoginThrottle? creacionDeCuentas = null)
     {
+        _creaciones = creacionDeCuentas;
         _ini = serverIni ?? new Data.ServerIni();
         _fixtureMode = fixtureMode;
         _shutdown = shutdown;
@@ -112,6 +113,20 @@ public sealed partial class PacketDispatcher
     /// <summary>Apagar el servidor (el mismo callback que usa el panel de admin: <c>cts.Cancel()</c>). Lo necesita
     /// <c>/APAGAR</c>. Null en tests, donde el comando avisa y no apaga nada.</summary>
     private readonly Action<bool>? _shutdown;
+
+    /// <summary>Cupo de CUENTAS NUEVAS por IP. <see cref="LoginThrottle"/> cuenta fallos, y crear una cuenta
+    /// con un nombre libre no falla nunca: medido, quince seguidas desde una misma dirección, quince
+    /// archivos nuevos en <c>data/Cuentas</c> y quince PBKDF2, sin que nada frenara. Acá cada creación que
+    /// SALE se anota como un "fallo" del cupo; a la cuarta en diez minutos la IP queda bloqueada para crear
+    /// (no para entrar: es otro contador). Tres cuentas cada diez minutos alcanza para cualquier persona.</summary>
+    private readonly LoginThrottle? _creaciones;
+    private bool CreacionBloqueada(ClientSession session)
+    {
+        if (_creaciones is null) return false;
+        if (!_creaciones.IsBlocked(ConnectionGuard.IpOf(session.RemoteEndpoint))) return false;
+        Reject(session, "Demasiadas cuentas creadas desde esta dirección. Esperá unos minutos.");
+        return true;
+    }
 
     /// <summary>Chequeo de rate-limit al inicio de un handler de login. true = bloqueado (ya rechazó).</summary>
     private bool LoginBlocked(ClientSession session)
@@ -573,6 +588,7 @@ public sealed partial class PacketDispatcher
             // mundo mientras le llenaba el disco al que hostea. El propio docstring de LoginThrottle nombra
             // este vector ("amplificación de DoS por PBKDF2") y esta ruta se había quedado afuera.
             if (LoginBlocked(session)) return;
+            if (CreacionBloqueada(session)) return;
             if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
             CrearCuentaFueraDelLoop(session, account, password, userCode);
         });
@@ -622,6 +638,7 @@ public sealed partial class PacketDispatcher
                     if (existia) { LoginFail(session); Reject(session, $"La cuenta '{account}' ya existe."); return; }
                     if (!creada) { Reject(session, "No se pudo crear la cuenta."); return; }
                     LoginOk(session);
+                    _creaciones?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));   // una creación que salió consume cupo
                     Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
                     // Lista de personajes vacía, para que el cliente siga a crear el primero.
                     session.Send(ServerMessages.AddPj(account, Array.Empty<CharacterSummary>()));
@@ -10787,7 +10804,7 @@ public sealed partial class PacketDispatcher
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
-            Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} tira {drop} en ({p.Pos.X},{p.Pos.Y})");
+            if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} tira {drop} en ({p.Pos.X},{p.Pos.Y})");
         });
     }
 
@@ -10831,7 +10848,7 @@ public sealed partial class PacketDispatcher
             _world.RemoveGround(p.Pos);
             _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectDelete(p.Pos.X, p.Pos.Y));
             session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
-            Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} agarra obj {ground.ObjIndex} en slot {slot}");
+            if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} agarra obj {ground.ObjIndex} en slot {slot}");
         });
     }
 
@@ -11120,7 +11137,7 @@ public sealed partial class PacketDispatcher
                 if (inv.Amount <= 0) inv = default;
                 p.Inventory[slot] = inv;
                 session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
-                Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} abre {obj.Name} (+{obj.Value} oro -> {p.Gold})");
+                if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} abre {obj.Name} (+{obj.Value} oro -> {p.Gold})");
                 return;
             }
 
@@ -11293,7 +11310,7 @@ public sealed partial class PacketDispatcher
             // Case de InvUsuario.bas:1567-1626 elige su propio Write (Dexterity / Strenght / HP / Mana).
             if (avisoStat is not null) session.Send(avisoStat);
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
-            Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} usa {obj.Name} ({effect})");
+            if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} usa {obj.Name} ({effect})");
         });
     }
 
