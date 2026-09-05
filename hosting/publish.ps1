@@ -375,6 +375,9 @@ aunque nunca les des un archivo: alcanza con que se conecten a jugar.
   Poné tu enlace en  Server.ini  ->  [INIT] CodigoFuente=https://...
   El juego se lo muestra al jugador en  Menu -> Licencia . Con eso cumplis.
 
+ERRORES Y PROPUESTAS: https://github.com/Ayrton09/CoverAO/issues  (los cambios de codigo, como
+Pull Request en el mismo repositorio). El juego muestra ese enlace en  Menu -> Licencia .
+
 Si no completas esa clave, el jugador ve el aviso de licencia sin enlace. Los graficos,
 sonidos y mapas heredados de Argentum Online no son parte de esta licencia: ver CREDITOS.
 "@

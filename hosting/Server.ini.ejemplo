@@ -327,9 +327,9 @@ RolesMasters=0
 ; estaba al final del archivo, debajo de [INTERVALOS]: el que descomentaba la
 ; linea la dejaba en esa otra seccion y la clave no se leia nunca -- el enlace
 ; no aparecia y no habia forma de notarlo.
-; Se deja PUESTA y vacia (que es lo mismo que ausente) para que el aviso de "opciones nuevas" del
-; arranque quede limpio. Escribi tu URL a la derecha del =.
-CodigoFuente=
+; Viene con el repositorio original, que es tambien a donde van los errores y las propuestas
+; (el juego agrega el /issues solo). Si hosteas un fork con cambios propios, pone el tuyo.
+CodigoFuente=https://github.com/Ayrton09/CoverAO
 
 ; ---------------------------------------------------------------------------
 ;  Version de cliente que este servidor acepta.

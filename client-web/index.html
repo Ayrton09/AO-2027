@@ -4314,6 +4314,11 @@
         codigoFuente
           ? 'Código fuente de este servidor: ' + codigoFuente
           : 'Quien hostea este servidor todavía no publicó de dónde bajar su código. Puede hacerlo poniendo la URL en Server.ini → [INIT] CodigoFuente.',
+        // Si el código vive en una forja con issues (GitHub/GitLab), el mismo enlace sirve para reportar
+        // errores y proponer cambios: es a donde el autor quiere que vayan, y no al chat del GM.
+        ...(/github\.com|gitlab\.com/.test(codigoFuente)
+          ? ['Errores y propuestas de cambio: ' + codigoFuente.replace(/\/+$/, '') + '/issues']
+          : []),
         '',
         'Los gráficos, sonidos y mapas vienen de Argentum Online y no son parte de esta licencia.',
       ], true, 'licencia');

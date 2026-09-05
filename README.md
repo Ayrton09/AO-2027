@@ -93,6 +93,14 @@ tiene cableado**: el **comercio entre usuarios** es código muerto en CoverAO-20
 handler no tiene rama para otro usuario, los entry-points no tienen llamadores y el cliente VB6 no trae ni el
 formulario ni los paquetes para participar—, así que portarlo sería inventarlo.
 
+## Reportar errores y proponer cambios
+
+Todo pasa por GitHub: los errores y las sugerencias van a
+[Issues](https://github.com/Ayrton09/CoverAO/issues) y los cambios de código, como
+[Pull Requests](https://github.com/Ayrton09/CoverAO/pulls). Al reportar, contá qué hiciste, qué esperabas y
+qué pasó; si es del cliente web, con qué navegador. El mismo enlace se lo muestra el juego al jugador en
+Menú → Licencia cuando el `Server.ini` trae `CodigoFuente`.
+
 ## Licencia
 
 **[AGPL-3.0](LICENSE)** — software libre con copyleft. No fue una elección de gusto: el material del que esto
