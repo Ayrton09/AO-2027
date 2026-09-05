@@ -262,8 +262,10 @@
     /* Fuerza y Agilidad vivían en el pie, al lado del minimapa. La grilla de barras es de dos columnas y
        Energía queda sola en la última fila, así que la celda de al lado estaba vacía: es el hueco que se
        pedía. Se le da el alto de un .track para que el renglón cierre parejo con la barra de Energía. */
-    .p-bars .attrs { height:calc(var(--u)*1.25); display:flex; align-items:center; justify-content:center;
-      gap:.4em; font-size:calc(var(--u)*0.78); }
+    /* Alineado a la izquierda, debajo de su título, como el "100/100" de cada barra: centrado quedaba
+       corrido respecto de ATRIBUTOS y se leía desparejo (lo marcó el autor jugando, 2026-09-05). */
+    .p-bars .attrs { height:calc(var(--u)*1.25); display:flex; align-items:center; justify-content:flex-start;
+      gap:.4em; font-size:calc(var(--u)*0.78); text-align:left; }
     /* EL ORO NO ES UNA BARRA. Estaba metido en la sexta celda de la grilla, donde todas las vecinas son
        barras con su relleno y su "100/100": quedaba como una barra rota. Va en su propio renglón, ancho
        completo y separado por un filete, que es lo que es — un total, no una proporción. */
