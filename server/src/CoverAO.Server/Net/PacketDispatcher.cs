@@ -7377,6 +7377,11 @@ public sealed partial class PacketDispatcher
             short attachObj = 0, attachAmt = 0;
             if (objIndex > 0 && amount > 0)
             {
+                // El adjunto no puede pasar de UNA pila. Al retirarlo entra en una sola ranura, recortado a
+                // `MaxInventoryObjs`; con 12.000 adjuntadas salían 12.000 del emisor y al receptor le entraban
+                // 10.000 — las otras 2.000 desaparecían. Se rechaza, no se recorta, como la cantidad al fabricar.
+                if (amount > GameLimits.MaxInventoryObjs)
+                { session.Send(ServerMessages.ConsoleMsg($"No puedes adjuntar más de {GameLimits.MaxInventoryObjs} unidades.", FuenteInfo)); return; }
                 if (CountItem(p, objIndex) < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes ese ítem para adjuntar.", FuenteInfo)); return; }
                 ConsumeItem(session, p, objIndex, amount);
                 attachObj = objIndex; attachAmt = amount;
