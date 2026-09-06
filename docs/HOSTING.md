@@ -112,7 +112,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `IdleLimit` | minutos sin actividad antes de desconectar. 0 = nunca |
 | `MaxPaquetesPorSegundo`, `RafagaDePaquetes` | techo de paquetes de una conexión. Al que lo sostiene se lo desconecta. 0 = sin límite |
 | `TrampasParaEchar`, `TrampasParaBanear` | anticheat con memoria: cada trampa detectada (velocidad, ataque fuera de rango, skills inventados, comprar más de una pila…) suma un punto en la CUENTA, que se conserva entre sesiones y se ve en el panel. Desde la primera cifra se lo expulsa en cada trampa nueva; en la segunda se banea cuenta y personaje. Los GMs conectados ven cada una. 0 = ese escalón apagado |
-| `MaxPersonajesPorIp` | cuántos personajes pueden estar jugando a la vez desde una misma IP (el original: tope fijo de 10 conexiones y nada más). Contra la manada de alts. Subilo si tus jugadores comparten casa o cyber. 0 = sin tope |
+| `MaxPersonajesPorIp` | cuántos personajes pueden estar jugando a la vez desde una misma IP (el original: tope fijo de 10 conexiones y nada más). Contra la manada de alts. 10 por defecto, como el tope de conexiones del original: alcanza para una LAN. 0 = sin tope |
 | `ClaveMinima` | largo mínimo de una contraseña nueva, al crear la cuenta y al cambiar la clave. 0 = sin mínimo |
 | `EconomiaUmbralOro` | los movimientos de oro de este monto o más (depósito, extracción, compra, venta, tirar, agarrar, casino) y todos los correos con adjunto, transferencias y bolsas van a `data/logs/economia-AAAA-MM-DD.log`, para reconstruir de dónde salió el oro de alguien. 0 = se anota todo |
 | `MsEntreMensajes`, `RafagaDeMensajes` | anti-spam de chat, susurro, clan y `/GM`. En ms entre mensajes |

@@ -42,7 +42,7 @@ public class AnticheatEscalonadoTests
     public void El_tope_por_ip_y_la_clave_minima_tienen_default_y_se_leen_del_ini()
     {
         var sin = new ServerIni();
-        Assert.Equal(3, sin.MaxPersonajesPorIp);
+        Assert.Equal(10, sin.MaxPersonajesPorIp);
         Assert.Equal(6, sin.ClaveMinima);
         Assert.False(sin.InitEscrita("MaxPersonajesPorIp"));   // sin archivo, nada está escrito
 

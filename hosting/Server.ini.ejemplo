@@ -137,9 +137,9 @@ TrampasParaBanear=6
 ; Cuantos personajes pueden estar JUGANDO a la vez desde una misma direccion IP.
 ; El original tenia un tope fijo de 10 conexiones por IP y nada mas; esto cuenta
 ; los que estan adentro del mundo. Es contra la manada de alts para farmear o
-; inclinar un evento. Ojo si tus jugadores comparten una casa o un cyber: subilo.
-; 0 = sin tope.
-MaxPersonajesPorIp=3
+; inclinar un evento. Diez, como el tope de conexiones del original: alcanza
+; para una LAN de amigos. 0 = sin tope.
+MaxPersonajesPorIp=10
 ; Largo minimo de una contraseña nueva, al crear la cuenta y al cambiar la clave.
 ; El original acepta una de un caracter. 0 = sin minimo.
 ClaveMinima=6
