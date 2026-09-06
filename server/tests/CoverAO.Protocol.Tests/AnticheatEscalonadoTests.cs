@@ -39,6 +39,64 @@ public class AnticheatEscalonadoTests
     }
 
     [Fact]
+    public void El_tope_por_ip_y_la_clave_minima_tienen_default_y_se_leen_del_ini()
+    {
+        var sin = new ServerIni();
+        Assert.Equal(3, sin.MaxPersonajesPorIp);
+        Assert.Equal(6, sin.ClaveMinima);
+        Assert.False(sin.InitEscrita("MaxPersonajesPorIp"));   // sin archivo, nada está escrito
+
+        string ruta = Path.Combine(Path.GetTempPath(), "coverao_ini_" + Guid.NewGuid().ToString("N") + ".ini");
+        File.WriteAllText(ruta, "[INIT]\nStartPort=7666\nMaxPersonajesPorIp=2\nClaveMinima=0\n");
+        try
+        {
+            var con = ServerIni.Cargar(ruta);
+            Assert.Equal(2, con.MaxPersonajesPorIp);
+            Assert.Equal(0, con.ClaveMinima);
+            // Escrita: es lo que hace que el --fixture NO la apague (un flow la pide a propósito).
+            Assert.True(con.InitEscrita("MaxPersonajesPorIp"));
+            Assert.False(con.InitEscrita("TrampasParaEchar"));
+            Assert.Contains("MaxPersonajesPorIp", ServerIni.ClavesConocidas);
+            Assert.Contains("ClaveMinima", ServerIni.ClavesConocidas);
+        }
+        finally { File.Delete(ruta); }
+    }
+
+    [Fact]
+    public void El_rate_limit_de_login_purga_las_ips_vencidas()
+    {
+        // Antes el mapa crecía para siempre: una entrada por cada IP que falló un login alguna vez.
+        var t = new LoginThrottle(maxFails: 20, windowMs: 1, blockMs: 1);
+        for (int i = 0; i < 1000; i++) t.RecordFailure($"10.1.{i / 256}.{i % 256}");
+        Thread.Sleep(5);                       // vencen las ventanas
+        for (int i = 0; i < 300; i++) t.RecordFailure($"10.2.{i / 256}.{i % 256}");   // 300 altas → al menos una purga
+        Assert.True(t.Anotadas < 1300, $"quedaron {t.Anotadas} IPs anotadas: no purgó");
+        // CONTROL: una IP bloqueada NO se purga aunque su ventana haya vencido.
+        var b = new LoginThrottle(maxFails: 1, windowMs: 1, blockMs: 60_000);
+        b.RecordFailure("10.9.9.9");           // bloqueada un minuto
+        Thread.Sleep(5);
+        for (int i = 0; i < 600; i++) b.RecordFailure($"10.3.{i / 256}.{i % 256}");
+        Assert.True(b.IsBlocked("10.9.9.9"));
+    }
+
+    [Fact]
+    public void El_registro_de_trampas_es_un_archivo_aparte_del_de_economia()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "coverao_tr_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var eco = new RegistroDeEconomia(dir, 30);
+            using var tr = new RegistroDeEconomia(dir, 30, "trampas");
+            tr.Anotar("cuenta_test Merlin ip:127.0.0.1 #1: speedhack"); tr.Volcar();
+            eco.Anotar("deposito Rugura: 1500 oro"); eco.Volcar();
+            Assert.NotEqual(eco.ArchivoDeHoy, tr.ArchivoDeHoy);
+            Assert.Contains("speedhack", File.ReadAllText(tr.ArchivoDeHoy));
+            Assert.DoesNotContain("speedhack", File.ReadAllText(eco.ArchivoDeHoy));
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
     public void Las_trampas_de_la_cuenta_sobreviven_al_guardado()
     {
         var acc = new Account { Name = "tramposo", PasswordHash = "h", Salt = "s", Trampas = 4 };

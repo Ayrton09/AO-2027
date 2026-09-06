@@ -92,6 +92,7 @@ public sealed class LoginThrottle
     private readonly object _gate = new();
 
     private struct Entry { public int Fails; public long WindowStartMs; public long BlockedUntilMs; }
+    private int _altas;
 
     public LoginThrottle(int maxFails, long windowMs, long blockMs)
     {
@@ -108,11 +109,20 @@ public sealed class LoginThrottle
             return _map.TryGetValue(ip, out var e) && e.BlockedUntilMs > now;
     }
 
+    /// <summary>Cuántas IPs tiene anotadas. Para el test de la purga.</summary>
+    public int Anotadas { get { lock (_gate) return _map.Count; } }
+
     public void RecordFailure(string ip)
     {
         long now = Environment.TickCount64;
         lock (_gate)
         {
+            // PURGA. El mapa crecía para siempre: una IP por cada fallo de login que hubo alguna vez. Con muchas
+            // IPs distintas (un barrido desde una botnet) era memoria que no volvía. Cada tantas altas se sacan
+            // las entradas cuya ventana ya venció y no están bloqueadas.
+            if (++_altas % 256 == 0)
+                foreach (var k in _map.Where(kv => kv.Value.BlockedUntilMs <= now && now - kv.Value.WindowStartMs > _windowMs).Select(kv => kv.Key).ToList())
+                    _map.Remove(k);
             _map.TryGetValue(ip, out var e);
             if (e.WindowStartMs == 0 || now - e.WindowStartMs > _windowMs) { e.WindowStartMs = now; e.Fails = 0; }
             e.Fails++;

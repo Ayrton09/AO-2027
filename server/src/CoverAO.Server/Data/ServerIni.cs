@@ -53,6 +53,14 @@ public sealed class ServerIni
     public int TrampasParaBanear { get; private set; } = 6;
     // REGISTRO DE ECONOMÍA: los movimientos de oro de este monto o más van a data/logs/economia-*.log.
     public int EconomiaUmbralOro { get; private set; } = 1000;
+    // PERSONAJES EN EL MUNDO POR IP (el original: tope fijo de 10 CONEXIONES por IP y AllowMultiLogins todo o
+    // nada). 0 = sin tope. Con --fixture vale 0 salvo que el ini lo escriba (como las cadencias).
+    public int MaxPersonajesPorIp { get; private set; } = 3;
+    // Largo mínimo de una contraseña nueva (crear cuenta y cambiar clave). El original no exige nada.
+    public int ClaveMinima { get; private set; } = 6;
+    public IReadOnlyCollection<string> InitEscritas { get; private set; } = Array.Empty<string>();
+    /// <summary>¿El ini escribió esta clave de <c>[INIT]</c>? Para que el fixture no apague un tope que un flow pidió.</summary>
+    public bool InitEscrita(string clave) => InitEscritas.Contains(clave, StringComparer.OrdinalIgnoreCase);
     // TECHO DE CADENCIA por conexión (ver Net/LimiteDeCadencia.cs). El original no tiene control de flood;
     // hace falta porque el cliente es una página web y cualquiera puede mandar por el WebSocket lo que quiera,
     // a la velocidad que quiera. `RafagaDePaquetes` es cuánto pico se perdona de una; `MaxPaquetesPorSegundo`
@@ -96,12 +104,12 @@ public sealed class ServerIni
     /// </summary>
     public static readonly string[] ClavesConocidas =
     {
-        "AllowMultiLogins", "BackupsAConservar", "Centinela", "CodigoFuente", "EconomiaUmbralOro",
+        "AllowMultiLogins", "BackupsAConservar", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
         "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
-        "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
+        "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
         "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "PorcentajeLluvia",
@@ -735,6 +743,9 @@ public sealed class ServerIni
         cfg.TrampasParaEchar = Math.Max(0, ini.GetInt("INIT", "TrampasParaEchar", 3));
         cfg.TrampasParaBanear = Math.Max(0, ini.GetInt("INIT", "TrampasParaBanear", 6));
         cfg.EconomiaUmbralOro = Math.Max(0, ini.GetInt("INIT", "EconomiaUmbralOro", 1000));
+        cfg.MaxPersonajesPorIp = Math.Max(0, ini.GetInt("INIT", "MaxPersonajesPorIp", 3));
+        cfg.ClaveMinima = Math.Max(0, ini.GetInt("INIT", "ClaveMinima", 6));
+        cfg.InitEscritas = ini.Claves("INIT").ToArray();
         cfg.MaxPaquetesPorSegundo = Math.Max(0, ini.GetInt("INIT", "MaxPaquetesPorSegundo", 150));
         cfg.RafagaDePaquetes = Math.Max(1, ini.GetInt("INIT", "RafagaDePaquetes", 200));
         cfg.MsEntreMensajes = Math.Max(0, ini.GetInt("INIT", "MsEntreMensajes", 700));

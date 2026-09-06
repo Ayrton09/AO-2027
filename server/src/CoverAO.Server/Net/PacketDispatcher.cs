@@ -37,16 +37,18 @@ public sealed partial class PacketDispatcher
     private readonly long _intervaloGolpeMagia;
     private readonly long _intervaloGolpeUsar;
     private readonly long _intervaloArco;      // IntervaloFlechasCazadores: la del arco, y es transversal
+    private readonly int _maxPersonajesPorIp;  // MaxPersonajesPorIp del ini; 0 con --fixture salvo que el ini lo escriba
     private readonly long _intervaloRobar;     // IntervaloTrabajo aplicado al ROBO, que es un paquete del cliente
 
     public PacketDispatcher(World world, GameLoop loop, Persistence db, GameData data, Leveling leveling,
         long walkIntervalMs = 0, long attackIntervalMs = 0, LoginThrottle? throttle = null, AdminConfig? admin = null,
         ServerContent? content = null, NpcSystem? npcs = null, Action<bool>? shutdown = null,
         bool fixtureMode = false, Data.ServerIni? serverIni = null, LoginThrottle? creacionDeCuentas = null,
-        RegistroDeEconomia? economia = null)
+        RegistroDeEconomia? economia = null, RegistroDeEconomia? trampas = null)
     {
         _creaciones = creacionDeCuentas;
         _economia = economia;
+        _trampasLog = trampas;
         _ini = serverIni ?? new Data.ServerIni();
         _fixtureMode = fixtureMode;
         _shutdown = shutdown;
@@ -75,6 +77,7 @@ public sealed partial class PacketDispatcher
         // tick de la faena no lo manda nadie —lo corre el game-loop—, asi que ponerlo en 0 no destrabaria un
         // flow: le multiplicaria por diecisiete la produccion y le cambiaria la economia a los que la miden.
         _intervaloRobar = Cadencia("IntervaloTrabajo", _ini.IntervaloTrabajo);
+        _maxPersonajesPorIp = fixtureMode && !_ini.InitEscrita("MaxPersonajesPorIp") ? 0 : _ini.MaxPersonajesPorIp;
         _throttle = throttle;
         _admin = admin;
         _content = content ?? ServerContent.Default;
@@ -591,6 +594,7 @@ public sealed partial class PacketDispatcher
             // este vector ("amplificación de DoS por PBKDF2") y esta ruta se había quedado afuera.
             if (LoginBlocked(session)) return;
             if (CreacionBloqueada(session)) return;
+            if (password.Length < _ini.ClaveMinima) { Reject(session, $"La contraseña debe tener al menos {_ini.ClaveMinima} caracteres."); return; }
             if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
             CrearCuentaFueraDelLoop(session, account, password, userCode);
         });
@@ -796,6 +800,7 @@ public sealed partial class PacketDispatcher
     /// veredicto vuelve por el loop.</summary>
     private void CambiarClaveFueraDelLoop(ClientSession session, string account, string pin, string nuevaClave, byte tipo)
     {
+        bool corta = nuevaClave.Length < _ini.ClaveMinima;   // ClaveMinima del Server.ini; se contesta después del pin
         if (session.Cerrada) return;
         if (!session.TomarVerificacion())
         { _loop.Enqueue(() => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo)); return; }
@@ -811,7 +816,9 @@ public sealed partial class PacketDispatcher
                 else
                 {
                     pinOk = tipo == TipoCambiarClave ? acc.VerifyPassword(pin) : acc.VerifyUserCode(pin);
-                    if (pinOk) { acc.PasswordHash = PasswordHasher.HashModern(nuevaClave); acc.Salt = ""; _db.SaveAccount(acc); }
+                    // El mismo piso que al crear la cuenta, y DESPUÉS de verificar el pin: el orden de las
+                    // respuestas del original (39 no existe, 51/52 pin mal) no cambia por una clave corta.
+                    if (pinOk && !corta) { acc.PasswordHash = PasswordHasher.HashModern(nuevaClave); acc.Salt = ""; _db.SaveAccount(acc); }
                 }
             }
             catch (Exception ex)
@@ -829,6 +836,10 @@ public sealed partial class PacketDispatcher
                         LoginFail(session);
                         session.Send(ServerMessages.SendMsgBox(ErrCuentaNoExiste, 1));
                     }
+                    else if (pinOk && corta)
+                    {
+                        session.Send(ServerMessages.SendMsgBox($"La contraseña nueva debe tener al menos {_ini.ClaveMinima} caracteres.", 0));
+                    }
                     else if (pinOk)
                     {
                         LoginOk(session);
@@ -841,7 +852,7 @@ public sealed partial class PacketDispatcher
                         session.Send(ServerMessages.SendMsgBox(
                             tipo == TipoCambiarClave ? ErrClaveIncorrecta : ErrCodigoIncorrecto, 1));
                     }
-                    session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, pinOk ? "1" : "0"));
+                    session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, pinOk && !corta ? "1" : "0"));
                 }
                 finally { session.ReanudarInbound(); }
             });
@@ -989,6 +1000,22 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.ShowMessageBox(
                 $"Ya hay un personaje de esta cuenta conectado ({otroDeLaCuenta.Name}). Solo se puede jugar con uno a la vez."));
             return;
+        }
+        // TOPE DE PERSONAJES EN EL MUNDO POR IP. El original tiene un tope fijo de 10 CONEXIONES por IP y un
+        // AllowMultiLogins todo-o-nada; acá se cuenta lo que importa para el juego —cuántos están JUGANDO desde
+        // una misma dirección— y se configura. Es la trampa más común del AO: la manada de alts para farmear
+        // o inclinar un evento. Con --fixture el tope es 0 salvo que el ini lo escriba (los flows entran de a varios).
+        if (_maxPersonajesPorIp > 0)
+        {
+            string ipNueva = ConnectionGuard.IpOf(session.RemoteEndpoint);
+            int desdeEstaIp = _world.Players.Count(pl => pl.Connection is not null
+                && ConnectionGuard.IpOf(pl.Connection.RemoteEndpoint) == ipNueva);
+            if (desdeEstaIp >= _maxPersonajesPorIp)
+            {
+                session.Send(ServerMessages.ShowMessageBox(
+                    $"Ya hay {desdeEstaIp} personaje(s) jugando desde tu conexión; el máximo es {_maxPersonajesPorIp}."));
+                return;
+            }
         }
 
         // ESTA LECTURA SE QUEDA EN EL LOOP, A PROPÓSITO. Es disco —un `.chr` entero con inventario, banco,
@@ -5445,6 +5472,7 @@ public sealed partial class PacketDispatcher
     {
         string guildName = r.ReadAsciiString().Trim();
         string application = r.ReadAsciiString();   // el texto de la solicitud: lo lee el líder con ShowUserRequest
+        if (application.Length > 255) { session.Send(ServerMessages.ConsoleMsg("La solicitud es demasiado larga (máximo 255).", FuenteClan)); return; }
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -6361,6 +6389,7 @@ public sealed partial class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
+            if (desc.Length > 255 || codex.Length > 500) { session.Send(ServerMessages.ConsoleMsg("Texto demasiado largo (descripción 255, códex 500).", FuenteClan)); return; }
             g.Description = desc;
             g.Codex = codex;
             PersistGuilds();
@@ -6375,6 +6404,7 @@ public sealed partial class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
+            if (url.Length > 128) { session.Send(ServerMessages.ConsoleMsg("La dirección es demasiado larga (máximo 128).", FuenteClan)); return; }
             g.Url = url;
             PersistGuilds();
         });
@@ -6388,6 +6418,7 @@ public sealed partial class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
+            if (news.Length > 512) { session.Send(ServerMessages.ConsoleMsg("Las noticias son demasiado largas (máximo 512).", FuenteClan)); return; }
             g.News = news;
             PersistGuilds();
             session.Send(ServerMessages.ConsoleMsg("Noticias del clan actualizadas.", FuenteClan));
@@ -10612,6 +10643,7 @@ public sealed partial class PacketDispatcher
     /// ese escalón. Las trampas que ya baneaban solas (skills, comprar más de una pila) siguen baneando.
     /// </summary>
     private readonly RegistroDeEconomia? _economia;
+    private readonly RegistroDeEconomia? _trampasLog;
     private void RegistrarTrampa(ClientSession session, Player? p, string motivo)
     {
         LogIntentoDeTrampa(session, p, motivo);
@@ -10628,6 +10660,7 @@ public sealed partial class PacketDispatcher
             _db.SaveAccount(acc);
         }
         BroadcastToAdmins(ServerMessages.ConsoleMsg($"Servidor> {p.Name} lleva {n} trampa(s): {ParaElLog(motivo)}", FuenteCombate));
+        _trampasLog?.Anotar($"{p.Account} {p.Name} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} #{n}: {ParaElLog(motivo)}");
         if (ban)
         {
             p.Banned = true;

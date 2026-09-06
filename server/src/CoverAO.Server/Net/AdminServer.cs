@@ -250,7 +250,10 @@ public sealed class AdminServer
             // direcciones y en la línea de request de cualquier proxy o log intermedio. La URL con el token
             // sigue siendo la forma de ENTRAR —es lo que imprime la consola—, pero el panel la limpia apenas
             // la lee y de ahí en más manda `X-Admin-Token`.
-            if (req.Headers["X-Admin-Token"] != _token)
+            // En tiempo constante: el panel es loopback, pero un `!=` de strings corta en el primer byte distinto y
+            // no cuesta nada no dejar ese reloj.
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(req.Headers["X-Admin-Token"] ?? ""), Encoding.UTF8.GetBytes(_token)))
             {
                 res.StatusCode = 401; await WriteText(res, "{\"error\":\"token invalido\"}", "application/json");
                 return;

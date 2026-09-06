@@ -16,18 +16,20 @@ public sealed class RegistroDeEconomia : IDisposable
 {
     private readonly string _dir;
     private readonly int _dias;
+    private readonly string _prefijo;
     private readonly ConcurrentQueue<string> _cola = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _bomba;
 
-    public RegistroDeEconomia(string dir, int dias)
+    /// <param name="prefijo">Nombre del archivo: <c>economia</c> para el oro, <c>trampas</c> para el anticheat.</param>
+    public RegistroDeEconomia(string dir, int dias, string prefijo = "economia")
     {
-        _dir = dir; _dias = dias;
+        _dir = dir; _dias = dias; _prefijo = prefijo;
         Directory.CreateDirectory(dir);
         _bomba = Task.Run(Bombear);
     }
 
-    public string ArchivoDeHoy => Path.Combine(_dir, $"economia-{DateTime.Now:yyyy-MM-dd}.log");
+    public string ArchivoDeHoy => Path.Combine(_dir, $"{_prefijo}-{DateTime.Now:yyyy-MM-dd}.log");
 
     /// <summary>Encola una línea (con la hora). Nunca bloquea al que llama.</summary>
     public void Anotar(string linea) => _cola.Enqueue($"{DateTime.Now:HH:mm:ss} {linea}");
@@ -59,7 +61,7 @@ public sealed class RegistroDeEconomia : IDisposable
     {
         if (_dias <= 0) return;
         var limite = DateTime.Now.AddDays(-_dias);
-        foreach (var f in Directory.EnumerateFiles(_dir, "economia-*.log"))
+        foreach (var f in Directory.EnumerateFiles(_dir, $"{_prefijo}-*.log"))
             if (File.GetLastWriteTime(f) < limite) { try { File.Delete(f); } catch { } }
     }
 

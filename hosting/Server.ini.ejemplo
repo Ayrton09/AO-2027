@@ -106,7 +106,9 @@ MaxUsers=0
 ; esta prohibido siempre, como en el original.
 AllowMultiLogins=1
 
-; Tope de conexiones simultaneas por IP. 0 = usar el valor interno (64).
+; Tope de conexiones simultaneas por IP (sockets, entren o no al mundo). 0 = el
+; del original, 10. Para cuantos PERSONAJES pueden jugar a la vez desde una IP,
+; ver MaxPersonajesPorIp mas abajo.
 LimiteConexionesPorIp=0
 
 ; Minutos SIN QUE EL JUGADOR MANDE NADA antes de desconectarlo (lo que le manda
@@ -132,6 +134,15 @@ RafagaDePaquetes=200
 ; y el panel muestra el contador. 0 = ese escalon apagado.
 TrampasParaEchar=3
 TrampasParaBanear=6
+; Cuantos personajes pueden estar JUGANDO a la vez desde una misma direccion IP.
+; El original tenia un tope fijo de 10 conexiones por IP y nada mas; esto cuenta
+; los que estan adentro del mundo. Es contra la manada de alts para farmear o
+; inclinar un evento. Ojo si tus jugadores comparten una casa o un cyber: subilo.
+; 0 = sin tope.
+MaxPersonajesPorIp=3
+; Largo minimo de una contraseña nueva, al crear la cuenta y al cambiar la clave.
+; El original acepta una de un caracter. 0 = sin minimo.
+ClaveMinima=6
 
 ; --- Registro de economia ----------------------------------------------------
 ; Los movimientos de oro de este monto o mas (deposito, extraccion, compra,

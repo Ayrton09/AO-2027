@@ -108,10 +108,12 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `StartPort` | puerto base |
 | `MaxUsers` | tope de jugadores. 0 = sin tope |
 | `AllowMultiLogins` | 0 = una sola conexión por IP |
-| `LimiteConexionesPorIp` | tope de sockets por IP. 0 = 64 |
+| `LimiteConexionesPorIp` | tope de sockets por IP. 0 = 10, el del original. Es distinto de `MaxPersonajesPorIp`: esto cuenta conexiones (incluidas las que todavía no entraron), aquello personajes jugando |
 | `IdleLimit` | minutos sin actividad antes de desconectar. 0 = nunca |
 | `MaxPaquetesPorSegundo`, `RafagaDePaquetes` | techo de paquetes de una conexión. Al que lo sostiene se lo desconecta. 0 = sin límite |
 | `TrampasParaEchar`, `TrampasParaBanear` | anticheat con memoria: cada trampa detectada (velocidad, ataque fuera de rango, skills inventados, comprar más de una pila…) suma un punto en la CUENTA, que se conserva entre sesiones y se ve en el panel. Desde la primera cifra se lo expulsa en cada trampa nueva; en la segunda se banea cuenta y personaje. Los GMs conectados ven cada una. 0 = ese escalón apagado |
+| `MaxPersonajesPorIp` | cuántos personajes pueden estar jugando a la vez desde una misma IP (el original: tope fijo de 10 conexiones y nada más). Contra la manada de alts. Subilo si tus jugadores comparten casa o cyber. 0 = sin tope |
+| `ClaveMinima` | largo mínimo de una contraseña nueva, al crear la cuenta y al cambiar la clave. 0 = sin mínimo |
 | `EconomiaUmbralOro` | los movimientos de oro de este monto o más (depósito, extracción, compra, venta, tirar, agarrar, casino) y todos los correos con adjunto, transferencias y bolsas van a `data/logs/economia-AAAA-MM-DD.log`, para reconstruir de dónde salió el oro de alguien. 0 = se anota todo |
 | `MsEntreMensajes`, `RafagaDeMensajes` | anti-spam de chat, susurro, clan y `/GM`. En ms entre mensajes |
 | `MsEntreConsultas`, `RafagaDeConsultas` | lo mismo para `/online`, `/est` y los comandos que sólo te contestan a vos |
