@@ -196,6 +196,10 @@ public sealed class ServerIni
     public int IntervaloMagiaGolpe { get; private set; } = 400;    // pegar después de castear
     public int IntervaloGolpeMagia { get; private set; } = 400;    // castear después de pegar
     public int IntervaloGolpeUsar { get; private set; } = 400;     // usar un objeto después de pegar
+    // NUESTRO, no del original: cuánto esperar para usar un objeto después de CASTEAR. En el VB6 sólo el
+    // golpe cuerpo a cuerpo sella ese reloj; un mago podía tomar la poción en el mismo instante que tiraba
+    // el hechizo, que es lo que aprovecha el "auto-pot". 0 = como el original.
+    public int IntervaloHechizoUsar { get; private set; } = 0;
     public int IntervaloAtacar { get; private set; } = 1000;        // IntervaloUserPuedeAtacar
     /// <summary><c>[INTERVALOS] IntervaloTrabajo</c> (700 en el install) — la cadencia de TRABAJAR, y el
     /// original la usa en dos lados con el MISMO contador: cada vuelta de la faena continua
@@ -782,6 +786,7 @@ public sealed class ServerIni
         cfg.IntervaloMagiaGolpe = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloMagiaGolpe", 400), 0, 60_000);
         cfg.IntervaloGolpeMagia = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloGolpeMagia", 400), 0, 60_000);
         cfg.IntervaloGolpeUsar = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloGolpeUsar", 400), 0, 60_000);
+        cfg.IntervaloHechizoUsar = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloHechizoUsar", 0), 0, 60_000);
         cfg.IntervaloTrabajo = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloTrabajo", 700), 0, 60_000);
         // CADENCIA DE GOLPE. La lee el VB6 en FileIO.bas:1495 y el ini del install dice 1000; el port la tenía
         // CABLEADA en 1200 (Program.cs), o sea que se peleaba un 20% más lento que el original.

@@ -413,6 +413,9 @@ Version=
 ;IntervaloMagiaGolpe=400         ; pegar despues de castear
 ;IntervaloGolpeMagia=400         ; castear despues de pegar
 ;IntervaloGolpeUsar=400          ; usar un objeto despues de pegar
+;IntervaloHechizoUsar=0          ; usar un objeto despues de CASTEAR. Es nuestro, no del original (que
+;                                ; deja tomar la pocion en el mismo instante que sale el hechizo, y de eso
+;                                ; vive el "auto-pot"). Contra el auto-pot, poner los dos en 2000 o 3000.
 ;IntervaloFlechasCazadores=1100  ; entre un disparo de ARCO y el siguiente. Es la mas fuerte y ademas
 ;                                ; es TRANSVERSAL: recien disparado no se puede ni pegar ni castear.
 ;IntervaloParalizado=500         ; cuanto dura una PARALISIS, en vueltas de 40 ms (500 = 20 s). Vale para el

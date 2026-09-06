@@ -529,6 +529,13 @@ public sealed class Player
     public long MagiaGolpeMs { get; set; }
     public long GolpeMagiaMs { get; set; }
     public long GolpeUsarMs { get; set; }
+    /// <summary>Último hechizo que SALIÓ (SpellCasted). Lo consulta el uso de objetos con IntervaloHechizoUsar,
+    /// que es nuestro: el original no hace esperar la poción después de castear.</summary>
+    public long HechizoUsarMs { get; set; }
+    /// <summary>Cuándo llegó el último <c>CastSpell</c> (elegir el hechizo). Con el clic del objetivo mide el
+    /// "tiempo de puntería": un humano tarda más de unas decenas de ms en clickear; un auto-aim, no.</summary>
+    public long CastSpellMs { get; set; }
+    public int ApuntadosInstantaneos { get; set; }
     /// <summary>VB6 <c>Counters.TimerPuedeUsarArco</c>: la última vez que se disparó. Lo SELLA el disparo y lo
     /// CONSULTAN el golpe y el casteo — mientras esté caliente, el original no deja hacer ninguno de los tres.
     /// Es el quinto reloj y era el que faltaba: sin él, el disparo no tenía ninguna cadencia.</summary>

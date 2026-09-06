@@ -63,6 +63,21 @@ public class AnticheatEscalonadoTests
     }
 
     [Fact]
+    public void La_espera_tras_castear_es_cero_como_el_original_y_se_lee_del_ini()
+    {
+        Assert.Equal(0, new ServerIni().IntervaloHechizoUsar);
+        string ruta = Path.Combine(Path.GetTempPath(), "coverao_ini_" + Guid.NewGuid().ToString("N") + ".ini");
+        File.WriteAllText(ruta, "[INIT]\nStartPort=7666\n[INTERVALOS]\nIntervaloHechizoUsar=3000\n");
+        try
+        {
+            var con = ServerIni.Cargar(ruta);
+            Assert.Equal(3000, con.IntervaloHechizoUsar);
+            Assert.True(con.IntervaloEscrito("IntervaloHechizoUsar"));   // el fixture no lo apaga si el flow lo pide
+        }
+        finally { File.Delete(ruta); }
+    }
+
+    [Fact]
     public void El_rate_limit_de_login_purga_las_ips_vencidas()
     {
         // Antes el mapa crecía para siempre: una entrada por cada IP que falló un login alguna vez.

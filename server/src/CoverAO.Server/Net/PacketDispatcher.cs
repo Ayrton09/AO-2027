@@ -36,6 +36,7 @@ public sealed partial class PacketDispatcher
     private readonly long _intervaloMagiaGolpe;
     private readonly long _intervaloGolpeMagia;
     private readonly long _intervaloGolpeUsar;
+    private readonly long _intervaloHechizoUsar;   // IntervaloHechizoUsar: nuestro, 0 = como el original
     private readonly long _intervaloArco;      // IntervaloFlechasCazadores: la del arco, y es transversal
     private readonly int _maxPersonajesPorIp;  // MaxPersonajesPorIp del ini; 0 con --fixture salvo que el ini lo escriba
     private readonly long _intervaloRobar;     // IntervaloTrabajo aplicado al ROBO, que es un paquete del cliente
@@ -71,6 +72,7 @@ public sealed partial class PacketDispatcher
         _intervaloMagiaGolpe = Cadencia("IntervaloMagiaGolpe", _ini.IntervaloMagiaGolpe);
         _intervaloGolpeMagia = Cadencia("IntervaloGolpeMagia", _ini.IntervaloGolpeMagia);
         _intervaloGolpeUsar = Cadencia("IntervaloGolpeUsar", _ini.IntervaloGolpeUsar);
+        _intervaloHechizoUsar = Cadencia("IntervaloHechizoUsar", _ini.IntervaloHechizoUsar);
         _intervaloArco = Cadencia("IntervaloFlechasCazadores", _ini.IntervaloArco);
         // ROBAR entra en el apagado del fixture y el TICK DE TRABAJO no, aunque los dos salgan de la misma
         // clave. No es un olvido: el apagado existe para que un flow pueda mandar PAQUETES en rafaga, y el
@@ -2800,6 +2802,7 @@ public sealed partial class PacketDispatcher
         if (p.Mana < 0) p.Mana = 0;                                                            // VB6: If MinMAN < 0 Then MinMAN = 0
         if (spell.StaRequerido > 0) p.Stamina = Math.Max(0, p.Stamina - spell.StaRequerido);   // VB6: castear cansa
         RaiseSkill(session, p, GameLimits.SkillMagia);                                         // VB6 SubirSkill(magia)
+        p.HechizoUsarMs = Environment.TickCount64;                                            // ver IntervaloHechizoUsar
     }
 
     /// <summary>
@@ -9054,7 +9057,17 @@ public sealed partial class PacketDispatcher
             // y pidió el blanco; este clic lo lanza. Antes no había rama: el paquete caía a los oficios y contestaba
             // un ConsoleMsg de "no hay nada que trabajar" donde el original lanza el hechizo — así lo midió el
             // oráculo, y así es como el tester veía que "no deja tirar hechizos".
-            if (skill == GameLimits.SkillMagia) { LanzarHechizoElegido(session, p, tx, ty); return; }
+            if (skill == GameLimits.SkillMagia)
+            {
+                // SOSPECHA DE AUTO-AIM, sólo al log (nunca al contador): elegir el hechizo y clickear el objetivo
+                // en menos de 40 ms no lo hace una mano. Una vez puede ser la red que juntó dos paquetes; diez
+                // veces en una sesión, no. Se anota una sola vez por sesión al llegar a diez, para el GM.
+                long ahora = Environment.TickCount64;
+                if (p.CastSpellMs > 0 && ahora - p.CastSpellMs < 40 && ++p.ApuntadosInstantaneos == 10)
+                    _trampasLog?.Anotar($"{p.Account} {p.Name} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} sospecha: diez hechizos apuntados en menos de 40 ms (posible auto-aim), sin sanción");
+                p.CastSpellMs = 0;
+                LanzarHechizoElegido(session, p, tx, ty); return;
+            }
             // ARMAS ARROJADIZAS (VB6 HandleWorkLeftClick, `Case eSkill.ArmasArrojadizas`, Protocol.bas:2655).
             // De todo el case, lo ÚNICO alcanzable con esta data es el RECHAZO: el tiro exige un arma de
             // `SubTipo = 5` y en el obj.dat no hay ninguna, así que la rama que dispara es código muerto. El
@@ -10109,6 +10122,7 @@ public sealed partial class PacketDispatcher
             if (p is null || !p.IsAlive) return;
             if (slot < 1 || slot > GameLimits.MaxUserSpells) { p.HechizoElegido = 0; return; }
             p.HechizoElegido = slot;
+            p.CastSpellMs = Environment.TickCount64;   // para medir cuánto tarda en clickear el objetivo
             var spell = _data.Spell(p.Spells[slot]);
             if (spell is null) return;   // `If uh <> 0`: ranura vacía -> silencio, pero la ranura queda elegida
             if (spell.EsAutoLanzado)
@@ -11263,6 +11277,13 @@ public sealed partial class PacketDispatcher
             // usa el original, y con tests propios verdes— y no los llamaba NADIE: `_intervaloGolpeUsar` se leía
             // del ini y no se usaba en ningún camino, así que el gate no existía en el juego.
             if (!Game.CombatTiming.PermiteGolpeUsar(p, Environment.TickCount64, _intervaloGolpeUsar))
+            {
+                session.Send(ServerMessages.LocaleMsg(469));
+                return;
+            }
+            // ANTI AUTO-POT (pedido del tester): después de CASTEAR también hay que esperar. Es nuestro —el
+            // original sólo espera después del golpe— y se configura con IntervaloHechizoUsar; 0 = como allá.
+            if (_intervaloHechizoUsar > 0 && Environment.TickCount64 - p.HechizoUsarMs < _intervaloHechizoUsar)
             {
                 session.Send(ServerMessages.LocaleMsg(469));
                 return;
