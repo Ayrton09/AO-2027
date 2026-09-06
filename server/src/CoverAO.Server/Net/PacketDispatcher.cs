@@ -5686,8 +5686,10 @@ public sealed partial class PacketDispatcher
             if (p is null) return;
             // `HasFound` -> Exit Sub, sin mensaje. Y con constancia: el original lo trata como trampa
             // (LogCheating, Protocol.bas:6230), porque el cliente no ofrece fundar a quien ya tiene clan.
+            // Al log y no al contador: el cliente web mostraba "Fundar" también al que ya tiene clan (se arregló),
+            // y el del original no lo esconde en todas las pantallas. Un clic de más no puede costar una sanción.
             if (!string.IsNullOrEmpty(p.GuildName))
-            { RegistrarTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }
+            { LogIntentoDeTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }
             byte alin = AlineacionPorFaccion(p);
             if (alin == 0)
             { session.Send(ServerMessages.ConsoleMsg("Hay un error en su faccion, comuniquese con algun GameMaster", FuenteClan)); return; }
@@ -5706,8 +5708,10 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
+            // Al log y no al contador: el cliente web mostraba "Fundar" también al que ya tiene clan (se arregló),
+            // y el del original no lo esconde en todas las pantallas. Un clic de más no puede costar una sanción.
             if (!string.IsNullOrEmpty(p.GuildName))
-            { RegistrarTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }   // :6230
+            { LogIntentoDeTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }   // :6230
             // La alineación ya quedó fijada por la FACCIÓN en el paso 1. El original lee este byte y su
             // `Select Case` está comentado entero (Protocol.bas:6256-6260), así que la elección del cliente no
             // se usa; acá se estaba guardando, que es dejar que el jugador elija la alineación de su clan.
@@ -9037,7 +9041,9 @@ public sealed partial class PacketDispatcher
                 // El original loguea este caso en la rama de MAGIA (`Ataque fuera de rango de …`,
                 // Protocol.bas:2931): tirarle a una baldosa que no ves no lo puede pedir un cliente normal.
                 if (skill == GameLimits.SkillMagia)
-                    RegistrarTrampa(session, p, $"ataque fuera de rango a ({p.Pos.Map}/{tx}/{ty}) desde ({p.Pos.X},{p.Pos.Y})");
+                    // Al log y no al contador: el clic se manda con la baldosa en pantalla, y si el jugador camina
+                    // entre elegir el hechizo y clickear, un tile del borde queda a nueve. No es un cliente modificado.
+                    LogIntentoDeTrampa(session, p, $"ataque fuera de rango a ({p.Pos.Map}/{tx}/{ty}) desde ({p.Pos.X},{p.Pos.Y})");
                 session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y)); return;
             }
             // CancelExit (:2651): trabajar también cancela la cuenta regresiva del /SALIR.

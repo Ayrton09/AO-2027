@@ -2925,6 +2925,10 @@
     }
 
     /** Puntos de skill sin repartir (LevelUp 62). Si el panel de Habilidades está abierto, lo actualiza en vivo. */
+    // ¿Mi personaje tiene clan? El nombre viaja con la etiqueta `<Clan>` (UpdateTagAndStatus / CharacterCreate,
+    // como el original). Sirve para no ofrecerle "Fundar" ni "Postular" al que ya tiene: el server lo anota
+    // como intento raro y el jugador no entendía qué hizo mal.
+    const tengoClan = () => /<[^>]+>\s*$/.test((chars.get(myCharIndex) || {}).name || '');
     function refrescarPuntosLibres() {
       const el = document.getElementById('sk-libres');
       if (el) el.textContent = puntosLibres;
@@ -3119,9 +3123,9 @@
           <button class="sbtn ghost" data-act="am-online">Ver amigos en línea</button></div>
         <div class="subpane${on('clan')}" data-p="clan">
           <button class="sbtn ghost" data-act="cl-info">Ver mi clan (miembros / solicitudes / novedades)</button>
-          <div class="fsec">Unirse / fundar</div>
-          <div class="frow"><input id="cl-join" placeholder="clan al que postular"><button class="sbtn" data-act="cl-join">Postular</button></div>
-          <div class="frow"><input id="cl-found" placeholder="nombre del clan a fundar"><select id="cl-align"><option value="0">Neutral</option><option value="1">Armada Real</option><option value="2">Legion Caos</option></select><button class="sbtn" data-act="cl-found">Fundar</button></div>
+          ${tengoClan()
+            ? '<div class="fhint">Ya tenés clan: se ve arriba. Para fundar o postular a otro, primero salí con /salirclan.</div>'
+            : '<div class="fsec">Unirse / fundar</div><div class="frow"><input id="cl-join" placeholder="clan al que postular"><button class="sbtn" data-act="cl-join">Postular</button></div><div class="frow"><input id="cl-found" placeholder="nombre del clan a fundar"><select id="cl-align"><option value="0">Neutral</option><option value="1">Armada Real</option><option value="2">Legion Caos</option></select><button class="sbtn" data-act="cl-found">Fundar</button></div>'}
           <div class="fsec">Liderazgo</div>
           <div class="frow"><input id="cl-accept" placeholder="aspirante a aceptar"><button class="sbtn" data-act="cl-accept">Aceptar</button></div>
           <div class="frow"><input id="cl-reject" placeholder="aspirante a rechazar"><button class="sbtn ghost" data-act="cl-reject">Rechazar</button></div>
@@ -3503,7 +3507,11 @@
         // al chat le tapa al recién llegado el mensaje del día con un bloque que no pidió y que, en la data
         // real de CoverAO, son cinco renglones de relleno ("12/8/21: 1"…) que sus autores nunca completaron.
         case 'EjecutarAccion': if (f.accion === 4 && f.extra) novedades.push(f.extra); break;
-        case 'LoggedSuccessful': break;                          // ack de conexión de cuenta; no cambia la UI
+        // Ack de entrada al mundo. Acá se REINICIAN los puntos libres: el server manda su LevelUp con los que
+        // hay guardados en cada entrada, y como el contador ACUMULA (fiel al original), un relogin sin recargar
+        // la página los duplicaba; el jugador repartía de más y el server lo tomaba por hack de skills, que
+        // banea solo. El LevelUp del login viene DESPUÉS de este paquete, así que el reinicio no lo pisa.
+        case 'LoggedSuccessful': puntosLibres = 0; refrescarPuntosLibres(); break;
         case 'UserCharIndexInServer': myCharIndex = f.charIndex; break;
         case 'CharacterCreate': chars.set(f.charIndex, Object.assign(
           { x: f.x, y: f.y, donador: f.donador, body: f.body, head: f.head, heading: f.heading, weapon: f.weapon, shield: f.shield, helmet: f.helmet },
