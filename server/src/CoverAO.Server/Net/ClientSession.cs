@@ -30,6 +30,11 @@ public sealed class ClientSession : IConnection
     // slot del ConnectionGuard). 0 = desactivado.
     private readonly long _authTimeoutMs;
     private readonly int _maxInboundBytes;
+    /// <summary>Tope de caracteres de CUALQUIER cadena que mande el cliente. Ninguna del juego se le acerca:
+    /// la más larga que el servidor acepta es el códex del clan, de 500. Vale para las ciento ocho que lee el
+    /// dispatcher y para las que se agreguen después, que es de lo que se trata (ver el comentario del
+    /// parámetro en <see cref="ByteQueueReader"/>).</summary>
+    private const int MaxCadenaDelCliente = 2048;
     private readonly Action? _onClose;
     private volatile bool _authed;
     /// <summary>Techo de paquetes por segundo de ESTA conexión (ver <see cref="LimiteDeCadencia"/>). Va acá y
@@ -181,7 +186,7 @@ public sealed class ClientSession : IConnection
                     Close("flood: demasiados paquetes por segundo");
                     return;
                 }
-                var reader = new ByteQueueReader(buf.Slice(offset));
+                var reader = new ByteQueueReader(buf.Slice(offset), MaxCadenaDelCliente);
                 try
                 {
                     _dispatcher.HandleOne(this, reader);
@@ -189,6 +194,15 @@ public sealed class ClientSession : IConnection
                 catch (NotEnoughDataException)
                 {
                     break; // incomplete packet; wait for more bytes
+                }
+                catch (StringTooLongException ex)
+                {
+                    // Se corta, no se recorta: recortar deja al jugador creyendo que su texto salió entero, y
+                    // el único que llega acá es un cliente modificado.
+                    Console.Error.WriteLine($"[{RemoteEndpoint}] cadena fuera de escala: {ex.Message}");
+                    if (offset > 0) _inbound.RemoveRange(0, offset);
+                    Close("cadena demasiado larga");
+                    return;
                 }
                 catch (Exception ex)
                 {

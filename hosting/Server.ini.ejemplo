@@ -140,7 +140,10 @@ TrampasParaBanear=6
 ; inclinar un evento. Diez, como el tope de conexiones del original: alcanza
 ; para una LAN de amigos. 0 = sin tope.
 MaxPersonajesPorIp=10
-; Largo minimo de una contraseña nueva, al crear la cuenta y al cambiar la clave.
+; Largo minimo de una contraseña nueva, al crear la cuenta y al cambiar la clave,
+; y del codigo de recuperacion (con el se cambia la clave, o sea que es una
+; segunda contraseña). Dejar el codigo VACIO si se permite: una cuenta sin codigo
+; no tiene camino de recuperacion que forzar.
 ; El original acepta una de un caracter. 0 = sin minimo.
 ClaveMinima=6
 

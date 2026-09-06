@@ -258,6 +258,12 @@ public sealed class World
 
     public Guild? GuildByName(string name) => _guilds.GetValueOrDefault(name);
     public void RemoveGuild(string name) => _guilds.Remove(name);
+    /// <summary>Cuántos clanes hay fundados.</summary>
+    public int GuildCount => _guilds.Count;
+    /// <summary>¿El registro de clanes está lleno? (VB6 <c>MAX_GUILDS = 1000</c>, modGuilds.bas:12, con su
+    /// compuerta viva en <c>CrearNuevoClan</c> :495). La decisión vive acá, y no en el handler, para que se
+    /// pueda medir sin fundar mil clanes por el cable.</summary>
+    public bool RegistroDeClanesLleno => _guilds.Count >= GameLimits.MaxClanes;
     /// <summary>All guilds (for persistence).</summary>
     public IEnumerable<Guild> AllGuilds => _guilds.Values;
     /// <summary>Repopulates the guild registry (e.g. from persistence at startup).</summary>

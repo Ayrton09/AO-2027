@@ -732,7 +732,7 @@
              cuenta cuya contraseña se perdió, y acá se mandaba un "0000" fijo para todo el mundo. -->
         <label>Código de recuperación <input name="code" required maxlength="30"></label>
         <button class="goldbtn" type="submit">Crear cuenta</button>
-        <div class="login-hint">Anotá el código: es lo único que recupera la cuenta si perdés la contraseña.</div>
+        <div class="login-hint">Anotá el código: es lo único que recupera la cuenta si perdés la contraseña. Con él se cambia la clave, así que tiene el mismo largo mínimo que la contraseña.</div>
       </form>
 
       <!-- Las dos operaciones de cuenta del original: frmCambiarContraseña y frmRecuperarCuenta. Las dos
@@ -3125,7 +3125,7 @@
           <button class="sbtn ghost" data-act="cl-info">Ver mi clan (miembros / solicitudes / novedades)</button>
           ${tengoClan()
             ? '<div class="fhint">Ya tenés clan: se ve arriba. Para fundar o postular a otro, primero salí con /salirclan.</div>'
-            : '<div class="fsec">Unirse / fundar</div><div class="frow"><input id="cl-join" placeholder="clan al que postular"><button class="sbtn" data-act="cl-join">Postular</button></div><div class="frow"><input id="cl-found" placeholder="nombre del clan a fundar"><select id="cl-align"><option value="0">Neutral</option><option value="1">Armada Real</option><option value="2">Legion Caos</option></select><button class="sbtn" data-act="cl-found">Fundar</button></div>'}
+            : '<div class="fsec">Unirse / fundar</div><div class="frow"><input id="cl-join" placeholder="clan al que postular"><button class="sbtn" data-act="cl-join">Postular</button></div><div class="frow"><input id="cl-found" placeholder="nombre del clan (letras y espacios)" maxlength="30"><select id="cl-align"><option value="0">Neutral</option><option value="1">Armada Real</option><option value="2">Legion Caos</option></select><button class="sbtn" data-act="cl-found">Fundar</button></div>'}
           <div class="fsec">Liderazgo</div>
           <div class="frow"><input id="cl-accept" placeholder="aspirante a aceptar"><button class="sbtn" data-act="cl-accept">Aceptar</button></div>
           <div class="frow"><input id="cl-reject" placeholder="aspirante a rechazar"><button class="sbtn ghost" data-act="cl-reject">Rechazar</button></div>
@@ -3177,6 +3177,9 @@
         else if (a === 'cl-join') { const g = S('cl-join'); if (g) send(W().writeByte(CLIENT.GuildRequestMembership).writeAsciiString(g).writeAsciiString('Quiero unirme.')); }
         else if (a === 'cl-found') {
           const g = S('cl-found');
+          // La MISMA regla del server (GuildNameValido del original: letras y espacios, hasta 30). Se avisa
+          // acá porque el rechazo llega como un texto suelto en la consola y el jugador no sabe qué corregir.
+          if (g && !/^[A-Za-zÿ ]{1,30}$/.test(g)) { log('· El nombre del clan sólo admite letras y espacios (hasta 30) ·', '#c07030'); return; }
           if (g) {
             // Fundar son DOS paquetes: GuildFundation lleva la ALINEACION elegida y CreateNewGuild los datos.
             // Acá iba sólo el segundo, así que el servidor tomaba `FoundingAlignment` en 0 y todo clan fundado

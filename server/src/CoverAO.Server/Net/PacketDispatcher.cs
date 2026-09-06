@@ -597,6 +597,14 @@ public sealed partial class PacketDispatcher
             if (LoginBlocked(session)) return;
             if (CreacionBloqueada(session)) return;
             if (password.Length < _ini.ClaveMinima) { Reject(session, $"La contraseña debe tener al menos {_ini.ClaveMinima} caracteres."); return; }
+            // EL CÓDIGO DE RECUPERACIÓN ES UNA SEGUNDA CONTRASEÑA, y tenía el piso de ninguna: con él se CAMBIA
+            // la clave de la cuenta (ProcesosLogin tipo 0), o sea que adivinarlo es quedarse con la cuenta. El
+            // rate-limit acota los intentos pero no alcanza contra un código de cuatro dígitos.
+            // Vacío se permite a propósito: una cuenta SIN código no tiene camino de recuperación
+            // (VerifyUserCode rechaza cuando el hash está vacío), que es el estado seguro. Lo que no puede
+            // haber es un código corto, que es un camino abierto con candado de juguete.
+            if (userCode.Length > 0 && userCode.Length < _ini.ClaveMinima)
+            { Reject(session, $"El código de recuperación debe tener al menos {_ini.ClaveMinima} caracteres."); return; }
             if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
             CrearCuentaFueraDelLoop(session, account, password, userCode);
         });
@@ -5436,7 +5444,24 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", FuenteClan)); return; }
-            if (string.IsNullOrWhiteSpace(name)) { session.Send(ServerMessages.ConsoleMsg("Nombre de clan inválido.", FuenteClan)); return; }
+            // El nombre pasa por la MISMA regla del original (`GuildNameValido`, modGuilds.bas:890, con su
+            // mensaje textual): letras y espacios. Acá sólo se miraba que no fuera vacío, así que entraba
+            // cualquier cosa —dígitos, NUL, `<`, treinta mil caracteres— en un texto que se difunde pegado al
+            // nombre del personaje.
+            if (!Naming.IsValidGuildName(name)) { session.Send(ServerMessages.ConsoleMsg("Nombre de clan inválido.", FuenteClan)); return; }
+            // Y la descripción, con el MISMO tope que cuando el líder la edita desde el panel: es el mismo
+            // campo del mismo clan, y por esta puerta entraba sin ninguno. (El sitio y el códex de este
+            // paquete se siguen descartando, como antes; el líder los carga desde el panel.)
+            if (desc.Length > MaxDescClan)
+            { session.Send(ServerMessages.ConsoleMsg("Texto demasiado largo (descripción 255).", FuenteClan)); return; }
+            // EL REGISTRO DE CLANES TIENE FONDO (VB6 `MAX_GUILDS = 1000`, modGuilds.bas:12, con su compuerta
+            // VIVA en CrearNuevoClan :495 y este mismo mensaje). Es de las pocas cosas que el original limita
+            // y el port no: fundar no cuesta nada —los requisitos de nivel, liderazgo y las cuatro gemas están
+            // ANULADOS en el original por un `Exit Function` al tope de PuedeFundarUnClan (:681), y eso sí se
+            // porta—, así que sin fondo la lista de clanes crece sin techo, se re-serializa entera en el hilo
+            // del mundo con cada operación de clan, y viaja entera en cada pedido de la lista.
+            if (_world.RegistroDeClanesLleno)
+            { session.Send(ServerMessages.ConsoleMsg("No hay más slots para fundar clanes. Consulte a un administrador.", FuenteClan)); return; }
             var guild = _world.CreateGuild(name, p.Name, desc);
             if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", FuenteClan)); return; }
             guild.Alignment = p.FoundingAlignment; // from the GuildFundation step (0 if founded directly)
@@ -5484,6 +5509,11 @@ public sealed partial class PacketDispatcher
             var guild = _world.GuildByName(guildName);
             if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
             if (guild.JoinRequests.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya solicitaste unirte a ese clan; espera la decisión del líder.", FuenteClan)); return; }
+            // LA COLA DE SOLICITUDES TIENE FONDO (VB6 MAXASPIRANTES = 10, modGuilds.bas:24, con su compuerta
+            // en NuevoAspirante :2142 y este mismo mensaje). Sin ella, cualquiera se anota en cualquier clan y
+            // la cola crece con un texto de 255 por cada uno, se guarda en disco y viaja entera al líder.
+            if (guild.AspirantesLleno)
+            { session.Send(ServerMessages.ConsoleMsg("El clan tiene demasiados aspirantes. Contáctate con un miembro para que procese las solicitudes.", FuenteClan)); return; }
             // El TEXTO de la solicitud se guarda: es el "Detalle" que el original mete en SOLICITUDES.dat
             // (NuevoAspirante(Nombre, Peticion)) y lo único que transporta ShowUserRequest cuando el líder
             // la mira. Antes se leía del wire y se tiraba, así que no había nada que mostrarle.
@@ -6385,6 +6415,11 @@ public sealed partial class PacketDispatcher
         });
     }
 
+    /// <summary>Topes de los textos libres del clan. Están en UNA sola parte porque los mismos cuatro textos
+    /// entran por DOS puertas —el panel del líder y el acto de fundar— y la primera vez sólo se le puso techo a
+    /// una: los literales sueltos hacen que arreglar una mitad parezca arreglar el hallazgo entero.</summary>
+    private const int MaxDescClan = 255, MaxCodexClan = 500, MaxUrlClan = 128, MaxNoticiasClan = 512;
+
     /// <summary>
     /// Descripción + códex del clan (VB6 ChangeCodexAndDesc, modGuilds.bas:402). Sólo el líder, y NO responde
     /// ningún paquete — el cliente ya tiene el texto que acaba de mandar. Antes se leían los dos strings y se
@@ -6396,7 +6431,7 @@ public sealed partial class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
-            if (desc.Length > 255 || codex.Length > 500) { session.Send(ServerMessages.ConsoleMsg("Texto demasiado largo (descripción 255, códex 500).", FuenteClan)); return; }
+            if (desc.Length > MaxDescClan || codex.Length > MaxCodexClan) { session.Send(ServerMessages.ConsoleMsg("Texto demasiado largo (descripción 255, códex 500).", FuenteClan)); return; }
             g.Description = desc;
             g.Codex = codex;
             PersistGuilds();
@@ -6411,7 +6446,7 @@ public sealed partial class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
-            if (url.Length > 128) { session.Send(ServerMessages.ConsoleMsg("La dirección es demasiado larga (máximo 128).", FuenteClan)); return; }
+            if (url.Length > MaxUrlClan) { session.Send(ServerMessages.ConsoleMsg("La dirección es demasiado larga (máximo 128).", FuenteClan)); return; }
             g.Url = url;
             PersistGuilds();
         });
@@ -6425,7 +6460,7 @@ public sealed partial class PacketDispatcher
         {
             var g = RequireGuildLeader(session, session.Player);
             if (g is null) return;
-            if (news.Length > 512) { session.Send(ServerMessages.ConsoleMsg("Las noticias son demasiado largas (máximo 512).", FuenteClan)); return; }
+            if (news.Length > MaxNoticiasClan) { session.Send(ServerMessages.ConsoleMsg("Las noticias son demasiado largas (máximo 512).", FuenteClan)); return; }
             g.News = news;
             PersistGuilds();
             session.Send(ServerMessages.ConsoleMsg("Noticias del clan actualizadas.", FuenteClan));
@@ -8475,6 +8510,11 @@ public sealed partial class PacketDispatcher
     private void HandleDenounce(ClientSession session, ByteQueueReader r)
     {
         string text = r.ReadAsciiString();
+        // La misma cadencia que el resto de lo que habla (el /GM de arriba la tiene desde siempre): esto le
+        // escribe una línea a CADA administrador conectado, así que sin freno es una manguera contra el staff
+        // justo cuando más lo necesita. El original no tiene cadencia en ningún lado; el cupo es nuestro y del
+        // mismo cubo que el chat, o sea que al que denuncia de verdad no lo toca.
+        if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -8803,6 +8843,7 @@ public sealed partial class PacketDispatcher
     private void HandleFriendMessage(ClientSession session, ByteQueueReader r)
     {
         string msg = r.ReadAsciiString();
+        if (Frenado(session, ruidosa: true)) return;   // habla: mismo cubo que el chat (va a los cinco amigos)
         _loop.Enqueue(() =>
         {
             var p = session.Player;

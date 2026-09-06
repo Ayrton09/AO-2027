@@ -6,6 +6,8 @@ public static class GameLimits
     public const byte MaxInventorySlots = 25; // Declares.bas:572
     public const byte MaxBankSlots = 40;      // Declares.bas:1085 MAX_BANCOINVENTORY_SLOTS
     public const byte MaxCorreos = 10;        // Declares.bas:1281 Max_Correos — tope de la casilla de correo
+    public const int MaxClanes = 1000;        // modGuilds.bas:12 MAX_GUILDS — el registro de clanes tiene fondo
+    public const int MaxAspirantes = 10;      // modGuilds.bas:24 MAXASPIRANTES — solicitudes pendientes por clan
     public const byte MaxUserSpells = 35;     // Declares.bas:308
     public const byte NumSkills = 27;         // Declares.bas NUMSKILLS
     public const int MaxMascotas = 3;         // Declares.bas:444 MAXMASCOTAS — cupo COMPARTIDO entre domar e invocar

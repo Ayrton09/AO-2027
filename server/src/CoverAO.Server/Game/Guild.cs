@@ -49,6 +49,10 @@ public sealed class Guild
     /// en SOLICITUDES.dat y lo único que transporta el paquete <c>ShowUserRequest</c>, con el que el líder mira
     /// la solicitud antes de decidir (<c>a_DetallesAspirante</c> → <c>DetallesSolicitudAspirante</c>).</summary>
     public Dictionary<string, string> JoinRequests { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>¿La cola de solicitudes está llena? (VB6 <c>MAXASPIRANTES</c>, modGuilds.bas:24, con su
+    /// compuerta viva en <c>NuevoAspirante</c> :2142). La decisión vive acá para poder medirla sin armar
+    /// once personajes por el cable.</summary>
+    public bool AspirantesLleno => JoinRequests.Count >= GameLimits.MaxAspirantes;
     /// <summary>Guild names this clan is at war with (attacks between them don't incur the criminal flag).</summary>
     public HashSet<string> Enemies { get; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Guild names this clan is allied with.</summary>

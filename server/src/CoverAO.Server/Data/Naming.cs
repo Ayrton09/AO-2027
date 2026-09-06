@@ -89,6 +89,30 @@ public static class Naming
         return true;
     }
 
+    /// <summary>Largo máximo de un nombre de CLAN. NO sale del original: <c>GuildNameValido</c> mira los
+    /// caracteres y no el largo, y el formulario del cliente VB6 tampoco pone tope. Hace falta igual porque el
+    /// nombre del clan viaja PEGADO al del personaje en cada <c>CharacterCreate</c>
+    /// (<c>Modulo_UsUaRiOs.bas:215</c>: <c>Nombre &lt;Clan&gt;</c>), o sea que lo recibe cada uno de los que lo
+    /// tienen en pantalla, cada vez que entra en su área. Con el charset de abajo el nombre no puede hacer
+    /// daño; con el largo suelto, sí. Treinta es el mismo tope que el de una cuenta.</summary>
+    public const int MaxGuildNameLength = 30;
+
+    /// <summary>Nombre de CLAN (VB6 <c>GuildNameValido</c>, modGuilds.bas:890): pasa el nombre a minúsculas y
+    /// exige que cada carácter sea una letra a-z, un espacio, o el 255 del codepage. Ni dígitos, ni acentos, ni
+    /// puntuación, ni NUL, ni controles.
+    ///
+    /// <para>No es cosmético. El nombre se difunde dentro del nombre del personaje, se guarda en el
+    /// <c>.chr</c> y se usa como clave del registro de clanes; y las listas de clanes y de miembros viajan como
+    /// UNA cadena separada por NUL, así que un nombre con un NUL adentro se lee como dos clanes. El original
+    /// cierra todo eso con esta única regla, y acá el llamador no la estaba aplicando.</para></summary>
+    public static bool IsValidGuildName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > MaxGuildNameLength) return false;
+        foreach (char c in name)
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == ' ' || c == 'ÿ')) return false;
+        return true;
+    }
+
     /// <summary>Backstop de path traversal para la capa de persistencia: normaliza a mayúsculas y verifica
     /// que el nombre no contenga separadores ni <c>..</c> (un nombre ya validado por <see cref="IsValidName"/>
     /// nunca los tiene, pero esto protege cualquier ruta que llegue sin validar).</summary>
