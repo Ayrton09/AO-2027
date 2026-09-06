@@ -123,6 +123,23 @@ IdleLimit=0
 MaxPaquetesPorSegundo=150
 RafagaDePaquetes=200
 
+; --- Anticheat -------------------------------------------------------------
+; El servidor detecta trampas que un cliente normal no puede hacer (velocidad,
+; ataque fuera de rango, skills inventados, comprar mas de una pila, etc.) y
+; cada una suma un punto en la CUENTA, que se conserva entre sesiones. Desde
+; TrampasParaEchar se lo expulsa en cada trampa nueva; en TrampasParaBanear se
+; banea la cuenta y el personaje. Los GMs conectados ven cada una en el momento
+; y el panel muestra el contador. 0 = ese escalon apagado.
+TrampasParaEchar=3
+TrampasParaBanear=6
+
+; --- Registro de economia ----------------------------------------------------
+; Los movimientos de oro de este monto o mas (deposito, extraccion, compra,
+; venta, tirar, agarrar, casino) y TODOS los correos con adjunto, transferencias
+; y bolsas van a data/logs/economia-AAAA-MM-DD.log. No detecta nada solo: sirve
+; para reconstruir de donde salio el oro de alguien cuando haga falta. 0 = todo.
+EconomiaUmbralOro=1000
+
 ; SPAM DENTRO DEL JUEGO, que es otro problema: con veinte mensajes por segundo
 ; uno esta MUY por debajo del techo de arriba y el chat igual queda inusable.
 ; Aca no se desconecta a nadie: se descarta la accion y se le avisa.

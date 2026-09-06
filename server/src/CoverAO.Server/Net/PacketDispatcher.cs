@@ -42,9 +42,11 @@ public sealed partial class PacketDispatcher
     public PacketDispatcher(World world, GameLoop loop, Persistence db, GameData data, Leveling leveling,
         long walkIntervalMs = 0, long attackIntervalMs = 0, LoginThrottle? throttle = null, AdminConfig? admin = null,
         ServerContent? content = null, NpcSystem? npcs = null, Action<bool>? shutdown = null,
-        bool fixtureMode = false, Data.ServerIni? serverIni = null, LoginThrottle? creacionDeCuentas = null)
+        bool fixtureMode = false, Data.ServerIni? serverIni = null, LoginThrottle? creacionDeCuentas = null,
+        RegistroDeEconomia? economia = null)
     {
         _creaciones = creacionDeCuentas;
+        _economia = economia;
         _ini = serverIni ?? new Data.ServerIni();
         _fixtureMode = fixtureMode;
         _shutdown = shutdown;
@@ -313,7 +315,7 @@ public sealed partial class PacketDispatcher
         // servidor. Con el cliente de stock no se manda, pero el daño era irreversible en caliente.
         if (EsDeLaFamiliaDeLogin(id) && session.Player is not null)
         {
-            LogIntentoDeTrampa(session, session.Player, $"mandó {id} con el personaje ya adentro");
+            RegistrarTrampa(session, session.Player, $"mandó {id} con el personaje ya adentro");
             session.Close("paquete de login estando adentro");
             return;
         }
@@ -1006,6 +1008,7 @@ public sealed partial class PacketDispatcher
         if (player is null) { Reject(session, $"No se encontro el personaje '{charName}'."); return; }
         if (player.Banned) { Reject(session, "Este personaje esta baneado."); return; }   // VB6 flags.Ban — baneo por personaje (/BAN)
         if (acc.Donador) player.Donador = true;   // VB6 TCP.bas:1863 — el flag de la CUENTA fuerza donador en el char
+        player.Trampas = acc.Trampas;             // el contador del anticheat vive en la cuenta
         // Modo mantenimiento "Solo GMs" (chkServerHabilitado del VB6): sólo entran privilegiados.
         // MANTENIMIENTO: quién es staff lo decide el Server.ini, NO el `.chr`. Acá se miraba `player.IsGm`, que
         // en este punto sale del `.chr` recién cargado — y como este mismo commit dejó de persistir privilegios,
@@ -1322,10 +1325,10 @@ public sealed partial class PacketDispatcher
                 switch (p.Pasos.Paso(nowMs))
                 {
                     case DetectorDeSpeedHack.Veredicto.Sospecha:
-                        LogIntentoDeTrampa(session, p, "34 pasos en menos de 5,2 s (primera ventana, sin echar)");
+                        RegistrarTrampa(session, p, "34 pasos en menos de 5,2 s (primera ventana, sin echar)");
                         break;
                     case DetectorDeSpeedHack.Veredicto.Echar:
-                        LogIntentoDeTrampa(session, p, "34 pasos en menos de 5,2 s por segunda vez: SH");
+                        RegistrarTrampa(session, p, "34 pasos en menos de 5,2 s por segunda vez: SH");
                         // El original se lo anuncia al staff conectado, no a todo el servidor (:1615).
                         BroadcastToAdmins(ServerMessages.ConsoleMsg(
                             $"Servidor> {p.Name} ha sido echado por el servidor por posible uso de SH.", FuenteCombate));
@@ -5656,7 +5659,7 @@ public sealed partial class PacketDispatcher
             // `HasFound` -> Exit Sub, sin mensaje. Y con constancia: el original lo trata como trampa
             // (LogCheating, Protocol.bas:6230), porque el cliente no ofrece fundar a quien ya tiene clan.
             if (!string.IsNullOrEmpty(p.GuildName))
-            { LogIntentoDeTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }
+            { RegistrarTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }
             byte alin = AlineacionPorFaccion(p);
             if (alin == 0)
             { session.Send(ServerMessages.ConsoleMsg("Hay un error en su faccion, comuniquese con algun GameMaster", FuenteClan)); return; }
@@ -5676,7 +5679,7 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (!string.IsNullOrEmpty(p.GuildName))
-            { LogIntentoDeTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }   // :6230
+            { RegistrarTrampa(session, p, $"quiso fundar un clan teniendo <{p.GuildName}>"); return; }   // :6230
             // La alineación ya quedó fijada por la FACCIÓN en el paso 1. El original lee este byte y su
             // `Select Case` está comentado entero (Protocol.bas:6256-6260), así que la elección del cliente no
             // se usa; acá se estaba guardando, que es dejar que el jugador elija la alineación de su clan.
@@ -6192,6 +6195,7 @@ public sealed partial class PacketDispatcher
             p.Inventory[slot] = inv;
             session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
         }
+        _economia?.Anotar($"correo {p.Name} retira {m.Amount} x obj {m.ObjIndex} (de {m.Sender})");
         box[i] = m with { ObjIndex = 0, Amount = 0 };   // la carta se queda, sin adjunto
         PersistMail();
         session.Send(ServerMessages.CorreoList(box));
@@ -6970,11 +6974,13 @@ public sealed partial class PacketDispatcher
                 { session.Send(ServerMessages.ConsoleMsg("Tienes la cantidad máxima de oro que puedes tener. No has obtenido oro", FuenteInfo)); return; }
                 p.Gold += amount;
                 Dice($"¡Felicidades! Has ganado {amount} monedas de oro.");
+                if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"casino {p.Name}: gana {amount} oro");
             }
             else
             {
                 p.Gold -= amount;
                 Dice($"Lo siento, has perdido {amount} monedas de oro.");
+                if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"casino {p.Name}: pierde {amount} oro");
             }
             session.Send(ServerMessages.UpdateGold(p.Gold));
         });
@@ -7392,6 +7398,7 @@ public sealed partial class PacketDispatcher
                 if (CountItem(p, objIndex) < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes ese ítem para adjuntar.", FuenteInfo)); return; }
                 ConsumeItem(session, p, objIndex, amount);
                 attachObj = objIndex; attachAmt = amount;
+                _economia?.Anotar($"correo {p.Name} -> {dest}: adjunta {amount} x obj {objIndex}");
             }
             p.Gold -= CostoDelCorreo;                       // VB6 mod_Correos.bas:47
             session.Send(ServerMessages.UpdateGold(p.Gold)); // …y su WriteUpdateGold (:48)
@@ -8350,6 +8357,7 @@ public sealed partial class PacketDispatcher
                 target.Connection?.Send(ServerMessages.ConsoleMsg(
                     "¡Has recibido un nuevo mensaje de Finanzas Goliath, ve a un correo local para leerlo.", FuenteInfo));
             }
+            _economia?.Anotar($"transferencia {p.Name} -> {targetName}: {amount} oro (le quedan {p.Bank} en boveda)");
             session.Send(ServerMessages.UpdateGold(p.Gold));                   // la billetera, como el original
             session.Send(ServerMessages.ConsoleMsg(
                 $"¡Se ha realizado la transferencia correctamente! Tienes {p.Bank} monedas de oro en tu cuenta.", FuenteInfo));
@@ -8375,7 +8383,7 @@ public sealed partial class PacketDispatcher
             for (int i = 1; i <= GameLimits.NumSkills; i++) pedido += inc[i];
             if (pedido > p.FreeSkillPoints)
             {
-                LogIntentoDeTrampa(session, p, $"trató de hackear los skills (pidió {pedido} con {p.FreeSkillPoints})");
+                RegistrarTrampa(session, p, $"trató de hackear los skills (pidió {pedido} con {p.FreeSkillPoints})");
                 session.Close("anticheat: skills");
                 return;
             }
@@ -8998,7 +9006,7 @@ public sealed partial class PacketDispatcher
                 // El original loguea este caso en la rama de MAGIA (`Ataque fuera de rango de …`,
                 // Protocol.bas:2931): tirarle a una baldosa que no ves no lo puede pedir un cliente normal.
                 if (skill == GameLimits.SkillMagia)
-                    LogIntentoDeTrampa(session, p, $"ataque fuera de rango a ({p.Pos.Map}/{tx}/{ty}) desde ({p.Pos.X},{p.Pos.Y})");
+                    RegistrarTrampa(session, p, $"ataque fuera de rango a ({p.Pos.Map}/{tx}/{ty}) desde ({p.Pos.X},{p.Pos.Y})");
                 session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y)); return;
             }
             // CancelExit (:2651): trabajar también cancela la cuenta regresiva del /SALIR.
@@ -10596,6 +10604,44 @@ public sealed partial class PacketDispatcher
     /// <para>Sale por la consola a propósito y no a un archivo aparte: <c>Console.WriteLine</c> ya está
     /// redirigido al LogRing, que lo deja en <c>data/logs/server-AAAA-MM-DD.log</c> y lo muestra en vivo en el
     /// panel. El prefijo <c>[TRAMPA]</c> es para poder grepearlo.</para></summary>
+    /// <summary>
+    /// SANCIÓN ESCALONADA CON MEMORIA. Hasta acá una trampa que no baneaba sola quedaba como una línea de log que
+    /// nadie miraba. Ahora cada una suma un punto en la CUENTA (persistido en el .cnt, sobrevive al relog) y se
+    /// avisa a los GMs conectados; desde <c>TrampasParaEchar</c> se expulsa en cada trampa nueva, y en
+    /// <c>TrampasParaBanear</c> se banea cuenta y personaje. Los dos umbrales viven en el Server.ini; 0 apaga
+    /// ese escalón. Las trampas que ya baneaban solas (skills, comprar más de una pila) siguen baneando.
+    /// </summary>
+    private readonly RegistroDeEconomia? _economia;
+    private void RegistrarTrampa(ClientSession session, Player? p, string motivo)
+    {
+        LogIntentoDeTrampa(session, p, motivo);
+        if (p is null) return;
+        var acc = _db.LoadAccount(p.Account);
+        int n = Math.Max(acc?.Trampas ?? 0, p.Trampas) + 1;
+        p.Trampas = n;
+        int echar = _ini.TrampasParaEchar, banear = _ini.TrampasParaBanear;
+        bool ban = banear > 0 && n >= banear;
+        if (acc is not null)
+        {
+            acc.Trampas = n;
+            if (ban) acc.Banned = true;
+            _db.SaveAccount(acc);
+        }
+        BroadcastToAdmins(ServerMessages.ConsoleMsg($"Servidor> {p.Name} lleva {n} trampa(s): {ParaElLog(motivo)}", FuenteCombate));
+        if (ban)
+        {
+            p.Banned = true;
+            _world.Broadcast(ServerMessages.ConsoleMsg($"{p.Name} ha sido baneado por el sistema anti-cheats.", FuenteCombate));
+            session.Send(ServerMessages.SendMsgBox("Has sido baneado por el Sistema AntiCheat."));
+            session.Close($"anticheat: {n} trampas");
+        }
+        else if (echar > 0 && n >= echar)
+        {
+            session.Send(ServerMessages.SendMsgBox("El servidor te expulsó por comportamiento sospechoso."));
+            session.Close($"anticheat: {n} trampas");
+        }
+    }
+
     internal static void LogIntentoDeTrampa(ClientSession session, Player? p, string motivo)
         => Console.WriteLine($"[TRAMPA] {p?.Name ?? "(sin personaje)"} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} - {ParaElLog(motivo)}");
 
@@ -10785,6 +10831,7 @@ public sealed partial class PacketDispatcher
                 // IGUAL aunque no haya caído una moneda (TirarOro se guarda sus propios gates adentro).
                 if (amount > 100_000) return;   // "Don't drop too much gold"
                 TirarOro(session, p, amount);
+                if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"tira {p.Name}: {amount} oro en ({p.Pos.Map},{p.Pos.X},{p.Pos.Y})");
                 _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
                 return;
@@ -10854,6 +10901,7 @@ public sealed partial class PacketDispatcher
             if (_data.Obj(ground.ObjIndex) is { IsGold: true })
             {
                 p.Gold = (int)Math.Min((long)p.Gold + ground.Amount, MaxOro);
+                if (ground.Amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"agarra {p.Name}: {ground.Amount} oro en ({p.Pos.Map},{p.Pos.X},{p.Pos.Y})");
                 _world.RemoveGround(p.Pos);
                 _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectDelete(p.Pos.X, p.Pos.Y));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
@@ -11155,6 +11203,7 @@ public sealed partial class PacketDispatcher
             if (obj.ObjType == Bolsa)
             {
                 p.Gold += obj.Value;
+                _economia?.Anotar($"bolsa {p.Name}: abre {obj.Name} (+{obj.Value} oro -> {p.Gold})");
                 session.Send(ServerMessages.LocaleMsg(471, $"{obj.Name}%{obj.Value}"));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
                 inv.Amount -= 1;
@@ -11455,7 +11504,7 @@ public sealed partial class PacketDispatcher
             // compra. Un cliente honesto nunca llega: el tope del pedido son 10.000 y el gate es "más de".
             if (amount > GameLimits.MaxInventoryObjs)
             {
-                LogIntentoDeTrampa(session, p, $"quiso comprar {amount} unidades de una");
+                RegistrarTrampa(session, p, $"quiso comprar {amount} unidades de una");
                 _world.Broadcast(ServerMessages.ConsoleMsg($"{p.Name} ha sido baneado por el sistema anti-cheats.", FuenteCombate));
                 p.Banned = true;
                 session.Send(ServerMessages.SendMsgBox("Has sido baneado por el Sistema AntiCheat."));
@@ -11470,6 +11519,7 @@ public sealed partial class PacketDispatcher
             if (invSlot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
 
             p.Gold -= (int)cost;
+            if (cost >= _ini.EconomiaUmbralOro) _economia?.Anotar($"compra {p.Name}: {buy} x obj {st.ObjIndex} por {cost} oro");
             var inv = p.Inventory[invSlot];
             inv.ObjIndex = st.ObjIndex;
             inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + buy);
@@ -11556,6 +11606,7 @@ public sealed partial class PacketDispatcher
             DesequiparSiSeVaEntero(session, p, slot, sell);
             inv = p.Inventory[slot];
             p.Gold = (int)Math.Min((long)p.Gold + gain, MaxOro);   // VB6 Comercio.bas:169, sobre el TOTAL
+            if (gain >= _ini.EconomiaUmbralOro) _economia?.Anotar($"venta {p.Name}: {sell} x obj {objVendido} por {gain} oro");
             inv.Amount -= (short)sell;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
@@ -11700,6 +11751,7 @@ public sealed partial class PacketDispatcher
             if (amount <= 0 || amount > p.Gold)
             { session.Send(ServerMessages.ChatOverHead("No tenés esa cantidad.", banquero.CharIndex, 0)); return; }
             p.Gold -= amount; p.Bank += amount;
+            if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"deposito {p.Name}: {amount} oro (boveda {p.Bank})");
             session.Send(ServerMessages.ChatOverHead($"Tenés {p.Bank} monedas de oro en tu cuenta.", banquero.CharIndex, 0));
             _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
             session.Send(ServerMessages.UpdateGold(p.Gold));   // DENTRO del éxito, como el original (:6082)
@@ -11730,6 +11782,7 @@ public sealed partial class PacketDispatcher
             else
             {
                 p.Bank -= amount; p.Gold += amount;
+                if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"extraccion {p.Name}: {amount} oro (boveda {p.Bank})");
                 session.Send(ServerMessages.ChatOverHead($"Tenés {p.Bank} monedas de oro en tu cuenta.", banquero.CharIndex, 0));
                 _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
             }

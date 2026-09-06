@@ -188,6 +188,8 @@ public sealed class Player
     // [FLAGS] Ban — baneo POR PERSONAJE (VB6 flags.Ban), distinto del baneo por cuenta del panel admin.
     // Un char con esto en true no puede entrar al mundo, aunque su cuenta esté limpia. Lo pone /BAN.
     public bool Banned { get; set; }
+    /// <summary>Trampas acumuladas en la CUENTA (se carga al entrar y la suma RegistrarTrampa). Lo muestra el panel.</summary>
+    public int Trampas { get; set; }
 
     // Guild-fundation flow: chosen alignment (0 = not founding).
     public byte FoundingAlignment { get; set; }

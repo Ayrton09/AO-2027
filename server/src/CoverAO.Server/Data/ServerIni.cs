@@ -48,6 +48,11 @@ public sealed class ServerIni
     public int MaxUsers { get; private set; }              // 0 = sin tope
     public bool AllowMultiLogins { get; private set; } = true;
     public int LimiteConexionesPorIp { get; private set; } // 0 = sin tope
+    // ANTICHEAT: sanción escalonada por cuenta (ver PacketDispatcher.RegistrarTrampa). 0 = ese escalón apagado.
+    public int TrampasParaEchar { get; private set; } = 3;
+    public int TrampasParaBanear { get; private set; } = 6;
+    // REGISTRO DE ECONOMÍA: los movimientos de oro de este monto o más van a data/logs/economia-*.log.
+    public int EconomiaUmbralOro { get; private set; } = 1000;
     // TECHO DE CADENCIA por conexión (ver Net/LimiteDeCadencia.cs). El original no tiene control de flood;
     // hace falta porque el cliente es una página web y cualquiera puede mandar por el WebSocket lo que quiera,
     // a la velocidad que quiera. `RafagaDePaquetes` es cuánto pico se perdona de una; `MaxPaquetesPorSegundo`
@@ -91,11 +96,11 @@ public sealed class ServerIni
     /// </summary>
     public static readonly string[] ClavesConocidas =
     {
-        "AllowMultiLogins", "BackupsAConservar", "Centinela", "CodigoFuente",
+        "AllowMultiLogins", "BackupsAConservar", "Centinela", "CodigoFuente", "EconomiaUmbralOro",
         "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
-        "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo",
+        "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
         "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
         "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
@@ -727,6 +732,9 @@ public sealed class ServerIni
         cfg.PuertoWebSocketPublico = wsPublico is >= 1 and <= 65535 ? wsPublico : 0;
         cfg.AllowMultiLogins = ini.GetInt("INIT", "AllowMultiLogins", 1) != 0;
         cfg.LimiteConexionesPorIp = ini.GetInt("INIT", "LimiteConexionesPorIp", 0);
+        cfg.TrampasParaEchar = Math.Max(0, ini.GetInt("INIT", "TrampasParaEchar", 3));
+        cfg.TrampasParaBanear = Math.Max(0, ini.GetInt("INIT", "TrampasParaBanear", 6));
+        cfg.EconomiaUmbralOro = Math.Max(0, ini.GetInt("INIT", "EconomiaUmbralOro", 1000));
         cfg.MaxPaquetesPorSegundo = Math.Max(0, ini.GetInt("INIT", "MaxPaquetesPorSegundo", 150));
         cfg.RafagaDePaquetes = Math.Max(1, ini.GetInt("INIT", "RafagaDePaquetes", 200));
         cfg.MsEntreMensajes = Math.Max(0, ini.GetInt("INIT", "MsEntreMensajes", 700));

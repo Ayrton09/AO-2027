@@ -145,7 +145,7 @@
         <h2>👥 Jugadores online <span class="count" id="pcount"></span></h2>
         <div class="tblwrap">
           <table>
-            <thead><tr><th>Personaje</th><th>Nivel</th><th>Clase</th><th>Mapa</th><th>Pos</th><th>Vida</th><th></th></tr></thead>
+            <thead><tr><th>Personaje</th><th>Nivel</th><th>Clase</th><th>Mapa</th><th>Pos</th><th>Vida</th><th title="trampas acumuladas en la cuenta (anticheat)">Trampas</th><th></th></tr></thead>
             <tbody id="players"></tbody>
           </table>
           <div class="empty" id="noplayers" style="display:none">No hay jugadores conectados.</div>
@@ -349,6 +349,7 @@ function render(st) {
       <td class="num">${p.map}</td>
       <td class="num">${p.x},${p.y}</td>
       <td><span class="hpbar"><i style="width:${hp}%"></i></span> <span class="num">${p.hp}/${p.maxHp}</span></td>
+      <td class="num" title="trampas acumuladas en la cuenta">${p.trampas ? `<span class="badge dead">${p.trampas}</span>` : "0"}</td>
       <td style="text-align:right; white-space:nowrap"><button class="mini danger" onclick="cmd('kick',{charIndex:${p.charIndex}})" ${p.gm ? 'disabled title="no se echa a un GM"' : ''}>Echar</button>
         <button class="mini act" onclick="if(confirm('¿Banear la cuenta ${esc(p.account)}? Se la echa del servidor.'))cmd('ban',{name:'${esc(p.account)}'})" ${p.gm ? 'disabled title="no se banea a un GM"' : ''}>Ban</button>
         <button class="mini act" onclick="if(confirm('¿Banear la IP de ${esc(p.name)}? Nadie desde esa IP podrá conectarse.'))cmd('banPlayerIp',{charIndex:${p.charIndex}})" ${p.gm ? 'disabled title="no se banea la IP de un GM"' : ''}>Ban IP</button></td>

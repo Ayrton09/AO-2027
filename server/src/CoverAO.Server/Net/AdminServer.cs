@@ -298,6 +298,7 @@ public sealed class AdminServer
                 map = (int)p.Pos.Map, x = (int)p.Pos.X, y = (int)p.Pos.Y,
                 hp = p.Hp, maxHp = p.MaxHp,
                 gm = p.IsGm, priv = (int)p.Privileges,
+                trampas = p.Trampas,
                 guild = p.GuildName,
                 faction = (int)p.FactionStatus,
                 dead = !p.IsAlive,

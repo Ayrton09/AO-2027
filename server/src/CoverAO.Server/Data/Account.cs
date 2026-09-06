@@ -11,6 +11,8 @@ public sealed class Account
     public string PasswordHash { get; set; } = "";
     public string Salt { get; set; } = "";
     public bool Banned { get; set; }
+    /// <summary>Trampas acumuladas por el anticheat (PacketDispatcher.RegistrarTrampa). Persiste en el .cnt.</summary>
+    public int Trampas { get; set; }
     /// <summary>Flag donador a nivel CUENTA (VB6 .cnt "Donador"). Al loguear fuerza Donador=1 en el char
     /// (TCP.bas:1863), así todos los personajes de una cuenta premium heredan el beneficio.</summary>
     public bool Donador { get; set; }

@@ -752,6 +752,9 @@ var loginThrottle = new LoginThrottle(maxFails: 20, windowMs: 60_000, blockMs: 3
 // Cuentas NUEVAS por IP: tres cada diez minutos. Es otro contador porque el de arriba cuenta FALLOS y crear
 // una cuenta con nombre libre no falla nunca (ver PacketDispatcher.CreacionBloqueada).
 var creacionDeCuentas = new LoginThrottle(maxFails: 3, windowMs: 600_000, blockMs: 600_000);
+// Registro de economía: un archivo por día en data/logs, aparte del log general, para reconstruir de dónde
+// salió el oro de alguien cuando haga falta. Se conserva lo mismo que el log (o 30 días si el log va a consola).
+using var economia = new RegistroDeEconomia(logsDir, serverIni.LogDias > 0 ? serverIni.LogDias : 30);
 const long authTimeoutMs = 30_000;   // 30 s para autenticarse o se cierra la conexión
 const int maxInboundBytes = 64 * 1024;
 // El token de cancelación se crea ANTES del dispatcher porque el comando GM /APAGAR necesita el mismo
@@ -895,7 +898,7 @@ if (args.Any(a => string.Equals(a, "--relojes-de-test", StringComparison.Ordinal
     PacketDispatcher.TicksEntreVueltas = 3_000 / GameLoop.TickMs;
     Console.WriteLine("[test] relojes de día/noche, clima y centinela acelerados a segundos (--relojes-de-test)");
 }
-dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => PedirApagadoOrdenado(), fixtureMode, serverIni, creacionDeCuentas);
+dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => PedirApagadoOrdenado(), fixtureMode, serverIni, creacionDeCuentas, economia);
 var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
