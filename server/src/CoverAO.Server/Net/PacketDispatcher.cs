@@ -597,14 +597,18 @@ public sealed partial class PacketDispatcher
             if (LoginBlocked(session)) return;
             if (CreacionBloqueada(session)) return;
             if (password.Length < _ini.ClaveMinima) { Reject(session, $"La contraseña debe tener al menos {_ini.ClaveMinima} caracteres."); return; }
-            // EL CÓDIGO DE RECUPERACIÓN ES UNA SEGUNDA CONTRASEÑA, y tenía el piso de ninguna: con él se CAMBIA
-            // la clave de la cuenta (ProcesosLogin tipo 0), o sea que adivinarlo es quedarse con la cuenta. El
-            // rate-limit acota los intentos pero no alcanza contra un código de cuatro dígitos.
-            // Vacío se permite a propósito: una cuenta SIN código no tiene camino de recuperación
-            // (VerifyUserCode rechaza cuando el hash está vacío), que es el estado seguro. Lo que no puede
-            // haber es un código corto, que es un camino abierto con candado de juguete.
-            if (userCode.Length > 0 && userCode.Length < _ini.ClaveMinima)
-            { Reject(session, $"El código de recuperación debe tener al menos {_ini.ClaveMinima} caracteres."); return; }
+            // EL CÓDIGO DE RECUPERACIÓN NO ES UNA CONTRASEÑA: es un PIN NUMÉRICO DE CUATRO, y el original lo
+            // dice en tres reglas seguidas (VB6 `CheckDataNewAccount`, Cuentas.bas:605-622): vacío no,
+            // letras no (aviso 53), y más de cuatro tampoco (aviso 68). Ninguna de las tres estaba portada, y
+            // sobre ese hueco se le había puesto encima un mínimo de seis, que CONTRADICE la tercera: ninguna
+            // cadena podía cumplir las dos reglas a la vez y el barrido del oráculo se quedaba sin poder crear
+            // una sola cuenta.
+            //
+            // El motivo de aquel mínimo sigue siendo cierto —con este PIN se cambia la clave de la cuenta— y no
+            // se contesta acá: se contesta donde corresponde, que es el freno por intentos. Diez mil
+            // combinaciones contra el rate-limit de login, y no una regla propia que rompe la paridad.
+            if (userCode.Length > 4 || (userCode.Length > 0 && !userCode.All(char.IsAsciiDigit)))
+            { Reject(session, "El código de recuperación son hasta cuatro números."); return; }
             if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
             CrearCuentaFueraDelLoop(session, account, password, userCode);
         });

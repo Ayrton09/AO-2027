@@ -56,6 +56,9 @@ public sealed class ServerIni
     // PERSONAJES EN EL MUNDO POR IP (el original: tope fijo de 10 CONEXIONES por IP y AllowMultiLogins todo o
     // nada). 0 = sin tope. Con --fixture vale 0 salvo que el ini lo escriba (como las cadencias).
     public int MaxPersonajesPorIp { get; private set; } = 10;   // 10, como las conexiones del original: en una LAN juegan varios
+    /// <summary>Cuentas nuevas que una misma IP puede CREAR cada diez minutos. Es nuestro: el rate-limit de
+    /// login cuenta fallos y crear una cuenta con un nombre libre no falla nunca. 0 = sin cupo.</summary>
+    public int CuentasNuevasPorIp { get; private set; } = 3;
     // Largo mínimo de una contraseña nueva (crear cuenta y cambiar clave). El original no exige nada.
     public int ClaveMinima { get; private set; } = 6;
     public IReadOnlyCollection<string> InitEscritas { get; private set; } = Array.Empty<string>();
@@ -109,7 +112,7 @@ public sealed class ServerIni
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
-        "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
+"CuentasNuevasPorIp", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
         "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "PorcentajeLluvia",
@@ -748,6 +751,7 @@ public sealed class ServerIni
         cfg.TrampasParaBanear = Math.Max(0, ini.GetInt("INIT", "TrampasParaBanear", 6));
         cfg.EconomiaUmbralOro = Math.Max(0, ini.GetInt("INIT", "EconomiaUmbralOro", 1000));
         cfg.MaxPersonajesPorIp = Math.Max(0, ini.GetInt("INIT", "MaxPersonajesPorIp", 10));
+        cfg.CuentasNuevasPorIp = Math.Max(0, ini.GetInt("INIT", "CuentasNuevasPorIp", 3));
         cfg.ClaveMinima = Math.Max(0, ini.GetInt("INIT", "ClaveMinima", 6));
         cfg.InitEscritas = ini.Claves("INIT").ToArray();
         cfg.MaxPaquetesPorSegundo = Math.Max(0, ini.GetInt("INIT", "MaxPaquetesPorSegundo", 150));

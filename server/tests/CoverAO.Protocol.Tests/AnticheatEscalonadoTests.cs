@@ -63,6 +63,28 @@ public class AnticheatEscalonadoTests
     }
 
     [Fact]
+    public void El_cupo_de_cuentas_nuevas_por_ip_tiene_default_y_se_lee_del_ini()
+    {
+        // Nació cableado en el Program y SIEMPRE encendido, también con --fixture: el barrido del oráculo crea
+        // una cuenta por acción desde 127.0.0.1 y se quedaba sin poder crear a partir de la cuarta, con lo que
+        // no medía nada. Ahora es una clave, y el fixture la apaga salvo que el ini del flow la escriba.
+        var sin = new ServerIni();
+        Assert.Equal(3, sin.CuentasNuevasPorIp);
+        Assert.False(sin.InitEscrita("CuentasNuevasPorIp"));
+
+        string ruta = Path.Combine(Path.GetTempPath(), "coverao_ini_" + Guid.NewGuid().ToString("N") + ".ini");
+        File.WriteAllText(ruta, "[INIT]\nStartPort=7666\nCuentasNuevasPorIp=5\n");
+        try
+        {
+            var con = ServerIni.Cargar(ruta);
+            Assert.Equal(5, con.CuentasNuevasPorIp);
+            Assert.True(con.InitEscrita("CuentasNuevasPorIp"));
+            Assert.Contains("CuentasNuevasPorIp", ServerIni.ClavesConocidas);
+        }
+        finally { File.Delete(ruta); }
+    }
+
+    [Fact]
     public void La_espera_tras_castear_es_cero_como_el_original_y_se_lee_del_ini()
     {
         Assert.Equal(0, new ServerIni().IntervaloHechizoUsar);

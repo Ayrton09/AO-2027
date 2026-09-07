@@ -754,7 +754,11 @@ var connGuard = new ConnectionGuard(
 var loginThrottle = new LoginThrottle(maxFails: 20, windowMs: 60_000, blockMs: 300_000);
 // Cuentas NUEVAS por IP: tres cada diez minutos. Es otro contador porque el de arriba cuenta FALLOS y crear
 // una cuenta con nombre libre no falla nunca (ver PacketDispatcher.CreacionBloqueada).
-var creacionDeCuentas = new LoginThrottle(maxFails: 3, windowMs: 600_000, blockMs: 600_000);
+// EL CUPO DE CUENTAS NUEVAS SE APAGA CON --fixture, igual que los topes por IP, salvo que el ini lo escriba.
+// El barrido del oraculo crea UNA cuenta por accion desde 127.0.0.1 —son ciento quince— y con el cupo puesto
+// se quedaba sin poder crear a partir de la cuarta: el barrido entero salia <sin-login> y sin medir.
+int cupoDeCuentas = fixtureMode && !serverIni.InitEscrita("CuentasNuevasPorIp") ? 0 : serverIni.CuentasNuevasPorIp;
+var creacionDeCuentas = cupoDeCuentas > 0 ? new LoginThrottle(maxFails: cupoDeCuentas, windowMs: 600_000, blockMs: 600_000) : null;
 // Registro de economía: un archivo por día en data/logs, aparte del log general, para reconstruir de dónde
 // salió el oro de alguien cuando haga falta. Se conserva lo mismo que el log (o 30 días si el log va a consola).
 using var economia = new RegistroDeEconomia(logsDir, serverIni.LogDias > 0 ? serverIni.LogDias : 30);

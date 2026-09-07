@@ -730,9 +730,9 @@
         <label>Repetir contraseña <input name="pw2" type="password" required></label>
         <!-- El CÓDIGO DE RECUPERACIÓN del original (el "UserCodigo" del .cnt). Es lo único que devuelve una
              cuenta cuya contraseña se perdió, y acá se mandaba un "0000" fijo para todo el mundo. -->
-        <label>Código de recuperación <input name="code" required maxlength="30"></label>
+        <label>Código de recuperación <input name="code" required inputmode="numeric" pattern="[0-9]{1,4}" maxlength="4"></label>
         <button class="goldbtn" type="submit">Crear cuenta</button>
-        <div class="login-hint">Anotá el código: es lo único que recupera la cuenta si perdés la contraseña. Con él se cambia la clave, así que tiene el mismo largo mínimo que la contraseña.</div>
+        <div class="login-hint">Anotá el código: son hasta cuatro números, y es lo único que recupera la cuenta si perdés la contraseña.</div>
       </form>
 
       <!-- Las dos operaciones de cuenta del original: frmCambiarContraseña y frmRecuperarCuenta. Las dos
