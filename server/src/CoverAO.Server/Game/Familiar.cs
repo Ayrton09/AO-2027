@@ -225,6 +225,11 @@ public sealed class Familiar
     {
         var avisos = new System.Collections.Generic.List<string>();
         if (!Existe || cuanto <= 0) return avisos;
+        // EN EL TECHO NO SE ACUMULA MÁS. La suma va antes del bucle y el bucle exige `Elu > 0`, así que una
+        // vez llegado al tope —que es justo cuando `Elu` queda en 0— cada muerte le sumaba experiencia que ya
+        // no compra ningún nivel y que nadie volvía a poner en cero: un contador que sólo crece, guardado en
+        // el `.chr` con un recorte a int. Es la misma regla que el jugador ya tiene en `Leveling.Grant`.
+        if (Nivel >= NivelMaximo) { Exp = 0; Elu = 0; return avisos; }
         Exp += cuanto;
 
         while (Exp >= Elu && Elu > 0)

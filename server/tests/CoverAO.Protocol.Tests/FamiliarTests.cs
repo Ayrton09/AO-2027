@@ -205,4 +205,22 @@ public class FamiliarTests
         Assert.False(f.Muerto);
         Assert.All(f.Habilidades, h => Assert.Equal(0, h));
     }
+
+    [Fact]
+    public void En_el_tope_de_nivel_la_experiencia_deja_de_acumularse()
+    {
+        // Al llegar al techo, GanarExperiencia pone Exp y Elu en 0. Pero la suma ocurre ANTES del bucle y el
+        // bucle exige `Elu > 0`, asi que a partir de ahi cada muerte le suma experiencia que ya no sirve para
+        // nada y que nadie vuelve a poner en cero. El `.chr` la guarda con un cast a int.
+        var f = new Familiar();
+        f.Nacer(Familiar.Oso, "Bruno", 100, 5, 10);
+        f.GanarExperiencia(long.MaxValue / 4);          // lo lleva al tope de una
+        Assert.Equal(Familiar.NivelMaximo, f.Nivel);
+        Assert.Equal(0, f.Elu);
+        Assert.Equal(0, f.Exp);
+
+        // Y ahora, una muerte mas cualquiera:
+        f.GanarExperiencia(1000);
+        Assert.Equal(0, f.Exp);   // no deberia acumular nada: ya no hay nivel que comprar
+    }
 }
