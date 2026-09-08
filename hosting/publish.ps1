@@ -78,14 +78,31 @@ Get-ChildItem $web -Recurse -Filter *.md -ErrorAction SilentlyContinue | Remove-
 # Server.ini: la configuración del host (puerto, rates, y sobre todo QUIÉN ES GM). Va al lado del .exe, que es
 # donde el servidor lo busca. Se copia comentado y con las listas de staff vacías: el server arranca igual, y el
 # host tiene el archivo delante para editarlo en vez de tener que averiguar que existe.
-# Si YA hay un Server.ini es porque el host lo edito (su puerto, sus rates, sus GMs): no se pisa nunca. El
-# de ejemplo se copia al lado con otro nombre, para que pueda mirar las claves nuevas de esta version.
+#
+# ARMAR UN PAQUETE NO ES ACTUALIZAR UNA INSTALACION, y el mismo archivo pide lo contrario en cada caso.
+# Publicando ENCIMA del servidor de alguien, su Server.ini no se pisa nunca: ahí están su puerto, sus rates y
+# sus GMs. Pero en la carpeta de armado el que está es el de la versión ANTERIOR —o el que dejó configurado
+# quien compila—, y preservarlo lo mete en el zip en lugar del actual. Así viajó un Server.ini viejo al que le
+# faltaban 15 claves (las de la seguridad entre ellas): el servidor corría igual, con los defaults del código,
+# pero quien hostea no tenía delante ni una sola de esas opciones.
+#
+# Entonces, cuando el destino es la carpeta de armado o se va a comprimir, el ini se repone del ejemplo y el
+# anterior se guarda AFUERA del paquete, por si tenía algo que alguien quería.
+$esPaquete = $Comprimir -or ($OutDir -eq (Join-Path $Root "dist\CoverAO-$Rid"))
+$ejemplo = Join-Path $PSScriptRoot "Server.ini.ejemplo"
 $iniDestino = Join-Path $OutDir "Server.ini"
-if (Test-Path $iniDestino) {
-  Copy-Item -Force (Join-Path $PSScriptRoot "Server.ini.ejemplo") (Join-Path $OutDir "Server.ini.ejemplo")
+# El de ejemplo viaja SIEMPRE: es la referencia intacta contra la que comparar el propio, y quien actualiza
+# mira ahí las claves nuevas de esta versión.
+Copy-Item -Force $ejemplo (Join-Path $OutDir "Server.ini.ejemplo")
+if ((Test-Path $iniDestino) -and -not $esPaquete) {
   Write-Host "   Server.ini: ya existia, se RESPETA (el de ejemplo queda como Server.ini.ejemplo)" -ForegroundColor Yellow
 } else {
-  Copy-Item -Force (Join-Path $PSScriptRoot "Server.ini.ejemplo") $iniDestino
+  if (Test-Path $iniDestino) {
+    $apartado = Join-Path (Split-Path $OutDir -Parent) "Server.ini.anterior-$Rid.txt"
+    Move-Item -Force $iniDestino $apartado
+    Write-Host "   Server.ini: REPUESTO del ejemplo (el anterior quedo en $apartado, afuera del paquete)" -ForegroundColor Yellow
+  }
+  Copy-Item -Force $ejemplo $iniDestino
 }
 
 # La guia del host viaja EN EL PAQUETE: el que abre el zip no clona el repo.
