@@ -401,6 +401,22 @@ else                     { Write-Host "Probalo:  cd `"$OutDir`"; .\CoverAO.Serve
 # El formato NO es indistinto por plataforma:
 #   win-x64   -> .zip     porque Windows lo abre sin instalar nada.
 #   linux-x64 -> .tar.gz  porque el zip no guarda el permiso de ejecucion. Igual servidor.sh se lo pone.
+# LO QUE NO VIAJA EN EL ARCHIVO QUE SE REPARTE.
+#
+# La carpeta de salida es DOS cosas a la vez: la instalacion que corre el que publica, y el molde del
+# paquete que se reparte. Conservar `data\` esta bien para lo primero y mal para lo segundo: el zip salia
+# con la CUENTA del que publica adentro -- su `.cnt` con el hash de la contrasena y el del codigo de
+# recuperacion, su personaje, sus logs, y 62 archivos de backup con copias de todo eso. Se lo llevaba
+# cualquiera que recibiera el zip.
+#
+# El paquete se reparte con `data\` VACIA: el server crea lo que necesita al arrancar. Lo unico que sigue
+# viajando de ahi son los dos archivos que el propio armador escribe (las novedades y la version).
+$noViajan = @('data/Cuentas/', 'data/Charfile/', 'data/Misc/', 'data/logs/', 'data/backups/', 'admin-token.txt')
+function Viaja($rel) {
+  foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }
+  return $true
+}
+
 if ($Comprimir) {
   Write-Host "`n== comprimiendo ==" -ForegroundColor Cyan
   $padre  = Split-Path $OutDir -Parent
@@ -416,7 +432,11 @@ if ($Comprimir) {
     # DESDE DONDE se lo llamara. El bsdtar que trae Windows no tiene esa sintaxis y toma la ruta tal cual.
     $tarExe = Join-Path $env:SystemRoot ("System32" + [char]92 + "tar.exe")
     if (-not (Test-Path $tarExe)) { $tarExe = "tar" }
-    & $tarExe -czf $arch -C $padre $nombre
+    # Las mismas exclusiones que el zip: el paquete que se reparte no lleva la cuenta, el personaje, los
+    # logs ni los backups del que publica.
+    $excl = @()
+    foreach ($p in $noViajan) { $excl += "--exclude"; $excl += ($p.TrimEnd('/') + "*") }
+    & $tarExe -czf $arch @excl -C $padre $nombre
     if ($LASTEXITCODE -ne 0) { throw "tar fallo con $LASTEXITCODE (con $tarExe)" }
   } else {
     $arch = Join-Path $padre "CoverAO-$Version-$Rid.zip"
@@ -428,11 +448,14 @@ if ($Comprimir) {
     # carpetas: crea archivos cuyo nombre incluye la barra.
     $fs = [IO.File]::Open($arch, 'CreateNew')
     $zip = New-Object IO.Compression.ZipArchive($fs, 'Create')
+    $dejados = 0
     foreach ($f in Get-ChildItem $OutDir -Recurse -File) {
       $rel = $f.FullName.Substring($padre.Length + 1).Replace('\', '/')
+      if (-not (Viaja $rel)) { $dejados++; continue }
       [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
         $zip, $f.FullName, $rel, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
+    if ($dejados) { Write-Host "   $dejados archivo(s) tuyos NO viajan (cuentas, personajes, logs, backups)" }
     $zip.Dispose(); $fs.Dispose()
   }
   Write-Host ("COMPRIMIDO -> {0}  ({1:N0} MB, {2:N1} min)" -f `

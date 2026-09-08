@@ -1,401 +1,120 @@
 ; ============================================================================
-;  Server.ini - configuracion del servidor CoverAO
-; ----------------------------------------------------------------------------
-;  Este archivo va AL LADO del ejecutable (CoverAO.Server.exe). Si no existe,
-;  el servidor arranca igual con los valores por defecto... pero NADIE va a ser
-;  GM y no vas a poder usar los comandos de administracion in-game.
+;  CoverAO - Server.ini
 ;
-;  Al arrancar, el servidor imprime que leyo de aca y que staff cargo. Si no
-;  ves esa linea, el archivo no esta donde tiene que estar o se llama distinto.
+;  TODAS las claves tienen un valor por defecto sensato: el servidor arranca
+;  sin este archivo. Lo que pongas aca PISA el valor por defecto.
+;  Los valores de abajo SON los valores por defecto.
 ;
-;  Los cambios se aplican al REINICIAR el servidor.
-;  Formato heredado del Server.ini original de Argentum Online.
+;  Que hace cada una, con el detalle: HOSTING.md, tabla "Opciones del Server.ini".
 ; ============================================================================
 
 [INIT]
 
-// --- Red: LOS PUERTOS ---------------------------------------------------------
-//
-// Aca se configura UNA sola cosa, StartPort, y de ahi salen los otros tres:
-//
-//     StartPort      el juego            <- lo usa el cliente clasico de Windows
-//     StartPort + 1  WebSocket suelto    <- compatibilidad; el cliente ya no lo necesita
-//     StartPort + 2  panel de admin      <- SOLO desde esta misma maquina
-//     StartPort + 3  cliente web         <- la pagina Y el juego: el unico que se abre
-//
-// Con StartPort=7666 eso es 7666, 7667, 7668 y 7669. El servidor los IMPRIME al arrancar
-// y tambien quedan en el log del dia (data\logs\), asi que no hay que sacar la cuenta.
-//
-// EN EL ROUTER se abre UNO: el del cliente web, que sirve la pagina Y el juego (en /ws).
-// Sumale el del juego solo si alguien va a entrar con el cliente clasico de Windows; el
-// WebSocket suelto quedo de compatibilidad y ya no hace falta abrirlo.
-// EL PANEL DE ADMIN NO SE ABRE NUNCA: escucha solo en loopback a
-// proposito, porque desde ahi se puede apagar el servidor, kickear a todos y bajarse un
-// backup. Para entrar de afuera va un tunel SSH.
-//
-// VARIOS SERVIDORES EN LA MISMA MAQUINA: cada uno va en SU PROPIA CARPETA, con su copia
-// completa del juego (su gamedata, sus mapas, su config, incluso su version). Lo unico
-// que hay que cuidar es no repetir puertos: separalos de a 10 y listo.
-//
-//     C:\CoverAO\rojo\   ->  StartPort=7666   (7666..7669)
-//     C:\CoverAO\azul\   ->  StartPort=7676   (7676..7679)
-//     C:\CoverAO\verde\  ->  StartPort=7686   (7686..7689)
-//
-// El primer argumento de linea de comandos PISA este valor y corre los cuatro. Tambien
-// vale la variable de entorno COVERAO_INIT_STARTPORT (util en Docker y en systemd).
+; --- Red ---------------------------------------------------------------------
+; De StartPort salen los otros tres: +1 WebSocket, +2 panel de admin, +3 web.
+; Con varios servidores en la misma maquina, separalos de a 10 (7666, 7676...).
 StartPort=7666
-
-// SOLO SI TU HOSTING REMAPEA PUERTOS *Y* el cliente entra por el WebSocket suelto.
-// Desde que el juego entra por /ws en el puerto del cliente web, esto ya casi no hace
-// falta: por ese camino el socket sale contra la MISMA direccion de la que se bajo la
-// pagina, remapeada o no. Queda para el cliente viejo, que usa el puerto aparte.
-//
-// El cliente web no trae la direccion cableada: se baja un coverao-config.json para
-// enterarse por que puerto abrir el WebSocket, y ahi va el puerto REAL del servidor. Si
-// tu proveedor te da el 25000 por afuera y adentro el servidor esta en el 7667, el
-// jugador baja la pagina bien y despues el socket se le va contra un puerto que no esta
-// abierto. Se ve como "carga pero no conecta", y del lado del servidor NO SE NOTA NADA:
-// los logs quedan iguales porque esa conexion nunca llega.
-//
-// Con esta clave le anuncias el puerto de AFUERA. El servidor sigue escuchando en el
-// suyo; lo unico que cambia es lo que se le dice al jugador.
-//
-// El del cliente web no necesita gemelo: ese lo escribe el jugador en la URL, asi que si
-// esta remapeado escribe el de afuera y listo.
-// Se deja PUESTA en 0 (= anunciar el puerto real, que es lo normal) y no comentada, para que el
-// aviso de "opciones nuevas" del arranque quede limpio: ahi solo tienen que aparecer las que trae
-// una version nueva, no las que este archivo ya explica.
+; 0 = el cliente web deduce el puerto solo. Ponelo si hay un proxy adelante.
 PuertoWebSocketPublico=0
-
-// LA PAGINA PUBLICA: quien esta jugando y la tabla de posiciones, en el mismo puerto del
-// cliente web (estado.html, con su enlace en la pantalla de ingreso).
-//
-// No es una regla de la casa: no cambia ninguna mecanica del juego. Existe porque con pocos
-// jugadores lo que decide si alguien entra es saber si hay alguien adentro, y el /ONLINE de
-// adentro del juego solo se lee estando ya conectado.
-//
-// Sale nombre, nivel, clase y clan -- lo mismo que ve cualquiera parado al lado tuyo. NO sale
-// el mapa ni la posicion de nadie (seria regalarle el mapa a quien quiera cazar gente), ni
-// cuentas, ni IPs. Los administradores no entran en la tabla: con /CI se ponen el nivel que
-// quieran y la tabla dejaria de medir nada.
-//
-// PaginaPublica=0 la apaga entera: la direccion deja de existir (404).
+; Pagina publica en el puerto web (1) o solo el juego (0).
 PaginaPublica=1
-
-// DE DONDE se acepta abrir el WebSocket del juego, aparte del dominio de este servidor.
-// Separados por coma. Vacio (lo normal) = solo el propio.
-//
-// El navegador declara en `Origin` que pagina abrio el socket. Sin mirarlo, CUALQUIER pagina
-// que un jugador visite puede abrirle sockets a tu servidor desde la maquina de el: gastarle
-// el cupo de conexiones por IP, y disparar logins fallidos hasta que el servidor le bloquee SU
-// IP. O sea, dejar afuera del juego a alguien que no hizo nada.
-//
-// Lo que NO manda `Origin` es un cliente que no es una pagina (una herramienta, el cliente
-// clasico): esos entran igual, y no es un agujero -- quien controla su propio cliente puede
-// escribir el Origin que quiera. La cabecera sirve contra la pagina de un TERCERO.
-//
-// Solo hace falta llenarla si servis el cliente web desde otro dominio que el servidor.
+; Origenes que puede tener el navegador, separados por coma. Vacio = cualquiera.
 OrigenesPermitidos=
 
-; Tope de jugadores conectados a la vez. 0 = sin tope (usa el limite interno).
+; --- Cupos y limites ---------------------------------------------------------
+; 0 = sin tope, en todos los que dicen 0.
 MaxUsers=0
-
-; 0 = una sola conexion por direccion IP (util contra multi-cuenta y floods).
-; 1 = varias conexiones por IP (lo normal si la gente entra detras de un router).
-; OJO: esto NO tiene nada que ver con entrar dos veces a la MISMA cuenta; eso
-; esta prohibido siempre, como en el original.
 AllowMultiLogins=1
-
-; Tope de conexiones simultaneas por IP (sockets, entren o no al mundo). 0 = el
-; del original, 10. Para cuantos PERSONAJES pueden jugar a la vez desde una IP,
-; ver MaxPersonajesPorIp mas abajo.
 LimiteConexionesPorIp=0
-
-; Minutos SIN QUE EL JUGADOR MANDE NADA antes de desconectarlo (lo que le manda
-; el servidor -clima, dia/noche- no cuenta como actividad). 0 = nunca.
-; Sirve para recuperar la ranura del que deja el cliente abierto toda la noche.
 IdleLimit=0
-
-; --- Anti-flood --------------------------------------------------------------
-; Techo de paquetes por segundo de UNA conexion. Al que lo sostiene se lo
-; desconecta: a esa velocidad no es un jugador. La rafaga es cuanto pico se
-; perdona de una vez -el trafico legitimo llega a tirones-. 0 = sin limite.
-; Al cerrar cada sesion el servidor deja en el log el pico que le vio, asi el
-; numero se elige mirando el trafico real y no a ojo.
 MaxPaquetesPorSegundo=150
 RafagaDePaquetes=200
 
-; --- Anticheat -------------------------------------------------------------
-; El servidor detecta trampas que un cliente normal no puede hacer (velocidad,
-; ataque fuera de rango, skills inventados, comprar mas de una pila, etc.) y
-; cada una suma un punto en la CUENTA, que se conserva entre sesiones. Desde
-; TrampasParaEchar se lo expulsa en cada trampa nueva; en TrampasParaBanear se
-; banea la cuenta y el personaje. Los GMs conectados ven cada una en el momento
-; y el panel muestra el contador. 0 = ese escalon apagado.
+; --- Seguridad y anticheat ---------------------------------------------------
+; Trampas detectadas que hacen falta para echar y para banear. 0 = ese escalon
+; apagado. Las trampas se cuentan en la CUENTA y sobreviven al relog.
 TrampasParaEchar=3
 TrampasParaBanear=6
-; Cuantos personajes pueden estar JUGANDO a la vez desde una misma direccion IP.
-; El original tenia un tope fijo de 10 conexiones por IP y nada mas; esto cuenta
-; los que estan adentro del mundo. Es contra la manada de alts para farmear o
-; inclinar un evento. Diez, como el tope de conexiones del original: alcanza
-; para una LAN de amigos. 0 = sin tope.
+; Personajes de una misma IP jugando a la vez, y cuentas nuevas que esa IP
+; puede crear cada diez minutos. 0 = sin tope.
 MaxPersonajesPorIp=10
-; Cuentas nuevas que una misma IP puede CREAR cada diez minutos. Hace falta
-; porque el freno de login cuenta FALLOS y crear una cuenta con un nombre libre
-; no falla nunca: sin cupo, una sola conexion crea cuentas en bucle y cada una
-; cuesta un PBKDF2 y un archivo. 0 = sin cupo.
 CuentasNuevasPorIp=3
-; Largo minimo de una contraseña nueva, al crear la cuenta y al cambiar la clave.
-; NO aplica al codigo de recuperacion: en el original ese codigo es un PIN de
-; hasta CUATRO numeros (Cuentas.bas CheckDataNewAccount), y pedirle un minimo de
-; seis seria una regla que ninguna cuenta puede cumplir.
-; El original acepta una contraseña de un caracter. 0 = sin minimo.
+; Largo minimo de una contrasena. NO aplica al codigo de recuperacion, que en
+; el original es un PIN de hasta cuatro numeros.
 ClaveMinima=6
-
-; --- Registro de economia ----------------------------------------------------
-; Los movimientos de oro de este monto o mas (deposito, extraccion, compra,
-; venta, tirar, agarrar, casino) y TODOS los correos con adjunto, transferencias
-; y bolsas van a data/logs/economia-AAAA-MM-DD.log. No detecta nada solo: sirve
-; para reconstruir de donde salio el oro de alguien cuando haga falta. 0 = todo.
+; Movimientos de oro de este monto o mas van a data\logs\economia-*.log.
 EconomiaUmbralOro=1000
 
-; SPAM DENTRO DEL JUEGO, que es otro problema: con veinte mensajes por segundo
-; uno esta MUY por debajo del techo de arriba y el chat igual queda inusable.
-; Aca no se desconecta a nadie: se descarta la accion y se le avisa.
-; En milisegundos ENTRE acciones. 0 = sin limite.
-;   Mensajes = hablar, susurrar, escribir al clan, /GM  (les llega a otros)
-;   Consultas = /online, /est, /uptime...               (solo te contestan a vos)
+; --- Cadencia de lo que se dice ----------------------------------------------
 MsEntreMensajes=700
 RafagaDeMensajes=5
 MsEntreConsultas=300
 RafagaDeConsultas=10
 
-; --- Puertas del servidor ----------------------------------------------------
-; 0 = nadie puede crear personajes nuevos (server cerrado / solo cuentas viejas).
+; --- Reglas de la casa -------------------------------------------------------
 PuedeCrearPersonajes=1
-
-; 1 = modo mantenimiento: solo entra el staff listado mas abajo.
 ServerSoloGMs=0
-
-; --- Rates -------------------------------------------------------------------
-; PORCENTAJES, igual que el original: 100 = normal, 200 = doble, 300 = triple.
-; (Se redondean hacia abajo al multiplicador entero; 150 queda en x1.)
+; Multiplicadores en PORCENTAJE: 100 = normal, 200 = el doble.
 Exp=100
 Oro=100
-
-; --- Relojes del mundo: dia/noche y lluvia -----------------------------------
-; OJO: ninguno de los dos existe en el Argentum original -- alla el mundo es
-; siempre de dia y la lluvia solo la conmuta un GM con /LLUVIA. Son un agregado
-; de este servidor, asi que estos numeros son gusto tuyo y no "el valor fiel".
-;
-; Cuanto dura un DIA ENTERO, en minutos: amanecer + dia + atardecer + noche.
-; Cada uno de los cuatro se lleva un cuarto. Cortito se vuelve molesto (el
-; mundo cambia de luz mientras cruzas una plaza y el chat se llena de avisos).
+; Minutos que dura un dia completo y cada cambio de clima, y cuanto llueve.
 MinutosDelDia=24
-
-; Cuanto dura un CICLO de clima, en minutos, y que parte de ese ciclo llueve.
-; Con 18 y 18: llueve unos 3 minutos y despues quedan 15 despejados.
-; PorcentajeLluvia=0 -> no llueve nunca.  =100 -> llueve siempre.
 MinutosDeClima=18
 PorcentajeLluvia=18
-
-; -- REGLAS DE LA CASA --------------------------------------------------------------------------------
-; Diez cosas que el ORIGINAL NO HACE. Siete salen APAGADAS: si borras este archivo, o si tu ini no las
-; menciona, en esas siete el servidor se comporta como el CoverAO original. TRES salen PRENDIDAS por
-; decision del autor de este fork -- HipocamposEnMarAbierto, DropGlobal y MetamorfosisDelDruida --, y este
-; archivo es donde
-; el autor de este fork decidio cuales quiere prendidas. Poner un 0 en cualquiera vuelve a lo del VB6.
-;
-; OroAlSubirNivel: oro de regalo por cada nivel que se sube. 0 = como el original (no regala nada).
-;                  Tope 1000000; un negativo se lee como 0.
-;                  DECIDIDO: queda en 0 "por ahora" (2026-08-17).
 OroAlSubirNivel=0
-; CuraAlSubirNivel: 1 = subir de nivel deja la vida, el mana y la energia al maximo. 0 = como el original,
-;                   que sube los MAXIMOS y deja los minimos donde estaban (se sube de nivel herido).
-;                   DECIDIDO: PRENDIDA (2026-08-17).
 CuraAlSubirNivel=1
-; QuitarEquipoNovato: 1 = al pasar el nivel 15 desaparecen los objetos "(Newbies)" del inventario, y SOLO
-;                     esos: lo que juntaste, compraste o fabricaste no se toca. Corre una sola vez, en la
-;                     subida que te saca del rango de novato. 0 = como el original, que no los saca nunca.
-;                     DECIDIDO: PRENDIDA (2026-08-17).
 QuitarEquipoNovato=1
-; PersistirSuelo: 1 = lo que queda tirado en el suelo sobrevive a un reinicio del servidor. 0 = como el
-;                 original, que tiene el suelo solo en RAM y lo repuebla del mapa en cada arranque.
-;                 No toca el decorado del mundo ni las puertas: solo lo que dejo o se le cayo a la gente,
-;                 y si el mapa cambio y ahora hay un arbol en ese tile, gana el arbol.
-;                 PUESTA EN 1 ACA, no por el autor: en una beta el servidor se reinicia para actualizarlo
-;                 y cada reinicio le borra a los jugadores lo que se les cayo al morir. Poner 0 si preferis
-;                 lo del original, o si reiniciar seguido te llena el mundo de cosas viejas.
+; Que lo tirado al piso sobreviva al reinicio.
 PersistirSuelo=1
-; Centinela: 1 = corre el centinela anti-macro. Un NPC se le planta al que esta trabajando y le pide que
-;            escriba /CENTINELA <clave>; el que no contesta en dos minutos se come quince de carcel y lo
-;            desconecta. 0 = como el original, que trae el modulo entero pero con sus dos llamadas
-;            COMENTADAS, asi que no aparece nunca.
-;            APAGADA por defecto. Prendela si vas a dejar el trabajo continuo suelto y no queres que la
-;            gente deje el personaje minando toda la noche. Un Dios tambien lo conmuta en vivo con
-;            /CENTINELAACTIVADO.
+; Dos reglas del original que vienen APAGADAS: el centinela antimacro y que el
+; familiar busque enemigos solo.
 Centinela=0
-; FamiliarBusca: 1 = el familiar sale a pelear solo contra el hostil mas cercano a su dueno, y el bicho que
-;                recibe el golpe se queda peleando con el. 0 = como el original, donde la mascota te sigue y
-;                solo pelea contra lo que ya tenga de objetivo.
-;                CAMBIA EL BALANCE: prendida, el domador deja de tener que abrir cada pelea.
-;                DECIDIDO: APAGADA (2026-08-25). Ponele un 1 aca si la queres, y reinicia el servidor.
 FamiliarBusca=0
-; GolpeParalizanteVueltas / GolpeParalizanteVueltasPvP: cuanto dura la paralisis que deja un golpe a MANO
-;                LIMPIA -- lo que el original llama artes marciales. Se cuenta en VUELTAS del reloj del juego,
-;                de 40 ms cada una: 30 son 1,2 s y 150 son 6 s. NO son segundos ni milisegundos; un 30 pensado
-;                en segundos te deja a alguien clavado veinte minutos.
-;                La primera es contra una CRIATURA y la segunda contra un JUGADOR, y en el original son
-;                distintas a proposito: al jugador lo deja quieto cinco veces mas.
-;                DEFAULTS = los numeros del original. Sin estas claves el juego se porta igual que el VB6.
+
+; --- Balance del golpe paralizante -------------------------------------------
+; Vueltas de 40 ms que dura, y el dado (1 entre N) contra criatura y jugador.
 GolpeParalizanteVueltas=30
 GolpeParalizanteVueltasPvP=150
-; GolpeParalizanteDado / GolpeParalizanteDadoGladiadorBardo: cada cuanto SALE el golpe que paraliza. La
-;                chance es (Lucha sin armas x 0,2 + nivel x 0,66) contra un dado de 1 a este numero, asi que
-;                BAJARLO lo hace mas frecuente y subirlo mas raro. El segundo es el dado del Gladiador y el
-;                Bardo, que son los que pelean sin arma: con 300 les sale ~1,7 veces mas seguido.
-;                La formula no se toca desde el ini, y es a proposito: es la MISMA que la de desarmar, asi que
-;                moverla cambiaria las dos cosas de una.
-;                DEFAULTS = los numeros del original.
 GolpeParalizanteDado=500
 GolpeParalizanteDadoGladiadorBardo=300
-; PasesDeRinkel: 1 = los dos pases que vende el pirata del Puerto de Rinkel se pueden usar. 0 = como el
-;                install, donde NO se pueden usar en ningun lado: su ficha dice que salen de la ciudad
-;                (mapa 20) y el unico transportador de Rinkel esta en el puerto (mapa 99), asi que el
-;                pirata te los cobra y despues te contesta que se muestra enojado. Es un bug de la data
-;                del install: pasa igual en el servidor original.
-;                APAGADA por defecto, como toda regla de la casa. Prendela si preferis que el viaje en
-;                barco funcione desde Rinkel en vez de ser fiel al bug.
+
+; --- Mundo -------------------------------------------------------------------
 PasesDeRinkel=0
-; HipocamposEnMarAbierto: 1 = con la RED de pesca en un mapa de mar abierto sacas Hipocampo en vez de
-;                         los cuatro peces de siempre (Pargo, Lisa, Pez Espada, Merluza). La cana no
-;                         cambia: sigue dando Pargo en todos lados.
-;                         0 = como el install, donde el Hipocampo esta definido en la data pero NADA lo
-;                         produce: no lo pesca ninguna herramienta, no lo tira ninguna criatura, no lo
-;                         vende ningun mercader y no esta puesto en ningun mapa.
-;                         ES LA UNICA REGLA DE LA CASA QUE VIENE PRENDIDA (decision del autor).
-;                         Ponele 0 si queres el comportamiento exacto del servidor original.
 HipocamposEnMarAbierto=1
-; DropGlobal: UNA DE CADA CUANTAS criaturas muertas suelta, ademas de su botin de siempre, un item de la
-;             tabla de DropGlobal.dat. 10000 = una cada diez mil. 0 lo apaga (como el install).
-;             El numero parece enorme y no lo es: con la data del propio juego, llegar a nivel 30 son unas
-;             1.900 criaturas, a nivel 40 unas 12.900 y a nivel 50 unas 81.000. Con 10000 un personaje
-;             encuentra alrededor de UNO en todo su camino hasta el 40. Bajarlo a 1000 le daria trece, y
-;             son accesorios de los mejores del juego: Brazalete del Ogro +30, Anillo de Defensa Magica
-;             +40, las tres Orbes. Con 1 cae en cada muerte.
-;             La tabla viene en el install y ningun codigo del servidor original la abre nunca: quedo a
-;             medio hacer. Los porcentajes del archivo se usan como PESOS (que sale cuando sale), no como
-;             probabilidades: sumadas dan 482%. Cada muerte suelta un item como maximo.
-;             PRENDIDA en 10000 por decision del autor.
+; 1 entre N criaturas deja el drop global. 0 = apagado.
 DropGlobal=10000
-; MetamorfosisDelDruida: SEGUNDOS que dura la transformacion. 0 = apagada (como el install).
-;                        Los once hechizos de metamorfosis (Murcielago, Lobo, Jabali, Tigre, Oso Pardo,
-;                        Tortuga, Arania, Demonio, Arbol, Golem y Dragon) estan enteros en la data del
-;                        install (cuerpo, FX, sonido, mana, energia, skill minima y bonos al golpe y a la
-;                        defensa) y sus pergaminos SE VENDEN, de 35.000 a 2.200.000 de oro. En el servidor
-;                        original lanzarlos no hace absolutamente nada: la clave se lee al cargar el
-;                        archivo y no se usa en ninguna linea.
-;                        Con 120 el druida se transforma dos minutos: toma el cuerpo de la criatura y sus
-;                        bonos (del +6/+20 del murcielago al +50/+20 del dragon, todos numeros del install),
-;                        y las criaturas mas debiles que su forma dejan de atacarlo -- con el murcielago las
-;                        ratas, con el dragon todo salvo los doce bichos de Nivel 100.
-;                        Morir o desconectarse la corta, y no se puede lanzar montado ni en barca.
-;                        La DURACION es lo unico que el original no dejo escrito EN NINGUN LADO: su
-;                        [INTERVALOS] tiene 34 entradas y ninguna es de esto. Como referencia, el efecto mas
-;                        largo del juego original son los 40 segundos de una criatura invocada, y la
-;                        invisibilidad dura 20. Los 120 son una decision de balance del autor, no un dato.
-;                        PRENDIDA en 120 por decision del autor.
+; Segundos que dura la metamorfosis del druida. 0 = apagada.
 MetamorfosisDelDruida=120
 
-; --- Operacion: que no se pierda nada ----------------------------------------
-; ESTOS DOS VIENEN PRENDIDOS aunque borres este archivo: los valores de abajo
-; son tambien los que trae el servidor por defecto. Hay que escribir un 0 para
-; APAGARLOS, no para tenerlos. Es a proposito: el servidor arranca sin este ini,
-; y no queremos que borrarlo te deje sin backups sin que te enteres.
-;
-; Cada cuantos minutos guardar a los jugadores conectados. 0 = solo al salir.
-; (Es el "MinutosGuardarUsuarios" del original. El panel de admin lo puede
-;  cambiar en caliente; lo de aca es con que arranca.)
+; --- Operacion ---------------------------------------------------------------
+; Estos vienen PRENDIDOS aunque borres el archivo: hay que escribir 0 para
+; apagarlos, no para tenerlos.
 MinutosGuardarUsuarios=15
-
-; Cada cuantos minutos hacer una COPIA DE SEGURIDAD del mundo entero (cuentas,
-; personajes, clanes, correo) en  data\backups\. 0 = desactivado.
-; La copia se hace con el servidor andando, sin frenar a nadie. Tambien tenes un
-; boton "Copia de seguridad" en el panel de administracion.
 MinutosBackup=30
-
-; Cuantas copias conservar (se borran las mas viejas). 0 = conservarlas todas,
-; OJO con el disco.
 BackupsAConservar=48
-
-; Dias de log a conservar en  data\logs\  (un archivo por dia). 0 = no escribir
-; nada a disco y que el log viva solo en la ventana del servidor.
 LogDias=7
 
 ; --- Staff -------------------------------------------------------------------
-; Aca declaras CUANTOS hay de cada rango; los nombres van en las secciones de
-; abajo. El nombre es el del PERSONAJE (no el de la cuenta) y no distingue
-; mayusculas. Se resuelve en cada login: si sacas un nombre de la lista, ese
-; personaje deja de ser GM la proxima vez que entre.
+; Cuantos hay de cada rango. Los NOMBRES DE PERSONAJE van en las secciones de
+; mas abajo, numerados desde 1.
 ;
-; Rangos, de mas a menos autoridad:
-;   Admines       todo, incluido apagar el servidor
-;   Dioses        casi todo (el rango habitual del que hostea)
-;   SemiDioses    moderacion (carcel, silenciar, teletransportar)
-;   Consejeros    moderacion basica
-;   RolesMasters  herramientas de rol (crear NPCs, hablar como NPC)
+; OJO: con todo en 0 el servidor abre SIN NINGUN GM. Nadie puede contestar un
+; /GM, echar a un tramposo, ni ver los avisos del anticheat desde adentro.
 Admines=0
 Dioses=0
 SemiDioses=0
 Consejeros=0
 RolesMasters=0
 
-; --- Licencia (AGPL): de donde bajar el codigo de ESTE servidor ---------------
-; AO2026 es software libre bajo AGPL-3.0, y esa licencia tiene "clausula de red":
-; a quien se conecta a jugar hay que ofrecerle el codigo de la version que estas
-; corriendo, aunque nunca le des un archivo. Poniendo la URL aca queda cumplido:
-; el juego la muestra en Menu -> Licencia. Si no la completas, el jugador ve el
-; aviso sin enlace.
-;   Si no modificaste nada, sirve el repositorio del que lo bajaste.
-;   Si le hiciste cambios, tiene que apuntar a TU codigo con esos cambios.
-;
-; Va en [INIT], que es la seccion donde el servidor la busca. Antes este bloque
-; estaba al final del archivo, debajo de [INTERVALOS]: el que descomentaba la
-; linea la dejaba en esa otra seccion y la clave no se leia nunca -- el enlace
-; no aparecia y no habia forma de notarlo.
-; Viene con el repositorio original, que es tambien a donde van los errores y las propuestas
-; (el juego agrega el /issues solo). Si hosteas un fork con cambios propios, pone el tuyo.
+; --- Publicacion -------------------------------------------------------------
+; Donde esta el codigo, para el aviso de licencia del cliente.
 CodigoFuente=https://github.com/Ayrton09/CoverAO
-
-; ---------------------------------------------------------------------------
-;  Version de cliente que este servidor acepta.
-;
-; Los cinco paquetes de ingreso traen la version del cliente y el servidor la
-; compara COMO TEXTO. Si no coincide: cartel de "juego desactualizado" y se
-; corta la conexion.
-;
-; VACIA (asi, como viene) = SIN CONTROL, que es lo que el servidor hacia hasta
-; ahora. Encendela solo si sabes que cliente repartiste: la comparacion es
-; exacta, y un valor que no sea el del cliente desplegado deja a TODOS afuera.
-;
-; El cliente web que viene con esta version manda 1.0.0, o sea que para
-; encenderla alcanza con escribir eso a la derecha del =:
-;
-;     Version=1.0.0
-;
-; Es lo que hay que hacer el dia que se abre al publico: con la clave VACIA
-; entra cualquier cliente, y con ella puesta solo entra el que repartiste.
+; Version que se le exige al cliente. VACIO = entra cualquiera.
+; El dia que se abre al publico va:  Version=1.0.0
 Version=
 
-; ============================================================================
-;  Listas de staff. La clave se numera desde 1 y tiene que coincidir con el
-;  contador de arriba (si pones Dioses=2 tienen que existir Dios1 y Dios2).
-;
-;  EJEMPLO - para hacerte GM a vos mismo:
-;     en [INIT] pone   Dioses=1
-;     y aca abajo      Dios1=NombreDeTuPersonaje
-; ============================================================================
-
+; --- Los nombres del staff ---------------------------------------------------
+; Ejemplo, para un Dios llamado Rugura:  Dioses=1  arriba, y aca  Dios1=Rugura
 [Admines]
 ;Admin1=
 
@@ -411,29 +130,21 @@ Version=
 [RolesMasters]
 ;RM1=
 
-; ============================================================================
-;  [INTERVALOS] - cadencias de combate, en MILISEGUNDOS. Son las mismas claves
-;  y los mismos nombres que el Server.ini del servidor original, y el server
-;  las lee de aca. Los valores de abajo son los que usa si la seccion no esta.
+; --- Cadencias de combate, en milisegundos -----------------------------------
+; Son las del servidor original y estos son los valores que usa si la seccion
+; no esta. Tocarlas cambia el BALANCE y lo aleja del original.
+; Fuera de 0..60000 se recorta.
 ;
-;  OJO: tocarlas cambia el BALANCE del juego y lo aleja del original. Si lo
-;  que queres es un server fiel, dejalas como estan (o no pongas la seccion).
-;  Cualquier valor fuera de 0..60000 se recorta a ese rango.
-; ============================================================================
+; IntervaloHechizoUsar es NUESTRO: el original deja tomar la pocion en el mismo
+; instante que sale el hechizo, y de eso vive el auto-pot. Contra el auto-pot,
+; poner ese y IntervaloGolpeUsar en 2000 o 3000.
 [INTERVALOS]
-;IntervaloLanzaHechizo=1000      ; entre un hechizo y el siguiente
-;IntervaloUserPuedeAtacar=1000   ; entre un golpe y el siguiente
-;IntervaloMagiaGolpe=400         ; pegar despues de castear
-;IntervaloGolpeMagia=400         ; castear despues de pegar
-;IntervaloGolpeUsar=400          ; usar un objeto despues de pegar
-;IntervaloHechizoUsar=0          ; usar un objeto despues de CASTEAR. Es nuestro, no del original (que
-;                                ; deja tomar la pocion en el mismo instante que sale el hechizo, y de eso
-;                                ; vive el "auto-pot"). Contra el auto-pot, poner los dos en 2000 o 3000.
-;IntervaloFlechasCazadores=1100  ; entre un disparo de ARCO y el siguiente. Es la mas fuerte y ademas
-;                                ; es TRANSVERSAL: recien disparado no se puede ni pegar ni castear.
-;IntervaloParalizado=500         ; cuanto dura una PARALISIS, en vueltas de 40 ms (500 = 20 s). Vale para el
-                                ;   hechizo Paralizar y para las criaturas que paralizan. NO es la del golpe
-                                ;   que paraliza del gladiador y el bardo (6 s) ni la de paralizar a una
-                                ;   criatura (1,5 s): esas dos el original las clava y no son configurables.
-;IntervaloGuardarUsuarios=15     ; autosave, en MINUTOS (es la clave del original;
-                                 ; equivale a MinutosGuardarUsuarios de [INIT])
+;IntervaloLanzaHechizo=1000       ; entre un hechizo y el siguiente
+;IntervaloUserPuedeAtacar=1000    ; entre un golpe y el siguiente
+;IntervaloMagiaGolpe=400          ; pegar despues de castear
+;IntervaloGolpeMagia=400          ; castear despues de pegar
+;IntervaloGolpeUsar=400           ; usar un objeto despues de pegar
+;IntervaloHechizoUsar=0           ; usar un objeto despues de castear
+;IntervaloFlechasCazadores=1100   ; entre un disparo de arco y el siguiente
+;IntervaloParalizado=500          ; cada cuanto se reintenta el paralizado
+;IntervaloGuardarUsuarios=15      ; el del original; equivale a MinutosGuardarUsuarios
