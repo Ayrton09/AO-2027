@@ -98,9 +98,18 @@ public sealed class Leveling
 
     /// <summary>Awards experience and applies any level-ups. Returns the number of levels gained.
     /// <paramref name="detalle"/> recibe una entrada por nivel, en orden, para poder avisarlas.</summary>
+    /// <summary><c>MAXEXP</c> (Declares.bas:345): el techo de la experiencia ACUMULADA. El original lo aplica
+    /// en los tres lugares donde suma —al matar un NPC (MODULO_NPCs.bas:135), al repartir el daño
+    /// (SistemaCombate.bas:2037) y en Modulo_UsUaRiOs.bas:1215—, o sea sobre el total después de sumar. Acá va
+    /// en el ÚNICO sitio por donde entra toda la experiencia, así que cubre también los caminos que se
+    /// agreguen. No es alcanzable jugando —el nivel topa en 50 mucho antes—, pero un `/EXP` de GM repetido sí
+    /// llega, y ahí el original corta y este port no lo hacía.</summary>
+    public const long MaxExp = 99_999_999;   // Declares.bas:345 MAXEXP
+
     public int Grant(Player p, long xp, List<Ganancia>? detalle = null)
     {
         p.Exp += xp;
+        if (p.Exp > MaxExp) p.Exp = MaxExp;
         int gained = 0;
         while (p.Elu > 0 && p.Exp >= p.Elu && p.Level < MaxLevel)
         {

@@ -379,7 +379,12 @@ CodigoFuente=https://github.com/Ayrton09/CoverAO
 ; exacta, y un valor que no sea el del cliente desplegado deja a TODOS afuera.
 ;
 ; El cliente web que viene con esta version manda 1.0.0, o sea que para
-; encenderla alcanza con escribir eso a la derecha del =.
+; encenderla alcanza con escribir eso a la derecha del =:
+;
+;     Version=1.0.0
+;
+; Es lo que hay que hacer el dia que se abre al publico: con la clave VACIA
+; entra cualquier cliente, y con ella puesta solo entra el que repartiste.
 Version=
 
 ; ============================================================================

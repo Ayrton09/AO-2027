@@ -10,7 +10,11 @@ namespace CoverAO.Server.Data;
 /// "cuenta_test"). Longitud 1..30.</summary>
 public static class Naming
 {
-    public const int MaxNameLength = 30;
+    /// <summary>Largo máximo de un nombre de CUENTA. Veinte, como el original (VB6
+    /// <c>CheckDataNewAccount</c>, Cuentas.bas:568: <c>If Len(Cuenta) &gt; 20</c> → aviso 63). Acá decía 30, o
+    /// sea que aceptábamos diez caracteres que el original rechaza. El nombre de PERSONAJE tiene el suyo, más
+    /// corto todavía (<see cref="MaxCharNameLength"/>).</summary>
+    public const int MaxNameLength = 20;
 
     // Nombres de dispositivo reservados de Windows: pasarían el filtro de charset (son puras letras) pero
     // File.WriteAllText("NUL.chr") escribe al dispositivo nulo (el .chr nunca persiste) y en un host con

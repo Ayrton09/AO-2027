@@ -76,6 +76,33 @@ public class TextoDelClienteTests
     }
 
     [Fact]
+    public void El_nombre_de_cuenta_topa_donde_topa_el_original()
+    {
+        // VB6 CheckDataNewAccount (Cuentas.bas:568): `If Len(Cuenta) > 20` -> aviso 63. Acá el tope decía 30,
+        // o sea que entraban diez caracteres que el original rechaza.
+        Assert.Equal(20, Naming.MaxNameLength);
+        Assert.True(Naming.IsValidName(new string('a', 20)));
+        Assert.False(Naming.IsValidName(new string('a', 21)));
+        // CONTROL: el nombre de PERSONAJE tiene su propio tope, más corto, y no se movió.
+        Assert.Equal(18, Naming.MaxCharNameLength);
+        Assert.True(Naming.IsValidCharName(new string('a', 18)));
+        Assert.False(Naming.IsValidCharName(new string('a', 19)));
+    }
+
+    [Fact]
+    public void La_experiencia_acumulada_topa_en_MAXEXP()
+    {
+        // Declares.bas:345 MAXEXP. El original lo aplica en los tres lugares donde suma; acá va en el único
+        // por donde entra toda la experiencia.
+        var leveling = new Leveling(new Dictionary<int, long>());
+        var p = new Player { CharIndex = 1, Name = "Rugura", Account = "cuenta_test" };
+        leveling.Grant(p, Leveling.MaxExp - 5);
+        Assert.Equal(Leveling.MaxExp - 5, p.Exp);      // CONTROL: por debajo del techo no toca nada
+        leveling.Grant(p, 1000);
+        Assert.Equal(Leveling.MaxExp, p.Exp);
+    }
+
+    [Fact]
     public void La_cola_de_aspirantes_de_un_clan_tiene_fondo()
     {
         var g = new Guild { Name = "Los Probadores", LeaderName = "Rugura" };
