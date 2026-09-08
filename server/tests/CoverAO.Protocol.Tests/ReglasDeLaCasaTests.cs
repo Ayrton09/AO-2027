@@ -56,12 +56,16 @@ public class ReglasDeLaCasaTests : IDisposable
         // Son NUMÉRICAS y no un sí/no porque en las dos el número es lo único que la fuente no dejó escrito:
         // una de cada cuántas muertes cae un drop global, y cuánto dura una transformación. Cero apaga las dos.
         //
+        // La de la metamorfosis dejó de ser un número elegido el 2026-09-08: en el AO clásico la
+        // transformación NO VENCE, así que el default pasó a ser el -1 —permanente— y los segundos quedaron
+        // para quien quiera acortarla.
+        //
         // Con esto, "sin Server.ini" ya son TRES cosas que no son el install. Quedan afirmadas acá, y no
         // omitidas, por lo mismo que la de los hipocampos: para que se lean como decisiones tomadas y no como
         // defaults que se colaron. Quien vuelva a la fidelidad total cambia estos tres asserts y, al hacerlo,
         // se entera de por qué estaban así.
         Assert.Equal(10000, cfg.DropGlobal);          // uno cada diez mil criaturas
-        Assert.Equal(120, cfg.MetamorfosisDelDruida); // dos minutos
+        Assert.Equal(-1, cfg.MetamorfosisDelDruida);  // permanente, como en el AO clásico
     }
 
     [Fact]
@@ -78,7 +82,7 @@ public class ReglasDeLaCasaTests : IDisposable
         // actualiza: su Server.ini viejo no las trae. Un default que sólo valiera SIN archivo las dejaría
         // apagadas justamente en todos los servidores de producción.
         Assert.Equal(10000, cfg.DropGlobal);
-        Assert.Equal(120, cfg.MetamorfosisDelDruida);
+        Assert.Equal(-1, cfg.MetamorfosisDelDruida);
     }
 
     [Fact]
@@ -95,11 +99,15 @@ public class ReglasDeLaCasaTests : IDisposable
     }
 
     /// <summary>Las dos numéricas se recortan igual que el oro por nivel, y por lo mismo: un valor absurdo
-    /// desbalancea el server sin que nadie lo note. El tope del drop global es 1000 porque es un por mil; el
-    /// de la metamorfosis, una hora — más que eso ya no es "efecto no permanente". Y el 0 tiene que llegar
-    /// intacto: es la única forma que tiene el host de volver al comportamiento del install.</summary>
+    /// desbalancea el server sin que nadie lo note. El tope del drop global es un millón porque es "uno cada
+    /// N"; el de la metamorfosis, una hora — más que eso, la duración que se quiere es la permanente. Y el 0
+    /// tiene que llegar intacto: es la única forma que tiene el host de volver al comportamiento del install.
+    ///
+    /// <para>El negativo NO se trata igual en las dos, y es a propósito: en el drop global no significa nada
+    /// y cae en el 0, pero en la metamorfosis el -1 es la transformación PERMANENTE, que es el default. Por
+    /// eso cualquier negativo cae en el -1 y no en el 0: apagar la regla es una decisión que se escribe.</para></summary>
     [Fact]
-    public void Las_dos_numericas_tienen_tope_y_no_aceptan_negativos()
+    public void Las_dos_numericas_tienen_tope()
     {
         // El 0 EXPLÍCITO tiene que llegar intacto: es la única forma que tiene el host de volver al install,
         // y las dos vienen prendidas, así que un clamp que lo subiera al default las dejaría sin apagado.
@@ -107,7 +115,8 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.Equal(0, Cargar("MetamorfosisDelDruida=0\r\n").MetamorfosisDelDruida);
         Assert.Equal(0, Cargar("DropGlobal=-5\r\n").DropGlobal);
         Assert.Equal(1_000_000, Cargar("DropGlobal=99999999\r\n").DropGlobal);
-        Assert.Equal(0, Cargar("MetamorfosisDelDruida=-1\r\n").MetamorfosisDelDruida);
+        Assert.Equal(-1, Cargar("MetamorfosisDelDruida=-1\r\n").MetamorfosisDelDruida);
+        Assert.Equal(-1, Cargar("MetamorfosisDelDruida=-50\r\n").MetamorfosisDelDruida);
         Assert.Equal(3600, Cargar("MetamorfosisDelDruida=99999\r\n").MetamorfosisDelDruida);
     }
 

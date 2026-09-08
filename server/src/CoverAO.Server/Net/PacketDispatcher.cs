@@ -2457,15 +2457,19 @@ public sealed partial class PacketDispatcher
     /// meditación (1 de 35 con la skill en 0, 1 de 5 con la skill en 100), así que entrenarla es cada vez más
     /// rápido — que es lo que hace que la skill sirva para algo.</para>
     /// </summary>
+    internal void MeditarSubeSkill(Player p) =>
+        RaiseSkill(p.Connection as ClientSession, p, GameLimits.SkillMeditar);
+
     /// <summary>El game loop pregunta por cada jugador vivo si se le venció la metamorfosis. Vive acá y no en
-    /// <c>Player</c> porque revertir emite paquetes al área, y eso lo sabe hacer el dispatcher.</summary>
+    /// <c>Player</c> porque revertir emite paquetes al área, y eso lo sabe hacer el dispatcher.
+    ///
+    /// <para>Con la regla en permanente —el default— no revierte nunca a nadie: el tick de vencimiento es
+    /// <see cref="Player.MetamorfosisSinVencimiento"/> y ninguna vuelta del loop lo alcanza. Sigue costando
+    /// una comparación por jugador y por vuelta, igual que con la regla apagada.</para></summary>
     internal void VencerMetamorfosis(Player p, long tick)
     {
         if (p.MetamorfosisHastaTick != 0 && tick >= p.MetamorfosisHastaTick) RevertirMetamorfosis(p);
     }
-
-    internal void MeditarSubeSkill(Player p) =>
-        RaiseSkill(p.Connection as ClientSession, p, GameLimits.SkillMeditar);
 
     /// <summary>
     /// Otorga experiencia y avisa al cliente como lo hace el original. Devuelve los niveles que subió.
@@ -2830,9 +2834,9 @@ public sealed partial class PacketDispatcher
     /// REGLA DE LA CASA <c>MetamorfosisDelDruida</c>: convierte al lanzador en la criatura del hechizo.
     ///
     /// <para>Todo lo que se aplica sale del <c>Hechizos.dat</c> del install —cuerpo, cabeza, FX, sonido, y los
-    /// bonos <c>ExtraHIT</c>/<c>ExtraDEF</c>—; lo único nuestro es CUÁNTO dura, que es la clave del ini.
-    /// Lanzarla de nuevo (o lanzar otra) re-transforma y reinicia el reloj, sin acumular bonos: el estado es
-    /// uno solo y se pisa entero.</para>
+    /// bonos <c>ExtraHIT</c>/<c>ExtraDEF</c>—; lo único nuestro es CUÁNTO dura, que es la clave del ini y por
+    /// default no vence (como en el AO clásico). Lanzarla de nuevo (o lanzar otra) re-transforma y reinicia el
+    /// reloj, sin acumular bonos: el estado es uno solo y se pisa entero.</para>
     ///
     /// <para>Cobra por <see cref="SpellCasted"/> como cualquier hechizo que SÍ hace algo. En el original esta
     /// rama sale gratis —la llamada al efecto está comentada, así que <c>HechizoCasteado</c> queda False y no
@@ -2857,9 +2861,12 @@ public sealed partial class PacketDispatcher
         p.MetamorfosisExtraHit = spell.ExtraHit;
         p.MetamorfosisExtraDef = spell.ExtraDef;
         p.MetamorfosisAsusta = spell.Asusta;
-        // Segundos del ini → ticks del loop (40 ms cada uno). El +1 evita que un valor de 1 segundo caiga
+        // Permanente (el default) no pone reloj: el tick de vencimiento es uno que el loop no alcanza nunca.
+        // Con segundos, del ini a ticks del loop (40 ms cada uno); el +1 evita que un valor de 1 segundo caiga
         // justo en el tick de vencimiento y la transformación no llegue a verse ni un frame.
-        p.MetamorfosisHastaTick = _loop.Tick + (_ini.MetamorfosisDelDruida * 1000L / GameLoop.TickMs) + 1;
+        p.MetamorfosisHastaTick = _ini.MetamorfosisPermanente
+            ? Player.MetamorfosisSinVencimiento
+            : _loop.Tick + (_ini.MetamorfosisDelDruida * 1000L / GameLoop.TickMs) + 1;
         p.Body = p.MetamorfosisBody;
         p.Head = 0;                                    // las once traen head=0: la criatura no tiene cabeza humana
         EmitSpellFx(p, p.Pos, p.CharIndex, spell);
@@ -10552,7 +10559,7 @@ public sealed partial class PacketDispatcher
                 // porque su `Tipo = 6` (uFamiliar) no tiene `Case` que lo atienda en ningún handler.
                 LlamarORetirarFamiliar(session, p, spell);
             }
-            else if (_ini.MetamorfosisDelDruida > 0 && spell.EsMetamorfosis)
+            else if (_ini.HayMetamorfosis && spell.EsMetamorfosis)
             {
                 Transformar(session, p, spell);
             }

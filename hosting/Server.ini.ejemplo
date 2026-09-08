@@ -83,8 +83,8 @@ PasesDeRinkel=0
 HipocamposEnMarAbierto=1
 ; 1 entre N criaturas deja el drop global. 0 = apagado.
 DropGlobal=10000
-; Segundos que dura la metamorfosis del druida. 0 = apagada.
-MetamorfosisDelDruida=120
+; Metamorfosis del druida: -1 = permanente (como el AO clasico), 0 = apagada, o los segundos que dura.
+MetamorfosisDelDruida=-1
 
 ; --- Operacion ---------------------------------------------------------------
 ; Estos vienen PRENDIDOS aunque borres el archivo: hay que escribir 0 para

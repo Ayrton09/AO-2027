@@ -50,17 +50,40 @@ public class MetamorfosisTests : IDisposable
 
     // ── LA REGLA ──────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>PRENDIDA en 120, con archivo y sin archivo. El número son SEGUNDOS, y no sale de la
-    /// fuente: el <c>[INTERVALOS]</c> del <c>Server.ini</c> original tiene 34 entradas y ninguna es de esto.
-    /// Es una decisión de balance del autor, anclada en que el efecto más largo del original —una criatura
-    /// invocada— dura 40 s y la invisibilidad 20.</summary>
+    /// <summary>PRENDIDA y PERMANENTE, con archivo y sin archivo. El -1 no es un negativo que se coló: en el
+    /// AO clásico la transformación no vence —se conserva hasta desencantar o morir—, y el 2026-09-08 esa fue
+    /// la decisión del autor. Los segundos siguen valiendo para quien quiera acortarla, y el 0 la apaga.</summary>
     [Fact]
-    public void Viene_prendida_en_dos_minutos()
+    public void Viene_prendida_y_permanente()
     {
-        Assert.Equal(120, new ServerIni().MetamorfosisDelDruida);
-        Assert.Equal(120, Cargar("MaxUsers=50\r\n").MetamorfosisDelDruida);
-        Assert.Equal(300, Cargar("MetamorfosisDelDruida=300\r\n").MetamorfosisDelDruida);
-        Assert.Equal(0, Cargar("MetamorfosisDelDruida=0\r\n").MetamorfosisDelDruida);
+        Assert.Equal(-1, new ServerIni().MetamorfosisDelDruida);
+        Assert.Equal(-1, Cargar("MaxUsers=50\r\n").MetamorfosisDelDruida);
+        Assert.True(new ServerIni().MetamorfosisPermanente);
+        Assert.True(new ServerIni().HayMetamorfosis);
+
+        var conReloj = Cargar("MetamorfosisDelDruida=300\r\n");
+        Assert.Equal(300, conReloj.MetamorfosisDelDruida);
+        Assert.False(conReloj.MetamorfosisPermanente);
+        Assert.True(conReloj.HayMetamorfosis);
+
+        var apagada = Cargar("MetamorfosisDelDruida=0\r\n");
+        Assert.Equal(0, apagada.MetamorfosisDelDruida);
+        Assert.False(apagada.HayMetamorfosis);
+        Assert.False(apagada.MetamorfosisPermanente);
+    }
+
+    /// <summary>El tick de "no vence" no vence: ni en la vuelta siguiente ni en la última que el loop podría
+    /// contar. Es la prueba de que permanente no necesita un caso especial en <c>VencerMetamorfosis</c> —el
+    /// game loop pregunta lo mismo de siempre y la respuesta es no—, y de que sigue siendo un estado que
+    /// <c>OlvidarMetamorfosis</c> apaga, que es por donde salen morir y desconectarse.</summary>
+    [Fact]
+    public void La_permanente_no_vence_nunca()
+    {
+        var p = Nuevo(hasta: Player.MetamorfosisSinVencimiento, body: 82);
+        Assert.True(p.EstaMetamorfoseado(0));
+        Assert.True(p.EstaMetamorfoseado(long.MaxValue - 1));   // ~11.700 millones de años de loop a 40 ms
+        p.OlvidarMetamorfosis();
+        Assert.False(p.EstaMetamorfoseado(0));
     }
 
     // ── LA DATA ───────────────────────────────────────────────────────────────────────────────────────

@@ -484,8 +484,8 @@ public sealed class ServerIni
     public int DropGlobal { get; private set; } = 10000;
 
     /// <summary>
-    /// REGLA DE LA CASA — <c>MetamorfosisDelDruida</c> (default <b>120</b>, o sea PRENDIDA). Son los SEGUNDOS
-    /// que dura la transformación; 0 la apaga del todo.
+    /// REGLA DE LA CASA — <c>MetamorfosisDelDruida</c> (default <b>-1</b>, o sea PRENDIDA y PERMANENTE).
+    /// <b>-1</b> = no vence nunca, <b>0</b> = apagada, <b>N</b> = dura N segundos (hasta 3600).
     ///
     /// <para>Los once hechizos de metamorfosis (#38-50: Murciélago, Lobo, Jabalí, Tigre, Oso Pardo, Tortuga,
     /// Araña, Demonio, Árbol, Gólem y Dragón) existen en el <c>Hechizos.dat</c> del install con todo:
@@ -505,19 +505,33 @@ public sealed class ServerIni
     /// ponerlo acá lo deja a la vista de quien hostea, que es de quien es la decisión. Todo lo demás —cuánto
     /// pega cada forma, cuánto cuesta, qué skill pide— sale de la data del install sin tocar nada.</para>
     ///
-    /// <para><b>De dónde salen los 120.</b> No de la fuente: el <c>[INTERVALOS]</c> del <c>Server.ini</c>
-    /// original tiene 34 entradas —veneno, incineración, parálisis, invisibilidad, ocultarse, frío,
-    /// invocación— y <b>ninguna</b> es de metamorfosis ni de mimetismo; el contador <c>Mimetismo</c> de
-    /// <c>UserCounters</c> se pone en 0 al entrar y nadie lo vuelve a tocar. La escala del juego sí sirve de
-    /// ancla: lo más largo que el original sostiene son los 40 s de una invocación, y la invisibilidad dura
-    /// 20. Los 120 son el triple de ese techo, elegidos por el autor (2026-08-31) para que el pergamino del
-    /// Dragón —2.200.000 de oro— valga lo que cuesta. Es una decisión de balance, no un dato.</para>
+    /// <para><b>Por qué el default es permanente.</b> El 2026-08-31 salió en 120 s como decisión de balance,
+    /// anclada en que el efecto más largo que sostiene el original son los 40 s de una invocación. El
+    /// 2026-09-08 el autor trajo el dato que faltaba: <b>en el AO clásico la metamorfosis del druida no
+    /// vence</b> —se toma la forma y se conserva hasta desencantar o morir (manual del druida de Imperium
+    /// Classic, foro de FenixAO)—, así que el número dejó de ser una elección nuestra y pasó a ser el
+    /// comportamiento del juego. Los segundos siguen aceptándose para quien quiera acortarla; el
+    /// <c>[INTERVALOS]</c> del original, con sus 34 entradas, sigue sin tener ninguna de esto, y el contador
+    /// <c>Mimetismo</c> de <c>UserCounters</c> se pone en 0 al entrar y nadie lo vuelve a tocar.</para>
+    ///
+    /// <para><b>Permanente es dentro de la sesión.</b> El estado no se persiste (ver
+    /// <see cref="Game.Player.MetamorfosisSinVencimiento"/>): morir y desconectarse devuelven al druida a su
+    /// forma, y lanzar otra transformación pisa la anterior sin acumular bonos. Con la clave en permanente,
+    /// esos tres son los únicos finales — el install no trae ningún hechizo que la saque, porque el
+    /// <c>desencantar</c> del <c>Hechizos.dat</c> (#22) es otra clave que el VB6 lee y no usa.</para>
     ///
     /// <para><b>Sale PRENDIDA por decisión del autor.</b> Prendida, el server DIVERGE del oráculo VB6 al
     /// lanzar esos once hechizos: donde el original manda un "aún no está implementado", el nuestro
     /// transforma. El barrido no los castea —un personaje recién creado no los tiene—, así que no lo rompe.</para>
     /// </summary>
-    public int MetamorfosisDelDruida { get; private set; } = 120;
+    public int MetamorfosisDelDruida { get; private set; } = -1;
+
+    /// <summary>¿La regla está prendida? Cualquier valor que no sea 0, o sea permanente o con reloj. Existe
+    /// para que ningún call site vuelva a preguntar <c>&gt; 0</c>, que con el -1 diría que está apagada.</summary>
+    public bool HayMetamorfosis => MetamorfosisDelDruida != 0;
+
+    /// <summary>¿La transformación no vence con el reloj? Es el default y el comportamiento del AO clásico.</summary>
+    public bool MetamorfosisPermanente => MetamorfosisDelDruida < 0;
 
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
@@ -835,7 +849,9 @@ public sealed class ServerIni
         // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no
         // desborde: a un millón de criaturas por ítem ya no cae nunca, que es igual que apagarlo.
         cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 10000), 0, 1_000_000);
-        cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", 120), 0, 3600);
+        // -1 es permanente y 0 apaga; de ahí para arriba son segundos. Cualquier negativo cae en el -1: pedir
+        // "menos que permanente" no significa nada, y el tope de una hora sigue siendo para el reloj.
+        cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {

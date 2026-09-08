@@ -440,10 +440,17 @@ public sealed class Player
     // Nada de esto se persiste, y es a propósito: si el servidor se cae con un druida hecho dragón, vuelve
     // druida. El cuerpo real se recalcula del equipo en cada login (RefreshAppearance), así que el estado no
     // tiene forma de sobrevivir a un reinicio ni aunque quisiera. Es la misma política del rango de seguridad.
+    // Por eso "permanente" quiere decir mientras dure la sesión: no vence con el reloj, pero desconectarse
+    // devuelve al druida a su forma.
 
     /// <summary>Tick hasta el que dura la transformación. 0 = el jugador NO está transformado, y es la única
     /// pregunta que hace el resto del código: no hay un bool aparte que pueda quedar desincronizado.</summary>
     public long MetamorfosisHastaTick { get; set; }
+    /// <summary>El valor de <see cref="MetamorfosisHastaTick"/> que significa "no vence": es la metamorfosis
+    /// permanente del AO clásico, y el default de la regla. No necesita un caso especial en ningún lado —el
+    /// game loop pregunta <c>tick &gt;= HastaTick</c> y ninguna vuelta llega a este número—, así que la
+    /// transformación sólo termina donde ya terminaba a mano: al morir, al desconectarse o al lanzar otra.</summary>
+    public const long MetamorfosisSinVencimiento = long.MaxValue;
     /// <summary>El cuerpo de la criatura mientras dura. Lo necesita <c>RefreshAppearance</c>, que si no
     /// recalcularía el cuerpo desde la armadura y te devolvería a humano al equipar cualquier cosa.</summary>
     public short MetamorfosisBody { get; set; }
