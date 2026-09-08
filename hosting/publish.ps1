@@ -411,7 +411,12 @@ else                     { Write-Host "Probalo:  cd `"$OutDir`"; .\CoverAO.Serve
 #
 # El paquete se reparte con `data\` VACIA: el server crea lo que necesita al arrancar. Lo unico que sigue
 # viajando de ahi son los dos archivos que el propio armador escribe (las novedades y la version).
-$noViajan = @('data/Cuentas/', 'data/Charfile/', 'data/Misc/', 'data/logs/', 'data/backups/', 'admin-token.txt')
+$noViajan = @('data/Cuentas/', 'data/Charfile/', 'data/Misc/', 'data/logs/', 'data/backups/', 'admin-token.txt',
+              # El SELLO DEL MUNDO lo escribe el SERVIDOR al arrancar, para saber de que version viene un
+              # mundo al actualizarlo. No es contenido del paquete: si viaja, el que lo recibe empieza con un
+              # mundo ya sellado por la maquina del que publico. Lo unico de `data/` que si es del paquete es
+              # `updates.txt`, que lo genera este armador desde el CHANGELOG.
+              'data/version.txt')
 function Viaja($rel) {
   foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }
   return $true
