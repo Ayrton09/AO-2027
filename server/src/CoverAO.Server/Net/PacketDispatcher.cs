@@ -320,6 +320,15 @@ public sealed partial class PacketDispatcher
         // servidor. Con el cliente de stock no se manda, pero el daño era irreversible en caliente.
         if (EsDeLaFamiliaDeLogin(id) && session.Player is not null)
         {
+            // ESTE ES EL ÚNICO DE LOS CINCO SITIOS QUE ANOTAN UNA TRAMPA QUE NO CORRE EN EL HILO DEL MUNDO, y
+            // se queda así a propósito. Encolarlo se probó y sale peor por dos motivos: `Close` completa la
+            // cola de salida, así que el cartel de expulsión y el de ban —que `RegistrarTrampa` manda— se
+            // pierden si el cierre pasa antes; y sin el cierre inmediato, el resto del segmento TCP se sigue
+            // despachando y cada paquete de login del montón suma OTRA trampa.
+            //
+            // Y no hace falta: lo que toca desde acá no se puede corromper. El contador y el baneo viven en la
+            // CUENTA, y el almacén serializa cada lectura y escritura con su candado; en el Player son un int
+            // y un bool que sólo crecen, con escritura atómica. La inconsistencia es de estilo, no de datos.
             RegistrarTrampa(session, session.Player, $"mandó {id} con el personaje ya adentro");
             session.Close("paquete de login estando adentro");
             return;
