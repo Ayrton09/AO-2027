@@ -13,16 +13,20 @@ public sealed class EntornoDeBots
     /// <summary>Las fichas del juego. El bot las mira para lo mismo que una persona mira al bicho que tiene
     /// enfrente y decide si le va a ganar: si la criatura ataca, si se la puede atacar, y cuánto pega.</summary>
     public GameData Datos { get; }
+    /// <summary>Los mapas: cómo ir de un lado a otro. Uno solo para todos los bots — se arma una vez y
+    /// después no se toca.</summary>
+    public Navegante Mapas { get; }
     private readonly CredencialesDeBots _credenciales;
 
     public EntornoDeBots(PacketDispatcher dispatcher, ServerIni ini, long authTimeoutMs, int maxInboundBytes,
-        GameData datos, CredencialesDeBots credenciales)
+        GameData datos, Navegante mapas, CredencialesDeBots credenciales)
     {
         Dispatcher = dispatcher;
         Ini = ini;
         AuthTimeoutMs = authTimeoutMs;
         MaxInboundBytes = maxInboundBytes;
         Datos = datos;
+        Mapas = mapas;
         _credenciales = credenciales;
     }
 
@@ -129,7 +133,8 @@ public sealed class PobladoDeBots
     {
         if (cantidad <= 0) return null;
         var credenciales = new CredencialesDeBots(dataRoot);
-        var entorno = new EntornoDeBots(dispatcher, ini, authTimeoutMs, maxInboundBytes, datos, credenciales);
+        var entorno = new EntornoDeBots(dispatcher, ini, authTimeoutMs, maxInboundBytes, datos,
+                                        new Navegante(datos), credenciales);
         var poblado = new PobladoDeBots();
 
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la

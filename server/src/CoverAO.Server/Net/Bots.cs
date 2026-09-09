@@ -123,6 +123,17 @@ public sealed class Bot
     /// <summary>Desde cuántas baldosas se da vuelta a mirar a alguien, y cada cuántas decisiones le pasa.</summary>
     private const int RadioDeMirar = 6, ChanceDeMirar = 25;
 
+    /// <summary>Tramos de un viaje: cada uno es "caminar hasta la próxima puerta, o hasta el destino". Doce
+    /// alcanzan para cruzar varios mapas y recalcular unas cuantas veces en el camino.</summary>
+    private const int TramosPorViaje = 12;
+
+    /// <summary>Cuántas baldosas alrededor se busca dónde trabajar, cuántas unidades se hacen de una sentada,
+    /// cuánto tarda cada una, y cuánto se descansa entre tandas. Trabajar sin parar toda la sesión no lo hace
+    /// nadie, y además el servidor cobra energía por cada unidad.</summary>
+    private const int RadioDeFaena = 25, FaenasPorTanda = 12;
+    private const int FaenaMinMs = 1_100, FaenaMaxMs = 2_000;
+    private const int EnfriamientoFaenaMinS = 60, EnfriamientoFaenaMaxS = 240;
+
     /// <summary>Cuánto dura una sesión y cuánto se queda afuera después, en minutos.
     ///
     /// <para>Que un personaje esté conectado DÍAS SEGUIDOS es de las cosas que más delatan: nadie juega así.
@@ -186,6 +197,10 @@ public sealed class Bot
     /// personaje que cada día juega distinto.</summary>
     private readonly Temperamento _temperamento;
 
+    /// <summary>La clase del personaje. Sale de la MISMA cuenta con la que se creó (derivada del nombre), así
+    /// que es la que tiene de verdad — y es la que decide si le sirve una caña, un hacha o un piquete.</summary>
+    private readonly byte _clase;
+
     public Bot(string nombre, string? clave, EntornoDeBots entorno, int semilla)
     {
         Nombre = nombre;
@@ -201,6 +216,7 @@ public sealed class Bot
         // El paso propio: entre 0,8 y 1,3 veces el de referencia. Dos personas no caminan igual, y con el
         // mismo número para todos una fila de bots se mueve como un desfile.
         _ritmo = 0.8 + (Math.Abs(propio) % 6) * 0.1;
+        _clase = Aspecto().Clase;
     }
 
     /// <summary>La vida del bot: entrar, vivir, y volver a entrar cuando se cae. Termina cuando se apaga el
@@ -366,7 +382,13 @@ public sealed class Bot
                 continue;
             }
 
-            if (await CuidarseAsync(transporte, sentidos, ct)) continue;
+            // CURARSE NO CONSUME EL TURNO. Antes esto era `if (...) continue;` y ahí estaba la trampa: un bot
+            // al que una criatura le pega sin parar se cura, vuelve a empezar el ciclo, se cura otra vez — y
+            // nunca llega a la decisión de HUIR, que es tres líneas más abajo. Medido en el log del servidor:
+            // el mismo bot tomando poción tras poción, con la barra volviendo a 16/16 cada vez, sin moverse ni
+            // hacer nada más en toda la sesión. Se cura y SIGUE decidiendo.
+            await CuidarseAsync(transporte, sentidos, ct);
+            if (!sentidos.Vivo) continue;
 
             // HUIR DE LO QUE LE QUEDA GRANDE. Elegir bien a quién atacar no alcanza: las criaturas atacan
             // solas, y una que pega la mitad de la vida de un golpe mata a un personaje de nivel uno antes de
@@ -384,6 +406,7 @@ public sealed class Bot
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
+            if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
@@ -507,20 +530,39 @@ public sealed class Bot
 
         bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
         bool hayQueVender = sentidos.EnLaMochila(EsVendible) is not null;
-        if (!faltanPociones && !hayQueVender) return false;
+        bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
+        if (!faltanPociones && !hayQueVender && !faltaHerramienta) return false;
 
-        var tienda = sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha)?.StockItems is { Count: > 0 });
-        if (tienda is not { } t || t.Pasos > RadioDeCompras) return false;
+        // Qué mercader sirve: si lo que falta es la herramienta del oficio, tiene que ser uno que la venda.
+        short quiero = faltaHerramienta ? HerramientaDeSuOficio : (short)0;
+        bool Sirve(int ficha) => _entorno.Datos.Npc(ficha)?.StockItems is { Count: > 0 } stock
+                                 && (quiero == 0 || stock.Any(s => s.ObjIndex == quiero));
 
-        // Acercarse: el mostrador atiende hasta tres baldosas (VB6 HandleCommerceStart).
-        for (int intentos = 0; intentos < RadioDeCompras * 2 && !cerrada.IsCompleted; intentos++)
+        var tienda = sentidos.MasCercano(ficha => Sirve(ficha));
+        // NO HAY NINGUNO A LA VISTA: se viaja. Se intenta DOS veces porque el primer destino se elige sin
+        // conocer el mapa de llegada —desde otro mapa no se puede saber por dónde se va a entrar— y muchos
+        // mercaderes están adentro de un edificio al que no se llega caminando: medido, en el mapa donde nacen
+        // los bots NINGUNO de los dos es alcanzable, y en el de al lado lo son tres de once. Ya en el mapa, la
+        // segunda búsqueda sí exige camino y elige uno al que se llega.
+        for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
-            if (sentidos.Donde(t.Quien.CharIndex) is not { } donde) return true;   // se fue
-            var (x, y) = sentidos.Posicion;
-            int dx = donde.X - x, dy = donde.Y - y;
-            if (Math.Abs(dx) + Math.Abs(dy) <= 3) break;
-            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) return true;
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve) is not { } lugar)
+            { PostergarCompra(); return intento > 0; }
+            if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct)
+                && sentidos.Mapa != lugar.Mapa)
+            { PostergarCompra(); return true; }   // ni siquiera se llegó al mapa
+            tienda = sentidos.MasCercano(ficha => Sirve(ficha));
         }
+        if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { PostergarCompra(); return true; }
+        var t = tienda.Value;
+
+        // Acercarse al mostrador. Va por el navegante y no a los tumbos: el mercader atiende hasta tres
+        // baldosas (VB6 HandleCommerceStart) y el paso codicioso se traba con cualquier mesa en el medio, que
+        // adentro de una tienda es lo normal.
+        if (sentidos.Donde(t.Quien.CharIndex) is { } donde
+            && Math.Abs(donde.X - sentidos.Posicion.X) + Math.Abs(donde.Y - sentidos.Posicion.Y) > 2
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, donde.X, donde.Y, cerrada, ct))
+        { PostergarCompra(); return true; }
 
         if (sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
         // El mercader es el que CLICKEASTE, no el que tenés enfrente: el servidor abre la tienda contra el NPC
@@ -529,14 +571,17 @@ public sealed class Bot
         transporte.Mandar(Paquete(ClientPacketId.CommerceStart, _ => { }));
 
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
-        if (!sentidos.Comerciando) return true;   // no atendió (facción, distancia, o no era mercader)
+        if (!sentidos.Comerciando) { PostergarCompra(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
         await VenderYComprarAsync(transporte, sentidos, ct);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
-        _proximaCompra = Environment.TickCount64 + _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L;
+        PostergarCompra();
         return true;
     }
+
+    private void PostergarCompra() =>
+        _proximaCompra = Environment.TickCount64 + _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L;
 
     /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar.</summary>
     private async Task VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
@@ -557,6 +602,13 @@ public sealed class Bot
             if (sentidos.QueHayEn(item.Ranura) == queOfrezco) _noLoCompran.Add(queOfrezco);
         }
 
+        // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás.
+        if (LeFaltaLaHerramienta(sentidos) && sentidos.EnLaTienda(obj => obj == HerramientaDeSuOficio) is { } h)
+        {
+            transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(h.Ranura).WriteInteger(1)));
+            await Task.Delay(_rng.Next(600, 1_400), ct);
+        }
+
         int faltan = PocionesQueQuiere - sentidos.CuantoTiene(EsPocionDeVida);
         if (faltan <= 0 || !sentidos.Comerciando) return;
         if (sentidos.EnLaTienda(EsPocionDeVida) is not { } oferta) return;
@@ -571,6 +623,26 @@ public sealed class Bot
             w => w.WriteByte(oferta.Ranura).WriteInteger((short)cuantas)));
         await Task.Delay(_rng.Next(600, 1_400), ct);
     }
+
+    /// <summary>La herramienta del oficio de esta clase, o 0 si no tiene oficio. Los tres números son los del
+    /// <c>obj.dat</c>, y son los que el servidor mira para saber qué oficio se está ejerciendo: el oficio lo
+    /// declara la HERRAMIENTA EQUIPADA, no la skill que diga el cliente.</summary>
+    private short HerramientaDeSuOficio => _clase switch
+    {
+        ClasePescador => CanaDePesca,
+        ClaseLenador => HachaDeLenador,
+        ClaseMinero => PiqueteDeMinero,
+        _ => 0,
+    };
+
+    private const byte ClasePescador = 11, ClaseLenador = 13, ClaseMinero = 14;
+    private const short CanaDePesca = 881, HachaDeLenador = 127, PiqueteDeMinero = 187;
+
+    /// <summary>¿Le falta la herramienta de su oficio? Ninguna clase nace con ella —el Pescador, el Leñador y
+    /// el Minero reciben todos el mismo martillo de piedra— así que hay que ir a comprarla, igual que un
+    /// jugador nuevo.</summary>
+    private bool LeFaltaLaHerramienta(SentidosDelBot sentidos) =>
+        HerramientaDeSuOficio > 0 && sentidos.CuantoTiene(obj => obj == HerramientaDeSuOficio) == 0;
 
     /// <summary>¿Vale la pena venderlo? Todo lo que NO es poción, comida, bebida ni oro — o sea, lo que
     /// levantó del piso. Lo que lleva puesto ya lo descarta la mochila.</summary>
@@ -642,6 +714,83 @@ public sealed class Bot
 
     /// <summary>Baldosas donde ya se agachó y no levantó nada.</summary>
     private readonly HashSet<(byte X, byte Y)> _nadaQueHacerAca = new();
+
+    /// <summary>
+    /// TRABAJAR EL OFICIO: pescar, talar o minar. Devuelve si se ocupó de esto.
+    ///
+    /// <para>La secuencia es la del cliente: se equipa la herramienta —el servidor decide QUÉ oficio se está
+    /// ejerciendo por la herramienta que llevás puesta, no por lo que diga el paquete—, se manda
+    /// <c>Work</c> con la skill, el servidor contesta pidiendo el objetivo, y se marca la baldosa con
+    /// <c>WorkLeftClick</c>. Después se repite: cada clic es una unidad de trabajo.</para>
+    ///
+    /// <para>Sólo lo hacen las tres clases que tienen oficio, y sólo si ya consiguieron la herramienta —que
+    /// ninguna trae de nacimiento y hay que ir a comprar—. Es lo que hace que un Pescador se distinga de un
+    /// Guerrero mirándolo, en vez de ser el mismo bot con otro nombre de clase.</para>
+    /// </summary>
+    private async Task<bool> TrabajarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                           CancellationToken ct)
+    {
+        short herramienta = HerramientaDeSuOficio;
+        if (herramienta == 0 || LeFaltaLaHerramienta(sentidos)) return false;
+        if (Environment.TickCount64 < _proximaFaena) return false;
+        if (sentidos.Fuelle < FuelleMinimo) return false;   // trabajar cuesta energía
+
+        byte skill = SkillDeSuOficio;
+        bool agua = skill == GameLimits.SkillPesca;
+        Func<int, bool>? recurso = agua ? null
+            : obj => _entorno.Datos.Obj(obj) is { } o && (skill == GameLimits.SkillTalar ? o.IsTree : o.IsDeposit);
+
+        // ¿Hay dónde trabajar acá cerca? Si no, se viaja hasta donde haya.
+        var punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
+        if (punto is null)
+        {
+            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso) is not { } lejos) { PostergarFaena(); return false; }
+            if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct)) { PostergarFaena(); return true; }
+            punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
+            if (punto is null) { PostergarFaena(); return true; }
+        }
+
+        // La herramienta va PUESTA, y equiparla es un interruptor: sólo se manda si no la lleva.
+        if (sentidos.EnLaMochila(obj => obj == herramienta) is { } enMochila)
+        {
+            transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(enMochila.Ranura)));
+            await Task.Delay(_rng.Next(400, 900), ct);
+        }
+
+        // Acercarse hasta tener la baldosa a tiro del clic (la ventana de visión del servidor, con margen).
+        for (int i = 0; i < RadioDeFaena * 2 && !cerrada.IsCompleted; i++)
+        {
+            var (x, y) = sentidos.Posicion;
+            int dx = punto.Value.Donde.X - x, dy = punto.Value.Donde.Y - y;
+            if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY) break;
+            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) return true;
+        }
+
+        for (int golpe = 0; golpe < FaenasPorTanda && !cerrada.IsCompleted; golpe++)
+        {
+            if (Urge(sentidos)) break;
+            transporte.Mandar(Paquete(ClientPacketId.Work, w => w.WriteByte(skill)));
+            transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+                w => w.WriteByte(punto.Value.Donde.X).WriteByte(punto.Value.Donde.Y).WriteByte(skill)));
+            await Task.Delay(_rng.Next(FaenaMinMs, FaenaMaxMs), ct);
+        }
+        PostergarFaena();
+        return true;
+    }
+
+    private void PostergarFaena() =>
+        _proximaFaena = Environment.TickCount64 + _rng.Next(EnfriamientoFaenaMinS, EnfriamientoFaenaMaxS + 1) * 1_000L;
+
+    private long _proximaFaena;
+
+    /// <summary>La skill del oficio de esta clase.</summary>
+    private byte SkillDeSuOficio => _clase switch
+    {
+        ClasePescador => (byte)GameLimits.SkillPesca,
+        ClaseLenador => (byte)GameLimits.SkillTalar,
+        ClaseMinero => (byte)GameLimits.SkillMineria,
+        _ => 0,
+    };
 
     /// <summary>Meditar para recuperar maná. Sólo los que tienen maná, y sólo cuando les falta bastante:
     /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>
@@ -803,6 +952,60 @@ public sealed class Bot
         return true;
     }
 
+    /// <summary>
+    /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.
+    ///
+    /// <para>Dos capas: el <see cref="Navegante"/> dice por dónde —las baldosas adentro del mapa, y qué
+    /// puerta tomar para acercarse a otro— y esto las camina revisando la vida en cada paso. Si el camino se
+    /// corta a mitad (alguien parado en el medio, una puerta cerrada) se recalcula: pedir el camino de nuevo
+    /// cuesta menos que quedarse empujando una pared.</para>
+    ///
+    /// <para>Es lo que separa a un bot que da vueltas de uno que hace cosas: sin esto no puede ir a comprar,
+    /// ni volver al pueblo, ni buscar al sacerdote que lo revive.</para>
+    /// </summary>
+    private async Task<bool> IrHastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                          int mapaDestino, byte destinoX, byte destinoY,
+                                          Task cerrada, CancellationToken ct)
+    {
+        for (int tramos = 0; tramos < TramosPorViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
+        {
+            if (!sentidos.Ubicado || !sentidos.Vivo) return false;
+            int mapa = sentidos.Mapa;
+            var desde = sentidos.Posicion;
+
+            // El destino puede estar en otro mapa: en ese caso el tramo termina en la puerta.
+            bool esLaMeta = mapa == mapaDestino;
+            (byte X, byte Y) meta;
+            if (esLaMeta) meta = (destinoX, destinoY);
+            else if (_entorno.Mapas.PuertaHacia(mapa, mapaDestino) is { } salida) meta = salida.Puerta;
+            else return false;   // desde acá no se llega
+
+            // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y
+            // el destino típico es justamente la baldosa donde está parado un mercader.
+            if (esLaMeta && Math.Abs(desde.X - destinoX) + Math.Abs(desde.Y - destinoY) <= 1) return true;
+
+            var camino = esLaMeta ? _entorno.Mapas.HayComoLlegar(mapa, desde, meta)
+                                   : _entorno.Mapas.Camino(mapa, desde, meta);
+            if (camino is null || camino.Count == 0) return false;
+
+            foreach (var baldosa in camino)
+            {
+                if (cerrada.IsCompleted) return false;
+                if (sentidos.Mapa != mapa) break;      // pisó la puerta: el tramo terminó
+                var (x, y) = sentidos.Posicion;
+                int dx = baldosa.X - x, dy = baldosa.Y - y;
+                if (dx == 0 && dy == 0) continue;
+                // El camino es de a un paso: cualquier otra cosa quiere decir que nos corrieron de lugar.
+                if (Math.Abs(dx) + Math.Abs(dy) != 1) break;
+                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct);
+                if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
+                if (_pasoTrabado) break;               // algo se paró en el camino: recalcular
+            }
+        }
+        return sentidos.Mapa == mapaDestino
+            && Math.Abs(sentidos.Posicion.X - destinoX) + Math.Abs(sentidos.Posicion.Y - destinoY) <= 1;
+    }
+
     /// <summary>Cómo salió un paso. El <see cref="Urgencia"/> es lo importante: quiere decir "soltá lo que
     /// estabas haciendo y volvé a decidir".</summary>
     private enum Paso { Dado, Urgencia, SinConexion }
@@ -837,9 +1040,17 @@ public sealed class Bot
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
     private int UnPaso() => (int)(_rng.Next(PasoMinMs, PasoMaxMs) * _ritmo);
 
-    /// <summary>¿Hay algo más importante que lo que está haciendo? Muerto, la vida en rojo, o sin aire.</summary>
+    /// <summary>
+    /// ¿Hay algo más importante que lo que está haciendo? Muerto o con la vida en rojo.
+    ///
+    /// <para>LA ENERGÍA NO ENTRA ACÁ, y es deliberado: caminar no la gasta (el servidor sólo la cobra al
+    /// pegar, al trabajar y al nadar), así que cortar un viaje por tenerla baja dejaba a un bot que venía de
+    /// pelear sin poder llegar NUNCA a la tienda — cada paso devolvía urgencia, el viaje se abortaba, y el
+    /// enfriamiento de compras lo mandaba a esperar quince minutos para volver a fallar igual. Donde la
+    /// energía sí importa —pelear y faenar— se mira aparte.</para>
+    /// </summary>
     private static bool Urge(SentidosDelBot sentidos) =>
-        !sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.Fuelle < FuelleMinimo;
+        !sentidos.Vivo || sentidos.Salud < TomaPocion;
 
     private bool _pasoTrabado;
 
