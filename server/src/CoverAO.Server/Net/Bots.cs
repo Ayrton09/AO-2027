@@ -120,6 +120,9 @@ public sealed class Bot
     /// para cuando reacciona ya le pegaron uno.</summary>
     private const int RadioDeSusto = 3, GolpesQueAguanta = 3;
 
+    /// <summary>Desde cuántas baldosas se da vuelta a mirar a alguien, y cada cuántas decisiones le pasa.</summary>
+    private const int RadioDeMirar = 6, ChanceDeMirar = 25;
+
     /// <summary>Cuánto dura una sesión y cuánto se queda afuera después, en minutos.
     ///
     /// <para>Que un personaje esté conectado DÍAS SEGUIDOS es de las cosas que más delatan: nadie juega así.
@@ -149,9 +152,19 @@ public sealed class Bot
     /// <summary>Pasos que se aleja para levantar algo del piso. Más lejos que esto, no vale la pena.</summary>
     private const int RadioDeBotin = 8;
 
-    /// <summary>Desde cuántos pasos tira un hechizo. El casteo va en dos paquetes —elegir la ranura y marcar
-    /// la baldosa— así que no hace falta estar pegado, que es justamente la gracia de pelear con magia.</summary>
-    private const int AlcanceDelHechizo = 8;
+    /// <summary>
+    /// Desde dónde tira un hechizo, POR EJE. El casteo va en dos paquetes —elegir la ranura y marcar la
+    /// baldosa— así que no hace falta estar pegado, que es la gracia de pelear con magia.
+    ///
+    /// <para>Y va por eje, no por distancia total, porque así lo mide el servidor: la ventana de visión es 8
+    /// de ancho y 6 de alto, y una baldosa fuera de ella queda anotada en el log de trampas como "ataque
+    /// fuera de rango". Con un radio de 8 en distancia total, una criatura ocho baldosas al norte estaba
+    /// adentro de mi cuenta y afuera de la del servidor: **medido, un bot llenó el log con nueve intentos**.
+    /// No lo hacía banear —ese caso el servidor lo loguea sin contarlo, justamente porque un jugador que
+    /// camina mientras castea cae ahí— pero le ensucia al que hostea el registro donde busca tramposos, que
+    /// es casi peor. Los números de acá dejan margen adentro de los del servidor.</para>
+    /// </summary>
+    private const int AlcanceHechizoX = 6, AlcanceHechizoY = 4;
 
     /// <summary>La MAC que declara el cliente. Los bots declaran todos la misma y no molesta: el servidor la
     /// registra pero no cuenta cupos por ella (los cupos son por dirección, y cada bot tiene la suya).</summary>
@@ -161,6 +174,8 @@ public sealed class Bot
     private readonly string _cuenta;
     private readonly EntornoDeBots _entorno;
     private readonly Random _rng;
+    /// <summary>Multiplicador del paso de este bot. Ver el constructor.</summary>
+    private readonly double _ritmo;
     private string? _clave;
     private ComoEntrar _como;
     /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
@@ -183,6 +198,9 @@ public sealed class Bot
         int propio = 17;
         foreach (char c in nombre) propio = unchecked(propio * 31 + c);
         _temperamento = (Temperamento)(Math.Abs(propio) % 3);
+        // El paso propio: entre 0,8 y 1,3 veces el de referencia. Dos personas no caminan igual, y con el
+        // mismo número para todos una fila de bots se mueve como un desfile.
+        _ritmo = 0.8 + (Math.Abs(propio) % 6) * 0.1;
     }
 
     /// <summary>La vida del bot: entrar, vivir, y volver a entrar cuando se cae. Termina cuando se apaga el
@@ -377,6 +395,8 @@ public sealed class Bot
                 continue;
             }
 
+            if (MirarALaGente(transporte, sentidos)) { await Task.Delay(_rng.Next(1_200, 3_500), ct); continue; }
+
             if (!await PasearAsync(transporte, sentidos, cerrada, ct)) return;
             bool larga = ++pausas % UnaDeCadaTantas == 0;
             await QuedarseAsync(sentidos, larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
@@ -393,6 +413,26 @@ public sealed class Bot
         // golpe a mano diga 0 porque pelea con magia.
         return n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima)
             || n.GiveExp > ExperienciaQueSeAnima(nivel) * 3;
+    }
+
+    /// <summary>
+    /// GIRARSE A MIRAR AL QUE PASA. Si hay alguien cerca, el bot se da vuelta hacia esa persona y se queda un
+    /// momento. Devuelve si lo hizo.
+    ///
+    /// <para>No cambia nada del juego y es de lo que más se nota: un mundo donde los personajes se ignoran
+    /// entre sí no parece un mundo con gente. Es sólo un cambio de rumbo —el mismo paquete que manda el
+    /// cliente cuando el jugador gira— y sale de vez en cuando, no siempre, porque nadie mira a todos.</para>
+    /// </summary>
+    private bool MirarALaGente(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (_rng.Next(100) >= ChanceDeMirar) return false;
+        if (sentidos.PersonaMasCercana() is not { } quien || quien.Pasos > RadioDeMirar) return false;
+
+        var (x, y) = sentidos.Posicion;
+        int dx = quien.Quien.X - x, dy = quien.Quien.Y - y;
+        if (dx == 0 && dy == 0) return false;
+        return transporte.Mandar(Paquete(ClientPacketId.ChangeHeading,
+            w => w.WriteByte(SentidosDelBot.RumboHacia(dx, dy))));
     }
 
     /// <summary>Cuánto lejos se va a buscar pelea, según cómo sea. El paseante ni mira.</summary>
@@ -694,7 +734,8 @@ public sealed class Bot
 
             // EL QUE SABE MAGIA PELEA CON MAGIA, y de lejos. Es lo que hace distinto a un mago de un guerrero
             // visto desde afuera, y sin esto todas las clases peleaban igual: acercarse y pegar.
-            if (pasos <= AlcanceDelHechizo && LanzarAlgo(transporte, sentidos, quien))
+            if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
+                && LanzarAlgo(transporte, sentidos, quien))
             {
                 await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                 continue;
@@ -757,7 +798,7 @@ public sealed class Bot
         {
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
-            await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+            await Task.Delay(UnPaso(), ct);
         }
         return true;
     }
@@ -786,12 +827,15 @@ public sealed class Bot
         var antes = sentidos.Posicion;
         if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return Paso.SinConexion;
         sentidos.PredecirPaso(rumbo);
-        await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+        await Task.Delay(UnPaso(), ct);
         // El servidor corrige con un PosUpdate cuando el paso se rechaza, así que quedar donde estábamos
         // significa que hay algo adelante.
         _pasoTrabado = sentidos.Posicion == antes;
         return Urge(sentidos) ? Paso.Urgencia : Paso.Dado;
     }
+
+    /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
+    private int UnPaso() => (int)(_rng.Next(PasoMinMs, PasoMaxMs) * _ritmo);
 
     /// <summary>¿Hay algo más importante que lo que está haciendo? Muerto, la vida en rojo, o sin aire.</summary>
     private static bool Urge(SentidosDelBot sentidos) =>
@@ -817,7 +861,7 @@ public sealed class Bot
         {
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
-            await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+            await Task.Delay(UnPaso(), ct);
             if (sentidos.Salud < TomaPocion) return true;   // se corta el paseo: hay algo más urgente
         }
         return true;

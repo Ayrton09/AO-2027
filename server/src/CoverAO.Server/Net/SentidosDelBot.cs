@@ -247,6 +247,23 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>La PERSONA más cercana (no criatura), sin contarse a sí mismo.</summary>
+    public (Visible Quien, int Pasos)? PersonaMasCercana()
+    {
+        lock (_candado)
+        {
+            if (!_tengoPosicion) return null;
+            (Visible, int)? mejor = null;
+            foreach (var v in _visibles.Values)
+            {
+                if (v.EsNpc || v.CharIndex == _miCharIndex) continue;
+                int pasos = Math.Abs(v.X - _x) + Math.Abs(v.Y - _y);
+                if (mejor is null || pasos < mejor.Value.Item2) mejor = (v, pasos);
+            }
+            return mejor;
+        }
+    }
+
     /// <summary>Dónde está ese personaje ahora, si sigue a la vista.</summary>
     public Visible? Donde(short charIndex)
     {
