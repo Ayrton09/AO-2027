@@ -207,19 +207,26 @@ public sealed class SentidosDelBot
 
     /// <summary>La baldosa con algo tirado más cercana, y a cuántos pasos. Es lo que deja una criatura al
     /// morir.</summary>
-    public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano()
+    public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano(Func<short, bool> vale)
     {
         lock (_candado)
         {
             if (!_tengoPosicion) return null;
             ((byte, byte), int)? mejor = null;
-            foreach (var baldosa in _enElPiso.Keys)
+            foreach (var (baldosa, obj) in _enElPiso)
             {
+                if (!vale(obj)) continue;
                 int pasos = Math.Abs(baldosa.X - _x) + Math.Abs(baldosa.Y - _y);
                 if (mejor is null || pasos < mejor.Value.Item2) mejor = (baldosa, pasos);
             }
             return mejor;
         }
+    }
+
+    /// <summary>Qué hay tirado en esa baldosa, o 0.</summary>
+    public short EnElPiso((byte X, byte Y) baldosa)
+    {
+        lock (_candado) return _enElPiso.TryGetValue(baldosa, out var o) ? o : (short)0;
     }
 
     /// <summary>La criatura más cercana que cumpla <paramref name="sirve"/>, o null. Devuelve también a qué

@@ -354,7 +354,8 @@ public sealed class Bot
             // solas, y una que pega la mitad de la vida de un golpe mata a un personaje de nivel uno antes de
             // que alcance a tomar dos pociones. Un jugador que ve algo así se va, y esto es eso.
             int vidaTope = sentidos.VidaMaxima;
-            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope));
+            int nivelAhora = sentidos.Nivel;
+            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora));
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
@@ -369,7 +370,7 @@ public sealed class Bot
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
             int vidaMaxima = sentidos.VidaMaxima;
-            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima));
+            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
             if (presa is { } p && p.Pasos <= RadioDeCazaSuyo && sentidos.Salud >= VuelveAPelear && LeDanGanas())
             {
                 if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
@@ -384,10 +385,14 @@ public sealed class Bot
 
     /// <summary>¿Esa criatura lo puede matar de pocos golpes? Es la que hay que esquivar, se la haya buscado
     /// o no.</summary>
-    private bool EsPeligroso(short ficha, int vidaMaxima)
+    private bool EsPeligroso(short ficha, int vidaMaxima, int nivel)
     {
         var n = _entorno.Datos.Npc(ficha);
-        return n is not null && n.Hostile && n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima);
+        if (n is null || !n.Hostile) return false;
+        // Por lo que pega, o por lo que ES: el que reparte mucha experiencia es un bicho grande aunque su
+        // golpe a mano diga 0 porque pelea con magia.
+        return n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima)
+            || n.GiveExp > ExperienciaQueSeAnima(nivel) * 3;
     }
 
     /// <summary>Cuánto lejos se va a buscar pelea, según cómo sea. El paseante ni mira.</summary>
@@ -557,7 +562,8 @@ public sealed class Bot
     private async Task<bool> LevantarBotinAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                                 CancellationToken ct)
     {
-        if (sentidos.BotinMasCercano() is not { } botin || botin.Pasos > RadioDeBotin) return false;
+        if (sentidos.BotinMasCercano(SePuedeLevantar) is not { } botin || botin.Pasos > RadioDeBotin
+            || _nadaQueHacerAca.Contains(botin.Donde)) return false;
 
         for (int intentos = 0; intentos < RadioDeBotin * 2 && !cerrada.IsCompleted; intentos++)
         {
@@ -565,8 +571,12 @@ public sealed class Bot
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
             if (dx == 0 && dy == 0)
             {
+                short queHabia = sentidos.EnElPiso(botin.Donde);
                 transporte.Mandar(Paquete(ClientPacketId.PickUp, _ => { }));
                 await Task.Delay(_rng.Next(400, 900), ct);
+                // Si sigue ahí no se puede levantar (mochila llena, o algo que no es botín). Se marca la
+                // baldosa: sin esto el bot vuelve a caminar hasta ella y a agacharse, para siempre.
+                if (sentidos.EnElPiso(botin.Donde) == queHabia) _nadaQueHacerAca.Add(botin.Donde);
                 return true;
             }
             if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) is var r && r != Paso.Dado)
@@ -574,6 +584,24 @@ public sealed class Bot
         }
         return true;
     }
+
+    /// <summary>
+    /// ¿Es algo que se pueda levantar? El servidor manda como "objeto del piso" lo tirado Y LAS PUERTAS
+    /// (ModAreas: el decorado fijo no viaja, pero las puertas sí, para que se sepa si están abiertas).
+    ///
+    /// <para>Sin este filtro el bot trataba a cada puerta del pueblo como botín: caminaba hasta ella, se
+    /// agachaba, no levantaba nada, y volvía a empezar. Medido: ocho bots con oro en CERO después de nueve
+    /// minutos, porque ninguno llegó nunca a un botín de verdad.</para>
+    /// </summary>
+    private bool SePuedeLevantar(short obj)
+    {
+        if (obj <= 0) return false;
+        var o = _entorno.Datos.Obj(obj);
+        return o is not null && !o.IsDoor;
+    }
+
+    /// <summary>Baldosas donde ya se agachó y no levantó nada.</summary>
+    private readonly HashSet<(byte X, byte Y)> _nadaQueHacerAca = new();
 
     /// <summary>Meditar para recuperar maná. Sólo los que tienen maná, y sólo cuando les falta bastante:
     /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>
@@ -801,12 +829,21 @@ public sealed class Bot
     /// <summary>¿Le conviene pelearse con esa criatura? Ataca sólo lo que ataca y se puede atacar —así no se
     /// mete con un ciudadano ni con un guardia, que lo dejarían criminal— y sólo si el golpe del bicho es
     /// chico contra su vida.</summary>
-    private bool EsPresa(short ficha, int vidaMaxima)
+    private bool EsPresa(short ficha, int vidaMaxima, int nivel)
     {
         var n = _entorno.Datos.Npc(ficha);
         if (n is null || !n.Hostile || !n.Attackable) return false;
+        // LA EXPERIENCIA QUE DA ES LA MEDIDA DE LO QUE ES, y el golpe a mano solo NO ALCANZA: un Espectro
+        // tiene MaxHit 0 porque pelea con hechizos, así que por el golpe parecía inofensivo — y da treinta y
+        // dos mil de experiencia, o sea que mata a un personaje de nivel uno sin despeinarse. Con la
+        // experiencia de por medio, un bicho así queda afuera aunque no pegue trompadas.
+        if (n.GiveExp > ExperienciaQueSeAnima(nivel)) return false;
         return n.MaxHit * GolpeTolerable <= Math.Max(1, vidaMaxima);
     }
+
+    /// <summary>La experiencia de la criatura más grande a la que se anima, según su nivel. Es la forma de
+    /// medir "qué tan brava es" que el dato del juego da directo.</summary>
+    private static int ExperienciaQueSeAnima(int nivel) => 30 + nivel * 40;
 
     /// <summary>Usa el primer objeto del inventario que cumpla la condición. false = no tiene ninguno.</summary>
     private bool Usar(TransporteDeBot transporte, SentidosDelBot sentidos, Func<ObjInfo, bool> sirve)

@@ -242,16 +242,31 @@ public class SentidosDelBotTests
     public void Lo_tirado_en_el_piso_se_ve_y_se_deja_de_ver()
     {
         var s = Ubicado(50, 50);
-        Assert.Null(s.BotinMasCercano());
+        Assert.Null(s.BotinMasCercano(_ => true));
 
         s.Recibir(ServerMessages.ObjectCreate(52, 50, 461, 3));
-        var botin = s.BotinMasCercano();
+        var botin = s.BotinMasCercano(_ => true);
         Assert.NotNull(botin);
         Assert.Equal(((byte)52, (byte)50), botin!.Value.Donde);
         Assert.Equal(2, botin.Value.Pasos);
 
         s.Recibir(ServerMessages.ObjectDelete(52, 50));
-        Assert.Null(s.BotinMasCercano());
+        Assert.Null(s.BotinMasCercano(_ => true));
+    }
+
+    /// <summary>El servidor manda como objeto del piso lo tirado Y LAS PUERTAS, así que el bot filtra: sin
+    /// eso caminaba hasta cada puerta del pueblo a agacharse, y no llegaba nunca a un botín de verdad.</summary>
+    [Fact]
+    public void El_botin_se_puede_filtrar_por_lo_que_es()
+    {
+        var s = Ubicado(50, 50);
+        s.Recibir(ServerMessages.ObjectCreate(51, 50, 190, 1));    // una puerta, pegada
+        s.Recibir(ServerMessages.ObjectCreate(54, 50, 461, 5));    // botín de verdad, más lejos
+
+        Assert.Equal(((byte)51, (byte)50), s.BotinMasCercano(_ => true)!.Value.Donde);
+        Assert.Equal(((byte)54, (byte)50), s.BotinMasCercano(obj => obj != 190)!.Value.Donde);
+        Assert.Equal((short)461, s.EnElPiso((54, 50)));
+        Assert.Equal((short)0, s.EnElPiso((99, 99)));
     }
 
     /// <summary>El mostrador se lee mientras la ventana está abierta, y se olvida al cerrarla: comprar de una
@@ -326,7 +341,7 @@ public class SentidosDelBotTests
         s.Recibir(ServerMessages.ChangeMap(34));
 
         Assert.Null(s.MasCercano(_ => true));
-        Assert.Null(s.BotinMasCercano());
+        Assert.Null(s.BotinMasCercano(_ => true));
         Assert.True(s.CambioDeMapa());
         Assert.False(s.CambioDeMapa());   // se consume al leerlo
     }
