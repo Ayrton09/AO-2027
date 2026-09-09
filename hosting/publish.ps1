@@ -285,8 +285,9 @@ JUGAR CON AMIGOS:
       MAQUINA", segui las instrucciones que imprime ahi mismo.
 
   POR INTERNET hay que reenviar en el router hacia esta maquina UN puerto: el
-  7669, que sirve la pagina Y el juego. El 7666 va ademas si alguien usa el
-  cliente clasico de Windows. Y ojo que tu IP de internet suele cambiar sola;
+  7669, que sirve la pagina Y el juego. El 7666 no hace falta abrirlo (habla el
+  protocolo clasico, pero el cliente de Windows no pasa del login: ver
+  HOSTING.md). Y ojo que tu IP de internet suele cambiar sola;
   para algo estable, un dominio y un reverse-proxy con HTTPS (esta explicado en
   HOSTING.md, y con un solo puerto es una sola regla).
 
@@ -304,7 +305,7 @@ CONFIGURACION — Server.ini (esta al lado del ejecutable):
   rango NO queda guardado en el personaje, lo decide el Server.ini en cada login.
 
 PUERTOS (base 7666, configurable con el primer argumento, ej: CoverAO.Server.exe 8000):
-  7666  juego (protocolo AO clasico, TCP)
+  7666  juego (protocolo AO clasico, TCP) - no hace falta abrirlo
   7667  WebSocket suelto (compatibilidad; ya no hace falta abrirlo)
   7668  panel de administracion (imprime la URL con token al arrancar)
   7669  cliente web: la pagina Y el juego (en /ws)  <- el unico que se abre

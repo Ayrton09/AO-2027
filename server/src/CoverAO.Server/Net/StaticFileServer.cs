@@ -136,7 +136,7 @@ public sealed class StaticFileServer
         var (listener, publico) = (bind.Value.Listener, bind.Value.Publico);
         Console.WriteLine($"== Cliente web: http://localhost:{_port}/ (raíz: {_root}) ==");
         HttpBind.AvisarSiSoloLocal(publico, _port);
-        HttpBind.ImprimirComoEntrar(_port, _wsPort, _wsPort - 1, publico);   // el TCP del juego es ws-1
+        HttpBind.ImprimirComoEntrar(_port, _wsPort, publico);
         try
         {
             while (!token.IsCancellationRequested)

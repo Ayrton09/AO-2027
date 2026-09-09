@@ -7,8 +7,10 @@ WebSocket. El objetivo no es un juego nuevo: es una réplica fiel de esa variant
 - **Autosuficiente**: corre sólo con lo que hay acá. Los datos del juego ya vienen decodificados a JSON en
   [`gamedata/`](gamedata/), y los gráficos, sonidos y música están en
   [`client-web/assets/`](client-web/assets/).
-- **Dos clientes**: el cliente web (no requiere instalar nada) y el cliente clásico de Windows, que se
-  conecta sin modificaciones.
+- **Cliente web**: se juega desde el navegador, sin instalar nada. El puerto de juego habla el protocolo AO
+  clásico byte a byte —es contra lo que se compara este port—, pero el **cliente clásico de Windows no llega
+  a entrar**: manda la contraseña ofuscada con `SEncriptar` (un corrimiento distinto en cada envío) y este
+  servidor no la deshace. Medido; ver [`docs/HOSTING.md`](docs/HOSTING.md).
 
 ## Requisitos
 

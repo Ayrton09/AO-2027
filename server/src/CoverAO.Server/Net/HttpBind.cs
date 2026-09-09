@@ -172,7 +172,7 @@ internal static class HttpBind
     /// Los tres puertos van EXPLICITOS y no derivados uno del otro: el web es configurable con
     /// <c>--web-port</c>, asi que cualquier cuenta del tipo "web menos dos" miente en cuanto alguien lo
     /// mueve al 80.</summary>
-    public static void ImprimirComoEntrar(int puertoWeb, int puertoWs, int puertoJuego, bool publico)
+    public static void ImprimirComoEntrar(int puertoWeb, int puertoWs, bool publico)
     {
         Console.WriteLine();
         Console.WriteLine("== Como entrar ==");
@@ -191,7 +191,9 @@ internal static class HttpBind
         Console.WriteLine(ElJuegoEntraPorElPuertoWeb
             ? $"   Desde internet       : abri en tu router el puerto {puertoWeb} hacia esta maquina"
             : $"   Desde internet       : abri en tu router los puertos {puertoWeb} y {puertoWs} hacia esta maquina");
-        Console.WriteLine($"                          (y el {puertoJuego} si alguien usa el cliente clasico de Windows)");
+        // El puerto de juego NO se nombra acá a propósito: abrirlo no le sirve a nadie. Habla el protocolo
+        // clásico, pero el cliente VB6 no pasa del login (manda la clave ofuscada con SEncriptar y este
+        // servidor no la deshace), así que la línea anterior mandaba a abrir un puerto de más.
         Console.WriteLine("                          Con dominio propio conviene un reverse-proxy con HTTPS: ver HOSTING.md");
         Console.WriteLine();
     }

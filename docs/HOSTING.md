@@ -45,7 +45,7 @@ Se configura uno solo, `StartPort`, y de ahí salen los otros tres:
 
 | puerto | servicio |
 |---|---|
-| `StartPort` | juego (protocolo AO clásico), cliente de Windows |
+| `StartPort` | juego (protocolo AO clásico) — no hace falta abrirlo, ver más abajo |
 | `StartPort + 1` | WebSocket suelto — **compatibilidad**, ya no hace falta abrirlo |
 | `StartPort + 2` | panel de administración — **sólo loopback** |
 | `StartPort + 3` | cliente web: la página **y el juego**, en `/ws` |
@@ -53,8 +53,8 @@ Se configura uno solo, `StartPort`, y de ahí salen los otros tres:
 El servidor los imprime al arrancar y quedan en el log del día.
 
 **En el router se abre UNO: el del cliente web** (`StartPort + 3`). El juego entra por `/ws` en ese mismo
-puerto, así que el jugador baja la página y juega por la misma dirección. Sumale el del juego
-(`StartPort`) sólo si alguien va a entrar con el cliente clásico de Windows.
+puerto, así que el jugador baja la página y juega por la misma dirección. **El del juego (`StartPort`) no
+hace falta abrirlo**: ver más abajo por qué el cliente clásico de Windows no puede entrar.
 
 > Antes hacían falta **dos** —el de la página y el del WebSocket— y ésa era la trampa más cara del hosteo:
 > abriendo uno solo, el amigo veía la página, veía el login, y el socket se moría contra un puerto cerrado.
@@ -84,10 +84,36 @@ Medido el 2026-08-09 con el servidor Linux corriendo en una máquina y el navega
 | el cliente abre su WebSocket | conecta (por `/ws` en el mismo puerto; el server lo publica en `/coverao-config.json`) |
 | poner cuenta y contraseña | el server contesta con la lista de personajes |
 | elegir personaje | entra al mundo, con los personajes de alrededor dibujados |
-| cliente clásico contra `StartPort` | login completo |
 
 Lo único que NO se puede probar sin salir a internet es el **NAT del router**: que el reenvío de puertos
 esté bien hecho. Todo lo demás del camino "un amigo abre la URL y juega" está ejercido.
+
+### El cliente clásico de Windows NO puede entrar
+
+El puerto de juego (`StartPort`) habla el **protocolo AO clásico byte a byte** —es lo que se compara contra el
+servidor VB6 original— y el cliente clásico conecta y sus paquetes se entienden. Pero **no pasa del login**, y
+la causa es la contraseña: el cliente VB6 la manda ofuscada con `SEncriptar`
+(`Cliente/Codigo/Protocol.bas:4454`), que le suma a cada carácter **un número al azar entre 10 y 98** y pega
+dos caracteres diciendo cuál fue. El servidor VB6 lo deshace con `SDesencriptar` antes de validar
+(`Servidor/Codigo/Cuentas.bas:439`); **este servidor no lo deshace en ningún lado**, así que compara contra la
+cadena ofuscada.
+
+Medido contra el servidor, con el control adentro:
+
+| lo que se manda | resultado |
+|---|---|
+| contraseña en claro (lo que manda el cliente web) | entra |
+| contraseña con `SEncriptar` (lo que manda el clásico) | *Cuenta o contraseña inválida* |
+| cuenta creada con `SEncriptar` y reentrada **con los mismos bytes** | entra — o sea que la cuenta existe |
+| esa misma cuenta, reentrada con `SEncriptar` **de nuevo** | *Cuenta o contraseña inválida* |
+
+Las dos últimas filas son las que cierran el caso: como el corrimiento cambia en cada envío, **ni siquiera un
+servidor que sólo viera clientes clásicos funcionaría** — la cuenta que el cliente crea no la puede volver a
+abrir. Por eso el `StartPort` no hace falta abrirlo en el router.
+
+Que funcione es posible y tiene un solo camino: portar `SDesencriptar` al servidor **y** que el cliente web
+mande la contraseña con `SEncriptar`. Van juntos: desencriptar sin lo otro rompe todas las contraseñas ya
+creadas.
 
 > **Ojo con las sondas.** Un `connect` TCP a los puertos HTTP en **Windows** da OK aunque el servidor no los
 > tenga registrados: quien acepta la conexión es HTTP.SYS (el kernel), que recién después mira el `Host:` y
@@ -145,7 +171,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `PuertoWebSocketPublico` | sólo si el hosting remapea puertos: el que se le anuncia al cliente |
 | `Version` | la versión de cliente que este servidor acepta. Los cinco paquetes de ingreso traen la del cliente y el servidor la compara **como texto**: si no coincide, cartel de *juego desactualizado* y se corta la conexión. **Vacía (el default) = sin control**, que es lo que hacía el servidor hasta ahora. El cliente web que viene con esta versión manda `1.0.0`. Encendela sólo si sabés qué cliente repartiste: la comparación es exacta, así que un valor que no sea el del cliente desplegado deja a **todos** afuera. Sirve para dos cosas — que no se conecte un cliente ajeno al puerto del juego, y forzar a que actualicen cuando publiques una versión nueva. **Se reparte VACÍA por decisión del autor (2026-09-08)**: con el cliente cacheado en el navegador de cada jugador, el cartel de *juego desactualizado* le sale a quien sólo necesita recargar |
 | `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa** — no cambia ninguna mecánica —, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
-| `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina** — gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta, el cliente clásico) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
+| `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina** — gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
 
 **Ser GM**: en `[INIT]` poner `Dioses=1` y agregar la sección:
 
@@ -343,8 +369,8 @@ server {
 ```
 
 Con el proxy puesto, en el router se abre **el 443 y nada más**: ni el 7669 ni el 7667 tienen que llegar desde
-afuera. El **7666** (cliente clásico de Windows) es aparte y no pasa por el proxy: ése va en claro salvo que
-arranques con `--tls cert.pfx`.
+afuera. El **7666** (el del protocolo clásico) es aparte y no pasa por el proxy: ése va en claro salvo que
+arranques con `--tls cert.pfx` — y hoy no hace falta abrirlo, porque el cliente clásico no puede entrar.
 
 **Verificado ejecutándolo** (2026-09-01), y no sólo leído: con un proxy TLS delante del servidor, la página se
 sirve por `https://`, el cliente abre `wss://<mismo host>/ws` y se juega — login, caminata, clic sobre una

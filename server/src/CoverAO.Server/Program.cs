@@ -4,7 +4,9 @@ using CoverAO.Server.Game;
 using CoverAO.Server.Net;
 
 // CoverAO — servidor moderno (Fase 1, slice vertical).
-// Habla el protocolo AO clasico byte-a-byte para que un cliente VB6 sin modificar se conecte.
+// Habla el protocolo AO clasico byte-a-byte: es lo que permite compararlo contra el servidor VB6 original.
+// (El CLIENTE VB6 igual no puede entrar: manda la clave ofuscada con SEncriptar y aca no se deshace. Medido;
+// esta contado en docs/HOSTING.md.)
 // Arquitectura: World (reemplaza UserList global) + GameLoop 40ms + EventBus + dispatch por sesion.
 
 // Modo importador: `CoverAO.Server migrate <dataDir> [dbPath]` migra .chr/.cnt/Misc legacy → SQLite y sale.
@@ -106,7 +108,7 @@ Console.WriteLine($"Instalado en: {AppContext.BaseDirectory}");
 // Separadores ASCII a propósito. El resto del banner tiene acentos, pero ESTA es la línea que un host lee
 // con `type` en una consola de Windows —codepage 850, no UTF-8— y ahí un `·` sale como un rombo negro.
 // El archivo está bien (los bytes son \xc2\xb7); lo que se rompe es la lectura, que es lo único que importa.
-Console.WriteLine($"Puertos: {port} juego (cliente clasico)  |  {port + 1} WebSocket (cliente web)  |  " +
+Console.WriteLine($"Puertos: {port} juego (protocolo clasico)  |  {port + 1} WebSocket (cliente web)  |  " +
                   $"{(sinAdmin ? "sin panel de admin" : adminPort + " panel de admin (solo local)")}  |  " +
                   $"{(habraWeb ? webPort + " cliente web" : "sin cliente web (esta instalacion no lo trae)")}");
 // SIN MENTIR SOBRE DE DONDE SALIO EL NUMERO. Si el puerto vino por linea de comandos, el Server.ini dice
