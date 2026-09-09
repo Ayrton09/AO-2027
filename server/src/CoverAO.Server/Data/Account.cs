@@ -11,6 +11,16 @@ public sealed class Account
     public string PasswordHash { get; set; } = "";
     public string Salt { get; set; } = "";
     public bool Banned { get; set; }
+    /// <summary>La cuenta es de un BOT de este servidor, no de una persona. Se marca al crearla y no se saca
+    /// nunca; lo que hace es que la cuenta SÓLO se pueda abrir desde el transporte de bot
+    /// (<see cref="Net.TransporteDeBot"/>), o sea desde adentro de este mismo proceso.
+    ///
+    /// <para>Existe por dónde vive el secreto: la contraseña de un bot la sortea el servidor y queda escrita
+    /// en <c>data/bots.txt</c>, que además se copia en cada backup. Sin esta marca, ese archivo alcanzaría
+    /// para entrar a jugar con el personaje de un bot, y sería un secreto que se propaga solo — a un backup,
+    /// a otra máquina, a quien le pidan ayuda al hosteador. Con la marca, la contraseña no vale nada fuera
+    /// del proceso.</para></summary>
+    public bool EsBot { get; set; }
     /// <summary>Trampas acumuladas por el anticheat (PacketDispatcher.RegistrarTrampa). Persiste en el .cnt.</summary>
     public int Trampas { get; set; }
     /// <summary>Flag donador a nivel CUENTA (VB6 .cnt "Donador"). Al loguear fuerza Donador=1 en el char

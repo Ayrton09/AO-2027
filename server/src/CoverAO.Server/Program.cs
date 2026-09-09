@@ -985,6 +985,19 @@ if (habraWeb)
 if (serverIni.BackupMinutos > 0) _ = Task.Run(() => HacerBackup(motivo: "al arrancar"));
 
 var loopTask = loop.RunAsync(cts.Token);
+
+// LOS BOTS. Apagados salvo que el host los pida (clave `Bots` del Server.ini), y NUNCA con --fixture: un bot
+// caminando cerca le mete a un flow de paridad apariciones, movimientos y desapariciones que el flow no pidió,
+// y con 218 flows eso serían rojos intermitentes imposibles de rastrear. Se avisa en vez de apagarlos callado.
+if (serverIni.Bots > 0)
+{
+    if (fixtureMode)
+        Console.WriteLine($"BOTS: {serverIni.Bots} pedidos, pero --fixture los apaga (contaminarian los flows).");
+    else
+        CoverAO.Server.Net.PobladoDeBots.Arrancar(serverIni.Bots, dispatcher, serverIni, dataRoot,
+            authTimeoutMs, maxInboundBytes, cts.Token);
+}
+
 try
 {
     await Task.WhenAll(server.RunAsync(cts.Token), wsServer.RunAsync(cts.Token), adminTask, webTask);

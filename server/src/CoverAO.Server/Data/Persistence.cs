@@ -242,7 +242,11 @@ public sealed class Persistence
     /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
     /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el
     /// campo del CreateNewAccount y lo tiraba.</param>
-    public Account CreateAccount(string name, string password, string userCode = "")
+    /// <summary><paramref name="esBot"/> marca la cuenta como de un bot del servidor, y esa marca es lo que
+    /// impide que se abra desde afuera (ver <see cref="Account.EsBot"/>). Va como parámetro y no se pone
+    /// después: entre crear la cuenta y marcarla habría una ventana en la que su contraseña —que queda
+    /// escrita en <c>data/bots.txt</c>— sí serviría desde la red.</summary>
+    public Account CreateAccount(string name, string password, string userCode = "", bool esBot = false)
     {
         // New accounts use the modern slow KDF (PBKDF2); the salt is embedded in the hash string.
         var acc = new Account
@@ -251,6 +255,7 @@ public sealed class Persistence
             Salt = "",
             PasswordHash = PasswordHasher.HashModern(password),
             UserCodeHash = string.IsNullOrEmpty(userCode) ? "" : PasswordHasher.HashModern(userCode),
+            EsBot = esBot,
         };
         SaveAccount(acc);
         return acc;

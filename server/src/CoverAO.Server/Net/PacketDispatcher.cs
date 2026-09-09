@@ -184,6 +184,21 @@ public sealed partial class PacketDispatcher
                 acc = _db.LoadAccount(account);
                 if (acc is null) PasswordHasher.DummyVerify(password);
                 else ok = acc.VerifyPassword(password, out migrado);
+                // LA CUENTA DE UN BOT SÓLO SE ABRE DESDE UN BOT, y una de persona sólo desde afuera. Va acá,
+                // que es el único cuello por donde pasan las tres rutas de login, y no repetido al lado de
+                // cada chequeo de baneo.
+                //
+                // El secreto de un bot no está donde está el de una persona: su contraseña la sortea el
+                // servidor y queda en `data/bots.txt`, que se copia en CADA backup. Sin esta línea, ese
+                // archivo alcanzaría para entrar a jugar con su personaje — un secreto que se propaga solo,
+                // a un backup, a otra máquina, a quien le pidan una mano al que hostea.
+                //
+                // La autoridad es el TRANSPORTE y no el nombre: el sufijo `_bot` lo puede registrar
+                // cualquiera, y decidir permisos por nombre es la forma conocida de dejar una puerta de atrás.
+                //
+                // Y se contesta como una contraseña equivocada a propósito: un mensaje propio le confirmaría
+                // a quien prueba que la cuenta existe y que es de un bot.
+                if (acc is not null && acc.EsBot != session.EsBot) ok = false;
             }
             catch (Exception ex)
             {
@@ -652,7 +667,7 @@ public sealed partial class PacketDispatcher
                 // PBKDF2 —son microsegundos contra 25 ms—, pero es I/O en el hilo sagrado y no tiene por qué
                 // estar ahí. Se hace acá, junto con la creación, y el veredicto vuelve por el loop.
                 existia = _db.AccountExists(account);
-                if (!existia) { _db.CreateAccount(account, password, userCode); creada = true; }
+                if (!existia) { _db.CreateAccount(account, password, userCode, esBot: session.EsBot); creada = true; }
             }
             catch (Exception ex) { Console.Error.WriteLine($"[{session.RemoteEndpoint}] crear cuenta: {ex.Message}"); }
             _loop.Enqueue(() =>

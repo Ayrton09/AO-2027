@@ -86,6 +86,18 @@ DropGlobal=10000
 ; Metamorfosis del druida: -1 = permanente (como el AO clasico), 0 = apagada, o los segundos que dura.
 MetamorfosisDelDruida=-1
 
+; --- Bots --------------------------------------------------------------------
+; Personajes que juegan solos, para que el mundo no se vea vacio. VIENEN
+; APAGADOS: 0 = ninguno, y el maximo son 48 (los nombres que hay para repartir).
+; Cada bot entra por el mismo login que un jugador: ocupa un lugar de MaxUsers,
+; sale en el /ONLINE y en la pagina publica, y no puede hacer nada que un
+; jugador no pueda. Hoy caminan y nada mas.
+; Sus cuentas llevan el sufijo _bot y quedan anotadas en data\bots.txt, para
+; que puedas distinguirlos de la gente de verdad.
+; Esa contrasena no sirve desde afuera: la cuenta de un bot solo se abre
+; desde adentro del servidor.
+Bots=0
+
 ; --- Operacion ---------------------------------------------------------------
 ; Estos vienen PRENDIDOS aunque borres el archivo: hay que escribir 0 para
 ; apagarlos, no para tenerlos.

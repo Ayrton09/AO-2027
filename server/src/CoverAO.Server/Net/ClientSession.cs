@@ -55,6 +55,11 @@ public sealed class ClientSession : IConnection
 
     public string RemoteEndpoint { get; }
 
+    /// <summary>La sesión es de un bot de este mismo servidor. Lo decide el TRANSPORTE, y por eso vale como
+    /// autoridad: quién acepta la conexión elige con qué transporte envolverla, así que un cliente de afuera
+    /// —que llega por TCP o por WebSocket— no tiene por dónde declararse bot.</summary>
+    public bool EsBot => _transport is TransporteDeBot;
+
     /// <summary>Cupo de líneas de log POR ACCIÓN DEL JUGADOR: tirar, agarrar, usar un objeto, abrir una bolsa.
     /// Cada una escribía una línea al log de disco por paquete, y el tope de paquetes por segundo no alcanza
     /// como freno: medido, un cliente a 96 pkt/s escribía 96 líneas/s, y con las 64 conexiones que admite una

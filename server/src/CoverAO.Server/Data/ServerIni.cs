@@ -107,7 +107,7 @@ public sealed class ServerIni
     /// </summary>
     public static readonly string[] ClavesConocidas =
     {
-        "AllowMultiLogins", "BackupsAConservar", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
+        "AllowMultiLogins", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
         "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
@@ -533,6 +533,28 @@ public sealed class ServerIni
     /// <summary>¿La transformación no vence con el reloj? Es el default y el comportamiento del AO clásico.</summary>
     public bool MetamorfosisPermanente => MetamorfosisDelDruida < 0;
 
+    /// <summary>
+    /// CUÁNTOS BOTS puebla este servidor (default <b>0</b>, o sea ninguno).
+    ///
+    /// <para>Un bot es una cuenta y un personaje que juegan solos: entran, caminan, y vuelven a entrar si se
+    /// caen. No es un NPC — habla el protocolo por una sesión, como cualquier jugador, así que pasa por el
+    /// mismo login, los mismos intervalos y el mismo anticheat, y no puede hacer nada que un jugador no pueda
+    /// hacer (ver <see cref="Net.TransporteDeBot"/>).</para>
+    ///
+    /// <para><b>Apagado por defecto, y es una decisión.</b> Un servidor recién instalado tiene que mostrar lo
+    /// que hay de verdad: si trajera gente de fábrica, el que hostea no podría distinguir a sus jugadores de
+    /// los que le puso el programa. Prenderlos es del que hostea, y cuántos también.</para>
+    ///
+    /// <para>Cuestan lo que cuesta un jugador: ocupan lugar en <c>MaxUsers</c>, salen en el <c>/ONLINE</c> y
+    /// en la página pública, y lo que hacen entra en los logs igual que lo de cualquiera. El tope son los
+    /// nombres que hay para repartir (<see cref="MaxBots"/>).</para>
+    /// </summary>
+    public int Bots { get; private set; }
+
+    /// <summary>El techo de <see cref="Bots"/>: son los nombres que trae la lista de
+    /// <see cref="Net.PobladoDeBots.Nombres"/>. Un test cuida que los dos números no se separen.</summary>
+    public const int MaxBots = 48;
+
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>
     public byte PrivilegioDe(string? nombre) =>
@@ -852,6 +874,7 @@ public sealed class ServerIni
         // -1 es permanente y 0 apaga; de ahí para arriba son segundos. Cualquier negativo cae en el -1: pedir
         // "menos que permanente" no significa nada, y el tope de una hora sigue siendo para el reloj.
         cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
+        cfg.Bots = Math.Clamp(ini.GetInt("INIT", "Bots", 0), 0, MaxBots);
 
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {
