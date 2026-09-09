@@ -240,7 +240,17 @@ public sealed class Navegante
         {
             if (!sirve(s.NpcIndex)) continue;
             var donde = ((byte)s.X, (byte)s.Y);
-            if (desde is not { } d) return donde;
+            if (desde is not { } d)
+            {
+                // TODAVÍA NO ESTÁ EN ESE MAPA, así que no se sabe por dónde va a entrar: se prueba desde unas
+                // pocas baldosas repartidas. Con devolver el primero que cumple —como hacía antes— el bot
+                // viajaba hasta un mercader encerrado en un edificio y volvía con las manos vacías; y como
+                // cada mapa tiene UNO solo de cada oficio, el que caía del lado inalcanzable dejaba al bot sin
+                // herramienta para siempre. Medido sobre el mundo: de los ocho que venden la caña se llega a
+                // tres, y de los doce que venden el hacha a seis.
+                if (Muestras.Any(m => HayComoLlegar(mapa, m, donde) is not null)) return donde;
+                continue;
+            }
             int pasos = Math.Abs(s.X - d.X) + Math.Abs(s.Y - d.Y);
             if (pasos >= mejorPasos) continue;
             if (HayComoLlegar(mapa, d, donde) is null) continue;
@@ -269,6 +279,11 @@ public sealed class Navegante
         _salidas.TryGetValue(mapa, out var l) ? l : Vacio;
 
     private static readonly List<(int Destino, byte X, byte Y)> Vacio = new();
+
+    /// <summary>Baldosas de prueba repartidas por un mapa, para preguntar "¿a esto se llega desde algún lado
+    /// abierto?" sin estar parado ahí.</summary>
+    private static readonly (byte X, byte Y)[] Muestras =
+        { (50, 50), (20, 20), (80, 80), (20, 80), (80, 20) };
 
     /// <summary>
     /// ¿Se puede pisar A PIE? Tres cosas: el anillo muerto del borde, que el servidor no deja pisar (VB6
