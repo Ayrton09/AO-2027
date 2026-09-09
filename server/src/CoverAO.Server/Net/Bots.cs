@@ -11,14 +11,39 @@ namespace CoverAO.Server.Net;
 internal enum ComoEntrar { Entrar, SoloPersonaje, Alta }
 
 /// <summary>
+/// Qué clase de jugador es este bot. Sale del nombre, así que cada uno es siempre el mismo.
+///
+/// <para>Existe porque la diferencia entre "hay gente jugando" y "hay bots" no está en lo que hace UNO sino
+/// en que todos hagan lo mismo. Seis personajes que salen a cazar con el mismo ritmo, la misma pausa y el
+/// mismo radio se leen como seis copias; uno que caza, otro que da vueltas por el pueblo y otro que se
+/// conecta un rato corto se leen como tres personas.</para>
+/// </summary>
+internal enum Temperamento
+{
+    /// <summary>Sale a matar criaturas y vuelve. Es el que sube de nivel.</summary>
+    Cazador,
+    /// <summary>Caza, pero con menos ganas: pasea más, se aleja menos y descansa seguido.</summary>
+    Tranquilo,
+    /// <summary>Casi no pelea: da vueltas, se queda parado, mira. El que está conectado haciendo nada.</summary>
+    Paseante,
+}
+
+/// <summary>
 /// Un bot: una cuenta, un personaje y una conducta. Habla el protocolo AO por un
 /// <see cref="TransporteDeBot"/>, así que para el resto del servidor es un jugador más — pasa por el mismo
 /// login, los mismos intervalos, el mismo anticheat y los mismos topes de cadencia.
 ///
-/// <para><b>Lo que sabe hacer hoy es vivir</b>: entrar, caminar con pausas, aguantar horas y volver a entrar
-/// si se cae. No caza, no comercia y no habla. Tampoco mira lo que el servidor le manda, salvo dos paquetes
-/// —el <c>Logged</c>, que trae la clave de sesión, y el <c>ConsoleMsg</c>, para poder decir POR QUÉ no pudo
-/// entrar—: un bot que no interpreta el mundo no puede reaccionar a él, y ése es el límite de esta etapa.</para>
+/// <para><b>Lo que sabe hacer</b>: entrar, pasear por su zona, cazar criaturas que le queden chicas —a mano o
+/// con hechizos, si sabe—, levantar lo que dejan, tomar pociones, comer, beber, meditar, repartir los puntos
+/// que da subir de nivel, ir a un mercader a vender el botín y reponer, cortar la pelea cuando queda débil,
+/// buscar un sacerdote si muere, irse a dormir cuando se le hizo tarde y volver más tarde. Lo que ve del
+/// mundo se lo arma <see cref="SentidosDelBot"/> con los paquetes que le manda el servidor — los mismos que
+/// recibe el cliente de una persona, ni uno más. Lo único que no hace es HABLAR.</para>
+///
+/// <para><b>El orden de las decisiones ES la conducta</b>, y va de lo urgente a lo opcional: no morirse,
+/// comer, repartir puntos, juntar lo que quedó tirado, ir a vender, recuperar maná, pelear, y pasear sólo si
+/// no hay nada mejor. Cada bot además tiene un <see cref="Temperamento"/> que sale de su nombre, así que dos
+/// no hacen la misma mezcla.</para>
 ///
 /// <para><b>El ritmo no es decorativo.</b> Un bot que camina a intervalos clavados se distingue de un humano
 /// desde la primera pantalla, y además choca contra los relojes del servidor: el paso mínimo lo pone
@@ -46,6 +71,88 @@ public sealed class Bot
 
     private const int ReconectaMinS = 5, ReconectaMaxS = 20;
 
+    // ── La caza ───────────────────────────────────────────────────────────────────────────────────────
+    /// <summary>Vida (de 0 a 1) a la que toma una poción roja, a la que corta la pelea y se aleja, y a la que
+    /// vuelve a pelear. Los tres están holgados a propósito: un bot que muere se queda cadáver donde cayó
+    /// —revivir necesita un sacerdote— así que la conducta cuidadosa no es prolijidad, es lo que lo mantiene
+    /// en el mundo.</summary>
+    private const double TomaPocion = 0.60, SeRetira = 0.35, VuelveAPelear = 0.80;
+
+    /// <summary>Energía mínima para pegar. El golpe la gasta (VB6 <c>StaRequerido</c>) y sin ella el servidor
+    /// no swingea, así que seguir mandando golpes sería mandar paquetes al vacío.</summary>
+    private const double FuelleMinimo = 0.20;
+
+    /// <summary>Pasos hasta la presa: más lejos que esto no vale la pena, y encima probablemente esté del otro
+    /// lado de algo. Es la mitad de lo que el jugador ve en pantalla.</summary>
+    private const int RadioDeCaza = 12;
+
+    /// <summary>Pasos gastados persiguiendo antes de soltar la presa. Sin esto, un bot separado por una pared
+    /// empuja contra ella para siempre.</summary>
+    private const int PacienciaPersiguiendo = 30;
+
+    /// <summary>Cuánto se le puede animar: el golpe máximo de la criatura no puede pasar de esta parte de su
+    /// vida. Es el equivalente a que una persona mire al bicho y calcule.</summary>
+    private const int GolpeTolerable = 5;
+
+    private const int GolpeMinMs = 1_100, GolpeMaxMs = 1_700;
+    private const int PocionMinMs = 700, PocionMaxMs = 1_400;
+
+    /// <summary>Cada cuánto, estando muerto, prueba pedir la resurrección. Sólo funciona con un sacerdote a la
+    /// vista, así que la mayoría de las veces no pasa nada — igual que un jugador tirado que insiste.</summary>
+    private const int PruebaRevivirMs = 20_000;
+
+    /// <summary>En cuánto se parte una pausa larga para poder reaccionar en el medio. NINGUNA espera puede ser
+    /// un solo <c>Delay</c> largo: la primera versión se quedaba quieta hasta un minuto entero y en ese rato
+    /// una criatura lo mataba sin que llegara a tomar una poción — dos de seis bots muertos en cuatro minutos,
+    /// con mil quinientas pociones en la mochila.</summary>
+    private const int RebanadaDePausaMs = 400;
+
+    /// <summary>Radio de la zona propia, en baldosas. Más lejos que esto vuelve para adentro.
+    ///
+    /// <para>No es prolijidad: sin correa los bots se iban caminando de mapa en mapa y terminaban en cuevas
+    /// que los mataban —medido, aparecieron en los mapas 20, 34 y 208 a los pocos minutos—. Un jugador de
+    /// nivel uno se queda cerca de donde nació, y además un bot que se aleja deja de verse en la zona donde el
+    /// que hostea quiere que se vea gente.</para></summary>
+    private const int RadioDeCasa = 20;
+
+    /// <summary>Desde cuántas baldosas se asusta de una criatura grande, y de cuántos golpes suyos se muere
+    /// para considerarla grande. Tres golpes es poco margen a propósito: con la vida de un personaje nuevo,
+    /// para cuando reacciona ya le pegaron uno.</summary>
+    private const int RadioDeSusto = 3, GolpesQueAguanta = 3;
+
+    /// <summary>Cuánto dura una sesión y cuánto se queda afuera después, en minutos.
+    ///
+    /// <para>Que un personaje esté conectado DÍAS SEGUIDOS es de las cosas que más delatan: nadie juega así.
+    /// Con esto la lista de conectados respira —entran unos, se van otros— que es lo que se ve en un servidor
+    /// con gente. La sesión se cierra con <c>Quit</c>, o sea el mismo camino que usa el que se va del juego.</para></summary>
+    private const int SesionMinM = 20, SesionMaxM = 90, AfueraMinM = 5, AfueraMaxM = 40;
+
+    /// <summary>Maná al que se sienta a meditar, y al que se levanta. Sólo lo hacen los que tienen maná.</summary>
+    private const double MeditaBajo = 0.35, MeditaHasta = 0.90;
+
+    /// <summary>Cuánto se aguanta meditando de una vez. Meditar se corta solo al caminar o al pelear, así que
+    /// el tope es para no quedarse sentado toda la sesión si el maná no sube.</summary>
+    private const int MeditaTopeMs = 45_000;
+
+    /// <summary>Cuántas pociones de vida quiere tener encima, y desde cuántos pasos se acerca a un mercader.
+    /// El kit de novato trae mil quinientas, así que el bot recién sale a comprar cuando gastó casi todas — lo
+    /// que dispara la visita al mercader, en la práctica, es tener botín para vender.</summary>
+    private const int PocionesQueQuiere = 200, RadioDeCompras = 15;
+
+    /// <summary>Ventas por visita. Se corta para que la parada en la tienda dure lo que dura una parada y no
+    /// se coma la sesión vaciando la mochila de a un objeto por vez.</summary>
+    private const int VentasPorVisita = 6;
+
+    /// <summary>Minutos entre una visita a la tienda y la siguiente.</summary>
+    private const int EnfriamientoCompraMinM = 5, EnfriamientoCompraMaxM = 15;
+
+    /// <summary>Pasos que se aleja para levantar algo del piso. Más lejos que esto, no vale la pena.</summary>
+    private const int RadioDeBotin = 8;
+
+    /// <summary>Desde cuántos pasos tira un hechizo. El casteo va en dos paquetes —elegir la ranura y marcar
+    /// la baldosa— así que no hace falta estar pegado, que es justamente la gracia de pelear con magia.</summary>
+    private const int AlcanceDelHechizo = 8;
+
     /// <summary>La MAC que declara el cliente. Los bots declaran todos la misma y no molesta: el servidor la
     /// registra pero no cuenta cupos por ella (los cupos son por dirección, y cada bot tiene la suya).</summary>
     private const string Mac = "00-00-00-00-00-00";
@@ -56,6 +163,13 @@ public sealed class Bot
     private readonly Random _rng;
     private string? _clave;
     private ComoEntrar _como;
+    /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
+    private bool _seFueSolo;
+
+    /// <summary>Cómo es este bot. Sale de una semilla derivada del NOMBRE y no del azar del arranque, igual
+    /// que su cara: así el que hostea reconoce a "Bruma, la que anda siempre por el pueblo" y no a un
+    /// personaje que cada día juega distinto.</summary>
+    private readonly Temperamento _temperamento;
 
     public Bot(string nombre, string? clave, EntornoDeBots entorno, int semilla)
     {
@@ -65,6 +179,10 @@ public sealed class Bot
         _entorno = entorno;
         _rng = new Random(semilla);
         _como = clave is null ? ComoEntrar.Alta : ComoEntrar.Entrar;
+
+        int propio = 17;
+        foreach (char c in nombre) propio = unchecked(propio * 31 + c);
+        _temperamento = (Temperamento)(Math.Abs(propio) % 3);
     }
 
     /// <summary>La vida del bot: entrar, vivir, y volver a entrar cuando se cae. Termina cuando se apaga el
@@ -82,7 +200,13 @@ public sealed class Bot
             if (entro) fracasos = 0;
             else { fracasos++; _como = _como == ComoEntrar.Alta ? ComoEntrar.Entrar : _como + 1; }
             if (ct.IsCancellationRequested) break;
-            try { await Task.Delay(TimeSpan.FromSeconds(_rng.Next(ReconectaMinS, ReconectaMaxS + 1)), ct); }
+            // El que se fue a dormir vuelve dentro de un rato LARGO; al que se le cortó, enseguida. Es la
+            // diferencia entre una lista de conectados que respira y una donde están siempre los mismos.
+            var espera = _seFueSolo
+                ? TimeSpan.FromMinutes(_rng.Next(AfueraMinM, AfueraMaxM + 1))
+                : TimeSpan.FromSeconds(_rng.Next(ReconectaMinS, ReconectaMaxS + 1));
+            _seFueSolo = false;
+            try { await Task.Delay(espera, ct); }
             catch (OperationCanceledException) { break; }
         }
         if (fracasos >= IntentosAntesDeRendirse)
@@ -98,10 +222,14 @@ public sealed class Bot
         var tieneCuenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cerrada = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         string aviso = "";
+        // Los sentidos son de ESTA vida: al reconectar el mundo se vuelve a armar desde cero con los paquetes
+        // del login. Reusarlos arrastraría criaturas que ya no están y una posición vieja.
+        var sentidos = new SentidosDelBot();
 
         transporte.Recibido += p =>
         {
             if (p.Length == 0) return;
+            sentidos.Recibir(p);
             switch ((ServerPacketId)p[0])
             {
                 case ServerPacketId.Logged: enElMundo.TrySetResult(); break;
@@ -135,7 +263,7 @@ public sealed class Bot
                 return false;
             }
             _como = ComoEntrar.Entrar;   // ya existen la cuenta y el personaje: de acá en más entra como cualquiera
-            await ComportarseAsync(transporte, cerrada.Task, ct);
+            await ComportarseAsync(transporte, sentidos, cerrada.Task, ct);
             return true;
         }
         finally
@@ -168,26 +296,533 @@ public sealed class Bot
         return await Espera(enElMundo.Task, ct);
     }
 
-    /// <summary>Caminar por ahí hasta que la sesión se caiga o se apague el servidor.</summary>
-    private async Task ComportarseAsync(TransporteDeBot transporte, Task cerrada, CancellationToken ct)
+    /// <summary>
+    /// La vida del personaje: cuidarse, cazar, y pasear cuando no hay nada que cazar. Termina cuando se cae la
+    /// sesión o se apaga el servidor.
+    ///
+    /// <para>El orden de las decisiones ES la conducta, y va de lo urgente a lo opcional: primero no morirse,
+    /// después comer, después pelear, y pasear sólo si no hay nada mejor. Un bot que revisara la caza antes que
+    /// la vida seguiría pegando con la barra en rojo, que es lo que ningún jugador hace dos veces.</para>
+    /// </summary>
+    private async Task ComportarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                        CancellationToken ct)
     {
+        _casa = null;            // la zona se elige de nuevo en cada vida: pudo entrar en otro lado
+        _pasoTrabado = false;
+        _traidoDeCasa.Clear();
+        foreach (byte ranura in sentidos.RanurasOcupadas()) _traidoDeCasa.Add(sentidos.QueHayEn(ranura));
         await Task.Delay(_rng.Next(MirarAlrededorMs, MirarAlrededorMs * 4), ct);
+        // El modo combate es un interruptor y hay que prenderlo: sin él, el servidor contesta el aviso 102 y no
+        // swingea. Se prende una vez al entrar, como hace cualquiera que sale a cazar.
+        transporte.Mandar(Paquete(ClientPacketId.CombatModeToggle, _ => { }));
+
         int pausas = 0;
+        long proximaResurreccion = 0;
+        // Cuánto va a jugar esta vez. Cada bot elige distinto y en cada sesión distinto, como cualquiera.
+        long finDeSesion = Environment.TickCount64 + _rng.Next(SesionMinM, SesionMaxM + 1) * 60_000L;
+
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted)
         {
-            // UNA CAMINATA: varios pasos en la misma dirección, como quien va a algún lado. Si hay una pared
-            // adelante el servidor no lo mueve, y el bot dobla igual al terminar la tanda; que se quede unos
-            // pasos empujando una pared es lo mismo que hace un jugador distraído.
-            byte rumbo = (byte)_rng.Next(1, 5);   // 1=N, 2=E, 3=S, 4=O
-            int pasos = _rng.Next(PasosMin, PasosMax);
-            for (int i = 0; i < pasos && !cerrada.IsCompleted; i++)
+            if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
+
+            // SE VA A DORMIR. Se cierra con `Quit`, el mismo camino del jugador que se va: el servidor le
+            // guarda el personaje y lo saca del mundo como corresponde.
+            if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo)
             {
-                if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return;
-                await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+                transporte.Mandar(Paquete(ClientPacketId.Quit, _ => { }));
+                await Task.Delay(1_500, ct);
+                _seFueSolo = true;
+                return;
             }
+
+            // MUERTO. El cadáver queda donde cayó y revivir necesita un sacerdote a la vista, así que lo único
+            // que puede hacer es caminar buscando uno e insistir cada tanto. Es lo mismo que hace una persona.
+            if (!sentidos.Vivo)
+            {
+                if (Environment.TickCount64 >= proximaResurreccion)
+                {
+                    proximaResurreccion = Environment.TickCount64 + PruebaRevivirMs;
+                    PedirResurreccion(transporte, sentidos);
+                }
+                if (!await BuscarSacerdoteAsync(transporte, sentidos, cerrada, ct)) return;
+                continue;
+            }
+
+            if (await CuidarseAsync(transporte, sentidos, ct)) continue;
+
+            // HUIR DE LO QUE LE QUEDA GRANDE. Elegir bien a quién atacar no alcanza: las criaturas atacan
+            // solas, y una que pega la mitad de la vida de un golpe mata a un personaje de nivel uno antes de
+            // que alcance a tomar dos pociones. Un jugador que ve algo así se va, y esto es eso.
+            int vidaTope = sentidos.VidaMaxima;
+            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope));
+            if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
+            {
+                if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
+                continue;
+            }
+
+            if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
+            if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await MeditarAsync(transporte, sentidos, ct)) continue;
+
+            // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
+            // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
+            int vidaMaxima = sentidos.VidaMaxima;
+            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima));
+            if (presa is { } p && p.Pasos <= RadioDeCazaSuyo && sentidos.Salud >= VuelveAPelear && LeDanGanas())
+            {
+                if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
+                continue;
+            }
+
+            if (!await PasearAsync(transporte, sentidos, cerrada, ct)) return;
             bool larga = ++pausas % UnaDeCadaTantas == 0;
-            await Task.Delay(larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
+            await QuedarseAsync(sentidos, larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
         }
+    }
+
+    /// <summary>¿Esa criatura lo puede matar de pocos golpes? Es la que hay que esquivar, se la haya buscado
+    /// o no.</summary>
+    private bool EsPeligroso(short ficha, int vidaMaxima)
+    {
+        var n = _entorno.Datos.Npc(ficha);
+        return n is not null && n.Hostile && n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima);
+    }
+
+    /// <summary>Cuánto lejos se va a buscar pelea, según cómo sea. El paseante ni mira.</summary>
+    private int RadioDeCazaSuyo => _temperamento switch
+    {
+        Temperamento.Cazador => RadioDeCaza,
+        Temperamento.Tranquilo => RadioDeCaza / 2,
+        _ => 1,
+    };
+
+    /// <summary>¿Se pelea o lo deja pasar? El cazador siempre; el tranquilo casi siempre; el paseante sólo si
+    /// se lo lleva por delante. Es la diferencia entre un personaje que barre el mapa y uno que anda dando
+    /// vueltas — y la que hace que seis bots no se muevan como seis copias.</summary>
+    private bool LeDanGanas() => _temperamento switch
+    {
+        Temperamento.Cazador => true,
+        Temperamento.Tranquilo => _rng.Next(100) < 70,
+        _ => _rng.Next(100) < 15,
+    };
+
+    /// <summary>Reparte los puntos que dio el nivel. Devuelve si mandó algo.
+    ///
+    /// <para>Se reparten de a uno y en una skill al azar de las que el personaje puede subir. Pedir más de los
+    /// que hay NO es un pedido a recortar: el servidor lo cuenta como intento de hackeo y cierra la conexión
+    /// (<c>HandleModifySkills</c>), así que el bot lleva la cuenta él y descuenta lo que gastó.</para></summary>
+    private bool RepartirPuntos(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        int libres = sentidos.PuntosLibres;
+        if (libres <= 0) return false;
+
+        // Un jugador no reparte de a uno cada vez que sube: junta y gasta. Y no los mete todos en la misma.
+        var reparto = new byte[GameLimits.NumSkills + 1];
+        int gastados = 0;
+        for (int i = 0; i < libres; i++)
+        {
+            int skill = _rng.Next(1, GameLimits.NumSkills + 1);
+            if (reparto[skill] == byte.MaxValue) continue;
+            reparto[skill]++;
+            gastados++;
+        }
+        if (gastados == 0) return false;
+
+        bool salio = transporte.Mandar(Paquete(ClientPacketId.ModifySkills, w =>
+        {
+            for (int i = 1; i <= GameLimits.NumSkills; i++) w.WriteByte(reparto[i]);
+        }));
+        if (salio) sentidos.GastarPuntos(gastados);
+        return salio;
+    }
+
+    /// <summary>
+    /// IR A UN MERCADER: vender lo que juntó y reponer pociones. Devuelve si se ocupó de esto.
+    ///
+    /// <para>Es la otra mitad del ciclo de cualquier jugador —matar, juntar, vender, reponer— y sin ella el
+    /// botín se acumula sin sentido y las pociones se terminan sin reemplazo. Sólo se hace si hay un mercader
+    /// A LA VISTA: el bot no sabe dónde queda la tienda, igual que alguien que recién empieza.</para>
+    ///
+    /// <para>Lo que está PUESTO no se vende nunca, y las pociones, la comida y la bebida tampoco: vender el
+    /// arma que lleva encima, o el agua que va a necesitar, no lo hace nadie. Lo que queda es justamente lo
+    /// que levantó del piso.</para>
+    /// </summary>
+    private async Task<bool> IrDeComprasAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                              CancellationToken ct)
+    {
+        // ENFRIAMIENTO. Sin esto el bot vuelve a la tienda en el instante siguiente: si el mercader NO le
+        // compra lo que le ofrece —cada uno acepta un tipo de objeto y nada más— la mochila queda igual, la
+        // condición se vuelve a cumplir, y el bot queda pegado al mostrador ofreciendo lo mismo para siempre.
+        // Medido: ocho bots inmóviles en tres baldosas durante diez minutos, y dos muertos ahí parados porque
+        // mientras negocian no miran la vida. Un jugador tampoco vuelve a entrar a la tienda a los cinco
+        // segundos.
+        if (Environment.TickCount64 < _proximaCompra) return false;
+
+        bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
+        bool hayQueVender = sentidos.EnLaMochila(EsVendible) is not null;
+        if (!faltanPociones && !hayQueVender) return false;
+
+        var tienda = sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha)?.StockItems is { Count: > 0 });
+        if (tienda is not { } t || t.Pasos > RadioDeCompras) return false;
+
+        // Acercarse: el mostrador atiende hasta tres baldosas (VB6 HandleCommerceStart).
+        for (int intentos = 0; intentos < RadioDeCompras * 2 && !cerrada.IsCompleted; intentos++)
+        {
+            if (sentidos.Donde(t.Quien.CharIndex) is not { } donde) return true;   // se fue
+            var (x, y) = sentidos.Posicion;
+            int dx = donde.X - x, dy = donde.Y - y;
+            if (Math.Abs(dx) + Math.Abs(dy) <= 3) break;
+            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) return true;
+        }
+
+        if (sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
+        // El mercader es el que CLICKEASTE, no el que tenés enfrente: el servidor abre la tienda contra el NPC
+        // targeteado, así que el clic va primero — igual que en el cliente.
+        transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
+        transporte.Mandar(Paquete(ClientPacketId.CommerceStart, _ => { }));
+
+        for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
+        if (!sentidos.Comerciando) return true;   // no atendió (facción, distancia, o no era mercader)
+
+        await VenderYComprarAsync(transporte, sentidos, ct);
+        transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
+        await Task.Delay(_rng.Next(600, 1_500), ct);
+        _proximaCompra = Environment.TickCount64 + _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L;
+        return true;
+    }
+
+    /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar.</summary>
+    private async Task VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        for (int i = 0; i < VentasPorVisita && sentidos.Comerciando; i++)
+        {
+            // La vida primero, también acá dentro: negociar son varios segundos y una criatura no espera a
+            // que el bot termine de vender.
+            if (!sentidos.Vivo || sentidos.Salud < TomaPocion) return;
+            if (sentidos.EnLaMochila(EsVendible) is not { } item) break;
+            short queOfrezco = sentidos.QueHayEn(item.Ranura);
+            transporte.Mandar(Paquete(ClientPacketId.CommerceSell,
+                w => w.WriteByte(item.Ranura).WriteInteger(item.Cantidad)));
+            await Task.Delay(_rng.Next(500, 1_200), ct);
+            // SI SIGUE AHÍ, NO SE LO COMPRAN. Cada mercader acepta un tipo de objeto (`TipoItems`) y rechaza
+            // el resto en silencio; sin anotarlo, el bot se lo ofrecería a todos los mercaderes del mundo, una
+            // y otra vez, para siempre.
+            if (sentidos.QueHayEn(item.Ranura) == queOfrezco) _noLoCompran.Add(queOfrezco);
+        }
+
+        int faltan = PocionesQueQuiere - sentidos.CuantoTiene(EsPocionDeVida);
+        if (faltan <= 0 || !sentidos.Comerciando) return;
+        if (sentidos.EnLaTienda(EsPocionDeVida) is not { } oferta) return;
+
+        // No se gasta hasta el último cobre: dejar algo encima es lo que hace cualquiera, y además el precio
+        // que ve el bot es el del mostrador, que puede no ser exactamente lo que termina cobrando el servidor.
+        int puede = oferta.Precio > 0 ? (int)(sentidos.Oro * 0.8 / oferta.Precio) : 0;
+        int cuantas = Math.Clamp(Math.Min(faltan, puede), 0, short.MaxValue);
+        if (cuantas <= 0) return;
+
+        transporte.Mandar(Paquete(ClientPacketId.CommerceBuy,
+            w => w.WriteByte(oferta.Ranura).WriteInteger((short)cuantas)));
+        await Task.Delay(_rng.Next(600, 1_400), ct);
+    }
+
+    /// <summary>¿Vale la pena venderlo? Todo lo que NO es poción, comida, bebida ni oro — o sea, lo que
+    /// levantó del piso. Lo que lleva puesto ya lo descarta la mochila.</summary>
+    private bool EsVendible(short obj)
+    {
+        // LO QUE TRAJO DE CASA NO SE VENDE. La regla anterior era por descarte —todo lo que no fuera poción,
+        // comida, bebida ni oro— y con eso el bot le ofrecía al mercader su propia arma: medido en los
+        // `.chr`, terminaban peleando con el martillo en la mochila. Acá se invierte: se vende lo que
+        // APARECIÓ durante la sesión, que es exactamente el botín.
+        if (_traidoDeCasa.Contains(obj) || _noLoCompran.Contains(obj)) return false;
+        var o = _entorno.Datos.Obj(obj);
+        return o is not null && !o.IsPotion && !o.IsFood && !o.IsDrink && !o.IsGold;
+    }
+
+    /// <summary>Lo que tenía encima al entrar al mundo. Se anota una vez por sesión.</summary>
+    private readonly HashSet<short> _traidoDeCasa = new();
+
+    /// <summary>Objetos que ya se probó vender y nadie quiso. Es por bot y sobrevive a la sesión: lo que no le
+    /// compró un mercader tampoco se lo va a comprar el de al lado, porque el motivo es el tipo del objeto.</summary>
+    private readonly HashSet<short> _noLoCompran = new();
+
+    /// <summary>Cuándo puede volver a una tienda.</summary>
+    private long _proximaCompra;
+
+    private bool EsPocionDeVida(short obj) => _entorno.Datos.Obj(obj) is { IsPotion: true, SubType: 3 };
+
+    /// <summary>Levanta lo que quedó tirado cerca. Es lo primero que hace cualquiera después de matar algo, y
+    /// su ausencia se nota: un personaje que mata y sigue de largo dejando el oro en el piso no existe.</summary>
+    private async Task<bool> LevantarBotinAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                                CancellationToken ct)
+    {
+        if (sentidos.BotinMasCercano() is not { } botin || botin.Pasos > RadioDeBotin) return false;
+
+        for (int intentos = 0; intentos < RadioDeBotin * 2 && !cerrada.IsCompleted; intentos++)
+        {
+            var (x, y) = sentidos.Posicion;
+            int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
+            if (dx == 0 && dy == 0)
+            {
+                transporte.Mandar(Paquete(ClientPacketId.PickUp, _ => { }));
+                await Task.Delay(_rng.Next(400, 900), ct);
+                return true;
+            }
+            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) is var r && r != Paso.Dado)
+                return r != Paso.SinConexion;
+        }
+        return true;
+    }
+
+    /// <summary>Meditar para recuperar maná. Sólo los que tienen maná, y sólo cuando les falta bastante:
+    /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>
+    private async Task<bool> MeditarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        if (!sentidos.UsaMana || sentidos.Mana >= MeditaBajo) return false;
+
+        transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));
+        for (int pasado = 0; pasado < MeditaTopeMs; pasado += RebanadaDePausaMs)
+        {
+            await Task.Delay(RebanadaDePausaMs, ct);
+            // Meditar se corta solo al caminar o al pelear, así que cualquier urgencia levanta al bot igual.
+            if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()) break;
+            if (sentidos.Mana >= MeditaHasta) break;
+        }
+        transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));   // el mismo paquete lo apaga
+        return true;
+    }
+
+    /// <summary>De muerto: caminar hacia el sacerdote si hay uno a la vista, y si no, dar vueltas buscando.
+    /// Es lo que hace un jugador tirado — no hay otra forma de volver.</summary>
+    private async Task<bool> BuscarSacerdoteAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                                  CancellationToken ct)
+    {
+        var cura = sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha)?.NpcType == 1);
+        if (cura is not { } c) return await PasearAsync(transporte, sentidos, cerrada, ct);
+
+        var (x, y) = sentidos.Posicion;
+        return await UnPasoHaciaAsync(transporte, sentidos, c.Quien.X - x, c.Quien.Y - y, ct) != Paso.SinConexion;
+    }
+
+    /// <summary>Quedarse quieto un rato, pero MIRANDO. La espera se parte en rebanadas y se corta si la vida
+    /// bajó o si algo se le puso al lado: un bot que descansa cuarenta segundos con los ojos cerrados se
+    /// muere, y eso no es una figura — pasó, con la mochila llena de pociones.</summary>
+    private static async Task QuedarseAsync(SentidosDelBot sentidos, int ms, CancellationToken ct)
+    {
+        for (int pasado = 0; pasado < ms; pasado += RebanadaDePausaMs)
+        {
+            await Task.Delay(Math.Min(RebanadaDePausaMs, ms - pasado), ct);
+            if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()) return;
+        }
+    }
+
+    /// <summary>Lo urgente: la poción, la comida y el agua. Devuelve si hizo algo — si lo hizo, se vuelve a
+    /// decidir desde arriba, porque tomar una poción cambia el cuadro.
+    ///
+    /// <para>El hambre y la sed no son decorado: con cualquiera de las dos en cero el servidor DEJA DE CURAR
+    /// (el tick envuelve Sanar en <c>Hunger &gt; 0 &amp;&amp; Thirst &gt; 0</c>), así que un bot que no come se
+    /// queda sin la única curación gratis que tiene.</para></summary>
+    private async Task<bool> CuidarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        if (sentidos.Salud < TomaPocion && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 }))
+        {
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            return true;
+        }
+        if (sentidos.ConHambre && Usar(transporte, sentidos, o => o.IsFood))
+        {
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            return true;
+        }
+        if (sentidos.ConSed && Usar(transporte, sentidos, o => o.IsDrink))
+        {
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
+    /// false sólo si se cayó la conexión.</summary>
+    private async Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
+                                        Task cerrada, CancellationToken ct)
+    {
+        int pasosGastados = 0;
+        while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
+        {
+            // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
+            if (sentidos.Donde(presa) is not { } quien) return true;
+            // LA POCIÓN SE TOMA PELEANDO. Es lo que hace cualquiera —se toma y se sigue— y no salir del ciclo
+            // para curarse es la diferencia entre aguantar la pelea y llegar al 35 % con la criatura encima:
+            // medido, sacar esto de acá dejaba un muerto cada ocho bots en diez minutos.
+            if (sentidos.Salud < TomaPocion && await CuidarseAsync(transporte, sentidos, ct)) continue;
+            // Con la vida o la energía abajo igual se corta: si no hay pociones, o no alcanzan, hay que irse.
+            if (sentidos.Salud < SeRetira || sentidos.Fuelle < FuelleMinimo) return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
+
+            var (x, y) = sentidos.Posicion;
+            int dx = quien.X - x, dy = quien.Y - y;
+            int pasos = Math.Abs(dx) + Math.Abs(dy);
+
+            // EL QUE SABE MAGIA PELEA CON MAGIA, y de lejos. Es lo que hace distinto a un mago de un guerrero
+            // visto desde afuera, y sin esto todas las clases peleaban igual: acercarse y pegar.
+            if (pasos <= AlcanceDelHechizo && LanzarAlgo(transporte, sentidos, quien))
+            {
+                await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                continue;
+            }
+
+            if (pasos == 1)
+            {
+                // Pegado y de frente: mirar y pegar. El golpe resuelve contra la baldosa que el atacante MIRA
+                // (VB6 UsuarioAtaca), así que sin girar primero se le pega al aire.
+                byte rumbo = SentidosDelBot.RumboHacia(dx, dy);
+                if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(rumbo)))) return false;
+                if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
+                await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                continue;
+            }
+
+            if (pasos > RadioDeCaza || ++pasosGastados > PacienciaPersiguiendo) return true;   // se aleja o no se llega
+            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) is var r && r != Paso.Dado)
+                return r != Paso.SinConexion;
+        }
+        return !cerrada.IsCompleted;
+    }
+
+    /// <summary>
+    /// Tira el hechizo de daño más fuerte que pueda pagar contra ese objetivo. false = no sabe magia, no le
+    /// alcanza el maná, o no tiene ninguno de ataque.
+    ///
+    /// <para>El casteo son DOS paquetes, igual que en el cliente: <c>CastSpell</c> elige la ranura y el
+    /// servidor contesta pidiendo el objetivo, y el <c>WorkLeftClick</c> sobre la baldosa lo marca. Mandar
+    /// sólo el primero deja el hechizo elegido y nada más — que es exactamente lo que le pasa a un jugador
+    /// que aprieta el hechizo y no clickea.</para>
+    /// </summary>
+    private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
+    {
+        if (!sentidos.UsaMana) return false;
+        int mana = sentidos.ManaEnPuntos;
+        (byte Ranura, int Dano)? mejor = null;
+        foreach (var (ranura, numero) in sentidos.Hechizos())
+        {
+            var h = _entorno.Datos.Spell(numero);
+            if (h is null || h.SubeHp != 2) continue;            // SubeHp 2 = hace daño; 1 = cura
+            if (h.ManaCost > mana) continue;
+            if (mejor is null || h.MaxHp > mejor.Value.Dano) mejor = (ranura, h.MaxHp);
+        }
+        if (mejor is null) return false;
+
+        return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(mejor.Value.Ranura)))
+            && transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+                   w => w.WriteByte(a.X).WriteByte(a.Y).WriteByte((byte)GameLimits.SkillMagia)));
+    }
+
+    /// <summary>Retroceder unos pasos en dirección contraria a lo que lo está lastimando. No es huir del todo
+    /// —el bot no sabe a dónde ir— pero le saca la criatura de encima mientras la vida vuelve.</summary>
+    private async Task<bool> AlejarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                           SentidosDelBot.Visible de, Task cerrada, CancellationToken ct)
+    {
+        var (x, y) = sentidos.Posicion;
+        byte rumbo = SentidosDelBot.RumboHacia(x - de.X, y - de.Y);
+        for (int i = 0; i < _rng.Next(3, 7) && !cerrada.IsCompleted; i++)
+        {
+            if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
+            sentidos.PredecirPaso(rumbo);
+            await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+        }
+        return true;
+    }
+
+    /// <summary>Cómo salió un paso. El <see cref="Urgencia"/> es lo importante: quiere decir "soltá lo que
+    /// estabas haciendo y volvé a decidir".</summary>
+    private enum Paso { Dado, Urgencia, SinConexion }
+
+    /// <summary>
+    /// Un paso hacia un objetivo. Va por el eje más largo, y si el paso no ocurrió —una pared, un árbol, otro
+    /// personaje— prueba el otro eje en la vuelta siguiente, porque la posición no cambió. Es un rodeo pobre y
+    /// a propósito: un bot que resuelve laberintos al primer intento no se mueve como nadie.
+    ///
+    /// <para><b>Acá se mira la vida, y por eso TODO lo que camina pasa por acá.</b> Cada recorrido largo del
+    /// bot —perseguir una presa, ir a levantar el botín, acercarse a un mercader, buscar al sacerdote— es un
+    /// bucle de varios segundos, y la primera versión de cada uno miraba la vida sólo al empezar. Medido:
+    /// cuatro de ocho bots muertos en diez minutos caminando hacia cosas mientras una criatura los golpeaba.
+    /// Poner el chequeo en cada bucle sería ponerlo cuatro veces y olvidarlo en el quinto.</para>
+    /// </summary>
+    private async Task<Paso> UnPasoHaciaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int dx, int dy,
+                                              CancellationToken ct)
+    {
+        byte rumbo = _pasoTrabado && dx != 0 && dy != 0
+            ? SentidosDelBot.RumboHacia(Math.Abs(dx) > Math.Abs(dy) ? 0 : dx, Math.Abs(dx) > Math.Abs(dy) ? dy : 0)
+            : SentidosDelBot.RumboHacia(dx, dy);
+        var antes = sentidos.Posicion;
+        if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return Paso.SinConexion;
+        sentidos.PredecirPaso(rumbo);
+        await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+        // El servidor corrige con un PosUpdate cuando el paso se rechaza, así que quedar donde estábamos
+        // significa que hay algo adelante.
+        _pasoTrabado = sentidos.Posicion == antes;
+        return Urge(sentidos) ? Paso.Urgencia : Paso.Dado;
+    }
+
+    /// <summary>¿Hay algo más importante que lo que está haciendo? Muerto, la vida en rojo, o sin aire.</summary>
+    private static bool Urge(SentidosDelBot sentidos) =>
+        !sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.Fuelle < FuelleMinimo;
+
+    private bool _pasoTrabado;
+
+    /// <summary>Un paseo corto, que es lo que hace cuando no hay nada que cazar. Si se alejó de su zona, el
+    /// paseo es de vuelta para adentro.</summary>
+    private async Task<bool> PasearAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                         CancellationToken ct)
+    {
+        // Al cambiar de mapa, este lugar pasa a ser su zona: las coordenadas de la anterior no significan nada.
+        var (x, y) = sentidos.Posicion;
+        if (sentidos.CambioDeMapa() || _casa is null) _casa = (x, y);
+
+        int dx = _casa.Value.X - x, dy = _casa.Value.Y - y;
+        bool lejos = Math.Abs(dx) + Math.Abs(dy) > RadioDeCasa;
+        byte rumbo = lejos ? SentidosDelBot.RumboHacia(dx, dy) : (byte)_rng.Next(1, 5);   // 1=N, 2=E, 3=S, 4=O
+
+        int pasos = _rng.Next(PasosMin, PasosMax);
+        for (int i = 0; i < pasos && !cerrada.IsCompleted; i++)
+        {
+            if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
+            sentidos.PredecirPaso(rumbo);
+            await Task.Delay(_rng.Next(PasoMinMs, PasoMaxMs), ct);
+            if (sentidos.Salud < TomaPocion) return true;   // se corta el paseo: hay algo más urgente
+        }
+        return true;
+    }
+
+    /// <summary>Dónde considera que es su zona. Se fija al entrar y se muda con él si cambia de mapa.</summary>
+    private (byte X, byte Y)? _casa;
+
+    /// <summary>¿Le conviene pelearse con esa criatura? Ataca sólo lo que ataca y se puede atacar —así no se
+    /// mete con un ciudadano ni con un guardia, que lo dejarían criminal— y sólo si el golpe del bicho es
+    /// chico contra su vida.</summary>
+    private bool EsPresa(short ficha, int vidaMaxima)
+    {
+        var n = _entorno.Datos.Npc(ficha);
+        if (n is null || !n.Hostile || !n.Attackable) return false;
+        return n.MaxHit * GolpeTolerable <= Math.Max(1, vidaMaxima);
+    }
+
+    /// <summary>Usa el primer objeto del inventario que cumpla la condición. false = no tiene ninguno.</summary>
+    private bool Usar(TransporteDeBot transporte, SentidosDelBot sentidos, Func<ObjInfo, bool> sirve)
+    {
+        byte ranura = sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { } info && sirve(info));
+        return ranura != 0 && transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)));
+    }
+
+    /// <summary>Pide la resurrección: hay que tener CLICKEADO un sacerdote a diez baldosas, así que primero se
+    /// lo clickea si hay uno a la vista. Sin sacerdote no pasa nada, que es lo correcto.</summary>
+    private void PedirResurreccion(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        var cura = sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha)?.NpcType == 1);
+        if (cura is not { } c || c.Pasos > 10) return;
+        transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(c.Quien.X).WriteByte(c.Quien.Y)));
+        transporte.Mandar(Paquete(ClientPacketId.Resucitate, _ => { }));
     }
 
     // ── Los paquetes ──────────────────────────────────────────────────────────────────────────────────

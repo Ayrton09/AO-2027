@@ -91,7 +91,9 @@ MetamorfosisDelDruida=-1
 ; APAGADOS: 0 = ninguno, y el maximo son 48 (los nombres que hay para repartir).
 ; Cada bot entra por el mismo login que un jugador: ocupa un lugar de MaxUsers,
 ; sale en el /ONLINE y en la pagina publica, y no puede hacer nada que un
-; jugador no pueda. Hoy caminan y nada mas.
+; jugador no pueda. Cazan, huyen de lo que les queda grande, levantan el botin,
+; toman pociones, comen, meditan, comercian, suben de nivel y se desconectan
+; cada tanto para volver mas tarde. Lo unico que no hacen es hablar.
 ; Sus cuentas llevan el sufijo _bot y quedan anotadas en data\bots.txt, para
 ; que puedas distinguirlos de la gente de verdad.
 ; Esa contrasena no sirve desde afuera: la cuenta de un bot solo se abre

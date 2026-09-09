@@ -10,15 +10,19 @@ public sealed class EntornoDeBots
     public ServerIni Ini { get; }
     public long AuthTimeoutMs { get; }
     public int MaxInboundBytes { get; }
+    /// <summary>Las fichas del juego. El bot las mira para lo mismo que una persona mira al bicho que tiene
+    /// enfrente y decide si le va a ganar: si la criatura ataca, si se la puede atacar, y cuánto pega.</summary>
+    public GameData Datos { get; }
     private readonly CredencialesDeBots _credenciales;
 
     public EntornoDeBots(PacketDispatcher dispatcher, ServerIni ini, long authTimeoutMs, int maxInboundBytes,
-        CredencialesDeBots credenciales)
+        GameData datos, CredencialesDeBots credenciales)
     {
         Dispatcher = dispatcher;
         Ini = ini;
         AuthTimeoutMs = authTimeoutMs;
         MaxInboundBytes = maxInboundBytes;
+        Datos = datos;
         _credenciales = credenciales;
     }
 
@@ -121,11 +125,11 @@ public sealed class PobladoDeBots
 
     /// <summary>Enciende <paramref name="cantidad"/> bots. Devuelve null si no hay ninguno que encender.</summary>
     public static PobladoDeBots? Arrancar(int cantidad, PacketDispatcher dispatcher, ServerIni ini,
-        string dataRoot, long authTimeoutMs, int maxInboundBytes, CancellationToken ct)
+        string dataRoot, long authTimeoutMs, int maxInboundBytes, GameData datos, CancellationToken ct)
     {
         if (cantidad <= 0) return null;
         var credenciales = new CredencialesDeBots(dataRoot);
-        var entorno = new EntornoDeBots(dispatcher, ini, authTimeoutMs, maxInboundBytes, credenciales);
+        var entorno = new EntornoDeBots(dispatcher, ini, authTimeoutMs, maxInboundBytes, datos, credenciales);
         var poblado = new PobladoDeBots();
 
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la
