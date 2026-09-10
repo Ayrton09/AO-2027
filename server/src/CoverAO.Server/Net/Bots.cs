@@ -1005,10 +1005,18 @@ public sealed class Bot
         }
 
         if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { } templo)
-            return await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct,
-                                      RadioDelAltar, deMuerto: true)
-                   || !sentidos.Vivo;   // no llegó, pero sigue muerto: se vuelve a intentar en la próxima vuelta
+        {
+            if (await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct,
+                                   RadioDelAltar, deMuerto: true)) return true;
+            // NO LLEGÓ. Se sigue intentando —está muerto, no tiene otra cosa que hacer— pero CON UNA PAUSA:
+            // sin ella este camino vuelve enseguida sin haber esperado nada y el ciclo de decisión gira sobre
+            // sí mismo a toda velocidad. Medido con el perfilador: un bot muerto en un mapa desde el que no se
+            // llega a ningún templo dio DOSCIENTAS SESENTA MIL vueltas en un minuto, un hilo entero quemado.
+            await Task.Delay(RebanadaDePausaMs, ct);
+            return !sentidos.Vivo;
+        }
 
+        await Task.Delay(RebanadaDePausaMs, ct);   // idem: PasearAsync también puede volver sin esperar
         return await PasearAsync(transporte, sentidos, cerrada, ct);
     }
 
@@ -1028,9 +1036,21 @@ public sealed class Bot
 
         if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
                                     f => EsPresa((short)f, vidaMaxima, nivel)) is not { } coto) return false;
-        if (coto.Mapa == sentidos.Mapa) return false;   // ya está donde hay: lo que falta es que reaparezcan
 
-        return await IrHastaAsync(transporte, sentidos, coto.Mapa, coto.X, coto.Y, cerrada, ct, RadioDeCazaSuyo);
+        // "HAY PRESAS EN ESTE MAPA" NO ES "HAY PRESAS DONDE ESTOY PARADO". Acá se devolvía false cuando el
+        // coto caía en el mapa propio, dando por hecho que entonces ya estaba bien ubicado — y no: el paseo
+        // no se aleja más de `RadioDeCasa` de donde entró, así que un bot que aparece en una punta de un mapa
+        // de cien por cien se queda en su burbuja de veinte baldosas para siempre. Medido con el perfilador:
+        // cuatro bots con `pasear` al 100% del tiempo y "sin presa a la vista" en TODAS las vueltas, en mapas
+        // que sí tienen criaturas. Se camina hasta donde aparecen, esté en este mapa o en otro.
+        if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, coto.X, coto.Y, cerrada, ct, RadioDeCazaSuyo))
+            return false;
+
+        // Y EL COTO PASA A SER SU ZONA. Sin esto el arreglo se anula solo cuando el viaje es adentro del mismo
+        // mapa: `PasearAsync` sólo re-elige la zona al CAMBIAR de mapa, así que el bot llegaba hasta las
+        // criaturas y el paseo siguiente lo devolvía a la burbuja de donde había salido.
+        _casa = sentidos.Posicion;
+        return true;
     }
 
     /// <summary>Cuándo vio una presa por última vez. Arranca en cero a propósito: un bot que aparece en un
