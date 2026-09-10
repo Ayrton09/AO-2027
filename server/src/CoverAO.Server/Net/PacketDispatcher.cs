@@ -3142,6 +3142,22 @@ public sealed partial class PacketDispatcher
                 _loop.Enqueue(() => GmWarp(session, name, map, x, y));
                 break;
             }
+            // ── 200: ARMAR — comando NUESTRO, no del original ────────────────────────────────────────────
+            // El original llega hasta el 91, así que de ahí para arriba es espacio libre y ningún cliente
+            // clásico lo manda. Va en 240 y NO en 200 a propósito: el 200 lo usa el guardia que comprueba que
+            // un selector desconocido cierre la conexión (GmCommandTests), y ocuparlo lo dejaría sin número. Es una herramienta del ARNÉS: deja pedir "un Guerrero de nivel 45 equipado"
+            // en un solo paquete, en vez de mandarle diez `/CI` y después subirlo a mano. Los flows de combate
+            // hoy dependen de criaturas del mundo, que se mueven y aparecen cuando quieren; con esto miden
+            // contra algo repetible.
+            //
+            // Gateado como cualquier comando de GM: quien no lo es, no llega hasta acá.
+            case 240: // Armar — /ARMAR <clase> <nivel>
+            {
+                byte clase = r.ReadByte();
+                short nivelPedido = r.ReadInteger();
+                _loop.Enqueue(() => GmArmar(session, clase, nivelPedido));
+                break;
+            }
             case 11: // GoToChar — /IRA <name>: teleport the GM to that player
             {
                 string name = r.ReadAsciiString();
@@ -12588,6 +12604,40 @@ public sealed partial class PacketDispatcher
             var inv = p.Inventory[i];
             if (inv.Equipped && data.Obj(inv.ObjIndex)?.IsMount == true) { inv.Equipped = false; p.Inventory[i] = inv; }
         }
+    }
+
+    /// <summary>
+    /// <c>/ARMAR &lt;clase&gt; &lt;nivel&gt;</c> — deja al personaje del GM como uno de esa clase y ese nivel,
+    /// con el mejor equipo que puede usar y pociones. Ver <see cref="PlantillaDeCombate"/>.
+    ///
+    /// <para>Le avisa al cliente TODO lo que cambió —el inventario ranura por ranura, los stats y la
+    /// apariencia— porque cambia media ficha de una: sin eso el jugador se queda mirando el inventario
+    /// anterior y el arnés parece roto.</para>
+    /// </summary>
+    private void GmArmar(ClientSession session, byte clase, short nivel)
+    {
+        var p = session.Player;
+        if (p is null || !RequireGm(session, p)) return;
+        if (clase < 1 || clase > 18) { session.Send(ServerMessages.ConsoleMsg("Clase invalida (1..18).", FuenteInfo)); return; }
+
+        int puestos = PlantillaDeCombate.Armar(p, _data, _leveling, clase, nivel);
+
+        // El equipo puesto tiene que verse: las animaciones salen de lo que quedó equipado.
+        p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
+        for (byte slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
+        {
+            var inv = p.Inventory[slot];
+            if (inv.Equipped && _data.Obj(inv.ObjIndex) is { } o) AplicarBonusDeEquipo(p, o, poniendose: true);
+            session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f,
+                (byte)(inv.IsEmpty ? 0 : 1)));
+        }
+        p.Body = Equipment.BodyFor(p, _data);
+        p.Hp = p.MaxHp; p.Mana = p.MaxMana; p.Stamina = p.MaxStamina;
+
+        session.Send(ServerMessages.UpdateUserStats(p));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
+        session.Send(ServerMessages.ConsoleMsg(
+            $"Armado: clase {GameLimits.NombreDeClase(clase)}, nivel {p.Level}, {puestos} objetos.", FuenteInfo));
     }
 
     private static void UnequipAll(Player p, GameData data)
