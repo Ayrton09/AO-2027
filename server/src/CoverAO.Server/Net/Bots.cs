@@ -451,7 +451,15 @@ public sealed class Bot
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
             int vidaMaxima = sentidos.VidaMaxima;
-            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
+            // LO QUE PAGA, PRIMERO. Elegir siempre lo más cercano dejaba al bot ciego al oro: en la cuna hay
+            // nueve escorpiones que sueltan tres monedas cada uno entre treinta y siete criaturas que no sueltan
+            // nada, así que lo más cercano casi nunca paga. Medido: diez minutos, ocho bots subiendo de nivel
+            // —uno pasó de 6 a 7— y CERO monedas ganadas entre todos, con la herramienta del oficio a
+            // doscientas. Quien necesita plata sale a cazar lo que la da. Si no hay nada que pague al alcance,
+            // vale lo más cercano, como siempre.
+            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora) && PagaOro(ficha));
+            if (presa is not { } rica || rica.Pasos > RadioDeCazaSuyo)
+                presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
             if (presa is { } p && p.Pasos <= RadioDeCazaSuyo && sentidos.Salud >= VuelveAPelear && LeDanGanas())
             {
                 _ultimaPresa = Environment.TickCount64;
@@ -1390,6 +1398,10 @@ public sealed class Bot
     /// <summary>La experiencia de la criatura más grande a la que se anima, según su nivel. Es la forma de
     /// medir "qué tan brava es" que el dato del juego da directo.</summary>
     private static int ExperienciaQueSeAnima(int nivel) => 30 + nivel * 40;
+
+    /// <summary>¿Suelta oro al morir? Es el <c>GiveGLD</c> de su ficha, que el servidor le paga directo al que
+    /// la mata (VB6 MODULO_NPCs.bas:910).</summary>
+    private bool PagaOro(short ficha) => _entorno.Datos.Npc(ficha)?.GiveGld > 0;
 
     /// <summary>Usa el primer objeto del inventario que cumpla la condición. false = no tiene ninguno.</summary>
     private bool Usar(TransporteDeBot transporte, SentidosDelBot sentidos, Func<ObjInfo, bool> sirve)

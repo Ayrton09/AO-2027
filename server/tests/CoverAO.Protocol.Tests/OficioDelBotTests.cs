@@ -67,6 +67,31 @@ public class OficioDelBotTests
         Assert.Contains(sacerdotes, s => Math.Abs(s.X - casa.X) <= 6 && Math.Abs(s.Y - casa.Y) <= 4);
     }
 
+    /// <summary>
+    /// EN LA CUNA HAY LO QUE PAGA, PERO ES MINORÍA. Es la premisa que obliga al bot a PREFERIR la presa que
+    /// suelta oro: si fuera mayoría, elegir lo más cercano ya alcanzaría. Medido con la regla de "lo más
+    /// cercano": diez minutos, ocho bots subiendo de nivel y cero monedas entre todos.
+    /// </summary>
+    [Fact]
+    public void En_la_cuna_lo_que_paga_se_deja_cazar_pero_es_minoria()
+    {
+        if (Mundo() is not { } m) return;
+        if (!m.Datos.MapSpawns.TryGetValue(m.Cuna.Map, out var spawns)) return;
+
+        // Un nivel 3 con la vida de un nivel 3: ya se anima al escorpión.
+        const int Nivel = 3, Vida = 35;
+        bool Presa(int f) => m.Datos.Npc(f) is { Hostile: true, Attackable: true } n
+                             && n.GiveExp <= 30 + Nivel * 40 && n.MaxHit * 5 <= Vida;
+
+        int pagan = spawns.Count(s => Presa(s.NpcIndex) && m.Datos.Npc(s.NpcIndex)!.GiveGld > 0);
+        int noPagan = spawns.Count(s => Presa(s.NpcIndex) && m.Datos.Npc(s.NpcIndex)!.GiveGld == 0);
+
+        Assert.True(pagan > 0, "en la cuna no hay nada que un nivel 3 pueda cazar y que suelte oro");
+        Assert.True(noPagan > pagan,
+            $"lo que paga ({pagan}) ya no es minoría frente a lo que no ({noPagan}): la preferencia por el oro " +
+            "dejaría de hacer falta");
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
