@@ -552,22 +552,31 @@ public sealed class Bot
         if (Environment.TickCount64 < _proximaCompra) return false;
 
         bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
-        bool hayQueVender = sentidos.EnLaMochila(EsVendible) is not null;
+        bool hayQueVender = sentidos.EnLaMochila(EsBotin) is not null;
         bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
         if (!faltanPociones && !hayQueVender && !faltaHerramienta) return false;
 
         // QUÉ MERCADER SIRVE. Si falta la herramienta Y hay con qué pagarla, se busca uno que la venda; si no,
-        // cualquiera. Con el filtro estrecho siempre puesto, el bot con oficio quedaba atado para siempre a los
-        // cuatro que venden herramientas — y como la herramienta cuesta 200 y él tiene 0, tampoco podía vender
-        // botín ni comprar pociones en ningún otro lado: el lazo se cerraba sobre sí mismo.
-        // El precio sale de la DATA, no de un número a mano: la caña vale 0 —o sea que un Pescador sin una
-        // moneda igual puede ir a buscarla— y el hacha y el piquete valen 200, así que esos dos primero tienen
-        // que juntar plata vendiendo, y hasta entonces les sirve cualquier mercader.
+        // uno que le compre lo que trae. Con el filtro de la herramienta siempre puesto, el bot con oficio
+        // quedaba atado para siempre a los cuatro que las venden — y como cuesta 200 y él tiene 0, tampoco
+        // podía vender botín ni comprar pociones en ningún otro lado: el lazo se cerraba sobre sí mismo.
+        // El precio sale de la DATA, no de un número a mano: las tres herramientas valen 200, así que los tres
+        // oficios arrancan igual —primero juntar la plata vendiendo botín, y hasta entonces les sirve
+        // cualquier mercader— y el día que la data cambie el precio esto cambia solo.
         int cuestaLaHerramienta = HerramientaDeSuOficio > 0
             ? (_entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? int.MaxValue) : int.MaxValue;
         short quiero = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta ? HerramientaDeSuOficio : (short)0;
-        bool Sirve(int ficha) => _entorno.Datos.Npc(ficha)?.StockItems is { Count: > 0 } stock
-                                 && (quiero == 0 || stock.Any(s => s.ObjIndex == quiero));
+        // Y SI VA A VENDER, QUE SEA A ALGUIEN QUE LE COMPRE. Cada mercader acepta UN tipo de objeto y rechaza
+        // el resto en silencio (`TipoItems`, VB6 Comercio.bas:123), así que caer en el gremio equivocado es un
+        // viaje entero para volver con lo mismo: el pollo se lo compra el de comidas, no el herrero. Eso lo
+        // sabe cualquiera que jugó una tarde, y sale de la data.
+        bool Sirve(int ficha)
+        {
+            if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
+            if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
+            if (!hayQueVender) return true;
+            return sentidos.EnLaMochila(obj => LeVendeA(mercader.TipoItems, obj)) is not null;
+        }
 
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
         // es 2 ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos. Sin este
@@ -615,7 +624,7 @@ public sealed class Bot
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
         if (!sentidos.Comerciando) { PostergarCompra(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
-        await VenderYComprarAsync(transporte, sentidos, ct);
+        await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
         PostergarCompra();
@@ -632,22 +641,28 @@ public sealed class Bot
             : _rng.Next(EnfriamientoFalloMinS, EnfriamientoFalloMaxS + 1) * 1_000L);
 
     /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar.</summary>
-    private async Task VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    private async Task VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                           short fichaDelMercader, CancellationToken ct)
     {
         for (int i = 0; i < VentasPorVisita && sentidos.Comerciando; i++)
         {
             // La vida primero, también acá dentro: negociar son varios segundos y una criatura no espera a
             // que el bot termine de vender.
             if (!sentidos.Vivo || sentidos.Salud < TomaPocion) return;
-            if (sentidos.EnLaMochila(EsVendible) is not { } item) break;
+            if (sentidos.EnLaMochila(obj => LeVendeA(TipoDeMercader(fichaDelMercader), obj)) is not { } item) break;
             short queOfrezco = sentidos.QueHayEn(item.Ranura);
             transporte.Mandar(Paquete(ClientPacketId.CommerceSell,
                 w => w.WriteByte(item.Ranura).WriteInteger(item.Cantidad)));
             await Task.Delay(_rng.Next(500, 1_200), ct);
-            // SI SIGUE AHÍ, NO SE LO COMPRAN. Cada mercader acepta un tipo de objeto (`TipoItems`) y rechaza
-            // el resto en silencio; sin anotarlo, el bot se lo ofrecería a todos los mercaderes del mundo, una
-            // y otra vez, para siempre.
-            if (sentidos.QueHayEn(item.Ranura) == queOfrezco) _noLoCompran.Add(queOfrezco);
+            // SI SIGUE AHÍ, NO SE LO COMPRAN. El `TipoItems` ya se miró antes de venir, pero el original
+            // rechaza además por otras razones (lo de novato, lo de facción) y siempre en silencio; sin
+            // anotarlo, el bot volvería a ofrecer lo mismo para siempre.
+            //
+            // Se anota contra EL GREMIO, no contra el objeto a secas: el que no le compra el pollo al herrero
+            // se lo compra el de comidas a doce baldosas. Anotado por objeto, un intento contra el mostrador
+            // equivocado lo dejaba invendible para el resto de la vida del bot — y en la cuna el pollo es lo
+            // único que tiene para vender.
+            if (sentidos.QueHayEn(item.Ranura) == queOfrezco) _noLoCompran.Add((TipoDeMercader(fichaDelMercader), queOfrezco));
         }
 
         // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás.
@@ -694,25 +709,54 @@ public sealed class Bot
     private bool LeFaltaLaHerramienta(SentidosDelBot sentidos) =>
         HerramientaDeSuOficio > 0 && sentidos.CuantoTiene(obj => obj == HerramientaDeSuOficio) == 0;
 
-    /// <summary>¿Vale la pena venderlo? Todo lo que NO es poción, comida, bebida ni oro — o sea, lo que
-    /// levantó del piso. Lo que lleva puesto ya lo descarta la mochila.</summary>
-    private bool EsVendible(short obj)
+    /// <summary>¿Es botín? Todo lo que apareció durante la sesión menos las pociones y el oro. Lo que lleva
+    /// puesto ya lo descarta la mochila.</summary>
+    private bool EsBotin(short obj)
     {
         // LO QUE TRAJO DE CASA NO SE VENDE. La regla anterior era por descarte —todo lo que no fuera poción,
         // comida, bebida ni oro— y con eso el bot le ofrecía al mercader su propia arma: medido en los
         // `.chr`, terminaban peleando con el martillo en la mochila. Acá se invierte: se vende lo que
         // APARECIÓ durante la sesión, que es exactamente el botín.
-        if (_traidoDeCasa.Contains(obj) || _noLoCompran.Contains(obj)) return false;
+        if (_traidoDeCasa.Contains(obj)) return false;
         var o = _entorno.Datos.Obj(obj);
-        return o is not null && !o.IsPotion && !o.IsFood && !o.IsDrink && !o.IsGold;
+        // LA COMIDA Y LA BEBIDA DEL BOTÍN SÍ SE VENDEN, y era lo único que tenían. En el Dungeon Newbie —donde
+        // nace TODO personaje— las criaturas que un recién nacido puede matar dan CERO oro: murciélagos,
+        // serpientes, gallinas y gallos. El escorpión da 3 y recién se le anima en nivel 2; el lobo da 50 y
+        // hay que llegar a nivel 10. Pero las siete gallinas y los cinco gallos sueltan un Pollo cada uno con
+        // probabilidad 100 y el Pollo vale 7, y el mercader de Comidas está a doce pasos de la baldosa de
+        // nacimiento, en un mapa que atiende. O sea que los doscientos de la herramienta están ahí, en unos
+        // treinta pollos, y con la comida en la lista de "no se vende" el bot los pisaba y seguía de largo:
+        // el oro cerraba cada corrida en CERO y el oficio no arrancaba nunca.
+        //
+        // Vender el pollo y quedarse las manzanas no es una excepción: lo que come salió del kit de novato y
+        // ya lo protege `_traidoDeCasa`, que son otros números de objeto. Las pociones sí quedan afuera,
+        // porque son de lo que depende para no morirse, y lo de novato porque el mercader no lo acepta
+        // (VB6 Comercio.bas:120) y encima `SalePrice` lo paga a cero.
+        return o is not null && !o.IsPotion && !o.IsGold && !o.IsNewbie;
     }
+
+    /// <summary>¿ESE mercader se lo compra? Tiene que ser botín, el gremio tiene que aceptar ese tipo de
+    /// objeto —o comprar de todo— y no puede estar anotado como ya rechazado por ese mismo gremio.</summary>
+    private bool LeVendeA(int tipoDeMercader, short obj) =>
+        EsBotin(obj)
+        && _entorno.Datos.Obj(obj) is { } o
+        && (tipoDeMercader == o.ObjType || tipoDeMercader == TipoItemsCualquiera)
+        && !_noLoCompran.Contains((tipoDeMercader, obj));
+
+    /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo. Lo traen cinco.</summary>
+    private const int TipoItemsCualquiera = 1000;
 
     /// <summary>Lo que tenía encima al entrar al mundo. Se anota una vez por sesión.</summary>
     private readonly HashSet<short> _traidoDeCasa = new();
 
-    /// <summary>Objetos que ya se probó vender y nadie quiso. Es por bot y sobrevive a la sesión: lo que no le
-    /// compró un mercader tampoco se lo va a comprar el de al lado, porque el motivo es el tipo del objeto.</summary>
-    private readonly HashSet<short> _noLoCompran = new();
+    /// <summary>Lo que ya se probó vender y ese tipo de mercader no quiso. Es por bot y sobrevive a la
+    /// sesión: lo que no le compra un herrero tampoco se lo compra otro herrero, porque los dos miran el
+    /// mismo <c>TipoItems</c>.</summary>
+    private readonly HashSet<(int TipoDeMercader, short Obj)> _noLoCompran = new();
+
+    /// <summary>Qué acepta comprar ese mercader (<c>TipoItems</c>). Es lo que hace que el rechazo se anote
+    /// contra el gremio y no contra el objeto.</summary>
+    private int TipoDeMercader(short ficha) => _entorno.Datos.Npc(ficha)?.TipoItems ?? 0;
 
     /// <summary>Cuándo puede volver a una tienda.</summary>
     private long _proximaCompra;
