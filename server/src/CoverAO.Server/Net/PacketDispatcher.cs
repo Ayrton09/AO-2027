@@ -10917,10 +10917,6 @@ public sealed partial class PacketDispatcher
         }
     }
 
-    /// <summary>El precio que ve y paga ESTE comprador — VB6 <c>Descuento</c> (Comercio.bas:244):
-    /// <c>Valor / (1 + Comerciar/100)</c>, o sea que con la skill al máximo se paga la mitad. Vale para el
-    /// cobro (Comercio.bas:89) y para la vidriera (Comercio.bas:268): el original muestra el precio YA con el
-    /// descuento, así que mostrar el de lista y cobrar otro no es una opción.</summary>
     /// <summary>El precio de lista de un objeto: su <c>Valor</c>, derivado en cada uso.
     ///
     /// <para>Se deriva y no se guarda, que es lo que hace el original (<c>Comercio.bas:89</c>). Guardarlo en
