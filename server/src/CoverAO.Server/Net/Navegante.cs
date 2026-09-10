@@ -33,6 +33,10 @@ public sealed class Navegante
     /// lado; más que eso es un viaje que un personaje de nivel uno no haría.</summary>
     private const int TopeDeMapas = 5;
 
+    /// <summary>A cuántas baldosas de un NPC alcanza con quedar parado para poder hablarle: el mostrador
+    /// atiende a tres (VB6 <c>Distancia</c>, Manhattan) y el doble clic no pide línea de vista.</summary>
+    private const int RadioDeMostrador = 3;
+
     private readonly GameData _datos;
 
     /// <summary>Por mapa, sus salidas: a qué mapa llevan y en qué baldosa se pisan.</summary>
@@ -139,14 +143,23 @@ public sealed class Navegante
     /// dónde está el herrero de su ciudad porque lo vio una vez.</para>
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos)? DondeHay(int mapaActual, (byte X, byte Y) desde,
-                                                           Func<int, bool> sirve)
+                                                           Func<int, bool> sirve, Func<int, bool>? mapaSirve = null)
     {
+        // EL MAPA TAMBIÉN TIENE QUE SERVIR. No alcanza con que el NPC sea el que se busca: un mercader no le
+        // vende a un ciudadano en un mapa cuyo `battleMode` no es 2 ni 3 (VB6 Protocol.bas:5205, portado igual
+        // en `MercaderMeAtiende`). Sin este filtro el bot viajaba, determinista, a Nix —el mapa vecino, que
+        // tiene los tres vendedores de herramientas y battleMode 1— y ahí NADIE lo atendía. Medido: de los 863
+        // mapas del mundo sólo 55 tienen battleMode 2 o 3, y de ésos 23 tienen mercader.
+        if (mapaSirve is not null && !mapaSirve(mapaActual)) { /* el propio no sirve: se busca afuera */ }
+        else
         // EN EL MAPA PROPIO SE EXIGE QUE SE PUEDA LLEGAR CAMINANDO. Muchos NPC están adentro de un edificio, y
         // devolver el primero que cumple sin mirar el camino mandaba al bot a una puerta que no existe: medido,
         // el vendedor de cañas del mapa 34 está en una baldosa libre y SIN CAMINO desde afuera, así que el
         // viaje fallaba siempre y el bot no compró nunca su herramienta. Se prueban todos los del mapa y se
         // elige el más cercano AL QUE SE LLEGA.
-        if (EnElMapa(mapaActual, desde, sirve) is { } aca) return (mapaActual, aca.X, aca.Y, 0);
+        {
+            if (EnElMapa(mapaActual, desde, sirve) is { } aca) return (mapaActual, aca.X, aca.Y, 0);
+        }
 
         // Mismo recorrido que PuertaHacia, pero mirando qué hay en cada mapa que se alcanza.
         var visto = new HashSet<int> { mapaActual };
@@ -157,6 +170,13 @@ public sealed class Navegante
         while (cola.Count > 0)
         {
             var (mapa, saltos) = cola.Dequeue();
+            if (mapaSirve is not null && !mapaSirve(mapa))
+            {
+                if (saltos < TopeDeMapas)
+                    foreach (var (destino, _, _) in Salidas(mapa))
+                        if (visto.Add(destino)) cola.Enqueue((destino, saltos + 1));
+                continue;
+            }
             // En un mapa donde todavía no está no se puede verificar el camino —no se sabe por dónde va a
             // entrar—, así que ahí vale el primero. Al llegar, el bot vuelve a preguntar desde su posición y
             // ahí sí se exige camino.
@@ -195,11 +215,16 @@ public sealed class Navegante
             for (int y = Math.Max(GameLimits.MinYBorder, desde.Y - radio); y <= Math.Min(GameLimits.MaxYBorder, desde.Y + radio); y++)
                 if (_datos.IsWater(mapa, x, y)) Probar(x, y);
         }
+        // El agua no se pisa, así que la baldosa del recurso nunca tiene camino DIRECTO: alcanza con poder
+        // pararse al lado. Lo mismo vale para un árbol o un yacimiento, que también ocupan su baldosa.
         else if (esRecurso is not null && _datos.MapObjects.TryGetValue(mapa, out var objetos))
         {
             foreach (var o in objetos)
                 if (esRecurso(o.ObjIndex)) Probar(o.X, o.Y);
         }
+        // Y que se pueda LLEGAR: sin esto el bot caminaba hacia un río del otro lado de una pared y gastaba
+        // los doce clics contra el aire.
+        if (mejor is { } m && HayComoLlegar(mapa, desde, m.Item1) is null) return null;
         return mejor;
     }
 
@@ -248,29 +273,48 @@ public sealed class Navegante
                 // cada mapa tiene UNO solo de cada oficio, el que caía del lado inalcanzable dejaba al bot sin
                 // herramienta para siempre. Medido sobre el mundo: de los ocho que venden la caña se llega a
                 // tres, y de los doce que venden el hacha a seis.
-                if (Muestras.Any(m => HayComoLlegar(mapa, m, donde) is not null)) return donde;
+                if (Muestras.Any(m => HayComoLlegar(mapa, m, donde, RadioDeMostrador) is not null)) return donde;
                 continue;
             }
             int pasos = Math.Abs(s.X - d.X) + Math.Abs(s.Y - d.Y);
             if (pasos >= mejorPasos) continue;
-            if (HayComoLlegar(mapa, d, donde) is null) continue;
+            if (HayComoLlegar(mapa, d, donde, RadioDeMostrador) is null) continue;
             mejor = donde;
             mejorPasos = pasos;
         }
         return mejor;
     }
 
-    /// <summary>Camino hasta el objetivo o hasta una baldosa pegada a él. Un NPC ocupa su baldosa, así que
-    /// "llegar" es quedar al lado.</summary>
-    public IReadOnlyList<(byte X, byte Y)>? HayComoLlegar(int mapa, (byte X, byte Y) desde, (byte X, byte Y) objetivo)
+    /// <summary>
+    /// Camino hasta el objetivo, o hasta la baldosa alcanzable MÁS CERCANA a él dentro de
+    /// <paramref name="radio"/>. Devuelve null si no hay ninguna.
+    ///
+    /// <para><b>Por qué un radio y no la baldosa exacta.</b> Un NPC ocupa la suya, así que ahí no se puede
+    /// parar. Y más importante: al servidor no le hace falta que estés al lado ni que lo VEAS — el mostrador
+    /// atiende a tres baldosas contadas en Manhattan (VB6 <c>Distancia</c>) y el doble clic sólo exige que la
+    /// baldosa caiga en la ventana de visión. No hay chequeo de línea de vista. O sea que se le puede comprar
+    /// a un mercader que está adentro de un edificio parándose del otro lado de la pared, que es justo lo que
+    /// hacía falta: medido sobre los mapas del mundo, la mayoría de los mercaderes están encerrados y el bot
+    /// que exigía llegar a su baldosa se pasaba la sesión viajando de uno a otro sin poder comprarle a
+    /// ninguno.</para>
+    /// </summary>
+    public IReadOnlyList<(byte X, byte Y)>? HayComoLlegar(int mapa, (byte X, byte Y) desde,
+                                                          (byte X, byte Y) objetivo, int radio = 1)
     {
         if (Camino(mapa, desde, objetivo) is { } directo) return directo;
-        for (byte rumbo = 1; rumbo <= 4; rumbo++)
+        // De cerca hacia afuera: la primera baldosa alcanzable es la mejor parada.
+        for (int d = 1; d <= radio; d++)
         {
-            var (dx, dy) = SentidosDelBot.Paso(rumbo);
-            int nx = objetivo.X + dx, ny = objetivo.Y + dy;
-            if (!SePuedePisar(mapa, nx, ny)) continue;
-            if (Camino(mapa, desde, ((byte)nx, (byte)ny)) is { } vecino) return vecino;
+            for (int dx = -d; dx <= d; dx++)
+            {
+                int resto = d - Math.Abs(dx);
+                foreach (int dy in resto == 0 ? new[] { 0 } : new[] { -resto, resto })
+                {
+                    int nx = objetivo.X + dx, ny = objetivo.Y + dy;
+                    if (!SePuedePisar(mapa, nx, ny)) continue;
+                    if (Camino(mapa, desde, ((byte)nx, (byte)ny)) is { } cerca) return cerca;
+                }
+            }
         }
         return null;
     }

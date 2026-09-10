@@ -131,6 +131,10 @@ public sealed class Bot
     /// cuánto tarda cada una, y cuánto se descansa entre tandas. Trabajar sin parar toda la sesión no lo hace
     /// nadie, y además el servidor cobra energía por cada unidad.</summary>
     private const int RadioDeFaena = 25, FaenasPorTanda = 12;
+
+    /// <summary>Baldosas (Manhattan) a las que hay que estar del árbol o del yacimiento para que el clic
+    /// cuente. El agua no lleva tope; estos dos sí (HandleWorkLeftClick: "Estás demasiado lejos").</summary>
+    private const int DistanciaParaFaenar = 2;
     private const int FaenaMinMs = 1_100, FaenaMaxMs = 2_000;
     private const int EnfriamientoFaenaMinS = 60, EnfriamientoFaenaMaxS = 240;
 
@@ -157,8 +161,16 @@ public sealed class Bot
     /// se coma la sesión vaciando la mochila de a un objeto por vez.</summary>
     private const int VentasPorVisita = 6;
 
+    /// <summary>A cuántas baldosas del mercader alcanza con pararse: el servidor atiende a tres y NO exige
+    /// línea de vista, así que se le compra a través de la pared del negocio.</summary>
+    private const int RadioDelMostrador = 3;
+
     /// <summary>Minutos entre una visita a la tienda y la siguiente.</summary>
     private const int EnfriamientoCompraMinM = 5, EnfriamientoCompraMaxM = 15;
+
+    /// <summary>Lo que se espera cuando la salida a comprar FRACASA: segundos, no minutos.</summary>
+    private const int EnfriamientoFalloMinS = 45, EnfriamientoFalloMaxS = 120;
+
 
     /// <summary>Pasos que se aleja para levantar algo del piso. Más lejos que esto, no vale la pena.</summary>
     private const int RadioDeBotin = 8;
@@ -344,6 +356,7 @@ public sealed class Bot
         _casa = null;            // la zona se elige de nuevo en cada vida: pudo entrar en otro lado
         _pasoTrabado = false;
         _traidoDeCasa.Clear();
+        _nadaQueHacerAca.Clear();   // las baldosas descartadas eran de la vida anterior
         foreach (byte ranura in sentidos.RanurasOcupadas()) _traidoDeCasa.Add(sentidos.QueHayEn(ranura));
         await Task.Delay(_rng.Next(MirarAlrededorMs, MirarAlrededorMs * 4), ct);
         // El modo combate es un interruptor y hay que prenderlo: sin él, el servidor contesta el aviso 102 y no
@@ -489,7 +502,17 @@ public sealed class Bot
         // Un jugador no reparte de a uno cada vez que sube: junta y gasta. Y no los mete todos en la misma.
         var reparto = new byte[GameLimits.NumSkills + 1];
         int gastados = 0;
-        for (int i = 0; i < libres; i++)
+        // LO PROPIO PRIMERO. Repartir los diez puntos al azar entre veintisiete skills deja al Pescador con
+        // menos de un tercio de chance de tocar Pesca alguna vez, y sin su skill el oficio rinde casi nada.
+        // Un jugador que eligió una clase de oficio pone ahí sus primeros puntos.
+        byte propia = SkillDeSuOficio;
+        if (propia > 0 && libres > 0)
+        {
+            byte suyos = (byte)Math.Min(libres, Math.Max(1, libres / 2));
+            reparto[propia] = suyos;
+            gastados = suyos;
+        }
+        for (int i = gastados; i < libres; i++)
         {
             int skill = _rng.Next(1, GameLimits.NumSkills + 1);
             if (reparto[skill] == byte.MaxValue) continue;
@@ -533,12 +556,27 @@ public sealed class Bot
         bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
         if (!faltanPociones && !hayQueVender && !faltaHerramienta) return false;
 
-        // Qué mercader sirve: si lo que falta es la herramienta del oficio, tiene que ser uno que la venda.
-        short quiero = faltaHerramienta ? HerramientaDeSuOficio : (short)0;
+        // QUÉ MERCADER SIRVE. Si falta la herramienta Y hay con qué pagarla, se busca uno que la venda; si no,
+        // cualquiera. Con el filtro estrecho siempre puesto, el bot con oficio quedaba atado para siempre a los
+        // cuatro que venden herramientas — y como la herramienta cuesta 200 y él tiene 0, tampoco podía vender
+        // botín ni comprar pociones en ningún otro lado: el lazo se cerraba sobre sí mismo.
+        // El precio sale de la DATA, no de un número a mano: la caña vale 0 —o sea que un Pescador sin una
+        // moneda igual puede ir a buscarla— y el hacha y el piquete valen 200, así que esos dos primero tienen
+        // que juntar plata vendiendo, y hasta entonces les sirve cualquier mercader.
+        int cuestaLaHerramienta = HerramientaDeSuOficio > 0
+            ? (_entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? int.MaxValue) : int.MaxValue;
+        short quiero = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta ? HerramientaDeSuOficio : (short)0;
         bool Sirve(int ficha) => _entorno.Datos.Npc(ficha)?.StockItems is { Count: > 0 } stock
                                  && (quiero == 0 || stock.Any(s => s.ObjIndex == quiero));
 
-        var tienda = sentidos.MasCercano(ficha => Sirve(ficha));
+        // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
+        // es 2 ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos. Sin este
+        // filtro el viaje terminaba siempre en el mapa vecino —que tiene los tres vendedores de herramientas y
+        // battleMode 1— donde nadie lo atendía. De los 863 mapas del mundo, 55 tienen battleMode 2 o 3 y 23 de
+        // ésos tienen mercader: destinos sobran.
+        bool MapaAtiende(int mapa) => _entorno.Datos.MapBattleMode(mapa) is 2 or 3;
+
+        var tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         // NO HAY NINGUNO A LA VISTA: se viaja. Se intenta DOS veces porque el primer destino se elige sin
         // conocer el mapa de llegada —desde otro mapa no se puede saber por dónde se va a entrar— y muchos
         // mercaderes están adentro de un edificio al que no se llega caminando: medido, en el mapa donde nacen
@@ -546,12 +584,12 @@ public sealed class Bot
         // segunda búsqueda sí exige camino y elige uno al que se llega.
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve) is not { } lugar)
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende) is not { } lugar)
             { PostergarCompra(); return intento > 0; }
-            if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct)
+            if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador)
                 && sentidos.Mapa != lugar.Mapa)
             { PostergarCompra(); return true; }   // ni siquiera se llegó al mapa
-            tienda = sentidos.MasCercano(ficha => Sirve(ficha));
+            tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         }
         if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { PostergarCompra(); return true; }
         var t = tienda.Value;
@@ -560,15 +598,19 @@ public sealed class Bot
         // baldosas (VB6 HandleCommerceStart) y el paso codicioso se traba con cualquier mesa en el medio, que
         // adentro de una tienda es lo normal.
         if (sentidos.Donde(t.Quien.CharIndex) is { } donde
-            && Math.Abs(donde.X - sentidos.Posicion.X) + Math.Abs(donde.Y - sentidos.Posicion.Y) > 2
-            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, donde.X, donde.Y, cerrada, ct))
+            && Math.Abs(donde.X - sentidos.Posicion.X) + Math.Abs(donde.Y - sentidos.Posicion.Y) > RadioDelMostrador
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, donde.X, donde.Y, cerrada, ct, RadioDelMostrador))
         { PostergarCompra(); return true; }
 
         if (sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
-        // El mercader es el que CLICKEASTE, no el que tenés enfrente: el servidor abre la tienda contra el NPC
-        // targeteado, así que el clic va primero — igual que en el cliente.
-        transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
-        transporte.Mandar(Paquete(ClientPacketId.CommerceStart, _ => { }));
+        // SE ABRE CON DOBLE CLIC, no con clic + CommerceStart.
+        //
+        // El `LeftClick` del servidor sondea PRIMERO la baldosa de ABAJO del punto clickeado, y `PlayerAt` no
+        // excluye al que clickea: cuando el bot quedaba parado justo debajo del mercader —que es donde lo deja
+        // el camino más corto— se targeteaba A SÍ MISMO, `TargetNpc` quedaba en 0 y `HandleCommerceStart` salía
+        // MUDO. Por eso en las corridas se veía llegar al bot y no abrirse nada. `HandleDoubleClick` resuelve
+        // el NPC de la baldosa directo y abre la tienda él mismo.
+        transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
 
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
         if (!sentidos.Comerciando) { PostergarCompra(); return true; }   // no atendió (facción, distancia, o no era mercader)
@@ -580,8 +622,14 @@ public sealed class Bot
         return true;
     }
 
-    private void PostergarCompra() =>
-        _proximaCompra = Environment.TickCount64 + _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L;
+    /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero
+    /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres
+    /// segundos se comía el cupo de toda la sesión, y la corrida terminaba con cero compras sin que el bot
+    /// hubiera llegado a intentarlo más de una vez.</summary>
+    private void PostergarCompra(bool exito = false) =>
+        _proximaCompra = Environment.TickCount64 + (exito
+            ? _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L
+            : _rng.Next(EnfriamientoFalloMinS, EnfriamientoFalloMaxS + 1) * 1_000L);
 
     /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar.</summary>
     private async Task VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
@@ -615,7 +663,9 @@ public sealed class Bot
 
         // No se gasta hasta el último cobre: dejar algo encima es lo que hace cualquiera, y además el precio
         // que ve el bot es el del mostrador, que puede no ser exactamente lo que termina cobrando el servidor.
-        int puede = oferta.Precio > 0 ? (int)(sentidos.Oro * 0.8 / oferta.Precio) : 0;
+        // Precio 0 = gratis: se lleva lo que necesita. Con la cuenta de abajo un objeto gratis daba "puedo
+        // comprar cero", que es justo al revés.
+        int puede = oferta.Precio > 0 ? (int)(sentidos.Oro * 0.8 / oferta.Precio) : faltan;
         int cuantas = Math.Clamp(Math.Min(faltan, puede), 0, short.MaxValue);
         if (cuantas <= 0) return;
 
@@ -675,7 +725,7 @@ public sealed class Bot
                                                 CancellationToken ct)
     {
         if (sentidos.BotinMasCercano(SePuedeLevantar) is not { } botin || botin.Pasos > RadioDeBotin
-            || _nadaQueHacerAca.Contains(botin.Donde)) return false;
+            || _nadaQueHacerAca.Contains((sentidos.Mapa, botin.Donde.X, botin.Donde.Y))) return false;
 
         for (int intentos = 0; intentos < RadioDeBotin * 2 && !cerrada.IsCompleted; intentos++)
         {
@@ -688,7 +738,7 @@ public sealed class Bot
                 await Task.Delay(_rng.Next(400, 900), ct);
                 // Si sigue ahí no se puede levantar (mochila llena, o algo que no es botín). Se marca la
                 // baldosa: sin esto el bot vuelve a caminar hasta ella y a agacharse, para siempre.
-                if (sentidos.EnElPiso(botin.Donde) == queHabia) _nadaQueHacerAca.Add(botin.Donde);
+                if (sentidos.EnElPiso(botin.Donde) == queHabia) _nadaQueHacerAca.Add((sentidos.Mapa, botin.Donde.X, botin.Donde.Y));
                 return true;
             }
             if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) is var r && r != Paso.Dado)
@@ -713,7 +763,7 @@ public sealed class Bot
     }
 
     /// <summary>Baldosas donde ya se agachó y no levantó nada.</summary>
-    private readonly HashSet<(byte X, byte Y)> _nadaQueHacerAca = new();
+    private readonly HashSet<(short Mapa, byte X, byte Y)> _nadaQueHacerAca = new();
 
     /// <summary>
     /// TRABAJAR EL OFICIO: pescar, talar o minar. Devuelve si se ocupó de esto.
@@ -757,14 +807,31 @@ public sealed class Bot
             await Task.Delay(_rng.Next(400, 900), ct);
         }
 
-        // Acercarse hasta tener la baldosa a tiro del clic (la ventana de visión del servidor, con margen).
+        // CUÁNTO HAY QUE ACERCARSE, y no es lo mismo para los tres.
+        //
+        // Pescar no tiene tope de distancia: al servidor le alcanza con que la baldosa tenga agua y caiga en
+        // la ventana de visión. Pero MINAR y TALAR exigen DOS baldosas contadas en Manhattan —"Estás demasiado
+        // lejos"— y el bot se acercaba a seis: para el Minero y el Leñador el clic se rechazaba SIEMPRE, y las
+        // doce faenas de la tanda se perdían contra ese aviso.
+        int cerca = agua ? AlcanceHechizoX : DistanciaParaFaenar;
         for (int i = 0; i < RadioDeFaena * 2 && !cerrada.IsCompleted; i++)
         {
             var (x, y) = sentidos.Posicion;
             int dx = punto.Value.Donde.X - x, dy = punto.Value.Donde.Y - y;
-            if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY) break;
-            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) return true;
+            bool aTiro = agua
+                ? Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
+                : Math.Abs(dx) + Math.Abs(dy) <= cerca;
+            if (aTiro) break;
+            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) { PostergarFaena(); return true; }
         }
+
+        // ¿QUEDÓ A TIRO? El acercamiento corta por intentos, no por haber llegado: si una pared lo dejó lejos,
+        // los doce clics caen fuera de la ventana de visión del servidor y se pierden contra un PosUpdate mudo.
+        var (fx, fy) = sentidos.Posicion;
+        bool llego = agua
+            ? Math.Abs(punto.Value.Donde.X - fx) <= AlcanceHechizoX && Math.Abs(punto.Value.Donde.Y - fy) <= AlcanceHechizoY
+            : Math.Abs(punto.Value.Donde.X - fx) + Math.Abs(punto.Value.Donde.Y - fy) <= DistanciaParaFaenar;
+        if (!llego) { PostergarFaena(); return true; }
 
         for (int golpe = 0; golpe < FaenasPorTanda && !cerrada.IsCompleted; golpe++)
         {
@@ -965,7 +1032,7 @@ public sealed class Bot
     /// </summary>
     private async Task<bool> IrHastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                           int mapaDestino, byte destinoX, byte destinoY,
-                                          Task cerrada, CancellationToken ct)
+                                          Task cerrada, CancellationToken ct, int tolerancia = 1)
     {
         for (int tramos = 0; tramos < TramosPorViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
@@ -982,9 +1049,9 @@ public sealed class Bot
 
             // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y
             // el destino típico es justamente la baldosa donde está parado un mercader.
-            if (esLaMeta && Math.Abs(desde.X - destinoX) + Math.Abs(desde.Y - destinoY) <= 1) return true;
+            if (esLaMeta && Math.Abs(desde.X - destinoX) + Math.Abs(desde.Y - destinoY) <= tolerancia) return true;
 
-            var camino = esLaMeta ? _entorno.Mapas.HayComoLlegar(mapa, desde, meta)
+            var camino = esLaMeta ? _entorno.Mapas.HayComoLlegar(mapa, desde, meta, tolerancia)
                                    : _entorno.Mapas.Camino(mapa, desde, meta);
             if (camino is null || camino.Count == 0) return false;
 
@@ -1003,7 +1070,7 @@ public sealed class Bot
             }
         }
         return sentidos.Mapa == mapaDestino
-            && Math.Abs(sentidos.Posicion.X - destinoX) + Math.Abs(sentidos.Posicion.Y - destinoY) <= 1;
+            && Math.Abs(sentidos.Posicion.X - destinoX) + Math.Abs(sentidos.Posicion.Y - destinoY) <= tolerancia;
     }
 
     /// <summary>Cómo salió un paso. El <see cref="Urgencia"/> es lo importante: quiere decir "soltá lo que

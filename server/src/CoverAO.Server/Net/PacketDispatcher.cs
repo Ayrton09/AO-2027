@@ -9431,7 +9431,18 @@ public sealed partial class PacketDispatcher
     {
         var (tool, resource, name) = OficioDe(skill);
         if (tool == 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No sabes hacer ese trabajo.", FuenteInfo)); return false; }
-        if (p.Skills[skill] <= 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No tienes esa habilidad.", FuenteInfo)); return false; }
+        // ACÁ HABÍA UNA COMPUERTA INVENTADA: `if (p.Skills[skill] <= 0) → "No tienes esa habilidad."`.
+        //
+        // El original NO la tiene. `DoPescar` (Trabajo.bas:1336), `DoTalar` (:1859) y `DoMineria` (:1990) leen
+        // la skill y tiran la suerte directo: `Suerte = Int(-0.00125*Skill*Skill - 0.3*Skill + 49)`, que con la
+        // skill en CERO da 49 — o sea 6 de 49 de sacar algo, poco pero jugable. Es más: el único chequeo de
+        // skill mínima que hay en esa función está COMENTADO en la fuente (Trabajo.bas:1401).
+        //
+        // Y no era un detalle: NINGÚN personaje nace con skills, así que esto le negaba el oficio a cualquier
+        // jugador de nivel uno con la herramienta puesta —humano incluido—. El Pescador no podía pescar.
+        // La suerte con skill 0 ya hace que rinda poco; el que quiera pescar mejor sube la skill, como en el
+        // original.
+
         // La herramienta se acepta por el OFICIO que declara, no por un índice único: la pesca tiene dos
         // aparejos y exigir sólo la caña dejaba la red sin hacer nada.
         var puesta = Equipment.EquippedOfCategory(p, _data, 6);
@@ -10906,7 +10917,12 @@ public sealed partial class PacketDispatcher
     {
         if (p is null) return precioDeLista;
         double desc = 1 + p.Skills[GameLimits.SkillComerciar] / 100.0;
-        return Math.Max(1, (long)(precioDeLista / desc + 0.5));   // VB6 CLng(... + 0.5)
+        // SIN PISO. Acá había un `Math.Max(1, ...)` que el original no tiene (Comercio.bas:89 es
+        // `Precio = CLng(Valor / Descuento * Cantidad + 0.5)` y nada más), y no era inocuo: los objetos de
+        // Valor 0 —entre ellos LA CAÑA DE PESCA— pasaban a costar una moneda, y un personaje recién nacido
+        // tiene cero. O sea que el piso le cerraba el oficio de pesca a cualquiera que empezara de cero, que
+        // es justamente para quien ese objeto vale 0.
+        return (long)(precioDeLista / desc + 0.5);   // VB6 CLng(... + 0.5)
     }
 
     /// <summary><c>SND_ORO2</c> (Declares.bas:558): el tintineo que el original tira al área al soltar oro.</summary>
@@ -11479,7 +11495,6 @@ public sealed partial class PacketDispatcher
                     // por el arma (:1971). Las otras cuatro las pone en 0 en su estructura y no avisa a nadie —
                     // rareza de la fuente que se porta igual, porque el `CharacterCreate` de más abajo ya manda
                     // el estado real y quien llegue después las ve bien de todos modos.
-                    p.WeaponAura = 0; p.BodyAura = 0; p.ShieldAura = 0; p.HelmetAura = 0; p.RingAura = 0;
                     _world.BroadcastToObservers(p.Pos, ServerMessages.AuraToChar(p.CharIndex, 0, 1));
                     p.Gender = p.Gender == 2 ? (byte)1 : (byte)2;   // eGenero: Hombre=1, Mujer=2
                     p.Head = p.OrigHead = CabezaAlAzar(p.Race, p.Gender);   // ídem: la cabeza VIVA también
@@ -12465,6 +12480,39 @@ public sealed partial class PacketDispatcher
 
     private const int CarroMinero = 880;
 
+    /// <summary>La ranura donde lleva PUESTO un Pendiente del Sacrificio, o null. El efecto lo declara el
+    /// objeto (<c>EfectoMagico = 15</c>), no una lista de números: si mañana la data le pone el efecto a otro
+    /// objeto, funciona igual.</summary>
+    private static byte? PendienteDeSacrificioEquipado(Player p, GameData data)
+    {
+        for (byte slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
+        {
+            var inv = p.Inventory[slot];
+            if (!inv.Equipped || inv.ObjIndex <= 0) continue;
+            if (data.Obj(inv.ObjIndex) is { EfectoMagico: EfectoSacrificio }) return slot;
+        }
+        return null;
+    }
+
+    /// <summary>`eMagicType.Sacrificio` (VB6 Declares.bas:872).</summary>
+    private const int EfectoSacrificio = 15;
+
+    /// <summary>Las tres cargas del pendiente, de entera a gastada. Al usar la última, el objeto se
+    /// termina.</summary>
+    private static readonly short[] CargasDelPendiente = { 1081, 1498, 1499 };
+
+    /// <summary>Gasta una carga: el 3/3 pasa a 2/3, el 2/3 a 1/3, y el 1/3 se consume. La cantidad no se toca
+    /// —el pendiente es de a uno— y queda desequipado, porque <see cref="UnequipAll"/> corre justo después.</summary>
+    private static void GastarPendienteDeSacrificio(Player p, byte slot)
+    {
+        var inv = p.Inventory[slot];
+        int carga = Array.IndexOf(CargasDelPendiente, inv.ObjIndex);
+        // Un objeto con el efecto que no es de la cadena conocida se gasta entero: es lo prudente ante una data
+        // que agregue otro pendiente sin decir cuántas cargas tiene.
+        if (carga < 0 || carga == CargasDelPendiente.Length - 1) p.Inventory[slot] = default;
+        else p.Inventory[slot] = inv with { ObjIndex = CargasDelPendiente[carga + 1], Equipped = false };
+    }
+
     private static void DropInventoryOnDeath(World world, GameData data, Player p)
     {
         if (!data.IsPkMap(p.Pos.Map)) return;                       // MapInfo(map).Pk = False → no se cae nada
@@ -12556,6 +12604,12 @@ public sealed partial class PacketDispatcher
             inv.Equipped = false; p.Inventory[slot] = inv;
         }
         p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
+        // Y LAS CINCO AURAS, que son parte de lo que se saca. El original las apaga junto a cada `Desequipar`
+        // adentro de `UserDie` (Modulo_UsUaRiOs.bas:1347-1388) y acá sólo se hacía en el camino de la poción de
+        // cambio de sexo: al MORIR se caía el objeto que brillaba y el brillo quedaba pegado al personaje,
+        // porque el `CharacterChange` que se manda después no lleva auras. Lo reportó el tester ("el brillo lo
+        // seguía teniendo después de revivir, y el ítem no lo tenía").
+        p.WeaponAura = 0; p.BodyAura = 0; p.ShieldAura = 0; p.HelmetAura = 0; p.RingAura = 0;
     }
 
     /// <summary>
@@ -12625,8 +12679,24 @@ public sealed partial class PacketDispatcher
             SacarLaMontura(p, data);
             p.Connection?.Send(ServerMessages.MontateToggle());
         }
-        DropInventoryOnDeath(world, data, p);   // VB6 UserDie:1332 TirarTodo — ANTES de desequipar
+        // EL PENDIENTE DEL SACRIFICIO. Equipado, el inventario NO se cae: se gasta una carga del pendiente y
+        // el resto de las cosas quedan donde estaban.
+        //
+        // El efecto es el `EfectoMagico = 15` del obj.dat, que en el enum del original se llama `Sacrificio`
+        // (Declares.bas:872) y que el servidor VB6 declara Y NO LEE EN NINGÚN LADO — es data muerta, como el
+        // `desencantar` del Hechizos.dat. O sea que esto es una REGLA DE LA CASA, no una omisión del port: se
+        // agrega por decisión del autor, sobre el pedido del tester, y con la mecánica que la propia data
+        // sostiene. Las tres cargas salen de los nombres —3/3, 2/3, 1/3— y de un hecho que las confirma: el
+        // ÚNICO que sueltan las criaturas es el 3/3 (Dragón Legendario, Rey Dragón, Gran Dragón Negro, Golem
+        // de oro, Grinch); el 2/3 y el 1/3 no los da NADIE, así que sólo pueden existir como estados gastados.
+        if (PendienteDeSacrificioEquipado(p, data) is { } ranuraPendiente)
+            GastarPendienteDeSacrificio(p, ranuraPendiente);
+        else
+            DropInventoryOnDeath(world, data, p);   // VB6 UserDie:1332 TirarTodo — ANTES de desequipar
         UnequipAll(p, data);                    // VB6 UserDie:1343-1390 — desequipa todo, siempre
+        // El área tiene que enterarse de que se apagaron las auras: el `CharacterChange` de abajo no las
+        // lleva. El original manda este mismo aviso, y uno solo, por el arma (Modulo_UsUaRiOs.bas:1359).
+        world.BroadcastToObservers(p.Pos, ServerMessages.AuraToChar(p.CharIndex, 0, 1));
 
         // Borrar el diálogo del muerto ANTES de cambiarle la apariencia (VB6 UserDie:1248): si dijo algo
         // justo antes de morir, la frase le quedaba flotando sobre el cadáver.
