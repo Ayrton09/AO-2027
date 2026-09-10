@@ -1066,11 +1066,33 @@ public sealed class Bot
         // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
         // "hay al menos una presa", sin mirar si soltaba oro — y así la única serpiente del mapa 1 alcanzaba para
         // mandar ahí a cinco bots, que se la repartieron durante media hora sin ganar una moneda.
-        var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
-                                              f => EsPresa((short)f, vidaMaxima, nivel) && PagaOro((short)f))
-                      ?? _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
-                                                 f => EsPresa((short)f, vidaMaxima, nivel));
+        Func<int, bool> sirve = f => EsPresa((short)f, vidaMaxima, nivel) && PagaOro((short)f);
+        var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve);
+        if (hallado is null)
+        {
+            sirve = f => EsPresa((short)f, vidaMaxima, nivel);
+            hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve);
+        }
         if (hallado is not { } coto) return false;
+
+        // REPARTIRSE. El navegante devuelve siempre el MISMO spawn —el más cercano— así que todos los bots
+        // que salían a buscar coto iban al mismo punto. Medido: desde la cuna y desde el mapa 1 elegía (67,25)
+        // para cualquiera, y cuatro bots quedaron amontonados a dos baldosas uno del otro, lejos de los
+        // escorpiones — que no caminan (`Movement=0`) y están repartidos en tres lugares del mapa. Adentro del
+        // mapa donde está, el bot elige al azar entre los spawns que le sirven y a los que se llega; cada bot
+        // tiene su propio azar, así que se reparten solos. Para otro mapa vale el que eligió el navegante, que
+        // ya verificó que se llega: al entrar, la próxima búsqueda reparte.
+        var destino = (X: coto.X, Y: coto.Y);
+        if (coto.Mapa == sentidos.Mapa && _entorno.Datos.MapSpawns.TryGetValue(coto.Mapa, out var spawns))
+        {
+            var opciones = spawns.Where(sp => sirve(sp.NpcIndex))
+                                 .Select(sp => (X: (byte)sp.X, Y: (byte)sp.Y))
+                                 .Distinct()
+                                 .Where(t => _entorno.Mapas.HayComoLlegar(coto.Mapa, sentidos.Posicion, (t.X, t.Y),
+                                                                          ToleranciaDelCoto) is not null)
+                                 .ToList();
+            if (opciones.Count > 0) destino = opciones[_rng.Next(opciones.Count)];
+        }
 
         // "HAY PRESAS EN ESTE MAPA" NO ES "HAY PRESAS DONDE ESTOY PARADO". Acá se devolvía false cuando el
         // coto caía en el mapa propio, dando por hecho que entonces ya estaba bien ubicado — y no: el paseo
@@ -1078,7 +1100,7 @@ public sealed class Bot
         // de cien por cien se queda en su burbuja de veinte baldosas para siempre. Medido con el perfilador:
         // cuatro bots con `pasear` al 100% del tiempo y "sin presa a la vista" en TODAS las vueltas, en mapas
         // que sí tienen criaturas. Se camina hasta donde aparecen, esté en este mapa o en otro.
-        if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, coto.X, coto.Y, cerrada, ct, RadioDeCazaSuyo))
+        if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto))
             return false;
 
         // Y EL COTO PASA A SER SU ZONA. Sin esto el arreglo se anula solo cuando el viaje es adentro del mismo
@@ -1096,6 +1118,11 @@ public sealed class Bot
 
     /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
     private const int PacienciaSinPresaMs = 3 * 60_000;
+
+    /// <summary>A cuántas baldosas del spawn se para al llegar al coto. Chico a propósito: la presa que paga no
+    /// camina, y con la tolerancia de antes —el radio de caza, doce— el bot podía frenar fuera de la ventana de
+    /// visión (ocho por seis, por eje) y no verla nunca.</summary>
+    private const int ToleranciaDelCoto = 3;
 
     /// <summary>
     /// AL CADÁVER QUE NO PUEDE LLEGAR A NINGÚN TEMPLO LE QUEDA VOLVER A CASA, y el original le da justo eso:

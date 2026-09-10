@@ -92,6 +92,31 @@ public class OficioDelBotTests
             "dejaría de hacer falta");
     }
 
+    /// <summary>
+    /// LO QUE PAGA ESTÁ REPARTIDO, ASÍ QUE LOS BOTS TIENEN QUE REPARTIRSE. Las criaturas que sueltan oro en la
+    /// cuna no caminan y están en varios lugares del mapa; si hubiera uno solo, elegir al azar entre spawns no
+    /// cambiaría nada y todos volverían a amontonarse. Se exigen al menos tres lugares distintos a los que se
+    /// llega caminando desde la baldosa de nacimiento.
+    /// </summary>
+    [Fact]
+    public void En_la_cuna_hay_varios_lugares_distintos_donde_cazar_lo_que_paga()
+    {
+        if (Mundo() is not { } m) return;
+        if (!m.Datos.MapSpawns.TryGetValue(m.Cuna.Map, out var spawns)) return;
+
+        const int Vida = 71;   // un nivel 7: ya se anima al escorpión, todavía no al lobo
+        var desde = ((byte)m.Cuna.X, (byte)m.Cuna.Y);
+        var lugares = spawns
+            .Where(s => m.Datos.Npc(s.NpcIndex) is { Hostile: true, Attackable: true } n
+                        && n.GiveGld > 0 && n.MaxHit * 5 <= Vida)
+            .Select(s => ((byte)s.X, (byte)s.Y)).Distinct()
+            .Where(lugar => m.Mapas.HayComoLlegar(m.Cuna.Map, desde, lugar, 3) is not null)
+            .ToList();
+
+        Assert.True(lugares.Count >= 3,
+            $"sólo {lugares.Count} lugares alcanzables con presas que pagan: repartirse no cambiaría nada");
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
