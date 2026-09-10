@@ -381,6 +381,7 @@ public sealed class Bot
     {
         _casa = null;            // la zona se elige de nuevo en cada vida: pudo entrar en otro lado
         _pasoTrabado = false;
+        _viajesAlTemploFallidos = 0;
         _traidoDeCasa.Clear();
         _nadaQueHacerAca.Clear();   // las baldosas descartadas eran de la vida anterior
         foreach (byte ranura in sentidos.RanurasOcupadas()) _traidoDeCasa.Add(sentidos.QueHayEn(ranura));
@@ -990,19 +991,22 @@ public sealed class Bot
     private async Task<bool> BuscarSacerdoteAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                                   CancellationToken ct)
     {
-        // A la vista: se va derecho, que es más barato que recalcular un camino entero.
-        if (sentidos.MasCercano(EsSacerdote) is { } c)
+        // YA ESTÁ AL ALCANCE: no se camina más. Caminar hacia un sacerdote que se tiene al lado es empujarle
+        // la baldosa —que está ocupada por él— y quedarse ahí forcejeando; lo único que falta es insistir con
+        // el pedido, que es lo que hace el ciclo de arriba. El alcance se mide POR EJE, igual que lo mide el
+        // servidor: con Manhattan, un cadáver a siete baldosas en Y se quedaba quieto pidiendo algo que nunca
+        // iba a llegar.
+        if (sentidos.MasCercano(EsSacerdote) is { } c && AlAlcanceDelAltar(sentidos, c.Quien))
         {
-            // YA ESTÁ AL ALCANCE: no se camina más. Caminar hacia un sacerdote que se tiene al lado es
-            // empujarle la baldosa —que está ocupada por él— y quedarse ahí forcejeando; lo único que falta
-            // es insistir con el pedido, que es lo que hace el ciclo de arriba. El alcance se mide POR EJE,
-            // igual que lo mide el servidor: con Manhattan, un cadáver a siete baldosas en Y se quedaba
-            // quieto pidiendo algo que nunca iba a llegar.
-            if (AlAlcanceDelAltar(sentidos, c.Quien)) { await Task.Delay(RebanadaDePausaMs, ct); return true; }
-            var (x, y) = sentidos.Posicion;
-            return await UnPasoHaciaAsync(transporte, sentidos, c.Quien.X - x, c.Quien.Y - y, ct, deMuerto: true)
-                   != Paso.SinConexion;
+            await Task.Delay(RebanadaDePausaMs, ct);
+            return true;
         }
+
+        // Y SI LO VE PERO LEJOS, TAMPOCO SE VA DERECHO. Acá se daba un paso codicioso hacia él, y el paso
+        // codicioso se traba con cualquier pared en el medio: medido, un cadáver a ocho baldosas del sacerdote
+        // en el mapa de la cuna se pasó cuatro minutos oscilando entre dos baldosas. Peor todavía, esa rama
+        // devolvía "hice algo", así que nunca se llegaba a la salida de volver al hogar. Se va por el
+        // navegante, igual que al mercader, que aprendió lo mismo.
 
         if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { } templo)
         {
@@ -1013,10 +1017,12 @@ public sealed class Bot
             // sí mismo a toda velocidad. Medido con el perfilador: un bot muerto en un mapa desde el que no se
             // llega a ningún templo dio DOSCIENTAS SESENTA MIL vueltas en un minuto, un hilo entero quemado.
             await Task.Delay(RebanadaDePausaMs, ct);
+            SiNoSePuedeLlegar(transporte);
             return !sentidos.Vivo;
         }
 
         await Task.Delay(RebanadaDePausaMs, ct);   // idem: PasearAsync también puede volver sin esperar
+        SiNoSePuedeLlegar(transporte);
         return await PasearAsync(transporte, sentidos, cerrada, ct);
     }
 
@@ -1059,6 +1065,31 @@ public sealed class Bot
 
     /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
     private const int PacienciaSinPresaMs = 3 * 60_000;
+
+    /// <summary>
+    /// AL CADÁVER QUE NO PUEDE LLEGAR A NINGÚN TEMPLO LE QUEDA VOLVER A CASA, y el original le da justo eso:
+    /// <c>RegresarHogar</c> (id 99), que sólo atiende estando muerto y deja al jugador en la baldosa de
+    /// resurrección de su ciudad — que está a dos pasos del sacerdote de esa ciudad, porque para eso existe.
+    ///
+    /// <para>Hace falta porque un fantasma choca con las paredes igual que un vivo (<c>PosLegal</c> no
+    /// exceptúa al muerto), así que "hay un templo a un salto de mapa" no quiere decir que se pueda llegar:
+    /// medido, un bot murió en una punta del mapa 814 y la puerta hacia el 815 no tenía camino desde ahí. Sin
+    /// esta salida se quedaba tirado hasta que alguien apagara el servidor.</para>
+    ///
+    /// <para>Se espera a fallar unas cuantas veces antes de usarlo: caminar hasta el templo es lo que hace
+    /// alguien que puede, y volver a casa deja el cuerpo del otro lado del mundo.</para>
+    /// </summary>
+    private void SiNoSePuedeLlegar(TransporteDeBot transporte)
+    {
+        if (++_viajesAlTemploFallidos < ViajesAntesDeVolverAlHogar) return;
+        _viajesAlTemploFallidos = 0;
+        transporte.Mandar(Paquete(ClientPacketId.RegresarHogar, _ => { }));
+    }
+
+    private int _viajesAlTemploFallidos;
+
+    /// <summary>Cuántos viajes fallidos al templo antes de tirar la toalla y volver a casa.</summary>
+    private const int ViajesAntesDeVolverAlHogar = 6;
 
     /// <summary>El sacerdote que resucita: <c>NpcType 1</c> (VB6 <c>eNPCType.Revividor</c>).</summary>
     private bool EsSacerdote(short ficha) => _entorno.Datos.Npc(ficha)?.NpcType == 1;

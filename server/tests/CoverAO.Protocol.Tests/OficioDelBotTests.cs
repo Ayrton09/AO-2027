@@ -46,6 +46,27 @@ public class OficioDelBotTests
         Assert.NotNull(m.Mapas.DondeHay(pueblo, (50, 50), HayPresa));
     }
 
+    /// <summary>
+    /// LA SALIDA DEL QUE MURIÓ LEJOS. Un fantasma choca con las paredes igual que un vivo, así que "hay un
+    /// templo a un salto" no garantiza que se pueda llegar: un bot murió en una punta del mapa 814 y la puerta
+    /// hacia el 815 no tenía camino desde ahí. Le queda <c>RegresarHogar</c>, que lo deja en la baldosa de
+    /// resurrección de su ciudad — y esa baldosa tiene que caer DENTRO de la ventana en la que el servidor
+    /// atiende el pedido, o el bot sale del pozo para caer en otro igual.
+    /// </summary>
+    [Fact]
+    public void La_baldosa_de_resurreccion_del_hogar_cae_al_lado_del_sacerdote()
+    {
+        if (Mundo() is not { } m) return;
+        var casa = Cities.DeadTile(Cities.DungeonNewbie);
+        if (!m.Datos.MapSpawns.TryGetValue(casa.Map, out var spawns)) return;
+
+        var sacerdotes = spawns.Where(s => m.Datos.Npc(s.NpcIndex)?.NpcType == TipoRevividor).ToList();
+        Assert.True(sacerdotes.Count > 0, $"el mapa {casa.Map} no tiene sacerdote: volver a casa no sirve de nada");
+        // La ventana del servidor es 8 de ancho por 6 de alto, por eje. Se exige con margen, que es como
+        // el bot mide su propio alcance.
+        Assert.Contains(sacerdotes, s => Math.Abs(s.X - casa.X) <= 6 && Math.Abs(s.Y - casa.Y) <= 4);
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
