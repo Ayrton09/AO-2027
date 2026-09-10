@@ -459,9 +459,14 @@ public sealed class Bot
             // doscientas. Quien necesita plata sale a cazar lo que la da. Si no hay nada que pague al alcance,
             // vale lo más cercano, como siempre.
             var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora) && PagaOro(ficha));
-            if (presa is not { } rica || rica.Pasos > RadioDeCazaSuyo)
+            // LO QUE PAGA SE VA A BUSCAR MÁS LEJOS. El radio del temperamento decide si vale la pena moverse por
+            // cualquier cosa; por lo que da plata, cualquiera camina unas baldosas más. Medido con la sonda: una
+            // Clériga tranquila —radio 6— con un escorpión a la vista a nueve pasos, pegándole al murciélago de al
+            // lado, que no suelta nada.
+            if (presa is not { } rica || rica.Pasos > RadioDeCaza)
                 presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
-            if (presa is { } p && p.Pasos <= RadioDeCazaSuyo && sentidos.Salud >= VuelveAPelear && LeDanGanas())
+            int alcance = presa is { } elegida && PagaOro(elegida.Quien.FichaNpc) ? RadioDeCaza : RadioDeCazaSuyo;
+            if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && LeDanGanas())
             {
                 // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
                 // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
@@ -525,7 +530,11 @@ public sealed class Bot
     {
         Temperamento.Cazador => RadioDeCaza,
         Temperamento.Tranquilo => RadioDeCaza / 2,
-        _ => 1,
+        // EL PASEANTE TAMBIÉN CAZA. Acá había un 1: sólo peleaba con lo que tuviera PEGADO, o sea casi nunca.
+        // Medido con la sonda: dos paseantes con `radio=1` sin presa en todas las vueltas. Y tiene que ser al
+        // menos la tolerancia con la que se llega a un coto (`ToleranciaDelCoto`), o llegar no le sirve de
+        // nada: se para a tres baldosas de la presa y no la alcanza.
+        _ => RadioDeCaza / 3,
     };
 
     /// <summary>¿Se pelea o lo deja pasar? El cazador siempre; el tranquilo casi siempre; el paseante sólo si
