@@ -540,7 +540,17 @@ public sealed class Bot
         // LO PROPIO PRIMERO. Repartir los diez puntos al azar entre veintisiete skills deja al Pescador con
         // menos de un tercio de chance de tocar Pesca alguna vez, y sin su skill el oficio rinde casi nada.
         // Un jugador que eligió una clase de oficio pone ahí sus primeros puntos.
-        byte propia = SkillDeSuOficio;
+        //
+        // Y EL QUE ELIGIÓ UNA CLASE QUE CASTEA LOS PONE EN MAGIA, que es lo mismo por el otro lado y estaba
+        // sin cubrir: un caster nace con un solo hechizo —el original le da `UserHechizos(1) = 2` en el alta,
+        // TCP.bas:541— y ese hechizo pide **cinco puntos de Magia** (`MinSkill=5` del Proyectil Mágico). El
+        // servidor lo gatea (`Skills[Magia] < spell.MinSkill` → LocaleMsg 221), así que con los puntos al azar
+        // el bot no casteaba NUNCA y se quedaba pegando con el báculo, que no mata nada. Medido: el Mago, el
+        // Bardo y la Clériga con el maná lleno y la experiencia congelada mientras los guerreros subían a
+        // nivel 5. Se reconoce por tener maná, que es lo que el propio servidor le contó al entrar.
+        byte propia = SkillDeSuOficio != 0 ? SkillDeSuOficio
+                    : sentidos.UsaMana ? (byte)GameLimits.SkillMagia
+                    : (byte)0;
         if (propia > 0 && libres > 0)
         {
             byte suyos = (byte)Math.Min(libres, Math.Max(1, libres / 2));
