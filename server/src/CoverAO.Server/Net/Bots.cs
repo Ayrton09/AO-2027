@@ -382,6 +382,7 @@ public sealed class Bot
         _casa = null;            // la zona se elige de nuevo en cada vida: pudo entrar en otro lado
         _pasoTrabado = false;
         _viajesAlTemploFallidos = 0;
+        _cotosFallidos = 0;
         _traidoDeCasa.Clear();
         _nadaQueHacerAca.Clear();   // las baldosas descartadas eran de la vida anterior
         foreach (byte ranura in sentidos.RanurasOcupadas()) _traidoDeCasa.Add(sentidos.QueHayEn(ranura));
@@ -1101,7 +1102,11 @@ public sealed class Bot
         // cuatro bots con `pasear` al 100% del tiempo y "sin presa a la vista" en TODAS las vueltas, en mapas
         // que sí tienen criaturas. Se camina hasta donde aparecen, esté en este mapa o en otro.
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto))
+        {
+            SiEstaEncerrado(transporte, sentidos);
             return false;
+        }
+        _cotosFallidos = 0;
 
         // Y EL COTO PASA A SER SU ZONA. Sin esto el arreglo se anula solo cuando el viaje es adentro del mismo
         // mapa: `PasearAsync` sólo re-elige la zona al CAMBIAR de mapa, así que el bot llegaba hasta las
@@ -1148,6 +1153,34 @@ public sealed class Bot
 
     /// <summary>Cuántos viajes fallidos al templo antes de tirar la toalla y volver a casa.</summary>
     private const int ViajesAntesDeVolverAlHogar = 6;
+
+    /// <summary>
+    /// EL QUE QUEDÓ ENCERRADO VUELVE A CASA CON LA RUNA. Un paseo o una puerta de un solo sentido pueden dejar
+    /// a un bot en un rincón sin camino a ninguna salida y sin nada que cazar. Medido: un Mago de nivel uno en un
+    /// bolsillo del mapa 20 —cero presas para él, y ninguna de las seis salidas del mapa alcanzable desde ahí—
+    /// paseando más de una hora con la experiencia congelada.
+    ///
+    /// <para>El juego ya trae la salida: todo kit de novato lleva una Runa de teletransportación, que devuelve a
+    /// la baldosa de nacimiento de la ciudad-hogar y NO se gasta al usarla. Estando vivo sólo viaja si el mapa
+    /// no es PK (o si se está parado en una arena); si no, el servidor contesta el 468 y no mueve a nadie
+    /// (VB6 InvUsuario.bas:1356-1372). Por eso se mira el mapa antes de pedirla, y se espera a haber fallado el
+    /// viaje al coto un par de veces: a un rincón al que no se llega se le da una oportunidad antes de irse.</para>
+    /// </summary>
+    private void SiEstaEncerrado(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (++_cotosFallidos < CotosFallidosAntesDeLaRuna) return;
+        _cotosFallidos = 0;
+        if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return;
+        Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
+    }
+
+    private int _cotosFallidos;
+
+    /// <summary>Cuántos viajes fallidos al coto antes de volver a casa con la Runa.</summary>
+    private const int CotosFallidosAntesDeLaRuna = 2;
+
+    /// <summary>VB6 <c>otRuna</c> (Declares.bas:615).</summary>
+    private const int ObjTypeRuna = 38;
 
     /// <summary>El sacerdote que resucita: <c>NpcType 1</c> (VB6 <c>eNPCType.Revividor</c>).</summary>
     private bool EsSacerdote(short ficha) => _entorno.Datos.Npc(ficha)?.NpcType == 1;

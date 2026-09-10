@@ -117,6 +117,33 @@ public class OficioDelBotTests
             $"sólo {lugares.Count} lugares alcanzables con presas que pagan: repartirse no cambiaría nada");
     }
 
+    /// <summary>
+    /// EL QUE QUEDA ENCERRADO TIENE CON QUÉ SALIR. Un bot vivo sin camino a ninguna salida y sin nada que cazar
+    /// vuelve a casa con la Runa de teletransportación, así que la premisa tiene dos mitades: que el kit de
+    /// novato la traiga, y que la casa no sea un mapa PK — estando vivo, en un mapa PK la Runa no viaja
+    /// (VB6 InvUsuario.bas:1356-1372), y un bot que vuelve a un lugar donde tampoco sirve no ganó nada.
+    /// </summary>
+    [Fact]
+    public void El_kit_de_novato_trae_la_runa_y_la_cuna_no_es_pk()
+    {
+        if (Mundo() is not { } m) return;
+        const int ObjTypeRuna = 38;
+
+        int conKit = 0;
+        for (int clase = 1; clase <= 18; clase++)
+        {
+            var kit = m.Datos.NewbieKit(clase);
+            if (kit.Count == 0) continue;
+            conKit++;
+            Assert.True(kit.Any(it => m.Datos.Obj(it.ObjIndex)?.ObjType == ObjTypeRuna),
+                $"el kit de novato de la clase {clase} no trae Runa: un bot encerrado de esa clase no tendría con qué salir");
+        }
+        Assert.True(conKit > 0, "ninguna clase tiene kit de novato: el test no miró nada");
+
+        var casa = Cities.SpawnTile(Cities.DungeonNewbie);
+        Assert.False(m.Datos.IsPkMap(casa.Map), $"la cuna (mapa {casa.Map}) es PK: la Runa no sacaría a un vivo de ahí");
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
