@@ -5649,6 +5649,12 @@
       '/oro': [89, 'bb'],
       '/exp': [90, 'bb'],
       '/cuentaregresiva': [91, 'bb'],
+      // /ARMAR no viene del original: arma un personaje de esa clase y ese nivel, con el mejor equipo que
+      // pueda usar y pociones. Nació para el arnés —un flow de combate pide "un Guerrero de nivel 45" en vez
+      // de mandar diez /CI— y por eso estuvo un día sin entrada acá: el server lo despachaba y ningún cliente
+      // lo podía tipear. Va con el resto porque está vivo y ya pasa por el mismo chequeo de privilegio que
+      // los demás; el mapa de los mudos es para los que NO HACEN NADA.
+      '/armar': [240, 'bi'],
     };
     // Los argumentos se toman de izquierda a derecha; el ÚLTIMO, si es texto, se lleva el resto de la línea
     // (así `/rmsg se cae el server en 5` manda la frase entera). Los tres comandos que llevan un texto EN EL
