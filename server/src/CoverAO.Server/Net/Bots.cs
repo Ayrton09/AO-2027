@@ -624,10 +624,13 @@ public sealed class Bot
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
         if (!sentidos.Comerciando) { PostergarCompra(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
-        await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
+        bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
-        PostergarCompra();
+        // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
+        // de la tienda con lo que fue a buscar se le da el descanso largo; al que sólo pasó a cambiar el
+        // botín, el corto — si no, un Pescador que vive de vender pescado se pasaría la sesión esperando.
+        PostergarCompra(exito: compro);
         return true;
     }
 
@@ -640,15 +643,17 @@ public sealed class Bot
             ? _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L
             : _rng.Next(EnfriamientoFalloMinS, EnfriamientoFalloMaxS + 1) * 1_000L);
 
-    /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar.</summary>
-    private async Task VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
-                                           short fichaDelMercader, CancellationToken ct)
+    /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar. Devuelve si
+    /// se llevó algo.</summary>
+    private async Task<bool> VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                                 short fichaDelMercader, CancellationToken ct)
     {
+        bool compro = false;
         for (int i = 0; i < VentasPorVisita && sentidos.Comerciando; i++)
         {
             // La vida primero, también acá dentro: negociar son varios segundos y una criatura no espera a
             // que el bot termine de vender.
-            if (!sentidos.Vivo || sentidos.Salud < TomaPocion) return;
+            if (!sentidos.Vivo || sentidos.Salud < TomaPocion) return compro;
             if (sentidos.EnLaMochila(obj => LeVendeA(TipoDeMercader(fichaDelMercader), obj)) is not { } item) break;
             short queOfrezco = sentidos.QueHayEn(item.Ranura);
             transporte.Mandar(Paquete(ClientPacketId.CommerceSell,
@@ -670,23 +675,27 @@ public sealed class Bot
         {
             transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(h.Ranura).WriteInteger(1)));
             await Task.Delay(_rng.Next(600, 1_400), ct);
+            compro = !LeFaltaLaHerramienta(sentidos);
         }
 
         int faltan = PocionesQueQuiere - sentidos.CuantoTiene(EsPocionDeVida);
-        if (faltan <= 0 || !sentidos.Comerciando) return;
-        if (sentidos.EnLaTienda(EsPocionDeVida) is not { } oferta) return;
+        if (faltan <= 0 || !sentidos.Comerciando) return compro;
+        if (sentidos.EnLaTienda(EsPocionDeVida) is not { } oferta) return compro;
 
-        // No se gasta hasta el último cobre: dejar algo encima es lo que hace cualquiera, y además el precio
-        // que ve el bot es el del mostrador, que puede no ser exactamente lo que termina cobrando el servidor.
+        // No se gasta hasta el último cobre: dejar algo encima es lo que hace cualquiera, y además EL PRECIO
+        // DE LA VITRINA NO ES EL DE LA CAJA — el mostrador canta la división cruda y la compra redondea para
+        // arriba con la cantidad adentro (ver `Comercio`), así que la cuenta de acá queda siempre corta.
         // Precio 0 = gratis: se lleva lo que necesita. Con la cuenta de abajo un objeto gratis daba "puedo
         // comprar cero", que es justo al revés.
         int puede = oferta.Precio > 0 ? (int)(sentidos.Oro * 0.8 / oferta.Precio) : faltan;
         int cuantas = Math.Clamp(Math.Min(faltan, puede), 0, short.MaxValue);
-        if (cuantas <= 0) return;
+        if (cuantas <= 0) return compro;
 
+        int teniaAntes = sentidos.CuantoTiene(EsPocionDeVida);
         transporte.Mandar(Paquete(ClientPacketId.CommerceBuy,
             w => w.WriteByte(oferta.Ranura).WriteInteger((short)cuantas)));
         await Task.Delay(_rng.Next(600, 1_400), ct);
+        return compro || sentidos.CuantoTiene(EsPocionDeVida) > teniaAntes;
     }
 
     /// <summary>La herramienta del oficio de esta clase, o 0 si no tiene oficio. Los tres números son los del
