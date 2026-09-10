@@ -158,6 +158,11 @@ public sealed class Bot
     /// que dispara la visita al mercader, en la práctica, es tener botín para vender.</summary>
     private const int PocionesQueQuiere = 200, RadioDeCompras = 15;
 
+    /// <summary>Con menos de lo primero de comida o de bebida sale a reponer, y compra hasta lo segundo. Barato
+    /// de sostener: la manzana y el agua de la cuna cuestan dos y tres monedas.</summary>
+    private const int ComidaMinima = 10, ComidaQueQuiere = 40;
+    private const int BebidaMinima = 10, BebidaQueQuiere = 40;
+
     /// <summary>Ventas por visita. Se corta para que la parada en la tienda dure lo que dura una parada y no
     /// se coma la sesión vaciando la mochila de a un objeto por vez.</summary>
     private const int VentasPorVisita = 6;
@@ -620,6 +625,13 @@ public sealed class Bot
         if (Environment.TickCount64 < _proximaCompra) return false;
 
         bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
+        // LA COMIDA Y LA BEBIDA SE REPONEN ANTES DE QUE SE ACABEN. El kit de novato trae cien de cada una y el bot
+        // nunca compraba más: después de horas de juego se le terminaban, el hambre y la sed llegaban a cero, y
+        // con cualquiera de las dos en cero el servidor deja de regenerar. Sin energía `CazarAsync` se aleja en
+        // cuanto empieza, así que no juntaba oro para comer: un espiral cerrado. Medido: un Gladiador de nivel 7
+        // con la mochila sin una manzana ni un agua, la energía en 20 de 130, y cada caza durando un segundo.
+        bool faltaComida = sentidos.CuantoTiene(EsComida) < ComidaMinima;
+        bool faltaBebida = sentidos.CuantoTiene(EsBebida) < BebidaMinima;
         bool hayQueVender = sentidos.EnLaMochila(EsBotin) is not null;
         bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
 
@@ -640,7 +652,9 @@ public sealed class Bot
         // se junta cazando y vendiendo el botín, que es lo que hace cualquiera que empieza.
         bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta;
         bool vaPorPociones = faltanPociones && sentidos.Oro > 0;
-        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones) return false;
+        bool vaPorComida = faltaComida && sentidos.Oro > 0;
+        bool vaPorBebida = faltaBebida && sentidos.Oro > 0;
+        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida) return false;
 
         // QUÉ MERCADER SIRVE. Si va por la herramienta, uno que la venda; si no, uno que le compre lo que trae.
         // Con el filtro de la herramienta siempre puesto, el bot con oficio quedaba atado para siempre a los
@@ -655,8 +669,13 @@ public sealed class Bot
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
-            if (!hayQueVender) return true;
-            return sentidos.EnLaMochila(obj => LeVendeA(mercader.TipoItems, obj)) is not null;
+            // CADA NECESIDAD, A QUIEN LA ATIENDE. Antes, sin nada que vender, servía cualquier mercader, y así se
+            // podía viajar a buscar pociones hasta el herrero. Ahora el que va por comida busca a quien la vende,
+            // y lo mismo la bebida y las pociones. Lo que hace falta para vivir, primero.
+            if (vaPorComida && stock.Any(s => EsComida((short)s.ObjIndex))) return true;
+            if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
+            if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
+            return hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(mercader.TipoItems, obj)) is not null;
         }
 
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
@@ -711,7 +730,11 @@ public sealed class Bot
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
         // de la tienda con lo que fue a buscar se le da el descanso largo; al que sólo pasó a cambiar el
         // botín, el corto — si no, un Pescador que vive de vender pescado se pasaría la sesión esperando.
-        PostergarCompra(exito: compro);
+        // El descanso largo es para el que se llevó lo que fue a buscar. Si todavía le falta comer o tomar —la
+        // comida la vende uno y la bebida otro—, se sale enseguida por lo que falta: con hambre o sed en cero no
+        // se regenera nada, y quince minutos de espera son quince minutos sin poder pelear.
+        bool sigueFaltando = sentidos.CuantoTiene(EsComida) < ComidaMinima || sentidos.CuantoTiene(EsBebida) < BebidaMinima;
+        PostergarCompra(exito: compro && !sigueFaltando);
         return true;
     }
 
@@ -759,9 +782,22 @@ public sealed class Bot
             compro = !LeFaltaLaHerramienta(sentidos);
         }
 
-        int faltan = PocionesQueQuiere - sentidos.CuantoTiene(EsPocionDeVida);
-        if (faltan <= 0 || !sentidos.Comerciando) return compro;
-        if (sentidos.EnLaTienda(EsPocionDeVida) is not { } oferta) return compro;
+        // Lo esencial primero: sin comer ni tomar no se recupera la energía, y sin energía no se pelea. Las pociones
+        // sobran —el kit de novato trae más de mil—, así que van al final con lo que quede.
+        compro |= await ReponerAsync(transporte, sentidos, EsComida, ComidaQueQuiere, ct);
+        compro |= await ReponerAsync(transporte, sentidos, EsBebida, BebidaQueQuiere, ct);
+        compro |= await ReponerAsync(transporte, sentidos, EsPocionDeVida, PocionesQueQuiere, ct);
+        return compro;
+    }
+
+    /// <summary>Compra lo que falte de algo hasta tener <paramref name="quiere"/>, eligiendo lo MÁS BARATO de la
+    /// vitrina. Devuelve si se llevó algo.</summary>
+    private async Task<bool> ReponerAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<short, bool> esDeEso,
+                                          int quiere, CancellationToken ct)
+    {
+        int faltan = quiere - sentidos.CuantoTiene(esDeEso);
+        if (faltan <= 0 || !sentidos.Comerciando) return false;
+        if (sentidos.MasBaratoEnLaTienda(esDeEso) is not { } oferta) return false;
 
         // No se gasta hasta el último cobre: dejar algo encima es lo que hace cualquiera, y además EL PRECIO
         // DE LA VITRINA NO ES EL DE LA CAJA — el mostrador canta la división cruda y la compra redondea para
@@ -770,13 +806,13 @@ public sealed class Bot
         // comprar cero", que es justo al revés.
         int puede = oferta.Precio > 0 ? (int)(sentidos.Oro * 0.8 / oferta.Precio) : faltan;
         int cuantas = Math.Clamp(Math.Min(faltan, puede), 0, short.MaxValue);
-        if (cuantas <= 0) return compro;
+        if (cuantas <= 0) return false;
 
-        int teniaAntes = sentidos.CuantoTiene(EsPocionDeVida);
+        int teniaAntes = sentidos.CuantoTiene(esDeEso);
         transporte.Mandar(Paquete(ClientPacketId.CommerceBuy,
             w => w.WriteByte(oferta.Ranura).WriteInteger((short)cuantas)));
         await Task.Delay(_rng.Next(600, 1_400), ct);
-        return compro || sentidos.CuantoTiene(EsPocionDeVida) > teniaAntes;
+        return sentidos.CuantoTiene(esDeEso) > teniaAntes;
     }
 
     /// <summary>La herramienta del oficio de esta clase, o 0 si no tiene oficio. Los tres números son los del
@@ -807,7 +843,12 @@ public sealed class Bot
         // comida, bebida ni oro— y con eso el bot le ofrecía al mercader su propia arma: medido en los
         // `.chr`, terminaban peleando con el martillo en la mochila. Acá se invierte: se vende lo que
         // APARECIÓ durante la sesión, que es exactamente el botín.
-        if (_traidoDeCasa.Contains(obj)) return false;
+        // LA HERRAMIENTA DEL OFICIO TAMPOCO. Se compra a mitad de sesión, así que no está en lo que trajo de
+        // casa — y a un salto de la cuna, en el mapa 20, el Vendedor General compra de todo, herramientas
+        // incluidas. Sin esto, la caña recién pagada caía desequipada en la mochila y, en cuanto vencía el
+        // enfriamiento de compras, el bot se la volvía a vender: doscientas monedas de caza tiradas por una
+        // regla de "qué es botín".
+        if (_traidoDeCasa.Contains(obj) || obj == HerramientaDeSuOficio) return false;
         var o = _entorno.Datos.Obj(obj);
         // LA COMIDA Y LA BEBIDA DEL BOTÍN SÍ SE VENDEN, y era lo único que tenían. En el Dungeon Newbie —donde
         // nace TODO personaje— las criaturas que un recién nacido puede matar dan CERO oro: murciélagos,
@@ -822,7 +863,10 @@ public sealed class Bot
         // ya lo protege `_traidoDeCasa`, que son otros números de objeto. Las pociones sí quedan afuera,
         // porque son de lo que depende para no morirse, y lo de novato porque el mercader no lo acepta
         // (VB6 Comercio.bas:120) y encima `SalePrice` lo paga a cero.
-        return o is not null && !o.IsPotion && !o.IsGold && !o.IsNewbie;
+        // Y LO QUE NO VALE NADA TAMPOCO. Con `Valor=0` el mercader lo paga a cero, y dejarlo como botín tenía un
+        // costo escondido: la mochila nunca se vaciaba de "cosas para vender", así que el bot tenía siempre un
+        // motivo para salir de compras. Medido: un Gladiador con 96 Anillos del Bardo encima, que pagan cero.
+        return o is not null && !o.IsPotion && !o.IsGold && !o.IsNewbie && o.Value > 0;
     }
 
     /// <summary>¿ESE mercader se lo compra? Tiene que ser botín, el gremio tiene que aceptar ese tipo de
@@ -852,6 +896,8 @@ public sealed class Bot
     private long _proximaCompra;
 
     private bool EsPocionDeVida(short obj) => _entorno.Datos.Obj(obj) is { IsPotion: true, SubType: 3 };
+    private bool EsComida(short obj) => _entorno.Datos.Obj(obj) is { IsFood: true };
+    private bool EsBebida(short obj) => _entorno.Datos.Obj(obj) is { IsDrink: true };
 
     /// <summary>Levanta lo que quedó tirado cerca. Es lo primero que hace cualquiera después de matar algo, y
     /// su ausencia se nota: un personaje que mata y sigue de largo dejando el oro en el piso no existe.</summary>

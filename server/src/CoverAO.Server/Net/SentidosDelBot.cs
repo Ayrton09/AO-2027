@@ -145,6 +145,22 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>La ranura MÁS BARATA de la vitrina que cumpla la condición. Para comprar con poca plata importa el
+    /// precio: con doce monedas un pastel de diez no entra y una manzana de dos sí, y justo el que se quedó sin
+    /// comida es el que menos plata tiene.</summary>
+    public (byte Ranura, float Precio)? MasBaratoEnLaTienda(Func<short, bool> sirve)
+    {
+        lock (_candado)
+        {
+            (byte Ranura, float Precio)? mejor = null;
+            foreach (var (ranura, item) in _tienda)
+                if (item.Obj > 0 && item.Cantidad > 0 && sirve(item.Obj)
+                    && (mejor is null || item.Precio < mejor.Value.Precio))
+                    mejor = (ranura, item.Precio);
+            return mejor;
+        }
+    }
+
     /// <summary>La primera ranura del inventario que cumpla la condición, con cuánto hay. Para vender hace
     /// falta la cantidad, no sólo la ranura. Lo que está PUESTO no se ofrece nunca: vender el arma que lleva
     /// encima es lo primero que no haría nadie.</summary>

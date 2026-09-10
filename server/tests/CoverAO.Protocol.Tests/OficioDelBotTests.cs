@@ -144,6 +144,35 @@ public class OficioDelBotTests
         Assert.False(m.Datos.IsPkMap(casa.Map), $"la cuna (mapa {casa.Map}) es PK: la Runa no sacaría a un vivo de ahí");
     }
 
+    /// <summary>
+    /// EL QUE SE QUEDÓ SIN COMIDA PUEDE REPONERLA CON CASI NADA. Un bot sin comer ni tomar deja de regenerar
+    /// energía y ya no puede pelear, así que no junta oro: la salida es comprar con lo poco que le quede. Medido:
+    /// un Gladiador de nivel 7 sin una manzana ni un agua y con doce monedas. La premisa es que en la cuna —un
+    /// mapa que atiende— haya comida y bebida a un precio que se paga con la mitad de eso.
+    /// </summary>
+    [Fact]
+    public void En_la_cuna_se_venden_comida_y_bebida_que_paga_un_hambriento()
+    {
+        if (Mundo() is not { } m) return;
+        if (!m.Datos.MapSpawns.TryGetValue(m.Cuna.Map, out var spawns)) return;
+        Assert.True(m.Datos.MapBattleMode(m.Cuna.Map) is 2 or 3, "la cuna no atiende: no hay dónde reponer");
+
+        int MasBarato(Func<ObjInfo, bool> es) => spawns
+            .SelectMany(sp => m.Datos.Npc(sp.NpcIndex)?.StockItems
+                              ?? (IReadOnlyList<(int ObjIndex, int Amount)>)Array.Empty<(int ObjIndex, int Amount)>())
+            .Select(it => m.Datos.Obj(it.ObjIndex))
+            .Where(o => o is not null && es(o))
+            .Select(o => o!.Value)
+            .DefaultIfEmpty(int.MaxValue)
+            .Min();
+
+        const int PlataDeUnHambriento = 12;
+        Assert.True(MasBarato(o => o.IsFood) <= PlataDeUnHambriento / 2,
+            $"la comida más barata de la cuna vale {MasBarato(o => o.IsFood)}: un bot casi sin plata no repone");
+        Assert.True(MasBarato(o => o.IsDrink) <= PlataDeUnHambriento / 2,
+            $"la bebida más barata de la cuna vale {MasBarato(o => o.IsDrink)}: un bot casi sin plata no repone");
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
