@@ -97,9 +97,10 @@ public sealed class Bot
     private const int GolpeMinMs = 1_100, GolpeMaxMs = 1_700;
     private const int PocionMinMs = 700, PocionMaxMs = 1_400;
 
-    /// <summary>Cada cuánto, estando muerto, prueba pedir la resurrección. Sólo funciona con un sacerdote a la
-    /// vista, así que la mayoría de las veces no pasa nada — igual que un jugador tirado que insiste.</summary>
-    private const int PruebaRevivirMs = 20_000;
+    /// <summary>Cada cuánto, estando muerto, insiste con la resurrección. Es CORTO a propósito: el sacerdote
+    /// del original CAMINA (<c>Movement=1</c> en su ficha), así que pedírselo una vez cada veinte segundos es
+    /// apuntarle a donde estaba. Una persona tirada en el piso clica hasta que la levantan.</summary>
+    private const int PruebaRevivirMs = 4_000;
 
     /// <summary>En cuánto se parte una pausa larga para poder reaccionar en el medio. NINGUNA espera puede ser
     /// un solo <c>Delay</c> largo: la primera versión se quedaba quieta hasta un minuto entero y en ese rato
@@ -164,6 +165,31 @@ public sealed class Bot
     /// <summary>A cuántas baldosas del mercader alcanza con pararse: el servidor atiende a tres y NO exige
     /// línea de vista, así que se le compra a través de la pared del negocio.</summary>
     private const int RadioDelMostrador = 3;
+
+    /// <summary>A cuántas baldosas del sacerdote alcanza con quedar parado. El servidor atiende hasta diez
+    /// (Manhattan, VB6 Acciones.bas:306); se para bastante más cerca a propósito, porque lo que para un
+    /// jugador es un error de puntería en un bot es sistemático.</summary>
+    private const int RadioDelAltar = 3;
+
+    /// <summary>
+    /// Hasta dónde se le puede PEDIR, y va POR EJE porque así lo mide el servidor.
+    ///
+    /// <para>El doble clic no lo gatea la distancia del sacerdote sino la VENTANA DE VISIÓN —ocho de ancho
+    /// por seis de alto, cada eje por su cuenta— y fuera de ahí el original sale mudo, sin contestar nada.
+    /// Acá había un tope de ocho en Manhattan, que no es lo mismo: un cadáver a siete baldosas EN Y le
+    /// parecía cerca y para el servidor estaba afuera, así que el pedido se perdía en silencio. Medido con
+    /// una sonda: el bot mandaba el doble clic a (55,51) desde (55,44) y `HandleDoubleClick` cortaba en su
+    /// primer renglón. Es la MISMA trampa que la del casteo —que ya se había arreglado con 6 y 4— y no se
+    /// había traído hasta acá.</para>
+    /// </summary>
+    private const int AlcanceDelAltarX = 6, AlcanceDelAltarY = 4;
+
+    /// <summary>¿Está el sacerdote adentro de la ventana donde el servidor atiende el pedido?</summary>
+    private static bool AlAlcanceDelAltar(SentidosDelBot sentidos, SentidosDelBot.Visible cura)
+    {
+        var (x, y) = sentidos.Posicion;
+        return Math.Abs(cura.X - x) <= AlcanceDelAltarX && Math.Abs(cura.Y - y) <= AlcanceDelAltarY;
+    }
 
     /// <summary>Minutos entre una visita a la tienda y la siguiente.</summary>
     private const int EnfriamientoCompraMinM = 5, EnfriamientoCompraMaxM = 15;
@@ -427,11 +453,19 @@ public sealed class Bot
             var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
             if (presa is { } p && p.Pasos <= RadioDeCazaSuyo && sentidos.Salud >= VuelveAPelear && LeDanGanas())
             {
+                _ultimaPresa = Environment.TickCount64;
                 if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
                 continue;
             }
 
             if (MirarALaGente(transporte, sentidos)) { await Task.Delay(_rng.Next(1_200, 3_500), ct); continue; }
+
+            // ACÁ NO HAY NADA QUE CAZAR, ASÍ QUE SE MUDA. Un paseo que pisa una puerta cambia de mapa, y el
+            // bot toma el mapa nuevo como su zona; si cae en un pueblo —que no tiene criaturas— se queda
+            // paseando ahí para siempre. Medido: cuatro de ocho bots parados en Ullathorpe y en el 457 con la
+            // experiencia congelada durante una hora entera, mientras los que se quedaron en la cuna subían
+            // de nivel. Un jugador que se cansa de dar vueltas por el pueblo agarra y sale a cazar.
+            if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
 
             if (!await PasearAsync(transporte, sentidos, cerrada, ct)) return;
             bool larga = ++pausas % UnaDeCadaTantas == 0;
@@ -554,18 +588,31 @@ public sealed class Bot
         bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
         bool hayQueVender = sentidos.EnLaMochila(EsBotin) is not null;
         bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
-        if (!faltanPociones && !hayQueVender && !faltaHerramienta) return false;
 
-        // QUÉ MERCADER SIRVE. Si falta la herramienta Y hay con qué pagarla, se busca uno que la venda; si no,
-        // uno que le compre lo que trae. Con el filtro de la herramienta siempre puesto, el bot con oficio
-        // quedaba atado para siempre a los cuatro que las venden — y como cuesta 200 y él tiene 0, tampoco
-        // podía vender botín ni comprar pociones en ningún otro lado: el lazo se cerraba sobre sí mismo.
-        // El precio sale de la DATA, no de un número a mano: las tres herramientas valen 200, así que los tres
-        // oficios arrancan igual —primero juntar la plata vendiendo botín, y hasta entonces les sirve
-        // cualquier mercader— y el día que la data cambie el precio esto cambia solo.
+        // EL PRECIO SALE DE LA DATA, no de un número a mano: hoy las tres herramientas valen 200, y el día que
+        // la data cambie esto cambia solo.
         int cuestaLaHerramienta = HerramientaDeSuOficio > 0
             ? (_entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? int.MaxValue) : int.MaxValue;
-        short quiero = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta ? HerramientaDeSuOficio : (short)0;
+
+        // NO SE VIAJA A UNA TIENDA SI NO HAY NADA QUE HACER AHÍ, y ésta era la que le rompía la vida al bot de
+        // oficio: que le faltara la herramienta alcanzaba para salir de compras, aunque tuviera CERO monedas.
+        // Como no la puede pagar nunca, volvía con las manos vacías, esperaba el enfriamiento corto y salía
+        // otra vez — la sesión entera yendo y viniendo del mostrador en vez de cazar.
+        //
+        // Medido a los quince minutos, ocho bots recién nacidos, experiencia acumulada:
+        //   Gladiador 225, Guerrero 163  (no tienen oficio: nunca salen de compras)
+        //   Pescador 60, Minero 30, Pescador 20  (los tres con oficio)
+        // Cuatro a ocho veces menos, y la única diferencia de conducta era ésta. Sin oro no hay compra: primero
+        // se junta cazando y vendiendo el botín, que es lo que hace cualquiera que empieza.
+        bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta;
+        bool vaPorPociones = faltanPociones && sentidos.Oro > 0;
+        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones) return false;
+
+        // QUÉ MERCADER SIRVE. Si va por la herramienta, uno que la venda; si no, uno que le compre lo que trae.
+        // Con el filtro de la herramienta siempre puesto, el bot con oficio quedaba atado para siempre a los
+        // cuatro que las venden — y como cuesta 200 y él tiene 0, tampoco podía vender botín ni comprar
+        // pociones en ningún otro lado: el lazo se cerraba sobre sí mismo.
+        short quiero = vaPorLaHerramienta ? HerramientaDeSuOficio : (short)0;
         // Y SI VA A VENDER, QUE SEA A ALGUIEN QUE LE COMPRE. Cada mercader acepta UN tipo de objeto y rechaza
         // el resto en silencio (`TipoItems`, VB6 Comercio.bas:123), así que caer en el gremio equivocado es un
         // viaje entero para volver con lo mismo: el pollo se lo compra el de comidas, no el herrero. Eso lo
@@ -930,17 +977,71 @@ public sealed class Bot
         return true;
     }
 
-    /// <summary>De muerto: caminar hacia el sacerdote si hay uno a la vista, y si no, dar vueltas buscando.
-    /// Es lo que hace un jugador tirado — no hay otra forma de volver.</summary>
+    /// <summary>
+    /// De muerto: ir hasta un sacerdote. Es lo único que le queda por hacer, y no hay otra forma de volver.
+    ///
+    /// <para><b>Se VIAJA, no se da vueltas.</b> Antes esto miraba sólo lo que tenía a la vista —la ventana de
+    /// visión son ocho baldosas por cuatro— y si no había ninguno se ponía a pasear adentro de su zona, veinte
+    /// baldosas. O sea que un cadáver a treinta baldosas del templo, o en el mapa de al lado, no volvía nunca.
+    /// Medido: tres de siete bots muertos y quietos durante cuarenta y cinco minutos, y uno estaba en un mapa
+    /// que TIENE sacerdote. El navegante sabe dónde están —salen de los puntos de aparición del mundo, igual
+    /// que los mercaderes—, así que se le pregunta y se camina hasta ahí.</para>
+    /// </summary>
     private async Task<bool> BuscarSacerdoteAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                                   CancellationToken ct)
     {
-        var cura = sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha)?.NpcType == 1);
-        if (cura is not { } c) return await PasearAsync(transporte, sentidos, cerrada, ct);
+        // A la vista: se va derecho, que es más barato que recalcular un camino entero.
+        if (sentidos.MasCercano(EsSacerdote) is { } c)
+        {
+            // YA ESTÁ AL ALCANCE: no se camina más. Caminar hacia un sacerdote que se tiene al lado es
+            // empujarle la baldosa —que está ocupada por él— y quedarse ahí forcejeando; lo único que falta
+            // es insistir con el pedido, que es lo que hace el ciclo de arriba. El alcance se mide POR EJE,
+            // igual que lo mide el servidor: con Manhattan, un cadáver a siete baldosas en Y se quedaba
+            // quieto pidiendo algo que nunca iba a llegar.
+            if (AlAlcanceDelAltar(sentidos, c.Quien)) { await Task.Delay(RebanadaDePausaMs, ct); return true; }
+            var (x, y) = sentidos.Posicion;
+            return await UnPasoHaciaAsync(transporte, sentidos, c.Quien.X - x, c.Quien.Y - y, ct, deMuerto: true)
+                   != Paso.SinConexion;
+        }
 
-        var (x, y) = sentidos.Posicion;
-        return await UnPasoHaciaAsync(transporte, sentidos, c.Quien.X - x, c.Quien.Y - y, ct) != Paso.SinConexion;
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { } templo)
+            return await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct,
+                                      RadioDelAltar, deMuerto: true)
+                   || !sentidos.Vivo;   // no llegó, pero sigue muerto: se vuelve a intentar en la próxima vuelta
+
+        return await PasearAsync(transporte, sentidos, cerrada, ct);
     }
+
+    /// <summary>
+    /// Cuando hace rato que no aparece una presa, viajar a un mapa donde haya. Devuelve si se ocupó de esto.
+    ///
+    /// <para>La PACIENCIA es lo que hace que esto no sea un bot que vive viajando: recién se mueve después de
+    /// varios minutos sin ver nada a lo que animarse, que es más o menos lo que aguanta una persona dando
+    /// vueltas al pedo. Y el destino sale del navegante con el MISMO criterio con el que elige presa, así que
+    /// no viaja a un mapa lleno de cosas que le quedan grandes.</para>
+    /// </summary>
+    private async Task<bool> BuscarDondeCazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                                   int vidaMaxima, int nivel, Task cerrada, CancellationToken ct)
+    {
+        if (Environment.TickCount64 - _ultimaPresa < PacienciaSinPresaMs) return false;
+        _ultimaPresa = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
+
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
+                                    f => EsPresa((short)f, vidaMaxima, nivel)) is not { } coto) return false;
+        if (coto.Mapa == sentidos.Mapa) return false;   // ya está donde hay: lo que falta es que reaparezcan
+
+        return await IrHastaAsync(transporte, sentidos, coto.Mapa, coto.X, coto.Y, cerrada, ct, RadioDeCazaSuyo);
+    }
+
+    /// <summary>Cuándo vio una presa por última vez. Arranca en cero a propósito: un bot que aparece en un
+    /// pueblo no tiene por qué esperar los primeros minutos para salir de ahí.</summary>
+    private long _ultimaPresa;
+
+    /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
+    private const int PacienciaSinPresaMs = 3 * 60_000;
+
+    /// <summary>El sacerdote que resucita: <c>NpcType 1</c> (VB6 <c>eNPCType.Revividor</c>).</summary>
+    private bool EsSacerdote(short ficha) => _entorno.Datos.Npc(ficha)?.NpcType == 1;
 
     /// <summary>Quedarse quieto un rato, pero MIRANDO. La espera se parte en rebanadas y se corta si la vida
     /// bajó o si algo se le puso al lado: un bot que descansa cuarenta segundos con los ojos cerrados se
@@ -1085,11 +1186,13 @@ public sealed class Bot
     /// </summary>
     private async Task<bool> IrHastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                           int mapaDestino, byte destinoX, byte destinoY,
-                                          Task cerrada, CancellationToken ct, int tolerancia = 1)
+                                          Task cerrada, CancellationToken ct, int tolerancia = 1,
+                                          bool deMuerto = false)
     {
         for (int tramos = 0; tramos < TramosPorViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
-            if (!sentidos.Ubicado || !sentidos.Vivo) return false;
+            // De muerto se viaja igual: es la única forma de llegar al sacerdote.
+            if (!sentidos.Ubicado || (!deMuerto && !sentidos.Vivo)) return false;
             int mapa = sentidos.Mapa;
             var desde = sentidos.Posicion;
 
@@ -1117,7 +1220,7 @@ public sealed class Bot
                 if (dx == 0 && dy == 0) continue;
                 // El camino es de a un paso: cualquier otra cosa quiere decir que nos corrieron de lugar.
                 if (Math.Abs(dx) + Math.Abs(dy) != 1) break;
-                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct);
+                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto);
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
                 if (_pasoTrabado) break;               // algo se paró en el camino: recalcular
             }
@@ -1142,7 +1245,7 @@ public sealed class Bot
     /// Poner el chequeo en cada bucle sería ponerlo cuatro veces y olvidarlo en el quinto.</para>
     /// </summary>
     private async Task<Paso> UnPasoHaciaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int dx, int dy,
-                                              CancellationToken ct)
+                                              CancellationToken ct, bool deMuerto = false)
     {
         byte rumbo = _pasoTrabado && dx != 0 && dy != 0
             ? SentidosDelBot.RumboHacia(Math.Abs(dx) > Math.Abs(dy) ? 0 : dx, Math.Abs(dx) > Math.Abs(dy) ? dy : 0)
@@ -1154,7 +1257,7 @@ public sealed class Bot
         // El servidor corrige con un PosUpdate cuando el paso se rechaza, así que quedar donde estábamos
         // significa que hay algo adelante.
         _pasoTrabado = sentidos.Posicion == antes;
-        return Urge(sentidos) ? Paso.Urgencia : Paso.Dado;
+        return Urge(sentidos, deMuerto) ? Paso.Urgencia : Paso.Dado;
     }
 
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
@@ -1168,9 +1271,16 @@ public sealed class Bot
     /// pelear sin poder llegar NUNCA a la tienda — cada paso devolvía urgencia, el viaje se abortaba, y el
     /// enfriamiento de compras lo mandaba a esperar quince minutos para volver a fallar igual. Donde la
     /// energía sí importa —pelear y faenar— se mira aparte.</para>
+    ///
+    /// <para><b>Y AL MUERTO NO LE URGE NADA</b>, que era la otra mitad del mismo error. Con la regla de
+    /// arriba, un cadáver devolvía urgencia en CADA paso: o sea que no podía caminar a ningún lado, ni
+    /// siquiera hasta el sacerdote, que es lo único que le queda por hacer. Medido: tres de siete bots
+    /// muertos y clavados en la misma baldosa durante cuarenta y cinco minutos, uno de ellos en un mapa que
+    /// tiene sacerdote. Cuando va de muerto, lo único que cambia el cuadro es volver a estar vivo.</para>
     /// </summary>
-    private static bool Urge(SentidosDelBot sentidos) =>
-        !sentidos.Vivo || sentidos.Salud < TomaPocion;
+    private static bool Urge(SentidosDelBot sentidos, bool deMuerto = false) =>
+        deMuerto ? sentidos.Vivo
+                 : !sentidos.Vivo || sentidos.Salud < TomaPocion;
 
     private bool _pasoTrabado;
 
@@ -1231,10 +1341,13 @@ public sealed class Bot
     /// lo clickea si hay uno a la vista. Sin sacerdote no pasa nada, que es lo correcto.</summary>
     private void PedirResurreccion(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
-        var cura = sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha)?.NpcType == 1);
-        if (cura is not { } c || c.Pasos > 10) return;
-        transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(c.Quien.X).WriteByte(c.Quien.Y)));
-        transporte.Mandar(Paquete(ClientPacketId.Resucitate, _ => { }));
+        if (sentidos.MasCercano(EsSacerdote) is not { } c || !AlAlcanceDelAltar(sentidos, c.Quien)) return;
+        // DOBLE CLIC, no clic + Resucitate. Es la misma trampa que con la tienda: el `LeftClick` del servidor
+        // sondea PRIMERO la baldosa de ABAJO del punto clickeado y `PlayerAt` no excluye al que clickea, así
+        // que un bot parado justo debajo del sacerdote se targeteaba A SÍ MISMO y `Resucitate` contestaba "no
+        // tenés nada clickeado". `HandleDoubleClick` resuelve el NPC de la baldosa y revive él mismo
+        // (VB6 Acciones.bas:304), sin pasar por el target.
+        transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(c.Quien.X).WriteByte(c.Quien.Y)));
     }
 
     // ── Los paquetes ──────────────────────────────────────────────────────────────────────────────────

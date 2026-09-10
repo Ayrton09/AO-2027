@@ -22,6 +22,30 @@ public class OficioDelBotTests
 {
     private const short CanaDePesca = 881, HachaDeLenador = 127, PiqueteDeMinero = 187;
 
+    /// <summary>
+    /// DE UN PUEBLO SE PUEDE SALIR A CAZAR. Un paseo que pisa una puerta cambia de mapa, y el bot toma el
+    /// mapa nuevo como su zona: si cae en un pueblo —donde no hay criaturas— se queda ahí para siempre.
+    /// Medido: cuatro de ocho bots con la experiencia congelada una hora entera. La salida existe si desde un
+    /// mapa sin presas el navegante encuentra uno con presas, que es justo lo que el bot le pregunta.
+    /// </summary>
+    [Fact]
+    public void Desde_un_mapa_sin_presas_se_encuentra_uno_con_presas()
+    {
+        if (Mundo() is not { } m) return;
+
+        bool HayPresa(int ficha) => m.Datos.Npc(ficha) is { Hostile: true, Attackable: true } n
+                                    && SeLeAnimaUnRecienNacido(n);
+
+        // Un mapa poblado donde un recién nacido no tiene NADA que cazar: es la situación que dejó bots
+        // parados. Si la data cambiara y ese mapa tuviera presas, el test se buscaría otro antes de opinar.
+        int pueblo = m.Datos.MapSpawns.Keys.FirstOrDefault(
+            mapa => m.Datos.MapSpawns[mapa].Count > 5
+                    && !m.Datos.MapSpawns[mapa].Any(s => HayPresa(s.NpcIndex)));
+        if (pueblo == 0) return;
+
+        Assert.NotNull(m.Mapas.DondeHay(pueblo, (50, 50), HayPresa));
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
@@ -145,6 +169,39 @@ public class OficioDelBotTests
         Assert.True(comprador.n is not null,
             $"nadie compra el botín de la cuna a pie desde ({desde.Item1},{desde.Item2}): el bot lo levanta y no tiene dónde cambiarlo");
     }
+
+    /// <summary>
+    /// DEL CEMENTERIO SE VUELVE. Un bot muerto no puede hacer NADA salvo caminar hasta un sacerdote, así que
+    /// si desde la cuna no se llega a uno, el bot queda tirado para siempre — y eso fue exactamente lo que
+    /// pasó: tres de siete bots muertos y quietos cuarenta y cinco minutos.
+    ///
+    /// <para>Se exige que el sacerdote esté en el mapa donde nace todo personaje, no en otro: ahí es donde
+    /// van a morir los primeros, y el que muere de nivel uno no tiene con qué cruzar medio mundo.</para>
+    /// </summary>
+    [Fact]
+    public void En_la_cuna_hay_un_sacerdote_al_que_se_llega_caminando()
+    {
+        if (Mundo() is not { } m) return;
+        if (!m.Datos.MapSpawns.TryGetValue(m.Cuna.Map, out var spawns)) return;
+
+        var desde = ((byte)m.Cuna.X, (byte)m.Cuna.Y);
+        var sacerdotes = spawns.Where(s => m.Datos.Npc(s.NpcIndex)?.NpcType == TipoRevividor).ToList();
+        Assert.True(sacerdotes.Count > 0, $"el mapa {m.Cuna.Map} no tiene ningún sacerdote: un muerto no vuelve nunca");
+        Assert.Contains(sacerdotes, s => m.Mapas.HayComoLlegar(m.Cuna.Map, desde, ((byte)s.X, (byte)s.Y), 3) is not null);
+    }
+
+    /// <summary>Y el navegante tiene que encontrarlo solo, que es lo que el bot le pregunta de verdad cuando
+    /// está tirado.</summary>
+    [Fact]
+    public void El_navegante_encuentra_al_sacerdote_desde_la_cuna()
+    {
+        if (Mundo() is not { } m) return;
+        var desde = ((byte)m.Cuna.X, (byte)m.Cuna.Y);
+        Assert.NotNull(m.Mapas.DondeHay(m.Cuna.Map, desde, f => m.Datos.Npc(f)?.NpcType == TipoRevividor));
+    }
+
+    /// <summary>VB6 <c>eNPCType.Revividor</c>.</summary>
+    private const int TipoRevividor = 1;
 
     /// <summary>
     /// Y LA HERRAMIENTA SE PUEDE IR A BUSCAR. Con el oro juntado, el bot le pregunta al navegante dónde hay
