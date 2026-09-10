@@ -462,7 +462,12 @@ public sealed class Bot
                 presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
             if (presa is { } p && p.Pasos <= RadioDeCazaSuyo && sentidos.Salud >= VuelveAPelear && LeDanGanas())
             {
-                _ultimaPresa = Environment.TickCount64;
+                // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
+                // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
+                // mudarse. Medido: cinco bots amontonados en el mapa 1, que tiene UNA sola serpiente y paga cero,
+                // subiendo de nivel de a poco y sin ganar una moneda — con nueve escorpiones que pagan a un salto.
+                if (PagaOro(p.Quien.FichaNpc)) _ultimaPresaQuePaga = Environment.TickCount64;
+                else if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
                 if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
                 continue;
             }
@@ -1055,11 +1060,17 @@ public sealed class Bot
     private async Task<bool> BuscarDondeCazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                    int vidaMaxima, int nivel, Task cerrada, CancellationToken ct)
     {
-        if (Environment.TickCount64 - _ultimaPresa < PacienciaSinPresaMs) return false;
-        _ultimaPresa = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
+        if (Environment.TickCount64 - _ultimaPresaQuePaga < PacienciaSinPresaMs) return false;
+        _ultimaPresaQuePaga = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
 
-        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
-                                    f => EsPresa((short)f, vidaMaxima, nivel)) is not { } coto) return false;
+        // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
+        // "hay al menos una presa", sin mirar si soltaba oro — y así la única serpiente del mapa 1 alcanzaba para
+        // mandar ahí a cinco bots, que se la repartieron durante media hora sin ganar una moneda.
+        var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
+                                              f => EsPresa((short)f, vidaMaxima, nivel) && PagaOro((short)f))
+                      ?? _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion,
+                                                 f => EsPresa((short)f, vidaMaxima, nivel));
+        if (hallado is not { } coto) return false;
 
         // "HAY PRESAS EN ESTE MAPA" NO ES "HAY PRESAS DONDE ESTOY PARADO". Acá se devolvía false cuando el
         // coto caía en el mapa propio, dando por hecho que entonces ya estaba bien ubicado — y no: el paseo
@@ -1077,9 +1088,11 @@ public sealed class Bot
         return true;
     }
 
-    /// <summary>Cuándo vio una presa por última vez. Arranca en cero a propósito: un bot que aparece en un
-    /// pueblo no tiene por qué esperar los primeros minutos para salir de ahí.</summary>
-    private long _ultimaPresa;
+    /// <summary>Cuándo cazó por última vez algo que SUELTA ORO. Es contra esto que se mide la paciencia para
+    /// mudarse: cazar criaturas que no pagan no cuenta, porque con eso un bot se queda para siempre donde sólo
+    /// hay experiencia y ni una moneda. Arranca en cero a propósito: un bot que aparece en un pueblo no tiene
+    /// por qué esperar los primeros minutos para salir de ahí.</summary>
+    private long _ultimaPresaQuePaga;
 
     /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
     private const int PacienciaSinPresaMs = 3 * 60_000;
