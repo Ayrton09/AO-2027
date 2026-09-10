@@ -10929,17 +10929,13 @@ public sealed partial class PacketDispatcher
     /// Ver <see cref="Game.MerchantSlot"/>.</para></summary>
     private int PrecioDeLista(short objIndex) => _data.Obj(objIndex)?.Value ?? 0;
 
-    private static long PrecioParaElComprador(Player? p, int precioDeLista)
-    {
-        if (p is null) return precioDeLista;
-        double desc = 1 + p.Skills[GameLimits.SkillComerciar] / 100.0;
-        // SIN PISO. Acá había un `Math.Max(1, ...)` que el original no tiene (Comercio.bas:89 es
-        // `Precio = CLng(Valor / Descuento * Cantidad + 0.5)` y nada más), y no era inocuo: los objetos de
-        // Valor 0 —entre ellos LA CAÑA DE PESCA— pasaban a costar una moneda, y un personaje recién nacido
-        // tiene cero. O sea que el piso le cerraba el oficio de pesca a cualquiera que empezara de cero, que
-        // es justamente para quien ese objeto vale 0.
-        return (long)(precioDeLista / desc + 0.5);   // VB6 CLng(... + 0.5)
-    }
+    /// <summary>Las cuentas del mercader viven en <see cref="Comercio"/>: lo que cobra, lo que canta en la
+    /// vitrina y lo que paga son tres fórmulas parecidas y distintas, y separadas se portaron mal.</summary>
+    private static long PrecioDeCompra(Player? p, int precioDeLista, int cantidad) =>
+        Comercio.PrecioDeCompra(precioDeLista, p?.Skills[GameLimits.SkillComerciar] ?? 0, cantidad);
+
+    private static float PrecioDeVitrina(Player? p, int precioDeLista) =>
+        Comercio.PrecioDeVitrina(precioDeLista, p?.Skills[GameLimits.SkillComerciar] ?? 0);
 
     /// <summary><c>SND_ORO2</c> (Declares.bas:558): el tintineo que el original tira al área al soltar oro.</summary>
     private const short SndOro = 172;
@@ -11628,7 +11624,7 @@ public sealed partial class PacketDispatcher
         for (byte i = 0; i < npc.Stock!.Count; i++)
         {
             var st = npc.Stock[i];
-            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, (int)PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)), st.ObjIndex));
+            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, PrecioDeVitrina(p, PrecioDeLista(st.ObjIndex)), st.ObjIndex));
         }
     }
 
@@ -11680,7 +11676,7 @@ public sealed partial class PacketDispatcher
             }
             if (st.Amount < 1) return;   // slot agotado: sin esto Math.Clamp(_,1,0) lanza ArgumentException (min>max)
             int buy = Math.Clamp((int)amount, 1, st.Amount);
-            long cost = PrecioParaElComprador(p, PrecioDeLista(st.ObjIndex)) * buy;
+            long cost = PrecioDeCompra(p, PrecioDeLista(st.ObjIndex), buy);
             if (p.Gold < cost) { session.Send(ServerMessages.LocaleMsg(26)); return; }
             int invSlot = FindSlotFor(p, st.ObjIndex, buy);
             if (invSlot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
@@ -11702,7 +11698,7 @@ public sealed partial class PacketDispatcher
             // Comercio.bas:101-102), que lee la ranura del NPC, no una copia.
             var trasComprar = npc.Stock![slot - 1];
             session.Send(ServerMessages.ChangeNpcInventorySlot(slot, trasComprar.Amount,
-                (int)PrecioParaElComprador(p, PrecioDeLista(trasComprar.ObjIndex)), trasComprar.ObjIndex));
+                PrecioDeVitrina(p, PrecioDeLista(trasComprar.ObjIndex)), trasComprar.ObjIndex));
             session.Send(ServerMessages.UpdateGold(p.Gold));
             session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", FuenteInfo));
             // Regatear entrena: el VB6 sube Comerciar al final de `Sub Comercio` (Comercio.bas:192), que es la
@@ -11761,10 +11757,9 @@ public sealed partial class PacketDispatcher
             // cantidad 2 el original da Fix(1,67*2)=3 y el port daba (5/3)*2=2.
             var vendido = _data.Obj(inv.ObjIndex);
             short objVendido = inv.ObjIndex;   // se guarda ANTES: abajo el slot se vacía y el índice se pierde
-            double salePrice = vendido is null || vendido.IsNewbie ? 0.0 : vendido.Value / 3.0;
-            // Fix(): trunca. En LONG y con techo: 10.000 unidades de un Valor alto desbordan un int y el
-            // cast desde double dejaba la ganancia negativa — el vendedor se destruía su propio oro.
-            long gain = Math.Min((long)Math.Floor(salePrice * sell), MaxOro);
+            // En LONG y con techo: 10.000 unidades de un Valor alto desbordan un int y el cast desde double
+            // dejaba la ganancia negativa — el vendedor se destruía su propio oro.
+            long gain = Math.Min(Comercio.PrecioDeVenta(vendido, sell), MaxOro);
 
             // Vender lo que se lleva puesto lo DESEQUIPA, y va acá arriba porque el original saca el objeto
             // antes de calcular el precio (`QuitarUserInvItem`, Comercio.bas:154, contra el `Fix` de :158 y el
@@ -11992,7 +11987,7 @@ public sealed partial class PacketDispatcher
         slotStock.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, slotStock.Amount + cantidad);
         npc.Stock[idx] = slotStock;
         session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(idx + 1), slotStock.Amount,
-            (int)PrecioParaElComprador(session.Player, PrecioDeLista(slotStock.ObjIndex)), slotStock.ObjIndex));
+            PrecioDeVitrina(session.Player, PrecioDeLista(slotStock.ObjIndex)), slotStock.ObjIndex));
     }
 
     private void DescontarStockDelMercader(Npc npc, int idx, short cantidad)
