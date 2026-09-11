@@ -728,7 +728,10 @@ public sealed class Bot
                 // sale a pie: medido, desde el mapa 62 no hay a pie ningún vendedor de piquetes ni de hachas, y la
                 // única salida hacia la cuna está en un cuarto cerrado. Después de un par de intentos, a casa, igual
                 // que con el coto; el contador es otro porque cazar bien no arregla no poder comprar.
-                if (intento == 0 && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna && !_entorno.Datos.IsPkMap(sentidos.Mapa))
+                // Sólo si hay algo que COMPRAR: nadie vuelve a casa con la runa para ir a vender.
+                bool vaAComprar = vaPorLaHerramienta || vaPorComida || vaPorBebida || vaPorPociones;
+                if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
+                    && !_entorno.Datos.IsPkMap(sentidos.Mapa))
                 {
                     _tiendasSinCamino = 0;
                     Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
@@ -883,6 +886,18 @@ public sealed class Bot
     private const byte ClasePescador = 11, ClaseLenador = 13, ClaseMinero = 14;
     private const short CanaDePesca = 881, HachaDeLenador = 127, PiqueteDeMinero = 187;
 
+    /// <summary>Lo que saca su oficio, con los mismos números que usa el servidor para saber qué da cada trabajo
+    /// (el pez de la caña, la leña y el hierro).</summary>
+    private short ProductoDeSuOficio => _clase switch
+    {
+        ClasePescador => Pargo,
+        ClaseLenador => Lena,
+        ClaseMinero => Hierro,
+        _ => 0,
+    };
+
+    private const short Pargo = 139, Lena = 58, Hierro = 192;
+
     /// <summary>¿Le falta la herramienta de su oficio? Ninguna clase nace con ella —el Pescador, el Leñador y
     /// el Minero reciben todos el mismo martillo de piedra— así que hay que ir a comprarla, igual que un
     /// jugador nuevo.</summary>
@@ -902,7 +917,11 @@ public sealed class Bot
         // incluidas. Sin esto, la caña recién pagada caía desequipada en la mochila y, en cuanto vencía el
         // enfriamiento de compras, el bot se la volvía a vender: doscientas monedas de caza tiradas por una
         // regla de "qué es botín".
-        if (_traidoDeCasa.Contains(obj) || obj == HerramientaDeSuOficio) return false;
+        // LO QUE SACÓ DE SU OFICIO SÍ SE VENDE, aunque venga de otra sesión. `_traidoDeCasa` es una foto de la mochila
+        // al entrar, así que el pescado de la sesión anterior quedaba "de casa" y no se vendía nunca: medido, una
+        // Pescadora que entró con 135 pargos, llegó a 158, y en toda la corrida no salió una sola vez a vender. La
+        // comida que necesita la sigue guardando la reserva.
+        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio) || obj == HerramientaDeSuOficio) return false;
         var o = _entorno.Datos.Obj(obj);
         // LA COMIDA Y LA BEBIDA DEL BOTÍN SÍ SE VENDEN, y era lo único que tenían. En el Dungeon Newbie —donde
         // nace TODO personaje— las criaturas que un recién nacido puede matar dan CERO oro: murciélagos,
