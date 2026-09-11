@@ -377,6 +377,19 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Las baldosas donde hay alguien parado, criatura o persona, sin contarse a sí mismo: el mapa no las sabe y no se
+    /// pueden pisar.</summary>
+    public IReadOnlySet<(byte X, byte Y)> BaldosasOcupadas()
+    {
+        lock (_candado)
+        {
+            var ocupadas = new HashSet<(byte X, byte Y)>();
+            foreach (var v in _visibles.Values)
+                if (v.CharIndex != _miCharIndex) ocupadas.Add((v.X, v.Y));
+            return ocupadas;
+        }
+    }
+
     /// <summary>Dónde está ese personaje ahora, si sigue a la vista.</summary>
     public Visible? Donde(short charIndex)
     {

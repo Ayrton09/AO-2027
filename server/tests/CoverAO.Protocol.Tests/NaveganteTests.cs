@@ -290,6 +290,30 @@ public class NaveganteTests
         Assert.Null(m.Mapas.PuertaHacia(20, 37, (75, 55), pisable: Pisable));
     }
 
+    /// <summary>
+    /// ALEJARSE NO SE TRABA EN UN RINCÓN: en (47,48) de la cuna hay pared al norte y al oeste, y con la criatura al este la huida a
+    /// ciegas rebotaba entre las dos paredes. El camino sale por el piso, en cruz, y termina lejos. Con el sur ocupado no queda
+    /// adónde ir.
+    /// </summary>
+    [Fact]
+    public void Alejarse_de_un_rincon_sale_por_donde_hay_piso()
+    {
+        if (Mundo() is not { } m) return;
+        Assert.True(m.Datos.IsBlockedTile(37, 47, 47) && m.Datos.IsBlockedTile(37, 46, 48) && !m.Datos.IsBlockedTile(37, 47, 49),
+            "el rincón de la cuna cambió: el test no prueba nada");
+        var camino = m.Mapas.LejosDe(37, (47, 48), (48, 48), 8);
+        Assert.NotNull(camino);
+        var antes = ((byte X, byte Y))(47, 48);
+        foreach (var b in camino!)
+        {
+            Assert.Equal(1, Math.Abs(b.X - antes.X) + Math.Abs(b.Y - antes.Y));
+            Assert.False(m.Datos.IsBlockedTile(37, b.X, b.Y), $"el camino pisa la pared en {b}");
+            antes = b;
+        }
+        Assert.True(Math.Abs(antes.X - 48) + Math.Abs(antes.Y - 48) >= 5, $"terminó en {antes}, casi pegado a la criatura");
+        Assert.Null(m.Mapas.LejosDe(37, (47, 48), (48, 48), 8, new HashSet<(byte X, byte Y)> { (47, 49) }));
+    }
+
     /// <summary>Y dónde se puede pescar. El agua no viaja por la red —el servidor no manda el terreno— así que
     /// si esto no la encontrara, un Pescador no tendría forma de saber a dónde ir.</summary>
     [Fact]

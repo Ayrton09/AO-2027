@@ -1906,31 +1906,39 @@ public sealed class Bot
                    w => w.WriteByte(a.X).WriteByte(a.Y).WriteByte((byte)GameLimits.SkillMagia)));
     }
 
-    /// <summary>Retroceder unos pasos en dirección contraria a lo que lo está lastimando. No es huir del todo
-    /// —el bot no sabe a dónde ir— pero le saca la criatura de encima mientras la vida vuelve.</summary>
-    /// <summary>Un rumbo perpendicular al dado, alternando de lado. Los rumbos son los del juego: 1 norte,
-    /// 2 este, 3 sur, 4 oeste.</summary>
-    private static byte RumboDeCostado(byte rumbo, int vuelta) =>
-        rumbo is 1 or 3 ? (byte)(vuelta % 2 == 0 ? 2 : 4) : (byte)(vuelta % 2 == 0 ? 1 : 3);
-
+    /// <summary>
+    /// ALEJARSE de lo que lo está lastimando: unos pasos por el camino a la baldosa libre más lejos de la criatura, a
+    /// <see cref="PasosDeHuida"/> o menos, sabiendo dónde están las paredes, el agua y quién está parado. No es huir del todo —el
+    /// bot no sabe a dónde ir— pero le saca la criatura de encima mientras la vida vuelve.
+    ///
+    /// <para>Antes se caminaba a ciegas en contra de la criatura y, al chocar, se probaba un costado alternando de lado según la
+    /// vuelta. En un rincón eso rebotaba entre las dos paredes sin probar nunca la salida: medido en `rojo1`, los cinco bots sin
+    /// pociones murieron alguna vez después de varias vueltas huyendo sin moverse de la baldosa, uno de ellos veinticuatro vueltas
+    /// seguidas en (47,48) de la cuna, con pared al norte y al oeste y piso libre al sur y al este.</para>
+    /// </summary>
     private async Task<bool> AlejarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                            SentidosDelBot.Visible de, Task cerrada, CancellationToken ct)
     {
-        var (x, y) = sentidos.Posicion;
-        byte rumbo = SentidosDelBot.RumboHacia(x - de.X, y - de.Y);
-        for (int i = 0; i < _rng.Next(3, 7) && !cerrada.IsCompleted; i++)
+        var donde = sentidos.Posicion;
+        var camino = _entorno.Mapas.LejosDe(sentidos.Mapa, donde, (de.X, de.Y), PasosDeHuida, sentidos.BaldosasOcupadas());
+        // ACORRALADO DE VERDAD: ninguna baldosa a la que se llegue queda más lejos. Se espera un paso y la vuelta que viene lo vuelve
+        // a mirar, que la criatura se mueve.
+        if (camino is null) { await Task.Delay(UnPaso(), ct); return true; }
+        foreach (var baldosa in camino.Take(_rng.Next(3, 7)))
         {
-            var antes = sentidos.Posicion;
+            if (cerrada.IsCompleted) break;
+            byte rumbo = SentidosDelBot.RumboHacia(baldosa.X - donde.X, baldosa.Y - donde.Y);
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
             await Task.Delay(UnPaso(), ct);
-            // SI LA PARED NO DEJA, SE PRUEBA PARA LOS COSTADOS. Acá se caminaba siempre en contra del que pega sin
-            // mirar si el paso entraba: con una pared atrás, cada paso rebotaba y el bot se quedaba pegado a la
-            // criatura que lo estaba corriendo.
-            if (sentidos.Posicion == antes) rumbo = RumboDeCostado(rumbo, i);
+            // El servidor corrige con un PosUpdate cuando el paso se rechaza: algo se paró adelante, y la vuelta que viene recalcula.
+            if (sentidos.Posicion != baldosa) break;
+            donde = baldosa;
         }
         return true;
     }
+
+    private const int PasosDeHuida = 8;
 
     /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.

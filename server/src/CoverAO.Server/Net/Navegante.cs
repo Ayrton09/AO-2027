@@ -392,6 +392,49 @@ public sealed class Navegante
         return null;
     }
 
+    /// <summary>
+    /// HACIA DÓNDE ALEJARSE de <paramref name="amenaza"/>: el camino a la baldosa a <paramref name="pasos"/> o menos que queda más
+    /// lejos de ella, contada en Manhattan porque en el juego se pega en cruz. Sin pisar la baldosa de la amenaza, lo que el que
+    /// llama trae en <paramref name="evitar"/> ni una salida, que saca del mapa. null si ninguna queda más lejos que donde está.
+    ///
+    /// <para>Entre las que quedan igual de lejos gana la primera que encuentra la búsqueda en anchura, que es la de menos pasos.</para>
+    /// </summary>
+    public IReadOnlyList<(byte X, byte Y)>? LejosDe(int mapa, (byte X, byte Y) desde, (byte X, byte Y) amenaza, int pasos,
+                                                    IReadOnlySet<(byte X, byte Y)>? evitar = null)
+    {
+        static int Distancia(int x, int y, (byte X, byte Y) b) => Math.Abs(x - b.X) + Math.Abs(y - b.Y);
+        var deDonde = new Dictionary<int, int>();
+        var pasosHasta = new Dictionary<int, int>();
+        var cola = new Queue<int>();
+        int inicio = Clave(desde.X, desde.Y);
+        deDonde[inicio] = -1;
+        pasosHasta[inicio] = 0;
+        cola.Enqueue(inicio);
+        int mejor = inicio, mejorDistancia = Distancia(desde.X, desde.Y, amenaza);
+        while (cola.Count > 0)
+        {
+            int actual = cola.Dequeue();
+            byte x = (byte)(actual & 0xff), y = (byte)(actual >> 8);
+            int d = Distancia(x, y, amenaza);
+            if (d > mejorDistancia) { mejor = actual; mejorDistancia = d; }
+            if (pasosHasta[actual] >= pasos) continue;
+            for (byte rumbo = 1; rumbo <= 4; rumbo++)
+            {
+                var (dx, dy) = SentidosDelBot.Paso(rumbo);
+                int nx = x + dx, ny = y + dy;
+                if (!SePuedePisar(mapa, nx, ny) || evitar?.Contains(((byte)nx, (byte)ny)) == true) continue;
+                if (nx == amenaza.X && ny == amenaza.Y) continue;
+                if (EsSalida(mapa, nx, ny)) continue;
+                int vecino = Clave((byte)nx, (byte)ny);
+                if (deDonde.ContainsKey(vecino)) continue;
+                deDonde[vecino] = actual;
+                pasosHasta[vecino] = pasosHasta[actual] + 1;
+                cola.Enqueue(vecino);
+            }
+        }
+        return mejor == inicio ? null : Reconstruir(deDonde, mejor);
+    }
+
     /// <summary>Todas las baldosas a las que se llega caminando desde <paramref name="desde"/> en ese mapa. Es
     /// una sola búsqueda en anchura para responder muchas preguntas de "¿se llega?" seguidas, en vez de una
     /// búsqueda por cada baldosa de salida. El tope es el recuadro pisable entero, para no cortar un mapa
