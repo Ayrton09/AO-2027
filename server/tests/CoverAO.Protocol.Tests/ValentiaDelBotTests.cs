@@ -43,6 +43,18 @@ public class ValentiaDelBotTests
         Assert.False(Bot.EsPeligrosoPara(gallina, 50, 5, conPociones: false, curaVeneno: false));
     }
 
+    /// <summary>CON LA VIDA EN ROJO Y SIN POCIONES, EL ÁGUILA ASUSTA aunque sea presa. Con pociones o con la vida alta, no.</summary>
+    [Fact]
+    public void Con_la_vida_en_rojo_y_sin_pociones_hasta_la_presa_asusta()
+    {
+        if (Datos() is not { } d) return;
+        var aguila = d.Npc(532)!;
+        Assert.True(Bot.EsPresaPara(aguila, 50, 5, conPociones: false, curaVeneno: false));
+        Assert.True(Bot.AsustaConLaVidaEnRojo(aguila, conPociones: false, salud: 0.30));
+        Assert.False(Bot.AsustaConLaVidaEnRojo(aguila, conPociones: true, salud: 0.30));
+        Assert.False(Bot.AsustaConLaVidaEnRojo(aguila, conPociones: false, salud: 0.90));
+    }
+
     /// <summary>SIN POCIONES NI CURA, LO QUE ENVENENA NO ES PRESA: el Escorpión chico (golpe 3, veneno) sí lo es con pociones o con
     /// la poción que cura el veneno.</summary>
     [Fact]

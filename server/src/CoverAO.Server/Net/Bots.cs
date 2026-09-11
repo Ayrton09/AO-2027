@@ -492,7 +492,11 @@ public sealed class Bot
             // Con qué se cura, leído ANTES de buscar por lo mismo que la vida: la búsqueda tiene el modelo bajo su candado.
             bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
             bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
-            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno));
+            // CON LA VIDA EN ROJO Y SIN POCIONES, TODO LO QUE PEGA ASUSTA: la pelea que queda no se gana sin nada que tomar. Medido en
+            // `sano2`: las cinco muertes fueron de bots sin pociones contra el Águila, que para ellos es presa, con la vida ya en rojo.
+            double saludAhora = sentidos.Salud;
+            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)
+                || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora));
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
@@ -566,6 +570,9 @@ public sealed class Bot
     /// o no.</summary>
     private bool EsPeligroso(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
         EsPeligrosoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+
+    /// <summary>¿Asusta esta criatura a quien no tiene pociones y anda con la vida bajo el umbral de la poción? Toda la que pega.</summary>
+    public static bool AsustaConLaVidaEnRojo(NpcInfo? n, bool conPociones, double salud) => !conPociones && salud < TomaPocion && n is { Hostile: true, MaxHit: > 0 };
 
     /// <summary>La regla de <see cref="EsPeligroso"/> sobre la ficha sola.</summary>
     public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
@@ -1731,6 +1738,16 @@ public sealed class Bot
             return true;
         }
 
+        // SIN SACERDOTE AL QUE SE LLEGUE, LA RUNA A CASA, que en la cuna hay uno: lo mismo que para el veneno. Medido en `sano2`: bots
+        // sin pociones con la vida entre 7 y 30 % en el mapa 62, desde donde no se llega a pie a ningún sacerdote, esperando ahí hasta
+        // que un Águila los terminaba. Sólo fuera de un mapa pk, donde la runa no lleva.
+        if (++_sanacionesSinCamino >= CotosFallidosAntesDeLaRuna && !_entorno.Datos.IsPkMap(sentidos.Mapa)
+            && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
+        {
+            _sanacionesSinCamino = 0;
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            return true;
+        }
         _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaCuraMinMs, EsperaCuraMaxMs);
         return false;
     }
@@ -1741,6 +1758,7 @@ public sealed class Bot
     private const int SaltosHastaElSacerdote = 2;
     private const int EsperaSanarFallidoMinMs = 20_000, EsperaSanarFallidoMaxMs = 40_000;
     private long _proximaSanacion;
+    private int _sanacionesSinCamino;
 
     private const int PocionQueCuraElVeneno = 5;
     private const int EsperaCuraMinMs = 60_000, EsperaCuraMaxMs = 120_000;
