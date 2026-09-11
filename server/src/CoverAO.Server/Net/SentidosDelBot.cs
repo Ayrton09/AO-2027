@@ -322,6 +322,20 @@ public sealed class SentidosDelBot
             foreach (var baldosa in lejos) _enElPiso.Remove(baldosa);
     }
 
+    /// <summary>
+    /// LO QUE EL SERVIDOR LE HACE AL QUE MUERE SIN AVISARLE: le apaga la meditación y le saca todo lo puesto (`KillPlayer`
+    /// llama a `UnequipAll`, VB6 UserDie). El original avisa cada ranura desequipada con el paquete corto (acción 2, al final
+    /// de `Desequipar`, InvUsuario.bas:827) y el port no manda nada: sin esto el bot se seguía creyendo vestido y armado, y
+    /// `Equiparse` no le volvía a poner nada. Si algún día el servidor avisa, esto no cambia nada. Se llama con el candado
+    /// tomado.
+    /// </summary>
+    private void AlMorir()
+    {
+        _meditando = false;
+        for (int s = 1; s < _inventario.Length; s++)
+            if (_inventario[s].Puesto) _inventario[s] = (_inventario[s].Obj, _inventario[s].Cantidad, false);
+    }
+
     /// <summary>Qué hay tirado en esa baldosa, o 0.</summary>
     public short EnElPiso((byte X, byte Y) baldosa)
     {
@@ -523,7 +537,7 @@ public sealed class SentidosDelBot
                         _energiaMax = enerMax; _energia = ener;
                         _oro = oro;
                         _nivel = nivel; _hambre = hambre; _sed = sed;
-                        if (vida <= 0) _meditando = false;
+                        if (vida <= 0) AlMorir();
                     }
                     break;
                 }
@@ -532,7 +546,7 @@ public sealed class SentidosDelBot
                     lock (_candado)
                     {
                         _vida = l.Entero();
-                        if (_vida <= 0) _meditando = false;   // al morir el servidor apaga la meditación sin avisar
+                        if (_vida <= 0) AlMorir();
                     }
                     break;
 

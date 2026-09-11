@@ -432,6 +432,21 @@ public class SentidosDelBotTests
         Assert.NotNull(s.BotinMasCercano(_ => true));
     }
 
+    /// <summary>AL MORIR QUEDA SIN NADA PUESTO: el servidor desequipa todo sin avisarlo ranura por ranura.</summary>
+    [Fact]
+    public void Al_morir_queda_sin_nada_puesto()
+    {
+        var s = Ubicado(50, 50);
+        s.Recibir(ServerMessages.ChangeInventorySlot(3, 574, 1, true, 0f, 1));    // el arma, puesta
+        s.Recibir(ServerMessages.ChangeInventorySlot(4, 466, 1, true, 0f, 1));    // la ropa, puesta
+        Assert.True(s.LlevaPuesto(_ => true));
+
+        s.Recibir(ServerMessages.UpdateHP(0));
+        Assert.False(s.EstaPuesto(3));
+        Assert.False(s.EstaPuesto(4));
+        Assert.False(s.LlevaPuesto(_ => true));
+    }
+
     /// <summary>
     /// LA MEJOR OFERTA ES LA QUE MÁS RINDE POR MONEDA ENTRE LO QUE ALCANZA. La manzana cuesta dos y llena diez; el
     /// queso cuesta cinco y llena cincuenta: con plata, el queso. Sin plata para el queso, la manzana, que es el

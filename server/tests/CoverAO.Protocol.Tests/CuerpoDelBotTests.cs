@@ -87,6 +87,25 @@ public class CuerpoDelBotTests : IDisposable
         sesion.Close("fin del test");
     }
 
+    /// <summary>MORIR: el servidor le saca todo lo puesto sin avisarlo ranura por ranura, y el bot tiene que quedar igual.</summary>
+    [Fact]
+    public void Al_morir_el_bot_queda_sin_nada_puesto_como_en_el_servidor()
+    {
+        var p = new Player { CharIndex = 1, Name = "Aldo", Account = "aldo_bot", Pos = new WorldPos(1, 50, 50) };
+        p.Inventory[3] = new InventorySlot { ObjIndex = 574, Amount = 1, Equipped = true };
+        p.Inventory[4] = new InventorySlot { ObjIndex = 466, Amount = 1, Equipped = true };
+        var s = new SentidosDelBot();
+        foreach (byte ranura in new byte[] { 3, 4 })
+            s.Recibir(ServerMessages.ChangeInventorySlot(ranura, p.Inventory[ranura].ObjIndex, p.Inventory[ranura].Amount, true, 0f, 1));
+
+        PacketDispatcher.KillPlayer(new World(), _datos, p, "test");
+        s.Recibir(ServerMessages.UpdateHP(0));   // lo que manda el golpe que lo mata
+
+        Assert.False(p.Inventory[3].Equipped || p.Inventory[4].Equipped, "el servidor no lo desequipó: el test no mira nada");
+        Assert.False(s.EstaPuesto(3));
+        Assert.False(s.EstaPuesto(4));
+    }
+
     private static ByteQueueReader Paquete(ClientPacketId id, params byte[] datos)
     {
         var w = new ByteQueueWriter().WriteByte((byte)id);
