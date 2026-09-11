@@ -33,6 +33,9 @@ public sealed class Navegante
     /// lado; más que eso es un viaje que un personaje de nivel uno no haría.</summary>
     private const int TopeDeMapas = 5;
 
+    /// <summary>De cada mapa vecino se prueban hasta tantas entradas a zonas que no se tocan.</summary>
+    private const int ZonasPorMapa = 2;
+
     /// <summary>A cuántas baldosas de un NPC alcanza con quedar parado para poder hablarle: el mostrador
     /// atiende a tres (VB6 <c>Distancia</c>, Manhattan) y el doble clic no pide línea de vista.</summary>
     private const int RadioDeMostrador = 3;
@@ -114,7 +117,8 @@ public sealed class Navegante
     /// primera puerta, que es lo único que el bot necesita para dar el próximo paso del viaje.</para>
     /// </summary>
     public ((byte X, byte Y) Puerta, int Saltos)? PuertaHacia(int mapaActual, int mapaDestino,
-                                                             (byte X, byte Y)? desde = null)
+                                                             (byte X, byte Y)? desde = null,
+                                                             (byte X, byte Y)? meta = null)
     {
         if (mapaActual == mapaDestino) return null;
 
@@ -124,6 +128,24 @@ public sealed class Navegante
         // servidor: desde donde estaba parado un Minero en el mapa 62, la puerta (51,73) hacia el 194 que le daba
         // el navegante no tenía camino.
         var alcanzables = desde is { } d ? Alcanzables(mapaActual, d) : null;
+
+        // Y SI EL DESTINO ES EL MAPA DE AL LADO Y SE SABE ADÓNDE SE VA, LA PUERTA SE ELIGE POR LO QUE HAY DEL OTRO
+        // LADO: la primera que se alcanza puede dejar en una zona desde la que no se llega a la meta. Es la misma
+        // cuenta que hace `DondeHay`; sin ella el viaje entraba por otra puerta que la que se había elegido.
+        if (meta is { } objetivo)
+        {
+            var probadas = new List<HashSet<int>>();
+            foreach (var (destino, x, y) in Salidas(mapaActual))
+            {
+                if (destino != mapaDestino || (alcanzables is not null && !alcanzables.Contains(Clave(x, y)))) continue;
+                if (!_datos.MapExits.TryGetValue((mapaActual, x, y), out var llegada)) continue;
+                (byte X, byte Y) entrada = ((byte)llegada.DestX, (byte)llegada.DestY);
+                if (probadas.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) continue;
+                probadas.Add(Alcanzables(destino, entrada));
+                if (HayComoLlegar(destino, entrada, objetivo, RadioDeMostrador) is not null) return ((x, y), 1);
+                if (probadas.Count >= ZonasPorMapa) break;
+            }
+        }
 
         // BFS sobre mapas, recordando por qué puerta DE ESTE MAPA se entró a cada rama.
         var visto = new HashSet<int> { mapaActual };
@@ -184,28 +206,36 @@ public sealed class Navegante
         // Minero en el mapa 62 al que se mandaba al vendedor de piquetes del 194 por (51,73), la única salida hacia
         // allá, que no se alcanza desde ninguno de los puntos del 62 que se probaron.
         var alcanzables = Alcanzables(mapaActual, desde);
-        var visto = new HashSet<int> { mapaActual };
-        var cola = new Queue<(int Mapa, int Saltos)>();
-        foreach (var (destino, x, y) in Salidas(mapaActual))
-            if (alcanzables.Contains(Clave(x, y)) && visto.Add(destino)) cola.Enqueue((destino, 1));
+        // Y EN CADA MAPA SE BUSCA DESDE LA BALDOSA POR LA QUE SE ENTRA, que se sabe: cada salida dice dónde se
+        // aparece del otro lado. Primero se devolvía el primero que cumplía —y el bot viajaba hasta un mercader
+        // encerrado: de los ocho que venden la caña se llega a tres—; después se lo probaba desde unas baldosas de
+        // muestra repartidas por el mapa, que no son por donde se entra. Medido: a una Pescadora envenenada del
+        // mapa 62 se la mandaba al sacerdote del 64, que se alcanza desde alguna muestra pero no desde (10,36), la
+        // baldosa de llegada; entraba, no había camino, y lo volvía a intentar cada uno o dos minutos con el veneno
+        // encima. Un mapa puede tener entradas a zonas que no se tocan, así que de cada uno se prueban hasta dos.
+        var zonas = new Dictionary<int, List<HashSet<int>>>();
+        var cola = new Queue<(int Mapa, int Saltos, (byte X, byte Y) Entrada, HashSet<int> Zona)>();
+        void Entrar(int mapa, byte x, byte y, int saltos)
+        {
+            if (!_datos.MapExits.TryGetValue((mapa, x, y), out var llegada) || llegada.DestMap == mapaActual) return;
+            (byte X, byte Y) entrada = ((byte)llegada.DestX, (byte)llegada.DestY);
+            if (!zonas.TryGetValue(llegada.DestMap, out var deEse)) zonas[llegada.DestMap] = deEse = new();
+            if (deEse.Count >= ZonasPorMapa || deEse.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) return;
+            var zona = Alcanzables(llegada.DestMap, entrada);
+            deEse.Add(zona);
+            cola.Enqueue((llegada.DestMap, saltos, entrada, zona));
+        }
+        foreach (var (_, x, y) in Salidas(mapaActual))
+            if (alcanzables.Contains(Clave(x, y))) Entrar(mapaActual, x, y, 1);
 
         while (cola.Count > 0)
         {
-            var (mapa, saltos) = cola.Dequeue();
-            if (mapaSirve is not null && !mapaSirve(mapa))
-            {
-                if (saltos < TopeDeMapas)
-                    foreach (var (destino, _, _) in Salidas(mapa))
-                        if (visto.Add(destino)) cola.Enqueue((destino, saltos + 1));
-                continue;
-            }
-            // En un mapa donde todavía no está no se puede verificar el camino —no se sabe por dónde va a
-            // entrar—, así que ahí vale el primero. Al llegar, el bot vuelve a preguntar desde su posición y
-            // ahí sí se exige camino.
-            if (EnElMapa(mapa, null, sirve) is { } ahi) return (mapa, ahi.X, ahi.Y, saltos);
+            var (mapa, saltos, entrada, zona) = cola.Dequeue();
+            if ((mapaSirve is null || mapaSirve(mapa)) && EnElMapa(mapa, entrada, sirve) is { } ahi)
+                return (mapa, ahi.X, ahi.Y, saltos);
             if (saltos >= TopeDeMapas) continue;
-            foreach (var (destino, _, _) in Salidas(mapa))
-                if (visto.Add(destino)) cola.Enqueue((destino, saltos + 1));
+            foreach (var (_, x, y) in Salidas(mapa))
+                if (zona.Contains(Clave(x, y))) Entrar(mapa, x, y, saltos + 1);
         }
         return null;
     }
@@ -276,9 +306,9 @@ public sealed class Navegante
         return null;
     }
 
-    /// <summary>El que cumple en ese mapa. Con <paramref name="desde"/> se exige además que haya camino, y de
-    /// los que lo tienen se elige el más cercano.</summary>
-    private (byte X, byte Y)? EnElMapa(int mapa, (byte X, byte Y)? desde, Func<int, bool> sirve)
+    /// <summary>El que cumple en ese mapa y al que se llega caminando desde <paramref name="d"/>; de los que lo
+    /// tienen, el más cercano. Para otro mapa, <paramref name="d"/> es la baldosa por la que se entra.</summary>
+    private (byte X, byte Y)? EnElMapa(int mapa, (byte X, byte Y) d, Func<int, bool> sirve)
     {
         if (!_datos.MapSpawns.TryGetValue(mapa, out var lista)) return null;
         (byte X, byte Y)? mejor = null;
@@ -287,17 +317,6 @@ public sealed class Navegante
         {
             if (!sirve(s.NpcIndex)) continue;
             var donde = ((byte)s.X, (byte)s.Y);
-            if (desde is not { } d)
-            {
-                // TODAVÍA NO ESTÁ EN ESE MAPA, así que no se sabe por dónde va a entrar: se prueba desde unas
-                // pocas baldosas repartidas. Con devolver el primero que cumple —como hacía antes— el bot
-                // viajaba hasta un mercader encerrado en un edificio y volvía con las manos vacías; y como
-                // cada mapa tiene UNO solo de cada oficio, el que caía del lado inalcanzable dejaba al bot sin
-                // herramienta para siempre. Medido sobre el mundo: de los ocho que venden la caña se llega a
-                // tres, y de los doce que venden el hacha a seis.
-                if (Muestras.Any(m => HayComoLlegar(mapa, m, donde, RadioDeMostrador) is not null)) return donde;
-                continue;
-            }
             int pasos = Math.Abs(s.X - d.X) + Math.Abs(s.Y - d.Y);
             if (pasos >= mejorPasos) continue;
             if (HayComoLlegar(mapa, d, donde, RadioDeMostrador) is null) continue;
@@ -374,11 +393,6 @@ public sealed class Navegante
         _salidas.TryGetValue(mapa, out var l) ? l : Vacio;
 
     private static readonly List<(int Destino, byte X, byte Y)> Vacio = new();
-
-    /// <summary>Baldosas de prueba repartidas por un mapa, para preguntar "¿a esto se llega desde algún lado
-    /// abierto?" sin estar parado ahí.</summary>
-    private static readonly (byte X, byte Y)[] Muestras =
-        { (50, 50), (20, 20), (80, 80), (20, 80), (80, 20) };
 
     /// <summary>
     /// ¿Se puede pisar A PIE? Tres cosas: el anillo muerto del borde, que el servidor no deja pisar (VB6

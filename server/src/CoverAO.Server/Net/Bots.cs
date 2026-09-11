@@ -478,7 +478,12 @@ public sealed class Bot
             if (presa is not { } rica || rica.Pasos > RadioDeCaza)
                 presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
             int alcance = presa is { } elegida && PagaOro(elegida.Quien.FichaNpc) ? RadioDeCaza : RadioDeCazaSuyo;
-            if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && LeDanGanas())
+            // SIN ENERGÍA PARA PELEAR NO SE EMPIEZA UNA PELEA. `CazarAsync` se aleja apenas arranca si no la tiene, así
+            // que empezar igual era ir y volver. Medido con la sonda: un bot con la energía en cero eligiendo presa y
+            // alejándose cada pocos segundos, sin hacer otra cosa. Con la regeneración cortada alcanza con que le quede
+            // algo, porque esperar no la devuelve.
+            bool conFuelle = sentidos.Fuelle >= FuelleMinimo || ((sentidos.ConHambre || sentidos.ConSed) && sentidos.Fuelle > 0);
+            if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && conFuelle && LeDanGanas())
             {
                 // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
                 // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
@@ -1398,9 +1403,24 @@ public sealed class Bot
             return true;
         }
 
-        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { } templo
-            && await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar))
+        var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f));
+        if (templo is not null) _curasSinCamino = 0;
+        if (templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar))
             return true;
+
+        // SIN SACERDOTE AL QUE SE LLEGUE CAMINANDO, LA RUNA A CASA, que en la cuna hay uno. Medido sin servidor: desde
+        // el mapa 62 no se llega a pie a ningún sacerdote —la única salida hacia la cuna está en un cuarto cerrado—,
+        // y una Pescadora envenenada ahí siguió cazando con el veneno encima. Después de un par de intentos, igual que
+        // con el coto y con las tiendas; el contador es otro porque cada cosa se destraba por su lado.
+        if (templo is null && ++_curasSinCamino >= CotosFallidosAntesDeLaRuna && !_entorno.Datos.IsPkMap(sentidos.Mapa))
+        {
+            _curasSinCamino = 0;
+            if (Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
+            {
+                await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                return true;
+            }
+        }
 
         // NO HAY A QUIÉN IR: se sigue con lo demás y se vuelve a probar más tarde. Sin la espera, un bot envenenado
         // lejos de todo templo reintentaría el viaje en cada vuelta del ciclo.
@@ -1411,6 +1431,9 @@ public sealed class Bot
     private const int PocionQueCuraElVeneno = 5;
     private const int EsperaCuraMinMs = 60_000, EsperaCuraMaxMs = 120_000;
     private long _proximaCura;
+
+    /// <summary>Búsquedas de sacerdote seguidas sin ninguno al que se llegue caminando.</summary>
+    private int _curasSinCamino;
 
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
     /// false sólo si se cayó la conexión.</summary>
@@ -1552,7 +1575,7 @@ public sealed class Bot
             bool esLaMeta = mapa == mapaDestino;
             (byte X, byte Y) meta;
             if (esLaMeta) meta = (destinoX, destinoY);
-            else if (_entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde) is { } salida) meta = salida.Puerta;
+            else if (_entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY)) is { } salida) meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
             // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y

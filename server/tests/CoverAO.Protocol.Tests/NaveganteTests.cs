@@ -114,6 +114,32 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// LO QUE ELIGE <c>DondeHay</c> EN OTRO MAPA SE ALCANZA DESDE LA BALDOSA POR LA QUE SE ENTRA, y la puerta que da
+    /// <c>PuertaHacia</c> con esa meta lleva a esa entrada. Si no, el bot llega y no encuentra camino: una
+    /// Pescadora del 62 mandada al sacerdote del 64, que desde la entrada (10,36) no se alcanza.
+    /// </summary>
+    [Fact]
+    public void Lo_que_elige_DondeHay_en_otro_mapa_se_alcanza_desde_la_entrada()
+    {
+        if (Mundo() is not { } m) return;
+        bool EsSacerdote(int ficha) => m.Datos.Npc(ficha)?.NpcType == 1;
+        bool VendeCana(int ficha) => m.Datos.Npc(ficha)?.StockItems?.Any(s => s.ObjIndex == 881) == true;
+        int miradas = 0;
+        foreach (var (mapa, desde, sirve) in new (int, (byte X, byte Y), Func<int, bool>)[]
+                 { (62, (44, 32), EsSacerdote), (62, (54, 80), EsSacerdote), (37, (57, 74), VendeCana), (37, (57, 74), EsSacerdote) })
+        {
+            if (m.Mapas.DondeHay(mapa, desde, sirve) is not { Saltos: 1 } lugar) continue;
+            var puerta = m.Mapas.PuertaHacia(mapa, lugar.Mapa, desde, (lugar.X, lugar.Y));
+            Assert.True(puerta is not null, $"DondeHay mandó de m{mapa} al m{lugar.Mapa} y no hay puerta hacia allá");
+            var llegada = m.Datos.MapExits[(mapa, puerta!.Value.Puerta.X, puerta.Value.Puerta.Y)];
+            miradas++;
+            Assert.True(m.Mapas.HayComoLlegar(lugar.Mapa, ((byte)llegada.DestX, (byte)llegada.DestY), (lugar.X, lugar.Y), 3) is not null,
+                $"de m{mapa} a m{lugar.Mapa} ({lugar.X},{lugar.Y}): desde la entrada ({llegada.DestX},{llegada.DestY}) no se llega");
+        }
+        Assert.True(miradas > 0, "ninguna búsqueda eligió un mapa vecino: el test no miró nada");
+    }
+
+    /// <summary>
     /// EL CAMINO NO PISA OTRAS SALIDAS. Pisar una salida saca del mapa, así que un camino que pasa por encima de
     /// una lleva a otro lado: una Pescadora que iba de la cuna a la puerta del 62 terminó en el 185 y en el 208.
     /// Sólo la última baldosa puede ser una salida.
