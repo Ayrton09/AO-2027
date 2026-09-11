@@ -1479,6 +1479,38 @@ public sealed class Bot
     }
 
     /// <summary>
+    /// DÓNDE CAZAR: el coto que paga más cercano, salvo que tenga pocas contra el más poblado a <see cref="SaltosHastaElCoto"/> mapas o
+    /// menos; ahí, el poblado. Si los dos caen en el mismo mapa, lo que paga. <paramref name="porElOro"/> dice cuál eligió, que es lo
+    /// que decide entre qué spawns se reparte al llegar.
+    ///
+    /// <para>Lo que paga primero salió de bots de nivel 5 a 7 que no ganaban una moneda. Para uno recién creado era al revés: medido en
+    /// `sano3`, siete de ocho se mudaron de la cuna al mapa 62 en el primer minuto y pasaron ahí la media hora repartiéndose cuatro
+    /// Águilas, y entre los ocho cazaron cuatro criaturas. En la cuna un nivel 1 tiene 38 presas y ninguna paga; recién en nivel 3
+    /// pagan los Escorpiones, y ahí la cuna misma es el coto que paga.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? ElegirCoto(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                     Func<int, bool> esPresa, Func<int, bool> paga,
+                                                                     Func<int, bool>? pisable, out bool porElOro)
+    {
+        Func<int, bool> conOro = f => esPresa(f) && paga(f);
+        var quePaga = mapas.DondeHay(mapa, desde, conOro, pisable: pisable);
+        var poblado = mapas.CotoMasPoblado(mapa, desde, esPresa, SaltosHastaElCoto, pisable);
+        porElOro = true;
+        if (quePaga is { } p && (poblado is not { } r || r.Mapa == p.Mapa
+                                  || ValeMudarsePorElOro(mapas.CuantasSeAlcanzan(p.Mapa, (p.X, p.Y), conOro), r.Cuantas)))
+            return p;
+        porElOro = false;
+        if (poblado is { } q) return (q.Mapa, q.X, q.Y, q.Saltos);
+        return mapas.DondeHay(mapa, desde, esPresa, pisable: pisable);
+    }
+
+    /// <summary>¿Vale ir por lo que paga? Si tiene al menos una que paga por cada <see cref="PresasPorCadaUnaQuePaga"/> presas del
+    /// coto más poblado.</summary>
+    public static bool ValeMudarsePorElOro(int quePagan, int presasDelPoblado) => quePagan * PresasPorCadaUnaQuePaga >= presasDelPoblado;
+
+    private const int SaltosHastaElCoto = 2, PresasPorCadaUnaQuePaga = 4;
+
+    /// <summary>
     /// Cuando hace rato que no aparece una presa, viajar a un mapa donde haya. Devuelve si se ocupó de esto.
     ///
     /// <para>La PACIENCIA es lo que hace que esto no sea un bot que vive viajando: recién se mueve después de
@@ -1499,16 +1531,14 @@ public sealed class Bot
 
         // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
         // "hay al menos una presa", sin mirar si soltaba oro — y así la única serpiente del mapa 1 alcanzaba para
-        // mandar ahí a cinco bots, que se la repartieron durante media hora sin ganar una moneda.
+        // mandar ahí a cinco bots, que se la repartieron durante media hora sin ganar una moneda. Pero no a cualquier
+        // precio: ver `ElegirCoto`.
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
-        Func<int, bool> sirve = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno) && PagaOro((short)f);
-        var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve, pisable: Pisable(sentidos));
-        if (hallado is null)
-        {
-            sirve = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
-            hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve, pisable: Pisable(sentidos));
-        }
+        Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
+        var hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), Pisable(sentidos),
+                                 out bool porElOro);
+        Func<int, bool> sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         if (hallado is not { } coto) return false;
 
         // REPARTIRSE. El navegante devuelve siempre el MISMO spawn —el más cercano— así que todos los bots

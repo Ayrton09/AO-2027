@@ -435,6 +435,37 @@ public sealed class Navegante
         return mejor == inicio ? null : Reconstruir(deDonde, mejor);
     }
 
+    /// <summary>
+    /// EL COTO MÁS POBLADO a <paramref name="saltosMax"/> mapas o menos, contando el propio: el mapa con más criaturas que sirven
+    /// entre las que nacen en baldosas a las que se llega (desde donde se entra, o desde donde está en el propio), y la más cercana
+    /// de ellas para ir. Entre los igual de poblados, el primero que se encuentra, que es el más cercano. null si no hay ninguno.
+    /// </summary>
+    public (int Mapa, byte X, byte Y, int Saltos, int Cuantas)? CotoMasPoblado(int mapaActual, (byte X, byte Y) desde,
+                                                                              Func<int, bool> sirve, int saltosMax,
+                                                                              Func<int, bool>? pisable = null)
+    {
+        (int Mapa, byte X, byte Y, int Saltos, int Cuantas)? mejor = null;
+        void Probar(int mapa, (byte X, byte Y) entrada, int saltos)
+        {
+            int cuantas = CuantasSeAlcanzan(mapa, entrada, sirve);
+            if (cuantas == 0 || (mejor is { } ya && ya.Cuantas >= cuantas)) return;
+            if (EnElMapa(mapa, entrada, sirve) is { } ahi) mejor = (mapa, ahi.X, ahi.Y, saltos, cuantas);
+        }
+        Probar(mapaActual, desde, 0);
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
+            if (saltos <= saltosMax) Probar(mapa, entrada, saltos);
+        return mejor;
+    }
+
+    /// <summary>Cuántas criaturas que cumplen <paramref name="sirve"/> nacen en baldosas de ese mapa a las que se llega caminando
+    /// desde <paramref name="desde"/>.</summary>
+    public int CuantasSeAlcanzan(int mapa, (byte X, byte Y) desde, Func<int, bool> sirve)
+    {
+        if (!_datos.MapSpawns.TryGetValue(mapa, out var spawns)) return 0;
+        var alcanzables = Alcanzables(mapa, desde);
+        return spawns.Count(sp => sirve(sp.NpcIndex) && alcanzables.Contains(Clave((byte)sp.X, (byte)sp.Y)));
+    }
+
     /// <summary>Todas las baldosas a las que se llega caminando desde <paramref name="desde"/> en ese mapa. Es
     /// una sola búsqueda en anchura para responder muchas preguntas de "¿se llega?" seguidas, en vez de una
     /// búsqueda por cada baldosa de salida. El tope es el recuadro pisable entero, para no cortar un mapa
