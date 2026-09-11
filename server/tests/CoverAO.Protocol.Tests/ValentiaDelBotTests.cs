@@ -81,8 +81,8 @@ public class ValentiaDelBotTests
     }
 
     /// <summary>CONTRA LO QUE LO MATA DE UN GOLPE, LA RUNA AUNQUE LA VIDA NO ESTÉ EN ROJO, y antes que el sacerdote, que cura hasta la
-    /// vida máxima y no más. Sin runa lista y en rojo, el sacerdote igual; sin runa lista a vida alta, con pociones o en un mapa pk,
-    /// caminando.</summary>
+    /// vida máxima y no más, y con pociones también: la poción no frena el golpe que viene. Sin runa lista y en rojo, el sacerdote
+    /// igual; sin runa lista a vida alta o en un mapa pk, caminando; con pociones y sin un golpe que mate, caminando.</summary>
     [Fact]
     public void Contra_lo_que_mata_de_un_golpe_la_runa_va_primero()
     {
@@ -91,7 +91,8 @@ public class ValentiaDelBotTests
         Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: true, sacerdoteAMano: true, mapaSinPk: true, runaLista: false));
         Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: true, mapaSinPk: true, runaLista: false));
         Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: false, mapaSinPk: false, runaLista: true));
-        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: true, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Runa, Bot.ComoHuye(conPociones: true, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: true, salud: 1.0, unGolpeLoMata: false, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
     }
 
     /// <summary>EL LOBO MATA DE UN GOLPE A UN NIVEL 1: pega hasta 18, y un personaje recién creado tiene de 16 a 21 de vida. La

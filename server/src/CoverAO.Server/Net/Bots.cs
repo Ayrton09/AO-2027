@@ -652,14 +652,17 @@ public sealed class Bot
     public static bool AsustaConLaVidaEnRojo(NpcInfo? n, bool conPociones, double salud) => !conPociones && salud < TomaPocion && n is { Hostile: true, MaxHit: > 0 };
 
     /// <summary>
-    /// CÓMO HUYE de lo que asusta. Con pociones, alejándose. Sin pociones: con la vida en rojo, el sacerdote si está a mano; contra lo
-    /// que lo mata de un golpe, o en rojo sin sacerdote, la runa, sólo fuera de un mapa pk y si no la acaba de usar. La runa va antes
-    /// que el sacerdote contra un golpe que mata: el sacerdote cura hasta la vida máxima y ese golpe la alcanza. Sin runa lista y en
-    /// rojo, el sacerdote igual, que sube la vida por encima del golpe más flojo; si no, alejándose.
+    /// CÓMO HUYE de lo que asusta. Con pociones, alejándose, salvo contra lo que lo mata de un golpe. Sin pociones: con la vida en rojo,
+    /// el sacerdote si está a mano; contra lo que lo mata de un golpe, o en rojo sin sacerdote, la runa, sólo fuera de un mapa pk y si
+    /// no la acaba de usar. La runa va antes que el sacerdote contra un golpe que mata: el sacerdote cura hasta la vida máxima y ese
+    /// golpe la alcanza. Sin runa lista y en rojo, el sacerdote igual, que sube la vida por encima del golpe más flojo; si no, alejándose.
+    ///
+    /// <para>CON POCIONES TAMBIÉN, CONTRA UN GOLPE QUE MATA: la poción cura lo que ya pegó, no el golpe que viene. Medido en `normal3`:
+    /// bots de nivel 1 con pociones y 16 y 18 de vida murieron huyendo del Lobo con la vida llena, y en `normal1` otros dos igual.</para>
     /// </summary>
     public static Huida ComoHuye(bool conPociones, double salud, bool unGolpeLoMata, bool sacerdoteAMano, bool mapaSinPk, bool runaLista)
     {
-        if (conPociones) return Huida.Alejarse;
+        if (conPociones && !unGolpeLoMata) return Huida.Alejarse;
         bool enRojo = salud < TomaPocion;
         if (enRojo && sacerdoteAMano && !unGolpeLoMata) return Huida.Sacerdote;
         if ((enRojo || unGolpeLoMata) && mapaSinPk && runaLista) return Huida.Runa;
@@ -1538,6 +1541,16 @@ public sealed class Bot
         return mapas.DondeHay(mapa, desde, esPresa, pisable: pisable);
     }
 
+    /// <summary>
+    /// DE LOS SPAWNS DONDE CAZAR, LOS QUE NO TIENEN ALGO PELIGROSO NACIENDO A LA VISTA (<see cref="AlAlcanceDeSuVista"/>). Si no queda
+    /// ninguno, todos: mejor ir a cazar que quedarse sin coto.
+    /// </summary>
+    public static List<(byte X, byte Y)> LejosDelPeligro(IReadOnlyList<(byte X, byte Y)> presas, IReadOnlyCollection<(byte X, byte Y)> peligros)
+    {
+        var lejos = presas.Where(t => !peligros.Any(o => AlAlcanceDeSuVista(t, o))).ToList();
+        return lejos.Count > 0 ? lejos : presas.ToList();
+    }
+
     /// <summary>¿Vale ir por lo que paga? Si tiene al menos una que paga por cada <see cref="PresasPorCadaUnaQuePaga"/> presas del
     /// coto más poblado.</summary>
     public static bool ValeMudarsePorElOro(int quePagan, int presasDelPoblado) => quePagan * PresasPorCadaUnaQuePaga >= presasDelPoblado;
@@ -1585,9 +1598,14 @@ public sealed class Bot
         var destino = (X: coto.X, Y: coto.Y);
         if (coto.Mapa == sentidos.Mapa && _entorno.Datos.MapSpawns.TryGetValue(coto.Mapa, out var spawns))
         {
-            var opciones = spawns.Where(sp => sirve(sp.NpcIndex))
-                                 .Select(sp => (X: (byte)sp.X, Y: (byte)sp.Y))
-                                 .Distinct()
+            // NI A LA VISTA DE DONDE NACE ALGO PELIGROSO, que ahí vuelve a aparecer y camina hacia el que ve. Medido en `normal3`: de
+            // las siete muertes de bots de nivel 1, dos fueron a la vista de donde nace el Lobo del medio de la cuna.
+            var peligros = spawns.Where(sp => EsPeligroso((short)sp.NpcIndex, vidaMaxima, nivel, conPociones, curaVeneno))
+                                 .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
+            var opciones = LejosDelPeligro(spawns.Where(sp => sirve(sp.NpcIndex))
+                                                 .Select(sp => (X: (byte)sp.X, Y: (byte)sp.Y))
+                                                 .Distinct()
+                                                 .ToList(), peligros)
                                  .Where(t => _entorno.Mapas.HayComoLlegar(coto.Mapa, sentidos.Posicion, (t.X, t.Y),
                                                                           ToleranciaDelCoto) is not null)
                                  .ToList();

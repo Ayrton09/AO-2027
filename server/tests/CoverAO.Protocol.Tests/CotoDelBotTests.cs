@@ -42,6 +42,25 @@ public class CotoDelBotTests
         }
     }
 
+    /// <summary>
+    /// EN LA CUNA NO SE REPARTE A LA VISTA DE DONDE NACEN LOS LOBOS: para un nivel 1 con pociones, 6 de sus 38 spawns de presa tienen un
+    /// Lobo naciendo a la vista, y quedan afuera.
+    /// </summary>
+    [Fact]
+    public void En_la_cuna_no_se_caza_a_la_vista_de_donde_nacen_los_lobos()
+    {
+        if (Mundo() is not { } m) return;
+        var spawns = m.Datos.MapSpawns[37];
+        var presas = spawns.Where(sp => Bot.EsPresaPara(m.Datos.Npc(sp.NpcIndex), 20, 1, conPociones: true, curaVeneno: false))
+                           .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
+        var peligros = spawns.Where(sp => Bot.EsPeligrosoPara(m.Datos.Npc(sp.NpcIndex), 20, 1, conPociones: true, curaVeneno: false))
+                             .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
+        Assert.Equal(38, presas.Count);
+        var lejos = Bot.LejosDelPeligro(presas, peligros);
+        Assert.Equal(32, lejos.Count);
+        Assert.DoesNotContain(lejos, t => peligros.Any(o => Bot.AlAlcanceDeSuVista(t, o)));
+    }
+
     /// <summary>LO QUE PAGA VALE SI ALCANZA: una que paga por cada cuatro presas del coto más poblado.</summary>
     [Fact]
     public void Lo_que_paga_vale_si_hay_una_por_cada_cuatro_presas()
