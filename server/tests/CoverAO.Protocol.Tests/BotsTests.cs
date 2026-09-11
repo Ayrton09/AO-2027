@@ -8,9 +8,10 @@ namespace CoverAO.Protocol.Tests;
 /// <summary>
 /// Los bots: personajes que juegan solos, apagados salvo que el host los pida.
 ///
-/// <para>Lo que se cuida acá no es que caminen —eso se ve corriéndolos— sino las tres cosas que, si se
-/// rompen, se rompen en silencio: que vengan apagados, que cada bot cuente como su propia dirección para los
-/// cupos, y que el transporte no pierda ni deforme un byte.</para>
+/// <para>Lo que se cuida acá no es que caminen —eso se ve corriéndolos— sino las cosas que, si se rompen, se
+/// rompen en silencio: que vengan apagados, que cada bot cuente como su propia dirección para los cupos, que el
+/// transporte no pierda ni deforme un byte, y que el que ya entró no gaste sus intentos creando otra vez la
+/// cuenta.</para>
 /// </summary>
 public class BotsTests
 {
@@ -156,5 +157,32 @@ public class BotsTests
 
         Assert.Equal("expulsado", motivo);
         Assert.False(t.Mandar(new byte[] { 1 }));
+    }
+
+    // ── Volver a entrar ───────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// EL QUE YA ENTRÓ VUELVE A ENTRAR COMO CUALQUIERA. Su cuenta y su personaje existen, así que una vida que no
+    /// llega al mundo —un plazo vencido, una excepción de su conducta— no lo manda a crearlos: parta de la forma
+    /// que parta, la próxima es <c>Entrar</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(ComoEntrar.Entrar)]
+    [InlineData(ComoEntrar.SoloPersonaje)]
+    [InlineData(ComoEntrar.Alta)]
+    public void El_que_ya_entro_no_vuelve_a_crear_la_cuenta(ComoEntrar como)
+    {
+        Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(como, yaEntro: true));
+    }
+
+    /// <summary>EL CONTROL. El que no entró nunca sí prueba las tres formas en orden y vuelve a empezar: es lo que
+    /// saca al bot que tiene la clave anotada pero no tiene la cuenta en los datos. Si esto también diera siempre
+    /// <c>Entrar</c>, el test de arriba estaría verde por el motivo equivocado.</summary>
+    [Fact]
+    public void El_que_nunca_entro_prueba_las_tres_formas()
+    {
+        Assert.Equal(ComoEntrar.SoloPersonaje, Bot.DespuesDeUnFracaso(ComoEntrar.Entrar, yaEntro: false));
+        Assert.Equal(ComoEntrar.Alta, Bot.DespuesDeUnFracaso(ComoEntrar.SoloPersonaje, yaEntro: false));
+        Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Alta, yaEntro: false));
     }
 }

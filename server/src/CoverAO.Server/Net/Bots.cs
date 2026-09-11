@@ -5,10 +5,10 @@ using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;
 
-/// <summary>Cómo va a intentar entrar el bot en su próxima vida. Si un intento falla se pasa a la siguiente,
-/// así que en tres vidas prueba las tres formas: la cuenta y el personaje ya existen, la cuenta existe pero
-/// le falta el personaje, y no existe nada.</summary>
-internal enum ComoEntrar { Entrar, SoloPersonaje, Alta }
+/// <summary>Cómo va a intentar entrar el bot en su próxima vida. Mientras no haya entrado nunca, si un intento
+/// falla se pasa a la siguiente, así que en tres vidas prueba las tres formas: la cuenta y el personaje ya
+/// existen, la cuenta existe pero le falta el personaje, y no existe nada. Ver <c>Bot.DespuesDeUnFracaso</c>.</summary>
+public enum ComoEntrar { Entrar, SoloPersonaje, Alta }
 
 /// <summary>
 /// Qué clase de jugador es este bot. Sale del nombre, así que cada uno es siempre el mismo.
@@ -238,6 +238,8 @@ public sealed class Bot
     private readonly double _ritmo;
     private string? _clave;
     private ComoEntrar _como;
+    /// <summary>Ya estuvo adentro del mundo desde que arrancó el servidor: la cuenta y el personaje existen.</summary>
+    private bool _yaEntro;
     /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
     private bool _seFueSolo;
 
@@ -281,7 +283,7 @@ public sealed class Bot
             catch (Exception ex) { Console.Error.WriteLine($"[bot {Nombre}] error: {ex.Message}"); entro = false; }
 
             if (entro) fracasos = 0;
-            else { fracasos++; _como = _como == ComoEntrar.Alta ? ComoEntrar.Entrar : _como + 1; }
+            else { fracasos++; _como = DespuesDeUnFracaso(_como, _yaEntro); }
             if (ct.IsCancellationRequested) break;
             // El que se fue a dormir vuelve dentro de un rato LARGO; al que se le cortó, enseguida. Es la
             // diferencia entre una lista de conectados que respira y una donde están siempre los mismos.
@@ -295,6 +297,21 @@ public sealed class Bot
         if (fracasos >= IntentosAntesDeRendirse)
             Console.WriteLine($"[bot {Nombre}] no pudo entrar {fracasos} veces seguidas; se queda afuera.");
     }
+
+    /// <summary>
+    /// Con qué forma intenta la próxima vida, después de una que no llegó a estar adentro del mundo.
+    ///
+    /// <para>Mientras no entró nunca, pasa a la forma siguiente: es lo que saca a un bot que tiene la clave
+    /// anotada pero cuya cuenta no está en los datos. Visto en una corrida de campo: tres bots en ese caso
+    /// entraron así, los tres en el último intento que tenían.</para>
+    ///
+    /// <para>Una vez que entró, sigue con <c>Entrar</c>: la cuenta y el personaje existen, y lo que falle
+    /// después —un plazo de respuesta vencido, una excepción de su conducta— no cambia eso. Pasar de forma
+    /// ahí gastaba los dos intentos que le quedaban en crear un personaje con un nombre ya en uso y una cuenta
+    /// que ya existe, y el bot se quedaba afuera hasta el próximo arranque del servidor.</para>
+    /// </summary>
+    public static ComoEntrar DespuesDeUnFracaso(ComoEntrar como, bool yaEntro) =>
+        yaEntro || como == ComoEntrar.Alta ? ComoEntrar.Entrar : como + 1;
 
     /// <summary>Una conexión, de punta a punta. Devuelve si llegó a estar adentro del mundo, para distinguir
     /// "se cayó jugando" —que se reintenta sin castigo— de "no pudo entrar", que cuenta como fracaso.</summary>
@@ -346,6 +363,7 @@ public sealed class Bot
                 return false;
             }
             _como = ComoEntrar.Entrar;   // ya existen la cuenta y el personaje: de acá en más entra como cualquiera
+            _yaEntro = true;
             await ComportarseAsync(transporte, sentidos, cerrada.Task, ct);
             return true;
         }
