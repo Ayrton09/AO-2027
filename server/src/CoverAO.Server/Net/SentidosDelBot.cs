@@ -56,6 +56,7 @@ public sealed class SentidosDelBot
     private int _mana, _manaMax = 1, _oro, _puntosLibres;
     private short _nivel, _mapa;
     private byte _hambre, _sed;
+    private long _ultimoAvisoDeVeneno;
     private bool _mapaNuevo, _comerciando;
 
     // ── Lo que el que decide le pregunta ──────────────────────────────────────────────────────────────
@@ -103,6 +104,21 @@ public sealed class SentidosDelBot
 
     public bool ConHambre { get { lock (_candado) return _hambre == 0; } }
     public bool ConSed { get { lock (_candado) return _sed == 0; } }
+
+    /// <summary>¿Está envenenado? No hay un paquete de estado para esto: el servidor avisa con el <c>LocaleMsg 47</c>
+    /// cada vez que el veneno le saca vida, que es cada veinte segundos (VB6 EfectoVeneno), y el veneno no se pasa
+    /// solo. Se toma como vigente mientras el último aviso tenga menos de dos intervalos.</summary>
+    public bool Envenenado
+    {
+        get { lock (_candado) return _ultimoAvisoDeVeneno != 0 && Environment.TickCount64 - _ultimoAvisoDeVeneno < VenenoVigenteMs; }
+    }
+
+    /// <summary>Después de curarse no se espera a que venzan los dos intervalos: si sigue envenenado, el próximo
+    /// aviso lo vuelve a marcar.</summary>
+    public void OlvidarVeneno() { lock (_candado) _ultimoAvisoDeVeneno = 0; }
+
+    private const long VenenoVigenteMs = 45_000;
+    private const short AvisoDeVeneno = 47;
 
     /// <summary>El maná, de 0 a 1. Los que lanzan hechizos meditan cuando esto baja.</summary>
     public double Mana { get { lock (_candado) return _manaMax <= 0 ? 0 : (double)_mana / _manaMax; } }
@@ -544,6 +560,11 @@ public sealed class SentidosDelBot
 
                 case ServerPacketId.UpdateSed:
                     lock (_candado) _sed = l.Byte();
+                    break;
+
+                // "Estás envenenado" (VB6 EfectoVeneno): es la única señal de que el veneno sigue encima.
+                case ServerPacketId.LocaleMsg:
+                    if (l.Entero() == AvisoDeVeneno) lock (_candado) _ultimoAvisoDeVeneno = Environment.TickCount64;
                     break;
 
                 case ServerPacketId.ChangeInventorySlot:

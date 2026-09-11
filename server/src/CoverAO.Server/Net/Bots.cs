@@ -454,6 +454,7 @@ public sealed class Bot
                 continue;
             }
 
+            if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1361,6 +1362,55 @@ public sealed class Bot
         }
         return false;
     }
+
+    /// <summary>
+    /// CURARSE EL VENENO. Devuelve si se ocupó de esto.
+    ///
+    /// <para>El veneno del original no se pasa solo: saca de uno a cinco de vida cada veinte segundos hasta que
+    /// alguien lo cura, y puede matar. En la cuna lo meten las serpientes y los escorpiones, que es justo lo que
+    /// caza un recién nacido, y nada en el bot lo miraba. Medido: seis de ocho bots con el veneno encima en el
+    /// `.chr`, tomando poción tras poción. Lo que hace una persona es tomar la poción violeta si tiene, o ir al
+    /// sacerdote, que al que llega vivo y herido lo cura (VB6 Acciones.bas:316).</para>
+    /// </summary>
+    private async Task<bool> CurarVenenoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                              CancellationToken ct)
+    {
+        if (!sentidos.Envenenado || Environment.TickCount64 < _proximaCura) return false;
+
+        if (Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: PocionQueCuraElVeneno }))
+        {
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            sentidos.OlvidarVeneno();
+            return true;
+        }
+
+        if (sentidos.MasCercano(EsSacerdote) is { } cura && AlAlcanceDelAltar(sentidos, cura.Quien))
+        {
+            // A VIDA LLENA NO CURA: el original calla y el veneno queda. Se espera al próximo mordisco, que baja la
+            // vida, y ahí se le pide.
+            if (sentidos.Salud < 1.0)
+            {
+                PedirResurreccion(transporte, sentidos);
+                await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                if (sentidos.Salud >= 1.0) sentidos.OlvidarVeneno();
+            }
+            else await Task.Delay(RebanadaDePausaMs, ct);
+            return true;
+        }
+
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { } templo
+            && await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar))
+            return true;
+
+        // NO HAY A QUIÉN IR: se sigue con lo demás y se vuelve a probar más tarde. Sin la espera, un bot envenenado
+        // lejos de todo templo reintentaría el viaje en cada vuelta del ciclo.
+        _proximaCura = Environment.TickCount64 + _rng.Next(EsperaCuraMinMs, EsperaCuraMaxMs);
+        return false;
+    }
+
+    private const int PocionQueCuraElVeneno = 5;
+    private const int EsperaCuraMinMs = 60_000, EsperaCuraMaxMs = 120_000;
+    private long _proximaCura;
 
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
     /// false sólo si se cayó la conexión.</summary>

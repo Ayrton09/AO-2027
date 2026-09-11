@@ -345,6 +345,23 @@ public class SentidosDelBotTests
         Assert.Null(s.MejorOfertaEnLaTienda(Puntos, plata: 1));
     }
 
+    /// <summary>
+    /// EL VENENO SE SABE POR EL AVISO. No hay paquete de estado: el servidor avisa con el LocaleMsg 47 cada vez que
+    /// el veneno saca vida. Otro aviso cualquiera no cuenta, y después de curarse se olvida.
+    /// </summary>
+    [Fact]
+    public void Se_entera_del_veneno_por_el_aviso_y_lo_olvida_al_curarse()
+    {
+        var s = new SentidosDelBot();
+        Assert.False(s.Envenenado);
+        s.Recibir(ServerMessages.LocaleMsg(8));
+        Assert.False(s.Envenenado);
+        s.Recibir(ServerMessages.LocaleMsg(47, "", 0, 5));
+        Assert.True(s.Envenenado);
+        s.OlvidarVeneno();
+        Assert.False(s.Envenenado);
+    }
+
     [Fact]
     public void Suma_lo_que_rinde_cada_unidad()
     {
