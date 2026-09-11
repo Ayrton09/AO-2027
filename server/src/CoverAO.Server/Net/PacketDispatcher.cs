@@ -2912,11 +2912,12 @@ public sealed partial class PacketDispatcher
 
     private void CastStateOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell)
     {
-        // Paralizar una CRIATURA dura mucho menos que paralizar a una persona: el original usa
-        // IntervaloParalizadoReducido (Admin.bas:58 = 37 vueltas ≈ 1,5 s) en HechizoEstadoNPC
-        // (modHechizos.bas:1565), no IntervaloParalizado. El valor estaba en 250 con este mismo comentario:
-        // la cita era correcta y el número no. Encaja con el golpe que paraliza criaturas (30 vueltas).
-        const long ParalisisTicks = 37;
+        // Paralizar una CRIATURA usa un número más chico que paralizar a una persona: el original usa
+        // IntervaloParalizadoReducido (Admin.bas:58 = 37) en HechizoEstadoNPC (modHechizos.bas:1565), no
+        // IntervaloParalizado. Pero las 37 son vueltas del TIMER_AI de 380 ms, no del game-loop: en tiempo real son
+        // 14 segundos, casi el DOBLE que los 6 s de una persona. Acá decía 37 a secas —el mismo error de unidades que
+        // el golpe a mano limpia— y la criatura arrancaba a segundo y medio.
+        long ParalisisTicks = GameLimits.TicksDeUnContadorDeCriatura(37);
 
         if (spell.IsRemoveParalysis)
         {

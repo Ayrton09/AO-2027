@@ -202,6 +202,12 @@ public sealed class NpcSystem
     /// tocar aunque la clave exista en la fuente.</summary>
     public long ParalisisDeNpcTicks { get; set; } = 500;
 
+    /// <summary>La MISMA parálisis, cuando la víctima es otra CRIATURA. El original escribe el mismo
+    /// <c>IntervaloParalizado</c> (modHechizos.bas:179 y :190, <c>NpcLanzaSpellSobreNpc</c>), pero lo escribe en el contador
+    /// de la criatura, que corre en el TIMER_AI de 380 ms: son 190 segundos, no 20. Ver
+    /// <see cref="GameLimits.TicksDeUnContadorDeCriatura"/>.</summary>
+    public long ParalisisDeNpcEnCriaturaTicks => GameLimits.TicksDeUnContadorDeCriatura((int)ParalisisDeNpcTicks);
+
     /// <summary>Cuánto dura la pertenencia de una criatura, en ms (<c>[TIMERS] IntervaloOwnedNpc</c>). Lo pone
     /// el arranque desde el Server.ini.</summary>
     public int IntervaloNpcApropiado { get; set; } = PertenenciaDeNpc.IntervaloPorDefectoMs;
@@ -1150,7 +1156,7 @@ public sealed class NpcSystem
         if (fam is null || !victima.IsAlive) return;
         if (fam.Sabe(Familiar.HabGolpeParaliza) && _tick >= victima.ParalyzedUntilTick
             && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
-            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
+            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcEnCriaturaTicks;
     }
 
     /// <summary>Cuánto dura la ceguera que tira un familiar: lo mismo que la del hechizo de ceguera del
@@ -1206,7 +1212,7 @@ public sealed class NpcSystem
         if (spell.IsParalyze || spell.IsImmobilize)
         {
             if (_tick < victima.ParalyzedUntilTick) return false;   // no se encadena, como en el original
-            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
+            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcEnCriaturaTicks;
             _world.BroadcastToObservers(victima.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
             if (spell.Wav > 0)
                 _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)spell.Wav, victima.Pos.X, victima.Pos.Y));

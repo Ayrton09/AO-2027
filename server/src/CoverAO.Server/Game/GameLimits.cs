@@ -3,6 +3,26 @@ namespace CoverAO.Server.Game;
 /// <summary>Fixed game limits from the original server (Declares.bas). Must match the client's expectations.</summary>
 public static class GameLimits
 {
+    /// <summary>
+    /// CADA CUANTO CORRE LA IA DE LAS CRIATURAS EN EL ORIGINAL: 380 ms (<c>frmMain.frm:170-171</c>, el control
+    /// <c>TIMER_AI</c>, que arranca prendido y nadie cambia en marcha). Es OTRO reloj que el del juego, que corre a 40 ms
+    /// (<c>GameTimer</c>, frmMain.frm:175-176 = <see cref="GameLoop.TickMs"/>).
+    /// </summary>
+    public const int MsPorVueltaDeIa = 380;
+
+    /// <summary>
+    /// CUANTOS TICKS DE ESTE SERVER DURA UN CONTADOR DE CRIATURA DEL ORIGINAL. Los contadores de las criaturas
+    /// (<c>Npclist().Contadores</c>) los baja <c>TIMER_AI</c> de a UNO FIJO, sin DeltaTick (<c>General.bas:941</c>, y sus dos
+    /// unicos llamadores estan en <c>mMainLoop.bas:90</c> y <c>:95</c>, adentro de <c>TIMER_AI</c>), asi que cada unidad vale
+    /// 380 ms y no 40. Los de los JUGADORES no pasan por aca: esos si corren en el game-loop y son 1 a 1.
+    ///
+    /// <para>VA UNA VUELTA DE MAS, y no es un redondeo generoso: <c>EfectoParalisisNpc</c> resta mientras el contador es mayor
+    /// que cero y limpia la bandera reci&#233;n en el disparo SIGUIENTE, cuando ya vale cero (General.bas:939-946). En esa
+    /// vuelta extra la criatura sigue paralizada. El contador del jugador no la lleva: resta y libera en la misma pasada
+    /// (General.bas:1043-1046).</para>
+    /// </summary>
+    public static long TicksDeUnContadorDeCriatura(int vueltasDelOriginal) =>
+        (long)Math.Ceiling((vueltasDelOriginal + 1) * (double)MsPorVueltaDeIa / GameLoop.TickMs);
     public const byte MaxInventorySlots = 25; // Declares.bas:572
     public const byte MaxBankSlots = 40;      // Declares.bas:1085 MAX_BANCOINVENTORY_SLOTS
     public const byte MaxCorreos = 10;        // Declares.bas:1281 Max_Correos — tope de la casilla de correo

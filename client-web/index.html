@@ -2454,12 +2454,12 @@
       25: 'Tenés el inventario lleno. Tirá algo con Ctrl+clic, o vendéselo al mercader. El oro no ocupa '
         + 'ranura: va directo a la bolsa.',
     };
-    // EL 2.18 DEL INFORME: *"tu golpe paralizó a la criatura"* y la criatura se sigue moviendo. Los números son
-    // vueltas del game loop, de 40 ms cada una, y salen del server: el golpe deja a la criatura en 30 (1,2 s) y
-    // el hechizo Paralizar en 37 (1,5 s), contra las 150 (6 s) que dura sobre una PERSONA. O sea que el mensaje
-    // dice la verdad y la criatura arranca de nuevo enseguida; el original hace exactamente lo mismo.
-    const PISTA_PARALISIS = 'Sobre una criatura la parálisis dura poco más de un segundo, sea de un golpe o del '
-      + 'hechizo; sobre una persona dura bastante más. Por eso la ves moverse enseguida: el original es igual.';
+    // EL 2.18 DEL INFORME: *"tu golpe paralizó a la criatura"* y la criatura se sigue moviendo. El server cuenta
+    // esas duraciones en el reloj de las criaturas del original, que corre cada 380 ms: el golpe la deja quieta 11,4 s
+    // y el hechizo Paralizar 14 s, contra los 6 s que dura sobre una PERSONA. Antes acá decía "poco más de un
+    // segundo" porque el server leía esas vueltas como si fueran del game loop de 40 ms.
+    const PISTA_PARALISIS = 'Sobre una criatura la parálisis dura unos diez segundos, sea de un golpe o del hechizo; '
+      + 'sobre una persona, seis. Si la ves moverse antes, es que se le acabó: el original es igual.';
 
     // WebSocket + flujo de login por formulario. El login ya NO está hardcodeado: la pantalla #login
     // arma el paquete (LoginExistingChar / CreateNewAccount / LoginNewChar) y `loginBytes` guarda el

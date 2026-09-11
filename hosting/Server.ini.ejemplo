@@ -72,8 +72,9 @@ Centinela=0
 FamiliarBusca=0
 
 ; --- Balance del golpe paralizante -------------------------------------------
-; Vueltas de 40 ms que dura, y el dado (1 entre N) contra criatura y jugador.
-GolpeParalizanteVueltas=30
+; Vueltas de 40 ms que dura, y el dado (1 entre N) contra criatura y jugador. Los 295 de la criatura son las 30
+; vueltas del original medidas en su reloj de criaturas, que corre cada 380 ms.
+GolpeParalizanteVueltas=295
 GolpeParalizanteVueltasPvP=150
 GolpeParalizanteDado=500
 GolpeParalizanteDadoGladiadorBardo=300

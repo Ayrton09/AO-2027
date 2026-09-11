@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using CoverAO.Server.Data;
+using CoverAO.Server.Game;
 using Xunit;
 
 namespace CoverAO.Protocol.Tests;
@@ -19,8 +20,10 @@ namespace CoverAO.Protocol.Tests;
 ///     <description>150 = 6 s, CABLEADO en <c>GolpeParalizaUsuario</c> (SistemaCombate.bas:2289). La clase
 ///     cambia la PROBABILIDAD (dado 1..300 en vez de 1..500), nunca la duración.</description></item>
 ///   <item><term>Paralizar a una CRIATURA</term>
-///     <description>37 ≈ 1,5 s, el <c>IntervaloParalizadoReducido</c> de Admin.bas:58, cableado también
-///     (<c>HechizoEstadoNPC</c>, modHechizos.bas:1565).</description></item>
+///     <description>37 vueltas DE OTRO RELOJ: los contadores de las criaturas los baja el <c>TIMER_AI</c> del original,
+///     que corre cada 380 ms (frmMain.frm:170-171), así que son 14 s y no 1,5. Es el
+///     <c>IntervaloParalizadoReducido</c> de Admin.bas:58, cableado también (<c>HechizoEstadoNPC</c>,
+///     modHechizos.bas:1565).</description></item>
 /// </list>
 ///
 /// Lo que este archivo fija es la primera: que el default sea el del install y que la clave del
@@ -87,7 +90,8 @@ public class DuracionDeParalisisTests
     public void Sin_ini_el_golpe_paralizante_es_el_del_original()
     {
         var cfg = ServerIni.Cargar(null);
-        Assert.Equal(30, cfg.GolpeParalizanteVueltas);            // SistemaCombate.bas:2234 — 1,2 s
+        Assert.Equal(295, cfg.GolpeParalizanteVueltas);           // SistemaCombate.bas:2235 — 30 vueltas del TIMER_AI = 11,4 s
+        Assert.Equal(GameLimits.TicksDeUnContadorDeCriatura(30), cfg.GolpeParalizanteVueltas);
         Assert.Equal(150, cfg.GolpeParalizanteVueltasPvP);        // SistemaCombate.bas:2289 — 6 s
         Assert.Equal(500, cfg.GolpeParalizanteDado);              // RandomNumber(1, 500)
         Assert.Equal(300, cfg.GolpeParalizanteDadoGladiadorBardo);// RandomNumber(1, 300)

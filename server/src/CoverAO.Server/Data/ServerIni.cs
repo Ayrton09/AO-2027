@@ -292,18 +292,22 @@ public sealed class ServerIni
     // Van en [INIT] con el resto de las reglas de la casa —no en [INTERVALOS], que es una sección del
     // original— para que se vea de un vistazo qué es fiel y qué agregamos.
     //
-    // Y OJO CON EL NOMBRE: dicen VUELTAS porque eso miden, vueltas del game-loop de 40 ms. El original cuenta
-    // así (`Contadores.Paralisis`) y su loop corre al mismo intervalo, de modo que son 1:1. Escribir 30
-    // pensando en segundos deja una parálisis de veinte minutos.
+    // Y OJO CON EL NOMBRE: dicen VUELTAS porque eso miden, vueltas de ESTE server, de 40 ms. Para la de JUGADOR son
+    // las mismas que las del original, que cuenta en su game-loop de 40 ms. Para la de CRIATURA no: ese contador lo
+    // baja el `TIMER_AI` del original, que corre cada 380 ms (frmMain.frm:170-171), asi que sus 30 vueltas son 295
+    // ticks de acá — ver `GameLimits.TicksDeUnContadorDeCriatura`. Escribir 30 pensando en segundos deja una
+    // parálisis de veinte minutos.
 
     /// <summary><c>[INIT] GolpeParalizanteVueltas</c> — cuánto queda quieta una CRIATURA a la que un golpe a
-    /// mano limpia paralizó. Default 30 = 1,2 s, el <c>Contadores.Paralisis = 30</c> del original
-    /// (SistemaCombate.bas:2234).</summary>
-    public int GolpeParalizanteVueltas { get; private set; } = 30;
+    /// mano limpia paralizó, en vueltas de 40 ms de este server. Default 295 = 11,4 s: son las 30 vueltas del
+    /// <c>Contadores.Paralisis = 30</c> del original (SistemaCombate.bas:2235) medidas en SU reloj, el TIMER_AI de 380 ms
+    /// (<see cref="GameLimits.TicksDeUnContadorDeCriatura"/>). Acá decía 30 leyendo esas vueltas como si fueran del
+    /// game-loop, y la criatura arrancaba a los 1,2 s.</summary>
+    public int GolpeParalizanteVueltas { get; private set; } = 295;
 
     /// <summary><c>[INIT] GolpeParalizanteVueltasPvP</c> — lo mismo contra un JUGADOR. Default 150 = 6 s
-    /// (SistemaCombate.bas:2289). El original le da CINCO VECES más que a una criatura; no es un descuido de
-    /// este port.</summary>
+    /// (SistemaCombate.bas:2289), y acá sí son vueltas de 40 ms en las dos puntas. A la CRIATURA el original la deja
+    /// quieta casi el doble (11,4 s), aunque su número sea más chico: son relojes distintos.</summary>
     public int GolpeParalizanteVueltasPvP { get; private set; } = 150;
 
     /// <summary><c>[INIT] GolpeParalizanteDado</c> — contra qué se tira. La probabilidad del golpe es
@@ -837,7 +841,8 @@ public sealed class ServerIni
         // El mismo techo que la parálisis del hechizo, y piso 1: un 0 dejaría el efecto vencido en el tick
         // siguiente, que se ve igual que "no anda". El dado tiene piso 1 porque `_rng.Next(1, tope + 1)` con
         // tope 0 tira siempre 1 — paralizaría en cada golpe, que no es lo que quiere quien escribe un 0.
-        cfg.GolpeParalizanteVueltas = Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteVueltas", 30), 1, 100_000);
+        cfg.GolpeParalizanteVueltas = Math.Clamp(
+            ini.GetInt("INIT", "GolpeParalizanteVueltas", (int)GameLimits.TicksDeUnContadorDeCriatura(30)), 1, 100_000);
         cfg.GolpeParalizanteVueltasPvP = Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteVueltasPvP", 150), 1, 100_000);
         cfg.GolpeParalizanteDado = Math.Clamp(ini.GetInt("INIT", "GolpeParalizanteDado", 500), 1, 100_000);
         cfg.GolpeParalizanteDadoGladiadorBardo =
