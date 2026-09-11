@@ -489,7 +489,10 @@ public sealed class Bot
             // que alcance a tomar dos pociones. Un jugador que ve algo así se va, y esto es eso.
             int vidaTope = sentidos.VidaMaxima;
             int nivelAhora = sentidos.Nivel;
-            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora));
+            // Con qué se cura, leído ANTES de buscar por lo mismo que la vida: la búsqueda tiene el modelo bajo su candado.
+            bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+            bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+            var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno));
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
@@ -514,13 +517,13 @@ public sealed class Bot
             // —uno pasó de 6 a 7— y CERO monedas ganadas entre todos, con la herramienta del oficio a
             // doscientas. Quien necesita plata sale a cazar lo que la da. Si no hay nada que pague al alcance,
             // vale lo más cercano, como siempre.
-            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora) && PagaOro(ficha));
+            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha));
             // LO QUE PAGA SE VA A BUSCAR MÁS LEJOS. El radio del temperamento decide si vale la pena moverse por
             // cualquier cosa; por lo que da plata, cualquiera camina unas baldosas más. Medido con la sonda: una
             // Clériga tranquila —radio 6— con un escorpión a la vista a nueve pasos, pegándole al murciélago de al
             // lado, que no suelta nada.
             if (presa is not { } rica || rica.Pasos > RadioDeCaza)
-                presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora));
+                presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno));
             int alcance = presa is { } elegida && PagaOro(elegida.Quien.FichaNpc) ? RadioDeCaza : RadioDeCazaSuyo;
             // SIN ENERGÍA PARA PELEAR NO SE EMPIEZA UNA PELEA. `CazarAsync` se aleja apenas arranca si no la tiene, así
             // que empezar igual era ir y volver. Medido con la sonda: un bot con la energía en cero eligiendo presa y
@@ -561,14 +564,22 @@ public sealed class Bot
 
     /// <summary>¿Esa criatura lo puede matar de pocos golpes? Es la que hay que esquivar, se la haya buscado
     /// o no.</summary>
-    private bool EsPeligroso(short ficha, int vidaMaxima, int nivel)
+    private bool EsPeligroso(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
+        EsPeligrosoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+
+    /// <summary>La regla de <see cref="EsPeligroso"/> sobre la ficha sola.</summary>
+    public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
     {
-        var n = _entorno.Datos.Npc(ficha);
         if (n is null || !n.Hostile) return false;
         // Por lo que pega, o por lo que ES: el que reparte mucha experiencia es un bicho grande aunque su
         // golpe a mano diga 0 porque pelea con magia.
-        return n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima)
-            || n.GiveExp > ExperienciaQueSeAnima(nivel) * 3;
+        if (n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima) || n.GiveExp > ExperienciaQueSeAnima(nivel) * 3)
+            return true;
+        // SIN POCIONES, LO QUE NO ES PRESA SE ESQUIVA. Entre la presa y lo peligroso quedaba un hueco —lo que ni se pelea ni se
+        // esquiva— y el que no tiene con qué curarse se moría adentro: medido en `sano1`, 21 muertes en media hora, todas de los
+        // cinco bots sin pociones y 17 contra el Escorpión y el Lobo, mientras los tres con pociones no murieron nunca. Una
+        // Guerrera con 58 de vida no le pegaba al Lobo (golpe 18) ni se le iba, y el Lobo la mataba parada.
+        return !conPociones && n.MaxHit > 0 && !EsPresaPara(n, vidaMaxima, nivel, conPociones, curaVeneno);
     }
 
     /// <summary>
@@ -1342,11 +1353,13 @@ public sealed class Bot
         // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
         // "hay al menos una presa", sin mirar si soltaba oro — y así la única serpiente del mapa 1 alcanzaba para
         // mandar ahí a cinco bots, que se la repartieron durante media hora sin ganar una moneda.
-        Func<int, bool> sirve = f => EsPresa((short)f, vidaMaxima, nivel) && PagaOro((short)f);
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        Func<int, bool> sirve = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno) && PagaOro((short)f);
         var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve);
         if (hallado is null)
         {
-            sirve = f => EsPresa((short)f, vidaMaxima, nivel);
+            sirve = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
             hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve);
         }
         if (hallado is not { } coto) return false;
@@ -1963,17 +1976,35 @@ public sealed class Bot
     /// <summary>¿Le conviene pelearse con esa criatura? Ataca sólo lo que ataca y se puede atacar —así no se
     /// mete con un ciudadano ni con un guardia, que lo dejarían criminal— y sólo si el golpe del bicho es
     /// chico contra su vida.</summary>
-    private bool EsPresa(short ficha, int vidaMaxima, int nivel)
+    private bool EsPresa(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
+        EsPresaPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+
+    /// <summary>La regla de <see cref="EsPresa"/> sobre la ficha sola.</summary>
+    public static bool EsPresaPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
     {
-        var n = _entorno.Datos.Npc(ficha);
         if (n is null || !n.Hostile || !n.Attackable) return false;
         // LA EXPERIENCIA QUE DA ES LA MEDIDA DE LO QUE ES, y el golpe a mano solo NO ALCANZA: un Espectro
         // tiene MaxHit 0 porque pelea con hechizos, así que por el golpe parecía inofensivo — y da treinta y
         // dos mil de experiencia, o sea que mata a un personaje de nivel uno sin despeinarse. Con la
         // experiencia de por medio, un bicho así queda afuera aunque no pegue trompadas.
         if (n.GiveExp > ExperienciaQueSeAnima(nivel)) return false;
-        return n.MaxHit * GolpeTolerable <= Math.Max(1, vidaMaxima);
+        // SIN POCIONES, LO QUE ENVENENA QUEDA AFUERA SI NO HAY CON QUÉ CURARLO. El veneno no se pasa solo, y sin la poción
+        // violeta sólo lo cura un sacerdote: medido en `largo2` y `sano1`, un Mago sin pociones muerto una y otra vez por
+        // escorpiones y por el veneno.
+        if (!conPociones && n.Veneno > 0 && !curaVeneno) return false;
+        // Y SIN NADA QUE TOMAR, LA PELEA SE GANA CON LA VIDA QUE SE TIENE: el golpe del bicho tiene que entrar el doble de veces.
+        int tolerable = conPociones ? GolpeTolerable : GolpeTolerableSinPociones;
+        return n.MaxHit * tolerable <= Math.Max(1, vidaMaxima);
     }
+
+    /// <summary>Cuántos golpes máximos tiene que aguantar con su vida para animarse a una criatura sin pociones que tomar: el
+    /// doble que con pociones.</summary>
+    private const int GolpeTolerableSinPociones = GolpeTolerable * 2;
+
+    /// <summary>Con menos pociones de vida que éstas pelea como el que no tiene ninguna: dos o tres peleas duras se las comen.</summary>
+    private const int PocionesParaPelear = 10;
+
+    private bool EsPocionQueCuraElVeneno(short obj) => _entorno.Datos.Obj(obj) is { IsPotion: true, SubType: PocionQueCuraElVeneno };
 
     /// <summary>La experiencia de la criatura más grande a la que se anima, según su nivel. Es la forma de
     /// medir "qué tan brava es" que el dato del juego da directo.</summary>
