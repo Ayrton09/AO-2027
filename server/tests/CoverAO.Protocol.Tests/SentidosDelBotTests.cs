@@ -356,11 +356,10 @@ public class SentidosDelBotTests
     }
 
     /// <summary>
-    /// AL SUBIR DE NIVEL TOMA LOS TOPES NUEVOS Y QUEDA LLENO. El servidor manda sólo los máximos y el nivel, y deja la
-    /// vida, el maná y la energía al tope sin avisarlo aparte.
+    /// AL SUBIR DE NIVEL TOMA LOS TOPES NUEVOS Y LLENA LA VIDA, como el original: el maná y la energía quedan donde estaban.
     /// </summary>
     [Fact]
-    public void Al_subir_de_nivel_toma_los_topes_nuevos_y_queda_lleno()
+    public void Al_subir_de_nivel_toma_los_topes_nuevos_y_llena_la_vida()
     {
         var s = new SentidosDelBot();
         var p = Personaje(MiIndice, "Aldo", 50, 50);
@@ -373,8 +372,8 @@ public class SentidosDelBotTests
         Assert.Equal((short)5, s.Nivel);
         Assert.Equal(70, s.VidaMaxima);
         Assert.Equal(1.0, s.Salud);
-        Assert.Equal(1.0, s.Mana);
-        Assert.Equal(1.0, s.Fuelle);
+        Assert.Equal(10.0 / 130, s.Mana, 6);
+        Assert.Equal(5.0 / 95, s.Fuelle, 6);
     }
 
     /// <summary>MEDITAR LO PRENDE Y LO APAGA EL SERVIDOR: cada <c>MeditateToggle</c> lo da vuelta, y al morir queda

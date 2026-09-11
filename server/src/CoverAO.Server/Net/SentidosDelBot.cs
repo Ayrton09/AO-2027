@@ -629,10 +629,10 @@ public sealed class SentidosDelBot
                     break;
 
                 // SUBIÓ DE NIVEL. El servidor manda sólo los MÁXIMOS nuevos y el nivel (vida, maná, energía, nivel, y después
-                // la experiencia para subir y la experiencia), no lo que le queda de cada cosa. Lo actual lo deja lleno
-                // (`Leveling.ApplyLevelGains`) y ninguna regeneración lo avisa, porque las barras ya están al tope. Sin leerlo
-                // el bot seguía con los topes y el nivel del login y con lo que tenía antes de subir: un mago con el maná
-                // lleno en el servidor se quedaba meditando porque lo creía bajo.
+                // la experiencia para subir y la experiencia), no lo que le queda de cada cosa. La vida la deja llena como el
+                // original (Modulo_UsUaRiOs.bas:575), y el cliente original la iguala al tope con este mismo paquete; el maná y la
+                // energía quedan donde estaban, salvo con la regla de la casa `CuraAlSubirNivel`, que antes manda los tres
+                // valores sueltos. Sin leerlo el bot seguía con los topes y el nivel del login.
                 case ServerPacketId.UpdateUserStatsForLevel:
                 {
                     int vidaMax = l.Entero(), manaMax = l.Entero(), enerMax = l.Entero();
@@ -640,8 +640,8 @@ public sealed class SentidosDelBot
                     lock (_candado)
                     {
                         _vidaMax = vidaMax; _vida = vidaMax;
-                        _manaMax = manaMax; _mana = manaMax;
-                        _energiaMax = enerMax; _energia = enerMax;
+                        _manaMax = manaMax;
+                        _energiaMax = enerMax;
                         _nivel = nivel;
                     }
                     break;

@@ -170,10 +170,11 @@ public sealed class Leveling
         p.MaxHit = Math.Min(hitCap, p.MaxHit + hit);
         p.MinHit = Math.Min(hitCap, p.MinHit + hit);
 
-        // El VB6 deja al personaje a full al subir de nivel (y así lo ve el jugador en la barra).
+        // EL VB6 LLENA SÓLO LA VIDA al subir de nivel (`.Stats.MinHP = .Stats.MaxHP`, Modulo_UsUaRiOs.bas:575): el maná y la
+        // energía suben de tope y quedan donde estaban, y el cliente original lo sabe (`ActualizarEst(HP, HP, ...)` en
+        // HandleUpdateUserStatsForLevel iguala sólo la vida). Acá se llenaban las tres, con un comentario que decía que el original
+        // lo hacía. Llenar todo es la regla de la casa `CuraAlSubirNivel`.
         p.Hp = p.MaxHp;
-        p.Mana = p.MaxMana;
-        p.Stamina = p.MaxStamina;
         return new Ganancia(ganadoHp, ganadoSta, ganadoMana, hit);
     }
 }

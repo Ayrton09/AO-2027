@@ -34,7 +34,7 @@ public class ReglasDeLaCasaTests : IDisposable
     {
         var cfg = new ServerIni();
         Assert.Equal(0, cfg.OroAlSubirNivel);       // `SubirNivel` del VB6 no toca el oro
-        Assert.False(cfg.CuraAlSubirNivel);         // sube los MÁXIMOS y deja los mínimos donde estaban
+        Assert.False(cfg.CuraAlSubirNivel);         // sube los MÁXIMOS y llena sólo la vida, como el original
         Assert.False(cfg.QuitarEquipoNovato);       // no existe ningún `QuitarNewbieObj`
         Assert.False(cfg.PersistirSuelo);           // el suelo del VB6 vive en RAM y se repuebla del .csm
         // El módulo del centinela existe entero en el VB6 pero sus dos llamadas están COMENTADAS

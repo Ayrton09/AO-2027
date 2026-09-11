@@ -150,7 +150,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `MinutosDelDia` | duración del ciclo día/noche |
 | `MinutosDeClima`, `PorcentajeLluvia` | ciclo de lluvia |
 | `OroAlSubirNivel` | oro de regalo por nivel. **0 = como el original**, que no regala nada. El `Server.ini` de ejemplo lo trae en 0 |
-| `CuraAlSubirNivel` | 1 = subir de nivel deja vida, maná y energía al máximo. 0 = como el original, que sube los máximos y deja los mínimos. **El ejemplo lo trae en 1** |
+| `CuraAlSubirNivel` | 1 = subir de nivel deja vida, maná y energía al máximo. 0 = como el original, que sube los máximos y llena sólo la vida. **El ejemplo lo trae en 1** |
 | `QuitarEquipoNovato` | 1 = al pasar el nivel 15 desaparecen los objetos `(Newbies)`, y **sólo** ésos: lo que juntaste, compraste o fabricaste no se toca. 0 = como el original, que no los saca. **El ejemplo lo trae en 1** |
 | `PersistirSuelo` | 1 = lo que queda tirado en el suelo sobrevive a un reinicio del servidor. 0 = como el original, que tiene el suelo sólo en RAM y lo repuebla del mapa en cada arranque. No toca el decorado del mundo ni las puertas: sólo lo que dejó o se le cayó a la gente. **El ejemplo lo trae en 1**, porque un servidor de beta se reinicia para actualizarlo y cada reinicio le borra a los jugadores lo que se les cayó al morir |
 | `Centinela` | 1 = corre el centinela anti-macro: un NPC se le planta al que está trabajando y le pide que escriba `/CENTINELA <clave>`; el que no contesta en dos minutos se come quince de cárcel y lo desconecta. **0 = como el original**, que trae el módulo entero pero con sus dos llamadas comentadas, así que nunca aparece. Un Dios también lo prende y lo apaga en vivo con `/CENTINELAACTIVADO` |

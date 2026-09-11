@@ -154,14 +154,16 @@ public class LevelGainsTests
         Assert.True(p.MaxHit <= 99, "bajo nivel 36 el golpe no pasa STAT_MAXHIT_UNDER36");
     }
 
+    /// <summary>Subir de nivel llena la vida y deja la energía donde estaba, como el original (Modulo_UsUaRiOs.bas:575).
+    /// Llenar todo es la regla de la casa CuraAlSubirNivel.</summary>
     [Fact]
-    public void Level_up_leaves_the_character_at_full()
+    public void Level_up_fills_the_life_and_leaves_the_stamina()
     {
         var p = NewChar(Guerrero);
         p.Hp = 1; p.Stamina = 1;
         Sut().Grant(p, 100);
         Assert.Equal(p.MaxHp, p.Hp);
-        Assert.Equal(p.MaxStamina, p.Stamina);
+        Assert.Equal(1, p.Stamina);
     }
 
     [Fact]
