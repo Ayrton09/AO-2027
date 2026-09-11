@@ -140,6 +140,35 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// DESDE LA CUNA SE ENCUENTRA DÓNDE MINAR. Los yacimientos están en pocos mapas y en los más cercanos el centro es
+    /// pared: buscando desde (50,50), el Minero no encontraba nunca dónde trabajar.
+    /// </summary>
+    [Fact]
+    public void Desde_la_cuna_se_encuentra_donde_minar()
+    {
+        if (Mundo() is not { } m) return;
+        bool EsYacimiento(int obj) => m.Datos.Obj(obj) is { IsDeposit: true };
+        var lugar = m.Mapas.DondeSeTrabaja(37, false, EsYacimiento, (57, 74));
+        Assert.True(lugar is not null, "desde la cuna no se encuentra ningún yacimiento al que se llegue");
+    }
+
+    /// <summary>
+    /// SIN ZONAS PK, LA CUNA TIENE DÓNDE PESCAR Y TALAR PERO NO DÓNDE MINAR. Es la premisa de la regla de los bots: no se
+    /// viaja a trabajar a un mapa pk, y todas las minas del mundo lo son; el agua y los árboles de la cuna, no.
+    /// </summary>
+    [Fact]
+    public void Sin_zonas_pk_la_cuna_tiene_donde_pescar_y_talar_pero_no_donde_minar()
+    {
+        if (Mundo() is not { } m) return;
+        bool Seguro(int mapa) => !m.Datos.IsPkMap(mapa);
+        bool EsYacimiento(int obj) => m.Datos.Obj(obj) is { IsDeposit: true };
+        bool EsArbol(int obj) => m.Datos.Obj(obj) is { IsTree: true };
+        Assert.True(m.Mapas.DondeSeTrabaja(37, true, null, (57, 74), Seguro) is not null, "sin pk no hay dónde pescar desde la cuna");
+        Assert.True(m.Mapas.DondeSeTrabaja(37, false, EsArbol, (57, 74), Seguro) is not null, "sin pk no hay dónde talar desde la cuna");
+        Assert.True(m.Mapas.DondeSeTrabaja(37, false, EsYacimiento, (57, 74), Seguro) is null, "hay una mina fuera de zona pk: la regla se puede aflojar");
+    }
+
+    /// <summary>
     /// EL CAMINO NO PISA OTRAS SALIDAS. Pisar una salida saca del mapa, así que un camino que pasa por encima de
     /// una lleva a otro lado: una Pescadora que iba de la cuna a la puerta del 62 terminó en el 185 y en el 208.
     /// Sólo la última baldosa puede ser una salida.

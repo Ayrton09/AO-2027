@@ -205,7 +205,6 @@ public sealed class Navegante
         // descarta, el viaje moría en el primer tramo y la búsqueda siguiente volvía a elegir lo mismo. Medido: un
         // Minero en el mapa 62 al que se mandaba al vendedor de piquetes del 194 por (51,73), la única salida hacia
         // allá, que no se alcanza desde ninguno de los puntos del 62 que se probaron.
-        var alcanzables = Alcanzables(mapaActual, desde);
         // Y EN CADA MAPA SE BUSCA DESDE LA BALDOSA POR LA QUE SE ENTRA, que se sabe: cada salida dice dónde se
         // aparece del otro lado. Primero se devolvía el primero que cumplía —y el bot viajaba hasta un mercader
         // encerrado: de los ocho que venden la caña se llega a tres—; después se lo probaba desde unas baldosas de
@@ -213,6 +212,21 @@ public sealed class Navegante
         // mapa 62 se la mandaba al sacerdote del 64, que se alcanza desde alguna muestra pero no desde (10,36), la
         // baldosa de llegada; entraba, no había camino, y lo volvía a intentar cada uno o dos minutos con el veneno
         // encima. Un mapa puede tener entradas a zonas que no se tocan, así que de cada uno se prueban hasta dos.
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde))
+            if ((mapaSirve is null || mapaSirve(mapa)) && EnElMapa(mapa, entrada, sirve) is { } ahi)
+                return (mapa, ahi.X, ahi.Y, saltos);
+        return null;
+    }
+
+    /// <summary>
+    /// Los mapas a los que se llega viajando desde <paramref name="desde"/>, en orden de cercanía, cada uno con la
+    /// baldosa por la que se entra. Sólo cuentan las salidas a las que se llega caminando dentro de cada mapa, y de
+    /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan.
+    /// </summary>
+    private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada)> MapasPorSuEntrada(int mapaActual,
+                                                                                            (byte X, byte Y) desde)
+    {
+        var alcanzables = Alcanzables(mapaActual, desde);
         var zonas = new Dictionary<int, List<HashSet<int>>>();
         var cola = new Queue<(int Mapa, int Saltos, (byte X, byte Y) Entrada, HashSet<int> Zona)>();
         void Entrar(int mapa, byte x, byte y, int saltos)
@@ -231,13 +245,11 @@ public sealed class Navegante
         while (cola.Count > 0)
         {
             var (mapa, saltos, entrada, zona) = cola.Dequeue();
-            if ((mapaSirve is null || mapaSirve(mapa)) && EnElMapa(mapa, entrada, sirve) is { } ahi)
-                return (mapa, ahi.X, ahi.Y, saltos);
+            yield return (mapa, saltos, entrada);
             if (saltos >= TopeDeMapas) continue;
             foreach (var (_, x, y) in Salidas(mapa))
                 if (zona.Contains(Clave(x, y))) Entrar(mapa, x, y, saltos + 1);
         }
-        return null;
     }
 
     /// <summary>
@@ -283,26 +295,22 @@ public sealed class Navegante
     /// <summary>El mapa más cercano donde hay dónde ejercer ese oficio, y en qué baldosa. Sirve para IR a
     /// trabajar cuando en el mapa donde está no hay ni agua ni yacimientos.</summary>
     public (int Mapa, byte X, byte Y, int Saltos)? DondeSeTrabaja(int mapaActual, bool agua,
-                                                                  Func<int, bool>? esRecurso = null)
+                                                                  Func<int, bool>? esRecurso = null,
+                                                                  (byte X, byte Y)? desde = null,
+                                                                  Func<int, bool>? mapaSirve = null)
     {
-        var centro = ((byte)50, (byte)50);
-        if (DondeTrabajar(mapaActual, centro, 90, agua, esRecurso) is { } aca)
+        // DESDE DÓNDE SE BUSCA: desde donde está parado y, en cada mapa al que se viaja, desde la baldosa por la que se
+        // entra. Antes se buscaba desde el centro de cada mapa, (50,50), y en los mapas con minas el centro es pared:
+        // medido sin servidor, en el 33, el 50 y el 205 —los tres con yacimientos más cercanos a la cuna— el centro no
+        // se pisa, así que ninguno aparecía y el Minero no encontraba nunca dónde trabajar, aunque desde la entrada del
+        // 33 se llega a 56 de sus 59 yacimientos. Es el mismo recorrido que usa `DondeHay`.
+        var inicio = desde ?? ((byte)50, (byte)50);
+        if ((mapaSirve is null || mapaSirve(mapaActual)) && DondeTrabajar(mapaActual, inicio, 90, agua, esRecurso) is { } aca)
             return (mapaActual, aca.Donde.X, aca.Donde.Y, 0);
 
-        var visto = new HashSet<int> { mapaActual };
-        var cola = new Queue<(int Mapa, int Saltos)>();
-        foreach (var (destino, _, _) in Salidas(mapaActual))
-            if (visto.Add(destino)) cola.Enqueue((destino, 1));
-
-        while (cola.Count > 0)
-        {
-            var (mapa, saltos) = cola.Dequeue();
-            if (DondeTrabajar(mapa, centro, 90, agua, esRecurso) is { } ahi)
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, inicio))
+            if ((mapaSirve is null || mapaSirve(mapa)) && DondeTrabajar(mapa, entrada, 90, agua, esRecurso) is { } ahi)
                 return (mapa, ahi.Donde.X, ahi.Donde.Y, saltos);
-            if (saltos >= TopeDeMapas) continue;
-            foreach (var (destino, _, _) in Salidas(mapa))
-                if (visto.Add(destino)) cola.Enqueue((destino, saltos + 1));
-        }
         return null;
     }
 

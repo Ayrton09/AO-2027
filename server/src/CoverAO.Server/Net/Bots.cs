@@ -663,7 +663,10 @@ public sealed class Bot
         //   Pescador 60, Minero 30, Pescador 20  (los tres con oficio)
         // Cuatro a ocho veces menos, y la única diferencia de conducta era ésta. Sin oro no hay compra: primero
         // se junta cazando y vendiendo el botín, que es lo que hace cualquiera que empieza.
-        bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta;
+        // Y SÓLO SI HAY DÓNDE USARLA SIN JUGARSE LA VIDA: una herramienta que no se puede usar son doscientas monedas
+        // tiradas, y se cae al morir. Medido: un Minero compró el piquete dos veces y los dos se le cayeron muriendo en el
+        // camino a una mina; todas las minas del mundo están en mapas pk.
+        bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta && HayDondeTrabajarSeguro(sentidos);
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
         // sin llevarse nada.
@@ -899,6 +902,35 @@ public sealed class Bot
 
     private const short Pargo = 139, Lena = 58, Hierro = 192;
 
+    /// <summary>Qué cuenta como lugar de trabajo para su oficio: null para el agua (la pesca mira el terreno), o qué
+    /// objetos del mapa sirven (los árboles para el Leñador, los yacimientos para el Minero).</summary>
+    private Func<int, bool>? RecursoDeSuOficio()
+    {
+        byte skill = SkillDeSuOficio;
+        if (skill == GameLimits.SkillPesca) return null;
+        return obj => _entorno.Datos.Obj(obj) is { } o && (skill == GameLimits.SkillTalar ? o.IsTree : o.IsDeposit);
+    }
+
+    /// <summary>Un mapa donde se trabaja: los pk quedan afuera.</summary>
+    private bool MapaSeguro(int mapa) => !_entorno.Datos.IsPkMap(mapa);
+
+    /// <summary>¿Hay un lugar a salvo donde ejercer su oficio? Se recalcula al cambiar de mapa o cada cinco minutos:
+    /// buscarlo es recorrer varios mapas, y esto se pregunta en cada vuelta.</summary>
+    private bool HayDondeTrabajarSeguro(SentidosDelBot sentidos)
+    {
+        if (sentidos.Mapa == _trabajoSeguroMapa && Environment.TickCount64 < _trabajoSeguroHasta) return _trabajoSeguro;
+        bool agua = SkillDeSuOficio == GameLimits.SkillPesca;
+        _trabajoSeguro = SkillDeSuOficio != 0
+            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaSeguro) is not null;
+        _trabajoSeguroMapa = sentidos.Mapa;
+        _trabajoSeguroHasta = Environment.TickCount64 + 5 * 60_000;
+        return _trabajoSeguro;
+    }
+
+    private int _trabajoSeguroMapa = -1;
+    private long _trabajoSeguroHasta;
+    private bool _trabajoSeguro;
+
     /// <summary>¿Le falta la herramienta de su oficio? Ninguna clase nace con ella —el Pescador, el Leñador y
     /// el Minero reciben todos el mismo martillo de piedra— así que hay que ir a comprarla, igual que un
     /// jugador nuevo.</summary>
@@ -1077,14 +1109,18 @@ public sealed class Bot
 
         byte skill = SkillDeSuOficio;
         bool agua = skill == GameLimits.SkillPesca;
-        Func<int, bool>? recurso = agua ? null
-            : obj => _entorno.Datos.Obj(obj) is { } o && (skill == GameLimits.SkillTalar ? o.IsTree : o.IsDeposit);
+        Func<int, bool>? recurso = RecursoDeSuOficio();
 
         // ¿Hay dónde trabajar acá cerca? Si no, se viaja hasta donde haya.
-        var punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
+        // Y SÓLO DONDE NO SE MATA A LA GENTE: nada de mapas pk. Medido: un Minero de nivel 5 al que se mandaba a la mina
+        // del mapa 33, a cinco mapas, cruzando zonas pk con gladiadores que pegan 282 y trece lobos, murió al menos dos
+        // veces en veinte minutos y perdió los dos piquetes, que se caen al morir. Todas las minas del mundo están en
+        // mapas pk; el agua y los árboles de la cuna, no.
+        var punto = MapaSeguro(sentidos.Mapa)
+            ? _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso) : null;
         if (punto is null)
         {
-            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso) is not { } lejos) { PostergarFaena(); return false; }
+            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, MapaSeguro) is not { } lejos) { PostergarFaena(); return false; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct)) { PostergarFaena(); return true; }
             punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
             if (punto is null) { PostergarFaena(); return true; }
@@ -1416,24 +1452,42 @@ public sealed class Bot
         foreach (var esDeEso in QueSePone)
         {
             if (sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && esDeEso(puesto))) continue;
-            byte mejor = 0;
-            int valorMejor = -1;
-            foreach (byte ranura in sentidos.RanurasOcupadas())
-            {
-                short obj = sentidos.QueHayEn(ranura);
-                if (sentidos.EstaPuesto(ranura) || _noSeLoPone.Contains(obj)) continue;
-                if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)
-                    continue;
-                int valor = o.IsWeapon ? o.MaxHit : o.MaxDef;
-                if (valor > valorMejor) { mejor = ranura; valorMejor = valor; }
-            }
-            if (mejor == 0) continue;
-
-            _equipoPedido = (mejor, sentidos.QueHayEn(mejor));
-            _proximoEquipo = Environment.TickCount64 + EsperaEquipoMs;
-            return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(mejor)));
+            if (MejorParaPoner(sentidos, esDeEso) is { } ranura) return PedirQueSePonga(transporte, sentidos, ranura);
         }
+
+        // LOS NUDILLOS, SÓLO PARA EL QUE NO TIENE ARMA. El servidor saca uno al ponerse el otro (VB6
+        // InvUsuario.bas:991-997 y :1051-1058), así que con los dos en la mochila el bot se pasaría la vida cambiando.
+        // Medido con la sonda: un Gladiador sin arma, con los Nudillos de Hierro en la mochila sin poner.
+        static bool EsArma(ObjInfo o) => o.IsWeapon && o.Proyectil == 0;
+        if (!sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && (EsArma(puesto) || puesto.IsKnuckles))
+            && MejorParaPoner(sentidos, EsArma) is null
+            && MejorParaPoner(sentidos, o => o.IsKnuckles) is { } nudillos)
+            return PedirQueSePonga(transporte, sentidos, nudillos);
         return false;
+    }
+
+    /// <summary>La ranura con lo mejor de eso que tiene sin poner y que puede usar, o null.</summary>
+    private byte? MejorParaPoner(SentidosDelBot sentidos, Func<ObjInfo, bool> esDeEso)
+    {
+        byte mejor = 0;
+        int valorMejor = -1;
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+        {
+            short obj = sentidos.QueHayEn(ranura);
+            if (sentidos.EstaPuesto(ranura) || _noSeLoPone.Contains(obj)) continue;
+            if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)
+                continue;
+            int valor = o.IsWeapon || o.IsKnuckles ? o.MaxHit : o.MaxDef;
+            if (valor > valorMejor) { mejor = ranura; valorMejor = valor; }
+        }
+        return mejor == 0 ? null : mejor;
+    }
+
+    private bool PedirQueSePonga(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura)
+    {
+        _equipoPedido = (ranura, sentidos.QueHayEn(ranura));
+        _proximoEquipo = Environment.TickCount64 + EsperaEquipoMs;
+        return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)));
     }
 
     private static readonly Func<ObjInfo, bool>[] QueSePone =
