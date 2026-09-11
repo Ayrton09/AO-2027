@@ -432,6 +432,11 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     int MaxHp, int MinHit, int MaxHit, int Def, long GiveExp, int GiveGld, long PoderEvasion, long PoderAtaque,
     IReadOnlyList<NpcDrop>? Drops = null, string Description = "",
     bool Hostile = false, bool Attackable = false, int Movement = 0,
+    // NPCs.dat "PosOrig": 1 = al reaparecer vuelve a su baldosa (la carga del mapa le guarda `Orig`, VB6 FileIO.bas:1348);
+    // 0 = reaparece en una posición legal al azar del mapa, lejos de los jugadores (CrearNPC, MODULO_NPCs.bas:436). Lo
+    // traen 157 de las 291 fichas del install, entre ellas el sacerdote y el mercader de la cuna y once jefes (los dragones
+    // grandes); ninguna de las criaturas de la cuna.
+    bool PosOrig = false,
     // NPCs.dat "Domable": puntos requeridos para domesticarla (0 = no domable). VB6 DoDomar exige
     // Domable <= Carisma * SkillDomar (+ una tirada). Ver HandleTrain.
     int Domable = 0,
@@ -1353,6 +1358,7 @@ public sealed class GameData
                 Int(el, "DEF", "Def"), Int(el, "GiveEXP"), Int(el, "GiveGLD"), Int(el, "PoderEvasion"), Int(el, "PoderAtaque"),
                 ParseDrops(Str(el, "RandomDrop")), Str(el, "Desc"),
                 Hostile: Int(el, "Hostile") == 1, Attackable: Int(el, "Attackable") == 1, Movement: Int(el, "Movement"),
+                PosOrig: Int(el, "PosOrig") == 1,
                 Domable: Int(el, "Domable"),
                 NpcType: Int(el, "NpcType"),
                 StockItems: Int(el, "Comercia") == 1 ? ParseStock(el) : null,

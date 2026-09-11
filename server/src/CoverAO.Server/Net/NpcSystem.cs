@@ -37,6 +37,7 @@ public sealed class NpcSystem
         public short CharIndex;
         public bool Alive;
         public long RespawnAtTick;
+        public bool PosOrig;
     }
 
     /// <summary>Da de baja el respawn de una criatura (VB6 <c>QuitarNPC</c>, MODULO_NPCs.bas:328): la saca del
@@ -104,12 +105,15 @@ public sealed class NpcSystem
     /// plantillas genéricas (Aldeano/Murciélago/Lobo) cuyo Movement es 0 — o sea que, con la IA fiel, un
     /// "banquero" de test se pondría a caminar hacia el jugador. En la data real los servicios SON Movement=1,
     /// así que fijarlo no es hacer trampa: es corregir la infidelidad de reusar una plantilla cualquiera.</summary>
-    public void AddSpawn(NpcInfo template, WorldPos pos, bool hostile = false, int? movement = null)
+    public void AddSpawn(NpcInfo template, WorldPos pos, bool hostile = false, int? movement = null, bool? posOrig = null)
     {
         var spawn = new Spawn
         {
             Template = template, Pos = pos, Hostile = hostile,
             Movement = movement ?? template.Movement,
+            // Y DÓNDE REAPARECE (ver `Reaparecer`): null = lo que diga su ficha. El fixture lo fija por lo mismo que el
+            // Movement: sus criaturas salen de plantillas de campo y tienen que volver a su baldosa de prueba.
+            PosOrig = posOrig ?? template.PosOrig,
         };
         SpawnNow(spawn);
         _spawns.Add(spawn);
@@ -128,7 +132,9 @@ public sealed class NpcSystem
     /// </summary>
     public int GmSpawn(NpcInfo template, WorldPos pos)
     {
-        AddSpawn(template, pos);
+        // `SpawnNpc` no le guarda `Orig` (eso lo hace sólo la carga del mapa): al morir reaparece al azar aunque su ficha
+        // traiga PosOrig.
+        AddSpawn(template, pos, posOrig: false);
         var spawn = _spawns[^1];
         _world.BroadcastToObservers(pos, ServerMessages.PlayWave(SndWarp, pos.X, pos.Y));
         _world.BroadcastToObservers(pos, ServerMessages.CreateFX(spawn.CharIndex, FxWarp, 0));
@@ -241,7 +247,7 @@ public sealed class NpcSystem
             }
             else if (!s.Alive && tick >= s.RespawnAtTick)
             {
-                SpawnNow(s);
+                Reaparecer(s);
             }
         }
 
@@ -738,6 +744,100 @@ public sealed class NpcSystem
         if (_rng.Next(1, 13) == 3) StepRandom(npc);   // el paso al azar del Case SigueAmo, corra o no SeguirAmo
     }
 
+    /// <summary>
+    /// REAPARECER (VB6 ReSpawnNpc → CrearNPC, MODULO_NPCs.bas:886 y :436). La que trae `PosOrig=1` en su ficha vuelve a su
+    /// baldosa; el resto busca una posición legal al azar del mapa (<see cref="PosicionDeReaparicion"/>). Si no encuentra
+    /// ninguna no reaparece más: el original la quita y lo anota en el log.
+    ///
+    /// <para>Acá reaparecían TODAS en su baldosa, hubiera alguien parado ahí o no. Medido en `verdad1`: el servidor tenía a un
+    /// Escorpión y a un jugador en la misma baldosa de la cuna, y a una criatura parada en tu baldosa no se le puede pegar,
+    /// porque el golpe va a la baldosa de enfrente.</para>
+    /// </summary>
+    private void Reaparecer(Spawn s)
+    {
+        if (s.PosOrig) { SpawnNow(s); return; }
+        if (PosicionDeReaparicion(s) is { } donde) { SpawnNow(s, donde); return; }
+        s.RespawnAtTick = long.MaxValue;
+        Console.WriteLine($"[npc] {MaxSpawnAttemps} iteraciones en CrearNpc Mapa:{s.Pos.Map} NroNpc:{s.Template.Index}");
+    }
+
+    /// <summary>
+    /// El sorteo de <c>CrearNPC</c> para la que no tiene posición fija: hasta <see cref="MaxSpawnAttemps"/> baldosas al azar dentro
+    /// de los bordes, cada una llevada a la legal más cercana (primero con el terreno de la criatura y, si no hay, pudiendo pisar
+    /// tierra), y se acepta la que la criatura puede pisar, sin nadie en el área y con un trigger que lo permite. Agotados los
+    /// sorteos vale la última legal que se encontró, sin mirar el área; si no hubo ninguna, la legal más cercana al centro.
+    /// </summary>
+    private WorldPos? PosicionDeReaparicion(Spawn s)
+    {
+        short mapa = s.Pos.Map;
+        bool puedeAgua = s.Template.AguaValida, puedeTierra = !s.Template.TierraInvalida;
+        WorldPos? alternativa = null;
+        for (int iteraciones = 1; ; iteraciones++)
+        {
+            var sorteo = new WorldPos(mapa, (byte)_rng.Next(GameLimits.MinXBorder, GameLimits.MaxXBorder + 1),
+                                            (byte)_rng.Next(GameLimits.MinYBorder, GameLimits.MaxYBorder + 1));
+            var nueva = ClosestLegalPos(sorteo, puedeAgua, puedeTierra) ?? ClosestLegalPos(sorteo, puedeAgua);
+            if (nueva is { } candidata)
+            {
+                alternativa = candidata;
+                if (LegalPosNpc(candidata, puedeAgua) && !HayPCarea(candidata) && TestSpawnTrigger(candidata, puedeAgua))
+                    return candidata;
+            }
+            if (iteraciones > MaxSpawnAttemps)
+                return alternativa ?? ClosestLegalPos(new WorldPos(mapa, 50, 50));
+        }
+    }
+
+    /// <summary>VB6 ClosestLegalPos (GameLogic.bas:243): la baldosa legal más cercana, en cuadrados de radio 0 a 12 recorridos
+    /// fila por fila; null si no hay ninguna.</summary>
+    private WorldPos? ClosestLegalPos(WorldPos pos, bool puedeAgua = false, bool puedeTierra = true)
+    {
+        for (int anillo = 0; anillo <= 12; anillo++)
+            for (int y = pos.Y - anillo; y <= pos.Y + anillo; y++)
+                for (int x = pos.X - anillo; x <= pos.X + anillo; x++)
+                    if (LegalPos(pos.Map, x, y, puedeAgua, puedeTierra)) return new WorldPos(pos.Map, (byte)x, (byte)y);
+        return null;
+    }
+
+    /// <summary>VB6 LegalPos (GameLogic.bas:458): dentro de los bordes, sin bloqueo, con el agua según pueda la criatura y sin
+    /// nadie parado (criatura, o usuario vivo o muerto). El jugador se mira último porque es el único recorrido.</summary>
+    private bool LegalPos(short mapa, int x, int y, bool puedeAgua = false, bool puedeTierra = true)
+    {
+        if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder || y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder) return false;
+        if (_data.IsBlockedTile(mapa, x, y)) return false;
+        bool agua = _data.IsWater(mapa, x, y);
+        if (!(puedeAgua && puedeTierra) && !(puedeTierra && !agua) && !(puedeAgua && agua)) return false;
+        var pos = new WorldPos(mapa, (byte)x, (byte)y);
+        return _world.NpcAt(pos) is null && _world.PlayerAt(pos) is null;
+    }
+
+    /// <summary>VB6 LegalPosNPC (GameLogic.bas:608): como <see cref="LegalPos"/>, pero no la tapan un usuario muerto ni un GM
+    /// invisible, no pisa una posición inválida para criaturas y, sin <c>AguaValida</c>, no entra al agua.</summary>
+    private bool LegalPosNpc(WorldPos pos, bool aguaValida)
+    {
+        if (pos.X < GameLimits.MinXBorder || pos.X > GameLimits.MaxXBorder || pos.Y < GameLimits.MinYBorder || pos.Y > GameLimits.MaxYBorder) return false;
+        if (_data.IsBlockedTile(pos.Map, pos.X, pos.Y)) return false;
+        if (_data.IsNpcInvalidTile(pos.Map, pos.X, pos.Y)) return false;
+        if (!aguaValida && _data.IsWater(pos.Map, pos.X, pos.Y)) return false;
+        return _world.NpcAt(pos) is null && _world.PlayerAt(pos) is not { IsAlive: true, Invisible: false };
+    }
+
+    /// <summary>VB6 HayPCarea (TCP.bas:737): algún usuario, vivo o muerto, a <c>MinXBorder - 1</c> baldosas o menos en X y a
+    /// <c>MinYBorder - 1</c> o menos en Y.</summary>
+    private bool HayPCarea(WorldPos pos)
+    {
+        foreach (var p in _world.Players)
+            if (p.Pos.Map == pos.Map && Math.Abs(p.Pos.X - pos.X) <= GameLimits.MinXBorder - 1
+                && Math.Abs(p.Pos.Y - pos.Y) <= GameLimits.MinYBorder - 1) return true;
+        return false;
+    }
+
+    /// <summary>VB6 TestSpawnTrigger (MODULO_NPCs.bas:420): legal, y sin los triggers 1, 2 ni 3.</summary>
+    private bool TestSpawnTrigger(WorldPos pos, bool puedeAgua) =>
+        LegalPos(pos.Map, pos.X, pos.Y, puedeAgua) && _data.TileTrigger(pos.Map, pos.X, pos.Y) is not (1 or 2 or 3);
+
+    private const int MaxSpawnAttemps = 60;   // Declares.bas:65 MAXSPAWNATTEMPS
+
     /// <summary>¿Este NPC puede pisar este tile? VB6 MoveNPCChar/LegalPosNPC: dentro del mapa, sin bloqueo del .csm
     /// (no se atraviesan paredes), y respetando el terreno de la criatura — un NPC terrestre (AguaValida=0) no entra
     /// al agua, y uno acuático puro (TierraInvalida=1) no pisa tierra.</summary>
@@ -755,15 +855,16 @@ public sealed class NpcSystem
     }
 
 
-    private void SpawnNow(Spawn s)
+    private void SpawnNow(Spawn s, WorldPos? donde = null)
     {
         var npc = new Npc
         {
             CharIndex = _world.AllocateCharIndex(),
             Template = s.Template,
             Hp = s.Template.MaxHp,
-            Pos = s.Pos,
-            StartPos = s.Pos,                // VB6 StartPos: de acá sale si el click le muestra su diálogo
+            Pos = donde ?? s.Pos,
+            StartPos = s.Pos,                // VB6 StartPos: de acá sale si el click le muestra su diálogo. La
+                                             // guarda sólo la carga del mapa (FileIO.bas:1362): CrearNPC no la mueve
             Hostile = s.Hostile,
             OriginallyHostile = s.Hostile,   // VB6 MODULO_NPCs.bas:994: `.flags.OldHostil = .Hostile` al cargarlo
             Movement = s.Movement,           // VB6 TipoAI: 0 = va al usuario cercano, 1 = estatico, 3 = deambula

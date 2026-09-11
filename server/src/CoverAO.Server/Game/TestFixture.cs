@@ -119,7 +119,7 @@ public static class TestFixture
             // Murciélagos PvE: PRIMEROS en spawnear, así el `npcs[0]` de npc_flow/npc_ai_flow (orden de
             // CharacterCreate) cae siempre en uno de ellos y no en el bruiser de 300 HP.
             for (byte i = 0; i < 3; i++)
-                npcSystem.AddSpawn(npcTemplate, new WorldPos(FixtureMap, (byte)(52 + i * 2), PveRow), movement: Estatico);   // (52|54|56, 53)
+                npcSystem.AddSpawn(npcTemplate, new WorldPos(FixtureMap, (byte)(52 + i * 2), PveRow), movement: Estatico, posOrig: true);   // (52|54|56, 53)
             // A guaranteed-drop variant: forces RandomDrop to 100% so loot is observable/testable.
             // ProbTirar = 100 es el "dropea siempre" del VB6 (NPC_TIRAR_ITEMS), así el loot es observable/testable.
             var dropSrc = npcTemplate.Drops is { Count: > 0 } ds ? ds[0] : null;
@@ -127,12 +127,12 @@ public static class TestFixture
             {
                 Drops = new[] { new Data.NpcDrop(dropSrc?.ObjIndex > 0 ? dropSrc.ObjIndex : 38, System.Math.Max(1, dropSrc?.Amount ?? 1), 100) },
             };
-            npcSystem.AddSpawn(dropper, new WorldPos(FixtureMap, 46, PveRow), movement: Estatico);
+            npcSystem.AddSpawn(dropper, new WorldPos(FixtureMap, 46, PveRow), movement: Estatico, posOrig: true);
             // A hard-hitting, high-HP stationary NPC so equipment defence vs NPCs is observable (the default bat
             // hits for 1, which armour can't visibly reduce). Used by armor_npc_flow y potion_flow (que necesita 2
             // tiles libres al oeste: (59,53) para Rugura y (58,53) para Merlin).
             var bruiser = npcTemplate with { MinHit = 10, MaxHit = 10, MaxHp = 300, GiveExp = 0 };
-            npcSystem.AddSpawn(bruiser, new WorldPos(FixtureMap, 60, PveRow), movement: Estatico);
+            npcSystem.AddSpawn(bruiser, new WorldPos(FixtureMap, 60, PveRow), movement: Estatico, posOrig: true);
             // A frail, high-XP dummy: a single kill grants enough exp to level up, so emit_flow can verify the
             // LevelUp packet deterministically (PvP exp is faithfully low now, so killing players won't).
             // Un HECHICERO estático en (62,53): tira el hechizo 36 ("Hechizo de NPC", SubeHP=2, 30-50 de daño),
@@ -143,7 +143,7 @@ public static class TestFixture
             // hostile: true — `AddSpawn` lo toma por PARÁMETRO, no del NpcInfo, y su default es false: el resto
             // del fixture nace pacífico y sólo devuelve el golpe. Acá se quiere que tire magia sin que lo
             // provoquen, que es lo que hacen 31 de los 70 casters del mundo real.
-            npcSystem.AddSpawn(hechicero, new WorldPos(FixtureMap, 62, PveRow), hostile: true, movement: Estatico);
+            npcSystem.AddSpawn(hechicero, new WorldPos(FixtureMap, 62, PveRow), hostile: true, movement: Estatico, posOrig: true);
             // INMUNIDAD A LA PARÁLISIS (NPCs.dat "Inmunidad"). Dos criaturas gemelas y ESTÁTICAS, que sólo se
             // diferencian en ese campo: la de (42,53) se paraliza y la de (40,53) no. Van al fixture y no se
             // invocan con /ACC porque una criatura recién invocada CAMINA — se la vio salirse del tile de
@@ -154,35 +154,35 @@ public static class TestFixture
             // esta pareja en la 42 y CHOCO con el lobo: una de las dos no llegaba a spawnear, y el flow medía
             // "no hay objetivo" creyendo que medía la inmunidad. Se usan la 36 y la 38, que estan libres.
             var paralizable = npcTemplate with { MaxHp = 300, GiveExp = 0, Inmunidad = 0 };
-            npcSystem.AddSpawn(paralizable, new WorldPos(FixtureMap, 38, PveRow), movement: Estatico);
+            npcSystem.AddSpawn(paralizable, new WorldPos(FixtureMap, 38, PveRow), movement: Estatico, posOrig: true);
             var inmune = npcTemplate with { MaxHp = 300, GiveExp = 0, Inmunidad = 1 };
-            npcSystem.AddSpawn(inmune, new WorldPos(FixtureMap, 36, PveRow), movement: Estatico);
+            npcSystem.AddSpawn(inmune, new WorldPos(FixtureMap, 36, PveRow), movement: Estatico, posOrig: true);
             // VENENOSA (veneno_criatura_flow): clonada del murciélago —pega de a 1, así que uno se puede quedar
             // parado al lado— con `Veneno = 1` y hostil para que ataque sola. Va al final de la fila, después
             // del hechicero: los huecos del medio están sobre el camino que otros flows recorren.
             var venenosa = npcTemplate with { MaxHp = 300, GiveExp = 0, Veneno = 1 };
-            npcSystem.AddSpawn(venenosa, new WorldPos(FixtureMap, 64, PveRow), hostile: true, movement: Estatico);
+            npcSystem.AddSpawn(venenosa, new WorldPos(FixtureMap, 64, PveRow), hostile: true, movement: Estatico, posOrig: true);
             // AGRESOR para mascota_ataca_flow: hostil DE NACIMIENTO —pega sin que lo provoquen— y con 300 de
             // vida para que la mascota no lo mate y termine volviendo con el amo. Va una fila más abajo, no en
             // la PvE: parado en (41,53) uno doma al lobo, y ahí al lado no puede haber nada que pegue, o
             // pet_flow se comería mordiscones que no pidió.
             var agresor = npcTemplate with { MaxHp = 300, GiveExp = 0 };
-            npcSystem.AddSpawn(agresor, new WorldPos(FixtureMap, 41, PveRow + 2), hostile: true, movement: Estatico);
+            npcSystem.AddSpawn(agresor, new WorldPos(FixtureMap, 41, PveRow + 2), hostile: true, movement: Estatico, posOrig: true);
             System.Console.WriteLine($"Spawn: paralizable en (38,{PveRow}) e INMUNE en (36,{PveRow}).");
 
             var xpDummy = npcTemplate with { MaxHp = 20, Def = 0, GiveExp = 100000 };
-            npcSystem.AddSpawn(xpDummy, new WorldPos(FixtureMap, 44, PveRow), movement: Estatico);
+            npcSystem.AddSpawn(xpDummy, new WorldPos(FixtureMap, 44, PveRow), movement: Estatico, posOrig: true);
             // A TAMEABLE creature for pet_flow: the default bat has no `Domable` in NPCs.dat, and the faithful taming
             // gate (VB6 DoDomar) requires Domable > 0 and <= Carisma * Domar skill. The Wolf (501) has Domable=160.
             var tameable = gameData.Npc(501);
-            if (tameable is not null) npcSystem.AddSpawn(tameable, new WorldPos(FixtureMap, 42, PveRow), movement: Estatico);
+            if (tameable is not null) npcSystem.AddSpawn(tameable, new WorldPos(FixtureMap, 42, PveRow), movement: Estatico, posOrig: true);
             // Errantes, DENTRO DE UN CORRAL (56..60 × 36..40): deambulan ~1 tile/s y, sueltos, derivan hasta los
             // carriles y bloquean el paso de un flow de forma NO determinista (con la colisión activa eso los vuelve
             // flaky — medido: potion_flow fallaba 1 de cada 4 por un errante cruzado). Encerrados siguen moviéndose
             // (wander_flow los ve) pero no pueden salir. El corral entra en el InView del spawn y está lejos de la
             // autopista y=50 y de las dos filas de NPCs; sus paredes no cortan ninguna columna de acceso.
             for (byte i = 0; i < 2; i++)
-                npcSystem.AddSpawn(npcTemplate, new WorldPos(FixtureMap, (byte)(57 + i * 2), 38), movement: MueveAlAzar);
+                npcSystem.AddSpawn(npcTemplate, new WorldPos(FixtureMap, (byte)(57 + i * 2), 38), movement: MueveAlAzar, posOrig: true);
             // Hostil (persigue al que entra en AggroRange=6): al SUR en (58,60), a 10 de la autopista y a 7 del
             // puesto de potion_flow (59,53) — así NADIE lo despierta de paso; sólo aggro_flow baja a buscarlo.
             //
@@ -197,7 +197,7 @@ public static class TestFixture
             // NPCs al sur de y=56, el más cercano a este tile. El "más cercano" hace falta porque el mapa 15 no
             // es sólo fixture — también trae su población del .csm, y ahí abajo vive una Araña Gigante en
             // (50,61).
-            npcSystem.AddSpawn(npcTemplate, new WorldPos(FixtureMap, 58, 60), hostile: true, movement: VaAlUsuario);
+            npcSystem.AddSpawn(npcTemplate, new WorldPos(FixtureMap, 58, 60), hostile: true, movement: VaAlUsuario, posOrig: true);
             System.Console.WriteLine($"Spawn: 3x '{npcTemplate.Name}' PvE en y={PveRow} + dropper + bruiser + dummy + lobo; 2 errantes (57|59,38); 1 hostil (58,60).");
         }
 
