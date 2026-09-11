@@ -1323,12 +1323,17 @@ public sealed class Bot
     /// agachaba, no levantaba nada, y volvía a empezar. Medido: ocho bots con oro en CERO después de nueve
     /// minutos, porque ninguno llegó nunca a un botín de verdad.</para>
     /// </summary>
-    private bool SePuedeLevantar(short obj)
-    {
-        if (obj <= 0) return false;
-        var o = _entorno.Datos.Obj(obj);
-        return o is not null && !o.IsDoor;
-    }
+    private bool SePuedeLevantar(short obj) => obj > 0 && SeLevantaDelPiso(_entorno.Datos.Obj(obj));
+
+    /// <summary>
+    /// La regla de <see cref="SePuedeLevantar"/> sobre el objeto solo, que es la del servidor al levantar: `Agarrable` distinto de 1
+    /// (<see cref="ObjInfo.IsPickable"/>, VB6 InvUsuario.bas:619). El decorado fijo también viaja como objeto del piso, y no sólo
+    /// las puertas: los Teleports de la cuna están encima de las salidas. Medido en `normal2`: una Pescadora de nivel 1 pasó
+    /// veinticuatro de treinta minutos sin matar nada y terminó al lado del Teleport de (66,74) de la cuna, que es la salida al
+    /// 208. `LevantarBotinAsync` camina hacia lo que ve a levantar y sólo anota la baldosa inútil al agacharse encima: con el paso
+    /// a la salida sin entrar, devolvía que hizo algo en cada vuelta.
+    /// </summary>
+    public static bool SeLevantaDelPiso(ObjInfo? o) => o is not null && !o.IsDoor && o.IsPickable;
 
     /// <summary>Baldosas donde ya se agachó y no levantó nada.</summary>
     private readonly HashSet<(short Mapa, byte X, byte Y)> _nadaQueHacerAca = new();
