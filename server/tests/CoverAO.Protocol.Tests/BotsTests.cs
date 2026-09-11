@@ -185,4 +185,31 @@ public class BotsTests
         Assert.Equal(ComoEntrar.Alta, Bot.DespuesDeUnFracaso(ComoEntrar.SoloPersonaje, yaEntro: false));
         Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Alta, yaEntro: false));
     }
+
+    // ── Salir del pozo sin pociones ───────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// CON URGENCIA, EL VIAJE SIGUE SÓLO SI PARAR NO SIRVE: sin pociones que tomar y sin nada hostil cerca. Con pociones se para
+    /// a tomar, y con algo que ataca se corta como siempre.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, 0, false, true)]
+    [InlineData(true, false, 3, false, false)]
+    [InlineData(true, false, 0, true, false)]
+    [InlineData(false, false, 0, false, false)]
+    [InlineData(true, true, 0, false, false)]
+    public void Con_urgencia_sigue_caminando_solo_si_parar_no_sirve(bool vivo, bool deMuerto, int pociones, bool hostilCerca, bool sigue)
+    {
+        Assert.Equal(sigue, Bot.SigueCaminandoConUrgencia(vivo, deMuerto, pociones, hostilCerca));
+    }
+
+    /// <summary>SIN POCIONES Y CON LA VIDA BAJA TOCA EL SACERDOTE; con pociones se toma una, y con la vida alta no hace falta.</summary>
+    [Theory]
+    [InlineData(0.30, 0, true)]
+    [InlineData(0.30, 5, false)]
+    [InlineData(0.90, 0, false)]
+    public void Sin_pociones_y_con_la_vida_baja_toca_el_sacerdote(double salud, int pociones, bool toca)
+    {
+        Assert.Equal(toca, Bot.TocaSanarse(salud, pociones));
+    }
 }

@@ -258,6 +258,19 @@ public class NaveganteTests
         Assert.True(miradas > 0, "ninguna consulta devolvió puerta: el test no miró nada");
     }
 
+    /// <summary>
+    /// DESDE DONDE QUEDÓ TRABADA DALIA SE LLEGA A UN SACERDOTE. Es la salida del pozo sin pociones: una Guerrera en el 194 con
+    /// 5 de 58 de vida y sin con qué regenerar, a la que el sacerdote cura del todo si llega.
+    /// </summary>
+    [Fact]
+    public void Desde_donde_quedo_trabada_Dalia_se_llega_a_un_sacerdote()
+    {
+        if (Mundo() is not { } m) return;
+        var templo = m.Mapas.DondeHay(194, (54, 82), ficha => m.Datos.Npc(ficha)?.NpcType == 1);
+        Assert.True(templo is not null, "desde (54,82) del 194 no se llega a ningún sacerdote");
+        Assert.True(templo!.Value.Saltos <= 2, $"el sacerdote más cercano queda a {templo.Value.Saltos} mapas");
+    }
+
     /// <summary>Y dónde se puede pescar. El agua no viaja por la red —el servidor no manda el terreno— así que
     /// si esto no la encontrara, un Pescador no tendría forma de saber a dónde ir.</summary>
     [Fact]

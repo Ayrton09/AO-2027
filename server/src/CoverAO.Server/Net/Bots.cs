@@ -498,6 +498,7 @@ public sealed class Bot
 
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await SanarseAsync(transporte, sentidos, cerrada, ct)) continue;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1628,6 +1629,48 @@ public sealed class Bot
         return false;
     }
 
+    /// <summary>
+    /// SIN POCIONES Y CON LA VIDA BAJA, AL SACERDOTE. Al vivo herido lo cura del todo con el doble clic (VB6 Acciones.bas:316),
+    /// que es lo que hace cualquiera que empieza y se quedó sin pociones. Sin esto un bot sin pociones sólo podía esperar a que
+    /// la vida volviera sola, y con el hambre o la sed en cero no vuelve: medido en `largo2`, una Guerrera con 5 de 58 de vida
+    /// trabada en el pozo, y un Mago sin pociones muerto por una Gallina Salvaje. Sólo si hay uno a
+    /// <see cref="SaltosHastaElSacerdote"/> mapas o menos; si no, se vuelve a probar más tarde. Devuelve si se ocupó de esto.
+    /// </summary>
+    private async Task<bool> SanarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (!sentidos.Vivo || !TocaSanarse(sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))
+            || Environment.TickCount64 < _proximaSanacion) return false;
+
+        if (sentidos.MasCercano(EsSacerdote) is { } cura && AlAlcanceDelAltar(sentidos, cura.Quien))
+        {
+            PedirResurreccion(transporte, sentidos);   // el mismo doble clic: al vivo herido lo cura
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            // SI NO LO CURÓ, SE ESPERA ANTES DE INSISTIR: sin la espera el ciclo volvería acá en el acto y giraría sin ceder.
+            if (sentidos.Salud < TomaPocion)
+                _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
+            return true;
+        }
+
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { Saltos: <= SaltosHastaElSacerdote } templo
+            && await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar))
+        {
+            // LLEGÓ PERO NO LO TIENE AL ALCANCE (el sacerdote no está en su lugar): la misma espera, por lo mismo.
+            if (sentidos.MasCercano(EsSacerdote) is not { } visto || !AlAlcanceDelAltar(sentidos, visto.Quien))
+                _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
+            return true;
+        }
+
+        _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaCuraMinMs, EsperaCuraMaxMs);
+        return false;
+    }
+
+    /// <summary>¿Toca ir al sacerdote? Con la vida bajo el umbral de la poción y sin ninguna poción que tomar.</summary>
+    public static bool TocaSanarse(double salud, int pocionesDeVida) => salud < TomaPocion && pocionesDeVida == 0;
+
+    private const int SaltosHastaElSacerdote = 2;
+    private const int EsperaSanarFallidoMinMs = 20_000, EsperaSanarFallidoMaxMs = 40_000;
+    private long _proximaSanacion;
+
     private const int PocionQueCuraElVeneno = 5;
     private const int EsperaCuraMinMs = 60_000, EsperaCuraMaxMs = 120_000;
     private long _proximaCura;
@@ -1811,6 +1854,13 @@ public sealed class Bot
                 if (como == Paso.Urgencia && !deMuerto && sentidos.Vivo && sentidos.Salud >= SeRetira
                     && await CuidarseAsync(transporte, sentidos, ct))
                     como = Paso.Dado;
+                // SIN POCIONES Y SIN NADA HOSTIL CERCA, EL VIAJE SIGUE. Cortarlo sirve para tomar una poción o para escapar de
+                // lo que pega; sin pociones y sin nadie que ataque, pararse no cura nada. Medido en `largo2`: una Guerrera con 5
+                // de 58 de vida, sin pociones, sin comida ni bebida y con una moneda cortaba cada minuto, en el primer paso, el
+                // viaje a vender la Runa que la sacaba del pozo.
+                if (como == Paso.Urgencia && SigueCaminandoConUrgencia(sentidos.Vivo, deMuerto,
+                        sentidos.CuantoTiene(EsPocionDeVida), HostilCerca(sentidos)))
+                    como = Paso.Dado;
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
                 if (_pasoTrabado) { trabas.Add(baldosa); break; }   // algo se paró en el camino: rodearlo
             }
@@ -1873,6 +1923,15 @@ public sealed class Bot
                  : !sentidos.Vivo || sentidos.Salud < TomaPocion;
 
     private bool _pasoTrabado;
+
+    /// <summary>¿Sigue el viaje aunque la vida pida parar? Sólo si parar no sirve para nada: vivo, sin pociones que tomar y
+    /// sin ninguna criatura hostil cerca de la que haya que escaparse. El viaje de muerto tiene su propia regla.</summary>
+    public static bool SigueCaminandoConUrgencia(bool vivo, bool deMuerto, int pocionesDeVida, bool hostilCerca) =>
+        vivo && !deMuerto && pocionesDeVida == 0 && !hostilCerca;
+
+    /// <summary>¿Hay una criatura hostil a <see cref="RadioDeSusto"/> pasos o menos?</summary>
+    private bool HostilCerca(SentidosDelBot sentidos) =>
+        sentidos.MasCercano(ficha => _entorno.Datos.Npc(ficha) is { Hostile: true }) is { Pasos: <= RadioDeSusto };
 
     /// <summary>Un paseo corto, que es lo que hace cuando no hay nada que cazar. Si se alejó de su zona, el
     /// paseo es de vuelta para adentro.</summary>
