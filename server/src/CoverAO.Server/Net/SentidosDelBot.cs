@@ -14,7 +14,7 @@ namespace CoverAO.Server.Net;
 ///
 /// <para><b>Por qué no hace falta un decodificador completo.</b> El escritor de la sesión llama a
 /// <c>Send</c> una vez por paquete (ver <see cref="TransporteDeBot"/>), así que acá cada paquete llega entero
-/// y solo. Se decodifican los DIEZ que interesan y el resto se descarta sin leerlo — que es lo que evita
+/// y solo. Se decodifican los que interesan y el resto se descarta sin leerlo — que es lo que evita
 /// tener que portar el layout de los ciento ocho que el servidor sabe mandar.</para>
 ///
 /// <para>Lo tocan dos hilos —el escritor de la sesión, que trae los paquetes, y el del bot, que decide— así
@@ -591,6 +591,32 @@ public sealed class SentidosDelBot
                     bool puesto = l.Byte() != 0;
                     lock (_candado)
                         if (slot > 0 && slot < _inventario.Length) _inventario[slot] = (obj, cantidad, puesto);
+                    break;
+                }
+
+                // LA COMIDA Y LA BEBIDA SE DESCUENTAN CON EL PAQUETE CORTO. Al comer o tomar, el servidor no reenvía la
+                // ranura entera: manda sólo la cantidad nueva (acción 3, y en cero la ranura queda vacía), y es el único
+                // aviso de lo consumido. Sin leerlo el bot seguía contando las botellas que ya se había tomado: no salía
+                // a comprar agua y, terminada la de verdad, pedía tomar de una ranura vacía que el servidor ignora.
+                // Medido: dos Pescadoras con 787 y 5962 monedas, la sed en cero y ni una gota en la mochila al final de
+                // la corrida. Las acciones 1 y 2 son equipar y desequipar (writeChangeInventorySlotUser, Protocol.bas:17447).
+                case ServerPacketId.ChangeInventorySlotUser:
+                {
+                    byte slot = l.Byte(), accion = l.Byte();
+                    short valor = l.Entero();
+                    lock (_candado)
+                        if (slot > 0 && slot < _inventario.Length && _inventario[slot].Obj > 0)
+                        {
+                            var (obj, cantidad, puesto) = _inventario[slot];
+                            _inventario[slot] = accion switch
+                            {
+                                1 => (obj, cantidad, true),
+                                2 => (obj, cantidad, false),
+                                3 when valor <= 0 => ((short)0, (short)0, false),
+                                3 => (obj, valor, puesto),
+                                _ => (obj, cantidad, puesto),
+                            };
+                        }
                     break;
                 }
             }

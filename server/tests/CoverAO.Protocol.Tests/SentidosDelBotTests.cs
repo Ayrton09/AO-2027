@@ -326,6 +326,36 @@ public class SentidosDelBotTests
     }
 
     /// <summary>
+    /// LO QUE SE COME Y SE TOMA SE DESCUENTA. Al consumir, el servidor no reenvía la ranura: manda sólo la cantidad
+    /// nueva con el paquete corto, y en cero la ranura queda vacía. Sin leerlo, el bot contaba para siempre las
+    /// botellas del login.
+    /// </summary>
+    [Fact]
+    public void Lo_que_se_come_y_se_toma_se_descuenta()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeInventorySlot(2, 43, 4, false, 0f, 1));   // cuatro botellas de agua
+        s.Recibir(ServerMessages.ChangeInventorySlotUser(2, 3, 3));
+        Assert.Equal(3, s.CuantoTiene(obj => obj == 43));
+
+        s.Recibir(ServerMessages.ChangeInventorySlotUser(2, 3, 0));
+        Assert.Equal(0, s.CuantoTiene(obj => obj == 43));
+        Assert.Equal((byte)0, s.Ranura(obj => obj == 43));   // ya no hay de dónde tomar
+    }
+
+    /// <summary>El mismo paquete corto equipa y desequipa, y lo puesto no se ofrece para vender.</summary>
+    [Fact]
+    public void El_paquete_corto_equipa_y_desequipa()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeInventorySlot(3, 574, 1, false, 0f, 1));
+        s.Recibir(ServerMessages.ChangeInventorySlotUser(3, 1, 0));
+        Assert.Null(s.EnLaMochila(obj => obj == 574));
+        s.Recibir(ServerMessages.ChangeInventorySlotUser(3, 2, 0));
+        Assert.NotNull(s.EnLaMochila(obj => obj == 574));
+    }
+
+    /// <summary>
     /// LA MEJOR OFERTA ES LA QUE MÁS RINDE POR MONEDA ENTRE LO QUE ALCANZA. La manzana cuesta dos y llena diez; el
     /// queso cuesta cinco y llena cincuenta: con plata, el queso. Sin plata para el queso, la manzana, que es el
     /// caso del que se quedó sin comida.
