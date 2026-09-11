@@ -93,6 +93,11 @@ public sealed class Navegante
                 // Lo que el mapa no sabe —una criatura parada, otro personaje— lo trae el que llama en `evitar`.
                 if (!SePuedePisar(mapa, nx, ny) || evitar?.Contains(((byte)nx, (byte)ny)) == true) continue;
                 int vecino = Clave((byte)nx, (byte)ny);
+                // UNA SALIDA NO SE CRUZA: pisarla saca del mapa, así que sólo vale como la baldosa final. Contándola
+                // como piso, el camino más corto pasaba por encima de otras salidas y el viaje terminaba en cualquier
+                // lado. Medido: una Pescadora que iba de la cuna a la puerta del mapa 62 cayó en el 185, volvió a la
+                // cuna y cayó dos veces en el 208, siempre en el primer tramo.
+                if (vecino != fin && EsSalida(mapa, nx, ny)) continue;
                 if (deDonde.ContainsKey(vecino)) continue;
                 deDonde[vecino] = actual;
                 cola.Enqueue(vecino);
@@ -173,10 +178,16 @@ public sealed class Navegante
         }
 
         // Mismo recorrido que PuertaHacia, pero mirando qué hay en cada mapa que se alcanza.
+        // Y LA PRIMERA PUERTA, IGUAL QUE AHÍ: sólo las que se alcanzan desde donde se está. Eligiendo por cualquier
+        // salida, el mapa de destino podía quedar detrás de una puerta sin camino, y como `PuertaHacia` sí la
+        // descarta, el viaje moría en el primer tramo y la búsqueda siguiente volvía a elegir lo mismo. Medido: un
+        // Minero en el mapa 62 al que se mandaba al vendedor de piquetes del 194 por (51,73), la única salida hacia
+        // allá, que no se alcanza desde ninguno de los puntos del 62 que se probaron.
+        var alcanzables = Alcanzables(mapaActual, desde);
         var visto = new HashSet<int> { mapaActual };
         var cola = new Queue<(int Mapa, int Saltos)>();
-        foreach (var (destino, _, _) in Salidas(mapaActual))
-            if (visto.Add(destino)) cola.Enqueue((destino, 1));
+        foreach (var (destino, x, y) in Salidas(mapaActual))
+            if (alcanzables.Contains(Clave(x, y)) && visto.Add(destino)) cola.Enqueue((destino, 1));
 
         while (cola.Count > 0)
         {
@@ -352,7 +363,8 @@ public sealed class Navegante
                 int nx = x + dx, ny = y + dy;
                 if (!SePuedePisar(mapa, nx, ny)) continue;
                 int vecino = Clave((byte)nx, (byte)ny);
-                if (vistos.Add(vecino)) cola.Enqueue(vecino);
+                // A una salida se llega, pero no se sigue de largo: pisarla saca del mapa.
+                if (vistos.Add(vecino) && !EsSalida(mapa, nx, ny)) cola.Enqueue(vecino);
             }
         }
         return vistos;
@@ -385,6 +397,8 @@ public sealed class Navegante
         && y >= GameLimits.MinYBorder && y <= GameLimits.MaxYBorder
         && !_datos.IsBlockedTile(mapa, x, y)
         && !_datos.IsWater(mapa, x, y);
+
+    private bool EsSalida(int mapa, int x, int y) => _datos.MapExits.ContainsKey((mapa, x, y));
 
     private static int Clave(byte x, byte y) => x | (y << 8);
 

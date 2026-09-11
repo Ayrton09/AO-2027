@@ -91,6 +91,51 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// LO QUE ELIGE <c>DondeHay</c> EN OTRO MAPA TIENE UNA PUERTA A LA QUE SE LLEGA. Si el destino se eligiera por
+    /// una salida sin camino, <c>PuertaHacia</c> la descartaría, el viaje moriría en el primer tramo y la búsqueda
+    /// siguiente elegiría lo mismo: un Minero en el mapa 62 mandado al vendedor de piquetes del 194.
+    /// </summary>
+    [Fact]
+    public void Lo_que_elige_DondeHay_en_otro_mapa_tiene_una_puerta_a_la_que_se_llega()
+    {
+        if (Mundo() is not { } m) return;
+        bool Atiende(int mapa) => m.Datos.MapBattleMode(mapa) is 2 or 3;
+        int miradas = 0;
+        foreach (var (mapa, desde) in new (int, (byte X, byte Y))[] { (62, (70, 72)), (37, (57, 74)), (37, (80, 88)), (208, (48, 51)) })
+            foreach (short herramienta in new short[] { 881, 127, 187 })
+            {
+                bool Vende(int ficha) => m.Datos.Npc(ficha)?.StockItems?.Any(s => s.ObjIndex == herramienta) == true;
+                if (m.Mapas.DondeHay(mapa, desde, Vende, Atiende) is not { Saltos: > 0 } lugar) continue;
+                miradas++;
+                Assert.True(m.Mapas.PuertaHacia(mapa, lugar.Mapa, desde) is not null,
+                    $"DondeHay mandó de m{mapa} {desde} al m{lugar.Mapa} y no hay puerta a la que se llegue");
+            }
+        Assert.True(miradas > 0, "ninguna búsqueda eligió otro mapa: el test no miró nada");
+    }
+
+    /// <summary>
+    /// EL CAMINO NO PISA OTRAS SALIDAS. Pisar una salida saca del mapa, así que un camino que pasa por encima de
+    /// una lleva a otro lado: una Pescadora que iba de la cuna a la puerta del 62 terminó en el 185 y en el 208.
+    /// Sólo la última baldosa puede ser una salida.
+    /// </summary>
+    [Fact]
+    public void El_camino_no_pisa_salidas_que_no_son_el_destino()
+    {
+        if (Mundo() is not { } m) return;
+        int mirados = 0;
+        foreach (var (mapa, desde, hasta) in new (int, (byte X, byte Y), (byte X, byte Y))[]
+                 { (37, (80, 88), (66, 78)), (37, (89, 48), (66, 78)), (208, (56, 72), (12, 48)), (37, (57, 74), (63, 78)) })
+        {
+            if (m.Mapas.Camino(mapa, desde, hasta) is not { Count: > 0 } camino) continue;
+            mirados++;
+            foreach (var b in camino.Take(camino.Count - 1))
+                Assert.False(m.Datos.MapExits.ContainsKey((mapa, b.X, b.Y)),
+                    $"el camino de m{mapa} {desde} a {hasta} pisa la salida {b}");
+        }
+        Assert.True(mirados > 0, "ningún camino encontrado: el test no miró nada");
+    }
+
+    /// <summary>
     /// EL CAMINO RODEA LO QUE SE LE PIDE EVITAR. Una criatura quieta en un pasillo no está en el mapa: el bot
     /// anota la baldosa donde rebotó y pide otro camino. Si el navegante la ignorara, devolvería el mismo camino y
     /// el bot chocaría contra lo mismo — que es lo que le pasó a uno en la cuna, doce veces contra (66,24).

@@ -173,6 +173,35 @@ public class OficioDelBotTests
             $"la bebida más barata de la cuna vale {MasBarato(o => o.IsDrink)}: un bot casi sin plata no repone");
     }
 
+    /// <summary>
+    /// EL QUE SE QUEDÓ SIN AGUA Y SIN PLATA TIENE SALIDA. Las criaturas de la cuna no dan oro pero sueltan comida:
+    /// vendida de a un par, tiene que pagar la bebida más barata de la cuna EN CAJA, que redondea para arriba. Si no
+    /// alcanzara, el bot sin agua ni monedas no volvería a regenerar nunca.
+    /// </summary>
+    [Fact]
+    public void Un_par_de_comidas_del_botin_pagan_el_agua_mas_barata_de_la_cuna()
+    {
+        if (Mundo() is not { } m) return;
+        if (!m.Datos.MapSpawns.TryGetValue(m.Cuna.Map, out var spawns)) return;
+        const int UnidadesDeApuro = 2;   // la misma cuenta que hace el bot
+
+        var comidaDelBotin = BotinVendibleDeUnRecienNacido(m.Datos, m.Cuna.Map).Where(o => o.IsFood).ToList();
+        Assert.True(comidaDelBotin.Count > 0, "en la cuna no hay comida de botín para vender");
+        long porElPar = comidaDelBotin.Max(o => CoverAO.Server.Game.Comercio.PrecioDeVenta(o, UnidadesDeApuro));
+
+        long aguaEnCaja = spawns
+            .SelectMany(sp => m.Datos.Npc(sp.NpcIndex)?.StockItems
+                              ?? (IReadOnlyList<(int ObjIndex, int Amount)>)Array.Empty<(int ObjIndex, int Amount)>())
+            .Select(it => m.Datos.Obj(it.ObjIndex))
+            .Where(o => o is { IsDrink: true })
+            .Select(o => CoverAO.Server.Game.Comercio.PrecioDeCompra(o!.Value, 0, 1))
+            .DefaultIfEmpty(long.MaxValue)
+            .Min();
+
+        Assert.True(porElPar >= aguaEnCaja,
+            $"un par de comidas del botín paga {porElPar} y el agua más barata cuesta {aguaEnCaja} en caja");
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 
