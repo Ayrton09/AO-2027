@@ -694,6 +694,12 @@ public sealed class Bot
         // Medido: ocho bots inmóviles en tres baldosas durante diez minutos, y dos muertos ahí parados porque
         // mientras negocian no miran la vida. Un jugador tampoco vuelve a entrar a la tienda a los cinco
         // segundos.
+        // LO ESENCIAL NO ESPERA EL DESCANSO LARGO. Después de una compra el bot descansa de cinco a quince minutos, y si en ese
+        // rato se le terminaban la comida o la bebida seguía esperando con el hambre o la sed en cero, sin regenerar. Medido en
+        // `sano1`: un Gladiador compró dos pociones y pasó doce minutos sin volver, con 215 monedas encima y la comida y la
+        // bebida en cero. El descanso corto de un viaje fallido sí se respeta: sin él reintentaría en cada vuelta.
+        if (SaltaElDescanso(_descansoLargo, sentidos.Oro, sentidos.Suma(PuntosDeComida), sentidos.Suma(PuntosDeBebida)))
+            _proximaCompra = 0;
         if (Environment.TickCount64 < _proximaCompra) return false;
 
         bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
@@ -849,10 +855,61 @@ public sealed class Bot
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres
     /// segundos se comía el cupo de toda la sesión, y la corrida terminaba con cero compras sin que el bot
     /// hubiera llegado a intentarlo más de una vez.</summary>
-    private void PostergarCompra(bool exito = false) =>
+    private void PostergarCompra(bool exito = false)
+    {
+        _descansoLargo = exito;
         _proximaCompra = Environment.TickCount64 + (exito
             ? _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L
             : _rng.Next(EnfriamientoFalloMinS, EnfriamientoFalloMaxS + 1) * 1_000L);
+    }
+
+    /// <summary>¿Se corta el descanso largo? Sólo el que viene de una compra, con plata para comprar y con la comida o la
+    /// bebida por debajo de lo mínimo.</summary>
+    public static bool SaltaElDescanso(bool descansoLargo, int oro, int puntosDeComida, int puntosDeBebida) =>
+        descansoLargo && oro >= MonedasDeApuro && (puntosDeComida < ComidaMinima || puntosDeBebida < BebidaMinima);
+
+    private bool _descansoLargo;
+
+    /// <summary>
+    /// LO QUE SE GUARDA PARA LO OTRO ESENCIAL. Comprando una cosa se gastaba todo menos una moneda, y si la otra también faltaba
+    /// no quedaba con qué: medido en `sano1`, una Guerrera recién salida del pozo con 33 monedas se las gastó en pollos y siguió
+    /// con la sed en cero, sin regenerar. Se guarda lo que cuesta llevar la comida o la bebida hasta su mínimo al precio por
+    /// punto más barato del juego, que sale de la data.
+    /// </summary>
+    private int ReservaPara(SentidosDelBot sentidos, bool comida, bool bebida) =>
+        (comida ? ReservaParaLoQueFalta(CostoPorPunto(esBebida: false), sentidos.Suma(PuntosDeComida), ComidaMinima) : 0)
+        + (bebida ? ReservaParaLoQueFalta(CostoPorPunto(esBebida: true), sentidos.Suma(PuntosDeBebida), BebidaMinima) : 0);
+
+    /// <summary>Las monedas para llevar de <paramref name="tiene"/> a <paramref name="minimo"/> puntos a ese costo por punto. El
+    /// épsilon es por la coma flotante: setenta por 0,1 da 7,000000000000001 y el techo lo volvía ocho.</summary>
+    public static int ReservaParaLoQueFalta(double costoPorPunto, int tiene, int minimo) =>
+        tiene >= minimo ? 0 : (int)Math.Ceiling((minimo - tiene) * costoPorPunto - 1e-9);
+
+    /// <summary>El precio por punto más barato de la comida o de la bebida, calculado una vez: la data no cambia con el servidor
+    /// andando.</summary>
+    private double CostoPorPunto(bool esBebida)
+    {
+        if (esBebida) return _costoPorPuntoDeBebida ??= CostoPorPuntoEn(_entorno.Datos, esBebida: true);
+        return _costoPorPuntoDeComida ??= CostoPorPuntoEn(_entorno.Datos, esBebida: false);
+    }
+
+    private double? _costoPorPuntoDeBebida, _costoPorPuntoDeComida;
+
+    /// <summary>El precio de lista por punto más barato de la comida o de la bebida entre todo lo que venden los mercaderes del
+    /// mundo. 0 si no hay ninguna.</summary>
+    public static double CostoPorPuntoEn(GameData datos, bool esBebida)
+    {
+        double mejor = double.MaxValue;
+        foreach (var npc in datos.Npcs.Values)
+            if (npc.StockItems is { } stock)
+                foreach (var (obj, _) in stock)
+                    if (datos.Obj((short)obj) is { Value: > 0 } o)
+                    {
+                        int puntos = esBebida ? (o.IsDrink ? o.MinSed : 0) : (o.IsFood ? o.MinHam : 0);
+                        if (puntos > 0) mejor = Math.Min(mejor, o.Value / (double)puntos);
+                    }
+        return mejor == double.MaxValue ? 0 : mejor;
+    }
 
     /// <summary>Con la ventana abierta: primero vender —para tener con qué— y después comprar. Devuelve si
     /// se llevó algo.</summary>
@@ -897,10 +954,10 @@ public sealed class Bot
         // Sin una gota encima, con la sed en cero y el hambre aguantando, la plata es para el agua: la comida no
         // se compra aunque esté enfrente. Y al revés con el hambre.
         if (!(SinNadaQueTomar(sentidos) && !sentidos.ConHambre))
-            compro |= await ReponerAsync(transporte, sentidos, PuntosDeComida, ComidaQueQuiere, ct);
+            compro |= await ReponerAsync(transporte, sentidos, PuntosDeComida, ComidaQueQuiere, ct, ReservaPara(sentidos, comida: false, bebida: true));
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
-            compro |= await ReponerAsync(transporte, sentidos, PuntosDeBebida, BebidaQueQuiere, ct);
-        compro |= await ReponerAsync(transporte, sentidos, UnaSiEsPocion, PocionesQueQuiere, ct);
+            compro |= await ReponerAsync(transporte, sentidos, PuntosDeBebida, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
+        compro |= await ReponerAsync(transporte, sentidos, UnaSiEsPocion, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
         return compro;
     }
 
@@ -908,7 +965,7 @@ public sealed class Bot
     /// <paramref name="rinde"/> (lo que da una unidad; cero = no es de eso), eligiendo lo que MÁS RINDE POR MONEDA
     /// entre lo que le alcanza. Devuelve si se llevó algo.</summary>
     private async Task<bool> ReponerAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<short, int> rinde,
-                                          int quiere, CancellationToken ct)
+                                          int quiere, CancellationToken ct, int reserva = 0)
     {
         int faltan = quiere - sentidos.Suma(rinde);
         if (faltan <= 0 || !sentidos.Comerciando) return false;
@@ -920,7 +977,8 @@ public sealed class Bot
         // comprar cero", que es justo al revés.
         // Con poca plata el 80 % deja afuera justo lo que hace falta —con ocho monedas, el pollo de siete de
         // vitrina y ocho en caja no entraba—, así que se puede gastar todo menos la moneda que redondea la caja.
-        double plata = Math.Max(sentidos.Oro * 0.8, sentidos.Oro - 1);
+        // Y LO QUE SE GUARDA PARA LO OTRO ESENCIAL NO SE GASTA ACÁ (ver `ReservaPara`).
+        double plata = Math.Max(0, Math.Max(sentidos.Oro * 0.8, sentidos.Oro - 1) - reserva);
         if (sentidos.MejorOfertaEnLaTienda(rinde, plata) is not { } oferta) return false;
         int porUnidad = rinde(oferta.Obj);
         int unidades = (faltan + porUnidad - 1) / porUnidad;
