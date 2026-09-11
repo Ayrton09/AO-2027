@@ -169,6 +169,34 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// DESDE UN MAPA PK SE ENCUENTRA UNO SEGURO AL QUE SE LLEGA. Un bot al que se le vence la sesión en un mapa pk no se
+    /// va a dormir ahí (el <c>Quit</c> arranca una cuenta y lo pueden matar): camina hasta el mapa seguro más cercano.
+    /// Se prueba desde cada baldosa por la que se entra al 196, donde se vio a un bot cortar su sesión: lo elegido
+    /// tiene que ser seguro y tener una puerta a la que se llegue desde ahí.
+    /// </summary>
+    [Fact]
+    public void Desde_un_mapa_pk_se_encuentra_uno_seguro_al_que_se_llega()
+    {
+        if (Mundo() is not { } m) return;
+        bool Seguro(int mapa) => !m.Datos.IsPkMap(mapa);
+        Assert.True(m.Datos.IsPkMap(196), "el 196 tenía que ser pk o esto no prueba nada");
+        var entradas = m.Datos.MapExits.Values.Where(e => e.DestMap == 196)
+            .Select(e => ((byte)e.DestX, (byte)e.DestY)).Distinct().ToList();
+        Assert.NotEmpty(entradas);
+
+        int conRefugio = 0;
+        foreach (var desde in entradas)
+        {
+            if (m.Mapas.MapaMasCercano(196, desde, Seguro) is not { } refugio) continue;
+            conRefugio++;
+            Assert.True(Seguro(refugio.Mapa), $"el mapa {refugio.Mapa} no es seguro");
+            Assert.True(m.Mapas.PuertaHacia(196, refugio.Mapa, desde, (refugio.X, refugio.Y)) is not null,
+                $"desde {desde} se eligió el mapa {refugio.Mapa} sin una puerta a la que se llegue");
+        }
+        Assert.True(conRefugio > 0, "desde ninguna entrada al 196 se encuentra un mapa seguro");
+    }
+
+    /// <summary>
     /// EL CAMINO NO PISA OTRAS SALIDAS. Pisar una salida saca del mapa, así que un camino que pasa por encima de
     /// una lleva a otro lado: una Pescadora que iba de la cuna a la puerta del 62 terminó en el 185 y en el 208.
     /// Sólo la última baldosa puede ser una salida.

@@ -219,6 +219,19 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// EL MAPA MÁS CERCANO QUE SIRVE, con la baldosa por la que se entra. Es a dónde ir cuando lo que importa es el
+    /// mapa y no algo adentro de él: un bot al que se le terminó la sesión en un mapa pk camina hasta uno seguro para
+    /// irse a dormir. La entrada es la baldosa de llegada, así que ir hasta ella es cruzar la puerta.
+    /// </summary>
+    public (int Mapa, byte X, byte Y, int Saltos)? MapaMasCercano(int mapaActual, (byte X, byte Y) desde,
+                                                                 Func<int, bool> mapaSirve)
+    {
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde))
+            if (mapaSirve(mapa)) return (mapa, entrada.X, entrada.Y, saltos);
+        return null;
+    }
+
+    /// <summary>
     /// Los mapas a los que se llega viajando desde <paramref name="desde"/>, en orden de cercanía, cada uno con la
     /// baldosa por la que se entra. Sólo cuentan las salidas a las que se llega caminando dentro de cada mapa, y de
     /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan.

@@ -146,6 +146,8 @@ public sealed class Bot
     /// Con esto la lista de conectados respira —entran unos, se van otros— que es lo que se ve en un servidor
     /// con gente. La sesión se cierra con <c>Quit</c>, o sea el mismo camino que usa el que se va del juego.</para></summary>
     private const int SesionMinM = 20, SesionMaxM = 90, AfueraMinM = 5, AfueraMaxM = 40;
+    /// <summary>Cada cuánto vuelve a intentar ir a un mapa seguro el que tiene la sesión vencida en uno pk.</summary>
+    private const int ReintentoDeRefugioMs = 60_000;
 
     /// <summary>Maná al que se sienta a meditar, y al que se levanta. Sólo lo hacen los que tienen maná.</summary>
     private const double MeditaBajo = 0.35, MeditaHasta = 0.90;
@@ -242,6 +244,8 @@ public sealed class Bot
     private bool _yaEntro;
     /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
     private bool _seFueSolo;
+    /// <summary>Cuándo vuelve a intentar ir a un mapa seguro para irse a dormir.</summary>
+    private long _proximoRefugio;
 
     /// <summary>Cómo es este bot. Sale de una semilla derivada del NOMBRE y no del azar del arranque, igual
     /// que su cara: así el que hostea reconoce a "Bruma, la que anda siempre por el pueblo" y no a un
@@ -434,14 +438,29 @@ public sealed class Bot
             // PERO NO EN UN MAPA PK: ahí el `Quit` no saca al personaje, arranca una cuenta de cinco segundos
             // (HandleQuit), y el bot cortaba a los 1,5 s sin tomar pociones con lo que tuviera encima. Medido: un
             // Minero cortó su sesión en el mapa 196 a los veinte minutos y cinco segundos —el vencimiento exacto de la
-            // suya— después de doce pociones seguidas, y quedó guardado muerto. Se va a dormir cuando pise un mapa que
-            // no es pk.
+            // suya— después de doce pociones seguidas, y quedó guardado muerto. Se va a dormir en un mapa que no es
+            // pk, y si no está en uno camina hasta el más cercano (la rama de abajo).
             if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo && MapaSeguro(sentidos.Mapa))
             {
                 transporte.Mandar(Paquete(ClientPacketId.Quit, _ => { }));
                 await Task.Delay(1_500, ct);
                 _seFueSolo = true;
                 return;
+            }
+            // Y NO SE QUEDA ESPERANDO A PISAR UNO: camina hasta el mapa seguro más cercano, como el que se va a
+            // desconectar a la ciudad. Según la data, de los 185 mapas con criaturas hostiles a seis saltos o menos de
+            // la cuna, 176 son pk, y en tres de cada cuatro el mapa seguro más cercano queda a dos saltos o más:
+            // esperando, la sesión de un bot que caza lejos se estiraba hasta el próximo viaje de compras. Si el viaje
+            // se corta —una criatura, una traba— sigue jugando y lo vuelve a probar al rato.
+            if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo && Environment.TickCount64 >= _proximoRefugio)
+            {
+                _proximoRefugio = Environment.TickCount64 + ReintentoDeRefugioMs;
+                if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro) is { } refugio)
+                {
+                    await IrHastaAsync(transporte, sentidos, refugio.Mapa, refugio.X, refugio.Y, cerrada, ct);
+                    if (cerrada.IsCompleted) return;
+                    continue;
+                }
             }
 
             // MUERTO. El cadáver queda donde cayó y revivir necesita un sacerdote a la vista, así que lo único
