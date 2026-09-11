@@ -541,7 +541,7 @@ public sealed class Bot
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
                 // baldosas, y se tomó 159 pociones ahí. A lo que tiene pegado se le devuelve el golpe: mirar y pegar, como en
                 // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
-                if (EstaAcorralado(_huidasSinMoverse) && TieneFuelleParaPelear(sentidos)
+                if (EstaAcorralado(_huidasSinMoverse, _huidasQueNoLoSacaron) && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } pegado)
                 {
                     var (px, py) = sentidos.Posicion;
@@ -554,9 +554,16 @@ public sealed class Bot
                 var antesDeHuir = sentidos.Posicion;
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
                 _huidasSinMoverse = sentidos.Posicion == antesDeHuir ? _huidasSinMoverse + 1 : 0;
+                // Y SI SE MOVIÓ PERO LA SIGUE TENIENDO ENCIMA, tampoco le sirvió: una criatura camina lo mismo que una persona,
+                // así que a la que te persigue no se le gana la carrera. Se cuenta aparte del rincón porque son dos problemas
+                // distintos con la misma salida: dejar de correr.
+                _huidasQueNoLoSacaron = sentidos.Donde(amenaza.Quien.CharIndex) is { } sigueAhi
+                    && Math.Abs(sigueAhi.X - sentidos.Posicion.X) + Math.Abs(sigueAhi.Y - sentidos.Posicion.Y) <= 1
+                        ? _huidasQueNoLoSacaron + 1 : 0;
                 continue;
             }
             _huidasSinMoverse = 0;
+            _huidasQueNoLoSacaron = 0;
 
             // LO QUE YA LE PEGA SE LO SACA DE ENCIMA, aunque haya algo peligroso a la vista, la vida no esté para empezar una pelea o
             // no le den ganas: esas reglas son para ELEGIR a quién atacar, no para dejarse picar. Medido en `normal1`: un Minero de
@@ -1972,14 +1979,26 @@ public sealed class Bot
     private long _proximaRunaDeHuida;
     private long _proximoPedidoAlSacerdote;
 
-    /// <summary>¿Está acorralado? <see cref="HuidasParaAcorralado"/> huidas seguidas sin moverse de la baldosa.</summary>
-    public static bool EstaAcorralado(int huidasSinMoverse) => huidasSinMoverse >= HuidasParaAcorralado;
+    /// <summary>
+    /// ¿ESTÁ ACORRALADO? Son DOS formas de estarlo, y las dos terminan igual: huir no lo saca del problema.
+    ///
+    /// <para>La primera son <see cref="HuidasParaAcorralado"/> huidas seguidas SIN MOVERSE de la baldosa: un rincón, o alguien
+    /// tapando la única salida.</para>
+    ///
+    /// <para>La segunda es la que faltaba: huidas en las que SÍ se movió y la criatura le quedó pegada igual, porque camina al
+    /// mismo paso que él. Medido en `verdad3`: de 120 huidas de la corrida, 91 fueron de un mismo bot con un Lobo encima —84
+    /// veces a una baldosa— y la racha más larga fue de TREINTA Y SEIS huidas seguidas, con mil cuatrocientas pociones en la
+    /// mochila. El contador viejo no lo veía nunca: se resetea apenas el bot da un paso, y el bot daba un paso siempre.</para>
+    /// </summary>
+    public static bool EstaAcorralado(int huidasSinMoverse, int huidasQueNoLoSacaron = 0) =>
+        huidasSinMoverse >= HuidasParaAcorralado || huidasQueNoLoSacaron >= HuidasParaAcorralado;
 
     /// <summary>¿Lo está atacando? Una criatura hostil que pega, pegada en cruz, que es desde donde se pega en el juego.</summary>
     public static bool LoEstaAtacando(NpcInfo? n, int pasos) => pasos <= 1 && n is { Hostile: true, MaxHit: > 0 };
 
     private const int HuidasParaAcorralado = 3;
     private int _huidasSinMoverse;
+    private int _huidasQueNoLoSacaron;
     private const int EsperaEntreRunasDeHuidaMs = 30_000;
 
     private const int PocionQueCuraElVeneno = 5;
