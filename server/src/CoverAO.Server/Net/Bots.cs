@@ -506,16 +506,24 @@ public sealed class Bot
                 // a casa en el acto (VB6 InvUsuario.bas:1356). Alejarse caminando no alcanza: medido en `rojo1`, un bot con la vida en
                 // 24 % se alejó 46 veces del Águila, las últimas 27 sin poder moverse de la baldosa, y murió. La sanación que usa la
                 // runa no llegaba nunca, porque la huida corta la vuelta antes.
-                bool sacerdoteAMano = Environment.TickCount64 >= _proximaSanacion
+                //
+                // Y LA RUNA, AUNQUE LA VIDA NO ESTÉ EN ROJO, CONTRA LO QUE LO MATA DE UN GOLPE. Medido en `rojo2`: bots de nivel 1 con 18 de
+                // vida murieron huyendo del Lobo, que pega hasta 18, con la vida entre 67 y 100 %.
+                //
+                // EL PEDIDO AL SACERDOTE TIENE SU PROPIA ESPERA. Se usaba la de `_proximaSanacion`, que es la de caminar hasta uno: medido en
+                // `rojo2`, un bot al 44 % en diagonal al sacerdote de la cuna y con un Lobo pegado se alejó en vez de pedirle, porque el
+                // viaje que se acababa de cortar le había dejado de uno a dos minutos de espera, y murió.
+                bool sacerdoteAMano = Environment.TickCount64 >= _proximoPedidoAlSacerdote
                     && sentidos.MasCercano(EsSacerdote) is { } alLado && AlAlcanceDelAltar(sentidos, alLado.Quien);
-                var huida = ComoHuye(conPociones, saludAhora, sacerdoteAMano, !_entorno.Datos.IsPkMap(sentidos.Mapa),
+                bool unGolpeLoMata = UnGolpeLoMata(_entorno.Datos.Npc(amenaza.Quien.FichaNpc), (int)Math.Round(saludAhora * vidaTope));
+                var huida = ComoHuye(conPociones, saludAhora, unGolpeLoMata, sacerdoteAMano, !_entorno.Datos.IsPkMap(sentidos.Mapa),
                                      Environment.TickCount64 >= _proximaRunaDeHuida);
                 if (huida == Huida.Sacerdote)
                 {
                     PedirResurreccion(transporte, sentidos);   // el mismo doble clic de la sanación
                     await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
                     if (sentidos.Salud < TomaPocion)
-                        _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
+                        _proximoPedidoAlSacerdote = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
                     continue;
                 }
                 if (huida == Huida.Runa && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
@@ -615,14 +623,22 @@ public sealed class Bot
     public static bool AsustaConLaVidaEnRojo(NpcInfo? n, bool conPociones, double salud) => !conPociones && salud < TomaPocion && n is { Hostile: true, MaxHit: > 0 };
 
     /// <summary>
-    /// CÓMO HUYE de lo que asusta. Con pociones o con la vida arriba del umbral de la poción, alejándose. Con la vida en rojo y sin
-    /// pociones: el sacerdote si está a mano; si no, la runa, sólo fuera de un mapa pk y si no la acaba de usar; si no, alejándose.
+    /// CÓMO HUYE de lo que asusta. Con pociones, alejándose. Sin pociones: con la vida en rojo, el sacerdote si está a mano; contra lo
+    /// que lo mata de un golpe, o en rojo sin sacerdote, la runa, sólo fuera de un mapa pk y si no la acaba de usar. La runa va antes
+    /// que el sacerdote contra un golpe que mata: el sacerdote cura hasta la vida máxima y ese golpe la alcanza. Sin runa lista y en
+    /// rojo, el sacerdote igual, que sube la vida por encima del golpe más flojo; si no, alejándose.
     /// </summary>
-    public static Huida ComoHuye(bool conPociones, double salud, bool sacerdoteAMano, bool mapaSinPk, bool runaLista) =>
-        conPociones || salud >= TomaPocion ? Huida.Alejarse
-        : sacerdoteAMano ? Huida.Sacerdote
-        : mapaSinPk && runaLista ? Huida.Runa
-        : Huida.Alejarse;
+    public static Huida ComoHuye(bool conPociones, double salud, bool unGolpeLoMata, bool sacerdoteAMano, bool mapaSinPk, bool runaLista)
+    {
+        if (conPociones) return Huida.Alejarse;
+        bool enRojo = salud < TomaPocion;
+        if (enRojo && sacerdoteAMano && !unGolpeLoMata) return Huida.Sacerdote;
+        if ((enRojo || unGolpeLoMata) && mapaSinPk && runaLista) return Huida.Runa;
+        return enRojo && sacerdoteAMano ? Huida.Sacerdote : Huida.Alejarse;
+    }
+
+    /// <summary>¿Lo puede matar de un golpe? El golpe máximo de su ficha contra la vida que le queda.</summary>
+    public static bool UnGolpeLoMata(NpcInfo? n, int vida) => n is { MaxHit: > 0 } && n.MaxHit >= vida;
 
     /// <summary>La regla de <see cref="EsPeligroso"/> sobre la ficha sola.</summary>
     public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
@@ -1782,18 +1798,21 @@ public sealed class Bot
     /// </summary>
     private async Task<bool> SanarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (!sentidos.Vivo || !TocaSanarse(sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))
-            || Environment.TickCount64 < _proximaSanacion) return false;
+        if (!sentidos.Vivo || !TocaSanarse(sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))) return false;
 
-        if (sentidos.MasCercano(EsSacerdote) is { } cura && AlAlcanceDelAltar(sentidos, cura.Quien))
+        // EL SACERDOTE A MANO, ANTES QUE LA ESPERA DEL VIAJE: pedirle es un doble clic, y `_proximaSanacion` es la espera de caminar
+        // hasta uno o de usar la runa. El pedido tiene la suya, que sólo se pone si no curó.
+        if (Environment.TickCount64 >= _proximoPedidoAlSacerdote
+            && sentidos.MasCercano(EsSacerdote) is { } cura && AlAlcanceDelAltar(sentidos, cura.Quien))
         {
             PedirResurreccion(transporte, sentidos);   // el mismo doble clic: al vivo herido lo cura
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             // SI NO LO CURÓ, SE ESPERA ANTES DE INSISTIR: sin la espera el ciclo volvería acá en el acto y giraría sin ceder.
             if (sentidos.Salud < TomaPocion)
-                _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
+                _proximoPedidoAlSacerdote = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
             return true;
         }
+        if (Environment.TickCount64 < _proximaSanacion) return false;
 
         if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos)) is { Saltos: <= SaltosHastaElSacerdote } templo
             && await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar))
@@ -1826,6 +1845,7 @@ public sealed class Bot
     private long _proximaSanacion;
     private int _sanacionesSinCamino;
     private long _proximaRunaDeHuida;
+    private long _proximoPedidoAlSacerdote;
     private const int EsperaEntreRunasDeHuidaMs = 30_000;
 
     private const int PocionQueCuraElVeneno = 5;

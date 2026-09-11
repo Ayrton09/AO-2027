@@ -60,13 +60,13 @@ public class ValentiaDelBotTests
     [Fact]
     public void Con_la_vida_en_rojo_y_sin_pociones_huir_es_el_sacerdote_o_la_runa()
     {
-        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
-        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: true, mapaSinPk: false, runaLista: false));
-        Assert.Equal(Huida.Runa, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
-        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: false, mapaSinPk: false, runaLista: true));
-        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: false, mapaSinPk: true, runaLista: false));
-        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: true, salud: 0.30, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
-        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.90, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: false, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: false, sacerdoteAMano: true, mapaSinPk: false, runaLista: false));
+        Assert.Equal(Huida.Runa, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: false, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: false, sacerdoteAMano: false, mapaSinPk: false, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: false, sacerdoteAMano: false, mapaSinPk: true, runaLista: false));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: true, salud: 0.30, unGolpeLoMata: false, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.90, unGolpeLoMata: false, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
     }
 
     /// <summary>NO SE EMPIEZA UNA PELEA A LA VISTA DE ALGO PELIGROSO: las criaturas que persiguen ven 8 baldosas a los costados y 6
@@ -78,6 +78,31 @@ public class ValentiaDelBotTests
         Assert.True(Bot.AlAlcanceDeSuVista((50, 50), (42, 44)));
         Assert.False(Bot.AlAlcanceDeSuVista((50, 50), (59, 50)));
         Assert.False(Bot.AlAlcanceDeSuVista((50, 50), (50, 57)));
+    }
+
+    /// <summary>CONTRA LO QUE LO MATA DE UN GOLPE, LA RUNA AUNQUE LA VIDA NO ESTÉ EN ROJO, y antes que el sacerdote, que cura hasta la
+    /// vida máxima y no más. Sin runa lista y en rojo, el sacerdote igual; sin runa lista a vida alta, con pociones o en un mapa pk,
+    /// caminando.</summary>
+    [Fact]
+    public void Contra_lo_que_mata_de_un_golpe_la_runa_va_primero()
+    {
+        Assert.Equal(Huida.Runa, Bot.ComoHuye(conPociones: false, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Runa, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: true, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, unGolpeLoMata: true, sacerdoteAMano: true, mapaSinPk: true, runaLista: false));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: true, mapaSinPk: true, runaLista: false));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: false, mapaSinPk: false, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: true, salud: 1.0, unGolpeLoMata: true, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
+    }
+
+    /// <summary>EL LOBO MATA DE UN GOLPE A UN NIVEL 1: pega hasta 18, y un personaje recién creado tiene de 16 a 21 de vida. La
+    /// Serpiente de la cuna, no.</summary>
+    [Fact]
+    public void El_lobo_mata_de_un_golpe_a_un_nivel_uno()
+    {
+        if (Datos() is not { } d) return;
+        Assert.True(Bot.UnGolpeLoMata(d.Npc(501), 18));
+        Assert.False(Bot.UnGolpeLoMata(d.Npc(501), 19));
+        Assert.False(Bot.UnGolpeLoMata(d.Npc(504), 18));
     }
 
     /// <summary>SIN POCIONES NI CURA, LO QUE ENVENENA NO ES PRESA: el Escorpión chico (golpe 3, veneno) sí lo es con pociones o con
