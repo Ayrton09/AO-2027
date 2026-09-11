@@ -55,6 +55,20 @@ public class ValentiaDelBotTests
         Assert.False(Bot.AsustaConLaVidaEnRojo(aguila, conPociones: false, salud: 0.90));
     }
 
+    /// <summary>CON LA VIDA EN ROJO Y SIN POCIONES, HUIR ES EL SACERDOTE A MANO O LA RUNA fuera de un mapa pk. Con pociones, con la
+    /// vida alta, en un mapa pk o con la runa recién usada, se aleja caminando.</summary>
+    [Fact]
+    public void Con_la_vida_en_rojo_y_sin_pociones_huir_es_el_sacerdote_o_la_runa()
+    {
+        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Sacerdote, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: true, mapaSinPk: false, runaLista: false));
+        Assert.Equal(Huida.Runa, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: false, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: false, mapaSinPk: false, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.30, sacerdoteAMano: false, mapaSinPk: true, runaLista: false));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: true, salud: 0.30, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+        Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.90, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
+    }
+
     /// <summary>SIN POCIONES NI CURA, LO QUE ENVENENA NO ES PRESA: el Escorpión chico (golpe 3, veneno) sí lo es con pociones o con
     /// la poción que cura el veneno.</summary>
     [Fact]

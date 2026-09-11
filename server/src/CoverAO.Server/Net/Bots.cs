@@ -10,6 +10,9 @@ namespace CoverAO.Server.Net;
 /// existen, la cuenta existe pero le falta el personaje, y no existe nada. Ver <c>Bot.DespuesDeUnFracaso</c>.</summary>
 public enum ComoEntrar { Entrar, SoloPersonaje, Alta }
 
+/// <summary>Cómo huye un bot de lo que lo asusta: alejándose, pidiéndole al sacerdote que tiene a mano o con la runa a casa.</summary>
+public enum Huida { Alejarse, Sacerdote, Runa }
+
 /// <summary>
 /// Qué clase de jugador es este bot. Sale del nombre, así que cada uno es siempre el mismo.
 ///
@@ -499,6 +502,32 @@ public sealed class Bot
                 || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora));
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
+                // CON LA VIDA EN ROJO Y SIN POCIONES, HUIR ES EL SACERDOTE SI ESTÁ A MANO Y SI NO LA RUNA, que fuera de un mapa pk lleva
+                // a casa en el acto (VB6 InvUsuario.bas:1356). Alejarse caminando no alcanza: medido en `rojo1`, un bot con la vida en
+                // 24 % se alejó 46 veces del Águila, las últimas 27 sin poder moverse de la baldosa, y murió. La sanación que usa la
+                // runa no llegaba nunca, porque la huida corta la vuelta antes.
+                bool sacerdoteAMano = Environment.TickCount64 >= _proximaSanacion
+                    && sentidos.MasCercano(EsSacerdote) is { } alLado && AlAlcanceDelAltar(sentidos, alLado.Quien);
+                var huida = ComoHuye(conPociones, saludAhora, sacerdoteAMano, !_entorno.Datos.IsPkMap(sentidos.Mapa),
+                                     Environment.TickCount64 >= _proximaRunaDeHuida);
+                if (huida == Huida.Sacerdote)
+                {
+                    PedirResurreccion(transporte, sentidos);   // el mismo doble clic de la sanación
+                    await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                    if (sentidos.Salud < TomaPocion)
+                        _proximaSanacion = Environment.TickCount64 + _rng.Next(EsperaSanarFallidoMinMs, EsperaSanarFallidoMaxMs);
+                    continue;
+                }
+                if (huida == Huida.Runa && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
+                {
+                    // En casa, al sacerdote sin esperar la vuelta de la sanación. Y una runa por vez: la llegada puede tener criaturas
+                    // cerca, y rebotar de runa en runa no cura.
+                    _proximaRunaDeHuida = Environment.TickCount64 + EsperaEntreRunasDeHuidaMs;
+                    _proximaSanacion = 0;
+                    _sanacionesSinCamino = 0;
+                    await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                    continue;
+                }
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
                 continue;
             }
@@ -573,6 +602,16 @@ public sealed class Bot
 
     /// <summary>¿Asusta esta criatura a quien no tiene pociones y anda con la vida bajo el umbral de la poción? Toda la que pega.</summary>
     public static bool AsustaConLaVidaEnRojo(NpcInfo? n, bool conPociones, double salud) => !conPociones && salud < TomaPocion && n is { Hostile: true, MaxHit: > 0 };
+
+    /// <summary>
+    /// CÓMO HUYE de lo que asusta. Con pociones o con la vida arriba del umbral de la poción, alejándose. Con la vida en rojo y sin
+    /// pociones: el sacerdote si está a mano; si no, la runa, sólo fuera de un mapa pk y si no la acaba de usar; si no, alejándose.
+    /// </summary>
+    public static Huida ComoHuye(bool conPociones, double salud, bool sacerdoteAMano, bool mapaSinPk, bool runaLista) =>
+        conPociones || salud >= TomaPocion ? Huida.Alejarse
+        : sacerdoteAMano ? Huida.Sacerdote
+        : mapaSinPk && runaLista ? Huida.Runa
+        : Huida.Alejarse;
 
     /// <summary>La regla de <see cref="EsPeligroso"/> sobre la ficha sola.</summary>
     public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
@@ -1775,6 +1814,8 @@ public sealed class Bot
     private const int EsperaSanarFallidoMinMs = 20_000, EsperaSanarFallidoMaxMs = 40_000;
     private long _proximaSanacion;
     private int _sanacionesSinCamino;
+    private long _proximaRunaDeHuida;
+    private const int EsperaEntreRunasDeHuidaMs = 30_000;
 
     private const int PocionQueCuraElVeneno = 5;
     private const int EsperaCuraMinMs = 60_000, EsperaCuraMaxMs = 120_000;
