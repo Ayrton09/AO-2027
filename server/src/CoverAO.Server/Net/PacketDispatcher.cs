@@ -12643,6 +12643,11 @@ public sealed partial class PacketDispatcher
             // `BarcoSlot`, y el original hace lo mismo (Trabajo.bas:156-157).
             if (data.Obj(inv.ObjIndex) is { } o) AplicarBonusDeEquipo(p, o, poniendose: false);
             inv.Equipped = false; p.Inventory[slot] = inv;
+            // Y SE AVISA RANURA POR RANURA, como el original: `Desequipar` termina en `UpdateUserInventario(slot, 2, 0)`
+            // (InvUsuario.bas:827), el paquete corto con la acción 2, y lo llaman tanto `UserDie` como `DarCuerpoNuevo`. Acá no
+            // se avisaba nada: el cliente seguía mostrando puesto lo que el servidor ya había sacado, y un bot no se volvía a
+            // poner el equipo.
+            p.Connection?.Send(ServerMessages.ChangeInventorySlotUser((byte)slot, 2, 0));
         }
         p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
         // Y LAS CINCO AURAS, que son parte de lo que se saca. El original las apaga junto a cada `Desequipar`
