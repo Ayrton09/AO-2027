@@ -4552,7 +4552,7 @@ public sealed partial class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var t = _world.PlayerByName(nick.Replace('+', ' ').Trim());
         if (t is null || !t.IsAlive) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // OnlineCheck falla → "Usuario offline"
-        KillPlayer(_world, _data, t);
+        KillPlayer(_world, _data, t, $"lo ejecuto {p.Name}");
         _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterChange(t));   // apariencia de cadáver al área
         _world.Broadcast(ServerMessages.LocaleMsg(458, $"{t.Name}%{p!.Name}"));  // anuncio global (VB6 ToAll)
         Console.WriteLine($"[{session.RemoteEndpoint}] /EJECUTAR {p.Name} -> {t.Name}");
@@ -9728,7 +9728,7 @@ public sealed partial class PacketDispatcher
             attackerSession.Send(ServerMessages.ConsoleMsg(levels > 0
                 ? $"Ganaste {reward} de experiencia y subiste {levels} nivel(es)! Nivel {attacker.Level}."
                 : $"Ganaste {reward} de experiencia.", 0));
-        KillPlayer(_world, _data, target);   // VB6: el muerto queda como cadáver donde cayó (no respawn instantáneo)
+        KillPlayer(_world, _data, target, $"lo mato {attacker.Name}");   // VB6: el muerto queda como cadáver donde cayó (no respawn instantáneo)
     }
 
     /// <summary>El hechizo del portal está cableado por NÚMERO en el original (VB6 <c>HechizoCreateTelep</c>
@@ -12675,7 +12675,7 @@ public sealed partial class PacketDispatcher
         return null;
     }
 
-    public static void KillPlayer(World world, GameData data, Player p)
+    public static void KillPlayer(World world, GameData data, Player p, string cause = "sin causa anotada")
     {
         // Morir corta la faena: si no, el cadáver seguiría pescando (el loop sólo mira el flag). El original
         // llega a lo mismo porque `DoTrabajar` cuelga de un usuario vivo.
@@ -12750,6 +12750,9 @@ public sealed partial class PacketDispatcher
         // tras el delay. Fuera de arena el muerto queda fantasma hasta un revive manual (sacerdote/hechizo/RegresarHogar).
         if (data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y))
             p.Resucitando = true;
+        // LA MUERTE QUEDA ANOTADA CON SU CAUSA (la línea del log sale de Program.cs). Va al final a propósito: el bus
+        // es sincrónico, y un suscriptor que fallara en el medio dejaría la muerte aplicada a medias.
+        world.Events.Publish(new PlayerDied(p, cause));
     }
 
     /// <summary>Revive al jugador muerto (VB6 DarVida, Modulo_UsUaRiOs.bas:60-119): HP full, restaura la cabeza

@@ -613,7 +613,7 @@ loop.OnTickHandler = tick =>
                 {
                     pl.Connection?.Send(ServerMessages.LocaleMsg(46));
                     pl.Hp -= Survival.ColdBite(pl.MaxHp);
-                    if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
+                    if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el frio"); }
                     cambioHp = true;
                 }
                 else
@@ -637,7 +637,7 @@ loop.OnTickHandler = tick =>
                 pl.PoisonCounter = 0;
                 pl.Hp -= regenRng.Next(1, 6);
                 pl.Connection?.Send(ServerMessages.LocaleMsg(47, "", 0, 5));   // el original manda fuente = 5
-                if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
+                if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el veneno"); }
                 cambioHp = true;   // VB6 EfectoVeneno: WriteUpdateHP
             }
             // EfectoIncinerado (VB6 FileIO.bas:2010, llamado desde mMainLoop.bas:170). NO es veneno: pega
@@ -669,7 +669,7 @@ loop.OnTickHandler = tick =>
                         pl.Connection?.Send(ServerMessages.LocaleMsg(48));
                         world.BroadcastToObservers(pl.Pos, ServerMessages.PlayWave(78, pl.Pos.X, pl.Pos.Y));
                         pl.Hp -= regenRng.Next(45, 66);                   // RandomNumber(45, 65), inclusivo
-                        if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl); }
+                        if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el fuego"); }
                         cambioHp = true;
                     }
                 }
@@ -931,6 +931,11 @@ var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTime
 // Ejemplo de suscripcion al event bus (decoupling de reglas y efectos).
 world.Events.Subscribe<PlayerLoggedIn>(e =>
     Console.WriteLine($"[evento] {e.Player.Name} entro al mundo (char {e.Player.CharIndex})."));
+// Cada muerte con su causa: es lo único que dice qué mata a los personajes en una corrida larga. Sin tildes, como la
+// de arriba: redirigida a un archivo, la consola del host las rompe.
+world.Events.Subscribe<PlayerDied>(e =>
+    Console.WriteLine($"[evento] {e.Player.Name} murio en el mapa {e.Player.Pos.Map} ({e.Player.Pos.X},{e.Player.Pos.Y}), " +
+                      $"nivel {e.Player.Level}, energia {e.Player.Stamina}/{e.Player.MaxStamina}: {e.Cause}."));
 
 // Panel de administración web (reemplaza el frmMain del server VB6, rediseñado + responsive). Escucha en
 // loopback (port+2 por defecto) y exige un token. Flags: --no-admin (desactivar), --admin-port <p>,

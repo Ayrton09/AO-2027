@@ -931,7 +931,7 @@ public sealed class NpcSystem
         // skill sólo subía en PvP: contra las 70 criaturas que tiran magia quedaba clavada. Lo reportó el
         // tester. Va antes de la muerte, como allá; y el tope por nivel lo pone SubirSkill.
         SubirSkillPorUso?.Invoke(player, GameLimits.SkillResistencia);
-        if (player.Hp < 1) PacketDispatcher.KillPlayer(_world, _data, player);
+        if (player.Hp < 1) PacketDispatcher.KillPlayer(_world, _data, player, $"lo mato con un hechizo {npc.Name} (npc {npc.Template.Index})");
         return true;
     }
 
@@ -1252,7 +1252,7 @@ public sealed class NpcSystem
             {
                 // VB6 SistemaCombate.bas:606: "te mató la criatura X" (LocaleMsg 72) + UserDie -> cadáver donde cayó.
                 player.Connection?.Send(ServerMessages.LocaleMsg(72, npc.Name));
-                PacketDispatcher.KillPlayer(_world, _data, player);
+                PacketDispatcher.KillPlayer(_world, _data, player, $"lo mato {npc.Name} (npc {npc.Template.Index})");
             }
             // El cierre de NpcAtacaUser (:759): el golpe recibido entrena Tácticas — incluso el que mata,
             // que en el original también pasa por acá. La otra salida (el fallo) tiene su gemelo arriba.

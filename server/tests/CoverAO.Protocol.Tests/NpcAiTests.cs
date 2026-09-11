@@ -584,4 +584,53 @@ public class NpcAiTests
         Assert.True(player.Hp < player.MaxHp);
     }
 
+    // ── La muerte queda anotada con su causa ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// LA CRIATURA QUE MATA QUEDA NOMBRADA EN LA MUERTE. El log del servidor anota cada muerte con su causa, y la de
+    /// un golpe de criatura tiene que decir cuál fue: ni el cadáver ni el <c>.chr</c> guardan al que mató, así que
+    /// sin esto no hay forma de saber qué mata a los personajes en una corrida larga.
+    /// </summary>
+    [Fact]
+    public void La_criatura_que_mata_queda_nombrada_en_la_muerte()
+    {
+        var (world, npc, player, sys) = LoboPegado();
+        player.Hp = 1;                            // el primer golpe que entra lo mata
+        var muertes = new List<PlayerDied>();
+        world.Events.Subscribe<PlayerDied>(muertes.Add);
+
+        RunRounds(sys);
+
+        var muerte = Assert.Single(muertes);
+        Assert.Same(player, muerte.Player);
+        Assert.Contains(npc.Name, muerte.Cause);
+    }
+
+    /// <summary>EL CONTROL. Un golpe que no mata no anota ninguna muerte, y la criatura tiene que haber pegado de
+    /// verdad: si no pegara, la lista vacía saldría verde por no haber pasado nada.</summary>
+    [Fact]
+    public void Un_golpe_que_no_mata_no_anota_ninguna_muerte()
+    {
+        var (world, _, player, sys) = LoboPegado();
+        var muertes = new List<PlayerDied>();
+        world.Events.Subscribe<PlayerDied>(muertes.Add);
+
+        RunRounds(sys);
+
+        Assert.True(player.Hp < player.MaxHp, "la criatura tenía que pegar");
+        Assert.Empty(muertes);
+    }
+
+    /// <summary>Un lobo hostil pegado al jugador, con el mundo a mano para escuchar sus eventos.</summary>
+    private static (World world, Npc npc, Player player, NpcSystem sys) LoboPegado()
+    {
+        var world = new World();
+        var npc = new Npc { CharIndex = world.AllocateCharIndex(), Template = Template("Lobo"), Hp = 1000,
+                            Pos = new WorldPos(1, 10, 10), Movement = 1 };
+        world.AddNpc(npc);
+        npc.Hostile = true;                       // le pega a cualquiera que tenga al lado
+        var player = PlayerAt(world, "Rugura", 10, 11);
+        return (world, npc, player, new NpcSystem(world, new GameData()));
+    }
+
 }

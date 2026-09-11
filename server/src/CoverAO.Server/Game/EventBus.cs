@@ -9,6 +9,9 @@ public sealed record PlayerLoggedIn(Player Player) : IGameEvent;
 public sealed record PlayerMoved(Player Player, WorldPos From, WorldPos To) : IGameEvent;
 public sealed record PlayerTalked(Player Player, string Message) : IGameEvent;
 public sealed record PlayerDisconnected(short CharIndex) : IGameEvent;
+/// <summary>Murió un jugador. <c>Cause</c> dice qué lo mató ("lo mato Lobo (npc 501)", "el veneno"): ni el cadáver
+/// ni el <c>.chr</c> lo guardan, así que es el único lugar donde queda.</summary>
+public sealed record PlayerDied(Player Player, string Cause) : IGameEvent;
 
 /// <summary>
 /// Minimal synchronous publish/subscribe bus. Handlers publish events instead of reaching
