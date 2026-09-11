@@ -356,6 +356,83 @@ public class SentidosDelBotTests
     }
 
     /// <summary>
+    /// AL SUBIR DE NIVEL TOMA LOS TOPES NUEVOS Y QUEDA LLENO. El servidor manda sólo los máximos y el nivel, y deja la
+    /// vida, el maná y la energía al tope sin avisarlo aparte.
+    /// </summary>
+    [Fact]
+    public void Al_subir_de_nivel_toma_los_topes_nuevos_y_queda_lleno()
+    {
+        var s = new SentidosDelBot();
+        var p = Personaje(MiIndice, "Aldo", 50, 50);
+        p.MaxHp = 60; p.Hp = 20; p.MaxMana = 100; p.Mana = 10; p.MaxStamina = 80; p.Stamina = 5; p.Level = 4;
+        s.Recibir(ServerMessages.UpdateUserStats(p));
+
+        p.MaxHp = 70; p.MaxMana = 130; p.MaxStamina = 95; p.Level = 5;
+        s.Recibir(ServerMessages.UpdateUserStatsForLevel(p));
+
+        Assert.Equal((short)5, s.Nivel);
+        Assert.Equal(70, s.VidaMaxima);
+        Assert.Equal(1.0, s.Salud);
+        Assert.Equal(1.0, s.Mana);
+        Assert.Equal(1.0, s.Fuelle);
+    }
+
+    /// <summary>MEDITAR LO PRENDE Y LO APAGA EL SERVIDOR: cada <c>MeditateToggle</c> lo da vuelta, y al morir queda
+    /// apagado aunque el servidor no lo avise.</summary>
+    [Fact]
+    public void Meditar_lo_prende_y_lo_apaga_el_servidor()
+    {
+        var s = new SentidosDelBot();
+        var p = Personaje(MiIndice, "Aldo", 50, 50);
+        p.MaxHp = 100; p.Hp = 100;
+        s.Recibir(ServerMessages.UpdateUserStats(p));
+        Assert.False(s.Meditando);
+
+        s.Recibir(ServerMessages.MeditateToggle());
+        Assert.True(s.Meditando);
+        s.Recibir(ServerMessages.MeditateToggle());   // la cortó un golpe
+        Assert.False(s.Meditando);
+
+        s.Recibir(ServerMessages.MeditateToggle());
+        s.Recibir(ServerMessages.UpdateHP(0));
+        Assert.False(s.Meditando);
+    }
+
+    /// <summary>PARALIZADO NO SE PREDICE EL PASO: el servidor lo rechaza sin mandar ningún <c>PosUpdate</c> que lo
+    /// corrija.</summary>
+    [Fact]
+    public void Paralizado_no_predice_el_paso()
+    {
+        var s = Ubicado(50, 50);
+        s.Recibir(ServerMessages.ParalizeOK());
+        Assert.True(s.Paralizado);
+        s.PredecirPaso(2);
+        Assert.Equal(((byte)50, (byte)50), s.Posicion);
+
+        s.Recibir(ServerMessages.ParalizeOK());   // se soltó
+        s.PredecirPaso(2);
+        Assert.Equal(((byte)51, (byte)50), s.Posicion);
+    }
+
+    /// <summary>
+    /// LO TIRADO FUERA DEL ÁREA SE OLVIDA AL MOVERSE. El servidor sólo avisa que alguien lo levantó a los que ven esa
+    /// baldosa; lo que sigue tirado lo reenvía al volver a entrar al área.
+    /// </summary>
+    [Fact]
+    public void Lo_tirado_fuera_del_area_se_olvida_al_moverse()
+    {
+        var s = Ubicado(10, 10);
+        s.Recibir(ServerMessages.ObjectCreate(12, 12, 26, 1));    // al lado
+        s.Recibir(ServerMessages.ObjectCreate(20, 10, 139, 1));   // en el bloque vecino
+        s.Recibir(ServerMessages.PosUpdate(40, 40));              // a más de un bloque de los dos
+        Assert.Null(s.BotinMasCercano(_ => true));
+
+        s.Recibir(ServerMessages.ObjectCreate(41, 41, 26, 1));
+        s.Recibir(ServerMessages.PosUpdate(45, 41));              // el bloque de al lado: sigue a la vista
+        Assert.NotNull(s.BotinMasCercano(_ => true));
+    }
+
+    /// <summary>
     /// LA MEJOR OFERTA ES LA QUE MÁS RINDE POR MONEDA ENTRE LO QUE ALCANZA. La manzana cuesta dos y llena diez; el
     /// queso cuesta cinco y llena cincuenta: con plata, el queso. Sin plata para el queso, la manzana, que es el
     /// caso del que se quedó sin comida.

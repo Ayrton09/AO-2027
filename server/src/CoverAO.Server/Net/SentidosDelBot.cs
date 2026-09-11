@@ -57,7 +57,7 @@ public sealed class SentidosDelBot
     private short _nivel, _mapa;
     private byte _hambre, _sed;
     private long _ultimoAvisoDeVeneno;
-    private bool _mapaNuevo, _comerciando;
+    private bool _mapaNuevo, _comerciando, _meditando, _paralizado;
 
     // ── Lo que el que decide le pregunta ──────────────────────────────────────────────────────────────
 
@@ -104,6 +104,13 @@ public sealed class SentidosDelBot
 
     public bool ConHambre { get { lock (_candado) return _hambre == 0; } }
     public bool ConSed { get { lock (_candado) return _sed == 0; } }
+
+    /// <summary>¿Está meditando? Lo dice el servidor: contesta cada pedido con el <c>MeditateToggle</c>, y lo manda también
+    /// cuando corta la meditación por su cuenta, al caminar o al recibir un golpe.</summary>
+    public bool Meditando { get { lock (_candado) return _meditando; } }
+
+    /// <summary>¿Está paralizado? El servidor lo prende y lo apaga con el mismo <c>ParalizeOK</c>.</summary>
+    public bool Paralizado { get { lock (_candado) return _paralizado; } }
 
     /// <summary>¿Está envenenado? No hay un paquete de estado para esto: el servidor avisa con el <c>LocaleMsg 47</c>
     /// cada vez que el veneno le saca vida, que es cada veinte segundos (VB6 EfectoVeneno), y el veneno no se pasa
@@ -297,6 +304,24 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>
+    /// LO TIRADO FUERA DEL ÁREA SE OLVIDA, como hace el cliente original al cambiar de área (CambioDeArea, ModAreas.bas del
+    /// cliente). El servidor avisa que alguien levantó algo sólo a los que ven esa baldosa, y al volver a entrar reenvía
+    /// lo que sigue tirado pero no lo que ya no está: sin olvidarlo, lo que otro levantaba lejos quedaba en el piso para
+    /// siempre y el bot caminaba hasta ahí a agacharse en vano. El área son los bloques de <see cref="World.AreaBlock"/>
+    /// baldosas vecinos al propio, la misma cuenta de <see cref="World.InView"/>. Se llama con el candado tomado.
+    /// </summary>
+    private void OlvidarElPisoLejano()
+    {
+        List<(byte X, byte Y)>? lejos = null;
+        foreach (var baldosa in _enElPiso.Keys)
+            if (Math.Abs(baldosa.X / World.AreaBlock - _x / World.AreaBlock) > 1
+                || Math.Abs(baldosa.Y / World.AreaBlock - _y / World.AreaBlock) > 1)
+                (lejos ??= new()).Add(baldosa);
+        if (lejos is not null)
+            foreach (var baldosa in lejos) _enElPiso.Remove(baldosa);
+    }
+
     /// <summary>Qué hay tirado en esa baldosa, o 0.</summary>
     public short EnElPiso((byte X, byte Y) baldosa)
     {
@@ -355,14 +380,15 @@ public sealed class SentidosDelBot
         }
     }
 
-    /// <summary>Adelanta la posición propia un paso, porque el servidor NO le avisa al que camina que se
-    /// movió: sólo le manda un <c>PosUpdate</c> cuando el paso se RECHAZA. Es la misma cuenta que hace el
-    /// cliente de una persona — mueve el muñeco y espera la corrección si pegó contra algo.</summary>
+    /// <summary>Adelanta la posición propia un paso, como el cliente de una persona que mueve el muñeco antes de que
+    /// llegue la respuesta: el servidor contesta cada paso con un <c>PosUpdate</c>, aceptado o rechazado, y ése corrige
+    /// lo predicho. PARALIZADO NO SE PREDICE: ahí el servidor rechaza el paso sin mandar nada, y cada paso predicho
+    /// quedaba como una posición que el bot creía tener.</summary>
     public void PredecirPaso(byte rumbo)
     {
         lock (_candado)
         {
-            if (!_tengoPosicion) return;
+            if (!_tengoPosicion || _paralizado) return;
             var (dx, dy) = Paso(rumbo);
             _x = (byte)Math.Clamp(_x + dx, 0, 255);
             _y = (byte)Math.Clamp(_y + dy, 0, 255);
@@ -455,7 +481,11 @@ public sealed class SentidosDelBot
                 case ServerPacketId.PosUpdate:
                 {
                     byte x = l.Byte(), y = l.Byte();
-                    lock (_candado) { _x = x; _y = y; _tengoPosicion = true; }
+                    lock (_candado)
+                    {
+                        _x = x; _y = y; _tengoPosicion = true;
+                        OlvidarElPisoLejano();
+                    }
                     break;
                 }
 
@@ -493,12 +523,17 @@ public sealed class SentidosDelBot
                         _energiaMax = enerMax; _energia = ener;
                         _oro = oro;
                         _nivel = nivel; _hambre = hambre; _sed = sed;
+                        if (vida <= 0) _meditando = false;
                     }
                     break;
                 }
 
                 case ServerPacketId.UpdateHP:
-                    lock (_candado) _vida = l.Entero();
+                    lock (_candado)
+                    {
+                        _vida = l.Entero();
+                        if (_vida <= 0) _meditando = false;   // al morir el servidor apaga la meditación sin avisar
+                    }
                     break;
 
                 case ServerPacketId.UpdateMana:
@@ -577,6 +612,38 @@ public sealed class SentidosDelBot
 
                 case ServerPacketId.UpdateSed:
                     lock (_candado) _sed = l.Byte();
+                    break;
+
+                // SUBIÓ DE NIVEL. El servidor manda sólo los MÁXIMOS nuevos y el nivel (vida, maná, energía, nivel, y después
+                // la experiencia para subir y la experiencia), no lo que le queda de cada cosa. Lo actual lo deja lleno
+                // (`Leveling.ApplyLevelGains`) y ninguna regeneración lo avisa, porque las barras ya están al tope. Sin leerlo
+                // el bot seguía con los topes y el nivel del login y con lo que tenía antes de subir: un mago con el maná
+                // lleno en el servidor se quedaba meditando porque lo creía bajo.
+                case ServerPacketId.UpdateUserStatsForLevel:
+                {
+                    int vidaMax = l.Entero(), manaMax = l.Entero(), enerMax = l.Entero();
+                    short nivel = l.Entero();
+                    lock (_candado)
+                    {
+                        _vidaMax = vidaMax; _vida = vidaMax;
+                        _manaMax = manaMax; _mana = manaMax;
+                        _energiaMax = enerMax; _energia = enerMax;
+                        _nivel = nivel;
+                    }
+                    break;
+                }
+
+                // MEDITAR ES UN INTERRUPTOR, y lo mueve el servidor: contesta cada pedido con este paquete y lo manda también
+                // cuando corta la meditación por su cuenta, al caminar o al recibir un golpe. Sin leerlo, el bot al que un
+                // golpe levantaba volvía a sentarse con su propio pedido de levantarse.
+                case ServerPacketId.MeditateToggle:
+                    lock (_candado) _meditando = !_meditando;
+                    break;
+
+                // PARALIZADO: el mismo paquete lo prende y lo apaga. Mientras dura, el servidor rechaza el paso sin mandar
+                // ningún PosUpdate, así que la posición no se predice (ver PredecirPaso).
+                case ServerPacketId.ParalizeOK:
+                    lock (_candado) _paralizado = !_paralizado;
                     break;
 
                 // "Estás envenenado" (VB6 EfectoVeneno): es la única señal de que el veneno sigue encima.

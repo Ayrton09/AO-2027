@@ -1247,17 +1247,22 @@ public sealed class Bot
     /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>
     private async Task<bool> MeditarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        if (!sentidos.UsaMana || sentidos.Mana >= MeditaBajo) return false;
+        // CON ALGO PEGADO NO SE SIENTA: el primer golpe corta la meditación, y sentarse otra vez en cada vuelta era comer
+        // golpes sin recuperar maná.
+        if (!sentidos.UsaMana || sentidos.Mana >= MeditaBajo || sentidos.AlgoPegado()) return false;
 
-        transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));
+        // EL PAQUETE ES UN INTERRUPTOR, así que se manda según lo que dice el servidor y no a ciegas: si el servidor ya
+        // había cortado la meditación por un golpe o un paso, el pedido de levantarse la volvía a prender.
+        if (!sentidos.Meditando) transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));
         for (int pasado = 0; pasado < MeditaTopeMs; pasado += RebanadaDePausaMs)
         {
             await Task.Delay(RebanadaDePausaMs, ct);
             // Meditar se corta solo al caminar o al pelear, así que cualquier urgencia levanta al bot igual.
             if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()) break;
             if (sentidos.Mana >= MeditaHasta) break;
+            if (!sentidos.Meditando) break;   // la cortó el servidor
         }
-        transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));   // el mismo paquete lo apaga
+        if (sentidos.Meditando) transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));   // el mismo paquete la apaga
         return true;
     }
 
