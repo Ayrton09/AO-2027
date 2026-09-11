@@ -90,6 +90,46 @@ public class NaveganteTests
         Assert.NotNull(donde);
     }
 
+    /// <summary>
+    /// EL CAMINO RODEA LO QUE SE LE PIDE EVITAR. Una criatura quieta en un pasillo no está en el mapa: el bot
+    /// anota la baldosa donde rebotó y pide otro camino. Si el navegante la ignorara, devolvería el mismo camino y
+    /// el bot chocaría contra lo mismo — que es lo que le pasó a uno en la cuna, doce veces contra (66,24).
+    /// </summary>
+    [Fact]
+    public void El_camino_rodea_la_baldosa_que_se_pide_evitar()
+    {
+        if (Mundo() is not { } m) return;
+        (byte X, byte Y) desde = (67, 24), hasta = (52, 65);
+        // Igual que el viaje: el mercader ocupa su baldosa, así que se llega a una de alrededor.
+        var directo = m.Mapas.HayComoLlegar(37, desde, hasta, 3);
+        Assert.True(directo is { Count: > 0 }, "sin camino directo en la cuna: la premisa del test no vale");
+        var tapada = directo![0];
+        var rodeo = m.Mapas.HayComoLlegar(37, desde, hasta, 3, new HashSet<(byte X, byte Y)> { tapada });
+        Assert.True(rodeo is { Count: > 0 }, $"tapando {tapada} no queda camino: esa baldosa no es un buen caso");
+        Assert.DoesNotContain(tapada, rodeo!);
+    }
+
+    /// <summary>
+    /// LA PUERTA QUE ELIGE EL NAVEGANTE SE ALCANZA DESDE DONDE SE ESTÁ. Si devolviera una baldosa de salida sin
+    /// camino, el viaje fallaría en el primer tramo aunque la misma salida tuviera otra baldosa alcanzable — que
+    /// es lo que le pasaba a un Minero en el mapa 62 con la puerta (51,73).
+    /// </summary>
+    [Fact]
+    public void La_puerta_que_elige_el_navegante_se_alcanza_desde_donde_se_esta()
+    {
+        if (Mundo() is not { } m) return;
+        int miradas = 0;
+        foreach (var (mapa, desde, destino) in new (int, (byte, byte), int)[]
+                 { (62, (58, 72), 194), (37, (57, 74), 62), (37, (83, 66), 62), (20, (80, 12), 62) })
+        {
+            if (m.Mapas.PuertaHacia(mapa, destino, desde) is not { } p) continue;
+            miradas++;
+            Assert.True(m.Mapas.Camino(mapa, desde, p.Puerta) is not null,
+                $"el navegante eligió la puerta ({p.Puerta.X},{p.Puerta.Y}) del mapa {mapa} y desde {desde} no se llega");
+        }
+        Assert.True(miradas > 0, "ninguna consulta devolvió puerta: el test no miró nada");
+    }
+
     /// <summary>Y dónde se puede pescar. El agua no viaja por la red —el servidor no manda el terreno— así que
     /// si esto no la encontrara, un Pescador no tendría forma de saber a dónde ir.</summary>
     [Fact]

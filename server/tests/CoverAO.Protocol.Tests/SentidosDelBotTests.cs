@@ -302,6 +302,58 @@ public class SentidosDelBotTests
         Assert.Equal((byte)7, s.EnLaMochila(obj => obj == 1354)!.Value.Ranura);
     }
 
+    /// <summary>
+    /// AL COMER O TOMAR SE ENTERA ENSEGUIDA. El servidor contesta la comida con un paquete suelto de hambre y la
+    /// bebida con uno de sed; el combinado sólo llega con el reloj. Sin leer los sueltos, el bot seguía con hambre
+    /// después de comer y comía de nuevo en cada vuelta.
+    /// </summary>
+    [Fact]
+    public void Al_comer_o_tomar_se_entera_enseguida()
+    {
+        var s = new SentidosDelBot();
+        var p = Personaje(MiIndice, "Aldo", 50, 50);
+        p.MaxHp = 100; p.Hp = 100; p.Hunger = 0; p.Thirst = 0;
+        s.Recibir(ServerMessages.UpdateUserStats(p));
+        Assert.True(s.ConHambre);
+        Assert.True(s.ConSed);
+
+        s.Recibir(ServerMessages.UpdateHambre(10));
+        Assert.False(s.ConHambre);
+        Assert.True(s.ConSed);
+
+        s.Recibir(ServerMessages.UpdateSed(30));
+        Assert.False(s.ConSed);
+    }
+
+    /// <summary>
+    /// LA MEJOR OFERTA ES LA QUE MÁS RINDE POR MONEDA ENTRE LO QUE ALCANZA. La manzana cuesta dos y llena diez; el
+    /// queso cuesta cinco y llena cincuenta: con plata, el queso. Sin plata para el queso, la manzana, que es el
+    /// caso del que se quedó sin comida.
+    /// </summary>
+    [Fact]
+    public void La_mejor_oferta_es_la_que_mas_rinde_entre_lo_que_alcanza()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.CommerceInit());
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(1, 100, 2f, 1));     // manzana: 10 puntos
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(2, 100, 5f, 28));    // queso: 50 puntos
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(3, 100, 3f, 43));    // agua: no es comida
+        static int Puntos(short obj) => obj switch { 1 => 10, 28 => 50, _ => 0 };
+
+        Assert.Equal((short)28, s.MejorOfertaEnLaTienda(Puntos, plata: 100)!.Value.Obj);
+        Assert.Equal((short)1, s.MejorOfertaEnLaTienda(Puntos, plata: 4)!.Value.Obj);
+        Assert.Null(s.MejorOfertaEnLaTienda(Puntos, plata: 1));
+    }
+
+    [Fact]
+    public void Suma_lo_que_rinde_cada_unidad()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, 1, 7, false, 0f, 1));     // siete manzanas
+        s.Recibir(ServerMessages.ChangeInventorySlot(2, 26, 2, false, 0f, 1));    // dos pollos
+        Assert.Equal(7 * 10 + 2 * 75, s.Suma(obj => obj switch { 1 => 10, 26 => 75, _ => 0 }));
+    }
+
     [Fact]
     public void Cuenta_lo_que_tiene_sumando_ranuras()
     {

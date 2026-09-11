@@ -67,7 +67,8 @@ public sealed class Navegante
     /// diagonales. Devuelve el camino entero y no sólo el primer paso porque el bot lo recorre revisando su
     /// vida en cada paso, y recalcular en cada baldosa sería tirar el trabajo.</para>
     /// </summary>
-    public IReadOnlyList<(byte X, byte Y)>? Camino(int mapa, (byte X, byte Y) desde, (byte X, byte Y) hasta)
+    public IReadOnlyList<(byte X, byte Y)>? Camino(int mapa, (byte X, byte Y) desde, (byte X, byte Y) hasta,
+                                                   IReadOnlySet<(byte X, byte Y)>? evitar = null)
     {
         if (desde == hasta) return Array.Empty<(byte, byte)>();
         if (!SePuedePisar(mapa, hasta.X, hasta.Y)) return null;
@@ -89,7 +90,8 @@ public sealed class Navegante
             {
                 var (dx, dy) = SentidosDelBot.Paso(rumbo);
                 int nx = x + dx, ny = y + dy;
-                if (!SePuedePisar(mapa, nx, ny)) continue;
+                // Lo que el mapa no sabe —una criatura parada, otro personaje— lo trae el que llama en `evitar`.
+                if (!SePuedePisar(mapa, nx, ny) || evitar?.Contains(((byte)nx, (byte)ny)) == true) continue;
                 int vecino = Clave((byte)nx, (byte)ny);
                 if (deDonde.ContainsKey(vecino)) continue;
                 deDonde[vecino] = actual;
@@ -106,15 +108,24 @@ public sealed class Navegante
     /// <para>Es una búsqueda en anchura sobre el grafo de mapas: encuentra la ruta entera y devuelve la
     /// primera puerta, que es lo único que el bot necesita para dar el próximo paso del viaje.</para>
     /// </summary>
-    public ((byte X, byte Y) Puerta, int Saltos)? PuertaHacia(int mapaActual, int mapaDestino)
+    public ((byte X, byte Y) Puerta, int Saltos)? PuertaHacia(int mapaActual, int mapaDestino,
+                                                             (byte X, byte Y)? desde = null)
     {
         if (mapaActual == mapaDestino) return null;
+
+        // SÓLO PUERTAS A LAS QUE SE LLEGA CAMINANDO, si se sabe desde dónde. Una salida suele ser una fila
+        // entera de baldosas, y acá se tomaba la primera baldosa hacia cada mapa sin mirar si se alcanzaba: el
+        // viaje fallaba en el primer tramo aunque hubiera otra baldosa de la misma salida a la vista. Medido sin
+        // servidor: desde donde estaba parado un Minero en el mapa 62, la puerta (51,73) hacia el 194 que le daba
+        // el navegante no tenía camino.
+        var alcanzables = desde is { } d ? Alcanzables(mapaActual, d) : null;
 
         // BFS sobre mapas, recordando por qué puerta DE ESTE MAPA se entró a cada rama.
         var visto = new HashSet<int> { mapaActual };
         var cola = new Queue<(int Mapa, (byte X, byte Y) PrimeraPuerta, int Saltos)>();
         foreach (var (destino, x, y) in Salidas(mapaActual))
         {
+            if (alcanzables is not null && !alcanzables.Contains(Clave(x, y))) continue;
             if (!visto.Add(destino)) continue;
             if (destino == mapaDestino) return ((x, y), 1);
             cola.Enqueue((destino, (x, y), 1));
@@ -299,9 +310,10 @@ public sealed class Navegante
     /// ninguno.</para>
     /// </summary>
     public IReadOnlyList<(byte X, byte Y)>? HayComoLlegar(int mapa, (byte X, byte Y) desde,
-                                                          (byte X, byte Y) objetivo, int radio = 1)
+                                                          (byte X, byte Y) objetivo, int radio = 1,
+                                                          IReadOnlySet<(byte X, byte Y)>? evitar = null)
     {
-        if (Camino(mapa, desde, objetivo) is { } directo) return directo;
+        if (Camino(mapa, desde, objetivo, evitar) is { } directo) return directo;
         // De cerca hacia afuera: la primera baldosa alcanzable es la mejor parada.
         for (int d = 1; d <= radio; d++)
         {
@@ -312,11 +324,38 @@ public sealed class Navegante
                 {
                     int nx = objetivo.X + dx, ny = objetivo.Y + dy;
                     if (!SePuedePisar(mapa, nx, ny)) continue;
-                    if (Camino(mapa, desde, ((byte)nx, (byte)ny)) is { } cerca) return cerca;
+                    if (Camino(mapa, desde, ((byte)nx, (byte)ny), evitar) is { } cerca) return cerca;
                 }
             }
         }
         return null;
+    }
+
+    /// <summary>Todas las baldosas a las que se llega caminando desde <paramref name="desde"/> en ese mapa. Es
+    /// una sola búsqueda en anchura para responder muchas preguntas de "¿se llega?" seguidas, en vez de una
+    /// búsqueda por cada baldosa de salida. El tope es el recuadro pisable entero, para no cortar un mapa
+    /// abierto a la mitad.</summary>
+    private HashSet<int> Alcanzables(int mapa, (byte X, byte Y) desde)
+    {
+        var vistos = new HashSet<int>();
+        var cola = new Queue<int>();
+        int inicio = Clave(desde.X, desde.Y);
+        vistos.Add(inicio);
+        cola.Enqueue(inicio);
+        while (cola.Count > 0 && vistos.Count < 10_000)
+        {
+            int actual = cola.Dequeue();
+            byte x = (byte)(actual & 0xff), y = (byte)(actual >> 8);
+            for (byte rumbo = 1; rumbo <= 4; rumbo++)
+            {
+                var (dx, dy) = SentidosDelBot.Paso(rumbo);
+                int nx = x + dx, ny = y + dy;
+                if (!SePuedePisar(mapa, nx, ny)) continue;
+                int vecino = Clave((byte)nx, (byte)ny);
+                if (vistos.Add(vecino)) cola.Enqueue(vecino);
+            }
+        }
+        return vistos;
     }
 
     private List<(int Destino, byte X, byte Y)> Salidas(int mapa) =>

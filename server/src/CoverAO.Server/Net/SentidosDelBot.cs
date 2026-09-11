@@ -145,18 +145,30 @@ public sealed class SentidosDelBot
         }
     }
 
-    /// <summary>La ranura MÁS BARATA de la vitrina que cumpla la condición. Para comprar con poca plata importa el
-    /// precio: con doce monedas un pastel de diez no entra y una manzana de dos sí, y justo el que se quedó sin
-    /// comida es el que menos plata tiene.</summary>
-    public (byte Ranura, float Precio)? MasBaratoEnLaTienda(Func<short, bool> sirve)
+    /// <summary>La ranura de la vitrina que MÁS RINDE POR MONEDA entre las que no pasan de <paramref name="plata"/>.
+    /// <paramref name="rinde"/> dice los puntos que da una unidad, y cero es que no sirve. Importa el rendimiento y
+    /// no el precio: la manzana de la cuna cuesta dos y llena diez de hambre, el queso cuesta cinco y llena
+    /// cincuenta, así que comprando lo más barato se pagaba el doble por comer. Y el tope de plata es por el que
+    /// se quedó sin comida, que es justo el que menos tiene: si el queso no le alcanza, la manzana sí. Lo gratis
+    /// rinde más que todo.</summary>
+    public (byte Ranura, short Obj, float Precio)? MejorOfertaEnLaTienda(Func<short, int> rinde, double plata)
     {
         lock (_candado)
         {
-            (byte Ranura, float Precio)? mejor = null;
+            (byte Ranura, short Obj, float Precio)? mejor = null;
+            double mejorPorMoneda = 0;
             foreach (var (ranura, item) in _tienda)
-                if (item.Obj > 0 && item.Cantidad > 0 && sirve(item.Obj)
-                    && (mejor is null || item.Precio < mejor.Value.Precio))
-                    mejor = (ranura, item.Precio);
+            {
+                if (item.Obj <= 0 || item.Cantidad <= 0 || item.Precio > plata) continue;
+                int puntos = rinde(item.Obj);
+                if (puntos <= 0) continue;
+                double porMoneda = item.Precio > 0 ? puntos / (double)item.Precio : double.PositiveInfinity;
+                if (mejor is null || porMoneda > mejorPorMoneda)
+                {
+                    mejor = (ranura, item.Obj, item.Precio);
+                    mejorPorMoneda = porMoneda;
+                }
+            }
             return mejor;
         }
     }
@@ -205,6 +217,19 @@ public sealed class SentidosDelBot
             int n = 0;
             for (byte s = 1; s < _inventario.Length; s++)
                 if (_inventario[s].Obj > 0 && sirve(_inventario[s].Obj)) n += _inventario[s].Cantidad;
+            return n;
+        }
+    }
+
+    /// <summary>Lo que suma la mochila según <paramref name="porUnidad"/>: los puntos de hambre que carga en comida,
+    /// por ejemplo. Cuenta también lo puesto, igual que <see cref="CuantoTiene"/>.</summary>
+    public int Suma(Func<short, int> porUnidad)
+    {
+        lock (_candado)
+        {
+            int n = 0;
+            for (byte s = 1; s < _inventario.Length; s++)
+                if (_inventario[s].Obj > 0) n += _inventario[s].Cantidad * porUnidad(_inventario[s].Obj);
             return n;
         }
     }
@@ -507,6 +532,18 @@ public sealed class SentidosDelBot
 
                 case ServerPacketId.UpdateHungerAndThirst:
                     lock (_candado) { _sed = l.Byte(); _hambre = l.Byte(); }
+                    break;
+
+                // AL COMER O TOMAR el servidor manda sólo lo que cambió, en paquetes sueltos (VB6 WriteUpdateHambre
+                // y WriteUpdateSed); el combinado llega con el reloj del hambre. Sin leer estos, el bot seguía viendo
+                // el hambre en cero después de comer y volvía a comer en cada vuelta: medido, doce manzanas para
+                // pasar de 50 a 100, cuando alcanzaba con cinco.
+                case ServerPacketId.UpdateHambre:
+                    lock (_candado) _hambre = l.Byte();
+                    break;
+
+                case ServerPacketId.UpdateSed:
+                    lock (_candado) _sed = l.Byte();
                     break;
 
                 case ServerPacketId.ChangeInventorySlot:
