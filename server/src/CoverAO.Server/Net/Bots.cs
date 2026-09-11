@@ -536,7 +536,36 @@ public sealed class Bot
                     await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
                     continue;
                 }
+                // ACORRALADO SE PELEA. Si tres huidas seguidas no lo movieron de la baldosa, insistir es quedarse quieto recibiendo:
+                // medido en `normal1`, un Mago de nivel 1 con pociones se pasó veinticinco de treinta minutos huyendo sin moverse en
+                // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
+                // baldosas, y se tomó 159 pociones ahí. A lo que tiene pegado se le devuelve el golpe: mirar y pegar, como en
+                // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
+                if (EstaAcorralado(_huidasSinMoverse) && TieneFuelleParaPelear(sentidos)
+                    && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } pegado)
+                {
+                    var (px, py) = sentidos.Posicion;
+                    byte haciaElQuePega = SentidosDelBot.RumboHacia(pegado.Quien.X - px, pegado.Quien.Y - py);
+                    if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(haciaElQuePega)))) return;
+                    if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return;
+                    await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                    continue;
+                }
+                var antesDeHuir = sentidos.Posicion;
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
+                _huidasSinMoverse = sentidos.Posicion == antesDeHuir ? _huidasSinMoverse + 1 : 0;
+                continue;
+            }
+            _huidasSinMoverse = 0;
+
+            // LO QUE YA LE PEGA SE LO SACA DE ENCIMA, aunque haya algo peligroso a la vista, la vida no esté para empezar una pelea o
+            // no le den ganas: esas reglas son para ELEGIR a quién atacar, no para dejarse picar. Medido en `normal1`: un Minero de
+            // nivel 1 con 16 de vida se tomó 67 pociones seguidas en la llegada de la cuna sin cazar ni huir, y terminó la media hora
+            // sin matar nada.
+            if (TieneFuelleParaPelear(sentidos)
+                && sentidos.MasCercano(f => EsPresa(f, vidaTope, nivelAhora, conPociones, curaVeneno) && LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } picando)
+            {
+                if (!await CazarAsync(transporte, sentidos, picando.Quien.CharIndex, cerrada, ct)) return;
                 continue;
             }
 
@@ -1876,6 +1905,15 @@ public sealed class Bot
     private int _sanacionesSinCamino;
     private long _proximaRunaDeHuida;
     private long _proximoPedidoAlSacerdote;
+
+    /// <summary>¿Está acorralado? <see cref="HuidasParaAcorralado"/> huidas seguidas sin moverse de la baldosa.</summary>
+    public static bool EstaAcorralado(int huidasSinMoverse) => huidasSinMoverse >= HuidasParaAcorralado;
+
+    /// <summary>¿Lo está atacando? Una criatura hostil que pega, pegada en cruz, que es desde donde se pega en el juego.</summary>
+    public static bool LoEstaAtacando(NpcInfo? n, int pasos) => pasos <= 1 && n is { Hostile: true, MaxHit: > 0 };
+
+    private const int HuidasParaAcorralado = 3;
+    private int _huidasSinMoverse;
     private const int EsperaEntreRunasDeHuidaMs = 30_000;
 
     private const int PocionQueCuraElVeneno = 5;

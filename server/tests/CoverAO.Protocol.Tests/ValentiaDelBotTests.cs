@@ -105,6 +105,19 @@ public class ValentiaDelBotTests
         Assert.False(Bot.UnGolpeLoMata(d.Npc(504), 18));
     }
 
+    /// <summary>ACORRALADO SE LE DEVUELVE EL GOLPE A LO QUE PEGA: tres huidas seguidas sin moverse, y lo hostil pegado en cruz, sea el
+    /// Escorpión o la Serpiente. Lo que está a dos baldosas no pega.</summary>
+    [Fact]
+    public void Acorralado_se_le_devuelve_el_golpe_a_lo_que_pega()
+    {
+        if (Datos() is not { } d) return;
+        Assert.False(Bot.EstaAcorralado(2));
+        Assert.True(Bot.EstaAcorralado(3));
+        Assert.True(Bot.LoEstaAtacando(d.Npc(529), 1));
+        Assert.True(Bot.LoEstaAtacando(d.Npc(504), 1));
+        Assert.False(Bot.LoEstaAtacando(d.Npc(501), 2));
+    }
+
     /// <summary>SIN POCIONES NI CURA, LO QUE ENVENENA NO ES PRESA: el Escorpión chico (golpe 3, veneno) sí lo es con pociones o con
     /// la poción que cura el veneno.</summary>
     [Fact]
