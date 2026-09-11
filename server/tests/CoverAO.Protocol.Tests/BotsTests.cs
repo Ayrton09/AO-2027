@@ -186,6 +186,17 @@ public class BotsTests
         Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Alta, yaEntro: false));
     }
 
+    /// <summary>LA ZONA NEWBIE CIERRA A PARTIR DEL NIVEL 16, con la misma cuenta que el servidor; las demás zonas, nunca.</summary>
+    [Theory]
+    [InlineData(15, "NEWBIE", true)]
+    [InlineData(16, "NEWBIE", false)]
+    [InlineData(16, " newbie ", false)]
+    [InlineData(40, "CIUDAD", true)]
+    public void La_zona_newbie_cierra_a_partir_del_nivel_16(int nivel, string zona, bool entra)
+    {
+        Assert.Equal(entra, Bot.PuedeEntrar(nivel, zona));
+    }
+
     // ── Salir del pozo sin pociones ───────────────────────────────────────────────────────────────────────
 
     /// <summary>

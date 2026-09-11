@@ -455,7 +455,7 @@ public sealed class Bot
             if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo && Environment.TickCount64 >= _proximoRefugio)
             {
                 _proximoRefugio = Environment.TickCount64 + ReintentoDeRefugioMs;
-                if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro) is { } refugio)
+                if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is { } refugio)
                 {
                     await IrHastaAsync(transporte, sentidos, refugio.Mapa, refugio.X, refugio.Y, cerrada, ct);
                     if (cerrada.IsCompleted) return;
@@ -798,7 +798,7 @@ public sealed class Bot
         // segunda búsqueda sí exige camino y elige uno al que se llega.
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende) is not { } lugar)
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende, Pisable(sentidos)) is not { } lugar)
             {
                 // SIN TIENDA A LA QUE SE LLEGUE CAMINANDO, LA RUNA. Hay mapas a los que se entra y de los que no se
                 // sale a pie: medido, desde el mapa 62 no hay a pie ningún vendedor de piquetes ni de hachas, y la
@@ -1038,6 +1038,22 @@ public sealed class Bot
     /// <summary>Un mapa donde se trabaja: los pk quedan afuera.</summary>
     private bool MapaSeguro(int mapa) => !_entorno.Datos.IsPkMap(mapa);
 
+    /// <summary>
+    /// A QUÉ MAPAS PUEDE ENTRAR. A partir del nivel 16 el servidor no deja entrar a la zona NEWBIE (la cuna y el 208): al que pisa la
+    /// puerta lo rebota a la baldosa estable de al lado sin cambiar de mapa (PacketDispatcher, con `GameLimits.NewbieMaxLevel`). Sin
+    /// esto el bot la seguía eligiendo para comprar, dormir, trabajar o curarse —la cuna es a la vez segura, atiende y tiene taberna y
+    /// sacerdote— y chocaba contra la misma puerta para siempre. Encontrado leyendo: hoy ningún bot llegó a 16.
+    /// </summary>
+    private Func<int, bool> Pisable(SentidosDelBot sentidos)
+    {
+        int nivel = sentidos.Nivel;
+        return mapa => PuedeEntrar(nivel, _entorno.Datos.MapZone(mapa));
+    }
+
+    /// <summary>¿Deja el servidor entrar con ese nivel a un mapa de esa zona? La misma cuenta que hace al pisar la puerta.</summary>
+    public static bool PuedeEntrar(int nivel, string? zona) =>
+        nivel <= GameLimits.NewbieMaxLevel || !string.Equals(zona?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>¿Hay un lugar a salvo donde ejercer su oficio? Se recalcula al cambiar de mapa o cada cinco minutos:
     /// buscarlo es recorrer varios mapas, y esto se pregunta en cada vuelta.</summary>
     private bool HayDondeTrabajarSeguro(SentidosDelBot sentidos)
@@ -1045,7 +1061,7 @@ public sealed class Bot
         if (sentidos.Mapa == _trabajoSeguroMapa && Environment.TickCount64 < _trabajoSeguroHasta) return _trabajoSeguro;
         bool agua = SkillDeSuOficio == GameLimits.SkillPesca;
         _trabajoSeguro = SkillDeSuOficio != 0
-            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaSeguro) is not null;
+            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not null;
         _trabajoSeguroMapa = sentidos.Mapa;
         _trabajoSeguroHasta = Environment.TickCount64 + 5 * 60_000;
         return _trabajoSeguro;
@@ -1255,7 +1271,7 @@ public sealed class Bot
             ? _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso) : null;
         if (punto is null)
         {
-            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, MapaSeguro) is not { } lejos) { PostergarFaena(); return false; }
+            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } lejos) { PostergarFaena(); return false; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct)) { PostergarFaena(); return true; }
             punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
             if (punto is null) { PostergarFaena(); return true; }
@@ -1373,7 +1389,7 @@ public sealed class Bot
         // devolvía "hice algo", así que nunca se llegaba a la salida de volver al hogar. Se va por el
         // navegante, igual que al mercader, que aprendió lo mismo.
 
-        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { } templo)
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos)) is { } templo)
         {
             if (await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct,
                                    RadioDelAltar, deMuerto: true)) return true;
@@ -1421,11 +1437,11 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         Func<int, bool> sirve = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno) && PagaOro((short)f);
-        var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve);
+        var hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve, pisable: Pisable(sentidos));
         if (hallado is null)
         {
             sirve = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
-            hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve);
+            hallado = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, sirve, pisable: Pisable(sentidos));
         }
         if (hallado is not { } coto) return false;
 
@@ -1682,7 +1698,7 @@ public sealed class Bot
             return true;
         }
 
-        var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f));
+        var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos));
         if (templo is not null) _curasSinCamino = 0;
         if (templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar))
             return true;
@@ -1729,7 +1745,7 @@ public sealed class Bot
             return true;
         }
 
-        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f)) is { Saltos: <= SaltosHastaElSacerdote } templo
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos)) is { Saltos: <= SaltosHastaElSacerdote } templo
             && await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar))
         {
             // LLEGÓ PERO NO LO TIENE AL ALCANCE (el sacerdote no está en su lugar): la misma espera, por lo mismo.
@@ -1907,7 +1923,7 @@ public sealed class Bot
             bool esLaMeta = mapa == mapaDestino;
             (byte X, byte Y) meta;
             if (esLaMeta) meta = (destinoX, destinoY);
-            else if (_entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY)) is { } salida) meta = salida.Puerta;
+            else if (_entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos)) is { } salida) meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
             // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y

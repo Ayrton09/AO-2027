@@ -271,6 +271,25 @@ public class NaveganteTests
         Assert.True(templo!.Value.Saltos <= 2, $"el sacerdote más cercano queda a {templo.Value.Saltos} mapas");
     }
 
+    /// <summary>
+    /// A PARTIR DEL NIVEL 16 LA CUNA NO ES CAMINO NI DESTINO: el servidor rebota al que pisa la puerta de la zona NEWBIE. Con el mapa
+    /// vedado, lo que se busca no puede quedar en la cuna y no hay puerta hacia ella.
+    /// </summary>
+    [Fact]
+    public void Una_zona_vedada_no_es_camino_ni_destino()
+    {
+        if (Mundo() is not { } m) return;
+        bool Pisable(int mapa) => Bot.PuedeEntrar(16, m.Datos.MapZone(mapa));
+        Assert.False(Pisable(37), "la cuna tenía que ser zona NEWBIE o esto no prueba nada");
+        bool Tabernero(int ficha) => m.Datos.Npc(ficha)?.StockItems?.Any(s => m.Datos.Obj((short)s.ObjIndex) is { IsDrink: true }) == true;
+        bool Atiende(int mapa) => m.Datos.MapBattleMode(mapa) is 2 or 3;
+        var libre = m.Mapas.DondeHay(20, (75, 55), Tabernero, Atiende);
+        Assert.True(libre is { Mapa: 37 }, $"sin vedar tenía que elegir la cuna y eligió el mapa {libre?.Mapa}: el test no prueba nada");
+        var vedado = m.Mapas.DondeHay(20, (75, 55), Tabernero, Atiende, Pisable);
+        Assert.True(vedado is null || vedado.Value.Mapa != 37, "con la cuna vedada igual la eligió");
+        Assert.Null(m.Mapas.PuertaHacia(20, 37, (75, 55), pisable: Pisable));
+    }
+
     /// <summary>Y dónde se puede pescar. El agua no viaja por la red —el servidor no manda el terreno— así que
     /// si esto no la encontrara, un Pescador no tendría forma de saber a dónde ir.</summary>
     [Fact]

@@ -118,9 +118,13 @@ public sealed class Navegante
     /// </summary>
     public ((byte X, byte Y) Puerta, int Saltos)? PuertaHacia(int mapaActual, int mapaDestino,
                                                              (byte X, byte Y)? desde = null,
-                                                             (byte X, byte Y)? meta = null)
+                                                             (byte X, byte Y)? meta = null,
+                                                             Func<int, bool>? pisable = null)
     {
         if (mapaActual == mapaDestino) return null;
+        // UN MAPA QUE NO DEJA ENTRAR NO ES DESTINO NI CAMINO. El que llama dice cuáles con `pisable`: para el bot, la zona NEWBIE a
+        // partir del nivel 16, que el servidor rebota a la baldosa de al lado sin cambiar de mapa.
+        if (pisable is not null && !pisable(mapaDestino)) return null;
 
         // SÓLO PUERTAS A LAS QUE SE LLEGA CAMINANDO, si se sabe desde dónde. Una salida suele ser una fila
         // entera de baldosas, y acá se tomaba la primera baldosa hacia cada mapa sin mirar si se alcanzaba: el
@@ -153,6 +157,7 @@ public sealed class Navegante
         foreach (var (destino, x, y) in Salidas(mapaActual))
         {
             if (alcanzables is not null && !alcanzables.Contains(Clave(x, y))) continue;
+            if (pisable is not null && !pisable(destino)) continue;
             if (!visto.Add(destino)) continue;
             if (destino == mapaDestino) return ((x, y), 1);
             cola.Enqueue((destino, (x, y), 1));
@@ -164,6 +169,7 @@ public sealed class Navegante
             if (saltos >= TopeDeMapas) continue;
             foreach (var (destino, _, _) in Salidas(mapa))
             {
+                if (pisable is not null && !pisable(destino)) continue;
                 if (!visto.Add(destino)) continue;
                 if (destino == mapaDestino) return (puerta, saltos + 1);
                 cola.Enqueue((destino, puerta, saltos + 1));
@@ -181,7 +187,8 @@ public sealed class Navegante
     /// dónde está el herrero de su ciudad porque lo vio una vez.</para>
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos)? DondeHay(int mapaActual, (byte X, byte Y) desde,
-                                                           Func<int, bool> sirve, Func<int, bool>? mapaSirve = null)
+                                                           Func<int, bool> sirve, Func<int, bool>? mapaSirve = null,
+                                                           Func<int, bool>? pisable = null)
     {
         // EL MAPA TAMBIÉN TIENE QUE SERVIR. No alcanza con que el NPC sea el que se busca: un mercader no le
         // vende a un ciudadano en un mapa cuyo `battleMode` no es 2 ni 3 (VB6 Protocol.bas:5205, portado igual
@@ -212,7 +219,7 @@ public sealed class Navegante
         // mapa 62 se la mandaba al sacerdote del 64, que se alcanza desde alguna muestra pero no desde (10,36), la
         // baldosa de llegada; entraba, no había camino, y lo volvía a intentar cada uno o dos minutos con el veneno
         // encima. Un mapa puede tener entradas a zonas que no se tocan, así que de cada uno se prueban hasta dos.
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde))
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
             if ((mapaSirve is null || mapaSirve(mapa)) && EnElMapa(mapa, entrada, sirve) is { } ahi)
                 return (mapa, ahi.X, ahi.Y, saltos);
         return null;
@@ -224,9 +231,9 @@ public sealed class Navegante
     /// irse a dormir. La entrada es la baldosa de llegada, así que ir hasta ella es cruzar la puerta.
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos)? MapaMasCercano(int mapaActual, (byte X, byte Y) desde,
-                                                                 Func<int, bool> mapaSirve)
+                                                                 Func<int, bool> mapaSirve, Func<int, bool>? pisable = null)
     {
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde))
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
             if (mapaSirve(mapa)) return (mapa, entrada.X, entrada.Y, saltos);
         return null;
     }
@@ -237,7 +244,8 @@ public sealed class Navegante
     /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan.
     /// </summary>
     private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada)> MapasPorSuEntrada(int mapaActual,
-                                                                                            (byte X, byte Y) desde)
+                                                                                            (byte X, byte Y) desde,
+                                                                                            Func<int, bool>? pisable = null)
     {
         var alcanzables = Alcanzables(mapaActual, desde);
         var zonas = new Dictionary<int, List<HashSet<int>>>();
@@ -245,6 +253,7 @@ public sealed class Navegante
         void Entrar(int mapa, byte x, byte y, int saltos)
         {
             if (!_datos.MapExits.TryGetValue((mapa, x, y), out var llegada) || llegada.DestMap == mapaActual) return;
+            if (pisable is not null && !pisable(llegada.DestMap)) return;
             (byte X, byte Y) entrada = ((byte)llegada.DestX, (byte)llegada.DestY);
             if (!zonas.TryGetValue(llegada.DestMap, out var deEse)) zonas[llegada.DestMap] = deEse = new();
             if (deEse.Count >= ZonasPorMapa || deEse.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) return;
@@ -310,7 +319,8 @@ public sealed class Navegante
     public (int Mapa, byte X, byte Y, int Saltos)? DondeSeTrabaja(int mapaActual, bool agua,
                                                                   Func<int, bool>? esRecurso = null,
                                                                   (byte X, byte Y)? desde = null,
-                                                                  Func<int, bool>? mapaSirve = null)
+                                                                  Func<int, bool>? mapaSirve = null,
+                                                                  Func<int, bool>? pisable = null)
     {
         // DESDE DÓNDE SE BUSCA: desde donde está parado y, en cada mapa al que se viaja, desde la baldosa por la que se
         // entra. Antes se buscaba desde el centro de cada mapa, (50,50), y en los mapas con minas el centro es pared:
@@ -321,7 +331,7 @@ public sealed class Navegante
         if ((mapaSirve is null || mapaSirve(mapaActual)) && DondeTrabajar(mapaActual, inicio, 90, agua, esRecurso) is { } aca)
             return (mapaActual, aca.Donde.X, aca.Donde.Y, 0);
 
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, inicio))
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, inicio, pisable))
             if ((mapaSirve is null || mapaSirve(mapa)) && DondeTrabajar(mapa, entrada, 90, agua, esRecurso) is { } ahi)
                 return (mapa, ahi.Donde.X, ahi.Donde.Y, saltos);
         return null;
