@@ -1620,8 +1620,17 @@ public sealed class Bot
         // de cien por cien se queda en su burbuja de veinte baldosas para siempre. Medido con el perfilador:
         // cuatro bots con `pasear` al 100% del tiempo y "sin presa a la vista" en TODAS las vueltas, en mapas
         // que sí tienen criaturas. Se camina hasta donde aparecen, esté en este mapa o en otro.
-        if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto))
+        // NO SE PASA DE LARGO UNA PRESA POR LLEGAR AL COTO. El viaje al coto cruza medio mapa y el bot lo caminaba entero mirando
+        // el piso: lo único que lo cortaba era la vida. Con las criaturas reapareciendo desparramadas —que es lo que hace el
+        // original— lo que hay en el camino vale tanto como lo que hay en el destino, y nadie pasa al lado de un bicho que salió a
+        // matar. Medido en `verdad2`: ocho bots caminando entre veinte y treinta y cuatro baldosas por minuto y setenta y dos
+        // criaturas entre todos en quince minutos, con dos bots que no mataron ninguna.
+        _cortoElViaje = false;
+        if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
+                                cortaSi: () => HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno)))
         {
+            // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
+            if (_cortoElViaje) { _cortoElViaje = false; return true; }
             SiEstaEncerrado(transporte, sentidos);
             return false;
         }
@@ -1639,6 +1648,38 @@ public sealed class Bot
     /// hay experiencia y ni una moneda. Arranca en cero a propósito: un bot que aparece en un pueblo no tiene
     /// por qué esperar los primeros minutos para salir de ahí.</summary>
     private long _ultimaPresaQuePaga;
+
+    /// <summary>
+    /// ¿HAY ALGO QUE CAZAR ACÁ MISMO, como para dejar un viaje por la mitad? Mira lo que tiene a la vista con el radio de su
+    /// temperamento —el paseante no frena por cualquier cosa—, pide vida y energía para pelear, y se sigue de largo si lo que hay
+    /// cerca es peligroso: frenar al lado de un Lobo para pegarle a un Murciélago es la forma más rápida de morirse.
+    /// </summary>
+    public static bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, GameData datos, int vidaMaxima, int nivel,
+                                            bool conPociones, bool curaVeneno, int radioSuyo)
+    {
+        var presa = sentidos.MasCercano(ficha => EsPresaPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno));
+        var peligro = sentidos.MasCercano(ficha => EsPeligrosoPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno));
+        // Lo que paga se persigue desde más lejos, igual que al elegir presa.
+        int alcance = presa is { } p && datos.Npc(p.Quien.FichaNpc) is { GiveGld: > 0 } ? RadioDeCaza : radioSuyo;
+        bool peligroALaVista = peligro is { } temible && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
+        return CortaElViajePorLaPresa(presa?.Pasos ?? -1, alcance, sentidos.Salud, TieneFuelleParaPelear(sentidos), peligroALaVista);
+    }
+
+    /// <summary>La misma pregunta con lo que ya sabe este bot, y avisando por <see cref="_cortoElViaje"/> que la parada fue por
+    /// esto y no por una traba.</summary>
+    private bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
+    {
+        _cortoElViaje = HayAlgoQueCazarCerca(sentidos, _entorno.Datos, vidaMaxima, nivel, conPociones, curaVeneno, RadioDeCazaSuyo);
+        return _cortoElViaje;
+    }
+
+    /// <summary>Cuándo vale más lo que hay a la vista que seguir hasta el destino: una presa al alcance, con vida y energía para
+    /// pelear y sin nada peligroso a la vista. <paramref name="pasosDeLaPresa"/> negativo = no hay ninguna.</summary>
+    public static bool CortaElViajePorLaPresa(int pasosDeLaPresa, int alcance, double salud, bool conFuelle,
+                                              bool peligroALaVista) =>
+        pasosDeLaPresa >= 0 && pasosDeLaPresa <= alcance && salud >= VuelveAPelear && conFuelle && !peligroALaVista;
+
+    private bool _cortoElViaje;
 
     /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
     private const int PacienciaSinPresaMs = 3 * 60_000;
@@ -2118,7 +2159,7 @@ public sealed class Bot
     private async Task<bool> IrHastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                           int mapaDestino, byte destinoX, byte destinoY,
                                           Task cerrada, CancellationToken ct, int tolerancia = 1,
-                                          bool deMuerto = false)
+                                          bool deMuerto = false, Func<bool>? cortaSi = null)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -2180,6 +2221,7 @@ public sealed class Bot
                         sentidos.CuantoTiene(EsPocionDeVida), HostilCerca(sentidos)))
                     como = Paso.Dado;
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
+                if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
                 if (_pasoTrabado) { trabas.Add(baldosa); break; }   // algo se paró en el camino: rodearlo
             }
         }
