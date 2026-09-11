@@ -11411,7 +11411,7 @@ public sealed partial class PacketDispatcher
                 case 2: // green potion — temporary strength boost (attr 1)
                 {
                     int attr = obj.SubType == 1 ? 2 : 1;
-                    long durationTicks = Math.Max(1, obj.DurationSeconds) * (1000L / GameLoop.TickMs);
+                    long durationTicks = Potions.VueltasDeEfecto(obj);
                     p.ApplyAttrBonus(attr, roll, _loop.Tick, durationTicks);
                     effect = $"+{roll} {(attr == 2 ? "agilidad" : "fuerza")} temporal";
                     // El VB6 manda SÓLO el atributo que tocó la poción (InvUsuario.bas:1576 agilidad / :1594

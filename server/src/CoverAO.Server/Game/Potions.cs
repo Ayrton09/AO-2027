@@ -1,3 +1,5 @@
+using CoverAO.Server.Data;
+
 namespace CoverAO.Server.Game;
 
 /// <summary>
@@ -12,6 +14,18 @@ public static class Potions
     /// otros cinco lugares lo reimplementaran con división entera: nadie busca una cuenta de porcentaje dentro
     /// del archivo de las pociones.</summary>
     private static long Porcentaje(long total, long porc) => Matematicas.Porcentaje(total, porc);
+
+    /// <summary>
+    /// CUANTAS VUELTAS DURA EL EFECTO de esa pocion. El <c>DuracionEfecto</c> del obj.dat ya viene en VUELTAS del loop de 40 ms
+    /// —el original le resta una por pasada (<c>General.bas:1156</c>, dentro de <c>DuracionPociones</c>, que <c>mMainLoop.bas:180</c>
+    /// llama en cada vuelta)— y la vuelta de este server mide lo mismo, asi que la conversion es uno a uno.
+    ///
+    /// <para>Acá se leia como SEGUNDOS y se multiplicaba por 25: la Amarilla y la Verde, que traen 50000 en la data, duraban
+    /// 13 h 53 min en vez de 33 min 20 s, o sea para siempre en cualquier partida. Es la mitad que quedo sin arreglar del mismo
+    /// error ya corregido para los hechizos, que usan una constante en vez de la data.</para>
+    /// </summary>
+    public static long VueltasDeEfecto(ObjInfo obj) =>
+        Math.Max(1, obj.DuracionEfectoEnVueltas);
 
     /// <summary>
     /// Mana restored by a blue potion (SubTipo 4): MinMAN += Porcentaje(MaxMAN,4) + ELV\2 + 40/ELV.

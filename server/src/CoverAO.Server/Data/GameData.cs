@@ -4,9 +4,10 @@ namespace CoverAO.Server.Data;
 
 /// <summary>Static definition of one item, loaded from the transcoded obj.json (Fase 0).
 /// SubType is the potion routing (SubTipo: 1=agility, 2=strength, 3=HP, 4=mana, 5=cast spell);
-/// Min/MaxModifier is the restore/boost range; DurationSeconds is the temporary-effect duration.</summary>
+/// Min/MaxModifier is the restore/boost range; DuracionEfectoEnVueltas es cuanto dura el efecto temporal EN VUELTAS del loop
+/// de 40 ms —no en segundos—, que es como lo cuenta el original: `General.bas:1156` le resta una vuelta por pasada.</summary>
 public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModifier, int Value, int Anim,
-    int SubType = 0, int MinModifier = 0, int DurationSeconds = 0,
+    int SubType = 0, int MinModifier = 0, int DuracionEfectoEnVueltas = 0,
     int IngotIron = 0, int IngotSilver = 0, int IngotGold = 0, int SkillBlacksmith = 0,
     int Wood = 0, int SkillCarpentry = 0,
     int SkinWolf = 0, int SkinBrownBear = 0, int SkinPolarBear = 0, int SkillTailoring = 0,
