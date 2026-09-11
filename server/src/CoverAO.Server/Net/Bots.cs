@@ -413,7 +413,12 @@ public sealed class Bot
 
             // SE VA A DORMIR. Se cierra con `Quit`, el mismo camino del jugador que se va: el servidor le
             // guarda el personaje y lo saca del mundo como corresponde.
-            if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo)
+            // PERO NO EN UN MAPA PK: ahí el `Quit` no saca al personaje, arranca una cuenta de cinco segundos
+            // (HandleQuit), y el bot cortaba a los 1,5 s sin tomar pociones con lo que tuviera encima. Medido: un
+            // Minero cortó su sesión en el mapa 196 a los veinte minutos y cinco segundos —el vencimiento exacto de la
+            // suya— después de doce pociones seguidas, y quedó guardado muerto. Se va a dormir cuando pise un mapa que
+            // no es pk.
+            if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo && MapaSeguro(sentidos.Mapa))
             {
                 transporte.Mandar(Paquete(ClientPacketId.Quit, _ => { }));
                 await Task.Delay(1_500, ct);
@@ -483,7 +488,7 @@ public sealed class Bot
             // que empezar igual era ir y volver. Medido con la sonda: un bot con la energía en cero eligiendo presa y
             // alejándose cada pocos segundos, sin hacer otra cosa. Con la regeneración cortada alcanza con que le quede
             // algo, porque esperar no la devuelve.
-            bool conFuelle = sentidos.Fuelle >= FuelleMinimo || ((sentidos.ConHambre || sentidos.ConSed) && sentidos.Fuelle > 0);
+            bool conFuelle = TieneFuelleParaPelear(sentidos);
             if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && conFuelle && LeDanGanas())
             {
                 // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
@@ -510,6 +515,11 @@ public sealed class Bot
             await QuedarseAsync(sentidos, larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
         }
     }
+
+    /// <summary>¿Tiene energía para pelear? La que pide `CazarAsync`; con la regeneración cortada (hambre o sed en
+    /// cero) alcanza con que le quede algo, porque esperar no la devuelve.</summary>
+    private static bool TieneFuelleParaPelear(SentidosDelBot s) =>
+        s.Fuelle >= FuelleMinimo || ((s.ConHambre || s.ConSed) && s.Fuelle > 0);
 
     /// <summary>¿Esa criatura lo puede matar de pocos golpes? Es la que hay que esquivar, se la haya buscado
     /// o no.</summary>
@@ -1267,6 +1277,11 @@ public sealed class Bot
     private async Task<bool> BuscarDondeCazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                    int vidaMaxima, int nivel, Task cerrada, CancellationToken ct)
     {
+        // SIN ENERGÍA PARA PELEAR TAMPOCO SE SALE A BUSCAR DÓNDE CAZAR: se llega y no se puede pegar. Medido: con
+        // GolpeTolerable en 3, las diez muertes de una corrida de quince minutos fueron de los dos bots con la energía en
+        // cero (ocho y dos), y la sonda ya los había visto así saliendo a buscar coto. Para ellos, con el valor 3 el lobo
+        // pasa a ser presa, y el lobo paga cincuenta: los cotos que se elegían eran de lobos.
+        if (!TieneFuelleParaPelear(sentidos)) return false;
         if (Environment.TickCount64 - _ultimaPresaQuePaga < PacienciaSinPresaMs) return false;
         _ultimaPresaQuePaga = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
 
