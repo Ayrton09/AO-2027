@@ -202,6 +202,58 @@ public class OficioDelBotTests
             $"un par de comidas del botín paga {porElPar} y el agua más barata cuesta {aguaEnCaja} en caja");
     }
 
+    /// <summary>
+    /// LO DE CASA SE VENDE SÓLO EN EL POZO: sin plata y sin nada que comer o tomar. Con plata se compra, y con qué comer y
+    /// tomar se sigue cazando; en esos casos lo que trajo de casa —su Runa, su equipo de repuesto— no se toca.
+    /// </summary>
+    [Theory]
+    [InlineData(0, true, false, true)]
+    [InlineData(1, false, true, true)]
+    [InlineData(0, true, true, true)]
+    [InlineData(100, true, true, false)]
+    [InlineData(0, false, false, false)]
+    public void Lo_de_casa_se_vende_solo_en_el_pozo(int oro, bool sinNadaQueComer, bool sinNadaQueTomar, bool vende)
+    {
+        Assert.Equal(vende, Bot.EnElPozo(oro, sinNadaQueComer, sinNadaQueTomar));
+    }
+
+    /// <summary>
+    /// Y DEL POZO SE SALE CON LA RUNA DEL KIT. Un bot sin plata, sin nada que comer o tomar y sin energía no puede cazar
+    /// para salir, y lo único con precio que le queda es la Runa: dos bots quedaron así corrida tras corrida. La premisa
+    /// es la cadena entera contra la data: la Runa se vende, lo que pagan por ella alcanza para la comida y la bebida más
+    /// baratas de la cuna en caja, y desde la cuna se llega a un mercader que compra de todo en un mapa que atiende.
+    /// </summary>
+    [Fact]
+    public void Sin_plata_ni_comida_la_runa_del_kit_paga_la_comida_y_la_bebida()
+    {
+        if (Mundo() is not { } m) return;
+        if (!m.Datos.MapSpawns.TryGetValue(m.Cuna.Map, out var spawns)) return;
+        const int ObjTypeRuna = 38;
+
+        var runa = Enumerable.Range(1, 18).SelectMany(clase => m.Datos.NewbieKit(clase))
+            .Select(it => m.Datos.Obj(it.ObjIndex)).FirstOrDefault(o => o?.ObjType == ObjTypeRuna);
+        Assert.True(runa is not null, "el kit de novato no trae Runa");
+        long porLaRuna = Comercio.PrecioDeVenta(runa, 1);
+
+        long EnCaja(Func<ObjInfo, bool> es) => spawns
+            .SelectMany(sp => m.Datos.Npc(sp.NpcIndex)?.StockItems
+                              ?? (IReadOnlyList<(int ObjIndex, int Amount)>)Array.Empty<(int ObjIndex, int Amount)>())
+            .Select(it => m.Datos.Obj(it.ObjIndex))
+            .Where(o => o is not null && es(o))
+            .Select(o => Comercio.PrecioDeCompra(o!.Value, 0, 1))
+            .DefaultIfEmpty(long.MaxValue)
+            .Min();
+        long comida = EnCaja(o => o.IsFood), bebida = EnCaja(o => o.IsDrink);
+        Assert.True(porLaRuna >= comida + bebida,
+            $"la Runa paga {porLaRuna} y la comida y la bebida más baratas de la cuna cuestan {comida} y {bebida} en caja");
+
+        var desde = ((byte)m.Cuna.X, (byte)m.Cuna.Y);
+        bool CompraDeTodo(int ficha) => m.Datos.Npc(ficha) is { TipoItems: TipoItemsCualquiera, StockItems.Count: > 0 };
+        bool Atiende(int mapa) => m.Datos.MapBattleMode(mapa) is 2 or 3;
+        Assert.True(m.Mapas.DondeHay(m.Cuna.Map, desde, CompraDeTodo, Atiende) is not null,
+            "desde la cuna no se llega a ningún mercader que compre de todo en un mapa que atiende: la Runa no tiene a quién venderse");
+    }
+
     /// <summary>VB6 <c>otCualquiera</c> (Declares.bas:498): el mercader que compra de todo.</summary>
     private const int TipoItemsCualquiera = 1000;
 

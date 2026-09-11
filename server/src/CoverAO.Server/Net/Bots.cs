@@ -1001,7 +1001,13 @@ public sealed class Bot
         // al entrar, así que el pescado de la sesión anterior quedaba "de casa" y no se vendía nunca: medido, una
         // Pescadora que entró con 135 pargos, llegó a 158, y en toda la corrida no salió una sola vez a vender. La
         // comida que necesita la sigue guardando la reserva.
-        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio) || obj == HerramientaDeSuOficio) return false;
+        // Y EN EL POZO, LO DE CASA TAMBIÉN (`EnElPozo`). Sin plata y sin nada que comer o tomar la energía no vuelve y no
+        // se puede cazar para salir: dos bots quedaron así corrida tras corrida, con el hambre y la sed en cero y en la
+        // mochila una Runa del kit de valor 100, que el Vendedor General del mapa 20 —a un salto de la cuna— paga 33,
+        // cuando la comida y la bebida cuestan del orden de una moneda cada diez puntos. Lo de novato, las pociones y lo
+        // que no vale nada siguen afuera (abajo), y lo puesto ya lo descarta la mochila.
+        bool enElPozo = EnElPozo(sentidos.Oro, SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
+        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo) || obj == HerramientaDeSuOficio) return false;
         var o = _entorno.Datos.Obj(obj);
         // LA COMIDA Y LA BEBIDA DEL BOTÍN SÍ SE VENDEN, y era lo único que tenían. En el Dungeon Newbie —donde
         // nace TODO personaje— las criaturas que un recién nacido puede matar dan CERO oro: murciélagos,
@@ -1070,6 +1076,11 @@ public sealed class Bot
     private int UnaSiEsPocion(short obj) => EsPocionDeVida(obj) ? 1 : 0;
     private bool SinNadaQueTomar(SentidosDelBot s) => s.ConSed && s.Suma(PuntosDeBebida) == 0;
     private bool SinNadaQueComer(SentidosDelBot s) => s.ConHambre && s.Suma(PuntosDeComida) == 0;
+
+    /// <summary>¿Está en el pozo? Sin plata para un agua y sin nada que comer o tomar: con el hambre o la sed en cero la
+    /// energía no vuelve, sin energía no se caza, y sin cazar no hay con qué comprar.</summary>
+    public static bool EnElPozo(int oro, bool sinNadaQueComer, bool sinNadaQueTomar) =>
+        oro < MonedasDeApuro && (sinNadaQueComer || sinNadaQueTomar);
 
     /// <summary>¿Se puede vender una unidad de esta comida o bebida? Si sobra por encima de la reserva, sí; si no,
     /// sólo cuando hace falta cambiarla por lo otro.</summary>
