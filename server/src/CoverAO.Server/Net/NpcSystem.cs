@@ -20,8 +20,8 @@ public sealed class NpcSystem
     private const int RespawnTicks = 125;     // ~5 seconds
     private const int AutoReviveTicks = 63;   // ~2500ms (VB6 IntervaloRevive) — delay del revive en arena
     // VB6 AI_NPC.bas:50-51: la caja de vision de IrUsuarioCercano es RECTANGULAR, no un radio.
-    private const int RangoVisionX = 8;
-    private const int RangoVisionY = 6;
+    public const int RangoVisionX = 8;
+    public const int RangoVisionY = 6;
 
     private readonly World _world;
     private readonly GameData _data;

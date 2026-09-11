@@ -563,7 +563,10 @@ public sealed class Bot
             // alejándose cada pocos segundos, sin hacer otra cosa. Con la regeneración cortada alcanza con que le quede
             // algo, porque esperar no la devuelve.
             bool conFuelle = TieneFuelleParaPelear(sentidos);
-            if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && conFuelle && LeDanGanas())
+            // NI A LA VISTA DE ALGO PELIGROSO, que viene. Medido en `rojo1`: un Minero de nivel 1 recién escapado de un Lobo se puso a
+            // pegarle a un Murciélago con el Lobo a dos y tres baldosas, dos veces seguidas, y el Lobo lo mató las dos.
+            bool peligroALaVista = peligro is { } temible && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
+            if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && conFuelle && !peligroALaVista && LeDanGanas())
             {
                 // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
                 // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
@@ -589,6 +592,14 @@ public sealed class Bot
             await QuedarseAsync(sentidos, larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
         }
     }
+
+    /// <summary>
+    /// ¿LO VE ESA CRIATURA? Las que persiguen miran un rectángulo de <see cref="NpcSystem.RangoVisionX"/> baldosas a los costados y
+    /// <see cref="NpcSystem.RangoVisionY"/> arriba y abajo (VB6 RANGO_VISION_X/Y, AI_NPC.bas:50) y caminan hacia el primero que
+    /// encuentran ahí: empezar una pelea a la vista de algo peligroso es pelear con los dos.
+    /// </summary>
+    public static bool AlAlcanceDeSuVista((byte X, byte Y) yo, (byte X, byte Y) ella) =>
+        Math.Abs(yo.X - ella.X) <= NpcSystem.RangoVisionX && Math.Abs(yo.Y - ella.Y) <= NpcSystem.RangoVisionY;
 
     /// <summary>¿Tiene energía para pelear? La que pide `CazarAsync`; con la regeneración cortada (hambre o sed en
     /// cero) alcanza con que le quede algo, porque esperar no la devuelve.</summary>

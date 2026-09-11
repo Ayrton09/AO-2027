@@ -69,6 +69,17 @@ public class ValentiaDelBotTests
         Assert.Equal(Huida.Alejarse, Bot.ComoHuye(conPociones: false, salud: 0.90, sacerdoteAMano: true, mapaSinPk: true, runaLista: true));
     }
 
+    /// <summary>NO SE EMPIEZA UNA PELEA A LA VISTA DE ALGO PELIGROSO: las criaturas que persiguen ven 8 baldosas a los costados y 6
+    /// arriba y abajo, contadas por separado, como el original.</summary>
+    [Fact]
+    public void Una_pelea_no_se_empieza_a_la_vista_de_algo_peligroso()
+    {
+        Assert.True(Bot.AlAlcanceDeSuVista((50, 50), (58, 56)));
+        Assert.True(Bot.AlAlcanceDeSuVista((50, 50), (42, 44)));
+        Assert.False(Bot.AlAlcanceDeSuVista((50, 50), (59, 50)));
+        Assert.False(Bot.AlAlcanceDeSuVista((50, 50), (50, 57)));
+    }
+
     /// <summary>SIN POCIONES NI CURA, LO QUE ENVENENA NO ES PRESA: el Escorpión chico (golpe 3, veneno) sí lo es con pociones o con
     /// la poción que cura el veneno.</summary>
     [Fact]
