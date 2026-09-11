@@ -343,8 +343,11 @@ public sealed class SentidosDelBot
     }
 
     /// <summary>La criatura más cercana que cumpla <paramref name="sirve"/>, o null. Devuelve también a qué
-    /// distancia está, contada en pasos (Manhattan): es la que corresponde, porque el bot camina en cruz.</summary>
-    public (Visible Quien, int Pasos)? MasCercano(Func<short, bool> sirve)
+    /// distancia está, contada en pasos (Manhattan): es la que corresponde, porque el bot camina en cruz.
+    ///
+    /// <para><paramref name="salvo"/> deja afuera a UNA criatura por su índice: la que el bot ya probó y no alcanzó. Sin eso, la
+    /// vuelta siguiente vuelve a elegir la misma —es la más cercana— y choca contra la misma pared.</para></summary>
+    public (Visible Quien, int Pasos)? MasCercano(Func<short, bool> sirve, short salvo = 0)
     {
         lock (_candado)
         {
@@ -352,7 +355,7 @@ public sealed class SentidosDelBot
             (Visible, int)? mejor = null;
             foreach (var v in _visibles.Values)
             {
-                if (!v.EsNpc || v.CharIndex == _miCharIndex || !sirve(v.FichaNpc)) continue;
+                if (!v.EsNpc || v.CharIndex == _miCharIndex || v.CharIndex == salvo || !sirve(v.FichaNpc)) continue;
                 int pasos = Math.Abs(v.X - _x) + Math.Abs(v.Y - _y);
                 if (mejor is null || pasos < mejor.Value.Item2) mejor = (v, pasos);
             }

@@ -587,13 +587,15 @@ public sealed class Bot
             // —uno pasó de 6 a 7— y CERO monedas ganadas entre todos, con la herramienta del oficio a
             // doscientas. Quien necesita plata sale a cazar lo que la da. Si no hay nada que pague al alcance,
             // vale lo más cercano, como siempre.
-            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha));
+            // Y LA QUE NO SE ALCANZA NO SE ELIGE DE NUEVO POR UN RATO (ver `NoSeLlegaA`).
+            short salvo = Environment.TickCount64 < _presaSinCaminoHasta ? _presaSinCamino : (short)0;
+            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha), salvo);
             // LO QUE PAGA SE VA A BUSCAR MÁS LEJOS. El radio del temperamento decide si vale la pena moverse por
             // cualquier cosa; por lo que da plata, cualquiera camina unas baldosas más. Medido con la sonda: una
             // Clériga tranquila —radio 6— con un escorpión a la vista a nueve pasos, pegándole al murciélago de al
             // lado, que no suelta nada.
             if (presa is not { } rica || rica.Pasos > RadioDeCaza)
-                presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno));
+                presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno), salvo);
             int alcance = presa is { } elegida && PagaOro(elegida.Quien.FichaNpc) ? RadioDeCaza : RadioDeCazaSuyo;
             // SIN ENERGÍA PARA PELEAR NO SE EMPIEZA UNA PELEA. `CazarAsync` se aleja apenas arranca si no la tiene, así
             // que empezar igual era ir y volver. Medido con la sonda: un bot con la energía en cero eligiendo presa y
@@ -1952,6 +1954,7 @@ public sealed class Bot
                                         Task cerrada, CancellationToken ct)
     {
         int pasosGastados = 0;
+        bool rodeando = false;
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
@@ -1994,11 +1997,50 @@ public sealed class Bot
             }
 
             if (pasos > RadioDeCaza || ++pasosGastados > PacienciaPersiguiendo) return true;   // se aleja o no se llega
-            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) is var r && r != Paso.Dado)
+
+            if (PasoDeCaza(_entorno.Mapas, sentidos.Mapa, (x, y), (quien.X, quien.Y), _pasoTrabado, rodeando,
+                           sentidos.BaldosasOcupadas()) is not { } acercarse)
+            { NoSeLlegaA(presa); return true; }
+            rodeando = acercarse.Rodeando;
+            if (await UnPasoHaciaAsync(transporte, sentidos, acercarse.Paso.X - x, acercarse.Paso.Y - y, ct) is var r && r != Paso.Dado)
                 return r != Paso.SinConexion;
         }
         return !cerrada.IsCompleted;
     }
+
+    /// <summary>
+    /// CÓMO SE ACERCA A LA PRESA: la baldosa del próximo paso, y si de acá en más va rodeando. Mientras el paso codicioso avance se
+    /// usa ése, que es como camina cualquiera; apenas choca contra algo se pasa al camino del navegante y ya no se vuelve, porque lo
+    /// que frenó un paso es una pared y va a seguir estando. <c>null</c> = ni rodeando hay camino.
+    ///
+    /// <para>El paso codicioso solo prueba el otro eje, así que con algo grande en el medio el bot rebota contra la misma pared hasta
+    /// gastar la paciencia, y la vuelta siguiente elige LA MISMA presa y empieza de nuevo. Medido en `verdad1`: un bot quince minutos
+    /// entre (49,67) y (53,67) de la cuna, eligiendo un Murciélago a once baldosas en línea recta —dieciséis por camino, con el
+    /// edificio de la tienda de comidas en el medio— y terminó la corrida en nivel 1 con seis criaturas.</para>
+    /// </summary>
+    public static ((byte X, byte Y) Paso, bool Rodeando)? PasoDeCaza(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                     (byte X, byte Y) presa, bool choco, bool rodeando,
+                                                                     IReadOnlySet<(byte X, byte Y)>? ocupadas = null)
+    {
+        if (!choco && !rodeando)
+        {
+            var (dx, dy) = SentidosDelBot.Paso(SentidosDelBot.RumboHacia(presa.X - desde.X, presa.Y - desde.Y));
+            return (((byte)(desde.X + dx), (byte)(desde.Y + dy)), false);
+        }
+        return mapas.HayComoLlegar(mapa, desde, presa, 1, ocupadas) is { Count: > 0 } camino ? (camino[0], true) : null;
+    }
+
+    /// <summary>La presa a la que no hay camino se descarta un rato: si no, es la más cercana y se vuelve a elegir en la vuelta
+    /// siguiente. Es una sola porque es una sola la que se persigue.</summary>
+    private void NoSeLlegaA(short presa)
+    {
+        _presaSinCamino = presa;
+        _presaSinCaminoHasta = Environment.TickCount64 + SinCaminoMs;
+    }
+
+    private short _presaSinCamino;
+    private long _presaSinCaminoHasta;
+    private const int SinCaminoMs = 60_000;
 
     /// <summary>
     /// Tira el hechizo de daño más fuerte que pueda pagar contra ese objetivo. false = no sabe magia, no le
