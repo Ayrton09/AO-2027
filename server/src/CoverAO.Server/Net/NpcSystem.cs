@@ -506,6 +506,12 @@ public sealed class NpcSystem
             if (!p.IsAlive || p.Invisible || p.Oculto) continue;   // VB6 filtra Muerto/Invisible/Oculto/protegidos
             if (!Perseguible(p)) continue;             // …y AdminPerseguible (AI_NPC.bas:344): a un GM tampoco lo persigue
             if (EnGraciaDeEntrada(p)) continue;        // …y el `UserProtected` de la misma línea (:343)
+            // MIENTRAS SE ACERCA, TIRA MAGIA (`If Npclist(npcindex).flags.LanzaSpells <> 0 Then Call NpcLanzaUnSpell`,
+            // AI_NPC.bas:346, en esta misma línea del original). Acá el bucle general sólo caminaba, así que una criatura maga
+            // que todavía no te había marcado te casteaba recién cuando quedaba pegada: el único casteo que le quedaba era el
+            // de la fase de ataque, que barre las cuatro baldosas de al lado. El original te alcanza desde toda su ventana de
+            // visión —ocho en X, seis en Y— y encima sigue caminando hacia vos. La rama del usuario apropiado ya lo hacía.
+            if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, p);
             byte h = FindDirection(npc, p.Pos);        // decide el paso — y esquiva; ver FindDirection
             if (h != 0)
             {
