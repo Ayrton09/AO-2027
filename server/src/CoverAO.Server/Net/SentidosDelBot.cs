@@ -204,6 +204,23 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>¿Lleva PUESTO algo que cumpla la condición?</summary>
+    public bool LlevaPuesto(Func<short, bool> sirve)
+    {
+        lock (_candado)
+        {
+            for (byte s = 1; s < _inventario.Length; s++)
+                if (_inventario[s].Obj > 0 && _inventario[s].Puesto && sirve(_inventario[s].Obj)) return true;
+            return false;
+        }
+    }
+
+    /// <summary>¿Lo de esa ranura está puesto?</summary>
+    public bool EstaPuesto(byte ranura)
+    {
+        lock (_candado) return ranura > 0 && ranura < _inventario.Length && _inventario[ranura].Puesto;
+    }
+
     /// <summary>Las ranuras con algo adentro.</summary>
     public IReadOnlyList<byte> RanurasOcupadas()
     {

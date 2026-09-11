@@ -372,6 +372,20 @@ public class SentidosDelBotTests
     }
 
     [Fact]
+    public void Sabe_que_lleva_puesto()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeInventorySlot(3, 574, 1, true, 0f, 1));    // el arma, puesta
+        s.Recibir(ServerMessages.ChangeInventorySlot(4, 464, 1, false, 0f, 1));   // la ropa, en la mochila
+
+        Assert.True(s.LlevaPuesto(obj => obj == 574));
+        Assert.False(s.LlevaPuesto(obj => obj == 464));
+        Assert.True(s.EstaPuesto(3));
+        Assert.False(s.EstaPuesto(4));
+        Assert.False(s.EstaPuesto(0));
+    }
+
+    [Fact]
     public void Cuenta_lo_que_tiene_sumando_ranuras()
     {
         var s = new SentidosDelBot();

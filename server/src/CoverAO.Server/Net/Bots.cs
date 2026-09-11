@@ -454,6 +454,7 @@ public sealed class Bot
                 continue;
             }
 
+            if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1206,7 +1207,12 @@ public sealed class Bot
             // llega a ningún templo dio DOSCIENTAS SESENTA MIL vueltas en un minuto, un hilo entero quemado.
             await Task.Delay(RebanadaDePausaMs, ct);
             SiNoSePuedeLlegar(transporte);
-            return !sentidos.Vivo;
+            // Y EL CICLO SIGUE: `false` quiere decir "se cayó la conexión", y el que llama corta la sesión entera. Acá
+            // se devolvía `!sentidos.Vivo`, así que el bot que revivía justo después de un viaje fallido al templo —por
+            // la vuelta al hogar, o porque el sacerdote lo alcanzó igual— terminaba su propia sesión. Medido: una
+            // Guerrera que moría seguido cerró la sesión dos veces en quince minutos sin ningún aviso del servidor
+            // ("receive loop ended") y volvió a entrar con otro índice de personaje.
+            return !cerrada.IsCompleted;
         }
 
         await Task.Delay(RebanadaDePausaMs, ct);   // idem: PasearAsync también puede volver sin esperar
@@ -1386,6 +1392,59 @@ public sealed class Bot
         }
         return false;
     }
+
+    /// <summary>
+    /// PONERSE EL EQUIPO: el arma, la armadura, el escudo y el casco, lo mejor que tenga de cada cosa. Devuelve si
+    /// mandó a equipar algo.
+    ///
+    /// <para>El servidor le saca TODO lo puesto al que muere (VB6 UserDie, `UnequipAll`), y acá sólo se equipaba la
+    /// herramienta del oficio: después de la primera muerte el bot peleaba a mano limpia y sin ropa para siempre.
+    /// Medido en los `.chr`: una Guerrera que murió ocho veces en quince minutos tenía el martillo y la ropa en la
+    /// mochila sin poner, igual que un Minero que murió tres; la Pescadora que no había muerto los tenía puestos. Las
+    /// armas arrojadizas quedan afuera, porque cambian la forma de pelear.</para>
+    /// </summary>
+    private bool Equiparse(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (Environment.TickCount64 < _proximoEquipo) return false;
+        // SI EL SERVIDOR NO LO DEJÓ PONER (la clase, el nivel), no se insiste con eso.
+        if (_equipoPedido is { } pedido)
+        {
+            if (!sentidos.EstaPuesto(pedido.Ranura) && sentidos.QueHayEn(pedido.Ranura) == pedido.Obj) _noSeLoPone.Add(pedido.Obj);
+            _equipoPedido = null;
+        }
+
+        foreach (var esDeEso in QueSePone)
+        {
+            if (sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && esDeEso(puesto))) continue;
+            byte mejor = 0;
+            int valorMejor = -1;
+            foreach (byte ranura in sentidos.RanurasOcupadas())
+            {
+                short obj = sentidos.QueHayEn(ranura);
+                if (sentidos.EstaPuesto(ranura) || _noSeLoPone.Contains(obj)) continue;
+                if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)
+                    continue;
+                int valor = o.IsWeapon ? o.MaxHit : o.MaxDef;
+                if (valor > valorMejor) { mejor = ranura; valorMejor = valor; }
+            }
+            if (mejor == 0) continue;
+
+            _equipoPedido = (mejor, sentidos.QueHayEn(mejor));
+            _proximoEquipo = Environment.TickCount64 + EsperaEquipoMs;
+            return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(mejor)));
+        }
+        return false;
+    }
+
+    private static readonly Func<ObjInfo, bool>[] QueSePone =
+    {
+        o => o.IsWeapon && o.Proyectil == 0, o => o.IsArmor, o => o.IsShield, o => o.IsHelmet,
+    };
+
+    private const int EsperaEquipoMs = 1_500;
+    private long _proximoEquipo;
+    private (byte Ranura, short Obj)? _equipoPedido;
+    private readonly HashSet<short> _noSeLoPone = new();
 
     /// <summary>
     /// CURARSE EL VENENO. Devuelve si se ocupó de esto.
