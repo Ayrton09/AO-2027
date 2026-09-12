@@ -149,4 +149,20 @@ public class MagiaDelBotTests
         Assert.False(Bot.ValeLaPenaElPergamino(hechizo, new (byte Ranura, short Hechizo)[] { (1, 77) }),
             "compró un pergamino de un hechizo que ya sabía");
     }
+
+    /// <summary>
+    /// EL CASTER VA PRIMERO POR EL PERGAMINO, pero sólo si hay dónde comprarlo. Medido en `seguir4`: Fabia, maga con
+    /// quince mil monedas, viajaba al Herrero Rinkel —que no vende pergaminos— porque estaba más cerca, y ningún
+    /// caster de ninguna corrida pasó del hechizo con el que nace.
+    /// </summary>
+    [Theory]
+    // ¿va por hechizo? | ¿hay vendedor al alcance? | ¿el viaje es sólo por el pergamino?
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]    // sin vendedor cerca se afloja: comprar comida importa más
+    [InlineData(false, true, false)]    // no castea, o no le alcanza la plata
+    [InlineData(false, false, false)]
+    public void El_caster_va_primero_por_el_pergamino_si_hay_donde(bool vaPorHechizo, bool hayUno, bool soloElPergamino)
+    {
+        Assert.Equal(soloElPergamino, Bot.PrimeroElPergamino(vaPorHechizo, hayUno));
+    }
 }

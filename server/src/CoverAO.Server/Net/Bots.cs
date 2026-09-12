@@ -943,13 +943,28 @@ public sealed class Bot
         // Pescadora de nivel 11 con 4755 monedas seguía con el Martillo de Piedra del kit (golpe 5) mientras el
         // Herrero General de su mapa vendía una Espada Larga (golpe 8) a 350.
         bool soloGustos = SoloLeFaltanGustos(faltaComida, faltaBebida, faltanPociones, faltaHerramienta);
+        // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no es 2
+        // ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos.
+        bool MapaAtiende(int mapa) => _entorno.Datos.MapBattleMode(mapa) is 2 or 3;
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaElEquipo(sentidos);
+
+        // EL QUE CASTEA VA PRIMERO POR EL PERGAMINO. `Sirve` aceptaba al mercader que atendiera CUALQUIERA de los dos
+        // gustos, y gana siempre el más cercano —el herrero—, así que a los siete que venden pergaminos no se llegaba
+        // nunca: ningún caster de ninguna corrida pasó del hechizo con el que nace. Para un mago el hechizo ES su arma.
+        // Medido en `seguir4`: Fabia, maga con quince mil monedas y `hechizo=True`, viajando al Herrero Rinkel.
+        bool VendePergamino(int ficha) =>
+            _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
+            && suStock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo));
+        bool hayUnoAlAlcance = vaPorHechizo
+            && _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendePergamino, MapaAtiende) is not null;
+        bool soloElPergamino = PrimeroElPergamino(vaPorHechizo, hayUnoAlAlcance);
 
         bool Sirve(int ficha)
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
+            if (soloElPergamino) return VendePergamino(ficha);
             if (soloGustos)
                 return (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
@@ -972,8 +987,6 @@ public sealed class Bot
         // filtro el viaje terminaba siempre en el mapa vecino —que tiene los tres vendedores de herramientas y
         // battleMode 1— donde nadie lo atendía. De los 863 mapas del mundo, 55 tienen battleMode 2 o 3 y 23 de
         // ésos tienen mercader: destinos sobran.
-        bool MapaAtiende(int mapa) => _entorno.Datos.MapBattleMode(mapa) is 2 or 3;
-
         var tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         // NO HAY NINGUNO A LA VISTA: se viaja. Se intenta DOS veces porque el primer destino se elige sin
         // conocer el mapa de llegada —desde otro mapa no se puede saber por dónde se va a entrar— y muchos
@@ -2577,6 +2590,13 @@ public sealed class Bot
     private readonly HashSet<short> _noLoAprende = new();
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar pergaminos: el más barato de la data vale 200.</summary>
+    /// <summary>
+    /// ¿EL VIAJE VA SÓLO POR EL PERGAMINO? Cuando el bot castea Y hay un vendedor al alcance que tenga uno que le
+    /// sirva y pueda pagar. Sin la segunda mitad, un caster lejos de cualquier vendedor de pergaminos dejaría de
+    /// comprar comida, bebida y equipo — que es peor que no aprender un hechizo.
+    /// </summary>
+    public static bool PrimeroElPergamino(bool vaPorHechizo, bool hayUnoAlAlcance) => vaPorHechizo && hayUnoAlAlcance;
+
     private const int OroParaMirarHechizos = 250;
 
     private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
