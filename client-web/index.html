@@ -4526,6 +4526,8 @@
     fetch('./assets/auras.json').then((r) => (r.ok ? r.json() : {})).then((a) => { auraDefs = (a && a.auras) || {}; }).catch(() => {});
     // `emisores` se declara arriba, con `chars`/`ground`/`dying`: es estado por mapa y `loadMap` lo vacía.
     let partAcum = 0;               // contador del paso (el `frame_counter` del original)
+    /** Cuanto aporta CADA particula al acumulado aditivo. Ver el comentario en `dibujarParticulas`. */
+    const ALFA_DE_PARTICULA = 0.65;
     // dt real entre frames de partículas. Se mide acá y no con el dt del limitador de FPS porque `__draw()`
     // fuerza frames fuera del loop (lo usan las mediciones) y ahí el dt del loop no avanza.
     let partT = 0, partCv = null, partCx = null, avisoParticulas = false;
@@ -4648,7 +4650,14 @@
           if (p.vida <= 0 || dibujadas >= MAX_PARTICULAS) continue;
           const t = grhTenido(p.grh, color);
           if (!t) continue;
+          // CADA PARTICULA SE APOYA A MEDIA FUERZA, Y ESO ES LO QUE LE DEVUELVE EL COLOR AL FUEGO. Con blend
+          // aditivo y alfa pleno, las seis de la fogata se suman unas sobre otras y el centro satura a BLANCO:
+          // se veia un punto blanco en vez de una llama (reportado por el autor, 2026-09-12). El sprite 20022
+          // es un halo en escala de grises pensado para sumarse, asi que el aditivo no se puede cambiar —con
+          // mezcla normal su fondo negro tapa la escena, probado— pero SI cuanto aporta cada una.
+          partCx.globalAlpha = ALFA_DE_PARTICULA;
           partCx.drawImage(t.cv, bx + p.x - t.w / 2, by + p.y - t.h / 2, t.w, t.h);
+          partCx.globalAlpha = 1;
           dibujadas++;
         }
       }
