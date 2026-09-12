@@ -46,6 +46,48 @@ public class HuidaQueNoSirveTests
         Assert.Equal(dejaDeCorrer, Bot.NoSeLoSacaDeEncima(huidas));
     }
 
+    /// <summary>
+    /// EL RESPIRO NO BORRA LA SERIE. Es lo que midió `verdad6` con la regla ya puesta: 53 huidas, CERO peleas. Huir despega a la
+    /// criatura —queda a cuatro o cinco baldosas—, así que entre alcance y alcance el bot sale del peligro; si ese respiro
+    /// reinicia el contador, la serie no pasa nunca de uno y la regla no entra jamás.
+    /// </summary>
+    [Fact]
+    public void El_respiro_entre_un_alcance_y_el_siguiente_no_corta_la_serie()
+    {
+        var contadores = new Bot.ContadoresDeHuida();
+        contadores.Huyo(501, 1_000, 60_000);
+        contadores.SalioDelPeligro();                 // el Lobo quedó a cuatro baldosas: el peligro se terminó
+        contadores.Huyo(501, 20_000, 60_000);
+        contadores.SalioDelPeligro();
+        contadores.Huyo(501, 40_000, 60_000);
+        Assert.Equal(3, contadores.DeLaMismaCriatura);
+        Assert.True(Bot.NoSeLoSacaDeEncima(contadores.DeLaMismaCriatura));
+    }
+
+    /// <summary>Y lo que el respiro SÍ tiene que borrar: los dos contadores que son de UNA huida.</summary>
+    [Fact]
+    public void El_respiro_borra_los_contadores_del_rincon()
+    {
+        var contadores = new Bot.ContadoresDeHuida { SinMoverse = 2, QueNoLoSacaron = 2 };
+        contadores.SalioDelPeligro();
+        Assert.Equal(0, contadores.SinMoverse);
+        Assert.Equal(0, contadores.QueNoLoSacaron);
+    }
+
+    /// <summary>La serie la cortan las dos cosas que tienen que cortarla: otra criatura, o que haya pasado la ventana.</summary>
+    [Fact]
+    public void La_serie_se_corta_con_otra_criatura_y_con_el_reloj()
+    {
+        var contadores = new Bot.ContadoresDeHuida();
+        contadores.Huyo(501, 1_000, 60_000);
+        contadores.Huyo(501, 2_000, 60_000);
+        contadores.Huyo(502, 3_000, 60_000);          // otro Lobo: es otro susto, empieza de nuevo
+        Assert.Equal(1, contadores.DeLaMismaCriatura);
+        contadores.Huyo(502, 4_000, 60_000);
+        contadores.Huyo(502, 200_000, 60_000);        // dos minutos después: ya no es la misma persecución
+        Assert.Equal(1, contadores.DeLaMismaCriatura);
+    }
+
     /// <summary>Y LA REGLA VIEJA SIGUE VALIENDO tal cual para el que sólo mira el rincón.</summary>
     [Fact]
     public void La_regla_del_rincon_no_cambia()

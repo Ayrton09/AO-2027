@@ -541,7 +541,7 @@ public sealed class Bot
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
                 // baldosas, y se tomó 159 pociones ahí. A lo que tiene pegado se le devuelve el golpe: mirar y pegar, como en
                 // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
-                if ((EstaAcorralado(_huidasSinMoverse, _huidasQueNoLoSacaron) || NoSeLoSacaDeEncima(_huidasDeEsaCriatura))
+                if ((EstaAcorralado(_huidas.SinMoverse, _huidas.QueNoLoSacaron) || NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                     && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } pegado)
                 {
@@ -552,29 +552,24 @@ public sealed class Bot
                     await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                     continue;
                 }
-                // LA SERIE: cuántas veces seguidas huyó de ESTA criatura. Se reinicia al cambiar de amenaza o al pasar la ventana,
-                // así que dos sustos distintos no se suman.
-                bool mismaAmenaza = amenaza.Quien.CharIndex == _deQuienHuye && Environment.TickCount64 < _ventanaDeHuidas;
-                _huidasDeEsaCriatura = mismaAmenaza ? _huidasDeEsaCriatura + 1 : 1;
-                _deQuienHuye = amenaza.Quien.CharIndex;
-                _ventanaDeHuidas = Environment.TickCount64 + VentanaDeHuidasMs;
+                // LA SERIE: cuántas veces seguidas huyó de ESTA criatura. La cortan el cambio de amenaza y el reloj, y NADA más:
+                // el respiro que deja huir es parte de la persecución.
+                _huidas.Huyo(amenaza.Quien.CharIndex, Environment.TickCount64, VentanaDeHuidasMs);
 
                 var antesDeHuir = sentidos.Posicion;
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
-                _huidasSinMoverse = sentidos.Posicion == antesDeHuir ? _huidasSinMoverse + 1 : 0;
+                _huidas.SinMoverse = sentidos.Posicion == antesDeHuir ? _huidas.SinMoverse + 1 : 0;
                 // Y SI SE MOVIÓ PERO LA SIGUE TENIENDO CERCA, tampoco le sirvió: una criatura camina lo mismo que una persona,
                 // así que a la que te persigue no se le gana la carrera. Se cuenta aparte del rincón porque son dos problemas
                 // distintos con la misma salida: dejar de correr. Ver `LaHuidaNoSirvio` para por qué el tope es el radio de susto
                 // y no la baldosa de al lado.
                 var despues = sentidos.Donde(amenaza.Quien.CharIndex);
-                _huidasQueNoLoSacaron = LaHuidaNoSirvio(despues is { } sigueAhi
+                _huidas.QueNoLoSacaron = LaHuidaNoSirvio(despues is { } sigueAhi
                         ? Math.Abs(sigueAhi.X - sentidos.Posicion.X) + Math.Abs(sigueAhi.Y - sentidos.Posicion.Y) : -1)
-                    ? _huidasQueNoLoSacaron + 1 : 0;
+                    ? _huidas.QueNoLoSacaron + 1 : 0;
                 continue;
             }
-            _huidasSinMoverse = 0;
-            _huidasQueNoLoSacaron = 0;
-            _huidasDeEsaCriatura = 0;
+            _huidas.SalioDelPeligro();
 
             // LO QUE YA LE PEGA SE LO SACA DE ENCIMA, aunque haya algo peligroso a la vista, la vida no esté para empezar una pelea o
             // no le den ganas: esas reglas son para ELEGIR a quién atacar, no para dejarse picar. Medido en `normal1`: un Minero de
@@ -1991,16 +1986,17 @@ public sealed class Bot
     private long _proximoPedidoAlSacerdote;
 
     /// <summary>
-    /// ¿ESTÁ ACORRALADO? Son DOS formas de estarlo, y las dos terminan igual: huir no lo saca del problema.
+    /// ¿NO SE LA PUEDE SACAR DE ENCIMA? Tres huidas de LA MISMA criatura adentro de la misma ventana de tiempo
+    /// (<see cref="VentanaDeHuidasMs"/>) y correr deja de ser una estrategia: hay que pelear o irse con la runa.
     ///
-    /// <para>La primera son <see cref="HuidasParaAcorralado"/> huidas seguidas SIN MOVERSE de la baldosa: un rincón, o alguien
-    /// tapando la única salida.</para>
-    ///
-    /// <para>La segunda es la que faltaba: huidas en las que SÍ se movió y la criatura le quedó pegada igual, porque camina al
-    /// mismo paso que él. Medido en `verdad3`: de 120 huidas de la corrida, 91 fueron de un mismo bot con un Lobo encima —84
-    /// veces a una baldosa— y la racha más larga fue de TREINTA Y SEIS huidas seguidas, con mil cuatrocientas pociones en la
-    /// mochila. El contador viejo no lo veía nunca: se resetea apenas el bot da un paso, y el bot daba un paso siempre.</para>
+    /// <para>Es la tercera forma de estar acorralado. Las otras dos miran UNA huida —no se pudo mover, o quedó pegada— y esta
+    /// mira la SERIE. Medido en `verdad5`: al huir, el Lobo queda a cuatro, cinco, seis o siete baldosas, o sea que huir SÍ lo
+    /// despega; el problema es que vuelve a alcanzarlo a los pocos segundos. Con los contadores por distancia el bot encadenó
+    /// treinta y siete huidas seguidas y la rama de pelear no entró ni una vez.</para>
     /// </summary>
+    public static bool NoSeLoSacaDeEncima(int huidasDeLaMismaCriatura) =>
+        huidasDeLaMismaCriatura >= HuidasParaAcorralado;
+
     /// <summary>
     /// ¿LA HUIDA NO SIRVIÓ? Si después de alejarse la amenaza sigue adentro del radio de susto, sí: es la misma distancia que
     /// vuelve a disparar la huida en la vuelta siguiente, así que el bot ya está condenado a repetirla.
@@ -2012,21 +2008,20 @@ public sealed class Bot
     ///
     /// <para><paramref name="pasosDeLaAmenazaDespues"/> negativo = ya no se la ve, que es la única huida que sirvió.</para>
     /// </summary>
-    /// <summary>
-    /// ¿NO SE LA PUEDE SACAR DE ENCIMA? Tres huidas de LA MISMA criatura adentro de la misma ventana de tiempo
-    /// (<see cref="VentanaDeHuidasMs"/>) y correr deja de ser una estrategia: hay que pelear o irse con la runa.
-    ///
-    /// <para>Es la tercera forma de estar acorralado y la que faltaba. Las otras dos miran UNA huida —no me pude mover, o quedó
-    /// pegada— y esta mira la SERIE. Medido en `verdad5`: al huir, el Lobo queda a cuatro, cinco, seis o siete baldosas, o sea
-    /// que huir SÍ lo despega; el problema es que vuelve a alcanzarlo a los pocos segundos. Con los contadores por distancia el
-    /// bot encadenó treinta y siete huidas seguidas y la rama de pelear no entró ni una vez.</para>
-    /// </summary>
-    public static bool NoSeLoSacaDeEncima(int huidasDeLaMismaCriatura) =>
-        huidasDeLaMismaCriatura >= HuidasParaAcorralado;
-
     public static bool LaHuidaNoSirvio(int pasosDeLaAmenazaDespues) =>
         pasosDeLaAmenazaDespues >= 0 && pasosDeLaAmenazaDespues <= RadioDeSusto;
 
+    /// <summary>
+    /// ¿ESTÁ ACORRALADO? Son DOS formas de estarlo, y las dos terminan igual: huir no lo saca del problema.
+    ///
+    /// <para>La primera son <see cref="HuidasParaAcorralado"/> huidas seguidas SIN MOVERSE de la baldosa: un rincón, o alguien
+    /// tapando la única salida.</para>
+    ///
+    /// <para>La segunda son huidas en las que SÍ se movió y la criatura le quedó pegada igual, porque camina al mismo paso que
+    /// él. Medido en `verdad3`: de 120 huidas de la corrida, 91 fueron de un mismo bot con un Lobo encima —84 veces a una
+    /// baldosa— y la racha más larga fue de TREINTA Y SEIS huidas seguidas, con mil cuatrocientas pociones en la mochila. El
+    /// contador viejo no lo veía nunca: se resetea apenas el bot da un paso, y el bot daba un paso siempre.</para>
+    /// </summary>
     public static bool EstaAcorralado(int huidasSinMoverse, int huidasQueNoLoSacaron = 0) =>
         huidasSinMoverse >= HuidasParaAcorralado || huidasQueNoLoSacaron >= HuidasParaAcorralado;
 
@@ -2034,11 +2029,51 @@ public sealed class Bot
     public static bool LoEstaAtacando(NpcInfo? n, int pasos) => pasos <= 1 && n is { Hostile: true, MaxHit: > 0 };
 
     private const int HuidasParaAcorralado = 3;
-    private int _huidasSinMoverse;
-    private int _huidasQueNoLoSacaron;
-    private short _deQuienHuye;
-    private int _huidasDeEsaCriatura;
-    private long _ventanaDeHuidas;
+    private readonly ContadoresDeHuida _huidas = new();
+
+    /// <summary>
+    /// LOS CONTADORES DE HUIDA, juntos porque se olvidan de maneras DISTINTAS, y esa diferencia es justo lo que hace falta.
+    ///
+    /// <para><see cref="SinMoverse"/> y <see cref="QueNoLoSacaron"/> miran UNA huida —no se pudo mover, o la criatura le quedó
+    /// adentro del radio de susto— y dejan de valer apenas se termina el peligro. <see cref="DeLaMismaCriatura"/> mira la SERIE,
+    /// y a esa la corta el TIEMPO: al que te vuelve a alcanzar no se le gana la carrera.</para>
+    ///
+    /// <para>Los cinco campos estaban sueltos en el bot y se olvidaban todos juntos. Como huir SÍ despega a la criatura —queda a
+    /// cuatro, cinco, seis baldosas—, entre alcance y alcance el bot sale del peligro y ahí se borraba también la serie: medido
+    /// en `verdad6`, 53 huidas, la rama de pelear sin entrar NI UNA VEZ y el contador sin pasar de uno.</para>
+    /// </summary>
+    public sealed class ContadoresDeHuida
+    {
+        /// <summary>Huidas seguidas en las que no se movió de la baldosa: el rincón.</summary>
+        public int SinMoverse;
+
+        /// <summary>Huidas seguidas que lo dejaron con la amenaza adentro del radio de susto.</summary>
+        public int QueNoLoSacaron;
+
+        /// <summary>Huidas de LA MISMA criatura adentro de la ventana: la serie.</summary>
+        public int DeLaMismaCriatura;
+
+        private short _deQuien;
+        private long _hastaCuando;
+
+        /// <summary>Una huida más: sigue la serie si es la misma criatura y todavía está adentro de la ventana.</summary>
+        public void Huyo(short deQuien, long ahora, int ventanaMs)
+        {
+            DeLaMismaCriatura = deQuien == _deQuien && ahora < _hastaCuando ? DeLaMismaCriatura + 1 : 1;
+            _deQuien = deQuien;
+            _hastaCuando = ahora + ventanaMs;
+        }
+
+        /// <summary>
+        /// SE TERMINÓ EL PELIGRO: se olvidan los dos contadores del rincón, que son de esa huida y de ninguna otra. La serie no
+        /// se toca acá — el respiro entre alcance y alcance es parte de la persecución, no el final.
+        /// </summary>
+        public void SalioDelPeligro()
+        {
+            SinMoverse = 0;
+            QueNoLoSacaron = 0;
+        }
+    }
 
     /// <summary>Cuánto dura la serie: dos huidas separadas por más de esto son dos sustos distintos, no una persecución.</summary>
     private const int VentanaDeHuidasMs = 60_000;
