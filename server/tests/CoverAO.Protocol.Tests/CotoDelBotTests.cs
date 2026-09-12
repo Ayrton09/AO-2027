@@ -33,7 +33,8 @@ public class CotoDelBotTests
             "el 62 dejó de tener pocas Águilas que pagan: el test no prueba nada");
         foreach (var (mapa, desde) in new[] { (37, ((byte)57, (byte)74)), (208, ((byte)56, (byte)72)), (1, ((byte)58, (byte)45)) })
         {
-            var coto = Bot.ElegirCoto(m.Mapas, mapa, desde, presa, f => m.Datos.Npc(f)?.GiveGld > 0, null, out bool porElOro);
+            var coto = Bot.ElegirCoto(m.Mapas, mapa, desde, presa, f => m.Datos.Npc(f)?.GiveGld > 0,
+                                      f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0, null, out bool porElOro);
             Assert.True(coto is not null, $"desde el mapa {mapa} no eligió ningún coto");
             Assert.NotEqual(62, coto!.Value.Mapa);
             Assert.False(porElOro);
@@ -68,5 +69,64 @@ public class CotoDelBotTests
         Assert.False(Bot.ValeMudarsePorElOro(4, 38));
         Assert.True(Bot.ValeMudarsePorElOro(9, 36));
         Assert.True(Bot.ValeMudarsePorElOro(1, 1));
+    }
+
+    /// <summary>
+    /// LO QUE RINDE SE MIDE CONTRA LO QUE TIENE, no contra un número fijo. Los números son los de la data, medidos con
+    /// `mejor_presa_por_mapa.py`: lo más gordo que un bot se anima a cazar en la cuna y lo más gordo a dos mapas.
+    /// </summary>
+    [Theory]
+    // lo mejor de acá | lo mejor de allá | ¿se muda?
+    [InlineData(38, 25, false)]     // nivel 1: Escorpión en la cuna contra Serpiente al lado — se queda
+    [InlineData(115, 115, false)]   // nivel 10: el mismo Lobo de los dos lados
+    [InlineData(115, 270, true)]    // nivel 13: Lobo contra Esqueleto Guerrero
+    [InlineData(115, 505, true)]    // nivel 20: Lobo contra Orco
+    [InlineData(0, 1, true)]        // donde no rinde NADA, cualquier cosa es mejor
+    [InlineData(0, 0, false)]       // pero si allá tampoco hay nada, no hay por qué moverse
+    public void Se_muda_cuando_lo_de_alla_rinde_varias_veces_lo_de_aca(int aca, int alla, bool seMuda)
+    {
+        Assert.Equal(seMuda, Bot.ValeMudarsePorLoQueRinde(aca, alla));
+    }
+
+    /// <summary>
+    /// Y SE REVISA AL SUBIR DE NIVEL, aunque tenga presa a la vista: es el otro medio arreglo, porque con la cuna
+    /// siempre llena de bichos la búsqueda de coto no arrancaba nunca. Medido en `seguir1`: Ciro de nivel 13 con la
+    /// experiencia clavada y 31 criaturas muertas, cazando Lobos en la cuna.
+    /// </summary>
+    [Theory]
+    // nivel con el que eligió el coto | nivel de ahora | ¿vuelve a mirar?
+    [InlineData(0, 1, true)]      // recién entrado: todavía no eligió nada
+    [InlineData(13, 13, false)]   // sigue en el mismo nivel: se queda donde está
+    [InlineData(13, 14, true)]    // subió: mira alrededor
+    public void Al_subir_de_nivel_vuelve_a_mirar_donde_esta_cazando(int nivelDelCoto, int nivelAhora, bool revisa)
+    {
+        Assert.Equal(revisa, Bot.HayQueRevisarElCoto(nivelDelCoto, nivelAhora));
+    }
+
+    /// <summary>
+    /// Y CONTRA LOS MAPAS DE VERDAD: en la cuna, un bot de nivel 13 tiene que irse a un coto que rinda más, y uno de
+    /// nivel 1 tiene que quedarse. Es el óptimo local que dejaba a los bots matando Lobos para siempre: medido en
+    /// `seguir1`, Ciro de nivel 13 con 31 criaturas muertas y la experiencia clavada.
+    /// </summary>
+    [Fact]
+    public void Desde_la_cuna_el_de_nivel_trece_se_muda_y_el_de_nivel_uno_no()
+    {
+        if (Mundo() is not { } m) return;
+        var cuna = ((byte)57, (byte)74);
+        int Rinde(Func<int, bool> presa) => m.Mapas.LoQueMasRinde(37, cuna, Da(presa))?.Rinde ?? 0;
+        Func<int, int> Da(Func<int, bool> presa) => f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+
+        var novato = Presa(m.Datos, 20, 1);
+        var crecido = Presa(m.Datos, 141, 13);
+        Assert.True(Rinde(crecido) > Rinde(novato), "en la cuna un nivel 13 no se anima a nada mejor que un nivel 1: el test no prueba nada");
+
+        var mejorCerca = m.Mapas.CotoQueMasRinde(37, cuna, Da(crecido), 2);
+        Assert.True(mejorCerca is not null, "a dos mapas de la cuna no hay ningún coto");
+        Assert.True(Bot.ValeMudarsePorLoQueRinde(Rinde(crecido), mejorCerca!.Value.Rinde),
+            $"el de nivel 13 se queda: la cuna rinde {Rinde(crecido)} y lo mejor cerca rinde {mejorCerca.Value.Rinde}");
+
+        var cercaDelNovato = m.Mapas.CotoQueMasRinde(37, cuna, Da(novato), 2);
+        Assert.False(cercaDelNovato is { } n && n.Mapa != 37 && Bot.ValeMudarsePorLoQueRinde(Rinde(novato), n.Rinde),
+            "el de nivel 1 se va de la cuna, que es el mejor lugar donde puede estar");
     }
 }

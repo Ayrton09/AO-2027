@@ -457,6 +457,51 @@ public sealed class Navegante
         return mejor;
     }
 
+    /// <summary>
+    /// LO QUE MÁS RINDE en ese mapa: de las criaturas que nacen en baldosas a las que se llega caminando desde
+    /// <paramref name="desde"/>, la que más da según <paramref name="rinde"/>, con el punto más cercano donde nace. Es
+    /// la otra mitad de <see cref="CuantasSeAlcanzan"/>: una dice cuántas hay, ésta dice cuánto valen.
+    /// </summary>
+    public (byte X, byte Y, int Rinde)? LoQueMasRinde(int mapa, (byte X, byte Y) desde, Func<int, int> rinde)
+    {
+        if (!_datos.MapSpawns.TryGetValue(mapa, out var lista)) return null;
+        var alcanzables = Alcanzables(mapa, desde);
+        (byte X, byte Y, int Rinde)? mejor = null;
+        int mejorPasos = int.MaxValue;
+        foreach (var s in lista)
+        {
+            int da = rinde(s.NpcIndex);
+            if (da <= 0 || !alcanzables.Contains(Clave((byte)s.X, (byte)s.Y))) continue;
+            int pasos = Math.Abs(s.X - desde.X) + Math.Abs(s.Y - desde.Y);
+            // La que más rinde; entre dos que rinden lo mismo, la más cercana.
+            if (mejor is { } ya && (da < ya.Rinde || (da == ya.Rinde && pasos >= mejorPasos))) continue;
+            mejor = ((byte)s.X, (byte)s.Y, da);
+            mejorPasos = pasos;
+        }
+        return mejor;
+    }
+
+    /// <summary>
+    /// EL COTO QUE MÁS RINDE a <paramref name="saltosMax"/> mapas o menos, contando el propio. Mismo recorrido que
+    /// <see cref="CotoMasPoblado"/>, pero midiendo la criatura más gorda en vez de la cantidad.
+    /// </summary>
+    public (int Mapa, byte X, byte Y, int Saltos, int Rinde)? CotoQueMasRinde(int mapaActual, (byte X, byte Y) desde,
+                                                                             Func<int, int> rinde, int saltosMax,
+                                                                             Func<int, bool>? pisable = null)
+    {
+        (int Mapa, byte X, byte Y, int Saltos, int Rinde)? mejor = null;
+        void Probar(int mapa, (byte X, byte Y) entrada, int saltos)
+        {
+            if (LoQueMasRinde(mapa, entrada, rinde) is not { } ahi) return;
+            if (mejor is { } ya && ya.Rinde >= ahi.Rinde) return;
+            mejor = (mapa, ahi.X, ahi.Y, saltos, ahi.Rinde);
+        }
+        Probar(mapaActual, desde, 0);
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
+            if (saltos <= saltosMax) Probar(mapa, entrada, saltos);
+        return mejor;
+    }
+
     /// <summary>Cuántas criaturas que cumplen <paramref name="sirve"/> nacen en baldosas de ese mapa a las que se llega caminando
     /// desde <paramref name="desde"/>.</summary>
     public int CuantasSeAlcanzan(int mapa, (byte X, byte Y) desde, Func<int, bool> sirve)

@@ -664,6 +664,16 @@ public sealed class Bot
                 // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
                 // mudarse. Medido: cinco bots amontonados en el mapa 1, que tiene UNA sola serpiente y paga cero,
                 // subiendo de nivel de a poco y sin ganar una moneda — con nueve escorpiones que pagan a un salto.
+                // Y AL SUBIR DE NIVEL SE REVISA EL COTO AUNQUE TENGA PRESA A LA VISTA. La paciencia de
+                // `BuscarDondeCazarAsync` es para "no veo nada", y en la cuna siempre hay algo que cazar: nunca se
+                // agotaba, así que el bot no se preguntaba jamás si eso todavía le rendía. Subir de nivel es
+                // justamente cuando una persona mira alrededor y decide si se queda.
+                if (HayQueRevisarElCoto(_nivelDelCoto, nivelAhora))
+                {
+                    _nivelDelCoto = nivelAhora;
+                    _ultimaPresaQuePaga = 0;
+                    if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
+                }
                 if (PagaOro(p.Quien.FichaNpc)) _ultimaPresaQuePaga = Environment.TickCount64;
                 else if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
                 if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
@@ -1637,8 +1647,21 @@ public sealed class Bot
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? ElegirCoto(Navegante mapas, int mapa, (byte X, byte Y) desde,
                                                                      Func<int, bool> esPresa, Func<int, bool> paga,
+                                                                     Func<int, int> rinde,
                                                                      Func<int, bool>? pisable, out bool porElOro)
     {
+        // LO QUE RINDE MANDA CUANDO LA DIFERENCIA ES GRANDE, y va primero: ni la cantidad ni el oro sirven para salir
+        // de la cuna. Preguntado a la data, lo más gordo que un bot se anima a cazar en la cuna es el Lobo —115 de
+        // experiencia— y ahí se queda para siempre, mientras a dos mapas hay Esqueletos Guerreros de 270 desde el
+        // nivel 13 y Orcos de 505 desde el 20. Con 53 presas, la cuna gana siempre por cantidad.
+        var acaRinde = mapas.LoQueMasRinde(mapa, desde, rinde);
+        if (mapas.CotoQueMasRinde(mapa, desde, rinde, SaltosHastaElCoto, pisable) is { } gordo && gordo.Mapa != mapa
+            && ValeMudarsePorLoQueRinde(acaRinde?.Rinde ?? 0, gordo.Rinde))
+        {
+            porElOro = false;
+            return (gordo.Mapa, gordo.X, gordo.Y, gordo.Saltos);
+        }
+
         Func<int, bool> conOro = f => esPresa(f) && paga(f);
         var quePaga = mapas.DondeHay(mapa, desde, conOro, pisable: pisable);
         var poblado = mapas.CotoMasPoblado(mapa, desde, esPresa, SaltosHastaElCoto, pisable);
@@ -1665,7 +1688,15 @@ public sealed class Bot
     /// coto más poblado.</summary>
     public static bool ValeMudarsePorElOro(int quePagan, int presasDelPoblado) => quePagan * PresasPorCadaUnaQuePaga >= presasDelPoblado;
 
-    private const int SaltosHastaElCoto = 2, PresasPorCadaUnaQuePaga = 4;
+    /// <summary>
+    /// ¿VALE MUDARSE POR LO QUE RINDE? Cuando el bicho más gordo que se anima a cazar allá da varias veces lo que el
+    /// más gordo de acá. La comparación es contra lo que TIENE, no contra un número fijo: en la cuna un nivel 1 caza
+    /// Escorpiones de 38 y lo mejor a dos mapas son Serpientes de 25, así que se queda —y hace bien—; el mismo bot en
+    /// nivel 13 sigue con el Lobo de 115 teniendo Esqueletos Guerreros de 270 al lado, y ahí se muda.
+    /// </summary>
+    public static bool ValeMudarsePorLoQueRinde(int rindeAca, int rindeAlla) => rindeAca <= 0 ? rindeAlla > 0 : rindeAlla >= rindeAca * VecesQueTieneQueRendir;
+
+    private const int SaltosHastaElCoto = 2, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
 
     /// <summary>
     /// Cuando hace rato que no aparece una presa, viajar a un mapa donde haya. Devuelve si se ocupó de esto.
@@ -1693,7 +1724,8 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
-        var hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), Pisable(sentidos),
+        var hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f),
+                                 f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0, Pisable(sentidos),
                                  out bool porElOro);
         Func<int, bool> sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         if (hallado is not { } coto) return false;
@@ -1790,6 +1822,17 @@ public sealed class Bot
     private bool _cortoElViaje;
 
     /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
+    /// <summary>El nivel con el que eligió el coto donde está; cuando cambia, vuelve a mirar.</summary>
+    private int _nivelDelCoto;
+
+    /// <summary>
+    /// ¿HAY QUE VOLVER A MIRAR DÓNDE ESTÁ CAZANDO? Cuando subió de nivel desde que eligió este coto. La paciencia de
+    /// <see cref="BuscarDondeCazarAsync"/> es para "no veo nada" y en la cuna siempre hay algo, así que no se agotaba
+    /// nunca: el bot no se preguntaba jamás si eso todavía le rendía. Un cero de entrada también cuenta como cambio,
+    /// que es el bot recién entrado al mundo.
+    /// </summary>
+    public static bool HayQueRevisarElCoto(int nivelDelCoto, int nivelAhora) => nivelDelCoto != nivelAhora;
+
     private const int PacienciaSinPresaMs = 3 * 60_000;
 
     /// <summary>A cuántas baldosas del spawn se para al llegar al coto. Chico a propósito: la presa que paga no
