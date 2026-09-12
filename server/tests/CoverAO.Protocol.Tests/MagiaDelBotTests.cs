@@ -156,13 +156,15 @@ public class MagiaDelBotTests
     /// caster de ninguna corrida pasó del hechizo con el que nace.
     /// </summary>
     [Theory]
-    // ¿va por hechizo? | ¿hay vendedor al alcance? | ¿el viaje es sólo por el pergamino?
-    [InlineData(true, true, true)]
-    [InlineData(true, false, false)]    // sin vendedor cerca se afloja: comprar comida importa más
-    [InlineData(false, true, false)]    // no castea, o no le alcanza la plata
-    [InlineData(false, false, false)]
-    public void El_caster_va_primero_por_el_pergamino_si_hay_donde(bool vaPorHechizo, bool hayUno, bool soloElPergamino)
+    // ¿va por hechizo? | ¿tiene lo esencial? | ¿hay vendedor al alcance? | ¿el viaje es sólo por el pergamino?
+    [InlineData(true, true, true, true)]
+    [InlineData(true, true, false, false)]    // sin vendedor cerca se afloja: comprar comida importa más
+    [InlineData(true, false, true, false)]    // le falta comer, tomar o con qué curarse: eso va antes
+    [InlineData(false, true, true, false)]    // no castea, o no le alcanza la plata
+    [InlineData(false, false, false, false)]
+    public void El_caster_va_primero_por_el_pergamino_si_hay_donde(bool vaPorHechizo, bool loEsencial, bool hayUno,
+                                                                   bool soloElPergamino)
     {
-        Assert.Equal(soloElPergamino, Bot.PrimeroElPergamino(vaPorHechizo, hayUno));
+        Assert.Equal(soloElPergamino, Bot.PrimeroElPergamino(vaPorHechizo, loEsencial, hayUno));
     }
 }

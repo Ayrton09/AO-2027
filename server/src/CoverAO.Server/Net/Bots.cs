@@ -956,9 +956,10 @@ public sealed class Bot
         bool VendePergamino(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo));
-        bool hayUnoAlAlcance = vaPorHechizo
-            && _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendePergamino, MapaAtiende) is not null;
-        bool soloElPergamino = PrimeroElPergamino(vaPorHechizo, hayUnoAlAlcance);
+        bool hayUnoAlAlcance = vaPorHechizo && soloGustos
+            && _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendePergamino, MapaAtiende,
+                                       Pisable(sentidos)) is not null;
+        bool soloElPergamino = PrimeroElPergamino(vaPorHechizo, soloGustos, hayUnoAlAlcance);
 
         bool Sirve(int ficha)
         {
@@ -2591,11 +2592,16 @@ public sealed class Bot
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar pergaminos: el más barato de la data vale 200.</summary>
     /// <summary>
-    /// ¿EL VIAJE VA SÓLO POR EL PERGAMINO? Cuando el bot castea Y hay un vendedor al alcance que tenga uno que le
-    /// sirva y pueda pagar. Sin la segunda mitad, un caster lejos de cualquier vendedor de pergaminos dejaría de
-    /// comprar comida, bebida y equipo — que es peor que no aprender un hechizo.
+    /// ¿EL VIAJE VA SÓLO POR EL PERGAMINO? Cuando el bot castea, NO LE FALTA NADA ESENCIAL, y hay un vendedor al
+    /// alcance que tenga uno que le sirva y pueda pagar.
+    ///
+    /// <para>Las otras dos condiciones no son adorno. Sin <paramref name="soloLeFaltanGustos"/> un caster con hambre
+    /// o sin pociones viajaría igual al de pergaminos, que es la regla de <see cref="SoloLeFaltanGustos"/> al revés.
+    /// Y sin <paramref name="hayUnoAlAlcance"/>, un caster lejos de cualquier vendedor de pergaminos dejaría de
+    /// comprar comida, bebida y equipo — peor que no aprender un hechizo.</para>
     /// </summary>
-    public static bool PrimeroElPergamino(bool vaPorHechizo, bool hayUnoAlAlcance) => vaPorHechizo && hayUnoAlAlcance;
+    public static bool PrimeroElPergamino(bool vaPorHechizo, bool soloLeFaltanGustos, bool hayUnoAlAlcance) =>
+        vaPorHechizo && soloLeFaltanGustos && hayUnoAlAlcance;
 
     private const int OroParaMirarHechizos = 250;
 
