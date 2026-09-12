@@ -23,6 +23,18 @@ public class HuidaQueNoSirveTests
         Assert.Equal(acorralado, Bot.EstaAcorralado(sinMoverse, queNoLoSacaron));
     }
 
+    [Theory]
+    // a cuántas baldosas quedó la amenaza DESPUÉS de huir | la huida no sirvió
+    [InlineData(-1, false)]   // ya no se la ve: la única que sirvió
+    [InlineData(1, true)]     // pegada
+    [InlineData(3, true)]     // en el borde del radio de susto: en la vuelta siguiente vuelve a huir
+    [InlineData(4, false)]    // afuera: dejó de ser un problema
+    [InlineData(9, false)]
+    public void Huir_no_sirve_si_la_amenaza_queda_adentro_del_radio_de_susto(int pasosDespues, bool noSirvio)
+    {
+        Assert.Equal(noSirvio, Bot.LaHuidaNoSirvio(pasosDespues));
+    }
+
     /// <summary>Y LA REGLA VIEJA SIGUE VALIENDO tal cual para el que sólo mira el rincón.</summary>
     [Fact]
     public void La_regla_del_rincon_no_cambia()

@@ -554,12 +554,14 @@ public sealed class Bot
                 var antesDeHuir = sentidos.Posicion;
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
                 _huidasSinMoverse = sentidos.Posicion == antesDeHuir ? _huidasSinMoverse + 1 : 0;
-                // Y SI SE MOVIÓ PERO LA SIGUE TENIENDO ENCIMA, tampoco le sirvió: una criatura camina lo mismo que una persona,
+                // Y SI SE MOVIÓ PERO LA SIGUE TENIENDO CERCA, tampoco le sirvió: una criatura camina lo mismo que una persona,
                 // así que a la que te persigue no se le gana la carrera. Se cuenta aparte del rincón porque son dos problemas
-                // distintos con la misma salida: dejar de correr.
-                _huidasQueNoLoSacaron = sentidos.Donde(amenaza.Quien.CharIndex) is { } sigueAhi
-                    && Math.Abs(sigueAhi.X - sentidos.Posicion.X) + Math.Abs(sigueAhi.Y - sentidos.Posicion.Y) <= 1
-                        ? _huidasQueNoLoSacaron + 1 : 0;
+                // distintos con la misma salida: dejar de correr. Ver `LaHuidaNoSirvio` para por qué el tope es el radio de susto
+                // y no la baldosa de al lado.
+                var despues = sentidos.Donde(amenaza.Quien.CharIndex);
+                _huidasQueNoLoSacaron = LaHuidaNoSirvio(despues is { } sigueAhi
+                        ? Math.Abs(sigueAhi.X - sentidos.Posicion.X) + Math.Abs(sigueAhi.Y - sentidos.Posicion.Y) : -1)
+                    ? _huidasQueNoLoSacaron + 1 : 0;
                 continue;
             }
             _huidasSinMoverse = 0;
@@ -1990,6 +1992,20 @@ public sealed class Bot
     /// veces a una baldosa— y la racha más larga fue de TREINTA Y SEIS huidas seguidas, con mil cuatrocientas pociones en la
     /// mochila. El contador viejo no lo veía nunca: se resetea apenas el bot da un paso, y el bot daba un paso siempre.</para>
     /// </summary>
+    /// <summary>
+    /// ¿LA HUIDA NO SIRVIÓ? Si después de alejarse la amenaza sigue adentro del radio de susto, sí: es la misma distancia que
+    /// vuelve a disparar la huida en la vuelta siguiente, así que el bot ya está condenado a repetirla.
+    ///
+    /// <para>Acá decía "a una baldosa" y por eso el contador nunca llegaba a tres: <see cref="AlejarseAsync"/> camina de tres a
+    /// seis pasos y la criatura se mueve una vez por segundo, así que casi siempre queda a dos o tres —lejos para este contador,
+    /// cerca para volver a huir—. Medido en `verdad4`, con la regla ya puesta: 44 huidas, 37 de un mismo bot con el Lobo encima,
+    /// racha de 28 seguidas, y la rama de pelear no se activó NI UNA VEZ.</para>
+    ///
+    /// <para><paramref name="pasosDeLaAmenazaDespues"/> negativo = ya no se la ve, que es la única huida que sirvió.</para>
+    /// </summary>
+    public static bool LaHuidaNoSirvio(int pasosDeLaAmenazaDespues) =>
+        pasosDeLaAmenazaDespues >= 0 && pasosDeLaAmenazaDespues <= RadioDeSusto;
+
     public static bool EstaAcorralado(int huidasSinMoverse, int huidasQueNoLoSacaron = 0) =>
         huidasSinMoverse >= HuidasParaAcorralado || huidasQueNoLoSacaron >= HuidasParaAcorralado;
 
