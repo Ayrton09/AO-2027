@@ -624,6 +624,7 @@ public sealed class Bot
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await SanarseAsync(transporte, sentidos, cerrada, ct)) continue;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
+            if (await AprenderHechizosAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
@@ -898,9 +899,12 @@ public sealed class Bot
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
         bool vaPorEquipo = !enApuro && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
+        // Y EL QUE CASTEA APRENDE HECHIZOS NUEVOS, que es su forma de mejorar: el arma no le sirve de mucho.
+        bool vaPorHechizo = !enApuro && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
-        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo) return false;
+        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
+            && !vaPorHechizo) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -935,6 +939,7 @@ public sealed class Bot
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
             if (vaPorEquipo && stock.Any(s => MejoraLoQueTiene(sentidos, (short)s.ObjIndex))) return true;
+            if (vaPorHechizo && stock.Any(s => LeSirveElPergamino(sentidos, (short)s.ObjIndex))) return true;
             return hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
@@ -1121,6 +1126,7 @@ public sealed class Bot
             compro |= await ReponerAsync(transporte, sentidos, PuntosDeBebida, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
         compro |= await ReponerAsync(transporte, sentidos, UnaSiEsPocion, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
         compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
+        compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
         return compro;
     }
 
@@ -1952,6 +1958,21 @@ public sealed class Bot
         return false;
     }
 
+    /// <summary>
+    /// COMPRARSE UN HECHIZO: de los pergaminos de la vitrina que le sirven y puede pagar, el del hechizo que más pega.
+    /// </summary>
+    private async Task<bool> ComprarPergaminoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        double plata = PlataParaElEquipo(sentidos);
+        if (plata <= 0 || !sentidos.UsaMana || !sentidos.Comerciando) return false;
+        int Pega(short obj) => LeSirveElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? Math.Max(1, h.MaxHp) : 0;
+        if (sentidos.LoMejorDeLaVitrina(Pega, plata) is not { } oferta) return false;
+        int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
+        transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
+        await Task.Delay(_rng.Next(600, 1_400), ct);
+        return sentidos.CuantoTiene(obj => obj == oferta.Obj) > teniaAntes;
+    }
+
     /// <summary>Lo que puede gastar en equipo: lo que sobra después de asegurarse la comida, la bebida y un colchón.</summary>
     private int PlataParaElEquipo(SentidosDelBot sentidos) =>
         Math.Max(0, sentidos.Oro - ReservaPara(sentidos, comida: true, bebida: true) - MonedasDeApuro);
@@ -2291,6 +2312,51 @@ public sealed class Bot
     /// sólo el primero deja el hechizo elegido y nada más — que es exactamente lo que le pasa a un jugador
     /// que aprieta el hechizo y no clickea.</para>
     /// </summary>
+    /// <summary>
+    /// ¿VALE LA PENA ESE PERGAMINO? Enseña un hechizo que HACE DAÑO y que todavía no sabe.
+    ///
+    /// <para>Un caster nace con uno solo —el original le da <c>UserHechizos(1) = 2</c> en el alta— y sin comprar
+    /// pergaminos se queda con ése para siempre, pegando con el báculo. En la data hay ochenta y cuatro, de
+    /// doscientas a tres mil monedas, y siete mercaderes que los venden.</para>
+    /// </summary>
+    public static bool ValeLaPenaElPergamino(SpellInfo? hechizo, IReadOnlyList<(byte Ranura, short Hechizo)> yaSabe) =>
+        hechizo is { SubeHp: 2 } && !yaSabe.Any(x => x.Hechizo == hechizo.Index);
+
+    /// <summary>El hechizo que enseña ese objeto si es un pergamino, o null.</summary>
+    private SpellInfo? QueEnsena(short obj) =>
+        _entorno.Datos.Obj(obj) is { IsPergamino: true } o ? _entorno.Datos.Spell((short)o.HechizoIndex) : null;
+
+    /// <summary>¿Ese pergamino de la vitrina le sirve a este bot?</summary>
+    private bool LeSirveElPergamino(SentidosDelBot sentidos, short obj) =>
+        sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos());
+
+    /// <summary>
+    /// APRENDER LO QUE COMPRÓ: usar el pergamino que tenga en la mochila. Devuelve si mandó algo.
+    ///
+    /// <para>Si el servidor no se lo deja aprender —sin maná, sin lugar en el libro— no se insiste con ese: se anota
+    /// y se prueba con otro, igual que con el equipo que no se puede poner.</para>
+    /// </summary>
+    private async Task<bool> AprenderHechizosAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        if (!sentidos.UsaMana) return false;
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+        {
+            short obj = sentidos.QueHayEn(ranura);
+            if (_noLoAprende.Contains(obj) || !LeSirveElPergamino(sentidos, obj)) continue;
+            int sabiaAntes = sentidos.Hechizos().Count;
+            if (!transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)))) return false;
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+            if (sentidos.Hechizos().Count == sabiaAntes) _noLoAprende.Add(obj);
+            return true;
+        }
+        return false;
+    }
+
+    private readonly HashSet<short> _noLoAprende = new();
+
+    /// <summary>Desde acá vale la pena pasar por el mercader a mirar pergaminos: el más barato de la data vale 200.</summary>
+    private const int OroParaMirarHechizos = 250;
+
     private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
     {
         if (!sentidos.UsaMana) return false;

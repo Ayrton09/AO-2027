@@ -1,5 +1,6 @@
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
+using CoverAO.Server.Net;
 using Xunit;
 
 namespace CoverAO.Protocol.Tests;
@@ -93,5 +94,23 @@ public class MagiaDelBotTests
                 "con el reparto de a mitad no se habilita nunca");
         }
         finally { try { Directory.Delete(raiz, recursive: true); } catch { /* el temp queda */ } }
+    }
+
+    /// <summary>
+    /// QUÉ PERGAMINO VALE LA PENA: el de un hechizo que hace daño y que todavía no sabe. Un caster nace con uno solo,
+    /// así que sin esto se queda con ése para siempre.
+    /// </summary>
+    [Fact]
+    public void Vale_la_pena_el_pergamino_de_un_hechizo_de_dano_que_no_sabe()
+    {
+        var sabe = new List<(byte Ranura, short Hechizo)> { ((byte)1, (short)2) };
+        var dano = new SpellInfo(7, "Descarga", SubeHp: 2, MinHp: 20, MaxHp: 40, ManaCost: 30, Target: 1);
+        var yaLoSabe = new SpellInfo(2, "Proyectil Mágico", SubeHp: 2, MinHp: 5, MaxHp: 10, ManaCost: 5, Target: 1);
+        var cura = new SpellInfo(9, "Curar Heridas", SubeHp: 1, MinHp: 10, MaxHp: 20, ManaCost: 10, Target: 1);
+
+        Assert.True(Bot.ValeLaPenaElPergamino(dano, sabe));
+        Assert.False(Bot.ValeLaPenaElPergamino(yaLoSabe, sabe));
+        Assert.False(Bot.ValeLaPenaElPergamino(cura, sabe));
+        Assert.False(Bot.ValeLaPenaElPergamino(null, sabe));
     }
 }
