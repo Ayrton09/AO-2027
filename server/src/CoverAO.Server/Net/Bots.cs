@@ -1973,9 +1973,25 @@ public sealed class Bot
         return sentidos.CuantoTiene(obj => obj == oferta.Obj) > teniaAntes;
     }
 
-    /// <summary>Lo que puede gastar en equipo: lo que sobra después de asegurarse la comida, la bebida y un colchón.</summary>
+    /// <summary>
+    /// Lo que puede gastar en lo que no es de supervivencia: lo que sobra después de asegurarse la comida, la bebida,
+    /// LA HERRAMIENTA DEL OFICIO y un colchón.
+    ///
+    /// <para>La herramienta se reserva aparte porque es lo único que le da un ingreso propio, y se compra en la
+    /// tienda que la venda: sin esta reserva, un Minero con lo justo se gastaba las monedas en un arma en el
+    /// herrero y se quedaba sin piquete, que cuesta doscientas y tarda una hora de caza en juntarse.</para>
+    /// </summary>
     private int PlataParaElEquipo(SentidosDelBot sentidos) =>
-        Math.Max(0, sentidos.Oro - ReservaPara(sentidos, comida: true, bebida: true) - MonedasDeApuro);
+        PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
+
+    /// <summary>Lo que queda para gustos después de lo que no se puede dejar de comprar.</summary>
+    public static int PlataQueSobra(int oro, int reservaDeLaPanza, int cuestaLaHerramienta, int colchon) =>
+        Math.Max(0, oro - reservaDeLaPanza - cuestaLaHerramienta - colchon);
+
+    /// <summary>Lo que cuesta la herramienta de su oficio si todavía le falta; cero si ya la tiene o no tiene oficio.</summary>
+    private int CuestaLaHerramienta(SentidosDelBot sentidos) =>
+        LeFaltaLaHerramienta(sentidos) && HerramientaDeSuOficio > 0
+            ? _entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? 0 : 0;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;

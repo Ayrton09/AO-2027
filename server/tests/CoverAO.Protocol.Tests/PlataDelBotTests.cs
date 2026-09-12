@@ -73,4 +73,20 @@ public class PlataDelBotTests
 
         Assert.Equal(seLleva, s.LoMejorDeLaVitrina(obj => obj == 100 ? 5 : obj == 200 ? 40 : 0, plata) is not null);
     }
+
+    /// <summary>
+    /// LO QUE SOBRA PARA GUSTOS es lo que queda después de la comida, la bebida, LA HERRAMIENTA y el colchón. La
+    /// herramienta del oficio es lo único que le da un ingreso propio: gastarse esas monedas en un arma lo deja sin
+    /// con qué trabajar y tarda una hora de caza en juntarlas de nuevo.
+    /// </summary>
+    [Theory]
+    // oro | lo reservado para comer y tomar | lo que cuesta la herramienta que le falta | colchón | sobra
+    [InlineData(500, 50, 200, 4, 246)]
+    [InlineData(250, 0, 200, 4, 46)]      // el Minero con lo justo: no le alcanza para el arma, y está bien
+    [InlineData(250, 0, 0, 4, 246)]       // ya tiene el piquete: puede mirar armas
+    [InlineData(100, 120, 0, 4, 0)]       // ni para comer: no sobra nada
+    public void Lo_que_sobra_para_gustos_deja_afuera_la_herramienta(int oro, int panza, int herramienta, int colchon, int sobra)
+    {
+        Assert.Equal(sobra, Bot.PlataQueSobra(oro, panza, herramienta, colchon));
+    }
 }
