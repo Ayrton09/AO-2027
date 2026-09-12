@@ -34,7 +34,7 @@ public class CotoDelBotTests
         foreach (var (mapa, desde) in new[] { (37, ((byte)57, (byte)74)), (208, ((byte)56, (byte)72)), (1, ((byte)58, (byte)45)) })
         {
             var coto = Bot.ElegirCoto(m.Mapas, mapa, desde, presa, f => m.Datos.Npc(f)?.GiveGld > 0,
-                                      f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0, null, out bool porElOro);
+                                      f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0, null, out bool porElOro, out _);
             Assert.True(coto is not null, $"desde el mapa {mapa} no eligió ningún coto");
             Assert.NotEqual(62, coto!.Value.Mapa);
             Assert.False(porElOro);
@@ -128,5 +128,22 @@ public class CotoDelBotTests
         var cercaDelNovato = m.Mapas.CotoQueMasRinde(37, cuna, Da(novato), 2);
         Assert.False(cercaDelNovato is { } n && n.Mapa != 37 && Bot.ValeMudarsePorLoQueRinde(Rinde(novato), n.Rinde),
             "el de nivel 1 se va de la cuna, que es el mejor lugar donde puede estar");
+    }
+
+    /// <summary>
+    /// EL QUE SE MUDA PORQUE ACÁ RINDE POCO NO FRENA EN EL CAMINO POR LO QUE RINDE POCO. Los números son los de
+    /// `seguir3`: Ciro eligió irse de m195 (Lobo, 115) a m202 (Esqueleto Guerrero, 270) cuatro veces y no llegó nunca,
+    /// porque en m195 siempre tiene un lobo a la vista y el viaje se cortaba en el primer paso.
+    /// </summary>
+    [Theory]
+    // lo que rinde lo del camino | lo que rinde el destino | ¿frena?
+    [InlineData(115, 270, false)]   // el lobo del camino contra el esqueleto del destino: sigue de largo
+    [InlineData(270, 270, true)]    // un esqueleto en el camino: ése sí
+    [InlineData(140, 270, true)]    // la mitad ya alcanza: no se trata de despreciar todo
+    [InlineData(115, 0, true)]      // el viaje no es por lo que rinde: vale cualquier presa, como siempre
+    [InlineData(0, 0, true)]
+    public void Yendo_a_algo_que_rinde_mas_no_frena_por_lo_que_rinde_menos(int camino, int destino, bool frena)
+    {
+        Assert.Equal(frena, Bot.ValeFrenarElViaje(camino, destino));
     }
 }

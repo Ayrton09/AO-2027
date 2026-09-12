@@ -1648,8 +1648,10 @@ public sealed class Bot
     public static (int Mapa, byte X, byte Y, int Saltos)? ElegirCoto(Navegante mapas, int mapa, (byte X, byte Y) desde,
                                                                      Func<int, bool> esPresa, Func<int, bool> paga,
                                                                      Func<int, int> rinde,
-                                                                     Func<int, bool>? pisable, out bool porElOro)
+                                                                     Func<int, bool>? pisable, out bool porElOro,
+                                                                     out int porLoQueRinde)
     {
+        porLoQueRinde = 0;
         // LO QUE RINDE MANDA CUANDO LA DIFERENCIA ES GRANDE, y va primero: ni la cantidad ni el oro sirven para salir
         // de la cuna. Preguntado a la data, lo más gordo que un bot se anima a cazar en la cuna es el Lobo —115 de
         // experiencia— y ahí se queda para siempre, mientras a dos mapas hay Esqueletos Guerreros de 270 desde el
@@ -1659,6 +1661,7 @@ public sealed class Bot
             && ValeMudarsePorLoQueRinde(acaRinde?.Rinde ?? 0, gordo.Rinde))
         {
             porElOro = false;
+            porLoQueRinde = gordo.Rinde;
             return (gordo.Mapa, gordo.X, gordo.Y, gordo.Saltos);
         }
 
@@ -1726,7 +1729,7 @@ public sealed class Bot
         Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
         var hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f),
                                  f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0, Pisable(sentidos),
-                                 out bool porElOro);
+                                 out bool porElOro, out int porLoQueRinde);
         Func<int, bool> sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         if (hallado is not { } coto) return false;
 
@@ -1767,7 +1770,7 @@ public sealed class Bot
         // criaturas entre todos en quince minutos, con dos bots que no mataron ninguna.
         _cortoElViaje = false;
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
-                                cortaSi: () => HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno)))
+                                cortaSi: () => HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde)))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
             if (_cortoElViaje) { _cortoElViaje = false; return true; }
@@ -1790,14 +1793,27 @@ public sealed class Bot
     private long _ultimaPresaQuePaga;
 
     /// <summary>
+    /// ¿VALE FRENAR EL VIAJE POR ESTO? Si el viaje es porque el destino RINDE MÁS, sólo por algo que rinda parecido:
+    /// el que se muda porque acá el bicho más gordo da 115 y allá 270 no puede pararse a matar los de 115, porque
+    /// entonces no llega nunca. Medido en `seguir3`: Ciro eligió `m195 -> m202` cuatro veces —niveles 13, 14 y 15— y
+    /// se quedó veinte minutos en m195, que siempre tiene un lobo a la vista.
+    ///
+    /// <para>Con <paramref name="rindeElDestino"/> en cero —el viaje no es por lo que rinde— vale cualquier presa,
+    /// que es la conducta de siempre: nadie pasa al lado de un bicho que salió a matar.</para>
+    /// </summary>
+    public static bool ValeFrenarElViaje(int rindeLoDelCamino, int rindeElDestino) =>
+        rindeElDestino <= 0 || rindeLoDelCamino * VecesQueTieneQueRendir >= rindeElDestino;
+
+    /// <summary>
     /// ¿HAY ALGO QUE CAZAR ACÁ MISMO, como para dejar un viaje por la mitad? Mira lo que tiene a la vista con el radio de su
     /// temperamento —el paseante no frena por cualquier cosa—, pide vida y energía para pelear, y se sigue de largo si lo que hay
     /// cerca es peligroso: frenar al lado de un Lobo para pegarle a un Murciélago es la forma más rápida de morirse.
     /// </summary>
     public static bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, GameData datos, int vidaMaxima, int nivel,
-                                            bool conPociones, bool curaVeneno, int radioSuyo)
+                                            bool conPociones, bool curaVeneno, int radioSuyo, int rindeElDestino = 0)
     {
-        var presa = sentidos.MasCercano(ficha => EsPresaPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno));
+        var presa = sentidos.MasCercano(ficha => EsPresaPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno)
+                                                 && ValeFrenarElViaje((int)(datos.Npc(ficha)?.GiveExp ?? 0), rindeElDestino));
         var peligro = sentidos.MasCercano(ficha => EsPeligrosoPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno));
         // Lo que paga se persigue desde más lejos, igual que al elegir presa.
         int alcance = presa is { } p && datos.Npc(p.Quien.FichaNpc) is { GiveGld: > 0 } ? RadioDeCaza : radioSuyo;
@@ -1807,9 +1823,11 @@ public sealed class Bot
 
     /// <summary>La misma pregunta con lo que ya sabe este bot, y avisando por <see cref="_cortoElViaje"/> que la parada fue por
     /// esto y no por una traba.</summary>
-    private bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
+    private bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno,
+                                      int rindeElDestino = 0)
     {
-        _cortoElViaje = HayAlgoQueCazarCerca(sentidos, _entorno.Datos, vidaMaxima, nivel, conPociones, curaVeneno, RadioDeCazaSuyo);
+        _cortoElViaje = HayAlgoQueCazarCerca(sentidos, _entorno.Datos, vidaMaxima, nivel, conPociones, curaVeneno,
+                                             RadioDeCazaSuyo, rindeElDestino);
         return _cortoElViaje;
     }
 
