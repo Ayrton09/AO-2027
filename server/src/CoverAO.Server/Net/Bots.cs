@@ -1914,10 +1914,47 @@ public sealed class Bot
     /// <para>El hambre y la sed no son decorado: con cualquiera de las dos en cero el servidor DEJA DE CURAR
     /// (el tick envuelve Sanar en <c>Hunger &gt; 0 &amp;&amp; Thirst &gt; 0</c>), así que un bot que no come se
     /// queda sin la única curación gratis que tiene.</para></summary>
+    /// <summary>
+    /// LA CURA MÁS FUERTE QUE PUEDE PAGAR con el maná que tiene, o null si no le alcanza para ninguna. Entre varias,
+    /// la que más levanta: el que sabe Curar Heridas Leves y Graves tira la Grave mientras le dé el maná.
+    /// </summary>
+    public static (byte Ranura, int Cura)? MejorCuraQuePuedePagar(IReadOnlyList<(byte Ranura, int Cura, int Mana)> curas, int mana)
+    {
+        (byte Ranura, int Cura)? mejor = null;
+        foreach (var c in curas)
+            if (c.Mana <= mana && (mejor is null || c.Cura > mejor.Value.Cura)) mejor = (c.Ranura, c.Cura);
+        return mejor;
+    }
+
+    /// <summary>
+    /// CURARSE CON MAGIA. Devuelve si mandó el casteo.
+    ///
+    /// <para>Va ANTES de la poción: el maná vuelve solo y las pociones se compran, así que el que sabe curarse guarda
+    /// las pociones para cuando se queda seco. Es lo primero que hace cualquiera que juega un caster, y el bot no lo
+    /// hacía: <see cref="LanzarAlgo"/> filtra los hechizos de daño y para curarse sólo tenía la poción y el sacerdote.</para>
+    ///
+    /// <para>El objetivo es su propia baldosa: el servidor, si en el tile encarado no hay nadie o es uno mismo,
+    /// autocura al que lo tiró (VB6 modHechizos.bas:1412). Son los mismos dos paquetes que manda el cliente.</para>
+    /// </summary>
+    private bool CurarseConMagia(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (!sentidos.UsaMana) return false;
+        var curas = new List<(byte Ranura, int Cura, int Mana)>();
+        foreach (var (ranura, numero) in sentidos.Hechizos())
+            if (_entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h) curas.Add((ranura, h.MaxHp, h.ManaCost));
+        if (MejorCuraQuePuedePagar(curas, sentidos.ManaEnPuntos) is not { } cura) return false;
+
+        var (x, y) = sentidos.Posicion;
+        return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
+            && transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+                   w => w.WriteByte(x).WriteByte(y).WriteByte((byte)GameLimits.SkillMagia)));
+    }
+
     private async Task<bool> CuidarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
         if (HoraDeTomarPocion(sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))
-            && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 }))
+            && (CurarseConMagia(transporte, sentidos)
+                || Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 })))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             return true;
@@ -2461,14 +2498,18 @@ public sealed class Bot
     /// que aprieta el hechizo y no clickea.</para>
     /// </summary>
     /// <summary>
-    /// ¿VALE LA PENA ESE PERGAMINO? Enseña un hechizo que HACE DAÑO y que todavía no sabe.
+    /// ¿VALE LA PENA ESE PERGAMINO? Enseña un hechizo que HACE DAÑO o que CURA, y que todavía no sabe.
     ///
     /// <para>Un caster nace con uno solo —el original le da <c>UserHechizos(1) = 2</c> en el alta— y sin comprar
     /// pergaminos se queda con ése para siempre, pegando con el báculo. En la data hay ochenta y cuatro, de
     /// doscientas a tres mil monedas, y siete mercaderes que los venden.</para>
+    ///
+    /// <para>LA CURA TAMBIÉN: sólo se miraban los de daño, así que el bot mago no aprendía nunca a curarse —lo
+    /// primero que compra cualquiera que juega un caster— y se le iban las pociones. Curar Heridas Leves sale 500.
+    /// Ver <see cref="CurarseConMagia"/>, que es lo que las usa.</para>
     /// </summary>
     public static bool ValeLaPenaElPergamino(SpellInfo? hechizo, IReadOnlyList<(byte Ranura, short Hechizo)> yaSabe) =>
-        hechizo is { SubeHp: 2 } && !yaSabe.Any(x => x.Hechizo == hechizo.Index);
+        hechizo is { SubeHp: 1 or 2 } && !yaSabe.Any(x => x.Hechizo == hechizo.Index);
 
     /// <summary>El hechizo que enseña ese objeto si es un pergamino, o null.</summary>
     private SpellInfo? QueEnsena(short obj) =>

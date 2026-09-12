@@ -97,8 +97,8 @@ public class MagiaDelBotTests
     }
 
     /// <summary>
-    /// QUÉ PERGAMINO VALE LA PENA: el de un hechizo que hace daño y que todavía no sabe. Un caster nace con uno solo,
-    /// así que sin esto se queda con ése para siempre.
+    /// QUÉ PERGAMINO VALE LA PENA: el de un hechizo que hace daño O QUE CURA y que todavía no sabe. Un caster nace con
+    /// uno solo, así que sin esto se queda con ése para siempre — y sin la cura se le van las pociones.
     /// </summary>
     [Fact]
     public void Vale_la_pena_el_pergamino_de_un_hechizo_de_dano_que_no_sabe()
@@ -110,7 +110,43 @@ public class MagiaDelBotTests
 
         Assert.True(Bot.ValeLaPenaElPergamino(dano, sabe));
         Assert.False(Bot.ValeLaPenaElPergamino(yaLoSabe, sabe));
-        Assert.False(Bot.ValeLaPenaElPergamino(cura, sabe));
+        Assert.True(Bot.ValeLaPenaElPergamino(cura, sabe));       // la cura TAMBIÉN: ver `CurarseConMagia`
         Assert.False(Bot.ValeLaPenaElPergamino(null, sabe));
+    }
+
+    /// <summary>
+    /// EL QUE SABE CURARSE SE CURA CON MAGIA, y con la más fuerte que le dé el maná: entre Curar Heridas Leves y
+    /// Graves, la Grave mientras pueda pagarla.
+    /// </summary>
+    [Fact]
+    public void Se_cura_con_el_hechizo_mas_fuerte_que_puede_pagar()
+    {
+        var curas = new (byte Ranura, int Cura, int Mana)[]
+        {
+            (1, 15, 6),     // Curar Heridas Leves
+            (2, 45, 25),    // Curar Heridas Graves
+        };
+
+        Assert.Equal((byte)2, Bot.MejorCuraQuePuedePagar(curas, mana: 30)!.Value.Ranura);
+        Assert.Equal((byte)1, Bot.MejorCuraQuePuedePagar(curas, mana: 10)!.Value.Ranura);   // no le alcanza la grave
+        Assert.Null(Bot.MejorCuraQuePuedePagar(curas, mana: 3));                            // no le alcanza ninguna
+        Assert.Null(Bot.MejorCuraQuePuedePagar(System.Array.Empty<(byte, int, int)>(), mana: 500));   // no sabe curarse
+    }
+
+    /// <summary>
+    /// Y EL PERGAMINO DE CURA TAMBIÉN SE COMPRA. Antes sólo contaban los de daño, así que el bot mago nunca aprendía
+    /// a curarse — que es lo primero que compra cualquiera que juega un caster.
+    /// </summary>
+    [Theory]
+    [InlineData(2, true)]     // hace daño
+    [InlineData(1, true)]     // cura
+    [InlineData(0, false)]    // ni una cosa ni la otra: un hechizo de estado
+    public void El_pergamino_que_vale_la_pena_hace_dano_o_cura(int subeHp, bool vale)
+    {
+        var hechizo = new SpellInfo(77, "el que sea", SubeHp: subeHp, MinHp: 10, MaxHp: 20, ManaCost: 10, Target: 1);
+
+        Assert.Equal(vale, Bot.ValeLaPenaElPergamino(hechizo, System.Array.Empty<(byte Ranura, short Hechizo)>()));
+        Assert.False(Bot.ValeLaPenaElPergamino(hechizo, new (byte Ranura, short Hechizo)[] { (1, 77) }),
+            "compró un pergamino de un hechizo que ya sabía");
     }
 }
