@@ -295,7 +295,7 @@ public sealed class Bot
 
     /// <summary>La clase del personaje. Sale de la MISMA cuenta con la que se creó (derivada del nombre), así
     /// que es la que tiene de verdad — y es la que decide si le sirve una caña, un hacha o un piquete.</summary>
-    private readonly byte _clase, _raza;
+    private readonly byte _clase, _raza, _genero;
 
     public Bot(string nombre, string? clave, EntornoDeBots entorno, int semilla)
     {
@@ -312,7 +312,7 @@ public sealed class Bot
         // El paso propio: entre 0,8 y 1,3 veces el de referencia. Dos personas no caminan igual, y con el
         // mismo número para todos una fila de bots se mueve como un desfile.
         _ritmo = 0.8 + (Math.Abs(propio) % 6) * 0.1;
-        (_raza, _, _clase, _, _) = Aspecto();
+        (_raza, _genero, _clase, _, _) = Aspecto();
     }
 
     /// <summary>La vida del bot: entrar, vivir, y volver a entrar cuando se cae. Termina cuando se apaga el
@@ -2085,18 +2085,22 @@ public sealed class Bot
     public static int ValorDeCombate(ObjInfo o) => o.IsWeapon || o.IsKnuckles ? o.MaxHit : o.MaxDef;
 
     /// <summary>
-    /// ¿LO PUEDE USAR? La clase, LA RAZA y el nivel, que es lo que el servidor va a mirar cuando se lo quiera poner.
+    /// ¿LO PUEDE USAR? La clase, LA RAZA, EL GÉNERO y el nivel: todo lo que el servidor va a mirar cuando se lo
+    /// quiera poner. Llama a las MISMAS funciones del handler (<see cref="Equipment.MiraElGenero"/> y
+    /// <see cref="Equipment.PuedeUsarloSuGenero"/>) y no a una copia, porque dos copias de la misma regla se
+    /// desincronizan solas — y entonces el bot paga algo que después no se puede poner.
     ///
     /// <para>La raza faltaba, y es media biblioteca: <c>RazasProhibidas</c> del obj.dat viene de Imperium, que ordena
     /// las razas distinto, y <see cref="ObjInfo.RaceForbidden"/> ya hace la traducción. Sin eso el bot compraba ropa
     /// que no se puede poner y se quedaba con la que tenía. Medido en `seguir3`: Ciro, enano, con la Armadura de
     /// Cazador (defensa 24) guardada —lleva <c>RazasProhibidas=2,5</c>, enano y gnomo— y defensa 3 encima.</para>
     /// </summary>
-    public static bool PuedeUsarlo(ObjInfo? o, byte clase, byte raza, short nivel) =>
-        o is not null && !o.ClassForbidden(clase) && !o.RaceForbidden(raza) && o.MinLevel <= nivel;
+    public static bool PuedeUsarlo(ObjInfo? o, byte clase, byte raza, byte genero, short nivel) =>
+        o is not null && !o.ClassForbidden(clase) && !o.RaceForbidden(raza) && o.MinLevel <= nivel
+        && (!Equipment.MiraElGenero(o) || Equipment.PuedeUsarloSuGenero(o.Gender, genero));
 
     /// <inheritdoc cref="PuedeUsarlo"/>
-    private bool LoPuedeUsar(ObjInfo o, short nivel) => PuedeUsarlo(o, _clase, _raza, nivel);
+    private bool LoPuedeUsar(ObjInfo o, short nivel) => PuedeUsarlo(o, _clase, _raza, _genero, nivel);
 
     /// <summary>Lo mejor de eso que YA tiene, puesto o guardado: contra esto se compara la vitrina.</summary>
     private int LoMejorQueTiene(SentidosDelBot sentidos, Func<ObjInfo, bool> esDeEso)

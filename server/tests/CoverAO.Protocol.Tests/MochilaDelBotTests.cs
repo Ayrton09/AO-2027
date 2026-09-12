@@ -154,8 +154,8 @@ public class MochilaDelBotTests : IDisposable
         Assert.True(prohibida != 0 && permitida != 0,
             "la Armadura de Cazador dejó de tener razas prohibidas: el test no prueba nada");
 
-        Assert.False(Bot.PuedeUsarlo(cazador, clase: 8, raza: prohibida, nivel: 40));
-        Assert.True(Bot.PuedeUsarlo(cazador, clase: 8, raza: permitida, nivel: 40));
+        Assert.False(Bot.PuedeUsarlo(cazador, clase: 8, raza: prohibida, genero: 1, nivel: 40));
+        Assert.True(Bot.PuedeUsarlo(cazador, clase: 8, raza: permitida, genero: 1, nivel: 40));
     }
 
     /// <summary>Y las otras dos condiciones siguen valiendo: la clase prohibida y el nivel mínimo.</summary>
@@ -170,8 +170,26 @@ public class MochilaDelBotTests : IDisposable
             else permitida = permitida == 0 ? c : permitida;
         Assert.True(prohibida != 0 && permitida != 0, "el Escudo de Hierro +2 dejó de tener clases prohibidas");
 
-        Assert.False(Bot.PuedeUsarlo(escudo, clase: prohibida, raza: 1, nivel: 40));
-        Assert.True(Bot.PuedeUsarlo(escudo, clase: permitida, raza: 1, nivel: 40));
-        Assert.False(Bot.PuedeUsarlo(null, clase: permitida, raza: 1, nivel: 40));
+        Assert.False(Bot.PuedeUsarlo(escudo, clase: prohibida, raza: 1, genero: 1, nivel: 40));
+        Assert.True(Bot.PuedeUsarlo(escudo, clase: permitida, raza: 1, genero: 1, nivel: 40));
+        Assert.False(Bot.PuedeUsarlo(null, clase: permitida, raza: 1, genero: 1, nivel: 40));
     }
+
+    /// <summary>
+    /// EL BOT NO COMPRA LO QUE SU GÉNERO NO SE PUEDE PONER. Desde que el servidor respeta la marca de género
+    /// (`4d758551`), un bot hombre que compre una de las 43 prendas de mujer paga por algo que después le rechazan:
+    /// queda muerto en la mochila. El filtro de la COMPRA tiene que mirar lo mismo que la validación de la ACCIÓN.
+    /// </summary>
+    [Fact]
+    public void No_compra_la_ropa_que_su_genero_no_puede_usar()
+    {
+        var datos = GameData.Load();
+        var deMujer = System.Linq.Enumerable.Range(1, 1700).Select(i => datos.Obj((short)i))
+                            .FirstOrDefault(o => o is { Gender: 2, IsArmor: true });
+        if (deMujer is null) return;                     // sin data marcada no hay nada que medir
+
+        Assert.False(Bot.PuedeUsarlo(deMujer, clase: 1, raza: 1, genero: 1, nivel: 40), "un hombre la compró igual");
+        Assert.True(Bot.PuedeUsarlo(deMujer, clase: 1, raza: 1, genero: 2, nivel: 40), "una mujer dejó de poder usarla");
+    }
+
 }
