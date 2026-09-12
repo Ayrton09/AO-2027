@@ -1911,10 +1911,7 @@ public sealed class Bot
         }
 
         foreach (var esDeEso in QueSePone)
-        {
-            if (sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && esDeEso(puesto))) continue;
             if (MejorParaPoner(sentidos, esDeEso) is { } ranura) return PedirQueSePonga(transporte, sentidos, ranura);
-        }
 
         // LOS NUDILLOS, SÓLO PARA EL QUE NO TIENE ARMA. El servidor saca uno al ponerse el otro (VB6
         // InvUsuario.bas:991-997 y :1051-1058), así que con los dos en la mochila el bot se pasaría la vida cambiando.
@@ -1928,20 +1925,39 @@ public sealed class Bot
     }
 
     /// <summary>La ranura con lo mejor de eso que tiene sin poner y que puede usar, o null.</summary>
+    /// <summary>
+    /// ¿CUÁL DE ESAS SE PONE? La mejor de la mochila, y SÓLO si supera a la que ya lleva puesta.
+    ///
+    /// <para>Antes alcanzaba con llevar algo de esa clase para no volver a mirar la mochila, así que el bot se ponía lo
+    /// primero que conseguía y no se lo cambiaba nunca. Medido en `seguir1`: Ciro, de nivel 13, con el Escudo de Hierro
+    /// +2 —defensa 8, comprado por 3774 monedas— guardado, y el Escudo de Tortuga —defensa 2, del botín— puesto. Toda la
+    /// cadena de juntar plata para comprarse equipo mejor terminaba en la mochila.</para>
+    ///
+    /// <para>Empatada NO se cambia: el servidor saca la vieja al poner la nueva, así que con dos iguales el bot se
+    /// pasaría la vida cambiándoselas.</para>
+    /// </summary>
+    public static byte? QueSePoneDeEso(IReadOnlyList<(byte Ranura, int Valor, bool Puesto)> deEsas)
+    {
+        if (deEsas.Count == 0) return null;
+        int puesto = deEsas.Where(x => x.Puesto).Select(x => x.Valor).DefaultIfEmpty(0).Max();
+        var mejor = deEsas.Where(x => !x.Puesto).OrderByDescending(x => x.Valor).ToList();
+        return mejor.Count > 0 && mejor[0].Valor > puesto ? mejor[0].Ranura : null;
+    }
+
+    /// <summary>Las de esa clase que tiene, con lo que valen y si las lleva puestas; las que el servidor no le deja
+    /// poner quedan afuera, salvo que ya las tenga encima.</summary>
     private byte? MejorParaPoner(SentidosDelBot sentidos, Func<ObjInfo, bool> esDeEso)
     {
-        byte mejor = 0;
-        int valorMejor = -1;
+        var deEsas = new List<(byte Ranura, int Valor, bool Puesto)>();
         foreach (byte ranura in sentidos.RanurasOcupadas())
         {
             short obj = sentidos.QueHayEn(ranura);
-            if (sentidos.EstaPuesto(ranura) || _noSeLoPone.Contains(obj)) continue;
-            if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)
-                continue;
-            int valor = ValorDeCombate(o);
-            if (valor > valorMejor) { mejor = ranura; valorMejor = valor; }
+            if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o)) continue;
+            bool puesto = sentidos.EstaPuesto(ranura);
+            if (!puesto && (_noSeLoPone.Contains(obj) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)) continue;
+            deEsas.Add((ranura, ValorDeCombate(o), puesto));
         }
-        return mejor == 0 ? null : mejor;
+        return QueSePoneDeEso(deEsas);
     }
 
     private bool PedirQueSePonga(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura)

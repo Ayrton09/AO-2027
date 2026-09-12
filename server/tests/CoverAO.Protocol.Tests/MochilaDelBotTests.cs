@@ -94,4 +94,46 @@ public class MochilaDelBotTests : IDisposable
 
         Assert.True(deNovato >= 4, $"el kit trae {deNovato} objetos de novato: la regla no tendría nada que proteger");
     }
+
+    /// <summary>
+    /// LO QUE COMPRÓ SE LO PONE. Con un escudo peor puesto y uno mejor en la mochila, el bot se cambia: si no, juntar
+    /// plata para comprarse equipo mejor no sirve de nada. Es el caso de Ciro en `seguir1`, con el Escudo de Hierro +2
+    /// guardado y el Escudo de Tortuga encima.
+    /// </summary>
+    [Fact]
+    public void Se_cambia_por_lo_mejor_que_tiene_en_la_mochila()
+    {
+        var mochila = new (byte Ranura, int Valor, bool Puesto)[]
+        {
+            (4, 2, true),      // el Escudo de Tortuga, puesto
+            (12, 8, false),    // el Escudo de Hierro +2, guardado
+        };
+
+        Assert.Equal((byte)12, Bot.QueSePoneDeEso(mochila));
+    }
+
+    /// <summary>
+    /// Y NO SE CAMBIA POR ALGO PEOR NI POR ALGO IGUAL: el servidor saca lo puesto al poner lo nuevo, así que con dos
+    /// que valen lo mismo el bot se pasaría la vida cambiándoselas.
+    /// </summary>
+    [Theory]
+    [InlineData(8, 2, false)]    // lo de la mochila es peor
+    [InlineData(8, 8, false)]    // valen lo mismo
+    [InlineData(2, 8, true)]     // lo de la mochila es mejor
+    public void Solo_se_cambia_por_algo_mejor(int puesto, int guardado, bool seCambia)
+    {
+        var mochila = new (byte Ranura, int Valor, bool Puesto)[] { (4, puesto, true), (12, guardado, false) };
+
+        Assert.Equal(seCambia ? (byte?)12 : null, Bot.QueSePoneDeEso(mochila));
+    }
+
+    /// <summary>Sin nada puesto se pone lo mejor que tenga, que es como empieza cualquiera.</summary>
+    [Fact]
+    public void Sin_nada_puesto_se_pone_lo_mejor_de_la_mochila()
+    {
+        var mochila = new (byte Ranura, int Valor, bool Puesto)[] { (3, 1, false), (7, 5, false), (9, 3, false) };
+
+        Assert.Equal((byte)7, Bot.QueSePoneDeEso(mochila));
+        Assert.Null(Bot.QueSePoneDeEso(System.Array.Empty<(byte, int, bool)>()));
+    }
 }
