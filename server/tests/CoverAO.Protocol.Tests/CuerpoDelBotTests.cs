@@ -117,4 +117,42 @@ public class CuerpoDelBotTests : IDisposable
     {
         for (int i = 0; i < 250 && !listo(); i++) await Task.Delay(20);
     }
+
+    /// <summary>
+    /// SE COME Y SE TOMA CON LA BARRA POR LA MITAD, no esperando el cero. La barra se la dice el SERVIDOR, con el
+    /// mismo paquete que manda su reloj del hambre, así que esto pasa por la lectura de verdad.
+    ///
+    /// <para>Medido en `verdad7`: los ocho bots pasaron los quince minutos con el hambre en 10 de 100 y la sed en 20,
+    /// llevando 99 manzanas y 99 botellas encima. En cero no se regenera la energía y sin energía no se pelea.</para>
+    /// </summary>
+    [Theory]
+    // lo que manda el servidor en la barra | hay que reponerla
+    [InlineData(0, true)]         // famélico: ahí ya se perdió la regeneración
+    [InlineData(10, true)]        // con lo que arrancaban los bots de campo
+    [InlineData(50, true)]        // la mitad: un jugador come acá
+    [InlineData(51, false)]
+    [InlineData(100, false)]      // recién comido
+    public void Come_y_toma_cuando_la_barra_va_por_la_mitad(byte barra, bool repone)
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.UpdateHungerAndThirst(barra, barra));
+
+        Assert.Equal(repone, Bot.TieneQueComer(s));
+        Assert.Equal(repone, Bot.TieneQueTomar(s));
+    }
+
+    /// <summary>Y CADA BARRA VA POR SU LADO: al comer, el servidor manda sólo el hambre (`UpdateHambre`), y la sed
+    /// sigue pidiendo lo suyo.</summary>
+    [Fact]
+    public void Al_comer_deja_de_tener_hambre_pero_la_sed_sigue()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.UpdateHungerAndThirst(20, 20));
+        Assert.True(Bot.TieneQueComer(s), "con la barra en 20 tendría que comer: el test no mira nada");
+
+        s.Recibir(ServerMessages.UpdateHambre(100));
+
+        Assert.False(Bot.TieneQueComer(s));
+        Assert.True(Bot.TieneQueTomar(s));
+    }
 }

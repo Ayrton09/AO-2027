@@ -168,6 +168,27 @@ public sealed class Bot
     /// en PUNTOS de hambre y de sed, no en unidades: diez manzanas llenan cien y diez pollos setecientos cincuenta.
     /// El hambre baja diez cada tres minutos, así que cien puntos son media hora y cuatrocientos, dos horas.</summary>
     private const int ComidaMinima = 100, ComidaQueQuiere = 400;
+
+    /// <summary>
+    /// ¿HAY QUE REPONER LA BARRA? Se come y se toma con la barra por la mitad, que es cuando lo hace un jugador, y no
+    /// esperando el cero.
+    ///
+    /// <para>Esperar el cero salía carísimo: el hambre baja diez cada tres minutos y una manzana da diez, así que el
+    /// bot vivía oscilando entre cero y diez —comiendo una manzana cada tres minutos con noventa y nueve en la
+    /// mochila— y pasaba una parte de cada ciclo EN CERO. Ahí el original no regenera energía (`RecStamina`), y sin
+    /// energía no se pelea: medido en `verdad7`, los ocho bots terminaron los quince minutos con el hambre en 10 de
+    /// 100, la sed en 20, y ninguno subió de nivel.</para>
+    /// </summary>
+    public static bool HayQueReponerLaBarra(int barra) => barra <= BarraParaReponer;
+
+    /// <summary>¿Tiene que comer? La barra se la dice el servidor, con su propio reloj.</summary>
+    public static bool TieneQueComer(SentidosDelBot sentidos) => HayQueReponerLaBarra(sentidos.Hambre);
+
+    /// <inheritdoc cref="TieneQueComer"/>
+    public static bool TieneQueTomar(SentidosDelBot sentidos) => HayQueReponerLaBarra(sentidos.Sed);
+
+    /// <summary>La mitad de la barra: de ahí para abajo se come o se toma.</summary>
+    private const int BarraParaReponer = 50;
     private const int BebidaMinima = 100, BebidaQueQuiere = 400;
 
     /// <summary>Con menos de lo primero no se sale a comprar —no alcanza para un agua, que en caja cuesta cuatro— y
@@ -1783,12 +1804,12 @@ public sealed class Bot
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             return true;
         }
-        if (sentidos.ConHambre && Usar(transporte, sentidos, o => o.IsFood))
+        if (TieneQueComer(sentidos) && Usar(transporte, sentidos, o => o.IsFood))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             return true;
         }
-        if (sentidos.ConSed && Usar(transporte, sentidos, o => o.IsDrink))
+        if (TieneQueTomar(sentidos) && Usar(transporte, sentidos, o => o.IsDrink))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             return true;

@@ -102,7 +102,17 @@ public sealed class SentidosDelBot
     /// agotado tiene que parar aunque le sobre vida.</summary>
     public double Fuelle { get { lock (_candado) return _energiaMax <= 0 ? 1 : (double)_energia / _energiaMax; } }
 
+    /// <summary>El hambre y la sed, de 0 a 100: la barra que el jugador mira para saber cuándo comer.</summary>
+    public int Hambre { get { lock (_candado) return _hambre; } }
+
+    /// <inheritdoc cref="Hambre"/>
+    public int Sed { get { lock (_candado) return _sed; } }
+
+    /// <summary>En CERO, que es donde se corta la regeneración de energía. Para decidir cuándo comer está
+    /// <see cref="Bot.HayQueReponerLaBarra"/>: esperar a esto es esperar demasiado.</summary>
     public bool ConHambre { get { lock (_candado) return _hambre == 0; } }
+
+    /// <inheritdoc cref="ConHambre"/>
     public bool ConSed { get { lock (_candado) return _sed == 0; } }
 
     /// <summary>¿Está meditando? Lo dice el servidor: contesta cada pedido con el <c>MeditateToggle</c>, y lo manda también
