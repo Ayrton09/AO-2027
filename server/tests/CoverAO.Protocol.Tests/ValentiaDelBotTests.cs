@@ -130,4 +130,23 @@ public class ValentiaDelBotTests
         Assert.False(Bot.EsPresaPara(escorpion, 50, 5, conPociones: false, curaVeneno: false));
         Assert.True(Bot.EsPresaPara(escorpion, 50, 5, conPociones: false, curaVeneno: true));
     }
+
+    /// <summary>
+    /// EL QUE TIENE POCIONES DE SOBRA SE CURA PARA VOLVER A PELEAR. Entre el 60% —donde tomaba— y el 80% —donde
+    /// vuelve a pelear— el bot no hacía ninguna de las dos cosas y esperaba la curación natural: dos puntos cada
+    /// sesenta y cuatro segundos. Medido en `verdad7`: rachas de nueve minutos sin matar nada con mil quinientas
+    /// pociones en la mochila.
+    /// </summary>
+    [Theory]
+    // vida (0 a 1) | pociones en la mochila | se toma una
+    [InlineData(0.50, 0, true)]      // en rojo se toma igual, aunque no le queden (la rama de abajo decide si hay)
+    [InlineData(0.50, 100, true)]
+    [InlineData(0.70, 100, true)]    // le sobran: se cura para volver a pelear en vez de esperar
+    [InlineData(0.70, 3, false)]     // con tres, la poción se guarda para no morirse
+    [InlineData(0.85, 100, false)]   // ya puede pelear: no gasta
+    [InlineData(1.00, 1500, false)]
+    public void Con_pociones_de_sobra_se_cura_para_volver_a_pelear(double salud, int pociones, bool toma)
+    {
+        Assert.Equal(toma, Bot.HoraDeTomarPocion(salud, pociones));
+    }
 }

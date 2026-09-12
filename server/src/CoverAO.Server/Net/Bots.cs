@@ -81,6 +81,23 @@ public sealed class Bot
     /// en el mundo.</summary>
     private const double TomaPocion = 0.60, SeRetira = 0.35, VuelveAPelear = 0.80;
 
+    /// <summary>Con esta cantidad en la mochila, una poción deja de ser un recurso que se cuida.</summary>
+    private const int PocionesDeSobra = 20;
+
+    /// <summary>
+    /// ¿SE TOMA UNA POCIÓN? Con pocas, sólo para no morirse. Con la mochila llena, también para volver a pelear.
+    ///
+    /// <para>Entre <see cref="TomaPocion"/> y <see cref="VuelveAPelear"/> el bot no hacía ninguna de las dos cosas:
+    /// no se curaba —porque le sobraba vida— y no peleaba —porque le faltaba—, así que esperaba la curación
+    /// natural, que DE PIE devuelve dos puntos cada sesenta y cuatro segundos (`Survival.HealIntervalTicks`).
+    /// Medido en `verdad7`: rachas de nueve, ocho y siete minutos sin matar nada, en un mapa con diecinueve
+    /// murciélagos y nueve escorpiones, con mil quinientas pociones rojas encima. Un jugador con la mochila así
+    /// se toma una y sigue.</para>
+    /// </summary>
+    public static bool HoraDeTomarPocion(double salud, int pociones) =>
+        salud < TomaPocion ||
+        (pociones >= PocionesDeSobra && salud < VuelveAPelear);
+
     /// <summary>Energía mínima para pegar. El golpe la gasta (VB6 <c>StaRequerido</c>) y sin ella el servidor
     /// no swingea, así que seguir mandando golpes sería mandar paquetes al vacío.</summary>
     private const double FuelleMinimo = 0.20;
@@ -1799,7 +1816,8 @@ public sealed class Bot
     /// queda sin la única curación gratis que tiene.</para></summary>
     private async Task<bool> CuidarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        if (sentidos.Salud < TomaPocion && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 }))
+        if (HoraDeTomarPocion(sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))
+            && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 }))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             return true;
