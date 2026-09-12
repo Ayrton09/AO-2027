@@ -1745,7 +1745,7 @@
     /** Sonda: el Base_Light del mapa actual — 0 = sigue el ciclo dia/noche. */
     window.__baseLight = () => (map ? map.baseLight : null);
     /** Sonda: con que color pinta el motor el aura/particula de ese grupo (tiene que ser el de la data). */
-    window.__colorAura = (g) => colorDominante(g, null);
+    window.__colorAura = (g) => colorDelQuad(g, null);
     /** Sonda: forzar la ceguera, por la misma variable que escribe el paquete Blind. */
     window.__setCiego = (v) => { blind = !!v; return blind; };
     /** Sonda: el alfa del latido de mi personaje, 0..255 (VB6 charlist().AlphaX). */
@@ -2186,19 +2186,27 @@
     // una lista escrita a mano en la que cinco de los nueve grupos no tenían nada que ver con la data (el
     // aura de meditación 25-34 es VERDE (0,255,0) y salía naranja; la de 15-24 es blanca y salía violeta).
     //
-    // Se usa el dominante y plano: este motor tiñe el sprite entero de un color, no puede interpolar cuatro
-    // vértices como el Gouraud del original. Es la aproximación más cercana con la data real.
-    const colorDominante = (grupo, porDefecto) => {
+    // Este motor tiñe el sprite entero de UN color y no puede interpolar cuatro vértices como el Gouraud del
+    // original, así que se usa la MEZCLA de esos cuatro, que es la aproximación plana más cercana. Los vértices
+    // salen de los ColorSet en el orden del original —`temp_rgb = (CS2, CS2, CS3, CS1)`, mod_Particulas.bas:599-602;
+    // el ColorSet4 no lo usa nadie— y por eso el CS2 pesa el doble.
+    //
+    // Antes se tomaba el CS2 SOLO, y para el fuego ese es BLANCO: con blend aditivo una llama blanca sobre el piso
+    // claro del día se borra, que es lo que reportó el autor el 2026-09-12. Los dos vértices naranjas del original
+    // son justo los que la hacen visible. En la fogata (grupo 104) el color pasa de (255,255,255) a (255,168,128).
+    const colorDelQuad = (grupo, porDefecto) => {
       const def = partDefs && partDefs[grupo];
       const c = def && def.colores;
-      return (c && (c[1] || c[0])) || porDefecto;
+      if (!c || c.length < 3) return (c && (c[1] || c[0])) || porDefecto;
+      const v = [c[1], c[1], c[2], c[0]];
+      return [0, 1, 2].map((i) => Math.round((v[0][i] + v[1][i] + v[2][i] + v[3][i]) / 4));
     };
     // Motes swirling up from the character's feet. Deterministic in `t` so frames don't jitter.
     // Returns false once a timed particle expires (time < 0 means "until removed").
     function drawParticle(c, sx, sy) {
       const p = c.particle, now = Date.now();
       if (now > p.until) return false;
-      const [r, g, b] = colorDominante(p.id, [230, 230, 255]);
+      const [r, g, b] = colorDelQuad(p.id, [230, 230, 255]);
       const cx = sx + TILE / 2, base = sy + TILE - 4, t = (now - p.startedAt) / 1000;
       for (let i = 0; i < 8; i++) {
         const rise = (t * 0.8 + i / 8) % 1;
@@ -4616,7 +4624,7 @@
         if (!ps) { ps = []; for (let i = 0; i < def.n; i++) ps.push({ vida: 0 }); emisores.set(clave, ps); }
         const paso = partAcum > def.speed;
         const bx = sx * TILE + offX + TILE / 2, by = sy * TILE + offY + TILE;
-        const dom = colorDominante(grupo, [255, 255, 255]);
+        const dom = colorDelQuad(grupo, [255, 255, 255]);
         const color = `rgb(${dom[0]},${dom[1]},${dom[2]})`;
         partCx.globalCompositeOperation = def.alpha ? 'lighter' : 'source-over';
         for (const p of ps) {
