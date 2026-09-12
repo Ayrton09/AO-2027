@@ -623,6 +623,7 @@ public sealed class Bot
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await SanarseAsync(transporte, sentidos, cerrada, ct)) continue;
+            _nivelParaLoNovato = sentidos.Nivel;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await AprenderHechizosAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -861,14 +862,14 @@ public sealed class Bot
             _proximaCompra = 0;
         if (Environment.TickCount64 < _proximaCompra) return false;
 
-        bool faltanPociones = sentidos.CuantoTiene(EsPocionDeVida) < PocionesQueQuiere;
+        bool faltanPociones = sentidos.Suma(PocionPropia) < PocionesQueQuiere;
         // LA COMIDA Y LA BEBIDA SE REPONEN ANTES DE QUE SE ACABEN. El kit de novato trae cien de cada una y el bot
         // nunca compraba más: después de horas de juego se le terminaban, el hambre y la sed llegaban a cero, y
         // con cualquiera de las dos en cero el servidor deja de regenerar. Sin energía `CazarAsync` se aleja en
         // cuanto empieza, así que no juntaba oro para comer: un espiral cerrado. Medido: un Gladiador de nivel 7
         // con la mochila sin una manzana ni un agua, la energía en 20 de 130, y cada caza durando un segundo.
-        bool faltaComida = sentidos.Suma(PuntosDeComida) < ComidaMinima;
-        bool faltaBebida = sentidos.Suma(PuntosDeBebida) < BebidaMinima;
+        bool faltaComida = sentidos.Suma(ComidaPropia) < ComidaMinima;
+        bool faltaBebida = sentidos.Suma(BebidaPropia) < BebidaMinima;
         bool hayQueVender = sentidos.EnLaMochila(obj => EsBotin(sentidos, obj)) is not null;
         bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
 
@@ -1044,8 +1045,8 @@ public sealed class Bot
     /// punto más barato del juego, que sale de la data.
     /// </summary>
     private int ReservaPara(SentidosDelBot sentidos, bool comida, bool bebida) =>
-        (comida ? ReservaParaLoQueFalta(CostoPorPunto(esBebida: false), sentidos.Suma(PuntosDeComida), ComidaMinima) : 0)
-        + (bebida ? ReservaParaLoQueFalta(CostoPorPunto(esBebida: true), sentidos.Suma(PuntosDeBebida), BebidaMinima) : 0);
+        (comida ? ReservaParaLoQueFalta(CostoPorPunto(esBebida: false), sentidos.Suma(ComidaPropia), ComidaMinima) : 0)
+        + (bebida ? ReservaParaLoQueFalta(CostoPorPunto(esBebida: true), sentidos.Suma(BebidaPropia), BebidaMinima) : 0);
 
     /// <summary>Las monedas para llevar de <paramref name="tiene"/> a <paramref name="minimo"/> puntos a ese costo por punto. El
     /// épsilon es por la coma flotante: setenta por 0,1 da 7,000000000000001 y el techo lo volvía ocho.</summary>
@@ -1121,10 +1122,10 @@ public sealed class Bot
         // Sin una gota encima, con la sed en cero y el hambre aguantando, la plata es para el agua: la comida no
         // se compra aunque esté enfrente. Y al revés con el hambre.
         if (!(SinNadaQueTomar(sentidos) && !sentidos.ConHambre))
-            compro |= await ReponerAsync(transporte, sentidos, PuntosDeComida, ComidaQueQuiere, ct, ReservaPara(sentidos, comida: false, bebida: true));
+            compro |= await ReponerAsync(transporte, sentidos, ComidaPropia, ComidaQueQuiere, ct, ReservaPara(sentidos, comida: false, bebida: true));
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
-            compro |= await ReponerAsync(transporte, sentidos, PuntosDeBebida, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
-        compro |= await ReponerAsync(transporte, sentidos, UnaSiEsPocion, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
+            compro |= await ReponerAsync(transporte, sentidos, BebidaPropia, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
+        compro |= await ReponerAsync(transporte, sentidos, PocionPropia, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
         compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
         compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
         return compro;
@@ -1329,6 +1330,38 @@ public sealed class Bot
     private int PuntosDeComida(short obj) => _entorno.Datos.Obj(obj) is { IsFood: true } o ? o.MinHam : 0;
     private int PuntosDeBebida(short obj) => _entorno.Datos.Obj(obj) is { IsDrink: true } o ? o.MinSed : 0;
     private int UnaSiEsPocion(short obj) => EsPocionDeVida(obj) ? 1 : 0;
+
+    /// <summary>
+    /// ¿ESTÁ POR DEJAR DE SER NOVATO? El último nivel de novato ya cuenta como que sí.
+    ///
+    /// <para>Al pasar <see cref="GameLimits.NewbieMaxLevel"/> el servidor le saca DE UNA todo lo de novato
+    /// (<c>QuitarEquipoNovato</c>, prendido en el `Server.ini` que se distribuye), y de los ocho ítems del kit de
+    /// nacimiento SIETE son de novato: el mapa, las pociones rojas y las azules, las manzanas, las botellas, el
+    /// martillo y el báculo. El que no se preparó se queda sin comer, sin tomar, sin con qué curarse y sin arma en la
+    /// misma subida de nivel. Un jugador lo ve venir y va de compras antes.</para>
+    /// </summary>
+    public static bool PorDejarDeSerNovato(int nivel) => nivel >= GameLimits.NewbieMaxLevel;
+
+    /// <summary>
+    /// ¿Eso cuenta COMO PROPIO para decidir qué comprar? Lo de novato deja de contar cuando está por perderlo.
+    ///
+    /// <para>Es sólo para COMPRAR. Para usarlo sigue contando: mientras las tenga, esas pociones se las toma y esas
+    /// manzanas se las come — tirarlas sería peor que perderlas.</para>
+    /// </summary>
+    private bool CuentaComoPropio(short obj) =>
+        !PorDejarDeSerNovato(_nivelParaLoNovato) || _entorno.Datos.Obj(obj) is not { IsNewbie: true };
+
+    /// <summary>El nivel que mira <see cref="CuentaComoPropio"/>; se refresca en cada vuelta del ciclo.</summary>
+    private int _nivelParaLoNovato;
+
+    /// <summary>Lo mismo que los contadores de al lado, pero mirando SÓLO lo propio: con esto se decide qué comprar.</summary>
+    private int PocionPropia(short obj) => CuentaComoPropio(obj) && EsPocionDeVida(obj) ? 1 : 0;
+
+    /// <inheritdoc cref="PocionPropia"/>
+    private int ComidaPropia(short obj) => CuentaComoPropio(obj) ? PuntosDeComida(obj) : 0;
+
+    /// <inheritdoc cref="PocionPropia"/>
+    private int BebidaPropia(short obj) => CuentaComoPropio(obj) ? PuntosDeBebida(obj) : 0;
     private bool SinNadaQueTomar(SentidosDelBot s) => s.ConSed && s.Suma(PuntosDeBebida) == 0;
     private bool SinNadaQueComer(SentidosDelBot s) => s.ConHambre && s.Suma(PuntosDeComida) == 0;
 
@@ -1918,7 +1951,8 @@ public sealed class Bot
     {
         int mejor = 0;
         foreach (byte ranura in sentidos.RanurasOcupadas())
-            if (_entorno.Datos.Obj(sentidos.QueHayEn(ranura)) is { } o && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel))
+            if (_entorno.Datos.Obj(sentidos.QueHayEn(ranura)) is { } o && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel)
+                && CuentaComoPropio(sentidos.QueHayEn(ranura)))
                 mejor = Math.Max(mejor, ValorDeCombate(o));
         return mejor;
     }

@@ -64,4 +64,34 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(3, sentidos.CuantoTiene(o => o == obj));
         sesion.Close("fin del test");
     }
+
+    /// <summary>
+    /// EL ÚLTIMO NIVEL DE NOVATO YA CUENTA COMO "ESTOY POR PERDERLO". Al pasar de
+    /// <see cref="GameLimits.NewbieMaxLevel"/> el servidor le saca de una todo lo de novato —siete de los ocho ítems
+    /// del kit de nacimiento—, así que el bot tiene que salir a comprar lo suyo ANTES, mientras todavía tiene con qué.
+    /// </summary>
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(14, false)]
+    [InlineData(15, true)]     // último nivel de novato: ya va de compras
+    [InlineData(16, true)]     // ya se lo sacaron
+    [InlineData(40, true)]
+    public void En_el_ultimo_nivel_de_novato_ya_se_compra_lo_suyo(int nivel, bool seprepara)
+    {
+        Assert.Equal(seprepara, Bot.PorDejarDeSerNovato(nivel));
+    }
+
+    /// <summary>Y lo que el servidor le va a sacar es REAL: el kit de nacimiento de una clase cualquiera está lleno de
+    /// objetos que el port trata como de novato, que es lo que hace falta para que la regla de arriba sirva.</summary>
+    [Fact]
+    public void El_kit_de_nacimiento_esta_lleno_de_cosas_que_se_pierden_al_dejar_de_ser_novato()
+    {
+        var datos = GameData.Load();
+        var kit = datos.NewbieKit(2);
+        if (kit.Count == 0) return;                       // sin la data del juego no hay kit que mirar
+
+        int deNovato = kit.Count(it => datos.Obj((short)it.ObjIndex) is { IsNewbie: true });
+
+        Assert.True(deNovato >= 4, $"el kit trae {deNovato} objetos de novato: la regla no tendría nada que proteger");
+    }
 }
