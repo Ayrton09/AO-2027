@@ -1003,6 +1003,11 @@ public sealed class Bot
                 // única salida hacia la cuna está en un cuarto cerrado. Después de un par de intentos, a casa, igual
                 // que con el coto; el contador es otro porque cazar bien no arregla no poder comprar.
                 // Sólo si hay algo que COMPRAR: nadie vuelve a casa con la runa para ir a vender.
+                // ANTES DE DARSE POR VENCIDO, LA PUERTA. Un mercader al que no se llega caminando casi siempre está
+                // adentro de un edificio, y el bot no abría una sola puerta en todo el juego: los ocho vendedores de
+                // pergaminos del mapa 20 están detrás de las once puertas cerradas de ese mapa, todas sin llave.
+                // Es lo que hace cualquiera que no encuentra un negocio abierto: probar la puerta de al lado.
+                if (intento == 0 && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
                 bool vaAComprar = vaPorLaHerramienta || vaPorComida || vaPorBebida || vaPorPociones;
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
                     && !_entorno.Datos.IsPkMap(sentidos.Mapa))
@@ -2208,6 +2213,50 @@ public sealed class Bot
     /// </summary>
     public static bool SoloLeFaltanGustos(bool faltaComida, bool faltaBebida, bool faltanPociones, bool faltaHerramienta) =>
         !faltaComida && !faltaBebida && !faltanPociones && !faltaHerramienta;
+
+    /// <summary>
+    /// ¿ES UNA PUERTA QUE EL BOT PUEDE ABRIR? Cerrada, sin llave, y con una versión abierta a la que cambiar.
+    ///
+    /// <para>Las tres condiciones salen del handler del servidor (<c>AccionParaPuerta</c>, portado de VB6): una
+    /// puerta CON llave sólo se abre con el ítem <c>otLlaves</c> de su misma clave —que este slice no modela— y sin
+    /// <c>IndexAbierta</c> no hay a qué objeto cambiarla. <c>Closed</c> vale 1 cuando está cerrada (sale de la clave
+    /// <c>abierta</c> del .dat, invertida).</para>
+    ///
+    /// <para>En el mundo hay 494 puertas y 381 no tienen llave. El bot no abría ninguna, así que TODO lo que vive
+    /// adentro de un edificio le era inalcanzable: medido, los ocho vendedores de pergaminos del mapa 20 y varios
+    /// de los que venden las herramientas de oficio.</para>
+    /// </summary>
+    public static bool PuertaQueSeAbre(ObjInfo? o) => o is { IsDoor: true, Closed: 1, Llave: 0, IndexAbierta: > 0 };
+
+    /// <summary>
+    /// ¿ESTÁ LO BASTANTE CERCA PARA ABRIRLA? La distancia EUCLÍDEA del original: <c>If Not (Distance(...) > 2)</c>
+    /// (Matematicas.bas:55), o sea <c>dx² + dy² &lt;= 4</c>. No es el Chebyshev de los gates de NPC: con la euclídea
+    /// la diagonal de dos —distancia 2,83— NO alcanza, y el servidor contesta "Estás muy lejos".
+    /// </summary>
+    public static bool AlAlcanceDeLaPuerta(int dx, int dy) => dx * dx + dy * dy <= 4;
+
+    /// <summary>
+    /// ABRIR UNA PUERTA que tenga a la vista. Devuelve si la abrió.
+    ///
+    /// <para>Se acerca por el navegante —una puerta suele estar en una pared, y el paso codicioso se traba— y manda
+    /// el mismo doble clic que el cliente. Que se haya abierto se verifica mirando el piso: el servidor cambia el
+    /// objeto por su versión abierta, así que si la baldosa sigue con el mismo objeto no pasó nada.</para>
+    /// </summary>
+    private async Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                                 CancellationToken ct)
+    {
+        if (sentidos.LoMasCercanoDelPiso(obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj))) is not { } puerta
+            || puerta.Pasos > RadioDeCompras) return false;
+
+        var (x, y) = sentidos.Posicion;
+        if (!AlAlcanceDeLaPuerta(x - puerta.Donde.X, y - puerta.Donde.Y)
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, puerta.Donde.X, puerta.Donde.Y, cerrada, ct, 1))
+            return false;
+
+        transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(puerta.Donde.X).WriteByte(puerta.Donde.Y)));
+        await Task.Delay(_rng.Next(400, 900), ct);
+        return sentidos.EnElPiso(puerta.Donde) != puerta.Obj;
+    }
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;

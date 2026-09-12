@@ -374,6 +374,28 @@ public sealed class SentidosDelBot
             if (_inventario[s].Puesto) _inventario[s] = (_inventario[s].Obj, _inventario[s].Cantidad, false);
     }
 
+    /// <summary>
+    /// LO MÁS CERCANO DEL PISO que cumpla <paramref name="sirve"/>, con su baldosa y a cuántos pasos está. Es el
+    /// hermano de <see cref="MasCercano"/> para las cosas tiradas: hasta ahora sólo se podía preguntar por UNA
+    /// baldosa a la vez, así que el bot no tenía forma de encontrar, por ejemplo, la puerta cerrada más próxima.
+    /// </summary>
+    public ((byte X, byte Y) Donde, short Obj, int Pasos)? LoMasCercanoDelPiso(Func<short, bool> sirve)
+    {
+        lock (_candado)
+        {
+            if (!_tengoPosicion) return null;
+            ((byte X, byte Y) Donde, short Obj, int Pasos)? mejor = null;
+            foreach (var (donde, obj) in _enElPiso)
+            {
+                if (obj <= 0 || !sirve(obj)) continue;
+                int pasos = Math.Abs(donde.X - _x) + Math.Abs(donde.Y - _y);
+                if (mejor is { } ya && ya.Pasos <= pasos) continue;
+                mejor = (donde, obj, pasos);
+            }
+            return mejor;
+        }
+    }
+
     /// <summary>Qué hay tirado en esa baldosa, o 0.</summary>
     public short EnElPiso((byte X, byte Y) baldosa)
     {
