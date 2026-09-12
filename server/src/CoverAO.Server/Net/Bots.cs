@@ -295,7 +295,7 @@ public sealed class Bot
 
     /// <summary>La clase del personaje. Sale de la MISMA cuenta con la que se creó (derivada del nombre), así
     /// que es la que tiene de verdad — y es la que decide si le sirve una caña, un hacha o un piquete.</summary>
-    private readonly byte _clase;
+    private readonly byte _clase, _raza;
 
     public Bot(string nombre, string? clave, EntornoDeBots entorno, int semilla)
     {
@@ -312,7 +312,7 @@ public sealed class Bot
         // El paso propio: entre 0,8 y 1,3 veces el de referencia. Dos personas no caminan igual, y con el
         // mismo número para todos una fila de bots se mueve como un desfile.
         _ritmo = 0.8 + (Math.Abs(propio) % 6) * 0.1;
-        _clase = Aspecto().Clase;
+        (_raza, _, _clase, _, _) = Aspecto();
     }
 
     /// <summary>La vida del bot: entrar, vivir, y volver a entrar cuando se cae. Termina cuando se apaga el
@@ -2036,7 +2036,7 @@ public sealed class Bot
             short obj = sentidos.QueHayEn(ranura);
             if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o)) continue;
             bool puesto = sentidos.EstaPuesto(ranura);
-            if (!puesto && (_noSeLoPone.Contains(obj) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)) continue;
+            if (!puesto && (_noSeLoPone.Contains(obj) || !LoPuedeUsar(o, sentidos.Nivel))) continue;
             deEsas.Add((ranura, ValorDeCombate(o), puesto));
         }
         return QueSePoneDeEso(deEsas);
@@ -2052,8 +2052,19 @@ public sealed class Bot
     /// <summary>Lo que vale en combate: el golpe si pega, la defensa si se viste.</summary>
     public static int ValorDeCombate(ObjInfo o) => o.IsWeapon || o.IsKnuckles ? o.MaxHit : o.MaxDef;
 
-    /// <summary>¿Lo puede usar? La clase y el nivel, que es lo que el servidor va a mirar cuando se lo quiera poner.</summary>
-    private bool LoPuedeUsar(ObjInfo o, short nivel) => !o.ClassForbidden(_clase) && o.MinLevel <= nivel;
+    /// <summary>
+    /// ¿LO PUEDE USAR? La clase, LA RAZA y el nivel, que es lo que el servidor va a mirar cuando se lo quiera poner.
+    ///
+    /// <para>La raza faltaba, y es media biblioteca: <c>RazasProhibidas</c> del obj.dat viene de Imperium, que ordena
+    /// las razas distinto, y <see cref="ObjInfo.RaceForbidden"/> ya hace la traducción. Sin eso el bot compraba ropa
+    /// que no se puede poner y se quedaba con la que tenía. Medido en `seguir3`: Ciro, enano, con la Armadura de
+    /// Cazador (defensa 24) guardada —lleva <c>RazasProhibidas=2,5</c>, enano y gnomo— y defensa 3 encima.</para>
+    /// </summary>
+    public static bool PuedeUsarlo(ObjInfo? o, byte clase, byte raza, short nivel) =>
+        o is not null && !o.ClassForbidden(clase) && !o.RaceForbidden(raza) && o.MinLevel <= nivel;
+
+    /// <inheritdoc cref="PuedeUsarlo"/>
+    private bool LoPuedeUsar(ObjInfo o, short nivel) => PuedeUsarlo(o, _clase, _raza, nivel);
 
     /// <summary>Lo mejor de eso que YA tiene, puesto o guardado: contra esto se compara la vitrina.</summary>
     private int LoMejorQueTiene(SentidosDelBot sentidos, Func<ObjInfo, bool> esDeEso)

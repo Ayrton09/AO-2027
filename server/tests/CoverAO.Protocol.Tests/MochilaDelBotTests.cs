@@ -136,4 +136,42 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal((byte)7, Bot.QueSePoneDeEso(mochila));
         Assert.Null(Bot.QueSePoneDeEso(System.Array.Empty<(byte, int, bool)>()));
     }
+
+    /// <summary>
+    /// NO SE COMPRA NI SE PONE LO QUE SU RAZA TIENE PROHIBIDO. Contra la data de verdad: la Armadura de Cazador (360)
+    /// lleva <c>RazasProhibidas=2,5</c> —números del obj.dat de Imperium, que <c>RaceForbidden</c> traduce— y es la que
+    /// Ciro, enano, se compró en `seguir3` y no se pudo poner, quedándose con defensa 3 en vez de 24.
+    /// </summary>
+    [Fact]
+    public void No_se_pone_la_armadura_que_su_raza_tiene_prohibida()
+    {
+        var datos = GameData.Load();
+        if (datos.Obj(360) is not { } cazador) return;                 // sin la data del juego no hay nada que mirar
+        byte prohibida = 0, permitida = 0;
+        for (byte r = 1; r <= 6; r++)
+            if (cazador.RaceForbidden(r)) prohibida = prohibida == 0 ? r : prohibida;
+            else permitida = permitida == 0 ? r : permitida;
+        Assert.True(prohibida != 0 && permitida != 0,
+            "la Armadura de Cazador dejó de tener razas prohibidas: el test no prueba nada");
+
+        Assert.False(Bot.PuedeUsarlo(cazador, clase: 8, raza: prohibida, nivel: 40));
+        Assert.True(Bot.PuedeUsarlo(cazador, clase: 8, raza: permitida, nivel: 40));
+    }
+
+    /// <summary>Y las otras dos condiciones siguen valiendo: la clase prohibida y el nivel mínimo.</summary>
+    [Fact]
+    public void Tampoco_lo_que_su_clase_prohibe_ni_lo_que_le_queda_grande()
+    {
+        var datos = GameData.Load();
+        if (datos.Obj(1000) is not { } escudo) return;                  // Escudo de Hierro +2
+        byte prohibida = 0, permitida = 0;
+        for (byte c = 1; c <= 18; c++)
+            if (escudo.ClassForbidden(c)) prohibida = prohibida == 0 ? c : prohibida;
+            else permitida = permitida == 0 ? c : permitida;
+        Assert.True(prohibida != 0 && permitida != 0, "el Escudo de Hierro +2 dejó de tener clases prohibidas");
+
+        Assert.False(Bot.PuedeUsarlo(escudo, clase: prohibida, raza: 1, nivel: 40));
+        Assert.True(Bot.PuedeUsarlo(escudo, clase: permitida, raza: 1, nivel: 40));
+        Assert.False(Bot.PuedeUsarlo(null, clase: permitida, raza: 1, nivel: 40));
+    }
 }
