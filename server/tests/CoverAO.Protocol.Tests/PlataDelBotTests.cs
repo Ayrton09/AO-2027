@@ -126,4 +126,20 @@ public class PlataDelBotTests
         Assert.Equal((short)200, elegida!.Value.Obj);
         Assert.Null(s.LoMejorDeLaVitrina(Mejora, plata: 100));                // no le alcanza la que mejora
     }
+
+    /// <summary>
+    /// NO SE VIAJA A MIRAR ALGO QUE NO PUEDE PAGAR. Es el caso de Ciro en `seguir1`: 2445 monedas y el Herrero Rinkel
+    /// con la Armadura de Cuero a 3000 — doce minutos de ida y vuelta sin cazar. El precio de lista es el techo de lo
+    /// que le van a cobrar, así que con eso alcanza para decidir el viaje.
+    /// </summary>
+    [Theory]
+    // precio de lista | plata que le sobra | ¿vale el viaje?
+    [InlineData(3000, 2441, false)]    // la Armadura de Cuero contra lo que tenía Ciro
+    [InlineData(3000, 3000, true)]     // justo
+    [InlineData(300, 2441, true)]      // el Escudo de Tortuga, que sí podía
+    [InlineData(0, 0, true)]           // lo que no cuesta nada se puede pagar siempre
+    public void No_viaja_a_mirar_lo_que_no_puede_pagar(int precio, double plata, bool leAlcanza)
+    {
+        Assert.Equal(leAlcanza, Bot.LoPuedePagar(precio, plata));
+    }
 }

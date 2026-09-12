@@ -933,14 +933,16 @@ public sealed class Bot
         // Pescadora de nivel 11 con 4755 monedas seguía con el Martillo de Piedra del kit (golpe 5) mientras el
         // Herrero General de su mapa vendía una Espada Larga (golpe 8) a 350.
         bool soloGustos = SoloLeFaltanGustos(faltaComida, faltaBebida, faltanPociones, faltaHerramienta);
+        // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
+        double sobraParaEquipo = PlataParaElEquipo(sentidos);
 
         bool Sirve(int ficha)
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
             if (soloGustos)
-                return (vaPorEquipo && stock.Any(s => MejoraLoQueTiene(sentidos, (short)s.ObjIndex)))
-                    || (vaPorHechizo && stock.Any(s => LeSirveElPergamino(sentidos, (short)s.ObjIndex)))
+                return (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
+                    || (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null);
             if (primeroLaBebida) return stock.Any(s => EsBebida((short)s.ObjIndex));
             if (primeroLaComida) return stock.Any(s => EsComida((short)s.ObjIndex));
@@ -950,8 +952,8 @@ public sealed class Bot
             if (vaPorComida && stock.Any(s => EsComida((short)s.ObjIndex))) return true;
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
-            if (vaPorEquipo && stock.Any(s => MejoraLoQueTiene(sentidos, (short)s.ObjIndex))) return true;
-            if (vaPorHechizo && stock.Any(s => LeSirveElPergamino(sentidos, (short)s.ObjIndex))) return true;
+            if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
+            if (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             return hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
@@ -1985,6 +1987,24 @@ public sealed class Bot
     }
 
     /// <summary>¿Eso de la vitrina lo mejora en algo? Es lo que decide si vale la pena el viaje al mercader.</summary>
+    /// <summary>
+    /// ¿LE ALCANZA LA PLATA? El precio de lista es el TECHO de lo que le van a cobrar: el mercader cobra
+    /// <c>Valor / (1 + Comerciar/100)</c> (ver <see cref="Comercio.PrecioDeVitrina"/>), o sea el valor o menos. Desde
+    /// lejos el bot no conoce su propio regateo, así que mira el techo: como mucho deja pasar algo que con el descuento
+    /// habría podido pagar, y eso es preferible al viaje al pedo.
+    ///
+    /// <para>Lo que no cuesta nada SÍ se puede pagar: hay objetos de valor cero en las vitrinas.</para>
+    /// </summary>
+    public static bool LoPuedePagar(int precioDeLista, double plata) => precioDeLista <= plata;
+
+    /// <summary>¿Eso de la vitrina lo mejora Y lo puede pagar? Las dos cosas, porque es lo que decide el VIAJE: sin el
+    /// precio, el bot viajaba a ver algo que no le alcanzaba, volvía con las manos vacías y salía de nuevo — y como
+    /// mientras viaja no caza, la plata no le crecía nunca. Medido en `seguir1`: Ciro, nivel 13 con 2445 monedas, doce
+    /// minutos entre la cuna y el Herrero Rinkel —Armadura de Cuero a 3000— sin matar una criatura.</summary>
+    private bool ValeElViajePorEso(SentidosDelBot sentidos, short obj, double plata) =>
+        MejoraLoQueTiene(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata);
+
+    /// <summary>¿Eso de la vitrina lo mejora en algo? Es lo que decide si vale la pena el viaje al mercader.</summary>
     private bool MejoraLoQueTiene(SentidosDelBot sentidos, short obj)
     {
         if (_entorno.Datos.Obj(obj) is not { } o || !LoPuedeUsar(o, sentidos.Nivel)) return false;
@@ -2414,6 +2434,10 @@ public sealed class Bot
     /// <summary>¿Ese pergamino de la vitrina le sirve a este bot?</summary>
     private bool LeSirveElPergamino(SentidosDelBot sentidos, short obj) =>
         sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos());
+
+    /// <inheritdoc cref="ValeElViajePorEso"/>
+    private bool ValeElViajePorElPergamino(SentidosDelBot sentidos, short obj, double plata) =>
+        LeSirveElPergamino(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata);
 
     /// <summary>
     /// APRENDER LO QUE COMPRÓ: usar el pergamino que tenga en la mochila. Devuelve si mandó algo.
