@@ -541,7 +541,8 @@ public sealed class Bot
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
                 // baldosas, y se tomó 159 pociones ahí. A lo que tiene pegado se le devuelve el golpe: mirar y pegar, como en
                 // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
-                if (EstaAcorralado(_huidasSinMoverse, _huidasQueNoLoSacaron) && TieneFuelleParaPelear(sentidos)
+                if ((EstaAcorralado(_huidasSinMoverse, _huidasQueNoLoSacaron) || NoSeLoSacaDeEncima(_huidasDeEsaCriatura))
+                    && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } pegado)
                 {
                     var (px, py) = sentidos.Posicion;
@@ -551,6 +552,13 @@ public sealed class Bot
                     await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                     continue;
                 }
+                // LA SERIE: cuántas veces seguidas huyó de ESTA criatura. Se reinicia al cambiar de amenaza o al pasar la ventana,
+                // así que dos sustos distintos no se suman.
+                bool mismaAmenaza = amenaza.Quien.CharIndex == _deQuienHuye && Environment.TickCount64 < _ventanaDeHuidas;
+                _huidasDeEsaCriatura = mismaAmenaza ? _huidasDeEsaCriatura + 1 : 1;
+                _deQuienHuye = amenaza.Quien.CharIndex;
+                _ventanaDeHuidas = Environment.TickCount64 + VentanaDeHuidasMs;
+
                 var antesDeHuir = sentidos.Posicion;
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
                 _huidasSinMoverse = sentidos.Posicion == antesDeHuir ? _huidasSinMoverse + 1 : 0;
@@ -566,6 +574,7 @@ public sealed class Bot
             }
             _huidasSinMoverse = 0;
             _huidasQueNoLoSacaron = 0;
+            _huidasDeEsaCriatura = 0;
 
             // LO QUE YA LE PEGA SE LO SACA DE ENCIMA, aunque haya algo peligroso a la vista, la vida no esté para empezar una pelea o
             // no le den ganas: esas reglas son para ELEGIR a quién atacar, no para dejarse picar. Medido en `normal1`: un Minero de
@@ -2003,6 +2012,18 @@ public sealed class Bot
     ///
     /// <para><paramref name="pasosDeLaAmenazaDespues"/> negativo = ya no se la ve, que es la única huida que sirvió.</para>
     /// </summary>
+    /// <summary>
+    /// ¿NO SE LA PUEDE SACAR DE ENCIMA? Tres huidas de LA MISMA criatura adentro de la misma ventana de tiempo
+    /// (<see cref="VentanaDeHuidasMs"/>) y correr deja de ser una estrategia: hay que pelear o irse con la runa.
+    ///
+    /// <para>Es la tercera forma de estar acorralado y la que faltaba. Las otras dos miran UNA huida —no me pude mover, o quedó
+    /// pegada— y esta mira la SERIE. Medido en `verdad5`: al huir, el Lobo queda a cuatro, cinco, seis o siete baldosas, o sea
+    /// que huir SÍ lo despega; el problema es que vuelve a alcanzarlo a los pocos segundos. Con los contadores por distancia el
+    /// bot encadenó treinta y siete huidas seguidas y la rama de pelear no entró ni una vez.</para>
+    /// </summary>
+    public static bool NoSeLoSacaDeEncima(int huidasDeLaMismaCriatura) =>
+        huidasDeLaMismaCriatura >= HuidasParaAcorralado;
+
     public static bool LaHuidaNoSirvio(int pasosDeLaAmenazaDespues) =>
         pasosDeLaAmenazaDespues >= 0 && pasosDeLaAmenazaDespues <= RadioDeSusto;
 
@@ -2015,6 +2036,12 @@ public sealed class Bot
     private const int HuidasParaAcorralado = 3;
     private int _huidasSinMoverse;
     private int _huidasQueNoLoSacaron;
+    private short _deQuienHuye;
+    private int _huidasDeEsaCriatura;
+    private long _ventanaDeHuidas;
+
+    /// <summary>Cuánto dura la serie: dos huidas separadas por más de esto son dos sustos distintos, no una persecución.</summary>
+    private const int VentanaDeHuidasMs = 60_000;
     private const int EsperaEntreRunasDeHuidaMs = 30_000;
 
     private const int PocionQueCuraElVeneno = 5;

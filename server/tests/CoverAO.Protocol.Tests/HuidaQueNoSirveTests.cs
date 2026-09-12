@@ -35,6 +35,17 @@ public class HuidaQueNoSirveTests
         Assert.Equal(noSirvio, Bot.LaHuidaNoSirvio(pasosDespues));
     }
 
+    [Theory]
+    // huidas seguidas de LA MISMA criatura en la ventana | hay que dejar de correr
+    [InlineData(0, false)]
+    [InlineData(2, false)]    // todavía puede probar
+    [InlineData(3, true)]     // a la tercera, correr dejó de ser una estrategia
+    [InlineData(37, true)]    // la racha que se midió en `verdad5`
+    public void A_la_tercera_huida_de_la_misma_criatura_se_pelea(int huidas, bool dejaDeCorrer)
+    {
+        Assert.Equal(dejaDeCorrer, Bot.NoSeLoSacaDeEncima(huidas));
+    }
+
     /// <summary>Y LA REGLA VIEJA SIGUE VALIENDO tal cual para el que sólo mira el rincón.</summary>
     [Fact]
     public void La_regla_del_rincon_no_cambia()
