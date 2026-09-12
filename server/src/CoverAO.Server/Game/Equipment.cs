@@ -11,6 +11,31 @@ namespace CoverAO.Server.Game;
 /// </summary>
 public static class Equipment
 {
+    /// <summary>
+    /// ¿EL GÉNERO DEL JUGADOR PUEDE USAR ESA PRENDA? Sin marca (0) la usa cualquiera; con marca, sólo ese género.
+    /// <c>eGenero</c> del original (Declares.bas:173): Hombre = 1, Mujer = 2.
+    ///
+    /// <para>La regla es la del original —<c>SexoPuedeUsarItem</c>, InvUsuario.bas:851-856, con su <c>Else …
+    /// = True</c> para lo que no lleva marca, que es donde caen las 56 túnicas sin género— pero el DATO no. El VB6
+    /// alimenta esa función con las claves <c>Mujer</c> y <c>Hombre</c> del obj.dat (FileIO.bas:959-960), y esas dos
+    /// claves no existen en ningún obj.dat del repo: allá la regla nunca rechaza nada. Lo que la data sí trae es
+    /// <c>Genero=2</c> en 43 prendas —todas de mujer; no hay una sola con <c>Genero=1</c>—, una clave que el VB6 no
+    /// lee. Respetarla es una DECISIÓN DEL AUTOR del 2026-09-12, a partir del reporte del tester, y un apartamiento
+    /// consciente de la paridad. Por eso no hay "los hombres sólo ropa de hombres": no existe la marca que lo diga.</para>
+    /// </summary>
+    public static bool PuedeUsarloSuGenero(int generoDeLaPrenda, int generoDelJugador) =>
+        generoDeLaPrenda <= 0 || generoDeLaPrenda == generoDelJugador;
+
+    /// <summary>
+    /// ¿EN QUÉ PRENDAS SE MIRA EL GÉNERO? Sólo en la armadura de CUERPO: es la única rama del original que llama a
+    /// <c>SexoPuedeUsarItem</c> (InvUsuario.bas:1151, <c>Case otArmadura</c> / <c>Case 0</c>); el casco (:1193) y el
+    /// escudo (:1230) no la llaman, y el resto del equipo ni siquiera pasa por ahí.
+    ///
+    /// <para>Hoy la data no lo notaría —ninguno de los 43 objetos con marca es casco ni escudo— pero el gate sigue
+    /// la FUENTE y no el catálogo: un obj.dat editado sí lo notaría.</para>
+    /// </summary>
+    public static bool MiraElGenero(ObjInfo o) => o.IsArmor;
+
     /// <summary>1 weapon, 2 armour, 3 helmet, 4 shield, 5 ammo (flechas), 6 anillo/herramienta, 7 nudillos,
     /// 8 ítem mágico; 0 = not equippable. La 6 corresponde al <c>AnilloEqpSlot</c> del original, que es donde se
     /// lleva la HERRAMIENTA de oficio (ver <see cref="ObjInfo.IsRing"/>): sin ella no se puede portar el gate de

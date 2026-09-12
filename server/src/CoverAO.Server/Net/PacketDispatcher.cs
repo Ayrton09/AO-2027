@@ -12083,10 +12083,10 @@ public sealed partial class PacketDispatcher
             }
             else
             {
-                // Restricciones de equipamiento (VB6 EquiparInvItem, InvUsuario.bas:909). Nivel/clase/raza solo
-                // se validan para un jugador normal (User), no para GMs (guard "Privilegios And User"). El género
-                // (obj.Genero) y las facciones de ejército (obj.Faccion → 439) se difieren: el slice no modela
-                // esos subsistemas (todo char es ciudadano Status 0/1, sin Real/Caos/Milicia).
+                // Restricciones de equipamiento (VB6 EquiparInvItem, InvUsuario.bas:909). Nivel/clase/raza/género
+                // solo se validan para un jugador normal (User), no para GMs (guard "Privilegios And User"). Las
+                // facciones de ejército (obj.Faccion → 439) se difieren: el slice no modela ese subsistema (todo
+                // char es ciudadano Status 0/1, sin Real/Caos/Milicia).
                 if (!p.IsGm)
                 {
                     if (obj.MinLevel > 0 && p.Level < obj.MinLevel) { session.Send(ServerMessages.LocaleMsg(268, obj.MinLevel.ToString())); return; }  // nivel
@@ -12097,6 +12097,12 @@ public sealed partial class PacketDispatcher
                     // y no el catálogo, porque un obj.dat editado sí lo notaría.
                     if (!obj.IsMagicItem && obj.ClassForbidden(p.Class)) { session.Send(ServerMessages.LocaleMsg(265)); return; }   // clase prohibida
                     if (obj.IsArmor && obj.RaceForbidden(p.Race)) { session.Send(ServerMessages.LocaleMsg(266)); return; } // raza prohibida (armadura)
+                    // EL GÉNERO, SÓLO EN LA ARMADURA DE CUERPO: es la única rama del original que llama a
+                    // `SexoPuedeUsarItem` (InvUsuario.bas:1151); el casco (:1193) y el escudo (:1230) no. Ver
+                    // `Equipment.PuedeUsarloSuGenero` para de dónde sale el dato y por qué acá no es fiel al VB6.
+                    if (Equipment.MiraElGenero(obj) && !Equipment.PuedeUsarloSuGenero(obj.Gender, p.Gender))
+                    { session.Send(ServerMessages.LocaleMsg(267)); return; }   // "Tu género no puede usar este objeto."
+
                 }
                 // Conflicto de 2 manos (aplica a todos): arma de 2 manos + escudo equipado -> 263; escudo + arma de 2 manos -> 428.
                 if (obj.IsWeapon && obj.TwoHanded == 1 && Equipment.EquippedOfCategory(p, _data, 4) is { TwoHanded: 0 })
