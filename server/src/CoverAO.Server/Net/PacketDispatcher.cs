@@ -2668,6 +2668,18 @@ public sealed partial class PacketDispatcher
         if (!PuedeUsarSkill(session, p, GameLimits.SkillEquitacion, montura)) return;
         // Sólo al SUBIRSE: desmontar adentro tiene que poder hacerse, o el que entra a caballo queda trabado
         // arriba del animal. El original ordena igual — el `If .flags.Montando = 0` envuelve sólo esa rama.
+        // Y LO QUE LA MONTURA PIDE EN SU FICHA: nivel, clase y raza, igual que el resto del equipo. El original no
+        // los mira —`DoEquita` sólo pide la skill— pero la data los trae escritos y nadie los leía: los dos huargos
+        // llevan `RazasProhibidas` que deja sólo al Orco. Ver `Equipment.QueLeFaltaParaUsarlo`.
+        //
+        // SÓLO AL SUBIRSE, igual que la guarda de abajo: si no, un personaje que ya está montado —porque cambió de
+        // raza con una poción, o porque la data cambió— se queda trabado arriba del animal para siempre.
+        if (Equipment.QueLeFaltaParaMontar(montura, p.Mounted, p.IsGm, p.Level, p.Class, p.Race) is var leFalta && leFalta != 0)
+        {
+            session.Send(leFalta == 268 ? ServerMessages.LocaleMsg(268, montura.MinLevel.ToString())
+                                        : ServerMessages.LocaleMsg((short)leFalta));
+            return;
+        }
         if (!p.Mounted && _data.NoSeMontaAca(p.Pos.Map, p.Pos.X, p.Pos.Y))
         {
             session.Send(ServerMessages.LocaleMsg(253));   // "No puedes montar aquí"

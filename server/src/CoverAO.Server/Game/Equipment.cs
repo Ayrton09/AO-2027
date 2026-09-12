@@ -36,6 +36,35 @@ public static class Equipment
     /// </summary>
     public static bool MiraElGenero(ObjInfo o) => o.IsArmor;
 
+    /// <summary>
+    /// ¿QUÉ LE FALTA PARA USARLO? Devuelve el <c>LocaleMsg</c> del rechazo —268 nivel, 265 clase, 266 raza— o 0 si no
+    /// le falta nada. Es el mismo orden en que los pide <c>EquiparInvItem</c> (VB6 InvUsuario.bas:925 el nivel, y
+    /// después la rama del tipo), y el ítem mágico queda afuera del gate de clase como en el original: el
+    /// <c>Case otItemsMagicos</c> (:940) es la única rama que no llama a <c>ClasePuedeUsarItem</c>.
+    ///
+    /// <para>Se extrajo para que la MONTURA pase por lo mismo que el equipo. El original no lo hace —el huargo es
+    /// <c>otMonturas</c> y se va por <c>DoEquita</c> (Trabajo.bas:2338), donde la única compuerta de ficha es la skill
+    /// de Equitación, así que allá un no-orco sí puede montar un huargo— pero la data trae la restricción escrita:
+    /// los dos huargos llevan <c>RazasProhibidas=1,2,3,4,5</c>, que deja sólo al Orco, y hay 10 monturas con raza
+    /// prohibida y 5 con clase. Aplicarla es una DECISIÓN DEL AUTOR del 2026-09-12, sobre el reporte del tester.</para>
+    /// </summary>
+    public static int QueLeFaltaParaUsarlo(ObjInfo o, int nivel, byte clase, byte raza)
+    {
+        if (o.MinLevel > 0 && nivel < o.MinLevel) return 268;             // "necesitás nivel N"
+        if (!o.IsMagicItem && o.ClassForbidden(clase)) return 265;        // "tu clase no puede usar este objeto"
+        if (o.RaceForbidden(raza)) return 266;                            // "tu raza no puede usar este objeto"
+        return 0;
+    }
+
+    /// <summary>
+    /// ¿QUÉ LE FALTA PARA MONTAR? Lo mismo que para el equipo, pero SÓLO AL SUBIRSE: al que ya está arriba no se le
+    /// pregunta nada, o un personaje que dejó de cumplir —cambió de raza con una poción, o cambió la data— se quedaría
+    /// trabado sobre el animal para siempre. Es el mismo orden del original, que envuelve con <c>If .flags.Montando
+    /// = 0</c> sólo la rama de subirse (Trabajo.bas:2347). El GM pasa, como en el resto del equipo.
+    /// </summary>
+    public static int QueLeFaltaParaMontar(ObjInfo montura, bool yaEstaMontado, bool esGm, int nivel, byte clase, byte raza) =>
+        yaEstaMontado || esGm ? 0 : QueLeFaltaParaUsarlo(montura, nivel, clase, raza);
+
     /// <summary>1 weapon, 2 armour, 3 helmet, 4 shield, 5 ammo (flechas), 6 anillo/herramienta, 7 nudillos,
     /// 8 ítem mágico; 0 = not equippable. La 6 corresponde al <c>AnilloEqpSlot</c> del original, que es donde se
     /// lleva la HERRAMIENTA de oficio (ver <see cref="ObjInfo.IsRing"/>): sin ella no se puede portar el gate de
