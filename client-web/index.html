@@ -314,6 +314,11 @@
     .mapa-zona { text-align:center; padding:6px 0 2px; font-family:var(--serif); color:var(--gold-hi);
       font-size:calc(var(--u)*1.05); letter-spacing:.06em; }
     .mapa-pie { text-align:center; color:var(--ink-dim); font-size:calc(var(--u)*0.78); letter-spacing:.04em; }
+    .mapa-info { min-height:calc(var(--u)*5.2); padding:4px 10px 2px; font-size:calc(var(--u)*0.82); line-height:1.5; }
+    .mapa-info .mi-t { color:var(--gold-hi); font-family:var(--serif); font-size:calc(var(--u)*0.95); letter-spacing:.04em; }
+    .mapa-info .mi-n { color:var(--ink-dim); }
+    .mapa-info .mi-b { color:#d8c49a; }
+    .mapa-info .mi-c { color:#9ad8c4; }
     .cardT { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between;
       padding:8px 12px; font-family:var(--serif); font-size:calc(var(--u)*1.1); letter-spacing:.03em; color:var(--gold-hi);
       background:linear-gradient(180deg,#3a2814,#211608); border-bottom:1px solid var(--gold-lo); }
@@ -1296,6 +1301,12 @@
     const HOJA_DEL_MAPA = 15567, ANCHO_MAPA = 800, ALTO_MAPA = 600;
     let mapTable = null;
     fetch('./assets/maptable.json').then((r) => (r.ok ? r.json() : null)).then((t) => { mapTable = t; }).catch(() => {});
+    // Qué hay en cada mapa: nombre, zona, criaturas hostiles con cuántas aparecen, y las cuevas que se entran desde
+    // ahí (`fase0/transcode/build_mapa_zonas.py`). Las cuevas no están en la lámina —son 84 mapas de zona DUNGEON,
+    // con el 42% de los hostiles— así que cuelgan del mapa de superficie que les da la boca.
+    let mapaZonas = null;
+    fetch('./assets/mapa-zonas.json').then((r) => (r.ok ? r.json() : null)).then((z) => { mapaZonas = z; }).catch(() => {});
+    let casilleroMirado = null;
 
     function casilleroDelMapa(n) {
       if (!mapTable) return null;
@@ -1320,6 +1331,13 @@
         if (cartel) cartel.textContent = nombre + ' · bajo tierra';
         return;
       }
+      if (casilleroMirado) {                            // el que está debajo del cursor
+        const rx = (casilleroMirado.col - 1) * mapTable.anchoCasillero + mapTable.izquierda + 4;
+        const ry = (casilleroMirado.fila - 1) * mapTable.altoCasillero + mapTable.arriba + 4;
+        ctx.lineWidth = 1; ctx.strokeStyle = '#ffd9a0cc';
+        ctx.strokeRect(Math.round(rx - mapTable.anchoCasillero / 2) + 0.5, Math.round(ry - mapTable.altoCasillero / 2) + 0.5,
+          mapTable.anchoCasillero, mapTable.altoCasillero);
+      }
       const x = (donde.col - 1) * mapTable.anchoCasillero + mapTable.izquierda + 4;
       const y = (donde.fila - 1) * mapTable.altoCasillero + mapTable.arriba + 4;
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
@@ -1330,12 +1348,60 @@
       if (cartel) cartel.textContent = nombre;
     }
 
+    // DE PÍXEL A CASILLERO, invirtiendo `SetMapPoint`. El original hace esta cuenta con 27,5 y sin el mismo origen
+    // (`imgMap_MouseMove`), o sea que NO coincide con dónde dibuja: el cursor nombra un mapa y el punto propio
+    // aparece en otro. Acá se usa la geometría del dibujo, así lo que señalás es lo que ves.
+    function casilleroEnElPixel(x, y) {
+      if (!mapTable) return null;
+      return {
+        col: Math.min(mapTable.columnas, Math.max(1, Math.round((x - mapTable.izquierda - 4) / mapTable.anchoCasillero) + 1)),
+        fila: Math.min(mapTable.filas, Math.max(1, Math.round((y - mapTable.arriba - 4) / mapTable.altoCasillero) + 1)),
+      };
+    }
+
+    function nombreDeCriatura(ficha) {
+      const n = npcsIdx && npcsIdx[ficha];
+      return (n && n.n) || ('criatura ' + ficha);
+    }
+
+    function contarZona(col, fila) {
+      const caja = document.getElementById('mapa-info'); if (!caja || !mapTable) return;
+      const n = mapTable.grilla[fila - 1][col - 1];
+      const zona = (mapaZonas && mapaZonas[n]) || null;
+      if (!zona) { caja.innerHTML = `<span class="mi-t">Mapa ${n}</span>`; return; }
+      const bichos = (zona.b || []).slice(0, 6).map(([f, c]) => `${nombreDeCriatura(f)} <span class="mi-n">×${c}</span>`);
+      const masBichos = (zona.b || []).length - bichos.length;
+      const cuevas = (zona.c || []).map((n) => {
+        const c = mapaZonas[n] || {};
+        const suyos = (c.b || []).slice(0, 3).map(([f, cu]) => nombreDeCriatura(f) + ' ×' + cu).join(', ');
+        return `${c.n || ('mapa ' + n)} <span class="mi-n">(mapa ${n}${suyos ? ' · ' + suyos : ''})</span>`;
+      });
+      caja.innerHTML = `<div><span class="mi-t">${zona.n || ('Mapa ' + n)}</span> <span class="mi-n">· mapa ${n}`
+        + `${zona.z ? ' · ' + zona.z.toLowerCase() : ''}</span></div>`
+        + (bichos.length ? `<div class="mi-b">${bichos.join(', ')}${masBichos > 0 ? ` <span class="mi-n">y ${masBichos} más</span>` : ''}</div>` : '')
+        + (cuevas.length ? `<div class="mi-c">Cuevas: ${cuevas.join(' · ')}</div>` : '');
+    }
+
     function abrirMapaDelMundo() {
       showModal('Mapa del mundo', [
         `<canvas class="mapamundi" id="mapamundi" width="${ANCHO_MAPA}" height="${ALTO_MAPA}"></canvas>`
         + `<div class="mapa-zona" id="mapa-zona"></div>`
-        + `<div class="mapa-pie">estás en el punto rojo</div>`], true, 'mapa');
+        + `<div class="mapa-info" id="mapa-info"></div>`
+        + `<div class="mapa-pie">estás en el punto rojo · pasá por una zona para ver qué hay</div>`], true, 'mapa');
+      const cv = document.getElementById('mapamundi');
+      cv.addEventListener('mousemove', (ev) => {
+        const caja = cv.getBoundingClientRect();
+        const donde = casilleroEnElPixel((ev.clientX - caja.left) * cv.width / caja.width,
+                                         (ev.clientY - caja.top) * cv.height / caja.height);
+        if (!donde || (casilleroMirado && donde.col === casilleroMirado.col && donde.fila === casilleroMirado.fila)) return;
+        casilleroMirado = donde;
+        contarZona(donde.col, donde.fila);
+        dibujarMapaDelMundo();
+      });
+      cv.addEventListener('mouseleave', () => { casilleroMirado = null; dibujarMapaDelMundo(); });
       dibujarMapaDelMundo();
+      const propio = casilleroDelMapa(currentMap);
+      if (propio) contarZona(propio.col, propio.fila);     // arranca contando dónde estás
     }
     window.__mapa = () => abrirMapaDelMundo();   // debug: abrir la pantalla sin tener el ítem en la mochila
 

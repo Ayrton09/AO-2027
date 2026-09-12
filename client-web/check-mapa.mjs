@@ -80,6 +80,25 @@ if (!existsSync(rutaTabla)) {
   if (pegados) console.log(`check-mapa: ${pegados} casilleros quedan pegados al borde y el punto se ve cortado, igual que en el original`);
 }
 
+// --- 5. El índice de zonas: todo casillero tiene ficha, y toda criatura y cueva se pueden nombrar ---------
+const rutaZonas = join(ASSETS, 'mapa-zonas.json');
+if (!existsSync(rutaZonas)) {
+  problemas.push('falta assets/mapa-zonas.json (lo arma fase0/transcode/build_mapa_zonas.py)');
+} else if (existsSync(rutaTabla)) {
+  const zonas = JSON.parse(readFileSync(rutaZonas, 'utf8'));
+  const npcs = JSON.parse(readFileSync(join(ASSETS, 'npcs.json'), 'utf8'));
+  const t = JSON.parse(readFileSync(rutaTabla, 'utf8'));
+  const sinFicha = new Set(), sinNombre = new Set(), cuevaSuelta = new Set();
+  for (const fila of t.grilla) for (const n of fila) if (n > 0 && !zonas[n]) sinFicha.add(n);
+  for (const [n, z] of Object.entries(zonas)) {
+    for (const [ficha] of z.b || []) if (!npcs[ficha]) sinNombre.add(ficha);
+    for (const cueva of z.c || []) if (!zonas[cueva]) cuevaSuelta.add(`${n}->${cueva}`);
+  }
+  if (sinFicha.size) problemas.push(`${sinFicha.size} casilleros de la lámina no tienen ficha en mapa-zonas.json`);
+  if (sinNombre.size) problemas.push(`${sinNombre.size} criaturas del índice no están en npcs.json: se mostrarían como "criatura N"`);
+  if (cuevaSuelta.size) problemas.push(`${cuevaSuelta.size} cuevas apuntan a un mapa que no está en el índice (${[...cuevaSuelta][0]})`);
+}
+
 if (problemas.length) {
   console.error('check-mapa: PROBLEMAS');
   for (const p of problemas) console.error('  - ' + p);
