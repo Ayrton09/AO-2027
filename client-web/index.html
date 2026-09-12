@@ -305,6 +305,15 @@
        justamente las dos que había que ensanchar. En CSS no se puede saltear, y si algún navegador viejo no
        soporta `:has()` lo único que pasa es que sigue angosto. */
     .card:has(.shop2) { width:min(940px,94vw); }
+    /* La lámina del mapa mide 800x600 y se muestra entera; por el mismo `:has()` que el comercio. */
+    .card:has(.mapamundi) { width:min(840px,96vw); }
+    /* La lámina entra ENTERA: en una pantalla baja, 800x600 al ancho de la ventana se sale y el mapa
+       quedaba con barra de scroll. */
+    .mapamundi { display:block; margin:0 auto; width:auto; max-width:100%; max-height:66vh;
+      image-rendering:pixelated; background:#05040a; }
+    .mapa-zona { text-align:center; padding:6px 0 2px; font-family:var(--serif); color:var(--gold-hi);
+      font-size:calc(var(--u)*1.05); letter-spacing:.06em; }
+    .mapa-pie { text-align:center; color:var(--ink-dim); font-size:calc(var(--u)*0.78); letter-spacing:.04em; }
     .cardT { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between;
       padding:8px 12px; font-family:var(--serif); font-size:calc(var(--u)*1.1); letter-spacing:.03em; color:var(--gold-hi);
       background:linear-gradient(180deg,#3a2814,#211608); border-bottom:1px solid var(--gold-lo); }
@@ -1250,6 +1259,8 @@
     const TIPOS_QUE_SE_EQUIPAN = new Set([3, 16, 17, 21, 32, 44, 46]);
     function usarItemDelSlot(slot) {
       const it = inventory[slot]; if (!it || ws.readyState !== 1) return;
+      if (ITEMS_MAPA.has(it.objIndex)) { abrirMapaDelMundo(); return; }   // se abre acá: no hay paquete que mandar
+
       const meta = items && items[it.objIndex];
       const tipo = meta && meta[2] ? meta[2] : 0;
       let equipar = TIPOS_QUE_SE_EQUIPAN.has(tipo);
@@ -1269,6 +1280,65 @@
       w.writeByte(equipar ? CLIENT.EquipItem : CLIENT.UseItem).writeByte(slot);
       ws.send(xorBuffer(w.toBytes(), myKey));
     }
+    // ── EL MAPA DEL MUNDO ────────────────────────────────────────────────────────────────────────────────────
+    // El ítem mapa es de tipo ESCUDO en el .dat, así que el ruteo de arriba lo mandaba a equipar y no pasaba nada.
+    // En el original tampoco pasaba: `frmMap` está en el cliente VB6 y no lo abre NADIE —`frmMap.Show` no aparece
+    // en ningún lado—, así que el ítem que el juego te da para no perderte nunca mostró un mapa.
+    //
+    // Lo que sí es del original es TODO lo que se dibuja: la lámina es la hoja 15567 —`frmMap` la carga con
+    // `Me.Picture` y el formulario mide 800x600, o sea que se ve esa esquina de la hoja— y la grilla sale de
+    // `table.ind` (`assets/maptable.json`), que dice qué mapa ocupa cada uno de los 30x23 casilleros. El punto va
+    // donde lo pone `SetMapPoint`:  x = (columna - 1) * 26 + 39,  y = (fila - 1) * 25 + 30.
+    //
+    // Se abre SIN mandar nada al server. `UseItem` sobre esto contesta "No podés usar ese objeto", un mensaje que
+    // el VB6 no emite, así que el paquete se queda acá.
+    const ITEMS_MAPA = new Set([372, 1396]);            // "Mapa (Newbies)" y "Mapa"
+    const HOJA_DEL_MAPA = 15567, ANCHO_MAPA = 800, ALTO_MAPA = 600;
+    let mapTable = null;
+    fetch('./assets/maptable.json').then((r) => (r.ok ? r.json() : null)).then((t) => { mapTable = t; }).catch(() => {});
+
+    function casilleroDelMapa(n) {
+      if (!mapTable) return null;
+      for (let fila = 0; fila < mapTable.filas; fila++) {
+        const col = mapTable.grilla[fila].indexOf(n);
+        if (col >= 0) return { col: col + 1, fila: fila + 1 };
+      }
+      return null;                                      // las cuevas y los interiores no están en la lámina
+    }
+
+    function dibujarMapaDelMundo() {
+      const cv = document.getElementById('mapamundi'); if (!cv) return;
+      const hoja = sheets[HOJA_DEL_MAPA];
+      if (!hoja) { loadSheet(HOJA_DEL_MAPA); setTimeout(dibujarMapaDelMundo, 150); return; }
+      const ctx = cv.getContext('2d');
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(hoja, 0, 0, ANCHO_MAPA, ALTO_MAPA, 0, 0, cv.width, cv.height);
+      const cartel = document.getElementById('mapa-zona');
+      const donde = casilleroDelMapa(currentMap);
+      const nombre = (map && (map.name || '').trim()) || ('Mapa ' + currentMap);
+      if (!donde) {
+        if (cartel) cartel.textContent = nombre + ' · bajo tierra';
+        return;
+      }
+      const x = (donde.col - 1) * mapTable.anchoCasillero + mapTable.izquierda + 4;
+      const y = (donde.fila - 1) * mapTable.altoCasillero + mapTable.arriba + 4;
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#00000088'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#e02a1e'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#ffd9a0'; ctx.stroke();
+      if (cartel) cartel.textContent = nombre;
+    }
+
+    function abrirMapaDelMundo() {
+      showModal('Mapa del mundo', [
+        `<canvas class="mapamundi" id="mapamundi" width="${ANCHO_MAPA}" height="${ALTO_MAPA}"></canvas>`
+        + `<div class="mapa-zona" id="mapa-zona"></div>`
+        + `<div class="mapa-pie">estás en el punto rojo</div>`], true, 'mapa');
+      dibujarMapaDelMundo();
+    }
+    window.__mapa = () => abrirMapaDelMundo();   // debug: abrir la pantalla sin tener el ítem en la mochila
+
     function fireHotbar(i) {
       const b = hotbar[i]; if (!b || ws.readyState !== 1) return;
       if (b.kind === 'cmd') { sendChat(b.text); return; }             // macro de comando/texto (/resucitar, etc.)
