@@ -94,6 +94,17 @@ if (!existsSync(rutaZonas)) {
     for (const [ficha] of z.b || []) if (!npcs[ficha]) sinNombre.add(ficha);
     for (const cueva of z.c || []) if (!zonas[cueva]) cuevaSuelta.add(`${n}->${cueva}`);
   }
+  // El índice es data DERIVADA: si alguien toca los spawns y no lo regenera, la pantalla miente sin que nada avise.
+  const spawns = JSON.parse(readFileSync(join(RAIZ, 'gamedata/MapSpawns.json'), 'utf8'));
+  const hostil = new Map(JSON.parse(readFileSync(join(RAIZ, 'gamedata/NPCs.json'), 'utf8')).NPC
+    .map((n) => [Number(n._index), String(n.Hostile) === '1']));
+  let viejos = 0;
+  for (const [n, puntos] of Object.entries(spawns)) {
+    const enLaData = puntos.filter((p) => hostil.get(p[2])).length;
+    const enElIndice = ((zonas[n] || {}).b || []).reduce((a, [, c]) => a + c, 0);
+    if (enLaData !== enElIndice) viejos++;
+  }
+  if (viejos) problemas.push(`${viejos} mapas tienen en mapa-zonas.json otras criaturas que en gamedata: regenerar con build_mapa_zonas.py`);
   if (sinFicha.size) problemas.push(`${sinFicha.size} casilleros de la lámina no tienen ficha en mapa-zonas.json`);
   if (sinNombre.size) problemas.push(`${sinNombre.size} criaturas del índice no están en npcs.json: se mostrarían como "criatura N"`);
   if (cuevaSuelta.size) problemas.push(`${cuevaSuelta.size} cuevas apuntan a un mapa que no está en el índice (${[...cuevaSuelta][0]})`);
