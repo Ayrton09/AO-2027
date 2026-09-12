@@ -927,10 +927,21 @@ public sealed class Bot
         // el resto en silencio (`TipoItems`, VB6 Comercio.bas:123), así que caer en el gremio equivocado es un
         // viaje entero para volver con lo mismo: el pollo se lo compra el de comidas, no el herrero. Eso lo
         // sabe cualquiera que jugó una tarde, y sale de la data.
+        // SI NO LE FALTA NADA ESENCIAL, EL VIAJE ES AL QUE VENDE LO QUE BUSCA. `Sirve` acepta al mercader más
+        // cercano que atienda CUALQUIERA de las necesidades, y el de comida siempre está más cerca —en la cuna hay
+        // uno y herrero no hay ninguno—, así que al herrero no se llegaba nunca. Medido en `acelerada1`: una
+        // Pescadora de nivel 11 con 4755 monedas seguía con el Martillo de Piedra del kit (golpe 5) mientras el
+        // Herrero General de su mapa vendía una Espada Larga (golpe 8) a 350.
+        bool soloGustos = SoloLeFaltanGustos(faltaComida, faltaBebida, faltanPociones, faltaHerramienta);
+
         bool Sirve(int ficha)
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
+            if (soloGustos)
+                return (vaPorEquipo && stock.Any(s => MejoraLoQueTiene(sentidos, (short)s.ObjIndex)))
+                    || (vaPorHechizo && stock.Any(s => LeSirveElPergamino(sentidos, (short)s.ObjIndex)))
+                    || (hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null);
             if (primeroLaBebida) return stock.Any(s => EsBebida((short)s.ObjIndex));
             if (primeroLaComida) return stock.Any(s => EsComida((short)s.ObjIndex));
             // CADA NECESIDAD, A QUIEN LA ATIENDE. Antes, sin nada que vender, servía cualquier mercader, y así se
@@ -2026,6 +2037,14 @@ public sealed class Bot
     private int CuestaLaHerramienta(SentidosDelBot sentidos) =>
         LeFaltaLaHerramienta(sentidos) && HerramientaDeSuOficio > 0
             ? _entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? 0 : 0;
+
+    /// <summary>
+    /// ¿LO ÚNICO QUE LE FALTA SON GUSTOS? O sea: nada de comer, nada de tomar, nada con qué curarse y la herramienta
+    /// en la mochila. Cuando es así, el viaje al mercader se hace por el equipo o por un pergamino, y entonces sirve
+    /// SÓLO quien venda eso: si no, gana siempre el mercader más cercano —el de comida— y al herrero no se llega nunca.
+    /// </summary>
+    public static bool SoloLeFaltanGustos(bool faltaComida, bool faltaBebida, bool faltanPociones, bool faltaHerramienta) =>
+        !faltaComida && !faltaBebida && !faltanPociones && !faltaHerramienta;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;

@@ -89,4 +89,41 @@ public class PlataDelBotTests
     {
         Assert.Equal(sobra, Bot.PlataQueSobra(oro, panza, herramienta, colchon));
     }
+
+    /// <summary>
+    /// EL VIAJE POR GUSTOS ES SÓLO CUANDO NO FALTA NADA ESENCIAL. Si falta cualquiera de las cuatro cosas de vivir
+    /// —comer, tomar, con qué curarse, la herramienta del oficio— el mercader se elige por eso; recién cuando no
+    /// falta ninguna, el viaje se hace por el equipo o el pergamino.
+    /// </summary>
+    [Theory]
+    // falta comida | falta bebida | faltan pociones | falta la herramienta | sólo le faltan gustos
+    [InlineData(false, false, false, false, true)]
+    [InlineData(true, false, false, false, false)]
+    [InlineData(false, true, false, false, false)]
+    [InlineData(false, false, true, false, false)]
+    [InlineData(false, false, false, true, false)]
+    public void El_viaje_por_gustos_es_solo_con_lo_esencial_cubierto(bool comida, bool bebida, bool pociones, bool herramienta, bool gustos)
+    {
+        Assert.Equal(gustos, Bot.SoloLeFaltanGustos(comida, bebida, pociones, herramienta));
+    }
+
+    /// <summary>
+    /// Y DE LA VITRINA SE ELIGE POR LO QUE MEJORA A LO QUE YA LLEVA: un arma que pega menos que la suya no cuenta
+    /// como oferta, aunque sea lo único del mostrador.
+    /// </summary>
+    [Fact]
+    public void De_la_vitrina_no_sirve_un_arma_peor_que_la_que_lleva()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(1, 5, 20f, 100));    // pega 3: peor que la suya
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(2, 5, 350f, 200));   // pega 8: la mejora
+        const int loQueLleva = 5;                                            // el Martillo de Piedra del kit
+        int Mejora(short obj) { int pega = obj == 100 ? 3 : obj == 200 ? 8 : 0; return pega > loQueLleva ? pega : 0; }
+
+        var elegida = s.LoMejorDeLaVitrina(Mejora, plata: 1000);
+
+        Assert.NotNull(elegida);
+        Assert.Equal((short)200, elegida!.Value.Obj);
+        Assert.Null(s.LoMejorDeLaVitrina(Mejora, plata: 100));                // no le alcanza la que mejora
+    }
 }
