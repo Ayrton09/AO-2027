@@ -895,9 +895,12 @@ public sealed class Bot
         // sin llevarse nada.
         bool enApuro = sentidos.Oro < MonedasDeApuro;
         bool vaPorPociones = faltanPociones && !enApuro;
+        // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
+        // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
+        bool vaPorEquipo = !enApuro && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
-        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida) return false;
+        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -931,6 +934,7 @@ public sealed class Bot
             if (vaPorComida && stock.Any(s => EsComida((short)s.ObjIndex))) return true;
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
+            if (vaPorEquipo && stock.Any(s => MejoraLoQueTiene(sentidos, (short)s.ObjIndex))) return true;
             return hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
@@ -1116,6 +1120,7 @@ public sealed class Bot
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
             compro |= await ReponerAsync(transporte, sentidos, PuntosDeBebida, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
         compro |= await ReponerAsync(transporte, sentidos, UnaSiEsPocion, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
+        compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
         return compro;
     }
 
@@ -1883,7 +1888,7 @@ public sealed class Bot
             if (sentidos.EstaPuesto(ranura) || _noSeLoPone.Contains(obj)) continue;
             if (_entorno.Datos.Obj(obj) is not { } o || !esDeEso(o) || o.ClassForbidden(_clase) || o.MinLevel > sentidos.Nivel)
                 continue;
-            int valor = o.IsWeapon || o.IsKnuckles ? o.MaxHit : o.MaxDef;
+            int valor = ValorDeCombate(o);
             if (valor > valorMejor) { mejor = ranura; valorMejor = valor; }
         }
         return mejor == 0 ? null : mejor;
@@ -1895,6 +1900,64 @@ public sealed class Bot
         _proximoEquipo = Environment.TickCount64 + EsperaEquipoMs;
         return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)));
     }
+
+    /// <summary>Lo que vale en combate: el golpe si pega, la defensa si se viste.</summary>
+    public static int ValorDeCombate(ObjInfo o) => o.IsWeapon || o.IsKnuckles ? o.MaxHit : o.MaxDef;
+
+    /// <summary>¿Lo puede usar? La clase y el nivel, que es lo que el servidor va a mirar cuando se lo quiera poner.</summary>
+    private bool LoPuedeUsar(ObjInfo o, short nivel) => !o.ClassForbidden(_clase) && o.MinLevel <= nivel;
+
+    /// <summary>Lo mejor de eso que YA tiene, puesto o guardado: contra esto se compara la vitrina.</summary>
+    private int LoMejorQueTiene(SentidosDelBot sentidos, Func<ObjInfo, bool> esDeEso)
+    {
+        int mejor = 0;
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+            if (_entorno.Datos.Obj(sentidos.QueHayEn(ranura)) is { } o && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel))
+                mejor = Math.Max(mejor, ValorDeCombate(o));
+        return mejor;
+    }
+
+    /// <summary>¿Eso de la vitrina lo mejora en algo? Es lo que decide si vale la pena el viaje al mercader.</summary>
+    private bool MejoraLoQueTiene(SentidosDelBot sentidos, short obj)
+    {
+        if (_entorno.Datos.Obj(obj) is not { } o || !LoPuedeUsar(o, sentidos.Nivel)) return false;
+        foreach (var esDeEso in QueSePone)
+            if (esDeEso(o) && ValorDeCombate(o) > LoMejorQueTiene(sentidos, esDeEso)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// COMPRARSE ALGO MEJOR. El que junta plata jugando no la deja quieta: se compra el arma o la armadura que lo
+    /// hace más fuerte, y por eso a la hora de juego no está igual que cuando empezó.
+    ///
+    /// <para>Va DESPUÉS de lo esencial y con lo que sobra —la comida, la bebida y las pociones se reservan aparte—,
+    /// y se lleva UNA pieza por visita. Ponérsela es cosa de <see cref="Equiparse"/>, en la vuelta siguiente.</para>
+    /// </summary>
+    private async Task<bool> MejorarElEquipoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        double plata = PlataParaElEquipo(sentidos);
+        if (plata <= 0 || !sentidos.Comerciando) return false;
+        foreach (var esDeEso in QueSePone)
+        {
+            int tengo = LoMejorQueTiene(sentidos, esDeEso);
+            int Vale(short obj) =>
+                _entorno.Datos.Obj(obj) is { } o && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel) && ValorDeCombate(o) > tengo
+                    ? ValorDeCombate(o) : 0;
+            if (sentidos.LoMejorDeLaVitrina(Vale, plata) is not { } oferta) continue;
+            int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
+            transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
+            await Task.Delay(_rng.Next(600, 1_400), ct);
+            if (sentidos.CuantoTiene(obj => obj == oferta.Obj) > teniaAntes) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Lo que puede gastar en equipo: lo que sobra después de asegurarse la comida, la bebida y un colchón.</summary>
+    private int PlataParaElEquipo(SentidosDelBot sentidos) =>
+        Math.Max(0, sentidos.Oro - ReservaPara(sentidos, comida: true, bebida: true) - MonedasDeApuro);
+
+    /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
+    private const int OroParaMirarEquipo = 100;
 
     private static readonly Func<ObjInfo, bool>[] QueSePone =
     {

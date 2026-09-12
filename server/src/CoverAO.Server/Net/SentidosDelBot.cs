@@ -206,6 +206,34 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>
+    /// La ranura de la vitrina con lo MEJOR que pueda pagar, según <paramref name="valor"/> (cero = no sirve).
+    ///
+    /// <para>Va por el valor y no por el rendimiento por moneda como <see cref="MejorOfertaEnLaTienda"/>: la comida
+    /// se compra por lo que rinde cada moneda, pero un arma no —de dos que se pueden pagar se lleva la que más
+    /// pega, aunque la otra sea más barata por punto de daño—.</para>
+    /// </summary>
+    public (byte Ranura, short Obj, float Precio)? LoMejorDeLaVitrina(Func<short, int> valor, double plata)
+    {
+        lock (_candado)
+        {
+            (byte Ranura, short Obj, float Precio)? mejor = null;
+            int mejorValor = 0;
+            foreach (var (ranura, item) in _tienda)
+            {
+                if (item.Obj <= 0 || item.Cantidad <= 0 || item.Precio > plata) continue;
+                int valen = valor(item.Obj);
+                if (valen <= 0) continue;
+                if (mejor is null || valen > mejorValor)
+                {
+                    mejor = (ranura, item.Obj, item.Precio);
+                    mejorValor = valen;
+                }
+            }
+            return mejor;
+        }
+    }
+
     /// <summary>La primera ranura del inventario que cumpla la condición, con cuánto hay. Para vender hace
     /// falta la cantidad, no sólo la ranura. Lo que está PUESTO no se ofrece nunca: vender el arma que lleva
     /// encima es lo primero que no haría nadie.</summary>

@@ -41,4 +41,36 @@ public class PlataDelBotTests
         Assert.InRange(Bot.CostoPorPuntoEn(datos, esBebida: true), 0.001, 0.1);
         Assert.InRange(Bot.CostoPorPuntoEn(datos, esBebida: false), 0.001, 0.2);
     }
+
+    /// <summary>
+    /// DE LA VITRINA SE LLEVA LO MEJOR QUE PUEDA PAGAR, no lo primero ni lo más barato. La vitrina se arma con el
+    /// mismo paquete que manda el servidor al abrir el comercio, así que esto pasa por la lectura de verdad.
+    /// </summary>
+    [Fact]
+    public void De_la_vitrina_se_lleva_lo_mejor_que_le_alcanza()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(1, 10, 50f, 100));      // barata y flojita
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(2, 10, 300f, 200));     // la mejor, impagable
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(3, 10, 120f, 300));     // la mejor de las que puede pagar
+        int Vale(short obj) => obj switch { 100 => 5, 200 => 40, 300 => 12, _ => 0 };
+
+        var elegida = s.LoMejorDeLaVitrina(Vale, plata: 150);
+
+        Assert.NotNull(elegida);
+        Assert.Equal((short)300, elegida!.Value.Obj);
+    }
+
+    /// <summary>Y si no hay nada que sirva —o nada que le alcance— no se lleva nada.</summary>
+    [Theory]
+    [InlineData(40, false)]     // no le alcanza ni la más barata
+    [InlineData(60, true)]
+    public void De_la_vitrina_no_se_lleva_lo_que_no_puede_pagar(int plata, bool seLleva)
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(1, 10, 50f, 100));
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(2, 10, 300f, 200));
+
+        Assert.Equal(seLleva, s.LoMejorDeLaVitrina(obj => obj == 100 ? 5 : obj == 200 ? 40 : 0, plata) is not null);
+    }
 }
