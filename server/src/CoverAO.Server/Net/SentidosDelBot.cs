@@ -146,6 +146,10 @@ public sealed class SentidosDelBot
     /// <summary>El maná que le queda, en puntos. Es contra esto que se compara lo que sale un hechizo.</summary>
     public int ManaEnPuntos { get { lock (_candado) return _mana; } }
 
+    /// <summary>La energía EN PUNTOS, que es como la pide el servidor para dejar lanzar un hechizo
+    /// (<c>p.Stamina &lt; spell.StaRequerido</c>). <see cref="Fuelle"/> es la fracción, que sirve para otra cosa.</summary>
+    public int EnergiaEnPuntos { get { lock (_candado) return _energia; } }
+
     public int Oro { get { lock (_candado) return _oro; } }
 
     /// <summary>Puntos de skill sin repartir. El servidor los anuncia al subir de nivel, y un jugador los

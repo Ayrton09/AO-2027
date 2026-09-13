@@ -14,7 +14,9 @@ public sealed class Leveling
 {
     public const int MaxLevel = 50; // STAT_MAXELV (Declares.bas:665)
     private const int MaxHpCap = 999;          // STAT_MAXHP (Declares.bas:666)
-    private const int MaxStaCap = 999;         // STAT_MAXSTA (Declares.bas:667)
+    /// <summary>El techo de energía de CUALQUIER personaje (STAT_MAXSTA, Declares.bas:667). Es público porque el
+    /// bot lo necesita para descartar los hechizos que piden más energía que la que se puede tener.</summary>
+    public const int MaxStaCap = 999;
     private const int MaxManaCap = 9999;       // STAT_MAXMAN (Declares.bas:668)
     private const int MaxHitUnder36 = 99;      // STAT_MAXHIT_UNDER36
     private const int MaxHitOver36 = 999;      // STAT_MAXHIT_OVER36

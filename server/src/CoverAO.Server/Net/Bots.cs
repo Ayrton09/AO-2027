@@ -2814,6 +2814,25 @@ public sealed class Bot
 
     private const int OroParaMirarHechizos = 250;
 
+    /// <summary>
+    /// ¿LO PUEDE LANZAR AHORA? El servidor pide maná Y ENERGÍA (<c>p.Stamina &lt; spell.StaRequerido</c>,
+    /// PacketDispatcher.cs:10299). El bot miraba sólo el maná, así que elegía hechizos que le rebotaban — y el
+    /// rechazo no gasta maná, con lo cual volvía a elegir el mismo en la vuelta siguiente.
+    /// </summary>
+    public static bool LoPuedeLanzarAhora(SpellInfo? h, int mana, int energia) =>
+        h is not null && mana >= h.ManaCost && energia >= h.StaRequerido;
+
+    /// <summary>
+    /// ¿ALGUNA VEZ VA A PODER LANZARLO? Es lo que decide si vale la pena COMPRAR el pergamino: hay hechizos que
+    /// piden más energía que el techo del juego, así que no los puede lanzar nadie, nunca.
+    ///
+    /// <para>Son dos de los ciento trece, y son justo los dos que encabezan el ranking del bot porque ordena por
+    /// daño: el 30 «Te Violo» (energía 1000, daño 10000) y el 31 «Curación» (energía 1000). El techo es
+    /// <see cref="Leveling.MaxStaCap"/> = 999.</para>
+    /// </summary>
+    public static bool AlgunaVezLoVaAPoderLanzar(SpellInfo? h) =>
+        h is not null && h.StaRequerido <= Leveling.MaxStaCap;
+
     private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
     {
         if (!sentidos.UsaMana) return false;
@@ -2823,7 +2842,7 @@ public sealed class Bot
         {
             var h = _entorno.Datos.Spell(numero);
             if (h is null || h.SubeHp != 2) continue;            // SubeHp 2 = hace daño; 1 = cura
-            if (h.ManaCost > mana) continue;
+            if (!LoPuedeLanzarAhora(h, mana, sentidos.EnergiaEnPuntos)) continue;
             if (mejor is null || h.MaxHp > mejor.Value.Dano) mejor = (ranura, h.MaxHp);
         }
         if (mejor is null) return false;

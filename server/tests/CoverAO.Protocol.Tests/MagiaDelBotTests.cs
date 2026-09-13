@@ -167,4 +167,57 @@ public class MagiaDelBotTests
     {
         Assert.Equal(soloElPergamino, Bot.PrimeroElPergamino(vaPorHechizo, loEsencial, hayUno));
     }
+
+    /// <summary>
+    /// NO ELIGE UN HECHIZO QUE EL SERVIDOR LE VA A RECHAZAR. Al lanzar, el servidor pide maná Y ENERGÍA
+    /// (<c>p.Stamina &lt; spell.StaRequerido</c>); el bot miraba sólo el maná. Y el rechazo no gasta maná, así que
+    /// volvía a elegir el mismo en la vuelta siguiente.
+    /// </summary>
+    [Theory]
+    // maná que tiene | energía que tiene | maná que pide | energía que pide | ¿lo puede lanzar?
+    [InlineData(100, 100, 50, 50, true)]
+    [InlineData(100, 100, 50, 200, false)]   // le sobra maná y le falta energía: el caso que no se miraba
+    [InlineData(10, 100, 50, 50, false)]     // le falta maná
+    [InlineData(100, 0, 50, 0, true)]        // el que no pide energía se lanza sin ella
+    public void No_elige_un_hechizo_que_el_servidor_le_rechaza(int mana, int energia, int pideMana, int pideSta, bool puede)
+    {
+        var h = Hechizo(pideMana, pideSta);
+        Assert.Equal(puede, Bot.LoPuedeLanzarAhora(h, mana, energia));
+    }
+
+    /// <summary>
+    /// Y NO COMPRA EL PERGAMINO DE UN HECHIZO QUE NADIE PUEDE LANZAR. Dos de los ciento trece piden mil de energía
+    /// y el techo del juego son 999 (<c>MaxStaCap</c>), así que son incasteables para cualquier personaje de
+    /// cualquier clase y nivel — y son justo los dos que encabezan el ranking del bot, que ordena por daño.
+    /// </summary>
+    [Theory]
+    [InlineData(1000, false)]   // los dos de la data: energía 1000 contra un techo de 999
+    [InlineData(999, true)]     // el borde exacto
+    [InlineData(5, true)]
+    [InlineData(0, true)]
+    public void No_compra_el_pergamino_de_un_hechizo_incasteable(int pideSta, bool algunaVez)
+    {
+        Assert.Equal(algunaVez, Bot.AlgunaVezLoVaAPoderLanzar(Hechizo(1, pideSta)));
+    }
+
+    /// <summary>Y contra la data de verdad: los hechizos que piden más energía que el techo quedan afuera.</summary>
+    [Fact]
+    public void Los_hechizos_que_piden_mas_energia_que_el_techo_quedan_afuera()
+    {
+        var datos = GameData.Load();
+        if (datos.Spell(30) is null) return;                 // sin la data del juego no hay nada que mirar
+        int incasteables = 0;
+        for (short i = 1; i <= 113; i++)
+            if (datos.Spell(i) is { } h && !Bot.AlgunaVezLoVaAPoderLanzar(h))
+            {
+                incasteables++;
+                Assert.True(h.StaRequerido > Leveling.MaxStaCap);
+            }
+        Assert.True(incasteables > 0, "la data dejó de tener hechizos incasteables: el caso ya no aplica");
+    }
+
+    /// <summary>Un hechizo de prueba con lo que pide de maná y de energía.</summary>
+    private static SpellInfo Hechizo(int mana, int sta) => new(
+        Index: 1, Name: "prueba", SubeHp: 2, MinHp: 1, MaxHp: 10, ManaCost: mana, Target: 1,
+        StaRequerido: sta);
 }
