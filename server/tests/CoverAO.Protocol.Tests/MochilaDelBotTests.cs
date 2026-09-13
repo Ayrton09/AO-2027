@@ -272,4 +272,35 @@ public class MochilaDelBotTests : IDisposable
         Assert.True(arrojadizas > 0, "la data dejó de tener arrojadizas: el caso ya no aplica");
         Assert.True(cuerpoACuerpo > 0);
     }
+
+    /// <summary>
+    /// SÓLO LA VIOLETA CURA EL VENENO. El predicado pedía `SubTipo == 5`, que no es "cura veneno" sino "lanza un
+    /// hechizo sobre quien la toma": de las ocho pociones así que hay en el obj.dat, sólo las dos Violetas lanzan
+    /// <c>Curar Veneno</c>. Las otras seis lanzan Metamorfosis, Remover parálisis, Desencantar —dos—,
+    /// Invisibilidad y Sanar.
+    ///
+    /// <para>El bot envenenado se tomaba cualquiera de ésas y llamaba a <c>OlvidarVeneno</c>, con lo cual creía
+    /// haberse curado; y como tener antídoto decide si una criatura venenosa es presa o peligro, salía a cazar
+    /// serpientes creyendo que estaba cubierto.</para>
+    /// </summary>
+    [Fact]
+    public void Solo_la_violeta_cura_el_veneno()
+    {
+        var curarVeneno = new SpellInfo(1, "Curar Veneno", SubeHp: 0, MinHp: 0, MaxHp: 0, ManaCost: 10,
+                                        Target: 1, CuraVeneno: 1);
+        var invisibilidad = new SpellInfo(14, "Invisibilidad", SubeHp: 0, MinHp: 0, MaxHp: 0, ManaCost: 10,
+                                          Target: 1);
+        var violeta = new ObjInfo(166, "Poción Violeta", ObjType: 11, MaxModifier: 0, Value: 10, Anim: 0,
+                                  SubType: 5, LanzaHechizo: 1);
+        var deInvisibilidad = new ObjInfo(892, "Poción de Invisibilidad", ObjType: 11, MaxModifier: 0,
+                                          Value: 0, Anim: 0, SubType: 5, LanzaHechizo: 14);
+        var roja = new ObjInfo(38, "Poción Roja", ObjType: 11, MaxModifier: 0, Value: 20, Anim: 0,
+                               SubType: 3);
+
+        Assert.True(Bot.CuraElVeneno(violeta, curarVeneno));
+        Assert.False(Bot.CuraElVeneno(deInvisibilidad, invisibilidad));
+        // La roja no lanza ningún hechizo: no hay con qué confundirla.
+        Assert.False(Bot.CuraElVeneno(roja, null));
+        Assert.False(Bot.CuraElVeneno(null, curarVeneno));
+    }
 }

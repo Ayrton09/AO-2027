@@ -181,6 +181,10 @@ public sealed class Bot
     /// que dispara la visita al mercader, en la práctica, es tener botín para vender.</summary>
     private const int PocionesQueQuiere = 200, RadioDeCompras = 15;
 
+    /// <summary>Cuántos antídotos lleva encima. Son pocos porque el veneno no es constante y cada uno cura
+    /// del todo: lo que importa es no quedarse sin ninguno, no acumular.</summary>
+    private const int AntidotosQueQuiere = 5;
+
     /// <summary>Con menos de lo primero de comida o de bebida sale a reponer, y compra hasta lo segundo. Se cuenta
     /// en PUNTOS de hambre y de sed, no en unidades: diez manzanas llenan cien y diez pollos setecientos cincuenta.
     /// El hambre baja diez cada tres minutos, así que cien puntos son media hora y cuatrocientos, dos horas.</summary>
@@ -1204,6 +1208,12 @@ public sealed class Bot
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
             compro |= await ReponerAsync(transporte, sentidos, BebidaPropia, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
         compro |= await ReponerAsync(transporte, sentidos, PocionPropia, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
+        // EL ANTIDOTO, que cuesta DIEZ monedas y es la diferencia entre seguir cazando y perder la vida de a
+        // poco. Se compra acá, donde el bot ya está parado, y no se viaja por él: lo vende el Alquimista, que
+        // tiene 21 puestos —uno en la cuna y otro en el 62, que es donde los bots cazan— mientras que criaturas
+        // venenosas hay 709 repartidas en 93 mapas. Ver `CuraElVeneno`.
+        compro |= await ReponerAsync(transporte, sentidos, AntidotoPropio, AntidotosQueQuiere, ct,
+                                     ReservaPara(sentidos, comida: true, bebida: true));
         compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
         compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
         return compro;
@@ -1441,6 +1451,9 @@ public sealed class Bot
 
     /// <summary>Lo mismo que los contadores de al lado, pero mirando SÓLO lo propio: con esto se decide qué comprar.</summary>
     private int PocionPropia(short obj) => CuentaComoPropio(obj) && EsPocionDeVida(obj) ? 1 : 0;
+
+    /// <inheritdoc cref="PocionPropia"/>
+    private int AntidotoPropio(short obj) => CuentaComoPropio(obj) && EsPocionQueCuraElVeneno(obj) ? 1 : 0;
 
     /// <inheritdoc cref="PocionPropia"/>
     private int ComidaPropia(short obj) => CuentaComoPropio(obj) ? PuntosDeComida(obj) : 0;
@@ -2493,7 +2506,7 @@ public sealed class Bot
     {
         if (!sentidos.Envenenado || Environment.TickCount64 < _proximaCura) return false;
 
-        if (Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: PocionQueCuraElVeneno }))
+        if (Usar(transporte, sentidos, o => CuraElVeneno(o, _entorno.Datos.Spell((short)o.LanzaHechizo))))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
             sentidos.OlvidarVeneno();
@@ -2705,7 +2718,9 @@ public sealed class Bot
     private const int VentanaDeHuidasMs = 60_000;
     private const int EsperaEntreRunasDeHuidaMs = 30_000;
 
-    private const int PocionQueCuraElVeneno = 5;
+    /// <summary>El SubTipo de poción que LANZA UN HECHIZO sobre quien la toma (VB6 InvUsuario.bas:1636).
+    /// No es "la que cura el veneno": de las ocho que hay, sólo las dos Violetas lanzan `Curar Veneno`.</summary>
+    private const int PocionQueLanzaUnHechizo = 5;
     private const int EsperaCuraMinMs = 60_000, EsperaCuraMaxMs = 120_000;
     private long _proximaCura;
 
@@ -3211,7 +3226,21 @@ public sealed class Bot
     /// <summary>Con menos pociones de vida que éstas pelea como el que no tiene ninguna: dos o tres peleas duras se las comen.</summary>
     private const int PocionesParaPelear = 10;
 
-    private bool EsPocionQueCuraElVeneno(short obj) => _entorno.Datos.Obj(obj) is { IsPotion: true, SubType: PocionQueCuraElVeneno };
+    /// <summary>
+    /// ¿ESTA POCIÓN CURA EL VENENO? No alcanza con el SubTipo: el 5 es "lanza un hechizo sobre quien la
+    /// toma", y hay OCHO pociones así. Sólo las dos Violetas lanzan el hechizo <c>Curar Veneno</c>; las otras
+    /// seis lanzan Metamorfosis, Remover parálisis, Desencantar —dos—, Invisibilidad y Sanar.
+    ///
+    /// <para>Con el SubTipo a secas el bot envenenado se tomaba la de invisibilidad y llamaba a
+    /// <c>OlvidarVeneno</c>: creía haberse curado mientras el veneno le seguía sacando vida. Y peor, porque
+    /// tener antidoto es lo que decide si una criatura venenosa es presa o peligro: salía a cazar serpientes
+    /// creyendo que estaba cubierto.</para>
+    /// </summary>
+    public static bool CuraElVeneno(ObjInfo? o, SpellInfo? loQueLanza) =>
+        o is { IsPotion: true, SubType: PocionQueLanzaUnHechizo } && loQueLanza is { IsCurePoison: true };
+
+    private bool EsPocionQueCuraElVeneno(short obj) =>
+        _entorno.Datos.Obj(obj) is { } o && CuraElVeneno(o, _entorno.Datos.Spell((short)o.LanzaHechizo));
 
     /// <summary>La experiencia de la criatura más grande a la que se anima, según su nivel. Es la forma de
     /// medir "qué tan brava es" que el dato del juego da directo.</summary>
