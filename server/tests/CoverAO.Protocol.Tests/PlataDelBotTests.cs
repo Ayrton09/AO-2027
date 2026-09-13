@@ -160,6 +160,48 @@ public class PlataDelBotTests
     public void El_equipo_y_los_pergaminos_cuentan_como_algo_que_comprar(bool herr, bool com, bool beb, bool poc,
                                                                          bool eq, bool hech, bool vuelve)
     {
-        Assert.Equal(vuelve, Bot.HayAlgoQueComprar(herr, com, beb, poc, eq, hech));
+        Assert.Equal(vuelve, Bot.HayAlgoQueComprar(herr, com, beb, poc, eq, hech, antidoto: false));
+    }
+
+    /// <summary>
+    /// SALIR A COMPRAR ANTÍDOTO: sólo si le falta Y le alcanza. Lo segundo no es un detalle — es el mismo
+    /// espiral que el archivo ya documentó con la herramienta: si faltar alcanzara para salir, un bot sin plata
+    /// volvería con las manos vacías y saldría de nuevo, sin cazar nunca.
+    ///
+    /// <para>Y un precio en cero significa que NADIE lo vende: entonces tampoco se sale.</para>
+    /// </summary>
+    [Theory]
+    // ¿le falta? | oro | lo que cuesta | ¿sale?
+    [InlineData(true, 100, 10, true)]     // le falta y le sobra
+    [InlineData(true, 10, 10, true)]      // justo le alcanza
+    [InlineData(true, 9, 10, false)]      // le falta una moneda: no sale a dar la vuelta al vicio
+    [InlineData(true, 0, 10, false)]      // sin plata, el espiral cerrado
+    [InlineData(false, 100, 10, false)]   // ya tiene: no sale
+    [InlineData(true, 100, 0, false)]     // nadie lo vende
+    public void Vale_salir_por_el_antidoto(bool falta, int oro, int cuesta, bool sale)
+    {
+        Assert.Equal(sale, Bot.ValeSalirPorElAntidoto(falta, oro, cuesta));
+    }
+
+    /// <summary>El antídoto cuenta para salir de compras, como cualquier otra necesidad.</summary>
+    [Fact]
+    public void El_antidoto_es_motivo_para_salir_de_compras()
+    {
+        Assert.True(Bot.HayAlgoQueComprar(false, false, false, false, false, false, antidoto: true));
+        Assert.False(Bot.HayAlgoQueComprar(false, false, false, false, false, false, antidoto: false));
+    }
+
+    /// <summary>
+    /// Y EL PRECIO SALE DE LA DATA: contra el obj.dat y los NPC de verdad, el antídoto que alguien vende
+    /// existe y cuesta poco. Si nadie lo vendiera, `ValeSalirPorElAntidoto` apagaría la necesidad sola.
+    /// </summary>
+    [Fact]
+    public void El_precio_del_antidoto_sale_de_la_data()
+    {
+        var datos = GameData.Load();
+        if (datos.Obj(1) is null) return;   // sin la carpeta del juego no hay nada que decir
+        int cuesta = Bot.PrecioDelAntidotoEn(datos);
+        Assert.True(cuesta > 0, "ningún mercader vende antídoto: el bot no tendría cómo conseguirlo");
+        Assert.True(cuesta <= 100, $"el antídoto pasó a costar {cuesta}: revisar si sigue siendo barato");
     }
 }

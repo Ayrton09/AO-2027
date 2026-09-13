@@ -897,6 +897,12 @@ public sealed class Bot
         // con cualquiera de las dos en cero el servidor deja de regenerar. Sin energía `CazarAsync` se aleja en
         // cuanto empieza, así que no juntaba oro para comer: un espiral cerrado. Medido: un Gladiador de nivel 7
         // con la mochila sin una manzana ni un agua, la energía en 20 de 130, y cada caza durando un segundo.
+        // EL ANTÍDOTO ES UNA NECESIDAD PROPIA, y sin esto el bot no lo conseguía NUNCA. `Sirve` elige al
+        // mercader por la necesidad, y el único que vende antídoto —el Alquimista— sólo tiene pociones y dos
+        // herramientas: ni comida ni bebida. Así que sólo lo elegía yendo por pociones, y eso no pasa hasta
+        // nivel 15 porque el kit de novato trae mil quinientas. Medido: treinta mostradores en treinta y cinco
+        // minutos y ninguno vendía antídoto.
+        bool faltaAntidoto = sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere;
         bool faltaComida = sentidos.Suma(ComidaPropia) < ComidaMinima;
         bool faltaBebida = sentidos.Suma(BebidaPropia) < BebidaMinima;
         bool hayQueVender = sentidos.EnLaMochila(obj => EsBotin(sentidos, obj)) is not null;
@@ -931,10 +937,13 @@ public sealed class Bot
         bool vaPorEquipo = !enApuro && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
         // Y EL QUE CASTEA APRENDE HECHIZOS NUEVOS, que es su forma de mejorar: el arma no le sirve de mucho.
         bool vaPorHechizo = !enApuro && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
+        // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
+        // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
+        bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, sentidos.Oro, CuestaElAntidoto);
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
         if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
-            && !vaPorHechizo) return false;
+            && !vaPorHechizo && !vaPorAntidoto) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -1001,6 +1010,7 @@ public sealed class Bot
             if (vaPorComida && stock.Any(s => EsComida((short)s.ObjIndex))) return true;
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
+            if (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex))) return true;
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             if (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             return hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
@@ -1062,6 +1072,7 @@ public sealed class Bot
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto))
                     continue;
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
+                                                    vaPorAntidoto,
                                                     vaPorEquipo, vaPorHechizo);
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
                     && !_entorno.Datos.IsPkMap(sentidos.Mapa))
@@ -1161,6 +1172,35 @@ public sealed class Bot
 
     /// <summary>El precio de lista por punto más barato de la comida o de la bebida entre todo lo que venden los mercaderes del
     /// mundo. 0 si no hay ninguna.</summary>
+    /// <summary>
+    /// ¿VALE SALIR A COMPRAR ANTÍDOTO? Si le falta y le alcanza. Lo segundo no es un detalle: el archivo ya
+    /// tropezó con eso en la herramienta — que faltara alcanzaba para salir de compras aunque tuviera CERO
+    /// monedas, y como no la podía pagar nunca, volvía con las manos vacías y salía de nuevo.
+    ///
+    /// <para>Un <paramref name="cuesta"/> en cero quiere decir que NADIE lo vende: entonces tampoco se sale.</para>
+    /// </summary>
+    public static bool ValeSalirPorElAntidoto(bool falta, int oro, int cuesta) => falta && oro >= cuesta && cuesta > 0;
+
+    /// <summary>Lo que cuesta el antídoto más barato que alguien venda, o 0 si no lo vende nadie. Sale de la
+    /// DATA y no de un número a mano, igual que el precio de la herramienta.</summary>
+    public static int PrecioDelAntidotoEn(GameData datos)
+    {
+        int mejor = int.MaxValue;
+        foreach (var npc in datos.Npcs.Values)
+            if (npc.StockItems is { } stock)
+                foreach (var (obj, _) in stock)
+                    if (datos.Obj((short)obj) is { Value: > 0 } o
+                        && CuraElVeneno(o, datos.Spell((short)o.LanzaHechizo)))
+                        mejor = Math.Min(mejor, o.Value);
+        return mejor == int.MaxValue ? 0 : mejor;
+    }
+
+    private int _cuestaElAntidoto = -1;
+
+    /// <inheritdoc cref="PrecioDelAntidotoEn"/>
+    private int CuestaElAntidoto =>
+        _cuestaElAntidoto >= 0 ? _cuestaElAntidoto : _cuestaElAntidoto = PrecioDelAntidotoEn(_entorno.Datos);
+
     public static double CostoPorPuntoEn(GameData datos, bool esBebida)
     {
         double mejor = double.MaxValue;
@@ -2435,7 +2475,8 @@ public sealed class Bot
     /// <para>Lo que sigue sin contar es VENDER: nadie usa una runa para volver a casa a descargar el botín.</para>
     /// </summary>
     public static bool HayAlgoQueComprar(bool herramienta, bool comida, bool bebida, bool pociones,
-                                         bool equipo, bool hechizo) => herramienta || comida || bebida || pociones || equipo || hechizo;
+                                         bool equipo, bool hechizo, bool antidoto) =>
+        herramienta || comida || bebida || pociones || equipo || hechizo || antidoto;
 
     /// <summary>
     /// ¿VALE CAMINAR HACIA EL MERCADER AUNQUE NO SE LLEGUE A ÉL? Cuando ya está en su mapa y no lo alcanza.
