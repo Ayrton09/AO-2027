@@ -2073,13 +2073,27 @@ public sealed class Bot
         // LOS NUDILLOS, SÓLO PARA EL QUE NO TIENE ARMA. El servidor saca uno al ponerse el otro (VB6
         // InvUsuario.bas:991-997 y :1051-1058), así que con los dos en la mochila el bot se pasaría la vida cambiando.
         // Medido con la sonda: un Gladiador sin arma, con los Nudillos de Hierro en la mochila sin poner.
-        static bool EsArma(ObjInfo o) => o.IsWeapon && o.Proyectil == 0;
         if (!sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && (EsArma(puesto) || puesto.IsKnuckles))
             && MejorParaPoner(sentidos, EsArma) is null
             && MejorParaPoner(sentidos, o => o.IsKnuckles) is { } nudillos)
             return PedirQueSePonga(transporte, sentidos, nudillos);
         return false;
     }
+
+    /// <summary>El <c>Proyectil</c> de las arrojadizas, que son las que sí cambian la forma de pelear y quedan
+    /// afuera. El ARCO es <c>Proyectil == 1</c> y sí se equipa: pega cuerpo a cuerpo con su <c>[MinHIT, MaxHIT]</c>
+    /// por la rama de arma de <c>MeleeDamage</c>, y las flechas sólo hacen falta para DISPARAR.</summary>
+    private const int ArrojadizaQueNoSeUsa = 2;
+
+    /// <summary>
+    /// ¿ES UN ARMA QUE EL BOT SE PONE? Todo lo que el servidor cuenta como arma menos las arrojadizas.
+    ///
+    /// <para>Pedía <c>Proyectil == 0</c> y eso dejaba afuera también al ARCO, que son 11 de las 85 armas del
+    /// catálogo. El servidor desequipa todo al morir, así que el Cazador —que nace con un Arco Simple y NADA
+    /// más— no tenía después ningún camino para volver a ponérselo: peleaba a mano limpia hasta juntar para un
+    /// arma cuerpo a cuerpo, y su única fuente de plata es cazar.</para>
+    /// </summary>
+    public static bool EsArma(ObjInfo o) => o.IsWeapon && o.Proyectil != ArrojadizaQueNoSeUsa;
 
     /// <summary>La ranura con lo mejor de eso que tiene sin poner y que puede usar, o null.</summary>
     /// <summary>
@@ -2419,7 +2433,7 @@ public sealed class Bot
 
     private static readonly Func<ObjInfo, bool>[] QueSePone =
     {
-        o => o.IsWeapon && o.Proyectil == 0, o => o.IsArmor, o => o.IsShield, o => o.IsHelmet,
+        EsArma, o => o.IsArmor, o => o.IsShield, o => o.IsHelmet,
     };
 
     private const int EsperaEquipoMs = 1_500;

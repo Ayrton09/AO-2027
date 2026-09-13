@@ -242,4 +242,34 @@ public class MochilaDelBotTests : IDisposable
     {
         Assert.Equal(seLoGuarda, Bot.EsLoMejorQueTieneDeEsaClase(vale, mejor));
     }
+
+    /// <summary>
+    /// EL ARCO ES UN ARMA QUE EL BOT SE PONE, y la arrojadiza no. El filtro pedía <c>Proyectil == 0</c> con el
+    /// comentario «las arrojadizas quedan afuera», pero las arrojadizas son <c>Proyectil == 2</c>: el arco
+    /// (<c>== 1</c>) se caía de más. Son 11 de las 85 armas del catálogo.
+    ///
+    /// <para>El servidor desequipa TODO al morir, así que el Cazador —que nace con un Arco Simple y nada más— no
+    /// tenía ningún camino para volver a armarse: peleaba a mano limpia, y su única fuente de plata es cazar. El
+    /// arco pega cuerpo a cuerpo por la rama de arma de <c>MeleeDamage</c>; las flechas son para disparar.</para>
+    /// </summary>
+    [Fact]
+    public void El_arco_es_un_arma_que_se_pone_y_la_arrojadiza_no()
+    {
+        var datos = GameData.Load();
+        if (datos.Obj(1355) is not { } arcoDeNovato) return;      // sin la data del juego no hay nada que mirar
+        Assert.Equal(1, arcoDeNovato.Proyectil);                  // es el arco con el que nace el Cazador
+        Assert.True(Bot.EsArma(arcoDeNovato), "el arco del Cazador no cuenta como arma: queda desarmado al morir");
+
+        int arcos = 0, arrojadizas = 0, cuerpoACuerpo = 0;
+        for (short i = 1; i <= 1700; i++)
+            if (datos.Obj(i) is { IsWeapon: true } a)
+            {
+                if (a.Proyectil == 1) { arcos++; Assert.True(Bot.EsArma(a)); }
+                if (a.Proyectil == 2) { arrojadizas++; Assert.False(Bot.EsArma(a)); }
+                if (a.Proyectil == 0) { cuerpoACuerpo++; Assert.True(Bot.EsArma(a)); }
+            }
+        Assert.True(arcos > 0, "la data dejó de tener arcos: el caso ya no aplica");
+        Assert.True(arrojadizas > 0, "la data dejó de tener arrojadizas: el caso ya no aplica");
+        Assert.True(cuerpoACuerpo > 0);
+    }
 }
