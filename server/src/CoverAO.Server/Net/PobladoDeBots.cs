@@ -117,6 +117,15 @@ public sealed class PobladoDeBots
         "Pina", "Ramiro", "Sonia", "Tobal", "Urso", "Vito", "Wanda", "Zoe",
     };
 
+    /// <summary>En qué lugar de la lista está ese nombre, o -1. Es lo que decide qué clase le toca: ver
+    /// <see cref="Bot.Reparto"/>.</summary>
+    public static int LugarEnElPoblado(string nombre)
+    {
+        for (int i = 0; i < Nombres.Count; i++)
+            if (string.Equals(Nombres[i], nombre, StringComparison.OrdinalIgnoreCase)) return i;
+        return -1;
+    }
+
     /// <summary>Cuánto se espera entre el arranque de un bot y el del siguiente. Entran de a poco por dos
     /// motivos: cada alta de cuenta es un PBKDF2, y una tanda de gente que aparece toda junta en el mismo
     /// segundo no se parece a nadie entrando a jugar.</summary>

@@ -3104,6 +3104,24 @@ public sealed class Bot
 
     /// <summary>Raza, género, clase, tierra natal y cara. Sale de una semilla derivada del NOMBRE y no del
     /// azar del arranque: así el bot se ve siempre igual, aunque alguna vez haya que recrearle el personaje.</summary>
+    /// <summary>
+    /// EL REPARTO DE CLASES. Un dado por bot deja clases en cero: sembrando un <c>Random</c> con el hash del
+    /// nombre, la lista de cuarenta y ocho nombres —que es el techo, no hay más— da Gladiador seis veces y
+    /// LEÑADOR, CARPINTERO y SASTRE NINGUNA. Y el oficio del Leñador está entero en el bot (el hacha, la leña, la
+    /// skill de talar, los árboles de <see cref="QueCuentaComoTrabajo"/>) con sus tests en verde: escrito, probado
+    /// y sin correr nunca en el juego.
+    ///
+    /// <para>El orden no es casual: los primeros ocho —que es con cuantos se arranca— cubren los tres oficios
+    /// extractivos, dos clases de maná y tres de combate, así que una corrida corta ya ejercita todos los caminos
+    /// que el bot sabe recorrer. Las tres de fabricación van al final porque todavía no sabe ejercerlas.</para>
+    ///
+    /// <para>Da la vuelta: con dieciocho bots hay uno de cada clase y con treinta y seis, dos.</para>
+    /// </summary>
+    public static readonly IReadOnlyList<byte> Reparto = new byte[] { 13, 2, 3, 11, 1, 8, 14, 10, 7, 17, 4, 18, 5, 9, 6, 12, 15, 16 };
+
+    /// <summary>Qué clase le toca al bot número <paramref name="indice"/> del poblado.</summary>
+    public static byte ClaseQueLeToca(int indice) => Reparto[indice % Reparto.Count];
+
     private (byte Raza, byte Genero, byte Clase, byte Hogar, short Cabeza) Aspecto()
     {
         int semilla = 17;
@@ -3111,7 +3129,9 @@ public sealed class Bot
         var r = new Random(semilla);
         byte genero = (byte)r.Next(1, 3);
         byte raza = (byte)r.Next(1, 7);            // 1..6: las que tienen tabla de cabezas (Equipment.HeadRange)
-        byte clase = (byte)r.Next(1, 19);
+        // LA CLASE SALE DEL REPARTO, no del dado. Un nombre que no está en el poblado —no pasa hoy— cae al sorteo.
+        int suLugar = PobladoDeBots.LugarEnElPoblado(Nombre);
+        byte clase = suLugar >= 0 ? ClaseQueLeToca(suLugar) : (byte)r.Next(1, 19);
         byte hogar = (byte)r.Next(1, Cities.MaxTierraNatal + 1);
         var rango = Equipment.HeadRange(raza, genero);
         short cabeza = rango is null ? (short)1 : (short)r.Next(rango.Value.Min, rango.Value.Max + 1);
