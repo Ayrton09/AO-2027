@@ -994,6 +994,7 @@ public sealed class Bot
         // mercaderes están adentro de un edificio al que no se llega caminando: medido, en el mapa donde nacen
         // los bots NINGUNO de los dos es alcanzable, y en el de al lado lo son tres de once. Ya en el mapa, la
         // segunda búsqueda sí exige camino y elige uno al que se llega.
+        bool abrioUnaPuerta = false;
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
             if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende, Pisable(sentidos)) is not { } lugar)
@@ -1007,12 +1008,14 @@ public sealed class Bot
                 // adentro de un edificio, y el bot no abría una sola puerta en todo el juego: los ocho vendedores de
                 // pergaminos del mapa 20 están detrás de las once puertas cerradas de ese mapa, todas sin llave.
                 // Es lo que hace cualquiera que no encuentra un negocio abierto: probar la puerta de al lado.
-                if (intento == 0 && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
+                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
+                    && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) { abrioUnaPuerta = true; continue; }
 
                 // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
                 // manda los objetos del suelo que entran en la vista, así que la puerta del edificio recién aparece
                 // de cerca. Ver `ValeAcercarseAunqueNoLlegue`.
-                if (intento == 0 && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var losDeAca)
+                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
+                    && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var losDeAca)
                     && losDeAca.FirstOrDefault(q => Sirve(q.NpcIndex)) is { NpcIndex: > 0 } elMercader
                     && ValeAcercarseAunqueNoLlegue(true, false)
                     && await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)elMercader.X, (byte)elMercader.Y,
@@ -1026,7 +1029,7 @@ public sealed class Bot
                 var conMercader = _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
                     m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
                     Pisable(sentidos));
-                if (intento == 0 && conMercader is { } pueblo
+                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto))
                     continue;
@@ -2325,6 +2328,17 @@ public sealed class Bot
     /// <summary>Lo lejos que el bot se conforma con quedar del mostrador cuando NO llega: lo que el navegante
     /// consiga. Es generoso a propósito — con esto sólo se busca que la puerta entre en vista.</summary>
     private const int ParaQueLaPuertaEntreEnVista = 12;
+
+    /// <summary>
+    /// ¿TOCA PROBAR LOS CAMINOS CAROS? —abrir una puerta, caminar hasta el mercader, viajar al pueblo—. En el primer
+    /// intento, y en el siguiente a HABER ABIERTO UNA PUERTA.
+    ///
+    /// <para>Abrir una puerta cambia el mundo: el servidor desbloquea sus dos baldosas (<c>SetTileBlocked</c>) y el
+    /// navegante las lee en vivo, así que un camino que no existía ahora sí. Sin esto el bot abría la puerta y en la
+    /// misma vuelta se daba por vencido sin volver a mirar — medido en `puertas7`, dos líneas seguidas:
+    /// <c>abierta=True</c> y acto seguido <c>viaje al pueblo: intento=1 | mapa con mercader=NINGUNO</c>.</para>
+    /// </summary>
+    public static bool TocaProbarLosCaminosCaros(int intento, bool abrioUnaPuerta) => intento == 0 || abrioUnaPuerta;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;

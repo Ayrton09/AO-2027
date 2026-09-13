@@ -115,4 +115,22 @@ public class PuertasDelBotTests
     {
         Assert.Equal(camina, Bot.ValeAcercarseAunqueNoLlegue(enSuMapa, loAlcanza));
     }
+
+    /// <summary>
+    /// ABRIR UNA PUERTA REINICIA LA BÚSQUEDA. El servidor desbloquea sus dos baldosas y el navegante las lee en vivo,
+    /// así que un camino que no existía ahora sí — pero los tres caminos caros estaban atados al primer intento, y el
+    /// bot abría la puerta y en la misma vuelta se daba por vencido. Medido en `puertas7`, dos líneas seguidas:
+    /// `abierta=True` y acto seguido `viaje al pueblo: intento=1 | mapa con mercader=NINGUNO`.
+    /// </summary>
+    [Theory]
+    // intento | ¿abrió una puerta? | ¿se prueban los caminos caros?
+    [InlineData(0, false, true)]    // el primero, siempre
+    [InlineData(1, false, false)]   // sin novedades: no se insiste
+    [InlineData(2, false, false)]
+    [InlineData(1, true, true)]     // el caso: acaba de abrir una puerta, el mundo cambió
+    [InlineData(2, true, true)]
+    public void Abrir_una_puerta_reinicia_la_busqueda(int intento, bool abrio, bool prueba)
+    {
+        Assert.Equal(prueba, Bot.TocaProbarLosCaminosCaros(intento, abrio));
+    }
 }
