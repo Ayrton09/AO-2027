@@ -1,5 +1,6 @@
 using System.Linq;
 using CoverAO.Server.Data;
+using CoverAO.Server.Game;
 using CoverAO.Server.Net;
 using Xunit;
 
@@ -259,5 +260,32 @@ public class PuertasDelBotTests
         Assert.NotNull(elegida);
         Assert.Contains(elegida!.Value.Donde, destraban.Select(d => d.Donde));
         Assert.NotEqual(candidatas[0].Donde, elegida!.Value.Donde);
+    }
+
+    /// <summary>
+    /// EL TOPE DE EXPLORACIÓN TIENE QUE CUBRIR EL RECUADRO QUE SE PUEDE PISAR. Estaba en 6.000 comparado contra
+    /// las 10.000 baldosas del mapa crudo, pero lo caminable es el recuadro del borde: 84 por 88 = <b>7392</b>. El
+    /// tope quedaba adentro, así que había caminos que existían y el navegante no encontraba — y peor:
+    /// <c>Alcanzables</c>, con su propio tope de 10.000, los daba por buenos y <c>Camino</c> no.
+    ///
+    /// <para>Medido contra la data: de los 200 mapas a cinco saltos de la cuna, CIEN tienen una región alcanzable
+    /// mayor a 6.000, y 6449 de 42335 puertas (15,2%) caían en esa grieta.</para>
+    /// </summary>
+    [Fact]
+    public void El_tope_de_exploracion_cubre_el_recuadro_pisable_entero()
+    {
+        Assert.True(Navegante.ElTopeCubreElRecuadroPisable,
+            "el tope de exploración quedó por debajo del recuadro que un personaje puede pisar: " +
+            "hay caminos que existen y el navegante no los encuentra");
+    }
+
+    /// <summary>Y el recuadro es el que dicen los bordes del servidor, no el mapa crudo.</summary>
+    [Fact]
+    public void El_recuadro_pisable_son_las_baldosas_de_adentro_del_borde()
+    {
+        int ancho = GameLimits.MaxXBorder - GameLimits.MinXBorder + 1;
+        int alto = GameLimits.MaxYBorder - GameLimits.MinYBorder + 1;
+        Assert.Equal(7392, ancho * alto);
+        Assert.True(ancho * alto < 10_000, "el recuadro pisable es MENOR que el mapa crudo: ahí estuvo el error");
     }
 }

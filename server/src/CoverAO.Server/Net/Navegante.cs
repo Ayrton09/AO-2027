@@ -24,10 +24,34 @@ namespace CoverAO.Server.Net;
 /// </summary>
 public sealed class Navegante
 {
-    /// <summary>Tope de baldosas que se exploran buscando un camino. Un mapa entero son 10.000, así que esto
-    /// no recorta ningún viaje real; está para que un destino encerrado detrás de una pared no cueste el mapa
-    /// completo cada vez que se pregunta.</summary>
-    private const int TopeDeExploracion = 6_000;
+    /// <summary>
+    /// LAS BALDOSAS QUE UN PERSONAJE PUEDE PISAR EN UN MAPA. NO son las 10.000 del mapa crudo: el servidor no deja
+    /// pisar el anillo del borde (VB6 <c>MoveToLegalPos</c>), así que lo caminable es el recuadro
+    /// <see cref="GameLimits.MinXBorder"/>..<see cref="GameLimits.MaxXBorder"/> por
+    /// <see cref="GameLimits.MinYBorder"/>..<see cref="GameLimits.MaxYBorder"/> — 84 por 88 = <b>7392</b>.
+    /// </summary>
+    private const int BaldosasDelRecuadroPisable =
+        (GameLimits.MaxXBorder - GameLimits.MinXBorder + 1) * (GameLimits.MaxYBorder - GameLimits.MinYBorder + 1);
+
+    /// <summary>
+    /// Tope de baldosas que se exploran buscando un camino: el recuadro pisable ENTERO, así que no recorta ningún
+    /// viaje posible. Está para que un destino encerrado detrás de una pared no cueste más que eso.
+    ///
+    /// <para>Estaba en 6.000 con el comentario «un mapa entero son 10.000, así que esto no recorta nada» — pero el
+    /// número a comparar no era el mapa crudo sino el recuadro que se puede pisar, que son 7392: el tope quedaba
+    /// ADENTRO y sí recortaba. Medido contra la data: de los 200 mapas a cinco saltos de la cuna, CIEN tienen una
+    /// región alcanzable mayor a 6.000, y 6449 de 42335 puertas (15,2%) que <c>Alcanzables</c> daba por buenas no
+    /// las encontraba <see cref="Camino"/>. El viaje fallaba en el primer tramo sin caminar un paso.</para>
+    ///
+    /// <para>Se DERIVA del recuadro para que no se pueda volver a desfasar: si algún día se mueven los bordes, el
+    /// tope los acompaña.</para>
+    /// </summary>
+    private const int TopeDeExploracion = BaldosasDelRecuadroPisable;
+
+    /// <summary>¿El tope de exploración cubre todo lo que se puede pisar? Si no, hay caminos que existen y el
+    /// navegante no encuentra — y peor, `Alcanzables` los da por buenos y `Camino` no. Es lo que verifica el
+    /// test: una propiedad entre las dos constantes, no un caso de un mapa.</summary>
+    public static bool ElTopeCubreElRecuadroPisable => TopeDeExploracion >= BaldosasDelRecuadroPisable;
 
     /// <summary>Tope de mapas que se atraviesan en un viaje. Cinco alcanzan para ir de una ciudad a la de al
     /// lado; más que eso es un viaje que un personaje de nivel uno no haría.</summary>
@@ -567,7 +591,9 @@ public sealed class Navegante
         int inicio = Clave(desde.X, desde.Y);
         vistos.Add(inicio);
         cola.Enqueue(inicio);
-        while (cola.Count > 0 && vistos.Count < 10_000)
+        // EL MISMO TOPE QUE `Camino`: con uno propio, este declaraba alcanzable una puerta que después el otro no
+        // encontraba, y el bot elegía destinos a los que su propio navegante no sabía llegar.
+        while (cola.Count > 0 && vistos.Count < TopeDeExploracion)
         {
             int actual = cola.Dequeue();
             byte x = (byte)(actual & 0xff), y = (byte)(actual >> 8);
