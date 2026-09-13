@@ -175,7 +175,24 @@ public sealed class Navegante
             }
         }
 
-        // BFS sobre mapas, recordando por qué puerta DE ESTE MAPA se entró a cada rama.
+        // CON LOS PIES, NO CON EL GRAFO. El recorrido de abajo mira si cada salida se alcanza CAMINANDO desde la
+        // baldosa por la que se entra a su mapa, en todos los saltos y no sólo en el primero. El BFS propio que
+        // había acá validaba el primer salto y de ahí en más recorría el grafo de mapas a secas, así que prometía
+        // rutas que no existían.
+        //
+        // Medido replicando los dos recorridos contra la data, sobre 1242 destinos que el navegante declara
+        // alcanzables desde 30 mapas con criaturas: 68 (5,5%) salían por la puerta equivocada, y el error crece con
+        // la distancia — 0 de 79 a un salto, 4 de 150 a dos, 28 de 429 a cinco. Y no son errores sueltos: desde el
+        // mapa 746 mandaba por la MISMA puerta mala a ocho destinos distintos, o sea entrando y volviendo por ahí.
+        if (desde is { } origen)
+        {
+            foreach (var (mapa, saltos, _, primera) in MapasPorSuEntrada(mapaActual, origen, pisable))
+                if (mapa == mapaDestino) return (primera, saltos);
+            return null;
+        }
+
+        // SIN SABER DESDE DÓNDE no hay pies que valgan: queda el grafo de mapas pelado. Es lo que se responde a
+        // un "¿se llega de acá a allá?" sin un personaje parado en ningún lado.
         var visto = new HashSet<int> { mapaActual };
         var cola = new Queue<(int Mapa, (byte X, byte Y) PrimeraPuerta, int Saltos)>();
         foreach (var (destino, x, y) in Salidas(mapaActual))
@@ -243,7 +260,7 @@ public sealed class Navegante
         // mapa 62 se la mandaba al sacerdote del 64, que se alcanza desde alguna muestra pero no desde (10,36), la
         // baldosa de llegada; entraba, no había camino, y lo volvía a intentar cada uno o dos minutos con el veneno
         // encima. Un mapa puede tener entradas a zonas que no se tocan, así que de cada uno se prueban hasta dos.
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable))
             if ((mapaSirve is null || mapaSirve(mapa)) && EnElMapa(mapa, entrada, sirve) is { } ahi)
                 return (mapa, ahi.X, ahi.Y, saltos);
         return null;
@@ -257,7 +274,7 @@ public sealed class Navegante
     public (int Mapa, byte X, byte Y, int Saltos)? MapaMasCercano(int mapaActual, (byte X, byte Y) desde,
                                                                  Func<int, bool> mapaSirve, Func<int, bool>? pisable = null)
     {
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable))
             if (mapaSirve(mapa)) return (mapa, entrada.X, entrada.Y, saltos);
         return null;
     }
@@ -267,15 +284,17 @@ public sealed class Navegante
     /// baldosa por la que se entra. Sólo cuentan las salidas a las que se llega caminando dentro de cada mapa, y de
     /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan.
     /// </summary>
-    private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada)> MapasPorSuEntrada(int mapaActual,
-                                                                                            (byte X, byte Y) desde,
-                                                                                            Func<int, bool>? pisable = null,
-                                                                                            int topeDeSaltos = TopeDeMapas)
+    private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
+        MapasPorSuEntrada(int mapaActual, (byte X, byte Y) desde, Func<int, bool>? pisable = null,
+                          int topeDeSaltos = TopeDeMapas)
     {
         var alcanzables = Alcanzables(mapaActual, desde);
         var zonas = new Dictionary<int, List<HashSet<int>>>();
-        var cola = new Queue<(int Mapa, int Saltos, (byte X, byte Y) Entrada, HashSet<int> Zona)>();
-        void Entrar(int mapa, byte x, byte y, int saltos)
+        var cola = new Queue<(int Mapa, int Saltos, (byte X, byte Y) Entrada, HashSet<int> Zona,
+                              (byte X, byte Y) PrimeraPuerta)>();
+        // LA PRIMERA PUERTA se arrastra por toda la rama: es por donde hay que salir DE ESTE mapa para
+        // terminar allá, y es lo único que el bot necesita para dar el próximo paso del viaje.
+        void Entrar(int mapa, byte x, byte y, int saltos, (byte X, byte Y)? primera)
         {
             if (!_datos.MapExits.TryGetValue((mapa, x, y), out var llegada) || llegada.DestMap == mapaActual) return;
             if (pisable is not null && !pisable(llegada.DestMap)) return;
@@ -284,22 +303,22 @@ public sealed class Navegante
             if (deEse.Count >= ZonasPorMapa || deEse.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) return;
             var zona = Alcanzables(llegada.DestMap, entrada);
             deEse.Add(zona);
-            cola.Enqueue((llegada.DestMap, saltos, entrada, zona));
+            cola.Enqueue((llegada.DestMap, saltos, entrada, zona, primera ?? (x, y)));
         }
         foreach (var (_, x, y) in Salidas(mapaActual))
-            if (alcanzables.Contains(Clave(x, y))) Entrar(mapaActual, x, y, 1);
+            if (alcanzables.Contains(Clave(x, y))) Entrar(mapaActual, x, y, 1, null);
 
         while (cola.Count > 0)
         {
-            var (mapa, saltos, entrada, zona) = cola.Dequeue();
-            yield return (mapa, saltos, entrada);
+            var (mapa, saltos, entrada, zona, primera) = cola.Dequeue();
+            yield return (mapa, saltos, entrada, primera);
             // EL TOPE CORTA ACÁ, que es el único lugar donde ahorra algo: filtrar después de enumerar deja hecho
             // el trabajo de los mapas que se descartan, y cada mapa enumerado cuesta un `Alcanzables` —una
             // búsqueda en anchura de hasta 7392 baldosas—. Medido sobre los 322 mapas con criaturas: a dos
             // saltos se llega a 12 mapas y a cinco, a 74, o sea 7,5 veces más de los que se usaban.
             if (saltos >= topeDeSaltos) continue;
             foreach (var (_, x, y) in Salidas(mapa))
-                if (zona.Contains(Clave(x, y))) Entrar(mapa, x, y, saltos + 1);
+                if (zona.Contains(Clave(x, y))) Entrar(mapa, x, y, saltos + 1, primera);
         }
     }
 
@@ -360,7 +379,7 @@ public sealed class Navegante
         if ((mapaSirve is null || mapaSirve(mapaActual)) && DondeTrabajar(mapaActual, inicio, 90, agua, esRecurso) is { } aca)
             return (mapaActual, aca.Donde.X, aca.Donde.Y, 0);
 
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, inicio, pisable))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, inicio, pisable))
             if ((mapaSirve is null || mapaSirve(mapa)) && DondeTrabajar(mapa, entrada, 90, agua, esRecurso) is { } ahi)
                 return (mapa, ahi.Donde.X, ahi.Donde.Y, saltos);
         return null;
@@ -511,8 +530,9 @@ public sealed class Navegante
     /// <summary>Los mapas a los que se llega a <paramref name="topeDeSaltos"/> saltos o menos, cada uno con la
     /// baldosa por la que se entra. Es <c>MapasPorSuEntrada</c> con el tope a la vista, para poder medir que el
     /// corte sea de verdad y no un filtro puesto después de hacer el trabajo.</summary>
-    public IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada)> MapasAlcanzables(
-        int mapaActual, (byte X, byte Y) desde, int topeDeSaltos, Func<int, bool>? pisable = null) =>
+    public IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
+        MapasAlcanzables(int mapaActual, (byte X, byte Y) desde, int topeDeSaltos,
+                         Func<int, bool>? pisable = null) =>
         MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos);
 
     /// <summary>
@@ -533,7 +553,7 @@ public sealed class Navegante
         }
         Probar(mapaActual, desde, 0);
         // El tope va al enumerador y no a un `if` de acá: así los mapas de más no se exploran siquiera.
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
             Probar(mapa, entrada, saltos);
         return mejor;
     }
@@ -579,7 +599,7 @@ public sealed class Navegante
         }
         Probar(mapaActual, desde, 0);
         // El tope va al enumerador y no a un `if` de acá: así los mapas de más no se exploran siquiera.
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
             Probar(mapa, entrada, saltos);
         return mejor;
     }

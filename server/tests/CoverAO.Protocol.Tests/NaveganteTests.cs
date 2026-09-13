@@ -322,4 +322,24 @@ public class NaveganteTests
         if (Mundo() is not { } m) return;
         Assert.NotNull(m.Mapas.DondeSeTrabaja(37, agua: true));
     }
+
+    /// <summary>
+    /// LA RUTA SE VALIDA A PIE EN TODOS LOS SALTOS, no sólo en el primero. Contra los mapas de verdad: desde el
+    /// 746, parado en (45,16), las dos salidas se alcanzan caminando —la (19,17) hacia el 770 y la (80,69) hacia el
+    /// 815— pero por el 770 el camino se corta del otro lado, así que al 839 se llega por el 815.
+    ///
+    /// <para>El BFS que había validaba el primer salto y de ahí en más recorría el grafo de mapas a secas: mandaba
+    /// por la (19,17). Medido sobre 1242 destinos alcanzables desde 30 mapas, 68 salían por la puerta equivocada, y
+    /// desde este mismo 746 eran ocho destinos por la misma puerta mala.</para>
+    /// </summary>
+    [Fact]
+    public void La_ruta_se_valida_a_pie_en_todos_los_saltos()
+    {
+        if (Mundo() is not { } m) return;
+        var salidas = new[] { ((byte)19, (byte)17), ((byte)80, (byte)69) };
+        var elegida = m.Mapas.PuertaHacia(746, 839, ((byte)45, (byte)16));
+        Assert.True(elegida is not null, "del 746 al 839 dejó de haber camino: el test no prueba nada");
+        Assert.Contains(elegida!.Value.Puerta, salidas);
+        Assert.Equal(((byte)80, (byte)69), elegida.Value.Puerta);
+    }
 }
