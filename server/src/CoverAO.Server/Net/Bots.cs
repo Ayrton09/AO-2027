@@ -1008,6 +1008,18 @@ public sealed class Bot
                 // pergaminos del mapa 20 están detrás de las once puertas cerradas de ese mapa, todas sin llave.
                 // Es lo que hace cualquiera que no encuentra un negocio abierto: probar la puerta de al lado.
                 if (intento == 0 && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
+
+                // Y SI LA PUERTA NO ESTÁ ACÁ, SE VIAJA AL PUEBLO IGUAL. Buscar la puerta donde el bot está parado
+                // sólo sirve si ya llegó: en el bosque no hay ninguna. Con el mercader adentro de un edificio,
+                // `DondeHay` nunca devuelve nada y el viaje no salía — pero el MAPA sí se encuentra. Ver
+                // `ValeViajarAlPueblo`.
+                var conMercader = _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
+                    m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
+                    Pisable(sentidos));
+                if (intento == 0 && conMercader is { } pueblo
+                    && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
+                    && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto))
+                    continue;
                 bool vaAComprar = vaPorLaHerramienta || vaPorComida || vaPorBebida || vaPorPociones;
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
                     && !_entorno.Datos.IsPkMap(sentidos.Mapa))
@@ -2257,6 +2269,21 @@ public sealed class Bot
         await Task.Delay(_rng.Next(400, 900), ct);
         return sentidos.EnElPiso(puerta.Donde) != puerta.Obj;
     }
+
+    /// <summary>
+    /// ¿VALE VIAJAR AL PUEBLO IGUAL? Cuando no hay ningún mercader al que se LLEGUE caminando pero sí existe el
+    /// MAPA que lo tiene, y ese mapa no es en el que ya está.
+    ///
+    /// <para>Los mercaderes de ciudad viven adentro de edificios, así que desde afuera "no se llega a ninguno" es
+    /// lo normal, no la excepción: medido con el navegante, los ocho vendedores de pergaminos del mapa 20 dan
+    /// "sin camino" desde la puerta del mapa. El bot se quedaba en el bosque buscando una puerta que ahí no existe
+    /// —`puertas1`, once veces "NINGUNA a la vista"— porque nunca viajaba. Una vez adentro del pueblo la puerta sí
+    /// está a la vista y <see cref="AbrirUnaPuertaAsync"/> la abre.</para>
+    ///
+    /// <para>La segunda condición evita el viaje a ninguna parte: si el mapa que tiene al mercader es el propio, ya
+    /// está ahí y lo que falta es la puerta, no el viaje.</para>
+    /// </summary>
+    public static bool ValeViajarAlPueblo(bool hayDondeLlegar, bool estaEnOtroMapa) => !hayDondeLlegar && estaEnOtroMapa;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;

@@ -82,4 +82,21 @@ public class PuertasDelBotTests
                                                  && st.Any(o => datos.Obj((short)o.ObjIndex) is { IsPergamino: true }));
         Assert.True(vendenPergaminos > 0, "el mapa 20 dejó de tener vendedores de pergaminos: el caso ya no aplica");
     }
+
+    /// <summary>
+    /// SE VIAJA AL PUEBLO AUNQUE NO SE LLEGUE AL MERCADER. Buscar la puerta donde el bot está parado sólo sirve si
+    /// ya llegó, y en el bosque no hay ninguna: medido en `puertas1`, once veces "NINGUNA a la vista" con los bots
+    /// en m202 y m807. El mercader de ciudad está adentro de un edificio, así que "no se llega a ninguno" es lo
+    /// normal desde afuera — pero el MAPA sí se encuentra, y una vez adentro la puerta está a la vista.
+    /// </summary>
+    [Theory]
+    // ¿hay mercader al que se llegue? | ¿el mapa que lo tiene es otro? | ¿se viaja igual?
+    [InlineData(false, true, true)]     // el caso: nadie alcanzable, pero el pueblo está a unos saltos
+    [InlineData(false, false, false)]   // ya está en ese mapa: lo que falta es la puerta, no el viaje
+    [InlineData(true, true, false)]     // hay uno alcanzable: se va por el camino de siempre
+    [InlineData(true, false, false)]
+    public void Se_viaja_al_pueblo_cuando_no_hay_mercader_alcanzable(bool hayDondeLlegar, bool otroMapa, bool viaja)
+    {
+        Assert.Equal(viaja, Bot.ValeViajarAlPueblo(hayDondeLlegar, otroMapa));
+    }
 }
