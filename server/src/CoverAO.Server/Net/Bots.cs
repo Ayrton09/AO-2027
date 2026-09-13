@@ -1008,7 +1008,12 @@ public sealed class Bot
                 // adentro de un edificio, y el bot no abría una sola puerta en todo el juego: los ocho vendedores de
                 // pergaminos del mapa 20 están detrás de las once puertas cerradas de ese mapa, todas sin llave.
                 // Es lo que hace cualquiera que no encuentra un negocio abierto: probar la puerta de al lado.
+                // Y SÓLO DONDE ATIENDEN: ver `ValeBuscarLaPuertaAca`. Buscar la puerta en un mapa donde nadie le
+                // vende es abrir el ropero más cercano, y era lo que pasaba en las ocho vueltas medidas.
+                bool hayQuienLeVendaAca = _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var paraLaPuerta)
+                                          && paraLaPuerta.Any(q => Sirve(q.NpcIndex));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
+                    && ValeBuscarLaPuertaAca(MapaAtiende(sentidos.Mapa), hayQuienLeVendaAca)
                     && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) { abrioUnaPuerta = true; continue; }
 
                 // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
@@ -1017,7 +1022,7 @@ public sealed class Bot
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
                     && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var losDeAca)
                     && losDeAca.FirstOrDefault(q => Sirve(q.NpcIndex)) is { NpcIndex: > 0 } elMercader
-                    && ValeAcercarseAunqueNoLlegue(true, false)
+                    && ValeAcercarseAunqueNoLlegue(MapaAtiende(sentidos.Mapa), false)
                     && await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)elMercader.X, (byte)elMercader.Y,
                                           cerrada, ct, ParaQueLaPuertaEntreEnVista)
                     && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -2324,6 +2329,22 @@ public sealed class Bot
     /// más cerca que el navegante consiga, la puerta entra en vista y <see cref="AbrirUnaPuertaAsync"/> la abre.</para>
     /// </summary>
     public static bool ValeAcercarseAunqueNoLlegue(bool enElMapaDelMercader, bool loAlcanza) => enElMapaDelMercader && !loAlcanza;
+
+    /// <summary>
+    /// ¿VALE BUSCAR LA PUERTA ACÁ? Sólo donde el mapa ATIENDE y hay alguien que le venda: una puerta es un camino
+    /// hacia un mercader de ESE mapa, y sin mercader que atienda no hay nada detrás de ninguna puerta.
+    ///
+    /// <para>Sin esto el bot abría la puerta más cercana en cualquier mapa. Medido contra la data con el navegante
+    /// replicado: de los ocho mapas donde entró a este camino en `puertas7`, ATIENDEN CERO — cinco no tienen un solo
+    /// mercader, y el m34 tiene once con <c>battleMode=1</c>, que no le venden a un ciudadano (VB6 Protocol.bas:5205).
+    /// En ese m34 la puerta que abrió sumó treinta baldosas y NINGÚN mercader: de los once ya alcanzaba nueve, y las
+    /// dos que lo habrían destrabado estaban a unas cincuenta y cinco baldosas, fuera de
+    /// <see cref="RadioDeCompras"/>.</para>
+    ///
+    /// <para>Es el mismo defecto que ya apareció tres veces: el filtro de la acción de acá mira menos cosas que la
+    /// decisión de a dónde ir, así que el bot se ocupa y no progresa.</para>
+    /// </summary>
+    public static bool ValeBuscarLaPuertaAca(bool elMapaAtiende, bool hayQuienLeVendaAca) => elMapaAtiende && hayQuienLeVendaAca;
 
     /// <summary>Lo lejos que el bot se conforma con quedar del mostrador cuando NO llega: lo que el navegante
     /// consiga. Es generoso a propósito — con esto sólo se busca que la puerta entre en vista.</summary>

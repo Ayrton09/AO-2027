@@ -133,4 +133,21 @@ public class PuertasDelBotTests
     {
         Assert.Equal(prueba, Bot.TocaProbarLosCaminosCaros(intento, abrio));
     }
+
+    /// <summary>
+    /// LA PUERTA SE BUSCA DONDE ATIENDEN. Una puerta es un camino hacia un mercader de ESE mapa: sin mapa que
+    /// atienda y sin mercader que le venda, no hay nada detrás de ninguna. Medido contra la data con el navegante
+    /// replicado: de los ocho mapas donde el bot entró a este camino en `puertas7`, atienden CERO — y en el m34
+    /// (once mercaderes, `battleMode=1`) la puerta que abrió sumó treinta baldosas y ningún mercader.
+    /// </summary>
+    [Theory]
+    // ¿atiende el mapa? | ¿hay quien le venda acá? | ¿vale buscar la puerta?
+    [InlineData(true, true, true)]      // el único caso que sirve
+    [InlineData(false, true, false)]    // el m34: once mercaderes y battleMode 1, ninguno le vende
+    [InlineData(true, false, false)]    // atiende pero no hay mercader: la puerta no lleva a nadie
+    [InlineData(false, false, false)]   // el campo, que es donde estaba cinco de cada ocho veces
+    public void La_puerta_se_busca_donde_atienden(bool atiende, bool hayQuienLeVenda, bool vale)
+    {
+        Assert.Equal(vale, Bot.ValeBuscarLaPuertaAca(atiende, hayQuienLeVenda));
+    }
 }
