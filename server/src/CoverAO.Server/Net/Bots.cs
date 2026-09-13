@@ -2433,7 +2433,43 @@ public sealed class Bot
     public static bool AlAlcanceDeLaPuerta(int dx, int dy) => dx * dx + dy * dy <= 4;
 
     /// <summary>
-    /// ABRIR UNA PUERTA que tenga a la vista. Devuelve si la abrió.
+    /// LAS PUERTAS QUE EL MAPA TIENE, de la más cercana a la más lejana. NO las que están a la vista.
+    ///
+    /// <para><b>Por qué no alcanza con mirar.</b> El servidor sólo manda los objetos del suelo que caen en el
+    /// área vecina (<see cref="World.InView"/>: bloques de nueve baldosas, ±1), y la puerta del edificio del
+    /// mercader casi nunca cae ahí. Mientras las candidatas salían de <c>TodoLoDelPiso</c>, abrir la correcta era
+    /// una lotería que dependía de hacia qué mostrador lo hubiera llevado la rama de acercarse: medido sobre el
+    /// mapa 20, parado junto a la ficha 63 la puerta que sirve —la de (50,86)— le queda a 18 pasos y FUERA de la
+    /// vista, y parado junto a la 47 le queda a 5 y la abre. En campo salió 2 de 4: dos veces
+    /// "destraba=NINGUNA" en un mapa donde sí había con qué.</para>
+    ///
+    /// <para>Una puerta es DATA, igual que la posición del mercader: está en <c>MapObjects</c>, y el navegante ya
+    /// razona sobre ese mapa estático para saber cuál destraba (<see cref="Navegante.AbrirlaDaCamino"/>). O sea que
+    /// el bot puede IR A BUSCARLA en vez de esperar a verla, que es lo que hace cualquiera que sabe dónde queda el
+    /// negocio.</para>
+    ///
+    /// <para>Y sin tope de distancia: <see cref="RadioDeCompras"/> sobre lo que estaba a la vista casi no
+    /// filtraba —el área vecina ya está cerca—, y sobre las puertas del mapa filtraría justo las que sirven: las
+    /// dos del mapa 20 están a 54 y 56 pasos de la baldosa por la que se entra. Cruzar el pueblo hasta la puerta
+    /// correcta es barato al lado de los mapas que ya cruzó para llegar.</para>
+    /// </summary>
+    public static IReadOnlyList<((byte X, byte Y) Donde, short Obj, int Pasos)> PuertasQueElMapaTiene(
+        IReadOnlyList<MapObjectPlacement>? objetos, (byte X, byte Y) desde, Func<int, bool> esPuerta)
+    {
+        if (objetos is null) return Array.Empty<((byte X, byte Y), short, int)>();
+        var todas = new List<((byte X, byte Y) Donde, short Obj, int Pasos)>();
+        foreach (var o in objetos)
+            if (esPuerta(o.ObjIndex))
+                todas.Add((((byte)o.X, (byte)o.Y), (short)o.ObjIndex,
+                           Math.Abs(o.X - desde.X) + Math.Abs(o.Y - desde.Y)));
+        // De la más cercana a la más lejana: `LaPuertaQueConviene` se queda con la primera que destraba, y
+        // preguntar por la de al lado antes que por la del otro extremo del mapa ahorra la búsqueda en anchura.
+        todas.Sort((a, b) => a.Pasos.CompareTo(b.Pasos));
+        return todas;
+    }
+
+    /// <summary>
+    /// ABRIR LA PUERTA QUE DA CAMINO a un mercader de este mapa. Devuelve si la abrió.
     ///
     /// <para>Se acerca por el navegante —una puerta suele estar en una pared, y el paso codicioso se traba— y manda
     /// el mismo doble clic que el cliente. Que se haya abierto se verifica mirando el piso: el servidor cambia el
@@ -2442,8 +2478,9 @@ public sealed class Bot
     private async Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                  Func<int, bool> sirve, Task cerrada, CancellationToken ct)
     {
-        var candidatas = sentidos.TodoLoDelPiso(obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj)))
-                                 .Where(p => p.Pasos <= RadioDeCompras).ToList();
+        var candidatas = PuertasQueElMapaTiene(_entorno.Datos.MapObjects.GetValueOrDefault(sentidos.Mapa),
+                                               sentidos.Posicion,
+                                               obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj)));
         if (LaPuertaQueConviene(candidatas,
                 donde => _entorno.Mapas.AbrirlaDaCamino(sentidos.Mapa, sentidos.Posicion, donde, sirve))
             is not { } puerta) return false;
@@ -2494,6 +2531,10 @@ public sealed class Bot
     /// VISTA del jugador (<c>EnviarSueloQueEntraEnVista</c> → <c>GroundInView</c>), o sea unas ocho baldosas; la
     /// puerta del edificio del mercader está a veinte. El bot la estaba ESPERANDO en vez de ir a buscarla, y por eso
     /// la sonda decía "NINGUNA a la vista" incluso ya dentro del pueblo.</para>
+    ///
+    /// <para>Acercarse ya NO es lo que mete la puerta en la lista —eso lo resuelve
+    /// <see cref="PuertasQueElMapaTiene"/>, que la saca de la data—, pero sigue haciendo falta: al mostrador hay
+    /// que llegar igual, y desde más cerca el camino que el navegante calcula es más corto.</para>
     ///
     /// <para>La posición del mercader no hace falta verla: sale de <c>MapSpawns</c>, que es data. Se camina hasta lo
     /// más cerca que el navegante consiga, la puerta entra en vista y <see cref="AbrirUnaPuertaAsync"/> la abre.</para>

@@ -263,6 +263,66 @@ public class PuertasDelBotTests
     }
 
     /// <summary>
+    /// LA PUERTA QUE SIRVE NO ESTÁ A LA VISTA. El caso es el que dejó la sonda de campo, con su baldosa exacta:
+    /// <c>[SONDA-PUERTA] Elmo mapa 20 en (74,54): ve 2 puertas, 2 a menos de 15 pasos, destraba=NINGUNA</c>.
+    ///
+    /// <para>Contra la data, parado en esa misma baldosa: el mapa 20 tiene ONCE puertas que se abren, y las que
+    /// destraban al Hechicero de (49,75) son las de (50,86) y (52,86), a 56 y 54 pasos y en otra área. Las dos que
+    /// el servidor sí le manda —(75,46) y (77,46), a 9 y 11 pasos— no lo liberan. O sea que el viaje entero se
+    /// perdía por mirar en vez de saber, y no porque en ese mapa no hubiera con qué.</para>
+    ///
+    /// <para>El mercader que se busca es UNO —la ficha 63— y no cualquiera que venda pergaminos: en ese mapa dos
+    /// de los ocho ya se atienden a pie, y a <see cref="Navegante.AbrirlaDaCamino"/> le alcanza con que DESPUÉS de
+    /// abrir haya uno alcanzable. Es lo mismo que pasa en el juego —a esta rama se llega sólo cuando <c>DondeHay</c>
+    /// ya dijo que no hay ninguno al alcance— y en campo era literal: el bot quería un pergamino que sólo tenían los
+    /// encerrados, y por eso <c>hayQuienLeVendaAca</c> daba verdadero con <c>DondeHay</c> en nulo.</para>
+    /// </summary>
+    [Fact]
+    public void La_puerta_que_sirve_sale_del_mapa_y_no_de_lo_que_se_ve()
+    {
+        var datos = Datos();
+        if (!datos.MapObjects.TryGetValue(20, out var objetos) || !datos.MapSpawns.ContainsKey(20)) return;
+        var navegante = new Navegante(datos);
+        // La baldosa por la que se entra al mapa 20 desde la cuna, que es donde la sonda lo encontró.
+        (byte X, byte Y) parado = (74, 54);
+
+        // El Hechicero de (49,75), uno de los seis que están adentro del edificio.
+        const int Encerrado = 63;
+        bool Sirve(int ficha) => ficha == Encerrado;
+        Assert.Contains(datos.MapSpawns[20], s => s.NpcIndex == Encerrado && (s.X, s.Y) == (49, 75));
+        Assert.True(datos.Npc(Encerrado) is { StockItems: { Count: > 0 } stock }
+                    && stock.Any(s => datos.Obj((short)s.ObjIndex) is { IsPergamino: true }),
+                    $"la ficha {Encerrado} dejó de vender pergaminos: el caso ya no es el del campo");
+        // Y LA PRECONDICIÓN, que es la que hace que esta rama corra: sin abrir nada no se le llega al mostrador
+        // (`RadioDeMostrador` = 3), así que `DondeHay` devuelve nulo y el bot pasa a buscar la puerta.
+        Assert.Null(navegante.HayComoLlegar(20, parado, (49, 75), 3));
+        bool EnLaVista((byte X, byte Y) donde) =>
+            World.InView(new WorldPos(20, parado.X, parado.Y), new WorldPos(20, donde.X, donde.Y));
+
+        var delMapa = Bot.PuertasQueElMapaTiene(objetos, parado, obj => Bot.PuertaQueSeAbre(datos.Obj(obj)));
+        Assert.True(delMapa.Count >= 5, $"el mapa 20 tiene {delMapa.Count} puertas que se abren: el caso necesita varias");
+
+        // Y EL ORDEN, que es el contrato de `LaPuertaQueConviene`: se queda con la PRIMERA que destraba
+        // dando por hecho que es la más cercana.
+        Assert.Equal(delMapa.Select(p => p.Pasos).OrderBy(p => p), delMapa.Select(p => p.Pasos));
+
+        // LO QUE EL BOT VE: las que el servidor le manda son las del área, y ninguna de ésas le sirve.
+        var aLaVista = delMapa.Where(p => EnLaVista(p.Donde)).ToList();
+        Assert.NotEmpty(aLaVista);
+        Assert.Null(Bot.LaPuertaQueConviene(aLaVista,
+            donde => navegante.AbrirlaDaCamino(20, parado, donde, Sirve)));
+
+        // LO QUE EL MAPA SABE: hay una que sí destraba, y está fuera de la vista.
+        var elegida = Bot.LaPuertaQueConviene(delMapa,
+            donde => navegante.AbrirlaDaCamino(20, parado, donde, Sirve));
+        Assert.NotNull(elegida);
+        Assert.False(EnLaVista(elegida!.Value.Donde),
+            $"la puerta {elegida.Value.Donde} entró en la vista desde {parado}: el caso ya no distingue mirar de saber");
+        Assert.True(elegida.Value.Pasos > 15,
+            $"la puerta que sirve quedó a {elegida.Value.Pasos} pasos: con el tope de compras puesto volvería a filtrarse");
+    }
+
+    /// <summary>
     /// EL TOPE DE EXPLORACIÓN TIENE QUE CUBRIR EL RECUADRO QUE SE PUEDE PISAR. Estaba en 6.000 comparado contra
     /// las 10.000 baldosas del mapa crudo, pero lo caminable es el recuadro del borde: 84 por 88 = <b>7392</b>. El
     /// tope quedaba adentro, así que había caminos que existían y el navegante no encontraba — y peor:
