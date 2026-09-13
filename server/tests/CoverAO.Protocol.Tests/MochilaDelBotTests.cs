@@ -303,4 +303,36 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.CuraElVeneno(roja, null));
         Assert.False(Bot.CuraElVeneno(null, curarVeneno));
     }
+
+    /// <summary>
+    /// EL ANTÍDOTO DEL JUEGO SE RECONOCE, contra el obj.dat de verdad y no contra un <c>ObjInfo</c> armado a mano.
+    /// El test de al lado prueba la REGLA; éste prueba que la data traiga los campos que la regla mira — si
+    /// <c>LanzaHechizo</c> dejara de cargarse, el predicado daría false siempre, el bot no compraría antídoto ni
+    /// reconocería el que lleva encima, y el otro test seguiría verde.
+    ///
+    /// <para>Viene de una corrida de campo: treinta mostradores visitados y cero antídotos. La data dice que el
+    /// Alquimista está al alcance —en el mapa 1 y en el 62 es el mercader más cercano—, así que había que
+    /// descartar que el predicado estuviera ciego.</para>
+    /// </summary>
+    [Fact]
+    public void El_antidoto_del_juego_se_reconoce()
+    {
+        var datos = GameData.Load();
+        if (datos.Obj(1) is null) return;   // sin la carpeta del juego no hay nada que decir
+
+        var curan = new List<string>();
+        var noCuran = new List<string>();
+        for (short i = 1; i < 2000; i++)
+        {
+            if (datos.Obj(i) is not { IsPotion: true, SubType: 5 } o) continue;
+            (Bot.CuraElVeneno(o, datos.Spell((short)o.LanzaHechizo)) ? curan : noCuran).Add(o.Name);
+        }
+        // La premisa: si el obj.dat dejara de tener pociones de SubTipo 5, el test no probaría nada.
+        Assert.True(curan.Count + noCuran.Count >= 5,
+            $"el obj.dat dejó de tener pociones de SubTipo 5 (hay {curan.Count + noCuran.Count})");
+        Assert.NotEmpty(curan);
+        Assert.All(curan, n => Assert.Contains("ioleta", n));
+        // Y las otras seis —Metamorfosis, Remover parálisis, Desencantar dos veces, Invisibilidad, Sanar— no.
+        Assert.NotEmpty(noCuran);
+    }
 }
