@@ -142,4 +142,24 @@ public class PlataDelBotTests
     {
         Assert.Equal(leAlcanza, Bot.LoPuedePagar(precio, plata));
     }
+
+    /// <summary>
+    /// EL EQUIPO Y LOS PERGAMINOS TAMBIÉN SON ALGO QUE COMPRAR. Es lo que habilita la runa a casa cuando no hay
+    /// tienda al alcance; sin ellos, el bot que ya tiene lo esencial se queda en el bosque para siempre con la plata
+    /// sin gastar. Medido en `puertas3` y `seguir7`.
+    /// </summary>
+    [Theory]
+    // herramienta | comida | bebida | pociones | equipo | hechizo | ¿vuelve a casa a comprar?
+    [InlineData(false, false, false, false, false, false, false)]   // no le falta nada: se queda cazando
+    [InlineData(true, false, false, false, false, false, true)]
+    [InlineData(false, true, false, false, false, false, true)]
+    [InlineData(false, false, true, false, false, false, true)]
+    [InlineData(false, false, false, true, false, false, true)]
+    [InlineData(false, false, false, false, true, false, true)]     // sólo equipo: antes NO volvía
+    [InlineData(false, false, false, false, false, true, true)]     // sólo pergamino: antes NO volvía
+    public void El_equipo_y_los_pergaminos_cuentan_como_algo_que_comprar(bool herr, bool com, bool beb, bool poc,
+                                                                         bool eq, bool hech, bool vuelve)
+    {
+        Assert.Equal(vuelve, Bot.HayAlgoQueComprar(herr, com, beb, poc, eq, hech));
+    }
 }

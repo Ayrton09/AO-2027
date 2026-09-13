@@ -1020,7 +1020,8 @@ public sealed class Bot
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto))
                     continue;
-                bool vaAComprar = vaPorLaHerramienta || vaPorComida || vaPorBebida || vaPorPociones;
+                bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
+                                                    vaPorEquipo, vaPorHechizo);
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
                     && !_entorno.Datos.IsPkMap(sentidos.Mapa))
                 {
@@ -2284,6 +2285,19 @@ public sealed class Bot
     /// está ahí y lo que falta es la puerta, no el viaje.</para>
     /// </summary>
     public static bool ValeViajarAlPueblo(bool hayDondeLlegar, bool estaEnOtroMapa) => !hayDondeLlegar && estaEnOtroMapa;
+
+    /// <summary>
+    /// ¿HAY ALGO QUE COMPRAR? Es lo que habilita volver a casa con la runa cuando no hay ninguna tienda al alcance.
+    ///
+    /// <para>El EQUIPO y los PERGAMINOS cuentan, y antes no: con eso un bot que ya tenía lo esencial cubierto y salía
+    /// a cazar lejos se quedaba en el bosque para siempre —no encontraba mercader, no volvía— y la plata se le
+    /// acumulaba sin gastar. Medido en `puertas3`: tres bots en m202 y m807 con "mapa con mercader=NINGUNO" una y
+    /// otra vez; y en `seguir7`, Fabia con 19.839 monedas sin comprar un solo pergamino.</para>
+    ///
+    /// <para>Lo que sigue sin contar es VENDER: nadie usa una runa para volver a casa a descargar el botín.</para>
+    /// </summary>
+    public static bool HayAlgoQueComprar(bool herramienta, bool comida, bool bebida, bool pociones,
+                                         bool equipo, bool hechizo) => herramienta || comida || bebida || pociones || equipo || hechizo;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;
