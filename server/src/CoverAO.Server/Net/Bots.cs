@@ -975,9 +975,13 @@ public sealed class Bot
         bool VendePergamino(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo));
-        bool hayUnoAlAlcance = vaPorHechizo && soloGustos
-            && _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendePergamino, MapaAtiende,
-                                       Pisable(sentidos)) is not null;
+        bool hayUnoAlAlcance = vaPorHechizo && soloGustos && HayDondeComprarElPergamino(
+            _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendePergamino, MapaAtiende,
+                                    Pisable(sentidos)) is not null,
+            _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
+                m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var deEse)
+                     && deEse.Any(q => VendePergamino(q.NpcIndex)),
+                Pisable(sentidos)) is not null);
         bool soloElPergamino = PrimeroElPergamino(vaPorHechizo, soloGustos, hayUnoAlAlcance);
 
         bool Sirve(int ficha)
@@ -2912,6 +2916,24 @@ public sealed class Bot
     /// </summary>
     public static bool PrimeroElPergamino(bool vaPorHechizo, bool soloLeFaltanGustos, bool hayUnoAlAlcance) =>
         vaPorHechizo && soloLeFaltanGustos && hayUnoAlAlcance;
+
+    /// <summary>
+    /// ¿HAY DÓNDE COMPRAR EL PERGAMINO? Alcanza con que exista el MAPA: los vendedores están adentro de
+    /// edificios —los del mapa 20, detrás de sus once puertas— y preguntar sólo por los que se alcanzan
+    /// CAMINANDO daba siempre que no, así que el bot nunca priorizaba el viaje y se quedaba con el mercader
+    /// más cercano, que no vende pergaminos.
+    ///
+    /// <para>Es la misma decisión que ya se tomó para el viaje al pueblo: con el mercader adentro de un
+    /// edificio <c>DondeHay</c> no devuelve nada, pero el mapa sí se encuentra — y una vez ahí el bot prueba
+    /// la puerta.</para>
+    ///
+    /// <para>Medido en una corrida de 45 minutos: el caster salió de compras 35 veces, 7 de ellas queriendo un
+    /// hechizo, llegó a 10 mostradores y en NINGUNO había un pergamino que le sirviera; terminó con 17.775
+    /// monedas y el único hechizo con el que nació. Contra la data: de los 22 mercaderes a los que llega
+    /// caminando desde la cuna, cero venden pergaminos; mapas que atienden y los venden, dos.</para>
+    /// </summary>
+    public static bool HayDondeComprarElPergamino(bool seLlegaCaminando, bool hayUnMapaQueLosVende) =>
+        seLlegaCaminando || hayUnMapaQueLosVende;
 
     private const int OroParaMirarHechizos = 250;
 

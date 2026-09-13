@@ -304,4 +304,23 @@ public class MagiaDelBotTests
         Assert.Equal((byte)1, Bot.MejorHechizoDeDano(hechizos, 20, 100, ninguno));
         Assert.Equal((byte)1, Bot.MejorHechizoDeDano(hechizos, 100, 10, ninguno));
     }
+
+    /// <summary>
+    /// HAY DÓNDE COMPRAR EL PERGAMINO aunque no se llegue caminando: los vendedores están adentro de edificios
+    /// —los del mapa 20, detrás de sus once puertas— y preguntar sólo por los alcanzables a pie daba siempre que
+    /// no, así que el bot nunca priorizaba el viaje.
+    ///
+    /// <para>Medido en campo, 45 minutos: el caster salió de compras 35 veces, 7 queriendo un hechizo, llegó a
+    /// 10 mostradores y en ninguno había un pergamino que le sirviera — con 17.775 monedas encima y el único
+    /// hechizo con el que nació.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(true, true, true)]     // se llega a pie: siempre sirvió
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]    // detrás de una puerta, pero el mapa existe: ahora también
+    [InlineData(false, false, false)]  // no hay ninguno en ningún lado
+    public void Hay_donde_comprar_el_pergamino(bool aPie, bool elMapa, bool hayDonde)
+    {
+        Assert.Equal(hayDonde, Bot.HayDondeComprarElPergamino(aPie, elMapa));
+    }
 }
