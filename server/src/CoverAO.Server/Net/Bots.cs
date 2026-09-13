@@ -2067,13 +2067,18 @@ public sealed class Bot
             if (!_noLoPuedeLanzar.Contains(numero)
                 && _entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h) curas.Add((ranura, h.MaxHp, h.ManaCost));
         if (MejorCuraQuePuedePagar(curas, sentidos.ManaEnPuntos) is not { } cura) return false;
-        _curaPedida = (sentidos.HechizoEn(cura.Ranura), sentidos.Salud);
-        _ultimoCasteo = (_curaPedida.Value.Hechizo, Environment.TickCount64);
 
+        // LA VIDA SE LEE ANTES DE PEDIR, y lo pedido se recuerda DESPUÉS de que los dos paquetes salieron: si el
+        // envío falla no hubo casteo, y anotarlo igual marcaría como rechazado un hechizo que el servidor ni vio.
+        short hechizo = sentidos.HechizoEn(cura.Ranura);
+        double vidaAntes = sentidos.Salud;
         var (x, y) = sentidos.Posicion;
-        return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
-            && transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(x).WriteByte(y).WriteByte((byte)GameLimits.SkillMagia)));
+        if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
+            || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+                   w => w.WriteByte(x).WriteByte(y).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+        _curaPedida = (hechizo, vidaAntes);
+        _ultimoCasteo = (hechizo, Environment.TickCount64);
+        return true;
     }
 
     private async Task<bool> CuidarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
@@ -2990,10 +2995,13 @@ public sealed class Bot
         if (MejorHechizoDeDano(candidatos, sentidos.ManaEnPuntos, sentidos.EnergiaEnPuntos, _noLoPuedeLanzar)
                 is not { } ranuraElegida) return false;
 
-        _ultimoCasteo = (sentidos.HechizoEn(ranuraElegida), Environment.TickCount64);
-        return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranuraElegida)))
-            && transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(a.X).WriteByte(a.Y).WriteByte((byte)GameLimits.SkillMagia)));
+        // Lo pedido se recuerda DESPUÉS de que los dos paquetes salieron: ver `CurarseConMagia`.
+        short hechizo = sentidos.HechizoEn(ranuraElegida);
+        if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranuraElegida)))
+            || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+                   w => w.WriteByte(a.X).WriteByte(a.Y).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+        _ultimoCasteo = (hechizo, Environment.TickCount64);
+        return true;
     }
 
     /// <summary>
