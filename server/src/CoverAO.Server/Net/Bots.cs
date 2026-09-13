@@ -822,7 +822,19 @@ public sealed class Bot
         // el bot no casteaba NUNCA y se quedaba pegando con el báculo, que no mata nada. Medido: el Mago, el
         // Bardo y la Clériga con el maná lleno y la experiencia congelada mientras los guerreros subían a
         // nivel 5. Se reconoce por tener maná, que es lo que el propio servidor le contó al entrar.
-        byte propia = SkillPropia(SkillDeSuOficio, sentidos.UsaMana, LlevaUnArmaPuesta(sentidos));
+        //
+        // Y EL QUE PELEA A GOLPES NO ENTRA ACÁ, que parece el caso simétrico y no lo es. Lo que las otras dos
+        // ramas rompen es un CÍRCULO: sin la skill mínima el servidor no deja castear, y sin castear la skill no
+        // sube nunca. Armas no tiene mínimo — con la skill en cero el acierto ya es
+        // `clamp(50 + (0 − evasión) × 0,4; 10; 90)`, o sea 45% contra el Murciélago — así que el bot pega, acierta
+        // y la entrena solo. Medido contra los .chr de una corrida: `RaiseChancePercent` es 100, cada acierto
+        // suma un punto, y el uso lleva Armas al tope del nivel en seis golpes a nivel 1 y en cincuenta a nivel
+        // 10 — menos de un minuto. Los puntos libres, en cambio, quedan POR DEBAJO de ese tope a partir del nivel
+        // 5 (23 contra 25 a nivel 10): darle Armas en vez del azar cambia el acierto en UN punto porcentual a
+        // nivel 1 y en nada después. Se probó y se sacó.
+        byte propia = SkillDeSuOficio != 0 ? SkillDeSuOficio
+                    : sentidos.UsaMana ? (byte)GameLimits.SkillMagia
+                    : (byte)0;
         if (propia > 0 && libres > 0)
         {
             byte suyos = (byte)Math.Min(libres, Math.Max(1, libres / 2));
@@ -1624,35 +1636,6 @@ public sealed class Bot
     private long _proximaFaena;
 
     /// <summary>La skill del oficio de esta clase.</summary>
-    /// <summary>
-    /// EN QUÉ SKILL PONE SUS PUNTOS: la del oficio si tiene uno, Magia si castea, y si no, la skill con la que
-    /// pega — Armas con un arma puesta, Wrestling con nudillos o con las manos vacías, que es la misma cuenta
-    /// que hace el servidor para resolver el golpe (<c>AttackSkillOf</c>, PacketDispatcher.cs:1676).
-    ///
-    /// <para>La rama de pelea faltaba: oficio hay en TRES clases y maná en unas pocas, así que el Guerrero, el
-    /// Gladiador, el Cazador, el Ladrón, el Mercenario, el Herrero, el Carpintero y el Sastre repartían sus diez
-    /// puntos al azar entre veintisiete skills y no subían nunca la que usan para pegar.</para>
-    ///
-    /// <para>Y esa skill es lo único que decide si el golpe entra: <c>PoderAtaqueWrestling</c> por debajo de 31
-    /// es <c>skill × ModAtaque</c> —ni agilidad ni nivel— y el acierto sale de
-    /// <c>clamp(50 + (ataque − evasión) × 0,4; 10; 90)</c>. Medido contra los cotos donde los bots cazan, para
-    /// un Guerrero: con la skill en 2 le pega al Murciélago 45 veces de cada 100 y al Lobo 31; con la skill en
-    /// 25, 54 y 40.</para>
-    ///
-    /// <para>El oficio va PRIMERO: un Leñador vive de talar, y sin la skill el oficio no rinde.</para>
-    /// </summary>
-    public static byte SkillPropia(byte skillDeSuOficio, bool usaMana, bool llevaArmaPuesta) =>
-        skillDeSuOficio != 0 ? skillDeSuOficio
-        : usaMana ? (byte)GameLimits.SkillMagia
-        : llevaArmaPuesta ? (byte)GameLimits.SkillArmas
-        : (byte)GameLimits.SkillWrestling;
-
-    /// <summary>¿Lleva un arma puesta? Cuenta cualquier arma del catálogo —también las arrojadizas, que el bot
-    /// no elige pero con las que NACE equipado—, porque lo que importa acá es con qué resuelve el golpe el
-    /// servidor y no cuáles prefiere el bot.</summary>
-    private bool LlevaUnArmaPuesta(SentidosDelBot sentidos) =>
-        sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { IsWeapon: true });
-
     private byte SkillDeSuOficio => _clase switch
     {
         ClasePescador => (byte)GameLimits.SkillPesca,
