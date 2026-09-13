@@ -753,6 +753,15 @@ public sealed class Bot
         // esquiva— y el que no tiene con qué curarse se moría adentro: medido en `sano1`, 21 muertes en media hora, todas de los
         // cinco bots sin pociones y 17 contra el Escorpión y el Lobo, mientras los tres con pociones no murieron nunca. Una
         // Guerrera con 58 de vida no le pegaba al Lobo (golpe 18) ni se le iba, y el Lobo la mataba parada.
+        // CON POCIONES QUEDA UN HUECO, Y QUEDA A PROPÓSITO: lo que no es presa pero tampoco asusta no se pelea ni
+        // se esquiva. Medido contra la data: son 3 criaturas de 111 a nivel 1 —Escorpión, Sierpe, Sertlac—, 5 a
+        // nivel 10 —Zombie, Esqueleto Guerrero y los Fuegos elementales, que caen por la experiencia y no por el
+        // golpe— y 8 a nivel 20. El caso que mataba bots es el de SIN pociones, y ése lo tapa la línea de arriba;
+        // con pociones el bot tiene con qué curarse mientras pelea o se aleja.
+        //
+        // Taparlo también acá es una decisión de balance, no un arreglo: ampliar `EsPeligrosoPara` le hace perder
+        // presas legítimas y ampliar `EsPresaPara` lo manda a peleas largas contra cosas como el Zombie, que pega
+        // 30. Las dos rompen un test que documenta la decisión contraria. DECIDIDO POR EL AUTOR: queda como está.
         return !conPociones && n.MaxHit > 0 && !EsPresaPara(n, vidaMaxima, nivel, conPociones, curaVeneno);
     }
 
