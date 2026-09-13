@@ -254,4 +254,54 @@ public class MagiaDelBotTests
     {
         Assert.Equal(vuelveAProbar, Bot.VuelveAProbarLosHechizos(skill));
     }
+
+    /// <summary>
+    /// EL HECHIZO QUE EL SERVIDOR RECHAZA POR MAGIA NO SE VUELVE A ELEGIR. <c>LanzarAlgo</c> elegía el de más
+    /// daño entre los que podía pagar de maná y energía, sin mirar la skill de Magia que el servidor pide primero
+    /// (<c>LocaleMsg 221</c>). El rechazo no cobra nada, así que volvía a elegir el mismo — y como
+    /// <c>LanzarAlgo</c> devolvía true por haber mandado los paquetes, arriba el <c>continue</c> le comía también
+    /// el golpe con el arma.
+    ///
+    /// <para>Medido: de los 23 pergaminos de daño que venden los mercaderes el bot elige el Misil Mágico
+    /// (daño 35, maná 40), que pide 30 de Magia. Junta 5 al nacer y 2 por nivel, o sea nivel 16 — y el pergamino
+    /// lo compra mucho antes. Desde que lo aprende hasta ahí no atacaba de ninguna forma.</para>
+    /// </summary>
+    [Theory]
+    // cuándo lo pidió | último rechazo | ¿es de este pedido?
+    [InlineData(1000L, 1200L, true)]    // el rechazo llegó después: es de este casteo
+    [InlineData(1000L, 1000L, true)]    // en el mismo tick, que es lo normal
+    [InlineData(1000L, 900L, false)]    // el rechazo es ANTERIOR: era de otro hechizo
+    [InlineData(1000L, 0L, false)]      // nunca le rechazaron nada
+    [InlineData(0L, 1200L, false)]      // no pidió nada, no hay a quién anotar
+    public void Se_lo_rechazo_por_magia(long cuandoLoPidio, long ultimoRechazo, bool esDeEstePedido)
+    {
+        Assert.Equal(esDeEstePedido, Bot.SeLoRechazoPorMagia(cuandoLoPidio, ultimoRechazo));
+    }
+
+    /// <summary>
+    /// EL HECHIZO DE DAÑO QUE CONVIENE es el de más daño entre los que puede pagar — y NO uno que el
+    /// servidor ya le rechazó. Sin saltear los anotados vuelve a elegir el mismo para siempre, porque un casteo
+    /// rechazado no gasta maná ni energía: no cambia nada que lo lleve a elegir otro.
+    /// </summary>
+    [Fact]
+    public void El_hechizo_de_dano_que_conviene()
+    {
+        // ranura, número, daño, maná, energía
+        var hechizos = new[]
+        {
+            ((byte)1, (short)2, 15, 12, 2),      // Proyectil Mágico: barato y flojo
+            ((byte)2, (short)24, 35, 40, 20),    // Misil Mágico: el que más pega de los que puede pagar
+            ((byte)3, (short)10, 80, 1400, 120)  // Implosión: no le alcanza el maná
+        };
+        var ninguno = new HashSet<short>();
+
+        Assert.Equal((byte)2, Bot.MejorHechizoDeDano(hechizos, mana: 100, energia: 100, ninguno));
+        // Con el Misil anotado baja al Proyectil en vez de insistir con el que le rechazan.
+        Assert.Equal((byte)1, Bot.MejorHechizoDeDano(hechizos, 100, 100, new HashSet<short> { 24 }));
+        // Y si le rechazaron los dos, no castea: le queda pegar con el arma.
+        Assert.Null(Bot.MejorHechizoDeDano(hechizos, 100, 100, new HashSet<short> { 24, 2 }));
+        // El maná y la energía siguen mandando: con poco de cada uno sólo llega al más barato.
+        Assert.Equal((byte)1, Bot.MejorHechizoDeDano(hechizos, 20, 100, ninguno));
+        Assert.Equal((byte)1, Bot.MejorHechizoDeDano(hechizos, 100, 10, ninguno));
+    }
 }

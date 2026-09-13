@@ -2038,12 +2038,14 @@ public sealed class Bot
     private bool CurarseConMagia(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
         if (!sentidos.UsaMana) return false;
+        RevisarElUltimoCasteo(sentidos);
         var curas = new List<(byte Ranura, int Cura, int Mana)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
             if (!_noLoPuedeLanzar.Contains(numero)
                 && _entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h) curas.Add((ranura, h.MaxHp, h.ManaCost));
         if (MejorCuraQuePuedePagar(curas, sentidos.ManaEnPuntos) is not { } cura) return false;
         _curaPedida = (sentidos.HechizoEn(cura.Ranura), sentidos.Salud);
+        _ultimoCasteo = (_curaPedida.Value.Hechizo, Environment.TickCount64);
 
         var (x, y) = sentidos.Posicion;
         return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
@@ -2892,6 +2894,23 @@ public sealed class Bot
         h is not null && mana >= h.ManaCost && energia >= h.StaRequerido;
 
     /// <summary>
+    /// ¿SE LO RECHAZÓ POR FALTA DE MAGIA? El servidor pide la skill de Magia antes que nada
+    /// (<c>Skills[SkillMagia] &lt; spell.MinSkill</c> → <c>LocaleMsg 221</c>, PacketDispatcher.cs:10298) y ese
+    /// <c>return</c> corta antes de cobrar, así que el casteo rechazado no gasta nada y el bot elegía el mismo
+    /// hechizo para siempre. Peor: <c>LanzarAlgo</c> devuelve true por haber MANDADO los paquetes y arriba hay
+    /// un <c>continue</c>, con lo cual tampoco llegaba a pegar con el arma. No hacía nada.
+    ///
+    /// <para>Medido: de los 23 pergaminos de daño que venden los mercaderes, el bot ordena por daño y elige el
+    /// Misil Mágico (daño 35, maná 40) apenas lo tiene, y ése pide <b>30 de Magia</b>. El bot junta 5 al nacer
+    /// y 2 por nivel, o sea que recién a nivel 16 lo puede lanzar — el pergamino, en cambio, lo compra mucho
+    /// antes.</para>
+    ///
+    /// <para>Se compara CUÁNDO: un rechazo posterior al pedido es de ese pedido. Sin mirar el momento, un
+    /// rechazo viejo condenaría al hechizo que se pide después.</para>
+    /// </summary>
+    public static bool SeLoRechazoPorMagia(long cuandoLoPidio, long ultimoRechazo) => cuandoLoPidio > 0 && ultimoRechazo >= cuandoLoPidio;
+
+    /// <summary>
     /// ¿ALGUNA VEZ VA A PODER LANZARLO? Es lo que decide si vale la pena COMPRAR el pergamino: hay hechizos que
     /// piden más energía que el techo del juego, así que no los puede lanzar nadie, nunca.
     ///
@@ -2902,21 +2921,52 @@ public sealed class Bot
     public static bool AlgunaVezLoVaAPoderLanzar(SpellInfo? h) =>
         h is not null && h.StaRequerido <= Leveling.MaxStaCap;
 
+    /// <summary>
+    /// EL HECHIZO DE DAÑO QUE CONVIENE: el de más daño entre los que puede pagar de maná y energía,
+    /// salteando los que el servidor ya le rechazó por falta de Magia. Ver <see cref="SeLoRechazoPorMagia"/>.
+    /// </summary>
+    public static byte? MejorHechizoDeDano(
+        IReadOnlyList<(byte Ranura, short Numero, int Dano, int Mana, int Sta)> hechizos,
+        int mana, int energia, IReadOnlySet<short> anotados)
+    {
+        byte? mejor = null;
+        int suDano = -1;
+        foreach (var h in hechizos)
+        {
+            if (anotados.Contains(h.Numero)) continue;
+            if (mana < h.Mana || energia < h.Sta) continue;
+            if (h.Dano > suDano) { suDano = h.Dano; mejor = h.Ranura; }
+        }
+        return mejor;
+    }
+
+    /// <summary>¿El servidor rechazó el último casteo por falta de Magia? Entonces ese hechizo se anota y no se
+    /// vuelve a elegir, ni para pegar ni para curarse. Ver <see cref="SeLoRechazoPorMagia"/>.</summary>
+    private void RevisarElUltimoCasteo(SentidosDelBot sentidos)
+    {
+        if (_ultimoCasteo is not { } pedido) return;
+        if (SeLoRechazoPorMagia(pedido.Cuando, sentidos.UltimoRechazoDeMagia)) _noLoPuedeLanzar.Add(pedido.Hechizo);
+        _ultimoCasteo = null;
+    }
+
+    private (short Hechizo, long Cuando)? _ultimoCasteo;
+
     private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
     {
         if (!sentidos.UsaMana) return false;
-        int mana = sentidos.ManaEnPuntos;
-        (byte Ranura, int Dano)? mejor = null;
+        RevisarElUltimoCasteo(sentidos);
+        var candidatos = new List<(byte Ranura, short Numero, int Dano, int Mana, int Sta)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
         {
             var h = _entorno.Datos.Spell(numero);
             if (h is null || h.SubeHp != 2) continue;            // SubeHp 2 = hace daño; 1 = cura
-            if (!LoPuedeLanzarAhora(h, mana, sentidos.EnergiaEnPuntos)) continue;
-            if (mejor is null || h.MaxHp > mejor.Value.Dano) mejor = (ranura, h.MaxHp);
+            candidatos.Add((ranura, numero, h.MaxHp, h.ManaCost, h.StaRequerido));
         }
-        if (mejor is null) return false;
+        if (MejorHechizoDeDano(candidatos, sentidos.ManaEnPuntos, sentidos.EnergiaEnPuntos, _noLoPuedeLanzar)
+                is not { } ranuraElegida) return false;
 
-        return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(mejor.Value.Ranura)))
+        _ultimoCasteo = (sentidos.HechizoEn(ranuraElegida), Environment.TickCount64);
+        return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranuraElegida)))
             && transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
                    w => w.WriteByte(a.X).WriteByte(a.Y).WriteByte((byte)GameLimits.SkillMagia)));
     }

@@ -57,6 +57,7 @@ public sealed class SentidosDelBot
     private short _nivel, _mapa;
     private byte _hambre, _sed;
     private long _ultimoAvisoDeVeneno;
+    private long _ultimoRechazoDeMagia;
     private bool _mapaNuevo, _comerciando, _meditando, _paralizado;
 
     // ── Lo que el que decide le pregunta ──────────────────────────────────────────────────────────────
@@ -136,6 +137,15 @@ public sealed class SentidosDelBot
 
     private const long VenenoVigenteMs = 45_000;
     private const short AvisoDeVeneno = 47;
+
+    /// <summary>Cuando fue la ultima vez que el servidor le rechazo un casteo por falta de Magia, o 0 si
+    /// nunca. Es la unica senal del rechazo: <c>PuedeLanzar</c> corta con el <c>LocaleMsg 221</c> y no manda
+    /// nada mas.</summary>
+    public long UltimoRechazoDeMagia { get { lock (_candado) return _ultimoRechazoDeMagia; } }
+
+    /// <summary>"No tienes suficientes puntos de magia" (VB6 PuedeLanzar, modHechizos.bas:319). Es el
+    /// PRIMER requisito que mira el servidor, antes que la energia (93) y el mana (222).</summary>
+    private const short AvisoDeFaltaDeMagia = 221;
 
     /// <summary>El maná, de 0 a 1. Los que lanzan hechizos meditan cuando esto baja.</summary>
     public double Mana { get { lock (_candado) return _manaMax <= 0 ? 0 : (double)_mana / _manaMax; } }
@@ -767,8 +777,14 @@ public sealed class SentidosDelBot
 
                 // "Estás envenenado" (VB6 EfectoVeneno): es la única señal de que el veneno sigue encima.
                 case ServerPacketId.LocaleMsg:
-                    if (l.Entero() == AvisoDeVeneno) lock (_candado) _ultimoAvisoDeVeneno = Environment.TickCount64;
+                {
+                    short aviso = l.Entero();
+                    if (aviso == AvisoDeVeneno) lock (_candado) _ultimoAvisoDeVeneno = Environment.TickCount64;
+                    // Y el rechazo del casteo por falta de Magia, que es lo que dejaba al bot eligiendo para
+                    // siempre un hechizo que no puede lanzar. Ver `Bot.SeLoRechazoPorMagia`.
+                    else if (aviso == AvisoDeFaltaDeMagia) lock (_candado) _ultimoRechazoDeMagia = Environment.TickCount64;
                     break;
+                }
 
                 case ServerPacketId.ChangeInventorySlot:
                 {
