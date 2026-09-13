@@ -192,4 +192,36 @@ public class MochilaDelBotTests : IDisposable
         Assert.True(Bot.PuedeUsarlo(deMujer, clase: 1, raza: 1, genero: 2, nivel: 40), "una mujer dejó de poder usarla");
     }
 
+    /// <summary>
+    /// EL DESNUDO SE VISTE CON LO QUE TENGA, aunque no defienda. La regla exigía que lo de la mochila fuera MEJOR
+    /// que lo puesto, y con nada puesto eso es <c>0 &gt; 0</c>: el bot que sólo tiene ropa de defensa cero se
+    /// quedaba desnudo teniéndola encima. Desde que el desnudo no recupera energía eso lo deja sin poder trabajar
+    /// ni pelear, y la energía sólo se repone al subir de nivel.
+    ///
+    /// <para>Medido en `tala1`: de los ocho bots, el único desnudo era el único con la energía en CERO (0 de 572),
+    /// con las Vestimentas Tribales de defensa 0 en la mochila. Los otros siete, con una prenda puesta, la tenían
+    /// llena.</para>
+    /// </summary>
+    [Theory]
+    // lo que hay en la mochila | ¿hay algo puesto? | ¿se lo pone?
+    [InlineData(0, false, true)]     // el caso: defensa cero y desnudo -> se viste igual
+    [InlineData(0, true, false)]     // con algo puesto, defensa cero no mejora nada
+    [InlineData(3, false, true)]     // desnudo y algo que defiende: obvio
+    [InlineData(3, true, true)]      // puesto vale 2 (ver abajo): 3 es mejor
+    public void El_desnudo_se_viste_aunque_no_defienda(int guardado, bool algoPuesto, bool seLoPone)
+    {
+        var mochila = algoPuesto
+            ? new (byte Ranura, int Valor, bool Puesto)[] { (4, guardado, false), (9, 2, true) }
+            : new (byte Ranura, int Valor, bool Puesto)[] { (4, guardado, false) };
+
+        Assert.Equal(seLoPone ? (byte?)4 : null, Bot.QueSePoneDeEso(mochila));
+    }
+
+    /// <summary>Y con TODO puesto no hay nada que cambiar, aunque lo puesto no defienda.</summary>
+    [Fact]
+    public void Con_todo_puesto_no_se_cambia_nada()
+    {
+        var mochila = new (byte Ranura, int Valor, bool Puesto)[] { (4, 0, true) };
+        Assert.Null(Bot.QueSePoneDeEso(mochila));
+    }
 }

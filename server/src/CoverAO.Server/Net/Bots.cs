@@ -2091,7 +2091,17 @@ public sealed class Bot
         if (deEsas.Count == 0) return null;
         int puesto = deEsas.Where(x => x.Puesto).Select(x => x.Valor).DefaultIfEmpty(0).Max();
         var mejor = deEsas.Where(x => !x.Puesto).OrderByDescending(x => x.Valor).ToList();
-        return mejor.Count > 0 && mejor[0].Valor > puesto ? mejor[0].Ranura : null;
+        if (mejor.Count == 0) return null;
+        // CON NADA PUESTO SE PONE LO QUE HAYA, aunque no defienda nada. Exigir que sea MEJOR que lo puesto deja
+        // desnudo al que sólo tiene ropa de defensa cero: `0 > 0` es falso. Y desde que el desnudo no recupera
+        // energía (<see cref="Survival.RecuperaEnergia"/>) eso no es cosmético, es un bloqueo — sin energía no
+        // trabaja ni pelea, y la energía sólo se repone al subir de nivel.
+        //
+        // Medido en `tala1`: de los ocho bots, el ÚNICO desnudo era el único con la energía en cero (0 de 572),
+        // con las Vestimentas Tribales de defensa 0 en la mochila; los otros siete, con una prenda puesta, la
+        // tenían llena. La sonda de la faena lo dijo así: "sin energia: 0 % < 20 %".
+        bool nadaPuesto = !deEsas.Any(x => x.Puesto);
+        return nadaPuesto || mejor[0].Valor > puesto ? mejor[0].Ranura : null;
     }
 
     /// <summary>Las de esa clase que tiene, con lo que valen y si las lleva puestas; las que el servidor no le deja
