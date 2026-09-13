@@ -213,4 +213,51 @@ public class PuertasDelBotTests
         Assert.Contains(43 | (78 << 8), libres);
         Assert.Contains(42 | (78 << 8), libres);
     }
+
+    /// <summary>
+    /// LA MEJORA, CONTRA LA DATA. La corrida de campo verificó el mecanismo —ver dos puertas, evaluar las dos,
+    /// elegir y abrir— pero ahí la que destrababa era ADEMÁS la más cercana, así que no distinguía la conducta
+    /// nueva de la vieja. El mapa 20 tampoco sirve: desde su entrada la más cercana ya destraba.
+    ///
+    /// <para>El caso que SÍ distingue, buscado en los dieciséis mapas que atienden con mercader y puertas: el
+    /// <b>mapa 248 desde la entrada (50,50)</b>, con cuatro puertas al alcance. La más cercana —(49,44), a cinco
+    /// pasos— no libera a NADIE; la de (49,59), a ocho, libera CUATRO mercaderes. El bot que abre la más cercana
+    /// abre la inútil y se queda afuera.</para>
+    /// </summary>
+    [Fact]
+    public void Elige_la_que_destraba_y_no_la_mas_cercana()
+    {
+        var datos = Datos();
+        if (!datos.MapObjects.TryGetValue(248, out _) || !datos.MapSpawns.TryGetValue(248, out _)) return;
+        var navegante = new Navegante(datos);
+        (byte X, byte Y) entrada = (50, 50);
+
+        // Sirve cualquiera que comercie: en el 248 los cuatro que la puerta libera son mercaderes comunes.
+        bool Sirve(int ficha) => datos.Npc((short)ficha) is { StockItems: { Count: > 0 } };
+
+        // Las puertas del mapa que el bot puede abrir, con los pasos REALES desde la entrada.
+        var candidatas = datos.MapObjects[248]
+            .Where(o => Bot.PuertaQueSeAbre(datos.Obj((short)o.ObjIndex)))
+            .Select(o => (Donde: ((byte)o.X, (byte)o.Y), Obj: (short)o.ObjIndex,
+                          Pasos: navegante.HayComoLlegar(248, entrada, ((byte)o.X, (byte)o.Y), 2)?.Count ?? int.MaxValue))
+            .Where(p => p.Pasos != int.MaxValue)
+            .OrderBy(p => p.Pasos)
+            .ToList();
+        Assert.True(candidatas.Count >= 2,
+            $"desde {entrada} se alcanzan {candidatas.Count} puertas del mapa 248: el caso necesita al menos dos");
+
+        var destraban = candidatas.Where(p => navegante.AbrirlaDaCamino(248, entrada, p.Donde, Sirve)).ToList();
+        Assert.NotEmpty(destraban);
+
+        // EL CORAZÓN: la más cercana NO es de las que destraban, así que elegir por cercanía deja al bot afuera.
+        Assert.False(navegante.AbrirlaDaCamino(248, entrada, candidatas[0].Donde, Sirve),
+            $"la puerta más cercana {candidatas[0].Donde} ahora destraba: el caso dejó de distinguir las dos conductas");
+
+        // Y la regla elige una de las que destraban, no la de al lado.
+        var elegida = Bot.LaPuertaQueConviene(candidatas,
+            donde => navegante.AbrirlaDaCamino(248, entrada, donde, Sirve));
+        Assert.NotNull(elegida);
+        Assert.Contains(elegida!.Value.Donde, destraban.Select(d => d.Donde));
+        Assert.NotEqual(candidatas[0].Donde, elegida!.Value.Donde);
+    }
 }
