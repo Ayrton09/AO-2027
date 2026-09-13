@@ -1,4 +1,5 @@
 ﻿using CoverAO.Server.Data;
+using CoverAO.Server.Game;
 using CoverAO.Server.Net;
 using Xunit;
 
@@ -165,5 +166,29 @@ public class ValentiaDelBotTests
         Assert.True(Bot.BuscaAlSacerdoteHastaDondeLlega,
             "la rama de sanarse busca al sacerdote más cerca de lo que el navegante sabe llegar: " +
             "hay mapas donde el bot no tiene cómo curarse ni puede usar la runa");
+    }
+
+    /// <summary>
+    /// EN QUÉ SKILL PONE SUS PUNTOS. Faltaba la rama de los que pelean: oficio hay en TRES clases —Pescador,
+    /// Leñador, Minero— y maná en unas pocas, así que el Guerrero, el Gladiador, el Cazador, el Ladrón, el
+    /// Mercenario, el Herrero, el Carpintero y el Sastre repartían sus diez puntos al azar entre veintisiete skills.
+    ///
+    /// <para>Esa skill es lo único que decide si el golpe entra: por debajo de 31 el poder de ataque es
+    /// <c>skill × ModAtaque</c>, ni agilidad ni nivel. Medido contra los cotos donde los bots cazan, para un
+    /// Guerrero: con la skill en 2 le pega al Murciélago 45 veces de cada 100 y al Lobo 31; con 25, 54 y 40.</para>
+    ///
+    /// <para>Y no es siempre Armas: el kit de nacimiento le equipa NUDILLOS al Gladiador, y con nudillos el
+    /// servidor resuelve el golpe por Wrestling.</para>
+    /// </summary>
+    [Theory]
+    // skill del oficio | ¿castea? | ¿arma puesta? | la que le toca subir
+    [InlineData(GameLimits.SkillTalar, false, true, GameLimits.SkillTalar)]      // el Leñador vive de talar
+    [InlineData(GameLimits.SkillPesca, false, false, GameLimits.SkillPesca)]     // y la Pescadora, de pescar
+    [InlineData(0, true, true, GameLimits.SkillMagia)]                           // el que castea, Magia
+    [InlineData(0, false, true, GameLimits.SkillArmas)]                          // el Guerrero, con su arma
+    [InlineData(0, false, false, GameLimits.SkillWrestling)]                     // el Gladiador, con nudillos
+    public void En_que_skill_pone_sus_puntos(int oficio, bool castea, bool conArma, int esperada)
+    {
+        Assert.Equal((byte)esperada, Bot.SkillPropia((byte)oficio, castea, conArma));
     }
 }
