@@ -99,4 +99,20 @@ public class PuertasDelBotTests
     {
         Assert.Equal(viaja, Bot.ValeViajarAlPueblo(hayDondeLlegar, otroMapa));
     }
+
+    /// <summary>
+    /// SE CAMINA HACIA EL MERCADER AUNQUE NO SE LLEGUE. El servidor sólo manda los objetos del suelo que entran en la
+    /// vista del jugador (unas ocho baldosas) y la puerta del edificio está a veinte: el bot la estaba esperando en
+    /// vez de ir a buscarla, y por eso la sonda decía "NINGUNA a la vista" incluso ya dentro del pueblo.
+    /// </summary>
+    [Theory]
+    // ¿está en el mapa del mercader? | ¿lo alcanza? | ¿camina igual?
+    [InlineData(true, false, true)]     // el caso: está en el pueblo y el mercader es inalcanzable
+    [InlineData(true, true, false)]     // lo alcanza: va por el camino de siempre
+    [InlineData(false, false, false)]   // está en otro mapa: primero el viaje
+    [InlineData(false, true, false)]
+    public void Se_camina_hacia_el_mercader_para_que_la_puerta_entre_en_vista(bool enSuMapa, bool loAlcanza, bool camina)
+    {
+        Assert.Equal(camina, Bot.ValeAcercarseAunqueNoLlegue(enSuMapa, loAlcanza));
+    }
 }

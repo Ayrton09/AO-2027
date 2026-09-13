@@ -1009,6 +1009,16 @@ public sealed class Bot
                 // Es lo que hace cualquiera que no encuentra un negocio abierto: probar la puerta de al lado.
                 if (intento == 0 && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
 
+                // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
+                // manda los objetos del suelo que entran en la vista, así que la puerta del edificio recién aparece
+                // de cerca. Ver `ValeAcercarseAunqueNoLlegue`.
+                if (intento == 0 && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var losDeAca)
+                    && losDeAca.FirstOrDefault(q => Sirve(q.NpcIndex)) is { NpcIndex: > 0 } elMercader
+                    && ValeAcercarseAunqueNoLlegue(true, false)
+                    && await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)elMercader.X, (byte)elMercader.Y,
+                                          cerrada, ct, ParaQueLaPuertaEntreEnVista)
+                    && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
+
                 // Y SI LA PUERTA NO ESTÁ ACÁ, SE VIAJA AL PUEBLO IGUAL. Buscar la puerta donde el bot está parado
                 // sólo sirve si ya llegó: en el bosque no hay ninguna. Con el mercader adentro de un edificio,
                 // `DondeHay` nunca devuelve nada y el viaje no salía — pero el MAPA sí se encuentra. Ver
@@ -2298,6 +2308,23 @@ public sealed class Bot
     /// </summary>
     public static bool HayAlgoQueComprar(bool herramienta, bool comida, bool bebida, bool pociones,
                                          bool equipo, bool hechizo) => herramienta || comida || bebida || pociones || equipo || hechizo;
+
+    /// <summary>
+    /// ¿VALE CAMINAR HACIA EL MERCADER AUNQUE NO SE LLEGUE A ÉL? Cuando ya está en su mapa y no lo alcanza.
+    ///
+    /// <para>Es el último eslabón de las puertas. El servidor sólo manda los objetos del suelo que ENTRAN EN LA
+    /// VISTA del jugador (<c>EnviarSueloQueEntraEnVista</c> → <c>GroundInView</c>), o sea unas ocho baldosas; la
+    /// puerta del edificio del mercader está a veinte. El bot la estaba ESPERANDO en vez de ir a buscarla, y por eso
+    /// la sonda decía "NINGUNA a la vista" incluso ya dentro del pueblo.</para>
+    ///
+    /// <para>La posición del mercader no hace falta verla: sale de <c>MapSpawns</c>, que es data. Se camina hasta lo
+    /// más cerca que el navegante consiga, la puerta entra en vista y <see cref="AbrirUnaPuertaAsync"/> la abre.</para>
+    /// </summary>
+    public static bool ValeAcercarseAunqueNoLlegue(bool enElMapaDelMercader, bool loAlcanza) => enElMapaDelMercader && !loAlcanza;
+
+    /// <summary>Lo lejos que el bot se conforma con quedar del mostrador cuando NO llega: lo que el navegante
+    /// consiga. Es generoso a propósito — con esto sólo se busca que la puerta entre en vista.</summary>
+    private const int ParaQueLaPuertaEntreEnVista = 12;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;
