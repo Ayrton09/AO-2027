@@ -1365,6 +1365,13 @@ public sealed class Bot
         if (o is { IsDrink: true }
             && !SobraOSeCambia(sentidos, PuntosDeBebida, obj, BebidaQueQuiere,
                                SinNadaQueComer(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
+        // Y LO MEJOR QUE TIENE DE CADA CLASE DE EQUIPO TAMPOCO: ver `EsLoMejorQueTieneDeEsaClase`. Sin esto el bot
+        // vendía la armadura que acababa de comprar —o la que se le desequipó al morir— y la recompraba en el mismo
+        // segundo, perdiendo dos tercios del valor en cada vuelta.
+        if (o is not null && LoPuedeUsar(o, sentidos.Nivel)
+            && QueSePone.Any(esDeEso => esDeEso(o)
+                             && EsLoMejorQueTieneDeEsaClase(ValorDeCombate(o), LoMejorQueTiene(sentidos, esDeEso))))
+            return false;
         return o is not null && !o.IsPotion && !o.IsGold && !o.IsNewbie && o.Value > 0;
     }
 
@@ -2149,6 +2156,22 @@ public sealed class Bot
     private bool LoPuedeUsar(ObjInfo o, short nivel) => PuedeUsarlo(o, _clase, _raza, _genero, nivel);
 
     /// <summary>Lo mejor de eso que YA tiene, puesto o guardado: contra esto se compara la vitrina.</summary>
+    /// <summary>
+    /// ¿ES LO MEJOR QUE TIENE DE ESA CLASE DE EQUIPO? Lo que lo es NO se vende: el bot lo ofrece en el mostrador
+    /// y un segundo después lo vuelve a comprar, porque sigue siendo lo mejor de la vitrina.
+    ///
+    /// <para>Medido en el log de economía del juego, cuatro pares del mismo objeto con cero o un segundo de
+    /// diferencia: una armadura vendida a 6.000 y recomprada a 16.072, otra a 6.000 y 15.930, y un casco dos veces
+    /// a 1.666 y 4.202. <b>25.074 monedas</b> quemadas en una corrida. El mercader paga <c>Valor/3</c> y cobra el
+    /// valor entero, así que cada vuelta se come dos tercios de la pieza.</para>
+    ///
+    /// <para>Pasa sobre todo después de morir, porque <c>UserDie</c> desequipa todo: la pieza queda en la mochila
+    /// sin poner y el bucle de venta la toma por botín. Lo PEOR sí se vende —eso es botín de verdad, lo que sueltan
+    /// las criaturas— así que la mochila se sigue vaciando.</para>
+    /// </summary>
+    public static bool EsLoMejorQueTieneDeEsaClase(int valorDeCombate, int mejorDeEsaClase) =>
+        valorDeCombate > 0 && valorDeCombate >= mejorDeEsaClase;
+
     private int LoMejorQueTiene(SentidosDelBot sentidos, Func<ObjInfo, bool> esDeEso)
     {
         int mejor = 0;

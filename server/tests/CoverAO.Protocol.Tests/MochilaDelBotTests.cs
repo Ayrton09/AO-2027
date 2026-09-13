@@ -224,4 +224,22 @@ public class MochilaDelBotTests : IDisposable
         var mochila = new (byte Ranura, int Valor, bool Puesto)[] { (4, 0, true) };
         Assert.Null(Bot.QueSePoneDeEso(mochila));
     }
+
+    /// <summary>
+    /// NO VENDE LO MEJOR QUE TIENE, porque lo recompra un segundo después. Medido en el log de economía del juego:
+    /// cuatro pares venta+compra del MISMO objeto con cero o un segundo de diferencia —una armadura a 6.000 y de
+    /// vuelta a 16.072— por <b>25.074 monedas</b> en una corrida. Pasa sobre todo al morir, que desequipa todo y
+    /// deja la pieza en la mochila, donde el bucle de venta la toma por botín.
+    /// </summary>
+    [Theory]
+    // lo que vale la pieza | lo mejor que tiene de esa clase | ¿se la guarda (no es botín)?
+    [InlineData(24, 24, true)]    // ES lo mejor que tiene: no se vende
+    [InlineData(24, 20, true)]    // todavía mejor que lo suyo
+    [InlineData(3, 24, false)]    // peor que lo que tiene: eso sí es botín
+    [InlineData(0, 0, false)]     // sin valor de combate no es equipo: no lo protege
+    [InlineData(0, 24, false)]
+    public void No_vende_lo_mejor_que_tiene_de_cada_clase(int vale, int mejor, bool seLoGuarda)
+    {
+        Assert.Equal(seLoGuarda, Bot.EsLoMejorQueTieneDeEsaClase(vale, mejor));
+    }
 }
