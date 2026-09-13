@@ -149,4 +149,21 @@ public class ValentiaDelBotTests
     {
         Assert.Equal(toma, Bot.HoraDeTomarPocion(salud, pociones));
     }
+
+    /// <summary>
+    /// EL BOT BUSCA AL SACERDOTE TAN LEJOS COMO SABE VIAJAR. La rama de sanarse se quedaba en dos mapas mientras el
+    /// navegante llega a cinco — y las otras dos ramas que van al sacerdote (curar el veneno, revivir) ya usaban el
+    /// alcance completo.
+    ///
+    /// <para>Medido sobre los 282 mapas con criaturas hostiles: con dos saltos el sacerdote se alcanza desde 142
+    /// (50,4%) y con cinco desde 275 (97,5%). Y la otra salida, la runa, no sirve en mapa pk: <b>139 mapas (49,3%)
+    /// quedaban sin ninguna vía</b> para un bot sin pociones con la vida en rojo.</para>
+    /// </summary>
+    [Fact]
+    public void Busca_al_sacerdote_tan_lejos_como_sabe_viajar()
+    {
+        Assert.True(Bot.BuscaAlSacerdoteHastaDondeLlega,
+            "la rama de sanarse busca al sacerdote más cerca de lo que el navegante sabe llegar: " +
+            "hay mapas donde el bot no tiene cómo curarse ni puede usar la runa");
+    }
 }

@@ -55,7 +55,7 @@ public sealed class Navegante
 
     /// <summary>Tope de mapas que se atraviesan en un viaje. Cinco alcanzan para ir de una ciudad a la de al
     /// lado; más que eso es un viaje que un personaje de nivel uno no haría.</summary>
-    private const int TopeDeMapas = 5;
+    public const int TopeDeMapas = 5;
 
     /// <summary>De cada mapa vecino se prueban hasta tantas entradas a zonas que no se tocan.</summary>
     private const int ZonasPorMapa = 2;

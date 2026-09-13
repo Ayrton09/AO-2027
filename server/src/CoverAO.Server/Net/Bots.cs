@@ -2552,7 +2552,21 @@ public sealed class Bot
     /// <summary>¿Toca ir al sacerdote? Con la vida bajo el umbral de la poción y sin ninguna poción que tomar.</summary>
     public static bool TocaSanarse(double salud, int pocionesDeVida) => salud < TomaPocion && pocionesDeVida == 0;
 
-    private const int SaltosHastaElSacerdote = 2;
+    /// <summary>
+    /// A cuántos mapas de distancia se va a buscar un sacerdote cuando no queda ninguna poción: hasta donde llega
+    /// el navegante, que es el mismo alcance que ya usan <c>CurarVenenoAsync</c> y <c>BuscarSacerdoteAsync</c>.
+    ///
+    /// <para>Estaba en 2 y eso dejaba al bot sin salida en medio mundo. Medido sobre los 282 mapas con criaturas
+    /// hostiles: con dos saltos el sacerdote se alcanza desde 142 (50,4%) y con cinco desde 275 (97,5%). Y la otra
+    /// salida —la runa a casa— no sirve en mapa pk, que es lo que casi todo mapa de caza es: <b>139 mapas (49,3%)
+    /// quedaban sin NINGUNA vía</b>, con el bot esperando ahí hasta que algo lo terminara. Con el alcance del
+    /// navegante eso baja a 6 mapas (2,1%).</para>
+    /// </summary>
+    private const int SaltosHastaElSacerdote = Navegante.TopeDeMapas;
+
+    /// <summary>¿El bot busca al sacerdote tan lejos como su navegante sabe viajar? Si se queda corto, hay mapas
+    /// donde no tiene cómo curarse y tampoco puede usar la runa.</summary>
+    public static bool BuscaAlSacerdoteHastaDondeLlega => SaltosHastaElSacerdote >= Navegante.TopeDeMapas;
     private const int EsperaSanarFallidoMinMs = 20_000, EsperaSanarFallidoMaxMs = 40_000;
     private long _proximaSanacion;
     private int _sanacionesSinCamino;
