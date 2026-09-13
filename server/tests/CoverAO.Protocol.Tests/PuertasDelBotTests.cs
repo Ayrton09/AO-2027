@@ -150,4 +150,67 @@ public class PuertasDelBotTests
     {
         Assert.Equal(vale, Bot.ValeBuscarLaPuertaAca(atiende, hayQuienLeVenda));
     }
+
+    /// <summary>
+    /// LA PUERTA QUE CONVIENE ES LA QUE DESTRABA, no la más cercana. Medido contra la data: de los 105 mercaderes
+    /// encerrados de los mapas que atienden, abrir una puerta libera 30 — y en el mapa 20 la correcta libera SEIS
+    /// vendedores de pergaminos a seis pasos de la entrada, mientras la que el bot abrió en campo (mapa 34) no
+    /// liberaba a ninguno.
+    /// </summary>
+    [Fact]
+    public void Entre_las_puertas_gana_la_que_destraba_aunque_este_mas_lejos()
+    {
+        var candidatas = new ((byte X, byte Y) Donde, short Obj, int Pasos)[]
+        {
+            (((byte)43, (byte)78), (short)8, 6),      // la de al lado, que no lleva a nadie
+            (((byte)50, (byte)86), (short)1404, 12),  // la que destraba
+        };
+        var elegida = Bot.LaPuertaQueConviene(candidatas, donde => donde == ((byte)50, (byte)86));
+        Assert.Equal(((byte)50, (byte)86), elegida?.Donde);
+    }
+
+    /// <summary>Y entre dos que destraban gana la más cercana, que es la más barata: vienen ordenadas.</summary>
+    [Fact]
+    public void Entre_dos_que_destraban_gana_la_mas_cercana()
+    {
+        var candidatas = new ((byte X, byte Y) Donde, short Obj, int Pasos)[]
+        {
+            (((byte)10, (byte)10), (short)8, 4),
+            (((byte)20, (byte)20), (short)8, 9),
+        };
+        var elegida = Bot.LaPuertaQueConviene(candidatas, _ => true);
+        Assert.Equal(((byte)10, (byte)10), elegida?.Donde);
+    }
+
+    /// <summary>Si ninguna destraba no se abre ninguna: abrir por abrir gasta el viaje y la puerta no se vuelve a
+    /// cerrar. Es el caso del mapa 34, con dieciséis puertas y ninguna que sirviera desde donde estaba.</summary>
+    [Fact]
+    public void Si_ninguna_destraba_no_se_abre_ninguna()
+    {
+        var candidatas = new ((byte X, byte Y) Donde, short Obj, int Pasos)[]
+        {
+            (((byte)43, (byte)78), (short)8, 6),
+        };
+        Assert.Null(Bot.LaPuertaQueConviene(candidatas, _ => false));
+    }
+
+    /// <summary>Sin puertas a la vista, nada.</summary>
+    [Fact]
+    public void Sin_puertas_a_la_vista_no_hay_nada_que_abrir()
+    {
+        Assert.Null(Bot.LaPuertaQueConviene(Array.Empty<((byte X, byte Y) Donde, short Obj, int Pasos)>(), _ => true));
+    }
+
+    /// <summary>
+    /// UNA PUERTA DESTRABA SUS DOS BALDOSAS, <c>(X,Y)</c> y <c>(X-1,Y)</c>: es lo que hace `AccionParaPuerta` al
+    /// abrirla (PacketDispatcher.cs:8163). Con una sola, un vano de dos de ancho seguía cortando el camino.
+    /// </summary>
+    [Fact]
+    public void Una_puerta_destraba_sus_dos_baldosas()
+    {
+        var libres = Navegante.BaldosasQueDestraba(((byte)43, (byte)78));
+        Assert.Equal(2, libres.Count);
+        Assert.Contains(43 | (78 << 8), libres);
+        Assert.Contains(42 | (78 << 8), libres);
+    }
 }

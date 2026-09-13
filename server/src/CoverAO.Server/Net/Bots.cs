@@ -1014,7 +1014,7 @@ public sealed class Bot
                                           && paraLaPuerta.Any(q => Sirve(q.NpcIndex));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
                     && ValeBuscarLaPuertaAca(MapaAtiende(sentidos.Mapa), hayQuienLeVendaAca)
-                    && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) { abrioUnaPuerta = true; continue; }
+                    && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) { abrioUnaPuerta = true; continue; }
 
                 // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
                 // manda los objetos del suelo que entran en la vista, así que la puerta del edificio recién aparece
@@ -1025,7 +1025,7 @@ public sealed class Bot
                     && ValeAcercarseAunqueNoLlegue(MapaAtiende(sentidos.Mapa), false)
                     && await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)elMercader.X, (byte)elMercader.Y,
                                           cerrada, ct, ParaQueLaPuertaEntreEnVista)
-                    && await AbrirUnaPuertaAsync(transporte, sentidos, cerrada, ct)) continue;
+                    && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) continue;
 
                 // Y SI LA PUERTA NO ESTÁ ACÁ, SE VIAJA AL PUEBLO IGUAL. Buscar la puerta donde el bot está parado
                 // sólo sirve si ya llegó: en el bosque no hay ninguna. Con el mercader adentro de un edificio,
@@ -2273,11 +2273,14 @@ public sealed class Bot
     /// el mismo doble clic que el cliente. Que se haya abierto se verifica mirando el piso: el servidor cambia el
     /// objeto por su versión abierta, así que si la baldosa sigue con el mismo objeto no pasó nada.</para>
     /// </summary>
-    private async Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
-                                                 CancellationToken ct)
+    private async Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                                 Func<int, bool> sirve, Task cerrada, CancellationToken ct)
     {
-        if (sentidos.LoMasCercanoDelPiso(obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj))) is not { } puerta
-            || puerta.Pasos > RadioDeCompras) return false;
+        var candidatas = sentidos.TodoLoDelPiso(obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj)))
+                                 .Where(p => p.Pasos <= RadioDeCompras).ToList();
+        if (LaPuertaQueConviene(candidatas,
+                donde => _entorno.Mapas.AbrirlaDaCamino(sentidos.Mapa, sentidos.Posicion, donde, sirve))
+            is not { } puerta) return false;
 
         var (x, y) = sentidos.Posicion;
         if (!AlAlcanceDeLaPuerta(x - puerta.Donde.X, y - puerta.Donde.Y)
@@ -2345,6 +2348,23 @@ public sealed class Bot
     /// decisión de a dónde ir, así que el bot se ocupa y no progresa.</para>
     /// </summary>
     public static bool ValeBuscarLaPuertaAca(bool elMapaAtiende, bool hayQuienLeVendaAca) => elMapaAtiende && hayQuienLeVendaAca;
+
+    /// <summary>
+    /// CUÁL DE LAS PUERTAS A LA VISTA CONVIENE ABRIR: la más cercana ENTRE LAS QUE DESTRABAN el camino a un
+    /// mercader. Ninguna si ninguna destraba: abrir por abrir gasta el viaje y la puerta no se vuelve a cerrar.
+    ///
+    /// <para>Las candidatas vienen ya ordenadas por cercanía, así que la primera que sirve es la más barata.
+    /// Medido contra la data: de los 105 mercaderes encerrados de los mapas que atienden, abrir una puerta libera
+    /// 30, y el bot llega a 28. En el mapa 20 la puerta correcta libera SEIS vendedores de pergaminos a seis pasos
+    /// de la entrada; la que abría en campo, en el mapa 34, no liberaba a ninguno.</para>
+    /// </summary>
+    public static ((byte X, byte Y) Donde, short Obj, int Pasos)? LaPuertaQueConviene(
+        IReadOnlyList<((byte X, byte Y) Donde, short Obj, int Pasos)> candidatas,
+        Func<(byte X, byte Y), bool> destraba)
+    {
+        var elegida = candidatas.FirstOrDefault(p => destraba(p.Donde));
+        return elegida.Obj == 0 ? null : elegida;
+    }
 
     /// <summary>Lo lejos que el bot se conforma con quedar del mostrador cuando NO llega: lo que el navegante
     /// consiga. Es generoso a propósito — con esto sólo se busca que la puerta entre en vista.</summary>

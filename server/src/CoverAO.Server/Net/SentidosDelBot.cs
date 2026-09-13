@@ -396,6 +396,23 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>TODO lo del piso que sirve, de lo más cerca a lo más lejos. Hermano de
+    /// <see cref="LoMasCercanoDelPiso"/> para cuando no alcanza con la primera: entre varias puertas a la vista hay
+    /// que elegir la que destraba el camino, y la más cercana casi nunca es ésa.</summary>
+    public IReadOnlyList<((byte X, byte Y) Donde, short Obj, int Pasos)> TodoLoDelPiso(Func<short, bool> sirve)
+    {
+        lock (_candado)
+        {
+            if (!_tengoPosicion) return Array.Empty<((byte X, byte Y), short, int)>();
+            var todo = new List<((byte X, byte Y) Donde, short Obj, int Pasos)>();
+            foreach (var (donde, obj) in _enElPiso)
+                if (obj > 0 && sirve(obj))
+                    todo.Add((donde, obj, Math.Abs(donde.X - _x) + Math.Abs(donde.Y - _y)));
+            todo.Sort((a, b) => a.Pasos.CompareTo(b.Pasos));
+            return todo;
+        }
+    }
+
     /// <summary>Qué hay tirado en esa baldosa, o 0.</summary>
     public short EnElPiso((byte X, byte Y) baldosa)
     {

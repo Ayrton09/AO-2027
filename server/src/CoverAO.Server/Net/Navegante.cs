@@ -358,6 +358,50 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// LAS BALDOSAS QUE DESTRABA ABRIR ESA PUERTA: las DOS que ocupa, <c>(X,Y)</c> y <c>(X-1,Y)</c>. Es lo que el
+    /// servidor desbloquea al abrirla (<c>AccionParaPuerta</c>, PacketDispatcher.cs:8163, que las recorre en ese
+    /// orden), y el <c>.csm</c> las trae bloqueadas: abrir una puerta es, literalmente, quitarles el bloqueo.
+    /// </summary>
+    public static IReadOnlySet<int> BaldosasQueDestraba((byte X, byte Y) puerta)
+    {
+        var libres = new HashSet<int> { Clave(puerta.X, puerta.Y) };
+        if (puerta.X > GameLimits.MinXBorder) libres.Add(Clave((byte)(puerta.X - 1), puerta.Y));
+        return libres;
+    }
+
+    /// <summary>
+    /// ¿ABRIR ESA PUERTA LE DA CAMINO a un NPC que sirve, en este mapa? Se recorre el mapa tratando como libres
+    /// las baldosas que la puerta ocupa, que es exactamente lo que pasa cuando se abre.
+    ///
+    /// <para>Hace falta para ELEGIR cuál abrir. El bot abría la más cercana que veía, y en un mapa de ciudad hay
+    /// diez o veinte: medido contra la data, en los 23 mapas que atienden hay 146 mercaderes y sólo 41 se alcanzan
+    /// a pie; de los 105 encerrados, abrir una puerta libera 30. En el mapa 20 una sola puerta —la de (50,86), a
+    /// SEIS pasos de la baldosa por la que se entra— libera a SEIS vendedores de pergaminos. Y la única que se lo
+    /// vio abrir en campo, la del mapa 34, sumaba treinta baldosas y NINGÚN mercader.</para>
+    ///
+    /// <para>Preguntarlo antes es la única forma: abriéndola para ver ya gastó el viaje, y de la puerta no se
+    /// vuelve — el servidor no la cierra sola.</para>
+    /// </summary>
+    public bool AbrirlaDaCamino(int mapa, (byte X, byte Y) desde, (byte X, byte Y) puerta, Func<int, bool> sirve)
+    {
+        if (!_datos.MapSpawns.TryGetValue(mapa, out var lista)) return false;
+        var alcanzables = Alcanzables(mapa, desde, BaldosasQueDestraba(puerta));
+        foreach (var s in lista)
+        {
+            if (!sirve(s.NpcIndex)) continue;
+            // Alcanza con quedar a RadioDeMostrador del mostrador, igual que en EnElMapa.
+            for (int dx = -RadioDeMostrador; dx <= RadioDeMostrador; dx++)
+                for (int resto = RadioDeMostrador - Math.Abs(dx), dy = -resto; dy <= resto; dy++)
+                {
+                    int px = s.X + dx, py = s.Y + dy;
+                    if (px is >= 0 and <= 255 && py is >= 0 and <= 255
+                        && alcanzables.Contains(Clave((byte)px, (byte)py))) return true;
+                }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Camino hasta el objetivo, o hasta la baldosa alcanzable MÁS CERCANA a él dentro de
     /// <paramref name="radio"/>. Devuelve null si no hay ninguna.
     ///
@@ -515,7 +559,8 @@ public sealed class Navegante
     /// una sola búsqueda en anchura para responder muchas preguntas de "¿se llega?" seguidas, en vez de una
     /// búsqueda por cada baldosa de salida. El tope es el recuadro pisable entero, para no cortar un mapa
     /// abierto a la mitad.</summary>
-    private HashSet<int> Alcanzables(int mapa, (byte X, byte Y) desde)
+    private HashSet<int> Alcanzables(int mapa, (byte X, byte Y) desde,
+                                     IReadOnlySet<int>? comoSiEstuvieranLibres = null)
     {
         var vistos = new HashSet<int>();
         var cola = new Queue<int>();
@@ -530,7 +575,7 @@ public sealed class Navegante
             {
                 var (dx, dy) = SentidosDelBot.Paso(rumbo);
                 int nx = x + dx, ny = y + dy;
-                if (!SePuedePisar(mapa, nx, ny)) continue;
+                if (!SePuedePisar(mapa, nx, ny, comoSiEstuvieranLibres)) continue;
                 int vecino = Clave((byte)nx, (byte)ny);
                 // A una salida se llega, pero no se sigue de largo: pisarla saca del mapa.
                 if (vistos.Add(vecino) && !EsSalida(mapa, nx, ny)) cola.Enqueue(vecino);
@@ -556,10 +601,10 @@ public sealed class Navegante
     /// <para>Lo que NO se mira es si hay alguien parado ahí: eso cambia todo el tiempo y el bot lo descubre
     /// caminando, igual que una persona.</para>
     /// </summary>
-    private bool SePuedePisar(int mapa, int x, int y) =>
+    private bool SePuedePisar(int mapa, int x, int y, IReadOnlySet<int>? comoSiEstuvieranLibres = null) =>
         x >= GameLimits.MinXBorder && x <= GameLimits.MaxXBorder
         && y >= GameLimits.MinYBorder && y <= GameLimits.MaxYBorder
-        && !_datos.IsBlockedTile(mapa, x, y)
+        && (comoSiEstuvieranLibres?.Contains(Clave((byte)x, (byte)y)) == true || !_datos.IsBlockedTile(mapa, x, y))
         && !_datos.IsWater(mapa, x, y);
 
     private bool EsSalida(int mapa, int x, int y) => _datos.MapExits.ContainsKey((mapa, x, y));
