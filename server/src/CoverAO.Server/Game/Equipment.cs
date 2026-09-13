@@ -132,6 +132,13 @@ public static class Equipment
     /// <summary>La montura que el personaje lleva puesta, o null. No sale por <see cref="Category"/> porque la
     /// montura no ocupa un slot de equipo: el original la guarda aparte (<c>MonturaObjIndex</c>) y la enciende
     /// con el flag <c>Montando</c>. Acá se deriva del inventario, como el resto.</summary>
+    /// <summary>
+    /// ¿ESTÁ DESNUDO? Sin armadura de CUERPO puesta. El original lleva un flag (<c>flags.Desnudo</c>) que pone
+    /// <c>DarCuerpoDesnudo</c> (General.bas:106) y limpia <c>EquiparInvItem</c> (InvUsuario.bas:1171); acá se
+    /// deriva del equipo, que es la misma respuesta y no se puede desincronizar.
+    /// </summary>
+    public static bool EstaDesnudo(Player p, GameData data) => EquippedOfCategory(p, data, 2) is null;
+
     public static ObjInfo? MonturaEquipada(Player p, GameData data)
     {
         for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)

@@ -711,6 +711,7 @@ loop.OnTickHandler = tick =>
             // 50 literal en las dos ramas—, y con un corte que el port no tenía: no recupera NADA mientras
             // estás trabajando.
             if (pl.Hunger > 0 && pl.Thirst > 0 && pl.Stamina < pl.MaxStamina && !pl.Laborando
+                && Survival.RecuperaEnergia(Equipment.EstaDesnudo(pl, gameData), pl.Mounted)
                 && ++pl.StaCounter >= Survival.StaminaIntervalTicks)
             {
                 pl.StaCounter = 0;

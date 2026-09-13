@@ -65,6 +65,22 @@ public static class Survival
     public static int HealAmount(int maxStamina, System.Func<int, int, int> rnd)
         => rnd(2, System.Math.Max(2, (int)Matematicas.Porcentaje(maxStamina, 5)));
 
+    /// <summary>
+    /// ¿RECUPERA ENERGÍA? El DESNUDO no, salvo que esté montado. Es lo primero que hace <c>RecStamina</c>
+    /// (VB6 General.bas:1083-1085):
+    /// <code>
+    /// If .flags.Desnudo Then
+    ///     If Not .flags.Montando Then Exit Sub
+    /// End If
+    /// </code>
+    ///
+    /// <para>El port no modelaba ese flag —un comentario decía que "se derivaría del equipo" y nadie lo derivaba—
+    /// así que un personaje sin armadura recuperaba igual que uno vestido. Salió investigando el reporte del tester
+    /// sobre la energía: la fórmula en sí ya era la del original, incluida la skill de Supervivencia; lo que faltaba
+    /// era esta guarda, y va en la dirección contraria a lo que se percibía (el port era MÁS generoso).</para>
+    /// </summary>
+    public static bool RecuperaEnergia(bool desnudo, bool montado) => !desnudo || montado;
+
     /// <summary>Cuánta energía devuelve <c>RecStamina</c>: <c>5 * RandomNumber(1, Porcentaje(MaxSta +
     /// Supervivencia, 5))</c>.</summary>
     public static int StaminaAmount(int maxStamina, int supervivencia, System.Func<int, int, int> rnd)

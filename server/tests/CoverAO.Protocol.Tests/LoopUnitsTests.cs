@@ -106,4 +106,32 @@ public class LoopUnitsTests
         Assert.Equal(500, PacketDispatcher.InvisibilityDurationTicks);
         Assert.Equal(500, PacketDispatcher.OcultoDurationTicks);
     }
+
+    /// <summary>
+    /// EL DESNUDO NO RECUPERA ENERGÍA, salvo montado. Es lo primero que hace <c>RecStamina</c> (VB6
+    /// General.bas:1083-1085) y el port no lo tenía: un personaje sin armadura recuperaba igual que uno vestido.
+    /// </summary>
+    [Theory]
+    // ¿desnudo? | ¿montado? | ¿recupera?
+    [InlineData(false, false, true)]    // vestido: recupera, como siempre
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]    // desnudo y a pie: NO
+    [InlineData(true, true, true)]      // desnudo pero montado: sí — la excepción del original
+    public void El_desnudo_no_recupera_energia_salvo_montado(bool desnudo, bool montado, bool recupera)
+    {
+        Assert.Equal(recupera, Survival.RecuperaEnergia(desnudo, montado));
+    }
+
+    /// <summary>Y la fórmula sigue siendo la del original, con la skill de Supervivencia adentro: es lo que el
+    /// tester preguntaba. Sube el TECHO del tiro, no el piso, y por eso se siente aleatoria.</summary>
+    [Fact]
+    public void La_supervivencia_sube_el_techo_de_la_energia_que_vuelve()
+    {
+        int sinSkill = Survival.StaminaAmount(200, 0, (lo, hi) => hi);
+        int conSkill = Survival.StaminaAmount(200, 100, (lo, hi) => hi);
+
+        Assert.True(conSkill > sinSkill, "la Supervivencia dejó de influir en la energía que vuelve");
+        Assert.Equal(Survival.StaminaAmount(200, 0, (lo, hi) => lo),
+                     Survival.StaminaAmount(200, 100, (lo, hi) => lo));   // el PISO no se mueve: es el del original
+    }
 }
