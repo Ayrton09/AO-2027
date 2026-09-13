@@ -840,7 +840,12 @@ public sealed class Bot
         {
             for (int i = 1; i <= GameLimits.NumSkills; i++) w.WriteByte(reparto[i]);
         }));
-        if (salio) sentidos.GastarPuntos(gastados);
+        if (salio)
+        {
+            sentidos.GastarPuntos(gastados);
+            // LO QUE LE RECHAZARON SE VUELVE A PROBAR. Ver `VuelveAProbarLosHechizos`.
+            if (propia > 0 && VuelveAProbarLosHechizos(propia)) _noLoPuedeLanzar.Clear();
+        }
         return salio;
     }
 
@@ -1993,6 +1998,25 @@ public sealed class Bot
     /// LA CURA MÁS FUERTE QUE PUEDE PAGAR con el maná que tiene, o null si no le alcanza para ninguna. Entre varias,
     /// la que más levanta: el que sabe Curar Heridas Leves y Graves tira la Grave mientras le dé el maná.
     /// </summary>
+    /// <summary>
+    /// ¿EL SERVIDOR NO SE LO DEJÓ? Se pide un casteo y en la vuelta siguiente se mira la vida: si NO subió, el
+    /// servidor lo rechazó y ese hechizo no se vuelve a elegir.
+    ///
+    /// <para>Hace falta porque el bot sólo miraba el maná y el servidor pide además la skill de Magia — y el
+    /// rechazo <b>no cobra el maná</b>, así que el hechizo se podía repetir para siempre. Peor: como
+    /// <c>CurarseConMagia</c> devolvía true por haber MANDADO los paquetes, <c>CuidarseAsync</c> cortaba ahí y la
+    /// poción no se tomaba nunca. El bot se quedaba casteando mientras lo mataban, con la mochila llena.</para>
+    ///
+    /// <para>Se mira el EFECTO y no el requisito, que es el mismo camino que <c>_noSeLoPone</c> usa para el equipo:
+    /// así cubre cualquier motivo de rechazo y no hace falta que el bot lleve la cuenta de sus skills.</para>
+    /// </summary>
+    public static bool ElServidorNoSeLoDejo(double vidaAntes, double vidaAhora) => vidaAntes >= vidaAhora;
+
+    /// <summary>¿Vuelve a probar los hechizos que le rechazaron? Sí cuando lo que subió es Magia, que es
+    /// justamente el requisito que se lo estaba impidiendo: <c>RepartirPuntos</c> le mete ahí la mitad de los
+    /// puntos libres si el personaje castea, así que el rechazo de ayer deja de valer.</summary>
+    public static bool VuelveAProbarLosHechizos(byte skillQueSubio) => skillQueSubio == GameLimits.SkillMagia;
+
     public static (byte Ranura, int Cura)? MejorCuraQuePuedePagar(IReadOnlyList<(byte Ranura, int Cura, int Mana)> curas, int mana)
     {
         (byte Ranura, int Cura)? mejor = null;
@@ -2016,8 +2040,10 @@ public sealed class Bot
         if (!sentidos.UsaMana) return false;
         var curas = new List<(byte Ranura, int Cura, int Mana)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
-            if (_entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h) curas.Add((ranura, h.MaxHp, h.ManaCost));
+            if (!_noLoPuedeLanzar.Contains(numero)
+                && _entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h) curas.Add((ranura, h.MaxHp, h.ManaCost));
         if (MejorCuraQuePuedePagar(curas, sentidos.ManaEnPuntos) is not { } cura) return false;
+        _curaPedida = (sentidos.HechizoEn(cura.Ranura), sentidos.Salud);
 
         var (x, y) = sentidos.Posicion;
         return transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
@@ -2032,6 +2058,16 @@ public sealed class Bot
                 || Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 })))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+
+            // ¿EL SERVIDOR LE DEJÓ EL HECHIZO? Se mira ACÁ y no en la vuelta siguiente porque acá la medición es
+            // inmediata: pasó el delay del casteo y nada más. Dejarla para después abre una ventana entre esta baja
+            // de vida y la próxima, y en el medio un hechizo que curó bien quedaría anotado por lo que le pegaron.
+            // Ver `ElServidorNoSeLoDejo`.
+            if (_curaPedida is { } pedida)
+            {
+                if (ElServidorNoSeLoDejo(pedida.Vida, sentidos.Salud)) _noLoPuedeLanzar.Add(pedida.Hechizo);
+                _curaPedida = null;
+            }
             return true;
         }
         if (TieneQueComer(sentidos) && Usar(transporte, sentidos, o => o.IsFood))
@@ -2826,6 +2862,11 @@ public sealed class Bot
     }
 
     private readonly HashSet<short> _noLoAprende = new();
+
+    /// <summary>Los hechizos que el servidor no le dejó lanzar: se anotan mirando si la vida subió, y no se
+    /// vuelven a elegir. El mismo camino que <c>_noSeLoPone</c> para el equipo.</summary>
+    private readonly HashSet<short> _noLoPuedeLanzar = new();
+    private (short Hechizo, double Vida)? _curaPedida;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar pergaminos: el más barato de la data vale 200.</summary>
     /// <summary>

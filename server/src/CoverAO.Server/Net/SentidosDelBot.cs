@@ -146,6 +146,14 @@ public sealed class SentidosDelBot
     /// <summary>El maná que le queda, en puntos. Es contra esto que se compara lo que sale un hechizo.</summary>
     public int ManaEnPuntos { get { lock (_candado) return _mana; } }
 
+    /// <summary>El número de hechizo que hay en esa ranura, o 0. Hace falta para recordar CUÁL se pidió
+    /// cuando hay que anotar que el servidor lo rechazó.</summary>
+    public short HechizoEn(byte ranura)
+    {
+        // `_hechizos` es un ARRAY indexado por ranura, no una lista de pares.
+        lock (_candado) return ranura > 0 && ranura < _hechizos.Length ? _hechizos[ranura] : (short)0;
+    }
+
     /// <summary>La energía EN PUNTOS, que es como la pide el servidor para dejar lanzar un hechizo
     /// (<c>p.Stamina &lt; spell.StaRequerido</c>). <see cref="Fuelle"/> es la fracción, que sirve para otra cosa.</summary>
     public int EnergiaEnPuntos { get { lock (_candado) return _energia; } }
