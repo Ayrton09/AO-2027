@@ -269,7 +269,8 @@ public sealed class Navegante
     /// </summary>
     private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada)> MapasPorSuEntrada(int mapaActual,
                                                                                             (byte X, byte Y) desde,
-                                                                                            Func<int, bool>? pisable = null)
+                                                                                            Func<int, bool>? pisable = null,
+                                                                                            int topeDeSaltos = TopeDeMapas)
     {
         var alcanzables = Alcanzables(mapaActual, desde);
         var zonas = new Dictionary<int, List<HashSet<int>>>();
@@ -292,7 +293,11 @@ public sealed class Navegante
         {
             var (mapa, saltos, entrada, zona) = cola.Dequeue();
             yield return (mapa, saltos, entrada);
-            if (saltos >= TopeDeMapas) continue;
+            // EL TOPE CORTA ACÁ, que es el único lugar donde ahorra algo: filtrar después de enumerar deja hecho
+            // el trabajo de los mapas que se descartan, y cada mapa enumerado cuesta un `Alcanzables` —una
+            // búsqueda en anchura de hasta 7392 baldosas—. Medido sobre los 322 mapas con criaturas: a dos
+            // saltos se llega a 12 mapas y a cinco, a 74, o sea 7,5 veces más de los que se usaban.
+            if (saltos >= topeDeSaltos) continue;
             foreach (var (_, x, y) in Salidas(mapa))
                 if (zona.Contains(Clave(x, y))) Entrar(mapa, x, y, saltos + 1);
         }
@@ -503,6 +508,13 @@ public sealed class Navegante
         return mejor == inicio ? null : Reconstruir(deDonde, mejor);
     }
 
+    /// <summary>Los mapas a los que se llega a <paramref name="topeDeSaltos"/> saltos o menos, cada uno con la
+    /// baldosa por la que se entra. Es <c>MapasPorSuEntrada</c> con el tope a la vista, para poder medir que el
+    /// corte sea de verdad y no un filtro puesto después de hacer el trabajo.</summary>
+    public IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada)> MapasAlcanzables(
+        int mapaActual, (byte X, byte Y) desde, int topeDeSaltos, Func<int, bool>? pisable = null) =>
+        MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos);
+
     /// <summary>
     /// EL COTO MÁS POBLADO a <paramref name="saltosMax"/> mapas o menos, contando el propio: el mapa con más criaturas que sirven
     /// entre las que nacen en baldosas a las que se llega (desde donde se entra, o desde donde está en el propio), y la más cercana
@@ -520,8 +532,9 @@ public sealed class Navegante
             if (EnElMapa(mapa, entrada, sirve) is { } ahi) mejor = (mapa, ahi.X, ahi.Y, saltos, cuantas);
         }
         Probar(mapaActual, desde, 0);
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
-            if (saltos <= saltosMax) Probar(mapa, entrada, saltos);
+        // El tope va al enumerador y no a un `if` de acá: así los mapas de más no se exploran siquiera.
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
+            Probar(mapa, entrada, saltos);
         return mejor;
     }
 
@@ -565,8 +578,9 @@ public sealed class Navegante
             mejor = (mapa, ahi.X, ahi.Y, saltos, ahi.Rinde);
         }
         Probar(mapaActual, desde, 0);
-        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable))
-            if (saltos <= saltosMax) Probar(mapa, entrada, saltos);
+        // El tope va al enumerador y no a un `if` de acá: así los mapas de más no se exploran siquiera.
+        foreach (var (mapa, saltos, entrada) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
+            Probar(mapa, entrada, saltos);
         return mejor;
     }
 

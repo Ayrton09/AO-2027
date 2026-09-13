@@ -146,4 +146,26 @@ public class CotoDelBotTests
     {
         Assert.Equal(frena, Bot.ValeFrenarElViaje(camino, destino));
     }
+
+    /// <summary>
+    /// EL TOPE DE SALTOS CORTA LA EXPLORACIÓN, no la lista del final. Buscar coto enumeraba hasta cinco mapas de
+    /// distancia y recién después descartaba los de más de dos, con lo cual el trabajo de los saltos 3, 4 y 5 se
+    /// hacía y se tiraba — y cada mapa enumerado cuesta una búsqueda en anchura de hasta 7392 baldosas.
+    ///
+    /// <para>Medido sobre el grafo de salidas, desde los 322 mapas con criaturas: a dos saltos se llega a 12
+    /// mapas (mediana) y a cinco, a 74. Siete veces y media más de los que se usaban.</para>
+    /// </summary>
+    [Fact]
+    public void El_tope_de_saltos_corta_la_exploracion()
+    {
+        if (Mundo() is not { } m) return;
+        var cuna = ((byte)57, (byte)74);
+        var lejos = m.Mapas.MapasAlcanzables(37, cuna, 5).ToList();
+        var cerca = m.Mapas.MapasAlcanzables(37, cuna, 2).ToList();
+
+        // Sin mapas a más de dos saltos en el mundo de verdad, el test no probaría nada.
+        Assert.Contains(lejos, x => x.Saltos > 2);
+        Assert.All(cerca, x => Assert.True(x.Saltos <= 2, $"el mapa {x.Mapa} vino a {x.Saltos} saltos con el tope en 2"));
+        Assert.True(cerca.Count < lejos.Count, "con el tope en 2 se enumeran los mismos mapas que con 5");
+    }
 }
