@@ -422,10 +422,11 @@ public sealed class Navegante
     /// las baldosas que la puerta ocupa, que es exactamente lo que pasa cuando se abre.
     ///
     /// <para>Hace falta para ELEGIR cuál abrir. El bot abría la más cercana que veía, y en un mapa de ciudad hay
-    /// diez o veinte: medido contra la data, en los 23 mapas que atienden hay 146 mercaderes y sólo 41 se alcanzan
-    /// a pie; de los 105 encerrados, abrir una puerta libera 30. En el mapa 20 una sola puerta —la de (50,86), a
-    /// SEIS pasos de la baldosa por la que se entra— libera a SEIS vendedores de pergaminos. Y la única que se lo
-    /// vio abrir en campo, la del mapa 34, sumaba treinta baldosas y NINGÚN mercader.</para>
+    /// diez o veinte: medido contra la data —contando, como el juego, que se atiende a tres baldosas del
+    /// mostrador—, en los 23 mapas que atienden hay 146 mercaderes y 62 se alcanzan a pie; de los 84 encerrados,
+    /// abrir UNA puerta libera 36, repartidos en ocho mapas. En el mapa 20 una sola puerta —la de (50,86), a
+    /// siete pasos de la entrada del sur— libera a SEIS vendedores de pergaminos. Y la única que se lo vio abrir
+    /// en campo, la del mapa 34, sumaba treinta baldosas y NINGÚN mercader.</para>
     ///
     /// <para>Preguntarlo antes es la única forma: abriéndola para ver ya gastó el viaje, y de la puerta no se
     /// vuelve — el servidor no la cierra sola.</para>

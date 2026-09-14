@@ -1047,8 +1047,8 @@ public sealed class Bot
                 // que con el coto; el contador es otro porque cazar bien no arregla no poder comprar.
                 // Sólo si hay algo que COMPRAR: nadie vuelve a casa con la runa para ir a vender.
                 // ANTES DE DARSE POR VENCIDO, LA PUERTA. Un mercader al que no se llega caminando casi siempre está
-                // adentro de un edificio, y el bot no abría una sola puerta en todo el juego: los ocho vendedores de
-                // pergaminos del mapa 20 están detrás de las once puertas cerradas de ese mapa, todas sin llave.
+                // adentro de un edificio, y el bot no abría una sola puerta en todo el juego: seis de los ocho
+                // vendedores de pergaminos del mapa 20 están detrás de sus once puertas cerradas, todas sin llave.
                 // Es lo que hace cualquiera que no encuentra un negocio abierto: probar la puerta de al lado.
                 // Y SÓLO DONDE ATIENDEN: ver `ValeBuscarLaPuertaAca`. Buscar la puerta en un mapa donde nadie le
                 // vende es abrir el ropero más cercano, y era lo que pasaba en las ocho vueltas medidas.
@@ -2581,9 +2581,9 @@ public sealed class Bot
     /// mercader. Ninguna si ninguna destraba: abrir por abrir gasta el viaje y la puerta no se vuelve a cerrar.
     ///
     /// <para>Las candidatas vienen ya ordenadas por cercanía, así que la primera que sirve es la más barata.
-    /// Medido contra la data: de los 105 mercaderes encerrados de los mapas que atienden, abrir una puerta libera
-    /// 30, y el bot llega a 28. En el mapa 20 la puerta correcta libera SEIS vendedores de pergaminos a seis pasos
-    /// de la entrada; la que abría en campo, en el mapa 34, no liberaba a ninguno.</para>
+    /// Medido contra la data: de los 84 mercaderes encerrados de los mapas que atienden, abrir UNA puerta libera
+    /// 36. En el mapa 20 la puerta correcta libera SEIS vendedores de pergaminos; la que abría en campo, en el
+    /// mapa 34, no liberaba a ninguno.</para>
     /// </summary>
     public static ((byte X, byte Y) Donde, short Obj, int Pasos)? LaPuertaQueConviene(
         IReadOnlyList<((byte X, byte Y) Donde, short Obj, int Pasos)> candidatas,

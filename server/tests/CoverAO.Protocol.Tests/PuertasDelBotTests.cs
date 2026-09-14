@@ -9,8 +9,8 @@ namespace CoverAO.Protocol.Tests;
 /// <summary>
 /// EL BOT ABRE LAS PUERTAS. Era el hueco que le cerraba medio juego: 494 puertas en el mundo, 381 sin llave, y ni
 /// una línea para abrirlas — así que todo lo que vive adentro de un edificio le era inalcanzable. Medido con el
-/// navegante real: los ocho vendedores de pergaminos del mapa 20 dan "no hay camino" desde la entrada, y las once
-/// puertas de ese mapa están cerradas y ninguna tiene llave.
+/// navegante real: seis de los ocho vendedores de pergaminos del mapa 20 dan "no hay camino" desde la entrada que
+/// da la cuna, y las once puertas de ese mapa están cerradas y ninguna tiene llave.
 /// </summary>
 public class PuertasDelBotTests
 {
