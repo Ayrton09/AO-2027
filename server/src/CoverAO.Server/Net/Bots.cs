@@ -2433,6 +2433,21 @@ public sealed class Bot
     public static bool AlAlcanceDeLaPuerta(int dx, int dy) => dx * dx + dy * dy <= 4;
 
     /// <summary>
+    /// ¿YA ESTÁ ABIERTA? El servidor cambia el objeto del piso por su versión abierta, así que la baldosa deja de
+    /// tener el que el mapa trae puesto.
+    ///
+    /// <para>Hace falta porque el doble clic es un INTERRUPTOR: <c>AccionParaPuerta</c> abre la cerrada y cierra
+    /// la abierta, y las candidatas salen de <c>MapObjects</c>, que es el mapa antes de que nadie tocara nada —
+    /// una puerta ya abierta sigue figurando cerrada ahí. Medido en campo en el mapa 184: uno abrió la de (24,45)
+    /// y el que venía atrás por lo mismo la cerró.</para>
+    ///
+    /// <para>El cero es "no sé": el suelo sólo le llega cuando entra en el área, y no saberlo no es motivo para
+    /// no probar — la verificación de después dice si pasó algo.</para>
+    /// </summary>
+    public static bool YaEstaAbierta(short enElPiso, short laQueTraeElMapa) =>
+        enElPiso != 0 && enElPiso != laQueTraeElMapa;
+
+    /// <summary>
     /// LAS PUERTAS QUE EL MAPA TIENE, de la más cercana a la más lejana. NO las que están a la vista.
     ///
     /// <para><b>Por qué no alcanza con mirar.</b> El servidor sólo manda los objetos del suelo que caen en el
@@ -2489,6 +2504,10 @@ public sealed class Bot
         if (!AlAlcanceDeLaPuerta(x - puerta.Donde.X, y - puerta.Donde.Y)
             && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, puerta.Donde.X, puerta.Donde.Y, cerrada, ct, 1))
             return false;
+
+        // Y SI OTRO YA LA ABRIÓ, no se toca: ver `YaEstaAbierta`. Devuelve que sí porque para el que llama lo que
+        // importa es que el camino quedó abierto, y con eso vuelve a buscar al mercader.
+        if (YaEstaAbierta(sentidos.EnElPiso(puerta.Donde), puerta.Obj)) return true;
 
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(puerta.Donde.X).WriteByte(puerta.Donde.Y)));
         await Task.Delay(_rng.Next(400, 900), ct);

@@ -263,6 +263,28 @@ public class PuertasDelBotTests
     }
 
     /// <summary>
+    /// LA QUE YA ESTÁ ABIERTA NO SE VUELVE A CLICKEAR, porque el doble clic es un INTERRUPTOR: la misma acción
+    /// que abre la cerrada cierra la abierta (<c>AccionParaPuerta</c>).
+    ///
+    /// <para>Medido en campo en el mapa 184, con las tres sondas puestas: <c>Elmo doble clic en (24,45):
+    /// abrio=True</c> y enseguida <c>Bruma doble clic en (24,45): abrio=False</c> — la cerró. Las candidatas
+    /// salen de <c>MapObjects</c>, que es el mapa antes de que nadie tocara nada, así que ahí sigue figurando
+    /// cerrada por más que alguien la haya abierto.</para>
+    ///
+    /// <para>Y el CERO —el bot no sabe qué hay en esa baldosa, porque el suelo le llega por área— no cuenta como
+    /// abierta: no saber no es motivo para no probar.</para>
+    /// </summary>
+    [Theory]
+    // lo que el bot ve en la baldosa | el objeto que el mapa trae ahí | ¿ya está abierta?
+    [InlineData(1404, 1404, false)]   // el mismo: sigue cerrada, hay que abrirla
+    [InlineData(1405, 1404, true)]    // otro objeto: alguien la abrió, no se toca
+    [InlineData(0, 1404, false)]      // no sabe qué hay: se prueba igual
+    public void La_puerta_ya_abierta_no_se_vuelve_a_clickear(int enElPiso, int laQueTraeElMapa, bool yaEsta)
+    {
+        Assert.Equal(yaEsta, Bot.YaEstaAbierta((short)enElPiso, (short)laQueTraeElMapa));
+    }
+
+    /// <summary>
     /// LA PUERTA QUE SIRVE NO ESTÁ A LA VISTA. El caso es el que dejó la sonda de campo, con su baldosa exacta:
     /// <c>[SONDA-PUERTA] Elmo mapa 20 en (74,54): ve 2 puertas, 2 a menos de 15 pasos, destraba=NINGUNA</c>.
     ///
