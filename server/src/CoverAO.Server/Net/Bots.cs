@@ -676,10 +676,10 @@ public sealed class Bot
                 {
                     _nivelDelCoto = nivelAhora;
                     _ultimaPresaQuePaga = 0;
-                    if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
+                    if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, true, cerrada, ct)) continue;
                 }
                 if (PagaOro(p.Quien.FichaNpc)) _ultimaPresaQuePaga = Environment.TickCount64;
-                else if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
+                else if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, true, cerrada, ct)) continue;
                 if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
                 continue;
             }
@@ -691,7 +691,8 @@ public sealed class Bot
             // paseando ahí para siempre. Medido: cuatro de ocho bots parados en Ullathorpe y en el 457 con la
             // experiencia congelada durante una hora entera, mientras los que se quedaron en la cuna subían
             // de nivel. Un jugador que se cansa de dar vueltas por el pueblo agarra y sale a cazar.
-            if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, cerrada, ct)) continue;
+            if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, presa is not null,
+                                            cerrada, ct)) continue;
 
             if (!await PasearAsync(transporte, sentidos, cerrada, ct)) return;
             bool larga = ++pausas % UnaDeCadaTantas == 0;
@@ -1854,14 +1855,15 @@ public sealed class Bot
     /// no viaja a un mapa lleno de cosas que le quedan grandes.</para>
     /// </summary>
     private async Task<bool> BuscarDondeCazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
-                                                   int vidaMaxima, int nivel, Task cerrada, CancellationToken ct)
+                                                   int vidaMaxima, int nivel, bool veAlgunaPresa,
+                                                   Task cerrada, CancellationToken ct)
     {
         // SIN ENERGÍA PARA PELEAR TAMPOCO SE SALE A BUSCAR DÓNDE CAZAR: se llega y no se puede pegar. Medido: con
         // GolpeTolerable en 3, las diez muertes de una corrida de quince minutos fueron de los dos bots con la energía en
         // cero (ocho y dos), y la sonda ya los había visto así saliendo a buscar coto. Para ellos, con el valor 3 el lobo
         // pasa a ser presa, y el lobo paga cincuenta: los cotos que se elegían eran de lobos.
         if (!TieneFuelleParaPelear(sentidos)) return false;
-        if (Environment.TickCount64 - _ultimaPresaQuePaga < PacienciaSinPresaMs) return false;
+        if (EsperaParaBuscarCoto(veAlgunaPresa, Environment.TickCount64 - _ultimaPresaQuePaga)) return false;
         _ultimaPresaQuePaga = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
 
         // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
@@ -1995,7 +1997,24 @@ public sealed class Bot
     /// </summary>
     public static bool HayQueRevisarElCoto(int nivelDelCoto, int nivelAhora) => nivelDelCoto != nivelAhora;
 
+    /// <summary>
+    /// ¿ESPERA ANTES DE VOLVER A BUSCAR COTO? Depende de si VE alguna presa, que son dos situaciones distintas
+    /// y estaban con la misma paciencia.
+    ///
+    /// <para>"Veo presas pero ninguna me rinde" puede esperar: el bot igual está cazando y juntando algo. "No
+    /// veo NINGUNA" no, porque lo único que hace mientras tanto es pasear al azar. Medido con una sonda que
+    /// cuenta el primer motivo por el que no pelea, en 1355 vueltas de ocho bots: <b>63 % de las vueltas sin una
+    /// sola presa a la vista</b> —y la cuna tiene 53 hostiles—, contra 9 % peleando. Con tres minutos de espera,
+    /// el que se alejó del coto tarda eso en enterarse.</para>
+    /// </summary>
+    public static bool EsperaParaBuscarCoto(bool veAlgunaPresa, long desdeLaUltimaQuePaga) =>
+        desdeLaUltimaQuePaga < (veAlgunaPresa ? PacienciaSinPresaMs : PacienciaSinNingunaMs);
+
     private const int PacienciaSinPresaMs = 3 * 60_000;
+
+    /// <summary>Lo que espera para volver a mirar dónde cazar cuando NO ve una sola presa. Corto, pero no cero:
+    /// buscar coto recorre varios mapas y el bot no tiene por qué hacerlo en cada vuelta del ciclo.</summary>
+    private const int PacienciaSinNingunaMs = 30_000;
 
     /// <summary>A cuántas baldosas del spawn se para al llegar al coto. Chico a propósito: la presa que paga no
     /// camina, y con la tolerancia de antes —el radio de caza, doce— el bot podía frenar fuera de la ventana de

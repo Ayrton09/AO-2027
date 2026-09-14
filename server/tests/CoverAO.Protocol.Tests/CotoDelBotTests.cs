@@ -10,6 +10,37 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class CotoDelBotTests
 {
+    /// <summary>
+    /// NO VER NINGUNA PRESA NO ES LO MISMO QUE VER UNA QUE NO PAGA, y estaban con la misma paciencia de tres
+    /// minutos. Con presas a la vista el bot está cazando aunque no le rindan; sin ninguna, lo único que hace
+    /// mientras espera es pasear al azar.
+    ///
+    /// <para>Medido con una sonda que cuenta, en cada vuelta del ciclo, el primer motivo por el que no pelea:
+    /// en 1355 vueltas de ocho bots, <b>63 % fueron sin una sola presa a la vista</b> —y la cuna tiene 53
+    /// hostiles— contra 9 % peleando.</para>
+    /// </summary>
+    [Theory]
+    // ¿ve alguna presa? | ms desde la última que pagó | ¿espera antes de buscar coto?
+    [InlineData(true, 10_000, true)]      // ve presas y hace poco que una pagó: sigue donde está
+    [InlineData(true, 100_000, true)]     // ve presas: aguanta los tres minutos
+    [InlineData(true, 200_000, false)]    // ya pasaron: mira si le conviene mudarse
+    [InlineData(false, 10_000, true)]     // sin presas, pero recién buscó: no lo hace en cada vuelta
+    [InlineData(false, 40_000, false)]    // EL CASO: no ve nada hace rato, deja de pasear y va a buscar
+    [InlineData(false, 200_000, false)]
+    public void Sin_ninguna_presa_a_la_vista_se_busca_coto_antes(bool veAlguna, long desde, bool espera)
+    {
+        Assert.Equal(espera, Bot.EsperaParaBuscarCoto(veAlguna, desde));
+    }
+
+    /// <summary>Y la espera sin ninguna presa es MÁS CORTA que la otra, que es de lo que se trata.</summary>
+    [Fact]
+    public void La_espera_sin_presas_es_mas_corta_que_la_otra()
+    {
+        // El punto donde una ya dejó de esperar y la otra todavía espera.
+        Assert.False(Bot.EsperaParaBuscarCoto(false, 60_000));
+        Assert.True(Bot.EsperaParaBuscarCoto(true, 60_000));
+    }
+
     private static (Navegante Mapas, GameData Datos)? Mundo()
     {
         var datos = GameData.Load();
