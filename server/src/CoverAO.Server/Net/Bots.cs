@@ -1002,6 +1002,11 @@ public sealed class Bot
                 Pisable(sentidos)) is not null);
         bool soloElPergamino = PrimeroElPergamino(vaPorHechizo, soloGustos, hayUnoAlAlcance);
 
+        // Y VENDER NO ALCANZA PARA ELEGIRLO SI LE FALTA LO ESENCIAL: ver `VenderAlcanzaParaElegirlo`. Una sola
+        // vez, igual que `sobraParaEquipo`: `Sirve` corre por cada mercader del mapa.
+        bool venderAlcanza = VenderAlcanzaParaElegirlo(faltaComida || faltaBebida, sentidos.Oro,
+                                                       ReservaPara(sentidos, comida: true, bebida: true));
+
         bool Sirve(int ficha)
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
@@ -1022,7 +1027,8 @@ public sealed class Bot
             if (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex))) return true;
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             if (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
-            return hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
+            return venderAlcanza
+                   && hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
@@ -2542,6 +2548,24 @@ public sealed class Bot
     public static bool HayAlgoQueComprar(bool herramienta, bool comida, bool bebida, bool pociones,
                                          bool equipo, bool hechizo, bool antidoto) =>
         herramienta || comida || bebida || pociones || equipo || hechizo || antidoto;
+
+    /// <summary>
+    /// ¿ALCANZA CON QUE EL MERCADER LE COMPRE para que el viaje termine en él? No mientras le falte comida o
+    /// bebida y tenga con qué pagarlas: ahí el viaje es a quien se las VENDA.
+    ///
+    /// <para>Botín para vender hay casi siempre, así que esa última condición de <c>Sirve</c> acepta al mercader
+    /// más cercano SEA CUAL SEA lo que venda — y como ahí se compra lo que ese tenga y la necesidad sigue abierta,
+    /// el viaje siguiente termina en el mismo mostrador. Medido con los bots pasando el nivel 15, cuando el kit de
+    /// novato deja de contarles: cuatro visitas seguidas con <c>comida=0 bebida=420</c> y veinte mil monedas
+    /// encima, mientras el vendedor de comida estaba a los mismos saltos que el tabernero al que sí llegó. Es el
+    /// mismo defecto que este archivo ya documenta para el antídoto, del otro lado de la misma función.</para>
+    ///
+    /// <para><b>Y el guardia del espiral:</b> sin plata para pagarlo, vender SIGUE alcanzando. Si no, el que se
+    /// quedó sin nada viajaría a un mostrador que no le compra el botín, volvería con las manos vacías y no
+    /// podría comprar nunca — el mismo lazo cerrado que el archivo documenta para la herramienta.</para>
+    /// </summary>
+    public static bool VenderAlcanzaParaElegirlo(bool faltaComidaOBebida, double oro, int cuestaLoQueFalta) =>
+        !faltaComidaOBebida || oro < cuestaLoQueFalta;
 
     /// <summary>
     /// ¿VALE CAMINAR HACIA EL MERCADER AUNQUE NO SE LLEGUE A ÉL? Cuando ya está en su mapa y no lo alcanza.

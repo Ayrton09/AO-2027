@@ -204,4 +204,36 @@ public class PlataDelBotTests
         Assert.True(cuesta > 0, "ningún mercader vende antídoto: el bot no tendría cómo conseguirlo");
         Assert.True(cuesta <= 100, $"el antídoto pasó a costar {cuesta}: revisar si sigue siendo barato");
     }
+
+    /// <summary>
+    /// VENDER NO ALCANZA PARA ELEGIR AL MERCADER cuando falta comida o bebida y hay con qué pagarlas.
+    ///
+    /// <para>Botín para vender hay casi siempre, así que la última condición de <c>Sirve</c> aceptaba al mercader
+    /// más cercano sea cual sea lo que venda, se compraba lo que ése tuviera y la necesidad seguía abierta para el
+    /// viaje siguiente, que terminaba en el mismo mostrador. Medido con los bots pasando el nivel 15 —cuando el kit
+    /// de novato deja de contarles—: cuatro visitas seguidas con la comida en cero y veinte mil monedas encima,
+    /// con el vendedor de comida a los mismos saltos que el tabernero al que sí llegó.</para>
+    ///
+    /// <para>Y sin plata para pagarlo, vender sigue alcanzando: si no, el que se quedó sin nada viajaría a un
+    /// mostrador que no le compra el botín y no podría comprar nunca.</para>
+    /// </summary>
+    [Theory]
+    // ¿falta comida o bebida? | oro | lo que cuesta cubrirlo | ¿alcanza con que le compre?
+    [InlineData(false, 0, 500, true)]      // no le falta nada: el viaje a vender vale igual
+    [InlineData(false, 5000, 500, true)]
+    [InlineData(true, 5000, 500, false)]   // el caso: le falta y puede pagarlo, así que va a quien le venda
+    [InlineData(true, 500, 500, false)]    // justo le alcanza
+    [InlineData(true, 499, 500, true)]     // no le alcanza: primero vender, o queda sin salida
+    [InlineData(true, 0, 500, true)]
+    public void Vender_no_alcanza_para_elegir_al_mercader(bool falta, int oro, int cuesta, bool alcanza)
+    {
+        Assert.Equal(alcanza, Bot.VenderAlcanzaParaElegirlo(falta, oro, cuesta));
+    }
+
+    /// <summary>Sin nada que cueste —la data podría dar cero— vender tampoco alcanza: no hay excusa de plata.</summary>
+    [Fact]
+    public void Con_lo_que_falta_gratis_el_viaje_es_a_quien_lo_venda()
+    {
+        Assert.False(Bot.VenderAlcanzaParaElegirlo(true, 0, 0));
+    }
 }
