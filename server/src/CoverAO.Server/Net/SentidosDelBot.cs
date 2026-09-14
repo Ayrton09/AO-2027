@@ -446,7 +446,7 @@ public sealed class SentidosDelBot
     ///
     /// <para><paramref name="salvo"/> deja afuera a UNA criatura por su índice: la que el bot ya probó y no alcanzó. Sin eso, la
     /// vuelta siguiente vuelve a elegir la misma —es la más cercana— y choca contra la misma pared.</para></summary>
-    public (Visible Quien, int Pasos)? MasCercano(Func<short, bool> sirve, short salvo = 0)
+    public (Visible Quien, int Pasos)? MasCercano(Func<short, bool> sirve, IReadOnlySet<short>? salvo = null)
     {
         lock (_candado)
         {
@@ -454,7 +454,8 @@ public sealed class SentidosDelBot
             (Visible, int)? mejor = null;
             foreach (var v in _visibles.Values)
             {
-                if (!v.EsNpc || v.CharIndex == _miCharIndex || v.CharIndex == salvo || !sirve(v.FichaNpc)) continue;
+                if (!v.EsNpc || v.CharIndex == _miCharIndex || salvo?.Contains(v.CharIndex) == true
+                    || !sirve(v.FichaNpc)) continue;
                 int pasos = Math.Abs(v.X - _x) + Math.Abs(v.Y - _y);
                 if (mejor is null || pasos < mejor.Value.Item2) mejor = (v, pasos);
             }

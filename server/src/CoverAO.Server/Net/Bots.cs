@@ -645,7 +645,7 @@ public sealed class Bot
             // doscientas. Quien necesita plata sale a cazar lo que la da. Si no hay nada que pague al alcance,
             // vale lo más cercano, como siempre.
             // Y LA QUE NO SE ALCANZA NO SE ELIGE DE NUEVO POR UN RATO (ver `NoSeLlegaA`).
-            short salvo = Environment.TickCount64 < _presaSinCaminoHasta ? _presaSinCamino : (short)0;
+            var salvo = SiguenSinCamino(_sinCamino, Environment.TickCount64);
             var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha), salvo);
             // LO QUE PAGA SE VA A BUSCAR MÁS LEJOS. El radio del temperamento decide si vale la pena moverse por
             // cualquier cosa; por lo que da plata, cualquiera camina unas baldosas más. Medido con la sonda: una
@@ -2962,16 +2962,36 @@ public sealed class Bot
         return mapas.HayComoLlegar(mapa, desde, presa, 1, ocupadas) is { Count: > 0 } camino ? (camino[0], true) : null;
     }
 
-    /// <summary>La presa a la que no hay camino se descarta un rato: si no, es la más cercana y se vuelve a elegir en la vuelta
-    /// siguiente. Es una sola porque es una sola la que se persigue.</summary>
+    /// <summary>
+    /// LA PRESA A LA QUE NO HAY CAMINO SE DESCARTA UN RATO: si no, sigue siendo la más cercana —<see cref="SentidosDelBot.MasCercano"/>
+    /// mide en Manhattan, que no sabe de paredes— y se vuelve a elegir en la vuelta siguiente.
+    ///
+    /// <para><b>Y son VARIAS.</b> Guardando una sola, con dos criaturas inalcanzables a la vista el bot hace
+    /// ping-pong: elige A, no hay camino, la anota; elige B, no hay camino, la anota —y pisa la de A—, así que
+    /// vuelve a elegir A. Medido en campo con una sonda por escalón: un Clérigo empezó <b>508 peleas en cuarenta
+    /// minutos y 487 terminaron en "sin camino"</b>, repartidas entre DOS criaturas, 244 y 243 veces. Otro bot,
+    /// en el mismo mapa y la misma corrida, tuvo una sola de ésas en 67 peleas.</para>
+    /// </summary>
     private void NoSeLlegaA(short presa)
     {
-        _presaSinCamino = presa;
-        _presaSinCaminoHasta = Environment.TickCount64 + SinCaminoMs;
+        long ahora = Environment.TickCount64;
+        // Lo vencido se saca acá: es el único lugar por donde se agrega, y sin esto la lista junta todas las
+        // criaturas de la sesión.
+        foreach (var vencida in _sinCamino.Where(p => p.Value <= ahora).Select(p => p.Key).ToList())
+            _sinCamino.Remove(vencida);
+        _sinCamino[presa] = ahora + SinCaminoMs;
     }
 
-    private short _presaSinCamino;
-    private long _presaSinCaminoHasta;
+    /// <summary>De lo anotado en <see cref="NoSeLlegaA"/>, lo que TODAVÍA está descartado.</summary>
+    public static IReadOnlySet<short> SiguenSinCamino(IReadOnlyDictionary<short, long> anotadas, long ahora)
+    {
+        var vigentes = new HashSet<short>();
+        foreach (var (quien, hasta) in anotadas)
+            if (ahora < hasta) vigentes.Add(quien);
+        return vigentes;
+    }
+
+    private readonly Dictionary<short, long> _sinCamino = new();
     private const int SinCaminoMs = 60_000;
 
     /// <summary>

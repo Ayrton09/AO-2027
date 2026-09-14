@@ -12,6 +12,47 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class CazaConParedTests
 {
+    /// <summary>
+    /// LAS PRESAS SIN CAMINO SON VARIAS, no una. <c>MasCercano</c> mide en Manhattan, que no sabe de paredes,
+    /// así que la criatura del otro lado del muro sigue siendo "la más cercana" y se vuelve a elegir en la
+    /// vuelta siguiente; por eso la que no se alcanza se descarta un rato.
+    ///
+    /// <para>Guardando UNA sola, con dos inalcanzables a la vista el bot hace ping-pong —elige A, la anota,
+    /// elige B, la anota y pisa la de A, vuelve a A—. Medido en campo con una sonda por escalón de la caza: un
+    /// Clérigo empezó <b>508 peleas en cuarenta minutos y 487 terminaron en "sin camino"</b>, repartidas entre
+    /// DOS criaturas, 244 y 243 veces. Otro bot, en el mismo mapa y la misma corrida, tuvo UNA sola en 67
+    /// peleas.</para>
+    /// </summary>
+    [Fact]
+    public void Las_presas_sin_camino_se_descartan_todas_y_vencen()
+    {
+        const long ahora = 1_000_000;
+        var anotadas = new Dictionary<short, long>
+        {
+            [5455] = ahora + 60_000,   // recién anotada
+            [878] = ahora + 30_000,    // anotada antes, todavía vigente
+            [894] = ahora,             // justo vencida
+            [926] = ahora - 1,         // vencida hace rato
+        };
+
+        var vigentes = Bot.SiguenSinCamino(anotadas, ahora);
+
+        // EL CORAZÓN: las DOS vigentes quedan afuera de la elección, no sólo la última.
+        Assert.Contains((short)5455, vigentes);
+        Assert.Contains((short)878, vigentes);
+        // Y lo vencido vuelve a estar disponible: si no, el mapa se le va vaciando de presas.
+        Assert.DoesNotContain((short)894, vigentes);
+        Assert.DoesNotContain((short)926, vigentes);
+        Assert.Equal(2, vigentes.Count);
+    }
+
+    /// <summary>Sin nada anotado no se descarta a nadie.</summary>
+    [Fact]
+    public void Sin_nada_anotado_no_se_descarta_ninguna_presa()
+    {
+        Assert.Empty(Bot.SiguenSinCamino(new Dictionary<short, long>(), 1_000_000));
+    }
+
     private const int Cuna = 37;
 
     private static (Navegante Mapas, GameData Datos)? Mundo()
@@ -81,6 +122,8 @@ public class CazaConParedTests
         s.Recibir(ServerMessages.CharacterCreate(Criatura(601, 501, 50, 55)));   // a cinco
 
         Assert.Equal((short)600, s.MasCercano(_ => true)!.Value.Quien.CharIndex);
-        Assert.Equal((short)601, s.MasCercano(_ => true, salvo: 600)!.Value.Quien.CharIndex);
+        Assert.Equal((short)601, s.MasCercano(_ => true, salvo: new HashSet<short> { 600 })!.Value.Quien.CharIndex);
+        // Y con las DOS descartadas no queda ninguna: es el caso que el ping-pong no cubría.
+        Assert.Null(s.MasCercano(_ => true, salvo: new HashSet<short> { 600, 601 }));
     }
 }
