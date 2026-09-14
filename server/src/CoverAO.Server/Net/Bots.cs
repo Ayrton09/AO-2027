@@ -1563,25 +1563,41 @@ public sealed class Bot
         if (sentidos.BotinMasCercano(SePuedeLevantar) is not { } botin || botin.Pasos > RadioDeBotin
             || _nadaQueHacerAca.Contains((sentidos.Mapa, botin.Donde.X, botin.Donde.Y))) return false;
 
+        bool llego = false;
+        short queHabia = 0, hayAhora = 0;
         for (int intentos = 0; intentos < RadioDeBotin * 2 && !cerrada.IsCompleted; intentos++)
         {
             var (x, y) = sentidos.Posicion;
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
             if (dx == 0 && dy == 0)
             {
-                short queHabia = sentidos.EnElPiso(botin.Donde);
+                llego = true;
+                queHabia = sentidos.EnElPiso(botin.Donde);
                 transporte.Mandar(Paquete(ClientPacketId.PickUp, _ => { }));
                 await Task.Delay(_rng.Next(400, 900), ct);
-                // Si sigue ahí no se puede levantar (mochila llena, o algo que no es botín). Se marca la
-                // baldosa: sin esto el bot vuelve a caminar hasta ella y a agacharse, para siempre.
-                if (sentidos.EnElPiso(botin.Donde) == queHabia) _nadaQueHacerAca.Add((sentidos.Mapa, botin.Donde.X, botin.Donde.Y));
-                return true;
+                hayAhora = sentidos.EnElPiso(botin.Donde);
+                break;
             }
             if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) is var r && r != Paso.Dado)
                 return r != Paso.SinConexion;
         }
+        if (BaldosaQueNoSirve(llego, queHabia, hayAhora))
+            _nadaQueHacerAca.Add((sentidos.Mapa, botin.Donde.X, botin.Donde.Y));
         return true;
     }
+
+    /// <summary>
+    /// ¿QUEDA LA BALDOSA ANOTADA COMO QUE NO SIRVE? Si se llegó, cuando agacharse no levantó nada: la mochila llena, o algo
+    /// que el servidor no deja levantar. <b>Y SI NO SE LLEGÓ, SIEMPRE.</b>
+    ///
+    /// <para>El paso hacia el botín es codicioso, así que cualquier pared en el medio deja la baldosa inalcanzable. Sin
+    /// anotarla, la vuelta siguiente elige el MISMO botín —es el más cercano— y vuelve a gastar los mismos
+    /// <see cref="RadioDeBotin"/> por dos pasos sin llegar, para siempre. Medido con la sonda del ciclo: levantar botín se
+    /// llevó el 63 % del tiempo de ocho bots en veinticinco minutos, con el tiempo por vuelta clavado por bot —3,9 s los de
+    /// ritmo bajo, 5,9 s los de ritmo alto—, que es la firma de una cuenta de pasos fija y no de una distancia que varía. Un
+    /// Gladiador terminó la corrida en nivel 1, con cero de experiencia y cero de oro, después de 198 vueltas.</para>
+    /// </summary>
+    public static bool BaldosaQueNoSirve(bool llego, short habiaAntes, short hayAhora) => !llego || habiaAntes == hayAhora;
 
     /// <summary>
     /// ¿Es algo que se pueda levantar? El servidor manda como "objeto del piso" lo tirado Y LAS PUERTAS
