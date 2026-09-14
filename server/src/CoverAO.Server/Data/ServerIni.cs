@@ -368,6 +368,27 @@ public sealed class ServerIni
     /// false = como el original.</summary>
     public bool QuitarEquipoNovato { get; private set; }
 
+    /// <summary>
+    /// NIVEL MÍNIMO PARA ENTRAR A CADA MAPA, de la sección <c>[NIVELMINIMO]</c> del <c>Server.ini</c>: una
+    /// línea <c>mapa=nivel</c>. Vacío = la regla no corre, que es el default del servidor.
+    ///
+    /// <para>Es REGLA DE LA CASA: el original tiene un campo <c>Restringir</c> por mapa, lo carga y deja que
+    /// un GM lo edite, pero NADIE lo lee para negar la entrada. Lo pidió el tester (punto 5 de su informe) y
+    /// el autor lo aprobó <b>sólo con mínimo, sin tope máximo</b>.</para>
+    ///
+    /// <para>Va por MAPA y no por cueva porque una cueva son varios mapas —el Dungeon Cristal es el 230, el
+    /// 231 y el 232—, y porque así el host la toca sin tocar código.</para>
+    /// </summary>
+    public IReadOnlyDictionary<int, int> NivelMinimoPorMapa { get; private set; }
+        = new Dictionary<int, int>();
+
+    /// <summary>
+    /// ¿LO DEJA ENTRAR? Sin mínimo para ese mapa, sí; con mínimo, sólo desde ese nivel. El GM entra siempre,
+    /// igual que en el gate de la zona NEWBIE del original.
+    /// </summary>
+    public bool DejaEntrarAlMapa(int mapa, int nivel, bool esGm) =>
+        esGm || !NivelMinimoPorMapa.TryGetValue(mapa, out int minimo) || minimo <= 0 || nivel >= minimo;
+
     /// <summary>¿Lo que queda tirado en el suelo sobrevive a un reinicio? (informe del tester, 2.27). El
     /// original tiene el suelo SÓLO en RAM —`MapData().ObjInfo`, que se repuebla del .csm en cada arranque—,
     /// así que un reinicio se lleva puesto todo lo que la gente dejó o se le cayó al morir. false = como el
@@ -865,6 +886,24 @@ public sealed class ServerIni
         cfg.OroAlSubirNivel = Math.Clamp(ini.GetInt("INIT", "OroAlSubirNivel", 0), 0, 1_000_000);
         cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
         cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
+        // LA TABLA DE NIVELES MÍNIMOS: una línea `mapa=nivel` por mapa. Sin la sección queda vacía y la
+        // regla no corre. Lo que no es un par de enteros se ignora en silencio, igual que el resto del ini:
+        // un renglón mal tipeado no puede dejar al host sin arrancar.
+        var minimos = new Dictionary<int, int>();
+        foreach (var clave in ini.Claves("NIVELMINIMO"))
+        {
+            // EL COMENTARIO PEGADO AL VALOR SE CORTA. `IniFile.Parse` parte en el primer `=` y se queda con
+            // TODO lo que sigue, así que `753=20 ; Cueva orca` vale el texto "20 ; Cueva orca" y no parsea.
+            // Escribir el nombre de la cueva al lado del número es lo natural, y sin esto el mapa quedaba
+            // sin restringir y sin que nadie avisara.
+            string crudo = ini.GetString("NIVELMINIMO", clave, "");
+            int corte = crudo.IndexOfAny(new[] { ';', '\'', '#' });
+            if (corte >= 0) crudo = crudo[..corte];
+            if (int.TryParse(clave, out int mapa) && mapa > 0
+                && int.TryParse(crudo.Trim(), out int nivel) && nivel > 0)
+                minimos[mapa] = nivel;
+        }
+        cfg.NivelMinimoPorMapa = minimos;
         cfg.PersistirSuelo = ini.GetInt("INIT", "PersistirSuelo", 0) != 0;
         cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;

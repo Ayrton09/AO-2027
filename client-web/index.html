@@ -1097,6 +1097,11 @@
     // frmMain.frm). Es lo ultimo que faltaba del censo de teclas del original. El chat sobre la cabeza NO se
     // apaga con esto: son dos cosas distintas en el cliente clasico.
     let mostrarNombres = localStorage.getItem('ao_nombres') !== '0';   // persiste (tecla N u Opciones)
+    // LA LLUVIA BAJO TECHO Y EN CUEVAS. Que llueva adentro es FIEL: el original dibuja la partícula sin
+    // ninguna condición (TileEngine.bas:2295). El tester pidió apagarla, así que va como OPCIÓN y APAGADA:
+    // el default sigue siendo lo del original. Es un overlay de pantalla —no toca el juego ni el protocolo—,
+    // por eso es del cliente y no una regla del Server.ini.
+    let ocultarLluviaBajoTecho = localStorage.getItem('ao_lluviatecho') === '1';
     /*
      * MACRO — repetir la acción mientras la tecla sigue apretada.
      *
@@ -3193,6 +3198,9 @@
                            guardarPref('ao_escalado', smoothWorld ? '1' : '0'); abrirOpciones(); return;
           case 'nombres':  mostrarNombres = !mostrarNombres; guardarPref('ao_nombres', mostrarNombres ? '1' : '0');
                            draw(); abrirOpciones(); return;
+          case 'lluviatecho': ocultarLluviaBajoTecho = !ocultarLluviaBajoTecho;
+                           guardarPref('ao_lluviatecho', ocultarLluviaBajoTecho ? '1' : '0');
+                           draw(); abrirOpciones(); return;
           // Apagarlo suelta lo que estuviera repitiendo: si no, una tecla que quedó apretada seguía
           // disparando después de apagar la opción, y sólo paraba al soltarla.
           case 'macro':    macroOn = !macroOn; guardarPref('ao_macro', macroOn ? '1' : '0');
@@ -3496,6 +3504,11 @@
         <div class="fsec">Juego</div>
         <div class="frow" style="justify-content:space-between"><span>Ver nombres de los jugadores</span>
           <button class="sbtn ghost" data-op="nombres" style="min-width:5em">${mostrarNombres ? 'sí' : 'no'}</button></div>
+        <div class="frow" style="justify-content:space-between"><span>Ocultar la lluvia bajo techo y en cuevas</span>
+          <button class="sbtn ghost" data-op="lluviatecho" style="min-width:5em">${ocultarLluviaBajoTecho ? 'sí' : 'no'}</button></div>
+        <div class="sp2">Viene en <b>no</b>, que es lo del original: la lluvia se dibuja en todos lados,
+          también adentro de una cueva. En <b>sí</b> se corta en las cuevas y se desvanece al entrar bajo
+          techo.</div>
         <div class="frow" style="justify-content:space-between"><span>Macro (repetir con la tecla apretada)</span>
           <button class="sbtn ghost" data-op="macro" style="min-width:5em">${macroOn ? 'sí' : 'no'}</button></div>
         <div class="sp2">Viene puesto: mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue
@@ -3508,7 +3521,7 @@
           <span class="fhint">reasignar cualquier tecla</span></div>`, true, 'opciones');
     }
     window.__abrirOpciones = abrirOpciones;
-    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, macroOn });
+    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, macroOn, ocultarLluviaBajoTecho });
     const SKILL_ROBAR = 14;        // la tecla R del original (mKeySteal); tambien pide objetivo
     // ÍTEM SELECCIONADO del inventario. El original lo tiene (`Inventario.SelectedItem`) y sus teclas de
     // inventario —T tirar, U usar, E equipar— actúan SOBRE ÉL. Acá no existía: el clic actuaba directo, y por
@@ -5330,9 +5343,14 @@
       // techos. Se sacó por fidelidad. Consecuencia práctica, por si vuelve el reporte: llueve también en las
       // cuevas. Si algún día se quiere apagar, va como OPCIÓN del cliente (al lado de música/sonido/nombres)
       // y apagada por defecto: es un overlay de pantalla, no toca el juego ni el protocolo.
-      if (raining) {
+      // Con la opción puesta se apaga en las cuevas y se DESVANECE al entrar bajo techo, siguiendo el mismo
+      // `techoAlpha` que los techos: cortarla de golpe se ve como un parpadeo en el borde de la puerta.
+      const lluviaAlpha = !ocultarLluviaBajoTecho ? 1
+                        : (map && String(map.zone || '').toUpperCase() === 'DUNGEON') ? 0
+                        : techoAlpha;
+      if (raining && lluviaAlpha > 0.01) {
         const t = Date.now();
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = lluviaAlpha;
         // ACA HABIA UN VELO AZUL de pantalla completa mientras llueve. Es invento nuestro: lo unico que
         // hace el original al empezar a llover es crear el grupo de particulas (HandleRainToggle,
         // Protocol.bas:2428) y dibujarlo; el ambiente no mira el clima.

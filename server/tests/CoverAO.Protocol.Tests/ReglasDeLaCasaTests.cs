@@ -152,6 +152,77 @@ public class ReglasDeLaCasaTests : IDisposable
     /// sin este test, alguien que viniera a "arreglar" la plantilla la devolvería a ceros creyendo que
     /// corrige una infidelidad, y se llevaría puesta una decisión tomada.</para>
     /// </summary>
+    /// <summary>
+    /// EL NIVEL MÍNIMO POR CUEVA (punto 5 del informe del tester, aprobado por el autor: sólo mínimo, sin
+    /// tope máximo). Sin la sección la regla NO corre, que es lo que hace el original: tiene un campo
+    /// <c>Restringir</c> por mapa, lo carga y deja que un GM lo edite, pero nadie lo lee para negar entrada.
+    /// </summary>
+    [Fact]
+    public void Sin_la_seccion_no_hay_nivel_minimo_en_ningun_mapa()
+    {
+        var cfg = new ServerIni();
+        Assert.Empty(cfg.NivelMinimoPorMapa);
+        Assert.True(cfg.DejaEntrarAlMapa(753, 1, esGm: false));   // el nivel 1 entra a la Cueva orca
+    }
+
+    /// <summary>Y con la sección puesta, el interruptor ENCIENDE de verdad: se lee la tabla y se aplica.</summary>
+    [Theory]
+    // mapa | nivel del que pisa la salida | ¿es GM? | ¿lo deja entrar?
+    [InlineData(753, 19, false, false)]   // uno menos que el mínimo: no entra
+    [InlineData(753, 20, false, true)]    // el nivel JUSTO entra
+    [InlineData(753, 40, false, true)]
+    [InlineData(753, 1, true, true)]      // el GM entra siempre, igual que en el gate de zona NEWBIE
+    [InlineData(1, 1, false, true)]       // un mapa sin mínimo no restringe a nadie
+    public void Con_la_seccion_el_minimo_se_aplica(int mapa, int nivel, bool esGm, bool entra)
+    {
+        var cfg = Cargar("\r\n[NIVELMINIMO]\r\n753=20\r\n117=30\r\n");
+        Assert.Equal(entra, cfg.DejaEntrarAlMapa(mapa, nivel, esGm));
+    }
+
+    /// <summary>Un renglón que no es un par de enteros se ignora, como el resto del ini: un error de tipeo
+    /// del host no puede dejar el servidor sin arrancar ni, peor, restringiendo un mapa que no quiso.</summary>
+    [Fact]
+    public void Un_renglon_mal_tipeado_no_restringe_nada()
+    {
+        var cfg = Cargar("\r\n[NIVELMINIMO]\r\ncueva orca=20\r\n753=cero\r\n117=0\r\n230=40\r\n");
+        Assert.True(cfg.DejaEntrarAlMapa(753, 1, esGm: false));    // el valor no era un numero
+        Assert.True(cfg.DejaEntrarAlMapa(117, 1, esGm: false));    // cero = sin minimo
+        Assert.False(cfg.DejaEntrarAlMapa(230, 39, esGm: false));  // el que si estaba bien, se aplica
+    }
+
+    /// <summary>
+    /// Y EL NOMBRE DE LA CUEVA AL LADO DEL NÚMERO no rompe la tabla. <c>IniFile.Parse</c> parte en el primer
+    /// <c>=</c> y se queda con todo lo que sigue, así que sin cortarlo el valor es el texto entero, no parsea,
+    /// y el mapa queda sin restringir <b>sin que nadie avise</b>. Escribirlo así es lo natural en una tabla de
+    /// veintitrés renglones, y las tres marcas son las que el propio parser acepta al principio de línea.
+    /// </summary>
+    [Theory]
+    [InlineData("753=20 ; Cueva orca")]
+    [InlineData("753=20   \u0027 la marca del VB6")]
+    [InlineData("753=20 # la que se escribe por costumbre")]
+    public void El_nombre_de_la_cueva_al_lado_del_numero_no_rompe_la_tabla(string renglon)
+    {
+        var cfg = Cargar("\r\n[NIVELMINIMO]\r\n" + renglon + "\r\n");
+        Assert.False(cfg.DejaEntrarAlMapa(753, 19, esGm: false));
+        Assert.True(cfg.DejaEntrarAlMapa(753, 20, esGm: false));
+    }
+
+    /// <summary>La tabla que el autor aprobó viaja en la plantilla, con las trece cuevas del tester repartidas
+    /// en sus mapas —una cueva son varios— y ningún tope máximo.</summary>
+    [Fact]
+    public void El_ini_de_ejemplo_trae_la_tabla_de_las_cuevas()
+    {
+        var cfg = ServerIni.Cargar(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo")));
+        Assert.True(cfg.NivelMinimoPorMapa.Count >= 20,
+            $"la plantilla trae {cfg.NivelMinimoPorMapa.Count} mapas con mínimo; la tabla del tester son trece cuevas");
+        Assert.Equal(20, cfg.NivelMinimoPorMapa[753]);   // Cueva orca
+        Assert.Equal(40, cfg.NivelMinimoPorMapa[230]);   // Dungeon Cristal, los tres mapas
+        Assert.Equal(40, cfg.NivelMinimoPorMapa[231]);
+        Assert.Equal(40, cfg.NivelMinimoPorMapa[232]);
+        // Y NINGUNO es un tope máximo disfrazado: el autor decidió sólo mínimo.
+        Assert.All(cfg.NivelMinimoPorMapa.Values, n => Assert.InRange(n, 1, 45));
+    }
+
     [Fact]
     public void El_ini_de_ejemplo_trae_lo_que_eligio_el_autor()
     {

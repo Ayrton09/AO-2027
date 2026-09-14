@@ -1482,6 +1482,19 @@ public sealed partial class PacketDispatcher
                     if (estable is not null) TeleportTo(session, p, estable.Value);
                     return;
                 }
+                // NIVEL MÍNIMO DEL MAPA DE DESTINO (regla de la casa; ver `ServerIni.NivelMinimoPorMapa`).
+                // Mismo trato que el gate de arriba —avisar y reubicar en el tile ESTABLE más cercano— porque
+                // el problema es el mismo: si se lo deja parado sobre la salida, vuelve a dispararla sin fin.
+                // Sin la sección en el Server.ini esto no corre nunca y el server se comporta como el original.
+                if (!_ini.DejaEntrarAlMapa(destino.Map, p.Level, p.IsGm))
+                {
+                    int piden = _ini.NivelMinimoPorMapa[destino.Map];
+                    session.Send(ServerMessages.ConsoleMsg(
+                        $"Hace falta nivel {piden} para entrar a este lugar.", FuenteInfo));
+                    var frena = PosLegalMasCercana(p.Pos, puedeAgua, soloEstable: true);
+                    if (frena is not null) TeleportTo(session, p, frena.Value);
+                    return;
+                }
                 if (!PosLegal(destino, puedeAgua))
                 {
                     var alterna = PosLegalMasCercana(destino, puedeAgua);

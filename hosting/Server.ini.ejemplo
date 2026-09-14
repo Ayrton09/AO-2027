@@ -154,6 +154,72 @@ Version=
 ; IntervaloHechizoUsar es NUESTRO: el original deja tomar la pocion en el mismo
 ; instante que sale el hechizo, y de eso vive el auto-pot. Contra el auto-pot,
 ; poner ese y IntervaloGolpeUsar en 2000 o 3000.
+; ---------------------------------------------------------------------------
+; NIVEL MINIMO PARA ENTRAR A CADA CUEVA  (regla de la casa; el original NO la tiene)
+;
+; El original trae un campo `Restringir` por mapa, lo carga y deja que un GM lo
+; edite, pero nadie lo lee para negar la entrada. Esta seccion si: el que pisa la
+; salida hacia uno de estos mapas sin el nivel queda donde estaba, con un aviso.
+; Los GM entran siempre.
+;
+; SIN ESTA SECCION la regla no corre y el server se comporta como el original.
+; Una linea por MAPA porque una cueva son varios: el Dungeon Cristal son tres.
+; Los numeros son los que paso el tester; el autor decidio SOLO minimo, sin tope.
+; ---------------------------------------------------------------------------
+[NIVELMINIMO]
+; Cueva orca
+753=20
+; Caverna del Pirata
+117=30
+; Dungeon Cristal (el tester: subir el minimo a 40)
+230=40
+; Dungeon Cristal
+231=40
+; Dungeon Cristal
+232=40
+; Dungeon Dragon (el tester: 35 o 40; queda en 35)
+48=35
+; Dungeon Veriil
+140=30
+; Dungeon Veriil
+141=30
+; Dungeon Veriil
+142=30
+; Dungeon Veriil
+143=30
+; Dungeon Veriil
+144=30
+; Dungeon Veriil
+145=30
+; Dungeon Gaugin (el tester: subir de 20 a 30)
+207=30
+; Dungeon Marabel (el tester: redondear a 20)
+115=20
+; Dungeon Marabel
+116=20
+; Dungeon Zero
+209=35
+; Dungeon Zero
+210=35
+; Dungeon Zero
+211=35
+; Minas Dorck
+50=25
+; Minas Dorck
+51=25
+; Minas Dorck
+52=25
+; Mina Kirle
+233=38
+; Minas Thyr
+33=20
+;
+; FALTAN DOS de la tabla del tester, porque ningun mapa del juego se llama asi:
+;   'minas de oro'  (min 20, el tester sugiere 25)
+;   'minas veril'   (min 30)
+; Los nombres de su tabla son los de la wiki y no siempre coinciden con los del
+; .dat. Cuando diga cuales son, se agregan dos lineas aca y listo.
+
 [INTERVALOS]
 ;IntervaloLanzaHechizo=1000       ; entre un hechizo y el siguiente
 ;IntervaloUserPuedeAtacar=1000    ; entre un golpe y el siguiente
