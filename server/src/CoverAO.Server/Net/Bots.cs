@@ -691,7 +691,8 @@ public sealed class Bot
             // paseando ahí para siempre. Medido: cuatro de ocho bots parados en Ullathorpe y en el 457 con la
             // experiencia congelada durante una hora entera, mientras los que se quedaron en la cuna subían
             // de nivel. Un jugador que se cansa de dar vueltas por el pueblo agarra y sale a cazar.
-            if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, presa is not null,
+            if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora,
+                                            VeUnaPresaQueIriaABuscar(presa?.Pasos, alcance),
                                             cerrada, ct)) continue;
 
             if (!await PasearAsync(transporte, sentidos, cerrada, ct)) return;
@@ -2012,6 +2013,20 @@ public sealed class Bot
     /// que es el bot recién entrado al mundo.
     /// </summary>
     public static bool HayQueRevisarElCoto(int nivelDelCoto, int nivelAhora) => nivelDelCoto != nivelAhora;
+
+    /// <summary>
+    /// ¿VE UNA PRESA A LA QUE IRÍA? Para la paciencia de mudarse de coto, lo que cuenta no es ver algo cazable sino ver algo
+    /// que vaya a cazar. La vista alcanza un área de bloques enteros alrededor, y el temperamento decide cuántas baldosas
+    /// camina por una pelea (<see cref="RadioDeCazaSuyo"/>: 12 el cazador, 6 el tranquilo, 4 el quieto). Una presa más lejos
+    /// que eso no se pelea NUNCA.
+    ///
+    /// <para>Contándola igual, el bot tomaba la paciencia larga —tres minutos— y se quedaba paseando alrededor de algo que no
+    /// iba a atacar. Medido con la sonda del ciclo: `pasear` con una presa lejos a la vista fue el 49,4 % del tiempo de ocho
+    /// bots en veinticinco minutos, la rama más grande de lejos, contra un 3,6 % de pelear. Sin presa que valga, la paciencia
+    /// corta de treinta segundos lo manda al coto, y el viaje al coto es el que lo deja parado donde las criaturas nacen.</para>
+    /// </summary>
+    public static bool VeUnaPresaQueIriaABuscar(int? pasosHastaLaPresa, int alcance) =>
+        pasosHastaLaPresa is { } pasos && pasos <= alcance;
 
     /// <summary>
     /// ¿ESPERA ANTES DE VOLVER A BUSCAR COTO? Depende de si VE alguna presa, que son dos situaciones distintas

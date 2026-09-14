@@ -199,4 +199,28 @@ public class CotoDelBotTests
         Assert.All(cerca, x => Assert.True(x.Saltos <= 2, $"el mapa {x.Mapa} vino a {x.Saltos} saltos con el tope en 2"));
         Assert.True(cerca.Count < lejos.Count, "con el tope en 2 se enumeran los mismos mapas que con 5");
     }
+
+    /// <summary>
+    /// UNA PRESA A LA QUE NUNCA VA NO CUENTA COMO "ACA HAY ALGO". La paciencia larga —tres minutos— es para cuando el bot
+    /// tiene algo para cazar donde esta; una presa mas lejos que lo que su temperamento camina no se pelea nunca, asi que
+    /// contarla lo dejaba paseando alrededor de algo que no iba a atacar.
+    /// </summary>
+    [Fact]
+    public void La_presa_mas_lejos_de_lo_que_camina_no_cuenta()
+    {
+        // El tranquilo camina seis: la de nueve pasos no la va a buscar.
+        Assert.False(Bot.VeUnaPresaQueIriaABuscar(9, 6));
+        Assert.True(Bot.VeUnaPresaQueIriaABuscar(6, 6));
+        Assert.True(Bot.VeUnaPresaQueIriaABuscar(1, 6));
+
+        // Sin ninguna presa a la vista tampoco, que es el caso que ya existia.
+        Assert.False(Bot.VeUnaPresaQueIriaABuscar(null, 12));
+
+        // Y la misma presa, para el cazador que camina doce, si cuenta.
+        Assert.True(Bot.VeUnaPresaQueIriaABuscar(9, 12));
+
+        // La paciencia es la que cambia con eso: corta sin presa que valga, larga con una.
+        Assert.True(Bot.EsperaParaBuscarCoto(true, 60_000));
+        Assert.False(Bot.EsperaParaBuscarCoto(false, 60_000));
+    }
 }
