@@ -1285,8 +1285,18 @@ public sealed class Bot
         // venenosas hay 709 repartidas en 93 mapas. Ver `CuraElVeneno`.
         compro |= await ReponerAsync(transporte, sentidos, AntidotoPropio, AntidotosQueQuiere, ct,
                                      ReservaPara(sentidos, comida: true, bebida: true));
-        compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
-        compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
+        // EL QUE CASTEA GASTA PRIMERO EN EL PERGAMINO: ver <see cref="ElHechizoAntesQueElArma"/>. Las dos compras
+        // salen de la MISMA bolsa, así que el orden decide cuál se queda sin plata.
+        if (ElHechizoAntesQueElArma(sentidos.UsaMana))
+        {
+            compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
+            compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
+        }
+        else
+        {
+            compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
+            compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
+        }
         return compro;
     }
 
@@ -2442,6 +2452,21 @@ public sealed class Bot
         }
         return false;
     }
+
+    /// <summary>
+    /// ¿GASTA PRIMERO EN EL PERGAMINO Y DESPUÉS EN EL EQUIPO? El que castea, sí. Para él el hechizo ES el arma, y las
+    /// dos compras salen de la MISMA bolsa (<see cref="PlataParaElEquipo"/>), así que el que va primero es el que se la
+    /// gasta.
+    ///
+    /// <para>El VIAJE al vendedor de pergaminos ya estaba priorizado, pero al llegar al mercader la compra del
+    /// pergamino corría última: el caster llegaba con plata, la dejaba en un arma que casi no usa y se volvía sin
+    /// hechizo. Medido con una sonda sobre la compuerta del viaje: un Clérigo con 3.550 monedas decidió viajar por el
+    /// pergamino ONCE veces en media hora y terminó con el hechizo con el que nació; y en una corrida de cincuenta
+    /// minutos un Mago llegó a nivel 16 con Magia 42 y 7.115 monedas sin aprender ninguno, cuando le entraban cuatro.</para>
+    ///
+    /// <para>Al que no castea no le cambia nada: no compra pergaminos.</para>
+    /// </summary>
+    public static bool ElHechizoAntesQueElArma(bool castea) => castea;
 
     /// <summary>
     /// COMPRARSE UN HECHIZO: de los pergaminos de la vitrina que le sirven y puede pagar, el del hechizo que más pega.

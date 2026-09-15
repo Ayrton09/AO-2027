@@ -323,4 +323,18 @@ public class MagiaDelBotTests
     {
         Assert.Equal(hayDonde, Bot.HayDondeComprarElPergamino(aPie, elMapa));
     }
+
+    /// <summary>
+    /// PARA EL QUE CASTEA, EL HECHIZO VA ANTES QUE EL ARMA. Las dos compras salen de la misma bolsa, asi que el orden
+    /// decide cual se queda sin plata: con el pergamino ultimo, un Clerigo con 3.550 monedas viajo ONCE veces por el
+    /// pergamino en media hora y volvio sin ninguno, y un Mago de nivel 16 con 7.115 monedas tampoco aprendio uno.
+    /// </summary>
+    [Fact]
+    public void El_que_castea_gasta_primero_en_el_pergamino()
+    {
+        Assert.True(Bot.ElHechizoAntesQueElArma(castea: true));
+
+        // Al que no castea no le cambia nada: no compra pergaminos, asi que el equipo sigue yendo primero.
+        Assert.False(Bot.ElHechizoAntesQueElArma(castea: false));
+    }
 }
