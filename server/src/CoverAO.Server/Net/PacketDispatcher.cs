@@ -2979,6 +2979,42 @@ public sealed partial class PacketDispatcher
         EmitirCostoDelHechizo(session, p);
     }
 
+    /// <summary>
+    /// LAS PIEZAS DEL LANZADOR QUE TOCAN LA MAGIA: el arma y el anillo (aoweb <c>applyMagicBonuses</c>). Cada una
+    /// aporta su porcentaje de daño y su penetración; hoy las dos columnas están en cero en toda la data.
+    /// </summary>
+    private IReadOnlyList<(int Bono, int Penetracion)> PiezasMagicas(Player p)
+    {
+        var piezas = new List<(int, int)>(2);
+        foreach (int categoria in new[] { 1, 6 })   // 1 = arma, 6 = anillo
+            if (Equipment.EquippedOfCategory(p, _data, categoria) is { } o)
+                piezas.Add((o.DanoMagicoBonus, o.PenetracionMagica));
+        return piezas;
+    }
+
+    /// <summary>El báculo de DañoMágico que lleve puesto, que suma PLANO. Es del VB6 y se conserva.</summary>
+    private int BonoDelBaculo(Player p) =>
+        Equipment.EquippedOfCategory(p, _data, 1) is { EfectoMagico: 14 } baculo ? baculo.CuantoAumento : 0;
+
+    /// <summary>El daño de un hechizo de un jugador contra otro, con el modelo de <see cref="MagiaWeb"/>.</summary>
+    private int DanoMagicoAJugador(Player lanzador, Player blanco, int tirada)
+    {
+        var (dano, penetracion) = MagiaWeb.DanoDelLanzador(tirada, lanzador.Level, BonoDelBaculo(lanzador),
+            PiezasMagicas(lanzador), MagiaWeb.ModDanoDeLaClase(lanzador.Class));
+        int porciento = MagiaWeb.ResistenciaEnPorciento(Equipment.MagicResistance(blanco, _data),
+            MagiaWeb.ModResistenciaDeLaClase(blanco.Class), blanco.Level, lanzador.Level, penetracion);
+        return MagiaWeb.ConLaResistencia(dano, porciento);
+    }
+
+    /// <summary>El daño de un hechizo de un jugador contra una criatura.</summary>
+    private int DanoMagicoANpc(Player lanzador, Npc npc, int tirada)
+    {
+        var (dano, penetracion) = MagiaWeb.DanoDelLanzador(tirada, lanzador.Level, BonoDelBaculo(lanzador),
+            PiezasMagicas(lanzador), MagiaWeb.ModDanoDeLaClase(lanzador.Class));
+        return MagiaWeb.DanoContraNpc(dano, npc.Template.ResistenciaMagica, npc.Template.DefensaMagica,
+                                      lanzador.Level, penetracion);
+    }
+
     private void CastDamageOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell, int amount)
     {
         // VB6 PuedeAtacarNPC: los NPCs de servicio no son atacables — mismo gate que AttackNpc.
@@ -2987,7 +3023,7 @@ public sealed partial class PacketDispatcher
         if (!PuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         npc.AttackedBy = p.Name;   // VB6 NPCAtacado: lo provoca y lo vuelve hostil para defenderse
         npc.Hostile = true;
-        int damage = Combat.EfectoHechizoArea3Pct(amount, p.Level);   // VB6: daño + Porcentaje(daño, 3*ELV), piso 0
+        int damage = DanoMagicoANpc(p, npc, amount);
         SpellCasted(session, p, spell);
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
         // OJO: acá el goteo de experiencia va DESPUÉS de aplicar el daño, al revés que en el melee. No es un
@@ -10049,12 +10085,8 @@ public sealed partial class PacketDispatcher
     /// el daño no entra — ninguno de los 4 hechizos de daño de área lo trae, así que la rama no tiene data.</summary>
     private void AreaDamagePlayer(ClientSession session, Player p, Player target, Data.SpellInfo spell)
     {
-        var weapon = Equipment.EquippedOfCategory(p, _data, 1);
-        int bonoBaculo = weapon is { EfectoMagico: 14 } ? weapon.CuantoAumento : 0;   // eMagicType.DañoMagico
-        // Los CINCO slots que descuenta el original (casco, escudo, armadura, montura, anillo). Antes acá sólo
-        // se miraban los tres de defensa, así que la montura Unicornio (RM +10) no protegía nada.
-        int resistencia = Equipment.MagicResistance(target, _data);
-        int damage = Combat.DanoHechizoOfensivo(_rng.Next(spell.MinHp, spell.MaxHp + 1), p.Level, bonoBaculo, resistencia);
+        // EL MODELO DE AOWEB, igual que el camino de un solo blanco: ver <see cref="MagiaWeb"/>.
+        int damage = DanoMagicoAJugador(p, target, _rng.Next(spell.MinHp, spell.MaxHp + 1));
 
         // ¿PUEDE ATACARLO? Acá no había NINGUNA compuerta, y el camino del área es el único del juego que
         // llega a un jugador sin pasar por una: `HandleCastSpell` rutea el área con un `return` que ocurre
@@ -10105,9 +10137,7 @@ public sealed partial class PacketDispatcher
             || npc.IsTrainer || npc.FactionConvert != 0) return;
         npc.AttackedBy = p.Name;   // NPCAtacado
         npc.Hostile = true;
-        var staff = Equipment.EquippedOfCategory(p, _data, 1);
-        int damage = Combat.EfectoHechizoArea3Pct(_rng.Next(spell.MinHp, spell.MaxHp + 1), p.Level,
-            staff is { EfectoMagico: 14 } ? staff.CuantoAumento : 0);
+        int damage = DanoMagicoANpc(p, npc, _rng.Next(spell.MinHp, spell.MaxHp + 1));
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
         session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, damage, 2));
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
@@ -10436,10 +10466,7 @@ public sealed partial class PacketDispatcher
                 // por nivel, + el báculo de DañoMagico, − la resistencia mágica de los cinco slots equipados.
                 // Acá antes se restaba `amount` pelado, así que la magia PvP ignoraba tanto el nivel del mago
                 // como la armadura anti-magia de la víctima: un casco con ResistenciaMagica 20 no servía de nada.
-                var staff = Equipment.EquippedOfCategory(p, _data, 1);
-                amount = Combat.DanoHechizoOfensivo(amount, p.Level,
-                    staff is { EfectoMagico: 14 } ? staff.CuantoAumento : 0,
-                    Equipment.MagicResistance(target, _data));
+                amount = DanoMagicoAJugador(p, target, amount);
                 target.Hp = Math.Max(0, target.Hp - amount);
                 // VB6 :366 `Call SubirSkill(targetIndex, eSkill.Resistencia)`: aguantar un hechizo entrena la
                 // Resistencia MÁGICA de quien lo recibe. Es del camino de un solo objetivo nada más — el 3×3 del

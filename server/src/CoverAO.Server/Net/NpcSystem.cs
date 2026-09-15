@@ -1031,10 +1031,12 @@ public sealed class NpcSystem
         // jugador. Ningún NPC del install trae un hechizo con esa bandera.
         if (spell.SubeHp != 2) return false;
 
-        // Daño: el equipo RESTA su ResistenciaMagica (casco + escudo + armadura + montura + anillo,
-        // modHechizos.bas:136-170). Es la misma suma de cinco slots que ya usa la magia del jugador.
+        // Daño: el modelo de aoweb (`applyNpcSpellDamageToUser`), que es una cuenta MÁS CORTA que la del PvP — una
+        // criatura no tiene nivel ni equipo con que perforar, así que sólo frena lo que el blanco lleva puesto y lo
+        // que le da su clase. El piso en 0 lo pone acá el que llama, que es lo que hace aoweb.
         int dano = spell.MaxHp >= spell.MinHp ? _rng.Next(spell.MinHp, spell.MaxHp + 1) : spell.MinHp;
-        dano = Math.Max(0, dano - Equipment.MagicResistance(player, _data));
+        dano = Math.Max(0, MagiaWeb.DanoDeNpcAJugador(dano, Equipment.MagicResistance(player, _data),
+                                                      MagiaWeb.ModResistenciaDeLaClase(player.Class), 0));
         EmitirFxDeHechizo(npc, player, spell);
         player.Hp = Math.Max(0, player.Hp - dano);
         conn?.Send(ServerMessages.LocaleMsg(34, $"${npc.Template.Index}%{dano}"));

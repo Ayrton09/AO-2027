@@ -48,6 +48,12 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // escudo + armadura + montura + anillo se descuenta del daño en VB6 `HechizoTerrenoHP` (modHechizos.bas:530).
     // La traen 15 objetos (cascos y escudos altos: 10, 20, 8...).
     int ResistenciaMagica = 0,
+    // "DanoMagicoBonus" (aoweb `magicDamageBonus`): PORCENTAJE que el arma o el anillo del lanzador le suman al daño
+    // de sus hechizos. No está en nuestro obj.dat todavía; vale 0, igual que en aoweb cuando le falta el campo.
+    int DanoMagicoBonus = 0,
+    // "PenetracionMagica" (aoweb `magicPenetration`): puntos de porcentaje que el equipo del lanzador le PERFORA a la
+    // resistencia del blanco. Tampoco tiene data todavía.
+    int PenetracionMagica = 0,
     // "EfectoMagico" (obj.dat) = eMagicType (Declares.bas:857). Sólo se usa el 14 (DañoMagico): un báculo que le
     // SUMA `CuantoAumento` al daño de los hechizos del portador (misma función, :523). El casing en el .dat viene
     // en tres variantes, de ahí las tres claves en el loader.
@@ -505,7 +511,11 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     //
     // La clave del .dat viene en las dos grafías —`SND1` en 50 fichas y `Snd1` en 3—, así que se leen las dos:
     // buscar sólo una da cero en la mayoría y el campo parece muerto. Es la misma trampa de `obj.dat`.
-    int Snd1 = 0, int Snd2 = 0, int Snd3 = 0)
+    int Snd1 = 0, int Snd2 = 0, int Snd3 = 0,
+    // aoweb `npc.magicResistance` y `npc.magicDef`/`defM`: la resistencia mágica de la criatura, que decide si le
+    // frena un porcentaje del hechizo, y su defensa mágica plana. Ninguno de los dos está en NPCs.dat todavía, así
+    // que valen 0 y la rama no hace nada — es lo mismo que hace aoweb cuando le falta el campo.
+    int ResistenciaMagica = 0, int DefensaMagica = 0)
 {
     /// <summary>¿Este mercader te compra ese objeto? Es la condición de <c>Comercio.bas:123</c> dada vuelta:
     /// el VB6 RECHAZA (LocaleMsg 148) si <c>TipoItems &lt;&gt; OBJType And TipoItems &lt;&gt; otCualquiera</c>,
@@ -1175,6 +1185,8 @@ public sealed class GameData
                 Int(el, "Proyectil", "proyectil"), Int(el, "Municiones", "municiones"),   // arco / munición
                 Int(el, "CuantoAumento", "cuantoaumento"),   // cofre de créditos (SubTipo 13)
                 Int(el, "ResistenciaMagica", "resistenciamagica"),
+                Int(el, "DanoMagicoBonus", "danomagicobonus", "MagicDamageBonus"),
+                Int(el, "PenetracionMagica", "penetracionmagica", "MagicPenetration"),
                 Int(el, "EfectoMagico", "efectomagico", "Efectomagico"),
                 Int(el, "HechizoIndex", "hechizoindex"),   // pergamino: hechizo que enseña
                 Int(el, "Lingoteindex", "LingoteIndex"),   // mineral crudo: lingote que produce al fundir
