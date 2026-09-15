@@ -695,7 +695,7 @@ public sealed class Bot
                                             VeUnaPresaQueIriaABuscar(presa?.Pasos, alcance),
                                             cerrada, ct)) continue;
 
-            if (!await PasearAsync(transporte, sentidos, cerrada, ct)) return;
+            if (!await PasearAsync(transporte, sentidos, cerrada, ct, presa?.Quien)) return;
             bool larga = ++pausas % UnaDeCadaTantas == 0;
             await QuedarseAsync(sentidos, larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
         }
@@ -3434,7 +3434,7 @@ public sealed class Bot
     /// <summary>Un paseo corto, que es lo que hace cuando no hay nada que cazar. Si se alejó de su zona, el
     /// paseo es de vuelta para adentro.</summary>
     private async Task<bool> PasearAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
-                                         CancellationToken ct)
+                                         CancellationToken ct, SentidosDelBot.Visible? haciaDonde = null)
     {
         // Al cambiar de mapa, este lugar pasa a ser su zona: las coordenadas de la anterior no significan nada.
         var (x, y) = sentidos.Posicion;
@@ -3442,7 +3442,12 @@ public sealed class Bot
 
         int dx = _casa.Value.X - x, dy = _casa.Value.Y - y;
         bool lejos = Math.Abs(dx) + Math.Abs(dy) > RadioDeCasa;
-        byte rumbo = lejos ? SentidosDelBot.RumboHacia(dx, dy) : (byte)_rng.Next(1, 5);   // 1=N, 2=E, 3=S, 4=O
+        // HACIA LO QUE VE, NO AL AZAR. Ver <see cref="ElPaseoVaHaciaLaPresa"/>. Volver a la zona manda:
+        // sin ese freno el bot se iría siguiendo lo que aparezca y dejaría de tener un lugar.
+        byte rumbo = lejos ? SentidosDelBot.RumboHacia(dx, dy)
+                   : ElPaseoVaHaciaLaPresa(lejos, haciaDonde is not null) && haciaDonde is { } presaALaVista
+                       ? SentidosDelBot.RumboHacia(presaALaVista.X - x, presaALaVista.Y - y)
+                       : (byte)_rng.Next(1, 5);   // 1=N, 2=E, 3=S, 4=O
 
         int pasos = _rng.Next(PasosMin, PasosMax);
         for (int i = 0; i < pasos && !cerrada.IsCompleted; i++)
@@ -3454,6 +3459,20 @@ public sealed class Bot
         }
         return true;
     }
+
+    /// <summary>
+    /// ¿EL PASEO VA HACIA LA PRESA? Si hay una a la vista y no está lejos de su zona, sí; si no, al azar, como siempre.
+    ///
+    /// <para>El radio del temperamento (<see cref="RadioDeCazaSuyo"/>) decide si INTERRUMPE lo que está haciendo por una
+    /// pelea, no si alguna vez va a caminar para ese lado. Con el paseo al azar, una presa fuera de ese radio dejaba al bot
+    /// dando vueltas en círculos al lado de algo que no iba a atacar: medido con la sonda del ciclo, esa sola situación era
+    /// ~20 % del tiempo de ocho bots, la rama más grande, incluso después de arreglar la paciencia del coto.</para>
+    ///
+    /// <para>No lo vuelve una persecución: sigue siendo el paseo —unos pocos pasos y una pausa— y la vuelta siguiente vuelve
+    /// a decidir. Si en el camino la presa entra en su radio, la agarra la compuerta de pelea. Y volver a la zona manda por
+    /// encima: sin ese freno el bot se iría detrás de lo que apareciera y dejaría de tener un lugar.</para>
+    /// </summary>
+    public static bool ElPaseoVaHaciaLaPresa(bool lejosDeSuZona, bool veUnaPresa) => !lejosDeSuZona && veUnaPresa;
 
     /// <summary>Dónde considera que es su zona. Se fija al entrar y se muda con él si cambia de mapa.</summary>
     private (byte X, byte Y)? _casa;

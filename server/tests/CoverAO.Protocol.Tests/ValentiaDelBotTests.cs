@@ -166,4 +166,23 @@ public class ValentiaDelBotTests
             "la rama de sanarse busca al sacerdote más cerca de lo que el navegante sabe llegar: " +
             "hay mapas donde el bot no tiene cómo curarse ni puede usar la runa");
     }
+
+    /// <summary>
+    /// EL PASEO VA HACIA LO QUE VE. El radio del temperamento decide si interrumpe lo que hace por una pelea, no si
+    /// alguna vez camina para ese lado: con el rumbo sorteado, una presa fuera del radio dejaba al bot dando vueltas al
+    /// lado de algo que no iba a atacar (~20 % del tiempo, medido con la sonda del ciclo). Volver a la zona manda igual.
+    /// </summary>
+    [Fact]
+    public void El_paseo_va_hacia_la_presa_que_ve()
+    {
+        // Con una presa a la vista y en su zona: va hacia ella.
+        Assert.True(Bot.ElPaseoVaHaciaLaPresa(lejosDeSuZona: false, veUnaPresa: true));
+
+        // Sin nada a la vista: al azar, como siempre.
+        Assert.False(Bot.ElPaseoVaHaciaLaPresa(lejosDeSuZona: false, veUnaPresa: false));
+
+        // Y lejos de su zona manda volver, haya presa o no: sin ese freno el bot deja de tener un lugar.
+        Assert.False(Bot.ElPaseoVaHaciaLaPresa(lejosDeSuZona: true, veUnaPresa: true));
+        Assert.False(Bot.ElPaseoVaHaciaLaPresa(lejosDeSuZona: true, veUnaPresa: false));
+    }
 }
