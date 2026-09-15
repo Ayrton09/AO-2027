@@ -223,6 +223,49 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.All(cfg.NivelMinimoPorMapa.Values, n => Assert.InRange(n, 1, 45));
     }
 
+    /// <summary>
+    /// AL TESORO NO SE LLEGA SIN CRUZAR UN MINIMO. Es el error que casi se comete al agregar el Dungeon Forzhe:
+    /// ponerle el minimo SOLO al mapa del oro (754, con sus 34 vetas) y dejar el resto abierto.
+    ///
+    /// <para>Al Forzhe se entra desde el 650 (Latifundio Abandonado) por TRES puertas distintas —al 755, al 756 y
+    /// al 757—, y el subsuelo del oro cuelga del 755. O sea que gatear un solo piso no gatea nada: se entra por
+    /// cualquiera de las otras dos y se baja igual. El test lo fija contra la data de verdad, no contra una lista
+    /// escrita a mano, asi que si alguien mueve una salida o borra un renglon del ini, se entera.</para>
+    /// </summary>
+    [Fact]
+    public void Al_oro_del_Forzhe_no_se_llega_sin_cruzar_un_minimo()
+    {
+        var d = GameData.Load();
+        var cfg = ServerIni.Cargar(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo")));
+        int[] elForzhe = { 754, 755, 756, 757, 760 };
+        const int ElOro = 754;
+
+        // La data tiene que traer el dungeon, o el test no probaria nada.
+        Assert.All(elForzhe, m => Assert.True(d.MapExits.Keys.Any(k => k.Map == m),
+                                              $"el mapa {m} no tiene salidas en la data"));
+
+        // TODA entrada al dungeon desde afuera cae en un mapa con minimo.
+        var entradas = d.MapExits
+            .Where(e => !elForzhe.Contains(e.Key.Map) && elForzhe.Contains(e.Value.DestMap))
+            .Select(e => e.Value.DestMap).Distinct().ToList();
+        Assert.NotEmpty(entradas);
+        Assert.All(entradas, m => Assert.True(cfg.NivelMinimoPorMapa.ContainsKey(m),
+                                             $"al Forzhe se entra por el mapa {m} y ese mapa no tiene minimo: la puerta queda abierta"));
+
+        // Y AL ORO en particular: sus vecinos de adentro tambien tienen el suyo, asi que no hay atajo.
+        var vecinosDelOro = d.MapExits
+            .Where(e => e.Value.DestMap == ElOro && e.Key.Map != ElOro)
+            .Select(e => e.Key.Map).Distinct().ToList();
+        Assert.NotEmpty(vecinosDelOro);
+        Assert.All(vecinosDelOro, m => Assert.True(cfg.NivelMinimoPorMapa.ContainsKey(m),
+                                                  $"al oro del {ElOro} se baja desde el {m}, que no tiene minimo"));
+
+        // El minimo que MANDA para llegar al oro es el mas alto del camino, no el del subsuelo.
+        int mandaDeVerdad = vecinosDelOro.Max(m => cfg.NivelMinimoPorMapa[m]);
+        Assert.True(mandaDeVerdad >= cfg.NivelMinimoPorMapa[ElOro],
+                    "el minimo del subsuelo es mas alto que el del piso por el que se baja: entonces manda el de abajo y el comentario del ini miente");
+    }
+
     [Fact]
     public void El_ini_de_ejemplo_trae_lo_que_eligio_el_autor()
     {

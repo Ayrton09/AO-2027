@@ -214,11 +214,41 @@ Version=
 ; Minas Thyr
 33=20
 ;
-; FALTAN DOS de la tabla del tester, porque ningun mapa del juego se llama asi:
-;   'minas de oro'  (min 20, el tester sugiere 25)
-;   'minas veril'   (min 30)
-; Los nombres de su tabla son los de la wiki y no siempre coinciden con los del
-; .dat. Cuando diga cuales son, se agregan dos lineas aca y listo.
+; --- Las dos que faltaban de la tabla del tester -----------------------------
+; 'minas veril' YA ESTA: se le pregunto a la data y en todo el juego hay solo DOS
+; mapas con yacimiento de oro, y uno es el 145, que es parte del Dungeon Veriil
+; (140-145) y ya quedo en 30 -- el mismo numero que el pidio.
+;
+; 'minas de oro' es el otro: el 754, el subsuelo del Dungeon Forzhe, con 34 vetas.
+; Es el yacimiento mas rico con oro del juego.
+;
+; PERO AL 754 SE ENTRA SOLO POR EL 755, asi que el minimo que manda de verdad para
+; llegar al oro es el de ese piso (30), no el del subsuelo. Para bajarlo a 25 habria
+; que bajar tambien el 755 -- y el 755 tiene Medusas de golpe 250, que es exactamente
+; la Caverna del Pirata, que el tester puso en 30.
+;
+; Y ya que el Forzhe se abria, van sus cinco mapas con la rampa que tienen adentro,
+; cada uno por lo que vive ahi. Se entra desde el 650 (Latifundio Abandonado) por
+; tres puertas distintas -- al 755, al 756 y al 757 -- asi que gatear uno solo dejaba
+; las otras dos abiertas.
+
+; Dungeon Forzhe (Subsuelo) -- EL ORO, 34 vetas. Saqueador de minas, golpe 180
+754=25
+; Dungeon Forzhe (1er Piso) -- por aca se baja al oro. Medusa, golpe 250
+755=30
+; Dungeon Forzhe (2do Piso) -- Castigador, golpe 250
+757=30
+; Dungeon Forzhe (Entre Piso) -- Golem infernal, golpe 530
+756=35
+; Dungeon Forzhe (2do Piso) -- Dragon Legendario: 1.750.000 de experiencia, CUATRO
+; veces el Gran Dragon Negro del Dungeon Zero. Es lo mas gordo de toda la tabla.
+760=40
+; Minas Thordore -- 32 vetas de plata y hierro. Golem de oro, golpe 510
+205=35
+;
+; NO SE LE PONE MINIMO al 747 (Fuerte Central) aunque sea el mapa con MAS yacimientos
+; del juego (69): no tiene una sola criatura hostil. Un minimo ahi no protegeria a
+; nadie de nada, solo le cerraria a los mineros el mejor lugar seguro para picar.
 
 [INTERVALOS]
 ;IntervaloLanzaHechizo=1000       ; entre un hechizo y el siguiente
