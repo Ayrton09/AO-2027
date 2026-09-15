@@ -1880,7 +1880,9 @@ public sealed class Bot
         // cero (ocho y dos), y la sonda ya los había visto así saliendo a buscar coto. Para ellos, con el valor 3 el lobo
         // pasa a ser presa, y el lobo paga cincuenta: los cotos que se elegían eran de lobos.
         if (!TieneFuelleParaPelear(sentidos)) return false;
-        if (EsperaParaBuscarCoto(veAlgunaPresa, Environment.TickCount64 - _ultimaPresaQuePaga)) return false;
+        // Y LA PACIENCIA NO CORRE DONDE NO NACE NADA: ver <see cref="AcaPuedeAparecerAlgo"/>.
+        if (AcaPuedeAparecerAlgo(sentidos.Mapa)
+            && EsperaParaBuscarCoto(veAlgunaPresa, Environment.TickCount64 - _ultimaPresaQuePaga)) return false;
         _ultimaPresaQuePaga = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
 
         // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
@@ -2027,6 +2029,23 @@ public sealed class Bot
     /// </summary>
     public static bool VeUnaPresaQueIriaABuscar(int? pasosHastaLaPresa, int alcance) =>
         pasosHastaLaPresa is { } pasos && pasos <= alcance;
+
+    /// <summary>¿Puede aparecer algo para cazar en el mapa donde está parado?</summary>
+    private bool AcaPuedeAparecerAlgo(int mapa) =>
+        _entorno.Datos.MapSpawns.TryGetValue(mapa, out var nacen)
+        && AlgunoEsHostil(nacen, f => _entorno.Datos.Npc((short)f) is { Hostile: true });
+
+    /// <summary>
+    /// ¿NACE ALGO HOSTIL EN ESE MAPA? Si no nace una sola criatura, esperar no sirve: por mucho tiempo que se le dé no va a
+    /// aparecer nada. Es el caso del pueblo, donde el bot cae cada vez que va de compras — y donde la paciencia de treinta
+    /// segundos lo dejaba paseando entre mercaderes.
+    ///
+    /// <para>Medido con la sonda del ciclo, abriendo el «no veo presa» por lo que el bot tiene a la vista: el 13,9 % del
+    /// tiempo de ocho bots se iba en vueltas donde lo único visible eran NPCs no hostiles. La mudanza ya existía —es la
+    /// rama de abajo del ciclo—; lo que sobraba era la espera antes de decidirla.</para>
+    /// </summary>
+    public static bool AlgunoEsHostil(IEnumerable<MapNpcSpawn> nacen, Func<int, bool> esHostil) =>
+        nacen.Any(s => esHostil(s.NpcIndex));
 
     /// <summary>
     /// ¿ESPERA ANTES DE VOLVER A BUSCAR COTO? Depende de si VE alguna presa, que son dos situaciones distintas

@@ -201,6 +201,37 @@ public class CotoDelBotTests
     }
 
     /// <summary>
+    /// EN UN PUEBLO NO NACE NADA, ASI QUE NO HAY NADA QUE ESPERAR. La paciencia de treinta segundos se aplicaba en
+    /// cualquier mapa, incluido aquel al que el bot va a comprar. Contra la data de verdad: Ullathorpe (1) y las otras
+    /// ciudades Nix y Banderbill no tienen una sola criatura hostil; la cuna (37) y Ullathorpe, si.
+    /// </summary>
+    [Fact]
+    public void En_un_mapa_donde_no_nace_nada_no_se_espera()
+    {
+        var d = GameData.Load();
+        bool EsHostil(int f) => d.Npc((short)f) is { Hostile: true };
+        List<MapNpcSpawn> DeEse(int m) => d.MapSpawns.TryGetValue(m, out var s) ? s.ToList() : new List<MapNpcSpawn>();
+
+        // La cuna y el mapa 1 existen en la data de verdad, o el test no probaria nada.
+        Assert.NotEmpty(DeEse(37));
+
+        // Donde nace algo hostil, la regla dice que si.
+        Assert.True(Bot.AlgunoEsHostil(DeEse(37), EsHostil));
+
+        // Y en las ciudades, que es donde el bot cae al ir de compras, no nace una sola.
+        foreach (int ciudad in new[] { 34, 59 })   // Nix y Banderbill Central
+            Assert.False(Bot.AlgunoEsHostil(DeEse(ciudad), EsHostil),
+                         $"el mapa {ciudad} tiene criaturas hostiles y el test lo toma por ciudad");
+
+        // Ullathorpe es el borde y por eso va: tiene UNA sola hostil —la serpiente—, asi que si puede aparecer
+        // algo y la paciencia corre. La regla no mira cuantas: eso lo decide el coto.
+        Assert.True(Bot.AlgunoEsHostil(DeEse(1), EsHostil));
+
+        // Una lista vacia tampoco: no hay nada que esperar donde no hay nada.
+        Assert.False(Bot.AlgunoEsHostil(new List<MapNpcSpawn>(), EsHostil));
+    }
+
+    /// <summary>
     /// UNA PRESA A LA QUE NUNCA VA NO CUENTA COMO "ACA HAY ALGO". La paciencia larga —tres minutos— es para cuando el bot
     /// tiene algo para cazar donde esta; una presa mas lejos que lo que su temperamento camina no se pelea nunca, asi que
     /// contarla lo dejaba paseando alrededor de algo que no iba a atacar.
