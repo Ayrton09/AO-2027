@@ -191,6 +191,10 @@ Version=
 144=30
 ; Dungeon Veriil
 145=30
+; Fuerte Veriil -- es el septimo mapa del Veriil y colgaba sin minimo. Tiene la
+; misma dureza que el resto (Golem de piedra, golpe 480) y se sale de el al 142.
+; aoweb tambien lo gatea como parte del dungeon.
+146=30
 ; Dungeon Gaugin (el tester: subir de 20 a 30)
 207=30
 ; Dungeon Marabel (el tester: redondear a 20)
