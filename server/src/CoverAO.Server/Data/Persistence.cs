@@ -560,6 +560,20 @@ public sealed class Persistence
         rugura.Skills[GameLimits.SkillProyectiles] = 15;
         rugura.Inventory[21] = new InventorySlot { ObjIndex = 989, Amount = 1 };    // Arco Simple (Proyectil=1, [5,8])
         rugura.Inventory[22] = new InventorySlot { ObjIndex = 480, Amount = 100 };  // Flecha (otFlechas, [4,6]) — munición
+        // RUGURA PELEA VESTIDO, y es lo único que lo distingue del kit común. Es el que mata en quince flows, y
+        // desde que el desnudo no recupera energía —fiel: TCP.bas:2070 deriva el flag del slot de armadura y
+        // SistemaCombate.bas:999 cobra RandomNumber(1,10) por golpe a mano limpia— una ráfaga de 120 golpes lo dejaba
+        // sin fuelle antes de matar a nadie. Medido: sin esto `death_flow` da FALLO y con esto OK, en el commit que
+        // lo rompió y en la cabeza.
+        //
+        // No se toca la energía del kit (100) ni la de Merlin: `craft_flow` DRENA la de Merlin a propósito para
+        // ejercitar «sin energía el oficio no fabrica», y `stamina_golpe_flow` vacía la de Rugura a ráfaga para
+        // ejercitar el freno del golpe. Lo que cambia acá es el ESTADO —vestido, como pelea cualquiera— y no el
+        // tamaño del pozo.
+        //
+        // El único que necesitaba a Rugura desnudo era `body_flow`, que mide el cuerpo al vestirse; usa a Merlin,
+        // que es de la misma raza y género y trae la misma armadura en el mismo slot.
+        rugura.Inventory[15] = new InventorySlot { ObjIndex = 1480, Amount = 1, Equipped = true };
         // Los nudillos y el anillo mágico de `nudillos_flow` NO van acá: se crean con /CI, como en aura_flow.
         // Se intentó ponerlos en el inventario y salió mal por partida doble — el slot 23 ya tenía las Tijeras
         // (las pisó y gather_flow se puso rojo) y el 24 era el anteúltimo libre, así que Rugura se quedó sin
