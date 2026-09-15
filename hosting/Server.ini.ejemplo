@@ -177,24 +177,26 @@ Version=
 231=40
 ; Dungeon Cristal
 232=40
-; Dungeon Dragon (el tester: 35 o 40; queda en 35)
-48=35
+; Dungeon Dragon. El tester dijo 35 o 40; aoweb lo tiene en 30 y se copia ese,
+; por decision del autor. Nuestra data lo respalda: pega menos que el Veriil
+; (golpe 350 contra 480) aunque de mas experiencia.
+48=30
 ; Dungeon Veriil
-140=30
+140=28
 ; Dungeon Veriil
-141=30
+141=28
 ; Dungeon Veriil
-142=30
+142=28
 ; Dungeon Veriil
-143=30
+143=28
 ; Dungeon Veriil
-144=30
+144=28
 ; Dungeon Veriil
-145=30
+145=28
 ; Fuerte Veriil -- es el septimo mapa del Veriil y colgaba sin minimo. Tiene la
 ; misma dureza que el resto (Golem de piedra, golpe 480) y se sale de el al 142.
-; aoweb tambien lo gatea como parte del dungeon.
-146=30
+; aoweb lo gatea como parte del dungeon, con el mismo numero.
+146=28
 ; Dungeon Gaugin (el tester: subir de 20 a 30)
 207=30
 ; Dungeon Marabel (el tester: redondear a 20)
@@ -219,6 +221,15 @@ Version=
 33=20
 ;
 ; --- Las dos que faltaban de la tabla del tester -----------------------------
+; DE DONDE SALEN ESTOS NUMEROS. Los del tester, de su informe. Tres dungeons los
+; tiene tambien aoweb (github.com/dcatanzaro/aoweb), que gatea 24 mapas con un
+; `minLevel` propio, y por decision del autor ESOS TRES se copian tal cual de ahi:
+;   Dungeon Marabel 20 (los dos dan igual) | Dungeon Veriil 28 | Dungeon Dragon 30
+; El cruce va POR NOMBRE, no por numero de mapa: la numeracion no coincide entre
+; los dos juegos (su mapa 33 es 'Minas de Hierro' y el nuestro Minas Thyr).
+; El resto de la tabla no existe en aoweb, asi que queda como lo puso el tester o,
+; para el Forzhe y las Minas Thordore, calibrado contra su propia escala.
+;
 ; 'minas veril' YA ESTA: se le pregunto a la data y en todo el juego hay solo DOS
 ; mapas con yacimiento de oro, y uno es el 145, que es parte del Dungeon Veriil
 ; (140-145) y ya quedo en 30 -- el mismo numero que el pidio.
