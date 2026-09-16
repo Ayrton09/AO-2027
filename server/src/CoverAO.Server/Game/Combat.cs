@@ -29,14 +29,33 @@ public static class Combat
 
     private static long Clng(double d) => (long)Math.Round(d, MidpointRounding.ToEven);
 
-    /// <summary>Unarmed attack power (PoderAtaqueWrestling, SistemaCombate.bas:157). Two VB6 Long rounds.</summary>
-    public static long PoderAtaqueWrestling(int wrestlingSkill, int agility, int level, double attackMod)
+    /// <summary>Poder de ataque, con la MISMA curva que la evasión. Sirve a las tres variantes del
+    /// original —<c>PoderAtaqueWrestling</c> (:157), <c>PoderAtaqueArma</c> (:93) y
+    /// <c>PoderAtaqueProyectil</c> (:125)—, que son idénticas salvo de qué habilidad leen.
+    ///
+    /// <para><b>DESVIACIÓN DELIBERADA, decidida por el autor.</b> El original acá usa cuatro escalones:</para>
+    /// <code>
+    ///   skill &lt; 31 → skill                    * ModClase
+    ///   skill &lt; 61 → (skill + 1 * agilidad)    * ModClase
+    ///   skill &lt; 91 → (skill + 2 * agilidad)    * ModClase
+    ///   resto      → (skill + 3 * agilidad)    * ModClase
+    /// </code>
+    /// <para>y para la evasión usa <c>skill + skill/33 * agilidad</c>, que es <b>la misma cuenta</b>: el
+    /// factor vale 1 en 33, 2 en 66 y 3 en 99, justo donde saltan los escalones. Las dos ramas convergen en
+    /// skill 100 (154 contra 155), así que no son dos diseños distintos — es una la versión redondeada de la
+    /// otra, aplicada a un solo lado del cálculo.</para>
+    ///
+    /// <para>El costo cae entero en el early, porque el escalón más grosero es el primero: hasta skill 30 el
+    /// ataque <b>ignora la agilidad por completo</b> y la evasión no. Con agilidad 18 y skill 30 son 30
+    /// contra 46, y esos 16 puntos son 6% de acierto en una fórmula que arranca en 50.</para>
+    ///
+    /// <para>Acá se toma la rama continua para los dos lados. Sube el acierto de los niveles bajos, no toca
+    /// el de los altos, y deja de castigar al que sí invirtió en agilidad mientras la habilidad todavía es
+    /// verde. Lo demás del original queda intacto: el mismo modificador de clase, el mismo
+    /// <c>+2.5 * max(nivel-12, 0)</c> y los mismos dos redondeos a Long.</para></summary>
+    public static long PoderDeAtaque(int skill, int agility, int level, double attackMod)
     {
-        double raw = wrestlingSkill < 31 ? wrestlingSkill * attackMod
-                   : wrestlingSkill < 61 ? (wrestlingSkill + agility) * attackMod
-                   : wrestlingSkill < 91 ? (wrestlingSkill + 2 * agility) * attackMod
-                   : (wrestlingSkill + 3 * agility) * attackMod;
-        long temp = Clng(raw);
+        long temp = Clng((skill + skill / 33.0 * agility) * attackMod);
         return Clng(temp + 2.5 * Math.Max(level - 12, 0));
     }
 

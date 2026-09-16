@@ -51,12 +51,39 @@ public class CombatTests
         Assert.Equal(181, Combat.PoderEvasion(tacticsSkill: 100, agility: 20, level: 20, evasionMod: 1.0));
     }
 
+    /// <summary>EL ATAQUE USA LA MISMA CURVA QUE LA EVASIÓN. Es una <b>desviación deliberada</b> del
+    /// original, que para el ataque usa cuatro escalones (skill&lt;31, &lt;61, &lt;91, resto) y para la evasión
+    /// la curva continua <c>skill + skill/33 * agilidad</c>.
+    ///
+    /// <para>Que sean la misma cuenta no es una opinión: los escalones suman 0, 1, 2 o 3 agilidades y el
+    /// factor de la curva vale exactamente 1 en 33, 2 en 66 y 3 en 99. Este test lo fija en los tres
+    /// cruces —donde las dos ramas dan el MISMO número— y en el hueco más grande, que es el primer
+    /// escalón: hasta skill 30 el original ignora la agilidad por completo.</para></summary>
     [Fact]
-    public void WrestlingAttackPowerTiers()
+    public void ElAtaqueUsaLaMismaCurvaQueLaEvasion()
     {
-        Assert.Equal(0, Combat.PoderAtaqueWrestling(wrestlingSkill: 0, agility: 18, level: 1, attackMod: 1.0));
-        // skill 50 (<61) -> (50+18)*1.0 = 68 ; + 2.5*max(15-12,0)=7.5 -> 75.5 -> 76 (even)
-        Assert.Equal(76, Combat.PoderAtaqueWrestling(wrestlingSkill: 50, agility: 18, level: 15, attackMod: 1.0));
+        // EL ESPEJO: con los mismos argumentos, las dos fórmulas son la misma función.
+        foreach (int skill in new[] { 0, 1, 5, 30, 31, 33, 50, 66, 90, 99, 100 })
+            Assert.Equal(Combat.PoderEvasion(skill, agility: 18, level: 15, evasionMod: 0.9),
+                         Combat.PoderDeAtaque(skill, agility: 18, level: 15, attackMod: 0.9));
+
+        // Los tres cruces, donde el original coincide con la curva: la desviación no toca el late game.
+        Assert.Equal(51, Combat.PoderDeAtaque(skill: 33, agility: 18, level: 1, attackMod: 1.0));   // 33 + 1*18
+        Assert.Equal(102, Combat.PoderDeAtaque(skill: 66, agility: 18, level: 1, attackMod: 1.0));  // 66 + 2*18
+        Assert.Equal(153, Combat.PoderDeAtaque(skill: 99, agility: 18, level: 1, attackMod: 1.0));  // 99 + 3*18
+
+        // EL HUECO, que es de lo que se trata el cambio. Con la habilidad todavía verde el original daba
+        // el skill pelado; la curva le reconoce la agilidad desde el primer punto.
+        Assert.Equal(0, Combat.PoderDeAtaque(skill: 0, agility: 18, level: 1, attackMod: 1.0));     // el original: 0
+        Assert.Equal(8, Combat.PoderDeAtaque(skill: 5, agility: 18, level: 1, attackMod: 1.0));     // el original: 5
+        Assert.Equal(46, Combat.PoderDeAtaque(skill: 30, agility: 18, level: 1, attackMod: 1.0));   // el original: 30
+
+        // Y NO ES UN AUMENTO PAREJO: justo pasado un escalón el original iba ADELANTE, y ahí la curva baja.
+        Assert.Equal(48, Combat.PoderDeAtaque(skill: 31, agility: 18, level: 1, attackMod: 1.0));   // el original: 49
+
+        // El resto del original queda intacto: dos redondeos al par y el +2.5*max(nivel-12,0).
+        // (50 + 50/33*18)*1.0 = 77,27 -> 77 ; + 2.5*3 = 84,5 -> 84 (al par, no 85)
+        Assert.Equal(84, Combat.PoderDeAtaque(skill: 50, agility: 18, level: 15, attackMod: 1.0));
     }
 
     [Fact]

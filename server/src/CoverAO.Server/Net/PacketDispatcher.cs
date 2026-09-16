@@ -1678,9 +1678,9 @@ public sealed partial class PacketDispatcher
     /// UserImpactoUser :1073-1121 — los dos hacen la misma selección). Antes esto era Wrestling FIJO, así que
     /// pelear con espada no usaba —ni entrenaba— la habilidad de armas: daba igual el arma que llevaras.
     ///
-    /// <c>PoderAtaqueArma</c> y <c>PoderAtaqueWrestling</c> son idénticas en forma (mismos cortes 31/61/91,
-    /// el MISMO modificador de clase <c>ModClase.AtaqueArmas</c> y el mismo <c>+2.5 * max(nivel-12, 0)</c>),
-    /// así que la fórmula ya portada sirve tal cual: lo único que cambia es de qué skill sale el valor.
+    /// <c>PoderAtaqueArma</c> y <c>PoderAtaqueWrestling</c> son idénticas en forma (el MISMO modificador de
+    /// clase <c>ModClase.AtaqueArmas</c> y el mismo <c>+2.5 * max(nivel-12, 0)</c>), así que
+    /// <c>Combat.PoderDeAtaque</c> sirve a las dos: lo único que cambia es de qué skill sale el valor.
     ///
     /// El original mira PRIMERO los nudillos y recién después el arma, así que con nudillos puestos se pelea
     /// —y se entrena— por <c>Wrestling</c> aunque haya un arma en la mochila. Las ramas de proyectil (arco →
@@ -1699,7 +1699,7 @@ public sealed partial class PacketDispatcher
         double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
         double evasionMod = _data.EvasionMod.TryGetValue(target.Class, out var ev) ? ev : 1.0;
         int atkSkill = AttackSkillOf(p);
-        long pa = Combat.PoderAtaqueWrestling(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
+        long pa = Combat.PoderDeAtaque(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
         long pe = Combat.PoderEvasion(target.Skills[GameLimits.SkillTacticas], target.Agility, target.Level, evasionMod);
         // EL ESCUDO EN PvP. `PoderEvasionEscudo` tenía UN solo call site en todo el server —la evasión contra
         // NPC (NpcSystem.cs)— así que un escudo equipado era decorativo entre jugadores. El VB6 lo usa en las
@@ -1978,7 +1978,7 @@ public sealed partial class PacketDispatcher
     private long RangedAttackPower(Player p)
     {
         double mod = _data.ProjectileAttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
-        return Combat.PoderAtaqueWrestling(p.Skills[GameLimits.SkillProyectiles], p.Agility, p.Level, mod);
+        return Combat.PoderDeAtaque(p.Skills[GameLimits.SkillProyectiles], p.Agility, p.Level, mod);
     }
 
     /// <summary>Aplica un disparo a un NPC ya validado como atacable/en-rango por RangedShot (VB6 UsuarioAtacaNpc).
@@ -2200,7 +2200,7 @@ public sealed partial class PacketDispatcher
         npc.Hostile = true;
         double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
         int atkSkill = AttackSkillOf(p);
-        long pa = Combat.PoderAtaqueWrestling(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
+        long pa = Combat.PoderDeAtaque(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
         if (_rng.Next(1, 101) > Combat.HitChance(pa, npc.Template.PoderEvasion))
         {
             SonidosDelGolpeAUnaCriatura(session, p, npc, acerto: false);
