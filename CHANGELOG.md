@@ -2,6 +2,34 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.0 — 2026-09-16
+
+Casi toda esta tanda sale del informe del tester del 14 de septiembre, más dos cosas que aparecieron
+midiendo el combate contra el servidor original.
+
+- **Las criaturas te llaman por su nombre.** Cuando un bicho te lastimaba con un hechizo, el mensaje te
+  decía su número de ficha: «598 te ha quitado 65 puntos de vida». Ahora dice «Fuego fatuo».
+
+- **La ventana de habilidades muestra lo que tenés.** Se abría con todo en cero apenas te conectabas, y
+  después se quedaba con los valores viejos aunque el chat te avisara que habías subido una. Y los puntos
+  libres seguían figurando como disponibles después de repartirlos.
+
+- **La puerta cerrada frena.** Cerrabas una puerta y se podía cruzar igual: el servidor la trababa, pero tu
+  pantalla te dejaba pasar y después te devolvía de un tirón.
+
+- **Las criaturas reaccionan como en el original.** Pensaban una vez por segundo, cuando el juego original
+  las hace pensar dos veces y media más seguido. Se notaba en que tardaban en verte, en que no podían
+  perseguirte —se movían una baldosa por segundo contra las casi cinco tuyas— y en que pegaban más
+  espaciado de lo que les corresponde.
+
+- **Los bichos grandes tardan en volver.** Reaparecían todos a los cinco segundos, del más chico al más
+  grande. Ahora los comunes tardan medio minuto, los que dan mucha experiencia cinco minutos, y los cuatro
+  jefes del mundo media hora. El que hostea puede cambiar los tres números.
+
+- **Pegar con la habilidad todavía verde rinde más.** El poder de ataque subía a los saltos: pasar de
+  treinta a treinta y uno en una habilidad te daba de golpe lo que antes no te daba nada. Ahora sube
+  parejo, igual que la evasión, que siempre lo hizo así.
+
 ## 1.0.0 — 2026-09-04
 
 Esta tanda es de **juego**: cosas que se sienten peleando, comerciando o entrando al mundo. Varias las
