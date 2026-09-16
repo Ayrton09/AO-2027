@@ -2938,8 +2938,22 @@
      *  este gate, todo personaje con puntos libres se comía un panel en la cara en cada login. */
     let pedidoDeSkills = false;
     let misSkills = null;
+    /** PEDIR LAS SKILLS AL ABRIR, como el cliente original. `frmMain.frm:2038` manda RequestSkills (más
+     *  RequestAtributes y RequestMiniStats) CADA vez que se abre la ficha; acá sólo se pedían con la tecla,
+     *  así que el panel de Acciones dibujaba una caché que nadie refrescaba nunca. Eso daba los dos síntomas
+     *  del reporte: todas las skills en 0 recién conectado (la caché arranca en null) y los valores viejos
+     *  después de subir una por uso — el server no avisa de esas subidas, igual que el original (`SubirSkill`
+     *  manda los locales 454 y 140 y ningún SendSkills). */
+    const pedirSkills = () => send(W().writeByte(CLIENT.RequestSkills));
     function showSkills(skills) {
       misSkills = skills;
+      // Y SE PINTA DONDE YA ESTÉ ABIERTO: la respuesta llega después de que el panel se dibujó, así que sin
+      // esto el pedido de arriba no se vería hasta la próxima apertura. Se tocan sólo los valores, para no
+      // pisar lo que el jugador tenga repartido sin aplicar.
+      for (let i = 1; i <= 27; i++) {
+        const e = document.getElementById('skv-' + i);
+        if (e) e.textContent = '(' + (skills[i - 1] || 0) + ')';
+      }
       if (!pedidoDeSkills) return;   // llegó solo (login): se guarda y nada más, como el original
       pedidoDeSkills = false;
       const rows = skills.map((v, i) => `${esc(SKILL_NAMES[i] || 'Skill ' + (i + 1))} <b>${v}</b>`);
@@ -3552,7 +3566,7 @@
           <div id="mail-box"></div></div>
         <div class="subpane${on('skills')}" data-p="skills">
           <div class="fhint">Puntos libres: <b id="sk-libres">${puntosLibres}</b> — repartilos y aplicá.</div>
-          <div class="skgrid">${SKILLS_MOD.map(([i, n]) => `<div class="kn">${n} <span class="fhint">(${(misSkills && misSkills[i - 1]) || 0})</span></div><button class="sbtn ghost stepbtn" data-skd="${i}">−</button><div class="kv" id="sk-${i}">0</div><button class="sbtn ghost stepbtn" data-ski="${i}">+</button>`).join('')}</div>
+          <div class="skgrid">${SKILLS_MOD.map(([i, n]) => `<div class="kn">${n} <span class="fhint" id="skv-${i}">(${(misSkills && misSkills[i - 1]) || 0})</span></div><button class="sbtn ghost stepbtn" data-skd="${i}">−</button><div class="kv" id="sk-${i}">0</div><button class="sbtn ghost stepbtn" data-ski="${i}">+</button>`).join('')}</div>
           <button class="sbtn" data-act="sk-apply">Aplicar</button></div>
         <div class="subpane${on('varios')}" data-p="varios">
           <div class="fsec">Transferir oro</div>
@@ -3566,6 +3580,12 @@
           <button class="sbtn ghost" data-act="rest">Descansar junto a fogata</button>
           <div class="frow"><span class="fhint">Entrenar mascota (junto a un domador):</span><button class="sbtn ghost" data-act="train1">Mascota 1</button><button class="sbtn ghost" data-act="train2">Mascota 2</button></div></div>`, 'acciones');
       const skPend = {};
+      // Al abrir en Habilidades, y al pasarse a esa solapa: las subsolapas sólo conmutan clases, no vuelven
+      // a dibujar, así que el pedido va acá y no en el render.
+      if (tab === 'skills') pedirSkills();
+      modalCard.querySelectorAll('.subtabs .st').forEach((t) => {
+        if (t.dataset.p === 'skills') t.addEventListener('click', pedirSkills);
+      });
       body.addEventListener('click', (ev) => {
         const el = ev.target.closest('[data-act],[data-work],[data-ski],[data-skd]'); if (!el) return;
         if (el.dataset.work) { modoPunteria(+el.dataset.work); closeModal(); return; }
@@ -3577,6 +3597,10 @@
         if (el.dataset.ski || el.dataset.skd) {
           const i = +(el.dataset.ski || el.dataset.skd), sube = !!el.dataset.ski;
           if (sube && skPuestos() >= puntosLibres) return;
+          // Y TAMPOCO SE PASA DE 100. El server devuelve a la bolsa lo que sobra de 100 y avisa sólo por
+          // consola, así que el descuento de acá abajo quedaría mintiendo. El propio original dice que esto
+          // lo tiene que atajar el cliente (Protocol.bas:3305, "Client should prevent this").
+          if (sube && (((misSkills && misSkills[i - 1]) || 0) + (skPend[i] || 0)) >= 100) return;
           skPend[i] = Math.max(0, (skPend[i] || 0) + (sube ? 1 : -1));
           modalCard.querySelector('#sk-' + i).textContent = skPend[i];
           refrescarLibresPend();
@@ -3597,6 +3621,12 @@
           const w = W().writeByte(CLIENT.ModifySkills);
           for (let i = 1; i <= 27; i++) w.writeByte(skPend[i] || 0);
           send(w);
+          // LOS PUNTOS GASTADOS SE DESCUENTAN ACÁ. El server contesta con los valores nuevos (SendSkills)
+          // pero los libres que quedan viajan sólo dentro de un texto de consola, que nadie parsea: sin esto
+          // seguían figurando como disponibles después de gastarlos. El tope de 100 de arriba hace que lo
+          // mandado y lo gastado sean siempre lo mismo.
+          puntosLibres = Math.max(0, puntosLibres - skPuestos());
+          refrescarPuntosLibres();
           for (const k of Object.keys(skPend)) { const c = modalCard.querySelector('#sk-' + k); if (c) c.textContent = '0'; delete skPend[k]; }
           refrescarLibresPend();
         }
@@ -3799,10 +3829,18 @@
         // Los tres que se consumen a proposito EN VACIO, y por que:
         //   AreaChanged     — el port manda un CharacterRemove por cada personaje que sale del area, asi que
         //                     no hay nada que limpiar a mano (el original si lo necesita: usa CambioDeArea).
-        //   BlockPosition   — el cliente original mantiene su mapa de bloqueos para predecir el paso; aca el
-        //                     movimiento es server-authoritative y el server ya rechaza el tile.
         //   UserIndexInServer — el indice de sesion; el render usa el charIndex, que llega aparte.
-        case 'AreaChanged': case 'BlockPosition': case 'UserIndexInServer': break;
+        case 'AreaChanged': case 'UserIndexInServer': break;
+        // EL BLOQUEO QUE CAMBIA EN CALIENTE. `bloqueados` se arma UNA sola vez al cargar el mapa, así que
+        // todo lo que bloquee o libere una baldosa después no le llegaba nunca — y la puerta es justo eso:
+        // el server mueve el Blocked de sus DOS baldosas al abrirla o cerrarla y avisa con un BlockPosition
+        // por cada una (AccionParaPuerta, PacketDispatcher.cs:8218, fiel a `Bloquear` de General.bas:112).
+        // Sin esto el cliente predecía el paso, cruzaba la puerta cerrada y recién el server lo devolvía.
+        // El server también manda el estado de las puertas al loguear, así que entrar al mundo ya deja el
+        // mapa al día.
+        case 'BlockPosition':
+          if (f.blocked) bloqueados.add(claveTile(f.x, f.y)); else bloqueados.delete(claveTile(f.x, f.y));
+          break;
         // El mundo se pausa mientras el server graba los personajes; el toggle vuelve al terminar.
         case 'PauseToggle': paused = !paused; break;
         case 'Disconnect': break;   // el server avisa la salida limpia; el socket se cierra solo
@@ -4053,6 +4091,12 @@
             spellName,
             spellSelfText,
             itemName,
+            // EL SIGILO `$` ES UN NÚMERO DE FICHA DE NPC. El server manda `"$598%65"`, que es exactamente
+            // lo que manda el original (modHechizos.bas:182, el mensaje 34 de cuando una criatura te castea),
+            // y sin este resolver el renglón salía con el índice crudo: «598 te ha quitado 65 puntos de vida».
+            // Si el fetch de npcs.json todavía no volvió, `npcsIdx` es null y el parser cae al número, que es
+            // lo mismo que hacía antes: no empeora nada mientras carga.
+            npcName: (i) => npcsIdx && npcsIdx[i] && npcsIdx[i].n,
             // EL SIGILO `*` ES UNA SKILL, y sin este resolver caía al número crudo: subir Comerciar decía
             // "has mejorado tu skill 15", que no le dice nada a nadie. SKILL_NAMES está en el orden del enum
             // eSkill (1..27), así que el índice va -1.
