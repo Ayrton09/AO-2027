@@ -19,7 +19,10 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class NpcAiTests
 {
-    private const int AttackTick = 25;   // NpcSystem.AttackEveryTicks: los NPCs actúan en los múltiplos de 25
+    // LA CADENCIA SE PREGUNTA, NO SE COPIA: acá decía 25 a mano y quedó desincronizado al cambiarla.
+    // Todas las vueltas de este archivo son "la i-ésima pasada de la IA", así que siguen valiendo igual
+    // sea cual sea el número.
+    private const int AttackTick = NpcSystem.AttackEveryTicks;
 
     // PoderAtaque alto -> HitChance clampeada al 90% (Combat.HitChance), así que en 40 rondas la chance de
     // no pegar nunca es 0.1^40: el test es determinista en la práctica sin exponer el RNG del NpcSystem.
@@ -52,6 +55,64 @@ public class NpcAiTests
         world.AddNpc(npc);
         var player = PlayerAt(world, "Rugura", 10, (byte)(10 + dist));
         return (npc, player, new NpcSystem(world, data));
+    }
+
+    /// <summary>
+    /// LA IA NO CORRE EN UN MAPA SIN JUGADORES. Es el gate del original —<c>mMainLoop.TIMER_AI</c>:
+    /// <c>If MapInfo(Mapa).NumUsers &gt; 0 Then ... Call NPCAI</c>— y acá faltaba: se barrían las 5.376
+    /// criaturas del mundo estuviera donde estuviera la gente. De ahí salían los ~430 pasos al azar por
+    /// segundo CON EL SERVIDOR VACÍO que están medidos en fase5/auditoria-performance.md.
+    ///
+    /// <para>El test corre el MISMO escenario dos veces y sólo cambia una cosa: si hay alguien en el mapa. Sin
+    /// el par, un mundo entero quieto se vería igual que uno donde la IA anda bien.</para>
+    /// </summary>
+    [Fact]
+    public void Sin_nadie_en_el_mapa_la_criatura_no_se_mueve()
+    {
+        static (Npc npc, NpcSystem sys) Escena(bool conJugador)
+        {
+            var world = new World();
+            var npc = new Npc { CharIndex = world.AllocateCharIndex(), Template = Template("Lobo"), Hp = 1000,
+                                // Movement 0 = IrUsuarioCercano. El 1 es ESTATICO: no se movería ni con gente,
+                                // así que el control del final no probaría nada.
+                                Pos = new WorldPos(1, 10, 10), Movement = 0, Hostile = true, OriginallyHostile = true };
+            world.AddNpc(npc);
+            // El jugador va en OTRO mapa cuando no tiene que contar: así la diferencia es el mapa y no
+            // que no haya nadie conectado.
+            var p = PlayerAt(world, "Rugura", 12, 10);
+            if (!conJugador) p.Pos = new WorldPos(2, 12, 10);
+            return (npc, new NpcSystem(world, new GameData()));
+        }
+
+        var (quieto, sysVacio) = Escena(conJugador: false);
+        // 120 vueltas y no 60: sin la compuerta, `NpcIrUsuarioCercano` sin usuario tira un paso al azar con
+        // probabilidad 1/11 por barrido, asi que con 60 el sabotaje quedaba verde 3 de cada mil veces.
+        for (int i = 1; i <= 120; i++) sysVacio.Update(AttackTick * i);
+        Assert.Equal(new WorldPos(1, 10, 10), quieto.Pos);
+
+        // El control: el MISMO lobo, con alguien en el mapa, sí se mueve.
+        var (movido, sysConGente) = Escena(conJugador: true);
+        for (int i = 1; i <= 60 && movido.Pos == new WorldPos(1, 10, 10); i++) sysConGente.Update(AttackTick * i);
+        Assert.NotEqual(new WorldPos(1, 10, 10), movido.Pos);
+    }
+
+    /// <summary>
+    /// EL BARRIDO VA A LA CADENCIA DEL ORIGINAL. Su <c>TIMER_AI</c> corre con <c>Interval = 380</c>
+    /// (frmMain.frm:171); con el tick de 40 ms lo más cerca son 400. Estuvo en 1000 ms sin que nadie lo
+    /// midiera, y a esa cadencia una criatura se movía UNA baldosa por segundo contra las 2,6 del original
+    /// —el jugador camina 4,8—, así que no podía perseguir a nadie.
+    ///
+    /// <para>Se fija acá porque los tests de este archivo le PREGUNTAN la cadencia al sistema en vez de
+    /// copiarla: sin este guardia, volverla a 1000 dejaría todo verde.</para>
+    /// </summary>
+    [Fact]
+    public void El_barrido_de_la_IA_va_a_la_cadencia_del_original()
+    {
+        const int DelOriginal = 380;   // frmMain.frm:171
+        int nuestro = NpcSystem.AttackEveryTicks * GameLoop.TickMs;
+        Assert.InRange(nuestro, DelOriginal - 40, DelOriginal + 40);
+        // Las dos fases van en la misma vuelta: el orden entre ellas es lo único que decide (ver NpcSystem).
+        Assert.Equal(NpcSystem.AttackEveryTicks, NpcSystem.MoveEveryTicks);
     }
 
     private static void RunRounds(NpcSystem sys, int rounds = 40)

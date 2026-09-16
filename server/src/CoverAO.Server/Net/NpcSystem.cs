@@ -15,8 +15,21 @@ public sealed class NpcSystem
     // El barrido de la fase de ataque. NO es el que decide cada cuánto pega una criatura: eso lo fija el
     // contador POR CRIATURA de `IntervaloAtaqueTicks` (3 s, como el original). Este sólo dice cada cuánto se
     // revisa quién tiene a alguien al lado.
-    private const int AttackEveryTicks = 25;  // NPCs act ~once per second (40ms tick)
-    private const int MoveEveryTicks = 25;    // wander/chase check ~once per second
+    //
+    // LA CADENCIA ES LA DEL ORIGINAL: su `TIMER_AI` corre con <c>Interval = 380</c> (frmMain.frm:171).
+    // Con el tick de 40 ms el 380 no cae justo (380/40 = 9,5), así que van 10 ticks = 400 ms: un 5% más
+    // lento que el original, en vez de los 360 ms que serían un 5% más rápido.
+    //
+    // Estaba en 25 (1000 ms), que nunca salió de medir nada. A esa cadencia una criatura se movía UNA
+    // baldosa por segundo contra las 2,6 del original —el jugador camina 4,8—, así que no podía perseguir
+    // a nadie; tardaba hasta un segundo entero en notar que tenía a alguien al lado; y el golpe, cuyo
+    // intervalo POR CRIATURA son 3 s, caía entre los 3 y los 4 porque sólo se revisaba cada 1000 ms.
+    //
+    // VAN PUBLICAS A PROPOSITO: los tests tenían el número copiado a mano y al cambiarlo se pusieron rojos
+    // cinco, ninguno por el producto. Un test que quiere "la vuelta en que la IA actúa" tiene que
+    // preguntárselo al sistema, no adivinarlo.
+    public const int AttackEveryTicks = 10;   // 400 ms — VB6 TIMER_AI (380 ms)
+    public const int MoveEveryTicks = 10;     // 400 ms — la misma vuelta que la fase de ataque
     private const int RespawnTicks = 125;     // ~5 seconds
     private const int AutoReviveTicks = 63;   // ~2500ms (VB6 IntervaloRevive) — delay del revive en arena
     // VB6 AI_NPC.bas:50-51: la caja de vision de IrUsuarioCercano es RECTANGULAR, no un radio.
@@ -261,7 +274,8 @@ public sealed class NpcSystem
         // `Select Case .Movement`). No es cosmético: la fase de ataque termina en RestoreOldMovement cuando no
         // encontró a quién pegarle, y eso le cambia el Movement al NPC — con los barridos al revés, una criatura
         // en modo /SEGUIR alcanzaba a dar un paso antes de que le revirtieran el estado. Las dos cadencias son
-        // 25, así que las dos fases caen siempre en el mismo tick y el orden entre ellas es lo único que decide.
+        // iguales, así que las dos fases caen siempre en el mismo tick y el orden entre ellas es lo único que
+        // decide.
         // En CADA vuelta y no sólo en las del barrido de ataque: cuesta 4 tiles por jugador conectado y así el
         // conjunto nunca puede quedar de un tick viejo, pase lo que pase con las cadencias.
         RecalcularTilesJuntoAJugador();
@@ -269,6 +283,7 @@ public sealed class NpcSystem
         if (tick % AttackEveryTicks == 0)
             foreach (var npc in _world.Npcs)
             {
+                if (!_mapasConJugador.Contains(npc.Pos.Map)) continue;   // VB6: sin usuarios en el mapa, no hay IA
                 if (tick < npc.ParalyzedUntilTick) continue;   // paralizada: tampoco pega
                 NpcTryAttack(npc);
             }
@@ -278,6 +293,7 @@ public sealed class NpcSystem
             {
                 // Las dos ramas de ataque hacen Exit Sub apenas enganchan a alguien, así que un NPC que está
                 // pegándole a un usuario no se mueve: el de ataque manda mientras haya alguien adyacente.
+                if (!_mapasConJugador.Contains(npc.Pos.Map)) continue;   // VB6: sin usuarios en el mapa, no hay IA
                 if (tick < npc.ParalyzedUntilTick) continue;   // paralizada: no se mueve (VB6 .flags.Paralizado)
                 // TipoAI.SigueAmo (mascotas). El gate por dueño es un atajo del port —el VB6 distingue por
                 // Movement, que a una mascota se lo pone FollowAmo— y hay que dejar pasar el caso en que /SEGUIR
@@ -366,13 +382,19 @@ public sealed class NpcSystem
     /// <see cref="NpcGolpeaAdyacente"/> como corte rápido; se recalcula al principio de cada vuelta del loop.
     /// No filtra por estado del jugador a propósito: es un superconjunto, y como tal sólo sirve para negar.</summary>
     private readonly HashSet<WorldPos> _tilesJuntoAJugador = new();
+    /// <summary>Los mapas donde hay alguien. El original no le corre la IA a una criatura cuyo mapa está
+    /// vacío (<c>mMainLoop.TIMER_AI</c>: <c>If MapInfo(Mapa).NumUsers &gt; 0 Then ... Call NPCAI</c>), y acá
+    /// faltaba: se barrían las 5.376 criaturas del mundo estuviera donde estuviera la gente.</summary>
+    private readonly HashSet<short> _mapasConJugador = new();
 
     private void RecalcularTilesJuntoAJugador()
     {
         _tilesJuntoAJugador.Clear();
+        _mapasConJugador.Clear();
         foreach (var p in _world.Players)
         {
             var pos = p.Pos;
+            _mapasConJugador.Add(pos.Map);
             if (pos.X > 1) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, (byte)(pos.X - 1), pos.Y));
             if (pos.X < 255) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, (byte)(pos.X + 1), pos.Y));
             if (pos.Y > 1) _tilesJuntoAJugador.Add(new WorldPos(pos.Map, pos.X, (byte)(pos.Y - 1)));

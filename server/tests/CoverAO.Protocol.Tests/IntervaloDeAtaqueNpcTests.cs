@@ -21,8 +21,13 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class IntervaloDeAtaqueNpcTests
 {
-    private const int TicksPorVuelta = 25;   // NpcSystem.AttackEveryTicks
-    private const int Vueltas = 30;          // 30 pasadas de la fase de ataque = 30 s de reloj
+    // ESTE ARCHIVO AFIRMA SOBRE SEGUNDOS, no sobre vueltas: "en 30 segundos pega ~10 veces, una cada 3 s".
+    // Por eso las vueltas se CALCULAN desde el tiempo y la cadencia se le pregunta al sistema. Con el número
+    // copiado a mano, bajar el barrido de 25 a 10 ticks dejaba el mismo bucle midiendo 12 segundos y
+    // comparándolos contra un umbral de 30.
+    private const int TicksPorVuelta = NpcSystem.AttackEveryTicks;
+    private const int Segundos = 30;
+    private const int Vueltas = Segundos * 1000 / (TicksPorVuelta * GameLoop.TickMs);
 
     private static NpcInfo Template() =>
         new(Index: 1, Name: "Lobo", Body: 1, Head: 1, Heading: 3, MaxHp: 1000, MinHit: 1, MaxHit: 1,
