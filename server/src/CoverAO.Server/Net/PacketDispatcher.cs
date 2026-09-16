@@ -11402,10 +11402,19 @@ public sealed partial class PacketDispatcher
             // El orden es el del VB6 —primero el oro, después el aviso, después el `UpdateGold`, y recién ahí
             // se descuenta— y el 471 lleva los dos argumentos separados por `%`: `Obj.Name & "%" & Obj.Valor`.
             //
-            // NO LAS REPARTE NADIE en este install: ningún NPC las vende ni las tira, y no hay una sola en el
-            // piso de los 863 mapas, así que hoy sólo llegan por un `/CI` de GM. Eso NO las hace código muerto
-            // —la rama del original se ejecuta y la data existe—, y es la diferencia con `UserIncinera`, que
-            // está muerta porque ninguna data puede abrir su compuerta (ver fase5/GAPS-CODIGO-MUERTO.md §4q).
+            // NO LAS REPARTE NADIE en este install, pero NO por lo que decía acá antes. El mundo SÍ tiene bolsas:
+            // hay 151 puestas en el piso, por 1.955.000 de oro, repartidas en cuatro mapas —Cueva de ladrones (92),
+            // Caverna del Pirata (44), Lindos (9) y Distrito Real (6)—. Son los objetos 606 y 607; los 753 y 754,
+            // que son otro par con los mismos nombres y otros valores, no están puestos en ningún lado.
+            //
+            // Lo que las hace inalcanzables es otra cosa: **las 151 están sobre baldosas BLOQUEADAS**, y se agarra
+            // pisando la baldosa (HandlePickUp lee el piso de `p.Pos`, no el de enfrente). O sea que son decorado,
+            // igual que los árboles —el 99% de los objetos 4..8 también está sobre bloqueo—. Ningún NPC las vende
+            // ni las tira, y no están en DropGlobal.dat. Hoy sólo llegan por un `/CI` de GM.
+            //
+            // Eso NO las hace código muerto —la rama del original se ejecuta y la data existe—, y es la diferencia
+            // con `UserIncinera`, que está muerta porque ninguna data puede abrir su compuerta
+            // (ver fase5/GAPS-CODIGO-MUERTO.md §4q).
             if (obj.ObjType == Bolsa)
             {
                 p.Gold += obj.Value;
