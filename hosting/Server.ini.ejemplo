@@ -265,6 +265,31 @@ Version=
 ; del juego (69): no tiene una sola criatura hostil. Un minimo ahi no protegeria a
 ; nadie de nada, solo le cerraria a los mineros el mejor lugar seguro para picar.
 
+; ============================ CUANTO TARDAN EN VOLVER LOS BICHOS ============================
+; REGLA DE LA CASA, como [NIVELMINIMO]: el original NO tiene ninguna clave de esto. Alla la criatura
+; reaparece AL INSTANTE -- `MuereNpc` llama a `ReSpawnNpc` justo despues de tirar el oro, sin ninguna
+; espera-- y su campo `RespawnTime` del NPCs.dat es data muerta: una linea suelta lo pisa para todos.
+; El otro AO que miramos (github.com/dcatanzaro/aoweb) hace lo mismo: cero espera para todo, salvo los
+; dragones, que esperan una hora.
+;
+; Aca hay TRES escalones segun lo que valga la criatura, porque una rata y el Dragon Legendario no
+; pueden volver a la misma velocidad. El corte lo marca nuestra data: de las 124 hostiles la mediana da
+; 3.200 de experiencia, y despues del cuarto puesto cae 2,3 veces de golpe.
+;
+;   3.900.000  El Abominable Grinch      |  550.000  Guardian
+;   2.200.000  Rey Dragon                |  450.000  Gran Dragon Negro
+;   1.750.000  Dragon Legendario         |  ... 16 mas por encima de 100.000
+;   1.250.000  Gran Hechicero Garveloth  |
+;   --- cae x2,3 ---                     |    3.200  la mediana
+;
+; Los valores son los de abajo; descomentar para cambiarlos. 0 = vuelve en el acto, como el original.
+[RESPAWN]
+;Segundos=30          ; el comun: casi todas las criaturas
+;SegundosGordo=300    ; 5 min, los que dan mucha experiencia
+;SegundosJefe=1800    ; 30 min, los cuatro jefes del mundo
+;ExpGordo=100000      ; desde que experiencia cuenta como gordo
+;ExpJefe=1000000      ; desde que experiencia cuenta como jefe
+
 [INTERVALOS]
 ;IntervaloLanzaHechizo=1000       ; entre un hechizo y el siguiente
 ;IntervaloUserPuedeAtacar=1000    ; entre un golpe y el siguiente

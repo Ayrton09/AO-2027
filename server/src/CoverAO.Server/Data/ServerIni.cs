@@ -252,6 +252,40 @@ public sealed class ServerIni
     /// era la única de TIMERS que hacía falta leer.</para></summary>
     public int IntervaloNpcApropiado { get; private set; } = 18_000;
 
+    /// <summary>
+    /// CUÁNTO TARDA EN VOLVER UNA CRIATURA, en segundos, de la sección <c>[RESPAWN]</c>. Tres escalones por
+    /// lo que vale la criatura, porque una rata y el Dragón Legendario no pueden volver a la misma velocidad.
+    ///
+    /// <para><b>ES DECISIÓN DEL AUTOR, no fidelidad.</b> Las dos referencias reaparecen AL INSTANTE: el VB6
+    /// llama a <c>ReSpawnNpc</c> dentro de <c>MuereNpc</c> sin ninguna espera (y su campo <c>RespawnTime</c>
+    /// del .dat es data muerta — una línea suelta pisa el <c>if</c> que lo leía, MODULO_NPCs.bas:1089), y
+    /// aoweb devuelve 0 para todo salvo los dragones, que esperan una hora. Lo pidió el tester y el autor
+    /// eligió estos números.</para>
+    ///
+    /// <para>Va en <c>[RESPAWN]</c>, sección PROPIA, y no en <c>[TIMERS]</c>: el original no tiene ninguna
+    /// clave de esto —reaparece al instante— así que es una regla de la casa, como <c>[NIVELMINIMO]</c>.
+    /// Meterla entre las claves del install haría creer que sale de ahí.</para>
+    ///
+    /// <para>El corte lo marca la data: de las 124 hostiles la mediana da 3.200 de experiencia, y después
+    /// del cuarto puesto (Grinch 3.900.000, Rey Dragón 2.200.000, Dragón Legendario 1.750.000, Garveloth
+    /// 1.250.000) cae 2,3 veces de golpe. Por eso el umbral de jefe va en el millón.</para>
+    /// </summary>
+    public int RespawnSegundos { get; private set; } = 30;
+    /// <summary>Los que dan mucha experiencia (por defecto, desde 100.000): 5 minutos.</summary>
+    public int RespawnSegundosGordo { get; private set; } = 300;
+    /// <summary>Los cuatro jefes del mundo (por defecto, desde 1.000.000): media hora.</summary>
+    public int RespawnSegundosJefe { get; private set; } = 1800;
+    /// <summary>Desde qué experiencia una criatura cuenta como gorda.</summary>
+    public long RespawnExpGordo { get; private set; } = 100_000;
+    /// <summary>Desde qué experiencia cuenta como jefe.</summary>
+    public long RespawnExpJefe { get; private set; } = 1_000_000;
+
+    /// <summary>Los segundos que le tocan a una criatura que da <paramref name="experiencia"/>.</summary>
+    public int SegundosDeRespawn(long experiencia) =>
+        experiencia >= RespawnExpJefe ? RespawnSegundosJefe
+        : experiencia >= RespawnExpGordo ? RespawnSegundosGordo
+        : RespawnSegundos;
+
     /// <summary>Las claves de <c>[INTERVALOS]</c> que el archivo trae ESCRITAS, distinguidas de las que están
     /// tomando su valor por defecto.
     ///
@@ -801,6 +835,13 @@ public sealed class ServerIni
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
+        // El tope de un día es por si alguien escribe un número absurdo: una criatura que no vuelve nunca
+        // se pide con el 0 de la otra punta, no con un millón de segundos.
+        cfg.RespawnSegundos = Math.Clamp(ini.GetInt("RESPAWN", "Segundos", cfg.RespawnSegundos), 0, 86_400);
+        cfg.RespawnSegundosGordo = Math.Clamp(ini.GetInt("RESPAWN", "SegundosGordo", cfg.RespawnSegundosGordo), 0, 86_400);
+        cfg.RespawnSegundosJefe = Math.Clamp(ini.GetInt("RESPAWN", "SegundosJefe", cfg.RespawnSegundosJefe), 0, 86_400);
+        cfg.RespawnExpGordo = Math.Max(0, ini.GetInt("RESPAWN", "ExpGordo", (int)cfg.RespawnExpGordo));
+        cfg.RespawnExpJefe = Math.Max(0, ini.GetInt("RESPAWN", "ExpJefe", (int)cfg.RespawnExpJefe));
         cfg.IntervaloPuedeSerAtacado = Math.Clamp(ini.GetInt("TIMERS", "IntervaloPuedeSerAtacado", 5000), 0, 600_000);
         // Mismo recorte que StartPort: un valor fuera de rango se ignora y vale el real. Anunciarle al
         // cliente un puerto imposible lo dejaría sin poder conectarse nunca, y el ini se edita a mano.

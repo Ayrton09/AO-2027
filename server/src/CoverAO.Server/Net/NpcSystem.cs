@@ -30,7 +30,18 @@ public sealed class NpcSystem
     // preguntárselo al sistema, no adivinarlo.
     public const int AttackEveryTicks = 10;   // 400 ms — VB6 TIMER_AI (380 ms)
     public const int MoveEveryTicks = 10;     // 400 ms — la misma vuelta que la fase de ataque
-    private const int RespawnTicks = 125;     // ~5 seconds
+    // CUÁNTO TARDA EN VOLVER: ya no es una constante para las 5.404 criaturas del mundo, sale de lo que
+    // vale cada una (ServerIni.SegundosDeRespawn) y el host lo mueve desde el `[TIMERS]` del Server.ini.
+    // Sin config —los tests que instancian NpcSystem suelto— vale el escalón común.
+    // EL RESPAWN DEL LABORATORIO. Sin config —el modo fixture y los tests que instancian NpcSystem suelto—
+    // la criatura vuelve rapido, y NO es un numero de relleno: los flows matan a la criatura de prueba en
+    // tres golpes y siguen pegando en la MISMA tanda, asi que si no vuelve se quedan sin blanco y miden otra
+    // cosa. Con la espera de produccion se cayeron tres flows juntos (weapon_skill, npc_ai, novato_equipo).
+    //
+    // PUBLICA, como las dos cadencias y por lo mismo: los tests tenian el retraso copiado a mano (125 ticks)
+    // con un comentario que decia `NpcSystem.RespawnTicks`. Un test que quiere "la vuelta en que reaparece"
+    // tiene que preguntarla.
+    public const int RespawnSegundosSinConfig = 5;
     private const int AutoReviveTicks = 63;   // ~2500ms (VB6 IntervaloRevive) — delay del revive en arena
     // VB6 AI_NPC.bas:50-51: la caja de vision de IrUsuarioCercano es RECTANGULAR, no un radio.
     public const int RangoVisionX = 8;
@@ -40,6 +51,7 @@ public sealed class NpcSystem
     private readonly GameData _data;
     private readonly Random _rng = new();
     private readonly List<Spawn> _spawns = new();
+    private readonly ServerIni? _ini;
 
     private sealed class Spawn
     {
@@ -65,12 +77,17 @@ public sealed class NpcSystem
             if (s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = long.MaxValue; }
     }
 
-    public NpcSystem(World world, GameData data, bool gmsPerseguibles = false)
+    public NpcSystem(World world, GameData data, bool gmsPerseguibles = false, ServerIni? ini = null)
     {
         _world = world;
         _data = data;
         _gmsPerseguibles = gmsPerseguibles;
+        _ini = ini;
     }
+
+    /// <summary>Los ticks que tarda en volver esta criatura. Queda en el escalón común si no hay config.</summary>
+    private long TicksDeRespawn(NpcInfo t) =>
+        (_ini?.SegundosDeRespawn(t.GiveExp) ?? RespawnSegundosSinConfig) * 1000L / Game.GameLoop.TickMs;
 
     /// <summary>Cómo sube una skill por uso. Lo pone el dispatcher, que es quien tiene <c>SubirSkill</c> con su
     /// tirada y su aviso; acá hace falta porque el rechazo con escudo contra una CRIATURA es la vía por la que
@@ -262,7 +279,7 @@ public sealed class NpcSystem
             if (s.Alive && !_world.HasNpc(s.CharIndex))
             {
                 s.Alive = false;
-                s.RespawnAtTick = tick + RespawnTicks;
+                s.RespawnAtTick = tick + TicksDeRespawn(s.Template);
             }
             else if (!s.Alive && tick >= s.RespawnAtTick)
             {

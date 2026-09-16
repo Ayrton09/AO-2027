@@ -12,7 +12,9 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class ReaparicionTests
 {
-    private const int RespawnTicks = 125;   // NpcSystem.RespawnTicks
+    // SE PREGUNTA, NO SE COPIA: aca decia 125 a mano y quedo desincronizado al volver el respawn
+    // configurable. Estos tests construyen el NpcSystem SIN config, asi que les toca el escalon comun.
+    private const int RespawnTicks = NpcSystem.RespawnSegundosSinConfig * 1000 / GameLoop.TickMs;
 
     /// <summary>Estática desde su ficha: un paso en la misma vuelta de la reaparición no tiene que mover lo que se mide.</summary>
     private static NpcInfo Bicho(bool posOrig) =>

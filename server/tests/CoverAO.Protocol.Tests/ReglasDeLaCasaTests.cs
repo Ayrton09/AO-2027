@@ -266,6 +266,90 @@ public class ReglasDeLaCasaTests : IDisposable
                     "el minimo del subsuelo es mas alto que el del piso por el que se baja: entonces manda el de abajo y el comentario del ini miente");
     }
 
+    /// <summary>
+    /// LOS ESCALONES DE RESPAWN, contra la data. Es REGLA DE LA CASA: el original reaparece AL INSTANTE
+    /// (<c>MuereNpc</c> llama a <c>ReSpawnNpc</c> sin ninguna espera, y su campo <c>RespawnTime</c> del
+    /// NPCs.dat es data muerta — una línea suelta lo pisa para los 291), y aoweb tampoco espera salvo con
+    /// los dragones. Los tres escalones los eligió el autor a pedido del tester.
+    ///
+    /// <para>Lo que fija este test no son los números sino DÓNDE CAE EL CORTE: con el umbral de jefe en un
+    /// millón son cuatro criaturas en todo el juego. Bajarlo por error convertiría media tabla en jefes
+    /// —media hora para volver— y eso no lo cantaría ningún test que sólo comparara constantes.</para>
+    /// </summary>
+    [Fact]
+    public void Los_escalones_de_respawn_alcanzan_a_los_jefes_y_a_nadie_mas()
+    {
+        var d = GameData.Load();
+        var cfg = ServerIni.Cargar(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo")));
+
+        // El orden de los escalones: volver tarde tiene que ser para el que MÁS vale.
+        Assert.True(cfg.RespawnSegundosJefe >= cfg.RespawnSegundosGordo,
+                    "el jefe vuelve antes que un gordo: los escalones están dados vuelta");
+        Assert.True(cfg.RespawnSegundosGordo >= cfg.RespawnSegundos,
+                    "un gordo vuelve antes que una rata: los escalones están dados vuelta");
+        Assert.True(cfg.RespawnExpJefe > cfg.RespawnExpGordo);
+
+        // Los cuatro jefes del mundo, por NOMBRE: si alguien mueve el umbral, el test dice cuáles entraron.
+        var hostiles = d.Npcs.Values.Where(n => n.Hostile).ToList();
+        Assert.NotEmpty(hostiles);
+        var jefes = hostiles.Where(n => cfg.SegundosDeRespawn(n.GiveExp) == cfg.RespawnSegundosJefe)
+                            .Select(n => n.Name).OrderBy(x => x).ToList();
+        Assert.Equal(new[] { "Dragón Legendario", "El Abominable Grinch", "Gran Hechicero Garveloth", "Rey Dragón" },
+                     jefes);
+
+        // Y que el escalón de arriba siga siendo una EXCEPCIÓN: un puñado, no media tabla.
+        int gordos = hostiles.Count(n => cfg.SegundosDeRespawn(n.GiveExp) == cfg.RespawnSegundosGordo);
+        Assert.InRange(gordos, 1, hostiles.Count / 4);
+        int comunes = hostiles.Count(n => cfg.SegundosDeRespawn(n.GiveExp) == cfg.RespawnSegundos);
+        Assert.True(comunes > hostiles.Count / 2,
+                    $"sólo {comunes} de {hostiles.Count} hostiles quedaron en el escalón común: el umbral está muy bajo");
+    }
+
+    /// <summary>
+    /// Y QUE EL RETRASO SE APLIQUE, no sólo que la cuenta dé bien. Se matan dos criaturas en el mismo tick
+    /// —una común y un jefe— y se mira quién vuelve primero: pasada la espera común tiene que estar la rata
+    /// y NO el jefe, y recién mucho después el jefe.
+    /// </summary>
+    [Fact]
+    public void Al_jefe_lo_hacen_esperar_mucho_mas_que_a_una_rata()
+    {
+        var cfg = ServerIni.Cargar(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo")));
+        var world = new CoverAO.Server.Game.World();
+        var sys = new CoverAO.Server.Net.NpcSystem(world, new GameData(), ini: cfg);
+
+        NpcInfo Ficha(short i, string n, long exp) =>
+            new(Index: i, Name: n, Body: 1, Head: 1, Heading: 3, MaxHp: 10, MinHit: 1, MaxHit: 1,
+                Def: 0, GiveExp: exp, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 1);
+
+        // posOrig: vuelven a su baldosa, así el respawn no depende del sorteo de posición.
+        sys.AddSpawn(Ficha(1, "Rata", 10), new CoverAO.Server.Game.WorldPos(1, 10, 10), posOrig: true);
+        sys.AddSpawn(Ficha(2, "Jefe", cfg.RespawnExpJefe), new CoverAO.Server.Game.WorldPos(1, 20, 20), posOrig: true);
+        int Vivas(string nombre) => world.Npcs.Count(n => n.Template.Name == nombre);
+        Assert.Equal(1, Vivas("Rata"));
+        Assert.Equal(1, Vivas("Jefe"));
+
+        foreach (var n in world.Npcs.ToList()) world.RemoveNpc(n.CharIndex);
+        sys.Update(1);                       // la vuelta en que se entera de las dos muertes
+        Assert.Equal(0, Vivas("Rata"));
+
+        // Justo pasada la espera común: vuelve la rata y el jefe sigue afuera.
+        int ticksComun = cfg.RespawnSegundos * 1000 / CoverAO.Server.Game.GameLoop.TickMs;
+        sys.Update(1 + ticksComun + 1);
+        Assert.Equal(1, Vivas("Rata"));
+        Assert.Equal(0, Vivas("Jefe"));
+
+        // NI SIQUIERA pasada la espera de un gordo: sin esto, un jefe que cayera al escalón de abajo
+        // pasaría el test igual, porque la comprobación de arriba sólo lo separa del escalón común.
+        int ticksGordo = cfg.RespawnSegundosGordo * 1000 / CoverAO.Server.Game.GameLoop.TickMs;
+        sys.Update(1 + ticksGordo + 1);
+        Assert.Equal(0, Vivas("Jefe"));
+
+        // Y pasada la del jefe, vuelve.
+        int ticksJefe = cfg.RespawnSegundosJefe * 1000 / CoverAO.Server.Game.GameLoop.TickMs;
+        sys.Update(1 + ticksJefe + 1);
+        Assert.Equal(1, Vivas("Jefe"));
+    }
+
     [Fact]
     public void El_ini_de_ejemplo_trae_lo_que_eligio_el_autor()
     {

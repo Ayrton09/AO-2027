@@ -239,7 +239,9 @@ var serverContent = CoverAO.Server.Game.ServerContent.Load(dataRoot, gameData.So
 
 // gmsPerseguibles sólo en fixture: el protagonista demo (Rugura) es Dios, y el gate fiel AdminPerseguible
 // dejaría al laboratorio sin PvE — ninguna criatura lo perseguiría ni lo golpearía. Ver NpcSystem.
-var npcSystem = new NpcSystem(world, gameData, gmsPerseguibles: fixtureMode);
+// EL FIXTURE NO TOMA LA ESPERA DE RESPAWN DE PRODUCCION: sus criaturas son utileria que los flows matan y
+// vuelven a necesitar dentro de la misma tanda de golpes. Con los 30 s de produccion se quedaban sin blanco.
+var npcSystem = new NpcSystem(world, gameData, gmsPerseguibles: fixtureMode, ini: fixtureMode ? null : serverIni);
 // Regla de la casa: ¿el familiar sale a buscar pelea solo? Apagada = como el original (te sigue y nada más).
 npcSystem.FamiliarBuscaEnemigo = serverIni.FamiliarBusca;
 npcSystem.ParalisisDeNpcTicks = serverIni.IntervaloParalizado;   // [INTERVALOS] IntervaloParalizado
