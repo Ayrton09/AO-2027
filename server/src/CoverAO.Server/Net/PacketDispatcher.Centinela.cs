@@ -180,8 +180,10 @@ public sealed partial class PacketDispatcher
         Console.WriteLine($"[centinela] revisando a {candidato.Name} (clave {_centinelaClave})");
     }
 
-    /// <summary>Pone el NPC encima del jugador (VB6 <c>WarpCentinela</c>, modCentinela.bas:337). En agua va el
-    /// 623 y en tierra el 622: el que está pescando lo tiene que ver flotando, no parado sobre el mar.</summary>
+    /// <summary>Pone el NPC al lado del jugador (VB6 <c>WarpCentinela</c>, modCentinela.bas:311): se lo pide sobre
+    /// su posición y <see cref="NpcSystem.GmSpawn"/> lo corre a la baldosa legal más cercana, como el
+    /// <c>SpawnNpc</c> del original. En agua va el 623 y en tierra el 622: el que está pescando lo tiene que
+    /// ver flotando, no parado sobre el mar.</summary>
     private bool CentinelaPlantar(Player p)
     {
         CentinelaQuitarNpc();

@@ -157,17 +157,24 @@ public sealed class NpcSystem
     /// `.Respawn = 0`, que en esta variante significa "sí respawnea"—, así que no se distinguen.
     ///
     /// Emite, además del CharacterCreate que ya manda AddSpawn, el par de efectos del warp que ve el área:
-    /// PlayWave(SND_WARP=3) + CreateFX(FXWARP=1). El original busca la posición legal más cercana con
-    /// ClosestLegalPos; acá se usa la posición pedida directamente (el caller la valida antes).
+    /// PlayWave(SND_WARP=3) + CreateFX(FXWARP=1).
+    ///
+    /// <para>LA POSICIÓN PEDIDA NO ES DONDE CAE: <c>SpawnNpc</c> la corre con <c>ClosestLegalPos</c> a la baldosa
+    /// legal más cercana —primero con el terreno de la criatura y, si no hay, admitiendo tierra— y si no
+    /// encuentra ninguna no crea nada. Acá se usaba la pedida tal cual con la nota de que "el caller la valida
+    /// antes", y ninguno la validaba: el entrenador pedía SU baldosa y la criatura le quedaba encima, el
+    /// centinela aparecía parado sobre el jugador que revisa, y un /ACC contra una pared la metía adentro.</para>
     /// </summary>
     public int GmSpawn(NpcInfo template, WorldPos pos)
     {
+        if ((ClosestLegalPos(pos, template.AguaValida, !template.TierraInvalida)
+             ?? ClosestLegalPos(pos, template.AguaValida)) is not { } donde) return 0;
         // `SpawnNpc` no le guarda `Orig` (eso lo hace sólo la carga del mapa): al morir reaparece al azar aunque su ficha
         // traiga PosOrig.
-        AddSpawn(template, pos, posOrig: false);
+        AddSpawn(template, donde, posOrig: false);
         var spawn = _spawns[^1];
-        _world.BroadcastToObservers(pos, ServerMessages.PlayWave(SndWarp, pos.X, pos.Y));
-        _world.BroadcastToObservers(pos, ServerMessages.CreateFX(spawn.CharIndex, FxWarp, 0));
+        _world.BroadcastToObservers(donde, ServerMessages.PlayWave(SndWarp, donde.X, donde.Y));
+        _world.BroadcastToObservers(donde, ServerMessages.CreateFX(spawn.CharIndex, FxWarp, 0));
         return spawn.CharIndex;
     }
 

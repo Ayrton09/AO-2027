@@ -138,8 +138,7 @@ public sealed partial class PacketDispatcher
         var fam = amo.Familiar;
         var plantilla = _data.Npc(Familiar.FichaDe(fam.Tipo));
         if (plantilla is null) return false;
-        WorldPos? libre = null;
-        foreach (var pos in FreeTilesAround(amo.Pos, 1)) { libre = pos; break; }
+        var libre = DondeCaeLaCriatura(amo.Pos, plantilla);   // la misma regla que la mascota que viaja
         if (libre is null) return false;
 
         // La ficha de NPCs.dat da el aspecto y la base; las barras salen del FAMILIAR, que es lo que sube de

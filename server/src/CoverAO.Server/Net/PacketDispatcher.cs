@@ -1508,15 +1508,17 @@ public sealed partial class PacketDispatcher
 
     /// <summary>¿Se puede PISAR este tile? (VB6 <c>LegalPos</c>, GameLogic.bas:458.) Cuatro condiciones, las
     /// mismas del original: dentro de los bordes jugables, no bloqueado, sin nadie encima —ni jugador ni
-    /// criatura— y, salvo que se vaya navegando, que no sea agua.</summary>
-    private bool PosLegal(WorldPos pos, bool puedeAgua)
+    /// criatura— y el agua según lo que se pida. <paramref name="puedeTierra"/> en false es el caso de una
+    /// criatura que SÓLO anda por agua; para un jugador siempre vale true.</summary>
+    private bool PosLegal(WorldPos pos, bool puedeAgua, bool puedeTierra = true)
     {
         if (pos.Map <= 0) return false;
         if (pos.X < GameLimits.MinXBorder || pos.X > GameLimits.MaxXBorder
             || pos.Y < GameLimits.MinYBorder || pos.Y > GameLimits.MaxYBorder) return false;
         if (_data.IsBlockedTile(pos.Map, pos.X, pos.Y)) return false;
         if (_world.PlayerAt(pos) is not null || _world.NpcAt(pos) is not null) return false;
-        return puedeAgua || !_data.IsWater(pos.Map, pos.X, pos.Y);
+        bool agua = _data.IsWater(pos.Map, pos.X, pos.Y);
+        return (puedeAgua && puedeTierra) || (puedeTierra && !agua) || (puedeAgua && agua);
     }
 
     /// <summary>El tile legal más cercano a <paramref name="dest"/> (VB6 <c>ClosestLegalPos</c>,
@@ -1526,7 +1528,7 @@ public sealed partial class PacketDispatcher
     /// <param name="soloEstable">Pide además que el tile NO tenga salida — el <c>ClosestStablePos</c> del
     /// original (GameLogic.bas:295), que es el mismo barrido con un <c>TileExit.Map = 0</c> de más. Es lo
     /// que evita el rebote infinito al sacar a alguien de encima de un portal.</param>
-    private WorldPos? PosLegalMasCercana(WorldPos dest, bool puedeAgua, bool soloEstable = false)
+    private WorldPos? PosLegalMasCercana(WorldPos dest, bool puedeAgua, bool soloEstable = false, bool puedeTierra = true)
     {
         for (int anillo = 0; anillo <= 12; anillo++)
             for (int y = dest.Y - anillo; y <= dest.Y + anillo; y++)
@@ -1534,7 +1536,7 @@ public sealed partial class PacketDispatcher
                 {
                     if (x is < 0 or > 255 || y is < 0 or > 255) continue;
                     var cand = new WorldPos(dest.Map, (byte)x, (byte)y);
-                    if (!PosLegal(cand, puedeAgua)) continue;
+                    if (!PosLegal(cand, puedeAgua, puedeTierra)) continue;
                     if (soloEstable && _data.MapExits.ContainsKey((cand.Map, cand.X, cand.Y))) continue;
                     return cand;
                 }
@@ -3101,22 +3103,21 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.ConsoleMsg($"{npc.Name} dejó caer {nombre}.", 0));
     }
 
-    /// <summary>Up to `count` tiles near `center` free of players and NPCs, scanning expanding rings.</summary>
-    private IEnumerable<WorldPos> FreeTilesAround(WorldPos center, int count)
-    {
-        var result = new List<WorldPos>();
-        for (int radius = 1; radius <= 3 && result.Count < count; radius++)
-            for (int dx = -radius; dx <= radius && result.Count < count; dx++)
-                for (int dy = -radius; dy <= radius && result.Count < count; dy++)
-                {
-                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != radius) continue; // only the ring's edge
-                    int x = center.X + dx, y = center.Y + dy;
-                    if (x is < 0 or > 255 || y is < 0 or > 255) continue;
-                    var pos = new WorldPos(center.Map, (byte)x, (byte)y);
-                    if (_world.PlayerAt(pos) is null && _world.NpcAt(pos) is null) result.Add(pos);
-                }
-        return result;
-    }
+    /// <summary>
+    /// DÓNDE CAE UNA CRIATURA QUE APARECE JUNTO A ALGUIEN: la regla de <c>SpawnNpc</c> (MODULO_NPCs.bas:803),
+    /// por donde el original hace pasar a la mascota que viaja con su amo. Es <c>ClosestLegalPos</c> dos
+    /// veces: primero con el terreno de la criatura y, si no hay ninguna, admitiendo tierra. Legal es sin
+    /// bloqueo, sin nadie parado y con el agua que la criatura aguante, recorriendo cuadrados de radio 0 a 12
+    /// fila por fila. <c>null</c> = no hay lugar, y el original entonces no crea nada.
+    ///
+    /// <para>Acá había un barrido propio que sólo miraba que no hubiera nadie parado, por columnas y hasta
+    /// radio 3: con una pared en la diagonal de arriba a la izquierda del amo, la mascota aparecía ADENTRO de
+    /// la pared, y un lobo que llegaba junto a la orilla caía al agua. Lo usaban también el familiar y la
+    /// invocación, que no son del original pero aparecen igual al lado de alguien.</para>
+    /// </summary>
+    private WorldPos? DondeCaeLaCriatura(WorldPos junto, NpcInfo plantilla) =>
+        PosLegalMasCercana(junto, plantilla.AguaValida, puedeTierra: !plantilla.TierraInvalida)
+        ?? PosLegalMasCercana(junto, plantilla.AguaValida);
 
     /// <summary>The NPC's tile if free of ground items, else the first free 4-neighbour, else null.</summary>
     /// <summary>Hasta dónde busca <c>Tilelibre</c> antes de rendirse (<c>If loopc &gt; 15 Then Exit Do</c>).</summary>
@@ -7778,13 +7779,13 @@ public sealed partial class PacketDispatcher
 
             if (ficha == 0 || !puedenVenir) continue;
 
-            var libre = TileLibreParaMascota(amo.Pos);
+            var plantilla = _data.Npc(ficha);
+            if (plantilla is null) continue;
+            var libre = DondeCaeLaCriatura(amo.Pos, plantilla);
             // Sin lugar donde ponerla (agua, todo ocupado) se la deja esperando afuera y se sigue con las
             // otras, que es lo que hace el original cuando su SpawnNpc devuelve 0: no toca MascotasType, así
             // que la mascota no se pierde — vuelve en el próximo warp que encuentre lugar.
             if (libre is null) continue;
-            var plantilla = _data.Npc(ficha);
-            if (plantilla is null) continue;
 
             var traida = new Npc
             {
@@ -7807,14 +7808,6 @@ public sealed partial class PacketDispatcher
             _world.BroadcastToObservers(traida.Pos, ServerMessages.CharacterCreate(traida));
             amo.MascotasIndex[i] = traida.CharIndex;     // el lugar ya estaba contado: acá sólo se le pone la criatura
         }
-    }
-
-    /// <summary>Un tile donde poner la mascota que llega, empezando por el del amo (VB6 <c>SpawnNpc</c> con la
-    /// posición del amo busca el primer lugar legal alrededor).</summary>
-    private WorldPos? TileLibreParaMascota(WorldPos junto)
-    {
-        foreach (var pos in FreeTilesAround(junto, 1)) return pos;
-        return null;
     }
 
     /// <summary>
@@ -7849,8 +7842,9 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>Crea la criatura EN la posición del entrenador y la deja colgada de él. Se reusa el mismo
-    /// camino que la invocación de un hechizo (`NpcSystem.Spawn`), que ya resuelve tile libre y CharacterCreate.</summary>
+    /// <summary>Crea la criatura JUNTO al entrenador y la deja colgada de él. El original la pide sobre la
+    /// posición del entrenador (Protocol.bas:3358) y su <c>SpawnNpc</c> la corre a la baldosa legal más cercana;
+    /// acá eso lo hace <see cref="NpcSystem.GmSpawn"/>.</summary>
     private void SpawnCriaturaDelEntrenador(Npc entrenador, short plantilla)
     {
         var tpl = _data.Npc(plantilla);
@@ -10509,14 +10503,17 @@ public sealed partial class PacketDispatcher
                 if (current >= GameLimits.MaxMascotas) { session.Send(ServerMessages.ConsoleMsg("No puedes controlar más criaturas.", 0)); return; }
                 SpellCasted(session, p, spell);
                 int summoned = 0;
-                foreach (var pos in FreeTilesAround(p.Pos, Math.Min((int)spell.InvokeCount, GameLimits.MaxMascotas - current)))
+                int cuantas = Math.Min((int)spell.InvokeCount, GameLimits.MaxMascotas - current);
+                for (int j = 0; j < cuantas; j++)
                 {
+                    // De a una: cada criatura que entra ocupa su baldosa y la siguiente busca otra.
+                    if (DondeCaeLaCriatura(p.Pos, template) is not { } donde) break;
                     var npc = new Npc
                     {
                         CharIndex = _world.AllocateCharIndex(),
                         Template = template,
                         Hp = template.MaxHp,
-                        Pos = pos,
+                        Pos = donde,
                         OwnerCharIndex = p.CharIndex, // won't attack its summoner
                         ExpireAtTick = _loop.Tick + SummonLifetimeTicks,  // VB6 TiempoExistencia = IntervaloInvocacion
                     };
