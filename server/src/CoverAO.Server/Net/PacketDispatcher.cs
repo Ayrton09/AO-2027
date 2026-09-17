@@ -1487,7 +1487,7 @@ public sealed partial class PacketDispatcher
                 {
                     session.Send(ServerMessages.LocaleMsg(152, "1%14"));
                     var estable = PosLegalMasCercana(p.Pos, puedeAgua, soloEstable: true);
-                    if (estable is not null) TeleportTo(session, p, estable.Value);
+                    if (estable is not null) TeleportTo(session, p, estable.Value, fx: true);
                     return;
                 }
                 // NIVEL MÍNIMO DEL MAPA DE DESTINO (regla de la casa; ver `ServerIni.NivelMinimoPorMapa`).
@@ -1500,7 +1500,7 @@ public sealed partial class PacketDispatcher
                     session.Send(ServerMessages.ConsoleMsg(
                         $"Hace falta nivel {piden} para entrar a este lugar.", FuenteInfo));
                     var frena = PosLegalMasCercana(p.Pos, puedeAgua, soloEstable: true);
-                    if (frena is not null) TeleportTo(session, p, frena.Value);
+                    if (frena is not null) TeleportTo(session, p, frena.Value, fx: true);
                     return;
                 }
                 if (!PosLegal(destino, puedeAgua))
@@ -1509,7 +1509,11 @@ public sealed partial class PacketDispatcher
                     if (alterna is null) return;   // sin lugar donde caer: el original tampoco mueve a nadie
                     destino = alterna.Value;
                 }
-                TeleportTo(session, p, destino);
+                // EL DESTELLO SÓLO SI LA BALDOSA TIENE UN TELEPORT (GameLogic.bas:70-72, el `FxFlag`): una salida
+                // común de borde de mapa salta callada.
+                bool esTeleport = _world.TryGetGround(p.Pos, out var suelo) && suelo.ObjIndex > 0
+                                  && _data.Obj(suelo.ObjIndex)?.ObjType == 19;   // otTeleport
+                TeleportTo(session, p, destino, fx: esTeleport);
             }
         });
     }
@@ -1551,57 +1555,100 @@ public sealed partial class PacketDispatcher
         return null;
     }
 
-    /// <summary>Warp a player to a destination map/tile (tile-exits). Sends ChangeMap on a map change and
-    /// refreshes area visibility across the jump — InView is map-aware, so old-map characters are removed
-    /// and new-map characters created automatically. The player's own client keeps its char + moves via
-    /// PosUpdate.</summary>
-    private void TeleportTo(ClientSession session, Player p, WorldPos dest)
-    {
-        var from = p.Pos;
-        // Los DIÁLOGOS se limpian ANTES de mover (VB6 WarpUserChar, Modulo_UsUaRiOs.bas:1594-1595, con este
-        // orden): primero al ÁREA VIEJA, para que los que se quedan dejen de ver la frase del que se fue —por
-        // eso va con `from`, no con `dest`—, y después al que warpea, para que no se lleve puestos los
-        // diálogos de la gente que deja atrás.
-        _world.BroadcastToObservers(from, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
-        session.Send(ServerMessages.RemoveDialogs());
-        p.Pos = dest;
-        DisembarkIfStranded(p);                           // no dejar a un navegante varado en tierra tras el warp
-        DesmontarSiEntraBajoTecho(session, p);            // ni a caballo adentro de un interior/dungeon
-        if (dest.Map != from.Map) session.Send(ServerMessages.ChangeMap(dest.Map));
-        session.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
-        RefreshAreaVisibility(_world, _data, p, from, dest);     // remove old-area chars, create new-area chars (map-aware)
-        WarpMascotas(p);                                  // las mascotas viajan con vos (VB6 WarpUserChar:1657)
-        WarpFamiliar(p);                                  // y el familiar también (agregado nuestro)
-        _world.Events.Publish(new PlayerMoved(p, from, dest));
-    }
+    /// <summary>El salto del jugador que mandó el paquete: la salida de mapa, el /IRCERCA, el pergamino a
+    /// Intermundia, el rebote del mapa de newbies. Es <see cref="WarpUserChar"/> y, además, la bajada del animal
+    /// al caer bajo techo.</summary>
+    /// <param name="fx">El sonido y el destello del salto. Lo decide cada llamada, como en el original: la
+    /// salida de mapa sólo lo hace si la baldosa tiene un teleport, y todo lo demás siempre.</param>
+    private void TeleportTo(ClientSession session, Player p, WorldPos dest, bool fx) =>
+        WarpUserChar(p, dest, fx, alCaer: () => DesmontarSiEntraBajoTecho(session, p));
+
+    /// <summary>El salto de un jugador que NO es el que mandó el paquete: el /TELEP, el /IRA, el /SUM y la cárcel.
+    /// Todos llevan sonido y destello en el original.</summary>
+    public void WarpOtroJugador(Player t, WorldPos dest) => WarpUserChar(t, dest, fx: true);
 
     /// <summary>
-    /// El <c>WarpUserChar</c> del original para un jugador que NO es el que mandó el paquete: los dos caminos
-    /// de la cárcel (<c>Encarcelar</c>, Admin.bas:175, y <c>PurgarPenas</c>, Admin.bas:152) lo llaman, y los dos
-    /// acá movían <c>Pos</c> a mano.
+    /// EL SALTO DE UN JUGADOR, UNO SOLO PARA TODOS LOS CAMINOS: el <c>WarpUserChar</c> del original
+    /// (Modulo_UsUaRiOs.bas:1569), por donde pasan la salida de mapa, el /TELEP, el /IRA, el /IRCERCA, el /SUM,
+    /// la cárcel, el hogar, la runa, el pasaje y el pergamino a Intermundia.
     ///
-    /// Mover la posición sin refrescar el área tiene DOS mitades, y las dos se notan jugando: el preso queda
-    /// DIBUJADO donde estaba para todos los que lo veían —se lo llevaron y para el resto sigue parado en medio
-    /// de la ciudad— y él llega a la cárcel sin ver a nadie de ahí, arrastrando los personajes del lugar que
-    /// dejó. Ninguna de las dos se arregla sola: el cliente dibuja lo que le dijeron hasta que le digan otra cosa.
+    /// <para>Acá eran tres copias —<c>TeleportTo</c>, <c>WarpOtroJugador</c> y <c>WarpAlHogar</c>— y a cada una le
+    /// faltaba algo distinto: la gracia contra las criaturas estaba en una sola, el sonido y el destello sólo en
+    /// el /IRCERCA, y ninguna le avisaba a quien veía las dos puntas del salto, que se quedaba con el personaje
+    /// dibujado donde estaba. Mover la posición sin refrescar a todos se nota jugando: el cliente dibuja lo que
+    /// le dijeron hasta que le digan otra cosa.</para>
     /// </summary>
-    public void WarpOtroJugador(Player t, WorldPos dest)
+    /// <param name="alCaer">Lo que un camino hace apenas el jugador pisa el destino, antes de avisarle nada.</param>
+    public void WarpUserChar(Player t, WorldPos dest, bool fx, Action? alCaer = null)
     {
         var from = t.Pos;
-        // GRACIA CONTRA LAS CRIATURAS. El original la arma en `WarpUserChar` (Modulo_UsUaRiOs.bas:1660), o sea
-        // en TODO teletransporte del server: una salida de mapa, un /TELEP, la carcel, el hogar. Caminar no
-        // pasa por aca y por eso no la renueva.
-        t.NoAtacablePorNpcHastaMs = Environment.TickCount64 + _ini.IntervaloPuedeSerAtacado;
+        // Los DIÁLOGOS se limpian ANTES de mover (:1594-1595, con este orden): primero al ÁREA VIEJA, para que
+        // los que se quedan dejen de ver la frase del que se fue —por eso va con `from`, no con `dest`—, y
+        // después al que salta, para que no se lleve puestos los diálogos de la gente que deja atrás.
         _world.BroadcastToObservers(from, ServerMessages.RemoveCharDialog(t.CharIndex), t.CharIndex);
         t.Connection?.Send(ServerMessages.RemoveDialogs());
         t.Pos = dest;
-        DisembarkIfStranded(t);                           // ni el preso ni el liberado quedan varados a bordo
-        if (dest.Map != from.Map) t.Connection?.Send(ServerMessages.ChangeMap(dest.Map));
+        DisembarkIfStranded(t);                           // no dejar a un navegante varado en tierra tras el salto
+        alCaer?.Invoke();
+        if (dest.Map != from.Map)
+        {
+            t.Connection?.Send(ServerMessages.ChangeMap(dest.Map));
+            // LA LLUVIA SE VUELVE A AVISAR al cambiar de mapa (:1606-1608), con la misma global que lee el login.
+            byte clima = Weather.Efectivo(_loop.Tick);
+            if (clima != 0) t.Connection?.Send(ServerMessages.RainToggle(clima));
+            // Y EL MAPA QUE NO ADMITE INVISIBILIDAD te la saca al entrar (:1613-1623): sólo al usuario común,
+            // con el aviso 447. El original lo avisa al área VIEJA, que es donde todavía está parado.
+            if (!t.IsGm && t.Invisible && _data.MapNoInvi(dest.Map))
+            {
+                t.Invisible = false;
+                t.InvisibleUntilTick = 0;
+                var visible = ServerMessages.SetInvisible(t.CharIndex, false);
+                t.Connection?.Send(visible);
+                _world.BroadcastToObservers(from, visible, t.CharIndex);
+                t.Connection?.Send(ServerMessages.LocaleMsg(447));
+            }
+        }
         t.Connection?.Send(ServerMessages.PosUpdate(dest.X, dest.Y));
         RefreshAreaVisibility(_world, _data, t, from, dest);
-        WarpMascotas(t);                                  // también al preso y al liberado
-        WarpFamiliar(t);
+        RedibujarParaQuienVeLasDosPuntas(t, from, dest);
+        // EL SALTO SE ANUNCIA (:1653-1654): sonido y destello en el área de llegada, él incluido, salvo que el que
+        // salta sea un GM en invisibilidad permanente.
+        if (fx && !(t.Invisible && t.InvisibleUntilTick == 0))
+        {
+            _world.BroadcastToObservers(dest, ServerMessages.PlayWave(SndWarp, dest.X, dest.Y));
+            _world.BroadcastToObservers(dest, ServerMessages.CreateFX(t.CharIndex, FxWarp, 0));
+        }
+        WarpMascotas(t);                                  // las mascotas viajan con vos (:1657)
+        WarpFamiliar(t);                                  // y el familiar también (agregado nuestro)
+        // GRACIA CONTRA LAS CRIATURAS (:1660), en TODO salto y no en uno solo. Caminar no pasa por acá y por eso
+        // no la renueva.
+        t.NoAtacablePorNpcHastaMs = Environment.TickCount64 + _ini.IntervaloPuedeSerAtacado;
+        PerderNpc(t);                                     // y la criatura que era tuya deja de serlo (:1663)
         _world.Events.Publish(new PlayerMoved(t, from, dest));
+    }
+
+    private const short SndWarp = 3;   // SND_WARP (Declares.bas:538)
+    private const short FxWarp = 1;    // FXWARP (Declares.bas:222)
+
+    /// <summary>
+    /// QUIEN VE LAS DOS PUNTAS DEL SALTO. <see cref="RefreshAreaVisibility"/> le avisa sólo a quien GANA o PIERDE
+    /// de vista al que se movió, y para un paso alcanza porque el paso sale además como <c>CharacterMove</c>. Un
+    /// salto no sale como nada, así que el que lo veía antes y lo sigue viendo después se quedaba con el
+    /// personaje dibujado donde estaba: el GM que le hacía /TELEP a alguien de su pantalla lo seguía viendo en el
+    /// lugar viejo. El original lo borra de toda el área vieja y lo vuelve a crear en toda la nueva
+    /// (<c>EraseUserChar</c> con <c>ToPCArea</c> y <c>MakeUserChar</c> → <c>AgregarUser</c>, :1597 y :1640), así que
+    /// al que está en las dos le llegan las dos cosas.
+    /// </summary>
+    private void RedibujarParaQuienVeLasDosPuntas(Player t, WorldPos from, WorldPos to)
+    {
+        foreach (var otro in _world.Players)
+        {
+            if (otro.CharIndex == t.CharIndex || otro.Connection is null) continue;
+            if (!World.InView(from, otro.Pos) || !World.InView(to, otro.Pos)) continue;
+            otro.Connection.Send(ServerMessages.CharacterRemove(t.CharIndex, faded: true));
+            otro.Connection.Send(ServerMessages.CharacterCreate(t));
+            if (t.Invisible || t.Oculto) otro.Connection.Send(ServerMessages.SetInvisible(t.CharIndex, true));
+        }
     }
 
     /// <summary>Si el jugador quedó navegando sobre TIERRA (tras un teleport/regreso al hogar/revive que no
@@ -2560,7 +2607,7 @@ public sealed partial class PacketDispatcher
                 && string.Equals(_data.MapZone(p.Pos.Map).Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase))
             {
                 p.HomeCity = p.IsCitizen ? Cities.Nix : p.IsRepublicano ? Cities.Illiandor : Cities.Rinkel;
-                TeleportTo(session, p, Cities.SpawnTile(p.HomeCity));
+                TeleportTo(session, p, Cities.SpawnTile(p.HomeCity), fx: true);
                 session.Send(ServerMessages.LocaleMsg(304));
             }
             // Y LA TERCERA REGLA DE LA CASA (2.2b): que el equipo de novato desaparezca al dejar de serlo. El
@@ -5029,14 +5076,7 @@ public sealed partial class PacketDispatcher
                     if (_world.PlayerAt(dest) is not null || _world.NpcAt(dest) is not null) continue;
                     // El VB6 llama LegalPos(..., PuedeAgua:=True, ...): acepta agua, así que NO se filtra por IsWater.
                     if (_data.IsBlockedTile(dest.Map, dest.X, dest.Y)) continue;
-                    TeleportTo(session, p, dest);
-                    // WarpUserChar(..., FX:=True): el original anuncia el salto al área con sonido + efecto,
-                    // salvo que el GM esté en invisibilidad permanente (AdminInvisible).
-                    if (!(p.Invisible && p.InvisibleUntilTick == 0))
-                    {
-                        _world.BroadcastToObservers(dest, ServerMessages.PlayWave(3, dest.X, dest.Y));      // SND_WARP
-                        _world.BroadcastToObservers(dest, ServerMessages.CreateFX(p.CharIndex, 1, 0));      // FXWARP
-                    }
+                    TeleportTo(session, p, dest, fx: true);
                     Console.WriteLine($"[{session.RemoteEndpoint}] /IRCERCA {p.Name} -> {t.Name}");
                     return;
                 }
@@ -8753,24 +8793,8 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null || p.IsAlive) return;  // VB6 HandleRegresarHogar: solo con Muerto=1
             // Al tile Dead de la ciudad-hogar elegida (SeleccionarHogar -> p.HomeCity); Ullathorpe por defecto.
-            WarpAlHogar(session, p, Cities.DeadTile(p.HomeCity));
+            WarpUserChar(p, Cities.DeadTile(p.HomeCity), fx: true);   // sin mensaje de llegada, como el VB6
         });
-    }
-
-    /// <summary>El viaje a la ciudad-hogar: lo comparten <c>RegresarHogar</c> y la RUNA, que en el original
-    /// llaman los dos a <c>WarpUserChar(..., True)</c> con el mismo destino. No emite mensaje de llegada
-    /// (el VB6 tampoco) y baja del barco si venía navegando, porque el hogar es tierra.</summary>
-    private void WarpAlHogar(ClientSession session, Player p, WorldPos destino)
-    {
-        var from = p.Pos;
-        p.Pos = destino;
-        DisembarkIfStranded(p);
-        if (p.Pos.Map != from.Map) session.Send(ServerMessages.ChangeMap(p.Pos.Map));
-        session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
-        RefreshAreaVisibility(_world, _data, p, from, p.Pos);
-        WarpMascotas(p);
-        WarpFamiliar(p);
-        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterMove(p.CharIndex, p.Pos.X, p.Pos.Y), p.CharIndex);
     }
 
     /// <summary>MoveSpell (id 38): upwards(byte), slot(byte). Swaps the spell with its neighbour.</summary>
@@ -11243,10 +11267,10 @@ public sealed partial class PacketDispatcher
             // Acá la Runa no hacía NADA: caía al "No puedes usar ese objeto" del final.
             if (obj.ObjType == Runa)
             {
-                if (!p.IsAlive) { WarpAlHogar(session, p, Cities.DeadTile(p.HomeCity)); return; }
+                if (!p.IsAlive) { WarpUserChar(p, Cities.DeadTile(p.HomeCity), fx: true); return; }
                 bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
                 if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }
-                WarpAlHogar(session, p, Cities.SpawnTile(p.HomeCity));
+                WarpUserChar(p, Cities.SpawnTile(p.HomeCity), fx: true);
                 return;
             }
 
@@ -11313,8 +11337,8 @@ public sealed partial class PacketDispatcher
                 if (p.Pos.Map != obj.PasajeDesdeMap) { session.Send(ServerMessages.LocaleMsg(30)); return; }
                 if (!_data.MapExists(obj.PasajeHastaMap)) { session.Send(ServerMessages.LocaleMsg(30)); return; }
 
-                WarpAlHogar(session, p, new WorldPos((short)obj.PasajeHastaMap,
-                                                     (byte)obj.PasajeHastaX, (byte)obj.PasajeHastaY));
+                WarpUserChar(p, new WorldPos((short)obj.PasajeHastaMap,
+                                             (byte)obj.PasajeHastaX, (byte)obj.PasajeHastaY), fx: true);
                 session.Send(ServerMessages.LocaleMsg(31));                                    // "viajaste varios días, estás exhausto"
                 // EL VIAJE TE DEJA VACÍO: hambre y sed a CERO, no al máximo (`MinAGU = 0 : MinHam = 0`). Y
                 // devuelve fuerza y agilidad a su valor base, o sea que te corta los buffs — el original usa el
@@ -11541,7 +11565,7 @@ public sealed partial class PacketDispatcher
                     // Se porta tal cual, incluido el silencio: es la misma traba anti-escape que la baldosa de
                     // salida, y avisar acá sería mejorar el original a espaldas de quien conoce el bug.
                     if (p.MapeoBloqueadoHastaTick <= _loop.Tick)
-                        TeleportTo(session, p, Cities.Intermundia);
+                        TeleportTo(session, p, Cities.Intermundia, fx: true);
                     effect = "Intermundia";
                     break;
                 }
