@@ -1244,7 +1244,7 @@ public sealed class NpcSystem
             victima.TargetNpcCharIndex = npc.CharIndex;
             victima.Movement = GameLimits.TipoAiNpcAtacaNpc;
         }
-        if (victima.Hp == 0) MatarNpcSinDueno(victima);
+        if (victima.Hp == 0) MuereACriatura(npc, victima);
     }
 
     /// <summary>El familiar le tira uno de sus hechizos a otra CRIATURA. Es la versión corta de
@@ -1276,12 +1276,36 @@ public sealed class NpcSystem
         if (spell.Wav > 0)
             _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)spell.Wav, victima.Pos.X, victima.Pos.Y));
         _world.BroadcastToObservers(victima.Pos, ServerMessages.DamageOverHead(victima.CharIndex, dano));
-        if (victima.Hp == 0) MatarNpcSinDueno(victima);
+        if (victima.Hp == 0) MuereACriatura(npc, victima);
         return true;
     }
 
-    /// <summary>Muerte de una criatura a manos de OTRA criatura: no hay jugador al que darle exp, oro ni
-    /// loot, así que sólo se la saca del mundo. El dueño se entera porque deja de verla.</summary>
+    /// <summary>
+    /// LO QUE MATA UNA MASCOTA LO COBRA SU AMO (VB6 <c>MuereNpc(Victima, MaestroUser)</c>, tanto en el golpe
+    /// —SistemaCombate.bas:812— como en el hechizo —modHechizos.bas:164—): la experiencia que le quedaba a la
+    /// criatura, el "Has matado a", el conteo, el oro y el botín van al dueño, igual que si la hubiera matado él.
+    /// Lo resuelve el DESPACHADOR, que es quien reparte la recompensa de una muerte; se cablea igual que
+    /// <see cref="SubirSkillPorUso"/>. Devuelve false si no pudo cobrarla, y entonces la criatura sólo sale del
+    /// mundo.
+    ///
+    /// <para>Acá toda muerte entre criaturas iba a <see cref="MatarNpcSinDueno"/>: la mascota mataba y el amo no
+    /// se llevaba nada. Y el familiar que sube con la experiencia de su dueño se quedaba clavado justo cuando
+    /// aprendía a matar a distancia.</para>
+    /// </summary>
+    public Func<Player, Npc, bool>? CobrarLaMuerteParaElAmo { get; set; }
+
+    /// <summary>Muerte de una criatura a manos de OTRA. Si la que mató tiene dueño, la cobra el dueño (ver
+    /// <see cref="CobrarLaMuerteParaElAmo"/>); si no, sólo sale del mundo.</summary>
+    private void MuereACriatura(Npc atacante, Npc victima)
+    {
+        if (atacante.OwnerCharIndex != 0 && CobrarLaMuerteParaElAmo is { } cobrar
+            && _world.TryGet(atacante.OwnerCharIndex, out var amo) && amo is not null && cobrar(amo, victima))
+            return;
+        MatarNpcSinDueno(victima);
+    }
+
+    /// <summary>Muerte de una criatura a manos de otra SIN dueño: no hay jugador al que darle exp, oro ni loot,
+    /// así que sólo se la saca del mundo.</summary>
     private void MatarNpcSinDueno(Npc victima)
     {
         _world.BroadcastToObservers(victima.Pos, ServerMessages.CharacterRemove(victima.CharIndex, faded: true));

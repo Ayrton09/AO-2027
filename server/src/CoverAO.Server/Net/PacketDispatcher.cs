@@ -91,6 +91,14 @@ public sealed partial class PacketDispatcher
                 RaiseSkill(jugador.Connection as ClientSession, jugador, skill);
         EngancharAvisosDelFamiliar();
         if (_npcs is not null) _npcs.DesarmarPorFamiliar = DesarmarPorElFamiliar;
+        // Y lo que mata una mascota lo cobra su amo, por el mismo camino que si lo hubiera matado él.
+        if (_npcs is not null)
+            _npcs.CobrarLaMuerteParaElAmo = (amo, victima) =>
+            {
+                if (amo.Connection is not ClientSession sesion) return false;
+                NpcKilledByPlayer(sesion, amo, victima);
+                return true;
+            };
     }
 
     private readonly NpcSystem? _npcs;   // para /ACC /RACC (spawn de NPCs con respawn); null en tests sin mundo vivo
@@ -2776,8 +2784,9 @@ public sealed partial class PacketDispatcher
 
     /// <summary>Muerte de un NPC a manos de un jugador (VB6 <c>MuereNpc</c>): lo saca del mundo, libera el
     /// slot de mascota de su dueño y —si no es invocación/mascota— otorga experiencia, nivel y loot.
-    /// Compartido por el melee (<see cref="AttackNpc"/>) y por la magia de daño (<see cref="CastDamageOnNpc"/>)
-    /// para que matar con espada o con hechizo dé exactamente la misma recompensa.</summary>
+    /// Compartido por el melee (<see cref="AttackNpc"/>), por la magia de daño (<see cref="CastDamageOnNpc"/>) y
+    /// por lo que mata la mascota del jugador (<see cref="NpcSystem.CobrarLaMuerteParaElAmo"/>), para que la
+    /// recompensa sea exactamente la misma.</summary>
     private void NpcKilledByPlayer(ClientSession session, Player p, Npc npc)
     {
         _world.RemoveNpc(npc.CharIndex);
@@ -2786,7 +2795,8 @@ public sealed partial class PacketDispatcher
         // sacó la criatura del mundo —o sea después del CharacterRemove— y antes de repartir experiencia.
         //
         // Dos detalles del original que no se ven leyendo por arriba. Va SÓLO si la mató un jugador (`If
-        // UserIndex > 0`): una criatura que mata a otra no suena. Y el área es la DEL JUGADOR (`ToPCArea,
+        // UserIndex > 0`): una criatura sin dueño que mata a otra no suena, y la mascota sí, porque la cobra
+        // su amo. Y el área es la DEL JUGADOR (`ToPCArea,
         // UserIndex`) aunque las coordenadas del sonido sean las de la criatura — que muerta ya no está en el
         // mundo, así que su área no existiría.
         if (npc.Template.Snd3 > 0)
