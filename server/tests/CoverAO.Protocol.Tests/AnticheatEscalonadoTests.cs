@@ -105,13 +105,16 @@ public class AnticheatEscalonadoTests
         // Antes el mapa crecía para siempre: una entrada por cada IP que falló un login alguna vez.
         var t = new LoginThrottle(maxFails: 20, windowMs: 1, blockMs: 1);
         for (int i = 0; i < 1000; i++) t.RecordFailure($"10.1.{i / 256}.{i % 256}");
-        Thread.Sleep(5);                       // vencen las ventanas
+        // LA ESPERA SE MIDE CON EL RELOJ DEL PRODUCTO, que es `TickCount64` y en Windows avanza de a ~15,6 ms:
+        // con 5 ms hay veces que no se mueve ni un tick, ninguna ventana vence y no hay nada que purgar. Cayó
+        // una vez en una puerta cargada. Cincuenta pasan dos tics aunque la máquina esté ocupada.
+        Thread.Sleep(50);                      // vencen las ventanas
         for (int i = 0; i < 300; i++) t.RecordFailure($"10.2.{i / 256}.{i % 256}");   // 300 altas → al menos una purga
         Assert.True(t.Anotadas < 1300, $"quedaron {t.Anotadas} IPs anotadas: no purgó");
         // CONTROL: una IP bloqueada NO se purga aunque su ventana haya vencido.
         var b = new LoginThrottle(maxFails: 1, windowMs: 1, blockMs: 60_000);
         b.RecordFailure("10.9.9.9");           // bloqueada un minuto
-        Thread.Sleep(5);
+        Thread.Sleep(50);
         for (int i = 0; i < 600; i++) b.RecordFailure($"10.3.{i / 256}.{i % 256}");
         Assert.True(b.IsBlocked("10.9.9.9"));
     }
