@@ -124,15 +124,30 @@ public class PuertasDelBotTests
     /// `abierta=True` y acto seguido `viaje al pueblo: intento=1 | mapa con mercader=NINGUNO`.
     /// </summary>
     [Theory]
-    // intento | ¿abrió una puerta? | ¿se prueban los caminos caros?
-    [InlineData(0, false, true)]    // el primero, siempre
-    [InlineData(1, false, false)]   // sin novedades: no se insiste
-    [InlineData(2, false, false)]
-    [InlineData(1, true, true)]     // el caso: acaba de abrir una puerta, el mundo cambió
-    [InlineData(2, true, true)]
-    public void Abrir_una_puerta_reinicia_la_busqueda(int intento, bool abrio, bool prueba)
+    // intento | ¿abrió una puerta? | ¿llegó al pueblo? | ¿se prueban los caminos caros?
+    [InlineData(0, false, false, true)]    // el primero, siempre
+    [InlineData(1, false, false, false)]   // sin novedades: no se insiste
+    [InlineData(2, false, false, false)]
+    [InlineData(1, true, false, true)]     // el caso: acaba de abrir una puerta, el mundo cambió
+    [InlineData(2, true, false, true)]
+    public void Abrir_una_puerta_reinicia_la_busqueda(int intento, bool abrio, bool llego, bool prueba)
     {
-        Assert.Equal(prueba, Bot.TocaProbarLosCaminosCaros(intento, abrio));
+        Assert.Equal(prueba, Bot.TocaProbarLosCaminosCaros(intento, abrio, llego));
+    }
+
+    /// <summary>
+    /// Y LLEGAR AL PUEBLO TAMBIÉN. La puerta y el mercader se buscan desde donde está parado, y el viaje lo dejó en
+    /// otro mapa. Medido en `tarde2`: un Clérigo con diez mil monedas yendo por el pergamino de la cuna a la entrada
+    /// de Rinkel y de vuelta, una y otra vez, sin probar nunca la puerta: el viaje se había comido el primer intento.
+    /// </summary>
+    [Theory]
+    // intento | ¿abrió una puerta? | ¿llegó al pueblo? | ¿se prueban los caminos caros?
+    [InlineData(1, false, true, true)]     // el caso: recién llegado a la entrada del pueblo
+    [InlineData(2, false, true, true)]     // y después de probar la puerta, a buscar al mercader
+    [InlineData(2, true, true, true)]
+    public void Llegar_al_pueblo_reinicia_la_busqueda(int intento, bool abrio, bool llego, bool prueba)
+    {
+        Assert.Equal(prueba, Bot.TocaProbarLosCaminosCaros(intento, abrio, llego));
     }
 
     /// <summary>

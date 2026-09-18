@@ -1044,7 +1044,7 @@ public sealed class Bot
         // mercaderes están adentro de un edificio al que no se llega caminando: medido, en el mapa donde nacen
         // los bots NINGUNO de los dos es alcanzable, y en el de al lado lo son tres de once. Ya en el mapa, la
         // segunda búsqueda sí exige camino y elige uno al que se llega.
-        bool abrioUnaPuerta = false;
+        bool abrioUnaPuerta = false, llegoAlPueblo = false;
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
             if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende, Pisable(sentidos)) is not { } lugar)
@@ -1062,14 +1062,14 @@ public sealed class Bot
                 // vende es abrir el ropero más cercano, y era lo que pasaba en las ocho vueltas medidas.
                 bool hayQuienLeVendaAca = _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var paraLaPuerta)
                                           && paraLaPuerta.Any(q => Sirve(q.NpcIndex));
-                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
+                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo)
                     && ValeBuscarLaPuertaAca(MapaAtiende(sentidos.Mapa), hayQuienLeVendaAca)
                     && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) { abrioUnaPuerta = true; continue; }
 
                 // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
                 // manda los objetos del suelo que entran en la vista, así que la puerta del edificio recién aparece
                 // de cerca. Ver `ValeAcercarseAunqueNoLlegue`.
-                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta)
+                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo)
                     && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var losDeAca)
                     && losDeAca.FirstOrDefault(q => Sirve(q.NpcIndex)) is { NpcIndex: > 0 } elMercader
                     && ValeAcercarseAunqueNoLlegue(MapaAtiende(sentidos.Mapa), false)
@@ -1084,10 +1084,10 @@ public sealed class Bot
                 var conMercader = _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
                     m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
                     Pisable(sentidos));
-                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta) && conMercader is { } pueblo
+                if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto))
-                    continue;
+                { llegoAlPueblo = true; continue; }
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
                                                     vaPorAntidoto,
                                                     vaPorEquipo, vaPorHechizo);
@@ -2717,14 +2717,22 @@ public sealed class Bot
 
     /// <summary>
     /// ¿TOCA PROBAR LOS CAMINOS CAROS? —abrir una puerta, caminar hasta el mercader, viajar al pueblo—. En el primer
-    /// intento, y en el siguiente a HABER ABIERTO UNA PUERTA.
+    /// intento, en el siguiente a HABER ABIERTO UNA PUERTA y en el siguiente a HABER LLEGADO AL PUEBLO.
     ///
     /// <para>Abrir una puerta cambia el mundo: el servidor desbloquea sus dos baldosas (<c>SetTileBlocked</c>) y el
     /// navegante las lee en vivo, así que un camino que no existía ahora sí. Sin esto el bot abría la puerta y en la
     /// misma vuelta se daba por vencido sin volver a mirar — medido en `puertas7`, dos líneas seguidas:
     /// <c>abierta=True</c> y acto seguido <c>viaje al pueblo: intento=1 | mapa con mercader=NINGUNO</c>.</para>
+    ///
+    /// <para>LLEGAR AL PUEBLO ES LO MISMO: la puerta y el mercader se buscan desde donde está parado, y ahora está en
+    /// otro mapa. El viaje se comía el primer intento, así que el bot que venía de afuera llegaba a la entrada del
+    /// pueblo y ya no tenía permitido buscar la puerta: se volvía sin entrar a ninguna tienda. Medido en `tarde2`: un
+    /// Clérigo con diez mil monedas yendo por el pergamino de la cuna a la entrada de Rinkel —(74,54), desde donde
+    /// sólo se llega a pie a dos vendedores con pergaminos de un millón— y de vuelta a la cuna, una y otra vez. Lo
+    /// que se medía el 14/09 no lo mostraba porque el escenario ponía a los bots ADENTRO del pueblo.</para>
     /// </summary>
-    public static bool TocaProbarLosCaminosCaros(int intento, bool abrioUnaPuerta) => intento == 0 || abrioUnaPuerta;
+    public static bool TocaProbarLosCaminosCaros(int intento, bool abrioUnaPuerta, bool llegoAlPueblo) =>
+        intento == 0 || abrioUnaPuerta || llegoAlPueblo;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar equipo.</summary>
     private const int OroParaMirarEquipo = 100;
