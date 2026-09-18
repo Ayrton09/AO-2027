@@ -480,6 +480,9 @@ public sealed class Bot
         // El modo combate es un interruptor y hay que prenderlo: sin él, el servidor contesta el aviso 102 y no
         // swingea. Se prende una vez al entrar, como hace cualquiera que sale a cazar.
         transporte.Mandar(Paquete(ClientPacketId.CombatModeToggle, _ => { }));
+        // Y MIRA SUS SKILLS, como el que abre la ventana de habilidades al entrar: el servidor las manda sólo si hay
+        // puntos libres, y para fabricar hace falta saber qué receta le alcanza (ver `SentidosDelBot.Skill`).
+        transporte.Mandar(Paquete(ClientPacketId.RequestSkills, _ => { }));
 
         int pausas = 0;
         long proximaResurreccion = 0;
@@ -645,6 +648,7 @@ public sealed class Bot
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
+            if (await FabricarAsync(transporte, sentidos, ct)) continue;
             if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
@@ -855,9 +859,15 @@ public sealed class Bot
         // 10 — menos de un minuto. Los puntos libres, en cambio, quedan POR DEBAJO de ese tope a partir del nivel
         // 5 (23 contra 25 a nivel 10): darle Armas en vez del azar cambia el acierto en UN punto porcentual a
         // nivel 1 y en nada después. Se probó y se sacó.
-        byte propia = SkillDeSuOficio != 0 ? SkillDeSuOficio
+        byte propia = SkillPropia != 0 ? SkillPropia
                     : sentidos.UsaMana ? (byte)GameLimits.SkillMagia
                     : (byte)0;
+        // Y EL QUE CASTEA Y FABRICA —el Druida— pone primero en Magia lo que pide su hechizo de nacimiento: con los
+        // puntos en la Alquimia desde el principio no casteaba, que es el mismo defecto de arriba por el otro lado.
+        // Después, a la de fabricar; la Magia sigue subiendo sola con cada hechizo que tira.
+        if (SuFabricacion is not null && sentidos.UsaMana
+            && LeFaltaMagiaParaCastear(sentidos.Skill(GameLimits.SkillMagia), MagiaDelHechizoDeNacimiento))
+            propia = (byte)GameLimits.SkillMagia;
         if (propia > 0 && libres > 0)
         {
             byte suyos = (byte)Math.Min(libres, Math.Max(1, libres / 2));
@@ -929,12 +939,13 @@ public sealed class Bot
         bool faltaComida = sentidos.Suma(ComidaPropia) < ComidaMinima;
         bool faltaBebida = sentidos.Suma(BebidaPropia) < BebidaMinima;
         bool hayQueVender = sentidos.EnLaMochila(obj => EsBotin(sentidos, obj)) is not null;
-        bool faltaHerramienta = LeFaltaLaHerramienta(sentidos);
+        short laQueFalta = HerramientaQueLeFalta(sentidos);
+        bool faltaHerramienta = laQueFalta != 0;
 
         // EL PRECIO SALE DE LA DATA, no de un número a mano: hoy las tres herramientas valen 200, y el día que
         // la data cambie esto cambia solo.
-        int cuestaLaHerramienta = HerramientaDeSuOficio > 0
-            ? (_entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? int.MaxValue) : int.MaxValue;
+        int cuestaLaHerramienta = laQueFalta > 0
+            ? (_entorno.Datos.Obj(laQueFalta)?.Value ?? int.MaxValue) : int.MaxValue;
 
         // NO SE VIAJA A UNA TIENDA SI NO HAY NADA QUE HACER AHÍ, y ésta era la que le rompía la vida al bot de
         // oficio: que le faltara la herramienta alcanzaba para salir de compras, aunque tuviera CERO monedas.
@@ -949,7 +960,9 @@ public sealed class Bot
         // Y SÓLO SI HAY DÓNDE USARLA SIN JUGARSE LA VIDA: una herramienta que no se puede usar son doscientas monedas
         // tiradas, y se cae al morir. Medido: un Minero compró el piquete dos veces y los dos se le cayeron muriendo en el
         // camino a una mina; todas las minas del mundo están en mapas pk.
-        bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta && HayDondeTrabajarSeguro(sentidos);
+        // La de FABRICAR no pide lugar: se fabrica parado donde sea (el servidor no mira el mapa).
+        bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta
+                                  && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos));
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
         // sin llevarse nada.
@@ -983,7 +996,7 @@ public sealed class Bot
         // la vende — y si ese viaje fallaba, el bot nunca iba por comida aunque la tuviera al lado. Medido: un
         // Minero con 275 monedas y la comida a nueve pasos, veinte minutos sin comprar nada, mientras el
         // vendedor de piquetes quedaba detrás de una puerta sin camino. La herramienta se busca con la panza llena.
-        short quiero = vaPorLaHerramienta && !vaPorComida && !vaPorBebida ? HerramientaDeSuOficio : (short)0;
+        short quiero = vaPorLaHerramienta && !vaPorComida && !vaPorBebida ? laQueFalta : (short)0;
         // Y SI VA A VENDER, QUE SEA A ALGUIEN QUE LE COMPRE. Cada mercader acepta UN tipo de objeto y rechaza
         // el resto en silencio (`TipoItems`, VB6 Comercio.bas:123), así que caer en el gremio equivocado es un
         // viaje entero para volver con lo mismo: el pollo se lo compra el de comidas, no el herrero. Eso lo
@@ -1274,12 +1287,15 @@ public sealed class Bot
             if (sentidos.CuantoTiene(obj => obj == queOfrezco) >= teniaAntes) _noLoCompran.Add((TipoDeMercader(fichaDelMercader), queOfrezco));
         }
 
-        // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás.
-        if (LeFaltaLaHerramienta(sentidos) && sentidos.EnLaTienda(obj => obj == HerramientaDeSuOficio) is { } h)
+        // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás. Las dos, la
+        // de juntar y la de fabricar, si las vende el mismo mostrador: el Alquimista tiene las Tijeras y la Olla.
+        foreach (short herramienta in new[] { HerramientaDeSuOficio, HerramientaDeFabricar })
         {
+            if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) > 0
+                || sentidos.EnLaTienda(obj => obj == herramienta) is not { } h) continue;
             transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(h.Ranura).WriteInteger(1)));
             await Task.Delay(_rng.Next(600, 1_400), ct);
-            compro = !LeFaltaLaHerramienta(sentidos);
+            compro |= sentidos.CuantoTiene(obj => obj == herramienta) > 0;
         }
 
         // Lo esencial primero: sin comer ni tomar no se recupera la energía, y sin energía no se pelea. Las pociones
@@ -1344,22 +1360,28 @@ public sealed class Bot
         return sentidos.Suma(rinde) > teniaAntes;
     }
 
-    /// <summary>La herramienta del oficio de esta clase, o 0 si no tiene oficio. Los tres números son los del
+    /// <summary>La herramienta con la que JUNTA su oficio, o 0 si no junta con herramienta. Los números son los del
     /// <c>obj.dat</c>, y son los que el servidor mira para saber qué oficio se está ejerciendo: el oficio lo
-    /// declara la HERRAMIENTA EQUIPADA, no la skill que diga el cliente.</summary>
+    /// declara la HERRAMIENTA EQUIPADA, no la skill que diga el cliente.
+    ///
+    /// <para>LOS QUE FABRICAN JUNTAN LO SUYO CON LA MISMA HERRAMIENTA QUE EL QUE LO VENDE: el Carpintero tala como el
+    /// Leñador y el Druida corta raíces con las Tijeras (las dos sobre un árbol, PacketDispatcher `OficioDe`). El Sastre
+    /// no junta con herramienta: sus pieles las suelta el Lobo que caza (RandomDrop 414 al 100 %).</para></summary>
     private short HerramientaDeSuOficio => _clase switch
     {
         ClasePescador => CanaDePesca,
-        ClaseLenador => HachaDeLenador,
+        ClaseLenador or ClaseCarpintero => HachaDeLenador,
         ClaseMinero => PiqueteDeMinero,
+        ClaseDruida => Tijeras,
         _ => 0,
     };
 
     private const byte ClasePescador = 11, ClaseLenador = 13, ClaseMinero = 14;
-    private const short CanaDePesca = 881, HachaDeLenador = 127, PiqueteDeMinero = 187;
+    private const byte ClaseDruida = 7, ClaseCarpintero = 15, ClaseSastre = 16;
+    private const short CanaDePesca = 881, HachaDeLenador = 127, PiqueteDeMinero = 187, Tijeras = 885;
 
-    /// <summary>Lo que saca su oficio, con los mismos números que usa el servidor para saber qué da cada trabajo
-    /// (el pez de la caña, la leña y el hierro).</summary>
+    /// <summary>Lo que saca su oficio PARA VENDER, con los mismos números que usa el servidor para saber qué da cada
+    /// trabajo (el pez de la caña, la leña y el hierro). El que fabrica no vende lo que junta: ver <see cref="InsumoDeSuOficio"/>.</summary>
     private short ProductoDeSuOficio => _clase switch
     {
         ClasePescador => Pargo,
@@ -1370,13 +1392,62 @@ public sealed class Bot
 
     private const short Pargo = 139, Lena = 58, Hierro = 192;
 
+    /// <summary>Lo que junta para fabricar, y que por eso NO es botín aunque haya aparecido en la sesión: la leña del
+    /// Carpintero, la raíz del Druida y la piel de lobo del Sastre (los números del servidor: <c>GameLimits.WoodObj</c>,
+    /// <c>RootObj</c> y <c>SkinWolfObj</c>).</summary>
+    private short InsumoDeSuOficio => _clase switch
+    {
+        ClaseCarpintero => Lena,
+        ClaseDruida => (short)GameLimits.RootObj,
+        ClaseSastre => (short)GameLimits.SkinWolfObj,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// CÓMO FABRICA ESTA CLASE, o null si no fabrica. Los cuatro datos salen del handler del servidor, y son los que él
+    /// mira: el paquete, las recetas que acepta, la herramienta que tiene que estar PUESTA (el Costurero y la Olla; la
+    /// carpintería no pide ninguna, fiel al original) y la skill contra la que compara cada receta.
+    ///
+    /// <para>El Herrero no está: sus recetas piden lingotes, los lingotes salen de fundir mineral, y todos los
+    /// yacimientos del mundo están en mapas pk, donde el bot no trabaja. Es la misma decisión que deja al Minero sin
+    /// minar.</para>
+    /// </summary>
+    private (ClientPacketId Paquete, IReadOnlySet<int> Recetas, Oficios.Fabricacion Regla)? SuFabricacion => _clase switch
+    {
+        ClaseCarpintero => (ClientPacketId.CraftCarpenter, _entorno.Datos.CarpenterItems, Oficios.Carpinteria),
+        ClaseDruida => (ClientPacketId.Craftalquimia, _entorno.Datos.AlchemyItems, Oficios.Alquimia),
+        ClaseSastre => (ClientPacketId.CraftSastre, _entorno.Datos.TailorItems, Oficios.Sastreria),
+        _ => null,
+    };
+
+    /// <summary>La herramienta con la que fabrica, o 0 si no pide ninguna.</summary>
+    private short HerramientaDeFabricar => (short)(SuFabricacion?.Regla.Herramienta ?? 0);
+
+    /// <summary>
+    /// LA HERRAMIENTA QUE LE FALTA, o 0: primero la de juntar y después la de fabricar. Ninguna clase nace con ellas —el
+    /// Pescador, el Leñador y el Minero reciben todos el mismo martillo de piedra— así que hay que ir a comprarlas, igual
+    /// que un jugador nuevo.
+    /// </summary>
+    private short HerramientaQueLeFalta(SentidosDelBot sentidos)
+    {
+        short juntar = HerramientaDeSuOficio, fabricar = HerramientaDeFabricar;
+        if (juntar > 0 && sentidos.CuantoTiene(obj => obj == juntar) == 0) return juntar;
+        if (fabricar > 0 && sentidos.CuantoTiene(obj => obj == fabricar) == 0) return fabricar;
+        return 0;
+    }
+
+    /// <summary>¿Es una de las herramientas de su oficio? Ésas no se venden aunque las haya comprado en la sesión.</summary>
+    private bool EsHerramientaDeSuOficio(short obj) => obj != 0 && (obj == HerramientaDeSuOficio || obj == HerramientaDeFabricar);
+
     /// <summary>Qué cuenta como lugar de trabajo para su oficio: null para el agua (la pesca mira el terreno), o qué
     /// objetos del mapa sirven (los árboles para el Leñador, los yacimientos para el Minero).</summary>
     private Func<int, bool>? RecursoDeSuOficio()
     {
         byte skill = SkillDeSuOficio;
         if (skill == GameLimits.SkillPesca) return null;
-        return obj => _entorno.Datos.Obj(obj) is { } o && (skill == GameLimits.SkillTalar ? o.IsTree : o.IsDeposit);
+        // La tala y la botánica trabajan las dos sobre un ÁRBOL (el hacha y las tijeras, PacketDispatcher `IniciarFaena`).
+        bool arbol = skill is GameLimits.SkillTalar or GameLimits.SkillBotanica;
+        return obj => _entorno.Datos.Obj(obj) is { } o && (arbol ? o.IsTree : o.IsDeposit);
     }
 
     /// <summary>Un mapa donde se trabaja: los pk quedan afuera.</summary>
@@ -1415,11 +1486,8 @@ public sealed class Bot
     private long _trabajoSeguroHasta;
     private bool _trabajoSeguro;
 
-    /// <summary>¿Le falta la herramienta de su oficio? Ninguna clase nace con ella —el Pescador, el Leñador y
-    /// el Minero reciben todos el mismo martillo de piedra— así que hay que ir a comprarla, igual que un
-    /// jugador nuevo.</summary>
-    private bool LeFaltaLaHerramienta(SentidosDelBot sentidos) =>
-        HerramientaDeSuOficio > 0 && sentidos.CuantoTiene(obj => obj == HerramientaDeSuOficio) == 0;
+    /// <summary>¿Le falta alguna herramienta de su oficio? Ver <see cref="HerramientaQueLeFalta"/>.</summary>
+    private bool LeFaltaLaHerramienta(SentidosDelBot sentidos) => HerramientaQueLeFalta(sentidos) != 0;
 
     /// <summary>¿Es botín? Todo lo que apareció durante la sesión menos las pociones y el oro. Lo que lleva
     /// puesto ya lo descarta la mochila.</summary>
@@ -1444,7 +1512,10 @@ public sealed class Bot
         // cuando la comida y la bebida cuestan del orden de una moneda cada diez puntos. Lo de novato, las pociones y lo
         // que no vale nada siguen afuera (abajo), y lo puesto ya lo descarta la mochila.
         bool enElPozo = EnElPozo(sentidos.Oro, SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
-        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo) || obj == HerramientaDeSuOficio) return false;
+        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo) || EsHerramientaDeSuOficio(obj)) return false;
+        // NI LO QUE JUNTA PARA FABRICAR: la leña del Carpintero o la piel del Sastre aparecen durante la sesión como
+        // cualquier botín, y vendiéndolas no fabricaría nunca.
+        if (obj == InsumoDeSuOficio && obj != 0) return false;
         var o = _entorno.Datos.Obj(obj);
         // LA COMIDA Y LA BEBIDA DEL BOTÍN SÍ SE VENDEN, y era lo único que tenían. En el Dungeon Newbie —donde
         // nace TODO personaje— las criaturas que un recién nacido puede matar dan CERO oro: murciélagos,
@@ -1661,8 +1732,13 @@ public sealed class Bot
                                            CancellationToken ct)
     {
         short herramienta = HerramientaDeSuOficio;
-        if (herramienta == 0 || LeFaltaLaHerramienta(sentidos)) return false;
+        // Para juntar alcanza con la herramienta de juntar: al Druida sin la Olla todavía le sirven las raíces.
+        if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) == 0) return false;
         if (Environment.TickCount64 < _proximaFaena) return false;
+        // EL QUE JUNTA PARA FABRICAR NO JUNTA DE MÁS: un acierto de tala da de diez a treinta leñas y la cuchara gasta dos, así
+        // que sin tope el Carpintero se pasaría la vida talando. Con la reserva hecha, lo que falta es fabricar —o subir de
+        // nivel para destrabar la receta siguiente—, y mientras tanto sale a cazar como cualquiera.
+        if (InsumoDeSuOficio != 0 && sentidos.CuantoTiene(obj => obj == InsumoDeSuOficio) >= InsumoQueGuarda) return false;
         if (sentidos.Fuelle < FuelleMinimo) return false;   // trabajar cuesta energía
 
         byte skill = SkillDeSuOficio;
@@ -1732,16 +1808,124 @@ public sealed class Bot
     private void PostergarFaena() =>
         _proximaFaena = Environment.TickCount64 + _rng.Next(EnfriamientoFaenaMinS, EnfriamientoFaenaMaxS + 1) * 1_000L;
 
+    /// <summary>
+    /// FABRICAR LO SUYO con lo que juntó: el Carpintero con la leña, el Druida con las raíces y la Olla, el Sastre con las
+    /// pieles y el Costurero. Devuelve si hizo algo.
+    ///
+    /// <para>Cada vez, lo más difícil que ya sabe hacer (<see cref="QueFabricar"/>), y de a una por paquete: la energía y
+    /// la subida de la skill se cobran por PAQUETE y no por unidad (VB6 CarpinteroConstruirItem), así que de a una es lo
+    /// que más sube el oficio por material. El servidor rechaza en silencio (sin <c>Else</c> en el original) lo que no
+    /// llega, así que la skill sale de lo que él mandó (<see cref="SentidosDelBot.Skill"/>) y lo que salió se mira en
+    /// la mochila.</para>
+    ///
+    /// <para>En un mapa seguro y sin nada hostil cerca, como cualquiera que se sienta a coser, y con la energía que sobra:
+    /// es la misma que hace falta para pelear.</para>
+    /// </summary>
+    private async Task<bool> FabricarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        if (SuFabricacion is not { } fab) return false;
+        if (Environment.TickCount64 < _proximaFabricacion) return false;
+        if (!MapaSeguro(sentidos.Mapa) || HostilCerca(sentidos)) return false;
+        if (sentidos.Fuelle < FuelleParaFabricar || sentidos.EnergiaEnPuntos < fab.Regla.Energia) return false;
+        int skill = sentidos.Skill(fab.Regla.Skill);
+        if (skill < 0) return false;   // todavía no le llegaron sus skills
+        Func<int, int> tiene = obj => sentidos.CuantoTiene(o => o == obj);
+        if (QueFabricar(_entorno.Datos, fab.Recetas, fab.Regla, skill, tiene) is not { } primera) { PostergarFabricacion(); return false; }
+        // FABRICA PARA APRENDER, O PARA LO QUE LE FALTA. Con la skill en el tope de su nivel otra cuchara no le enseña nada
+        // y le come la energía de pelear; el Druida igual se hace el antídoto que le falta.
+        bool leFalta = EsPocionQueCuraElVeneno(primera) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere;
+        if (!ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leFalta)) { PostergarFabricacion(); return false; }
+
+        // LA HERRAMIENTA VA PUESTA (el Costurero, la Olla): equiparla es un interruptor, así que sólo se manda si la
+        // tiene guardada. El Druida la cambia por las Tijeras para juntar, y acá vuelve a ponerse la Olla.
+        short herramienta = (short)fab.Regla.Herramienta;
+        if (herramienta != 0)
+        {
+            if (tiene(herramienta) == 0) return false;
+            if (sentidos.EnLaMochila(obj => obj == herramienta) is { } guardada)
+            {
+                transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(guardada.Ranura)));
+                await Task.Delay(_rng.Next(400, 900), ct);
+            }
+        }
+
+        for (int vez = 0; vez < FabricacionesPorTanda; vez++)
+        {
+            if (Urge(sentidos) || sentidos.EnergiaEnPuntos < fab.Regla.Energia) break;
+            // Se vuelve a elegir cada vez: la skill sube con cada una y los materiales bajan.
+            if (QueFabricar(_entorno.Datos, fab.Recetas, fab.Regla, sentidos.Skill(fab.Regla.Skill), tiene) is not { } receta) break;
+            int antes = tiene(receta);
+            if (!transporte.Mandar(Paquete(fab.Paquete, w => w.WriteInteger(receta).WriteInteger((short)1)))) return false;
+            await Task.Delay(_rng.Next(FabricarMinMs, FabricarMaxMs), ct);
+            if (tiene(receta) <= antes) break;   // no salió, y el servidor no dice por qué
+        }
+        PostergarFabricacion();
+        return true;
+    }
+
+    /// <summary>
+    /// QUÉ FABRICAR: de las recetas de su oficio, la de mínimo más alto que le alcanza la skill y para la que tiene los
+    /// materiales de UNA unidad; entre dos que piden lo mismo, la que gasta menos. Null si ninguna. Es lo que hace
+    /// cualquiera que sube un oficio, y la regla es la del servidor (<see cref="Oficios.Fabricacion"/>), no una copia.
+    ///
+    /// <para>Una receta sin ningún material queda afuera: el servidor la daría gratis, y eso es una rareza de la data,
+    /// no un oficio.</para>
+    /// </summary>
+    public static short? QueFabricar(GameData datos, IReadOnlySet<int> recetas, Oficios.Fabricacion regla, int skill,
+                                     Func<int, int> cuantoTiene)
+    {
+        short? mejor = null;
+        int mejorPide = -1, mejorGasta = int.MaxValue;
+        foreach (int item in recetas.OrderBy(x => x))
+        {
+            if (datos.Obj(item) is not { } o) continue;
+            int pide = regla.Pide(o);
+            if (pide > skill) continue;
+            var materiales = regla.Materiales(o).Where(m => m.PorUnidad > 0).ToArray();
+            if (materiales.Length == 0 || materiales.Any(m => cuantoTiene(m.Obj) < m.PorUnidad)) continue;
+            int gasta = materiales.Sum(m => m.PorUnidad);
+            if (pide < mejorPide || (pide == mejorPide && gasta >= mejorGasta)) continue;
+            mejor = (short)item; mejorPide = pide; mejorGasta = gasta;
+        }
+        return mejor;
+    }
+
+    /// <summary>¿Vale sentarse a fabricar? Mientras la skill pueda subir —el tope es por nivel, <see cref="SkillProgression"/>—
+    /// o si lo que sale le hace falta.</summary>
+    public static bool ValeFabricar(int skill, int topeDelNivel, bool leHaceFalta) => skill < topeDelNivel || leHaceFalta;
+
+    private void PostergarFabricacion() =>
+        _proximaFabricacion = Environment.TickCount64 + _rng.Next(EnfriamientoFaenaMinS, EnfriamientoFaenaMaxS + 1) * 1_000L;
+
+    private long _proximaFabricacion;
+
+    /// <summary>Cuántas fabrica de una sentada, cuánto tarda cada una (lo que se tarda en apretar "construir" otra vez) y
+    /// con cuánta energía se sienta a fabricar: la mitad larga, porque la otra mitad es para pelear.</summary>
+    private const int FabricacionesPorTanda = 6, FabricarMinMs = 900, FabricarMaxMs = 2_200;
+    private const double FuelleParaFabricar = 0.6;
+
+    /// <summary>Cuánto de lo que junta para fabricar guarda antes de dejar de juntar.</summary>
+    private const int InsumoQueGuarda = 100;
+
     private long _proximaFaena;
 
     /// <summary>La skill del oficio de esta clase.</summary>
     private byte SkillDeSuOficio => _clase switch
     {
         ClasePescador => (byte)GameLimits.SkillPesca,
-        ClaseLenador => (byte)GameLimits.SkillTalar,
+        ClaseLenador or ClaseCarpintero => (byte)GameLimits.SkillTalar,
         ClaseMinero => (byte)GameLimits.SkillMineria,
+        ClaseDruida => (byte)GameLimits.SkillBotanica,
         _ => 0,
     };
+
+    /// <summary>
+    /// DÓNDE VAN LOS PUNTOS DE NIVEL: la skill de FABRICAR si fabrica, y si no la de su oficio. Es el mismo círculo que
+    /// el de la magia (ver <see cref="RepartirPuntos"/>): cada receta pide una skill mínima —la cuchara 5, la Poción
+    /// Violeta y las Vestimentas 10— y el servidor la rechaza en silencio si no llega, así que sin puntos no fabrica y
+    /// sin fabricar la skill no sube. Juntar no tiene mínimo: con la skill en cero se acierta uno de cada ocho.
+    /// </summary>
+    private byte SkillPropia => SuFabricacion is { } f ? (byte)f.Regla.Skill : SkillDeSuOficio;
 
     /// <summary>Meditar para recuperar maná. Sólo los que tienen maná, y sólo cuando les falta bastante:
     /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>
@@ -2252,6 +2436,16 @@ public sealed class Bot
     /// puntos libres si el personaje castea, así que el rechazo de ayer deja de valer.</summary>
     public static bool VuelveAProbarLosHechizos(byte skillQueSubio) => skillQueSubio == GameLimits.SkillMagia;
 
+    /// <summary>¿Le falta Magia para castear el hechizo con el que nació? Una skill que todavía no sabe (-1) cuenta como
+    /// que falta: es el personaje recién creado, que tiene todo en cero.</summary>
+    public static bool LeFaltaMagiaParaCastear(int magia, int minima) => magia < minima;
+
+    /// <summary>El hechizo con el que nace todo el que castea (VB6 <c>UserHechizos(1) = 2</c>, TCP.bas:541).</summary>
+    private const short HechizoDeNacimiento = 2;
+
+    /// <summary>La Magia que pide ese hechizo, de la data.</summary>
+    private int MagiaDelHechizoDeNacimiento => _entorno.Datos.Spell(HechizoDeNacimiento)?.MinSkill ?? 0;
+
     public static (byte Ranura, int Cura)? MejorCuraQuePuedePagar(IReadOnlyList<(byte Ranura, int Cura, int Mana)> curas, int mana)
     {
         (byte Ranura, int Cura)? mejor = null;
@@ -2574,8 +2768,7 @@ public sealed class Bot
 
     /// <summary>Lo que cuesta la herramienta de su oficio si todavía le falta; cero si ya la tiene o no tiene oficio.</summary>
     private int CuestaLaHerramienta(SentidosDelBot sentidos) =>
-        LeFaltaLaHerramienta(sentidos) && HerramientaDeSuOficio > 0
-            ? _entorno.Datos.Obj(HerramientaDeSuOficio)?.Value ?? 0 : 0;
+        HerramientaQueLeFalta(sentidos) is var falta && falta > 0 ? _entorno.Datos.Obj(falta)?.Value ?? 0 : 0;
 
     /// <summary>
     /// ¿LO ÚNICO QUE LE FALTA SON GUSTOS? O sea: nada de comer, nada de tomar, nada con qué curarse y la herramienta

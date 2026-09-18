@@ -42,4 +42,30 @@ public static class Oficios
     /// VB6 no trunca—, así que el 1,5 del herrero no se pierde: 30 × 1,5 = 45 clavado.</summary>
     public static bool PuedeFundir(int minSkillDelMineral, int mineria, byte clase) =>
         minSkillDelMineral <= mineria / ModFundicion(clase);
+
+    /// <summary>
+    /// UN OFICIO DE FABRICAR, con lo que el servidor mira para aceptar una receta: la skill, el mínimo que pide cada
+    /// objeto, lo que gasta UNA unidad de cada material, la herramienta que tiene que estar PUESTA (0 = ninguna) y la
+    /// energía que cobra cada paquete. Lo usan el handler (<c>PacketDispatcher.DoCraft</c>) y los bots: dos copias de
+    /// la misma regla se desincronizan solas, y el bot terminaría pidiendo lo que el servidor rechaza en silencio.
+    /// </summary>
+    public sealed record Fabricacion(int Skill, Func<Data.ObjInfo, int> Pide,
+                                     Func<Data.ObjInfo, (int Obj, int PorUnidad)[]> Materiales, int Herramienta, int Energia);
+
+    /// <summary>VB6 CarpinteroConstruirItem (Trabajo.bas:747): leña, 20 de energía, sin herramienta.</summary>
+    public static readonly Fabricacion Carpinteria = new(GameLimits.SkillCarpinteria, o => o.SkillCarpentry,
+        o => new[] { (GameLimits.WoodObj, o.Wood) }, Herramienta: 0, Energia: 20);
+
+    /// <summary>VB6 druidaConstruirItem (Trabajo.bas:2428): raíces, la Olla (887) puesta, 30 de energía.</summary>
+    public static readonly Fabricacion Alquimia = new(GameLimits.SkillAlquimia, o => o.SkillAlchemy,
+        o => new[] { (GameLimits.RootObj, o.Roots) }, Herramienta: 887, Energia: 30);
+
+    /// <summary>VB6 SastreConstruirItem (Trabajo.bas:390): las tres pieles, el Costurero (886) puesto, 50 de energía.</summary>
+    public static readonly Fabricacion Sastreria = new(GameLimits.SkillSastreria, o => o.SkillTailoring,
+        o => new[]
+        {
+            (GameLimits.SkinWolfObj, o.SkinWolf),
+            (GameLimits.SkinBrownBearObj, o.SkinBrownBear),
+            (GameLimits.SkinPolarBearObj, o.SkinPolarBear),
+        }, Herramienta: 886, Energia: 50);
 }

@@ -7410,33 +7410,31 @@ public sealed partial class PacketDispatcher
     private void HandleCraftCarpenter(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        // VB6 CarpinteroConstruirItem (Trabajo.bas:765): 20 de energía, LocaleMsg 206. La regla vive en `Oficios`,
+        // que es también la que usan los bots para elegir qué fabricar.
+        var f = Oficios.Carpinteria;
         _loop.Enqueue(() => DoCraft(session, item, cant, "construir", "Construiste", _data.CarpenterItems,
-            GameLimits.SkillCarpinteria, o => o.SkillCarpentry, o => new[] { (GameLimits.WoodObj, o.Wood) },
-            staminaCost: 20));   // VB6 CarpinteroConstruirItem (Trabajo.bas:765): 20 de energía, LocaleMsg 206
+            f.Skill, f.Pide, f.Materiales, requiredTool: f.Herramienta, staminaCost: f.Energia));
     }
 
     /// <summary>CraftSastre (id 26): Item, cant. Sew from skins (obj.dat PielLobo/PielOsoPardo/PielOsoPolar).</summary>
     private void HandleCraftSastre(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        // VB6 SastreConstruirItem: exige el Costurero (886); Trabajo.bas:395: 50 de energía, y ES el único que manda el 93.
+        var f = Oficios.Sastreria;
         _loop.Enqueue(() => DoCraft(session, item, cant, "confeccionar", "Confeccionaste", _data.TailorItems,
-            GameLimits.SkillSastreria, o => o.SkillTailoring, o => new[]
-            {
-                (GameLimits.SkinWolfObj, o.SkinWolf),
-                (GameLimits.SkinBrownBearObj, o.SkinBrownBear),
-                (GameLimits.SkinPolarBearObj, o.SkinPolarBear),
-            }, requiredTool: 886,            // VB6 SastreConstruirItem: exige el Costurero (886)
-               staminaCost: 50, tiredMsg: 93));   // Trabajo.bas:395: 50 de energía, y ES el único que manda el 93
+            f.Skill, f.Pide, f.Materiales, requiredTool: f.Herramienta, staminaCost: f.Energia, tiredMsg: 93));
     }
 
     /// <summary>Craftalquimia (id 25): Item, cant. Brew a potion from roots (obj.dat Raices).</summary>
     private void HandleCraftAlquimia(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        // VB6 druidaConstruirItem: exige la Olla (887); Trabajo.bas:2433: 30 de energía, LocaleMsg 206.
+        var f = Oficios.Alquimia;
         _loop.Enqueue(() => DoCraft(session, item, cant, "preparar", "Preparaste", _data.AlchemyItems,
-            GameLimits.SkillAlquimia, o => o.SkillAlchemy, o => new[] { (GameLimits.RootObj, o.Roots) },
-            requiredTool: 887,          // VB6 druidaConstruirItem: exige la Olla (887)
-            staminaCost: 30));          // Trabajo.bas:2433: 30 de energía, LocaleMsg 206
+            f.Skill, f.Pide, f.Materiales, requiredTool: f.Herramienta, staminaCost: f.Energia));
     }
 
     /// <summary>Shared crafting: validate the recipe, skill, and materials, then consume the materials and

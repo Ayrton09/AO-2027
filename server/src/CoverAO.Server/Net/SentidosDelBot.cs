@@ -174,6 +174,32 @@ public sealed class SentidosDelBot
     /// gasta: dejarlos juntándose es de las cosas que más delatan que del otro lado no hay nadie.</summary>
     public int PuntosLibres { get { lock (_candado) return _puntosLibres; } }
 
+    /// <summary>
+    /// CUÁNTO TIENE DE ESA SKILL, o -1 si todavía no lo sabe. Llega entera con <c>SendSkills</c> —el servidor la manda al
+    /// entrar si hay puntos libres, después de cada reparto y cuando se la pide— y de a una con el aviso de que subió
+    /// (<c>LocaleMsg 454</c>, <c>"*skill%valor"</c>). Hace falta para elegir qué fabricar: cada receta pide una skill
+    /// mínima y el servidor rechaza en SILENCIO la que no llega (VB6, sin <c>Else</c>).
+    /// </summary>
+    public int Skill(int skill)
+    {
+        lock (_candado) return !_sabeSusSkills || skill < 1 || skill >= _skills.Length ? -1 : _skills[skill];
+    }
+
+    private readonly byte[] _skills = new byte[GameLimits.NumSkills + 1];
+    private bool _sabeSusSkills;
+
+    /// <summary>"Tu habilidad en X subió a Y" (VB6 SubirSkill): es el ÚNICO aviso de que una skill subió por usarla.</summary>
+    private const short AvisoDeSkillQueSube = 454;
+
+    /// <summary>Lee el <c>"*skill%valor"</c> del aviso de que una skill subió. Null si no tiene esa forma.</summary>
+    public static (int Skill, int Valor)? SkillQueSubio(string argumentos)
+    {
+        if (argumentos.Length < 4 || argumentos[0] != '*') return null;
+        int pct = argumentos.IndexOf('%');
+        return pct > 1 && int.TryParse(argumentos[1..pct], out int skill) && int.TryParse(argumentos[(pct + 1)..], out int valor)
+            ? (skill, valor) : null;
+    }
+
     /// <summary>La ventana de comercio está abierta.</summary>
     public bool Comerciando { get { lock (_candado) return _comerciando; } }
 
@@ -784,8 +810,21 @@ public sealed class SentidosDelBot
                     // Y el rechazo del casteo por falta de Magia, que es lo que dejaba al bot eligiendo para
                     // siempre un hechizo que no puede lanzar. Ver `Bot.SeLoRechazoPorMagia`.
                     else if (aviso == AvisoDeFaltaDeMagia) lock (_candado) _ultimoRechazoDeMagia = Environment.TickCount64;
+                    // UNA SKILL SUBIÓ POR USARLA: el servidor no vuelve a mandar las 27, sólo este aviso. Es un paquete
+                    // DELTA, y sin leerlo el bot seguiría creyendo que su skill de fabricar está donde la dejó el reparto.
+                    else if (aviso == AvisoDeSkillQueSube && SkillQueSubio(l.Cadena()) is { } subio)
+                        lock (_candado)
+                            if (subio.Skill >= 1 && subio.Skill < _skills.Length) _skills[subio.Skill] = (byte)Math.Clamp(subio.Valor, 0, 255);
                     break;
                 }
+
+                case ServerPacketId.SendSkills:
+                    lock (_candado)
+                    {
+                        for (int i = 1; i < _skills.Length; i++) _skills[i] = l.Byte();
+                        _sabeSusSkills = true;
+                    }
+                    break;
 
                 case ServerPacketId.ChangeInventorySlot:
                 {
