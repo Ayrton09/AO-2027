@@ -136,6 +136,41 @@ public class FabricarDelBotTests
     }
 
     /// <summary>
+    /// LO QUE LE FALTA PARA FABRICAR: los materiales de lo que ya sabe hacer, cuando no le alcanza para nada. Al Sastre con una
+    /// piel le falta la piel de lobo; con seis, nada; y con la skill por debajo de la primera receta, tampoco: todavía no sabe
+    /// hacer nada, así que no hay qué salir a buscar.
+    /// </summary>
+    [Fact]
+    public void Le_falta_lo_que_piden_las_recetas_que_ya_sabe()
+    {
+        if (Datos() is not { } d) return;
+        Assert.Equal(new[] { GameLimits.SkinWolfObj },
+            Bot.MaterialesQueLeFaltan(d, d.TailorItems, Oficios.Sastreria, 13, Tiene((GameLimits.SkinWolfObj, 1))).Order());
+        Assert.Empty(Bot.MaterialesQueLeFaltan(d, d.TailorItems, Oficios.Sastreria, 13, Tiene((GameLimits.SkinWolfObj, 6))));
+        Assert.Empty(Bot.MaterialesQueLeFaltan(d, d.TailorItems, Oficios.Sastreria, 9, Tiene()));
+        Assert.Equal(new[] { GameLimits.WoodObj },
+            Bot.MaterialesQueLeFaltan(d, d.CarpenterItems, Oficios.Carpinteria, 5, Tiene((GameLimits.WoodObj, 1))).Order());
+        Assert.Equal(new[] { GameLimits.RootObj },
+            Bot.MaterialesQueLeFaltan(d, d.AlchemyItems, Oficios.Alquimia, 10, Tiene()).Order());
+    }
+
+    /// <summary>
+    /// DE LO QUE PIDEN LAS PRIMERAS RECETAS, SÓLO LA PIEL SE CAZA: la suelta el Lobo. La leña y la raíz no las suelta ninguna
+    /// criatura, se juntan con la herramienta; por eso salir a cazar para el oficio mueve al Sastre y a nadie más. Si la data
+    /// cambia, este test tiene que decirlo.
+    /// </summary>
+    [Fact]
+    public void De_lo_que_piden_las_primeras_recetas_solo_la_piel_se_caza()
+    {
+        if (Datos() is not { } d) return;
+        Assert.True(Bot.SueltaAlgoDe(d.Npc(501), new HashSet<int> { GameLimits.SkinWolfObj }), "el Lobo no suelta la piel");
+        var seJuntan = new HashSet<int> { GameLimits.WoodObj, GameLimits.RootObj };
+        Assert.DoesNotContain(d.Npcs.Values, n => Bot.SueltaAlgoDe(n, seJuntan));
+        // Y sin nada que buscar no sirve ninguna: el Lobo suelta cosas, pero no es eso.
+        Assert.False(Bot.SueltaAlgoDe(d.Npc(501), new HashSet<int>()));
+    }
+
+    /// <summary>
     /// EL DRUIDA CASTEA PRIMERO: su hechizo de nacimiento pide Magia 5 y los puntos van ahí hasta llegar; recién después, a la
     /// Alquimia. Con todo a la Alquimia desde el principio no casteaba, que es el defecto viejo de las clases que castean.
     /// </summary>

@@ -1774,17 +1774,24 @@ public sealed class Bot
         // la ventana de visión. Pero MINAR y TALAR exigen DOS baldosas contadas en Manhattan —"Estás demasiado
         // lejos"— y el bot se acercaba a seis: para el Minero y el Leñador el clic se rechazaba SIEMPRE, y las
         // doce faenas de la tanda se perdían contra ese aviso.
-        int cerca = agua ? AlcanceHechizoX : DistanciaParaFaenar;
-        for (int i = 0; i < RadioDeFaena * 2 && !cerrada.IsCompleted; i++)
+        //
+        // Y AL ÁRBOL O AL YACIMIENTO SE LLEGA POR EL CAMINO, no de a un paso en línea recta. Medido en `oficios2`: el Druida,
+        // recién comprada la tijera, eligió un árbol del mapa 20 a seis baldosas en línea recta, con una pared de cuatro filas
+        // en el medio —por el camino son cuarenta y un pasos—, y los pasos contra la pared lo dejaron donde estaba. Fue su
+        // único intento de la corrida.
+        if (!agua)
         {
-            var (x, y) = sentidos.Posicion;
-            int dx = punto.Value.Donde.X - x, dy = punto.Value.Donde.Y - y;
-            bool aTiro = agua
-                ? Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
-                : Math.Abs(dx) + Math.Abs(dy) <= cerca;
-            if (aTiro) break;
-            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) { PostergarFaena(); return true; }
+            if (!await IrHastaAsync(transporte, sentidos, sentidos.Mapa, punto.Value.Donde.X, punto.Value.Donde.Y, cerrada, ct,
+                                    DistanciaParaFaenar)) { PostergarFaena(); return true; }
         }
+        else
+            for (int i = 0; i < RadioDeFaena * 2 && !cerrada.IsCompleted; i++)
+            {
+                var (x, y) = sentidos.Posicion;
+                int dx = punto.Value.Donde.X - x, dy = punto.Value.Donde.Y - y;
+                if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY) break;
+                if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct) != Paso.Dado) { PostergarFaena(); return true; }
+            }
 
         // ¿QUEDÓ A TIRO? El acercamiento corta por intentos, no por haber llegado: si una pared lo dejó lejos,
         // los doce clics caen fuera de la ventana de visión del servidor y se pierden contra un PosUpdate mudo.
@@ -1899,6 +1906,63 @@ public sealed class Bot
     /// <summary>¿Vale sentarse a fabricar? Mientras la skill pueda subir —el tope es por nivel, <see cref="SkillProgression"/>—
     /// o si lo que sale le hace falta.</summary>
     public static bool ValeFabricar(int skill, int topeDelNivel, bool leHaceFalta) => skill < topeDelNivel || leHaceFalta;
+
+    /// <summary>
+    /// LO QUE LE FALTA PARA FABRICAR: los materiales de las recetas que ya sabe hacer, cuando no le alcanza para ninguna. Vacío si
+    /// puede fabricar algo o si todavía no sabe hacer nada.
+    /// </summary>
+    public static IReadOnlySet<int> MaterialesQueLeFaltan(GameData datos, IReadOnlySet<int> recetas, Oficios.Fabricacion regla,
+                                                         int skill, Func<int, int> cuantoTiene)
+    {
+        var falta = new HashSet<int>();
+        if (QueFabricar(datos, recetas, regla, skill, cuantoTiene) is not null) return falta;
+        foreach (int item in recetas)
+        {
+            if (datos.Obj(item) is not { } o || regla.Pide(o) > skill) continue;
+            foreach (var m in regla.Materiales(o))
+                if (m.PorUnidad > 0 && cuantoTiene(m.Obj) < m.PorUnidad) falta.Add(m.Obj);
+        }
+        return falta;
+    }
+
+    /// <summary>¿Suelta esa criatura alguno de esos objetos? El Lobo, la piel del Sastre (<c>RandomDrop 414</c> al 100 %).</summary>
+    public static bool SueltaAlgoDe(NpcInfo? criatura, IReadOnlySet<int> objetos) =>
+        objetos.Count > 0 && criatura?.Drops is { } lo && lo.Any(d => d.ProbTirar > 0 && objetos.Contains(d.ObjIndex));
+
+    /// <summary>
+    /// EL COTO PARA SU OFICIO: el mapa con más criaturas de las que <paramref name="sirve"/> a <see cref="SaltosHastaElCoto"/> mapas o
+    /// menos, y si no hay, el más cercano donde nazca alguna. SÓLO donde se caza sin peligro (<paramref name="seCazaAhi"/>): por un
+    /// material no se arriesga lo que sí se arriesga por no tener dónde cazar. null si no hay ninguno.
+    ///
+    /// <para>Por cantidad y no por lo que rinde: lo que se busca es juntar, y por lo que rinde todos los Lobos empatan.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? CotoParaSuOficio(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                           Func<int, bool> sirve, Func<int, bool>? pisable,
+                                                                           Func<int, bool> seCazaAhi)
+    {
+        if (mapas.CotoMasPoblado(mapa, desde, sirve, SaltosHastaElCoto, pisable, seCazaAhi) is { } poblado)
+            return (poblado.Mapa, poblado.X, poblado.Y, poblado.Saltos);
+        return mapas.DondeHay(mapa, desde, sirve, seCazaAhi, pisable);
+    }
+
+    /// <summary>
+    /// LO QUE SALE A CAZAR PARA SU OFICIO: los materiales que le faltan para fabricar lo que ya sabe (<see cref="MaterialesQueLeFaltan"/>).
+    /// Vacío si no fabrica, si todavía no tiene la herramienta —primero la plata para comprarla— o si en su nivel ya no aprende nada.
+    ///
+    /// <para>Sólo mueve al Sastre: la piel de lobo la suelta el Lobo, y la leña y la raíz no las suelta nadie, se juntan. Medido en
+    /// `oficios2`: el Sastre cazaba donde cazaba cualquiera y en tres cuartos de hora juntó UNA piel de las seis que pide la
+    /// primera receta, con el Costurero comprado desde el nivel 9.</para>
+    /// </summary>
+    private IReadOnlySet<int> LoQueSaleACazarParaSuOficio(SentidosDelBot sentidos)
+    {
+        if (SuFabricacion is not { } fab) return NadaQueCazar;
+        if (fab.Regla.Herramienta != 0 && sentidos.CuantoTiene(o => o == fab.Regla.Herramienta) == 0) return NadaQueCazar;
+        int skill = sentidos.Skill(fab.Regla.Skill);
+        if (skill < 0 || !ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leHaceFalta: false)) return NadaQueCazar;
+        return MaterialesQueLeFaltan(_entorno.Datos, fab.Recetas, fab.Regla, skill, obj => sentidos.CuantoTiene(o => o == obj));
+    }
+
+    private static readonly IReadOnlySet<int> NadaQueCazar = new HashSet<int>();
 
     private void PostergarFabricacion() =>
         _proximaFabricacion = Environment.TickCount64 + _rng.Next(EnfriamientoFaenaMinS, EnfriamientoFaenaMaxS + 1) * 1_000L;
@@ -2188,10 +2252,22 @@ public sealed class Bot
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m),
             _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
             f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno));
-        var hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f),
+        // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.
+        var paraSuOficio = LoQueSaleACazarParaSuOficio(sentidos);
+        Func<int, bool> esPresaDelOficio = f => esPresa(f) && SueltaAlgoDe(_entorno.Datos.Npc(f), paraSuOficio);
+        var hallado = paraSuOficio.Count > 0
+            ? CotoParaSuOficio(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresaDelOficio, Pisable(sentidos), seCazaAhi)
+            : null;
+        bool porElOro = false;
+        int porLoQueRinde = 0;
+        Func<int, bool> sirve = esPresaDelOficio;
+        if (hallado is null)
+        {
+            hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f),
                                  f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0, Pisable(sentidos),
-                                 out bool porElOro, out int porLoQueRinde, seCazaAhi, m => CuantoLeGusta(_propio, m));
-        Func<int, bool> sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
+                                 out porElOro, out porLoQueRinde, seCazaAhi, m => CuantoLeGusta(_propio, m));
+            sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
+        }
         if (hallado is not { } coto) return false;
 
         // REPARTIRSE. El navegante devuelve siempre el MISMO spawn —el más cercano— así que todos los bots

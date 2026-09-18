@@ -250,6 +250,68 @@ public class CotoDelBotTests
         Assert.True(loElegian > 0, "sin el filtro ningún mapa vecino elegía el 202: el test no prueba nada");
     }
 
+    private static readonly IReadOnlySet<int> PielDeLobo = new HashSet<int> { CoverAO.Server.Game.GameLimits.SkinWolfObj };
+
+    /// <summary>
+    /// EL SASTRE SIN PIELES VA A DONDE ESTÁN LOS LOBOS, y al que tiene más a dos mapas o menos. Medido en `oficios2`: cazando donde
+    /// cazaba cualquiera juntó UNA piel en tres cuartos de hora. Un nivel 12 sale de la cuna, con sus seis Lobos repartidos
+    /// entre todos los recién creados; un nivel 16 ya no entra a la zona NEWBIE.
+    /// </summary>
+    [Theory]
+    // nivel | vida | mapa y baldosa de donde sale
+    [InlineData(12, 120, 37, 57, 74)]    // la cuna
+    [InlineData(16, 160, 1, 58, 45)]     // la llegada al mapa 1
+    public void El_sastre_sin_pieles_va_a_donde_estan_los_lobos(int nivel, int vida, int mapa, int x, int y)
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        var presa = Presa(d, vida, nivel);
+        Func<int, bool> sirve = f => presa(f) && Bot.SueltaAlgoDe(d.Npc(f), PielDeLobo);
+        Func<int, bool> pisable = z => Bot.PuedeEntrar(nivel, d.MapZone(z));
+        var seCaza = SeCaza(d, vida, nivel);
+        var desde = ((byte)x, (byte)y);
+        var coto = Bot.CotoParaSuOficio(m.Mapas, mapa, desde, sirve, pisable, seCaza);
+        Assert.NotNull(coto);
+        var c = coto.Value;
+        Assert.True(seCaza(c.Mapa) && pisable(c.Mapa), $"eligió el {c.Mapa}, donde no se caza o no entra");
+        int lobosAlla = m.Mapas.CuantasSeAlcanzan(c.Mapa, (c.X, c.Y), sirve);
+        Assert.True(lobosAlla > 0, $"en el {c.Mapa} no hay ningún Lobo que sirva");
+        // Ninguno de los que se alcanzan a dos mapas, y donde entra y se caza, tiene más.
+        foreach (var (otro, _, entrada, _) in m.Mapas.MapasAlcanzables(mapa, desde, 2, pisable))
+            if (seCaza(otro))
+                Assert.True(m.Mapas.CuantasSeAlcanzan(otro, entrada, sirve) <= lobosAlla,
+                    $"el {otro} tiene más Lobos que el {c.Mapa}, que es el que eligió");
+        // Y SIN LA REGLA NO IBA: el coto de siempre tiene menos Lobos, o el test no prueba nada.
+        var deSiempre = Bot.ElegirCoto(m.Mapas, mapa, desde, presa, f => d.Npc(f)?.GiveGld > 0,
+                                       f => presa(f) ? (int)(d.Npc(f)?.GiveExp ?? 0) : 0, pisable, out _, out _, seCaza);
+        Assert.True(deSiempre is not { } s || m.Mapas.CuantasSeAlcanzan(s.Mapa, (s.X, s.Y), sirve) < lobosAlla,
+            $"el coto de siempre ({deSiempre?.Mapa}) ya tenía los Lobos: el test no prueba nada");
+    }
+
+    /// <summary>
+    /// Y POR UNA PIEL NO SE VA A DONDE LO MATAN: alrededor del 202 el que tiene más Lobos es el 202 mismo, donde vive el Basilisco,
+    /// y un Sastre de nivel 13 no lo elige desde ninguno de los mapas vecinos.
+    /// </summary>
+    [Fact]
+    public void Por_una_piel_no_se_va_a_donde_vive_el_Basilisco()
+    {
+        if (Mundo() is not { } m) return;
+        const int vida = 140, nivel = 13;
+        var d = m.Datos;
+        var presa = Presa(d, vida, nivel);
+        Func<int, bool> sirve = f => presa(f) && Bot.SueltaAlgoDe(d.Npc(f), PielDeLobo);
+        var seCaza = SeCaza(d, vida, nivel);
+        var entrada202 = d.MapExits.Values.Where(e => e.DestMap == 202).Select(e => ((byte)e.DestX, (byte)e.DestY)).First();
+        int loElegian = 0;
+        foreach (var (mapa, _, entrada, _) in m.Mapas.MapasAlcanzables(202, entrada202, 2))
+        {
+            if (Bot.CotoParaSuOficio(m.Mapas, mapa, entrada, sirve, null, _ => true)?.Mapa == 202) loElegian++;
+            var ahora = Bot.CotoParaSuOficio(m.Mapas, mapa, entrada, sirve, null, seCaza);
+            Assert.True(ahora is not { } a || seCaza(a.Mapa), $"desde el {mapa} eligió el {ahora?.Mapa}, donde no se caza");
+        }
+        Assert.True(loElegian > 0, "sin el filtro ningún vecino elegía el 202: el test no prueba nada");
+    }
+
     /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
     [Fact]
     public void Si_ningun_coto_pasa_el_filtro_se_elige_como_siempre()
