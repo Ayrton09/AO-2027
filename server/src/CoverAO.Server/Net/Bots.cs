@@ -648,7 +648,7 @@ public sealed class Bot
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
-            if (await FabricarAsync(transporte, sentidos, ct)) continue;
+            if (await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
@@ -1827,13 +1827,14 @@ public sealed class Bot
     /// la mochila.</para>
     ///
     /// <para>En un mapa seguro y sin nada hostil cerca, como cualquiera que se sienta a coser, y con la energía que sobra:
-    /// es la misma que hace falta para pelear.</para>
+    /// es la misma que hace falta para pelear. Si tiene qué fabricar y está en un mapa inseguro, va a uno seguro
+    /// (<see cref="DondeSentarseAFabricar"/>).</para>
     /// </summary>
-    private async Task<bool> FabricarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    private async Task<bool> FabricarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         if (SuFabricacion is not { } fab) return false;
         if (Environment.TickCount64 < _proximaFabricacion) return false;
-        if (!MapaSeguro(sentidos.Mapa) || HostilCerca(sentidos)) return false;
+        if (HostilCerca(sentidos)) return false;
         if (sentidos.Fuelle < FuelleParaFabricar || sentidos.EnergiaEnPuntos < fab.Regla.Energia) return false;
         int skill = sentidos.Skill(fab.Regla.Skill);
         if (skill < 0) return false;   // todavía no le llegaron sus skills
@@ -1844,22 +1845,35 @@ public sealed class Bot
         bool leFalta = EsPocionQueCuraElVeneno(primera) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere;
         if (!ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leFalta)) { PostergarFabricacion(); return false; }
 
+        short herramienta = (short)fab.Regla.Herramienta;
+        if (herramienta != 0 && tiene(herramienta) == 0) return false;
+
+        // EN UN MAPA INSEGURO SE VA A FABRICAR A UNO SEGURO, como el que vuelve al pueblo a coser. Medido en `oficios3`: el
+        // Sastre cazó Lobos en el 19 y el 24, los dos pk, juntó 49 pieles y no fabricó nada en toda la corrida: no volvió
+        // a un mapa seguro, y fabricar sólo se hacía en el mapa donde estaba parado.
+        if (!MapaSeguro(sentidos.Mapa))
+        {
+            if (DondeSentarseAFabricar(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } lugar)
+            { PostergarFabricacion(); return false; }
+            if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, ToleranciaDelCoto))
+                PostergarFabricacion();
+            return true;   // llegó: la vuelta que viene fabrica, ya en el mapa seguro
+        }
+
         // LA HERRAMIENTA VA PUESTA (el Costurero, la Olla): equiparla es un interruptor, así que sólo se manda si la
         // tiene guardada. El Druida la cambia por las Tijeras para juntar, y acá vuelve a ponerse la Olla.
-        short herramienta = (short)fab.Regla.Herramienta;
-        if (herramienta != 0)
+        if (herramienta != 0 && sentidos.EnLaMochila(obj => obj == herramienta) is { } guardada)
         {
-            if (tiene(herramienta) == 0) return false;
-            if (sentidos.EnLaMochila(obj => obj == herramienta) is { } guardada)
-            {
-                transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(guardada.Ranura)));
-                await Task.Delay(_rng.Next(400, 900), ct);
-            }
+            transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(guardada.Ranura)));
+            await Task.Delay(_rng.Next(400, 900), ct);
         }
 
         for (int vez = 0; vez < FabricacionesPorTanda; vez++)
         {
-            if (Urge(sentidos) || sentidos.EnergiaEnPuntos < fab.Regla.Energia) break;
+            if (Urge(sentidos)) break;
+            // SIN ENERGÍA, SE ESPERA A QUE VUELVA: sentado se recupera en segundos (`RecStamina`, cada 2 s), y cortar la tanda
+            // ahí dejaba con una o dos hechas al que había viajado a fabricar. Cada Vestimenta cuesta 50.
+            if (!await EsperarEnergiaAsync(sentidos, fab.Regla.Energia, ct)) break;
             // Se vuelve a elegir cada vez: la skill sube con cada una y los materiales bajan.
             int ahora = sentidos.Skill(fab.Regla.Skill);
             if (QueFabricar(_entorno.Datos, fab.Recetas, fab.Regla, ahora, tiene) is not { } receta) break;
@@ -1963,6 +1977,36 @@ public sealed class Bot
     }
 
     private static readonly IReadOnlySet<int> NadaQueCazar = new HashSet<int>();
+
+    /// <summary>
+    /// DÓNDE SENTARSE A FABRICAR estando en un mapa inseguro: el más cercano de los que <paramref name="sirve"/> —los seguros—, con la
+    /// baldosa por la que se entra. null si no hay ninguno a <see cref="Navegante.TopeDeMapas"/> saltos.
+    ///
+    /// <para>Con criaturas o sin ellas: fabricar ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba al Sastre
+    /// sin dónde desde el 19, donde cazaba: el río del 98 corta el camino al 20, y a cinco saltos los únicos seguros son el mapa
+    /// 1 y la cuna, que tienen.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y)? DondeSentarseAFabricar(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                     Func<int, bool> sirve, Func<int, bool>? pisable)
+    {
+        foreach (var (otro, _, entrada, _) in mapas.MapasAlcanzables(mapa, desde, Navegante.TopeDeMapas, pisable))
+            if (sirve(otro)) return (otro, entrada.X, entrada.Y);
+        return null;
+    }
+
+    /// <summary>Espera, sentado, a tener la energía de una fabricación más. Devuelve si la tiene; corta si algo urge o se
+    /// acerca algo hostil.</summary>
+    private async Task<bool> EsperarEnergiaAsync(SentidosDelBot sentidos, int energia, CancellationToken ct)
+    {
+        for (int i = 0; i < EsperasDeEnergia && sentidos.EnergiaEnPuntos < energia; i++)
+        {
+            if (Urge(sentidos) || HostilCerca(sentidos)) return false;
+            await Task.Delay(EsperaDeEnergiaMs, ct);
+        }
+        return sentidos.EnergiaEnPuntos >= energia;
+    }
+
+    private const int EsperasDeEnergia = 15, EsperaDeEnergiaMs = 2_000;
 
     private void PostergarFabricacion() =>
         _proximaFabricacion = Environment.TickCount64 + _rng.Next(EnfriamientoFaenaMinS, EnfriamientoFaenaMaxS + 1) * 1_000L;

@@ -312,6 +312,30 @@ public class CotoDelBotTests
         Assert.True(loElegian > 0, "sin el filtro ningún vecino elegía el 202: el test no prueba nada");
     }
 
+    /// <summary>
+    /// DÓNDE SE SIENTA A FABRICAR EL QUE ESTÁ EN UN MAPA INSEGURO: el mapa seguro más cercano. Medido en `oficios3`: el Sastre juntó
+    /// 49 pieles cazando Lobos en el 19 y el 24, los dos pk, y no fabricó nada. Desde las baldosas donde estuvo hay dónde, a cinco
+    /// saltos o menos, también con el nivel que ya no entra a la cuna.
+    /// </summary>
+    [Theory]
+    [InlineData(12)]
+    [InlineData(16)]
+    public void Desde_donde_caza_lobos_hay_un_mapa_seguro_donde_sentarse_a_fabricar(int nivel)
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        Func<int, bool> seguro = z => !d.IsPkMap(z);
+        Func<int, bool> pisable = z => Bot.PuedeEntrar(nivel, d.MapZone(z));
+        // Las baldosas donde estuvo el Sastre en `oficios3`, y la llegada al 8 desde el mapa 1.
+        foreach (var (mapa, x, y) in new (int, byte, byte)[] { (19, 75, 55), (19, 68, 46), (24, 60, 65), (24, 32, 11), (8, 91, 50) })
+        {
+            Assert.True(d.IsPkMap(mapa), $"el {mapa} no es inseguro: el test no prueba nada");
+            var lugar = Bot.DondeSentarseAFabricar(m.Mapas, mapa, (x, y), seguro, pisable);
+            Assert.True(lugar is not null, $"desde el {mapa} ({x},{y}) no hay dónde sentarse a fabricar");
+            Assert.True(seguro(lugar.Value.Mapa) && pisable(lugar.Value.Mapa), $"desde el {mapa} eligió el {lugar.Value.Mapa}");
+        }
+    }
+
     /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
     [Fact]
     public void Si_ningun_coto_pasa_el_filtro_se_elige_como_siempre()
