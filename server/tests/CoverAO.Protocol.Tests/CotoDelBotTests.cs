@@ -336,6 +336,55 @@ public class CotoDelBotTests
         }
     }
 
+    /// <summary>
+    /// EL LUGAR LLENO: con nada que cazar a la vista y tres personas o más, el mapa sale de la elección del coto. Medido en
+    /// `oficios3` y `oficios4`: tres cuartos del tiempo de 18 bots en la cuna, casi siempre con diez a dieciocho juntos.
+    /// </summary>
+    [Theory]
+    // personas a la vista | ¿está lleno?
+    [InlineData(0, false)]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    [InlineData(8, true)]
+    public void Con_tres_personas_a_la_vista_el_lugar_esta_lleno(int personas, bool lleno)
+    {
+        Assert.Equal(lleno, Bot.EstaLleno(personas));
+    }
+
+    /// <summary>Y SE DEJA POR UN RATO, no para siempre: pasado el plazo vuelve a contar como cualquiera.</summary>
+    [Fact]
+    public void El_lugar_lleno_se_deja_por_un_rato()
+    {
+        var llenos = new Dictionary<int, long> { [37] = 10_000 };
+        Assert.True(Bot.SigueLleno(llenos, 37, 9_999));
+        Assert.False(Bot.SigueLleno(llenos, 37, 10_000));
+        Assert.False(Bot.SigueLleno(llenos, 208, 0));
+    }
+
+    /// <summary>
+    /// Y CONTRA LOS MAPAS DE VERDAD: con la cuna llena, un nivel 3 se va a cazar a otro mapa donde tiene presas; sin la regla se
+    /// queda en la cuna, que es donde se quedaban los dieciocho.
+    /// </summary>
+    [Fact]
+    public void Con_la_cuna_llena_un_novato_caza_en_otro_lado()
+    {
+        if (Mundo() is not { } m) return;
+        const int vida = 30, nivel = 3;
+        var presa = Presa(m.Datos, vida, nivel);
+        Func<int, int> rinde = f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+        Func<int, bool> paga = f => m.Datos.Npc(f)?.GiveGld > 0;
+        var seCaza = SeCaza(m.Datos, vida, nivel);
+        var cuna = ((byte)57, (byte)74);
+        var deSiempre = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _, seCaza);
+        Assert.True(deSiempre?.Mapa == 37, $"sin la regla eligió el {deSiempre?.Mapa} y no la cuna: el test no prueba nada");
+        var llenos = new Dictionary<int, long> { [37] = long.MaxValue };
+        var otro = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _,
+                                  x => !Bot.SigueLleno(llenos, x, 0) && seCaza(x));
+        Assert.True(otro is { } o && o.Mapa != 37, $"con la cuna llena eligió el {otro?.Mapa}");
+        Assert.True(m.Mapas.CuantasSeAlcanzan(otro!.Value.Mapa, (otro.Value.X, otro.Value.Y), presa) > 0,
+            $"el {otro.Value.Mapa} no tiene presas para un nivel 3");
+    }
+
     /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
     [Fact]
     public void Si_ningun_coto_pasa_el_filtro_se_elige_como_siempre()

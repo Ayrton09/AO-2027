@@ -506,6 +506,18 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Cuántas PERSONAS ve (no criaturas), sin contarse a sí mismo: lo que le dice si el lugar está lleno.</summary>
+    public int PersonasALaVista()
+    {
+        lock (_candado)
+        {
+            int cuantas = 0;
+            foreach (var v in _visibles.Values)
+                if (!v.EsNpc && v.CharIndex != _miCharIndex) cuantas++;
+            return cuantas;
+        }
+    }
+
     /// <summary>Las baldosas donde hay alguien parado, criatura o persona, sin contarse a sí mismo: el mapa no las sabe y no se
     /// pueden pisar.</summary>
     public IReadOnlySet<(byte X, byte Y)> BaldosasOcupadas()

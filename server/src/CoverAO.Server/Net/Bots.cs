@@ -2223,6 +2223,25 @@ public sealed class Bot
         !mapaInseguro || !loQueNace.Any(esPeligroso);
 
     /// <summary>
+    /// ¿ESTÁ LLENO EL LUGAR? Cuando se le acabó la paciencia sin nada que cazar a la vista y ve a <see cref="PersonasQueLlenan"/> o más
+    /// personas, el mapa donde está se deja por <see cref="LlenoMs"/>, como el que llega a donde cazan muchos y se va a otro lado. Pasa
+    /// por el mismo filtro que <see cref="SeCazaAhi"/>: si ningún coto lo pasa, se elige como siempre.
+    ///
+    /// <para>Medido en `oficios3` y `oficios4` (18 bots desde nivel 1): tres cuartos del tiempo de los bots en la cuna, casi siempre
+    /// con diez a dieciocho juntos, y el 208 —el otro mapa de novatos— casi vacío. Sin nadie a la vista fue lo más grande del reparto
+    /// del tiempo: entre un cuarto y un tercio del de todos. La cuna se elegía por cuántas criaturas nacen ahí, no por cuántos las
+    /// cazan, y reaparecen a los treinta segundos y lejos de los jugadores.</para>
+    /// </summary>
+    public static bool EstaLleno(int personasALaVista) => personasALaVista >= PersonasQueLlenan;
+
+    /// <summary>¿Sigue lleno ese mapa? Hasta que pasa el rato desde que lo vio lleno.</summary>
+    public static bool SigueLleno(IReadOnlyDictionary<int, long> llenoHasta, int mapa, long ahora) =>
+        llenoHasta.TryGetValue(mapa, out long hasta) && ahora < hasta;
+
+    private readonly Dictionary<int, long> _llenoHasta = new();
+    private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
+
+    /// <summary>
     /// CUÁNTO LE GUSTA ESE MAPA A ESTE BOT, para desempatar entre cotos que rinden lo mismo. Sale de la semilla del nombre,
     /// así que es siempre el mismo para el mismo bot —cada uno tiene "su" lugar— y distinto entre bots.
     ///
@@ -2293,7 +2312,10 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
-        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m),
+        // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
+        long ahora = Environment.TickCount64;
+        if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
+        Func<int, bool> seCazaAhi = m => !SigueLleno(_llenoHasta, m, ahora) && SeCazaAhi(_entorno.Datos.IsPkMap(m),
             _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
             f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno));
         // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.

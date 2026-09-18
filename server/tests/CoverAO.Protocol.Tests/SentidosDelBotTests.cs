@@ -91,6 +91,23 @@ public class SentidosDelBotTests
         Assert.Equal(2, elegida.Value.Pasos);
     }
 
+    /// <summary>
+    /// CUÁNTA GENTE VE: las personas, sin las criaturas ni él mismo, y la que se va deja de contar. Es lo que le dice que el
+    /// lugar está lleno (<see cref="Bot.EstaLleno"/>).
+    /// </summary>
+    [Fact]
+    public void Cuenta_la_gente_que_ve_sin_las_criaturas_ni_el()
+    {
+        var s = Ubicado(50, 50);
+        Assert.Equal(0, s.PersonasALaVista());
+        s.Recibir(ServerMessages.CharacterCreate(Criatura(600, ficha: 45, 51, 50)));
+        s.Recibir(ServerMessages.CharacterCreate(Personaje(OtroIndice, "Rugura", 52, 50)));
+        s.Recibir(ServerMessages.CharacterCreate(Personaje(502, "Tito", 45, 50)));
+        Assert.Equal(2, s.PersonasALaVista());
+        s.Recibir(ServerMessages.CharacterRemove(502, faded: false));
+        Assert.Equal(1, s.PersonasALaVista());
+    }
+
     [Fact]
     public void La_que_desaparece_deja_de_estar_a_la_vista()
     {
