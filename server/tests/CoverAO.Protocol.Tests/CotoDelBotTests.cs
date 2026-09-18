@@ -201,6 +201,128 @@ public class CotoDelBotTests
     }
 
     /// <summary>
+    /// NO SE CAZA EN UN MAPA INSEGURO DONDE NACE ALGO QUE LO MATA. En las nueve corridas de campo del 15 al 17/09 hubo quince
+    /// muertes y trece fueron en dos mapas inseguros con un bicho así: diez del Basilisco del 202, dos del Señor de las sombras
+    /// del 4, una de un Lobo en el mismo 202. En un mapa seguro la runa lo saca, y ahí no se descarta nada.
+    /// </summary>
+    [Theory]
+    // ¿mapa inseguro? | ¿nace algo peligroso para él? | ¿se caza ahí?
+    [InlineData(true, true, false)]     // el 202 para un nivel 13: el Basilisco
+    [InlineData(true, false, true)]     // inseguro pero sin nada que lo mate
+    [InlineData(false, true, true)]     // la cuna para un nivel 1, con sus Lobos: la runa lo saca
+    [InlineData(false, false, true)]
+    public void Se_caza_ahi_salvo_en_un_mapa_inseguro_con_algo_que_lo_mata(bool inseguro, bool conPeligro, bool seCaza)
+    {
+        var nacen = new[] { 500, 573 };   // un Murciélago y un Basilisco
+        Assert.Equal(seCaza, Bot.SeCazaAhi(inseguro, nacen, f => conPeligro && f == 573));
+    }
+
+    private static Func<int, bool> SeCaza(GameData d, int vida, int nivel) =>
+        m => Bot.SeCazaAhi(d.IsPkMap(m),
+                           d.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>(),
+                           f => Bot.EsPeligrosoPara(d.Npc(f), vida, nivel, conPociones: true, curaVeneno: false));
+
+    /// <summary>
+    /// Y CONTRA LOS MAPAS DE VERDAD: alrededor del 202, un nivel 13 lo elegía de coto por sus trece Lobos, que pagan; con el
+    /// filtro no lo elige nadie, y lo que elige en su lugar es un coto donde se caza.
+    /// </summary>
+    [Fact]
+    public void Alrededor_del_202_ninguno_va_a_cazar_donde_vive_el_Basilisco()
+    {
+        if (Mundo() is not { } m) return;
+        const int vida = 140, nivel = 13;
+        var presa = Presa(m.Datos, vida, nivel);
+        Func<int, int> rinde = f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+        Func<int, bool> paga = f => m.Datos.Npc(f)?.GiveGld > 0;
+        var seCaza = SeCaza(m.Datos, vida, nivel);
+        Assert.False(seCaza(202), "el 202 no es un mapa inseguro con algo que mata a un nivel 13: el test no prueba nada");
+
+        var entrada202 = m.Datos.MapExits.Values.Where(e => e.DestMap == 202)
+                                         .Select(e => ((byte)e.DestX, (byte)e.DestY)).First();
+        int loElegian = 0;
+        foreach (var (mapa, _, entrada, _) in m.Mapas.MapasAlcanzables(202, entrada202, 2))
+        {
+            var antes = Bot.ElegirCoto(m.Mapas, mapa, entrada, presa, paga, rinde, null, out _, out _);
+            if (antes?.Mapa == 202) loElegian++;
+            var ahora = Bot.ElegirCoto(m.Mapas, mapa, entrada, presa, paga, rinde, null, out _, out _, seCaza);
+            Assert.True(ahora is not { } a || seCaza(a.Mapa), $"desde el {mapa} eligió el {ahora?.Mapa}, donde no se caza");
+        }
+        Assert.True(loElegian > 0, "sin el filtro ningún mapa vecino elegía el 202: el test no prueba nada");
+    }
+
+    /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
+    [Fact]
+    public void Si_ningun_coto_pasa_el_filtro_se_elige_como_siempre()
+    {
+        if (Mundo() is not { } m) return;
+        var presa = Presa(m.Datos, 140, 13);
+        Func<int, int> rinde = f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+        Func<int, bool> paga = f => m.Datos.Npc(f)?.GiveGld > 0;
+        var cuna = ((byte)57, (byte)74);
+        var sinFiltro = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _);
+        var nadaSirve = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _, _ => false);
+        Assert.NotNull(sinFiltro);
+        Assert.Equal(sinFiltro, nadaSirve);
+    }
+
+    /// <summary>LA CUNA SIGUE SIENDO EL COTO DEL NIVEL 1 con el filtro puesto: es segura, y sus Lobos no la descartan.</summary>
+    [Fact]
+    public void La_cuna_sigue_siendo_el_coto_del_nivel_uno()
+    {
+        if (Mundo() is not { } m) return;
+        var presa = Presa(m.Datos, 20, 1);
+        var seCaza = SeCaza(m.Datos, 20, 1);
+        Assert.Contains(m.Datos.MapSpawns[37], sp => Bot.EsPeligrosoPara(m.Datos.Npc(sp.NpcIndex), 20, 1, true, false));
+        var coto = Bot.ElegirCoto(m.Mapas, 37, ((byte)57, (byte)74), presa, f => m.Datos.Npc(f)?.GiveGld > 0,
+                                  f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0, null, out _, out _, seCaza);
+        Assert.Equal(37, coto?.Mapa);
+    }
+
+    private static readonly string[] LosOcho = { "Aldo", "Bruma", "Ciro", "Dalia", "Elmo", "Fabia", "Gonzo", "Hilda" };
+
+    /// <summary>CADA BOT TIENE SU COTO ENTRE LOS QUE RINDEN IGUAL: el mismo siempre para el mismo bot, y no el mismo para todos.</summary>
+    [Fact]
+    public void Cuanto_le_gusta_un_mapa_es_fijo_por_bot_y_distinto_entre_bots()
+    {
+        var mapas = new[] { 807, 814, 823, 824 };
+        int Favorito(string nombre) => mapas.OrderByDescending(x => Bot.CuantoLeGusta(Bot.SemillaDelNombre(nombre), x)).First();
+        Assert.All(LosOcho, n => Assert.Equal(Favorito(n), Favorito(n)));
+        Assert.True(LosOcho.Select(Favorito).Distinct().Count() >= 3,
+            "los ocho bots prefieren casi todos el mismo mapa: el desempate no reparte");
+    }
+
+    /// <summary>
+    /// Y CONTRA LOS MAPAS DE VERDAD, LO QUE SE VIO EN `tarde2`: los bots de nivel 14 a 19 salían de comprar en el 815 y se
+    /// iban todos al 807, el más cercano entre los que empatan con la Rata Gigante; cinco en veintidós presas. Con el
+    /// desempate se reparten, y ninguno elige un coto que rinda menos que el que elegían.
+    /// </summary>
+    [Fact]
+    public void Los_que_salen_de_comprar_del_815_no_van_todos_al_mismo_coto()
+    {
+        if (Mundo() is not { } m) return;
+        const int vida = 180, nivel = 18;
+        var presa = Presa(m.Datos, vida, nivel);
+        Func<int, int> rinde = f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+        Func<int, bool> paga = f => m.Datos.Npc(f)?.GiveGld > 0;
+        var seCaza = SeCaza(m.Datos, vida, nivel);
+        var tienda = ((byte)60, (byte)73);
+        var todos = Bot.ElegirCoto(m.Mapas, 815, tienda, presa, paga, rinde, null, out _, out int rindeAntes, seCaza);
+        Assert.True(todos is not null && rindeAntes > 0, "desde el 815 no se elige coto por lo que rinde: el test no prueba nada");
+
+        var elegidos = new List<int>();
+        foreach (var nombre in LosOcho)
+        {
+            int propio = Bot.SemillaDelNombre(nombre);
+            var suyo = Bot.ElegirCoto(m.Mapas, 815, tienda, presa, paga, rinde, null, out _, out int rindeSuyo, seCaza,
+                                      x => Bot.CuantoLeGusta(propio, x));
+            Assert.NotNull(suyo);
+            Assert.Equal(rindeAntes, rindeSuyo);
+            elegidos.Add(suyo!.Value.Mapa);
+        }
+        Assert.True(elegidos.Distinct().Count() >= 3, $"los ocho eligen {string.Join(", ", elegidos)}: no se reparten");
+    }
+
+    /// <summary>
     /// EN UN PUEBLO NO NACE NADA, ASI QUE NO HAY NADA QUE ESPERAR. La paciencia de treinta segundos se aplicaba en
     /// cualquier mapa, incluido aquel al que el bot va a comprar. Contra la data de verdad: Ullathorpe (1) y las otras
     /// ciudades Nix y Banderbill no tienen una sola criatura hostil; la cuna (37) y Ullathorpe, si.

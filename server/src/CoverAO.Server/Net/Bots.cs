@@ -297,6 +297,18 @@ public sealed class Bot
     /// personaje que cada día juega distinto.</summary>
     private readonly Temperamento _temperamento;
 
+    /// <summary>La semilla que sale del nombre: de ahí el temperamento, el paso y qué coto le gusta más entre los que rinden
+    /// igual (<see cref="CuantoLeGusta"/>).</summary>
+    private readonly int _propio;
+
+    /// <summary>La semilla de un nombre: la misma cuenta para el mismo nombre, en cualquier arranque.</summary>
+    public static int SemillaDelNombre(string nombre)
+    {
+        int propio = 17;
+        foreach (char c in nombre) propio = unchecked(propio * 31 + c);
+        return propio;
+    }
+
     /// <summary>La clase del personaje. Sale de la MISMA cuenta con la que se creó (derivada del nombre), así
     /// que es la que tiene de verdad — y es la que decide si le sirve una caña, un hacha o un piquete.</summary>
     private readonly byte _clase, _raza, _genero;
@@ -310,8 +322,8 @@ public sealed class Bot
         _rng = new Random(semilla);
         _como = clave is null ? ComoEntrar.Alta : ComoEntrar.Entrar;
 
-        int propio = 17;
-        foreach (char c in nombre) propio = unchecked(propio * 31 + c);
+        int propio = SemillaDelNombre(nombre);
+        _propio = propio;
         _temperamento = (Temperamento)(Math.Abs(propio) % 3);
         // El paso propio: entre 0,8 y 1,3 veces el de referencia. Dos personas no caminan igual, y con el
         // mismo número para todos una fila de bots se mueve como un desfile.
@@ -1816,20 +1828,45 @@ public sealed class Bot
     /// `sano3`, siete de ocho se mudaron de la cuna al mapa 62 en el primer minuto y pasaron ahí la media hora repartiéndose cuatro
     /// Águilas, y entre los ocho cazaron cuatro criaturas. En la cuna un nivel 1 tiene 38 presas y ninguna paga; recién en nivel 3
     /// pagan los Escorpiones, y ahí la cuna misma es el coto que paga.</para>
+    ///
+    /// <para>Y NO SE CAZA DONDE VIVE LO QUE LO MATA Y NO HAY RUNA: ver <see cref="SeCazaAhi"/>. Los mapas que no pasan
+    /// <paramref name="seCazaAhi"/> no son coto, tampoco el propio; si con ese filtro no queda ninguno, se elige como
+    /// siempre: mejor cazar con cuidado que quedarse sin dónde, la misma regla de <see cref="LejosDelPeligro"/>.</para>
+    ///
+    /// <para>Y ENTRE LOS QUE RINDEN IGUAL, EL SUYO: <paramref name="desempate"/> ordena los empates de lo que rinde (ver
+    /// <see cref="CuantoLeGusta"/>). Sin él gana siempre el más cercano, y todos los que salen del mismo lugar van al mismo
+    /// coto.</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? ElegirCoto(Navegante mapas, int mapa, (byte X, byte Y) desde,
                                                                      Func<int, bool> esPresa, Func<int, bool> paga,
                                                                      Func<int, int> rinde,
                                                                      Func<int, bool>? pisable, out bool porElOro,
-                                                                     out int porLoQueRinde)
+                                                                     out int porLoQueRinde, Func<int, bool>? seCazaAhi = null,
+                                                                     Func<int, int>? desempate = null)
+    {
+        if (seCazaAhi is not null
+            && ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, seCazaAhi, desempate,
+                               out porElOro, out porLoQueRinde) is { } sinPeligro)
+            return sinPeligro;
+        return ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, null, desempate,
+                               out porElOro, out porLoQueRinde);
+    }
+
+    /// <summary><see cref="ElegirCoto"/> entre los mapas que cumplen <paramref name="sirve"/> (todos, si es null).</summary>
+    private static (int Mapa, byte X, byte Y, int Saltos)? ElegirCotoEntre(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                           Func<int, bool> esPresa, Func<int, bool> paga,
+                                                                           Func<int, int> rinde, Func<int, bool>? pisable,
+                                                                           Func<int, bool>? sirve, Func<int, int>? desempate,
+                                                                           out bool porElOro, out int porLoQueRinde)
     {
         porLoQueRinde = 0;
         // LO QUE RINDE MANDA CUANDO LA DIFERENCIA ES GRANDE, y va primero: ni la cantidad ni el oro sirven para salir
         // de la cuna. Preguntado a la data, lo más gordo que un bot se anima a cazar en la cuna es el Lobo —115 de
         // experiencia— y ahí se queda para siempre, mientras a dos mapas hay Esqueletos Guerreros de 270 desde el
         // nivel 13 y Orcos de 505 desde el 20. Con 53 presas, la cuna gana siempre por cantidad.
-        var acaRinde = mapas.LoQueMasRinde(mapa, desde, rinde);
-        if (mapas.CotoQueMasRinde(mapa, desde, rinde, SaltosHastaElCoto, pisable) is { } gordo && gordo.Mapa != mapa
+        // Donde está parado no rinde nada si ahí no se caza: con cualquier coto que sirva, se va.
+        var acaRinde = sirve is null || sirve(mapa) ? mapas.LoQueMasRinde(mapa, desde, rinde) : null;
+        if (mapas.CotoQueMasRinde(mapa, desde, rinde, SaltosHastaElCoto, pisable, sirve, desempate) is { } gordo && gordo.Mapa != mapa
             && ValeMudarsePorLoQueRinde(acaRinde?.Rinde ?? 0, gordo.Rinde))
         {
             porElOro = false;
@@ -1838,15 +1875,49 @@ public sealed class Bot
         }
 
         Func<int, bool> conOro = f => esPresa(f) && paga(f);
-        var quePaga = mapas.DondeHay(mapa, desde, conOro, pisable: pisable);
-        var poblado = mapas.CotoMasPoblado(mapa, desde, esPresa, SaltosHastaElCoto, pisable);
+        var quePaga = mapas.DondeHay(mapa, desde, conOro, sirve, pisable);
+        var poblado = mapas.CotoMasPoblado(mapa, desde, esPresa, SaltosHastaElCoto, pisable, sirve);
         porElOro = true;
         if (quePaga is { } p && (poblado is not { } r || r.Mapa == p.Mapa
                                   || ValeMudarsePorElOro(mapas.CuantasSeAlcanzan(p.Mapa, (p.X, p.Y), conOro), r.Cuantas)))
             return p;
         porElOro = false;
         if (poblado is { } q) return (q.Mapa, q.X, q.Y, q.Saltos);
-        return mapas.DondeHay(mapa, desde, esPresa, pisable: pisable);
+        return mapas.DondeHay(mapa, desde, esPresa, sirve, pisable);
+    }
+
+    /// <summary>
+    /// ¿SE CAZA EN ESE MAPA? No si es inseguro y nace ahí algo peligroso para él. En un mapa inseguro la runa no saca a
+    /// nadie vivo, y de lo que persigue no se escapa caminando: pelea o muere.
+    ///
+    /// <para>Medido en las nueve corridas de campo del 15 al 17/09: quince muertes, y TRECE en dos mapas inseguros con un
+    /// bicho así — diez del Basilisco del 202 (golpe de hasta 150, contra bots de nivel 9 a 17), dos
+    /// del Señor de las sombras del 4 y un Lobo en el mismo 202. Los bots iban al 202 por sus trece Lobos, que pagan. En
+    /// una de esas muertes un Leñador de nivel 17 se tomó diez pociones de a treinta mientras le entraban golpes de 44, 49
+    /// y 95.</para>
+    ///
+    /// <para>En un mapa seguro no se descarta nada: ahí la runa lo saca, y la cuna, que es donde viven los nivel 1, tiene
+    /// Lobos que para ellos son peligrosos.</para>
+    /// </summary>
+    public static bool SeCazaAhi(bool mapaInseguro, IEnumerable<int> loQueNace, Func<int, bool> esPeligroso) =>
+        !mapaInseguro || !loQueNace.Any(esPeligroso);
+
+    /// <summary>
+    /// CUÁNTO LE GUSTA ESE MAPA A ESTE BOT, para desempatar entre cotos que rinden lo mismo. Sale de la semilla del nombre,
+    /// así que es siempre el mismo para el mismo bot —cada uno tiene "su" lugar— y distinto entre bots.
+    ///
+    /// <para>Medido en `tarde2`: cinco de los ocho bots, de nivel 14 a 19, cazando en el mismo mapa (807), veintidós presas
+    /// para cinco, peleando el 8 % del tiempo; mientras tanto Fabia, sola en el 261, peleaba el 28 % y subió tres niveles
+    /// en catorce minutos. Los cinco salían de comprar en el 815, y a dos saltos de ahí lo que más rinde —la Rata Gigante,
+    /// 220— empata en varios mapas: ganaba siempre el más cercano.</para>
+    /// </summary>
+    public static int CuantoLeGusta(int propio, int mapa)
+    {
+        uint h = unchecked((uint)propio * 0x9E3779B1u ^ (uint)mapa * 0x85EBCA77u);
+        h ^= h >> 15;
+        h = unchecked(h * 0x2C1B3C6Du);
+        h ^= h >> 12;
+        return (int)(h & int.MaxValue);
     }
 
     /// <summary>
@@ -1902,9 +1973,12 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
+        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m),
+            _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
+            f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno));
         var hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f),
                                  f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0, Pisable(sentidos),
-                                 out bool porElOro, out int porLoQueRinde);
+                                 out bool porElOro, out int porLoQueRinde, seCazaAhi, m => CuantoLeGusta(_propio, m));
         Func<int, bool> sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         if (hallado is not { } coto) return false;
 

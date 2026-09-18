@@ -543,11 +543,14 @@ public sealed class Navegante
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos, int Cuantas)? CotoMasPoblado(int mapaActual, (byte X, byte Y) desde,
                                                                               Func<int, bool> sirve, int saltosMax,
-                                                                              Func<int, bool>? pisable = null)
+                                                                              Func<int, bool>? pisable = null,
+                                                                              Func<int, bool>? cotoSirve = null)
     {
         (int Mapa, byte X, byte Y, int Saltos, int Cuantas)? mejor = null;
         void Probar(int mapa, (byte X, byte Y) entrada, int saltos)
         {
+            // El que no sirve de coto se cruza igual: el filtro es para quedarse, no para pasar.
+            if (cotoSirve is not null && !cotoSirve(mapa)) return;
             int cuantas = CuantasSeAlcanzan(mapa, entrada, sirve);
             if (cuantas == 0 || (mejor is { } ya && ya.Cuantas >= cuantas)) return;
             if (EnElMapa(mapa, entrada, sirve) is { } ahi) mejor = (mapa, ahi.X, ahi.Y, saltos, cuantas);
@@ -589,13 +592,19 @@ public sealed class Navegante
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos, int Rinde)? CotoQueMasRinde(int mapaActual, (byte X, byte Y) desde,
                                                                              Func<int, int> rinde, int saltosMax,
-                                                                             Func<int, bool>? pisable = null)
+                                                                             Func<int, bool>? pisable = null,
+                                                                             Func<int, bool>? cotoSirve = null,
+                                                                             Func<int, int>? desempate = null)
     {
         (int Mapa, byte X, byte Y, int Saltos, int Rinde)? mejor = null;
         void Probar(int mapa, (byte X, byte Y) entrada, int saltos)
         {
+            if (cotoSirve is not null && !cotoSirve(mapa)) return;
             if (LoQueMasRinde(mapa, entrada, rinde) is not { } ahi) return;
-            if (mejor is { } ya && ya.Rinde >= ahi.Rinde) return;
+            // Entre los que rinden igual, el primero que se encuentra —el más cercano— salvo que haya con qué desempatar.
+            if (mejor is { } ya && (ya.Rinde > ahi.Rinde
+                                    || (ya.Rinde == ahi.Rinde && (desempate is null || desempate(ya.Mapa) >= desempate(mapa)))))
+                return;
             mejor = (mapa, ahi.X, ahi.Y, saltos, ahi.Rinde);
         }
         Probar(mapaActual, desde, 0);
