@@ -859,7 +859,8 @@ public sealed class Bot
         // 10 — menos de un minuto. Los puntos libres, en cambio, quedan POR DEBAJO de ese tope a partir del nivel
         // 5 (23 contra 25 a nivel 10): darle Armas en vez del azar cambia el acierto en UN punto porcentual a
         // nivel 1 y en nada después. Se probó y se sacó.
-        byte propia = SkillPropia != 0 ? SkillPropia
+        byte suya = SkillPropia(sentidos);
+        byte propia = suya != 0 ? suya
                     : sentidos.UsaMana ? (byte)GameLimits.SkillMagia
                     : (byte)0;
         // Y EL QUE CASTEA Y FABRICA —el Druida— pone primero en Magia lo que pide su hechizo de nacimiento: con los
@@ -1853,7 +1854,12 @@ public sealed class Bot
         {
             if (Urge(sentidos) || sentidos.EnergiaEnPuntos < fab.Regla.Energia) break;
             // Se vuelve a elegir cada vez: la skill sube con cada una y los materiales bajan.
-            if (QueFabricar(_entorno.Datos, fab.Recetas, fab.Regla, sentidos.Skill(fab.Regla.Skill), tiene) is not { } receta) break;
+            int ahora = sentidos.Skill(fab.Regla.Skill);
+            if (QueFabricar(_entorno.Datos, fab.Recetas, fab.Regla, ahora, tiene) is not { } receta) break;
+            // Y SE LEVANTA CUANDO YA NO APRENDE: medido en `oficios1`, la primera de la tanda llevó al Carpintero al tope del
+            // nivel y las otras cinco se fabricaron igual, gastando leña y energía por nada.
+            bool leSirve = EsPocionQueCuraElVeneno(receta) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere;
+            if (!ValeFabricar(ahora, SkillProgression.CapForLevel(sentidos.Nivel), leSirve)) break;
             int antes = tiene(receta);
             if (!transporte.Mandar(Paquete(fab.Paquete, w => w.WriteInteger(receta).WriteInteger((short)1)))) return false;
             await Task.Delay(_rng.Next(FabricarMinMs, FabricarMaxMs), ct);
@@ -1920,12 +1926,34 @@ public sealed class Bot
     };
 
     /// <summary>
-    /// DÓNDE VAN LOS PUNTOS DE NIVEL: la skill de FABRICAR si fabrica, y si no la de su oficio. Es el mismo círculo que
-    /// el de la magia (ver <see cref="RepartirPuntos"/>): cada receta pide una skill mínima —la cuchara 5, la Poción
-    /// Violeta y las Vestimentas 10— y el servidor la rechaza en silencio si no llega, así que sin puntos no fabrica y
-    /// sin fabricar la skill no sube. Juntar no tiene mínimo: con la skill en cero se acierta uno de cada ocho.
+    /// DÓNDE VAN LOS PUNTOS DE NIVEL: la de su oficio, y el que fabrica, a la skill de FABRICAR sólo hasta la mínima de su
+    /// primera receta. Es el mismo círculo que el de la magia (ver <see cref="RepartirPuntos"/>): cada receta pide una
+    /// skill mínima —la cuchara 5, la Poción Violeta y las Vestimentas 10— y el servidor la rechaza en silencio si no
+    /// llega, así que sin puntos no fabrica y sin fabricar la skill no sube.
+    ///
+    /// <para>PASADA LA MÍNIMA, LA SUBE FABRICANDO —un punto por cada una, hasta el tope del nivel— y los puntos van a la de
+    /// juntar, que es de donde sale el material. Medido en `oficios1`: con todos los puntos a Carpintería, un Carpintero
+    /// de nivel 12 tenía la skill en 30, que es justo el tope del nivel, y no fabricaba nunca: ya no le enseñaba nada, y
+    /// en esta data lo fabricado vale menos que lo que gasta (seis pieles se venden a más que unas Vestimentas).</para>
     /// </summary>
-    private byte SkillPropia => SuFabricacion is { } f ? (byte)f.Regla.Skill : SkillDeSuOficio;
+    private byte SkillPropia(SentidosDelBot sentidos) =>
+        SuFabricacion is { } f && LeFaltaParaFabricar(sentidos.Skill(f.Regla.Skill), MinimaParaFabricar(f.Recetas, f.Regla))
+            ? (byte)f.Regla.Skill : SkillDeSuOficio;
+
+    /// <summary>¿Le falta skill para su primera receta? Una skill que todavía no sabe (-1) cuenta como que falta.</summary>
+    public static bool LeFaltaParaFabricar(int skill, int minima) => skill < minima;
+
+    /// <summary>La skill que pide la receta más fácil de ese oficio (entre las que gastan algo): la cuchara, la Violeta o las
+    /// Vestimentas. Se calcula una vez: la data no cambia con el servidor andando.</summary>
+    private int MinimaParaFabricar(IReadOnlySet<int> recetas, Oficios.Fabricacion regla) =>
+        _minimaParaFabricar ??= MinimaDeLasRecetas(_entorno.Datos, recetas, regla);
+
+    private int? _minimaParaFabricar;
+
+    /// <summary><see cref="MinimaParaFabricar"/> sobre la data. <c>int.MaxValue</c> si no hay ninguna receta.</summary>
+    public static int MinimaDeLasRecetas(GameData datos, IReadOnlySet<int> recetas, Oficios.Fabricacion regla) =>
+        recetas.Select(i => datos.Obj(i)).Where(o => o is not null && regla.Materiales(o).Any(m => m.PorUnidad > 0))
+               .Select(o => regla.Pide(o!)).DefaultIfEmpty(int.MaxValue).Min();
 
     /// <summary>Meditar para recuperar maná. Sólo los que tienen maná, y sólo cuando les falta bastante:
     /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>

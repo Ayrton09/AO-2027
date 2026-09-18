@@ -96,6 +96,24 @@ public class FabricarDelBotTests
     }
 
     /// <summary>
+    /// LOS PUNTOS A LA SKILL DE FABRICAR, SÓLO HASTA LA PRIMERA RECETA. Pasada la mínima, la sube fabricando; con todos los
+    /// puntos ahí la skill llegaba sola al tope del nivel y fabricar ya no le enseñaba nada. Medido en `oficios1`: un
+    /// Carpintero de nivel 12 con Carpintería 30 —el tope— y leña en la mochila, sin fabricar una sola cosa.
+    /// </summary>
+    [Fact]
+    public void Los_puntos_van_a_fabricar_solo_hasta_la_primera_receta()
+    {
+        if (Datos() is not { } d) return;
+        Assert.Equal(5, Bot.MinimaDeLasRecetas(d, d.CarpenterItems, Oficios.Carpinteria));   // la cuchara
+        Assert.Equal(10, Bot.MinimaDeLasRecetas(d, d.AlchemyItems, Oficios.Alquimia));      // la Violeta
+        Assert.Equal(10, Bot.MinimaDeLasRecetas(d, d.TailorItems, Oficios.Sastreria));      // las Vestimentas
+        Assert.True(Bot.LeFaltaParaFabricar(-1, 5));    // todavía no sabe sus skills: el recién creado
+        Assert.True(Bot.LeFaltaParaFabricar(4, 5));
+        Assert.False(Bot.LeFaltaParaFabricar(5, 5));
+        Assert.False(Bot.LeFaltaParaFabricar(30, 5));
+    }
+
+    /// <summary>
     /// LA SKILL LA DICE EL SERVIDOR: entera con <c>SendSkills</c> y de a una con el aviso 454 (<c>"*skill%valor"</c>), que es
     /// un paquete DELTA. Sin leerlo, el bot creería que su skill de fabricar quedó donde la dejó el reparto.
     /// </summary>
