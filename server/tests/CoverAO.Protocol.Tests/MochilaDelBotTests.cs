@@ -81,6 +81,47 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(seprepara, Bot.PorDejarDeSerNovato(nivel));
     }
 
+    /// <summary>
+    /// Y SE VA CON LA MOCHILA LLENA. Pasado el nivel de novato la cuna no lo deja entrar más y, desde los Campos
+    /// Abiertos, Ullathorpe o Nix, ningún pueblo que le venda se alcanza sin cruzar mapas donde lo matan, así que lo
+    /// que cargue en la última compra es todo lo que va a tener por un buen rato.
+    ///
+    /// <para>Las horas salen del desgaste del PROPIO servidor (<see cref="Survival"/>), no de un número copiado de
+    /// la regla: si mañana el hambre bajara al doble de rápido, esto se pone rojo.</para>
+    /// </summary>
+    [Fact]
+    public void El_que_esta_por_dejar_la_cuna_carga_para_muchas_horas()
+    {
+        Assert.True(Bot.ComidaQueSeLleva(15) > Bot.ComidaQueSeLleva(14), "en el último nivel de novato compra MÁS comida");
+        Assert.True(Bot.BebidaQueSeLleva(15) > Bot.BebidaQueSeLleva(14), "en el último nivel de novato compra MÁS bebida");
+
+        double horasDeComida = Horas(Bot.ComidaQueSeLleva(15), Survival.HungerIntervalTicks);
+        double horasDeBebida = Horas(Bot.BebidaQueSeLleva(15), Survival.ThirstIntervalTicks);
+        Assert.True(horasDeComida >= 8, $"se va con comida para {horasDeComida:0.0} horas");
+        Assert.True(horasDeBebida >= 8, $"se va con bebida para {horasDeBebida:0.0} horas");
+
+        double antes = Horas(Bot.ComidaQueSeLleva(14), Survival.HungerIntervalTicks);
+        Assert.True(antes <= 4, $"mientras es novato compra para un rato ({antes:0.0} horas), que para eso tiene la tienda al lado");
+    }
+
+    /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
+    /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
+    private static double Horas(int puntos, int vueltas) =>
+        (double)puntos / Survival.DecayStep * vueltas * GameLoop.TickMs / 3_600_000;
+
+    /// <summary>
+    /// EL MOMENTO EN QUE EMPIEZA A COMPRAR LO SUYO ES EL ÚLTIMO EN QUE TODAVÍA PUEDE ENTRAR A LA CUNA, y de eso
+    /// depende que la carga de arriba se pueda hacer: el que sale a comprar cuando ya no lo dejan entrar se queda
+    /// sin nada. Las dos reglas viven separadas —una mira el kit, la otra la zona del mapa— y esto las ata.
+    /// </summary>
+    [Fact]
+    public void Cuando_empieza_a_comprar_lo_suyo_todavia_lo_dejan_entrar_a_la_cuna()
+    {
+        int primero = Enumerable.Range(1, 60).First(Bot.PorDejarDeSerNovato);
+        Assert.True(Bot.PuedeEntrar(primero, "NEWBIE"), $"a nivel {primero} ya compra lo suyo y no lo dejan entrar a la cuna");
+        Assert.False(Bot.PuedeEntrar(primero + 1, "NEWBIE"), $"a nivel {primero + 1} la cuna tendría que estar cerrada");
+    }
+
     /// <summary>Y lo que el servidor le va a sacar es REAL: el kit de nacimiento de una clase cualquiera está lleno de
     /// objetos que el port trata como de novato, que es lo que hace falta para que la regla de arriba sirva.</summary>
     [Fact]

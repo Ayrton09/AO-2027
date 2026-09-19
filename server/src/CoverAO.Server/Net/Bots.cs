@@ -191,6 +191,28 @@ public sealed class Bot
     private const int ComidaMinima = 100, ComidaQueQuiere = 400;
 
     /// <summary>
+    /// CUÁNTO CARGA EL QUE ESTÁ POR IRSE DE LA ZONA DE NOVATOS. Son unas diez horas de hambre y de sed, contra las dos
+    /// de <see cref="ComidaQueQuiere"/>.
+    ///
+    /// <para>Mientras es novato tiene la tienda de la cuna a mano y puede volver cuando quiera, así que compra para
+    /// un rato. Pasado <see cref="GameLimits.NewbieMaxLevel"/> la cuna no lo deja entrar más y, desde los Campos
+    /// Abiertos, Ullathorpe o Nix, NINGÚN pueblo que le venda se alcanza sin cruzar mapas donde lo matan: los
+    /// mercaderes de esos tres no le venden a un ciudadano porque su territorio no es de su facción, que es del
+    /// original (VB6 Protocol.bas:5203) y no un hueco del port. Con <c>QuitarEquipoNovato</c> —prendido en el
+    /// `Server.ini` que se distribuye— además pierde el kit en esa misma subida de nivel.</para>
+    ///
+    /// <para>Así que llena la mochila mientras todavía tiene a quién comprarle, que es lo que hace cualquiera antes
+    /// de dejar la zona de novatos. En unidades son veintisiete pollos, o sea un casillero de la mochila.</para>
+    /// </summary>
+    private const int PuntosParaElCamino = 2_000;
+
+    /// <summary>Cuánta comida compra, según si todavía puede volver a la tienda de la cuna.</summary>
+    public static int ComidaQueSeLleva(int nivel) => PorDejarDeSerNovato(nivel) ? PuntosParaElCamino : ComidaQueQuiere;
+
+    /// <inheritdoc cref="ComidaQueSeLleva"/>
+    public static int BebidaQueSeLleva(int nivel) => PorDejarDeSerNovato(nivel) ? PuntosParaElCamino : BebidaQueQuiere;
+
+    /// <summary>
     /// ¿HAY QUE REPONER LA BARRA? Se come y se toma con la barra por la mitad, que es cuando lo hace un jugador, y no
     /// esperando el cero.
     ///
@@ -1306,9 +1328,11 @@ public sealed class Bot
         // Sin una gota encima, con la sed en cero y el hambre aguantando, la plata es para el agua: la comida no
         // se compra aunque esté enfrente. Y al revés con el hambre.
         if (!(SinNadaQueTomar(sentidos) && !sentidos.ConHambre))
-            compro |= await ReponerAsync(transporte, sentidos, ComidaPropia, ComidaQueQuiere, ct, ReservaPara(sentidos, comida: false, bebida: true));
+            compro |= await ReponerAsync(transporte, sentidos, ComidaPropia, ComidaQueSeLleva(sentidos.Nivel), ct,
+                                         ReservaPara(sentidos, comida: false, bebida: true));
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
-            compro |= await ReponerAsync(transporte, sentidos, BebidaPropia, BebidaQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: false));
+            compro |= await ReponerAsync(transporte, sentidos, BebidaPropia, BebidaQueSeLleva(sentidos.Nivel), ct,
+                                         ReservaPara(sentidos, comida: true, bebida: false));
         compro |= await ReponerAsync(transporte, sentidos, PocionPropia, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
         // EL ANTIDOTO, que cuesta DIEZ monedas y es la diferencia entre seguir cazando y perder la vida de a
         // poco. Se compra acá, donde el bot ya está parado, y no se viaja por él: lo vende el Alquimista, que
