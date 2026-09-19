@@ -3900,6 +3900,16 @@ public sealed class Bot
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
+            // PARADO ENCIMA DE LA PUERTA: ver `RumboParaUsarLaPuerta`.
+            if (!esLaMeta && meta == desde)
+            {
+                byte rumbo = RumboParaUsarLaPuerta(_entorno.Datos.MapExits, mapa, desde, (x, y) => _entorno.Datos.IsBlockedTile(mapa, x, y));
+                if (rumbo == 0) return false;
+                var (px, py) = SentidosDelBot.Paso(rumbo);
+                if (await UnPasoHaciaAsync(transporte, sentidos, px, py, ct, deMuerto, puedeSalir: true) != Paso.Dado) return false;
+                continue;
+            }
+
             // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y
             // el destino típico es justamente la baldosa donde está parado un mercader.
             if (esLaMeta && Math.Abs(desde.X - destinoX) + Math.Abs(desde.Y - destinoY) <= tolerancia) return true;
@@ -4012,6 +4022,35 @@ public sealed class Bot
     {
         var (dx, dy) = SentidosDelBot.Paso(rumbo);
         return salidas.ContainsKey((mapa, desde.X + dx, desde.Y + dy));
+    }
+
+    /// <summary>
+    /// PARADO ENCIMA DE LA PUERTA: la salida se dispara al PISARLA, no por estar encima. El rumbo del paso para usarla: a una vecina que
+    /// también sale al mismo mapa, y si no hay, a una vecina que se pisa sin salir, desde donde el tramo siguiente vuelve a la puerta.
+    /// 0 si no es una puerta o no hay ninguna vecina así.
+    ///
+    /// <para>Medido en `oficios10`: una Cazadora y el Minero pasaron más de media hora parados en la esquina (9,7) del 11 y del 12, que
+    /// es una salida con otra salida a cada costado. El que llega a (10,8) desde el mapa del oeste con esa baldosa ocupada cae en la
+    /// legal más cercana, y el anillo del original (ClosestLegalPos) empieza por esa esquina. Desde ahí el camino hasta la puerta daba
+    /// cero pasos y el viaje se daba por fallido, una y otra vez.</para>
+    /// </summary>
+    public static byte RumboParaUsarLaPuerta(IReadOnlyDictionary<(int Map, int X, int Y), (int DestMap, int DestX, int DestY)> salidas,
+                                             int mapa, (byte X, byte Y) puerta, Func<int, int, bool> bloqueada)
+    {
+        if (!salidas.TryGetValue((mapa, puerta.X, puerta.Y), out var aca)) return 0;
+        byte sinSalir = 0;
+        for (byte rumbo = 1; rumbo <= 4; rumbo++)
+        {
+            var (dx, dy) = SentidosDelBot.Paso(rumbo);
+            int x = puerta.X + dx, y = puerta.Y + dy;
+            if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder || y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder) continue;
+            if (salidas.TryGetValue((mapa, x, y), out var alla))
+            {
+                if (alla.DestMap == aca.DestMap) return rumbo;
+            }
+            else if (sinSalir == 0 && !bloqueada(x, y)) sinSalir = rumbo;
+        }
+        return sinSalir;
     }
 
     /// <summary>

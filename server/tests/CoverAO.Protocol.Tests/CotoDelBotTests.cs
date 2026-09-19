@@ -479,6 +479,30 @@ public class CotoDelBotTests
         Assert.False(Bot.PasoSaleDelMapa(salidas, 187, (11, 82), 4));   // una más adentro
     }
 
+    /// <summary>
+    /// PARADO ENCIMA DE LA PUERTA, SE LA USA PISANDO OTRA: en la esquina (9,7) del 11 —salida al 1, con la del 555 al este y otra al 1
+    /// al sur— el paso es al sur. Encima del teleport del 1 que lleva a la cuna, que no tiene otra salida al lado, el paso es a una
+    /// vecina que se pisa sin salir. Medido en `oficios10`: dos bots más de media hora parados en esquinas así.
+    /// </summary>
+    [Fact]
+    public void Parado_encima_de_la_puerta_se_la_usa_pisando_otra()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        Assert.Equal(((byte)9, (byte)7), m.Mapas.PuertaHacia(11, 1, ((byte)9, (byte)7))?.Puerta);   // la puerta es donde está parado
+        Assert.Equal((byte)3, Bot.RumboParaUsarLaPuerta(d.MapExits, 11, (9, 7), (x, y) => d.IsBlockedTile(11, x, y)));
+        Assert.Equal(1, d.MapExits[(11, 9, 8)].DestMap);
+
+        Assert.Equal(37, d.MapExits[(1, 36, 65)].DestMap);
+        byte r = Bot.RumboParaUsarLaPuerta(d.MapExits, 1, (36, 65), (x, y) => d.IsBlockedTile(1, x, y));
+        Assert.NotEqual((byte)0, r);
+        var (dx, dy) = SentidosDelBot.Paso(r);
+        Assert.False(d.MapExits.ContainsKey((1, 36 + dx, 65 + dy)));
+        Assert.False(d.IsBlockedTile(1, 36 + dx, 65 + dy));
+
+        Assert.Equal((byte)0, Bot.RumboParaUsarLaPuerta(d.MapExits, 11, (50, 50), (x, y) => d.IsBlockedTile(11, x, y)));   // no es puerta
+    }
+
     /// <summary>Los mapas por los que pasa un viaje, siguiendo las puertas que da el navegante como las sigue el bot.</summary>
     private static List<int> PorDondePasa(Navegante mapas, GameData d, int mapa, (byte X, byte Y) desde, int destino,
                                           (byte X, byte Y) meta, Func<int, bool> filtro)
