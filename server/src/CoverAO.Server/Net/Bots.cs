@@ -2248,7 +2248,7 @@ public sealed class Bot
     /// <summary>
     /// ¿ESTÁ LLENO EL LUGAR? Cuando se le acabó la paciencia sin nada que cazar a la vista y ve a <see cref="PersonasQueLlenan"/> o más
     /// personas, el mapa donde está se deja por <see cref="LlenoMs"/>, como el que llega a donde cazan muchos y se va a otro lado: el
-    /// coto sale de <see cref="OtroCotoSinPeligro"/>, y si no hay ninguno se elige como siempre.
+    /// coto sale de <see cref="CotoSinVolverAlLleno"/>.
     ///
     /// <para>Medido en `oficios3` y `oficios4` (18 bots desde nivel 1): tres cuartos del tiempo de los bots en la cuna, casi siempre
     /// con diez a dieciocho juntos, y el 208 —el otro mapa de novatos— casi vacío. Sin nadie a la vista fue lo más grande del reparto
@@ -2283,6 +2283,34 @@ public sealed class Bot
     /// <summary>¿Sigue lleno ese mapa? Hasta que pasa el rato desde que lo vio lleno.</summary>
     public static bool SigueLleno(IReadOnlyDictionary<int, long> llenoHasta, int mapa, long ahora) =>
         llenoHasta.TryGetValue(mapa, out long hasta) && ahora < hasta;
+
+    /// <summary>
+    /// EL COTO, CON LOS LUGARES LLENOS A LA VISTA. Parado en uno lleno, el otro coto sin peligro (<see cref="OtroCotoSinPeligro"/>);
+    /// si no hay, el de siempre (<see cref="ElegirCoto"/>). Y si el de siempre cae en OTRO mapa que todavía está lleno para él, ahí no
+    /// se vuelve mientras dura: el otro coto sin peligro, o null y se queda donde está.
+    ///
+    /// <para>Medido en `oficios9`: de 141 veces que un bot dejó un lugar lleno, 60 lo volvió a elegir en la búsqueda siguiente. El
+    /// Sastre fue y vino seis veces entre la cuna y el 58 antes de llegar a nivel 5: en el 58 hay cuatro presas y en la cuna
+    /// treinta y ocho, y el coto de siempre elige por cuántas hay.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? CotoSinVolverAlLleno(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                               Func<int, bool> esPresa, Func<int, bool> paga,
+                                                                               Func<int, int> rinde, Func<int, bool>? pisable,
+                                                                               Func<int, bool> seCazaAhi, Func<int, bool> sigueLleno,
+                                                                               Func<int, bool> sirveParaIrseDelLleno,
+                                                                               Func<int, int>? desempate,
+                                                                               out bool porElOro, out int porLoQueRinde)
+    {
+        if (sigueLleno(mapa)
+            && OtroCotoSinPeligro(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirveParaIrseDelLleno, desempate,
+                                  out porElOro, out porLoQueRinde) is { } otro)
+            return otro;
+        var elegido = ElegirCoto(mapas, mapa, desde, esPresa, paga, rinde, pisable, out porElOro, out porLoQueRinde, seCazaAhi, desempate);
+        if (elegido is { } e && e.Mapa != mapa && sigueLleno(e.Mapa))
+            return OtroCotoSinPeligro(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirveParaIrseDelLleno, desempate,
+                                      out porElOro, out porLoQueRinde);
+        return elegido;
+    }
 
     private readonly Dictionary<int, long> _llenoHasta = new();
     private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
@@ -2402,18 +2430,12 @@ public sealed class Bot
         int porLoQueRinde = 0;
         Func<int, bool> sirve = esPresaDelOficio;
         Func<int, int> rinde = f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0;
-        if (hallado is null && SigueLleno(_llenoHasta, sentidos.Mapa, ahora))
-        {
-            hallado = OtroCotoSinPeligro(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
-                                         Pisable(sentidos),
-                                         m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
-                                         m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde);
-            sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
-        }
         if (hallado is null)
         {
-            hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
-                                 Pisable(sentidos), out porElOro, out porLoQueRinde, seCazaAhi, m => CuantoLeGusta(_propio, m));
+            hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
+                                           Pisable(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
+                                           m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
+                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
         if (hallado is not { } coto) return false;

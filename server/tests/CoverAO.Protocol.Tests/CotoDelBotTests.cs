@@ -399,6 +399,43 @@ public class CotoDelBotTests
     }
 
     /// <summary>
+    /// Y AL LUGAR LLENO NO SE VUELVE MIENTRAS DURA: desde el 58, adonde un nivel 1 se va de la cuna llena, el coto de siempre es la
+    /// cuna, que tiene treinta y ocho presas contra cuatro. Medido en `oficios9`: el Sastre fue y vino seis veces entre los dos.
+    /// </summary>
+    [Fact]
+    public void Al_lugar_lleno_no_se_vuelve_mientras_dura()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        const int vida = 20, nivel = 1;
+        var presa = Presa(d, vida, nivel);
+        Func<int, bool> peligroso = f => Bot.EsPeligrosoPara(d.Npc(f), vida, nivel, conPociones: true, curaVeneno: false);
+        Func<int, int> rinde = f => presa(f) ? (int)(d.Npc(f)?.GiveExp ?? 0) : 0;
+        Func<int, bool> paga = f => d.Npc(f)?.GiveGld > 0;
+        IEnumerable<int> Nacen(int x) => d.MapSpawns.TryGetValue(x, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
+        var seCaza = SeCaza(d, vida, nivel);
+        var llenos = new Dictionary<int, long> { [37] = long.MaxValue };
+        var desde = ((byte)27, (byte)79);
+        var deSiempre = Bot.ElegirCoto(m.Mapas, 58, desde, presa, paga, rinde, null, out _, out _, seCaza);
+        Assert.True(deSiempre?.Mapa == 37, $"desde el 58 el coto de siempre es el {deSiempre?.Mapa} y no la cuna: el test no prueba nada");
+
+        var ahora = Bot.CotoSinVolverAlLleno(m.Mapas, 58, desde, presa, paga, rinde, null, seCaza, x => Bot.SigueLleno(llenos, x, 0),
+                                             x => Bot.SirveParaIrseDelLleno(Bot.SigueLleno(llenos, x, 0), Nacen(x), peligroso),
+                                             null, out _, out _);
+        Assert.True(ahora is not { } a || (a.Mapa != 37 && !Nacen(a.Mapa).Any(peligroso)),
+            $"eligió el {ahora?.Mapa}, que está lleno o donde nace algo que lo mata");
+        // Parado en la cuna llena, se va a otro lado sin peligro.
+        var deLaCuna = Bot.CotoSinVolverAlLleno(m.Mapas, 37, ((byte)57, (byte)74), presa, paga, rinde, null, seCaza,
+                                                x => Bot.SigueLleno(llenos, x, 0),
+                                                x => Bot.SirveParaIrseDelLleno(Bot.SigueLleno(llenos, x, 0), Nacen(x), peligroso),
+                                                null, out _, out _);
+        Assert.True(deLaCuna is { } c && c.Mapa != 37 && !Nacen(c.Mapa).Any(peligroso), $"desde la cuna llena eligió el {deLaCuna?.Mapa}");
+        // Sin nada lleno, el de siempre.
+        Assert.Equal(deSiempre, Bot.CotoSinVolverAlLleno(m.Mapas, 58, desde, presa, paga, rinde, null, seCaza, _ => false, _ => true,
+                                                         null, out _, out _));
+    }
+
+    /// <summary>
     /// EL DESTINO EN OTRO MAPA, LEJOS DEL PELIGRO: el coto del 208 que da el navegante es el (45,40), a la vista de donde nace el Señor
     /// de las sombras (47,37); para un nivel 4 se cambia por otro spawn de presa del 208 sin nada peligroso a la vista y al que se
     /// llega desde ahí. Medido en `oficios6`: nueve muertes del Señor de las sombras ahí.
