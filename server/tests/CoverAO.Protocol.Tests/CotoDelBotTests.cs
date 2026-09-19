@@ -425,6 +425,62 @@ public class CotoDelBotTests
         Assert.Equal(destino, Bot.DestinoLejosDelPeligro(m.Mapas, 208, destino, presas, peligros));
     }
 
+    /// <summary>
+    /// UN PASO SUELTO NO SACA DEL MAPA: desde (10,82) del 187, un paso al oeste pisa la salida al 186 (toda la columna x = 9), en
+    /// cuya entrada vive el Ent; al norte o al sur, no, y una baldosa más adentro, tampoco. Medido en `oficios6`: dos bots de nivel
+    /// 12 muertos así, sin haber elegido nunca ir al 186.
+    /// </summary>
+    [Fact]
+    public void Un_paso_al_borde_del_mapa_se_ve_antes_de_darlo()
+    {
+        if (Mundo() is not { } m) return;
+        var salidas = m.Datos.MapExits;
+        Assert.Equal(186, salidas[(187, 9, 82)].DestMap);
+        Assert.True(Bot.PasoSaleDelMapa(salidas, 187, (10, 82), 4));    // al oeste: la salida al 186
+        Assert.False(Bot.PasoSaleDelMapa(salidas, 187, (10, 82), 1));   // al norte
+        Assert.False(Bot.PasoSaleDelMapa(salidas, 187, (10, 82), 3));   // al sur
+        Assert.False(Bot.PasoSaleDelMapa(salidas, 187, (11, 82), 4));   // una más adentro
+    }
+
+    /// <summary>Los mapas por los que pasa un viaje, siguiendo las puertas que da el navegante como las sigue el bot.</summary>
+    private static List<int> PorDondePasa(Navegante mapas, GameData d, int mapa, (byte X, byte Y) desde, int destino,
+                                          (byte X, byte Y) meta, Func<int, bool> filtro)
+    {
+        var ruta = new List<int>();
+        for (int i = 0; i < 8 && mapa != destino; i++)
+        {
+            if (mapas.PuertaHacia(mapa, destino, desde, meta, filtro) is not { } p) return new List<int>();
+            var llegada = d.MapExits[(mapa, p.Puerta.X, p.Puerta.Y)];
+            mapa = llegada.DestMap;
+            desde = ((byte)llegada.DestX, (byte)llegada.DestY);
+            ruta.Add(mapa);
+        }
+        return ruta;
+    }
+
+    /// <summary>
+    /// POR DONDE NO LO MATAN, SI HAY POR DONDE: yendo del 32 al 23, una Cazadora de nivel 7 cruzaba el 4, donde nacen tres Señores de
+    /// las sombras, y murió ahí (`oficios7`); con <see cref="Bot.PasaPorAhi"/> el camino va por el 29. Y del 9 al 242 no hay otro que
+    /// cruzar el 10 de la Aparición: ahí el filtro no da camino y el bot va por el de siempre.
+    /// </summary>
+    [Fact]
+    public void El_viaje_no_cruza_donde_nace_lo_que_lo_mata_si_hay_otro_camino()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        const int vida = 70, nivel = 7;
+        Func<int, bool> peligroso = f => Bot.EsPeligrosoPara(d.Npc(f), vida, nivel, conPociones: true, curaVeneno: false);
+        bool NaceAlgo(int x) => d.MapSpawns.TryGetValue(x, out var sp) && sp.Any(s => peligroso(s.NpcIndex));
+        Func<int, bool> pisable = x => Bot.PuedeEntrar(nivel, d.MapZone(x));
+        var desde = ((byte)14, (byte)11);
+        var meta = ((byte)30, (byte)59);
+        var deSiempre = PorDondePasa(m.Mapas, d, 32, desde, 23, meta, pisable);
+        Assert.True(deSiempre.Contains(4) && NaceAlgo(4), $"el camino de siempre ({string.Join(" > ", deSiempre)}) no cruza el 4: el test no prueba nada");
+        var sinPeligro = PorDondePasa(m.Mapas, d, 32, desde, 23, meta, x => Bot.PasaPorAhi(x, 23, pisable(x), NaceAlgo(x)));
+        Assert.True(sinPeligro.Count > 0 && sinPeligro[^1] == 23, "sin peligro no llega al 23");
+        Assert.DoesNotContain(sinPeligro.Take(sinPeligro.Count - 1), NaceAlgo);
+    }
+
     /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
     [Fact]
     public void Si_ningun_coto_pasa_el_filtro_se_elige_como_siempre()

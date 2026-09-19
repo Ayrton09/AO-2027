@@ -1466,6 +1466,29 @@ public sealed class Bot
         return mapa => PuedeEntrar(nivel, _entorno.Datos.MapZone(mapa));
     }
 
+    /// <summary>
+    /// ¿SE PASA POR ESE MAPA CAMINO A OTRO? Si deja entrar y no nace ahí nada peligroso para él; el destino, siempre que deje
+    /// entrar. <see cref="IrHastaAsync"/> busca primero el camino por mapas así, y si no hay, va por el de siempre.
+    ///
+    /// <para>Medido en `oficios7`: una Cazadora de nivel 7 murió en el 4, a dos baldosas de donde nace uno de sus tres Señores
+    /// de las sombras (pega de 60 a 75), yendo del 32 al 23: el camino de siempre cruza el 4, y por el 29 se llega igual. Y en
+    /// `oficios5` el Sastre murió cruzando el 10 (la Aparición) camino al 242, donde no hay otro camino a cinco mapas.</para>
+    /// </summary>
+    public static bool PasaPorAhi(int mapa, int mapaDestino, bool dejaEntrar, bool naceAlgoPeligroso) =>
+        dejaEntrar && (mapa == mapaDestino || !naceAlgoPeligroso);
+
+    /// <summary><see cref="PasaPorAhi"/> para este bot, con su vida, su nivel y lo que lleva encima.</summary>
+    private Func<int, bool> PasaSinPeligro(SentidosDelBot sentidos, int mapaDestino)
+    {
+        var pisable = Pisable(sentidos);
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        return m => PasaPorAhi(m, mapaDestino, pisable(m),
+            _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
+            && nacen.Any(sp => EsPeligroso((short)sp.NpcIndex, vida, nivel, conPociones, curaVeneno)));
+    }
+
     /// <summary>¿Deja el servidor entrar con ese nivel a un mapa de esa zona? La misma cuenta que hace al pisar la puerta.</summary>
     public static bool PuedeEntrar(int nivel, string? zona) =>
         nivel <= GameLimits.NewbieMaxLevel || !string.Equals(zona?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
@@ -3848,7 +3871,11 @@ public sealed class Bot
             bool esLaMeta = mapa == mapaDestino;
             (byte X, byte Y) meta;
             if (esLaMeta) meta = (destinoX, destinoY);
-            else if (_entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos)) is { } salida) meta = salida.Puerta;
+            // POR DONDE NO LO MATAN, SI HAY POR DONDE: ver `PasaPorAhi`. De muerto da igual, que al fantasma no lo atacan.
+            else if ((deMuerto ? null : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
+                                                                   PasaSinPeligro(sentidos, mapaDestino))
+                      ?? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos))) is { } salida)
+                meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
             // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y
@@ -3876,7 +3903,7 @@ public sealed class Bot
                 if (dx == 0 && dy == 0) continue;
                 // El camino es de a un paso: cualquier otra cosa quiere decir que nos corrieron de lugar.
                 if (Math.Abs(dx) + Math.Abs(dy) != 1) break;
-                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto);
+                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto, puedeSalir: true);
                 // CURARSE EN EL CAMINO EN VEZ DE VOLVERSE. Un golpe que bajaba la vida del umbral de la poción
                 // abortaba el viaje entero aunque el bot tuviera mil pociones encima, y el intento siguiente
                 // arrancaba otra vez desde donde estuviera. Mientras no esté en peligro de verdad se toma la poción y
@@ -3916,11 +3943,26 @@ public sealed class Bot
     /// Poner el chequeo en cada bucle sería ponerlo cuatro veces y olvidarlo en el quinto.</para>
     /// </summary>
     private async Task<Paso> UnPasoHaciaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int dx, int dy,
-                                              CancellationToken ct, bool deMuerto = false)
+                                              CancellationToken ct, bool deMuerto = false, bool puedeSalir = false)
     {
-        byte rumbo = _pasoTrabado && dx != 0 && dy != 0
+        byte porElOtroEje = dx != 0 && dy != 0
             ? SentidosDelBot.RumboHacia(Math.Abs(dx) > Math.Abs(dy) ? 0 : dx, Math.Abs(dx) > Math.Abs(dy) ? dy : 0)
-            : SentidosDelBot.RumboHacia(dx, dy);
+            : (byte)0;
+        byte rumbo = _pasoTrabado && porElOtroEje != 0 ? porElOtroEje : SentidosDelBot.RumboHacia(dx, dy);
+        // UN PASO SUELTO NO SACA DEL MAPA (ver `PasoSaleDelMapa`): si el rumbo pisa una salida se prueba el otro eje, y si
+        // tampoco se puede, el paso no se da y cuenta como trabado. Sólo el viaje sale a propósito.
+        if (!puedeSalir && PasoSaleDelMapa(_entorno.Datos.MapExits, sentidos.Mapa, sentidos.Posicion, rumbo))
+        {
+            if (porElOtroEje != 0 && porElOtroEje != rumbo
+                && !PasoSaleDelMapa(_entorno.Datos.MapExits, sentidos.Mapa, sentidos.Posicion, porElOtroEje))
+                rumbo = porElOtroEje;
+            else
+            {
+                _pasoTrabado = true;
+                await Task.Delay(UnPaso(), ct);
+                return Urge(sentidos, deMuerto) ? Paso.Urgencia : Paso.Dado;
+            }
+        }
         var antes = sentidos.Posicion;
         if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return Paso.SinConexion;
         sentidos.PredecirPaso(rumbo);
@@ -3929,6 +3971,22 @@ public sealed class Bot
         // significa que hay algo adelante.
         _pasoTrabado = sentidos.Posicion == antes;
         return Urge(sentidos, deMuerto) ? Paso.Urgencia : Paso.Dado;
+    }
+
+    /// <summary>
+    /// ¿EL PASO EN ESE RUMBO PISA UNA SALIDA DEL MAPA? Pisarla lo saca del mapa, y eso se hace a propósito, viajando
+    /// (<see cref="IrHastaAsync"/>): no paseando ni persiguiendo una presa.
+    ///
+    /// <para>Medido en `oficios6`: un Paladín y una Nigromante de nivel 12 cazaban en el borde oeste del 187 —toda la columna
+    /// x = 9 es la salida al 186— y aparecieron en la entrada del 186, al lado del Ent (pega de 40 a 90 y no camina): murieron
+    /// los dos, sin haber elegido nunca ir ahí. El camino del navegante ya esquivaba las salidas; el paseo y el paso suelto,
+    /// no.</para>
+    /// </summary>
+    public static bool PasoSaleDelMapa(IReadOnlyDictionary<(int Map, int X, int Y), (int DestMap, int DestX, int DestY)> salidas,
+                                       int mapa, (byte X, byte Y) desde, byte rumbo)
+    {
+        var (dx, dy) = SentidosDelBot.Paso(rumbo);
+        return salidas.ContainsKey((mapa, desde.X + dx, desde.Y + dy));
     }
 
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
@@ -3985,6 +4043,7 @@ public sealed class Bot
         int pasos = _rng.Next(PasosMin, PasosMax);
         for (int i = 0; i < pasos && !cerrada.IsCompleted; i++)
         {
+            if (PasoSaleDelMapa(_entorno.Datos.MapExits, sentidos.Mapa, sentidos.Posicion, rumbo)) break;   // ver `PasoSaleDelMapa`
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
             await Task.Delay(UnPaso(), ct);
