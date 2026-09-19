@@ -2224,8 +2224,8 @@ public sealed class Bot
 
     /// <summary>
     /// ¿ESTÁ LLENO EL LUGAR? Cuando se le acabó la paciencia sin nada que cazar a la vista y ve a <see cref="PersonasQueLlenan"/> o más
-    /// personas, el mapa donde está se deja por <see cref="LlenoMs"/>, como el que llega a donde cazan muchos y se va a otro lado. Pasa
-    /// por el mismo filtro que <see cref="SeCazaAhi"/>: si ningún coto lo pasa, se elige como siempre.
+    /// personas, el mapa donde está se deja por <see cref="LlenoMs"/>, como el que llega a donde cazan muchos y se va a otro lado: el
+    /// coto sale de <see cref="OtroCotoSinPeligro"/>, y si no hay ninguno se elige como siempre.
     ///
     /// <para>Medido en `oficios3` y `oficios4` (18 bots desde nivel 1): tres cuartos del tiempo de los bots en la cuna, casi siempre
     /// con diez a dieciocho juntos, y el 208 —el otro mapa de novatos— casi vacío. Sin nadie a la vista fue lo más grande del reparto
@@ -2233,6 +2233,29 @@ public sealed class Bot
     /// cazan, y reaparecen a los treinta segundos y lejos de los jugadores.</para>
     /// </summary>
     public static bool EstaLleno(int personasALaVista) => personasALaVista >= PersonasQueLlenan;
+
+    /// <summary>
+    /// A DÓNDE IRSE DE UN LUGAR LLENO: <see cref="ElegirCoto"/> entre los mapas que <paramref name="sirve"/>
+    /// (<see cref="SirveParaIrseDelLleno"/>), sin caer a elegir como siempre: null si no hay ninguno, y el bot se queda.
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? OtroCotoSinPeligro(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                             Func<int, bool> esPresa, Func<int, bool> paga,
+                                                                             Func<int, int> rinde, Func<int, bool>? pisable,
+                                                                             Func<int, bool> sirve, Func<int, int>? desempate,
+                                                                             out bool porElOro, out int porLoQueRinde) =>
+        ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirve, desempate, out porElOro, out porLoQueRinde);
+
+    /// <summary>
+    /// ¿SIRVE PARA IRSE AHÍ DE UN LUGAR LLENO? Si no está lleno también y no nace ahí NADA peligroso para él, sea el mapa seguro o
+    /// no: por irse de un lugar lleno no se va a donde lo matan.
+    ///
+    /// <para>Medido en `oficios6`, con la regla del lugar lleno sin esto: nueve de las catorce muertes en el 208, el otro mapa de
+    /// novatos, del Señor de las sombras (pega de 60 a 75 y no camina), a bots de nivel 4 a 11. El coto del 208 era siempre la
+    /// baldosa (45,40), a cinco pasos de donde nace, y el 208 es seguro: <see cref="SeCazaAhi"/> no descarta nada en un mapa
+    /// seguro, porque la cuna del nivel 1 tiene Lobos que para él son peligrosos.</para>
+    /// </summary>
+    public static bool SirveParaIrseDelLleno(bool tambienLleno, IEnumerable<int> loQueNace, Func<int, bool> esPeligroso) =>
+        !tambienLleno && !loQueNace.Any(esPeligroso);
 
     /// <summary>¿Sigue lleno ese mapa? Hasta que pasa el rato desde que lo vio lleno.</summary>
     public static bool SigueLleno(IReadOnlyDictionary<int, long> llenoHasta, int mapa, long ahora) =>
@@ -2267,6 +2290,33 @@ public sealed class Bot
     {
         var lejos = presas.Where(t => !peligros.Any(o => AlAlcanceDeSuVista(t, o))).ToList();
         return lejos.Count > 0 ? lejos : presas.ToList();
+    }
+
+    /// <summary>
+    /// EL DESTINO EN OTRO MAPA, LEJOS DEL PELIGRO: el spawn que eligió el navegante si no tiene nada peligroso naciendo a la vista; si
+    /// lo tiene, el más cercano a él que no lo tenga y al que se llega desde ahí (la misma zona del mapa). Si no hay ninguno, el del
+    /// navegante.
+    ///
+    /// <para>Para otro mapa el navegante da el spawn de presa más cercano a la entrada, sin mirar qué nace al lado, y el reparto de
+    /// <see cref="LejosDelPeligro"/> recién corría al llegar. Medido en `oficios6`: el coto del 208 era siempre la baldosa (45,40), a
+    /// cinco pasos de donde nace el Señor de las sombras (pega de 60 a 75), y fueron ahí tanto los que dejaban la cuna llena como
+    /// los que iban por el oro: nueve de catorce muertes.</para>
+    /// </summary>
+    public static (byte X, byte Y) DestinoLejosDelPeligro(Navegante mapas, int mapa, (byte X, byte Y) elegido,
+                                                          IReadOnlyList<(byte X, byte Y)> presas,
+                                                          IReadOnlyCollection<(byte X, byte Y)> peligros)
+    {
+        if (!peligros.Any(o => AlAlcanceDeSuVista(elegido, o))) return elegido;
+        (byte X, byte Y)? mejor = null;
+        int mejorPasos = int.MaxValue;
+        foreach (var t in presas.OrderBy(t => Math.Abs(t.X - elegido.X) + Math.Abs(t.Y - elegido.Y)))
+        {
+            if (peligros.Any(o => AlAlcanceDeSuVista(t, o))) continue;
+            if (mapas.HayComoLlegar(mapa, elegido, t, ToleranciaDelCoto) is null) continue;
+            mejor = t;
+            break;
+        }
+        return mejor ?? elegido;
     }
 
     /// <summary>¿Vale ir por lo que paga? Si tiene al menos una que paga por cada <see cref="PresasPorCadaUnaQuePaga"/> presas del
@@ -2312,12 +2362,13 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
+        Func<int, bool> esPeligroso = f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
+        Func<int, IEnumerable<int>> loQueNace = m => _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
+            ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
+        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
-        Func<int, bool> seCazaAhi = m => !SigueLleno(_llenoHasta, m, ahora) && SeCazaAhi(_entorno.Datos.IsPkMap(m),
-            _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
-            f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno));
         // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.
         var paraSuOficio = LoQueSaleACazarParaSuOficio(sentidos);
         Func<int, bool> esPresaDelOficio = f => esPresa(f) && SueltaAlgoDe(_entorno.Datos.Npc(f), paraSuOficio);
@@ -2327,11 +2378,19 @@ public sealed class Bot
         bool porElOro = false;
         int porLoQueRinde = 0;
         Func<int, bool> sirve = esPresaDelOficio;
+        Func<int, int> rinde = f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+        if (hallado is null && SigueLleno(_llenoHasta, sentidos.Mapa, ahora))
+        {
+            hallado = OtroCotoSinPeligro(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
+                                         Pisable(sentidos),
+                                         m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
+                                         m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde);
+            sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
+        }
         if (hallado is null)
         {
-            hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f),
-                                 f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0, Pisable(sentidos),
-                                 out porElOro, out porLoQueRinde, seCazaAhi, m => CuantoLeGusta(_propio, m));
+            hallado = ElegirCoto(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
+                                 Pisable(sentidos), out porElOro, out porLoQueRinde, seCazaAhi, m => CuantoLeGusta(_propio, m));
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
         if (hallado is not { } coto) return false;
@@ -2344,20 +2403,24 @@ public sealed class Bot
         // tiene su propio azar, así que se reparten solos. Para otro mapa vale el que eligió el navegante, que
         // ya verificó que se llega: al entrar, la próxima búsqueda reparte.
         var destino = (X: coto.X, Y: coto.Y);
-        if (coto.Mapa == sentidos.Mapa && _entorno.Datos.MapSpawns.TryGetValue(coto.Mapa, out var spawns))
+        if (_entorno.Datos.MapSpawns.TryGetValue(coto.Mapa, out var spawns))
         {
             // NI A LA VISTA DE DONDE NACE ALGO PELIGROSO, que ahí vuelve a aparecer y camina hacia el que ve. Medido en `normal3`: de
             // las siete muertes de bots de nivel 1, dos fueron a la vista de donde nace el Lobo del medio de la cuna.
             var peligros = spawns.Where(sp => EsPeligroso((short)sp.NpcIndex, vidaMaxima, nivel, conPociones, curaVeneno))
                                  .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
-            var opciones = LejosDelPeligro(spawns.Where(sp => sirve(sp.NpcIndex))
-                                                 .Select(sp => (X: (byte)sp.X, Y: (byte)sp.Y))
-                                                 .Distinct()
-                                                 .ToList(), peligros)
-                                 .Where(t => _entorno.Mapas.HayComoLlegar(coto.Mapa, sentidos.Posicion, (t.X, t.Y),
-                                                                          ToleranciaDelCoto) is not null)
-                                 .ToList();
-            if (opciones.Count > 0) destino = opciones[_rng.Next(opciones.Count)];
+            var presas = spawns.Where(sp => sirve(sp.NpcIndex)).Select(sp => ((byte)sp.X, (byte)sp.Y)).Distinct().ToList();
+            if (coto.Mapa == sentidos.Mapa)
+            {
+                var opciones = LejosDelPeligro(presas, peligros)
+                                     .Where(t => _entorno.Mapas.HayComoLlegar(coto.Mapa, sentidos.Posicion, (t.X, t.Y),
+                                                                              ToleranciaDelCoto) is not null)
+                                     .ToList();
+                if (opciones.Count > 0) destino = opciones[_rng.Next(opciones.Count)];
+            }
+            else
+                // Y EN OTRO MAPA TAMBIÉN: ver `DestinoLejosDelPeligro`.
+                destino = DestinoLejosDelPeligro(_entorno.Mapas, coto.Mapa, destino, presas, peligros);
         }
 
         // "HAY PRESAS EN ESTE MAPA" NO ES "HAY PRESAS DONDE ESTOY PARADO". Acá se devolvía false cuando el

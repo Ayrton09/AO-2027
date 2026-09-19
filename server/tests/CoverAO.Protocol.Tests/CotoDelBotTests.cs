@@ -362,27 +362,67 @@ public class CotoDelBotTests
     }
 
     /// <summary>
-    /// Y CONTRA LOS MAPAS DE VERDAD: con la cuna llena, un nivel 3 se va a cazar a otro mapa donde tiene presas; sin la regla se
-    /// queda en la cuna, que es donde se quedaban los dieciocho.
+    /// Y CONTRA LOS MAPAS DE VERDAD: con la cuna llena, de nivel 3 a 11, el otro coto nunca es un mapa donde nace algo peligroso
+    /// para él —el 208 del Señor de las sombras—; si no hay ninguno así, ninguno, y se queda. Medido en `oficios6`, con la regla
+    /// del lugar lleno pasando sólo por el filtro de siempre: nueve de catorce muertes en el 208, del Señor de las sombras.
     /// </summary>
     [Fact]
-    public void Con_la_cuna_llena_un_novato_caza_en_otro_lado()
+    public void Por_un_lugar_lleno_no_se_va_a_donde_vive_el_senor_de_las_sombras()
     {
         if (Mundo() is not { } m) return;
-        const int vida = 30, nivel = 3;
-        var presa = Presa(m.Datos, vida, nivel);
-        Func<int, int> rinde = f => presa(f) ? (int)(m.Datos.Npc(f)?.GiveExp ?? 0) : 0;
-        Func<int, bool> paga = f => m.Datos.Npc(f)?.GiveGld > 0;
-        var seCaza = SeCaza(m.Datos, vida, nivel);
+        var d = m.Datos;
         var cuna = ((byte)57, (byte)74);
-        var deSiempre = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _, seCaza);
-        Assert.True(deSiempre?.Mapa == 37, $"sin la regla eligió el {deSiempre?.Mapa} y no la cuna: el test no prueba nada");
         var llenos = new Dictionary<int, long> { [37] = long.MaxValue };
-        var otro = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _,
-                                  x => !Bot.SigueLleno(llenos, x, 0) && seCaza(x));
-        Assert.True(otro is { } o && o.Mapa != 37, $"con la cuna llena eligió el {otro?.Mapa}");
-        Assert.True(m.Mapas.CuantasSeAlcanzan(otro!.Value.Mapa, (otro.Value.X, otro.Value.Y), presa) > 0,
-            $"el {otro.Value.Mapa} no tiene presas para un nivel 3");
+        IEnumerable<int> Nacen(int x) => d.MapSpawns.TryGetValue(x, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
+        int alDoscientosOcho = 0, seVan = 0;
+        foreach (var (nivel, vida) in new[] { (3, 30), (5, 50), (8, 80), (11, 110) })
+        {
+            var presa = Presa(d, vida, nivel);
+            Func<int, bool> peligroso = f => Bot.EsPeligrosoPara(d.Npc(f), vida, nivel, conPociones: true, curaVeneno: false);
+            Func<int, int> rinde = f => presa(f) ? (int)(d.Npc(f)?.GiveExp ?? 0) : 0;
+            Func<int, bool> paga = f => d.Npc(f)?.GiveGld > 0;
+            var seCaza = SeCaza(d, vida, nivel);
+            // Lo de antes: el lugar lleno pasando sólo por el filtro de siempre.
+            var antes = Bot.ElegirCoto(m.Mapas, 37, cuna, presa, paga, rinde, null, out _, out _,
+                                       x => !Bot.SigueLleno(llenos, x, 0) && seCaza(x));
+            if (antes?.Mapa == 208) alDoscientosOcho++;
+            var ahora = Bot.OtroCotoSinPeligro(m.Mapas, 37, cuna, presa, paga, rinde, null,
+                                               x => Bot.SirveParaIrseDelLleno(Bot.SigueLleno(llenos, x, 0), Nacen(x), peligroso),
+                                               null, out _, out _);
+            if (ahora is not { } a) continue;
+            seVan++;
+            Assert.True(a.Mapa != 37 && !Nacen(a.Mapa).Any(peligroso), $"nivel {nivel}: eligió el {a.Mapa}, donde nace algo que lo mata");
+            Assert.True(m.Mapas.CuantasSeAlcanzan(a.Mapa, (a.X, a.Y), presa) > 0, $"nivel {nivel}: el {a.Mapa} no tiene presas");
+        }
+        Assert.True(alDoscientosOcho > 0, "con la regla de antes ninguno iba al 208: el test no prueba nada");
+        Assert.True(seVan > 0, "ningún nivel encuentra dónde irse: la regla no mueve a nadie");
+    }
+
+    /// <summary>
+    /// EL DESTINO EN OTRO MAPA, LEJOS DEL PELIGRO: el coto del 208 que da el navegante es el (45,40), a la vista de donde nace el Señor
+    /// de las sombras (47,37); para un nivel 4 se cambia por otro spawn de presa del 208 sin nada peligroso a la vista y al que se
+    /// llega desde ahí. Medido en `oficios6`: nueve muertes del Señor de las sombras ahí.
+    /// </summary>
+    [Fact]
+    public void En_el_208_no_se_va_al_lado_del_senor_de_las_sombras()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        const int vida = 45, nivel = 4;
+        var presa = Presa(d, vida, nivel);
+        var spawns = d.MapSpawns[208];
+        var peligros = spawns.Where(sp => Bot.EsPeligrosoPara(d.Npc(sp.NpcIndex), vida, nivel, conPociones: true, curaVeneno: false))
+                             .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
+        var presas = spawns.Where(sp => presa(sp.NpcIndex)).Select(sp => ((byte)sp.X, (byte)sp.Y)).Distinct().ToList();
+        var elegido = ((byte)45, (byte)40);
+        Assert.True(peligros.Any(o => Bot.AlAlcanceDeSuVista(elegido, o)), "el (45,40) no tiene nada peligroso a la vista: el test no prueba nada");
+        var destino = Bot.DestinoLejosDelPeligro(m.Mapas, 208, elegido, presas, peligros);
+        Assert.NotEqual(elegido, destino);
+        Assert.DoesNotContain(peligros, o => Bot.AlAlcanceDeSuVista(destino, o));
+        Assert.Contains(destino, presas);
+        Assert.NotNull(m.Mapas.HayComoLlegar(208, elegido, destino, 3));
+        // Y el que ya está lejos del peligro se queda como está.
+        Assert.Equal(destino, Bot.DestinoLejosDelPeligro(m.Mapas, 208, destino, presas, peligros));
     }
 
     /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
