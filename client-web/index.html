@@ -1086,6 +1086,27 @@
     // portarlo al globo quedó el array sin nadie que lo llenara y un bucle de render recorriéndolo vacío en
     // cada cuadro. Ver el handler de `ChatOverHeadLocale`.
     const groundFx = [];           // FX de hechizos de AREA, anclados a un TILE: {x, y, at, kind:'fx'|'part', id}
+    /// El techo de lo que dura un FX del piso: el cálculo por cuadros del dibujo nunca pasa de acá.
+    const VIDA_MAXIMA_FX = 1400;
+    /**
+     * LO QUE SE LIMPIA DIBUJANDO NO SE LIMPIA CON LA PESTAÑA DE FONDO.
+     *
+     * <p>`requestAnimationFrame` no corre en una pestaña oculta —lo decide el navegador— pero los paquetes siguen
+     * llegando y aplicándose. `dying` y `groundFx` se podaban sólo adentro del cuadro, así que el que deja el juego
+     * en otra solapa vuelve con todos los muertos y todos los efectos de área de ese rato encima, y el primer
+     * cuadro tiene que masticarlos a todos. Se podan también al ENTRAR, que es el único momento en que crecen.</p>
+     *
+     * <p>Los dos están ordenados por antigüedad —se agregan de a uno, al final— así que alcanza con cortar por el
+     * primero que sigue vivo.</p>
+     */
+    function podarLoViejo() {
+      const ahora = Date.now();
+      while (groundFx.length && ahora - groundFx[0].at > VIDA_MAXIMA_FX) groundFx.shift();
+      for (const [ci, c] of dying) {
+        if (ahora - c.diedAt < FADE_FANTASMA_MS) break;
+        dying.delete(ci);
+      }
+    }
     let laborando = false;         // faena en curso (trabajo CONTINUO): el server produce solo cada 700ms
     // Estado que el server informa y el cliente ignoraba. Los cuatro son TOGGLES sin payload: el server no
     // manda el valor nuevo, manda "cambió", asi que hay que espejar el bool como hace el cliente original.
@@ -1326,9 +1347,14 @@
       const cv = document.getElementById('mapamundi'); if (!cv) return;
       const hoja = sheets[HOJA_DEL_MAPA];
       if (!hoja) { loadSheet(HOJA_DEL_MAPA); setTimeout(dibujarMapaDelMundo, 150); return; }
+      hoja._uso = _marcaDeMapa;
       const ctx = cv.getContext('2d');
       ctx.clearRect(0, 0, cv.width, cv.height);
-      ctx.drawImage(hoja, 0, 0, ANCHO_MAPA, ALTO_MAPA, 0, 0, cv.width, cv.height);
+      // LA LAMINA ESTA EN HD, IGUAL QUE TODO EL RESTO DEL ARTE. El original muestra la esquina de 800x600 de la
+      // hoja porque `frmMap` mide eso; acá la hoja viene remasterizada a xHD, así que esos mismos 800x600 logicos
+      // son 3200x2400 pixeles. Sin multiplicar se veia UN DIECISEISAVO del mapa —la esquina noroeste, la isla
+      // nevada— agrandada cuatro veces, y el punto del jugador caia en cualquier lado.
+      ctx.drawImage(hoja, 0, 0, ANCHO_MAPA * HD, ALTO_MAPA * HD, 0, 0, cv.width, cv.height);
       const cartel = document.getElementById('mapa-zona');
       const donde = casilleroDelMapa(currentMap);
       const nombre = (map && (map.name || '').trim()) || ('Mapa ' + currentMap);
@@ -1438,6 +1464,7 @@
     // así que un art-píxel entero cae exacto en píxeles del dispositivo. `sx * TILE` ya es entero, o sea que
     // todas las baldosas se corren lo mismo y la grilla no se desarma.
     function dGrh(c2, sheet, g, dx, dy, dw, dh) {
+      sheet._uso = _marcaDeMapa;   // la última vez que se dibujó, para saber cuál soltar (ver `soltarHojasQueNadieUsa`)
       c2.drawImage(sheet, g.x * HD, g.y * HD, g.w * HD, g.h * HD, Math.round(dx), Math.round(dy), dw, dh);
     }
     // Render un GrhIndex estático, escalado+centrado, dentro de un <canvas> chico del DOM (inventario/hotbar).
@@ -1506,6 +1533,43 @@
 
     // Art pipeline: atlas (GrhIndex -> {file,x,y,w,h}), body index, and sprite-sheet BMPs.
     let atlas = null, bodies = null, headsIdx = null; const sheets = {}, loading = {}, failedSheets = new Set();
+    /**
+     * CUÁNTA MEMORIA DE HOJAS YA DECODIFICADAS SE AGUANTA antes de soltar las que no se están usando.
+     *
+     * <p>Las hojas se cargaban bajo demanda y no se soltaban NUNCA, así que la memoria del cliente sube con cada
+     * mapa nuevo y no baja jamás. Lo que pesa no es el `.png` sino la imagen decodificada —ancho × alto × 4—, que
+     * es entre cincuenta y cien veces más: las 2397 hojas suman 12,1 GB decodificadas contra 142 MB en disco.
+     * Medido caminando veinte mapas desde Ullathorpe: 831 MB y 187 hojas al final, subiendo en cada mapa nuevo y
+     * sin bajar nunca. Cuando el navegador manda la pestaña al fondo tira esas imágenes decodificadas, y al volver
+     * las tiene que decodificar de nuevo: eso es el bajón de cuadros al volver a la solapa.</p>
+     *
+     * <p>El tope está arriba del mapa más caro que se camina de verdad, así que en una sesión corta no se suelta
+     * nada; recién con muchos mapas encima empieza a soltar las que hace dos mapas que nadie dibuja.</p>
+     *
+     * <p>VAN ACÁ ARRIBA A PROPÓSITO, no al lado de las funciones que las usan: `loadMap(1)` corre mientras se
+     * evalúa el módulo, y una declaración más abajo lo deja leyéndolas en zona muerta. Eso corta la evaluación
+     * entera y el cliente queda en la pantalla de login — y ni `check-index` ni la suite lo ven, porque lo único
+     * que verifican es que el script PARSEE.</p>
+     */
+    const TOPE_DE_HOJAS = 512 * 1024 * 1024, MAPAS_DE_GRACIA = 2;
+    /// Cuántos mapas se pisaron: es el reloj con el que se mide hace cuánto que no se dibuja una hoja.
+    let _marcaDeMapa = 0;
+    /**
+     * UN REDIBUJO POR CUADRO, NO UNO POR HOJA QUE LLEGA.
+     *
+     * <p>Al entrar a un mapa se piden de veinte a sesenta hojas y cada una, al llegar, disparaba un `draw()`
+     * entero: sesenta dibujos del mundo para mostrar un solo cuadro, todos en el hilo principal y todos seguidos.
+     * Eso es parte del tirón al cambiar de mapa. Se junta todo en el próximo cuadro del navegador.</p>
+     *
+     * <p>Con la pestaña oculta `requestAnimationFrame` no corre, y está bien: no hay nada que mostrar hasta que
+     * vuelva, y al volver el bucle dibuja igual.</p>
+     */
+    let _dibujoPedido = false;
+    function pedirDibujo() {
+      if (_dibujoPedido) return;
+      _dibujoPedido = true;
+      requestAnimationFrame(() => { _dibujoPedido = false; draw(); });
+    }
     let weaponsIdx = null, shieldsIdx = null, helmetsIdx = null;   // equipped-gear anim tables (per heading)
     fetch('./assets/grh.json').then((r) => r.json()).then((a) => { atlas = a.grh; loadSheet(1); draw(); });
     fetch('./assets/bodies.json').then((r) => r.json()).then((b) => { bodies = b.bodies; draw(); });
@@ -1522,6 +1586,7 @@
     function loadMap(n) {
       if (n === currentMap && map) return;                                             // already here
       currentMap = n;
+      _marcaDeMapa++; soltarHojasQueNadieUsa();
       for (const ci of [...chars.keys()]) if (ci !== myCharIndex) chars.delete(ci);     // drop other-map entities
       // `emisores` también: su clave es "x,y" SIN el mapa, así que sin vaciarlo la antorcha de una baldosa se
       // encuentra con las partículas a medio vivir de lo que hubiera en esa misma baldosa del mapa anterior. Y
@@ -1699,6 +1764,43 @@
     fetch('./assets/minimap.bin').then((r) => (r.ok ? r.arrayBuffer() : null))
       .then((b) => { if (b) { miniColor = new Uint32Array(b); if (map) map._mini = null; } }).catch(() => {});
 
+    /// Lo que ocupan ahora mismo las hojas cargadas, en bytes ya decodificados.
+    function memoriaDeLasHojas() {
+      let total = 0;
+      for (const n in sheets) {
+        const h = sheets[n];
+        total += h._bytes || (h.naturalWidth || 0) * (h.naturalHeight || 0) * 4;
+      }
+      return total;
+    }
+    /// Suelta las hojas que hace `MAPAS_DE_GRACIA` mapas que nadie dibuja, de la más vieja a la más nueva, hasta
+    /// bajar del tope. Soltar es sacarla de `sheets`: la próxima vez que se necesite se vuelve a pedir sola.
+    function soltarHojasQueNadieUsa() {
+      let total = memoriaDeLasHojas(), sueltas = 0;
+      if (total <= TOPE_DE_HOJAS) return 0;
+      const viejas = Object.keys(sheets)
+        .filter((n) => (sheets[n]._uso || 0) <= _marcaDeMapa - MAPAS_DE_GRACIA)
+        .sort((a, b) => (sheets[a]._uso || 0) - (sheets[b]._uso || 0));
+      for (const n of viejas) {
+        if (total <= TOPE_DE_HOJAS) break;
+        total -= sheets[n]._bytes || 0;
+        if (sheets[n].close) sheets[n].close();        // el ImageBitmap se suelta en el acto, sin esperar al recolector
+        delete sheets[n]; delete loading[n];
+        sueltas++;
+      }
+      return sueltas;
+    }
+    window.__hojas = () => ({ cargadas: Object.keys(sheets).length, mb: +(memoriaDeLasHojas() / 1048576).toFixed(1), mapa: currentMap });
+    /// Deja la hoja lista para dibujar y despierta a los que la estaban esperando.
+    function guardarHoja(n, hoja, bytes) {
+      hoja._bytes = bytes;    // lo que ocupa DECODIFICADA, que es lo que pesa
+      hoja._uso = _marcaDeMapa;
+      sheets[n] = hoja;
+      // EL `loading` SE BORRA AL LLEGAR, no sólo al fallar: quedaba en `true` para siempre y, con la hoja ya
+      // soltada, el guardia de `loadSheet` daba media vuelta y no se pedía nunca más.
+      delete loading[n];
+      pedirDibujo(); scheduleIconRefresh();   // re-pinta íconos DOM (inventario/hotbar) que usaban esta hoja
+    }
     function loadSheet(n) {
       if (sheets[n] || loading[n] || failedSheets.has(n)) return;
       loading[n] = true;
@@ -1706,8 +1808,18 @@
       img.onload = () => {
         // Las hojas HD son PNG con el colorkey de AO (negro→transparente) ya horneado en el alpha por el
         // pipeline (tools/hd/). El <img> es fuente válida de drawImage; no hace falta el pase getImageData.
-        sheets[n] = img;
-        draw(); scheduleIconRefresh();   // re-pinta íconos DOM (inventario/hotbar) que usaban esta hoja
+        //
+        // SE DECODIFICA ANTES DE PUBLICARLA, y es la mitad del tirón al cambiar de mapa. Chrome decodifica una
+        // imagen al RASTERIZARLA, no al bajarla, así que el primer `drawImage` de cada hoja nueva se pagaba
+        // adentro del cuadro: al entrar a un mapa llegan de veinte a sesenta hojas y todas se decodifican en el
+        // hilo del dibujo. `decode()` lo hace afuera y recién después la hoja entra en `sheets`.
+        //
+        // Se probó guardarla como `ImageBitmap` recortado, que además ahorraba la mitad de la memoria. Con placa
+        // de video andaba mejor que esto; SIN placa —Chrome rasterizando por software— el cuadro pasaba de 2,5-7,6
+        // ms a 25-75, porque un bitmap ya materializado le saca a Skia el atajo de decodificar a la escala en que
+        // se dibuja. El ahorro de memoria se consiguió recortando los `.png` en el pipeline, que no toca esto.
+        const guardar = () => guardarHoja(n, img, img.naturalWidth * img.naturalHeight * 4);
+        if (img.decode) img.decode().then(guardar).catch(guardar); else guardar();
       };
       img.onerror = () => { delete loading[n]; failedSheets.add(n); };  // hoja inexistente (p.ej. 896): no dejar loading colgado ni reintentar en loop
       img.src = `./assets/graficos/${n}.png`;
@@ -3904,7 +4016,7 @@
           //
           // Acá seguía saliendo de `frameGrh` y de `posRender`, así que el que moría caminando seguía moviendo
           // las piernas y deslizándose mientras se apagaba.
-          if (c && f.faded) { c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
+          if (c && f.faded) { podarLoViejo(); c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
           chars.delete(f.charIndex); break; }
         case 'UpdateTagAndStatus': { const c = chars.get(f.charIndex); if (c) c.status = f.status; break; }
         case 'CorreoList': cartas = f.cartas; renderCartas(); break;   // la bandeja del buzon
@@ -4123,8 +4235,10 @@
         // `yArea` es el centro que el server barrió de verdad, y lo usa el tinte del 3x3, que es agregado
         // nuestro y no tiene por qué moverse con el sprite.
         case 'EfectoTerrenoFX':
+          podarLoViejo();
           groundFx.push({ x: f.x, y: f.y, yArea: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx }); break;
         case 'EfectoTerrenoParticula':
+          podarLoViejo();
           groundFx.push({ x: f.x, y: f.y, yArea: f.y, at: Date.now(), kind: 'part', id: f.particula }); break;
         case 'EfectoCharParticula': {
           // Persistent aura attached to a character. time < 0 = until an explicit remove.
@@ -6762,8 +6876,10 @@
       const sc = Math.min(cv.width / ANCHO_REF, cv.height / ALTO_REF) * 0.94;
       const cw = cv.width, ch = cv.height;
       const piso = ch - (ch - ALTO_REF * sc) / 2;
-      const blit = (g, ox, oy) =>
-        cx.drawImage(sheets[g.file], g.x * HD, g.y * HD, g.w * HD, g.h * HD, ox, oy, g.w * sc, g.h * sc);
+      const blit = (g, ox, oy) => {
+        const hoja = sheets[g.file]; hoja._uso = _marcaDeMapa;
+        cx.drawImage(hoja, g.x * HD, g.y * HD, g.w * HD, g.h * HD, ox, oy, g.w * sc, g.h * sc);
+      };
       blit(bg, (cw - bg.w * sc) / 2, piso - bg.h * sc);         // cuerpo anclado al piso
       // LAS CINCO PIEZAS, como `DrawPJ` (TileEngine.bas:4092-4112): cuerpo, cabeza, CASCO, ARMA y ESCUDO,
       // todas de frente. Acá se dibujaban sólo las dos primeras, así que un personaje con armadura completa
