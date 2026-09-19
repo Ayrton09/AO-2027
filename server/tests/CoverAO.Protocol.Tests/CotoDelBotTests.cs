@@ -504,10 +504,11 @@ public class CotoDelBotTests
     }
 
     /// <summary>
-    /// SIN TIENDA A CINCO MAPAS, SE BUSCA MÁS LEJOS: pasado el nivel 15 la cuna no deja entrar, y desde los Campos Abiertos del 25
-    /// —donde la Sastre de `oficios14` juntó 89 mil monedas sin poder comprar comida ni el Costurero— no hay a cinco mapas ninguno
-    /// que atienda con quien venda comida. Más lejos sí, y el viaje hasta allá arranca. Al de nivel 12, que pasa por la cuna, le
-    /// alcanza con lo de siempre.
+    /// SIN TIENDA A CINCO MAPAS, SE BUSCA MÁS LEJOS, PERO SÓLO POR DONDE NO LO MATAN. Desde las Costas Occidentales del 394 un nivel
+    /// 18 no tiene a cinco mapas ningún pueblo que atienda con quien le venda comida, y a seis está la Avanzada republicana, por
+    /// mapas donde no nace nada que lo mate. Desde los Campos Abiertos del 25 —donde la Sastre de `oficios14` juntó 89 mil monedas
+    /// sin poder comprar— el pueblo más cercano queda del otro lado del Desierto de Rinkel, donde en `tienda2` murieron tres bots
+    /// yendo a comprar: ése no se elige. Al de nivel 12, que pasa por la cuna, le alcanza con lo de siempre.
     /// </summary>
     [Fact]
     public void Sin_tienda_a_cinco_mapas_se_busca_mas_lejos()
@@ -516,21 +517,41 @@ public class CotoDelBotTests
         var d = m.Datos;
         Func<int, bool> tieneMercader = x => d.MapBattleMode(x) is 2 or 3 && d.MapSpawns.TryGetValue(x, out var sp)
             && sp.Any(q => d.Npc(q.NpcIndex) is { StockItems: { Count: > 0 } st } && st.Any(s => d.Obj(s.ObjIndex) is { ObjType: 1 }));
-        var desde = ((byte)74, (byte)52);
-        Func<int, bool> pisable = x => Bot.PuedeEntrar(18, d.MapZone(x));
-        Assert.Null(m.Mapas.MapaMasCercano(25, desde, tieneMercader, pisable));   // a cinco mapas no hay
-        var pueblo = Bot.PuebloConMercader(m.Mapas, 25, desde, tieneMercader, pisable);
+        const int vida = 190, nivel = 18;
+        Func<int, bool> pisable = x => Bot.PuedeEntrar(nivel, d.MapZone(x));
+        Func<int, bool> peligroso = f => Bot.EsPeligrosoPara(d.Npc(f), vida, nivel, conPociones: true, curaVeneno: false);
+        bool NaceAlgo(int x) => d.MapSpawns.TryGetValue(x, out var sp) && sp.Any(q => peligroso(q.NpcIndex));
+        Func<int, bool> sinPeligro = x => Bot.PasaPorAhi(x, -1, pisable(x), NaceAlgo(x));
+
+        var costas = ((byte)91, (byte)8);
+        Assert.Null(m.Mapas.MapaMasCercano(394, costas, tieneMercader, pisable));   // a cinco mapas no hay
+        var pueblo = Bot.PuebloConMercader(m.Mapas, 394, costas, tieneMercader, pisable, sinPeligro);
         Assert.NotNull(pueblo);
-        Assert.True(tieneMercader(pueblo!.Value.Mapa) && pisable(pueblo.Value.Mapa), $"eligió el {pueblo.Value.Mapa}");
+        Assert.True(tieneMercader(pueblo!.Value.Mapa), $"eligió el {pueblo.Value.Mapa}");
         Assert.InRange(pueblo.Value.Saltos, Navegante.TopeDeMapas + 1, Bot.SaltosHastaElPuebloLejano);
-        // El viaje arranca con el tope largo, y con el de siempre no.
-        Assert.NotNull(m.Mapas.PuertaHacia(25, pueblo.Value.Mapa, desde, null, pisable, Bot.SaltosHastaElPuebloLejano));
-        Assert.Null(m.Mapas.PuertaHacia(25, pueblo.Value.Mapa, desde, null, pisable));
+        // El camino entero, siguiendo las puertas como el bot, no cruza ningún mapa donde nazca algo que lo mata.
+        var ruta = new List<int>();
+        int mapa = 394; var aca = costas;
+        for (int i = 0; i < Bot.SaltosHastaElPuebloLejano + 2 && mapa != pueblo.Value.Mapa; i++)
+        {
+            var puerta = m.Mapas.PuertaHacia(mapa, pueblo.Value.Mapa, aca, null, sinPeligro, Bot.SaltosHastaElPuebloLejano);
+            Assert.True(puerta is not null, $"se cortó el camino en el {mapa} ({string.Join(" > ", ruta)})");
+            var llegada = d.MapExits[(mapa, puerta!.Value.Puerta.X, puerta.Value.Puerta.Y)];
+            mapa = llegada.DestMap; aca = ((byte)llegada.DestX, (byte)llegada.DestY);
+            ruta.Add(mapa);
+        }
+        Assert.Equal(pueblo.Value.Mapa, mapa);
+        Assert.DoesNotContain(ruta, NaceAlgo);
+
+        // Del otro lado del desierto hay pueblo, pero sólo por donde lo matan: no se elige.
+        var campos = ((byte)74, (byte)52);
+        Assert.NotNull(m.Mapas.MapaMasCercano(25, campos, tieneMercader, pisable, Bot.SaltosHastaElPuebloLejano));
+        Assert.Null(Bot.PuebloConMercader(m.Mapas, 25, campos, tieneMercader, pisable, sinPeligro));
 
         Func<int, bool> pisable12 = x => Bot.PuedeEntrar(12, d.MapZone(x));
-        var cerca = m.Mapas.MapaMasCercano(25, desde, tieneMercader, pisable12);
+        var cerca = m.Mapas.MapaMasCercano(25, campos, tieneMercader, pisable12);
         Assert.NotNull(cerca);
-        Assert.Equal(cerca, Bot.PuebloConMercader(m.Mapas, 25, desde, tieneMercader, pisable12));
+        Assert.Equal(cerca, Bot.PuebloConMercader(m.Mapas, 25, campos, tieneMercader, pisable12, sinPeligro));
     }
 
     /// <summary>Los mapas por los que pasa un viaje, siguiendo las puertas que da el navegante como las sigue el bot.</summary>

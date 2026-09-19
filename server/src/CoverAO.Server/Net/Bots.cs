@@ -1110,7 +1110,7 @@ public sealed class Bot
                 // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS: ver `PuebloConMercader`.
                 var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion,
                     m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
-                    Pisable(sentidos));
+                    Pisable(sentidos), PasaSinPeligro(sentidos, NingunMapa));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto,
@@ -3177,18 +3177,29 @@ public sealed class Bot
 
     /// <summary>
     /// EL PUEBLO CON MERCADER: el más cercano de los que <paramref name="tieneMercader"/>, y si a cinco mapas no hay ninguno, el
-    /// más cercano hasta <see cref="SaltosHastaElPuebloLejano"/>. Uno de nivel alto cruza medio mundo para ir a comprar.
+    /// más cercano hasta <see cref="SaltosHastaElPuebloLejano"/> al que se llega sólo por mapas que <paramref name="cruzaSinPeligro"/>
+    /// (donde no nace nada que lo mate). Uno de nivel alto cruza medio mundo para ir a comprar, pero no por donde lo matan: el viaje
+    /// largo no tiene la ruta de repuesto del corto (<see cref="IrHastaAsync"/>).
     ///
     /// <para>Medido en `oficios14`: la Sastre de nivel 18 cazaba en los Campos Abiertos del 25 con 89 mil monedas, sin comida,
     /// bebida ni pociones propias y sin el Costurero, y cada intento de compra terminaba en "ningún pueblo" (`tienda1`). Pasado
     /// el nivel 15 la cuna no deja entrar, y era el atajo: desde el 22, el 24 y el 25 el primer mapa que atiende con comida queda
     /// a 10 a 12 saltos, y Rinkel (el Costurero) a 8 a 10. La runa no lo arregla: al dejar de ser novato el hogar pasa a Nix,
     /// donde los mercaderes no le venden a un ciudadano.</para>
+    ///
+    /// <para>Y medido en `tienda2`, con el viaje largo por cualquier camino: tres bots de nivel 16 a 19 muertos en el Desierto de
+    /// Rinkel (el 15 y el 16, Arañas gigantes que pegan hasta 115), que queda de camino a Rinkel; desde el mismo arranque y con el
+    /// código anterior, `tienda1` no tuvo ninguna.</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? PuebloConMercader(Navegante mapas, int mapa, (byte X, byte Y) desde,
-                                                                           Func<int, bool> tieneMercader, Func<int, bool>? pisable) =>
+                                                                           Func<int, bool> tieneMercader, Func<int, bool>? pisable,
+                                                                           Func<int, bool> cruzaSinPeligro) =>
         mapas.MapaMasCercano(mapa, desde, tieneMercader, pisable)
-        ?? mapas.MapaMasCercano(mapa, desde, tieneMercader, pisable, SaltosHastaElPuebloLejano);
+        ?? mapas.MapaMasCercano(mapa, desde, tieneMercader, cruzaSinPeligro, SaltosHastaElPuebloLejano);
+
+    /// <summary>Un número de mapa que no existe: con <see cref="PasaSinPeligro"/>, ningún mapa es "el destino" y todos tienen
+    /// que cruzarse sin peligro.</summary>
+    private const int NingunMapa = -1;
 
     /// <summary>Hasta cuántos mapas se va a buscar un pueblo con mercader cuando a cinco no hay ninguno.</summary>
     public const int SaltosHastaElPuebloLejano = 12;
@@ -3916,10 +3927,12 @@ public sealed class Bot
             (byte X, byte Y) meta;
             if (esLaMeta) meta = (destinoX, destinoY);
             // POR DONDE NO LO MATAN, SI HAY POR DONDE: ver `PasaPorAhi`. De muerto da igual, que al fantasma no lo atacan.
+            // Y UN VIAJE LARGO VA SÓLO POR AHÍ: ver `PuebloConMercader`.
             else if ((deMuerto ? null : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
                                                                    PasaSinPeligro(sentidos, mapaDestino), topeDeMapas)
-                      ?? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
-                                                    topeDeMapas)) is { } salida)
+                      ?? (!deMuerto && topeDeMapas > Navegante.TopeDeMapas ? null
+                          : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
+                                                       topeDeMapas))) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
