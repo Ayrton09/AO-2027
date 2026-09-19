@@ -135,7 +135,8 @@ public sealed class Navegante
 
     /// <summary>
     /// En qué baldosa de ESTE mapa hay que pararse para acercarse a <paramref name="mapaDestino"/>, y a
-    /// cuántos mapas de distancia queda. null si no se llega en <see cref="TopeDeMapas"/> saltos.
+    /// cuántos mapas de distancia queda. null si no se llega en <paramref name="topeDeSaltos"/> saltos (de
+    /// entrada, <see cref="TopeDeMapas"/>).
     ///
     /// <para>Es una búsqueda en anchura sobre el grafo de mapas: encuentra la ruta entera y devuelve la
     /// primera puerta, que es lo único que el bot necesita para dar el próximo paso del viaje.</para>
@@ -143,7 +144,8 @@ public sealed class Navegante
     public ((byte X, byte Y) Puerta, int Saltos)? PuertaHacia(int mapaActual, int mapaDestino,
                                                              (byte X, byte Y)? desde = null,
                                                              (byte X, byte Y)? meta = null,
-                                                             Func<int, bool>? pisable = null)
+                                                             Func<int, bool>? pisable = null,
+                                                             int topeDeSaltos = TopeDeMapas)
     {
         if (mapaActual == mapaDestino) return null;
         // UN MAPA QUE NO DEJA ENTRAR NO ES DESTINO NI CAMINO. El que llama dice cuáles con `pisable`: para el bot, la zona NEWBIE a
@@ -186,7 +188,7 @@ public sealed class Navegante
         // mapa 746 mandaba por la MISMA puerta mala a ocho destinos distintos, o sea entrando y volviendo por ahí.
         if (desde is { } origen)
         {
-            foreach (var (mapa, saltos, _, primera) in MapasPorSuEntrada(mapaActual, origen, pisable))
+            foreach (var (mapa, saltos, _, primera) in MapasPorSuEntrada(mapaActual, origen, pisable, topeDeSaltos))
                 if (mapa == mapaDestino) return (primera, saltos);
             return null;
         }
@@ -207,7 +209,7 @@ public sealed class Navegante
         while (cola.Count > 0)
         {
             var (mapa, puerta, saltos) = cola.Dequeue();
-            if (saltos >= TopeDeMapas) continue;
+            if (saltos >= topeDeSaltos) continue;
             foreach (var (destino, _, _) in Salidas(mapa))
             {
                 if (pisable is not null && !pisable(destino)) continue;
@@ -272,9 +274,10 @@ public sealed class Navegante
     /// irse a dormir. La entrada es la baldosa de llegada, así que ir hasta ella es cruzar la puerta.
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos)? MapaMasCercano(int mapaActual, (byte X, byte Y) desde,
-                                                                 Func<int, bool> mapaSirve, Func<int, bool>? pisable = null)
+                                                                 Func<int, bool> mapaSirve, Func<int, bool>? pisable = null,
+                                                                 int topeDeSaltos = TopeDeMapas)
     {
-        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos))
             if (mapaSirve(mapa)) return (mapa, entrada.X, entrada.Y, saltos);
         return null;
     }

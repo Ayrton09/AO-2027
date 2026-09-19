@@ -1107,12 +1107,14 @@ public sealed class Bot
                 // sólo sirve si ya llegó: en el bosque no hay ninguna. Con el mercader adentro de un edificio,
                 // `DondeHay` nunca devuelve nada y el viaje no salía — pero el MAPA sí se encuentra. Ver
                 // `ValeViajarAlPueblo`.
-                var conMercader = _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
+                // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS: ver `PuebloConMercader`.
+                var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion,
                     m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
                     Pisable(sentidos));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
-                    && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto))
+                    && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto,
+                                          topeDeMapas: Math.Max(Navegante.TopeDeMapas, pueblo.Saltos)))
                 { llegoAlPueblo = true; continue; }
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
                                                     vaPorAntidoto,
@@ -3174,6 +3176,24 @@ public sealed class Bot
     public static bool ValeViajarAlPueblo(bool hayDondeLlegar, bool estaEnOtroMapa) => !hayDondeLlegar && estaEnOtroMapa;
 
     /// <summary>
+    /// EL PUEBLO CON MERCADER: el más cercano de los que <paramref name="tieneMercader"/>, y si a cinco mapas no hay ninguno, el
+    /// más cercano hasta <see cref="SaltosHastaElPuebloLejano"/>. Uno de nivel alto cruza medio mundo para ir a comprar.
+    ///
+    /// <para>Medido en `oficios14`: la Sastre de nivel 18 cazaba en los Campos Abiertos del 25 con 89 mil monedas, sin comida,
+    /// bebida ni pociones propias y sin el Costurero, y cada intento de compra terminaba en "ningún pueblo" (`tienda1`). Pasado
+    /// el nivel 15 la cuna no deja entrar, y era el atajo: desde el 22, el 24 y el 25 el primer mapa que atiende con comida queda
+    /// a 10 a 12 saltos, y Rinkel (el Costurero) a 8 a 10. La runa no lo arregla: al dejar de ser novato el hogar pasa a Nix,
+    /// donde los mercaderes no le venden a un ciudadano.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? PuebloConMercader(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                           Func<int, bool> tieneMercader, Func<int, bool>? pisable) =>
+        mapas.MapaMasCercano(mapa, desde, tieneMercader, pisable)
+        ?? mapas.MapaMasCercano(mapa, desde, tieneMercader, pisable, SaltosHastaElPuebloLejano);
+
+    /// <summary>Hasta cuántos mapas se va a buscar un pueblo con mercader cuando a cinco no hay ninguno.</summary>
+    public const int SaltosHastaElPuebloLejano = 12;
+
+    /// <summary>
     /// ¿HAY ALGO QUE COMPRAR? Es lo que habilita volver a casa con la runa cuando no hay ninguna tienda al alcance.
     ///
     /// <para>El EQUIPO y los PERGAMINOS cuentan, y antes no: con eso un bot que ya tenía lo esencial cubierto y salía
@@ -3874,14 +3894,17 @@ public sealed class Bot
     private async Task<bool> IrHastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                           int mapaDestino, byte destinoX, byte destinoY,
                                           Task cerrada, CancellationToken ct, int tolerancia = 1,
-                                          bool deMuerto = false, Func<bool>? cortaSi = null)
+                                          bool deMuerto = false, Func<bool>? cortaSi = null,
+                                          int topeDeMapas = Navegante.TopeDeMapas)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
         // mismo hasta gastar todos los tramos. Medido: tres bots de la cuna sin llegar nunca a la comida, uno
         // doce veces contra la misma baldosa y dos atascados uno detrás del otro en el mismo pasillo.
         var trabas = new HashSet<(byte X, byte Y)>();
-        for (int tramos = 0; tramos < TramosPorViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
+        // UN TRAMO POR MAPA DE MÁS en un viaje largo (ver `PuebloConMercader`): cada puerta que se cruza gasta uno.
+        int tramosDelViaje = TramosPorViaje + Math.Max(0, topeDeMapas - Navegante.TopeDeMapas);
+        for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
             if (!sentidos.Ubicado || (!deMuerto && !sentidos.Vivo)) return false;
@@ -3894,8 +3917,9 @@ public sealed class Bot
             if (esLaMeta) meta = (destinoX, destinoY);
             // POR DONDE NO LO MATAN, SI HAY POR DONDE: ver `PasaPorAhi`. De muerto da igual, que al fantasma no lo atacan.
             else if ((deMuerto ? null : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                                   PasaSinPeligro(sentidos, mapaDestino))
-                      ?? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos))) is { } salida)
+                                                                   PasaSinPeligro(sentidos, mapaDestino), topeDeMapas)
+                      ?? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
+                                                    topeDeMapas)) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
 

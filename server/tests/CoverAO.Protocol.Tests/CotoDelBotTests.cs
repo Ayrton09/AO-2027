@@ -503,6 +503,36 @@ public class CotoDelBotTests
         Assert.Equal((byte)0, Bot.RumboParaUsarLaPuerta(d.MapExits, 11, (50, 50), (x, y) => d.IsBlockedTile(11, x, y)));   // no es puerta
     }
 
+    /// <summary>
+    /// SIN TIENDA A CINCO MAPAS, SE BUSCA MÁS LEJOS: pasado el nivel 15 la cuna no deja entrar, y desde los Campos Abiertos del 25
+    /// —donde la Sastre de `oficios14` juntó 89 mil monedas sin poder comprar comida ni el Costurero— no hay a cinco mapas ninguno
+    /// que atienda con quien venda comida. Más lejos sí, y el viaje hasta allá arranca. Al de nivel 12, que pasa por la cuna, le
+    /// alcanza con lo de siempre.
+    /// </summary>
+    [Fact]
+    public void Sin_tienda_a_cinco_mapas_se_busca_mas_lejos()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        Func<int, bool> tieneMercader = x => d.MapBattleMode(x) is 2 or 3 && d.MapSpawns.TryGetValue(x, out var sp)
+            && sp.Any(q => d.Npc(q.NpcIndex) is { StockItems: { Count: > 0 } st } && st.Any(s => d.Obj(s.ObjIndex) is { ObjType: 1 }));
+        var desde = ((byte)74, (byte)52);
+        Func<int, bool> pisable = x => Bot.PuedeEntrar(18, d.MapZone(x));
+        Assert.Null(m.Mapas.MapaMasCercano(25, desde, tieneMercader, pisable));   // a cinco mapas no hay
+        var pueblo = Bot.PuebloConMercader(m.Mapas, 25, desde, tieneMercader, pisable);
+        Assert.NotNull(pueblo);
+        Assert.True(tieneMercader(pueblo!.Value.Mapa) && pisable(pueblo.Value.Mapa), $"eligió el {pueblo.Value.Mapa}");
+        Assert.InRange(pueblo.Value.Saltos, Navegante.TopeDeMapas + 1, Bot.SaltosHastaElPuebloLejano);
+        // El viaje arranca con el tope largo, y con el de siempre no.
+        Assert.NotNull(m.Mapas.PuertaHacia(25, pueblo.Value.Mapa, desde, null, pisable, Bot.SaltosHastaElPuebloLejano));
+        Assert.Null(m.Mapas.PuertaHacia(25, pueblo.Value.Mapa, desde, null, pisable));
+
+        Func<int, bool> pisable12 = x => Bot.PuedeEntrar(12, d.MapZone(x));
+        var cerca = m.Mapas.MapaMasCercano(25, desde, tieneMercader, pisable12);
+        Assert.NotNull(cerca);
+        Assert.Equal(cerca, Bot.PuebloConMercader(m.Mapas, 25, desde, tieneMercader, pisable12));
+    }
+
     /// <summary>Los mapas por los que pasa un viaje, siguiendo las puertas que da el navegante como las sigue el bot.</summary>
     private static List<int> PorDondePasa(Navegante mapas, GameData d, int mapa, (byte X, byte Y) desde, int destino,
                                           (byte X, byte Y) meta, Func<int, bool> filtro)
