@@ -481,6 +481,25 @@ public class CotoDelBotTests
         Assert.DoesNotContain(sinPeligro.Take(sinPeligro.Count - 1), NaceAlgo);
     }
 
+    /// <summary>
+    /// NI EL PASEO NI EL VIAJE SE ARRIMAN A LO QUE LO MATA: un paso que lo deja a tres baldosas o menos de algo peligroso a la vista,
+    /// sin alejarlo, no se da; alejarse vale siempre. Con el Señor de las sombras en (47,37), como en el 208, donde en `oficios8` un
+    /// Carpintero murió tres veces paseando hacia las presas que tenía a la vista.
+    /// </summary>
+    [Theory]
+    // desde | hasta | ¿lo arrima?
+    [InlineData(47, 41, 47, 40, true)]    // de cuatro a tres: entra adonde tendría que huir
+    [InlineData(47, 40, 47, 41, false)]   // de tres a cuatro: se aleja
+    [InlineData(47, 39, 48, 39, false)]   // de dos a tres, alejándose: vale
+    [InlineData(47, 39, 47, 38, true)]    // de dos a uno: al lado
+    [InlineData(50, 40, 49, 40, false)]   // de seis a cinco: todavía lejos
+    public void Un_paso_no_lo_arrima_a_lo_que_lo_mata(int dx, int dy, int hx, int hy, bool loArrima)
+    {
+        var senor = new List<(byte X, byte Y)> { (47, 37) };
+        Assert.Equal(loArrima, Bot.LoArrimaAlPeligro(((byte)dx, (byte)dy), ((byte)hx, (byte)hy), senor));
+        Assert.False(Bot.LoArrimaAlPeligro(((byte)dx, (byte)dy), ((byte)hx, (byte)hy), new List<(byte X, byte Y)>()));
+    }
+
     /// <summary>SI NINGÚN COTO PASA EL FILTRO, SE ELIGE COMO SIEMPRE: mejor cazar con cuidado que quedarse sin dónde.</summary>
     [Fact]
     public void Si_ningun_coto_pasa_el_filtro_se_elige_como_siempre()

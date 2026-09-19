@@ -3903,6 +3903,9 @@ public sealed class Bot
                 if (dx == 0 && dy == 0) continue;
                 // El camino es de a un paso: cualquier otra cosa quiere decir que nos corrieron de lugar.
                 if (Math.Abs(dx) + Math.Abs(dy) != 1) break;
+                // NI EL VIAJE SE ARRIMA A LO QUE LO MATA (ver `LoArrimaAlPeligro`): esa baldosa pasa a ser una traba y el camino se
+                // recalcula rodeándola. De muerto da igual, que al fantasma no lo atacan.
+                if (!deMuerto && LoArrimaAlPeligro((x, y), baldosa, PeligrosALaVista(sentidos))) { trabas.Add(baldosa); break; }
                 var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto, puedeSalir: true);
                 // CURARSE EN EL CAMINO EN VEZ DE VOLVERSE. Un golpe que bajaba la vida del umbral de la poción
                 // abortaba el viaje entero aunque el bot tuviera mil pociones encima, y el intento siguiente
@@ -3989,6 +3992,33 @@ public sealed class Bot
         return salidas.ContainsKey((mapa, desde.X + dx, desde.Y + dy));
     }
 
+    /// <summary>
+    /// ¿ESE PASO LO ARRIMA A LO QUE LO MATA? Si lo deja a <see cref="RadioDeSusto"/> pasos o menos de algo peligroso que tiene a la
+    /// vista —la distancia a la que huye— sin alejarlo del más cercano: nadie camina solo hasta donde después tiene que escaparse.
+    /// Alejarse, aunque todavía quede cerca, vale siempre.
+    ///
+    /// <para>Medido en `oficios8`: un Carpintero de nivel 7 a 10 murió tres veces en el 208, dos del Señor de las sombras (pega de
+    /// 60 a 75 y no camina) y una de un Lobo, a menos de siete pasos de donde nace el Señor. Con algo peligroso a la vista el bot
+    /// no pelea y pasea (`pasear: peligro cerca`, dieciséis veces), y el paseo daba varios pasos seguidos hacia la presa que veía
+    /// sin volver a mirar el peligro.</para>
+    /// </summary>
+    public static bool LoArrimaAlPeligro((byte X, byte Y) desde, (byte X, byte Y) hasta, IReadOnlyCollection<(byte X, byte Y)> peligros)
+    {
+        if (peligros.Count == 0) return false;
+        int despues = peligros.Min(p => Math.Abs(p.X - hasta.X) + Math.Abs(p.Y - hasta.Y));
+        int antes = peligros.Min(p => Math.Abs(p.X - desde.X) + Math.Abs(p.Y - desde.Y));
+        return despues <= RadioDeSusto && despues <= antes;
+    }
+
+    /// <summary>Dónde está, de lo que tiene a la vista, lo peligroso para él.</summary>
+    private List<(byte X, byte Y)> PeligrosALaVista(SentidosDelBot sentidos)
+    {
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        return sentidos.DondeEstan(f => EsPeligroso(f, vida, nivel, conPociones, curaVeneno));
+    }
+
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
     private int UnPaso() => (int)(_rng.Next(PasoMinMs, PasoMaxMs) * _ritmo);
 
@@ -4044,6 +4074,9 @@ public sealed class Bot
         for (int i = 0; i < pasos && !cerrada.IsCompleted; i++)
         {
             if (PasoSaleDelMapa(_entorno.Datos.MapExits, sentidos.Mapa, sentidos.Posicion, rumbo)) break;   // ver `PasoSaleDelMapa`
+            var (px, py) = SentidosDelBot.Paso(rumbo);
+            var aca = sentidos.Posicion;
+            if (LoArrimaAlPeligro(aca, ((byte)(aca.X + px), (byte)(aca.Y + py)), PeligrosALaVista(sentidos))) break;   // ver `LoArrimaAlPeligro`
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
             await Task.Delay(UnPaso(), ct);

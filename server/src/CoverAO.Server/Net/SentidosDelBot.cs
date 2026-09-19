@@ -506,6 +506,18 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Dónde están las criaturas que <paramref name="sirve"/>, de las que ve.</summary>
+    public List<(byte X, byte Y)> DondeEstan(Func<short, bool> sirve)
+    {
+        lock (_candado)
+        {
+            var donde = new List<(byte X, byte Y)>();
+            foreach (var v in _visibles.Values)
+                if (v.EsNpc && sirve(v.FichaNpc)) donde.Add((v.X, v.Y));
+            return donde;
+        }
+    }
+
     /// <summary>Cuántas PERSONAS ve (no criaturas), sin contarse a sí mismo: lo que le dice si el lugar está lleno.</summary>
     public int PersonasALaVista()
     {

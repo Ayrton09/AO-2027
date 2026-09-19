@@ -108,6 +108,18 @@ public class SentidosDelBotTests
         Assert.Equal(1, s.PersonasALaVista());
     }
 
+    /// <summary>DÓNDE ESTÁN LAS CRIATURAS QUE LE IMPORTAN, de las que ve: las que cumplen, y nunca una persona.</summary>
+    [Fact]
+    public void Dice_donde_estan_las_criaturas_que_le_importan()
+    {
+        var s = Ubicado(50, 50);
+        s.Recibir(ServerMessages.CharacterCreate(Criatura(600, ficha: 45, 51, 50)));
+        s.Recibir(ServerMessages.CharacterCreate(Criatura(601, ficha: 534, 47, 37)));
+        s.Recibir(ServerMessages.CharacterCreate(Personaje(OtroIndice, "Rugura", 52, 50)));
+        Assert.Equal(new[] { ((byte)47, (byte)37) }, s.DondeEstan(f => f == 534));
+        Assert.Equal(2, s.DondeEstan(_ => true).Count);   // las dos criaturas, no la persona
+    }
+
     [Fact]
     public void La_que_desaparece_deja_de_estar_a_la_vista()
     {
