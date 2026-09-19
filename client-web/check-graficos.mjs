@@ -297,4 +297,45 @@ if (rotas.length) {
   if (rotas.length > 40) console.error(`  ... y ${rotas.length - 40} más`);
   process.exit(1);
 }
+// --- El relleno que ninguna hoja usa ----------------------------------------------------------------------
+//
+// Lo que una hoja pesa en el navegador NO es el `.png`, es la imagen decodificada: ancho × alto × 4. Las hojas
+// del original venían rellenadas hasta una potencia de dos y el remasterizado ×4 multiplica ese relleno por
+// DIECISÉIS, así que la mitad de la memoria de arte del cliente era margen que no dibuja nadie. Se recortó
+// (`tools/hd/recortar.py`, y `build.cjs` ya las emite así), y esto es lo que impide que vuelva: una
+// regeneración que se olvide del recorte pone esto rojo en vez de devolverle al cliente un gigabyte.
+//
+// No se exige recorte exacto: hay hojas que no se pueden recortar —tienen píxeles fuera de la caja del
+// atlas— y el margen de un art-píxel es a propósito. Lo que se mide es el TOTAL desperdiciado.
+{
+  const caja = new Map();                       // hoja -> [ancho, alto] que el atlas usa, en píxeles de la hoja
+  const HD = 4;
+  for (const k of Object.keys(grh)) {
+    const g = grh[k];
+    if (!g || g.file == null) continue;
+    const c = caja.get(g.file) || [0, 0];
+    caja.set(g.file, [Math.max(c[0], (g.x + g.w) * HD), Math.max(c[1], (g.y + g.h) * HD)]);
+  }
+  let total = 0, sobra = 0;
+  const peores = [];
+  for (const [f, [cw, ch]] of caja) {
+    const p = join(A, 'graficos', `${f}.png`);
+    if (!laminas.has(`${f}.png`)) continue;
+    const cab = readFileSync(p).subarray(0, 24);
+    const w = cab.readUInt32BE(16), h = cab.readUInt32BE(20);
+    const usados = Math.min(w, cw + HD) * Math.min(h, ch + HD) * 4;
+    total += w * h * 4;
+    sobra += w * h * 4 - usados;
+    if (w * h * 4 - usados > 8 * 1024 * 1024) peores.push(`${f}.png ${w}x${h}, el atlas llega a ${cw}x${ch}`);
+  }
+  const porciento = 100 * sobra / total;
+  console.log(`check-graficos: las hojas pesan ${(total / 2 ** 30).toFixed(2)} GB decodificadas, ` +
+              `${porciento.toFixed(1)} % de relleno sin usar`);
+  if (porciento > 15) {
+    console.error(`FALLO: ${porciento.toFixed(1)} % de la memoria de arte es margen que no dibuja nadie ` +
+                  `(${(sobra / 2 ** 30).toFixed(2)} GB). Corré tools/hd/recortar.py`);
+    for (const x of peores.slice(0, 10)) console.error('  ' + x);
+    process.exit(1);
+  }
+}
 console.log('OK: todo lo que un jugador puede ver está definido y tiene su lámina');

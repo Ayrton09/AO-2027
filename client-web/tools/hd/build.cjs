@@ -96,7 +96,14 @@ for (const f of targetFiles) {
     srcBytes += bmpBuf.length;
     const img = decodeBmp(bmpBuf);
     applyColorKey(img.rgba);
-    const OW = img.w * HD, OH = img.h * HD;
+    // LA HOJA SALE DEL TAMAÑO QUE USA EL ATLAS, no del BMP entero. Los BMP del original vienen rellenados
+    // hasta una potencia de dos —así los quería DirectDraw— y el ×4 multiplica ese relleno por DIECISÉIS:
+    // la mitad de los bytes que las hojas ocupan DECODIFICADAS en el navegador era margen que no dibuja
+    // nadie. `73.bmp` es 2048×2048 con el atlas llegando a 1536×1536, o sea 256 MB en RAM contra 144.
+    // Recortar no mueve `grh.json`: las coordenadas se cuentan desde arriba a la izquierda. Queda un
+    // art-píxel de margen para que el sprite que toca el borde se siga suavizando contra el vacío.
+    const usado = fileRegions.get(f).reduce((a, r) => ({ w: Math.max(a.w, r.x + r.w), h: Math.max(a.h, r.y + r.h) }), { w: 0, h: 0 });
+    const OW = Math.min(img.w * HD, usado.w * HD + HD), OH = Math.min(img.h * HD, usado.h * HD + HD);
     const outRgba = new Uint8ClampedArray(OW * OH * 4);
     for (const r of fileRegions.get(f)) {
       const region = crop(img, r.x, r.y, r.w, r.h);
