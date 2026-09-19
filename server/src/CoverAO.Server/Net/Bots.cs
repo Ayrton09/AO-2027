@@ -1409,9 +1409,8 @@ public sealed class Bot
     /// mira: el paquete, las recetas que acepta, la herramienta que tiene que estar PUESTA (el Costurero y la Olla; la
     /// carpintería no pide ninguna, fiel al original) y la skill contra la que compara cada receta.
     ///
-    /// <para>El Herrero no está: sus recetas piden lingotes, los lingotes salen de fundir mineral, y todos los
-    /// yacimientos del mundo están en mapas pk, donde el bot no trabaja. Es la misma decisión que deja al Minero sin
-    /// minar.</para>
+    /// <para>El Herrero no está: sus recetas piden lingotes, que salen de fundir lo que se mina, y ni el Herrero ni el
+    /// Minero son clases de bot (ver <see cref="Reparto"/>).</para>
     /// </summary>
     private (ClientPacketId Paquete, IReadOnlySet<int> Recetas, Oficios.Fabricacion Regla)? SuFabricacion => _clase switch
     {
@@ -4279,13 +4278,20 @@ public sealed class Bot
     /// skill de talar, los árboles de <see cref="QueCuentaComoTrabajo"/>) con sus tests en verde: escrito, probado
     /// y sin correr nunca en el juego.
     ///
-    /// <para>El orden no es casual: los primeros ocho —que es con cuantos se arranca— cubren los tres oficios
-    /// extractivos, dos clases de maná y tres de combate, así que una corrida corta ya ejercita todos los caminos
-    /// que el bot sabe recorrer. Las tres de fabricación van al final porque todavía no sabe ejercerlas.</para>
+    /// <para>El orden no es casual: los primeros ocho —que es con cuantos se arranca— cubren los dos oficios de juntar
+    /// (el Leñador y el Pescador), el Druida, que junta raíces y prepara pociones, dos clases de maná más y tres de
+    /// combate, así que una corrida corta ya ejercita casi todos los caminos que el bot sabe recorrer. El Carpintero y
+    /// el Sastre quedaron al final de cuando el bot todavía no fabricaba.</para>
     ///
-    /// <para>Da la vuelta: con dieciocho bots hay uno de cada clase y con treinta y seis, dos.</para>
+    /// <para>SIN MINERO NI HERRERO (decisión del autor, 19/09): el oficio del Minero no tiene cómo andar. Todas las minas
+    /// están en mapas pk, y según la data la única sin nada peligroso adentro a la que se llega a pie, las Minas Dorck,
+    /// queda detrás del Bosque Dorck (Jabalíes que pegan hasta 130 y Arañas gigantes hasta 115), peligroso para el bot
+    /// hasta nivel 36; las demás, peor. El Herrero forja con los lingotes que salen de lo que se mina. Los personajes
+    /// que ya existían siguen con su clase.</para>
+    ///
+    /// <para>Da la vuelta: con dieciséis bots hay uno de cada clase y con treinta y dos, dos.</para>
     /// </summary>
-    public static readonly IReadOnlyList<byte> Reparto = new byte[] { 13, 2, 3, 11, 1, 8, 14, 10, 7, 17, 4, 18, 5, 9, 6, 12, 15, 16 };
+    public static readonly IReadOnlyList<byte> Reparto = new byte[] { 13, 2, 3, 11, 1, 8, 10, 7, 17, 4, 18, 5, 9, 6, 15, 16 };
 
     /// <summary>Qué clase le toca al bot número <paramref name="indice"/> del poblado.</summary>
     public static byte ClaseQueLeToca(int indice) => Reparto[indice % Reparto.Count];
@@ -4297,9 +4303,9 @@ public sealed class Bot
         var r = new Random(semilla);
         byte genero = (byte)r.Next(1, 3);
         byte raza = (byte)r.Next(1, 7);            // 1..6: las que tienen tabla de cabezas (Equipment.HeadRange)
-        // LA CLASE SALE DEL REPARTO, no del dado. Un nombre que no está en el poblado —no pasa hoy— cae al sorteo.
+        // LA CLASE SALE DEL REPARTO, no del dado. Un nombre que no está en el poblado —no pasa hoy— sortea entre las del reparto.
         int suLugar = PobladoDeBots.LugarEnElPoblado(Nombre);
-        byte clase = suLugar >= 0 ? ClaseQueLeToca(suLugar) : (byte)r.Next(1, 19);
+        byte clase = suLugar >= 0 ? ClaseQueLeToca(suLugar) : Reparto[r.Next(Reparto.Count)];
         byte hogar = (byte)r.Next(1, Cities.MaxTierraNatal + 1);
         var rango = Equipment.HeadRange(raza, genero);
         short cabeza = rango is null ? (short)1 : (short)r.Next(rango.Value.Min, rango.Value.Max + 1);

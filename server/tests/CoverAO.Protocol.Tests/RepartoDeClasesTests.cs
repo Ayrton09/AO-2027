@@ -11,40 +11,53 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class RepartoDeClasesTests
 {
-    /// <summary>Están las dieciocho, una sola vez cada una: si falta alguna, esa clase no aparece nunca.</summary>
+    private const byte Herrero = 12, Minero = 14;
+
+    /// <summary>Están todas menos el Minero y el Herrero, una sola vez cada una: si falta alguna, esa clase no aparece
+    /// nunca.</summary>
     [Fact]
-    public void El_reparto_tiene_las_dieciocho_clases_una_vez()
+    public void El_reparto_tiene_todas_las_clases_menos_el_minero_y_el_herrero_una_vez()
     {
-        Assert.Equal(GameLimits.NombresDeClase.Length, Bot.Reparto.Count);
+        Assert.Equal(GameLimits.NombresDeClase.Length - 2, Bot.Reparto.Count);
         Assert.Equal(Bot.Reparto.Count, Bot.Reparto.Distinct().Count());
         for (byte clase = 1; clase <= GameLimits.NombresDeClase.Length; clase++)
-            Assert.Contains(clase, Bot.Reparto);
+            if (clase is Herrero or Minero) Assert.DoesNotContain(clase, Bot.Reparto);
+            else Assert.Contains(clase, Bot.Reparto);
+    }
+
+    /// <summary>Ningún bot del poblado es Minero ni Herrero.</summary>
+    [Fact]
+    public void Ningun_bot_del_poblado_es_minero_ni_herrero()
+    {
+        var clases = Enumerable.Range(0, PobladoDeBots.Nombres.Count).Select(Bot.ClaseQueLeToca).ToList();
+        Assert.DoesNotContain(Minero, clases);
+        Assert.DoesNotContain(Herrero, clases);
     }
 
     /// <summary>
-    /// Con los ocho primeros —que es con cuantos se arranca— se ejercen los TRES oficios extractivos. Con el
-    /// sorteo viejo los ocho primeros daban Mago, Pescadora, Gladiador, Guerrera, Bardo, Clériga, Minero y
-    /// Pescadora: ningún Leñador, y dos veces la misma clase.
+    /// Con los ocho primeros —que es con cuantos se arranca— se ejercen los oficios de juntar y uno de fabricar: el
+    /// Pescador, el Leñador y el Druida. Con el sorteo viejo los ocho primeros daban Mago, Pescadora, Gladiador, Guerrera,
+    /// Bardo, Clériga, Minero y Pescadora: ningún Leñador, y dos veces la misma clase.
     /// </summary>
     [Fact]
-    public void Con_los_primeros_ocho_ya_se_ejercen_los_tres_oficios()
+    public void Con_los_primeros_ocho_ya_se_ejercen_los_oficios()
     {
         var losOcho = Enumerable.Range(0, 8).Select(Bot.ClaseQueLeToca).ToList();
         Assert.Contains((byte)11, losOcho);   // Pescador
         Assert.Contains((byte)13, losOcho);   // Leñador
-        Assert.Contains((byte)14, losOcho);   // Minero
+        Assert.Contains((byte)7, losOcho);    // Druida
     }
 
-    /// <summary>Y con dieciocho hay uno de cada clase; con treinta y seis, dos. El reparto da la vuelta.</summary>
+    /// <summary>Y con dieciséis hay uno de cada clase; con treinta y dos, dos. El reparto da la vuelta.</summary>
     [Fact]
-    public void Con_dieciocho_hay_uno_de_cada_clase()
+    public void Con_dieciseis_hay_uno_de_cada_clase()
     {
-        var deCada = Enumerable.Range(0, 18).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
-        Assert.Equal(18, deCada.Count);
+        var deCada = Enumerable.Range(0, 16).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
+        Assert.Equal(16, deCada.Count);
         Assert.All(deCada, g => Assert.Single(g));
 
-        var elDoble = Enumerable.Range(0, 36).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
-        Assert.Equal(18, elDoble.Count);
+        var elDoble = Enumerable.Range(0, 32).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
+        Assert.Equal(16, elDoble.Count);
         Assert.All(elDoble, g => Assert.Equal(2, g.Count()));
     }
 
@@ -52,8 +65,9 @@ public class RepartoDeClasesTests
     [Fact]
     public void El_reparto_da_la_vuelta_mas_alla_del_poblado()
     {
-        Assert.Equal(Bot.ClaseQueLeToca(0), Bot.ClaseQueLeToca(18));
-        Assert.Equal(Bot.ClaseQueLeToca(5), Bot.ClaseQueLeToca(5 + 18 * 3));
+        int vuelta = Bot.Reparto.Count;
+        Assert.Equal(Bot.ClaseQueLeToca(0), Bot.ClaseQueLeToca(vuelta));
+        Assert.Equal(Bot.ClaseQueLeToca(5), Bot.ClaseQueLeToca(5 + vuelta * 3));
         foreach (int i in new[] { 47, 48, 100 })
             Assert.InRange(Bot.ClaseQueLeToca(i), (byte)1, (byte)GameLimits.NombresDeClase.Length);
     }
