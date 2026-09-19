@@ -4125,10 +4125,14 @@ public sealed class Bot
         bool lejos = Math.Abs(dx) + Math.Abs(dy) > RadioDeCasa;
         // HACIA LO QUE VE, NO AL AZAR. Ver <see cref="ElPaseoVaHaciaLaPresa"/>. Volver a la zona manda:
         // sin ese freno el bot se iría siguiendo lo que aparezca y dejaría de tener un lugar.
-        byte rumbo = lejos ? SentidosDelBot.RumboHacia(dx, dy)
-                   : ElPaseoVaHaciaLaPresa(lejos, haciaDonde is not null) && haciaDonde is { } presaALaVista
-                       ? SentidosDelBot.RumboHacia(presaALaVista.X - x, presaALaVista.Y - y)
-                       : (byte)_rng.Next(1, 5);   // 1=N, 2=E, 3=S, 4=O
+        (int X, int Y) hacia = lejos ? (dx, dy)
+                             : ElPaseoVaHaciaLaPresa(lejos, haciaDonde is not null) && haciaDonde is { } presaALaVista
+                                 ? (presaALaVista.X - x, presaALaVista.Y - y)
+                                 : (0, 0);
+        byte rumbo = hacia != (0, 0) ? SentidosDelBot.RumboHacia(hacia.X, hacia.Y) : (byte)_rng.Next(1, 5);   // 1=N, 2=E, 3=S, 4=O
+        // NO SE EMPUJA CONTRA LO QUE TAPA EL PASO: ver `RodeoDelPaseo`.
+        if (_pasoTapado is { } tapado && tapado.Mapa == sentidos.Mapa && tapado.Desde == (x, y) && tapado.Rumbo == rumbo)
+            rumbo = RodeoDelPaseo(rumbo, hacia.X, hacia.Y, _rng.Next(2));
 
         int pasos = _rng.Next(PasosMin, PasosMax);
         for (int i = 0; i < pasos && !cerrada.IsCompleted; i++)
@@ -4140,10 +4144,38 @@ public sealed class Bot
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
             await Task.Delay(UnPaso(), ct);
+            // El servidor corrige con un PosUpdate el paso que no se dio: quedar donde estaba es que algo tapa esa baldosa.
+            if (sentidos.Posicion == aca)
+            {
+                _pasoTapado = (sentidos.Mapa, aca, rumbo);
+                rumbo = RodeoDelPaseo(rumbo, hacia.X, hacia.Y, _rng.Next(2));
+            }
             if (sentidos.Salud < TomaPocion) return true;   // se corta el paseo: hay algo más urgente
         }
         return true;
     }
+
+    /// <summary>
+    /// EL RODEO DEL PASEO: el rumbo que prueba cuando el paso en <paramref name="tapado"/> no se dio. El otro eje hacia donde va
+    /// (<paramref name="dx"/>, <paramref name="dy"/>), si lo hay; si no, de costado, para el lado que dice <paramref name="moneda"/>
+    /// (0 o 1). Nunca el mismo rumbo.
+    ///
+    /// <para>Medido en `oficios13`: un Cazador de nivel 8 pasó media hora en la misma baldosa del 12 tomándose 668 pociones, con un
+    /// Goblin al lado que le pegaba y que para él no es presa (no se le pelea) ni peligro (no se huye). El paseo iba hacia una presa
+    /// lejana siempre por el mismo rumbo, y el paso rebotaba contra lo que tapaba la baldosa. Reproducido desde el estado guardado
+    /// (`clavado1`), la sonda mostró el paso que no se da: un Esqueleto parado en la baldosa de enfrente.</para>
+    /// </summary>
+    public static byte RodeoDelPaseo(byte tapado, int dx, int dy, int moneda)
+    {
+        var (px, py) = SentidosDelBot.Paso(tapado);
+        if (px != 0 && dy != 0) return SentidosDelBot.RumboHacia(0, dy);
+        if (py != 0 && dx != 0) return SentidosDelBot.RumboHacia(dx, 0);
+        int lado = moneda == 0 ? -1 : 1;
+        return px != 0 ? SentidosDelBot.RumboHacia(0, lado) : SentidosDelBot.RumboHacia(lado, 0);
+    }
+
+    /// <summary>El último paso del paseo que no se dio: en qué mapa, desde dónde y hacia dónde.</summary>
+    private (int Mapa, (byte X, byte Y) Desde, byte Rumbo)? _pasoTapado;
 
     /// <summary>
     /// ¿EL PASEO VA HACIA LA PRESA? Si hay una a la vista y no está lejos de su zona, sí; si no, al azar, como siempre.

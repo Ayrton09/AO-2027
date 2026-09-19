@@ -185,4 +185,31 @@ public class ValentiaDelBotTests
         Assert.False(Bot.ElPaseoVaHaciaLaPresa(lejosDeSuZona: true, veUnaPresa: true));
         Assert.False(Bot.ElPaseoVaHaciaLaPresa(lejosDeSuZona: true, veUnaPresa: false));
     }
+
+    /// <summary>
+    /// EL PASEO RODEA LO QUE LE TAPA EL PASO: el otro eje hacia donde va, y si no hay, de costado. Medido en `oficios13`: un
+    /// Cazador media hora en la misma baldosa, empujando siempre hacia el mismo lado contra un Goblin que le pegaba.
+    /// </summary>
+    [Theory]
+    // rumbo tapado (1=N, 2=E, 3=S, 4=O) | hacia (dx, dy) | moneda | rumbo que prueba
+    [InlineData(2, 4, 3, 0, 3)]     // al este tapado y la presa al sureste: por el sur
+    [InlineData(3, 4, 3, 1, 2)]     // al sur tapado y la presa al sureste: por el este
+    [InlineData(1, 0, -5, 0, 4)]    // al norte tapado y la presa derecho al norte: de costado, al oeste
+    [InlineData(1, 0, -5, 1, 2)]    // o al este
+    [InlineData(2, 0, 0, 1, 3)]     // sin adónde ir, de costado
+    public void El_paseo_rodea_lo_que_le_tapa_el_paso(byte tapado, int dx, int dy, int moneda, byte rodeo)
+    {
+        Assert.Equal(rodeo, Bot.RodeoDelPaseo(tapado, dx, dy, moneda));
+    }
+
+    /// <summary>Y nunca vuelve a probar el mismo rumbo, vaya para donde vaya.</summary>
+    [Fact]
+    public void El_rodeo_del_paseo_nunca_es_el_rumbo_tapado()
+    {
+        for (byte tapado = 1; tapado <= 4; tapado++)
+            for (int dx = -3; dx <= 3; dx++)
+                for (int dy = -3; dy <= 3; dy++)
+                    for (int moneda = 0; moneda <= 1; moneda++)
+                        Assert.NotEqual(tapado, Bot.RodeoDelPaseo(tapado, dx, dy, moneda));
+    }
 }
