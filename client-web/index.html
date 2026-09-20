@@ -305,10 +305,10 @@
        justamente las dos que había que ensanchar. En CSS no se puede saltear, y si algún navegador viejo no
        soporta `:has()` lo único que pasa es que sigue angosto. */
     .card:has(.shop2) { width:min(940px,94vw); }
-    /* La lámina del mapa mide 800x600 y se muestra entera; por el mismo `:has()` que el comercio. */
+    /* La lámina del mapa se muestra entera; por el mismo `:has()` que el comercio. */
     .card:has(.mapamundi) { width:min(840px,96vw); }
-    /* La lámina entra ENTERA: en una pantalla baja, 800x600 al ancho de la ventana se sale y el mapa
-       quedaba con barra de scroll. */
+    /* La lámina entra ENTERA: en una pantalla baja, a lo ancho de la ventana se sale y el mapa quedaba con
+       barra de scroll. `pixelated` porque la lámina tiene un píxel cada seis baldosas, igual que el minimapa. */
     .mapamundi { display:block; margin:0 auto; width:auto; max-width:100%; max-height:66vh;
       image-rendering:pixelated; background:#05040a; }
     .mapa-zona { text-align:center; padding:6px 0 2px; font-family:var(--serif); color:var(--gold-hi);
@@ -1107,6 +1107,8 @@
         dying.delete(ci);
       }
     }
+    /** Sonda: cuántos efectos de área y cuántos fantasmas hay vivos ahora mismo. */
+    window.__fxDelPiso = () => ({ enElPiso: groundFx.length, muriendo: dying.size });
     let laborando = false;         // faena en curso (trabajo CONTINUO): el server produce solo cada 700ms
     // Estado que el server informa y el cliente ignoraba. Los cuatro son TOGGLES sin payload: el server no
     // manda el valor nuevo, manda "cambió", asi que hay que espejar el bool como hace el cliente original.
@@ -1316,10 +1318,9 @@
     // En el original tampoco pasaba: `frmMap` está en el cliente VB6 y no lo abre NADIE —`frmMap.Show` no aparece
     // en ningún lado—, así que el ítem que el juego te da para no perderte nunca mostró un mapa.
     //
-    // Lo que sí es del original es TODO lo que se dibuja: la lámina es la hoja 15567 —`frmMap` la carga con
-    // `Me.Picture` y el formulario mide 800x600, o sea que se ve esa esquina de la hoja— y la grilla sale de
-    // `table.ind` (`assets/maptable.json`), que dice qué mapa ocupa cada uno de los 30x23 casilleros. El punto va
-    // donde lo pone `SetMapPoint`:  x = (columna - 1) * 26 + 39,  y = (fila - 1) * 25 + 30.
+    // La grilla es la del original: `table.ind` (`assets/maptable.json`) dice qué mapa ocupa cada uno de los
+    // 30x23 casilleros. La LÁMINA no —ver abajo: la del original no cubre el mundo entero y no se puede alinear
+    // con esa grilla—, así que se dibuja una armada con los colores del minimapa de cada mapa.
     //
     // Se abre SIN mandar nada al server. `UseItem` sobre esto contesta "No podés usar ese objeto", un mensaje que
     // el VB6 no emite, así que el paquete se queda acá.
@@ -1396,9 +1397,10 @@
       if (cartel) cartel.textContent = nombre;
     }
 
-    // DE PÍXEL A CASILLERO, invirtiendo `SetMapPoint`. El original hace esta cuenta con 27,5 y sin el mismo origen
-    // (`imgMap_MouseMove`), o sea que NO coincide con dónde dibuja: el cursor nombra un mapa y el punto propio
-    // aparece en otro. Acá se usa la geometría del dibujo, así lo que señalás es lo que ves.
+    // DE PÍXEL A CASILLERO, con la misma geometría con la que se dibuja: lo que señalás es lo que ves. En el
+    // original las dos cuentas no coinciden —`imgMap_MouseMove` divide por 27,5 y `SetMapPoint` multiplica por 26,
+    // y ninguna de las dos arranca en el mismo origen—, así que el cursor nombraba un mapa y el punto propio
+    // aparecía en otro.
     function casilleroEnElPixel(x, y) {
       if (!mapTable) return null;
       const lado = LADO_DEL_CASILLERO * ZOOM_DEL_MAPA;
