@@ -1324,7 +1324,24 @@
     // Se abre SIN mandar nada al server. `UseItem` sobre esto contesta "No podés usar ese objeto", un mensaje que
     // el VB6 no emite, así que el paquete se queda acá.
     const ITEMS_MAPA = new Set([372, 1396]);            // "Mapa (Newbies)" y "Mapa"
-    const HOJA_DEL_MAPA = 15567, ANCHO_MAPA = 800, ALTO_MAPA = 600;
+    /**
+     * LA LÁMINA SALE DE NUESTROS PROPIOS MAPAS, no del dibujo que trae el original, y la razón es que ese dibujo
+     * y la grilla de `table.ind` NO SON LA MISMA IMAGEN.
+     *
+     * <p>La grilla tiene 30×23 casilleros y los mapas del mundo son cuadrados (100×100 baldosas), así que una
+     * lámina que la respete tiene proporción 1,30. El dibujo del original (hoja 15567, el mapa de COVER AO) mide
+     * 506×600, o sea 0,84: las treinta columnas no entran de ninguna manera. Ajustándolo contra la data —cuánta
+     * agua tiene cada mapa contra cuánto mar tiene ese pedazo del dibujo— no aparece ningún encuadre que
+     * coincida. Y se entiende por qué nadie lo había notado: en el cliente VB6 esta pantalla **no se abre
+     * nunca** (`frmMap.Show` no aparece en ningún lado), así que las dos puntas jamás tuvieron que coincidir.</p>
+     *
+     * <p>`assets/mapamundi.png` lo arma `fase0/transcode/build_mapamundi.py` pintando cada casillero con los
+     * colores del minimapa (`minimap.bin`, del `minimap.dat` del original) del mapa que la tabla pone ahí. El
+     * dibujo y la grilla pasan a ser la misma cosa por construcción: el punto cae en el mapa que dice el cartel,
+     * y lo que el cursor nombra es lo que se ve. Verificado contra cinco ciudades —Banderbill, Ullathorpe, Nix,
+     * Lindos y Puerto de Illiandor—: las cinco caen encima de su ciudad dibujada.</p>
+     */
+    const LADO_DEL_CASILLERO = 16, ZOOM_DEL_MAPA = 2;
     let mapTable = null;
     fetch('./assets/maptable.json').then((r) => (r.ok ? r.json() : null)).then((t) => { mapTable = t; }).catch(() => {});
     // Qué hay en cada mapa: nombre, zona, criaturas hostiles con cuántas aparecen, y las cuevas que se entran desde
@@ -1343,18 +1360,20 @@
       return null;                                      // las cuevas y los interiores no están en la lámina
     }
 
+    let laminaDelMundo = null;
     function dibujarMapaDelMundo() {
       const cv = document.getElementById('mapamundi'); if (!cv) return;
-      const hoja = sheets[HOJA_DEL_MAPA];
-      if (!hoja) { loadSheet(HOJA_DEL_MAPA); setTimeout(dibujarMapaDelMundo, 150); return; }
-      hoja._uso = _marcaDeMapa;
+      if (!laminaDelMundo) {
+        laminaDelMundo = new Image();
+        laminaDelMundo.onload = () => dibujarMapaDelMundo();
+        laminaDelMundo.src = './assets/mapamundi.png';
+      }
       const ctx = cv.getContext('2d');
       ctx.clearRect(0, 0, cv.width, cv.height);
-      // LA LAMINA ESTA EN HD, IGUAL QUE TODO EL RESTO DEL ARTE. El original muestra la esquina de 800x600 de la
-      // hoja porque `frmMap` mide eso; acá la hoja viene remasterizada a xHD, así que esos mismos 800x600 logicos
-      // son 3200x2400 pixeles. Sin multiplicar se veia UN DIECISEISAVO del mapa —la esquina noroeste, la isla
-      // nevada— agrandada cuatro veces, y el punto del jugador caia en cualquier lado.
-      ctx.drawImage(hoja, 0, 0, ANCHO_MAPA * HD, ALTO_MAPA * HD, 0, 0, cv.width, cv.height);
+      // Sin suavizado: la lámina tiene un píxel por cada seis baldosas y agrandarla con filtro la vuelve una
+      // mancha. Con nearest se ve como el minimapa, que es de lo que sale.
+      ctx.imageSmoothingEnabled = false;
+      if (laminaDelMundo.complete && laminaDelMundo.naturalWidth) ctx.drawImage(laminaDelMundo, 0, 0, cv.width, cv.height);
       const cartel = document.getElementById('mapa-zona');
       const donde = casilleroDelMapa(currentMap);
       const nombre = (map && (map.name || '').trim()) || ('Mapa ' + currentMap);
@@ -1362,15 +1381,13 @@
         if (cartel) cartel.textContent = nombre + ' · bajo tierra';
         return;
       }
+      const lado = LADO_DEL_CASILLERO * ZOOM_DEL_MAPA;
       if (casilleroMirado) {                            // el que está debajo del cursor
-        const rx = (casilleroMirado.col - 1) * mapTable.anchoCasillero + mapTable.izquierda + 4;
-        const ry = (casilleroMirado.fila - 1) * mapTable.altoCasillero + mapTable.arriba + 4;
         ctx.lineWidth = 1; ctx.strokeStyle = '#ffd9a0cc';
-        ctx.strokeRect(Math.round(rx - mapTable.anchoCasillero / 2) + 0.5, Math.round(ry - mapTable.altoCasillero / 2) + 0.5,
-          mapTable.anchoCasillero, mapTable.altoCasillero);
+        ctx.strokeRect((casilleroMirado.col - 1) * lado + 0.5, (casilleroMirado.fila - 1) * lado + 0.5, lado - 1, lado - 1);
       }
-      const x = (donde.col - 1) * mapTable.anchoCasillero + mapTable.izquierda + 4;
-      const y = (donde.fila - 1) * mapTable.altoCasillero + mapTable.arriba + 4;
+      const x = (donde.col - 0.5) * lado;
+      const y = (donde.fila - 0.5) * lado;
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
       ctx.fillStyle = '#00000088'; ctx.fill();
       ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2);
@@ -1384,9 +1401,10 @@
     // aparece en otro. Acá se usa la geometría del dibujo, así lo que señalás es lo que ves.
     function casilleroEnElPixel(x, y) {
       if (!mapTable) return null;
+      const lado = LADO_DEL_CASILLERO * ZOOM_DEL_MAPA;
       return {
-        col: Math.min(mapTable.columnas, Math.max(1, Math.round((x - mapTable.izquierda - 4) / mapTable.anchoCasillero) + 1)),
-        fila: Math.min(mapTable.filas, Math.max(1, Math.round((y - mapTable.arriba - 4) / mapTable.altoCasillero) + 1)),
+        col: Math.min(mapTable.columnas, Math.max(1, Math.floor(x / lado) + 1)),
+        fila: Math.min(mapTable.filas, Math.max(1, Math.floor(y / lado) + 1)),
       };
     }
 
@@ -1415,7 +1433,8 @@
 
     function abrirMapaDelMundo() {
       showModal('Mapa del mundo', [
-        `<canvas class="mapamundi" id="mapamundi" width="${ANCHO_MAPA}" height="${ALTO_MAPA}"></canvas>`
+        `<canvas class="mapamundi" id="mapamundi" width="${(mapTable ? mapTable.columnas : 30) * LADO_DEL_CASILLERO * ZOOM_DEL_MAPA}" `
+        + `height="${(mapTable ? mapTable.filas : 23) * LADO_DEL_CASILLERO * ZOOM_DEL_MAPA}"></canvas>`
         + `<div class="mapa-zona" id="mapa-zona"></div>`
         + `<div class="mapa-info" id="mapa-info"></div>`
         + `<div class="mapa-pie">estás en el punto rojo · pasá por una zona para ver qué hay</div>`], true, 'mapa');

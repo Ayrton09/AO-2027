@@ -48,10 +48,23 @@ else {
 }
 
 // --- 3. La lámina que se dibuja ---------------------------------------------------------------------------
-const hoja = /const HOJA_DEL_MAPA = (\d+)/.exec(html);
-if (!hoja) problemas.push('no encontré `HOJA_DEL_MAPA` en index.html');
-else if (!existsSync(join(ASSETS, 'graficos', `${hoja[1]}.png`)))
-  problemas.push(`la pantalla dibuja la hoja ${hoja[1]} y assets/graficos/${hoja[1]}.png no está`);
+//
+// La lámina NO es el dibujo que trae el original: es `assets/mapamundi.png`, que arma
+// `fase0/transcode/build_mapamundi.py` pintando cada casillero con los colores del minimapa del mapa que la
+// tabla pone ahí (el dibujo del original cubre 18 de las 30 columnas del mundo, así que el continente del este
+// no figura). Como la lámina se DERIVA de la tabla, las dos tienen que medir lo mismo: si alguien cambia la
+// grilla y no vuelve a armar la lámina, el punto del jugador se corre y nadie se entera.
+const ladoTxt = /const LADO_DEL_CASILLERO = (\d+)/.exec(html);
+if (!ladoTxt) problemas.push('no encontré `LADO_DEL_CASILLERO` en index.html');
+const LADO = ladoTxt ? +ladoTxt[1] : 0;
+const rutaLamina = join(ASSETS, 'mapamundi.png');
+let laminaMide = null;
+if (!existsSync(rutaLamina)) {
+  problemas.push('falta assets/mapamundi.png (lo arma fase0/transcode/build_mapamundi.py)');
+} else {
+  const cab = readFileSync(rutaLamina).subarray(0, 24);
+  laminaMide = [cab.readUInt32BE(16), cab.readUInt32BE(20)];
+}
 
 // --- 4. La grilla: tamaño, mapas reales y todos los puntos adentro de la lámina ---------------------------
 const rutaTabla = join(ASSETS, 'maptable.json');
@@ -61,23 +74,23 @@ if (!existsSync(rutaTabla)) {
   const t = JSON.parse(readFileSync(rutaTabla, 'utf8'));
   if (t.filas !== t.grilla.length || t.grilla.some((f) => f.length !== t.columnas))
     problemas.push(`maptable.json dice ${t.columnas}x${t.filas} y la grilla no mide eso`);
-  // Se mide el CENTRO del punto, no el círculo entero: el original deja que el casillero de la última columna
-  // pise el borde —`shpMap` arranca en 793 y mide 9— y eso se ve igual. Lo que no se ve es un centro afuera.
-  const ANCHO = 800, ALTO = 600;
-  let afuera = 0, pegados = 0, sinMapa = 0;
+  // La lámina se deriva de la grilla, así que el único desacuerdo posible es de TAMAÑO: un casillero de más en
+  // la tabla y el punto del jugador se corre medio mapa.
+  let sinMapa = 0, conMapa = 0;
   for (let fila = 1; fila <= t.filas; fila++) {
     for (let col = 1; col <= t.columnas; col++) {
       const n = t.grilla[fila - 1][col - 1];
-      if (n > 0 && !existsSync(join(ASSETS, `map${n}.json`))) sinMapa++;
-      const x = (col - 1) * t.anchoCasillero + t.izquierda + 4;
-      const y = (fila - 1) * t.altoCasillero + t.arriba + 4;
-      if (x < 0 || x >= ANCHO || y < 0 || y >= ALTO) afuera++;
-      else if (x + 7 > ANCHO || y + 7 > ALTO) pegados++;
+      if (n > 0) { conMapa++; if (!existsSync(join(ASSETS, `map${n}.json`))) sinMapa++; }
     }
   }
   if (sinMapa) problemas.push(`${sinMapa} casilleros de la grilla nombran un mapa que no está en assets/`);
-  if (afuera) problemas.push(`${afuera} casilleros caen afuera del recorte de ${ANCHO}x${ALTO} de la lámina`);
-  if (pegados) console.log(`check-mapa: ${pegados} casilleros quedan pegados al borde y el punto se ve cortado, igual que en el original`);
+  if (laminaMide && LADO) {
+    const esperado = [t.columnas * LADO, t.filas * LADO];
+    if (laminaMide[0] !== esperado[0] || laminaMide[1] !== esperado[1])
+      problemas.push(`mapamundi.png mide ${laminaMide.join('x')} y la grilla pide ${esperado.join('x')}: `
+        + 'volvé a correr fase0/transcode/build_mapamundi.py');
+    else console.log(`check-mapa: la lámina mide ${laminaMide.join('x')} y cubre los ${conMapa} casilleros con mapa`);
+  }
 }
 
 // --- 5. El índice de zonas: todo casillero tiene ficha, y toda criatura y cueva se pueden nombrar ---------
