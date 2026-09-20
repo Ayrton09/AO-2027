@@ -1,4 +1,6 @@
 using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+using CoverAO.Server.Net;
 using Xunit;
 
 namespace CoverAO.Protocol.Tests;
@@ -37,6 +39,10 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.False(cfg.CuraAlSubirNivel);         // sube los MÁXIMOS y llena sólo la vida, como el original
         Assert.False(cfg.QuitarEquipoNovato);       // no existe ningún `QuitarNewbieObj`
         Assert.False(cfg.PersistirSuelo);           // el suelo del VB6 vive en RAM y se repuebla del .csm
+        // La fogata prendida del original NO se apaga nunca: `AccionParaRamita` mete su posición en
+        // `TrashCollector` con el comentario "Las fogatas prendidas se deben eliminar" (Acciones.bas:572) y esa
+        // colección aparece DOS veces en todo el servidor —esa línea y su declaración—: nadie la vacía jamás.
+        Assert.Equal(0, cfg.MinutosDeFogata);
         // El módulo del centinela existe entero en el VB6 pero sus dos llamadas están COMENTADAS
         // (frmMain.frm:749 y mMainLoop.bas:21): en el install no aparece nunca.
         Assert.False(cfg.Centinela);
@@ -361,5 +367,26 @@ public class ReglasDeLaCasaTests : IDisposable
         // reinicia y cada reinicio le borra a la gente lo que se le cayó. El comentario del ini lo dice con
         // todas las letras. Si el autor prefiere lo del original, acá se cambia el true por false.
         Assert.True(cfg.PersistirSuelo);
+        // Las fogatas SÍ las eligió el autor, el 2026-09-19, después de que el tester preguntara cuánto tardan
+        // en apagarse: "ponela en 5 min y que obviamente este la opcion de elgir cuanto tiempo en el .ini".
+        Assert.Equal(5, cfg.MinutosDeFogata);
+    }
+
+    /// <summary>
+    /// EL PLAZO DE LA FOGATA, EN LA UNIDAD DEL MUNDO. El ini habla en MINUTOS y el reloj del mundo cuenta
+    /// VUELTAS del loop, no milisegundos — confundir esas dos unidades ya pasó dos veces en este proyecto y
+    /// deshidrataba al jugador cuarenta veces más rápido. Acá los minutos se comparan contra
+    /// <see cref="GameLoop.TickMs"/>, no contra un número copiado: si mañana la vuelta dura otra cosa, esto
+    /// sigue diciendo la verdad.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [InlineData(60)]
+    public void La_fogata_se_apaga_a_los_minutos_que_dice_el_ini(int minutos)
+    {
+        long vence = PacketDispatcher.TickEnQueSeApaga(1000, minutos);
+        double milisegundos = (vence - 1000) * (double)GameLoop.TickMs;
+        Assert.Equal(minutos * 60_000d, milisegundos, 1);
     }
 }

@@ -5799,6 +5799,47 @@ public sealed partial class PacketDispatcher
     private const int Herramienta = 18;
     private const int MaxMascotasEntrenador = 7;   // VB6 MAXMASCOTASENTRENADOR (Declares.bas:218)         // otRuna (Declares.bas:615) — la Runa de teletransportacion
 
+    /// <summary>
+    /// LAS FOGATAS PRENDIDAS QUE SE VAN A APAGAR, en orden de vencimiento.
+    ///
+    /// <para>Van en una lista y no en el índice del suelo porque el plazo es de ESTA fogata, no del tile: la
+    /// baldosa puede cambiar de dueño —alguien levanta la fogata, o le tiran algo encima— y entonces el plazo
+    /// no tiene que apagar lo que haya quedado ahí. Se agregan con un plazo constante, así que la lista queda
+    /// ordenada sola y alcanza con mirar la primera.</para>
+    /// </summary>
+    private readonly List<(WorldPos Pos, long Vence)> _fogatasPrendidas = new();
+
+    /// <summary>
+    /// EN QUÉ VUELTA DEL LOOP SE APAGA una fogata prendida ahora. La cuenta va acá afuera porque el error
+    /// clásico de este código es la UNIDAD: el plazo del ini está en minutos y el reloj del mundo cuenta
+    /// VUELTAS de <see cref="GameLoop.TickMs"/> milisegundos, no milisegundos.
+    /// </summary>
+    public static long TickEnQueSeApaga(long ahora, int minutos) => ahora + minutos * 60_000L / GameLoop.TickMs;
+
+    /// <summary>Anota una fogata recién prendida, si la regla de la casa pide que se apaguen.</summary>
+    private void AnotarFogataPrendida(WorldPos pos)
+    {
+        if (_ini.MinutosDeFogata <= 0) return;     // el default: no se apagan nunca, como el original
+        _fogatasPrendidas.Add((pos, TickEnQueSeApaga(_loop.Tick, _ini.MinutosDeFogata)));
+    }
+
+    /// <summary>
+    /// Apaga las que cumplieron el plazo. La llama el loop una vez por vuelta; con la regla apagada —el
+    /// default— la lista está vacía y esto sale en el primer <c>if</c>.
+    /// </summary>
+    public void ApagarFogatasVencidas()
+    {
+        while (_fogatasPrendidas.Count > 0 && _loop.Tick >= _fogatasPrendidas[0].Vence)
+        {
+            var pos = _fogatasPrendidas[0].Pos;
+            _fogatasPrendidas.RemoveAt(0);
+            // La baldosa pudo cambiar en el medio: sólo se saca si lo que hay ahí sigue siendo LA fogata.
+            if (!_world.TryGetGround(pos, out var hay) || hay.ObjIndex != Fogata) continue;
+            _world.RemoveGround(pos);
+            _world.BroadcastToObservers(pos, ServerMessages.ObjectDelete(pos.X, pos.Y));
+        }
+    }
+
     /// <summary>Partir un montón de leña en fogatas apagadas (VB6 <c>TratarDeHacerFogata</c>, Trabajo.bas:1228).
     /// Pide TRES troncos —el mensaje del original dice "no mas ni menos de tres" pero el gate es <c>&lt; 3</c>,
     /// o sea que con seis salen dos fogatas— y la tirada sale de Supervivencia. No consume la daga ni energía.
@@ -8112,6 +8153,7 @@ public sealed partial class PacketDispatcher
                 { session.Send(ServerMessages.LocaleMsg(171)); return; }
                 _world.SetGround(pos, Fogata, 1);
                 _world.BroadcastToObservers(pos, ServerMessages.ObjectCreate(pos.X, pos.Y, Fogata, 0));
+                AnotarFogataPrendida(pos);
                 session.Send(ServerMessages.LocaleMsg(170));
                 RaiseSkill(session, p, GameLimits.SkillSupervivencia);
                 return;

@@ -66,6 +66,10 @@ CuraAlSubirNivel=1
 QuitarEquipoNovato=1
 ; Que lo tirado al piso sobreviva al reinicio.
 PersistirSuelo=1
+; Minutos que dura prendida una fogata antes de apagarse sola. En el original NO se apaga
+; nunca (la rutina que las juntaba para borrarlas quedo declarada y sin escribir), asi que
+; el default del servidor es 0 = como el original. 0 apaga la regla.
+MinutosDeFogata=5
 ; Dos reglas del original que vienen APAGADAS: el centinela antimacro y que el
 ; familiar busque enemigos solo.
 Centinela=0

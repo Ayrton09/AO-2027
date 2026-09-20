@@ -114,7 +114,7 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
-        "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version",
@@ -433,6 +433,22 @@ public sealed class ServerIni
     /// real igual — en una beta el server se reinicia para actualizarlo, y cada reinicio le borra a la gente
     /// su mochila. Por eso está acá y no cableado: quien hostea decide.</summary>
     public bool PersistirSuelo { get; private set; }
+
+    /// <summary>
+    /// REGLA DE LA CASA — <c>MinutosDeFogata</c> (default 0 = como el original). Cuántos minutos dura prendida
+    /// una fogata antes de apagarse sola.
+    ///
+    /// <para>En el original la intención está ESCRITA y el código no. <c>AccionParaRamita</c> (Acciones.bas:572)
+    /// mete la posición de la fogata que se acaba de prender en una colección llamada <c>TrashCollector</c>, con
+    /// el comentario <i>"Las fogatas prendidas se deben eliminar"</i> justo arriba — y esa colección aparece
+    /// exactamente DOS veces en todo el servidor: esa línea y su declaración (Declares.bas:63). Nadie la vacía
+    /// nunca. O sea que el recolector se declaró y jamás se escribió, y la fogata queda prendida para siempre.
+    /// Por eso el default es CERO: lo fiel es que no se apague.</para>
+    ///
+    /// <para>Lo reportó el tester: hizo una fogata para subir Supervivencia, volvió a conectarse un buen rato
+    /// después y seguía ahí. La plantilla que se distribuye viene con cinco minutos.</para>
+    /// </summary>
+    public int MinutosDeFogata { get; private set; }
 
     /// <summary>
     /// REGLA DE LA CASA — <c>PasesDeRinkel</c> (default 0 = como el install). Hace usables los dos pases que
@@ -946,6 +962,7 @@ public sealed class ServerIni
         }
         cfg.NivelMinimoPorMapa = minimos;
         cfg.PersistirSuelo = ini.GetInt("INIT", "PersistirSuelo", 0) != 0;
+        cfg.MinutosDeFogata = Math.Max(0, ini.GetInt("INIT", "MinutosDeFogata", 0));
         cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;

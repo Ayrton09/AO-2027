@@ -382,6 +382,8 @@ loop.OnTickHandler = tick =>
     // Clanes y correo: se escriben acá, agrupados, y no una vez por acción de clan (ver
     // PacketDispatcher.VolcarPersistenciaDiferida). Es barato: si no hay nada sucio, sale en el primer if.
     dispatcher?.VolcarPersistenciaDiferida();
+    // Las fogatas que cumplieron su plazo (regla de la casa `MinutosDeFogata`; apagada, no hace nada).
+    dispatcher?.ApagarFogatasVencidas();
     // Autosave periódico (config del panel, "MinutosGuardarUsuarios" del VB6). Corre aunque esté pausado.
     if (admin.AutosaveMinutes > 0 && (tick - admin.LastAutosaveTick) * GameLoop.TickMs >= (long)admin.AutosaveMinutes * 60_000)
     {
