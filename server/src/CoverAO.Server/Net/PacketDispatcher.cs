@@ -9417,19 +9417,35 @@ public sealed partial class PacketDispatcher
                 // `DoTrabajar` (Trabajo.bas:2484) es `If .flags.Lingoteando Then DoLingotes`, o sea que el
                 // que arranca a fundir sigue fundiendo solo, igual que el que mina o pesca. Acá el clic hacía
                 // una sola tanda y había que volver a clickear la fragua por cada puñado de lingotes.
-                if (!DoFundir(session, p)) return;             // la primera tanda falló: no hay faena que abrir
+                // LA TANDA DEL CLIC TAMBIÉN RESPETA EL INTERVALO. Salía siempre, así que clickear la fragua en
+                // ráfaga fundía a la velocidad de los paquetes. Si el reloj no dio, la faena arranca igual y la
+                // primera tanda la hace el loop cuando toca.
+                long ahoraFundir = Environment.TickCount64;
+                if (ahoraFundir - p.LastWorkMs >= IntervaloTrabajoMs)
+                {
+                    if (!DoFundir(session, p)) return;         // la primera tanda falló: no hay faena que abrir
+                    p.LastWorkMs = ahoraFundir;
+                }
                 p.Laborando = true;
-                p.LastWorkMs = Environment.TickCount64;         // la tanda del clic ya salió: la próxima, en un intervalo
                 session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", 2));
                 return;
             }
-            // El original saca el mineral de `flags.TargetObj`, que le queda seteado del LeftClick previo. Acá
-            // se resuelve del tile que trae ESTE paquete, para no depender de que el cliente haya mandado el
-            // clic de selección antes: el resultado es el mismo y no hay estado de por medio.
-            if (skill == GameLimits.SkillMineria
-                && _world.TryGetGround(new WorldPos(p.Pos.Map, tx, ty), out var tile) && tile.ObjIndex > 0)
-            { p.TargetObj = tile.ObjIndex; p.TargetObjMap = p.Pos.Map; p.TargetObjX = tx; p.TargetObjY = ty; }
-            DoRecolectar(session, p, skill, avisarSinHerramienta: true);
+            // LOS OFICIOS DE JUNTAR (pesca, tala, minería, botánica). En el original el `Select` de este handler
+            // no los tiene: `HandleWork` pide el objetivo (Protocol.bas:2321) y el clic que vuelve NO HACE NADA —
+            // se junta con el doble clic sobre el recurso (`Accion`). Se porta la INTENCIÓN, igual que la fragua:
+            // el clic arranca LA MISMA faena que el doble clic, con sus compuertas (terreno, distancia, zona
+            // segura) y el intervalo del loop.
+            //
+            // Acá se pagaba una unidad por clic sin mirar la baldosa ni la distancia: un cliente modificado
+            // juntaba leña o pescaba desde cualquier lado, y tan rápido como mandara paquetes.
+            if (skill is GameLimits.SkillPesca or GameLimits.SkillTalar or GameLimits.SkillMineria or GameLimits.SkillBotanica)
+            {
+                var herramienta = Equipment.EquippedOfCategory(p, _data, 6);
+                if (herramienta is null || SkillDeLaHerramienta(herramienta.Index) != skill)
+                { session.Send(ServerMessages.ConsoleMsg("Necesitas la herramienta adecuada.", FuenteInfo)); return; }
+                IniciarFaena(session, p, tx, ty);
+            }
+            // Cualquier otra skill: el original tampoco tiene rama para ella, y no pasa nada.
         });
     }
 
@@ -9488,7 +9504,11 @@ public sealed partial class PacketDispatcher
         // primera en DoTrabajar, el que fundió una vez no volvía a minar en toda la sesión.
         p.Lingoteando = 0;
         p.Laborando = true;
-        p.LastWorkMs = 0;   // que la primera vuelta salga ya, sin esperar el intervalo
+        // EL RELOJ NO SE TOCA. En el original arrancar la faena sólo prende `.flags.Trabajando` (Acciones.bas):
+        // `TimerPuedeTrabajar` se mueve únicamente cuando una vuelta pasa de verdad (modNuevoTimer.bas:249). Acá
+        // se ponía en cero "para que la primera vuelta salga ya", y así cada reinicio de la faena —un doble clic
+        // o un clic de oficio en ráfaga— cobraba una vuelta sin esperar el intervalo. La primera faena de la
+        // sesión igual sale en el acto: el reloj arranca en cero.
         session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", 2));
         return true;
     }
@@ -9522,7 +9542,7 @@ public sealed partial class PacketDispatcher
         // blanco — el flag queda prendido. Acá se corta, que es lo mismo desde afuera pero no deja al loop
         // trabajando de gusto sobre un jugador que ya no puede producir.
         if (skill == 0) { p.Laborando = false; return; }
-        if (!DoRecolectar(session, p, skill, avisarSinHerramienta: false)) p.Laborando = false;
+        if (!DoRecolectar(session, p, skill)) p.Laborando = false;
     }
 
     /// <summary>Los ids de <c>LocaleMsg</c> del acierto y del fallo, por oficio. El original NO usa texto
@@ -9597,16 +9617,17 @@ public sealed partial class PacketDispatcher
     /// El <c>Int</c> de VB6 redondea hacia abajo, que es <see cref="Math.Floor(double)"/>.</summary>
     private static int SuerteDelOficio(int skill) => (int)Math.Floor(-0.00125 * skill * skill - 0.3 * skill + 49);
 
-    /// <summary>UNA unidad de recolección (VB6 <c>DoPescar</c>/<c>DoTalar</c>/<c>DoMineria</c>). Lo llaman los dos
-    /// caminos: el click puntual y —desde que existe el trabajo continuo— cada vuelta del loop.
+    /// <summary>UNA unidad de recolección (VB6 <c>DoPescar</c>/<c>DoTalar</c>/<c>DoMineria</c>). La llama cada vuelta
+    /// del trabajo continuo, y sólo ella: el clic de oficio arranca la faena y no cobra por su cuenta (ver el final
+    /// de <c>HandleWorkLeftClick</c>).
     ///
     /// La herramienta se exige <b>EQUIPADA</b>, no en la mochila: el original la lee de
     /// <c>Invent.AnilloEqpObjIndex</c>. Devuelve false cuando el trabajo no puede seguir (sin herramienta, sin
     /// skill, sin energía), que es lo que el loop usa para cortar la faena.</summary>
-    private bool DoRecolectar(ClientSession session, Player p, int skill, bool avisarSinHerramienta)
+    private bool DoRecolectar(ClientSession session, Player p, int skill)
     {
         var (tool, resource, name) = OficioDe(skill);
-        if (tool == 0) { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("No sabes hacer ese trabajo.", FuenteInfo)); return false; }
+        if (tool == 0) return false;
         // ACÁ HABÍA UNA COMPUERTA INVENTADA: `if (p.Skills[skill] <= 0) → "No tienes esa habilidad."`.
         //
         // El original NO la tiene. `DoPescar` (Trabajo.bas:1336), `DoTalar` (:1859) y `DoMineria` (:1990) leen
@@ -9622,8 +9643,7 @@ public sealed partial class PacketDispatcher
         // La herramienta se acepta por el OFICIO que declara, no por un índice único: la pesca tiene dos
         // aparejos y exigir sólo la caña dejaba la red sin hacer nada.
         var puesta = Equipment.EquippedOfCategory(p, _data, 6);
-        if (puesta is null || SkillDeLaHerramienta(puesta.Index) != skill)
-        { if (avisarSinHerramienta) session.Send(ServerMessages.ConsoleMsg("Necesitas la herramienta adecuada.", FuenteInfo)); return false; }
+        if (puesta is null || SkillDeLaHerramienta(puesta.Index) != skill) return false;
         // VB6 DoPescar/DoTalar/DoMineria: el trabajo CUESTA stamina (QuitarSta — sin energía no se trabaja) y
         // el éxito es una tirada según skill (res = RandomNumber(1,Suerte), sólo rinde a veces). Sin esto el
         // trabajo daba recurso garantizado sin costo → canilla de oro (los recursos se venden a NPCs).
