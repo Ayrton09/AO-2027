@@ -1953,7 +1953,9 @@ public sealed partial class PacketDispatcher
         // equipado y sin modo combate, el original dispara —gasta stamina, consume la flecha y hace daño— y el
         // port respondía "debés estar en modo combate" y no hacía nada. Leí el `Case eSkill.Proyectiles`
         // entero (Protocol.bas:2751-2916): no hay `SeguroCheck` ni equivalente. El seguro es del MELEE
-        // (UsuarioAtaca), no del disparo.
+        // (UsuarioAtaca), no del disparo. SALVO CONTRA UNA CRIATURA: ahí el tiro entra por `UsuarioAtacaNpc` →
+        // `PuedeAtacarNPC`, que sí exige el modo combate (SistemaCombate.bas:1729); contra un jugador,
+        // `PuedeAtacar` no lo mira. Ver la rama de la criatura, más abajo.
 
         // LA CADENCIA DEL DISPARO (VB6 Protocol.bas:2754-2761), y el port no tenía NINGUNA: se disparaba a la
         // velocidad del socket. Van los tres chequeos del original, en su orden y con su modo — los dos
@@ -2010,8 +2012,17 @@ public sealed partial class PacketDispatcher
         {
             // Sólo se ataca si el NPC es atacable (VB6 :2860). Si NO lo es, el VB6 no manda mensaje e IGUAL consume la
             // flecha (Atacked queda True) — a diferencia del melee, que sí avisa con LocaleMsg 298.
+            //
+            // Y EL TIRO ENTRA POR `UsuarioAtacaNpc`, que arranca con `PuedeAtacarNPC` (SistemaCombate.bas:896): el
+            // modo combate (102), el Armada contra una criatura sin dueño (272), la mascota ajena y la pertenencia.
+            // Si no puede, `Atacked` queda en falso y la flecha NO se gasta (la energía sí, ya se cobró). Faltaba
+            // entero: el arco era la puerta trasera del Armada, que con la espada o un hechizo recibe el 272.
             if (RangedNpcAtacable(targetNpc))
+            {
+                if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
+                if (!PuedeAtacarNpc(session, p, targetNpc)) return;
                 RangedHitNpc(session, p, targetNpc, bow, ammo);
+            }
         }
         // TIRO AL AIRE: el original NO hace ruido. Su `Case eSkill.Proyectiles` (Protocol.bas:2751-2870) no tiene
         // un solo PlayWave — cuando no hay blanco simplemente marca `Atacked` y consume la flecha. Acá salía un
@@ -3041,6 +3052,9 @@ public sealed partial class PacketDispatcher
         // maná: por eso este gate va ANTES de `SpellCasted`. Sin él, congelar a un boss y matarlo sin que se
         // moviera era gratis.
         if (npc.Template.Inmunidad != 0) { session.Send(ServerMessages.LocaleMsg(399)); return; }
+        // El modo combate (VB6 PuedeAtacarNPC, que HechizoEstadoNPC llama recién con una criatura que NO es inmune,
+        // modHechizos.bas:1550): antes que el 298, sin cobrar.
+        if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
 
         // VB6 PuedeAtacarNPC: los NPCs de servicio no se tocan — el mismo gate que el daño.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
@@ -3094,6 +3108,10 @@ public sealed partial class PacketDispatcher
 
     private void CastDamageOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell, int amount)
     {
+        // EL MODO COMBATE, primero (VB6 PuedeAtacarNPC, SistemaCombate.bas:1729, que el daño llama en
+        // modHechizos.bas:1668): sale antes que el 298 y sin cobrar. Faltaba, y con el modo combate apagado —el
+        // default— se le pegaba a cualquier criatura con un hechizo.
+        if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
         // VB6 PuedeAtacarNPC: los NPCs de servicio no son atacables — mismo gate que AttackNpc.
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
@@ -10520,13 +10538,19 @@ public sealed partial class PacketDispatcher
             //
             // OJO LA ASIMETRÍA, que es de la fuente y no un olvido: el gate está en `HandleHechizoTerreno`
             // (modHechizos.bas:701) y en `HandleHechizoUsuario` (:763), pero NO en `HandleHechizoNPC` (:813).
-            // O sea: castearle a una CRIATURA no lo exige, castearle a un JUGADOR o al TERRENO sí. `LanzarHechizo`
+            // O sea: el handler de CRIATURAS no lo exige, el de un JUGADOR o el del TERRENO sí. `LanzarHechizo`
             // (:875) elige el handler por `spell.Target` — 4 terreno, 1 usuarios, 2 NPC, 3 ambos (usuario primero
             // y si no hay, NPC) —, así que acá se replica esa misma decisión.
             //
             // Tampoco distingue el TIPO de hechizo: en el original hay que estar en modo combate hasta para
             // CURAR a un aliado, porque SeguroCheck corre antes de mirar qué hace el hechizo. Se porta así.
             // Y no exime al GM: SeguroCheck no mira privilegios (corre después de PuedeLanzar, que sí los mira).
+            //
+            // Y OJO LA OTRA MITAD: que el handler de criaturas no tenga el SeguroCheck no quiere decir que castearle a
+            // una criatura no pida el modo combate. Los hechizos OFENSIVOS contra criaturas —el daño
+            // (modHechizos.bas:1668) y la parálisis o inmovilización (:1550)— entran por `PuedeAtacarNPC`, que lo
+            // exige antes que nada (SistemaCombate.bas:1729). Eso está en CastDamageOnNpc y CastStateOnNpc; acá
+            // quedan exentos, porque los benignos (curar una mascota) no lo piden.
             bool haySobreNpc;
             {
                 var (sx, sy) = TileObjetivo();
