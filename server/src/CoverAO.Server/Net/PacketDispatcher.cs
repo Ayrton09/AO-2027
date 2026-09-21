@@ -5824,12 +5824,31 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>
+    /// LAS QUE VENÍAN DEL ARRANQUE ANTERIOR. La lista de vencimientos vive en memoria, así que sin esto una
+    /// fogata que se guardó prendida —<c>PersistirSuelo</c> está en 1 en la plantilla que se reparte— volvía
+    /// del disco sin plazo y ya no se apagaba nunca: justo lo que la regla viene a evitar, y encima sólo se
+    /// notaba después de un reinicio. Se les da el plazo entero desde el arranque.
+    ///
+    /// <para>Mira el suelo NO FIJO: el decorado del .csm no se toca. Hoy no hay ninguna fogata prendida
+    /// colocada en el mundo, pero si mañana la hubiera sería parte del mapa, no de alguien.</para>
+    /// </summary>
+    public void AnotarFogatasDelSueloRestaurado()
+    {
+        foreach (var (pos, obj, _) in _world.SueloNoFijo())
+            if (obj == Fogata) AnotarFogataPrendida(pos);
+    }
+
+    /// <summary>
     /// Apaga las que cumplieron el plazo. La llama el loop una vez por vuelta; con la regla apagada —el
     /// default— la lista está vacía y esto sale en el primer <c>if</c>.
+    ///
+    /// <para>La vuelta llega POR PARÁMETRO y no de <c>_loop.Tick</c> para que se pueda probar el apagado de
+    /// verdad: el reloj del mundo avanza en tiempo real, así que leerlo de adentro obligaba a esperar los
+    /// minutos del plazo y lo único que quedaba testeable era la cuenta de la conversión.</para>
     /// </summary>
-    public void ApagarFogatasVencidas()
+    public void ApagarFogatasVencidas(long ahora)
     {
-        while (_fogatasPrendidas.Count > 0 && _loop.Tick >= _fogatasPrendidas[0].Vence)
+        while (_fogatasPrendidas.Count > 0 && ahora >= _fogatasPrendidas[0].Vence)
         {
             var pos = _fogatasPrendidas[0].Pos;
             _fogatasPrendidas.RemoveAt(0);

@@ -22,8 +22,13 @@ namespace CoverAO.Protocol.Tests;
 public class ReglasDeLaCasaTests : IDisposable
 {
     private readonly string _ruta = Path.Combine(Path.GetTempPath(), "coverao_casa_" + Guid.NewGuid().ToString("N") + ".ini");
+    private readonly string _datos = Path.Combine(Path.GetTempPath(), "coverao_casa_" + Guid.NewGuid().ToString("N"));
 
-    public void Dispose() { try { File.Delete(_ruta); } catch { } }
+    public void Dispose()
+    {
+        try { File.Delete(_ruta); } catch { /* el temp queda */ }
+        try { Directory.Delete(_datos, recursive: true); } catch { /* idem */ }
+    }
 
     private ServerIni Cargar(string cuerpo)
     {
@@ -388,5 +393,85 @@ public class ReglasDeLaCasaTests : IDisposable
         long vence = PacketDispatcher.TickEnQueSeApaga(1000, minutos);
         double milisegundos = (vence - 1000) * (double)GameLoop.TickMs;
         Assert.Equal(minutos * 60_000d, milisegundos, 1);
+    }
+
+    /// <summary>
+    /// LA FOGATA QUE SOBREVIVE A UN REINICIO. La lista de vencimientos vive en memoria y el suelo se guarda en
+    /// disco (<c>PersistirSuelo</c>, que la plantilla repartida trae encendido), así que una fogata prendida
+    /// antes de apagar el server volvía sin plazo y ya no se apagaba nunca — el agujero sólo se notaba después
+    /// de un reinicio, que es cuando nadie lo está mirando.
+    ///
+    /// <para>Y se mira el borde: una vuelta ANTES del plazo la fogata tiene que seguir ahí. Sin eso el test
+    /// pasaría igual con un apagado que borra todo desde el primer tick.</para>
+    /// </summary>
+    [Fact]
+    public void Una_fogata_que_viene_del_arranque_anterior_tambien_se_apaga()
+    {
+        const short Fogata = 63, Ramitas = 136, Lenia = 58, Mapa = 1;
+        var enElPiso = new WorldPos(Mapa, 50, 50);
+        var tirado = new WorldPos(Mapa, 51, 50);
+        var decorado = new WorldPos(Mapa, 52, 50);
+        var mundo = new World();
+        mundo.SetGround(enElPiso, Fogata, 1);                    // lo que restauró el suelo persistido
+        mundo.SetGround(tirado, Lenia, 3);                       // y al lado, leña de alguien: no es una fogata
+        mundo.SetGround(decorado, Ramitas, 1, esFijo: true);     // lo que puso el .csm: no es de nadie
+
+        var dispatcher = Dispatcher(mundo, Cargar("MinutosDeFogata=5\r\n"));
+        dispatcher.AnotarFogatasDelSueloRestaurado();
+
+        long vence = PacketDispatcher.TickEnQueSeApaga(0, 5);
+        dispatcher.ApagarFogatasVencidas(vence - 1);
+        Assert.True(mundo.TryGetGround(enElPiso, out _));        // una vuelta antes, sigue prendida
+        dispatcher.ApagarFogatasVencidas(vence);
+        Assert.False(mundo.TryGetGround(enElPiso, out _));       // y al plazo, se apagó sola
+        Assert.True(mundo.TryGetGround(tirado, out _));          // lo tirado al piso no lo barre nadie
+        Assert.True(mundo.TryGetGround(decorado, out _));        // el decorado del mapa, intacto
+    }
+
+    /// <summary>
+    /// EL PLAZO ES DE LA FOGATA, NO DE LA BALDOSA. Anotar al arrancar todo lo que haya en el suelo, y no sólo
+    /// las fogatas, parece inofensivo —el apagado igual mira qué quedó en el tile— pero deja un vencimiento
+    /// colgado: la fogata que alguien prenda DESPUÉS en esa misma baldosa se apagaría con el plazo del objeto
+    /// viejo, antes de tiempo. Con 30.000 objetos en el mundo eso no es un caso raro.
+    /// </summary>
+    [Fact]
+    public void El_plazo_de_lo_que_ya_estaba_no_apaga_la_fogata_que_venga_despues()
+    {
+        var baldosa = new WorldPos(1, 50, 50);
+        var mundo = new World();
+        mundo.SetGround(baldosa, 58, 3);                         // leña de alguien, no una fogata
+
+        var dispatcher = Dispatcher(mundo, Cargar("MinutosDeFogata=5\r\n"));
+        dispatcher.AnotarFogatasDelSueloRestaurado();
+
+        mundo.RemoveGround(baldosa);
+        mundo.SetGround(baldosa, 63, 1);                         // alguien prende una ahí, con SU propio plazo
+        dispatcher.ApagarFogatasVencidas(PacketDispatcher.TickEnQueSeApaga(0, 5));
+        Assert.True(mundo.TryGetGround(baldosa, out _));
+    }
+
+    /// <summary>El default es el original: sin la regla, la fogata no se apaga NUNCA. Es el control negativo
+    /// del test de arriba — sin él, "desapareció" no distingue la regla de cualquier otra cosa que borre.</summary>
+    [Fact]
+    public void Con_la_regla_apagada_la_fogata_se_queda_para_siempre()
+    {
+        var enElPiso = new WorldPos(1, 50, 50);
+        var mundo = new World();
+        mundo.SetGround(enElPiso, 63, 1);
+
+        var dispatcher = Dispatcher(mundo, new ServerIni());     // MinutosDeFogata = 0
+        dispatcher.AnotarFogatasDelSueloRestaurado();
+        dispatcher.ApagarFogatasVencidas(PacketDispatcher.TickEnQueSeApaga(0, 60 * 24));
+        Assert.True(mundo.TryGetGround(enElPiso, out _));
+    }
+
+    /// <summary>Un dispatcher mínimo, con su carpeta de datos propia para que la persistencia no toque nada.</summary>
+    private PacketDispatcher Dispatcher(World mundo, ServerIni ini)
+    {
+        Directory.CreateDirectory(_datos);
+        var datos = GameData.Load();
+        var leveling = new Leveling(datos.LevelExp);
+        return new PacketDispatcher(mundo, new GameLoop(), new Persistence(new FileStore(_datos), leveling),
+                                    datos, leveling, serverIni: ini);
     }
 }

@@ -383,7 +383,7 @@ loop.OnTickHandler = tick =>
     // PacketDispatcher.VolcarPersistenciaDiferida). Es barato: si no hay nada sucio, sale en el primer if.
     dispatcher?.VolcarPersistenciaDiferida();
     // Las fogatas que cumplieron su plazo (regla de la casa `MinutosDeFogata`; apagada, no hace nada).
-    dispatcher?.ApagarFogatasVencidas();
+    dispatcher?.ApagarFogatasVencidas(tick);
     // Autosave periódico (config del panel, "MinutosGuardarUsuarios" del VB6). Corre aunque esté pausado.
     if (admin.AutosaveMinutes > 0 && (tick - admin.LastAutosaveTick) * GameLoop.TickMs >= (long)admin.AutosaveMinutes * 60_000)
     {
@@ -916,6 +916,9 @@ if (args.Any(a => string.Equals(a, "--relojes-de-test", StringComparison.Ordinal
     Console.WriteLine("[test] relojes de día/noche, clima y centinela acelerados a segundos (--relojes-de-test)");
 }
 dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkIntervalMs, attackIntervalMs, loginThrottle, admin, serverContent, npcSystem, _ => PedirApagadoOrdenado(), fixtureMode, serverIni, creacionDeCuentas, economia, trampas);
+// Las fogatas que quedaron prendidas del arranque anterior arrancan su plazo acá: el suelo se restaura mucho
+// más arriba y la lista de vencimientos es del dispatcher, que recién existe ahora.
+dispatcher.AnotarFogatasDelSueloRestaurado();
 var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
