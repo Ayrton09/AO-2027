@@ -239,6 +239,15 @@ public sealed class AdminServer
         {
             var req = ctx.Request; var res = ctx.Response;
             string path = req.Url?.AbsolutePath ?? "/";
+            // HEAD: los encabezados y nada más. `HttpListener` no deja escribir cuerpo en la respuesta a un HEAD
+            // —tira "Bytes to be written to the stream exceed the Content-Length"—, y así preguntan los monitores
+            // de disponibilidad: cada sondeo dejaba una línea roja en el log del panel, que parecía una falla.
+            if (req.HttpMethod == "HEAD")
+            {
+                res.StatusCode = path is "/" or "/admin" or "/index.html" ? 200 : 405;
+                res.Close();
+                return;
+            }
             // La UI (shell) es pública; la API exige token (el server sólo escucha en loopback igual).
             if (path == "/" || path == "/admin" || path == "/index.html")
             {
