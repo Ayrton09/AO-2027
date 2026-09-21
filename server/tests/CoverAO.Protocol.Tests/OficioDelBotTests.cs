@@ -351,6 +351,33 @@ public class OficioDelBotTests
     }
 
     /// <summary>
+    /// EL LEÑADOR Y EL DRUIDA TIENEN DÓNDE TRABAJAR. El original no deja talar ni juntar raíces en un mapa seguro
+    /// (Acciones.bas: "No puedes talar en zona segura"), y la cuna lo es: el árbol del bot tiene que estar en un mapa
+    /// PK donde no nazca nada que le quede grande — la regla con la que caza. Se pregunta a la data SIN pociones, que
+    /// es la regla más estricta, en tres momentos del camino; y el mapa que aparece tiene que ser pk, que es lo que
+    /// el servidor exige al arrancar la faena. Si mañana el mundo cambia y no queda ninguno a mano, esto lo dice
+    /// antes de que un leñador se pase la corrida entera sin trabajar.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 16)]      // un recién nacido: 16 a 18 de vida, medido en `normal3`
+    [InlineData(5, 50)]
+    [InlineData(14, 148)]    // Aldo, el leñador de `oficios14`
+    public void El_arbol_del_bot_esta_en_un_mapa_pk_sin_peligro_y_cerca(int nivel, int vida)
+    {
+        if (Mundo() is not { } m) return;
+        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoPara(m.Datos.Npc((short)f), vida, nivel, conPociones: false, curaVeneno: false);
+        Func<int, bool> sirve = mapa => Bot.SeTrabajaElArbolAhi(m.Datos.IsPkMap(mapa),
+            m.Datos.MapSpawns.TryGetValue(mapa, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(), esPeligroso);
+        Func<int, bool> esArbol = obj => m.Datos.Obj(obj) is { IsTree: true };
+
+        Assert.False(sirve(m.Cuna.Map), "premisa: la cuna es segura, y en un mapa seguro no se tala");
+        var lugar = m.Mapas.DondeSeTrabaja(m.Cuna.Map, agua: false, esArbol, (m.Cuna.X, m.Cuna.Y), sirve);
+        Assert.True(lugar is not null, $"a nivel {nivel} no hay ningún árbol en un mapa pk sin peligro al que se llegue");
+        Assert.True(m.Datos.IsPkMap(lugar!.Value.Mapa));
+        Assert.True(lugar.Value.Saltos <= 3, $"el árbol más cercano queda a {lugar.Value.Saltos} mapas, en el {lugar.Value.Mapa}");
+    }
+
+    /// <summary>
     /// Y HAY A QUIÉN VENDÉRSELO, A PASOS DE LA CUNA. No alcanza con que el botín valga: el mercader tiene que
     /// aceptar ESE tipo de objeto (<c>TipoItems</c>), el mapa tiene que atender —un mercader no le vende a un
     /// ciudadano donde el <c>battleMode</c> no es 2 ni 3— y se tiene que poder llegar caminando.

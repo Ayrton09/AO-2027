@@ -1476,8 +1476,35 @@ public sealed class Bot
         return obj => _entorno.Datos.Obj(obj) is { } o && (arbol ? o.IsTree : o.IsDeposit);
     }
 
-    /// <summary>Un mapa donde se trabaja: los pk quedan afuera.</summary>
+    /// <summary>Un mapa sin pk: donde se desconecta y donde se sienta a fabricar.</summary>
     private bool MapaSeguro(int mapa) => !_entorno.Datos.IsPkMap(mapa);
+
+    /// <summary>
+    /// ¿SE PUEDE EJERCER SU OFICIO EN ESE MAPA? El agua, en un mapa sin pk, como siempre. El ÁRBOL, al revés: sólo en un
+    /// mapa PK, porque el original no deja talar ni juntar raíces en zona segura (Acciones.bas: "No puedes talar en zona
+    /// segura"), y ahí sólo donde no nace nada que lo pueda matar — la misma regla con la que caza, que el autor aprobó
+    /// para trabajar. Los bots talaban en la cuna, que es segura, por un clic de oficio que pagaba sin mirar la baldosa
+    /// ni el mapa: el servidor ya no lo deja.
+    ///
+    /// <para>ES UNO SOLO para las tres preguntas —si hay dónde, adónde viajar y si se trabaja acá—: con filtros
+    /// distintos el bot viaja a un lugar donde después no puede trabajar (memoria `filtro-del-viaje-y-de-la-compra`).</para>
+    /// </summary>
+    private Func<int, bool> MapaParaSuFaena(SentidosDelBot sentidos)
+    {
+        if (SkillDeSuOficio == GameLimits.SkillPesca) return MapaSeguro;
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        Func<int, bool> esPeligroso = f => EsPeligroso((short)f, vida, nivel, conPociones, curaVeneno);
+        return m => SeTrabajaElArbolAhi(_entorno.Datos.IsPkMap(m),
+            _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
+            esPeligroso);
+    }
+
+    /// <summary>La regla de <see cref="MapaParaSuFaena"/> para el ÁRBOL, sobre el mapa solo: pk, y sin nada que le
+    /// quede grande naciendo ahí.</summary>
+    public static bool SeTrabajaElArbolAhi(bool mapaPk, IEnumerable<int> loQueNace, Func<int, bool> esPeligroso) =>
+        mapaPk && SeCazaAhi(true, loQueNace, esPeligroso);
 
     /// <summary>
     /// A QUÉ MAPAS PUEDE ENTRAR. A partir del nivel 16 el servidor no deja entrar a la zona NEWBIE (la cuna y el 208): al que pisa la
@@ -1525,7 +1552,7 @@ public sealed class Bot
         if (sentidos.Mapa == _trabajoSeguroMapa && Environment.TickCount64 < _trabajoSeguroHasta) return _trabajoSeguro;
         bool agua = SkillDeSuOficio == GameLimits.SkillPesca;
         _trabajoSeguro = SkillDeSuOficio != 0
-            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not null;
+            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaParaSuFaena(sentidos), Pisable(sentidos)) is not null;
         _trabajoSeguroMapa = sentidos.Mapa;
         _trabajoSeguroHasta = Environment.TickCount64 + 5 * 60_000;
         return _trabajoSeguro;
@@ -1771,7 +1798,9 @@ public sealed class Bot
     /// <para>La secuencia es la del cliente: se equipa la herramienta —el servidor decide QUÉ oficio se está
     /// ejerciendo por la herramienta que llevás puesta, no por lo que diga el paquete—, se manda
     /// <c>Work</c> con la skill, el servidor contesta pidiendo el objetivo, y se marca la baldosa con
-    /// <c>WorkLeftClick</c>. Después se repite: cada clic es una unidad de trabajo.</para>
+    /// <c>WorkLeftClick</c>. Ese clic ARRANCA la faena, igual que el doble clic de un jugador, y el servidor junta de a
+    /// una vuelta por intervalo mientras el bot se quede ahí; caminar la corta. Los clics que siguen la mantienen
+    /// prendida si algo la cortó (la energía, por ejemplo), pero ya no cobran por su cuenta.</para>
     ///
     /// <para>Sólo lo hacen las tres clases que tienen oficio, y sólo si ya consiguieron la herramienta —que
     /// ninguna trae de nacimiento y hay que ir a comprar—. Es lo que hace que un Pescador se distinga de un
@@ -1799,11 +1828,12 @@ public sealed class Bot
         // del mapa 33, a cinco mapas, cruzando zonas pk con gladiadores que pegan 282 y trece lobos, murió al menos dos
         // veces en veinte minutos y perdió los dos piquetes, que se caen al morir. Todas las minas del mundo están en
         // mapas pk; el agua y los árboles de la cuna, no.
-        var punto = MapaSeguro(sentidos.Mapa)
+        var sirve = MapaParaSuFaena(sentidos);
+        var punto = sirve(sentidos.Mapa)
             ? _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso) : null;
         if (punto is null)
         {
-            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } lejos) { PostergarFaena(); return false; }
+            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, Pisable(sentidos)) is not { } lejos) { PostergarFaena(); return false; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct)) { PostergarFaena(); return true; }
             punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
             if (punto is null) { PostergarFaena(); return true; }
