@@ -2872,6 +2872,8 @@ public sealed class Bot
             _equipoPedido = null;
         }
 
+        // PRIMERO, SACARSE EL ARMA CON LA QUE NO SE PEGA: con el arco puesto el servidor contesta 127 a cada golpe.
+        if (ArmaQueNoPegaPuesta(sentidos, _entorno.Datos) is { } arco) return PedirQueSeSaque(transporte, arco);
         foreach (var esDeEso in QueSePone)
             if (MejorParaPoner(sentidos, esDeEso) is { } ranura) return PedirQueSePonga(transporte, sentidos, ranura);
 
@@ -2885,20 +2887,26 @@ public sealed class Bot
         return false;
     }
 
-    /// <summary>El <c>Proyectil</c> de las arrojadizas, que son las que sí cambian la forma de pelear y quedan
-    /// afuera. El ARCO es <c>Proyectil == 1</c> y sí se equipa: pega cuerpo a cuerpo con su <c>[MinHIT, MaxHIT]</c>
-    /// por la rama de arma de <c>MeleeDamage</c>, y las flechas sólo hacen falta para DISPARAR.</summary>
-    private const int ArrojadizaQueNoSeUsa = 2;
-
     /// <summary>
-    /// ¿ES UN ARMA QUE EL BOT SE PONE? Todo lo que el servidor cuenta como arma menos las arrojadizas.
+    /// ¿ES UN ARMA QUE EL BOT SE PONE PARA PELEAR? Las de cuerpo a cuerpo: ni el arco ni las arrojadizas.
     ///
-    /// <para>Pedía <c>Proyectil == 0</c> y eso dejaba afuera también al ARCO, que son 11 de las 85 armas del
-    /// catálogo. El servidor desequipa todo al morir, así que el Cazador —que nace con un Arco Simple y NADA
-    /// más— no tenía después ningún camino para volver a ponérselo: peleaba a mano limpia hasta juntar para un
-    /// arma cuerpo a cuerpo, y su única fuente de plata es cazar.</para>
+    /// <para>El bot pelea cuerpo a cuerpo (y castea), no dispara. Con un arma de PROYECTIL puesta el servidor no
+    /// deja pegar: contesta el 127 a cada golpe, igual que el original (Protocol.bas:1700-1706). El arco llegó a
+    /// contarse como arma porque el port lo dejaba pegar con su golpe de arma, y el Cazador —que nace con un Arco
+    /// Simple y nada más— peleaba así; ahora eso no existe, y con el arco puesto pelearía peor que a mano limpia.
+    /// Se lo saca (ver <see cref="ArmaQueNoPegaPuesta"/>) y pelea a mano hasta conseguir una de verdad.</para>
     /// </summary>
-    public static bool EsArma(ObjInfo o) => o.IsWeapon && o.Proyectil != ArrojadizaQueNoSeUsa;
+    public static bool EsArma(ObjInfo o) => o.IsWeapon && o.Proyectil == 0;
+
+    /// <summary>La ranura de un arma de PROYECTIL que lleve puesta —con la que el servidor no lo deja pegar—, o
+    /// null. Es lo primero que se saca al equiparse.</summary>
+    public static byte? ArmaQueNoPegaPuesta(SentidosDelBot sentidos, GameData datos)
+    {
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+            if (sentidos.EstaPuesto(ranura) && datos.Obj(sentidos.QueHayEn(ranura)) is { IsWeapon: true, Proyectil: > 0 })
+                return ranura;
+        return null;
+    }
 
     /// <summary>La ranura con lo mejor de eso que tiene sin poner y que puede usar, o null.</summary>
     /// <summary>
@@ -2944,6 +2952,14 @@ public sealed class Bot
             deEsas.Add((ranura, ValorDeCombate(o), puesto));
         }
         return QueSePoneDeEso(deEsas);
+    }
+
+    /// <summary>Sacarse lo de esa ranura: equipar lo que ya está puesto lo saca. No se anota como pedido, porque
+    /// el control de "no se lo pudo poner" lo marcaría como imposible de ponerse.</summary>
+    private bool PedirQueSeSaque(TransporteDeBot transporte, byte ranura)
+    {
+        _proximoEquipo = Environment.TickCount64 + EsperaEquipoMs;
+        return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)));
     }
 
     private bool PedirQueSePonga(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura)

@@ -285,33 +285,47 @@ public class MochilaDelBotTests : IDisposable
     }
 
     /// <summary>
-    /// EL ARCO ES UN ARMA QUE EL BOT SE PONE, y la arrojadiza no. El filtro pedía <c>Proyectil == 0</c> con el
-    /// comentario «las arrojadizas quedan afuera», pero las arrojadizas son <c>Proyectil == 2</c>: el arco
-    /// (<c>== 1</c>) se caía de más. Son 11 de las 85 armas del catálogo.
-    ///
-    /// <para>El servidor desequipa TODO al morir, así que el Cazador —que nace con un Arco Simple y nada más— no
-    /// tenía ningún camino para volver a armarse: peleaba a mano limpia, y su única fuente de plata es cazar. El
-    /// arco pega cuerpo a cuerpo por la rama de arma de <c>MeleeDamage</c>; las flechas son para disparar.</para>
+    /// NI EL ARCO NI LA ARROJADIZA SON ARMAS PARA PELEAR CUERPO A CUERPO. Con un arma de proyectil puesta el servidor
+    /// contesta el 127 a cada golpe, como el original (Protocol.bas:1700-1706), y el bot no dispara: pelea a mano.
+    /// El arco llegó a contarse como arma porque el port lo dejaba pegar con su golpe de arma; eso ya no existe.
     /// </summary>
     [Fact]
-    public void El_arco_es_un_arma_que_se_pone_y_la_arrojadiza_no()
+    public void Ni_el_arco_ni_la_arrojadiza_son_armas_para_pelear()
     {
         var datos = GameData.Load();
         if (datos.Obj(1355) is not { } arcoDeNovato) return;      // sin la data del juego no hay nada que mirar
         Assert.Equal(1, arcoDeNovato.Proyectil);                  // es el arco con el que nace el Cazador
-        Assert.True(Bot.EsArma(arcoDeNovato), "el arco del Cazador no cuenta como arma: queda desarmado al morir");
+        Assert.False(Bot.EsArma(arcoDeNovato));
 
         int arcos = 0, arrojadizas = 0, cuerpoACuerpo = 0;
         for (short i = 1; i <= 1700; i++)
             if (datos.Obj(i) is { IsWeapon: true } a)
             {
-                if (a.Proyectil == 1) { arcos++; Assert.True(Bot.EsArma(a)); }
+                if (a.Proyectil == 1) { arcos++; Assert.False(Bot.EsArma(a)); }
                 if (a.Proyectil == 2) { arrojadizas++; Assert.False(Bot.EsArma(a)); }
                 if (a.Proyectil == 0) { cuerpoACuerpo++; Assert.True(Bot.EsArma(a)); }
             }
         Assert.True(arcos > 0, "la data dejó de tener arcos: el caso ya no aplica");
         Assert.True(arrojadizas > 0, "la data dejó de tener arrojadizas: el caso ya no aplica");
         Assert.True(cuerpoACuerpo > 0);
+    }
+
+    /// <summary>EL QUE LLEVA EL ARCO PUESTO SE LO SACA: con él el servidor no lo deja pegar. Con un arma de verdad
+    /// puesta no hay nada que sacar.</summary>
+    [Fact]
+    public void El_arco_puesto_es_lo_primero_que_se_saca()
+    {
+        var datos = GameData.Load();
+        if (datos.Obj(1355) is null) return;
+        const short ArcoSimple = 1355, Daga = 15;
+        var conArco = new SentidosDelBot();
+        conArco.Recibir(ServerMessages.ChangeInventorySlot(3, ArcoSimple, 1, true, 0f, 1));
+        Assert.Equal((byte)3, Bot.ArmaQueNoPegaPuesta(conArco, datos));
+
+        var conDaga = new SentidosDelBot();
+        conDaga.Recibir(ServerMessages.ChangeInventorySlot(3, Daga, 1, true, 0f, 1));
+        conDaga.Recibir(ServerMessages.ChangeInventorySlot(4, ArcoSimple, 1, false, 0f, 1));   // en la mochila: no molesta
+        Assert.Null(Bot.ArmaQueNoPegaPuesta(conDaga, datos));
     }
 
     /// <summary>

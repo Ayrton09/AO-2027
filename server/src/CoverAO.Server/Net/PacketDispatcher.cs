@@ -1674,12 +1674,24 @@ public sealed partial class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || !p.IsAlive) return;
+            if (p is null) return;
+            if (DeadCheck(session, p)) return;   // VB6 HandleAttack, Protocol.bas:1692 (antes salía mudo)
             // VB6 SeguroCheck(_, 1): attacking requires combat mode. Not in it -> LocaleMsg 102, no swing
             // (Protocol.HandleAttack short-circuits before UsuarioAtaca). This is the ModoCombate gate.
             if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
             // VB6: a meditating user can't attack (silent exit on .flags.Meditando in HandleAttack).
             if (p.Meditating) return;
+            // CON UN ARMA DE PROYECTIL NO SE PEGA CUERPO A CUERPO (VB6 Protocol.bas:1700-1706): el 127 y afuera,
+            // sin cobrar energía, sin revelar al oculto y sin cancelar la salida. Faltaba entero: el arco y las
+            // arrojadizas pegaban con su golpe de arma sin gastar munición, y la Lanza —golpe 15-19 a nivel 6— era
+            // lo mejor del juego a esa altura. Arcos y arrojadizas son para DISPARAR.
+            if (Equipment.EquippedOfCategory(p, _data, 1) is { Proyectil: > 0 })
+            { session.Send(ServerMessages.LocaleMsg(127)); return; }
+            // ATACAR CANCELA EL /SALIR EN CURSO (VB6 HandleAttack, Protocol.bas:1709: `Call CancelExit`). Faltaba, y
+            // es la mitad de la protección contra escapar de una pelea: se arrancaba la salida, se seguía pegando y a
+            // los cinco segundos el server desconectaba en plena pelea. Va ANTES de las cadencias, porque en el
+            // original están adentro de `UsuarioAtaca`, que corre después.
+            CancelarSalida(p);
             // Cadencia de golpe (VB6 IntervaloParaGolpe): no se puede swingear más rápido que el intervalo
             // (anti attack-speed hack / farmeo a velocidad de red). Rechazo silencioso, como el VB6.
             //
@@ -6098,6 +6110,7 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (DeadCheck(session, p)) return;   // VB6 HandleWork: Protocol.bas:2311
+            CancelarSalida(p);                    // :2314 — pedir un trabajo cancela la cuenta del /SALIR
             // Ocultarse (VB6 HandleWork → Case Ocultarse, Protocol.bas:2324): es una self-action, NO pide
             // objetivo. Gates: ya oculto → silencio; navegando → 56; montando → 67; mapa InviSinEfecto → 447.
             // Si pasa, DoOcultarse tira la suerte.
@@ -6298,33 +6311,17 @@ public sealed partial class PacketDispatcher
     /// Cantidad por tanda: CantidadItems = max(1, (nivel-4)/5), acotada a lo que alcance el
     /// stock; consume MineralesParaLingote·CantidadItems minerales y entrega CantidadItems lingotes (LingoteIndex).
     ///
-    /// El VB6 funde el mineral del TargetObjInvSlot (el que el cliente seleccionó); acá se funde el PRIMER mineral
-    /// crudo del inventario — equivalente cuando el jugador lleva un solo tipo, divergencia acotada si lleva varios.
-    /// Tampoco se modela el "trabajo continuo" (flag Lingoteando + DoTrabajar): un WorkLeftClick = una tanda, igual
-    /// que la minería/tala/pesca de este slice.</summary>
+    /// QUÉ mineral se funde lo decide <see cref="MineralParaFundir"/>: el que se está fundiendo, si no el que el
+    /// jugador eligió al usarlo, si no el primero del inventario. Es UNA tanda: la llama el trabajo continuo
+    /// (<see cref="TickTrabajo"/>) mientras la faena de fundir esté abierta, y esa faena la abre el clic en la
+    /// fragua, que no funde por su cuenta.</summary>
     /// <returns>true si esta vuelta produjo lingotes. El trabajo continuo lo usa para saber cuándo parar: la
     /// primera tanda que no sale (sin minerales, sin skill, sin lugar) apaga la faena en vez de repetir el
     /// mismo aviso cada 700 ms, que es lo que haría el original —su <c>DoLingotes</c> avisa y sale, pero deja
     /// el flag prendido—.</returns>
     private bool DoFundir(ClientSession session, Player p)
     {
-        int slot = 0; ObjInfo? mineral = null;
-        // PRIMERO, EL QUE ELIGIÓ: la ranura que dejó anotada al usar el mineral (VB6 flags.Lingoteando). Recién
-        // si esa ranura ya no sirve —la gastó, la movió— se busca en el inventario, que es lo único que había
-        // antes: con hierro y oro encima, elegía el server y no el jugador.
-        if (p.Lingoteando >= 1 && p.Lingoteando <= GameLimits.MaxInventorySlots)
-        {
-            var elegido = p.Inventory[p.Lingoteando];
-            var o = elegido.ObjIndex > 0 && elegido.Amount > 0 ? _data.Obj(elegido.ObjIndex) : null;
-            if (o is not null && o.IsMineral) { slot = p.Lingoteando; mineral = o; }
-        }
-        for (int i = 1; slot == 0 && i <= GameLimits.MaxInventorySlots; i++)
-        {
-            var inv = p.Inventory[i];
-            if (inv.ObjIndex <= 0 || inv.Amount <= 0) continue;
-            var o = _data.Obj(inv.ObjIndex);
-            if (o is not null && o.IsMineral) { slot = i; mineral = o; }
-        }
+        var (slot, mineral) = MineralParaFundir(p);
         if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", FuenteInfo)); return false; }
         // DEJAR ANOTADA LA RANURA QUE SE ESTÁ FUNDIENDO. Es lo que mira la faena continua para saber que lo
         // que sigue es fundir y no un oficio de herramienta, y no puede depender de que el jugador haya usado
@@ -9417,15 +9414,20 @@ public sealed partial class PacketDispatcher
                 // `DoTrabajar` (Trabajo.bas:2484) es `If .flags.Lingoteando Then DoLingotes`, o sea que el
                 // que arranca a fundir sigue fundiendo solo, igual que el que mina o pesca. Acá el clic hacía
                 // una sola tanda y había que volver a clickear la fragua por cada puñado de lingotes.
-                // LA TANDA DEL CLIC TAMBIÉN RESPETA EL INTERVALO. Salía siempre, así que clickear la fragua en
-                // ráfaga fundía a la velocidad de los paquetes. Si el reloj no dio, la faena arranca igual y la
-                // primera tanda la hace el loop cuando toca.
-                long ahoraFundir = Environment.TickCount64;
-                if (ahoraFundir - p.LastWorkMs >= IntervaloTrabajoMs)
-                {
-                    if (!DoFundir(session, p)) return;         // la primera tanda falló: no hay faena que abrir
-                    p.LastWorkMs = ahoraFundir;
-                }
+                // EL CLIC NO FUNDE: ABRE LA FAENA, y funde el loop. Es la intención de la rama de la fragua de
+                // `Accion` (Acciones.bas:111-137): valida, prende `Trabajando` y avisa; las tandas las hace
+                // `DoLingotes` adentro de `DoTrabajar`. Acá el clic fundía una tanda en el acto, y en ráfaga
+                // fundía a la velocidad de los paquetes; y cuando el reloj no dejaba, abría la faena sin anotar
+                // QUÉ se funde, y el loop ruteaba por la HERRAMIENTA puesta —que no mira el terreno—: con el
+                // hacha, salía leña de la fragua.
+                //
+                // Como toda acción de `Accion`, lo primero es cortar la faena que haya (:25-27).
+                if (p.Laborando) { p.Laborando = false; session.Send(ServerMessages.LocaleMsg(391, "", 1, 12)); }
+                p.Lingoteando = 0;
+                var (slotMineral, mineral) = MineralParaFundir(p);
+                if (mineral is null)
+                { session.Send(ServerMessages.ConsoleMsg("No tienes más minerales", FuenteInfo)); return; }   // Acciones.bas:125
+                p.Lingoteando = (byte)slotMineral;
                 p.Laborando = true;
                 session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", 2));
                 return;
@@ -9543,6 +9545,33 @@ public sealed partial class PacketDispatcher
         // trabajando de gusto sobre un jugador que ya no puede producir.
         if (skill == 0) { p.Laborando = false; return; }
         if (!DoRecolectar(session, p, skill)) p.Laborando = false;
+    }
+
+    /// <summary>
+    /// QUÉ MINERAL SE FUNDE. PRIMERO, el que ya se está fundiendo (<c>Lingoteando</c>); después, EL QUE ELIGIÓ: la
+    /// ranura que dejó anotada al usar el mineral (<c>MineralElegido</c>; en el VB6, <c>flags.Lingoteando</c> para las
+    /// dos cosas). Recién si ninguna sirve —la gastó, la movió— se busca en el inventario,
+    /// que es lo único que había antes: con hierro y oro encima, elegía el server y no el jugador. Lo usan la tanda
+    /// (<see cref="DoFundir"/>) y el clic en la fragua cuando el reloj todavía no dio, que tiene que dejar anotado
+    /// QUÉ se funde sin fundir.
+    /// </summary>
+    private (int Slot, ObjInfo? Mineral) MineralParaFundir(Player p)
+    {
+        foreach (byte preferida in new[] { p.Lingoteando, p.MineralElegido })
+        {
+            if (preferida < 1 || preferida > GameLimits.MaxInventorySlots) continue;
+            var elegido = p.Inventory[preferida];
+            var o = elegido.ObjIndex > 0 && elegido.Amount > 0 ? _data.Obj(elegido.ObjIndex) : null;
+            if (o is not null && o.IsMineral) return (preferida, o);
+        }
+        for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)
+        {
+            var inv = p.Inventory[i];
+            if (inv.ObjIndex <= 0 || inv.Amount <= 0) continue;
+            var o = _data.Obj(inv.ObjIndex);
+            if (o is not null && o.IsMineral) return (i, o);
+        }
+        return (0, null);
     }
 
     /// <summary>Los ids de <c>LocaleMsg</c> del acierto y del fallo, por oficio. El original NO usa texto
@@ -9665,13 +9694,34 @@ public sealed partial class PacketDispatcher
         // MINERÍA: el mineral lo declara el YACIMIENTO, no el oficio (VB6 `MiObj.ObjIndex =
         // ObjData(.flags.TargetObj).MineralIndex`, Trabajo.bas:2001). De los 12 yacimientos del install, 4 son
         // de Hierro, 4 de Oro y 4 de Plata; con el mineral cableado, los 8 de Oro y Plata daban hierro y toda
-        // esa rama de la fundición era inalcanzable picando. Si el target se perdió, se cae al hierro, que es
-        // lo que hacía antes.
+        // esa rama de la fundición era inalcanzable picando.
+        //
+        // SIN OBJETIVO, EL ACIERTO NO DA NADA. El original sale en el acto (`If .flags.TargetObj = 0 Then Exit
+        // Sub`, :1999): la energía ya se gastó y la faena sigue, pero no hay mineral, ni aviso, ni skill. Acá se
+        // caía al hierro, y como un clic al suelo o a una criatura pisa el objetivo en plena faena, se seguía
+        // sacando hierro de la nada.
         if (skill == GameLimits.SkillMineria)
         {
-            var yacimiento = p.TargetObj > 0 ? _data.Obj(p.TargetObj) : null;
-            if (yacimiento is { IsDeposit: true, MineralIndex: > 0 })
-            { resource = yacimiento.MineralIndex; name = _data.Obj(resource)?.Name ?? name; }
+            if (p.TargetObj <= 0)
+            {
+                session.Send(ServerMessages.UpdateSta((short)p.Stamina));
+                return true;
+            }
+            // CON UN OBJETIVO QUE NO ES YACIMIENTO (un clic suelto a un árbol o a algo del piso en plena faena), el
+            // original NO sale: toma `MineralIndex` = 0, mete un "objeto" de índice 0 en una ranura vacía —eso no se
+            // porta, es basura en la mochila— y después avisa el 66, sube Minería y suma el crédito del centinela
+            // como si hubiera sacado algo (Trabajo.bas:2001-2029). Se porta lo que se ve: el aviso, la skill y el
+            // crédito, sin mineral.
+            var yacimiento = _data.Obj(p.TargetObj);
+            if (yacimiento is not { IsDeposit: true, MineralIndex: > 0 })
+            {
+                session.Send(ServerMessages.UpdateSta((short)p.Stamina));
+                session.Send(ServerMessages.LocaleMsg(AvisoDelOficio(skill).Ok));
+                RaiseSkill(session, p, skill);
+                p.Trabajando++;
+                return true;
+            }
+            resource = yacimiento.MineralIndex; name = _data.Obj(resource)?.Name ?? name;
         }
         // PESCA: el pez sale de la HERRAMIENTA, no del oficio (VB6 DoPescar vs DoPescarRed).
         if (skill == GameLimits.SkillPesca)
@@ -10890,6 +10940,10 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) { session.Close("quit"); return; }
 
+            // PARALIZADO NO SE PUEDE SALIR, y eso se mira PRIMERO (VB6 HandleQuit, Protocol.bas:4975-4980, antes
+            // de llamar a Cerrar_Usuario): con la cuenta en marcha, un /SALIR paralizado contesta el 119 y la cuenta
+            // sigue. Acá se cancelaba.
+            if (p.IsParalyzed(_loop.Tick)) { session.Send(ServerMessages.LocaleMsg(119)); return; }
             if (p.Saliendo)   // VB6 Cerrar_Usuario:1855 — el segundo /SALIR cancela
             {
                 p.Saliendo = false; p.SalirSegundos = 0;
@@ -10897,7 +10951,6 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.LocaleMsg(365, "", 1));
                 return;
             }
-            if (p.IsParalyzed(_loop.Tick)) { session.Send(ServerMessages.LocaleMsg(119)); return; }
 
             session.Send(ServerMessages.EjecutarAccion(1));   // el cliente muestra el cartel de salida
             if (p.Invisible || p.Oculto)
@@ -10906,6 +10959,15 @@ public sealed partial class PacketDispatcher
                 p.InvisibleUntilTick = 0; p.OcultoUntilTick = 0;
                 session.Send(ServerMessages.LocaleMsg(307));
                 _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, false));
+            }
+            // Y LA FAENA SE CORTA (Cerrar_Usuario, Modulo_UsUaRiOs.bas:1880-1884): el mismo aviso 391, y también
+            // lo que se estaba fundiendo. Seguía trabajando durante toda la cuenta, y si se cancelaba la salida,
+            // para siempre.
+            if (p.Laborando)
+            {
+                session.Send(ServerMessages.LocaleMsg(391, "", 1));
+                p.Laborando = false;
+                p.Lingoteando = 0;
             }
             // Salida inmediata donde no hay riesgo: ciudad (mapa no-Pk), muerto o GM.
             if (!_data.IsPkMap(p.Pos.Map) || !p.IsAlive || p.IsGm)
@@ -11064,7 +11126,11 @@ public sealed partial class PacketDispatcher
     /// <summary>Cancela la cuenta regresiva del <c>/SALIR</c> (VB6 <c>CancelExit</c>,
     /// Modulo_UsUaRiOs.bas:1908-1921): baja el cartel del cliente y avisa. Es anti-escape — la salida existe
     /// para que no te vayas del mundo en medio de una pelea, así que cualquier cosa que demuestre que seguís
-    /// jugando la cancela: caminar, trabajar, y <b>que te ataquen</b>, que era el call site que faltaba.
+    /// jugando la cancela: caminar, pedir un trabajo o hacerlo, atacar, y <b>que te ataquen</b> (el segundo /SALIR
+    /// la cancela en <c>HandleQuit</c>). Atacar y pedir un trabajo fueron los últimos en portarse. Falta a
+    /// propósito la víctima de un robo de objeto (Trabajo.bas:1749): en el original sólo corre cuando el robo NO
+    /// encuentra nada —si encuentra, sale antes por un `Or` que siempre da verdadero (:1721)—, y qué hacer con el
+    /// robo roto del original lo decide el autor.
     ///
     /// <para>El original tiene además una rama para el desconectado (<c>ConnIDValida = False</c>) que sólo
     /// reajusta el contador. Acá un jugador sin conexión ya no está en el mundo.</para></summary>
@@ -11366,15 +11432,21 @@ public sealed partial class PacketDispatcher
 
             // EL MINERAL CRUDO PIDE OBJETIVO (VB6 `Case eOBJType.otMinerales` de UsarInvItem,
             // InvUsuario.bas:1830): usar un mineral no funde nada por sí solo, contesta
-            // `WriteWorkRequestTarget(FundirMetal)` y se anota la RANURA en `flags.Lingoteando`. El clic que
-            // viene después —sobre la fragua— es el que funde.
+            // `WriteWorkRequestTarget(FundirMetal)` y se anota la RANURA elegida. El clic que viene después
+            // —sobre la fragua— es el que abre la faena de fundir.
+            //
+            // La ranura va a `MineralElegido` y NO a `Lingoteando`, aunque el original use el mismo flag para las
+            // dos cosas: `Lingoteando` es lo que le dice al loop "esta faena funde", y prenderlo acá convertía
+            // cualquier faena abierta en fundición SIN FRAGUA — pescando en un lago, U sobre el hierro, y el lago
+            // fundía cada 700 ms. En el original pasa igual (y peor: DoLingotes no pide fragua), pero acá la
+            // fragua es obligatoria por decisión del port (ver la rama de la fragua en HandleWorkLeftClick).
             //
             // Faltaba entero: acá el mineral caía en el "No puedes usar ese objeto" del final, y el tester lo
             // reportó como que la fragua no anda. Medido contra el server: `usar_mineral` devolvía ese texto.
             if (obj.IsMineral)
             {
-                if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }   // VB6 DeadCheck
-                p.Lingoteando = slot;
+                if (DeadCheck(session, p)) return;
+                p.MineralElegido = slot;
                 session.Send(ServerMessages.WorkRequestTarget(GameLimits.SkillFundir));
                 return;
             }
@@ -12255,8 +12327,8 @@ public sealed partial class PacketDispatcher
                 p.Inventory[slot] = inv;
                 // Sacarse la HERRAMIENTA corta la faena en el acto (VB6 `Desequipar`, InvUsuario.bas:767, justo
                 // después de limpiar `AnilloEqpObjIndex`). El loop ya la cortaba solo, pero recién en la vuelta
-                // siguiente —hasta 700 ms después— y sin avisar; y si se cambiaba de herramienta, seguía
-                // trabajando con el oficio nuevo en vez de parar.
+                // siguiente —hasta 700 ms después— y sin avisar. CAMBIARLA por otra también corta: eso está en el
+                // bucle de abajo, que es el camino de poner una herramienta teniendo otra.
                 if (cat == 6 && p.Laborando)
                 {
                     p.Laborando = false;
@@ -12303,6 +12375,16 @@ public sealed partial class PacketDispatcher
                         other.Equipped = false; p.Inventory[i] = other;
                         ClearEquipAnim(p, oo);
                         AplicarBonusDeEquipo(p, oo, poniendose: false);   // el que sale devuelve SU bonus
+                        // SI LO QUE SALE ES LA HERRAMIENTA, la faena se corta igual que al sacársela: el original
+                        // equipa la nueva llamando a `Desequipar` sobre la anterior (InvUsuario.bas:1100-1103), y
+                        // el corte vive ahí adentro (:767-770), antes de su `UpdateUserInventario`. Faltaba en
+                        // este camino, y cambiar la caña por el hacha en plena faena seguía trabajando con el
+                        // hacha sin pasar por las compuertas del terreno: leña sin árbol, en la ciudad.
+                        if (Equipment.Category(oo) == 6 && p.Laborando)
+                        {
+                            p.Laborando = false;
+                            session.Send(ServerMessages.LocaleMsg(391, "", 1));
+                        }
                         session.Send(ServerMessages.ChangeInventorySlot((byte)i, other.ObjIndex, other.Amount, false, 0f, 1));
                     }
                 }
@@ -12982,7 +13064,7 @@ public sealed partial class PacketDispatcher
     private static bool DeadCheck(ClientSession session, Player p)
     {
         if (p.IsAlive) return false;
-        session.Send(ServerMessages.LocaleMsg(77));
+        session.Send(ServerMessages.LocaleMsg(77, "", 0, 12));   // VB6 InvUsuario.bas:2449, con su fuente
         return true;
     }
 

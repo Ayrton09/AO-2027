@@ -54,9 +54,11 @@ public class ClicDeOficioTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { /* el temp queda */ }
     }
 
+    private const short Cana = 881, Piquete = 187;
+
     /// <summary>Un leñador con la skill al tope (la tirada no falla nunca: si hay una sola unidad de más, se ve)
-    /// y energía de sobra, con el hacha PUESTA.</summary>
-    private (Player Jugador, ClientSession Sesion) Lenador()
+    /// y energía de sobra, con una herramienta PUESTA: el hacha, salvo que se pida otra.</summary>
+    private (Player Jugador, ClientSession Sesion) Lenador(short herramienta = Hacha)
     {
         var p = new Player
         {
@@ -66,7 +68,7 @@ public class ClicDeOficioTests : IDisposable
         };
         p.Skills[GameLimits.SkillTalar] = 100;
         p.Skills[GameLimits.SkillMineria] = 100;
-        p.Inventory[1] = new InventorySlot { ObjIndex = Hacha, Amount = 1, Equipped = true };
+        p.Inventory[1] = new InventorySlot { ObjIndex = herramienta, Amount = 1, Equipped = true };
         var sesion = new ClientSession(new Transporte(), _dispatcher);
         sesion.Player = p;
         p.Connection = sesion;
@@ -87,6 +89,12 @@ public class ClicDeOficioTests : IDisposable
         for (int i = 0; i < veces; i++)
             _dispatcher.HandleOne(sesion, new ByteQueueReader(new[] { (byte)ClientPacketId.WorkLeftClick, x, y, (byte)skill }));
         await Task.Delay(300);   // el loop los atiende en la vuelta siguiente
+    }
+
+    private async Task Mandar(ClientSession sesion, params byte[] paquete)
+    {
+        _dispatcher.HandleOne(sesion, new ByteQueueReader(paquete));
+        await Task.Delay(300);
     }
 
     private static int Cuantos(Player p, int obj) =>
@@ -136,6 +144,8 @@ public class ClicDeOficioTests : IDisposable
         Assert.True(Cuantos(p, GameLimits.WoodObj) > primera, "cumplido el intervalo, la faena sigue");
     }
 
+    /// <summary>EL CLIC EN LA FRAGUA NO FUNDE: abre la faena y funde el loop, de a una tanda por intervalo. Antes
+    /// el clic fundía en el acto, y en ráfaga fundía a la velocidad de los paquetes.</summary>
     [Fact]
     public async Task Clickear_la_fragua_en_rafaga_no_funde_mas_rapido()
     {
@@ -143,13 +153,147 @@ public class ClicDeOficioTests : IDisposable
         var fragua = _datos.Objects.Values.First(o => o.IsForge);
         _world.SetGround(new WorldPos(Mapa, X + 1, Y), (short)fragua.Index, 1, esFijo: true);
         p.Inventory[2] = new InventorySlot { ObjIndex = (short)GameLimits.OreIronObj, Amount = 1000 };
+        const long T0 = 1_000_000;
 
         await Clickear(sesion, X + 1, Y, GameLimits.SkillFundir, veces: 1);
+        Assert.Equal(0, Cuantos(p, GameLimits.IngotIronObj));                 // el clic no funde
+        _dispatcher.TickTrabajo(sesion, p, T0);
         int tanda = Cuantos(p, GameLimits.IngotIronObj);
-        Assert.True(tanda > 0, "premisa: el primer clic en la fragua tiene que fundir");
+        Assert.True(tanda > 0, "premisa: la primera vuelta de la faena tiene que fundir");
 
         await Clickear(sesion, X + 1, Y, GameLimits.SkillFundir, veces: 5);
+        _dispatcher.TickTrabajo(sesion, p, T0 + 100);
         Assert.Equal(tanda, Cuantos(p, GameLimits.IngotIronObj));
         Assert.True(p.Laborando, "la faena de fundir sigue abierta: la próxima tanda la hace el loop");
+    }
+
+    /// <summary>
+    /// CAMBIAR DE HERRAMIENTA CORTA LA FAENA. El original equipa la nueva llamando a <c>Desequipar</c> sobre la
+    /// anterior (InvUsuario.bas:1100-1103), y el corte vive ahí. Faltaba en el camino del cambio: con la faena
+    /// abierta, ponerse otra herramienta seguía trabajando con la nueva sin pasar por las compuertas del terreno.
+    /// </summary>
+    [Fact]
+    public async Task Cambiar_de_herramienta_en_plena_faena_la_corta()
+    {
+        var (p, sesion) = Lenador();
+        p.Inventory[2] = new InventorySlot { ObjIndex = Cana, Amount = 1 };
+        PlantarUnArbol();
+        await Clickear(sesion, X + 1, Y, GameLimits.SkillTalar, veces: 1);
+        Assert.True(p.Laborando, "premisa: el clic sobre el árbol arranca la faena");
+
+        await Mandar(sesion, (byte)ClientPacketId.EquipItem, 2);             // la caña, con el hacha puesta
+        Assert.True(p.Inventory[2].Equipped, "premisa: la caña quedó puesta");
+        Assert.False(p.Laborando);
+    }
+
+    /// <summary>
+    /// LA FRAGUA SIN MINERAL NO ABRE NINGUNA FAENA, y menos una de herramienta. Con el reloj de trabajo sin cumplir
+    /// se prendía la faena sin anotar qué se funde, el loop ruteaba por la herramienta puesta —que no mira el
+    /// terreno— y con el hacha salía leña de la fragua.
+    /// </summary>
+    [Fact]
+    public async Task La_fragua_sin_minerales_no_abre_ninguna_faena()
+    {
+        var (p, sesion) = Lenador();
+        var fragua = _datos.Objects.Values.First(o => o.IsForge);
+        _world.SetGround(new WorldPos(Mapa, X + 1, Y), (short)fragua.Index, 1, esFijo: true);
+        p.LastWorkMs = Environment.TickCount64;                                  // acaba de trabajar
+
+        await Clickear(sesion, X + 1, Y, GameLimits.SkillFundir, veces: 1);
+        Assert.False(p.Laborando);
+        _dispatcher.TickTrabajo(sesion, p, Environment.TickCount64 + 60_000);
+        Assert.Equal(0, Cuantos(p, GameLimits.WoodObj));
+    }
+
+    /// <summary>Y con mineral, la faena que se abre es la de FUNDIR: el loop saca lingotes, no leña.</summary>
+    [Fact]
+    public async Task El_clic_en_la_fragua_abre_la_faena_de_fundir()
+    {
+        var (p, sesion) = Lenador();
+        var fragua = _datos.Objects.Values.First(o => o.IsForge);
+        _world.SetGround(new WorldPos(Mapa, X + 1, Y), (short)fragua.Index, 1, esFijo: true);
+        p.Inventory[2] = new InventorySlot { ObjIndex = (short)GameLimits.OreIronObj, Amount = 1000 };
+        p.LastWorkMs = Environment.TickCount64;
+
+        await Clickear(sesion, X + 1, Y, GameLimits.SkillFundir, veces: 1);
+        Assert.True(p.Laborando);
+        _dispatcher.TickTrabajo(sesion, p, Environment.TickCount64 + 60_000);
+        Assert.True(Cuantos(p, GameLimits.IngotIronObj) > 0, "la faena de fundir no fundió");
+        Assert.Equal(0, Cuantos(p, GameLimits.WoodObj));
+    }
+
+    /// <summary>
+    /// MINAR SIN YACIMIENTO SELECCIONADO NO DA NADA (Trabajo.bas:1999, <c>If .flags.TargetObj = 0 Then Exit
+    /// Sub</c>). Acá se caía al hierro, y un clic al suelo en plena faena bastaba para sacar hierro de la nada.
+    /// Con la skill al tope la tirada acierta cinco de cada seis: en cinco vueltas, el hierro viejo salía seguro.
+    /// </summary>
+    [Fact]
+    public void Minar_sin_yacimiento_seleccionado_no_da_nada()
+    {
+        var (p, sesion) = Lenador(Piquete);
+        p.Laborando = true;
+        p.TargetObj = 0;
+        for (int vuelta = 1; vuelta <= 5; vuelta++)
+            _dispatcher.TickTrabajo(sesion, p, 1_000_000 + vuelta * _dispatcher.IntervaloTrabajoMs);
+        Assert.Equal(0, Cuantos(p, GameLimits.OreIronObj));
+    }
+
+    /// <summary>
+    /// USAR UN MINERAL CON OTRA FAENA ABIERTA NO LA VUELVE FUNDICIÓN. Usar (U) un mineral anota qué se eligió; sólo el
+    /// clic en la fragua abre la faena de fundir. Anotarlo en el mismo flag que el loop mira para fundir convertía la
+    /// tala —o la pesca en un lago— en fundición sin fragua.
+    /// </summary>
+    [Fact]
+    public async Task Usar_un_mineral_con_otra_faena_abierta_no_la_vuelve_fundicion()
+    {
+        var (p, sesion) = Lenador();
+        p.Inventory[2] = new InventorySlot { ObjIndex = (short)GameLimits.OreIronObj, Amount = 1000 };
+        PlantarUnArbol();
+        await Clickear(sesion, X + 1, Y, GameLimits.SkillTalar, veces: 1);
+        Assert.True(p.Laborando, "premisa: el clic sobre el árbol arranca la faena");
+
+        await Mandar(sesion, (byte)ClientPacketId.UseItem, 2);
+        Assert.Equal(2, p.MineralElegido);
+        Assert.Equal(0, p.Lingoteando);
+        _dispatcher.TickTrabajo(sesion, p, 1_000_000);
+        Assert.Equal(0, Cuantos(p, GameLimits.IngotIronObj));
+        Assert.True(Cuantos(p, GameLimits.WoodObj) > 0, "la faena de tala tenía que seguir talando");
+    }
+
+    /// <summary>
+    /// MINAR CON UN OBJETIVO QUE NO ES YACIMIENTO no da mineral. El original avisa el 66, sube la skill y suma el
+    /// crédito como si hubiera sacado algo —eso se porta—, pero el "objeto" que mete es de índice 0: no hay
+    /// mineral que dar.
+    /// </summary>
+    [Fact]
+    public void Minar_con_un_objetivo_que_no_es_yacimiento_no_da_mineral()
+    {
+        var (p, sesion) = Lenador(Piquete);
+        p.Laborando = true;
+        p.TargetObj = (short)_datos.Objects.Values.First(o => o.IsTree).Index;
+        int creditoAntes = p.Trabajando;
+        int ocupadasAntes = Enumerable.Range(1, GameLimits.MaxInventorySlots).Count(i => !p.Inventory[i].IsEmpty || p.Inventory[i].Amount > 0);
+        for (int vuelta = 1; vuelta <= 5; vuelta++)
+            _dispatcher.TickTrabajo(sesion, p, 1_000_000 + vuelta * _dispatcher.IntervaloTrabajoMs);
+        Assert.Equal(0, Cuantos(p, GameLimits.OreIronObj));
+        // Ni el hierro de respaldo que se pagaba antes, ni el "objeto" de índice 0 que el original mete en una ranura.
+        Assert.Equal(ocupadasAntes, Enumerable.Range(1, GameLimits.MaxInventorySlots).Count(i => !p.Inventory[i].IsEmpty || p.Inventory[i].Amount > 0));
+        Assert.True(p.Trabajando > creditoAntes, "el crédito del centinela, que el original suma igual");
+    }
+
+    /// <summary>/SALIR CORTA LA FAENA (Cerrar_Usuario, Modulo_UsUaRiOs.bas:1880-1884), antes de decidir si la
+    /// salida es inmediata. Seguía trabajando durante la cuenta, y si se cancelaba, para siempre.</summary>
+    [Fact]
+    public async Task Salir_corta_la_faena()
+    {
+        var (p, sesion) = Lenador();
+        PlantarUnArbol();
+        await Clickear(sesion, X + 1, Y, GameLimits.SkillTalar, veces: 1);
+        Assert.True(p.Laborando, "premisa: el clic sobre el árbol arranca la faena");
+
+        await Mandar(sesion, (byte)ClientPacketId.Quit);
+        Assert.True(p.Saliendo, "premisa: en un mapa pk la salida arranca la cuenta");
+        Assert.False(p.Laborando);
+        Assert.Equal(0, p.Lingoteando);
     }
 }

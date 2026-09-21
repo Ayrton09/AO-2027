@@ -558,14 +558,19 @@ public sealed class Player
     /// nunca se armó tiene 0, que ya venció.</para></summary>
     public long NoAtacablePorNpcHastaMs { get; set; }
 
-    /// <summary>La RANURA del mineral que se eligió para fundir (VB6 <c>flags.Lingoteando</c>,
-    /// InvUsuario.bas:1836). Se prende al usar (U) un mineral crudo, que es cuando el original pide el objetivo
-    /// con <c>WorkRequestTarget(FundirMetal)</c>, y la consume el clic sobre la fragua.
+    /// <summary>La RANURA del mineral que se está FUNDIENDO: si vale algo, la faena abierta es de fundir y el loop
+    /// llama a DoFundir (VB6 <c>flags.Lingoteando</c>, la primera rama de <c>DoTrabajar</c>). La prende SÓLO el clic
+    /// en la fragua; lo que el jugador elige al usar (U) un mineral va a <see cref="MineralElegido"/>.
     ///
     /// <para>Guardar la RANURA y no el objeto es lo que hace el original, y no es un detalle: el jugador puede
     /// llevar hierro y oro a la vez, y lo que se funde es el que eligió — antes acá se fundía el primer mineral
     /// del inventario, que con dos tipos encima elegía por él.</para></summary>
     public byte Lingoteando { get; set; }
+
+    /// <summary>La ranura del mineral que el jugador ELIGIÓ al usarlo (U). Separada de <see cref="Lingoteando"/>
+    /// —que es "esta faena funde"— para que elegir un mineral con otra faena abierta no la convierta en fundición
+    /// sin fragua. La consume el clic en la fragua.</summary>
+    public byte MineralElegido { get; set; }
 
     /// <summary>TRABAJO CONTINUO (VB6 <c>flags.Trabajando</c>). Prendido, el game-loop ejecuta el oficio del
     /// jugador cada <c>IntervaloTrabajo</c> (700 ms) hasta que algo lo apaga: quedarse sin energía, o cualquier
