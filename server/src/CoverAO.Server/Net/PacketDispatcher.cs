@@ -2497,12 +2497,16 @@ public sealed partial class PacketDispatcher
     private void CalcularDarExp(ClientSession session, Player p, Npc npc, int damage)
     {
         if (npc.OwnerCharIndex != 0) return;
-        long exp = Combat.ExpPorGolpe(damage, npc.Hp, npc.Template.MaxHp, npc.Template.GiveExp);
+        // La TASA DEL SERVER va adentro de la cuenta: el original la hornea en `GiveEXP` al cargar la criatura
+        // (MODULO_NPCs.bas:996), así que el golpe redondea sobre el número ya multiplicado.
+        long exp = Combat.ExpPorGolpe(damage, npc.Hp, npc.Template.MaxHp, npc.Template.GiveExp * _ini.Exp);
         if (exp <= 0) return;
         // El pool manda: nunca se reparte más de lo que le queda a la criatura.
-        if (exp > npc.ExpCount) exp = npc.ExpCount;
+        long pozo = npc.PozoDeExperiencia(_ini.Exp);
+        if (exp > pozo) exp = pozo;
         if (exp <= 0) return;
-        npc.ExpCount -= exp;
+        npc.ExpCount = pozo - exp;
+        // El EVENTO del GM (`/EXP`, el panel) multiplica acá y sólo acá (SistemaCombate.bas:2025).
         long dar = exp * (_admin?.ExpMult ?? 1);
         if (p.Donador) dar += dar / 2;   // VB6 :2029
         OtorgarExp(session, p, dar);
@@ -2859,14 +2863,16 @@ public sealed partial class PacketDispatcher
         // `GiveExp` completo al que remataba, así que la criatura repartía su experiencia DOS veces si alguien
         // más la había estado golpeando. Ahora el goteo por golpe ya cobró su parte y al matador le queda el
         // saldo — que si peleó solo es todo, igual que antes.
-        if (daRecompensa && npc.ExpCount > 0)
+        long resto = npc.PozoDeExperiencia(_ini.Exp);
+        if (daRecompensa && resto > 0)
         {
-            long gainExp = npc.ExpCount * (_admin?.ExpMult ?? 1);   // "Evento Experiencia" del panel
-            if (p.Donador) gainExp += gainExp / 2;   // VB6 SistemaCombate.bas:2029 — el donador gana +50% de experiencia
+            // PELADO, como en el original (MODULO_NPCs.bas:128-142: `.Stats.Exp + ExpCount`): ni el evento del GM
+            // ni el medio extra del donador, que son del goteo por golpe (SistemaCombate.bas:2025-2030) y acá se
+            // cobraban dos veces.
             npc.ExpCount = 0;                        // VB6 :142 — el pool se vacía, no se paga dos veces
-            OtorgarExp(session, p, gainExp);
-            RepartirExperienciaAlFamiliar(session, p, gainExp);
-            session.Send(ServerMessages.LocaleMsg(140, gainExp.ToString()));   // VB6 MODULO_NPCs.bas:136
+            OtorgarExp(session, p, resto);
+            RepartirExperienciaAlFamiliar(session, p, resto);
+            session.Send(ServerMessages.LocaleMsg(140, resto.ToString()));   // VB6 MODULO_NPCs.bas:136
         }
         // "¡Has matado a #1!" con el NOMBRE de la criatura, y va SIEMPRE — el original lo manda afuera del
         // `If ExpCount > 0` (MODULO_NPCs.bas:141), así que rematar algo que ya no da experiencia igual avisa.
@@ -3109,13 +3115,18 @@ public sealed partial class PacketDispatcher
         var t = npc.Template;
         if (t.GiveGld > 0)
         {
-            int gainGld = t.GiveGld * (_admin?.GoldMult ?? 1);              // "Evento Oro" del panel
+            // La tasa del server (`Oro` del ini, MODULO_NPCs.bas:1004) y el "Evento Oro" del panel encima.
+            long gainGld = (long)t.GiveGld * _ini.Oro * (_admin?.GoldMult ?? 1);
             // Si con esto te pasarias del tope, el original NO paga y avisa con el 378 (MODULO_NPCs.bas:904,
-            // guard `OroLleno`). Aca se sumaba igual y el long se comia el desborde en silencio.
-            if ((long)p.Gold + gainGld > int.MaxValue) { session.Send(ServerMessages.LocaleMsg(378)); return; }
-            p.Gold += gainGld;
-            session.Send(ServerMessages.LocaleMsg(29, gainGld.ToString()));
-            session.Send(ServerMessages.UpdateGold(p.Gold));   // VB6 MODULO_NPCs.bas:910, no el UpdateUserStats gordo
+            // guard `OroLleno`). Pero sale sólo de `NPCTirarOro`: el botín se tira igual (:163-166). Acá había
+            // un `return` que se llevaba también los ítems, y con una tasa alta llegar al tope no es raro.
+            if (p.Gold + gainGld > int.MaxValue) session.Send(ServerMessages.LocaleMsg(378));
+            else
+            {
+                p.Gold += (int)gainGld;
+                session.Send(ServerMessages.LocaleMsg(29, gainGld.ToString()));
+                session.Send(ServerMessages.UpdateGold(p.Gold));   // VB6 MODULO_NPCs.bas:910, no el UpdateUserStats gordo
+            }
         }
         // Botín: el VB6 (NPC_TIRAR_ITEMS, Modulo_InventANDobj.bas:72) recorre TODOS los ítems del inventario
         // del NPC y evalúa cada uno por separado — los NPCs multidrop (Lobo, Dragón Legendario…) sueltan varias

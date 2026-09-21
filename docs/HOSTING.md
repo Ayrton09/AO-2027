@@ -146,7 +146,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `MsEntreConsultas`, `RafagaDeConsultas` | lo mismo para `/online`, `/est` y los comandos que sólo te contestan a vos |
 | `PuedeCrearPersonajes` | 0 = no se aceptan personajes nuevos |
 | `ServerSoloGMs` | 1 = modo mantenimiento |
-| `Exp`, `Oro` | porcentajes (200 = doble) |
+| `Exp`, `Oro` | cuántas veces la experiencia y el oro que da cada criatura: `1` = normal, `5` = cinco veces (el server original venía con `200`). El evento del GM (`/EXP`, `/ORO`, el panel) multiplica encima |
 | `MinutosDelDia` | duración del ciclo día/noche |
 | `MinutosDeClima`, `PorcentajeLluvia` | ciclo de lluvia |
 | `OroAlSubirNivel` | oro de regalo por nivel. **0 = como el original**, que no regala nada. El `Server.ini` de ejemplo lo trae en 0 |

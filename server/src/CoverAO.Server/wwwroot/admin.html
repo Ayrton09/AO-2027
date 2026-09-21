@@ -177,6 +177,7 @@
     <div class="cols2">
       <div class="card ornate">
         <h2>⚡ Eventos y mantenimiento</h2>
+        <div class="subhdr" id="tasas"></div>
         <div class="section">
           <div class="evrow"><span class="evk">Experiencia</span><span class="evmult" id="ev-exp">×1</span><span class="evbtns" data-ev="exp"></span></div>
           <div class="evrow"><span class="evk">Oro</span><span class="evmult" id="ev-gold">×1</span><span class="evbtns" data-ev="gold"></span></div>
@@ -368,6 +369,7 @@ function render(st) {
   const cf = st.config || {};
   const setMult = (id, ev, val) => { $(id).textContent = '×' + val; document.querySelectorAll(`.evbtns[data-ev="${ev}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.m === val)); };
   setMult('ev-exp', 'exp', cf.expMult || 1); setMult('ev-gold', 'gold', cf.goldMult || 1); setMult('ev-drop', 'drop', cf.dropMult || 1);
+  $('tasas').textContent = `Tasa del server (Server.ini): experiencia ×${cf.tasaExp || 1}, oro ×${cf.tasaOro || 1}. Los eventos multiplican encima.`;
   syncField('autosave', cf.autosaveMin || 0);
   $('nextsave').textContent = cf.nextSaveSec >= 0 ? 'próximo en ' + fmtDur(cf.nextSaveSec) : '';
   const pb = $('btn-pause'); pb.classList.toggle('act', !!cf.paused); pb.textContent = cf.paused ? '▶️ Reanudar mundo' : '⏸️ Pausar mundo';

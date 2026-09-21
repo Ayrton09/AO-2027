@@ -89,16 +89,38 @@ public class ServerIniTests
     }
 
     [Theory]
-    // Exp/Oro del original son PORCENTAJES (el install trae 200 = doble). Acá viven como multiplicador entero.
-    [InlineData(100, 1)] [InlineData(200, 2)] [InlineData(300, 3)]
-    [InlineData(150, 1)]   // redondeo hacia abajo
-    [InlineData(0, 1)]     // piso 1: nadie quiere un server que no da experiencia
+    // Exp/Oro del original son un MULTIPLICADOR directo (`.GiveEXP = GiveEXP * Expc`, MODULO_NPCs.bas:996): el
+    // `Exp=200` del install es ×200. Se leían como porcentaje, con un `/ 100` que el VB6 no tiene.
+    [InlineData(1, 1)] [InlineData(5, 5)] [InlineData(100, 100)] [InlineData(200, 200)]
+    [InlineData(0, 1)]       // piso 1: nadie quiere un server que no da experiencia
     [InlineData(-500, 1)]
-    public void Los_rates_son_porcentajes(int porcentaje, int multiplicador)
+    [InlineData(99_999, ServerIni.TasaMaxima)]   // el Integer del original
+    public void Los_rates_son_un_multiplicador_directo(int escrito, int multiplicador)
     {
-        var cfg = Parse($"[INIT]\nExp={porcentaje}\nOro={porcentaje}\n");
+        var cfg = Parse($"[INIT]\nExp={escrito}\nOro={escrito}\n");
         Assert.Equal(multiplicador, cfg.Exp);
         Assert.Equal(multiplicador, cfg.Oro);
+    }
+
+    /// <summary>
+    /// EL Server.ini DE ANTES. La plantilla traía <c>Exp=100</c> como lo normal y al actualizar el armador conserva
+    /// el ini del host: sin aviso, ese server pasaba a dar cien veces la experiencia sin que nadie lo decidiera.
+    /// Los porcentajes de antes eran múltiplos de 100, y ése es el caso que tiene que avisar; una tasa elegida
+    /// con la escala nueva no.
+    /// </summary>
+    [Theory]
+    [InlineData(100, 100, true)]    // la plantilla vieja, tal cual
+    [InlineData(200, 200, true)]    // el install del original, leído con la escala vieja
+    [InlineData(1, 300, true)]      // con que una de las dos lo sea
+    [InlineData(1, 1, false)]
+    [InlineData(5, 10, false)]
+    [InlineData(150, 1, false)]     // no es un porcentaje redondo: alguien lo eligió
+    public void Avisa_cuando_la_tasa_parece_un_porcentaje_de_antes(int exp, int oro, bool avisa)
+    {
+        var cfg = Parse($"[INIT]\nExp={exp}\nOro={oro}\n");
+        var aviso = cfg.AvisoDeTasaVieja();
+        Assert.Equal(avisa, aviso is not null);
+        if (avisa) Assert.Contains($"x{exp}", aviso);
     }
 
     [Fact]
@@ -243,15 +265,22 @@ public class ServerIniTests
     public void El_status_de_GM_es_el_que_pinta_el_nick(int priv, int status) =>
         Assert.Equal((byte)status, ServerIni.StatusDeStaff((byte)priv));
 
+    /// <summary>
+    /// LA TASA DEL INI NO PRENDE UN EVENTO. Los multiplicadores del panel son el evento del GM (<c>/EXP</c>,
+    /// <c>/ORO</c>) y arrancan apagados. Vivían en el mismo campo que la tasa del server, y un <c>/EXP</c> sobre
+    /// un server de ×10 la tomaba por un evento en curso y la bajaba a ×1; los avisos de "evento en curso"
+    /// también anunciaban la tasa como si fuera un evento.
+    /// </summary>
     [Fact]
-    public void Los_rates_del_ini_se_vuelcan_en_la_config_viva_del_panel()
+    public void La_tasa_del_ini_no_prende_un_evento_en_el_panel()
     {
-        var cfg = Parse("[INIT]\nExp=200\nOro=300\nServerSoloGMs=1\n");
+        var cfg = Parse("[INIT]\nExp=10\nOro=3\nServerSoloGMs=1\n");
         var admin = new AdminConfig();
         cfg.AplicarA(admin);
-        Assert.Equal(2, admin.ExpMult);
-        Assert.Equal(3, admin.GoldMult);
-        Assert.True(admin.OnlyGms);
+        Assert.Equal(1, admin.ExpMult);
+        Assert.Equal(1, admin.GoldMult);
+        Assert.True(admin.OnlyGms);                 // lo demás sí se vuelca
+        Assert.Equal(10, cfg.Exp);                  // y la tasa queda donde se la lee en cada pago
     }
 
     [Fact]

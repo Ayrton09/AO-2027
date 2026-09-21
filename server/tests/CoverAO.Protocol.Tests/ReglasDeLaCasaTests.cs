@@ -375,6 +375,10 @@ public class ReglasDeLaCasaTests : IDisposable
         // Las fogatas SÍ las eligió el autor, el 2026-09-19, después de que el tester preguntara cuánto tardan
         // en apagarse: "ponela en 5 min y que obviamente este la opcion de elgir cuanto tiempo en el .ini".
         Assert.Equal(5, cfg.MinutosDeFogata);
+        // Y las tasas en 1, el 2026-09-20: "mejor seria que lo normal sea 1 y la persona le agregue el multiplo
+        // que quiera por ej 5.10.100".
+        Assert.Equal(1, cfg.Exp);
+        Assert.Equal(1, cfg.Oro);
     }
 
     /// <summary>

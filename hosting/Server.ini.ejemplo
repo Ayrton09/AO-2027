@@ -54,9 +54,10 @@ RafagaDeConsultas=10
 ; --- Reglas de la casa -------------------------------------------------------
 PuedeCrearPersonajes=1
 ServerSoloGMs=0
-; Multiplicadores en PORCENTAJE: 100 = normal, 200 = el doble.
-Exp=100
-Oro=100
+; Cuantas veces la experiencia y el oro que da cada criatura: 1 = normal,
+; 5 = cinco veces, 100 = cien veces. El server original venia con 200.
+Exp=1
+Oro=1
 ; Minutos que dura un dia completo y cada cambio de clima, y cuanto llueve.
 MinutosDelDia=24
 MinutosDeClima=18

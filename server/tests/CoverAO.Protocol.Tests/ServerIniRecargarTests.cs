@@ -31,12 +31,12 @@ public class ServerIniRecargarTests : IDisposable
     [Fact]
     public void Recargar_lee_el_archivo_de_nuevo_sobre_la_misma_instancia()
     {
-        Escribir("200", "Rugura");   // el ini trae PORCENTAJE: 200 = x2 (ServerIni: GetInt/100)
+        Escribir("2", "Rugura");     // el multiplicador directo: 2 = ×2
         var ini = ServerIni.Cargar(_ruta);
         Assert.Equal(2, ini.Exp);
         Assert.True(ini.EsStaff("Rugura"));
 
-        Escribir("500", "Merlin");   // 500 = x5
+        Escribir("5", "Merlin");
         Assert.True(ini.Recargar(), "con archivo, Recargar tiene que poder");
 
         Assert.Equal(5, ini.Exp);                                   // el valor nuevo

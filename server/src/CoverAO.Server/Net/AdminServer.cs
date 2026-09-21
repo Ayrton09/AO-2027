@@ -328,6 +328,8 @@ public sealed class AdminServer
             {
                 paused = _admin.Paused, onlyGms = _admin.OnlyGms,
                 expMult = _admin.ExpMult, goldMult = _admin.GoldMult, dropMult = _admin.DropMult,
+                // La TASA del server (Exp/Oro del ini) va aparte de los eventos: se multiplican, no se pisan.
+                tasaExp = _ini?.Exp ?? 1, tasaOro = _ini?.Oro ?? 1,
                 autosaveMin = _admin.AutosaveMinutes, nextSaveSec,
                 walkMs = _admin.WalkIntervalMs, attackMs = _admin.AttackIntervalMs,
                 autoMsgMin = _admin.AutoMsgMinutes, autoMessages = _admin.AutoMessages, nextAutoMsgSec,

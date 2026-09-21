@@ -141,6 +141,7 @@ Console.WriteLine($"            MaxUsers={(serverIni.MaxUsers > 0 ? serverIni.Ma
 Console.WriteLine($"            autosave={(serverIni.AutosaveMinutos > 0 ? serverIni.AutosaveMinutos + " min" : "off")}, " +
                   $"backup={(serverIni.BackupMinutos > 0 ? $"cada {serverIni.BackupMinutos} min (se conservan {serverIni.BackupsAConservar})" : "off")}, " +
                   $"log={(serverIni.LogDias > 0 ? serverIni.LogDias + " dias" : "solo consola")}");
+if (serverIni.AvisoDeTasaVieja() is { } avisoDeTasa) Console.WriteLine("            " + avisoDeTasa);
 // OPCIONES QUE ESTE Server.ini NO TIENE. Al actualizar, el armador CONSERVA el archivo del host a propósito
 // —ahí están su puerto, sus rates y su lista de GMs—, así que las claves nuevas de la versión no aparecen
 // solas. Sin esta línea, una versión puede traer una regla que cambia el juego y el que hostea nunca se

@@ -47,6 +47,17 @@ public sealed class Npc
         get => _expCount < 0 ? Template.GiveExp : _expCount;
         set => _expCount = value < 0 ? 0 : value;
     }
+
+    /// <summary>
+    /// El pozo con la TASA DEL SERVER (<c>Exp</c> del Server.ini) adentro. El original la hornea en la criatura
+    /// al cargarla (<c>.GiveEXP = GiveEXP * Expc</c>, MODULO_NPCs.bas:996), así que el pozo nace multiplicado y
+    /// cada golpe redondea sobre el número grande. Acá se resuelve en el primer uso, igual que
+    /// <see cref="ExpCount"/>.
+    ///
+    /// <para>La tasa NO se mete en la ficha: de <c>GiveExp</c> cuelgan también el tiempo de respawn y cómo mide
+    /// un bot el peligro de una criatura, y en un server de ×200 los bots verían todo como mortal.</para>
+    /// </summary>
+    public long PozoDeExperiencia(int tasa) => _expCount < 0 ? Template.GiveExp * Math.Max(1, tasa) : _expCount;
     public WorldPos Pos { get; set; }
     public byte Heading { get; set; } = 3;
     public int Hp { get; set; }

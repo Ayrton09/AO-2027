@@ -92,8 +92,37 @@ public sealed class ServerIni
     public bool PuedeCrearPersonajes { get; private set; } = true;
     public bool ServerSoloGms { get; private set; }
     public int IdleLimitMinutos { get; private set; }      // 0 = sin desconexión por inactividad
+    /// <summary>
+    /// LA TASA DEL SERVER: cuántas veces la experiencia (<c>Exp</c>) y el oro (<c>Oro</c>) que da cada criatura.
+    /// 1 = lo de la data; 5 = cinco veces. Es la del original: <c>.GiveEXP = GiveEXP * Expc</c> al cargar la
+    /// criatura (MODULO_NPCs.bas:996 y :1004), un multiplicador directo y no un porcentaje — el install venía
+    /// con 200, o sea un server de ×200.
+    ///
+    /// <para>No es el EVENTO del GM (<c>/EXP</c>, <c>/ORO</c> y el panel): ése vive en <c>AdminConfig</c> y
+    /// multiplica encima. Estaban en el mismo campo, y un <c>/EXP</c> sobre un server de ×10 lo tomaba por un
+    /// evento en curso y lo bajaba a ×1.</para>
+    /// </summary>
     public int Exp { get; private set; } = 1;
     public int Oro { get; private set; } = 1;
+
+    /// <summary>El techo de <see cref="Exp"/> y <see cref="Oro"/>: el <c>Integer</c> de VB6 donde el original
+    /// guarda la tasa (<c>Expc</c>, Declares.bas:36). Más grande, allá el server no arrancaba.</summary>
+    public const int TasaMaxima = short.MaxValue;
+
+    /// <summary>
+    /// EL AVISO PARA EL Server.ini DE ANTES. Hasta el 2026-09-20 las tasas se leían como porcentaje y la
+    /// plantilla traía <c>Exp=100</c> = normal. Al actualizar, el armador CONSERVA el ini del host, así que ese
+    /// 100 pasa a ser cien veces sin que nadie lo haya decidido. Los porcentajes de antes eran múltiplos de 100:
+    /// ése es el caso que se avisa. Un host que de verdad quiere ×100 lo ve una vez por arranque y sigue.
+    /// Devuelve null si no hay nada que avisar.
+    /// </summary>
+    public string? AvisoDeTasaVieja()
+    {
+        static bool Sospechosa(int tasa) => tasa >= 100 && tasa % 100 == 0;
+        if (!Sospechosa(Exp) && !Sospechosa(Oro)) return null;
+        return $"OJO: la experiencia va x{Exp} y el oro x{Oro}. Hasta el 20/09 este número era un porcentaje " +
+               "(100 = normal). Si tu Server.ini es de antes, poné Exp=1 y Oro=1 para lo normal.";
+    }
     public string? Ruta { get; private set; }              // de dónde se leyó (null = defaults)
 
     /// <summary>
@@ -881,10 +910,10 @@ public sealed class ServerIni
         cfg.PuedeCrearPersonajes = ini.GetInt("INIT", "PuedeCrearPersonajes", 1) != 0;
         cfg.ServerSoloGms = ini.GetInt("INIT", "ServerSoloGMs", 0) != 0;
         cfg.IdleLimitMinutos = ini.GetInt("INIT", "IdleLimit", 0);
-        // Exp/Oro del original son PORCENTAJES (el install trae 200 = doble). Acá se guardan como el
-        // multiplicador entero que ya usa AdminConfig, redondeando hacia abajo y con piso 1.
-        cfg.Exp = Math.Max(1, ini.GetInt("INIT", "Exp", 100) / 100);
-        cfg.Oro = Math.Max(1, ini.GetInt("INIT", "Oro", 100) / 100);
+        // Un multiplicador directo, como en el original (ver Exp). Se leía como porcentaje, con un `/ 100`
+        // que el VB6 no tiene: el `Exp=200` del install daba ×2 donde allá da ×200.
+        cfg.Exp = Math.Clamp(ini.GetInt("INIT", "Exp", 1), 1, TasaMaxima);
+        cfg.Oro = Math.Clamp(ini.GetInt("INIT", "Oro", 1), 1, TasaMaxima);
         // Se acotan acá y no en el consumidor: un número absurdo en el ini (un backup por minuto durante un año)
         // no puede volverse un problema operativo silencioso.
         // AUTOSAVE: la clave del original es `IntervaloGuardarUsuarios` y vive en [INTERVALOS], no en [INIT]
@@ -1011,11 +1040,11 @@ public sealed class ServerIni
         Weather.LluviaPorciento = PorcentajeLluvia;
     }
 
-    /// <summary>Vuelca lo leído en la config viva del panel (rates y modo mantenimiento).</summary>
+    /// <summary>Vuelca lo leído en la config viva del panel (modo mantenimiento y autosave). Las tasas NO
+    /// van: los multiplicadores del panel son los EVENTOS y arrancan apagados; la tasa se lee de acá en cada
+    /// pago (ver <see cref="Exp"/>).</summary>
     public void AplicarA(AdminConfig admin)
     {
-        admin.ExpMult = Exp;
-        admin.GoldMult = Oro;
         admin.OnlyGms = ServerSoloGms;
         admin.AutosaveMinutes = AutosaveMinutos;   // el panel lo puede cambiar en vivo; el ini fija el arranque
     }
