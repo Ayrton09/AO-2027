@@ -1911,6 +1911,7 @@ public sealed partial class PacketDispatcher
         // exactamente el TickMs del port, así que los contadores son ticks 1:1: 150 ticks = 6 segundos. Ese 150
         // es el DEFAULT de `GolpeParalizanteVueltasPvP`; el host lo puede mover desde el Server.ini.
         target.ParalyzedUntilTick = now + _ini.GolpeParalizanteVueltasPvP;
+        target.MarcaParalizado = true; target.MarcaInmovilizado = false;
         target.ParalyzedByCharIndex = p.CharIndex;
         session.Send(ServerMessages.LocaleMsg(135, target.Name));             // "Has paralizado a #1"
         target.Connection?.Send(ServerMessages.LocaleMsg(134, p.Name));         // "Has sido paralizado por el ataque de #1"
@@ -3144,6 +3145,10 @@ public sealed partial class PacketDispatcher
                 FlagCriminalIfLegalTarget(session, p, target);
                 casteado = true;
                 target.ParalyzedUntilTick = now + _ini.IntervaloParalizado;
+                // Cada hechizo prende SU marca (:161-162: la línea que paralizaba siempre está comentada), así que el
+                // Inmovilizar de un jugador deja al otro inmovilizado sin parálisis, y ése puede hacer /SALIR.
+                target.MarcaParalizado = spell.IsParalyze;
+                target.MarcaInmovilizado = spell.IsImmobilize;
                 target.ParalyzedByCharIndex = p.CharIndex;
                 // ParalizeOK es un TOGGLE del lado del cliente: sólo se manda en la transición.
                 if (!target.ClientParalyzed) { target.ClientParalyzed = true; target.Connection?.Send(ServerMessages.ParalizeOK()); }
@@ -10720,6 +10725,8 @@ public sealed partial class PacketDispatcher
         if (spell.IsParalyze || spell.IsImmobilize)
         {
             target.ParalyzedUntilTick = now + StateDurationTicks;
+            target.MarcaParalizado = spell.IsParalyze;
+            target.MarcaInmovilizado = spell.IsImmobilize;
             efectos.Add(spell.IsImmobilize ? "inmovilizado" : "paralizado");
             // Quién lo paralizó: el efecto se suelta si el caster se muere o se aleja (VB6 EfectoParalisisUser,
             // General.bas:978 — ver el bloque del game-loop en Program.cs).
@@ -11183,7 +11190,9 @@ public sealed partial class PacketDispatcher
             // PARALIZADO NO SE PUEDE SALIR, y eso se mira PRIMERO (VB6 HandleQuit, Protocol.bas:4975-4980, antes
             // de llamar a Cerrar_Usuario): con la cuenta en marcha, un /SALIR paralizado contesta el 119 y la cuenta
             // sigue. Acá se cancelaba.
-            if (p.IsParalyzed(_loop.Tick)) { session.Send(ServerMessages.LocaleMsg(119)); return; }
+            // Sólo la PARÁLISIS: el inmovilizado sin parálisis sale (el original mira `flags.Paralizado` y nada más).
+            if (p.IsParalyzed(_loop.Tick) && !p.EstaSoloInmovilizado(_loop.Tick))
+            { session.Send(ServerMessages.LocaleMsg(119)); return; }
             CerrarUsuario(p, "quit");
         });
     }

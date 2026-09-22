@@ -607,9 +607,12 @@ public static class ServerMessages
     private static byte CharStatExDe(Player p, long nowTick)
     {
         int s = 0;
-        if (p.IsParalyzed(nowTick)) s |= (int)CharStatEx.Paralizado;
-        // El original distingue Paralizado de Inmovilizado; el slice tiene un solo estado, así que no se
-        // inventa el segundo bit.
+        // Las dos marcas del original por separado (Generate_Char_StatEx, TCP.bas:1790-1797), que pueden ir juntas.
+        if (p.IsParalyzed(nowTick))
+        {
+            if (p.MarcaParalizado || !p.MarcaInmovilizado) s |= (int)CharStatEx.Paralizado;
+            if (p.MarcaInmovilizado) s |= (int)CharStatEx.Inmovilizado;
+        }
         s |= p.Gender == 1 ? (int)CharStatEx.Hombre : (int)CharStatEx.Mujer;
         return (byte)s;
     }

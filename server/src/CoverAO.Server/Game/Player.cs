@@ -595,6 +595,14 @@ public sealed class Player
     public bool ClientBlind { get; set; }     // Blind/BlindNoMore are distinct packets, tracked so expiry clears it
     public bool IsBlinded(long nowTick) => BlindedUntilTick > nowTick;
     public bool IsParalyzed(long nowTick) => ParalyzedUntilTick > nowTick;
+    /// <summary>Las dos marcas del original (VB6 <c>flags.Paralizado</c> y <c>flags.Inmovilizado</c>), que comparten el
+    /// contador <see cref="ParalyzedUntilTick"/> y sólo valen mientras corre. Las dos impiden caminar; la diferencia
+    /// es que el inmovilizado SIN parálisis puede hacer /SALIR (Protocol.bas:4975 mira sólo `Paralizado`). Al jugador
+    /// lo deja así el Inmovilizar de otro jugador (modHechizos.bas:161-162); el de una criatura prende las dos
+    /// (:218-220), y el golpe que paraliza sólo la parálisis.</summary>
+    public bool MarcaParalizado { get; set; } = true;
+    public bool MarcaInmovilizado { get; set; }
+    public bool EstaSoloInmovilizado(long nowTick) => IsParalyzed(nowTick) && MarcaInmovilizado && !MarcaParalizado;
     public bool IsPoisoned(long nowTick) => PoisonedUntilTick > nowTick;
 
     // [Inventory] (1-based, slot 0 unused), [HECHIZOS], [SKILLS] (eSkill 1..27), [BancoInventory]

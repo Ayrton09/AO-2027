@@ -1182,8 +1182,11 @@ public sealed class NpcSystem
         if (spell.IsParalyze || spell.IsImmobilize)
         {
             // El original sólo actúa si NO estaba ya paralizado (`If .flags.Paralizado = 0`): no refresca el
-            // contador, así que la parálisis no se puede encadenar indefinidamente.
-            if (player.IsParalyzed(_tick)) return false;
+            // contador, así que la parálisis no se puede encadenar indefinidamente. Al que sólo está inmovilizado
+            // sí lo paraliza, y le deja la inmovilización puesta.
+            if (player.IsParalyzed(_tick) && !player.EstaSoloInmovilizado(_tick)) return false;
+            player.MarcaInmovilizado = spell.IsImmobilize || player.EstaSoloInmovilizado(_tick);
+            player.MarcaParalizado = true;                          // la de una criatura paraliza siempre (:220)
             player.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
             player.ParalyzedByCharIndex = 0;                       // lo paralizó una criatura, no un jugador
             EmitirFxDeHechizo(npc, player, spell);

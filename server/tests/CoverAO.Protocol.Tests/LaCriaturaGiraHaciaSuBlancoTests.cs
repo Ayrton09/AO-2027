@@ -92,7 +92,7 @@ public class LaCriaturaGiraHaciaSuBlancoTests
         var (world, jugador, conexion) = Escena();
         var lobo = Bicho(world, Lobo, 1, 11, 10, hostil: false);
         lobo.AttackedBy = jugador.Name;
-        Correr(new NpcSystem(world, new GameData()), vueltas: 20);
+        Correr(new NpcSystem(world, new GameData()));                           // varios intentos: uno solo puede errar
         Assert.True(jugador.Hp < jugador.MaxHp, "premisa: le pegó");
         Assert.Equal(Oeste, lobo.Heading);
     }
@@ -145,7 +145,7 @@ public class LaCriaturaGiraHaciaSuBlancoTests
         var (world, jugador, conexion) = Escena(Cuna, 50, 50);
         var npc = Bicho(world, maga! with { Movement = 1 }, Cuna, 51, 50, hostil: false);
         npc.AttackedBy = jugador.Name;
-        Correr(new NpcSystem(world, d), vueltas: 20);
+        Correr(new NpcSystem(world, d));
         Assert.True(jugador.Hp < jugador.MaxHp, "premisa: le tiró un hechizo");
         Assert.Equal(Norte, npc.Heading);
         Assert.Empty(Giros(conexion, npc));
