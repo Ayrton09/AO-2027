@@ -447,9 +447,11 @@ loop.OnTickHandler = tick =>
             foreach (var pl in world.Players.ToArray())
             {
                 var con = pl.Connection;
-                if (con is null || ahora - con.UltimaActividadMs < limiteMs) continue;
+                // El que ya no tiene conexión está esperando su cuenta de salida: no hay a quién echar.
+                if (con is null || pl.SinConexion || ahora - con.UltimaActividadMs < limiteMs) continue;
                 Console.WriteLine($"[idle] {pl.Name} desconectado por inactividad ({serverIni.IdleLimitMinutos} min)");
-                con.Close("desconectado por inactividad");
+                if (dispatcher is not null) dispatcher.EcharPorInactividad(pl);   // el 33 y la salida de siempre
+                else con.Close("desconectado por inactividad");
             }
         }
     }
@@ -473,8 +475,10 @@ loop.OnTickHandler = tick =>
     }
     npcSystem.Update(tick);
     // Cuenta regresiva de SALIDA (VB6 General.bas:1341, el mismo timer de 1 s): a cada jugador que pidió
-    // /SALIR se le baja el contador avisándole con LocaleMsg(491), y al llegar a 0 se le manda el Disconnect
-    // y se le cierra la conexión. Cancelar es volver a mandar /SALIR (lo maneja el dispatcher).
+    // /SALIR —o al que se le cortó la conexión en un mapa inseguro— se le baja el contador avisándole con
+    // LocaleMsg(491), y al llegar a 0 se le manda el Disconnect y se le cierra la conexión, que es el cierre
+    // DEFINITIVO: al que ya no tenía conexión lo saca del mundo igual. Cancelar es volver a mandar /SALIR (lo
+    // maneja el dispatcher).
     if (tick % (1000 / GameLoop.TickMs) == 0)
         foreach (var pl in world.Players.Where(x => x.Saliendo).ToArray())
         {

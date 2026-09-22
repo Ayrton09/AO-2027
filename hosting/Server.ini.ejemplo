@@ -304,4 +304,5 @@ Version=
 ;IntervaloHechizoUsar=0           ; usar un objeto despues de castear
 ;IntervaloFlechasCazadores=1100   ; entre un disparo de arco y el siguiente
 ;IntervaloParalizado=500          ; cada cuanto se reintenta el paralizado
+;IntervaloCerrarConexion=5        ; segundos que queda en un mapa inseguro al salir o cortarse
 ;IntervaloGuardarUsuarios=15      ; el del original; equivale a MinutosGuardarUsuarios

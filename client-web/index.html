@@ -2747,7 +2747,7 @@
     // arma el paquete (LoginExistingChar / CreateNewAccount / LoginNewChar) y `loginBytes` guarda el
     // último para re-enviarlo si la conexión se cae (auto-reconexión sin perder la sesión).
     let ws, loginBytes = null, loggedIn = false, lastReject = null;
-    let reintentoSesion = false;   // ya se reintentó tras un choque de sesión (ver el case 'ShowMessageBox')
+    let reintentoSesion = 0;   // reintentos tras un choque de sesión (ver el case 'ShowMessageBox')
     function sendLogin(bytes) {                 // arma+manda un paquete de login (clave inicial 13, pre-Logged)
       loginBytes = bytes; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
@@ -3788,7 +3788,7 @@
       recentPackets.push(e.name); if (recentPackets.length > 60) recentPackets.shift();
       const f = e.fields;
       switch (e.name) {
-        case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = false; cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
+        case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = 0; cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
           // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
           // original y no se le agregan campos. Va una sola vez.
           if (familiarPendiente) {
@@ -3811,13 +3811,14 @@
         case 'ShowMessageBox':
           if (!loggedIn) {
             lastReject = f.message; showLogin(); loginErr(f.message); statusEl.textContent = 'conectado';
-            // UN reintento automático. El gate de sesión del server (VB6 Protocol.bas:1191) rechaza al que
-            // entra pero CIERRA la sesión anterior, así que el segundo intento sí pasa. Sin esto, a un jugador
-            // al que se le corta la conexión un segundo lo rechaza su propio fantasma —el original no tenía
-            // reconexión automática, así que este caso no existía en la fuente—. Es UNA vez: un rechazo de
-            // verdad (cuenta/contraseña) llega por ConsoleMsg, no por acá, y no debe entrar en bucle.
-            if (!reintentoSesion && loginBytes) {
-              reintentoSesion = true;
+            // POCOS reintentos automáticos, espaciados. El gate de sesión del server (VB6 Protocol.bas:1191)
+            // rechaza al que entra mientras el personaje siga adentro, y al que se le cortó la conexión en un mapa
+            // inseguro le corre la cuenta de salida (IntervaloCerrarConexion, 5 s en el install): un solo
+            // reintento a los 2,5 s rebotaba contra su propio personaje. Cuatro cubren la cuenta —el original no
+            // tenía reconexión automática, así que este caso no existía en la fuente—. Un rechazo de verdad
+            // (cuenta/contraseña) llega por ConsoleMsg, no por acá, y no debe entrar en bucle.
+            if (reintentoSesion < 4 && loginBytes) {
+              reintentoSesion++;
               const bytes = loginBytes;
               setTimeout(() => { loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
             }

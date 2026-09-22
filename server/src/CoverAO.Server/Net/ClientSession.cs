@@ -156,7 +156,8 @@ public sealed class ClientSession : IConnection
         catch (OperationCanceledException) { }
         catch (IOException) { }
         catch (Exception ex) { Console.Error.WriteLine($"[{RemoteEndpoint}] recv error: {ex.Message}"); }
-        finally { Close("receive loop ended"); }
+        // Se le cortó la conexión al cliente (o ya la había cerrado el server, y entonces esto no hace nada).
+        finally { Cortar("receive loop ended"); }
     }
 
     /// <summary>Despacha lo que haya en el buffer. Lo llaman DOS hilos —el de la sesión, cuando llegan bytes,
@@ -270,7 +271,7 @@ public sealed class ClientSession : IConnection
     {
         if (_closed) return;
         // TryWrite NO espera: con la cola llena devuelve false en vez de bloquear al que llama.
-        if (!_salida.Writer.TryWrite(packet)) Close("cola de salida saturada (cliente lento)");
+        if (!_salida.Writer.TryWrite(packet)) Cortar("cola de salida saturada (cliente lento)");
     }
 
     /// <summary>El único que escribe al socket. Corre en su propia tarea, fuera del game loop.</summary>
@@ -286,7 +287,7 @@ public sealed class ClientSession : IConnection
                     catch (Exception ex)
                     {
                         Console.Error.WriteLine($"[{RemoteEndpoint}] send error: {ex.Message}");
-                        Close("send error");
+                        Cortar("send error");   // VB6 EnviarDatosASlot (TCP.bas:699-703): CloseSocketSL + Cerrar_Usuario
                         return;
                     }
                 }
@@ -298,12 +299,29 @@ public sealed class ClientSession : IConnection
         finally { try { _transport.Close(_motivoDeCierre); } catch { /* ignore */ } }
     }
 
-    public void Close(string reason)
+    /// <summary>El cierre DEFINITIVO, el que decide el server: echar, banear, una trampa, un paquete que no se
+    /// entiende, el fin de la cuenta de salida. El personaje sale del mundo en el acto (VB6 <c>CloseSocket</c>).</summary>
+    public void Close(string reason) => Cerrar(reason, conCuentaDeSalida: false);
+
+    /// <summary>El CORTE de la conexión: el cliente se fue o el envío falló. El personaje no sale en el acto: pasa
+    /// por la cuenta de salida del /SALIR, y en un mapa inseguro queda en el mundo hasta que termine (VB6
+    /// <c>CloseSocketSL</c> + <c>Cerrar_Usuario</c>, wskapiAO.bas:314-324). Un paquete de login estando adentro NO
+    /// es un corte: el original lo cierra en el acto (HandleIncomingData, Protocol.bas:148-156).</summary>
+    public void Cortar(string reason) => Cerrar(reason, conCuentaDeSalida: true);
+
+    private void Cerrar(string reason, bool conCuentaDeSalida)
     {
         // Interlocked y no "if (_closed) { _closed = true; }": ese check-and-set NO es atómico, y hay dos
         // hilos que pueden entrar a la vez — el callback del timeout de auth (pool) y el finally del receive
         // loop. Los dos pasaban, y OnDisconnect se encolaba DOS veces: doble SaveCharacter y doble Remove.
-        if (Interlocked.Exchange(ref _cerrando, 1) != 0) return;
+        if (Interlocked.Exchange(ref _cerrando, 1) != 0)
+        {
+            // Ya estaba cerrada. Si fue un corte y el personaje quedó esperando la cuenta de salida, un cierre
+            // DEFINITIVO lo saca ahora: así andan el fin de la cuenta, el /ECHAR y los baneos sobre el que se
+            // desconectó (VB6 CloseSocket sobre un slot con ConnIDValida = False).
+            if (!conCuentaDeSalida) _dispatcher.SacarAlQueQuedoEsperando(this);
+            return;
+        }
         _closed = true;
         _motivoDeCierre = reason;
         var charIndex = Player?.CharIndex;
@@ -318,7 +336,7 @@ public sealed class ClientSession : IConnection
         _salida.Writer.TryComplete();
         _ = Task.Delay(TcpTransport.SendTimeoutMs).ContinueWith(_ => { try { _transport.Close(reason); } catch { /* ignore */ } });
         try { _onClose?.Invoke(); } catch { /* ignore */ }   // libera el slot del ConnectionGuard
-        _dispatcher.OnDisconnect(this, reason);
+        _dispatcher.OnDisconnect(this, reason, conCuentaDeSalida);
         // El PICO va en la línea de cierre a propósito: el número con el que hay que elegir el techo sale de
         // mirar servidores reales, no de estimarlo. Con el límite apagado se sigue midiendo igual.
         string pico = $" pico={_cadencia.Pico} pkt/s";

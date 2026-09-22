@@ -282,10 +282,18 @@ public sealed class Player
     // Salida en curso (VB6 <c>Counters.Saliendo</c> / <c>Counters.Salir</c>): el /SALIR no cierra la sesión de
     // una — arranca una cuenta regresiva de IntervaloCerrarConexion segundos que el jugador puede CANCELAR
     // volviendo a mandar /SALIR. Es una mecánica anti-escape: en un mapa Pk no se sale de una pelea cerrando el
-    // cliente. Ver Cerrar_Usuario (Modulo_UsUaRiOs.bas:1849).
+    // cliente, porque cortar la conexión arranca la MISMA cuenta (ver SinConexion). Ver Cerrar_Usuario
+    // (Modulo_UsUaRiOs.bas:1849).
     public bool Saliendo { get; set; }
     /// <summary>Segundos que faltan para que se cierre la conexión; 0 = sin salida en curso.</summary>
     public int SalirSegundos { get; set; }
+    /// <summary>La conexión se CORTÓ y el personaje sigue en el mundo esperando el fin de la cuenta de salida (VB6
+    /// <c>ConnIDValida = False</c>). El original no saca al que se desconecta: le arranca la cuenta del /SALIR
+    /// (wskapiAO.bas:314-324, "no hay q llamar a CloseSocket() directamente, ya q pueden abusar de algun error para
+    /// desconectarse sin los 10segs"), así que en un mapa pk lo pueden matar mientras tanto. Lo que se le manda va a
+    /// una sesión cerrada y se pierde, y lo que le cancelaría la salida a un conectado —que lo ataquen— le REINICIA
+    /// la cuenta (CancelExit, Modulo_UsUaRiOs.bas:1922-1925).</summary>
+    public bool SinConexion { get; set; }
 
     /// <summary>Anti-spam de avisos repetidos (VB6 <c>flags.UltimoMensaje</c>). El original manda ciertos avisos
     /// UNA sola vez y después calla mientras la condición se sostenga: el caso canónico es el 54 ("no podés

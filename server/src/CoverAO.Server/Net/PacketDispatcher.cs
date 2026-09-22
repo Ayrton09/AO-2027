@@ -1010,11 +1010,11 @@ public sealed partial class PacketDispatcher
         var yaOnline = _world.PlayerByName(charName);
         if (yaOnline is not null)
         {
-            // FANTASMA SIN CONEXIÓN: si el que figura adentro ya no tiene socket, no hay a quién avisarle ni
-            // a quién echar — y rechazar al que entra dejaría el personaje inaccesible PARA SIEMPRE. Se lo
-            // saca del mundo y el login sigue su curso. El original no necesitaba esta rama (un slot sin
-            // conexión no existía en su modelo), pero acá el estado vive en objetos y una desconexión sucia
-            // puede dejar el Player colgado.
+            // FANTASMA SIN SESIÓN: si el que figura adentro no tiene sesión de ninguna clase, no hay a quién
+            // avisarle ni a quién echar — y rechazar al que entra dejaría el personaje inaccesible PARA SIEMPRE.
+            // Se lo saca del mundo y el login sigue su curso. No es el que se desconectó y espera su cuenta de
+            // salida: ése conserva su sesión (cerrada), está `Saliendo` y cae en la rama de abajo, como en el
+            // original. Esta es la red para un Player colgado sin sesión, que el original no podía tener.
             if (yaOnline.Connection is null)
             {
                 _world.Remove(yaOnline.CharIndex);
@@ -1023,16 +1023,18 @@ public sealed partial class PacketDispatcher
             }
             else if (yaOnline.Saliendo)
             {
-                session.Send(ServerMessages.ShowMessageBox("Ese personaje está saliendo del mundo. Esperá unos segundos e intentá de nuevo."));
+                session.Send(ServerMessages.ShowMessageBox("El personaje está saliendo del juego."));   // Locale_Error 44
                 return;
             }
             else
             {
-                session.Send(ServerMessages.ShowMessageBox("Ese personaje ya está conectado. Se cerró la otra sesión: volvé a entrar."));
-                yaOnline.Connection.Send(ServerMessages.ShowMessageBox("Alguien entró con tu personaje desde otro lado. Se cierra esta sesión."));
-                // Por IConnection, NO por un cast al ClientSession de TCP: el cliente web entra por WebSocket y
-                // un cast fallido dejaría la sesión vieja viva, trabando el personaje para siempre.
-                yaOnline.Connection.Close("login duplicado");
+                // Los textos son los del cliente original (locale_error_es.ind 46 y 45), y a la sesión vieja no se la
+                // cierra: se la SACA DEL MUNDO por la salida de siempre (`Cerrar_Usuario(tIndex)`), así que en un
+                // mapa inseguro le corre la cuenta como a cualquiera que se va.
+                session.Send(ServerMessages.ShowMessageBox("El personaje está online, espere mientras es desconectado."));
+                yaOnline.Connection.Send(ServerMessages.ShowMessageBox(
+                    "Un jugador está intentando entrar con tu personaje, se te desconectará, si crees que esto es un error, notifica a algún Administrador."));
+                CerrarUsuario(yaOnline, "login duplicado");
                 return;   // el login nuevo NO procede, igual que el original
             }
         }
@@ -11165,67 +11167,76 @@ public sealed partial class PacketDispatcher
         return lvl == 50 ? 107 : 0;
     }
 
-    /// <summary>Segundos de la cuenta regresiva de salida (VB6 <c>IntervaloCerrarConexion</c>, Server.ini = 5).</summary>
-    public const int QuitCountdownSeconds = 5;
-
-    /// <summary>/SALIR (VB6 HandleQuit → <c>Cerrar_Usuario</c>, Modulo_UsUaRiOs.bas:1849). Antes esto era
-    /// <c>session.Close("quit")</c>: cerrar el cliente era una salida INSTANTÁNEA, así que escapar de una pelea
-    /// perdida salía gratis. El original no cierra de una — arranca una cuenta regresiva:
-    /// <list type="number">
-    /// <item>si ya hay una salida en curso, este segundo /SALIR la <b>CANCELA</b> (<c>CancelExit</c>).</item>
-    /// <item>paralizado no se puede salir: <c>LocaleMsg(119)</c> y no pasa nada.</item>
-    /// <item>arranca la salida (<c>EjecutarAccion(1)</c>) y, si estaba oculto o invisible, lo <b>REVELA</b> —
-    ///   otra puerta de escape que el original cierra: no te vas invisible.</item>
-    /// <item>y acá está el corazón: <b>si el mapa NO es Pk, o está muerto, o es GM, la salida es inmediata</b>
-    ///   (Disconnect + cerrar). La espera existe SÓLO donde te pueden matar, que es de lo que protege.</item>
-    /// </list></summary>
+    /// <summary>/SALIR (VB6 HandleQuit, Protocol.bas:4962-4982): paralizado no se puede salir —el 119, y una cuenta
+    /// que ya corría sigue corriendo—; si no, <see cref="CerrarUsuario"/>. Antes esto era <c>session.Close("quit")</c>:
+    /// cerrar el cliente era una salida INSTANTÁNEA, así que escapar de una pelea perdida salía gratis.</summary>
     private void HandleQuit(ClientSession session)
     {
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) { session.Close("quit"); return; }
-
             // PARALIZADO NO SE PUEDE SALIR, y eso se mira PRIMERO (VB6 HandleQuit, Protocol.bas:4975-4980, antes
             // de llamar a Cerrar_Usuario): con la cuenta en marcha, un /SALIR paralizado contesta el 119 y la cuenta
             // sigue. Acá se cancelaba.
             if (p.IsParalyzed(_loop.Tick)) { session.Send(ServerMessages.LocaleMsg(119)); return; }
-            if (p.Saliendo)   // VB6 Cerrar_Usuario:1855 — el segundo /SALIR cancela
-            {
-                p.Saliendo = false; p.SalirSegundos = 0;
-                session.Send(ServerMessages.EjecutarAccion(1));
-                session.Send(ServerMessages.LocaleMsg(365, "", 1));
-                return;
-            }
-
-            session.Send(ServerMessages.EjecutarAccion(1));   // el cliente muestra el cartel de salida
-            if (p.Invisible || p.Oculto)
-            {
-                p.Invisible = false; p.Oculto = false;
-                p.InvisibleUntilTick = 0; p.OcultoUntilTick = 0;
-                session.Send(ServerMessages.LocaleMsg(307));
-                _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, false));
-            }
-            // Y LA FAENA SE CORTA (Cerrar_Usuario, Modulo_UsUaRiOs.bas:1880-1884): el mismo aviso 391, y también
-            // lo que se estaba fundiendo. Seguía trabajando durante toda la cuenta, y si se cancelaba la salida,
-            // para siempre.
-            if (p.Laborando)
-            {
-                session.Send(ServerMessages.LocaleMsg(391, "", 1));
-                p.Laborando = false;
-                p.Lingoteando = 0;
-            }
-            // Salida inmediata donde no hay riesgo: ciudad (mapa no-Pk), muerto o GM.
-            if (!_data.IsPkMap(p.Pos.Map) || !p.IsAlive || p.IsGm)
-            {
-                session.Send(ServerMessages.Disconnect());
-                session.Close("quit");
-                return;
-            }
-            p.Saliendo = true;
-            p.SalirSegundos = QuitCountdownSeconds;
-            session.Send(ServerMessages.LocaleMsg(203, p.SalirSegundos.ToString()));
+            CerrarUsuario(p, "quit");
         });
+    }
+
+    /// <summary>
+    /// LA SALIDA DEL MUNDO (VB6 <c>Cerrar_Usuario</c>, Modulo_UsUaRiOs.bas:1849-1900), la misma para el /SALIR, el
+    /// corte de la conexión, el login duplicado y el inactivo. Devuelve si el personaje SIGUE en el mundo.
+    /// <list type="number">
+    /// <item>si ya hay una salida en curso, <see cref="CancelarSalida"/>: con la conexión viva la cancela (el
+    ///   segundo /SALIR); cortada, le reinicia la cuenta.</item>
+    /// <item>arranca la salida (<c>EjecutarAccion(1)</c>) y, si estaba oculto o invisible, lo <b>REVELA</b> —
+    ///   otra puerta de escape que el original cierra: no te vas invisible.</item>
+    /// <item>la faena se corta (391), y también lo que se estaba fundiendo.</item>
+    /// <item>y acá está el corazón: <b>si el mapa NO es Pk, o está muerto, o es GM, la salida es inmediata</b>
+    ///   (Disconnect + cerrar). Si no, avisa los segundos (203) y el personaje queda en el mundo hasta que termine
+    ///   la cuenta, AUNQUE SE LE HAYA CORTADO LA CONEXIÓN: la espera existe donde te pueden matar, que es de lo que
+    ///   protege, y desconectarse no es escapar.</item>
+    /// </list>
+    /// </summary>
+    private bool CerrarUsuario(Player p, string motivo)
+    {
+        if (p.Saliendo) { CancelarSalida(p); return true; }
+        var con = p.Connection;
+        con?.Send(ServerMessages.EjecutarAccion(1));   // el cliente muestra el cartel de salida
+        if (p.Invisible || p.Oculto)
+        {
+            p.Invisible = false; p.Oculto = false;
+            p.InvisibleUntilTick = 0; p.OcultoUntilTick = 0;
+            con?.Send(ServerMessages.LocaleMsg(307));
+            _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, false));
+        }
+        if (p.Laborando)
+        {
+            con?.Send(ServerMessages.LocaleMsg(391, "", 1));
+            p.Laborando = false;
+            p.Lingoteando = 0;
+        }
+        // Salida inmediata donde no hay riesgo: ciudad (mapa no-Pk), muerto o GM.
+        if (!_data.IsPkMap(p.Pos.Map) || !p.IsAlive || p.IsGm)
+        {
+            con?.Send(ServerMessages.Disconnect());
+            if (p.SinConexion) SacarDelMundo(p, con as ClientSession);
+            else con?.Close(motivo);
+            return false;
+        }
+        p.Saliendo = true;
+        p.SalirSegundos = _ini.IntervaloCerrarConexion;
+        con?.Send(ServerMessages.LocaleMsg(203, p.SalirSegundos.ToString()));
+        return true;
+    }
+
+    /// <summary>El IdleLimit del Server.ini (VB6 CheckIdleUser, frmMain.frm:686-705): el aviso 33 y la salida de
+    /// siempre, con la conexión viva. En un mapa inseguro también le corre la cuenta.</summary>
+    public void EcharPorInactividad(Player p)
+    {
+        p.Connection?.Send(ServerMessages.ShowMessageBox("Desconectado por inactividad."));   // Locale_Error 33
+        CerrarUsuario(p, "desconectado por inactividad");
     }
 
     /// <summary>Texto del cliente listo para el LOG: los caracteres de control (CR/LF, ESC, DEL) se
@@ -11373,16 +11384,23 @@ public sealed partial class PacketDispatcher
     /// Modulo_UsUaRiOs.bas:1908-1921): baja el cartel del cliente y avisa. Es anti-escape — la salida existe
     /// para que no te vayas del mundo en medio de una pelea, así que cualquier cosa que demuestre que seguís
     /// jugando la cancela: caminar, pedir un trabajo o hacerlo, atacar, y <b>que te ataquen</b> (el segundo /SALIR
-    /// la cancela en <c>HandleQuit</c>). Atacar y pedir un trabajo fueron los últimos en portarse. Falta a
+    /// también: <see cref="CerrarUsuario"/> llega acá). Atacar y pedir un trabajo fueron los últimos en portarse. Falta a
     /// propósito la víctima de un robo de objeto (Trabajo.bas:1749): en el original sólo corre cuando el robo NO
     /// encuentra nada —si encuentra, sale antes por un `Or` que siempre da verdadero (:1721)—, y qué hacer con el
     /// robo roto del original lo decide el autor.
     ///
-    /// <para>El original tiene además una rama para el desconectado (<c>ConnIDValida = False</c>) que sólo
-    /// reajusta el contador. Acá un jugador sin conexión ya no está en el mundo.</para></summary>
-    private static void CancelarSalida(Player p)
+    /// <para>Al que se le cortó la conexión NO se le cancela: se le REINICIA la cuenta (la rama "Simply reset" del
+    /// original, <c>ConnIDValida = False</c>, Modulo_UsUaRiOs.bas:1922-1925). Un usuario común en un mapa pk vuelve a
+    /// tener la cuenta entera, así que mientras lo sigan atacando no se va; en cualquier otro caso queda en 0 y sale
+    /// en el segundo siguiente.</para></summary>
+    private void CancelarSalida(Player p)
     {
         if (!p.Saliendo) return;
+        if (p.SinConexion)
+        {
+            p.SalirSegundos = (p.Privileges & 1) != 0 && _data.IsPkMap(p.Pos.Map) ? _ini.IntervaloCerrarConexion : 0;
+            return;
+        }
         p.Saliendo = false; p.SalirSegundos = 0;
         p.Connection?.Send(ServerMessages.EjecutarAccion(1));       // el cliente baja el cartel de salida
         p.Connection?.Send(ServerMessages.LocaleMsg(365, "", 1));   // "Se ha cancelado la salida."
@@ -13442,65 +13460,91 @@ public sealed partial class PacketDispatcher
         }
     }
 
-    public void OnDisconnect(ClientSession session, string reason)
+    /// <summary>Se cerró la sesión. Si fue un CORTE (<paramref name="conCuentaDeSalida"/>: el cliente se fue o el envío
+    /// falló), el personaje pasa por <see cref="CerrarUsuario"/> sin conexión, como en el original: en un mapa
+    /// inseguro queda en el mundo con la cuenta de salida. Si fue un cierre del server, sale en el acto.</summary>
+    public void OnDisconnect(ClientSession session, string reason, bool conCuentaDeSalida = false)
     {
         var p = session.Player;
         if (p is null) return;
         _loop.Enqueue(() =>
         {
-            p.Laborando = false;   // VB6 Cerrar_Usuario (Modulo_UsUaRiOs.bas:1882): desconectar corta la faena
-            // La muerte AHORA PERSISTE entre sesiones (VB6 FileIO.bas:1626 guarda Muerto=1): si te desconectás
-            // muerto, reconectás muerto. CharacterFile guarda la cabeza VIVA (OrigHead) para que la de cadáver
-            // (500) no quede pegada, y SpawnIntoWorld re-aplica la apariencia de cadáver al entrar sin vida.
-            // DESPAWNEAR PRIMERO Y GUARDAR DESPUÉS, y el orden es el arreglo: al revés, el `.chr` se escribía
-            // con la vida que el familiar tenía al ser INVOCADO —porque es `RemoveNpc` quien le copia la vida
-            // real de la criatura— y desconectarse y volver a entrar lo curaba gratis, salteando a la
-            // Veterinaria, que es el único sumidero del diseño. El comentario que estaba acá decía que el
-            // familiar "se guarda solo": era cierto salvo por el orden, que es justo lo que importaba.
-            //
-            // Y el motivo original de despawnear sigue en pie: una invocación huérfana, matada tras reconectar,
-            // daría exp/oro/loot. (.ToList antes de remover.)
-            foreach (var summon in _world.Npcs.Where(n => n.OwnerCharIndex == p.CharIndex).ToList())
-            {
-                _world.RemoveNpc(summon.CharIndex);
-                _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex, faded: true));
-            }
-            // DESCONECTARSE TE BAJA DEL CABALLO, y va ANTES de guardar (VB6 CloseUser, TCP.bas:1602:
-            // `If .Invent.MonturaObjIndex > 0 Then Desequipar(.Invent.MonturaSlot)`). Sin esto el `.chr` se
-            // llevaba la montura puesta y el flag de montar, y al volver a entrar la apariencia se rearmaba
-            // desde el equipo: el jugador aparecía a pie con el server convencido de que iba a caballo, y de
-            // ahí en más el inventario le mostraba el estado al revés.
-            if (p.Mounted) SacarLaMontura(p, _data);
-            // Serializa acá —con el Player vivo— y escribe afuera del loop: el `fsync` de la escritura
-            // atómica son ~2 ms, y multiplicados por los que se van juntos frenan el mundo para todos.
-            try { _db.GuardarEnSegundoPlano(p); }
-            catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
-            // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
-            // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres
-            // lugares y termina con `.NroMascotas = 0`). Las mascotas no sobreviven a la sesión.
-            for (int i = 1; i <= GameLimits.MaxMascotas; i++) { p.MascotasIndex[i] = 0; p.MascotasType[i] = 0; }
-            p.NroMascotas = 0;
-            p.OlvidarMetamorfosis();   // desconectarse deshace la transformación: no se guarda ni vuelve al entrar
-            // VB6 TCP.bas:1644 — al área, EXCLUYENDO al que se va (ya no está para verlo).
-            _world.BroadcastToObservers(p.Pos, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
-            ControlarPortalLum(_world, _data, p, 1);   // VB6 CloseUser, TCP.bas:1629 — el portal se va con él
-            AvisarAmigosQueMeVoy(p);     // VB6 CloseUser → ObtenerIndexAmigos(_, True)
-            _world.HelpRemove(p.Name);   // VB6 TCP.bas:1661 — al desconectar se le limpia la consulta a los GMs
-            // El PAR del 489 de la entrada (VB6 TCP.bas:1684). Estaba media puerta puesta: a los GMs les
-            // llegaba quién entraba y nunca quién se iba, así que la lista que se armaban mirando la consola
-            // sólo crecía.
-            BroadcastToAdmins(ServerMessages.LocaleMsg(490, p.Name));
-            _world.Remove(p.CharIndex);
-            _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterRemove(p.CharIndex, faded: false)); // se va de golpe, sin fantasma
-            _world.Events.Publish(new PlayerDisconnected(p.CharIndex));
-            // Soltar el Player de la sesión muerta. Sin esto quedaba colgado del ClientSession —con sus 20
-            // slots de inventario, 40 de banco y los arrays de skills y hechizos— y encima cualquier paquete
-            // que llegara DESPUÉS pasaba el gate `if (p is null) return` sobre un personaje ya guardado y
-            // sacado del mundo, mutándolo sin efecto persistente pero con efecto real sobre el mundo vivo.
-            p.Connection = null;
-            session.Player = null;
-            Console.WriteLine($"[{session.RemoteEndpoint}] guardado y desconectado: {p.Name}");
+            if (!ReferenceEquals(session.Player, p)) return;   // ya salió del mundo
+            if (!conCuentaDeSalida) { SacarDelMundo(p, session); return; }
+            p.SinConexion = true;
+            if (CerrarUsuario(p, reason))
+                Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} se desconectó y queda en el mundo {p.SalirSegundos} s");
         });
+    }
+
+    /// <summary>Un cierre DEFINITIVO sobre una sesión que ya se había cortado: si el personaje sigue en el mundo
+    /// esperando la cuenta de salida, sale ahora. Es el fin de la cuenta, y también el /ECHAR o un baneo sobre el
+    /// que se desconectó.</summary>
+    public void SacarAlQueQuedoEsperando(ClientSession session)
+    {
+        _loop.Enqueue(() =>
+        {
+            if (session.Player is { SinConexion: true } p) SacarDelMundo(p, session);
+        });
+    }
+
+    /// <summary>La baja del mundo (VB6 <c>CloseUser</c>): guarda, despawnea lo suyo, avisa y suelta la sesión. Corre en
+    /// el hilo del mundo.</summary>
+    private void SacarDelMundo(Player p, ClientSession? session)
+    {
+        p.Laborando = false;   // salir del mundo corta la faena (el corte y el /SALIR ya la cortaron en CerrarUsuario)
+        // La muerte AHORA PERSISTE entre sesiones (VB6 FileIO.bas:1626 guarda Muerto=1): si te desconectás
+        // muerto, reconectás muerto. CharacterFile guarda la cabeza VIVA (OrigHead) para que la de cadáver
+        // (500) no quede pegada, y SpawnIntoWorld re-aplica la apariencia de cadáver al entrar sin vida.
+        // DESPAWNEAR PRIMERO Y GUARDAR DESPUÉS, y el orden es el arreglo: al revés, el `.chr` se escribía
+        // con la vida que el familiar tenía al ser INVOCADO —porque es `RemoveNpc` quien le copia la vida
+        // real de la criatura— y desconectarse y volver a entrar lo curaba gratis, salteando a la
+        // Veterinaria, que es el único sumidero del diseño. El comentario que estaba acá decía que el
+        // familiar "se guarda solo": era cierto salvo por el orden, que es justo lo que importaba.
+        //
+        // Y el motivo original de despawnear sigue en pie: una invocación huérfana, matada tras reconectar,
+        // daría exp/oro/loot. (.ToList antes de remover.)
+        foreach (var summon in _world.Npcs.Where(n => n.OwnerCharIndex == p.CharIndex).ToList())
+        {
+            _world.RemoveNpc(summon.CharIndex);
+            _world.BroadcastToObservers(summon.Pos, ServerMessages.CharacterRemove(summon.CharIndex, faded: true));
+        }
+        // DESCONECTARSE TE BAJA DEL CABALLO, y va ANTES de guardar (VB6 CloseUser, TCP.bas:1602:
+        // `If .Invent.MonturaObjIndex > 0 Then Desequipar(.Invent.MonturaSlot)`). Sin esto el `.chr` se
+        // llevaba la montura puesta y el flag de montar, y al volver a entrar la apariencia se rearmaba
+        // desde el equipo: el jugador aparecía a pie con el server convencido de que iba a caballo, y de
+        // ahí en más el inventario le mostraba el estado al revés.
+        if (p.Mounted) SacarLaMontura(p, _data);
+        // Serializa acá —con el Player vivo— y escribe afuera del loop: el `fsync` de la escritura
+        // atómica son ~2 ms, y multiplicados por los que se van juntos frenan el mundo para todos.
+        try { _db.GuardarEnSegundoPlano(p); }
+        catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
+        // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
+        // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres
+        // lugares y termina con `.NroMascotas = 0`). Las mascotas no sobreviven a la sesión.
+        for (int i = 1; i <= GameLimits.MaxMascotas; i++) { p.MascotasIndex[i] = 0; p.MascotasType[i] = 0; }
+        p.NroMascotas = 0;
+        p.OlvidarMetamorfosis();   // desconectarse deshace la transformación: no se guarda ni vuelve al entrar
+        // VB6 TCP.bas:1644 — al área, EXCLUYENDO al que se va (ya no está para verlo).
+        _world.BroadcastToObservers(p.Pos, ServerMessages.RemoveCharDialog(p.CharIndex), p.CharIndex);
+        ControlarPortalLum(_world, _data, p, 1);   // VB6 CloseUser, TCP.bas:1629 — el portal se va con él
+        AvisarAmigosQueMeVoy(p);     // VB6 CloseUser → ObtenerIndexAmigos(_, True)
+        _world.HelpRemove(p.Name);   // VB6 TCP.bas:1661 — al desconectar se le limpia la consulta a los GMs
+        // El PAR del 489 de la entrada (VB6 TCP.bas:1684). Estaba media puerta puesta: a los GMs les
+        // llegaba quién entraba y nunca quién se iba, así que la lista que se armaban mirando la consola
+        // sólo crecía.
+        BroadcastToAdmins(ServerMessages.LocaleMsg(490, p.Name));
+        _world.Remove(p.CharIndex);
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterRemove(p.CharIndex, faded: false)); // se va de golpe, sin fantasma
+        _world.Events.Publish(new PlayerDisconnected(p.CharIndex));
+        // Soltar el Player de la sesión muerta. Sin esto quedaba colgado del ClientSession —con sus 20
+        // slots de inventario, 40 de banco y los arrays de skills y hechizos— y encima cualquier paquete
+        // que llegara DESPUÉS pasaba el gate `if (p is null) return` sobre un personaje ya guardado y
+        // sacado del mundo, mutándolo sin efecto persistente pero con efecto real sobre el mundo vivo.
+        string origen = p.Connection?.RemoteEndpoint ?? session?.RemoteEndpoint ?? "?";
+        p.Connection = null;
+        if (session is not null) session.Player = null;
+        Console.WriteLine($"[{origen}] guardado y desconectado: {p.Name}");
     }
 
     private static (byte x, byte y) Step(byte x, byte y, byte heading) => heading switch

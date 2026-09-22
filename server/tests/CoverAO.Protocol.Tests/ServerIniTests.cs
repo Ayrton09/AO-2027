@@ -421,6 +421,17 @@ public class ServerIniTests
         Assert.False(Parse("[INTERVALOS]\nIntervaloGolpeUsar=400\n").IntervaloEscrito("IntervaloTrabajo"));
     }
 
+    /// <summary>Los segundos de la cuenta de salida salen del ini, como en el original (FileIO.bas:1512); estaban
+    /// cableados en 5.</summary>
+    [Fact]
+    public void La_cuenta_de_salida_sale_del_ini()
+    {
+        Assert.Equal(5, ServerIni.Cargar(null).IntervaloCerrarConexion);
+        Assert.Equal(12, Parse("[INTERVALOS]\nIntervaloCerrarConexion=12\n").IntervaloCerrarConexion);
+        Assert.Equal(0, Parse("[INTERVALOS]\nIntervaloCerrarConexion=0\n").IntervaloCerrarConexion);
+        Assert.Equal(5, Parse("[INIT]\nIntervaloCerrarConexion=12\n").IntervaloCerrarConexion);
+    }
+
     [Fact]
     public void El_autosave_lee_la_clave_del_VB6_y_tambien_la_vieja()
     {

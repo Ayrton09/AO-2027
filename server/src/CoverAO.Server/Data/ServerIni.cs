@@ -346,6 +346,12 @@ public sealed class ServerIni
     /// </summary>
     public int IntervaloParalizado { get; private set; } = 500;
 
+    /// <summary><c>[INTERVALOS] IntervaloCerrarConexion</c> (5 en el install), en SEGUNDOS: lo que dura la cuenta
+    /// de salida de un usuario común vivo en un mapa inseguro, sea por /SALIR o porque se le cortó la conexión
+    /// (VB6 FileIO.bas:1512, leído en Cerrar_Usuario y CancelExit). Con 0 la salida espera sólo hasta el próximo
+    /// segundo del reloj, como en el original.</summary>
+    public int IntervaloCerrarConexion { get; private set; } = 5;
+
     // ── EL GOLPE QUE PARALIZA, a pedido del tester (informe del 2026-09-02, punto 2) ────────────────────────
     //
     // Las cuatro perillas de abajo son NUESTRAS: el original no tiene claves para esto, lo lleva cableado en
@@ -945,6 +951,7 @@ public sealed class ServerIni
         cfg.IntervaloArco = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloFlechasCazadores", 1100), 0, 60_000);
         cfg.IntervalosEscritos = ini.Claves("INTERVALOS").ToArray();
         cfg.IntervaloParalizado = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloParalizado", 500), 1, 100_000);
+        cfg.IntervaloCerrarConexion = Math.Clamp(ini.GetInt("INTERVALOS", "IntervaloCerrarConexion", 5), 0, 3600);
         // El mismo techo que la parálisis del hechizo, y piso 1: un 0 dejaría el efecto vencido en el tick
         // siguiente, que se ve igual que "no anda". El dado tiene piso 1 porque `_rng.Next(1, tope + 1)` con
         // tope 0 tira siempre 1 — paralizaría en cada golpe, que no es lo que quiere quien escribe un 0.
