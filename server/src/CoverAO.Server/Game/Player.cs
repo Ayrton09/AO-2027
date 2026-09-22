@@ -438,6 +438,10 @@ public sealed class Player
     // siendo la fuente de verdad para el filtrado de la IA/observadores; este tick es sólo el vencimiento del
     // hechizo (el /INVISIBLE de GM lo deja en 0 = permanente).
     public long InvisibleUntilTick { get; set; }
+    /// <summary>La invisibilidad del /INVISIBLE (VB6 <c>flags.AdminInvisible</c>), distinta de la del hechizo: es la
+    /// que no tiene reloj. El original la mira aparte en todo lo que hace ruido —tomar, tocar un instrumento—: al GM
+    /// invisible se escucha sólo él, y al invisible por hechizo lo escucha el área.</summary>
+    public bool InvisibleDeAdmin => Invisible && InvisibleUntilTick == 0;
     // Ocultarse (VB6 flags.Oculto + Counters.TiempoOculto, Trabajo.bas): estado SEPARADO de Invisible. El VB6
     // los mantiene distintos porque Ocultar se ROMPE al actuar (caminar/atacar/castear) y se revela con
     // LocaleMsg 307, mientras que la invisibilidad de hechizo/GM no. El aggro de NPCs filtra por ambos.

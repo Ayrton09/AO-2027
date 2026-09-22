@@ -3074,8 +3074,13 @@ public sealed partial class PacketDispatcher
     /// sobre el blanco, y el mensaje con la variable `daño` del original, que es la ÚLTIMA tirada —la de la vida, o la
     /// de la agilidad o la fuerza en un buff—: con número, el 497/498 (o 499 sobre uno mismo); sin número, el 452/453
     /// (o el 0). La fuente es 2, o 13 si curó vida.</para>
+    ///
+    /// <para>DESDE UN OBJETO (<paramref name="desdeObjeto"/>): la poción que lanza un hechizo llama a este mismo Sub
+    /// (InvUsuario.bas:1638), con los mismos cortes y el mismo aviso, pero el cobro es del caller que castea
+    /// (HandleHechizoUsuario), así que no se cobra ni sube la skill. Devuelve si quedó lanzado (el `Casteo`).</para>
     /// </summary>
-    private void HechizoEstadoUsuario(ClientSession session, Player p, Player target, Data.SpellInfo spell, int amount)
+    private bool HechizoEstadoUsuario(ClientSession session, Player p, Player target, Data.SpellInfo spell, int amount,
+        bool desdeObjeto = false)
     {
         long now = _loop.Tick;
         bool yo = target.CharIndex == p.CharIndex;
@@ -3083,8 +3088,8 @@ public sealed partial class PacketDispatcher
         bool casteado = false;
         long dano = 0;
         byte color = 2;
-        // `Exit Sub` pelado: cobra si algo ya había hecho efecto, sin avisos.
-        void Cortar() { if (casteado) { SpellCasted(session, p, spell); EmitirCostoDelHechizo(session, p); } }
+        // `Exit Sub` pelado: queda lanzado si algo ya había hecho efecto (y se cobra), sin avisos.
+        bool Cortar() { if (casteado && !desdeObjeto) { SpellCasted(session, p, spell); EmitirCostoDelHechizo(session, p); } return casteado; }
         bool NoSePuedeAyudar(bool exentaEnArena)
         {
             if ((exentaEnArena && arena) || PuedeAyudar(p, target)) return false;
@@ -3095,7 +3100,7 @@ public sealed partial class PacketDispatcher
         // SANACIÓN (:1049-1057): PuedeAyudar SIN la excepción de la arena. Apaga el fuego y el veneno.
         if (spell.IsSanacion)
         {
-            if (NoSePuedeAyudar(exentaEnArena: false)) return;
+            if (NoSePuedeAyudar(exentaEnArena: false)) return false;
             target.Incinerado = false;
             target.PoisonedUntilTick = 0;
             casteado = true;
@@ -3115,7 +3120,7 @@ public sealed partial class PacketDispatcher
         // `ToPCArea` (:1089), que incluye al propio: el que la lanza también se ve latiendo.
         if (spell.IsInvisibility)
         {
-            if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
+            if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return false; }
             if (!p.Invisible) p.InvisibleUntilTick = now + InvisibilityDurationTicks;
             p.Invisible = true;
             _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true));
@@ -3125,9 +3130,9 @@ public sealed partial class PacketDispatcher
         // y son agresiones (PuedeAtacar, y el legal atacado vuelve criminal al que lo tira).
         if (spell.IsPoison)
         {
-            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-            if (target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(326)); return; }
-            if (!PuedeAtacar(session, p, target)) return;
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
+            if (target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(326)); return false; }
+            if (!PuedeAtacar(session, p, target)) return false;
             FlagCriminalIfLegalTarget(session, p, target);
             target.PoisonedUntilTick = long.MaxValue;
             target.PoisonCounter = 0;
@@ -3135,9 +3140,9 @@ public sealed partial class PacketDispatcher
         }
         if (spell.IsIncinerate)
         {
-            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-            if (target.Incinerado) { session.Send(ServerMessages.LocaleMsg(326)); return; }
-            if (!PuedeAtacar(session, p, target)) return;
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
+            if (target.Incinerado) { session.Send(ServerMessages.LocaleMsg(326)); return false; }
+            if (!PuedeAtacar(session, p, target)) return false;
             FlagCriminalIfLegalTarget(session, p, target);
             // El contador NO se toca: el original sólo prende el flag (:1150), y de ahí sale cuánto dura.
             target.Incinerado = true;
@@ -3146,18 +3151,18 @@ public sealed partial class PacketDispatcher
         // CURAR VENENO (:1134-1148): al sano, el 451 sin cobrar; al que no se puede ayudar, el 449 y SE COBRA sin curar.
         if (spell.IsCurePoison)
         {
-            if (!target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(451)); return; }
-            if (NoSePuedeAyudar(exentaEnArena: true)) { casteado = true; Cortar(); return; }
+            if (!target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(451)); return false; }
+            if (NoSePuedeAyudar(exentaEnArena: true)) { casteado = true; return Cortar(); }
             target.PoisonedUntilTick = 0;
             casteado = true;
         }
         // PARALIZAR O INMOVILIZAR (:1149-1168): sobre uno mismo el 298; sobre quien ya está quieto, nada.
         if (spell.IsParalyze || spell.IsImmobilize)
         {
-            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
             if (target.ParalyzedUntilTick <= now)
             {
-                if (!PuedeAtacar(session, p, target)) { Cortar(); return; }
+                if (!PuedeAtacar(session, p, target)) return Cortar();
                 FlagCriminalIfLegalTarget(session, p, target);
                 casteado = true;
                 target.ParalyzedUntilTick = now + _ini.IntervaloParalizado;
@@ -3173,7 +3178,7 @@ public sealed partial class PacketDispatcher
         // REMOVER PARÁLISIS (:1169-1180): sólo si está quieto, y sólo a quien se puede ayudar.
         if (spell.IsRemoveParalysis && target.ParalyzedUntilTick > now)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
             target.ParalyzedUntilTick = 0;
             target.ParalyzedByCharIndex = 0;
             if (target.ClientParalyzed) { target.ClientParalyzed = false; target.Connection?.Send(ServerMessages.ParalizeOK()); }
@@ -3182,8 +3187,8 @@ public sealed partial class PacketDispatcher
         // CEGUERA (:1290-1310): sobre uno mismo el 298; es agresión; al que ya está ciego no se le renueva.
         if (spell.Ceguera > 0)
         {
-            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-            if (!PuedeAtacar(session, p, target)) return;
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
+            if (!PuedeAtacar(session, p, target)) return false;
             FlagCriminalIfLegalTarget(session, p, target);
             if (target.BlindedUntilTick <= now) ApplyBlind(target, spell);
             casteado = true;
@@ -3193,7 +3198,7 @@ public sealed partial class PacketDispatcher
         // con `HechizoCasteado = False`.
         if (spell.SubeAgilidad == 1)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
             dano = _rng.Next(spell.MinAgilidad, spell.MaxAgilidad + 1);
             target.ApplyAttrBonus(2, (int)dano, now, AttrBuffDurationTicks);
             target.Connection?.Send(ServerMessages.UpdateDexterity(target.Agility));
@@ -3201,7 +3206,7 @@ public sealed partial class PacketDispatcher
         }
         else if (spell.SubeAgilidad == 2)
         {
-            if (!PuedeAtacar(session, p, target)) { Cortar(); return; }
+            if (!PuedeAtacar(session, p, target)) return Cortar();
             if (!yo) FlagCriminalIfLegalTarget(session, p, target);
             dano = _rng.Next(spell.MinAgilidad, spell.MaxAgilidad + 1);
             target.ApplyAttrBonus(2, -(int)dano, now, AttrDebuffDurationTicks);
@@ -3210,7 +3215,7 @@ public sealed partial class PacketDispatcher
         }
         if (spell.SubeFuerza == 1)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
             dano = _rng.Next(spell.MinFuerza, spell.MaxFuerza + 1);
             target.ApplyAttrBonus(1, (int)dano, now, AttrBuffDurationTicks);
             target.Connection?.Send(ServerMessages.UpdateStrenght(target.Strength));
@@ -3218,7 +3223,7 @@ public sealed partial class PacketDispatcher
         }
         else if (spell.SubeFuerza == 2)
         {
-            if (!PuedeAtacar(session, p, target)) return;
+            if (!PuedeAtacar(session, p, target)) return false;
             if (!yo) FlagCriminalIfLegalTarget(session, p, target);
             dano = _rng.Next(spell.MinFuerza, spell.MaxFuerza + 1);
             target.ApplyAttrBonus(1, -(int)dano, now, AttrDebuffDurationTicks);
@@ -3232,7 +3237,7 @@ public sealed partial class PacketDispatcher
         bool mato = false;
         if (spell.SubeHp == 1)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
             dano = Combat.EfectoHechizoArea3Pct(amount, p.Level);
             target.Hp = (int)Math.Min(target.MaxHp, target.Hp + dano);
             target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
@@ -3242,9 +3247,9 @@ public sealed partial class PacketDispatcher
         }
         else if (spell.SubeHp == 2)
         {
-            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
             dano = DanoMagicoAJugador(p, target, amount);
-            if (!PuedeAtacar(session, p, target)) { Cortar(); return; }
+            if (!PuedeAtacar(session, p, target)) return Cortar();
             FlagCriminalIfLegalTarget(session, p, target);
             casteado = true;
             RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillResistencia);
@@ -3254,7 +3259,7 @@ public sealed partial class PacketDispatcher
             mato = target.Hp == 0;
         }
 
-        if (!casteado) return;
+        if (!casteado) return false;
         // InfoHechizo, y después el cobro (HandleHechizoUsuario, :778-797).
         EmitSpellFx(p, target.Pos, target.CharIndex, spell);
         if (dano > 0)
@@ -3272,9 +3277,9 @@ public sealed partial class PacketDispatcher
             target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}", 0, color));
         }
         else session.Send(ServerMessages.LocaleMsg(0, $"={spell.Index}", 0, color));
-        SpellCasted(session, p, spell);
-        EmitirCostoDelHechizo(session, p);
+        if (!desdeObjeto) { SpellCasted(session, p, spell); EmitirCostoDelHechizo(session, p); }
         if (mato) OnKill(session, p, target);
+        return true;
     }
 
     /// <summary>
@@ -10683,114 +10688,6 @@ public sealed partial class PacketDispatcher
         if (!target.ClientBlind) { target.ClientBlind = true; target.Connection?.Send(ServerMessages.Blind()); }
     }
 
-    /// <summary>Aplica sobre <paramref name="target"/> TODOS los efectos de estado que traiga el hechizo, con
-    /// <c>If</c> INDEPENDIENTES y en el orden del original (<c>HechizoEstadoUsuario</c>, modHechizos.bas:
-    /// Sanacion :1048 → Envenena :1096 → Incinera :1127 → CuraVeneno :1157 → Paraliza/Inmoviliza :1180 →
-    /// RemoverParalisis :1213 → Ceguera :1290).
-    ///
-    /// POR QUÉ EXISTE. El VB6 rutea TODOS los hechizos con objetivo usuario al mismo Sub, que es una única
-    /// secuencia de <c>If</c> sueltos donde <c>Select SubeHP</c> es el ÚLTIMO (:1412). Acá el despacho era una
-    /// cadena <c>if / else if</c> por tipo, así que la primera bandera que matcheaba se comía todas las demás.
-    /// Cinco hechizos del install quedaban a medias, y ninguno daba error:
-    /// <list type="table">
-    /// <item>32 Sanar — SubeHP=1 + RemoverParalisis + Sanacion → curaba y nada más (la incineración quedaba SIN antídoto)</item>
-    /// <item>57 Tormenta ácida — SubeHP=2 + Envenena → no envenenaba</item>
-    /// <item>69 Descarga Flamígera — SubeHP=2 + Incinera → no incineraba</item>
-    /// <item>35 Lluvia de Mosquitos — Paraliza + Ceguera → no cegaba</item>
-    /// <item>90 Prevención del mal — Invisibilidad + SubeAG → no daba agilidad (ver la rama IsInvisibility)</item>
-    /// </list>
-    /// El cobro de maná/stamina NO va acá: el original lo hace UNA vez en el caller (<c>HechizoCasteado</c>),
-    /// así que cobrar por efecto cobraría de más.
-    ///
-    /// No se modela <c>Estupidez</c>/<c>RemoverEstupidez</c> — el port no tiene ese estado. Sanar trae
-    /// <c>RemoverEstupidez=1</c> y esa bandera sigue sin efecto, igual que antes.</summary>
-    private List<string> AplicarEfectosDeEstado(Player caster, Player target, Data.SpellInfo spell)
-    {
-        long StateDurationTicks = _ini.IntervaloParalizado;   // [INTERVALOS] IntervaloParalizado, en vueltas de 40 ms
-        long now = _loop.Tick;
-        var efectos = new List<string>();
-        if (spell.IsSanacion) { target.PoisonedUntilTick = 0; target.Incinerado = false; efectos.Add("sanado"); }
-        // EL VENENO NO SE VA SOLO: en el original es un flag pelado, sin contador de duración. Lo apagan Curar
-        // Veneno, la Sanación, el sacerdote (Acciones.bas:317) o la muerte.
-        if (spell.IsPoison)
-        {
-            target.PoisonedUntilTick = long.MaxValue; target.PoisonCounter = 0;
-            efectos.Add("envenenado");
-        }
-        // INCINERAR NO ES ENVENENAR (VB6 modHechizos.bas:1127). Tiene su propio flag, su propio contador y su
-        // propio efecto: 45-65 de daño por golpe de fuego —contra el 1-5 del veneno— y se apaga solo a las 50
-        // vueltas. Acá prendía el flag del VENENO, así que incinerar a alguien lo dejaba envenenado PARA
-        // SIEMPRE y pegando diez veces menos. Y el original rechaza incinerar a quien ya está ardiendo
-        // (LocaleMsg 326), que era otra rama que no existía.
-        if (spell.IsIncinerate)
-        {
-            if (target.Incinerado) { caster.Connection?.Send(ServerMessages.LocaleMsg(326)); }   // ya está ardiendo
-            // Prender el fuego NO resetea el contador, y ahí está toda la duración: el original sólo toca el
-            // flag (modHechizos.bas:1150). Acá se lo ponía en 0, con lo cual toda quemadura duraba los 50
-            // ticks enteros y la rareza del azar del original —una de cada cuatro se apaga sola— no existía.
-            else { target.Incinerado = true; efectos.Add("incinerado"); }
-        }
-        // Curar veneno a alguien que NO está envenenado: el original refuta con el 451 ("El objetivo no está
-        // bajo el efecto de ese modificador", modHechizos.bas:1160) y NO castea. Acá se aplicaba igual y
-        // salía "curado del veneno" sobre alguien sano.
-        if (spell.IsCurePoison)
-        {
-            if (!target.IsPoisoned(now)) { caster.Connection?.Send(ServerMessages.LocaleMsg(451)); }
-            else { target.PoisonedUntilTick = 0; efectos.Add("curado del veneno"); }
-        }
-        if (spell.IsParalyze || spell.IsImmobilize)
-        {
-            target.ParalyzedUntilTick = now + StateDurationTicks;
-            target.MarcaParalizado = spell.IsParalyze;
-            target.MarcaInmovilizado = spell.IsImmobilize;
-            efectos.Add(spell.IsImmobilize ? "inmovilizado" : "paralizado");
-            // Quién lo paralizó: el efecto se suelta si el caster se muere o se aleja (VB6 EfectoParalisisUser,
-            // General.bas:978 — ver el bloque del game-loop en Program.cs).
-            target.ParalyzedByCharIndex = target.CharIndex == caster.CharIndex ? (short)0 : caster.CharIndex;
-            // ParalizeOK es un TOGGLE del lado del cliente: sólo se manda en la transición.
-            if (!target.ClientParalyzed) { target.ClientParalyzed = true; target.Connection?.Send(ServerMessages.ParalizeOK()); }
-        }
-        // Va DESPUÉS de paralizar, como en el original: un hechizo con las dos banderas termina liberando.
-        if (spell.IsRemoveParalysis)
-        {
-            target.ParalyzedUntilTick = 0; target.ParalyzedByCharIndex = 0; efectos.Add("liberado de la parálisis");
-            if (target.ClientParalyzed) { target.ClientParalyzed = false; target.Connection?.Send(ServerMessages.ParalizeOK()); }
-        }
-        if (spell.Ceguera > 0) { ApplyBlind(target, spell); efectos.Add("cegado"); }
-        return efectos;
-    }
-
-    /// <summary>Aplica los buffs/debuffs de atributo del hechizo y emite SÓLO el atributo que tocó.
-    ///
-    /// El original son dos <c>Select Case</c> INDEPENDIENTES y en este orden: <c>SubeAgilidad</c>
-    /// (modHechizos.bas:1322, emite <c>WriteUpdateDexterity</c>) y <c>SubeFuerza</c> (:1365, emite
-    /// <c>WriteUpdateStrenght</c>). Acá se mandaban los DOS siempre, con una cita que leía esas dos líneas como
-    /// si fueran un bloque único; el único lugar donde el VB6 manda ambos es la expiración de pociones
-    /// (General.bas:1166), y ahí el propio autor lo comenta como excepción que no le gusta.</summary>
-    private List<string> AplicarBuffsDeAtributo(Player target, Data.SpellInfo spell)
-    {
-        var parts = new List<string>();
-        if (spell.SubeAgilidad > 0)
-        {
-            int roll = _rng.Next(spell.MinAgilidad, spell.MaxAgilidad + 1);
-            int delta = spell.SubeAgilidad == 2 ? -roll : roll;
-            long dur = spell.SubeAgilidad == 2 ? AttrDebuffDurationTicks : AttrBuffDurationTicks;
-            target.ApplyAttrBonus(2, delta, _loop.Tick, dur);
-            parts.Add($"{(delta >= 0 ? "+" : "")}{delta} agilidad");
-            target.Connection?.Send(ServerMessages.UpdateDexterity(target.Agility));
-        }
-        if (spell.SubeFuerza > 0)
-        {
-            int roll = _rng.Next(spell.MinFuerza, spell.MaxFuerza + 1);
-            int delta = spell.SubeFuerza == 2 ? -roll : roll;
-            long dur = spell.SubeFuerza == 2 ? AttrDebuffDurationTicks : AttrBuffDurationTicks;
-            target.ApplyAttrBonus(1, delta, _loop.Tick, dur);
-            parts.Add($"{(delta >= 0 ? "+" : "")}{delta} fuerza");
-            target.Connection?.Send(ServerMessages.UpdateStrenght(target.Strength));
-        }
-        return parts;
-    }
-
     /// <summary>EL CASTEO SON DOS PAQUETES, como en el original (Protocol.bas:2142-2186). Este es el primero:
     /// <c>CastSpell(ranura)</c> NO lanza nada — deja la ranura elegida en <c>flags.Hechizo</c> y le pide al
     /// cliente que marque un blanco con <c>WorkRequestTarget(magia)</c>. El clic siguiente llega como
@@ -11872,9 +11769,9 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.PlayWave(snd, (byte)p.Pos.X, (byte)p.Pos.Y));
                 // "Los admin invisibles solo producen sonidos a si mismos" — pero SÓLO en la BEBIDA
                 // (InvUsuario.bas:1709). La COMIDA no lleva ese gate (:1444-1449) y suena al área igual estando
-                // invisible: la asimetría es de la fuente y se porta tal cual. Acá no se gateaba ninguna de las
-                // dos, así que un GM invisible se delataba tomando agua.
-                if (!(obj.IsDrink && p.Invisible))
+                // invisible: la asimetría es de la fuente y se porta tal cual. Y es la invisibilidad del GM
+                // (`AdminInvisible`): al invisible por hechizo que toma agua lo escucha el área.
+                if (!(obj.IsDrink && p.InvisibleDeAdmin))
                     _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(snd, (byte)p.Pos.X, (byte)p.Pos.Y), p.CharIndex);
                 session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, inv.Amount));
                 return;
@@ -11887,7 +11784,7 @@ public sealed partial class PacketDispatcher
                 if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }   // VB6 DeadCheck
                 var wave = ServerMessages.PlayWave((short)obj.Snd1, p.Pos.X, p.Pos.Y);
                 session.Send(wave);
-                if (!p.Invisible) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
+                if (!p.InvisibleDeAdmin) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
                 return;
             }
             // BOLSA DE ORO (otBolsas = 39, VB6 InvUsuario.bas:1838). Se abre, suma su `Valor` en monedas y se
@@ -11987,39 +11884,23 @@ public sealed partial class PacketDispatcher
                     session.Send(ServerMessages.LocaleMsg(470, $"{obj.CuantoAumento}%{p.CreditoDonador}"));   // "¡Has abierto cofre de #1 creditos, ahora tienes #2!"
                     return;
                 }
-                case 5: // poción que LANZA UN HECHIZO sobre quien la toma (VB6 InvUsuario.bas:1636)
+                case 5: // poción que LANZA UN HECHIZO sobre quien la toma (VB6 InvUsuario.bas:1635-1641)
                 {
-                    // El original pone TargetUser = uno mismo y llama HechizoEstadoUsuario. Si ese Sub no
-                    // aplicó nada devuelve Casteo=False y hace `Exit Sub`: la poción NO se consume. Eso es lo
-                    // que hace que la de Metamorfosis y las dos de Desencantar sigan sin efecto —ese Sub no
-                    // lee esos campos— y es fiel, no una simplificación nuestra.
-                    var hechizo = obj.LanzaHechizo > 0 ? _data.Spell(obj.LanzaHechizo) : null;
-                    if (hechizo is null) { session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", FuenteInfo)); return; }
-                    var aplicados = AplicarBuffsDeAtributo(p, hechizo);
-                    aplicados.AddRange(AplicarEfectosDeEstado(p, p, hechizo));
-                    // SubeHP va al final, como en el original (:1412), y con la misma fórmula que el hechizo.
-                    if (hechizo.SubeHp == 1 && hechizo.MaxHp > 0)
+                    // El original pone TargetUser = uno mismo, llama al MISMO HechizoEstadoUsuario que el hechizo —con
+                    // sus cortes, las palabras, el FX y el aviso 0/499— y vuelve el TargetUser a 0. Si no quedó lanzado
+                    // (`Casteo = False`) sale sin gastarla y sin sonido: la de Remover Parálisis sin estar quieto, la
+                    // de Curar Veneno sano (el 451), la de Invisibilidad donde no hay (el 448), y la de Metamorfosis y
+                    // las dos de Desencantar, que ese Sub no lee. Sin hechizo en la ficha, se gasta sin hacer nada.
+                    effect = "sin hechizo";
+                    if (obj.LanzaHechizo > 0)
                     {
-                        int cura = Combat.EfectoHechizoArea3Pct(_rng.Next(hechizo.MinHp, hechizo.MaxHp + 1), p.Level);
-                        p.Hp = Math.Min(p.MaxHp, p.Hp + cura);
-                        aplicados.Add($"+{cura} HP -> {p.Hp}/{p.MaxHp}");
-                        avisoStat = ServerMessages.UpdateHP((short)p.Hp);
+                        if (_data.Spell(obj.LanzaHechizo) is not { } hechizo) return;
+                        bool casteo = HechizoEstadoUsuario(session, p, p, hechizo, _rng.Next(hechizo.MinHp, hechizo.MaxHp + 1),
+                            desdeObjeto: true);
+                        p.TargetUser = 0;
+                        if (!casteo) return;
+                        effect = hechizo.Name;
                     }
-                    if (hechizo.Invisibilidad > 0 && !p.Invisible)
-                    {
-                        p.InvisibleUntilTick = _loop.Tick + InvisibilityDurationTicks;
-                        p.Invisible = true;
-                        _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
-                        aplicados.Add("invisible");
-                    }
-                    if (aplicados.Count == 0)
-                    {
-                        // Casteo = False. Ni se consume ni se gasta: el frasco sigue en el inventario.
-                        session.Send(ServerMessages.ConsoleMsg("Esa poción no te hace nada.", FuenteInfo));
-                        return;
-                    }
-                    EmitSpellFx(p, p.Pos, p.CharIndex, hechizo);
-                    effect = string.Join(", ", aplicados);
                     break;
                 }
                 case 6: // Scroll a Intermundia (VB6 InvUsuario.bas:1644) — objeto 498
@@ -12087,17 +11968,20 @@ public sealed partial class PacketDispatcher
                     session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", FuenteInfo)); return;
             }
 
+            // Los cuatro Case que se BEBEN (1 a 4) mandan primero el granular del stat que tocaron, no el
+            // UpdateUserStats gordo —cada uno elige su Write: Dexterity / Strenght / HP / Mana (InvUsuario.bas:
+            // 1567-1626)— y después el SND_BEBER. Los demás (el hechizo, el pergamino, las mágicas) no suenan. Al GM
+            // invisible lo escucha sólo él (`If .flags.AdminInvisible = 1`); al invisible por hechizo, el área.
+            if (avisoStat is not null) session.Send(avisoStat);
+            if (obj.SubType is >= 1 and <= 4)
+            {
+                var trago = ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y);
+                if (p.InvisibleDeAdmin) session.Send(trago);
+                else _world.BroadcastToObservers(p.Pos, trago);
+            }
             inv.Amount -= 1;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
-            session.Send(ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y));      // drink sound (SND_BEBER)
-            // Mismo gate que la bebida: los cuatro Case de poción del original lo traen (InvUsuario.bas:1578,
-            // 1596, 1613 y 1628). Sin él, un GM invisible tomando una poción se escucha en toda el área.
-            if (!p.Invisible)
-                _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y), p.CharIndex);
-            // El original manda el granular del stat que tocó la poción, no el UpdateUserStats gordo: cada
-            // Case de InvUsuario.bas:1567-1626 elige su propio Write (Dexterity / Strenght / HP / Mana).
-            if (avisoStat is not null) session.Send(avisoStat);
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} usa {obj.Name} ({effect})");
         });
