@@ -10485,6 +10485,9 @@ public sealed partial class PacketDispatcher
     /// pasa por el camino de "avisar quién le pegó a quién".</summary>
     private void CastAreaSpell(ClientSession session, Player p, Data.SpellInfo spell, byte cx, byte cy)
     {
+        // `b = True` al entrar al 3×3 (VB6 HechizoTerrenoEstado, modHechizos.bas:398): sin criaturas en el área, el
+        // hechizo se cobra siempre; con criaturas, manda la última (ver abajo).
+        bool casteado = true;
         // El CENTRO del 3×3 es el tile CLICKEADO (`PosCasteadaX = .flags.TargetX`, modHechizos.bas:397-399),
         // que LookatTile acaba de dejar. Antes era el tile encarado, porque el casteo no tenía clic.
 
@@ -10499,17 +10502,29 @@ public sealed partial class PacketDispatcher
                 var target = _world.PlayerAt(tile);
                 if (target is { IsAlive: true })
                 {
-                    // Case 1 cura: sólo si PuedeAyudar (gate de facción). Case 2 daño: a cualquiera MENOS a uno
-                    // mismo — el original excluye al lanzador con `If Not TargetUser = UserIndex`, así que la
-                    // Bomba mágica no se autodaña aunque el 3×3 incluya al mago si está pegado al centro.
-                    if (spell.IsHeal) { if (PuedeAyudar(p, target)) AreaHealPlayer(session, p, target, spell); }
-                    else if (spell.IsDamage && target.CharIndex != p.CharIndex) AreaDamagePlayer(session, p, target, spell);
+                    // Case 1 cura: sólo si PuedeAyudar, y a quien no se puede ayudar le llega el 449 (PuedeAyudar lo
+                    // manda adentro, :1917-1930). Case 2 daño: a cualquiera MENOS a uno mismo — el original excluye al
+                    // lanzador con `If Not TargetUser = UserIndex`, así que la Bomba mágica no se autodaña aunque el
+                    // 3×3 incluya al mago si está pegado al centro — y deja el hechizo lanzado (:421).
+                    if (spell.IsHeal)
+                    {
+                        if (PuedeAyudar(p, target)) AreaHealPlayer(session, p, target, spell);
+                        else session.Send(ServerMessages.LocaleMsg(449));
+                    }
+                    else if (spell.IsDamage && target.CharIndex != p.CharIndex) { AreaDamagePlayer(session, p, target, spell); casteado = true; }
                 }
 
                 // El NPC del tile se resuelve APARTE del jugador y en el mismo paso, no en un `else`: un tile con
                 // criatura pisando a un jugador recibe las dos cosas (VB6 :431, fuera del `If TargetUser > 0`).
                 var npc = _world.NpcAt(tile);
-                if (npc is { IsAlive: true }) AreaSpellOnNpc(session, p, npc, spell);
+                if (npc is { IsAlive: true })
+                {
+                    // La criatura pasa por HechizoPropNPC con `b` por referencia (:430): el resultado de CADA criatura
+                    // pisa si el hechizo quedó lanzado, así que cobra o no según la ÚLTIMA. Y su quejido suena
+                    // siempre, haya recibido algo o no (:431-433).
+                    casteado = AreaSpellOnNpc(session, p, npc, spell, casteado);
+                    if (npc.Template.Snd2 > 0) NpcSystem.SonidoDeCriatura(_world, npc, npc.Template.Snd2);
+                }
             }
 
         // Los tres paquetes al terreno, una vez y en el orden del original (:469-471).
@@ -10527,9 +10542,11 @@ public sealed partial class PacketDispatcher
         // llega a la línea :1743.
         DecirPalabrasMagicas(p, spell);
 
-        SpellCasted(session, p, spell);                      // el cobro va al final (VB6 `If HechizoCasteado`)
+        // El cobro va al final y sólo si quedó lanzado (HandleHechizoTerreno, :716-727), con UN UpdateSta y un
+        // UpdateMana: EmitirCostoDelHechizo ya manda los dos.
+        if (!casteado) return;
+        SpellCasted(session, p, spell);
         EmitirCostoDelHechizo(session, p);
-        session.Send(ServerMessages.UpdateSta((short)p.Stamina));     // maná Y stamina del lanzador (VB6 los manda por separado)
     }
 
     /// <summary>Una víctima de la cura de área (VB6 <c>HechizoTerrenoHP</c> con <c>Accion = True</c>,
@@ -10589,35 +10606,36 @@ public sealed partial class PacketDispatcher
     /// asimetría con los jugadores, que es de la fuente: acá el bono es del <b>3%</b> por nivel en las dos
     /// direcciones y no hay resistencia mágica que descontar. Curar sólo funciona sobre una criatura NO hostil
     /// (<c>If Npclist(npcindex).Hostile > 0 Then ... Exit Sub</c>), o sea las mascotas.</summary>
-    /// <summary>NO SE PORTA ACÁ EL <c>Snd2</c> DE LA CRIATURA, y es deliberado. El original lo emite en el
-    /// barrido de área de <c>HechizoTerrenoEstado</c> (modHechizos.bas:438), justo después de
-    /// <c>HechizoPropNPC</c> y para CUALQUIER criatura que caiga en el área — mientras que este método sale
-    /// temprano en tres casos (cura sobre hostil, hechizo sin daño, NPC de servicio) y sólo modela daño y cura.
-    /// Meter el sonido en una estructura que no es la misma emitiría donde el original calla, que es la clase
-    /// de error que sólo caza el oráculo… y que el oráculo NO cazaría acá, porque su barrido nunca lanza un
-    /// hechizo de área sobre una criatura. Los otros cinco sitios del original sí están portados: el rugido al
-    /// atacar, el quejido al recibirlo a melee (jugador→criatura y criatura→criatura) y el grito al morir.</summary>
-    private void AreaSpellOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell)
+    /// <summary>
+    /// Una criatura del área (VB6 HechizoPropNPC, modHechizos.bas:1640-1700), llamado con el `b` del área por
+    /// referencia. Devuelve cómo queda ese `b`: curar a una hostil lo apaga y curar a otra lo prende; un hechizo sin
+    /// vida (SubeHP 0, el Tornado) no entra a ningún Case y lo deja como estaba; dañar pasa por PuedeAtacarNPC ENTERO
+    /// —el 298 de la que no se ataca (SistemaCombate.bas:1736: sí avisa, también en un área), el Armada contra la
+    /// que no tiene dueño, la mascota ajena, la pertenencia— y si no puede lo apaga. El daño gotea experiencia igual
+    /// que el de un solo blanco: los dos son el mismo HechizoPropNPC, que llama a CalcularDarExp.
+    /// </summary>
+    private bool AreaSpellOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell, bool casteado)
     {
         if (spell.IsHeal)
         {
-            if (npc.Hostile) return;
+            if (npc.Hostile) return false;
             int healed = Combat.EfectoHechizoArea3Pct(_rng.Next(spell.MinHp, spell.MaxHp + 1), p.Level);
             npc.Hp = Math.Min(npc.Template.MaxHp, npc.Hp + healed);
             session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, healed, 3));
-            return;
+            return true;
         }
-        if (!spell.IsDamage) return;   // SubeHP = 0 (Tornado): ningún Case lo agarra
-        // PuedeAtacarNPC: los NPCs de servicio no se tocan. Silencio, no LocaleMsg(298): el original sale con
-        // `HechizoCasteado = False` y sin avisar nada, porque en un área es normal barrer tiles no válidos.
+        if (!spell.IsDamage) return casteado;   // SubeHP = 0 (Tornado): ningún Case lo agarra
         if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench
-            || npc.IsTrainer || npc.FactionConvert != 0) return;
+            || npc.IsTrainer || npc.FactionConvert != 0) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
+        if (!PuedeAtacarNpc(session, p, npc)) return false;
         npc.AttackedBy = p.Name;   // NPCAtacado
         npc.Hostile = true;
         int damage = DanoMagicoANpc(p, npc, _rng.Next(spell.MinHp, spell.MaxHp + 1));
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
         session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, damage, 2));
+        CalcularDarExp(session, p, npc, damage);
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
+        return true;
     }
 
     /// <summary>Ceguera side-effect: any spell with Ceguera&gt;0 blinds its target for a while. Blind and
