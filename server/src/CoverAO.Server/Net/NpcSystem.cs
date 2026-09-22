@@ -182,6 +182,8 @@ public sealed class NpcSystem
     private const short SndImpacto = 86; // Declares.bas:553 SND_IMPACTO — el golpe que entra
     private const short FxSangre = 14;   // Declares.bas:67 FXSANGRE
     private const short ElementalSinMelee = 92;  // AI_NPC.bas:433 — el elemental no pega cuerpo a cuerpo
+    private const short ElementalFuego = 93;     // AI_NPC.bas:45 ELEMENTALFUEGO: contra otra criatura castea, no pega
+    private const int TipoDragon = 20;           // eNPCType.Dragon (Declares.bas:398): le contesta al elemental de fuego
 
     /// <summary>
     /// Vueltas del loop entre ataque y ataque de UNA criatura: los 3000 ms de
@@ -743,6 +745,10 @@ public sealed class NpcSystem
             if (otro.IsMerchant || otro.IsBanker || otro.IsReviver) continue;
             int dx = Math.Abs(otro.Pos.X - amo.Pos.X), dy = Math.Abs(otro.Pos.Y - amo.Pos.Y);
             if (dx > RangoVisionX || dy > RangoVisionY) continue;
+            // Y QUE EL FAMILIAR LO VEA PARA PELEAR: la pelea entre criaturas suelta al blanco que está fuera de su caja
+            // de 6 por 6 (NpcAtacaANpcObjetivo). Sin esto elegía una presa a 7 u 8 baldosas, la soltaba en la vuelta
+            // siguiente y la volvía a elegir, sin acercarse nunca.
+            if (Math.Abs(otro.Pos.X - npc.Pos.X) > RangoVisionY || Math.Abs(otro.Pos.Y - npc.Pos.Y) > RangoVisionY) continue;
             int dist = dx + dy;
             if (dist >= mejorDist) continue;
             mejor = otro; mejorDist = dist;
@@ -756,35 +762,82 @@ public sealed class NpcSystem
     private void NpcAtacaANpcObjetivo(Npc npc)
     {
         var blanco = npc.TargetNpcCharIndex != 0 ? _world.NpcByIndex(npc.TargetNpcCharIndex) : null;
-        // `If Not bNoEsta` (AI_NPC.bas:625): si el blanco ya no está, la mascota vuelve con su amo y una
-        // criatura sin dueño recupera el movimiento que traía.
-        if (blanco is null || !blanco.IsAlive || blanco.Pos.Map != npc.Pos.Map || blanco.CharIndex == npc.CharIndex)
+        bool inmovilizada = npc.EstaInmovilizada(_tick);
+        // EL BLANCO SE BUSCA EN LO QUE VE (AI_NPC.bas:557-605): la caja de visión, o la línea del frente si está
+        // inmovilizada. Si no está ahí —se fue, murió o se alejó—, `If Not bNoEsta` (:625): la mascota vuelve con su
+        // amo, y una criatura sin dueño recupera el movimiento y la hostilidad que traía. OJO LA CAJA: el original la
+        // recorre con RANGO_VISION_Y en los DOS ejes (:593-594), así que es de 6 por 6, no la de 8 por 6 del resto.
+        if (blanco is null || !blanco.IsAlive || blanco.Pos.Map != npc.Pos.Map || blanco.CharIndex == npc.CharIndex
+            || !(inmovilizada ? EnLaLineaDelFrente(npc, blanco.Pos)
+                              : Math.Abs(blanco.Pos.X - npc.Pos.X) <= RangoVisionY && Math.Abs(blanco.Pos.Y - npc.Pos.Y) <= RangoVisionY))
         {
             npc.TargetNpcCharIndex = 0;
-            npc.Movement = npc.OwnerCharIndex != 0 ? GameLimits.TipoAiSigueAmo : npc.OriginalMovement;
+            if (npc.OwnerCharIndex != 0) npc.Movement = GameLimits.TipoAiSigueAmo;
+            else { npc.Movement = npc.OriginalMovement; npc.Hostile = npc.OriginallyHostile; }
             return;
         }
         int dx = blanco.Pos.X - npc.Pos.X, dy = blanco.Pos.Y - npc.Pos.Y;
-        // INMOVILIZADA (AI_NPC.bas:557-591): busca a su blanco sólo en la línea del frente, y si lo encuentra le pega
-        // si lo tiene pegado —o nada, si está más lejos— sin moverse. Si no está en esa línea, lo da por perdido
-        // igual que si se hubiera ido: la mascota vuelve con su amo (`If Not bNoEsta`, :625).
-        if (npc.EstaInmovilizada(_tick))
+        // EL ELEMENTAL DE FUEGO NO PEGA: le tira su hechizo desde donde lo vea, y si el blanco es un DRAGÓN, el dragón
+        // le contesta con uno suyo (:577-583 y :598-604). Las demás pegan si lo tienen pegado (`If Distancia <= 1`).
+        if (npc.Template.Index == ElementalFuego)
         {
-            if (!EnLaLineaDelFrente(npc, blanco.Pos))
-            {
-                npc.TargetNpcCharIndex = 0;
-                npc.Movement = npc.OwnerCharIndex != 0 ? GameLimits.TipoAiSigueAmo : npc.OriginalMovement;
-            }
-            else if (Math.Abs(dx) + Math.Abs(dy) <= 1) NpcGolpeaA(npc, blanco);
-            return;
+            NpcLanzaHechizoSobreNpc(npc, blanco);
+            if (blanco.IsAlive && npc.IsAlive && blanco.Template.NpcType == TipoDragon) NpcLanzaHechizoSobreNpc(blanco, npc);
         }
-        if (Math.Abs(dx) + Math.Abs(dy) <= 1) { NpcGolpeaA(npc, blanco); return; }   // `If Distancia <= 1 Then NpcAtacaNpc`
+        else if (Math.Abs(dx) + Math.Abs(dy) <= 1) NpcGolpeaA(npc, blanco);
+        // Quieta no camina (:586), y con el blanco muerto tampoco (`If .TargetNPC = 0 Then Exit Sub`).
+        if (inmovilizada || !blanco.IsAlive || !npc.IsAlive) return;
         byte h = FindDirection(npc, blanco.Pos);
         if (h != 0)
         {
             var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
             MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
         }
+    }
+
+    /// <summary>
+    /// UNA CRIATURA LE TIRA UN HECHIZO A OTRA (VB6 NpcLanzaUnSpellSobreNpc, AI_NPC.bas:893, y NpcLanzaSpellSobreNpc,
+    /// modHechizos.bas:134-192): uno de los suyos al azar, con el MISMO intervalo que el golpe. El daño va crudo —no hay
+    /// equipo que lo frene—, con el sonido, el efecto y la partícula al área de la víctima y sin palabras mágicas; si la
+    /// mata, la cobra el amo de la que tiró. Inmovilizar y paralizar usan el contador largo (IntervaloParalizado contado
+    /// en vueltas de la IA) y cada uno le saca el otro a la víctima, como en el original.
+    /// </summary>
+    private void NpcLanzaHechizoSobreNpc(Npc npc, Npc victima)
+    {
+        if (npc.Template.Spells is not { Count: > 0 } lista || !IntervaloPermiteAtacar(npc)) return;
+        var spell = _data.Spell((short)lista[_rng.Next(lista.Count)]);
+        if (spell is null) return;
+        if (spell.SubeHp == 2)
+        {
+            int dano = spell.MaxHp >= spell.MinHp ? _rng.Next(spell.MinHp, spell.MaxHp + 1) : spell.MinHp;
+            EfectoDeHechizoSobreCriatura(victima, spell);
+            victima.Hp = Math.Max(0, victima.Hp - dano);
+            if (victima.Hp == 0) { MuereACriatura(npc, victima); return; }
+        }
+        bool inmune = victima.Template.Inmunidad != 0;   // `AfectaParalisis`
+        if (spell.IsImmobilize && !inmune && _tick >= victima.InmovilizadaHastaTick)
+        {
+            EfectoDeHechizoSobreCriatura(victima, spell);
+            victima.InmovilizadaHastaTick = _tick + ParalisisDeNpcEnCriaturaTicks;
+            victima.ParalyzedUntilTick = 0;
+        }
+        if (spell.IsParalyze && !inmune && !victima.EstaParalizada(_tick))
+        {
+            EfectoDeHechizoSobreCriatura(victima, spell);
+            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcEnCriaturaTicks;
+            victima.InmovilizadaHastaTick = 0;
+        }
+    }
+
+    /// <summary>El sonido, el efecto y la partícula de un hechizo sobre una criatura, a su área (modHechizos.bas:154-156).</summary>
+    private void EfectoDeHechizoSobreCriatura(Npc victima, SpellInfo spell)
+    {
+        _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)spell.Wav, victima.Pos.X, victima.Pos.Y));
+        if (spell.FxGrh > 0)
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.CreateFX(victima.CharIndex, (short)spell.FxGrh, (short)spell.FxLoops));
+        if (spell.Particle > 0)
+            _world.BroadcastToObservers(victima.Pos,
+                ServerMessages.EfectoCharParticula(victima.CharIndex, (short)spell.Particle, spell.TimeParticula, false));
     }
 
     /// <summary>VB6 <c>CheckPets</c> (SistemaCombate.bas:630), llamado desde <c>NpcAtacaUser</c>: cuando una
