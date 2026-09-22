@@ -10912,7 +10912,11 @@ public sealed partial class PacketDispatcher
                 _blancoDelCasteo = BlancoDelCasteo.Jugador;
             }
 
-            RevealHidden(p);   // castear rompe el ocultamiento (VB6: lanzar un hechizo revela al oculto)
+            // CASTEAR NO DESTAPA AL OCULTO. Acá había un `RevealHidden(p)` con el comentario "lanzar un hechizo revela
+            // al oculto", y en el original ninguna línea del casteo pone `Oculto = 0`: destapan hablar (Protocol.bas:1387),
+            // atacar (:1719), la flecha (SistemaCombate.bas:899), navegar, morir, salir y el vencimiento. `LanzarHechizo`
+            // sólo baja `Counters.Ocultando` (modHechizos.bas:945), que cuenta intentos de ocultarse para el listado de
+            // los GM (Protocol.bas:7265).
             // EL PORTAL DE LUM va por índice de hechizo, no por un flag del data: el original abre con
             // `If HechizoIndex <> 53 Then Exit Sub` (modHechizos.bas:1948). Es el único hechizo cableado por
             // número de todo el subsistema, y por eso no hay campo en Hechizos.dat que lo distinga.

@@ -229,6 +229,18 @@ public class HechizosSobreUnJugadorTests : IDisposable
         Assert.Equal(vence, mago.InvisibleUntilTick);
     }
 
+    /// <summary>Castear no destapa al oculto: en el original ninguna línea del casteo pone <c>Oculto = 0</c>.</summary>
+    [Fact]
+    public async Task Castear_no_destapa_al_oculto()
+    {
+        var (mago, sesion) = Mago(CurarHeridasLeves);
+        mago.Oculto = true;
+        mago.OcultoUntilTick = long.MaxValue;
+        await Castear(sesion, mago);                                           // se cura a sí mismo
+        Assert.True(mago.Hp > 50, "premisa: el hechizo se lanzó");
+        Assert.True(mago.Oculto, "sigue oculto");
+    }
+
     /// <summary>Prevención del mal sobre otro: la invisibilidad es del que lo tira (el bloque escribe sus flags) y
     /// la agilidad, del blanco.</summary>
     [Fact]
