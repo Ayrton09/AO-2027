@@ -2959,6 +2959,9 @@ public sealed partial class PacketDispatcher
         if (spell.StaRequerido > 0) p.Stamina = Math.Max(0, p.Stamina - spell.StaRequerido);   // VB6: castear cansa
         RaiseSkill(session, p, GameLimits.SkillMagia);                                         // VB6 SubirSkill(magia)
         p.HechizoUsarMs = Environment.TickCount64;                                            // ver IntervaloHechizoUsar
+        if (_blancoDelCasteo == BlancoDelCasteo.Criatura) p.TargetNpc = 0;
+        else if (_blancoDelCasteo == BlancoDelCasteo.Jugador) p.TargetUser = 0;
+        _blancoDelCasteo = BlancoDelCasteo.Terreno;
     }
 
     /// <summary>
@@ -3026,6 +3029,49 @@ public sealed partial class PacketDispatcher
         if (avisar) p.Connection?.Send(ServerMessages.ConsoleMsg("Vuelves a tu forma normal.", 0));
     }
 
+    /// <summary>
+    /// UN HECHIZO SOBRE UNA CRIATURA (VB6 HandleHechizoNPC, modHechizos.bas:813-872), por el Tipo del hechizo. Los
+    /// de ESTADO (2) van a HechizoEstadoNPC: paralizar o inmovilizar, y sacarle la parálisis a la mascota propia.
+    /// Los de PROPIEDADES (1), a HechizoPropNPC: curar a una criatura que no es hostil, o dañarla. Cualquier otro
+    /// Tipo, o un efecto que no aplica (envenenar a una criatura, curar a una hostil), no hace nada y no cobra.
+    /// </summary>
+    private void HechizoSobreCriatura(ClientSession session, Player p, Npc npc, Data.SpellInfo spell)
+    {
+        if (spell.Tipo == 2)
+        {
+            if (spell.IsParalyze || spell.IsImmobilize) { CastStateOnNpc(session, p, npc, spell); return; }
+            if (spell.IsRemoveParalysis)
+            {
+                // Sólo la mascota PROPIA y sólo si está quieta (:1578-1584); si no, silencio y sin cobrar.
+                if (npc.OwnerCharIndex != p.CharIndex || npc.ParalyzedUntilTick <= _loop.Tick) return;
+                npc.ParalyzedUntilTick = 0;
+                EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
+                SpellCasted(session, p, spell);
+                EmitirCostoDelHechizo(session, p);
+            }
+            return;
+        }
+        if (spell.Tipo != 1) return;
+        int amount = _rng.Next(spell.MinHp, spell.MaxHp + 1);   // RandomNumber(MinHP, MaxHP)
+        if (spell.SubeHp == 2) { CastDamageOnNpc(session, p, npc, spell, amount); return; }
+        if (spell.SubeHp != 1) return;
+        // CURAR A UNA CRIATURA (:1650-1664): a una hostil, nada; a cualquier otra —una mascota, un NPC del pueblo—,
+        // la vida más el 3 % por nivel del lanzador, el número en azul sobre el lanzador, y se cobra.
+        if (npc.Hostile) return;
+        int healed = Combat.EfectoHechizoArea3Pct(amount, p.Level);
+        npc.Hp = Math.Min(npc.Template.MaxHp, npc.Hp + healed);
+        session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, healed, 3));
+        EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
+        SpellCasted(session, p, spell);
+        EmitirCostoDelHechizo(session, p);
+    }
+
+    /// <summary>Sobre qué cayó el hechizo que se está lanzando: <see cref="SpellCasted"/> borra ese objetivo al
+    /// cobrar, como el original (HandleHechizoNPC pone <c>TargetNPC = 0</c>, :846; HandleHechizoUsuario,
+    /// <c>TargetUser = 0</c>, :797; el de terreno no borra nada).</summary>
+    private enum BlancoDelCasteo { Terreno, Jugador, Criatura }
+    private BlancoDelCasteo _blancoDelCasteo;
+
     private void CastStateOnNpc(ClientSession session, Player p, Npc npc, Data.SpellInfo spell)
     {
         // Paralizar una CRIATURA usa un número más chico que paralizar a una persona: el original usa
@@ -3034,18 +3080,6 @@ public sealed partial class PacketDispatcher
         // 14 segundos, casi el DOBLE que los 6 s de una persona. Acá decía 37 a secas —el mismo error de unidades que
         // el golpe a mano limpia— y la criatura arrancaba a segundo y medio.
         long ParalisisTicks = GameLimits.TicksDeUnContadorDeCriatura(37);
-
-        if (spell.IsRemoveParalysis)
-        {
-            // Sólo la propia mascota: el VB6 gatea con `.MaestroUser = UserIndex` y si no, no hace nada.
-            if (npc.OwnerCharIndex != p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-            npc.ParalyzedUntilTick = 0;
-            SpellCasted(session, p, spell);
-            EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
-            session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {npc.Name} quedó liberado de la parálisis.", 0));
-            EmitirCostoDelHechizo(session, p);
-            return;
-        }
 
         if (!spell.IsParalyze) { session.Send(ServerMessages.LocaleMsg(298)); return; }
 
@@ -10513,7 +10547,7 @@ public sealed partial class PacketDispatcher
             if (spell.EsAutoLanzado)
             {
                 // `.flags.TargetUser = UserIndex : LanzarHechizo(...)` — sobre uno mismo, sin clic.
-                LanzarHechizoElegido(session, p, p.Pos.X, p.Pos.Y);
+                LanzarHechizoElegido(session, p, p.Pos.X, p.Pos.Y, autolanzado: true);
                 return;
             }
             session.Send(ServerMessages.WorkRequestTarget((byte)GameLimits.SkillMagia));
@@ -10529,9 +10563,10 @@ public sealed partial class PacketDispatcher
     /// Se llama con el tile del clic (o el propio, para los <c>AutoLanzar</c>). Adentro, "el objetivo" es lo que
     /// haya en ese tile: el original lo lee de <c>flags.TargetUser/TargetNPC</c>, que <c>LookatTile</c> acaba de
     /// dejar, y este port lo lee del tile directamente — es lo mismo, sin pasar por el índice.</summary>
-    private void LanzarHechizoElegido(ClientSession session, Player p, byte clickX, byte clickY)
+    private void LanzarHechizoElegido(ClientSession session, Player p, byte clickX, byte clickY, bool autolanzado = false)
     {
         {
+            _blancoDelCasteo = BlancoDelCasteo.Terreno;
             byte slot = p.HechizoElegido;
             p.HechizoElegido = 0;   // `.flags.Hechizo = 0` (:2950): se consume, haya salido o no
             if (slot < 1 || slot > GameLimits.MaxUserSpells) return;
@@ -10543,7 +10578,12 @@ public sealed partial class PacketDispatcher
             if (_data.MapNoMagic(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(385)); return; }
             // `Call LookatTile(UserIndex, .Pos.Map, X, Y)` (:2927): el clic del hechizo SELECCIONA, igual que un
             // clic normal — de ahí que el original mande el CharMsgStatus de quien esté en el tile.
-            LookatTile(session, p, clickX, clickY);
+            //
+            // EL AUTOLANZAR NO CLICKEA: el original le pone el blanco en uno mismo (`.flags.TargetUser = UserIndex`,
+            // Protocol.bas:2138) y lanza. Pasarlo por LookatTile con la baldosa propia elegiría al que esté parado
+            // justo al SUR, porque LookatTile mira primero la baldosa de abajo.
+            if (autolanzado) p.TargetUser = p.CharIndex;
+            else LookatTile(session, p, clickX, clickY);
             // Fuera del rango de visión: `LogCheating` y salir, sin avisar (:2930).
             if (Math.Abs(p.Pos.X - clickX) > RangoVisionX || Math.Abs(p.Pos.Y - clickY) > RangoVisionY) return;
             // CADENCIA DE CASTEO (:2936-2945). El port no tenía NINGUNA: un mago tiraba hechizos a velocidad de
@@ -10557,8 +10597,6 @@ public sealed partial class PacketDispatcher
             if (!CombatTiming.PermiteUsarArcos(p, castMs, _intervaloArco, actualizar: false)) return;
             if (!CombatTiming.PermiteGolpeMagia(p, castMs, _intervaloGolpeMagia)
                 && !CombatTiming.PermiteLanzarSpell(p, castMs, _intervaloCastear)) return;
-            // EL TILE QUE RECIBE EL HECHIZO es el clickeado. Los `autolanzar` llegan acá con el tile propio.
-            (byte, byte) TileObjetivo() => (clickX, clickY);
             // VB6 PuedeLanzar (modHechizos.bas:319), en su orden: un GM saltea todos los requisitos; si no,
             // primero la skill de magia mínima (221), después la stamina (93) y por último el maná (222).
             // Antes sólo se miraba el maná, así que un nivel 1 podía tirar el hechizo más caro del juego.
@@ -10591,14 +10629,71 @@ public sealed partial class PacketDispatcher
             // (modHechizos.bas:1668) y la parálisis o inmovilización (:1550)— entran por `PuedeAtacarNPC`, que lo
             // exige antes que nada (SistemaCombate.bas:1729). Eso está en CastDamageOnNpc y CastStateOnNpc; acá
             // quedan exentos, porque los benignos (curar una mascota) no lo piden.
-            bool haySobreNpc;
+            //
+            // EL BLANCO ES EL QUE ELIGIÓ LookatTile, no la baldosa clickeada (VB6 LanzarHechizo, modHechizos.bas:891-938,
+            // lee `.flags.TargetUser` y `.flags.TargetNPC`). LookatTile mira PRIMERO la baldosa de abajo del clic y,
+            // en la misma baldosa, la criatura le gana al jugador (GameLogic.bas:733-752): clickear la cabeza de un
+            // personaje —que se dibuja una baldosa más arriba de sus pies— lo elige a él. Después el `Target` del
+            // hechizo filtra: 1 sólo jugadores (si no, el 223), 2 sólo criaturas (el 224), 3 el jugador primero y
+            // si no la criatura (sin nadie, nada), 4 el terreno. Con el blanco más lejos que el rango de visión en
+            // Y —puede pasar, por la baldosa de abajo—, el 8. Todo antes de cobrar. Acá se leía la baldosa cruda:
+            // clickear la propia cabeza no curaba y el Proyectil Mágico (sólo criaturas) le pegaba a un jugador.
+            Player? blancoJugador = null;
+            Npc? blancoCriatura = null;
             {
-                var (sx, sy) = TileObjetivo();
-                var tile = new WorldPos(p.Pos.Map, sx, sy);
-                bool hayJugador = _world.PlayerAt(tile) is not null;
-                haySobreNpc = spell.Target == 2 || (spell.Target == 3 && !hayJugador && _world.NpcAt(tile) is not null);
+                var tu = p.TargetUser != 0 ? _world.PlayerByCharIndex(p.TargetUser) : null;
+                var tn = p.TargetNpc != 0 ? _world.NpcByIndex(p.TargetNpc) : null;
+                if (tn is { IsAlive: false }) tn = null;
+                bool Lejos(WorldPos pos) => Math.Abs(pos.Y - p.Pos.Y) > RangoVisionY;
+                switch (spell.Target)
+                {
+                    case 1:
+                        if (tu is null) { session.Send(ServerMessages.LocaleMsg(223)); return; }
+                        if (Lejos(tu.Pos)) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                        blancoJugador = tu;
+                        break;
+                    case 2:
+                        if (tn is null) { session.Send(ServerMessages.LocaleMsg(224)); return; }
+                        if (Lejos(tn.Pos)) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                        blancoCriatura = tn;
+                        break;
+                    case 3:
+                        if (tu is not null)
+                        {
+                            if (Lejos(tu.Pos)) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                            blancoJugador = tu;
+                        }
+                        else if (tn is not null)
+                        {
+                            if (Lejos(tn.Pos)) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+                            blancoCriatura = tn;
+                        }
+                        else return;
+                        break;
+                    case 4:
+                        break;
+                    default:
+                        return;
+                }
             }
-            if (!haySobreNpc && !p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
+            // SOBRE UNA CRIATURA manda su propio handler (HandleHechizoNPC, :813), sin el SeguroCheck: lo que pida
+            // el modo combate lo pide `PuedeAtacarNPC` adentro del efecto.
+            if (blancoCriatura is not null)
+            {
+                _blancoDelCasteo = BlancoDelCasteo.Criatura;
+                HechizoSobreCriatura(session, p, blancoCriatura, spell);
+                return;
+            }
+            if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
+            // SOBRE UN JUGADOR (HandleHechizoUsuario, :763): sólo hacen algo los Tipos de propiedades, de estado y los
+            // dos juntos (1, 2 y 8); y si el blanco está muerto, el 7 antes que cualquier efecto —salvo Resucitar,
+            // que es para eso— (HechizoEstadoUsuario, :1038-1044).
+            if (blancoJugador is not null)
+            {
+                if (spell.Tipo is not (1 or 2 or 8)) return;
+                if (!blancoJugador.IsAlive && !spell.IsRevive) { session.Send(ServerMessages.LocaleMsg(7)); return; }
+                _blancoDelCasteo = BlancoDelCasteo.Jugador;
+            }
 
             RevealHidden(p);   // castear rompe el ocultamiento (VB6: lanzar un hechizo revela al oculto)
             // EL PORTAL DE LUM va por índice de hechizo, no por un flag del data: el original abre con
@@ -10631,9 +10726,8 @@ public sealed partial class PacketDispatcher
             {
                 // Hechizo Resucitar (VB6 HechizoEstadoUsuario, modHechizos.bas:981-1027). El caster ya está vivo
                 // (HandleCastSpell sale con !p.IsAlive).
-                var (tx, ty) = TileObjetivo();
-                var target = _world.PlayerAt(new WorldPos(p.Pos.Map, tx, ty));
-                if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
+                var target = blancoJugador;
+                if (target is null) return;
                 // SOBRE UN VIVO NO PASA NADA: el bloque entero pide `Muerto = 1` (:981) y ninguna otra rama del
                 // hechizo aplica. Ni mensaje ni cobro.
                 if (target.IsAlive) return;
@@ -10670,12 +10764,10 @@ public sealed partial class PacketDispatcher
             }
             else if (spell.IsHeal)
             {
-                // VB6 SubeHP=1 (modHechizos.bas:1412): la curación puede ir sobre un ALIADO, no sólo sobre uno
-                // mismo. El objetivo es el jugador del tile encarado (mismo patrón que la magia de daño); si no
-                // hay nadie, o es uno mismo, se autocura.
-                var (hx, hy) = TileObjetivo();
-                var ally = _world.PlayerAt(new WorldPos(p.Pos.Map, hx, hy));
-                var heal = ally is { IsAlive: true } && ally.CharIndex != p.CharIndex ? ally : p;
+                // VB6 SubeHP=1 (modHechizos.bas:1412): cura al blanco, que puede ser uno mismo —clickeándose— o
+                // un aliado. Sin blanco no hay cura: ya no "cae" sobre el que lo tira.
+                var heal = blancoJugador;
+                if (heal is null) return;
 
                 // Gate de facción (VB6 PuedeAyudar, modHechizos.bas:1910): un renegado ayuda a cualquiera; la
                 // Armada/ciudadanos sólo entre sí; República/Milicia sólo entre sí; el Caos y los GMs a
@@ -10708,18 +10800,10 @@ public sealed partial class PacketDispatcher
             }
             else if (spell.IsDamage)
             {
-                var (tx, ty) = TileObjetivo();
-                var spellPos = new WorldPos(p.Pos.Map, tx, ty);
-                var target = _world.PlayerAt(spellPos);
-                // PvE: si no hay jugador en el tile encarado, el hechizo va contra el NPC que esté ahí (VB6
-                // HandleHechizoNPC -> HechizoPropNPC). Sin esta rama la magia ofensiva era sólo PvP y un mago
-                // no podía cazar: nukear una criatura devolvía "No hay objetivo".
-                if (target is null)
-                {
-                    var npcTarget = _world.NpcAt(spellPos);
-                    if (npcTarget is not null && npcTarget.IsAlive) { CastDamageOnNpc(session, p, npcTarget, spell, amount); return; }
-                }
-                if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
+                // Sobre una criatura ya salió por HechizoSobreCriatura. Sobre uno mismo, el 298 (:325-329).
+                var target = blancoJugador;
+                if (target is null) return;
+                if (target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }
                 if (!PuedeAtacar(session, p, target)) return;    // VB6 modHechizos.bas:1109 — el mismo gate del melee
                 FlagCriminalIfLegalTarget(session, p, target);   // lanzar daño a un legal pena igual que el melee (VB6: el "seguro" aplica a magia ofensiva)
                 SpellCasted(session, p, spell);
@@ -10838,9 +10922,9 @@ public sealed partial class PacketDispatcher
                 // por el TILE ENCARADO, no por Target. Un DEBUFF (SubeX=2) es una agresión: exige objetivo distinto
                 // y marca criminal como el melee/daño (VB6 HechizoPropUsuario → UsuarioAtacadoPorUsuario). Un BUFF
                 // (SubeX=1) va sobre el aliado encarado (gate PuedeAyudar) o, si no hay nadie, sobre uno mismo.
-                var (bx, by) = TileObjetivo();
                 bool esDebuff = spell.SubeFuerza == 2 || spell.SubeAgilidad == 2;
-                Player? target = _world.PlayerAt(new WorldPos(p.Pos.Map, bx, by));
+                Player? target = blancoJugador;
+                if (target is null) return;
                 if (esDebuff)
                 {
                     if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
@@ -10849,7 +10933,6 @@ public sealed partial class PacketDispatcher
                 }
                 else
                 {
-                    if (target is null) target = p;                  // buff sin objetivo → sobre uno mismo
                     if (target != p && !PuedeAyudar(p, target)) { session.Send(ServerMessages.LocaleMsg(449)); return; }
                 }
                 SpellCasted(session, p, spell);
@@ -10865,18 +10948,10 @@ public sealed partial class PacketDispatcher
                 // NO "self". Los OFENSIVOS (paralizar/inmovilizar/envenenar/incinerar) van sobre el jugador —o la
                 // criatura— ENCARADO y marcan criminal como cualquier agresión; los de SOPORTE (curar veneno /
                 // remover parálisis) pueden ir sobre uno mismo si no hay nadie al frente.
-                var (sx, sy) = TileObjetivo();
                 bool ofensivo = spell.IsParalyze || spell.IsImmobilize || spell.IsPoison || spell.IsIncinerate;
-                Player? target = _world.PlayerAt(new WorldPos(p.Pos.Map, sx, sy));
-                // Si al frente hay una CRIATURA (y el hechizo es ofensivo), el estado va sobre ella (VB6
-                // HandleHechizoNPC → Case uEstado → HechizoEstadoNPC, modHechizos.bas:834). Sin esto, paralizar o
-                // envenenar a un bicho devolvía "No hay objetivo para el hechizo".
-                if (target is null && ofensivo)
-                {
-                    var npcTarget = _world.NpcAt(new WorldPos(p.Pos.Map, sx, sy));
-                    if (npcTarget is not null && npcTarget.IsAlive) { CastStateOnNpc(session, p, npcTarget, spell); return; }
-                }
-                if (target is null && (spell.IsCurePoison || spell.IsRemoveParalysis || spell.IsSanacion)) target = p;   // soporte → self
+                // El blanco que eligió LookatTile. Sobre una criatura ya salió por HechizoSobreCriatura; sin blanco
+                // no hay efecto (el de soporte ya no "cae" sobre el que lo tira).
+                Player? target = blancoJugador;
                 // "Resucitar familiar o mascota" (#79) entra por acá. En el original NO tiene efecto —el
                 // comentario de la fuente es literal: 'Solo damos la animacion xd'— pero la rama SÍ corre y da
                 // el hechizo por lanzado (modHechizos.bas:1066), que es lo que emite las palabras mágicas, el
@@ -10888,8 +10963,11 @@ public sealed partial class PacketDispatcher
                 // del guard para no cambiar nada de lo que emite el original en el caso sin familiar.
                 if (spell.EsResucitaFamiliar) RevivirFamiliarSiHay(session, p);
                 if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
+                // UN ESTADO OFENSIVO SOBRE UNO MISMO NO SE LANZA: envenenar (modHechizos.bas:93-96), incinerar
+                // (:114-118) y paralizar o inmovilizar (:150-154) contestan el 298 y salen sin cobrar.
+                if (ofensivo && target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }
                 // El gate va ANTES de consumir maná (VB6: los `Exit Sub` de PuedeAtacar están arriba de todo).
-                if (ofensivo && target.CharIndex != p.CharIndex && !PuedeAtacar(session, p, target)) return;
+                if (ofensivo && !PuedeAtacar(session, p, target)) return;
 
                 SpellCasted(session, p, spell);
                 if (ofensivo && target.CharIndex != p.CharIndex) FlagCriminalIfLegalTarget(session, p, target);   // agredir a un legal → criminal

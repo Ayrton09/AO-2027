@@ -2794,9 +2794,16 @@ public sealed class Bot
     /// las pociones para cuando se queda seco. Es lo primero que hace cualquiera que juega un caster, y el bot no lo
     /// hacía: <see cref="LanzarAlgo"/> filtra los hechizos de daño y para curarse sólo tenía la poción y el sacerdote.</para>
     ///
-    /// <para>El objetivo es su propia baldosa: el servidor, si en el tile encarado no hay nadie o es uno mismo,
-    /// autocura al que lo tiró (VB6 modHechizos.bas:1412). Son los mismos dos paquetes que manda el cliente.</para>
+    /// <para>Se clickea SU PROPIA CABEZA, la baldosa de arriba de sus pies, como un jugador que se hace clic encima:
+    /// el servidor elige el blanco como el original, mirando PRIMERO la baldosa de abajo del clic (LookatTile,
+    /// GameLogic.bas:733), y así lo encuentra a él. Clickear los pies elegiría al que esté parado justo al sur. Son
+    /// los mismos dos paquetes que manda el cliente.</para>
     /// </summary>
+    /// <summary>La baldosa de la CABEZA de un personaje parado en <paramref name="y"/>: la de arriba de sus pies. Es la
+    /// que se clickea para elegirlo, porque el servidor mira primero la baldosa de abajo del clic (ver
+    /// <see cref="CurarseConMagia"/>).</summary>
+    public static byte ClicEnLaCabeza(byte y) => (byte)Math.Max(1, y - 1);
+
     private bool CurarseConMagia(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
         if (!sentidos.UsaMana) return false;
@@ -2812,9 +2819,10 @@ public sealed class Bot
         short hechizo = sentidos.HechizoEn(cura.Ranura);
         double vidaAntes = sentidos.Salud;
         var (x, y) = sentidos.Posicion;
+        byte cabeza = ClicEnLaCabeza(y);
         if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
             || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(x).WriteByte(y).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+                   w => w.WriteByte(x).WriteByte(cabeza).WriteByte((byte)GameLimits.SkillMagia)))) return false;
         _curaPedida = (hechizo, vidaAntes);
         _ultimoCasteo = (hechizo, Environment.TickCount64);
         return true;
@@ -3922,7 +3930,7 @@ public sealed class Bot
         short hechizo = sentidos.HechizoEn(ranuraElegida);
         if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranuraElegida)))
             || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(a.X).WriteByte(a.Y).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+                   w => w.WriteByte(a.X).WriteByte(ClicEnLaCabeza(a.Y)).WriteByte((byte)GameLimits.SkillMagia)))) return false;
         _ultimoCasteo = (hechizo, Environment.TickCount64);
         return true;
     }
