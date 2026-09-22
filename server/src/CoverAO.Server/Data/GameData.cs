@@ -328,7 +328,7 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     // `ResucitaFamiliar` (Hechizos.dat): lo trae UN solo hechizo, el #79 "Resucitar familiar o mascota". El
     // sistema de familiares no existe en esta variante —el propio original comenta la rama con un "Solo damos
     // la animacion xd"— pero la rama SE EJECUTA y da el hechizo por lanzado, que es lo que cobra el maná y
-    // saca las palabras mágicas. Sin leer esta clave el hechizo caía en el "aún no está implementado" y salía
+    // saca las palabras mágicas. Sin leer esta clave el hechizo caía en la rama de los que no hacen nada y salía
     // gratis. Ver modHechizos.bas:1066.
     int ResucitaFamiliar = 0,
     // ── METAMORFOSIS ──────────────────────────────────────────────────────────────────────────────────

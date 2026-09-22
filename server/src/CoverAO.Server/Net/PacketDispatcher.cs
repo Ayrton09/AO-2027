@@ -11015,7 +11015,8 @@ public sealed partial class PacketDispatcher
                 // castear al aire entrando por la puerta de atrás: el maná no es un costo real (se recupera gratis
                 // meditando, que no cuesta nada), es un delay — y la SKILL subía igual, por un hechizo que no hace
                 // absolutamente nada.
-                session.Send(ServerMessages.ConsoleMsg($"El hechizo {spell.Name} aun no esta implementado.", 0));
+                //
+                // Y NO AVISA NADA: el original no tiene ningún texto para esto, el clic se queda en silencio.
             }
             // Piso de maná (VB6 HechizoCasteado: If .Stats.MinMAN < 0 Then .Stats.MinMAN = 0). Un GM saltea el gate
             // de recursos, así que sin este clamp su maná quedaba negativo y se transmitía como short negativo.

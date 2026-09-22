@@ -513,8 +513,8 @@ public sealed class Persistence
         // única que estos chars pueden lanzar sin ser GM: tienen 15 de Magia, y la que sigue pide 15 justos —
         // quedarse sin margen ahí es pedir un flow que falla el día que alguien toque la skill inicial.
         // Sólo hace algo con la regla de la casa `MetamorfosisDelDruida` prendida, que es lo que trae
-        // `metamorfosis_flow.ini`; con la regla apagada esta ranura contesta "aún no está implementado", que
-        // es lo que hace el original.
+        // `metamorfosis_flow.ini`; con la regla apagada esta ranura no hace nada ni avisa, que es lo que hace el
+        // original.
         p.Spells[15] = 49; // Metamorfosis: Murciélago (body 9, head 0, +6 al golpe, +20 a la defensa)
         // INCINERAR: el único camino por el que se puede prender fuego a alguien, y sin él `EfectoIncinerado`
         // —que tiene dos relojes distintos y una duración al azar— no lo ejercita nada. Pide MinSkill 90 y 920

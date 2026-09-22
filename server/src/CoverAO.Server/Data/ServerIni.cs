@@ -631,8 +631,7 @@ public sealed class ServerIni
     /// <c>desencantar</c> del <c>Hechizos.dat</c> (#22) es otra clave que el VB6 lee y no usa.</para>
     ///
     /// <para><b>Sale PRENDIDA por decisión del autor.</b> Prendida, el server DIVERGE del oráculo VB6 al
-    /// lanzar esos once hechizos: donde el original manda un "aún no está implementado", el nuestro
-    /// transforma. El barrido no los castea —un personaje recién creado no los tiene—, así que no lo rompe.</para>
+    /// lanzar esos once hechizos: donde el original no hace nada ni avisa, el nuestro transforma. El barrido no los castea —un personaje recién creado no los tiene—, así que no lo rompe.</para>
     /// </summary>
     public int MetamorfosisDelDruida { get; private set; } = -1;
 
