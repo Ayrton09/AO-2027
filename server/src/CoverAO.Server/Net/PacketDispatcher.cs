@@ -3030,6 +3030,221 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>
+    /// UN HECHIZO SOBRE UN JUGADOR (VB6 HechizoEstadoUsuario, modHechizos.bas:956-1529). En el original TODO hechizo con
+    /// blanco usuario pasa por este único Sub: una secuencia de bloques sueltos, uno por efecto, en este orden —sanación,
+    /// invisibilidad, envenenar, incinerar, curar veneno, paralizar o inmovilizar, remover parálisis, ceguera, agilidad,
+    /// fuerza y vida—, donde cada uno decide si el hechizo quedó lanzado y cuáles cortan todo. Acá era una cadena de
+    /// ramas por el primer efecto que matcheaba, y cada rama tenía sus propias reglas.
+    ///
+    /// <para>LOS DOS CORTES DEL ORIGINAL NO SON IGUALES. `HechizoCasteado = False: Exit Sub` sale sin cobrar aunque un
+    /// bloque anterior ya hubiera hecho efecto; un `Exit Sub` pelado (el PuedeAtacar de la parálisis, del debuff de
+    /// agilidad y del daño) deja el hechizo como estaba: si algo ya había hecho efecto, se cobra, pero sin avisos. Y
+    /// curar veneno a quien no se puede ayudar cobra a propósito (`HechizoCasteado = True`) y no cura.</para>
+    ///
+    /// <para>LA FACCIÓN (PuedeAyudar, :1910, que manda el 449): cada efecto de ayuda la pide, y salvo la sanación, no
+    /// en un duelo de arena. Estupidez y remover estupidez no están: ningún hechizo del install aplica estupidez.</para>
+    ///
+    /// <para>EL AVISO (InfoHechizo, :1741-1765) va una vez al final si quedó lanzado: las palabras, el FX y el sonido
+    /// sobre el blanco, y el mensaje con la variable `daño` del original, que es la ÚLTIMA tirada —la de la vida, o la
+    /// de la agilidad o la fuerza en un buff—: con número, el 497/498 (o 499 sobre uno mismo); sin número, el 452/453
+    /// (o el 0). La fuente es 2, o 13 si curó vida.</para>
+    /// </summary>
+    private void HechizoEstadoUsuario(ClientSession session, Player p, Player target, Data.SpellInfo spell, int amount)
+    {
+        long now = _loop.Tick;
+        bool yo = target.CharIndex == p.CharIndex;
+        bool arena = DueloDeArena(p, target);
+        bool casteado = false;
+        long dano = 0;
+        byte color = 2;
+        // `Exit Sub` pelado: cobra si algo ya había hecho efecto, sin avisos.
+        void Cortar() { if (casteado) { SpellCasted(session, p, spell); EmitirCostoDelHechizo(session, p); } }
+        bool NoSePuedeAyudar(bool exentaEnArena)
+        {
+            if ((exentaEnArena && arena) || PuedeAyudar(p, target)) return false;
+            session.Send(ServerMessages.LocaleMsg(449));
+            return true;
+        }
+
+        // SANACIÓN (:1049-1057): PuedeAyudar SIN la excepción de la arena. Apaga el fuego y el veneno.
+        if (spell.IsSanacion)
+        {
+            if (NoSePuedeAyudar(exentaEnArena: false)) return;
+            target.Incinerado = false;
+            target.PoisonedUntilTick = 0;
+            casteado = true;
+        }
+        // RESUCITAR FAMILIAR (:1059-1063): en el original sólo "da por lanzado" si es sobre uno mismo ('Solo damos la
+        // animacion xd'). Lo que hace de verdad —revivir el familiar— es un agregado nuestro.
+        if (spell.EsResucitaFamiliar && yo)
+        {
+            casteado = true;
+            RevivirFamiliarSiHay(session, p);
+        }
+        // INVISIBILIDAD (:1065-1080): la del LANZADOR, sea cual sea el blanco (el bloque escribe `.flags` del que lo
+        // tira). Ya invisible, el 68; en un mapa sin invisibilidad, el 448.
+        if (spell.IsInvisibility)
+        {
+            if (p.Invisible) { session.Send(ServerMessages.LocaleMsg(68)); return; }
+            if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
+            p.InvisibleUntilTick = now + InvisibilityDurationTicks;
+            p.Invisible = true;
+            _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
+            casteado = true;
+        }
+        // ENVENENAR (:1092-1112) e INCINERAR (:1113-1133): sobre uno mismo el 298; sobre quien ya lo está, el 326;
+        // y son agresiones (PuedeAtacar, y el legal atacado vuelve criminal al que lo tira).
+        if (spell.IsPoison)
+        {
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            if (target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(326)); return; }
+            if (!PuedeAtacar(session, p, target)) return;
+            FlagCriminalIfLegalTarget(session, p, target);
+            target.PoisonedUntilTick = long.MaxValue;
+            target.PoisonCounter = 0;
+            casteado = true;
+        }
+        if (spell.IsIncinerate)
+        {
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            if (target.Incinerado) { session.Send(ServerMessages.LocaleMsg(326)); return; }
+            if (!PuedeAtacar(session, p, target)) return;
+            FlagCriminalIfLegalTarget(session, p, target);
+            // El contador NO se toca: el original sólo prende el flag (:1150), y de ahí sale cuánto dura.
+            target.Incinerado = true;
+            casteado = true;
+        }
+        // CURAR VENENO (:1134-1148): al sano, el 451 sin cobrar; al que no se puede ayudar, el 449 y SE COBRA sin curar.
+        if (spell.IsCurePoison)
+        {
+            if (!target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(451)); return; }
+            if (NoSePuedeAyudar(exentaEnArena: true)) { casteado = true; Cortar(); return; }
+            target.PoisonedUntilTick = 0;
+            casteado = true;
+        }
+        // PARALIZAR O INMOVILIZAR (:1149-1168): sobre uno mismo el 298; sobre quien ya está quieto, nada.
+        if (spell.IsParalyze || spell.IsImmobilize)
+        {
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            if (target.ParalyzedUntilTick <= now)
+            {
+                if (!PuedeAtacar(session, p, target)) { Cortar(); return; }
+                FlagCriminalIfLegalTarget(session, p, target);
+                casteado = true;
+                target.ParalyzedUntilTick = now + _ini.IntervaloParalizado;
+                target.ParalyzedByCharIndex = p.CharIndex;
+                // ParalizeOK es un TOGGLE del lado del cliente: sólo se manda en la transición.
+                if (!target.ClientParalyzed) { target.ClientParalyzed = true; target.Connection?.Send(ServerMessages.ParalizeOK()); }
+            }
+        }
+        // REMOVER PARÁLISIS (:1169-1180): sólo si está quieto, y sólo a quien se puede ayudar.
+        if (spell.IsRemoveParalysis && target.ParalyzedUntilTick > now)
+        {
+            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            target.ParalyzedUntilTick = 0;
+            target.ParalyzedByCharIndex = 0;
+            if (target.ClientParalyzed) { target.ClientParalyzed = false; target.Connection?.Send(ServerMessages.ParalizeOK()); }
+            casteado = true;
+        }
+        // CEGUERA (:1290-1310): sobre uno mismo el 298; es agresión; al que ya está ciego no se le renueva.
+        if (spell.Ceguera > 0)
+        {
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            if (!PuedeAtacar(session, p, target)) return;
+            FlagCriminalIfLegalTarget(session, p, target);
+            if (target.BlindedUntilTick <= now) ApplyBlind(target, spell);
+            casteado = true;
+        }
+        // AGILIDAD (:1322-1349) y FUERZA (:1365-1387): el buff pide PuedeAyudar (salvo en la arena); el debuff es
+        // agresión. OJO la asimetría del original: el debuff de agilidad sale con un `Exit Sub` pelado y el de fuerza
+        // con `HechizoCasteado = False`.
+        if (spell.SubeAgilidad == 1)
+        {
+            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            dano = _rng.Next(spell.MinAgilidad, spell.MaxAgilidad + 1);
+            target.ApplyAttrBonus(2, (int)dano, now, AttrBuffDurationTicks);
+            target.Connection?.Send(ServerMessages.UpdateDexterity(target.Agility));
+            casteado = true;
+        }
+        else if (spell.SubeAgilidad == 2)
+        {
+            if (!PuedeAtacar(session, p, target)) { Cortar(); return; }
+            if (!yo) FlagCriminalIfLegalTarget(session, p, target);
+            dano = _rng.Next(spell.MinAgilidad, spell.MaxAgilidad + 1);
+            target.ApplyAttrBonus(2, -(int)dano, now, AttrDebuffDurationTicks);
+            target.Connection?.Send(ServerMessages.UpdateDexterity(target.Agility));
+            casteado = true;
+        }
+        if (spell.SubeFuerza == 1)
+        {
+            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            dano = _rng.Next(spell.MinFuerza, spell.MaxFuerza + 1);
+            target.ApplyAttrBonus(1, (int)dano, now, AttrBuffDurationTicks);
+            target.Connection?.Send(ServerMessages.UpdateStrenght(target.Strength));
+            casteado = true;
+        }
+        else if (spell.SubeFuerza == 2)
+        {
+            if (!PuedeAtacar(session, p, target)) return;
+            if (!yo) FlagCriminalIfLegalTarget(session, p, target);
+            dano = _rng.Next(spell.MinFuerza, spell.MaxFuerza + 1);
+            target.ApplyAttrBonus(1, -(int)dano, now, AttrDebuffDurationTicks);
+            target.Connection?.Send(ServerMessages.UpdateStrenght(target.Strength));
+            casteado = true;
+        }
+        // VIDA (:1412-1509). Curar: PuedeAyudar (salvo en la arena), la tirada más el 3 % por nivel del LANZADOR, el
+        // número en azul sobre el lanzador, y el aviso en la fuente 13. Dañar: sobre uno mismo el 298; el daño con el
+        // 2 % por nivel, el báculo y la resistencia mágica (DanoMagicoAJugador); es agresión; aguantarlo entrena la
+        // Resistencia de quien lo recibe; el número en rojo sobre el lanzador; y si lo mata, la muerte.
+        bool mato = false;
+        if (spell.SubeHp == 1)
+        {
+            if (NoSePuedeAyudar(exentaEnArena: true)) return;
+            dano = Combat.EfectoHechizoArea3Pct(amount, p.Level);
+            target.Hp = (int)Math.Min(target.MaxHp, target.Hp + dano);
+            target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
+            session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, (int)dano, 3));
+            color = 13;
+            casteado = true;
+        }
+        else if (spell.SubeHp == 2)
+        {
+            if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return; }
+            dano = DanoMagicoAJugador(p, target, amount);
+            if (!PuedeAtacar(session, p, target)) { Cortar(); return; }
+            FlagCriminalIfLegalTarget(session, p, target);
+            casteado = true;
+            RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillResistencia);
+            target.Hp = (int)Math.Max(0, target.Hp - dano);
+            target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
+            session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, (int)dano, 2));
+            mato = target.Hp == 0;
+        }
+
+        if (!casteado) return;
+        // InfoHechizo, y después el cobro (HandleHechizoUsuario, :778-797).
+        EmitSpellFx(p, target.Pos, target.CharIndex, spell);
+        if (dano > 0)
+        {
+            if (!yo)
+            {
+                session.Send(ServerMessages.LocaleMsg(497, $"^{spell.Index}%{target.Name}%{dano}", 0, color));
+                target.Connection?.Send(ServerMessages.LocaleMsg(498, $"{p.Name}%^{spell.Index}%{dano}", 0, color));
+            }
+            else session.Send(ServerMessages.LocaleMsg(499, $"^{spell.Index}%{dano}", 0, color));
+        }
+        else if (!yo)
+        {
+            session.Send(ServerMessages.LocaleMsg(452, $"^{spell.Index}%{target.Name}", 0, color));
+            target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}", 0, color));
+        }
+        else session.Send(ServerMessages.LocaleMsg(0, $"={spell.Index}", 0, color));
+        SpellCasted(session, p, spell);
+        EmitirCostoDelHechizo(session, p);
+        if (mato) OnKill(session, p, target);
+    }
+
+    /// <summary>
     /// UN HECHIZO SOBRE UNA CRIATURA (VB6 HandleHechizoNPC, modHechizos.bas:813-872), por el Tipo del hechizo. Los
     /// de ESTADO (2) van a HechizoEstadoNPC: paralizar o inmovilizar, y sacarle la parálisis a la mascota propia.
     /// Los de PROPIEDADES (1), a HechizoPropNPC: curar a una criatura que no es hostil, o dañarla. Cualquier otro
@@ -10722,6 +10937,14 @@ public sealed partial class PacketDispatcher
                 DecirPalabrasMagicas(p, spell);
                 return;
             }
+            // UN HECHIZO SOBRE UN JUGADOR va entero por HechizoEstadoUsuario: todos sus efectos, en el orden del
+            // original y cada uno con su propio corte. Quedan afuera el Resucitar (su bloque sale solo, :981-1027) y
+            // la metamorfosis, que es una regla de la casa.
+            if (blancoJugador is not null && !spell.IsRevive && !(_ini.HayMetamorfosis && spell.EsMetamorfosis))
+            {
+                HechizoEstadoUsuario(session, p, blancoJugador, spell, amount);
+                return;
+            }
             if (spell.IsRevive)
             {
                 // Hechizo Resucitar (VB6 HechizoEstadoUsuario, modHechizos.bas:981-1027). El caster ya está vivo
@@ -10761,76 +10984,6 @@ public sealed partial class PacketDispatcher
                 target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}", 0, 2));
                 SpellCasted(session, p, spell);
                 EmitirCostoDelHechizo(session, p);
-            }
-            else if (spell.IsHeal)
-            {
-                // VB6 SubeHP=1 (modHechizos.bas:1412): cura al blanco, que puede ser uno mismo —clickeándose— o
-                // un aliado. Sin blanco no hay cura: ya no "cae" sobre el que lo tira.
-                var heal = blancoJugador;
-                if (heal is null) return;
-
-                // Gate de facción (VB6 PuedeAyudar, modHechizos.bas:1910): un renegado ayuda a cualquiera; la
-                // Armada/ciudadanos sólo entre sí; República/Milicia sólo entre sí; el Caos y los GMs a
-                // cualquiera (agujero del original, se preserva). En el rechazo: LocaleMsg 449 y NO se cura.
-                if (heal != p && !PuedeAyudar(p, heal)) { session.Send(ServerMessages.LocaleMsg(449)); return; }
-
-                // Bono +3% por nivel DEL LANZADOR (VB6: daño + Porcentaje(daño, 3 * ELV)).
-                int healed = Combat.EfectoHechizoArea3Pct(amount, p.Level);
-                SpellCasted(session, p, spell);
-                heal.Hp = Math.Min(heal.MaxHp, heal.Hp + healed);
-                EmitSpellFx(p, heal.Pos, heal.CharIndex, spell);
-                // Un hechizo de curación puede traer ADEMÁS efectos de estado, y el original los aplica todos:
-                // "Sanar" (32) es SubeHP=1 + RemoverParalisis + Sanacion. Acá sólo se llamaba a ApplyBlind, así
-                // que Sanar curaba y dejaba al jugador paralizado y quemándose.
-                AplicarEfectosDeEstado(p, heal, spell);
-                heal.Connection?.Send(ServerMessages.UpdateHP((short)heal.Hp));   // VB6 modHechizos.bas:1018
-                // El número CURADO flotando, en modo 3 (azul), y como en el resto del original con el charIndex
-                // DEL LANZADOR y sólo a él (:1433, la línea siguiente al UpdateHP). Faltaba: el camino de área ya
-                // lo mandaba y el de un solo objetivo no, así que curar a un aliado no mostraba cuánto.
-                session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, healed, 3));
-                EmitirCostoDelHechizo(session, p);
-
-                if (heal == p)
-                    session.Send(ServerMessages.LocaleMsg(499, $"^{spell.Index}%{healed}"));   // autocura
-                else
-                {
-                    session.Send(ServerMessages.LocaleMsg(497, $"^{spell.Index}%{heal.Name}%{healed}"));       // al lanzador
-                    heal.Connection?.Send(ServerMessages.LocaleMsg(498, $"{p.Name}%^{spell.Index}%{healed}")); // al objetivo
-                }
-            }
-            else if (spell.IsDamage)
-            {
-                // Sobre una criatura ya salió por HechizoSobreCriatura. Sobre uno mismo, el 298 (:325-329).
-                var target = blancoJugador;
-                if (target is null) return;
-                if (target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-                if (!PuedeAtacar(session, p, target)) return;    // VB6 modHechizos.bas:1109 — el mismo gate del melee
-                FlagCriminalIfLegalTarget(session, p, target);   // lanzar daño a un legal pena igual que el melee (VB6: el "seguro" aplica a magia ofensiva)
-                SpellCasted(session, p, spell);
-                // MISMA fórmula que el área (VB6 `HechizoPropUsuario` Case 2, modHechizos.bas:1441): bono del 2%
-                // por nivel, + el báculo de DañoMagico, − la resistencia mágica de los cinco slots equipados.
-                // Acá antes se restaba `amount` pelado, así que la magia PvP ignoraba tanto el nivel del mago
-                // como la armadura anti-magia de la víctima: un casco con ResistenciaMagica 20 no servía de nada.
-                amount = DanoMagicoAJugador(p, target, amount);
-                target.Hp = Math.Max(0, target.Hp - amount);
-                // VB6 :366 `Call SubirSkill(targetIndex, eSkill.Resistencia)`: aguantar un hechizo entrena la
-                // Resistencia MÁGICA de quien lo recibe. Es del camino de un solo objetivo nada más — el 3×3 del
-                // área no la sube (`HechizoTerrenoHP` no llama a SubirSkill), y esa asimetría es de la fuente.
-                RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillResistencia);
-                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
-                // Un hechizo de daño puede traer ADEMÁS efectos de estado: "Tormenta ácida" (57) es SubeHP=2 +
-                // Envenena, y "Descarga Flamígera" (69) SubeHP=2 + Incinera. Acá sólo se llamaba a ApplyBlind,
-                // así que los dos pegaban pero nunca envenenaban ni incineraban.
-                AplicarEfectosDeEstado(p, target, spell);
-                session.Send(ServerMessages.LocaleMsg(497, $"^{spell.Index}%{target.Name}%{amount}"));
-                target.Connection?.Send(ServerMessages.LocaleMsg(498, $"{p.Name}%^{spell.Index}%{amount}"));
-                target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
-                // El número de DAÑO flotando (:1494, modo 2, rojo). Mismo caso que la cura: el área lo mandaba y
-                // el camino de un solo objetivo no. Va con el charIndex del LANZADOR y sólo a él, igual que en el
-                // melee — el original dibuja el número sobre TU cabeza, no sobre la de la víctima.
-                session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, amount, 2));
-                EmitirCostoDelHechizo(session, p);
-                if (target.Hp == 0) OnKill(session, p, target);
             }
             else if (spell.IsInvoke)
             {
@@ -10878,116 +11031,6 @@ public sealed partial class PacketDispatcher
                 EmitSpellFx(p, p.Pos, p.CharIndex, spell);
                 session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: invocaste {summoned}x {template.Name}.", 0));
                 EmitirCostoDelHechizo(session, p);
-            }
-            else if (spell.IsInvisibility)
-            {
-                // Invisibilidad (VB6 Case uEstado, Invisibilidad=1, modHechizos.bas): oculta al LANZADOR (Target 1).
-                // Reusa el mismo estado que el /INVISIBLE de GM (p.Invisible + SetInvisible a observadores), pero con
-                // vencimiento por tick — el game loop lo revierte cuando InvisibleUntilTick pasa. La IA de NPCs y el
-                // filtrado de observadores ya respetan p.Invisible, así que quedar invisible corta el aggro.
-                // YA INVISIBLE (VB6 modHechizos.bas:1078, y va ANTES del chequeo del mapa): LocaleMsg(68) y
-                // `HechizoCasteado = False`, o sea que tampoco se cobra el maná. Faltaba: volver a lanzarla
-                // estando invisible re-casteaba y cobraba, que es una fuga de maná chica pero real.
-                if (p.Invisible) { session.Send(ServerMessages.LocaleMsg(68)); return; }
-                // MAPA SIN INVISIBILIDAD (VB6 modHechizos.bas:1083): LocaleMsg(448) y el hechizo NO se casteó
-                // —o sea que tampoco se cobra el maná, porque el original pone HechizoCasteado = False—.
-                if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
-                SpellCasted(session, p, spell);
-                // No pisar la invisibilidad PERMANENTE de un GM: /INVISIBLE deja InvisibleUntilTick=0 (permanente),
-                // y si el hechizo le fijara un vencimiento el game loop lo destaparía ~20 s después. Sólo fijamos el
-                // timer si no está ya permanentemente invisible.
-                if (!(p.Invisible && p.InvisibleUntilTick == 0))
-                    p.InvisibleUntilTick = _loop.Tick + InvisibilityDurationTicks;
-                p.Invisible = true;
-                _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
-                EmitSpellFx(p, p.Pos, p.CharIndex, spell);
-                // "Prevención del mal" (90) es Invisibilidad=1 + SubeAG=1: en el original los dos bloques son
-                // `If` independientes del mismo Sub (:1074 y :1322), así que da invisibilidad Y +35 de agilidad.
-                // Acá la rama de invisibilidad cortaba antes y el bono nunca se aplicaba.
-                var buffs = AplicarBuffsDeAtributo(p, spell);
-                var estados = AplicarEfectosDeEstado(p, p, spell);
-                string extra = buffs.Concat(estados).ToList() is { Count: > 0 } todos ? " (" + string.Join(", ", todos) + ")" : "";
-                session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: te has vuelto invisible.{extra}", 0));
-                EmitirCostoDelHechizo(session, p);
-            }
-            else if (spell.IsAttrBuff)
-            {
-                // Buffs/debuffs de atributo (VB6 HechizoPropUsuario): Fuerza/Debilidad, Celeridad/Torpeza, Poder
-                // divino... Suben (SubeX=1) o bajan (SubeX=2) Fuerza/Agilidad en RandomNumber(Min,Max). Reusa
-                // Player.ApplyAttrBonus (el camino de las pociones violeta), así que la aritmética del bono y su
-                // expiración (ExpireEffects en el loop) ya están probadas.
-                //
-                // OJO con Target: en el VB6 `Target=1` (uUsuarios) significa "apunta a un usuario" — NO "sobre uno
-                // mismo": los hechizos de daño también son Target=1 y van al enemigo encarado. Por eso se resuelve
-                // por el TILE ENCARADO, no por Target. Un DEBUFF (SubeX=2) es una agresión: exige objetivo distinto
-                // y marca criminal como el melee/daño (VB6 HechizoPropUsuario → UsuarioAtacadoPorUsuario). Un BUFF
-                // (SubeX=1) va sobre el aliado encarado (gate PuedeAyudar) o, si no hay nadie, sobre uno mismo.
-                bool esDebuff = spell.SubeFuerza == 2 || spell.SubeAgilidad == 2;
-                Player? target = blancoJugador;
-                if (target is null) return;
-                if (esDebuff)
-                {
-                    if (target is null || target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
-                    if (!PuedeAtacar(session, p, target)) return;    // debilitar es agredir: mismo gate (VB6 modHechizos.bas:1269)
-                    FlagCriminalIfLegalTarget(session, p, target);   // debilitar a un legal pena igual que pegarle
-                }
-                else
-                {
-                    if (target != p && !PuedeAyudar(p, target)) { session.Send(ServerMessages.LocaleMsg(449)); return; }
-                }
-                SpellCasted(session, p, spell);
-                var parts = AplicarBuffsDeAtributo(target, spell);
-                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
-                session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {target.Name} {string.Join(", ", parts)}.", 0));
-                EmitirCostoDelHechizo(session, p);
-            }
-            else if (spell.IsParalyze || spell.IsRemoveParalysis || spell.IsPoison || spell.IsCurePoison
-                     || spell.IsImmobilize || spell.IsIncinerate || spell.IsSanacion || spell.EsResucitaFamiliar)
-            {
-                // Hechizos de estado. OJO con Target (igual que en IsAttrBuff): `Target=1` = "apunta a un usuario",
-                // NO "self". Los OFENSIVOS (paralizar/inmovilizar/envenenar/incinerar) van sobre el jugador —o la
-                // criatura— ENCARADO y marcan criminal como cualquier agresión; los de SOPORTE (curar veneno /
-                // remover parálisis) pueden ir sobre uno mismo si no hay nadie al frente.
-                bool ofensivo = spell.IsParalyze || spell.IsImmobilize || spell.IsPoison || spell.IsIncinerate;
-                // El blanco que eligió LookatTile. Sobre una criatura ya salió por HechizoSobreCriatura; sin blanco
-                // no hay efecto (el de soporte ya no "cae" sobre el que lo tira).
-                Player? target = blancoJugador;
-                // "Resucitar familiar o mascota" (#79) entra por acá. En el original NO tiene efecto —el
-                // comentario de la fuente es literal: 'Solo damos la animacion xd'— pero la rama SÍ corre y da
-                // el hechizo por lanzado (modHechizos.bas:1066), que es lo que emite las palabras mágicas, el
-                // sonido y el aviso, y lo que cobra los 600 de maná y los 120 de stamina. Con `autolanzar=1`
-                // el tile casteado es el propio, así que el `If UserIndex = targetIndex` del original se cumple
-                // siempre; si aun así hubiera OTRO parado ahí, el original no lo daría por lanzado.
-                if (spell.EsResucitaFamiliar && target?.CharIndex != p.CharIndex) return;
-                // Y ACÁ el agregado nuestro: si el que lo tira tiene el familiar muerto, lo revive. Va después
-                // del guard para no cambiar nada de lo que emite el original en el caso sin familiar.
-                if (spell.EsResucitaFamiliar) RevivirFamiliarSiHay(session, p);
-                if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
-                // UN ESTADO OFENSIVO SOBRE UNO MISMO NO SE LANZA: envenenar (modHechizos.bas:93-96), incinerar
-                // (:114-118) y paralizar o inmovilizar (:150-154) contestan el 298 y salen sin cobrar.
-                if (ofensivo && target.CharIndex == p.CharIndex) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-                // El gate va ANTES de consumir maná (VB6: los `Exit Sub` de PuedeAtacar están arriba de todo).
-                if (ofensivo && !PuedeAtacar(session, p, target)) return;
-
-                SpellCasted(session, p, spell);
-                if (ofensivo && target.CharIndex != p.CharIndex) FlagCriminalIfLegalTarget(session, p, target);   // agredir a un legal → criminal
-                // Los efectos se ACUMULAN y se aplican con `If` independientes, en el orden del original: ver
-                // AplicarEfectosDeEstado. Antes esto era una cadena else-if acá adentro Y otra afuera, por tipo
-                // de hechizo, y entre las dos dejaban cinco hechizos del install a medias.
-                var efectos = AplicarEfectosDeEstado(p, target, spell);
-
-                EmitSpellFx(p, target.Pos, target.CharIndex, spell);
-                // El aviso al LANZADOR. El original (InfoHechizo, modHechizos.bas:1762-1765) tiene dos variantes
-                // para un hechizo SIN daño: 452 "has lanzado #1 sobre #2" cuando el objetivo es otro, y 0 "has
-                // lanzado #1 sobre ti" cuando es uno mismo. Acá salía un ConsoleMsg con texto nuestro, y el 453
-                // que le llega al objetivo quedaba sin su par — el lanzador veía otra frase que el que la recibe.
-                // El `^` y el `=` no son adorno: le dicen al cliente que resuelva el NOMBRE del hechizo por id.
-                session.Send(target.CharIndex != p.CharIndex
-                    ? ServerMessages.LocaleMsg(452, $"^{spell.Index}%{target.Name}")
-                    : ServerMessages.LocaleMsg(0, $"={spell.Index}"));
-                EmitirCostoDelHechizo(session, p);
-                if (target.CharIndex != p.CharIndex)
-                    target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}"));
             }
             else if (spell.Index == HechizoLlamadoAlFamiliar)
             {
