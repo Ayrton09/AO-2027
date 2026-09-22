@@ -464,6 +464,18 @@ public static class ServerMessages
             .WriteInteger(0).WriteInteger(0)   // FX / FXLoops
             .ToArray();
 
+    /// <summary>Una criatura que GIRA (VB6 ChangeNPCChar, MODULO_NPCs.bas:624): su cuerpo y su cabeza, la dirección
+    /// nueva y el efecto en 0. El original manda también el arma, el escudo y el casco en 0, que en SU cliente quiere
+    /// decir "no cambia"; este cliente toma el 0 como "nada", así que va el equipo de la ficha, que se ve igual.</summary>
+    public static byte[] CharacterChange(Npc n) =>
+        new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterChange)
+            .WriteInteger(n.CharIndex)
+            .WriteInteger(n.Template.Body).WriteInteger(n.Template.Head).WriteByte(n.Heading)
+            .WriteInteger((short)n.Template.WeaponAnim).WriteInteger((short)n.Template.ShieldAnim)
+            .WriteInteger((short)n.Template.HelmetAnim)
+            .WriteInteger(0).WriteInteger(0)   // FX / FXLoops
+            .ToArray();
+
     public static byte[] Pong(int time) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.Pong).WriteLong(time).ToArray();
 

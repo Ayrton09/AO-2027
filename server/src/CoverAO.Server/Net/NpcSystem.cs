@@ -1103,6 +1103,7 @@ public sealed class NpcSystem
                 if (npc.Hostile && otro is not null && otro.IsAlive && otro.OwnerCharIndex != 0
                     && otro.CharIndex != npc.CharIndex && !otro.EstaParalizada(_tick))
                 {
+                    GirarHacia(npc, heading);   // gira ANTES de ir contra la mascota (AI_NPC.bas:191)
                     NpcGolpeaA(npc, otro);
                     return true;
                 }
@@ -1127,8 +1128,16 @@ public sealed class NpcSystem
             // Los NPCs que saben MAGIA la tiran en vez de pegar (VB6 AI_NPC.bas:169/295 → NpcLanzaUnSpell,
             // que elige uno al azar de su lista). Son 70 de los 291 del install: sin esto, los Magos, los
             // Nigromantes y las Banshees peleaban sólo a melee.
-            if (npc.Template.Spells is { Count: > 0 } && NpcLanzaUnHechizo(npc, player)) return true;
-            NpcGolpeaA(npc, player);
+            //
+            // Y GIRA HACIA EL BLANCO (ChangeNPCChar). La hostil que sabe magia gira ANTES de castear, pueda o no (:179);
+            // la pacífica castea sin girar (:229). Después, las dos giran si el golpe se llegó a intentar (`If
+            // NpcAtacaUser(...) Then ChangeNPCChar`, :184 y :235).
+            if (npc.Template.Spells is { Count: > 0 })
+            {
+                if (npc.Hostile) GirarHacia(npc, heading);
+                if (NpcLanzaUnHechizo(npc, player)) return true;
+            }
+            if (NpcGolpeaA(npc, player)) GirarHacia(npc, heading);
             return true; // one attack per tick
         }
         return false;
@@ -1420,11 +1429,13 @@ public sealed class NpcSystem
         _world.RemoveNpc(victima.CharIndex);
     }
 
-    private void NpcGolpeaA(Npc npc, Player player)
+    /// <summary>Devuelve lo que devuelve <c>NpcAtacaUser</c>: si el intervalo dejó intentar el golpe, entre o no. Es
+    /// lo que decide si la criatura gira hacia el blanco (ver <see cref="GirarHacia"/>).</summary>
+    private bool NpcGolpeaA(Npc npc, Player player)
     {
         {
             // LAS CUATRO GUARDAS DEL ORIGINAL, adentro y no en el caller (VB6 SistemaCombate.bas:700-707).
-            if (!PuedeSerAtacado(player)) return;
+            if (!PuedeSerAtacado(player)) return false;
             // EL FAMILIAR QUE SABE MAGIA la tira en vez de pegar, como cualquier criatura con hechizos: sus
             // habilidades viajan en la ficha (`Template.Spells`), asi que el camino es el MISMO que ya usan
             // los NPCs magos -- con su dano, la resistencia del equipo y el efecto de estado. Va acá y no en
@@ -1434,10 +1445,10 @@ public sealed class NpcSystem
             // (modHechizos.bas:100): el contador es UNO SOLO para golpe y hechizo, así que la criatura que
             // castea no pega también en la misma vuelta.
             if (npc.Template.Spells is { Count: > 0 } && FamiliarDe(npc) is not null
-                && _rng.Next(1, 101) < ProbHabilidadDeGolpe && NpcLanzaUnHechizo(npc, player)) return;
+                && _rng.Next(1, 101) < ProbHabilidadDeGolpe && NpcLanzaUnHechizo(npc, player)) return true;
             // EL INTERVALO DE 3 SEGUNDOS (VB6 SistemaCombate.bas:713: `If IntervaloPermiteAtacarNpc(...)
             // ... Else NpcAtacaUser = False : Exit Function`). Sale MUDA: ni rugido, ni tirada, ni skill.
-            if (!IntervaloPermiteAtacar(npc)) return;
+            if (!IntervaloPermiteAtacar(npc)) return false;
             // EL RUGIDO AL ATACAR (VB6 SistemaCombate.bas:730). Suena ANTES de la tirada de acierto, así que
             // la criatura ruge igual cuando erra — que es lo que hace el original y lo que se escucha en el
             // juego.
@@ -1480,7 +1491,7 @@ public sealed class NpcSystem
                 // si lo esquiva. Es LA manera de subir la evasión — el atacante nunca la sube (:218 entrena
                 // la skill del arma, y sólo al acertar). Faltaba en las dos salidas de esta rutina.
                 SubirSkillPorUso?.Invoke(player, GameLimits.SkillTacticas);
-                return; // missed
+                return true; // missed
             }
 
             // EL GOLPE QUE ENTRA SUENA Y SANGRA (VB6 SistemaCombate.bas:740-747): `PlayWave(SND_IMPACTO)` al
@@ -1550,7 +1561,17 @@ public sealed class NpcSystem
             // El cierre de NpcAtacaUser (:759): el golpe recibido entrena Tácticas — incluso el que mata,
             // que en el original también pasa por acá. La otra salida (el fallo) tiene su gemelo arriba.
             SubirSkillPorUso?.Invoke(player, GameLimits.SkillTacticas);
+            return true;
         }
+    }
+
+    /// <summary>VB6 <c>ChangeNPCChar</c> con su mismo cuerpo y cabeza (MODULO_NPCs.bas:624): la criatura mira hacia
+    /// <paramref name="heading"/> y el área recibe el CharacterChange, cambie o no la dirección. Es como gira hacia lo
+    /// que ataca; caminando gira sola (<see cref="MoveNpc"/>).</summary>
+    private void GirarHacia(Npc npc, byte heading)
+    {
+        npc.Heading = heading;
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterChange(npc));
     }
 
     /// <summary>VB6 <c>RestoreOldMovement</c> (AI_NPC.bas:494), al que caen las dos ramas de la IA cuando no
