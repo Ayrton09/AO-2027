@@ -1609,7 +1609,9 @@ public sealed class NpcSystem
             // VB6 SistemaCombate.bas:752: `If Npclist(npcIndex).Veneno > 0 Then Call NpcEnvenenarUser(...)`,
             // que envenena con un 30% (`RandomNumber(1,100) < 30`, MODULO_NPCs.bas:793) y avisa con el 182.
             // Son 7 criaturas del install; el port nunca leyó el campo, así que su veneno no existía.
-            if (npc.Template.Veneno > 0 && !player.IsPoisoned(_tick) && _rng.Next(1, 101) < 30)
+            // El dado se tira y el 182 sale AUNQUE YA ESTÉ ENVENENADO: NpcEnvenenarUser no mira el flag, sólo lo vuelve
+            // a prender.
+            if (npc.Template.Veneno > 0 && _rng.Next(1, 101) < 30)
             {
                 player.PoisonedUntilTick = long.MaxValue;
                 player.Connection?.Send(ServerMessages.LocaleMsg(182));
