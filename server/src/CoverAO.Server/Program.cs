@@ -577,21 +577,8 @@ loop.OnTickHandler = tick =>
                 pl.Connection?.Send(ServerMessages.BlindNoMore());
             }
             // Invisibilidad por hechizo vencida → volver visible (el /INVISIBLE de GM deja InvisibleUntilTick=0,
-            // así que este bloque no lo toca: su invisibilidad es permanente hasta re-togglear).
-            if (pl.InvisibleUntilTick != 0 && tick >= pl.InvisibleUntilTick)
-            {
-                pl.InvisibleUntilTick = 0;
-                if (pl.Invisible)
-                {
-                    pl.Invisible = false;
-                    // No destapar si el jugador SIGUE oculto por el oficio Ocultarse: sólo venció la invis de hechizo.
-                    if (!pl.Oculto)
-                    {
-                        world.BroadcastToObservers(pl.Pos, ServerMessages.SetInvisible(pl.CharIndex, false), pl.CharIndex);
-                        pl.Connection?.Send(ServerMessages.ConsoleMsg("Vuelves a ser visible.", 0));
-                    }
-                }
-            }
+            // así que no la toca: su invisibilidad es permanente hasta re-togglear).
+            dispatcher?.VencerInvisibilidad(pl, tick);
             // Metamorfosis vencida → vuelve a su forma (regla de la casa MetamorfosisDelDruida; con la regla
             // apagada nadie se transforma nunca y este chequeo es un `!= 0` que siempre da falso, y con la
             // regla en permanente —el default— el tick de vencimiento no lo alcanza ninguna vuelta).

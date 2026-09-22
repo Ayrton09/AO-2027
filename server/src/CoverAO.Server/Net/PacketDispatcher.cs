@@ -2594,6 +2594,21 @@ public sealed partial class PacketDispatcher
         if (p.MetamorfosisHastaTick != 0 && tick >= p.MetamorfosisHastaTick) RevertirMetamorfosis(p);
     }
 
+    /// <summary>La invisibilidad del hechizo que venció (VB6 EfectoInvisibilidad, General.bas:897-919). El /INVISIBLE
+    /// del GM deja <c>InvisibleUntilTick</c> en 0, así que no la toca. El que sigue oculto por el oficio no se destapa;
+    /// si no, primero el 307 y después el SetInvisible al área ENTERA (`ToPCArea` incluye al propio, que así deja de
+    /// verse latiendo).</summary>
+    public void VencerInvisibilidad(Player p, long tick)
+    {
+        if (p.InvisibleUntilTick == 0 || tick < p.InvisibleUntilTick) return;
+        p.InvisibleUntilTick = 0;
+        if (!p.Invisible) return;
+        p.Invisible = false;
+        if (p.Oculto) return;
+        p.Connection?.Send(ServerMessages.LocaleMsg(307));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, false));
+    }
+
     /// <summary>
     /// Otorga experiencia y avisa al cliente como lo hace el original. Devuelve los niveles que subió.
     ///
@@ -3096,13 +3111,14 @@ public sealed partial class PacketDispatcher
         // tira). En un mapa sin invisibilidad, el 448. Y "YA INVISIBLE" NO CORTA: el original lo pregunta con
         // `If .flags.Invisible = True` (:1078), e `Invisible` es un Byte que vale 1 (Declares.bas:1195): 1 = -1 da
         // falso, así que el 68 no sale nunca. Re-lanzarla la vuelve a aplicar y se cobra, pero el contador no se
-        // reinicia (EfectoInvisibilidad, General.bas:897): vence cuando vencía la primera.
+        // reinicia (EfectoInvisibilidad, General.bas:897): vence cuando vencía la primera. El SetInvisible va a
+        // `ToPCArea` (:1089), que incluye al propio: el que la lanza también se ve latiendo.
         if (spell.IsInvisibility)
         {
             if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
             if (!p.Invisible) p.InvisibleUntilTick = now + InvisibilityDurationTicks;
             p.Invisible = true;
-            _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
+            _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true));
             casteado = true;
         }
         // ENVENENAR (:1092-1112) e INCINERAR (:1113-1133): sobre uno mismo el 298; sobre quien ya lo está, el 326;
