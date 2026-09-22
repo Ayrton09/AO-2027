@@ -501,14 +501,17 @@ loop.OnTickHandler = tick =>
     // HambreYSed (VB6 General.bas:1183): la sed baja 10 cada IntervaloSed y el hambre cada IntervaloHambre,
     // las dos con piso en 0. Los intervalos se cuentan en VUELTAS del loop, no en milisegundos (ver
     // Survival.cs y fase5/unidades-del-loop.md), y el contador es POR USUARIO: se reinicia al disparar.
+    // Y SÓLO AL USUARIO COMÚN: el original sale de entrada si no tiene el bit User (`If Not .flags.Privilegios
+    // And PlayerType.User Then Exit Sub`, General.bas:1184). Un GM no se deshidrata ni pasa hambre.
     foreach (var pl in world.Players)
     {
         if (!pl.IsAlive) continue;
         bool hcChanged = false;
-        if (pl.Thirst > 0 && ++pl.ThirstCounter >= Survival.ThirstIntervalTicks)
-        { pl.ThirstCounter = 0; pl.Thirst = Survival.Decay(pl.Thirst); hcChanged = true; }
-        if (pl.Hunger > 0 && ++pl.HungerCounter >= Survival.HungerIntervalTicks)
-        { pl.HungerCounter = 0; pl.Hunger = Survival.Decay(pl.Hunger); hcChanged = true; }
+        bool comun = (pl.Privileges & 1) != 0;   // PlayerType.User
+        if (comun && pl.Thirst > 0 && Survival.Cumplio(ref pl.ThirstCounter, Survival.ThirstIntervalTicks))
+        { pl.Thirst = Survival.Decay(pl.Thirst); hcChanged = true; }
+        if (comun && pl.Hunger > 0 && Survival.Cumplio(ref pl.HungerCounter, Survival.HungerIntervalTicks))
+        { pl.Hunger = Survival.Decay(pl.Hunger); hcChanged = true; }
         if (hcChanged) pl.Connection?.Send(ServerMessages.UpdateHungerAndThirst(pl.Thirst, pl.Hunger));
         // TRABAJO CONTINUO (VB6 mMainLoop.bas:178, `If .flags.Trabajando Then DoTrabajar iUserIndex`): mientras
         // la faena esté prendida, el jugador pesca/mina/tala solo. El propio TickTrabajo se gatea por el
@@ -611,9 +614,8 @@ loop.OnTickHandler = tick =>
             // terreno se lo saca a la ENERGÍA. Los 95 mapas nevados del install no gateaban nada hasta ahora
             // porque el transcode se salteaba el campo `terrain` del header de cada .csm.
             if (!pl.IsGm && Equipment.EquippedOfCategory(pl, gameData, 2) is null
-                && ++pl.ColdCounter >= Survival.ColdIntervalTicks)
+                && Survival.Cumplio(ref pl.ColdCounter, Survival.ColdIntervalTicks))
             {
-                pl.ColdCounter = 0;
                 if (gameData.IsSnowMap(pl.Pos.Map))
                 {
                     pl.Connection?.Send(ServerMessages.LocaleMsg(46));
@@ -637,9 +639,8 @@ loop.OnTickHandler = tick =>
             // EfectoVeneno (VB6 General.bas): cada IntervaloVeneno saca RandomNumber(1,5) y avisa con
             // LocaleMsg 47. OJO que el veneno MATA (`If MinHP < 1 Then UserDie`): el port lo clampaba a 1 con
             // el comentario "poison can't kill directly", que era invención del slice.
-            if (pl.IsPoisoned(tick) && ++pl.PoisonCounter >= Survival.PoisonIntervalTicks)
+            if (pl.IsPoisoned(tick) && Survival.Cumplio(ref pl.PoisonCounter, Survival.PoisonIntervalTicks))
             {
-                pl.PoisonCounter = 0;
                 pl.Hp -= regenRng.Next(1, 6);
                 pl.Connection?.Send(ServerMessages.LocaleMsg(47, "", 0, 5));   // el original manda fuente = 5
                 if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el veneno"); }
@@ -689,9 +690,8 @@ loop.OnTickHandler = tick =>
             // rápida descansando (4 s), y devuelve RandomNumber(2, 5% de la energía máxima) avisando con
             // LocaleMsg 389. Sólo si no hay hambre ni sed (mMainLoop.bas:184 envuelve Sanar+RecStamina).
             if (pl.Hunger > 0 && pl.Thirst > 0 && pl.Hp < pl.MaxHp
-                && ++pl.HpCounter >= (pl.Resting ? Survival.HealRestingIntervalTicks : Survival.HealIntervalTicks))
+                && Survival.Cumplio(ref pl.HpCounter, pl.Resting ? Survival.HealRestingIntervalTicks : Survival.HealIntervalTicks))
             {
-                pl.HpCounter = 0;
                 pl.Hp = Math.Min(pl.MaxHp, pl.Hp + Survival.HealAmount(pl.MaxStamina, (lo, hi) => regenRng.Next(lo, hi + 1)));
                 pl.Connection?.Send(ServerMessages.LocaleMsg(389));
                 cambioHp = true;   // VB6 Sanar: WriteUpdateHP
@@ -717,9 +717,8 @@ loop.OnTickHandler = tick =>
             // estás trabajando.
             if (pl.Hunger > 0 && pl.Thirst > 0 && pl.Stamina < pl.MaxStamina && !pl.Laborando
                 && Survival.RecuperaEnergia(Equipment.EstaDesnudo(pl, gameData), pl.Mounted)
-                && ++pl.StaCounter >= Survival.StaminaIntervalTicks)
+                && Survival.Cumplio(ref pl.StaCounter, Survival.StaminaIntervalTicks))
             {
-                pl.StaCounter = 0;
                 pl.Stamina = Math.Min(pl.MaxStamina, pl.Stamina + Survival.StaminaAmount(
                     pl.MaxStamina, pl.Skills[GameLimits.SkillSupervivencia], (lo, hi) => regenRng.Next(lo, hi + 1)));
                 cambioSta = true;   // VB6 RecStamina: WriteUpdateSta

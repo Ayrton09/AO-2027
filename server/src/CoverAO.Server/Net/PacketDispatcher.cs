@@ -2875,6 +2875,9 @@ public sealed partial class PacketDispatcher
         // mundo, así que su área no existiría.
         if (npc.Template.Snd3 > 0)
             _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)npc.Template.Snd3, npc.Pos.X, npc.Pos.Y));
+        // EL QUE LA MATA SE QUEDA SIN OBJETIVO (VB6 MuereNpc, MODULO_NPCs.bas:107-108): TargetNPC a 0 y el tipo a
+        // Comun. Es lo que corta, por ejemplo, la bóveda que quedó abierta.
+        p.TargetNpc = 0; p.TargetNpcTipo = 0;
         p.NpcsKilled++;
         // El lugar de mascota de su dueño se libera solo: lo hace World.RemoveNpc, por donde pasa esta muerte, y
         // RemoveNpc (arriba) ya sacó a este NPC del mundo. No hay que tocar ningún contador aparte (cupo compartido).
@@ -3834,6 +3837,11 @@ public sealed partial class PacketDispatcher
     private const int PrivUser = 1, PrivConsejero = 2, PrivSemiDios = 4;
     private const int PrivDios = 8, PrivAdmin = 16, PrivRoleMaster = 32;
     private static bool IsDios(Player? p) => p is not null && (p.Privileges & PrivDios) != 0;
+    /// <summary>El Consejero que NO es además RoleMaster (VB6 <c>Privilegios And Consejero</c> con
+    /// <c>Not Privilegios And RoleMaster</c>): el GM de rango más bajo, que no levanta, no tira ni destruye objetos
+    /// (Protocol.bas:1757, :2018, :2109).</summary>
+    private static bool EsConsejeroSinRoleMaster(Player p) =>
+        (p.Privileges & PrivConsejero) != 0 && (p.Privileges & PrivRoleMaster) == 0;
     private static bool IsAltoGm(Player? p) => p is not null && (p.Privileges & (PrivDios | PrivAdmin | PrivRoleMaster)) != 0;
     /// <summary>SemiDios o superior (Admin|Dios|SemiDios) — el gate de /ECHAR, /RMSG, /ONLINEMAP y /ONLINEGM.
     /// Como en el VB6, quien no pasa el gate rebota EN SILENCIO (Exit Sub, sin ConsoleMsg).</summary>
@@ -6182,7 +6190,15 @@ public sealed partial class PacketDispatcher
     {
         if (p.FactionStatus != Player.StatusCriminal)
         { session.Send(ServerMessages.ConsoleMsg("Para robar debes ser renegado, escribe /RETIRAR para dejar tu ciudadania.", FuenteInfo)); return; }
-        if (p.Stamina < 15) { session.Send(ServerMessages.ConsoleMsg("Estas muy cansado para robar.", FuenteInfo)); return; }
+        // EN LA ARENA NO SE ROBA (VB6 DoRobar, Trabajo.bas:1490): si el ladrón o la víctima pisan una baldosa de
+        // pelea (`TriggerZonaPelea <> TRIGGER6_AUSENTE`), sale mudo y antes de cobrar la energía.
+        if (_data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || _data.IsArena(victima.Pos.Map, victima.Pos.X, victima.Pos.Y)) return;
+        // El aviso del cansancio va con el género del ladrón (:1504-1508).
+        if (p.Stamina < 15)
+        {
+            session.Send(ServerMessages.ConsoleMsg(p.Gender == 2 ? "Estás muy cansada para robar." : "Estás muy cansado para robar.", FuenteInfo));
+            return;
+        }
         p.Stamina -= 15;
         if (p.Stamina < 0) p.Stamina = 0;
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // VB6 Trabajo.bas → WriteUpdateSta
@@ -7749,7 +7765,8 @@ public sealed partial class PacketDispatcher
             if (!p.IsAlive) return;
             // NI NAVEGANDO NI A CABALLO (:2110, la misma linea que el gate del muerto). Destruir el barco en
             // medio del mar dejaba `Navigating` prendido y persistido, o sea navegacion permanente sin barco.
-            if (p.Navigating || p.Mounted) return;
+            // Y en esa misma línea, el Consejero sin RoleMaster: no destruye nada.
+            if (p.Navigating || p.Mounted || EsConsejeroSinRoleMaster(p)) return;
             if (p.Comerciando) return;   // :2113, con el mismo comentario de trampa que el de tirar
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
@@ -9492,6 +9509,10 @@ public sealed partial class PacketDispatcher
         switch (tool.Index)
         {
             case 138 or 881:   // RED_PESCA / CAÑA_PESCA
+                // PARADO EN UNA BALDOSA CON TRIGGER 1 NO SE PESCA (VB6 Accion, Acciones.bas:35-39): se mira la
+                // baldosa del JUGADOR, no la del agua, y antes que el agua.
+                if (_data.TileTrigger(p.Pos.Map, p.Pos.X, p.Pos.Y) == 1)
+                { session.Send(ServerMessages.ConsoleMsg("No puedes pescar desde donde te encuentras.", FuenteInfo)); return true; }
                 if (!_data.IsWater(p.Pos.Map, x, y))
                 { session.Send(ServerMessages.ConsoleMsg("No hay agua donde pescar. Busca un lago, rio o mar.", FuenteInfo)); return true; }
                 break;
@@ -9694,9 +9715,11 @@ public sealed partial class PacketDispatcher
         // VB6 DoPescar/DoTalar/DoMineria: el trabajo CUESTA stamina (QuitarSta — sin energía no se trabaja) y
         // el éxito es una tirada según skill (res = RandomNumber(1,Suerte), sólo rinde a veces). Sin esto el
         // trabajo daba recurso garantizado sin costo → canilla de oro (los recursos se venden a NPCs).
+        // El esfuerzo se cobra SIN pedir que alcance (VB6 QuitarSta, Trabajo.bas:1827): la energía se clava en
+        // cero y la vuelta se hace igual. El único freno es el de DoTrabajar —menos de 2, "Dejas de trabajar
+        // debido a tu poca energía."—, que está en TickTrabajo.
         int esfuerzo = EsfuerzoDelOficio(skill, p.Class);
-        if (p.Stamina < esfuerzo) { session.Send(ServerMessages.ConsoleMsg("Estas demasiado cansado para trabajar.", FuenteInfo)); return false; }
-        p.Stamina -= esfuerzo;
+        p.Stamina = Math.Max(0, p.Stamina - esfuerzo);
         // El umbral del acierto: 6 en tala, botánica y pesca CON CAÑA; 5 en minería (Trabajo.bas:1996) y en
         // pesca CON RED, porque el original escribe `res < 6` ahí (:1425) y `res <= 6` en la caña (:1341).
         int suerte = SuerteDelOficio(p.Skills[skill]);
@@ -11233,8 +11256,9 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null || slot < 1) return;
             // MUDO a propósito: el original corta con un `Exit Sub` pelado y no manda el 77 (Protocol.bas:2018).
-            // Acá salía por `DeadCheck`, que sí lo manda. Ver la nota de las dos familias en ese helper.
-            if (!p.IsAlive) return;
+            // Acá salía por `DeadCheck`, que sí lo manda. Ver la nota de las dos familias en ese helper. En la
+            // MISMA línea del original está el Consejero sin RoleMaster: tampoco tira nada, ni oro.
+            if (!p.IsAlive || EsConsejeroSinRoleMaster(p)) return;
             // TIRAR EN MEDIO DE UN COMERCIO ES TRAMPA y el original corta seco, con su propio comentario:
             // "he can't drop items => He's cheating, we kick him" (:2021). Va antes que la rama del oro.
             if (p.Comerciando) return;
@@ -11305,6 +11329,9 @@ public sealed partial class PacketDispatcher
             if (DeadCheck(session, p)) return;   // VB6 HandlePickUp: Protocol.bas:1751
             // Y levantar en medio de un comercio tambien es trampa (:1754, mismo comentario que el de tirar).
             if (p.Comerciando) return;
+            // UN CONSEJERO NO LEVANTA NADA, salvo que además sea RoleMaster (:1757-1762): el 25 y afuera. Es el
+            // rango más bajo de GM, invisible a los jugadores, y así no se lleva el botín de nadie.
+            if (EsConsejeroSinRoleMaster(p)) { session.Send(ServerMessages.LocaleMsg(25)); return; }
             if (!_world.TryGetGround(p.Pos, out var ground)) { session.Send(ServerMessages.LocaleMsg(261)); return; }  // VB6 GetObj
             // VB6 InvUsuario.bas:619 (`If ObjData(...).Agarrable <> 1 Then`): el decorado del mundo NO se levanta.
             // El sentido del dato está INVERTIDO — `Agarrable = 1` significa fijo. De los 176 objetos del mapa 1,
@@ -11350,6 +11377,11 @@ public sealed partial class PacketDispatcher
             if (p is null || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             var obj = inv.IsEmpty ? null : _data.Obj(inv.ObjIndex);
+            // EL NIVEL MÍNIMO PARA USAR (VB6 UseInvItem, InvUsuario.bas:1342-1350): a un usuario común, todo objeto
+            // que trae `MinELV` le pide ese nivel ANTES de mirar qué es —el barco incluido— y antes del DeadCheck.
+            // Acá el nivel se miraba sólo al equipar, y la Barca (MinELV 25) se usaba con cualquier nivel.
+            if (obj is { MinLevel: > 0 } && (p.Privileges & PrivUser) != 0 && p.Level < obj.MinLevel)
+            { session.Send(ServerMessages.LocaleMsg(268, obj.MinLevel.ToString())); return; }
             // El BARCO es la única excepción al gate de muerte: el VB6 (DoNavega) contempla embarcar/desembarcar
             // estando muerto — el cadáver navega como fragata fantasmal (body 87).
             if (obj is not null && obj.IsBoat) { DoNavega(session, p, slot, obj); return; }
@@ -12112,7 +12144,12 @@ public sealed partial class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || !p.BankOpen || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
+            if (p is null || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
+            // MUERTO NO, y EL OBJETIVO TIENE QUE SER EL BANQUERO (VB6 HandleBankDeposit, Protocol.bas:3585-3598), en
+            // cada operación y no sólo al abrir: un clic a otra cosa o matar una criatura cambian el objetivo, y
+            // con eso la bóveda deja de atender aunque la ventana siga abierta. El muerto, primero.
+            if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
+            if (!p.BankOpen || BanqueroDelTarget(p) is null) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
             int move = Math.Clamp((int)amount, 1, inv.Amount);
@@ -12140,7 +12177,10 @@ public sealed partial class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || !p.BankOpen || slot < 1 || slot > GameLimits.MaxBankSlots) return;
+            if (p is null || slot < 1 || slot > GameLimits.MaxBankSlots) return;
+            // Lo mismo que el depósito (VB6 HandleBankExtractItem, Protocol.bas:3480-3493).
+            if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
+            if (!p.BankOpen || BanqueroDelTarget(p) is null) return;
             var bk = p.BankInventory[slot];
             if (bk.IsEmpty) return;
             int move = Math.Clamp((int)amount, 1, bk.Amount);

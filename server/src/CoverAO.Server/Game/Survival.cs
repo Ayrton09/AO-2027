@@ -23,6 +23,22 @@ public static class Survival
     /// <summary>One decay step, floored at 0 (VB6: MinX = MinX - 10; if MinX &lt;= 0 then MinX = 0).</summary>
     public static byte Decay(byte value) => (byte)System.Math.Max(0, value - DecayStep);
 
+    /// <summary>
+    /// UN CONTADOR DEL BUCLE, CONTADO COMO EL ORIGINAL. Los seis del jugador —sed, hambre, vida, energía, frío y
+    /// veneno— tienen la misma forma en la fuente: <c>If cnt &lt; Intervalo Then cnt = cnt + DeltaTick Else
+    /// (efecto): cnt = 0</c> (General.bas: HambreYSed, Sanar, RecStamina, EfectoFrio, EfectoVeneno). O sea que
+    /// SUMA mientras no llegó y dispara en la vuelta SIGUIENTE a la que llega: el efecto sale cada
+    /// <c>Intervalo + 1</c> vueltas. Acá se incrementaba y se comparaba en la misma vuelta, y salía cada
+    /// <c>Intervalo</c>: descansando, la vida volvía cada 5 vueltas en vez de 6, un 20 % más rápido.
+    /// </summary>
+    /// <returns>true en la vuelta en que dispara el efecto (y ya dejó el contador en cero).</returns>
+    public static bool Cumplio(ref int contador, int intervalo)
+    {
+        if (contador < intervalo) { contador++; return false; }
+        contador = 0;
+        return true;
+    }
+
     // --- Regeneración y veneno, en la MISMA unidad (vueltas del loop de 40 ms) ---
     //
     // OJO DE DÓNDE SALEN: estos números NO se leen del Server.ini, se leen del CALL SITE (mMainLoop.bas:186-212),
@@ -32,13 +48,15 @@ public static class Survival
     //   de pie      -> Sanar(SanaIntervaloSinDescansar = 1600)    RecStamina(50)   <- 50 HARDCODEADO
     //   descansando -> Sanar(StaminaIntervaloSinDescansar = 5)    RecStamina(50)   <- ídem
     //
-    // Sí: descansando, la VIDA se cura con la constante de la ENERGÍA (5 vueltas = 0,2 s). Es un error de la
+    // Sí: descansando, la VIDA se cura con la constante de la ENERGÍA (5, o sea cada 6 vueltas = 0,24 s: ver
+    // `Cumplio`). Es un error de la
     // fuente —el `Else` hasta tiene el comentario al revés, "No esta descansando"— pero es el que corre, así que
     // se porta igual: descansar cura vertiginosamente rápido y de pie tardás 64 segundos por curación. Y
     // `SanaIntervaloDescansar` / `StaminaIntervaloDescansar` son dos constantes MUERTAS: se cargan del .ini y no
     // las usa nadie. Ver fase5/unidades-del-loop.md.
+    // Cada número es el `Intervalo` del original: el efecto sale cada Intervalo + 1 vueltas (ver `Cumplio`).
     public const int HealIntervalTicks = 1600;          // SanaIntervaloSinDescansar     -> 64 s de pie
-    public const int HealRestingIntervalTicks = 5;      // StaminaIntervaloSinDescansar  -> 0,2 s descansando (sic)
+    public const int HealRestingIntervalTicks = 5;      // StaminaIntervaloSinDescansar  -> 0,24 s descansando (sic)
     public const int StaminaIntervalTicks = 50;         // literal en las DOS ramas      -> 2 s
     public const int PoisonIntervalTicks = 500;         // IntervaloVeneno               -> 20 s
     public const int ColdIntervalTicks = 50;            // IntervaloFrio (Server.ini:92) -> 2 s

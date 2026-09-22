@@ -885,8 +885,9 @@ public sealed class GameData
     public bool IsNpcInvalidTile(int map, int x, int y) => TileTrigger(map, x, y) == 3;
 
     // NO hay acá un `IsUnderRoof`. La regla de "bajo techo" (Trigger = 1, 2, 4 o >= 20) es del CLIENTE —
-    // TileEngine.bas:1690 y RoofAlphaCalculate :3837, para desvanecer los techos— y en el SERVER los valores
-    // 1, 2 y 4 no gatean NADA vivo, aunque a primera vista parezca que sí:
+    // TileEngine.bas:1690 y RoofAlphaCalculate :3837, para desvanecer los techos—. En el SERVER el único uso
+    // vivo del 1 es la pesca: parado en esa baldosa no se puede pescar (Acciones.bas:35, en IniciarFaena). Los
+    // valores 2 y 4 como "techo" no gatean nada vivo, aunque a primera vista parezca que sí:
     //   . `Intemperie` (General.bas:798), la función que decide si la lluvia te pega, tiene CERO call sites;
     //   . los dos guards de regeneración (General.bas:1088 y :1243) dicen
     //     `If Trigger = 1 And Trigger = 2 And Trigger = 4 Then Exit Sub` — tres igualdades sobre la MISMA
