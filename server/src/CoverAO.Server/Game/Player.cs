@@ -550,13 +550,15 @@ public sealed class Player
     public long LastWorkMs { get; set; }   // VB6 IntervaloPermiteTrabajar: cadencia por-usuario del trabajo y del robo
 
     /// <summary>Hasta cuándo las criaturas no lo ven, en ms de <c>Environment.TickCount64</c> (VB6
-    /// <c>Counters.TimerPuedeSerAtacado</c> + <c>flags.NoPuedeSerAtacado</c>, modNuevoTimer.bas:316). Se arma al
-    /// entrar al mundo y en cada teletransporte; dura <c>[TIMERS] IntervaloPuedeSerAtacado</c>.
-    ///
-    /// <para>El original lo lleva en dos campos —un reloj y un flag— porque su función hace las dos cosas en
-    /// una sola llamada. Acá alcanza el vencimiento: "protegido" es <c>ahora &lt; esto</c>, y un personaje que
-    /// nunca se armó tiene 0, que ya venció.</para></summary>
+    /// <c>Counters.TimerPuedeSerAtacado</c>, modNuevoTimer.bas:316). Se arma al entrar al mundo y en cada
+    /// teletransporte; dura <c>[TIMERS] IntervaloPuedeSerAtacado</c>. Protege SÓLO junto con
+    /// <see cref="NoPuedeSerAtacado"/>.</summary>
     public long NoAtacablePorNpcHastaMs { get; set; }
+    /// <summary>La otra mitad de la gracia (VB6 <c>flags.NoPuedeSerAtacado</c>): la prenden el login y el
+    /// teletransporte junto con el reloj, y la APAGA CUALQUIER PAQUETE del jugador (Protocol.bas:160-162, antes del
+    /// despacho). O sea que la gracia dura hasta el vencimiento o hasta que el jugador haga algo, lo que llegue
+    /// primero: la IA protege sólo si el reloj no venció Y esto sigue prendido (<c>UserProtected</c>).</summary>
+    public bool NoPuedeSerAtacado { get; set; }
 
     /// <summary>La RANURA del mineral que se está FUNDIENDO: si vale algo, la faena abierta es de fundir y el loop
     /// llama a DoFundir (VB6 <c>flags.Lingoteando</c>, la primera rama de <c>DoTrabajar</c>). La prende SÓLO el clic

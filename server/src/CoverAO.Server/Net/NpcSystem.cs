@@ -117,17 +117,15 @@ public sealed class NpcSystem
     /// IA no lo elige de blanco (VB6 <c>UserProtected</c>, armado por <c>IntervaloPermiteSerAtacado</c>,
     /// modNuevoTimer.bas:316). Dura <c>[TIMERS] IntervaloPuedeSerAtacado</c>, 5 s en el install.
     ///
-    /// <para><b>Va SÓLO en la selección de blanco, no en el golpe.</b> El original la escribe en los seis
-    /// bucles que ELIGEN a quién perseguir (AI_NPC.bas :88, :160, :229, :293, :343, :669) y en ninguno de los
-    /// dos caminos por los que la criatura pega — ni <c>SeguirAgresor</c> ni <c>NpcAtacaUser</c>—. O sea que la
-    /// gracia te salva de que te vengan a buscar, pero si vos le pegás primero, te devuelve el golpe en el
-    /// acto. Ponerla también en el golpe dejaba a un recién llegado invulnerable cinco segundos aunque
-    /// atacara, y lo cazó <c>npc_ai_flow</c>.</para>
-    ///
-    /// <para>De los seis sitios del original, este port sólo tiene el de <c>IrUsuarioCercano</c>: los otros
-    /// cinco son de las IAs de guardia y de objeto, que no se modelan (los guardias salen por
-    /// <see cref="Npc.SinIa"/>).</para></summary>
-    private bool EnGraciaDeEntrada(Player p) => Environment.TickCount64 < p.NoAtacablePorNpcHastaMs;
+    /// <para>El original la escribe en los seis bucles de la IA (AI_NPC.bas :88 guardias, :160 HostilMalvadoAI,
+    /// :229 HostilBuenoAI, :293 y :343 IrUsuarioCercano, :669 objeto), siempre como <c>Not
+    /// IntervaloPermiteSerAtacado And flags.NoPuedeSerAtacado</c>: el reloj Y el flag. Los de las criaturas hostiles
+    /// son los del GOLPE a la pegada (<see cref="NpcGolpeaAdyacente"/>) y el de ir a buscarlo. Y el flag lo apaga
+    /// cualquier paquete del jugador: si le pega primero —o hace cualquier cosa—, la gracia se termina y la
+    /// criatura le devuelve el golpe en el acto. (Una versión anterior la ponía en el golpe SIN el flag, y un
+    /// recién llegado quedaba invulnerable cinco segundos aunque atacara: lo cazó <c>npc_ai_flow</c>.)</para>
+    /// </summary>
+    private bool EnGraciaDeEntrada(Player p) => p.NoPuedeSerAtacado && Environment.TickCount64 < p.NoAtacablePorNpcHastaMs;
     /// <summary>Registers a spawn point and spawns its NPC immediately.
     ///
     /// <paramref name="movement"/> es el <c>TipoAI</c> del VB6 (ver <see cref="Npc.Movement"/>): null = el de su
@@ -1010,8 +1008,10 @@ public sealed class NpcSystem
             if (player.AsustaAUnaCriaturaDeNivel(npc.Template.Nivel)) continue;   // se transformó en algo que le da miedo a ESTA criatura
             if (player.CharIndex == npc.OwnerCharIndex) continue; // summons never attack their summoner
             // Las TRES ramas de la IA exigen `flags.AdminPerseguible` (AI_NPC.bas:88/160/229), que el original
-            // sólo prende para el usuario común: a un GM ninguna criatura le pega ni lo persigue.
+            // sólo prende para el usuario común: a un GM ninguna criatura le pega ni lo persigue. Y en esa misma
+            // línea, `Not UserProtected`: la gracia de entrada (ver EnGraciaDeEntrada).
             if (!Perseguible(player)) continue;
+            if (EnGraciaDeEntrada(player)) continue;
             // VB6 NPCAI (AI_NPC.bas:705) se bifurca por Hostile: Hostile<>0 -> HostilMalvadoAI, que pega a
             // CUALQUIER usuario adyacente; Hostile=0 -> HostilBuenoAI (AI_NPC.bas:451), que sólo pega si el
             // usuario adyacente es `flags.AttackedBy`, o sea su agresor. Sin este gate todo NPC que no fuera

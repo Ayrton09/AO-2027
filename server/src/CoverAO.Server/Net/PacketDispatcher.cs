@@ -356,6 +356,12 @@ public sealed partial class PacketDispatcher
             session.Close("paquete de login estando adentro");
             return;
         }
+        // CUALQUIER PAQUETE APAGA LA GRACIA CONTRA LAS CRIATURAS (VB6 HandleIncomingData, Protocol.bas:160-162:
+        // "Ante cualquier paquete, pierde la proteccion de ser atacado", antes del despacho). Va ENCOLADO y antes del
+        // trabajo del paquete, para que quede en el orden del original: un paso que cae en un teletransporte la
+        // apaga y el teletransporte la vuelve a prender, y recién el paquete siguiente la apaga.
+        if (session.Player is not null)
+            _loop.Enqueue(() => { if (session.Player is { } jugador) jugador.NoPuedeSerAtacado = false; });
         switch (id)
         {
             case ClientPacketId.LoginExistingChar: HandleLoginExistingChar(session, reader); break;
@@ -1179,6 +1185,7 @@ public sealed partial class PacketDispatcher
         // al conectar (`ConnectUser`, TCP.bas:1199). Entrar al mundo parado entre hostiles no puede costarte el
         // primer golpe antes de que el cliente termine de dibujar el mapa.
         player.NoAtacablePorNpcHastaMs = Environment.TickCount64 + _ini.IntervaloPuedeSerAtacado;
+        player.NoPuedeSerAtacado = true;
         RefreshAppearance(player, _data); // apariencia inicial desde el equipo: Ropaje de armadura / desnudo + anims de arma/escudo/casco
         // Relogueó A CABALLO. El original no necesita este bloque porque GUARDA el cuerpo (`Char.body` va al
         // .chr y vuelve tal cual); acá la apariencia se REARMA desde el equipo, así que la línea de arriba
@@ -1623,6 +1630,7 @@ public sealed partial class PacketDispatcher
         // GRACIA CONTRA LAS CRIATURAS (:1660), en TODO salto y no en uno solo. Caminar no pasa por acá y por eso
         // no la renueva.
         t.NoAtacablePorNpcHastaMs = Environment.TickCount64 + _ini.IntervaloPuedeSerAtacado;
+        t.NoPuedeSerAtacado = true;
         PerderNpc(t);                                     // y la criatura que era tuya deja de serlo (:1663)
         _world.Events.Publish(new PlayerMoved(t, from, dest));
     }
