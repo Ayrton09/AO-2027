@@ -4927,13 +4927,21 @@ public sealed partial class PacketDispatcher
         if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8290: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         var t = ObjetivoDeGm(p, name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        // `RevivePlayer` y no `Hp = MaxHp` a secas: acá se subían los puntos de vida y nada más, así que el
-        // resucitado por un GM quedaba vivo pero DIBUJADO COMO CADÁVER para todos —incluido él— y seguía
-        // incinerado si lo estaba. El helper restaura la cabeza viva, apaga el fuego, refresca la apariencia
-        // y la DIFUNDE, que es la mitad que faltaba. Es el mismo que usa el sacerdote.
-        RevivePlayer(_world, _data, t);
-        t.Connection?.Send(ServerMessages.ConsoleMsg("Un GM te ha resucitado.", FuenteInfo));
-        session.Send(ServerMessages.ConsoleMsg($"Resucitaste a {t.Name}.", FuenteInfo));
+        // VB6 /REVIVIR (Protocol.bas:8331-8354): NO pasa por la espera del resucitar. Al muerto lo levanta en el
+        // acto —desnudo, con su cabeza, y difundido— y le avisa quién lo resucitó; al vivo le avisa que lo curó.
+        // A los dos les llena la vida. Al GM no le contesta nada. Y no toca `Resucitando`: si el muerto estaba
+        // esperando, el flag queda prendido, como allá.
+        if (!t.IsAlive)
+        {
+            t.Hp = t.MaxHp;
+            t.Head = t.OrigHead;
+            RefreshAppearance(t, _data);
+            _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterChange(t));
+            t.Connection?.Send(ServerMessages.ConsoleMsg($"{p!.Name} te ha resucitado.", FuenteInfo));
+        }
+        else t.Connection?.Send(ServerMessages.ConsoleMsg($"{p!.Name} te ha curado.", FuenteInfo));
+        t.Hp = t.MaxHp;
+        t.Connection?.Send(ServerMessages.UpdateHP((short)t.Hp));
     }
 
     private void GmKillNpc(ClientSession session)
@@ -6779,9 +6787,15 @@ public sealed partial class PacketDispatcher
             // Sin nada clickeado avisa; con algo clickeado que no sirva CALLA. Son dos ramas distintas del
             // original (:5110 avisa, :5116 hace Exit Sub pelado) y se replican tal cual.
             if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
-            if (!npc.IsReviver || p.IsAlive) return;
+            // LA CONDICIÓN DEL ORIGINAL, TAL CUAL ESTÁ ESCRITA (:5116): `(NPCtype <> Revividor And (NPCtype Or Not
+            // EsNewbie)) Or Muerto = 0`. Por los operadores de bits, lo que queda es: sale si no es un sacerdote Y
+            // (la criatura no es común O el jugador no es novato). O sea que a un NOVATO muerto lo levanta
+            // también cualquier criatura común (tipo 0) clickeada a diez baldosas.
+            bool esNovato = p.Level <= GameLimits.NewbieMaxLevel;
+            if (!npc.IsReviver && (npc.Template.NpcType != 0 || !esNovato)) return;
+            if (p.IsAlive) return;
             if (DistanciaVB6(p.Pos, npc.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
-            RevivePlayer(_world, _data, p);
+            RevivirUsuario(_world, p);   // arranca la espera; no mira si ya estaba esperando (vuelve a armarla)
             _world.BroadcastToObservers(p.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, 11, 1));
         });
     }
@@ -8445,9 +8459,12 @@ public sealed partial class PacketDispatcher
                 // PRIMERO, antes de mirar si estás vivo: el original gatea la distancia y recién después parte.
                 if (DistanciaVB6(p.Pos, npc.Pos) > 10)
                 { session.Send(ServerMessages.LocaleMsg(8)); return; }      // VB6: distancia <= 10 (LocaleMsg 8 si lejos)
+                // MIENTRAS ESPERA, EL SACERDOTE NO LO ATIENDE: las dos ramas del original piden `Resucitando = False`
+                // (Acciones.bas:311 y :315). Ni lo vuelve a revivir ni lo cura.
+                if (p.Resucitando) return;
                 if (!p.IsAlive)
                 {
-                    RevivePlayer(_world, _data, p);   // HP full + apariencia + LocaleMsg(90)
+                    RevivirUsuario(_world, p);   // arranca la espera: el bucle lo levanta a los ~2,5 s
                     // La frase del sacerdote NO es texto libre: el original manda `ChatOverHeadLocale(charIndex,
                     // 11, 1)` (Acciones.bas:313), o sea el MODO 1, que el cliente resuelve como las palabras
                     // mágicas del hechizo 11 — Resucitar. Acá iba un `ChatOverHead` con "¡Levántate y anda!"
@@ -10594,18 +10611,39 @@ public sealed partial class PacketDispatcher
             // camino de un solo objetivo). Sin esto la Bomba mágica y la Tormenta de fuego le pegaban a UNA
             // sola víctima, y el Círculo curativo curaba a UNO.
             if (spell.IsArea && spell.IsTerrainState) { CastAreaSpell(session, p, spell, clickX, clickY); return; }
+            // UN HECHIZO DE TERRENO QUE NO ES DE ÁREA no hace nada más que su efecto sobre la baldosa (VB6
+            // HechizoTerrenoEstado, modHechizos.bas:403-472): sin `HechizoDeArea` no entra al 3×3, `b` queda en
+            // falso y no se cobra. En el install es el #54 Resurrección (Target 4): el `If HechizoIndex = 54` que
+            // lo haría revivir (:1015) vive en el camino de los jugadores, al que un Target 4 nunca llega.
+            if (spell.IsTerrainState)
+            {
+                if (spell.Particle > 0)
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoParticula((short)spell.Particle, clickX, clickY, spell.TimeParticula));
+                if (spell.FxGrh > 0)
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoTerrenoFX((short)spell.FxGrh, clickX,
+                        (byte)Math.Min(byte.MaxValue, clickY + 1), (short)spell.FxLoops));
+                if (spell.Wav > 0)
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave((short)spell.Wav, clickX, clickY));
+                DecirPalabrasMagicas(p, spell);
+                return;
+            }
             if (spell.IsRevive)
             {
-                // Hechizo Resucitar (VB6 modHechizos.bas:981): revive al jugador MUERTO al frente. El caster
-                // ya está vivo (HandleCastSpell sale con !p.IsAlive). El slice omite los gates de arena/ModoCombate.
+                // Hechizo Resucitar (VB6 HechizoEstadoUsuario, modHechizos.bas:981-1027). El caster ya está vivo
+                // (HandleCastSpell sale con !p.IsAlive).
                 var (tx, ty) = TileObjetivo();
                 var target = _world.PlayerAt(new WorldPos(p.Pos.Map, tx, ty));
                 if (target is null) { session.Send(ServerMessages.LocaleMsg(SinObjetivo(spell))); return; }
-                if (target.IsAlive) { session.Send(ServerMessages.ConsoleMsg($"{target.Name} no está muerto.", 0)); return; }
+                // SOBRE UN VIVO NO PASA NADA: el bloque entero pide `Muerto = 1` (:981) y ninguna otra rama del
+                // hechizo aplica. Ni mensaje ni cobro.
+                if (target.IsAlive) return;
                 // MAPA SIN RESURRECCIÓN (VB6 modHechizos.bas:984): se mira el mapa del MUERTO, no el del caster,
                 // y sale LocaleMsg(448) sin cobrar el maná. El original lo clava en la prisión al arrancar
                 // (General.bas:298) para que a un preso no lo saquen resucitándolo desde afuera.
                 if (_data.MapNoResu(target.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
+                // LA FACCIÓN (VB6 :991-996): fuera de un duelo de arena, sólo se revive a quien se puede ayudar
+                // (PuedeAyudar). Si no, el 449 y sin cobrar.
+                if (!DueloDeArena(p, target) && !PuedeAyudar(p, target)) { session.Send(ServerMessages.LocaleMsg(449)); return; }
                 // EL MUERTO EN MODO COMBATE NO SE DEJA REVIVIR (VB6 modHechizos.bas:1000). En este fork el modo
                 // combate hace de "seguro de resurrección": el 450 que le llega al muerto dice literalmente
                 // "desactiva el seguro si quieres ser resucitado". Salen DOS mensajes, uno a cada uno, y el
@@ -10616,10 +10654,18 @@ public sealed partial class PacketDispatcher
                     target.Connection?.Send(ServerMessages.LocaleMsg(450, p.Name));
                     return;
                 }
-                SpellCasted(session, p, spell);
+                // En el orden del original: arranca la espera (:1006) —el muerto sigue muerto ~2,5 s—, le llena la
+                // bebida y la comida (:1008-1013; esto lo hace SÓLO el hechizo, no el sacerdote), y recién ahí
+                // InfoHechizo: las palabras, el FX, el 452 al lanzador y el 453 al muerto (:1761-1763, fuente 2).
+                // El cobro va al final (HandleHechizoUsuario, :778-796).
+                RevivirUsuario(_world, target);
+                target.Thirst = target.MaxThirst;
+                target.Hunger = target.MaxHunger;
+                target.Connection?.Send(ServerMessages.UpdateHungerAndThirst(target.Thirst, target.Hunger));
                 EmitSpellFx(p, target.Pos, target.CharIndex, spell);
-                RevivePlayer(_world, _data, target);                                       // HP full + apariencia + LocaleMsg(90) al target
-                target.Connection?.Send(ServerMessages.LocaleMsg(532, p.Name));            // "#1 te ha resucitado"
+                session.Send(ServerMessages.LocaleMsg(452, $"^{spell.Index}%{target.Name}", 0, 2));
+                target.Connection?.Send(ServerMessages.LocaleMsg(453, $"{p.Name}%^{spell.Index}", 0, 2));
+                SpellCasted(session, p, spell);
                 EmitirCostoDelHechizo(session, p);
             }
             else if (spell.IsHeal)
@@ -13089,26 +13135,61 @@ public sealed partial class PacketDispatcher
         // levanta al jugador (DarVida) recién a los ~2500ms. Acá se marca Resucitando; NpcSystem programa el revive
         // tras el delay. Fuera de arena el muerto queda fantasma hasta un revive manual (sacerdote/hechizo/RegresarHogar).
         if (data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y))
-            p.Resucitando = true;
+            RevivirUsuario(world, p);
+        // LA PARTÍCULA QUE LLEVE PUESTA SE APAGA AL MORIR, en la arena o no (UserDie, Modulo_UsUaRiOs.bas:1457-1462):
+        // la de la espera recién prendida, la de la poción de Nhareth, la que sea.
+        if (p.ParticulaFx > 0)
+            world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, p.ParticulaFx, 0, true));
+        p.ParticulaFx = 0;
         // LA MUERTE QUEDA ANOTADA CON SU CAUSA (la línea del log sale de Program.cs). Va al final a propósito: el bus
         // es sincrónico, y un suscriptor que fallara en el medio dejaría la muerte aplicada a medias.
         world.Events.Publish(new PlayerDied(p, cause));
     }
 
-    /// <summary>Revive al jugador muerto (VB6 DarVida, Modulo_UsUaRiOs.bas:60-119): HP full, restaura la cabeza
-    /// viva y la apariencia desde el equipo (armadura Ropaje / cuerpo desnudo + anims), avisa con LocaleMsg(90)
-    /// y re-broadcastea. No cambia la posición: revive donde está el cadáver.</summary>
+    /// <summary>
+    /// ARRANCA LA ESPERA DEL RESUCITAR (VB6 <c>RevivirUsuario</c>, Modulo_UsUaRiOs.bas:49-58). No revive: prende
+    /// <c>Resucitando</c> y el reloj, y el que levanta al jugador es el bucle (<see cref="NpcSystem"/>, el
+    /// <c>DoResucitar</c> de mMainLoop.bas:235) a los ~2,5 s, con <see cref="RevivePlayer"/>. Mientras tanto sigue
+    /// muerto. Lo usan el sacerdote, /RESUCITAR, el hechizo y la muerte en la arena.
+    ///
+    /// <para>La guarda del original (<c>If Resucitando &lt;&gt; 1</c>) no frena nunca —es un Boolean y True vale
+    /// -1—, así que cada llamada vuelve a armar el reloj y a mandar el sonido y la partícula. Acá no hay guarda.
+    /// El reloj lo fija el bucle en su vuelta siguiente (<c>ReviveAtTick = 0</c> quiere decir "desde ahora").</para>
+    /// </summary>
+    public static void RevivirUsuario(World world, Player p)
+    {
+        p.Resucitando = true;
+        p.ReviveAtTick = 0;
+        world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndResucitar, p.Pos.X, p.Pos.Y));
+        world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, ParticulaResucitar, 3000, false));
+        p.ParticulaFx = ParticulaResucitar;   // EsUsuario=True: queda anotada en el personaje (AgregarParticula)
+    }
+
+    /// <summary>
+    /// LEVANTA AL MUERTO cuando vence la espera (VB6 <c>DarVida</c>, Modulo_UsUaRiOs.bas:60-119): vida llena,
+    /// <c>Resucitando</c> apagado, la apariencia —navegando, la barca— y en este orden: el 90 al jugador, el sonido
+    /// 204 al área, el cambio de apariencia, la vida y el apagado de la partícula de la espera. No cambia la
+    /// posición: revive donde está el cadáver.
+    /// </summary>
     public static void RevivePlayer(World world, GameData data, Player p)
     {
         p.Hp = p.MaxHp;
+        p.Resucitando = false;
+        p.ReviveAtTick = 0;
         p.Head = p.OrigHead;
-        // El sacerdote apaga el fuego además de revivir (VB6 Acciones.bas:319, `.flags.Incinerado = 0`).
-        p.Incinerado = false;
         RefreshAppearance(p, data);
-        p.Connection?.Send(ServerMessages.UpdateUserStats(p));
+        if (p.Navigating) { p.Head = 0; p.Body = BoatBody; p.ShieldAnim = 0; p.WeaponAnim = 0; p.HelmetAnim = 0; }
         p.Connection?.Send(ServerMessages.LocaleMsg(90));   // "¡Has resucitado!"
+        world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndResucitado, p.Pos.X, p.Pos.Y));
         world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
+        p.Connection?.Send(ServerMessages.UpdateHP((short)p.Hp));
+        world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, ParticulaResucitar, 0, true));
+        p.ParticulaFx = 0;
     }
+
+    /// <summary>SND_RESUCITAR y SND_RESUCITADO (Declares.bas:552-553), y la partícula de la espera (22).</summary>
+    private const short SndResucitar = 84, SndResucitado = 204;
+    private const byte ParticulaResucitar = 22;
 
     /// <summary>VB6 <c>DeadCheck</c> (InvUsuario.bas:2444): si el jugador está muerto, avisa LocaleMsg(77) y
     /// devuelve true para que el handler aborte. El muerto (fantasma) sólo puede caminar; todo lo demás se

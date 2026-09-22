@@ -257,13 +257,17 @@ public sealed class NpcSystem
         PacketDispatcher.VencerPertenencias(_world, Environment.TickCount64, IntervaloNpcApropiado);
         // Revive en ARENA con delay (VB6 DoResucitar, mMainLoop.bas:235 + Modulo_UsUaRiOs.bas:33): un jugador que
         // murió en zona de pelea queda `Resucitando` (lo marca KillPlayer) y DarVida lo levanta recién a los ~2500ms.
-        // Fuera de arena NO hay auto-revive: el muerto queda fantasma hasta un revive manual (sacerdote/hechizo/hogar).
+        // Fuera de arena NO hay auto-revive: el muerto queda fantasma hasta que alguien arranque la espera.
+        //
+        // Vale para TODOS los caminos que arrancan la espera (PacketDispatcher.RevivirUsuario): la arena, el
+        // sacerdote, /RESUCITAR y el hechizo. `ReviveAtTick = 0` es "recién armada": el reloj se fija acá, en la
+        // primera vuelta que la ve. Y sólo se mira a los MUERTOS, como el GameTimer del original: a un vivo con el
+        // flag prendido —el /REVIVIR de un GM en plena espera— no se lo toca, y el flag queda, como allá.
         foreach (var p in _world.Players)
         {
-            if (!p.Resucitando) continue;
-            if (p.IsAlive) { p.Resucitando = false; p.ReviveAtTick = 0; continue; }   // ya revivió por otra vía
+            if (!p.Resucitando || p.IsAlive) continue;
             if (p.ReviveAtTick == 0) p.ReviveAtTick = tick + AutoReviveTicks;
-            else if (tick >= p.ReviveAtTick) { PacketDispatcher.RevivePlayer(_world, _data, p); p.Resucitando = false; p.ReviveAtTick = 0; }
+            else if (tick >= p.ReviveAtTick) PacketDispatcher.RevivePlayer(_world, _data, p);
         }
 
         // Expiración de invocaciones (VB6 Contadores.TiempoExistencia, decrementado hasta 0 → MuereNpc):
