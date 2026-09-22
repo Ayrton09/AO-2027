@@ -922,6 +922,7 @@ public sealed class NpcSystem
         var conn = amo.Connection;
         conn?.Send(ServerMessages.ConsoleMsg($"{fam.Nombre} te cura {cura} puntos de vida.", 0));
         conn?.Send(ServerMessages.UpdateHP((short)amo.Hp));
+        DecirElHechizo(npc, amo, spell);
     }
 
     private void NpcTryFollowOwner(Npc npc)
@@ -1207,11 +1208,13 @@ public sealed class NpcSystem
     private bool NpcLanzaUnHechizo(Npc npc, Player player)
     {
         if (player.Invisible || player.Oculto) return false;
-        if (_data.MapNoMagic(player.Pos.Map)) return false;
         // EL MISMO CONTADOR QUE EL GOLPE (VB6 modHechizos.bas:100: `If Not IntervaloPermiteAtacarNpc(...)
         // Then Exit Sub`). Se consume acá y no en el caller, igual que en el original, así que una criatura
         // maga castea O pega en una vuelta, nunca las dos cosas.
         if (!IntervaloPermiteAtacar(npc)) return false;
+        // EL MAPA SIN MAGIA VA DESPUÉS DEL CONTADOR (:106): el hechizo no sale pero el turno se gastó, así que la
+        // criatura maga tampoco pega. Donde un GM apagó la magia, la que castea queda inofensiva.
+        if (_data.MapNoMagic(player.Pos.Map)) return true;
         var lista = npc.Template.Spells!;
         var spell = _data.Spell((short)lista[_rng.Next(lista.Count)]);
         if (spell is null) return false;
@@ -1224,6 +1227,7 @@ public sealed class NpcSystem
             EmitirFxDeHechizo(npc, player, spell);
             conn?.Send(ServerMessages.LocaleMsg(34, $"${npc.Template.Index}%{cura}"));
             conn?.Send(ServerMessages.UpdateHP((short)player.Hp));
+            DecirElHechizo(npc, player, spell);   // el nombre, al final (:130)
             return true;
         }
         // HECHIZOS DE ESTADO (VB6 :208, `ElseIf Paraliza = 1 Or Inmoviliza = 1`). Acá había un
@@ -1242,7 +1246,7 @@ public sealed class NpcSystem
             player.MarcaParalizado = true;                          // la de una criatura paraliza siempre (:220)
             player.ParalyzedUntilTick = _tick + ParalisisDeNpcTicks;
             player.ParalyzedByCharIndex = 0;                       // lo paralizó una criatura, no un jugador
-            EmitirFxDeHechizo(npc, player, spell);
+            EmitirFxDeHechizo(npc, player, spell);                 // sin el nombre: esta rama no lo dice (:212-226)
             if (!player.ClientParalyzed) { player.ClientParalyzed = true; conn?.Send(ServerMessages.ParalizeOK()); }
             return true;
         }
@@ -1265,9 +1269,16 @@ public sealed class NpcSystem
         // skill sólo subía en PvP: contra las 70 criaturas que tiran magia quedaba clavada. Lo reportó el
         // tester. Va antes de la muerte, como allá; y el tope por nivel lo pone SubirSkill.
         SubirSkillPorUso?.Invoke(player, GameLimits.SkillResistencia);
+        DecirElHechizo(npc, player, spell);   // el nombre, después de la skill y antes de la muerte (:188)
         if (player.Hp < 1) PacketDispatcher.KillPlayer(_world, _data, player, $"lo mato con un hechizo {npc.Name} (npc {npc.Template.Index})");
         return true;
     }
+
+    /// <summary>El nombre del hechizo sobre la cabeza de la criatura (ChatOverHeadLocale, modo 1), al área del que lo
+    /// recibe (`SendData(ToPCArea, UserIndex, ...)`). Va DESPUÉS del UpdateHP en la cura y el daño, y la parálisis no lo
+    /// manda (modHechizos.bas:130, :188).</summary>
+    private void DecirElHechizo(Npc npc, Player player, SpellInfo spell) =>
+        _world.BroadcastToObservers(player.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
 
     /// <summary>Sonido + FX + partícula del hechizo de un NPC, al área (modHechizos.bas:116-120).</summary>
     private void EmitirFxDeHechizo(Npc npc, Player player, SpellInfo spell)
@@ -1284,8 +1295,6 @@ public sealed class NpcSystem
         if (spell.Particle > 0)
             _world.BroadcastToObservers(player.Pos,
                 ServerMessages.EfectoCharParticula(player.CharIndex, (short)spell.Particle, spell.TimeParticula, false));
-        // El cartel sobre la cabeza del NPC con el nombre del hechizo (ChatOverHeadLocale, modo 1).
-        _world.BroadcastToObservers(npc.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
     }
 
     /// <summary>El golpe en sí (VB6 <c>NpcAtacaUser</c>): tirada de impacto contra el poder de evasión del
