@@ -212,6 +212,23 @@ public class HechizosSobreUnJugadorTests : IDisposable
         Assert.True(mago.Mana < 5000);
     }
 
+    /// <summary>Re-lanzar la invisibilidad estando invisible: el 68 del original no sale nunca (compara un Byte con
+    /// True), así que se vuelve a aplicar y se cobra, sin estirar el vencimiento.</summary>
+    [Fact]
+    public async Task Re_lanzar_la_invisibilidad_se_cobra_y_no_estira_el_vencimiento()
+    {
+        const short Invisibilidad = 14;
+        Assert.True(_datos.Spell(Invisibilidad)!.EsAutoLanzado);                // premisa
+        var (mago, sesion) = Mago(Invisibilidad);
+        mago.Invisible = true;
+        mago.InvisibleUntilTick = _loop.Tick + 5000;
+        long vence = mago.InvisibleUntilTick;
+        _dispatcher.HandleOne(sesion, new ByteQueueReader(new[] { (byte)ClientPacketId.CastSpell, (byte)1 }));
+        await Task.Delay(300);
+        Assert.True(mago.Mana < 5000, "re-lanzarla se cobra");
+        Assert.Equal(vence, mago.InvisibleUntilTick);
+    }
+
     /// <summary>Prevención del mal sobre otro: la invisibilidad es del que lo tira (el bloque escribe sus flags) y
     /// la agilidad, del blanco.</summary>
     [Fact]

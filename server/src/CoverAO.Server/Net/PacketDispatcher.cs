@@ -3081,13 +3081,15 @@ public sealed partial class PacketDispatcher
             casteado = true;
             RevivirFamiliarSiHay(session, p);
         }
-        // INVISIBILIDAD (:1065-1080): la del LANZADOR, sea cual sea el blanco (el bloque escribe `.flags` del que lo
-        // tira). Ya invisible, el 68; en un mapa sin invisibilidad, el 448.
+        // INVISIBILIDAD (:1077-1091): la del LANZADOR, sea cual sea el blanco (el bloque escribe `.flags` del que lo
+        // tira). En un mapa sin invisibilidad, el 448. Y "YA INVISIBLE" NO CORTA: el original lo pregunta con
+        // `If .flags.Invisible = True` (:1078), e `Invisible` es un Byte que vale 1 (Declares.bas:1195): 1 = -1 da
+        // falso, así que el 68 no sale nunca. Re-lanzarla la vuelve a aplicar y se cobra, pero el contador no se
+        // reinicia (EfectoInvisibilidad, General.bas:897): vence cuando vencía la primera.
         if (spell.IsInvisibility)
         {
-            if (p.Invisible) { session.Send(ServerMessages.LocaleMsg(68)); return; }
             if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(448)); return; }
-            p.InvisibleUntilTick = now + InvisibilityDurationTicks;
+            if (!p.Invisible) p.InvisibleUntilTick = now + InvisibilityDurationTicks;
             p.Invisible = true;
             _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, true), p.CharIndex);
             casteado = true;
