@@ -151,6 +151,7 @@ public sealed class Npc
             Hostile = false;
         }
         ParalyzedUntilTick = 0;   // el original le baja Inmovilizado/Paralizado/Contadores.Paralisis
+        InmovilizadaHastaTick = 0;
     }
 
     /// <summary>Hostilidad ORIGINAL, la de su ficha de NPCs.dat (VB6 <c>flags.OldHostil</c>, guardada al
@@ -209,15 +210,39 @@ public sealed class Npc
     public WorldPos OldPos { get; set; }
 
     /// <summary>
-    /// Tick hasta el que la criatura está paralizada/inmovilizada (VB6 <c>.flags.Paralizado</c> +
-    /// <c>.Contadores.Paralisis</c>, seteados por HechizoEstadoNPC en modHechizos.bas:1546). Mientras corre,
-    /// el NPC no se mueve ni ataca. 0 = libre.
-    ///
-    /// El original ofrece además una inmunidad por NPC (<c>.flags.AfectaParalisis</c> → LocaleMsg 399 "la
-    /// criatura es inmune"), pero en ESTA data ninguno de los 291 NPCs trae la clave, así que la rama es
-    /// inalcanzable y no se modela.
+    /// Tick hasta el que la criatura está PARALIZADA (VB6 <c>.flags.Paralizado</c> + <c>.Contadores.Paralisis</c>,
+    /// seteados por HechizoEstadoNPC en modHechizos.bas:1546 y por el golpe que paraliza). Mientras corre no se le
+    /// corre la IA: ni camina, ni pega, ni castea (mMainLoop.bas:88-91). 0 = libre. La inmunidad del original
+    /// (<c>AfectaParalisis</c>, el 399) sale del <c>Inmunidad</c> de su ficha: ver CastStateOnNpc.
     /// </summary>
     public long ParalyzedUntilTick { get; set; }
+
+    /// <summary>
+    /// Tick hasta el que la criatura está INMOVILIZADA (VB6 <c>.flags.Inmovilizado</c>). No es la parálisis: la
+    /// inmovilizada no camina, pero la IA le sigue corriendo y pega y castea según su rutina (mMainLoop.bas:93-104,
+    /// ver NpcSystem). En el original las dos marcas comparten el contador (<c>Contadores.Paralisis</c>): con las dos
+    /// activas, el último hechizo reinicia a ambas y vencen juntas. Va en un campo aparte para que lo que ya
+    /// paraliza siga paralizando.
+    /// </summary>
+    public long InmovilizadaHastaTick { get; set; }
+
+    /// <summary>VB6 <c>flags.Paralizado</c>: quieta y sin IA.</summary>
+    public bool EstaParalizada(long tick) => tick < ParalyzedUntilTick;
+
+    /// <summary>VB6 <c>flags.Inmovilizado</c> sin <c>Paralizado</c>: no camina, pero pega y castea.</summary>
+    public bool EstaInmovilizada(long tick) => tick < InmovilizadaHastaTick && !EstaParalizada(tick);
+
+    /// <summary>Paralizada o inmovilizada, lo que el original pregunta con <c>Paralizado = 1 Or Inmovilizado = 1</c>.</summary>
+    public bool EstaQuieta(long tick) => tick < ParalyzedUntilTick || tick < InmovilizadaHastaTick;
+
+    /// <summary>Un hechizo que la deja quieta (VB6 HechizoEstadoNPC, modHechizos.bas:1557-1565): prende su marca y
+    /// reinicia el contador COMPARTIDO, así que la otra marca, si seguía activa, vence junto con ésta.</summary>
+    public void Aquietar(long hastaTick, bool paraliza, bool inmoviliza, long tick)
+    {
+        bool estabaParalizada = tick < ParalyzedUntilTick, estabaInmovilizada = tick < InmovilizadaHastaTick;
+        if (paraliza || estabaParalizada) ParalyzedUntilTick = hastaTick;
+        if (inmoviliza || estabaInmovilizada) InmovilizadaHastaTick = hastaTick;
+    }
 
     /// <summary>
     /// Tick del game-loop a partir del cual esta criatura puede volver a ATACAR — de un golpe o de un

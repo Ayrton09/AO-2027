@@ -657,7 +657,9 @@ public static class ServerMessages
     public static byte[] CharMsgStatusNpc(Npc npc, Player quienMira, long nowTick)
     {
         bool vidaExacta = quienMira.IsGm || quienMira.Skills[GameLimits.SkillSupervivencia] >= 60;
-        int estados = npc.ParalyzedUntilTick > nowTick ? (int)CharStatEx.Paralizado : 0;
+        // Las dos marcas por separado, que pueden estar juntas (VB6 Generate_Char_StatExNpcs, TCP.bas:1819).
+        int estados = (npc.ParalyzedUntilTick > nowTick ? (int)CharStatEx.Paralizado : 0)
+                    | (npc.InmovilizadaHastaTick > nowTick ? (int)CharStatEx.Inmovilizado : 0);
         return new ByteQueueWriter().WritePacketId(ServerPacketId.CharMsgStatusNPC)
             .WriteInteger(npc.Template.Index)
             .WriteByte((byte)(npc.Template.Status is >= 0 and <= 4 ? npc.Template.Status : 1))

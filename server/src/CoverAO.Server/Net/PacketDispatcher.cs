@@ -2208,7 +2208,7 @@ public sealed partial class PacketDispatcher
             // Sobre una criatura que YA está quieta el original abre el árbol faccionario; sobre una que no,
             // deja paralizar siempre (y no cambia el dueño: su `If OwnerUserIndex = 0` de ahí está muerto,
             // porque en esta rama el dueño existe).
-            if (npc.ParalyzedUntilTick <= _loop.Tick) return true;   // no está quieta: se puede siempre
+            if (!npc.EstaQuieta(_loop.Tick)) return true;   // no está quieta: se puede siempre
             if (!p.IsRenegado && !duenio.IsRenegado)
             {
                 if (p.IsArmada && duenio.IsArmada) { session.Send(ServerMessages.LocaleMsg(272)); return false; }
@@ -2439,7 +2439,7 @@ public sealed partial class PacketDispatcher
     private void GolpeParalizaNpc(ClientSession session, Player p, Npc npc)
     {
         long now = _loop.Tick;
-        if (npc.ParalyzedUntilTick > now) return;   // ya paralizada/inmovilizada → sale
+        if (npc.EstaQuieta(now)) return;   // ya paralizada o inmovilizada → sale (SistemaCombate.bas:2214)
         var arma = Equipment.EquippedOfCategory(p, _data, 1);
         int ammoSlot = EquippedSlotOfCategory(p, 5);
         bool orbe = arma is not null && arma.Proyectil == 0 && ammoSlot > 0 && p.Inventory[ammoSlot].ObjIndex == 1085;
@@ -3269,9 +3269,12 @@ public sealed partial class PacketDispatcher
             if (spell.IsParalyze || spell.IsImmobilize) { CastStateOnNpc(session, p, npc, spell); return; }
             if (spell.IsRemoveParalysis)
             {
-                // Sólo la mascota PROPIA y sólo si está quieta (:1578-1584); si no, silencio y sin cobrar.
-                if (npc.OwnerCharIndex != p.CharIndex || npc.ParalyzedUntilTick <= _loop.Tick) return;
+                // Sólo la mascota PROPIA y sólo si está quieta —paralizada o inmovilizada— (:1578-1584); si no,
+                // silencio y sin cobrar. El original baja `Paralizado` y el contador COMPARTIDO a 0, así que la
+                // inmovilización se va también (EfectoParalisisNpc la apaga en la vuelta siguiente).
+                if (npc.OwnerCharIndex != p.CharIndex || !npc.EstaQuieta(_loop.Tick)) return;
                 npc.ParalyzedUntilTick = 0;
+                npc.InmovilizadaHastaTick = 0;
                 EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
                 SpellCasted(session, p, spell);
                 EmitirCostoDelHechizo(session, p);
@@ -3308,8 +3311,6 @@ public sealed partial class PacketDispatcher
         // el golpe a mano limpia— y la criatura arrancaba a segundo y medio.
         long ParalisisTicks = GameLimits.TicksDeUnContadorDeCriatura(37);
 
-        if (!spell.IsParalyze) { session.Send(ServerMessages.LocaleMsg(298)); return; }
-
         // INMUNIDAD (VB6 HechizoEstadoNPC, modHechizos.bas:1548): la criatura con `Inmunidad = 1` no se
         // paraliza ni se inmoviliza — son los 66 bosses del install. El original avisa con LocaleMsg 399
         // ("¡La criatura es inmune a este hechizo!") y deja `HechizoCasteado = False`, así que NO cobra el
@@ -3327,10 +3328,13 @@ public sealed partial class PacketDispatcher
 
         npc.AttackedBy = p.Name;   // NPCAtacado: paralizarla la provoca igual que pegarle
         npc.Hostile = true;
-        npc.ParalyzedUntilTick = _loop.Tick + ParalisisTicks;
-        SpellCasted(session, p, spell);
+        // PARALIZAR O INMOVILIZAR, con el mismo contador (modHechizos.bas:1557-1565): la paralizada se queda sin
+        // IA; la inmovilizada no camina pero pega y castea según su rutina (ver NpcSystem).
+        npc.Aquietar(_loop.Tick + ParalisisTicks, spell.IsParalyze, spell.IsImmobilize, _loop.Tick);
+        // InfoHechizo ANTES del cobro, como HandleHechizoNPC (:830-840). Sobre una criatura son las palabras mágicas,
+        // el efecto, el sonido y la partícula, y nada de texto: el original no le avisa al lanzador que la dejó quieta.
         EmitSpellFx(p, npc.Pos, npc.CharIndex, spell);
-        session.Send(ServerMessages.ConsoleMsg($"Lanzaste {spell.Name}: {npc.Name} quedó paralizado.", 0));
+        SpellCasted(session, p, spell);
         EmitirCostoDelHechizo(session, p);
     }
 

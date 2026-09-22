@@ -307,12 +307,16 @@ public sealed class NpcSystem
         RecalcularTilesJuntoAJugador();
 
         if (tick % AttackEveryTicks == 0)
+        {
+            RecalcularTilesJuntoAMascota();
             foreach (var npc in _world.Npcs)
             {
                 if (!_mapasConJugador.Contains(npc.Pos.Map)) continue;   // VB6: sin usuarios en el mapa, no hay IA
-                if (tick < npc.ParalyzedUntilTick) continue;   // paralizada: tampoco pega
+                // La PARALIZADA no corre IA (mMainLoop.bas:88-91); la INMOVILIZADA sí, y pega según su rutina.
+                if (npc.EstaParalizada(tick)) continue;
                 NpcTryAttack(npc);
             }
+        }
 
         if (tick % MoveEveryTicks == 0)
             foreach (var npc in _world.Npcs)
@@ -320,7 +324,9 @@ public sealed class NpcSystem
                 // Las dos ramas de ataque hacen Exit Sub apenas enganchan a alguien, así que un NPC que está
                 // pegándole a un usuario no se mueve: el de ataque manda mientras haya alguien adyacente.
                 if (!_mapasConJugador.Contains(npc.Pos.Map)) continue;   // VB6: sin usuarios en el mapa, no hay IA
-                if (tick < npc.ParalyzedUntilTick) continue;   // paralizada: no se mueve (VB6 .flags.Paralizado)
+                // Paralizada, nada (VB6 .flags.Paralizado). La inmovilizada entra y cada rutina decide: no camina,
+                // pero castea o pega hacia donde mira.
+                if (npc.EstaParalizada(tick)) continue;
                 // TipoAI.SigueAmo (mascotas). El gate por dueño es un atajo del port —el VB6 distingue por
                 // Movement, que a una mascota se lo pone FollowAmo— y hay que dejar pasar el caso en que /SEGUIR
                 // se lo cambió a NPCDEFENSA: si no, una mascota puesta a seguir al GM igual iría tras su amo.
@@ -363,6 +369,7 @@ public sealed class NpcSystem
     /// cuenta y se congelaba cuando alguien se le acercaba, cosa que la fuente no hace.</summary>
     private void NpcTryWander(Npc npc)
     {
+        if (npc.EstaInmovilizada(_tick)) return;   // `If .flags.Inmovilizado = 1 Then Exit Sub` (AI_NPC.bas:720)
         if (_rng.Next(1, 13) != 3) return;
         StepRandom(npc);
     }
@@ -412,6 +419,24 @@ public sealed class NpcSystem
     /// vacío (<c>mMainLoop.TIMER_AI</c>: <c>If MapInfo(Mapa).NumUsers &gt; 0 Then ... Call NPCAI</c>), y acá
     /// faltaba: se barrían las 5.376 criaturas del mundo estuviera donde estuviera la gente.</summary>
     private readonly HashSet<short> _mapasConJugador = new();
+
+    /// <summary>Los tiles ortogonalmente pegados a alguna criatura CON DUEÑO: el otro blanco de la hostil (ver
+    /// <see cref="NpcGolpeaAdyacente"/>). Se arma al principio de cada barrido de ataque, que es el único que lo lee.</summary>
+    private readonly HashSet<WorldPos> _tilesJuntoAMascota = new();
+
+    private void RecalcularTilesJuntoAMascota()
+    {
+        _tilesJuntoAMascota.Clear();
+        foreach (var n in _world.Npcs)
+        {
+            if (n.OwnerCharIndex == 0) continue;
+            var pos = n.Pos;
+            if (pos.X > 1) _tilesJuntoAMascota.Add(new WorldPos(pos.Map, (byte)(pos.X - 1), pos.Y));
+            if (pos.X < 255) _tilesJuntoAMascota.Add(new WorldPos(pos.Map, (byte)(pos.X + 1), pos.Y));
+            if (pos.Y > 1) _tilesJuntoAMascota.Add(new WorldPos(pos.Map, pos.X, (byte)(pos.Y - 1)));
+            if (pos.Y < 255) _tilesJuntoAMascota.Add(new WorldPos(pos.Map, pos.X, (byte)(pos.Y + 1)));
+        }
+    }
 
     private void RecalcularTilesJuntoAJugador()
     {
@@ -523,6 +548,7 @@ public sealed class NpcSystem
     /// </list></summary>
     private void NpcIrUsuarioCercano(Npc npc)
     {
+        if (npc.EstaInmovilizada(_tick)) { NpcInmovilizadaCastea(npc); return; }
         // EL QUE SE LA APROPIÓ TIENE PRIORIDAD (VB6 AI_NPC.bas:307-327: "Tiene prioridad de seguir al usuario
         // al que le pertenece si esta en el rango de vision"). Es lo que le da sentido a toda la pertenencia:
         // la criatura que estás peleando te sigue a VOS aunque haya alguien más cerca, así que el que llega
@@ -595,6 +621,7 @@ public sealed class NpcSystem
     private void NpcSeguirAgresor(Npc npc)
     {
         if (string.IsNullOrEmpty(npc.AttackedBy)) return;
+        if (npc.EstaInmovilizada(_tick)) { NpcSeguirAgresorQuieta(npc); return; }
         foreach (var p in _world.Players)
         {
             if (p.Pos.Map != npc.Pos.Map) continue;
@@ -634,6 +661,57 @@ public sealed class NpcSystem
             {
                 var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
                 MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
+            }
+            return;
+        }
+    }
+
+    /// <summary>¿<paramref name="pos"/> está en la línea recta hacia donde mira la criatura, dentro de su caja de
+    /// visión? Es el `Sgn(dx) = SignoEO And Sgn(dy) = SignoNS` con el que el original resuelve lo que ve una
+    /// criatura inmovilizada (AI_NPC.bas:268-288, :392-409, :558-575).</summary>
+    private static bool EnLaLineaDelFrente(Npc npc, WorldPos pos)
+    {
+        var (sx, sy) = npc.Heading switch { HNorte => (0, -1), HEste => (1, 0), HOeste => (-1, 0), _ => (0, 1) };
+        int dx = pos.X - npc.Pos.X, dy = pos.Y - npc.Pos.Y;
+        return Math.Abs(dx) <= RangoVisionX && Math.Sign(dx) == sx
+            && Math.Abs(dy) <= RangoVisionY && Math.Sign(dy) == sy;
+    }
+
+    /// <summary>VB6 <c>IrUsuarioCercano</c>, la rama <c>If .flags.Inmovilizado = 1</c> (AI_NPC.bas:264-302): quieta, le
+    /// tira magia al primer usuario que tenga en la línea del frente. Esa rama mira sólo que esté vivo y la gracia de
+    /// entrada —ni si es perseguible, ni la pertenencia—, y el invisible y el oculto los descarta el lanzamiento.</summary>
+    private void NpcInmovilizadaCastea(Npc npc)
+    {
+        foreach (var p in _world.Players)
+        {
+            if (p.Pos.Map != npc.Pos.Map || !EnLaLineaDelFrente(npc, p.Pos)) continue;
+            if (!p.IsAlive || EnGraciaDeEntrada(p)) continue;
+            if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, p);
+            return;
+        }
+    }
+
+    /// <summary>VB6 <c>SeguirAgresor</c> con la criatura quieta (AI_NPC.bas:391-444): busca a su agresor sólo en la
+    /// línea del frente y, si lo ve, le castea o le pega si lo tiene pegado, sin moverse. El freno de la Armada es el
+    /// mismo que caminando, pero acá el original tiene comentado el aviso y no la manda con el amo: sólo le borra el
+    /// agresor. Como caminando, el golpe es sólo de la criatura con dueño (ver NpcSeguirAgresor).</summary>
+    private void NpcSeguirAgresorQuieta(Npc npc)
+    {
+        foreach (var p in _world.Players)
+        {
+            if (p.Pos.Map != npc.Pos.Map || !EnLaLineaDelFrente(npc, p.Pos)) continue;
+            if (!string.Equals(p.Name, npc.AttackedBy, StringComparison.OrdinalIgnoreCase)) continue;
+            if (npc.OwnerCharIndex != 0)
+            {
+                _world.TryGet(npc.OwnerCharIndex, out var amo);
+                if (amo is not null && !EsRenegado(amo) && !EsRenegado(p) && amo.IsArmada) { npc.AttackedBy = null; return; }
+            }
+            if (!p.IsAlive || p.Invisible || p.Oculto) continue;
+            if (npc.OwnerCharIndex != 0)
+            {
+                int dx = p.Pos.X - npc.Pos.X, dy = p.Pos.Y - npc.Pos.Y;
+                if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, p);
+                else if (Math.Abs(dx) + Math.Abs(dy) <= 1 && npc.Template.Index != ElementalSinMelee) NpcGolpeaA(npc, p);
             }
             return;
         }
@@ -687,6 +765,19 @@ public sealed class NpcSystem
             return;
         }
         int dx = blanco.Pos.X - npc.Pos.X, dy = blanco.Pos.Y - npc.Pos.Y;
+        // INMOVILIZADA (AI_NPC.bas:557-591): busca a su blanco sólo en la línea del frente, y si lo encuentra le pega
+        // si lo tiene pegado —o nada, si está más lejos— sin moverse. Si no está en esa línea, lo da por perdido
+        // igual que si se hubiera ido: la mascota vuelve con su amo (`If Not bNoEsta`, :625).
+        if (npc.EstaInmovilizada(_tick))
+        {
+            if (!EnLaLineaDelFrente(npc, blanco.Pos))
+            {
+                npc.TargetNpcCharIndex = 0;
+                npc.Movement = npc.OwnerCharIndex != 0 ? GameLimits.TipoAiSigueAmo : npc.OriginalMovement;
+            }
+            else if (Math.Abs(dx) + Math.Abs(dy) <= 1) NpcGolpeaA(npc, blanco);
+            return;
+        }
         if (Math.Abs(dx) + Math.Abs(dy) <= 1) { NpcGolpeaA(npc, blanco); return; }   // `If Distancia <= 1 Then NpcAtacaNpc`
         byte h = FindDirection(npc, blanco.Pos);
         if (h != 0)
@@ -782,6 +873,7 @@ public sealed class NpcSystem
 
     private void NpcTryFollowOwner(Npc npc)
     {
+        if (npc.EstaInmovilizada(_tick)) return;   // `Case TipoAI.SigueAmo: If .flags.Inmovilizado = 1 Then Exit Sub` (:737)
         // El dueño se desconectó: OnDisconnect ya despawnea sus invocaciones/mascotas. NO la revertimos a NPC
         // salvaje (OwnerCharIndex=0): matar una invocación huérfana no debe dar recompensa — el gate en
         // AttackNpc es OwnerCharIndex==0, así que mantenerlo distinto de 0 evita la canilla de exp/oro via relog.
@@ -982,22 +1074,34 @@ public sealed class NpcSystem
         // (4 tiles por jugador) y ahorra 4 barridos de la lista de jugadores por cada uno de los 5404 NPCs.
         // Es un SUPERCONJUNTO a propósito —se arma sin mirar vivo/invisible/oculto/perseguible— así que sólo
         // puede decir "seguro que no": los filtros de verdad siguen abajo, intactos.
-        if (!_tilesJuntoAJugador.Contains(npc.Pos)) return false;
+        //
+        // LA MASCOTA DE AL LADO TAMBIÉN CUENTA para la hostil (la rama `ElseIf NPCI > 0` de abajo). Con el corte
+        // armado sólo con jugadores, esa rama corría únicamente si además había un jugador pegado a la criatura: la
+        // hostil pasaba al lado de una mascota sola sin tocarla.
+        if (!_tilesJuntoAJugador.Contains(npc.Pos) && !(npc.Hostile && _tilesJuntoAMascota.Contains(npc.Pos))) return false;
         // Look at the four adjacent tiles for a player to hit.
-        Span<(int dx, int dy)> dirs = stackalloc (int, int)[] { (0, -1), (1, 0), (0, 1), (-1, 0) };
-        foreach (var (dx, dy) in dirs)
+        Span<(int dx, int dy, byte heading)> dirs = stackalloc (int, int, byte)[]
+            { (0, -1, HNorte), (1, 0, HEste), (0, 1, HSur), (-1, 0, HOeste) };
+        // INMOVILIZADA, LA PACÍFICA SÓLO PEGA AL FRENTE (HostilBuenoAI, AI_NPC.bas:219: `If .flags.Inmovilizado = 0 Or
+        // .Char.heading = headingloop`). La hostil pega a los cuatro lados igual: en HostilMalvadoAI ese mismo chequeo
+        // está COMENTADO (:151 y el `'End If 'inmo`), y así corre.
+        bool soloAlFrente = !npc.Hostile && npc.EstaInmovilizada(_tick);
+        foreach (var (dx, dy, heading) in dirs)
         {
+            if (soloAlFrente && heading != npc.Heading) continue;
             int x = npc.Pos.X + dx, y = npc.Pos.Y + dy;
             if (x is < 0 or > 255 || y is < 0 or > 255) continue;
             var player = _world.PlayerAt(new WorldPos(npc.Pos.Map, (byte)x, (byte)y));
             if (player is null)
             {
                 // `ElseIf NPCI > 0` (AI_NPC.bas:189): sin jugador en el tile, la criatura le pega a la MASCOTA
-                // que tenga al lado. Sólo a las que tienen dueño y no estén paralizadas — las salvajes no se
-                // pelean entre sí. Sin esto una invocación era invulnerable al mundo entero.
+                // que tenga al lado. Sólo a las que tienen dueño y no estén paralizadas —la inmovilizada sí se
+                // come el golpe— y las salvajes no se pelean entre sí. Sin esto una invocación era invulnerable al
+                // mundo entero. Y es sólo de la HOSTIL: HostilBuenoAI no tiene esta rama, así que una pacífica
+                // no se le tira encima a la mascota que tenga al lado.
                 var otro = _world.NpcAt(new WorldPos(npc.Pos.Map, (byte)x, (byte)y));
-                if (otro is not null && otro.IsAlive && otro.OwnerCharIndex != 0
-                    && otro.CharIndex != npc.CharIndex && _tick >= otro.ParalyzedUntilTick)
+                if (npc.Hostile && otro is not null && otro.IsAlive && otro.OwnerCharIndex != 0
+                    && otro.CharIndex != npc.CharIndex && !otro.EstaParalizada(_tick))
                 {
                     NpcGolpeaA(npc, otro);
                     return true;
