@@ -5957,7 +5957,8 @@ public sealed partial class PacketDispatcher
 
     /// <summary>/RESETINV (VB6 HandleResetNPCInventory, Protocol.bas:8789 → ResetNpcInv): vacía el stock del
     /// mercader clickeado. El original NO lo repone: pone <c>NroItems = 0</c>, limpia los slots y apaga el
-    /// <c>InvReSpawn</c>, o sea que deja al mercader sin nada para vender. No emite ningún paquete — lo
+    /// <c>InvReSpawn</c>, o sea que deja al mercader sin nada para vender hasta que alguien le venda algo y se lo
+    /// recompre — ahí el contador vuelve a cero y, sin InvReSpawn, se recarga entero. No emite ningún paquete — lo
     /// observable es que la tienda abre vacía. Gate: SemiDios/Dios/Admin (el VB6 excluye también al RoleMaster).</summary>
     private void GmResetNpcInventory(ClientSession session)
     {
@@ -5965,7 +5966,7 @@ public sealed partial class PacketDispatcher
         if (p is null || (p.Privileges & (PrivUser | PrivConsejero | PrivRoleMaster)) != 0) return;   // gate silencioso
         var npc = TargetNpcDe(p);
         if (npc is null) return;              // el VB6 sale en silencio con TargetNPC = 0
-        npc.Stock?.Clear();                   // sigue siendo mercader (Stock no-null), pero sin mercadería
+        InventarioDelMercader.Vaciar(npc);    // sigue siendo mercader (Stock no-null), pero sin mercadería
         Console.WriteLine($"[{session.RemoteEndpoint}] /RESETINV {p.Name} -> {npc.Name}");
     }
 
@@ -8161,7 +8162,7 @@ public sealed partial class PacketDispatcher
     public void VolcarPersistenciaDiferida(bool forzar = false)
     {
         bool sueloSucio = _ini.PersistirSuelo && _world.SueloCambios != _sueloGuardado;
-        if (!_clanesSucios && !_correoSucio && !sueloSucio && _world.RecordUsuarios == _recordGuardado) return;
+        if (!_clanesSucios && !_correoSucio && !sueloSucio && !_llavesSucias && _world.RecordUsuarios == _recordGuardado) return;
         long ahora = Environment.TickCount64;
         if (!forzar && ahora - _ultimaPersistenciaMs < IntervaloPersistenciaMs) return;
         _ultimaPersistenciaMs = ahora;
@@ -8183,6 +8184,11 @@ public sealed partial class PacketDispatcher
         {
             try { _db.SaveRecordUsuarios(_world.RecordUsuarios); _recordGuardado = _world.RecordUsuarios; }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] record: {ex.Message}"); }
+        }
+        if (_llavesSucias)
+        {
+            try { _db.SaveLlavesVendidas(_world.LlavesVendidas); _llavesSucias = false; }
+            catch (Exception ex) { Console.Error.WriteLine($"[persistencia] llaves vendidas: {ex.Message}"); }
         }
         // EL SUELO (regla de la casa). El contador se toma ANTES de serializar y se guarda DESPUÉS: así lo que
         // queda anotado como "ya está en el disco" es exactamente lo que se escribió. Hoy todo esto corre en el
@@ -12394,7 +12400,10 @@ public sealed partial class PacketDispatcher
         return false;
     }
 
-    /// <summary>Opens a merchant's trade window: CommerceInit + one ChangeNpcInventorySlot per stock item.</summary>
+    /// <summary>Abre la tienda como el original (<c>IniciarComercioNPC</c>, Comercio.bas:196-204): las 25 ranuras del
+    /// mostrador —las vacías también— y DESPUÉS el CommerceInit. Acá iba primero el CommerceInit y sólo las ranuras
+    /// con algo. El precio de una ranura vacía es el de la última con objeto: <c>UpdateNpcInv</c> no reinicia su
+    /// <c>val</c> entre vueltas (:283-293), y en una ranura vacía el cliente no lo mira.</summary>
     private void OpenCommerce(ClientSession session, Player p, Npc npc)
     {
         p.TradingWith = npc.CharIndex;
@@ -12405,12 +12414,27 @@ public sealed partial class PacketDispatcher
         // esto el gate `TargetNPC < 1` —que es fiel y lo pide el oráculo— deja la compra muerta.
         p.TargetNpc = npc.CharIndex;
         p.TargetNpcTipo = (byte)npc.Template.NpcType;
-        session.Send(ServerMessages.CommerceInit());
-        for (byte i = 0; i < npc.Stock!.Count; i++)
+        float precio = 0f;
+        for (byte ranura = 1; ranura <= GameLimits.MaxInventorySlots; ranura++)
         {
-            var st = npc.Stock[i];
-            session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(i + 1), st.Amount, PrecioDeVitrina(p, PrecioDeLista(st.ObjIndex)), st.ObjIndex));
+            var st = InventarioDelMercader.Ranura(npc, ranura);
+            if (st.ObjIndex > 0) precio = PrecioDeVitrina(p, PrecioDeLista(st.ObjIndex));
+            session.Send(ServerMessages.ChangeNpcInventorySlot(ranura, st.Amount, precio, st.ObjIndex));
         }
+        session.Send(ServerMessages.CommerceInit());
+    }
+
+    /// <summary><c>UpdateNpcInvToAll(False, npc, ranura)</c> (Comercio.bas:324): la ranura, con el precio que le toca
+    /// a cada uno (<c>Descuento</c> sale de su Comerciar), a todos los que tienen abierta la tienda de este mercader.
+    /// El original elige por <c>flags.TargetNPC</c>; acá la tienda es la del mercader con el que abriste
+    /// (<c>TradingWith</c>), que es también al que le comprás y le vendés.</summary>
+    private void AvisarRanuraATodos(Npc npc, byte ranura)
+    {
+        var st = InventarioDelMercader.Ranura(npc, ranura);
+        foreach (var otro in _world.Players)
+            if (otro.TradingWith == npc.CharIndex && otro.Connection is { } conexion)
+                conexion.Send(ServerMessages.ChangeNpcInventorySlot(ranura, st.Amount,
+                    st.ObjIndex > 0 ? PrecioDeVitrina(otro, PrecioDeLista(st.ObjIndex)) : 0f, st.ObjIndex));
     }
 
     private void HandleCommerceEnd(ClientSession session)
@@ -12442,10 +12466,13 @@ public sealed partial class PacketDispatcher
             if (_world.NpcByIndex(p.TargetNpc) is { IsMerchant: false } mudo)
             { NoTengoInteresEnComerciar(session, mudo, conDescripcion: false); return; }
             if (p.TradingWith == 0) { session.Send(ServerMessages.LocaleMsg(388)); return; }
+            // `Comercio` arranca con `If Cantidad < 1 Or slot < 1 Then Exit Sub` (Comercio.bas:56), antes que la
+            // montura: pedir cero no compra nada. Acá el Math.Clamp de abajo lo convertía en uno.
+            if (amount < 1 || slot < 1) return;
             if (MonturaEnUso(session, p, slot)) return;   // el mismo gate, y con el slot DEL MERCADER: ver el helper
             var npc = _world.NpcByIndex(p.TradingWith);
-            if (npc?.Stock is null || slot < 1 || slot > npc.Stock.Count) return;
-            var st = npc.Stock[slot - 1];
+            if (npc?.Stock is null || slot > GameLimits.MaxInventorySlots) return;
+            var st = InventarioDelMercader.Ranura(npc, slot);
             // EL ÚNICO BANEO AUTOMÁTICO DEL ORIGINAL (Comercio.bas:66-78). Pedir más de `MAX_INVENTORY_OBJS`
             // unidades de una no es un número a recortar: el VB6 lo anuncia a TODO el servidor, banea, avisa
             // con un cartel y cierra. Acá se clampeaba con `Math.Clamp(amount, 1, st.Amount)` y seguía la
@@ -12459,33 +12486,28 @@ public sealed partial class PacketDispatcher
                 session.Close("anticheat: comercio");
                 return;
             }
-            if (st.Amount < 1) return;   // slot agotado: sin esto Math.Clamp(_,1,0) lanza ArgumentException (min>max)
-            int buy = Math.Clamp((int)amount, 1, st.Amount);
+            if (st.Amount < 1) return;   // `If Not ...Amount > 0 Then Exit Sub` (Comercio.bas:79)
+            int buy = Math.Min((int)amount, st.Amount);
             long cost = PrecioDeCompra(p, PrecioDeLista(st.ObjIndex), buy);
             if (p.Gold < cost) { session.Send(ServerMessages.LocaleMsg(26)); return; }
             int invSlot = FindSlotFor(p, st.ObjIndex, buy);
             if (invSlot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }
 
-            p.Gold -= (int)cost;
-            if (cost >= _ini.EconomiaUmbralOro) _economia?.Anotar($"compra {p.Name}: {buy} x obj {st.ObjIndex} por {cost} oro");
+            // EN EL ORDEN DEL ORIGINAL (Comercio.bas:95-110): el objeto a la mochila —`MeterItemEnInventario` manda
+            // su ranura—, el oro, y recién ahí se descuenta del mostrador y se avisa la ranura a los que tienen
+            // abierta esta tienda. Y SIN TEXTO: el "Compraste N x ..." que iba acá no existe en el original.
             var inv = p.Inventory[invSlot];
             inv.ObjIndex = st.ObjIndex;
             inv.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, inv.Amount + buy);
             p.Inventory[invSlot] = inv;
-            DescontarStockDelMercader(npc, slot - 1, (short)buy);
-
             session.Send(ServerMessages.ChangeInventorySlot((byte)invSlot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
-            // LA VITRINA SE RELEE DESPUÉS DE DESCONTAR. `st` es una copia —`MerchantSlot` es un struct— hecha
-            // ANTES de la compra, así que mandarla acá cantaba el stock viejo: el que compraba 5 de 5 veía la
-            // ranura como si siguiera llena, y sólo se enteraba al reabrir la ventana. Cuando el slot se agota
-            // es peor, porque `ObjIndex` también queda en el valor viejo y el objeto sigue "estando".
-            // El original descuenta con `QuitarNpcInvItem` y recién entonces emite (`UpdateNpcInvToAll`,
-            // Comercio.bas:101-102), que lee la ranura del NPC, no una copia.
-            var trasComprar = npc.Stock![slot - 1];
-            session.Send(ServerMessages.ChangeNpcInventorySlot(slot, trasComprar.Amount,
-                PrecioDeVitrina(p, PrecioDeLista(trasComprar.ObjIndex)), trasComprar.ObjIndex));
+            p.Gold -= (int)cost;
+            if (cost >= _ini.EconomiaUmbralOro) _economia?.Anotar($"compra {p.Name}: {buy} x obj {st.ObjIndex} por {cost} oro");
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Compraste {buy} x {_data.Obj(st.ObjIndex)?.Name ?? "objeto"} por {cost} oro.", FuenteInfo));
+            InventarioDelMercader.Quitar(npc, slot, buy, (_data.Obj(st.ObjIndex)?.Crucial ?? 0) != 0,
+                                         LineasDelMercader(npc), npc.Template.NroItems);
+            AvisarRanuraATodos(npc, slot);
+            if (_data.Obj(st.ObjIndex) is { IsKey: true } llave) LlaveVendida(p, npc, slot, llave);
             // Regatear entrena: el VB6 sube Comerciar al final de `Sub Comercio` (Comercio.bas:192), que es la
             // MISMA rutina para comprar y para vender, asi que las dos operaciones entrenan.
             RaiseSkill(session, p, GameLimits.SkillComerciar);
@@ -12506,8 +12528,10 @@ public sealed partial class PacketDispatcher
             if (p.TargetNpc < 1) return;
             if (_world.NpcByIndex(p.TargetNpc) is { IsMerchant: false } mudo)
             { NoTengoInteresEnComerciar(session, mudo, conDescripcion: false); return; }
-            if (p.TradingWith == 0 || slot < 1 || slot > GameLimits.MaxInventorySlots) return;
+            if (p.TradingWith == 0) return;
+            if (amount < 1 || slot < 1) return;   // Comercio.bas:56: vender cero no vende nada (el Clamp vendía uno)
             if (MonturaEnUso(session, p, slot)) return;   // Comercio.bas:57-62, arriba del Select Case
+            if (slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
 
@@ -12528,7 +12552,7 @@ public sealed partial class PacketDispatcher
                 return;
             }
 
-            int sell = Math.Clamp((int)amount, 1, inv.Amount);
+            int sell = Math.Min((int)amount, inv.Amount);
             // VB6 `Precio = Fix(SalePrice(ObjIndex) * Cantidad)` (Comercio.bas:158) con SalePrice (Comercio.bas:306):
             //     objeto inválido -> 0 | ItemNewbie -> 0 | si no, Valor / REDUCTOR_PRECIOVENTA(=3)
             // Acá había `Math.Max(1, (Value ?? 3) / 3)`, que tenía CUATRO divergencias, y las cuatro pagaban de más:
@@ -12558,14 +12582,14 @@ public sealed partial class PacketDispatcher
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
 
-            // LO VENDIDO VA AL STOCK DEL MERCADER (VB6 Comercio.bas:169-180: `SlotEnNPCInv` → suma → tope
-            // MAX_INVENTORY_OBJS → `UpdateNpcInvToAll`). Acá el objeto se DESTRUÍA: salía del inventario del
-            // jugador y no entraba a ningún lado, así que no se podía recomprar lo que uno mismo acababa de
-            // vender — ni ver aparecer en la tienda lo que vendió otro.
-            MeterEnStockDelMercader(session, mercader, objVendido, (short)sell);
+            // EN EL ORDEN DEL ORIGINAL (Comercio.bas:154-186): la ranura de la mochila, el oro, y al final lo vendido
+            // entra al mostrador (`SlotEnNPCInv`) y se avisa esa ranura a los que tienen abierta esta tienda. Sin
+            // lugar en el mostrador, lo vendido no queda en ningún lado, como allá. Y SIN TEXTO: el "Vendiste N
+            // objeto(s)" que iba acá no existe en el original.
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            session.Send(ServerMessages.ConsoleMsg($"Vendiste {sell} objeto(s) por {gain} oro.", FuenteInfo));
+            if (mercader is not null && InventarioDelMercader.Meter(mercader, objVendido, sell) is > 0 and var ranura)
+                AvisarRanuraATodos(mercader, ranura);
             RaiseSkill(session, p, GameLimits.SkillComerciar);   // Comercio.bas:192 (misma Sub que la compra)
         });
     }
@@ -12745,74 +12769,25 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>Descuenta del inventario de un mercader y lo repone como el original
-    /// (<c>QuitarNpcInvItem</c>, Modulo_InventANDobj.bas:202-263).
-    ///
-    /// Acá había un gate <c>if (Crucial == 0)</c> que dejaba el contador de los ítems crucial CLAVADO, con la
-    /// lectura de que "todo el descuento está dentro de un <c>If ObjData(...).Crucial = 0</c>". Es media
-    /// función: ese <c>If</c> tiene un <c>Else</c>, y el <c>Else</c> TAMBIÉN descuenta (:233). Lo que distingue
-    /// a las dos ramas es qué pasa cuando el slot llega a cero:
-    /// <list type="bullet">
-    /// <item><b>Crucial = 1</b> — el slot se REPONE solo, releyendo la cantidad del NPCs.dat
-    /// (<c>EncontrarCant</c>, :242), siempre que no quede ese mismo objeto en otro slot (<c>QuedanItems</c>).</item>
-    /// <item><b>Crucial = 0</b> — el slot queda vacío; y sólo cuando se vacían TODOS (<c>NroItems = 0</c>) se
-    /// recarga el inventario entero (<c>CargarInvent</c>, :225 y :253 — está en las DOS ramas).</item>
-    /// </list>
-    /// O sea: no es stock infinito, es <b>auto-restock</b>. Con el gate viejo, comprarle 2 pociones al
-    /// alquimista dejaba el stock en 100 donde el original deja 98; y de yapa los objetos NO crucial se
-    /// agotaban para siempre, que es exactamente el bug que el gate pretendía evitar, corrido de lugar.</summary>
-    /// <summary>Mete lo que el jugador acaba de vender en el stock del mercader (VB6 Comercio.bas:169-180).
-    /// Apila en un slot del mismo objeto si entra, si no usa uno libre, y acota al tope de la pila. El precio
-    /// del slot nuevo sale del `Valor` del obj.dat, que es lo que el mercader cobra por lo que tiene.</summary>
-    private void MeterEnStockDelMercader(ClientSession session, Npc? npc, short objIndex, short cantidad)
+    /// <summary>Las 25 líneas del .dat de este mercader, con las llaves ya vendidas en cero.</summary>
+    private IReadOnlyList<(int ObjIndex, int Amount)> LineasDelMercader(Npc npc) =>
+        InventarioDelMercader.LineasDe(npc.Template, _world.LlavesVendidas.GetValueOrDefault(npc.Template.Index));
+
+    /// <summary>LA LLAVE SE VENDE UNA SOLA VEZ (Comercio.bas:106-109): el original reescribe la línea de esa ranura en
+    /// el NPCs.dat con la cantidad en cero, "para que no se vuelvan a vender las llaves si se recargan los .dat", y lo
+    /// anota en <c>logs\propiedades.log</c>. Acá la línea reescrita va a <see cref="World.LlavesVendidas"/>, que se
+    /// guarda con el mundo, y la anotación al registro de economía.</summary>
+    private void LlaveVendida(Player p, Npc npc, byte ranura, Data.ObjInfo llave)
     {
-        if (npc?.Stock is null || objIndex <= 0 || cantidad <= 0) return;
-        int idx = npc.Stock.FindIndex(st => st.ObjIndex == objIndex && st.Amount + cantidad <= GameLimits.MaxInventoryObjs);
-        if (idx < 0) idx = npc.Stock.FindIndex(st => st.ObjIndex == 0 || st.Amount <= 0);
-        if (idx < 0)
-        {
-            if (npc.Stock.Count >= GameLimits.MaxInventorySlots) return;   // sin lugar: el original tampoco lo mete
-            npc.Stock.Add(new MerchantSlot { ObjIndex = 0, Amount = 0 });
-            idx = npc.Stock.Count - 1;
-        }
-        var slotStock = npc.Stock[idx];
-        slotStock.ObjIndex = objIndex;
-        slotStock.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, slotStock.Amount + cantidad);
-        npc.Stock[idx] = slotStock;
-        session.Send(ServerMessages.ChangeNpcInventorySlot((byte)(idx + 1), slotStock.Amount,
-            PrecioDeVitrina(session.Player, PrecioDeLista(slotStock.ObjIndex)), slotStock.ObjIndex));
+        if (!_world.LlavesVendidas.TryGetValue(npc.Template.Index, out var ranuras))
+            _world.LlavesVendidas[npc.Template.Index] = ranuras = new();
+        ranuras[ranura] = (short)llave.Index;
+        _llavesSucias = true;
+        _economia?.Anotar($"propiedad {p.Name} compró {llave.Name}");
     }
 
-    private void DescontarStockDelMercader(Npc npc, int idx, short cantidad)
-    {
-        if (npc.Stock is null || idx < 0 || idx >= npc.Stock.Count) return;
-        var st = npc.Stock[idx];
-        short objIndex = st.ObjIndex;
-        // AL CRUCIAL NO SE LE TOCA EL STOCK. El original ni lo descuenta: su `QuitarNpcInvItem` envuelve la
-        // resta entera en `If ObjData(...).Crucial = 0` (Modulo_InventANDobj.bas:217), de modo que el alquimista
-        // y el herrero nunca se quedan sin nada. Acá se descontaba igual y se REPONÍA la ranura al llegar a
-        // cero — un rodeo que llega a un lugar parecido pero pasa por el vacío: entre la compra que agota y la
-        // reposición, la ranura queda sin objeto, y con el precio derivándose de `ObjIndex` eso es una ranura
-        // sin precio. La diferencia estuvo tapada mientras la vitrina se cantaba con el stock viejo.
-        if ((_data.Obj(objIndex)?.Crucial ?? 0) != 0) return;
-        st.Amount -= cantidad;
-        if (st.Amount > 0) { npc.Stock[idx] = st; return; }
-
-        st.ObjIndex = 0; st.Amount = 0;
-        npc.Stock[idx] = st;
-
-        // Acá había una rama que REPONÍA la ranura del crucial al agotarse. Quedó inalcanzable con el gate de
-        // arriba —un crucial ya no llega a cero— y se saca: era la aproximación, no la regla.
-        // CargarInvent: con TODOS los slots vacíos se recarga el inventario entero desde el .dat. Va en las dos
-        // ramas del original, así que también repone a los no-crucial una vez agotados.
-        if (npc.Stock.All(s => s.ObjIndex == 0) && npc.Template.StockItems is { Count: > 0 } items)
-            for (int i = 0; i < npc.Stock.Count && i < items.Count; i++)
-                npc.Stock[i] = new MerchantSlot
-                {
-                    ObjIndex = (short)items[i].ObjIndex,
-                    Amount = (short)Math.Clamp(items[i].Amount, 1, short.MaxValue),
-                };
-    }
+    /// <summary>Hay llaves vendidas que todavía no están en el disco.</summary>
+    private bool _llavesSucias;
 
     /// <summary>
     /// Ranura de la BÓVEDA donde entra <paramref name="cantidad"/> de ese objeto: primero una que ya lo tenga

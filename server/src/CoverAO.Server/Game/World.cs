@@ -138,6 +138,12 @@ public sealed class World
     /// es una métrica interna: es parte de lo que el jugador ve. Persiste en <c>Misc/RECORD.json</c>.</summary>
     public int RecordUsuarios { get; set; }
 
+    /// <summary>LAS LLAVES YA VENDIDAS, por ficha de mercader y ranura. El original reescribe la línea del NPCs.dat
+    /// con la cantidad en cero al vender una llave, "para que no se vuelvan a vender las llaves si se recargan los
+    /// .dat" (Comercio.bas:106-109): acá esa línea reescrita vive en este mapa, que persiste en
+    /// <c>Misc/PROPIEDADES.json</c>, y <see cref="InventarioDelMercader.LineasDe"/> la aplica sobre la ficha.</summary>
+    public Dictionary<int, Dictionary<int, short>> LlavesVendidas { get; } = new();
+
     public void Add(Player p)
     {
         _players[p.CharIndex] = p;

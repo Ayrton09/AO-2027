@@ -62,9 +62,17 @@ public sealed class Npc
     public byte Heading { get; set; } = 3;
     public int Hp { get; set; }
 
-    /// <summary>Non-null for merchant NPCs; the goods they sell.</summary>
+    /// <summary>Non-null for merchant NPCs; the goods they sell. Las 25 ranuras del mostrador: ver
+    /// <see cref="InventarioDelMercader"/>.</summary>
     public List<MerchantSlot>? Stock { get; set; }
     public bool IsMerchant => Stock is not null;
+
+    /// <summary>El <c>Invent.NroItems</c> del original: arranca en el NROITEMS de la ficha aunque falten líneas, baja al
+    /// vaciarse una ranura y sube al ocupar una vacía. Cuando llega a cero el mostrador se recarga.</summary>
+    public int NroItems { get; set; }
+
+    /// <summary>El <c>InvReSpawn</c> de la ficha: con él, el mostrador vacío NO se recarga. El /RESETINV lo apaga.</summary>
+    public bool InvReSpawn { get; set; }
 
     /// <summary>True for banker NPCs (open the vault).</summary>
     public bool IsBanker { get; set; }

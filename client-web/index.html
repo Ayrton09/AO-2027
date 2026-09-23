@@ -4205,7 +4205,9 @@
         case 'AlianceProposalsList': listaPropuestas('🤝 Propuestas de alianza', f.guilds, CLIENT.GuildAllianceDetails); break;
         case 'PeaceProposalsList': listaPropuestas('🕊️ Propuestas de paz', f.guilds, CLIENT.GuildPeaceDetails); break;
         case 'GuildDetails': openPanel('🏰 ' + esc(f.name), `Líder: <b>${esc(f.leader)}</b><br>Alineación: ${esc(f.alignment)}<br>Miembros: ${f.memberCount} · Enemigos: ${f.enemies} · Aliados: ${f.allies}${f.electionsOpen ? ' · <b>elecciones abiertas</b>' : ''}<br>${f.url ? ('URL: ' + esc(f.url) + '<br>') : ''}${esc(f.desc || '(sin descripción)')}`); break;
-        case 'CommerceInit': commerceItems = {}; renderCommerce(); break;               // merchant window opening
+        // LAS RANURAS LLEGAN ANTES que el CommerceInit, las 25 y las vacías también (IniciarComercioNPC,
+        // Comercio.bas:196-204), y pisan todas las de la tienda anterior: vaciar acá borraba la que llegaba.
+        case 'CommerceInit': renderCommerce(); break;                                   // merchant window opening
         // El stock de un mercader llega SLOT POR SLOT, y cada uno reconstruía la ventana ENTERA: con 40
         // productos son 40 innerHTML completos, ~1600 <canvas> creados y tirados, y 1600 blits — el tirón de
         // medio segundo al abrir una tienda. Igual el banco. Se agrupa con el mismo debounce de 120 ms que el

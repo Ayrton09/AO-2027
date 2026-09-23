@@ -267,6 +267,10 @@ if (serverIni.PasesDeRinkel)
 if (fixtureMode)
     TestFixture.Populate(world, npcSystem, gameData);
 
+// LAS LLAVES YA VENDIDAS, antes de poblar: los mercaderes de Propiedades cargan su mostrador con esas ranuras en
+// cero, como el original lee su NPCs.dat ya reescrito (ver World.LlavesVendidas).
+foreach (var (ficha, ranuras) in db.LoadLlavesVendidas()) world.LlavesVendidas[ficha] = ranuras;
+
 // El mundo real: la población y los objetos que cada mapa trae en su .csm (ver WorldPopulator, que es donde
 // vive la lógica — acá adentro no se podía testear y por eso se comió el truncamiento del nº de mapa a byte).
 int spawnedNpcs, spawnedMaps, spawnedObjs;

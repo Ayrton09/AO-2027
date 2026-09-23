@@ -210,18 +210,17 @@ public static class TestFixture
             // que no comercia y por lo tanto tiene TipoItems = 0—, así que sin este `with` el gate de la venta
             // (Comercio.bas:123) le rechazaría TODO y los flows que venden se caerían por el fixture, no por el
             // código. El mercader especializado de al lado (54,47) es el que ejerce el rechazo.
-            world.AddNpc(new Npc
+            // El mostrador pasa por el cargador de siempre (las 25 ranuras del original): con una lista de dos, lo
+            // que se le vende no tendría ranura vacía donde caer.
+            var comerciante = new Npc
             {
                 CharIndex = world.AllocateCharIndex(), Movement = Estatico,
                 Template = merchantTemplate with { TipoItems = GameLimits.TipoItemsCualquiera },
                 Hp = merchantTemplate.MaxHp,
                 Pos = new WorldPos(FixtureMap, 52, SvcRow),
-                Stock = new List<MerchantSlot>
-                {
-                    new() { ObjIndex = 38, Amount = 100 },   // pociones rojas
-                    new() { ObjIndex = 2,  Amount = 10 },    // espada larga
-                },
-            });
+            };
+            InventarioDelMercader.Cargar(comerciante, new[] { (38, 100), (2, 10) }, 2);   // pociones rojas, espada larga
+            world.AddNpc(comerciante);
             System.Console.WriteLine($"Spawn: comerciante en (52,{SvcRow}) con 2 productos.");
 
             // MERCADER ESPECIALIZADO: sólo compra ObjType 2 (armas). Existe para ejercer el RECHAZO del gate
@@ -233,17 +232,15 @@ public static class TestFixture
             // —el único hueco entre 34 y 62— y eso rompió blocking_flow y gm_tanda3_flow: la 50 no está libre,
             // está RESERVADA, porque es el pasillo del spawn (50,50) hacia la pared de (50,45). El comentario
             // del layout ya lo decía ("saltando x=50") y va repetido acá para el que venga a agregar el próximo.
-            world.AddNpc(new Npc
+            var armero = new Npc
             {
                 CharIndex = world.AllocateCharIndex(), Movement = Estatico,
                 Template = merchantTemplate with { TipoItems = 2 },
                 Hp = merchantTemplate.MaxHp,
                 Pos = new WorldPos(FixtureMap, 64, SvcRow),
-                Stock = new List<MerchantSlot>
-                {
-                    new() { ObjIndex = 2, Amount = 10 },
-                },
-            });
+            };
+            InventarioDelMercader.Cargar(armero, new[] { (2, 10) }, 1);
+            world.AddNpc(armero);
             System.Console.WriteLine($"Spawn: mercader de armas (TipoItems=2) en (64,{SvcRow}).");
 
             world.AddNpc(new Npc

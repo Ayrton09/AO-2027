@@ -1254,12 +1254,13 @@ public sealed class NpcSystem
         // Los NPCs de servicio/guardias (Attackable=0 en el NPCs.dat) no se pueden atacar (VB6 NpcAtacable).
         // Los NPCs de test de Program.cs quieren ser atacables → sólo los poblados por data respetan el flag.
         npc.Attackable = s.Template.Attackable;
-        if (s.Template.StockItems is { Count: > 0 } items)                       // Comercia=1 → mercader con su stock
-            npc.Stock = items.Select(it => new MerchantSlot
-            {
-                ObjIndex = (short)it.ObjIndex,
-                Amount = (short)Math.Clamp(it.Amount, 1, short.MaxValue),
-            }).ToList();
+        if (s.Template.LineasDelDat is not null)                                  // Comercia=1 → mercader con su stock
+        {
+            npc.InvReSpawn = s.Template.InvReSpawn;
+            InventarioDelMercader.Cargar(npc,
+                InventarioDelMercader.LineasDe(s.Template, _world.LlavesVendidas.GetValueOrDefault(s.Template.Index)),
+                s.Template.NroItems);
+        }
         _world.AddNpc(npc);
         s.CharIndex = npc.CharIndex;
         s.Alive = true;

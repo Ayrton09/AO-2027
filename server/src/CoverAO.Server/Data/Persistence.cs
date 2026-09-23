@@ -56,6 +56,24 @@ public sealed class Persistence
         => int.TryParse(_store.ReadMisc("record"), System.Globalization.NumberStyles.Integer,
                         System.Globalization.CultureInfo.InvariantCulture, out int r) ? r : 0;
 
+    /// <summary>Las llaves ya vendidas (<see cref="Game.World.LlavesVendidas"/>): ficha del mercader → ranura → objeto.</summary>
+    public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
+        => _store.WriteMisc("propiedades", System.Text.Json.JsonSerializer.Serialize(vendidas));
+
+    /// <summary>Lo guardado por <see cref="SaveLlavesVendidas"/>. Un archivo ausente o ilegible da el mapa vacío y NO
+    /// tira, como el suelo: con eso las casas vuelven a la venta, que es menos grave que un servidor que no arranca.</summary>
+    public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
+    {
+        string? json = _store.ReadMisc("propiedades");
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<int, Dictionary<int, short>>>(json) ?? new(); }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Console.Error.WriteLine($"[propiedades] el archivo guardado no se pudo leer, se arranca sin él: {ex.Message}");
+            return new();
+        }
+    }
+
     public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
         => _store.WriteMisc("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
 

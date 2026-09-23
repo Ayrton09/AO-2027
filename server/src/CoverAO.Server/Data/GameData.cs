@@ -450,7 +450,8 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // NPCs.dat "NpcType" (VB6 eNPCType): 1=Revividor, 3=Entrenador, 4=Banquero, 5=facciones, 12=Timbero…
     // Le da su ROL a cada NPC poblado desde MapSpawns (antes eran todos inertes).
     int NpcType = 0,
-    // NPCs.dat "Obj1..ObjN" ("objIndex-cantidad") de un NPC con Comercia=1: su stock de mercader.
+    // Lo que vende un NPC con Comercia=1 al nacer: las líneas 1..NROITEMS de `LineasDelDat` que traen objeto y
+    // cantidad. Null si no comercia.
     IReadOnlyList<(int ObjIndex, int Amount)>? StockItems = null,
     // NPCs.dat "TipoItems": el ObjType que este mercader ACEPTA cuando le vendés (VB6 Comercio.bas:123).
     // Lo traen 82 NPCs del install: el herrero compra armas, el sastre ropa, el de comidas comida. El valor
@@ -515,7 +516,14 @@ public sealed record NpcInfo(short Index, string Name, short Body, short Head, b
     // aoweb `npc.magicResistance` y `npc.magicDef`/`defM`: la resistencia mágica de la criatura, que decide si le
     // frena un porcentaje del hechizo, y su defensa mágica plana. Ninguno de los dos está en NPCs.dat todavía, así
     // que valen 0 y la rama no hace nada — es lo mismo que hace aoweb cuando le falta el campo.
-    int ResistenciaMagica = 0, int DefensaMagica = 0)
+    int ResistenciaMagica = 0, int DefensaMagica = 0,
+    // NPCs.dat "NROITEMS" y las 25 líneas "ObjN" de un mercader, tal como las lee el original (MODULO_NPCs.bas:200-210).
+    // El mostrador se carga de las líneas 1..NroItems, cada una en SU ranura; el `EncontrarCant` que repone lo Crucial
+    // mira las 25. Null si no comercia. Ver Game.InventarioDelMercader.
+    int NroItems = 0, IReadOnlyList<(int ObjIndex, int Amount)>? LineasDelDat = null,
+    // NPCs.dat "InvReSpawn": 1 = el mostrador NO se recarga al vaciarse (QuitarNpcInvItem, Modulo_InventANDobj.bas:225).
+    // Lo traen los diez mercaderes de Propiedades: cada llave se vende una sola vez.
+    bool InvReSpawn = false)
 {
     /// <summary>¿Este mercader te compra ese objeto? Es la condición de <c>Comercio.bas:123</c> dada vuelta:
     /// el VB6 RECHAZA (LocaleMsg 148) si <c>TipoItems &lt;&gt; OBJType And TipoItems &lt;&gt; otCualquiera</c>,
@@ -1412,6 +1420,8 @@ public sealed class GameData
         {
             int index = el.TryGetProperty("_index", out var ix) ? ix.GetInt32() : 0;
             if (index <= 0) continue;
+            var lineas = Int(el, "Comercia") == 1 ? LineasDelDat(el) : null;
+            int nroItems = Math.Clamp(Int(el, "NROITEMS"), 0, Game.GameLimits.MaxInventorySlots);
             map[index] = new NpcInfo(
                 (short)index, Str(el, "Name"),
                 (short)Int(el, "Body"), (short)Int(el, "Head"), (byte)Math.Clamp(Int(el, "Heading"), 1, 4),
@@ -1422,7 +1432,8 @@ public sealed class GameData
                 PosOrig: Int(el, "PosOrig") == 1,
                 Domable: Int(el, "Domable"),
                 NpcType: Int(el, "NpcType"),
-                StockItems: Int(el, "Comercia") == 1 ? ParseStock(el) : null,
+                StockItems: lineas is null ? null : LoQueVende(lineas, nroItems),
+                NroItems: nroItems, LineasDelDat: lineas, InvReSpawn: Int(el, "InvReSpawn") == 1,
                 TipoItems: Int(el, "TipoItems"),
                 Inmunidad: Int(el, "Inmunidad"),
                 Veneno: Int(el, "Veneno"),
@@ -1699,21 +1710,40 @@ public sealed class GameData
     /// <summary>Parses a RandomDrop field "objIndex,amount,chance" (e.g. "737,1,0.5"). Missing → zeros.</summary>
     /// <summary>Stock de un mercader (NPCs.dat, NPC con Comercia=1): claves <c>Obj1..ObjN</c> con el formato
     /// <c>"objIndex-cantidad"</c>. Se leen hasta <c>NROITEMS</c> (y se tolera el case irregular del .dat).</summary>
-    private static IReadOnlyList<(int ObjIndex, int Amount)> ParseStock(JsonElement el)
+    /// <summary>Las 25 líneas <c>ObjN</c> de un mercader como las lee el original: el objeto es
+    /// <c>val(ReadField(1, ln, 45))</c> y la cantidad <c>val(ReadField(2, ln, 45))</c> (MODULO_NPCs.bas:204-208). Dos
+    /// cosas de la data del install sólo se leen bien así: el SastreGeneral trae un comentario pegado a cada línea
+    /// (<c>31-100'Vestimentas de Hombre</c>: el <c>val</c> se queda con el 100), y el Herrero de Armaduras de Rinkel
+    /// siete líneas sin cantidad (<c>Obj9=30</c>: sin separador, <see cref="ReadField"/> devuelve el texto entero, así
+    /// que vende 30 del objeto 30). Una línea que falta queda en (0, 0).</summary>
+    private static (int ObjIndex, int Amount)[] LineasDelDat(JsonElement el)
     {
-        var list = new List<(int, int)>();
-        int n = Int(el, "NROITEMS");
-        for (int i = 1; i <= Math.Max(n, 25); i++)
+        var lineas = new (int, int)[Game.GameLimits.MaxInventorySlots];
+        for (int i = 1; i <= lineas.Length; i++)
         {
-            var raw = Str(el, $"Obj{i}", $"obj{i}", $"OBj{i}");
-            if (string.IsNullOrWhiteSpace(raw)) continue;
-            var parts = raw.Split('-');
-            if (parts.Length < 2) continue;
-            if (!int.TryParse(parts[0].Trim(), out var obj) || obj <= 0) continue;
-            if (!int.TryParse(parts[1].Trim(), out var amt) || amt <= 0) continue;
-            list.Add((obj, amt));
+            string ln = Str(el, $"Obj{i}");   // `Candidatos` también encuentra el "OBj22" del herrero de Rinkel
+            lineas[i - 1] = (LeadingInt(ReadField(1, ln, '-')) ?? 0, LeadingInt(ReadField(2, ln, '-')) ?? 0);
         }
-        return list;
+        return lineas;
+    }
+
+    /// <summary>Lo que el mercader vende al nacer: las líneas 1..<paramref name="nroItems"/> con objeto y cantidad. El
+    /// original no carga nada más allá de <c>NROITEMS</c>: el Pirata de Illiandor trae ocho líneas y declara cinco, así
+    /// que vende dos pases (las líneas 2, 3 y 5 no existen) y no cinco.</summary>
+    private static IReadOnlyList<(int ObjIndex, int Amount)> LoQueVende((int ObjIndex, int Amount)[] lineas, int nroItems) =>
+        lineas.Take(nroItems).Where(l => l.ObjIndex > 0 && l.Amount > 0).ToList();
+
+    /// <summary>VB6 <c>ReadField</c> (General.bas:373) tal cual. Con menos separadores que el campo pedido NO da vacío:
+    /// el índice vuelve al principio del texto, así que <c>ReadField(2, "30", 45)</c> es <c>"30"</c>.</summary>
+    public static string ReadField(int pos, string texto, char sep)
+    {
+        int ultimo = 0, actual = 0;
+        for (int i = 1; i <= pos; i++)
+        {
+            ultimo = actual;
+            actual = texto.IndexOf(sep, ultimo) + 1;   // InStr(ultimo + 1, ...): la posición desde 1, o 0 si no está
+        }
+        return actual == 0 ? texto[ultimo..] : texto.Substring(ultimo, actual - ultimo - 1);
     }
 
     /// <summary>

@@ -780,8 +780,10 @@ public sealed class SentidosDelBot
                     break;
                 }
 
+                // LAS RANURAS LLEGAN ANTES que el CommerceInit, las 25 y las vacías también (IniciarComercioNPC,
+                // Comercio.bas:196-204), y pisan todas las de la tienda anterior: vaciar acá borraba la que llegaba.
                 case ServerPacketId.CommerceInit:
-                    lock (_candado) { _comerciando = true; _tienda.Clear(); }
+                    lock (_candado) _comerciando = true;
                     break;
 
                 case ServerPacketId.CommerceEnd:
