@@ -97,13 +97,7 @@ public sealed class WebSocketGameServer
     {
         var remote = ctx.Request.RemoteEndPoint?.ToString() ?? "?";
         string ip = ConnectionGuard.NormalizeIp(remote);   // IP canónica (igual forma que el ban del panel)
-        if (_admin?.IsIpBanned(ip) == true)   // IP baneada desde el panel
-        {
-            ctx.Response.StatusCode = 403; ctx.Response.Close();
-            Console.WriteLine($"[ws:{remote}] rechazado (IP baneada)");
-            return;
-        }
-        // ANTES del cupo de conexiones, y el orden importa: `TryAcquire` TOMA la ranura, así que rechazando
+        // ANTES del cupo de conexiones, y el orden importa: `Reservar` TOMA la ranura, así que rechazando
         // después habría que acordarse de devolverla — y un rechazo que filtra un slot convierte el guardia en
         // el arma. Acá el drive-by se corta sin gastar nada.
         if (!OrigenAceptable(ctx.Request))
@@ -112,7 +106,23 @@ public sealed class WebSocketGameServer
             Console.WriteLine($"[ws:{remote}] rechazado (Origin ajeno: {ctx.Request.Headers["Origin"]})");
             return;
         }
-        if (_guard is not null && !_guard.TryAcquire(ip))   // cap por-IP/global
+        // LOS RECHAZOS AL ACEPTAR, en el orden del original (wskapiAO.bas:501-552): el servidor lleno y la IP bloqueada
+        // se avisan con un cartel antes de cortar; el tope por IP corta callado. Acá los tres cortaban callados.
+        var reserva = _guard?.Reservar(ip) ?? ConnectionGuard.Reserva.Hecha;
+        if (reserva == ConnectionGuard.Reserva.ServidorLleno)
+        {
+            Console.WriteLine($"[ws:{remote}] rechazado (servidor lleno)");
+            await AvisarYCortar(ctx, remote, ConnectionGuard.AvisoServidorLleno);
+            return;
+        }
+        if (_admin?.IsIpBanned(ip) == true)   // IP baneada desde el panel
+        {
+            if (reserva == ConnectionGuard.Reserva.Hecha) _guard!.Release(ip);
+            Console.WriteLine($"[ws:{remote}] rechazado (IP baneada)");
+            await AvisarYCortar(ctx, remote, ConnectionGuard.AvisoIpBloqueada);
+            return;
+        }
+        if (reserva == ConnectionGuard.Reserva.TopeDeLaIp)   // cap por-IP
         {
             ctx.Response.StatusCode = 503; ctx.Response.Close();
             Console.WriteLine($"[ws:{remote}] rechazado (cap de conexiones)");
@@ -139,6 +149,20 @@ public sealed class WebSocketGameServer
         {
             if (acquired) _guard!.Release(ip);   // falló el upgrade antes de crear la sesión → liberar acá
         }
+    }
+
+    /// <summary>El cartel del rechazo y el corte. Hay que subir a WebSocket para mandarlo: el cartel es un paquete del
+    /// juego, y un 503 no lo lee nadie. Sale como cualquier paquete y el cierre lleva el mismo texto como motivo.</summary>
+    private static async Task AvisarYCortar(HttpListenerContext ctx, string remote, string aviso)
+    {
+        try
+        {
+            var wsCtx = await ctx.AcceptWebSocketAsync(subProtocol: null);
+            var transporte = new WebSocketTransport(wsCtx.WebSocket, remote);
+            transporte.Send(ServerMessages.SendMsgBox(aviso));
+            transporte.Close(aviso);
+        }
+        catch { /* el que se va no espera respuesta */ }
     }
 
     /// <summary>

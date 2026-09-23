@@ -3931,6 +3931,9 @@
           const texto = f.modo > 0 ? (LOCALE_ERROR[f.message] || 'Aviso ' + f.message) : f.message;
           log('» ' + texto, '#e8c876');
           if (!$('login').classList.contains('hidden')) loginErr(texto);
+          // ANTES DE ENTRAR ES UN RECHAZO: el servidor lleno o la IP bloqueada (wskapiAO.bas:501-552) llegan así y el
+          // server corta. Sin marcarlo, el cierre ponía "reintentando" y se reconectaba en bucle contra el mismo no.
+          if (!loggedIn) lastReject = texto;
           break;
         }
         // Correo pendiente: el original prende el cartelito `frmMain.nuevocorreo`.

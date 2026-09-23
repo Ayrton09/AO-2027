@@ -75,13 +75,23 @@ public sealed class TcpGameServer
     {
         string ip = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
         string remote = client.Client.RemoteEndPoint?.ToString() ?? "?";
-        if (_admin?.IsIpBanned(ip) == true)   // IP baneada desde el panel: se rechaza antes de gastar recursos
+        // LOS RECHAZOS AL ACEPTAR, en el orden del original (wskapiAO.bas:501-552): el servidor lleno y la IP bloqueada
+        // se avisan con un cartel antes de cortar; el tope por IP corta callado. Acá los tres cortaban callados.
+        var reserva = _guard?.Reservar(ip) ?? ConnectionGuard.Reserva.Hecha;
+        if (reserva == ConnectionGuard.Reserva.ServidorLleno)
         {
-            Console.WriteLine($"[tcp:{remote}] rechazado (IP baneada)");
-            try { client.Close(); } catch { }
+            Console.WriteLine($"[tcp:{remote}] rechazado (servidor lleno)");
+            await AvisarYCortar(client, ConnectionGuard.AvisoServidorLleno);
             return;
         }
-        if (_guard is not null && !_guard.TryAcquire(ip))   // cap por-IP/global: rechaza el flood
+        if (_admin?.IsIpBanned(ip) == true)   // IP baneada desde el panel
+        {
+            if (reserva == ConnectionGuard.Reserva.Hecha) _guard!.Release(ip);
+            Console.WriteLine($"[tcp:{remote}] rechazado (IP baneada)");
+            await AvisarYCortar(client, ConnectionGuard.AvisoIpBloqueada);
+            return;
+        }
+        if (reserva == ConnectionGuard.Reserva.TopeDeLaIp)   // cap por-IP: rechaza el flood
         {
             Console.WriteLine($"[tcp:{remote}] rechazado (cap de conexiones)");
             try { client.Close(); } catch { }
@@ -123,5 +133,29 @@ public sealed class TcpGameServer
             // con cada login/logout Y con cada escaneo de puertos. Era la memoria que sube con los días.
             if (session is not null) { lock (_sessions) _sessions.Remove(session); }
         }
+    }
+
+    /// <summary>
+    /// El cartel del rechazo (<c>WriteSendMsgBox</c> + <c>FlushBuffer</c> + cerrar el socket) y el corte. Después de
+    /// escribir se cierra el envío y se vacía lo que el cliente ya mandó —su login—, hasta que corte o pase un
+    /// segundo: cerrar con datos sin leer sale como RST, y el RST se puede llevar el cartel antes de que lo lean.
+    /// Con TLS el cartel no puede ir antes del handshake, y ahí se corta callado.
+    /// </summary>
+    private async Task AvisarYCortar(TcpClient client, string aviso)
+    {
+        try
+        {
+            if (_tlsCert is null)
+            {
+                var stream = client.GetStream();
+                using var plazo = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                await stream.WriteAsync(ServerMessages.SendMsgBox(aviso), plazo.Token);
+                client.Client.Shutdown(SocketShutdown.Send);
+                var basura = new byte[1024];
+                while (await stream.ReadAsync(basura, plazo.Token) > 0) { }
+            }
+        }
+        catch { /* el que se va no espera respuesta */ }
+        finally { try { client.Close(); } catch { } }
     }
 }

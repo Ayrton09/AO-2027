@@ -17,19 +17,31 @@ public sealed class ConnectionGuard
         _maxPerIp = maxPerIp;
     }
 
-    /// <summary>Intenta reservar un slot para <paramref name="ip"/>. false si se superó el cap global o por-IP.</summary>
-    public bool TryAcquire(string ip)
+    /// <summary>Cómo terminó el pedido de un slot. Los dos rechazos no son iguales en el original: el servidor lleno
+    /// se avisa con un cartel y el tope por IP (<c>aDos.MaxConexiones</c>) corta callado.</summary>
+    public enum Reserva { Hecha, ServidorLleno, TopeDeLaIp }
+
+    /// <summary>Los dos carteles con que el original rechaza una conexión antes del login (wskapiAO.bas:517 y :543).</summary>
+    public const string AvisoServidorLleno = "El servidor se encuentra lleno en este momento. Disculpe las molestias ocasionadas.";
+    public const string AvisoIpBloqueada = "Su IP se encuentra bloqueada en este servidor.";
+
+    /// <summary>Intenta reservar un slot para <paramref name="ip"/> y, si no puede, dice cuál de los dos cupos lo
+    /// frenó. El global se mira primero, como el <c>NextOpenUser</c> del original (wskapiAO.bas:502).</summary>
+    public Reserva Reservar(string ip)
     {
         lock (_gate)
         {
-            if (_maxTotal > 0 && _total >= _maxTotal) return false;
+            if (_maxTotal > 0 && _total >= _maxTotal) return Reserva.ServidorLleno;
             _perIp.TryGetValue(ip, out int n);
-            if (_maxPerIp > 0 && n >= _maxPerIp) return false;
+            if (_maxPerIp > 0 && n >= _maxPerIp) return Reserva.TopeDeLaIp;
             _total++;
             _perIp[ip] = n + 1;
-            return true;
+            return Reserva.Hecha;
         }
     }
+
+    /// <summary>Intenta reservar un slot para <paramref name="ip"/>. false si se superó el cap global o por-IP.</summary>
+    public bool TryAcquire(string ip) => Reservar(ip) == Reserva.Hecha;
 
     public void Release(string ip)
     {
