@@ -1347,7 +1347,7 @@ public sealed class NpcSystem
 
         if (fam.Sabe(Familiar.HabGolpeEnvenena) && !victima.IsPoisoned(_tick) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
         {
-            victima.PoisonedUntilTick = long.MaxValue;   // el veneno del original no caduca solo: se cura
+            victima.Envenenar();   // el veneno del original no caduca solo: se cura
             victima.Connection?.Send(ServerMessages.LocaleMsg(182));
         }
         if (fam.Sabe(Familiar.HabGolpeParaliza) && !victima.IsParalyzed(_tick) && _rng.Next(1, 101) < ProbHabilidadDeGolpe)
@@ -1613,7 +1613,7 @@ public sealed class NpcSystem
             // a prender.
             if (npc.Template.Veneno > 0 && _rng.Next(1, 101) < 30)
             {
-                player.PoisonedUntilTick = long.MaxValue;
+                player.Envenenar();
                 player.Connection?.Send(ServerMessages.LocaleMsg(182));
             }
             FamiliarGolpeoA(npc, player);

@@ -53,7 +53,7 @@ public static class CharacterFile
         //     el .chr no guarda, así que reponerlo solo lo apaga el primer tick: el par no cierra.
         //   · Incinerado — nuestro incinerar comparte estado con el veneno, no hay campo separado que guardar.
         //   · Hambre / Sed / Desnudo — derivados del contador de comida/agua y del equipo, que ya persisten.
-        ini.Set("FLAGS", "Envenenado", F(p.PoisonedUntilTick == long.MaxValue ? 1 : 0));
+        ini.Set("FLAGS", "Envenenado", F(p.PoisonedUntilTick == long.MaxValue ? p.ValorDelVeneno : 0));   // el Byte, no un 1
         // VB6 flags.MuertesUsuario (Modulo_UsUaRiOs.bas:1260, +1 en UserDie). La ficha del cliente lo muestra
         // como "Veces que moriste"; el .chr lo llama `Murio` (FileIO.bas:1638).
         ini.Set("FLAGS", "Murio", F(p.Deaths));
@@ -234,7 +234,9 @@ public static class CharacterFile
         p.Banned = ini.GetInt("FLAGS", "Ban") == 1;
         p.Navigating = ini.GetInt("FLAGS", "Navegando") == 1;   // VB6 TCP.bas:1866
         p.Mounted = ini.GetInt("FLAGS", "Montando") == 1;       // VB6 TCP.bas:1867 (la línea de abajo)
-        p.PoisonedUntilTick = ini.GetInt("FLAGS", "Envenenado") == 1 ? long.MaxValue : 0;   // VB6 TCP.bas:1868
+        // VB6 TCP.bas:1868: el Byte tal cual (`CByte`), y envenena cualquier valor que no sea 0 (mMainLoop.bas:168).
+        int veneno = ini.GetInt("FLAGS", "Envenenado");
+        if (veneno > 0) p.Envenenar((byte)Math.Min(veneno, byte.MaxValue));
         p.Deaths = Math.Max(0, ini.GetInt("FLAGS", "Murio"));   // VB6 TCP.bas:1869 (.flags.MuertesUsuario)
         p.UsersKilled = Math.Max(0, ini.GetInt("MUERTES", "UserMuertes"));   // VB6 TCP.bas:2166
         p.NpcsKilled = Math.Max(0, ini.GetInt("MUERTES", "NpcsMuertes"));    // VB6 TCP.bas:2167

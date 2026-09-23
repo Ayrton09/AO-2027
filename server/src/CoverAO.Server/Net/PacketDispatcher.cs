@@ -2594,6 +2594,21 @@ public sealed partial class PacketDispatcher
         if (p.MetamorfosisHastaTick != 0 && tick >= p.MetamorfosisHastaTick) RevertirMetamorfosis(p);
     }
 
+    /// <summary>EfectoVeneno (VB6 General.bas:1117), en cada vuelta del jugador vivo: cada IntervaloVeneno saca
+    /// RandomNumber(1,5) y avisa con el LocaleMsg 47 en la fuente 5. Devuelve si pegó (el caller manda el UpdateHP).
+    /// <para>OJO que el veneno MATA (`If MinHP &lt; 1 Then UserDie`): el port lo clampaba a 1 con el comentario "poison
+    /// can't kill directly", que era invención del slice. Y es SÓLO PARA EL USUARIO COMÚN: el original lo llama con
+    /// `(.flags.Privilegios And PlayerType.User) &lt;&gt; 0` (mMainLoop.bas:168), así que al GM envenenado no le pega.</para></summary>
+    public static bool EfectoVeneno(World world, GameData data, Player pl, long tick, Random rng)
+    {
+        if (!pl.IsPoisoned(tick) || (pl.Privileges & 1) == 0) return false;
+        if (!Survival.Cumplio(ref pl.PoisonCounter, Survival.PoisonIntervalTicks)) return false;
+        pl.Hp -= rng.Next(1, 6);
+        pl.Connection?.Send(ServerMessages.LocaleMsg(47, "", 0, 5));
+        if (pl.Hp < 1) { pl.Hp = 0; KillPlayer(world, data, pl, "el veneno"); }
+        return true;
+    }
+
     /// <summary>La invisibilidad del hechizo que venció (VB6 EfectoInvisibilidad, General.bas:897-919). El /INVISIBLE
     /// del GM deja <c>InvisibleUntilTick</c> en 0, así que no la toca. El que sigue oculto por el oficio no se destapa;
     /// si no, primero el 307 y después el SetInvisible al área ENTERA (`ToPCArea` incluye al propio, que así deja de
@@ -3131,11 +3146,12 @@ public sealed partial class PacketDispatcher
         if (spell.IsPoison)
         {
             if (yo) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
-            if (target.IsPoisoned(now)) { session.Send(ServerMessages.LocaleMsg(326)); return false; }
+            // "Ya envenenado" pregunta por el 1 (`If .flags.Envenenado = 1`, :1103): al envenenado por un área (el 3)
+            // se lo vuelve a envenenar, con el 1. Y el contador no se toca (:1118 sólo prende el flag).
+            if (target.IsPoisoned(now) && target.ValorDelVeneno == 1) { session.Send(ServerMessages.LocaleMsg(326)); return false; }
             if (!PuedeAtacar(session, p, target)) return false;
             FlagCriminalIfLegalTarget(session, p, target);
-            target.PoisonedUntilTick = long.MaxValue;
-            target.PoisonCounter = 0;
+            target.Envenenar();
             casteado = true;
         }
         if (spell.IsIncinerate)
@@ -10615,8 +10631,12 @@ public sealed partial class PacketDispatcher
     /// de defensa que lleve la víctima. Piso en 0.
     ///
     /// Del original quedan afuera dos restas por ítems que este port no modela como equipables: el anillo y la
-    /// montura. Y el veneno (<c>Envenena</c>) se aplica FUERA del gate de zona, o sea que envenena incluso donde
-    /// el daño no entra — ninguno de los 4 hechizos de daño de área lo trae, así que la rama no tiene data.</summary>
+    /// montura.
+    ///
+    /// <para>EL VENENO DEL ÁREA (:572-575): la Tormenta ácida (#57) trae <c>Envenena = 3</c>, y el original lo aplica
+    /// DESPUÉS del daño y de la muerte —si lo mató, el muerto queda envenenado y revive así—, con otro
+    /// UsuarioAtacadoPorUsuario y el valor del hechizo, no el 1. El `TriggerZonaPelea` que lo encierra devuelve
+    /// 1, 2 o 3 y nunca corta; lo que corta es el PuedeAtacar, que sale del Sub y se lleva el veneno también.</para></summary>
     private void AreaDamagePlayer(ClientSession session, Player p, Player target, Data.SpellInfo spell)
     {
         // EL MODELO DE AOWEB, igual que el camino de un solo blanco: ver <see cref="MagiaWeb"/>.
@@ -10640,6 +10660,11 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, damage, 2));          // el número, al lanzador
         target.Connection?.Send(ServerMessages.LocaleMsg(34, $"{p.Name}%{damage}"));      // "#1 te ha quitado..."
         if (target.Hp == 0) OnKill(session, p, target);
+        if (spell.Envenena > 0)
+        {
+            FlagCriminalIfLegalTarget(session, p, target);
+            target.Envenenar((byte)spell.Envenena);
+        }
     }
 
     /// <summary>La criatura de un tile del área (VB6 <c>HechizoPropNPC</c>, modHechizos.bas:1639). Ojo la
@@ -13175,6 +13200,7 @@ public sealed partial class PacketDispatcher
             p.WeaponAnim = 0; p.ShieldAnim = 0; p.HelmetAnim = 0;
         }
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
+        p.PoisonCounter = 0;    // `.Counters.Veneno = 0` (Modulo_UsUaRiOs.bas:1253), junto con el flag
         p.Incinerado = false;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego, y no toca el contador
         // Morir deshace la metamorfosis (regla de la casa). El cadáver ya pisa cuerpo y cabeza acá arriba;
         // lo que hay que soltar son los BONOS y el tick, o al revivir el druida seguiría pegando como dragón

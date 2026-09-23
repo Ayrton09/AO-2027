@@ -608,6 +608,13 @@ public sealed class Player
     public bool MarcaInmovilizado { get; set; }
     public bool EstaSoloInmovilizado(long nowTick) => IsParalyzed(nowTick) && MarcaInmovilizado && !MarcaParalizado;
     public bool IsPoisoned(long nowTick) => PoisonedUntilTick > nowTick;
+    /// <summary>El valor del veneno (VB6 <c>flags.Envenenado</c>, un Byte): 1 casi siempre, y el <c>Envenena</c> del
+    /// hechizo cuando viene de un área (el 3 de la Tormenta ácida). Cuenta sólo mientras <see cref="IsPoisoned"/>, y lo
+    /// único que lo distingue es el "ya está envenenado" del hechizo Envenenar, que pregunta por el 1.</summary>
+    public byte ValorDelVeneno { get; private set; } = 1;
+    /// <summary>Envenena con el valor que deja el original (1 salvo el área). El veneno del original no caduca solo:
+    /// lo apagan curarlo, la sanación, el sacerdote o la muerte.</summary>
+    public void Envenenar(byte valor = 1) { PoisonedUntilTick = long.MaxValue; ValorDelVeneno = valor; }
 
     // [Inventory] (1-based, slot 0 unused), [HECHIZOS], [SKILLS] (eSkill 1..27), [BancoInventory]
     public InventorySlot[] Inventory { get; } = new InventorySlot[GameLimits.MaxInventorySlots + 1];

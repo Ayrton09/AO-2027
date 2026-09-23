@@ -627,16 +627,7 @@ loop.OnTickHandler = tick =>
                 pl.PortalTickCounter = 0;
                 PacketDispatcher.PasoDelPortalDeLum(world, gameData, pl);
             }
-            // EfectoVeneno (VB6 General.bas): cada IntervaloVeneno saca RandomNumber(1,5) y avisa con
-            // LocaleMsg 47. OJO que el veneno MATA (`If MinHP < 1 Then UserDie`): el port lo clampaba a 1 con
-            // el comentario "poison can't kill directly", que era invención del slice.
-            if (pl.IsPoisoned(tick) && Survival.Cumplio(ref pl.PoisonCounter, Survival.PoisonIntervalTicks))
-            {
-                pl.Hp -= regenRng.Next(1, 6);
-                pl.Connection?.Send(ServerMessages.LocaleMsg(47, "", 0, 5));   // el original manda fuente = 5
-                if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el veneno"); }
-                cambioHp = true;   // VB6 EfectoVeneno: WriteUpdateHP
-            }
+            if (PacketDispatcher.EfectoVeneno(world, gameData, pl, tick, regenRng)) cambioHp = true;   // y el UpdateHP
             // EfectoIncinerado (VB6 FileIO.bas:2010, llamado desde mMainLoop.bas:170). NO es veneno: pega
             // RandomNumber(45, 65) por golpe de fuego —contra el 1 a 5 del veneno— y avisa con LocaleMsg 48.
             // El original excluye a los GMs (`Privilegios And PlayerType.User`).
