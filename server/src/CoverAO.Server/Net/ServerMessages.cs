@@ -122,6 +122,12 @@ public static class ServerMessages
         new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterChangeSlot)
             .WriteInteger(charIndex).WriteInteger(value).WriteByte(slot).ToArray();
 
+    /// <summary>La pieza que cambió de un JUGADOR. La del GM con /INVISIBLE viaja en 0, como el resto de su
+    /// apariencia (ver <see cref="CharacterChange(Player)"/>): equiparse no lo destapa. La dirección (slot 3) no es
+    /// apariencia y va igual.</summary>
+    public static byte[] CharacterChangeSlot(Player p, short value, byte slot) =>
+        CharacterChangeSlot(p.CharIndex, slot == 3 ? value : Tapado(p, value), slot);
+
     /// <summary>El aura que rodea a un personaje por el equipo que lleva (AuraToChar, id 103). Layout:
     /// Integer(charIndex), Byte(aura), Byte(tipo) — PrepareMessageAuraToChar (Protocol.bas:17470).
     /// El tipo dice a QUÉ pieza corresponde: <b>1</b> arma, <b>2</b> cuerpo, <b>3</b> escudo, <b>4</b> casco,
@@ -455,14 +461,22 @@ public static class ServerMessages
             .WriteByte(p.ShowName ? p.FactionStatus : (byte)0)
             .WriteByte((byte)(p.ShowName && p.Donador ? 1 : 0)).ToArray();   // VB6 UpdateTagAndStatus field Donador (PROTOCOLO §82)
 
-    /// <summary>A character changed appearance/heading. Layout from CharacterChange (id 29).</summary>
+    /// <summary>A character changed appearance/heading. Layout from CharacterChange (id 29).
+    ///
+    /// <para>El GM con /INVISIBLE sale con cuerpo, cabeza y equipo en 0 (VB6 DoAdminInvisible, Trabajo.bas:1202-1206),
+    /// que el cliente no dibuja. Se tapa acá y no en el jugador: su apariencia real sigue al día —se equipa, navega,
+    /// se transforma— y vuelve entera cuando se hace visible. El original, en cambio, pierde el arma, el escudo y el
+    /// casco al volver (no los restaura) y se destapa solo si se pone una armadura o si navega.</para></summary>
     public static byte[] CharacterChange(Player p) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterChange)
             .WriteInteger(p.CharIndex)
-            .WriteInteger(p.Body).WriteInteger(p.Head).WriteByte(p.Heading)
-            .WriteInteger(p.WeaponAnim).WriteInteger(p.ShieldAnim).WriteInteger(p.HelmetAnim)
+            .WriteInteger(Tapado(p, p.Body)).WriteInteger(Tapado(p, p.Head)).WriteByte(p.Heading)
+            .WriteInteger(Tapado(p, p.WeaponAnim)).WriteInteger(Tapado(p, p.ShieldAnim)).WriteInteger(Tapado(p, p.HelmetAnim))
             .WriteInteger(0).WriteInteger(0)   // FX / FXLoops
             .ToArray();
+
+    /// <summary>La parte de la apariencia que viaja: 0 si el GM está con /INVISIBLE.</summary>
+    private static short Tapado(Player p, short valor) => p.AdminInvisible ? (short)0 : valor;
 
     /// <summary>Una criatura que GIRA (VB6 ChangeNPCChar, MODULO_NPCs.bas:624): su cuerpo y su cabeza, la dirección
     /// nueva y el efecto en 0. El original manda también el arma, el escudo y el casco en 0, que en SU cliente quiere
@@ -871,13 +885,13 @@ public static class ServerMessages
         new ByteQueueWriter()
             .WritePacketId(ServerPacketId.CharacterCreate)
             .WriteInteger(p.CharIndex)
-            .WriteInteger(p.Body)
-            .WriteInteger(p.Head)
+            .WriteInteger(Tapado(p, p.Body))       // el GM con /INVISIBLE, en 0 (ver CharacterChange)
+            .WriteInteger(Tapado(p, p.Head))
             .WriteByte(p.Heading)
             .WriteByte(p.Pos.X).WriteByte(p.Pos.Y)
-            .WriteInteger(p.WeaponAnim)
-            .WriteInteger(p.ShieldAnim)
-            .WriteInteger(p.HelmetAnim)
+            .WriteInteger(Tapado(p, p.WeaponAnim))
+            .WriteInteger(Tapado(p, p.ShieldAnim))
+            .WriteInteger(Tapado(p, p.HelmetAnim))
             .WriteInteger(0)     // FX (0 = sin efecto activo al aparecer, == .Char.FX en spawn normal)
             .WriteInteger(999)   // FXLoops: constante de spawn de jugador del VB6 (MakeUserChar:332)
             // Nick VACÍO si tiene showName en false (VB6 MakeUserChar, Modulo_UsUaRiOs.bas:309): así el GM que

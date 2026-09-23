@@ -1340,9 +1340,15 @@ public sealed partial class PacketDispatcher
 
         // Area-scoped visibility (ModAreas): show the newcomer only the players/NPCs in their view
         // window, and announce the newcomer only to observers who can see them.
+        // Lo mismo que el cambio de área (ModAreas.bas:226-234, que es por donde entra el original): el GM con
+        // /INVISIBLE no se le crea, y al invisible u oculto se le manda además su SetInvisible, o el que entra lo
+        // vería entero.
         foreach (var other in _world.Players)
-            if (other.CharIndex != player.CharIndex && World.InView(player.Pos, other.Pos))
+            if (other.CharIndex != player.CharIndex && World.InView(player.Pos, other.Pos) && !other.AdminInvisible)
+            {
                 session.Send(ServerMessages.CharacterCreate(other));
+                if (other.Invisible || other.Oculto) session.Send(ServerMessages.SetInvisible(other.CharIndex, true));
+            }
         // Objetos del suelo del área (VB6 ModAreas.bas:274): se mandan los que NO son decorado fijo — o sea los
         // ítems tirados y las PUERTAS. Los árboles y carteles nunca viajan: el cliente los dibuja de su mapa
         // (`EsObjetoFijo`, Modulo_UsUaRiOs.bas:2277 + el flag ObjEsFijo del tile). Y por cada puerta van además
@@ -1479,13 +1485,14 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.PosUpdate(from.X, from.Y));
                 return;
             }
-            // Colisión de personajes (VB6 MoveToLegalPos: `(UserIndex=0 Or IsDeadChar Or IsAdminInvisible) And
-            // .npcindex=0`): no se pisa un tile ocupado por un jugador VIVO no-invisible ni por un NPC. Sí se puede
-            // pisar un muerto/fantasma (lógica CasperIndex del VB6). El layout del fixture (Program.cs) está diseñado
-            // para dejar un camino libre del spawn a cada NPC con este gate activo.
+            // Colisión de personajes (VB6 MoveToLegalPos, GameLogic.bas:527: `(UserIndex=0 Or IsDeadChar Or
+            // IsAdminInvisible) And .npcindex=0`): no se pisa un tile con una criatura ni con un jugador vivo, salvo
+            // que sea un GM con /INVISIBLE. Al invisible POR HECHIZO no se lo atraviesa: acá se lo dejaba pasar (se
+            // miraba `Invisible`), y el original no. El layout del fixture (Program.cs) está diseñado para dejar un
+            // camino libre del spawn a cada NPC con este gate activo.
             var destTile = new WorldPos(from.Map, nx, ny);
             var occ = _world.PlayerAt(destTile);
-            if ((occ is not null && occ.IsAlive && !occ.Invisible) || _world.NpcAt(destTile) is not null)
+            if ((occ is not null && occ.IsAlive && !occ.AdminInvisible) || _world.NpcAt(destTile) is not null)
             {
                 session.Send(ServerMessages.PosUpdate(from.X, from.Y));
                 return;
@@ -1501,6 +1508,14 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.LocaleMsg(488, segundos.ToString(System.Globalization.CultureInfo.InvariantCulture)));
                 session.Send(ServerMessages.PosUpdate(from.X, from.Y));
                 return;
+            }
+            // EL CASPER (VB6 MoveUserChar, Modulo_UsUaRiOs.bas:740-770): al muerto —o al GM invisible— que está en esa
+            // baldosa se lo corre a la de la que se viene. Acá los dos quedaban en la misma baldosa. El que camina
+            // con /INVISIBLE, en cambio, no corre a nadie: rebota.
+            if (occ is not null)
+            {
+                if (p.AdminInvisible) { session.Send(ServerMessages.PosUpdate(from.X, from.Y)); return; }
+                CorrerAlCasper(occ, heading, from);
             }
             p.Pos = new WorldPos(from.Map, nx, ny);
             session.Send(ServerMessages.PosUpdate(nx, ny));                                  // self
@@ -1574,6 +1589,23 @@ public sealed partial class PacketDispatcher
                 TeleportTo(session, p, destino, fx: esTeleport);
             }
         });
+    }
+
+    /// <summary>Corre al "casper" —el muerto o el GM invisible cuya baldosa pisa otro— a la baldosa de la que viene el
+    /// que camina (VB6 MoveUserChar, Modulo_UsUaRiOs.bas:749-765), en el orden del original: le llega su posición
+    /// VIEJA (el PosUpdate se escribe antes de moverlo), el área ve su CharacterMove, y a él un ForceCharMove hacia
+    /// el lado contrario, que es lo que lo corre en su pantalla.</summary>
+    private void CorrerAlCasper(Player casper, byte heading, WorldPos haciaDonde)
+    {
+        var viejo = casper.Pos;
+        casper.Connection?.Send(ServerMessages.PosUpdate(viejo.X, viejo.Y));
+        byte opuesto = NpcSystem.InvertirHeading(heading);
+        casper.Pos = haciaDonde;
+        casper.Heading = opuesto;
+        _world.BroadcastToObservers(haciaDonde, ServerMessages.CharacterMove(casper.CharIndex, haciaDonde.X, haciaDonde.Y),
+                                    casper.CharIndex);
+        casper.Connection?.Send(ServerMessages.ForceCharMove(opuesto));
+        RefreshAreaVisibility(_world, _data, casper, viejo, haciaDonde);
     }
 
     /// <summary>¿Se puede PISAR este tile? (VB6 <c>LegalPos</c>, GameLogic.bas:458.) Cuatro condiciones, las
@@ -1670,8 +1702,8 @@ public sealed partial class PacketDispatcher
         RefreshAreaVisibility(_world, _data, t, from, dest);
         RedibujarParaQuienVeLasDosPuntas(t, from, dest);
         // EL SALTO SE ANUNCIA (:1653-1654): sonido y destello en el área de llegada, él incluido, salvo que el que
-        // salta sea un GM en invisibilidad permanente.
-        if (fx && !(t.Invisible && t.InvisibleUntilTick == 0))
+        // salta sea un GM con /INVISIBLE.
+        if (fx && !t.AdminInvisible)
         {
             _world.BroadcastToObservers(dest, ServerMessages.PlayWave(SndWarp, dest.X, dest.Y));
             _world.BroadcastToObservers(dest, ServerMessages.CreateFX(t.CharIndex, FxWarp, 0));
@@ -1705,6 +1737,9 @@ public sealed partial class PacketDispatcher
             if (otro.CharIndex == t.CharIndex || otro.Connection is null) continue;
             if (!World.InView(from, otro.Pos) || !World.InView(to, otro.Pos)) continue;
             otro.Connection.Send(ServerMessages.CharacterRemove(t.CharIndex, faded: true));
+            // Al GM con /INVISIBLE no se lo vuelve a crear en nadie (`MakeUserChar` → ModAreas.bas:241), y por eso
+            // tampoco lleva el SetInvisible del que sigue invisible (:1647).
+            if (t.AdminInvisible) continue;
             otro.Connection.Send(ServerMessages.CharacterCreate(t));
             if (t.Invisible || t.Oculto) otro.Connection.Send(ServerMessages.SetInvisible(t.CharIndex, true));
         }
@@ -2446,6 +2481,9 @@ public sealed partial class PacketDispatcher
 
         if (!acerto)
         {
+            // Al GM con /INVISIBLE que erra lo escucha sólo él, y con el silbido de siempre aunque tire flechas
+            // (:1230-1233). Contra una criatura el original no tiene esta excepción: ahí suena al área.
+            if (p.AdminInvisible) { session.Send(ServerMessages.PlayWave(SndSwing, p.Pos.X, p.Pos.Y)); return; }
             AlAreaDelJugador(session, p, conFlecha ? SndFallasFlecha : SndSwing, p.Pos);
             return;
         }
@@ -6007,19 +6045,26 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.ConsoleMsg($"Clan {guildName.ToUpperInvariant()}: {string.Join(",", nombres)}", 9));
     }
 
+    /// <summary>
+    /// /INVISIBLE (VB6 HandleInvisible → <c>DoAdminInvisible</c>, Trabajo.bas:1186). No es la invisibilidad del
+    /// hechizo, que deja al personaje latiendo: el GM desaparece. Cuerpo, cabeza y equipo viajan en 0 (ver
+    /// <see cref="Player.AdminInvisible"/>), el nombre se apaga, y al área —él incluido— le llegan los tres avisos del
+    /// original en su orden: el tag (RefreshCharStatus), la apariencia (ChangeUserCharTodo) y un
+    /// <c>SetInvisible(false)</c> para que nadie lo dibuje latiendo. Sin ningún texto: acá le contestaba "Ahora eres
+    /// invisible.", y a los demás les mandaba un SetInvisible(true), que el cliente dibuja como una silueta que late.
+    /// </summary>
     private void GmInvisible(ClientSession session)
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
-        p!.Invisible = !p.Invisible;
-        p.InvisibleUntilTick = 0;   // /INVISIBLE es permanente: limpia cualquier timer de hechizo pendiente que destaparía al GM
-        // `DoAdminInvisible` (Trabajo.bas:1208/1217) también mueve el showName: al ocultarse lo baja y al
-        // mostrarse lo sube. Sin esto el GM invisible seguía mandando su nick en el UpdateTagAndStatus y en el
-        // CharacterCreate de quien entrara a su área, o sea que se delataba solo.
-        p.ShowName = !p.Invisible;
-        session.Send(ServerMessages.ConsoleMsg(p.Invisible ? "Ahora eres invisible." : "Ya no eres invisible.", FuenteInfo));
-        // Observers toggle the GM's visibility (SetInvisible keeps the char so other GMs still see it).
-        _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, p.Invisible), p.CharIndex);
+        p!.AdminInvisible = !p.AdminInvisible;
+        p.Invisible = p.AdminInvisible;
+        p.InvisibleUntilTick = 0;
+        p.ShowName = !p.AdminInvisible;
+        if (!p.AdminInvisible) { p.Oculto = false; p.OcultoUntilTick = 0; }   // `.flags.Oculto = 0: .Counters.TiempoOculto = 0`
+        _world.BroadcastToObservers(p.Pos, ServerMessages.UpdateTagAndStatus(p));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChange(p));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, false));
     }
 
     // --- Guilds (modGuilds slice: create, chat, leave, online) ---
@@ -6528,7 +6573,8 @@ public sealed partial class PacketDispatcher
             // Si pasa, DoOcultarse tira la suerte.
             if (skill == GameLimits.SkillOcultar)
             {
-                if (p.Oculto) return;
+                // El GM con /INVISIBLE cuenta como oculto: DoAdminInvisible le pone `Oculto = 1` (Trabajo.bas:1200).
+                if (p.Oculto || p.AdminInvisible) return;
                 if (p.Navigating) { session.Send(ServerMessages.LocaleMsg(56)); return; }
                 if (p.Mounted) { session.Send(ServerMessages.LocaleMsg(67)); return; }
                 if (_data.MapNoInvi(p.Pos.Map)) { session.Send(ServerMessages.LocaleMsg(447)); return; }
@@ -6802,13 +6848,16 @@ public sealed partial class PacketDispatcher
         }
     }
 
-    /// <summary>Como <see cref="RevealHidden"/> pero además rompe la invisibilidad POR HECHIZO (no la permanente
-    /// de GM, InvisibleUntilTick==0): atacar a una criatura revela AMBOS estados (VB6 UsuarioAtacaNpc,
-    /// SistemaCombate.bas:898-904). Se usa en los golpes a NPC (melee y arco).</summary>
+    /// <summary>Como <see cref="RevealHidden"/> pero además rompe la invisibilidad: atacar a una criatura revela
+    /// AMBOS estados (VB6 UsuarioAtacaNpc, SistemaCombate.bas:898-904). Se usa en los golpes a NPC (melee y arco).
+    ///
+    /// <para>Al GM con /INVISIBLE también: el original no mira <c>AdminInvisible</c> acá, así que le baja el
+    /// <c>Invisible</c> y le avisa el 307. Pero <see cref="Player.AdminInvisible"/> sigue puesto y su apariencia en 0,
+    /// así que nadie lo ve igual.</para></summary>
     private void RevealOnAttack(Player p)
     {
         RevealHidden(p);
-        if (p.Invisible && p.InvisibleUntilTick != 0)   // invis por hechizo (la de GM es permanente, InvisibleUntilTick==0)
+        if (p.Invisible)
         {
             p.Invisible = false;
             p.InvisibleUntilTick = 0;
@@ -7487,7 +7536,13 @@ public sealed partial class PacketDispatcher
         // deja pasar al último gate, que es el que protege a los GMs fuera de la arena.
         bool yoEnArena = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y);
         bool elEnArena = _data.IsArena(victima.Pos.Map, victima.Pos.X, victima.Pos.Y);
-        if (yoEnArena || elEnArena) return yoEnArena == elEnArena;
+        // Al GM con /INVISIBLE no se lo ataca, y sin el aviso que lo delataría (:1645 y :1656).
+        if (yoEnArena || elEnArena) return yoEnArena == elEnArena && !victima.AdminInvisible;
+        // Fuera de la arena el original lo deja atacable, y es un error de traducción: en la base de la que viene
+        // (la de IAO-Clon-1.4.5, SistemaCombate.bas:1119) sólo el aviso "El ser es demasiado poderoso" depende de
+        // `AdminInvisible = 0`, y el `PuedeAtacar = False: Exit Function` corre siempre; al pasar el aviso al
+        // LocaleMsg 101 el corte quedó adentro del If. Se porta la intención, que en la arena sigue intacta.
+        if (victima.AdminInvisible) return false;
         if (victima.IsGm) { session.Send(ServerMessages.LocaleMsg(101)); return false; }
         return true;
     }
@@ -8488,9 +8543,8 @@ public sealed partial class PacketDispatcher
                 // el bit User=1) la segunda mitad ya es verdadera y el gate SIEMPRE pasa: al GM escondido lo
                 // "targetea" cualquier jugador común, y sólo otro GM se queda sin poder seleccionarlo.
                 // Y ojo AdminInvisible, que es un flag DISTINTO de Invisible (modHechizos.bas:456 los compara
-                // por separado): la invisibilidad de GM acá es la permanente, InvisibleUntilTick == 0.
-                bool adminInvisible = user.Invisible && user.IsGm && user.InvisibleUntilTick == 0;
-                if (!adminInvisible || (p.Privileges & PrivUser) != 0)
+                // por separado): acá cuenta sólo el /INVISIBLE, no el hechizo.
+                if (!user.AdminInvisible || (p.Privileges & PrivUser) != 0)
                 {
                     foundSomething = true;
                     p.TargetUser = user.CharIndex; p.TargetNpc = 0; p.TargetNpcTipo = 0;
@@ -10262,12 +10316,22 @@ public sealed partial class PacketDispatcher
             bool was = World.InView(from, other.Pos), now = World.InView(to, other.Pos);
             if (now && !was)
             {
-                p.Connection?.Send(ServerMessages.CharacterCreate(other));      // p now sees other
-                // El CharacterCreate dibuja al char visible; si está oculto/invisible hay que re-aplicar el
-                // SetInvisible o el observador que recién lo entra en vista lo vería (VB6 MakeUserChar + flag).
-                if (other.Invisible || other.Oculto) p.Connection?.Send(ServerMessages.SetInvisible(other.CharIndex, true));
-                other.Connection?.Send(ServerMessages.CharacterCreate(p));      // other now sees p
-                if (p.Invisible || p.Oculto) other.Connection?.Send(ServerMessages.SetInvisible(p.CharIndex, true));
+                // Al GM con /INVISIBLE no se lo crea en quien lo empieza a ver ("Solo avisa al otro cliente si no es
+                // un admin invisible", ModAreas.bas:226 y :241): para ese cliente no existe. Que se lo borre al salir
+                // de la vista sí queda, abajo: el que lo tenía de antes del /INVISIBLE se queda sin un personaje
+                // vacío ocupándole la baldosa.
+                if (!other.AdminInvisible)
+                {
+                    p.Connection?.Send(ServerMessages.CharacterCreate(other));      // p now sees other
+                    // El CharacterCreate dibuja al char visible; si está oculto/invisible hay que re-aplicar el
+                    // SetInvisible o el observador que recién lo entra en vista lo vería (VB6 MakeUserChar + flag).
+                    if (other.Invisible || other.Oculto) p.Connection?.Send(ServerMessages.SetInvisible(other.CharIndex, true));
+                }
+                if (!p.AdminInvisible)
+                {
+                    other.Connection?.Send(ServerMessages.CharacterCreate(p));      // other now sees p
+                    if (p.Invisible || p.Oculto) other.Connection?.Send(ServerMessages.SetInvisible(p.CharIndex, true));
+                }
             }
             else if (was && !now)
             {
@@ -11338,6 +11402,13 @@ public sealed partial class PacketDispatcher
             // con el 238. El gate va antes de todo, incluso de romper el ocultamiento.
             if (chat.Length >= 80) { session.Send(ServerMessages.LocaleMsg(238)); return; }
             Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name}: {ParaElLog(chat)}");
+            // EL GM CON /INVISIBLE NO HABLA EN VOZ ALTA (Protocol.bas:1384 y :1417-1421): nada sobre su cabeza ni
+            // revelarse; lo que dice lo leen sólo los GMs, por consola.
+            if (p.AdminInvisible)
+            {
+                if (chat.Length > 0) BroadcastToAdmins(ServerMessages.ConsoleMsg($"Game Master> [{p.Name}] {chat}", 14));
+                return;
+            }
             // HABLAR ROMPE EL OCULTAMIENTO (VB6 HandleTalk, Protocol.bas:1385-1391: `If .flags.Oculto > 0 Then
             // .flags.Oculto = 0 … SetInvisible(False) + WriteLocaleMsg(307)`). Éste es EL call site que la cita
             // del `RevealHidden` de HandleWalk señalaba — y estaba en el handler equivocado: el port revelaba
@@ -11868,7 +11939,7 @@ public sealed partial class PacketDispatcher
                 // (InvUsuario.bas:1709). La COMIDA no lleva ese gate (:1444-1449) y suena al área igual estando
                 // invisible: la asimetría es de la fuente y se porta tal cual. Y es la invisibilidad del GM
                 // (`AdminInvisible`): al invisible por hechizo que toma agua lo escucha el área.
-                if (!(obj.IsDrink && p.InvisibleDeAdmin))
+                if (!(obj.IsDrink && p.AdminInvisible))
                     _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(snd, (byte)p.Pos.X, (byte)p.Pos.Y), p.CharIndex);
                 session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, inv.Amount));
                 return;
@@ -11881,7 +11952,7 @@ public sealed partial class PacketDispatcher
                 if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }   // VB6 DeadCheck
                 var wave = ServerMessages.PlayWave((short)obj.Snd1, p.Pos.X, p.Pos.Y);
                 session.Send(wave);
-                if (!p.InvisibleDeAdmin) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
+                if (!p.AdminInvisible) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
                 return;
             }
             // LAS BOTELLAS (VB6 InvUsuario.bas:1770-1817). La VACÍA se llena en el agua de la última baldosa clickeada
@@ -11926,7 +11997,7 @@ public sealed partial class PacketDispatcher
                 if (llena)
                 {
                     var trago = ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y);
-                    if (p.InvisibleDeAdmin) session.Send(trago);
+                    if (p.AdminInvisible) session.Send(trago);
                     else _world.BroadcastToObservers(p.Pos, trago);
                 }
                 return;
@@ -12068,7 +12139,7 @@ public sealed partial class PacketDispatcher
                     p.Head = p.OrigHead = CabezaAlAzar(p.Race, p.Gender);
                     // El VB6 manda el GRANULAR (slot 2 = cabeza), no el CharacterChange entero: el que mira sólo
                     // cambia la cabeza del muñeco y le quedan el cuerpo y el arma que ya tenía dibujados.
-                    _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChangeSlot(p.CharIndex, p.Head, 2));
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChangeSlot(p, p.Head, 2));
                     _world.BroadcastToObservers(p.Pos, ServerMessages.CreateFX(p.CharIndex, 30, 0));
                     effect = $"cabeza {p.Head}";
                     break;
@@ -12120,7 +12191,7 @@ public sealed partial class PacketDispatcher
             if (obj.SubType is >= 1 and <= 4)
             {
                 var trago = ServerMessages.PlayWave(SND_BEBER, p.Pos.X, p.Pos.Y);
-                if (p.InvisibleDeAdmin) session.Send(trago);
+                if (p.AdminInvisible) session.Send(trago);
                 else _world.BroadcastToObservers(p.Pos, trago);
             }
             inv.Amount -= 1;
@@ -12824,7 +12895,7 @@ public sealed partial class PacketDispatcher
             }
             return;
         }
-        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChangeSlot(p.CharIndex, valor, slot));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharacterChangeSlot(p, valor, slot));
         // El aura se difunde sólo si hay algo que decir: el original lo gatea con `If Obj.Aura <> 0` al
         // equipar y con `If .Char.X_Aura <> 0` al desequipar (no manda un 0 sobre algo que ya era 0).
         byte previa = tipoAura switch { 1 => p.WeaponAura, 2 => p.BodyAura, 3 => p.ShieldAura, _ => p.HelmetAura };

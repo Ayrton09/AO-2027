@@ -116,8 +116,7 @@ public class SaltoDeUnJugadorTests : IDisposable
         var (_, olga) = Jugador("Olga", Campo, 40, 40);
         var (gm, _) = Jugador("Gema", Campo, 42, 40);
         gm.Privileges = 3;
-        gm.Invisible = true;
-        gm.InvisibleUntilTick = 0;   // la de GM es la permanente
+        gm.Invisible = gm.AdminInvisible = true;   // la del /INVISIBLE
 
         _dispatcher.WarpUserChar(gm, new WorldPos(Campo, 44, 42), fx: true);
 
@@ -181,7 +180,9 @@ public class SaltoDeUnJugadorTests : IDisposable
     /// <summary>
     /// Y QUE NO VUELVA A HABER UNA CUARTA COPIA. Un salto que mueve la posición y refresca el área por su cuenta es
     /// exactamente como nacieron las tres de antes, y cada una se olvidó de algo distinto. El refresco de área
-    /// tiene dos usos legítimos: el paso (que sale además como CharacterMove) y el salto.
+    /// tiene tres usos legítimos: el paso (que sale además como CharacterMove), el del "casper" al que se corre de
+    /// su baldosa —que es un paso forzado, y el original también le actualiza el área (Modulo_UsUaRiOs.bas:765)— y
+    /// el salto.
     /// </summary>
     [Fact]
     public void Los_saltos_pasan_todos_por_el_mismo_lugar()
@@ -197,8 +198,8 @@ public class SaltoDeUnJugadorTests : IDisposable
             .SelectMany(f => File.ReadAllLines(f).Select((linea, i) => (archivo: Path.GetFileName(f), i, linea)))
             .Where(t => Regex.IsMatch(t.linea, @"\bRefreshAreaVisibility\(") && !t.linea.Contains("static void RefreshAreaVisibility"))
             .ToList();
-        Assert.True(usos.Count == 2,
-            "el refresco de área se llama desde " + usos.Count + " lugares (se esperaban el paso y WarpUserChar): "
-            + string.Join("; ", usos.Select(u => $"{u.archivo}:{u.i + 1}")));
+        Assert.True(usos.Count == 3,
+            "el refresco de área se llama desde " + usos.Count + " lugares (se esperaban el paso, el casper y "
+            + "WarpUserChar): " + string.Join("; ", usos.Select(u => $"{u.archivo}:{u.i + 1}")));
     }
 }

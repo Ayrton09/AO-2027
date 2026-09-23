@@ -216,8 +216,12 @@ public class InmovilizarUnaCriaturaTests : IDisposable
         var quieta = Bicho(world, 40, 30, hostil: false, movimiento: 3);
         quieta.InmovilizadaHastaTick = Siempre;
         var desde = (libre.Pos, quieta.Pos);
-        Correr(new NpcSystem(world, new GameData()));
-        Assert.NotEqual(desde.Item1, libre.Pos);                                  // el control
+        // EL CONTROL MIRA SI DIO ALGÚN PASO, no dónde terminó: deambulando al azar vuelve a su baldosa bastante
+        // seguido, y la posición final sola daba rojo una de cada seis corridas.
+        var sistema = new NpcSystem(world, new GameData());
+        bool seMovio = false;
+        for (int i = 1; i <= Vueltas; i++) { sistema.Update(i); seMovio |= libre.Pos != desde.Item1; }
+        Assert.True(seMovio, "el control: la libre no dio ni un paso");
         Assert.Equal(desde.Item2, quieta.Pos);
     }
 

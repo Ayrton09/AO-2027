@@ -195,7 +195,8 @@ public class LaPocionQueLanzaUnHechizoTests : IDisposable
         Assert.Contains(delOtro.Recibidos, EsTrago);
 
         while (delOtro.Recibidos.TryDequeue(out _)) { }
-        p.InvisibleUntilTick = 0;                                                 // la del /INVISIBLE, no
+        p.InvisibleUntilTick = 0;
+        p.AdminInvisible = true;                                                  // la del /INVISIBLE, no
         await Tomar(p, sesion, PocionRoja);
         Assert.DoesNotContain(delOtro.Recibidos, EsTrago);
     }

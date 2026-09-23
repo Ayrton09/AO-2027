@@ -442,10 +442,18 @@ public sealed class Player
     /// el golpe de la criatura si está en 0 (SistemaCombate.bas:719) y la suelta salir del mapa, morir o desconectarse
     /// (<see cref="Net.PacketDispatcher.LiberarAlQueLoPersigue"/>).</summary>
     public short AtacadoPorNpc { get; set; }
-    /// <summary>La invisibilidad del /INVISIBLE (VB6 <c>flags.AdminInvisible</c>), distinta de la del hechizo: es la
-    /// que no tiene reloj. El original la mira aparte en todo lo que hace ruido —tomar, tocar un instrumento—: al GM
-    /// invisible se escucha sólo él, y al invisible por hechizo lo escucha el área.</summary>
-    public bool InvisibleDeAdmin => Invisible && InvisibleUntilTick == 0;
+    /// <summary>
+    /// El /INVISIBLE de un GM (VB6 <c>flags.AdminInvisible</c>), que no es la invisibilidad del hechizo: el GM no se
+    /// dibuja latiendo, directamente no se dibuja. <c>DoAdminInvisible</c> (Trabajo.bas:1186) le pone el cuerpo, la
+    /// cabeza y el equipo en 0 y le apaga el nombre, así que el cliente no tiene nada que pintar —ni para los demás
+    /// ni para él—, y a quien entra después en su área ni siquiera se lo crea (ModAreas.bas:226).
+    ///
+    /// <para>Anda junto con <see cref="Invisible"/> en true, que es lo que miran las criaturas para no ir por él. Lo
+    /// demás lo mira a él: se lo puede pisar y se lo corre (el "casper"), no se lo puede atacar, su golpe errado y lo
+    /// que toma se escuchan sólo en su cliente, y lo que dice lo leen sólo los GMs. No se guarda: cada ingreso
+    /// arranca visible, como el original (TCP.bas:1457).</para>
+    /// </summary>
+    public bool AdminInvisible { get; set; }
     // Ocultarse (VB6 flags.Oculto + Counters.TiempoOculto, Trabajo.bas): estado SEPARADO de Invisible. El VB6
     // los mantiene distintos porque Ocultar se ROMPE al actuar (caminar/atacar/castear) y se revela con
     // LocaleMsg 307, mientras que la invisibilidad de hechizo/GM no. El aggro de NPCs filtra por ambos.

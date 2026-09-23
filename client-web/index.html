@@ -4050,7 +4050,15 @@
           // las piernas y deslizándose mientras se apagaba.
           if (c && f.faded) { podarLoViejo(); c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
           chars.delete(f.charIndex); break; }
-        case 'UpdateTagAndStatus': { const c = chars.get(f.charIndex); if (c) c.status = f.status; break; }
+        // EL TAG, EL COLOR Y EL DONADOR (VB6 HandleUpdateTagAndStatus + UpdateTagAndNameChar, TileEngine.bas:990).
+        // Acá se aplicaba sólo el color, así que el nombre de un personaje no cambiaba nunca después de crearlo: el
+        // /SHOWNAME y el /INVISIBLE de un GM, que lo mandan VACÍO, le dejaban el nombre flotando sobre la baldosa, y
+        // un cambio de clan no se veía hasta volver a entrar. A las criaturas el server no les manda este paquete.
+        case 'UpdateTagAndStatus': {
+          const c = chars.get(f.charIndex);
+          if (c) { c.status = f.status; if (!c.esNpc) { c.name = f.tag; c.donador = f.donador; } }
+          break;
+        }
         case 'CorreoList': cartas = f.cartas; renderCartas(); break;   // la bandeja del buzon
         case 'UpdateUserStats': myStats = f; break;   // HP/mana/level for the HUD
         case 'FamiliarInfo': miFamiliar = f.tipo ? f : null; break;

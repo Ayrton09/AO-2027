@@ -214,7 +214,7 @@ public sealed class NpcSystem
     /// <c>NpcAtacaUser</c>: por eso las aplica siempre, la llame quien la llame.</para>
     /// </summary>
     private bool PuedeSerAtacado(Player p) =>
-        p.IsAlive && !p.Invisible && !p.Oculto && Perseguible(p);
+        !p.AdminInvisible && p.IsAlive && !p.Invisible && !p.Oculto && Perseguible(p);   // la primera guarda: :700
 
     /// <summary>El sonido propio de una criatura, al área donde está (VB6 <c>SendTarget.ToNPCArea</c>).
     ///
@@ -408,16 +408,17 @@ public sealed class NpcSystem
 
     /// <summary>Mueve al NPC un tile si el destino es legal (VB6 <c>MoveNPCChar</c> + <c>LegalPosNPC</c>).
     /// Devuelve si se movió. Un tile con un jugador VIVO o con otro NPC no es legal — pero uno con un jugador
-    /// MUERTO sí: el NPC no lo atraviesa, lo <b>intercambia de lugar</b> (GameLogic.bas:642 `.UserIndex = 0 Or
-    /// IsDeadChar`; el swap en MODULO_NPCs.bas:707). Al cadáver lo empuja al tile del que venía el NPC con un
-    /// <c>ForceCharMove</c> de heading invertido, y avisa al área con un CharacterMove.</summary>
+    /// MUERTO sí, y uno con un GM con /INVISIBLE también: el NPC no lo atraviesa, lo <b>intercambia de lugar</b>
+    /// (GameLogic.bas:642 `.UserIndex = 0 Or IsDeadChar Or IsAdminInvisible`; el swap en MODULO_NPCs.bas:707). Al
+    /// que estaba lo empuja al tile del que venía el NPC con un <c>ForceCharMove</c> de heading invertido, y avisa al
+    /// área con un CharacterMove.</summary>
     private bool MoveNpc(Npc npc, int x, int y, byte heading)
     {
         if (!NpcTileWalkable(npc, x, y)) return false;                            // pared/.csm + límites 1..100
         var dest = new WorldPos(npc.Pos.Map, (byte)x, (byte)y);
         if (_world.NpcAt(dest) is not null) return false;
         var enElDestino = _world.PlayerAt(dest);
-        if (enElDestino is not null && enElDestino.IsAlive) return false;         // a un vivo no lo mueve nadie
+        if (enElDestino is not null && enElDestino.IsAlive && !enElDestino.AdminInvisible) return false;   // a un vivo no lo mueve nadie
         var from = npc.Pos;
         if (enElDestino is not null)
         {
@@ -479,7 +480,7 @@ public sealed class NpcSystem
     }
 
     /// <summary>VB6 <c>InvertHeading</c>: N↔S, E↔O.</summary>
-    private static byte InvertirHeading(byte h) => h switch
+    internal static byte InvertirHeading(byte h) => h switch
         { HNorte => HSur, HSur => HNorte, HEste => HOeste, _ => HEste };
 
     /// <summary>VB6 <c>PuedeNpc</c> (GameLogic.bas:1136): el tile está libre para un NPC — sin NPC, sin bloqueo y
