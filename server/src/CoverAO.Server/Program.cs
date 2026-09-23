@@ -455,8 +455,6 @@ loop.OnTickHandler = tick =>
             }
         }
     }
-    if (admin.Paused) return;   // pausa de mantenimiento: congela el mundo (NPC AI, regen, clima, día/noche)
-
     var period = DayNight.PeriodAt(tick);
     if (period != lastPeriod)
     {
@@ -473,7 +471,9 @@ loop.OnTickHandler = tick =>
         world.Broadcast(ServerMessages.RainToggle(Weather.Clima(weather)));           // client shows/hides rain
         world.Broadcast(ServerMessages.ConsoleMsg(Weather.Announce(weather), 0));
     }
-    npcSystem.Update(tick);
+    // LA PAUSA DEL SERVIDOR (VB6 EnPausa) frena sólo el TIMER_AI (mMainLoop.bas:77): la IA de las criaturas. El resto
+    // del mundo —la vida, el hambre, el veneno, la cuenta de salida, el clima— es de otros timers y sigue corriendo.
+    npcSystem.Update(tick, pausado: admin.Paused);
     // Cuenta regresiva de SALIDA (VB6 General.bas:1341, el mismo timer de 1 s): a cada jugador que pidió
     // /SALIR —o al que se le cortó la conexión en un mapa inseguro— se le baja el contador avisándole con
     // LocaleMsg(491), y al llegar a 0 se le manda el Disconnect y se le cierra la conexión, que es el cierre

@@ -933,6 +933,7 @@ public sealed partial class PacketDispatcher
             // Cuentas.bas:378 → mensaje 3). Sirve para congelar el ingreso sin bajar el server.
             if (!_ini.PuedeCrearPersonajes)
             { Reject(session, "La creacion de personajes esta deshabilitada en este servidor."); return; }
+            if (EnPausaNoSeEntra(session)) return;
             if (!Naming.IsValidName(account)) { Reject(session, "Nombre de cuenta invalido."); return; }
             if (!Naming.IsValidCharName(charName)) { Reject(session, "Nombre de personaje invalido (solo letras y espacios)."); return; }
             // VB6 TCP.bas:383-453: valida los rangos de raza/sexo/clase/tierra al crear (rechaza 0 y fuera de tabla).
@@ -972,9 +973,33 @@ public sealed partial class PacketDispatcher
         session.Close(reason);
     }
 
+    /// <summary>El aviso con que el original rechaza el login mientras el servidor está en pausa (locale_error_es.ind,
+    /// mensaje 2).</summary>
+    private const string MensajeDeMantenimiento = "El servidor se encuentra restringido por mantenimiento. Por favor intente más tarde.";
+
+    /// <summary>¿Se rechaza el login porque el servidor está en pausa? (VB6 ChequeosServerIni, Cuentas.bas:393, en los
+    /// dos login.) Avisa con el cartel de mantenimiento y deja la conexión abierta (`CierraConexion = False`), para
+    /// reintentar cuando se reanude.</summary>
+    private bool EnPausaNoSeEntra(ClientSession session)
+    {
+        if (_admin?.Paused != true) return false;
+        session.Send(ServerMessages.ShowMessageBox(MensajeDeMantenimiento));
+        return true;
+    }
+
+    /// <summary>El aviso de la pausa del servidor (VB6 Command21_Click, frmServidor.frm:390): a TODOS el PauseToggle
+    /// —en el cliente, mientras dura, no se camina ni se usan objetos— y el LocaleMsg 3 ("realizando tareas de
+    /// mantenimiento") al pausar o el 436 al reanudar.</summary>
+    public static void AvisarPausa(World world, bool pausado)
+    {
+        world.Broadcast(ServerMessages.PauseToggle());
+        world.Broadcast(ServerMessages.LocaleMsg(pausado ? (short)3 : (short)436));
+    }
+
     private void EnterWorld(ClientSession session, string account, string password, string charName, string version)
     {
         if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
+        if (EnPausaNoSeEntra(session)) return;
         if (!Naming.IsValidName(account) || !Naming.IsValidName(charName)) { Reject(session, "Nombre invalido."); return; }   // valida antes de tocar el store (path traversal)
         VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
         {

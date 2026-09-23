@@ -249,12 +249,19 @@ public sealed class NpcSystem
     /// el arranque desde el Server.ini.</summary>
     public int IntervaloNpcApropiado { get; set; } = PertenenciaDeNpc.IntervaloPorDefectoMs;
 
-    public void Update(long tick)
+    /// <summary>La vuelta en que arrancó la pausa del servidor, o null. Mientras dura, el original no cuenta la
+    /// parálisis de las criaturas (EfectoParalisisNpc vive en el TIMER_AI, mMainLoop.bas:89); acá la quietud vence
+    /// por reloj, así que al reanudar se le corre el vencimiento lo que duró la pausa.</summary>
+    private long? _pausadaDesde;
+
+    /// <param name="pausado">La pausa del servidor (VB6 <c>EnPausa</c>): corta la IA de las criaturas.</param>
+    public void Update(long tick, bool pausado = false)
     {
         _tick = tick;
         // VENCIMIENTO DE LA PERTENENCIA (VB6 ValidarPermanenciaNpc, MODULO_NPCs.bas:1167, desde el loop
-        // principal): al que dejó de golpear su criatura por más del intervalo, se le suelta.
-        PacketDispatcher.VencerPertenencias(_world, Environment.TickCount64, IntervaloNpcApropiado);
+        // principal): al que dejó de golpear su criatura por más del intervalo, se le suelta. Vive adentro del
+        // TIMER_AI (mMainLoop.bas:86), así que en pausa no corre.
+        if (!pausado) PacketDispatcher.VencerPertenencias(_world, Environment.TickCount64, IntervaloNpcApropiado);
         // Revive en ARENA con delay (VB6 DoResucitar, mMainLoop.bas:235 + Modulo_UsUaRiOs.bas:33): un jugador que
         // murió en zona de pelea queda `Resucitando` (lo marca KillPlayer) y DarVida lo levanta recién a los ~2500ms.
         // Fuera de arena NO hay auto-revive: el muerto queda fantasma hasta que alguien arranque la espera.
@@ -296,6 +303,21 @@ public sealed class NpcSystem
             {
                 Reaparecer(s);
             }
+        }
+
+        // LA PAUSA DEL SERVIDOR (VB6 EnPausa, mMainLoop.bas:77) corta acá: la IA de las criaturas —la pelea, el
+        // movimiento y el contador de su parálisis— es el TIMER_AI, que en pausa no corre. Lo de arriba (el revive,
+        // las invocaciones que vencen, los respawns) es de otros timers y sigue.
+        if (pausado) { _pausadaDesde ??= tick; return; }
+        if (_pausadaDesde is { } desde)
+        {
+            long duro = tick - desde;
+            foreach (var npc in _world.Npcs)
+            {
+                if (npc.ParalyzedUntilTick > desde) npc.ParalyzedUntilTick += duro;
+                if (npc.InmovilizadaHastaTick > desde) npc.InmovilizadaHastaTick += duro;
+            }
+            _pausadaDesde = null;
         }
 
         // ORDEN: ataque y DESPUÉS movimiento, como el NPCAI del VB6 (AI_NPC.bas:701 pelea, :718 el

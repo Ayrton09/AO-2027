@@ -433,10 +433,13 @@ public sealed class AdminServer
                 _admin.LastAutosaveTick = _loop.Tick;   // reinicia el countdown
                 return Ok(_admin.AutosaveMinutes > 0 ? $"autosave cada {_admin.AutosaveMinutes} min" : "autosave desactivado");
             case "togglePause":
-                _admin.Paused = !_admin.Paused;
-                _loop.Enqueue(() => _world.Broadcast(ServerMessages.ConsoleMsg(_admin.Paused ? "El servidor fue pausado por un administrador." : "El servidor se reanudó.", 0)));
-                Console.WriteLine($"[admin] servidor {(_admin.Paused ? "PAUSADO" : "reanudado")}");
-                return Ok(_admin.Paused ? "servidor pausado" : "servidor reanudado");
+            {
+                // El botón "Pausar el servidor" del original (frmServidor.frm:390, Command21_Click).
+                bool pausado = _admin.Paused = !_admin.Paused;
+                _loop.Enqueue(() => PacketDispatcher.AvisarPausa(_world, pausado));
+                Console.WriteLine($"[admin] servidor {(pausado ? "PAUSADO" : "reanudado")}");
+                return Ok(pausado ? "servidor pausado" : "servidor reanudado");
+            }
             case "toggleOnlyGms":
                 _admin.OnlyGms = !_admin.OnlyGms;
                 Console.WriteLine($"[admin] modo solo-GMs: {(_admin.OnlyGms ? "ON" : "OFF")}");

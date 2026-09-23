@@ -91,8 +91,12 @@ public class LaInvisibilidadComoElOriginalTests : IDisposable
         Assert.Equal(new[] { true }, SetInvisibleDe(delOtro, mago));
     }
 
+    /// <summary>Lo que se manda pasa por la cola de salida de cada sesión, que la baja en su propio hilo: los
+    /// paquetes se miran después de darle tiempo.</summary>
+    private static Task Entregar() => Task.Delay(300);
+
     [Fact]
-    public void Al_vencer_avisa_con_el_307_y_despues_lo_ven_todos_incluido_el_propio()
+    public async Task Al_vencer_avisa_con_el_307_y_despues_lo_ven_todos_incluido_el_propio()
     {
         var (jugador, _, suyo) = Conectado("Aldo", 50);
         var (_, _, delOtro) = Conectado("Bruno", 52);
@@ -102,6 +106,7 @@ public class LaInvisibilidadComoElOriginalTests : IDisposable
         Assert.True(jugador.Invisible, "premisa: todavía no venció");
 
         _dispatcher.VencerInvisibilidad(jugador, 1000);
+        await Entregar();
         Assert.False(jugador.Invisible);
         Assert.Equal(new[] { false }, SetInvisibleDe(suyo, jugador));
         Assert.Equal(new[] { false }, SetInvisibleDe(delOtro, jugador));
@@ -112,7 +117,7 @@ public class LaInvisibilidadComoElOriginalTests : IDisposable
     }
 
     [Fact]
-    public void Al_vencer_el_que_sigue_oculto_no_se_destapa()
+    public async Task Al_vencer_el_que_sigue_oculto_no_se_destapa()
     {
         var (jugador, _, suyo) = Conectado("Aldo", 50);
         var (_, _, delOtro) = Conectado("Bruno", 52);
@@ -121,6 +126,7 @@ public class LaInvisibilidadComoElOriginalTests : IDisposable
         jugador.Oculto = true;
         jugador.OcultoUntilTick = long.MaxValue;
         _dispatcher.VencerInvisibilidad(jugador, 1000);
+        await Entregar();
         Assert.False(jugador.Invisible);
         Assert.Empty(SetInvisibleDe(suyo, jugador));
         Assert.Empty(SetInvisibleDe(delOtro, jugador));
@@ -128,12 +134,13 @@ public class LaInvisibilidadComoElOriginalTests : IDisposable
     }
 
     [Fact]
-    public void La_invisibilidad_del_GM_no_vence()
+    public async Task La_invisibilidad_del_GM_no_vence()
     {
         var (gm, _, suyo) = Conectado("Aldo", 50);
         gm.Invisible = true;
         gm.InvisibleUntilTick = 0;                                                // el /INVISIBLE no tiene reloj
         _dispatcher.VencerInvisibilidad(gm, long.MaxValue);
+        await Entregar();
         Assert.True(gm.Invisible);
         Assert.Empty(suyo.Recibidos);
     }

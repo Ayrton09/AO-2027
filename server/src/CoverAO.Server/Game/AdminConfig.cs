@@ -11,7 +11,7 @@ namespace CoverAO.Server.Game;
 /// </summary>
 public sealed class AdminConfig
 {
-    public volatile bool Paused;      // congela el tick del mundo (NPCs/regen/clima/día-noche)
+    public volatile bool Paused;      // la pausa del original (VB6 EnPausa): frena la IA de las criaturas y los logins
     public volatile bool OnlyGms;     // rechaza el login de no-GMs (mantenimiento)
 
     private int _exp = 1, _gold = 1, _drop = 1, _autosaveMin;

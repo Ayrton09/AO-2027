@@ -1116,6 +1116,10 @@
     let paralizado = false;        // ParalizeOK 77 — paralizado por un hechizo
     let montando = false;          // MontateToggle 5 — montura equipada
     let navegando = false;         // NavigateToggle 4 — arriba de una barca
+    // LA PAUSA DEL SERVIDOR (PauseToggle, el `pausa` del cliente original): mientras dura no se camina (General.bas:619),
+    // no se usan objetos (Mod_AutoUsar.bas:66), no se piden las estadísticas (frmMain.frm:2032) ni sale el ping
+    // (modTimer.bas:258). El mundo se sigue DIBUJANDO: no es el `paused` de las capturas, que congela el canvas.
+    let pausaDelServer = false;
     // Tecla N: apagar los NOMBRES sobre los personajes (VB6 `mKeyToggleNames` -> `Nombres = Not Nombres`,
     // frmMain.frm). Es lo ultimo que faltaba del censo de teclas del original. El chat sobre la cabeza NO se
     // apaga con esto: son dos cosas distintas en el cliente clasico.
@@ -1291,6 +1295,7 @@
     const ARROJADIZAS = new Set([576, 671, 571, 656, 742, 720, 741, 980, 1594, 1241, 1595, 1596]);
     const TIPOS_QUE_SE_EQUIPAN = new Set([3, 16, 17, 21, 32, 44, 46]);
     function usarItemDelSlot(slot) {
+      if (pausaDelServer) return;                        // en pausa no se usan objetos (Mod_AutoUsar.bas:66)
       const it = inventory[slot]; if (!it || ws.readyState !== 1) return;
       if (ITEMS_MAPA.has(it.objIndex)) { abrirMapaDelMundo(); return; }   // se abre acá: no hay paquete que mandar
 
@@ -2831,6 +2836,7 @@
       ws.onclose = (ev) => {
         const wasLogged = loggedIn; loggedIn = false;      // reset por conexión: 'Logged' lo vuelve a poner true
         enCombate = false;                                 // el original también la apaga al caerse (frmMain.frm:2966)
+        pausaDelServer = false;                            // ídem (`pausa = False`, frmMain.frm:2970)
         chars.clear(); myCharIndex = null;                 // drop the stale world before reconnecting
         novedades = [];                                    // el server las remanda al entrar: sin esto se duplican
         pasosPredichos.length = 0;                         // la cola de predicción muere con la conexión
@@ -3779,7 +3785,7 @@
     // 10`), aunque alla esta gateado por FPSFLAG —o sea que solo mide latencia si tenes el contador a la
     // vista—; aca el cartel de perf esta siempre, asi que se mide siempre. El Pong devuelve el timestamp.
     setInterval(() => {
-      if (loggedIn && ws && ws.readyState === 1) send(W().writeByte(CLIENT.Ping).writeLong(Math.round(performance.now()) & 0x7FFFFFFF));
+      if (loggedIn && !pausaDelServer && ws && ws.readyState === 1) send(W().writeByte(CLIENT.Ping).writeLong(Math.round(performance.now()) & 0x7FFFFFFF));
     }, 10000);
 
     const recentPackets = [];   // ultimos 60 nombres de paquete decodificados (debug: window.__pkts())
@@ -3976,7 +3982,7 @@
           if (f.blocked) bloqueados.add(claveTile(f.x, f.y)); else bloqueados.delete(claveTile(f.x, f.y));
           break;
         // El mundo se pausa mientras el server graba los personajes; el toggle vuelve al terminar.
-        case 'PauseToggle': paused = !paused; break;
+        case 'PauseToggle': pausaDelServer = !pausaDelServer; break;   // la pausa y el /GRABAR del server
         case 'Disconnect': break;   // el server avisa la salida limpia; el socket se cierra solo
         case 'CharacterChangeSlot': { const c = chars.get(f.charIndex); if (c) {
           if (f.slot === 1) c.body = f.value;
@@ -5667,6 +5673,7 @@
     /** ¿El personaje está en medio de un paso? Es el `UserMoving` del original. */
     function deslizando(c) { return c.moveT0 != null && performance.now() - c.moveT0 < pasoMs(c); }
     function mandarPaso() {
+      if (pausaDelServer) return;                        // en pausa no se camina ni se gira (General.bas:619)
       const tecla = dirsApretadas[dirsApretadas.length - 1];
       const h = HEADINGS[tecla];
       if (!h || ws.readyState !== 1) return;
@@ -6388,7 +6395,7 @@
       } else if (acc === 'hechizos' && ws.readyState === 1) {
         showSpells();                                  // hechizos: se mudó de S (mnemónico, y S es del original)
         ev.preventDefault();
-      } else if (acc === 'info' && ws.readyState === 1) {
+      } else if (acc === 'info' && ws.readyState === 1 && !pausaDelServer) {   // en pausa no (frmMain.frm:2032)
         ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestMiniStats).toBytes(), myKey)); // info: se mudó de E
         ev.preventDefault();
       } else if (acc === 'meditar' && ws.readyState === 1) {
