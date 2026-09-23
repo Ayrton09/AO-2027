@@ -538,12 +538,14 @@ public sealed class ServerIni
 
     /// <summary>
     /// REGLA DE LA CASA — <c>NavegacionParaCruzar</c> (default <b>80</b>, prendida; 0 = como el original). Los puntos
-    /// de Navegación que pide un pasaje que CRUZA EL MAR: los quince que el <c>obj.dat</c> marca con
-    /// <c>NecesitaNave=1</c>, que son los que van a Tiama y a Nueva Esperanza. Los que no cruzan no piden nada.
+    /// de Navegación que pide un pasaje que CRUZA EL AGUA a otra tierra (<see cref="GameData.MismaTierra"/>). Entre dos
+    /// puertos de la misma tierra no pide nada.
     ///
-    /// <para>El original no la pide: la clave está en la data y ningún código la lee. La reportó el tester, que
-    /// recordaba los 80 puntos, y el autor la dejó prendida (2026-09-23). Al que no llega le sale el aviso del
-    /// barco (LocaleMsg 477), y al staff no lo gatea, como al barco (<c>PuedeUsarSkill</c>).</para>
+    /// <para>El original no la pide: el <c>obj.dat</c> marca con <c>NecesitaNave=1</c> quince de los que cruzan y ningún
+    /// código lee la clave; la geografía los incluye a todos. La reportó el tester, que
+    /// recordaba los 80 puntos, y el autor la dejó prendida para todo pasaje que cruce el agua (2026-09-23). Al que
+    /// no llega le sale el aviso del barco (LocaleMsg 477), y al staff no lo gatea, como al barco
+    /// (<c>PuedeUsarSkill</c>).</para>
     /// </summary>
     public int NavegacionParaCruzar { get; private set; } = 80;
 

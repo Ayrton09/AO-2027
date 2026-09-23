@@ -8,9 +8,9 @@ using Xunit;
 namespace CoverAO.Protocol.Tests;
 
 /// <summary>
-/// REGLA DE LA CASA <c>NavegacionParaCruzar</c> (decisión del autor del 2026-09-23): los pasajes que CRUZAN EL MAR —los
-/// que el <c>obj.dat</c> marca con <c>NecesitaNave=1</c>, a Tiama y a Nueva Esperanza— piden Navegación, 80 por
-/// defecto. El original no la pide: la clave está en la data y ningún código la lee. La reportó el tester.
+/// REGLA DE LA CASA <c>NavegacionParaCruzar</c> (decisión del autor del 2026-09-23): los pasajes que CRUZAN EL AGUA a otra
+/// tierra piden Navegación, 80 por defecto; entre dos puertos de la misma tierra, nada. El original no la pide. La
+/// reportó el tester.
 /// </summary>
 public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
 {
@@ -23,8 +23,9 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     private readonly Task _corriendo;
     private PacketDispatcher? _dispatcher;
 
-    private const short OracATiama = 1010, OracARinkel = 34;    // los dos salen del puerto de Orac
-    private const short PuertoDeOrac = 181, Tiama = 217, Rinkel = 20;
+    private const short OracATiama = 1010, OracARinkel = 34;    // los dos salen del puerto de Orac, que es isla
+    private const short IlliandorASuramei = 1034;                // de un puerto a otro del mismo continente
+    private const short PuertoDeOrac = 181, Tiama = 217, Rinkel = 20, PuertoDeSuramei = 183;
     private const byte Slot = 1;
     private const int LocaleExhausto = 31;                       // "viajaste varios días": el viaje se hizo
 
@@ -64,7 +65,8 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
         var leveling = new Leveling(_datos.LevelExp);
         _dispatcher = new PacketDispatcher(_world, _loop, new Persistence(new FileStore(_root), leveling), _datos,
                                            leveling, serverIni: ini);
-        var aca = new WorldPos(PuertoDeOrac, 60, 20);
+        var puerto = (short)_datos.Obj(pasaje)!.PasajeDesdeMap;
+        var aca = new WorldPos(puerto, 60, 20);
         var p = new Player
         {
             CharIndex = _world.AllocateCharIndex(), Name = "Merlin", Account = "merlin", Pos = aca, Heading = 3,
@@ -74,7 +76,7 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
         p.Inventory[Slot] = new InventorySlot { ObjIndex = pasaje, Amount = 1 };
         var pirata = new Npc
         {
-            CharIndex = _world.AllocateCharIndex(), Hp = 1000, Pos = new WorldPos(PuertoDeOrac, 62, 20), IsTransportador = true,
+            CharIndex = _world.AllocateCharIndex(), Hp = 1000, Pos = new WorldPos(puerto, 62, 20), IsTransportador = true,
             Template = new NpcInfo(Index: 106, Name: "Pirata", Body: 1, Head: 1, Heading: 3, MaxHp: 1000, MinHit: 0,
                                    MaxHit: 0, Def: 0, GiveExp: 0, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 0),
         };
@@ -102,7 +104,7 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
 
     private static void NoViajo(Player p, Transporte t, int pide)
     {
-        Assert.Equal(PuertoDeOrac, p.Pos.Map);
+        Assert.Equal(PuertoDeOrac, p.Pos.Map);   // los que no viajan salen todos de Orac
         Assert.True(t.Recibio(ServerMessages.LocaleMsg(477, $"{pide}%*{GameLimits.SkillNavegacion}")),
                     $"no avisó que pide {pide} de Navegación");
         Assert.False(t.Recibio(ServerMessages.LocaleMsg(LocaleExhausto)));
@@ -111,19 +113,39 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
 
     // ── LA DATA ──────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>La marca llega del <c>obj.dat</c>: quince pasajes, y todos van a Tiama o a Nueva Esperanza.</summary>
     [Fact]
-    public void La_data_marca_los_quince_pasajes_que_cruzan()
+    public void Los_pasajes_de_los_casos_salen_de_donde_dice_el_test()
     {
-        var cruzan = _datos.Objects.Values.Where(o => o.NecesitaNave).ToList();
-
-        Assert.Equal(15, cruzan.Count);
-        Assert.All(cruzan, o => Assert.Equal(36, o.ObjType));
-        Assert.All(cruzan, o => Assert.Contains(_datos.MapName(o.PasajeHastaMap), new[] { "Costas de Tiama", "Puerto Nueva Esperanza" }));
-        Assert.True(_datos.Obj(OracATiama)!.NecesitaNave);
-        Assert.False(_datos.Obj(OracARinkel)!.NecesitaNave);
         Assert.Equal(PuertoDeOrac, _datos.Obj(OracATiama)!.PasajeDesdeMap);
         Assert.Equal(PuertoDeOrac, _datos.Obj(OracARinkel)!.PasajeDesdeMap);
+        Assert.Equal(PuertoDeSuramei, _datos.Obj(IlliandorASuramei)!.PasajeHastaMap);
+    }
+
+    /// <summary>Las tierras salen de la data: se llega caminando dentro de cada una y a las otras sólo por agua.</summary>
+    [Fact]
+    public void Las_tierras_del_mundo()
+    {
+        short Ullathorpe = 1, Nix = 34, Banderbill = 59, RinkelCiudad = 20, Arghal = 151;
+        short Illiandor = 194, Suramei = 184, TiamaCiudad = 218, Orac = 180, Lindos = 64, NuevaEsperanza = 112;
+        foreach (var m in new[] { Nix, Banderbill, RinkelCiudad, Arghal })
+            Assert.True(_datos.MismaTierra(Ullathorpe, m), $"el mapa {m} no quedó en el continente de Ullathorpe");
+        Assert.True(_datos.MismaTierra(Illiandor, Suramei));
+        foreach (var m in new[] { Illiandor, TiamaCiudad, Orac, Lindos, NuevaEsperanza })
+            Assert.False(_datos.MismaTierra(Ullathorpe, m), $"el mapa {m} quedó unido al continente de Ullathorpe");
+        Assert.False(_datos.MismaTierra(Illiandor, Lindos));
+    }
+
+    /// <summary>De los treinta y siete pasajes, no cruzan el agua los ocho que el tester describió: los de Nix, Banderbill,
+    /// Arghâl y Rinkel entre sí, y los dos entre Illiandor y Suramei.</summary>
+    [Fact]
+    public void Los_pasajes_que_no_cruzan_son_los_del_mismo_continente()
+    {
+        var pasajes = _datos.Objects.Values.Where(o => o.ObjType == 36).ToList();
+        var sinCruzar = pasajes.Where(o => _datos.MismaTierra(o.PasajeDesdeMap, o.PasajeHastaMap)).Select(o => o.Index).OrderBy(i => i);
+
+        Assert.Equal(37, pasajes.Count);
+        Assert.All(pasajes, o => Assert.True(o.PasajeDesdeMap > 0, $"'{o.Name}' no trae su puerto de salida"));
+        Assert.Equal(new short[] { 597, 598, 722, 723, 730, 1009, 1034, 1051 }, sinCruzar);
     }
 
     // ── EL PASAJE ────────────────────────────────────────────────────────────────────────────────────────
@@ -151,11 +173,25 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     [Fact]
     public async Task El_pasaje_que_no_cruza_no_pide_nada()
     {
-        var (p, sesion, t) = EnElPuerto(new ServerIni(), OracARinkel, navegacion: 0);
+        var (p, sesion, t) = EnElPuerto(new ServerIni(), IlliandorASuramei, navegacion: 0);
 
         await Usar(sesion);
 
-        Viajo(p, t, Rinkel);
+        Viajo(p, t, PuertoDeSuramei);
+    }
+
+    /// <summary>Orac es isla: su pasaje a Rinkel cruza el agua aunque la data no lo marque.</summary>
+    [Theory]
+    [InlineData(79, false)]
+    [InlineData(80, true)]
+    public async Task El_que_cruza_el_agua_pide_aunque_no_traiga_la_marca(int navegacion, bool cruza)
+    {
+        var (p, sesion, t) = EnElPuerto(new ServerIni(), OracARinkel, navegacion);
+
+        await Usar(sesion);
+
+        if (cruza) Viajo(p, t, Rinkel);
+        else NoViajo(p, t, pide: 80);
     }
 
     /// <summary>Al staff no lo gatea, como al barco: el original compara sólo con el bit de User prendido.</summary>

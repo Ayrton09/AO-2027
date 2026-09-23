@@ -11992,10 +11992,11 @@ public sealed partial class PacketDispatcher
                 if (DistanciaVB6(pirata.Pos, p.Pos) > 3) { session.Send(ServerMessages.LocaleMsg(8)); return; }
                 if (p.Pos.Map != obj.PasajeDesdeMap) { session.Send(ServerMessages.LocaleMsg(30)); return; }
                 if (!_data.MapExists(obj.PasajeHastaMap)) { session.Send(ServerMessages.LocaleMsg(30)); return; }
-                // REGLA DE LA CASA `NavegacionParaCruzar`: el pasaje que cruza el mar pide Navegación, con el aviso
-                // del barco. El original no la pide; 0 la apaga.
+                // REGLA DE LA CASA `NavegacionParaCruzar`: el pasaje que cruza el agua a otra tierra pide Navegación,
+                // con el aviso del barco. El original no la pide; 0 la apaga.
                 int navegacion = _ini.NavegacionParaCruzar;
-                if (obj.NecesitaNave && navegacion > 0 && !p.IsGm && p.Skills[GameLimits.SkillNavegacion] < navegacion)
+                bool cruza = !_data.MismaTierra(p.Pos.Map, obj.PasajeHastaMap);
+                if (cruza && navegacion > 0 && !p.IsGm && p.Skills[GameLimits.SkillNavegacion] < navegacion)
                 { session.Send(ServerMessages.LocaleMsg(477, $"{navegacion}%*{GameLimits.SkillNavegacion}")); return; }
 
                 WarpUserChar(p, new WorldPos((short)obj.PasajeHastaMap,

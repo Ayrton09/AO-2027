@@ -150,11 +150,7 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // el campo llegaba en el JSON del transcode y ObjInfo ni lo tenia, asi que pelear no cansaba y el combate
     // no tenia techo. El default de 10 es del cargador del original (FileIO.bas:999): al objeto que no trae la
     // clave le pone 10, no 0.
-    int StaRequerido = 10,
-    // `NecesitaNave` (obj.dat): el pasaje CRUZA EL MAR. Lo traen los quince que van a Tiama y a Nueva Esperanza, y
-    // el original no lo lee: ni el server ni el cliente VB6 nombran la clave, así que allá ningún pasaje pide
-    // Navegación. Lo usa la regla de la casa <see cref="ServerIni.NavegacionParaCruzar"/>.
-    bool NecesitaNave = false)
+    int StaRequerido = 10)
 {
     /// <summary>
     /// ÍTEM DE NOVATO. El original lo decide por la clave <c>Newbie</c> del <c>obj.dat</c> (FileIO.bas:819) y con
@@ -939,6 +935,53 @@ public sealed class GameData
 
     /// <summary>Borra la salida de un tile (VB6 <c>.TileExit.Map = 0</c> de /DT). Devuelve si había una.</summary>
     public bool RemoveMapExit(int map, int x, int y) => _mapExits.Remove((map, x, y));
+
+    /// <summary>
+    /// ¿Los dos mapas son de la misma TIERRA, o sea que se llega de uno al otro caminando? Dos mapas se unen si una
+    /// salida de BORDE los conecta con las dos puntas pisables —ni agua ni pared— y ninguno es océano abierto. Las
+    /// salidas del interior (escaleras, portales) no cuentan: por ellas se llega a todas partes. Con la data del install
+    /// salen el continente de Ullathorpe, Nix, Banderbill, Arghâl y Rinkel; el de Illiandor y Suramei; el de las
+    /// Avanzadas y las Ruinas Caóticas; y las islas de Tiama, Orac, Lindos y Nueva Esperanza.
+    ///
+    /// <para>No es del original: lo usa la regla de la casa de los pasajes que cruzan el agua
+    /// (<see cref="ServerIni.NavegacionParaCruzar"/>).</para>
+    /// </summary>
+    public bool MismaTierra(int a, int b) => TierraDe(a) == TierraDe(b);
+
+    private Dictionary<int, int>? _tierras;
+
+    private int TierraDe(int mapa)
+    {
+        _tierras ??= CalcularTierras();
+        return _tierras.TryGetValue(mapa, out int tierra) ? tierra : mapa;
+    }
+
+    private Dictionary<int, int> CalcularTierras()
+    {
+        var padre = new Dictionary<int, int>();
+        int Raiz(int m)
+        {
+            padre.TryAdd(m, m);
+            while (padre[m] != m) { padre[m] = padre[padre[m]]; m = padre[m]; }
+            return m;
+        }
+        bool Pisable(int m, int x, int y) =>
+            _terrain.TryGetValue(m, out var t) && !Bit(t.Water, x, y) && !Bit(t.Blocked, x, y);
+        bool DeBorde(int x, int y) =>
+            x <= Game.GameLimits.MinXBorder || x >= Game.GameLimits.MaxXBorder
+            || y <= Game.GameLimits.MinYBorder || y >= Game.GameLimits.MaxYBorder;
+
+        foreach (var (origen, destino) in _mapExits)
+        {
+            if (EsOceanoAbierto(origen.Map) || EsOceanoAbierto(destino.DestMap) || !DeBorde(origen.X, origen.Y)) continue;
+            if (!Pisable(origen.Map, origen.X, origen.Y) || !Pisable(destino.DestMap, destino.DestX, destino.DestY)) continue;
+            int a = Raiz(origen.Map), b = Raiz(destino.DestMap);
+            if (a != b) padre[a] = b;
+        }
+        var tierras = new Dictionary<int, int>();
+        foreach (int m in padre.Keys.ToList()) tierras[m] = Raiz(m);
+        return tierras;
+    }
     /// <summary>Experience needed to advance FROM each level, loaded from Niveles.dat (levelELU).</summary>
     /// <summary>Kit inicial por clase (NACIMIENTO.dat): clase → ítems con los que nace el personaje.</summary>
     public IReadOnlyDictionary<int, IReadOnlyList<NewbieItem>> NewbieKits { get; private set; }
@@ -1209,8 +1252,7 @@ public sealed class GameData
                 // El pasaje: las claves del .dat son `Desde`/`Map`/`X`/`Y`, no los nombres del campo.
                 Int(el, "Desde", "desde"), Int(el, "Map", "map", "MAP"), Int(el, "X", "x"), Int(el, "Y", "y"),
                 Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
-                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")),
-                Int(el, "NecesitaNave", "NECESITANAVE", "necesitanave") == 1);   // el pasaje cruza el mar
+                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
         }
 
         return map;

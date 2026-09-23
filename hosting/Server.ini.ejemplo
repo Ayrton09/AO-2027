@@ -87,8 +87,9 @@ GolpeParalizanteDadoGladiadorBardo=300
 ; --- Mundo -------------------------------------------------------------------
 PasesDeRinkel=0
 HipocamposEnMarAbierto=1
-; Puntos de Navegacion que piden los pasajes que cruzan el mar (los que van a
-; Tiama y a Nueva Esperanza). En el original no piden nada: 0 = como el original.
+; Puntos de Navegacion que piden los pasajes que cruzan el agua a otra tierra
+; (entre puertos del mismo continente no piden nada). En el original no piden
+; nada: 0 = como el original.
 NavegacionParaCruzar=80
 ; 1 entre N criaturas deja el drop global. 0 = apagado.
 DropGlobal=10000
