@@ -1463,8 +1463,10 @@ public sealed class NpcSystem
 
         if (spell.IsParalyze || spell.IsImmobilize)
         {
-            if (_tick < victima.ParalyzedUntilTick) return false;   // no se encadena, como en el original
-            victima.ParalyzedUntilTick = _tick + ParalisisDeNpcEnCriaturaTicks;
+            if (victima.EstaQuieta(_tick)) return false;   // no se encadena, como en el original
+            // Cada hechizo prende SU marca, igual que el del jugador (CastStateOnNpc): Inmovilizar la deja sin caminar
+            // pero pegando, y Paralizar sin IA. Acá las dos paralizaban; decisión del autor (22/09): que inmovilice.
+            victima.Aquietar(_tick + ParalisisDeNpcEnCriaturaTicks, spell.IsParalyze, spell.IsImmobilize, _tick);
             _world.BroadcastToObservers(victima.Pos, ServerMessages.ChatOverHeadLocale(npc.CharIndex, spell.Index, 1));
             if (spell.Wav > 0)
                 _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)spell.Wav, victima.Pos.X, victima.Pos.Y));
