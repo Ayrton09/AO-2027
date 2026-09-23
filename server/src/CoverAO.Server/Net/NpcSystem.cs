@@ -372,6 +372,7 @@ public sealed class NpcSystem
                     if (FamiliarBuscaEnemigo && npc.TargetNpcCharIndex == 0 && FamiliarBuscaPresa(npc)) continue;
                     NpcTryFollowOwner(npc); continue;
                 }
+                if (EsGuardiaQuePelea(npc)) { GuardiaSeMueve(npc); continue; }
                 if (npc.SinIa) continue;   // NPCAI sale de una para GuardiasCity/facciones/Convertidores
                 switch (npc.Movement)
                 {
@@ -626,6 +627,129 @@ public sealed class NpcSystem
         }
         // "Si llega aca es que no habia ningun usuario cercano vivo. A bailar." (AI_NPC.bas:360-363)
         if (_rng.Next(0, 11) == 0) StepRandom(npc);
+    }
+
+    // ── LOS GUARDIAS QUE ATACAN ──────────────────────────────────────────────────────────────────────────
+    // Regla de la casa (ver ServerIni.GuardiasAtacan): en el original ningún guardia pelea ni se mueve.
+
+    /// <summary>¿Es un guardia de ciudad con bando y con qué pelear, y la regla está prendida? Sin config —el
+    /// fixture y los tests que arman el sistema suelto— siguen como el original. Los que no tienen golpe ni un
+    /// hechizo que lastime (los cuatro de Rinkel, los Cazadores y las Torres, cuyo único hechizo es un buff propio)
+    /// quedan quietos como allá.</summary>
+    private bool EsGuardiaQuePelea(Npc npc) =>
+        _ini is { GuardiasAtacan: true } && npc.Template.NpcType == 2 && npc.OwnerCharIndex == 0
+        && npc.FactionEnlist == 0 && npc.FactionConvert == 0
+        && npc.Template.Status is ServerIni.GuardiaImperial or ServerIni.GuardiaRepublicano or ServerIni.GuardiaDelCaos
+        && (npc.Template.MaxHit > 0 || HechizosQueLastiman(npc).Count > 0);
+
+    /// <summary>Los hechizos de la ficha que le hacen algo a un jugador: daño, parálisis o inmovilización.</summary>
+    private List<int> HechizosQueLastiman(Npc npc)
+    {
+        if (_hechizosQueLastiman.TryGetValue(npc.Template.Index, out var ya)) return ya;
+        var lista = (npc.Template.Spells ?? (IReadOnlyList<int>)Array.Empty<int>())
+            .Where(id => _data.Spell((short)id) is { } s && (s.SubeHp == 2 || s.IsParalyze || s.IsImmobilize)).ToList();
+        _hechizosQueLastiman[npc.Template.Index] = lista;
+        return lista;
+    }
+    private readonly Dictionary<int, List<int>> _hechizosQueLastiman = new();
+
+    /// <summary>¿El guardia va por este jugador? Las guardas de cualquier criatura (vivo, visible, no GM, fuera de
+    /// la gracia de entrada, sin una forma que la asuste) y las de la regla: su facción está entre las enemigas del
+    /// bando del guardia, y los newbies se respetan salvo que el ini diga lo contrario.</summary>
+    private bool EsEnemigoDelGuardia(Npc guardia, Player p) =>
+        _ini is { } ini
+        && PuedeSerAtacado(p) && !EnGraciaDeEntrada(p)
+        && !p.AsustaAUnaCriaturaDeNivel(guardia.Template.Nivel)
+        && (ini.GuardiasAtacanNewbies || p.Level > GameLimits.NewbieMaxLevel)
+        && ini.GuardiaAtacaA(guardia.Template.Status, p.FactionStatus);
+
+    private static bool LoVe(Npc npc, Player p) =>
+        p.Pos.Map == npc.Pos.Map
+        && Math.Abs(p.Pos.X - npc.Pos.X) <= RangoVisionX && Math.Abs(p.Pos.Y - npc.Pos.Y) <= RangoVisionY;
+
+    /// <summary>El primer enemigo en la caja de visión del guardia (la 8×6 de <see cref="NpcIrUsuarioCercano"/>, y
+    /// como allá el primero de la lista, no el más cercano), o null.</summary>
+    private Player? EnemigoALaVista(Npc guardia)
+    {
+        foreach (var p in _world.Players)
+            if (LoVe(guardia, p) && EsEnemigoDelGuardia(guardia, p)) return p;
+        return null;
+    }
+
+    /// <summary>Qué le puede tirar el guardia a este jugador, o null si no tiene nada que le haga algo (entonces
+    /// pega). Al que ya está paralizado no le gasta el turno en otra parálisis: la criatura común sí, y por eso el
+    /// Paladín que sólo sabe paralizar no te pega nunca mientras dure.</summary>
+    private List<int>? HechizosParaElGuardia(Npc guardia, Player p)
+    {
+        bool quieto = p.IsParalyzed(_tick);
+        var sirven = HechizosQueLastiman(guardia)
+            .Where(id => _data.Spell((short)id) is { } s && (s.SubeHp == 2 || !quieto)).ToList();
+        return sirven.Count > 0 ? sirven : null;
+    }
+
+    /// <summary>La fase de ataque del guardia: al enemigo que tenga pegado, de frente. Devuelve si enganchó a
+    /// alguien. Gira sólo cuando ataca de verdad: el contador de su golpe es de 3 s y la fase corre cada 400 ms.</summary>
+    private bool GuardiaGolpeaAdyacente(Npc npc)
+    {
+        if (!_tilesJuntoAJugador.Contains(npc.Pos)) return false;
+        foreach (var (dx, dy, heading) in Steps)
+        {
+            int x = npc.Pos.X + dx, y = npc.Pos.Y + dy;
+            if (x is < 0 or > 255 || y is < 0 or > 255) continue;
+            var player = _world.PlayerAt(new WorldPos(npc.Pos.Map, (byte)x, (byte)y));
+            if (player is null || !EsEnemigoDelGuardia(npc, player)) continue;
+            if (_tick < npc.NextAttackTick) return true;
+            GirarHacia(npc, heading);
+            if (HechizosParaElGuardia(npc, player) is { } hechizos) NpcLanzaUnHechizo(npc, player, hechizos);
+            else if (npc.Template.MaxHit > 0) NpcGolpeaA(npc, player);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// La fase de movimiento del guardia. Al primer enemigo que ve lo marca y, si persigue, no lo suelta mientras
+    /// siga en su ciudad —su mapa— y siga siendo su enemigo: puede irse lejos de la vista, que el guardia lo sigue
+    /// igual. Cuando lo pierde vuelve a su puesto. Al que tiene a la vista le tira sus hechizos mientras se acerca,
+    /// como <see cref="NpcIrUsuarioCercano"/>.
+    ///
+    /// <para>No caminan los que su ficha deja estáticos (<c>Movement=1</c>: la Torre y los cuatro de Rinkel) ni
+    /// ninguno con <c>GuardiasPersiguen=0</c>: ésos pegan al que pasa al lado y castean al que ven.</para>
+    /// </summary>
+    private void GuardiaSeMueve(Npc npc)
+    {
+        Player? blanco = npc.GuardiaPersigueA != 0 ? _world.PlayerByCharIndex(npc.GuardiaPersigueA) : null;
+        if (blanco is null || blanco.Pos.Map != npc.Pos.Map || !EsEnemigoDelGuardia(npc, blanco))
+        {
+            blanco = EnemigoALaVista(npc);
+            npc.GuardiaPersigueA = blanco?.CharIndex ?? 0;
+        }
+        if (blanco is not null && LoVe(npc, blanco) && HechizosParaElGuardia(npc, blanco) is { } hechizos)
+            NpcLanzaUnHechizo(npc, blanco, hechizos);
+        bool camina = _ini is { GuardiasPersiguen: true } && npc.Template.Movement != 1;
+        if (!camina || npc.EstaInmovilizada(_tick)) return;
+        if (blanco is not null) Acercarse(npc, blanco.Pos);
+        else if (npc.Pos != npc.StartPos && npc.StartPos.Map == npc.Pos.Map) VolverAlPuesto(npc);
+    }
+
+    /// <summary>Un paso hacia el blanco, con el <see cref="FindDirection"/> del original (que esquiva, y que no se
+    /// mueve si ya lo tiene pegado).</summary>
+    private void Acercarse(Npc npc, WorldPos destino)
+    {
+        byte h = FindDirection(npc, destino);
+        if (h == 0) return;
+        var (sx, sy) = h switch { HNorte => (0, -1), HEste => (1, 0), HSur => (0, 1), _ => (-1, 0) };
+        MoveNpc(npc, npc.Pos.X + sx, npc.Pos.Y + sy, h);
+    }
+
+    /// <summary>De vuelta al puesto. A una baldosa de distancia pisa el puesto directo: <see cref="FindDirection"/>
+    /// no se mueve con el destino pegado, porque está hecho para llegar al lado de alguien, no encima.</summary>
+    private void VolverAlPuesto(Npc npc)
+    {
+        int dx = npc.StartPos.X - npc.Pos.X, dy = npc.StartPos.Y - npc.Pos.Y;
+        if (Math.Abs(dx) + Math.Abs(dy) != 1) { Acercarse(npc, npc.StartPos); return; }
+        byte h = dx == 1 ? HEste : dx == -1 ? HOeste : dy == 1 ? HSur : HNorte;
+        MoveNpc(npc, npc.StartPos.X, npc.StartPos.Y, h);
     }
 
     /// <summary>VB6 <c>SeguirAgresor</c> (AI_NPC.bas:375), la fase de movimiento de un NPC en
@@ -1126,6 +1250,8 @@ public sealed class NpcSystem
 
     private void NpcTryAttack(Npc npc)
     {
+        // Salvo que la regla de la casa los haga pelear (ver GuardiaSeMueve).
+        if (EsGuardiaQuePelea(npc)) { GuardiaGolpeaAdyacente(npc); return; }
         // VB6 NPCAI (AI_NPC.bas:700) sale ANTES de pelear para GuardiasCity/facciones/Convertidores: no corren
         // IA, así que ni siquiera devuelven el golpe — ni se les restaura nada.
         if (npc.SinIa) return;
@@ -1227,7 +1353,9 @@ public sealed class NpcSystem
     /// Gates del original, en orden: no le tira a un invisible ni a un oculto, y no tira nada en un mapa con
     /// magia deshabilitada. Devuelve true si lanzó — el caller no pega ese tick.
     /// </summary>
-    private bool NpcLanzaUnHechizo(Npc npc, Player player)
+    /// <param name="entre">De qué hechizos elegir. Sin esto, los de su ficha; el guardia pasa sólo los que le
+    /// hacen algo al blanco (ver <see cref="HechizosParaElGuardia"/>).</param>
+    private bool NpcLanzaUnHechizo(Npc npc, Player player, IReadOnlyList<int>? entre = null)
     {
         if (player.Invisible || player.Oculto) return false;
         // EL MISMO CONTADOR QUE EL GOLPE (VB6 modHechizos.bas:100: `If Not IntervaloPermiteAtacarNpc(...)
@@ -1237,7 +1365,7 @@ public sealed class NpcSystem
         // EL MAPA SIN MAGIA VA DESPUÉS DEL CONTADOR (:106): el hechizo no sale pero el turno se gastó, así que la
         // criatura maga tampoco pega. Donde un GM apagó la magia, la que castea queda inofensiva.
         if (_data.MapNoMagic(player.Pos.Map)) return true;
-        var lista = npc.Template.Spells!;
+        var lista = entre ?? npc.Template.Spells!;
         var spell = _data.Spell((short)lista[_rng.Next(lista.Count)]);
         if (spell is null) return false;
 

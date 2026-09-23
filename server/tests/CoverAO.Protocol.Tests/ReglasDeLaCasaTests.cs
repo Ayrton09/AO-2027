@@ -77,6 +77,12 @@ public class ReglasDeLaCasaTests : IDisposable
         // se entera de por qué estaban así.
         Assert.Equal(10000, cfg.DropGlobal);          // uno cada diez mil criaturas
         Assert.Equal(-1, cfg.MetamorfosisDelDruida);  // permanente, como en el AO clásico
+
+        // Y LA CUARTA (2026-09-23): los guardias de ciudad ATACAN, a pedido del tester. En el original no corren
+        // IA (AI_NPC.bas:700). Persiguen y respetan a los newbies, también por decisión del autor.
+        Assert.True(cfg.GuardiasAtacan);
+        Assert.True(cfg.GuardiasPersiguen);
+        Assert.False(cfg.GuardiasAtacanNewbies);
     }
 
     [Fact]
@@ -94,6 +100,7 @@ public class ReglasDeLaCasaTests : IDisposable
         // apagadas justamente en todos los servidores de producción.
         Assert.Equal(10000, cfg.DropGlobal);
         Assert.Equal(-1, cfg.MetamorfosisDelDruida);
+        Assert.True(cfg.GuardiasAtacan);
     }
 
     [Fact]

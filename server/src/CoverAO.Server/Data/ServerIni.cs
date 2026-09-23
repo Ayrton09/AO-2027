@@ -140,6 +140,8 @@ public sealed class ServerIni
         "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
+        "GuardiasAtacan", "GuardiasAtacanNewbies", "GuardiasDelCaosAtacanA", "GuardiasImperialesAtacanA",
+        "GuardiasPersiguen", "GuardiasRepublicanosAtacanA",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
@@ -643,6 +645,99 @@ public sealed class ServerIni
     public bool MetamorfosisPermanente => MetamorfosisDelDruida < 0;
 
     /// <summary>
+    /// REGLA DE LA CASA — <c>GuardiasAtacan</c> (default <b>1</b>, o sea PRENDIDA). Los guardias de las ciudades
+    /// atacan a los de las facciones enemigas de su bando.
+    ///
+    /// <para><b>En el original no atacan.</b> Los 246 guardias del install (<c>NpcType=2</c>, GuardiasCity) no
+    /// corren IA: <c>NPCAI</c> sale en su primera línea para ellos (AI_NPC.bas:700) con el comentario <i>"Mermas
+    /// temporal para que los bichos nose muevan"</i>, y lo temporal quedó. Ni pelean ni se mueven. La rutina de
+    /// guardias existe (<c>GuardiasAI</c>, AI_NPC.bas:65) pero nadie la llama, y distingue sólo a los renegados
+    /// del resto. La data, en cambio, está hecha para pelear: los guardias por clase traen nivel 50, 40.000 de
+    /// vida, golpes de 250 a 280 y hechizos.</para>
+    ///
+    /// <para>El bando del guardia es el <c>Status</c> de su ficha: 1 imperial (122 guardias: Ullathorpe, Nix,
+    /// Banderbill, Arghûl…), 2 republicano (91: Lindos, Suramei, Illiandor…) y 4 del Caos (33: Orac, Ruinas
+    /// Caóticas, Kerthon…). A quién ataca cada bando lo eligen las tres listas de abajo.</para>
+    ///
+    /// <para><b>Sale PRENDIDA por decisión del autor</b> (2026-09-23), a pedido del tester. Con 0 los guardias
+    /// vuelven a ser los del original.</para>
+    /// </summary>
+    public bool GuardiasAtacan { get; private set; } = true;
+
+    /// <summary><c>GuardiasPersiguen</c> (default <b>1</b>): el guardia que ve a un enemigo sale de su puesto a
+    /// buscarlo y no lo suelta mientras siga en su ciudad; cuando se va (o muere, o se hace invisible) vuelve a su
+    /// puesto. Con 0 se quedan quietos: pegan al que pasa al lado y los que tienen hechizos le tiran al que ven.
+    /// Los que en su ficha son estáticos —la Torre Imperial, los dos "Guardia Imperial" y los dos "Guardia
+    /// Republicano"— no caminan nunca.</summary>
+    public bool GuardiasPersiguen { get; private set; } = true;
+
+    /// <summary><c>GuardiasAtacanNewbies</c> (default <b>0</b>): con 0 los guardias no le hacen nada a un newbie
+    /// (hasta nivel <see cref="GameLimits.NewbieMaxLevel"/>) aunque sea del bando enemigo. Todo personaje nace
+    /// Ciudadano (o Republicano si nace en Illiandor), así que sin esto el recién llegado que entra a la ciudad del
+    /// otro bando se come un golpe de 280 y muere.</summary>
+    public bool GuardiasAtacanNewbies { get; private set; }
+
+    /// <summary>A quién ataca cada bando de guardias: el <c>Faccion.Status</c> de los jugadores (1 Renegado,
+    /// 2 Ciudadano, 3 Republicano, 4 Caos, 5 Armada, 6 Milicia), por el <c>Status</c> del guardia (1, 2 o 4).
+    /// En el ini van por nombre: <c>GuardiasImperialesAtacanA</c>, <c>GuardiasRepublicanosAtacanA</c> y
+    /// <c>GuardiasDelCaosAtacanA</c>. Los defaults son los del tester: cada bando ataca a todos menos a los suyos.</summary>
+    public IReadOnlyDictionary<int, IReadOnlySet<byte>> EnemigosDeLosGuardias { get; private set; } = new Dictionary<int, IReadOnlySet<byte>>
+    {
+        [GuardiaImperial] = LeerEnemigos(ImperialesAtacanPorDefecto, null),
+        [GuardiaRepublicano] = LeerEnemigos(RepublicanosAtacanPorDefecto, null),
+        [GuardiaDelCaos] = LeerEnemigos(DelCaosAtacanPorDefecto, null),
+    };
+
+    // Los defaults van escritos como los escribiría el host: cada bando, a todos menos a los suyos.
+    private const string ImperialesAtacanPorDefecto = "Renegado, Republicano, Caos, Milicia";
+    private const string RepublicanosAtacanPorDefecto = "Renegado, Ciudadano, Caos, Armada";
+    private const string DelCaosAtacanPorDefecto = "Renegado, Ciudadano, Republicano, Armada, Milicia";
+
+    /// <summary>El <c>Status</c> del NPCs.dat que marca el bando de un guardia.</summary>
+    public const int GuardiaImperial = 1, GuardiaRepublicano = 2, GuardiaDelCaos = 4;
+
+    /// <summary>¿Este guardia ataca a alguien de esta facción?</summary>
+    public bool GuardiaAtacaA(int bandoDelGuardia, byte faccionDelJugador) =>
+        EnemigosDeLosGuardias.TryGetValue(bandoDelGuardia, out var enemigos) && enemigos.Contains(faccionDelJugador);
+
+    /// <summary>Los nombres que no se reconocieron en las tres listas de guardias. El arranque los avisa: un
+    /// "Renegao" mal escrito dejaría a los renegados a salvo sin que nadie se entere.</summary>
+    public IReadOnlyList<string> FaccionesDesconocidas { get; private set; } = Array.Empty<string>();
+
+    /// <summary>La facción por su nombre, sin mirar mayúsculas ni acentos y en singular o plural.</summary>
+    private static byte? FaccionPorNombre(string nombre)
+    {
+        string n = new string(nombre.Trim().ToLowerInvariant().Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
+        return n switch
+        {
+            "renegado" or "renegados" => 1,
+            "ciudadano" or "ciudadanos" => 2,
+            "republicano" or "republicanos" => 3,
+            "caos" => 4,
+            "armada" or "armadas" => 5,
+            "milicia" or "milicias" => 6,
+            _ => null,
+        };
+    }
+
+    /// <summary>Una lista de facciones separadas por coma. Escrita y vacía, ese bando no ataca a nadie. Un
+    /// comentario pegado al valor (<c>; …</c>) se corta, como en <c>[NIVELMINIMO]</c>.</summary>
+    private static IReadOnlySet<byte> LeerEnemigos(string lista, List<string>? desconocidas)
+    {
+        int corte = lista.IndexOfAny(new[] { ';', '\'', '#' });
+        if (corte >= 0) lista = lista[..corte];
+        var enemigos = new HashSet<byte>();
+        foreach (var nombre in lista.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (FaccionPorNombre(nombre) is { } faccion) enemigos.Add(faccion);
+            else desconocidas?.Add(nombre);
+        }
+        return enemigos;
+    }
+
+    /// <summary>
     /// CUÁNTOS BOTS puebla este servidor (default <b>0</b>, o sea ninguno).
     ///
     /// <para>Un bot es una cuenta y un personaje que juegan solos: entran, caminan, y vuelven a entrar si se
@@ -1011,6 +1106,17 @@ public sealed class ServerIni
         // -1 es permanente y 0 apaga; de ahí para arriba son segundos. Cualquier negativo cae en el -1: pedir
         // "menos que permanente" no significa nada, y el tope de una hora sigue siendo para el reloj.
         cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
+        cfg.GuardiasAtacan = ini.GetInt("INIT", "GuardiasAtacan", 1) != 0;
+        cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;
+        cfg.GuardiasAtacanNewbies = ini.GetInt("INIT", "GuardiasAtacanNewbies", 0) != 0;
+        var desconocidas = new List<string>();
+        cfg.EnemigosDeLosGuardias = new Dictionary<int, IReadOnlySet<byte>>
+        {
+            [GuardiaImperial] = LeerEnemigos(ini.GetString("INIT", "GuardiasImperialesAtacanA", ImperialesAtacanPorDefecto), desconocidas),
+            [GuardiaRepublicano] = LeerEnemigos(ini.GetString("INIT", "GuardiasRepublicanosAtacanA", RepublicanosAtacanPorDefecto), desconocidas),
+            [GuardiaDelCaos] = LeerEnemigos(ini.GetString("INIT", "GuardiasDelCaosAtacanA", DelCaosAtacanPorDefecto), desconocidas),
+        };
+        cfg.FaccionesDesconocidas = desconocidas;
         cfg.Bots = Math.Clamp(ini.GetInt("INIT", "Bots", 0), 0, MaxBots);
 
         foreach (var (contador, seccion, clave, priv) in Rangos)

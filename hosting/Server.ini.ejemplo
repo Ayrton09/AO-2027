@@ -92,6 +92,20 @@ DropGlobal=10000
 ; Metamorfosis del druida: -1 = permanente (como el AO clasico), 0 = apagada, o los segundos que dura.
 MetamorfosisDelDruida=-1
 
+; --- Guardias de las ciudades ------------------------------------------------
+; En el original NO atacan (su IA esta apagada): 0 = como el original.
+GuardiasAtacan=1
+; 1 = persiguen al que ven hasta que se va de la ciudad, y vuelven a su puesto.
+; 0 = quietos: pegan al que pasa al lado y los que saben magia tiran al que ven.
+GuardiasPersiguen=1
+; 0 = a los newbies (hasta nivel 15) no los tocan aunque sean del otro bando.
+GuardiasAtacanNewbies=0
+; A quien ataca cada bando. Facciones: Renegado, Ciudadano, Republicano, Caos,
+; Armada y Milicia. Vacio = ese bando no ataca a nadie.
+GuardiasImperialesAtacanA=Renegado, Republicano, Caos, Milicia
+GuardiasRepublicanosAtacanA=Renegado, Ciudadano, Caos, Armada
+GuardiasDelCaosAtacanA=Renegado, Ciudadano, Republicano, Armada, Milicia
+
 ; --- Bots --------------------------------------------------------------------
 ; Personajes que juegan solos, para que el mundo no se vea vacio. VIENEN
 ; APAGADOS: 0 = ninguno, y el maximo son 48 (los nombres que hay para repartir).

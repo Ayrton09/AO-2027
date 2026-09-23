@@ -201,8 +201,13 @@ public sealed class Npc
     public long ExpireAtTick { get; set; }
 
     /// <summary>El tile donde spawneó (VB6 <c>Npclist().StartPos</c>). Lo mira <c>LookatTile</c>: a una criatura
-    /// que se corrió de ahí, el click izquierdo le saca además su diálogo sobre la cabeza.</summary>
+    /// que se corrió de ahí, el click izquierdo le saca además su diálogo sobre la cabeza. Es también el PUESTO al
+    /// que vuelve un guardia cuando deja de perseguir.</summary>
     public WorldPos StartPos { get; set; }
+
+    /// <summary>El jugador que este GUARDIA está persiguiendo (su CharIndex; 0 = ninguno). Regla de la casa
+    /// <c>GuardiasPersiguen</c>: no lo suelta mientras siga en su ciudad y siga siendo su enemigo.</summary>
+    public short GuardiaPersigueA { get; set; }
 
     /// <summary>Tile anterior (VB6 <c>Npclist().oldPos</c>). Lo usa <c>FindDirection</c> en las diagonales para
     /// NO retroceder: si un eje lo devolvería al tile del que viene, prefiere el otro. Sin esto un NPC que

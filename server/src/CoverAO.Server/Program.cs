@@ -153,6 +153,11 @@ if (serverIni.ClavesAusentes.Count > 0)
                       "defecto. Copialas de Server.ini.ejemplo si querés cambiarlas:");
     Console.WriteLine("            " + string.Join(", ", serverIni.ClavesAusentes));
 }
+// Una facción mal escrita en las listas de los guardias deja a esa gente a salvo sin que nadie se entere.
+if (serverIni.FaccionesDesconocidas.Count > 0)
+    Console.WriteLine("            OJO: estas facciones de los guardias no existen y se ignoran: " +
+                      string.Join(", ", serverIni.FaccionesDesconocidas) +
+                      " (valen Renegado, Ciudadano, Republicano, Caos, Armada y Milicia).");
 Console.WriteLine(serverIni.CantidadStaff == 0
     ? "            STAFF: ninguno. Nadie va a poder usar los comandos GM — agregá un nombre a [Dioses]."
     : $"            STAFF ({serverIni.CantidadStaff}): " + string.Join(", ",
