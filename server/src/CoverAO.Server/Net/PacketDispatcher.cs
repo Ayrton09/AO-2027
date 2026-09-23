@@ -258,6 +258,12 @@ public sealed partial class PacketDispatcher
     /// recibe—, que en el original llevan el mismo texto y la misma fuente (Protocol.bas:1495).</summary>
     private const byte FuenteSusurro = 22;
 
+    /// <summary>`FONTTYPE_PALABRASMAGICAS`: el GRITO, el `-texto` del chat (HandleTalk modo 2, Protocol.bas:1405).</summary>
+    private const byte FuenteGrito = 25;
+
+    /// <summary>`FONTTYPE_INFOBOLD3`: el GLOBAL, el `;texto` del chat (HandleTalk modo 3, Protocol.bas:1410).</summary>
+    private const byte FuenteGlobal = 23;
+
     // LO QUE SE QUEDA EN 0 A PROPÓSITO, para que no lo "arregle" el que pase después:
     //
     //  - EL COMBATE (fallar, pegar, matar, el efecto de un hechizo). El original no manda eso por
@@ -11506,9 +11512,36 @@ public sealed partial class PacketDispatcher
             // al caminar, que el original no hace, y NO revelaba al hablar, que sí. Quedó al descubierto al
             // sacar el gate inventado.
             RevealHidden(p);
-            // Player chat renders OVER THE HEAD (ChatOverHead), not in the console — matches the VB6
-            // oracle (HandleTalk -> ChatOverHead ToPCArea). Broadcast to the area incl. self.
-            _world.BroadcastToObservers(p.Pos, ServerMessages.ChatOverHead(chat, p.CharIndex, talkMode));
+            // LOS TRES MODOS DEL ORIGINAL (Protocol.bas:1394-1412). 1, la charla: el globo al área, él incluido.
+            // 2, gritar: vivo, a todo el MAPA el globo y "[Nombre] texto" con la fuente 25. 3, el global: vivo, a
+            // TODO el server "[Nombre] texto" con la fuente 23 y el globo. El grito y el global viajan con su marca
+            // adelante (`-` y `;`) y se la saca (`mid(chat, 2)`). Otro modo no hace nada: acá cualquiera salía al área.
+            switch (talkMode)
+            {
+                case 1:
+                    _world.BroadcastToObservers(p.Pos, ServerMessages.ChatOverHead(chat, p.CharIndex, 1));
+                    break;
+                case 2:
+                {
+                    if (DeadCheck(session, p)) return;
+                    string grito = chat.Length > 0 ? chat[1..] : "";
+                    _world.BroadcastToMap(p.Pos.Map, ServerMessages.ChatOverHead(grito, p.CharIndex, 2));
+                    _world.BroadcastToMap(p.Pos.Map, ServerMessages.ConsoleMsg($"[{p.Name}] {grito}", FuenteGrito));
+                    break;
+                }
+                case 3:
+                {
+                    if (DeadCheck(session, p)) return;
+                    string global = chat.Length > 0 ? chat[1..] : "";
+                    var linea = ServerMessages.ConsoleMsg($"[{p.Name}] {global}", FuenteGlobal);
+                    foreach (var otro in _world.Players) otro.Connection?.Send(linea);
+                    var globo = ServerMessages.ChatOverHead(global, p.CharIndex, 3);
+                    foreach (var otro in _world.Players) otro.Connection?.Send(globo);
+                    break;
+                }
+                default:
+                    return;
+            }
             _world.Events.Publish(new PlayerTalked(p, chat));
         });
     }

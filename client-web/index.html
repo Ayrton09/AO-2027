@@ -6118,6 +6118,14 @@
         send(w.writeByte(CLIENT.Whisper).writeAsciiString(destino).writeAsciiString(msg));
         return;
       }
+      // GRITAR Y EL GLOBAL, con el primer carácter como en el original (frmMain.frm:1770-1792): `-texto` grita a todo
+      // el mapa (modo 2) y `;texto` habla en el global, a todo el server (modo 3), que no se manda si el texto tiene
+      // un `>`. Viajan con su marca adelante y el server la saca. Acá todo salía como charla común.
+      if (text[0] === '-' || text[0] === ';') {
+        const modo = text[0] === '-' ? 2 : 3, msg = text.slice(1).trim();
+        if (msg && !(modo === 3 && text.includes('>'))) send(w.writeByte(CLIENT.Talk).writeAsciiString(text[0] + msg).writeByte(modo));
+        return;
+      }
       if (text[0] === '/') {
         const sp = text.indexOf(' ');
         const cmd = (sp < 0 ? text : text.slice(0, sp)).toLowerCase();
@@ -6140,6 +6148,7 @@
           log('del original: c combate · a agarrar · t tirar · u usar · e equipar · d domar · r robar · s seguro de resurrección · o ocultarse · n nombres · l actualizar posición · Ctrl atacar · Enter chat · F1-F10 macros', '#8a9');
           log('nuestras: h hechizos · f lanzar · i estadísticas · j clan · m meditar · g recoger · k habilidades · p escalado · +/- zoom · x combate (alias de c)', '#8a9');
           log('t, u y e actúan sobre el objeto ELEGIDO del inventario (hacé clic para elegirlo)', '#8a9');
+          log('en el chat: -mensaje grita a todo el mapa · ;mensaje habla en el global · \\Nombre mensaje es un privado', '#8a9');
           return;
         }
         // /PING no manda nada: imprime la latencia que ya trajo el ultimo Pong, igual que el original (que la
