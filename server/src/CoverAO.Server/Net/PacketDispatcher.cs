@@ -924,16 +924,22 @@ public sealed partial class PacketDispatcher
         if (VersionRechazada(session, verMajor, verMinor, verRev)) return;
         _loop.Enqueue(() =>
         {
+            // LOS CHEQUEOS DEL SERVER.INI, en el orden del original (ChequeosServerIni, Cuentas.bas:348-398): solo GMs
+            // —un personaje nuevo pasa sólo si su nombre está en la lista de staff—, la IP repetida, la creación
+            // cerrada y la pausa. La creación cerrada, acá SÓLO al crear: en el original frena también al que entra
+            // con uno que ya existe, y el autor decidió que no (22/09).
+            if (_admin?.OnlyGms == true && !(_ini.CantidadStaff > 0 && _ini.EsStaff(charName)))
+            { RechazarConCartel(session, MensajeSoloGms, "solo GMs"); return; }
+            if (!_ini.AllowMultiLogins && MismaIpYaConectada(session))
+            { RechazarConCartel(session, MensajeIpRepetida, "ip repetida"); return; }
+            if (!_ini.PuedeCrearPersonajes)
+            { RechazarConCartel(session, MensajeCreacionCerrada, "creacion cerrada"); return; }
+            if (EnPausaNoSeEntra(session)) return;
             // La cuenta admite dígitos y guión bajo; el PERSONAJE no (VB6 ValidarNombre, TCP.bas:181 — sólo
             // letras y espacio). Ver el porqué en Naming.IsValidCharName: un nombre numérico haría que el
             // cliente confundiera al personaje con una criatura.
             // Se rechazan por separado para que el motivo sea el correcto: decirle "solo letras y espacios" a
             // quien puso mal la CUENTA sería mentirle, porque ahí los dígitos sí valen.
-            // El host puede cerrar la creación de personajes desde el Server.ini (VB6 PuedeCrearPersonajes,
-            // Cuentas.bas:378 → mensaje 3). Sirve para congelar el ingreso sin bajar el server.
-            if (!_ini.PuedeCrearPersonajes)
-            { Reject(session, "La creacion de personajes esta deshabilitada en este servidor."); return; }
-            if (EnPausaNoSeEntra(session)) return;
             if (!Naming.IsValidName(account)) { Reject(session, "Nombre de cuenta invalido."); return; }
             if (!Naming.IsValidCharName(charName)) { Reject(session, "Nombre de personaje invalido (solo letras y espacios)."); return; }
             // VB6 TCP.bas:383-453: valida los rangos de raza/sexo/clase/tierra al crear (rechaza 0 y fuera de tabla).
@@ -976,6 +982,21 @@ public sealed partial class PacketDispatcher
     /// <summary>El aviso con que el original rechaza el login mientras el servidor está en pausa (locale_error_es.ind,
     /// mensaje 2).</summary>
     private const string MensajeDeMantenimiento = "El servidor se encuentra restringido por mantenimiento. Por favor intente más tarde.";
+
+    /// <summary>Los otros avisos de ChequeosServerIni (Cuentas.bas:336-398), los del cliente original (locale_error_es.ind
+    /// 70, 25 y 3).</summary>
+    private const string MensajeSoloGms = "El servidor se encuentra restringido para Game Master. Por favor intente más tarde.";
+    private const string MensajeIpRepetida = "Su cuenta ha alcanzado el límite de conexiones simultáneas permitidas para este servidor.";
+    private const string MensajeCreacionCerrada = "La creación de personajes está prohibida temporalmente. Intente más tarde.";
+
+    /// <summary>Un rechazo de ChequeosServerIni: el cartel (`WriteShowMessageBox`) y la conexión cerrada (`CierraConexion =
+    /// True`, Protocol.bas:1135-1141).</summary>
+    private void RechazarConCartel(ClientSession session, string texto, string motivo)
+    {
+        session.Send(ServerMessages.ShowMessageBox(texto));
+        Console.WriteLine($"[{session.RemoteEndpoint}] RECHAZADO: {motivo}");
+        session.Close(motivo);
+    }
 
     /// <summary>¿Se rechaza el login porque el servidor está en pausa? (VB6 ChequeosServerIni, Cuentas.bas:393, en los
     /// dos login.) Avisa con el cartel de mantenimiento y deja la conexión abierta (`CierraConexion = False`), para
@@ -1031,7 +1052,7 @@ public sealed partial class PacketDispatcher
         // Cuentas.bas:369 → mensaje 25). Es un límite distinto del de "una sesión por cuenta" de más abajo:
         // éste es por IP y lo decide el host; aquél va por cuenta y corre siempre.
         if (!_ini.AllowMultiLogins && MismaIpYaConectada(session))
-        { Reject(session, "Tu conexion ya alcanzo el limite de sesiones simultaneas de este servidor."); return; }
+        { RechazarConCartel(session, MensajeIpRepetida, "ip repetida"); return; }
         var yaOnline = _world.PlayerByName(charName);
         if (yaOnline is not null)
         {
@@ -1127,7 +1148,7 @@ public sealed partial class PacketDispatcher
         // Sin listas en el ini se cae al privilegio en memoria, que es lo que mantiene vivo el GM cableado del
         // fixture (Rugura), del que dependen los flows de comandos GM.
         bool esStaff = _ini.CantidadStaff > 0 ? _ini.EsStaff(player.Name) : player.IsGm;
-        if (_admin?.OnlyGms == true && !esStaff) { Reject(session, "El servidor está en mantenimiento (solo administradores)."); return; }
+        if (_admin?.OnlyGms == true && !esStaff) { RechazarConCartel(session, MensajeSoloGms, "solo GMs"); return; }
         SpawnIntoWorld(session, player, version);
     }
 

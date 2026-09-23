@@ -2753,6 +2753,9 @@
     // último para re-enviarlo si la conexión se cae (auto-reconexión sin perder la sesión).
     let ws, loginBytes = null, loggedIn = false, lastReject = null;
     let reintentoSesion = 0;   // reintentos tras un choque de sesión (ver el case 'ShowMessageBox')
+    // Los dos avisos del gate de sesión del server (el personaje sigue adentro): con ésos se reintenta, con nada más.
+    const CHOQUE_DE_SESION = new Set(['El personaje está online, espere mientras es desconectado.',
+                                      'El personaje está saliendo del juego.']);
     function sendLogin(bytes) {                 // arma+manda un paquete de login (clave inicial 13, pre-Logged)
       loginBytes = bytes; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
@@ -3821,9 +3824,10 @@
             // rechaza al que entra mientras el personaje siga adentro, y al que se le cortó la conexión en un mapa
             // inseguro le corre la cuenta de salida (IntervaloCerrarConexion, 5 s en el install): un solo
             // reintento a los 2,5 s rebotaba contra su propio personaje. Cuatro cubren la cuenta —el original no
-            // tenía reconexión automática, así que este caso no existía en la fuente—. Un rechazo de verdad
-            // (cuenta/contraseña) llega por ConsoleMsg, no por acá, y no debe entrar en bucle.
-            if (reintentoSesion < 4 && loginBytes) {
+            // tenía reconexión automática, así que este caso no existía en la fuente—. SÓLO para esos dos avisos: los
+            // demás carteles del login (solo GMs, IP repetida, creación cerrada, mantenimiento) no se arreglan
+            // insistiendo, y un rechazo de cuenta/contraseña llega por ConsoleMsg.
+            if (CHOQUE_DE_SESION.has(f.message) && reintentoSesion < 4 && loginBytes) {
               reintentoSesion++;
               const bytes = loginBytes;
               setTimeout(() => { loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
