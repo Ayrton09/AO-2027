@@ -9235,38 +9235,74 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>
-    /// SeleccionarHogar (id 103): fija a qué ciudad manda RegresarHogar. El byte es el id de ciudad (1..12).
+    /// SeleccionarHogar (id 103, VB6 HandleSeleccionarHogar, Protocol.bas:16266): el hogar es la ciudad DONDE ESTÁS.
+    /// El byte es un modo, como en el original:
+    /// <list type="bullet">
+    /// <item><b>0</b> (el <c>/HOGAR</c>): con el sacerdote clickeado a cinco baldosas o menos, le pregunta si quiere
+    /// que esta ciudad sea su hogar (ShowMessageBox pregunta 5, que el cliente arma con el nombre del mapa).</item>
+    /// <item><b>1</b> (aceptar la pregunta): fija como hogar la ciudad del mapa donde está parado.</item>
+    /// </list>
     ///
-    /// DIVERGENCIA DELIBERADA del stack .NET+web (ver fase5/GAPS-CODIGO-MUERTO.md). En el VB6 el byte NO es la
-    /// ciudad sino un SUBCOMANDO (0 = pedirle el cambio al sacerdote Revividor cercano, 1 = confirmar), y la
-    /// ciudad se DERIVA del mapa donde estás parado — y encima con dos bugs de precedencia que hacen que un
-    /// ciudadano común no pueda elegir NINGUNA ciudad y que la rama República/Milicia sea inalcanzable. Este
-    /// stack deja elegir la ciudad directo de un dropdown (el cliente web manda <c>SeleccionarHogar(cityId)</c>):
-    /// más simple, sin los bugs, y el ciclo elegir-hogar → morir → RegresarHogar está verificado (home_flow).
-    ///
-    /// <para>Lo que SÍ se porta es el <b>gate del sacerdote</b>: hay que tener clickeado a un Revividor a cinco
-    /// baldosas o menos (VB6 :16283-16297). No es parte de la divergencia —esa es sobre CÓMO se elige la ciudad,
-    /// no sobre desde dónde— y sin él el hogar se cambiaba desde cualquier punto del mundo, lo que convertía a
-    /// <c>RegresarHogar</c> en un teletransporte gratis a cualquier ciudad. Con el gate, mudarse cuesta el viaje
-    /// hasta el templo de destino, que es la economía que el original quería.</para>
+    /// <para>Sin los bugs del original, por decisión del autor (2026-09-23). Allá <c>esArmada Or esCiuda = 1</c> y
+    /// <c>(esRepu Or esMili) = 1</c> comparan un True (-1) contra 1, así que el ciudadano común y los republicanos
+    /// sólo podían elegir las ciudades neutrales; la ciudad de otro bando decía "Tu nuevo hogar ahora es…" sin cambiar
+    /// nada; y el "ya es tu hogar" miraba otro mapa que el de la elección en Lindos, Suramei y Nueva Esperanza. Acá
+    /// se elegía de una lista cualquier ciudad desde cualquier templo, y el tester lo reportó.</para>
     /// </summary>
     private void HandleSelectHome(ClientSession session, ByteQueueReader r)
     {
-        byte city = r.ReadByte();
+        byte modo = r.ReadByte();
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            var npc = TargetNpcDe(p);
-            if (npc is null || !npc.IsReviver)
-            { session.Send(ServerMessages.ConsoleMsg("Primero tienes que seleccionar un sacerdote, haz click izquierdo sobre él.", FuenteInfo)); return; }
-            if (DistanciaVB6(p.Pos, npc.Pos) > 5)
-            { session.Send(ServerMessages.ConsoleMsg("Estás muy lejos del sacerdote.", FuenteInfo)); return; }
-            if (city < 1 || city > 12) { session.Send(ServerMessages.ConsoleMsg("Ciudad invalida.", FuenteInfo)); return; }
-            p.HomeCity = city;
-            session.Send(ServerMessages.ConsoleMsg($"Elegiste la ciudad {city} como tu hogar.", FuenteInfo));
+            if (modo == 0)
+            {
+                var npc = TargetNpcDe(p);
+                if (npc is null)
+                { session.Send(ServerMessages.ConsoleMsg("Primero tienes que seleccionar un personaje, haz click izquierdo sobre él.", FuenteInfo)); return; }
+                if (!npc.IsReviver) return;
+                if (DistanciaVB6(p.Pos, npc.Pos) > 5)
+                { session.Send(ServerMessages.ConsoleMsg("Estás muy lejos del sacerdote.", FuenteInfo)); return; }
+                session.Send(ServerMessages.ShowMessageBox("0", esPregunta: true, accion: 5));
+                return;
+            }
+            if (modo != 1) return;
+            string ciudad = _data.MapName(p.Pos.Map).Trim();
+            if (!HogarDelMapa.TryGetValue(p.Pos.Map, out var hogar))
+            { session.Send(ServerMessages.ConsoleMsg("Ciudad inválida.", FuenteInfo)); return; }
+            if (hogar.Ciudad == p.HomeCity)
+            { session.Send(ServerMessages.ConsoleMsg($"{ciudad} es tu hogar.", FuenteInfo)); return; }
+            bool puede = hogar.Bando switch
+            {
+                BandoDelHogar.Imperio => p.IsCitizen || p.IsArmada,
+                BandoDelHogar.Republica => p.IsRepublicano || p.IsMilicia,
+                _ => true,
+            };
+            if (!puede) { session.Send(ServerMessages.ConsoleMsg("Ciudad inválida.", FuenteInfo)); return; }
+            p.HomeCity = hogar.Ciudad;
+            session.Send(ServerMessages.ConsoleMsg($"Tu nuevo hogar ahora es {ciudad}.", FuenteInfo));
         });
     }
+
+    private enum BandoDelHogar { Neutral, Imperio, Republica }
+
+    /// <summary>La ciudad-hogar de cada mapa donde se la puede elegir (VB6 :16324-16340): las neutrales para todos,
+    /// las del Imperio para ciudadanos y Armada, las de la República para republicanos y Milicia.</summary>
+    private static readonly Dictionary<short, (byte Ciudad, BandoDelHogar Bando)> HogarDelMapa = new()
+    {
+        [20] = (5, BandoDelHogar.Neutral),       // Rinkel
+        [151] = (8, BandoDelHogar.Neutral),      // Arghâl
+        [218] = (9, BandoDelHogar.Neutral),      // Tiama
+        [180] = (10, BandoDelHogar.Neutral),     // Orac
+        [112] = (12, BandoDelHogar.Neutral),     // Nueva Esperanza
+        [1] = (3, BandoDelHogar.Imperio),        // Ullathorpe
+        [34] = (1, BandoDelHogar.Imperio),       // Nix
+        [59] = (4, BandoDelHogar.Imperio),       // Banderbill
+        [194] = (2, BandoDelHogar.Republica),    // Illiandor
+        [63] = (7, BandoDelHogar.Republica),     // Lindos
+        [184] = (11, BandoDelHogar.Republica),   // Suramei
+    };
 
     // --- More player actions: uptime / home / reorder / kick / friends ---
 

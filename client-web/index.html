@@ -3415,7 +3415,6 @@
       return modalCard.querySelector('.cardBody');
     }
     const pv = (id) => (modalCard.querySelector('#' + id)?.value || '').trim();
-    // CIUDADES se declara en el bloque de login (char-creation) y se reusa acá (mismo scope de módulo).
 
     // ---- Tanda 3: Social (Amigos / Clan / Facción) --------------------------------------------
     function openSocial(tab = 'amigos') {
@@ -3715,7 +3714,8 @@
           <div class="fhint">Sale de tu BÓVEDA, no de la mano — depositá primero en un banquero. El otro no necesita estar conectado: le queda acreditado en su cuenta.</div>
           <div class="frow"><input id="xf-to" placeholder="a quién"><input id="xf-amt" type="number" min="1" value="100" style="max-width:7em"><button class="sbtn" data-act="xf-send">Dar</button></div>
           <div class="fsec">Hogar</div>
-          <div class="frow"><select id="home-city">${CIUDADES.map((c, i) => `<option value="${i + 1}">${c}</option>`).join('')}</select><button class="sbtn" data-act="home-set">Fijar hogar</button></div>
+          <div class="fhint">Tu hogar es la ciudad donde estás: clickeá al sacerdote del templo y pedilo.</div>
+          <button class="sbtn" data-act="home-set">Que esta ciudad sea mi hogar</button>
           <button class="sbtn ghost" data-act="home-go">Volver al hogar</button>
           <div class="fsec">Otros</div>
           <button class="sbtn ghost" data-act="safe-res">Seguro de resurrección (on/off)</button>
@@ -3773,7 +3773,7 @@
           refrescarLibresPend();
         }
         else if (a === 'xf-send') { const to = pv('xf-to'), amt = +pv('xf-amt') || 0; if (to && amt > 0) send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(to).writeLong(amt)); }
-        else if (a === 'home-set') send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(+pv('home-city') || 1));
+        else if (a === 'home-set') send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0));   // el /HOGAR: pregunta el server
         else if (a === 'home-go') send(W().writeByte(CLIENT.RegresarHogar));
         else if (a === 'safe-res') send(W().writeByte(CLIENT.ResuscitationSafeToggle));
         else if (a === 'rest') send(W().writeByte(CLIENT.Rest));
@@ -3832,6 +3832,13 @@
               const bytes = loginBytes;
               setTimeout(() => { loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
             }
+          }
+          // LA PREGUNTA DEL HOGAR (VB6 frmPregunta.SetAccion 5): "¿Deseas que <ciudad> sea tu nuevo hogar?" con el
+          // nombre del mapa donde estás, y aceptarla estando vivo manda el SeleccionarHogar(1) (frmPregunta.frm:251).
+          else if (f.esPregunta && f.accion === 5) {
+            const ciudad = (map && (map.name || '').trim()) || 'esta ciudad';
+            if (confirmar(`¿Deseas que ${ciudad} sea tu nuevo hogar?`) && !estoyMuerto())
+              send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(1));
           }
           else { log(f.message, '#ffd24a'); }   // ya adentro: va al chat (p. ej. el /SMSG de un GM)
           break;
@@ -5887,7 +5894,7 @@
     const CHAT_NOARG = { '/online': CLIENT.Online, '/salir': CLIENT.Quit, '/meditar': CLIENT.Meditate,
       '/descansar': CLIENT.Rest, '/resucitar': CLIENT.Resucitate, '/est': CLIENT.RequestStats,
       '/enlistar': CLIENT.Enlist, '/informacion': CLIENT.Information, '/info': CLIENT.Information,
-      '/recompensa': CLIENT.Reward, '/uptime': CLIENT.UpTime, '/hogar': CLIENT.RegresarHogar,
+      '/recompensa': CLIENT.Reward, '/uptime': CLIENT.UpTime,
       '/salirclan': CLIENT.GuildLeave, '/onlineclan': CLIENT.GuildOnline,
       // Los tres que faltaban de la tabla real del original (locale_cmd_es.ind dentro de Init.cao): abrir la
       // bóveda y el comercio sin doble clic en el NPC, y pedirle al server la lista de skins.
@@ -6148,6 +6155,10 @@
         }
         // /SKIN pide el formulario de skins: el server contesta AbrirFormularios y el cliente lo abre.
         if (cmd === '/skin') { send(W().writeByte(CLIENT.AbrirForms).writeByte(1)); return; }
+        // /HOGAR pide que la ciudad donde estás sea tu hogar (VB6 clsClientTCP: `WriteSeleccionarHogar(0)`), con el
+        // sacerdote clickeado; el server contesta con la pregunta. Acá mandaba el RegresarHogar, que en el original
+        // sale del cartel de "Has muerto" y no tiene comando.
+        if (cmd === '/hogar') { send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0)); return; }
         if (CHAT_NOARG[cmd] !== undefined) w.writeByte(CHAT_NOARG[cmd]);
         else if (CHAT_ARGSTR[cmd] !== undefined) { if (!arg) { log('uso: ' + cmd + ' <texto>', '#b94'); return; } w.writeByte(CHAT_ARGSTR[cmd]).writeAsciiString(arg); }
         else if (cmd === '/apostar') w.writeByte(CLIENT.Gamble).writeInteger(parseInt(arg) || 0);
@@ -6588,17 +6599,6 @@
     // Mago es 2. El índice+1 de esta lista viaja crudo en LoginNewChar y es el que indexa MODVIDA (Balance.dat),
     // el kit de NACIMIENTO.dat y la armadura faccionaria — si se reordena, un Mago nace con el kit del Clérigo.
     const CLASES = ['Clérigo', 'Mago', 'Guerrero', 'Asesino', 'Ladrón', 'Bardo', 'Druida', 'Gladiador', 'Paladín', 'Cazador', 'Pescador', 'Herrero', 'Leñador', 'Minero', 'Carpintero', 'Sastre', 'Mercenario', 'Nigromante'];
-    // LAS DOCE CIUDADES REALES de este juego (Ciudades.dat + eCiudad, Declares.bas:142). Acá había una lista
-    // inventada —Arkhein, Bilbo Hills, Esperanza, Hilliard, Petriria, Isla del Padre— que ni siquiera existe en
-    // esta versión, y que además estaba CORRIDA: el índice viaja crudo al server, así que quien elegía
-    // "Ullathorpe" fijaba Nix, y "Arkhein" lo mandaba al Dungeon Newbie. Se usa en el selector de hogar, que es
-    // el que cambia adónde te lleva /HOGAR cuando morís.
-    // Los nombres son los que el JUEGO usa, no las claves del enum. `cARGHAL` y `cNueva` son
-    // identificadores de `Declares.bas`; el contenido las llama «Arghâl» y «Nueva Esperanza» — los
-    // teleports del obj.dat dicen "Teleport a Arghâl", y el locale de NPCs trae al "Herrero Armas Nueva
-    // Esperanza" y al "PirataNuevaEsperanza". El tester las nombró así y tenía razón. El VALOR que se
-    // manda es el ÍNDICE, así que el rótulo se puede corregir sin tocar el protocolo.
-    const CIUDADES = ['Nix', 'Illiandor', 'Ullathorpe', 'Banderbill', 'Rinkel', 'Dungeon Newbie', 'Lindos', 'Arghâl', 'Tiama', 'Orac', 'Suramei', 'Nueva Esperanza'];
     // La TIERRA NATAL del nacimiento es otra cosa y son sólo DOS: el original carga el combo con NUMCIUDADES = 2
     // (Declares.bas:102) y el server corta en 2 "porque al nacimiento solo hay Nix o Illi" (TCP.bas:455). Elegir
     // acá no elige mapa —se nace en el Dungeon Newbie de todas formas— sino BANDO, y de eso salen la ciudadanía
