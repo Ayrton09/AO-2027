@@ -1653,7 +1653,7 @@ public sealed partial class PacketDispatcher
     private void TeleportTo(ClientSession session, Player p, WorldPos dest, bool fx) =>
         WarpUserChar(p, dest, fx, alCaer: () => DesmontarSiEntraBajoTecho(session, p));
 
-    /// <summary>El salto de un jugador que NO es el que mandó el paquete: el /TELEP, el /IRA, el /SUM y la cárcel.
+    /// <summary>El salto de un jugador que NO es el que mandó el paquete: el /TELEP, la cárcel y la salida de ella.
     /// Todos llevan sonido y destello en el original.</summary>
     public void WarpOtroJugador(Player t, WorldPos dest) => WarpUserChar(t, dest, fx: true);
 
@@ -4342,16 +4342,56 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.ConsoleMsg($"Info de {t.Name}: clase {t.Class}, nivel {t.Level}, oro {t.Gold}, clan '{t.GuildName}'.", FuenteInfo));
     }
 
+    /// <summary>
+    /// /IRA &lt;nombre&gt; (VB6 HandleGoToChar, Protocol.bas:7040): el GM va hasta un jugador. Lo usan Dios, Admin,
+    /// SemiDios y Consejero —el RoleMaster no—, y hasta un Dios o un Admin sólo va otro Dios o Admin: si no, el
+    /// comando calla, aunque el otro esté desconectado. Cae en la baldosa de ABAJO del jugador, o en la más cercana
+    /// sin nadie (<see cref="LugarParaElQueSalta"/>). Al GM no le contesta nada, y al jugador le avisa que llegó,
+    /// salvo que el GM esté invisible.
+    /// </summary>
     private void GmGoToChar(ClientSession session, string name)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (p is null || (p.Privileges & (PrivDios | PrivAdmin | PrivSemiDios | PrivConsejero)) == 0) return;
+        if (EsDiosOAdminPorNombre(name) && (p.Privileges & (PrivDios | PrivAdmin)) == 0) return;
         var t = _world.PlayerByName(name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        // Mismo helper que /TELEP: sin el ChangeMap, un GM que iba hacia alguien de otro mapa se quedaba
-        // mirando el suyo. Y es el comando que más se usa, así que era el más visible de los tres.
-        WarpOtroJugador(p!, new WorldPos(t.Pos.Map, t.Pos.X, t.Pos.Y));
-        session.Send(ServerMessages.ConsoleMsg($"Te teletransportaste junto a {t.Name}.", FuenteInfo));
+        WarpUserChar(p, LugarParaElQueSalta(p, new WorldPos(t.Pos.Map, t.Pos.X, (byte)(t.Pos.Y + 1))), fx: true);
+        if (!p.AdminInvisible)
+            t.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} se ha trasportado hacia donde te encuentras.", FuenteInfo));
+    }
+
+    /// <summary>¿El nombre es de un Dios o un Admin? El original lo mira en las listas del Server.ini
+    /// (<c>EsDios</c>/<c>EsAdmin</c>), así que vale también para el desconectado; el GM del fixture no está en
+    /// ninguna lista y se lo reconoce conectado.</summary>
+    private bool EsDiosOAdminPorNombre(string name) =>
+        (_ini.PrivilegioDe(name.Replace('+', ' ')) & (PrivDios | PrivAdmin)) != 0
+        || (_world.PlayerByName(name) is { } conectado && (conectado.Privileges & (PrivDios | PrivAdmin)) != 0);
+
+    /// <summary>
+    /// DÓNDE CAE EL QUE SALTA HASTA ALGUIEN (VB6 <c>FindLegalPos</c>, GameLogic.bas:546), el del /IRA y el /SUM. Si en
+    /// la baldosa pedida hay alguien —jugador o criatura— que no es él mismo, busca en anillos de uno a cinco, fila por
+    /// fila desde la esquina de arriba a la izquierda, y de cada fila mira sólo la primera baldosa sin nadie: si cae
+    /// fuera de los bordes jugables, pasa a la fila siguiente. Mira únicamente quién está parado —una pared o el agua no
+    /// la descartan—, como allá. Sin lugar en los cinco anillos cae igual en la pedida; el original además desconecta
+    /// al jugador que estaba ahí, y eso no se porta.
+    /// </summary>
+    private WorldPos LugarParaElQueSalta(Player quien, WorldPos pedida)
+    {
+        bool Ocupada(WorldPos pos) => _world.PlayerAt(pos) is not null || _world.NpcAt(pos) is not null;
+        if (!Ocupada(pedida) || _world.PlayerAt(pedida)?.CharIndex == quien.CharIndex) return pedida;
+        for (int rango = 1; rango <= 5; rango++)
+            for (int y = pedida.Y - rango; y <= pedida.Y + rango; y++)
+                for (int x = pedida.X - rango; x <= pedida.X + rango; x++)
+                {
+                    if (x < 1 || x > 100 || y < 1 || y > 100) continue;
+                    var cand = new WorldPos(pedida.Map, (byte)x, (byte)y);
+                    if (Ocupada(cand)) continue;
+                    if (x >= GameLimits.MinXBorder && x <= GameLimits.MaxXBorder
+                        && y >= GameLimits.MinYBorder && y <= GameLimits.MaxYBorder) return cand;
+                    break;
+                }
+        return pedida;
     }
 
     /// <summary>
@@ -5322,16 +5362,22 @@ public sealed partial class PacketDispatcher
         Console.WriteLine($"[{session.RemoteEndpoint}] /CI {p.Name}: {qty}x {obj.Name} ({objIndex}) en slot {slot}");
     }
 
+    /// <summary>
+    /// /SUM &lt;nombre&gt; (VB6 HandleSummonChar, Protocol.bas:8725): trae a un jugador hasta el GM. Lo usan Admin, Dios
+    /// y SemiDios; el SemiDios sólo trae a usuarios y Consejeros, y a otro rango le contesta "Objetivo inválido." (298).
+    /// Al jugador le avisa quién lo trajo, y cae en la baldosa de ABAJO del GM o en la más cercana sin nadie
+    /// (<see cref="LugarParaElQueSalta"/>). Al GM no le contesta nada.
+    /// </summary>
     private void GmSummon(ClientSession session, string name)
     {
         var p = session.Player;
-        if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8320: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
+        if (!IsSemiDiosOrHigher(p)) return;
         var t = _world.PlayerByName(name);
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        // Y el tercero: traer a alguien de otro mapa sin ChangeMap lo dejaba viendo el mapa del que vino.
-        WarpOtroJugador(t, new WorldPos(p!.Pos.Map, p.Pos.X, p.Pos.Y));
-        t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te ha transportado.", FuenteInfo));
-        session.Send(ServerMessages.ConsoleMsg($"Transportaste a {t.Name} junto a ti.", FuenteInfo));
+        if ((p!.Privileges & (PrivDios | PrivAdmin)) == 0 && (t.Privileges & (PrivConsejero | PrivUser)) == 0)
+        { session.Send(ServerMessages.LocaleMsg(298)); return; }
+        t.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te ha trasportado.", FuenteInfo));
+        WarpUserChar(t, LugarParaElQueSalta(t, new WorldPos(p.Pos.Map, p.Pos.X, (byte)(p.Pos.Y + 1))), fx: true);
     }
 
     private void GmRevive(ClientSession session, string name)
