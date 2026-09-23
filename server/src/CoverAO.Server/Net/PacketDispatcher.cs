@@ -5111,8 +5111,14 @@ public sealed partial class PacketDispatcher
 
     /// <summary>
     /// /ACC y /RACC (VB6 HandleCreateNPC / HandleCreateNPCWithRespawn, Protocol.bas:10964/11003 → SpawnNpc).
-    /// Spawnea un NPC del NPCs.dat en el tile que el GM tiene enfrente. Los dos comandos hacen lo mismo: en
-    /// el original el flag `respawn` es código muerto, así que el NPC siempre queda registrado para respawn.
+    /// Spawnea un NPC del NPCs.dat. Los dos comandos hacen lo mismo: en el original el flag `respawn` es código
+    /// muerto, así que el NPC siempre queda registrado para respawn.
+    ///
+    /// <para>SE PIDE EN LA BALDOSA DEL GM (`SpawnNpc(npcindex, .Pos, ...)`), y como ahí está él, cae en la legal más
+    /// cercana: ClosestLegalPos recorre los anillos desde la fila de arriba, así que casi siempre queda en su
+    /// diagonal noroeste. Acá se pedía la baldosa de enfrente; el autor decidió portarlo (22/09). Y el original no
+    /// le contesta nada al GM —ni con la criatura, ni sin lugar, ni con un número que no existe—: sólo lo anota en
+    /// el log de GMs.</para>
     ///
     /// Sobre el gate: el original usa una máscara distinta a la de /INV (bloquea SemiDios, permite RoleMaster),
     /// pero esa asimetría es inalcanzable en este install —sólo el tier Dios existe, y Dios pasa TODAS las
@@ -5123,16 +5129,9 @@ public sealed partial class PacketDispatcher
         var p = session.Player;
         if (!RequireGm(session, p)) return;
         var template = _data.Npc(npcIndex);
-        if (npcIndex < 1 || template is null)
-        { session.Send(ServerMessages.ConsoleMsg($"No existe el NPC {npcIndex}.", FuenteInfo)); return; }   // VB6: SpawnNpc devuelve 0 y calla; acá se avisa por consola
-        if (_npcs is null) { session.Send(ServerMessages.ConsoleMsg("Spawn de NPCs no disponible.", FuenteInfo)); return; }
-
-        var (tx, ty) = Step(p!.Pos.X, p.Pos.Y, p.Heading);
-        var pos = new WorldPos(p.Pos.Map, tx, ty);
-        int charIndex = _npcs.GmSpawn(template, pos);
-        if (charIndex == 0) { session.Send(ServerMessages.ConsoleMsg("No se pudo invocar la criatura acá.", FuenteInfo)); return; }
-        session.Send(ServerMessages.ConsoleMsg($"Invocaste a {template.Name}.", FuenteInfo));
-        Console.WriteLine($"[{session.RemoteEndpoint}] /ACC {p.Name} -> NPC {npcIndex} ({template.Name})");
+        if (npcIndex < 1 || template is null || _npcs is null) return;
+        if (_npcs.GmSpawn(template, p!.Pos) != 0)
+            Console.WriteLine($"[{session.RemoteEndpoint}] /ACC {p.Name} -> NPC {npcIndex} ({template.Name}) en el mapa {p.Pos.Map}");
     }
 
     private enum GmInspectKind { Inventory, Bank, Skills }
