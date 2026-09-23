@@ -6204,6 +6204,9 @@ public sealed partial class PacketDispatcher
     /// <summary>VB6 <c>eOBJType.otBolsas</c> (39): las bolsas de oro, que al usarlas se abren y dan su
     /// <c>Valor</c> en monedas. La data trae cuatro —dos "Pequeño Saco de Oro" y dos "Gran Saco de Oro"—.</summary>
     private const int Bolsa = 39;
+    /// <summary>VB6 <c>eOBJType.otBotellaVacia</c> (33) y <c>otBotellaLlena</c> (34): la botella que se llena en el agua y
+    /// se toma. El Vendedor General vende la vacía.</summary>
+    private const int BotellaVacia = 33, BotellaLlena = 34;
     /// <summary>VB6 <c>eOBJType.otPasajes</c>: el pasaje del barco (viaje rápido entre puertos).</summary>
     private const int Pasaje = 36;
     /// <summary>VB6 <c>eOBJType.otAnillo</c> (18): el slot de HERRAMIENTA de este fork — piquete, hacha, caña,
@@ -11859,6 +11862,53 @@ public sealed partial class PacketDispatcher
                 var wave = ServerMessages.PlayWave((short)obj.Snd1, p.Pos.X, p.Pos.Y);
                 session.Send(wave);
                 if (!p.InvisibleDeAdmin) _world.BroadcastToObservers(p.Pos, wave, p.CharIndex);
+                return;
+            }
+            // LAS BOTELLAS (VB6 InvUsuario.bas:1770-1817). La VACÍA se llena en el agua de la última baldosa clickeada
+            // (`HayAgua(.Pos.Map, .flags.TargetX, .flags.TargetY)`; sin agua, el 392) y pasa a ser la LLENA, su
+            // `IndexAbierta`. La LLENA se toma —la sed sube su MinAgu y se avisa— y vuelve a ser la vacía, su
+            // `IndexCerrada`, con el trago que al GM invisible lo escucha sólo él. Las dos cambian de a una: la que
+            // sale se descuenta, y la que entra va a la mochila o, si no entra, al piso. Acá caían en el "No puedes
+            // usar ese objeto" del final, y el Vendedor General las vende.
+            if (obj.ObjType is BotellaVacia or BotellaLlena)
+            {
+                bool llena = obj.ObjType == BotellaLlena;
+                if (!llena && !_data.IsWater(p.Pos.Map, p.TargetX, p.TargetY)) { session.Send(ServerMessages.LocaleMsg(392)); return; }
+                if (llena)
+                {
+                    p.Thirst = (byte)Math.Min(p.MaxThirst, p.Thirst + obj.MinSed);
+                    session.Send(ServerMessages.UpdateSed(p.Thirst));
+                }
+                inv.Amount -= 1;
+                if (inv.Amount <= 0) inv = default;
+                p.Inventory[slot] = inv;
+                short otra = (short)(llena ? obj.IndexCerrada : obj.IndexAbierta);
+                int donde = FindSlotFor(p, otra);
+                if (donde == 0)
+                {
+                    if (FreeGroundNear(_world, p.Pos) is { } spot)
+                    {
+                        _world.SetGround(spot, otra, 1);
+                        _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, otra, 1));
+                    }
+                }
+                else
+                {
+                    var nueva = p.Inventory[donde];
+                    nueva.ObjIndex = otra;
+                    nueva.Amount += 1;
+                    p.Inventory[donde] = nueva;
+                    session.Send(ServerMessages.ChangeInventorySlot((byte)donde, nueva.ObjIndex, nueva.Amount, nueva.Equipped, 0f, 1));
+                }
+                // Y después el slot de donde salió, con la actualización compacta (`UpdateUserInventario(UserIndex,
+                // slot, 3, Amount)`), aunque la nueva haya caído en el mismo.
+                session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, p.Inventory[slot].Amount));
+                if (llena)
+                {
+                    var trago = ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y);
+                    if (p.InvisibleDeAdmin) session.Send(trago);
+                    else _world.BroadcastToObservers(p.Pos, trago);
+                }
                 return;
             }
             // BOLSA DE ORO (otBolsas = 39, VB6 InvUsuario.bas:1838). Se abre, suma su `Valor` en monedas y se
