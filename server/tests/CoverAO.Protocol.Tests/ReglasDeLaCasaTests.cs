@@ -83,6 +83,10 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.True(cfg.GuardiasAtacan);
         Assert.True(cfg.GuardiasPersiguen);
         Assert.False(cfg.GuardiasAtacanNewbies);
+
+        // Y LA QUINTA (2026-09-23): los pasajes que cruzan el mar piden 80 de Navegación, también a pedido del tester.
+        // En el original la marca `NecesitaNave` del obj.dat no la lee nadie.
+        Assert.Equal(80, cfg.NavegacionParaCruzar);
     }
 
     [Fact]
@@ -101,6 +105,7 @@ public class ReglasDeLaCasaTests : IDisposable
         Assert.Equal(10000, cfg.DropGlobal);
         Assert.Equal(-1, cfg.MetamorfosisDelDruida);
         Assert.True(cfg.GuardiasAtacan);
+        Assert.Equal(80, cfg.NavegacionParaCruzar);
     }
 
     [Fact]

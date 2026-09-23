@@ -144,7 +144,7 @@ public sealed class ServerIni
         "GuardiasPersiguen", "GuardiasRepublicanosAtacanA",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
-        "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "Oro",
+        "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
         "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
@@ -535,6 +535,17 @@ public sealed class ServerIni
     /// red.</para>
     /// </summary>
     public bool HipocamposEnMarAbierto { get; private set; } = true;
+
+    /// <summary>
+    /// REGLA DE LA CASA — <c>NavegacionParaCruzar</c> (default <b>80</b>, prendida; 0 = como el original). Los puntos
+    /// de Navegación que pide un pasaje que CRUZA EL MAR: los quince que el <c>obj.dat</c> marca con
+    /// <c>NecesitaNave=1</c>, que son los que van a Tiama y a Nueva Esperanza. Los que no cruzan no piden nada.
+    ///
+    /// <para>El original no la pide: la clave está en la data y ningún código la lee. La reportó el tester, que
+    /// recordaba los 80 puntos, y el autor la dejó prendida (2026-09-23). Al que no llega le sale el aviso del
+    /// barco (LocaleMsg 477), y al staff no lo gatea, como al barco (<c>PuedeUsarSkill</c>).</para>
+    /// </summary>
+    public int NavegacionParaCruzar { get; private set; } = 80;
 
     /// <summary>
     /// <c>PaginaPublica</c> (default <b>1</b>, prendida). Publica <c>estado.html</c> en el mismo puerto del
@@ -1097,6 +1108,7 @@ public sealed class ServerIni
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
+        cfg.NavegacionParaCruzar = Math.Clamp(ini.GetInt("INIT", "NavegacionParaCruzar", 80), 0, SkillProgression.MaxSkillPoints);
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
         cfg.OrigenesPermitidos = ini.GetString("INIT", "OrigenesPermitidos")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

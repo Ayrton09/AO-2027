@@ -150,7 +150,11 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // el campo llegaba en el JSON del transcode y ObjInfo ni lo tenia, asi que pelear no cansaba y el combate
     // no tenia techo. El default de 10 es del cargador del original (FileIO.bas:999): al objeto que no trae la
     // clave le pone 10, no 0.
-    int StaRequerido = 10)
+    int StaRequerido = 10,
+    // `NecesitaNave` (obj.dat): el pasaje CRUZA EL MAR. Lo traen los quince que van a Tiama y a Nueva Esperanza, y
+    // el original no lo lee: ni el server ni el cliente VB6 nombran la clave, así que allá ningún pasaje pide
+    // Navegación. Lo usa la regla de la casa <see cref="ServerIni.NavegacionParaCruzar"/>.
+    bool NecesitaNave = false)
 {
     /// <summary>
     /// ÍTEM DE NOVATO. El original lo decide por la clave <c>Newbie</c> del <c>obj.dat</c> (FileIO.bas:819) y con
@@ -1205,7 +1209,8 @@ public sealed class GameData
                 // El pasaje: las claves del .dat son `Desde`/`Map`/`X`/`Y`, no los nombres del campo.
                 Int(el, "Desde", "desde"), Int(el, "Map", "map", "MAP"), Int(el, "X", "x"), Int(el, "Y", "y"),
                 Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
-                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
+                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")),
+                Int(el, "NecesitaNave", "NECESITANAVE", "necesitanave") == 1);   // el pasaje cruza el mar
         }
 
         return map;
