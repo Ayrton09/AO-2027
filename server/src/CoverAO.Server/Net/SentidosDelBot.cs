@@ -27,13 +27,17 @@ public sealed class SentidosDelBot
     ///
     /// <para>La distinción sale de donde la saca el cliente del original: el "nombre" de un NPC no es un
     /// nombre sino su NÚMERO de ficha, y el VB6 usa <c>IsNumeric(Name)</c> para saber que lo que tiene
-    /// enfrente es una criatura (Protocol.bas:1733).</para></summary>
-    public readonly record struct Visible(short CharIndex, byte X, byte Y, short FichaNpc)
+    /// enfrente es una criatura (Protocol.bas:1733).</para>
+    ///
+    /// <para><see cref="Estado"/> es el byte que sigue al nombre en el <c>CharacterCreate</c>: el bando de una persona y el
+    /// <c>Status</c> de la ficha de una criatura.</para></summary>
+    public readonly record struct Visible(short CharIndex, byte X, byte Y, short FichaNpc, byte Estado = 0)
     {
         public bool EsNpc => FichaNpc > 0;
     }
 
     private readonly object _candado = new();
+    private byte _miEstado;
     private readonly Dictionary<short, Visible> _visibles = new();
     private readonly (short Obj, short Cantidad, bool Puesto)[] _inventario =
         new (short, short, bool)[GameLimits.MaxInventorySlots + 1];
@@ -63,6 +67,9 @@ public sealed class SentidosDelBot
     // ── Lo que el que decide le pregunta ──────────────────────────────────────────────────────────────
 
     public short MiCharIndex { get { lock (_candado) return _miCharIndex; } }
+    /// <summary>Su bando, el que dice su propio <c>CharacterCreate</c> (o un <c>UpdateTagAndStatus</c> después). 0 mientras no
+    /// lo sabe.</summary>
+    public byte MiEstado { get { lock (_candado) return _miEstado; } }
     public bool Ubicado { get { lock (_candado) return _tengoPosicion; } }
     public (byte X, byte Y) Posicion { get { lock (_candado) return (_x, _y); } }
     public short Nivel { get { lock (_candado) return _nivel; } }
@@ -615,7 +622,7 @@ public sealed class SentidosDelBot
                     lock (_candado)
                     {
                         _miCharIndex = mio;
-                        if (_visibles.TryGetValue(mio, out var yo)) { _x = yo.X; _y = yo.Y; _tengoPosicion = true; }
+                        if (_visibles.TryGetValue(mio, out var yo)) { _x = yo.X; _y = yo.Y; _tengoPosicion = true; _miEstado = yo.Estado; }
                     }
                     break;
                 }
@@ -628,13 +635,30 @@ public sealed class SentidosDelBot
                     byte x = l.Byte(), y = l.Byte();
                     l.Entero(); l.Entero(); l.Entero(); l.Entero(); l.Entero();   // arma, escudo, casco, FX, FXLoops
                     string nombre = l.Cadena();
+                    byte estado = l.Byte();
                     lock (_candado)
                     {
                         // El número de ficha si es criatura; 0 si es una persona. Un nombre vacío es el GM que
                         // se escondió con /SHOWNAME: tampoco es un NPC.
                         short ficha = short.TryParse(nombre, out var f) && f > 0 ? f : (short)0;
-                        _visibles[ci] = new Visible(ci, x, y, ficha);
-                        if (ci == _miCharIndex) { _x = x; _y = y; _tengoPosicion = true; }
+                        _visibles[ci] = new Visible(ci, x, y, ficha, estado);
+                        if (ci == _miCharIndex) { _x = x; _y = y; _tengoPosicion = true; _miEstado = estado; }
+                    }
+                    break;
+                }
+
+                // EL BANDO QUE CAMBIA sin volver a crear al personaje (volverse criminal, enlistarse). Sin nombre a la
+                // vista el estado viaja en 0, y ése no se toma.
+                case ServerPacketId.UpdateTagAndStatus:
+                {
+                    short ci = l.Entero();
+                    l.Cadena();
+                    byte estado = l.Byte();
+                    if (estado == 0) break;
+                    lock (_candado)
+                    {
+                        if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { Estado = estado };
+                        if (ci == _miCharIndex) _miEstado = estado;
                     }
                     break;
                 }

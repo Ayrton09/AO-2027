@@ -638,17 +638,34 @@ public sealed class NpcSystem
     /// hechizo que lastime (los cuatro de Rinkel, los Cazadores y las Torres, cuyo único hechizo es un buff propio)
     /// quedan quietos como allá.</summary>
     private bool EsGuardiaQuePelea(Npc npc) =>
-        _ini is { GuardiasAtacan: true } && npc.Template.NpcType == 2 && npc.OwnerCharIndex == 0
-        && npc.FactionEnlist == 0 && npc.FactionConvert == 0
-        && npc.Template.Status is ServerIni.GuardiaImperial or ServerIni.GuardiaRepublicano or ServerIni.GuardiaDelCaos
-        && (npc.Template.MaxHit > 0 || HechizosQueLastiman(npc).Count > 0);
+        npc.OwnerCharIndex == 0 && npc.FactionEnlist == 0 && npc.FactionConvert == 0
+        && FichaDeGuardiaQuePelea(npc.Template, _data, _ini);
+
+    /// <summary>La parte de <see cref="EsGuardiaQuePelea"/> que sale de la FICHA sola: guardia de ciudad (tipo 2) de un
+    /// bando, con golpe o con un hechizo que lastime, y la regla prendida.</summary>
+    public static bool FichaDeGuardiaQuePelea(NpcInfo ficha, GameData data, ServerIni? ini) =>
+        ini is { GuardiasAtacan: true } && ficha.NpcType == 2
+        && ficha.Status is ServerIni.GuardiaImperial or ServerIni.GuardiaRepublicano or ServerIni.GuardiaDelCaos
+        && (ficha.MaxHit > 0 || (ficha.Spells ?? (IReadOnlyList<int>)Array.Empty<int>())
+                .Any(id => data.Spell((short)id) is { } s && Lastima(s)));
+
+    /// <summary>¿Un guardia con esta FICHA va por alguien de este bando y este nivel? La regla de
+    /// <see cref="EsEnemigoDelGuardia"/> que se decide sin el jugador en juego. La usan los bots para no meterse donde
+    /// los matan.</summary>
+    public static bool GuardiaVaPor(NpcInfo? ficha, byte faccion, int nivel, GameData data, ServerIni? ini) =>
+        ficha is not null && ini is not null && FichaDeGuardiaQuePelea(ficha, data, ini)
+        && (ini.GuardiasAtacanNewbies || nivel > GameLimits.NewbieMaxLevel)
+        && ini.GuardiaAtacaA(ficha.Status, faccion);
+
+    /// <summary>¿Este hechizo le hace algo a un jugador? Daño, parálisis o inmovilización.</summary>
+    private static bool Lastima(Data.SpellInfo s) => s.SubeHp == 2 || s.IsParalyze || s.IsImmobilize;
 
     /// <summary>Los hechizos de la ficha que le hacen algo a un jugador: daño, parálisis o inmovilización.</summary>
     private List<int> HechizosQueLastiman(Npc npc)
     {
         if (_hechizosQueLastiman.TryGetValue(npc.Template.Index, out var ya)) return ya;
         var lista = (npc.Template.Spells ?? (IReadOnlyList<int>)Array.Empty<int>())
-            .Where(id => _data.Spell((short)id) is { } s && (s.SubeHp == 2 || s.IsParalyze || s.IsImmobilize)).ToList();
+            .Where(id => _data.Spell((short)id) is { } s && Lastima(s)).ToList();
         _hechizosQueLastiman[npc.Template.Index] = lista;
         return lista;
     }

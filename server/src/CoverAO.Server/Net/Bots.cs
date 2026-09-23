@@ -311,6 +311,10 @@ public sealed class Bot
     private bool _yaEntro;
     /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
     private bool _seFueSolo;
+
+    /// <summary>Su bando y su nivel, leídos de los sentidos al empezar cada vuelta: con ellos sabe qué guardia va por él.</summary>
+    private byte _miBando;
+    private int _miNivel;
     /// <summary>Cuándo vuelve a intentar ir a un mapa seguro para irse a dormir.</summary>
     private long _proximoRefugio;
 
@@ -514,6 +518,8 @@ public sealed class Bot
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted)
         {
             if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
+            _miBando = sentidos.MiEstado;
+            _miNivel = sentidos.Nivel;
 
             // SE VA A DORMIR. Se cierra con `Quit`, el mismo camino del jugador que se va: el servidor le
             // guarda el personaje y lo saca del mundo como corresponde.
@@ -755,7 +761,28 @@ public sealed class Bot
     /// <summary>¿Esa criatura lo puede matar de pocos golpes? Es la que hay que esquivar, se la haya buscado
     /// o no.</summary>
     private bool EsPeligroso(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
-        EsPeligrosoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+        EsPeligrosoParaElBot(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno, _miBando,
+                             _entorno.Datos, _entorno.Ini);
+
+    /// <summary>
+    /// <see cref="EsPeligrosoPara"/> y, además, EL GUARDIA DEL OTRO BANDO (regla de la casa `GuardiasAtacan`): no es hostil,
+    /// así que la regla de las criaturas no lo ve, y a un bot que entra a una ciudad enemiga lo mata. Es peligro como
+    /// cualquier otro: se lo esquiva, se huye de él y su ciudad no sirve de coto (<see cref="MapaSeguroPara"/> hace lo
+    /// mismo con el refugio, el mercado y el templo).
+    /// </summary>
+    public static bool EsPeligrosoParaElBot(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno,
+                                            byte bando, GameData datos, ServerIni? ini) =>
+        EsPeligrosoPara(n, vidaMaxima, nivel, conPociones, curaVeneno) || NpcSystem.GuardiaVaPor(n, bando, nivel, datos, ini);
+
+    private bool EsGuardiaQueVaPorEl(short ficha, int nivel) =>
+        NpcSystem.GuardiaVaPor(_entorno.Datos.Npc(ficha), _miBando, nivel, _entorno.Datos, _entorno.Ini);
+
+    /// <summary>¿Nace en ese mapa un guardia que va por alguien de este bando y nivel? Las ciudades del otro bando.</summary>
+    public static bool HayGuardiaQueVaPor(int mapa, byte bando, int nivel, GameData datos, ServerIni? ini) =>
+        datos.MapSpawns.TryGetValue(mapa, out var nacen)
+        && nacen.Any(sp => NpcSystem.GuardiaVaPor(datos.Npc((short)sp.NpcIndex), bando, nivel, datos, ini));
+
+    private bool HayGuardiaQueLoAtaca(int mapa) => HayGuardiaQueVaPor(mapa, _miBando, _miNivel, _entorno.Datos, _entorno.Ini);
 
     /// <summary>¿Asusta esta criatura a quien no tiene pociones y anda con la vida bajo el umbral de la poción? Toda la que pega.</summary>
     public static bool AsustaConLaVidaEnRojo(NpcInfo? n, bool conPociones, double salud) => !conPociones && salud < TomaPocion && n is { Hostile: true, MaxHit: > 0 };
@@ -1032,7 +1059,8 @@ public sealed class Bot
         bool soloGustos = SoloLeFaltanGustos(faltaComida, faltaBebida, faltanPociones, faltaHerramienta);
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no es 2
         // ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos.
-        bool MapaAtiende(int mapa) => _entorno.Datos.MapBattleMode(mapa) is 2 or 3;
+        // Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
+        bool MapaAtiende(int mapa) => _entorno.Datos.MapBattleMode(mapa) is 2 or 3 && !HayGuardiaQueLoAtaca(mapa);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaElEquipo(sentidos);
 
@@ -1476,8 +1504,11 @@ public sealed class Bot
         return obj => _entorno.Datos.Obj(obj) is { } o && (arbol ? o.IsTree : o.IsDeposit);
     }
 
-    /// <summary>Un mapa sin pk: donde se desconecta y donde se sienta a fabricar.</summary>
-    private bool MapaSeguro(int mapa) => !_entorno.Datos.IsPkMap(mapa);
+    private bool MapaSeguro(int mapa) => MapaSeguroPara(mapa, _miBando, _miNivel, _entorno.Datos, _entorno.Ini);
+
+    /// <summary>Un mapa sin pk y sin guardias que vayan por él: donde se desconecta, se refugia, pesca y se sienta a fabricar.</summary>
+    public static bool MapaSeguroPara(int mapa, byte bando, int nivel, GameData datos, ServerIni? ini) =>
+        !datos.IsPkMap(mapa) && !HayGuardiaQueVaPor(mapa, bando, nivel, datos, ini);
 
     /// <summary>
     /// ¿SE PUEDE EJERCER SU OFICIO EN ESE MAPA? El agua, en un mapa sin pk, como siempre. El ÁRBOL, al revés: sólo en un
@@ -2182,7 +2213,8 @@ public sealed class Bot
         // el pedido, que es lo que hace el ciclo de arriba. El alcance se mide POR EJE, igual que lo mide el
         // servidor: con Manhattan, un cadáver a siete baldosas en Y se quedaba quieto pidiendo algo que nunca
         // iba a llegar.
-        if (sentidos.MasCercano(EsSacerdote) is { } c && AlAlcanceDelAltar(sentidos, c.Quien))
+        // Salvo en la ciudad del otro bando: ahí revive entre los guardias que lo mataron.
+        if (!HayGuardiaQueLoAtaca(sentidos.Mapa) && sentidos.MasCercano(EsSacerdote) is { } c && AlAlcanceDelAltar(sentidos, c.Quien))
         {
             await Task.Delay(RebanadaDePausaMs, ct);
             return true;
@@ -2194,7 +2226,8 @@ public sealed class Bot
         // devolvía "hice algo", así que nunca se llegaba a la salida de volver al hogar. Se va por el
         // navegante, igual que al mercader, que aprendió lo mismo.
 
-        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos)) is { } templo)
+        if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), m => !HayGuardiaQueLoAtaca(m),
+                                    Pisable(sentidos)) is { } templo)
         {
             if (await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct,
                                    RadioDelAltar, deMuerto: true)) return true;
@@ -2576,11 +2609,13 @@ public sealed class Bot
     /// cerca es peligroso: frenar al lado de un Lobo para pegarle a un Murciélago es la forma más rápida de morirse.
     /// </summary>
     public static bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, GameData datos, int vidaMaxima, int nivel,
-                                            bool conPociones, bool curaVeneno, int radioSuyo, int rindeElDestino = 0)
+                                            bool conPociones, bool curaVeneno, int radioSuyo, int rindeElDestino = 0,
+                                            Func<short, bool>? tambienPeligroso = null)
     {
         var presa = sentidos.MasCercano(ficha => EsPresaPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno)
                                                  && ValeFrenarElViaje((int)(datos.Npc(ficha)?.GiveExp ?? 0), rindeElDestino));
-        var peligro = sentidos.MasCercano(ficha => EsPeligrosoPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno));
+        var peligro = sentidos.MasCercano(ficha => EsPeligrosoPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno)
+                                                   || tambienPeligroso?.Invoke(ficha) == true);
         // Lo que paga se persigue desde más lejos, igual que al elegir presa.
         int alcance = presa is { } p && datos.Npc(p.Quien.FichaNpc) is { GiveGld: > 0 } ? RadioDeCaza : radioSuyo;
         bool peligroALaVista = peligro is { } temible && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
@@ -2593,7 +2628,7 @@ public sealed class Bot
                                       int rindeElDestino = 0)
     {
         _cortoElViaje = HayAlgoQueCazarCerca(sentidos, _entorno.Datos, vidaMaxima, nivel, conPociones, curaVeneno,
-                                             RadioDeCazaSuyo, rindeElDestino);
+                                             RadioDeCazaSuyo, rindeElDestino, f => EsGuardiaQueVaPorEl(f, nivel));
         return _cortoElViaje;
     }
 
