@@ -3362,8 +3362,8 @@ public sealed partial class PacketDispatcher
         // VIDA (:1412-1509). Curar: PuedeAyudar (salvo en la arena), la tirada más el 3 % por nivel del LANZADOR, el
         // número en azul sobre el lanzador, y el aviso en la fuente 13. Dañar: sobre uno mismo el 298; el daño con el
         // 2 % por nivel, el báculo y la resistencia mágica (DanoMagicoAJugador); es agresión; aguantarlo entrena la
-        // Resistencia de quien lo recibe; el número en rojo sobre el lanzador; y si lo mata, la muerte.
-        bool mato = false;
+        // Resistencia de quien lo recibe; el número en rojo sobre el lanzador; y si lo mata, la muerte AHÍ MISMO
+        // (:372-384): antes de las palabras mágicas, los avisos 497/498 y el cobro, que salen después del Select.
         if (spell.SubeHp == 1)
         {
             if (NoSePuedeAyudar(exentaEnArena: true)) return false;
@@ -3385,7 +3385,7 @@ public sealed partial class PacketDispatcher
             target.Hp = (int)Math.Max(0, target.Hp - dano);
             target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
             session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, (int)dano, 2));
-            mato = target.Hp == 0;
+            if (target.Hp == 0) OnKill(session, p, target);
         }
 
         if (!casteado) return false;
@@ -3407,7 +3407,6 @@ public sealed partial class PacketDispatcher
         }
         else session.Send(ServerMessages.LocaleMsg(0, $"={spell.Index}", 0, color));
         if (!desdeObjeto) { SpellCasted(session, p, spell); EmitirCostoDelHechizo(session, p); }
-        if (mato) OnKill(session, p, target);
         return true;
     }
 
