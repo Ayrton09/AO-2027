@@ -438,6 +438,10 @@ public sealed class Player
     // siendo la fuente de verdad para el filtrado de la IA/observadores; este tick es sólo el vencimiento del
     // hechizo (el /INVISIBLE de GM lo deja en 0 = permanente).
     public long InvisibleUntilTick { get; set; }
+    /// <summary>La primera criatura que lo atacó (VB6 <c>flags.AtacadoPorNpc</c>, el CharIndex; 0 = ninguna). La anota
+    /// el golpe de la criatura si está en 0 (SistemaCombate.bas:719) y la suelta salir del mapa, morir o desconectarse
+    /// (<see cref="Net.PacketDispatcher.LiberarAlQueLoPersigue"/>).</summary>
+    public short AtacadoPorNpc { get; set; }
     /// <summary>La invisibilidad del /INVISIBLE (VB6 <c>flags.AdminInvisible</c>), distinta de la del hechizo: es la
     /// que no tiene reloj. El original la mira aparte en todo lo que hace ruido —tomar, tocar un instrumento—: al GM
     /// invisible se escucha sólo él, y al invisible por hechizo lo escucha el área.</summary>

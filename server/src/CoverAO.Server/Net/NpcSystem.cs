@@ -1536,6 +1536,9 @@ public sealed class NpcSystem
             // EL INTERVALO DE 3 SEGUNDOS (VB6 SistemaCombate.bas:713: `If IntervaloPermiteAtacarNpc(...)
             // ... Else NpcAtacaUser = False : Exit Function`). Sale MUDA: ni rugido, ni tirada, ni skill.
             if (!IntervaloPermiteAtacar(npc)) return false;
+            // QUIÉN LO PERSIGUE (VB6 SistemaCombate.bas:719-721): la primera criatura que lo ataca queda anotada en el
+            // jugador hasta que sale del mapa, muere o se desconecta.
+            if (player.AtacadoPorNpc == 0) player.AtacadoPorNpc = npc.CharIndex;
             // EL RUGIDO AL ATACAR (VB6 SistemaCombate.bas:730). Suena ANTES de la tirada de acierto, así que
             // la criatura ruge igual cuando erra — que es lo que hace el original y lo que se escucha en el
             // juego.

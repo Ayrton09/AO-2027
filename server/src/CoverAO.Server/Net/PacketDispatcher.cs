@@ -1506,6 +1506,9 @@ public sealed partial class PacketDispatcher
             // que truncaba: la salida al mapa 555 dejaba al jugador en el 43 (555 & 255).
             if (_data.MapExits.TryGetValue((p.Pos.Map, p.Pos.X, p.Pos.Y), out var dest) && dest.DestMap > 0)
             {
+                // "Te fuiste del mapa. La criatura ya no es más tuya ni te reconoce como que vos la atacaste"
+                // (GameLogic.bas:117-141): pisar la salida suelta a la que lo perseguía, pase o no al otro mapa.
+                LiberarAlQueLoPersigue(_world, p);
                 // EL DESTINO SE VALIDA (VB6 GameLogic.bas:104-114). El original no warpea a ciegas: si el tile
                 // de llegada no es legal busca el legal MÁS CERCANO, y si no encuentra ninguno NO TELEPORTA —
                 // el jugador se queda donde está. Acá se saltaba entero: había salidas que dejaban al personaje
@@ -2617,6 +2620,26 @@ public sealed partial class PacketDispatcher
     internal void VencerMetamorfosis(Player p, long tick)
     {
         if (p.MetamorfosisHastaTick != 0 && tick >= p.MetamorfosisHastaTick) RevertirMetamorfosis(p);
+    }
+
+    /// <summary>
+    /// SUELTA A LA CRIATURA QUE LO PERSEGUÍA (VB6 GameLogic.bas:117-141 al pisar una salida, Modulo_UsUaRiOs.bas:
+    /// 1272-1292 al morir, TCP.bas:1579-1584 al desconectarse): la primera que lo atacó (<see cref="Player.AtacadoPorNpc"/>)
+    /// vuelve al movimiento de su ficha, se olvida del agresor y deja de estar anotada.
+    ///
+    /// <para>SIN EL BUG DEL ORIGINAL, por decisión del autor (22/09): ahí la línea es `Attackable = OldHostil`, que a
+    /// una pacífica provocada la deja inatacable hasta que reaparece. Acá vuelve su HOSTILIDAD a la de la ficha, que
+    /// es lo que hace el RestoreOldMovement de la IA. Como allá, no mira si la criatura tiene dueño.</para>
+    /// </summary>
+    internal static void LiberarAlQueLoPersigue(World world, Player p)
+    {
+        if (p.AtacadoPorNpc != 0 && world.NpcByIndex(p.AtacadoPorNpc) is { } npc)
+        {
+            npc.Movement = npc.OriginalMovement;
+            npc.Hostile = npc.OriginallyHostile;
+            npc.AttackedBy = null;
+        }
+        p.AtacadoPorNpc = 0;
     }
 
     /// <summary>EfectoVeneno (VB6 General.bas:1117), en cada vuelta del jugador vivo: cada IntervaloVeneno saca
@@ -13226,6 +13249,7 @@ public sealed partial class PacketDispatcher
         }
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
         p.PoisonCounter = 0;    // `.Counters.Veneno = 0` (Modulo_UsUaRiOs.bas:1253), junto con el flag
+        LiberarAlQueLoPersigue(world, p);   // VB6 UserDie (Modulo_UsUaRiOs.bas:1272-1292)
         p.Incinerado = false;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego, y no toca el contador
         // Morir deshace la metamorfosis (regla de la casa). El cadáver ya pisa cuerpo y cabeza acá arriba;
         // lo que hay que soltar son los BONOS y el tick, o al revivir el druida seguiría pegando como dragón
@@ -13458,6 +13482,7 @@ public sealed partial class PacketDispatcher
     private void SacarDelMundo(Player p, ClientSession? session)
     {
         p.Laborando = false;   // salir del mundo corta la faena (el corte y el /SALIR ya la cortaron en CerrarUsuario)
+        LiberarAlQueLoPersigue(_world, p);   // VB6 CloseUser (TCP.bas:1579-1584)
         // La muerte AHORA PERSISTE entre sesiones (VB6 FileIO.bas:1626 guarda Muerto=1): si te desconectás
         // muerto, reconectás muerto. CharacterFile guarda la cabeza VIVA (OrigHead) para que la de cadáver
         // (500) no quede pegada, y SpawnIntoWorld re-aplica la apariencia de cadáver al entrar sin vida.
