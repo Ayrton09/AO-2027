@@ -6178,6 +6178,15 @@ public sealed partial class PacketDispatcher
                         && string.Equals(pl.EscucheClan, p.GuildName, StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(pl.Name, p.Name, StringComparison.OrdinalIgnoreCase)))
                 gm.Connection?.Send(ServerMessages.GuildChat(line));
+            // Y EL GLOBO (VB6 :5575): "< texto >" sobre la cabeza, en modo 0, a los que lo ven y son de su clan o
+            // Dioses que no son RoleMaster (ToClanArea → SendToUserGuildArea, modSendData.bas:353). El GM con
+            // /INVISIBLE habla sólo por el chat del clan.
+            if (p.AdminInvisible) return;
+            var globo = ServerMessages.ChatOverHead($"< {chat} >", p.CharIndex, 0);
+            foreach (var otro in _world.Observers(p.Pos))
+                if (string.Equals(otro.GuildName, p.GuildName, StringComparison.OrdinalIgnoreCase)
+                    || ((otro.Privileges & PrivDios) != 0 && (otro.Privileges & PrivRoleMaster) == 0))
+                    otro.Connection?.Send(globo);
         });
     }
 
