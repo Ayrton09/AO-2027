@@ -6504,6 +6504,13 @@
       send(W().writeByte(CLIENT.LeftClick).writeByte(wx).writeByte(wy));
       ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.DoubleClick).writeByte(wx).writeByte(wy).toBytes(), myKey));
       describirObjetoDelPiso(wx, wy);
+      // EL SHIFT+CLIC DEL GM (VB6 frmMain.frm:2556): después del clic, `/TELEP YO` a esa baldosa del mapa donde está.
+      // El original lo manda sólo si es GM, que lo sabe por su lista de personajes; acá lo decide el server, que a un
+      // jugador común no le contesta nada.
+      if (ev.shiftKey) {
+        const w = new ByteQueueWriter();
+        if (armarComandoGm(w, '/telep', `YO ${currentMap} ${wx} ${wy}`)) ws.send(xorBuffer(w.toBytes(), myKey));
+      }
     });
     // Los personajes los describe el SERVER (CharMsgStatus, que llega por LookatTile), pero el objeto del piso
     // lo dice el CLIENTE con su tabla local, igual que el original (frmMain.frm:2451 → General_Locale_Obj).

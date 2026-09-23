@@ -4306,34 +4306,38 @@ public sealed partial class PacketDispatcher
 
     /// <summary>El nick que llega en un comando de GM, resuelto a un jugador ONLINE. <c>YO</c> es el propio
     /// GM: <c>If UCase$(UserName) &lt;&gt; "YO" Then tUser = NameIndex(UserName) Else tUser = UserIndex</c>,
-    /// que el original escribe en <c>/TELEP</c> (Protocol.bas:6895), <c>/REVIVIR</c> (:8320) y <c>/MOD</c>
-    /// (:7570). Los tres lo tienen porque su propio cliente manda esa palabra —el GM que se teletransporta
-    /// haciendo clic en el mapa dispara <c>WriteWarpChar("YO", ...)</c> (Cliente/frmMain.frm:2388)—, y acá
-    /// sólo lo tenía <c>/MOD</c>: los otros dos contestaban que "YO no está online".
+    /// que el original escribe en <c>/REVIVIR</c> (Protocol.bas:8320) y <c>/MOD</c> (:7570).
     ///
     /// <para>El nick vacío también devuelve al GM. No es del original —allá el vacío cae en el
-    /// <c>LenB(UserName) &lt;&gt; 0</c> y no hace nada— pero es lo que ya aceptaban estos dos handlers, y
-    /// sacarlo le rompería el comando a quien lo esté usando así.</para></summary>
+    /// <c>LenB(UserName) &lt;&gt; 0</c> y no hace nada— pero es lo que ya aceptaba el /REVIVIR, y sacarlo le
+    /// rompería el comando a quien lo esté usando así.</para></summary>
     private Player? ObjetivoDeGm(Player? gm, string name) =>
         string.IsNullOrWhiteSpace(name) || string.Equals(name, "YO", StringComparison.OrdinalIgnoreCase)
             ? gm : _world.PlayerByName(name);
 
+    /// <summary>
+    /// /TELEP &lt;nombre&gt; &lt;mapa&gt; &lt;x&gt; &lt;y&gt; (VB6 HandleWarpChar, Protocol.bas:6850): lleva a un jugador —o al propio
+    /// GM, con <c>YO</c>, que es lo que manda el Shift+clic del cliente— a una baldosa. Lo usa cualquier GM, pero el
+    /// Consejero sólo se mueve a sí mismo. Sin nombre, con un mapa que no existe o con la baldosa fuera de los bordes
+    /// no hace nada. Cae en la pedida o en la más cercana sin nadie (<see cref="LugarParaElQueSalta"/>); al GM le
+    /// contesta el 487 con SU nombre, y al que movió no le dice nada.
+    ///
+    /// <para>Dos cosas del original que no se portan (el autor lo dejó a criterio del port, 2026-09-23): el reemplazo
+    /// del nombre por el jugador que el GM tiene clickeado (<c>TargetUserName = .flags.TargetUser</c>), que con un
+    /// nombre escrito movía a otro y con el Shift+clic sobre un jugador lo "teletransportaba" a su propia baldosa; y
+    /// el LocaleMsg 77 ("¡Estás muerto!…") al nombre desconectado, un id equivocado: va el 75, "Usuario offline.".</para>
+    /// </summary>
     private void GmWarp(ClientSession session, string name, short map, byte x, byte y)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
-        var t = ObjetivoDeGm(p, name);
-        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"{name} no está online.", FuenteInfo)); return; }
-        short destMap = map <= 0 ? t.Pos.Map : map;
-        // Por `WarpOtroJugador` y no a mano: mover `Pos` de a pedacitos se olvidaba del `ChangeMap`, así que
-        // teletransportar a alguien a OTRO mapa le dejaba el cliente dibujando el mapa viejo — con la gente
-        // del nuevo apareciendo encima del escenario que ya no estaba. El helper ya existía (lo escribió la
-        // cárcel, que tropezó con esto mismo) y hace la secuencia entera: limpia los diálogos de las dos
-        // puntas, baja del barco al que quedó varado, manda el ChangeMap si cambió el mapa y refresca el área.
-        WarpOtroJugador(t, new WorldPos(destMap, x, y));
-        session.Send(ServerMessages.LocaleMsg(487, t.Name));
-        if (t.CharIndex != p!.CharIndex)
-            t.Connection?.Send(ServerMessages.ConsoleMsg($"Un GM te teletransportó a ({x},{y}).", FuenteInfo));
+        if (!RequireGm(session, p) || string.IsNullOrEmpty(name) || !_data.MapExists(map)) return;
+        var t = string.Equals(name, "YO", StringComparison.OrdinalIgnoreCase) ? p
+              : (p!.Privileges & PrivConsejero) != 0 ? null : _world.PlayerByName(name);
+        if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
+        if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder || y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder)
+            return;
+        WarpUserChar(t, LugarParaElQueSalta(t, new WorldPos(map, x, y)), fx: true);
+        session.Send(ServerMessages.LocaleMsg(487, p!.Name));
     }
 
     private void GmCharInfo(ClientSession session, string name)
