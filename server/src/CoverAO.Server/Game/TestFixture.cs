@@ -297,8 +297,9 @@ public static class TestFixture
             });
             System.Console.WriteLine($"Spawn: timbero en (66,{SvcRow}).");
 
-            // Enlistadores de facción (VB6 eNPCType.facciones): el NPCs.dat de este install no trae ninguno, así que
-            // se agregan al fixture. Doble-clic (o Enlist/Reward de frente) para enlistarse o ascender de rango.
+            // Enlistadores de facción (VB6 eNPCType.facciones) del laboratorio. Los del mundo (Jerek, Barinke Fauster y el
+            // Demonio) toman su rol de la ficha en `NpcSystem.SpawnNow`. Doble-clic (o Enlist/Reward de frente) para
+            // enlistarse o ascender de rango.
             world.AddNpc(new Npc
             {
                 CharIndex = world.AllocateCharIndex(), Movement = Estatico, Template = merchantTemplate, Hp = merchantTemplate.MaxHp,
@@ -314,9 +315,9 @@ public static class TestFixture
                 CharIndex = world.AllocateCharIndex(), Movement = Estatico, Template = merchantTemplate, Hp = merchantTemplate.MaxHp,
                 Pos = new WorldPos(FixtureMap, 38, SvcRow), FactionEnlist = 6,   // Milicia Republicana
             });
-            // CONVERTIDORES (VB6 eNPCType.Convertidores): le dan la ciudadanía a un renegado — el imperial abre la
-            // rama Ciudadano→Armada y el republicano la rama Republicano→Milicia. El NPCs.dat de este install no
-            // trae ninguno (no hay NpcType=5 ni Convertidores), así que van al fixture como los enlistadores.
+            // CONVERTIDORES (VB6 eNPCType.Convertidores) del laboratorio: le dan la ciudadanía a un renegado — el
+            // imperial abre la rama Ciudadano→Armada y el republicano la rama Republicano→Milicia. Los del mundo
+            // (Demedor Falentus y Halinte Ganre, mapa 20) toman su rol de la ficha, como los enlistadores.
             world.AddNpc(new Npc
             {
                 CharIndex = world.AllocateCharIndex(), Movement = Estatico, Template = merchantTemplate, Hp = merchantTemplate.MaxHp,

@@ -1247,6 +1247,14 @@ public sealed class NpcSystem
         if (s.Template.NpcType == 11) npc.IsVeterinaria = true;                  // eNPCType.Veterinarias
         if (s.Template.NpcType == 4) npc.IsBanker = true;                        // eNPCType.Banquero
         if (s.Template.NpcType == 7) npc.IsTransportador = true;                 // eNPCType.transportadores (el pirata del pasaje)
+        // LOS ENLISTADORES Y LOS CONVERTIDORES, de su ficha: el original los rutea por NPCtype y `flags.Status`
+        // (Acciones.bas:214-268). Sólo los ponía el fixture, así que en el mundo nadie podía enlistarse ni convertirse.
+        if (s.Template.NpcType == 5)                                              // eNPCType.facciones
+            npc.FactionEnlist = s.Template.Status switch
+            { 1 => Player.StatusArmada, 2 => Player.StatusMilicia, 4 => Player.StatusCaos, _ => (byte)0 };
+        if (s.Template.NpcType == 18)                                             // eNPCType.Convertidores
+            npc.FactionConvert = s.Template.Status switch
+            { 1 => Player.StatusCiudadano, 2 => Player.StatusRepublicano, _ => (byte)0 };
         // eNPCType.Entrenador: sus criaturas salen de la ficha (NroCriaturas + CN1..CNn). `IsTrainer` se
         // deriva de que la lista NO sea nula, asi que con esto el entrenador del mundo por fin lista algo.
         if (s.Template.TrainerCreatures is { Count: > 0 } criaturas)

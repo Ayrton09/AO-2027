@@ -6609,18 +6609,26 @@ public sealed partial class PacketDispatcher
                 if (reproche is not null) Say(reproche);
                 return;
             }
-
-            if (p.FactionRank >= MaxFactionRank(p)) { Say("Ya no tengo trabajo para darte, has alcanzado el rango más alto aquí."); return; }
-            int killsEnemigos = KillsForFaction(p);
-            int req = MatadosParaRango(p);   // VB6 matadosArmada/Caos: kills acumulados para el próximo rango
-            if (killsEnemigos < req) { Say($"Mata {req - killsEnemigos} enemigos más para recibir tu próxima recompensa."); return; }
-            p.FactionRank++;
-            // VB6 RecompensaArmadaReal:427 / RecompensaCaos:548 / RecompensaMilicia:497: al entrar en la jerarquía
-            // superior de tu facción el líder entrega además su armadura (rango >= 6 en Armada/Caos, >= 4 en Milicia).
-            if (p.FactionRank >= (p.IsMilicia ? MiliciaArmorRank : SecondHierarchyRank)) GrantFactionArmor(session, p);
-            session.Send(ServerMessages.UpdateUserStats(p));
-            Say($"¡Felicidades! Has ascendido a {FactionTitle(p)}.");
+            Recompensar(session, p, npc);
         });
+    }
+
+    /// <summary>Lo que hace el enlistador de tu bando cuando le pedís la recompensa (VB6 <c>RecompensaArmadaReal</c>,
+    /// <c>RecompensaMilicia</c> y <c>RecompensaCaos</c>). Lo llaman el /RECOMPENSA y el doble clic al enlistador del
+    /// bando propio.</summary>
+    private void Recompensar(ClientSession session, Player p, Npc npc)
+    {
+        void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
+        if (p.FactionRank >= MaxFactionRank(p)) { Say("Ya no tengo trabajo para darte, has alcanzado el rango más alto aquí."); return; }
+        int killsEnemigos = KillsForFaction(p);
+        int req = MatadosParaRango(p);   // VB6 matadosArmada/Caos: kills acumulados para el próximo rango
+        if (killsEnemigos < req) { Say($"Mata {req - killsEnemigos} enemigos más para recibir tu próxima recompensa."); return; }
+        p.FactionRank++;
+        // VB6 RecompensaArmadaReal:427 / RecompensaCaos:548 / RecompensaMilicia:497: al entrar en la jerarquía
+        // superior de tu facción el líder entrega además su armadura (rango >= 6 en Armada/Caos, >= 4 en Milicia).
+        if (p.FactionRank >= (p.IsMilicia ? MiliciaArmorRank : SecondHierarchyRank)) GrantFactionArmor(session, p);
+        session.Send(ServerMessages.UpdateUserStats(p));
+        Say($"¡Felicidades! Has ascendido a {FactionTitle(p)}.");
     }
 
     /// <summary>Work (id 21): skill(byte). Selecting a gathering skill begins that work (like a click).</summary>
@@ -7338,45 +7346,52 @@ public sealed partial class PacketDispatcher
             var npc = _world.NpcByIndex(p.TargetNpc);
             if (npc is null || npc.FactionEnlist == 0 || !p.IsAlive) return;
             if (DistanciaVB6(p.Pos, npc.Pos) > 4) { session.Send(ServerMessages.LocaleMsg(8)); return; }   // VB6 :5310
-
-            // El NPC te habla A VOS: las frases de ModFacciones.bas salen por `WriteChatOverHead(UserIndex, ...)`,
-            // que es al socket del jugador. Acá se emitían al área y las escuchaba media ciudad.
-            void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
-
-            if (npc.FactionEnlist == Player.StatusArmada)   // Armada Real (VB6 EnlistarArmadaReal:301)
-            {
-                if (p.IsArmada) { Say("Ya perteneces a las tropas reales, ve a combatir enemigos."); return; }
-                if (!p.IsCitizen) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
-                int kills = p.KillsEnemigosArmada;
-                if (kills < 15) { Say($"Para unirte a nuestras fuerzas debes matar al menos 15 enemigos, sólo has matado {kills}."); return; }
-                if (p.Level < 25) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 25."); return; }
-                p.CambiarFaccion(Player.StatusArmada);
-            }
-            else if (npc.FactionEnlist == Player.StatusMilicia)   // Milicia Republicana (VB6 EnlistarMilicia:222)
-            {
-                if (p.IsMilicia) { Say("Ya perteneces a las tropas milicianas, ve a combatir enemigos."); return; }
-                if (!p.IsRepublicano) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
-                int kills = p.KillsEnemigosMilicia;
-                if (kills < 15) { Say($"Para unirte a nuestras fuerzas debes matar al menos 15 enemigos, sólo has matado {kills}."); return; }
-                if (p.Level < 25) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 25."); return; }
-                p.CambiarFaccion(Player.StatusMilicia);
-            }
-            else   // Legión del Caos (VB6 EnlistarCaos:120)
-            {
-                if (p.IsCaos) { Say("Ya perteneces a la horda del caos, tráeme más almas."); return; }
-                if (!(p.FactionStatus == Player.StatusCriminal)) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
-                int kills = p.KillsEnemigosCaos;
-                if (kills < 30) { Say($"Para unirte a nuestras fuerzas debes matar al menos 30 enemigos, sólo has matado {kills}."); return; }
-                if (p.Level < 40) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 40."); return; }
-                p.CambiarFaccion(Player.StatusCaos);
-            }
-            p.FactionRank = 1;
-            // VB6 ModFacciones.bas:44/98/204: el cambio de bando se difunde al área con CharStatus (charIndex +
-            // status), no re-mandando el CharacterChange entero — que además ni siquiera lleva el status.
-            _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
-            session.Send(ServerMessages.UpdateUserStats(p));
-            Say($"¡Bienvenido, {FactionTitle(p)}! Ve a combatir a nuestros enemigos.");
+            Enlistar(session, p, npc);
         });
+    }
+
+    /// <summary>Lo que hace el enlistador cuando le pedís entrar (VB6 <c>EnlistarArmadaReal</c>, <c>EnlistarMilicia</c>
+    /// y <c>EnlistarCaos</c> de ModFacciones.bas). Lo llaman el /ENLISTAR y el doble clic a un enlistador de otro
+    /// bando, cada uno con sus compuertas.</summary>
+    private void Enlistar(ClientSession session, Player p, Npc npc)
+    {
+        // El NPC te habla A VOS: las frases de ModFacciones.bas salen por `WriteChatOverHead(UserIndex, ...)`,
+        // que es al socket del jugador. Acá se emitían al área y las escuchaba media ciudad.
+        void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
+
+        if (npc.FactionEnlist == Player.StatusArmada)   // Armada Real (VB6 EnlistarArmadaReal:301)
+        {
+            if (p.IsArmada) { Say("Ya perteneces a las tropas reales, ve a combatir enemigos."); return; }
+            if (!p.IsCitizen) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
+            int kills = p.KillsEnemigosArmada;
+            if (kills < 15) { Say($"Para unirte a nuestras fuerzas debes matar al menos 15 enemigos, sólo has matado {kills}."); return; }
+            if (p.Level < 25) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 25."); return; }
+            p.CambiarFaccion(Player.StatusArmada);
+        }
+        else if (npc.FactionEnlist == Player.StatusMilicia)   // Milicia Republicana (VB6 EnlistarMilicia:222)
+        {
+            if (p.IsMilicia) { Say("Ya perteneces a las tropas milicianas, ve a combatir enemigos."); return; }
+            if (!p.IsRepublicano) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
+            int kills = p.KillsEnemigosMilicia;
+            if (kills < 15) { Say($"Para unirte a nuestras fuerzas debes matar al menos 15 enemigos, sólo has matado {kills}."); return; }
+            if (p.Level < 25) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 25."); return; }
+            p.CambiarFaccion(Player.StatusMilicia);
+        }
+        else   // Legión del Caos (VB6 EnlistarCaos:120)
+        {
+            if (p.IsCaos) { Say("Ya perteneces a la horda del caos, tráeme más almas."); return; }
+            if (!(p.FactionStatus == Player.StatusCriminal)) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
+            int kills = p.KillsEnemigosCaos;
+            if (kills < 30) { Say($"Para unirte a nuestras fuerzas debes matar al menos 30 enemigos, sólo has matado {kills}."); return; }
+            if (p.Level < 40) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 40."); return; }
+            p.CambiarFaccion(Player.StatusCaos);
+        }
+        p.FactionRank = 1;
+        // VB6 ModFacciones.bas:44/98/204: el cambio de bando se difunde al área con CharStatus (charIndex +
+        // status), no re-mandando el CharacterChange entero — que además ni siquiera lleva el status.
+        _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
+        session.Send(ServerMessages.UpdateUserStats(p));
+        Say($"¡Bienvenido, {FactionTitle(p)}! Ve a combatir a nuestros enemigos.");
     }
 
     /// <summary>Convertidor (VB6 EntrarImperial :64 / EntrarRepublica :11, vía Acciones.bas:225): le da la
@@ -9005,6 +9020,12 @@ public sealed partial class PacketDispatcher
             if (DistanciaVB6(p.Pos, npc.Pos) > 3)
             { session.Send(ServerMessages.LocaleMsg(8)); return; }
             if (npc.FactionConvert != 0) { DoConvertir(session, p, npc); return; }   // Convertidor: da la ciudadanía
+            // EL ENLISTADOR (Acciones.bas:235-268): al que ya es de su bando le da la recompensa y al que no, lo enlista.
+            if (npc.FactionEnlist != 0)
+            {
+                if (p.FactionStatus == npc.FactionEnlist) Recompensar(session, p, npc); else Enlistar(session, p, npc);
+                return;
+            }
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
             // Doble clic a un mercader → la tienda, salvo que no te atienda por tu facción (Acciones.bas:180-197,
             // el mismo bloque que el `CommerceStart`). Es el camino por el que el cliente web abre el comercio.
