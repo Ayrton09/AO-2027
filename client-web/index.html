@@ -894,7 +894,7 @@
     // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
     // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
     import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=31';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=32';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
@@ -2992,7 +2992,7 @@
     // y una actualización de inventario resucitaría la bóveda encima del panel nuevo (bankOpen colgado).
     function endShopIfOpen() {
       if (ws && ws.readyState === 1) {
-        if (bankOpen) send(W().writeByte(CLIENT.BankEnd));
+        if (bankOpen || modalKind === 'bankgold') send(W().writeByte(CLIENT.BankEnd));
         else if (modalKind === 'commerce') send(W().writeByte(CLIENT.CommerceEnd));
       }
       bankOpen = false;
@@ -3274,7 +3274,7 @@
     }
     // --- Bank / vault panel (fed by BankInit + ChangeBankSlot) ---
     let bankItems = {};       // bankSlot -> {objIndex, amount, value}
-    let bankGold = 0, bankOpen = false;
+    let bankGold = 0, bankOpen = false, bankCount = 0;
     // Gemela de `comercioQty`: la ventana se rearma entera cada vez que cambia un slot, así que lo tipeado se
     // guarda acá o se pierde en el repintado.
     let bancoQty = 1;
@@ -3295,16 +3295,34 @@
       // La BÓVEDA a la izquierda y VOS a la derecha, con UNA caja de cantidad para los dos lados — igual que
       // el comercio y que el `frmBanco` del original. Antes no había caja y los dos botones movían de a UNA
       // unidad: depositar un montón era clickear cien veces.
-      modalCard.innerHTML = `<div class="cardT">Banco · bóveda ${bankGold} oro / llevás ${(myStats && myStats.gold) || 0}<span class="cx" title="cerrar">✕</span></div>`
+      modalCard.innerHTML = `<div class="cardT">Bóveda · llevás ${(myStats && myStats.gold) || 0} oro<span class="cx" title="cerrar">✕</span></div>`
         + `<div class="frow" style="padding:8px 12px">Cantidad por vez <input class="bnkq cantbox" type="number" min="1" max="10000" value="${bancoQty}"></div>`
         + `<div class="shop2">`
         +   `<div class="col"><div class="shopsec">Bóveda — clic para retirar</div>`
         +     `${vault.length ? vault.join('') : '<div class="fhint" style="grid-column:1/-1">(vacía)</div>'}</div>`
         +   `<div class="col"><div class="shopsec">Tu inventario — clic para depositar</div>`
         +     `${inv.length ? inv.join('') : '<div class="fhint" style="grid-column:1/-1">(vacío)</div>'}</div>`
-        + `</div>`
-        + `<div class="frow" style="padding:0 12px 12px"><span class="buy" data-depgold="100">depositar 100</span><span class="buy" data-extgold="100">retirar 100</span><span class="fhint">oro</span></div>`;
+        + `</div>`;
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
+    }
+    // EL PANEL DEL ORO (frmGoliath del original): lo abre el doble clic al banquero. Depositar y retirar mandan
+    // BankDepositGold / BankExtractGold —en el cliente original esos dos botones no mandaban nada y el oro se movía
+    // con /DEPOSITAR y /RETIRAR—, transferir manda TransferGOLD y "ver bóveda" pide la bóveda de ítems (BankStart).
+    let oroQty = 100;
+    const leerOroQty = () => {
+      const i = modalCard.querySelector('.orq');
+      const n = i ? parseInt(i.value, 10) : oroQty;
+      return Math.max(1, Number.isFinite(n) ? n : 1);
+    };
+    function renderPanelDelOro() {
+      if (modalKind === 'bankgold') oroQty = leerOroQty();
+      modalKind = 'bankgold';
+      modalCard.innerHTML = `<div class="cardT">Banco<span class="cx" title="cerrar">✕</span></div>`
+        + `<div class="frow" style="padding:8px 12px">Llevás ${(myStats && myStats.gold) || 0} monedas de oro; en tu cuenta hay ${bankGold} y ${bankCount} ítems en tu bóveda.</div>`
+        + `<div class="frow" style="padding:0 12px 8px">Oro <input class="orq cantbox" type="number" min="1" value="${oroQty}"> <span class="buy" data-depgold="1">depositar</span> <span class="buy" data-extgold="1">retirar</span></div>`
+        + `<div class="frow" style="padding:0 12px 8px">Transferir a <input class="trq" type="text" maxlength="30" placeholder="personaje"> <span class="buy" data-transfer="1">transferir</span></div>`
+        + `<div class="frow" style="padding:0 12px 12px"><span class="buy" data-boveda="1">ver bóveda</span></div>`;
+      modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal;
     }
     const itemName = (oi) => (items && items[oi] && items[oi][1]) || ('objeto ' + oi);
     const spellName = (id) => (spellNames && spellNames[id]) || ('hechizo ' + id);
@@ -3373,6 +3391,16 @@
       // del original, desde donde el líder decide. Antes la solicitud era un renglón y nada más: no había
       // forma de ver a quién estabas por aceptar.
       if (b.dataset.joiner) { send(W().writeByte(CLIENT.GuildRequestJoinerInfo).writeAsciiString(b.dataset.joiner)); return; }
+      // "VER BÓVEDA" pide la bóveda de ítems y cierra el panel SIN el BankEnd, como el `Case 2` de frmGoliath: si
+      // se abre, la ventana nueva la dibuja el BankInit que llega.
+      if (b.dataset.boveda) { modalEl.classList.remove('on'); modalKind = null; send(W().writeByte(CLIENT.BankStart)); return; }
+      // TRANSFERIR: TransferGOLD y después el BankEnd del cierre, como la tercera etapa de frmGoliath.
+      if (b.dataset.transfer) {
+        const caja = modalCard.querySelector('.trq');
+        const a = ((caja && caja.value) || '').trim();
+        if (a) { send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(a).writeLong(leerOroQty())); closeModal(); }
+        return;
+      }
       // Los dos botones del cartel "Cantidad a dejar". `Dejar todo` no lee la caja: manda el monton entero,
       // que es para lo que existe el boton en el original.
       if (b.dataset.dropslot || b.dataset.dropall) {
@@ -3394,8 +3422,8 @@
       // a lo que hay y a lo que entra, así que pasarse no rompe nada: se mueve lo posible.
       else if (b.dataset.bankslot) w.writeByte(CLIENT.BankExtractItem).writeByte(+b.dataset.bankslot).writeInteger(leerBancoQty());
       else if (b.dataset.depslot) w.writeByte(CLIENT.BankDeposit).writeByte(+b.dataset.depslot).writeInteger(leerBancoQty());
-      else if (b.dataset.depgold) w.writeByte(CLIENT.BankDepositGold).writeLong(+b.dataset.depgold);                   // deposit gold
-      else if (b.dataset.extgold) w.writeByte(CLIENT.BankExtractGold).writeLong(+b.dataset.extgold);                   // withdraw gold
+      else if (b.dataset.depgold) w.writeByte(CLIENT.BankDepositGold).writeLong(leerOroQty());                        // depositar oro
+      else if (b.dataset.extgold) w.writeByte(CLIENT.BankExtractGold).writeLong(leerOroQty());                        // retirar oro
       else if (b.dataset.prize) w.writeByte(CLIENT.RPremios).writeInteger(+b.dataset.prize);                          // canjear premio de donador (1-based)
       else w.writeByte(CLIENT.CommerceBuy).writeByte(+b.dataset.slot).writeInteger(leerComercioQty());
       ws.send(xorBuffer(w.toBytes(), myKey));
@@ -4091,7 +4119,8 @@
           if (myStats) { myStats.maxHp = f.maxHp; myStats.maxMan = f.maxMan; myStats.maxSta = f.maxSta;
                          myStats.level = f.level; myStats.elu = f.elu; myStats.exp = f.exp; }
           break;
-        case 'UpdateGold': if (myStats) myStats.gold = f.gold; else myStats = { gold: f.gold }; if (bankOpen) renderBank(); break; // carry-gold update (commerce/bank)
+        case 'UpdateGold': if (myStats) myStats.gold = f.gold; else myStats = { gold: f.gold };
+          if (bankOpen) renderBank(); else if (modalKind === 'bankgold') renderPanelDelOro(); break; // el oro encima, en el banco
         case 'ChangeInventorySlotUser': {              // compact delta update of one slot (equip/amount)
           const it = inventory[f.slot]; if (!it) break;
           if (f.accion === 1) it.equipped = true;
@@ -4213,7 +4242,13 @@
         // medio segundo al abrir una tienda. Igual el banco. Se agrupa con el mismo debounce de 120 ms que el
         // archivo ya usa para los íconos (scheduleIconRefresh): la ráfaga entera termina en UN solo render.
         case 'ChangeNPCInventorySlot': commerceItems[f.slot] = f; scheduleCommerce(); break; // stock slot (initial or post-buy)
-        case 'BankInit': bankItems = {}; bankOpen = true; bankGold = f.gold; renderBank(); break;   // vault window opening
+        // DOS VENTANAS, como el original (HandleBankInit del cliente VB6): con goliath, el PANEL DEL ORO (frmGoliath:
+        // el oro de la bóveda, cuántos ítems tiene y el menú); sin él, la BÓVEDA DE ÍTEMS (frmBancoObj), cuyas 40
+        // ranuras llegaron ANTES, así que acá no se vacía nada.
+        case 'BankInit':
+          if (f.goliath) { bankGold = f.gold; bankCount = f.count; renderPanelDelOro(); }
+          else { bankOpen = true; renderBank(); }
+          break;
         case 'ChangeBankSlot': bankItems[f.slot] = { objIndex: f.objIndex, amount: f.amount, value: f.value }; if (bankOpen) scheduleBank(); break;
         // Not in a guild: the server answers with the plain list of every clan (VB6 WriteGuildList).
         case 'GuildList': {
@@ -4311,6 +4346,9 @@
           // le pasa ESE color a `Char_Dialog_Create`. Acá el globo salía siempre del mismo crema, así que un
           // grito no se distinguía de un susurro.
           if (c) { c.chatText = f.chat; c.chatColor = colorPorModo(f.mode); c.chatAt = Date.now(); }
+          // EL SALDO DE LA CUENTA lo dice el banquero en su globo al depositar o retirar oro: con eso el panel del oro
+          // se mantiene al día sin pedir nada.
+          { const m = /Tenés (\d+) monedas de oro en tu cuenta/.exec(f.chat || ''); if (m) { bankGold = +m[1]; if (modalKind === 'bankgold') renderPanelDelOro(); } }
           // SOLO EL MODO 1 ESCRIBE EN LA CONSOLA. El cliente VB6 (Cliente/Codigo/Protocol.bas:1267) tiene un
           // `Select Case ModeChat` donde únicamente el `Case 1` llama a `AddtoRichTextBox`; los casos 2
           // (gritar), 3 (global) y 4 (privado) asignan el color y NO lo usan, así que esos sólo se dibujan
@@ -4359,8 +4397,8 @@
           else if (f.chat.includes('Es de día')) period = 'dia';
           else if (f.chat.includes('sol comienza a ponerse')) period = 'atardecer';
           else if (f.chat.includes('caído la noche')) period = 'noche';
-          // Gold deposit/withdraw report the authoritative vault balance in the text ("Boveda: N.").
-          { const m = /[Bb][oó]veda:\s*(\d+)/.exec(f.chat); if (m && bankOpen) { bankGold = +m[1]; renderBank(); } }
+          // La transferencia de oro informa el saldo que queda en la cuenta ("Tienes N monedas de oro en tu cuenta.").
+          { const m = /Tienes (\d+) monedas de oro en tu cuenta/.exec(f.chat); if (m) bankGold = +m[1]; }
           // Got hit (an NPC/player struck us) → brief red flash on our tile.
           if (/te (golpea|pega|prod)/i.test(f.chat)) myHitAt = Date.now();
           log(f.chat, FUENTES[f.font]);

@@ -383,10 +383,13 @@ public static class ServerMessages
         new ByteQueueWriter().WritePacketId(ServerPacketId.ChangeNPCInventorySlot)
             .WriteByte(slot).WriteInteger(amount).WriteSingle(price).WriteInteger(objIndex).ToArray();
 
-    /// <summary>Opens the bank window. Layout: goliath(byte), bankGold(long), bankItemCount(byte).</summary>
-    public static byte[] BankInit(long bankGold, byte bankItemCount) =>
+    /// <summary>Abre una ventana del banco (VB6 WriteBankInit, Protocol.bas:11636). Layout: goliath(byte),
+    /// oro de la bóveda(long), ítems de la bóveda(byte). El panel del oro (<paramref name="goliath"/>) trae los dos
+    /// números; la bóveda de ítems los manda en CERO, como el original.</summary>
+    public static byte[] BankInit(bool goliath, long bankGold = 0, byte bankItemCount = 0) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.BankInit)
-            .WriteByte(0).WriteLong((int)bankGold).WriteByte(bankItemCount).ToArray();
+            .WriteByte((byte)(goliath ? 1 : 0)).WriteLong(goliath ? (int)bankGold : 0)
+            .WriteByte(goliath ? bankItemCount : (byte)0).ToArray();
 
     public static byte[] BankEnd() =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.BankEnd).ToArray();

@@ -241,7 +241,8 @@ function readOne(r: ByteQueueReader, id: number): Record<string, unknown> | null
     }
     case ServerPacketId.TrainerCreatureList: return { creatures: r.readAsciiString() };
     case ServerPacketId.CommerceInit: return {};
-    case ServerPacketId.BankInit: { r.readByte(); const gold = r.readLong(); const count = r.readByte(); return { gold, count }; } // byte(legacy)+long(gold)+byte(count)
+    // goliath = 1: el panel del oro, con el oro de la bóveda y cuántos ítems tiene; 0: la bóveda de ítems, con los dos en cero.
+    case ServerPacketId.BankInit: { const goliath = r.readByte(); const gold = r.readLong(); const count = r.readByte(); return { goliath, gold, count }; }
     case ServerPacketId.BankEnd: return {};
     case ServerPacketId.ChangeBankSlot: return { slot: r.readByte(), objIndex: r.readInteger(), amount: r.readInteger(), value: r.readLong() };
     case ServerPacketId.GuildLeaderInfo: return { guilds: r.readAsciiString(), members: r.readAsciiString(), news: r.readAsciiString(), requests: r.readAsciiString() };

@@ -8990,6 +8990,12 @@ public sealed partial class PacketDispatcher
                 return;
             }
             if (DeadCheck(session, p)) return;   // un muerto sólo puede acudir al sacerdote (arriba); nada de comercio/banco/oficios
+            // CON UNA VENTANA YA ABIERTA, EL DOBLE CLIC NO ABRE OTRA. El original pone `If .flags.Comerciando
+            // Then Exit Sub` —mudo, sin el LocaleMsg 387 de la apertura directa— en TRES de sus ramas de NPC:
+            // mercader (Acciones.bas:170), entrenador (:274) y banquero (:290), y en las tres va ANTES que la
+            // distancia: con una ventana abierta y lejos calla, no dice "estás muy lejos". En las otras tres —Shop,
+            // Convertidores y facciones— no está. Sin esto se podía tener la tienda y la bóveda abiertas a la vez.
+            if ((npc.IsMerchant || npc.IsBanker || npc.TrainerCreatures is not null) && p.Comerciando) return;
             // VB6 Sub Accion: interactuar con un NPC (comercio/banco/entrenador/mesa) exige estar a <= 3 tiles,
             // medidos con `Distancia` — MANHATTAN (Acciones.bas:174, :208, :220, :239, :279, :295). Acá estaba
             // en Chebyshev, o sea que un mercader en (+3,+3) contaba como 3 cuando para el original está a 6:
@@ -9002,17 +9008,13 @@ public sealed partial class PacketDispatcher
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
             // Doble clic a un mercader → la tienda, salvo que no te atienda por tu facción (Acciones.bas:180-197,
             // el mismo bloque que el `CommerceStart`). Es el camino por el que el cliente web abre el comercio.
-            // CON UNA VENTANA YA ABIERTA, EL DOBLE CLIC NO ABRE OTRA. El original pone `If .flags.Comerciando
-            // Then Exit Sub` —mudo, sin el LocaleMsg 387 de la apertura directa— en TRES de sus ramas de NPC:
-            // mercader (Acciones.bas:170), entrenador (:274) y banquero (:290). En las otras tres —Shop,
-            // Convertidores y facciones— no está, así que el gate va por rama y no arriba de todas. Sin esto se
-            // podía tener la tienda y la bóveda abiertas a la vez: `BankOpen && TradingWith != 0`.
-            if (npc.IsMerchant) { if (p.Comerciando) return; if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
-            if (npc.IsBanker) { if (p.Comerciando) return; OpenBank(session, p, npc); return; }
+            if (npc.IsMerchant) { if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
+            // Doble clic al banquero → el PANEL DEL ORO (IniciarDeposito con goliath, Acciones.bas:301), no la bóveda.
+            if (npc.IsBanker) { AbrirPanelDelOro(session, p, npc); return; }
             // Sólo la lista: la rama Entrenador del original (Acciones.bas:271) manda `WriteTrainerCreatureList`
             // y nada más. Acá iba además un ConsoleMsg ("estas son las criaturas que puedo entrenar") que el VB6
             // no emite — el mismo patrón de mensaje espurio que el barrido del oráculo cerró 16 veces.
-            if (npc.TrainerCreatures is not null) { if (p.Comerciando) return; session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
+            if (npc.TrainerCreatures is not null) { session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
             // DESVIACIÓN DELIBERADA DEL SLICE (decidida, no olvidada). El original CALLA acá: su `Accion` rutea
             // por NPCtype y no tiene rama `Else`, así que un NPC sin rol no contesta nada al doble clic. Se
             // mantiene el diálogo porque sin él las criaturas quedan mudas.
@@ -12444,6 +12446,7 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             p.TradingWith = 0;
+            p.BankOpen = false;   // un solo `flags.Comerciando` para la tienda y el banco (Protocol.bas HandleCommerceEnd)
             session.Send(ServerMessages.CommerceEnd());
         });
     }
@@ -12615,29 +12618,44 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>Opens the vault for a player: BankInit (gold + item count) then one ChangeBankSlot per slot.
-    /// Shared by HandleBankStart (BankStart packet) and the DoubleClick-on-banker path.</summary>
+    /// <summary>La BÓVEDA DE ÍTEMS, como el original (<c>IniciarDeposito(False)</c>, modBanco.bas:25-43), que es lo que
+    /// abre el BankStart (/BOVEDA, o "ver bóveda" en el panel del oro): las 40 ranuras, el oro que lleva encima y
+    /// DESPUÉS el <c>BankInit</c> con goliath, oro e ítems en cero; recién ahí queda comerciando. Acá iba primero el
+    /// BankInit con el oro de la bóveda y la cuenta de ítems, que en el original son del panel del oro.</summary>
     private void OpenBank(ClientSession session, Player p, Npc banquero)
     {
-        p.BankOpen = true;
         // SOSTENER EL INVARIANTE DEL ORIGINAL. El VB6 lee el banquero de `.flags.TargetNPC`, que le queda
         // seteado del clic con el que se abre la ventana; nuestro port la abre por la baldosa encarada y nunca
         // llenaba ese campo. Los handlers de oro lo necesitan para colgarle el globo de diálogo al banquero y
         // para medir la distancia, así que se setea acá — el mismo arreglo que se le hizo a OpenCommerce.
         p.TargetNpc = banquero.CharIndex;
-        byte count = 0;
-        for (int i = 1; i <= GameLimits.MaxBankSlots; i++) if (!p.BankInventory[i].IsEmpty) count++;
-        session.Send(ServerMessages.BankInit(p.Bank, count));
         for (byte i = 1; i <= GameLimits.MaxBankSlots; i++)
         {
             var b = p.BankInventory[i];
             session.Send(ServerMessages.ChangeBankSlot(i, b.ObjIndex, b.Amount, _data.Obj(b.ObjIndex)?.Value ?? 0));
         }
+        session.Send(ServerMessages.UpdateGold(p.Gold));
+        session.Send(ServerMessages.BankInit(goliath: false));
+        p.BankOpen = true;
+    }
+
+    /// <summary>EL PANEL DEL ORO, que es lo que abre el doble clic al banquero (<c>IniciarDeposito(True)</c>,
+    /// Acciones.bas:301): sólo el <c>BankInit</c> con el oro de la bóveda y cuántos ítems tiene, sin ranuras y SIN
+    /// quedar comerciando. Desde ese panel se deposita y se retira oro, se transfiere, o se pide la bóveda de ítems
+    /// con un BankStart.</summary>
+    private void AbrirPanelDelOro(ClientSession session, Player p, Npc banquero)
+    {
+        p.TargetNpc = banquero.CharIndex;   // el mismo invariante que en OpenBank: los handlers del oro lo leen
+        byte items = 0;
+        for (int i = 1; i <= GameLimits.MaxBankSlots; i++) if (!p.BankInventory[i].IsEmpty) items++;
+        session.Send(ServerMessages.BankInit(goliath: true, p.Bank, items));
     }
 
     private void HandleBankEnd(ClientSession session)
     {
-        _loop.Enqueue(() => { var p = session.Player; if (p is null) return; p.BankOpen = false; session.Send(ServerMessages.BankEnd()); });
+        // El `flags.Comerciando` del original es UNO SOLO (ver Player.Comerciando): cerrar el banco también deja de
+        // comerciar con el mercader (Protocol.bas HandleBankEnd), igual que el CommerceEnd cierra el banco.
+        _loop.Enqueue(() => { var p = session.Player; if (p is null) return; p.BankOpen = false; p.TradingWith = 0; session.Send(ServerMessages.BankEnd()); });
     }
 
     private void HandleBankDeposit(ClientSession session, ByteQueueReader r)
@@ -12707,6 +12725,19 @@ public sealed partial class PacketDispatcher
     private Npc? BanqueroDelTarget(Player p) =>
         _world.NpcByIndex(p.TargetNpc) is { IsBanker: true } b ? b : null;
 
+    /// <summary>Las compuertas del oro, las del original (<c>HandleBankDepositGold</c> :6041-6056 y
+    /// <c>HandleBankExtractGold</c>): sin nada clickeado el 22; lo clickeado a más de 10 baldosas, el 8 —cualquiera
+    /// sea—; y si no es un banquero, silencio. NO piden la bóveda abierta: alcanza con haber clickeado al banquero,
+    /// que es como andan el /DEPOSITAR, el /RETIRAR y el panel del oro. Acá se pedía la bóveda abierta en lugar del
+    /// target, y el 8 salía sólo si era banquero.</summary>
+    private Npc? BanqueroParaElOro(ClientSession session, Player p)
+    {
+        if (p.TargetNpc < 1) { session.Send(ServerMessages.LocaleMsg(22)); return null; }
+        if (_world.NpcByIndex(p.TargetNpc) is not { } objetivo) return null;
+        if (DistanciaVB6(p.Pos, objetivo.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return null; }
+        return objetivo.IsBanker ? objetivo : null;
+    }
+
     /// <summary>Depositar oro (VB6 <c>HandleBankDepositGold</c>, Protocol.bas:6027). Le faltaban los dos gates
     /// de entrada —MUERTO (77) y LEJOS (8, con la <c>Distancia</c> Manhattan del original)— así que con la
     /// bóveda abierta se podía caminar hasta la otra punta del mapa y seguir operando, y un cadáver también.
@@ -12723,10 +12754,7 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
-            if (!p.BankOpen) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6: sin banquero targeteado
-            var banquero = BanqueroDelTarget(p);
-            if (banquero is null) return;                                              // NPCtype <> Banquero: silencio
-            if (DistanciaVB6(p.Pos, banquero.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            if (BanqueroParaElOro(session, p) is not { } banquero) return;
             if (amount <= 0 || amount > p.Gold)
             { session.Send(ServerMessages.ChatOverHead("No tenés esa cantidad.", banquero.CharIndex, 0)); return; }
             p.Gold -= amount; p.Bank += amount;
@@ -12752,10 +12780,7 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
-            if (!p.BankOpen) { session.Send(ServerMessages.LocaleMsg(22)); return; }   // VB6: sin banquero targeteado
-            var banquero = BanqueroDelTarget(p);
-            if (banquero is null) return;                                              // NPCtype <> Banquero: silencio
-            if (DistanciaVB6(p.Pos, banquero.Pos) > 10) { session.Send(ServerMessages.LocaleMsg(8)); return; }
+            if (BanqueroParaElOro(session, p) is not { } banquero) return;
             if (amount <= 0 || amount > p.Bank)
                 session.Send(ServerMessages.ChatOverHead("No tienes esa cantidad.", banquero.CharIndex, 0));
             else
