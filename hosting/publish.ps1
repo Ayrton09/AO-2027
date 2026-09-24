@@ -434,7 +434,10 @@ $noViajan = @('data/Cuentas/', 'data/Charfile/', 'data/Misc/', 'data/logs/', 'da
               # mundo al actualizarlo. No es contenido del paquete: si viaja, el que lo recibe empieza con un
               # mundo ya sellado por la maquina del que publico. Lo unico de `data/` que si es del paquete es
               # `updates.txt`, que lo genera este armador desde el CHANGELOG.
-              'data/version.txt')
+              'data/version.txt',
+              # Las CONTRASENAS de las cuentas de los bots de esta instalacion: las crea el servidor al arrancar
+              # con la clave Bots y no salen de la maquina donde se crearon. Se colaba en el zip de Windows.
+              'data/bots.txt')
 function Viaja($rel) {
   foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }
   return $true
