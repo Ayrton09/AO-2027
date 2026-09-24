@@ -95,8 +95,8 @@ contar desde el 4 de septiembre.
   su nivel mínimo, la barca también; en la arena no se roba; y el que anda sin ropa no recupera energía, salvo
   montado.
 
-- **La ropa de mujer es sólo para personajes mujer, y cada montura pide el nivel, la clase y la raza que dice su
-  ficha**: el huargo, por ejemplo, es sólo para orcos. (Pedidos del tester: en el original ninguna de las dos
+- **La ropa de mujer es sólo para personajes mujer**, y cada montura pide el nivel, la clase y la raza que dice
+  su ficha: el huargo, por ejemplo, es sólo para orcos. (Pedidos del tester: en el original ninguna de las dos
   cosas se controla.)
 
 - **Las pociones de fuerza y agilidad duran lo que en el original**: una media hora las comunes y más de hora y
