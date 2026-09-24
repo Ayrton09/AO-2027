@@ -200,6 +200,9 @@ if (Test-Path $changelog) {
       continue
     }
     if (-not $enSeccion) { continue }
+    # TITULO DE GRUPO: "### Combate" viaja como "== Combate ==", que el cliente web pinta en negrita.
+    # No puede empezar con '#': el server toma esas lineas de updates.txt como comentario.
+    if ($l -match '^###\s+(.*)$') { $lineas += ("== " + (Limpiar-Markdown $Matches[1]) + " =="); continue }
     if ($l -match '^\s*-\s+(.*)$') { $lineas += (Limpiar-Markdown $Matches[1]); continue }
     # CONTINUACION de la vinieta anterior. Sin esto se PERDIA: una vinieta escrita en dos lineas -que en
     # Markdown es una sola frase- llegaba al jugador cortada a la mitad, terminando en "y" o en "de". El

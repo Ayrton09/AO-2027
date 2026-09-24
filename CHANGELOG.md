@@ -4,158 +4,127 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.0 — 2026-09-24
 
-Esta tanda es larga. La mayor parte sale de cruzar el servidor contra el original sistema por sistema —los
-hechizos, las criaturas, el mercader, el banco, las facciones—; el resto son pedidos del tester y lo que quedó sin
-contar desde el 4 de septiembre.
+La mayor parte sale de cruzar el servidor contra el original sistema por sistema; el resto son pedidos del tester
+y lo que quedó sin contar desde el 4 de septiembre.
 
-- **Ya te podés enlistar.** Los enlistadores del mundo no enlistaban a nadie. Ahora Jerek te enlista en la Armada
-  Real, Barinke Fauster en la Milicia y el Demonio en la Legión del Caos, y si ya sos de su bando el doble clic te
-  da la recompensa. Y al renegado le dan la ciudadanía Demedor Falentus, la del Imperio, y Halinte Ganre, la de la
-  República.
+### Facciones y mundo
 
-- **Los guardias de las ciudades atacan.** Cada uno va contra las facciones enemigas de su bando: el imperial,
-  contra renegados, republicanos, la Milicia y el Caos; el republicano, contra renegados, ciudadanos, la Armada y
-  el Caos; el del Caos, contra todos los demás. Te persiguen hasta que salís de la ciudad y después vuelven a su
-  puesto. A los newbies (hasta nivel 15) no los tocan. (En el original los guardias no se mueven; quien hostea
-  elige a quién atacan, si persiguen y si tocan a los newbies, o los deja quietos con `GuardiasAtacan=0`.)
+- **Ya te podés enlistar.** Jerek te enlista en la Armada Real, Barinke Fauster en la Milicia y el Demonio en la
+  Legión del Caos; si ya sos de su bando, te dan la recompensa. Demedor Falentus y Halinte Ganre le dan la
+  ciudadanía al renegado.
 
-- **Los pasajes que cruzan el agua piden Navegación.** Todo pasaje a otra tierra —a Tiama, a Nueva Esperanza y
-  los demás cruces— te pide 80 puntos de Navegación, y si no llegás te lo dice. Entre puertos del mismo
-  continente no pide nada. (En el original no piden nada; quien hostea cambia el mínimo con
-  `NavegacionParaCruzar`, y con 0 vuelve a ser así.)
+- **Los guardias de las ciudades atacan** a las facciones enemigas de su bando, te persiguen hasta que salís de
+  la ciudad y después vuelven a su puesto. A los newbies (hasta nivel 15) no los tocan.
 
-- **Desconectarse no es escapar.** Si cortás la conexión en un mapa inseguro, tu personaje se queda en el mundo
-  los cinco segundos de la cuenta de salida, como con /SALIR, y si te atacan mientras tanto la cuenta vuelve a
-  empezar. Antes, cerrar el juego en medio de una pelea te sacaba al instante.
+- **Los pasajes que cruzan el agua piden 80 de Navegación.** Entre puertos del mismo continente, nada.
 
-- **Las cuevas piden nivel.** Cada dungeon tiene su mínimo y no te deja entrar antes: la Cueva orca pide 20, el
-  Veriil 28, el Dragón 30, el Zero 35 y el Cristal 40, entre otros. (Quien hostea cambia la tabla en la sección
-  `[NIVELMINIMO]` del `Server.ini`.)
+- **Las cuevas piden nivel**: la Cueva orca 20, el Veriil 28, el Dragón 30, el Zero 35 y el Cristal 40, entre
+  otras.
 
-- **La magia pega con otra cuenta.** El daño de los hechizos ahora depende del nivel, de la clase, de los objetos
-  que suman daño mágico o atraviesan defensas, y de la resistencia mágica del que lo recibe, en porcentaje. Es un
-  cambio de balance hecho a propósito, tomado de aoweb: no es el cálculo del original.
+- **Desconectarse no es escapar.** En un mapa inseguro tu personaje se queda los cinco segundos de la cuenta de
+  salida, y si te atacan la cuenta vuelve a empezar.
 
-- **La metamorfosis del druida ya no se vence.** Dura hasta que morís o salís del juego, como en el AO clásico;
-  antes se cortaba a los dos minutos. (Quien hostea le puede poner duración con `MetamorfosisDelDruida`.)
+### Combate y magia
 
-- **El mapa del mundo.** Hacé doble clic en el objeto Mapa y se abre con tu posición. Al pasar el mouse por una
-  zona te dice su nombre, qué criaturas hay y cuántas, y qué cuevas tiene, cada una con las suyas. El dibujo
-  coincide con el mundo: cada casillero tiene los colores de su mapa.
+- **La magia pega con otra cuenta**: depende del nivel, de la clase, de los objetos mágicos y de la resistencia
+  del que la recibe. Es un cambio de balance a propósito, tomado de aoweb.
 
-- **El hechizo cae sobre lo que clickeaste**, con las reglas del original para elegir el blanco: si en la baldosa
-  hay una criatura y un jugador, gana la criatura. Un hechizo sin blanco ya no te cae encima, los que dañan no se
-  lanzan sobre uno mismo, y curarle el veneno a alguien sano o sacarle la parálisis a quien no está paralizado no
-  te cobra el maná.
+- **El hechizo cae sobre lo que clickeaste**: si hay una criatura y un jugador, gana la criatura. Sin blanco ya
+  no te cae encima, y curarle el veneno a alguien sano no te cobra el maná.
 
-- **Atacar a una criatura con un hechizo de daño o de parálisis, o con una flecha, pide el modo combate**, como en
-  el original. La flecha que no le puede pegar ya no se gasta.
+- **Atacar a una criatura con hechizos o flechas pide el modo combate.** La flecha que no pega no se gasta.
 
-- **Más hechizos como en el original.** Lanzar uno ya no te saca del ocultamiento. Honor del Paladín sube además
-  la agilidad y la fuerza. La Tormenta ácida envenena a los que alcanza. Los de área sobre criaturas siguen las
-  mismas reglas que los de un solo blanco. Y las pociones que lanzan un hechizo se gastan sólo si hacen efecto.
+- **Lanzar un hechizo ya no te saca del ocultamiento.** Honor del Paladín sube además agilidad y fuerza, y la
+  Tormenta ácida envenena.
 
-- **La invisibilidad, como en el original.** Mientras sos invisible te ves latiendo, podés volver a lanzarla —se
-  cobra, pero no estira el tiempo— y cuando se vence te avisa y todos te vuelven a ver. Al invisible ya no se lo
-  atraviesa caminando, y el que entra a un mapa donde no se permite queda visible, con aviso.
+- **La invisibilidad, como en el original**: te ves latiendo, se puede volver a lanzar, avisa al terminarse y
+  al invisible ya no se lo atraviesa.
 
-- **Inmovilizar no es paralizar.** La criatura inmovilizada no camina pero sigue pegando: la hostil a los cuatro
-  lados, la pacífica sólo al frente. El jugador inmovilizado por otro jugador no queda paralizado y puede usar
-  /SALIR. El Inmovilizar del fuego fatuo ahora inmoviliza, igual que el tuyo. Y la parálisis sobre una criatura
-  dura lo que en el original: antes se le iba mucho más rápido.
+- **Inmovilizar no es paralizar**: la criatura no camina pero sigue pegando, y el jugador inmovilizado puede
+  usar /SALIR. El fuego fatuo también inmoviliza.
 
-- **Las criaturas, más como en el original.** Giran hacia lo que atacan, las magas tiran el hechizo mientras se
-  acercan, y entre ellas pelean buscando a su blanco sólo en lo que ven. La que te perseguía te suelta cuando
-  salís del mapa, te morís o te desconectás, y la pacífica que provocaste vuelve a ser pacífica. Las que no tienen
-  un lugar fijo reaparecen en cualquier punto del mapa, lejos de los jugadores.
+- **La metamorfosis del druida ya no se vence**: dura hasta que morís o salís del juego.
 
-- **Lo que mata tu mascota lo cobrás vos**: la experiencia, el oro y lo que suelta, también con los hechizos del
-  familiar. Y tu mascota, tu familiar y lo que invocás aparecen en la baldosa libre más cercana, nunca adentro de
-  una pared; las criaturas de agua, en el agua.
+- **Resucitar lleva un par de segundos**, con su sonido y su brillo, y el hechizo te deja con la comida y la
+  bebida llenas.
 
-- **Resucitar lleva un par de segundos**, con su sonido y su brillo, sea con el sacerdote, con /RESUCITAR, con el
-  hechizo o al morir en la arena; mientras tanto el sacerdote no te vuelve a atender. El hechizo Resucitar además
-  te deja con la comida y la bebida llenas.
+- **La gracia al entrar se corta apenas hacés algo**, caminar incluido.
 
-- **La gracia al entrar se corta apenas hacés algo.** Los cinco segundos en que las criaturas no te eligen de
-  blanco —al conectarte o al viajar— terminan con cualquier cosa que hagas, caminar incluido, como en el original.
-  Mientras duran, tampoco te pega la que tenés al lado.
+- **Más sonidos en la pelea**: el arco al acertar y al errar, y el golpe a otro jugador, que además deja sangre.
 
-- **Los teletransportes se ven de los dos lados**: el que está donde salís te ve irte y el que está donde llegás
-  te ve aparecer, con su sonido y su destello. Y al cambiar de mapa se te vuelve a avisar si llueve.
+### Criaturas y mascotas
 
-- **Lo tirado en el piso se ve al volver a un mapa.** Al cambiar de mapa o teletransportarte, los objetos del
-  suelo no aparecían en pantalla.
+- **Las criaturas giran hacia lo que atacan**, las magas tiran el hechizo mientras se acercan, y la parálisis
+  les dura lo que en el original.
 
-- **El trabajo arranca también con un clic.** Con la caña, el hacha, el pico o las tijeras en la mano, el clic
-  arranca la faena igual que el doble clic. Cambiar de herramienta o escribir /SALIR la corta, bajo techo no se
-  pesca y picar donde no hay yacimiento no da mineral.
+- **La que te perseguía te suelta** cuando salís del mapa, te morís o te desconectás.
 
-- **Reglas del original que faltaban.** Con el arco en la mano no se pega cuerpo a cuerpo; usar un objeto pide
-  su nivel mínimo, la barca también; en la arena no se roba; y el que anda sin ropa no recupera energía, salvo
-  montado.
+- **Reaparecen en cualquier punto del mapa, lejos de los jugadores**, salvo las que tienen un lugar fijo.
 
-- **La ropa de mujer es sólo para personajes mujer**, y cada montura pide el nivel, la clase y la raza que dice
-  su ficha: el huargo, por ejemplo, es sólo para orcos. (Pedidos del tester: en el original ninguna de las dos
-  cosas se controla.)
+- **Lo que mata tu mascota lo cobrás vos**: la experiencia, el oro y lo que suelta. Y tu mascota, tu familiar y
+  lo que invocás nunca aparecen adentro de una pared.
 
-- **Las pociones de fuerza y agilidad duran lo que en el original**: una media hora las comunes y más de hora y
-  media las de Alquimia; antes duraban horas. Los atributos no pasan de 35, y el panel te muestra el efecto y te
-  lo marca cuando llegás al tope.
+### Objetos y oficios
 
-- **El pendiente del sacrificio te salva el inventario**: con él puesto no se te cae nada al morir, y se gasta una
-  de sus tres cargas.
+- **El trabajo arranca con un clic**, igual que con el doble clic. Cambiar de herramienta o /SALIR lo cortan.
 
-- **El mercader, como en el original.** Cada uno vende lo que tiene en el original, cada cosa en su ranura. Lo
-  que no puede faltarle baja al comprarlo y se repone solo, y cuando se le vacía el mostrador lo vuelve a llenar.
-  La llave de una casa se vende una sola vez, aunque se reinicie el servidor. Si otro compra en la tienda que
-  tenés abierta lo ves al momento, y comprar o vender ya no llena la consola de mensajes.
+- **Las pociones de fuerza y agilidad duran lo que en el original**: media hora las comunes, hora y media las de
+  Alquimia. Los atributos no pasan de 35.
 
-- **El banco, como en el original.** El doble clic al banquero abre el panel del oro: cuánto tenés en la cuenta,
-  depositar, retirar, transferir y el botón de la bóveda. La bóveda también se abre con /BOVEDA, y para depositar
-  o retirar oro alcanza con haber hecho clic en el banquero.
+- **El pendiente del sacrificio te salva el inventario al morir**, gastando una de sus tres cargas.
 
-- **El hogar se elige con el sacerdote.** Hacé clic en el sacerdote y pedilo, desde Acciones en el menú o con
-  /HOGAR: te pregunta si querés que la ciudad donde estás sea tu hogar. Las neutrales las elige cualquiera;
-  Ullathorpe, Nix y Banderbill, los ciudadanos y la Armada; Illiandor, Lindos y Suramei, los republicanos y la
-  Milicia.
+- **La ropa de mujer es sólo para personajes mujer**, y cada montura pide el nivel, la clase y la raza de su
+  ficha: el huargo, sólo orcos.
 
-- **Las botellas se llenan en el agua que clickeás** y se toman: te sacan la sed y vuelven a quedar vacías.
+- **Reglas del original que faltaban**: con el arco no se pega cuerpo a cuerpo, los objetos piden su nivel
+  (la barca también), en la arena no se roba y desnudo no se recupera energía.
 
-- **Gritar y el chat global.** Empezá el mensaje con `-` para gritarle a todo el mapa, o con `;` para hablarle a
-  todo el servidor. Hablar por el clan también sale sobre tu cabeza, para los de tu clan que te ven.
+- **Las botellas se llenan en el agua** y se toman.
 
-- **Al fantasma se lo puede pisar**: si caminás hacia un muerto, pasa a la baldosa de la que venís.
+- **La fogata se ve como fogata** y se apaga sola a los cinco minutos.
 
-- **Los carteles del ingreso, como en el original.** Si el servidor está lleno, en mantenimiento o abierto sólo
-  para GMs, te sale el cartel del original. Las contraseñas nuevas piden seis caracteres o más, y el código para
-  recuperar la cuenta es un PIN de cuatro números, como allá.
+### Comercio, banco y hogar
 
-- **La fogata se ve como fogata**: naranja y con forma de llama, en vez de un punto blanco, y los efectos de
-  partículas —el fuego, los hechizos— tienen los colores del original. Además se apaga sola a los cinco minutos.
-  (En el original no se apaga nunca; quien hostea cambia los minutos con `MinutosDeFogata`, y con 0 vuelve a ser
-  así.)
+- **El mercader, como en el original**: vende lo del original, se repone solo, y la llave de una casa se vende
+  una sola vez. Si otro compra en la misma tienda, lo ves al momento.
 
-- **Más sonidos en la pelea**: el arco suena al acertar y al errar, y pegarle a otro jugador suena y deja sangre.
-  Y aguantar el hechizo de una criatura entrena la Resistencia mágica.
+- **El banco, como en el original**: el doble clic al banquero abre el panel del oro, con la bóveda a un botón
+  (o con /BOVEDA).
 
-- **El juego anda más liviano.** Los gráficos se preparan fuera del dibujo, así que se traba menos al entrar a un
-  mapa nuevo, y se sueltan los que hace rato que no se usan. En Opciones, Juego, podés ocultar la lluvia bajo
-  techo y en las cuevas.
+- **El hogar se pide al sacerdote** de la ciudad donde estás, desde Acciones o con /HOGAR.
 
-- **Para los GMs:** /TELEP, /IRA, /SUM, /ACC e /INVISIBLE funcionan como en el original. El GM invisible no se ve
-  ni se escucha, y lo que dice lo leen sólo los GMs. Pausar el servidor frena sólo a las criaturas y no deja
-  entrar a nadie. En el cliente web, Shift+clic en el mapa te lleva a esa baldosa.
+### Chat, mapa y pantalla
 
-- **Para el que hostea:** las tasas `Exp` y `Oro` multiplican directo —1 es lo normal, y el servidor avisa al
-  arrancar si una parece de la escala vieja—, y el panel las muestra aparte de los eventos. El anticheat tiene
-  memoria: cada trampa suma en la cuenta, a las tres se echa y a las seis se banea, y los GMs conectados las ven
-  pasar. Quedan registrados los movimientos grandes de oro, y hay topes de personajes y de cuentas nuevas por IP.
+- **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
+  cuevas.
 
-- **Bots que juegan solos.** Vienen apagados; quien hostea los prende con `Bots=` y la cantidad. Cazan,
-  comercian, fabrican con su oficio, suben de nivel y se desconectan cada tanto, se alejan de lo que los puede
-  matar y de los guardias del otro bando, y no pueden hacer nada que un jugador no pueda. Salen en el /ONLINE
-  como cualquiera.
+- **Gritar y el global**: empezá el mensaje con `-` para todo el mapa o con `;` para todo el servidor. El chat
+  del clan sale sobre la cabeza.
+
+- **Los teletransportes se ven de los dos lados**, y lo tirado en el piso se ve al volver a un mapa.
+
+- **Al fantasma se lo puede pisar**: pasa a la baldosa de la que venís.
+
+- **Los carteles del ingreso son los del original.** La contraseña nueva pide seis caracteres, y el código de
+  recuperación es un PIN de cuatro números.
+
+- **El juego anda más liviano**, y en Opciones, Juego, podés ocultar la lluvia bajo techo.
+
+### Para GMs y para el que hostea
+
+- **GMs**: /TELEP, /IRA, /SUM, /ACC e /INVISIBLE como en el original; pausar frena sólo a las criaturas; en el
+  cliente web, Shift+clic en el mapa te lleva a esa baldosa.
+
+- **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
+  `[NIVELMINIMO]`, `MinutosDeFogata` y `MetamorfosisDelDruida`. Con 0 —o la tabla de cuevas vacía— cada una
+  vuelve a ser como el original.
+
+- **Las tasas `Exp` y `Oro` multiplican directo** (1 es lo normal), y el panel las muestra aparte de los eventos.
+
+- **El anticheat tiene memoria**: a las tres trampas se echa y a las seis se banea. Los movimientos grandes de oro
+  quedan registrados.
+
+- **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad.
 
 ## 1.0.0 — 2026-09-16
 

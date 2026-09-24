@@ -4716,7 +4716,10 @@
       else if (m === 'trabajar') openActions('trabajar');
       else if (m === 'skills') openActions('skills');
       else if (m === 'varios') openActions('varios');
-      else if (m === 'novedades') showModal('📰 Novedades', novedades.length ? novedades.map(esc)
+      // Un renglón "== Tema ==" es el título de un grupo (el armador lo saca de los "###" del CHANGELOG). Va como
+      // texto plano en el cable, así que un cliente que no lo conoce lo muestra igual, legible.
+      else if (m === 'novedades') showModal('📰 Novedades', novedades.length
+        ? novedades.map((l) => { const t = /^== (.+) ==$/.exec(l); return t ? `<b>${esc(t[1])}</b>` : esc(l); })
         : ['El servidor no publicó novedades.'], true, 'novedades');
       // LA LICENCIA, VISIBLE PARA EL JUGADOR. No es un adorno legal: AO2026 es AGPL-3.0 y su cláusula de red
       // obliga a ofrecerle el código a quien interactúa con el servidor POR LA RED, o sea a cada persona que
