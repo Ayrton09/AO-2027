@@ -83,6 +83,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **La fogata se ve como fogata** y se apaga sola a los cinco minutos.
 
+- **Menos texto en la consola**: asignar habilidades y reordenar la bóveda ya no escriben nada, como en el
+  original.
+
 ### Comercio, banco y hogar
 
 - **El mercader, como en el original**: vende lo del original, se repone solo, y la llave de una casa se vende

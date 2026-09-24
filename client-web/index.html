@@ -3791,10 +3791,18 @@
           const w = W().writeByte(CLIENT.ModifySkills);
           for (let i = 1; i <= 27; i++) w.writeByte(skPend[i] || 0);
           send(w);
-          // LOS PUNTOS GASTADOS SE DESCUENTAN ACÁ. El server contesta con los valores nuevos (SendSkills)
-          // pero los libres que quedan viajan sólo dentro de un texto de consola, que nadie parsea: sin esto
-          // seguían figurando como disponibles después de gastarlos. El tope de 100 de arriba hace que lo
-          // mandado y lo gastado sean siempre lo mismo.
+          // EL CLIENTE SE ACTUALIZA SOLO, como el del original: el server no contesta nada al asignar
+          // (HandleModifySkills no tiene ni un Write). Se suman los puntos a cada skill y se descuentan de los
+          // libres; el tope de 100 de arriba hace que lo mandado y lo gastado sean siempre lo mismo.
+          if (misSkills) {
+            misSkills = misSkills.slice();
+            for (let i = 1; i <= 27; i++) {
+              if (!skPend[i]) continue;
+              misSkills[i - 1] = Math.min(100, (misSkills[i - 1] || 0) + skPend[i]);
+              const e = document.getElementById('skv-' + i);
+              if (e) e.textContent = '(' + misSkills[i - 1] + ')';
+            }
+          }
           puntosLibres = Math.max(0, puntosLibres - skPuestos());
           refrescarPuntosLibres();
           for (const k of Object.keys(skPend)) { const c = modalCard.querySelector('#sk-' + k); if (c) c.textContent = '0'; delete skPend[k]; }

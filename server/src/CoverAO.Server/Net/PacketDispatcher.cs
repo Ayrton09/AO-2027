@@ -7328,7 +7328,15 @@ public sealed partial class PacketDispatcher
             int other = upwards ? slot - 1 : slot + 1;
             if (slot < 1 || slot > GameLimits.MaxBankSlots || other < 1 || other > GameLimits.MaxBankSlots) return;
             (p.BankInventory[slot], p.BankInventory[other]) = (p.BankInventory[other], p.BankInventory[slot]);
-            session.Send(ServerMessages.ConsoleMsg("Reordenaste la bóveda.", FuenteInfo));
+            // COMO EL ORIGINAL (HandleMoveBank → UpdateBanUserInv(True) + UpdateVentanaBanco): las 40 ranuras y el
+            // BankOK, sin texto. Acá iba un "Reordenaste la bóveda." y ninguna ranura, así que la ventana no se
+            // enteraba del orden nuevo hasta reabrirla.
+            for (byte i = 1; i <= GameLimits.MaxBankSlots; i++)
+            {
+                var b = p.BankInventory[i];
+                session.Send(ServerMessages.ChangeBankSlot(i, b.ObjIndex, b.Amount, _data.Obj(b.ObjIndex)?.Value ?? 0));
+            }
+            session.Send(ServerMessages.BankOk());
         });
     }
 
@@ -9238,7 +9246,6 @@ public sealed partial class PacketDispatcher
                 session.Close("anticheat: skills");
                 return;
             }
-            int spent = 0;
             for (int i = 1; i <= GameLimits.NumSkills; i++)
             {
                 if (inc[i] <= 0) continue;
@@ -9250,11 +9257,10 @@ public sealed partial class PacketDispatcher
                 // "Client should prevent this, but just in case...": el original devuelve el sobrante en vez
                 // de comérselo (:3305-3308). Los puntos que pasan de 100 vuelven a la bolsa.
                 int gastado = inc[i] - Math.Max(0, sube - 100);
-                p.FreeSkillPoints -= (short)gastado; spent += gastado;
+                p.FreeSkillPoints -= (short)gastado;
             }
-            if (spent == 0) return;   // VB6: sin puntos asignados, no responde
-            session.Send(ServerMessages.SendSkills(p.Skills));
-            session.Send(ServerMessages.ConsoleMsg($"Asignaste {spent} punto(s) de skill. Restantes: {p.FreeSkillPoints}.", FuenteInfo));
+            // Y NO CONTESTA NADA: `HandleModifySkills` no tiene ni un Write, el cliente se actualiza solo. Acá se
+            // mandaban las skills enteras y un "Asignaste N punto(s)" que el original no conoce.
         });
     }
 
@@ -11873,7 +11879,7 @@ public sealed partial class PacketDispatcher
             {
                 p.Gold = (int)Math.Min((long)p.Gold + inv.Amount, MaxOro);
                 p.Inventory[slot] = default;
-                session.Send(ServerMessages.ChangeInventorySlot(slot, 0, 0, false, 0f, 0));
+                session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, 0));   // UpdateUserInventario (:1462)
                 session.Send(ServerMessages.UpdateGold(p.Gold));
                 return;
             }
@@ -12019,7 +12025,7 @@ public sealed partial class PacketDispatcher
                 inv.Amount -= 1;
                 if (inv.Amount <= 0) inv = default;
                 p.Inventory[slot] = inv;
-                session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, inv.IsEmpty ? (byte)0 : (byte)1));
+                session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, inv.Amount));   // UpdateUserInventario (:1412)
                 return;
             }
 
@@ -12033,18 +12039,26 @@ public sealed partial class PacketDispatcher
                 if (p.MaxMana <= 0) { session.Send(ServerMessages.LocaleMsg(393)); return; }
                 short hIndex = (short)obj.HechizoIndex;
                 if (hIndex <= 0) return;
-                for (int i = 1; i <= GameLimits.MaxUserSpells; i++)
-                    if (p.Spells[i] == hIndex) { session.Send(ServerMessages.LocaleMsg(396)); return; }   // ya lo tiene
-                int freeSlot = 0;
-                for (int i = 1; i <= GameLimits.MaxUserSpells; i++)
-                    if (p.Spells[i] == 0) { freeSlot = i; break; }
-                if (freeSlot == 0) { session.Send(ServerMessages.LocaleMsg(395)); return; }                // sin espacio
-                p.Spells[freeSlot] = hIndex;
-                session.Send(ServerMessages.ChangeSpellSlot((byte)freeSlot, hIndex));
-                inv.Amount -= 1;
-                if (inv.Amount <= 0) inv = default;
-                p.Inventory[slot] = inv;
-                session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, inv.IsEmpty ? (byte)0 : (byte)1));
+                // `AgregarHechizo` (modHechizos.bas:230) y, se aprenda o no, el delta de la ranura con lo que quedó
+                // (InvUsuario.bas:1825): con el hechizo ya sabido o sin lugar, la ranura sale igual, sin cambios.
+                if (p.Spells.Skip(1).Take(GameLimits.MaxUserSpells).Contains(hIndex))
+                    session.Send(ServerMessages.LocaleMsg(396));                                          // ya lo tiene
+                else
+                {
+                    int freeSlot = 0;
+                    for (int i = 1; i <= GameLimits.MaxUserSpells; i++)
+                        if (p.Spells[i] == 0) { freeSlot = i; break; }
+                    if (freeSlot == 0) session.Send(ServerMessages.LocaleMsg(395));                        // sin espacio
+                    else
+                    {
+                        p.Spells[freeSlot] = hIndex;
+                        session.Send(ServerMessages.ChangeSpellSlot((byte)freeSlot, hIndex));
+                        inv.Amount -= 1;
+                        if (inv.Amount <= 0) inv = default;
+                        p.Inventory[slot] = inv;
+                    }
+                }
+                session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, p.Inventory[slot].Amount));
                 return;
             }
 
@@ -12170,7 +12184,7 @@ public sealed partial class PacketDispatcher
                 inv.Amount -= 1;
                 if (inv.Amount <= 0) inv = default;
                 p.Inventory[slot] = inv;
-                session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
+                session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, inv.Amount));   // UpdateUserInventario (:1847)
                 if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} abre {obj.Name} (+{obj.Value} oro -> {p.Gold})");
                 return;
             }
@@ -12228,15 +12242,15 @@ public sealed partial class PacketDispatcher
                                           : ServerMessages.UpdateStrenght(p.Strength); break;
                 }
                 case 13: // cofre de créditos de donador (VB6 InvUsuario.bas:1683): suma CuantoAumento al crédito.
-                {        // No es una bebida: se consume y avisa con LocaleMsg 470, sin sonido de beber ni UpdateUserStats.
-                    if (obj.CuantoAumento <= 0) { session.Send(ServerMessages.ConsoleMsg("Ese objeto no tiene efecto.", FuenteInfo)); return; }
-                    p.CreditoDonador += obj.CuantoAumento;
-                    inv.Amount -= 1;
-                    if (inv.Amount <= 0) inv = default;
-                    p.Inventory[slot] = inv;
-                    session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, inv.IsEmpty ? (byte)0 : (byte)1));
-                    session.Send(ServerMessages.LocaleMsg(470, $"{obj.CuantoAumento}%{p.CreditoDonador}"));   // "¡Has abierto cofre de #1 creditos, ahora tienes #2!"
-                    return;
+                {        // No es una bebida: avisa con LocaleMsg 470 —sólo si suma algo—, sin sonido de beber, y se
+                         // consume abajo como cualquier poción, con o sin créditos.
+                    if (obj.CuantoAumento > 0)
+                    {
+                        p.CreditoDonador += obj.CuantoAumento;
+                        session.Send(ServerMessages.LocaleMsg(470, $"{obj.CuantoAumento}%{p.CreditoDonador}"));   // "¡Has abierto cofre de #1 creditos, ahora tienes #2!"
+                    }
+                    effect = $"+{obj.CuantoAumento} créditos";
+                    break;
                 }
                 case 5: // poción que LANZA UN HECHIZO sobre quien la toma (VB6 InvUsuario.bas:1635-1641)
                 {
@@ -12319,7 +12333,9 @@ public sealed partial class PacketDispatcher
                     // Los SubTipo 10, 11 y 12 del obj.dat (Scroll x2 Experiencia, x2 Oro y del Trueno) caen acá y
                     // está bien: son data sin código TAMBIÉN en el original —su Select Case salta del 9 al 13—,
                     // o sea ítems que el servidor de origen tampoco sabía usar. Lo que no se porta es lo muerto.
-                    session.Send(ServerMessages.ConsoleMsg("Esa poción no tiene efecto.", FuenteInfo)); return;
+                    // Y SE CONSUMEN IGUAL, en silencio: el `QuitarUserInvItem` del original está después del `End Select`
+                    // (InvUsuario.bas:1690). Acá no se gastaban y salía un "Esa poción no tiene efecto." inventado.
+                    effect = "sin efecto"; break;
             }
 
             // Los cuatro Case que se BEBEN (1 a 4) mandan primero el granular del stat que tocaron, no el
@@ -12336,7 +12352,8 @@ public sealed partial class PacketDispatcher
             inv.Amount -= 1;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
-            session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
+            // El delta de la ranura y no la ranura entera (UpdateUserInventario, InvUsuario.bas:1691).
+            session.Send(ServerMessages.ChangeInventorySlotUser(slot, 3, inv.Amount));
             if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} usa {obj.Name} ({effect})");
         });
     }
