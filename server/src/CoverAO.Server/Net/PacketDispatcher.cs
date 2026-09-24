@@ -8711,7 +8711,7 @@ public sealed partial class PacketDispatcher
     /// <summary>Doble-clic sobre un tile SIN NPC: puede haber un objeto del mundo. VB6 <c>Accion</c>
     /// (Acciones.bas:332-390) sondea CUATRO tiles y no sólo el clickeado — (X,Y), (X+1,Y), (X+1,Y+1) y (X,Y+1) —
     /// y en los tres extra sólo acepta puertas. Eso es lo que deja abrir una puerta clickeándole el dintel o la
-    /// mitad de al lado. Del resto de los tipos accionables (Correo/Leña/Pozos) el slice no modela ninguno.</summary>
+    /// mitad de al lado. Los otros tipos accionables —pozos, fogata apagada y correo— tienen cada uno su rama.</summary>
     private void TryAccionParaObjeto(ClientSession session, Player p, byte x, byte y)
     {
         Span<(int dx, int dy, bool soloPuertas)> sondas = stackalloc (int, int, bool)[]
@@ -8749,29 +8749,6 @@ public sealed partial class PacketDispatcher
                 AnotarFogataPrendida(pos);
                 session.Send(ServerMessages.LocaleMsg(170));
                 RaiseSkill(session, p, GameLimits.SkillSupervivencia);
-                return;
-            }
-            // POZOS (otPozos = 40). VB6 AccionParaPozos (Acciones.bas:410): a más de 3 tiles no hace NADA
-            // —ni avisa— y adentro ramifica por SubTipo: 1 llena el maná, 2 la sed. Los dos gates son "sólo si
-            // falta": estando lleno no pasa nada y no se emite un byte. Faltaba entero, y hay 10 pozos
-            // colocados en 7 mapas del mundo real.
-            if (info.ObjType == 40)
-            {
-                if (DistanciaVB6(pos, p.Pos) > 3) return;
-                if (info.SubType == 1 && p.Mana < p.MaxMana)
-                {
-                    p.Mana = p.MaxMana;
-                    session.Send(ServerMessages.UpdateMana((short)p.Mana));
-                    session.Send(ServerMessages.LocaleMsg(173));
-                    _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y));
-                }
-                else if (info.SubType == 2 && p.Thirst < p.MaxThirst)
-                {
-                    p.Thirst = p.MaxThirst;
-                    session.Send(ServerMessages.UpdateSed((byte)p.Thirst));
-                    session.Send(ServerMessages.LocaleMsg(175));
-                    _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndBeber, p.Pos.X, p.Pos.Y));
-                }
                 return;
             }
             // Buzón de correo (otCorreo = 48). VB6 AccionParaCorreo (Acciones.bas:592): a más de 3 tiles
