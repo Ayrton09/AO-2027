@@ -143,6 +143,9 @@ public sealed class World
     /// .dat" (Comercio.bas:106-109): acá esa línea reescrita vive en este mapa, que persiste en
     /// <c>Misc/PROPIEDADES.json</c>, y <see cref="InventarioDelMercader.LineasDe"/> la aplica sobre la ficha.</summary>
     public Dictionary<int, Dictionary<int, short>> LlavesVendidas { get; } = new();
+    /// <summary>El motivo del rechazo de un aspirante que estaba desconectado (VB6 <c>[GUILD] MotivoRechazo</c> del .chr,
+    /// modGuilds.bas:1906): se le muestra en un cartel la próxima vez que entra, y se borra.</summary>
+    public Dictionary<string, string> MotivosDeRechazo { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public void Add(Player p)
     {

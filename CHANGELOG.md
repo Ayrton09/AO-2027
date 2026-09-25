@@ -100,6 +100,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Fundar un clan se anuncia a todo el servidor**, con su sonido, y se lleva las gemas si las tenés.
 
+- **Los clanes, como en el original**: aceptar, echar o irse se avisa a todo el clan, con su sonido; aceptar mira
+  que tu facción cuadre con la del clan; cualquier miembro puede rechazar una solicitud, y si el rechazado no
+  estaba conectado, lee el motivo al entrar.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus

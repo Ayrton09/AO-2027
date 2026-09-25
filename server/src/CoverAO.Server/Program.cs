@@ -202,6 +202,7 @@ Console.WriteLine($"Persistencia en {dataRoot} ({(store is SqliteStore ? "SQLite
 
 var world = new World();
 world.LoadGuilds(db.LoadGuilds());       // restore persisted clans
+foreach (var (nombre, motivo) in db.LoadMotivosDeRechazo()) world.MotivosDeRechazo[nombre] = motivo;
 world.LoadMailboxes(db.LoadMailboxes()); // restore pending mail
 world.RecordUsuarios = db.LoadRecordUsuarios();   // el pico historico de conectados, que muestra el /ONLINE
 var loop = new GameLoop();

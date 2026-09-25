@@ -74,6 +74,23 @@ public sealed class Persistence
         }
     }
 
+    /// <summary>Los motivos de rechazo pendientes (<see cref="Game.World.MotivosDeRechazo"/>): personaje → motivo.</summary>
+    public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
+        => _store.WriteMisc("rechazos-de-clan", System.Text.Json.JsonSerializer.Serialize(motivos));
+
+    /// <summary>Lo guardado por <see cref="SaveMotivosDeRechazo"/>; ausente o ilegible, el mapa vacío.</summary>
+    public Dictionary<string, string> LoadMotivosDeRechazo()
+    {
+        string? json = _store.ReadMisc("rechazos-de-clan");
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new(); }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Console.Error.WriteLine($"[rechazos-de-clan] el archivo guardado no se pudo leer, se arranca sin él: {ex.Message}");
+            return new();
+        }
+    }
+
     public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
         => _store.WriteMisc("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
 

@@ -1326,6 +1326,12 @@ public sealed partial class PacketDispatcher
         }
         if (player.Navigating) session.Send(ServerMessages.NavigateToggle());   // TCP.bas:320 — relogueó en el barco
         SendGuildNewsAlEntrar(session, player);                                 // TCP.bas:346 — modGuilds.SendGuildNews
+        if (_world.MotivosDeRechazo.Remove(player.Name, out var motivo))          // TCP.bas:348 — a_ObtenerRechazoDeChar
+        {
+            PersistGuilds();
+            if (motivo.Length > 0)
+                session.Send(ServerMessages.ShowMessageBox("Tu solicitud de ingreso al clan ha sido rechazada. El clan te explica que: " + motivo));
+        }
         // TCP.bas:374 — al staff conectado se le anuncia quién entró (SendTarget.ToADMINS). Un servidor
         // hosteado sin esto deja a los GMs sin ver el movimiento de gente.
         BroadcastToAdmins(ServerMessages.LocaleMsg(489, player.Name));
@@ -5795,25 +5801,12 @@ public sealed partial class PacketDispatcher
         if (p is null || (p.Privileges & PrivRoleMaster) != 0
             || (p.Privileges & (PrivAdmin | PrivDios)) == 0) return;   // gate silencioso
         string nombre = nick.Replace('+', ' ').Trim();
-        // El objetivo puede estar OFFLINE: entonces hay que barrer los clanes buscándolo por nombre.
-        var t = _world.PlayerByName(nombre);
-        var g = t is not null && !string.IsNullOrEmpty(t.GuildName)
-            ? _world.GuildByName(t.GuildName)
-            : _world.AllGuilds.FirstOrDefault(x => x.Members.Any(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase)));
-        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"{nombre} no pertenece a ningún clan.", FuenteClan)); return; }
-        var miembro = g.Members.FirstOrDefault(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase));
-        if (miembro is null) { session.Send(ServerMessages.ConsoleMsg($"{nombre} no pertenece a ningún clan.", FuenteClan)); return; }
-        // AL LÍDER NO SE LO ECHA, ni siquiera un GM. Es la última línea de `m_PuedeSalirDeClan`
-        // (modGuilds.bas:664): `m_PuedeSalirDeClan = UCase$(GetLeader) <> UCase$(Nombre)` — o sea que el
-        // permiso se niega SIEMPRE que el expulsado sea el líder, sin mirar quién lo echa. Acá faltaba y el
-        // comando decapitaba el clan: lo destapó el flow, que fundó el clan con el propio objetivo de líder.
-        if (string.Equals(miembro, g.LeaderName, StringComparison.OrdinalIgnoreCase))
-        { session.Send(ServerMessages.ConsoleMsg($"No puedes expulsar al líder del clan <{g.Name}>.", FuenteClan)); return; }
-        g.Members.Remove(miembro);
-        PersistGuilds();
-        if (t is not null) { t.GuildName = ""; t.Connection?.Send(ServerMessages.ConsoleMsg($"Has sido expulsado del clan <{g.Name}>.", FuenteClan)); }
-        session.Send(ServerMessages.ConsoleMsg($"Expulsaste a {miembro} del clan <{g.Name}>.", FuenteClan));
-        Console.WriteLine($"[{session.RemoteEndpoint}] /RAJARCLAN {p.Name} -> {miembro} de <{g.Name}>");
+        Console.WriteLine($"[{session.RemoteEndpoint}] /RAJARCLAN {p.Name} -> {nombre}");   // LogGM
+        // VB6 HandleRemoveCharFromGuild (Protocol.bas:11145): el GM no recibe nada (sus dos avisos están comentados);
+        // los del clan, el aviso de la expulsión.
+        var g = EcharDelClan(p, nombre);
+        if (g is not null)
+            EnviarAlClan(g.Name, ServerMessages.ConsoleMsg($"{nombre} ha sido expulsado del clan por los administradores del servidor.", FuenteClan));
     }
 
     // --- Tanda 5: comandos GM que reusan rutinas ya existentes del port ---
@@ -6266,7 +6259,11 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>GuildAcceptNewMember (id 54): applicant name. The leader admits a queued aspirant.</summary>
+    /// <summary>GuildAcceptNewMember (id 54): el líder acepta a un aspirante — VB6 <c>HandleGuildAcceptNewMember</c>
+    /// (Protocol.bas:4478) con <c>a_AceptarAspirante</c> (modGuilds.bas:2175). Cada rechazo con su texto del original;
+    /// el aspirante que no puede entrar por su alineación o porque ya es de otro clan SALE de la cola. Aceptado, se
+    /// avisa a los del clan con el sonido 43. La facción del aspirante desconectado sale de su ficha, que se lee fuera
+    /// del loop.</summary>
     private void HandleGuildAcceptMember(ClientSession session, ByteQueueReader r)
     {
         string applicant = r.ReadAsciiString().Trim();
@@ -6275,42 +6272,137 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null) return;
             var guild = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
-            if (guild is null || !string.Equals(guild.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede aceptar solicitudes.", FuenteClan)); return; }
-            if (!guild.JoinRequests.Remove(applicant)) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no tiene una solicitud pendiente.", FuenteClan)); return; }
+            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan", FuenteClan)); return; }
+            if (!string.Equals(guild.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("No eres el líder de tu clan", FuenteClan)); return; }
+            if (ClaveDeAspirante(guild, applicant) is null)
+            { session.Send(ServerMessages.ConsoleMsg("El Pj no es aspirante al clan.", FuenteClan)); return; }
             var joiner = _world.PlayerByName(applicant);
-            // VB6 a_AceptarAspirante: rechaza si el aspirante ya pertenece a otro clan (evita doble membresía).
-            if (joiner is not null && !string.IsNullOrEmpty(joiner.GuildName))
-            { session.Send(ServerMessages.ConsoleMsg($"{applicant} ya pertenece a un clan.", FuenteClan)); return; }
-            guild.Members.Add(applicant);
-            if (joiner is not null) joiner.GuildName = guild.Name;
-            PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Aceptaste a {applicant} en el clan.", FuenteClan));
-            joiner?.Connection?.Send(ServerMessages.ConsoleMsg($"Fuiste aceptado en el clan <{guild.Name}>.", FuenteClan));
-            foreach (var m in _world.GuildMembersOnline(guild.Name))
-                if (m.CharIndex != p.CharIndex && !string.Equals(m.Name, applicant, StringComparison.OrdinalIgnoreCase))
-                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{applicant} se unió al clan.", FuenteClan));
+            if (joiner is not null)
+            {
+                TerminarDeAceptar(session, guild, applicant, joiner.FactionStatus, !string.IsNullOrEmpty(joiner.GuildName));
+                return;
+            }
+            // Desconectado: el clan sale del registro (`GetGuildIndexFromChar`) y la facción, de su ficha.
+            bool enOtroClan = _world.AllGuilds.Any(g => g.Members.Contains(applicant));
+            string pedido = applicant;
+            _ = Task.Run(() =>
+            {
+                byte status = 0;
+                try { if (_db.CharacterExists(pedido) && _db.LoadCharacter(pedido, 0, "") is { } ficha) status = ficha.FactionStatus; }
+                catch (Exception ex) { Console.Error.WriteLine($"[clan] ficha de {pedido}: {ex.Message}"); }
+                _loop.Enqueue(() => TerminarDeAceptar(session, guild, pedido, status, enOtroClan));
+            });
         });
     }
 
-    /// <summary>GuildRejectNewMember (id 55): applicant name + reason. The leader declines a queued aspirant.</summary>
+    private void TerminarDeAceptar(ClientSession session, Guild guild, string applicant, byte status, bool enOtroClan)
+    {
+        var clave = ClaveDeAspirante(guild, applicant);
+        if (clave is null || session.Player is null) return;   // la cola cambió mientras se leía la ficha
+        if (!PuedeEntrarAlClan(guild, applicant, status))
+        {
+            guild.JoinRequests.Remove(clave);
+            PersistGuilds();
+            session.Send(ServerMessages.ConsoleMsg(
+                $"{applicant} no puede entrar a un clan de alineación {Guild.NombreDeAlineacion(guild.Alignment)}", FuenteClan));
+            return;
+        }
+        if (enOtroClan)
+        {
+            guild.JoinRequests.Remove(clave);
+            PersistGuilds();
+            session.Send(ServerMessages.ConsoleMsg($"{applicant} ya es parte de otro clan.", FuenteClan));
+            return;
+        }
+        guild.JoinRequests.Remove(clave);
+        guild.Members.Add(clave);
+        var joiner = _world.PlayerByName(clave);
+        if (joiner is not null)
+        {
+            joiner.GuildName = guild.Name;
+            _world.BroadcastToObservers(joiner.Pos, ServerMessages.UpdateTagAndStatus(joiner));   // RefreshCharStatus
+        }
+        PersistGuilds();
+        EnviarAlClan(guild.Name, ServerMessages.ConsoleMsg($"{applicant} ha sido aceptado como miembro del clan.", FuenteClan));
+        EnviarAlClan(guild.Name, ServerMessages.PlayWave(43, 0, 0));
+    }
+
+    /// <summary>El nombre tal como quedó en la cola de aspirantes, o null si no está.</summary>
+    private static string? ClaveDeAspirante(Guild g, string nombre) =>
+        g.JoinRequests.Keys.FirstOrDefault(k => string.Equals(k, nombre, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>VB6 <c>m_EstadoPermiteEntrar</c> (modGuilds.bas): el líder entra siempre; si no, la facción tiene que
+    /// cuadrar con la alineación del clan. Alineaciones del port: 1 Republicano, 2 Imperial, 3 Caótico, 4 Renegado.</summary>
+    private static bool PuedeEntrarAlClan(Guild g, string nombre, byte status)
+    {
+        if (string.Equals(nombre, g.LeaderName, StringComparison.OrdinalIgnoreCase)) return true;
+        return g.Alignment switch
+        {
+            2 => status is Player.StatusArmada or Player.StatusCiudadano,
+            3 => status == Player.StatusCaos,
+            1 => status is Player.StatusMilicia or Player.StatusRepublicano,
+            4 => status == Player.StatusCriminal,
+            _ => true,
+        };
+    }
+
+    /// <summary>VB6 <c>SendTarget.ToGuildMembers</c>: a los miembros conectados.</summary>
+    private void EnviarAlClan(string clan, byte[] paquete)
+    {
+        foreach (var m in _world.GuildMembersOnline(clan)) m.Connection?.Send(paquete);
+    }
+
+    /// <summary>GuildRejectNewMember (id 55): VB6 <c>HandleGuildRejectNewMember</c> (Protocol.bas:4547) con
+    /// <c>a_RechazarAspirante</c> (modGuilds.bas:1911). Rechaza CUALQUIER miembro, no sólo el líder ("Contáctate con un
+    /// miembro para que procese las solicitudes"). El que rechaza no recibe nada; el rechazado conectado, el motivo en
+    /// la consola; el desconectado, un cartel al entrar (<c>MotivoRechazo</c>, TCP.bas:348).</summary>
     private void HandleGuildRejectMember(ClientSession session, ByteQueueReader r)
     {
         string applicant = r.ReadAsciiString().Trim();
-        string reason = r.ReadAsciiString().Trim();
+        string reason = r.ReadAsciiString();
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
             var guild = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
-            if (guild is null || !string.Equals(guild.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede rechazar solicitudes.", FuenteClan)); return; }
-            if (!guild.JoinRequests.Remove(applicant)) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no tiene una solicitud pendiente.", FuenteClan)); return; }
+            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan", FuenteClan)); return; }
+            var clave = ClaveDeAspirante(guild, applicant);
+            if (clave is null) { session.Send(ServerMessages.ConsoleMsg($"{applicant} no es aspirante a tu clan.", FuenteClan)); return; }
+            guild.JoinRequests.Remove(clave);
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la solicitud de {applicant}.", FuenteClan));
-            _world.PlayerByName(applicant)?.Connection?.Send(
-                ServerMessages.ConsoleMsg($"Tu solicitud al clan <{guild.Name}> fue rechazada{(reason.Length > 0 ? $": {reason}" : ".")}", FuenteClan));
+            var rechazado = _world.PlayerByName(applicant);
+            if (rechazado is not null)
+                rechazado.Connection?.Send(ServerMessages.ConsoleMsg($"Fue rechazada tu solicitud de ingreso a {guild.Name} : {reason}", FuenteClan));
+            else
+                _world.MotivosDeRechazo[clave] = reason;
         });
+    }
+
+    /// <summary>VB6 <c>m_EcharMiembroDeClan</c> + <c>m_PuedeSalirDeClan</c> (modGuilds.bas:320): saca a <paramref name="nombre"/>
+    /// de su clan si <paramref name="quien"/> puede. Un usuario sólo echa si es el líder de ESE clan o si se va él; el
+    /// staff, a cualquiera. Al líder no lo saca nadie. Devuelve el clan, o null en silencio.</summary>
+    private Guild? EcharDelClan(Player quien, string nombre)
+    {
+        var t = _world.PlayerByName(nombre);
+        var g = t is not null
+            ? (string.IsNullOrEmpty(t.GuildName) ? null : _world.GuildByName(t.GuildName))
+            : _world.AllGuilds.FirstOrDefault(x => x.Members.Contains(nombre));
+        if (g is null) return null;
+        if ((quien.Privileges & PrivUser) != 0
+            && !string.Equals(quien.Name, g.LeaderName, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(quien.Name, nombre, StringComparison.OrdinalIgnoreCase)) return null;
+        if (string.Equals(nombre, g.LeaderName, StringComparison.OrdinalIgnoreCase)) return null;
+        var miembro = g.Members.FirstOrDefault(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase));
+        if (miembro is null) return null;
+        g.Members.Remove(miembro);
+        if (t is not null)
+        {
+            t.GuildName = "";
+            _world.BroadcastToObservers(t.Pos, ServerMessages.UpdateTagAndStatus(t));   // RefreshCharStatus
+        }
+        PersistGuilds();
+        return g;
     }
 
     /// <summary>GuildRequestJoinerInfo (id 49): applicant name. Sends the leader the aspirant's basic sheet.</summary>
@@ -8022,23 +8114,12 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (string.IsNullOrEmpty(p.GuildName)) return;   // VB6 HandleGuildLeave: fuera de un clan, silencio
-            var guild = _world.GuildByName(p.GuildName);
-            // EL LÍDER NO SE VA DE SU PROPIO CLAN. Es la última línea de `m_PuedeSalirDeClan`
-            // (modGuilds.bas:668): `GetLeader <> Nombre`. Y es silenciosa, porque cuando devuelve False el
-            // `m_EcharMiembroDeClan` contesta 0 y el `Else` del handler tiene su mensaje comentado.
-            //
-            // No era cosmético: sin líder, el clan quedaba inservible para siempre. Ni el que se fue —ya no
-            // pertenece— ni ningún miembro —no es el líder— pasa `RequireGuildLeader`, así que no se pueden
-            // abrir elecciones, ni aceptar o rechazar a nadie, ni declarar guerra o paz, ni echar. Y se
-            // disparaba con un solo paquete del cliente normal. La compuerta hermana, la de echar, ya estaba.
-            if (guild is not null && string.Equals(p.Name, guild.LeaderName, StringComparison.OrdinalIgnoreCase)) return;
-            guild?.Members.Remove(p.Name);
-            PersistGuilds();
-            foreach (var m in _world.GuildMembersOnline(p.GuildName))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} deja el clan.", FuenteClan));
-            session.Send(ServerMessages.ConsoleMsg($"Dejaste el clan <{p.GuildName}>.", FuenteClan));
-            p.GuildName = "";
+            // VB6 HandleGuildLeave (Protocol.bas:4995): `m_EcharMiembroDeClan` consigo mismo. Fuera de un clan, o
+            // siendo el líder (`m_PuedeSalirDeClan`: `GetLeader <> Nombre`), no pasa nada y no se avisa: sin esa
+            // compuerta el clan quedaba sin nadie que pudiera aceptar, echar o firmar. El que se va ya no recibe el
+            // aviso: lo desconecta del clan antes de mandarlo.
+            var g = EcharDelClan(p, p.Name);
+            if (g is not null) EnviarAlClan(g.Name, ServerMessages.ConsoleMsg($"{p.Name} deja el clan.", FuenteClan));
         });
     }
 
@@ -8225,7 +8306,7 @@ public sealed partial class PacketDispatcher
         // se limpia sólo si la escritura salió bien, para que el próximo intento lo reintente.
         if (_clanesSucios)
         {
-            try { _db.SaveGuilds(_world.AllGuilds); _clanesSucios = false; }
+            try { _db.SaveGuilds(_world.AllGuilds); _db.SaveMotivosDeRechazo(_world.MotivosDeRechazo); _clanesSucios = false; }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] clanes: {ex.Message}"); }
         }
         if (_correoSucio)
@@ -9529,19 +9610,19 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>GuildKickMember (id 56): the leader removes a member from the clan.</summary>
+    /// <summary>GuildKickMember: VB6 <c>HandleGuildKickMember</c> (Protocol.bas:4617). Lo que no se puede, calla; lo
+    /// que sí, se avisa a los del clan con el sonido 45.</summary>
     private void HandleGuildKick(ClientSession session, ByteQueueReader r)
     {
         string name = r.ReadAsciiString().Trim();
         _loop.Enqueue(() =>
         {
-            var g = RequireGuildLeader(session, session.Player);
+            var p = session.Player;
+            if (p is null) return;
+            var g = EcharDelClan(p, name);
             if (g is null) return;
-            if (string.Equals(name, g.LeaderName, StringComparison.OrdinalIgnoreCase)) { session.Send(ServerMessages.ConsoleMsg("No puedes expulsarte a ti mismo.", FuenteClan)); return; }
-            if (!g.Members.Remove(name)) { session.Send(ServerMessages.ConsoleMsg("Ese personaje no es del clan.", FuenteClan)); return; }
-            PersistGuilds();
-            var kicked = _world.PlayerByName(name);
-            if (kicked is not null) { kicked.GuildName = ""; kicked.Connection?.Send(ServerMessages.ConsoleMsg($"Has sido expulsado del clan <{g.Name}>.", FuenteClan)); }
-            session.Send(ServerMessages.ConsoleMsg($"Expulsaste a {name} del clan.", FuenteClan));
+            EnviarAlClan(g.Name, ServerMessages.ConsoleMsg($"{name} fue expulsado del clan.", FuenteClan));
+            EnviarAlClan(g.Name, ServerMessages.PlayWave(45, 0, 0));
         });
     }
 
