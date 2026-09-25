@@ -77,6 +77,14 @@ public sealed class NpcSystem
             if (s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = long.MaxValue; }
     }
 
+    /// <summary>Reaparece en la próxima vuelta, sin esperar el tiempo de respawn (VB6 <c>ReSpawnNpc</c> después de
+    /// <c>QuitarNPC</c>, el /RMATA): la criatura vuelve a su lugar de origen.</summary>
+    public void ReaparecerYa(short charIndex)
+    {
+        foreach (var s in _spawns)
+            if (s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = 0; }
+    }
+
     public NpcSystem(World world, GameData data, bool gmsPerseguibles = false, ServerIni? ini = null)
     {
         _world = world;

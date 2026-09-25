@@ -3771,12 +3771,13 @@ public sealed partial class PacketDispatcher
                 _loop.Enqueue(() => GmCharInfo(session, name));
                 break;
             }
-            case 14: // RequestUserList — /LISTUSU: the list of online player names
+            case 14: // RequestUserList — /LISTUSU: la lista de nombres conectados (VB6 HandleRequestUserList, Protocol.bas:7154)
                 _loop.Enqueue(() =>
                 {
-                    if (!RequireGm(session, session.Player)) return;
+                    // El original deja afuera al User y al RoleMaster, y contesta sólo con la lista, sin texto.
+                    var p = session.Player;
+                    if (!RequireGm(session, p) || (p!.Privileges & PrivRoleMaster) != 0) return;
                     session.Send(ServerMessages.UserNameList(_world.Players.Select(pl => pl.Name)));
-                    session.Send(ServerMessages.ConsoleMsg($"Usuarios online: {_world.OnlineCount}.", FuenteInfo));
                 });
                 break;
             case 25: // ReviveChar — /REVIVIR <name>
@@ -4286,11 +4287,13 @@ public sealed partial class PacketDispatcher
         return p is not null && p.IsGm;
     }
 
+    /// <summary>/HORA (VB6 HandleServerTime, Protocol.bas:6609): la hora se le anuncia a TODO el servidor,
+    /// "Hora: " con la hora y la fecha, no sólo al GM que la pide.</summary>
     private void GmServerTime(ClientSession session)
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
-        session.Send(ServerMessages.ConsoleMsg($"Hora del servidor: {DateTime.Now:HH:mm:ss dd/MM/yyyy}", FuenteInfo));
+        _world.Broadcast(ServerMessages.ConsoleMsg($"Hora: {DateTime.Now:HH:mm:ss dd/MM/yyyy}", FuenteInfo));
     }
 
     /// <summary>/DONDE (VB6 HandleWhere, Protocol.bas:6642): dónde está un jugador.
@@ -5364,8 +5367,7 @@ public sealed partial class PacketDispatcher
 
         t.JailMinutesLeft = minutos;
         WarpOtroJugador(t, Cities.Prision);   // VB6 Encarcelar (Admin.bas:175) llama WarpUserChar
-        t.Connection?.Send(ServerMessages.LocaleMsg(145, p!.Name));   // "#1 te ha encarcelado"
-        session.Send(ServerMessages.ConsoleMsg($"Encarcelaste a {t.Name} por {minutos} minuto(s): {motivo}.", FuenteInfo));
+        t.Connection?.Send(ServerMessages.LocaleMsg(145, p!.Name));   // "#1 te ha encarcelado"; al GM, nada (Admin.bas:164)
         Console.WriteLine($"[{session.RemoteEndpoint}] /CARCEL {p!.Name} -> {t.Name} ({minutos}m, motivo: {motivo})");
     }
 
@@ -5389,8 +5391,7 @@ public sealed partial class PacketDispatcher
         var p = session.Player;
         if (!IsDios(p)) return;
         var obj = _data.Obj(objIndex);
-        if (objIndex < 1 || obj is null || string.IsNullOrWhiteSpace(obj.Name))
-        { session.Send(ServerMessages.ConsoleMsg($"No existe el objeto {objIndex}.", FuenteInfo)); return; }
+        if (objIndex < 1 || obj is null || string.IsNullOrWhiteSpace(obj.Name)) return;   // el original calla
         int qty = Math.Clamp((int)amount, 1, GameLimits.MaxInventoryObjs);
         int slot = FindSlotFor(p!, objIndex, qty);
         if (slot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }   // inventario lleno
@@ -5444,16 +5445,20 @@ public sealed partial class PacketDispatcher
         t.Connection?.Send(ServerMessages.UpdateHP((short)t.Hp));
     }
 
+    /// <summary>/RMATA (VB6 HandleKillNPC, Protocol.bas:7397): mata a la criatura CLICKEADA —no a la de al
+    /// frente—, avisa "RMatas (con posible respawn) a: X" y la hace reaparecer en el acto en su lugar de origen
+    /// (<c>QuitarNPC</c> + <c>ReSpawnNpc</c>). Sin criatura marcada, <c>LocaleMsg(22)</c>.</summary>
     private void GmKillNpc(ClientSession session)
     {
         var p = session.Player;
         if (!RequireGm(session, p)) return;
-        var (tx, ty) = Step(p!.Pos.X, p.Pos.Y, p.Heading);
-        var npc = _world.NpcAt(new WorldPos(p.Pos.Map, tx, ty));
-        if (npc is null) { session.Send(ServerMessages.ConsoleMsg("No hay una criatura al frente.", FuenteInfo)); return; }
+        var npc = p!.TargetNpc > 0 ? _world.NpcByIndex(p.TargetNpc) : null;
+        if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
+        session.Send(ServerMessages.ConsoleMsg($"RMatas (con posible respawn) a: {npc.Name}", FuenteInfo));
         _world.RemoveNpc(npc.CharIndex);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
-        session.Send(ServerMessages.ConsoleMsg($"Eliminaste a {npc.Name}.", FuenteInfo));
+        _npcs?.ReaparecerYa(npc.CharIndex);
+        p.TargetNpc = 0;
     }
 
     /// <summary>/GMSG (VB6 Protocol.bas:6361): chat privado entre staff. Gate Consejero+ (o sea, no un User raso).
@@ -5809,10 +5814,12 @@ public sealed partial class PacketDispatcher
     {
         var p = session.Player;
         if (p is null || (p.Privileges & (PrivAdmin | PrivDios)) == 0) return;   // gate silencioso
-        string nombre = clan.Replace("\\", "").Replace('+', ' ').Trim();
+        string nombre = clan.Replace("\\", "").Replace("/", "").Replace('+', ' ').Trim();
         var g = _world.GuildByName(nombre);
-        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"El clan <{nombre}> no existe.", FuenteInfo)); return; }
-        session.Send(ServerMessages.ConsoleMsg($"Miembros de <{g.Name}>: {string.Join(", ", g.Members)}", FuenteInfo));
+        if (g is null) { session.Send(ServerMessages.ConsoleMsg($"No existe el clan: {nombre}", FuenteInfo)); return; }
+        // Una línea por miembro, "Nombre<clan>", con el clan como lo escribió el GM.
+        foreach (var miembro in g.Members)
+            session.Send(ServerMessages.ConsoleMsg($"{miembro}<{nombre}>", FuenteInfo));
     }
 
     /// <summary>/RAJARCLAN &lt;nick&gt; (VB6 HandleRemoveCharFromGuild, Protocol.bas:11145 →
@@ -7091,7 +7098,7 @@ public sealed partial class PacketDispatcher
     private bool DoFundir(ClientSession session, Player p)
     {
         var (slot, mineral) = MineralParaFundir(p);
-        if (mineral is null) { session.Send(ServerMessages.ConsoleMsg("No tienes minerales para fundir.", FuenteInfo)); return false; }
+        if (mineral is null) { session.Send(ServerMessages.LocaleMsg(206)); return false; }   // "No tenés suficientes materiales" (DoLingotes)
         // DEJAR ANOTADA LA RANURA QUE SE ESTÁ FUNDIENDO. Es lo que mira la faena continua para saber que lo
         // que sigue es fundir y no un oficio de herramienta, y no puede depender de que el jugador haya usado
         // el mineral antes: el clic sobre la fragua alcanza para fundir, así que también tiene que alcanzar
@@ -7110,21 +7117,31 @@ public sealed partial class PacketDispatcher
         while (cantidad > 0 && slotInv.Amount < perLingote * cantidad) cantidad--;
         if (cantidad <= 0 || slotInv.Amount < perLingote) { session.Send(ServerMessages.LocaleMsg(206)); return false; }   // "No tenés suficientes materiales"
 
-        // Buscar el destino del lingote ANTES de consumir el mineral: si no hay espacio, se avisa sin tocar el
-        // stock (el VB6 tira el lingote al piso, pero acá preferimos no perder material silenciosamente).
+        // Sin lugar en el inventario el original avisa (LocaleMsg 25, MeterItemEnInventario) y TIRA los lingotes
+        // al piso. Si tampoco hay piso libre allá se pierden; acá no se funde, así no se pierde el mineral.
         int lingSlot = FindSlotFor(p, (short)mineral.LingoteIndex, cantidad);
-        if (lingSlot == 0) { session.Send(ServerMessages.ConsoleMsg("No tienes espacio para los lingotes.", FuenteInfo)); return false; }
+        WorldPos? alPiso = lingSlot == 0 ? FreeGroundNear(_world, p.Pos) : null;
+        if (lingSlot == 0 && alPiso is null) { session.Send(ServerMessages.LocaleMsg(25)); return false; }
 
         slotInv.Amount -= (short)(perLingote * cantidad);          // consumir minerales
         if (slotInv.Amount < 1) slotInv = default;
         p.Inventory[slot] = slotInv;
         session.Send(ServerMessages.ChangeInventorySlot((byte)slot, slotInv.ObjIndex, slotInv.Amount, slotInv.Equipped, 0f, slotInv.IsEmpty ? (byte)0 : (byte)1));
 
-        var ling = p.Inventory[lingSlot];
-        ling.ObjIndex = (short)mineral.LingoteIndex;
-        ling.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, ling.Amount + cantidad);
-        p.Inventory[lingSlot] = ling;
-        session.Send(ServerMessages.ChangeInventorySlot((byte)lingSlot, ling.ObjIndex, ling.Amount, ling.Equipped, 0f, 1));
+        if (alPiso is { } piso)
+        {
+            session.Send(ServerMessages.LocaleMsg(25));
+            _world.SetGround(piso, (short)mineral.LingoteIndex, (short)cantidad);
+            _world.BroadcastToObservers(piso, ServerMessages.ObjectCreate(piso.X, piso.Y, (short)mineral.LingoteIndex, (short)cantidad));
+        }
+        else
+        {
+            var ling = p.Inventory[lingSlot];
+            ling.ObjIndex = (short)mineral.LingoteIndex;
+            ling.Amount = (short)Math.Min(GameLimits.MaxInventoryObjs, ling.Amount + cantidad);
+            p.Inventory[lingSlot] = ling;
+            session.Send(ServerMessages.ChangeInventorySlot((byte)lingSlot, ling.ObjIndex, ling.Amount, ling.Equipped, 0f, 1));
+        }
         session.Send(ServerMessages.LocaleMsg(207, cantidad.ToString()));   // "¡Has obtenido #1 lingotes!"
         // OJO: el VB6 DoLingotes (Trabajo.bas:825-884) NO sube skill al fundir — la Minería sólo sube al MINAR
         // (DoMineria, ya replicado en el gather). Subirla también acá sería una segunda fuente por unidad de mineral,
@@ -7306,9 +7323,7 @@ public sealed partial class PacketDispatcher
             var offers = alliance ? g.AllianceOffers.Keys : g.PeaceOffers.Keys;
             session.Send(alliance
                 ? ServerMessages.AlianceProposalsList(offers)
-                : ServerMessages.PeaceProposalsList(offers)); // structured proposal-list window
-            session.Send(ServerMessages.ConsoleMsg(
-                $"Ofertas de {(alliance ? "alianza" : "paz")} pendientes: {(offers.Count == 0 ? "ninguna" : string.Join(", ", offers))}", FuenteClan));
+                : ServerMessages.PeaceProposalsList(offers)); // la ventana, sin texto (VB6 HandleGuildAlliancePropList)
         });
     }
 
@@ -7402,7 +7417,19 @@ public sealed partial class PacketDispatcher
         if (string.IsNullOrEmpty(player.GuildName)) return;
         var g = _world.GuildByName(player.GuildName);
         if (g is null) return;
+        EnviarNoticiasDelClan(session, g);
+    }
+
+    /// <summary>VB6 <c>modGuilds.SendGuildNews</c> (modGuilds.bas:560), el mismo al entrar y al pedirlas: la ventana
+    /// de noticias y, si hay elecciones abiertas, los cuatro avisos de la votación.</summary>
+    private static void EnviarNoticiasDelClan(ClientSession session, Guild g)
+    {
         session.Send(ServerMessages.GuildNews(g.News ?? "", g.Enemies, g.Allies));
+        if (!g.ElectionsOpen) return;
+        session.Send(ServerMessages.ConsoleMsg("Hoy es la votación para elegir un nuevo líder para el clan.", FuenteClan));
+        session.Send(ServerMessages.ConsoleMsg("La elección durará 24 horas, se puede votar a cualquier miembro del clan.", FuenteClan));
+        session.Send(ServerMessages.ConsoleMsg("Para votar escribe /VOTO NICKNAME.", FuenteClan));
+        session.Send(ServerMessages.ConsoleMsg("Sólo se computará un voto por miembro. Tu voto no puede ser cambiado.", FuenteClan));
     }
 
     private void HandleShowGuildNews(ClientSession session)
@@ -7413,8 +7440,7 @@ public sealed partial class PacketDispatcher
             if (p is null || string.IsNullOrEmpty(p.GuildName)) return;
             var g = _world.GuildByName(p.GuildName);
             if (g is null) return;
-            session.Send(ServerMessages.GuildNews(g.News ?? "", g.Enemies, g.Allies)); // structured news window
-            session.Send(ServerMessages.ConsoleMsg($"Noticias de <{g.Name}>: {(string.IsNullOrEmpty(g.News) ? "sin novedades." : g.News)}", FuenteClan));
+            EnviarNoticiasDelClan(session, g);
         });
     }
 

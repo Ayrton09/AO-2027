@@ -68,6 +68,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **El trabajo arranca con un clic**, igual que con el doble clic. Cambiar de herramienta o /SALIR lo cortan.
 
+- **Fundir con el inventario lleno** tira los lingotes al piso, como en el original.
+
 - **Las pociones de fuerza y agilidad duran lo que en el original**: media hora las comunes, hora y media las de
   Alquimia. Los atributos no pasan de 35.
 
@@ -111,6 +113,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **El correo, como en el original**: al que recibe una carta se le avisa que la lea en un buzón, podés mandarte
   una a vos mismo, y la respuesta de un GM llega firmada por el staff.
 
+- **Las noticias del clan avisan de la elección** cuando hay una abierta, como en el original.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
@@ -135,6 +139,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **GMs**: /TELEP, /IRA, /SUM, /ACC e /INVISIBLE como en el original; pausar frena sólo a las criaturas; en el
   cliente web, Shift+clic en el mapa te lleva a esa baldosa. Las denuncias les llegan como en el original.
+
+- **Más comandos de GM como en el original**: /HORA se anuncia a todo el servidor, /RMATA mata a la criatura
+  clickeada y la hace reaparecer, y /MIEMBROSCLAN lista un miembro por línea.
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
   `[NIVELMINIMO]`, `MinutosDeFogata` y `MetamorfosisDelDruida`. Con 0 —o la tabla de cuevas vacía— cada una
