@@ -144,8 +144,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   clickeada y la hace reaparecer, y /MIEMBROSCLAN lista un miembro por línea.
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
-  `[NIVELMINIMO]`, `MinutosDeFogata` y `MetamorfosisDelDruida`. Con 0 —o la tabla de cuevas vacía— cada una
-  vuelve a ser como el original.
+  `[NIVELMINIMO]`, `MinutosDeFogata`, `MetamorfosisDelDruida` y `AtacarAliadoVuelveCriminal`. Con 0 —o la tabla
+  de cuevas vacía— cada una vuelve a ser como el original.
 
 - **Las tasas `Exp` y `Oro` multiplican directo** (1 es lo normal), y el panel las muestra aparte de los eventos.
 

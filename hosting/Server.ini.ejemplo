@@ -96,6 +96,10 @@ DropGlobal=10000
 ; Metamorfosis del druida: -1 = permanente (como el AO clasico), 0 = apagada, o los segundos que dura.
 MetamorfosisDelDruida=-1
 
+; Atacar a un ciudadano o a un soldado (sin guerra de clanes ni faccion enemiga)
+; te vuelve criminal y te echa del ejercito. 0 = atacar no cambia el estado.
+AtacarAliadoVuelveCriminal=1
+
 ; --- Guardias de las ciudades ------------------------------------------------
 ; En el original NO atacan (su IA esta apagada): 0 = como el original.
 GuardiasAtacan=1

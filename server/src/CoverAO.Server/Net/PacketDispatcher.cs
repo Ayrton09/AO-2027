@@ -7906,6 +7906,10 @@ public sealed partial class PacketDispatcher
     /// ya-criminales/Caos y a los clanes en guerra. Se aplica IDÉNTICO en melee y en hechizos de daño: antes vivía
     /// sólo en el melee, así que matar aliados con magia no penaba (canilla de PK "limpio").
     ///
+    /// <para>Esa parte NO está en el fuente del original: es la regla de la casa
+    /// <see cref="Data.ServerIni.AtacarAliadoVuelveCriminal"/>, prendida por decisión del autor. Con 0 el Sub hace
+    /// sólo lo del original.</para>
+    ///
     /// <para>Es el <c>UsuarioAtacadoPorUsuario</c> del original (SistemaCombate.bas:1442) y por eso hace también
     /// lo OTRO que ese Sub hace en toda agresión: trabar las salidas de mapa siete segundos a los dos. Va acá y
     /// no en cada call site justamente porque el original tiene un solo Sub — repartirlo era garantizar que
@@ -7952,7 +7956,10 @@ public sealed partial class PacketDispatcher
                                || (p.IsArmada && target.IsMilicia) || (p.IsMilicia && target.IsArmada);
         // "Legales" son los civiles con ciudadanía y sus ejércitos (imperiales y republicanos).
         bool objetivoLegal = target.IsCitizen || target.IsRepublicano || tEjercito;
-        if (esEnemigoDeFaccion || p.IsCaos || !objetivoLegal || AtWar(p, target)) return;
+        // El que ya es renegado no se vuelve "más" criminal: sin esto, cada golpe le repetía el aviso y le volvía a
+        // difundir el estado.
+        if (esEnemigoDeFaccion || p.IsCaos || p.IsRenegado || !objetivoLegal || AtWar(p, target)) return;
+        if (!_ini.AtacarAliadoVuelveCriminal) return;   // regla de la casa: con 0, como el fuente del original
         p.CambiarFaccion(Player.StatusCriminal);
         p.FactionRank = 0;   // atacar a un legal expulsa de la Armada
         session.Send(ServerMessages.ConsoleMsg("Has atacado a un aliado. Ahora eres CRIMINAL.", FuenteInfo));

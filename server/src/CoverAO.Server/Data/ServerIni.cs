@@ -136,7 +136,7 @@ public sealed class ServerIni
     /// </summary>
     public static readonly string[] ClavesConocidas =
     {
-        "AllowMultiLogins", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
+        "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
         "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
@@ -677,6 +677,17 @@ public sealed class ServerIni
     /// </summary>
     public bool GuardiasAtacan { get; private set; } = true;
 
+    /// <summary>
+    /// REGLA DE LA CASA — <c>AtacarAliadoVuelveCriminal</c> (default <b>1</b>, PRENDIDA). Atacar a un ciudadano o a
+    /// un soldado sin guerra de clanes ni facción enemiga de por medio te vuelve criminal y te echa del ejército,
+    /// con el aviso "Has atacado a un aliado. Ahora eres CRIMINAL.".
+    ///
+    /// <para>En el fuente del original no está: <c>UsuarioAtacadoPorUsuario</c> (SistemaCombate.bas:1442) no toca
+    /// el estado de nadie, y renegado sólo se vuelve el que deja una facción. <b>Sale PRENDIDA por decisión del
+    /// autor</b> (2026-09-25), que la recuerda del juego. Con 0 atacar no cambia el estado.</para>
+    /// </summary>
+    public bool AtacarAliadoVuelveCriminal { get; private set; } = true;
+
     /// <summary><c>GuardiasPersiguen</c> (default <b>1</b>): el guardia que ve a un enemigo sale de su puesto a
     /// buscarlo y no lo suelta mientras siga en su ciudad; cuando se va (o muere, o se hace invisible) vuelve a su
     /// puesto. Con 0 se quedan quietos: pegan al que pasa al lado y los que tienen hechizos le tiran al que ven.
@@ -1121,6 +1132,7 @@ public sealed class ServerIni
         // "menos que permanente" no significa nada, y el tope de una hora sigue siendo para el reloj.
         cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
         cfg.GuardiasAtacan = ini.GetInt("INIT", "GuardiasAtacan", 1) != 0;
+        cfg.AtacarAliadoVuelveCriminal = ini.GetInt("INIT", "AtacarAliadoVuelveCriminal", 1) != 0;
         cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;
         cfg.GuardiasAtacanNewbies = ini.GetInt("INIT", "GuardiasAtacanNewbies", 0) != 0;
         var desconocidas = new List<string>();
