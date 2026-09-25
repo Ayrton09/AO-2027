@@ -98,6 +98,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **El hogar se pide al sacerdote** de la ciudad donde estás, desde Acciones o con /HOGAR.
 
+- **Fundar un clan se anuncia a todo el servidor**, con su sonido, y se lleva las gemas si las tenés.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus

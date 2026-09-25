@@ -241,6 +241,8 @@ public sealed partial class PacketDispatcher
     /// <summary>`FONTTYPE_GUILD`: TODO lo que emite un handler de clan, incluida la rama de rechazo
     /// "no perteneces a ningún clan".</summary>
     private const byte FuenteClan = 7;
+    /// <summary>Las cuatro gemas del clan (modGuilds.bas:31-34): Lunar, Naranja, Gris y Dorada.</summary>
+    private static readonly short[] GemasDelClan = { 406, 408, 409, 410 };
 
     /// <summary>`FONTTYPE_GUILDMSG`: sólo el `/ONLINECLAN` (HandleGuildOnline). Es OTRA que la del clan, y la
     /// diferencia se ve: no hay una "fuente de clan" única.</summary>
@@ -6157,15 +6159,45 @@ public sealed partial class PacketDispatcher
             // ANULADOS en el original por un `Exit Function` al tope de PuedeFundarUnClan (:681), y eso sí se
             // porta—, así que sin fondo la lista de clanes crece sin techo, se re-serializa entera en el hilo
             // del mundo con cada operación de clan, y viaja entera en cada pedido de la lista.
+            // En el orden de CrearNuevoClan (modGuilds.bas:483-495): el nombre repetido antes que el registro lleno.
+            if (_world.GuildByName(name) is not null)
+            { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", FuenteClan)); return; }
             if (_world.RegistroDeClanesLleno)
             { session.Send(ServerMessages.ConsoleMsg("No hay más slots para fundar clanes. Consulte a un administrador.", FuenteClan)); return; }
             var guild = _world.CreateGuild(name, p.Name, desc);
             if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", FuenteClan)); return; }
             guild.Alignment = p.FoundingAlignment; // from the GuildFundation step (0 if founded directly)
             p.FoundingAlignment = 0;
+            string alineacion = Guild.NombreDeAlineacion(guild.Alignment);
+            guild.News = "Clan creado con alineación: " + alineacion;          // `.SetGuildNews` (modGuilds.bas:510)
             p.GuildName = guild.Name;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Fundaste el clan <{guild.Name}> y eres su líder.", FuenteClan));
+            // LO QUE HACE EL ORIGINAL AL FUNDAR (HandleCreateNewGuild, Protocol.bas:3094-3103, y CrearNuevoClan).
+            // Pedir las gemas está anulado en el original (`PuedeFundarUnClan` sale con True antes de mirarlas), pero
+            // SÍ se las lleva si las tiene, y dos veces: una por ranura en CrearNuevoClan y otra con QuitarObjetos.
+            void MandarRanura(byte ranura)
+            {
+                var inv = p.Inventory[ranura];
+                session.Send(ServerMessages.ChangeInventorySlot(ranura, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, inv.IsEmpty ? (byte)0 : (byte)1));
+            }
+            void QuitarUna(byte ranura)
+            {
+                var inv = p.Inventory[ranura];
+                inv.Amount--;
+                p.Inventory[ranura] = inv.Amount <= 0 ? new InventorySlot() : inv;
+                MandarRanura(ranura);
+            }
+            for (byte i = 1; i <= GameLimits.MaxInventorySlots; i++)            // CrearNuevoClan, modGuilds.bas:524-538
+                if (Array.IndexOf(GemasDelClan, p.Inventory[i].ObjIndex) >= 0) QuitarUna(i);
+            _world.BroadcastToObservers(p.Pos, ServerMessages.UpdateTagAndStatus(p));   // RefreshCharStatus
+            _world.Broadcast(ServerMessages.ConsoleMsg($"{p.Name} fundó el clan {guild.Name} de alineación {alineacion}.", FuenteClan));
+            _world.Broadcast(ServerMessages.PlayWave(44, 0, 0));                // NO_3D_SOUND
+            foreach (var gema in new short[] { 406, 408, 409, 410 })            // QuitarObjetos(406..410, 1)
+            {
+                for (byte i = 1; i <= GameLimits.MaxInventorySlots; i++)
+                    if (p.Inventory[i].ObjIndex == gema) { QuitarUna(i); break; }
+            }
+            _world.BroadcastToObservers(p.Pos, ServerMessages.UpdateTagAndStatus(p));   // RefreshCharStatus
         });
     }
 
