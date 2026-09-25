@@ -143,6 +143,6 @@ public class FundarUnClanComoElOriginalTests : IDisposable
 
         Assert.Equal("Los Del Sur", p.GuildName);
         Assert.Null(_world.GuildByName("Los Del Norte"));
-        Assert.Contains("Ya perteneces a un clan.", t.Textos());
+        Assert.Contains("Ya perteneces a un clan, no puedes fundar otro", t.Textos());
     }
 }

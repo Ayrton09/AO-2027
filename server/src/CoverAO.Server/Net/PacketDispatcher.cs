@@ -241,6 +241,10 @@ public sealed partial class PacketDispatcher
     /// <summary>`FONTTYPE_GUILD`: TODO lo que emite un handler de clan, incluida la rama de rechazo
     /// "no perteneces a ningún clan".</summary>
     private const byte FuenteClan = 7;
+    /// <summary>FONTTYPE_SERVER (Protocol.bas:290, el octavo de la lista).</summary>
+    private const byte FuenteServidor = 8;
+    /// <summary>VB6 <c>LimiteNewbie</c> (Declares.bas:192): hasta este nivel se es newbie.</summary>
+    private const int LimiteNewbie = 15;
     /// <summary>Las cuatro gemas del clan (modGuilds.bas:31-34): Lunar, Naranja, Gris y Dorada.</summary>
     private static readonly short[] GemasDelClan = { 406, 408, 409, 410 };
 
@@ -6135,7 +6139,7 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", FuenteClan)); return; }
+            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan, no puedes fundar otro", FuenteClan)); return; }
             // El nombre pasa por la MISMA regla del original (`GuildNameValido`, modGuilds.bas:890, con su
             // mensaje textual): letras y espacios. Acá sólo se miraba que no fuera vacío, así que entraba
             // cualquier cosa —dígitos, NUL, `<`, treinta mil caracteres— en un texto que se difunde pegado al
@@ -6236,26 +6240,27 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            if (!string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan.", FuenteClan)); return; }
+            // VB6 a_NuevoAspirante (modGuilds.bas): cada compuerta con su texto. La solicitud anterior (a este o a otro
+            // clan) se retira y queda la nueva; el líder no recibe aviso: la ve en la lista.
+            if (!string.IsNullOrEmpty(p.GuildName))
+            { session.Send(ServerMessages.ConsoleMsg("Ya perteneces a un clan, debes salir del mismo antes de solicitar ingresar a otro.", FuenteClan)); return; }
+            if (p.Level <= LimiteNewbie)
+            { session.Send(ServerMessages.ConsoleMsg("Los newbies no tienen derecho a entrar a un clan.", FuenteClan)); return; }
             var guild = _world.GuildByName(guildName);
-            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
-            if (guild.JoinRequests.ContainsKey(p.Name)) { session.Send(ServerMessages.ConsoleMsg("Ya solicitaste unirte a ese clan; espera la decisión del líder.", FuenteClan)); return; }
+            if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe, avise a un administrador.", FuenteClan)); return; }
+            if (!PuedeEntrarAlClan(guild, p.Name, p.FactionStatus))
+            { session.Send(ServerMessages.ConsoleMsg($"Tú no puedes entrar a un clan de alineación {Guild.NombreDeAlineacion(guild.Alignment)}", FuenteClan)); return; }
             // LA COLA DE SOLICITUDES TIENE FONDO (VB6 MAXASPIRANTES = 10, modGuilds.bas:24, con su compuerta
-            // en NuevoAspirante :2142 y este mismo mensaje). Sin ella, cualquiera se anota en cualquier clan y
-            // la cola crece con un texto de 255 por cada uno, se guarda en disco y viaja entera al líder.
-            if (guild.AspirantesLleno)
+            // en NuevoAspirante :2142 y este mismo mensaje).
+            if (guild.AspirantesLleno && ClaveDeAspirante(guild, p.Name) is null)
             { session.Send(ServerMessages.ConsoleMsg("El clan tiene demasiados aspirantes. Contáctate con un miembro para que procese las solicitudes.", FuenteClan)); return; }
-            // El TEXTO de la solicitud se guarda: es el "Detalle" que el original mete en SOLICITUDES.dat
-            // (NuevoAspirante(Nombre, Peticion)) y lo único que transporta ShowUserRequest cuando el líder
-            // la mira. Antes se leía del wire y se tiraba, así que no había nada que mostrarle.
+            foreach (var otro in _world.AllGuilds)                   // `ASPIRANTEA`: la solicitud vieja se retira
+                if (ClaveDeAspirante(otro, p.Name) is { } vieja) otro.JoinRequests.Remove(vieja);
             guild.JoinRequests[p.Name] = application;
             PersistGuilds();
-            // Protocol.bas:4838, tal cual: el original nombra al clan sin los <> y cierra con punto.
+            // Protocol.bas:4838, tal cual: el original nombra al clan como lo escribió el aspirante y cierra con punto.
             session.Send(ServerMessages.ConsoleMsg(
-                $"Tu solicitud ha sido enviada. Espera prontas noticias del líder de {guild.Name}.", FuenteClan));
-            foreach (var m in _world.GuildMembersOnline(guild.Name))
-                if (string.Equals(m.Name, guild.LeaderName, StringComparison.OrdinalIgnoreCase))
-                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} solicitó unirse al clan.", FuenteClan));
+                $"Tu solicitud ha sido enviada. Espera prontas noticias del líder de {guildName}.", FuenteClan));
         });
     }
 
@@ -6425,24 +6430,105 @@ public sealed partial class PacketDispatcher
     /// clans become enemies (attacks between their members don't incur the criminal flag).</summary>
     private void HandleGuildDeclareWar(ClientSession session, ByteQueueReader r)
     {
-        string enemyName = r.ReadAsciiString().Trim();
+        string enemyName = r.ReadAsciiString();
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
-            if (string.IsNullOrEmpty(p.GuildName)) { session.Send(ServerMessages.ConsoleMsg("No perteneces a ningún clan.", FuenteClan)); return; }
-            var mine = _world.GuildByName(p.GuildName);
-            if (mine is null || !string.Equals(mine.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede declarar la guerra.", FuenteClan)); return; }
-            var enemy = _world.GuildByName(enemyName);
-            if (enemy is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
-            if (string.Equals(enemy.Name, mine.Name, StringComparison.OrdinalIgnoreCase)) { session.Send(ServerMessages.ConsoleMsg("No puedes declararte la guerra a ti mismo.", FuenteClan)); return; }
-            mine.Enemies.Add(enemy.Name);
-            enemy.Enemies.Add(mine.Name);
+            // VB6 HandleGuildDeclareWar + r_DeclararGuerra (modGuilds.bas), en su orden.
+            var mine = ClanDelLider(session, p);
+            if (mine is null) return;
+            if (enemyName.Trim().Length == 0) { session.Send(ServerMessages.ConsoleMsg("No has seleccionado ningún clan.", FuenteClan)); return; }
+            var enemy = _world.GuildByName(enemyName.Trim());
+            if (enemy is not null && mine.Enemies.Contains(enemy.Name))
+            { session.Send(ServerMessages.ConsoleMsg($"Tu clan ya está en guerra con {enemyName}.", FuenteClan)); return; }
+            if (enemy is not null && string.Equals(enemy.Name, mine.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("No puedes declarar la guerra a tu mismo clan.", FuenteClan)); return; }
+            if (enemy is null)
+            { session.Send(ServerMessages.ConsoleMsg("Inconsistencia en el sistema de clanes. Avise a un administrador (GIG fuera de rango)", FuenteClan)); return; }
+            AnularPropuestas(mine, enemy);
+            AnularPropuestas(enemy, mine);
+            PonerRelacion(mine, enemy, Relacion.Guerra);
             PersistGuilds();
-            foreach (var m in _world.GuildMembersOnline(mine.Name).Concat(_world.GuildMembersOnline(enemy.Name)))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡GUERRA! Los clanes <{mine.Name}> y <{enemy.Name}> están en guerra.", FuenteClan));
+            EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"TU CLAN HA ENTRADO EN GUERRA CON {enemyName}.", FuenteClan));
+            EnviarAlClan(enemy.Name, ServerMessages.ConsoleMsg($"{mine.Name} LE DECLARA LA GUERRA A TU CLAN.", FuenteClan));
+            EnviarAlClan(mine.Name, ServerMessages.PlayWave(45, 0, 0));
+            EnviarAlClan(enemy.Name, ServerMessages.PlayWave(45, 0, 0));
         });
+    }
+
+    private enum Relacion { Paz, Guerra, Aliados }
+
+    private static Relacion RelacionEntre(Guild a, Guild b) =>
+        a.Enemies.Contains(b.Name) ? Relacion.Guerra : a.Allies.Contains(b.Name) ? Relacion.Aliados : Relacion.Paz;
+
+    /// <summary>VB6 <c>SetRelacion</c> en los dos clanes: la relación es UNA sola (paz, guerra o alianza).</summary>
+    private static void PonerRelacion(Guild a, Guild b, Relacion r)
+    {
+        a.Enemies.Remove(b.Name); b.Enemies.Remove(a.Name);
+        a.Allies.Remove(b.Name); b.Allies.Remove(a.Name);
+        if (r == Relacion.Guerra) { a.Enemies.Add(b.Name); b.Enemies.Add(a.Name); }
+        if (r == Relacion.Aliados) { a.Allies.Add(b.Name); b.Allies.Add(a.Name); }
+    }
+
+    /// <summary>VB6 <c>clsClan.AnularPropuestas(otro)</c>: saca de <paramref name="en"/> las propuestas que le hizo
+    /// <paramref name="de"/>.</summary>
+    private static void AnularPropuestas(Guild en, Guild de)
+    {
+        en.PeaceOffers.Remove(de.Name);
+        en.AllianceOffers.Remove(de.Name);
+    }
+
+    /// <summary>Las dos primeras compuertas de las funciones de relaciones del original: tener clan ("No eres miembro de
+    /// ningún clan.") y ser su líder ("No eres el líder de tu clan.").</summary>
+    private Guild? ClanDelLider(ClientSession session, Player p)
+    {
+        var g = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
+        if (g is null) { session.Send(ServerMessages.ConsoleMsg("No eres miembro de ningún clan.", FuenteClan)); return null; }
+        if (!string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+        { session.Send(ServerMessages.ConsoleMsg("No eres el líder de tu clan.", FuenteClan)); return null; }
+        return g;
+    }
+
+    /// <summary>VB6 <c>r_ClanGeneraPropuesta</c> (modGuilds.bas): la propuesta queda en el OTRO clan, para que su líder la
+    /// vea en la lista. Si sale bien, no se avisa nada (el aviso del original está comentado).</summary>
+    private void ProponerRelacion(ClientSession session, string otroNombre, bool alianza, string detalle)
+    {
+        var p = session.Player;
+        if (p is null) return;
+        var mine = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
+        if (mine is null) { session.Send(ServerMessages.ConsoleMsg("No eres miembro de ningún clan.", FuenteClan)); return; }
+        var otro = _world.GuildByName(otroNombre.Trim());
+        if (otro is not null && string.Equals(otro.Name, mine.Name, StringComparison.OrdinalIgnoreCase))
+        { session.Send(ServerMessages.ConsoleMsg("No puedes declarar relaciones con tu propio clan.", FuenteClan)); return; }
+        if (otro is null)
+        { session.Send(ServerMessages.ConsoleMsg("El sistema de clanes esta inconsistente, el otro clan no existe.", FuenteClan)); return; }
+        var propuestas = alianza ? otro.AllianceOffers : otro.PeaceOffers;
+        if (propuestas.ContainsKey(mine.Name))
+        { session.Send(ServerMessages.ConsoleMsg($"Ya hay propuesta de {(alianza ? "A" : "P")} con {otroNombre}", FuenteClan)); return; }
+        if (!string.Equals(mine.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+        { session.Send(ServerMessages.ConsoleMsg("No eres el líder de tu clan.", FuenteClan)); return; }
+        if (!alianza && RelacionEntre(mine, otro) != Relacion.Guerra)
+        { session.Send(ServerMessages.ConsoleMsg($"No estás en guerra con {otroNombre}", FuenteClan)); return; }
+        if (alianza && RelacionEntre(mine, otro) != Relacion.Paz)
+        { session.Send(ServerMessages.ConsoleMsg($"Para solicitar alianza no debes estar ni aliado ni en guerra con {otroNombre}", FuenteClan)); return; }
+        propuestas[mine.Name] = detalle;
+        PersistGuilds();
+    }
+
+    /// <summary>Las compuertas comunes de aceptar y rechazar una propuesta (VB6 r_Aceptar/r_RechazarPropuestaDe*): clan,
+    /// líder, nombre y que el otro exista. Devuelve (mío, el otro) o null con el aviso ya mandado.</summary>
+    private (Guild Mio, Guild Otro)? ClanesDeLaPropuesta(ClientSession session, string otroNombre)
+    {
+        var p = session.Player;
+        if (p is null) return null;
+        var mine = ClanDelLider(session, p);
+        if (mine is null) return null;
+        if (otroNombre.Trim().Length == 0) { session.Send(ServerMessages.ConsoleMsg("No has seleccionado ningún clan.", FuenteClan)); return null; }
+        var otro = _world.GuildByName(otroNombre.Trim());
+        if (otro is null)
+        { session.Send(ServerMessages.ConsoleMsg("Inconsistencia en el sistema de clanes. Avise a un administrador (GIG fuera de rango).", FuenteClan)); return null; }
+        return (mine, otro);
     }
 
     /// <summary>Enqueues a simple ConsoleMsg acknowledgement (for packets with no state change).</summary>
@@ -7356,39 +7442,50 @@ public sealed partial class PacketDispatcher
         if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
-            var g = RequireGuildLeader(session, session.Player);
-            if (g is null) return;
+            // VB6 ActualizarNoticias (modGuilds.bas): sin clan o sin ser el líder, nada.
+            var p = session.Player;
+            var g = p is null || string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
+            if (p is null || g is null || !string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase)) return;
             if (news.Length > MaxNoticiasClan) { session.Send(ServerMessages.ConsoleMsg("Las noticias son demasiado largas (máximo 512).", FuenteClan)); return; }
             g.News = news;
             PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg("Noticias del clan actualizadas.", FuenteClan));
+            // `ToDiosesYclan`: los miembros y los GMs que escuchan al clan.
+            var aviso = ServerMessages.GuildChat($"{p.Name} ha actualizado las noticias del clan!");
+            EnviarAlClan(g.Name, aviso);
+            foreach (var gm in _world.Players.Where(pl => pl.IsGm && string.Equals(pl.EscucheClan, g.Name, StringComparison.OrdinalIgnoreCase)))
+                gm.Connection?.Send(aviso);
         });
     }
 
     private void HandleGuildRejectAlliance(ClientSession session, ByteQueueReader r)
     {
-        string name = r.ReadAsciiString().Trim();
+        string name = r.ReadAsciiString();
         _loop.Enqueue(() =>
         {
-            // VB6 HandleGuildRejectAlliance (Protocol.bas:3860): sin clan, r_RechazarPropuestaDeAlianza
-            // devuelve 0 con errorStr "No eres miembro de ningún clan" y el handler lo emite como ConsoleMsg.
-            var g = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (g is null) return;
-            g.AllianceOffers.Remove(name);
-            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la alianza con <{name}>.", FuenteClan));
+            if (ClanesDeLaPropuesta(session, name) is not var (mine, other)) return;
+            if (!mine.AllianceOffers.ContainsKey(other.Name))
+            { session.Send(ServerMessages.ConsoleMsg($"No hay propuesta de alianza del clan {name}", FuenteClan)); return; }
+            AnularPropuestas(mine, other);
+            other.News = $"{mine.Name} ha rechazado nuestra propuesta de alianza. " + other.News;
+            PersistGuilds();
+            EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"Tu clan rechazado la propuesta de alianza de {name}", FuenteClan));
+            EnviarAlClan(other.Name, ServerMessages.ConsoleMsg($"{mine.Name} ha rechazado nuestra propuesta de alianza con su clan.", FuenteClan));
         });
     }
 
     private void HandleGuildRejectPeace(ClientSession session, ByteQueueReader r)
     {
-        string name = r.ReadAsciiString().Trim();
+        string name = r.ReadAsciiString();
         _loop.Enqueue(() =>
         {
-            // VB6 HandleGuildRejectPeace (Protocol.bas:3925): sin clan responde ConsoleMsg "No eres miembro de ningún clan".
-            var g = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (g is null) return;
-            g.PeaceOffers.Remove(name);
-            session.Send(ServerMessages.ConsoleMsg($"Rechazaste la paz con <{name}>.", FuenteClan));
+            if (ClanesDeLaPropuesta(session, name) is not var (mine, other)) return;
+            if (!mine.PeaceOffers.ContainsKey(other.Name))
+            { session.Send(ServerMessages.ConsoleMsg($"No hay propuesta de paz del clan {name}", FuenteClan)); return; }
+            AnularPropuestas(mine, other);
+            other.News = $"{mine.Name} ha rechazado nuestra propuesta de paz. " + other.News;
+            PersistGuilds();
+            EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"Tu clan rechazado la propuesta de paz de {name}.", FuenteClan));
+            EnviarAlClan(other.Name, ServerMessages.ConsoleMsg($"{mine.Name} ha rechazado nuestra propuesta de paz con su clan.", FuenteClan));
         });
     }
 
@@ -7822,38 +7919,28 @@ public sealed partial class PacketDispatcher
     /// VB6 HandleGuildOfferPeace (Protocol.bas:4051) reads TWO ASCIIStrings (guild, proposal).</summary>
     private void HandleGuildOfferPeace(ClientSession session, ByteQueueReader r)
     {
-        string enemyName = r.ReadAsciiString().Trim();
+        string enemyName = r.ReadAsciiString();
         string proposal = r.ReadAsciiString();   // el texto que el líder enemigo leerá con OfferDetails
-        _loop.Enqueue(() =>
-        {
-            var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (mine is null) return;
-            var enemy = _world.GuildByName(enemyName);
-            if (enemy is null || !mine.Enemies.Contains(enemy.Name)) { session.Send(ServerMessages.ConsoleMsg("No estás en guerra con ese clan.", FuenteClan)); return; }
-            enemy.PeaceOffers[mine.Name] = proposal;
-            session.Send(ServerMessages.ConsoleMsg($"Ofreciste la paz a <{enemy.Name}>.", FuenteClan));
-            foreach (var m in _world.GuildMembersOnline(enemy.Name))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"<{mine.Name}> ofrece la paz (el líder puede aceptarla).", FuenteClan));
-        });
+        _loop.Enqueue(() => ProponerRelacion(session, enemyName, alianza: false, proposal));
     }
 
     /// <summary>GuildAcceptPeace (id 41): offering guild name. Ends the war if peace was offered.</summary>
     private void HandleGuildAcceptPeace(ClientSession session, ByteQueueReader r)
     {
-        string offeringName = r.ReadAsciiString().Trim();
+        string offeringName = r.ReadAsciiString();
         _loop.Enqueue(() =>
         {
-            var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (mine is null) return;
-            if (!mine.PeaceOffers.ContainsKey(offeringName)) { session.Send(ServerMessages.ConsoleMsg("Ese clan no te ofreció la paz.", FuenteClan)); return; }
-            var other = _world.GuildByName(offeringName);
-            if (other is null) return;
-            mine.PeaceOffers.Remove(offeringName);
-            mine.Enemies.Remove(other.Name);
-            other.Enemies.Remove(mine.Name);
+            if (ClanesDeLaPropuesta(session, offeringName) is not var (mine, other)) return;
+            if (RelacionEntre(mine, other) != Relacion.Guerra)
+            { session.Send(ServerMessages.ConsoleMsg("No estás en guerra con ese clan.", FuenteClan)); return; }
+            if (!mine.PeaceOffers.ContainsKey(other.Name))
+            { session.Send(ServerMessages.ConsoleMsg("No hay ninguna propuesta de paz para aceptar.", FuenteClan)); return; }
+            AnularPropuestas(mine, other);
+            AnularPropuestas(other, mine);
+            PonerRelacion(mine, other, Relacion.Paz);
             PersistGuilds();
-            foreach (var m in _world.GuildMembersOnline(mine.Name).Concat(_world.GuildMembersOnline(other.Name)))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡PAZ! Los clanes <{mine.Name}> y <{other.Name}> firmaron la paz.", FuenteClan));
+            EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"Tu clan ha firmado la paz con {offeringName}.", FuenteClan));
+            EnviarAlClan(other.Name, ServerMessages.ConsoleMsg($"Tu clan ha firmado la paz con {mine.Name}.", FuenteClan));
         });
     }
 
@@ -7989,12 +8076,19 @@ public sealed partial class PacketDispatcher
     {
         _loop.Enqueue(() =>
         {
-            var g = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (g is null) return;
+            // VB6 HandleGuildOpenElections + v_AbrirElecciones (modGuilds.bas), con sus textos.
+            var p = session.Player;
+            if (p is null) return;
+            var g = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
+            if (g is null) { session.Send(ServerMessages.ConsoleMsg("Tú no perteneces a ningún clan.", FuenteClan)); return; }
+            if (!string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("No eres el líder de tu clan", FuenteClan)); return; }
+            if (g.ElectionsOpen) { session.Send(ServerMessages.ConsoleMsg("Las elecciones ya están abiertas.", FuenteClan)); return; }
             g.ElectionsOpen = true;
             g.Votes.Clear();
-            foreach (var m in _world.GuildMembersOnline(g.Name))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"Se han abierto elecciones en el clan <{g.Name}>. Usa /VOTO <nombre>.", FuenteClan));
+            PersistGuilds();
+            EnviarAlClan(g.Name, ServerMessages.ConsoleMsg(
+                $"¡Han comenzado las elecciones del clan! Puedes votar escribiendo /VOTO seguido del nombre del personaje, por ejemplo: /VOTO {p.Name}", FuenteClan));
         });
     }
 
@@ -8029,8 +8123,9 @@ public sealed partial class PacketDispatcher
                 g.LeaderName = ganador;
                 g.ElectionsOpen = false;   // elección resuelta
                 PersistGuilds();
-                foreach (var m in _world.GuildMembersOnline(g.Name))
-                    m.Connection?.Send(ServerMessages.ConsoleMsg($"{ganador} es ahora el líder del clan <{g.Name}>.", FuenteClan));
+                // El único anuncio que tiene el original para esto (v_RutinaElecciones, modGuilds.bas:1050), a todos
+                // y en la fuente del servidor. En el original esa rutina no la llama nadie: las elecciones no se cierran.
+                _world.Broadcast(ServerMessages.ConsoleMsg($"Servidor> {ganador} es el nuevo líder de {g.Name}.", FuenteServidor));
             }
         });
     }
@@ -8053,8 +8148,7 @@ public sealed partial class PacketDispatcher
             return null;
         }
         var g = _world.GuildByName(p.GuildName);
-        if (g is null || !string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
-        { session.Send(ServerMessages.ConsoleMsg("Solo el líder del clan puede hacer eso.", fuente)); return null; }
+        if (g is null || !string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase)) return null;   // en silencio
         return g;
     }
 
@@ -8062,40 +8156,29 @@ public sealed partial class PacketDispatcher
     /// VB6 HandleGuildOfferAlliance (Protocol.bas:4111) reads TWO ASCIIStrings (guild, proposal).</summary>
     private void HandleGuildOfferAlliance(ClientSession session, ByteQueueReader r)
     {
-        string targetName = r.ReadAsciiString().Trim();
+        string targetName = r.ReadAsciiString();
         string proposal = r.ReadAsciiString();   // el texto que el líder del otro clan leerá con OfferDetails
-        _loop.Enqueue(() =>
-        {
-            var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (mine is null) return;
-            var target = _world.GuildByName(targetName);
-            if (target is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan no existe.", FuenteClan)); return; }
-            if (string.Equals(target.Name, mine.Name, StringComparison.OrdinalIgnoreCase)) return;
-            target.AllianceOffers[mine.Name] = proposal;
-            PersistGuilds();
-            session.Send(ServerMessages.ConsoleMsg($"Ofreciste una alianza a <{target.Name}>.", FuenteClan));
-            foreach (var m in _world.GuildMembersOnline(target.Name))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"<{mine.Name}> te ofrece una alianza (el líder puede aceptarla).", FuenteClan));
-        });
+        _loop.Enqueue(() => ProponerRelacion(session, targetName, alianza: true, proposal));
     }
 
     /// <summary>GuildAcceptAlliance (id 44): offering guild name. Forms the alliance if it was offered.</summary>
     private void HandleGuildAcceptAlliance(ClientSession session, ByteQueueReader r)
     {
-        string offeringName = r.ReadAsciiString().Trim();
+        string offeringName = r.ReadAsciiString();
         _loop.Enqueue(() =>
         {
-            var mine = RequireGuildLeader(session, session.Player, announceNoGuild: true);
-            if (mine is null) return;
-            if (!mine.AllianceOffers.ContainsKey(offeringName)) { session.Send(ServerMessages.ConsoleMsg("Ese clan no te ofreció una alianza.", FuenteClan)); return; }
-            var other = _world.GuildByName(offeringName);
-            if (other is null) { session.Send(ServerMessages.ConsoleMsg("Ese clan ya no existe.", FuenteClan)); return; }
-            mine.AllianceOffers.Remove(offeringName);
-            mine.Allies.Add(other.Name);
-            other.Allies.Add(mine.Name);
+            if (ClanesDeLaPropuesta(session, offeringName) is not var (mine, other)) return;
+            if (RelacionEntre(mine, other) != Relacion.Paz)
+            { session.Send(ServerMessages.ConsoleMsg("No estás en paz con el clan, solo puedes aceptar propuesas de alianzas con alguien que estes en paz.", FuenteClan)); return; }
+            if (!mine.AllianceOffers.ContainsKey(other.Name))
+            { session.Send(ServerMessages.ConsoleMsg("No hay ninguna propuesta de alianza para aceptar.", FuenteClan)); return; }
+            AnularPropuestas(mine, other);
+            AnularPropuestas(other, mine);
+            PonerRelacion(mine, other, Relacion.Aliados);
             PersistGuilds();
-            foreach (var m in _world.GuildMembersOnline(mine.Name).Concat(_world.GuildMembersOnline(other.Name)))
-                m.Connection?.Send(ServerMessages.ConsoleMsg($"¡ALIANZA! Los clanes <{mine.Name}> y <{other.Name}> son aliados.", FuenteClan));
+            EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"Tu clan ha firmado la alianza con {offeringName}.", FuenteClan));
+            // Sic: al otro clan el original le dice "la paz" (Protocol.bas, HandleGuildAcceptAlliance).
+            EnviarAlClan(other.Name, ServerMessages.ConsoleMsg($"Tu clan ha firmado la paz con {mine.Name}.", FuenteClan));
         });
     }
 
@@ -9382,24 +9465,25 @@ public sealed partial class PacketDispatcher
     {
         _loop.Enqueue(() =>
         {
+            // VB6 HandleCloseGuild (Protocol.bas:16621): cada compuerta con su texto, y el clan se cierra sólo cuando
+            // no queda nadie más que el líder. Se anuncia a todo el servidor.
             var p = session.Player;
             if (p is null) return;
-            // DOS GATES QUE FALTABAN, y van ANTES del de liderazgo (VB6 Protocol.bas:16632 y :16637): un
-            // cadáver no cierra el clan, y en mapa PK tampoco. Sin ellos, el líder disolvía el clan muerto y
-            // en medio de una pelea. Los dos rechazan con FONTTYPE_INFO, como el resto de este handler.
             if (!p.IsAlive) { session.Send(ServerMessages.ConsoleMsg("¡¡Estás muerto!!", FuenteInfo)); return; }
             if (_data.IsPkMap(p.Pos.Map))
             { session.Send(ServerMessages.ConsoleMsg("¡No puedes cerrar el clan en zona insegura!", FuenteInfo)); return; }
-            // El /CERRARCLAN es la excepción: rechaza con FONTTYPE_INFO, no con la del clan.
-            var g = RequireGuildLeader(session, session.Player, announceNoGuild: true, fuente: FuenteInfo);
-            if (g is null) return;
-            foreach (var member in _world.GuildMembersOnline(g.Name).ToList())
-            {
-                member.GuildName = "";
-                member.Connection?.Send(ServerMessages.ConsoleMsg($"El clan <{g.Name}> ha sido disuelto.", FuenteInfo));
-            }
+            var g = string.IsNullOrEmpty(p.GuildName) ? null : _world.GuildByName(p.GuildName);
+            if (g is null) { session.Send(ServerMessages.ConsoleMsg("¡No perteneces a ningún clan!", FuenteInfo)); return; }
+            if (!string.Equals(g.LeaderName, p.Name, StringComparison.OrdinalIgnoreCase))
+            { session.Send(ServerMessages.ConsoleMsg("¡No eres el lider del clan!", FuenteInfo)); return; }
+            if (g.Members.Count > 1)
+            { session.Send(ServerMessages.ConsoleMsg("¡Debes hechar a todos los miembros del clan para cerrarlo!", FuenteInfo)); return; }
+            _world.Broadcast(ServerMessages.ConsoleMsg($"Servidor> {p.Name} ha cerrado el clan llamado: {g.Name}", FuenteInfo));
             _world.RemoveGuild(g.Name);
             PersistGuilds();
+            p.GuildName = "";
+            session.Send(ServerMessages.ConsoleMsg("¡Clan eliminado!", FuenteInfo));
+            _world.BroadcastToObservers(p.Pos, ServerMessages.UpdateTagAndStatus(p));   // RefreshCharStatus
         });
     }
 

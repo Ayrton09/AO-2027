@@ -104,6 +104,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
   que tu facción cuadre con la del clan; cualquier miembro puede rechazar una solicitud, y si el rechazado no
   estaba conectado, lee el motivo al entrar.
 
+- **La diplomacia de los clanes, como en el original**: la guerra se avisa a los dos clanes con su sonido, las
+  propuestas de paz o alianza le llegan al otro líder en su lista, y firmarlas o rechazarlas se avisa a los dos. Los
+  newbies no pueden pedir entrar a un clan, y para cerrar uno hay que quedarse solo.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
