@@ -84,7 +84,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **La fogata se ve como fogata** y se apaga sola a los cinco minutos.
 
 - **Menos texto en la consola**: asignar habilidades y reordenar la bóveda ya no escriben nada, como en el
-  original.
+  original. Y trabajando, el aviso de que no conseguiste nada sale una sola vez por racha.
+
+- **Botánica con sus textos**: «¡Has obtenido raíces!» al juntar y «¡No has obtenido raices!» al fallar.
 
 ### Comercio, banco y hogar
 

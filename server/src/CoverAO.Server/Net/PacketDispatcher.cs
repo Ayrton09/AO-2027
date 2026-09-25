@@ -10039,8 +10039,8 @@ public sealed partial class PacketDispatcher
             if (skill is GameLimits.SkillPesca or GameLimits.SkillTalar or GameLimits.SkillMineria or GameLimits.SkillBotanica)
             {
                 var herramienta = Equipment.EquippedOfCategory(p, _data, 6);
-                if (herramienta is null || SkillDeLaHerramienta(herramienta.Index) != skill)
-                { session.Send(ServerMessages.ConsoleMsg("Necesitas la herramienta adecuada.", FuenteInfo)); return; }
+                // Sin la herramienta del oficio no pasa nada: en el original este clic nunca hace nada.
+                if (herramienta is null || SkillDeLaHerramienta(herramienta.Index) != skill) return;
                 IniciarFaena(session, p, tx, ty);
             }
             // Cualquier otra skill: el original tampoco tiene rama para ella, y no pasa nada.
@@ -10078,9 +10078,14 @@ public sealed partial class PacketDispatcher
                 { session.Send(ServerMessages.ConsoleMsg("No hay agua donde pescar. Busca un lago, rio o mar.", FuenteInfo)); return true; }
                 break;
             case 187:          // PIQUETE_MINERO
-                if (info is null || !info.IsDeposit)
-                { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ningún yacimiento.", FuenteInfo)); return true; }
+                // En el orden del original (Acciones.bas:49-67): con algo en la baldosa, primero la distancia y
+                // después si es un yacimiento; sin nada, el aviso sin tilde. Los dos "no hay yacimiento" NO cortan
+                // el doble clic: el original sigue con las acciones de la baldosa (puertas, criaturas).
+                if (!hayObjeto)
+                { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ningun yacimiento.", FuenteInfo)); return false; }
                 if (lejos > 2) { session.Send(ServerMessages.ConsoleMsg("Estás demasiado lejos.", FuenteInfo)); return true; }
+                if (info is null || !info.IsDeposit)
+                { session.Send(ServerMessages.ConsoleMsg("Ahí no hay ningún yacimiento.", FuenteInfo)); return false; }
                 // El yacimiento queda SELECCIONADO, que es de donde el original saca el mineral en cada vuelta
                 // (`ObjData(.flags.TargetObj).MineralIndex`, Trabajo.bas:2001). Sin esto la faena continua no
                 // tiene forma de saber sobre qué está picando.
@@ -10111,7 +10116,9 @@ public sealed partial class PacketDispatcher
         // se ponía en cero "para que la primera vuelta salga ya", y así cada reinicio de la faena —un doble clic
         // o un clic de oficio en ráfaga— cobraba una vuelta sin esperar el intervalo. La primera faena de la
         // sesión igual sale en el acto: el reloj arranca en cero.
-        session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", 2));
+        // Cada oficio lo avisa con su color (Acciones.bas:42/61/86/108): pesca 3, tijeras 4, el resto 2.
+        byte color = tool.Index switch { 138 or 881 => 3, 885 => 4, _ => 2 };
+        session.Send(ServerMessages.ConsoleMsg("Comienzas a trabajar...", color));
         return true;
     }
 
@@ -10178,6 +10185,16 @@ public sealed partial class PacketDispatcher
     /// literal acá: manda el mensaje catalogado (Trabajo.bas 1364/1370 pesca, 1888/1895 talar, 2014/2021
     /// minería). Botánica es la excepción y sí manda <c>WriteConsoleMsg</c> con el texto armado
     /// (Trabajo.bas:1940), así que va con 0 y se resuelve con <c>ConsoleMsg</c>.</summary>
+    /// <summary>El aviso de fallo de cada oficio y su marca de <c>UltimoMensaje</c> (Trabajo.bas:1369/1894/1948/2020).
+    /// Botánica no tiene LocaleMsg: su aviso es texto, y el 0 lo dice.</summary>
+    private static (short Fallo, byte Marca) FalloDelOficio(int skill) => skill switch
+    {
+        GameLimits.SkillPesca => (59, 6),
+        GameLimits.SkillTalar => (61, 8),
+        GameLimits.SkillMineria => (62, 9),
+        _ => (0, 8),
+    };
+
     private static (short Ok, short Fallo) AvisoDelOficio(int skill) => skill switch
     {
         GameLimits.SkillPesca => (64, 59),
@@ -10288,9 +10305,19 @@ public sealed partial class PacketDispatcher
         if (suerte <= 0 || _rng.Next(1, suerte + 1) > umbral)   // RandomNumber(1, Suerte); fallar igual gasta stamina
         {
             session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // la tirada fallida igual gasta stamina
-            var fallo = AvisoDelOficio(skill).Fallo;
-            session.Send(fallo > 0 ? ServerMessages.LocaleMsg(fallo)
-                                   : ServerMessages.ConsoleMsg("No has conseguido nada esta vez.", FuenteInfo));
+            // EL AVISO DE FALLO NO SE REPITE (VB6 `If Not .flags.UltimoMensaje = N`, Trabajo.bas:1369/1894/1948/
+            // 2020): sale una vez y calla hasta que otro aviso con marca pise la marca. Acertar no la pisa. Tala y
+            // botánica comparten la 8.
+            var (fallo, marca) = FalloDelOficio(skill);
+            if (p.UltimoMensaje != marca)
+            {
+                session.Send(fallo > 0 ? ServerMessages.LocaleMsg(fallo)
+                                       : ServerMessages.ConsoleMsg("¡No has obtenido raices!", FuenteInfo));
+                p.UltimoMensaje = marca;
+            }
+            // Botánica sube la skill y suma el crédito del centinela también al fallar (Trabajo.bas:1955-1958);
+            // los otros tres, sólo al acertar.
+            if (skill == GameLimits.SkillBotanica) { RaiseSkill(session, p, skill); p.Trabajando++; }
             return true;   // fallar la tirada NO corta la faena: en el original se sigue intentando
         }
         // MINERÍA: el mineral lo declara el YACIMIENTO, no el oficio (VB6 `MiObj.ObjIndex =
@@ -10367,7 +10394,7 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.UpdateSta((short)p.Stamina));   // reflejar la stamina gastada
         var acierto = AvisoDelOficio(skill).Ok;
         session.Send(acierto > 0 ? ServerMessages.LocaleMsg(acierto)
-                                 : ServerMessages.ConsoleMsg($"¡Has obtenido {name.ToLowerInvariant()}!({amount})", FuenteInfo));
+                                 : ServerMessages.ConsoleMsg($"¡Has obtenido raíces!({amount})", FuenteInfo));   // Trabajo.bas:1940
         // El oficio mejora con el uso, igual que pegar o castear (VB6 DoPescar/DoTalar/DoMineria:
         // Trabajo.bas:1365/1890/2016 llaman SubirSkill con SU skill al conseguir el recurso).
         RaiseSkill(session, p, skill);
@@ -11234,7 +11261,7 @@ public sealed partial class PacketDispatcher
                 // ocupados, así que una domada que espera afuera de una ciudad te sigue ocupando el suyo — igual
                 // que en el original, y a diferencia de como estaba acá antes (conteo de NPCs vivos).
                 int current = CuentaMascotas(p);
-                if (current >= GameLimits.MaxMascotas) { session.Send(ServerMessages.ConsoleMsg("No puedes controlar más criaturas.", 0)); return; }
+                if (current >= GameLimits.MaxMascotas) return;   // en silencio: `If .NroMascotas >= MAXMASCOTAS Then Exit Sub` (modHechizos.bas:638)
                 SpellCasted(session, p, spell);
                 int summoned = 0;
                 int cuantas = Math.Min((int)spell.InvokeCount, GameLimits.MaxMascotas - current);
