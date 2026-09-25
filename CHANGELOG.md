@@ -108,6 +108,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
   propuestas de paz o alianza le llegan al otro líder en su lista, y firmarlas o rechazarlas se avisa a los dos. Los
   newbies no pueden pedir entrar a un clan, y para cerrar uno hay que quedarse solo.
 
+- **El correo, como en el original**: al que recibe una carta se le avisa que la lea en un buzón, podés mandarte
+  una a vos mismo, y la respuesta de un GM llega firmada por el staff.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
@@ -125,10 +128,13 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **El juego anda más liviano**, y en Opciones, Juego, podés ocultar la lluvia bajo techo.
 
+- **Los amigos, como en el original**: el mensaje a tus amigos también te llega a vos, y quitar a alguien de la
+  lista te saca de la suya, aunque no esté conectado.
+
 ### Para GMs y para el que hostea
 
 - **GMs**: /TELEP, /IRA, /SUM, /ACC e /INVISIBLE como en el original; pausar frena sólo a las criaturas; en el
-  cliente web, Shift+clic en el mapa te lleva a esa baldosa.
+  cliente web, Shift+clic en el mapa te lleva a esa baldosa. Las denuncias les llegan como en el original.
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
   `[NIVELMINIMO]`, `MinutosDeFogata` y `MetamorfosisDelDruida`. Con 0 —o la tabla de cuevas vacía— cada una

@@ -3777,14 +3777,16 @@
           return;
         }
         const a = el.dataset.act;
-        if (a === 'mail-send') { const to = pv('mail-to'), m = pv('mail-msg'), slot = +pv('mail-slot') || 0; const oi = inventory[slot]?.objIndex || 0; if (to) send(W().writeByte(CLIENT.EnviarCorreo).writeAsciiString(to).writeAsciiString(m).writeInteger(oi).writeInteger(oi ? 1 : 0)); }
+        // El adjunto viaja como RANURA del inventario, como en el original (frmcorreo: lstInv.ListIndex + 1).
+        if (a === 'mail-send') { const to = pv('mail-to'), m = pv('mail-msg'), slot = +pv('mail-slot') || 0; const hay = inventory[slot]?.objIndex ? slot : 0; if (to) send(W().writeByte(CLIENT.EnviarCorreo).writeAsciiString(to).writeAsciiString(m).writeInteger(hay).writeInteger(hay ? 1 : 0)); }
         // Acciones por carta (VB6 HandlePacketsCorreo): 1=borrar, 2=marcar leida, 3=retirar el adjunto.
         // El slot sale de `el` (el elemento con data-act que resolvió el closest), no de un `e` que no existe
         // en este scope: el handler recibe `ev`. Los tres botones tiraban ReferenceError y la bandeja del
         // buzón quedaba de sólo lectura — no se podía borrar, marcar leída ni retirar el adjunto.
-        else if (a === 'mail-del') send(W().writeByte(CLIENT.PacketsCorreo).writeByte(1).writeByte(+el.dataset.slot));
-        else if (a === 'mail-read') send(W().writeByte(CLIENT.PacketsCorreo).writeByte(2).writeByte(+el.dataset.slot));
-        else if (a === 'mail-take') send(W().writeByte(CLIENT.PacketsCorreo).writeByte(3).writeByte(+el.dataset.slot));
+        // El server no vuelve a mandar la bandeja (el cliente original cierra el buzón): se actualiza acá.
+        else if (a === 'mail-del') { const n = +el.dataset.slot; send(W().writeByte(CLIENT.PacketsCorreo).writeByte(1).writeByte(n)); cartas.splice(n - 1, 1); renderCartas(); }
+        else if (a === 'mail-read') { const n = +el.dataset.slot; send(W().writeByte(CLIENT.PacketsCorreo).writeByte(2).writeByte(n)); if (cartas[n - 1]) cartas[n - 1].leida = 1; renderCartas(); }
+        else if (a === 'mail-take') { const n = +el.dataset.slot; send(W().writeByte(CLIENT.PacketsCorreo).writeByte(3).writeByte(n)); if (cartas[n - 1]) { cartas[n - 1].objIndex = 0; cartas[n - 1].cantidad = 0; } renderCartas(); }
         // Y al aplicar se VACIA lo pendiente: sin eso, un segundo clic en Aplicar remandaba el mismo reparto
         // contra los puntos que ya se gastaron, o sea un pedido de mas -- que ahora es motivo de corte.
         else if (a === 'sk-apply') {

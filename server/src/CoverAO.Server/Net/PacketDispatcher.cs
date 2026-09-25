@@ -4762,15 +4762,13 @@ public sealed partial class PacketDispatcher
         {
             session.Send(ServerMessages.LocaleMsg(75));                     // "Usuario offline"
             if (!_db.CharacterExists(dest)) return;                         // sin .chr no hay a quién escribirle
-            _world.DeliverMail(dest, new MailEntry(p.Name, $"{p.Name}:{mensaje}", 0, 0));
-            PersistMail();
-            session.Send(ServerMessages.ConsoleMsg("Se le ha enviado por correo la respuesta enviada.", 3));
+            if (!RespuestaDelStaffPorCorreo(session, p, dest, mensaje, null)) return;
+            session.Send(ServerMessages.ConsoleMsg("Se le ha enviado por correo la respuesta enviada.", FuenteInfo));
         }
         else if (_data.IsPkMap(t.Pos.Map))
         {
             session.Send(ServerMessages.LocaleMsg(426));
-            _world.DeliverMail(dest, new MailEntry(p.Name, $"{p.Name}:{mensaje}", 0, 0));
-            PersistMail();
+            RespuestaDelStaffPorCorreo(session, p, dest, mensaje, t);
         }
         else
         {
@@ -4782,6 +4780,28 @@ public sealed partial class PacketDispatcher
         // no hay ninguna llamada a `Ayuda.Quitar` en todo el handler. Sacarla es justamente para lo que existe
         // SOSDONE, que el cliente manda cuando el GM marca la consulta como atendida.
         Console.WriteLine($"[{session.RemoteEndpoint}] ResponderGM {p.Name} -> {dest}");
+    }
+
+    /// <summary>La respuesta de un GM que va por correo: <c>EnviarCorreo</c> con <c>EnvioDirecto = 1</c>
+    /// (mod_Correos.bas), sin cobrar ni adjuntar, firmada por "CoverAO Staff". Si la casilla está llena no se
+    /// manda (<c>CantSendCorreo</c>) y el GM recibe el aviso del original. Si el destinatario está conectado se le
+    /// prende el indicador de carta y se le avisa; al GM, como a cualquiera que manda una carta, "El mensaje fue
+    /// enviado correctamente.".</summary>
+    private bool RespuestaDelStaffPorCorreo(ClientSession session, Player gm, string dest, string mensaje, Player? conectado)
+    {
+        if (_world.PeekMail(dest).Count >= GameLimits.MaxCorreos)
+        {
+            session.Send(ServerMessages.ConsoleMsg(
+                "El usuario tiene su casilla de correos llena, por favor comunicate con el usuario a la brevedad.", FuenteInfo));
+            return false;
+        }
+        _world.DeliverMail(dest, new MailEntry("CoverAO Staff", $"{gm.Name}:{mensaje}", 0, 0));
+        PersistMail();
+        conectado?.Connection?.Send(ServerMessages.MensajeSigno(true));
+        conectado?.Connection?.Send(ServerMessages.ConsoleMsg(
+            "Has recibido una respuesta de [CoverAO Staff], ve a un correo local para leerlo.", FuenteInfo));
+        session.Send(ServerMessages.ConsoleMsg("El mensaje fue enviado correctamente.", FuenteInfo));
+        return true;
     }
 
     /// <summary>/CENTINELAACTIVADO (VB6 HandleToggleCentinelActivated, Protocol.bas:10840): conmuta el
@@ -7199,11 +7219,10 @@ public sealed partial class PacketDispatcher
             if (slot < 1 || slot > box.Count) return;
             switch (sub)
             {
-                case 1:   // ResetCorreos: borrar y compactar
+                case 1:   // ResetCorreos: borrar y compactar. El original no contesta; el cliente cierra el buzón.
                     box.RemoveAt(slot - 1);
                     _world.DropMailboxIfEmpty(p.Name);
                     PersistMail();
-                    session.Send(ServerMessages.CorreoList(box));   // que la bandeja quede al día
                     break;
                 case 2:   // marcar leída
                     box[slot - 1] = box[slot - 1] with { Leida = 1 };
@@ -7216,8 +7235,9 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>Saca el adjunto de una carta al inventario (VB6 <c>RetirarItemCorreo</c>, mod_Correos.bas).
-    /// Si no entra en el inventario, el original lo TIRA AL PISO en vez de perderlo — la carta queda igual en
-    /// la bandeja, sólo sin adjunto.</summary>
+    /// Si no entra en el inventario, el original avisa con el <c>LocaleMsg(25)</c> de <c>MeterItemEnInventario</c>
+    /// y lo TIRA AL PISO en vez de perderlo — la carta queda igual en la bandeja, sólo sin adjunto. No manda la
+    /// bandeja de nuevo: el cliente cierra el buzón.</summary>
     private void RetirarItemCorreo(ClientSession session, Player p, List<MailEntry> box, int i)
     {
         var m = box[i];
@@ -7225,6 +7245,7 @@ public sealed partial class PacketDispatcher
         int slot = FindSlotFor(p, m.ObjIndex, m.Amount);
         if (slot == 0)
         {
+            session.Send(ServerMessages.LocaleMsg(25));   // inventario lleno
             // VB6 TirarItemAlPiso → Tilelibre: hay que buscar un tile LIBRE, no escribir sobre p.Pos, que
             // pisaría lo que ya hubiera en el suelo (incluida una puerta abierta, que quedaría imposible de
             // cerrar). Sin ningún tile libre el ítem se pierde, igual que el `NuevaPos = 0` del original.
@@ -7232,7 +7253,6 @@ public sealed partial class PacketDispatcher
             {
                 _world.SetGround(spot, m.ObjIndex, m.Amount);
                 _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, m.ObjIndex, m.Amount));
-                session.Send(ServerMessages.ConsoleMsg("No te entra en el inventario: el adjunto quedó en el piso.", FuenteInfo));
             }
             else return;   // ni piso ni inventario: la carta conserva su adjunto para el próximo intento
         }
@@ -7247,7 +7267,6 @@ public sealed partial class PacketDispatcher
         _economia?.Anotar($"correo {p.Name} retira {m.Amount} x obj {m.ObjIndex} (de {m.Sender})");
         box[i] = m with { ObjIndex = 0, Amount = 0 };   // la carta se queda, sin adjunto
         PersistMail();
-        session.Send(ServerMessages.CorreoList(box));
     }
 
     /// <summary>GuildAllianceDetails / GuildPeaceDetails → <c>r_VerPropuesta</c> (modGuilds.bas:1773): el LÍDER
@@ -8432,58 +8451,65 @@ public sealed partial class PacketDispatcher
     /// <summary>Lo último que se persistió del record, para no reescribirlo en cada vuelta.</summary>
     private int _recordGuardado = -1;
 
-    /// <summary>EnviarCorreo (id 97): recipient, message, ObjIndex, Amount. Consumes the attached item from
-    /// the sender and drops it in the recipient's mailbox (delivered now if online, else at their login).</summary>
+    /// <summary>
+    /// EnviarCorreo (id 97): destinatario, mensaje, RANURA del inventario y cantidad — como el original
+    /// (HandleEnviarCorreo, Protocol.bas:16020, y mod_Correos.EnviarCorreo). El cliente de stock manda la ranura
+    /// (<c>lstInv.ListIndex + 1</c>, frmcorreo.frm:311) y el server saca de ella el objeto. Los textos y el
+    /// orden son los del original; mandarse una carta a uno mismo se puede (el cliente tiene ese chequeo
+    /// comentado).
+    /// </summary>
     private void HandleEnviarCorreo(ClientSession session, ByteQueueReader r)
     {
         string dest = r.ReadAsciiString();
         string message = r.ReadAsciiString();
-        short objIndex = r.ReadInteger();
+        short ranura = r.ReadInteger();
         short amount = r.ReadInteger();
         _loop.Enqueue(() =>
         {
             var p = session.Player;
             if (p is null) return;
             if (string.IsNullOrWhiteSpace(dest) || !_db.CharacterExists(dest))
-            { session.Send(ServerMessages.ConsoleMsg($"No existe el personaje {dest}.", FuenteInfo)); return; }
-            if (string.Equals(dest, p.Name, StringComparison.OrdinalIgnoreCase))
-            { session.Send(ServerMessages.ConsoleMsg("No puedes enviarte correo a ti mismo.", FuenteInfo)); return; }
+            { session.Send(ServerMessages.ConsoleMsg($"No existe el personaje [{dest}]", FuenteInfo)); return; }
             // CASILLA LLENA (VB6 Max_Correos = 10, Declares.bas:1281; el gate en CantSendCorreo,
             // mod_Correos.bas:134). Sin tope, `DeliverMail` acumulaba sin límite — y como cada operación de
             // correo re-serializa el diccionario ENTERO de buzones a JSON dentro del game loop (hilo único),
             // un bucle de envíos a una víctima era un DoS remoto además de un buzón inutilizable: `slot` es un
             // byte, así que a partir de la carta 256 nadie podía volver a tocarlas.
             if (_world.PeekMail(dest).Count >= GameLimits.MaxCorreos)
-            { session.Send(ServerMessages.ConsoleMsg($"{dest} no tiene más espacio en su casilla.", FuenteInfo)); return; }
+            { session.Send(ServerMessages.ConsoleMsg($"{dest} no tiene más espacio en su casilla de mensajes.", FuenteInfo)); return; }
             // EL CORREO CUESTA 1750 DE ORO (VB6 mod_Correos.bas:32-48). Es un sumidero de oro de la economía
             // —y de paso el limitador natural del spam— que acá no se cobraba: mandar cartas era gratis.
             // El original chequea ANTES de sacar el ítem y cobra DESPUÉS, con su UpdateGold.
             if (p.Gold < CostoDelCorreo) { session.Send(ServerMessages.LocaleMsg(26)); return; }   // "Oro insuficiente"
 
             short attachObj = 0, attachAmt = 0;
-            if (objIndex > 0 && amount > 0)
+            if (ranura != 0 && amount != 0)                  // `If ObjIndex <> 0 And AmountIndex <> 0`
             {
-                // El adjunto no puede pasar de UNA pila. Al retirarlo entra en una sola ranura, recortado a
-                // `MaxInventoryObjs`; con 12.000 adjuntadas salían 12.000 del emisor y al receptor le entraban
-                // 10.000 — las otras 2.000 desaparecían. Se rechaza, no se recorta, como la cantidad al fabricar.
-                if (amount > GameLimits.MaxInventoryObjs)
-                { session.Send(ServerMessages.ConsoleMsg($"No puedes adjuntar más de {GameLimits.MaxInventoryObjs} unidades.", FuenteInfo)); return; }
-                if (CountItem(p, objIndex) < amount) { session.Send(ServerMessages.ConsoleMsg("No tienes ese ítem para adjuntar.", FuenteInfo)); return; }
-                ConsumeItem(session, p, objIndex, amount);
-                attachObj = objIndex; attachAmt = amount;
-                _economia?.Anotar($"correo {p.Name} -> {dest}: adjunta {amount} x obj {objIndex}");
+                // Una ranura fuera del inventario es un error de subíndice en el original: el paquete muere
+                // sin respuesta.
+                if (ranura < 1 || ranura > GameLimits.MaxInventorySlots) return;
+                var inv = p.Inventory[ranura];
+                // El original cuenta con `TieneObjetos` en TODO el inventario pero saca de UNA ranura
+                // (`QuitarUserInvItem`, que se queda en cero): adjuntar 8 teniendo 5 y 5 le mandaba 8 al otro
+                // y le sacaba 5 al que envía. Acá la cantidad tiene que estar en esa ranura, con el mismo aviso
+                // que el original da cuando no la tenés; igual con una cantidad negativa, que allá SUMABA.
+                if (inv.IsEmpty || amount < 0 || amount > inv.Amount)
+                { session.Send(ServerMessages.ConsoleMsg("No tienes esa cantidad.", FuenteInfo)); return; }
+                attachObj = inv.ObjIndex; attachAmt = amount;
+                QuitarDeLaRanura(session, p, (byte)ranura, amount);
+                _economia?.Anotar($"correo {p.Name} -> {dest}: adjunta {amount} x obj {attachObj}");
             }
             p.Gold -= CostoDelCorreo;                       // VB6 mod_Correos.bas:47
             session.Send(ServerMessages.UpdateGold(p.Gold)); // …y su WriteUpdateGold (:48)
             _world.DeliverMail(dest, new MailEntry(p.Name, message, attachObj, attachAmt));
             PersistMail();
-            session.Send(ServerMessages.ConsoleMsg($"Enviaste correo a {dest}.", FuenteInfo));
-            // If they're connected, notify them; they retrieve from the mailbox via Packets_Correo (or at login).
+            // Si está conectado se le prende el INDICADOR de carta y se le avisa (mod_Correos.bas:68-75); la
+            // carta se lee en un buzón.
             var online = _world.PlayerByName(dest);
-            online?.Connection?.Send(ServerMessages.ConsoleMsg($"Tienes correo nuevo de {p.Name}. Usa /RETIRAR para recibirlo.", FuenteInfo));
-            // VB6 mod_Correos.bas:68: además del aviso por consola se prende el INDICADOR de correo pendiente
-            // (el "tenés carta" del cliente). Se apaga cuando lo retira — es un flag, no un mensaje.
             online?.Connection?.Send(ServerMessages.MensajeSigno(true));
+            online?.Connection?.Send(ServerMessages.ConsoleMsg(
+                $"Has recibido un nuevo mensaje de [{p.Name}], ve a un correo local para leerlo.", FuenteInfo));
+            session.Send(ServerMessages.ConsoleMsg("El mensaje fue enviado correctamente.", FuenteInfo));
         });
     }
 
@@ -9487,7 +9513,9 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>Denounce (id 86): text. Sends a report to every online GM.</summary>
+    /// <summary>Denounce (id 86, VB6 HandleDenounce, Protocol.bas:6096): a los administradores conectados
+    /// "nombre DENUNCIA: texto", con el nombre en minúsculas y en FONTTYPE_GUILDMSG, y al que denuncia el
+    /// <c>LocaleMsg(85)</c>. El <c>If .flags.Silenciado = 0</c> del original no se porta: nada pone ese flag en 1.</summary>
     private void HandleDenounce(ClientSession session, ByteQueueReader r)
     {
         string text = r.ReadAsciiString();
@@ -9499,11 +9527,9 @@ public sealed partial class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || string.IsNullOrWhiteSpace(text)) return;
-            int gms = 0;
-            foreach (var gm in _world.Players.Where(pl => pl.IsGm))
-            { gm.Connection?.Send(ServerMessages.ConsoleMsg($"[DENUNCIA de {p.Name}] {text}", FuenteClanMsg)); gms++; }
-            session.Send(ServerMessages.LocaleMsg(85));   // VB6 HandleDenounce: WriteLocaleMsg(85) siempre (el broadcast a admins va aparte)
+            if (p is null) return;
+            BroadcastToAdmins(ServerMessages.ConsoleMsg($"{p.Name.ToLowerInvariant()} DENUNCIA: {text}", FuenteClanMsg));
+            session.Send(ServerMessages.LocaleMsg(85));
         });
     }
 
@@ -9800,6 +9826,10 @@ public sealed partial class PacketDispatcher
         });
     }
 
+    /// <summary>DelAmigos (VB6 HandleDelAmigo, Protocol.bas:16939): quitar a alguien de la lista. Si el personaje
+    /// no existe o no está en la lista, calla. Si está, avisa "X fue quitado de tu lista de amigos." y la amistad
+    /// se rompe de los DOS lados: al otro, conectado, se le avisa "Y te ha quitado de su lista de amigos." y se lo
+    /// saca; desconectado, se le corrige el personaje guardado (<c>delAmigoOfli</c>, GameLogic.bas:1226).</summary>
     private void HandleDelFriend(ClientSession session, ByteQueueReader r)
     {
         string name = r.ReadAsciiString().Trim();
@@ -9807,9 +9837,28 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
-            // VB6 HandleDelAmigo: si el personaje no existe -> Exit Sub silencioso; tampoco confirma por texto.
-            if (!_db.CharacterExists(name)) return;
-            p.Friends.RemoveAll(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase));
+            if (!_db.CharacterExists(name)) return;                 // `If Not PersonajeExiste(nick) Then Exit Sub`
+            int i = p.Friends.FindIndex(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase));
+            if (i < 0) return;
+            string amigo = p.Friends[i];
+            session.Send(ServerMessages.ConsoleMsg($"{amigo} fue quitado de tu lista de amigos.", FuenteInfo));
+            p.Friends.RemoveAt(i);
+            p.QuienAmigo = "";
+
+            var otro = _world.PlayerByName(amigo);
+            if (otro is not null)
+            {
+                int j = otro.Friends.FindIndex(f => string.Equals(f, p.Name, StringComparison.OrdinalIgnoreCase));
+                if (j < 0) return;
+                otro.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te ha quitado de su lista de amigos.", FuenteInfo));
+                otro.Friends.RemoveAt(j);
+            }
+            // Desconectado: se lee, se corrige y se guarda en este hilo, como /BANCLAN. Hacerlo en otro hilo
+            // abre una carrera con su login (que también pasa por el loop): el guardado viejo pisaría lo nuevo.
+            // Y no se puede repetir a gusto: después de la primera vez ya no está en la lista.
+            else if (_db.LoadCharacter(amigo, 0, "") is { } off
+                     && off.Friends.RemoveAll(f => string.Equals(f, p.Name, StringComparison.OrdinalIgnoreCase)) > 0)
+                _db.SaveCharacter(off);
         });
     }
 
@@ -9841,6 +9890,9 @@ public sealed partial class PacketDispatcher
         });
     }
 
+    /// <summary>MsgAmigos (VB6 HandleMsgAmigo, Protocol.bas:16761): "[Nombre] mensaje" a cada amigo conectado y el
+    /// mismo eco al que lo manda, en FONTTYPE_INFOBOLD4. Sin recuento ni aviso de que no había nadie: si ninguno
+    /// está, sólo llega el eco.</summary>
     private void HandleFriendMessage(ClientSession session, ByteQueueReader r)
     {
         string msg = r.ReadAsciiString();
@@ -9848,14 +9900,17 @@ public sealed partial class PacketDispatcher
         _loop.Enqueue(() =>
         {
             var p = session.Player;
-            if (p is null || string.IsNullOrWhiteSpace(msg)) return;
-            int sent = 0;
+            if (p is null) return;
+            var texto = ServerMessages.ConsoleMsg($"[{p.Name}] {msg}", FuenteAmigos);
+            // El original manda a los `Amigos(i).index` cargados, que son los amigos de a dos que están conectados.
             foreach (var f in p.Friends)
             {
-                var friend = _world.PlayerByName(f);
-                if (friend is not null) { friend.Connection?.Send(ServerMessages.ConsoleMsg($"[Amigo] {p.Name}> {msg}", FuenteAmigos)); sent++; }
+                var amigo = _world.PlayerByName(f);
+                if (amigo is not null && !ReferenceEquals(amigo, p)
+                    && amigo.Friends.Any(x => string.Equals(x, p.Name, StringComparison.OrdinalIgnoreCase)))
+                    amigo.Connection?.Send(texto);
             }
-            session.Send(ServerMessages.ConsoleMsg(sent > 0 ? $"Mensaje enviado a {sent} amigo(s)." : "Ningún amigo en línea.", FuenteAmigos));
+            session.Send(texto);
         });
     }
 
@@ -10614,24 +10669,32 @@ public sealed partial class PacketDispatcher
             var inv = p.Inventory[i];
             if (inv.IsEmpty || inv.ObjIndex != objIndex) continue;
             int take = Math.Min(amount, inv.Amount);
-            // SI SE VA ENTERO Y ESTABA PUESTO, PRIMERO HAY QUE SACÁRSELO. Acá se hacía `inv = default`, que
-            // borra el flag `Equipped` sin devolver el bono: el anillo se iba y el +30 se quedaba. Mandarlo
-            // por correo y retirarlo del buzón lo volvía a poner, y el bono se apilaba hasta el techo — con el
-            // cliente de stock, sin tocar un byte. Peor todavía, los skills y atributos se PERSISTEN en el
-            // `.chr`, así que quedaba para siempre.
-            //
-            // El original lo tiene adentro de `QuitarUserInvItem`, que es su equivalente de esta función:
-            // `If .Amount <= Cantidad And .Equipped = 1 Then Call Desequipar` (InvUsuario.bas:283-285), y en
-            // ese mismo orden — desequipar y después descontar.
-            //
-            // Hay que RELEER el slot: desequipar lo muta.
-            DesequiparSiSeVaEntero(session, p, (byte)i, take);
-            inv = p.Inventory[i];
-            inv.Amount -= (short)take; amount -= take;
-            if (inv.Amount <= 0) inv = default;
-            p.Inventory[i] = inv;
-            session.Send(ServerMessages.ChangeInventorySlot((byte)i, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
+            QuitarDeLaRanura(session, p, (byte)i, take);
+            amount -= take;
         }
+    }
+
+    /// <summary>Saca <paramref name="take"/> unidades de una ranura (VB6 <c>QuitarUserInvItem</c> +
+    /// <c>UpdateUserInv</c>). La cantidad no puede pasar de lo que hay en la ranura.</summary>
+    private void QuitarDeLaRanura(ClientSession session, Player p, byte i, int take)
+    {
+        // SI SE VA ENTERO Y ESTABA PUESTO, PRIMERO HAY QUE SACÁRSELO. Acá se hacía `inv = default`, que
+        // borra el flag `Equipped` sin devolver el bono: el anillo se iba y el +30 se quedaba. Mandarlo
+        // por correo y retirarlo del buzón lo volvía a poner, y el bono se apilaba hasta el techo — con el
+        // cliente de stock, sin tocar un byte. Peor todavía, los skills y atributos se PERSISTEN en el
+        // `.chr`, así que quedaba para siempre.
+        //
+        // El original lo tiene adentro de `QuitarUserInvItem`, que es su equivalente de esta función:
+        // `If .Amount <= Cantidad And .Equipped = 1 Then Call Desequipar` (InvUsuario.bas:283-285), y en
+        // ese mismo orden — desequipar y después descontar.
+        //
+        // Hay que RELEER el slot: desequipar lo muta.
+        DesequiparSiSeVaEntero(session, p, i, take);
+        var inv = p.Inventory[i];
+        inv.Amount -= (short)take;
+        if (inv.Amount <= 0) inv = default;
+        p.Inventory[i] = inv;
+        session.Send(ServerMessages.ChangeInventorySlot(i, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
     }
 
     /// <summary>After a character moves or teleports, send CharacterCreate/Remove diffs so each side sees
