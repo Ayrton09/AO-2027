@@ -4048,11 +4048,30 @@ public sealed class Bot
         int aca = sentidos.Mapa;
         var antes = sentidos.Posicion;
         var pisable = Pisable(sentidos);
-        if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m != aca && pisable(m) && !HayGuardiaQueLoAtaca(m), pisable)
-            is not { } afuera) return false;
-        await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
-        return sentidos.Mapa != aca || sentidos.Posicion != antes;
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        foreach (int vecino in VecinosDelMenosPeligroso(_entorno.Datos, aca, m => pisable(m) && !HayGuardiaQueLoAtaca(m),
+                     m => _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
+                         ? nacen.Count(sp => EsPeligroso((short)sp.NpcIndex, vida, nivel, conPociones, curaVeneno)) : 0))
+        {
+            if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m == vecino, pisable) is not { } afuera) continue;
+            await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
+            return sentidos.Mapa != aca || sentidos.Posicion != antes;
+        }
+        return false;
     }
+
+    /// <summary>
+    /// ADÓNDE SE SALE: los mapas de al lado que <paramref name="sirve"/>, del que tiene MENOS de lo que lo puede matar al que más.
+    /// El primero que se encontraba podía ser el peor: medido en `tienda7`, un Guerrero de nivel 18 salió de la Cordillera del
+    /// Norte (806) al Río Daglor (798), donde nacen cuatro Sanguijuelas gigantes (nivel 31, pegan hasta 180), y una lo mató; por
+    /// el Bosque mortecino (805) había un solo Turbador y murciélagos.
+    /// </summary>
+    public static IEnumerable<int> VecinosDelMenosPeligroso(GameData datos, int mapa, Func<int, bool> sirve, Func<int, int> peligros) =>
+        datos.MapExits.Where(e => e.Key.Map == mapa).Select(e => e.Value.DestMap).Distinct()
+             .Where(m => m != mapa && sirve(m))
+             .OrderBy(peligros);
 
     /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.

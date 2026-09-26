@@ -60,4 +60,26 @@ public class LosBotsNoCruzanElPeligroTests
         Assert.Equal(1, afuera!.Value.Saltos);
         Assert.False(Bot.HayGuardiaQueVaPor(afuera.Value.Mapa, Player.StatusCiudadano, nivel, m.Datos, ini));
     }
+
+    /// <summary>ADÓNDE SE SALE (`tienda7`): de la Cordillera del Norte, el vecino con menos de lo que lo mata. El Río Daglor (798)
+    /// tiene cuatro Sanguijuelas gigantes; el Bosque mortecino (805), un solo Turbador.</summary>
+    [Fact]
+    public void De_la_Cordillera_del_Norte_se_sale_por_el_vecino_menos_peligroso()
+    {
+        if (Mundo() is not { } m) return;
+        const int nivel = 18, vida = 199;   // Ciro
+        var ini = new ServerIni();
+        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(m.Datos.Npc((short)f), vida, nivel, conPociones: true,
+            curaVeneno: false, Player.StatusCiudadano, m.Datos, ini);
+        Func<int, int> peligros = mapa => m.Datos.MapSpawns.TryGetValue(mapa, out var nacen) ? nacen.Count(sp => esPeligroso(sp.NpcIndex)) : 0;
+        Func<int, bool> sirve = mapa => Bot.PuedeEntrar(nivel, m.Datos.MapZone(mapa))
+            && !Bot.HayGuardiaQueVaPor(mapa, Player.StatusCiudadano, nivel, m.Datos, ini);
+
+        Assert.True(peligros(798) > peligros(805), "premisa: el 798 es más peligroso que el 805 para él");
+        var orden = Bot.VecinosDelMenosPeligroso(m.Datos, 806, sirve, peligros).ToList();
+
+        Assert.Equal(805, orden[0]);
+        Assert.DoesNotContain(807, orden);   // con guardias que van por él
+        Assert.DoesNotContain(814, orden);
+    }
 }
