@@ -4033,7 +4033,7 @@ public sealed class Bot
         var pisable = Pisable(sentidos);
         if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m != aca && pisable(m) && !HayGuardiaQueLoAtaca(m), pisable)
             is not { } afuera) return false;
-        await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto);
+        await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
         return sentidos.Mapa != aca || sentidos.Posicion != antes;
     }
 
@@ -4052,7 +4052,7 @@ public sealed class Bot
                                           int mapaDestino, byte destinoX, byte destinoY,
                                           Task cerrada, CancellationToken ct, int tolerancia = 1,
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
-                                          int topeDeMapas = Navegante.TopeDeMapas)
+                                          int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -4125,9 +4125,13 @@ public sealed class Bot
                 // abortaba el viaje entero aunque el bot tuviera mil pociones encima, y el intento siguiente
                 // arrancaba otra vez desde donde estuviera. Mientras no esté en peligro de verdad se toma la poción y
                 // se sigue caminando; con la vida bajo `SeRetira` el viaje se corta igual que antes.
-                if (como == Paso.Urgencia && !deMuerto && sentidos.Vivo && sentidos.Salud >= SeRetira
+                if (como == Paso.Urgencia && !deMuerto && sentidos.Vivo && (sentidos.Salud >= SeRetira || escapando)
                     && await CuidarseAsync(transporte, sentidos, ct))
                     como = Paso.Dado;
+                // ESCAPANDO, EL VIAJE NO SE CORTA POR LA VIDA: se toma lo que haya en el camino y se sigue. Pararse a curarse es
+                // quedarse quieto delante de lo que pega (ver `SalirDelMapaAsync`). Medido en `tienda5`: un Guerrero que salía del
+                // mapa de cuatro guardias cortaba el viaje en cada paso con la vida baja, y el Clérigo lo mató a seis baldosas.
+                if (como == Paso.Urgencia && escapando && !deMuerto && sentidos.Vivo) como = Paso.Dado;
                 // SIN POCIONES Y SIN NADA HOSTIL CERCA, EL VIAJE SIGUE. Cortarlo sirve para tomar una poción o para escapar de
                 // lo que pega; sin pociones y sin nadie que ataque, pararse no cura nada. Medido en `largo2`: una Guerrera con 5
                 // de 58 de vida, sin pociones, sin comida ni bebida y con una moneda cortaba cada minuto, en el primer paso, el
