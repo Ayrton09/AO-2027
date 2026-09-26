@@ -2872,9 +2872,18 @@ public sealed class Bot
     /// <see cref="CurarseConMagia"/>).</summary>
     public static byte ClicEnLaCabeza(byte y) => (byte)Math.Max(1, y - 1);
 
+    /// <summary>
+    /// ¿EL CLIC EN LA CABEZA LO ELIGE? Sólo si cae adentro del área jugable: el servidor elige blanco desde la fila
+    /// <see cref="GameLimits.MinYBorder"/> (<c>InMapBounds</c>, GameLogic.bas:225) y un clic más arriba DESELECCIONA. Al que está
+    /// parado en esa primera fila no se lo elige clickeando su cabeza, y el hechizo que va sin blanco se corta sin cobrar.
+    /// </summary>
+    public static bool ElClicLoElige(byte y) => ClicEnLaCabeza(y) >= GameLimits.MinYBorder;
+
     private bool CurarseConMagia(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
-        if (!sentidos.UsaMana) return false;
+        // Parado en la primera fila su cabeza queda afuera (`ElClicLoElige`): la cura no sale y, por no subirle la vida, el
+        // hechizo quedaría anotado como rechazado. Ahí, la poción.
+        if (!sentidos.UsaMana || !ElClicLoElige(sentidos.Posicion.Y)) return false;
         RevisarElUltimoCasteo(sentidos);
         var curas = new List<(byte Ranura, int Cura, int Mana)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
@@ -3720,6 +3729,17 @@ public sealed class Bot
     private const int GolpesParaJuzgar = 10, GolpesQueSeBanca = 50;
 
     /// <summary>
+    /// ¿DEJA DE LANZARLE? Después de <see cref="LanzadosEnVanoParaPegar"/> hechizos seguidos que no le cobraron el maná. El
+    /// servidor corta sin cobrar todo lo que no sale —sin blanco, fuera de rango, la cadencia—, así que el maná que no baja es
+    /// el hechizo que no salió. <c>LanzarAlgo</c> devuelve true por haber MANDADO los paquetes y arriba hay un <c>continue</c>:
+    /// sin esto el bot no llegaba nunca a pegar con el arma. Visto en `pelea_a`: un Nigromante con 79 de maná en (13,8) del
+    /// mapa 19, la fila de al lado del borde, siete minutos con el maná clavado y tomando pociones mientras lo mordía un Lobo.
+    /// </summary>
+    public static bool DejaDeLanzarle(int lanzadosEnVano) => lanzadosEnVano >= LanzadosEnVanoParaPegar;
+
+    private const int LanzadosEnVanoParaPegar = 3;
+
+    /// <summary>
     /// LAS CRIATURAS QUE NO PUEDE LASTIMAR (<see cref="NoLaVaAMatar"/>), con el arma y el nivel con que lo intentó: con otra arma o
     /// en otro nivel el golpe cambia y se vuelve a probar. Lo anotado no es presa (<see cref="EsPresa"/>) y se esquiva.
     /// </summary>
@@ -3748,6 +3768,8 @@ public sealed class Bot
         // LO QUE LE VA SACANDO, para no quedarse peleando con lo que no puede matar (`NoLaVaAMatar`). Lo de antes no cuenta.
         sentidos.TomarLoQuePego();
         int golpes = 0, sacado = 0;
+        // Y LOS HECHIZOS QUE NO SALEN, para pasar al arma (`DejaDeLanzarle`).
+        int lanzadosEnVano = 0;
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
@@ -3771,10 +3793,12 @@ public sealed class Bot
 
             // EL QUE SABE MAGIA PELEA CON MAGIA, y de lejos. Es lo que hace distinto a un mago de un guerrero
             // visto desde afuera, y sin esto todas las clases peleaban igual: acercarse y pegar.
-            if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
+            int manaAntes = sentidos.ManaEnPuntos;
+            if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY && !DejaDeLanzarle(lanzadosEnVano)
                 && LanzarAlgo(transporte, sentidos, quien))
             {
                 await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                lanzadosEnVano = sentidos.ManaEnPuntos < manaAntes ? 0 : lanzadosEnVano + 1;
                 continue;
             }
 
@@ -4029,7 +4053,7 @@ public sealed class Bot
 
     private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
     {
-        if (!sentidos.UsaMana) return false;
+        if (!sentidos.UsaMana || !ElClicLoElige(a.Y)) return false;
         RevisarElUltimoCasteo(sentidos);
         var candidatos = new List<(byte Ranura, short Numero, int Dano, int Mana, int Sta)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
