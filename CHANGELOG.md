@@ -159,7 +159,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **El anticheat tiene memoria**: a las tres trampas se echa y a las seis se banea. Los movimientos grandes de oro
   quedan registrados.
 
-- **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad.
+- **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
+  guardias del otro bando, y para cazar o trabajar no cruzan por donde los matan.
 
 ## 1.0.0 — 2026-09-16
 
