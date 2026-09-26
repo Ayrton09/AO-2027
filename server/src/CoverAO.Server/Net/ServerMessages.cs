@@ -578,6 +578,12 @@ public static class ServerMessages
     public static byte[] ConsoleMsg(string text, byte fontIndex = 0) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.ConsoleMsg).WriteAsciiString(text).WriteByte(fontIndex).ToArray();
 
+    /// <summary>La puñalada a una criatura (VB6 Trabajo.bas:1800), que viaja sólo como texto. Está acá y no adentro del handler
+    /// porque los bots la leen para saber cuánto le sacaron (<see cref="SentidosDelBot.TomarLoQuePego"/>).</summary>
+    public static string ApunalasteLaCriatura(int dano) => ComienzoDeLaPunalada + dano + ".";
+
+    public const string ComienzoDeLaPunalada = "Has apuñalado la criatura por ";
+
     /// <summary>Cartel modal en el cliente (id 22). Layout: ASCIIString(mensaje) + Boolean(esPregunta) +
     /// Byte(accion) — PrepareMessageShowMessageBox (Protocol.bas:14596). Lo usa /SMSG para avisarle a todo el
     /// servidor, y con <c>("", true, 1)</c> el rechazo a tirar al piso un objeto marcado <c>Destruir</c>

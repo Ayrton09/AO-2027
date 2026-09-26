@@ -2697,7 +2697,7 @@ public sealed partial class PacketDispatcher
             // resta en Trabajo.bas:1799 y recién llama a CalcularDarExp en :1803. O sea que la puñalada que
             // MATA tampoco cobra en el goteo — su parte sale del pago del pool al morir.
             CalcularDarExp(session, p, npc, dano);
-            session.Send(ServerMessages.ConsoleMsg($"Has apuñalado la criatura por {dano}.", FuenteCombate));
+            session.Send(ServerMessages.ConsoleMsg(ServerMessages.ApunalasteLaCriatura(dano), FuenteCombate));
             // Idem: Trabajo.bas:1800 manda solo la linea de texto.
             if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
         }

@@ -182,6 +182,42 @@ public sealed class SentidosDelBot
     public int PuntosLibres { get { lock (_candado) return _puntosLibres; } }
 
     /// <summary>
+    /// LO QUE LE SACÓ A LO QUE LE PEGA desde la última vez que se preguntó: cuántos golpes cuerpo a cuerpo le resolvió el servidor
+    /// y la suma de lo que hicieron. Es el número que el servidor le pone sobre la cabeza a cada golpe (el modo 2 de
+    /// <c>ChatOverHeadLocale</c>): 0 si erró, y NEGATIVO si la criatura se curó, porque el original le resta la defensa al golpe
+    /// sin piso (SistemaCombate.bas:465). La puñalada suma lo suyo sin contar como otro golpe.
+    /// </summary>
+    public (int Golpes, int Dano) TomarLoQuePego()
+    {
+        lock (_candado)
+        {
+            var loQuePego = (_golpesDados, _danoDado);
+            _golpesDados = 0;
+            _danoDado = 0;
+            return loQuePego;
+        }
+    }
+
+    private int _golpesDados, _danoDado;
+
+    /// <summary>El modo de <c>ChatOverHeadLocale</c> que lleva el número de un golpe (<see cref="ServerMessages.DamageOverHead"/>).</summary>
+    private const byte ModoDelGolpe = 2;
+
+    /// <summary>Cuánto sacó la puñalada que avisa ese mensaje de consola, o null si el mensaje es otro. Se mira el comienzo sobre
+    /// los bytes antes de armar el texto: el bot recibe muchos mensajes de consola y casi ninguno es éste.</summary>
+    private static int? DanoDeLaPunalada(byte[] p)
+    {
+        // [id][largo, 2 bytes][texto][fuente]
+        int largo = p.Length >= 3 ? (short)(p[1] | (p[2] << 8)) : 0;
+        if (largo <= BytesDeLaPunalada.Length || 3 + largo > p.Length
+            || !p.AsSpan(3, BytesDeLaPunalada.Length).SequenceEqual(BytesDeLaPunalada)) return null;
+        string numero = Codec.Ansi.GetString(p, 3 + BytesDeLaPunalada.Length, largo - BytesDeLaPunalada.Length).TrimEnd('.');
+        return int.TryParse(numero, out int dano) ? dano : null;
+    }
+
+    private static readonly byte[] BytesDeLaPunalada = Codec.Ansi.GetBytes(ServerMessages.ComienzoDeLaPunalada);
+
+    /// <summary>
     /// CUÁNTO TIENE DE ESA SKILL, o -1 si todavía no lo sabe. Llega entera con <c>SendSkills</c> —el servidor la manda al
     /// entrar si hay puntos libres, después de cada reparto y cuando se la pide— y de a una con el aviso de que subió
     /// (<c>LocaleMsg 454</c>, <c>"*skill%valor"</c>). Hace falta para elegir qué fabricar: cada receta pide una skill
@@ -911,6 +947,22 @@ public sealed class SentidosDelBot
                         }
                     break;
                 }
+
+                // LO QUE LE SACÓ A LO QUE LE PEGA (ver `TomarLoQuePego`). Sobre la cabeza de otro es el golpe de otro.
+                case ServerPacketId.ChatOverHeadLocale:
+                {
+                    short ci = l.Entero();
+                    int valor = l.Largo();
+                    if (l.Byte() != ModoDelGolpe) break;
+                    lock (_candado)
+                        if (ci == _miCharIndex) { _golpesDados++; _danoDado += valor; }
+                    break;
+                }
+
+                // Y LA PUÑALADA, que va como texto y sin número (VB6 Trabajo.bas:1800).
+                case ServerPacketId.ConsoleMsg:
+                    if (DanoDeLaPunalada(p) is { } punalada) lock (_candado) _danoDado += punalada;
+                    break;
             }
         }
         // Un paquete más corto de lo que dice su layout no puede tumbar al bot: se descarta y se sigue. Pasa

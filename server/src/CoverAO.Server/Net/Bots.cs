@@ -587,14 +587,16 @@ public sealed class Bot
             // que alcance a tomar dos pociones. Un jugador que ve algo así se va, y esto es eso.
             int vidaTope = sentidos.VidaMaxima;
             int nivelAhora = sentidos.Nivel;
+            _conQuePelea = (ArmaEnLaMano(sentidos), nivelAhora);
             // Con qué se cura, leído ANTES de buscar por lo mismo que la vida: la búsqueda tiene el modelo bajo su candado.
             bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
             bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
             // CON LA VIDA EN ROJO Y SIN POCIONES, TODO LO QUE PEGA ASUSTA: la pelea que queda no se gana sin nada que tomar. Medido en
             // `sano2`: las cinco muertes fueron de bots sin pociones contra el Águila, que para ellos es presa, con la vida ya en rojo.
             double saludAhora = sentidos.Salud;
+            // Y LO QUE NO PUEDE LASTIMAR TAMBIÉN SE ESQUIVA: pegarle no sirve, y dejar que lo pique es tomar pociones para nada.
             var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)
-                || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora));
+                || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora) || NoLaLastima(ficha));
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
                 // CON LA VIDA EN ROJO Y SIN POCIONES, HUIR ES EL SACERDOTE SI ESTÁ A MANO Y SI NO LA RUNA, que fuera de un mapa pk lleva
@@ -638,6 +640,10 @@ public sealed class Bot
                 // mapa y tomando pociones. Si no se pudo mover, la huida de siempre.
                 if (NpcSystem.GuardiaVaPor(_entorno.Datos.Npc(amenaza.Quien.FichaNpc), _miBando, _miNivel, _entorno.Datos, _entorno.Ini)
                     && await SalirDelMapaAsync(transporte, sentidos, cerrada, ct)) continue;
+                // DE LO QUE NO PUEDE LASTIMAR Y NO SE SACA DE ENCIMA, TAMBIÉN SE SALE DEL MAPA: devolverle el golpe no la mata nunca
+                // (ver `NoLaVaAMatar`), y la persecución se suelta al cambiar de mapa.
+                if (NoLaLastima(amenaza.Quien.FichaNpc) && NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura)
+                    && await SalirDelMapaAsync(transporte, sentidos, cerrada, ct)) continue;
                 // ACORRALADO SE PELEA. Si tres huidas seguidas no lo movieron de la baldosa, insistir es quedarse quieto recibiendo:
                 // medido en `normal1`, un Mago de nivel 1 con pociones se pasó veinticinco de treinta minutos huyendo sin moverse en
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
@@ -645,7 +651,7 @@ public sealed class Bot
                 // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
                 if ((EstaAcorralado(_huidas.SinMoverse, _huidas.QueNoLoSacaron) || NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                     && TieneFuelleParaPelear(sentidos)
-                    && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } pegado)
+                    && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado)
                 {
                     var (px, py) = sentidos.Posicion;
                     byte haciaElQuePega = SentidosDelBot.RumboHacia(pegado.Quien.X - px, pegado.Quien.Y - py);
@@ -3697,6 +3703,41 @@ public sealed class Bot
     /// <summary>Búsquedas de sacerdote seguidas sin ninguno al que se llegue caminando.</summary>
     private int _curasSinCamino;
 
+    /// <summary>
+    /// ¿ESTA PELEA NO SE GANA? Con <see cref="GolpesParaJuzgar"/> golpes resueltos, si lo que le sacó no alcanza para matarla en
+    /// <see cref="GolpesQueSeBanca"/> contando la vida de su ficha. En cero o negativo no la mata nunca.
+    ///
+    /// <para>El original le resta la defensa de la criatura al golpe SIN PISO (SistemaCombate.bas:465): el golpe que no la pasa la
+    /// CURA. Medido: un Ladrón de nivel 9 con la Daga de novato (golpe de 10 a 13) contra los Goblins del mapa 12 (defensa 15) se
+    /// pasó 40 de 45 minutos peleando en `oficios11`, una sola pelea de 19; y una Ladrona de nivel 12 (golpe hasta 17), 6 minutos
+    /// contra un Esqueleto guerrero (defensa 19) en `oficios14`. A lo que ya le pegaba se lo "sacaba de encima" mientras le
+    /// duraran las pociones.</para>
+    /// </summary>
+    public static bool NoLaVaAMatar(int golpes, int dano, int vidaDeLaCriatura) =>
+        golpes >= GolpesParaJuzgar
+        && (dano <= 0 || (long)vidaDeLaCriatura * golpes > (long)dano * GolpesQueSeBanca);
+
+    private const int GolpesParaJuzgar = 10, GolpesQueSeBanca = 50;
+
+    /// <summary>
+    /// LAS CRIATURAS QUE NO PUEDE LASTIMAR (<see cref="NoLaVaAMatar"/>), con el arma y el nivel con que lo intentó: con otra arma o
+    /// en otro nivel el golpe cambia y se vuelve a probar. Lo anotado no es presa (<see cref="EsPresa"/>) y se esquiva.
+    /// </summary>
+    private readonly Dictionary<short, (short Arma, int Nivel)> _noLaLastima = new();
+
+    /// <summary>Con qué pelea ahora: el arma en la mano y el nivel. Se toma en cada vuelta del ciclo.</summary>
+    private (short Arma, int Nivel) _conQuePelea;
+
+    private bool NoLaLastima(short ficha) => _noLaLastima.TryGetValue(ficha, out var con) && con == _conQuePelea;
+
+    /// <summary>El arma o los nudillos que tiene puestos, o 0.</summary>
+    private short ArmaEnLaMano(SentidosDelBot s)
+    {
+        foreach (byte ranura in s.RanurasOcupadas())
+            if (s.EstaPuesto(ranura) && _entorno.Datos.Obj(s.QueHayEn(ranura)) is { } o && (o.IsWeapon || o.IsKnuckles)) return o.Index;
+        return 0;
+    }
+
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
     /// false sólo si se cayó la conexión.</summary>
     private async Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
@@ -3704,6 +3745,9 @@ public sealed class Bot
     {
         int pasosGastados = 0;
         bool rodeando = false;
+        // LO QUE LE VA SACANDO, para no quedarse peleando con lo que no puede matar (`NoLaVaAMatar`). Lo de antes no cuenta.
+        sentidos.TomarLoQuePego();
+        int golpes = 0, sacado = 0;
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
@@ -3742,6 +3786,15 @@ public sealed class Bot
                 if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(rumbo)))) return false;
                 if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
                 await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                var (g, d) = sentidos.TomarLoQuePego();
+                golpes += g;
+                sacado += d;
+                if (NoLaVaAMatar(golpes, sacado, _entorno.Datos.Npc(quien.FichaNpc)?.MaxHp ?? 0))
+                {
+                    _conQuePelea = (ArmaEnLaMano(sentidos), sentidos.Nivel);
+                    _noLaLastima[quien.FichaNpc] = _conQuePelea;
+                    return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
+                }
                 continue;
             }
 
@@ -4421,7 +4474,7 @@ public sealed class Bot
     /// mete con un ciudadano ni con un guardia, que lo dejarían criminal— y sólo si el golpe del bicho es
     /// chico contra su vida.</summary>
     private bool EsPresa(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
-        EsPresaPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+        EsPresaPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno) && !NoLaLastima(ficha);
 
     /// <summary>La regla de <see cref="EsPresa"/> sobre la ficha sola.</summary>
     public static bool EsPresaPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)

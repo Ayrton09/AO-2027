@@ -601,4 +601,25 @@ public class SentidosDelBotTests
         s.Recibir(ServerMessages.CharacterCreate(Personaje(MiIndice, "Aldo", x, y)));
         return s;
     }
+
+    /// <summary>
+    /// LO QUE LE SACA A LO QUE LE PEGA: el número sobre SU cabeza cuenta como un golpe —0 si erró, negativo si la curó—, el que va
+    /// sobre otro no, un texto sobre la cabeza tampoco, y la puñalada suma sin ser otro golpe. Se toma una sola vez.
+    /// </summary>
+    [Fact]
+    public void Cuenta_lo_que_le_saca_a_lo_que_le_pega()
+    {
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.UserCharIndexInServer(MiIndice));
+
+        s.Recibir(ServerMessages.DamageOverHead(MiIndice, 0));
+        s.Recibir(ServerMessages.DamageOverHead(MiIndice, -2));
+        s.Recibir(ServerMessages.DamageOverHead(OtroIndice, 30));
+        s.Recibir(ServerMessages.ChatOverHeadLocale(MiIndice, 30, 1));
+        s.Recibir(ServerMessages.ConsoleMsg(ServerMessages.ApunalasteLaCriatura(24), 1));
+        s.Recibir(ServerMessages.ConsoleMsg("Has apuñalado a Pepe por 50.", 1));
+
+        Assert.Equal((2, 22), s.TomarLoQuePego());
+        Assert.Equal((0, 0), s.TomarLoQuePego());
+    }
 }
