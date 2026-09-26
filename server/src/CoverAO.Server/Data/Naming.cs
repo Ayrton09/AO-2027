@@ -62,7 +62,10 @@ public static class Naming
         return false;
     }
 
-    public static bool IsValidName(string? name)
+    public static bool IsValidName(string? name) => FormaValida(name) && !IsForbiddenName(name);
+
+    /// <summary>Las reglas de <see cref="IsValidName"/> sin la lista de nombres prohibidos.</summary>
+    private static bool FormaValida(string? name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length > MaxNameLength) return false;
         // Sin espacios en los bordes ni dobles: 'Rugura ' / ' Rugura' / 'Rug  ura' rendean idéntico a 'Rugura'
@@ -71,8 +74,7 @@ public static class Naming
         if (name != name.Trim() || name.Contains("  ")) return false;
         foreach (char c in name)
             if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || c == '_')) return false;
-        if (ReservedNames.Contains(name)) return false;
-        return !IsForbiddenName(name);
+        return !ReservedNames.Contains(name);
     }
 
     public const int MaxCharNameLength = 18;   // VB6 ValidarNombre: `If Len(Nombre) < 1 Or Len(Nombre) > 18`
@@ -85,9 +87,14 @@ public static class Naming
     /// <c>IsNumeric</c>, Protocol.bas:1733). Un personaje llamado "500" se renderizaría como la criatura 500:
     /// nombre ajeno, color ajeno y la etiqueta escondida bajo la regla de los NPCs. Que el original prohíba los
     /// dígitos es JUSTAMENTE lo que hace que ese truco sea seguro.</summary>
-    public static bool IsValidCharName(string? name)
+    public static bool IsValidCharName(string? name) => IsValidCharNameShape(name) && !IsForbiddenName(name);
+
+    /// <summary>Las reglas de <see cref="IsValidCharName"/> sin la lista de prohibidos. Separa los dos avisos del
+    /// original al crear un personaje: el nombre mal formado ("Nombre inválido.", 4) del que está en la lista
+    /// ("No está permitido usar este nombre en el juego.", 74).</summary>
+    public static bool IsValidCharNameShape(string? name)
     {
-        if (!IsValidName(name) || name!.Length > MaxCharNameLength) return false;
+        if (!FormaValida(name) || name!.Length > MaxCharNameLength) return false;
         foreach (char c in name)
             if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == ' ')) return false;
         return true;

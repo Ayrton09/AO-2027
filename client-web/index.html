@@ -3857,7 +3857,10 @@
         // cliente se quedaba en "logueando…" para siempre y sin explicación.
         case 'ShowMessageBox':
           if (!loggedIn) {
-            lastReject = f.message; showLogin(); loginErr(f.message); statusEl.textContent = 'conectado';
+            // Se queda en la pantalla donde está: varios carteles del ingreso NO cortan la conexión (el nombre del
+            // personaje nuevo, la cuenta que ya existe, el personaje bloqueado) y el jugador corrige desde ahí, como
+            // en el original. Los que sí cortan vuelven al login por el cierre, que es el que llama a showLogin().
+            lastReject = f.message; loginErr(f.message); statusEl.textContent = 'conectado';
             // POCOS reintentos automáticos, espaciados. El gate de sesión del server (VB6 Protocol.bas:1191)
             // rechaza al que entra mientras el personaje siga adentro, y al que se le cortó la conexión en un mapa
             // inseguro le corre la cuenta de salida (IntervaloCerrarConexion, 5 s en el install): un solo
@@ -6657,11 +6660,18 @@
     // Las líneas de `locale_error_es.ind` que el server manda por número (SendMsgBox con Modo > 0). Sólo las
     // que puede emitir el stack, textuales del archivo del original; el resto cae al "Aviso N" del handler.
     const LOCALE_ERROR = {
+      36: 'La acción no puede ser realizada debido a un error, consulte con algún Admnistrador para regularizar la situación.',
       39: 'La cuenta no existe.',
       49: 'Ingrese una contraseña válida.',
       50: 'Contraseña restablecida.',
       51: 'Código incorrecto.',
       52: 'La contraseña ingresada es incorrecta, intente de nuevo.',
+      53: 'Solo se pueden ingresar números en el código de la cuenta.',
+      62: '¡Ingrese un nombre válido!',
+      63: 'El nombre de la cuenta debe tener menos de 20 letras.',
+      64: 'Nombre inválido.',
+      67: '¡Ingrese un código válido!',
+      68: 'El código debe tener menos de 5 letras.',
     };
     // Los índices son los que valida el server: raza 1-10, género 1-2, clase 1-18, tierra natal 1-2, cabeza ≥1.
     // eRaza del VB6 (Declares.bas:162): Humano=1, Elfo=2, Drow=3, gnomo=4, enano=5, Orco=6. Faltaba el Orco.

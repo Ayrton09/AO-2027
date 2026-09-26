@@ -68,11 +68,11 @@ public class BotsCuentaTests : IDisposable
         Abrir(new ClientSession(afuera, _dispatcher), CuentaDeBot, Clave);
 
         Assert.Null(await Esperar(afuera.Recibidos, ServerPacketId.AddPJ));
-        var rechazo = Buscar(afuera.Recibidos, ServerPacketId.ConsoleMsg);
+        var rechazo = Buscar(afuera.Recibidos, ServerPacketId.ShowMessageBox);
         Assert.NotNull(rechazo);
-        // El mismo texto que una contraseña equivocada, a propósito: un mensaje propio le confirmaría a quien
+        // El mismo cartel que una contraseña equivocada, a propósito: un mensaje propio le confirmaría a quien
         // prueba que la cuenta existe y que es de un bot.
-        Assert.Contains("invalida", Texto(rechazo!), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Contraseña incorrecta.", Texto(rechazo!));
     }
 
     /// <summary>EL CONTROL. Todo igual —la misma cuenta, la misma contraseña, el mismo paquete— salvo el

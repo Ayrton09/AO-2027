@@ -72,7 +72,17 @@ public class DesconectarseNoEsEscaparTests : IDisposable
 
     private bool EnElMundo(Player p) => _world.Players.Any(x => ReferenceEquals(x, p));
 
-    private static Task Esperar() => Task.Delay(300);
+    /// <summary>El tiempo de antes Y que el loop haya atendido todo lo encolado hasta acá. El corte y el cierre encolan
+    /// su trabajo en el loop en el acto (OnDisconnect, SacarAlQueQuedoEsperando), así que una marca encolada después
+    /// corre después. Con los 300 ms solos, la suite entera en paralelo a veces llegaba antes que el loop y el test
+    /// fallaba por eso, no por el producto.</summary>
+    private async Task Esperar()
+    {
+        await Task.Delay(300);
+        var atendido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _loop.Enqueue(() => atendido.SetResult());
+        await atendido.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    }
 
     [Fact]
     public async Task Cortarse_en_un_mapa_inseguro_deja_al_personaje_con_la_cuenta_de_salida()

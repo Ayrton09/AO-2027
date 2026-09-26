@@ -580,15 +580,16 @@ public sealed partial class PacketDispatcher
     private void SendAccountCharList(ClientSession session, string account, string password)
     {
         if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
-        if (!Naming.IsValidName(account)) { Reject(session, "Nombre de cuenta invalido."); return; }   // valida antes de tocar el store (path traversal)
+        // Valida antes de tocar el store (path traversal), con el aviso de CheckDataLoginAccount.
+        if (!Naming.IsValidName(account)) { AvisoNumeradoYCerrar(session, AvisoDeNombreDeCuenta(account), "nombre de cuenta invalido"); return; }
         // Mismo mensaje genérico + mismo costo de tiempo (el DummyVerify que hace VerificarCuenta) para
         // cuenta-inexistente y password-malo: no delatar si la cuenta existe (enumeración por texto o por
         // timing). El baneo se chequea DESPUÉS de verificar el password (si no, un baneado se puede enumerar
         // sin conocer la contraseña).
         VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
         {
-            if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
-            if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }
+            if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
+            if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }
             LoginOk(session);
 
             // LA LISTA DE PERSONAJES SALE DEL DISCO: un `.chr` por personaje, hasta DIEZ, y hasta acá se leían
@@ -646,7 +647,9 @@ public sealed partial class PacketDispatcher
             // este vector ("amplificación de DoS por PBKDF2") y esta ruta se había quedado afuera.
             if (LoginBlocked(session)) return;
             if (CreacionBloqueada(session)) return;
-            if (password.Length < _ini.ClaveMinima) { Reject(session, $"La contraseña debe tener al menos {_ini.ClaveMinima} caracteres."); return; }
+            // En el orden de CheckDataNewAccount (Cuentas.bas:554): el nombre, la contraseña y el código.
+            if (!Naming.IsValidName(account)) { LoginFail(session); AvisoNumeradoYCerrar(session, AvisoDeNombreDeCuenta(account), "nombre de cuenta invalido"); return; }   // también evita el path traversal en el .cnt
+            if (password.Length < _ini.ClaveMinima) { Reject(session, $"La contraseña debe tener al menos {_ini.ClaveMinima} caracteres."); return; }   // regla de la casa (ClaveMinima)
             // EL CÓDIGO DE RECUPERACIÓN NO ES UNA CONTRASEÑA: es un PIN NUMÉRICO DE CUATRO, y el original lo
             // dice en tres reglas seguidas (VB6 `CheckDataNewAccount`, Cuentas.bas:605-622): vacío no,
             // letras no (aviso 53), y más de cuatro tampoco (aviso 68). Ninguna de las tres estaba portada, y
@@ -657,9 +660,9 @@ public sealed partial class PacketDispatcher
             // El motivo de aquel mínimo sigue siendo cierto —con este PIN se cambia la clave de la cuenta— y no
             // se contesta acá: se contesta donde corresponde, que es el freno por intentos. Diez mil
             // combinaciones contra el rate-limit de login, y no una regla propia que rompe la paridad.
-            if (userCode.Length > 4 || (userCode.Length > 0 && !userCode.All(char.IsAsciiDigit)))
-            { Reject(session, "El código de recuperación son hasta cuatro números."); return; }
-            if (!Naming.IsValidName(account)) { LoginFail(session); Reject(session, "Nombre de cuenta invalido (solo letras y espacios)."); return; }   // VB6 AsciiValidos/NombrePermitido — evita path traversal en el .cnt
+            if (userCode.Length == 0) { AvisoNumeradoYCerrar(session, 67, "codigo vacio"); return; }                    // "¡Ingrese un código válido!"
+            if (!userCode.All(char.IsAsciiDigit)) { AvisoNumeradoYCerrar(session, 53, "codigo no numerico"); return; }  // "Solo se pueden ingresar números…"
+            if (userCode.Length > 4) { AvisoNumeradoYCerrar(session, 68, "codigo largo"); return; }                     // "El código debe tener menos de 5 letras."
             CrearCuentaFueraDelLoop(session, account, password, userCode);
         });
     }
@@ -705,8 +708,10 @@ public sealed partial class PacketDispatcher
                 {
                     // Cuenta ya existente: cuenta como intento fallido. Sin esto el handler era además un
                     // oráculo de enumeración gratis — se podía sondear qué cuentas existen sin credenciales.
-                    if (existia) { LoginFail(session); Reject(session, $"La cuenta '{account}' ya existe."); return; }
-                    if (!creada) { Reject(session, "No se pudo crear la cuenta."); return; }
+                    // Ya existe: el cartel 41 y la conexión SIGUE (el original no corta), así el jugador prueba otro
+                    // nombre sin volver a conectarse.
+                    if (existia) { LoginFail(session); Cartel(session, CartelYaExisteLaCuenta); return; }
+                    if (!creada) { AvisoNumeradoYCerrar(session, 36, "no se pudo crear la cuenta"); return; }   // el aviso genérico de error
                     LoginOk(session);
                     _creaciones?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));   // una creación que salió consume cupo
                     Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
@@ -952,28 +957,35 @@ public sealed partial class PacketDispatcher
             // cliente confundiera al personaje con una criatura.
             // Se rechazan por separado para que el motivo sea el correcto: decirle "solo letras y espacios" a
             // quien puso mal la CUENTA sería mentirle, porque ahí los dígitos sí valen.
-            if (!Naming.IsValidName(account)) { Reject(session, "Nombre de cuenta invalido."); return; }
-            if (!Naming.IsValidCharName(charName)) { Reject(session, "Nombre de personaje invalido (solo letras y espacios)."); return; }
-            // VB6 TCP.bas:383-453: valida los rangos de raza/sexo/clase/tierra al crear (rechaza 0 y fuera de tabla).
-            // La TIERRA NATAL admite dos, no doce: el original corta en 2 con el comentario "porque al nacimiento
-            // solo hay Nix o Illi" (TCP.bas:455). Las otras diez son ciudades del mundo a las que se muda el hogar
-            // más tarde, con el sacerdote; aceptarlas acá dejaba nacer en el Dungeon Newbie o en la cárcel.
-            if (gender is < 1 or > 2 || race is < 1 or > 10 || klass is < 1 or > 18 || homeland is < 1 or > Cities.MaxTierraNatal)
-            { Reject(session, "Datos de personaje invalidos."); return; }
-            // La CABEZA se valida aparte porque su rango depende de raza+género (VB6 ValidarCabeza, TCP.bas:125):
-            // no es 1..N sino un tramo propio por combinación. Acá sólo se exigía `head >= 1`, así que se podía
-            // crear un humano con cabeza de orco — y el cliente lo dibujaba mal o directamente no lo dibujaba.
-            if (!Equipment.IsValidHead(race, gender, head))
-            { Reject(session, "Esa cara no corresponde a la raza y el genero elegidos."); return; }
+            // La cuenta, antes de tocar el disco (path traversal). Una cuenta que no puede existir contesta lo mismo que
+            // una que no existe: la contraseña incorrecta.
+            if (!Naming.IsValidName(account)) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "cuenta invalida"); return; }
             if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
             VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
             {
-                if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
-                if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }   // un baneado tampoco crea personajes nuevos
+                if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
+                if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // un baneado tampoco crea personajes nuevos
                 LoginOk(session);
                 if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
-                if (_db.CharacterExists(charName)) { Reject(session, $"El nombre '{charName}' ya esta en uso."); return; }
-                if (acc.Characters.Count >= AccountFile.MaxCharacters) { Reject(session, "Maximo de personajes alcanzado."); return; }
+                // LOS CHEQUEOS DE ConnectNewUser (TCP.bas:363), en su orden y con sus carteles. Los del NOMBRE —y el de
+                // que ya existe— no cortan la conexión: el jugador corrige y vuelve a mandar desde la misma pantalla.
+                // Los demás sí, porque sólo los provoca un cliente que no es el del juego.
+                if (acc.Characters.Count >= AccountFile.MaxCharacters) { RechazarConCartel(session, CartelLimiteDePersonajes, "limite de personajes"); return; }
+                // La cuenta admite dígitos y guión bajo; el PERSONAJE no (VB6 ValidarNombre, TCP.bas:181 — sólo
+                // letras y espacio). Ver el porqué en Naming.IsValidCharName: un nombre numérico haría que el
+                // cliente confundiera al personaje con una criatura.
+                if (CartelDeNombreNuevo(charName) is { } malNombre) { Cartel(session, malNombre); return; }
+                if (_db.CharacterExists(charName)) { Cartel(session, CartelYaExisteElPersonaje); return; }
+                // VB6 TCP.bas:383-453: los rangos de raza, género, clase y tierra natal, cada uno con su cartel. La TIERRA
+                // NATAL admite dos, no doce: el original corta en 2 con el comentario "porque al nacimiento solo hay Nix
+                // o Illi" (TCP.bas:455). Las otras diez son ciudades a las que se muda el hogar más tarde, con el
+                // sacerdote; aceptarlas acá dejaba nacer en el Dungeon Newbie o en la cárcel.
+                string? malDato = race is < 1 or > 10 ? CartelRaza : gender is < 1 or > 2 ? CartelGenero
+                    : klass is < 1 or > 18 ? CartelClase : homeland is < 1 or > Cities.MaxTierraNatal ? CartelHogar
+                    // La CABEZA depende de raza+género (VB6 ValidarCabeza, TCP.bas:125): no es 1..N sino un tramo propio
+                    // por combinación. Con sólo `head >= 1` se podía crear un humano con cabeza de orco.
+                    : !Equipment.IsValidHead(race, gender, head) ? CartelCabeza : null;
+                if (malDato is not null) { RechazarConCartel(session, malDato, "datos de personaje invalidos"); return; }
                 // Personaje REAL: nace con el kit de su clase (NACIMIENTO.dat). El kit demo maestro queda sólo para
                 // los personajes sembrados del fixture, de cuyo layout dependen los flows.
                 var player = _db.CreateCharacter(acc, charName, _world.AllocateCharIndex(), race, gender, klass, homeland, head,
@@ -982,6 +994,62 @@ public sealed partial class PacketDispatcher
                 SpawnIntoWorld(session, player, $"v{verMajor}.{verMinor}.{verRev}");
             });
         });
+    }
+
+    // LOS CARTELES DEL INGRESO Y DEL ALTA (locale_error_es.ind del cliente original). El original los manda por
+    // NÚMERO: los de ShowMessageBox como texto ("29") y los de SendMsgBox con modo 1; el cliente los traduce. Acá los
+    // de ShowMessageBox van ya traducidos, como el resto de los carteles del ingreso, y los de SendMsgBox van por
+    // número, porque el cliente web tiene la tabla (LOCALE_ERROR).
+    //
+    // La cuenta que no existe contesta lo MISMO que la contraseña equivocada, "Contraseña incorrecta." (29): el
+    // original dice "La cuenta no existe." (39) y así deja averiguar qué cuentas hay. Decisión del autor (25/09).
+    private const string CartelClaveIncorrecta = "Contraseña incorrecta.";                                    // 29
+    private const string CartelCuentaBaneada =
+        "Su cuenta está baneada. Si crees que esto es un erorr, comunicate con algún Administrador para regularizr tu situación.";   // 19 (sic)
+    private const string CartelPersonajeBloqueado = "El personaje ha sido bloqueado y no puede ser accedido."; // 22
+    private const string CartelPersonajeInvalido = "Personaje invalido.";                                    // 37
+    private const string CartelPersonajeNoExiste = "El personaje no existe.";                                // 38
+    private const string CartelNombreInvalido = "Nombre inválido.";                                           // 64 y 4
+    private const string CartelYaExisteLaCuenta = "Ya existe la cuenta.";                                     // 41
+    private const string CartelYaExisteElPersonaje = "Ya existe el personaje.";                               // 7
+    private const string CartelLimiteDePersonajes =
+        "No puedes crear mas personajes, has llegado a tu límite de diez personajes.";                          // 10
+    private const string CartelNombreCorto = "El nombre es muy corto.";                                       // 34
+    private const string CartelNombreLargo = "El nombre es muy largo.";                                       // 35
+    private const string CartelNombreProhibido = "No está permitido usar este nombre en el juego.";           // 74
+    private const string CartelRaza = "Ingresa una raza válida.", CartelGenero = "Ingresa un género válido.",   // 75, 76
+        CartelClase = "Ingresa una clase válida.", CartelHogar = "Ingresa un hogar válido.",                    // 77, 78
+        CartelCabeza = "Ingresa una cabeza válida.";                                                          // 79
+
+    /// <summary>Un cartel del ingreso que NO corta la conexión: el cliente se queda en la pantalla donde estaba y el
+    /// jugador puede corregir y volver a mandar (el original, con <c>CierraConexion = False</c>).</summary>
+    private static void Cartel(ClientSession session, string texto) => session.Send(ServerMessages.ShowMessageBox(texto));
+
+    /// <summary>Un aviso de <c>locale_error_es.ind</c> por NÚMERO (<c>WriteSendMsgBox(UserIndex, n, 1)</c>) y la
+    /// conexión cerrada, como los chequeos de datos del original (<c>CheckDataLoginAccount</c>,
+    /// <c>CheckDataNewAccount</c>).</summary>
+    private void AvisoNumeradoYCerrar(ClientSession session, int numero, string motivo)
+    {
+        session.Send(ServerMessages.SendMsgBox(numero.ToString(), 1));
+        Console.WriteLine($"[{session.RemoteEndpoint}] RECHAZADO: {motivo} (aviso {numero})");
+        session.Close(motivo);
+    }
+
+    /// <summary>El aviso del nombre de CUENTA inválido (VB6 CheckDataLoginAccount/CheckDataNewAccount): vacío 62,
+    /// más de veinte letras 63, caracteres que no valen 64.</summary>
+    private static int AvisoDeNombreDeCuenta(string cuenta) =>
+        cuenta.Length == 0 ? 62 : cuenta.Length > Data.Naming.MaxNameLength ? 63 : 64;
+
+    /// <summary>El cartel del nombre de un personaje NUEVO que no vale, en el orden de <c>ConnectNewUser</c>
+    /// (TCP.bas:363): caracteres que no valen o vacío 4, menos de dos letras 34, más de treinta 35, el resto de
+    /// <c>ValidarNombre</c> 4, y la lista de prohibidos 74. <c>null</c> si el nombre vale.</summary>
+    private static string? CartelDeNombreNuevo(string nombre)
+    {
+        if (Data.Naming.IsValidCharName(nombre)) return nombre.Length < 2 ? CartelNombreCorto : null;
+        if (nombre.Trim().Length == 0 || !nombre.All(c => char.IsAsciiLetter(c) || c == ' ')) return CartelNombreInvalido;
+        if (nombre.Length < 2) return CartelNombreCorto;
+        if (nombre.Length > 30) return CartelNombreLargo;
+        return Data.Naming.IsValidCharNameShape(nombre) ? CartelNombreProhibido : CartelNombreInvalido;
     }
 
     private void Reject(ClientSession session, string reason)
@@ -1033,11 +1101,12 @@ public sealed partial class PacketDispatcher
     {
         if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
         if (EnPausaNoSeEntra(session)) return;
-        if (!Naming.IsValidName(account) || !Naming.IsValidName(charName)) { Reject(session, "Nombre invalido."); return; }   // valida antes de tocar el store (path traversal)
+        // La cuenta, antes de tocar el store (path traversal): una que no puede existir contesta como una que no existe.
+        if (!Naming.IsValidName(account)) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "cuenta invalida"); return; }
         VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
         {
-            if (acc is null || !ok) { LoginFail(session); Reject(session, "Cuenta o contrasena invalida."); return; }
-            if (acc.Banned) { Reject(session, "Cuenta baneada."); return; }   // el baneo también aplica al login directo (no solo a ConnectAccount)
+            if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
+            if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // el baneo también aplica al login directo (no solo a ConnectAccount)
             LoginOk(session);
             if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
             EntrarAlMundo(session, acc, account, charName, version);
@@ -1049,8 +1118,14 @@ public sealed partial class PacketDispatcher
     /// VerificarCuenta) y ésta corre de vuelta en el loop, que es donde tiene que correr.</summary>
     private void EntrarAlMundo(ClientSession session, Data.Account acc, string account, string charName, string version)
     {
+        // VB6 Protocol.bas:1154-1185: el nombre (64), que exista (38) y que sea de la cuenta (37), cada uno con su
+        // cartel y la conexión cerrada. El nombre se valida antes de mirar el disco (path traversal).
+        if (!Naming.IsValidName(charName)) { RechazarConCartel(session, CartelNombreInvalido, "nombre invalido"); return; }
         if (!acc.Characters.Contains(charName, StringComparer.OrdinalIgnoreCase))
-        { Reject(session, $"El personaje '{charName}' no pertenece a la cuenta."); return; }
+        {
+            RechazarConCartel(session, _db.CharacterExists(charName) ? CartelPersonajeInvalido : CartelPersonajeNoExiste, "personaje ajeno");
+            return;
+        }
 
         // ¿YA ESTÁ CONECTADO ESE PERSONAJE? (VB6 Protocol.bas:1187-1202). El original rechaza el login nuevo Y
         // cierra la sesión vieja, avisando a las dos puntas; si la vieja está en la cuenta regresiva del
@@ -1145,8 +1220,10 @@ public sealed partial class PacketDispatcher
         // sino reservar el personaje ANTES de leer (marcarlo como "entrando" en el mundo), y recién ahí se
         // puede hacer la lectura afuera sin ventana.
         var player = _db.LoadCharacter(charName, _world.AllocateCharIndex(), account);
-        if (player is null) { Reject(session, $"No se encontro el personaje '{charName}'."); return; }
-        if (player.Banned) { Reject(session, "Este personaje esta baneado."); return; }   // VB6 flags.Ban — baneo por personaje (/BAN)
+        if (player is null) { RechazarConCartel(session, CartelPersonajeNoExiste, "sin archivo de personaje"); return; }
+        // VB6 flags.Ban — baneo por personaje (/BAN). El original (BANCheck, Protocol.bas:1211) muestra el 22 y NO
+        // corta: el jugador sigue en la pantalla de sus personajes y puede entrar con otro.
+        if (player.Banned) { Cartel(session, CartelPersonajeBloqueado); return; }
         if (acc.Donador) player.Donador = true;   // VB6 TCP.bas:1863 — el flag de la CUENTA fuerza donador en el char
         player.Trampas = acc.Trampas;             // el contador del anticheat vive en la cuenta
         // Modo mantenimiento "Solo GMs" (chkServerHabilitado del VB6): sólo entran privilegiados.

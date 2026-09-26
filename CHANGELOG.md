@@ -133,6 +133,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Los carteles del ingreso son los del original.** La contraseña nueva pide seis caracteres, y el código de
   recuperación es un PIN de cuatro números.
 
+- **Crear la cuenta y el personaje avisa como el original**: cada error dice qué pasó, y si el nombre no vale o ya
+  existe seguís en la misma pantalla para corregirlo. Una cuenta que no existe contesta como una contraseña mal
+  puesta, para que nadie pueda averiguar qué cuentas hay.
+
 - **El juego anda más liviano**, y en Opciones, Juego, podés ocultar la lluvia bajo techo.
 
 - **Los amigos, como en el original**: el mensaje a tus amigos también te llega a vos, y quitar a alguien de la
