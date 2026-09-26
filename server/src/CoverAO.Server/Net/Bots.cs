@@ -621,6 +621,13 @@ public sealed class Bot
                     await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
                     continue;
                 }
+                // DE UN GUARDIA DEL OTRO BANDO NO SE HUYE ALEJÁNDOSE: SE SALE DEL MAPA. El guardia (regla de la casa GuardiasAtacan)
+                // persigue mientras uno siga en su mapa y tira hechizos de lejos, así que alejarse no lo saca nunca de encima, y
+                // devolverle el golpe a uno de nivel 50 tampoco. Medido en `tienda4`: un Guerrero que arrancó la sesión en la
+                // Cordillera del Norte (806), con cuatro guardias republicanos, se pasó 19 de sus 20 minutos huyendo adentro del
+                // mapa y tomando pociones. Si no se pudo mover, la huida de siempre.
+                if (NpcSystem.GuardiaVaPor(_entorno.Datos.Npc(amenaza.Quien.FichaNpc), _miBando, _miNivel, _entorno.Datos, _entorno.Ini)
+                    && await SalirDelMapaAsync(transporte, sentidos, cerrada, ct)) continue;
                 // ACORRALADO SE PELEA. Si tres huidas seguidas no lo movieron de la baldosa, insistir es quedarse quieto recibiendo:
                 // medido en `normal1`, un Mago de nivel 1 con pociones se pasó veinticinco de treinta minutos huyendo sin moverse en
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
@@ -1560,6 +1567,16 @@ public sealed class Bot
     public static bool PasaPorAhi(int mapa, int mapaDestino, bool dejaEntrar, bool naceAlgoPeligroso) =>
         dejaEntrar && (mapa == mapaDestino || !naceAlgoPeligroso);
 
+    /// <summary>
+    /// POR DÓNDE SE BUSCA ADÓNDE IR A TRABAJAR O A CAZAR: sólo por mapas donde no nace nada que lo pueda matar, el mismo filtro que
+    /// usa el viaje largo al pueblo. Con <see cref="Pisable"/> la búsqueda encontraba lugares seguros a los que sólo se llega
+    /// cruzando uno que no lo es, y el viaje, sin camino sin peligro, iba por el de siempre. Medido en `tienda4`: una Pescadora de
+    /// nivel 14 pescaba en el 101 y eligió cazar en el 551, al que sólo se llega por el 17, donde nacen cinco Arañas gigantes
+    /// (nivel 24, pegan hasta 115); murió cruzándolo. Un solo filtro para decidir y para viajar (memoria
+    /// `filtro-del-viaje-y-de-la-compra`).
+    /// </summary>
+    private Func<int, bool> CruzaSinPeligro(SentidosDelBot sentidos) => PasaSinPeligro(sentidos, NingunMapa);
+
     /// <summary><see cref="PasaPorAhi"/> para este bot, con su vida, su nivel y lo que lleva encima.</summary>
     private Func<int, bool> PasaSinPeligro(SentidosDelBot sentidos, int mapaDestino)
     {
@@ -1583,7 +1600,7 @@ public sealed class Bot
         if (sentidos.Mapa == _trabajoSeguroMapa && Environment.TickCount64 < _trabajoSeguroHasta) return _trabajoSeguro;
         bool agua = SkillDeSuOficio == GameLimits.SkillPesca;
         _trabajoSeguro = SkillDeSuOficio != 0
-            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaParaSuFaena(sentidos), Pisable(sentidos)) is not null;
+            && _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, RecursoDeSuOficio(), sentidos.Posicion, MapaParaSuFaena(sentidos), CruzaSinPeligro(sentidos)) is not null;
         _trabajoSeguroMapa = sentidos.Mapa;
         _trabajoSeguroHasta = Environment.TickCount64 + 5 * 60_000;
         return _trabajoSeguro;
@@ -1864,7 +1881,7 @@ public sealed class Bot
             ? _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso) : null;
         if (punto is null)
         {
-            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, Pisable(sentidos)) is not { } lejos) { PostergarFaena(); return false; }
+            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, CruzaSinPeligro(sentidos)) is not { } lejos) { PostergarFaena(); return false; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct)) { PostergarFaena(); return true; }
             punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
             if (punto is null) { PostergarFaena(); return true; }
@@ -2512,7 +2529,7 @@ public sealed class Bot
         var paraSuOficio = LoQueSaleACazarParaSuOficio(sentidos);
         Func<int, bool> esPresaDelOficio = f => esPresa(f) && SueltaAlgoDe(_entorno.Datos.Npc(f), paraSuOficio);
         var hallado = paraSuOficio.Count > 0
-            ? CotoParaSuOficio(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresaDelOficio, Pisable(sentidos), seCazaAhi)
+            ? CotoParaSuOficio(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresaDelOficio, CruzaSinPeligro(sentidos), seCazaAhi)
             : null;
         bool porElOro = false;
         int porLoQueRinde = 0;
@@ -2521,7 +2538,7 @@ public sealed class Bot
         if (hallado is null)
         {
             hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
-                                           Pisable(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
+                                           CruzaSinPeligro(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
                                            m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
                                            m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
@@ -4003,6 +4020,22 @@ public sealed class Bot
     }
 
     private const int PasosDeHuida = 8;
+
+    /// <summary>
+    /// SALIR DEL MAPA hacia el más cercano donde no nace ningún guardia que vaya por él: la huida de un guardia del otro bando
+    /// (ver dónde se llama). Devuelve si hizo algo —salió o por lo menos se movió hacia la salida—; si no se pudo mover, false, y
+    /// queda la huida de siempre.
+    /// </summary>
+    private async Task<bool> SalirDelMapaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        int aca = sentidos.Mapa;
+        var antes = sentidos.Posicion;
+        var pisable = Pisable(sentidos);
+        if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m != aca && pisable(m) && !HayGuardiaQueLoAtaca(m), pisable)
+            is not { } afuera) return false;
+        await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto);
+        return sentidos.Mapa != aca || sentidos.Posicion != antes;
+    }
 
     /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.
