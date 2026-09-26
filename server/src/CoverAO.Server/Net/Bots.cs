@@ -641,9 +641,19 @@ public sealed class Bot
                 if (NpcSystem.GuardiaVaPor(_entorno.Datos.Npc(amenaza.Quien.FichaNpc), _miBando, _miNivel, _entorno.Datos, _entorno.Ini)
                     && await SalirDelMapaAsync(transporte, sentidos, cerrada, ct)) continue;
                 // DE LO QUE NO PUEDE LASTIMAR Y NO SE SACA DE ENCIMA, TAMBIÉN SE SALE DEL MAPA: devolverle el golpe no la mata nunca
-                // (ver `NoLaVaAMatar`), y la persecución se suelta al cambiar de mapa.
-                if (NoLaLastima(amenaza.Quien.FichaNpc) && NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura)
-                    && await SalirDelMapaAsync(transporte, sentidos, cerrada, ct)) continue;
+                // (ver `NoLaVaAMatar`), y la persecución se suelta al cambiar de mapa. Y A ESE MAPA NO VUELVE POR UN RATO, como al
+                // lugar lleno: la criatura se queda donde lo dejó de ver, que suele ser la entrada. Medido en `pelea_b2`: una Ladrona
+                // echada del 262 por un Esqueleto guerrero volvió doce veces por la misma puerta a cazar los Zombies de ahí, y cada
+                // vez la esperaba el mismo Esqueleto.
+                if (NoLaLastima(amenaza.Quien.FichaNpc) && NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
+                {
+                    int deDonde = sentidos.Mapa;
+                    if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct))
+                    {
+                        _llenoHasta[deDonde] = Environment.TickCount64 + LlenoMs;
+                        continue;
+                    }
+                }
                 // ACORRALADO SE PELEA. Si tres huidas seguidas no lo movieron de la baldosa, insistir es quedarse quieto recibiendo:
                 // medido en `normal1`, un Mago de nivel 1 con pociones se pasó veinticinco de treinta minutos huyendo sin moverse en
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
