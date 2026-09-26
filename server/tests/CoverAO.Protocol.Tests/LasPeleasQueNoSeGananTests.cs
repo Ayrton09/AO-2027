@@ -64,4 +64,14 @@ public class LasPeleasQueNoSeGananTests
         if (d.Npc(EsqueletoGuerrero) is not { } esqueleto) return;
         Assert.True(Bot.NoLaVaAMatar(golpes: 10, dano: 15, esqueleto.MaxHp));
     }
+
+    /// <summary>LA LENTA SE SIGUE PELEANDO: el Leñador de `pelea_b3`, con el Martillo de novato, le había sacado 84 de 200 al
+    /// Esqueleto guerrero en 22 golpes. Lo mataba en unos 52; con el tope en 50 lo dejó y salió del mapa donde tala.</summary>
+    [Fact]
+    public void La_que_se_mata_despacio_se_sigue_peleando()
+    {
+        var d = GameData.Load();
+        if (d.Npc(EsqueletoGuerrero) is not { } esqueleto) return;
+        Assert.False(Bot.NoLaVaAMatar(golpes: 22, dano: 84, esqueleto.MaxHp));
+    }
 }

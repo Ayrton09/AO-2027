@@ -3724,7 +3724,9 @@ public sealed class Bot
 
     /// <summary>
     /// ¿ESTA PELEA NO SE GANA? Con <see cref="GolpesParaJuzgar"/> golpes resueltos, si lo que le sacó no alcanza para matarla en
-    /// <see cref="GolpesQueSeBanca"/> contando la vida de su ficha. En cero o negativo no la mata nunca.
+    /// <see cref="GolpesQueSeBanca"/> contando la vida de su ficha. En cero o negativo no la mata nunca. El tope es para lo que en
+    /// la práctica no se mata, no para lo lento: lo que se deja se anota, se esquiva y puede sacarlo del mapa, y en `pelea_b3` un
+    /// Leñador que con cincuenta dejó a un Esqueleto guerrero al que mataba en unos cincuenta y dos golpes salió del mapa donde tala.
     ///
     /// <para>El original le resta la defensa de la criatura al golpe SIN PISO (SistemaCombate.bas:465): el golpe que no la pasa la
     /// CURA. Medido: un Ladrón de nivel 9 con la Daga de novato (golpe de 10 a 13) contra los Goblins del mapa 12 (defensa 15) se
@@ -3736,7 +3738,7 @@ public sealed class Bot
         golpes >= GolpesParaJuzgar
         && (dano <= 0 || (long)vidaDeLaCriatura * golpes > (long)dano * GolpesQueSeBanca);
 
-    private const int GolpesParaJuzgar = 10, GolpesQueSeBanca = 50;
+    private const int GolpesParaJuzgar = 10, GolpesQueSeBanca = 100;
 
     /// <summary>
     /// ¿DEJA DE LANZARLE? Después de <see cref="LanzadosEnVanoParaPegar"/> hechizos seguidos que no le cobraron el maná. El
