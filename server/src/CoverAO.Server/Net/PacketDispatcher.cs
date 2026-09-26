@@ -1120,7 +1120,10 @@ public sealed partial class PacketDispatcher
     {
         // VB6 Protocol.bas:1154-1185: el nombre (64), que exista (38) y que sea de la cuenta (37), cada uno con su
         // cartel y la conexión cerrada. El nombre se valida antes de mirar el disco (path traversal).
-        if (!Naming.IsValidName(charName)) { RechazarConCartel(session, CartelNombreInvalido, "nombre invalido"); return; }
+        // El nombre: `AsciiValidos` del original (sólo letras y espacio: "Pepe1" es 64, no "no existe") y, además, la forma
+        // segura para el disco.
+        if (!Naming.IsValidName(charName) || !charName.All(c => char.IsAsciiLetter(c) || c == ' '))
+        { RechazarConCartel(session, CartelNombreInvalido, "nombre invalido"); return; }
         if (!acc.Characters.Contains(charName, StringComparer.OrdinalIgnoreCase))
         {
             RechazarConCartel(session, _db.CharacterExists(charName) ? CartelPersonajeInvalido : CartelPersonajeNoExiste, "personaje ajeno");

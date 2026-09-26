@@ -172,6 +172,20 @@ public class ElIngresoComoElOriginalTests : IDisposable
         Assert.Equal(["El personaje no existe."], Carteles(inexistente));
     }
 
+    /// <summary>El nombre con dígitos no es de personaje (VB6 AsciiValidos): "Nombre inválido.", no "no existe". Lo encontró
+    /// la sonda contra el VB6 (`fase0/parity/comparar_ingreso.py`).</summary>
+    [Fact]
+    public async Task Entrar_con_un_nombre_con_digitos_es_nombre_invalido()
+    {
+        CuentaCon("cuenta", "Aldo");
+
+        var t = Mandar(Entrar("cuenta", Clave, "Pepe1"));
+
+        Assert.True(await Esperar(() => Carteles(t).Count > 0));
+        Assert.Equal(["Nombre inválido."], Carteles(t));
+        Assert.True(t.Cerrado);
+    }
+
     [Fact]
     public async Task El_personaje_bloqueado_sale_con_el_22_y_no_corta()
     {
