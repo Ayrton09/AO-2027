@@ -2307,6 +2307,11 @@ public sealed class Bot
     /// <paramref name="seCazaAhi"/> no son coto, tampoco el propio; si con ese filtro no queda ninguno, se elige como
     /// siempre: mejor cazar con cuidado que quedarse sin dónde, la misma regla de <see cref="LejosDelPeligro"/>.</para>
     ///
+    /// <para>SALVO LO QUE <paramref name="nunca"/> DESCARTA, que no entra ni como repuesto: el mapa de los guardias que van por él.
+    /// Medido en `pelea_b2`: un Guerrero cortó en (28,40) la salida del 806 —cuatro guardias republicanos— y desde ahí la
+    /// búsqueda sin peligro no llega a ninguno (los cuatro vecinos tienen algo que lo mata), así que el repuesto eligió cazar en
+    /// el mismo 806, hacia donde nacen los guardias, y el Clérigo lo mató. Desde cualquier baldosa del 806 elegía el 806.</para>
+    ///
     /// <para>Y ENTRE LOS QUE RINDEN IGUAL, EL SUYO: <paramref name="desempate"/> ordena los empates de lo que rinde (ver
     /// <see cref="CuantoLeGusta"/>). Sin él gana siempre el más cercano, y todos los que salen del mismo lugar van al mismo
     /// coto.</para>
@@ -2316,13 +2321,13 @@ public sealed class Bot
                                                                      Func<int, int> rinde,
                                                                      Func<int, bool>? pisable, out bool porElOro,
                                                                      out int porLoQueRinde, Func<int, bool>? seCazaAhi = null,
-                                                                     Func<int, int>? desempate = null)
+                                                                     Func<int, int>? desempate = null, Func<int, bool>? nunca = null)
     {
         if (seCazaAhi is not null
             && ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, seCazaAhi, desempate,
                                out porElOro, out porLoQueRinde) is { } sinPeligro)
             return sinPeligro;
-        return ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, null, desempate,
+        return ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, nunca is null ? null : m => !nunca(m), desempate,
                                out porElOro, out porLoQueRinde);
     }
 
@@ -2430,13 +2435,15 @@ public sealed class Bot
                                                                                Func<int, bool> seCazaAhi, Func<int, bool> sigueLleno,
                                                                                Func<int, bool> sirveParaIrseDelLleno,
                                                                                Func<int, int>? desempate,
-                                                                               out bool porElOro, out int porLoQueRinde)
+                                                                               out bool porElOro, out int porLoQueRinde,
+                                                                               Func<int, bool>? nunca = null)
     {
         if (sigueLleno(mapa)
             && OtroCotoSinPeligro(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirveParaIrseDelLleno, desempate,
                                   out porElOro, out porLoQueRinde) is { } otro)
             return otro;
-        var elegido = ElegirCoto(mapas, mapa, desde, esPresa, paga, rinde, pisable, out porElOro, out porLoQueRinde, seCazaAhi, desempate);
+        var elegido = ElegirCoto(mapas, mapa, desde, esPresa, paga, rinde, pisable, out porElOro, out porLoQueRinde, seCazaAhi, desempate,
+                                 nunca);
         if (elegido is { } e && e.Mapa != mapa && sigueLleno(e.Mapa))
             return OtroCotoSinPeligro(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirveParaIrseDelLleno, desempate,
                                       out porElOro, out porLoQueRinde);
@@ -2547,7 +2554,8 @@ public sealed class Bot
         Func<int, bool> esPeligroso = f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
         Func<int, IEnumerable<int>> loQueNace = m => _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
             ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
-        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso);
+        // EN EL MAPA DE LOS GUARDIAS QUE VAN POR ÉL NO SE CAZA, tampoco en una ciudad del otro bando que no sea pk: ver `ElegirCoto`.
+        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !HayGuardiaQueLoAtaca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
@@ -2566,7 +2574,7 @@ public sealed class Bot
             hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
                                            CruzaSinPeligro(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
                                            m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
-                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde);
+                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, HayGuardiaQueLoAtaca);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
         if (hallado is not { } coto) return false;

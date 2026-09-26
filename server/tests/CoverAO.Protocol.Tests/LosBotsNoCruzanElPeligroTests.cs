@@ -82,4 +82,33 @@ public class LosBotsNoCruzanElPeligroTests
         Assert.DoesNotContain(807, orden);   // con guardias que van por él
         Assert.DoesNotContain(814, orden);
     }
+
+    /// <summary>
+    /// DEL MAPA DE SUS GUARDIAS NO SE CAZA AHÍ (`pelea_b2`): un Guerrero ciudadano cortó en (28,40) la salida de la Cordillera del
+    /// Norte y la búsqueda de coto, sin ningún vecino que se cruce sin peligro, caía a la de repuesto y elegía el mismo 806, hacia
+    /// donde nacen los guardias. Con los guardias en el "nunca", ese mapa no sale ni como repuesto.
+    /// </summary>
+    [Fact]
+    public void Desde_el_mapa_de_sus_guardias_el_coto_nunca_es_ese_mapa()
+    {
+        if (Mundo() is not { } m) return;
+        const int nivel = 18, vida = 199;   // Ciro
+        var ini = new ServerIni();
+        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(m.Datos.Npc((short)f), vida, nivel, conPociones: true,
+            curaVeneno: false, Player.StatusCiudadano, m.Datos, ini);
+        Func<int, bool> esPresa = f => Bot.EsPresaPara(m.Datos.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
+        Func<int, IEnumerable<int>> nace = mapa => m.Datos.MapSpawns.TryGetValue(mapa, out var n) ? n.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
+        Func<int, bool> pisable = mapa => Bot.PuedeEntrar(nivel, m.Datos.MapZone(mapa));
+        Func<int, bool> cruza = mapa => Bot.PasaPorAhi(mapa, -1, pisable(mapa), nace(mapa).Any(esPeligroso));
+        Func<int, bool> guardia = mapa => Bot.HayGuardiaQueVaPor(mapa, Player.StatusCiudadano, nivel, m.Datos, ini);
+        Func<int, bool> seCaza = mapa => Bot.SeCazaAhi(m.Datos.IsPkMap(mapa), nace(mapa), esPeligroso) && !guardia(mapa);
+        Func<int, int> rinde = f => esPresa(f) ? (int)(m.Datos.Npc((short)f)?.GiveExp ?? 0) : 0;
+        (int Mapa, byte X, byte Y, int Saltos)? Coto(Func<int, bool>? nunca) => Bot.CotoSinVolverAlLleno(m.Mapas, 806, (28, 40),
+            esPresa, f => m.Datos.Npc((short)f)?.GiveGld > 0, rinde, cruza, seCaza, _ => false,
+            mapa => Bot.SirveParaIrseDelLleno(false, nace(mapa), esPeligroso), mapa => Bot.CuantoLeGusta(Bot.SemillaDelNombre("Ciro"), mapa),
+            out _, out _, nunca);
+
+        Assert.Equal(806, Coto(nunca: null)?.Mapa);   // premisa: el repuesto elegía el mismo 806
+        Assert.NotEqual(806, Coto(guardia)?.Mapa);
+    }
 }
