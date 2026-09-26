@@ -572,6 +572,16 @@ public sealed class Bot
             await CuidarseAsync(transporte, sentidos, ct);
             if (!sentidos.Vivo) continue;
 
+            // EN EL MAPA DE UN GUARDIA DEL OTRO BANDO NO SE QUEDA: se va apenas llega, antes de elegir coto y antes de que lo vean.
+            // Medido en `tienda6`: un Guerrero que arrancó la sesión en la Cordillera del Norte (806) eligió cazar ahí mismo, caminó
+            // hacia el sur —donde nacen sus cuatro guardias— y el Clérigo lo mató. Si no hay salida a la que se llegue, juega y lo
+            // vuelve a probar al rato.
+            if (HayGuardiaQueLoAtaca(sentidos.Mapa) && Environment.TickCount64 >= _proximaSalidaDelGuardia)
+            {
+                if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct)) continue;
+                _proximaSalidaDelGuardia = Environment.TickCount64 + ReintentoDeSalidaDelGuardiaMs;
+            }
+
             // HUIR DE LO QUE LE QUEDA GRANDE. Elegir bien a quién atacar no alcanza: las criaturas atacan
             // solas, y una que pega la mitad de la vida de un golpe mata a un personaje de nivel uno antes de
             // que alcance a tomar dos pociones. Un jugador que ve algo así se va, y esto es eso.
@@ -4021,10 +4031,17 @@ public sealed class Bot
 
     private const int PasosDeHuida = 8;
 
+    private const int ReintentoDeSalidaDelGuardiaMs = 30_000;
+    private long _proximaSalidaDelGuardia;
+
     /// <summary>
-    /// SALIR DEL MAPA hacia el más cercano donde no nace ningún guardia que vaya por él: la huida de un guardia del otro bando
-    /// (ver dónde se llama). Devuelve si hizo algo —salió o por lo menos se movió hacia la salida—; si no se pudo mover, false, y
-    /// queda la huida de siempre.
+    /// SALIR DEL MAPA hacia el más cercano donde no nace ningún guardia que vaya por él: la huida de un guardia del otro bando, y
+    /// lo primero que hace el que aparece en su mapa (ver dónde se llama). Devuelve si hizo algo —salió o por lo menos se movió
+    /// hacia la salida—; si no se pudo mover, false, y queda la huida de siempre.
+    ///
+    /// <para>Se probó elegir la salida más lejos de donde nacen los guardias (`tienda6`, 26/09) y no sirve así: en la Cordillera
+    /// del Norte elegía siempre la del norte, también desde al lado del Mercenario, que queda al sur, o sea cruzando el mapa entre
+    /// los cuatro. Lo que importa es por dónde pasa el CAMINO, no dónde queda la puerta; mientras eso no esté, la más cercana.</para>
     /// </summary>
     private async Task<bool> SalirDelMapaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
