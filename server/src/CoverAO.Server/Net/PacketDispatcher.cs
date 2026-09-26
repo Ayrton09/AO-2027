@@ -1109,8 +1109,9 @@ public sealed partial class PacketDispatcher
             pl => string.Equals(pl.Account, account, StringComparison.OrdinalIgnoreCase));
         if (otroDeLaCuenta is not null)
         {
+            // locale_error_es.ind 47, como el resto de los carteles del ingreso (el original manda el número).
             session.Send(ServerMessages.ShowMessageBox(
-                $"Ya hay un personaje de esta cuenta conectado ({otroDeLaCuenta.Name}). Solo se puede jugar con uno a la vez."));
+                "Ya hay un usuario conectado con esta cuenta, solo puedes logear un personaje por cuenta."));
             return;
         }
         // TOPE DE PERSONAJES EN EL MUNDO POR IP. El original tiene un tope fijo de 10 CONEXIONES por IP y un
@@ -9031,7 +9032,7 @@ public sealed partial class PacketDispatcher
             // herramienta de §4r: sin el martillo en la mano, el doble clic sobre el yunque no hace nada.
             if (info.IsAnvil)
             {
-                if (Equipment.EquippedOfCategory(p, _data, 6)?.Index == 389) SendCraftList(session, "blacksmith", "Yunque");
+                if (Equipment.EquippedOfCategory(p, _data, 6)?.Index == 389) SendCraftList(session, "blacksmith");
                 return;
             }
             // LA FRAGUA, clickeada de una: no funde: el orden es al revés (primero se elige el mineral, y el
@@ -9266,7 +9267,7 @@ public sealed partial class PacketDispatcher
                 if (p.FactionStatus == npc.FactionEnlist) Recompensar(session, p, npc); else Enlistar(session, p, npc);
                 return;
             }
-            if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade, npc.Name); return; }
+            if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade); return; }
             // Doble clic a un mercader → la tienda, salvo que no te atienda por tu facción (Acciones.bas:180-197,
             // el mismo bloque que el `CommerceStart`). Es el camino por el que el cliente web abre el comercio.
             if (npc.IsMerchant) { if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
@@ -9295,8 +9296,9 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>Sends a workbench's craftable list (BlacksmithWeapons/CarpenterObjects/…) to the client.</summary>
-    private void SendCraftList(ClientSession session, string trade, string npcName)
+    /// <summary>Sends a workbench's craftable list (BlacksmithWeapons/CarpenterObjects/…) to the client. Sólo las
+    /// listas, sin texto: el original abre la ventana y no dice nada (InvUsuario.bas, EnivarArmasConstruibles…).</summary>
+    private void SendCraftList(ClientSession session, string trade)
     {
         if (trade == "blacksmith")
         {
@@ -9305,7 +9307,6 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.BlacksmithArmors(CraftItems(_data.BlacksmithArmors)));
             session.Send(ServerMessages.BlacksmithHelmets(CraftItems(_data.BlacksmithHelmets)));
             session.Send(ServerMessages.BlacksmithShields(CraftItems(_data.BlacksmithShields)));
-            session.Send(ServerMessages.ConsoleMsg($"{npcName}: aquí puedes forjar armas, armaduras, cascos y escudos. Elige una receta.", FuenteInfo));
             return;
         }
         byte[]? pkt = trade switch
@@ -9317,7 +9318,6 @@ public sealed partial class PacketDispatcher
         };
         if (pkt is null) return;
         session.Send(pkt);
-        session.Send(ServerMessages.ConsoleMsg($"{npcName}: aquí puedes fabricar. Elige una receta.", FuenteInfo));
     }
 
     private List<Data.ObjInfo> CraftItems(IReadOnlySet<int> set)
@@ -10854,11 +10854,12 @@ public sealed partial class PacketDispatcher
     /// mágicas del portador. En esta data lo trae uno solo, el Amuleto del Silencio (obj 755).</summary>
     private const int Silencio = 16;
 
-    /// <summary>Death handling shared by melee and spells: message, XP award + level-up, respawn.</summary>
+    /// <summary>Death handling shared by melee and spells: los contadores de facción (VB6 <c>ContarMuerte</c>), los avisos y
+    /// la experiencia (<c>ActStats</c>, Modulo_UsUaRiOs.bas:2353) y la muerte. Si el que mata le lleva más de 10 niveles
+    /// al muerto, <c>ActStats</c> sale sin decir nada: ni "has matado" ni experiencia, sólo el LocaleMsg 330 de
+    /// <c>ContarMuerte</c>. <c>UserDie</c> no le avisa nada al muerto.</summary>
     private void OnKill(ClientSession attackerSession, Player attacker, Player target)
     {
-        attackerSession.Send(ServerMessages.ConsoleMsg($"Has matado a {target.Name}!", 0));
-        target.Connection?.Send(ServerMessages.ConsoleMsg("Has muerto!", 0));
         attacker.UsersKilled++;
         // Contadores de facción por bando de la víctima (VB6 ContarMuerte, Modulo_UsUaRiOs.bas:1473). ANTES de contar
         // hay gates anti-farm que hacen Exit Sub: (1) nivel del atacante > víctima+10 → LocaleMsg(330) y no cuenta;
@@ -10884,12 +10885,14 @@ public sealed partial class PacketDispatcher
         }
         // VB6 ActStats (Modulo_UsUaRiOs.bas:2353): la exp por frag es ELV_víctima * 2 (no *100), y si el atacante
         // supera a la víctima por más de 10 niveles NO recibe exp (mismo gate de nivel que ContarMuerte).
-        long reward = farmeoDeNivel ? 0L : Math.Max(1, (int)target.Level) * 2L;
-        int levels = reward > 0 ? OtorgarExp(attackerSession, attacker, reward) : 0;
-        if (reward > 0)
-            attackerSession.Send(ServerMessages.ConsoleMsg(levels > 0
-                ? $"Ganaste {reward} de experiencia y subiste {levels} nivel(es)! Nivel {attacker.Level}."
-                : $"Ganaste {reward} de experiencia.", 0));
+        if (!farmeoDeNivel)
+        {
+            long reward = Math.Max(1, (int)target.Level) * 2L;
+            attackerSession.Send(ServerMessages.ConsoleMsg($"¡Has matado a {target.Name}!", FuenteInfo));
+            target.Connection?.Send(ServerMessages.ConsoleMsg($"¡{attacker.Name} te ha matado!", FuenteInfo));
+            attackerSession.Send(ServerMessages.ConsoleMsg($"Has ganado {reward} puntos de experiencia.", FuenteInfo));
+            OtorgarExp(attackerSession, attacker, reward);
+        }
         KillPlayer(_world, _data, target, $"lo mato {attacker.Name}");   // VB6: el muerto queda como cadáver donde cayó (no respawn instantáneo)
     }
 
@@ -12304,7 +12307,7 @@ public sealed partial class PacketDispatcher
                 if (taller is null) return;                                      // el resto del Select: silencio
                 if (Equipment.EquippedOfCategory(p, _data, 6)?.Index != obj.Index)
                 { session.Send(ServerMessages.LocaleMsg(391)); return; }
-                SendCraftList(session, taller, obj.Name);
+                SendCraftList(session, taller);
                 return;
             }
 

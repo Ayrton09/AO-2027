@@ -26,6 +26,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 ### Combate y magia
 
+- **Matar a otro jugador avisa como en el original**: a los dos, con la experiencia que ganaste. Si le llevás
+  más de diez niveles, no hay aviso ni experiencia.
+
 - **La magia pega con otra cuenta**: depende del nivel, de la clase, de los objetos mágicos y de la resistencia
   del que la recibe. Es un cambio de balance a propósito, tomado de aoweb.
 

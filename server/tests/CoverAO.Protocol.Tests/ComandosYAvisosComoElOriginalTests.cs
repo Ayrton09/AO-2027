@@ -179,6 +179,25 @@ public class ComandosYAvisosComoElOriginalTests : IDisposable
     }
 
     [Fact]
+    public async Task La_mesa_de_trabajo_abre_su_lista_sin_texto()
+    {
+        var (_, s, t) = Conectado("Aldo", 50);
+        _world.AddNpc(new Npc
+        {
+            CharIndex = _world.AllocateCharIndex(), Hp = 100, Pos = new WorldPos(1, 51, 50), Movement = 1,
+            WorkbenchTrade = "carpenter",
+            Template = new NpcInfo(Index: 904, Name: "Carpintero", Body: 1, Head: 1, Heading: 3, MaxHp: 100, MinHit: 0,
+                                   MaxHit: 0, Def: 0, GiveExp: 0, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 0),
+        });
+
+        await Mandar(s, new ByteQueueWriter().WriteByte((byte)ClientPacketId.DoubleClick).WriteByte(51).WriteByte(50));
+        await Asentar(t);
+
+        Assert.True(t.RecibioId(ServerPacketId.CarpenterObjects));
+        Assert.Empty(t.Textos());
+    }
+
+    [Fact]
     public async Task Las_noticias_del_clan_traen_los_avisos_de_la_eleccion_y_ningun_resumen()
     {
         var (p, s, t) = Conectado("Aldo", 50);
