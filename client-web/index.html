@@ -3648,19 +3648,17 @@
      * visión del original, Protocol.bas:2646). Es la misma para todos los hechizos. El cliente original mostraba justo esa
      * caja, así que allá no hacía falta; éste muestra más —en una pantalla ancha, unas cuatro baldosas de más por lado—, y un
      * clic afuera el server lo rechaza. Es el rectángulo real y no un círculo (decisión del autor, 2026-09-27): un círculo
-     * mostraría como alcanzables baldosas que no lo son, o al revés. Afuera se apaga un poco y el borde queda marcado.
+     * mostraría como alcanzables baldosas que no lo son, o al revés. Se marca SÓLO el borde: afuera no se oscurece, porque
+     * al autor no le gustó (2026-09-27). Va en dos tonos —un filete oscuro por fuera y el celeste encima— para que se vea
+     * igual sobre la nieve y la arena que sobre el pasto.
      */
     const ALCANCE_X = 8, ALCANCE_Y = 6;
     function dibujarAlcanceDelHechizo(me, camX, camY) {
       const x0 = (me.x - ALCANCE_X - camX) * TILE, y0 = (me.y - ALCANCE_Y - camY) * TILE;
       const x1 = x0 + (2 * ALCANCE_X + 1) * TILE, y1 = y0 + (2 * ALCANCE_Y + 1) * TILE;
-      const arriba = Math.max(0, y0), abajo = Math.min(VH, y1);
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
-      if (y0 > 0) ctx.fillRect(0, 0, VW, y0);
-      if (y1 < VH) ctx.fillRect(0, y1, VW, VH - y1);
-      if (x0 > 0 && abajo > arriba) ctx.fillRect(0, arriba, x0, abajo - arriba);
-      if (x1 < VW && abajo > arriba) ctx.fillRect(x1, arriba, VW - x1, abajo - arriba);
-      ctx.strokeStyle = 'rgba(150,190,255,0.9)'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3;
+      ctx.strokeRect(x0 + 1.5, y0 + 1.5, x1 - x0 - 3, y1 - y0 - 3);
+      ctx.strokeStyle = 'rgba(150,190,255,0.95)'; ctx.lineWidth = 1.5;
       ctx.strokeRect(x0 + 0.75, y0 + 0.75, x1 - x0 - 1.5, y1 - y0 - 1.5);
     }
     window.__alcanceHechizo = () => ({ prendido: alcanceHechizo, apuntando: workSkill === SKILL_MAGIA_CLIENTE });
