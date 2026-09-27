@@ -118,6 +118,13 @@ public sealed class ServerIni
     /// </summary>
     public bool EventoAlRematar { get; private set; }
 
+    /// <summary>
+    /// <c>OroPorMonton</c> (default <b>10000</b>, el <c>MAX_INVENTORY_OBJS</c> del original): cuánto oro entra en cada montón que se
+    /// tira al piso. Tirar más se reparte en varios montones por las baldosas libres de alrededor, como el original
+    /// (TirarOro, InvUsuario.bas:212). Pedido del tester, 2026-09-27. Va de 1 a 32767, lo que entra en una pila del piso.
+    /// </summary>
+    public int OroPorMonton { get; private set; } = 10_000;
+
     /// <summary>El techo de <see cref="Exp"/> y <see cref="Oro"/>: el <c>Integer</c> de VB6 donde el original
     /// guarda la tasa (<c>Expc</c>, Declares.bas:36). Más grande, allá el server no arrancaba.</summary>
     public const int TasaMaxima = short.MaxValue;
@@ -150,7 +157,7 @@ public sealed class ServerIni
     public static readonly string[] ClavesConocidas =
     {
         "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
-        "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca",
+        "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca", "OroPorMonton",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
         "GuardiasAtacan", "GuardiasAtacanNewbies", "GuardiasDelCaosAtacanA", "GuardiasImperialesAtacanA",
@@ -1147,6 +1154,7 @@ public sealed class ServerIni
         cfg.GuardiasAtacan = ini.GetInt("INIT", "GuardiasAtacan", 1) != 0;
         cfg.AtacarAliadoVuelveCriminal = ini.GetInt("INIT", "AtacarAliadoVuelveCriminal", 1) != 0;
         cfg.EventoAlRematar = ini.GetInt("INIT", "EventoAlRematar", 0) != 0;
+        cfg.OroPorMonton = Math.Clamp(ini.GetInt("INIT", "OroPorMonton", 10_000), 1, short.MaxValue);
         cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;
         cfg.GuardiasAtacanNewbies = ini.GetInt("INIT", "GuardiasAtacanNewbies", 0) != 0;
         var desconocidas = new List<string>();

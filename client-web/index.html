@@ -269,6 +269,7 @@
     /* EL ORO NO ES UNA BARRA. Estaba metido en la sexta celda de la grilla, donde todas las vecinas son
        barras con su relleno y su "100/100": quedaba como una barra rota. Va en su propio renglón, ancho
        completo y separado por un filete, que es lo que es — un total, no una proporción. */
+    #goldrow { cursor:pointer; }
     .goldrow { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px;
       margin-top:3px; padding-top:5px; border-top:1px solid #ffdf9a1f; }
     .p-gold { display:flex; align-items:center; gap:6px;
@@ -685,7 +686,7 @@
         <div class="stat"><span class="cap">Sed</span><div class="track"><div class="fill thirst" id="f-thirst"></div><span class="val" id="v-thirst">—</span></div></div>
         <div class="stat"><span class="cap">Energía</span><div class="track"><div class="fill ener" id="f-ener"></div><span class="val" id="v-ener">—</span></div></div>
         <div class="stat"><span class="cap">Atributos</span><div class="attrs">Fuerza <b id="a-str">—</b> · Agilidad <b id="a-agi">—</b></div></div>
-        <div class="goldrow"><span class="cap">Oro</span><div class="p-gold" id="v-gold">0</div></div>
+        <div class="goldrow" id="goldrow" title="Clic para tirar oro al piso"><span class="cap">Oro</span><div class="p-gold" id="v-gold">0</div></div>
       </div>
 
       <div class="p-foot ornate">
@@ -3063,6 +3064,23 @@
         + ` <span class="buy" data-dropall="${slot}">Dejar todo</span>`,
       ], true, 'drop');
     }
+    /**
+     * EL CARTEL PARA TIRAR ORO: el clic en el oro abre el mismo cartel de cantidad que el de los objetos, con `Tirar` y `Tirar
+     * todo`. El oro viaja por la ranura que no existe, `FLAGORO = MAX_INVENTORY_SLOTS + 1` (Declares.bas:576), y el servidor
+     * no tira nada si se le piden más de 100.000 de una vez (Protocol.bas:2025): el cartel no deja pasar de ahí.
+     */
+    const FLAGORO = 26, ORO_POR_VEZ = 100000;
+    function tirarOro() {
+      const oro = (myStats && myStats.gold) || 0;
+      if (oro <= 0) { log('No tenés oro para tirar.', '#b94'); return; }
+      const tope = Math.min(oro, ORO_POR_VEZ);
+      showModal('Cantidad de oro a tirar', [
+        `<input class="dropgq cantbox" type="number" min="1" max="${tope}" value="${tope}">`
+        + ` <span class="buy" data-dropgold="1">Tirar</span>`
+        + ` <span class="buy" data-dropgoldall="1">Tirar ${oro > ORO_POR_VEZ ? '100.000' : 'todo'}</span>`,
+      ].concat(oro > ORO_POR_VEZ ? ['<small>Se tiran hasta 100.000 monedas por vez.</small>'] : []), true, 'dropgold');
+    }
+    window.__tirarOro = () => tirarOro();
     function showCraft(title, rows, fresh) {
       const cantidad = fresh
         ? ['Cantidad por vez <input class="craftq" type="number" min="1" max="1000" value="1" '
@@ -3413,6 +3431,15 @@
         const caja = modalCard.querySelector('.trq');
         const a = ((caja && caja.value) || '').trim();
         if (a) { send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(a).writeLong(leerOroQty())); closeModal(); }
+        return;
+      }
+      // Los dos botones del cartel del oro: ver `tirarOro`.
+      if (b.dataset.dropgold || b.dataset.dropgoldall) {
+        const tope = Math.min((myStats && myStats.gold) || 0, ORO_POR_VEZ);
+        const caja = modalCard.querySelector('.dropgq');
+        const n = b.dataset.dropgoldall ? tope : Math.max(1, Math.min(tope, parseInt(caja && caja.value, 10) || 1));
+        if (n > 0) send(W().writeByte(CLIENT.Drop).writeByte(FLAGORO).writeLong(n));
+        closeModal();
         return;
       }
       // Los dos botones del cartel "Cantidad a dejar". `Dejar todo` no lee la caja: manda el monton entero,
@@ -4461,6 +4488,7 @@
       if (prop === 'w') el.style.width = v; else el.textContent = v;
     }
     const ATRIB_TOPE = 35;                // MAXATRIBUTOS del server: de ahí para arriba la cifra cambia de color
+    document.getElementById('goldrow').addEventListener('click', () => tirarOro());
     const hudEl = {
       level: $('levelnum'), xpfill: $('xpfill'), xptxt: $('xptxt'), gold: $('v-gold'),
       str: $('a-str'), agi: $('a-agi'), name: $('charname'), mapa: $('mapname'),

@@ -3769,7 +3769,7 @@ public sealed partial class PacketDispatcher
     ///   <item>Y busca en cuadrados crecientes hasta 15 baldosas, en orden de fila, no en cuatro vecinos.</item>
     /// </list>
     /// </summary>
-    private WorldPos? FindFreeGround(WorldPos at, short objIndex, short amount)
+    private WorldPos? FindFreeGround(WorldPos at, short objIndex, short amount, int tope = GameLimits.MaxInventoryObjs)
     {
         for (int radio = 0; radio <= RadioTileLibre; radio++)
             for (int y = at.Y - radio; y <= at.Y + radio; y++)
@@ -3778,7 +3778,7 @@ public sealed partial class PacketDispatcher
                     if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder) continue;
                     if (y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder) continue;
                     var n = new WorldPos(at.Map, (byte)x, (byte)y);
-                    if (LaBaldosaRecibeElItem(n, objIndex, amount)) return n;
+                    if (LaBaldosaRecibeElItem(n, objIndex, amount, tope)) return n;
                 }
         return null;
     }
@@ -3788,23 +3788,23 @@ public sealed partial class PacketDispatcher
     /// <c>MakeObj</c> (Modulo_InventANDobj.bas) suma sobre la pila que hay en vez de pisarla, y el
     /// <c>ObjectCreate</c> que manda lleva el TOTAL, no lo que acaba de caer.
     /// </summary>
-    private void DejarEnElPiso(WorldPos donde, short objIndex, short amount)
+    private void DejarEnElPiso(WorldPos donde, short objIndex, short amount, int tope = GameLimits.MaxInventoryObjs)
     {
         short total = amount;
         if (_world.TryGetGround(donde, out var hay) && hay.ObjIndex == objIndex)
-            total = (short)Math.Min(GameLimits.MaxInventoryObjs, hay.Amount + amount);
+            total = (short)Math.Min(tope, hay.Amount + amount);
         _world.SetGround(donde, objIndex, total);
         _world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, objIndex, total));
     }
 
     /// <summary>Las condiciones de <c>Tilelibre</c> sobre UNA baldosa. Ver <see cref="FindFreeGround"/>.</summary>
-    private bool LaBaldosaRecibeElItem(WorldPos p, short objIndex, short amount)
+    private bool LaBaldosaRecibeElItem(WorldPos p, short objIndex, short amount, int tope = GameLimits.MaxInventoryObjs)
     {
         if (_data.IsBlockedTile(p.Map, p.X, p.Y)) return false;
         if (_world.PlayerAt(p) is not null || _world.NpcAt(p) is not null) return false;
         if (_data.MapExits.ContainsKey((p.Map, p.X, p.Y))) return false;
         if (!_world.TryGetGround(p, out var hay)) return true;
-        return hay.ObjIndex == objIndex && hay.Amount + amount <= GameLimits.MaxInventoryObjs;
+        return hay.ObjIndex == objIndex && hay.Amount + amount <= tope;
     }
 
     /// <summary>GM commands (GMCommands packet, id 92): a subcommand byte (eGMCommands) + its args.
@@ -12094,28 +12094,28 @@ public sealed partial class PacketDispatcher
     /// <summary><c>SND_ORO2</c> (Declares.bas:558): el tintineo que el original tira al área al soltar oro.</summary>
     private const short SndOro = 172;
 
-    /// <summary>VB6 <c>TirarOro</c> (InvUsuario.bas:154): el oro va al piso como un objeto <c>iORO</c>. El
-    /// original tira montones de a <c>MAX_INVENTORY_OBJS</c> y busca un tile libre alrededor
-    /// (<c>TirarItemAlPiso</c>); acá se tira UN montón —el tope de una tirada ya lo pone el gate de 100.000 del
-    /// handler— en el tile del jugador o, si está ocupado, en uno pegado.</summary>
+    /// <summary>
+    /// VB6 <c>TirarOro</c> (InvUsuario.bas:154): el oro va al piso como objetos <c>iORO</c>, en MONTONES de a
+    /// <see cref="ServerIni.OroPorMonton"/> (<c>MAX_INVENTORY_OBJS</c> en el original, :212), cada uno donde lo pone
+    /// <see cref="FindFreeGround"/> —la regla de <c>Tilelibre</c>, que empieza al lado del jugador— y apilando sobre el oro que ya
+    /// esté ahí. El montón que no encuentra lugar no se descuenta (:229, <c>If AuxPos.X &lt;&gt; 0</c>), sin aviso, y la vuelta
+    /// cien corta (:244). El tope de 500.000 del original no se alcanza: el handler corta en 100.000 antes.
+    ///
+    /// <para>Acá se tiraba UN solo montón, en la baldosa del jugador: de 50.000 caían 10.000 y el resto seguía en la bolsa. Lo
+    /// reportó el tester, 2026-09-27.</para>
+    /// </summary>
     private void TirarOro(ClientSession session, Player p, long cantidad)
     {
         if (cantidad <= 0 || cantidad > p.Gold) return;       // VB6: `If (Cantidad > 0) And (Cantidad <= .Stats.GLD)`
-        short monton = (short)Math.Min(cantidad, GameLimits.MaxInventoryObjs);
-        var donde = p.Pos;
-        if (_world.TryGetGround(donde, out _))
+        int tope = _ini.OroPorMonton;
+        for (int vueltas = 0; cantidad > 0 && vueltas <= 100; vueltas++)
         {
-            donde = default;
-            foreach (var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) })
-            {
-                var t = new WorldPos(p.Pos.Map, (byte)(p.Pos.X + dx), (byte)(p.Pos.Y + dy));
-                if (!_world.TryGetGround(t, out _) && PosLegal(t, p.Navigating)) { donde = t; break; }
-            }
-            if (donde.Map == 0) { session.Send(ServerMessages.LocaleMsg(262)); return; }
+            short monton = (short)Math.Min(cantidad, tope);
+            cantidad -= monton;
+            if (FindFreeGround(p.Pos, (short)GameLimits.ObjOro, monton, tope) is not { } donde) continue;
+            p.Gold -= monton;
+            DejarEnElPiso(donde, (short)GameLimits.ObjOro, monton, tope);
         }
-        p.Gold -= monton;
-        _world.SetGround(donde, (short)GameLimits.ObjOro, monton);
-        _world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, (short)GameLimits.ObjOro, monton));
     }
 
     private void HandleDrop(ClientSession session, ByteQueueReader r)

@@ -77,6 +77,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Fundir con el inventario lleno** tira los lingotes al piso, como en el original.
 
+- **Tirar oro**: un clic en tu oro abre el cartel de cantidad. Cae en montones de 10.000 por las baldosas de
+  alrededor, como en el original, y el tamaño del montón se cambia con `OroPorMonton` en el Server.ini.
+
 - **Las pociones de fuerza y agilidad duran lo que en el original**: media hora las comunes, hora y media las de
   Alquimia. Los atributos no pasan de 35.
 
