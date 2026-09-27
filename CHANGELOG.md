@@ -70,6 +70,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Más sonidos en la pelea**: el arco al acertar y al errar, y el golpe a otro jugador, que además deja sangre.
 
+- **Pelear contra otro jugador, como el original**: el escudo también frena las flechas, y el ladrón, el bardo y el
+  gladiador desarman también con el arco. Montado o en barco se pega más fuerte, y el barco o la montura de la víctima
+  la cubren sólo donde tiene casco o armadura. Con hambre o sed no se apuñala, y el número del golpe te aparece sobre
+  tu personaje.
+
 - **Los hechizos se ven como en el original.** La mitad son de partículas, y cada uno muestra ahora las suyas en
   vez de unos puntitos iguales para todos, con la duración que corresponde; los de área también, y la meditación.
   Los demás efectos brillan en lugar de taparse con un borde negro, y los largos ya no se cortan. Los brillos de

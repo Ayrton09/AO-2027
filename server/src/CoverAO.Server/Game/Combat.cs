@@ -244,6 +244,9 @@ public static class Combat
     /// <param name="armadura">Equipped armour's (MinDef,MaxDef), or null.</param>
     /// <param name="escudo">Equipped shield's (MinDef,MaxDef), or null.</param>
     /// <param name="rollDef">Resolves RandomNumber(min,max) inclusive.</param>
+    /// <param name="defensaConPieza">Defensa que se suma SÓLO si el golpe cae en una pieza que absorbe —el casco en la
+    /// cabeza, la armadura en el cuerpo—: el barco y la montura de la víctima en PvP (UserDañoUser :1318 y :1336,
+    /// <c>absorbido + defbarco + defmontura</c> adentro de cada rama). Sin pieza en esa zona, no cubre nada.</param>
     /// <param name="defensaExtra">Defensa PLANA que no viene de una pieza de equipo, sumada a lo absorbido —
     /// hoy sólo el <c>ExtraDEF</c> de la metamorfosis (regla de la casa). 0 en el original y en cualquier
     /// camino donde la regla esté apagada, así que la fórmula portada queda idéntica. Va DENTRO de la función
@@ -251,19 +254,19 @@ public static class Combat
     /// sobre-absorbido, y restar por fuera daría 0 o negativos.</param>
     public static long AplicarDefensa(long dano, int zona,
         (int Min, int Max)? casco, (int Min, int Max)? armadura, (int Min, int Max)? escudo,
-        Func<int, int, int> rollDef, int defensaExtra = 0)
+        Func<int, int, int> rollDef, int defensaExtra = 0, int defensaConPieza = 0)
     {
         long absorbido = defensaExtra;   // las dos ramas SUMAN sobre esto: asignar acá las pisaría
         if (zona == 1) // PartesCuerpo.bCabeza
         {
-            if (casco is { } c) absorbido += rollDef(c.Min, c.Max);
+            if (casco is { } c) absorbido += rollDef(c.Min, c.Max) + defensaConPieza;
         }
         else           // torso / brazos / piernas → armadura (+ escudo)
         {
             if (armadura is { } a)
-                absorbido += escudo is { } s
+                absorbido += (escudo is { } s
                     ? rollDef(a.Min + s.Min, a.Max + s.Max)
-                    : rollDef(a.Min, a.Max);
+                    : rollDef(a.Min, a.Max)) + defensaConPieza;
         }
         dano -= absorbido;
         if (dano < 0) dano = 1;

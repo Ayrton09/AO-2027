@@ -1956,18 +1956,36 @@ public sealed partial class PacketDispatcher
     private void AttackPlayer(ClientSession session, Player p, Player target)
     {
         if (!PuedeAtacar(session, p, target)) return;    // VB6 UsuarioAtacaUsuario:1183 — el primer statement
-        FlagCriminalIfLegalTarget(session, p, target);   // adentro: corta la meditación, despierta mascotas, marca criminal
-        // Hit chance: attacker Wrestling power vs target Tacticas evasion (real .chr skills).
-        double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
+        GolpeAUnJugador(session, p, target, arco: null, municion: null);
+    }
+
+    /// <summary>
+    /// EL GOLPE A OTRO JUGADOR, con la mano, el arma o el ARCO (VB6 <c>UsuarioAtacaUsuario</c>, SistemaCombate.bas:1172). En
+    /// el original el tiro y el golpe son LA MISMA función —el <c>Case Proyectiles</c> del WorkLeftClick la llama igual que el
+    /// ataque— y acá el tiro tenía un camino aparte que se salteaba el escudo de la víctima (la evasión y el rechazo) y el
+    /// desarme. Lo único que cambia con el arco es el poder de ataque y el daño (<c>UsuarioImpacto</c> elige el poder por el
+    /// arma, <c>CalcularDaño</c> suma la flecha).
+    ///
+    /// <para>El ORDEN es el del original: el impacto (con el escudo), los sonidos, y sobre el golpe que entra
+    /// <c>UserIncinera</c> → <c>Desarmar</c> → <c>GolpeParalizaUsuario</c> → <c>UserDañoUser</c>. O sea que el desarme y la
+    /// parálisis corren ANTES del daño, también sobre el que muere con ese golpe.</para>
+    ///
+    /// <para><c>UserIncinera</c> NO se porta, por decisión del autor (2026-09-27): con un arma que no es arco lee
+    /// <c>ObjData(MunicionEqpObjIndex)</c>, que es <c>ObjData(0)</c>, y con <c>BoundsCheck</c> prendido eso es el error 9 que
+    /// corta el golpe entero: en el original el PvP cuerpo a cuerpo con arma y sin flechas puestas no hace daño. Portarlo
+    /// sería portar ese corte.</para>
+    /// </summary>
+    private void GolpeAUnJugador(ClientSession session, Player p, Player target, Data.ObjInfo? arco, Data.ObjInfo? municion)
+    {
+        FlagCriminalIfLegalTarget(session, p, target);   // UsuarioAtacadoPorUsuario: corta la meditación, despierta mascotas, marca criminal
+        // UsuarioImpacto (:1060): el poder sale del arma —el arco usa el de proyectiles— contra la evasión de la víctima.
         double evasionMod = _data.EvasionMod.TryGetValue(target.Class, out var ev) ? ev : 1.0;
-        int atkSkill = AttackSkillOf(p);
-        long pa = Combat.PoderDeAtaque(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
+        long pa = arco is not null ? RangedAttackPower(p)
+                : Combat.PoderDeAtaque(p.Skills[AttackSkillOf(p)], p.Agility, p.Level,
+                                       _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0);
         long pe = Combat.PoderEvasion(target.Skills[GameLimits.SkillTacticas], target.Agility, target.Level, evasionMod);
-        // EL ESCUDO EN PvP. `PoderEvasionEscudo` tenía UN solo call site en todo el server —la evasión contra
-        // NPC (NpcSystem.cs)— así que un escudo equipado era decorativo entre jugadores. El VB6 lo usa en las
-        // dos direcciones y hace DOS cosas distintas con él (SistemaCombate.bas:1090-1096 y :1133-1155):
-        // primero lo suma a la evasión, y después, SÓLO si el golpe ya falló, tira una segunda chance de
-        // rechazo. Acá va la primera mitad; la segunda está abajo.
+        // EL ESCUDO de la víctima hace DOS cosas (SistemaCombate.bas:1090-1096 y :1133-1155): se suma a la evasión, y
+        // SÓLO si el golpe ya falló tira una segunda chance de rechazo.
         var escudoVictima = Equipment.EquippedOfCategory(target, _data, 4);
         if (escudoVictima is not null)
         {
@@ -1981,90 +1999,113 @@ public sealed partial class PacketDispatcher
             // El fallo tambien se muestra: un "0" flotante sobre uno mismo (SistemaCombate.bas:1248).
             session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));
             target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
-            // RECHAZO CON ESCUDO (VB6 SistemaCombate.bas:1136-1151). Segunda tirada, sólo sobre un golpe ya
-            // fallado. Y es la ÚNICA vía de entrenamiento de Defensa que tiene el juego: sin esto la skill no
-            // subía por uso en ninguna parte —`RaiseSkill(SkillDefensa)` no tenía un solo call site—, así que
-            // los puntos que un jugador le pusiera quedaban congelados para siempre.
+            // RECHAZO CON ESCUDO (VB6 SistemaCombate.bas:1136-1151). Es la ÚNICA vía de entrenamiento de Defensa.
             if (escudoVictima is not null)
             {
                 int probRechazo = Combat.ProbabilidadRechazoEscudo(
                     target.Skills[GameLimits.SkillDefensa], target.Skills[GameLimits.SkillTacticas]);
-                if (probRechazo > 0)
+                if (probRechazo > 0 && _rng.Next(1, 101) <= probRechazo)
                 {
-                    if (_rng.Next(1, 101) <= probRechazo)
-                    {
-                        _world.BroadcastToObservers(target.Pos,
-                            ServerMessages.PlayWave(SndEscudo, (byte)target.Pos.X, (byte)target.Pos.Y));
-                        session.Send(ServerMessages.ConsoleMsg("¡El usuario rechazó el ataque con su escudo!", FuenteInfo));
-                        target.Connection?.Send(ServerMessages.ConsoleMsg("¡Has rechazado el ataque con el escudo!", FuenteInfo));
-                        RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillDefensa);
-                    }
+                    _world.BroadcastToObservers(target.Pos,
+                        ServerMessages.PlayWave(SndEscudo, (byte)target.Pos.X, (byte)target.Pos.Y));
+                    session.Send(ServerMessages.ConsoleMsg("¡El usuario rechazó el ataque con su escudo!", FuenteInfo));
+                    target.Connection?.Send(ServerMessages.ConsoleMsg("¡Has rechazado el ataque con el escudo!", FuenteInfo));
+                    RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillDefensa);
                 }
             }
             return;
         }
         SonidosDelGolpeAUnJugador(session, p, target, acerto: true);
-        int rawDamage = MeleeDamage(p, contraNpc: false);
-        // Victim's equipment absorbs the blow (UserDañoUser): head→helmet, body→armour(+shield).
+        // DESARMAR (VB6 `Desarmar`, Trabajo.bas:2269): un ladrón(5), bardo(6) o gladiador(8). El `DoDesequipar` que el
+        // original llama en la línea siguiente NO se porta: su gate `If Not Clase = Gladiador Or Not Clase = Bardo Then
+        // Exit Sub` es SIEMPRE verdadero, así que sale siempre y nunca desequipa nada (código muerto por un bug de lógica).
+        if (p.Class is 5 or 6 or 8) Desarmar(p, target);
+        GolpeParalizaUsuario(session, p, target);
+        int dano = arco is not null ? RangedDamage(p, arco, municion, criatura: null) : MeleeDamage(p, contraNpc: false);
+        DanoAUnJugador(session, p, target, dano);
+    }
+
+    /// <summary>
+    /// EL DAÑO A OTRO JUGADOR (VB6 <c>UserDañoUser</c>, SistemaCombate.bas:1263). Sobre lo que calculó <c>CalcularDaño</c>:
+    /// <list type="bullet">
+    /// <item>el BARCO del que pega, si navega, y la MONTURA OTRA VEZ: <c>CalcularDaño</c> ya la sumó y acá se vuelve a
+    /// tirar (:1287-1296). Es de la fuente;</item>
+    /// <item>la defensa del barco y de la montura de la VÍCTIMA entra en lo absorbido SÓLO si el golpe cae donde tiene casco
+    /// o armadura (:1318 y :1336): desnuda, el barco no la cubre;</item>
+    /// <item>los dos flotantes: al que pega, sobre SU PROPIO personaje (<c>WriteChatOverHeadLocale(AtacanteIndex,
+    /// UserList(AtacanteIndex).Char.CharIndex, ...)</c>, :1355), igual que su "0" del fallo; a la víctima, sobre ella;</item>
+    /// <item>si el que pega no tiene hambre ni sed, sube la skill del arma y trata de APUÑALAR con el daño que quedó
+    /// DESPUÉS de la armadura (:1360-1387), sin mirar si la víctima sigue en pie: la muerte se decide una sola vez, al
+    /// final (:1389).</item>
+    /// </list>
+    /// <c>UserEnvenena</c> (:1283) no se porta: ningún objeto del obj.dat trae <c>Envenena=1</c>, así que no envenena nunca.
+    /// </summary>
+    private void DanoAUnJugador(ClientSession session, Player p, Player target, int dano)
+    {
+        int Tirada(int lo, int hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo;
+        if (p.Navigating && p.BoatSlot > 0 && _data.Obj(p.Inventory[p.BoatSlot].ObjIndex) is { } barco)
+            dano += Tirada(barco.MinHit, barco.MaxHit);
+        if (p.Mounted && Equipment.MonturaEquipada(p, _data) is { } montura)
+            dano += Tirada(montura.MinHit, montura.MaxHit);
+        int defensaConPieza = 0;
+        if (target.Navigating && target.BoatSlot > 0 && _data.Obj(target.Inventory[target.BoatSlot].ObjIndex) is { } barcoVictima)
+            defensaConPieza += Tirada(barcoVictima.MinDef, barcoVictima.MaxDef);
+        if (target.Mounted && Equipment.MonturaEquipada(target, _data) is { } monturaVictima)
+            defensaConPieza += Tirada(monturaVictima.MinDef, monturaVictima.MaxDef);
         int zona = _rng.Next(1, 7); // RandomNumber(bCabeza=1, bTorso=6)
         var casco = Equipment.EquippedOfCategory(target, _data, 3);
         var armadura = Equipment.EquippedOfCategory(target, _data, 2);
         var escudo = Equipment.EquippedOfCategory(target, _data, 4);
-        int damage = (int)Combat.AplicarDefensa(rawDamage, zona,
+        dano = (int)Combat.AplicarDefensa(dano, zona,
             Equipment.DefRange(casco), Equipment.DefRange(armadura), Equipment.DefRange(escudo),
-            (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo, target.MetamorfosisExtraDef);
-        target.Hp = Math.Max(0, target.Hp - damage);
-        // Sin linea de consola: el original no narra el golpe, lo muestra (UserDanoUser,
-        // SistemaCombate.bas:1355-1356 — dos `WriteChatOverHeadLocale`, uno a cada participante, y
-        // NINGUN texto). Y va a los DOS que pelean, no al area: `Write*` escribe a un usuario.
-        target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));   // VB6 SistemaCombate.bas:749
-        session.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
-        target.Connection?.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
-        // El PvP no entrenaba NADA. El VB6 lo hace en UserDañoUser (SistemaCombate.bas:1360-1385), DESPUÉS de
-        // aplicar el daño; el gate de hambre/sed ya vive dentro de SubirSkill, así que RaiseSkill lo aplica solo.
-        RaiseSkill(session, p, atkSkill);
-        // APUÑALAR en PvP (VB6 SistemaCombate.bas:1385). Va con el daño BASE —el de antes de que la armadura
-        // se lo coma— y sólo si la víctima sobrevivió al golpe principal.
-        if (target.IsAlive && PuedeApunalar(p)) DoApunalar(session, p, null, target, rawDamage);
-        // DESARMAR (VB6 `Desarmar`, Trabajo.bas:2269, llamado desde SistemaCombate.bas:1221): un ladrón(5),
-        // bardo(6) o gladiador(8) puede arrancarle el arma a su víctima al pegarle. La probabilidad sale del
-        // Wrestling y el nivel DEL ATACANTE, no de la víctima.
-        //
-        // OJO el mensaje, que es una rareza de la fuente y se porta igual: el aviso "¡Tu oponente te ha
-        // desarmado!" sólo se manda si la víctima es de nivel < 20 — el original avisa al novato y deja que el
-        // veterano se dé cuenta solo.
-        //
-        // El `DoDesequipar` que el original llama en la línea siguiente NO se porta, y no por falta de ganas:
-        // su gate es `If Not Clase = Gladiador Or Not Clase = Bardo Then Exit Sub`, que es **siempre verdadero**
-        // para cualquier clase (si es Gladiador da `False Or True`; si es Bardo, `True Or False`; si es otra,
-        // `True Or True`). O sea que la función sale SIEMPRE y nunca desequipa nada: es código muerto por un bug
-        // de lógica, del mismo tipo que los de precedencia que ya documenta fase5/GAPS-CODIGO-MUERTO.md.
-        // OJO el `target.IsAlive`, que NO está: en el original la secuencia es `UserIncinera` → `Desarmar` →
-        // `GolpeParalizaUsuario` → **`UserDañoUser`**, o sea que desarmar corre ANTES de aplicar el daño y por
-        // lo tanto también desarma al que muere con ese mismo golpe. Acá el daño ya se aplicó arriba, así que
-        // condicionarlo a que siga vivo le sacaría el arma a todos MENOS al que matás — justo al revés.
-        if (p.Class is 5 or 6 or 8)
+            Tirada, target.MetamorfosisExtraDef, defensaConPieza);
+        // Sin linea de consola: el original no narra el golpe, lo muestra. Y va a los DOS que pelean, no al area.
+        session.Send(ServerMessages.DamageOverHead(p.CharIndex, dano));
+        target.Connection?.Send(ServerMessages.DamageOverHead(target.CharIndex, dano));
+        target.Hp = Math.Max(0, target.Hp - dano);
+        if (p.Hunger > 0 && p.Thirst > 0)                // `If .flags.Hambre = 0 And .flags.Sed = 0`
         {
-            int prob = Combat.ProbabilidadDesarmar(p.Skills[GameLimits.SkillWrestling], p.Level);
-            if (_rng.Next(1, 101) <= prob)
-            {
-                int slot = EquippedSlotOfCategory(target, 1);   // el arma equipada de la víctima
-                if (slot > 0)
-                {
-                    var inv = target.Inventory[slot];
-                    inv.Equipped = false;
-                    target.Inventory[slot] = inv;
-                    var arma = _data.Obj(inv.ObjIndex);
-                    if (arma is not null) ClearEquipAnim(target, arma);
-                    target.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, false, 0f, 1));
-                    if (arma is not null) BroadcastEquipChange(target, arma, equipped: false);
-                    if (target.Level < 20)
-                        target.Connection?.Send(ServerMessages.ConsoleMsg("¡Tu oponente te ha desarmado!", FuenteCombate));
-                }
-            }
+            RaiseSkill(session, p, SkillQueSubeContraUnJugador(p));
+            if (PuedeApunalar(p)) DoApunalar(session, p, null, target, dano);
         }
-        GolpeParalizaUsuario(session, p, target);
+        target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));   // VB6 SistemaCombate.bas:749
         if (target.Hp == 0) OnKill(session, p, target);
+    }
+
+    /// <summary>Qué skill entrena el golpe a un jugador (UserDañoUser :1361-1380): los nudillos, Wrestling; un arma con
+    /// <c>proyectil</c> —el arco y TAMBIÉN la arrojadiza, porque el <c>If ObjData(...).proyectil Then</c> de arriba agarra el 2
+    /// antes que su propio <c>ElseIf</c>—, Proyectiles; cualquier otra arma, Armas; la mano, Wrestling.</summary>
+    private int SkillQueSubeContraUnJugador(Player p)
+    {
+        if (Equipment.EquippedOfCategory(p, _data, 7) is not null) return GameLimits.SkillWrestling;
+        var arma = Equipment.EquippedOfCategory(p, _data, 1);
+        if (arma is null) return GameLimits.SkillWrestling;
+        return arma.Proyectil != 0 ? GameLimits.SkillProyectiles : GameLimits.SkillArmas;
+    }
+
+    /// <summary>
+    /// DESARMAR (VB6 <c>Desarmar</c>, Trabajo.bas:2269): la probabilidad sale del Wrestling y el nivel DEL ATACANTE. Si la
+    /// tirada sale, desequipa el arma de la víctima —si tiene— y al de nivel menor a 20 le avisa "¡Tu oponente te ha
+    /// desarmado!" AUNQUE NO TUVIERA ARMA: el aviso va después de <c>Desequipar(VictimIndex, WeaponEqpSlot)</c> sin mirar si
+    /// había algo que sacar (:2288-2290). El original avisa al novato y deja que el veterano se dé cuenta solo.
+    /// </summary>
+    private void Desarmar(Player p, Player target)
+    {
+        int prob = Combat.ProbabilidadDesarmar(p.Skills[GameLimits.SkillWrestling], p.Level);
+        if (_rng.Next(1, 101) > prob) return;
+        int slot = EquippedSlotOfCategory(target, 1);   // el arma equipada de la víctima
+        if (slot > 0)
+        {
+            var inv = target.Inventory[slot];
+            inv.Equipped = false;
+            target.Inventory[slot] = inv;
+            var arma = _data.Obj(inv.ObjIndex);
+            if (arma is not null) ClearEquipAnim(target, arma);
+            target.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, false, 0f, 1));
+            if (arma is not null) BroadcastEquipChange(target, arma, equipped: false);
+        }
+        if (target.Level < 20)
+            target.Connection?.Send(ServerMessages.ConsoleMsg("¡Tu oponente te ha desarmado!", FuenteCombate));
     }
 
     /// <summary>
@@ -2312,37 +2353,10 @@ public sealed partial class PacketDispatcher
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
     }
 
-    private void RangedHitPlayer(ClientSession session, Player p, Player target, Data.ObjInfo bow, Data.ObjInfo? ammo)
-    {
-        FlagCriminalIfLegalTarget(session, p, target);
-        double evasionMod = _data.EvasionMod.TryGetValue(target.Class, out var ev) ? ev : 1.0;
-        long pe = Combat.PoderEvasion(target.Skills[GameLimits.SkillTacticas], target.Agility, target.Level, evasionMod);
-        if (_rng.Next(1, 101) > Combat.HitChance(RangedAttackPower(p), pe, target.Meditating))
-        {
-            SonidosDelGolpeAUnJugador(session, p, target, acerto: false);
-            session.Send(ServerMessages.DamageOverHead(p.CharIndex, 0));   // el fallo, sin texto
-            target.Connection?.Send(ServerMessages.LocaleMsg(460, p.Name));
-            return;
-        }
-        SonidosDelGolpeAUnJugador(session, p, target, acerto: true);
-        int rawDamage = RangedDamage(p, bow, ammo, criatura: null);
-        int zona = _rng.Next(1, 7);
-        var casco = Equipment.EquippedOfCategory(target, _data, 3);
-        var armadura = Equipment.EquippedOfCategory(target, _data, 2);
-        var escudo = Equipment.EquippedOfCategory(target, _data, 4);
-        int damage = (int)Combat.AplicarDefensa(rawDamage, zona,
-            Equipment.DefRange(casco), Equipment.DefRange(armadura), Equipment.DefRange(escudo),
-            (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo, target.MetamorfosisExtraDef);
-        target.Hp = Math.Max(0, target.Hp - damage);
-        // Sin linea de consola: el original no narra el golpe, lo muestra (UserDanoUser,
-        // SistemaCombate.bas:1355-1356 — dos `WriteChatOverHeadLocale`, uno a cada participante, y
-        // NINGUN texto). Y va a los DOS que pelean, no al area: `Write*` escribe a un usuario.
-        target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));   // VB6 SistemaCombate.bas:749
-        session.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
-        target.Connection?.Send(ServerMessages.DamageOverHead(target.CharIndex, damage));
-        RaiseSkill(session, p, GameLimits.SkillProyectiles);
-        if (target.Hp == 0) OnKill(session, p, target);
-    }
+    /// <summary>El tiro a un jugador ya validado (el <c>PuedeAtacar</c> y el auto-disparo los mira el llamador): el mismo
+    /// golpe que el cuerpo a cuerpo, con el arco (ver <see cref="GolpeAUnJugador"/>).</summary>
+    private void RangedHitPlayer(ClientSession session, Player p, Player target, Data.ObjInfo bow, Data.ObjInfo? ammo) =>
+        GolpeAUnJugador(session, p, target, bow, ammo);
 
     /// <summary>
     /// La mitad FACCIONARIA y de PERTENENCIA de <c>PuedeAtacarNPC</c> (VB6 SistemaCombate.bas:1697), la que
@@ -2704,8 +2718,10 @@ public sealed partial class PacketDispatcher
     /// <c>Int(daño*2)</c> —truncado— y contra un jugador es <c>Round(daño*1.4)</c> del asesino o
     /// <c>Round(daño*1.5)</c> del resto —redondeado—. Dos conversiones distintas en la misma función.</para>
     ///
-    /// <para>Y el daño de entrada es el daño BASE, antes de restarle la defensa de la víctima: el original
-    /// pasa <c>DañoBase</c>, no el daño ya aplicado.</para>
+    /// <para>Y el daño de entrada NO es el mismo en los dos caminos: contra una criatura es el daño BASE, antes de su
+    /// defensa (<c>UserDañoNpc</c> pasa <c>DañoBase</c>); contra un jugador es el que QUEDÓ después de la armadura
+    /// (<c>UserDañoUser</c> pasa su <c>daño</c> ya descontado, SistemaCombate.bas:1385). Con un jugador la vida y la muerte
+    /// las resuelve el que llama, al final (ver <see cref="DanoAUnJugador"/>).</para>
     /// </summary>
     private void DoApunalar(ClientSession session, Player p, Npc? npc, Player? victima, int danoBase)
     {
@@ -2720,9 +2736,8 @@ public sealed partial class PacketDispatcher
             victima.Hp = Math.Max(0, victima.Hp - dano);
             session.Send(ServerMessages.ConsoleMsg($"Has apuñalado a {victima.Name} por {dano}.", FuenteCombate));
             victima.Connection?.Send(ServerMessages.ConsoleMsg($"Te ha apuñalado {p.Name} por {dano}.", FuenteCombate));
-            victima.Connection?.Send(ServerMessages.UpdateHP((short)victima.Hp));
-            // El apunalar del original manda SOLO texto (Trabajo.bas:1792): el flotante era agregado nuestro.
-            if (victima.Hp == 0) OnKill(session, p, victima);
+            // El apunalar del original manda SOLO texto (Trabajo.bas:1792): el flotante era agregado nuestro. La vida y la
+            // muerte las resuelve `DanoAUnJugador` al final, una sola vez, como UserDañoUser (:1389).
         }
         else if (npc is not null)
         {
