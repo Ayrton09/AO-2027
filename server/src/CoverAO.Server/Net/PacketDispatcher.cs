@@ -12318,6 +12318,18 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.WorkRequestTarget(GameLimits.SkillProyectiles));
                 return;
             }
+            // LA ARROJADIZA —la Lanza, la Jabalina, las dagas arrojadizas, el Shuriken— (el `Case 2` del Select por proyectil,
+            // InvUsuario.bas:1488-1496): como el arco, pide objetivo, con la skill Armas Arrojadizas y los mismos dos gates, equipada
+            // (391) y modo combate (102). Acá caía en la rama del cuerpo a cuerpo y contestaba el 422 de la leña. El tiro que sigue
+            // es código muerto en esta data —el `WorkLeftClick` de arrojadizas exige `SubTipo = 5` y no hay ninguna— y termina en
+            // su rechazo, como en el original.
+            if (obj.IsWeapon && obj.Proyectil == 2)
+            {
+                if (!inv.Equipped) { session.Send(ServerMessages.LocaleMsg(391)); return; }
+                if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
+                session.Send(ServerMessages.WorkRequestTarget(GameLimits.SkillArmasArrojadizas));
+                return;
+            }
 
             // ARMA CUERPO A CUERPO (el `Case Else` del Select por Proyectil, InvUsuario.bas:1498). Sólo hace UNA
             // cosa: la DAGA sobre un montón de LEÑA clickeado lo parte en fogatas apagadas. Con cualquier otro

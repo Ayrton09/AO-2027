@@ -190,6 +190,39 @@ public class LaTandaDelPvPTests : IDisposable
         Assert.Contains("apuñalado", Textos(alOtro.Recibidos));
     }
 
+    /// <summary>USAR UNA ARROJADIZA pide objetivo, como el arco (InvUsuario.bas:1488-1496): con la skill Armas Arrojadizas,
+    /// y los mismos gates, equipada (391) y modo combate (102). Acá caía en la rama del cuerpo a cuerpo y contestaba el 422
+    /// de la leña.</summary>
+    [Fact]
+    public async Task Usar_una_arrojadiza_pide_objetivo_como_el_arco()
+    {
+        const short Lanza = 656;
+        var (d, s, yo, _, _, aMi) = Pelea(clase: 1);
+        byte[] Usar() => new[] { (byte)ClientPacketId.UseItem, (byte)1 };
+        bool Pidio() => aMi.Enviados.Any((p) => p.Length == 2 && p[0] == (byte)ServerPacketId.WorkRequestTarget
+                                                 && p[1] == GameLimits.SkillArmasArrojadizas);
+        bool Dijo(short id) => aMi.Enviados.Any((p) => p.Length > 2 && p[0] == (byte)ServerPacketId.LocaleMsg && BitConverter.ToInt16(p, 1) == id);
+
+        yo.Inventory[1] = new InventorySlot { ObjIndex = Lanza, Amount = 1, Equipped = false };
+        d.HandleOne(s, new ByteQueueReader(Usar()));
+        await Task.Delay(300);
+        Assert.True(Dijo(391), "sin equipar: el 391");
+        Assert.False(Pidio());
+
+        yo.Inventory[1] = new InventorySlot { ObjIndex = Lanza, Amount = 1, Equipped = true };
+        yo.CombatMode = false;
+        d.HandleOne(s, new ByteQueueReader(Usar()));
+        await Task.Delay(300);
+        Assert.True(Dijo(102), "sin modo combate: el 102");
+        Assert.False(Pidio());
+
+        yo.CombatMode = true;
+        d.HandleOne(s, new ByteQueueReader(Usar()));
+        await Task.Delay(300);
+        Assert.True(Pidio(), "equipada y en combate: pide objetivo con Armas Arrojadizas");
+        Assert.False(Dijo(422), "nada de la leña");
+    }
+
     [Fact]
     public void La_defensa_del_barco_y_la_montura_cubre_solo_donde_hay_pieza()
     {
