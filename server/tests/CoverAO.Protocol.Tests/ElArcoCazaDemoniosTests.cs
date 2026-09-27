@@ -46,7 +46,9 @@ public class ElArcoCazaDemoniosTests : IDisposable
 
     /// <summary>
     /// Y POR EL SERVIDOR: el mismo arquero, con el mismo arco y la misma flecha, a un demonio y a una criatura que no lo es, las
-    /// dos sin defensa. Al demonio le saca varias veces más.
+    /// dos sin defensa. Al demonio le saca más del doble SIEMPRE: con el arco de 14 a 18 y la flecha de 4 a 6, el peor golpe
+    /// al demonio es (3*18 + 1) = 55 contra el mejor a la otra, (3*7 + 2) = 23, por el mismo modificador de clase. Pedir el
+    /// triple fallaba por azar: 55 no llega a 69.
     /// </summary>
     [Fact]
     public async Task Tirando_por_el_servidor_al_demonio_le_saca_mucho_mas()
@@ -54,7 +56,7 @@ public class ElArcoCazaDemoniosTests : IDisposable
         int alDemonio = await VidaQueLeSaca(ficha: 98);
         int aOtra = await VidaQueLeSaca(ficha: 900);
         Assert.True(alDemonio > 0 && aOtra > 0, $"no pegó: demonio {alDemonio}, otra {aOtra}");
-        Assert.True(alDemonio > aOtra * 3, $"al demonio le sacó {alDemonio} y a la otra {aOtra}");
+        Assert.True(alDemonio > aOtra * 2, $"al demonio le sacó {alDemonio} y a la otra {aOtra}");
     }
 
     private sealed class Transporte : ITransport
