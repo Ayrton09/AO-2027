@@ -554,6 +554,41 @@ public class CotoDelBotTests
         Assert.Equal(cerca, Bot.PuebloConMercader(m.Mapas, 25, campos, tieneMercader, pisable12, sinPeligro));
     }
 
+    /// <summary>
+    /// EL ARMA DEL CAMINO SE BUSCA LEJOS, como el resto de las compras, y por donde no lo matan (Ciro en `oficios23`: nivel 20,
+    /// 52 mil monedas y el martillo de novato, cazando en el 29). Desde ahí, pasado el nivel 15, a cinco mapas no hay ningún herrero
+    /// que le venda a un ciudadano —el atajo era el Dungeon Newbie, donde ya no entra—: caminando, Rinkel queda a once, y el camino
+    /// cruza el Desierto de Rinkel, con sus Arañas Gigantes. Con 260 de vida eso lo mata y no va; con 400 ya no, y va. Antes el arma
+    /// se buscaba sólo a cinco mapas y no salía nunca. Al de nivel 12, que todavía pasa por la cuna, le alcanza con lo de siempre.
+    /// </summary>
+    [Fact]
+    public void El_arma_del_camino_se_busca_mas_alla_de_cinco_mapas_y_por_donde_no_lo_matan()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        const byte ciudadano = 2;
+        Func<int, bool> vendeArma = f => d.Npc(f) is { StockItems: { Count: > 0 } st }
+                                         && st.Any(s => d.Obj(s.ObjIndex) is { } o && Bot.EsArma(o));
+        Func<int, bool> atiende = x => Bot.ElMercaderLeVende(null, d.MapBattleMode(x), ciudadano);
+        var desde = ((byte)20, (byte)8);                       // por donde se entra al 29 desde el 22
+        bool Va(int vida, int nivel, out bool aCinco)
+        {
+            Func<int, bool> pisable = x => Bot.PuedeEntrar(nivel, d.MapZone(x));
+            Func<int, bool> peligroso = f => Bot.EsPeligrosoPara(d.Npc(f), vida, nivel, conPociones: true, curaVeneno: false);
+            bool NaceAlgo(int x) => d.MapSpawns.TryGetValue(x, out var sp) && sp.Any(q => peligroso(q.NpcIndex));
+            Func<int, bool> sinPeligro = x => Bot.PasaPorAhi(x, -1, pisable(x), NaceAlgo(x));
+            bool TieneHerrero(int x) => atiende(x) && d.MapSpawns.TryGetValue(x, out var sp) && sp.Any(q => vendeArma(q.NpcIndex));
+            aCinco = m.Mapas.MapaMasCercano(29, desde, TieneHerrero, pisable) is not null;
+            return Bot.HayArmaAlAlcance(m.Mapas, d, 29, desde, vendeArma, atiende, pisable, sinPeligro);
+        }
+
+        Assert.False(Va(vida: 260, nivel: 20, out bool aCinco20), "con 260 de vida el desierto lo mata: no va");
+        Assert.False(aCinco20, "premisa: a cinco mapas no hay herrero");
+        Assert.True(Va(vida: 400, nivel: 25, out bool aCinco25), "con 400 cruza el desierto: va a Rinkel");
+        Assert.False(aCinco25, "y no porque haya uno a cinco mapas");
+        Assert.True(Va(vida: 150, nivel: 12, out bool aCinco12) && aCinco12, "el de nivel 12 lo tiene cerca, por la cuna");
+    }
+
     /// <summary>Los mapas por los que pasa un viaje, siguiendo las puertas que da el navegante como las sigue el bot.</summary>
     private static List<int> PorDondePasa(Navegante mapas, GameData d, int mapa, (byte X, byte Y) desde, int destino,
                                           (byte X, byte Y) meta, Func<int, bool> filtro)

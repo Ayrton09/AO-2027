@@ -1072,12 +1072,7 @@ public sealed class Bot
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => ArmaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
         bool vaPorElArma = faltaArma && !enApuro;
-        bool hayArmaAlAlcance = vaPorElArma && HayDondeComprarElPergamino(
-            _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendeElArma, MapaAtiende, Pisable(sentidos)) is not null,
-            _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
-                m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var conHerrero)
-                     && conHerrero.Any(q => VendeElArma(q.NpcIndex)),
-                Pisable(sentidos)) is not null);
+        bool hayArmaAlAlcance = vaPorElArma && ArmaAlAlcance(sentidos, VendeElArma, MapaAtiende);
         if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance) return false;
 
@@ -1702,6 +1697,22 @@ public sealed class Bot
     private int _trabajoSeguroMapa = -1;
     private long _trabajoSeguroHasta;
     private bool _trabajoSeguro;
+
+    /// <summary>¿Hay quien le venda el arma del camino, cerca o LEJOS? Ver <see cref="HayArmaAlAlcance"/>. Se recalcula al
+    /// cambiar de mapa o cada cinco minutos: la búsqueda larga recorre hasta doce mapas, y esto se pregunta en cada vuelta.</summary>
+    private bool ArmaAlAlcance(SentidosDelBot sentidos, Func<int, bool> vendeElArma, Func<int, bool> mapaAtiende)
+    {
+        long ahora = Environment.TickCount64;
+        if (sentidos.Mapa == _armaAlAlcanceMapa && ahora < _armaAlAlcanceHasta) return _armaAlAlcance;
+        _armaAlAlcanceMapa = sentidos.Mapa;
+        _armaAlAlcanceHasta = ahora + 5 * 60_000;
+        return _armaAlAlcance = HayArmaAlAlcance(_entorno.Mapas, _entorno.Datos, sentidos.Mapa, sentidos.Posicion,
+            vendeElArma, mapaAtiende, Pisable(sentidos), PasaSinPeligro(sentidos, NingunMapa));
+    }
+
+    private int _armaAlAlcanceMapa = -1;
+    private long _armaAlAlcanceHasta;
+    private bool _armaAlAlcance;
 
     /// <summary>¿Le falta alguna herramienta de su oficio? Ver <see cref="HerramientaQueLeFalta"/>.</summary>
     private bool LeFaltaLaHerramienta(SentidosDelBot sentidos) => HerramientaQueLeFalta(sentidos) != 0;
@@ -3486,6 +3497,26 @@ public sealed class Bot
                                                                            Func<int, bool> cruzaSinPeligro) =>
         mapas.MapaMasCercano(mapa, desde, tieneMercader, pisable)
         ?? mapas.MapaMasCercano(mapa, desde, tieneMercader, cruzaSinPeligro, SaltosHastaElPuebloLejano);
+
+    /// <summary>
+    /// ¿HAY DÓNDE COMPRAR EL ARMA DEL CAMINO? Un herrero que le venda una que pueda usar y pagar, al que se llegue caminando, o un
+    /// pueblo que atienda con uno —alcanza con el MAPA: los herreros están adentro de edificios—, buscado como la compra de todo
+    /// lo demás (<see cref="PuebloConMercader"/>): a cinco mapas, y si ahí no hay, hasta <see cref="SaltosHastaElPuebloLejano"/>
+    /// por mapas donde no nace nada que lo mate.
+    ///
+    /// <para>Medido en `oficios23`: Ciro llegó a nivel 20 con 52 mil monedas y el martillo de novato, cazando en el 29 (al lado de
+    /// Nix), y no salió nunca a comprar. Las ciudades viejas no le venden a un ciudadano, y desde el 29 el herrero más cercano que
+    /// sí —Rinkel— queda a cuatro mapas PASANDO POR EL DUNGEON NEWBIE, donde pasado el nivel 15 no se entra; caminando por fuera,
+    /// a ONCE, y el camino cruza el Desierto de Rinkel. El arma se buscaba sólo a cinco mapas, así que no salía nunca. Ahora va
+    /// cuando puede cruzar el desierto: con 260 de vida las Arañas Gigantes lo matan y espera; con 400, va.</para>
+    /// </summary>
+    public static bool HayArmaAlAlcance(Navegante mapas, GameData datos, int mapa, (byte X, byte Y) desde,
+                                        Func<int, bool> vendeElArma, Func<int, bool> mapaAtiende,
+                                        Func<int, bool> pisable, Func<int, bool> cruzaSinPeligro) =>
+        mapas.DondeHay(mapa, desde, vendeElArma, mapaAtiende, pisable) is not null
+        || PuebloConMercader(mapas, mapa, desde,
+               m => mapaAtiende(m) && datos.MapSpawns.TryGetValue(m, out var conHerrero) && conHerrero.Any(q => vendeElArma(q.NpcIndex)),
+               pisable, cruzaSinPeligro) is not null;
 
     /// <summary>Un número de mapa que no existe: con <see cref="PasaSinPeligro"/>, ningún mapa es "el destino" y todos tienen
     /// que cruzarse sin peligro.</summary>
