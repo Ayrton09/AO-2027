@@ -67,6 +67,14 @@ EventoAlRematar=0
 OroPorMonton=10000
 ; Al tocar Lanzar, el cliente web marca hasta donde llega el hechizo (1) o no (0).
 AlcanceDelHechizo=1
+; A quien le vende el mercader, segun la zona. Facciones: Renegado, Ciudadano, Republicano,
+; Caos, Armada, Milicia (separadas por coma; vacio = a nadie). Los valores de abajo son los
+; del original: Rinkel es Rinkel, Nueva Esperanza y el Dungeon de Newbies; las ciudades viejas,
+; Ullathorpe, Nix, Banderbill, Arghal; el resto, el campo y los mapas sueltos.
+ComercioEnRinkel=Renegado, Ciudadano, Republicano, Caos, Armada, Milicia
+ComercioEnLindos=Ciudadano, Republicano, Armada, Milicia
+ComercioEnCiudadesViejas=
+ComercioEnElResto=
 ; Minutos que dura un dia completo y cada cambio de clima, y cuanto llueve.
 MinutosDelDia=24
 MinutosDeClima=18

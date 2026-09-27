@@ -12859,7 +12859,7 @@ public sealed partial class PacketDispatcher
     private bool MercaderAtiende(ClientSession session, Player p, Npc npc)
     {
         if ((p.Privileges & PrivUser) == 0) return true;              // GM: el original ni entra al bloque
-        if (p.MercaderMeAtiende(_data.MapBattleMode(p.Pos.Map))) return true;
+        if (p.MercaderMeAtiende(_data.MapBattleMode(p.Pos.Map), _ini)) return true;
         session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, 592, 4));
         return false;
     }

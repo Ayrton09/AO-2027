@@ -110,14 +110,14 @@ public sealed class Player
     ///
     /// <para>El único que se salva es el STAFF: el original envuelve los tres <c>If</c> en
     /// <c>If .flags.Privilegios And PlayerType.User</c>, o sea que sólo gatea al jugador común. Eso lo decide el
-    /// llamador, que es quien tiene los privilegios a mano.</para></summary>
-    public bool MercaderMeAtiende(int battleMode)
-    {
-        if ((IsCitizen || IsArmada) && battleMode != 2 && battleMode != 3) return false;
-        if ((IsRepublicano || IsMilicia) && battleMode != 2 && battleMode != 3) return false;
-        if ((IsRenegado || IsCaos) && battleMode != 3) return false;
-        return true;
-    }
+    /// llamador, que es quien tiene los privilegios a mano.</para>
+    ///
+    /// <para>Desde el 2026-09-27 la regla se puede cambiar en el Server.ini (<see cref="Data.ServerIni.ComercioPorZona"/>,
+    /// pedido del autor). Sus defaults son estos tres <c>If</c>, y sin ini se usan ésos.</para></summary>
+    public bool MercaderMeAtiende(int battleMode, Data.ServerIni? ini = null) =>
+        (ini ?? ComercioDelOriginal).MercaderLeVende(battleMode, FactionStatus);
+
+    private static readonly Data.ServerIni ComercioDelOriginal = new();
 
     /// <summary>Rango dentro del ejército (VB6 Faccion.Rango, 1..10; sube canjeando kills con el líder). 0 = sin facción.</summary>
     public byte FactionRank { get; set; }

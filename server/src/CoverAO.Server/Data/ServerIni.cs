@@ -166,6 +166,7 @@ public sealed class ServerIni
     public static readonly string[] ClavesConocidas =
     {
         "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
+        "ComercioEnCiudadesViejas", "ComercioEnElResto", "ComercioEnLindos", "ComercioEnRinkel",
         "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca", "OroPorMonton",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
@@ -753,8 +754,44 @@ public sealed class ServerIni
     public bool GuardiaAtacaA(int bandoDelGuardia, byte faccionDelJugador) =>
         EnemigosDeLosGuardias.TryGetValue(bandoDelGuardia, out var enemigos) && enemigos.Contains(faccionDelJugador);
 
-    /// <summary>Los nombres que no se reconocieron en las tres listas de guardias. El arranque los avisa: un
-    /// "Renegao" mal escrito dejaría a los renegados a salvo sin que nadie se entere.</summary>
+    /// <summary>
+    /// OPCIONAL — A QUIÉN LE VENDE EL MERCADER, según la zona (pedido del autor, 2026-09-27). En el original es fija
+    /// (<see cref="Player.MercaderMeAtiende"/>, VB6 Protocol.bas:5203-5220 y Acciones.bas:180-197) y la decide el
+    /// <c>battle_mode</c> del mapa:
+    /// <list type="bullet">
+    /// <item><b>Rinkel</b> (battle_mode 3: Rinkel, Nueva Esperanza, el Dungeon de Newbies): a todos.</item>
+    /// <item><b>Lindos</b> (battle_mode 2): a ciudadanos, republicanos y sus ejércitos; ni al renegado ni al Caos.</item>
+    /// <item><b>Las ciudades viejas</b> (battle_mode 1: Ullathorpe, Nix, Banderbill, Arghâl…): a nadie.</item>
+    /// <item><b>El resto</b> (el campo y los mapas sueltos): a nadie.</item>
+    /// </list>
+    /// Ésos son los defaults, así que sin tocar nada el comercio es el del original. En el ini van por nombre de facción, como
+    /// las de los guardias: <c>ComercioEnRinkel</c>, <c>ComercioEnLindos</c>, <c>ComercioEnCiudadesViejas</c> y
+    /// <c>ComercioEnElResto</c>. Escrita y vacía, ahí no se le vende a nadie. Al staff se le vende siempre (lo decide el
+    /// llamador), y los bots miran la misma regla para saber dónde comprar.
+    /// </summary>
+    public IReadOnlyDictionary<int, IReadOnlySet<byte>> ComercioPorZona { get; private set; } = new Dictionary<int, IReadOnlySet<byte>>
+    {
+        [ZonaRinkel] = LeerEnemigos(ComercioEnRinkelPorDefecto, null),
+        [ZonaLindos] = LeerEnemigos(ComercioEnLindosPorDefecto, null),
+        [ZonaCiudadesViejas] = LeerEnemigos("", null),
+        [ZonaResto] = LeerEnemigos("", null),
+    };
+
+    private const string ComercioEnRinkelPorDefecto = "Renegado, Ciudadano, Republicano, Caos, Armada, Milicia";
+    private const string ComercioEnLindosPorDefecto = "Ciudadano, Republicano, Armada, Milicia";
+
+    /// <summary>Las zonas del comercio: el <c>battle_mode</c> del mapa, con el 0 y el 4 juntos en "el resto".</summary>
+    public const int ZonaResto = 0, ZonaCiudadesViejas = 1, ZonaLindos = 2, ZonaRinkel = 3;
+
+    /// <summary>La zona del comercio de un mapa con este <c>battle_mode</c>.</summary>
+    public static int ZonaDelComercio(int battleMode) => battleMode is ZonaCiudadesViejas or ZonaLindos or ZonaRinkel ? battleMode : ZonaResto;
+
+    /// <summary>¿El mercader de un mapa con este <c>battle_mode</c> le vende a alguien de esta facción?</summary>
+    public bool MercaderLeVende(int battleMode, byte faccion) =>
+        ComercioPorZona.TryGetValue(ZonaDelComercio(battleMode), out var aQuien) && aQuien.Contains(faccion);
+
+    /// <summary>Los nombres que no se reconocieron en las listas de facciones —las de los guardias y las del comercio—. El
+    /// arranque los avisa: un "Renegao" mal escrito dejaría a los renegados a salvo sin que nadie se entere.</summary>
     public IReadOnlyList<string> FaccionesDesconocidas { get; private set; } = Array.Empty<string>();
 
     /// <summary>La facción por su nombre, sin mirar mayúsculas ni acentos y en singular o plural.</summary>
@@ -1173,6 +1210,13 @@ public sealed class ServerIni
             [GuardiaImperial] = LeerEnemigos(ini.GetString("INIT", "GuardiasImperialesAtacanA", ImperialesAtacanPorDefecto), desconocidas),
             [GuardiaRepublicano] = LeerEnemigos(ini.GetString("INIT", "GuardiasRepublicanosAtacanA", RepublicanosAtacanPorDefecto), desconocidas),
             [GuardiaDelCaos] = LeerEnemigos(ini.GetString("INIT", "GuardiasDelCaosAtacanA", DelCaosAtacanPorDefecto), desconocidas),
+        };
+        cfg.ComercioPorZona = new Dictionary<int, IReadOnlySet<byte>>
+        {
+            [ZonaRinkel] = LeerEnemigos(ini.GetString("INIT", "ComercioEnRinkel", ComercioEnRinkelPorDefecto), desconocidas),
+            [ZonaLindos] = LeerEnemigos(ini.GetString("INIT", "ComercioEnLindos", ComercioEnLindosPorDefecto), desconocidas),
+            [ZonaCiudadesViejas] = LeerEnemigos(ini.GetString("INIT", "ComercioEnCiudadesViejas", ""), desconocidas),
+            [ZonaResto] = LeerEnemigos(ini.GetString("INIT", "ComercioEnElResto", ""), desconocidas),
         };
         cfg.FaccionesDesconocidas = desconocidas;
         cfg.Bots = Math.Clamp(ini.GetInt("INIT", "Bots", 0), 0, MaxBots);

@@ -1108,10 +1108,10 @@ public sealed class Bot
         // Pescadora de nivel 11 con 4755 monedas seguía con el Martillo de Piedra del kit (golpe 5) mientras el
         // Herrero General de su mapa vendía una Espada Larga (golpe 8) a 350.
         bool soloGustos = SoloLeFaltanGustos(faltaComida, faltaBebida, faltanPociones, faltaHerramienta);
-        // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no es 2
-        // ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos.
-        // Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
-        bool MapaAtiende(int mapa) => _entorno.Datos.MapBattleMode(mapa) is 2 or 3 && !HayGuardiaQueLoAtaca(mapa);
+        // Y EL MAPA TIENE QUE ATENDER: que su mercader le venda a la facción del bot, con la MISMA regla que el server
+        // (`ElMercaderLeVende`: la del Server.ini, que por defecto es la del original — un ciudadano sólo compra donde el
+        // `battleMode` es 2 o 3). Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
+        bool MapaAtiende(int mapa) => ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaElEquipo(sentidos);
 
@@ -4119,6 +4119,13 @@ public sealed class Bot
     /// </summary>
     public static bool HayDondeComprarElPergamino(bool seLlegaCaminando, bool hayUnMapaQueLosVende) =>
         seLlegaCaminando || hayUnMapaQueLosVende;
+
+    /// <summary>¿El mercader de un mapa con este <c>battleMode</c> le vende a un bot de esta facción? La regla del server
+    /// (<see cref="ServerIni.MercaderLeVende"/>); sin ini, la del original.</summary>
+    public static bool ElMercaderLeVende(ServerIni? ini, int battleMode, byte faccion) =>
+        (ini ?? ComercioDelOriginal).MercaderLeVende(battleMode, faccion);
+
+    private static readonly ServerIni ComercioDelOriginal = new();
 
     private const int OroParaMirarHechizos = 250;
 
