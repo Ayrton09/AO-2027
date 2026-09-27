@@ -480,6 +480,28 @@ public class ServerIniTests
         finally { Directory.Delete(raiz, recursive: true); }
     }
 
+    /// <summary>EL ALCANCE DEL HECHIZO (pedido del autor, 2026-09-27): viene prendido, se apaga con 0, y el cliente se entera
+    /// por el mismo JSON que el puerto.</summary>
+    [Fact]
+    public void El_alcance_del_hechizo_viene_prendido_y_le_llega_al_cliente()
+    {
+        Assert.True(Parse("[INIT]\nStartPort=7666\n").AlcanceDelHechizo);
+        Assert.False(Parse("[INIT]\nAlcanceDelHechizo=0\n").AlcanceDelHechizo);
+        Assert.Contains("AlcanceDelHechizo", ServerIni.ClavesConocidas);
+
+        var raiz = Path.Combine(Path.GetTempPath(), "coverao-alcance-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(raiz);
+        try
+        {
+            Assert.Contains("\"alcanceHechizo\":true", new CoverAO.Server.Net.StaticFileServer(7669, raiz, 7667).ConfigJson);
+            var apagado = new CoverAO.Server.Net.StaticFileServer(7669, raiz, 7667, alcanceDelHechizo: false);
+            Assert.Contains("\"alcanceHechizo\":false", apagado.ConfigJson);
+            using var json = System.Text.Json.JsonDocument.Parse(apagado.ConfigJson);   // y sigue siendo JSON válido
+            Assert.Equal(7667, json.RootElement.GetProperty("wsPort").GetInt32());
+        }
+        finally { Directory.Delete(raiz, recursive: true); }
+    }
+
     [Fact]
     public void Sin_override_cambiar_faccion_es_un_set_comun()
     {

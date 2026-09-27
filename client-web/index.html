@@ -358,15 +358,13 @@
     /* Slots (inventario/hotbar) con bisel interior más marcado. */
     .islot, .hbslot { box-shadow:inset 0 0 0 1px #00000088, inset 0 2px 6px #0006; }
     .islot:hover, .hbslot:hover { box-shadow:inset 0 0 0 1px #e8c87655, inset 0 0 10px #e8c87633; }
-    /* Scrollbars temáticas. */
-    .tabpane::-webkit-scrollbar, #spelllist::-webkit-scrollbar, .card::-webkit-scrollbar,
-    .login-card::-webkit-scrollbar, .crear-grid::-webkit-scrollbar, #charlist::-webkit-scrollbar { width:9px; }
-    .tabpane::-webkit-scrollbar-thumb, #spelllist::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb,
-    .login-card::-webkit-scrollbar-thumb, .crear-grid::-webkit-scrollbar-thumb, #charlist::-webkit-scrollbar-thumb
-    { background:linear-gradient(180deg,var(--gold-lo),var(--gold-deep)); border-radius:5px; }
-    .tabpane::-webkit-scrollbar-track, #spelllist::-webkit-scrollbar-track, .card::-webkit-scrollbar-track,
-    .login-card::-webkit-scrollbar-track, .crear-grid::-webkit-scrollbar-track, #charlist::-webkit-scrollbar-track
-    { background:#0a0705; }
+    /* Scrollbars temáticas, en TODOS lados. Iban por una lista de contenedores, y el que no estaba —las habilidades del
+       panel de Acciones, la tienda, las teclas— salía con la barra blanca del sistema (reporte del autor, 2026-09-27). El
+       chat tiene las suyas, más específicas. Firefox no conoce estas pseudo-clases: ahí van los colores estándar. */
+    ::-webkit-scrollbar { width:9px; height:9px; }
+    ::-webkit-scrollbar-thumb { background:linear-gradient(180deg,var(--gold-lo),var(--gold-deep)); border-radius:5px; }
+    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background:#0a0705; }
+    @supports not selector(::-webkit-scrollbar) { * { scrollbar-color:var(--gold-deep) #0a0705; scrollbar-width:thin; } }
     /* Foco accesible en botones. */
     .goldbtn:focus-visible, .menubtn:focus-visible { outline:2px solid var(--gold-hi); outline-offset:1px; }
 
@@ -588,7 +586,7 @@
     .fhint { font-size:calc(var(--u)*0.76); color:var(--ink-dim); }
     .skgrid { display:grid; grid-template-columns:1fr auto auto auto; gap:4px 8px; align-items:center; max-height:46vh; overflow:auto; }
     .skgrid .kn { font-size:calc(var(--u)*0.88); } .skgrid .kv { font-family:ui-monospace,monospace; color:var(--gold-hi); text-align:right; min-width:2.4em; }
-    .stepbtn { width:1.7em; height:1.7em; line-height:1; padding:0; text-align:center; }
+    .stepbtn { width:1.7em; height:1.7em; line-height:1; padding:0; text-align:center; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
     .shopcell { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px; text-align:center;
       background:linear-gradient(180deg,#160f08,#0c0804); border:1px solid var(--gold-deep); border-radius:5px; }
     .shopcell canvas { width:48px; height:48px; image-rendering:auto; }
@@ -2836,6 +2834,9 @@
     // URL del código de ESTE servidor, publicada por el server (Server.ini [INIT] CodigoFuente). Se
     // muestra en Menú → Licencia: es como el host cumple la cláusula de red de la AGPL sin armar nada.
     let codigoFuente = '';
+    // EL ALCANCE DEL HECHIZO al apuntar: lo prende o lo apaga el server (Server.ini `AlcanceDelHechizo`), y viene prendido.
+    // Ver `dibujarAlcanceDelHechizo`.
+    let alcanceHechizo = true;
     function urlDelSocket() {
       // wss:// cuando la página se sirve por HTTPS (TLS terminado en el server WS o en un reverse-proxy);
       // ws:// en http/localhost para desarrollo. Así el transporte del cliente web va cifrado en producción.
@@ -2923,7 +2924,8 @@
     fetch('./coverao-config.json').then((r) => (r.ok ? r.json() : null))
       .then((cfg) => { if (cfg && cfg.wsPort > 0) wsPort = cfg.wsPort;
                        if (cfg && cfg.wsPath) wsPath = String(cfg.wsPath);
-                       if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente); })
+                       if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente);
+                       if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false; })
       .catch(() => {})
       .finally(() => {
         // El auto-login sólo vale DESDE LA MISMA MÁQUINA (dev y capturas). Cablea las credenciales del
@@ -3634,6 +3636,28 @@
         : 'Elegí el objetivo del trabajo.', '#c9a24b');
     }
     function salirDePunteria() { workSkill = 0; canvas.style.cursor = ''; }
+    /**
+     * EL ALCANCE DEL HECHIZO. Mientras se apunta un hechizo se marca hasta dónde llega: las baldosas en las que el server
+     * acepta el clic, ocho a los costados y seis arriba y abajo de la baldosa del personaje (`RangoVisionX/Y`, la caja de
+     * visión del original, Protocol.bas:2646). Es la misma para todos los hechizos. El cliente original mostraba justo esa
+     * caja, así que allá no hacía falta; éste muestra más —en una pantalla ancha, unas cuatro baldosas de más por lado—, y un
+     * clic afuera el server lo rechaza. Es el rectángulo real y no un círculo (decisión del autor, 2026-09-27): un círculo
+     * mostraría como alcanzables baldosas que no lo son, o al revés. Afuera se apaga un poco y el borde queda marcado.
+     */
+    const ALCANCE_X = 8, ALCANCE_Y = 6;
+    function dibujarAlcanceDelHechizo(me, camX, camY) {
+      const x0 = (me.x - ALCANCE_X - camX) * TILE, y0 = (me.y - ALCANCE_Y - camY) * TILE;
+      const x1 = x0 + (2 * ALCANCE_X + 1) * TILE, y1 = y0 + (2 * ALCANCE_Y + 1) * TILE;
+      const arriba = Math.max(0, y0), abajo = Math.min(VH, y1);
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      if (y0 > 0) ctx.fillRect(0, 0, VW, y0);
+      if (y1 < VH) ctx.fillRect(0, y1, VW, VH - y1);
+      if (x0 > 0 && abajo > arriba) ctx.fillRect(0, arriba, x0, abajo - arriba);
+      if (x1 < VW && abajo > arriba) ctx.fillRect(x1, arriba, VW - x1, abajo - arriba);
+      ctx.strokeStyle = 'rgba(150,190,255,0.9)'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x0 + 0.75, y0 + 0.75, x1 - x0 - 1.5, y1 - y0 - 1.5);
+    }
+    window.__alcanceHechizo = () => ({ prendido: alcanceHechizo, apuntando: workSkill === SKILL_MAGIA_CLIENTE });
     const WORK_SKILLS = [[20, 'Talar'], [19, 'Minería'], [18, 'Pesca'], [12, 'Domar'], [14, 'Robar'], [88, 'Fundir metal']];
     // eSkill.Ocultarse (Declares.bas:412). Las seis de arriba piden un tile y van por WorkLeftClick; esta es
     // una self-action y viaja por Work (21), que es el handler que este cliente no usaba.
@@ -3803,30 +3827,58 @@
           <button class="sbtn ghost" data-act="rest">Descansar junto a fogata</button>
           <div class="frow"><span class="fhint">Entrenar mascota (junto a un domador):</span><button class="sbtn ghost" data-act="train1">Mascota 1</button><button class="sbtn ghost" data-act="train2">Mascota 2</button></div></div>`, 'acciones');
       const skPend = {};
+      const skPuestos = () => Object.keys(skPend).reduce((a, k) => a + (skPend[k] || 0), 0);
+      const refrescarLibresPend = () => { const e = modalCard.querySelector('#sk-libres'); if (e) e.textContent = puntosLibres - skPuestos(); };
+      /** Un paso del + o el − de una habilidad. Devuelve si cambió algo: el que repite corta cuando ya no se puede. */
+      function pasoDeSkill(i, sube) {
+        const celda = modalCard.querySelector('#sk-' + i);
+        if (!celda) return false;   // el panel se cerró con el botón apretado
+        // NO SE REPARTEN MAS PUNTOS DE LOS QUE HAY, y el tope va aca porque el server trata el pedido que se
+        // pasa como TRAMPA y corta la conexion (es lo que hace el original: Protocol.bas:3292). El contador de
+        // arriba muestra los que QUEDAN mientras se reparte.
+        if (sube && skPuestos() >= puntosLibres) return false;
+        // Y TAMPOCO SE PASA DE 100. El server devuelve a la bolsa lo que sobra de 100 y avisa sólo por
+        // consola, así que el descuento de acá abajo quedaría mintiendo. El propio original dice que esto
+        // lo tiene que atajar el cliente (Protocol.bas:3305, "Client should prevent this").
+        if (sube && (((misSkills && misSkills[i - 1]) || 0) + (skPend[i] || 0)) >= 100) return false;
+        if (!sube && !(skPend[i] > 0)) return false;
+        skPend[i] = (skPend[i] || 0) + (sube ? 1 : -1);
+        celda.textContent = skPend[i];
+        refrescarLibresPend();
+        return true;
+      }
       // Al abrir en Habilidades, y al pasarse a esa solapa: las subsolapas sólo conmutan clases, no vuelven
       // a dibujar, así que el pedido va acá y no en el render.
       if (tab === 'skills') pedirSkills();
       modalCard.querySelectorAll('.subtabs .st').forEach((t) => {
         if (t.dataset.p === 'skills') t.addEventListener('click', pedirSkills);
       });
+      // MANTENER APRETADO EL + O EL − REPITE, y cada vez más rápido (pedido del autor, 2026-09-27): con muchos puntos,
+      // repartirlos de a un clic era eterno. El primer paso sale al apretar; a los 350 ms empieza a repetir cada 80 ms, y
+      // pasado el segundo y medio, cada 30. Corta al soltar, al salir del botón o cuando ya no se puede (sin puntos, en
+      // 100 o en 0).
+      let repetidor = null;
+      const pararRepetidor = () => { if (repetidor) { clearTimeout(repetidor); repetidor = null; } };
+      body.addEventListener('pointerdown', (ev) => {
+        const el = ev.target.closest('[data-ski],[data-skd]'); if (!el || ev.button !== 0) return;
+        ev.preventDefault();
+        pararRepetidor();
+        const i = +(el.dataset.ski || el.dataset.skd), sube = !!el.dataset.ski;
+        if (!pasoDeSkill(i, sube)) return;
+        const desde = performance.now();
+        const otro = () => { repetidor = pasoDeSkill(i, sube) ? setTimeout(otro, performance.now() - desde > 1500 ? 30 : 80) : null; };
+        repetidor = setTimeout(otro, 350);
+        window.addEventListener('pointerup', pararRepetidor, { once: true });
+        window.addEventListener('pointercancel', pararRepetidor, { once: true });
+      });
+      body.addEventListener('pointerout', (ev) => { if (ev.target.closest('[data-ski],[data-skd]')) pararRepetidor(); });
       body.addEventListener('click', (ev) => {
         const el = ev.target.closest('[data-act],[data-work],[data-ski],[data-skd]'); if (!el) return;
         if (el.dataset.work) { modoPunteria(+el.dataset.work); closeModal(); return; }
-        // NO SE REPARTEN MAS PUNTOS DE LOS QUE HAY, y el tope va aca porque el server trata el pedido que se
-        // pasa como TRAMPA y corta la conexion (es lo que hace el original: Protocol.bas:3292). El contador de
-        // arriba muestra los que QUEDAN mientras se reparte.
-        const skPuestos = () => Object.keys(skPend).reduce((a, k) => a + (skPend[k] || 0), 0);
-        const refrescarLibresPend = () => { const e = modalCard.querySelector('#sk-libres'); if (e) e.textContent = puntosLibres - skPuestos(); };
+        // El paso del mouse ya lo dio el `pointerdown` (ver el repetidor, abajo); éste es el del teclado, que llega
+        // con `detail` en 0.
         if (el.dataset.ski || el.dataset.skd) {
-          const i = +(el.dataset.ski || el.dataset.skd), sube = !!el.dataset.ski;
-          if (sube && skPuestos() >= puntosLibres) return;
-          // Y TAMPOCO SE PASA DE 100. El server devuelve a la bolsa lo que sobra de 100 y avisa sólo por
-          // consola, así que el descuento de acá abajo quedaría mintiendo. El propio original dice que esto
-          // lo tiene que atajar el cliente (Protocol.bas:3305, "Client should prevent this").
-          if (sube && (((misSkills && misSkills[i - 1]) || 0) + (skPend[i] || 0)) >= 100) return;
-          skPend[i] = Math.max(0, (skPend[i] || 0) + (sube ? 1 : -1));
-          modalCard.querySelector('#sk-' + i).textContent = skPend[i];
-          refrescarLibresPend();
+          if (ev.detail === 0) pasoDeSkill(+(el.dataset.ski || el.dataset.skd), !!el.dataset.ski);
           return;
         }
         const a = el.dataset.act;
@@ -5735,6 +5787,9 @@
           }
         }
       }
+
+      // EL ALCANCE DEL HECHIZO mientras se apunta (ver `dibujarAlcanceDelHechizo`). Antes de la ceguera: el ciego no lo ve.
+      if (alcanceHechizo && workSkill === SKILL_MAGIA_CLIENTE && me) dibujarAlcanceDelHechizo(me, camX, camY);
 
       // CEGUERA (Blind 57 / BlindNoMore 65): todo negro MENOS vos y lo que tenés pegado al lado.
       //

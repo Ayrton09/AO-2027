@@ -125,6 +125,15 @@ public sealed class ServerIni
     /// </summary>
     public int OroPorMonton { get; private set; } = 10_000;
 
+    /// <summary>
+    /// REGLA DE LA CASA — <c>AlcanceDelHechizo</c> (default <b>1</b>, PRENDIDA): al tocar Lanzar, el cliente web marca hasta
+    /// dónde llega el hechizo mientras se apunta. Es el rectángulo en el que el server acepta el clic —ocho baldosas a los
+    /// costados y seis arriba y abajo, la caja de visión del original (Protocol.bas:2646)—, igual para todos los hechizos. El
+    /// cliente original mostraba justo esa caja; el web muestra más, y sin la marca no se sabe hasta dónde se puede tirar.
+    /// Pedido del autor, 2026-09-27. Con 0 no se marca. Le llega al cliente en <c>coverao-config.json</c>.
+    /// </summary>
+    public bool AlcanceDelHechizo { get; private set; } = true;
+
     /// <summary>El techo de <see cref="Exp"/> y <see cref="Oro"/>: el <c>Integer</c> de VB6 donde el original
     /// guarda la tasa (<c>Expc</c>, Declares.bas:36). Más grande, allá el server no arrancaba.</summary>
     public const int TasaMaxima = short.MaxValue;
@@ -156,7 +165,7 @@ public sealed class ServerIni
     /// </summary>
     public static readonly string[] ClavesConocidas =
     {
-        "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
+        "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
         "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca", "OroPorMonton",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
@@ -1155,6 +1164,7 @@ public sealed class ServerIni
         cfg.AtacarAliadoVuelveCriminal = ini.GetInt("INIT", "AtacarAliadoVuelveCriminal", 1) != 0;
         cfg.EventoAlRematar = ini.GetInt("INIT", "EventoAlRematar", 0) != 0;
         cfg.OroPorMonton = Math.Clamp(ini.GetInt("INIT", "OroPorMonton", 10_000), 1, short.MaxValue);
+        cfg.AlcanceDelHechizo = ini.GetInt("INIT", "AlcanceDelHechizo", 1) != 0;
         cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;
         cfg.GuardiasAtacanNewbies = ini.GetInt("INIT", "GuardiasAtacanNewbies", 0) != 0;
         var desconocidas = new List<string>();

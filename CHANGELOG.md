@@ -157,6 +157,12 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **El tope de FPS llega a lo que elegís**: en 240 ya no se queda en 180.
 
+- **Al apuntar un hechizo se ve hasta dónde llega**: ocho baldosas a los costados y seis arriba y abajo, y lo de afuera
+  se oscurece. El que hostea lo apaga con `AlcanceDelHechizo=0` en el Server.ini.
+
+- **Repartir habilidades es más rápido**: mantené apretado el + o el -. Y las barras de desplazamiento de los paneles
+  tienen los colores del juego.
+
 - **Los amigos, como en el original**: el mensaje a tus amigos también te llega a vos, y quitar a alguien de la
   lista te saca de la suya, aunque no esté conectado.
 

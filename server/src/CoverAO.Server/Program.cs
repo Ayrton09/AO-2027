@@ -975,7 +975,7 @@ if (habraWeb)
     // error visible: la página abría, el login aparecía, y el socket moría contra un puerto cerrado.
     webTask = new CoverAO.Server.Net.StaticFileServer(
         webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico,
-        estadoPublico, wsServer.AceptarAsync).RunAsync(cts.Token);
+        estadoPublico, wsServer.AceptarAsync, serverIni.AlcanceDelHechizo).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se

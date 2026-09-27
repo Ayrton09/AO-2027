@@ -106,9 +106,12 @@ public sealed class StaticFileServer
     /// <c>WebSocketGameServer.AceptarAsync</c>. Va como delegado y no como referencia al otro servidor para
     /// que este archivo siga sin saber nada del transporte de juego. <c>null</c> = <c>/ws</c> no existe acá y
     /// el cliente usa el puerto aparte, como antes.</param>
+    /// <param name="alcanceDelHechizo">Si el cliente marca el alcance del hechizo al apuntar (Server.ini
+    /// <c>AlcanceDelHechizo</c>). Viaja en el mismo JSON: es del server, no de cada jugador.</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
                             Func<string>? estadoPublico = null,
-                            Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null)
+                            Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
+                            bool alcanceDelHechizo = true)
     {
         _port = port;
         _wsPort = wsPort;
@@ -122,7 +125,8 @@ public sealed class StaticFileServer
         string ruta = juegoPorWebSocket is not null ? System.Text.Json.JsonSerializer.Serialize(RutaWs) : "null";
         _config = Encoding.UTF8.GetBytes(
             $"{{\"wsPort\":{anunciado},\"wsPath\":{ruta}," +
-            $"\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}}}");
+            $"\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}," +
+            $"\"alcanceHechizo\":{(alcanceDelHechizo ? "true" : "false")}}}");
     }
 
     /// <summary>El JSON que se baja el cliente, tal cual. Existe para poder testear QUÉ se le anuncia sin

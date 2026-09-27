@@ -65,6 +65,8 @@ EventoAlRematar=0
 ; Cuanto oro entra en cada monton que se tira al piso (1 a 32767). Tirar mas se reparte
 ; en varios montones alrededor. El original: 10000.
 OroPorMonton=10000
+; Al tocar Lanzar, el cliente web marca hasta donde llega el hechizo (1) o no (0).
+AlcanceDelHechizo=1
 ; Minutos que dura un dia completo y cada cambio de clima, y cuanto llueve.
 MinutosDelDia=24
 MinutosDeClima=18
