@@ -147,6 +147,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `PuedeCrearPersonajes` | 0 = no se aceptan personajes nuevos |
 | `ServerSoloGMs` | 1 = modo mantenimiento |
 | `Exp`, `Oro` | cuántas veces la experiencia y el oro que da cada criatura: `1` = normal, `5` = cinco veces (el server original venía con `200`). El evento del GM (`/EXP`, `/ORO`, el panel) multiplica encima |
+| `EventoAlRematar` | 1 = el **evento de experiencia** del GM (`/EXP`, el panel) y el medio extra del **donador** multiplican también lo que se cobra **al matar** a la criatura: la parte de su experiencia que no se cobró golpe a golpe. En el original van sólo en lo que se cobra golpe a golpe, y como el hechizo resta la vida antes de cobrar, **el que mata de un hechizo casi no cobra el evento**: con `/EXP` en x50, un Mago que mata de un Misil cobra x1 lo de ese hechizo y un Guerrero que mata con la espada, x50. **0 = como el original. Viene en 0** |
 | `MinutosDelDia` | duración del ciclo día/noche |
 | `MinutosDeClima`, `PorcentajeLluvia` | ciclo de lluvia |
 | `OroAlSubirNivel` | oro de regalo por nivel. **0 = como el original**, que no regala nada. El `Server.ini` de ejemplo lo trae en 0 |

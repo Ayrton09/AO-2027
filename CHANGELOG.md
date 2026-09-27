@@ -151,10 +151,12 @@ y lo que quedó sin contar desde el 4 de septiembre.
   clickeada y la hace reaparecer, y /MIEMBROSCLAN lista un miembro por línea.
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
-  `[NIVELMINIMO]`, `MinutosDeFogata`, `MetamorfosisDelDruida` y `AtacarAliadoVuelveCriminal`. Con 0 —o la tabla
-  de cuevas vacía— cada una vuelve a ser como el original.
+  `[NIVELMINIMO]`, `MinutosDeFogata`, `MetamorfosisDelDruida`, `AtacarAliadoVuelveCriminal` y `EventoAlRematar`.
+  Con 0 —o la tabla de cuevas vacía— cada una vuelve a ser como el original.
 
 - **Las tasas `Exp` y `Oro` multiplican directo** (1 es lo normal), y el panel las muestra aparte de los eventos.
+  Como en el original, el evento de experiencia no multiplica lo que se cobra al matar a la criatura —todo lo del
+  hechizo que la mata—; con `EventoAlRematar=1` en el Server.ini, sí.
 
 - **El anticheat tiene memoria**: a las tres trampas se echa y a las seis se banea. Los movimientos grandes de oro
   quedan registrados.

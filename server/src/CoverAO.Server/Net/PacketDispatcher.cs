@@ -2726,9 +2726,9 @@ public sealed partial class PacketDispatcher
         if (exp > pozo) exp = pozo;
         if (exp <= 0) return;
         npc.ExpCount = pozo - exp;
-        // El EVENTO del GM (`/EXP`, el panel) multiplica acá y sólo acá (SistemaCombate.bas:2025).
-        long dar = exp * (_admin?.ExpMult ?? 1);
-        if (p.Donador) dar += dar / 2;   // VB6 :2029
+        // El EVENTO del GM (`/EXP`, el panel) multiplica acá (SistemaCombate.bas:2025), y en el resto sólo con
+        // `EventoAlRematar` (ver `NpcKilledByPlayer`).
+        long dar = ConEventoYDonador(p, exp);
         OtorgarExp(session, p, dar);
         RepartirExperienciaAlFamiliar(session, p, dar);
         // CUÁNTA experiencia ganó ESTE golpe (VB6 SistemaCombate.bas:2041, la línea que sigue al UpdateExp).
@@ -2736,6 +2736,15 @@ public sealed partial class PacketDispatcher
         // jugador no tenía forma de saber cuánto rindió cada golpe. El aviso NO está en `OtorgarExp` porque el
         // original lo manda desde los sitios de COMBATE y no desde el otorgamiento en sí.
         session?.Send(ServerMessages.LocaleMsg(140, dar.ToString()));
+    }
+
+    /// <summary>El evento de experiencia del GM y el medio extra del donador sobre lo que cobra un golpe (VB6
+    /// SistemaCombate.bas:2025-2030).</summary>
+    private long ConEventoYDonador(Player p, long exp)
+    {
+        long dar = exp * (_admin?.ExpMult ?? 1);
+        if (p.Donador) dar += dar / 2;   // VB6 :2029
+        return dar;
     }
 
     private void RaiseSkill(ClientSession? session, Player p, int skill)
@@ -3141,11 +3150,12 @@ public sealed partial class PacketDispatcher
         {
             // PELADO, como en el original (MODULO_NPCs.bas:128-142: `.Stats.Exp + ExpCount`): ni el evento del GM
             // ni el medio extra del donador, que son del goteo por golpe (SistemaCombate.bas:2025-2030) y acá se
-            // cobraban dos veces.
+            // cobraban dos veces. Salvo con la regla de la casa `EventoAlRematar` (ver ServerIni).
             npc.ExpCount = 0;                        // VB6 :142 — el pool se vacía, no se paga dos veces
-            OtorgarExp(session, p, resto);
-            RepartirExperienciaAlFamiliar(session, p, resto);
-            session.Send(ServerMessages.LocaleMsg(140, resto.ToString()));   // VB6 MODULO_NPCs.bas:136
+            long dar = _ini.EventoAlRematar ? ConEventoYDonador(p, resto) : resto;
+            OtorgarExp(session, p, dar);
+            RepartirExperienciaAlFamiliar(session, p, dar);
+            session.Send(ServerMessages.LocaleMsg(140, dar.ToString()));   // VB6 MODULO_NPCs.bas:136
         }
         // "¡Has matado a #1!" con el NOMBRE de la criatura, y va SIEMPRE — el original lo manda afuera del
         // `If ExpCount > 0` (MODULO_NPCs.bas:141), así que rematar algo que ya no da experiencia igual avisa.

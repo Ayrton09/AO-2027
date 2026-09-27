@@ -58,6 +58,10 @@ ServerSoloGMs=0
 ; 5 = cinco veces, 100 = cien veces. El server original venia con 200.
 Exp=1
 Oro=1
+; El evento de experiencia del GM (/EXP, el panel) y el bonus de donador van en lo que
+; se cobra golpe a golpe; lo que queda al matar a la criatura va sin ellos, y el hechizo
+; que mata cobra todo ahi. 1 = el evento tambien va en lo que queda. 0 = como el original.
+EventoAlRematar=0
 ; Minutos que dura un dia completo y cada cambio de clima, y cuanto llueve.
 MinutosDelDia=24
 MinutosDeClima=18

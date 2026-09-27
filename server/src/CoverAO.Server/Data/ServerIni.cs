@@ -105,6 +105,19 @@ public sealed class ServerIni
     public int Exp { get; private set; } = 1;
     public int Oro { get; private set; } = 1;
 
+    /// <summary>
+    /// REGLA DE LA CASA — <c>EventoAlRematar</c> (default <b>0</b>, como el original). Con 1, el evento de experiencia del
+    /// GM (<c>/EXP</c>, el panel) y el medio extra del donador multiplican también el RESTO que cobra el que mata a la
+    /// criatura: la parte de su experiencia que no se cobró golpe a golpe.
+    ///
+    /// <para>En el original el resto se suma pelado (MODULO_NPCs.bas:128-142) y el evento va sólo en el goteo de cada
+    /// golpe (SistemaCombate.bas:2025). Pesa sobre todo en los que castean: el hechizo resta la vida ANTES de gotear
+    /// (modHechizos.bas), así que el que mata no gotea nada y todo lo de ese hechizo sale del resto. Con un evento x50, un
+    /// Mago que mata de un hechizo cobra x1 y un Guerrero que mata con la espada, x50. Pedido del autor (2026-09-27): como
+    /// el original, con la opción de prenderlo.</para>
+    /// </summary>
+    public bool EventoAlRematar { get; private set; }
+
     /// <summary>El techo de <see cref="Exp"/> y <see cref="Oro"/>: el <c>Integer</c> de VB6 donde el original
     /// guarda la tasa (<c>Expc</c>, Declares.bas:36). Más grande, allá el server no arrancaba.</summary>
     public const int TasaMaxima = short.MaxValue;
@@ -137,7 +150,7 @@ public sealed class ServerIni
     public static readonly string[] ClavesConocidas =
     {
         "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
-        "CuraAlSubirNivel", "DropGlobal", "Exp", "FamiliarBusca",
+        "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
         "GolpeParalizanteVueltas", "GolpeParalizanteVueltasPvP", "HipocamposEnMarAbierto",
         "GuardiasAtacan", "GuardiasAtacanNewbies", "GuardiasDelCaosAtacanA", "GuardiasImperialesAtacanA",
@@ -1133,6 +1146,7 @@ public sealed class ServerIni
         cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
         cfg.GuardiasAtacan = ini.GetInt("INIT", "GuardiasAtacan", 1) != 0;
         cfg.AtacarAliadoVuelveCriminal = ini.GetInt("INIT", "AtacarAliadoVuelveCriminal", 1) != 0;
+        cfg.EventoAlRematar = ini.GetInt("INIT", "EventoAlRematar", 0) != 0;
         cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;
         cfg.GuardiasAtacanNewbies = ini.GetInt("INIT", "GuardiasAtacanNewbies", 0) != 0;
         var desconocidas = new List<string>();

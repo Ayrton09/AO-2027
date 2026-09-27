@@ -42,11 +42,11 @@ public class TasasDelServerTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { /* el temp queda */ }
     }
 
-    private void Armar(int exp, int oro, GameLoop? loop = null)
+    private void Armar(int exp, int oro, GameLoop? loop = null, string otraClave = "")
     {
         Directory.CreateDirectory(_root);
         string ruta = Path.Combine(_root, "Server.ini");
-        File.WriteAllText(ruta, $"[INIT]\r\nStartPort=7666\r\nExp={exp}\r\nOro={oro}\r\n");
+        File.WriteAllText(ruta, $"[INIT]\r\nStartPort=7666\r\nExp={exp}\r\nOro={oro}\r\n{otraClave}\r\n");
         var leveling = new Leveling(_datos.LevelExp);
         _npcs = new NpcSystem(_world, _datos);
         _dispatcher = new PacketDispatcher(_world, loop ?? new GameLoop(), new Persistence(new FileStore(_root), leveling),
@@ -143,6 +143,26 @@ public class TasasDelServerTests : IDisposable
         Assert.Null(_world.NpcByIndex(presa.CharIndex));
         Assert.Equal(ExpDeLaPresa * 5, (long)(amo.Exp - expAntes));
         Assert.Equal((long)OroDeLaPresa * 3 * 2, amo.Gold - oroAntes);
+    }
+
+    /// <summary>CON <c>EventoAlRematar=1</c> (regla de la casa) el resto cobra como el goteo: el evento y el medio extra del
+    /// donador encima de la tasa. Es lo que le devuelve el evento al que mata de un hechizo, que no gotea.</summary>
+    [Fact]
+    public void Con_EventoAlRematar_el_resto_lleva_el_evento_y_el_bonus_del_donador()
+    {
+        Armar(exp: 5, oro: 3, otraClave: "EventoAlRematar=1");
+        _admin.ExpMult = 2;
+        var (amo, _) = Conectado(38, heading: 2);
+        amo.Donador = true;
+        var presa = Presa(42);
+        MascotaContra(amo, presa);
+        double expAntes = amo.Exp;
+
+        GirarHasta(() => _world.NpcByIndex(presa.CharIndex) is null, 3000);
+
+        Assert.Null(_world.NpcByIndex(presa.CharIndex));
+        long conEvento = ExpDeLaPresa * 5 * 2;
+        Assert.Equal(conEvento + conEvento / 2, (long)(amo.Exp - expAntes));
     }
 
     /// <summary>
