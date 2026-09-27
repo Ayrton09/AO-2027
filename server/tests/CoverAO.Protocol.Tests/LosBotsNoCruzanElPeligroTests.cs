@@ -30,14 +30,12 @@ public class LosBotsNoCruzanElPeligroTests
     {
         if (Mundo() is not { } m) return;
         const int nivel = 14, vida = 120;   // Dalia: 114 de vida en el nivel 13 del arranque de `tienda4`
-        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(m.Datos.Npc((short)f), vida, nivel, conPociones: true,
-            curaVeneno: false, Player.StatusCiudadano, m.Datos, new ServerIni());
         Func<int, bool> pisable = mapa => Bot.PuedeEntrar(nivel, m.Datos.MapZone(mapa));
-        // La misma cuenta que `CruzaSinPeligro`: PasaPorAhi sin mapa de destino.
-        Func<int, bool> cruzaSinPeligro = mapa => Bot.PasaPorAhi(mapa, -1, pisable(mapa),
-            m.Datos.MapSpawns.TryGetValue(mapa, out var nacen) && nacen.Any(sp => esPeligroso(sp.NpcIndex)));
+        var cruzaSinPeligro = Bot.SeCruzaBuscando(m.Datos, new ServerIni(), Player.StatusCiudadano, nivel, vida, conPociones: true,
+            curaVeneno: false);
 
-        Assert.False(cruzaSinPeligro(17), "premisa: en el 17 nacen Arañas gigantes, que a nivel 14 lo matan");
+        Assert.True(m.Datos.IsPkMap(17), "premisa: el 17 es inseguro, así que lo que nace ahí cuenta");
+        Assert.False(cruzaSinPeligro(17), "en el 17 nacen Arañas gigantes, que a nivel 14 lo matan");
         Assert.NotNull(m.Mapas.MapaMasCercano(101, (10, 26), mapa => mapa == 551, pisable));   // por el camino de siempre, sí
         Assert.Null(m.Mapas.MapaMasCercano(101, (10, 26), mapa => mapa == 551, cruzaSinPeligro));
     }
@@ -98,8 +96,7 @@ public class LosBotsNoCruzanElPeligroTests
             curaVeneno: false, Player.StatusCiudadano, m.Datos, ini);
         Func<int, bool> esPresa = f => Bot.EsPresaPara(m.Datos.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
         Func<int, IEnumerable<int>> nace = mapa => m.Datos.MapSpawns.TryGetValue(mapa, out var n) ? n.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
-        Func<int, bool> pisable = mapa => Bot.PuedeEntrar(nivel, m.Datos.MapZone(mapa));
-        Func<int, bool> cruza = mapa => Bot.PasaPorAhi(mapa, -1, pisable(mapa), nace(mapa).Any(esPeligroso));
+        var cruza = Bot.SeCruzaBuscando(m.Datos, ini, Player.StatusCiudadano, nivel, vida, conPociones: true, curaVeneno: false);
         Func<int, bool> guardia = mapa => Bot.HayGuardiaQueVaPor(mapa, Player.StatusCiudadano, nivel, m.Datos, ini);
         Func<int, bool> seCaza = mapa => Bot.SeCazaAhi(m.Datos.IsPkMap(mapa), nace(mapa), esPeligroso) && !guardia(mapa);
         Func<int, int> rinde = f => esPresa(f) ? (int)(m.Datos.Npc((short)f)?.GiveExp ?? 0) : 0;
@@ -110,5 +107,37 @@ public class LosBotsNoCruzanElPeligroTests
 
         Assert.Equal(806, Coto(nunca: null)?.Mapa);   // premisa: el repuesto elegía el mismo 806
         Assert.NotEqual(806, Coto(guardia)?.Mapa);
+    }
+
+    /// <summary>
+    /// DE VUELTA A LA CUNA (`oficios15`): un Druida y un Clérigo de nivel 3 a 5 dejaron la cuna llena por el 58, que tiene cuatro
+    /// presas, y se quedaron ahí cuarenta minutos sin pasar del nivel 5. La búsqueda de coto cruzaba sólo por mapas donde no nace
+    /// nada peligroso, y en la cuna nacen Lobos. La cuna es segura y ahí caza, así que también se la cruza, y se vuelve a ella.
+    /// </summary>
+    [Fact]
+    public void Desde_el_58_un_bot_de_poca_vida_vuelve_a_cazar_a_la_cuna()
+    {
+        if (Mundo() is not { } m) return;
+        const int nivel = 4, vida = 36;   // Hilda, Druida republicana, en `oficios15`
+        const byte bando = Player.StatusRepublicano;
+        var ini = new ServerIni();
+        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(m.Datos.Npc((short)f), vida, nivel, conPociones: true,
+            curaVeneno: false, bando, m.Datos, ini);
+        Func<int, bool> esPresa = f => Bot.EsPresaPara(m.Datos.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
+        Func<int, IEnumerable<int>> nace = mapa => m.Datos.MapSpawns.TryGetValue(mapa, out var n) ? n.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
+        Func<int, bool> pisable = mapa => Bot.PuedeEntrar(nivel, m.Datos.MapZone(mapa));
+        Func<int, bool> guardia = mapa => Bot.HayGuardiaQueVaPor(mapa, bando, nivel, m.Datos, ini);
+        Func<int, bool> seCaza = mapa => Bot.SeCazaAhi(m.Datos.IsPkMap(mapa), nace(mapa), esPeligroso) && !guardia(mapa);
+        Func<int, int> rinde = f => esPresa(f) ? (int)(m.Datos.Npc((short)f)?.GiveExp ?? 0) : 0;
+        int? Coto(Func<int, bool> cruza) => Bot.CotoSinVolverAlLleno(m.Mapas, 58, (27, 79), esPresa, f => m.Datos.Npc((short)f)?.GiveGld > 0,
+            rinde, cruza, seCaza, _ => false, mapa => Bot.SirveParaIrseDelLleno(false, nace(mapa), esPeligroso),
+            mapa => Bot.CuantoLeGusta(Bot.SemillaDelNombre("Hilda"), mapa), out _, out _, guardia)?.Mapa;
+
+        // Premisa: con el filtro del viaje (en ningún mapa nace algo peligroso) la cuna no pasa, y se quedaba en el 58.
+        Func<int, bool> sinNadaPeligroso = mapa => Bot.PasaPorAhi(mapa, -1, pisable(mapa), nace(mapa).Any(esPeligroso));
+        Assert.False(sinNadaPeligroso(37), "premisa: en la cuna nacen Lobos, peligrosos con 36 de vida");
+        Assert.Equal(58, Coto(sinNadaPeligroso));
+
+        Assert.Equal(37, Coto(Bot.SeCruzaBuscando(m.Datos, ini, bando, nivel, vida, conPociones: true, curaVeneno: false)));
     }
 }

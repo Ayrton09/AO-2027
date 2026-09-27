@@ -1594,14 +1594,43 @@ public sealed class Bot
         dejaEntrar && (mapa == mapaDestino || !naceAlgoPeligroso);
 
     /// <summary>
-    /// POR DÓNDE SE BUSCA ADÓNDE IR A TRABAJAR O A CAZAR: sólo por mapas donde no nace nada que lo pueda matar, el mismo filtro que
-    /// usa el viaje largo al pueblo. Con <see cref="Pisable"/> la búsqueda encontraba lugares seguros a los que sólo se llega
-    /// cruzando uno que no lo es, y el viaje, sin camino sin peligro, iba por el de siempre. Medido en `tienda4`: una Pescadora de
-    /// nivel 14 pescaba en el 101 y eligió cazar en el 551, al que sólo se llega por el 17, donde nacen cinco Arañas gigantes
-    /// (nivel 24, pegan hasta 115); murió cruzándolo. Un solo filtro para decidir y para viajar (memoria
-    /// `filtro-del-viaje-y-de-la-compra`).
+    /// POR DÓNDE SE BUSCA ADÓNDE IR A TRABAJAR O A CAZAR: por donde cazaría (<see cref="SeCruzaBuscando"/>). Con
+    /// <see cref="Pisable"/> la búsqueda encontraba lugares seguros a los que sólo se llega cruzando uno que no lo es, y el viaje,
+    /// sin camino sin peligro, iba por el de siempre. Medido en `tienda4`: una Pescadora de nivel 14 pescaba en el 101 y eligió
+    /// cazar en el 551, al que sólo se llega por el 17, donde nacen cinco Arañas gigantes (nivel 24, pegan hasta 115); murió
+    /// cruzándolo. El viaje prueba este mismo filtro antes que el de siempre (<see cref="IrHastaAsync"/>): un solo filtro para
+    /// decidir y para viajar (memoria `filtro-del-viaje-y-de-la-compra`).
     /// </summary>
-    private Func<int, bool> CruzaSinPeligro(SentidosDelBot sentidos) => PasaSinPeligro(sentidos, NingunMapa);
+    private Func<int, bool> CruzaSinPeligro(SentidosDelBot sentidos) =>
+        SeCruzaBuscando(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel, sentidos.VidaMaxima,
+                        sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear, sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0);
+
+    /// <summary>
+    /// ¿SE CRUZA ESE MAPA BUSCANDO DÓNDE CAZAR O TRABAJAR? Si deja entrar, no nacen ahí guardias que vayan por él y ahí cazaría
+    /// (<see cref="SeCazaAhi"/>): un mapa inseguro donde nace algo que lo mata no se cruza, y uno seguro sí, como se caza en él.
+    ///
+    /// <para>Con el filtro del viaje (<see cref="PasaPorAhi"/>: ningún mapa donde nazca algo peligroso) la cuna no pasaba para
+    /// un bot de poca vida, por sus Lobos, y el que la dejaba no volvía. Medido en `oficios15`: un Druida y un Clérigo de nivel 3
+    /// a 5 dejaron la cuna llena por el 58, que tiene cuatro presas, y se quedaron ahí cuarenta minutos sin pasar del nivel 5:
+    /// desde el 58 la búsqueda llegaba a doce mapas, y con la cuna a sesenta y seis.</para>
+    /// </summary>
+    public static Func<int, bool> SeCruzaBuscando(GameData datos, ServerIni? ini, byte bando, int nivel, int vida, bool conPociones,
+                                                  bool curaVeneno)
+    {
+        Func<int, bool> esPeligroso = f => EsPeligrosoParaElBot(datos.Npc((short)f), vida, nivel, conPociones, curaVeneno, bando, datos, ini);
+        return m => PuedeEntrar(nivel, datos.MapZone(m)) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini)
+                    && SeCazaAhi(datos.IsPkMap(m),
+                                 datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
+                                 esPeligroso);
+    }
+
+    /// <summary><see cref="CruzaSinPeligro"/> camino a un mapa: el destino, siempre que deje entrar, como en <see cref="PasaPorAhi"/>.</summary>
+    private Func<int, bool> CruzaSinPeligroHacia(SentidosDelBot sentidos, int mapaDestino)
+    {
+        var cruza = CruzaSinPeligro(sentidos);
+        var pisable = Pisable(sentidos);
+        return m => m == mapaDestino ? pisable(m) : cruza(m);
+    }
 
     /// <summary><see cref="PasaPorAhi"/> para este bot, con su vida, su nivel y lo que lleva encima.</summary>
     private Func<int, bool> PasaSinPeligro(SentidosDelBot sentidos, int mapaDestino)
@@ -4206,9 +4235,13 @@ public sealed class Bot
             (byte X, byte Y) meta;
             if (esLaMeta) meta = (destinoX, destinoY);
             // POR DONDE NO LO MATAN, SI HAY POR DONDE: ver `PasaPorAhi`. De muerto da igual, que al fantasma no lo atacan.
-            // Y UN VIAJE LARGO VA SÓLO POR AHÍ: ver `PuebloConMercader`.
+            // SI NO, POR DONDE CAZARÍA, que es por donde se buscó el coto: ver `SeCruzaBuscando`. Sin esto, un coto que se
+            // alcanza cruzando un mapa seguro se iba a buscar por el camino de siempre, que puede ser uno inseguro que lo mata.
+            // Y UN VIAJE LARGO VA SÓLO POR ESOS DOS: ver `PuebloConMercader`.
             else if ((deMuerto ? null : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
                                                                    PasaSinPeligro(sentidos, mapaDestino), topeDeMapas)
+                                        ?? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
+                                                                      CruzaSinPeligroHacia(sentidos, mapaDestino), topeDeMapas)
                       ?? (!deMuerto && topeDeMapas > Navegante.TopeDeMapas ? null
                           : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
                                                        topeDeMapas))) is { } salida)
