@@ -1613,15 +1613,26 @@ public sealed class Bot
     /// un bot de poca vida, por sus Lobos, y el que la dejaba no volvía. Medido en `oficios15`: un Druida y un Clérigo de nivel 3
     /// a 5 dejaron la cuna llena por el 58, que tiene cuatro presas, y se quedaron ahí cuarenta minutos sin pasar del nivel 5:
     /// desde el 58 la búsqueda llegaba a doce mapas, y con la cuna a sesenta y seis.</para>
+    ///
+    /// <para>NI UNO, SEGURO O NO, DONDE NACE UNA CRIATURA HOSTIL QUE LO MATA DE UN GOLPE (<see cref="UnGolpeLoMata"/> contra su
+    /// vida máxima): de eso la runa no lo saca. Medido en `oficios18` y `oficios20`: dos casters de nivel 7 salían del pueblo del
+    /// 20 a cazar Escorpiones al 208, donde nace el Señor de las sombras (pega de 60 a 75 y tenían unos 70 de vida), y murieron
+    /// peleando con él en nivel 8. El 208 mató bots desde la primera corrida (nueve en `oficios6`). En un mapa inseguro no cambia
+    /// nada: lo que mata de un golpe ya es peligroso. Lo que no es hostil no cuenta: los Guerreros y Asesinos de Ullathorpe pegan
+    /// de 260 a 350, y sin esa condición el 1 —el paso del 58 a la cuna— se cerraba. Y donde ya está no se mira: el Lobo de la
+    /// cuna pega 18 y un nivel 1 nace con 16 a 19 de vida, así que el que la deja no vuelve hasta el nivel 2.</para>
     /// </summary>
     public static Func<int, bool> SeCruzaBuscando(GameData datos, ServerIni? ini, byte bando, int nivel, int vida, bool conPociones,
                                                   bool curaVeneno)
     {
         Func<int, bool> esPeligroso = f => EsPeligrosoParaElBot(datos.Npc((short)f), vida, nivel, conPociones, curaVeneno, bando, datos, ini);
-        return m => PuedeEntrar(nivel, datos.MapZone(m)) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini)
-                    && SeCazaAhi(datos.IsPkMap(m),
-                                 datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>(),
-                                 esPeligroso);
+        return m =>
+        {
+            var nacen = datos.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
+            return PuedeEntrar(nivel, datos.MapZone(m)) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini)
+                   && SeCazaAhi(datos.IsPkMap(m), nacen, esPeligroso)
+                   && !nacen.Any(f => datos.Npc((short)f) is { Hostile: true } n && UnGolpeLoMata(n, vida));
+        };
     }
 
     /// <summary><see cref="CruzaSinPeligro"/> camino a un mapa: el destino, siempre que deje entrar, como en <see cref="PasaPorAhi"/>.</summary>

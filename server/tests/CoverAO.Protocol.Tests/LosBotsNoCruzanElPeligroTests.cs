@@ -142,6 +142,45 @@ public class LosBotsNoCruzanElPeligroTests
     }
 
     /// <summary>
+    /// NI AL 208 CON EL SEÑOR DE LAS SOMBRAS (`oficios18`, `oficios20`): dos casters de nivel 7 salían del pueblo del 20 a cazar
+    /// Escorpiones al 208 y el Señor de las sombras (pega de 60 a 75) los mató en nivel 8. El 208 es seguro, así que el filtro
+    /// de "por donde cazaría" lo dejaba; lo que nace ahí lo mata de un golpe, así que ya no.
+    /// </summary>
+    [Fact]
+    public void Del_pueblo_del_20_un_caster_de_nivel_7_no_va_al_208_del_Senor_de_las_sombras()
+    {
+        if (Mundo() is not { } m) return;
+        const int nivel = 7, vida = 73;   // Nadia en `oficios18`: nivel 7 y 73 de vida en el 20, antes de ir al 208
+        const byte bando = Player.StatusCiudadano;
+        var ini = new ServerIni();
+        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(m.Datos.Npc((short)f), vida, nivel, conPociones: true,
+            curaVeneno: false, bando, m.Datos, ini);
+        Func<int, bool> esPresa = f => Bot.EsPresaPara(m.Datos.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
+        Func<int, IEnumerable<int>> nace = mapa => m.Datos.MapSpawns.TryGetValue(mapa, out var n) ? n.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
+        Func<int, bool> pisable = mapa => Bot.PuedeEntrar(nivel, m.Datos.MapZone(mapa));
+        Func<int, bool> guardia = mapa => Bot.HayGuardiaQueVaPor(mapa, bando, nivel, m.Datos, ini);
+        Func<int, bool> seCaza = mapa => Bot.SeCazaAhi(m.Datos.IsPkMap(mapa), nace(mapa), esPeligroso) && !guardia(mapa);
+        Func<int, int> rinde = f => esPresa(f) ? (int)(m.Datos.Npc((short)f)?.GiveExp ?? 0) : 0;
+        // Desde la calle del 20: la baldosa de la corrida, (76,14), es adentro de una tienda, y con la puerta cerrada de la data
+        // quieta el navegante no sale de ahí.
+        int? Coto(Func<int, bool> cruza) => Bot.CotoSinVolverAlLleno(m.Mapas, 20, (55, 40), esPresa, f => m.Datos.Npc((short)f)?.GiveGld > 0,
+            rinde, cruza, seCaza, _ => false, mapa => Bot.SirveParaIrseDelLleno(false, nace(mapa), esPeligroso),
+            mapa => Bot.CuantoLeGusta(Bot.SemillaDelNombre("Nadia"), mapa), out _, out _, guardia)?.Mapa;
+
+        // Premisas: el Señor de las sombras nace en el 208 y lo mata de un golpe; y sin mirar eso, el coto era el 208.
+        Assert.False(m.Datos.IsPkMap(208), "premisa: el 208 es seguro");
+        Assert.Contains(m.Datos.MapSpawns[208], sp => Bot.UnGolpeLoMata(m.Datos.Npc((short)sp.NpcIndex), vida));
+        Func<int, bool> sinElGolpe = mapa => pisable(mapa) && !guardia(mapa) && Bot.SeCazaAhi(m.Datos.IsPkMap(mapa), nace(mapa), esPeligroso);
+        Assert.Equal(208, Coto(sinElGolpe));
+
+        var cruza = Bot.SeCruzaBuscando(m.Datos, ini, bando, nivel, vida, conPociones: true, curaVeneno: false);
+        Assert.False(cruza(208));
+        Assert.NotEqual(208, Coto(cruza));
+        Assert.True(cruza(37), "la cuna sigue pasando: el Lobo pega 18");
+        Assert.True(cruza(1), "Ullathorpe sigue pasando: sus Guerreros y Asesinos pegan fuerte, pero no son hostiles");
+    }
+
+    /// <summary>
     /// EL CAMINO DE UN VIAJE, POR ESCALONES: por donde no lo matan, por donde cazaría y por el de siempre; el viaje largo, sólo por
     /// los dos primeros. De muerto, por el de siempre: escrito como <c>deMuerto ? null : sinPeligro ?? (...)</c>, el cadáver no
     /// encontraba ninguna puerta y no llegaba nunca al sacerdote de otro mapa.
