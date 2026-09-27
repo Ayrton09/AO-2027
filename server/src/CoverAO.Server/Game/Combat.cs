@@ -12,6 +12,18 @@ namespace CoverAO.Server.Game;
 /// </summary>
 public static class Combat
 {
+    /// <summary>VB6 <c>eMagicType.AumentaGolpe</c> = <b>6</b> (Declares.bas:863): el ítem mágico que suma <c>CuantoAumento</c>
+    /// al golpe contra una criatura (SistemaCombate.bas:429-433). En esta data lo trae uno solo, el Brazalete del Ogro (+30).
+    /// El 18 es <c>Experto</c>, que el original no lee en ningún lado: el Pendiente del Experto no hace nada. Acá se usaba el
+    /// 18, así que el pendiente pegaba +20 y el brazalete nada.</summary>
+    public const int AumentaGolpe = 6;
+
+    /// <summary>Lo que el ítem mágico puesto le suma a un golpe: su <c>CuantoAumento</c> si es de <see cref="AumentaGolpe"/> y
+    /// el golpe va contra una criatura; si no, nada. Vale para el cuerpo a cuerpo y para el tiro, que en el original salen de
+    /// la misma <c>CalcularDaño</c>.</summary>
+    public static int BonoDelItemMagico(Data.ObjInfo? magico, bool contraNpc) =>
+        contraNpc && magico is { EfectoMagico: AumentaGolpe } ? magico.CuantoAumento : 0;
+
     /// <param name="weaponDamage">RandomNumber(weapon.MinHIT, weapon.MaxHIT), or wrestling roll.</param>
     /// <param name="weaponMaxDamage">weapon.MaxHIT (wrestling: 3).</param>
     /// <param name="userHit">RandomNumber(user MinHIT, MaxHIT) — the character's own hit roll.</param>

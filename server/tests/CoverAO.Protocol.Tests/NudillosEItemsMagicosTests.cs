@@ -110,9 +110,9 @@ public class NudillosEItemsMagicosTests
         Assert.Equal(2, agilidad.QueAtributo);
         Assert.Equal(5, agilidad.CuantoAumento);
 
-        var experto = data.Obj(1149)!;                           // Pendiente del Experto
-        Assert.Equal(18, experto.EfectoMagico);                  // eMagicType.AumentaGolpe (+daño contra NPC)
-        Assert.Equal(20, experto.CuantoAumento);
+        var ogro = data.Obj(707)!;                               // Brazalete del Ogro (+30)
+        Assert.Equal(6, ogro.EfectoMagico);                      // eMagicType.AumentaGolpe (+daño contra NPC)
+        Assert.Equal(30, ogro.CuantoAumento);
     }
 
     [Fact]

@@ -2237,7 +2237,8 @@ public sealed partial class PacketDispatcher
 
     /// <summary>Daño de un disparo (VB6 CalcularDaño rama proyectil): tirada del arco + tirada de la flecha,
     /// con el modificador de clase de DAÑO de proyectil. El máximo NO suma el de la flecha (bug intencional del
-    /// original, línea comentada "For some reason this isn't done").</summary>
+    /// original, línea comentada "For some reason this isn't done"). Y después, como el golpe, la montura y el ítem mágico
+    /// (SistemaCombate.bas:421-433): salen de la misma CalcularDaño, después de la rama del arma, y acá no se sumaban.</summary>
     private int RangedDamage(Player p, Data.ObjInfo bow, Data.ObjInfo? ammo, Npc? criatura)
     {
         long userHit = p.MaxHit >= p.MinHit ? _rng.Next(p.MinHit, p.MaxHit + 1) : p.MinHit;
@@ -2249,7 +2250,11 @@ public sealed partial class PacketDispatcher
         if (bow.Municiones == 1 && ammo is not null)
             weaponRoll += ammo.MaxHit >= ammo.MinHit ? _rng.Next(ammo.MinHit, ammo.MaxHit + 1) : ammo.MinHit;
         double classMod = _data.ProjectileDamageMod.TryGetValue(p.Class, out var dm) ? dm : 1.0;
-        return Math.Max(1, (int)Combat.CalcularDano(weaponRoll, weaponMax, userHit, p.Strength, classMod));
+        long dano = Combat.CalcularDano(weaponRoll, weaponMax, userHit, p.Strength, classMod);
+        if (p.Mounted && Equipment.MonturaEquipada(p, _data) is { } montura && montura.MaxHit >= montura.MinHit)
+            dano += _rng.Next(montura.MinHit, montura.MaxHit + 1);
+        dano += Combat.BonoDelItemMagico(Equipment.EquippedOfCategory(p, _data, 8), criatura is not null);
+        return Math.Max(1, (int)dano);
     }
 
     /// <summary>Poder de ataque a distancia (VB6 PoderAtaqueProyectil): misma forma que Wrestling pero con la
@@ -10908,9 +10913,9 @@ public sealed partial class PacketDispatcher
     ///
     /// Los dos últimos sumandos van DESPUÉS del modificador de clase, sobre el número ya redondeado: la
     /// montura (:421-427, cualquier objetivo) y el ítem mágico de <c>AumentaGolpe</c> (:429-433, <b>sólo contra
-    /// NPC</b> — el Pendiente del Experto no pega más fuerte en PvP). La Espada Mata Dragones cambia la tirada del arma
-    /// (<see cref="Combat.TiradaDeLaMataDragones"/>), y por eso hace falta saber contra qué criatura es; el arco caza demonios
-    /// sigue sin modelarse.</summary>
+    /// NPC</b> — el Brazalete del Ogro no pega más fuerte en PvP; ver <see cref="Combat.BonoDelItemMagico"/>). La Espada Mata
+    /// Dragones cambia la tirada del arma (<see cref="Combat.TiradaDeLaMataDragones"/>), y por eso hace falta saber contra qué
+    /// criatura es. El Arco Caza Demonios es del tiro: <see cref="RangedDamage"/>.</summary>
     private int MeleeDamage(Player p, bool contraNpc, Npc? criatura = null)
     {
         long userHit = p.MaxHit >= p.MinHit ? _rng.Next(p.MinHit, p.MaxHit + 1) : p.MinHit;
@@ -10943,10 +10948,9 @@ public sealed partial class PacketDispatcher
         // monturas de la data traen su [MinHIT,MaxHIT].
         if (p.Mounted && Equipment.MonturaEquipada(p, _data) is { } montura && montura.MaxHit >= montura.MinHit)
             dano += _rng.Next(montura.MinHit, montura.MaxHit + 1);
-        if (contraNpc && Equipment.EquippedOfCategory(p, _data, 8) is { EfectoMagico: AumentaGolpe } pendiente)
-            dano += pendiente.CuantoAumento;
+        dano += Combat.BonoDelItemMagico(Equipment.EquippedOfCategory(p, _data, 8), contraNpc);
         // TRANSFORMADO (regla de la casa MetamorfosisDelDruida): el `ExtraHIT` de la forma, plano y sobre el
-        // número ya redondeado, igual que la montura y el pendiente. Va del +6 del murciélago al +50 del
+        // número ya redondeado, igual que la montura y el ítem mágico. Va del +6 del murciélago al +50 del
         // dragón — los números son de la data del install, no nuestros. Contra cualquier objetivo: a
         // diferencia del pendiente, el hechizo no distingue criatura de persona.
         //
@@ -10955,10 +10959,6 @@ public sealed partial class PacketDispatcher
         dano += p.MetamorfosisExtraHit;
         return Math.Max(1, (int)dano);
     }
-
-    /// <summary>VB6 <c>eMagicType.AumentaGolpe</c> (Declares.bas): el ítem mágico que suma <c>CuantoAumento</c>
-    /// al daño contra criaturas. En esta data lo trae uno solo, el Pendiente del Experto (+20).</summary>
-    private const int AumentaGolpe = 18;
 
     /// <summary>VB6 <c>eMagicType.Silencio</c> (Declares.bas): el ítem mágico que hace CALLAR las palabras
     /// mágicas del portador. En esta data lo trae uno solo, el Amuleto del Silencio (obj 755).</summary>

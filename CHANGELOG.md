@@ -45,6 +45,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
   criatura le saca 1, y a una persona entre 22 y 35. Y el **Arco Caza Demonios** le pega de verdad al Demonio y
   al Demonio Abisal, y a lo demás 1.
 
+- **El Brazalete del Ogro pega más fuerte** contra las criaturas, también con el arco, y la flecha suma la montura
+  como el golpe. El Pendiente del Experto no suma nada, como en el original.
+
 - **Lanzar un hechizo ya no te saca del ocultamiento.** Honor del Paladín sube además agilidad y fuerza, y la
   Tormenta ácida envenena.
 
