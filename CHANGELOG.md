@@ -40,6 +40,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
   no te cae encima, y curarle el veneno a alguien sano no te cobra el maná.
 
 - **Atacar a una criatura con hechizos o flechas pide el modo combate.** La flecha que no pega no se gasta.
+  Y tirar sin flechas te saca el arco, como en el original.
 
 - **La Espada Mata Dragones, como el original**: a un dragón le pega muchísimo más fuerte, a cualquier otra
   criatura le saca 1, y a una persona entre 22 y 35. Y el **Arco Caza Demonios** le pega de verdad al Demonio y

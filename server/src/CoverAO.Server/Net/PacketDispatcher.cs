@@ -2165,16 +2165,30 @@ public sealed partial class PacketDispatcher
         if (!CombatTiming.PermiteUsarArcos(p, tiroMs, _intervaloArco)) return;
 
         // Gate arma/munición (VB6 Protocol.bas:2766-2811, DummyInt): sin arma equipada → LocaleMsg 127 (DummyInt=1);
-        // arma equipada que NO es arco (Proyectil<>1) → SILENCIO (DummyInt=2, el VB6 sólo desequipa la munición y sale);
-        // munición inválida/sin stock → LocaleMsg 127 (DummyInt=1). El VB6 además desequipa arco/munición en el error,
-        // limpieza defensiva de un estado que en este stack no se alcanza por vías legítimas (se omite ese detalle).
+        // arma equipada que NO es arco (Proyectil<>1) → SILENCIO (DummyInt=2); munición inválida/sin stock → LocaleMsg 127
+        // (DummyInt=1). Y en los dos casos el original DESEQUIPA (:2798-2807): con el 1, el arma y la munición; con el 2, sólo
+        // la munición. No es un estado raro: gastar la última flecha deja el arco puesto y la ranura de munición vacía, y el
+        // tiro siguiente se saca el arco. Acá se omitía, con la idea de que no se llegaba por vías legítimas.
         var bow = Equipment.EquippedOfCategory(p, _data, 1);
-        if (bow is null) { session.Send(ServerMessages.LocaleMsg(127)); return; }     // DummyInt=1: sin arma equipada
-        if (!bow.IsBow) return;                                                       // DummyInt=2: arma no-proyectil → sin mensaje
+        int weaponSlot = EquippedSlotOfCategory(p, 1);
         int ammoSlot = EquippedSlotOfCategory(p, 5);
+        void Desequipar(int slot)
+        {
+            if (slot < 1 || slot > GameLimits.MaxInventorySlots || !p.Inventory[slot].Equipped) return;
+            DesequiparSiSeVaEntero(session, p, (byte)slot, int.MaxValue);
+            var inv = p.Inventory[slot];
+            session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, inv.IsEmpty ? (byte)0 : (byte)1));
+        }
+        if (bow is null) { session.Send(ServerMessages.LocaleMsg(127)); Desequipar(ammoSlot); return; }   // DummyInt=1: sin arma
+        if (!bow.IsBow) { Desequipar(ammoSlot); return; }                                                  // DummyInt=2: sin mensaje
         var ammo = ammoSlot == 0 ? null : _data.Obj(p.Inventory[ammoSlot].ObjIndex);
         if (bow.Municiones == 1 && (ammoSlot == 0 || ammo is null || !ammo.IsAmmo || p.Inventory[ammoSlot].Amount < 1))
-        { session.Send(ServerMessages.LocaleMsg(127)); return; }
+        {
+            session.Send(ServerMessages.LocaleMsg(127));
+            Desequipar(weaponSlot);
+            Desequipar(ammoSlot);
+            return;
+        }
 
         // Stamina (VB6 Protocol.bas:2813-2822): el disparo EXIGE un piso de 10 de energía; si no lo tiene, LocaleMsg 93
         // y NO dispara. El descuento —QuitarSta(RandomNumber(1,10))— ocurre ACÁ, antes de resolver el objetivo, así que
