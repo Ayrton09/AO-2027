@@ -361,9 +361,15 @@
     /* Scrollbars temáticas, en TODOS lados. Iban por una lista de contenedores, y el que no estaba —las habilidades del
        panel de Acciones, la tienda, las teclas— salía con la barra blanca del sistema (reporte del autor, 2026-09-27). El
        chat tiene las suyas, más específicas. Firefox no conoce estas pseudo-clases: ahí van los colores estándar. */
-    ::-webkit-scrollbar { width:9px; height:9px; }
-    ::-webkit-scrollbar-thumb { background:linear-gradient(180deg,var(--gold-lo),var(--gold-deep)); border-radius:5px; }
-    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background:#0a0705; }
+    /* El pulgar va DESPEGADO del canal (borde del color del canal + `background-clip`) y el canal lleva un filete: pegado
+       y dorado sobre casi negro se confundía con los bordes dorados de al lado —los + de las habilidades—. */
+    ::-webkit-scrollbar { width:12px; height:12px; }
+    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background:#140e08; }
+    ::-webkit-scrollbar-track { box-shadow:inset 1px 0 0 #3a2a12; }
+    ::-webkit-scrollbar-thumb { background:linear-gradient(90deg,var(--gold-lo),var(--gold) 50%,var(--gold-lo));
+      border:2px solid #140e08; border-radius:7px; background-clip:padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background:linear-gradient(90deg,var(--gold),var(--gold-hi) 50%,var(--gold));
+      border:2px solid #140e08; background-clip:padding-box; }
     @supports not selector(::-webkit-scrollbar) { * { scrollbar-color:var(--gold-deep) #0a0705; scrollbar-width:thin; } }
     /* Foco accesible en botones. */
     .goldbtn:focus-visible, .menubtn:focus-visible { outline:2px solid var(--gold-hi); outline-offset:1px; }
@@ -584,7 +590,7 @@
     .fsec { font-family:var(--serif); font-size:calc(var(--u)*0.8); letter-spacing:.06em; text-transform:uppercase;
       color:var(--gold); border-bottom:1px solid var(--gold-deep); padding-bottom:2px; margin-top:4px; }
     .fhint { font-size:calc(var(--u)*0.76); color:var(--ink-dim); }
-    .skgrid { display:grid; grid-template-columns:1fr auto auto auto; gap:4px 8px; align-items:center; max-height:46vh; overflow:auto; }
+    .skgrid { display:grid; grid-template-columns:1fr auto auto auto; gap:4px 8px; align-items:center; max-height:46vh; overflow:auto; padding-right:8px; }
     .skgrid .kn { font-size:calc(var(--u)*0.88); } .skgrid .kv { font-family:ui-monospace,monospace; color:var(--gold-hi); text-align:right; min-width:2.4em; }
     .stepbtn { width:1.7em; height:1.7em; line-height:1; padding:0; text-align:center; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
     .shopcell { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px; text-align:center;
