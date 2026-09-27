@@ -46,7 +46,14 @@ public static class WorldPopulator
     }
 
     /// <summary>Los objetos colocados del .csm: árboles, carteles, muebles y PUERTAS. Van al mismo
-    /// <c>_ground</c> que los drops porque el VB6 también tiene UN objeto por tile.</summary>
+    /// <c>_ground</c> que los drops porque el VB6 también tiene UN objeto por tile.
+    ///
+    /// <para><b>La puerta cerrada bloquea desde el arranque</b>, decisión del autor (2026-09-27). En el original el
+    /// bloqueo sale sólo de la lista del mapa (<c>CargarMapa</c>, FileIO.bas:1266) y únicamente abrir o cerrar lo mueve
+    /// (<c>AccionParaPuerta</c>, Acciones.bas:465-489). Trece puertas cerradas —seis en Tiama, tres en Nueva Esperanza,
+    /// dos en el Puerto de Rinkel, una en Rinkel y una en Nix— vienen sin sus baldosas en esa lista, y se atravesaban
+    /// hasta que alguien las abría y las cerraba. Lo reportó el tester. Las otras 479 ya vienen bloqueadas, así que para
+    /// ellas esto no cambia nada. Las baldosas son las del toggle: (X,Y) y (X-1,Y).</para></summary>
     public static (int Placed, int Doors) PlaceObjects(World world, GameData data)
     {
         int placed = 0, doors = 0;
@@ -61,7 +68,11 @@ public static class WorldPopulator
                 world.SetGround(new WorldPos(ToMap(mapNum), (byte)o.X, (byte)o.Y), (short)o.ObjIndex,
                                 (short)Math.Max(1, o.Amount), esFijo: !info.IsDoor);
                 placed++;
-                if (info.IsDoor) doors++;
+                if (!info.IsDoor) continue;
+                doors++;
+                if (info.Closed != 1) continue;
+                data.SetTileBlocked(ToMap(mapNum), o.X, o.Y, true);
+                if (o.X > 1) data.SetTileBlocked(ToMap(mapNum), o.X - 1, o.Y, true);
             }
         return (placed, doors);
     }

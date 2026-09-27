@@ -1618,7 +1618,7 @@
       // `emisores` también: su clave es "x,y" SIN el mapa, así que sin vaciarlo la antorcha de una baldosa se
       // encuentra con las partículas a medio vivir de lo que hubiera en esa misma baldosa del mapa anterior. Y
       // como nunca se vaciaba, el Map se iba llenando de emisores de mapas que ya no se ven.
-      dying.clear(); ground.clear(); emisores.clear(); map = null;
+      dying.clear(); ground.clear(); emisores.clear(); cambiosDeBloqueo.clear(); map = null;
       fetch(`./assets/map${n}.json`).then((r) => (r.ok ? r.json() : null))
         .then((m) => { if (currentMap === n) { map = m; armarBloqueos(m); mostrarCartelDeMapa(m); ponerMusica(m); draw(); } }).catch(() => {});
       draw();
@@ -1634,11 +1634,21 @@
      * Se guarda como Set de `y * 1000 + x` (los mapas son 100×100): una consulta por paso, sin recorrer nada.
      */
     let bloqueados = new Set();
+    /**
+     * LOS BLOQUEOS QUE MANDA EL SERVER en el mapa actual (`BlockPosition`), por baldosa. `armarBloqueos` rehace
+     * `bloqueados` desde el JSON del mapa, y ese JSON baja DESPUÉS de que el server manda, pegados al cambio de mapa,
+     * el estado de las puertas que se ven: sin guardarlos acá, esos avisos iban a parar al Set viejo y se perdían, y el
+     * mapa quedaba con las puertas como las trae el `.csm`. Una puerta abierta se veía abierta y no se podía pasar, y
+     * una cerrada que el mapa trae libre se dejaba pisar hasta que el server te devolvía. El cliente del original carga
+     * el mapa del disco en el acto (`SwitchMap`), así que allá no pasa.
+     */
+    const cambiosDeBloqueo = new Map();
     const CUERPO_MUERTO = 8;                  // el cadáver del original: se puede pisar (lógica CasperIndex)
     const claveTile = (x, y) => y * 1000 + x;
     function armarBloqueos(m) {
       bloqueados = new Set();
       for (const [x, y] of (m && m.blocked) || []) bloqueados.add(claveTile(x, y));
+      for (const [k, b] of cambiosDeBloqueo) if (b) bloqueados.add(k); else bloqueados.delete(k);
       // La capa 2 del mapa: `HayAgua` exige que esté VACÍA, así que un tile de agua con un objeto encima
       // (un puente, un muelle) deja de contar como agua y se puede pisar.
       capa2 = new Set();
@@ -1886,6 +1896,8 @@
     window.__posRender = () => { const c = chars.get(myCharIndex); return c ? posRender(c) : null; };
     /** Sonda: si el cliente considera agua esa baldosa (la regla HayAgua del original). */
     window.__hayAgua = (x, y) => hayAgua(x, y);
+    /** Sonda: si el cliente considera bloqueada esa baldosa (el .csm más los BlockPosition del server). */
+    window.__bloqueada = (x, y) => bloqueados.has(claveTile(x, y));
     /** Sonda: el Base_Light del mapa actual — 0 = sigue el ciclo dia/noche. */
     window.__baseLight = () => (map ? map.baseLight : null);
     /** Sonda: con que color pinta el motor el aura/particula de ese grupo (tiene que ser el de la data). */
@@ -4074,9 +4086,13 @@
         // Sin esto el cliente predecía el paso, cruzaba la puerta cerrada y recién el server lo devolvía.
         // El server también manda el estado de las puertas al loguear, así que entrar al mundo ya deja el
         // mapa al día.
-        case 'BlockPosition':
-          if (f.blocked) bloqueados.add(claveTile(f.x, f.y)); else bloqueados.delete(claveTile(f.x, f.y));
+        // Y queda registrado en `cambiosDeBloqueo`, que es lo que sobrevive a que el mapa termine de bajar.
+        case 'BlockPosition': {
+          const k = claveTile(f.x, f.y);
+          cambiosDeBloqueo.set(k, !!f.blocked);
+          if (f.blocked) bloqueados.add(k); else bloqueados.delete(k);
           break;
+        }
         // El mundo se pausa mientras el server graba los personajes; el toggle vuelve al terminar.
         case 'PauseToggle': pausaDelServer = !pausaDelServer; break;   // la pausa y el /GRABAR del server
         case 'Disconnect': break;   // el server avisa la salida limpia; el socket se cierra solo
