@@ -2600,6 +2600,87 @@
       }
       return true;
     }
+    /**
+     * LA CABEZA QUE NO LLEGA A LA ROPA. Reporte del autor (2026-09-27): "hay como un vacío entre la cabeza y la ropa,
+     * sobre todo si lo mirás de frente". La cuenta es la del original —`Draw_Grh` con Center=1 apoya la cabeza en
+     * `HeadOffset.Y - alto + 32`, TileEngine.bas:2446— y el hueco viene del ARTE: mirando al sur, el 45% de las
+     * combinaciones que un jugador puede tener (cada armadura con su género y sus razas, contra las cabezas de
+     * `ValidarCabeza`) deja al menos una fila de fondo en el centro del cuello, y el Scale2x del HD lo agranda al
+     * redondear el mentón y los hombros (53%).
+     *
+     * La cabeza baja lo justo para que el cuello toque la ropa: en las cuatro columnas del medio de la cabeza se cuentan
+     * las filas de fondo entre lo último de la cabeza y lo primero del cuerpo, y se toma la peor, con tope de 2 píxeles
+     * (más ya la hunde en los hombros: son escotes y armaduras de otro cuello). Se mide DE FRENTE y ese valor vale para
+     * las cuatro direcciones; midiendo cada una, la cabeza saltaría al girar. El casco baja con ella, porque en el
+     * original va en el mismo punto (:2447). El arma y el escudo no: cuelgan del cuerpo.
+     *
+     * Se mide en píxeles del original, sobre el HD: cada píxel es un bloque de 4x4 y cuenta como lleno si lo está la
+     * mitad. Así sale la misma silueta que el BMP en 2127 de 2173 sprites (los otros difieren en algún píxel suelto).
+     */
+    const TOPE_DEL_CUELLO = 2;
+    const siluetas = new Map(), cuellos = new Map();
+    let lienzoSilueta = null, pincelSilueta = null;
+    function silueta(g) {
+      const clave = g.file + ':' + g.x + ':' + g.y + ':' + g.w + ':' + g.h;
+      let s = siluetas.get(clave);
+      if (s !== undefined) return s;
+      const hoja = sheets[g.file];
+      if (!hoja) { loadSheet(g.file); return null; }
+      const W = g.w * HD, H = g.h * HD;
+      if (!lienzoSilueta) lienzoSilueta = document.createElement('canvas');
+      if (lienzoSilueta.width < W || lienzoSilueta.height < H) {
+        lienzoSilueta.width = Math.max(lienzoSilueta.width, W); lienzoSilueta.height = Math.max(lienzoSilueta.height, H);
+        pincelSilueta = null;
+      }
+      if (!pincelSilueta) pincelSilueta = lienzoSilueta.getContext('2d', { willReadFrequently: true });
+      pincelSilueta.clearRect(0, 0, W, H);
+      pincelSilueta.drawImage(hoja, g.x * HD, g.y * HD, W, H, 0, 0, W, H);
+      try {
+        const d = pincelSilueta.getImageData(0, 0, W, H).data;
+        s = new Uint8Array(g.w * g.h);
+        for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+          let llenos = 0;
+          for (let j = 0; j < HD; j++) for (let i = 0; i < HD; i++) if (d[((y * HD + j) * W + x * HD + i) * 4 + 3] > 127) llenos++;
+          s[y * g.w + x] = llenos * 2 >= HD * HD ? 1 : 0;
+        }
+      } catch (e) { s = false; }   // hoja de otro origen (el cliente abierto como archivo): sin silueta no hay ajuste
+      siluetas.set(clave, s);
+      return s;
+    }
+    function bajadaDelCuello(c, b) {
+      const clave = c.body + '|' + c.head;
+      const hecho = cuellos.get(clave);
+      if (hecho !== undefined) return hecho;
+      const h = headsIdx && headsIdx[c.head];
+      const bg = b && b.head && staticGrh(b.walk[2]), hg = h && staticGrh(h.head[2]);   // de frente: el sur
+      if (!bg || !hg) return 0;
+      const sb = silueta(bg), sh = silueta(hg);
+      if (sb === null || sh === null) return 0;            // la hoja todavía no bajó: se mide en el próximo cuadro
+      let peor = -Infinity;
+      if (sb && sh) {
+        const bx = Math.round((TILE - bg.w) / 2), by = TILE - bg.h;
+        const hx = Math.round((TILE - hg.w) / 2 + b.head[0]), hy = TILE + b.head[1] - hg.h;
+        const medio = hg.w / 2;
+        for (let x = Math.floor(medio - 2); x < Math.floor(medio + 2); x++) {
+          let abajo = null;                                // la fila más baja de la cabeza (negativa: queda sobre la baldosa)
+          for (let y = hg.h - 1; y >= 0; y--) if (sh[y * hg.w + x]) { abajo = hy + y; break; }
+          const xc = hx + x - bx;
+          if (abajo === null || xc < 0 || xc >= bg.w) continue;
+          for (let y = Math.max(0, abajo - 7 - by); y < bg.h; y++) {
+            if (sb[y * bg.w + xc]) { peor = Math.max(peor, by + y - abajo - 1); break; }
+          }
+        }
+      }
+      const bajada = peor === -Infinity ? 0 : Math.max(0, Math.min(TOPE_DEL_CUELLO, peor));
+      cuellos.set(clave, bajada);
+      return bajada;
+    }
+    /** Sonda: cuántos píxeles baja la cabeza con ese cuerpo (undefined mientras falten las hojas). */
+    window.__cuello = (cuerpo, cabeza) => {
+      const b = bodies && bodies[cuerpo];
+      const v = b ? bajadaDelCuello({ body: cuerpo, head: cabeza }, b) : undefined;
+      return cuellos.has(cuerpo + '|' + cabeza) ? v : undefined;
+    };
     // Las tres partes propias del personaje. Cada una corre el tope (`c._top`) hacia arriba con su alto.
     function dibujarCuerpo(c, dx, dy, bg, bsheet) {
       const bx = dx + (TILE - bg.w) / 2, by = dy + TILE - bg.h;
@@ -2611,14 +2692,14 @@
       const hg = staticGrh(h.head[heading - 1]); if (!hg) return;
       if (!sheets[hg.file]) { loadSheet(hg.file); return; }
       // AO aplica el HeadOffset a la base y LUEGO ancla la cabeza abajo (Grh_Render: y = base+TILE-alto).
-      const hy = dy + TILE + b.head[1] - hg.h; if (hy < c._top) c._top = hy;
+      const hy = dy + TILE + b.head[1] + bajadaDelCuello(c, b) - hg.h; if (hy < c._top) c._top = hy;
       dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
     }
     function dibujarCasco(c, dx, dy, heading, b) {
       const ht = helmetsIdx && c.helmet && helmetsIdx[c.helmet]; if (!ht || !b.head) return;
       const hg = staticGrh(ht[heading - 1]); if (!hg) return;
       if (!sheets[hg.file]) { loadSheet(hg.file); return; }
-      const hy = dy + TILE + b.head[1] - hg.h; if (hy < c._top) c._top = hy;
+      const hy = dy + TILE + b.head[1] + bajadaDelCuello(c, b) - hg.h; if (hy < c._top) c._top = hy;
       dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
     }
 
@@ -7124,7 +7205,8 @@
       // LAS CINCO PIEZAS, como `DrawPJ` (TileEngine.bas:4092-4112): cuerpo, cabeza, CASCO, ARMA y ESCUDO,
       // todas de frente. Acá se dibujaban sólo las dos primeras, así que un personaje con armadura completa
       // aparecía desarmado en su propia lista — y los tres campos ya venían en el paquete y se tiraban.
-      const cabeza = (g) => { if (g) blit(g, (cw - g.w * sc) / 2 + b.head[0] * sc, piso + (b.head[1] - g.h) * sc); };
+      const cuello = bajadaDelCuello(c, b);                    // la cabeza baja hasta la ropa, igual que en el mundo
+      const cabeza = (g) => { if (g) blit(g, (cw - g.w * sc) / 2 + b.head[0] * sc, piso + (b.head[1] + cuello - g.h) * sc); };
       const mano = (g) => { if (g) blit(g, (cw - g.w * sc) / 2, piso - g.h * sc); };
       cabeza(hg);
       cabeza(cascoG);

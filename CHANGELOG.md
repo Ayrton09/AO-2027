@@ -166,6 +166,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Repartir habilidades es más rápido**: mantené apretado el + o el -. Y las barras de desplazamiento de los paneles
   tienen los colores del juego.
 
+- **La cabeza apoya en la ropa.** Con muchas ropas quedaba un hueco en el cuello, sobre todo de frente: ahora la
+  cabeza baja lo justo para tocarla.
+
 - **Los amigos, como en el original**: el mensaje a tus amigos también te llega a vos, y quitar a alguien de la
   lista te saca de la suya, aunque no esté conectado.
 
