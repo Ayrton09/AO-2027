@@ -108,10 +108,11 @@ public sealed class StaticFileServer
     /// el cliente usa el puerto aparte, como antes.</param>
     /// <param name="alcanceDelHechizo">Si el cliente marca el alcance del hechizo al apuntar (Server.ini
     /// <c>AlcanceDelHechizo</c>). Viaja en el mismo JSON: es del server, no de cada jugador.</param>
+    /// <param name="destinoDeLosPortales">Si cada portal dice a dónde lleva (Server.ini <c>DestinoDeLosPortales</c>).</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
                             Func<string>? estadoPublico = null,
                             Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
-                            bool alcanceDelHechizo = true)
+                            bool alcanceDelHechizo = true, bool destinoDeLosPortales = true)
     {
         _port = port;
         _wsPort = wsPort;
@@ -126,7 +127,8 @@ public sealed class StaticFileServer
         _config = Encoding.UTF8.GetBytes(
             $"{{\"wsPort\":{anunciado},\"wsPath\":{ruta}," +
             $"\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}," +
-            $"\"alcanceHechizo\":{(alcanceDelHechizo ? "true" : "false")}}}");
+            $"\"alcanceHechizo\":{(alcanceDelHechizo ? "true" : "false")}," +
+            $"\"destinoPortales\":{(destinoDeLosPortales ? "true" : "false")}}}");
     }
 
     /// <summary>El JSON que se baja el cliente, tal cual. Existe para poder testear QUÉ se le anuncia sin

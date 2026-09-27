@@ -134,6 +134,23 @@ public sealed class ServerIni
     /// </summary>
     public bool AlcanceDelHechizo { get; private set; } = true;
 
+    /// <summary>
+    /// REGLA DE LA CASA — <c>DestinoDeLosPortales</c> (default <b>1</b>, PRENDIDA): cada portal dice a dónde lleva, con un cartel
+    /// arriba y en el texto que sale al clickearlo ("Teleport a Nix"). En el original los 67 portales del mundo se llaman
+    /// "Teleport" a secas y el destino se descubre pisándolo. Pedido del tester, 2026-09-27. Lo dibuja el cliente web con la
+    /// salida de la baldosa; le llega en <c>coverao-config.json</c>. Con 0, como el original.
+    /// </summary>
+    public bool DestinoDeLosPortales { get; private set; } = true;
+
+    /// <summary>
+    /// REGLA DE LA CASA — <c>VidaMinimaDeJefe</c> (default <b>50000</b>): desde cuánta vida máxima una criatura hostil que da
+    /// experiencia es un JEFE, y el cliente web muestra su vida en una barra grande arriba de la pantalla mientras está a la
+    /// vista. Con 50.000 son 16: los dragones grandes y el Rey Dragón, Garveloth, los gólems, los yetis, el Guardián, el
+    /// Profeta Arcano, el Vampiro Transformado y el Grinch. Pedido del tester, 2026-09-27. Con 0 no hay jefes ni barra, y el
+    /// server no manda el paquete (<c>VidaDelJefe</c>, que el original no tiene).
+    /// </summary>
+    public int VidaMinimaDeJefe { get; private set; } = 50_000;
+
     /// <summary>El techo de <see cref="Exp"/> y <see cref="Oro"/>: el <c>Integer</c> de VB6 donde el original
     /// guarda la tasa (<c>Expc</c>, Declares.bas:36). Más grande, allá el server no arrancaba.</summary>
     public const int TasaMaxima = short.MaxValue;
@@ -173,12 +190,12 @@ public sealed class ServerIni
         "GuardiasAtacan", "GuardiasAtacanNewbies", "GuardiasDelCaosAtacanA", "GuardiasImperialesAtacanA",
         "GuardiasPersiguen", "GuardiasRepublicanosAtacanA",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
-"CuentasNuevasPorIp", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
+"CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
         "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
-        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version",
+        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
     };
 
     /// <summary>Las opciones que el servidor sabe leer y que el <c>Server.ini</c> del host NO menciona: están
@@ -1202,6 +1219,9 @@ public sealed class ServerIni
         cfg.EventoAlRematar = ini.GetInt("INIT", "EventoAlRematar", 0) != 0;
         cfg.OroPorMonton = Math.Clamp(ini.GetInt("INIT", "OroPorMonton", 10_000), 1, short.MaxValue);
         cfg.AlcanceDelHechizo = ini.GetInt("INIT", "AlcanceDelHechizo", 1) != 0;
+        cfg.DestinoDeLosPortales = ini.GetInt("INIT", "DestinoDeLosPortales", 1) != 0;
+        // 0 apaga; un negativo también (no hay jefes "de menos vida que ninguna").
+        cfg.VidaMinimaDeJefe = Math.Max(0, ini.GetInt("INIT", "VidaMinimaDeJefe", 50_000));
         cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;
         cfg.GuardiasAtacanNewbies = ini.GetInt("INIT", "GuardiasAtacanNewbies", 0) != 0;
         var desconocidas = new List<string>();

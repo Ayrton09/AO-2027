@@ -67,6 +67,11 @@ EventoAlRematar=0
 OroPorMonton=10000
 ; Al tocar Lanzar, el cliente web marca hasta donde llega el hechizo (1) o no (0).
 AlcanceDelHechizo=1
+; Cada portal dice a donde lleva: un cartel arriba y el texto al clickearlo (1) o no (0).
+DestinoDeLosPortales=1
+; Desde cuanta vida maxima una criatura hostil es un JEFE y muestra su vida en una barra
+; arriba de la pantalla (0 = sin barra). Con 50000 son los dragones grandes, los golems, etc.
+VidaMinimaDeJefe=50000
 ; A quien le vende el mercader, segun la zona. Facciones: Renegado, Ciudadano, Republicano,
 ; Caos, Armada, Milicia (separadas por coma; vacio = a nadie). Los valores de abajo son los
 ; del original: Rinkel es Rinkel, Nueva Esperanza y el Dungeon de Newbies; las ciudades viejas,

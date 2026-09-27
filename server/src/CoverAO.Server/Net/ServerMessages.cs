@@ -781,6 +781,13 @@ public static class ServerMessages
         return w.ToArray();
     }
 
+    /// <summary>LA VIDA DE UN JEFE (id 108). <b>Paquete nuestro</b>, no del original — ver
+    /// <see cref="ServerPacketId.VidaDelJefe"/>. Layout: Integer(charIndex), Long(vida), Long(vidaMaxima). La vida de un
+    /// jefe pasa de los 32.767 de un Integer (el Rey Dragón tiene 900.000), por eso va en Long.</summary>
+    public static byte[] VidaDelJefe(short charIndex, int vida, int vidaMaxima) =>
+        new ByteQueueWriter().WritePacketId(ServerPacketId.VidaDelJefe)
+            .WriteInteger(charIndex).WriteLong(vida).WriteLong(vidaMaxima).ToArray();
+
     /// <summary>
     /// El buzón entero (id 86). Layout: Byte(cantidad) y por cada carta
     /// ASCIIString(Emisor), ASCIIString(Carta), Byte(Leida), Integer(ObjetoCantidad), Integer(ObjetoIndex)

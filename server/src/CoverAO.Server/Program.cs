@@ -249,6 +249,7 @@ var serverContent = CoverAO.Server.Game.ServerContent.Load(dataRoot, gameData.So
 // EL FIXTURE NO TOMA LA ESPERA DE RESPAWN DE PRODUCCION: sus criaturas son utileria que los flows matan y
 // vuelven a necesitar dentro de la misma tanda de golpes. Con los 30 s de produccion se quedaban sin blanco.
 var npcSystem = new NpcSystem(world, gameData, gmsPerseguibles: fixtureMode, ini: fixtureMode ? null : serverIni);
+var vidaDeLosJefes = new VidaDeLosJefes(world, serverIni);
 // Regla de la casa: ¿el familiar sale a buscar pelea solo? Apagada = como el original (te sigue y nada más).
 npcSystem.FamiliarBuscaEnemigo = serverIni.FamiliarBusca;
 npcSystem.ParalisisDeNpcTicks = serverIni.IntervaloParalizado;   // [INTERVALOS] IntervaloParalizado
@@ -484,6 +485,8 @@ loop.OnTickHandler = tick =>
     // LA PAUSA DEL SERVIDOR (VB6 EnPausa) frena sólo el TIMER_AI (mMainLoop.bas:77): la IA de las criaturas. El resto
     // del mundo —la vida, el hambre, el veneno, la cuenta de salida, el clima— es de otros timers y sigue corriendo.
     npcSystem.Update(tick, pausado: admin.Paused);
+    // La barra de vida de los jefes (Server.ini `VidaMinimaDeJefe`): después de la IA, que es la que les cambia la vida.
+    vidaDeLosJefes.Tick(tick);
     // Cuenta regresiva de SALIDA (VB6 General.bas:1341, el mismo timer de 1 s): a cada jugador que pidió
     // /SALIR —o al que se le cortó la conexión en un mapa inseguro— se le baja el contador avisándole con
     // LocaleMsg(491), y al llegar a 0 se le manda el Disconnect y se le cierra la conexión, que es el cierre
@@ -975,7 +978,7 @@ if (habraWeb)
     // error visible: la página abría, el login aparecía, y el socket moría contra un puerto cerrado.
     webTask = new CoverAO.Server.Net.StaticFileServer(
         webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico,
-        estadoPublico, wsServer.AceptarAsync, serverIni.AlcanceDelHechizo).RunAsync(cts.Token);
+        estadoPublico, wsServer.AceptarAsync, serverIni.AlcanceDelHechizo, serverIni.DestinoDeLosPortales).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se

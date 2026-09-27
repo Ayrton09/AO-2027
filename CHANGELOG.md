@@ -174,6 +174,13 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **La cabeza apoya en la ropa.** Con muchas ropas quedaba un hueco en el cuello, sobre todo de frente: ahora la
   cabeza baja lo justo para tocarla.
 
+- **Los portales dicen a dónde llevan**: cada uno tiene un cartel con su destino, y al clickearlo dice "Teleport a
+  Nix". El que hostea lo apaga con `DestinoDeLosPortales=0`.
+
+- **Los jefes muestran su vida**: con un jefe cerca aparece arriba de la pantalla una barra con su nombre y su vida.
+  Son jefes los dragones grandes, los gólems, los yetis y las otras criaturas de 50.000 de vida o más; el que hostea
+  elige desde cuánta vida con `VidaMinimaDeJefe`.
+
 - **Los amigos, como en el original**: el mensaje a tus amigos también te llega a vos, y quitar a alguien de la
   lista te saca de la suya, aunque no esté conectado.
 

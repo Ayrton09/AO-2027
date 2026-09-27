@@ -118,4 +118,10 @@ public enum ServerPacketId : byte
     /// del lado del cliente. El original tenía el panel dibujado en `frmEstadisticas` y ningún paquete que lo
     /// alimentara; ésta es esa pieza que faltaba.</summary>
     FamiliarInfo = 107,
+
+    /// <summary>LA VIDA DE UN JEFE. <b>No existe en el original</b>: es el segundo paquete SC nuestro, después de
+    /// <see cref="FamiliarInfo"/>. Alimenta la barra de vida que el cliente web dibuja arriba de la pantalla mientras un
+    /// jefe está a la vista (pedido del tester, 2026-09-27). Lo manda <c>VidaDeLosJefes</c>, y sólo si el Server.ini tiene
+    /// <c>VidaMinimaDeJefe</c> mayor que 0.</summary>
+    VidaDelJefe = 108,
 }

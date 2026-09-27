@@ -79,6 +79,20 @@
       z-index:7; text-align:center; opacity:0; pointer-events:none;
       transition:opacity .5s ease, transform .5s ease; }
     #cartelmapa.on { opacity:1; transform:translateX(-50%) translateY(0); }
+    /* LA BARRA DEL JEFE: arriba al centro, debajo de la barra de estado, sin tapar clics. Se prende con la clase `on`
+       (no con `hidden`: el `display` de una regla le gana al atributo). */
+    #barra-jefe { position:absolute; top:calc(14px + var(--u)*1.9); left:50%; transform:translateX(-50%);
+      width:min(46%, 520px); z-index:6; pointer-events:none; opacity:0; transition:opacity .35s ease; }
+    #barra-jefe.on { opacity:1; }
+    #barra-jefe .bj-nombre { text-align:center; font-family:var(--serif); font-size:calc(var(--u)*1.15);
+      color:var(--gold-hi); letter-spacing:.05em; text-shadow:0 1px 3px #000, 0 0 10px #000a; margin-bottom:3px; }
+    #barra-jefe .bj-marco { position:relative; height:calc(var(--u)*1.3); background:#1a0706e6;
+      border:1px solid var(--gold-deep); border-radius:3px; box-shadow:0 1px 6px #000c, inset 0 0 0 1px #000;
+      overflow:hidden; }
+    #barra-jefe .bj-vida { position:absolute; left:0; top:0; bottom:0; width:100%;
+      background:linear-gradient(180deg,#e0453a,#a3160f 55%,#6e0b07); transition:width .25s ease-out; }
+    #barra-jefe .bj-numero { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-family: ui-monospace, monospace; font-size:calc(var(--u)*0.78); color:#fff2d8; text-shadow:0 1px 2px #000; }
     #cartelmapa .cm-n { font-family:var(--serif); font-size:calc(var(--u)*2.6); letter-spacing:.06em;
       color:var(--gold-hi); text-shadow:0 2px 6px #000, 0 0 18px #e8c87655; }
     #cartelmapa .cm-z { font-family:var(--serif); font-size:calc(var(--u)*0.95); letter-spacing:.34em;
@@ -625,6 +639,8 @@
       </div>
       <!-- Cartel del lugar: aparece unos segundos al entrar a un mapa con nombre. -->
       <div id="cartelmapa"><div class="cm-n"></div><div class="cm-z"></div></div>
+      <!-- La vida del jefe más cercano (ver `pintarBarraDelJefe`). -->
+      <div id="barra-jefe"><div class="bj-nombre"></div><div class="bj-marco"><div class="bj-vida"></div><div class="bj-numero"></div></div></div>
       <div id="chatwrap">
         <div id="chattabs">
           <span class="ct on" data-f="all">Todo</span>
@@ -899,7 +915,7 @@
     // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
     // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
     import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=33';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=34';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
@@ -2730,6 +2746,36 @@
      * Escala 1:1 — un pixel por tile, igual que el PictureBox de 97×97 del original. El canvas se
      * redimensiona al mapa y el CSS lo estira con `image-rendering:pixelated`.
      */
+    /**
+     * LA BARRA DEL JEFE (pedido del tester, 2026-09-27; no existe en el original). El server manda `VidaDelJefe` de cada
+     * jefe a la vista —cuando le cambia la vida y una vez por segundo— y acá se muestra el más cercano, grande, arriba de
+     * la pantalla: el nombre, la barra y los números. Se va sola cuando el jefe muere o sale de la vista, porque el
+     * `CharacterRemove` lo saca de `chars`. Toca el DOM sólo cuando cambia algo.
+     */
+    const barraJefe = document.getElementById('barra-jefe');
+    let barraJefeHecha = '';
+    function pintarBarraDelJefe(me) {
+      let elegido = null, cerca = Infinity;
+      if (me) for (const c of chars.values()) {
+        if (!c.jefe || c.jefe.vida <= 0) continue;
+        const d = Math.max(Math.abs(c.x - me.x), Math.abs(c.y - me.y));
+        if (d < cerca) { cerca = d; elegido = c; }
+      }
+      const clave = elegido ? elegido.name + '|' + elegido.jefe.vida + '|' + elegido.jefe.max : '';
+      if (clave === barraJefeHecha || !barraJefe) return;
+      barraJefeHecha = clave;
+      if (!elegido) { barraJefe.classList.remove('on'); return; }
+      const parte = Math.max(0, Math.min(1, elegido.jefe.vida / Math.max(1, elegido.jefe.max)));
+      barraJefe.querySelector('.bj-nombre').textContent = elegido.name;
+      barraJefe.querySelector('.bj-vida').style.width = (parte * 100).toFixed(2) + '%';
+      barraJefe.querySelector('.bj-numero').textContent =
+        elegido.jefe.vida.toLocaleString('es-AR') + ' / ' + elegido.jefe.max.toLocaleString('es-AR');
+      barraJefe.classList.add('on');
+    }
+    /** Sonda: lo que muestra la barra del jefe ahora mismo. */
+    window.__barraJefe = () => ({ on: !!barraJefe && barraJefe.classList.contains('on'),
+      nombre: barraJefe && barraJefe.querySelector('.bj-nombre').textContent,
+      numero: barraJefe && barraJefe.querySelector('.bj-numero').textContent });
     const minimapCv = document.getElementById('minimap');
     function drawMinimap() {
       const mx = minimapCv.getContext('2d');
@@ -2931,6 +2977,13 @@
     // EL ALCANCE DEL HECHIZO al apuntar: lo prende o lo apaga el server (Server.ini `AlcanceDelHechizo`), y viene prendido.
     // Ver `dibujarAlcanceDelHechizo`.
     let alcanceHechizo = true;
+    // A DÓNDE LLEVA CADA PORTAL (Server.ini `DestinoDeLosPortales`, viene prendido). Ver `destinoDelPortal`.
+    let destinoPortales = true;
+    // LOS PORTALES DE CADA MAPA (assets/portales.json; lo arma `check-portales.mjs` desde la data). El cliente no los recibe
+    // nunca: el server marca fijo todo objeto del mapa menos las puertas, y casi ninguno tiene gráfico —lo que se ve es su
+    // partícula—, así que sin esta lista no sabría dónde hay uno.
+    let portalesDelMundo = {};
+    fetch('./assets/portales.json').then((r) => (r.ok ? r.json() : {})).then((p) => { portalesDelMundo = p || {}; }).catch(() => {});
     function urlDelSocket() {
       // wss:// cuando la página se sirve por HTTPS (TLS terminado en el server WS o en un reverse-proxy);
       // ws:// en http/localhost para desarrollo. Así el transporte del cliente web va cifrado en producción.
@@ -3019,7 +3072,8 @@
       .then((cfg) => { if (cfg && cfg.wsPort > 0) wsPort = cfg.wsPort;
                        if (cfg && cfg.wsPath) wsPath = String(cfg.wsPath);
                        if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente);
-                       if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false; })
+                       if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false;
+                       if (cfg && cfg.destinoPortales === false) destinoPortales = false; })
       .catch(() => {})
       .finally(() => {
         // El auto-login sólo vale DESDE LA MISMA MÁQUINA (dev y capturas). Cablea las credenciales del
@@ -4341,6 +4395,8 @@
         case 'CorreoList': cartas = f.cartas; renderCartas(); break;   // la bandeja del buzon
         case 'UpdateUserStats': myStats = f; break;   // HP/mana/level for the HUD
         case 'FamiliarInfo': miFamiliar = f.tipo ? f : null; break;
+        // La vida de un jefe a la vista (paquete nuestro): la barra de arriba la lee de acá cada cuadro.
+        case 'VidaDelJefe': { const c = chars.get(f.charIndex); if (c) c.jefe = { vida: f.vida, max: f.vidaMaxima }; break; }
         // Actualizaciones de UN stat: el server manda solo el valor que cambio y el HUD lo aplica sobre lo
         // que ya tiene. Es el camino caliente (cada golpe, cada vuelta de regeneracion, cada tick de oficio),
         // asi que el original manda 3-5 bytes en vez del UpdateUserStats de ~26. Si todavia no llego ningun
@@ -5666,6 +5722,19 @@
       let iObj = 0;
       const delSuelo = [...ground.values()].sort((a, b) => a.y - b.y || a.x - b.x);
       let iSuelo = 0;
+      // Los carteles de los portales del mapa van en SU fila, como un objeto más: así los tapa lo que está delante.
+      // El portal que sí vino como objeto (el de un hechizo) lo nombra `pintarObjetoDelSuelo`.
+      const portalesVista = destinoPortales ? portalesDelMapa() : [];
+      let iPortal = 0;
+      const pintarCartelDePortal = (px, py) => {
+        const it = ground.get(px + ',' + py);
+        if (it && items && items[it.objIndex] && items[it.objIndex][2] === TIPO_TELEPORT) return;
+        const sx = px - Math.round(camX), sy = py - Math.round(camY);
+        if (sx < -2 || sx >= nW + 2 || sy < -2 || sy >= nH + 3) return;
+        const destino = destinoDelPortal(px, py);
+        if (destino) pintarEtiqueta({ texto: destino, x: sx * TILE + offX + TILE / 2, y: sy * TILE + offY - ALTO_CARTEL_PORTAL,
+                                      color: COLOR_PORTAL, alpha: 1 });
+      };
       const pintarObjetoDelSuelo = (it) => {
         const sx = it.x - Math.round(camX), sy = it.y - Math.round(camY);
         if (sx < -MARGEN_TILES || sx >= nW + MARGEN_TILES || sy < -MARGEN_TILES || sy >= nH + MARGEN_TILES) return;
@@ -5679,6 +5748,13 @@
           dGrh(ctx, sheets[g.file], g, dx, dy, g.w, g.h);
           borrarDeLasEtiquetas(sheets[g.file], g, dx, dy);
         } else if (g) loadSheet(g.file);
+        // EL PORTAL DICE A DÓNDE LLEVA: el nombre del mapa destino arriba del sprite, en la capa de las etiquetas (se
+        // apaga con los nombres, tecla N). Ver `destinoDelPortal`.
+        if (meta[2] === TIPO_TELEPORT) {
+          const destino = destinoDelPortal(it.x, it.y);
+          const arriba = g ? sy * TILE + offY + TILE - g.h : sy * TILE + offY;
+          if (destino) pintarEtiqueta({ texto: destino, x: sx * TILE + offX + TILE / 2, y: arriba - 3, color: COLOR_PORTAL, alpha: 1 });
+        }
       };
       // Avanza las dos listas hasta la fila/columna del personaje que se va a dibujar. El empate (mismo
       // tile) va PRIMERO el objeto, para que el personaje parado encima quede por delante — igual que el
@@ -5701,6 +5777,12 @@
           pintarObjetoDelSuelo(it);
           if (_orden) _orden.push(['suelo', it.y, it.x]);
           iSuelo++;
+        }
+        while (iPortal < portalesVista.length) {
+          const [px, py] = portalesVista[iPortal];
+          if (py > fy || (py === fy && px > fx)) break;
+          pintarCartelDePortal(px, py);
+          iPortal++;
         }
       };
       // Empate (mismo tile): primero la capa 3, para que el personaje parado ahí quede ENCIMA de ella.
@@ -6057,6 +6139,7 @@
       }
 
       drawMinimap();   // minimapa (canvas del DOM); las entidades/viewport se actualizan cada frame
+      pintarBarraDelJefe(me);
       ctx.setTransform(1, 0, 0, 1, 0, 0);   // restaura el transform (por si alguien dibuja fuera)
       syncStats();     // barras/nivel/oro/coords del panel DOM
     }
@@ -6925,6 +7008,31 @@
     // La cantidad entre paréntesis NO va siempre: `MostrarCantidad` (General.bas:1642) la oculta para puertas,
     // carteles, árboles, yacimientos, teleports y buzones — cosas de las que "3 puertas" no querría decir nada.
     const SIN_CANTIDAD = new Set([6, 8, 4, 22, 19, 48]);   // otPuertas, otCarteles, otArboles, otYacimiento, otTeleport, otcorreo
+    /**
+     * A DÓNDE LLEVA UN PORTAL (pedido del tester, 2026-09-27: "que todos los portales digan a dónde te llevan"). No está en
+     * el original: allá los 67 portales del mundo se llaman "Teleport" a secas y el destino se descubre pisándolo. Sale de
+     * la SALIDA de su baldosa —`map.exits`, la misma que usa el server al cruzarlo— y del nombre del mapa destino que trae
+     * `mapa-zonas.json`. Lo apaga el que hostea con `DestinoDeLosPortales=0`. null = no se sabe o está apagado.
+     */
+    function destinoDelPortal(x, y) {
+      if (!destinoPortales || !map || !map.exits || !mapaZonas) return null;
+      if (!map._salidas) { map._salidas = new Map(); for (const [ex, ey, dm] of map.exits) map._salidas.set(ex + ',' + ey, dm); }
+      const z = mapaZonas[map._salidas.get(x + ',' + y)];
+      return z && z.n ? z.n.trim() : null;
+    }
+    const COLOR_PORTAL = '#9fd8ff';
+    function portalesDelMapa() {
+      if (!map) return [];
+      if (!map._portales || map._portalesDe !== portalesDelMundo) {
+        map._portalesDe = portalesDelMundo;
+        map._portales = portalesDelMundo[currentMap] || [];
+        map._esPortal = new Set(map._portales.map(([x, y]) => x + ',' + y));
+      }
+      return map._portales;
+    }
+    const esPortalDelMapa = (x, y) => (portalesDelMapa(), !!(map && map._esPortal && map._esPortal.has(x + ',' + y)));
+    // El cartel va arriba del brillo: la partícula del teleport sube hasta unos 50 px sobre su baldosa.
+    const ALTO_CARTEL_PORTAL = 44;
     let porGrh = null;             // índice inverso grh → objIndex, para nombrar los objetos FIJOS del mapa
     function describirObjetoDelPiso(x, y) {
       const it = ground.get(x + ',' + y);
@@ -6932,7 +7040,18 @@
         const meta = items && items[it.objIndex];
         const tipo = meta && meta[2] ? meta[2] : 0;
         const cant = (!SIN_CANTIDAD.has(tipo) && it.amount > 0) ? ' (' + it.amount + ')' : '';
-        log(itemName(it.objIndex) + cant, '#c9c17a');
+        // El portal dice a dónde lleva: "Teleport a Nix" (el nombre del objeto sin el destino que traiga, que puede
+        // no ser el de esta baldosa, y el de la salida).
+        const destino = tipo === TIPO_TELEPORT ? destinoDelPortal(x, y) : null;
+        const nombre = destino ? itemName(it.objIndex).replace(/ a .*$/, '') + ' a ' + destino : itemName(it.objIndex);
+        log(nombre + cant, '#c9c17a');
+        return;
+      }
+      // UN PORTAL DEL MAPA, que no viaja como objeto (ver `portalesDelMundo`). El original lo nombra con su propia copia
+      // del mapa ("Teleport"); acá además dice a dónde lleva, salvo que el que hostea lo haya apagado.
+      if (esPortalDelMapa(x, y)) {
+        const destino = destinoDelPortal(x, y);
+        log(destino ? 'Teleport a ' + destino : 'Teleport', '#c9c17a');
         return;
       }
       // Sin ítem suelto: puede haber un objeto FIJO del mapa (un árbol, un cartel, una puerta). Esos no tienen

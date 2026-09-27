@@ -109,6 +109,8 @@ export var ServerPacketId;
     // ultimo id del VB6-- por el mismo criterio que el `BorrarPersonaje = 114` del lado del cliente. El original
     // tenia el panel dibujado en frmEstadisticas y ningun paquete que lo alimentara.
     ServerPacketId[ServerPacketId["FamiliarInfo"] = 107] = "FamiliarInfo";
+    // LA VIDA DE UN JEFE. AGREGADO NUESTRO, el segundo después de FamiliarInfo: alimenta la barra de arriba de la pantalla.
+    ServerPacketId[ServerPacketId["VidaDelJefe"] = 108] = "VidaDelJefe";
     // El cuadro de dialogo del server. Es EL paquete de los rechazos de login (personaje ya conectado, otra
     // sesion de la misma cuenta): sin decodificarlo, el cliente quedaba en "logueando..." para siempre y ademas
     // se le desincronizaba el stream, porque no sabia cuantos bytes comerse.
@@ -361,6 +363,8 @@ function readOne(r, id) {
         // SendUpdate). Sin este case el stream se DESINCRONIZA (protocolo sin length-prefix).
         case ServerPacketId.EjecutarAccion: return { accion: r.readByte(), extra: r.readAsciiString() };
         // La ficha del familiar. `estado` trae los dos bits juntos: 1 = esta puesto en el mundo, 2 = muerto.
+        // La vida va en Long: la de un jefe pasa del Integer (el Rey Dragón tiene 900.000).
+        case ServerPacketId.VidaDelJefe: return { charIndex: r.readInteger(), vida: r.readLong(), vidaMaxima: r.readLong() };
         case ServerPacketId.FamiliarInfo: {
             const tipo = r.readByte(), nombre = r.readAsciiString(), nivel = r.readByte();
             const exp = r.readLong(), elu = r.readLong();
