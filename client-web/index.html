@@ -2162,17 +2162,31 @@
     // default. Reportado jugando en un monitor de alto refresco, 2026-08-01.
     let fpsCap = Math.max(0, Number(localStorage.getItem('ao_fpscap') ?? 0));
     let lastDrawT = 0;
+    const tope = { proximo: 0 };
     window.__setFpsCap = (n) => {                       // lo usa el selector de Opciones
       fpsCap = Math.max(0, Number(n) || 0);
+      tope.proximo = 0;
       localStorage.setItem('ao_fpscap', String(fpsCap));
       log('Límite de FPS: ' + (fpsCap ? fpsCap : 'sin límite (vsync)'), '#c9a24b');
     };
+    // EL TOPE CUENTA DESDE EL CUADRO QUE TOCABA, no desde el último que se dibujó. Con "pasaron 1000/N ms desde
+    // el último" el tope sólo deja pasar múltiplos enteros del vsync: en un monitor de 360 Hz (un cuadro cada
+    // 2,78 ms) el tope de 240 dejaba pasar uno sí y uno no, o sea 180 FPS clavados. Reportado por el autor,
+    // 2026-09-27. Llevando la cuenta del próximo, pasan dos de cada tres y el promedio da el tope. Si se atrasó
+    // más de un paso (pestaña oculta, un cuadro lento), no se recupera de golpe: se arranca de nuevo desde ahí.
+    // El milisegundo de tolerancia es para el vsync, que nunca llega exacto.
+    function tocaDibujar(ts, cap, estado) {
+      if (!(cap > 0)) return true;
+      const paso = 1000 / cap;
+      if (ts < estado.proximo - 1) return false;
+      estado.proximo = ts - estado.proximo > paso ? ts + paso : estado.proximo + paso;
+      return true;
+    }
+    window.__tocaDibujar = tocaDibujar;   // para verificar el tope sin un monitor de 360 Hz
     function frame(ts) {
       requestAnimationFrame(frame);
       if (paused || !renderReady) return;
-      // Limitador: con cap 0 se dibuja en cada vsync. Con cap N se saltean los frames que llegan antes
-      // de 1000/N ms. Se resta medio frame de tolerancia para no perder uno por redondeo del vsync.
-      if (fpsCap > 0 && ts - lastDrawT < 1000 / fpsCap - 1) return;
+      if (!tocaDibujar(ts, fpsCap, tope)) return;
       if (lastDrawT) { const dt = ts - lastDrawT; if (dt > 0) fpsAvg = fpsAvg ? fpsAvg * 0.9 + (1000 / dt) * 0.1 : 1000 / dt; }
       lastDrawT = ts;
       draw();
