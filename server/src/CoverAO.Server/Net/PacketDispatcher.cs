@@ -2496,7 +2496,7 @@ public sealed partial class PacketDispatcher
         // player's raw damage is below the NPC's defence the result is negative and the NPC heals (VB6 parity).
         // `danoBase` se calcula UNA vez: apuñalar lo reusa, y volver a llamar a MeleeDamage tiraría el dado
         // de nuevo — la puñalada saldría de un golpe distinto del que acaba de pegar.
-        int danoBase = MeleeDamage(p, contraNpc: true);
+        int danoBase = MeleeDamage(p, contraNpc: true, npc);
         int damage = danoBase - npc.Template.Def;
         // La exp se gotea ANTES de aplicar el daño (VB6 SistemaCombate.bas:470 contra :472), porque el recorte
         // usa el HP que la criatura TODAVÍA tiene: el golpe que remata cobra por lo que quedaba, no por el
@@ -3179,8 +3179,8 @@ public sealed partial class PacketDispatcher
     /// Diferencias con el estado sobre jugadores, todas del original:
     ///   - paralizar/inmovilizar PROVOCA a la criatura (PuedeAtacarNPC + NPCAtacado), igual que pegarle;
     ///   - RemoverParalisis sólo funciona sobre TU PROPIA mascota (<c>If .MaestroUser = UserIndex</c>);
-    ///   - la inmunidad por NPC (.flags.AfectaParalisis → LocaleMsg 399) no se modela: ningún NPC de esta
-    ///     data trae la clave, así que la rama es inalcanzable.
+    ///   - la criatura inmune (.flags.AfectaParalisis, que el original carga de la clave <c>Inmunidad</c>) contesta el
+    ///     LocaleMsg 399: la traen 66 fichas, entre ellas los dragones.
     /// El veneno sobre criaturas no está en HechizoEstadoNPC (el original sólo ramifica paralizar,
     /// inmovilizar y remover parálisis), así que envenenar a un bicho sigue sin objetivo válido.
     /// </summary>
@@ -10892,9 +10892,10 @@ public sealed partial class PacketDispatcher
     ///
     /// Los dos últimos sumandos van DESPUÉS del modificador de clase, sobre el número ya redondeado: la
     /// montura (:421-427, cualquier objetivo) y el ítem mágico de <c>AumentaGolpe</c> (:429-433, <b>sólo contra
-    /// NPC</b> — el Pendiente del Experto no pega más fuerte en PvP). Los especiales de arma (matadragones,
-    /// arco-demonio) siguen sin modelarse.</summary>
-    private int MeleeDamage(Player p, bool contraNpc)
+    /// NPC</b> — el Pendiente del Experto no pega más fuerte en PvP). La Espada Mata Dragones cambia la tirada del arma
+    /// (<see cref="Combat.TiradaDeLaMataDragones"/>), y por eso hace falta saber contra qué criatura es; el arco caza demonios
+    /// sigue sin modelarse.</summary>
+    private int MeleeDamage(Player p, bool contraNpc, Npc? criatura = null)
     {
         long userHit = p.MaxHit >= p.MinHit ? _rng.Next(p.MinHit, p.MaxHit + 1) : p.MinHit;
         var nudillos = Equipment.EquippedOfCategory(p, _data, 7);
@@ -10906,6 +10907,9 @@ public sealed partial class PacketDispatcher
             weaponRoll = weapon.MaxHit >= weapon.MinHit ? _rng.Next(weapon.MinHit, weapon.MaxHit + 1) : weapon.MinHit;
             weaponMax = weapon.MaxHit;
             classMod = _data.WeaponMod.TryGetValue(p.Class, out var wm) ? wm : 1.0;      // ModClase.DañoArmas
+            if (weapon.Index == Combat.EspadaMataDragones)
+                (weaponRoll, weaponMax) = Combat.TiradaDeLaMataDragones(weaponRoll, weapon.MaxHit, contraNpc,
+                    criatura?.Template.NpcType == Combat.NpcDragon, (a, b) => _rng.Next(a, b + 1));
         }
         else
         {

@@ -7,8 +7,8 @@ namespace CoverAO.Server.Game;
 ///
 /// The RNG-resolved inputs (weapon roll, user-hit roll) are parameters so the arithmetic is a pure,
 /// golden-testable function. The result is assigned to a VB6 Long, which rounds half-to-even (banker's
-/// rounding) — reproduced here with MidpointRounding.ToEven. Special weapons (dragon-slayer, arco-demonio),
-/// mount/ship bonuses and magic-ring bonuses from the original are not modeled yet.
+/// rounding) — reproduced here with MidpointRounding.ToEven. La Espada Mata Dragones entra por
+/// <see cref="TiradaDeLaMataDragones"/>; el arco caza demonios sigue sin modelarse.
 /// </summary>
 public static class Combat
 {
@@ -28,6 +28,27 @@ public static class Combat
     }
 
     private static long Clng(double d) => (long)Math.Round(d, MidpointRounding.ToEven);
+
+    /// <summary>VB6 <c>EspadaMataDragonesIndex</c> (Declares.bas:213).</summary>
+    public const short EspadaMataDragones = 402;
+
+    /// <summary>VB6 <c>eNPCType.Dragon</c> (Declares.bas:398): el Dragón Legendario, los tres Grandes Dragones y el Rey Dragón.</summary>
+    public const int NpcDragon = 20;
+
+    /// <summary>
+    /// LA ESPADA MATA DRAGONES (VB6 CalcularDaño, SistemaCombate.bas:339-348 contra una criatura y :383-387 contra una persona):
+    /// la tirada y el golpe máximo del arma que entran en <see cref="CalcularDano"/>. Contra un DRAGÓN su golpe máximo cuenta
+    /// cincuenta veces, y es el que multiplica la fuerza en la cuenta; contra cualquier otra criatura pega 1; y contra una
+    /// persona tira entre 22 y 35. El "lo mata seguro" del original quedó apagado ahí mismo (<c>matoDragon = False</c>).
+    ///
+    /// <para>Faltaba, y sin esto la espada pegaba como un arma común (26 a 30): contra la defensa 650 del Rey Dragón ningún golpe
+    /// pasaba de cero. Reporte del tester, 2026-09-27.</para>
+    /// </summary>
+    public static (long Tirada, long Maximo) TiradaDeLaMataDragones(long tirada, int maxHit, bool contraNpc, bool esDragon,
+                                                                   Func<int, int, int> entre) =>
+        !contraNpc ? (entre(22, 35), 35)
+        : esDragon ? (tirada, maxHit * 50L)
+        : (1, 1);
 
     /// <summary>Poder de ataque, con la MISMA curva que la evasión. Sirve a las tres variantes del
     /// original —<c>PoderAtaqueWrestling</c> (:157), <c>PoderAtaqueArma</c> (:93) y
