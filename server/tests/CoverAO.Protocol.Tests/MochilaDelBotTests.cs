@@ -124,6 +124,11 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.PrimeroElArma(true, true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: true));
         Assert.False(Bot.PrimeroElArma(true, hayUnaAlAlcance: false, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false),
             "sin quien le venda una que pueda usar, no se ata a buscarla");
+
+        // Y AL LLEGAR AL ÚLTIMO NIVEL DE NOVATO, el descanso de la compra anterior no vale: se sale ya.
+        Assert.True(Bot.EmpiezaAAbastecerse(ultimo - 1, ultimo));
+        Assert.False(Bot.EmpiezaAAbastecerse(ultimo, ultimo), "una sola vez, al llegar");
+        Assert.False(Bot.EmpiezaAAbastecerse(ultimo - 2, ultimo - 1));
     }
 
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja

@@ -703,6 +703,8 @@ public sealed class Bot
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await SanarseAsync(transporte, sentidos, cerrada, ct)) continue;
+            // AL LLEGAR AL ÚLTIMO NIVEL DE NOVATO SE SALE DE COMPRAS YA: ver `EmpiezaAAbastecerse`.
+            if (EmpiezaAAbastecerse(_nivelParaLoNovato, sentidos.Nivel)) _proximaCompra = 0;
             _nivelParaLoNovato = sentidos.Nivel;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await AprenderHechizosAsync(transporte, sentidos, ct)) continue;
@@ -1267,7 +1269,11 @@ public sealed class Bot
         // El descanso largo es para el que se llevó lo que fue a buscar. Si todavía le falta comer o tomar —la
         // comida la vende uno y la bebida otro—, se sale enseguida por lo que falta: con hambre o sed en cero no
         // se regenera nada, y quince minutos de espera son quince minutos sin poder pelear.
-        bool sigueFaltando = sentidos.Suma(PuntosDeComida) < ComidaMinima || sentidos.Suma(PuntosDeBebida) < BebidaMinima;
+        // Y LO MISMO CON EL ARMA DEL CAMINO, si hay quien se la venda: ver `LeFaltaElArmaDelCamino`. El nivel 15 dura poco, y con
+        // el descanso largo después de la comida el viaje al herrero llegaba ya en el 16. Medido en `oficios22`: los tres bots que
+        // pasaron el 15 fueron del coto a la cuna por la comida y de vuelta al coto, y ninguno al herrero.
+        bool sigueFaltando = sentidos.Suma(PuntosDeComida) < ComidaMinima || sentidos.Suma(PuntosDeBebida) < BebidaMinima
+                             || (hayArmaAlAlcance && LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)));
         PostergarCompra(exito: compro && !sigueFaltando);
         return true;
     }
@@ -1824,6 +1830,13 @@ public sealed class Bot
     /// herrero llegaba ya en el 16, cuando desde el campo ningún pueblo que le venda se alcanza sin cruzar peligro.</para>
     /// </summary>
     public static bool LeFaltaElArmaDelCamino(int nivel, int mejorArmaPropia) => PorDejarDeSerNovato(nivel) && mejorArmaPropia <= 0;
+
+    /// <summary>
+    /// ¿ACABA DE LLEGAR AL ÚLTIMO NIVEL DE NOVATO? Entonces el descanso de la compra anterior —hasta quince minutos, si fue un
+    /// éxito— no vale: en ese nivel se abastece para el camino (la comida, la bebida y el arma) y dura poco.
+    /// </summary>
+    public static bool EmpiezaAAbastecerse(int nivelAntes, int nivelAhora) =>
+        !PorDejarDeSerNovato(nivelAntes) && PorDejarDeSerNovato(nivelAhora);
 
     /// <summary>
     /// ¿EL VIAJE VA POR EL ARMA DEL CAMINO? Cuando le falta, hay quien le venda una que pueda usar y pagar, y ya tiene la
