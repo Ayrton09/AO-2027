@@ -303,7 +303,10 @@ function readOne(r: ByteQueueReader, id: number): Record<string, unknown> | null
       // Los 9 bytes finales: [0]=privileges (== Faccion.Status, color de nick), [1]=donador, [2]=particula, 6 auras.
       f.status = r.readByte();            // status de facción (0 criminal, 1 ciudadano, 3+ ejército) — decide el color
       f.donador = r.readByte();           // insignia donador
-      for (let i = 0; i < 7; i++) r.readByte(); // particula + 6 auras (aún sin usar en el cliente)
+      f.particula = r.readByte();         // su partícula propia: MakeChar → SetCharacterParticle(..., -1)
+      // Los seis auras en el orden de HandleCharacterCreate: arma, cuerpo, escudo, casco, otra, anillo = los tipos
+      // 1..6 de AuraToChar.
+      f.auras = [r.readByte(), r.readByte(), r.readByte(), r.readByte(), r.readByte(), r.readByte()];
       return f;
     }
     // La bandeja de correo entera. OJO el orden de los dos ultimos campos: va la CANTIDAD y despues el

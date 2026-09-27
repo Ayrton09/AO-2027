@@ -70,6 +70,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Más sonidos en la pelea**: el arco al acertar y al errar, y el golpe a otro jugador, que además deja sangre.
 
+- **Los hechizos se ven como en el original.** La mitad son de partículas, y cada uno muestra ahora las suyas en
+  vez de unos puntitos iguales para todos, con la duración que corresponde; los de área también, y la meditación.
+  Los demás efectos brillan en lugar de taparse con un borde negro, y los largos ya no se cortan. Los brillos de
+  las armas y armaduras toman su color.
+
 ### Criaturas y mascotas
 
 - **Las criaturas giran hacia lo que atacan**, las magas tiran el hechizo mientras se acercan, y la parálisis

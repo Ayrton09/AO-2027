@@ -899,7 +899,7 @@
     // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
     // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
     import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=32';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=33';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
@@ -1090,9 +1090,10 @@
     // color, 3)`, Protocol.bas:1345), dibujado dentro de `CharRender` y por lo tanto pegado al sprite. Al
     // portarlo al globo quedó el array sin nadie que lo llenara y un bucle de render recorriéndolo vacío en
     // cada cuadro. Ver el handler de `ChatOverHeadLocale`.
-    const groundFx = [];           // FX de hechizos de AREA, anclados a un TILE: {x, y, at, kind:'fx'|'part', id}
-    /// El techo de lo que dura un FX del piso: el cálculo por cuadros del dibujo nunca pasa de acá.
-    const VIDA_MAXIMA_FX = 1400;
+    const groundFx = [];           // FX de hechizos de AREA, anclados a un TILE: {x, y, at, kind:'fx', id, loops}
+    /// El techo de lo que dura un FX del piso, sólo para podar con la pestaña de fondo: el más largo del juego
+    /// es de 30 cuadros con dos vueltas, 4,2 s. El dibujo lo saca antes, cuando termina de verdad.
+    const VIDA_MAXIMA_FX = 10000;
     /**
      * LO QUE SE LIMPIA DIBUJANDO NO SE LIMPIA CON LA PESTAÑA DE FONDO.
      *
@@ -1204,11 +1205,16 @@
       }).join('');
     }
     const ground = new Map();      // "x,y" -> {objIndex, amount}  (dropped items, from ObjectCreate/Delete)
-    // Partículas vivas de cada emisor del mapa: "x,y" -> [{x,y,vx,vy,vida,ang}]. Se declara ACÁ, con el resto
-    // del estado que se tira al cambiar de mapa, y no junto al código que la usa unas dos mil líneas más
-    // abajo: `loadMap` corre mientras el script todavía se está evaluando, así que desde allá una `const`
-    // declarada después queda en zona muerta y el ReferenceError deja el cliente entero sin ejecutar.
+    // El grupo de partículas de cada BALDOSA: "x,y" -> grupo (ver `crearGrupo`). Es el `MapData(X, Y).particle_group`
+    // del original, y por eso lo comparten los emisores que trae el mapa y los hechizos de área: uno pisa al otro.
+    // Se declara ACÁ, con el resto del estado que se tira al cambiar de mapa, y no junto al código que la usa unas
+    // dos mil líneas más abajo: `loadMap` corre mientras el script todavía se está evaluando, así que desde allá
+    // una `const` declarada después queda en zona muerta y el ReferenceError deja el cliente entero sin ejecutar.
     const emisores = new Map();
+    // Las baldosas cuyo emisor del mapa pisó un hechizo de área: no vuelve hasta recargar el mapa. En el original
+    // `HandleEfectoTerrenoParticula` pone `MapData(X, Y).particle_group = 0` antes de crear el suyo (Protocol.bas:8616),
+    // así que el grupo de la fuente queda suelto y nadie lo vuelve a dibujar.
+    const emisoresApagados = new Set();
     const spells = {};             // slot -> spellId  (from ChangeSpellSlot)
     let selectedSpell = 8;         // spell slot cast by 'f' (default: self-heal in slot 8)
 
@@ -1622,7 +1628,7 @@
       // `emisores` también: su clave es "x,y" SIN el mapa, así que sin vaciarlo la antorcha de una baldosa se
       // encuentra con las partículas a medio vivir de lo que hubiera en esa misma baldosa del mapa anterior. Y
       // como nunca se vaciaba, el Map se iba llenando de emisores de mapas que ya no se ven.
-      dying.clear(); ground.clear(); emisores.clear(); cambiosDeBloqueo.clear(); map = null;
+      dying.clear(); ground.clear(); emisores.clear(); emisoresApagados.clear(); cambiosDeBloqueo.clear(); map = null;
       fetch(`./assets/map${n}.json`).then((r) => (r.ok ? r.json() : null))
         .then((m) => { if (currentMap === n) { map = m; armarBloqueos(m); mostrarCartelDeMapa(m); ponerMusica(m); draw(); } }).catch(() => {});
       draw();
@@ -2295,8 +2301,12 @@
       dGrh(ctx, sheets[g.file], g, dx + b.head[0] + (TILE - g.w) / 2, dy + b.head[1] + vdelta + TILE - g.h, g.w, g.h);
     }
     // Spell FX: render the REAL AO FX animation (fxs.ind → fx.json: index → [grh, offX, offY]) over the
-    // character, cycling the grh's frames for `loops` passes. Falls back to a generic ring burst when the
-    // FX index doesn't resolve (e.g. particle-only spells that carry no FX grh). Returns false when done.
+    // character, cycling the grh's frames for `loops` passes. Returns false when done.
+    //
+    // EL FX SUMA LUZ: el original lo dibuja con `DrawGrhtoSurface(..., AlphaB = 1)` (TileEngine.bas:2551 el del
+    // personaje y :2201 el de la baldosa), y `clsBatch.SetAlpha` con eso pone SRCBLEND = ONE y DESTBLEND = ONE: una
+    // mezcla ADITIVA, en la que el negro no tapa nada y lo claro brilla. Acá se dibujaba opaco, y un rayo o una
+    // explosión salían como una calcomanía encima del personaje. En el canvas eso es `lighter`.
     // DÓNDE SE ANCLA UN SPRITE MÁS GRANDE QUE SU BALDOSA (VB6 `DrawGrhtoSurface` con Center=1,
     // TileEngine.bas:1815-1826). El original NO lo centra en la baldosa: lo apoya por el borde de ABAJO y lo
     // centra sólo en horizontal —`X - ancho/2 + 16`, `Y - alto + 32`—, o sea que un efecto alto crece hacia
@@ -2323,32 +2333,33 @@
         //
         // Y las pasadas son `Loops + 1`, no `Loops`: el original descuenta recién DESPUÉS de completar una
         // vuelta y apaga cuando ya estaba en cero (:1793-1799), así que con Loops=1 se ven dos.
+        //
+        // SIN TOPE DE DURACIÓN: acá se cortaba todo FX a los 1400 ms, y cinco hechizos duran más (la Implosión
+        // 1667, los dos Materializar 2083): se veían truncos. Loops = -1 es para siempre, como en el original.
         const frameMs = FX_MS_POR_CUADRO, loops = Math.max(1, (c.fxLoops || 0) + 1);
-        const dur = Math.min(1400, anim.frames.length * frameMs * loops);
+        const dur = c.fxLoops === -1 ? Infinity : anim.frames.length * frameMs * loops;
         if (dt >= dur) return false;
         const g = staticGrh(anim.frames[Math.floor(dt / frameMs) % anim.frames.length]);
         if (g && sheets[g.file]) {
           const fx = anclaX(sx, g.w) + entry[1], fy = anclaY(sy, g.h) + entry[2];
           _ultimoFx = { x: Math.round(fx), y: Math.round(fy), w: g.w, h: g.h, pies: sy + TILE };
+          const modo = ctx.globalCompositeOperation;
+          ctx.globalCompositeOperation = 'lighter';
           dGrh(ctx, sheets[g.file], g, fx, fy, g.w, g.h);
+          ctx.globalCompositeOperation = modo;
         }
         else if (g) loadSheet(g.file);
         return true;
       }
-      // El estallido genérico —para el FX que la data del install deja sin gráfico, como el del Tornado—
-      // sí va al centro de la baldosa: no es un sprite, es un círculo dibujado a mano.
-      const cx = sx + TILE / 2, cy = sy + TILE / 2;
-      if (dt >= 700) return false;                                   // generic fallback burst
-      const p = dt / 700;
-      ctx.strokeStyle = `rgba(190,120,255,${(1 - p) * 0.9})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(cx, cy, 6 + p * 26, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = `rgba(120,230,255,${(1 - p) * 0.7})`; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(cx, cy, 3 + p * 15, 0, Math.PI * 2); ctx.stroke();
-      return true;
+      // UN FX SIN GRÁFICO NO DIBUJA NADA. Acá se inventaba un anillo violeta: el original hace `InitGrh` sobre
+      // la animación del FX y, si el índice no existe (el 57 de "Animar a la naturaleza": `fxs.ind` trae 51) o el
+      // grh está roto (el 44 del Tornado), no hay nada que pintar. Y el server manda `CreateFX` con FX 0 para
+      // BORRAR el que hubiera (`SetCharacterFx` con 0, TileEngine.bas:2622): con el anillo, borrar se veía como
+      // un hechizo más.
+      return false;
     }
-    // Persistent particle aura (EfectoCharParticula). The server picks the id via ParticleToLevel:
-    // by meditation level (42 → 81 → 41), then by faction (citizen 40/113 · criminal 37/108),
-    // 107 at level 50, and 128 for GMs. Unknown ids fall back to a pale white aura.
+    // Las partículas del personaje (EfectoCharParticula): la meditación —el server elige el grupo con
+    // ParticleToLevel: por nivel 42 → 81 → 41, después por facción, 107 al 50 y 128 para GMs— y los hechizos.
     // EL COLOR SALE DE LA DATA, no de una lista a mano. Cada grupo de partículas de `particles.ini` trae sus
     // tres ColorSet, y el original los reparte en los cuatro vértices del sprite así (mod_Particulas.bas:597):
     //
@@ -2375,23 +2386,6 @@
       const v = [c[1], c[1], c[2], c[0]];
       return [0, 1, 2].map((i) => Math.round((v[0][i] + v[1][i] + v[2][i] + v[3][i]) / 4));
     };
-    // Motes swirling up from the character's feet. Deterministic in `t` so frames don't jitter.
-    // Returns false once a timed particle expires (time < 0 means "until removed").
-    function drawParticle(c, sx, sy) {
-      const p = c.particle, now = Date.now();
-      if (now > p.until) return false;
-      const [r, g, b] = colorDelQuad(p.id, [230, 230, 255]);
-      const cx = sx + TILE / 2, base = sy + TILE - 4, t = (now - p.startedAt) / 1000;
-      for (let i = 0; i < 8; i++) {
-        const rise = (t * 0.8 + i / 8) % 1;
-        const ang = i * 2.4 + t * 1.6;
-        const px = cx + Math.cos(ang) * 9 * (1 - rise * 0.45);
-        const py = base - rise * (TILE + 6);
-        ctx.fillStyle = `rgba(${r},${g},${b},${Math.sin(rise * Math.PI) * 0.85})`;
-        ctx.beginPath(); ctx.arc(px, py, 1.9 - rise * 0.9, 0, Math.PI * 2); ctx.fill();
-      }
-      return true;
-    }
     /** Un `CharacterCreate` no dice si el personaje es un usuario o un NPC: se deduce de que el NOMBRE sea
      *  NUMÉRICO (`IsNumeric(Name)`, Protocol.bas:1733), porque de un NPC el server manda su número de ficha y
      *  el cliente lo resuelve contra la tabla de locale. Un nombre de jugador nunca tiene dígitos
@@ -2495,19 +2489,32 @@
 
     /** El resplandor del equipo, DETRÁS del personaje y aditivo (VB6 `Renderizar_Aura`, TileEngine.bas:2585,
      *  llamado desde CharRender:2427 ANTES del cuerpo). Son hasta cinco a la vez: cuerpo, arma, escudo,
-     *  anillo y "otra". El original las dibuja todas, no la mayor. */
+     *  anillo y "otra" —el del casco (tipo 4) se guarda pero CharRender no lo dibuja—. El original las dibuja
+     *  todas, no la mayor.
+     *
+     *  CON SU COLOR Y SU GIRO: `DrawGrhIndextoSurfaceAlpha(.Grh, ..., .color, .angle, 1)`. El sprite es un halo
+     *  gris pensado para teñirse con el color de `auras.ini`; sin teñir, el aura roja de la Daga Infernal y la
+     *  azul del Báculo salían del mismo blanco. Y el que trae `Rotate=1` gira `timerTicksPerFrame * 5` grados por
+     *  cuadro, o sea 0,09 por milisegundo, todos a la vez (el ángulo es del aura, no del personaje). */
+    const GIRO_DEL_AURA_POR_MS = ENGINE_BASE_SPEED * 5;
     function drawAuras(c, dx, dy) {
       if (!c.auras) return;
       const previo = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
       for (const tipo in c.auras) {
+        if (tipo === '4') continue;
         const def = auraDefs[c.auras[tipo]];
         if (!def) continue;
-        const g = staticGrh(def.grh);
-        if (!g) continue;
-        const hoja = sheets[g.file];
-        if (!hoja) { loadSheet(g.file); continue; }
-        dGrh(ctx, hoja, g, anclaX(dx, g.w) + def.off[0], anclaY(dy, g.h) + def.off[1], g.w, g.h);
+        const t = grhTenido(def.grh, `rgb(${def.color[0]},${def.color[1]},${def.color[2]})`);
+        if (!t) continue;
+        const x = anclaX(dx, t.w) + def.off[0], y = anclaY(dy, t.h) + def.off[1];
+        if (def.rota) {
+          const a = ((performance.now() * GIRO_DEL_AURA_POR_MS) % 360 + 180) * Math.PI / 180;
+          ctx.save();
+          ctx.translate(x + t.w / 2, y + t.h / 2); ctx.rotate(a);
+          ctx.drawImage(t.cv, -t.w / 2, -t.h / 2, t.w, t.h);
+          ctx.restore();
+        } else ctx.drawImage(t.cv, Math.round(x), Math.round(y), t.w, t.h);
       }
       ctx.globalCompositeOperation = previo;
     }
@@ -3061,6 +3068,16 @@
     // Sonda: los emisores de partículas que aporta el SUELO (hoy, los teleports). Sin esto no hay forma de
     // distinguir "el teleport emite" de "el mapa ya traía una partícula ahí".
     window.__partSuelo = () => particulasDelSuelo();
+    // Sonda: los grupos de partículas vivos —por baldosa y por personaje— con su vida en pasos y cuántas partículas
+    // se ven. Es lo que dice si un hechizo "se ve" sin mirar una captura.
+    // Sonda: aplicar un paquete YA DECODIFICADO como si hubiera llegado del server (`{name, fields}` de
+    // decodeServerStream). Sirve para mirar cada partícula y cada FX sin gastar maná ni esperar el intervalo.
+    window.__aplicar = (name, fields) => apply({ name, fields });
+    window.__grupos = () => ({
+      baldosas: [...emisores.entries()].map(([k, g]) => ({ k, id: g.id, vida: g.vida, visibles: g.ps.filter((p) => p.grh).length })),
+      personajes: [...chars.entries()].filter(([, c]) => c.particulas && c.particulas.length)
+        .map(([ci, c]) => ({ ci, grupos: c.particulas.map((g) => ({ id: g.id, vida: g.vida, visibles: g.ps.filter((p) => p.grh).length })) })),
+    });
     window.__foundGuild = (name) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CreateNewGuild).writeAsciiString('clan del cliente web').writeAsciiString(name).writeAsciiString('').writeAsciiString('').toBytes(), myKey)); // debug
     window.__use = (slot) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.UseItem).writeByte(slot).toBytes(), myKey)); // debug: usar un ítem (p.ej. la barca para navegar)
     // debug: interactuar con un tile por coordenada del MUNDO, sin tener que calcular el píxel del canvas
@@ -3072,7 +3089,7 @@
     // contestar "¿esto que el servidor manda, llega y se dibuja?" sin mirar una captura. `chat` es el cartel
     // VIGENTE sobre la cabeza (los cuatro modos de ChatOverHeadLocale y el chat común), que si no es una
     // variable del render y desde afuera no se ve.
-    window.__chars = () => [...chars.entries()].map(([ci, c]) => ({ ci, me: ci === myCharIndex, name: c.name, body: c.body, head: c.head, weapon: c.weapon, shield: c.shield, helmet: c.helmet, x: c.x, y: c.y, particle: c.particle ? c.particle.id : null, invisible: !!c.invisible, status: c.status, esNpc: !!c.esNpc, hostil: !!c.hostil, chat: c.chatAt ? (c.chatText ?? null) : null }));
+    window.__chars = () => [...chars.entries()].map(([ci, c]) => ({ ci, me: ci === myCharIndex, name: c.name, body: c.body, head: c.head, weapon: c.weapon, shield: c.shield, helmet: c.helmet, x: c.x, y: c.y, particulas: (c.particulas || []).map((g) => g.id), invisible: !!c.invisible, status: c.status, esNpc: !!c.esNpc, hostil: !!c.hostil, chat: c.chatAt ? (c.chatText ?? null) : null }));
     window.__blind = () => blind;   // debug: estado de ceguera (Blind/BlindNoMore)
     window.__puntero = () => [punteroX, punteroY];   // debug: tile bajo el mouse (regla de nombres de NPC)
     // Historial de los ultimos paquetes decodificados. Permite verificar el cliente sin mirar pixeles:
@@ -4085,11 +4102,28 @@
         // banea solo. El LevelUp del login viene DESPUÉS de este paquete, así que el reinicio no lo pisa.
         case 'LoggedSuccessful': puntosLibres = 0; refrescarPuntosLibres(); break;
         case 'UserCharIndexInServer': myCharIndex = f.charIndex; break;
-        case 'CharacterCreate': chars.set(f.charIndex, Object.assign(
-          { x: f.x, y: f.y, donador: f.donador, body: f.body, head: f.head, heading: f.heading, weapon: f.weapon, shield: f.shield, helmet: f.helmet },
-          resolverPersonaje(f.name, f.status)));
+        case 'CharacterCreate': {
+          const c = Object.assign(
+            { x: f.x, y: f.y, donador: f.donador, body: f.body, head: f.head, heading: f.heading, weapon: f.weapon, shield: f.shield, helmet: f.helmet },
+            resolverPersonaje(f.name, f.status));
+          // LO QUE EL PERSONAJE YA TRAÍA PUESTO al entrar en pantalla (HandleCharacterCreate, Protocol.bas): su FX
+          // (`SetCharacterFx`), su partícula propia (`MakeChar` → `SetCharacterParticle(ParticulaFx, charindex, -1)`,
+          // TileEngine.bas:1081) y sus seis auras. Acá se leían y se tiraban: uno con un arma de aura que aparecía
+          // caminando no brillaba hasta que se la volvía a equipar.
+          if (f.fx) { c.fxAt = Date.now(); c.fxIndex = f.fx; c.fxLoops = f.fxLoops; }
+          // Si el personaje ya estaba, `MakeChar` le deja sus grupos, y no repite la partícula que ya tenía
+          // (`If .Particula = ParticulaFx Then ParticulaFx = 0`, TileEngine.bas:1073).
+          const viejo = chars.get(f.charIndex);
+          if (viejo) { c.particulas = viejo.particulas; c.particula = viejo.particula; }
+          if (f.particula && f.particula !== c.particula) {
+            const g = crearGrupo(f.particula, -1, SUBIDA_DEL_PERSONAJE);
+            if (g) { (c.particulas = c.particulas || []).push(g); c.particula = f.particula; }
+          }
+          (f.auras || []).forEach((a, i) => { if (a) (c.auras = c.auras || {})[i + 1] = a; });   // tipos 1..6 de AuraToChar
+          chars.set(f.charIndex, c);
           if (f.charIndex === myCharIndex) pintarEstados();   // recien aca se sabe el nombre propio
           break;
+        }
         case 'CharacterMove': { const c = chars.get(f.charIndex); if (c) {
           const dx = f.x - c.x, dy = f.y - c.y;          // packet has no heading — face the way we stepped
           if (dy < 0) c.heading = 1; else if (dy > 0) c.heading = 3; else if (dx > 0) c.heading = 2; else if (dx < 0) c.heading = 4;
@@ -4530,16 +4564,37 @@
         // nuestro y no tiene por qué moverse con el sprite.
         case 'EfectoTerrenoFX':
           podarLoViejo();
-          groundFx.push({ x: f.x, y: f.y, yArea: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx }); break;
-        case 'EfectoTerrenoParticula':
-          podarLoViejo();
-          groundFx.push({ x: f.x, y: f.y, yArea: f.y, at: Date.now(), kind: 'part', id: f.particula }); break;
+          groundFx.push({ x: f.x, y: f.y, yArea: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx, loops: f.loops }); break;
+        // LA PARTÍCULA DE UNA BALDOSA (HandleEfectoTerrenoParticula, Protocol.bas:8583). Acá se metía en la lista
+        // de FX y se dibujaba buscando el número de PARTÍCULA en la tabla de FX: un hechizo de área mostraba un
+        // efecto cualquiera. El tiempo viene en pasos del grupo: 1 es para siempre (el portal), 0 BORRA lo que
+        // haya en la baldosa, y cualquier otro número es la vida. Pisa al emisor que la baldosa tuviera.
+        case 'EfectoTerrenoParticula': {
+          const clave = f.x + ',' + f.y;
+          if (f.time === 0) { const g = emisores.get(clave); if (g) quitarGrupo(g); emisoresApagados.add(clave); break; }
+          const g = crearGrupo(f.particula, f.time === 1 ? -1 : f.time, 0);
+          if (!g) break;
+          g.tx = f.x; g.ty = f.y;
+          emisores.set(clave, g);
+          emisoresApagados.add(clave);
+          break;
+        }
+        // LAS PARTÍCULAS DE UN PERSONAJE (HandleEfectoCharParticula, Protocol.bas:8390): la meditación y la mitad de
+        // los hechizos. Acá se dibujaba un remolino de ocho motas igual para todos y el tiempo se tomaba como
+        // SEGUNDOS: un hechizo con 50 duraba cincuenta segundos, y los que mandan 0 —"la vida del grupo"— no se
+        // veían. Cada paquete agrega UN grupo más (el personaje puede llevar varios: meditar y recibir un
+        // hechizo), y el de quitar apaga el primero vivo con ese número (Char_Particle_Group_Remove).
         case 'EfectoCharParticula': {
-          // Persistent aura attached to a character. time < 0 = until an explicit remove.
           const c = chars.get(f.charIndex);
           if (!c) break;
-          if (f.remove) delete c.particle;
-          else c.particle = { id: f.particle, startedAt: Date.now(), until: f.time < 0 ? Infinity : Date.now() + f.time * 1000 };
+          c.particula = f.remove ? 0 : f.particle;          // el `.Particula` del original, que mira MakeChar
+          if (f.remove) {
+            const g = c.particulas && c.particulas.find((x) => x.id === f.particle && !x.destruir);
+            if (g) quitarGrupo(g);
+          } else {
+            const g = crearGrupo(f.particle, Math.trunc(f.time), SUBIDA_DEL_PERSONAJE);
+            if (g) (c.particulas = c.particulas || []).push(g);
+          }
           break;
         }
         // The aura itself is server-driven (EfectoCharParticula); this only marks the meditating state.
@@ -4997,7 +5052,6 @@
     let auraDefs = {};
     fetch('./assets/auras.json').then((r) => (r.ok ? r.json() : {})).then((a) => { auraDefs = (a && a.auras) || {}; }).catch(() => {});
     // `emisores` se declara arriba, con `chars`/`ground`/`dying`: es estado por mapa y `loadMap` lo vacía.
-    let partAcum = 0;               // contador del paso (el `frame_counter` del original)
     /** Cuanto aporta CADA particula al acumulado aditivo. Ver el comentario en `dibujarParticulas`. */
     const ALFA_DE_PARTICULA = 0.65;
     // dt real entre frames de partículas. Se mide acá y no con el dt del limitador de FPS porque `__draw()`
@@ -5014,7 +5068,6 @@
       partT = ahora;
       return dt;
     }
-    const azar = (a, b) => (a === b ? a : a + Math.random() * (b - a));
     // Sprites TEÑIDOS y cacheados por (grh, color). El original manda el color como color de vértice y el
     // canvas 2D no puede teñir un drawImage, así que se pre-tiñe una vez por par: dibujar, multiplicar por el
     // color, y recortar con la máscara del propio sprite para no perder el alpha.
@@ -5065,16 +5118,145 @@
       return emisoresDeObjetos;
     }
 
-    /** Avanza y dibuja las partículas de los emisores que están en pantalla. */
-    function dibujarParticulas(camX, camY, offX, offY, dtMs) {
+    /**
+     * EL MOTOR DE PARTÍCULAS DEL ORIGINAL (mod_Particulas.bas, el sistema ORE), en GRUPOS. Los usan tres cosas:
+     *   - la BALDOSA: los emisores que trae el mapa (fuentes, antorchas, humo) y los del suelo (el teleport, la
+     *     fogata), que viven para siempre, y los hechizos de área (`EfectoTerrenoParticula`);
+     *   - el PERSONAJE (`EfectoCharParticula`): la meditación y la mitad de los hechizos —50 de 113 no tienen FX,
+     *     tienen partícula—. Acá se dibujaba un remolino de ocho motas igual para todos.
+     *
+     * Un grupo tiene su VIDA en pasos (`alive_counter`): -1 es para siempre, y 0 al crearlo quiere decir "la del
+     * ini" (`life_counter`). Cada paso se descuenta uno; al llegar a cero ya no nace ninguna y cada partícula
+     * termina la suya (Particle_Group_Render, :604). El PASO no corre en cada cuadro: `frame_counter +=
+     * timerTicksPerFrame * 2` —0,036 por milisegundo— y avanza cuando pasa el `Speed` del grupo, y el contador
+     * vuelve a CERO (:606). Acá se sumaban 2 por cuadro de 60 Hz, 3,3 veces más rápido, y a 144 Hz el doble de
+     * rápido que a 60: las fuentes y el fuego corrían.
+     *
+     * Cada partícula (Particle_Render, :709):
+     *   - al nacer sortea posición, velocidad y vida (`RandomNumber` devuelve un Long: todo es entero) y EL SPRITE,
+     *     que es el mismo toda su vida (`InitGrh` sólo al nacer). Acá se volvía a sortear en cada paso;
+     *   - en cada paso: gravedad con rebote al cruzar el origen, giro, el `XMove`/`YMove` que vuelve a sortear la
+     *     velocidad, y el avance `x += vx \ friccion` con DIVISIÓN ENTERA;
+     *   - se dibuja con `Grh_Render` centrada y APOYADA POR EL BORDE DE ABAJO sobre la baldosa: `x - ancho/2 + 16`,
+     *     `y - alto + 32`. Acá se centraba también en vertical, media altura más abajo. Si el grupo trae `resize`,
+     *     `Grh_Render_Advance` la estira a rx por ry sin centrar (y le pasa rx como ALTO y ry como ANCHO);
+     *   - el giro es el de `clsBatch.Draw`: sobre su centro, y sólo con el ángulo entre 0 y 360;
+     *   - un grh que es ANIMACIÓN no se ve: `Grh_Render` dibuja con `GrhData(Grh.GrhIndex).FileNum`, y para una
+     *     animación el cargador no lo llena (TileEngine.bas:1515) — 7 grupos, entre ellos los "Fuego elemental".
+     *
+     * El personaje sube sus rangos 15 px (`SetCharacterParticle`, :329), y ocho grupos corren los suyos 16 hacia
+     * arriba y a la izquierda al cargarse (`CargarParticulas`, :196).
+     */
+    const CORRIDOS_16 = new Set([10, 25, 49, 66, 84, 86, 117, 126]);
+    const SUBIDA_DEL_PERSONAJE = 15;
+    const PASO_DE_PARTICULA_POR_MS = ENGINE_BASE_SPEED * 2;
+    const azarEntero = (a, b) => Math.round((b - a) * Math.random() + a);   // RandomNumber, General.bas:203
+    function crearGrupo(id, vida, subir) {
+      const def = partDefs && partDefs[id];
+      if (!def || !def.grhs || !def.grhs.length) return null;
+      const c16 = CORRIDOS_16.has(Number(id)) ? 16 : 0;
+      const v = vida === 0 ? (def.vidaGrupo ?? -1) : vida;
+      const ps = [];
+      for (let i = 0; i < def.n; i++) ps.push({ vida: 0, grh: 0, x: 0, y: 0, vx: 0, vy: 0, ang: 0 });
+      const dom = colorDelQuad(Number(id), [255, 255, 255]);
+      return { id: Number(id), def, ps, vida: v, siempre: v === -1, destruir: false, cuenta: 0, vivas: 0,
+               x1: def.x[0] - c16, x2: def.x[1] - c16, y1: def.y[0] - c16 - subir, y2: def.y[1] - c16 - subir,
+               color: `rgb(${dom[0]},${dom[1]},${dom[2]})` };
+    }
+    /** Apaga un grupo sin cortarlo: ya no nace ninguna y las que están terminan (Particle_Group_Remove, :430). */
+    function quitarGrupo(g) { g.vida = 0; g.siempre = false; g.destruir = true; }
+    function moverParticula(g, p, def) {
+      if (p.vida === 0 && !g.destruir) {                                  // nace
+        p.grh = def.grhs[azarEntero(1, def.grhs.length) - 1];
+        p.x = azarEntero(g.x1, g.x2); p.y = azarEntero(g.y1, g.y2);
+        p.vx = azarEntero(def.vx[0], def.vx[1]); p.vy = azarEntero(def.vy[0], def.vy[1]);
+        p.vida = azarEntero(def.vida[0], def.vida[1]);
+        g.vivas++;
+      } else {
+        if (p.vida === 0 && g.destruir) p.grh = 0;                        // terminó y el grupo se apaga: no vuelve
+        if (def.grav) { p.vy += def.gravF; if (p.y > 0) p.vy = def.rebote; }
+        if (def.spin) { p.ang += azarEntero(def.spinV[0], def.spinV[1]) / 5; while (p.ang >= 360) p.ang -= 360; }
+        if (def.xmove) p.vx = azarEntero(def.mx[0], def.mx[1]);
+        if (def.ymove) p.vy = azarEntero(def.my[0], def.my[1]);
+      }
+      p.x += Math.trunc(p.vx / def.fric);                                 // `\`: división ENTERA
+      p.y += Math.trunc(p.vy / def.fric);
+      p.vida--;
+    }
+    let dibujadasEnElCuadro = 0;
+    function dibujarParticula(g, p, def, ox, oy) {
+      const a0 = atlas && atlas[p.grh];
+      if (!a0 || a0.frames) return;                                       // una animación no se ve (ver arriba)
+      const t = grhTenido(p.grh, g.color);
+      if (!t) return;
+      let x, y, w = t.w, h = t.h;
+      if (def.resize) { w = def.ry; h = def.rx; x = ox + p.x; y = oy + p.y; }
+      else { x = ox + p.x + TILE / 2 - Math.floor(t.w / 2); y = oy + p.y + TILE - t.h; }
+      // CADA PARTICULA SE APOYA A MEDIA FUERZA, Y ESO ES LO QUE LE DEVUELVE EL COLOR AL FUEGO. Con blend
+      // aditivo y alfa pleno, las seis de la fogata se suman unas sobre otras y el centro satura a BLANCO:
+      // se veia un punto blanco en vez de una llama (reportado por el autor, 2026-09-12). El sprite 20022
+      // es un halo en escala de grises pensado para sumarse, asi que el aditivo no se puede cambiar —con
+      // mezcla normal su fondo negro tapa la escena, probado— pero SI cuanto aporta cada una.
+      partCx.globalAlpha = ALFA_DE_PARTICULA;
+      if (p.ang > 0 && p.ang <= 360) {
+        const a = (p.ang + 180) * Math.PI / 180, co = Math.cos(a), si = Math.sin(a);
+        partCx.setTransform(co, si, -si, co, x + w / 2, y + h / 2);
+        partCx.drawImage(t.cv, -w / 2, -h / 2, w, h);
+        partCx.setTransform(1, 0, 0, 1, 0, 0);
+      } else partCx.drawImage(t.cv, x, y, w, h);
+      partCx.globalAlpha = 1;
+      dibujadasEnElCuadro++;
+    }
+    /** Un cuadro de un grupo con la esquina de su baldosa en (ox, oy). false = terminó y se suelta. */
+    function correrGrupo(g, ox, oy, dtMs) {
+      if (g.vida === 0) {
+        g.destruir = true;
+        if (g.vivas <= 2) return false;                                   // Particle_Group_Destroy, :647
+      }
+      const def = g.def;
+      g.cuenta += PASO_DE_PARTICULA_POR_MS * dtMs;
+      const mover = g.cuenta > def.speed;
+      if (mover) g.cuenta = 0;
+      partCx.globalCompositeOperation = def.alpha ? 'lighter' : 'source-over';
+      let visibles = 0;
+      for (const p of g.ps) {
+        if (mover) moverParticula(g, p, def);
+        if (!p.grh) continue;
+        visibles++;
+        if (dibujadasEnElCuadro < MAX_PARTICULAS) dibujarParticula(g, p, def, ox, oy);
+      }
+      if (mover && g.vida !== 0 && !g.siempre) g.vida--;
+      // El original no suelta el grupo que se apagó con más de dos partículas —`PartCountLive` nunca baja— pero
+      // ya no dibuja nada: cada una quedó sin sprite al terminar. Soltarlo acá es lo mismo a la vista.
+      return !(g.destruir && visibles === 0);
+    }
+    /** Avanza y dibuja los grupos que están en pantalla: los de cada baldosa y los de cada personaje. */
+    function dibujarParticulas(camX, camY, offX, offY, dtMs, conParticulas) {
       const lista = (map && map.particulas) || [];
       const delSuelo = particulasDelSuelo();
-      if (!lista.length && !delSuelo.length) return;
-      // El paso del original no corre todos los frames: `frame_counter += timerTicksPerFrame * 2` y avanza
-      // cuando pasa `Speed`. Con los valores reales (0,1 a 2,5) eso es casi siempre un paso por frame; se
-      // respeta igual porque los dos grupos con Speed >= 2 se mueven la mitad de seguido.
-      partAcum += 2 * Math.min(3, dtMs / 16.7);
       const cx0 = Math.round(camX), cy0 = Math.round(camY);
+      const enPantalla = (tx, ty) => { const sx = tx - cx0, sy = ty - cy0;
+        return !(sx < -2 || sx >= VIEW_W + 2 || sy < -2 || sy >= VIEW_H + 2); };   // fuera: ni se simula
+      // Los emisores del mapa y del suelo nacen la primera vez que entran en pantalla y no mueren nunca
+      // (`SetMapParticle(..., -1)`, General.bas:785). El del suelo se apaga cuando se va su objeto (la fogata
+      // que se consume), como `Particle_Group_Remove` al borrar el objeto (TileEngine.bas:4396).
+      for (const [tx, ty, grupo] of lista) {
+        const clave = tx + ',' + ty;
+        if (!enPantalla(tx, ty) || emisores.has(clave) || emisoresApagados.has(clave)) continue;
+        const g = crearGrupo(grupo, -1, 0);
+        if (g) { g.tx = tx; g.ty = ty; emisores.set(clave, g); }
+      }
+      const clavesDelSuelo = new Set();
+      for (const [tx, ty, grupo] of delSuelo) {
+        const clave = tx + ',' + ty;
+        clavesDelSuelo.add(clave);
+        if (!enPantalla(tx, ty) || emisores.has(clave) || emisoresApagados.has(clave)) continue;
+        const g = crearGrupo(grupo, -1, 0);
+        if (g) { g.tx = tx; g.ty = ty; g.delSuelo = true; emisores.set(clave, g); }
+      }
+      for (const [clave, g] of emisores) if (g.delSuelo && !clavesDelSuelo.has(clave)) { quitarGrupo(g); g.delSuelo = false; }
+      const hayPersonajes = conParticulas && conParticulas.length;
+      if (!emisores.size && !hayPersonajes) return;
       // Se dibuja en un OFFSCREEN sin escala y se sube de un solo blit. Medido: dibujar las partículas
       // directo sobre el canvas del mundo cuesta **235 ms con 1.170 en pantalla** (el peor caso real del
       // mundo, el mapa 23), porque cada `drawImage` con blend aditivo va contra un canvas grande y con la
@@ -5086,54 +5268,16 @@
       }
       partCx.setTransform(1, 0, 0, 1, 0, 0);
       partCx.clearRect(0, 0, VW, VH);
-      let dibujadas = 0;
-      for (const [tx, ty, grupo] of lista.length && delSuelo.length ? lista.concat(delSuelo)
-                                    : (lista.length ? lista : delSuelo)) {
-        const sx = tx - cx0, sy = ty - cy0;
-        if (sx < -2 || sx >= VIEW_W + 2 || sy < -2 || sy >= VIEW_H + 2) continue;   // fuera de pantalla: ni se simula
-        const def = partDefs[grupo];
-        if (!def) continue;
-        const clave = tx + ',' + ty;
-        let ps = emisores.get(clave);
-        if (!ps) { ps = []; for (let i = 0; i < def.n; i++) ps.push({ vida: 0 }); emisores.set(clave, ps); }
-        const paso = partAcum > def.speed;
-        const bx = sx * TILE + offX + TILE / 2, by = sy * TILE + offY + TILE;
-        const dom = colorDelQuad(grupo, [255, 255, 255]);
-        const color = `rgb(${dom[0]},${dom[1]},${dom[2]})`;
-        partCx.globalCompositeOperation = def.alpha ? 'lighter' : 'source-over';
-        for (const p of ps) {
-          if (paso) {
-            if (p.vida <= 0) {                                  // nace
-              p.x = azar(def.x[0], def.x[1]); p.y = azar(def.y[0], def.y[1]);
-              p.vx = azar(def.vx[0], def.vx[1]); p.vy = azar(def.vy[0], def.vy[1]);
-              p.vida = azar(def.vida[0], def.vida[1]); p.ang = 0;
-              p.grh = def.grhs[(Math.random() * def.grhs.length) | 0];
-            } else {
-              if (def.grav) { p.vy += def.gravF; if (p.y > 0) p.vy = def.rebote; }
-              if (def.spin) p.ang = (p.ang + azar(def.spinV[0], def.spinV[1]) / 5) % 360;
-              if (def.xmove) p.vx = azar(def.mx[0], def.mx[1]);
-              if (def.ymove) p.vy = azar(def.my[0], def.my[1]);
-            }
-            p.x += Math.trunc(p.vx / def.fric);                 // division ENTERA, como el original
-            p.y += Math.trunc(p.vy / def.fric);
-            p.vida--;
-            p.grh = def.grhs[(Math.random() * def.grhs.length) | 0];   // el sprite cambia cada paso
-          }
-          if (p.vida <= 0 || dibujadas >= MAX_PARTICULAS) continue;
-          const t = grhTenido(p.grh, color);
-          if (!t) continue;
-          // CADA PARTICULA SE APOYA A MEDIA FUERZA, Y ESO ES LO QUE LE DEVUELVE EL COLOR AL FUEGO. Con blend
-          // aditivo y alfa pleno, las seis de la fogata se suman unas sobre otras y el centro satura a BLANCO:
-          // se veia un punto blanco en vez de una llama (reportado por el autor, 2026-09-12). El sprite 20022
-          // es un halo en escala de grises pensado para sumarse, asi que el aditivo no se puede cambiar —con
-          // mezcla normal su fondo negro tapa la escena, probado— pero SI cuanto aporta cada una.
-          partCx.globalAlpha = ALFA_DE_PARTICULA;
-          partCx.drawImage(t.cv, bx + p.x - t.w / 2, by + p.y - t.h / 2, t.w, t.h);
-          partCx.globalAlpha = 1;
-          dibujadas++;
-        }
+      dibujadasEnElCuadro = 0;
+      for (const [clave, g] of emisores) {
+        if (!enPantalla(g.tx, g.ty)) continue;
+        if (!correrGrupo(g, (g.tx - cx0) * TILE + offX, (g.ty - cy0) * TILE + offY, dtMs)) emisores.delete(clave);
       }
-      if (partAcum > 2.5) partAcum = 0;                         // reset del contador (el mayor Speed es 2,5)
+      if (hayPersonajes) for (const [c, sx, sy] of conParticulas) {
+        c.particulas = c.particulas.filter((g) => correrGrupo(g, sx, sy, dtMs));
+      }
+      partCx.globalCompositeOperation = 'source-over';
+      const dibujadas = dibujadasEnElCuadro;
       if (dibujadas) {
         const q = ctx.imageSmoothingEnabled;
         ctx.imageSmoothingEnabled = false;                      // 1:1, no hay nada que resamplear
@@ -5568,6 +5712,10 @@
           drawSparseTile(deco[iDeco++], camX, camY, undefined, offX, offY);
         }
       };
+      // Los que llevan partículas, con la esquina de su baldosa en pantalla: el grupo se mueve con el personaje
+      // (`Particle_Group_Render(.particle_group(i), PixelOffSetX, PixelOffSetY)`, TileEngine.bas:2560) y se
+      // dibuja en la pasada de partículas, después de la luz.
+      const conParticulas = [];
       for (const { ci, c, muriendo, rx: crx, ry: cry } of aDibujar) {
         capa2Hasta(cry, crx);
         if (_orden) _orden.push(['char', Math.round(cry), Math.round(crx)]);
@@ -5665,8 +5813,8 @@
         }
         // Spell FX (from a CreateFX packet): the real AO FX animation over the char, else a generic burst.
         if (c.fxAt && !drawFx(c, sx, sy)) c.fxAt = 0;
-        // Persistent aura (EfectoCharParticula): meditation, faction glow…
-        if (c.particle && !drawParticle(c, sx, sy)) delete c.particle;
+        // Sus grupos de partículas (EfectoCharParticula): la meditación y los hechizos. Se dibujan después.
+        if (c.particulas && c.particulas.length) conParticulas.push([c, sx, sy]);
         // Acá se dibujaba un ARCO BLANCO delante del atacante. También era nuestro: el original no traza
         // nada al golpear (ver la nota del salto, arriba).
         // Hit flash: a red wash over our own tile the moment something strikes us.
@@ -5721,7 +5869,7 @@
       // personaje, así que ninguno de los dos cae nunca en esa rama: la llama de una antorcha se ve igual de
       // noche que de día, y un nick azul sigue azul. Acá los dos se dibujaban ANTES del multiply, así que de
       // noche las partículas se apagaban y viraban, y el nick de un ciudadano (#2051FB) salía (18,45,90).
-      dibujarParticulas(camX, camY, offX, offY, dtParticulas());
+      dibujarParticulas(camX, camY, offX, offY, dtParticulas(), conParticulas);
       // LOS TECHOS VAN DESPUÉS DE LA LUZ, y con el ambiente solamente.
       //
       // El original dibuja la capa 4 con el array `Techos`, que lleva ÚNICAMENTE el color de ambiente
@@ -5833,7 +5981,7 @@
       // asi que va donde la pone el original: como estado, en la lista de chips del panel — el
       // "Trabajando" de `Generate_Char_Status` (General.bas:1702).
 
-      // FX DE LOS HECHIZOS DE AREA (EfectoTerrenoFX / EfectoTerrenoParticula), anclados a un TILE y no a un
+      // FX DE LOS HECHIZOS DE AREA (EfectoTerrenoFX; la partícula hermana va por el motor), anclados a un TILE y no a un
       // personaje. El original dibuja LA MISMA ANIMACION que un FX sobre un personaje: `SetFXMAP`
       // (General.bas:1424) hace `InitGrh MapData(X,Y).fX, FxData(fx).Animacion` con sus Loops, RenderScreen
       // la blitea sobre la baldosa con `DrawGrhtoSurface(..., Center=1, ...)` (TileEngine.bas:2201) y la borra
@@ -5855,7 +6003,8 @@
           const entry = fxIdx && g.id && fxIdx[g.id];
           const anim = entry && atlas && atlas[entry[0]];
           const cuadros = anim && anim.frames ? anim.frames.length : 0;
-          const dur = cuadros ? Math.min(1400, cuadros * FRAME_MS) : 700;
+          // Las pasadas son `Loops + 1` (SetFXMAP guarda las del paquete), como el FX del personaje.
+          const dur = cuadros ? cuadros * FRAME_MS * Math.max(1, (g.loops || 0) + 1) : 700;
           if (dt > dur) { groundFx.splice(i, 1); continue; }
           if (cx < -TILE * 4 || cx > VW + TILE * 4 || cy < -TILE * 4 || cy > VH + TILE * 4) continue;
           const k = 1 - dt / dur;
@@ -5867,7 +6016,10 @@
           if (cuadros) {
             const gr = staticGrh(anim.frames[Math.floor(dt / FRAME_MS) % cuadros]);
             if (gr && sheets[gr.file]) {
+              const modo = ctx.globalCompositeOperation;
+              ctx.globalCompositeOperation = 'lighter';      // aditivo, como el del personaje (TileEngine.bas:2201)
               dGrh(ctx, sheets[gr.file], gr, anclaX(cx, gr.w) + entry[1], anclaY(cy, gr.h) + entry[2], gr.w, gr.h);
+              ctx.globalCompositeOperation = modo;
             } else if (gr) loadSheet(gr.file);
           }
         }

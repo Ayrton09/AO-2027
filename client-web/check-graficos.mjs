@@ -23,9 +23,8 @@
 // que haría falta.
 //
 // Y SE MIRA EL SENTIDO CONTRARIO, que no lo miraba nada: un índice que el server MANDA y `fx.json` no
-// DEFINE no aparecía por ningún lado, porque el recorrido arranca en `fx.json`. El cliente cae ahí en el
-// estallido genérico y el jugador ve un destello cualquiera en lugar del efecto — mudo, como el `PlayWave`
-// sin su `.wav`.
+// DEFINE no aparecía por ningún lado, porque el recorrido arranca en `fx.json`. El cliente no dibuja nada
+// ahí —como el original— y el jugador se queda sin el efecto: mudo, como el `PlayWave` sin su `.wav`.
 //
 // Correr:  node check-graficos.mjs
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
@@ -183,8 +182,8 @@ for (const [i, e] of Object.entries(efectos))
 // EL SENTIDO CONTRARIO, que hasta acá no lo miraba nada. El recorrido de arriba va de `fx.json` HACIA
 // AFUERA —"este efecto que está definido, ¿lo usa alguien?"—, así que un índice que el server MANDA y
 // `fx.json` NO DEFINE le pasa por al lado: no está en el recorrido para empezar. El síntoma es mudo, igual
-// que el `PlayWave` sin `.wav`: el cliente cae en el estallido genérico y el jugador ve un destello
-// cualquiera en vez del efecto de verdad.
+// que el `PlayWave` sin `.wav`: el cliente no dibuja nada —como el original con un índice que no existe— y
+// el jugador se queda sin el efecto.
 //
 // COLGADO EN EL INSTALL, y por eso no pone rojo: el `fxs.ind` del original define 51 efectos y el hechizo
 // 74 ("Animar a la naturaleza") pide el 57. La referencia ya viene rota de la data, no la rompió el
