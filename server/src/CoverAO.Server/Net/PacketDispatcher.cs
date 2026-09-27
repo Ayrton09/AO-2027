@@ -2237,14 +2237,18 @@ public sealed partial class PacketDispatcher
     /// <summary>Daño de un disparo (VB6 CalcularDaño rama proyectil): tirada del arco + tirada de la flecha,
     /// con el modificador de clase de DAÑO de proyectil. El máximo NO suma el de la flecha (bug intencional del
     /// original, línea comentada "For some reason this isn't done").</summary>
-    private int RangedDamage(Player p, Data.ObjInfo bow, Data.ObjInfo? ammo)
+    private int RangedDamage(Player p, Data.ObjInfo bow, Data.ObjInfo? ammo, Npc? criatura)
     {
         long userHit = p.MaxHit >= p.MinHit ? _rng.Next(p.MinHit, p.MaxHit + 1) : p.MinHit;
         long weaponRoll = bow.MaxHit >= bow.MinHit ? _rng.Next(bow.MinHit, bow.MaxHit + 1) : bow.MinHit;
+        long weaponMax = bow.MaxHit;
+        // EL ARCO CAZA DEMONIOS: ver `Combat.TiradaDelArcoCazaDemonios`. Antes que la flecha, que suma igual.
+        if (bow.Index == Combat.ArcoCazaDemonios)
+            (weaponRoll, weaponMax) = Combat.TiradaDelArcoCazaDemonios(weaponRoll, bow.MaxHit, criatura?.Template.Index);
         if (bow.Municiones == 1 && ammo is not null)
             weaponRoll += ammo.MaxHit >= ammo.MinHit ? _rng.Next(ammo.MinHit, ammo.MaxHit + 1) : ammo.MinHit;
         double classMod = _data.ProjectileDamageMod.TryGetValue(p.Class, out var dm) ? dm : 1.0;
-        return Math.Max(1, (int)Combat.CalcularDano(weaponRoll, bow.MaxHit, userHit, p.Strength, classMod));
+        return Math.Max(1, (int)Combat.CalcularDano(weaponRoll, weaponMax, userHit, p.Strength, classMod));
     }
 
     /// <summary>Poder de ataque a distancia (VB6 PoderAtaqueProyectil): misma forma que Wrestling pero con la
@@ -2276,7 +2280,7 @@ public sealed partial class PacketDispatcher
         RaiseSkill(session, p, GameLimits.SkillProyectiles);
         NpcSystem.SonidoDeCriatura(_world, npc, npc.Template.Snd2);   // :909, el quejido de la criatura
         SonidosDelGolpeAUnaCriatura(session, p, npc, acerto: true);
-        int damage = RangedDamage(p, bow, ammo) - npc.Template.Def;
+        int damage = RangedDamage(p, bow, ammo, npc) - npc.Template.Def;
         // El disparo gotea experiencia igual que la espada, y con el MISMO orden (antes de aplicar el daño):
         // en el original el arco no tiene un camino propio — `UsuarioAtacaNpc` ramifica por proyectil sólo
         // para elegir el sonido y la munición (SistemaCombate.bas:916-920) y después cae en el mismo
@@ -2301,7 +2305,7 @@ public sealed partial class PacketDispatcher
             return;
         }
         SonidosDelGolpeAUnJugador(session, p, target, acerto: true);
-        int rawDamage = RangedDamage(p, bow, ammo);
+        int rawDamage = RangedDamage(p, bow, ammo, criatura: null);
         int zona = _rng.Next(1, 7);
         var casco = Equipment.EquippedOfCategory(target, _data, 3);
         var armadura = Equipment.EquippedOfCategory(target, _data, 2);

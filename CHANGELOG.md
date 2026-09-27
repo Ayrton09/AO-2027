@@ -38,7 +38,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Atacar a una criatura con hechizos o flechas pide el modo combate.** La flecha que no pega no se gasta.
 
 - **La Espada Mata Dragones, como el original**: a un dragón le pega muchísimo más fuerte, a cualquier otra
-  criatura le saca 1, y a una persona entre 22 y 35.
+  criatura le saca 1, y a una persona entre 22 y 35. Y el **Arco Caza Demonios** le pega de verdad al Demonio y
+  al Demonio Abisal, y a lo demás 1.
 
 - **Lanzar un hechizo ya no te saca del ocultamiento.** Honor del Paladín sube además agilidad y fuerza, y la
   Tormenta ácida envenena.

@@ -8,7 +8,7 @@ namespace CoverAO.Server.Game;
 /// The RNG-resolved inputs (weapon roll, user-hit roll) are parameters so the arithmetic is a pure,
 /// golden-testable function. The result is assigned to a VB6 Long, which rounds half-to-even (banker's
 /// rounding) — reproduced here with MidpointRounding.ToEven. La Espada Mata Dragones entra por
-/// <see cref="TiradaDeLaMataDragones"/>; el arco caza demonios sigue sin modelarse.
+/// <see cref="TiradaDeLaMataDragones"/> y el Arco Caza Demonios por <see cref="TiradaDelArcoCazaDemonios"/>.
 /// </summary>
 public static class Combat
 {
@@ -49,6 +49,24 @@ public static class Combat
         !contraNpc ? (entre(22, 35), 35)
         : esDragon ? (tirada, maxHit * 50L)
         : (1, 1);
+
+    /// <summary>VB6 <c>ARCO_DEMONIO</c> (SistemaCombate.bas:39): el Arco Caza Demonios.</summary>
+    public const short ArcoCazaDemonios = 666;
+
+    /// <summary>
+    /// LOS DEMONIOS DEL ARCO: el Demonio (fichas 98 y 543) y el Demonio Abisal (572). El original compara contra
+    /// <c>NPC_DEMONIO = 1</c> (SistemaCombate.bas:38), y la ficha 1 de esta data es el Aldeano: allá el arco pegaba de verdad sólo al
+    /// Aldeano y a los demonios les sacaba 1. Que apunte a los demonios es una REGLA DE LA CASA, decisión del autor del 2026-09-27.
+    /// </summary>
+    public static readonly IReadOnlySet<int> DemoniosDelArco = new HashSet<int> { 98, 543, 572 };
+
+    /// <summary>
+    /// EL ARCO CAZA DEMONIOS (VB6 CalcularDaño, SistemaCombate.bas:309-316 contra una criatura y :359-361 contra una persona): la
+    /// tirada y el golpe máximo del arco que entran en <see cref="CalcularDano"/>. Contra un demonio (<see cref="DemoniosDelArco"/>),
+    /// los suyos; contra cualquier otra criatura y contra una persona, 1. La flecha suma su tirada igual, como en el original.
+    /// </summary>
+    public static (long Tirada, long Maximo) TiradaDelArcoCazaDemonios(long tirada, int maxHit, int? fichaDeLaCriatura) =>
+        fichaDeLaCriatura is { } ficha && DemoniosDelArco.Contains(ficha) ? (tirada, maxHit) : (1, 1);
 
     /// <summary>Poder de ataque, con la MISMA curva que la evasión. Sirve a las tres variantes del
     /// original —<c>PoderAtaqueWrestling</c> (:157), <c>PoderAtaqueArma</c> (:93) y
