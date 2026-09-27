@@ -1946,8 +1946,8 @@ public sealed partial class PacketDispatcher
     ///
     /// El original mira PRIMERO los nudillos y recién después el arma, así que con nudillos puestos se pelea
     /// —y se entrena— por <c>Wrestling</c> aunque haya un arma en la mochila. Las ramas de proyectil (arco →
-    /// Proyectiles, arpón → ArmasArrojadizas) piden el campo <c>proyectil</c> del obj.dat, que hoy no existe en
-    /// ObjInfo: quedan diferidas, no inventadas.
+    /// Proyectiles, arrojadiza → ArmasArrojadizas) no llegan acá: con un arma de proyectil no se pega cuerpo a cuerpo
+    /// (el 127 de <c>HandleAttack</c>) y el disparo tiene su propio poder de ataque.
     /// </summary>
     private int AttackSkillOf(Player p) =>
         Equipment.EquippedOfCategory(p, _data, 7) is null && Equipment.EquippedOfCategory(p, _data, 1) is not null
@@ -2577,9 +2577,14 @@ public sealed partial class PacketDispatcher
     ///
     /// <para>Lo que suena depende del arma, y el original abre las mismas dos ramas para el acierto y para el
     /// fallo: con ARCO y munición puesta van los sonidos de la flecha; con cualquier otra cosa —o con las manos
-    /// vacías— va el golpe seco al acertar y el silbido al errar. La rama del arpón (<c>Proyectil = 2</c>, con
-    /// sus sonidos 68 y 67) no se porta, por lo mismo que no se porta en el disparo: en esta data no hay un
-    /// solo objeto con ese valor.</para>
+    /// vacías— va el golpe seco al acertar y el silbido al errar. La rama de la arrojadiza (<c>Proyectil = 2</c>,
+    /// con sus sonidos 68 y 67) no se porta porque no se llega: con un arma de proyectil no se pega cuerpo a cuerpo
+    /// (el 127 de <c>HandleAttack</c>), el disparo pide <c>Proyectil = 1</c> y el tiro de arrojadiza pide
+    /// <c>SubTipo = 5</c>, que no trae ningún arma de la data.</para>
+    ///
+    /// <para>El FX de la flecha va SIEMPRE, también en 0 (:918): un <c>CreateFX</c> con 0 borra el efecto que la
+    /// criatura tuviera encima (<c>SetCharacterFx</c>, TileEngine.bas:2622). Como ninguna flecha de la data trae
+    /// FX, eso es lo que se ve: la flecha que entra le corta el efecto del hechizo que le estaba mostrando.</para>
     ///
     /// <para>Ojo DÓNDE suena cada uno. Los de la flecha van al área de la CRIATURA y los otros al área del
     /// JUGADOR; y el que suena al errar lo hace en el tile del jugador, mientras que los del acierto suenan en
@@ -2601,8 +2606,7 @@ public sealed partial class PacketDispatcher
 
         var municion = _data.Obj(p.Inventory[ranuraMunicion].ObjIndex);
         NpcSystem.SonidoDeCriatura(_world, npc, municion?.Snd1 ?? 0);
-        if (municion is { Snd2: > 0 })
-            _world.BroadcastToObservers(npc.Pos, ServerMessages.CreateFX(npc.CharIndex, (short)municion.Snd2, 0));
+        _world.BroadcastToObservers(npc.Pos, ServerMessages.CreateFX(npc.CharIndex, (short)(municion?.Snd2 ?? 0), 0));
         AlAreaDelJugador(session, p, SndImpacto3, npc.Pos);
     }
 
@@ -2640,8 +2644,8 @@ public sealed partial class PacketDispatcher
             var municion = _data.Obj(p.Inventory[ranuraMunicion].ObjIndex);
             if (municion is { Snd1: > 0 })
                 _world.BroadcastToObservers(victima.Pos, ServerMessages.PlayWave((short)municion.Snd1, p.Pos.X, p.Pos.Y));
-            if (municion is { Snd2: > 0 })
-                _world.BroadcastToObservers(victima.Pos, ServerMessages.CreateFX(victima.CharIndex, (short)municion.Snd2, 0));
+            // Siempre, también en 0 (:1201), como contra una criatura: con 0 borra el efecto que tuviera la víctima.
+            _world.BroadcastToObservers(victima.Pos, ServerMessages.CreateFX(victima.CharIndex, (short)(municion?.Snd2 ?? 0), 0));
             AlAreaDelJugador(session, p, SndImpacto3, p.Pos);
         }
         else

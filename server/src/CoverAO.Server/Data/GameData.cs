@@ -91,9 +91,10 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // (VB6 InvUsuario.bas:1854). Tambor 48, Laúd 49, Flauta 51. OJO: en el obj.dat la clave va en
     // MAYÚSCULAS ("SND1"); buscarla como "Snd1" da cero y el campo parece muerto.
     int Snd1 = 0,
-    // `Snd2`: en una MUNICIÓN es el FX que se dibuja sobre la criatura cuando la flecha da en el blanco
-    // (VB6 SistemaCombate.bas:918, `CreateFX(npc, ObjData(Municion).Snd2, 0)`). La clave estaba en el .dat y
-    // en el JSON —89 objetos la traen— y no se leía: el campo entero faltaba en la ficha.
+    // `Snd2`: en una MUNICIÓN es el FX que se dibuja sobre el blanco cuando la flecha acierta (VB6
+    // SistemaCombate.bas:918 y :1201, `CreateFX(..., ObjData(Municion).Snd2, 0)`). En una flecha (otFlechas = 32) el
+    // original lo carga de la clave `FX1`, no de `SND2` (FileIO.bas:931): `SND2` es la de las armas y los instrumentos
+    // —los 89 objetos que la traen—, que el server no usa. Ninguna flecha de la data trae `FX1`, así que vale 0.
     int Snd2 = 0,
     // `SndEspecial`: el sonido que suena EN EL ÁREA al equipar un ítem que tiene aura ("Sonido de auras" en
     // el original). El VB6 lo emite en los cuatro caminos de equipar —arma, armadura, escudo y casco— y
@@ -1208,10 +1209,11 @@ public sealed class GameData
         {
             int index = el.TryGetProperty("_index", out var ix) ? ix.GetInt32() : 0;
             if (index <= 0) continue;
+            int tipo = Int(el, "ObjType", "Objtype");
             map[index] = new ObjInfo(
                 (short)index,
                 Str(el, "Name"),
-                Int(el, "ObjType", "Objtype"),
+                tipo,
                 Int(el, "MaxModificador"),
                 Int(el, "Valor"),
                 Int(el, "Anim"),
@@ -1251,7 +1253,7 @@ public sealed class GameData
                 Int(el, "Apuñala", "apuñala"),             // arma que sirve para apuñalar (13 objetos)
                 Int(el, "Crucial", "crucial"),             // stock infinito en el mercader (casing mezclado en el .dat)
                 Int(el, "SND1", "Snd1"),                   // sonido del instrumento (la clave del .dat va en MAYÚSCULAS)
-                Int(el, "SND2", "Snd2"),                   // munición: el FX que deja la flecha al acertar
+                tipo == 32 ? Int(el, "FX1") : Int(el, "SND2", "Snd2"),   // la flecha trae su FX en FX1 (FileIO.bas:931)
                 Int(el, "SndEspecial", "SNDESPECIAL", "sndespecial"),   // sonido al equipar un ítem con aura
                 Int(el, "QueSkill", "Queskill", "queskill"),             // skill que sube el ítem equipado
                 Int(el, "LanzaHechizo", "Lanzahechizo", "lanzahechizo"),   // poción SubTipo 5: hechizo que lanza

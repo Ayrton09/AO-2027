@@ -69,11 +69,15 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **La gracia al entrar se corta apenas hacés algo**, caminar incluido.
 
 - **Más sonidos en la pelea**: el arco al acertar y al errar, y el golpe a otro jugador, que además deja sangre.
+  Y la flecha que acierta le borra al blanco el efecto del hechizo que tenía encima, como en el original.
 
 - **Pelear contra otro jugador, como el original**: el escudo también frena las flechas, y el ladrón, el bardo y el
   gladiador desarman también con el arco. Montado o en barco se pega más fuerte, y el barco o la montura de la víctima
   la cubren sólo donde tiene casco o armadura. Con hambre o sed no se apuñala, y el número del golpe te aparece sobre
   tu personaje.
+
+- **Usar un arma arrojadiza pide objetivo**, como en el original: la Lanza, la Jabalina, las dagas arrojadizas y el
+  Shuriken. Si no la tenés equipada o no estás en modo combate, te avisa.
 
 - **Los hechizos se ven como en el original.** La mitad son de partículas, y cada uno muestra ahora las suyas en
   vez de unos puntitos iguales para todos, con la duración que corresponde; los de área también, y la meditación.
@@ -216,7 +220,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no
   salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa. Al dejar de ser novatos se
-  compran un arma.
+  compran un arma, aunque el herrero les quede lejos, si pueden llegar sin que los maten.
 
 ## 1.0.0 — 2026-09-16
 
