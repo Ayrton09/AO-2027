@@ -306,4 +306,27 @@ public class LosGuardiasAtacanTests
         Assert.True(enemigo.IsParalyzed(_tick));
         Assert.True(enemigo.Hp < enemigo.MaxHp, "el guardia gastó los turnos en paralizar de nuevo en vez de pegarle");
     }
+
+    /// <summary>
+    /// LAS MASCOTAS DEFIENDEN AL AMO DEL GUARDIA. Cuando una criatura le pega a alguien, sus mascotas salen a pelear con
+    /// ella (CheckPets, SistemaCombate.bas:630) si se la puede atacar. El guardia trae <c>Attackable=0</c>, así que se
+    /// quedaban mirando; desde que al guardia se le pega si él te pega a vos (decisión del autor, 2026-09-27), también.
+    /// </summary>
+    [Fact]
+    public void Las_mascotas_del_que_recibe_el_golpe_van_por_el_guardia()
+    {
+        var (world, sys, guardia) = Escena(Guardia(movement: 1));
+        Assert.False(guardia.Attackable);
+        var amo = Jugador(world, "Amo", Player.StatusCaos, 10, 11);
+        var fichaMascota = new NpcInfo(Index: 901, Name: "Lobo mascota", Body: 1, Head: 1, Heading: 3, MaxHp: 1000, MinHit: 1,
+            MaxHit: 1, Def: 0, GiveExp: 0, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 0);
+        var mascota = new Npc { CharIndex = world.AllocateCharIndex(), Template = fichaMascota, Hp = 1000,
+                                Pos = new WorldPos(Ciudad, 12, 13), OwnerCharIndex = amo.CharIndex };
+        world.AddNpc(mascota);
+
+        for (int i = 0; i < 100 && amo.Hp == amo.MaxHp; i++) Correr(sys, 1);
+
+        Assert.True(amo.Hp < amo.MaxHp, "el guardia no le pegó al Caos");
+        Assert.Equal(guardia.CharIndex, mascota.TargetNpcCharIndex);
+    }
 }

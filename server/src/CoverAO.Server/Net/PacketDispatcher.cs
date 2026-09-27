@@ -2127,9 +2127,10 @@ public sealed partial class PacketDispatcher
         return 0;
     }
 
-    /// <summary>NPC atacable a distancia (VB6 Protocol.bas:2860 'If Attackable &lt;&gt; 0' + roles de servicio del melee).</summary>
-    private static bool RangedNpcAtacable(Npc npc) =>
-        npc.Attackable && !npc.IsMerchant && !npc.IsBanker && !npc.IsReviver && !npc.IsWorkbench && !npc.IsTrainer && npc.FactionConvert == 0;
+    /// <summary>NPC atacable a distancia (VB6 Protocol.bas:2860 'If Attackable &lt;&gt; 0' + roles de servicio del melee), con
+    /// el guardia que va por el que tira (ver <see cref="EsAtacablePor"/>).</summary>
+    private bool RangedNpcAtacable(Npc npc, Player p) =>
+        EsAtacablePor(npc, p) && !npc.IsMerchant && !npc.IsBanker && !npc.IsReviver && !npc.IsWorkbench && !npc.IsTrainer && npc.FactionConvert == 0;
 
     /// <summary>
     /// Disparo con arco (VB6 HandleWorkLeftClick, Case eSkill.Proyectiles, Protocol.bas:2751-2916). El objetivo
@@ -2211,7 +2212,7 @@ public sealed partial class PacketDispatcher
             // modo combate (102), el Armada contra una criatura sin dueño (272), la mascota ajena y la pertenencia.
             // Si no puede, `Atacked` queda en falso y la flecha NO se gasta (la energía sí, ya se cobró). Faltaba
             // entero: el arco era la puerta trasera del Armada, que con la espada o un hechizo recibe el 272.
-            if (RangedNpcAtacable(targetNpc))
+            if (RangedNpcAtacable(targetNpc, p))
             {
                 if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
                 if (!PuedeAtacarNpc(session, p, targetNpc)) return;
@@ -2350,7 +2351,11 @@ public sealed partial class PacketDispatcher
         // --- La criatura NO es mascota de nadie (VB6 `If .MaestroUser = 0`, :1752) -----------------------
         if (npc.OwnerCharIndex == 0)
         {
-            if (!p.IsRenegado && p.IsArmada) { session.Send(ServerMessages.LocaleMsg(272)); return false; }
+            // Salvo el guardia que va por él (regla de la casa, ver EsAtacablePor): el del Caos ataca a los Armadas, y
+            // con este 272 no le podrían devolver el golpe. En el original a un guardia no se llegaba nunca: el 298 corta
+            // antes.
+            if (!p.IsRenegado && p.IsArmada && !NpcSystem.GuardiaQueVaPor(npc, p, _data, _ini))
+            { session.Send(ServerMessages.LocaleMsg(272)); return false; }
         }
         // --- La criatura ES mascota de alguien (:1768) ----------------------------------------------------
         else if (_world.PlayerByCharIndex(npc.OwnerCharIndex) is { } amo)
@@ -2461,12 +2466,19 @@ public sealed partial class PacketDispatcher
         }
     }
 
+    /// <summary>
+    /// ¿SE LE PUEDE PEGAR A ESTA CRIATURA? La que su ficha trae atacable, o un GUARDIA QUE VA POR ESTE JUGADOR: al guardia le
+    /// podés pegar si él te puede pegar a vos (<see cref="NpcSystem.GuardiaQueVaPor"/>, decisión del autor del 2026-09-27).
+    /// Vale para el golpe, el tiro, la parálisis y los hechizos de daño, de a uno y de área.
+    /// </summary>
+    private bool EsAtacablePor(Npc npc, Player p) => npc.Attackable || NpcSystem.GuardiaQueVaPor(npc, p, _data, _ini);
+
     private void AttackNpc(ClientSession session, Player p, Npc npc)
     {
         // VB6 NpcAtacable (SistemaCombate.bas:1737): no se atacan los NPCs de servicio. Se rechaza si el NPC
         // no es atacable (Attackable=0 en el NPCs.dat: sacerdotes/guardias/veterinarias reales) O tiene un rol
         // de servicio (los NPCs de test de Program.cs traen su flag pero el default Attackable=true). LocaleMsg 298.
-        if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
+        if (!EsAtacablePor(npc, p) || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
         if (!PuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         RevealOnAttack(p);   // golpear a un NPC revela ocultamiento e invisibilidad por hechizo (VB6 UsuarioAtacaNpc, SistemaCombate.bas:898)
@@ -3583,7 +3595,7 @@ public sealed partial class PacketDispatcher
         if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
 
         // VB6 PuedeAtacarNPC: los NPCs de servicio no se tocan — el mismo gate que el daño.
-        if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
+        if (!EsAtacablePor(npc, p) || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
         if (!PuedeAtacarNpc(session, p, npc, paraliza: true)) return;   // el original lo trata aparte   // VB6 PuedeAtacarNPC:1752 — va después del 298
 
@@ -3642,7 +3654,7 @@ public sealed partial class PacketDispatcher
         // default— se le pegaba a cualquier criatura con un hechizo.
         if (!p.CombatMode) { session.Send(ServerMessages.LocaleMsg(102)); return; }
         // VB6 PuedeAtacarNPC: los NPCs de servicio no son atacables — mismo gate que AttackNpc.
-        if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
+        if (!EsAtacablePor(npc, p) || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench || npc.IsTrainer || npc.FactionConvert != 0)
         { session.Send(ServerMessages.LocaleMsg(298)); return; }
         if (!PuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         npc.AttackedBy = p.Name;   // VB6 NPCAtacado: lo provoca y lo vuelve hostil para defenderse
@@ -11358,7 +11370,7 @@ public sealed partial class PacketDispatcher
             return true;
         }
         if (!spell.IsDamage) return casteado;   // SubeHP = 0 (Tornado): ningún Case lo agarra
-        if (!npc.Attackable || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench
+        if (!EsAtacablePor(npc, p) || npc.IsMerchant || npc.IsBanker || npc.IsReviver || npc.IsWorkbench
             || npc.IsTrainer || npc.FactionConvert != 0) { session.Send(ServerMessages.LocaleMsg(298)); return false; }
         if (!PuedeAtacarNpc(session, p, npc)) return false;
         npc.AttackedBy = p.Name;   // NPCAtacado

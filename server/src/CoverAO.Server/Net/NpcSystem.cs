@@ -665,6 +665,16 @@ public sealed class NpcSystem
         && (ini.GuardiasAtacanNewbies || nivel > GameLimits.NewbieMaxLevel)
         && ini.GuardiaAtacaA(ficha.Status, faccion);
 
+    /// <summary>
+    /// ¿Este guardia —la criatura en juego, no sólo su ficha— va por este jugador? Es la otra mitad de la regla: <b>al
+    /// guardia le podés pegar si él te puede pegar a vos</b> (decisión del autor, 2026-09-27). Los 38 guardias traen
+    /// <c>Attackable=0</c>, como en el original, donde tampoco peleaban; desde que pelean, el que recibía los golpes no
+    /// podía devolverlos. Con <c>GuardiasAtacan=0</c> esto es falso siempre y vuelven a ser inmunes.
+    /// </summary>
+    public static bool GuardiaQueVaPor(Npc npc, Player p, GameData data, ServerIni? ini) =>
+        npc.OwnerCharIndex == 0 && npc.FactionEnlist == 0 && npc.FactionConvert == 0
+        && GuardiaVaPor(npc.Template, p.FactionStatus, p.Level, data, ini);
+
     /// <summary>¿Este hechizo le hace algo a un jugador? Daño, parálisis o inmovilización.</summary>
     private static bool Lastima(Data.SpellInfo s) => s.SubeHp == 2 || s.IsParalyze || s.IsImmobilize;
 
@@ -1018,7 +1028,8 @@ public sealed class NpcSystem
     /// una mascota no se ataca a sí misma ni a otra del mismo dueño.</summary>
     private void MascotasDefiendenAlAmo(Player amo, Npc agresor)
     {
-        if (!agresor.Attackable || agresor.IsMerchant || agresor.IsBanker || agresor.IsReviver) return;   // VB6 PuedeAtacarNPC
+        if (!agresor.Attackable && !GuardiaQueVaPor(agresor, amo, _data, _ini)) return;   // VB6 PuedeAtacarNPC; el guardia, regla de la casa
+        if (agresor.IsMerchant || agresor.IsBanker || agresor.IsReviver) return;
         foreach (var mascota in _world.Npcs)
         {
             if (mascota.OwnerCharIndex != amo.CharIndex || !mascota.IsAlive) continue;
