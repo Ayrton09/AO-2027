@@ -3172,7 +3172,7 @@ public sealed class Bot
     /// </summary>
     public static bool PuedeUsarlo(ObjInfo? o, byte clase, byte raza, byte genero, short nivel) =>
         o is not null && !o.ClassForbidden(clase) && !o.RaceForbidden(raza) && o.MinLevel <= nivel
-        && (!Equipment.MiraElGenero(o) || Equipment.PuedeUsarloSuGenero(o.Gender, genero));
+        && Equipment.PuedeUsarloSuGenero(Equipment.GeneroDeLaPrenda(o), genero);
 
     /// <inheritdoc cref="PuedeUsarlo"/>
     private bool LoPuedeUsar(ObjInfo o, short nivel) => PuedeUsarlo(o, _clase, _raza, _genero, nivel);

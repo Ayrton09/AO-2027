@@ -61,6 +61,34 @@ public class NewbieKitTests
         Assert.True(humano.Inventory[4].Equipped, "la armadura inicial nace puesta");
     }
 
+    /// <summary>
+    /// LA MUJER NACE CON LA VERSIÓN DE MUJER (decisión del autor, 2026-09-27): con la ropa de hombre sólo para hombres, la de
+    /// novato de su raza no se la podría volver a poner. La Orca no tiene versión de mujer y nace con las Tribales, que por
+    /// eso son de las dos.
+    /// </summary>
+    [Fact]
+    public void La_mujer_nace_con_la_ropa_de_novato_de_mujer_y_se_la_puede_poner()
+    {
+        var data = LoadOrSkip();
+        var kit = data.NewbieKit(1);
+        var store = new FileStore(Path.Combine(Path.GetTempPath(), "coverao_kit_" + Guid.NewGuid().ToString("N")));
+        var db = new Persistence(store, new Leveling(data.LevelExp));
+        var acc = db.CreateAccount("kit_mujer", "pw");
+        // Humana, Elfa, Drow, Gnoma, Enana, Orca (VB6 eRaza).
+        var esperado = new (byte Raza, short Ropa)[] { (1, 1283), (2, 1284), (3, 1285), (4, 563), (5, 563), (6, 1087) };
+        short charIndex = 10;
+        foreach (var (raza, ropa) in esperado)
+        {
+            var mujer = db.CreateCharacter(acc, "KitMujer" + raza, charIndex++, race: raza, gender: 2, @class: 1, homeland: 1,
+                                           head: 1, newbieKit: kit);
+            Assert.Equal(ropa, mujer.Inventory[4].ObjIndex);
+            Assert.True(mujer.Inventory[4].Equipped, "la armadura inicial nace puesta");
+            var prenda = data.Obj(ropa)!;
+            Assert.True(Equipment.PuedeUsarloSuGenero(Equipment.GeneroDeLaPrenda(prenda), Equipment.Mujer),
+                $"la raza {raza} nace con '{prenda.Name}', que una mujer no se puede poner");
+        }
+    }
+
     [Fact]
     public void Weapon_slot_is_equipped_and_class_specific()
     {

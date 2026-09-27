@@ -21,10 +21,51 @@ public static class Equipment
     /// claves no existen en ningún obj.dat del repo: allá la regla nunca rechaza nada. Lo que la data sí trae es
     /// <c>Genero=2</c> en 43 prendas —todas de mujer; no hay una sola con <c>Genero=1</c>—, una clave que el VB6 no
     /// lee. Respetarla es una DECISIÓN DEL AUTOR del 2026-09-12, a partir del reporte del tester, y un apartamiento
-    /// consciente de la paridad. Por eso no hay "los hombres sólo ropa de hombres": no existe la marca que lo diga.</para>
+    /// consciente de la paridad. El género de cada prenda sale de <see cref="GeneroDeLaPrenda"/>.</para>
     /// </summary>
     public static bool PuedeUsarloSuGenero(int generoDeLaPrenda, int generoDelJugador) =>
         generoDeLaPrenda <= 0 || generoDeLaPrenda == generoDelJugador;
+
+    /// <summary><c>eGenero</c> del original (Declares.bas:173).</summary>
+    public const int Hombre = 1, Mujer = 2;
+
+    /// <summary>
+    /// ¿DE QUÉ GÉNERO ES ESA PRENDA? Sólo la armadura de cuerpo tiene (<see cref="MiraElGenero"/>): la marca de la data si la
+    /// trae, y si no, DE HOMBRE, salvo las túnicas y la ropa de novato de la Orca, que son de cualquiera (0).
+    ///
+    /// <para>DECISIÓN DEL AUTOR del 2026-09-27, sobre otro reporte del tester: "en todas las ropas, las de hombre se las pueden
+    /// poner las mujeres". La data marca sólo las 43 de mujer; las de hombre no tienen marca, así que se las distingue por
+    /// descarte: todo lo que no es de mujer es de hombre, salvo las túnicas (<see cref="EsTunica"/>), que las usa cualquiera.
+    /// Y las Vestimentas Tribales (Newbies), la ropa con la que nace la Orca, porque no tienen versión de mujer (ver
+    /// <see cref="RopaDeNovatoDeMujer"/>). A una mujer le quedan las de mujer y las túnicas.</para>
+    /// </summary>
+    public static int GeneroDeLaPrenda(ObjInfo o) =>
+        !MiraElGenero(o) ? 0
+        : o.Gender > 0 ? o.Gender
+        : EsTunica(o) || o.Index == TribalesDeNovato ? 0
+        : Hombre;
+
+    /// <summary>¿Es una túnica? Por el nombre: la data no trae otra cosa que las distinga, y son 57, con y sin acento.</summary>
+    public static bool EsTunica(ObjInfo o) =>
+        o.Name.StartsWith("Túnica", StringComparison.OrdinalIgnoreCase) || o.Name.StartsWith("Tunica", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Las Vestimentas Tribales (Newbies), la ropa con la que nace la Orca (VB6 RellenarInventario, TCP.bas:2226).</summary>
+    public const short TribalesDeNovato = 1087;
+
+    /// <summary>
+    /// LA ROPA DE NOVATO DE UNA MUJER: la versión de mujer de la que le toca por raza (VB6 RellenarInventario, TCP.bas:2212,
+    /// que la da sólo por raza). Las de mujer tienen las mismas razas permitidas que sus pares de hombre y vienen en el mismo
+    /// orden: 463/464/465 (Humano, Elfo, Drow) y 1283/1284/1285; 466 (Gnomo y Enano) y 563. La de la Orca no tiene versión de
+    /// mujer y queda la misma, que por eso es de cualquiera (<see cref="GeneroDeLaPrenda"/>). Decisión del autor, 2026-09-27.
+    /// </summary>
+    public static short RopaDeNovatoDeMujer(short deHombre) => deHombre switch
+    {
+        463 => 1283,
+        464 => 1284,
+        465 => 1285,
+        466 => 563,
+        _ => deHombre,
+    };
 
     /// <summary>
     /// ¿EN QUÉ PRENDAS SE MIRA EL GÉNERO? Sólo en la armadura de CUERPO: es la única rama del original que llama a

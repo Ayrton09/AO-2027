@@ -350,11 +350,14 @@ public sealed class Persistence
     /// </summary>
     private static void ApplyNewbieKit(Player p, IReadOnlyList<NewbieItem> kit, byte race)
     {
+        // Y LA MUJER, LA VERSIÓN DE MUJER: ver `Equipment.RopaDeNovatoDeMujer`.
+        short armadura = (short)RacialArmor(race);
+        if (p.Gender == Equipment.Mujer) armadura = Equipment.RopaDeNovatoDeMujer(armadura);
         for (int i = 0; i < kit.Count && i < GameLimits.MaxInventorySlots; i++)
         {
             var it = kit[i];
             int slot = i + 1;
-            int obj = slot == 4 ? RacialArmor(race) : it.ObjIndex;
+            int obj = slot == 4 ? armadura : it.ObjIndex;
             if (obj <= 0 || it.Amount <= 0) continue;
             bool equipped = it.Equipped || slot is 3 or 4;   // arma y armadura nacen puestas
             p.Inventory[slot] = new InventorySlot { ObjIndex = (short)obj, Amount = (short)it.Amount, Equipped = equipped };

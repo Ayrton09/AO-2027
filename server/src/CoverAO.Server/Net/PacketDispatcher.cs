@@ -13324,7 +13324,7 @@ public sealed partial class PacketDispatcher
                     // EL GÉNERO, SÓLO EN LA ARMADURA DE CUERPO: es la única rama del original que llama a
                     // `SexoPuedeUsarItem` (InvUsuario.bas:1151); el casco (:1193) y el escudo (:1230) no. Ver
                     // `Equipment.PuedeUsarloSuGenero` para de dónde sale el dato y por qué acá no es fiel al VB6.
-                    if (Equipment.MiraElGenero(obj) && !Equipment.PuedeUsarloSuGenero(obj.Gender, p.Gender))
+                    if (!Equipment.PuedeUsarloSuGenero(Equipment.GeneroDeLaPrenda(obj), p.Gender))
                     { session.Send(ServerMessages.LocaleMsg(267)); return; }   // "Tu género no puede usar este objeto."
 
                 }

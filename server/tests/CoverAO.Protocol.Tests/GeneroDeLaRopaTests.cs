@@ -12,8 +12,10 @@ namespace CoverAO.Protocol.Tests;
 /// <para><b>Esto NO es paridad con el original, y el test lo fija a propósito.</b> El VB6 tiene la regla
 /// (<c>SexoPuedeUsarItem</c>, InvUsuario.bas:839) pero la alimenta con las claves <c>Mujer</c>/<c>Hombre</c> del
 /// obj.dat, que no existen en esta data: allá no rechaza nada. Acá se respeta la clave <c>Genero</c>, que el VB6 no
-/// lee. Lo que sí se conserva del original: sólo la armadura de CUERPO, el mensaje 267, y que lo que no lleva marca
-/// lo usa cualquiera.</para>
+/// lee. Lo que sí se conserva del original: sólo la armadura de CUERPO y el mensaje 267.</para>
+///
+/// <para>Y DESDE EL 27/09, LA ROPA DE HOMBRE SÓLO PARA HOMBRES (otro reporte del tester, otra decisión del autor): lo que
+/// no lleva marca es de hombre, salvo las túnicas y las Tribales de novato de la Orca (<c>Equipment.GeneroDeLaPrenda</c>).</para>
 /// </summary>
 public class GeneroDeLaRopaTests
 {
@@ -26,7 +28,7 @@ public class GeneroDeLaRopaTests
         return data;
     }
 
-    /// <summary>La regla sola: sin marca la usa cualquiera —ahí caen las 56 túnicas—, con marca sólo ese género.</summary>
+    /// <summary>La regla sola: con género 0 la usa cualquiera —las túnicas, y lo que no es de cuerpo—, con género sólo ese.</summary>
     [Theory]
     // marca de la prenda | género del jugador | ¿puede?
     [InlineData(0, Hombre, true)]     // sin marca: el `Else … = True` del original
@@ -96,5 +98,43 @@ public class GeneroDeLaRopaTests
         Assert.True(conMarca <= 1, $"{conMarca} túnicas traen género; se esperaba a lo sumo una");
         Assert.True(tunicas.Count(o => Equipment.PuedeUsarloSuGenero(o!.Gender, Hombre)) >= tunicas.Count - 1,
             "un hombre dejó de poder ponerse las túnicas");
+    }
+
+    /// <summary>
+    /// LA ROPA DE HOMBRE, SÓLO PARA HOMBRES (decisión del autor del 2026-09-27, sobre otro reporte del tester: "en todas las
+    /// ropas, las de hombre se las pueden poner las mujeres"). La data no marca las de hombre: son las que no son de mujer.
+    /// </summary>
+    [Fact]
+    public void La_armadura_sin_marca_es_de_hombre()
+    {
+        var datos = Datos();
+        var cuero = datos.Obj(30);
+        Assert.True(cuero is { IsArmor: true, Gender: 0 }, "premisa: la Armadura de Cuero es de cuerpo y no trae marca");
+        Assert.Equal(Hombre, Equipment.GeneroDeLaPrenda(cuero!));
+        Assert.False(Equipment.PuedeUsarloSuGenero(Equipment.GeneroDeLaPrenda(cuero!), Mujer), "una mujer se pone la de hombre");
+        Assert.True(Equipment.PuedeUsarloSuGenero(Equipment.GeneroDeLaPrenda(cuero!), Hombre));
+    }
+
+    /// <summary>
+    /// Y CONTRA TODA LA DATA: una mujer se pone las de mujer, las túnicas y las Tribales de novato de la Orca, y nada más; un
+    /// hombre, todo menos las de mujer. Cascos, escudos y armas no tienen género.
+    /// </summary>
+    [Fact]
+    public void La_mujer_se_pone_las_de_mujer_las_tunicas_y_las_tribales()
+    {
+        var datos = Datos();
+        var todos = Enumerable.Range(1, 1700).Select(i => datos.Obj((short)i)).Where(o => o is not null).Select(o => o!).ToList();
+        var deCuerpo = todos.Where(o => o.IsArmor).ToList();
+        Assert.True(deCuerpo.Count >= 200, $"la data trae {deCuerpo.Count} armaduras de cuerpo: el test no prueba nada");
+        Assert.True(deCuerpo.Count(Equipment.EsTunica) >= 50, "no aparecieron las túnicas: el test no prueba nada");
+
+        foreach (var o in deCuerpo)
+        {
+            bool deMujer = o.Gender == Mujer, deLasDos = Equipment.EsTunica(o) || o.Index == Equipment.TribalesDeNovato;
+            int genero = Equipment.GeneroDeLaPrenda(o);
+            Assert.True((deMujer || deLasDos) == Equipment.PuedeUsarloSuGenero(genero, Mujer), $"'{o.Name}' ({o.Index}) para una mujer");
+            Assert.True(!deMujer == Equipment.PuedeUsarloSuGenero(genero, Hombre), $"'{o.Name}' ({o.Index}) para un hombre");
+        }
+        Assert.All(todos.Where(o => o.IsHelmet || o.IsShield || o.IsWeapon), o => Assert.Equal(0, Equipment.GeneroDeLaPrenda(o)));
     }
 }

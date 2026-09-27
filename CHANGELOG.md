@@ -78,8 +78,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **El pendiente del sacrificio te salva el inventario al morir**, gastando una de sus tres cargas.
 
-- **La ropa de mujer es sólo para personajes mujer**, y cada montura pide el nivel, la clase y la raza de su
-  ficha: el huargo, sólo orcos.
+- **La ropa de mujer es sólo para mujeres y la de hombre sólo para hombres**: las túnicas, para los dos. La
+  mujer nace con la ropa de novato de mujer. Y cada montura pide el nivel, la clase y la raza de su ficha: el
+  huargo, sólo orcos.
 
 - **Reglas del original que faltaban**: con el arco no se pega cuerpo a cuerpo, los objetos piden su nivel
   (la barca también), en la arena no se roba y desnudo no se recupera energía.
