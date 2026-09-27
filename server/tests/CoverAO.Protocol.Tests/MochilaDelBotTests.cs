@@ -104,6 +104,28 @@ public class MochilaDelBotTests : IDisposable
         Assert.True(antes <= 4, $"mientras es novato compra para un rato ({antes:0.0} horas), que para eso tiene la tienda al lado");
     }
 
+    /// <summary>
+    /// Y SE VA CON UN ARMA (pedido del autor, 27/09). En el último nivel de novato, sin un arma propia —la de novato ya no
+    /// cuenta—, el arma es una necesidad y no un gusto; y el viaje va por ella con la panza llena, antes que las pociones y
+    /// los gustos, siempre que haya quien le venda una que pueda usar y pagar.
+    /// </summary>
+    [Fact]
+    public void Al_dejar_de_ser_novato_se_compra_un_arma()
+    {
+        int ultimo = GameLimits.NewbieMaxLevel;
+        Assert.False(Bot.LeFaltaElArmaDelCamino(ultimo - 1, 0), "antes del último nivel de novato todavía no");
+        Assert.True(Bot.LeFaltaElArmaDelCamino(ultimo, 0));
+        Assert.True(Bot.LeFaltaElArmaDelCamino(ultimo + 3, 0), "si no la consiguió, la sigue buscando");
+        Assert.False(Bot.LeFaltaElArmaDelCamino(ultimo, 8), "con un arma propia, no");
+
+        Assert.True(Bot.PrimeroElArma(true, true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false));
+        Assert.False(Bot.PrimeroElArma(true, true, vaPorComida: true, vaPorBebida: false, vaPorLaHerramienta: false));
+        Assert.False(Bot.PrimeroElArma(true, true, vaPorComida: false, vaPorBebida: true, vaPorLaHerramienta: false));
+        Assert.False(Bot.PrimeroElArma(true, true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: true));
+        Assert.False(Bot.PrimeroElArma(true, hayUnaAlAlcance: false, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false),
+            "sin quien le venda una que pueda usar, no se ata a buscarla");
+    }
+
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
     /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     private static double Horas(int puntos, int vueltas) =>

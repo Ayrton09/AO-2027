@@ -1024,6 +1024,8 @@ public sealed class Bot
         bool hayQueVender = sentidos.EnLaMochila(obj => EsBotin(sentidos, obj)) is not null;
         short laQueFalta = HerramientaQueLeFalta(sentidos);
         bool faltaHerramienta = laQueFalta != 0;
+        // EL ARMA PARA EL CAMINO: ver `LeFaltaElArmaDelCamino`.
+        bool faltaArma = LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma));
 
         // EL PRECIO SALE DE LA DATA, no de un número a mano: hoy las tres herramientas valen 200, y el día que
         // la data cambie esto cambia solo.
@@ -1061,8 +1063,21 @@ public sealed class Bot
         bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, sentidos.Oro, CuestaElAntidoto);
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
+        // Y EL ARMA, SI HAY QUIEN LE VENDA UNA QUE SIRVA: ver `PrimeroElArma`. Alcanza con el MAPA, como con el pergamino
+        // (ver `HayDondeComprarElPergamino`): los herreros están adentro de edificios.
+        double sobraParaElArma = PlataParaElEquipo(sentidos);
+        bool VendeElArma(int ficha) =>
+            _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
+            && suStock.Any(s => ArmaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
+        bool vaPorElArma = faltaArma && !enApuro;
+        bool hayArmaAlAlcance = vaPorElArma && HayDondeComprarElPergamino(
+            _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendeElArma, MapaAtiende, Pisable(sentidos)) is not null,
+            _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
+                m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var conHerrero)
+                     && conHerrero.Any(q => VendeElArma(q.NpcIndex)),
+                Pisable(sentidos)) is not null);
         if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
-            && !vaPorHechizo && !vaPorAntidoto) return false;
+            && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -1080,6 +1095,7 @@ public sealed class Bot
         // Minero con 275 monedas y la comida a nueve pasos, veinte minutos sin comprar nada, mientras el
         // vendedor de piquetes quedaba detrás de una puerta sin camino. La herramienta se busca con la panza llena.
         short quiero = vaPorLaHerramienta && !vaPorComida && !vaPorBebida ? laQueFalta : (short)0;
+        bool soloElArma = PrimeroElArma(vaPorElArma, hayArmaAlAlcance, vaPorComida, vaPorBebida, vaPorLaHerramienta);
         // Y SI VA A VENDER, QUE SEA A ALGUIEN QUE LE COMPRE. Cada mercader acepta UN tipo de objeto y rechaza
         // el resto en silencio (`TipoItems`, VB6 Comercio.bas:123), así que caer en el gremio equivocado es un
         // viaje entero para volver con lo mismo: el pollo se lo compra el de comidas, no el herrero. Eso lo
@@ -1122,6 +1138,7 @@ public sealed class Bot
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
+            if (soloElArma) return VendeElArma(ficha);
             if (soloElPergamino) return VendePergamino(ficha);
             if (soloGustos)
                 return (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
@@ -1136,6 +1153,7 @@ public sealed class Bot
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
             if (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex))) return true;
+            if (hayArmaAlAlcance && VendeElArma(ficha)) return true;
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             if (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             return venderAlcanza
@@ -1201,7 +1219,7 @@ public sealed class Bot
                 { llegoAlPueblo = true; continue; }
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
                                                     vaPorAntidoto,
-                                                    vaPorEquipo, vaPorHechizo);
+                                                    vaPorEquipo || hayArmaAlAlcance, vaPorHechizo);
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
                     && !_entorno.Datos.IsPkMap(sentidos.Mapa))
                 {
@@ -1401,6 +1419,9 @@ public sealed class Bot
         // venenosas hay 709 repartidas en 93 mapas. Ver `CuraElVeneno`.
         compro |= await ReponerAsync(transporte, sentidos, AntidotoPropio, AntidotosQueQuiere, ct,
                                      ReservaPara(sentidos, comida: true, bebida: true));
+        // EL ARMA DEL CAMINO, ANTES QUE LOS GUSTOS: ver `LeFaltaElArmaDelCamino`.
+        if (LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)))
+            compro |= await ComprarElArmaDelCaminoAsync(transporte, sentidos, ct);
         // EL QUE CASTEA GASTA PRIMERO EN EL PERGAMINO: ver <see cref="ElHechizoAntesQueElArma"/>. Las dos compras
         // salen de la MISMA bolsa, así que el orden decide cuál se queda sin plata.
         if (ElHechizoAntesQueElArma(sentidos.UsaMana))
@@ -1790,6 +1811,29 @@ public sealed class Bot
     /// misma subida de nivel. Un jugador lo ve venir y va de compras antes.</para>
     /// </summary>
     public static bool PorDejarDeSerNovato(int nivel) => nivel >= GameLimits.NewbieMaxLevel;
+
+    /// <summary>
+    /// ¿LE FALTA EL ARMA PARA EL CAMINO? Está por dejar de ser novato (<see cref="PorDejarDeSerNovato"/>) y no tiene un arma
+    /// propia: la de novato ya no cuenta (<see cref="CuentaComoPropio"/>), y con <c>QuitarEquipoNovato</c> el servidor se la
+    /// saca en la subida. Entonces el arma es una necesidad, como la comida para el camino, y no un gusto.
+    ///
+    /// <para>Pedido del autor (2026-09-27): que se compre un arma al dejar de ser novato. Medido en `oficios20` y `oficios21`:
+    /// de los bots que pasaron el nivel 15 uno solo se había comprado un arma; los demás seguían con el Martillo de Piedra, el
+    /// Báculo o la Daga de novato (golpe 5, 4 y 2) y de once mil a setenta mil monedas encima. El arma iba con el equipo —lo que
+    /// sobra, cuando no falta nada más—, y en el 15 lo primero que falta es la comida y la bebida del camino: el viaje al
+    /// herrero llegaba ya en el 16, cuando desde el campo ningún pueblo que le venda se alcanza sin cruzar peligro.</para>
+    /// </summary>
+    public static bool LeFaltaElArmaDelCamino(int nivel, int mejorArmaPropia) => PorDejarDeSerNovato(nivel) && mejorArmaPropia <= 0;
+
+    /// <summary>
+    /// ¿EL VIAJE VA POR EL ARMA DEL CAMINO? Cuando le falta, hay quien le venda una que pueda usar y pagar, y ya tiene la
+    /// comida, la bebida y la herramienta: se busca con la panza llena, como la herramienta, y antes que las pociones y los
+    /// gustos, porque el nivel 15 dura poco. Sin <paramref name="hayUnaAlAlcance"/>, el que no puede usar ninguna de las que se
+    /// venden cerca dejaría de comprar todo lo demás.
+    /// </summary>
+    public static bool PrimeroElArma(bool vaPorElArma, bool hayUnaAlAlcance, bool vaPorComida, bool vaPorBebida,
+                                     bool vaPorLaHerramienta) =>
+        vaPorElArma && hayUnaAlAlcance && !vaPorComida && !vaPorBebida && !vaPorLaHerramienta;
 
     /// <summary>
     /// ¿Eso cuenta COMO PROPIO para decidir qué comprar? Lo de novato deja de contar cuando está por perderlo.
@@ -3177,6 +3221,26 @@ public sealed class Bot
     /// minutos entre la cuna y el Herrero Rinkel —Armadura de Cuero a 3000— sin matar una criatura.</summary>
     private bool ValeElViajePorEso(SentidosDelBot sentidos, short obj, double plata) =>
         MejoraLoQueTiene(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata);
+
+    /// <summary>¿Es un arma que se puede poner, que puede pagar y que el servidor no le rechazó? La del camino: ver
+    /// <see cref="LeFaltaElArmaDelCamino"/>.</summary>
+    private bool ArmaQueLeSirve(SentidosDelBot sentidos, short obj, double plata) =>
+        _entorno.Datos.Obj(obj) is { } o && EsArma(o) && LoPuedeUsar(o, sentidos.Nivel) && !_noSeLoPone.Contains(obj)
+        && LoPuedePagar(o.Value, plata);
+
+    /// <summary>COMPRARSE EL ARMA DEL CAMINO: de las de la vitrina que le sirven y puede pagar, la que más pega. Ponérsela es
+    /// cosa de <see cref="Equiparse"/>.</summary>
+    private async Task<bool> ComprarElArmaDelCaminoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        double plata = PlataParaElEquipo(sentidos);
+        if (plata <= 0 || !sentidos.Comerciando) return false;
+        int Pega(short obj) => ArmaQueLeSirve(sentidos, obj, plata) && _entorno.Datos.Obj(obj) is { } o ? Math.Max(1, ValorDeCombate(o)) : 0;
+        if (sentidos.LoMejorDeLaVitrina(Pega, plata) is not { } oferta) return false;
+        int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
+        transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
+        await Task.Delay(_rng.Next(600, 1_400), ct);
+        return sentidos.CuantoTiene(obj => obj == oferta.Obj) > teniaAntes;
+    }
 
     /// <summary>¿Eso de la vitrina lo mejora en algo? Es lo que decide si vale la pena el viaje al mercader.</summary>
     private bool MejoraLoQueTiene(SentidosDelBot sentidos, short obj)
