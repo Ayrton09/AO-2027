@@ -160,8 +160,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
   quedan registrados.
 
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
-  guardias del otro bando, y para cazar o trabajar no cruzan por donde los matan. No se quedan peleando con lo que
-  no pueden lastimar, y si sus hechizos no salen, siguen con el arma.
+  guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan. No se quedan
+  peleando con lo que no pueden lastimar, si sus hechizos no salen siguen con el arma, y de muertos van al
+  sacerdote aunque esté en otro mapa.
 
 ## 1.0.0 — 2026-09-16
 
