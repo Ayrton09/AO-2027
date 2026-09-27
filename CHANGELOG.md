@@ -20,6 +20,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Las puertas cerradas no se atraviesan.** Algunas de Tiama, Nueva Esperanza, Rinkel y Nix se podían cruzar
   hasta que alguien las abría y las cerraba.
 
+- **Sin obstáculos invisibles**: 34 baldosas de 16 mapas frenaban sin nada dibujado encima, seis de ellas en el
+  parque de Nix. Ahora se pasa.
+
 - **Los pasajes que cruzan el agua piden 80 de Navegación.** Entre puertos del mismo continente, nada.
 
 - **Las cuevas piden nivel**: la Cueva orca 20, el Veriil 28, el Dragón 30, el Zero 35 y el Cristal 40, entre
@@ -177,6 +180,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
   `[NIVELMINIMO]`, `MinutosDeFogata`, `MetamorfosisDelDruida`, `AtacarAliadoVuelveCriminal` y `EventoAlRematar`.
   Con 0 —o la tabla de cuevas vacía— cada una vuelve a ser como el original.
+
+- **A quién le vende el mercader se elige en el Server.ini**, por zona y por facción: `ComercioEnRinkel`,
+  `ComercioEnLindos`, `ComercioEnCiudadesViejas` y `ComercioEnElResto`. Vienen como el original, y los bots compran
+  donde les venden.
 
 - **Las tasas `Exp` y `Oro` multiplican directo** (1 es lo normal), y el panel las muestra aparte de los eventos.
   Como en el original, el evento de experiencia no multiplica lo que se cobra al matar a la criatura —todo lo del
