@@ -140,4 +140,26 @@ public class LosBotsNoCruzanElPeligroTests
 
         Assert.Equal(37, Coto(Bot.SeCruzaBuscando(m.Datos, ini, bando, nivel, vida, conPociones: true, curaVeneno: false)));
     }
+
+    /// <summary>
+    /// EL CAMINO DE UN VIAJE, POR ESCALONES: por donde no lo matan, por donde cazaría y por el de siempre; el viaje largo, sólo por
+    /// los dos primeros. De muerto, por el de siempre: escrito como <c>deMuerto ? null : sinPeligro ?? (...)</c>, el cadáver no
+    /// encontraba ninguna puerta y no llegaba nunca al sacerdote de otro mapa.
+    /// </summary>
+    [Fact]
+    public void El_camino_del_viaje_va_por_escalones_y_de_muerto_por_el_de_siempre()
+    {
+        int? Camino(bool deMuerto, bool viajeLargo, int? sinPeligro, int? porDondeCazaria, int? deSiempre) =>
+            Bot.CaminoDelViaje(deMuerto, viajeLargo, () => sinPeligro, () => porDondeCazaria, () => deSiempre);
+
+        Assert.Equal(1, Camino(false, false, 1, 2, 3));
+        Assert.Equal(2, Camino(false, false, null, 2, 3));
+        Assert.Equal(3, Camino(false, false, null, null, 3));
+        Assert.Equal(2, Camino(false, true, null, 2, 3));
+        Assert.Null(Camino(false, true, null, null, 3));
+
+        Assert.Equal(3, Camino(true, false, null, null, 3));
+        Assert.Equal(3, Camino(true, true, null, null, 3));
+        Assert.Equal(3, Camino(true, false, 1, 2, 3));
+    }
 }

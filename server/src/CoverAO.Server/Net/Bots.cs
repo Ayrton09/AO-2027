@@ -4200,6 +4200,21 @@ public sealed class Bot
              .OrderBy(peligros);
 
     /// <summary>
+    /// POR QUÉ CAMINO SE VA A OTRO MAPA. Vivo: por donde no lo matan, si hay por donde (<see cref="PasaPorAhi"/>); si no, por donde
+    /// cazaría, que es por donde se buscó el coto (<see cref="SeCruzaBuscando"/>); y si no, por el de siempre, salvo en un viaje largo,
+    /// que va sólo por esos dos (<see cref="PuebloConMercader"/>). Sin el del medio, un coto que se alcanza cruzando un mapa seguro se
+    /// iba a buscar por el de siempre, que puede cruzar uno inseguro que lo mata. De muerto, por el de siempre, que al fantasma no
+    /// lo atacan.
+    ///
+    /// <para>De muerto no se viajaba a ningún lado: escrito como <c>deMuerto ? null : sinPeligro ?? (...)</c>, el <c>??</c> se
+    /// agrupa antes que el <c>?:</c>, y el "de muerto, ninguno" se tragaba también el camino de siempre. Un cadáver con el sacerdote
+    /// en otro mapa no llegaba nunca (<see cref="BuscarSacerdoteAsync"/>).</para>
+    /// </summary>
+    public static T? CaminoDelViaje<T>(bool deMuerto, bool viajeLargo, Func<T?> sinPeligro, Func<T?> porDondeCazaria,
+                                       Func<T?> deSiempre) where T : struct =>
+        deMuerto ? deSiempre() : sinPeligro() ?? porDondeCazaria() ?? (viajeLargo ? null : deSiempre());
+
+    /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.
     ///
     /// <para>Dos capas: el <see cref="Navegante"/> dice por dónde —las baldosas adentro del mapa, y qué
@@ -4234,17 +4249,14 @@ public sealed class Bot
             bool esLaMeta = mapa == mapaDestino;
             (byte X, byte Y) meta;
             if (esLaMeta) meta = (destinoX, destinoY);
-            // POR DONDE NO LO MATAN, SI HAY POR DONDE: ver `PasaPorAhi`. De muerto da igual, que al fantasma no lo atacan.
-            // SI NO, POR DONDE CAZARÍA, que es por donde se buscó el coto: ver `SeCruzaBuscando`. Sin esto, un coto que se
-            // alcanza cruzando un mapa seguro se iba a buscar por el camino de siempre, que puede ser uno inseguro que lo mata.
-            // Y UN VIAJE LARGO VA SÓLO POR ESOS DOS: ver `PuebloConMercader`.
-            else if ((deMuerto ? null : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                                   PasaSinPeligro(sentidos, mapaDestino), topeDeMapas)
-                                        ?? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                                      CruzaSinPeligroHacia(sentidos, mapaDestino), topeDeMapas)
-                      ?? (!deMuerto && topeDeMapas > Navegante.TopeDeMapas ? null
-                          : _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
-                                                       topeDeMapas))) is { } salida)
+            // POR DÓNDE: ver `CaminoDelViaje`.
+            else if (CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas,
+                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
+                                                          PasaSinPeligro(sentidos, mapaDestino), topeDeMapas),
+                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
+                                                          CruzaSinPeligroHacia(sentidos, mapaDestino), topeDeMapas),
+                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
+                                                          topeDeMapas)) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
