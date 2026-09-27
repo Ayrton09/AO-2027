@@ -86,6 +86,9 @@ public class ProtocolParityTests
         // La ficha del familiar. El original tenía el panel dibujado en `frmEstadisticas` —con las etiquetas
         // de nivel, vida y experiencia ya puestas, todas en Visible = 0— y ningún paquete que lo alimentara.
         [107] = "FamiliarInfo",
+        // La vida de un jefe, para la barra de arriba de la pantalla (pedido del tester, 2026-09-27). El original no
+        // muestra la vida de ninguna criatura.
+        [108] = "VidaDelJefe",
     };
 
     /// <summary>El último id que usa el protocolo del VB6 en cada dirección. Todo lo nuestro va por encima.</summary>
@@ -178,6 +181,7 @@ public class ProtocolParityTests
         // 107 del VB6 (0..106) + las extensiones nuestras.
         Assert.Equal(107 + ExtensionesPropiasDelServidor.Count, Enum.GetValues<ServerPacketId>().Length);
         Assert.Equal(107, (int)ServerPacketId.FamiliarInfo);   // el primero que es nuestro
+        Assert.Equal(108, (int)ServerPacketId.VidaDelJefe);
         Assert.Equal(0, (int)ServerPacketId.LoggedSuccessful);
         Assert.Equal(9, (int)ServerPacketId.CommerceInit);
         Assert.Equal(10, (int)ServerPacketId.BankInit);

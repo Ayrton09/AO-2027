@@ -2749,8 +2749,9 @@
     /**
      * LA BARRA DEL JEFE (pedido del tester, 2026-09-27; no existe en el original). El server manda `VidaDelJefe` de cada
      * jefe a la vista —cuando le cambia la vida y una vez por segundo— y acá se muestra el más cercano, grande, arriba de
-     * la pantalla: el nombre, la barra y los números. Se va sola cuando el jefe muere o sale de la vista, porque el
-     * `CharacterRemove` lo saca de `chars`. Toca el DOM sólo cuando cambia algo.
+     * la pantalla: el nombre, la barra y la vida que le QUEDA (sólo ésa: la barra ya dice cuánto le falta, y con la máxima
+     * al lado un jefe sano decía "900.000 / 900.000", que el autor leyó como la vida dos veces). Se va sola cuando el
+     * jefe muere o sale de la vista, porque el `CharacterRemove` lo saca de `chars`. Toca el DOM sólo cuando cambia algo.
      */
     const barraJefe = document.getElementById('barra-jefe');
     let barraJefeHecha = '';
@@ -2768,8 +2769,7 @@
       const parte = Math.max(0, Math.min(1, elegido.jefe.vida / Math.max(1, elegido.jefe.max)));
       barraJefe.querySelector('.bj-nombre').textContent = elegido.name;
       barraJefe.querySelector('.bj-vida').style.width = (parte * 100).toFixed(2) + '%';
-      barraJefe.querySelector('.bj-numero').textContent =
-        elegido.jefe.vida.toLocaleString('es-AR') + ' / ' + elegido.jefe.max.toLocaleString('es-AR');
+      barraJefe.querySelector('.bj-numero').textContent = elegido.jefe.vida.toLocaleString('es-AR');
       barraJefe.classList.add('on');
     }
     /** Sonda: lo que muestra la barra del jefe ahora mismo. */
