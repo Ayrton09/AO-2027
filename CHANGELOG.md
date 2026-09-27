@@ -14,7 +14,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
   ciudadanía al renegado.
 
 - **Los guardias de las ciudades atacan** a las facciones enemigas de su bando, te persiguen hasta que salís de
-  la ciudad y después vuelven a su puesto. A los newbies (hasta nivel 15) no los tocan.
+  la ciudad y después vuelven a su puesto. A los newbies (hasta nivel 15) no los tocan. Y al guardia que te
+  ataca le podés pegar, y tus mascotas también.
+
+- **Las puertas cerradas no se atraviesan.** Algunas de Tiama, Nueva Esperanza, Rinkel y Nix se podían cruzar
+  hasta que alguien las abría y las cerraba.
 
 - **Los pasajes que cruzan el agua piden 80 de Navegación.** Entre puertos del mismo continente, nada.
 
@@ -147,6 +151,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **El juego anda más liviano**, y en Opciones, Juego, podés ocultar la lluvia bajo techo.
 
+- **El tope de FPS llega a lo que elegís**: en 240 ya no se queda en 180.
+
 - **Los amigos, como en el original**: el mensaje a tus amigos también te llega a vos, y quitar a alguien de la
   lista te saca de la suya, aunque no esté conectado.
 
@@ -172,7 +178,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no
-  salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa.
+  salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa. Al dejar de ser novatos se
+  compran un arma.
 
 ## 1.0.0 — 2026-09-16
 
