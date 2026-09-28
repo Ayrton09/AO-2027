@@ -7,8 +7,9 @@ namespace CoverAO.Server.Data;
 
 /// <summary>
 /// EL ALMACÉN EN SQLITE, CON TABLAS DE VERDAD (fase5/postgres/DISENO.md): una tabla por cosa —cuentas, personajes,
-/// inventario, bóveda, hechizos, skills, amigos, penas, familiar— con el esquema de <c>Data/Esquema/</c>. Es el motor por
-/// defecto: un archivo, <c>data/coverao.db</c>, y nada que instalar.
+/// inventario, bóveda, hechizos, skills, amigos, penas, familiar, y del mundo los clanes, el correo, el suelo, las llaves
+/// vendidas y el récord— con el esquema de <c>Data/Esquema/</c>. Es el motor por defecto: un archivo, <c>data/coverao.db</c>,
+/// y nada que instalar.
 ///
 /// <para><b>Una conexión escribe; las lecturas de afuera abren la suya.</b> Lo del juego llega por la cola de la base
 /// (<see cref="ColaDeLaBase"/>): un solo hilo y una sola conexión. La tabla de posiciones de la página pública y el backup
@@ -127,6 +128,7 @@ public sealed class AlmacenSqlite : IAlmacen, IDisposable
         {
             using var tx = _con.BeginTransaction();
             using (var c = Comando(sql, tx)) c.ExecuteNonQuery();
+            if (version == 2) PasarElMundoATablas(tx);   // lo que la versión 1 tenía como JSON
             using (var c = Comando("INSERT INTO migraciones (version, descripcion, aplicada_en) VALUES (@v, @d, @t)", tx))
             {
                 c.Parameters.AddWithValue("@v", version);
@@ -392,26 +394,195 @@ public sealed class AlmacenSqlite : IAlmacen, IDisposable
 
     // ── Lo que guarda el mundo ──────────────────────────────────────────────────────────────────────────────────
 
-    public string? LeerDelMundo(string clave)
+    /// <summary>Un clan mientras se lo arma con las filas de sus tablas.</summary>
+    private sealed class ClanArmandose(ClanGuardado datos)
+    {
+        public readonly ClanGuardado Datos = datos;
+        public readonly List<string> Miembros = new(), Aliados = new(), Enemigos = new();
+        public readonly List<KeyValuePair<string, string>> Alianza = new(), Paz = new(), Aspirantes = new(), Votos = new();
+    }
+
+    public IReadOnlyList<ClanGuardado> LeerClanes()
     {
         lock (_deAUno)
         {
-            using var c = Comando("SELECT texto FROM mundo_json WHERE clave = @k");
-            c.Parameters.AddWithValue("@k", clave);
-            return c.ExecuteScalar() as string;
+            var clanes = new Dictionary<long, ClanArmandose>();
+            var orden = new List<long>();
+            using (var c = Comando("SELECT id, nombre, lider, descripcion, noticias, alineacion, url, codex, elecciones_abiertas " +
+                                   "FROM clanes ORDER BY id"))
+            using (var r = c.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    long id = r.GetInt64(0);
+                    orden.Add(id);
+                    clanes[id] = new ClanArmandose(new ClanGuardado
+                    {
+                        Nombre = r.GetString(1), Lider = r.GetString(2), Descripcion = r.GetString(3), Noticias = r.GetString(4),
+                        Alineacion = (byte)r.GetInt64(5), Url = r.GetString(6), Codex = r.GetString(7),
+                        EleccionesAbiertas = r.GetInt64(8) != 0,
+                    });
+                }
+            }
+            Hijos("SELECT clan_id, nombre FROM clanes_miembros ORDER BY rowid",
+                (r, clan) => clan.Miembros.Add(r.GetString(1)));
+            Hijos("SELECT clan_id, otro_clan, relacion FROM clanes_relaciones ORDER BY rowid",
+                (r, clan) => (r.GetString(2) == "aliado" ? clan.Aliados : clan.Enemigos).Add(r.GetString(1)));
+            Hijos("SELECT clan_id, de_clan, tipo, texto FROM clanes_propuestas ORDER BY rowid",
+                (r, clan) => (r.GetString(2) == "alianza" ? clan.Alianza : clan.Paz).Add(new(r.GetString(1), r.GetString(3))));
+            Hijos("SELECT clan_id, nombre, solicitud FROM clanes_aspirantes ORDER BY rowid",
+                (r, clan) => clan.Aspirantes.Add(new(r.GetString(1), r.GetString(2))));
+            Hijos("SELECT clan_id, votante, candidato FROM clanes_votos ORDER BY rowid",
+                (r, clan) => clan.Votos.Add(new(r.GetString(1), r.GetString(2))));
+            return orden.Select(id => clanes[id]).Select(c => c.Datos with
+            {
+                Miembros = c.Miembros.ToImmutableArray(), Aliados = c.Aliados.ToImmutableArray(),
+                Enemigos = c.Enemigos.ToImmutableArray(), PropuestasDeAlianza = c.Alianza.ToImmutableArray(),
+                PropuestasDePaz = c.Paz.ToImmutableArray(), Aspirantes = c.Aspirantes.ToImmutableArray(),
+                Votos = c.Votos.ToImmutableArray(),
+            }).ToList();
+
+            void Hijos(string sql, Action<SqliteDataReader, ClanArmandose> fila)
+            {
+                using var c = Comando(sql);
+                using var r = c.ExecuteReader();
+                while (r.Read())
+                    if (clanes.TryGetValue(r.GetInt64(0), out var clan)) fila(r, clan);
+            }
         }
     }
 
-    public void GuardarEnElMundo(string clave, string texto)
+    public void GuardarClanes(IReadOnlyList<ClanGuardado> clanes) => EnTransaccion(tx => EscribirClanes(clanes, tx));
+
+    /// <summary>Se reescriben TODOS: el que no viene, se cerró. Son pocos, y la cascada se lleva los hijos del borrado.</summary>
+    private void EscribirClanes(IReadOnlyList<ClanGuardado> clanes, SqliteTransaction tx)
     {
-        lock (_deAUno)
+        using (var c = Comando("DELETE FROM clanes", tx)) c.ExecuteNonQuery();
+        using var clan = Comando("INSERT INTO clanes (nombre, lider, descripcion, noticias, alineacion, url, codex, elecciones_abiertas) " +
+                                 "VALUES (@n, @l, @d, @no, @a, @u, @c, @e) RETURNING id", tx);
+        using var miembro = Comando("INSERT INTO clanes_miembros (clan_id, nombre) VALUES (@id, @n)", tx);
+        using var relacion = Comando("INSERT INTO clanes_relaciones (clan_id, otro_clan, relacion) VALUES (@id, @o, @r)", tx);
+        using var propuesta = Comando("INSERT INTO clanes_propuestas (clan_id, de_clan, tipo, texto) VALUES (@id, @de, @t, @x)", tx);
+        using var aspirante = Comando("INSERT INTO clanes_aspirantes (clan_id, nombre, solicitud) VALUES (@id, @n, @s)", tx);
+        using var voto = Comando("INSERT INTO clanes_votos (clan_id, votante, candidato) VALUES (@id, @v, @c)", tx);
+        foreach (var g in clanes)
         {
-            using var c = Comando("INSERT INTO mundo_json (clave, texto) VALUES (@k, @t) " +
-                                  "ON CONFLICT (clave) DO UPDATE SET texto = excluded.texto");
-            c.Parameters.AddWithValue("@k", clave);
-            c.Parameters.AddWithValue("@t", texto);
-            c.ExecuteNonQuery();
+            long id = (long)Valores(clan, ("@n", g.Nombre), ("@l", g.Lider), ("@d", g.Descripcion), ("@no", g.Noticias),
+                ("@a", g.Alineacion), ("@u", g.Url), ("@c", g.Codex), ("@e", g.EleccionesAbiertas)).ExecuteScalar()!;
+            foreach (var m in g.Miembros) Valores(miembro, ("@id", id), ("@n", m)).ExecuteNonQuery();
+            foreach (var a in g.Aliados) Valores(relacion, ("@id", id), ("@o", a), ("@r", "aliado")).ExecuteNonQuery();
+            foreach (var e in g.Enemigos) Valores(relacion, ("@id", id), ("@o", e), ("@r", "enemigo")).ExecuteNonQuery();
+            foreach (var (de, texto) in g.PropuestasDeAlianza)
+                Valores(propuesta, ("@id", id), ("@de", de), ("@t", "alianza"), ("@x", texto)).ExecuteNonQuery();
+            foreach (var (de, texto) in g.PropuestasDePaz)
+                Valores(propuesta, ("@id", id), ("@de", de), ("@t", "paz"), ("@x", texto)).ExecuteNonQuery();
+            foreach (var (nombre, solicitud) in g.Aspirantes)
+                Valores(aspirante, ("@id", id), ("@n", nombre), ("@s", solicitud)).ExecuteNonQuery();
+            foreach (var (votante, candidato) in g.Votos)
+                Valores(voto, ("@id", id), ("@v", votante), ("@c", candidato)).ExecuteNonQuery();
         }
+    }
+
+    public IReadOnlyList<KeyValuePair<string, string>> LeerRechazosDeClan()
+        => Leer("SELECT personaje, motivo FROM rechazos_de_clan ORDER BY rowid", r => new KeyValuePair<string, string>(r.GetString(0), r.GetString(1)));
+
+    public void GuardarRechazosDeClan(IReadOnlyList<KeyValuePair<string, string>> rechazos) => EnTransaccion(tx => EscribirRechazos(rechazos, tx));
+
+    private void EscribirRechazos(IReadOnlyList<KeyValuePair<string, string>> rechazos, SqliteTransaction tx)
+    {
+        using (var c = Comando("DELETE FROM rechazos_de_clan", tx)) c.ExecuteNonQuery();
+        using var fila = Comando("INSERT INTO rechazos_de_clan (personaje, motivo) VALUES (@p, @m)", tx);
+        foreach (var (personaje, motivo) in rechazos) Valores(fila, ("@p", personaje), ("@m", motivo)).ExecuteNonQuery();
+    }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> LeerCorreo()
+    {
+        var casillas = new Dictionary<string, List<MailEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (destinatario, carta) in Leer("SELECT destinatario, remitente, mensaje, objeto, cantidad, leida FROM correo ORDER BY id",
+                     r => (r.GetString(0), new MailEntry(r.GetString(1), r.GetString(2), (short)r.GetInt64(3), (short)r.GetInt64(4),
+                         (byte)r.GetInt64(5)))))
+        {
+            if (!casillas.TryGetValue(destinatario, out var cartas)) casillas[destinatario] = cartas = new List<MailEntry>();
+            cartas.Add(carta);
+        }
+        return casillas.ToDictionary(c => c.Key, c => (IReadOnlyList<MailEntry>)c.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Sólo las casillas que vienen: se borran sus cartas y se escriben las de ahora. Las demás no se tocan.</summary>
+    public void GuardarCasillas(IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> casillas) => EnTransaccion(tx => EscribirCasillas(casillas, tx));
+
+    private void EscribirCasillas(IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> casillas, SqliteTransaction tx)
+    {
+        using var borrar = Comando("DELETE FROM correo WHERE upper(destinatario) = upper(@d)", tx);
+        using var carta = Comando("INSERT INTO correo (destinatario, remitente, mensaje, objeto, cantidad, leida) " +
+                                  "VALUES (@d, @r, @m, @o, @c, @l)", tx);
+        foreach (var (destinatario, cartas) in casillas)
+        {
+            Valores(borrar, ("@d", destinatario)).ExecuteNonQuery();
+            foreach (var m in cartas)
+                Valores(carta, ("@d", destinatario), ("@r", m.Sender), ("@m", m.Message), ("@o", m.ObjIndex), ("@c", m.Amount),
+                    ("@l", m.Leida)).ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<ObjetoEnElSuelo> LeerSuelo()
+        => Leer("SELECT mapa, x, y, objeto, cantidad FROM suelo ORDER BY mapa, x, y",
+            r => new ObjetoEnElSuelo(new WorldPos((short)r.GetInt64(0), (byte)r.GetInt64(1), (byte)r.GetInt64(2)),
+                (short)r.GetInt64(3), (short)r.GetInt64(4)));
+
+    public void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo) => EnTransaccion(tx => EscribirSuelo(suelo, tx));
+
+    private void EscribirSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo, SqliteTransaction tx)
+    {
+        using (var c = Comando("DELETE FROM suelo", tx)) c.ExecuteNonQuery();
+        using var fila = Comando("INSERT INTO suelo (mapa, x, y, objeto, cantidad) VALUES (@m, @x, @y, @o, @c)", tx);
+        foreach (var o in suelo)
+            Valores(fila, ("@m", o.Posicion.Map), ("@x", o.Posicion.X), ("@y", o.Posicion.Y), ("@o", o.Objeto), ("@c", o.Cantidad))
+                .ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<LlaveVendida> LeerLlavesVendidas()
+        => Leer("SELECT mercader, ranura, objeto FROM llaves_vendidas ORDER BY mercader, ranura",
+            r => new LlaveVendida((int)r.GetInt64(0), (int)r.GetInt64(1), (short)r.GetInt64(2)));
+
+    public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => EnTransaccion(tx => EscribirLlaves(llaves, tx));
+
+    private void EscribirLlaves(IReadOnlyList<LlaveVendida> llaves, SqliteTransaction tx)
+    {
+        using (var c = Comando("DELETE FROM llaves_vendidas", tx)) c.ExecuteNonQuery();
+        using var fila = Comando("INSERT INTO llaves_vendidas (mercader, ranura, objeto) VALUES (@m, @r, @o)", tx);
+        foreach (var l in llaves) Valores(fila, ("@m", l.Mercader), ("@r", l.Ranura), ("@o", l.Objeto)).ExecuteNonQuery();
+    }
+
+    public int LeerRecord() => Leer("SELECT record_usuarios FROM mundo WHERE id = 1", r => (int)r.GetInt64(0)).FirstOrDefault();
+
+    public void GuardarRecord(int record) => EnTransaccion(tx => EscribirRecord(record, tx));
+
+    private void EscribirRecord(int record, SqliteTransaction tx)
+    {
+        using var c = Comando("UPDATE mundo SET record_usuarios = @r WHERE id = 1", tx);
+        Valores(c, ("@r", record)).ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// LA VERSIÓN 2 PASA EL MUNDO A TABLAS. Lo que la 1 guardaba como JSON en <c>mundo_json</c> —el mismo formato de los
+    /// archivos de <c>Misc/</c>— se lee con <see cref="JsonDelMundo"/> y se escribe en sus tablas, en la misma transacción que
+    /// las crea, y la tabla vieja se va. Una base nueva pasa por acá con <c>mundo_json</c> vacía.
+    /// </summary>
+    private void PasarElMundoATablas(SqliteTransaction tx)
+    {
+        var viejo = new Dictionary<string, string>();
+        using (var c = Comando("SELECT clave, texto FROM mundo_json", tx))
+        using (var r = c.ExecuteReader())
+            while (r.Read()) viejo[r.GetString(0)] = r.GetString(1);
+        string? Guardado(string clave) => viejo.GetValueOrDefault(clave);
+        EscribirClanes(JsonDelMundo.Clanes(Guardado("guilds")), tx);
+        EscribirRechazos(JsonDelMundo.Rechazos(Guardado("rechazos-de-clan")), tx);
+        EscribirCasillas(JsonDelMundo.Correo(Guardado("mailboxes")), tx);
+        EscribirSuelo(JsonDelMundo.Suelo(Guardado("suelo")), tx);
+        EscribirLlaves(JsonDelMundo.Llaves(Guardado("propiedades")), tx);
+        EscribirRecord(JsonDelMundo.Record(Guardado("record")), tx);
+        using (var c = Comando("DROP TABLE mundo_json", tx)) c.ExecuteNonQuery();
     }
 
     // ── Backup ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -716,6 +887,36 @@ public sealed class AlmacenSqlite : IAlmacen, IDisposable
     }
 
     private static SqliteParameter Param(SqliteCommand c, string nombre) => c.Parameters.Add(nombre, SqliteType.Integer);
+
+    /// <summary>Carga los parámetros de un comando que se usa muchas veces y lo devuelve, listo para ejecutar.</summary>
+    private static SqliteCommand Valores(SqliteCommand c, params (string Nombre, object Valor)[] valores)
+    {
+        c.Parameters.Clear();
+        foreach (var (nombre, valor) in valores) c.Parameters.AddWithValue(nombre, valor);
+        return c;
+    }
+
+    private void EnTransaccion(Action<SqliteTransaction> escritura)
+    {
+        lock (_deAUno)
+        {
+            using var tx = _con.BeginTransaction();
+            escritura(tx);
+            tx.Commit();
+        }
+    }
+
+    private List<T> Leer<T>(string sql, Func<SqliteDataReader, T> fila)
+    {
+        lock (_deAUno)
+        {
+            using var c = Comando(sql);
+            using var r = c.ExecuteReader();
+            var filas = new List<T>();
+            while (r.Read()) filas.Add(fila(r));
+            return filas;
+        }
+    }
 
     private List<T> Filas<T>(long id, string sql, Func<SqliteDataReader, T> fila)
     {

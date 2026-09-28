@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using Microsoft.Data.Sqlite;
@@ -107,10 +108,68 @@ public class AlmacenSqliteTests : IDisposable
     [Fact]
     public void La_version_del_esquema_queda_anotada()
     {
+        int ultima = AlmacenSqlite.Versiones()[^1].Version;
         using (new AlmacenSqlite(Archivo)) { }
-        Assert.Equal(1, Escalar(Archivo, "SELECT max(version) FROM migraciones"));
+        Assert.Equal(ultima, Escalar(Archivo, "SELECT max(version) FROM migraciones"));
         using (new AlmacenSqlite(Archivo)) { }   // abrirla de nuevo no vuelve a aplicar nada
-        Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM migraciones"));
+        Assert.Equal(ultima, Escalar(Archivo, "SELECT count(*) FROM migraciones"));
+    }
+
+    /// <summary>
+    /// UNA BASE DE LA VERSIÓN 1 PASA SU MUNDO A TABLAS al abrirla. La 1 guardaba los clanes, el correo, el suelo, las llaves,
+    /// los rechazos y el récord como el JSON de <c>Misc/</c> en <c>mundo_json</c>; la 2 los pasa a sus tablas en la misma
+    /// transacción que las crea. Si esto se rompe, el que actualiza pierde el mundo.
+    /// </summary>
+    [Fact]
+    public void Una_base_de_la_version_1_pasa_su_mundo_a_tablas()
+    {
+        var clanes = new[] { ContratoDelAlmacen.ClanLleno("Sur", 1), ContratoDelAlmacen.ClanLleno("Norte", 2) };
+        var correo = new Dictionary<string, IReadOnlyList<MailEntry>>
+        {
+            ["Aldo"] = new[] { new MailEntry("Bruma", "hola", 2, 1), new MailEntry("Ciro", "chau", 0, 0, 1) },
+        };
+        var suelo = new[] { new ObjetoEnElSuelo(new WorldPos(1, 50, 50), 12, 3) };
+        var llaves = new[] { new LlaveVendida(40, 3, 53) };
+        var rechazos = new[] { new KeyValuePair<string, string>("Dana", "no") };
+
+        // La base como la dejaba la versión 1: su esquema y nada más, con el mundo en JSON.
+        Directory.CreateDirectory(_raiz);
+        using (var con = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Archivo, Pooling = false }.ToString()))
+        {
+            con.Open();
+            void Sql(string sql, params (string, object)[] ps)
+            {
+                using var c = con.CreateCommand();
+                c.CommandText = sql;
+                foreach (var (n, v) in ps) c.Parameters.AddWithValue(n, v);
+                c.ExecuteNonQuery();
+            }
+            Sql("CREATE TABLE migraciones (version INTEGER PRIMARY KEY, descripcion TEXT NOT NULL, aplicada_en TEXT NOT NULL) STRICT;");
+            Sql(AlmacenSqlite.Versiones().Single(v => v.Version == 1).Sql);
+            Sql("INSERT INTO migraciones VALUES (1, 'inicial', '2026-09-28')");
+            foreach (var (clave, texto) in new[]
+                     {
+                         ("guilds", JsonDelMundo.Clanes(clanes)), ("mailboxes", JsonDelMundo.Correo(correo)),
+                         ("suelo", JsonDelMundo.Suelo(suelo)), ("propiedades", JsonDelMundo.Llaves(llaves)),
+                         ("rechazos-de-clan", JsonDelMundo.Rechazos(rechazos)), ("record", JsonDelMundo.Record(9)),
+                     })
+                Sql("INSERT INTO mundo_json (clave, texto) VALUES (@k, @t)", ("@k", clave), ("@t", texto));
+        }
+
+        using (var almacen = new AlmacenSqlite(Archivo))
+        {
+            var leidos = almacen.LeerClanes();
+            Assert.Equal(2, leidos.Count);
+            ContratoDelAlmacen.AssertIgual(clanes[0], leidos[0]);
+            ContratoDelAlmacen.AssertIgual(clanes[1], leidos[1]);
+            Assert.Equal(correo["Aldo"], almacen.LeerCorreo()["Aldo"]);
+            Assert.Equal(suelo, almacen.LeerSuelo());
+            Assert.Equal(llaves, almacen.LeerLlavesVendidas());
+            Assert.Equal(rechazos, almacen.LeerRechazosDeClan());
+            Assert.Equal(9, almacen.LeerRecord());
+        }
+        Assert.Equal(0, Escalar(Archivo, "SELECT count(*) FROM sqlite_master WHERE name = 'mundo_json'"));
+        Assert.Equal(2, Escalar(Archivo, "SELECT max(version) FROM migraciones"));
     }
 
     /// <summary>Una base con un esquema MÁS NUEVO que el del servidor no se abre: escribirle con el esquema viejo la rompería.</summary>

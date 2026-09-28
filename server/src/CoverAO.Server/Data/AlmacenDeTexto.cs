@@ -127,7 +127,33 @@ public sealed class AlmacenDeTexto : IAlmacen
         return mapa;
     }
 
-    public string? LeerDelMundo(string clave) => _store.ReadMisc(clave);
-    public void GuardarEnElMundo(string clave, string texto) => _store.WriteMisc(clave, texto);
+    // ── Lo que guarda el mundo: un JSON por cosa en Misc/, con el formato de siempre (JsonDelMundo) ─────────────────
+
+    public IReadOnlyList<ClanGuardado> LeerClanes() => JsonDelMundo.Clanes(_store.ReadMisc("guilds"));
+    public void GuardarClanes(IReadOnlyList<ClanGuardado> clanes) => _store.WriteMisc("guilds", JsonDelMundo.Clanes(clanes));
+
+    public IReadOnlyList<KeyValuePair<string, string>> LeerRechazosDeClan() => JsonDelMundo.Rechazos(_store.ReadMisc("rechazos-de-clan"));
+    public void GuardarRechazosDeClan(IReadOnlyList<KeyValuePair<string, string>> rechazos)
+        => _store.WriteMisc("rechazos-de-clan", JsonDelMundo.Rechazos(rechazos));
+
+    public IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> LeerCorreo() => JsonDelMundo.Correo(_store.ReadMisc("mailboxes"));
+
+    /// <summary>El archivo tiene TODAS las casillas: se lee, se cambian las que vienen y se reescribe entero. Corre en el
+    /// escritor de la base, que es uno solo, así que nada se mete entre la lectura y la escritura.</summary>
+    public void GuardarCasillas(IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> casillas)
+    {
+        var todas = JsonDelMundo.Correo(_store.ReadMisc("mailboxes"));
+        foreach (var (destinatario, cartas) in casillas) todas[destinatario] = cartas;
+        _store.WriteMisc("mailboxes", JsonDelMundo.Correo(todas));
+    }
+
+    public IReadOnlyList<ObjetoEnElSuelo> LeerSuelo() => JsonDelMundo.Suelo(_store.ReadMisc("suelo"));
+    public void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo) => _store.WriteMisc("suelo", JsonDelMundo.Suelo(suelo));
+
+    public IReadOnlyList<LlaveVendida> LeerLlavesVendidas() => JsonDelMundo.Llaves(_store.ReadMisc("propiedades"));
+    public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => _store.WriteMisc("propiedades", JsonDelMundo.Llaves(llaves));
+
+    public int LeerRecord() => JsonDelMundo.Record(_store.ReadMisc("record"));
+    public void GuardarRecord(int record) => _store.WriteMisc("record", JsonDelMundo.Record(record));
     public string Backup(string destDir, string stem) => _store.Backup(destDir, stem);
 }

@@ -4,8 +4,8 @@ namespace CoverAO.Server.Data;
 
 /// <summary>
 /// EL ALMACÉN, TIPADO: cuentas, personajes (<see cref="FichaDePersonaje"/>) y lo que el mundo guarda entre reinicios. Es la
-/// costura donde entran los motores (fase5/postgres/DISENO.md): hoy los archivos o el SQLite viejo, los dos detrás de
-/// <see cref="AlmacenDeTexto"/>; después SQLite relacional y Postgres.
+/// costura donde entran los motores (fase5/postgres/DISENO.md): los archivos o el SQLite viejo, los dos detrás de
+/// <see cref="AlmacenDeTexto"/>, y la base SQLite con sus tablas (<see cref="AlmacenSqlite"/>); después, Postgres.
 ///
 /// <para>Sincrónico a propósito. En qué hilo corre lo decide el que llama, y el diseño apunta a que sea UNO solo: el
 /// escritor de la cola de la base. Así ninguna implementación necesita candados propios para ordenar lo que escribe.</para>
@@ -40,9 +40,33 @@ public interface IAlmacen
     /// Un personaje ilegible se saltea: no puede voltear la tabla.</summary>
     IReadOnlyList<CharacterFile.FilaDeRanking> FilasDeRanking();
 
-    /// <summary>Lo que el mundo guarda con una clave: clanes, correo, suelo, llaves vendidas, el récord.</summary>
-    string? LeerDelMundo(string clave);
-    void GuardarEnElMundo(string clave, string texto);
+    // ── Lo que guarda el mundo. Se lee al arrancar y se escribe desde el volcado diferido del juego. ─────────────────
+
+    IReadOnlyList<ClanGuardado> LeerClanes();
+    /// <summary>Reemplaza TODOS los clanes: el que no viene, se cerró.</summary>
+    void GuardarClanes(IReadOnlyList<ClanGuardado> clanes);
+
+    /// <summary>Los motivos de rechazo que esperan a que su aspirante entre: personaje y motivo.</summary>
+    IReadOnlyList<KeyValuePair<string, string>> LeerRechazosDeClan();
+    void GuardarRechazosDeClan(IReadOnlyList<KeyValuePair<string, string>> rechazos);
+
+    /// <summary>Todas las casillas de correo: destinatario y sus cartas, en orden.</summary>
+    IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> LeerCorreo();
+    /// <summary>Reemplaza SÓLO las casillas que vienen —las que cambiaron—; una lista vacía la deja sin cartas. Las demás no
+    /// se tocan.</summary>
+    void GuardarCasillas(IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> casillas);
+
+    IReadOnlyList<ObjetoEnElSuelo> LeerSuelo();
+    /// <summary>Reemplaza todo el suelo guardado.</summary>
+    void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo);
+
+    IReadOnlyList<LlaveVendida> LeerLlavesVendidas();
+    /// <summary>Reemplaza todas las llaves vendidas.</summary>
+    void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves);
+
+    /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>); 0 si no hay.</summary>
+    int LeerRecord();
+    void GuardarRecord(int record);
 
     /// <summary>Copia consistente del almacén entero con el servidor andando; devuelve la ruta creada.</summary>
     string Backup(string destDir, string stem);

@@ -72,171 +72,81 @@ public sealed class Persistence : IDisposable
         return _cola.PedirAsync(sobre is null ? operacion : $"{operacion} ({sobre})", pedido).GetAwaiter().GetResult();
     }
 
-    /// <summary>Lo que guarda el mundo: se escribe por la cola, con el texto ya armado en el hilo del que llama.</summary>
-    private void GuardarEnElMundo(string clave, string texto) =>
-        _cola.Escribir($"guardar {clave}", a => a.GuardarEnElMundo(clave, texto));
-
-    /// <summary>Lo que guarda el mundo: se lee al ARRANCAR, antes de que corra el loop.</summary>
-    private string? LeerDelMundo(string clave) => Esperar("leer del mundo", clave, a => a.LeerDelMundo(clave));
-
-    // --- Guild registry persistence (a single JSON blob under the "guilds" key) ---
-    private sealed record GuildDto(string Name, string Leader, string Desc,
-        List<string> Members, List<string> Enemies, List<string> Allies, List<string> Offers,
-        string News = "", byte Alignment = 0, List<string>? JoinRequests = null,
-        string Url = "", string Codex = "",   // web + códex que fija el líder
-        // La solicitud de cada aspirante (nombre → texto). Va en un campo NUEVO y no en JoinRequests
-        // para no romper los "guilds" ya persistidos: un blob viejo se sigue leyendo por la lista de
-        // nombres, y los aspirantes quedan con la solicitud vacía en vez de perderse.
-        Dictionary<string, string>? JoinRequestTexts = null,
-        // El texto de cada propuesta de alianza recibida, por el mismo motivo que JoinRequestTexts.
-        Dictionary<string, string>? OfferTexts = null,
-        // LA PAZ PROPUESTA, LAS ELECCIONES Y LOS VOTOS. El original los guarda —las propuestas en
-        // `-propositions.pro` (clsClan.cls:785-787), las elecciones en la ficha del clan y los votos en
-        // `-votaciones.vot` (:591-611)— y acá vivían sólo en memoria: un reinicio borraba una elección en curso y
-        // las propuestas de paz sin contestar. Campos nuevos con default, como los de arriba: un blob viejo se
-        // sigue leyendo.
-        Dictionary<string, string>? PeaceOfferTexts = null, bool ElectionsOpen = false,
-        Dictionary<string, string>? Votes = null);
+    // ── LO QUE GUARDA EL MUNDO ─────────────────────────────────────────────────────────────────────────────────────
+    //
+    // Se lee al ARRANCAR, antes de que corra el loop. Se escribe desde el volcado diferido del juego: la foto se arma acá, en
+    // el hilo del que llama —el del mundo, que es donde cambian esas colecciones—, y la escribe la cola.
 
     public void SaveGuilds(IEnumerable<Game.Guild> guilds)
     {
-        var dtos = guilds.Select(g => new GuildDto(g.Name, g.LeaderName, g.Description,
-            g.Members.ToList(), g.Enemies.ToList(), g.Allies.ToList(), g.AllianceOffers.Keys.ToList(),
-            g.News, g.Alignment, g.JoinRequests.Keys.ToList(), g.Url, g.Codex,
-            new Dictionary<string, string>(g.JoinRequests),
-            new Dictionary<string, string>(g.AllianceOffers),
-            new Dictionary<string, string>(g.PeaceOffers), g.ElectionsOpen,
-            new Dictionary<string, string>(g.Votes))).ToList();
-        GuardarEnElMundo("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
-    }
-
-    /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini;
-    /// acá va con el resto de los records del mundo, en <c>Misc/</c>, así entra en el backup.</summary>
-    public void SaveRecordUsuarios(int record) => GuardarEnElMundo("record", record.ToString(
-        System.Globalization.CultureInfo.InvariantCulture));
-
-    public int LoadRecordUsuarios()
-        => int.TryParse(LeerDelMundo("record"), System.Globalization.NumberStyles.Integer,
-                        System.Globalization.CultureInfo.InvariantCulture, out int r) ? r : 0;
-
-    /// <summary>Las llaves ya vendidas (<see cref="Game.World.LlavesVendidas"/>): ficha del mercader → ranura → objeto.</summary>
-    public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
-        => GuardarEnElMundo("propiedades", System.Text.Json.JsonSerializer.Serialize(vendidas));
-
-    /// <summary>Lo guardado por <see cref="SaveLlavesVendidas"/>. Un archivo ausente o ilegible da el mapa vacío y NO
-    /// tira, como el suelo: con eso las casas vuelven a la venta, que es menos grave que un servidor que no arranca.</summary>
-    public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
-    {
-        string? json = LeerDelMundo("propiedades");
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<int, Dictionary<int, short>>>(json) ?? new(); }
-        catch (System.Text.Json.JsonException ex)
-        {
-            Console.Error.WriteLine($"[propiedades] el archivo guardado no se pudo leer, se arranca sin él: {ex.Message}");
-            return new();
-        }
-    }
-
-    /// <summary>Los motivos de rechazo pendientes (<see cref="Game.World.MotivosDeRechazo"/>): personaje → motivo.</summary>
-    public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
-        => GuardarEnElMundo("rechazos-de-clan", System.Text.Json.JsonSerializer.Serialize(motivos));
-
-    /// <summary>Lo guardado por <see cref="SaveMotivosDeRechazo"/>; ausente o ilegible, el mapa vacío.</summary>
-    public Dictionary<string, string> LoadMotivosDeRechazo()
-    {
-        string? json = LeerDelMundo("rechazos-de-clan");
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new(); }
-        catch (System.Text.Json.JsonException ex)
-        {
-            Console.Error.WriteLine($"[rechazos-de-clan] el archivo guardado no se pudo leer, se arranca sin él: {ex.Message}");
-            return new();
-        }
-    }
-
-    public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
-        => GuardarEnElMundo("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
-
-    /// <summary>El suelo de los jugadores, cuando la regla de la casa <c>PersistirSuelo</c> está prendida.
-    ///
-    /// El formato es el mismo de <c>MapObjects.json</c> —<c>{"&lt;mapa&gt;": [[x,y,objIndex,amount], ...]}</c>—
-    /// a propósito: son el mismo concepto (objetos colocados en un tile) y así los dos archivos se pueden
-    /// mirar uno al lado del otro. El del .csm trae el decorado del mundo; éste, lo que dejó la gente.</summary>
-    public void SaveSuelo(IEnumerable<(Game.WorldPos Pos, short ObjIndex, short Amount)> suelo)
-    {
-        var porMapa = new Dictionary<string, List<int[]>>();
-        foreach (var (pos, obj, amount) in suelo)
-        {
-            string k = pos.Map.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (!porMapa.TryGetValue(k, out var lista)) porMapa[k] = lista = new List<int[]>();
-            lista.Add(new[] { pos.X, pos.Y, (int)obj, (int)amount });
-        }
-        GuardarEnElMundo("suelo", System.Text.Json.JsonSerializer.Serialize(porMapa));
-    }
-
-    /// <summary>Lo guardado por <see cref="SaveSuelo"/>. Un archivo ausente, vacío o ilegible devuelve la lista
-    /// vacía y NO tira: perder el suelo de un reinicio es molesto; no arrancar el servidor por un JSON roto es
-    /// mucho peor, y este archivo no es autoridad de nada — el mundo se puebla igual del .csm.</summary>
-    public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
-    {
-        var result = new List<(Game.WorldPos, short, short)>();
-        string? json = LeerDelMundo("suelo");
-        if (string.IsNullOrWhiteSpace(json)) return result;
-        Dictionary<string, List<int[]>>? porMapa;
-        try { porMapa = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<int[]>>>(json); }
-        catch (System.Text.Json.JsonException ex)
-        {
-            Console.Error.WriteLine($"[suelo] el archivo guardado no se pudo leer, se arranca sin él: {ex.Message}");
-            return result;
-        }
-        if (porMapa is null) return result;
-        foreach (var (mapa, objs) in porMapa)
-        {
-            if (!short.TryParse(mapa, System.Globalization.NumberStyles.Integer,
-                                System.Globalization.CultureInfo.InvariantCulture, out short m) || m <= 0) continue;
-            foreach (var o in objs)
-            {
-                // Una fila corta o con valores fuera de rango se saltea sola. El archivo lo escribe el server,
-                // así que esto no debería pasar nunca — pero es texto en el disco del host y se puede editar.
-                if (o.Length < 4) continue;
-                if (o[0] is < 0 or > byte.MaxValue || o[1] is < 0 or > byte.MaxValue) continue;
-                if (o[2] is <= 0 or > short.MaxValue || o[3] is <= 0 or > short.MaxValue) continue;
-                result.Add((new Game.WorldPos(m, (byte)o[0], (byte)o[1]), (short)o[2], (short)o[3]));
-            }
-        }
-        return result;
-    }
-
-    public Dictionary<string, List<Game.MailEntry>> LoadMailboxes()
-    {
-        var json = LeerDelMundo("mailboxes");
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<Game.MailEntry>>>(json) ?? new();
+        var clanes = guilds.Select(ClanGuardado.Desde).ToList();
+        _cola.Escribir("guardar los clanes", a => a.GuardarClanes(clanes));
     }
 
     public List<Game.Guild> LoadGuilds()
+        => Esperar("leer los clanes", null, a => a.LeerClanes()).Select(c => c.CrearGuild()).ToList();
+
+    /// <summary>Los motivos de rechazo pendientes (<see cref="Game.World.MotivosDeRechazo"/>): personaje → motivo.</summary>
+    public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
     {
-        var json = LeerDelMundo("guilds");
-        var result = new List<Game.Guild>();
-        if (string.IsNullOrWhiteSpace(json)) return result;
-        var dtos = System.Text.Json.JsonSerializer.Deserialize<List<GuildDto>>(json) ?? new();
-        foreach (var d in dtos)
-        {
-            var g = new Game.Guild { Name = d.Name, LeaderName = d.Leader, Description = d.Desc, News = d.News,
-                                     Alignment = d.Alignment, Url = d.Url, Codex = d.Codex };
-            foreach (var m in d.Members) g.Members.Add(m);
-            foreach (var e in d.Enemies) g.Enemies.Add(e);
-            foreach (var a in d.Allies) g.Allies.Add(a);
-            foreach (var o in d.Offers) g.AllianceOffers[o] = d.OfferTexts?.GetValueOrDefault(o, "") ?? "";
-            foreach (var j in d.JoinRequests ?? new())
-                g.JoinRequests[j] = d.JoinRequestTexts?.GetValueOrDefault(j, "") ?? "";
-            foreach (var (clan, texto) in d.PeaceOfferTexts ?? new()) g.PeaceOffers[clan] = texto;
-            g.ElectionsOpen = d.ElectionsOpen;
-            foreach (var (votante, candidato) in d.Votes ?? new()) g.Votes[votante] = candidato;
-            result.Add(g);
-        }
-        return result;
+        var rechazos = motivos.ToList();
+        _cola.Escribir("guardar los rechazos de clan", a => a.GuardarRechazosDeClan(rechazos));
     }
+
+    public Dictionary<string, string> LoadMotivosDeRechazo()
+    {
+        var motivos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (personaje, motivo) in Esperar("leer los rechazos de clan", null, a => a.LeerRechazosDeClan()))
+            motivos[personaje] = motivo;
+        return motivos;
+    }
+
+    /// <summary>LAS CASILLAS QUE CAMBIARON, y sólo ésas: el volcado del juego lleva la cuenta de cuáles se tocaron. Una
+    /// lista vacía deja la casilla sin cartas.</summary>
+    public void SaveCasillas(IReadOnlyDictionary<string, IReadOnlyList<Game.MailEntry>> casillas)
+    {
+        var foto = casillas.ToDictionary(c => c.Key, c => (IReadOnlyList<Game.MailEntry>)c.Value.ToArray(),
+                                         StringComparer.OrdinalIgnoreCase);
+        _cola.Escribir("guardar el correo", a => a.GuardarCasillas(foto));
+    }
+
+    public Dictionary<string, List<Game.MailEntry>> LoadMailboxes()
+        => Esperar("leer el correo", null, a => a.LeerCorreo())
+            .ToDictionary(c => c.Key, c => c.Value.ToList(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>El suelo de los jugadores, cuando la regla de la casa <c>PersistirSuelo</c> está prendida.</summary>
+    public void SaveSuelo(IEnumerable<(Game.WorldPos Pos, short ObjIndex, short Amount)> suelo)
+    {
+        var foto = suelo.Select(o => new ObjetoEnElSuelo(o.Pos, o.ObjIndex, o.Amount)).ToList();
+        _cola.Escribir("guardar el suelo", a => a.GuardarSuelo(foto));
+    }
+
+    public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
+        => Esperar("leer el suelo", null, a => a.LeerSuelo()).Select(o => (o.Posicion, o.Objeto, o.Cantidad)).ToList();
+
+    /// <summary>Las llaves ya vendidas (<see cref="Game.World.LlavesVendidas"/>): ficha del mercader → ranura → objeto.</summary>
+    public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
+    {
+        var llaves = vendidas.SelectMany(m => m.Value.Select(r => new LlaveVendida(m.Key, r.Key, r.Value))).ToList();
+        _cola.Escribir("guardar las llaves vendidas", a => a.GuardarLlavesVendidas(llaves));
+    }
+
+    public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
+    {
+        var vendidas = new Dictionary<int, Dictionary<int, short>>();
+        foreach (var l in Esperar("leer las llaves vendidas", null, a => a.LeerLlavesVendidas()))
+        {
+            if (!vendidas.TryGetValue(l.Mercader, out var ranuras)) vendidas[l.Mercader] = ranuras = new Dictionary<int, short>();
+            ranuras[l.Ranura] = l.Objeto;
+        }
+        return vendidas;
+    }
+
+    /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini; acá va con el
+    /// resto del mundo, así entra en el backup.</summary>
+    public void SaveRecordUsuarios(int record) => _cola.Escribir("guardar el récord", a => a.GuardarRecord(record));
+
+    public int LoadRecordUsuarios() => Esperar("leer el récord", null, a => a.LeerRecord());
 
     /// <summary>Sincrónicas, para quien no es el loop (ver <see cref="Esperar"/>).</summary>
     public Account? LoadAccount(string name) => Esperar("leer una cuenta", name, a => a.LeerCuenta(name));

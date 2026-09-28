@@ -327,4 +327,50 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
         // CONTROL: un voto de tres miembros no alcanza la mayoría, así que la elección sigue abierta y el líder es el mismo.
         Assert.Equal("Aldo", sur2.LeaderName);
     }
+
+    private static async Task<bool> Esperar(Func<bool> condicion, int topeMs = 15_000)
+    {
+        long fin = Environment.TickCount64 + topeMs;
+        while (Environment.TickCount64 < fin)
+        {
+            if (condicion()) return true;
+            await Task.Delay(25);
+        }
+        return false;
+    }
+
+    /// <summary>ACEPTAR A UN ASPIRANTE DESCONECTADO LE ANOTA EL CLAN, como el original: escribe el <c>GUILDINDEX</c> de su
+    /// <c>.chr</c> esté o no conectado (clsClan.cls:299). Acá quedaba en la lista del clan y, al entrar, sin clan.</summary>
+    [Fact]
+    public async Task Aceptar_a_un_aspirante_desconectado_le_anota_el_clan()
+    {
+        var sur = Clan("Sur", "Aldo");
+        var cuenta = _db.CreateAccount("cuenta_bruma", "clave_larga");
+        _db.CreateCharacter(cuenta, "Bruma", 0, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+        sur.JoinRequests["Bruma"] = "quiero entrar";
+        var (_, sa, _) = Conectado("Aldo", "Sur");
+
+        await Mandar(sa, Paquete(ClientPacketId.GuildAcceptNewMember).WriteAsciiString("Bruma"));
+
+        Assert.True(await Esperar(() => _db.LoadCharacter("Bruma", 0, "")!.GuildName == "Sur"), "el personaje no quedó en el clan");
+        Assert.Contains("Bruma", sur.Members);
+    }
+
+    /// <summary>ECHAR A UN MIEMBRO DESCONECTADO LE SACA EL CLAN (clsClan.cls:343). Acá salía de la lista del clan y, al entrar,
+    /// seguía con su tag.</summary>
+    [Fact]
+    public async Task Echar_a_un_miembro_desconectado_le_saca_el_clan()
+    {
+        var sur = Clan("Sur", "Aldo", 2, "Ciro");
+        var cuenta = _db.CreateAccount("cuenta_ciro", "clave_larga");
+        var ciro = _db.CreateCharacter(cuenta, "Ciro", 0, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+        ciro.GuildName = "Sur";
+        _db.SaveCharacter(ciro);
+        var (_, sa, _) = Conectado("Aldo", "Sur");
+
+        await Mandar(sa, Paquete(ClientPacketId.GuildKickMember).WriteAsciiString("Ciro"));
+
+        Assert.True(await Esperar(() => _db.LoadCharacter("Ciro", 0, "")!.GuildName == ""), "el personaje sigue con el clan");
+        Assert.DoesNotContain("Ciro", sur.Members);
+    }
 }

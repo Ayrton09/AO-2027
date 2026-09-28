@@ -5104,7 +5104,7 @@ public sealed partial class PacketDispatcher
             return false;
         }
         _world.DeliverMail(dest, new MailEntry("CoverAO Staff", $"{gm.Name}:{mensaje}", 0, 0));
-        PersistMail();
+        PersistMail(dest);
         conectado?.Connection?.Send(ServerMessages.MensajeSigno(true));
         conectado?.Connection?.Send(ServerMessages.ConsoleMsg(
             "Has recibido una respuesta de [CoverAO Staff], ve a un correo local para leerlo.", FuenteInfo));
@@ -6658,12 +6658,7 @@ public sealed partial class PacketDispatcher
         }
         guild.JoinRequests.Remove(clave);
         guild.Members.Add(clave);
-        var joiner = _world.PlayerByName(clave);
-        if (joiner is not null)
-        {
-            joiner.GuildName = guild.Name;
-            _world.BroadcastToObservers(joiner.Pos, ServerMessages.UpdateTagAndStatus(joiner));   // RefreshCharStatus
-        }
+        AnotarElClanEnElPersonaje(clave, guild.Name);
         PersistGuilds();
         EnviarAlClan(guild.Name, ServerMessages.ConsoleMsg($"{applicant} ha sido aceptado como miembro del clan.", FuenteClan));
         EnviarAlClan(guild.Name, ServerMessages.PlayWave(43, 0, 0));
@@ -6737,14 +6732,25 @@ public sealed partial class PacketDispatcher
         var miembro = g.Members.FirstOrDefault(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase));
         if (miembro is null) return null;
         g.Members.Remove(miembro);
-        if (t is not null)
-        {
-            t.GuildName = "";
-            _world.BroadcastToObservers(t.Pos, ServerMessages.UpdateTagAndStatus(t));   // RefreshCharStatus
-        }
+        AnotarElClanEnElPersonaje(miembro, "");
         PersistGuilds();
         return g;
     }
+
+    /// <summary>
+    /// EL CLAN EN EL PERSONAJE, esté conectado o no. La membresía está en dos lados, como en el original —la lista del clan y
+    /// el clan de cada personaje— y el original escribe los dos al aceptar y al echar: el <c>GUILDINDEX</c> del <c>.chr</c>,
+    /// con el personaje conectado o sin él (clsClan.cls:299 y :343). Acá se tocaba sólo la lista cuando el personaje no
+    /// estaba, y al entrar después figuraba en el clan sin clan —o con el tag de un clan que ya no lo tenía—.
+    /// </summary>
+    private void AnotarElClanEnElPersonaje(string nombre, string clan)
+        => ConElPersonaje(nombre, (t, vivo) =>
+        {
+            if (t is null) return;
+            t.GuildName = clan;
+            if (vivo is null) { _db.SaveCharacter(t); return; }
+            _world.BroadcastToObservers(t.Pos, ServerMessages.UpdateTagAndStatus(t));   // RefreshCharStatus
+        });
 
     /// <summary>GuildRequestJoinerInfo (id 49): applicant name. Sends the leader the aspirant's basic sheet.</summary>
     private void HandleGuildJoinerInfo(ClientSession session, ByteQueueReader r)
@@ -7548,11 +7554,11 @@ public sealed partial class PacketDispatcher
                 case 1:   // ResetCorreos: borrar y compactar. El original no contesta; el cliente cierra el buzón.
                     box.RemoveAt(slot - 1);
                     _world.DropMailboxIfEmpty(p.Name);
-                    PersistMail();
+                    PersistMail(p.Name);
                     break;
                 case 2:   // marcar leída
                     box[slot - 1] = box[slot - 1] with { Leida = 1 };
-                    PersistMail();
+                    PersistMail(p.Name);
                     break;
                 case 3: RetirarItemCorreo(session, p, box, slot - 1); break;
                 // case 4: el original lo tiene vacío.
@@ -7592,7 +7598,7 @@ public sealed partial class PacketDispatcher
         }
         _economia?.Anotar($"correo {p.Name} retira {m.Amount} x obj {m.ObjIndex} (de {m.Sender})");
         box[i] = m with { ObjIndex = 0, Amount = 0 };   // la carta se queda, sin adjunto
-        PersistMail();
+        PersistMail(p.Name);
     }
 
     /// <summary>GuildAllianceDetails / GuildPeaceDetails → <c>r_VerPropuesta</c> (modGuilds.bas:1773): el LÍDER
@@ -8712,8 +8718,8 @@ public sealed partial class PacketDispatcher
     /// <summary>Lo que cuesta mandar una carta (VB6 mod_Correos.bas:32-47, el 1750 está hardcodeado ahí).</summary>
     private const int CostoDelCorreo = 1750;
 
-    /// <summary>Persists the mailboxes after a change, so pending mail survives restarts.</summary>
-    private void PersistMail() => _correoSucio = true;
+    /// <summary>Marca la casilla que cambió: el volcado diferido escribe ésa, no el correo entero.</summary>
+    private void PersistMail(string casilla) => _casillasSucias.Add(casilla);
 
     // ── PERSISTENCIA DIFERIDA DE CLANES Y CORREO ────────────────────────────────────────────────────────
     // Las 22 llamadas a PersistGuilds/PersistMail escribían el archivo ENTERO en el acto, en el hilo del game
@@ -8730,7 +8736,9 @@ public sealed partial class PacketDispatcher
     // más no compra casi nada y sí cuesta: lo que se pierde ante una caída DURA (un kill, un corte de luz) es
     // exactamente este intervalo. El arnés lo hace explícito — reinicia el server a la fuerza 900 ms después de
     // fundar un clan y verifica que sobrevivió (persist_guild_flow / persist_mail_flow).
-    private bool _clanesSucios, _correoSucio;
+    private bool _clanesSucios;
+    /// <summary>Las casillas de correo que cambiaron desde el último volcado: se escriben ésas y nada más.</summary>
+    private readonly HashSet<string> _casillasSucias = new(StringComparer.OrdinalIgnoreCase);
     private long _ultimaPersistenciaMs;
     private const long IntervaloPersistenciaMs = 500;
 
@@ -8745,7 +8753,7 @@ public sealed partial class PacketDispatcher
     public void VolcarPersistenciaDiferida(bool forzar = false)
     {
         bool sueloSucio = _ini.PersistirSuelo && _world.SueloCambios != _sueloGuardado;
-        if (!_clanesSucios && !_correoSucio && !sueloSucio && !_llavesSucias && _world.RecordUsuarios == _recordGuardado) return;
+        if (!_clanesSucios && _casillasSucias.Count == 0 && !sueloSucio && !_llavesSucias && _world.RecordUsuarios == _recordGuardado) return;
         long ahora = Environment.TickCount64;
         if (!forzar && ahora - _ultimaPersistenciaMs < IntervaloPersistenciaMs) return;
         _ultimaPersistenciaMs = ahora;
@@ -8756,9 +8764,14 @@ public sealed partial class PacketDispatcher
             try { _db.SaveGuilds(_world.AllGuilds); _db.SaveMotivosDeRechazo(_world.MotivosDeRechazo); _clanesSucios = false; }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] clanes: {ex.Message}"); }
         }
-        if (_correoSucio)
+        if (_casillasSucias.Count > 0)
         {
-            try { _db.SaveMailboxes(_world.AllMailboxes); _correoSucio = false; }
+            try
+            {
+                _db.SaveCasillas(_casillasSucias.ToDictionary(c => c, c => (IReadOnlyList<MailEntry>)_world.PeekMail(c),
+                                                              StringComparer.OrdinalIgnoreCase));
+                _casillasSucias.Clear();
+            }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] correo: {ex.Message}"); }
         }
         // El record de conectados: se escribe sólo cuando SUBIÓ, que es un puñado de veces en la vida de un
@@ -8847,7 +8860,7 @@ public sealed partial class PacketDispatcher
             p.Gold -= CostoDelCorreo;                       // VB6 mod_Correos.bas:47
             session.Send(ServerMessages.UpdateGold(p.Gold)); // …y su WriteUpdateGold (:48)
             _world.DeliverMail(dest, new MailEntry(p.Name, message, attachObj, attachAmt));
-            PersistMail();
+            PersistMail(dest);
             // Si está conectado se le prende el INDICADOR de carta y se le avisa (mod_Correos.bas:68-75); la
             // carta se lee en un buzón.
             var online = _world.PlayerByName(dest);

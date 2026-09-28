@@ -153,6 +153,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Las elecciones del clan, sus votos y las propuestas de paz** ya no se borran al reiniciar el servidor.
 
+- **Aceptar o echar del clan a alguien que no está conectado** le cambia el clan a él también, como en el original. Antes
+  entraba después sin su clan, o con el de un clan que ya lo había echado.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
@@ -223,7 +226,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Los personajes y las cuentas se guardan en una base**: un archivo, `data/coverao.db`, y nada que instalar. Una
   instalación que ya tenía personajes en archivos sigue con ellos; se elige con `[BASEDEDATOS] Tipo=` en el Server.ini.
-  Cada cuenta anota su último ingreso y desde qué IP, como el original.
+  Cada cuenta anota su último ingreso y desde qué IP, como el original. Los clanes, el correo, el suelo y las llaves
+  vendidas van también a la base.
 
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde

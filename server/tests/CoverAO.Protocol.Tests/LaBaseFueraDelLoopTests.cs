@@ -78,8 +78,18 @@ public class LaBaseFueraDelLoopTests : IDisposable
         public CharacterSummary? LeerResumen(string nombre) => real.LeerResumen(nombre);
         public long? AcreditarBoveda(string nombre, long monto) => real.AcreditarBoveda(nombre, monto);
         public IReadOnlyList<CharacterFile.FilaDeRanking> FilasDeRanking() => real.FilasDeRanking();
-        public string? LeerDelMundo(string clave) => real.LeerDelMundo(clave);
-        public void GuardarEnElMundo(string clave, string texto) => real.GuardarEnElMundo(clave, texto);
+        public IReadOnlyList<ClanGuardado> LeerClanes() => real.LeerClanes();
+        public void GuardarClanes(IReadOnlyList<ClanGuardado> clanes) => real.GuardarClanes(clanes);
+        public IReadOnlyList<KeyValuePair<string, string>> LeerRechazosDeClan() => real.LeerRechazosDeClan();
+        public void GuardarRechazosDeClan(IReadOnlyList<KeyValuePair<string, string>> rechazos) => real.GuardarRechazosDeClan(rechazos);
+        public IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> LeerCorreo() => real.LeerCorreo();
+        public void GuardarCasillas(IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> casillas) => real.GuardarCasillas(casillas);
+        public IReadOnlyList<ObjetoEnElSuelo> LeerSuelo() => real.LeerSuelo();
+        public void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo) => real.GuardarSuelo(suelo);
+        public IReadOnlyList<LlaveVendida> LeerLlavesVendidas() => real.LeerLlavesVendidas();
+        public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => real.GuardarLlavesVendidas(llaves);
+        public int LeerRecord() => real.LeerRecord();
+        public void GuardarRecord(int record) => real.GuardarRecord(record);
         public string Backup(string destDir, string stem) => real.Backup(destDir, stem);
     }
 

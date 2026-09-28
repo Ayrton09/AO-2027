@@ -236,7 +236,8 @@ Antes de actualizar, mirá que haya un backup reciente en `data/backups/` — es
 
 ## Dónde se guardan los personajes
 
-En una base SQLite: **un archivo, `data/coverao.db`**, y nada que instalar. Es lo que usa una instalación nueva.
+En una base SQLite: **un archivo, `data/coverao.db`**, y nada que instalar. Es lo que usa una instalación nueva. Ahí
+van los personajes, las cuentas y lo que guarda el mundo: clanes, correo, suelo, llaves vendidas y el récord de conectados.
 
 Una instalación que ya tenía personajes en archivos —un `.chr` por personaje en `data/Charfile/` y un `.cnt` por
 cuenta en `data/Cuentas/`, como el original— sigue con los archivos, y lo dice al arrancar. Se elige en el

@@ -269,16 +269,116 @@ public abstract class ContratoDelAlmacen : IDisposable
         Assert.Null(Almacen.LeerResumen("NadieAqui"));
     }
 
-    [Fact]
-    public void Lo_que_guarda_el_mundo_se_lee_igual_y_se_pisa()
+    /// <summary>Un clan con todo, y las listas en un orden que no es el alfabético: el de los aspirantes es el que ve el
+    /// líder.</summary>
+    internal static ClanGuardado ClanLleno(string nombre, int semilla) => new()
     {
-        Assert.Null(Almacen.LeerDelMundo("guilds"));
-        Almacen.GuardarEnElMundo("guilds", "[{\"Name\":\"Sur\"}]");
-        Almacen.GuardarEnElMundo("record", "7");
-        Almacen.GuardarEnElMundo("guilds", "[]");
+        Nombre = nombre, Lider = "Lider" + semilla, Descripcion = "descripcion " + semilla, Noticias = "noticias " + semilla,
+        Alineacion = (byte)(semilla % 4 + 1), Url = "http://clan" + semilla, Codex = "codex " + semilla,
+        EleccionesAbiertas = semilla % 2 == 1,
+        Miembros = ImmutableArray.Create("Lider" + semilla, "Zeta" + semilla, "Alfa" + semilla),
+        Aliados = ImmutableArray.Create("Amigo" + semilla),
+        Enemigos = ImmutableArray.Create("Rival" + semilla, "Enemigo" + semilla),
+        PropuestasDeAlianza = ImmutableArray.Create(new KeyValuePair<string, string>("Otro" + semilla, "aliemonos " + semilla)),
+        PropuestasDePaz = ImmutableArray.Create(new KeyValuePair<string, string>("Rival" + semilla, "basta " + semilla)),
+        Aspirantes = ImmutableArray.Create(new KeyValuePair<string, string>("Zulu" + semilla, "quiero entrar"),
+                                           new KeyValuePair<string, string>("Alba" + semilla, "yo tambien")),
+        Votos = ImmutableArray.Create(new KeyValuePair<string, string>("Zeta" + semilla, "Alfa" + semilla)),
+    };
 
-        Assert.Equal("[]", Almacen.LeerDelMundo("guilds"));
-        Assert.Equal("7", Almacen.LeerDelMundo("record"));
+    internal static void AssertIgual(ClanGuardado esperado, ClanGuardado leido)
+    {
+        Assert.Equal(esperado with
+        {
+            Miembros = default, Aliados = default, Enemigos = default, PropuestasDeAlianza = default, PropuestasDePaz = default,
+            Aspirantes = default, Votos = default,
+        }, leido with
+        {
+            Miembros = default, Aliados = default, Enemigos = default, PropuestasDeAlianza = default, PropuestasDePaz = default,
+            Aspirantes = default, Votos = default,
+        });
+        // Como secuencias: un ImmutableArray se compara por referencia con su Equals.
+        Assert.Equal(esperado.Miembros.AsEnumerable(), leido.Miembros.AsEnumerable());
+        Assert.Equal(esperado.Aliados.AsEnumerable(), leido.Aliados.AsEnumerable());
+        Assert.Equal(esperado.Enemigos.AsEnumerable(), leido.Enemigos.AsEnumerable());
+        Assert.Equal(esperado.PropuestasDeAlianza.AsEnumerable(), leido.PropuestasDeAlianza.AsEnumerable());
+        Assert.Equal(esperado.PropuestasDePaz.AsEnumerable(), leido.PropuestasDePaz.AsEnumerable());
+        Assert.Equal(esperado.Aspirantes.AsEnumerable(), leido.Aspirantes.AsEnumerable());
+        Assert.Equal(esperado.Votos.AsEnumerable(), leido.Votos.AsEnumerable());
+    }
+
+    [Fact]
+    public void Los_clanes_se_leen_igual_y_en_el_orden_del_juego()
+    {
+        Assert.Empty(Almacen.LeerClanes());
+        var clanes = new[] { ClanLleno("Sur", 1), ClanLleno("Norte", 2) };
+        Almacen.GuardarClanes(clanes);
+
+        var leidos = Almacen.LeerClanes();
+        Assert.Equal(new[] { "Sur", "Norte" }, leidos.Select(c => c.Nombre));
+        for (int i = 0; i < clanes.Length; i++) AssertIgual(clanes[i], leidos[i]);
+
+        // Se reemplazan todos: el que no viene, se cerró.
+        Almacen.GuardarClanes(new[] { clanes[1] with { Noticias = "otras" } });
+        var quedo = Assert.Single(Almacen.LeerClanes());
+        AssertIgual(clanes[1] with { Noticias = "otras" }, quedo);
+    }
+
+    [Fact]
+    public void Los_rechazos_de_clan_se_leen_igual_y_se_reemplazan()
+    {
+        Assert.Empty(Almacen.LeerRechazosDeClan());
+        var rechazos = new[] { new KeyValuePair<string, string>("Aldo", "no sos del bando"), new KeyValuePair<string, string>("Bruma", "muy nueva") };
+        Almacen.GuardarRechazosDeClan(rechazos);
+        Assert.Equal(rechazos, Almacen.LeerRechazosDeClan());
+
+        Almacen.GuardarRechazosDeClan(new[] { rechazos[1] });
+        Assert.Equal(new[] { rechazos[1] }, Almacen.LeerRechazosDeClan());
+    }
+
+    /// <summary>El correo se guarda POR CASILLA: cambiar la de uno no toca las de los demás, y una vacía queda sin cartas.
+    /// El orden de las cartas es el que el cliente usa para señalarlas.</summary>
+    [Fact]
+    public void El_correo_se_guarda_por_casilla()
+    {
+        Assert.Empty(Almacen.LeerCorreo());
+        var aldo = new[] { new MailEntry("Bruma", "hola", 2, 1), new MailEntry("Ciro", "chau", 0, 0, 1), new MailEntry("Dana", "che", 5, 3) };
+        var bruma = new[] { new MailEntry("Aldo", "respuesta", 0, 0) };
+        Almacen.GuardarCasillas(new Dictionary<string, IReadOnlyList<MailEntry>> { ["Aldo"] = aldo, ["Bruma"] = bruma });
+        Assert.Equal(aldo, Almacen.LeerCorreo()["aldo"]);
+
+        var aldoDespues = new[] { aldo[2], aldo[0] };
+        Almacen.GuardarCasillas(new Dictionary<string, IReadOnlyList<MailEntry>> { ["aldo"] = aldoDespues });
+        var correo = Almacen.LeerCorreo();
+        Assert.Equal(aldoDespues, correo["Aldo"]);
+        Assert.Equal(bruma, correo["Bruma"]);
+
+        Almacen.GuardarCasillas(new Dictionary<string, IReadOnlyList<MailEntry>> { ["Bruma"] = Array.Empty<MailEntry>() });
+        Assert.False(Almacen.LeerCorreo().ContainsKey("Bruma"));
+        Assert.Equal(aldoDespues, Almacen.LeerCorreo()["Aldo"]);
+    }
+
+    [Fact]
+    public void El_suelo_las_llaves_y_el_record_se_leen_igual()
+    {
+        Assert.Empty(Almacen.LeerSuelo());
+        Assert.Empty(Almacen.LeerLlavesVendidas());
+        Assert.Equal(0, Almacen.LeerRecord());
+
+        var suelo = new[] { new ObjetoEnElSuelo(new WorldPos(1, 50, 50), 12, 3), new ObjetoEnElSuelo(new WorldPos(17, 89, 61), 474, 1) };
+        var llaves = new[] { new LlaveVendida(40, 3, 53), new LlaveVendida(40, 5, 54), new LlaveVendida(41, 1, 55) };
+        Almacen.GuardarSuelo(suelo);
+        Almacen.GuardarLlavesVendidas(llaves);
+        Almacen.GuardarRecord(7);
+
+        Assert.Equal(suelo.OrderBy(o => o.Posicion.Map), Almacen.LeerSuelo().OrderBy(o => o.Posicion.Map));
+        Assert.Equal(llaves, Almacen.LeerLlavesVendidas().OrderBy(l => l.Mercader).ThenBy(l => l.Ranura));
+        Assert.Equal(7, Almacen.LeerRecord());
+
+        Almacen.GuardarSuelo(new[] { suelo[1] });
+        Almacen.GuardarLlavesVendidas(Array.Empty<LlaveVendida>());
+        Assert.Equal(new[] { suelo[1] }, Almacen.LeerSuelo());
+        Assert.Empty(Almacen.LeerLlavesVendidas());
     }
 
     [Fact]
