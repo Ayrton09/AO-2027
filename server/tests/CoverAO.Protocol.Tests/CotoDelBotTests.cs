@@ -589,6 +589,32 @@ public class CotoDelBotTests
         Assert.True(Va(vida: 150, nivel: 12, out bool aCinco12) && aCinco12, "el de nivel 12 lo tiene cerca, por la cuna");
     }
 
+    /// <summary>
+    /// EN EL 15, AL LADO DE LA CUNA, CADA UNO TIENE A MANO QUIEN LE VENDA ROPA (ver <see cref="Bot.LeFaltaLaRopaDelCamino"/>): cada
+    /// raza y cada género, desde el 261, que es donde Ciro pasó el 15 en `oficios23`. Sin esto la regla nueva no tendría adónde ir.
+    /// </summary>
+    [Fact]
+    public void En_el_15_cada_uno_tiene_a_mano_quien_le_venda_ropa()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        const byte ciudadano = 2;
+        Func<int, bool> atiende = x => Bot.ElMercaderLeVende(null, d.MapBattleMode(x), ciudadano);
+        Func<int, bool> pisable = x => Bot.PuedeEntrar(15, d.MapZone(x));
+        var sinRopa = new List<string>();
+        foreach (byte clase in new byte[] { 2, 3, 13 })   // Mago, Guerrero, Leñador
+            foreach (byte raza in new byte[] { 1, 2, 3, 4, 5, 6 })
+                foreach (byte genero in new byte[] { 1, 2 })
+                {
+                    Func<int, bool> vendeRopa = f => d.Npc(f) is { StockItems: { Count: > 0 } st }
+                        && st.Any(s => d.Obj(s.ObjIndex) is { IsArmor: true, IsNewbie: false } o
+                                       && Bot.PuedeUsarlo(o, clase, raza, genero, 15) && o.Value <= 20_000);
+                    if (!Bot.HayArmaAlAlcance(m.Mapas, d, 261, ((byte)14, (byte)8), vendeRopa, atiende, pisable, _ => true))
+                        sinRopa.Add($"clase {clase} raza {raza} genero {genero}");
+                }
+        Assert.Empty(sinRopa);
+    }
+
     /// <summary>Los mapas por los que pasa un viaje, siguiendo las puertas que da el navegante como las sigue el bot.</summary>
     private static List<int> PorDondePasa(Navegante mapas, GameData d, int mapa, (byte X, byte Y) desde, int destino,
                                           (byte X, byte Y) meta, Func<int, bool> filtro)

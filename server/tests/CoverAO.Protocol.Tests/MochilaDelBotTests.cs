@@ -131,6 +131,26 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.EmpiezaAAbastecerse(ultimo - 2, ultimo - 1));
     }
 
+    /// <summary>LA ROPA DEL CAMINO (ver <see cref="Bot.LeFaltaLaRopaDelCamino"/>): desde el último nivel de novato, sin ropa de cuerpo
+    /// propia, se la compra, antes que el arma; y no es un gusto.</summary>
+    [Fact]
+    public void Al_dejar_de_ser_novato_se_compra_ropa_antes_que_el_arma()
+    {
+        int ultimo = GameLimits.NewbieMaxLevel;
+        Assert.False(Bot.LeFaltaLaRopaDelCamino(ultimo - 1, tieneRopaPropia: false), "antes del último nivel de novato, la de novato alcanza");
+        Assert.True(Bot.LeFaltaLaRopaDelCamino(ultimo, tieneRopaPropia: false));
+        Assert.True(Bot.LeFaltaLaRopaDelCamino(ultimo + 5, tieneRopaPropia: false), "el que quedó desnudo la sigue buscando");
+        Assert.False(Bot.LeFaltaLaRopaDelCamino(ultimo, tieneRopaPropia: true));
+
+        Assert.True(Bot.PrimeroLaRopa(hayUnaAlAlcance: true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false));
+        Assert.False(Bot.PrimeroLaRopa(hayUnaAlAlcance: true, vaPorComida: true, vaPorBebida: false, vaPorLaHerramienta: false),
+            "la comida primero");
+        Assert.False(Bot.PrimeroLaRopa(hayUnaAlAlcance: false, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false));
+        Assert.False(Bot.PrimeroElArma(true, true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false, vaPorLaRopa: true),
+            "la ropa antes que el arma");
+        Assert.False(Bot.SoloLeFaltanGustos(false, false, false, false, faltaRopa: true), "la ropa no es un gusto");
+    }
+
     /// <summary>EL QUE COMPRÓ Y TODAVÍA NECESITA ALGO SALE YA (ver <see cref="Bot.DescansoTrasElViaje"/>): en el nivel 15 la
     /// comida, la bebida y el arma son tres viajes, y con un descanso entre uno y otro el arma llegaba ya en el 16.</summary>
     [Fact]

@@ -220,7 +220,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no
   salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa. Al dejar de ser novatos se
-  compran un arma, aunque el herrero les quede lejos, si pueden llegar sin que los maten.
+  compran ropa y un arma, aunque el herrero les quede lejos, si pueden llegar sin que los maten.
 
 ## 1.0.0 — 2026-09-16
 
