@@ -144,6 +144,23 @@ public class ElIngresoComoElOriginalTests : IDisposable
         Assert.True(mala.Cerrado && inexistente.Cerrado);
     }
 
+    /// <summary>Entrar a la cuenta anota cuándo y desde dónde, como el original (VB6 <c>EntrarCuenta</c>,
+    /// Cuentas.bas:443-444). Una contraseña equivocada no anota nada.</summary>
+    [Fact]
+    public async Task Entrar_a_la_cuenta_anota_el_ingreso()
+    {
+        CuentaCon("cuenta", "Aldo");
+        var mala = Mandar(Entrar("cuenta", "otra_clave_cualquiera", "Aldo"), "tcp:10.0.0.9:1111");
+        Assert.True(await Esperar(() => mala.Cerrado));
+        _db.EsperarEscriturasPendientes();
+        Assert.Null(_db.LoadAccount("cuenta")!.UltimoIngreso);
+
+        Mandar(Entrar("cuenta", Clave, "Aldo"));
+
+        Assert.True(await Esperar(() => _db.LoadAccount("cuenta")!.UltimoIngreso is not null), "el ingreso no se anotó");
+        Assert.Equal("10.0.0.2", _db.LoadAccount("cuenta")!.UltimaIp);
+    }
+
     [Fact]
     public async Task La_cuenta_baneada_sale_con_el_cartel_19()
     {

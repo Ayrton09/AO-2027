@@ -34,6 +34,23 @@ public sealed class AlmacenDeTexto : IAlmacen
     }
 
     public void GuardarPersonaje(FichaDePersonaje ficha) => _store.WriteCharacter(ficha.Nombre, CharacterFile.ToIni(ficha).ToText());
+
+    /// <summary>El <c>.chr</c> y el nombre en la lista <c>[PJS]</c> de la cuenta GUARDADA. El tope se mira antes de escribir
+    /// nada: la lista del <c>.cnt</c> tiene diez lugares, y un undécimo se caía al guardar la cuenta y dejaba un personaje
+    /// que no figuraba en ninguna.</summary>
+    public bool CrearPersonaje(Account cuenta, FichaDePersonaje ficha)
+    {
+        var guardada = LeerCuenta(cuenta.Name) ?? cuenta;
+        if (!guardada.Characters.Contains(ficha.Nombre, StringComparer.OrdinalIgnoreCase))
+        {
+            if (guardada.Characters.Count >= AccountFile.MaxCharacters) return false;
+            guardada.Characters.Add(ficha.Nombre);
+        }
+        GuardarPersonaje(ficha);
+        GuardarCuenta(guardada);
+        return true;
+    }
+
     public bool ApartarPersonaje(string nombre) => _store.ArchivarCharacter(nombre);
     public IEnumerable<string> NombresDePersonajes() => _store.AllCharacterNames();
 

@@ -221,6 +221,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **El mundo no se frena al leer o guardar personajes**: la base trabaja aparte, de a uno y en orden. Un baneo desde
   el panel, un /MOD o una transferencia a alguien que justo está entrando ya no se pierden.
 
+- **Los personajes y las cuentas se guardan en una base**: un archivo, `data/coverao.db`, y nada que instalar. Una
+  instalación que ya tenía personajes en archivos sigue con ellos; se elige con `[BASEDEDATOS] Tipo=` en el Server.ini.
+  Cada cuenta anota su último ingreso y desde qué IP, como el original.
+
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no

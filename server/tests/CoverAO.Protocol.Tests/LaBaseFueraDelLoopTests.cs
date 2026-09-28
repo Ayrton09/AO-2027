@@ -72,6 +72,7 @@ public class LaBaseFueraDelLoopTests : IDisposable
         public IEnumerable<string> NombresDeCuentas() => real.NombresDeCuentas();
         public bool ExistePersonaje(string nombre) => real.ExistePersonaje(nombre);
         public void GuardarPersonaje(FichaDePersonaje ficha) => real.GuardarPersonaje(ficha);
+        public bool CrearPersonaje(Account cuenta, FichaDePersonaje ficha) => real.CrearPersonaje(cuenta, ficha);
         public bool ApartarPersonaje(string nombre) => real.ApartarPersonaje(nombre);
         public IEnumerable<string> NombresDePersonajes() => real.NombresDePersonajes();
         public CharacterSummary? LeerResumen(string nombre) => real.LeerResumen(nombre);

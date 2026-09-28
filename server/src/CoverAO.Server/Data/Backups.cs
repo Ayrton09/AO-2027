@@ -39,11 +39,23 @@ public static class Backups
             Directory.CreateDirectory(destino);
             foreach (var f in Directory.EnumerateFiles(dataRoot))
             {
+                // LA BASE NO: su copia es la de arriba, consistente. Copiar el archivo vivo —y su diario— da una base a
+                // medio escribir, del doble de tamaño, que encima parece un backup.
+                if (EsDeLaBase(f)) continue;
                 try { File.Copy(f, Path.Combine(destino, Path.GetFileName(f)), overwrite: true); }
                 catch (IOException) { /* un archivo tomado por otro proceso no puede voltear el backup */ }
             }
         }
         return ruta;
+    }
+
+    private static bool EsDeLaBase(string archivo)
+    {
+        string nombre = Path.GetFileName(archivo);
+        return nombre.EndsWith(".db", StringComparison.OrdinalIgnoreCase)
+            || nombre.EndsWith(".db-wal", StringComparison.OrdinalIgnoreCase)
+            || nombre.EndsWith(".db-shm", StringComparison.OrdinalIgnoreCase)
+            || nombre.EndsWith(".db-journal", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Los backups que hay en el directorio, del más nuevo al más viejo. UNO por backup: con SQLite

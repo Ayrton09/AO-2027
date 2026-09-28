@@ -309,6 +309,18 @@ public sealed class Persistence : IDisposable
         return cuenta;
     }
 
+    /// <summary>El último ingreso y desde qué IP, como el original al entrar a la cuenta (VB6 <c>EntrarCuenta</c>,
+    /// Cuentas.bas:443-444). Sólo esos dos datos, adentro del escritor.</summary>
+    public void AnotarIngreso(string cuenta, string ip)
+    {
+        var cuando = DateTime.UtcNow;
+        _cola.Escribir($"anotar el ingreso de {cuenta}", a => CambiarCuentaEn(a, cuenta, c =>
+        {
+            c.UltimoIngreso = cuando;
+            c.UltimaIp = ip;
+        }));
+    }
+
     /// <summary>
     /// EL HASH VIEJO, YA MIGRADO. Verificar una contraseña con hash SHA-256 lo pasa a PBKDF2 en la cuenta leída
     /// (<see cref="Account.VerifyPassword(string, out bool)"/>), y eso hay que guardarlo. Se guarda SÓLO la clave, y sólo si
@@ -635,7 +647,10 @@ public sealed class Persistence : IDisposable
     ///
     /// <para>El personaje se suma a la cuenta GUARDADA, no se guarda la que trae el que crea: ésa se leyó al verificar la
     /// contraseña, y lo que cambió desde entonces —un baneo del panel, un personaje borrado desde otra conexión— se
-    /// perdería. La traída sirve sólo si la cuenta todavía no llegó a la base.</para></summary>
+    /// perdería. La traída sirve sólo si la cuenta todavía no llegó a la base (<see cref="IAlmacen.CrearPersonaje"/>).</para>
+    ///
+    /// <para>El tope de personajes lo mira el alta del juego antes de llegar acá; la base lo vuelve a mirar adentro de su
+    /// transacción. Si esa segunda mirada dice que no —dos altas a la vez en la misma cuenta—, queda en el log.</para></summary>
     private void GuardarAlta(Player p, Account acc)
     {
         var ficha = FichaDePersonaje.Desde(p);
@@ -644,11 +659,10 @@ public sealed class Persistence : IDisposable
         _cuentas[cuenta.Name] = 0;
         _cola.Escribir($"alta de {ficha.Nombre}", a =>
         {
-            a.GuardarPersonaje(ficha);
-            var guardada = a.LeerCuenta(cuenta.Name) ?? cuenta;
-            if (!guardada.Characters.Contains(ficha.Nombre, StringComparer.OrdinalIgnoreCase))
-                guardada.Characters.Add(ficha.Nombre);
-            a.GuardarCuenta(guardada);
+            if (a.CrearPersonaje(cuenta, ficha)) return;
+            _personajes.TryRemove(ficha.Nombre, out _);   // no quedó nada guardado: el nombre no puede figurar como tomado
+            Console.Error.WriteLine($"[base] alta de {ficha.Nombre}: la cuenta {cuenta.Name} ya tiene " +
+                                    $"{AccountFile.MaxCharacters} personajes");
         });
     }
 

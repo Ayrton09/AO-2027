@@ -154,6 +154,14 @@ public sealed partial class PacketDispatcher
     private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));
     private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.IpOf(session.RemoteEndpoint));
 
+    /// <summary>La cuenta abrió con la contraseña bien: cuenta para el freno de intentos y anota el último ingreso y la IP,
+    /// como el original al entrar a la cuenta (VB6 <c>EntrarCuenta</c>, Cuentas.bas:443-444).</summary>
+    private void EntroALaCuenta(ClientSession session, Data.Account acc)
+    {
+        LoginOk(session);
+        _db.AnotarIngreso(acc.Name, ConnectionGuard.NormalizeIp(session.RemoteEndpoint));   // la misma forma que un baneo por IP
+    }
+
     /// <summary>Vuelve al hilo del mundo con la respuesta de la cola de la base (<see cref="Data.ColaDeLaBase"/>). Si el
     /// pedido falló, el error ya quedó en el log y corre <paramref name="alFallar"/>, si hay.</summary>
     private void Responder<T>(Task<T> pedido, Action<T> alVolver, Action? alFallar = null)
@@ -661,7 +669,7 @@ public sealed partial class PacketDispatcher
         {
             if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
             if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }
-            LoginOk(session);
+            EntroALaCuenta(session, acc);
 
             // LA LISTA DE PERSONAJES SALE DEL DISCO: un `.chr` por personaje, hasta DIEZ, y hasta acá se leían
             // adentro del hilo del game loop —este callback vuelve al loop— cuyo presupuesto por vuelta es de
@@ -1050,7 +1058,7 @@ public sealed partial class PacketDispatcher
             {
                 if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
                 if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // un baneado tampoco crea personajes nuevos
-                LoginOk(session);
+                EntroALaCuenta(session, acc);
                 if (upgraded) _db.GuardarClaveMigrada(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
                 // LOS CHEQUEOS DE ConnectNewUser (TCP.bas:363), en su orden y con sus carteles. Los del NOMBRE —y el de
                 // que ya existe— no cortan la conexión: el jugador corrige y vuelve a mandar desde la misma pantalla.
@@ -1192,7 +1200,7 @@ public sealed partial class PacketDispatcher
         {
             if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
             if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // el baneo también aplica al login directo (no solo a ConnectAccount)
-            LoginOk(session);
+            EntroALaCuenta(session, acc);
             if (upgraded) _db.GuardarClaveMigrada(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
             EntrarAlMundo(session, acc, account, charName, version);
         });

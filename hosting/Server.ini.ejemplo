@@ -350,3 +350,10 @@ Version=
 ;IntervaloParalizado=500          ; cada cuanto se reintenta el paralizado
 ;IntervaloCerrarConexion=5        ; segundos que queda en un mapa inseguro al salir o cortarse
 ;IntervaloGuardarUsuarios=15      ; el del original; equivale a MinutosGuardarUsuarios
+
+[BASEDEDATOS]
+; Donde se guardan los personajes y las cuentas. sqlite = un archivo, data/coverao.db, nada que instalar;
+; archivos = un .chr por personaje y un .cnt por cuenta, como el original. Sin Tipo, el servidor elige:
+; sqlite si la instalacion es nueva, archivos si ya habia personajes guardados asi.
+;Tipo=sqlite
+;Archivo=coverao.db

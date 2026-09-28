@@ -234,10 +234,38 @@ cambiarlas, copiá esas lineas de `Server.ini.ejemplo`.
 
 Antes de actualizar, mirá que haya un backup reciente en `data/backups/` — es el unico "deshacer" que hay.
 
+## Dónde se guardan los personajes
+
+En una base SQLite: **un archivo, `data/coverao.db`**, y nada que instalar. Es lo que usa una instalación nueva.
+
+Una instalación que ya tenía personajes en archivos —un `.chr` por personaje en `data/Charfile/` y un `.cnt` por
+cuenta en `data/Cuentas/`, como el original— sigue con los archivos, y lo dice al arrancar. Se elige en el
+`Server.ini`:
+
+```ini
+[BASEDEDATOS]
+; sqlite (un archivo) o archivos (un .chr por personaje). Sin la clave, el servidor elige: sqlite si es nueva,
+; archivos si ya habia personajes guardados asi.
+Tipo=sqlite
+; El archivo de la base, en la carpeta data/.
+Archivo=coverao.db
+```
+
+| Clave | Qué hace |
+|---|---|
+| `Tipo` | `sqlite` o `archivos`. Vacía: el servidor elige, como dice arriba |
+| `Archivo` | el archivo de la base, relativo a `data/`. Por defecto `coverao.db` |
+
+Como el resto del `Server.ini`, se pisan desde el entorno: `COVERAO_BASEDEDATOS_TIPO`, `COVERAO_BASEDEDATOS_ARCHIVO`.
+
 ## Backups y apagado
 
 Cada 30 minutos se copia el mundo entero a `data/backups/` sin frenar a nadie, conservando las últimas 48.
 Antes de cada copia se guarda a los conectados. También hay un botón en el panel de administración.
+
+Con la base, cada backup es **un archivo** `coverao-AAAAMMDD-HHMMSS.db`, una copia consistente aunque el
+servidor esté escribiendo, más una carpeta con el mismo nombre para los archivos sueltos de `data/`, como la
+lista de IPs baneadas.
 
 **Copiando la carpeta `data/` se reconstruye el servidor completo en otra máquina.** Es lo único que no se
 puede volver a generar.
@@ -257,8 +285,22 @@ del archivo. La forma barata de no tener el problema es tener el servidor **fuer
 
 ### Volver atrás con un backup
 
-Un backup que nunca se restauró no es un backup. Esto es todo lo que hay que hacer, y conviene probarlo **una
-vez** antes de necesitarlo de verdad:
+Un backup que nunca se restauró no es un backup. Conviene probarlo **una vez** antes de necesitarlo de verdad.
+
+**Con la base** (`data/coverao.db`):
+
+```sh
+# 1. Parar el servidor.
+# 2. Guardar lo que hay AHORA, por si el backup elegido no era el que uno creía. Van los tres: el diario de la base
+#    (-wal) puede tener lo último que se escribió.
+mv data/coverao.db data/coverao.db.antes
+mv data/coverao.db-wal data/coverao.db-wal.antes 2>/dev/null; rm -f data/coverao.db-shm
+# 3. Copiar el backup elegido en su lugar. `ls data/backups/` los lista del más viejo al más nuevo.
+cp data/backups/coverao-20260808-030000.db data/coverao.db
+# 4. Arrancar.
+```
+
+**Con los archivos** (`data/Charfile/`, `data/Cuentas/`):
 
 ```sh
 # 1. Parar el servidor. Sin esto se restaura sobre archivos que el servidor está escribiendo.
@@ -288,8 +330,8 @@ No hace falta tocar nada más: los mapas, la data del juego y el cliente web se 
 instalación. Y **no** se restaura sólo un personaje copiando su `.chr` suelto: la cuenta que lo lista vive en
 `Cuentas/`, así que si el personaje no existía en ese momento el `.chr` queda huérfano y no aparece al entrar.
 
-Con `COVERAO_DB=sqlite` el almacén es una base y el backup es **un archivo** `coverao-AAAAMMDD-HHMMSS.db`:
-ahí se restaura copiándolo sobre `data/coverao.db` en vez de las tres carpetas.
+Con el SQLite viejo (`COVERAO_DB=sqlite`, el que guardaba el texto de cada personaje en una columna) el backup
+también es un `.db`, y se restaura igual que el de la base.
 
 Al apagarse bien, el servidor guarda a todos los que están jugando. Sirve cualquiera de estas:
 

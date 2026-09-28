@@ -31,6 +31,11 @@ public sealed class Account
     /// (<c>HandleProcesosLogin</c> con Tipo 0, Protocol.bas:15748). Se guarda hasheado igual que la clave: el
     /// que hostea lee el .cnt, y en texto plano sería una segunda contraseña regalada.</summary>
     public string UserCodeHash { get; set; } = "";
+    /// <summary>El último ingreso con la contraseña bien, en UTC (VB6 .cnt "UltimoAcceso", Cuentas.bas:443). null = nunca,
+    /// o una cuenta importada sin el dato.</summary>
+    public DateTime? UltimoIngreso { get; set; }
+    /// <summary>Desde qué IP fue ese ingreso (VB6 .cnt "UltimaIP", Cuentas.bas:444). No se muestra en ninguna web.</summary>
+    public string UltimaIp { get; set; } = "";
     public List<string> Characters { get; } = new();
 
     /// <summary>Una copia para escribir desde otro hilo: la cuenta viva puede cambiar mientras la cola de la base la guarda
@@ -41,7 +46,7 @@ public sealed class Account
         var copia = new Account
         {
             Name = Name, PasswordHash = PasswordHash, Salt = Salt, Banned = Banned, EsBot = EsBot, Trampas = Trampas,
-            Donador = Donador, UserCodeHash = UserCodeHash,
+            Donador = Donador, UserCodeHash = UserCodeHash, UltimoIngreso = UltimoIngreso, UltimaIp = UltimaIp,
         };
         copia.Characters.AddRange(Characters);
         return copia;

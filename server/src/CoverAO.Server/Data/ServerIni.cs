@@ -271,6 +271,12 @@ public sealed class ServerIni
     public int BackupsAConservar { get; private set; } = DefaultBackupsAConservar;
     public int LogDias { get; private set; } = 7;          // días de log en disco. 0 = no escribir archivo
 
+    /// <summary><c>[BASEDEDATOS] Tipo</c>: <c>sqlite</c> (una base en un archivo) o <c>archivos</c> (un <c>.chr</c> por
+    /// personaje, como el original). Vacío: el servidor elige (ver <see cref="Almacenes.Abrir"/>).</summary>
+    public string TipoDeBase { get; private set; } = "";
+    /// <summary><c>[BASEDEDATOS] Archivo</c>: el archivo de SQLite, relativo a la carpeta <c>data/</c>.</summary>
+    public string ArchivoDeBase { get; private set; } = "coverao.db";
+
     // Relojes de COMBATE (VB6 [INTERVALOS]). Los defaults son los del Server.ini del install, no inventados.
     // 0 = desactivado, igual que el resto. Ver Game/CombatTiming.cs: los dos cruzados son ATAJOS, no gates.
     public int IntervaloCastear { get; private set; } = 1000;      // IntervaloLanzaHechizo
@@ -1169,6 +1175,11 @@ public sealed class ServerIni
         // divergencia deliberada — no una infidelidad que haya que cerrar leyendo esa clave.
         cfg.BackupsAConservar = Math.Clamp(ini.GetInt("INIT", "BackupsAConservar", DefaultBackupsAConservar), 0, 500);
         cfg.LogDias = Math.Clamp(ini.GetInt("INIT", "LogDias", 7), 0, 365);
+        // LA BASE DE DATOS (fase5/postgres/DISENO.md, sección 5). Su propia sección, no [INIT]: son los datos de conexión,
+        // no reglas del juego, y con Postgres van a ser varios.
+        cfg.TipoDeBase = ini.GetString("BASEDEDATOS", "Tipo").Trim().ToLowerInvariant();
+        string archivoDeBase = ini.GetString("BASEDEDATOS", "Archivo").Trim();
+        if (archivoDeBase.Length > 0) cfg.ArchivoDeBase = archivoDeBase;
         // Los relojes se acotan con PISO 1 minuto: un 0 (o un negativo) haría que el día entero durara una
         // vuelta del loop y el mundo amaneciera y anocheciera 25 veces por segundo, con su aviso de chat cada
         // vez. El techo de 1440 es un día real; más que eso el ciclo deja de ser un ciclo.

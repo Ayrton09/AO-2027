@@ -41,6 +41,7 @@ public class ColaDeLaBaseTests : IDisposable
             object valor = prop.PropertyType == typeof(string) ? "v" + prop.Name
                 : prop.PropertyType == typeof(bool) ? true
                 : prop.PropertyType == typeof(int) ? 7
+                : prop.PropertyType == typeof(DateTime?) ? new DateTime(2026, 9, 28, 13, 15, 0, DateTimeKind.Utc)
                 : throw new InvalidOperationException(
                     $"Account.{prop.Name} es {prop.PropertyType.Name}: este test no sabe llenarlo, hay que enseñarle");
             prop.SetValue(original, valor);

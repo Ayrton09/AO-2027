@@ -20,7 +20,11 @@ public interface IAlmacen
 
     bool ExistePersonaje(string nombre);
     FichaDePersonaje? LeerPersonaje(string nombre);
+    /// <summary>Guarda a un personaje que ya existe. El alta es <see cref="CrearPersonaje"/>.</summary>
     void GuardarPersonaje(FichaDePersonaje ficha);
+    /// <summary>EL ALTA: el personaje y su lugar en la cuenta, juntos. Si la cuenta no está guardada todavía, se guarda la
+    /// que viene. false si la cuenta ya tiene los <see cref="AccountFile.MaxCharacters"/> personajes.</summary>
+    bool CrearPersonaje(Account cuenta, FichaDePersonaje ficha);
     /// <summary>APARTA el personaje en vez de borrarlo y deja el nombre libre. false si no había nada que apartar.</summary>
     bool ApartarPersonaje(string nombre);
     /// <summary>Los personajes vivos, sin los apartados.</summary>

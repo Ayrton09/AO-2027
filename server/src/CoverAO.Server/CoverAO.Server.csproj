@@ -14,6 +14,16 @@
     <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CoverAO.Protocol.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Las versiones del esquema de la base (Data/AlmacenSqlite.cs las aplica al abrir). Van ADENTRO del ejecutable: un
+         esquema que viaja aparte se puede quedar atrás del servidor que lo usa. -->
+    <EmbeddedResource Include="Data\Esquema\*.sql" LogicalName="Esquema/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

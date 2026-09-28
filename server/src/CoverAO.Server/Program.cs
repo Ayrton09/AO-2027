@@ -192,13 +192,11 @@ switch (CoverAO.Server.Build.SellarMundo(dataRoot, out string versionPrevia))
                           "Queda sellado con ésta.");
         break;
 }
-IStore store = string.Equals(Environment.GetEnvironmentVariable("COVERAO_DB"), "sqlite", StringComparison.OrdinalIgnoreCase)
-    ? new SqliteStore(Path.Combine(dataRoot, "coverao.db"))
-    : new FileStore(dataRoot);
-IAlmacen almacen = new AlmacenDeTexto(store);
+// DÓNDE SE GUARDA: [BASEDEDATOS] del Server.ini (ver Data.Almacenes).
+var (almacen, dondeSeGuarda) = Almacenes.Abrir(serverIni, dataRoot);
 var db = new Persistence(almacen, leveling);
 if (fixtureMode) db.SeedDemoIfEmpty();   // sin fixture no hay cuenta demo (cuenta_test/Rugura/…): como un server real
-Console.WriteLine($"Persistencia en {dataRoot} ({(store is SqliteStore ? "SQLite (coverao.db)" : "archivos .chr/.cnt")}). COVERAO_DB=sqlite para SQLite.");
+Console.WriteLine($"Persistencia en {dataRoot}: {dondeSeGuarda}.");
 
 
 var world = new World();
@@ -1051,6 +1049,7 @@ dispatcher?.VolcarPersistenciaDiferida(forzar: true);
 // el hilo de la cola es de fondo: si el proceso termina sin esperarla, esos guardados mueren con él. Se cierra la cola
 // y se espera a que escriba todo.
 db.Dispose();
+(almacen as IDisposable)?.Dispose();   // la base: cierra la conexión y deja el archivo entero, sin el diario al lado
 Console.WriteLine("Servidor detenido. Hasta la proxima.");
 // Recién ACÁ se libera el handler de señal: hasta este punto el sistema tiene que esperarnos, o nos mata a
 // mitad de escribir los .chr y el guardado de arriba no sirve de nada.
