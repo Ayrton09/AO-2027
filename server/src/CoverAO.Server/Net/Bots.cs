@@ -1269,9 +1269,33 @@ public sealed class Bot
         // pasaron el 15 fueron del coto a la cuna por la comida y de vuelta al coto, y ninguno al herrero.
         bool sigueFaltando = sentidos.Suma(PuntosDeComida) < ComidaMinima || sentidos.Suma(PuntosDeBebida) < BebidaMinima
                              || (hayArmaAlAlcance && LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)));
-        PostergarCompra(exito: compro && !sigueFaltando);
+        switch (DescansoTrasElViaje(compro, sigueFaltando))
+        {
+            case DescansoDeCompras.Ninguno: _descansoLargo = false; _proximaCompra = 0; break;
+            case DescansoDeCompras.Largo: PostergarCompra(exito: true); break;
+            default: PostergarCompra(); break;
+        }
         return true;
     }
+
+    /// <summary>Cuánto se espera para la próxima compra después de un viaje. Ver <see cref="DescansoTrasElViaje"/>.</summary>
+    public enum DescansoDeCompras { Ninguno, Corto, Largo }
+
+    /// <summary>
+    /// ¿CUÁNTO DESCANSA DESPUÉS DE UN VIAJE DE COMPRAS? El que se llevó todo lo que fue a buscar, el descanso largo; el que no
+    /// compró nada, el corto (<see cref="EnfriamientoFalloMinS"/> a <see cref="EnfriamientoFalloMaxS"/> segundos), que es para
+    /// no reintentar en cada vuelta un viaje que falla. Y EL QUE COMPRÓ PERO TODAVÍA LE FALTA ALGO, NINGUNO: sale ya por lo que
+    /// falta. Iba al corto, como si hubiera fallado.
+    ///
+    /// <para>Medido en `oficios23`: Ciro llegó al nivel 15 al lado de la cuna, con nueve mil monedas, y ahí se abastece para el
+    /// camino —la comida, la bebida y el arma, porque en el 16 el servidor le saca el kit de novato—. Compró la comida, esperó,
+    /// compró la bebida, esperó, y cuando le tocaba el arma ya era 16: la cuna, y con ella el paso a Rinkel, le quedó cerrada, y
+    /// siguió con el martillo de novato hasta el 20. Con la experiencia a 50 el nivel 15 le duró cuatro minutos, y las dos
+    /// esperas se comieron casi la mitad. Cada viaje que sigue así compró algo, así que no puede quedar dando vueltas: cuando
+    /// no compra nada, vuelve el descanso corto.</para>
+    /// </summary>
+    public static DescansoDeCompras DescansoTrasElViaje(bool compro, bool sigueFaltando) =>
+        !compro ? DescansoDeCompras.Corto : sigueFaltando ? DescansoDeCompras.Ninguno : DescansoDeCompras.Largo;
 
     /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres

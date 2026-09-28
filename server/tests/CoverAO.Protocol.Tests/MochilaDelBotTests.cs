@@ -131,6 +131,17 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.EmpiezaAAbastecerse(ultimo - 2, ultimo - 1));
     }
 
+    /// <summary>EL QUE COMPRÓ Y TODAVÍA NECESITA ALGO SALE YA (ver <see cref="Bot.DescansoTrasElViaje"/>): en el nivel 15 la
+    /// comida, la bebida y el arma son tres viajes, y con un descanso entre uno y otro el arma llegaba ya en el 16.</summary>
+    [Fact]
+    public void El_que_compro_y_todavia_necesita_algo_sale_ya()
+    {
+        Assert.Equal(Bot.DescansoDeCompras.Ninguno, Bot.DescansoTrasElViaje(compro: true, sigueFaltando: true));
+        Assert.Equal(Bot.DescansoDeCompras.Largo, Bot.DescansoTrasElViaje(compro: true, sigueFaltando: false));
+        Assert.Equal(Bot.DescansoDeCompras.Corto, Bot.DescansoTrasElViaje(compro: false, sigueFaltando: true));
+        Assert.Equal(Bot.DescansoDeCompras.Corto, Bot.DescansoTrasElViaje(compro: false, sigueFaltando: false));
+    }
+
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
     /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     private static double Horas(int puntos, int vueltas) =>
