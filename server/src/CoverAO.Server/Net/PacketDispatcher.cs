@@ -8310,6 +8310,9 @@ public sealed partial class PacketDispatcher
             if (!g.Members.Contains(candidate)) { NoContabilizado($"{candidate} no pertenece al clan."); return; }
             if (g.Votes.ContainsKey(p.Name)) { NoContabilizado("Ya has votado, no puedes cambiar tu voto."); return; }
             g.Votes[p.Name] = candidate;
+            // El voto va al disco en el acto, como en el original (`ContabilizarVoto`, clsClan.cls:609-610). Sin esto
+            // sólo se guardaba si además alguien ganaba, y un reinicio devolvía el voto a quien ya había votado.
+            PersistGuilds();
             session.Send(ServerMessages.ConsoleMsg("Voto contabilizado.", FuenteClan));
 
             // El umbral (mayoría absoluta de los miembros) vive en Guild.GanadorDeLaEleccion, donde se puede

@@ -35,7 +35,14 @@ public sealed class Persistence
         // nombres, y los aspirantes quedan con la solicitud vacía en vez de perderse.
         Dictionary<string, string>? JoinRequestTexts = null,
         // El texto de cada propuesta de alianza recibida, por el mismo motivo que JoinRequestTexts.
-        Dictionary<string, string>? OfferTexts = null);
+        Dictionary<string, string>? OfferTexts = null,
+        // LA PAZ PROPUESTA, LAS ELECCIONES Y LOS VOTOS. El original los guarda —las propuestas en
+        // `-propositions.pro` (clsClan.cls:785-787), las elecciones en la ficha del clan y los votos en
+        // `-votaciones.vot` (:591-611)— y acá vivían sólo en memoria: un reinicio borraba una elección en curso y
+        // las propuestas de paz sin contestar. Campos nuevos con default, como los de arriba: un blob viejo se
+        // sigue leyendo.
+        Dictionary<string, string>? PeaceOfferTexts = null, bool ElectionsOpen = false,
+        Dictionary<string, string>? Votes = null);
 
     public void SaveGuilds(IEnumerable<Game.Guild> guilds)
     {
@@ -43,7 +50,9 @@ public sealed class Persistence
             g.Members.ToList(), g.Enemies.ToList(), g.Allies.ToList(), g.AllianceOffers.Keys.ToList(),
             g.News, g.Alignment, g.JoinRequests.Keys.ToList(), g.Url, g.Codex,
             new Dictionary<string, string>(g.JoinRequests),
-            new Dictionary<string, string>(g.AllianceOffers))).ToList();
+            new Dictionary<string, string>(g.AllianceOffers),
+            new Dictionary<string, string>(g.PeaceOffers), g.ElectionsOpen,
+            new Dictionary<string, string>(g.Votes))).ToList();
         _store.WriteMisc("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
     }
 
@@ -167,6 +176,9 @@ public sealed class Persistence
             foreach (var o in d.Offers) g.AllianceOffers[o] = d.OfferTexts?.GetValueOrDefault(o, "") ?? "";
             foreach (var j in d.JoinRequests ?? new())
                 g.JoinRequests[j] = d.JoinRequestTexts?.GetValueOrDefault(j, "") ?? "";
+            foreach (var (clan, texto) in d.PeaceOfferTexts ?? new()) g.PeaceOffers[clan] = texto;
+            g.ElectionsOpen = d.ElectionsOpen;
+            foreach (var (votante, candidato) in d.Votes ?? new()) g.Votes[votante] = candidato;
             result.Add(g);
         }
         return result;

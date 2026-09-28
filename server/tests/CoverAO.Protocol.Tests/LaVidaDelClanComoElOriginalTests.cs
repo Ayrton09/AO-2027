@@ -285,4 +285,41 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
         Assert.Contains("Servidor> Aldo ha cerrado el clan llamado: Sur", tb.Textos());
         Assert.Contains("¡Clan eliminado!", ta.Textos());
     }
+
+    /// <summary>LA PAZ PROPUESTA, LAS ELECCIONES Y LOS VOTOS SOBREVIVEN A UN REINICIO, como en el original
+    /// (clsClan.cls:785-787 las propuestas; :591-611 las elecciones y los votos). Vivían sólo en memoria.
+    ///
+    /// <para>El voto se vuelca SOLO, después de un volcado que ya limpió la marca de sucio: así lo que se mide es que
+    /// el voto mismo manda el clan al disco, que era la otra mitad del hueco.</para></summary>
+    [Fact]
+    public async Task La_paz_las_elecciones_y_los_votos_sobreviven_a_un_reinicio()
+    {
+        var sur = Clan("Sur", "Aldo", 2, "Bruma", "Ciro");
+        var norte = Clan("Norte", "Dana");
+        sur.Enemies.Add("Norte"); norte.Enemies.Add("Sur");
+        var (_, sa, _) = Conectado("Aldo", "Sur");
+        var (_, sb, _) = Conectado("Bruma", "Sur");
+        var (_, sd, _) = Conectado("Dana", "Norte");
+
+        async Task Volcar()
+        {
+            var listo = new TaskCompletionSource();
+            _loop.Enqueue(() => { _dispatcher.VolcarPersistenciaDiferida(forzar: true); listo.SetResult(); });
+            await listo.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+
+        await Mandar(sd, Paquete(ClientPacketId.GuildOfferPeace).WriteAsciiString("Sur").WriteAsciiString("basta"));
+        await Mandar(sa, Paquete(ClientPacketId.GuildOpenElections));
+        await Volcar();
+        await Mandar(sb, Paquete(ClientPacketId.GuildVote).WriteAsciiString("Ciro"));
+        await Volcar();
+
+        var releidos = new Persistence(new FileStore(_root), new Leveling(_datos.LevelExp)).LoadGuilds();
+        var sur2 = releidos.Single(g => g.Name == "Sur");
+        Assert.Equal("basta", sur2.PeaceOffers["Norte"]);
+        Assert.True(sur2.ElectionsOpen);
+        Assert.Equal("Ciro", sur2.Votes["Bruma"]);
+        // CONTROL: un voto de tres miembros no alcanza la mayoría, así que la elección sigue abierta y el líder es el mismo.
+        Assert.Equal("Aldo", sur2.LeaderName);
+    }
 }

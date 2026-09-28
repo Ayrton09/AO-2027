@@ -151,6 +151,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Las noticias del clan avisan de la elección** cuando hay una abierta, como en el original.
 
+- **Las elecciones del clan, sus votos y las propuestas de paz** ya no se borran al reiniciar el servidor.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
