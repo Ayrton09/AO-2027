@@ -39,9 +39,9 @@ Con `--fixture` arranca el escenario de pruebas en lugar del mundo real.
 
 ## Persistencia
 
-Archivos `.chr` y `.cnt` en el formato INI del original (`data/Charfile/` y `data/Cuentas/`), con el
-mismo esquema, de modo que los personajes de un servidor original se leen tal cual. Las contraseñas se
-guardan con PBKDF2-HMAC-SHA256 (210 000 iteraciones); los hashes viejos se migran en el primer login.
-El personaje se guarda al desconectar, en cada autosave y antes de cada backup.
-
-`COVERAO_DB=sqlite` cambia el respaldo a SQLite detrás de la misma interfaz `IStore`.
+Una base SQLite con una tabla por cosa (`data/coverao.db`, el esquema en `Data/Esquema/`), o —con
+`[BASEDEDATOS] Tipo=archivos`— los `.chr` y `.cnt` en el formato INI del original. Todo pasa por una cola con un
+solo escritor (`Data/ColaDeLaBase.cs`): el hilo del mundo nunca espera a la base. Los datos de un servidor original
+se importan con `CoverAO.Server importar <carpeta>`, y la instalación que tenía archivos los importa sola en el
+primer arranque. Las contraseñas se guardan con PBKDF2-HMAC-SHA256 (210 000 iteraciones); los hashes viejos se
+migran en el primer login. El personaje se guarda al desconectar, en cada autosave y antes de cada backup.

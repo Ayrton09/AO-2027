@@ -221,6 +221,33 @@ public static class CharacterFile
     public static Player FromIni(IniFile ini, short charIndex, string name, string account)
         => FichaDesdeIni(ini, name).CrearPlayer(charIndex, account);
 
+    /// <summary>El hueco que deja en la lista de amigos del original borrar a uno: el nombre pasa a "Vacío"
+    /// (GameLogic.bas:1246).</summary>
+    private static bool EsHuecoDelOriginal(string amigo)
+        => amigo.Trim().Equals("Vacío", StringComparison.OrdinalIgnoreCase) || amigo.Trim().Equals("Vacio", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// EL CORREO DEL ORIGINAL, que va ADENTRO del <c>.chr</c> del destinatario (mod_Correos.bas:80-93): <c>[FLAGS] Correos</c>
+    /// cartas, cada una con <c>EmisorN</c>, <c>CartaN</c>, <c>LeidaN</c> y <c>ObjetoN</c> ("objeto-cantidad-grh-nombre"). El nuestro
+    /// va aparte, por casilla; esto es para importar un servidor del original.
+    /// </summary>
+    public static List<MailEntry> CorreoDelOriginal(IniFile ini)
+    {
+        var cartas = new List<MailEntry>();
+        int cantidad = ini.GetInt("FLAGS", "Correos");
+        for (int i = 1; i <= cantidad; i++)
+        {
+            string emisor = ini.GetString("CORREO", "Emisor" + i);
+            string carta = ini.GetString("CORREO", "Carta" + i);
+            if (emisor.Length == 0 && carta.Length == 0) continue;
+            var objeto = ini.GetString("CORREO", "Objeto" + i).Split('-');
+            short obj = objeto.Length > 0 && short.TryParse(objeto[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var o) ? o : (short)0;
+            short cant = objeto.Length > 1 && short.TryParse(objeto[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var c) ? c : (short)0;
+            cartas.Add(new MailEntry(emisor, carta, obj, cant, ini.GetByte("CORREO", "Leida" + i)));
+        }
+        return cartas;
+    }
+
     /// <summary>
     /// La ficha de un <c>.chr</c>, con los valores tal cual y los DEFAULTS del formato para las claves que falten —un
     /// archivo viejo, de antes de que existiera una sección, se lee igual—. El saneo (bandos que no existen, rangos de
@@ -228,12 +255,15 @@ public static class CharacterFile
     /// </summary>
     public static FichaDePersonaje FichaDesdeIni(IniFile ini, string nombre)
     {
-        int friendCount = ini.GetInt("AMIGOS", "Cantidad");
+        // LOS AMIGOS. Los nuestros van en [AMIGOS] Cantidad + AmigoN; los del ORIGINAL, en [AMIGOS] NombreN, con la cantidad en
+        // [FLAGS] CantidadAmigos y "Vacío" en el hueco que deja borrar uno (GameLogic.bas:1234-1255, TCP.bas:1878).
+        bool amigosDelOriginal = !ini.HasKey("AMIGOS", "Cantidad") && ini.HasKey("FLAGS", "CantidadAmigos");
+        int friendCount = amigosDelOriginal ? ini.GetInt("FLAGS", "CantidadAmigos") : ini.GetInt("AMIGOS", "Cantidad");
         var amigos = ImmutableArray.CreateBuilder<string>();
         for (int i = 1; i <= friendCount; i++)
         {
-            var amigo = ini.GetString("AMIGOS", $"Amigo{i}");
-            if (!string.IsNullOrWhiteSpace(amigo)) amigos.Add(amigo);
+            var amigo = ini.GetString("AMIGOS", (amigosDelOriginal ? "Nombre" : "Amigo") + i);
+            if (!string.IsNullOrWhiteSpace(amigo) && !EsHuecoDelOriginal(amigo)) amigos.Add(amigo);
         }
         int penaCount = ini.GetInt("PENAS", "Cant");
         var penas = ImmutableArray.CreateBuilder<string>();
@@ -278,11 +308,13 @@ public static class CharacterFile
             Nombre = nombre,
             Bando = ini.GetByte("FACCIONES", "Status", Player.StatusCiudadano),
             Rango = ini.GetByte("FACCIONES", "Rango"),
-            RenegadosMatados = ini.GetInt("FACCIONES", "CrimMatados"),
-            CiudadanosMatados = ini.GetInt("FACCIONES", "CiudadanosMatados"),
-            RepublicanosMatados = ini.GetInt("FACCIONES", "RepublicanosMatados"),
-            ArmadaMatados = ini.GetInt("FACCIONES", "ArmadaMatados"),
-            MilicianosMatados = ini.GetInt("FACCIONES", "MilicianosMatados"),
+            // Los contadores de facción, con las claves del ORIGINAL como alternativa (TCP.bas:1896-1902): un .chr suyo no
+            // trae las nuestras, y sin esto se leían en cero.
+            RenegadosMatados = ini.GetInt("FACCIONES", "CrimMatados", ini.GetInt("FACCIONES", "ReneMatados")),
+            CiudadanosMatados = ini.GetInt("FACCIONES", "CiudadanosMatados", ini.GetInt("FACCIONES", "CiudMatados")),
+            RepublicanosMatados = ini.GetInt("FACCIONES", "RepublicanosMatados", ini.GetInt("FACCIONES", "RepuMatados")),
+            ArmadaMatados = ini.GetInt("FACCIONES", "ArmadaMatados", ini.GetInt("FACCIONES", "ArmiMatados")),
+            MilicianosMatados = ini.GetInt("FACCIONES", "MilicianosMatados", ini.GetInt("FACCIONES", "MiliMatados")),
             CaosMatados = ini.GetInt("FACCIONES", "CaosMatados"),
             Privilegios = ini.GetByte("FLAGS", "Privilegios", 1),
             Baneado = ini.GetInt("FLAGS", "Ban") == 1,
@@ -301,7 +333,7 @@ public static class CharacterFile
             Raza = ini.GetByte("INIT", "Raza"),
             TierraNatal = tierraNatal,
             CiudadHogar = ini.GetByte("INIT", "Ciudad", tierraNatal),   // un .chr viejo no la trae: la tierra natal
-            MinutosDeCarcel = ini.GetInt("INIT", "Pena"),
+            MinutosDeCarcel = ini.GetInt("INIT", "Pena", ini.GetInt("COUNTERS", "Pena")),   // el original: [COUNTERS] (TCP.bas:1852)
             Clase = ini.GetByte("INIT", "Clase"),
             Descripcion = ini.GetString("INIT", "Desc"),
             Rumbo = ini.GetByte("INIT", "Heading", 3),

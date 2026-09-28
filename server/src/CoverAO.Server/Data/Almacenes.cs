@@ -5,9 +5,9 @@ namespace CoverAO.Server.Data;
 /// <c>sqlite</c> —una base en un archivo, <c>data/coverao.db</c>— o <c>archivos</c>, un <c>.chr</c> por personaje y un
 /// <c>.cnt</c> por cuenta, como el original.
 ///
-/// <para><b>Sin <c>Tipo</c>, el servidor elige</b>, y lo que no puede hacer es dejar de ver un mundo que ya existe. Una
-/// instalación nueva arranca en SQLite. Una que ya tiene personajes en archivos —y ninguna base— sigue con los archivos,
-/// y lo dice: pasarlos a la base es un paso aparte, que el host decide.</para>
+/// <para><b>Sin <c>Tipo</c>, la base.</b> Y lo que no puede pasar es dejar de ver un mundo que ya existe: una instalación que
+/// tiene personajes en archivos —o una <c>coverao.db</c> del SQLite viejo— y ninguna base los IMPORTA en el primer arranque
+/// (<see cref="Importador.ImportarSiHaceFalta"/>), y lo viejo queda al lado, renombrado.</para>
 /// </summary>
 public static class Almacenes
 {
@@ -17,7 +17,7 @@ public static class Almacenes
         switch (ini.TipoDeBase)
         {
             case "sqlite":
-                return (new AlmacenSqlite(archivo), $"SQLite ({ini.ArchivoDeBase})");
+                break;
             case "archivos":
                 return (new AlmacenDeTexto(new FileStore(dataRoot)), "archivos .chr/.cnt");
             case "":
@@ -26,21 +26,8 @@ public static class Almacenes
                 throw new InvalidOperationException(
                     $"[BASEDEDATOS] Tipo={ini.TipoDeBase}: no se conoce. Los que hay son sqlite y archivos.");
         }
-        // El SQLite viejo —el texto del .chr en una columna—, que se prendía con esta variable. Sigue andando igual hasta
-        // que se lo pase a la base nueva.
-        if (string.Equals(Environment.GetEnvironmentVariable("COVERAO_DB"), "sqlite", StringComparison.OrdinalIgnoreCase))
-            return (new AlmacenDeTexto(new SqliteStore(archivo)), $"el SQLite viejo ({ini.ArchivoDeBase}, COVERAO_DB=sqlite)");
-        if (!File.Exists(archivo) && HayPersonajesEnArchivos(dataRoot))
-            return (new AlmacenDeTexto(new FileStore(dataRoot)),
-                "archivos .chr/.cnt: ya había personajes guardados así. Para usar la base, [BASEDEDATOS] Tipo=sqlite " +
-                "después de pasarlos");
-        return (new AlmacenSqlite(archivo), $"SQLite ({ini.ArchivoDeBase})");
-    }
-
-    private static bool HayPersonajesEnArchivos(string dataRoot)
-    {
-        string personajes = Path.Combine(dataRoot, "Charfile"), cuentas = Path.Combine(dataRoot, "Cuentas");
-        return (Directory.Exists(personajes) && Directory.EnumerateFiles(personajes, "*.chr").Any())
-            || (Directory.Exists(cuentas) && Directory.EnumerateFiles(cuentas, "*.cnt").Any());
+        var importado = Importador.ImportarSiHaceFalta(dataRoot, archivo);
+        return (new AlmacenSqlite(archivo), $"SQLite ({ini.ArchivoDeBase})" +
+                (importado is null ? "" : $", recién importada: {importado.Personajes} personajes de {importado.Cuentas} cuentas"));
     }
 }

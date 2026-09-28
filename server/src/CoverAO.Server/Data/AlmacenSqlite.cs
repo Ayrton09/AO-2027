@@ -29,11 +29,16 @@ public sealed class AlmacenSqlite : IAlmacen, IDisposable
     private readonly object _deAUno = new();
 
     /// <summary>Abre la base de <paramref name="archivo"/> —o la crea— y le aplica las versiones del esquema que falten.</summary>
-    public AlmacenSqlite(string archivo)
+    public AlmacenSqlite(string archivo) : this(archivo, paraImportar: false) { }
+
+    /// <param name="paraImportar">Una base TEMPORAL que se llena de una vez y recién después pasa a ser la de verdad
+    /// (<see cref="Importador"/>): sin diario en disco ni sincronización por transacción, que con miles de personajes es la
+    /// diferencia entre segundos y minutos. Si algo falla, el archivo se tira entero.</param>
+    internal AlmacenSqlite(string archivo, bool paraImportar)
         : this(new SqliteConnectionStringBuilder
         {
             DataSource = archivo, Mode = SqliteOpenMode.ReadWriteCreate, ForeignKeys = true, Pooling = false,
-        }.ToString(), archivo)
+        }.ToString(), archivo, paraImportar)
     {
     }
 
@@ -42,11 +47,11 @@ public sealed class AlmacenSqlite : IAlmacen, IDisposable
     {
         DataSource = "coverao-" + Guid.NewGuid().ToString("N"), Mode = SqliteOpenMode.Memory,
         Cache = SqliteCacheMode.Shared, ForeignKeys = true, Pooling = false,
-    }.ToString(), archivo: null);
+    }.ToString(), archivo: null, paraImportar: false);
 
     // Pooling apagado a propósito: una conexión del pool deja el archivo abierto después de cerrarla, y ni el backup
     // restaurado ni la carpeta de un test se pueden mover o borrar mientras tanto.
-    private AlmacenSqlite(string cadena, string? archivo)
+    private AlmacenSqlite(string cadena, string? archivo, bool paraImportar)
     {
         _cadena = cadena;
         _enMemoria = archivo is null;
@@ -57,8 +62,16 @@ public sealed class AlmacenSqlite : IAlmacen, IDisposable
         {
             // WAL: el que lee no frena al que escribe. FULL: cada transacción confirmada está en el disco, la misma
             // garantía que daba la escritura atómica de los archivos.
-            if (archivo is not null) Ejecutar("PRAGMA journal_mode = WAL;");
-            Ejecutar("PRAGMA synchronous = FULL;");
+            if (paraImportar)
+            {
+                Ejecutar("PRAGMA journal_mode = MEMORY;");   // el diario sigue: el alta que no entra se deshace
+                Ejecutar("PRAGMA synchronous = OFF;");
+            }
+            else
+            {
+                if (archivo is not null) Ejecutar("PRAGMA journal_mode = WAL;");
+                Ejecutar("PRAGMA synchronous = FULL;");
+            }
             RechazarElFormatoViejo(archivo);
             Migrar();
         }

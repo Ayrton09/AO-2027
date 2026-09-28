@@ -279,15 +279,20 @@ public class AlmacenesTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_raiz, "coverao.db")));
     }
 
-    /// <summary>Un mundo que ya está en archivos no puede desaparecer porque cambió el motor por defecto.</summary>
+    /// <summary>Un mundo que ya está en archivos no puede desaparecer porque cambió el motor por defecto: se importa (ver
+    /// ImportadorTests) y lo viejo queda al lado.</summary>
     [Fact]
-    public void Con_personajes_en_archivos_y_sin_base_sigue_con_los_archivos()
+    public void Con_personajes_en_archivos_y_sin_base_los_importa()
     {
-        Directory.CreateDirectory(Path.Combine(_raiz, "Charfile"));
-        File.WriteAllText(Path.Combine(_raiz, "Charfile", "RUGURA.chr"), "[INIT]\r\nGenero=1\r\n");
+        var archivos = new AlmacenDeTexto(new FileStore(_raiz));
+        var cuenta = new Account { Name = "Duena", PasswordHash = "pbkdf2$1$a$b" };
+        archivos.GuardarCuenta(cuenta);
+        Assert.True(archivos.CrearPersonaje(cuenta, FichasDePrueba.Llena("Rugura")));
 
-        Assert.IsType<AlmacenDeTexto>(Abrir(""));
-        Assert.False(File.Exists(Path.Combine(_raiz, "coverao.db")));
+        var almacen = Abrir("");
+        try { Assert.NotNull(Assert.IsType<AlmacenSqlite>(almacen).LeerPersonaje("Rugura")); }
+        finally { (almacen as IDisposable)?.Dispose(); }
+        Assert.True(Directory.Exists(Path.Combine(_raiz, "Charfile.importado")));
     }
 
     [Fact]

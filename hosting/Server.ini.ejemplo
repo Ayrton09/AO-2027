@@ -353,7 +353,7 @@ Version=
 
 [BASEDEDATOS]
 ; Donde se guardan los personajes y las cuentas. sqlite = un archivo, data/coverao.db, nada que instalar;
-; archivos = un .chr por personaje y un .cnt por cuenta, como el original. Sin Tipo, el servidor elige:
-; sqlite si la instalacion es nueva, archivos si ya habia personajes guardados asi.
+; archivos = un .chr por personaje y un .cnt por cuenta, como el original. Sin Tipo, sqlite: si ya habia
+; personajes en archivos, el primer arranque los importa y deja lo viejo renombrado a *.importado.
 ;Tipo=sqlite
 ;Archivo=coverao.db

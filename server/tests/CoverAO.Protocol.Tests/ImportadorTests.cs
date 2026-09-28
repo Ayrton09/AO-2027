@@ -1,0 +1,287 @@
+using System.Collections.Immutable;
+using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+using Xunit;
+
+namespace CoverAO.Protocol.Tests;
+
+/// <summary>
+/// IMPORTAR Y EXPORTAR (fase5/postgres/DISENO.md, sección 6): de una carpeta nuestra, de una del ORIGINAL y del SQLite
+/// viejo a la base, y de la base a una carpeta. Todo o nada, con informe y verificación campo por campo.
+/// </summary>
+public class ImportadorTests : IDisposable
+{
+    private readonly string _raiz = Path.Combine(Path.GetTempPath(), "coverao_importar_" + Guid.NewGuid().ToString("N"));
+    private string Datos => Path.Combine(_raiz, "data");
+    private string Base => Path.Combine(_raiz, "coverao.db");
+
+    public void Dispose()
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try { Directory.Delete(_raiz, recursive: true); } catch { }
+    }
+
+    private static Account Cuenta(string nombre) => new() { Name = nombre, PasswordHash = "pbkdf2$1$a$b" };
+
+    /// <summary>Una carpeta de datos NUESTRA, armada con el almacén de archivos: dos cuentas, tres personajes y el mundo.</summary>
+    private (FichaDePersonaje[] Fichas, ClanGuardado Clan) CarpetaNuestra()
+    {
+        var archivos = new AlmacenDeTexto(new FileStore(Datos));
+        var fichas = new[]
+        {
+            FichasDePrueba.Llena("Aldo", 1) with { Clan = "Sur", Amigos = ImmutableArray.Create("Bruma"), Pareja = "" },
+            FichasDePrueba.Llena("Bruma", 2) with { Clan = "Sur", Amigos = ImmutableArray.Create("Aldo"), Pareja = "" },
+            FichasDePrueba.Llena("Ciro", 3) with { Clan = "", Amigos = ImmutableArray<string>.Empty, Pareja = "" },
+        };
+        var uno = Cuenta("CuentaUno");
+        archivos.GuardarCuenta(uno);
+        Assert.True(archivos.CrearPersonaje(uno, fichas[0]));
+        Assert.True(archivos.CrearPersonaje(uno, fichas[1]));
+        var dos = Cuenta("CuentaDos");
+        archivos.GuardarCuenta(dos);
+        Assert.True(archivos.CrearPersonaje(dos, fichas[2]));
+        var clan = ContratoDelAlmacen.ClanLleno("Sur", 1) with
+        {
+            Lider = "Aldo", Miembros = ImmutableArray.Create("Aldo", "Bruma"), Votos = ImmutableArray<KeyValuePair<string, string>>.Empty,
+        };
+        archivos.GuardarClanes(new[] { clan });
+        archivos.GuardarCasillas(new Dictionary<string, IReadOnlyList<MailEntry>> { ["Ciro"] = new[] { new MailEntry("Aldo", "hola", 12, 3) } });
+        archivos.GuardarSuelo(new[] { new ObjetoEnElSuelo(new WorldPos(1, 50, 50), 12, 3) });
+        archivos.GuardarLlavesVendidas(new[] { new LlaveVendida(40, 3, 53) });
+        archivos.GuardarRecord(17);
+        return (fichas, clan);
+    }
+
+    [Fact]
+    public void Una_carpeta_nuestra_se_importa_entera_y_verificada()
+    {
+        var (fichas, clan) = CarpetaNuestra();
+
+        var informe = Importador.Importar(Datos, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        Assert.Equal(2, informe.Cuentas);
+        Assert.Equal(3, informe.Personajes);
+        Assert.Equal(3, informe.Equivalentes);
+        Assert.Empty(informe.Avisos);
+        using var base_ = new AlmacenSqlite(Base);
+        foreach (var f in fichas) FichasDePrueba.AssertIgual(f, base_.LeerPersonaje(f.Nombre)!);
+        Assert.Equal(new[] { "Aldo", "Bruma" }, base_.LeerCuenta("CuentaUno")!.Characters);
+        ContratoDelAlmacen.AssertIgual(clan, Assert.Single(base_.LeerClanes()));
+        Assert.Equal(new[] { new MailEntry("Aldo", "hola", 12, 3) }, base_.LeerCorreo()["Ciro"]);
+        Assert.Equal(17, base_.LeerRecord());
+        Assert.Single(base_.LeerSuelo());
+        Assert.Single(base_.LeerLlavesVendidas());
+    }
+
+    /// <summary>El <c>.chr</c> del ORIGINAL escribe varias cosas con otras claves que el nuestro (TCP.bas:1840-1990): la pena
+    /// en <c>[COUNTERS]</c>, los contadores de facción abreviados, los amigos como <c>NombreN</c> con huecos "Vacío", y el
+    /// correo ADENTRO. Leído como uno nuestro, todo eso daba cero.</summary>
+    [Fact]
+    public void Un_chr_del_original_se_lee_con_sus_claves()
+    {
+        var ini = IniFile.Parse(
+            "[INIT]\r\nGenero=1\r\nRaza=1\r\nClase=3\r\nHogar=1\r\nPosition=1-50-50\r\n" +
+            "[COUNTERS]\r\nPena=30\r\n" +
+            "[FACCIONES]\r\nStatus=1\r\nCiudMatados=5\r\nReneMatados=6\r\nRepuMatados=7\r\nCaosMatados=8\r\nArmiMatados=9\r\nMiliMatados=10\r\n" +
+            "[FLAGS]\r\nCantidadAmigos=3\r\nCorreos=2\r\n" +
+            "[AMIGOS]\r\nNombre1=Aldo\r\nNombre2=Vacío\r\nNombre3=Bruma\r\n" +
+            "[CORREO]\r\nEmisor1=Ciro\r\nCarta1=hola\r\nLeida1=1\r\nObjeto1=12-3-100-Espada\r\n" +
+            "Emisor2=CoverAO Staff\r\nCarta2=bienvenido\r\nLeida2=0\r\nObjeto2=0-0-0-\r\n");
+
+        var ficha = CharacterFile.FichaDesdeIni(ini, "Viejo");
+
+        Assert.Equal(30, ficha.MinutosDeCarcel);
+        Assert.Equal(5, ficha.CiudadanosMatados);
+        Assert.Equal(6, ficha.RenegadosMatados);
+        Assert.Equal(7, ficha.RepublicanosMatados);
+        Assert.Equal(8, ficha.CaosMatados);
+        Assert.Equal(9, ficha.ArmadaMatados);
+        Assert.Equal(10, ficha.MilicianosMatados);
+        Assert.Equal(new[] { "Aldo", "Bruma" }, ficha.Amigos.AsEnumerable());
+        Assert.Equal(new[] { new MailEntry("Ciro", "hola", 12, 3, 1), new MailEntry("CoverAO Staff", "bienvenido", 0, 0) },
+            CharacterFile.CorreoDelOriginal(ini));
+    }
+
+    [Fact]
+    public void Una_carpeta_del_original_se_importa_con_su_correo()
+    {
+        Directory.CreateDirectory(Path.Combine(Datos, "Charfile"));
+        Directory.CreateDirectory(Path.Combine(Datos, "Cuentas"));
+        File.WriteAllText(Path.Combine(Datos, "Cuentas", "VIEJA.cnt"),
+            "[VIEJA]\r\nCuenta=VIEJA\r\nPassword=abc\r\nSalt=xyz\r\nBan=0\r\nUltimoAcceso=15/8/2026 13:08:07\r\nUltimaIP=10.0.0.1\r\n" +
+            "[PJS]\r\nNumPjs=1\r\nPJ1=Viejo\r\n", CoverAO.Protocol.Codec.Ansi);
+        File.WriteAllText(Path.Combine(Datos, "Charfile", "VIEJO.chr"),
+            "[INIT]\r\nGenero=1\r\nRaza=1\r\nClase=3\r\nHogar=1\r\nPosition=1-50-50\r\n[STATS]\r\nELV=12\r\n" +
+            "[COUNTERS]\r\nPena=30\r\n[FACCIONES]\r\nStatus=1\r\nCiudMatados=5\r\n" +
+            "[FLAGS]\r\nCantidadAmigos=0\r\nCorreos=1\r\n[CORREO]\r\nEmisor1=Ciro\r\nCarta1=hola\r\nLeida1=0\r\nObjeto1=12-3-100-Espada\r\n",
+            CoverAO.Protocol.Codec.Ansi);
+
+        var informe = Importador.Importar(Datos, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        using var base_ = new AlmacenSqlite(Base);
+        var viejo = base_.LeerPersonaje("Viejo")!;
+        Assert.Equal(12, viejo.Nivel);
+        Assert.Equal(30, viejo.MinutosDeCarcel);
+        Assert.Equal(5, viejo.CiudadanosMatados);
+        Assert.Equal(new[] { new MailEntry("Ciro", "hola", 12, 3) }, base_.LeerCorreo()["Viejo"]);
+        var cuenta = base_.LeerCuenta("vieja")!;
+        Assert.Equal("10.0.0.1", cuenta.UltimaIp);
+        Assert.NotNull(cuenta.UltimoIngreso);
+        Assert.False(Directory.Exists(Path.Combine(Datos, "Misc")), "leer la carpeta de origen no puede crearle nada");
+    }
+
+    /// <summary>Nada se descarta en silencio: lo que no cierra en el origen va al informe.</summary>
+    [Fact]
+    public void El_informe_dice_lo_que_no_cierra()
+    {
+        var archivos = new AlmacenDeTexto(new FileStore(Datos));
+        var cuenta = Cuenta("Cuenta");
+        cuenta.Characters.Add("Fantasma");   // la cuenta lista a uno que no existe
+        archivos.GuardarCuenta(cuenta);
+        Assert.True(archivos.CrearPersonaje(cuenta, FichasDePrueba.Llena("Aldo") with
+        {
+            Clan = "Inexistente", Amigos = ImmutableArray.Create("Nadie"), Pareja = "Nadita",
+        }));
+        archivos.GuardarPersonaje(FichasDePrueba.Llena("Huerfano"));   // un .chr que no está en ninguna cuenta
+        archivos.GuardarClanes(new[] { new ClanGuardado { Nombre = "Norte", Lider = "Zeta", Miembros = ImmutableArray.Create("Zeta") } });
+        archivos.GuardarCasillas(new Dictionary<string, IReadOnlyList<MailEntry>> { ["Nadie"] = new[] { new MailEntry("Aldo", "?", 0, 0) } });
+
+        var informe = Importador.Importar(Datos, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        string todo = string.Join("\n", informe.Avisos);
+        Assert.Contains("lista a Fantasma, que no existe", todo);
+        Assert.Contains("HUERFANO no está en ninguna cuenta", todo, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("clan Inexistente, que no existe", todo);
+        Assert.Contains("de amigo a Nadie", todo);
+        Assert.Contains("casado con Nadita", todo);
+        Assert.Contains("el clan Norte lista a Zeta, que no existe", todo);
+        Assert.Contains("carta(s) para Nadie", todo);
+    }
+
+    /// <summary>Un almacén que cambia un campo al leer: la verificación tiene que verlo.</summary>
+    private sealed class AlmacenQueCambiaElOro(IAlmacen real) : IAlmacen
+    {
+        public FichaDePersonaje? LeerPersonaje(string nombre) => real.LeerPersonaje(nombre) is { } f ? f with { Oro = f.Oro + 1 } : null;
+        public bool ExisteCuenta(string nombre) => real.ExisteCuenta(nombre);
+        public Account? LeerCuenta(string nombre) => real.LeerCuenta(nombre);
+        public void GuardarCuenta(Account cuenta) => real.GuardarCuenta(cuenta);
+        public IEnumerable<string> NombresDeCuentas() => real.NombresDeCuentas();
+        public bool ExistePersonaje(string nombre) => real.ExistePersonaje(nombre);
+        public void GuardarPersonaje(FichaDePersonaje ficha) => real.GuardarPersonaje(ficha);
+        public bool CrearPersonaje(Account cuenta, FichaDePersonaje ficha) => real.CrearPersonaje(cuenta, ficha);
+        public bool ApartarPersonaje(string nombre) => real.ApartarPersonaje(nombre);
+        public IEnumerable<string> NombresDePersonajes() => real.NombresDePersonajes();
+        public CharacterSummary? LeerResumen(string nombre) => real.LeerResumen(nombre);
+        public long? AcreditarBoveda(string nombre, long monto) => real.AcreditarBoveda(nombre, monto);
+        public IReadOnlyList<CharacterFile.FilaDeRanking> FilasDeRanking() => real.FilasDeRanking();
+        public IReadOnlyList<ClanGuardado> LeerClanes() => real.LeerClanes();
+        public void GuardarClanes(IReadOnlyList<ClanGuardado> clanes) => real.GuardarClanes(clanes);
+        public IReadOnlyList<KeyValuePair<string, string>> LeerRechazosDeClan() => real.LeerRechazosDeClan();
+        public void GuardarRechazosDeClan(IReadOnlyList<KeyValuePair<string, string>> rechazos) => real.GuardarRechazosDeClan(rechazos);
+        public IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> LeerCorreo() => real.LeerCorreo();
+        public void GuardarCasillas(IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> casillas) => real.GuardarCasillas(casillas);
+        public IReadOnlyList<ObjetoEnElSuelo> LeerSuelo() => real.LeerSuelo();
+        public void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo) => real.GuardarSuelo(suelo);
+        public IReadOnlyList<LlaveVendida> LeerLlavesVendidas() => real.LeerLlavesVendidas();
+        public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => real.GuardarLlavesVendidas(llaves);
+        public int LeerRecord() => real.LeerRecord();
+        public void GuardarRecord(int record) => real.GuardarRecord(record);
+        public string Backup(string destDir, string stem) => real.Backup(destDir, stem);
+    }
+
+    [Fact]
+    public void La_verificacion_ve_un_campo_que_no_llego_igual()
+    {
+        CarpetaNuestra();
+        using var destino = AlmacenSqlite.EnMemoria();
+
+        var informe = CopiaDeAlmacen.Copiar(new AlmacenDeTexto(new FileStore(Datos, crearCarpetas: false)), new AlmacenQueCambiaElOro(destino));
+
+        Assert.False(informe.SalioBien);
+        Assert.Equal(3, informe.Distintos.Count);
+        Assert.Contains("Oro", informe.Distintos[0]);
+    }
+
+    [Fact]
+    public void Una_base_que_ya_existe_no_se_pisa_sin_reemplazar()
+    {
+        CarpetaNuestra();
+        Assert.True(Importador.Importar(Datos, Base).SalioBien);
+
+        Assert.Throws<InvalidOperationException>(() => Importador.Importar(Datos, Base));
+
+        Assert.True(Importador.Importar(Datos, Base, reemplazar: true).SalioBien);
+        Assert.Single(Directory.GetFiles(_raiz, "coverao.db.antes-de-importar-*"));
+    }
+
+    /// <summary>El primer arranque de la versión con base, en una instalación con archivos: importa solo, y lo viejo queda al
+    /// lado, renombrado, con el informe en <c>data/</c>.</summary>
+    [Fact]
+    public void El_primer_arranque_importa_los_archivos_y_los_aparta()
+    {
+        var (fichas, _) = CarpetaNuestra();
+
+        var (almacen, dondeSeGuarda) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        try
+        {
+            var sqlite = Assert.IsType<AlmacenSqlite>(almacen);
+            FichasDePrueba.AssertIgual(fichas[0], sqlite.LeerPersonaje("Aldo")!);
+            Assert.Contains("importada", dondeSeGuarda);
+        }
+        finally { (almacen as IDisposable)?.Dispose(); }
+        Assert.True(Directory.Exists(Path.Combine(Datos, "Charfile.importado")));
+        Assert.False(Directory.Exists(Path.Combine(Datos, "Charfile")));
+        Assert.Single(Directory.GetFiles(Datos, "importacion-*.txt"));
+
+        // Y el segundo arranque ya no importa nada: abre la base.
+        var (otra, dice) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        (otra as IDisposable)?.Dispose();
+        Assert.DoesNotContain("importada", dice);
+    }
+
+    [Fact]
+    public void El_primer_arranque_importa_el_sqlite_viejo()
+    {
+        Directory.CreateDirectory(Datos);
+        string viejo = Path.Combine(Datos, "coverao.db");
+        using (var store = new SqliteStore(viejo))
+        {
+            var texto = new AlmacenDeTexto(store);
+            var cuenta = Cuenta("DelViejo");
+            texto.GuardarCuenta(cuenta);
+            Assert.True(texto.CrearPersonaje(cuenta, FichasDePrueba.Llena("Antiguo")));
+        }
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        var (almacen, _) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        try { FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Antiguo"), Assert.IsType<AlmacenSqlite>(almacen).LeerPersonaje("Antiguo")!); }
+        finally { (almacen as IDisposable)?.Dispose(); }
+        Assert.True(File.Exists(viejo + ".importado"));
+    }
+
+    /// <summary>Exportar a archivos y volver a importar da lo mismo: es la vuelta atrás.</summary>
+    [Fact]
+    public void Exportar_y_volver_a_importar_da_lo_mismo()
+    {
+        var (fichas, _) = CarpetaNuestra();
+        Assert.True(Importador.Importar(Datos, Base).SalioBien);
+        string exportado = Path.Combine(_raiz, "exportado");
+        using (var base_ = new AlmacenSqlite(Base))
+            Assert.True(Importador.Exportar(base_, exportado).SalioBien);
+
+        string otraBase = Path.Combine(_raiz, "otra.db");
+        var informe = Importador.Importar(exportado, otraBase);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        using var otra = new AlmacenSqlite(otraBase);
+        foreach (var f in fichas) FichasDePrueba.AssertIgual(f, otra.LeerPersonaje(f.Nombre)!);
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            using var b = new AlmacenSqlite(Base);
+            Importador.Exportar(b, exportado);   // a una carpeta con cosas, no
+        });
+    }
+}

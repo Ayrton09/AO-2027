@@ -224,10 +224,13 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **El mundo no se frena al leer o guardar personajes**: la base trabaja aparte, de a uno y en orden. Un baneo desde
   el panel, un /MOD o una transferencia a alguien que justo está entrando ya no se pierden.
 
-- **Los personajes y las cuentas se guardan en una base**: un archivo, `data/coverao.db`, y nada que instalar. Una
-  instalación que ya tenía personajes en archivos sigue con ellos; se elige con `[BASEDEDATOS] Tipo=` en el Server.ini.
-  Cada cuenta anota su último ingreso y desde qué IP, como el original. Los clanes, el correo, el suelo y las llaves
-  vendidas van también a la base.
+- **Los personajes y las cuentas se guardan en una base**: un archivo, `data/coverao.db`, y nada que instalar. Los
+  clanes, el correo, el suelo y las llaves vendidas van también ahí, y cada cuenta anota su último ingreso y desde qué
+  IP, como el original. Se elige con `[BASEDEDATOS] Tipo=` en el Server.ini.
+
+- **Una instalación que tenía los personajes en archivos los importa sola** en el primer arranque, verificando cada
+  uno, y deja lo viejo al lado. `CoverAO.Server importar <carpeta>` hace lo mismo con cualquier carpeta de datos,
+  también la de un servidor del original con su correo; `exportar` saca todo a `.chr` y `.cnt`.
 
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde

@@ -240,13 +240,17 @@ En una base SQLite: **un archivo, `data/coverao.db`**, y nada que instalar. Es l
 van los personajes, las cuentas y lo que guarda el mundo: clanes, correo, suelo, llaves vendidas y el récord de conectados.
 
 Una instalación que ya tenía personajes en archivos —un `.chr` por personaje en `data/Charfile/` y un `.cnt` por
-cuenta en `data/Cuentas/`, como el original— sigue con los archivos, y lo dice al arrancar. Se elige en el
-`Server.ini`:
+cuenta en `data/Cuentas/`— o la base vieja de `COVERAO_DB=sqlite` **los importa sola en el primer arranque**. Lo viejo
+queda al lado, renombrado a `*.importado`, y en `data/` queda un informe `importacion-AAAAMMDD-HHMMSS.txt` con lo
+importado y lo que no cerraba (un personaje sin cuenta, un amigo que no existe). Si la verificación no da —cada
+personaje se relee de la base y se compara con el archivo—, no se toca nada y el servidor no arranca: el informe dice
+por qué.
+
+Se elige en el `Server.ini`:
 
 ```ini
 [BASEDEDATOS]
-; sqlite (un archivo) o archivos (un .chr por personaje). Sin la clave, el servidor elige: sqlite si es nueva,
-; archivos si ya habia personajes guardados asi.
+; sqlite (un archivo) o archivos (un .chr por personaje, como el original). Sin la clave, sqlite.
 Tipo=sqlite
 ; El archivo de la base, en la carpeta data/.
 Archivo=coverao.db
@@ -254,10 +258,25 @@ Archivo=coverao.db
 
 | Clave | Qué hace |
 |---|---|
-| `Tipo` | `sqlite` o `archivos`. Vacía: el servidor elige, como dice arriba |
+| `Tipo` | `sqlite` o `archivos`. Vacía: `sqlite`, importando lo que hubiera en archivos |
 | `Archivo` | el archivo de la base, relativo a `data/`. Por defecto `coverao.db` |
 
 Como el resto del `Server.ini`, se pisan desde el entorno: `COVERAO_BASEDEDATOS_TIPO`, `COVERAO_BASEDEDATOS_ARCHIVO`.
+
+### Importar y exportar
+
+Con el servidor **apagado**:
+
+```sh
+# Pasar a la base una carpeta de datos: la de otra instalación, o la del servidor ORIGINAL (su Charfile y sus Cuentas).
+CoverAO.Server importar /ruta/a/la/carpeta
+# Pisar una base que ya tiene cosas: la de antes queda al lado, como coverao.db.antes-de-importar-...
+CoverAO.Server importar /ruta/a/la/carpeta --reemplazar
+# Sacar todo a .chr y .cnt, para mirar un personaje con un editor o para volver atrás.
+CoverAO.Server exportar /ruta/a/una/carpeta/nueva
+```
+
+La importación es todo o nada: si algo no se puede verificar, la base queda como estaba.
 
 ## Backups y apagado
 
@@ -330,9 +349,6 @@ Un backup es una carpeta con **exactamente** las tres que importan:
 No hace falta tocar nada más: los mapas, la data del juego y el cliente web se regeneran desde la
 instalación. Y **no** se restaura sólo un personaje copiando su `.chr` suelto: la cuenta que lo lista vive en
 `Cuentas/`, así que si el personaje no existía en ese momento el `.chr` queda huérfano y no aparece al entrar.
-
-Con el SQLite viejo (`COVERAO_DB=sqlite`, el que guardaba el texto de cada personaje en una columna) el backup
-también es un `.db`, y se restaura igual que el de la base.
 
 Al apagarse bien, el servidor guarda a todos los que están jugando. Sirve cualquiera de estas:
 

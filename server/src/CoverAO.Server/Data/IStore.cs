@@ -48,11 +48,14 @@ public sealed class FileStore : IStore
     private readonly string _accountDir;
     private readonly string _miscDir;
 
-    public FileStore(string dataRoot)
+    /// <param name="crearCarpetas">false para LEER una carpeta ajena sin tocarla —la de un servidor del original que se
+    /// importa, que no tiene <c>Misc/</c>—.</param>
+    public FileStore(string dataRoot, bool crearCarpetas = true)
     {
         _charDir = Path.Combine(dataRoot, "Charfile");
         _accountDir = Path.Combine(dataRoot, "Cuentas");
         _miscDir = Path.Combine(dataRoot, "Misc");
+        if (!crearCarpetas) return;
         Directory.CreateDirectory(_charDir);
         Directory.CreateDirectory(_accountDir);
         Directory.CreateDirectory(_miscDir);

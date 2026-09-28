@@ -9,14 +9,6 @@ using CoverAO.Server.Net;
 // esta contado en docs/HOSTING.md.)
 // Arquitectura: World (reemplaza UserList global) + GameLoop 40ms + EventBus + dispatch por sesion.
 
-// Modo importador: `CoverAO.Server migrate <dataDir> [dbPath]` migra .chr/.cnt/Misc legacy → SQLite y sale.
-if (args.Length > 0 && string.Equals(args[0], "migrate", StringComparison.OrdinalIgnoreCase))
-{
-    var mSrc = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "data");
-    var mDst = args.Length > 2 ? args[2] : Path.Combine(mSrc, "coverao.db");
-    return Migrator.Run(mSrc, mDst);
-}
-
 // Panel de admin: capturar la consola en un ring buffer (sin dejar de escribir en la consola real),
 // para poder mostrarla en el panel web. Se instala ANTES de cualquier salida así queda todo.
 var logRing = new CoverAO.Server.Net.LogRing(Console.Out);
@@ -28,6 +20,11 @@ Console.SetError(logRing.EspejoDeError(Console.Error));   // los errores tambié
 // El puerto del ini lo pisa el argumento de línea de comandos, que es lo más específico.
 string iniPath = Path.Combine(AppContext.BaseDirectory, "Server.ini");
 var serverIni = CoverAO.Server.Data.ServerIni.Cargar(iniPath);
+
+// LA BASE DESDE LA LÍNEA DE COMANDOS: `importar <carpeta o coverao.db vieja> [--reemplazar]` y `exportar <carpeta>`, contra
+// la base que diga el Server.ini (fase5/postgres/DISENO.md, sección 6). Hacen lo suyo y salen: el servidor no arranca.
+if (args.Length > 0 && ComandosDeLaBase.EsUno(args[0]))
+    return ComandosDeLaBase.Correr(args, Path.Combine(AppContext.BaseDirectory, "data"), serverIni);
 
 int port = serverIni.StartPort;
 if (args.Length > 0 && int.TryParse(args[0], out var p)) port = p;
