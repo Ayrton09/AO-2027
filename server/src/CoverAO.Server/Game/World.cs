@@ -213,6 +213,17 @@ public sealed class World
         return null;
     }
 
+    /// <summary>
+    /// LOS QUE ESTÁN ENTRANDO: personajes cuyo ingreso ya pasó los chequeos y se los está leyendo de la base. La lectura
+    /// sale del loop (Data.ColaDeLaBase), y mientras tanto el personaje no está en el mundo ni afuera del todo: la reserva
+    /// frena un segundo ingreso del mismo personaje y le avisa a un cambio de GM que espere a que termine de entrar.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _entrando = new(StringComparer.OrdinalIgnoreCase);
+
+    public void ReservarEntrada(string name) => _entrando[name] = 0;
+    public void SoltarEntrada(string name) => _entrando.TryRemove(name, out _);
+    public bool EstaEntrando(string name) => _entrando.ContainsKey(name.Contains('+') ? name.Replace('+', ' ') : name);
+
     /// <summary>The player standing on a tile, if any (linear scan — fine at slice scale).</summary>
     public Player? PlayerAt(WorldPos pos)
     {

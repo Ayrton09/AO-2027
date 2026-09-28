@@ -154,6 +154,77 @@ public sealed partial class PacketDispatcher
     private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));
     private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.IpOf(session.RemoteEndpoint));
 
+    /// <summary>Vuelve al hilo del mundo con la respuesta de la cola de la base (<see cref="Data.ColaDeLaBase"/>). Si el
+    /// pedido falló, el error ya quedó en el log y corre <paramref name="alFallar"/>, si hay.</summary>
+    private void Responder<T>(Task<T> pedido, Action<T> alVolver, Action? alFallar = null)
+        => pedido.ContinueWith(t =>
+        {
+            if (t.IsCompletedSuccessfully) _loop.Enqueue(() => alVolver(t.Result));
+            else if (alFallar is not null) _loop.Enqueue(alFallar);
+        }, TaskScheduler.Default);
+
+    // ── LOS PERSONAJES DESCONECTADOS ────────────────────────────────────────────────────────────────────────────
+    //
+    // Un GM que banea, advierte o edita a alguien que no está, la transferencia a la bóveda de un ausente, el amigo
+    // que se borra de la lista del otro: todos leen al desconectado de la base, lo cambian y lo guardan. La lectura
+    // va por la cola y vuelve una o dos vueltas después, y en ese hueco pueden pasar dos cosas que perderían el cambio:
+    //
+    //   · Que el personaje ENTRE AL MUNDO. Su ingreso leería lo de antes del cambio, y su primer guardado pisaría lo
+    //     que el cambio escribió. Por eso, mientras dura un cambio, su ingreso ESPERA (EntrarAlMundo), y un cambio
+    //     que llega mientras el personaje está entrando espera a que termine de entrar y se aplica sobre el vivo.
+    //   · Que llegue OTRO cambio al mismo personaje. Los dos leerían lo mismo y el segundo pisaría al primero. Por
+    //     eso el segundo espera su turno.
+
+    /// <summary>Los desconectados con un cambio en curso, y lo que espera detrás de cada uno.</summary>
+    private readonly Dictionary<string, Queue<Action>> _cambiosEnCurso = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>¿Se puede decidir YA si el personaje está conectado o no? No si está entrando al mundo —la lectura de
+    /// su ingreso está en la cola— ni si tiene un cambio de desconectado en curso: en los dos casos
+    /// <paramref name="reintentar"/> corre cuando se aclare, y se devuelve false.</summary>
+    private bool Decidible(string nombre, Action reintentar)
+    {
+        if (_world.EstaEntrando(nombre)) { _loop.Enqueue(reintentar); return false; }
+        if (_cambiosEnCurso.TryGetValue(nombre, out var enEspera)) { enEspera.Enqueue(reintentar); return false; }
+        return true;
+    }
+
+    /// <summary>Un cambio a un DESCONECTADO: lo marca "en cambio" hasta que <paramref name="pedido"/> vuelva y termine
+    /// <paramref name="alVolver"/> (o <paramref name="alFallar"/>), y recién ahí suelta lo que esperaba detrás. Lo que
+    /// <paramref name="alVolver"/> encole en la base —el guardado del personaje cambiado— queda ANTES de lo que
+    /// esperaba.</summary>
+    private void CambiarDesconectado<T>(string nombre, Task<T> pedido, Action<T> alVolver, Action? alFallar = null)
+    {
+        _cambiosEnCurso[nombre] = new Queue<Action>();
+        Responder(pedido,
+            r => { try { alVolver(r); } finally { SoltarCambio(nombre); } },
+            () => { try { alFallar?.Invoke(); } finally { SoltarCambio(nombre); } });
+    }
+
+    private void SoltarCambio(string nombre)
+    {
+        if (!_cambiosEnCurso.Remove(nombre, out var enEspera)) return;
+        // El primero vuelve a marcarlo; los demás se encolan detrás. Uno que falle no puede dejar colgados a los que
+        // siguen: detrás puede haber un ingreso al mundo esperando.
+        foreach (var siguiente in enEspera)
+        {
+            try { siguiente(); }
+            catch (Exception ex) { Console.Error.WriteLine($"[loop] lo que esperaba el cambio a {nombre}: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>UN PERSONAJE, CONECTADO O NO: el vivo si está en el mundo; si no, uno leído de la base, con el cambio
+    /// marcado en curso (ver arriba). <paramref name="accion"/> recibe el personaje —null si no existe— y el vivo —null
+    /// si está desconectado—. Lo que le haga al desconectado lo tiene que guardar ella (<c>_db.SaveCharacter</c>).</summary>
+    private void ConElPersonaje(string nombre, Action<Player?, Player?> accion)
+    {
+        if (!Decidible(nombre, () => ConElPersonaje(nombre, accion))) return;
+        var vivo = _world.PlayerByName(nombre);
+        if (vivo is not null) { accion(vivo, vivo); return; }
+        if (!_db.CharacterExists(nombre)) { accion(null, null); return; }
+        CambiarDesconectado(nombre, _db.LeerPersonajeAsync(nombre), ficha => accion(ficha?.CrearPlayer(0, ""), null),
+            alFallar: () => accion(null, null));
+    }
+
     /// <summary>
     /// Carga la cuenta y verifica la contraseña FUERA del hilo del game loop, y vuelve a él con el resultado.
     ///
@@ -362,8 +433,8 @@ public sealed partial class PacketDispatcher
             // despachando y cada paquete de login del montón suma OTRA trampa.
             //
             // Y no hace falta: lo que toca desde acá no se puede corromper. El contador y el baneo viven en la
-            // CUENTA, y el almacén serializa cada lectura y escritura con su candado; en el Player son un int
-            // y un bool que sólo crecen, con escritura atómica. La inconsistencia es de estilo, no de datos.
+            // CUENTA, y se cambian adentro de la cola de la base, de a uno; en el Player son un int y un bool que
+            // sólo crecen, con escritura atómica. La inconsistencia es de estilo, no de datos.
             RegistrarTrampa(session, session.Player, $"mandó {id} con el personaje ya adentro");
             session.Close("paquete de login estando adentro");
             return;
@@ -609,7 +680,7 @@ public sealed partial class PacketDispatcher
                 var roster = new List<CharacterSummary>(nombres.Length);
                 try
                 {
-                    if (upgraded) _db.SaveAccount(cuenta);   // el hash SHA-256 viejo, ya migrado a PBKDF2
+                    if (upgraded) _db.GuardarClaveMigrada(cuenta);   // el hash SHA-256 viejo, ya migrado a PBKDF2
                     foreach (var name in nombres)
                         if (_db.LoadSummary(name) is { } s) roster.Add(s);
                 }
@@ -695,8 +766,16 @@ public sealed partial class PacketDispatcher
                 // `File.Exists` por paquete de creación. No hashea, así que no congela el mundo como el
                 // PBKDF2 —son microsegundos contra 25 ms—, pero es I/O en el hilo sagrado y no tiene por qué
                 // estar ahí. Se hace acá, junto con la creación, y el veredicto vuelve por el loop.
+                //
+                // El "¿existe?" de acá es el índice en memoria y sólo ahorra el hash. El que decide es el de adentro de la
+                // base (CrearCuentaSiNoExiste): dos altas simultáneas del mismo nombre pasaban las dos la pregunta, y la
+                // segunda pisaba a la primera.
                 existia = _db.AccountExists(account);
-                if (!existia) { _db.CreateAccount(account, password, userCode, esBot: session.EsBot); creada = true; }
+                if (!existia)
+                {
+                    creada = _db.CrearCuentaSiNoExiste(account, password, userCode, esBot: session.EsBot) is not null;
+                    existia = !creada;
+                }
             }
             catch (Exception ex) { Console.Error.WriteLine($"[{session.RemoteEndpoint}] crear cuenta: {ex.Message}"); }
             _loop.Enqueue(() =>
@@ -806,8 +885,10 @@ public sealed partial class PacketDispatcher
                     if (claveOk && eraSuyo)
                     {
                         borrado = _db.ArchivarCharacter(personaje);
-                        acc.Characters.RemoveAll(n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase));
-                        _db.SaveAccount(acc);
+                        // Se lo saca de la cuenta GUARDADA: la de acá se leyó antes del hash, y guardarla entera pisaría
+                        // lo que cambió en el medio (Persistence.CambiarCuenta).
+                        acc = _db.CambiarCuenta(cuenta, c => c.Characters.RemoveAll(
+                            n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase))) ?? acc;
                     }
                     if (claveOk)
                         foreach (var n in acc.Characters)
@@ -887,7 +968,11 @@ public sealed partial class PacketDispatcher
                     pinOk = tipo == TipoCambiarClave ? acc.VerifyPassword(pin) : acc.VerifyUserCode(pin);
                     // El mismo piso que al crear la cuenta, y DESPUÉS de verificar el pin: el orden de las
                     // respuestas del original (39 no existe, 51/52 pin mal) no cambia por una clave corta.
-                    if (pinOk && !corta) { acc.PasswordHash = PasswordHasher.HashModern(nuevaClave); acc.Salt = ""; _db.SaveAccount(acc); }
+                    if (pinOk && !corta)
+                    {
+                        string hash = PasswordHasher.HashModern(nuevaClave);
+                        _db.CambiarCuenta(account, c => { c.PasswordHash = hash; c.Salt = ""; });
+                    }
                 }
             }
             catch (Exception ex)
@@ -966,7 +1051,7 @@ public sealed partial class PacketDispatcher
                 if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
                 if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // un baneado tampoco crea personajes nuevos
                 LoginOk(session);
-                if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
+                if (upgraded) _db.GuardarClaveMigrada(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
                 // LOS CHEQUEOS DE ConnectNewUser (TCP.bas:363), en su orden y con sus carteles. Los del NOMBRE —y el de
                 // que ya existe— no cortan la conexión: el jugador corrige y vuelve a mandar desde la misma pantalla.
                 // Los demás sí, porque sólo los provoca un cliente que no es el del juego.
@@ -1108,7 +1193,7 @@ public sealed partial class PacketDispatcher
             if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
             if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // el baneo también aplica al login directo (no solo a ConnectAccount)
             LoginOk(session);
-            if (upgraded) _db.SaveAccount(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
+            if (upgraded) _db.GuardarClaveMigrada(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
             EntrarAlMundo(session, acc, account, charName, version);
         });
     }
@@ -1118,6 +1203,13 @@ public sealed partial class PacketDispatcher
     /// VerificarCuenta) y ésta corre de vuelta en el loop, que es donde tiene que correr.</summary>
     private void EntrarAlMundo(ClientSession session, Data.Account acc, string account, string charName, string version)
     {
+        // Un cambio de GM (o una transferencia) sobre este personaje desconectado está en curso: la entrada espera a
+        // que termine, o leería lo de antes del cambio (ver ConElPersonaje).
+        if (_cambiosEnCurso.TryGetValue(charName, out var enEspera))
+        {
+            enEspera.Enqueue(() => { if (!session.Cerrada) EntrarAlMundo(session, acc, account, charName, version); });
+            return;
+        }
         // VB6 Protocol.bas:1154-1185: el nombre (64), que exista (38) y que sea de la cuenta (37), cada uno con su
         // cartel y la conexión cerrada. El nombre se valida antes de mirar el disco (path traversal).
         // El nombre: `AsciiValidos` del original (sólo letras y espacio: "Pepe1" es 64, no "no existe") y, además, la forma
@@ -1143,6 +1235,13 @@ public sealed partial class PacketDispatcher
         // éste es por IP y lo decide el host; aquél va por cuenta y corre siempre.
         if (!_ini.AllowMultiLogins && MismaIpYaConectada(session))
         { RechazarConCartel(session, MensajeIpRepetida, "ip repetida"); return; }
+        // YA ESTÁ ENTRANDO: otro ingreso del mismo personaje lo reservó y se lo está leyendo de la base (ver más abajo).
+        // El original no puede tener este estado —lee en el momento—, así que el cartel es nuestro.
+        if (_world.EstaEntrando(charName))
+        {
+            session.Send(ServerMessages.ShowMessageBox("El personaje está entrando al juego."));
+            return;
+        }
         var yaOnline = _world.PlayerByName(charName);
         if (yaOnline is not null)
         {
@@ -1175,55 +1274,38 @@ public sealed partial class PacketDispatcher
             }
         }
 
-        // ¿YA HAY ALGUIEN DE ESTA CUENTA EN EL MUNDO? (VB6 Protocol.bas:1204, mensaje 47: "solo puedes logear un
-        // personaje por cuenta"). El original lo lleva con un flag `Conectada` que escribe en el .cnt al entrar
-        // (TCP.bas:959) y borra al salir; acá se pregunta por los jugadores online, que es lo mismo sin el
-        // problema del original —si el server se cae con el flag en 1, la cuenta queda trabada—.
-        //
-        // A diferencia del gate de arriba, este NO protege ningún dato: son personajes distintos con .chr
-        // distintos. Es una regla de producto del original — y por eso la cuenta demo queda exenta en modo
-        // laboratorio, donde un solo operador maneja varios personajes a la vez (ver AplicaSesionUnicaPorCuenta).
-        var otroDeLaCuenta = !AplicaSesionUnicaPorCuenta(account) ? null : _world.Players.FirstOrDefault(
-            pl => string.Equals(pl.Account, account, StringComparison.OrdinalIgnoreCase));
-        if (otroDeLaCuenta is not null)
-        {
-            // locale_error_es.ind 47, como el resto de los carteles del ingreso (el original manda el número).
-            session.Send(ServerMessages.ShowMessageBox(
-                "Ya hay un usuario conectado con esta cuenta, solo puedes logear un personaje por cuenta."));
-            return;
-        }
-        // TOPE DE PERSONAJES EN EL MUNDO POR IP. El original tiene un tope fijo de 10 CONEXIONES por IP y un
-        // AllowMultiLogins todo-o-nada; acá se cuenta lo que importa para el juego —cuántos están JUGANDO desde
-        // una misma dirección— y se configura. Es la trampa más común del AO: la manada de alts para farmear
-        // o inclinar un evento. Con --fixture el tope es 0 salvo que el ini lo escriba (los flows entran de a varios).
-        if (_maxPersonajesPorIp > 0)
-        {
-            string ipNueva = ConnectionGuard.IpOf(session.RemoteEndpoint);
-            int desdeEstaIp = _world.Players.Count(pl => pl.Connection is not null
-                && ConnectionGuard.IpOf(pl.Connection.RemoteEndpoint) == ipNueva);
-            if (desdeEstaIp >= _maxPersonajesPorIp)
-            {
-                session.Send(ServerMessages.ShowMessageBox(
-                    $"Ya hay {desdeEstaIp} personaje(s) jugando desde tu conexión; el máximo es {_maxPersonajesPorIp}."));
-                return;
-            }
-        }
+        if (CuentaOIpOcupadas(session, account)) return;
 
-        // ESTA LECTURA SE QUEDA EN EL LOOP, A PROPÓSITO. Es disco —un `.chr` entero con inventario, banco,
-        // hechizos y skills— y por eso rompe la regla que este archivo sigue en todos lados (el roster de
-        // personajes y la ficha de clan se leen afuera). La diferencia es lo que hay ARRIBA: los cuatro gates
-        // que acaba de pasar —el personaje pertenece a la cuenta, no está ya conectado, la IP no repite, la
-        // cuenta no tiene otro adentro— miran el estado VIVO del mundo. Sacar la lectura afuera obliga a
-        // volver al loop para spawnear, y entre una cosa y otra el mundo cambió: dos logins del mismo
-        // personaje pueden pasar los dos gates y entrar los dos, que es exactamente lo que ese gate impide y
-        // la forma clásica de duplicar oro e ítems (los dos escriben el mismo .chr y el último pisa).
-        //
-        // O sea que el costo es UNA lectura por entrada al mundo, contra abrir una ventana de carrera en la
-        // compuerta que protege los datos. Se paga la lectura. Si algún día molesta, el arreglo NO es moverla
-        // sino reservar el personaje ANTES de leer (marcarlo como "entrando" en el mundo), y recién ahí se
-        // puede hacer la lectura afuera sin ventana.
-        var player = _db.LoadCharacter(charName, _world.AllocateCharIndex(), account);
-        if (player is null) { RechazarConCartel(session, CartelPersonajeNoExiste, "sin archivo de personaje"); return; }
+        // LA LECTURA SALE DEL LOOP, CON EL PERSONAJE RESERVADO. Es la base —un personaje entero con inventario, banco,
+        // hechizos y skills—, y el hilo del mundo no la espera (Data.ColaDeLaBase). Lo delicado es lo de ARRIBA: los
+        // chequeos que acaba de pasar miran el mundo VIVO, y entre la lectura y la entrada el mundo cambia. Sin más, dos
+        // ingresos del mismo personaje podían pasar los dos y entrar los dos —los dos guardando el mismo personaje, el
+        // último pisando, que es la forma clásica de duplicar oro e ítems—. Por eso el personaje se RESERVA antes de
+        // leer (`World.Entrando`): un segundo ingreso lo ve y se frena, y un cambio de GM que lo trate como desconectado
+        // espera a que termine de entrar. Lo que no protege la reserva —otro personaje de la misma cuenta, otro desde la
+        // misma IP— se vuelve a mirar cuando llega la lectura.
+        _world.ReservarEntrada(charName);
+        Responder(_db.LeerPersonajeAsync(charName), ficha =>
+        {
+            _world.SoltarEntrada(charName);
+            if (session.Cerrada) return;
+            if (ficha is null) { RechazarConCartel(session, CartelPersonajeNoExiste, "sin archivo de personaje"); return; }
+            TerminarDeEntrar(session, acc, account, ficha.CrearPlayer(_world.AllocateCharIndex(), account), version);
+        }, alFallar: () =>
+        {
+            _world.SoltarEntrada(charName);
+            if (!session.Cerrada)
+                session.Send(ServerMessages.ShowMessageBox("No se pudo cargar el personaje. Probá de nuevo en un momento."));
+        });
+    }
+
+    /// <summary>La última mitad de la entrada al mundo, con el personaje ya leído. Vuelve a mirar lo que pudo cambiar
+    /// mientras se leía: otro personaje de la misma cuenta, o desde la misma IP, que entró en el medio.</summary>
+    private void TerminarDeEntrar(ClientSession session, Data.Account acc, string account, Player player, string version)
+    {
+        if (!_ini.AllowMultiLogins && MismaIpYaConectada(session))
+        { RechazarConCartel(session, MensajeIpRepetida, "ip repetida"); return; }
+        if (CuentaOIpOcupadas(session, account)) return;
         // VB6 flags.Ban — baneo por personaje (/BAN). El original (BANCheck, Protocol.bas:1211) muestra el 22 y NO
         // corta: el jugador sigue en la pantalla de sus personajes y puede entrar con otro.
         if (player.Banned) { Cartel(session, CartelPersonajeBloqueado); return; }
@@ -1243,6 +1325,46 @@ public sealed partial class PacketDispatcher
         bool esStaff = _ini.CantidadStaff > 0 ? _ini.EsStaff(player.Name) : player.IsGm;
         if (_admin?.OnlyGms == true && !esStaff) { RechazarConCartel(session, MensajeSoloGms, "solo GMs"); return; }
         SpawnIntoWorld(session, player, version);
+    }
+
+    /// <summary>¿Hay otro personaje de la cuenta en el mundo, o ya se llegó al tope de personajes desde esta IP? Avisa y
+    /// devuelve true si alguno de los dos frena la entrada.</summary>
+    private bool CuentaOIpOcupadas(ClientSession session, string account)
+    {
+        // ¿YA HAY ALGUIEN DE ESTA CUENTA EN EL MUNDO? (VB6 Protocol.bas:1204, mensaje 47: "solo puedes logear un
+        // personaje por cuenta"). El original lo lleva con un flag `Conectada` que escribe en el .cnt al entrar
+        // (TCP.bas:959) y borra al salir; acá se pregunta por los jugadores online, que es lo mismo sin el
+        // problema del original —si el server se cae con el flag en 1, la cuenta queda trabada—.
+        //
+        // A diferencia del gate del personaje ya conectado, este NO protege ningún dato: son personajes distintos
+        // con .chr distintos. Es una regla de producto del original — y por eso la cuenta demo queda exenta en modo
+        // laboratorio, donde un solo operador maneja varios personajes a la vez (ver AplicaSesionUnicaPorCuenta).
+        var otroDeLaCuenta = !AplicaSesionUnicaPorCuenta(account) ? null : _world.Players.FirstOrDefault(
+            pl => string.Equals(pl.Account, account, StringComparison.OrdinalIgnoreCase));
+        if (otroDeLaCuenta is not null)
+        {
+            // locale_error_es.ind 47, como el resto de los carteles del ingreso (el original manda el número).
+            session.Send(ServerMessages.ShowMessageBox(
+                "Ya hay un usuario conectado con esta cuenta, solo puedes logear un personaje por cuenta."));
+            return true;
+        }
+        // TOPE DE PERSONAJES EN EL MUNDO POR IP. El original tiene un tope fijo de 10 CONEXIONES por IP y un
+        // AllowMultiLogins todo-o-nada; acá se cuenta lo que importa para el juego —cuántos están JUGANDO desde
+        // una misma dirección— y se configura. Es la trampa más común del AO: la manada de alts para farmear
+        // o inclinar un evento. Con --fixture el tope es 0 salvo que el ini lo escriba (los flows entran de a varios).
+        if (_maxPersonajesPorIp > 0)
+        {
+            string ipNueva = ConnectionGuard.IpOf(session.RemoteEndpoint);
+            int desdeEstaIp = _world.Players.Count(pl => pl.Connection is not null
+                && ConnectionGuard.IpOf(pl.Connection.RemoteEndpoint) == ipNueva);
+            if (desdeEstaIp >= _maxPersonajesPorIp)
+            {
+                session.Send(ServerMessages.ShowMessageBox(
+                    $"Ya hay {desdeEstaIp} personaje(s) jugando desde tu conexión; el máximo es {_maxPersonajesPorIp}."));
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>¿Hay ya alguien EN EL MUNDO desde la misma IP? (VB6 <c>CheckForSameIP</c>, Cuentas.bas:369).
@@ -4505,10 +4627,12 @@ public sealed partial class PacketDispatcher
         var p = session.Player;
         if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8794: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         // /INFO también sobre un personaje OFFLINE (VB6 HandleRequestCharInfo lee su .chr): sólo lectura.
-        var t = _world.PlayerByName(name) ?? (_db.CharacterExists(name) ? _db.LoadCharacter(name, 0, "") : null);
-        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {name}", FuenteInfo)); return; }
-        session.Send(ServerMessages.CharacterInfo(t)); // structured sheet for the client's /INFO window
-        session.Send(ServerMessages.ConsoleMsg($"Info de {t.Name}: clase {t.Class}, nivel {t.Level}, oro {t.Gold}, clan '{t.GuildName}'.", FuenteInfo));
+        ConElPersonaje(name, (t, _) =>
+        {
+            if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {name}", FuenteInfo)); return; }
+            session.Send(ServerMessages.CharacterInfo(t)); // structured sheet for the client's /INFO window
+            session.Send(ServerMessages.ConsoleMsg($"Info de {t.Name}: clase {t.Class}, nivel {t.Level}, oro {t.Gold}, clan '{t.GuildName}'.", FuenteInfo));
+        });
     }
 
     /// <summary>
@@ -4573,8 +4697,6 @@ public sealed partial class PacketDispatcher
     /// </summary>
     private void GmEditChar(ClientSession session, string nick, byte opcion, string arg1, string arg2)
     {
-        const int MaxOroEdit = 5_000_000;      // VB6 MAX_ORO_EDIT
-        const long MaxExpEdit = 20_000_000;    // VB6: If val(arg1) > 20000000 Then arg1 = 20000000
         var p = session.Player;
         // GATE POR TIER. El original tiene DOS caminos (Protocol.bas:7577): si sos RoleMaster, un
         // `Select Case` te da opciones distintas segun el segundo bit que lleves (RM+Consejero edita solo su
@@ -4590,9 +4712,19 @@ public sealed partial class PacketDispatcher
         // "YO" = el propio GM; si no, el jugador online, o —VB6: "todos los comandos aunque el pj esté offline"—
         // su .chr cargado del store. La mutación corre igual sobre el Player offline y SaveCharacter lo persiste;
         // los Send a t.Connection (null si está offline) son no-ops, así que no hace falta ramificar.
-        var t = string.Equals(nick, "YO", StringComparison.OrdinalIgnoreCase) ? p
-                : (_world.PlayerByName(nick) ?? (_db.CharacterExists(nick) ? _db.LoadCharacter(nick, 0, "") : null));
-        if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
+        if (string.Equals(nick, "YO", StringComparison.OrdinalIgnoreCase)) { EditarPersonaje(session, p, p, opcion, arg1, arg2); return; }
+        ConElPersonaje(nick, (t, _) =>
+        {
+            if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
+            EditarPersonaje(session, p, t, opcion, arg1, arg2);
+        });
+    }
+
+    /// <summary>La mitad de /MOD que cambia al personaje, conectado o no (ver <see cref="GmEditChar"/>).</summary>
+    private void EditarPersonaje(ClientSession session, Player p, Player t, byte opcion, string arg1, string arg2)
+    {
+        const int MaxOroEdit = 5_000_000;      // VB6 MAX_ORO_EDIT
+        const long MaxExpEdit = 20_000_000;    // VB6: If val(arg1) > 20000000 Then arg1 = 20000000
         // VB6 val(): toma el número inicial y lo que no parsea vale 0.
         long V(string s) => long.TryParse(s.Trim(), out var v) ? v : 0;
         string cambio;
@@ -4695,23 +4827,35 @@ public sealed partial class PacketDispatcher
         if (!IsDios(p)) return;   // VB6 HandleDonador: exige el tier Dios (bit 8), silencio si no
         var t = _world.PlayerByName(nick.Replace('+', ' '));
         if (t is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
-        var acc = _db.LoadAccount(t.Account);
+        // La cuenta se lee, se da vuelta y se guarda en la cola de la base (VB6 :16127: persiste en el .cnt), y los
+        // avisos salen a la vuelta.
+        Responder(_db.CambiarCuentaAsync(t.Account, cuenta => cuenta.Donador = !cuenta.Donador),
+            acc => AvisarDonador(session, p!, t, acc));
+    }
+
+    /// <summary>La vuelta de /DONADOR, con la cuenta ya cambiada (ver <see cref="GmDonador"/>).</summary>
+    private void AvisarDonador(ClientSession session, Player p, Player t, Data.Account? acc)
+    {
         if (acc is null) { session.Send(ServerMessages.ConsoleMsg($"No se encontró la cuenta de {t.Name}.", FuenteInfo)); return; }
-        acc.Donador = !acc.Donador;   // toggle
-        _db.SaveAccount(acc);         // persiste en el .cnt (VB6 :16127)
-        t.Donador = acc.Donador;      // reflejar en el char online
-        _world.BroadcastToObservers(t.Pos, ServerMessages.UpdateTagAndStatus(t));   // VB6 RefreshCharStatus
+        // Se pudo haber ido mientras se cambiaba la cuenta: su número de personaje ya puede ser de otro, y el flag lo toma
+        // de la cuenta al volver a entrar. Al GM se le confirma igual.
+        bool sigue = _world.PlayerByName(t.Name) == t;
+        if (sigue)
+        {
+            t.Donador = acc.Donador;      // reflejar en el char online
+            _world.BroadcastToObservers(t.Pos, ServerMessages.UpdateTagAndStatus(t));   // VB6 RefreshCharStatus
+        }
         if (acc.Donador)
         {
             session.Send(ServerMessages.LocaleMsg(478, t.Name));   // al GM: "Has hecho donador a la cuenta de #1"
-            t.Connection?.Send(ServerMessages.LocaleMsg(424));     // al jugador: bienvenida al modo donador
+            if (sigue) t.Connection?.Send(ServerMessages.LocaleMsg(424));     // al jugador: bienvenida al modo donador
         }
         else
         {
             session.Send(ServerMessages.LocaleMsg(479, t.Name));   // al GM: "Has quitado el donador a la cuenta de #1"
-            t.Connection?.Send(ServerMessages.LocaleMsg(480));     // al jugador: "Ya no eres usuario donador"
+            if (sigue) t.Connection?.Send(ServerMessages.LocaleMsg(480));     // al jugador: "Ya no eres usuario donador"
         }
-        Console.WriteLine($"[{session.RemoteEndpoint}] /DONADOR {p!.Name} -> {t.Name} (cuenta {acc.Name}): {(acc.Donador ? "ON" : "OFF")}");
+        Console.WriteLine($"[{session.RemoteEndpoint}] /DONADOR {p.Name} -> {t.Name} (cuenta {acc.Name}): {(acc.Donador ? "ON" : "OFF")}");
     }
 
     /// <summary>
@@ -4741,8 +4885,12 @@ public sealed partial class PacketDispatcher
         nick = nick.Replace('+', ' ').Trim();
         if (string.IsNullOrWhiteSpace(nick)) return;
 
-        var online = _world.PlayerByName(nick);
-        var target = online ?? (_db.CharacterExists(nick) ? _db.LoadCharacter(nick, 0, "") : null);
+        ConElPersonaje(nick, (target, online) => Banear(session, p!, nick, ban, target, online));
+    }
+
+    /// <summary>La mitad de /BAN que decide y cambia, con el objetivo ya resuelto (ver <see cref="GmBan"/>).</summary>
+    private void Banear(ClientSession session, Player p, string nick, bool ban, Player? target, Player? online)
+    {
         if (target is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // no existe → "Usuario offline"
         // "No se banea a un staff": el rango del objetivo hay que sacarlo del Server.ini, no del `.chr`. Si está
         // OFFLINE, `target` sale del disco y —desde que los privilegios no se persisten— trae siempre
@@ -4803,8 +4951,12 @@ public sealed partial class PacketDispatcher
 
         // Objetivo: el jugador conectado, o su .chr en disco (el original sólo chequea FileExist). Un nick
         // inexistente cae acá en null → silencio total, igual que el VB6 cuando el .chr no existe.
-        var online = _world.PlayerByName(nick);
-        var target = online ?? (_db.CharacterExists(nick) ? _db.LoadCharacter(nick, 0, "") : null);
+        ConElPersonaje(nick, (target, _) => Advertir(session, p!, nick, reason, target));
+    }
+
+    /// <summary>La mitad de /ADVERTENCIA que anota la pena, con el objetivo ya resuelto (ver <see cref="GmWarn"/>).</summary>
+    private void Advertir(ClientSession session, Player p, string nick, string reason, Player? target)
+    {
         if (target is null) return;
 
         // No se advierte a un miembro del staff (VB6: LocaleMsg 298 si el objetivo figura en la tabla de GMs).
@@ -5462,9 +5614,17 @@ public sealed partial class PacketDispatcher
         // VB6 HandleEditChar/RequestCharInfo/SKILLS (Protocol.bas:7538 "todos los comandos se pueden usar aunque el
         // pj este offline"): la inspección GM funciona sobre un personaje OFFLINE — se lee su .chr del store (mismo
         // patrón que GmBan). Como /INV/BOV/SKILLS son de sólo lectura, el Player cargado sirve igual que el online.
-        var t = _world.PlayerByName(nick) ?? (_db.CharacterExists(nick) ? _db.LoadCharacter(nick, 0, "") : null);
-        if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {nick}", Font)); return; }
+        ConElPersonaje(nick, (t, _) =>
+        {
+            if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {nick}", Font)); return; }
+            MostrarInspeccion(session, p!, t, kind);
+        });
+    }
 
+    /// <summary>Lo que muestran /INV, /BOV y /SKILLS, con el personaje ya resuelto (ver <see cref="GmInspect"/>).</summary>
+    private void MostrarInspeccion(ClientSession session, Player p, Player t, GmInspectKind kind)
+    {
+        const byte Font = FuenteInfo;   // los tres helpers del original contestan con FONTTYPE_INFO
         session.Send(ServerMessages.ConsoleMsg(t.Name, Font));
         switch (kind)
         {
@@ -5884,18 +6044,14 @@ public sealed partial class PacketDispatcher
         foreach (var miembro in g.Members.ToArray())
         {
             _world.Broadcast(ServerMessages.ConsoleMsg($"   {miembro}<{g.Name}> ha sido expulsado del servidor.", 1));
-            var online = _world.PlayerByName(miembro);
-            if (online is not null)
+            string nombreDelClan = g.Name;
+            ConElPersonaje(miembro, (t, online) =>
             {
-                online.Banned = true;
-                _db.SaveCharacter(online);
-                online.Connection?.Close($"clan <{g.Name}> baneado por un GM");
-            }
-            else if (_db.CharacterExists(miembro) && _db.LoadCharacter(miembro, 0, "") is { } off)
-            {
-                off.Banned = true;
-                _db.SaveCharacter(off);
-            }
+                if (t is null) return;
+                t.Banned = true;
+                _db.SaveCharacter(t);
+                online?.Connection?.Close($"clan <{nombreDelClan}> baneado por un GM");
+            });
         }
         Console.WriteLine($"[{session.RemoteEndpoint}] /BANCLAN {p.Name} -> <{g.Name}>, {g.Members.Count} miembros");
     }
@@ -9573,19 +9729,21 @@ public sealed partial class PacketDispatcher
     /// <para>El <c>WriteUpdateGold</c> del original manda <c>Stats.GLD</c> —la billetera, que en esta operación
     /// no cambió—, no el saldo del banco. Se replica: el paquete sale igual y con el oro de la mano.</para>
     ///
-    /// <para>La rama offline toca DISCO adentro del game loop, que es lo que en general no se hace acá. Va así
-    /// a propósito: es un <c>.chr</c> (0,75 ms medido) y no se puede martillar, porque el techo de cadencia por
-    /// sesión corre ANTES de despachar cualquier paquete (<c>ClientSession</c>). Diferirlo obligaría a llevar
-    /// un saldo pendiente por nombre y a resolverlo si el tipo se conecta en el medio — más estado y más
-    /// formas de perder oro que el milisegundo que ahorra.</para></summary>
+    /// <para>La rama offline acredita en la COLA DE LA BASE, fuera del loop. El oro sale YA de la bóveda del que manda
+    /// —esperar la vuelta para descontar dejaría que dos transferencias seguidas pasaran las dos el chequeo del saldo—
+    /// y vuelve si la acreditación no llega. Mientras tanto el destinatario queda marcado "en cambio": si justo se
+    /// conecta, su ingreso espera y entra con lo acreditado (ver <see cref="ConElPersonaje"/>).</para></summary>
     private void HandleTransferGold(ClientSession session, ByteQueueReader r)
     {
         string targetName = r.ReadAsciiString();
         int amount = r.ReadLong();
-        _loop.Enqueue(() =>
+        _loop.Enqueue(Transferir);
+
+        void Transferir()
         {
             var p = session.Player;
             if (p is null) return;
+            if (!Decidible(targetName, Transferir)) return;
             var target = _world.PlayerByName(targetName);
             // `PersonajeExiste` del original es un FileExist sobre el .chr (Admin.bas:221): vale para el que está
             // conectado y para el que no.
@@ -9597,14 +9755,18 @@ public sealed partial class PacketDispatcher
             if (p.Bank < amount)
             { session.Send(ServerMessages.ConsoleMsg("No tienes suficientes monedas de oro depositadas en tu cuenta.", FuenteInfo)); return; }
 
-            // ACREDITAR PRIMERO, DESCONTAR DESPUÉS. Al revés —como lo hace el original— el oro se destruye si la
-            // escritura del `.chr` falla: el `.chr` puede existir para el chequeo y no poder leerse un instante
-            // después (el backup lo está copiando), y ahí la excepción sube con la bóveda ya descontada.
             if (target is null)
             {
-                if (_db.AcreditarBovedaOffline(targetName, amount) is null)     // VB6: GetVar + WriteVar sobre el .chr
-                { session.Send(ServerMessages.ConsoleMsg("El personaje no existe.", FuenteInfo)); return; }
+                // DESCONECTADO (VB6: GetVar + WriteVar sobre el .chr): se descuenta ya y se acredita en la cola; si la
+                // acreditación no llega, el oro vuelve. Ver el comentario del método.
                 p.Bank -= amount;
+                string quien = p.Name;
+                CambiarDesconectado(targetName, _db.AcreditarBovedaAsync(targetName, amount), saldo =>
+                {
+                    if (saldo is null) { DevolverTransferencia(quien, targetName, amount, "El personaje no existe."); return; }
+                    TerminarTransferencia(session, p, targetName, amount);
+                }, alFallar: () => DevolverTransferencia(quien, targetName, amount, "No se pudo hacer la transferencia."));
+                return;
             }
             else
             {
@@ -9618,11 +9780,37 @@ public sealed partial class PacketDispatcher
                 target.Connection?.Send(ServerMessages.ConsoleMsg(
                     "¡Has recibido un nuevo mensaje de Finanzas Goliath, ve a un correo local para leerlo.", FuenteInfo));
             }
-            _economia?.Anotar($"transferencia {p.Name} -> {targetName}: {amount} oro (le quedan {p.Bank} en boveda)");
-            session.Send(ServerMessages.UpdateGold(p.Gold));                   // la billetera, como el original
-            session.Send(ServerMessages.ConsoleMsg(
-                $"¡Se ha realizado la transferencia correctamente! Tienes {p.Bank} monedas de oro en tu cuenta.", FuenteInfo));
-            _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
+            TerminarTransferencia(session, p, targetName, amount);
+        }
+    }
+
+    /// <summary>El cierre de una transferencia que salió bien, con el destinatario conectado o no. Si el que la mandó se
+    /// fue mientras se acreditaba, queda anotada igual y no hay a quién avisarle.</summary>
+    private void TerminarTransferencia(ClientSession session, Player p, string targetName, int amount)
+    {
+        _economia?.Anotar($"transferencia {p.Name} -> {targetName}: {amount} oro (le quedan {p.Bank} en boveda)");
+        if (session.Player != p) return;
+        session.Send(ServerMessages.UpdateGold(p.Gold));                   // la billetera, como el original
+        session.Send(ServerMessages.ConsoleMsg(
+            $"¡Se ha realizado la transferencia correctamente! Tienes {p.Bank} monedas de oro en tu cuenta.", FuenteInfo));
+        _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
+    }
+
+    /// <summary>
+    /// LA ACREDITACIÓN A UN DESCONECTADO NO LLEGÓ: el oro vuelve a la bóveda del que lo mandó. Se lo busca por NOMBRE y no
+    /// por el personaje que mandó: si se desconectó en el medio, su guardado de salida ya salió sin ese oro, y el personaje
+    /// de la transferencia es un objeto que nadie va a volver a guardar. Conectado o no —o entrando de nuevo—, lo resuelve
+    /// <see cref="ConElPersonaje"/>.
+    /// </summary>
+    private void DevolverTransferencia(string quien, string targetName, int amount, string motivo)
+    {
+        _economia?.Anotar($"transferencia {quien} -> {targetName}: {amount} oro DEVUELTO ({motivo})");
+        ConElPersonaje(quien, (emisor, conectado) =>
+        {
+            if (emisor is null) { Console.Error.WriteLine($"[transferencia] no se pudieron devolver {amount} de oro a {quien}"); return; }
+            emisor.Bank += amount;
+            if (conectado is null) { _db.SaveCharacter(emisor); return; }
+            conectado.Connection?.Send(ServerMessages.ConsoleMsg(motivo, FuenteInfo));
         });
     }
 
@@ -10025,20 +10213,23 @@ public sealed partial class PacketDispatcher
             p.Friends.RemoveAt(i);
             p.QuienAmigo = "";
 
-            var otro = _world.PlayerByName(amigo);
-            if (otro is not null)
-            {
-                int j = otro.Friends.FindIndex(f => string.Equals(f, p.Name, StringComparison.OrdinalIgnoreCase));
-                if (j < 0) return;
-                otro.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} te ha quitado de su lista de amigos.", FuenteInfo));
-                otro.Friends.RemoveAt(j);
-            }
-            // Desconectado: se lee, se corrige y se guarda en este hilo, como /BANCLAN. Hacerlo en otro hilo
-            // abre una carrera con su login (que también pasa por el loop): el guardado viejo pisaría lo nuevo.
+            // Del otro lado: conectado, en el acto y con aviso; desconectado, se lee, se corrige y se guarda como
+            // /BANCLAN (ver ConElPersonaje: su ingreso espera a que termine, así el guardado viejo no pisa lo nuevo).
             // Y no se puede repetir a gusto: después de la primera vez ya no está en la lista.
-            else if (_db.LoadCharacter(amigo, 0, "") is { } off
-                     && off.Friends.RemoveAll(f => string.Equals(f, p.Name, StringComparison.OrdinalIgnoreCase)) > 0)
-                _db.SaveCharacter(off);
+            string quien = p.Name;
+            ConElPersonaje(amigo, (otro, conectado) =>
+            {
+                if (otro is null) return;
+                if (conectado is not null)
+                {
+                    int j = otro.Friends.FindIndex(f => string.Equals(f, quien, StringComparison.OrdinalIgnoreCase));
+                    if (j < 0) return;
+                    otro.Connection?.Send(ServerMessages.ConsoleMsg($"{quien} te ha quitado de su lista de amigos.", FuenteInfo));
+                    otro.Friends.RemoveAt(j);
+                }
+                else if (otro.Friends.RemoveAll(f => string.Equals(f, quien, StringComparison.OrdinalIgnoreCase)) > 0)
+                    _db.SaveCharacter(otro);
+            });
         });
     }
 
@@ -11932,17 +12123,17 @@ public sealed partial class PacketDispatcher
     {
         LogIntentoDeTrampa(session, p, motivo);
         if (p is null) return;
-        var acc = _db.LoadAccount(p.Account);
-        int n = Math.Max(acc?.Trampas ?? 0, p.Trampas) + 1;
+        // La cuenta en memoria es la del personaje (se copió al entrar); la guardada se corrige en la cola de la base
+        // sin esperarla. El máximo cubre al que tuviera más trampas anotadas en la cuenta que en el personaje.
+        int n = p.Trampas + 1;
         p.Trampas = n;
         int echar = _ini.TrampasParaEchar, banear = _ini.TrampasParaBanear;
         bool ban = banear > 0 && n >= banear;
-        if (acc is not null)
+        _ = _db.CambiarCuentaAsync(p.Account, cuenta =>
         {
-            acc.Trampas = n;
-            if (ban) acc.Banned = true;
-            _db.SaveAccount(acc);
-        }
+            cuenta.Trampas = Math.Max(cuenta.Trampas + 1, n);
+            if (ban) cuenta.Banned = true;
+        });
         BroadcastToAdmins(ServerMessages.ConsoleMsg($"Servidor> {p.Name} lleva {n} trampa(s): {ParaElLog(motivo)}", FuenteCombate));
         _trampasLog?.Anotar($"{p.Account} {p.Name} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} #{n}: {ParaElLog(motivo)}");
         if (ban)
@@ -14277,7 +14468,7 @@ public sealed partial class PacketDispatcher
         if (p.Mounted) SacarLaMontura(p, _data);
         // Serializa acá —con el Player vivo— y escribe afuera del loop: el `fsync` de la escritura
         // atómica son ~2 ms, y multiplicados por los que se van juntos frenan el mundo para todos.
-        try { _db.GuardarEnSegundoPlano(p); }
+        try { _db.SaveCharacter(p); }
         catch (Exception ex) { Console.Error.WriteLine($"[save] {p.Name}: {ex.Message}"); }
         // Y los lugares que quedaron ocupados sin criatura: la que esperaba afuera se pierde al desconectar,
         // igual que en el original (VB6 Cerrar_Usuario, Modulo_UsUaRiOs.bas:1428-1440, que barre los tres

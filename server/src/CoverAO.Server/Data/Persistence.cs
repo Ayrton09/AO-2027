@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System.Collections.Concurrent;
+using System.Threading.Tasks;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Data;
@@ -7,26 +8,76 @@ namespace CoverAO.Server.Data;
 /// Account/character persistence. High-level logic (create, seed, summaries) is backend-agnostic; what
 /// gets stored goes through an <see cref="IAlmacen"/> —cuentas, fichas de personaje y lo que guarda el
 /// mundo—, so switching backends changes nothing about the domain.
+///
+/// <para><b>Todo pasa por la cola de la base</b> (<see cref="ColaDeLaBase"/>): un solo escritor, en orden. Las
+/// escrituras se encolan y siguen; las lecturas que hace el hilo del mundo se piden con respuesta (las
+/// <c>...Async</c>) y vuelven por el loop; las sincrónicas son para quien NO es el loop —el pool, el panel, el
+/// arranque, los tests— y, si igual las llama el loop, lo frenan y se avisa en el log. Ver fase5/postgres/DISENO.md,
+/// sección 3.</para>
 /// </summary>
-public sealed class Persistence
+public sealed class Persistence : IDisposable
 {
     private readonly IAlmacen _almacen;
+    private readonly ColaDeLaBase _cola;
     private readonly Leveling _leveling;
     private readonly Random _rng = new();   // tiradas de vida/stamina al nacer (VB6 RandomNumber)
+
+    /// <summary>
+    /// QUIÉN EXISTE, EN MEMORIA: los nombres de los personajes vivos y de las cuentas. "¿Existe tal personaje?" lo
+    /// preguntan quince lugares del loop —el <c>/BAN</c>, el correo, los amigos— y cada pregunta al almacén sería disco o
+    /// un viaje a la base. Se carga al arrancar y se actualiza con cada alta y cada borrado; como todas pasan por acá,
+    /// no puede quedar desfasado.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _personajes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte> _cuentas = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte> _lecturasAvisadas = new();
 
     public Persistence(IAlmacen almacen, Leveling leveling)
     {
         _almacen = almacen;
         _leveling = leveling;
+        foreach (var nombre in almacen.NombresDePersonajes()) _personajes[nombre] = 0;
+        foreach (var nombre in almacen.NombresDeCuentas()) _cuentas[nombre] = 0;
+        _cola = new ColaDeLaBase(almacen);
     }
 
     /// <summary>Sobre un almacén de TEXTO (los archivos o el SQLite viejo), con el adaptador de siempre.</summary>
     public Persistence(IStore store, Leveling leveling) : this(new AlmacenDeTexto(store), leveling) { }
 
-    public bool AccountExists(string name) => _almacen.ExisteCuenta(name);
-    public bool CharacterExists(string name) => _almacen.ExistePersonaje(name);
-    /// <summary>Aparta el personaje sin destruirlo (borrado de personaje, 1b). Ver <see cref="IAlmacen.ApartarPersonaje"/>.</summary>
-    public bool ArchivarCharacter(string name) => _almacen.ApartarPersonaje(name);
+    /// <summary>Cierra la cola esperando lo que quedaba encolado.</summary>
+    public void Dispose() => _cola.Dispose();
+
+    public bool AccountExists(string name) => _cuentas.ContainsKey(name);
+    public bool CharacterExists(string name) => _personajes.ContainsKey(name);
+
+    /// <summary>Aparta el personaje sin destruirlo (borrado de personaje, 1b). Ver <see cref="IAlmacen.ApartarPersonaje"/>.
+    /// Sincrónico: lo llama el borrado de personaje, que corre en el pool.</summary>
+    public bool ArchivarCharacter(string name)
+    {
+        bool apartado = Esperar("apartar un personaje", name, a => a.ApartarPersonaje(name));
+        if (apartado) _personajes.TryRemove(name, out _);
+        return apartado;
+    }
+
+    /// <summary>
+    /// La respuesta de la cola, esperándola. Para los que NO son el loop: el pool (la contraseña, el alta de cuentas, el
+    /// borrado), el panel, el arranque y los tests. Desde el loop funciona igual pero lo frena, así que se avisa una vez
+    /// por operación: es la forma de encontrar una lectura que se escapó de la conversión.
+    /// </summary>
+    private T Esperar<T>(string operacion, string? sobre, Func<IAlmacen, T> pedido)
+    {
+        if (_cola.EsElEscritor) return pedido(_almacen);
+        if (GameLoop.EnUnaVuelta && _lecturasAvisadas.TryAdd(operacion, 0))
+            Console.Error.WriteLine($"[base] el hilo del mundo espera a la base: {operacion}");
+        return _cola.PedirAsync(sobre is null ? operacion : $"{operacion} ({sobre})", pedido).GetAwaiter().GetResult();
+    }
+
+    /// <summary>Lo que guarda el mundo: se escribe por la cola, con el texto ya armado en el hilo del que llama.</summary>
+    private void GuardarEnElMundo(string clave, string texto) =>
+        _cola.Escribir($"guardar {clave}", a => a.GuardarEnElMundo(clave, texto));
+
+    /// <summary>Lo que guarda el mundo: se lee al ARRANCAR, antes de que corra el loop.</summary>
+    private string? LeerDelMundo(string clave) => Esperar("leer del mundo", clave, a => a.LeerDelMundo(clave));
 
     // --- Guild registry persistence (a single JSON blob under the "guilds" key) ---
     private sealed record GuildDto(string Name, string Leader, string Desc,
@@ -56,27 +107,27 @@ public sealed class Persistence
             new Dictionary<string, string>(g.AllianceOffers),
             new Dictionary<string, string>(g.PeaceOffers), g.ElectionsOpen,
             new Dictionary<string, string>(g.Votes))).ToList();
-        _almacen.GuardarEnElMundo("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
+        GuardarEnElMundo("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
     }
 
     /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini;
     /// acá va con el resto de los records del mundo, en <c>Misc/</c>, así entra en el backup.</summary>
-    public void SaveRecordUsuarios(int record) => _almacen.GuardarEnElMundo("record", record.ToString(
+    public void SaveRecordUsuarios(int record) => GuardarEnElMundo("record", record.ToString(
         System.Globalization.CultureInfo.InvariantCulture));
 
     public int LoadRecordUsuarios()
-        => int.TryParse(_almacen.LeerDelMundo("record"), System.Globalization.NumberStyles.Integer,
+        => int.TryParse(LeerDelMundo("record"), System.Globalization.NumberStyles.Integer,
                         System.Globalization.CultureInfo.InvariantCulture, out int r) ? r : 0;
 
     /// <summary>Las llaves ya vendidas (<see cref="Game.World.LlavesVendidas"/>): ficha del mercader → ranura → objeto.</summary>
     public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
-        => _almacen.GuardarEnElMundo("propiedades", System.Text.Json.JsonSerializer.Serialize(vendidas));
+        => GuardarEnElMundo("propiedades", System.Text.Json.JsonSerializer.Serialize(vendidas));
 
     /// <summary>Lo guardado por <see cref="SaveLlavesVendidas"/>. Un archivo ausente o ilegible da el mapa vacío y NO
     /// tira, como el suelo: con eso las casas vuelven a la venta, que es menos grave que un servidor que no arranca.</summary>
     public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
     {
-        string? json = _almacen.LeerDelMundo("propiedades");
+        string? json = LeerDelMundo("propiedades");
         if (string.IsNullOrWhiteSpace(json)) return new();
         try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<int, Dictionary<int, short>>>(json) ?? new(); }
         catch (System.Text.Json.JsonException ex)
@@ -88,12 +139,12 @@ public sealed class Persistence
 
     /// <summary>Los motivos de rechazo pendientes (<see cref="Game.World.MotivosDeRechazo"/>): personaje → motivo.</summary>
     public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
-        => _almacen.GuardarEnElMundo("rechazos-de-clan", System.Text.Json.JsonSerializer.Serialize(motivos));
+        => GuardarEnElMundo("rechazos-de-clan", System.Text.Json.JsonSerializer.Serialize(motivos));
 
     /// <summary>Lo guardado por <see cref="SaveMotivosDeRechazo"/>; ausente o ilegible, el mapa vacío.</summary>
     public Dictionary<string, string> LoadMotivosDeRechazo()
     {
-        string? json = _almacen.LeerDelMundo("rechazos-de-clan");
+        string? json = LeerDelMundo("rechazos-de-clan");
         if (string.IsNullOrWhiteSpace(json)) return new();
         try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new(); }
         catch (System.Text.Json.JsonException ex)
@@ -104,7 +155,7 @@ public sealed class Persistence
     }
 
     public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
-        => _almacen.GuardarEnElMundo("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
+        => GuardarEnElMundo("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
 
     /// <summary>El suelo de los jugadores, cuando la regla de la casa <c>PersistirSuelo</c> está prendida.
     ///
@@ -120,7 +171,7 @@ public sealed class Persistence
             if (!porMapa.TryGetValue(k, out var lista)) porMapa[k] = lista = new List<int[]>();
             lista.Add(new[] { pos.X, pos.Y, (int)obj, (int)amount });
         }
-        _almacen.GuardarEnElMundo("suelo", System.Text.Json.JsonSerializer.Serialize(porMapa));
+        GuardarEnElMundo("suelo", System.Text.Json.JsonSerializer.Serialize(porMapa));
     }
 
     /// <summary>Lo guardado por <see cref="SaveSuelo"/>. Un archivo ausente, vacío o ilegible devuelve la lista
@@ -129,7 +180,7 @@ public sealed class Persistence
     public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
     {
         var result = new List<(Game.WorldPos, short, short)>();
-        string? json = _almacen.LeerDelMundo("suelo");
+        string? json = LeerDelMundo("suelo");
         if (string.IsNullOrWhiteSpace(json)) return result;
         Dictionary<string, List<int[]>>? porMapa;
         try { porMapa = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<int[]>>>(json); }
@@ -158,14 +209,14 @@ public sealed class Persistence
 
     public Dictionary<string, List<Game.MailEntry>> LoadMailboxes()
     {
-        var json = _almacen.LeerDelMundo("mailboxes");
+        var json = LeerDelMundo("mailboxes");
         if (string.IsNullOrWhiteSpace(json)) return new();
         return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<Game.MailEntry>>>(json) ?? new();
     }
 
     public List<Game.Guild> LoadGuilds()
     {
-        var json = _almacen.LeerDelMundo("guilds");
+        var json = LeerDelMundo("guilds");
         var result = new List<Game.Guild>();
         if (string.IsNullOrWhiteSpace(json)) return result;
         var dtos = System.Text.Json.JsonSerializer.Deserialize<List<GuildDto>>(json) ?? new();
@@ -187,81 +238,103 @@ public sealed class Persistence
         return result;
     }
 
-    public Account? LoadAccount(string name) => _almacen.LeerCuenta(name);
-    public void SaveAccount(Account acc) => _almacen.GuardarCuenta(acc);
-    public IEnumerable<string> AllAccountNames() => _almacen.NombresDeCuentas();   // gestión de bans del panel
-
+    /// <summary>Sincrónicas, para quien no es el loop (ver <see cref="Esperar"/>).</summary>
+    public Account? LoadAccount(string name) => Esperar("leer una cuenta", name, a => a.LeerCuenta(name));
+    public IEnumerable<string> AllAccountNames() => Esperar("listar las cuentas", null, a => a.NombresDeCuentas().ToList());
     public Player? LoadCharacter(string name, short charIndex, string account)
-        => _almacen.LeerPersonaje(name)?.CrearPlayer(charIndex, account);
+        => Esperar("leer un personaje", name, a => a.LeerPersonaje(name))?.CrearPlayer(charIndex, account);
+    public CharacterSummary? LoadSummary(string name) => Esperar("leer un resumen", name, a => a.LeerResumen(name));
 
-    public CharacterSummary? LoadSummary(string name) => _almacen.LeerResumen(name);
-
-    public void SaveCharacter(Player p) => _almacen.GuardarPersonaje(FichaDePersonaje.Desde(p));
-
-    /// <summary>La otra mitad de un guardado: escribe una ficha ya armada. Las DOS mitades van separadas.
-    ///
-    /// <para>Guardar a todos los conectados es lo que hacen el autosave y el backup, y hasta acá las dos mitades
-    /// corrían pegadas adentro del game loop. La de armar la ficha (<see cref="FichaDePersonaje.Desde"/>) TIENE que
-    /// correr ahí —lee unos cien campos del <see cref="Player"/> vivo, y hacerlo desde otro hilo devuelve un personaje
-    /// partido al medio: el oro ya descontado y el ítem todavía sin agregar—. Ésta no: es disco, y el disco no puede
-    /// estar adentro de una vuelta de 40 ms. Medido en este equipo: 0,75 ms por <c>.chr</c>, o sea que con cien
-    /// conectados el autosave se comía dos ticks enteros. Se puede llamar desde cualquier hilo: el almacén serializa
-    /// sus escrituras.</para></summary>
-    public void GuardarFicha(FichaDePersonaje ficha) => _almacen.GuardarPersonaje(ficha);
-
-    // ── EL GUARDADO DEL QUE SE VA ────────────────────────────────────────────────────────────────────────────
-    //
-    // El autosave y el backup ya usaban las dos mitades de arriba; el de la DESCONEXIÓN se había quedado
-    // llamando a `SaveCharacter`, o sea serializando Y escribiendo adentro del game loop. Medido con el mundo
-    // real y cuatro jugadores: cuando se van los cuatro juntos, el peor tick salta de 1,3 ms a 8,9 — unos 2 ms
-    // de `fsync` por cabeza, porque la escritura atómica baja el archivo al disco de verdad. Con cien
-    // desconectándose a la vez —un reinicio anunciado, un corte de red del host— eso son cinco vueltas
-    // perdidas y el mundo se frena para todos.
-    //
-    // La mitad que serializa SIGUE en el loop, y tiene que seguir: lee el `Player` vivo, y hacerlo desde otro
-    // hilo devuelve un personaje partido al medio.
-
-    private readonly object _candadoEscrituras = new();
-    private readonly List<Task> _escriturasEnVuelo = new();
-
-    /// <summary>Arma la ficha AHORA —llamar desde el game loop— y manda el disco a segundo plano.</summary>
-    public void GuardarEnSegundoPlano(Player p)
+    /// <summary>Guarda la cuenta por la cola, con una COPIA: la viva puede cambiar mientras se escribe.</summary>
+    public void SaveAccount(Account acc)
     {
-        var ficha = FichaDePersonaje.Desde(p);
-        var escritura = Task.Run(() =>
-        {
-            try { GuardarFicha(ficha); }
-            catch (Exception ex) { Console.Error.WriteLine($"[save] {ficha.Nombre}: {ex.Message}"); }
-        });
-        lock (_candadoEscrituras)
-        {
-            _escriturasEnVuelo.RemoveAll(t => t.IsCompleted);   // la lista no crece con la sesión
-            _escriturasEnVuelo.Add(escritura);
-        }
+        var copia = acc.Copia();
+        _cuentas[copia.Name] = 0;
+        _cola.Escribir($"guardar la cuenta {copia.Name}", a => a.GuardarCuenta(copia));
     }
 
-    /// <summary>Espera las escrituras que quedaron en vuelo. La llama el APAGADO: sin esto, el que se
-    /// desconectó un segundo antes de bajar el servidor pierde su partida — el proceso termina y la tarea del
-    /// pool se abandona a medio camino. El plazo es para no colgar el apagado si el disco no responde.</summary>
+    /// <summary>Guarda al personaje por la cola. Se llama en el hilo del mundo: arma la ficha con el personaje vivo
+    /// (<see cref="FichaDePersonaje.Desde"/>), que después viaja sola.</summary>
+    public void SaveCharacter(Player p) => GuardarFicha(FichaDePersonaje.Desde(p));
+
+    /// <summary>La otra mitad de un guardado: encola una ficha ya armada. Las DOS mitades van separadas.
+    ///
+    /// <para>Guardar a todos los conectados es lo que hacen el autosave y el backup. La mitad de armar la ficha TIENE
+    /// que correr en el loop —lee unos cien campos del <see cref="Player"/> vivo, y hacerlo desde otro hilo devuelve un
+    /// personaje partido al medio: el oro ya descontado y el ítem todavía sin agregar—. Ésta no: es disco, y el disco no
+    /// puede estar adentro de una vuelta de 40 ms. Medido en este equipo: 0,75 ms por <c>.chr</c>, o sea que con cien
+    /// conectados el autosave se comía dos ticks enteros. Se puede llamar desde cualquier hilo.</para></summary>
+    public void GuardarFicha(FichaDePersonaje ficha)
+    {
+        _personajes[ficha.Nombre] = 0;
+        _cola.Escribir($"guardar a {ficha.Nombre}", a => a.GuardarPersonaje(ficha));
+    }
+
+    /// <summary>Espera a que la cola aplique todo lo encolado. La llaman el APAGADO —sin esto, el que se desconectó un
+    /// segundo antes de bajar el servidor pierde su partida— y el backup, que tiene que salir con lo último. El plazo es
+    /// para no colgar el apagado si el disco no responde.</summary>
     public void EsperarEscriturasPendientes()
     {
-        Task[] pendientes;
-        lock (_candadoEscrituras) { pendientes = _escriturasEnVuelo.ToArray(); }
-        if (pendientes.Length == 0) return;
-        try { Task.WaitAll(pendientes, TimeSpan.FromSeconds(10)); }
-        catch (Exception ex) { Console.Error.WriteLine($"[save] escrituras pendientes: {ex.Message}"); }
+        if (!_cola.Vaciar(TimeSpan.FromSeconds(30)))
+            Console.Error.WriteLine($"[save] quedaron {_cola.Pendientes} escrituras sin terminar");
     }
 
-    /// <summary>Suma a la bóveda de un personaje DESCONECTADO, sin cargarlo entero.
+    // ── LO QUE PIDE EL HILO DEL MUNDO: con respuesta, sin esperar ──────────────────────────────────────────────
+
+    /// <summary>Lee un personaje por la cola.</summary>
+    public Task<FichaDePersonaje?> LeerPersonajeAsync(string nombre)
+        => _cola.PedirAsync($"leer a {nombre}", a => a.LeerPersonaje(nombre));
+
+    /// <summary>
+    /// CAMBIA UNA CUENTA adentro del escritor: la lee, le aplica <paramref name="cambio"/> y la guarda sin que nada se meta
+    /// en el medio. Es la forma de tocar una cuenta que ya existe. Leerla, cambiarla afuera y guardarla entera pisa lo que
+    /// cambió desde que se la leyó: un baneo del panel, una trampa, un personaje borrado desde otra conexión.
+    ///
+    /// <para>Devuelve la cuenta ya cambiada (el escritor no la vuelve a tocar), o null si no existe. El cambio corre en el
+    /// hilo de la cola: sólo puede tocar la cuenta que recibe.</para>
+    /// </summary>
+    public Task<Account?> CambiarCuentaAsync(string nombre, Action<Account> cambio)
+        => _cola.PedirAsync($"cambiar la cuenta {nombre}", a => CambiarCuentaEn(a, nombre, cambio));
+
+    /// <summary>La misma, esperándola: para el pool y el panel (ver <see cref="Esperar"/>).</summary>
+    public Account? CambiarCuenta(string nombre, Action<Account> cambio)
+        => Esperar("cambiar una cuenta", nombre, a => CambiarCuentaEn(a, nombre, cambio));
+
+    private static Account? CambiarCuentaEn(IAlmacen a, string nombre, Action<Account> cambio)
+    {
+        var cuenta = a.LeerCuenta(nombre);
+        if (cuenta is null) return null;
+        cambio(cuenta);
+        a.GuardarCuenta(cuenta);
+        return cuenta;
+    }
+
+    /// <summary>
+    /// EL HASH VIEJO, YA MIGRADO. Verificar una contraseña con hash SHA-256 lo pasa a PBKDF2 en la cuenta leída
+    /// (<see cref="Account.VerifyPassword(string, out bool)"/>), y eso hay que guardarlo. Se guarda SÓLO la clave, y sólo si
+    /// la guardada sigue siendo vieja: si mientras tanto se cambió la contraseña, la nueva ya es moderna y no se toca.
+    /// </summary>
+    public void GuardarClaveMigrada(Account acc)
+    {
+        string hash = acc.PasswordHash;
+        _cola.Escribir($"migrar la clave de {acc.Name}", a => CambiarCuentaEn(a, acc.Name, c =>
+        {
+            if (PasswordHasher.IsModern(c.PasswordHash)) return;
+            c.PasswordHash = hash;
+            c.Salt = "";
+        }));
+    }
+
+    /// <summary>Suma a la bóveda de un personaje DESCONECTADO, sin cargarlo entero, por la cola.
     ///
     /// <para>Es el <c>GetVar</c>/<c>WriteVar</c> sobre <c>[STATS] BANCO</c> que usa la transferencia de oro del
     /// original (VB6 Protocol.bas:15832): el destinatario puede no estar en el mundo, y la única forma de
-    /// acreditarle es tocarle lo guardado. Se hace por el saldo solo (<see cref="IAlmacen.AcreditarBoveda"/>) y no con
-    /// <see cref="LoadCharacter"/> + <see cref="SaveCharacter"/>, que reconstruirían el personaje completo para mover un
-    /// número.</para>
+    /// acreditarle es tocarle lo guardado. Se hace por el saldo solo (<see cref="IAlmacen.AcreditarBoveda"/>) y no leyendo
+    /// y guardando el personaje completo para mover un número.</para>
     ///
     /// <para>Devuelve el saldo que quedó, o <c>null</c> si no existe el personaje.</para></summary>
-    public long? AcreditarBovedaOffline(string nombre, long monto) => _almacen.AcreditarBoveda(nombre, monto);
+    public Task<long?> AcreditarBovedaAsync(string nombre, long monto)
+        => _cola.PedirAsync($"acreditar a la bóveda de {nombre}", a => a.AcreditarBoveda(nombre, monto));
 
     /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
     /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el
@@ -272,18 +345,20 @@ public sealed class Persistence
     /// escrita en <c>data/bots.txt</c>— sí serviría desde la red.</summary>
     public Account CreateAccount(string name, string password, string userCode = "", bool esBot = false)
     {
-        // New accounts use the modern slow KDF (PBKDF2); the salt is embedded in the hash string.
-        var acc = new Account
-        {
-            Name = name,
-            Salt = "",
-            PasswordHash = PasswordHasher.HashModern(password),
-            UserCodeHash = string.IsNullOrEmpty(userCode) ? "" : PasswordHasher.HashModern(userCode),
-            EsBot = esBot,
-        };
+        var acc = CuentaNueva(name, password, userCode, esBot);
         SaveAccount(acc);
         return acc;
     }
+
+    private static Account CuentaNueva(string name, string password, string userCode, bool esBot) => new()
+    {
+        // New accounts use the modern slow KDF (PBKDF2); the salt is embedded in the hash string.
+        Name = name,
+        Salt = "",
+        PasswordHash = PasswordHasher.HashModern(password),
+        UserCodeHash = string.IsNullOrEmpty(userCode) ? "" : PasswordHasher.HashModern(userCode),
+        EsBot = esBot,
+    };
 
     /// <summary>Armadura inicial POR RAZA (VB6 RellenarInventario, TCP.bas:2212): el slot 4 del kit no sale
     /// del .dat (viene en 0), lo rellena el server según eRaza.</summary>
@@ -451,9 +526,8 @@ public sealed class Persistence
             // oro y OCHO oficios en 100—, o sea maestro de todo y rico desde el minuto cero.
             ApplyNewCharacterStats(p);
             ApplyNewbieKit(p, newbieKit, race);
-            SaveCharacter(p);
             if (!acc.Characters.Contains(name)) acc.Characters.Add(name);
-            SaveAccount(acc);
+            GuardarAlta(p, acc);
             return p;
         }
 
@@ -549,10 +623,54 @@ public sealed class Persistence
         // Va en el 16 y no desplaza a nadie: el libro tiene 35 ranuras y de la 16 en adelante están libres. La
         // advertencia de "el fixture no tiene huecos" es del INVENTARIO, donde las ranuras sí se pelean.
         p.Spells[16] = 56; // Incinerar (Incinera=1)
-        SaveCharacter(p);
         if (!acc.Characters.Contains(name)) acc.Characters.Add(name);
-        SaveAccount(acc);
+        GuardarAlta(p, acc);
         return p;
+    }
+
+    /// <summary>EL ALTA DE UN PERSONAJE: su ficha y la cuenta que lo lista, en UN solo pedido. Eran dos escrituras
+    /// sueltas, y un corte entre las dos dejaba un personaje que no figuraba en ninguna cuenta con el nombre tomado para
+    /// siempre. El nombre entra al índice ya, en el hilo del que crea: un segundo alta con el mismo nombre lo ve en el
+    /// acto.
+    ///
+    /// <para>El personaje se suma a la cuenta GUARDADA, no se guarda la que trae el que crea: ésa se leyó al verificar la
+    /// contraseña, y lo que cambió desde entonces —un baneo del panel, un personaje borrado desde otra conexión— se
+    /// perdería. La traída sirve sólo si la cuenta todavía no llegó a la base.</para></summary>
+    private void GuardarAlta(Player p, Account acc)
+    {
+        var ficha = FichaDePersonaje.Desde(p);
+        var cuenta = acc.Copia();
+        _personajes[ficha.Nombre] = 0;
+        _cuentas[cuenta.Name] = 0;
+        _cola.Escribir($"alta de {ficha.Nombre}", a =>
+        {
+            a.GuardarPersonaje(ficha);
+            var guardada = a.LeerCuenta(cuenta.Name) ?? cuenta;
+            if (!guardada.Characters.Contains(ficha.Nombre, StringComparer.OrdinalIgnoreCase))
+                guardada.Characters.Add(ficha.Nombre);
+            a.GuardarCuenta(guardada);
+        });
+    }
+
+    /// <summary>
+    /// CREA LA CUENTA SI EL NOMBRE ESTÁ LIBRE, en un solo paso. El "¿existe?" y el "escribir" iban separados, y dos altas
+    /// simultáneas del mismo nombre —dos conexiones, dos hilos del pool— podían pasar las dos la pregunta: la segunda
+    /// pisaba a la primera. Adentro del escritor no hay nada en el medio. El hash (PBKDF2, 25 ms) se hace ANTES, en el hilo
+    /// del que llama: la cola no puede frenarse con eso. Devuelve la cuenta, o null si el nombre ya estaba.
+    /// </summary>
+    public Account? CrearCuentaSiNoExiste(string name, string password, string userCode = "", bool esBot = false)
+    {
+        var acc = CuentaNueva(name, password, userCode, esBot);
+        var copia = acc.Copia();
+        bool creada = Esperar("crear una cuenta", name, a =>
+        {
+            if (a.ExisteCuenta(name)) return false;
+            a.GuardarCuenta(copia);
+            return true;
+        });
+        if (!creada) return null;
+        _cuentas[name] = 0;
+        return acc;
     }
 
     /// <summary>Seeds a demo account + characters on first run so the flows work out of the box.</summary>

@@ -491,7 +491,9 @@ public sealed class AdminServer
             case "unbanAll":
             {
                 int n = 0;
-                try { foreach (var acct in _db.AllAccountNames().ToArray()) { var ac = _db.LoadAccount(acct); if (ac is { Banned: true }) { ac.Banned = false; _db.SaveAccount(ac); n++; } } }
+                // Se lee para no reescribir las que no estaban baneadas, y se desbanea adentro de la base
+                // (Persistence.CambiarCuenta): guardar la leída pisaría lo que haya cambiado en el medio.
+                try { foreach (var acct in _db.AllAccountNames().ToArray()) if (_db.LoadAccount(acct) is { Banned: true } && _db.CambiarCuenta(acct, c => c.Banned = false) is not null) n++; }
                 catch (Exception ex) { return Fail("error: " + ex.Message); }
                 lock (_banLock) _banned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 Console.WriteLine($"[admin] unban masivo: {n} cuentas");
@@ -539,10 +541,10 @@ public sealed class AdminServer
 
     private string SetBanned(string account, bool banned)
     {
-        var acc = _db.LoadAccount(account);
+        // Adentro de la base, no leída y guardada entera: eso pisaría lo que cambió en el medio (una trampa, un personaje
+        // nuevo) y, peor, un baneo que se cruzara con el hash migrado de un login se podía perder.
+        var acc = _db.CambiarCuenta(account, c => c.Banned = banned);
         if (acc is null) return Fail($"la cuenta '{account}' no existe");
-        acc.Banned = banned;
-        _db.SaveAccount(acc);
         lock (_banLock) { _banned ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase); if (banned) _banned.Add(acc.Name); else _banned.Remove(acc.Name); }
         if (banned)   // echar de inmediato a los personajes online de esa cuenta
             _loop.Enqueue(() => { foreach (var p in _world.Players.ToArray()) if (string.Equals(p.Account, account, StringComparison.OrdinalIgnoreCase)) p.Connection?.Close("cuenta baneada"); });

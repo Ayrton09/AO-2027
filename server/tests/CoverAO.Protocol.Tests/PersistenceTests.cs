@@ -14,7 +14,7 @@ public class PersistenceTests : IDisposable
         var leveling = new Leveling(new Dictionary<int, long> { [1] = 300, [2] = 450, [3] = 675 });
         _db = new Persistence(new FileStore(_root), leveling);
     }
-    public void Dispose() { try { Directory.Delete(_root, recursive: true); } catch { } }
+    public void Dispose() { _db.Dispose(); try { Directory.Delete(_root, recursive: true); } catch { } }
 
     [Fact]
     public void CharacterRoundTripsAllModeledFields()
@@ -57,6 +57,7 @@ public class PersistenceTests : IDisposable
     {
         var p = new Player { CharIndex = 1, Name = "MiXeDcAsE", Account = "acc" };
         _db.SaveCharacter(p);
+        _db.EsperarEscriturasPendientes();   // el guardado se encola: el archivo aparece cuando la cola lo escribe
         Assert.True(File.Exists(Path.Combine(_root, "Charfile", "MIXEDCASE.chr")));
         Assert.NotNull(_db.LoadCharacter("mixedcase", 1, "acc")); // case-insensitive lookup
     }

@@ -55,7 +55,7 @@ public class SqliteStoreTests : IDisposable
 
         // 1) Save a character on the legacy flat-file backend (the source of a real migration).
         var file = new FileStore(_root);
-        var fileDb = new Persistence(file, leveling);
+        using var fileDb = new Persistence(file, leveling);
         var p = new Player { CharIndex = 7, Name = "Rugura", Account = "cuenta_test" };
         p.Class = 3; p.Race = 2; p.Gender = 1; p.Level = 25; p.Gold = 123456;
         p.MaxHp = 250; p.Hp = 200; p.MaxMana = 500; p.Mana = 480; p.Elu = 90000; p.Exp = 12345;
@@ -65,6 +65,7 @@ public class SqliteStoreTests : IDisposable
         p.Spells[1] = 12;
         p.Skills[GameLimits.SkillWrestling] = 42;
         fileDb.SaveCharacter(p);
+        fileDb.EsperarEscriturasPendientes();   // el guardado se encola: el registro crudo aparece cuando la cola lo escribe
 
         // 2) Migrate: copy the raw record (same INI serialization) into SQLite — byte-for-byte.
         using var sqlite = new SqliteStore(Path.Combine(_root, "migrated.db"));
@@ -74,7 +75,7 @@ public class SqliteStoreTests : IDisposable
         Assert.Equal(rawIni, sqlite.ReadCharacter("Rugura"));    // migrated verbatim
 
         // 3) Reload through the SQLite backend and confirm every modeled field survived.
-        var sqlDb = new Persistence(sqlite, leveling);
+        using var sqlDb = new Persistence(sqlite, leveling);
         var loaded = sqlDb.LoadCharacter("Rugura", charIndex: 99, account: "cuenta_test")!;
         Assert.Equal(3, loaded.Class);
         Assert.Equal(25, loaded.Level);

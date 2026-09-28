@@ -368,6 +368,9 @@ string HacerBackup(string motivo)
         try
         {
             EscribirGuardados(pendientes, "backup");
+            // Los guardados de arriba —y los clanes y el correo que se volcaron en el loop— están ENCOLADOS en la base:
+            // la foto sale después de que se escriban, o saldría con lo de antes.
+            db.EsperarEscriturasPendientes();
             string ruta = Backups.Crear(almacen, backupsDir, cuando, dataRoot);
             int podados = Backups.Podar(backupsDir, serverIni.BackupsAConservar);
             Console.WriteLine($"[backup] {motivo}: {Path.GetFileName(ruta)}" + (podados > 0 ? $" ({podados} viejo(s) borrado(s))" : ""));
@@ -1033,9 +1036,6 @@ try { await loopTask; } catch (OperationCanceledException) { } catch (Exception 
 // mitad deja el almacén copiado a medias.
 try { await Task.WhenAll(tareaAutosave, tareaBackup); }
 catch (Exception ex) { Console.Error.WriteLine($"[apagado] guardado en segundo plano: {ex.Message}"); }
-// Y las escrituras de los que se DESCONECTARON hace un momento, que también salieron del loop: sin esperarlas,
-// el que se fue un segundo antes de bajar el servidor pierde la partida.
-db.EsperarEscriturasPendientes();
 
 int guardados = 0;
 foreach (var pl in world.Players.ToArray())
@@ -1047,6 +1047,10 @@ if (guardados > 0) Console.WriteLine($"Guardados {guardados} personaje(s) conect
 // Clanes y correo van diferidos (una escritura cada 3 s en vez de una por accion): si quedo algo sin
 // volcar, un cierre ORDENADO no lo puede perder.
 dispatcher?.VolcarPersistenciaDiferida(forzar: true);
+// TODO LO DE ARRIBA SE ENCOLÓ en la base, detrás de lo que ya esperaba —los que se desconectaron hace un momento—, y
+// el hilo de la cola es de fondo: si el proceso termina sin esperarla, esos guardados mueren con él. Se cierra la cola
+// y se espera a que escriba todo.
+db.Dispose();
 Console.WriteLine("Servidor detenido. Hasta la proxima.");
 // Recién ACÁ se libera el handler de señal: hasta este punto el sistema tiene que esperarnos, o nos mata a
 // mitad de escribir los .chr y el guardado de arriba no sirve de nada.

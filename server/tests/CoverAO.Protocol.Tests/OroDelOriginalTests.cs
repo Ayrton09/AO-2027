@@ -32,17 +32,17 @@ public class OroDelOriginalTests
 
     /// <summary>El <c>WriteVar</c> del original: suma sobre lo que ya había y deja el resto del archivo igual.</summary>
     [Fact]
-    public void Acreditar_la_boveda_de_un_desconectado_suma_sobre_lo_que_habia()
+    public async Task Acreditar_la_boveda_de_un_desconectado_suma_sobre_lo_que_habia()
     {
         string raiz = Raiz();
         try
         {
             var store = new FileStore(raiz);
             store.WriteCharacter("Ausente", "[STATS]\r\nGLD=7\r\nBANCO=100\r\n[FLAGS]\r\nMuerto=0\r\n");
-            var db = new Persistence(store, Leveling());
+            using var db = new Persistence(store, Leveling());
 
-            Assert.Equal(150, db.AcreditarBovedaOffline("Ausente", 50));
-            Assert.Equal(200, db.AcreditarBovedaOffline("Ausente", 50));   // sobre lo ya acreditado, no sobre 100
+            Assert.Equal(150, await db.AcreditarBovedaAsync("Ausente", 50));
+            Assert.Equal(200, await db.AcreditarBovedaAsync("Ausente", 50));   // sobre lo ya acreditado, no sobre 100
 
             // Y NO puede pisar el resto del personaje: el original toca UNA clave.
             string ini = store.ReadCharacter("Ausente")!;
@@ -55,13 +55,13 @@ public class OroDelOriginalTests
     /// <summary>Sin <c>.chr</c> no hay a quién acreditarle: el handler necesita distinguirlo para contestar
     /// "El personaje no existe." en vez de tragarse el oro.</summary>
     [Fact]
-    public void Acreditar_a_alguien_que_no_existe_devuelve_nulo()
+    public async Task Acreditar_a_alguien_que_no_existe_devuelve_nulo()
     {
         string raiz = Raiz();
         try
         {
-            var db = new Persistence(new FileStore(raiz), Leveling());
-            Assert.Null(db.AcreditarBovedaOffline("NadieAqui", 50));
+            using var db = new Persistence(new FileStore(raiz), Leveling());
+            Assert.Null(await db.AcreditarBovedaAsync("NadieAqui", 50));
         }
         finally { Directory.Delete(raiz, recursive: true); }
     }

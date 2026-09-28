@@ -61,6 +61,13 @@ public sealed class GameLoop
 
     public void Stop() => _cts?.Cancel();
 
+    [ThreadStatic] private static bool _enUnaVuelta;
+
+    /// <summary>¿Corre esto ADENTRO de una vuelta del mundo? Lo mira la persistencia para avisar de una lectura que frena
+    /// el loop (ver <see cref="Data.Persistence"/>). Vale durante el drenaje y el tick, que son sincrónicos: entre
+    /// vueltas el hilo es del pool y la marca está apagada.</summary>
+    public static bool EnUnaVuelta => _enUnaVuelta;
+
     private async Task Loop(CancellationToken token)
     {
         var sw = Stopwatch.StartNew();
@@ -68,8 +75,13 @@ public sealed class GameLoop
         while (!token.IsCancellationRequested)
         {
             long t0 = Stopwatch.GetTimestamp();
-            Drain();
-            OnTick();
+            _enUnaVuelta = true;
+            try
+            {
+                Drain();
+                OnTick();
+            }
+            finally { _enUnaVuelta = false; }
             _muestras[_muestraIdx] = Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
             _muestraIdx = (_muestraIdx + 1) % _muestras.Length;
             _muestrasTotales++;

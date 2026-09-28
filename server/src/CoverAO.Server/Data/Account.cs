@@ -33,6 +33,20 @@ public sealed class Account
     public string UserCodeHash { get; set; } = "";
     public List<string> Characters { get; } = new();
 
+    /// <summary>Una copia para escribir desde otro hilo: la cuenta viva puede cambiar mientras la cola de la base la guarda
+    /// (<see cref="Persistence.SaveAccount"/>). Un campo nuevo tiene que entrar acá; lo cuida un test que las compara
+    /// propiedad por propiedad.</summary>
+    public Account Copia()
+    {
+        var copia = new Account
+        {
+            Name = Name, PasswordHash = PasswordHash, Salt = Salt, Banned = Banned, EsBot = EsBot, Trampas = Trampas,
+            Donador = Donador, UserCodeHash = UserCodeHash,
+        };
+        copia.Characters.AddRange(Characters);
+        return copia;
+    }
+
     public bool VerifyPassword(string password) => VerifyPassword(password, out _);
 
     /// <summary>Verifica el código de recuperación. Sin código guardado devuelve false: una cuenta vieja

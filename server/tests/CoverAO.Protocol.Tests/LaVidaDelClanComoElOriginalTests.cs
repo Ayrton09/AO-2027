@@ -35,11 +35,14 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
             .Select(x => { var r = new ByteQueueReader(x); r.ReadByte(); return r.ReadAsciiString(); }).ToList();
     }
 
+    private readonly Persistence _db;
+
     public LaVidaDelClanComoElOriginalTests()
     {
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(_datos.LevelExp);
-        _dispatcher = new PacketDispatcher(_world, _loop, new Persistence(new FileStore(_root), leveling), _datos, leveling);
+        _db = new Persistence(new FileStore(_root), leveling);
+        _dispatcher = new PacketDispatcher(_world, _loop, _db, _datos, leveling);
         _corriendo = _loop.RunAsync(_cts.Token);
     }
 
@@ -47,6 +50,7 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
     {
         _cts.Cancel();
         try { _corriendo.Wait(TimeSpan.FromSeconds(5)); } catch { /* cancelado */ }
+        _db.Dispose();
         try { Directory.Delete(_root, recursive: true); } catch { /* el temp queda */ }
     }
 
@@ -313,6 +317,7 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
         await Volcar();
         await Mandar(sb, Paquete(ClientPacketId.GuildVote).WriteAsciiString("Ciro"));
         await Volcar();
+        _db.EsperarEscriturasPendientes();   // el volcado se encola en la base: el "reinicio" lee después
 
         var releidos = new Persistence(new FileStore(_root), new Leveling(_datos.LevelExp)).LoadGuilds();
         var sur2 = releidos.Single(g => g.Name == "Sur");

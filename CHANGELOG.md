@@ -218,6 +218,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **El anticheat tiene memoria**: a las tres trampas se echa y a las seis se banea. Los movimientos grandes de oro
   quedan registrados.
 
+- **El mundo no se frena al leer o guardar personajes**: la base trabaja aparte, de a uno y en orden. Un baneo desde
+  el panel, un /MOD o una transferencia a alguien que justo está entrando ya no se pierden.
+
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no
