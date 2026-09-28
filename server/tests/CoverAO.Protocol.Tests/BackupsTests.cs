@@ -70,7 +70,7 @@ public class BackupsTests : IDisposable
             store.WriteCharacter("Rugura", "[FLAGS]\r\nPrivilegios=1\r\n");
             store.WriteAccount("cuenta_test", "[INIT]\r\nName=cuenta_test\r\n");
             store.WriteMisc("GUILDS", "{}");
-            ruta = Backups.Crear(store, Path.Combine(_dir, "backups"), new DateTime(2026, 7, 27, 12, 0, 0));
+            ruta = Backups.Crear(new AlmacenDeTexto(store), Path.Combine(_dir, "backups"), new DateTime(2026, 7, 27, 12, 0, 0));
             // Sigue viva y escribible DESPUÉS del snapshot: VACUUM INTO no cierra ni bloquea la conexión.
             store.WriteCharacter("Merlin", "[FLAGS]\r\nPrivilegios=1\r\n");
         }
@@ -92,7 +92,7 @@ public class BackupsTests : IDisposable
         store.WriteAccount("cuenta_test", "[INIT]\r\n");
         store.WriteMisc("GUILDS", "{}");
 
-        string ruta = Backups.Crear(store, Path.Combine(_dir, "backups"), new DateTime(2026, 7, 27, 12, 0, 0));
+        string ruta = Backups.Crear(new AlmacenDeTexto(store), Path.Combine(_dir, "backups"), new DateTime(2026, 7, 27, 12, 0, 0));
         Assert.True(File.Exists(Path.Combine(ruta, "Charfile", "RUGURA.chr")));
         Assert.True(File.Exists(Path.Combine(ruta, "Cuentas", "CUENTA_TEST.cnt")));
         Assert.True(File.Exists(Path.Combine(ruta, "Misc", "GUILDS.json")));

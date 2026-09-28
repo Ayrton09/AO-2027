@@ -52,7 +52,7 @@ public class PaginaPublicaTests : IDisposable
 
     private JsonElement Foto(FileStore store, Func<string, bool>? esStaff = null, int tope = 25)
     {
-        var estado = new EstadoPublico(new World(), store, new GameLoop(), esStaff ?? (_ => false), "1.0.0", tope);
+        var estado = new EstadoPublico(new World(), new AlmacenDeTexto(store), new GameLoop(), esStaff ?? (_ => false), "1.0.0", tope);
         return JsonDocument.Parse(estado.Json()).RootElement;
     }
 

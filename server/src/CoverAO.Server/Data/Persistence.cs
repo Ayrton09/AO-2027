@@ -4,26 +4,29 @@ using CoverAO.Server.Game;
 namespace CoverAO.Server.Data;
 
 /// <summary>
-/// Account/character persistence. High-level logic (create, seed, summaries) is backend-agnostic;
-/// the raw record storage is delegated to an <see cref="IStore"/> (files or SQLite). Records are the
-/// same INI text either way, so switching backends changes nothing about the domain or format.
+/// Account/character persistence. High-level logic (create, seed, summaries) is backend-agnostic; what
+/// gets stored goes through an <see cref="IAlmacen"/> —cuentas, fichas de personaje y lo que guarda el
+/// mundo—, so switching backends changes nothing about the domain.
 /// </summary>
 public sealed class Persistence
 {
-    private readonly IStore _store;
+    private readonly IAlmacen _almacen;
     private readonly Leveling _leveling;
     private readonly Random _rng = new();   // tiradas de vida/stamina al nacer (VB6 RandomNumber)
 
-    public Persistence(IStore store, Leveling leveling)
+    public Persistence(IAlmacen almacen, Leveling leveling)
     {
-        _store = store;
+        _almacen = almacen;
         _leveling = leveling;
     }
 
-    public bool AccountExists(string name) => _store.AccountExists(name);
-    public bool CharacterExists(string name) => _store.CharacterExists(name);
-    /// <summary>Aparta el personaje sin destruirlo (borrado de personaje, 1b). Ver <c>IStore</c>.</summary>
-    public bool ArchivarCharacter(string name) => _store.ArchivarCharacter(name);
+    /// <summary>Sobre un almacén de TEXTO (los archivos o el SQLite viejo), con el adaptador de siempre.</summary>
+    public Persistence(IStore store, Leveling leveling) : this(new AlmacenDeTexto(store), leveling) { }
+
+    public bool AccountExists(string name) => _almacen.ExisteCuenta(name);
+    public bool CharacterExists(string name) => _almacen.ExistePersonaje(name);
+    /// <summary>Aparta el personaje sin destruirlo (borrado de personaje, 1b). Ver <see cref="IAlmacen.ApartarPersonaje"/>.</summary>
+    public bool ArchivarCharacter(string name) => _almacen.ApartarPersonaje(name);
 
     // --- Guild registry persistence (a single JSON blob under the "guilds" key) ---
     private sealed record GuildDto(string Name, string Leader, string Desc,
@@ -53,27 +56,27 @@ public sealed class Persistence
             new Dictionary<string, string>(g.AllianceOffers),
             new Dictionary<string, string>(g.PeaceOffers), g.ElectionsOpen,
             new Dictionary<string, string>(g.Votes))).ToList();
-        _store.WriteMisc("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
+        _almacen.GuardarEnElMundo("guilds", System.Text.Json.JsonSerializer.Serialize(dtos));
     }
 
     /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini;
     /// acá va con el resto de los records del mundo, en <c>Misc/</c>, así entra en el backup.</summary>
-    public void SaveRecordUsuarios(int record) => _store.WriteMisc("record", record.ToString(
+    public void SaveRecordUsuarios(int record) => _almacen.GuardarEnElMundo("record", record.ToString(
         System.Globalization.CultureInfo.InvariantCulture));
 
     public int LoadRecordUsuarios()
-        => int.TryParse(_store.ReadMisc("record"), System.Globalization.NumberStyles.Integer,
+        => int.TryParse(_almacen.LeerDelMundo("record"), System.Globalization.NumberStyles.Integer,
                         System.Globalization.CultureInfo.InvariantCulture, out int r) ? r : 0;
 
     /// <summary>Las llaves ya vendidas (<see cref="Game.World.LlavesVendidas"/>): ficha del mercader → ranura → objeto.</summary>
     public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
-        => _store.WriteMisc("propiedades", System.Text.Json.JsonSerializer.Serialize(vendidas));
+        => _almacen.GuardarEnElMundo("propiedades", System.Text.Json.JsonSerializer.Serialize(vendidas));
 
     /// <summary>Lo guardado por <see cref="SaveLlavesVendidas"/>. Un archivo ausente o ilegible da el mapa vacío y NO
     /// tira, como el suelo: con eso las casas vuelven a la venta, que es menos grave que un servidor que no arranca.</summary>
     public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
     {
-        string? json = _store.ReadMisc("propiedades");
+        string? json = _almacen.LeerDelMundo("propiedades");
         if (string.IsNullOrWhiteSpace(json)) return new();
         try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<int, Dictionary<int, short>>>(json) ?? new(); }
         catch (System.Text.Json.JsonException ex)
@@ -85,12 +88,12 @@ public sealed class Persistence
 
     /// <summary>Los motivos de rechazo pendientes (<see cref="Game.World.MotivosDeRechazo"/>): personaje → motivo.</summary>
     public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
-        => _store.WriteMisc("rechazos-de-clan", System.Text.Json.JsonSerializer.Serialize(motivos));
+        => _almacen.GuardarEnElMundo("rechazos-de-clan", System.Text.Json.JsonSerializer.Serialize(motivos));
 
     /// <summary>Lo guardado por <see cref="SaveMotivosDeRechazo"/>; ausente o ilegible, el mapa vacío.</summary>
     public Dictionary<string, string> LoadMotivosDeRechazo()
     {
-        string? json = _store.ReadMisc("rechazos-de-clan");
+        string? json = _almacen.LeerDelMundo("rechazos-de-clan");
         if (string.IsNullOrWhiteSpace(json)) return new();
         try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new(); }
         catch (System.Text.Json.JsonException ex)
@@ -101,7 +104,7 @@ public sealed class Persistence
     }
 
     public void SaveMailboxes(IReadOnlyDictionary<string, List<Game.MailEntry>> boxes)
-        => _store.WriteMisc("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
+        => _almacen.GuardarEnElMundo("mailboxes", System.Text.Json.JsonSerializer.Serialize(boxes));
 
     /// <summary>El suelo de los jugadores, cuando la regla de la casa <c>PersistirSuelo</c> está prendida.
     ///
@@ -117,7 +120,7 @@ public sealed class Persistence
             if (!porMapa.TryGetValue(k, out var lista)) porMapa[k] = lista = new List<int[]>();
             lista.Add(new[] { pos.X, pos.Y, (int)obj, (int)amount });
         }
-        _store.WriteMisc("suelo", System.Text.Json.JsonSerializer.Serialize(porMapa));
+        _almacen.GuardarEnElMundo("suelo", System.Text.Json.JsonSerializer.Serialize(porMapa));
     }
 
     /// <summary>Lo guardado por <see cref="SaveSuelo"/>. Un archivo ausente, vacío o ilegible devuelve la lista
@@ -126,7 +129,7 @@ public sealed class Persistence
     public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
     {
         var result = new List<(Game.WorldPos, short, short)>();
-        string? json = _store.ReadMisc("suelo");
+        string? json = _almacen.LeerDelMundo("suelo");
         if (string.IsNullOrWhiteSpace(json)) return result;
         Dictionary<string, List<int[]>>? porMapa;
         try { porMapa = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<int[]>>>(json); }
@@ -155,14 +158,14 @@ public sealed class Persistence
 
     public Dictionary<string, List<Game.MailEntry>> LoadMailboxes()
     {
-        var json = _store.ReadMisc("mailboxes");
+        var json = _almacen.LeerDelMundo("mailboxes");
         if (string.IsNullOrWhiteSpace(json)) return new();
         return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<Game.MailEntry>>>(json) ?? new();
     }
 
     public List<Game.Guild> LoadGuilds()
     {
-        var json = _store.ReadMisc("guilds");
+        var json = _almacen.LeerDelMundo("guilds");
         var result = new List<Game.Guild>();
         if (string.IsNullOrWhiteSpace(json)) return result;
         var dtos = System.Text.Json.JsonSerializer.Deserialize<List<GuildDto>>(json) ?? new();
@@ -184,42 +187,27 @@ public sealed class Persistence
         return result;
     }
 
-    public Account? LoadAccount(string name)
-    {
-        var text = _store.ReadAccount(name);
-        return text is null ? null : AccountFile.FromIni(IniFile.Parse(text), name);
-    }
-
-    public void SaveAccount(Account acc) => _store.WriteAccount(acc.Name, AccountFile.ToIni(acc).ToText());
-    public IEnumerable<string> AllAccountNames() => _store.AllAccountNames();   // gestión de bans del panel
+    public Account? LoadAccount(string name) => _almacen.LeerCuenta(name);
+    public void SaveAccount(Account acc) => _almacen.GuardarCuenta(acc);
+    public IEnumerable<string> AllAccountNames() => _almacen.NombresDeCuentas();   // gestión de bans del panel
 
     public Player? LoadCharacter(string name, short charIndex, string account)
-    {
-        var text = _store.ReadCharacter(name);
-        return text is null ? null : CharacterFile.FromIni(IniFile.Parse(text), charIndex, name, account);
-    }
+        => _almacen.LeerPersonaje(name)?.CrearPlayer(charIndex, account);
 
-    public CharacterSummary? LoadSummary(string name)
-    {
-        var text = _store.ReadCharacter(name);
-        return text is null ? null : CharacterFile.SummaryFromIni(IniFile.Parse(text), name);
-    }
+    public CharacterSummary? LoadSummary(string name) => _almacen.LeerResumen(name);
 
-    public void SaveCharacter(Player p) => _store.WriteCharacter(p.Name, CharacterFile.ToIni(p).ToText());
+    public void SaveCharacter(Player p) => _almacen.GuardarPersonaje(FichaDePersonaje.Desde(p));
 
-    /// <summary>Las DOS mitades de un guardado, separadas: serializar y escribir.
+    /// <summary>La otra mitad de un guardado: escribe una ficha ya armada. Las DOS mitades van separadas.
     ///
     /// <para>Guardar a todos los conectados es lo que hacen el autosave y el backup, y hasta acá las dos mitades
-    /// corrían pegadas adentro del game loop. La de arriba TIENE que correr ahí —lee unos cien campos del
-    /// <see cref="Player"/> vivo, y hacerlo desde otro hilo devuelve un personaje partido al medio: el oro ya
-    /// descontado y el ítem todavía sin agregar—. La de abajo no: es disco, y el disco no puede estar adentro de
-    /// una vuelta de 40 ms. Medido en este equipo: 0,75 ms por <c>.chr</c>, o sea que con cien conectados el
-    /// autosave se comía dos ticks enteros.</para></summary>
-    public static string SerializarPersonaje(Player p) => CharacterFile.ToIni(p).ToText();
-
-    /// <summary>La otra mitad: escribe a disco un texto ya serializado. Se puede llamar desde cualquier hilo
-    /// —el almacén serializa sus escrituras— y por eso es la que sale del loop.</summary>
-    public void GuardarPersonajeSerializado(string nombre, string ini) => _store.WriteCharacter(nombre, ini);
+    /// corrían pegadas adentro del game loop. La de armar la ficha (<see cref="FichaDePersonaje.Desde"/>) TIENE que
+    /// correr ahí —lee unos cien campos del <see cref="Player"/> vivo, y hacerlo desde otro hilo devuelve un personaje
+    /// partido al medio: el oro ya descontado y el ítem todavía sin agregar—. Ésta no: es disco, y el disco no puede
+    /// estar adentro de una vuelta de 40 ms. Medido en este equipo: 0,75 ms por <c>.chr</c>, o sea que con cien
+    /// conectados el autosave se comía dos ticks enteros. Se puede llamar desde cualquier hilo: el almacén serializa
+    /// sus escrituras.</para></summary>
+    public void GuardarFicha(FichaDePersonaje ficha) => _almacen.GuardarPersonaje(ficha);
 
     // ── EL GUARDADO DEL QUE SE VA ────────────────────────────────────────────────────────────────────────────
     //
@@ -236,15 +224,14 @@ public sealed class Persistence
     private readonly object _candadoEscrituras = new();
     private readonly List<Task> _escriturasEnVuelo = new();
 
-    /// <summary>Serializa AHORA —llamar desde el game loop— y manda el disco a segundo plano.</summary>
+    /// <summary>Arma la ficha AHORA —llamar desde el game loop— y manda el disco a segundo plano.</summary>
     public void GuardarEnSegundoPlano(Player p)
     {
-        string nombre = p.Name;
-        string ini = SerializarPersonaje(p);
+        var ficha = FichaDePersonaje.Desde(p);
         var escritura = Task.Run(() =>
         {
-            try { GuardarPersonajeSerializado(nombre, ini); }
-            catch (Exception ex) { Console.Error.WriteLine($"[save] {nombre}: {ex.Message}"); }
+            try { GuardarFicha(ficha); }
+            catch (Exception ex) { Console.Error.WriteLine($"[save] {ficha.Nombre}: {ex.Message}"); }
         });
         lock (_candadoEscrituras)
         {
@@ -269,22 +256,12 @@ public sealed class Persistence
     ///
     /// <para>Es el <c>GetVar</c>/<c>WriteVar</c> sobre <c>[STATS] BANCO</c> que usa la transferencia de oro del
     /// original (VB6 Protocol.bas:15832): el destinatario puede no estar en el mundo, y la única forma de
-    /// acreditarle es tocarle el <c>.chr</c>. Se hace por clave y no con <see cref="LoadCharacter"/> +
-    /// <see cref="SaveCharacter"/> porque eso reconstruiría el personaje completo —cien campos, inventario,
-    /// bóveda y hechizos— para mover un número, y la reescritura pisaría con los defaults del parser cualquier
-    /// clave que el archivo tenga y el <see cref="Player"/> no.</para>
+    /// acreditarle es tocarle lo guardado. Se hace por el saldo solo (<see cref="IAlmacen.AcreditarBoveda"/>) y no con
+    /// <see cref="LoadCharacter"/> + <see cref="SaveCharacter"/>, que reconstruirían el personaje completo para mover un
+    /// número.</para>
     ///
     /// <para>Devuelve el saldo que quedó, o <c>null</c> si no existe el personaje.</para></summary>
-    public long? AcreditarBovedaOffline(string nombre, long monto)
-    {
-        string? texto = _store.ReadCharacter(nombre);
-        if (texto is null) return null;
-        var ini = IniFile.Parse(texto);
-        long saldo = ini.GetLong("STATS", "BANCO") + monto;
-        ini.Set("STATS", "BANCO", saldo.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        _store.WriteCharacter(nombre, ini.ToText());
-        return saldo;
-    }
+    public long? AcreditarBovedaOffline(string nombre, long monto) => _almacen.AcreditarBoveda(nombre, monto);
 
     /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
     /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el

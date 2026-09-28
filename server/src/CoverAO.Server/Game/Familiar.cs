@@ -31,8 +31,11 @@ public sealed class Familiar
     public long GolpeMinimo { get; set; }
     public long GolpeMaximo { get; set; }
 
+    /// <summary>Cuántas ranuras de habilidad tiene un familiar.</summary>
+    public const int CantidadDeHabilidades = 4;
+
     /// <summary>Las cuatro ranuras de habilidad, en el orden en que se aprenden. 0 = vacía.</summary>
-    public int[] Habilidades { get; } = new int[4];
+    public int[] Habilidades { get; } = new int[CantidadDeHabilidades];
 
     /// <summary>Muerto: no se puede llamar hasta revivirlo.</summary>
     public bool Muerto { get; set; }

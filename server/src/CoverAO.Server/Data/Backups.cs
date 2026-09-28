@@ -7,7 +7,7 @@ namespace CoverAO.Server.Data;
 /// <c>data/</c> a mano. Un disco que se llena a mitad de un guardado, un <c>/BORRAR</c> mal tipeado o una
 /// corrupción del .db se llevaban puestos todos los personajes sin vuelta atrás.
 ///
-/// El snapshot lo hace el backend (<see cref="IStore.Backup"/>): SQLite con <c>VACUUM INTO</c>, que es
+/// El snapshot lo hace el backend (<see cref="IAlmacen.Backup"/>): SQLite con <c>VACUUM INTO</c>, que es
 /// consistente aunque haya escrituras en curso. Acá vive lo de arriba: el nombre con fecha, y la PODA —
 /// sin poda, un backup cada 30 minutos llena el disco en una semana y el remedio termina peor que la
 /// enfermedad.
@@ -26,10 +26,10 @@ public static class Backups
     /// base). Sin esto la copia se veia completa y no lo era: restaurar en otra maquina traia los personajes
     /// y perdia la lista de baneos por IP, en silencio. Un backup que no alcanza para levantar el servidor
     /// entero es peor que no tenerlo, porque uno se confia.</param>
-    public static string Crear(IStore store, string dir, DateTime cuando, string? dataRoot = null)
+    public static string Crear(IAlmacen almacen, string dir, DateTime cuando, string? dataRoot = null)
     {
         Directory.CreateDirectory(dir);
-        string ruta = store.Backup(dir, Stem(cuando));
+        string ruta = almacen.Backup(dir, Stem(cuando));
 
         if (dataRoot is not null && Directory.Exists(dataRoot))
         {

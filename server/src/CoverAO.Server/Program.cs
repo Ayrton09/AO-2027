@@ -195,7 +195,8 @@ switch (CoverAO.Server.Build.SellarMundo(dataRoot, out string versionPrevia))
 IStore store = string.Equals(Environment.GetEnvironmentVariable("COVERAO_DB"), "sqlite", StringComparison.OrdinalIgnoreCase)
     ? new SqliteStore(Path.Combine(dataRoot, "coverao.db"))
     : new FileStore(dataRoot);
-var db = new Persistence(store, leveling);
+IAlmacen almacen = new AlmacenDeTexto(store);
+var db = new Persistence(almacen, leveling);
 if (fixtureMode) db.SeedDemoIfEmpty();   // sin fixture no hay cuenta demo (cuenta_test/Rugura/…): como un server real
 Console.WriteLine($"Persistencia en {dataRoot} ({(store is SqliteStore ? "SQLite (coverao.db)" : "archivos .chr/.cnt")}). COVERAO_DB=sqlite para SQLite.");
 
@@ -307,12 +308,12 @@ PacketDispatcher? dispatcher = null;
 // Guardar a los conectados son DOS mitades, y una sola de las dos tiene que estar adentro del game loop:
 // serializar lee unos cien campos del Player vivo (hacerlo desde otro hilo devuelve un personaje partido al
 // medio), escribir es disco. Esto último es lo que se saca afuera.
-List<(string nombre, string ini)> SerializarConectados(string quien)
+List<FichaDePersonaje> SerializarConectados(string quien)
 {
-    var pendientes = new List<(string, string)>();
+    var pendientes = new List<FichaDePersonaje>();
     foreach (var pl in world.Players)
     {
-        try { pendientes.Add((pl.Name, Persistence.SerializarPersonaje(pl))); }
+        try { pendientes.Add(FichaDePersonaje.Desde(pl)); }
         catch (Exception ex) { Console.Error.WriteLine($"[{quien}] no se pudo serializar '{pl.Name}': {ex.Message}"); }
     }
     return pendientes;
@@ -320,13 +321,13 @@ List<(string nombre, string ini)> SerializarConectados(string quien)
 
 // Try POR JUGADOR: un solo .chr que falle (disco lleno, archivo tomado por el antivirus) no puede impedir que
 // se guarden los demás, y el mensaje tiene que decir DE QUIÉN fue el error.
-int EscribirGuardados(List<(string nombre, string ini)> pendientes, string quien)
+int EscribirGuardados(List<FichaDePersonaje> pendientes, string quien)
 {
     int ok = 0, fallidos = 0;
-    foreach (var (nombre, ini) in pendientes)
+    foreach (var ficha in pendientes)
     {
-        try { db.GuardarPersonajeSerializado(nombre, ini); ok++; }
-        catch (Exception ex) { fallidos++; Console.Error.WriteLine($"[{quien}] no se pudo guardar '{nombre}': {ex.Message}"); }
+        try { db.GuardarFicha(ficha); ok++; }
+        catch (Exception ex) { fallidos++; Console.Error.WriteLine($"[{quien}] no se pudo guardar '{ficha.Nombre}': {ex.Message}"); }
     }
     if (ok > 0 || fallidos > 0)
         Console.WriteLine($"[{quien}] {ok} personajes guardados" + (fallidos > 0 ? $", {fallidos} FALLARON" : ""));
@@ -367,7 +368,7 @@ string HacerBackup(string motivo)
         try
         {
             EscribirGuardados(pendientes, "backup");
-            string ruta = Backups.Crear(store, backupsDir, cuando, dataRoot);
+            string ruta = Backups.Crear(almacen, backupsDir, cuando, dataRoot);
             int podados = Backups.Podar(backupsDir, serverIni.BackupsAConservar);
             Console.WriteLine($"[backup] {motivo}: {Path.GetFileName(ruta)}" + (podados > 0 ? $" ({podados} viejo(s) borrado(s))" : ""));
         }
@@ -970,7 +971,7 @@ if (habraWeb)
     // toca el juego —ni un paquete nuevo— y se apaga entera con PaginaPublica=0, que deja la ruta en 404.
     // `EsStaff` sale del ini VIVO y no del personaje: el rango se deriva en cada login y el .chr no manda.
     Func<string>? estadoPublico = serverIni.PaginaPublica
-        ? new CoverAO.Server.Net.EstadoPublico(world, store, loop, serverIni.EsStaff, CoverAO.Server.Build.Version).Json
+        ? new CoverAO.Server.Net.EstadoPublico(world, almacen, loop, serverIni.EsStaff, CoverAO.Server.Build.Version).Json
         : null;
     // Y el JUEGO entra por este mismo puerto, en /ws. El WebSocket sigue teniendo el suyo (port+1) y los dos
     // caminos terminan en el mismo aceptador; lo que cambia es que el cliente ya no necesita el otro, así que

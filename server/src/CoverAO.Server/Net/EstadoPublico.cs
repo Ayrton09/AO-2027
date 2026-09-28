@@ -31,7 +31,7 @@ namespace CoverAO.Server.Net;
 public sealed class EstadoPublico
 {
     private readonly World _world;
-    private readonly IStore _store;
+    private readonly IAlmacen _almacen;
     private readonly GameLoop _loop;
     private readonly Func<string, bool> _esStaff;
     private readonly string _version;
@@ -54,10 +54,10 @@ public sealed class EstadoPublico
     /// <param name="esStaff">Quién NO entra en la tabla. Sale del <c>Server.ini</c> vivo y no del personaje,
     /// por lo mismo de siempre: el rango se deriva en cada login y el <c>.chr</c> no manda.</param>
     /// <param name="tope">Cuántos puestos publica la tabla.</param>
-    public EstadoPublico(World world, IStore store, GameLoop loop, Func<string, bool> esStaff,
+    public EstadoPublico(World world, IAlmacen almacen, GameLoop loop, Func<string, bool> esStaff,
                          string version, int tope = 25)
     {
-        _world = world; _store = store; _loop = loop; _esStaff = esStaff; _version = version; _tope = tope;
+        _world = world; _almacen = almacen; _loop = loop; _esStaff = esStaff; _version = version; _tope = tope;
     }
 
     /// <summary>El JSON que se sirve, cacheado. Se puede llamar desde cualquier hilo MENOS el del game loop:
@@ -115,61 +115,15 @@ public sealed class EstadoPublico
         });
     }
 
-    /// <summary>CÓMO SE ESCRIBE CADA NOMBRE, que el <c>.chr</c> no guarda.
+    /// <summary>La tabla, ordenada por nivel y experiencia. La lee el almacén (<see cref="IAlmacen.FilasDeRanking"/>), que
+    /// también sabe cómo se escribe cada nombre; acá se deja afuera al staff.
     ///
-    /// <para>El archivo de un personaje se llama con el nombre en MAYÚSCULAS —el original hace lo mismo,
-    /// <c>CharPath &amp; UCase$(.Name) &amp; ".chr"</c> (FileIO.bas:1597)— y adentro no hay ninguna clave con
-    /// el nombre. O sea que barrer el almacén devuelve "RUGURA", y la lista de conectados —que sale del mundo
-    /// vivo— dice "Rugura": la misma persona con dos grafías en la misma pantalla.</para>
-    ///
-    /// <para>La caja que el jugador escribió vive en la lista <c>[PJS]</c> de su cuenta, que es de donde la
-    /// saca el propio juego al mostrar los personajes. Un personaje que no figure en ninguna cuenta se queda
-    /// con el nombre del archivo, que es lo único que hay de él.</para></summary>
-    private Dictionary<string, string> CajaDeLosNombres()
-    {
-        var mapa = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var cuenta in _store.AllAccountNames())
-        {
-            try
-            {
-                var texto = _store.ReadAccount(cuenta);
-                if (texto is null) continue;
-                foreach (var pj in AccountFile.FromIni(IniFile.Parse(texto), cuenta).Characters)
-                    mapa[pj] = pj;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[publico] no se pudo leer la cuenta '{cuenta}': {ex.Message}");
-            }
-        }
-        return mapa;
-    }
-
-    /// <summary>La tabla: un archivo por personaje, ordenada por nivel y experiencia.
-    ///
-    /// <para>Un <c>.chr</c> ilegible NO voltea la tabla. Es la diferencia entre "a alguien se le cortó un
-    /// guardado" y "la página no anda": el personaje roto se saltea y los demás siguen apareciendo.</para>
+    /// <para>Un personaje ilegible NO voltea la tabla. Es la diferencia entre "a alguien se le cortó un guardado" y "la
+    /// página no anda": el almacén lo saltea y los demás siguen apareciendo.</para>
     /// </summary>
     private object[] ArmarRanking()
     {
-        var comoSeEscribe = CajaDeLosNombres();
-        var filas = new List<CharacterFile.FilaDeRanking>();
-        foreach (var nombre in _store.AllCharacterNames())
-        {
-            if (_esStaff(nombre)) continue;
-            try
-            {
-                var texto = _store.ReadCharacter(nombre);
-                if (texto is null) continue;
-                var lindo = comoSeEscribe.TryGetValue(nombre, out var n) ? n : nombre;
-                filas.Add(CharacterFile.RankingFromIni(IniFile.Parse(texto), lindo));
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[publico] no se pudo leer '{nombre}' para la tabla: {ex.Message}");
-            }
-        }
-
+        var filas = _almacen.FilasDeRanking().Where(f => !_esStaff(f.Nombre));
         return filas
             .OrderByDescending(f => f.Nivel).ThenByDescending(f => f.Exp)
             .ThenBy(f => f.Nombre, StringComparer.OrdinalIgnoreCase)

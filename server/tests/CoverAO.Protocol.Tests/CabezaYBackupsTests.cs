@@ -70,7 +70,7 @@ public class CabezaYBackupsTests : IDisposable
         {
             store.WriteCharacter("Rugura", "[FLAGS]\r\n");
             for (int d = 1; d <= 4; d++)
-                Backups.Crear(store, backups, new DateTime(2026, 7, d, 12, 0, 0), dataRoot);
+                Backups.Crear(new AlmacenDeTexto(store), backups, new DateTime(2026, 7, d, 12, 0, 0), dataRoot);
         }
 
         Assert.Equal(4, Backups.Listar(backups).Length);          // cuatro backups, no ocho entradas
