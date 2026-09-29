@@ -169,6 +169,23 @@ public sealed class Persistence : IDisposable
 
     public int LoadRecordUsuarios() => Esperar("leer el récord", null, a => a.LeerRecord());
 
+    /// <summary>Lo que leen las webs, al día al arrancar (<see cref="AlmacenRelacional.PrepararParaLasWebs"/>). Con los
+    /// archivos no hay webs, y no hace nada.</summary>
+    public void PrepararParaLasWebs(IEnumerable<string> staff, CatalogoParaLasWebs catalogo, string version)
+    {
+        if (_almacen is not AlmacenRelacional relacional) return;
+        var nombres = staff.ToList();
+        Esperar("preparar lo de las webs", null, _ => { relacional.PrepararParaLasWebs(nombres, catalogo, version); return true; });
+    }
+
+    /// <summary>Quiénes están conectados, para las webs, por la cola (<see cref="AlmacenRelacional.MarcarConectados"/>).</summary>
+    public void MarcarConectados(IEnumerable<string> nombres)
+    {
+        if (_almacen is not AlmacenRelacional relacional) return;
+        var foto = nombres.ToList();
+        _cola.Escribir("marcar los conectados", _ => relacional.MarcarConectados(foto));
+    }
+
     /// <summary>Las IPs baneadas (el <c>BanIps</c> del original). Al arrancar, esperándolas.</summary>
     public IReadOnlyList<string> LoadIpsBaneadas() => Esperar("leer las IPs baneadas", null, a => a.LeerIpsBaneadas());
 

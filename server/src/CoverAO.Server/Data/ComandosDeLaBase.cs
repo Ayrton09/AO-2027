@@ -8,7 +8,12 @@ namespace CoverAO.Server.Data;
 /// CoverAO.Server exportar &lt;carpeta nueva o vacía&gt;
 /// CoverAO.Server pasar-a-postgres [archivo de SQLite] [--reemplazar]
 /// CoverAO.Server restaurar &lt;backup&gt; [--reemplazar]
+/// CoverAO.Server crear-usuario-web [nombre]
 /// </code>
+///
+/// <c>crear-usuario-web</c> crea el usuario de Postgres de la página web, que sólo puede leer las vistas de <c>publico</c>. Lo
+/// hace un administrador de Postgres: su usuario y su clave van en <c>COVERAO_PG_ADMIN_USUARIO</c> (si no, <c>postgres</c>) y
+/// <c>COVERAO_PG_ADMIN_CLAVE</c>, no en la línea de comandos.
 ///
 /// <c>restaurar</c> vuelve a un backup de <c>data/backups/</c>: el <c>.zip</c> de Postgres se restaura en Postgres; el
 /// <c>.db</c> de SQLite es una base, y se importa (a SQLite o a Postgres).
@@ -20,7 +25,7 @@ namespace CoverAO.Server.Data;
 /// </summary>
 public static class ComandosDeLaBase
 {
-    private static readonly string[] Comandos = { "importar", "exportar", "pasar-a-postgres", "restaurar" };
+    private static readonly string[] Comandos = { "importar", "exportar", "pasar-a-postgres", "restaurar", "crear-usuario-web" };
 
     public static bool EsUno(string comando) => Comandos.Contains(comando, StringComparer.OrdinalIgnoreCase);
 
@@ -39,6 +44,21 @@ public static class ComandosDeLaBase
         }
         try
         {
+            if (comando == "crear-usuario-web")
+            {
+                if (!postgres)
+                {
+                    Console.WriteLine("El usuario de la web es de Postgres: [BASEDEDATOS] Tipo=postgres en el Server.ini.");
+                    return 1;
+                }
+                string usuario = resto.Length > 0 ? resto[0] : "coverao_web";
+                string clave = AlmacenPostgres.CrearUsuarioWeb(ini, usuario,
+                    Environment.GetEnvironmentVariable("COVERAO_PG_ADMIN_USUARIO") is { Length: > 0 } admin ? admin : "postgres",
+                    Environment.GetEnvironmentVariable("COVERAO_PG_ADMIN_CLAVE") ?? "");
+                Console.WriteLine($"Usuario de la web: {usuario}, con clave {clave}");
+                Console.WriteLine("Guardala: no se vuelve a mostrar (correr esto de nuevo le pone otra). Sólo puede leer el esquema publico.");
+                return 0;
+            }
             if (comando == "restaurar" && resto.Length > 0 && resto[0].EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
                 if (!postgres)

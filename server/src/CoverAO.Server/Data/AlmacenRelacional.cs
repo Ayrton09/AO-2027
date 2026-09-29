@@ -591,6 +591,47 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
             Valores(fila, ("@ip", ip)).ExecuteNonQuery();
     });
 
+    // ── Lo que leen las webs ────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// LO QUE LEEN LAS WEBS (fase5/postgres/DISENO.md, secciones 2 y 8), al día en cada arranque: los nombres del staff —SÓLO
+    /// para dejarlos afuera de lo público; el juego nunca los lee de acá para dar permisos, la autoridad es el Server.ini—,
+    /// el catálogo del juego —para que una web muestre "Espada Larga" y no "2"; la autoridad es gamedata/—, la versión del
+    /// servidor, y nadie conectado: un corte deja marcas de conectado que ya no son.
+    /// </summary>
+    public void PrepararParaLasWebs(IEnumerable<string> staff, CatalogoParaLasWebs catalogo, string version) => EnTransaccion(tx =>
+    {
+        void Reescribir<T>(string tabla, string columnas, IEnumerable<T> filas, Func<T, (string, object?)[]> valores)
+        {
+            using (var c = Comando($"DELETE FROM {tabla}", tx)) c.ExecuteNonQuery();
+            using var fila = Comando($"INSERT INTO {tabla} ({columnas.Replace("@", "")}) VALUES ({columnas})", tx);
+            foreach (var f in filas) Valores(fila, valores(f)).ExecuteNonQuery();
+        }
+        Reescribir("staff_visible", "@nombre", staff.Distinct(StringComparer.OrdinalIgnoreCase), n => new (string, object?)[] { ("@nombre", n) });
+        Reescribir("catalogo_objetos", "@id, @nombre, @tipo", catalogo.Objetos, o => new (string, object?)[] { ("@id", o.Id), ("@nombre", o.Nombre), ("@tipo", o.Tipo) });
+        Reescribir("catalogo_hechizos", "@id, @nombre", catalogo.Hechizos, h => new (string, object?)[] { ("@id", h.Id), ("@nombre", h.Nombre) });
+        Reescribir("catalogo_clases", "@id, @nombre", catalogo.Clases, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
+        Reescribir("catalogo_razas", "@id, @nombre", catalogo.Razas, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
+        Reescribir("catalogo_mapas", "@id, @nombre", catalogo.Mapas, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
+        using (var c = Comando("UPDATE mundo SET version_servidor = @v WHERE id = 1", tx)) Valores(c, ("@v", version)).ExecuteNonQuery();
+        using (var c = Comando("UPDATE personajes SET conectado_desde = NULL WHERE conectado_desde IS NOT NULL", tx)) c.ExecuteNonQuery();
+    });
+
+    /// <summary>Quiénes están conectados, para las webs: se marca desde cuándo al que entró y se desmarca al que salió. El que
+    /// sigue conectado conserva su hora de entrada.</summary>
+    public void MarcarConectados(IReadOnlyCollection<string> nombres) => EnTransaccion(tx =>
+    {
+        var ahora = new HashSet<string>(nombres, StringComparer.OrdinalIgnoreCase);
+        var antes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var c = Comando("SELECT nombre FROM personajes WHERE conectado_desde IS NOT NULL", tx))
+        using (var r = c.ExecuteReader())
+            while (r.Read()) antes.Add(r.GetString(0));
+        using var salio = Comando("UPDATE personajes SET conectado_desde = NULL WHERE upper(nombre) = upper(@n)", tx);
+        foreach (var n in antes.Where(n => !ahora.Contains(n))) Valores(salio, ("@n", n)).ExecuteNonQuery();
+        using var entro = Comando("UPDATE personajes SET conectado_desde = @desde WHERE upper(nombre) = upper(@n) AND borrado_en IS NULL", tx);
+        foreach (var n in ahora.Where(n => !antes.Contains(n))) Valores(entro, ("@n", n), ("@desde", Ahora())).ExecuteNonQuery();
+    });
+
     /// <summary>
     /// LA VERSIÓN 2 PASA EL MUNDO A TABLAS. Lo que la 1 guardaba como JSON en <c>mundo_json</c> —el mismo formato de los
     /// archivos de <c>Misc/</c>— se lee con <see cref="JsonDelMundo"/> y se escribe en sus tablas, en la misma transacción que

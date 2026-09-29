@@ -566,6 +566,9 @@ public sealed class GameData
     public int ModRaza(int raza, int attr) => _modRaza.GetValueOrDefault((raza, attr), 0);
 
     private static readonly string[] NombresDeRaza = { "", "Humano", "Elfo", "Drow", "Gnomo", "Enano", "Orco" };
+
+    /// <summary>Las razas con su nombre, por número (1 = Humano).</summary>
+    public static IEnumerable<(int Id, string Nombre)> Razas => NombresDeRaza.Select((n, i) => (i, n)).Skip(1);
     private static readonly string[] NombresDeAtributo = { "", "Fuerza", "Agilidad", "Inteligencia", "Carisma", "Constitucion" };
 
     private static void LoadModRaza(GameData data, string path)
@@ -746,6 +749,9 @@ public sealed class GameData
     /// <summary>Nombre del mapa (VB6 <c>MapInfo(map).Name</c>), tal como viene del header del .csm.</summary>
     public string MapName(int map) => _mapName.GetValueOrDefault(map, "");
     private readonly Dictionary<int, string> _mapName = new();
+
+    /// <summary>Todos los mapas con nombre, por número.</summary>
+    public IReadOnlyDictionary<int, string> NombresDeMapas => _mapName;
 
     /// <summary>
     /// ¿Es un mapa de MAR ABIERTO? Lo decide el NOMBRE, que es el único lugar donde el mundo lo dice: 403 de

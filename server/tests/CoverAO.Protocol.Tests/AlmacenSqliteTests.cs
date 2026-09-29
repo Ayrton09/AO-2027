@@ -98,6 +98,30 @@ public class AlmacenSqliteTests : IDisposable
         Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM personajes WHERE nombre = 'Uno' AND borrado_en IS NOT NULL"));
     }
 
+    /// <summary>Lo que leen las webs se pone al día en cada arranque: el staff, el catálogo y la versión se reescriben, y nadie
+    /// queda como conectado (un corte deja marcas viejas). Los conectados se marcan después, desde el loop.</summary>
+    [Fact]
+    public void Lo_de_las_webs_se_pone_al_dia_en_cada_arranque()
+    {
+        var catalogo = new CatalogoParaLasWebs(new[] { (1, "Espada Larga", 2), (2, "Escudo", 3) }, new[] { (1, "Dardo") },
+            new[] { (1, "Mago") }, new[] { (1, "Humano") }, new[] { (1, "Ullathorpe") });
+        using (var almacen = new AlmacenSqlite(Archivo))
+        {
+            var cuenta = new Account { Name = "Duena", PasswordHash = "pbkdf2$1$a$b", Salt = "" };
+            almacen.GuardarCuenta(cuenta);
+            Assert.True(almacen.CrearPersonaje(cuenta, FichasDePrueba.Llena("Uno")));
+            almacen.MarcarConectados(new[] { "Uno" });
+            almacen.PrepararParaLasWebs(new[] { "ElDios", "eldios", "Consejero" }, catalogo, "9.9");
+        }
+        Assert.Equal(2, Escalar(Archivo, "SELECT count(*) FROM staff_visible"));
+        Assert.Equal(2, Escalar(Archivo, "SELECT count(*) FROM catalogo_objetos"));
+        Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM mundo WHERE version_servidor = '9.9'"));
+        Assert.Equal(0, Escalar(Archivo, "SELECT count(*) FROM personajes WHERE conectado_desde IS NOT NULL"));
+
+        using (var almacen = new AlmacenSqlite(Archivo)) almacen.MarcarConectados(new[] { "uno" });
+        Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM personajes WHERE conectado_desde IS NOT NULL"));
+    }
+
     [Fact]
     public void Las_claves_foraneas_estan_prendidas_en_la_conexion_que_escribe()
     {

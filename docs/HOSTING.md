@@ -306,6 +306,20 @@ Con varios servidores en el mismo Postgres, una base por servidor (`Base=coverao
 
 Si Postgres no responde al arrancar, el servidor no arranca y dice por qué (sin mostrar la clave).
 
+**Una página web sobre la base.** La web se conecta a la misma base con un usuario propio que **sólo puede leer** el
+esquema `publico`: vistas con los personajes, la tabla de posiciones, los clanes y sus miembros, los conectados, la
+versión y el récord del servidor, y el catálogo del juego (objetos, hechizos, clases, razas y mapas, con sus nombres).
+No ve nada de las cuentas —ni contraseñas, ni IPs, ni baneos—, ni el oro, la bóveda, la posición o el inventario, y el
+staff del `Server.ini` y los personajes borrados quedan afuera. Se crea una vez, con el servidor apagado y los datos de
+un administrador de Postgres en el entorno:
+
+```sh
+COVERAO_PG_ADMIN_USUARIO=postgres COVERAO_PG_ADMIN_CLAVE=... CoverAO.Server crear-usuario-web
+```
+
+Imprime la clave del usuario `coverao_web`, que no se vuelve a mostrar (correrlo otra vez le pone una nueva). Hace falta
+Postgres 15 o más nuevo.
+
 **Si la base se cae con el servidor andando** —Postgres que se reinicia, un disco lleno, el archivo tomado por un
 antivirus—, el juego sigue: lo que se guarda espera en orden, en memoria, y se reintenta solo cada unos segundos. La
 consola lo avisa una vez cuando se cae y otra cuando vuelve, y el panel muestra el estado de la base y cuánto espera. El

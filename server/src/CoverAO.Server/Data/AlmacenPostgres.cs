@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.IO.Compression;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
 
@@ -44,6 +45,44 @@ public sealed class AlmacenPostgres : AlmacenRelacional
         Host = ini.ServidorDeBase, Port = ini.PuertoDeBase, Database = ini.NombreDeBase, Username = ini.UsuarioDeBase,
         Password = ini.ClaveDeBase, ApplicationName = "CoverAO",
     }.ToString();
+
+    /// <summary>
+    /// EL USUARIO DE LA WEB (DISENO.md, sección 8): uno de Postgres que sólo puede leer las vistas de <c>publico</c> —las vistas
+    /// corren con los permisos de su dueño, el usuario del juego, así que lee lo que muestran sin poder tocar las tablas—.
+    /// Lo crea, o le cambia la clave si ya estaba, un ADMINISTRADOR de Postgres: el servidor del juego no necesita permisos
+    /// para crear usuarios. Devuelve la clave, nueva y al azar.
+    /// </summary>
+    public static string CrearUsuarioWeb(ServerIni ini, string usuario, string adminUsuario, string adminClave)
+    {
+        if (usuario.Length == 0 || !usuario.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '_'))
+            throw new InvalidOperationException($"'{usuario}' no sirve de nombre: minúsculas, números y guion bajo.");
+        using (new AlmacenPostgres(Cadena(ini))) { }   // el esquema al día, con sus vistas, antes de dar permisos sobre ellas
+        string clave = Convert.ToHexString(RandomNumberGenerator.GetBytes(18)).ToLowerInvariant();
+        var admin = new NpgsqlConnectionStringBuilder(Cadena(ini)) { Username = adminUsuario, Password = adminClave, Pooling = false };
+        using var con = new NpgsqlConnection(admin.ToString());
+        con.Open();
+        using var tx = con.BeginTransaction();
+        void Ejecutar(string sql)
+        {
+            using var c = new NpgsqlCommand(sql, con, tx);
+            c.ExecuteNonQuery();
+        }
+        bool existe;
+        using (var c = new NpgsqlCommand("SELECT 1 FROM pg_roles WHERE rolname = @u", con, tx))
+        {
+            c.Parameters.AddWithValue("@u", usuario);
+            existe = c.ExecuteScalar() is not null;
+        }
+        // CREATE ROLE no acepta parámetros: la clave va escrita, y es hexadecimal, sin nada que escapar.
+        Ejecutar($"{(existe ? "ALTER" : "CREATE")} ROLE \"{usuario}\" LOGIN PASSWORD '{clave}'");
+        Ejecutar($"GRANT CONNECT ON DATABASE \"{ini.NombreDeBase}\" TO \"{usuario}\"");
+        Ejecutar($"GRANT USAGE ON SCHEMA publico TO \"{usuario}\"");
+        Ejecutar($"GRANT SELECT ON ALL TABLES IN SCHEMA publico TO \"{usuario}\"");
+        // Las vistas que traiga una versión nueva del esquema —las crea el usuario del juego— también.
+        Ejecutar($"ALTER DEFAULT PRIVILEGES FOR ROLE \"{ini.UsuarioDeBase}\" IN SCHEMA publico GRANT SELECT ON TABLES TO \"{usuario}\"");
+        tx.Commit();
+        return clave;
+    }
 
     /// <summary>Dónde está, para el log: sin la clave.</summary>
     public static string Donde(ServerIni ini) => $"{ini.NombreDeBase} en {ini.ServidorDeBase}:{ini.PuertoDeBase}";

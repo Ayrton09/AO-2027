@@ -195,6 +195,8 @@ var (almacen, dondeSeGuarda) = Almacenes.Abrir(serverIni, dataRoot);
 Rescates.AplicarLosPendientes(dataRoot, almacen);
 var db = new Persistence(almacen, leveling);
 if (fixtureMode) db.SeedDemoIfEmpty();   // sin fixture no hay cuenta demo (cuenta_test/Rugura/…): como un server real
+// Lo que leen las webs: el staff —sólo para dejarlo afuera de lo público—, el catálogo del juego y la versión (Data.AlmacenRelacional).
+db.PrepararParaLasWebs(serverIni.Staff.Select(s => s.Nombre), CatalogoParaLasWebs.Desde(gameData), CoverAO.Server.Build.Version);
 Console.WriteLine($"Persistencia en {dataRoot}: {dondeSeGuarda}.");
 
 
@@ -428,6 +430,8 @@ loop.OnTickHandler = tick =>
     // `--relojes-de-test`, y las condenas de /CARCEL y el IdleLimit tienen que seguir contando minutos de
     // verdad aunque el centinela vaya a un segundo.
     if (tick % PacketDispatcher.TicksEntreVueltas == 0) dispatcher?.PasarMinutoCentinela();
+    // Quiénes están conectados, para las webs: cada 30 segundos, por la cola.
+    if (tick % (30_000 / GameLoop.TickMs) == 0) db.MarcarConectados(world.Players.Select(p => p.Name));
     if (tick % (60_000 / GameLoop.TickMs) == 0)
     {
         foreach (var pl in world.Players)
@@ -1038,6 +1042,7 @@ dispatcher?.VolcarPersistenciaDiferida(forzar: true);
 // TODO LO DE ARRIBA SE ENCOLÓ en la base, detrás de lo que ya esperaba —los que se desconectaron hace un momento—, y
 // el hilo de la cola es de fondo: si el proceso termina sin esperarla, esos guardados mueren con él. Se cierra la cola
 // y se espera a que escriba todo; si la base no responde, lo que quedó va al archivo de rescate.
+db.MarcarConectados(Array.Empty<string>());
 db.Cerrar(dataRoot);
 (almacen as IDisposable)?.Dispose();   // la base: cierra la conexión y deja el archivo entero, sin el diario al lado
 Console.WriteLine("Servidor detenido. Hasta la proxima.");
