@@ -16,6 +16,10 @@ public static class Backups
 {
     public const string Prefijo = "coverao-";
 
+    /// <summary>El de los backups que se APARTAN antes de pisar la base —<c>antes-de-importar-…</c>—: van a la misma
+    /// carpeta sin <see cref="Prefijo"/>, así la poda no los cuenta ni los borra.</summary>
+    public const string PrefijoDeLosApartados = "antes-de-";
+
     /// <summary>Nombre base de un backup: <c>coverao-AAAAMMDD-HHMMSS</c>. Ordena cronológicamente como texto,
     /// que es de lo que depende la poda (y evita depender de la fecha del filesystem).</summary>
     public static string Stem(DateTime cuando) => Prefijo + cuando.ToString("yyyyMMdd-HHmmss");

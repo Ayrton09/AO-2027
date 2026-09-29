@@ -51,7 +51,9 @@ public class DocDeBackupsTests
             {
                 miradas++;
                 string nombre = m.Groups[1].Value;
-                Assert.True(nombre.StartsWith(Backups.Prefijo, StringComparison.Ordinal),
+                // Los de la poda, o los que se apartan antes de pisar la base: los dos los escribe el servidor.
+                Assert.True(nombre.StartsWith(Backups.Prefijo, StringComparison.Ordinal)
+                            || nombre.StartsWith(Backups.PrefijoDeLosApartados, StringComparison.Ordinal),
                     $"{Path.GetFileName(g)} manda a copiar de 'data/backups/{nombre}', y el servidor nombra sus " +
                     $"copias '{Backups.Prefijo}AAAAMMDD-HHMMSS'. Quien siga esa guía no va a encontrar la carpeta " +
                     "— y sólo se entera el día que necesita restaurar.");
