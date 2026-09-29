@@ -31,8 +31,8 @@ services:
       # es la forma natural de configurar: no hay que montar un archivo para cambiar un numero.
       # El servidor imprime al arrancar cuales le llegaron por entorno.
       - COVERAO_INIT_MAXUSERS=200
-      - COVERAO_INIT_EXP=100          # 100 = x1 (es un porcentaje, como en el Server.ini original)
-      - COVERAO_INIT_ORO=100
+      - COVERAO_INIT_EXP=1            # 1 = normal: multiplican directo, como el Server.ini.ejemplo
+      - COVERAO_INIT_ORO=1
       # LAS REGLAS DE LA CASA. La imagen NO lleva Server.ini a proposito, asi que sin estas dos lineas un
       # despliegue por Docker arranca con las tres APAGADAS —o sea como el VB6— mientras que el paquete .zip
       # las trae prendidas: el mismo servidor jugaria distinto segun como lo levantes. Se vio corriendo la

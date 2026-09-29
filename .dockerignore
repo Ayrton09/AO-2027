@@ -15,6 +15,10 @@ src/CoverAO-2021/
 # Distribuciones ya armadas
 dist/
 
+# Las carpetas de trabajo (herramientas, notas, el Postgres portable de las pruebas, worktrees): gitignoreadas,
+# pero en la copia del que desarrolla suman gigas.
+fase*/
+
 # Artefactos de compilacion: la imagen compila de cero adentro
 **/bin/
 **/obj/

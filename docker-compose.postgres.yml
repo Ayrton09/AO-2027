@@ -1,0 +1,46 @@
+# CoverAO con Postgres: el servidor del juego y la base, cada uno en su contenedor. Es para un servidor con pagina web que
+# lee la misma base (docs/HOSTING.md, "Con Postgres"); para jugar solo o en LAN alcanza el docker-compose.yml de siempre,
+# con SQLite. Va ENCIMA de ese:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# La clave de la base sale de un archivo .env al lado de este, con una linea COVERAO_PG_CLAVE=<una clave larga>: no se
+# escribe aca. Si ya habia un servidor con SQLite en el volumen coverao-data, el primer arranque con Postgres importa solo
+# su coverao.db y la deja renombrada.
+
+services:
+  db:
+    image: postgres:18
+    container_name: coverao-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=coverao
+      - POSTGRES_USER=coverao
+      - POSTGRES_PASSWORD=${COVERAO_PG_CLAVE:?falta COVERAO_PG_CLAVE en el archivo .env}
+    volumes:
+      # Postgres 18 guarda en /var/lib/postgresql/18/docker, adentro de este volumen. Como coverao-data, es lo que no se
+      # vuelve a generar.
+      - coverao-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coverao -d coverao"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # El 5432 NO se publica: el juego le llega por la red interna de compose, y una web en otro contenedor de este mismo
+    # compose, igual. Publicarlo es abrir la base a la red.
+    stop_grace_period: 60s
+
+  coverao:
+    # El servidor no arranca con la base caida: espera a que Postgres conteste.
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - COVERAO_BASEDEDATOS_TIPO=postgres
+      - COVERAO_BASEDEDATOS_SERVIDOR=db
+      - COVERAO_BASEDEDATOS_BASE=coverao
+      - COVERAO_BASEDEDATOS_USUARIO=coverao
+      - COVERAO_BASEDEDATOS_CLAVE=${COVERAO_PG_CLAVE:?falta COVERAO_PG_CLAVE en el archivo .env}
+
+volumes:
+  coverao-pg:

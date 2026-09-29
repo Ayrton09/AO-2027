@@ -239,7 +239,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Para un servidor con páginas web, Postgres**: `[BASEDEDATOS] Tipo=postgres` y dónde está la base, con las mismas
   tablas que SQLite. Con la base vacía, el primer arranque importa la `coverao.db`, o se la pasa antes con
-  `CoverAO.Server pasar-a-postgres`. El backup lo hace el servidor mismo, sin `pg_dump`.
+  `CoverAO.Server pasar-a-postgres`. El backup lo hace el servidor mismo, sin `pg_dump`. Con Docker, la base va en su
+  propio contenedor: `docker-compose.postgres.yml`, encima del de siempre.
+
+- **El `docker-compose.yml` arranca con la experiencia y el oro normales**: traía x100 de cuando las tasas eran un
+  porcentaje.
 
 - **Si la base se cae, el juego sigue**: lo que se guarda espera y se reintenta solo, el panel muestra el estado de la
   base, y el que entra mientras tanto recibe un cartel en vez de quedarse esperando. Si se apaga con la base caída, lo

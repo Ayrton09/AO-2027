@@ -30,8 +30,9 @@ public sealed class AlmacenPostgres : AlmacenRelacional
     public AlmacenPostgres(string cadena)
     {
         // Sin pool: una conexión del pool que quedó de antes de un reinicio de Postgres está muerta, y reabrir la que
-        // escribe tiene que dar una nueva de verdad.
-        _cadena = new NpgsqlConnectionStringBuilder(cadena) { Pooling = false }.ToString();
+        // escribe tiene que dar una nueva de verdad. Sin GSS (Kerberos), que CoverAO no usa: en Linux, intentarlo busca
+        // libgssapi_krb5 —la imagen de Docker no la trae— y el intento fallido sale en la consola como "Error:".
+        _cadena = new NpgsqlConnectionStringBuilder(cadena) { Pooling = false, GssEncryptionMode = GssEncryptionMode.Disable }.ToString();
         _con = new NpgsqlConnection(_cadena);
         _con.Open();
         try
@@ -53,7 +54,7 @@ public sealed class AlmacenPostgres : AlmacenRelacional
     public static string Cadena(ServerIni ini) => new NpgsqlConnectionStringBuilder
     {
         Host = ini.ServidorDeBase, Port = ini.PuertoDeBase, Database = ini.NombreDeBase, Username = ini.UsuarioDeBase,
-        Password = ini.ClaveDeBase, ApplicationName = "CoverAO",
+        Password = ini.ClaveDeBase, ApplicationName = "CoverAO", GssEncryptionMode = GssEncryptionMode.Disable,
     }.ToString();
 
     /// <summary>

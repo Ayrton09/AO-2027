@@ -451,6 +451,17 @@ docker compose logs -f
 El volumen `coverao-data:/app/data` es lo único que no se regenera. El `stop_grace_period: 60s` está puesto
 para que el guardado del apagado llegue a terminar.
 
+**Con Postgres**, la base va en su propio contenedor. Se pone la clave en un archivo `.env` al lado del compose (una
+línea `COVERAO_PG_CLAVE=` con una clave larga) y se levantan los dos:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+```
+
+El servidor espera a que Postgres conteste antes de arrancar, y si en `coverao-data` ya había una `coverao.db` de
+cuando andaba con SQLite, la importa sola. El volumen de la base, `coverao-pg`, tampoco se regenera. El puerto de
+Postgres no se publica: el juego —y una web en el mismo compose— le llegan por la red interna.
+
 ## Con dominio y HTTPS
 
 **Sin TLS la contraseña de cada jugador viaja legible** para cualquiera que mire la red: el cifrado XOR del
