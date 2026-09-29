@@ -651,9 +651,13 @@ public sealed class Bot
                 // echada del 262 por un Esqueleto guerrero volvió doce veces por la misma puerta a cazar los Zombies de ahí, y cada
                 // vez la esperaba el mismo Esqueleto.
                 // Y LO MISMO CON LO DEL HUECO, PERO SÓLO EN UN MAPA INSEGURO: ver `SeVaDelMapaPor`.
+                // Y SI NO PUDO SALIR, NO LO REINTENTA EN LA VUELTA SIGUIENTE, como con el guardia: mientras tanto pelea o se aleja.
+                // Medido en `hueco2`: un bot Pescador en (10,11) del 12, con un Goblin tapándole la esquina (9,7) por donde salía, lo
+                // intentó cada doce segundos durante minutos sin moverse, devolviendo un golpe entre intento e intento.
                 if (SeVaDelMapaPor(NoLaLastima(amenaza.Quien.FichaNpc),
                                    EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno),
-                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura))
+                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura)
+                    && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
                 {
                     int deDonde = sentidos.Mapa;
                     if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct))
@@ -661,6 +665,7 @@ public sealed class Bot
                         _llenoHasta[deDonde] = Environment.TickCount64 + LlenoMs;
                         continue;
                     }
+                    _proximaSalidaPorLaAmenaza = Environment.TickCount64 + ReintentoDeSalidaDelGuardiaMs;
                 }
                 // ACORRALADO SE PELEA. Si tres huidas seguidas no lo movieron de la baldosa, insistir es quedarse quieto recibiendo:
                 // medido en `normal1`, un Mago de nivel 1 con pociones se pasó veinticinco de treinta minutos huyendo sin moverse en
@@ -4447,6 +4452,9 @@ public sealed class Bot
 
     private const int ReintentoDeSalidaDelGuardiaMs = 30_000;
     private long _proximaSalidaDelGuardia;
+    /// <summary>Cuándo puede volver a probar irse del mapa por lo que no puede lastimar o por lo del hueco, si la salida anterior
+    /// no lo movió: la misma espera que con el guardia.</summary>
+    private long _proximaSalidaPorLaAmenaza;
 
     /// <summary>
     /// SALIR DEL MAPA hacia el más cercano donde no nace ningún guardia que vaya por él: la huida de un guardia del otro bando, y
