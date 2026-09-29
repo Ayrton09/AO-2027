@@ -161,6 +161,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 ### Chat, mapa y pantalla
 
+- **Los errores y las sugerencias se reportan en GitHub**, como dice el cartel de bienvenida:
+  github.com/Ayrton09/CoverAO/issues. El /GM queda para las dudas sobre el servidor donde jugás.
+
 - **El mapa del mundo**: doble clic en el objeto Mapa. Muestra dónde estás, y por zona, sus criaturas y sus
   cuevas.
 
