@@ -2689,7 +2689,6 @@ public sealed class Bot
     {
         if (!peligros.Any(o => AlAlcanceDeSuVista(elegido, o))) return elegido;
         (byte X, byte Y)? mejor = null;
-        int mejorPasos = int.MaxValue;
         foreach (var t in presas.OrderBy(t => Math.Abs(t.X - elegido.X) + Math.Abs(t.Y - elegido.Y)))
         {
             if (peligros.Any(o => AlAlcanceDeSuVista(t, o))) continue;

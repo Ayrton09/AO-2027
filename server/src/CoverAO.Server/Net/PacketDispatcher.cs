@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 using CoverAO.Protocol;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
@@ -4673,7 +4674,7 @@ public sealed partial class PacketDispatcher
     /// Como en el VB6, quien no pasa el gate rebota EN SILENCIO (Exit Sub, sin ConsoleMsg).</summary>
     private static bool IsSemiDiosOrHigher(Player? p) => p is not null && (p.Privileges & (PrivSemiDios | PrivDios | PrivAdmin)) != 0;
 
-    private static bool RequireGm(ClientSession session, Player? p)
+    private static bool RequireGm(ClientSession session, [NotNullWhen(true)] Player? p)
     {
         // VB6: cada sub-handler GM arranca con "If .flags.Privilegios And PlayerType.User Then Exit Sub" — un
         // jugador común NO recibe ningún aviso, la petición se descarta en silencio. Replicamos ese silencio
