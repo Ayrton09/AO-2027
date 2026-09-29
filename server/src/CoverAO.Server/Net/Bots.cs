@@ -650,9 +650,10 @@ public sealed class Bot
                 // lugar lleno: la criatura se queda donde lo dejó de ver, que suele ser la entrada. Medido en `pelea_b2`: una Ladrona
                 // echada del 262 por un Esqueleto guerrero volvió doce veces por la misma puerta a cazar los Zombies de ahí, y cada
                 // vez la esperaba el mismo Esqueleto.
-                // Y LO MISMO CON LO DEL HUECO (ver `EsDelHuecoPara`): no es una pelea que le convenga, y la persecución se suelta igual.
-                if ((NoLaLastima(amenaza.Quien.FichaNpc) || EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno))
-                    && NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
+                // Y LO MISMO CON LO DEL HUECO, PERO SÓLO EN UN MAPA INSEGURO: ver `SeVaDelMapaPor`.
+                if (SeVaDelMapaPor(NoLaLastima(amenaza.Quien.FichaNpc),
+                                   EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno),
+                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura))
                 {
                     int deDonde = sentidos.Mapa;
                     if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct))
@@ -883,9 +884,9 @@ public sealed class Bot
     /// Con el Zombie pegándole no se le iba ni le devolvía el golpe: seguía con lo suyo tomando pociones —una de las veces,
     /// cuarenta y cinco— y se moría igual.</para>
     ///
-    /// <para>DECIDIDO POR EL AUTOR (29/09): lo del hueco que ya le pega lo hace huir y, si no se lo saca de encima, irse del mapa,
-    /// como lo que no puede lastimar (en <see cref="ComportarseAsync"/>); y se sale al vecino donde nace menos de lo que lo puede
-    /// matar (<see cref="CuantasLoPuedenMatar"/>). Lo que se elige de antemano —dónde cazar, por dónde viajar— queda como estaba:
+    /// <para>DECIDIDO POR EL AUTOR (29/09): lo del hueco que ya le pega lo hace huir (en <see cref="ComportarseAsync"/>) y, en un
+    /// mapa inseguro, si no se lo saca de encima, irse del mapa (<see cref="SeVaDelMapaPor"/>), al vecino donde nace menos de lo que
+    /// lo puede matar (<see cref="CuantasLoPuedenMatar"/>). Lo que se elige de antemano —dónde cazar, por dónde viajar— queda como estaba:
     /// los de `ropa1` no eligieron el 13 para cazar, lo cruzaban de viaje a Ullathorpe y no tenían otro camino; y para un bot de
     /// 55 a 89 de vida el Lobo también es del hueco, así que esquivarlo de antemano le cerraba los mapas de Lobos y la cuna.</para>
     /// </summary>
@@ -3933,6 +3934,20 @@ public sealed class Bot
     /// </summary>
     public static bool NoSeLoSacaDeEncima(int huidasDeLaMismaCriatura) =>
         huidasDeLaMismaCriatura >= HuidasParaAcorralado;
+
+    /// <summary>
+    /// ¿SE VA DEL MAPA POR ESTA AMENAZA? Cuando no se la saca de encima (<see cref="NoSeLoSacaDeEncima"/>) y es algo que no puede
+    /// lastimar —en cualquier mapa— o algo del hueco (<see cref="EsDelHuecoPara"/>) en un mapa inseguro. En uno seguro, lo del hueco
+    /// no lo saca del mapa: se aleja, y si igual lo acorrala, pelea.
+    ///
+    /// <para>Medido en `hueco1` (29/09), cuando lo del hueco también lo sacaba de un mapa seguro: de 53 salidas que llegaron a otro
+    /// mapa, 23 volvieron al mismo antes de cinco minutos —a comprar, a curarse el veneno— y casi todas eran de la cuna, por el Lobo
+    /// (del hueco para 55 a 89 de vida). Y hubo salidas trabadas: un bot intentó irse seis veces seguidas desde la misma baldosa.
+    /// En la cuna los Lobos del hueco no habían matado a nadie (`ropa1`); los que matan son los Zombies del 13, que es inseguro.
+    /// DECIDIDO POR EL AUTOR (29/09).</para>
+    /// </summary>
+    public static bool SeVaDelMapaPor(bool noLaLastima, bool esDelHueco, bool mapaInseguro, int huidasDeLaMismaCriatura) =>
+        (noLaLastima || (esDelHueco && mapaInseguro)) && NoSeLoSacaDeEncima(huidasDeLaMismaCriatura);
 
     /// <summary>
     /// ¿LA HUIDA NO SIRVIÓ? Si después de alejarse la amenaza sigue adentro del radio de susto, sí: es la misma distancia que

@@ -8,8 +8,8 @@ namespace CoverAO.Protocol.Tests;
 /// <summary>
 /// LO DEL HUECO (`ropa1`, 28/09): tres de las cinco muertes fueron de Zombies del 13 a bots con pociones para los que el Zombie no
 /// es presa ni peligro, así que con el Zombie pegándoles ni se iban ni le devolvían el golpe. Decidido por el autor (29/09): lo del
-/// hueco que le pega lo hace huir y, si no se lo saca de encima, irse del mapa, al vecino donde nace menos de lo que lo puede matar.
-/// Con las fichas y el mundo de verdad.
+/// hueco que le pega lo hace huir y, en un mapa inseguro, si no se lo saca de encima, irse del mapa, al vecino donde nace menos de
+/// lo que lo puede matar. Con las fichas y el mundo de verdad.
 /// </summary>
 public class LoDelHuecoTests
 {
@@ -48,6 +48,23 @@ public class LoDelHuecoTests
         var guerrero = d.Npc(6)!;
         Assert.True(guerrero is { Hostile: false, MaxHit: > 200 }, "premisa: el Guerrero de Ullathorpe no es hostil y pega fuerte");
         Assert.False(Bot.EsDelHuecoPara(guerrero, 300, 20, conPociones: true, curaVeneno: false));
+    }
+
+    /// <summary>
+    /// DE UN MAPA SEGURO LO DEL HUECO NO LO SACA (`hueco1`): de la cuna salían por el Lobo y casi la mitad volvía antes de cinco
+    /// minutos. Lo que no puede lastimar sí lo saca de cualquier mapa, y lo del hueco del 13, que es inseguro, también.
+    /// </summary>
+    [Fact]
+    public void De_la_cuna_lo_del_hueco_no_lo_saca_del_mapa_y_del_13_si()
+    {
+        if (Datos() is not { } d) return;
+        Assert.False(d.IsPkMap(37), "premisa: la cuna es segura");
+        Assert.True(d.IsPkMap(13), "premisa: el 13 es inseguro");
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: true, mapaInseguro: d.IsPkMap(37), huidasDeLaMismaCriatura: 3));
+        Assert.True(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: true, mapaInseguro: d.IsPkMap(13), huidasDeLaMismaCriatura: 3));
+        Assert.True(Bot.SeVaDelMapaPor(noLaLastima: true, esDelHueco: false, mapaInseguro: false, huidasDeLaMismaCriatura: 3));
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: true, mapaInseguro: true, huidasDeLaMismaCriatura: 2));
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, huidasDeLaMismaCriatura: 3));
     }
 
     /// <summary>
