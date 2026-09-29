@@ -261,10 +261,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
-  nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar ni aguantando los golpes
-  de lo que no les conviene pelear: se alejan, y si los sigue por un mapa inseguro, se van de ahí. Si sus hechizos
-  no salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa. Al dejar de ser novatos se
-  compran ropa y un arma, aunque el herrero les quede lejos, si pueden llegar sin que los maten.
+  nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, y en un mapa inseguro
+  tampoco aguantando los golpes de lo que no les conviene pelear: se alejan, y si los sigue, se van de ahí. Si sus
+  hechizos no salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa. Al dejar de ser
+  novatos se compran ropa y un arma, aunque el herrero les quede lejos, si pueden llegar sin que los maten.
 
 ## 1.0.0 — 2026-09-16
 

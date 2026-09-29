@@ -7,9 +7,9 @@ namespace CoverAO.Protocol.Tests;
 
 /// <summary>
 /// LO DEL HUECO (`ropa1`, 28/09): tres de las cinco muertes fueron de Zombies del 13 a bots con pociones para los que el Zombie no
-/// es presa ni peligro, así que con el Zombie pegándoles ni se iban ni le devolvían el golpe. Decidido por el autor (29/09): lo del
-/// hueco que le pega lo hace huir y, en un mapa inseguro, si no se lo saca de encima, irse del mapa, al vecino donde nace menos de
-/// lo que lo puede matar. Con las fichas y el mundo de verdad.
+/// es presa ni peligro, así que con el Zombie pegándoles ni se iban ni le devolvían el golpe. Decidido por el autor (29/09): en un
+/// mapa inseguro, lo del hueco que le pega lo hace huir y, si no se lo saca de encima, irse del mapa, al vecino donde nace menos de
+/// lo que lo puede matar; en uno seguro, nada cambia. Con las fichas y el mundo de verdad.
 /// </summary>
 public class LoDelHuecoTests
 {
@@ -48,6 +48,25 @@ public class LoDelHuecoTests
         var guerrero = d.Npc(6)!;
         Assert.True(guerrero is { Hostile: false, MaxHit: > 200 }, "premisa: el Guerrero de Ullathorpe no es hostil y pega fuerte");
         Assert.False(Bot.EsDelHuecoPara(guerrero, 300, 20, conPociones: true, curaVeneno: false));
+    }
+
+    /// <summary>
+    /// EN LA CUNA LO DEL HUECO NO ES AMENAZA (`hueco3`): un Paladín de 79 de vida pasó cuarenta minutos entre el 9 y el 10 huyendo
+    /// del Lobo y devolviéndole el golpe. En el 13, que es inseguro, el Zombie pegado sí; a dos pasos todavía no, y si algo peligroso
+    /// está más cerca, la amenaza es eso.
+    /// </summary>
+    [Fact]
+    public void En_la_cuna_el_Lobo_del_hueco_no_es_amenaza_y_en_el_13_el_Zombie_si()
+    {
+        if (Datos() is not { } d) return;
+        var lobo = d.Npc(501)!;
+        var zombie = d.Npc(502)!;
+        Assert.True(Bot.EsDelHuecoPara(lobo, 79, 9, conPociones: true, curaVeneno: false), "premisa: con 79 de vida el Lobo es del hueco");
+        Assert.False(Bot.LoDelHuecoEsLaAmenaza(d.IsPkMap(37), lobo, pasos: 1, pasosDelPeligro: null));
+        Assert.True(Bot.LoDelHuecoEsLaAmenaza(d.IsPkMap(13), zombie, pasos: 1, pasosDelPeligro: null));
+        Assert.False(Bot.LoDelHuecoEsLaAmenaza(d.IsPkMap(13), zombie, pasos: 2, pasosDelPeligro: null));
+        Assert.False(Bot.LoDelHuecoEsLaAmenaza(d.IsPkMap(13), zombie, pasos: 1, pasosDelPeligro: 0));
+        Assert.True(Bot.LoDelHuecoEsLaAmenaza(d.IsPkMap(13), zombie, pasos: 1, pasosDelPeligro: 3));
     }
 
     /// <summary>

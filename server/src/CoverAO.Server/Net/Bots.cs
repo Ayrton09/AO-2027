@@ -597,10 +597,10 @@ public sealed class Bot
             // Y LO QUE NO PUEDE LASTIMAR TAMBIÉN SE ESQUIVA: pegarle no sirve, y dejar que lo pique es tomar pociones para nada.
             var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)
                 || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora) || NoLaLastima(ficha));
-            // Y LO DEL HUECO QUE YA LE PEGA, TAMBIÉN (ver `EsDelHuecoPara`): de antemano no se lo esquiva, pero pegado no se lo aguanta.
+            // Y LO DEL HUECO QUE YA LE PEGA EN UN MAPA INSEGURO, TAMBIÉN: ver `LoDelHuecoEsLaAmenaza`.
             if (sentidos.MasCercano(ficha => EsDelHueco(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)) is { } delHueco
-                && LoEstaAtacando(_entorno.Datos.Npc(delHueco.Quien.FichaNpc), delHueco.Pasos)
-                && (peligro is not { } otro || delHueco.Pasos < otro.Pasos))
+                && LoDelHuecoEsLaAmenaza(_entorno.Datos.IsPkMap(sentidos.Mapa), _entorno.Datos.Npc(delHueco.Quien.FichaNpc),
+                                         delHueco.Pasos, peligro?.Pasos))
                 peligro = delHueco;
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
@@ -889,9 +889,10 @@ public sealed class Bot
     /// Con el Zombie pegándole no se le iba ni le devolvía el golpe: seguía con lo suyo tomando pociones —una de las veces,
     /// cuarenta y cinco— y se moría igual.</para>
     ///
-    /// <para>DECIDIDO POR EL AUTOR (29/09): lo del hueco que ya le pega lo hace huir (en <see cref="ComportarseAsync"/>) y, en un
-    /// mapa inseguro, si no se lo saca de encima, irse del mapa (<see cref="SeVaDelMapaPor"/>), al vecino donde nace menos de lo que
-    /// lo puede matar (<see cref="CuantasLoPuedenMatar"/>). Lo que se elige de antemano —dónde cazar, por dónde viajar— queda como estaba:
+    /// <para>DECIDIDO POR EL AUTOR (29/09): en un mapa inseguro, lo del hueco que ya le pega lo hace huir
+    /// (<see cref="LoDelHuecoEsLaAmenaza"/>) y, si no se lo saca de encima, irse del mapa (<see cref="SeVaDelMapaPor"/>), al vecino
+    /// donde nace menos de lo que lo puede matar (<see cref="CuantasLoPuedenMatar"/>); en uno seguro, nada cambia. Lo que se elige
+    /// de antemano —dónde cazar, por dónde viajar— queda como estaba:
     /// los de `ropa1` no eligieron el 13 para cazar, lo cruzaban de viaje a Ullathorpe y no tenían otro camino; y para un bot de
     /// 55 a 89 de vida el Lobo también es del hueco, así que esquivarlo de antemano le cerraba los mapas de Lobos y la cuna.</para>
     /// </summary>
@@ -902,6 +903,18 @@ public sealed class Bot
     /// <summary>La regla de <see cref="EsDelHuecoPara"/> para este bot.</summary>
     private bool EsDelHueco(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
         EsDelHuecoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+
+    /// <summary>
+    /// ¿LO DEL HUECO ES LA AMENAZA DE LA QUE HUYE? Sólo en un mapa inseguro, cuando ya le pega (<see cref="LoEstaAtacando"/>) y
+    /// está más cerca que lo peligroso. En uno seguro lo del hueco se trata como siempre: ni se huye ni se pelea.
+    ///
+    /// <para>Medido en `hueco3` (29/09), cuando también huía de él en un mapa seguro: un Paladín de 79 de vida pasó cuarenta
+    /// minutos entre el nivel 9 y el 10 en la cuna, con setenta y un episodios del Lobo —del hueco de 55 a 89 de vida—, huyendo y
+    /// devolviéndole el golpe en vez de cazar. En la cuna los Lobos del hueco no habían matado a nadie (`ropa1`); los que matan
+    /// son los Zombies del 13, que es inseguro. DECIDIDO POR EL AUTOR (29/09).</para>
+    /// </summary>
+    public static bool LoDelHuecoEsLaAmenaza(bool mapaInseguro, NpcInfo? delHueco, int pasos, int? pasosDelPeligro) =>
+        mapaInseguro && LoEstaAtacando(delHueco, pasos) && (pasosDelPeligro is not { } otro || pasos < otro);
 
     /// <summary>
     /// CUÁNTAS DE LAS QUE NACEN EN ESE MAPA LO PUEDEN MATAR: lo peligroso (<see cref="EsPeligrosoParaElBot"/>) y lo del hueco
@@ -3942,8 +3955,8 @@ public sealed class Bot
 
     /// <summary>
     /// ¿SE VA DEL MAPA POR ESTA AMENAZA? Cuando no se la saca de encima (<see cref="NoSeLoSacaDeEncima"/>) y es algo que no puede
-    /// lastimar —en cualquier mapa— o algo del hueco (<see cref="EsDelHuecoPara"/>) en un mapa inseguro. En uno seguro, lo del hueco
-    /// no lo saca del mapa: se aleja, y si igual lo acorrala, pelea.
+    /// lastimar —en cualquier mapa— o algo del hueco (<see cref="EsDelHuecoPara"/>) en un mapa inseguro. En uno seguro lo del hueco
+    /// ni siquiera es la amenaza (<see cref="LoDelHuecoEsLaAmenaza"/>), así que tampoco lo saca del mapa.
     ///
     /// <para>Medido en `hueco1` (29/09), cuando lo del hueco también lo sacaba de un mapa seguro: de 53 salidas que llegaron a otro
     /// mapa, 23 volvieron al mismo antes de cinco minutos —a comprar, a curarse el veneno— y casi todas eran de la cuna, por el Lobo
