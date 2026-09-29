@@ -86,6 +86,12 @@ public class ElHogarComoElOriginalTests : IDisposable
     private async Task Hogar(ClientSession sesion, byte modo)
     {
         _dispatcher.HandleOne(sesion, new ByteQueueReader(new[] { (byte)ClientPacketId.SeleccionarHogar, modo }));
+        // SE ESPERA LA VUELTA DEL LOOP, que es quien lo atiende, y no un tiempo fijo: con la máquina cargada, los 300 ms solos no
+        // alcanzaron (29/09, `Fuera_de_los_mapas_del_hogar_es_invalida(mapa: 37)`). Después, el rato de la cola de salida de la
+        // sesión, que también es asincrónica.
+        var atendido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _loop.Enqueue(() => atendido.SetResult());
+        await atendido.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await Task.Delay(300);
     }
 
