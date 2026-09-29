@@ -219,6 +219,25 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// Y PARA QUEDAR CERCA DE ALGO NO SE PARA ENCIMA DE UNA SALIDA. Hay criaturas que nacen sobre una —el Murciélago de (19,7)
+    /// del 11 nace en la fila de la salida al 555— y el camino al coto terminaba ahí: medido en `early1`, dos bots de nivel 1
+    /// pisaban la salida, caían en el 555, volvían al 11 y otra vez, seis y ocho veces seguidas.
+    /// </summary>
+    [Fact]
+    public void Para_quedar_cerca_de_algo_no_se_para_encima_de_una_salida()
+    {
+        if (Mundo() is not { } m) return;
+        Assert.True(m.Datos.MapExits.ContainsKey((11, 19, 7)), "premisa: en el 11, la baldosa (19,7) es la salida al 555");
+        Assert.True(m.Datos.MapSpawns[11].Any(s => s.X == 19 && s.Y == 7), "premisa: en el 11 nace algo en (19,7)");
+        var camino = m.Mapas.HayComoLlegar(11, (10, 8), (19, 7), 3);
+        Assert.True(camino is { Count: > 0 }, "desde la entrada del 11 no se llega cerca de (19,7)");
+        foreach (var b in camino!)
+            Assert.False(m.Datos.MapExits.ContainsKey((11, b.X, b.Y)), $"el camino pisa la salida {b}");
+        var llegada = camino[^1];
+        Assert.True(Math.Abs(llegada.X - 19) + Math.Abs(llegada.Y - 7) <= 3, $"se para en {llegada}, lejos de (19,7)");
+    }
+
+    /// <summary>
     /// EL CAMINO RODEA LO QUE SE LE PIDE EVITAR. Una criatura quieta en un pasillo no está en el mapa: el bot
     /// anota la baldosa donde rebotó y pide otro camino. Si el navegante la ignorara, devolvería el mismo camino y
     /// el bot chocaría contra lo mismo — que es lo que le pasó a uno en la cuna, doce veces contra (66,24).

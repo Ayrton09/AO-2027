@@ -470,7 +470,11 @@ public sealed class Navegante
                                                           (byte X, byte Y) objetivo, int radio = 1,
                                                           IReadOnlySet<(byte X, byte Y)>? evitar = null)
     {
-        if (Camino(mapa, desde, objetivo, evitar) is { } directo) return directo;
+        // NI LA PARADA ES UNA SALIDA: pisarla saca del mapa, y lo que se busca es quedar cerca del objetivo EN ESTE. Hay criaturas
+        // que nacen encima de una —46 en el mundo, como el Murciélago de (19,7) del 11, en la fila de la salida al 555—, y el
+        // camino al coto terminaba ahí: medido en `early1`, dos bots de nivel 1 cayeron en el 555, volvieron al 11 y otra vez,
+        // seis y ocho veces seguidas.
+        if (!EsSalida(mapa, objetivo.X, objetivo.Y) && Camino(mapa, desde, objetivo, evitar) is { } directo) return directo;
         // De cerca hacia afuera: la primera baldosa alcanzable es la mejor parada.
         for (int d = 1; d <= radio; d++)
         {
@@ -480,7 +484,7 @@ public sealed class Navegante
                 foreach (int dy in resto == 0 ? new[] { 0 } : new[] { -resto, resto })
                 {
                     int nx = objetivo.X + dx, ny = objetivo.Y + dy;
-                    if (!SePuedePisar(mapa, nx, ny)) continue;
+                    if (!SePuedePisar(mapa, nx, ny) || EsSalida(mapa, nx, ny)) continue;
                     if (Camino(mapa, desde, ((byte)nx, (byte)ny), evitar) is { } cerca) return cerca;
                 }
             }
