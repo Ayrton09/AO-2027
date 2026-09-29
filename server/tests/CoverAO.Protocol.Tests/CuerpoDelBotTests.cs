@@ -24,7 +24,7 @@ public class CuerpoDelBotTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(_datos.LevelExp);
-        _dispatcher = new PacketDispatcher(new World(), _loop, new Persistence(new FileStore(_root), leveling), _datos, leveling);
+        _dispatcher = new PacketDispatcher(new World(), _loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), _datos, leveling);
         // Meditar y caminar corren adentro del loop, así que el loop tiene que girar de verdad.
         _loopTask = _loop.RunAsync(_cts.Token);
     }

@@ -35,13 +35,14 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
             .Select(x => { var r = new ByteQueueReader(x); r.ReadByte(); return r.ReadAsciiString(); }).ToList();
     }
 
+    private readonly AlmacenSqlite _almacen = AlmacenSqlite.EnMemoria();
     private readonly Persistence _db;
 
     public LaVidaDelClanComoElOriginalTests()
     {
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(_datos.LevelExp);
-        _db = new Persistence(new FileStore(_root), leveling);
+        _db = new Persistence(_almacen, leveling);
         _dispatcher = new PacketDispatcher(_world, _loop, _db, _datos, leveling);
         _corriendo = _loop.RunAsync(_cts.Token);
     }
@@ -319,7 +320,8 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
         await Volcar();
         _db.EsperarEscriturasPendientes();   // el volcado se encola en la base: el "reinicio" lee después
 
-        var releidos = new Persistence(new FileStore(_root), new Leveling(_datos.LevelExp)).LoadGuilds();
+        // El "reinicio": otro Persistence sobre la MISMA base, que lee lo que quedó guardado.
+        var releidos = new Persistence(_almacen, new Leveling(_datos.LevelExp)).LoadGuilds();
         var sur2 = releidos.Single(g => g.Name == "Sur");
         Assert.Equal("basta", sur2.PeaceOffers["Norte"]);
         Assert.True(sur2.ElectionsOpen);

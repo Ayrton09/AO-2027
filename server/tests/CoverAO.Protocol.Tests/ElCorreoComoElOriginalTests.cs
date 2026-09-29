@@ -43,7 +43,7 @@ public class ElCorreoComoElOriginalTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(_datos.LevelExp);
-        _db = new Persistence(new FileStore(_root), leveling);
+        _db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
         _dispatcher = new PacketDispatcher(_world, _loop, _db, _datos, leveling);
         _corriendo = _loop.RunAsync(_cts.Token);
     }

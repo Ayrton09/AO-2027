@@ -242,6 +242,12 @@ En una base de datos, con dos opciones y las mismas tablas en las dos:
   un servidor solo.
 - **Postgres**, para un servidor con páginas web que lean la misma base (ver más abajo).
 
+**Cómo elegir.** Para jugar solo, en LAN o en un servidor sin página web: SQLite. Los jugadores se conectan al
+servidor, no a la base, así que la cantidad de gente no cambia la elección: la base la usa un solo proceso, y un
+guardado entero es un milisegundo. Postgres conviene cuando algo más tiene que leer la misma base mientras el juego
+corre —una web con la tabla de posiciones, los clanes o los conectados—, o cuando ya hay un Postgres administrado
+(con sus copias y sus réplicas). Se puede empezar con SQLite y pasar a Postgres cuando haga falta: ver "Con Postgres".
+
 Ahí van los personajes, las cuentas y lo que guarda el mundo: clanes, correo, suelo, llaves vendidas y el récord de
 conectados.
 
@@ -256,8 +262,7 @@ Se elige en el `Server.ini`:
 
 ```ini
 [BASEDEDATOS]
-; sqlite (un archivo), postgres (un servidor con paginas web) o archivos (un .chr por personaje, como el original).
-; Sin la clave, sqlite.
+; sqlite (un archivo) o postgres (un servidor con paginas web). Sin la clave, sqlite.
 Tipo=sqlite
 ; Con sqlite: el archivo de la base, en la carpeta data/.
 Archivo=coverao.db
@@ -271,7 +276,7 @@ Clave=
 
 | Clave | Qué hace |
 |---|---|
-| `Tipo` | `sqlite`, `postgres` o `archivos`. Vacía: `sqlite`, importando lo que hubiera en archivos |
+| `Tipo` | `sqlite` o `postgres`. Vacía: `sqlite`, importando lo que hubiera en archivos |
 | `Archivo` | el archivo de SQLite, relativo a `data/`. Por defecto `coverao.db` |
 | `Servidor`, `Puerto` | dónde escucha Postgres. Por defecto `localhost` y `5432` |
 | `Base`, `Usuario`, `Clave` | la base de Postgres y con qué usuario entra el servidor. Por defecto `coverao` y `coverao` |
@@ -350,7 +355,7 @@ Cada 30 minutos se copia el mundo entero a `data/backups/` sin frenar a nadie, c
 Antes de cada copia se guarda a los conectados. También hay un botón en el panel de administración.
 
 Con la base, cada backup es **un archivo**, una copia consistente aunque el servidor esté escribiendo, más una
-carpeta con el mismo nombre para los archivos sueltos de `data/`, como la lista de IPs baneadas. Con SQLite es
+carpeta con el mismo nombre para los archivos sueltos de `data/`, como el mensaje del día. Con SQLite es
 `coverao-AAAAMMDD-HHMMSS.db`, una base que se abre tal cual. Con Postgres es `coverao-AAAAMMDD-HHMMSS.zip`: cada tabla
 en CSV y un manifiesto con la versión de las tablas, hecho por el servidor mismo, sin necesitar `pg_dump`. Para quien
 sabe de Postgres, `pg_dump` sirve igual.
@@ -360,16 +365,12 @@ puede volver a generar.
 
 ### No dejes `data/` adentro de una carpeta que sincroniza sola
 
-En Windows, un `.chr` **abierto por otro programa** no se puede reemplazar: el guardado de ese jugador falla, y
-el que hostea lo ve como alguien a quien "se le borró lo de la última media hora", cada tanto y sin patrón. Los
-sospechosos de siempre son OneDrive o Dropbox sincronizando `Documentos`, el antivirus escaneando al vuelo y el
-agente de backup del hosting.
-
-Está medido: con un solo proceso pidiéndole el **tamaño** a los diez `.chr` de prueba —ni siquiera leyéndolos—
-se perdieron 181 de 10.620 escrituras. El servidor ahora reintenta y eso baja a 0, pero el reintento tiene 31
-ms de presupuesto a propósito (esperar más congelaría el mundo para todos). Si el programa que molesta se queda
-el archivo más tiempo, el guardado se pierde igual — y entonces sí lo vas a ver en la consola, con el nombre
-del archivo. La forma barata de no tener el problema es tener el servidor **fuera** de la carpeta sincronizada.
+Un programa que sincroniza o escanea la carpeta —OneDrive o Dropbox sincronizando `Documentos`, el antivirus
+escaneando al vuelo, el agente de backup del hosting— **se agarra la base** (`data/coverao.db` y su diario, el
+`-wal`) mientras el servidor escribe. El servidor lo aguanta: lo que se guarda espera y se reintenta, y la consola
+avisa que la base no responde. Pero la copia que hace ese programa de una base abierta puede salir a medio escribir,
+y ésa no sirve para volver atrás: para eso están los backups de `data/backups/`, que son copias consistentes. La forma
+barata de no tener el problema es tener el servidor **fuera** de la carpeta sincronizada.
 
 ### Volver atrás con un backup
 
@@ -387,35 +388,8 @@ CoverAO.Server restaurar data/backups/coverao-20260808-030000.zip --reemplazar  
 Un backup de SQLite (`.db`) se puede restaurar también en Postgres; uno de Postgres (`.zip`), sólo en Postgres. Un
 backup de una versión anterior del servidor se restaura igual: las tablas se ponen al día al restaurar.
 
-**Con los archivos** (`data/Charfile/`, `data/Cuentas/`):
-
-```sh
-# 1. Parar el servidor. Sin esto se restaura sobre archivos que el servidor está escribiendo.
-#    (cerrar la ventana / Ctrl+C / systemctl stop coverao / docker stop)
-
-# 2. Guardar lo que hay AHORA, por si el backup elegido no era el que uno creía.
-mv data/Charfile data/Charfile.antes && mv data/Cuentas data/Cuentas.antes && mv data/Misc data/Misc.antes
-
-# 3. Poner en su lugar las tres carpetas del backup elegido. Se llaman coverao-AAAAMMDD-HHMMSS,
-#    así que `ls data/backups/` ya las lista de la más vieja a la más nueva.
-cp -r data/backups/coverao-20260808-030000/Charfile data/
-cp -r data/backups/coverao-20260808-030000/Cuentas  data/
-cp -r data/backups/coverao-20260808-030000/Misc     data/
-
-# 4. Arrancar. Los personajes y las cuentas quedan como estaban en ese momento.
-```
-
-Un backup es una carpeta con **exactamente** las tres que importan:
-
-| | |
-|---|---|
-| `Charfile/` | los personajes (`.chr`) |
-| `Cuentas/` | las cuentas (`.cnt`), con sus contraseñas |
-| `Misc/` | clanes, correo, records del mundo |
-
 No hace falta tocar nada más: los mapas, la data del juego y el cliente web se regeneran desde la
-instalación. Y **no** se restaura sólo un personaje copiando su `.chr` suelto: la cuenta que lo lista vive en
-`Cuentas/`, así que si el personaje no existía en ese momento el `.chr` queda huérfano y no aparece al entrar.
+instalación.
 
 Al apagarse bien, el servidor guarda a todos los que están jugando. Sirve cualquiera de estas:
 

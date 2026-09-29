@@ -58,7 +58,7 @@ public class ElIraYElSumComoElOriginalTests : IDisposable
     private PacketDispatcher Dispatcher(ServerIni ini)
     {
         var leveling = new Leveling(_datos.LevelExp);
-        return new PacketDispatcher(_world, _loop, new Persistence(new FileStore(_root), leveling), _datos, leveling,
+        return new PacketDispatcher(_world, _loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), _datos, leveling,
                                     serverIni: ini);
     }
 

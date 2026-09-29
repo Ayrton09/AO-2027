@@ -271,9 +271,8 @@ public sealed class ServerIni
     public int BackupsAConservar { get; private set; } = DefaultBackupsAConservar;
     public int LogDias { get; private set; } = 7;          // días de log en disco. 0 = no escribir archivo
 
-    /// <summary><c>[BASEDEDATOS] Tipo</c>: <c>sqlite</c> (una base en un archivo), <c>postgres</c> (un servidor con páginas
-    /// web) o <c>archivos</c> (un <c>.chr</c> por personaje, como el original). Vacío: el servidor elige (ver
-    /// <see cref="Almacenes.Abrir"/>).</summary>
+    /// <summary><c>[BASEDEDATOS] Tipo</c>: <c>sqlite</c> (una base en un archivo, lo que se usa si no se dice nada) o
+    /// <c>postgres</c> (un servidor con páginas web). Ver <see cref="Almacenes.Abrir"/>.</summary>
     public string TipoDeBase { get; private set; } = "";
     /// <summary><c>[BASEDEDATOS] Archivo</c>: el archivo de SQLite, relativo a la carpeta <c>data/</c>.</summary>
     public string ArchivoDeBase { get; private set; } = "coverao.db";

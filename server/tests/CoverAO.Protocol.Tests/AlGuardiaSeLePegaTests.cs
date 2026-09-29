@@ -50,7 +50,7 @@ public class AlGuardiaSeLePegaTests : IDisposable
         var world = new World();
         var loop = new GameLoop();
         var leveling = new Leveling(_datos.LevelExp);
-        var dispatcher = new PacketDispatcher(world, loop, new Persistence(new FileStore(carpeta), leveling), _datos, leveling,
+        var dispatcher = new PacketDispatcher(world, loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), _datos, leveling,
             serverIni: ServerIni.Desde(IniFile.Parse("[INIT]\r\n" + claves)));
         var cts = new CancellationTokenSource();
         _loops.Add((cts, loop.RunAsync(cts.Token)));

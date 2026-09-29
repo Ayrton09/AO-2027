@@ -329,8 +329,16 @@ public class AlmacenesTests : IDisposable
         try { Assert.IsType<AlmacenSqlite>(sqlite); }
         finally { (sqlite as IDisposable)?.Dispose(); }
         Assert.True(File.Exists(Path.Combine(_raiz, "otra.db")));
+    }
 
-        Assert.IsType<AlmacenDeTexto>(Abrir("[BASEDEDATOS]\r\nTipo=archivos\r\n"));
+    /// <summary>Los archivos ya no son un lugar donde guardar: el que todavía tiene <c>Tipo=archivos</c> se entera al arrancar
+    /// de qué hacer —sacar la línea, que importa solo— y no arranca guardando donde ya no se lee.</summary>
+    [Fact]
+    public void Tipo_archivos_ya_no_existe_y_dice_que_hacer()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Abrir("[BASEDEDATOS]\r\nTipo=archivos\r\n"));
+        Assert.Contains("importa solo", error.Message);
+        Assert.Contains("exportar", error.Message);
     }
 
     [Fact]

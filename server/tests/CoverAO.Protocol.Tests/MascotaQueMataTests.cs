@@ -38,7 +38,7 @@ public class MascotaQueMataTests : IDisposable
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(_datos.LevelExp);
         _npcs = new NpcSystem(_world, _datos);
-        _dispatcher = new PacketDispatcher(_world, new GameLoop(), new Persistence(new FileStore(_root), leveling),
+        _dispatcher = new PacketDispatcher(_world, new GameLoop(), new Persistence(AlmacenSqlite.EnMemoria(), leveling),
             _datos, leveling, npcs: _npcs);
     }
 

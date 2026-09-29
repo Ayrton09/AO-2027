@@ -136,6 +136,27 @@ public class ImportadorTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(Datos, "Misc")), "leer la carpeta de origen no puede crearle nada");
     }
 
+    /// <summary>Una segunda importación —se borró la base y quedaban archivos— con los <c>*.importado</c> de la primera al lado:
+    /// no los pisa ni falla por ellos, aparta lo nuevo con la fecha.</summary>
+    [Fact]
+    public void Una_segunda_importacion_no_pisa_lo_que_aparto_la_primera()
+    {
+        var archivos = new AlmacenDeTexto(new FileStore(Datos));
+        var cuenta = Cuenta("Cuenta");
+        archivos.GuardarCuenta(cuenta);
+        Assert.True(archivos.CrearPersonaje(cuenta, FichasDePrueba.Llena("Segundo")));
+        string viejo = Path.Combine(Datos, "Charfile.importado");
+        Directory.CreateDirectory(viejo);
+        File.WriteAllText(Path.Combine(viejo, "PRIMERO.chr"), "[INIT]\r\nGenero=1\r\n");
+
+        var informe = Importador.ImportarSiHaceFalta(Datos, Base);
+
+        Assert.NotNull(informe);
+        Assert.True(File.Exists(Path.Combine(viejo, "PRIMERO.chr")));   // lo de la primera, intacto
+        Assert.False(Directory.Exists(Path.Combine(Datos, "Charfile")));
+        Assert.Single(Directory.GetDirectories(Datos, "Charfile.importado-*"));
+    }
+
     /// <summary>Nada se descarta en silencio: lo que no cierra en el origen va al informe.</summary>
     [Fact]
     public void El_informe_dice_lo_que_no_cierra()

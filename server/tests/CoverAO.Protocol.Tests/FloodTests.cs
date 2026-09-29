@@ -29,7 +29,7 @@ public class FloodTests : IDisposable
         var data = new GameData();
         var world = new World();
         var leveling = new Leveling(data.LevelExp);
-        var db = new Persistence(new FileStore(_root), leveling);
+        var db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
         _dispatcher = new PacketDispatcher(world, new GameLoop(), db, data, leveling);
     }
 

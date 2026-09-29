@@ -229,7 +229,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   IP, como el original. Se elige con `[BASEDEDATOS] Tipo=` en el Server.ini.
 
 - **Una instalación que tenía los personajes en archivos los importa sola** en el primer arranque, verificando cada
-  uno, y deja lo viejo al lado. `CoverAO.Server importar <carpeta>` hace lo mismo con cualquier carpeta de datos,
+  uno, y deja lo viejo al lado. Los `.chr` y `.cnt` ya no son un lugar donde guardar: `Tipo=archivos` no arranca y dice
+  qué hacer. `CoverAO.Server importar <carpeta>` hace lo mismo con cualquier carpeta de datos,
   también la de un servidor del original con su correo; `exportar` saca todo a `.chr` y `.cnt`.
 
 - **Para un servidor con páginas web, Postgres**: `[BASEDEDATOS] Tipo=postgres` y dónde está la base, con las mismas

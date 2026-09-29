@@ -42,7 +42,7 @@ public class BotsCuentaTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(new Dictionary<int, long>());
-        _db = new Persistence(new FileStore(_root), leveling);
+        _db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
         _dispatcher = new PacketDispatcher(new World(), _loop, _db, GameData.Load(), leveling);
         // El login verifica la contraseña FUERA del loop y vuelve por él, así que acá el loop tiene que girar
         // de verdad: sin esto la respuesta nunca llega y los tres tests darían el mismo timeout.

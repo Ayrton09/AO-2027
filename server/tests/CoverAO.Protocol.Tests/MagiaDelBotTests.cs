@@ -34,7 +34,7 @@ public class MagiaDelBotTests
         if (datos.ItemCount == 0 || datos.LevelExp.Count == 0) return null;
         Directory.CreateDirectory(raiz);
         var niveles = new Leveling(datos.LevelExp, datos.LifeMod);
-        return new Mundo(datos, niveles, new Persistence(new FileStore(raiz), niveles));
+        return new Mundo(datos, niveles, new Persistence(AlmacenSqlite.EnMemoria(), niveles));
     }
 
     /// <summary>

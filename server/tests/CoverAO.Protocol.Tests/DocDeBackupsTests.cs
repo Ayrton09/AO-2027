@@ -62,21 +62,25 @@ public class DocDeBackupsTests
         Assert.True(miradas > 0, "ninguna guía muestra una ruta de backup: o se borró la sección o cambió el formato");
     }
 
+    /// <summary>
+    /// La guía restaura el backup que el servidor ESCRIBE: con la base, un backup es un archivo —el <c>.db</c> de SQLite, el
+    /// <c>.zip</c> de Postgres— que se devuelve con <c>restaurar</c>. La extensión sale de un backup de verdad, no de una
+    /// copia: si mañana cambia, esto se cae y avisa.
+    /// </summary>
     [Fact]
-    public void La_guia_nombra_las_TRES_carpetas_que_el_backup_contiene()
+    public void La_guia_restaura_el_archivo_que_el_backup_escribe()
     {
-        var guias = Guias();
-        Assert.NotEmpty(guias);
-        // Las mismas tres que copia FileStore.Backup. Que estén las tres importa: restaurar sólo Charfile deja
-        // los personajes sin la cuenta que los lista, y no aparecen al entrar.
-        foreach (var g in guias)
+        string? hosting = Guias().FirstOrDefault(g => Path.GetFileName(g) == "HOSTING.md");
+        Assert.NotNull(hosting);
+        string texto = File.ReadAllText(hosting!);
+        string dir = Path.Combine(Path.GetTempPath(), "coverao_docbk_" + Guid.NewGuid().ToString("N"));
+        try
         {
-            string texto = File.ReadAllText(g);
-            if (!texto.Contains("data/backups") && !texto.Contains(@"data\backups")) continue;
-            foreach (var carpeta in new[] { "Charfile", "Cuentas", "Misc" })
-                Assert.True(texto.Contains(carpeta),
-                    $"{Path.GetFileName(g)} explica cómo restaurar y no menciona '{carpeta}', que es una de las " +
-                    "tres carpetas que el backup trae y hay que devolver a su lugar.");
+            string ruta;
+            using (var almacen = AlmacenSqlite.EnMemoria()) ruta = almacen.Backup(dir, Backups.Stem(DateTime.Now));
+            Assert.Matches($@"restaurar data/backups/{Backups.Prefijo}[0-9-]+\{Path.GetExtension(ruta)}", texto);
+            Assert.Matches($@"restaurar data/backups/{Backups.Prefijo}[0-9-]+\.zip", texto);   // el de Postgres
         }
+        finally { try { Directory.Delete(dir, recursive: true); } catch { } }
     }
 }

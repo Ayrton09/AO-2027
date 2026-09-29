@@ -621,6 +621,10 @@ public sealed class Persistence : IDisposable
         return p;
     }
 
+    /// <summary>El alta de un personaje ya armado —con sus amigos, su oro, lo que sea— por el mismo camino que el alta del
+    /// juego. Para las pruebas, que arman al personaje a mano: la base no crea personajes al guardarlos.</summary>
+    internal void AltaDe(Player p, Account acc) => GuardarAlta(p, acc);
+
     /// <summary>EL ALTA DE UN PERSONAJE: su ficha y la cuenta que lo lista, en UN solo pedido. Eran dos escrituras
     /// sueltas, y un corte entre las dos dejaba un personaje que no figuraba en ninguna cuenta con el nombre tomado para
     /// siempre. El nombre entra al índice ya, en el hilo del que crea: un segundo alta con el mismo nombre lo ve en el

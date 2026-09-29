@@ -32,7 +32,7 @@ public class CuposDeAbusoTests : IDisposable
         Directory.CreateDirectory(_root);
         var data = new GameData();
         var leveling = new Leveling(data.LevelExp);
-        _dispatcher = new PacketDispatcher(new World(), new GameLoop(), new Persistence(new FileStore(_root), leveling), data, leveling);
+        _dispatcher = new PacketDispatcher(new World(), new GameLoop(), new Persistence(AlmacenSqlite.EnMemoria(), leveling), data, leveling);
     }
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }

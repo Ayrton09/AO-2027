@@ -60,7 +60,7 @@ public class AtacarAUnAliadoTests : IDisposable
             File.WriteAllText(ruta, "[INIT]\r\nStartPort=7666\r\n" + ini);
             cfg = ServerIni.Cargar(ruta);
         }
-        return new PacketDispatcher(_world, _loop, new Persistence(new FileStore(_root), leveling), _datos, leveling, serverIni: cfg);
+        return new PacketDispatcher(_world, _loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), _datos, leveling, serverIni: cfg);
     }
 
     private Player Pj(string nombre, byte x, byte faccion)

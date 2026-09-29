@@ -353,10 +353,9 @@ Version=
 
 [BASEDEDATOS]
 ; Donde se guardan los personajes y las cuentas. sqlite = un archivo, data/coverao.db, nada que instalar;
-; postgres = un servidor con paginas web que leen la misma base (ver docs/HOSTING.md); archivos = un .chr por
-; personaje y un .cnt por cuenta, como el original. Sin Tipo, sqlite: si ya habia personajes en archivos, el
-; primer arranque los importa y deja lo viejo renombrado a *.importado. Con postgres y la base vacia, importa
-; igual la coverao.db de data/: asi se pasa de SQLite a Postgres.
+; postgres = un servidor con paginas web que leen la misma base (ver docs/HOSTING.md). Sin Tipo, sqlite. Si ya
+; habia personajes en archivos (.chr y .cnt), el primer arranque los importa y deja lo viejo renombrado a
+; *.importado. Con postgres y la base vacia, importa igual la coverao.db de data/: asi se pasa de SQLite a Postgres.
 ;Tipo=sqlite
 ;Archivo=coverao.db
 ; Con postgres: donde esta la base. La clave, mejor desde el entorno (COVERAO_BASEDEDATOS_CLAVE).

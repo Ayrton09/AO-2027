@@ -182,8 +182,19 @@ public static class Importador
         foreach (var carpeta in new[] { "Charfile", "Cuentas", "Misc" })
         {
             string vieja = Path.Combine(dataRoot, carpeta);
-            if (Directory.Exists(vieja)) Directory.Move(vieja, vieja + ".importado");
+            if (Directory.Exists(vieja)) Directory.Move(vieja, NombreLibre(vieja + ".importado"));
         }
+    }
+
+    /// <summary><paramref name="ruta"/>, o —si ya hay algo con ese nombre, de una importación anterior— la misma con la fecha:
+    /// lo que se apartó antes no se pisa, y lo de ahora no falla por eso (con la base ya importada y el servidor sin
+    /// arrancar).</summary>
+    private static string NombreLibre(string ruta)
+    {
+        string libre = ruta;
+        for (int i = 1; File.Exists(libre) || Directory.Exists(libre); i++)
+            libre = $"{ruta}-{DateTime.Now:yyyyMMdd-HHmmss}" + (i > 1 ? $"-{i}" : "");
+        return libre;
     }
 
     public static bool HayPersonajesEnArchivos(string dataRoot)
@@ -274,7 +285,7 @@ public static class Importador
     private static string ApartarBase(string archivo, string sufijo)
     {
         SqliteConnection.ClearAllPools();
-        string nuevo = archivo + sufijo;
+        string nuevo = NombreLibre(archivo + sufijo);
         File.Move(archivo, nuevo);
         foreach (var lado in new[] { "-wal", "-shm", "-journal" })
             if (File.Exists(archivo + lado)) File.Move(archivo + lado, nuevo + lado);

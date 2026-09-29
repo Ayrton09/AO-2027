@@ -23,7 +23,7 @@ public class PlantillaDeCombateTests : IDisposable
         if (datos.ItemCount == 0 || datos.LevelExp.Count == 0) return null;
         Directory.CreateDirectory(_root);
         var niveles = new Leveling(datos.LevelExp, datos.LifeMod);
-        return (datos, niveles, new Persistence(new FileStore(_root), niveles));
+        return (datos, niveles, new Persistence(AlmacenSqlite.EnMemoria(), niveles));
     }
 
     /// <summary>Un personaje creado POR EL CAMINO REAL: los atributos salen del alta según raza y clase, y de

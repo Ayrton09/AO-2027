@@ -43,7 +43,7 @@ public class LosAvisosDelLoginTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         _leveling = new Leveling(_datos.LevelExp);
-        _db = new Persistence(new FileStore(_root), _leveling);
+        _db = new Persistence(AlmacenSqlite.EnMemoria(), _leveling);
         var cuenta = _db.CreateAccount("cuenta", "clave");
         _db.CreateCharacter(cuenta, "Aldo", 1, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
         _corriendo = _loop.RunAsync(_cts.Token);

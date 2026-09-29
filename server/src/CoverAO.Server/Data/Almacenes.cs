@@ -2,8 +2,9 @@ namespace CoverAO.Server.Data;
 
 /// <summary>
 /// DÓNDE GUARDA EL SERVIDOR (fase5/postgres/DISENO.md, sección 5). Lo elige el que hostea con <c>[BASEDEDATOS] Tipo</c>:
-/// <c>sqlite</c> —una base en un archivo, <c>data/coverao.db</c>—, <c>postgres</c> —un servidor con páginas web, que leen la
-/// misma base— o <c>archivos</c>, un <c>.chr</c> por personaje y un <c>.cnt</c> por cuenta, como el original.
+/// <c>sqlite</c> —una base en un archivo, <c>data/coverao.db</c>— o <c>postgres</c> —un servidor con páginas web, que leen
+/// la misma base—. Los <c>.chr</c> y <c>.cnt</c> del original ya no son un lugar donde guardar: se importan (y se exportan,
+/// para mirarlos o para las herramientas que los leen).
 ///
 /// <para><b>Sin <c>Tipo</c>, SQLite.</b> Y lo que no puede pasar es dejar de ver un mundo que ya existe: una base vacía, con
 /// personajes en archivos o en otra base al lado, los IMPORTA en el primer arranque (<see cref="Importador"/>), y lo viejo
@@ -36,10 +37,12 @@ public static class Almacenes
                 }
             }
             case "archivos":
-                return (new AlmacenDeTexto(new FileStore(dataRoot)), "archivos .chr/.cnt");
+                throw new InvalidOperationException(
+                    "[BASEDEDATOS] Tipo=archivos ya no existe: los personajes se guardan en una base. Sacá la línea (o poné " +
+                    "sqlite) y el primer arranque importa solo los .chr y .cnt; para verlos como archivos, CoverAO.Server exportar.");
             default:
                 throw new InvalidOperationException(
-                    $"[BASEDEDATOS] Tipo={ini.TipoDeBase}: no se conoce. Los que hay son sqlite, postgres y archivos.");
+                    $"[BASEDEDATOS] Tipo={ini.TipoDeBase}: no se conoce. Los que hay son sqlite y postgres.");
         }
     }
 

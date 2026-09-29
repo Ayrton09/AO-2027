@@ -63,7 +63,7 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     private (Player, ClientSession, Transporte) EnElPuerto(ServerIni ini, short pasaje, int navegacion, byte privilegios = 1)
     {
         var leveling = new Leveling(_datos.LevelExp);
-        _dispatcher = new PacketDispatcher(_world, _loop, new Persistence(new FileStore(_root), leveling), _datos,
+        _dispatcher = new PacketDispatcher(_world, _loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), _datos,
                                            leveling, serverIni: ini);
         var puerto = (short)_datos.Obj(pasaje)!.PasajeDesdeMap;
         var aca = new WorldPos(puerto, 60, 20);

@@ -84,7 +84,7 @@ public class LaEspadaMataDragonesTests : IDisposable
         var leveling = new Leveling(datos.LevelExp);
         string carpeta = Path.Combine(_root, esDragon ? "dragon" : "otra");
         Directory.CreateDirectory(carpeta);
-        var dispatcher = new PacketDispatcher(world, loop, new Persistence(new FileStore(carpeta), leveling), datos, leveling,
+        var dispatcher = new PacketDispatcher(world, loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), datos, leveling,
             admin: new AdminConfig(), npcs: npcs);
         using var cts = new CancellationTokenSource();
         var corriendo = loop.RunAsync(cts.Token);

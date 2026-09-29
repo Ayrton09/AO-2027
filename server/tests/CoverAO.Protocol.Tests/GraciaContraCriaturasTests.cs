@@ -70,7 +70,7 @@ public class GraciaContraCriaturasTests
         Directory.CreateDirectory(root);
         using var cts = new CancellationTokenSource();
         var leveling = new Leveling(datos.LevelExp);
-        var dispatcher = new PacketDispatcher(world, loop, new Persistence(new FileStore(root), leveling), datos, leveling);
+        var dispatcher = new PacketDispatcher(world, loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), datos, leveling);
         var corriendo = loop.RunAsync(cts.Token);
         try
         {

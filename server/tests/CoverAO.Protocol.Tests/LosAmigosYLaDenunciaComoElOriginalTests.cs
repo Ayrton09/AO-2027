@@ -40,7 +40,7 @@ public class LosAmigosYLaDenunciaComoElOriginalTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         var leveling = new Leveling(_datos.LevelExp);
-        _db = new Persistence(new FileStore(_root), leveling);
+        _db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
         _dispatcher = new PacketDispatcher(_world, _loop, _db, _datos, leveling);
         _corriendo = _loop.RunAsync(_cts.Token);
     }
@@ -63,10 +63,13 @@ public class LosAmigosYLaDenunciaComoElOriginalTests : IDisposable
         return p;
     }
 
+    /// <summary>El alta del personaje en la base, con su cuenta: la base no crea personajes al guardarlos.</summary>
+    private void Alta(Player p) => _db.AltaDe(p, new Account { Name = p.Account, PasswordHash = "pbkdf2$1$a$b", Salt = "" });
+
     private (Player, ClientSession, Transporte) Conectado(string nombre, byte x, params string[] amigos)
     {
         var p = Pj(nombre, x, amigos);
-        _db.SaveCharacter(p);
+        Alta(p);
         var t = new Transporte();
         var sesion = new ClientSession(t, _dispatcher) { Player = p };
         p.Connection = sesion;
@@ -137,7 +140,7 @@ public class LosAmigosYLaDenunciaComoElOriginalTests : IDisposable
     public async Task Quitar_a_un_amigo_desconectado_le_corrige_el_personaje_guardado()
     {
         var (p, s, t) = Conectado("Aldo", 50, "Bruma", "Ciro");
-        _db.SaveCharacter(Pj("Bruma", 60, "Ciro", "Aldo"));
+        Alta(Pj("Bruma", 60, "Ciro", "Aldo"));
 
         await Mandar(s, ClientPacketId.DelAmigos, "Bruma");
         await Asentar(t);
@@ -150,7 +153,7 @@ public class LosAmigosYLaDenunciaComoElOriginalTests : IDisposable
     public async Task Quitar_a_alguien_que_no_esta_en_la_lista_calla()
     {
         var (_, s, t) = Conectado("Aldo", 50);
-        _db.SaveCharacter(Pj("Bruma", 60, "Aldo"));
+        Alta(Pj("Bruma", 60, "Aldo"));
 
         await Mandar(s, ClientPacketId.DelAmigos, "Bruma");
         await Asentar(t);

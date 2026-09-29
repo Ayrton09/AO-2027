@@ -37,11 +37,6 @@ public static class ComandosDeLaBase
         string archivo = Path.Combine(dataRoot, ini.ArchivoDeBase);
         string backups = Path.Combine(dataRoot, "backups");
         bool postgres = ini.TipoDeBase == "postgres";
-        if (ini.TipoDeBase == "archivos" && comando != "pasar-a-postgres")
-        {
-            Console.WriteLine("El Server.ini dice [BASEDEDATOS] Tipo=archivos: no hay base de donde exportar ni adonde importar.");
-            return 1;
-        }
         try
         {
             if (comando == "crear-usuario-web")

@@ -49,7 +49,7 @@ public class TasasDelServerTests : IDisposable
         File.WriteAllText(ruta, $"[INIT]\r\nStartPort=7666\r\nExp={exp}\r\nOro={oro}\r\n{otraClave}\r\n");
         var leveling = new Leveling(_datos.LevelExp);
         _npcs = new NpcSystem(_world, _datos);
-        _dispatcher = new PacketDispatcher(_world, loop ?? new GameLoop(), new Persistence(new FileStore(_root), leveling),
+        _dispatcher = new PacketDispatcher(_world, loop ?? new GameLoop(), new Persistence(AlmacenSqlite.EnMemoria(), leveling),
             _datos, leveling, admin: _admin, npcs: _npcs, serverIni: ServerIni.Cargar(ruta));
     }
 

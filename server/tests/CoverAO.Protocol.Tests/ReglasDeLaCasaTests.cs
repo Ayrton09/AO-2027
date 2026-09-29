@@ -487,7 +487,7 @@ public class ReglasDeLaCasaTests : IDisposable
         Directory.CreateDirectory(_datos);
         var datos = GameData.Load();
         var leveling = new Leveling(datos.LevelExp);
-        return new PacketDispatcher(mundo, new GameLoop(), new Persistence(new FileStore(_datos), leveling),
+        return new PacketDispatcher(mundo, new GameLoop(), new Persistence(AlmacenSqlite.EnMemoria(), leveling),
                                     datos, leveling, serverIni: ini);
     }
 }

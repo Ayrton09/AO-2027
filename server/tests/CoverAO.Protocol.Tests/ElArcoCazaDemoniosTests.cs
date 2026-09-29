@@ -75,7 +75,7 @@ public class ElArcoCazaDemoniosTests : IDisposable
         var leveling = new Leveling(_datos.LevelExp);
         string carpeta = Path.Combine(_root, ficha.ToString());
         Directory.CreateDirectory(carpeta);
-        var dispatcher = new PacketDispatcher(world, loop, new Persistence(new FileStore(carpeta), leveling), _datos, leveling);
+        var dispatcher = new PacketDispatcher(world, loop, new Persistence(AlmacenSqlite.EnMemoria(), leveling), _datos, leveling);
         using var cts = new CancellationTokenSource();
         var corriendo = loop.RunAsync(cts.Token);
         try

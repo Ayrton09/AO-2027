@@ -43,7 +43,7 @@ public class ElIngresoComoElOriginalTests : IDisposable
         Directory.CreateDirectory(_root);
         var datos = GameData.Load();
         var leveling = new Leveling(datos.LevelExp);
-        _db = new Persistence(new FileStore(_root), leveling);
+        _db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
         _dispatcher = new PacketDispatcher(_world, _loop, _db, datos, leveling);
         // El login verifica la contraseña fuera del loop y vuelve por él: el loop tiene que girar de verdad.
         _corriendo = _loop.RunAsync(_cts.Token);
