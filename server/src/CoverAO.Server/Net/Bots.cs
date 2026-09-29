@@ -597,6 +597,11 @@ public sealed class Bot
             // Y LO QUE NO PUEDE LASTIMAR TAMBIÉN SE ESQUIVA: pegarle no sirve, y dejar que lo pique es tomar pociones para nada.
             var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)
                 || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora) || NoLaLastima(ficha));
+            // Y LO DEL HUECO QUE YA LE PEGA, TAMBIÉN (ver `EsDelHuecoPara`): de antemano no se lo esquiva, pero pegado no se lo aguanta.
+            if (sentidos.MasCercano(ficha => EsDelHueco(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)) is { } delHueco
+                && LoEstaAtacando(_entorno.Datos.Npc(delHueco.Quien.FichaNpc), delHueco.Pasos)
+                && (peligro is not { } otro || delHueco.Pasos < otro.Pasos))
+                peligro = delHueco;
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
                 // CON LA VIDA EN ROJO Y SIN POCIONES, HUIR ES EL SACERDOTE SI ESTÁ A MANO Y SI NO LA RUNA, que fuera de un mapa pk lleva
@@ -645,7 +650,9 @@ public sealed class Bot
                 // lugar lleno: la criatura se queda donde lo dejó de ver, que suele ser la entrada. Medido en `pelea_b2`: una Ladrona
                 // echada del 262 por un Esqueleto guerrero volvió doce veces por la misma puerta a cazar los Zombies de ahí, y cada
                 // vez la esperaba el mismo Esqueleto.
-                if (NoLaLastima(amenaza.Quien.FichaNpc) && NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
+                // Y LO MISMO CON LO DEL HUECO (ver `EsDelHuecoPara`): no es una pelea que le convenga, y la persecución se suelta igual.
+                if ((NoLaLastima(amenaza.Quien.FichaNpc) || EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno))
+                    && NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                 {
                     int deDonde = sentidos.Mapa;
                     if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct))
@@ -855,17 +862,53 @@ public sealed class Bot
         // esquiva— y el que no tiene con qué curarse se moría adentro: medido en `sano1`, 21 muertes en media hora, todas de los
         // cinco bots sin pociones y 17 contra el Escorpión y el Lobo, mientras los tres con pociones no murieron nunca. Una
         // Guerrera con 58 de vida no le pegaba al Lobo (golpe 18) ni se le iba, y el Lobo la mataba parada.
-        // CON POCIONES QUEDA UN HUECO, Y QUEDA A PROPÓSITO: lo que no es presa pero tampoco asusta no se pelea ni
-        // se esquiva. Medido contra la data: son 3 criaturas de 111 a nivel 1 —Escorpión, Sierpe, Sertlac—, 5 a
-        // nivel 10 —Zombie, Esqueleto Guerrero y los Fuegos elementales, que caen por la experiencia y no por el
-        // golpe— y 8 a nivel 20. El caso que mataba bots es el de SIN pociones, y ése lo tapa la línea de arriba;
-        // con pociones el bot tiene con qué curarse mientras pelea o se aleja.
+        // CON POCIONES QUEDA UN HUECO, Y ESTAS DOS REGLAS NO LO TAPAN: lo que no es presa pero tampoco asusta no se sale
+        // a buscar ni se esquiva de antemano. Medido contra la data: son 3 criaturas de 111 a nivel 1 —Escorpión, Sierpe,
+        // Sertlac—, 5 a nivel 10 —Zombie, Esqueleto Guerrero y los Fuegos elementales, que caen por la experiencia y no
+        // por el golpe— y 8 a nivel 20.
         //
-        // Taparlo también acá es una decisión de balance, no un arreglo: ampliar `EsPeligrosoPara` le hace perder
-        // presas legítimas y ampliar `EsPresaPara` lo manda a peleas largas contra cosas como el Zombie, que pega
-        // 30. Las dos rompen un test que documenta la decisión contraria. DECIDIDO POR EL AUTOR: queda como está.
+        // Taparlo acá es una decisión de balance, no un arreglo: ampliar `EsPeligrosoPara` le hace perder presas
+        // legítimas y ampliar `EsPresaPara` lo manda a peleas largas contra cosas como el Zombie, que pega 30. Las dos
+        // rompen un test que documenta la decisión contraria. DECIDIDO POR EL AUTOR (14/09): estas dos quedan como están.
+        // PERO EL HUECO MATA, y se atiende aparte (ver `EsDelHuecoPara`, decidido por el autor el 29/09).
         return !conPociones && n.MaxHit > 0 && !EsPresaPara(n, vidaMaxima, nivel, conPociones, curaVeneno);
     }
+
+    /// <summary>
+    /// ¿ES DEL HUECO? Lo hostil que pega y que para él no es presa ni peligro (<see cref="EsPresaPara"/>,
+    /// <see cref="EsPeligrosoPara"/>): no lo sale a buscar ni lo esquiva de antemano. Pero pega, y camina hacia el que ve.
+    ///
+    /// <para>Medido en `ropa1` (28/09, 18 bots desde el nivel 1): tres de las cinco muertes fueron del hueco, contra los Zombies
+    /// del 13 (golpe de 25 a 30, 320 de vida) y con pociones encima: un Carpintero de 122 de vida, dos veces, y un Mago de 107.
+    /// Con el Zombie pegándole no se le iba ni le devolvía el golpe: seguía con lo suyo tomando pociones —una de las veces,
+    /// cuarenta y cinco— y se moría igual.</para>
+    ///
+    /// <para>DECIDIDO POR EL AUTOR (29/09): lo del hueco que ya le pega lo hace huir y, si no se lo saca de encima, irse del mapa,
+    /// como lo que no puede lastimar (en <see cref="ComportarseAsync"/>); y se sale al vecino donde nace menos de lo que lo puede
+    /// matar (<see cref="CuantasLoPuedenMatar"/>). Lo que se elige de antemano —dónde cazar, por dónde viajar— queda como estaba:
+    /// los de `ropa1` no eligieron el 13 para cazar, lo cruzaban de viaje a Ullathorpe y no tenían otro camino; y para un bot de
+    /// 55 a 89 de vida el Lobo también es del hueco, así que esquivarlo de antemano le cerraba los mapas de Lobos y la cuna.</para>
+    /// </summary>
+    public static bool EsDelHuecoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
+        n is { Hostile: true, MaxHit: > 0 } && !EsPresaPara(n, vidaMaxima, nivel, conPociones, curaVeneno)
+        && !EsPeligrosoPara(n, vidaMaxima, nivel, conPociones, curaVeneno);
+
+    /// <summary>La regla de <see cref="EsDelHuecoPara"/> para este bot.</summary>
+    private bool EsDelHueco(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
+        EsDelHuecoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+
+    /// <summary>
+    /// CUÁNTAS DE LAS QUE NACEN EN ESE MAPA LO PUEDEN MATAR: lo peligroso (<see cref="EsPeligrosoParaElBot"/>) y lo del hueco
+    /// (<see cref="EsDelHuecoPara"/>). Es con lo que se elige adónde salir huyendo de un mapa (<see cref="VecinosDelMenosPeligroso"/>):
+    /// escapando de un Zombie no se sale a otro mapa de Zombies.
+    /// </summary>
+    public static int CuantasLoPuedenMatar(GameData datos, ServerIni? ini, byte bando, int mapa, int vida, int nivel, bool conPociones,
+                                           bool curaVeneno) =>
+        datos.MapSpawns.TryGetValue(mapa, out var nacen)
+            ? nacen.Select(sp => datos.Npc((short)sp.NpcIndex))
+                   .Count(n => EsPeligrosoParaElBot(n, vida, nivel, conPociones, curaVeneno, bando, datos, ini)
+                               || EsDelHuecoPara(n, vida, nivel, conPociones, curaVeneno))
+            : 0;
 
     /// <summary>
     /// GIRARSE A MIRAR AL QUE PASA. Si hay alguien cerca, el bot se da vuelta hacia esa persona y se queda un
@@ -4408,8 +4451,7 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         foreach (int vecino in VecinosDelMenosPeligroso(_entorno.Datos, aca, m => pisable(m) && !HayGuardiaQueLoAtaca(m),
-                     m => _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
-                         ? nacen.Count(sp => EsPeligroso((short)sp.NpcIndex, vida, nivel, conPociones, curaVeneno)) : 0))
+                     m => CuantasLoPuedenMatar(_entorno.Datos, _entorno.Ini, _miBando, m, vida, nivel, conPociones, curaVeneno)))
         {
             if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m == vecino, pisable) is not { } afuera) continue;
             await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
