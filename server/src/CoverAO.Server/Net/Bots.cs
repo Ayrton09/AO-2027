@@ -2898,9 +2898,11 @@ public sealed class Bot
         // original— lo que hay en el camino vale tanto como lo que hay en el destino, y nadie pasa al lado de un bicho que salió a
         // matar. Medido en `verdad2`: ocho bots caminando entre veinte y treinta y cuatro baldosas por minuto y setenta y dos
         // criaturas entre todos en quince minutos, con dos bots que no mataron ninguna.
+        // Y DEL LUGAR LLENO SE SALE SIN FRENAR: ver `FrenaEnElCamino`.
         _cortoElViaje = false;
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
-                                cortaSi: () => HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde)))
+                                cortaSi: () => FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa, Environment.TickCount64)
+                                               && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde)))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
             if (_cortoElViaje) { _cortoElViaje = false; return true; }
@@ -2968,6 +2970,18 @@ public sealed class Bot
     public static bool CortaElViajePorLaPresa(int pasosDeLaPresa, int alcance, double salud, bool conFuelle,
                                               bool peligroALaVista) =>
         pasosDeLaPresa >= 0 && pasosDeLaPresa <= alcance && salud >= VuelveAPelear && conFuelle && !peligroALaVista;
+
+    /// <summary>
+    /// ¿FRENA EN EL CAMINO AL COTO POR LO QUE HAYA A MANO? No mientras sigue adentro del lugar lleno del que se está yendo
+    /// (<see cref="EstaLleno"/>): ahí lo que aparece se lo llevan los otros, y frenar es quedarse. Ya afuera, o con el coto en el
+    /// mismo mapa, como siempre.
+    ///
+    /// <para>Medido en `early1` (29/09, 18 bots desde nivel 1): Petra eligió irse de la cuna al 35 nueve veces en seis minutos,
+    /// con nivel 1, sin salir nunca de la cuna ni subir de nivel; Quim, trece veces en once minutos con nivel 8, y un rato antes,
+    /// en el 35, había subido del 5 al 8 en medio minuto.</para>
+    /// </summary>
+    public static bool FrenaEnElCamino(IReadOnlyDictionary<int, long> llenoHasta, int mapaAhora, int mapaDelCoto, long ahora) =>
+        mapaAhora == mapaDelCoto || !SigueLleno(llenoHasta, mapaAhora, ahora);
 
     private bool _cortoElViaje;
 

@@ -436,6 +436,21 @@ public class CotoDelBotTests
     }
 
     /// <summary>
+    /// Y DEL LUGAR LLENO SE SALE SIN FRENAR: adentro de la cuna llena, lo que aparece a mano no corta el viaje al otro coto; ya
+    /// afuera sí, y con el coto en la misma cuna también. Medido en `early1`: Petra, con nivel 1, eligió irse al 35 nueve veces en
+    /// seis minutos sin salir nunca de la cuna.
+    /// </summary>
+    [Fact]
+    public void Del_lugar_lleno_se_sale_sin_frenar_por_lo_que_aparece_a_mano()
+    {
+        var llenos = new Dictionary<int, long> { [37] = 300_000 };
+        Assert.False(Bot.FrenaEnElCamino(llenos, 37, 35, ahora: 100_000));
+        Assert.True(Bot.FrenaEnElCamino(llenos, 34, 35, ahora: 100_000), "ya afuera de la cuna, sí");
+        Assert.True(Bot.FrenaEnElCamino(llenos, 37, 37, ahora: 100_000), "con el coto en la misma cuna, sí");
+        Assert.True(Bot.FrenaEnElCamino(llenos, 37, 35, ahora: 300_000), "pasado el rato, sí");
+    }
+
+    /// <summary>
     /// EL DESTINO EN OTRO MAPA, LEJOS DEL PELIGRO: el coto del 208 que da el navegante es el (45,40), a la vista de donde nace el Señor
     /// de las sombras (47,37); para un nivel 4 se cambia por otro spawn de presa del 208 sin nada peligroso a la vista y al que se
     /// llega desde ahí. Medido en `oficios6`: nueve muertes del Señor de las sombras ahí.
