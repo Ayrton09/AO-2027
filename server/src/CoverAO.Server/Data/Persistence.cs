@@ -48,20 +48,25 @@ public sealed class Persistence : IDisposable
     public void Dispose() => _cola.Dispose();
 
     /// <summary>
-    /// EL APAGADO: cierra la cola esperando lo que quedaba, hasta 30 s. Si la base no respondía y algo quedó sin aplicar,
-    /// va al archivo de rescate de <paramref name="dataRoot"/> (<see cref="Rescates"/>), que el próximo arranque aplica antes
-    /// de cargar el mundo. Lo que no tiene rescate queda anotado ahí y en el log.
+    /// EL APAGADO: cierra la cola esperando lo que quedaba, hasta 30 s —nada, si la base no responde—. Si algo quedó sin
+    /// aplicar, va al archivo de rescate de <paramref name="dataRoot"/> (<see cref="Rescates"/>), que el próximo arranque aplica
+    /// antes de cargar el mundo. Lo que no tiene rescate queda anotado ahí y en el log.
     /// </summary>
     public void Cerrar(string dataRoot, TimeSpan? plazo = null)
     {
         var sinAplicar = _cola.Cerrar(plazo ?? TimeSpan.FromSeconds(30));
-        if (sinAplicar.Count == 0) return;
-        string? ruta = Rescates.Escribir(dataRoot, sinAplicar);
-        int rescatadas = sinAplicar.Count(p => p.Rescate is not null);
-        Console.Error.WriteLine($"[base] LA BASE NO RESPONDIÓ AL APAGAR: {rescatadas} escritura(s) quedaron en {ruta}, y el próximo " +
-                                "arranque las aplica antes de abrir." +
-                                (rescatadas < sinAplicar.Count ? $" Se perdieron {sinAplicar.Count - rescatadas}: " +
-                                    string.Join(", ", sinAplicar.Where(p => p.Rescate is null).Select(p => p.Que)) : ""));
+        if (sinAplicar.Count > 0)
+        {
+            string? ruta = Rescates.Escribir(dataRoot, sinAplicar);
+            int rescatadas = sinAplicar.Count(p => p.Rescate is not null);
+            Console.Error.WriteLine($"[base] LA BASE NO RESPONDIÓ AL APAGAR: {rescatadas} escritura(s) quedaron en {ruta}, y el próximo " +
+                                    "arranque las aplica antes de abrir." +
+                                    (rescatadas < sinAplicar.Count ? $" Se perdieron {sinAplicar.Count - rescatadas}: " +
+                                        string.Join(", ", sinAplicar.Where(p => p.Rescate is null).Select(p => p.Que)) : ""));
+        }
+        // Recién con el rescate escrito: si el escritor quedó adentro de la base, un rato para que salga antes de que se cierre
+        // la conexión.
+        _cola.EsperarAlEscritor(TimeSpan.FromSeconds(5));
     }
 
     /// <summary>La cola, para el panel: si la base responde, cuántos pedidos esperan y desde cuándo.</summary>
@@ -74,7 +79,14 @@ public sealed class Persistence : IDisposable
     /// Sincrónico: lo llama el borrado de personaje, que corre en el pool.</summary>
     public bool ArchivarCharacter(string name)
     {
-        bool apartado = Esperar("apartar un personaje", name, a => a.ApartarPersonaje(name));
+        bool intentado = false;
+        bool apartado = Esperar("apartar un personaje", name, a =>
+        {
+            // Un reintento después de un apartado que entró sin que llegara la respuesta (ver CambioDeCuenta).
+            if (intentado && !a.ExistePersonaje(name)) return true;
+            intentado = true;
+            return a.ApartarPersonaje(name);
+        });
         if (apartado) _personajes.TryRemove(name, out _);
         return apartado;
     }
@@ -176,6 +188,22 @@ public sealed class Persistence : IDisposable
         if (_almacen is not AlmacenRelacional relacional) return;
         var nombres = staff.ToList();
         Esperar("preparar lo de las webs", null, _ => { relacional.PrepararParaLasWebs(nombres, catalogo, version); return true; });
+        _staffEnLaBase = new HashSet<string>(nombres, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private HashSet<string>? _staffEnLaBase;
+
+    /// <summary>El staff para las webs, si cambió desde la última vez: el panel y el <c>/RELOADSINI</c> lo cambian en caliente,
+    /// y las vistas públicas dejan afuera a los de ahora (<see cref="AlmacenRelacional.GuardarStaffVisible"/>). Lo llama el
+    /// loop cada 30 s, con <see cref="MarcarConectados"/>.</summary>
+    public void MarcarStaff(IEnumerable<string> nombres)
+    {
+        if (_almacen is not AlmacenRelacional relacional) return;
+        var ahora = new HashSet<string>(nombres, StringComparer.OrdinalIgnoreCase);
+        if (_staffEnLaBase is not null && _staffEnLaBase.SetEquals(ahora)) return;
+        _staffEnLaBase = ahora;
+        var foto = ahora.ToList();
+        _cola.Escribir("anotar el staff para las webs", _ => relacional.GuardarStaffVisible(foto));
     }
 
     /// <summary>Quiénes están conectados, para las webs, por la cola (<see cref="AlmacenRelacional.MarcarConectados"/>).</summary>
@@ -221,6 +249,8 @@ public sealed class Persistence : IDisposable
 
     /// <summary>Sincrónicas, para quien no es el loop (ver <see cref="Esperar"/>).</summary>
     public Account? LoadAccount(string name) => Esperar("leer una cuenta", name, a => a.LeerCuenta(name));
+    /// <summary>La misma lectura, sin esperarla: para el que le pone un plazo (el ingreso, con la base caída).</summary>
+    public Task<Account?> LeerCuentaAsync(string name) => _cola.PedirAsync($"leer una cuenta ({name})", a => a.LeerCuenta(name));
     public IEnumerable<string> AllAccountNames() => Esperar("listar las cuentas", null, a => a.NombresDeCuentas().ToList());
     public Player? LoadCharacter(string name, short charIndex, string account)
         => Esperar("leer un personaje", name, a => a.LeerPersonaje(name))?.CrearPlayer(charIndex, account);
@@ -254,13 +284,25 @@ public sealed class Persistence : IDisposable
     /// <summary>Espera a que la cola aplique todo lo encolado. La llaman el APAGADO —sin esto, el que se desconectó un
     /// segundo antes de bajar el servidor pierde su partida— y el backup, que tiene que salir con lo último. El plazo es
     /// para no colgar el apagado si el disco no responde.</summary>
-    public void EsperarEscriturasPendientes()
+    public void EsperarEscriturasPendientes(TimeSpan? plazo = null)
     {
-        if (!_cola.Vaciar(TimeSpan.FromSeconds(30)))
+        if (!_cola.Vaciar(plazo ?? TimeSpan.FromSeconds(30)))
             Console.Error.WriteLine($"[save] quedaron {_cola.Pendientes} escrituras sin terminar");
     }
 
     // ── LO QUE PIDE EL HILO DEL MUNDO: con respuesta, sin esperar ──────────────────────────────────────────────
+
+    /// <summary>
+    /// LA LECTURA DE LA ENTRADA AL MUNDO: el personaje y, en el MISMO pedido, si su cuenta está baneada. La clave se verificó
+    /// con la cuenta leída antes del hash; un baneo del panel que llegó a la base en el medio se ve acá —la cola va en orden—, y
+    /// uno que llega después encuentra al personaje ya adentro y lo echa.
+    /// </summary>
+    public Task<(FichaDePersonaje? Ficha, bool CuentaBaneada)> LeerParaEntrarAsync(string nombre, string cuenta)
+        => _cola.PedirAsync($"leer a {nombre} para entrar", a => (a.LeerPersonaje(nombre), a.LeerCuenta(cuenta)?.Banned == true));
+
+    /// <summary>¿El personaje está en la base? Por la cola, así que detrás de lo que se encoló antes —el alta, por ejemplo—:
+    /// es la confirmación de que el alta entró.</summary>
+    public Task<bool> ExistePersonajeAsync(string nombre) => _cola.PedirAsync($"confirmar a {nombre}", a => a.ExistePersonaje(nombre));
 
     /// <summary>Lee un personaje por la cola.</summary>
     public Task<FichaDePersonaje?> LeerPersonajeAsync(string nombre)
@@ -275,19 +317,33 @@ public sealed class Persistence : IDisposable
     /// hilo de la cola: sólo puede tocar la cuenta que recibe.</para>
     /// </summary>
     public Task<Account?> CambiarCuentaAsync(string nombre, Action<Account> cambio)
-        => _cola.PedirAsync($"cambiar la cuenta {nombre}", a => CambiarCuentaEn(a, nombre, cambio));
+        => _cola.PedirAsync($"cambiar la cuenta {nombre}", CambioDeCuenta(nombre, cambio));
 
     /// <summary>La misma, esperándola: para el pool y el panel (ver <see cref="Esperar"/>).</summary>
     public Account? CambiarCuenta(string nombre, Action<Account> cambio)
-        => Esperar("cambiar una cuenta", nombre, a => CambiarCuentaEn(a, nombre, cambio));
+        => Esperar("cambiar una cuenta", nombre, CambioDeCuenta(nombre, cambio));
 
-    private static Account? CambiarCuentaEn(IAlmacen a, string nombre, Action<Account> cambio)
+    /// <summary>
+    /// El pedido de un cambio de cuenta. UN CAMBIO QUE SE REINTENTA NO SE APLICA DOS VECES: si la base guardó y la respuesta
+    /// se perdió —un corte de red justo ahí—, la cola lo reintenta, y volver a leer y a cambiar sumaría la trampa dos veces o
+    /// daría vuelta el donador dos veces. Así que el cambio se hace UNA vez, en el primer intento que llega a leer la cuenta, y
+    /// los reintentos guardan esa misma cuenta: entre intento e intento nadie más escribe, porque la cola es el único escritor.
+    /// </summary>
+    private static Func<IAlmacen, Account?> CambioDeCuenta(string nombre, Action<Account> cambio)
     {
-        var cuenta = a.LeerCuenta(nombre);
-        if (cuenta is null) return null;
-        cambio(cuenta);
-        a.GuardarCuenta(cuenta);
-        return cuenta;
+        Account? cambiada = null;
+        bool leida = false;
+        return a =>
+        {
+            if (!leida)
+            {
+                cambiada = a.LeerCuenta(nombre);
+                if (cambiada is not null) cambio(cambiada);
+                leida = true;
+            }
+            if (cambiada is not null) a.GuardarCuenta(cambiada);
+            return cambiada;
+        };
     }
 
     /// <summary>El último ingreso y desde qué IP, como el original al entrar a la cuenta (VB6 <c>EntrarCuenta</c>,
@@ -295,11 +351,12 @@ public sealed class Persistence : IDisposable
     public void AnotarIngreso(string cuenta, string ip)
     {
         var cuando = DateTime.UtcNow;
-        _cola.Escribir($"anotar el ingreso de {cuenta}", a => CambiarCuentaEn(a, cuenta, c =>
+        var anotar = CambioDeCuenta(cuenta, c =>
         {
             c.UltimoIngreso = cuando;
             c.UltimaIp = ip;
-        }));
+        });
+        _cola.Escribir($"anotar el ingreso de {cuenta}", a => anotar(a));
     }
 
     /// <summary>
@@ -310,12 +367,13 @@ public sealed class Persistence : IDisposable
     public void GuardarClaveMigrada(Account acc)
     {
         string hash = acc.PasswordHash;
-        _cola.Escribir($"migrar la clave de {acc.Name}", a => CambiarCuentaEn(a, acc.Name, c =>
+        var migrar = CambioDeCuenta(acc.Name, c =>
         {
             if (PasswordHasher.IsModern(c.PasswordHash)) return;
             c.PasswordHash = hash;
             c.Salt = "";
-        }));
+        });
+        _cola.Escribir($"migrar la clave de {acc.Name}", a => migrar(a));
     }
 
     /// <summary>Suma a la bóveda de un personaje DESCONECTADO, sin cargarlo entero, por la cola.
@@ -325,9 +383,24 @@ public sealed class Persistence : IDisposable
     /// acreditarle es tocarle lo guardado. Se hace por el saldo solo (<see cref="IAlmacen.AcreditarBoveda"/>) y no leyendo
     /// y guardando el personaje completo para mover un número.</para>
     ///
+    /// <para>UNA SUMA QUE SE REINTENTA NO SE SUMA DOS VECES (ver <see cref="CambioDeCuenta"/>): el primer intento mira el
+    /// saldo de antes —acreditar 0 lo devuelve sin cambiarlo—, y un reintento que lo encuentra ya sumado sabe que el
+    /// anterior entró aunque la respuesta se haya perdido.</para>
+    ///
     /// <para>Devuelve el saldo que quedó, o <c>null</c> si no existe el personaje.</para></summary>
     public Task<long?> AcreditarBovedaAsync(string nombre, long monto)
-        => _cola.PedirAsync($"acreditar a la bóveda de {nombre}", a => a.AcreditarBoveda(nombre, monto));
+    {
+        long? antes = null;
+        return _cola.PedirAsync($"acreditar a la bóveda de {nombre}", a =>
+        {
+            if (antes is { } previo)
+            {
+                if (a.AcreditarBoveda(nombre, 0) is { } ahora && ahora == previo + monto) return ahora;
+            }
+            else antes = a.AcreditarBoveda(nombre, 0);
+            return a.AcreditarBoveda(nombre, monto);
+        });
+    }
 
     /// <param name="userCode">Código de recuperación (VB6 .cnt "UserCodigo"). Se hashea como la contraseña.
     /// Vacío = la cuenta no se puede recuperar, que es lo que pasaba con TODAS hasta ahora: el server leía el
@@ -642,8 +715,13 @@ public sealed class Persistence : IDisposable
         var cuenta = acc.Copia();
         _personajes[ficha.Nombre] = 0;
         _cuentas[cuenta.Name] = 0;
+        bool intentado = false;
         _cola.Escribir($"alta de {ficha.Nombre}", a =>
         {
+            // Un reintento después de un alta que entró sin que llegara la respuesta (ver CambioDeCuenta): el nombre es único
+            // y sólo esta alta lo pudo haber tomado.
+            if (intentado && a.ExistePersonaje(ficha.Nombre)) return;
+            intentado = true;
             if (a.CrearPersonaje(cuenta, ficha)) return;
             _personajes.TryRemove(ficha.Nombre, out _);   // no quedó nada guardado: el nombre no puede figurar como tomado
             Console.Error.WriteLine($"[base] alta de {ficha.Nombre}: la cuenta {cuenta.Name} ya tiene " +
@@ -661,9 +739,13 @@ public sealed class Persistence : IDisposable
     {
         var acc = CuentaNueva(name, password, userCode, esBot);
         var copia = acc.Copia();
+        bool intentado = false;
         bool creada = Esperar("crear una cuenta", name, a =>
         {
-            if (a.ExisteCuenta(name)) return false;
+            bool existe = a.ExisteCuenta(name);
+            if (intentado && existe) return true;   // un reintento de la que ya entró (ver CambioDeCuenta)
+            if (existe) return false;
+            intentado = true;
             a.GuardarCuenta(copia);
             return true;
         });

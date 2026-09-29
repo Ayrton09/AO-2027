@@ -23,14 +23,30 @@ public static class Importador
     {
         if (File.Exists(archivoDeLaBase) && !reemplazar)
             throw new InvalidOperationException($"{archivoDeLaBase} ya existe: para pisarla, --reemplazar (la de antes queda al lado).");
+        // Con el servidor andando sobre ella, pisarla le cambiaría la base abajo de los pies.
+        using var candado = AlmacenSqlite.Candado(archivoDeLaBase);
         string temporal = archivoDeLaBase + ".importando";
         BorrarBase(temporal);
         InformeDeCopia informe;
         var (almacen, correoAparte, ipsAparte, liberar) = AbrirOrigen(origen);
         try
         {
-            using var destino = new AlmacenSqlite(temporal, paraImportar: true);
-            informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+            if (almacen is AlmacenSqlite deAhora)
+            {
+                // UNA BASE DE AHORA —un backup que se restaura— PASA ENTERA: es la misma base, así que se copia el archivo, ya
+                // puesto al día, con las fechas y los personajes apartados. Personaje por personaje se perdía lo que la ficha no
+                // lleva. Y se verifica igual.
+                deAhora.CopiarA(temporal);
+                informe = new InformeDeCopia();
+                using var copia = new AlmacenSqlite(temporal);
+                CopiaDeAlmacen.Contar(copia, informe);
+                CopiaDeAlmacen.Verificar(deAhora, copia, informe);
+            }
+            else
+            {
+                using var destino = new AlmacenSqlite(temporal, paraImportar: true);
+                informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+            }
         }
         catch
         {
@@ -44,9 +60,21 @@ public static class Importador
             return informe;
         }
         AlDisco(temporal);
-        if (File.Exists(archivoDeLaBase))
-            ApartarBase(archivoDeLaBase, $".antes-de-importar-{DateTime.Now:yyyyMMdd-HHmmss}");
-        File.Move(temporal, archivoDeLaBase);
+        string? apartada = File.Exists(archivoDeLaBase)
+            ? ApartarBase(archivoDeLaBase, $".antes-de-importar-{DateTime.Now:yyyyMMdd-HHmmss}")
+            : null;
+        try { File.Move(temporal, archivoDeLaBase); }
+        catch
+        {
+            // Sin la nueva en su lugar —un antivirus que la tiene tomada—, la de antes vuelve al suyo: si no, el próximo
+            // arranque encontraría el lugar vacío y levantaría un mundo nuevo, sin nadie.
+            if (apartada is not null)
+            {
+                try { Restituir(apartada, archivoDeLaBase); }
+                catch (Exception ex) { Console.Error.WriteLine($"OJO: la base de antes quedó en {apartada} y no se pudo volver a poner: {ex.Message}"); }
+            }
+            throw;
+        }
         return informe;
     }
 
@@ -72,7 +100,10 @@ public static class Importador
             return destino.EnUnaSolaTransaccion(() =>
             {
                 if (!vacia) destino.Vaciar();
-                return CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+                // Una base de SQLite de ahora es la misma base en otro motor: va entera, tabla por tabla.
+                return almacen is AlmacenSqlite deAhora
+                    ? destino.CopiarTablasDe(deAhora)
+                    : CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
             }, informe => informe.SalioBien);
         }
         finally { liberar?.Dispose(); }
@@ -222,8 +253,12 @@ public static class Importador
             // diario, que puede tener lo último que se escribió.
             string copia = origen + ".leyendo";
             BorrarBase(copia);
-            File.Copy(origen, copia);
-            if (File.Exists(origen + "-wal")) File.Copy(origen + "-wal", copia + "-wal");
+            // Con un servidor andando sobre ella, la copia saldría a medio escribir: su candado lo dice.
+            using (AlmacenSqlite.Candado(origen))
+            {
+                File.Copy(origen, copia);
+                if (File.Exists(origen + "-wal")) File.Copy(origen + "-wal", copia + "-wal");
+            }
             var deAhora = new AlmacenSqlite(copia);
             return (deAhora, sinCorreo, sinIps, new AlCerrar(() =>
             {

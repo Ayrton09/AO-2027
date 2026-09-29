@@ -358,6 +358,26 @@ public class LaVidaDelClanComoElOriginalTests : IDisposable
         Assert.Contains("Bruma", sur.Members);
     }
 
+    /// <summary>/BANCLAN LE ANOTA LA PENA A CADA MIEMBRO, conectado o no, como el original: "gm: BAN AL CLAN: clan fecha",
+    /// con el clan como lo escribió el GM (Protocol.bas:9624). Acá sólo quedaba el baneo, sin el antecedente.</summary>
+    [Fact]
+    public async Task Banear_al_clan_le_anota_la_pena_a_cada_miembro()
+    {
+        Clan("Sur", "Aldo", 2, "Ciro");
+        var cuenta = _db.CreateAccount("cuenta_ciro", "clave_larga");
+        var ciro = _db.CreateCharacter(cuenta, "Ciro", 0, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+        ciro.GuildName = "Sur";
+        _db.SaveCharacter(ciro);
+        var (dios, sd, _) = Conectado("ElDios");
+        dios.Privileges = 8;   // Dios
+
+        await Mandar(sd, Paquete(ClientPacketId.GMCommands).WriteByte(50).WriteAsciiString("sur"));
+
+        Assert.True(await Esperar(() => _db.LoadCharacter("Ciro", 0, "") is { Banned: true } c
+                                        && c.Penalties.Any(x => x.StartsWith("eldios: BAN AL CLAN: sur ", StringComparison.Ordinal))),
+            "al miembro desconectado no se le anotó la pena");
+    }
+
     /// <summary>ECHAR A UN MIEMBRO DESCONECTADO LE SACA EL CLAN (clsClan.cls:343). Acá salía de la lista del clan y, al entrar,
     /// seguía con su tag.</summary>
     [Fact]

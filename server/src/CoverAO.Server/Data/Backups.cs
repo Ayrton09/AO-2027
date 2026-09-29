@@ -20,6 +20,22 @@ public static class Backups
     /// carpeta sin <see cref="Prefijo"/>, así la poda no los cuenta ni los borra.</summary>
     public const string PrefijoDeLosApartados = "antes-de-";
 
+    /// <summary>El de un backup A MEDIO HACER: se arma con este prefijo y recién entero pasa a su nombre, así uno cortado a la
+    /// mitad —un corte de luz, un reinicio de Windows, el disco lleno— no queda con el nombre de uno bueno, y justo el último,
+    /// el que se va a querer restaurar. Un prefijo y no una extensión: la retención lista con <see cref="Prefijo"/> y un
+    /// <c>coverao-….escribiendo</c> le entraría igual (lo mismo que el <c>parcial-</c> de las carpetas de archivos).</summary>
+    public const string PrefijoTemporal = "parcial-";
+
+    /// <summary>Dónde se arma el backup <paramref name="archivo"/> antes de tener su nombre. Borra las sobras de los que se
+    /// cortaron: no las mira nadie y ocupan disco. Corre un backup por vez, así que no hay otro armándose.</summary>
+    internal static string Temporal(string destDir, string archivo)
+    {
+        foreach (var viejo in Directory.EnumerateFiles(destDir, PrefijoTemporal + "*"))
+            try { File.Delete(viejo); }
+            catch (Exception ex) { Console.Error.WriteLine($"[backup] no se pudo limpiar {Path.GetFileName(viejo)}: {ex.Message}"); }
+        return Path.GetFullPath(Path.Combine(destDir, PrefijoTemporal + archivo));
+    }
+
     /// <summary>Nombre base de un backup: <c>coverao-AAAAMMDD-HHMMSS</c>. Ordena cronológicamente como texto,
     /// que es de lo que depende la poda (y evita depender de la fecha del filesystem).</summary>
     public static string Stem(DateTime cuando) => Prefijo + cuando.ToString("yyyyMMdd-HHmmss");
@@ -53,13 +69,15 @@ public static class Backups
         return ruta;
     }
 
+    /// <summary>¿La base, su diario o una COPIA de la base? Las copias apartadas —la de antes de importar, la del SQLite viejo ya
+    /// importado, las temporales de una importación— tampoco van: cada backup llevaría otra copia entera de una base que ya no
+    /// se usa, y con la retención de siempre son decenas.</summary>
     private static bool EsDeLaBase(string archivo)
     {
         string nombre = Path.GetFileName(archivo);
         return nombre.EndsWith(".db", StringComparison.OrdinalIgnoreCase)
-            || nombre.EndsWith(".db-wal", StringComparison.OrdinalIgnoreCase)
-            || nombre.EndsWith(".db-shm", StringComparison.OrdinalIgnoreCase)
-            || nombre.EndsWith(".db-journal", StringComparison.OrdinalIgnoreCase);
+            || nombre.Contains(".db-", StringComparison.OrdinalIgnoreCase)    // -wal, -shm, -journal
+            || nombre.Contains(".db.", StringComparison.OrdinalIgnoreCase);   // .importado, .antes-de-importar-…, .importando, .leyendo
     }
 
     /// <summary>Los backups que hay en el directorio, del más nuevo al más viejo. UNO por backup: con SQLite

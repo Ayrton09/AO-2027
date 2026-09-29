@@ -63,6 +63,21 @@ public class ActualizarTests : IDisposable
         Assert.Equal(Build.Version, m.Groups["v"].Value);
     }
 
+    /// <summary>
+    /// EL PAQUETE NO LLEVA LA BASE DEL QUE PUBLICA. La carpeta de salida es también la instalación que corre el que arma el
+    /// paquete, y desde que los personajes y las cuentas viven en <c>data/coverao.db</c>, ésa es su cuenta —con el hash de
+    /// la contraseña— y su personaje: lo mismo que la lista ya dejaba afuera cuando eran <c>.chr</c> y <c>.cnt</c>.
+    /// </summary>
+    [Fact]
+    public void El_paquete_no_lleva_la_base_del_que_publica()
+    {
+        string ps1 = File.ReadAllText(BuscarEnElRepo(Path.Combine("hosting", "publish.ps1")));
+        var lista = Regex.Match(ps1, @"\$noViajan\s*=\s*@\((?<l>.*?)\)\s*\r?\nfunction", RegexOptions.Singleline);
+        Assert.True(lista.Success, "no encontré la lista $noViajan en hosting/publish.ps1");
+        foreach (var queda in new[] { "'data/coverao.db'", "'data/rescate-'", "'data/importacion-'", "'data/bots.txt'" })
+            Assert.Contains(queda, lista.Groups["l"].Value);
+    }
+
     // ── 2. LAS OPCIONES NUEVAS SE AVISAN ──────────────────────────────────────────────────────────────
 
     /// <summary>La lista está escrita a mano; esto la cruza contra las claves que el código LEE de verdad. Sin

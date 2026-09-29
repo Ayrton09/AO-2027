@@ -122,6 +122,43 @@ public class AlmacenSqliteTests : IDisposable
         Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM personajes WHERE conectado_desde IS NOT NULL"));
     }
 
+    /// <summary>
+    /// UNA BASE, UN PROCESO. Dos servidores sobre el mismo archivo escribirían cada uno su mundo encima del otro, y SQLite lo
+    /// deja pasar sin quejarse. La segunda vez no se abre, y dice por qué; cerrada la primera, se abre.
+    /// </summary>
+    [Fact]
+    public void La_misma_base_no_se_abre_dos_veces()
+    {
+        using (new AlmacenSqlite(Archivo))
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => new AlmacenSqlite(Archivo));
+            Assert.Contains("Otro proceso ya usa", error.Message);
+        }
+        using var otra = new AlmacenSqlite(Archivo);
+        Assert.True(otra.ClavesForaneasPrendidas());
+    }
+
+    /// <summary>EL STAFF QUE CAMBIA CON EL SERVIDOR ANDANDO —el panel, un /RELOADSINI— llega a lo que leen las webs: si no, el
+    /// que ascendieron seguía en la lista de conectados y en el ranking hasta el próximo reinicio.</summary>
+    [Fact]
+    public void El_staff_que_cambia_en_caliente_llega_a_las_webs()
+    {
+        var catalogo = new CatalogoParaLasWebs(new[] { (1, "Espada Larga", 2) }, new[] { (1, "Dardo") },
+            new[] { (1, "Mago") }, new[] { (1, "Humano") }, new[] { (1, "Ullathorpe") });
+        using (var almacen = new AlmacenSqlite(Archivo))
+        {
+            var db = new Persistence(almacen, new CoverAO.Server.Game.Leveling(new Dictionary<int, long> { [1] = 300 }));
+            db.PrepararParaLasWebs(new[] { "Rugura" }, catalogo, "9.9");
+            db.MarcarStaff(new[] { "Rugura", "Ascendido" });
+            db.EsperarEscriturasPendientes();
+            Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM staff_visible WHERE nombre = 'Ascendido'"));
+            db.MarcarStaff(new[] { "Ascendido" });
+            db.Dispose();
+        }
+        Assert.Equal(0, Escalar(Archivo, "SELECT count(*) FROM staff_visible WHERE nombre = 'Rugura'"));
+        Assert.Equal(1, Escalar(Archivo, "SELECT count(*) FROM staff_visible"));
+    }
+
     [Fact]
     public void Las_claves_foraneas_estan_prendidas_en_la_conexion_que_escribe()
     {

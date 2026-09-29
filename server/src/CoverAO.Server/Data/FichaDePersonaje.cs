@@ -94,6 +94,12 @@ public sealed record FichaDePersonaje
     public byte Veneno { get; init; }
     /// <summary>Las veces que murió (<c>Murio</c>).</summary>
     public int VecesMuerto { get; init; }
+    /// <summary>Paralizado al salir (<c>Paralizado</c>, VB6 TCP.bas:1869): al entrar vuelve con la parálisis ENTERA
+    /// (<c>Counters.Paralisis = IntervaloParalizado</c>, TCP.bas:1930). Sin esto, salir y volver a entrar la sacaba.</summary>
+    public bool Paralizado { get; init; }
+    /// <summary>Prendido fuego al salir (<c>Incinerado</c>, VB6 TCP.bas:1882): al entrar sigue quemándose, con el contador
+    /// de nuevo en cero, que tampoco se guarda en el original.</summary>
+    public bool Incinerado { get; init; }
 
     // ── [FACCIONES] y [MUERTES] ─────────────────────────────────────────────────────────────────────────────
     /// <summary>El bando CIVIL (<c>Status</c>). El de staff no se guarda.</summary>
@@ -195,6 +201,11 @@ public sealed record FichaDePersonaje
             Montando = p.Mounted,
             Veneno = p.PoisonedUntilTick == long.MaxValue ? p.ValorDelVeneno : (byte)0,
             VecesMuerto = p.Deaths,
+            // El cliente sabe si está paralizado (el loop se lo apaga cuando vence): lo que valga ahí es lo que se guarda. El
+            // inmovilizado solo no, como el original, que guarda sólo `Paralizado`. Uno que todavía no entró al mundo la
+            // tiene pendiente, y un guardado en ese rato no se la puede sacar.
+            Paralizado = (p.ClientParalyzed && p.MarcaParalizado) || p.ParalizadoAlEntrar,
+            Incinerado = p.Incinerado,
             Bando = p.FactionStatusPersistido,
             Rango = p.FactionRank,
             RenegadosMatados = p.RenegadosMatados,
@@ -247,6 +258,8 @@ public sealed record FichaDePersonaje
         p.Mounted = Montando;
         // VB6 TCP.bas:1868: el byte tal cual, y envenena cualquier valor que no sea 0 (mMainLoop.bas:168).
         if (Veneno > 0) p.Envenenar(Veneno);
+        p.ParalizadoAlEntrar = Paralizado;   // la parálisis se arma al entrar al mundo, con el reloj del loop
+        p.Incinerado = Incinerado;
         p.Deaths = Math.Max(0, VecesMuerto);
         p.UsersKilled = Math.Max(0, UsuariosMatados);
         p.NpcsKilled = Math.Max(0, CriaturasMatadas);

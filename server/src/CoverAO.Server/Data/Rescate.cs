@@ -25,11 +25,15 @@ namespace CoverAO.Server.Data;
 public abstract record Rescate
 {
     public abstract void Aplicar(IAlmacen almacen);
+
+    /// <summary>Qué es, para el log: un método y no una propiedad, que iría al JSON.</summary>
+    public virtual string Describir() => GetType().Name;
 }
 
 public sealed record RescateDePersonaje(FichaDePersonaje Ficha) : Rescate
 {
     public override void Aplicar(IAlmacen almacen) => almacen.GuardarPersonaje(Ficha);
+    public override string Describir() => $"guardar a {Ficha.Nombre}";
 }
 
 /// <summary>Un alta: si el personaje ya entró —el alta llegó a la base antes de rendirse—, alcanza con guardarlo.</summary>
@@ -41,11 +45,14 @@ public sealed record RescateDeAlta(Account Cuenta, FichaDePersonaje Ficha) : Res
         else if (!almacen.CrearPersonaje(Cuenta, Ficha))
             throw new InvalidOperationException($"el alta de {Ficha.Nombre} no entró: la cuenta {Cuenta.Name} ya tiene {AccountFile.MaxCharacters}");
     }
+
+    public override string Describir() => $"alta de {Ficha.Nombre}";
 }
 
 public sealed record RescateDeCuenta(Account Cuenta) : Rescate
 {
     public override void Aplicar(IAlmacen almacen) => almacen.GuardarCuenta(Cuenta);
+    public override string Describir() => $"guardar la cuenta {Cuenta.Name}";
 }
 
 public sealed record RescateDeClanes(IReadOnlyList<ClanGuardado> Clanes) : Rescate
@@ -113,8 +120,10 @@ public static class Rescates
 
     /// <summary>
     /// EL ARRANQUE APLICA LO RESCATADO, del más viejo al más nuevo y antes de cargar el mundo, y deja cada archivo renombrado
-    /// a <c>*.aplicado</c>. Si algo no se puede aplicar, tira: el servidor no puede arrancar sobre un mundo al que le falta lo
-    /// último. Devuelve cuántas escrituras aplicó.
+    /// a <c>*.aplicado</c>. Si la base no responde, tira: el servidor no puede arrancar sobre un mundo al que le falta lo
+    /// último, y el archivo queda para el próximo intento. Lo que no se puede aplicar por OTRA cosa —un alta a una cuenta que
+    /// ya se llenó, como hubiera pasado con la base andando; un personaje que ya no está— queda en el log y se sigue: si
+    /// tirara, el servidor no arrancaría nunca más. Devuelve cuántas escrituras aplicó.
     /// </summary>
     public static int AplicarLosPendientes(string dataRoot, IAlmacen almacen)
     {
@@ -124,16 +133,44 @@ public static class Rescates
         {
             var archivo = JsonSerializer.Deserialize<Archivo>(File.ReadAllText(ruta, Encoding.UTF8), Opciones)
                 ?? throw new InvalidOperationException($"{ruta} está vacío");
+            var sinAplicar = new List<string>();
             foreach (var rescate in archivo.Rescates)
             {
-                rescate.Aplicar(almacen);
-                aplicadas++;
+                try
+                {
+                    rescate.Aplicar(almacen);
+                    aplicadas++;
+                }
+                catch (Exception ex) when (!ColaDeLaBase.EsQueLaBaseNoResponde(ex))
+                {
+                    sinAplicar.Add($"{rescate.Describir()} ({ex.Message})");
+                }
             }
             File.Move(ruta, ruta + ".aplicado");
-            Console.WriteLine($"[base] aplicado el rescate {Path.GetFileName(ruta)}: {archivo.Rescates.Count} escritura(s)" +
+            Console.WriteLine($"[base] aplicado el rescate {Path.GetFileName(ruta)}: {archivo.Rescates.Count - sinAplicar.Count} escritura(s)" +
                               (archivo.SinRescate.Count > 0 ? $"; se habían perdido {archivo.SinRescate.Count}: {string.Join(", ", archivo.SinRescate)}" : ""));
+            if (sinAplicar.Count > 0)
+                Console.Error.WriteLine($"[base] del rescate {Path.GetFileName(ruta)} NO se pudieron aplicar {sinAplicar.Count}: " +
+                                        string.Join("; ", sinAplicar));
         }
         return aplicadas;
+    }
+
+    /// <summary>
+    /// LOS RESCATES NO VAN ENCIMA DE OTRA BASE. Restaurar un backup o importar es volver a otro punto, y lo rescatado se escribió
+    /// sobre la base de antes: aplicado encima mezclaría personajes de los dos momentos —un ítem que pasó de mano estaría en
+    /// las dos, o en ninguna—. Así que se apartan, renombrados a <c>*.sin-aplicar</c>, y se dice. Devuelve los nombres.
+    /// </summary>
+    public static IReadOnlyList<string> ApartarLosPendientes(string dataRoot)
+    {
+        if (!Directory.Exists(dataRoot)) return Array.Empty<string>();
+        var apartados = new List<string>();
+        foreach (var ruta in Directory.GetFiles(dataRoot, Prefijo + "*.json").Order(StringComparer.Ordinal))
+        {
+            File.Move(ruta, ruta + ".sin-aplicar");
+            apartados.Add(Path.GetFileName(ruta) + ".sin-aplicar");
+        }
+        return apartados;
     }
 
     /// <summary>Para las pruebas: ida y vuelta por el mismo JSON del archivo.</summary>

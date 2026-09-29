@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.Sockets;
 using Microsoft.Data.Sqlite;
 using Npgsql;
@@ -235,6 +236,7 @@ public sealed class ColaDeLaBase : IDisposable
     /// </summary>
     internal static bool EsQueLaBaseNoResponde(Exception ex) => ex switch
     {
+        LaBaseNoResponde => true,
         NpgsqlException npgsql => npgsql.IsTransient,
         // BUSY, LOCKED, IOERR, FULL, CANTOPEN
         SqliteException sqlite => sqlite.SqliteErrorCode is 5 or 6 or 10 or 13 or 14,
@@ -248,28 +250,40 @@ public sealed class ColaDeLaBase : IDisposable
         => OperatingSystem.IsWindows() ? (io.HResult & 0xFFFF) is 32 or 33 or 39 or 112 : io.HResult == 28;
 
     /// <summary>
-    /// EL APAGADO: deja de aceptar pedidos y espera, hasta <paramref name="plazo"/>, a que corra lo que quedaba. Si se vence
-    /// —la base no responde—, la cola se rinde: devuelve lo que no se aplicó, en orden, y el que tenga rescate va al archivo
-    /// de rescate. Lo que estaba corriendo justo puede terminar igual después; su rescate aplicado otra vez da lo mismo,
-    /// porque cada uno guarda un estado entero.
+    /// EL APAGADO: deja de aceptar pedidos y espera, hasta <paramref name="plazo"/>, a que corra lo que quedaba. Si se vence,
+    /// o si la base NO RESPONDE —porque ya estaba caída o porque se cae en el medio—, la cola se rinde en el acto: devuelve lo
+    /// que no se aplicó, en orden, y el que tenga rescate va al archivo de rescate. A la base caída no se la espera: cerrar la
+    /// ventana en Windows le da al proceso unos 5 s antes de matarlo, y el rescate tiene que quedar escrito antes. Lo que
+    /// estaba corriendo justo puede terminar igual después; su rescate aplicado otra vez da lo mismo, porque cada uno guarda
+    /// un estado entero.
+    ///
+    /// <para>Al escritor trabado adentro de la base tampoco lo espera: lo suyo queda apartado. Esperarlo —para cerrar la
+    /// conexión sin que la esté usando— es <see cref="EsperarAlEscritor"/>, después de escribir el rescate.</para>
     /// </summary>
     public IReadOnlyList<(string Que, Rescate? Rescate)> Cerrar(TimeSpan plazo)
     {
         _pedidos.CompleteAdding();
-        if (EsElEscritor || _escritor.Join(plazo)) return Resultado();
-        lock (_estado)
+        if (EsElEscritor) return Resultado();
+        var reloj = Stopwatch.StartNew();
+        while (!_escritor.Join(Vistazo))
         {
-            _rendida = true;
-            if (_enCurso is { } corriendo) Apartar(corriendo);
-            while (_pedidos.TryTake(out var resto))
+            if (CaidaDesde is null && reloj.Elapsed < plazo) continue;
+            lock (_estado)
             {
-                Apartar(resto);
-                Interlocked.Decrement(ref _pendientes);
+                _rendida = true;
+                if (_enCurso is { } corriendo) Apartar(corriendo);
+                while (_pedidos.TryTake(out var resto))
+                {
+                    Apartar(resto);
+                    Interlocked.Decrement(ref _pendientes);
+                }
             }
+            // El que esperaba para reintentar se entera ya, y sale: un momento para que termine. Al que quedó trabado adentro
+            // de la base no se lo espera acá (ver EsperarAlEscritor).
+            _despertar.Set();
+            _escritor.Join(Vistazo * 2);
+            break;
         }
-        // Si el escritor quedó trabado adentro de la base, no se lo espera más que esto: lo suyo ya quedó apartado arriba.
-        _despertar.Set();
-        _escritor.Join(plazo < TimeSpan.FromSeconds(5) ? plazo : TimeSpan.FromSeconds(5));
         return Resultado();
 
         IReadOnlyList<(string, Rescate?)> Resultado()
@@ -278,6 +292,21 @@ public sealed class ColaDeLaBase : IDisposable
         }
     }
 
-    /// <summary>Deja de aceptar pedidos y espera a que corra lo que quedaba (hasta 30 s).</summary>
-    public void Dispose() => Cerrar(TimeSpan.FromSeconds(30));
+    /// <summary>Cada cuánto mira el apagado, mientras espera, si la base se cayó.</summary>
+    private static readonly TimeSpan Vistazo = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>Espera hasta <paramref name="plazo"/> a que el escritor termine lo que haya quedado haciendo adentro de la base
+    /// después de rendirse la cola: para cerrar la conexión sin que la esté usando. False si no terminó.</summary>
+    public bool EsperarAlEscritor(TimeSpan plazo) => EsElEscritor || _escritor.Join(plazo);
+
+    /// <summary>Deja de aceptar pedidos y espera a que corra lo que quedaba (hasta 30 s), y al escritor (hasta 5 s más).</summary>
+    public void Dispose()
+    {
+        Cerrar(TimeSpan.FromSeconds(30));
+        EsperarAlEscritor(TimeSpan.FromSeconds(5));
+    }
 }
+
+/// <summary>La base no responde, por algo que el motor no marca como pasajero: la conexión que no se pudo volver a abrir. La cola
+/// la reintenta como a cualquier caída (<see cref="ColaDeLaBase.EsQueLaBaseNoResponde"/>).</summary>
+public sealed class LaBaseNoResponde(string mensaje, Exception? causa = null) : Exception(mensaje, causa);

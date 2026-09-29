@@ -608,6 +608,9 @@ public sealed class Player
     /// (<c>flags.Trabajando</c> vs <c>Counters.Trabajando</c>).</summary>
     public bool Laborando { get; set; }
     public bool ClientParalyzed { get; set; } // what the client currently believes (ParalizeOK is a toggle)
+    /// <summary>Salió paralizado (<see cref="Data.FichaDePersonaje.Paralizado"/>): al entrar al mundo la parálisis se arma
+    /// entera, con el reloj del loop, y el cliente se entera (VB6 TCP.bas:1930 y :158).</summary>
+    public bool ParalizadoAlEntrar { get; set; }
     public bool ClientBlind { get; set; }     // Blind/BlindNoMore are distinct packets, tracked so expiry clears it
     public bool IsBlinded(long nowTick) => BlindedUntilTick > nowTick;
     public bool IsParalyzed(long nowTick) => ParalyzedUntilTick > nowTick;

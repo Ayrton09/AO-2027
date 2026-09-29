@@ -265,12 +265,12 @@ public sealed partial class PacketDispatcher
         Task.Run(() =>
         {
             Data.Account? acc = null;
-            bool ok = false, migrado = false;
+            bool ok = false, migrado = false, respondio = true;
             try
             {
-                acc = _db.LoadAccount(account);
-                if (acc is null) PasswordHasher.DummyVerify(password);
-                else ok = acc.VerifyPassword(password, out migrado);
+                (respondio, acc) = LeerCuentaConPlazo(account);
+                if (acc is not null) ok = acc.VerifyPassword(password, out migrado);
+                else if (respondio) PasswordHasher.DummyVerify(password);   // sin base no hay nada que disimular
                 // LA CUENTA DE UN BOT SÓLO SE ABRE DESDE UN BOT, y una de persona sólo desde afuera. Va acá,
                 // que es el único cuello por donde pasan las tres rutas de login, y no repetido al lado de
                 // cada chequeo de baneo.
@@ -297,7 +297,11 @@ public sealed partial class PacketDispatcher
                 // Entre que arrancó el hash y que terminó, el cliente se pudo haber ido (o lo pudo haber
                 // cerrado el timeout de autenticación). Nada de tocar el mundo por una conexión muerta.
                 if (session.Cerrada) return;
-                try { alTerminar(acc, ok, migrado); }
+                try
+                {
+                    if (!respondio) { session.Send(ServerMessages.ShowMessageBox(CartelLaBaseNoResponde)); return; }
+                    alTerminar(acc, ok, migrado);
+                }
                 // Lo que el cliente haya mandado DETRÁS del login quedó retenido en el buffer esperando esta
                 // verificación (ver ClientSession.DrainInbound). Se drena pase lo que pase, también si el
                 // login falló: si no, esos bytes se quedan ahí hasta que llegue el próximo segmento TCP.
@@ -880,27 +884,15 @@ public sealed partial class PacketDispatcher
         Task.Run(() =>
         {
             Data.Account? acc = null;
-            bool claveOk = false, eraSuyo = false, borrado = false;
-            var roster = new List<CharacterSummary>();
+            bool claveOk = false, eraSuyo = false, respondio = true;
             try
             {
-                acc = _db.LoadAccount(cuenta);
-                if (acc is null) PasswordHasher.DummyVerify(clave);
+                (respondio, acc) = LeerCuentaConPlazo(cuenta);
+                if (acc is null) { if (respondio) PasswordHasher.DummyVerify(clave); }
                 else
                 {
                     claveOk = acc.VerifyPassword(clave);
                     eraSuyo = acc.Characters.Any(n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase));
-                    if (claveOk && eraSuyo)
-                    {
-                        borrado = _db.ArchivarCharacter(personaje);
-                        // Se lo saca de la cuenta GUARDADA: la de acá se leyó antes del hash, y guardarla entera pisaría
-                        // lo que cambió en el medio (Persistence.CambiarCuenta).
-                        acc = _db.CambiarCuenta(cuenta, c => c.Characters.RemoveAll(
-                            n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase))) ?? acc;
-                    }
-                    if (claveOk)
-                        foreach (var n in acc.Characters)
-                            if (_db.LoadSummary(n) is { } s) roster.Add(s);
                 }
             }
             catch (Exception ex)
@@ -909,17 +901,73 @@ public sealed partial class PacketDispatcher
             }
             _loop.Enqueue(() =>
             {
-                session.SoltarVerificacion();
-                if (session.Cerrada) return;
+                if (session.Cerrada) { session.SoltarVerificacion(); return; }
+                if (!respondio)
+                {
+                    session.SoltarVerificacion();
+                    session.Send(ServerMessages.SendMsgBox(CartelLaBaseNoResponde, 1));
+                    return;
+                }
                 if (acc is null || !claveOk)
                 {
+                    session.SoltarVerificacion();
                     LoginFail(session);
                     session.Send(ServerMessages.SendMsgBox(acc is null ? ErrCuentaNoExiste : ErrClaveIncorrecta, 1));
                     return;
                 }
                 LoginOk(session);
                 if (!eraSuyo)
-                { session.Send(ServerMessages.SendMsgBox("Ese personaje no es de esta cuenta.", 1)); return; }
+                {
+                    session.SoltarVerificacion();
+                    session.Send(ServerMessages.SendMsgBox("Ese personaje no es de esta cuenta.", 1));
+                    return;
+                }
+                ApartarSiNoEstaAdentro(session, cuenta, personaje);
+            });
+        });
+    }
+
+    /// <summary>
+    /// LA MITAD DEL BORRADO QUE DECIDE, en el loop y con la clave ya verificada. El "¿está conectado?" del principio se miró
+    /// ANTES del hash, y en el medio el personaje pudo empezar a entrar desde otra conexión —el borrado trae la cuenta y la
+    /// clave, no necesita una sesión—: apartado ya adentro, jugaría sin que se guarde nada, con el nombre libre para otro.
+    /// Así que se vuelve a mirar acá y, si no está, se lo RESERVA mientras se aparta: un ingreso que llegue en ese rato se
+    /// entera de que está entrando, y un cambio de GM espera.
+    /// </summary>
+    private void ApartarSiNoEstaAdentro(ClientSession session, string cuenta, string personaje)
+    {
+        if (session.Cerrada) { session.SoltarVerificacion(); return; }
+        if (_world.PlayerByName(personaje) is not null || _world.EstaEntrando(personaje))
+        {
+            session.SoltarVerificacion();
+            session.Send(ServerMessages.SendMsgBox("Ese personaje está conectado. Salí del juego y volvé a intentarlo.", 1));
+            return;
+        }
+        if (!Decidible(personaje, () => ApartarSiNoEstaAdentro(session, cuenta, personaje))) return;   // un cambio de GM en curso
+        _world.ReservarEntrada(personaje);
+        Task.Run(() =>
+        {
+            bool borrado = false;
+            var roster = new List<CharacterSummary>();
+            try
+            {
+                borrado = _db.ArchivarCharacter(personaje);
+                // Se lo saca de la cuenta GUARDADA: la leída antes del hash, guardada entera, pisaría lo que cambió en el
+                // medio (Persistence.CambiarCuenta).
+                var acc = _db.CambiarCuenta(cuenta, c => c.Characters.RemoveAll(
+                    n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase)));
+                foreach (var n in acc?.Characters ?? new List<string>())
+                    if (_db.LoadSummary(n) is { } s) roster.Add(s);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[{session.RemoteEndpoint}] borrar personaje: {ex.Message}");
+            }
+            _loop.Enqueue(() =>
+            {
+                _world.SoltarEntrada(personaje);
+                session.SoltarVerificacion();
+                if (session.Cerrada) return;
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
                 session.Send(ServerMessages.AddPj(cuenta, roster));   // la pantalla de seleccion, ya sin el
                 session.Send(ServerMessages.SendMsgBox($"{personaje} fue borrado.", 1));
@@ -965,12 +1013,12 @@ public sealed partial class PacketDispatcher
         Task.Run(() =>
         {
             Data.Account? acc = null;
-            bool pinOk = false;
+            bool pinOk = false, respondio = true;
             try
             {
-                acc = _db.LoadAccount(account);
+                (respondio, acc) = LeerCuentaConPlazo(account);
                 // Sin cuenta se quema el mismo tiempo igual, como en el login (PasswordHasher.DummyVerify).
-                if (acc is null) PasswordHasher.DummyVerify(pin);
+                if (acc is null) { if (respondio) PasswordHasher.DummyVerify(pin); }
                 else
                 {
                     pinOk = tipo == TipoCambiarClave ? acc.VerifyPassword(pin) : acc.VerifyUserCode(pin);
@@ -993,6 +1041,12 @@ public sealed partial class PacketDispatcher
                 if (session.Cerrada) return;
                 try
                 {
+                    if (!respondio)
+                    {
+                        session.Send(ServerMessages.SendMsgBox(CartelLaBaseNoResponde, 1));
+                        session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0"));
+                        return;
+                    }
                     if (acc is null)
                     {
                         LoginFail(session);
@@ -1084,7 +1138,28 @@ public sealed partial class PacketDispatcher
                 var player = _db.CreateCharacter(acc, charName, _world.AllocateCharIndex(), race, gender, klass, homeland, head,
                     _data.NewbieKit(klass), _data.ModRaza);
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE CREADO name={charName} cuenta={account}");
-                SpawnIntoWorld(session, player, $"v{verMajor}.{verMinor}.{verRev}");
+                // AL MUNDO, RECIÉN CON EL ALTA ADENTRO. La base vuelve a mirar el tope de personajes en su transacción: con dos
+                // conexiones de la misma cuenta creando a la vez y la cuenta en 9, una de las dos no entra —el tope de arriba se
+                // miró con la cuenta leída antes del hash—. Ese personaje no puede quedar jugando: nada de lo suyo se guardaría,
+                // y su nombre quedaría libre para otro. La confirmación va por la cola, detrás del alta.
+                //
+                // Mientras tanto el nombre queda RESERVADO, como el de un ingreso (EntrarAlMundo): otra conexión que quiera
+                // entrar con él espera, y un cambio de GM o una transferencia a la bóveda no lo tratan como desconectado —
+                // leerían de la base y guardarían, y el primer guardado del que entra, armado antes, lo pisaría—.
+                string version = $"v{verMajor}.{verMinor}.{verRev}";
+                _world.ReservarEntrada(charName);
+                Responder(_db.ExistePersonajeAsync(charName), entro =>
+                {
+                    _world.SoltarEntrada(charName);
+                    if (session.Cerrada) return;
+                    if (!entro) { RechazarConCartel(session, CartelLimiteDePersonajes, "la base no tomó el alta (límite de personajes)"); return; }
+                    SpawnIntoWorld(session, player, version);
+                }, alFallar: () =>
+                {
+                    _world.SoltarEntrada(charName);
+                    if (!session.Cerrada)
+                        session.Send(ServerMessages.ShowMessageBox("No se pudo crear el personaje. Probá de nuevo en un momento."));
+                });
             });
         });
     }
@@ -1294,11 +1369,14 @@ public sealed partial class PacketDispatcher
         // misma IP— se vuelve a mirar cuando llega la lectura.
         _world.ReservarEntrada(charName);
         bool abandonada = false;
-        var lectura = _db.LeerPersonajeAsync(charName);
-        Responder(lectura, ficha =>
+        var lectura = _db.LeerParaEntrarAsync(charName, account);
+        Responder(lectura, leido =>
         {
+            var (ficha, cuentaBaneada) = leido;
             _world.SoltarEntrada(charName);
             if (abandonada || session.Cerrada) return;
+            // Un baneo del panel que llegó mientras se verificaba la clave (ver Persistence.LeerParaEntrarAsync).
+            if (cuentaBaneada) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada mientras entraba"); return; }
             if (ficha is null) { RechazarConCartel(session, CartelPersonajeNoExiste, "sin archivo de personaje"); return; }
             TerminarDeEntrar(session, acc, account, ficha.CrearPlayer(_world.AllocateCharIndex(), account), version);
         }, alFallar: () =>
@@ -1319,9 +1397,24 @@ public sealed partial class PacketDispatcher
         }), TaskScheduler.Default);
     }
 
-    /// <summary>Cuánto espera un ingreso a que la base le traiga el personaje antes de avisar que no se puede. Las pruebas lo
-    /// acortan en su propio despachador.</summary>
+    /// <summary>Cuánto espera un ingreso a que la base le traiga el personaje —o la cuenta— antes de avisar que no se puede.
+    /// Las pruebas lo acortan en su propio despachador.</summary>
     internal TimeSpan PlazoDeLaLecturaDeEntrada { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>El cartel de la cuenta que la base no trajo a tiempo (el del personaje es el de <see cref="EntrarAlMundo"/>).</summary>
+    private const string CartelLaBaseNoResponde = "No se puede entrar en este momento. Probá de nuevo en un rato.";
+
+    /// <summary>
+    /// LA CUENTA, CON PLAZO: la leen el ingreso, el borrado y el cambio de clave, desde el pool. Con la base caída la lectura
+    /// espera en la cola, y sin plazo el cliente quedaba colgado sin aviso —hasta que lo cortaba el tiempo de autenticación—
+    /// con un hilo del pool tomado mientras durara la caída. Pasado <see cref="PlazoDeLaLecturaDeEntrada"/> se abandona:
+    /// <c>Respondio</c> en false, y el que llama avisa. La lectura sigue en la cola y, cuando vuelva la base, nadie la espera.
+    /// </summary>
+    private (bool Respondio, Data.Account? Cuenta) LeerCuentaConPlazo(string cuenta)
+    {
+        var lectura = _db.LeerCuentaAsync(cuenta);
+        return lectura.Wait(PlazoDeLaLecturaDeEntrada) ? (true, lectura.Result) : (false, null);
+    }
 
     /// <summary>La última mitad de la entrada al mundo, con el personaje ya leído. Vuelve a mirar lo que pudo cambiar
     /// mientras se leía: otro personaje de la misma cuenta, o desde la misma IP, que entró en el medio.</summary>
@@ -1519,6 +1612,16 @@ public sealed partial class PacketDispatcher
         }
         for (byte slot = 1; slot <= GameLimits.MaxUserSpells; slot++)
             session.Send(ServerMessages.ChangeSpellSlot(slot, player.Spells[slot]));
+        // LA PARÁLISIS CON LA QUE SALIÓ vuelve entera (VB6 LoadUser, TCP.bas:1930) y el cliente se entera en este punto del
+        // ingreso, después del inventario y los hechizos (ConnectUser, TCP.bas:158).
+        if (player.ParalizadoAlEntrar)
+        {
+            player.ParalizadoAlEntrar = false;
+            player.MarcaParalizado = true;
+            player.ParalyzedUntilTick = _loop.Tick + _ini.IntervaloParalizado;
+            player.ClientParalyzed = true;
+            session.Send(ServerMessages.ParalizeOK());
+        }
         session.Send(ServerMessages.DumbNoMore());                      // clear stun overlay (VB6 ConnectUser #61)
         session.Send(ServerMessages.UserIndexInServer(player.CharIndex));
         session.Send(ServerMessages.ChangeMap(player.Pos.Map));
@@ -6069,10 +6172,13 @@ public sealed partial class PacketDispatcher
         {
             _world.Broadcast(ServerMessages.ConsoleMsg($"   {miembro}<{g.Name}> ha sido expulsado del servidor.", 1));
             string nombreDelClan = g.Name;
+            // La pena, con el clan como lo ESCRIBIÓ el GM (el original usa el GuildName del paquete, no el guardado).
+            string pena = $"{p.Name.ToLowerInvariant()}: BAN AL CLAN: {nombre} {DateTime.Now:dd/MM/yyyy HH:mm:ss}";
             ConElPersonaje(miembro, (t, online) =>
             {
                 if (t is null) return;
                 t.Banned = true;
+                t.Penalties.Add(pena);
                 _db.SaveCharacter(t);
                 online?.Connection?.Close($"clan <{nombreDelClan}> baneado por un GM");
             });
@@ -10124,7 +10230,6 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    /// <summary>GuildKickMember (id 56): the leader removes a member from the clan.</summary>
     /// <summary>GuildKickMember: VB6 <c>HandleGuildKickMember</c> (Protocol.bas:4617). Lo que no se puede, calla; lo
     /// que sí, se avisa a los del clan con el sonido 45.</summary>
     private void HandleGuildKick(ClientSession session, ByteQueueReader r)

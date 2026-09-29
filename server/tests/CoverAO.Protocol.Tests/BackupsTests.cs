@@ -14,6 +14,44 @@ public class BackupsTests : IDisposable
     public BackupsTests() => Directory.CreateDirectory(_dir);
     public void Dispose() { try { Directory.Delete(_dir, true); } catch { } }
 
+    /// <summary>
+    /// LAS BASES APARTADAS NO VAN EN CADA BACKUP. Importar deja la de antes al lado —<c>coverao.db.importado</c>, la de antes de
+    /// importar—, y los sueltos de <c>data/</c> van en cada backup: con la retención de siempre eran decenas de copias enteras
+    /// de una base que ya no se usa.
+    /// </summary>
+    [Fact]
+    public void Las_bases_apartadas_no_van_en_los_backups()
+    {
+        string data = Path.Combine(_dir, "data");
+        Directory.CreateDirectory(data);
+        using var almacen = new AlmacenSqlite(Path.Combine(data, "coverao.db"));
+        foreach (var apartada in new[] { "coverao.db.importado", "coverao.db.antes-de-importar-20260929-010203", "coverao.db.importado-wal" })
+            File.WriteAllText(Path.Combine(data, apartada), "una base vieja");
+        File.WriteAllText(Path.Combine(data, "banned-ips.txt"), "10.0.0.1");
+
+        string ruta = Backups.Crear(almacen, Path.Combine(_dir, "backups"), new DateTime(2026, 9, 29, 1, 0, 0), data);
+
+        string sueltos = Path.Combine(Path.GetDirectoryName(ruta)!, Path.GetFileNameWithoutExtension(ruta));
+        Assert.Equal(new[] { "banned-ips.txt" }, Directory.GetFiles(sueltos).Select(Path.GetFileName));
+    }
+
+    /// <summary>UN BACKUP A MEDIO HACER NO ES UN BACKUP: se arma con otro nombre, que la retención no cuenta, y lo que quedó de
+    /// uno que se cortó se limpia en el siguiente.</summary>
+    [Fact]
+    public void Un_backup_a_medio_hacer_no_cuenta_y_se_limpia()
+    {
+        string sobra = Path.Combine(_dir, Backups.PrefijoTemporal + Backups.Stem(new DateTime(2026, 9, 28)) + ".db");
+        File.WriteAllText(sobra, "cortado");
+        Assert.Empty(Backups.Listar(_dir));
+
+        using var almacen = AlmacenSqlite.EnMemoria();
+        string ruta = almacen.Backup(_dir, Backups.Stem(new DateTime(2026, 9, 29)));
+
+        Assert.False(File.Exists(sobra));
+        Assert.Equal(new[] { Path.GetFileName(ruta) }, Backups.Listar(_dir).Select(Path.GetFileName));
+        Assert.Empty(Directory.GetFiles(_dir, Backups.PrefijoTemporal + "*"));
+    }
+
     [Fact]
     public void El_nombre_ordena_cronologicamente_como_texto()
     {

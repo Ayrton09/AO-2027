@@ -42,7 +42,9 @@ public sealed class ServerIni
 
     // nombre en MAYÚSCULAS -> bit de privilegio. Un nombre en dos listas se queda con el rango MÁS ALTO,
     // que es lo que hace el original con su cadena de ElseIf (Admin gana sobre Dios, Dios sobre SemiDios…).
-    private readonly Dictionary<string, byte> _staff = new(StringComparer.OrdinalIgnoreCase);
+    // Recargar la REEMPLAZA entera, nunca la cambia: el loop la lee en cada ingreso mientras el panel recarga desde su
+    // hilo, y un diccionario vaciado y rellenado en el medio de una lectura puede tirar o mentir.
+    private volatile Dictionary<string, byte> _staff = new(StringComparer.OrdinalIgnoreCase);
 
     public int StartPort { get; private set; } = 7666;
     public int MaxUsers { get; private set; }              // 0 = sin tope
@@ -998,8 +1000,7 @@ public sealed class ServerIni
         foreach (var prop in typeof(ServerIni).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
             if (prop.CanWrite && prop.Name != nameof(Ruta))
                 prop.SetValue(this, prop.GetValue(nuevo));
-        _staff.Clear();
-        foreach (var (nombre, priv) in nuevo.Staff) _staff[nombre] = priv;
+        _staff = nuevo._staff;
         return true;
     }
 

@@ -90,7 +90,7 @@ public class GraciaContraCriaturasTests
         finally
         {
             cts.Cancel();
-            try { corriendo.Wait(TimeSpan.FromSeconds(5)); } catch { /* cancelado */ }
+            try { await corriendo.WaitAsync(TimeSpan.FromSeconds(5)); } catch { /* cancelado */ }
             try { Directory.Delete(root, recursive: true); } catch { /* el temp queda */ }
         }
     }

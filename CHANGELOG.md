@@ -45,6 +45,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Atacar a una criatura con hechizos o flechas pide el modo combate.** La flecha que no pega no se gasta.
   Y tirar sin flechas te saca el arco, como en el original.
 
+- **Salir y volver a entrar no cura**: si te desconectás paralizado o prendido fuego, volvés igual, como en el
+  original.
+
 - **La Espada Mata Dragones, como el original**: a un dragón le pega muchísimo más fuerte, a cualquier otra
   criatura le saca 1, y a una persona entre 22 y 35. Y el **Arco Caza Demonios** le pega de verdad al Demonio y
   al Demonio Abisal, y a lo demás 1.
@@ -204,7 +207,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   cliente web, Shift+clic en el mapa te lleva a esa baldosa. Las denuncias les llegan como en el original.
 
 - **Más comandos de GM como en el original**: /HORA se anuncia a todo el servidor, /RMATA mata a la criatura
-  clickeada y la hace reaparecer, y /MIEMBROSCLAN lista un miembro por línea.
+  clickeada y la hace reaparecer, /MIEMBROSCLAN lista un miembro por línea y /BANCLAN le anota la pena a cada
+  miembro.
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
   `[NIVELMINIMO]`, `MinutosDeFogata`, `MetamorfosisDelDruida`, `AtacarAliadoVuelveCriminal` y `EventoAlRematar`.
@@ -241,6 +245,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
   base, y el que entra mientras tanto recibe un cartel en vez de quedarse esperando. Si se apaga con la base caída, lo
   pendiente queda en un archivo de rescate que el próximo arranque aplica. `CoverAO.Server restaurar` vuelve a un backup.
   Las IPs baneadas también van en la base, y el importador trae las del original.
+
+- **La base es de un servidor a la vez**: un segundo servidor sobre la misma base no arranca, y los comandos de la
+  base no la tocan con el servidor andando. Pasar a Postgres o restaurar un backup la lleva entera, con las fechas y
+  los personajes borrados, y no le aplica encima un rescate viejo. Una cuenta de más de 20 letras —la 1.0.0 las
+  dejaba crear y ya no podían entrar— no frena la actualización: queda anotada en el informe.
 
 - **Una web puede leer la base de Postgres** con un usuario que sólo ve lo público: personajes, tabla de posiciones,
   clanes, conectados y el catálogo del juego con sus nombres, sin nada de las cuentas y sin el staff.

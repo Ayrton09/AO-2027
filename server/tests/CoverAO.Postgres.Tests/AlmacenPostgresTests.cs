@@ -28,6 +28,66 @@ public sealed class AlmacenPostgresTests : IDisposable
         return Convert.ToInt64(c.ExecuteScalar());
     }
 
+    /// <summary>UNA BASE, UN PROCESO: dos servidores sobre la misma base escribirían cada uno su mundo encima del otro. La
+    /// segunda vez no se abre, y dice por qué; cerrada la primera, se abre.</summary>
+    [Fact]
+    public void La_misma_base_no_se_abre_dos_veces()
+    {
+        using (new AlmacenPostgres(_base.Cadena))
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => new AlmacenPostgres(_base.Cadena));
+            Assert.Contains("Otro proceso ya usa", error.Message);
+        }
+        using var otra = new AlmacenPostgres(_base.Cadena);
+        Assert.False(otra.ExisteCuenta("Nadie"));
+    }
+
+    /// <summary>
+    /// RESTAURAR TIRA SÓLO LAS TABLAS DEL JUEGO: una que otro programa —una web— tenga en la misma base no es del backup, y
+    /// tirarla la perdía sin que ningún zip la devolviera.
+    /// </summary>
+    [Fact]
+    public void Restaurar_no_toca_las_tablas_que_no_son_del_juego()
+    {
+        using var almacen = new AlmacenPostgres(_base.Cadena);
+        almacen.GuardarCuenta(Cuenta("Duena"));
+        string zip = almacen.Backup(_raiz, "coverao-prueba");
+        Escalar("CREATE TABLE noticias_de_la_web (id integer, texto text); INSERT INTO noticias_de_la_web VALUES (1, 'hola'); SELECT 1");
+
+        almacen.Restaurar(zip);
+
+        Assert.Equal(1, Escalar("SELECT count(*) FROM noticias_de_la_web"));
+        Assert.True(almacen.ExisteCuenta("Duena"));
+    }
+
+    /// <summary>
+    /// LAS COLUMNAS DEL ZIP VAN AL COPY, así que sólo pasan las que la tabla tiene de verdad: un encabezado armado a mano
+    /// metería SQL propio, con el usuario del juego. Un zip así no se restaura, y la base queda como estaba.
+    /// </summary>
+    [Fact]
+    public void Restaurar_no_acepta_columnas_que_la_tabla_no_tiene()
+    {
+        using var almacen = new AlmacenPostgres(_base.Cadena);
+        almacen.GuardarCuenta(Cuenta("Duena"));
+        string zip = almacen.Backup(_raiz, "coverao-prueba");
+        using (var archivo = ZipFile.Open(zip, ZipArchiveMode.Update))
+        {
+            var cuentas = archivo.GetEntry("cuentas.csv")!;
+            string texto;
+            using (var lector = new StreamReader(cuentas.Open())) texto = lector.ReadToEnd();
+            cuentas.Delete();
+            int fin = texto.IndexOf('\n');
+            using var escritor = new StreamWriter(archivo.CreateEntry("cuentas.csv").Open());
+            escritor.Write(texto[..fin].Replace("nombre", "nombre\") FROM STDIN; DROP TABLE personajes; --") + texto[fin..]);
+        }
+
+        var error = Assert.Throws<InvalidOperationException>(() => almacen.Restaurar(zip));
+
+        Assert.Contains("no es un backup de esta base", error.Message);
+        Assert.True(almacen.ExisteCuenta("Duena"));
+        Assert.Equal(1, Escalar("SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'personajes'"));
+    }
+
     [Fact]
     public void La_version_del_esquema_queda_anotada_y_abrirla_de_nuevo_no_repite_nada()
     {
@@ -77,7 +137,7 @@ public sealed class AlmacenPostgresTests : IDisposable
         string ruta = almacen.Backup(_raiz, "coverao-prueba");
 
         Assert.EndsWith(".zip", ruta);
-        Assert.False(File.Exists(ruta + ".escribiendo"));
+        Assert.Empty(Directory.GetFiles(_raiz, Backups.PrefijoTemporal + "*"));
         using var zip = ZipFile.OpenRead(ruta);
         var entradas = zip.Entries.Select(e => e.FullName).ToHashSet();
         foreach (var tabla in new[] { "cuentas.csv", "personajes.csv", "inventario.csv", "skills.csv", "clanes.csv", "correo.csv", "migraciones.csv" })
@@ -275,6 +335,46 @@ public sealed class AlmacenPostgresTests : IDisposable
         Assert.Single(Directory.GetFiles(_raiz, "importacion-*.txt"));
         // Ya importado, no se vuelve a hacer.
         Assert.Null(Importador.ImportarAPostgresSiHaceFalta(_raiz, archivo, almacen));
+    }
+
+    /// <summary>
+    /// PASAR A POSTGRES ES LA MISMA BASE EN OTRO MOTOR: va entera, tabla por tabla —las fechas de alta, los personajes
+    /// apartados, la última IP—, con los tipos de Postgres, y verificada. Pasada personaje por personaje, las fechas quedaban
+    /// todas en el día del paso y los apartados no llegaban.
+    /// </summary>
+    [Fact]
+    public void Pasar_a_postgres_lleva_la_base_entera()
+    {
+        string archivo = Path.Combine(_raiz, "coverao.db");
+        using (var sqlite = new AlmacenSqlite(archivo))
+        {
+            var cuenta = Cuenta("Duena");
+            cuenta.UltimaIp = "10.1.2.3";
+            cuenta.Donador = true;
+            sqlite.GuardarCuenta(cuenta);
+            Assert.True(sqlite.CrearPersonaje(cuenta, FichasDePrueba.Llena("Vivo")));
+            Assert.True(sqlite.CrearPersonaje(cuenta, FichasDePrueba.Llena("Borrado", 2)));
+            Assert.True(sqlite.ApartarPersonaje("Borrado"));
+        }
+        using (var con = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={archivo};Pooling=False"))
+        {
+            con.Open();
+            using var c = con.CreateCommand();
+            c.CommandText = "UPDATE cuentas SET creada_en = '2026-01-02T03:04:05.000Z'";
+            c.ExecuteNonQuery();
+        }
+        using var almacen = new AlmacenPostgres(_base.Cadena);
+
+        var informe = Importador.ImportarAPostgres(archivo, almacen, reemplazar: false, Path.Combine(_raiz, "backups"));
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        Assert.Equal((1, 1, 1), (informe.Personajes, informe.Apartados, informe.Equivalentes));
+        Assert.Equal(1, Escalar("SELECT count(*) FROM personajes WHERE nombre = 'Borrado' AND borrado_en IS NOT NULL"));
+        Assert.Equal(1, Escalar("SELECT count(*) FROM cuentas WHERE creada_en = '2026-01-02 03:04:05+00' AND ultima_ip = '10.1.2.3' AND donador"));
+        FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Vivo"), almacen.LeerPersonaje("Vivo")!);
+        // Una cuenta nueva no choca con las copiadas: los contadores de los id siguen desde el más alto.
+        almacen.GuardarCuenta(Cuenta("Nueva"));
+        Assert.True(almacen.ExisteCuenta("Nueva"));
     }
 
     /// <summary><c>pasar-a-postgres</c> desde la línea de comandos, con el Server.ini todavía en SQLite: copia la base de

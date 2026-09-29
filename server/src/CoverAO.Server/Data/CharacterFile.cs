@@ -57,11 +57,12 @@ public static class CharacterFile
         // entrar te curaba gratis.
         //
         // El resto del bloque FLAGS del VB6 se miró y NO se porta, por motivo y no por olvido:
-        //   · Paralizado / Escondido — el flag va con un contador (`Contadores.Paralisis`, `TiempoOculto`) que
-        //     el .chr no guarda, así que reponerlo solo lo apaga el primer tick: el par no cierra.
-        //   · Incinerado — nuestro incinerar comparte estado con el veneno, no hay campo separado que guardar.
+        //   · Escondido — en el original nadie lo pone en 1: sólo se guarda, se lee y se apaga (TCP.bas:815, 1874).
         //   · Hambre / Sed / Desnudo — derivados del contador de comida/agua y del equipo, que ya persisten.
         ini.Set("FLAGS", "Envenenado", F(f.Veneno));   // el Byte, no un 1
+        // Paralizado e Incinerado (VB6 FileIO.bas:1635-1636): al entrar vuelven (ver FichaDePersonaje).
+        ini.Set("FLAGS", "Paralizado", F(f.Paralizado ? 1 : 0));
+        ini.Set("FLAGS", "Incinerado", F(f.Incinerado ? 1 : 0));
         // VB6 flags.MuertesUsuario (Modulo_UsUaRiOs.bas:1260, +1 en UserDie). La ficha del cliente lo muestra
         // como "Veces que moriste"; el .chr lo llama `Murio` (FileIO.bas:1638).
         ini.Set("FLAGS", "Murio", F(f.VecesMuerto));
@@ -323,6 +324,8 @@ public static class CharacterFile
             Montando = ini.GetInt("FLAGS", "Montando") == 1,     // VB6 TCP.bas:1867 (la línea de abajo)
             Veneno = veneno > 0 ? (byte)Math.Min(veneno, byte.MaxValue) : (byte)0,
             VecesMuerto = ini.GetInt("FLAGS", "Murio"),          // VB6 TCP.bas:1869 (.flags.MuertesUsuario)
+            Paralizado = ini.GetInt("FLAGS", "Paralizado") == 1,   // VB6 TCP.bas:1869
+            Incinerado = ini.GetInt("FLAGS", "Incinerado") == 1,   // VB6 TCP.bas:1882
             UsuariosMatados = ini.GetInt("MUERTES", "UserMuertes"),   // VB6 TCP.bas:2166
             CriaturasMatadas = ini.GetInt("MUERTES", "NpcsMuertes"),  // VB6 TCP.bas:2167
             Pareja = ini.GetString("CASAMIENTO", "Pareja"),

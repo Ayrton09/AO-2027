@@ -173,7 +173,7 @@ public class UsarObjetosComoElOriginalTests : IDisposable
 
         Assert.Equal(pase.PasajeHastaMap, p.Pos.Map);
         Assert.True(t.Recibio(ServerMessages.ChangeInventorySlotUser(7, 3, 0)));
-        Assert.Empty(t.De(ServerPacketId.ChangeInventorySlot).Where(x => x.Length > 1 && x[1] == 7));
+        Assert.DoesNotContain(t.De(ServerPacketId.ChangeInventorySlot), x => x.Length > 1 && x[1] == 7);
     }
 
     [Fact]

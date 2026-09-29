@@ -23,6 +23,17 @@ public class ImportadorTests : IDisposable
 
     private static Account Cuenta(string nombre) => new() { Name = nombre, PasswordHash = "pbkdf2$1$a$b" };
 
+    /// <summary>SQL directo sobre un archivo de SQLite: para lo que el almacén no escribe a pedido, como una fecha de alta.</summary>
+    private static object? Sql(string archivo, string sql)
+    {
+        using var con = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = archivo, Pooling = false }.ToString());
+        con.Open();
+        using var c = con.CreateCommand();
+        c.CommandText = sql;
+        return c.ExecuteScalar();
+    }
+
     /// <summary>Una carpeta de datos NUESTRA, armada con el almacén de archivos: dos cuentas, tres personajes y el mundo.</summary>
     private (FichaDePersonaje[] Fichas, ClanGuardado Clan) CarpetaNuestra()
     {
@@ -50,6 +61,94 @@ public class ImportadorTests : IDisposable
         archivos.GuardarLlavesVendidas(new[] { new LlaveVendida(40, 3, 53) });
         archivos.GuardarRecord(17);
         return (fichas, clan);
+    }
+
+    /// <summary>
+    /// UNA CUENTA DE MÁS DE 20 LETRAS —la 1.0.0 dejaba crear hasta 30— no cabe en la base, y copiarla cortaba la importación
+    /// entera: el servidor no arrancaba. Esa cuenta ya no puede entrar al juego (el ingreso corta en 20, como el original), así
+    /// que se saltea con sus personajes, se dice, y lo demás se importa.
+    /// </summary>
+    [Fact]
+    public void Una_cuenta_de_mas_de_20_letras_se_saltea_y_lo_demas_se_importa()
+    {
+        CarpetaNuestra();
+        const string Larga = "CuentaDeVeintitantasLetras";
+        File.WriteAllText(Path.Combine(Datos, "Cuentas", Larga.ToUpperInvariant() + ".cnt"),
+            $"[{Larga}]\r\nCuenta={Larga}\r\nPassword=abc\r\nSalt=xyz\r\n[PJS]\r\nNumPjs=1\r\nPJ1=Dario\r\n", CoverAO.Protocol.Codec.Ansi);
+        File.WriteAllText(Path.Combine(Datos, "Charfile", "DARIO.chr"), "[INIT]\r\nGenero=1\r\nRaza=1\r\nClase=3\r\n", CoverAO.Protocol.Codec.Ansi);
+
+        var informe = Importador.Importar(Datos, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        Assert.Equal((2, 3), (informe.Cuentas, informe.Personajes));
+        Assert.Contains(informe.Avisos, a => a.Contains(Larga, StringComparison.OrdinalIgnoreCase) && a.Contains("Dario"));
+        Assert.DoesNotContain(informe.Avisos, a => a.StartsWith("Dario no está en ninguna cuenta"));
+        using var base_ = new AlmacenSqlite(Base);
+        Assert.Null(base_.LeerCuenta(Larga));
+        Assert.False(base_.ExistePersonaje("Dario"));
+    }
+
+    /// <summary>
+    /// LO RESCATADO NO VA ENCIMA DE UN BACKUP. Un rescate que quedó de un apagado con la base caída se escribió sobre la base de
+    /// antes; restaurar es volver a otro punto, y aplicado encima mezclaría los dos. Se aparta, y el arranque no lo aplica.
+    /// </summary>
+    [Fact]
+    public void Restaurar_aparta_los_rescates_que_esperaban()
+    {
+        CarpetaNuestra();
+        string data = Path.Combine(_raiz, "srv");
+        Directory.CreateDirectory(data);
+        string backup = Path.Combine(_raiz, "backup.db");
+        Importador.Importar(Datos, backup);
+        string? rescate = Rescates.Escribir(data, new (string, Rescate?)[] { ("guardar a Aldo", new RescateDePersonaje(FichasDePrueba.Llena("Aldo", 9))) });
+
+        Assert.Equal(0, ComandosDeLaBase.Correr(new[] { "restaurar", backup }, data, new ServerIni()));
+
+        Assert.False(File.Exists(rescate));
+        Assert.True(File.Exists(rescate + ".sin-aplicar"));
+        using var base_ = new AlmacenSqlite(Path.Combine(data, "coverao.db"));
+        Assert.Equal(0, Rescates.AplicarLosPendientes(data, base_));
+    }
+
+    /// <summary>
+    /// UN BACKUP DE SQLITE SE RESTAURA ENTERO: es la misma base, así que vuelve con lo que la ficha de un personaje no lleva —las
+    /// fechas de alta, los personajes apartados, que se pueden devolver—. Pasado personaje por personaje, eso se perdía.
+    /// </summary>
+    [Fact]
+    public void Un_backup_de_sqlite_vuelve_con_las_fechas_y_los_apartados()
+    {
+        string backup = Path.Combine(_raiz, "backup.db");
+        using (var origen = new AlmacenSqlite(backup))
+        {
+            var cuenta = Cuenta("Duena");
+            origen.GuardarCuenta(cuenta);
+            Assert.True(origen.CrearPersonaje(cuenta, FichasDePrueba.Llena("Vivo")));
+            Assert.True(origen.CrearPersonaje(cuenta, FichasDePrueba.Llena("Borrado", 2)));
+            Assert.True(origen.ApartarPersonaje("Borrado"));
+        }
+        Sql(backup, "UPDATE cuentas SET creada_en = '2026-01-02T03:04:05.000Z'");
+
+        var informe = Importador.Importar(backup, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        Assert.Equal((1, 1, 1), (informe.Personajes, informe.Apartados, informe.Equivalentes));
+        Assert.Equal(1L, Sql(Base, "SELECT count(*) FROM personajes WHERE nombre = 'Borrado' AND borrado_en IS NOT NULL"));
+        Assert.Equal("2026-01-02T03:04:05.000Z", Sql(Base, "SELECT creada_en FROM cuentas WHERE nombre = 'Duena'"));
+        using var base_ = new AlmacenSqlite(Base);
+        FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Vivo"), base_.LeerPersonaje("Vivo")!);
+    }
+
+    /// <summary>UNA BASE, UN PROCESO: con un servidor andando sobre la base, importar encima no la toca.</summary>
+    [Fact]
+    public void Con_la_base_abierta_por_otro_no_se_importa_encima()
+    {
+        CarpetaNuestra();
+        using (new AlmacenSqlite(Base))
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => Importador.Importar(Datos, Base, reemplazar: true));
+            Assert.Contains("Otro proceso ya usa", error.Message);
+        }
+        Assert.True(Importador.Importar(Datos, Base, reemplazar: true).SalioBien);
     }
 
     [Fact]

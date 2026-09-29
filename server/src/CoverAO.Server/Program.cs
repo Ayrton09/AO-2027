@@ -295,9 +295,11 @@ var regenRng = new Random();   // RandomNumber del regen de stamina (VB6 RecStam
 // captura por referencia y para cuando el loop corra ya está.
 PacketDispatcher? dispatcher = null;
 
-// Guardar a los conectados son DOS mitades, y una sola de las dos tiene que estar adentro del game loop:
-// serializar lee unos cien campos del Player vivo (hacerlo desde otro hilo devuelve un personaje partido al
-// medio), escribir es disco. Esto último es lo que se saca afuera.
+// Guardar a los conectados son DOS mitades: serializar lee unos cien campos del Player vivo (hacerlo desde otro
+// hilo devuelve un personaje partido al medio), y escribir lo hace la cola de la base, en su hilo. Las dos se
+// hacen EN EL LOOP: guardar es sólo encolar, y encolar desde otro hilo dejaba que la foto de una vuelta llegara a
+// la cola DESPUÉS de un guardado más nuevo del mismo personaje —el de un GM que lo banea, el del que da un ítem y
+// sale— y lo pisara.
 List<FichaDePersonaje> SerializarConectados(string quien)
 {
     var pendientes = new List<FichaDePersonaje>();
@@ -332,7 +334,7 @@ int EscribirGuardados(List<FichaDePersonaje> pendientes, string quien)
 // CINCO SEGUNDOS de mundo congelado, cada backup, para siempre.
 long ultimoBackupTick = 0;
 string backupsDir = Path.Combine(dataRoot, "backups");
-Task tareaBackup = Task.CompletedTask, tareaAutosave = Task.CompletedTask;
+Task tareaBackup = Task.CompletedTask;
 int backupEnCurso = 0;
 
 string HacerBackup(string motivo)
@@ -351,15 +353,15 @@ string HacerBackup(string motivo)
     // Por lo mismo que los personajes: si los clanes o el correo quedaron sucios, el snapshot saldría con lo
     // de hace unos segundos.
     dispatcher?.VolcarPersistenciaDiferida(forzar: true);
+    EscribirGuardados(pendientes, "backup");
     var cuando = DateTime.Now;
 
     tareaBackup = Task.Run(() =>
     {
         try
         {
-            EscribirGuardados(pendientes, "backup");
-            // Los guardados de arriba —y los clanes y el correo que se volcaron en el loop— están ENCOLADOS en la base:
-            // la foto sale después de que se escriban, o saldría con lo de antes.
+            // Los guardados de arriba —y los clanes y el correo que se volcaron— están ENCOLADOS en la base: la foto sale
+            // después de que se escriban, o saldría con lo de antes.
             db.EsperarEscriturasPendientes();
             string ruta = Backups.Crear(almacen, backupsDir, cuando, dataRoot);
             int podados = Backups.Podar(backupsDir, serverIni.BackupsAConservar);
@@ -394,10 +396,8 @@ loop.OnTickHandler = tick =>
     if (admin.AutosaveMinutes > 0 && (tick - admin.LastAutosaveTick) * GameLoop.TickMs >= (long)admin.AutosaveMinutes * 60_000)
     {
         admin.LastAutosaveTick = tick;
-        // Serializar acá, escribir afuera: medido en este equipo son 0,75 ms por .chr, o sea que con cien
-        // conectados el autosave se comía dos ticks enteros y el mundo se trababa cada quince minutos.
-        var pendientes = SerializarConectados("autosave");
-        if (pendientes.Count > 0) tareaAutosave = Task.Run(() => EscribirGuardados(pendientes, "autosave"));
+        // Serializar y encolar, acá mismo (ver SerializarConectados): lo que cuesta, escribir, lo hace la cola en su hilo.
+        EscribirGuardados(SerializarConectados("autosave"), "autosave");
     }
     // Backup periódico del almacén entero (Server.ini MinutosBackup). Se guarda a los conectados PRIMERO, o el
     // snapshot sale con el estado del último save y el backup miente sobre lo que había.
@@ -430,8 +430,12 @@ loop.OnTickHandler = tick =>
     // `--relojes-de-test`, y las condenas de /CARCEL y el IdleLimit tienen que seguir contando minutos de
     // verdad aunque el centinela vaya a un segundo.
     if (tick % PacketDispatcher.TicksEntreVueltas == 0) dispatcher?.PasarMinutoCentinela();
-    // Quiénes están conectados, para las webs: cada 30 segundos, por la cola.
-    if (tick % (30_000 / GameLoop.TickMs) == 0) db.MarcarConectados(world.Players.Select(p => p.Name));
+    // Quiénes están conectados, para las webs, y el staff de ahora —que las webs dejan afuera—: cada 30 segundos, por la cola.
+    if (tick % (30_000 / GameLoop.TickMs) == 0)
+    {
+        db.MarcarConectados(world.Players.Select(p => p.Name));
+        db.MarcarStaff(serverIni.Staff.Select(s => s.Nombre));
+    }
     if (tick % (60_000 / GameLoop.TickMs) == 0)
     {
         foreach (var pl in world.Players)
@@ -1013,6 +1017,15 @@ try
 catch (OperationCanceledException) { }
 catch (Exception ex) { Console.Error.WriteLine($"[apagado] un listener falló: {ex.Message}"); }
 
+// LO QUE LA BASE TODAVÍA TENÍA QUE CONTESTAR, con el loop andando: un /BAN o un /BANCLAN a desconectados, la transferencia
+// a la bóveda de un ausente, la devolución de una que falló —todo lo que lee de la base y vuelve al loop a terminar—. Con
+// el loop ya parado, esas vueltas no corrían: el cambio avisado quedaba sin guardar. Con la base caída no se la espera: no
+// va a contestar, y lo suyo va al rescate.
+if (db.Cola.CaidaDesde is null)
+{
+    db.EsperarEscriturasPendientes(TimeSpan.FromSeconds(2));
+    await Task.Delay(GameLoop.TickMs * 3);   // las vueltas de lo que volvió
+}
 loop.Stop();
 try { await loopTask; } catch (OperationCanceledException) { } catch (Exception ex) { Console.Error.WriteLine($"[apagado] game loop: {ex.Message}"); }
 
@@ -1023,11 +1036,14 @@ try { await loopTask; } catch (OperationCanceledException) { } catch (Exception 
 // sin correr. Resultado: todo lo que hiciste desde el último autosave se perdía. Va acá, después de parar el
 // loop, que es cuando nadie más muta el mundo.
 //
-// Antes que nada hay que esperar al autosave y al backup que puedan estar escribiendo en segundo plano: si no,
-// una foto de hace unos milisegundos aterriza DESPUÉS del guardado final y lo pisa. Y un backup cortado a la
-// mitad deja el almacén copiado a medias.
-try { await Task.WhenAll(tareaAutosave, tareaBackup); }
-catch (Exception ex) { Console.Error.WriteLine($"[apagado] guardado en segundo plano: {ex.Message}"); }
+// Antes, el backup que pueda estar sacando su foto en segundo plano: cortarlo a la mitad no deja nada que sirva. Con la
+// base caída no puede terminar —espera a que se escriba lo encolado— y esperarlo sería perder el rescate: cerrar la
+// ventana le da al proceso unos 5 s.
+if (db.Cola.CaidaDesde is null)
+{
+    try { await tareaBackup; }
+    catch (Exception ex) { Console.Error.WriteLine($"[apagado] backup en segundo plano: {ex.Message}"); }
+}
 
 int guardados = 0;
 foreach (var pl in world.Players.ToArray())

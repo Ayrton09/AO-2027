@@ -47,11 +47,13 @@ public static class ComandosDeLaBase
                     return 1;
                 }
                 string usuario = resto.Length > 0 ? resto[0] : "coverao_web";
-                string clave = AlmacenPostgres.CrearUsuarioWeb(ini, usuario,
+                var (clave, existia) = AlmacenPostgres.CrearUsuarioWeb(ini, usuario,
                     Environment.GetEnvironmentVariable("COVERAO_PG_ADMIN_USUARIO") is { Length: > 0 } admin ? admin : "postgres",
                     Environment.GetEnvironmentVariable("COVERAO_PG_ADMIN_CLAVE") ?? "");
                 Console.WriteLine($"Usuario de la web: {usuario}, con clave {clave}");
-                Console.WriteLine("Guardala: no se vuelve a mostrar (correr esto de nuevo le pone otra). Sólo puede leer el esquema publico.");
+                Console.WriteLine("Guardala: no se vuelve a mostrar (correr esto de nuevo le pone otra). " +
+                                  (existia ? "El usuario ya existía: además del esquema publico, conserva los permisos que ya tuviera."
+                                           : "Sólo puede leer el esquema publico."));
                 return 0;
             }
             if (comando == "restaurar" && resto.Length > 0 && resto[0].EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
@@ -65,6 +67,7 @@ public static class ComandosDeLaBase
                 var filas = Importador.RestaurarEnPostgres(resto[0], pg, reemplazar, backups);
                 foreach (var (tabla, cuantas) in filas.Where(f => f.Filas > 0)) Console.WriteLine($"  {tabla}: {cuantas}");
                 Console.WriteLine($"Restaurado {resto[0]} en la base de Postgres ({AlmacenPostgres.Donde(ini)}).");
+                AvisarRescatesApartados(dataRoot);
                 return 0;
             }
             InformeDeCopia informe;
@@ -93,6 +96,7 @@ public static class ComandosDeLaBase
                     }
                     Console.WriteLine(informe.Texto());
                     Console.WriteLine(informe.SalioBien ? $"Importado a {destino}." : "No se importó nada: la verificación no dio bien.");
+                    if (informe.SalioBien) AvisarRescatesApartados(dataRoot);
                     break;
                 }
                 case "exportar":
@@ -138,5 +142,15 @@ public static class ComandosDeLaBase
             Console.WriteLine("No se pudo: " + ex.Message);
             return 1;
         }
+    }
+
+    /// <summary>Lo rescatado de un apagado con la base caída es de la base de ANTES: después de restaurar o importar no se aplica
+    /// (ver <see cref="Rescates.ApartarLosPendientes"/>). Pasar a Postgres no lo aparta: es la misma base, en otro motor.</summary>
+    private static void AvisarRescatesApartados(string dataRoot)
+    {
+        var apartados = Rescates.ApartarLosPendientes(dataRoot);
+        if (apartados.Count > 0)
+            Console.WriteLine($"Había {apartados.Count} rescate(s) de un apagado con la base caída, escritos sobre la base de antes: " +
+                              $"quedaron en data/ sin aplicar ({string.Join(", ", apartados)}).");
     }
 }

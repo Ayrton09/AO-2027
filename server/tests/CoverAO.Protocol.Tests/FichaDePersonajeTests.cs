@@ -51,11 +51,41 @@ public class FichaDePersonajeTests
 
     private static IEnumerable<Player> Jugadores() => new[] { Completo(), Muerto(), new Player { CharIndex = 3, Account = "cuenta", Name = "Vacio" } };
 
+    /// <summary>Salvo Paralizado e Incinerado, que el código de antes no guardaba y el original sí (FileIO.bas:1635-1636): con los
+    /// dos en 0 son lo único nuevo, y se sacan antes de comparar.</summary>
     [Fact]
     public void El_chr_sale_identico_al_de_antes()
     {
         foreach (var p in Jugadores())
-            Assert.Equal(CharacterFileViejo.ToIni(p).ToText(), CharacterFile.ToIni(p).ToText());
+            Assert.Equal(CharacterFileViejo.ToIni(p).ToText(),
+                System.Text.RegularExpressions.Regex.Replace(CharacterFile.ToIni(p).ToText(), @"^(Paralizado|Incinerado)=0\r?\n", "",
+                    System.Text.RegularExpressions.RegexOptions.Multiline));
+    }
+
+    /// <summary>SE GUARDA LA PARÁLISIS, NO LA INMOVILIZACIÓN (el original guarda sólo <c>flags.Paralizado</c>): la que el cliente
+    /// ve, y no la que ya venció. Y la pendiente de uno que todavía no entró al mundo no se pierde en un guardado.</summary>
+    [Fact]
+    public void Se_guarda_la_paralisis_y_no_la_inmovilizacion()
+    {
+        var paralizado = new Player { CharIndex = 1, Account = "cuenta", Name = "P", ClientParalyzed = true, MarcaParalizado = true };
+        var inmovilizado = new Player { CharIndex = 1, Account = "cuenta", Name = "I", ClientParalyzed = true, MarcaParalizado = false, MarcaInmovilizado = true };
+        var vencido = new Player { CharIndex = 1, Account = "cuenta", Name = "V", ClientParalyzed = false, MarcaParalizado = true };
+        var pendiente = new Player { CharIndex = 1, Account = "cuenta", Name = "E", ParalizadoAlEntrar = true };
+
+        Assert.True(FichaDePersonaje.Desde(paralizado).Paralizado);
+        Assert.False(FichaDePersonaje.Desde(inmovilizado).Paralizado);
+        Assert.False(FichaDePersonaje.Desde(vencido).Paralizado);
+        Assert.True(FichaDePersonaje.Desde(pendiente).Paralizado);
+        Assert.True(FichaDePersonaje.Desde(FichaDePersonaje.Desde(paralizado).CrearPlayer(1, "cuenta")).Paralizado);
+    }
+
+    [Fact]
+    public void Paralizado_e_incinerado_van_y_vuelven_por_el_chr()
+    {
+        var ficha = FichasDePrueba.Llena("Quemado") with { Paralizado = true, Incinerado = true };
+        var leida = CharacterFile.FichaDesdeIni(IniFile.Parse(CharacterFile.ToIni(ficha).ToText()), "Quemado");
+        Assert.True(leida.Paralizado);
+        Assert.True(leida.Incinerado);
     }
 
     /// <summary>Archivos RAROS, que es donde vive el saneo: un bando que no existe, un rango de más, contadores negativos,

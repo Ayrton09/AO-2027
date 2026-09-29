@@ -226,7 +226,7 @@ public class TasasDelServerTests : IDisposable
         finally
         {
             cts.Cancel();
-            try { corriendo.Wait(TimeSpan.FromSeconds(5)); } catch { /* cancelado */ }
+            try { await corriendo.WaitAsync(TimeSpan.FromSeconds(5)); } catch { /* cancelado */ }
         }
     }
 }

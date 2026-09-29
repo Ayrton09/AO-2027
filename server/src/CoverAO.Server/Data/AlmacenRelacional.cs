@@ -62,6 +62,9 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
     /// lo que siguiera iría fuera de la transacción.</summary>
     protected bool EnUnaTransaccionGrande => _grande is not null;
 
+    /// <summary>La transacción de <see cref="EnUnaSolaTransaccion{T}"/>, si hay una: para el motor que copia tablas adentro.</summary>
+    protected DbTransaction? Grande => _grande;
+
     // ── El esquema ──────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Las versiones del esquema que trae este servidor para <paramref name="motor"/>, en orden:
@@ -148,6 +151,18 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
             finally { _grande = null; }
         }
     }
+
+    /// <summary>Cada fila de <paramref name="tabla"/>, con <paramref name="columnas"/> en ese orden: para copiarla entera a otra
+    /// base (<see cref="AlmacenPostgres.CopiarTablasDe"/>). La tabla y las columnas salen del catálogo del destino.</summary>
+    internal void Recorrer(string tabla, IReadOnlyList<string> columnas, Action<DbDataReader> fila) => Operacion(() =>
+    {
+        using var c = Comando($"SELECT {string.Join(", ", columnas.Select(x => $"\"{x}\""))} FROM \"{tabla}\"");
+        using var r = c.ExecuteReader();
+        while (r.Read()) fila(r);
+    });
+
+    /// <summary>Los personajes apartados —borrados, que se pueden devolver—.</summary>
+    internal long ContarApartados() => Operacion(() => Convert.ToInt64(Escalar("SELECT count(*) FROM personajes WHERE borrado_en IS NOT NULL")));
 
     /// <summary>¿No hay nadie? Ni cuentas ni personajes: una base recién creada, o una a la que se puede importar.</summary>
     internal bool EstaVacia()
@@ -601,21 +616,30 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
     /// </summary>
     public void PrepararParaLasWebs(IEnumerable<string> staff, CatalogoParaLasWebs catalogo, string version) => EnTransaccion(tx =>
     {
-        void Reescribir<T>(string tabla, string columnas, IEnumerable<T> filas, Func<T, (string, object?)[]> valores)
-        {
-            using (var c = Comando($"DELETE FROM {tabla}", tx)) c.ExecuteNonQuery();
-            using var fila = Comando($"INSERT INTO {tabla} ({columnas.Replace("@", "")}) VALUES ({columnas})", tx);
-            foreach (var f in filas) Valores(fila, valores(f)).ExecuteNonQuery();
-        }
-        Reescribir("staff_visible", "@nombre", staff.Distinct(StringComparer.OrdinalIgnoreCase), n => new (string, object?)[] { ("@nombre", n) });
-        Reescribir("catalogo_objetos", "@id, @nombre, @tipo", catalogo.Objetos, o => new (string, object?)[] { ("@id", o.Id), ("@nombre", o.Nombre), ("@tipo", o.Tipo) });
-        Reescribir("catalogo_hechizos", "@id, @nombre", catalogo.Hechizos, h => new (string, object?)[] { ("@id", h.Id), ("@nombre", h.Nombre) });
-        Reescribir("catalogo_clases", "@id, @nombre", catalogo.Clases, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
-        Reescribir("catalogo_razas", "@id, @nombre", catalogo.Razas, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
-        Reescribir("catalogo_mapas", "@id, @nombre", catalogo.Mapas, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
+        ReescribirStaff(staff, tx);
+        Reescribir(tx, "catalogo_objetos", "@id, @nombre, @tipo", catalogo.Objetos, o => new (string, object?)[] { ("@id", o.Id), ("@nombre", o.Nombre), ("@tipo", o.Tipo) });
+        Reescribir(tx, "catalogo_hechizos", "@id, @nombre", catalogo.Hechizos, h => new (string, object?)[] { ("@id", h.Id), ("@nombre", h.Nombre) });
+        Reescribir(tx, "catalogo_clases", "@id, @nombre", catalogo.Clases, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
+        Reescribir(tx, "catalogo_razas", "@id, @nombre", catalogo.Razas, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
+        Reescribir(tx, "catalogo_mapas", "@id, @nombre", catalogo.Mapas, x => new (string, object?)[] { ("@id", x.Id), ("@nombre", x.Nombre) });
         using (var c = Comando("UPDATE mundo SET version_servidor = @v WHERE id = 1", tx)) Valores(c, ("@v", version)).ExecuteNonQuery();
         using (var c = Comando("UPDATE personajes SET conectado_desde = NULL WHERE conectado_desde IS NOT NULL", tx)) c.ExecuteNonQuery();
     });
+
+    /// <summary>El staff de AHORA, para las webs: el panel y el <c>/RELOADSINI</c> lo cambian con el servidor andando, y las
+    /// vistas públicas tienen que dejar afuera a los de ahora, no a los del arranque.</summary>
+    public void GuardarStaffVisible(IEnumerable<string> staff) => EnTransaccion(tx => ReescribirStaff(staff, tx));
+
+    private void ReescribirStaff(IEnumerable<string> staff, DbTransaction tx)
+        => Reescribir(tx, "staff_visible", "@nombre", staff.Distinct(StringComparer.OrdinalIgnoreCase), n => new (string, object?)[] { ("@nombre", n) });
+
+    /// <summary>Una tabla de las webs, entera de nuevo: lo que había se borra y entran <paramref name="filas"/>.</summary>
+    private void Reescribir<T>(DbTransaction tx, string tabla, string columnas, IEnumerable<T> filas, Func<T, (string, object?)[]> valores)
+    {
+        using (var c = Comando($"DELETE FROM {tabla}", tx)) c.ExecuteNonQuery();
+        using var fila = Comando($"INSERT INTO {tabla} ({columnas.Replace("@", "")}) VALUES ({columnas})", tx);
+        foreach (var f in filas) Valores(fila, valores(f)).ExecuteNonQuery();
+    }
 
     /// <summary>Quiénes están conectados, para las webs: se marca desde cuándo al que entró y se desmarca al que salió. El que
     /// sigue conectado conserva su hora de entrada.</summary>
@@ -678,7 +702,7 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
         ("carisma", f => Atributo(f, 4)), ("constitucion", f => Atributo(f, 5)),
         ("privilegios", f => f.Privilegios), ("baneado", f => f.Baneado), ("muerto", f => f.Muerto),
         ("navegando", f => f.Navegando), ("montando", f => f.Montando), ("veneno", f => f.Veneno),
-        ("veces_muerto", f => f.VecesMuerto),
+        ("veces_muerto", f => f.VecesMuerto), ("paralizado", f => f.Paralizado), ("incinerado", f => f.Incinerado),
         ("bando", f => f.Bando), ("rango", f => f.Rango), ("renegados_matados", f => f.RenegadosMatados),
         ("ciudadanos_matados", f => f.CiudadanosMatados), ("republicanos_matados", f => f.RepublicanosMatados),
         ("armada_matados", f => f.ArmadaMatados), ("milicianos_matados", f => f.MilicianosMatados),
@@ -751,6 +775,8 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
             Montando = B("montando"),
             Veneno = (byte)L("veneno"),
             VecesMuerto = (int)L("veces_muerto"),
+            Paralizado = B("paralizado"),
+            Incinerado = B("incinerado"),
             Bando = (byte)L("bando"),
             Rango = (byte)L("rango"),
             RenegadosMatados = (int)L("renegados_matados"),

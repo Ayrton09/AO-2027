@@ -14,6 +14,8 @@ public sealed class InformeDeCopia
     public int Clanes { get; internal set; }
     public int Cartas { get; internal set; }
     public int IpsBaneadas { get; internal set; }
+    /// <summary>Personajes apartados —borrados, que se pueden devolver—, cuando la copia es de una base entera.</summary>
+    public int Apartados { get; internal set; }
     /// <summary>Lo que no cierra en los datos de origen: se copió igual —o se dice por qué no— y queda anotado.</summary>
     public List<string> Avisos { get; } = new();
     /// <summary>Personajes que se volvieron a leer del destino iguales a como se leyeron del origen.</summary>
@@ -26,7 +28,8 @@ public sealed class InformeDeCopia
     public string Texto()
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Copiados: {Cuentas} cuentas, {Personajes} personajes, {Clanes} clanes, {Cartas} cartas, {IpsBaneadas} IPs baneadas.");
+        sb.AppendLine($"Copiados: {Cuentas} cuentas, {Personajes} personajes" + (Apartados > 0 ? $" (y {Apartados} apartados)" : "") +
+                      $", {Clanes} clanes, {Cartas} cartas, {IpsBaneadas} IPs baneadas.");
         sb.AppendLine($"Verificación: {Equivalentes} de {Personajes} personajes se leen iguales en el destino.");
         foreach (var d in Distintos) sb.AppendLine("  DISTINTO: " + d);
         if (Avisos.Count > 0)
@@ -61,14 +64,28 @@ public static class CopiaDeAlmacen
     {
         var informe = new InformeDeCopia();
         var fichas = new Dictionary<string, FichaDePersonaje>(StringComparer.OrdinalIgnoreCase);
+        var salteados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // ── Las cuentas y sus personajes, en el orden de su lista ───────────────────────────────────────────────
         foreach (var nombreDeCuenta in origen.NombresDeCuentas())
         {
             var cuenta = origen.LeerCuenta(nombreDeCuenta);
             if (cuenta is null) { informe.Avisos.Add($"la cuenta {nombreDeCuenta} no se pudo leer"); continue; }
+            // UN NOMBRE MÁS LARGO QUE LOS DEL ORIGINAL NO ENTRA en la base, y copiarlo cortaría la copia entera —el servidor no
+            // arrancaría—. La 1.0.0 dejaba crear cuentas de hasta 30 letras; desde el 7/9 el ingreso corta en 20, como el
+            // original (CheckDataLoginAccount, Cuentas.bas:691), así que esa cuenta ya no podía entrar. Se saltea con sus
+            // personajes, que quedan en el origen, y se dice.
+            if (NoEntra(cuenta.Name))
+            {
+                informe.Avisos.Add($"la cuenta {cuenta.Name} no se copia: tiene {cuenta.Name.Length} letras y el máximo es " +
+                                   $"{Naming.MaxNameLength}, así que no puede entrar al juego" +
+                                   (cuenta.Characters.Count > 0 ? $"; sus personajes tampoco ({string.Join(", ", cuenta.Characters)})" : "") +
+                                   ". Quedan en el origen.");
+                salteados.UnionWith(cuenta.Characters);
+                continue;
+            }
             if (!Naming.IsValidName(cuenta.Name)) informe.Avisos.Add($"la cuenta {cuenta.Name} tiene un nombre fuera de las reglas");
-            destino.GuardarCuenta(cuenta);
+            ConQuien($"la cuenta {cuenta.Name}", () => destino.GuardarCuenta(cuenta));
             informe.Cuentas++;
             foreach (var nombre in cuenta.Characters)
             {
@@ -79,8 +96,15 @@ public static class CopiaDeAlmacen
                 }
                 var ficha = origen.LeerPersonaje(nombre);
                 if (ficha is null) { informe.Avisos.Add($"la cuenta {cuenta.Name} lista a {nombre}, que no existe"); continue; }
+                if (NoEntra(ficha.Nombre))
+                {
+                    informe.Avisos.Add($"{ficha.Nombre} no se copia: tiene {ficha.Nombre.Length} letras y el máximo es {Naming.MaxNameLength}. " +
+                                       "Queda en el origen.");
+                    salteados.Add(nombre);
+                    continue;
+                }
                 if (!Naming.IsValidName(ficha.Nombre)) informe.Avisos.Add($"{ficha.Nombre} tiene un nombre fuera de las reglas");
-                if (!destino.CrearPersonaje(cuenta, ficha))
+                if (!ConQuien(ficha.Nombre, () => destino.CrearPersonaje(cuenta, ficha)))
                 {
                     informe.Avisos.Add($"{ficha.Nombre} no entró: la cuenta {cuenta.Name} ya tenía {AccountFile.MaxCharacters}");
                     continue;
@@ -90,7 +114,7 @@ public static class CopiaDeAlmacen
             }
         }
         foreach (var nombre in origen.NombresDePersonajes())
-            if (!fichas.ContainsKey(nombre))
+            if (!fichas.ContainsKey(nombre) && !salteados.Contains(nombre))
                 informe.Avisos.Add($"{nombre} no está en ninguna cuenta: no se copia (un personaje necesita su cuenta)");
 
         // ── Lo que guarda el mundo ──────────────────────────────────────────────────────────────────────────────
@@ -126,6 +150,45 @@ public static class CopiaDeAlmacen
         }
         return informe;
     }
+
+    /// <summary>Lo que hay en una base, para el informe de una copia entera (de tablas, o del archivo).</summary>
+    internal static void Contar(AlmacenRelacional almacen, InformeDeCopia informe)
+    {
+        informe.Cuentas = almacen.NombresDeCuentas().Count();
+        informe.Personajes = almacen.NombresDePersonajes().Count();
+        informe.Apartados = (int)almacen.ContarApartados();
+        informe.Clanes = almacen.LeerClanes().Count;
+        informe.Cartas = almacen.LeerCorreo().Values.Sum(c => c.Count);
+        informe.IpsBaneadas = almacen.LeerIpsBaneadas().Count;
+    }
+
+    /// <summary>La verificación de una copia que no pasó por las fichas —la de tablas, la del archivo—: cada personaje del
+    /// origen, releído del destino, igual campo por campo.</summary>
+    internal static void Verificar(IAlmacen origen, IAlmacen destino, InformeDeCopia informe)
+    {
+        foreach (var nombre in origen.NombresDePersonajes())
+        {
+            if (origen.LeerPersonaje(nombre) is not { } ficha) continue;
+            var leida = destino.LeerPersonaje(nombre);
+            string? diferencia = leida is null ? "no está en el destino" : PrimeraDiferencia(ficha, leida);
+            if (diferencia is null) informe.Equivalentes++;
+            else informe.Distintos.Add($"{nombre}: {diferencia}");
+        }
+    }
+
+    /// <summary>¿Un nombre que la base no acepta? El largo lo limita el esquema (de 1 a <see cref="Naming.MaxNameLength"/>); lo
+    /// demás fuera de las reglas entra, con aviso.</summary>
+    private static bool NoEntra(string nombre) => nombre.Length is 0 or > Naming.MaxNameLength;
+
+    /// <summary>Una escritura en el destino que, si falla, dice DE QUIÉN era: el error de la base solo no lo dice, y con miles
+    /// de personajes no hay cómo encontrarlo.</summary>
+    private static T ConQuien<T>(string quien, Func<T> escritura)
+    {
+        try { return escritura(); }
+        catch (Exception ex) { throw new InvalidOperationException($"{quien}: {ex.Message}", ex); }
+    }
+
+    private static void ConQuien(string quien, Action escritura) => ConQuien(quien, () => { escritura(); return true; });
 
     /// <summary>Lo que no cierra entre los datos: se anota, no se arregla. Arreglarlo sería decidir por el que hostea.</summary>
     private static void Cruzar(InformeDeCopia informe, Dictionary<string, FichaDePersonaje> fichas, IReadOnlyList<ClanGuardado> clanes,

@@ -306,8 +306,8 @@ Con varios servidores en el mismo Postgres, una base por servidor (`Base=coverao
   CoverAO.Server pasar-a-postgres
   ```
 
-  Copia la base de SQLite —la de `Archivo=`, u otra si se la nombra— a la de Postgres del `Server.ini`, y deja la de
-  SQLite como estaba.
+  Copia entera la base de SQLite —la de `Archivo=`, u otra si se la nombra—, tabla por tabla y con las fechas de alta
+  y los personajes borrados, a la de Postgres del `Server.ini`, y deja la de SQLite como estaba.
 
 Si Postgres no responde al arrancar, el servidor no arranca y dice por qué (sin mostrar la clave).
 
@@ -328,9 +328,11 @@ Postgres 15 o más nuevo.
 **Si la base se cae con el servidor andando** —Postgres que se reinicia, un disco lleno, el archivo tomado por un
 antivirus—, el juego sigue: lo que se guarda espera en orden, en memoria, y se reintenta solo cada unos segundos. La
 consola lo avisa una vez cuando se cae y otra cuando vuelve, y el panel muestra el estado de la base y cuánto espera. El
-que quiere entrar mientras tanto recibe, a los 10 segundos, un cartel de que no se puede cargar el personaje. Si se
-apaga el servidor con la base todavía caída, lo que no se pudo guardar queda en `data/rescate-AAAAMMDD-HHMMSS.json`, y el
-próximo arranque lo aplica antes de abrir.
+que quiere entrar mientras tanto recibe, a los 10 segundos, un cartel de que no se puede entrar en ese momento. Si se
+apaga el servidor con la base todavía caída, no se la espera: lo que no se pudo guardar queda enseguida en
+`data/rescate-AAAAMMDD-HHMMSS.json` —cerrar la ventana da unos pocos segundos— y el próximo arranque lo aplica antes de
+abrir. Si en vez de eso se restaura un backup o se importa, lo rescatado es de la base de antes y no se aplica encima:
+queda al lado, como `*.sin-aplicar`.
 
 ### Importar y exportar
 
@@ -348,6 +350,9 @@ CoverAO.Server exportar /ruta/a/una/carpeta/nueva
 ```
 
 La importación es todo o nada: si algo no se puede verificar, la base queda como estaba.
+
+La base es de **un proceso a la vez**: con el servidor andando, estos comandos no la tocan y lo dicen, y un segundo
+servidor sobre la misma base tampoco arranca.
 
 ## Backups y apagado
 
@@ -386,7 +391,8 @@ CoverAO.Server restaurar data/backups/coverao-20260808-030000.zip --reemplazar  
 ```
 
 Un backup de SQLite (`.db`) se puede restaurar también en Postgres; uno de Postgres (`.zip`), sólo en Postgres. Un
-backup de una versión anterior del servidor se restaura igual: las tablas se ponen al día al restaurar.
+backup de una versión anterior del servidor se restaura igual: las tablas se ponen al día al restaurar. Vuelve entero,
+también con las fechas de alta y los personajes borrados.
 
 No hace falta tocar nada más: los mapas, la data del juego y el cliente web se regeneran desde la
 instalación.

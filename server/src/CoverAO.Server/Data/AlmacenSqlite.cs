@@ -17,6 +17,7 @@ public sealed class AlmacenSqlite : AlmacenRelacional
     private readonly string _cadena;
     private readonly bool _enMemoria;
     private readonly SqliteConnection _con;
+    private readonly FileStream? _candado;
 
     /// <summary>Abre la base de <paramref name="archivo"/> —o la crea— y le aplica las versiones del esquema que falten.</summary>
     public AlmacenSqlite(string archivo) : this(archivo, paraImportar: false) { }
@@ -46,10 +47,12 @@ public sealed class AlmacenSqlite : AlmacenRelacional
         _cadena = cadena;
         _enMemoria = archivo is null;
         if (archivo is not null) Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(archivo))!);
+        // La temporal de una importación es sólo del importador, que ya tiene el candado de la de verdad.
+        if (archivo is not null && !paraImportar) _candado = Candado(archivo);
         _con = new SqliteConnection(cadena);
-        _con.Open();
         try
         {
+            _con.Open();
             // WAL: el que lee no frena al que escribe. FULL: cada transacción confirmada está en el disco, la misma
             // garantía que daba la escritura atómica de los archivos.
             if (paraImportar)
@@ -68,13 +71,38 @@ public sealed class AlmacenSqlite : AlmacenRelacional
         catch
         {
             _con.Dispose();
+            _candado?.Dispose();
             throw;
         }
     }
 
     public override void Dispose()
     {
-        lock (DeAUno) _con.Dispose();
+        lock (DeAUno)
+        {
+            _con.Dispose();
+            _candado?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// UNA BASE, UN PROCESO. Dos servidores sobre el mismo archivo —uno que quedó andando de fondo y otro que se prende, dos
+    /// instalaciones apuntando a la misma carpeta— escribirían cada uno su mundo encima del otro: el último en guardar pisa,
+    /// que es la forma de duplicar o perder ítems. SQLite lo deja pasar sin quejarse, así que el candado es propio: un archivo
+    /// al lado de la base, <c>coverao.db.lock</c>, tomado en exclusiva mientras el almacén está abierto. También lo toman los
+    /// comandos de la base (importar, restaurar), que van con el servidor apagado. El sistema lo suelta si el proceso muere:
+    /// uno que quedó de un corte no traba nada.
+    /// </summary>
+    internal static FileStream Candado(string archivo)
+    {
+        string ruta = Path.GetFullPath(archivo) + ".lock";
+        try { return new FileStream(ruta, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); }
+        catch (IOException ex)
+        {
+            throw new InvalidOperationException(
+                $"Otro proceso ya usa {Path.GetFileName(archivo)} —otro servidor andando, o un comando de la base—, y la base es de uno " +
+                $"solo a la vez. ({ex.Message})", ex);
+        }
     }
 
     protected override string Motor => "sqlite";
@@ -121,27 +149,53 @@ public sealed class AlmacenSqlite : AlmacenRelacional
                 "Movela a otra carpeta e importala a la base nueva.");
     }
 
-    /// <summary><c>VACUUM INTO</c>: una copia consistente con el servidor andando, en una conexión propia. Devuelve la ruta
-    /// del <c>.db</c> creado.</summary>
+    /// <summary>La base entera, a <paramref name="archivo"/> —que no puede existir—, con <c>VACUUM INTO</c>: todo lo que tiene,
+    /// también lo que la ficha de un personaje no lleva (las fechas, los apartados).</summary>
+    internal void CopiarA(string archivo)
+    {
+        lock (DeAUno)
+        {
+            using var c = _con.CreateCommand();
+            c.CommandText = "VACUUM INTO @ruta";
+            c.Parameters.AddWithValue("@ruta", Path.GetFullPath(archivo));
+            c.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary><c>VACUUM INTO</c>: una copia consistente con el servidor andando, en una conexión propia. Se arma aparte y
+    /// recién entera toma su nombre (<see cref="Backups.PrefijoTemporal"/>). Devuelve la ruta del <c>.db</c> creado.</summary>
     public override string Backup(string destDir, string stem)
     {
         Directory.CreateDirectory(destDir);
         string ruta = Path.GetFullPath(Path.Combine(destDir, stem + ".db"));
-        if (File.Exists(ruta)) File.Delete(ruta);   // VACUUM INTO falla si el destino ya existe
-        using var con = new SqliteConnection(_cadena);
-        con.Open();
-        if (_enMemoria)
+        string temporal = Backups.Temporal(destDir, stem + ".db");   // VACUUM INTO falla si el destino ya existe: no existe
+        try
         {
-            // Una base en memoria haría el VACUUM INTO también en memoria: se copia con la API de backup de SQLite.
-            using var destino = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = ruta, Pooling = false }.ToString());
-            destino.Open();
-            con.BackupDatabase(destino);
+            using (var con = new SqliteConnection(_cadena))
+            {
+                con.Open();
+                if (_enMemoria)
+                {
+                    // Una base en memoria haría el VACUUM INTO también en memoria: se copia con la API de backup de SQLite.
+                    using var destino = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = temporal, Pooling = false }.ToString());
+                    destino.Open();
+                    con.BackupDatabase(destino);
+                }
+                else
+                {
+                    using var c = con.CreateCommand();
+                    c.CommandText = "VACUUM INTO @ruta";
+                    c.Parameters.AddWithValue("@ruta", temporal);
+                    c.ExecuteNonQuery();
+                }
+            }
+            File.Move(temporal, ruta, overwrite: true);
             return ruta;
         }
-        using var c = con.CreateCommand();
-        c.CommandText = "VACUUM INTO @ruta";
-        c.Parameters.AddWithValue("@ruta", ruta);
-        c.ExecuteNonQuery();
-        return ruta;
+        catch
+        {
+            try { File.Delete(temporal); } catch { }
+            throw;
+        }
     }
 }

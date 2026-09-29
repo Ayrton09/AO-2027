@@ -102,8 +102,10 @@ public sealed class LasWebsTests : IDisposable
                                                 $"Base={datos.Database}\nUsuario={datos.Username}\nClave={datos.Password}\n"));
         try
         {
-            string clave = AlmacenPostgres.CrearUsuarioWeb(ini, rol, datos.Username!, datos.Password ?? "");
+            _almacen.Dispose();   // con el servidor apagado: la base es de un proceso a la vez
+            var (clave, existia) = AlmacenPostgres.CrearUsuarioWeb(ini, rol, datos.Username!, datos.Password ?? "");
             Assert.Matches("^[0-9a-f]{36}$", clave);
+            Assert.False(existia);
             string comoLaWeb = new NpgsqlConnectionStringBuilder(_base.Cadena) { Username = rol, Password = clave, Pooling = false }.ToString();
 
             Assert.Equal(2L, Consulta("SELECT count(*) FROM publico.personajes", comoLaWeb).Single()[0]);
@@ -112,7 +114,9 @@ public sealed class LasWebsTests : IDisposable
                 Assert.Equal("42501", Assert.Throws<PostgresException>(() => Consulta($"SELECT * FROM {tabla}", comoLaWeb)).SqlState);
 
             // Correrlo de nuevo le cambia la clave.
-            Assert.NotEqual(clave, AlmacenPostgres.CrearUsuarioWeb(ini, rol, datos.Username!, datos.Password ?? ""));
+            var (otra, yaExistia) = AlmacenPostgres.CrearUsuarioWeb(ini, rol, datos.Username!, datos.Password ?? "");
+            Assert.NotEqual(clave, otra);
+            Assert.True(yaExistia);
         }
         finally
         {
@@ -122,6 +126,53 @@ public sealed class LasWebsTests : IDisposable
             using var con = new NpgsqlConnection(PostgresDePrueba.Admin);
             con.Open();
             using var c = new NpgsqlCommand($"DROP ROLE IF EXISTS {rol}", con);
+            c.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// LAS VISTAS QUE FILTRAN TIENEN BARRERA (<c>security_barrier</c>). Sin ella, Postgres puede evaluar una condición del que
+    /// consulta —una función suya, que anote lo que ve— antes que el filtro de la vista, y ver las filas del staff y de los
+    /// borrados.
+    /// </summary>
+    [Fact]
+    public void Las_vistas_que_filtran_tienen_barrera()
+    {
+        var opciones = Consulta("SELECT relname, reloptions FROM pg_class WHERE relnamespace = 'publico'::regnamespace " +
+                                "AND relname IN ('personajes', 'conectados') ORDER BY relname");
+        Assert.Equal(2, opciones.Count);
+        Assert.All(opciones, f => Assert.Contains("security_barrier=true", (string[])f[1]!));
+    }
+
+    /// <summary>El usuario de la web no puede ser el del juego —cambiarle la clave dejaría al servidor sin conexión— ni uno que
+    /// administre Postgres: su clave va a una página.</summary>
+    [Fact]
+    public void El_usuario_de_la_web_no_puede_ser_el_del_juego_ni_un_administrador()
+    {
+        string admin = "adm_" + Guid.NewGuid().ToString("N")[..10];
+        var datos = new NpgsqlConnectionStringBuilder(_base.Cadena);
+        var ini = ServerIni.Desde(IniFile.Parse($"[BASEDEDATOS]\nTipo=postgres\nServidor={datos.Host}\nPuerto={datos.Port}\n" +
+                                                $"Base={datos.Database}\nUsuario={datos.Username}\nClave={datos.Password}\n"));
+        _almacen.Dispose();
+        using (var con = new NpgsqlConnection(PostgresDePrueba.Admin))
+        {
+            con.Open();
+            using var c = new NpgsqlCommand($"CREATE ROLE {admin} LOGIN CREATEDB", con);
+            c.ExecuteNonQuery();
+        }
+        try
+        {
+            Assert.Contains("usuario del juego", Assert.Throws<InvalidOperationException>(
+                () => AlmacenPostgres.CrearUsuarioWeb(ini, datos.Username!, datos.Username!, datos.Password ?? "")).Message);
+            Assert.Contains("administra Postgres", Assert.Throws<InvalidOperationException>(
+                () => AlmacenPostgres.CrearUsuarioWeb(ini, admin, datos.Username!, datos.Password ?? "")).Message);
+        }
+        finally
+        {
+            _base.Dispose();
+            using var con = new NpgsqlConnection(PostgresDePrueba.Admin);
+            con.Open();
+            using var c = new NpgsqlCommand($"DROP ROLE IF EXISTS {admin}", con);
             c.ExecuteNonQuery();
         }
     }
