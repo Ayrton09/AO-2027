@@ -663,6 +663,8 @@ public sealed class Bot
                     if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct))
                     {
                         _llenoHasta[deDonde] = Environment.TickCount64 + LlenoMs;
+                        // Y TAMPOCO SE LO VUELVE A CRUZAR DE VIAJE POR UN RATO: ver `NoVuelveACruzar`.
+                        _huyoDe[deDonde] = Environment.TickCount64 + LlenoMs;
                         continue;
                     }
                     _proximaSalidaPorLaAmenaza = Environment.TickCount64 + ReintentoDeSalidaDelGuardiaMs;
@@ -2715,6 +2717,21 @@ public sealed class Bot
     }
 
     private readonly Dictionary<int, long> _llenoHasta = new();
+
+    /// <summary>
+    /// ¿NO VUELVE A CRUZAR ESE MAPA? No lo cruza de viaje —salvo que sea el destino— si hace menos de un rato se fue de ahí
+    /// huyendo de algo que no podía lastimar o de lo del hueco (<see cref="SeVaDelMapaPor"/>).
+    ///
+    /// <para>La huida ya dejaba ese mapa fuera de los cotos (<see cref="SigueLleno"/>), pero el VIAJE no lo miraba: medido en
+    /// `hueco2` (29/09), una Ladrona de nivel 8 se fue del 19 por un Lobo al que no lastimaba, salió al 98 por el borde, eligió
+    /// cazar en el 27, y el camino al 27 volvía a entrar al 19 por la misma baldosa, al lado del mismo Lobo. Treinta y cinco
+    /// minutos de ida y vuelta, una por segundo: 520 viajes. Es el filtro del viaje que no mira lo mismo que la acción.</para>
+    /// </summary>
+    public static bool NoVuelveACruzar(IReadOnlyDictionary<int, long> huyoDe, int mapa, int mapaDestino, long ahora) =>
+        mapa != mapaDestino && huyoDe.TryGetValue(mapa, out long hasta) && ahora < hasta;
+
+    /// <summary>Los mapas de los que se fue huyendo, hasta cuándo no los cruza de viaje (ver <see cref="NoVuelveACruzar"/>).</summary>
+    private readonly Dictionary<int, long> _huyoDe = new();
     private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
 
     /// <summary>
@@ -4585,14 +4602,21 @@ public sealed class Bot
             // El destino puede estar en otro mapa: en ese caso el tramo termina en la puerta.
             bool esLaMeta = mapa == mapaDestino;
             (byte X, byte Y) meta;
+            // Y NI POR UN MAPA DEL QUE RECIÉN SE FUE HUYENDO, en ninguno de los tres escalones: ver `NoVuelveACruzar`. Escapando o de
+            // muerto, sí.
+            long ahoraDelTramo = Environment.TickCount64;
+            Func<int, bool> sinHuidas = m => escapando || deMuerto || !NoVuelveACruzar(_huyoDe, m, mapaDestino, ahoraDelTramo);
+            var pasa = PasaSinPeligro(sentidos, mapaDestino);
+            var cruza = CruzaSinPeligroHacia(sentidos, mapaDestino);
+            var pisable = Pisable(sentidos);
             if (esLaMeta) meta = (destinoX, destinoY);
             // POR DÓNDE: ver `CaminoDelViaje`.
             else if (CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas,
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                          PasaSinPeligro(sentidos, mapaDestino), topeDeMapas),
+                                                          m => pasa(m) && sinHuidas(m), topeDeMapas),
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                          CruzaSinPeligroHacia(sentidos, mapaDestino), topeDeMapas),
-                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), Pisable(sentidos),
+                                                          m => cruza(m) && sinHuidas(m), topeDeMapas),
+                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), m => pisable(m) && sinHuidas(m),
                                                           topeDeMapas)) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega

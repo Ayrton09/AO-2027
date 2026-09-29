@@ -101,6 +101,21 @@ public class LoDelHuecoTests
     }
 
     /// <summary>
+    /// DEL MAPA DEL QUE RECIÉN HUYÓ, NI DE PASO (`hueco2`): una Ladrona se fue del 19 por un Lobo que no lastimaba, salió al 98, y el
+    /// viaje al coto del 27 la volvía a meter al 19 por la misma baldosa: 520 viajes en 35 minutos. Por un rato no se cruza —salvo
+    /// que sea el destino—, y después sí.
+    /// </summary>
+    [Fact]
+    public void Del_mapa_del_que_recien_huyo_no_se_vuelve_a_cruzar_por_un_rato()
+    {
+        var huyoDe = new Dictionary<int, long> { [19] = 300_000 };
+        Assert.True(Bot.NoVuelveACruzar(huyoDe, 19, mapaDestino: 27, ahora: 100_000), "de paso al 27, no");
+        Assert.False(Bot.NoVuelveACruzar(huyoDe, 19, mapaDestino: 19, ahora: 100_000), "si el destino es ese mismo, sí");
+        Assert.False(Bot.NoVuelveACruzar(huyoDe, 97, mapaDestino: 27, ahora: 100_000), "por otro mapa, sí");
+        Assert.False(Bot.NoVuelveACruzar(huyoDe, 19, mapaDestino: 27, ahora: 300_000), "pasado el rato, sí");
+    }
+
+    /// <summary>
     /// ESCAPANDO DE UN ZOMBIE DEL 13, NO A OTRO MAPA DE ZOMBIES. Para Osmar, en el 12 y en el 19 no nace nada que lo mate, en el 553
     /// (la salida del norte) nacen tres Zombies y en el 15 cinco Arañas gigantes. Contando sólo lo peligroso, el 553 empataba en
     /// cero con el 12 y el 19, y quedaba antes que el 19.
