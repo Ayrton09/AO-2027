@@ -66,18 +66,21 @@ public class MochilaDelBotTests : IDisposable
     }
 
     /// <summary>
-    /// EL ÚLTIMO NIVEL DE NOVATO YA CUENTA COMO "ESTOY POR PERDERLO". Al pasar de
+    /// DOS NIVELES ANTES DEL ÚLTIMO DE NOVATO YA CUENTA COMO "ESTOY POR PERDERLO". Al pasar de
     /// <see cref="GameLimits.NewbieMaxLevel"/> el servidor le saca de una todo lo de novato —siete de los ocho ítems
-    /// del kit de nacimiento—, así que el bot tiene que salir a comprar lo suyo ANTES, mientras todavía tiene con qué.
+    /// del kit de nacimiento—, así que el bot tiene que salir a comprar lo suyo ANTES, mientras todavía tiene con qué. Y en el
+    /// último nivel no alcanza: en `hueco2` dos bots lo pasaron en un minuto y medio y en dos, y llegaron al 16 desnudos.
     /// </summary>
     [Theory]
     [InlineData(1, false)]
-    [InlineData(14, false)]
-    [InlineData(15, true)]     // último nivel de novato: ya va de compras
+    [InlineData(12, false)]
+    [InlineData(13, true)]     // dos niveles antes del último de novato: ya va de compras
+    [InlineData(15, true)]     // último nivel de novato
     [InlineData(16, true)]     // ya se lo sacaron
     [InlineData(40, true)]
-    public void En_el_ultimo_nivel_de_novato_ya_se_compra_lo_suyo(int nivel, bool seprepara)
+    public void Dos_niveles_antes_de_dejar_la_cuna_ya_se_compra_lo_suyo(int nivel, bool seprepara)
     {
+        Assert.Equal(GameLimits.NewbieMaxLevel - 2, GameLimits.NewbieMaxLevel - Bot.NivelesDePreparacion);   // premisa de los datos
         Assert.Equal(seprepara, Bot.PorDejarDeSerNovato(nivel));
     }
 
@@ -92,31 +95,32 @@ public class MochilaDelBotTests : IDisposable
     [Fact]
     public void El_que_esta_por_dejar_la_cuna_carga_para_muchas_horas()
     {
-        Assert.True(Bot.ComidaQueSeLleva(15) > Bot.ComidaQueSeLleva(14), "en el último nivel de novato compra MÁS comida");
-        Assert.True(Bot.BebidaQueSeLleva(15) > Bot.BebidaQueSeLleva(14), "en el último nivel de novato compra MÁS bebida");
+        int desde = GameLimits.NewbieMaxLevel - Bot.NivelesDePreparacion;
+        Assert.True(Bot.ComidaQueSeLleva(desde) > Bot.ComidaQueSeLleva(desde - 1), "al prepararse para dejar la cuna compra MÁS comida");
+        Assert.True(Bot.BebidaQueSeLleva(desde) > Bot.BebidaQueSeLleva(desde - 1), "al prepararse para dejar la cuna compra MÁS bebida");
 
-        double horasDeComida = Horas(Bot.ComidaQueSeLleva(15), Survival.HungerIntervalTicks);
-        double horasDeBebida = Horas(Bot.BebidaQueSeLleva(15), Survival.ThirstIntervalTicks);
+        double horasDeComida = Horas(Bot.ComidaQueSeLleva(desde), Survival.HungerIntervalTicks);
+        double horasDeBebida = Horas(Bot.BebidaQueSeLleva(desde), Survival.ThirstIntervalTicks);
         Assert.True(horasDeComida >= 8, $"se va con comida para {horasDeComida:0.0} horas");
         Assert.True(horasDeBebida >= 8, $"se va con bebida para {horasDeBebida:0.0} horas");
 
-        double antes = Horas(Bot.ComidaQueSeLleva(14), Survival.HungerIntervalTicks);
+        double antes = Horas(Bot.ComidaQueSeLleva(desde - 1), Survival.HungerIntervalTicks);
         Assert.True(antes <= 4, $"mientras es novato compra para un rato ({antes:0.0} horas), que para eso tiene la tienda al lado");
     }
 
     /// <summary>
-    /// Y SE VA CON UN ARMA (pedido del autor, 27/09). En el último nivel de novato, sin un arma propia —la de novato ya no
+    /// Y SE VA CON UN ARMA (pedido del autor, 27/09). Al prepararse para dejar la cuna, sin un arma propia —la de novato ya no
     /// cuenta—, el arma es una necesidad y no un gusto; y el viaje va por ella con la panza llena, antes que las pociones y
     /// los gustos, siempre que haya quien le venda una que pueda usar y pagar.
     /// </summary>
     [Fact]
     public void Al_dejar_de_ser_novato_se_compra_un_arma()
     {
-        int ultimo = GameLimits.NewbieMaxLevel;
-        Assert.False(Bot.LeFaltaElArmaDelCamino(ultimo - 1, 0), "antes del último nivel de novato todavía no");
-        Assert.True(Bot.LeFaltaElArmaDelCamino(ultimo, 0));
-        Assert.True(Bot.LeFaltaElArmaDelCamino(ultimo + 3, 0), "si no la consiguió, la sigue buscando");
-        Assert.False(Bot.LeFaltaElArmaDelCamino(ultimo, 8), "con un arma propia, no");
+        int desde = GameLimits.NewbieMaxLevel - Bot.NivelesDePreparacion;
+        Assert.False(Bot.LeFaltaElArmaDelCamino(desde - 1, 0), "antes de prepararse para dejar la cuna todavía no");
+        Assert.True(Bot.LeFaltaElArmaDelCamino(desde, 0));
+        Assert.True(Bot.LeFaltaElArmaDelCamino(GameLimits.NewbieMaxLevel + 3, 0), "si no la consiguió, la sigue buscando");
+        Assert.False(Bot.LeFaltaElArmaDelCamino(desde, 8), "con un arma propia, no");
 
         Assert.True(Bot.PrimeroElArma(true, true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false));
         Assert.False(Bot.PrimeroElArma(true, true, vaPorComida: true, vaPorBebida: false, vaPorLaHerramienta: false));
@@ -125,22 +129,22 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.PrimeroElArma(true, hayUnaAlAlcance: false, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false),
             "sin quien le venda una que pueda usar, no se ata a buscarla");
 
-        // Y AL LLEGAR AL ÚLTIMO NIVEL DE NOVATO, el descanso de la compra anterior no vale: se sale ya.
-        Assert.True(Bot.EmpiezaAAbastecerse(ultimo - 1, ultimo));
-        Assert.False(Bot.EmpiezaAAbastecerse(ultimo, ultimo), "una sola vez, al llegar");
-        Assert.False(Bot.EmpiezaAAbastecerse(ultimo - 2, ultimo - 1));
+        // Y AL EMPEZAR A PREPARARSE, el descanso de la compra anterior no vale: se sale ya.
+        Assert.True(Bot.EmpiezaAAbastecerse(desde - 1, desde));
+        Assert.False(Bot.EmpiezaAAbastecerse(desde, desde), "una sola vez, al llegar");
+        Assert.False(Bot.EmpiezaAAbastecerse(desde - 2, desde - 1));
     }
 
-    /// <summary>LA ROPA DEL CAMINO (ver <see cref="Bot.LeFaltaLaRopaDelCamino"/>): desde el último nivel de novato, sin ropa de cuerpo
+    /// <summary>LA ROPA DEL CAMINO (ver <see cref="Bot.LeFaltaLaRopaDelCamino"/>): al prepararse para dejar la cuna, sin ropa de cuerpo
     /// propia, se la compra, antes que el arma; y no es un gusto.</summary>
     [Fact]
     public void Al_dejar_de_ser_novato_se_compra_ropa_antes_que_el_arma()
     {
-        int ultimo = GameLimits.NewbieMaxLevel;
-        Assert.False(Bot.LeFaltaLaRopaDelCamino(ultimo - 1, tieneRopaPropia: false), "antes del último nivel de novato, la de novato alcanza");
-        Assert.True(Bot.LeFaltaLaRopaDelCamino(ultimo, tieneRopaPropia: false));
-        Assert.True(Bot.LeFaltaLaRopaDelCamino(ultimo + 5, tieneRopaPropia: false), "el que quedó desnudo la sigue buscando");
-        Assert.False(Bot.LeFaltaLaRopaDelCamino(ultimo, tieneRopaPropia: true));
+        int desde = GameLimits.NewbieMaxLevel - Bot.NivelesDePreparacion;
+        Assert.False(Bot.LeFaltaLaRopaDelCamino(desde - 1, tieneRopaPropia: false), "antes de prepararse, la de novato alcanza");
+        Assert.True(Bot.LeFaltaLaRopaDelCamino(desde, tieneRopaPropia: false));
+        Assert.True(Bot.LeFaltaLaRopaDelCamino(GameLimits.NewbieMaxLevel + 5, tieneRopaPropia: false), "el que quedó desnudo la sigue buscando");
+        Assert.False(Bot.LeFaltaLaRopaDelCamino(desde, tieneRopaPropia: true));
 
         Assert.True(Bot.PrimeroLaRopa(hayUnaAlAlcance: true, vaPorComida: false, vaPorBebida: false, vaPorLaHerramienta: false));
         Assert.False(Bot.PrimeroLaRopa(hayUnaAlAlcance: true, vaPorComida: true, vaPorBebida: false, vaPorLaHerramienta: false),
@@ -168,16 +172,19 @@ public class MochilaDelBotTests : IDisposable
         (double)puntos / Survival.DecayStep * vueltas * GameLoop.TickMs / 3_600_000;
 
     /// <summary>
-    /// EL MOMENTO EN QUE EMPIEZA A COMPRAR LO SUYO ES EL ÚLTIMO EN QUE TODAVÍA PUEDE ENTRAR A LA CUNA, y de eso
-    /// depende que la carga de arriba se pueda hacer: el que sale a comprar cuando ya no lo dejan entrar se queda
-    /// sin nada. Las dos reglas viven separadas —una mira el kit, la otra la zona del mapa— y esto las ata.
+    /// MIENTRAS SE PREPARA PARA DEJAR LA CUNA, LA CUNA SIGUE ABIERTA, y de eso depende que la carga de arriba se pueda
+    /// hacer: el que sale a comprar cuando ya no lo dejan entrar se queda sin nada. Las dos reglas viven separadas —una mira
+    /// el kit, la otra la zona del mapa— y esto las ata: todos los niveles de la preparación con la cuna abierta, y el
+    /// siguiente, cerrada.
     /// </summary>
     [Fact]
-    public void Cuando_empieza_a_comprar_lo_suyo_todavia_lo_dejan_entrar_a_la_cuna()
+    public void Mientras_se_prepara_para_dejar_la_cuna_todavia_lo_dejan_entrar()
     {
         int primero = Enumerable.Range(1, 60).First(Bot.PorDejarDeSerNovato);
-        Assert.True(Bot.PuedeEntrar(primero, "NEWBIE"), $"a nivel {primero} ya compra lo suyo y no lo dejan entrar a la cuna");
-        Assert.False(Bot.PuedeEntrar(primero + 1, "NEWBIE"), $"a nivel {primero + 1} la cuna tendría que estar cerrada");
+        int ultimo = primero + Bot.NivelesDePreparacion;
+        for (int nivel = primero; nivel <= ultimo; nivel++)
+            Assert.True(Bot.PuedeEntrar(nivel, "NEWBIE"), $"a nivel {nivel} ya compra lo suyo y no lo dejan entrar a la cuna");
+        Assert.False(Bot.PuedeEntrar(ultimo + 1, "NEWBIE"), $"a nivel {ultimo + 1} la cuna tendría que estar cerrada");
     }
 
     /// <summary>Y lo que el servidor le va a sacar es REAL: el kit de nacimiento de una clase cualquiera está lleno de

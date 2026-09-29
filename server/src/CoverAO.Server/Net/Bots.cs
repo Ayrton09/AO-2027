@@ -1934,15 +1934,24 @@ public sealed class Bot
     private int UnaSiEsPocion(short obj) => EsPocionDeVida(obj) ? 1 : 0;
 
     /// <summary>
-    /// ¿ESTÁ POR DEJAR DE SER NOVATO? El último nivel de novato ya cuenta como que sí.
+    /// ¿ESTÁ POR DEJAR DE SER NOVATO? Desde <see cref="NivelesDePreparacion"/> niveles antes del último de novato ya cuenta
+    /// como que sí.
     ///
     /// <para>Al pasar <see cref="GameLimits.NewbieMaxLevel"/> el servidor le saca DE UNA todo lo de novato
     /// (<c>QuitarEquipoNovato</c>, prendido en el `Server.ini` que se distribuye), y de los ocho ítems del kit de
     /// nacimiento SIETE son de novato: el mapa, las pociones rojas y las azules, las manzanas, las botellas, el
     /// martillo y el báculo. El que no se preparó se queda sin comer, sin tomar, sin con qué curarse y sin arma en la
     /// misma subida de nivel. Un jugador lo ve venir y va de compras antes.</para>
+    ///
+    /// <para>Y ANTES QUIERE DECIR ANTES DEL ÚLTIMO NIVEL, no en él. Medido en `hueco2` (29/09, con las tasas en 50): dos bots
+    /// subieron al 16 al minuto y medio y a los dos minutos de llegar al 15, sin haber comprado ropa, comida ni bebida; se
+    /// quedaron sin energía y los mató un Lobo. En las cuatro corridas de ese día el 15 duró de mediana diez minutos y el más
+    /// corto uno; el 13 y el 14, cinco y cuatro de mediana. Con esos dos niveles el viaje al pueblo entra.</para>
     /// </summary>
-    public static bool PorDejarDeSerNovato(int nivel) => nivel >= GameLimits.NewbieMaxLevel;
+    public static bool PorDejarDeSerNovato(int nivel) => nivel >= GameLimits.NewbieMaxLevel - NivelesDePreparacion;
+
+    /// <summary>Cuántos niveles antes del último de novato empieza a prepararse para dejar la cuna (ver <see cref="PorDejarDeSerNovato"/>).</summary>
+    public const int NivelesDePreparacion = 2;
 
     /// <summary>
     /// ¿LE FALTA EL ARMA PARA EL CAMINO? Está por dejar de ser novato (<see cref="PorDejarDeSerNovato"/>) y no tiene un arma
@@ -1958,8 +1967,9 @@ public sealed class Bot
     public static bool LeFaltaElArmaDelCamino(int nivel, int mejorArmaPropia) => PorDejarDeSerNovato(nivel) && mejorArmaPropia <= 0;
 
     /// <summary>
-    /// ¿ACABA DE LLEGAR AL ÚLTIMO NIVEL DE NOVATO? Entonces el descanso de la compra anterior —hasta quince minutos, si fue un
-    /// éxito— no vale: en ese nivel se abastece para el camino (la comida, la bebida y el arma) y dura poco.
+    /// ¿ACABA DE EMPEZAR A PREPARARSE PARA DEJAR DE SER NOVATO (<see cref="PorDejarDeSerNovato"/>)? Entonces el descanso de la
+    /// compra anterior —hasta quince minutos, si fue un éxito— no vale: se abastece para el camino (la comida, la bebida, la
+    /// ropa y el arma), y los últimos niveles de novato duran poco.
     /// </summary>
     public static bool EmpiezaAAbastecerse(int nivelAntes, int nivelAhora) =>
         !PorDejarDeSerNovato(nivelAntes) && PorDejarDeSerNovato(nivelAhora);
@@ -1967,7 +1977,7 @@ public sealed class Bot
     /// <summary>
     /// ¿EL VIAJE VA POR EL ARMA DEL CAMINO? Cuando le falta, hay quien le venda una que pueda usar y pagar, y ya tiene la
     /// comida, la bebida y la herramienta: se busca con la panza llena, como la herramienta, y antes que las pociones y los
-    /// gustos, porque el nivel 15 dura poco. Sin <paramref name="hayUnaAlAlcance"/>, el que no puede usar ninguna de las que se
+    /// gustos, porque los últimos niveles de novato duran poco. Sin <paramref name="hayUnaAlAlcance"/>, el que no puede usar ninguna de las que se
     /// venden cerca dejaría de comprar todo lo demás.
     /// </summary>
     public static bool PrimeroElArma(bool vaPorElArma, bool hayUnaAlAlcance, bool vaPorComida, bool vaPorBebida,
