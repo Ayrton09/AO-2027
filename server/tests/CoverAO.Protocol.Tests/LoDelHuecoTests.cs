@@ -87,6 +87,20 @@ public class LoDelHuecoTests
     }
 
     /// <summary>
+    /// LA SALIDA QUE NO LO SACÓ SE SALTEA UN RATO (`hueco2`, `hueco3`): escapando, los bots elegían siempre la esquina (9,7) del 13,
+    /// tapada por un Zombie, y morían ahí intentándolo. La vez siguiente prueba por otro vecino; pasado el rato, otra vez por esa.
+    /// </summary>
+    [Fact]
+    public void La_salida_que_no_lo_saco_se_saltea_un_rato()
+    {
+        var queNoAndan = new Dictionary<(int Aca, int Vecino), long> { [(13, 12)] = 300_000 };
+        Assert.False(Bot.SePruebaEsaSalida(queNoAndan, 13, 12, ahora: 100_000));
+        Assert.True(Bot.SePruebaEsaSalida(queNoAndan, 13, 19, ahora: 100_000), "por otro vecino, sí");
+        Assert.True(Bot.SePruebaEsaSalida(queNoAndan, 12, 12, ahora: 100_000), "desde otro mapa, sí");
+        Assert.True(Bot.SePruebaEsaSalida(queNoAndan, 13, 12, ahora: 300_000), "pasado el rato, se vuelve a probar");
+    }
+
+    /// <summary>
     /// ESCAPANDO DE UN ZOMBIE DEL 13, NO A OTRO MAPA DE ZOMBIES. Para Osmar, en el 12 y en el 19 no nace nada que lo mate, en el 553
     /// (la salida del norte) nacen tres Zombies y en el 15 cinco Arañas gigantes. Contando sólo lo peligroso, el 553 empataba en
     /// cero con el 12 y el 19, y quedaba antes que el 19.

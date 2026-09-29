@@ -4496,15 +4496,34 @@ public sealed class Bot
         int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        long ahora = Environment.TickCount64;
         foreach (int vecino in VecinosDelMenosPeligroso(_entorno.Datos, aca, m => pisable(m) && !HayGuardiaQueLoAtaca(m),
                      m => CuantasLoPuedenMatar(_entorno.Datos, _entorno.Ini, _miBando, m, vida, nivel, conPociones, curaVeneno)))
         {
+            // LA SALIDA QUE RECIÉN NO LO SACÓ SE SALTEA: ver `SePruebaEsaSalida`.
+            if (!SePruebaEsaSalida(_salidasQueNoAndan, aca, vecino, ahora)) continue;
             if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m == vecino, pisable) is not { } afuera) continue;
             await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
+            if (sentidos.Mapa == aca) _salidasQueNoAndan[(aca, vecino)] = Environment.TickCount64 + SalidaQueNoAndaMs;
             return sentidos.Mapa != aca || sentidos.Posicion != antes;
         }
         return false;
     }
+
+    /// <summary>
+    /// ¿SE PRUEBA SALIR POR AHÍ? No, si hace menos de <see cref="SalidaQueNoAndaMs"/> esa misma salida no lo sacó del mapa: la
+    /// próxima vez prueba por el vecino que sigue (<see cref="VecinosDelMenosPeligroso"/>).
+    ///
+    /// <para>Medido en `hueco2` y `hueco3` (29/09): escapando de lo del hueco, los bots salían siempre por el vecino más cercano sin
+    /// peligro, y en el 13 y en el 12 ese es la esquina (9,7), con salidas a los dos costados y un Zombie o un Goblin tapándola. El
+    /// viaje no los movía de la baldosa, y el intento siguiente elegía la misma esquina: dos de esas muertes fueron ahí.</para>
+    /// </summary>
+    public static bool SePruebaEsaSalida(IReadOnlyDictionary<(int Aca, int Vecino), long> queNoAndan, int aca, int vecino, long ahora) =>
+        !queNoAndan.TryGetValue((aca, vecino), out long hasta) || ahora >= hasta;
+
+    /// <summary>Las salidas que hace poco no lo sacaron del mapa, hasta cuándo se saltean (ver <see cref="SePruebaEsaSalida"/>).</summary>
+    private readonly Dictionary<(int Aca, int Vecino), long> _salidasQueNoAndan = new();
+    private const int SalidaQueNoAndaMs = 5 * 60_000;
 
     /// <summary>
     /// ADÓNDE SE SALE: los mapas de al lado que <paramref name="sirve"/>, del que tiene MENOS de lo que lo puede matar al que más.
