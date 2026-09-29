@@ -47,6 +47,26 @@ public sealed class Persistence : IDisposable
     /// <summary>Cierra la cola esperando lo que quedaba encolado.</summary>
     public void Dispose() => _cola.Dispose();
 
+    /// <summary>
+    /// EL APAGADO: cierra la cola esperando lo que quedaba, hasta 30 s. Si la base no respondía y algo quedó sin aplicar,
+    /// va al archivo de rescate de <paramref name="dataRoot"/> (<see cref="Rescates"/>), que el próximo arranque aplica antes
+    /// de cargar el mundo. Lo que no tiene rescate queda anotado ahí y en el log.
+    /// </summary>
+    public void Cerrar(string dataRoot, TimeSpan? plazo = null)
+    {
+        var sinAplicar = _cola.Cerrar(plazo ?? TimeSpan.FromSeconds(30));
+        if (sinAplicar.Count == 0) return;
+        string? ruta = Rescates.Escribir(dataRoot, sinAplicar);
+        int rescatadas = sinAplicar.Count(p => p.Rescate is not null);
+        Console.Error.WriteLine($"[base] LA BASE NO RESPONDIÓ AL APAGAR: {rescatadas} escritura(s) quedaron en {ruta}, y el próximo " +
+                                "arranque las aplica antes de abrir." +
+                                (rescatadas < sinAplicar.Count ? $" Se perdieron {sinAplicar.Count - rescatadas}: " +
+                                    string.Join(", ", sinAplicar.Where(p => p.Rescate is null).Select(p => p.Que)) : ""));
+    }
+
+    /// <summary>La cola, para el panel: si la base responde, cuántos pedidos esperan y desde cuándo.</summary>
+    public ColaDeLaBase Cola => _cola;
+
     public bool AccountExists(string name) => _cuentas.ContainsKey(name);
     public bool CharacterExists(string name) => _personajes.ContainsKey(name);
 
@@ -80,7 +100,7 @@ public sealed class Persistence : IDisposable
     public void SaveGuilds(IEnumerable<Game.Guild> guilds)
     {
         var clanes = guilds.Select(ClanGuardado.Desde).ToList();
-        _cola.Escribir("guardar los clanes", a => a.GuardarClanes(clanes));
+        _cola.Escribir("guardar los clanes", a => a.GuardarClanes(clanes), new RescateDeClanes(clanes));
     }
 
     public List<Game.Guild> LoadGuilds()
@@ -90,7 +110,7 @@ public sealed class Persistence : IDisposable
     public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
     {
         var rechazos = motivos.ToList();
-        _cola.Escribir("guardar los rechazos de clan", a => a.GuardarRechazosDeClan(rechazos));
+        _cola.Escribir("guardar los rechazos de clan", a => a.GuardarRechazosDeClan(rechazos), new RescateDeRechazos(rechazos));
     }
 
     public Dictionary<string, string> LoadMotivosDeRechazo()
@@ -107,7 +127,7 @@ public sealed class Persistence : IDisposable
     {
         var foto = casillas.ToDictionary(c => c.Key, c => (IReadOnlyList<Game.MailEntry>)c.Value.ToArray(),
                                          StringComparer.OrdinalIgnoreCase);
-        _cola.Escribir("guardar el correo", a => a.GuardarCasillas(foto));
+        _cola.Escribir("guardar el correo", a => a.GuardarCasillas(foto), new RescateDeCorreo(foto));
     }
 
     public Dictionary<string, List<Game.MailEntry>> LoadMailboxes()
@@ -118,7 +138,7 @@ public sealed class Persistence : IDisposable
     public void SaveSuelo(IEnumerable<(Game.WorldPos Pos, short ObjIndex, short Amount)> suelo)
     {
         var foto = suelo.Select(o => new ObjetoEnElSuelo(o.Pos, o.ObjIndex, o.Amount)).ToList();
-        _cola.Escribir("guardar el suelo", a => a.GuardarSuelo(foto));
+        _cola.Escribir("guardar el suelo", a => a.GuardarSuelo(foto), new RescateDelSuelo(foto));
     }
 
     public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
@@ -128,7 +148,7 @@ public sealed class Persistence : IDisposable
     public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
     {
         var llaves = vendidas.SelectMany(m => m.Value.Select(r => new LlaveVendida(m.Key, r.Key, r.Value))).ToList();
-        _cola.Escribir("guardar las llaves vendidas", a => a.GuardarLlavesVendidas(llaves));
+        _cola.Escribir("guardar las llaves vendidas", a => a.GuardarLlavesVendidas(llaves), new RescateDeLlaves(llaves));
     }
 
     public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
@@ -144,9 +164,43 @@ public sealed class Persistence : IDisposable
 
     /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini; acá va con el
     /// resto del mundo, así entra en el backup.</summary>
-    public void SaveRecordUsuarios(int record) => _cola.Escribir("guardar el récord", a => a.GuardarRecord(record));
+    public void SaveRecordUsuarios(int record)
+        => _cola.Escribir("guardar el récord", a => a.GuardarRecord(record), new RescateDelRecord(record));
 
     public int LoadRecordUsuarios() => Esperar("leer el récord", null, a => a.LeerRecord());
+
+    /// <summary>Las IPs baneadas (el <c>BanIps</c> del original). Al arrancar, esperándolas.</summary>
+    public IReadOnlyList<string> LoadIpsBaneadas() => Esperar("leer las IPs baneadas", null, a => a.LeerIpsBaneadas());
+
+    /// <summary>Las mismas, por la cola: para el /BANIPRELOAD, que no puede frenar al hilo del mundo.</summary>
+    public Task<IReadOnlyList<string>> LeerIpsBaneadasAsync() => _cola.PedirAsync("leer las IPs baneadas", a => a.LeerIpsBaneadas());
+
+    /// <summary>La lista entera, con una COPIA: la viva la cambian el panel y los GMs.</summary>
+    public void SaveIpsBaneadas(IEnumerable<string> ips)
+    {
+        var foto = ips.ToList();
+        _cola.Escribir("guardar las IPs baneadas", a => a.GuardarIpsBaneadas(foto), new RescateDeIpsBaneadas(foto));
+    }
+
+    /// <summary>
+    /// LAS IPS BANEADAS DE ANTES, las de <c>data/banned-ips.txt</c>, donde vivían hasta la versión 4 de la base: se suman una
+    /// sola vez a las de la base y el archivo queda renombrado a <c>*.importado</c>. Devuelve cuántas se sumaron.
+    /// </summary>
+    public int SumarIpsDelArchivoViejo(string archivo)
+    {
+        if (!File.Exists(archivo)) return 0;
+        var todas = LoadIpsBaneadas().ToList();
+        var vistas = new HashSet<string>(todas, StringComparer.OrdinalIgnoreCase);
+        int nuevas = 0;
+        foreach (var linea in File.ReadAllLines(archivo))
+        {
+            string ip = linea.Trim();
+            if (ip.Length > 0 && vistas.Add(ip)) { todas.Add(ip); nuevas++; }
+        }
+        Esperar("guardar las IPs baneadas", null, a => { a.GuardarIpsBaneadas(todas); return true; });
+        File.Move(archivo, archivo + ".importado", overwrite: true);
+        return nuevas;
+    }
 
     /// <summary>Sincrónicas, para quien no es el loop (ver <see cref="Esperar"/>).</summary>
     public Account? LoadAccount(string name) => Esperar("leer una cuenta", name, a => a.LeerCuenta(name));
@@ -160,7 +214,7 @@ public sealed class Persistence : IDisposable
     {
         var copia = acc.Copia();
         _cuentas[copia.Name] = 0;
-        _cola.Escribir($"guardar la cuenta {copia.Name}", a => a.GuardarCuenta(copia));
+        _cola.Escribir($"guardar la cuenta {copia.Name}", a => a.GuardarCuenta(copia), new RescateDeCuenta(copia));
     }
 
     /// <summary>Guarda al personaje por la cola. Se llama en el hilo del mundo: arma la ficha con el personaje vivo
@@ -177,7 +231,7 @@ public sealed class Persistence : IDisposable
     public void GuardarFicha(FichaDePersonaje ficha)
     {
         _personajes[ficha.Nombre] = 0;
-        _cola.Escribir($"guardar a {ficha.Nombre}", a => a.GuardarPersonaje(ficha));
+        _cola.Escribir($"guardar a {ficha.Nombre}", a => a.GuardarPersonaje(ficha), new RescateDePersonaje(ficha));
     }
 
     /// <summary>Espera a que la cola aplique todo lo encolado. La llaman el APAGADO —sin esto, el que se desconectó un
@@ -573,7 +627,7 @@ public sealed class Persistence : IDisposable
             _personajes.TryRemove(ficha.Nombre, out _);   // no quedó nada guardado: el nombre no puede figurar como tomado
             Console.Error.WriteLine($"[base] alta de {ficha.Nombre}: la cuenta {cuenta.Name} ya tiene " +
                                     $"{AccountFile.MaxCharacters} personajes");
-        });
+        }, new RescateDeAlta(cuenta, ficha));
     }
 
     /// <summary>

@@ -236,6 +236,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
   tablas que SQLite. Con la base vacía, el primer arranque importa la `coverao.db`, o se la pasa antes con
   `CoverAO.Server pasar-a-postgres`. El backup lo hace el servidor mismo, sin `pg_dump`.
 
+- **Si la base se cae, el juego sigue**: lo que se guarda espera y se reintenta solo, el panel muestra el estado de la
+  base, y el que entra mientras tanto recibe un cartel en vez de quedarse esperando. Si se apaga con la base caída, lo
+  pendiente queda en un archivo de rescate que el próximo arranque aplica. `CoverAO.Server restaurar` vuelve a un backup.
+  Las IPs baneadas también van en la base, y el importador trae las del original.
+
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no

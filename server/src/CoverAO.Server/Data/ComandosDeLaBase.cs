@@ -7,7 +7,11 @@ namespace CoverAO.Server.Data;
 /// CoverAO.Server importar &lt;carpeta de datos | archivo de SQLite&gt; [--reemplazar]
 /// CoverAO.Server exportar &lt;carpeta nueva o vacía&gt;
 /// CoverAO.Server pasar-a-postgres [archivo de SQLite] [--reemplazar]
+/// CoverAO.Server restaurar &lt;backup&gt; [--reemplazar]
 /// </code>
+///
+/// <c>restaurar</c> vuelve a un backup de <c>data/backups/</c>: el <c>.zip</c> de Postgres se restaura en Postgres; el
+/// <c>.db</c> de SQLite es una base, y se importa (a SQLite o a Postgres).
 ///
 /// <c>pasar-a-postgres</c> copia la base de SQLite —la de <c>[BASEDEDATOS] Archivo</c>, si no se dice otra— a la de Postgres
 /// de <c>[BASEDEDATOS]</c>, con el <c>Tipo</c> que sea: se pasa, se mira el informe, y recién después se cambia el
@@ -16,7 +20,7 @@ namespace CoverAO.Server.Data;
 /// </summary>
 public static class ComandosDeLaBase
 {
-    private static readonly string[] Comandos = { "importar", "exportar", "pasar-a-postgres" };
+    private static readonly string[] Comandos = { "importar", "exportar", "pasar-a-postgres", "restaurar" };
 
     public static bool EsUno(string comando) => Comandos.Contains(comando, StringComparer.OrdinalIgnoreCase);
 
@@ -35,14 +39,29 @@ public static class ComandosDeLaBase
         }
         try
         {
+            if (comando == "restaurar" && resto.Length > 0 && resto[0].EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!postgres)
+                {
+                    Console.WriteLine("Un backup de Postgres (.zip) se restaura en Postgres: [BASEDEDATOS] Tipo=postgres en el Server.ini.");
+                    return 1;
+                }
+                using var pg = Almacenes.AbrirPostgres(ini);
+                var filas = Importador.RestaurarEnPostgres(resto[0], pg, reemplazar, backups);
+                foreach (var (tabla, cuantas) in filas.Where(f => f.Filas > 0)) Console.WriteLine($"  {tabla}: {cuantas}");
+                Console.WriteLine($"Restaurado {resto[0]} en la base de Postgres ({AlmacenPostgres.Donde(ini)}).");
+                return 0;
+            }
             InformeDeCopia informe;
             switch (comando)
             {
-                case "importar":
+                case "importar" or "restaurar":   // un backup de SQLite es una base: se importa
                 {
                     if (resto.Length < 1)
                     {
-                        Console.WriteLine("Uso: CoverAO.Server importar <carpeta de datos o archivo de SQLite> [--reemplazar]");
+                        Console.WriteLine(comando == "importar"
+                            ? "Uso: CoverAO.Server importar <carpeta de datos o archivo de SQLite> [--reemplazar]"
+                            : "Uso: CoverAO.Server restaurar <backup .zip o .db de data/backups> [--reemplazar]");
                         return 1;
                     }
                     string destino;

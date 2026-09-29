@@ -26,11 +26,11 @@ public static class Importador
         string temporal = archivoDeLaBase + ".importando";
         BorrarBase(temporal);
         InformeDeCopia informe;
-        var (almacen, correoAparte, liberar) = AbrirOrigen(origen);
+        var (almacen, correoAparte, ipsAparte, liberar) = AbrirOrigen(origen);
         try
         {
             using var destino = new AlmacenSqlite(temporal, paraImportar: true);
-            informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte);
+            informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
         }
         catch
         {
@@ -63,19 +63,37 @@ public static class Importador
         if (!vacia)
         {
             // Sin el prefijo de los backups de siempre: la poda no lo cuenta ni lo borra.
-            string backup = destino.Backup(carpetaDeBackups, $"antes-de-importar-{DateTime.Now:yyyyMMdd-HHmmss}");
+            string backup = destino.Backup(carpetaDeBackups, $"{Backups.PrefijoDeLosApartados}importar-{DateTime.Now:yyyyMMdd-HHmmss}");
             Console.WriteLine($"Lo que había en la base quedó en {backup}.");
         }
-        var (almacen, correoAparte, liberar) = AbrirOrigen(origen);
+        var (almacen, correoAparte, ipsAparte, liberar) = AbrirOrigen(origen);
         try
         {
             return destino.EnUnaSolaTransaccion(() =>
             {
                 if (!vacia) destino.Vaciar();
-                return CopiaDeAlmacen.Copiar(almacen, destino, correoAparte);
+                return CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
             }, informe => informe.SalioBien);
         }
         finally { liberar?.Dispose(); }
+    }
+
+    /// <summary>
+    /// Restaura un backup de Postgres —el zip de <see cref="AlmacenPostgres.Backup"/>— en la base de Postgres. Una base con
+    /// cuentas no se toca, salvo con <paramref name="reemplazar"/>: ahí antes se hace un backup de lo que hay.
+    /// </summary>
+    public static IReadOnlyList<(string Tabla, long Filas)> RestaurarEnPostgres(string zip, AlmacenPostgres destino, bool reemplazar,
+        string carpetaDeBackups)
+    {
+        if (!File.Exists(zip)) throw new InvalidOperationException($"no existe: {zip}");
+        if (!destino.EstaVacia())
+        {
+            if (!reemplazar)
+                throw new InvalidOperationException("la base de Postgres ya tiene cuentas: para pisarla, --reemplazar (antes se hace un backup de lo que hay).");
+            string backup = destino.Backup(carpetaDeBackups, $"{Backups.PrefijoDeLosApartados}restaurar-{DateTime.Now:yyyyMMdd-HHmmss}");
+            Console.WriteLine($"Lo que había en la base quedó en {backup}.");
+        }
+        return destino.Restaurar(zip);
     }
 
     /// <summary>
@@ -176,24 +194,52 @@ public static class Importador
     }
 
     /// <summary>El almacén de origen, el correo que trae aparte y lo que hay que cerrar al terminar.</summary>
-    private static (IAlmacen Almacen, IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> CorreoAparte, IDisposable? Liberar)
-        AbrirOrigen(string origen)
+    private static (IAlmacen Almacen, IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> CorreoAparte, IReadOnlyList<string> IpsAparte,
+        IDisposable? Liberar) AbrirOrigen(string origen)
     {
         var sinCorreo = new Dictionary<string, IReadOnlyList<MailEntry>>();
+        var sinIps = Array.Empty<string>();
         if (File.Exists(origen))
         {
             if (EsDelSqliteViejo(origen))
             {
                 var viejo = new SqliteStore(origen);
-                return (new AlmacenDeTexto(viejo), sinCorreo, viejo);
+                return (new AlmacenDeTexto(viejo), sinCorreo, sinIps, viejo);
             }
-            // Una base de ahora: la de un servidor que pasa a Postgres, o un backup.
-            var deAhora = new AlmacenSqlite(origen);
-            return (deAhora, sinCorreo, deAhora);
+            // Una base de ahora: la de un servidor que pasa a Postgres, o un backup. Se lee de una COPIA al lado: abrirla le
+            // aplicaría las versiones del esquema que le falten, y el origen —un backup, sobre todo— no se toca. Con su
+            // diario, que puede tener lo último que se escribió.
+            string copia = origen + ".leyendo";
+            BorrarBase(copia);
+            File.Copy(origen, copia);
+            if (File.Exists(origen + "-wal")) File.Copy(origen + "-wal", copia + "-wal");
+            var deAhora = new AlmacenSqlite(copia);
+            return (deAhora, sinCorreo, sinIps, new AlCerrar(() =>
+            {
+                deAhora.Dispose();
+                BorrarBase(copia);
+            }));
         }
         if (!Directory.Exists(origen)) throw new InvalidOperationException($"no existe: {origen}");
         var store = new FileStore(origen, crearCarpetas: false);
-        return (new AlmacenDeTexto(store), CorreoDeLosChr(store), null);
+        return (new AlmacenDeTexto(store), CorreoDeLosChr(store), IpsDeLaCarpeta(origen), null);
+    }
+
+    /// <summary>Las IPs baneadas de una carpeta de datos, que van en un archivo suelto: <c>banned-ips.txt</c> en una nuestra,
+    /// <c>Dat/BanIps.dat</c> en la del original (una por renglón; lo que no parece una IP —el "0" que trae su instalación— no
+    /// se toma).</summary>
+    private static List<string> IpsDeLaCarpeta(string carpeta)
+    {
+        var ips = new List<string>();
+        foreach (var archivo in new[] { Path.Combine(carpeta, "banned-ips.txt"), Path.Combine(carpeta, "Dat", "BanIps.dat") })
+            if (File.Exists(archivo))
+                ips.AddRange(File.ReadAllLines(archivo).Select(l => l.Trim()).Where(l => l.Contains('.') || l.Contains(':')));
+        return ips;
+    }
+
+    private sealed class AlCerrar(Action cerrar) : IDisposable
+    {
+        public void Dispose() => cerrar();
     }
 
     /// <summary>El correo del ORIGINAL, que va adentro del <c>.chr</c> de cada destinatario (ver

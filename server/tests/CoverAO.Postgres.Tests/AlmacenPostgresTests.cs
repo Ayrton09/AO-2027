@@ -92,6 +92,96 @@ public sealed class AlmacenPostgresTests : IDisposable
         Assert.Contains("\"dos\nrenglones\"", personajes.ReadToEnd());
     }
 
+    /// <summary>
+    /// UN BACKUP SE RESTAURA EN OTRA BASE: todo lo que había —personajes, cuentas, el mundo— vuelve igual, y los contadores
+    /// de los <c>id</c> siguen desde el más alto (una cuenta o un clan nuevos no chocan con los restaurados). Una base con
+    /// cuentas pide <c>--reemplazar</c>, y con eso deja antes un backup de lo que tenía.
+    /// </summary>
+    [Fact]
+    public void Un_backup_se_restaura_entero_en_otra_base()
+    {
+        var ficha = FichasDePrueba.Llena("Respaldado") with { Descripcion = "dos\nrenglones, \"comillas\"" };
+        var clan = ContratoDelAlmacen.ClanLleno("Sur", 1);
+        var correo = new Dictionary<string, IReadOnlyList<CoverAO.Server.Game.MailEntry>>
+        {
+            ["Respaldado"] = new[] { new CoverAO.Server.Game.MailEntry("Bruma", "hola", 2, 1, 1) },
+        };
+        string zip;
+        using (var origen = new AlmacenPostgres(_base.Cadena))
+        {
+            var cuenta = Cuenta("Duena");
+            cuenta.UltimoIngreso = new DateTime(2026, 9, 28, 13, 15, 0, DateTimeKind.Utc);
+            cuenta.UltimaIp = "10.1.2.3";
+            origen.GuardarCuenta(cuenta);
+            Assert.True(origen.CrearPersonaje(cuenta, ficha));
+            origen.GuardarClanes(new[] { clan });
+            origen.GuardarCasillas(correo);
+            origen.GuardarRecord(12);
+            zip = origen.Backup(_raiz, "coverao-prueba");
+        }
+
+        using var otra = new BaseDePrueba();
+        using var destino = new AlmacenPostgres(otra.Cadena);
+        var ocupada = Cuenta("Ocupa");
+        destino.GuardarCuenta(ocupada);
+        string backups = Path.Combine(_raiz, "backups");
+        Assert.Throws<InvalidOperationException>(() => Importador.RestaurarEnPostgres(zip, destino, reemplazar: false, backups));
+
+        var filas = Importador.RestaurarEnPostgres(zip, destino, reemplazar: true, backups);
+
+        Assert.Contains(("personajes", 1L), filas);
+        Assert.Single(Directory.GetFiles(backups, "antes-de-restaurar-*.zip"));
+        Assert.False(destino.ExisteCuenta("Ocupa"));
+        FichasDePrueba.AssertIgual(ficha, destino.LeerPersonaje("Respaldado")!);
+        var cuentaLeida = destino.LeerCuenta("Duena")!;
+        Assert.Equal(new DateTime(2026, 9, 28, 13, 15, 0, DateTimeKind.Utc), cuentaLeida.UltimoIngreso);
+        Assert.Equal("10.1.2.3", cuentaLeida.UltimaIp);
+        ContratoDelAlmacen.AssertIgual(clan, Assert.Single(destino.LeerClanes()));
+        Assert.Equal(correo["Respaldado"], destino.LeerCorreo()["Respaldado"]);
+        Assert.Equal(12, destino.LeerRecord());
+        // Los contadores siguen: lo nuevo no choca con lo restaurado.
+        var nueva = Cuenta("Nueva");
+        destino.GuardarCuenta(nueva);
+        Assert.True(destino.CrearPersonaje(nueva, FichasDePrueba.Llena("Otro")));
+        destino.GuardarClanes(new[] { clan, ContratoDelAlmacen.ClanLleno("Norte", 2) });
+        Assert.Equal(2, destino.LeerClanes().Count);
+    }
+
+    /// <summary>Un backup que no cierra —las filas de una tabla no son las del manifiesto— no se restaura: la base queda como
+    /// estaba, con sus tablas y lo suyo.</summary>
+    [Fact]
+    public void Un_backup_que_no_cierra_no_se_restaura()
+    {
+        string zip;
+        using (var origen = new AlmacenPostgres(_base.Cadena))
+        {
+            var cuenta = Cuenta("Duena");
+            origen.GuardarCuenta(cuenta);
+            Assert.True(origen.CrearPersonaje(cuenta, FichasDePrueba.Llena("Respaldado")));
+            zip = origen.Backup(_raiz, "coverao-prueba");
+        }
+        using (var archivo = ZipFile.Open(zip, ZipArchiveMode.Update))
+        {
+            var entrada = archivo.GetEntry("manifiesto.txt")!;
+            string texto;
+            using (var lector = new StreamReader(entrada.Open())) texto = lector.ReadToEnd();
+            entrada.Delete();
+            using var escritor = new StreamWriter(archivo.CreateEntry("manifiesto.txt").Open());
+            escritor.Write(texto.Replace("tabla=personajes filas=1", "tabla=personajes filas=2"));
+        }
+        using var otra = new BaseDePrueba();
+        using var destino = new AlmacenPostgres(otra.Cadena);
+        var mia = Cuenta("Mia");
+        destino.GuardarCuenta(mia);
+        Assert.True(destino.CrearPersonaje(mia, FichasDePrueba.Llena("Propio")));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            Importador.RestaurarEnPostgres(zip, destino, reemplazar: true, Path.Combine(_raiz, "backups")));
+
+        FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Propio"), destino.LeerPersonaje("Propio")!);
+        Assert.False(destino.ExistePersonaje("Respaldado"));
+    }
+
     /// <summary>EL TODO O NADA DE IMPORTAR A POSTGRES: lo escrito adentro de la transacción grande entra sólo si la
     /// verificación dice que sí; si dice que no, o si algo falla a la mitad, la base queda como estaba.</summary>
     [Fact]
@@ -181,6 +271,7 @@ public sealed class AlmacenPostgresTests : IDisposable
         ContratoDelAlmacen.AssertIgual(clan, Assert.Single(almacen.LeerClanes()));
         Assert.False(File.Exists(archivo));
         Assert.True(File.Exists(archivo + ".importado"));
+        Assert.Empty(Directory.GetFiles(_raiz, "*.leyendo*"));   // la copia de la que se leyó no queda tirada
         Assert.Single(Directory.GetFiles(_raiz, "importacion-*.txt"));
         // Ya importado, no se vuelve a hacer.
         Assert.Null(Importador.ImportarAPostgresSiHaceFalta(_raiz, archivo, almacen));
@@ -210,6 +301,31 @@ public sealed class AlmacenPostgresTests : IDisposable
         FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Mudado"), almacen.LeerPersonaje("Mudado")!);
         // Otra vez no: la base ya tiene cuentas.
         Assert.Equal(1, ComandosDeLaBase.Correr(new[] { "pasar-a-postgres" }, _raiz, ini));
+    }
+
+    /// <summary><c>restaurar</c> desde la línea de comandos, con el Server.ini en Postgres: el zip de un backup vuelve a la
+    /// base, y con un zip se niega si el Server.ini dice SQLite.</summary>
+    [Fact]
+    public void Restaurar_desde_la_linea_de_comandos()
+    {
+        string zip;
+        using (var origen = new AlmacenPostgres(_base.Cadena))
+        {
+            var cuenta = Cuenta("Duena");
+            origen.GuardarCuenta(cuenta);
+            Assert.True(origen.CrearPersonaje(cuenta, FichasDePrueba.Llena("Vuelve")));
+            zip = origen.Backup(_raiz, "coverao-prueba");
+        }
+        using var otra = new BaseDePrueba();
+        var datos = new NpgsqlConnectionStringBuilder(otra.Cadena);
+        string Ini(string tipo) => $"[BASEDEDATOS]\nTipo={tipo}\nServidor={datos.Host}\nPuerto={datos.Port}\nBase={datos.Database}\n" +
+                                   $"Usuario={datos.Username}\nClave={datos.Password}\n";
+
+        Assert.Equal(1, ComandosDeLaBase.Correr(new[] { "restaurar", zip }, _raiz, ServerIni.Desde(IniFile.Parse(Ini("sqlite")))));
+        Assert.Equal(0, ComandosDeLaBase.Correr(new[] { "restaurar", zip }, _raiz, ServerIni.Desde(IniFile.Parse(Ini("postgres")))));
+
+        using var destino = new AlmacenPostgres(otra.Cadena);
+        FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Vuelve"), destino.LeerPersonaje("Vuelve")!);
     }
 
     /// <summary>La columna de la IP es <c>inet</c>: lo que no se lea como IP queda vacío, sin voltear el guardado de la cuenta.</summary>

@@ -334,6 +334,10 @@ function render(st) {
     ['Versión', s.version, s.fixture ? 'fixture' : 'mundo real'],
   ];
   if (st.config && st.config.nextSaveSec >= 0) tiles.push(['Próx. guardado', fmtDur(st.config.nextSaveSec), '']);
+  const b = st.baseDeDatos;
+  if (b) tiles.push(['Base', b.caida ? 'NO RESPONDE' : 'anda',
+    b.caida ? 'hace ' + fmtDur(b.caidaHaceSec) + ', ' + b.pendientes + ' esperando'
+            : (b.pendientes > 0 ? b.pendientes + ' en cola' : (b.donde || ''))]);
   $('tiles').innerHTML = tiles.map(([k, v, sub]) =>
     `<div class="tile ornate"><div class="k">${k}</div><div class="v">${esc(v)}${sub ? ` <small>${esc(sub)}</small>` : ''}</div></div>`).join('');
   // jugadores

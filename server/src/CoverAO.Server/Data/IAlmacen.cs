@@ -68,6 +68,11 @@ public interface IAlmacen
     int LeerRecord();
     void GuardarRecord(int record);
 
+    /// <summary>Las IPs baneadas (el <c>Dat/BanIps.dat</c> del original), tal como se escribieron.</summary>
+    IReadOnlyList<string> LeerIpsBaneadas();
+    /// <summary>Reemplaza la lista entera: es corta, y cada cambio del panel o de un GM la guarda toda.</summary>
+    void GuardarIpsBaneadas(IReadOnlyList<string> ips);
+
     /// <summary>Copia consistente del almacén entero con el servidor andando; devuelve la ruta creada.</summary>
     string Backup(string destDir, string stem);
 }

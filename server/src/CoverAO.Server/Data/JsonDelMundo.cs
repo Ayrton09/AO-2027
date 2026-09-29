@@ -146,6 +146,12 @@ public static class JsonDelMundo
     public static int Record(string? texto)
         => int.TryParse(texto, NumberStyles.Integer, CultureInfo.InvariantCulture, out int r) ? r : 0;
 
+    // ── IPs baneadas ("ips-baneadas") ───────────────────────────────────────────────────────────────────────────
+
+    public static string Ips(IReadOnlyList<string> ips) => JsonSerializer.Serialize(ips);
+
+    public static List<string> Ips(string? json) => Leer<List<string>>(json, "ips-baneadas") ?? new();
+
     // ── Ayudantes ───────────────────────────────────────────────────────────────────────────────────────────────
 
     private static KeyValuePair<string, string> Par(string clave, string valor) => new(clave, valor);

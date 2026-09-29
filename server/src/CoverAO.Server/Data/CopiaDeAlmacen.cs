@@ -13,6 +13,7 @@ public sealed class InformeDeCopia
     public int Personajes { get; internal set; }
     public int Clanes { get; internal set; }
     public int Cartas { get; internal set; }
+    public int IpsBaneadas { get; internal set; }
     /// <summary>Lo que no cierra en los datos de origen: se copió igual —o se dice por qué no— y queda anotado.</summary>
     public List<string> Avisos { get; } = new();
     /// <summary>Personajes que se volvieron a leer del destino iguales a como se leyeron del origen.</summary>
@@ -25,7 +26,7 @@ public sealed class InformeDeCopia
     public string Texto()
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Copiados: {Cuentas} cuentas, {Personajes} personajes, {Clanes} clanes, {Cartas} cartas.");
+        sb.AppendLine($"Copiados: {Cuentas} cuentas, {Personajes} personajes, {Clanes} clanes, {Cartas} cartas, {IpsBaneadas} IPs baneadas.");
         sb.AppendLine($"Verificación: {Equivalentes} de {Personajes} personajes se leen iguales en el destino.");
         foreach (var d in Distintos) sb.AppendLine("  DISTINTO: " + d);
         if (Avisos.Count > 0)
@@ -53,8 +54,10 @@ public static class CopiaDeAlmacen
 {
     /// <param name="correoAparte">El correo que el origen no tiene en su casilla —el del original, que va adentro de cada
     /// <c>.chr</c>—: se suma a las casillas del mismo destinatario.</param>
+    /// <param name="ipsAparte">Las IPs baneadas que el origen tiene en un archivo suelto —el <c>banned-ips.txt</c> de una
+    /// carpeta nuestra, el <c>Dat/BanIps.dat</c> del original—: se suman a las suyas.</param>
     public static InformeDeCopia Copiar(IAlmacen origen, IAlmacen destino,
-        IReadOnlyDictionary<string, IReadOnlyList<MailEntry>>? correoAparte = null)
+        IReadOnlyDictionary<string, IReadOnlyList<MailEntry>>? correoAparte = null, IReadOnlyList<string>? ipsAparte = null)
     {
         var informe = new InformeDeCopia();
         var fichas = new Dictionary<string, FichaDePersonaje>(StringComparer.OrdinalIgnoreCase);
@@ -106,6 +109,10 @@ public static class CopiaDeAlmacen
         destino.GuardarSuelo(origen.LeerSuelo());
         destino.GuardarLlavesVendidas(origen.LeerLlavesVendidas());
         destino.GuardarRecord(origen.LeerRecord());
+        var ips = origen.LeerIpsBaneadas().Concat(ipsAparte ?? Array.Empty<string>())
+            .Select(i => i.Trim()).Where(i => i.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        destino.GuardarIpsBaneadas(ips);
+        informe.IpsBaneadas = ips.Count;
 
         Cruzar(informe, fichas, clanes, correo);
 

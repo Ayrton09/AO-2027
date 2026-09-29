@@ -155,5 +155,8 @@ public sealed class AlmacenDeTexto : IAlmacen
 
     public int LeerRecord() => JsonDelMundo.Record(_store.ReadMisc("record"));
     public void GuardarRecord(int record) => _store.WriteMisc("record", JsonDelMundo.Record(record));
+
+    public IReadOnlyList<string> LeerIpsBaneadas() => JsonDelMundo.Ips(_store.ReadMisc("ips-baneadas"));
+    public void GuardarIpsBaneadas(IReadOnlyList<string> ips) => _store.WriteMisc("ips-baneadas", JsonDelMundo.Ips(ips));
     public string Backup(string destDir, string stem) => _store.Backup(destDir, stem);
 }

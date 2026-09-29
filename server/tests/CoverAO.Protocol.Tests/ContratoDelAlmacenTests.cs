@@ -382,6 +382,17 @@ public abstract class ContratoDelAlmacen : IDisposable
     }
 
     [Fact]
+    public void Las_ips_baneadas_se_leen_igual_y_se_reemplazan()
+    {
+        Assert.Empty(Almacen.LeerIpsBaneadas());
+        Almacen.GuardarIpsBaneadas(new[] { "10.0.0.1", "2001:db8::7", "192.168.1.20" });
+        Assert.Equal(new[] { "10.0.0.1", "192.168.1.20", "2001:db8::7" }, Almacen.LeerIpsBaneadas().Order(StringComparer.Ordinal));
+
+        Almacen.GuardarIpsBaneadas(new[] { "192.168.1.20" });
+        Assert.Equal(new[] { "192.168.1.20" }, Almacen.LeerIpsBaneadas());
+    }
+
+    [Fact]
     public void El_backup_deja_algo_en_el_disco()
     {
         var cuenta = CuentaGuardada("Duena");

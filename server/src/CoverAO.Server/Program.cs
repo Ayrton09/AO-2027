@@ -191,6 +191,8 @@ switch (CoverAO.Server.Build.SellarMundo(dataRoot, out string versionPrevia))
 }
 // DÓNDE SE GUARDA: [BASEDEDATOS] del Server.ini (ver Data.Almacenes).
 var (almacen, dondeSeGuarda) = Almacenes.Abrir(serverIni, dataRoot);
+// Lo que quedó sin guardar la última vez porque la base no respondía al apagar (Data.Rescates): antes de leer nada.
+Rescates.AplicarLosPendientes(dataRoot, almacen);
 var db = new Persistence(almacen, leveling);
 if (fixtureMode) db.SeedDemoIfEmpty();   // sin fixture no hay cuenta demo (cuenta_test/Rugura/…): como un server real
 Console.WriteLine($"Persistencia en {dataRoot}: {dondeSeGuarda}.");
@@ -204,37 +206,28 @@ world.RecordUsuarios = db.LoadRecordUsuarios();   // el pico historico de conect
 var loop = new GameLoop();
 
 // Estado de administración en caliente (eventos exp/oro/drop, autosave, pausa, solo-GMs, cadencia,
-// mensajes automáticos, bans por IP); lo muta el panel. Las IPs baneadas se persisten en data/banned-ips.txt.
+// mensajes automáticos, bans por IP); lo muta el panel. Las IPs baneadas se guardan en la base.
 var admin = new CoverAO.Server.Game.AdminConfig();
 // El centinela anti-macro arranca como diga el Server.ini (apagado por defecto, como el original). En vivo
 // lo conmuta /CENTINELAACTIVADO, que escribe en este mismo campo.
 admin.CentinelActive = serverIni.Centinela;
-var bannedIpsPath = Path.Combine(dataRoot, "banned-ips.txt");
-try { if (File.Exists(bannedIpsPath)) admin.LoadBannedIps(File.ReadAllLines(bannedIpsPath)); }
-catch (Exception ex) { Console.Error.WriteLine($"No se pudo leer {bannedIpsPath}: {ex.Message}"); }
+// LAS IPS BANEADAS, EN LA BASE (el Dat/BanIps.dat del original). Las de data/banned-ips.txt —donde vivían antes— se
+// suman una vez y el archivo queda renombrado.
+int ipsDelArchivo = db.SumarIpsDelArchivoViejo(Path.Combine(dataRoot, "banned-ips.txt"));
+if (ipsDelArchivo > 0) Console.WriteLine($"[base] {ipsDelArchivo} IP(s) baneada(s) de data/banned-ips.txt pasaron a la base.");
+admin.LoadBannedIps(db.LoadIpsBaneadas());
 // La lista la mutan dos caminos —el panel de admin y los comandos GM /BANIP y /UNBANIP—, así que la
-// persistencia se engancha acá, donde se conoce la ruta, y no en cada uno (el VB6 la graba en los dos casos).
-admin.PersistBannedIps = () =>
-{
-    try
-    {
-        var dir = Path.GetDirectoryName(bannedIpsPath);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        CoverAO.Server.Data.EscrituraAtomica.Escribir(bannedIpsPath,
-            string.Concat(admin.BannedIpList().Select(l => l + Environment.NewLine)),
-            System.Text.Encoding.UTF8);
-    }
-    catch (Exception ex) { Console.Error.WriteLine($"No se pudo guardar {bannedIpsPath}: {ex.Message}"); }
-};
-// Relectura desde disco, para el /BANIPRELOAD (VB6 BanIpGuardar + BanIpCargar).
+// persistencia se engancha acá y no en cada uno (el VB6 la graba en los dos casos).
+admin.PersistBannedIps = () => db.SaveIpsBaneadas(admin.BannedIpList());
+// Relectura de la base, para el /BANIPRELOAD (VB6 BanIpGuardar + BanIpCargar): por la cola, detrás de lo que se acaba de
+// guardar, y la lista se reemplaza en el loop cuando vuelve.
 admin.ReloadBannedIpsFrom = () =>
 {
-    try
+    db.LeerIpsBaneadasAsync().ContinueWith(t =>
     {
-        if (File.Exists(bannedIpsPath)) admin.LoadBannedIps(File.ReadAllLines(bannedIpsPath));
-        return admin.BannedIpList().Length;
-    }
-    catch (Exception ex) { Console.Error.WriteLine($"No se pudo releer {bannedIpsPath}: {ex.Message}"); return -1; }
+        if (t.IsCompletedSuccessfully) loop.Enqueue(() => admin.ReplaceBannedIps(t.Result));
+    }, TaskScheduler.Default);
+    return admin.BannedIpList().Length;
 };
 
 // Contenido del login (VB6 History.bas): MOTD (data/motd.txt) + novedades (data/updates.txt), o el default.
@@ -949,8 +942,8 @@ if (!sinAdmin)
     int atIdx = Array.FindIndex(args, a => string.Equals(a, "--admin-token", StringComparison.OrdinalIgnoreCase));
     string adminToken = (atIdx >= 0 && atIdx + 1 < args.Length) ? args[atIdx + 1]
         : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
-    var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, CoverAO.Server.Build.Version, fixtureMode);
-    var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, bannedIpsPath, HacerBackup, serverIni);
+    var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, CoverAO.Server.Build.Version, fixtureMode, dondeSeGuarda);
+    var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, HacerBackup, serverIni);
     adminTask = adminServer.RunAsync(cts.Token);
 }
 
@@ -1044,8 +1037,8 @@ if (guardados > 0) Console.WriteLine($"Guardados {guardados} personaje(s) conect
 dispatcher?.VolcarPersistenciaDiferida(forzar: true);
 // TODO LO DE ARRIBA SE ENCOLÓ en la base, detrás de lo que ya esperaba —los que se desconectaron hace un momento—, y
 // el hilo de la cola es de fondo: si el proceso termina sin esperarla, esos guardados mueren con él. Se cierra la cola
-// y se espera a que escriba todo.
-db.Dispose();
+// y se espera a que escriba todo; si la base no responde, lo que quedó va al archivo de rescate.
+db.Cerrar(dataRoot);
 (almacen as IDisposable)?.Dispose();   // la base: cierra la conexión y deja el archivo entero, sin el diario al lado
 Console.WriteLine("Servidor detenido. Hasta la proxima.");
 // Recién ACÁ se libera el handler de señal: hasta este punto el sistema tiene que esperarnos, o nos mata a

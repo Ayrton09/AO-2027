@@ -116,6 +116,9 @@ public class ImportadorTests : IDisposable
             "[COUNTERS]\r\nPena=30\r\n[FACCIONES]\r\nStatus=1\r\nCiudMatados=5\r\n" +
             "[FLAGS]\r\nCantidadAmigos=0\r\nCorreos=1\r\n[CORREO]\r\nEmisor1=Ciro\r\nCarta1=hola\r\nLeida1=0\r\nObjeto1=12-3-100-Espada\r\n",
             CoverAO.Protocol.Codec.Ansi);
+        // Las IPs baneadas del original, una por renglón; el "0" que trae su instalación no es una IP.
+        Directory.CreateDirectory(Path.Combine(Datos, "Dat"));
+        File.WriteAllText(Path.Combine(Datos, "Dat", "BanIps.dat"), "0\r\n10.9.8.7\r\n", CoverAO.Protocol.Codec.Ansi);
 
         var informe = Importador.Importar(Datos, Base);
 
@@ -129,6 +132,7 @@ public class ImportadorTests : IDisposable
         var cuenta = base_.LeerCuenta("vieja")!;
         Assert.Equal("10.0.0.1", cuenta.UltimaIp);
         Assert.NotNull(cuenta.UltimoIngreso);
+        Assert.Equal(new[] { "10.9.8.7" }, base_.LeerIpsBaneadas());
         Assert.False(Directory.Exists(Path.Combine(Datos, "Misc")), "leer la carpeta de origen no puede crearle nada");
     }
 
@@ -189,6 +193,8 @@ public class ImportadorTests : IDisposable
         public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => real.GuardarLlavesVendidas(llaves);
         public int LeerRecord() => real.LeerRecord();
         public void GuardarRecord(int record) => real.GuardarRecord(record);
+        public IReadOnlyList<string> LeerIpsBaneadas() => real.LeerIpsBaneadas();
+        public void GuardarIpsBaneadas(IReadOnlyList<string> ips) => real.GuardarIpsBaneadas(ips);
         public string Backup(string destDir, string stem) => real.Backup(destDir, stem);
     }
 

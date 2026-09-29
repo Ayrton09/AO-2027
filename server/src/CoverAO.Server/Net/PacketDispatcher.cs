@@ -1293,19 +1293,35 @@ public sealed partial class PacketDispatcher
         // espera a que termine de entrar. Lo que no protege la reserva —otro personaje de la misma cuenta, otro desde la
         // misma IP— se vuelve a mirar cuando llega la lectura.
         _world.ReservarEntrada(charName);
-        Responder(_db.LeerPersonajeAsync(charName), ficha =>
+        bool abandonada = false;
+        var lectura = _db.LeerPersonajeAsync(charName);
+        Responder(lectura, ficha =>
         {
             _world.SoltarEntrada(charName);
-            if (session.Cerrada) return;
+            if (abandonada || session.Cerrada) return;
             if (ficha is null) { RechazarConCartel(session, CartelPersonajeNoExiste, "sin archivo de personaje"); return; }
             TerminarDeEntrar(session, acc, account, ficha.CrearPlayer(_world.AllocateCharIndex(), account), version);
         }, alFallar: () =>
         {
             _world.SoltarEntrada(charName);
-            if (!session.Cerrada)
+            if (!abandonada && !session.Cerrada)
                 session.Send(ServerMessages.ShowMessageBox("No se pudo cargar el personaje. Probá de nuevo en un momento."));
         });
+        // CON LA BASE CAÍDA, EL CLIENTE NO SE QUEDA COLGADO (fase5/postgres/DISENO.md, 3.5): la lectura espera en la cola
+        // mientras la base no responde, y a los 10 s se le avisa y se abandona el intento. La reserva sigue hasta que la
+        // lectura vuelva: mientras tanto, ni otro ingreso ni un cambio de GM lo tratan como desconectado.
+        Task.Delay(PlazoDeLaLecturaDeEntrada).ContinueWith(_ => _loop.Enqueue(() =>
+        {
+            if (lectura.IsCompleted) return;
+            abandonada = true;
+            if (!session.Cerrada)
+                session.Send(ServerMessages.ShowMessageBox("No se puede cargar el personaje en este momento. Probá de nuevo en un rato."));
+        }), TaskScheduler.Default);
     }
+
+    /// <summary>Cuánto espera un ingreso a que la base le traiga el personaje antes de avisar que no se puede. Las pruebas lo
+    /// acortan en su propio despachador.</summary>
+    internal TimeSpan PlazoDeLaLecturaDeEntrada { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>La última mitad de la entrada al mundo, con el personaje ya leído. Vuelve a mirar lo que pudo cambiar
     /// mientras se leía: otro personaje de la misma cuenta, o desde la misma IP, que entró en el medio.</summary>

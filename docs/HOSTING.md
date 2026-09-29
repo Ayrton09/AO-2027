@@ -306,6 +306,13 @@ Con varios servidores en el mismo Postgres, una base por servidor (`Base=coverao
 
 Si Postgres no responde al arrancar, el servidor no arranca y dice por qué (sin mostrar la clave).
 
+**Si la base se cae con el servidor andando** —Postgres que se reinicia, un disco lleno, el archivo tomado por un
+antivirus—, el juego sigue: lo que se guarda espera en orden, en memoria, y se reintenta solo cada unos segundos. La
+consola lo avisa una vez cuando se cae y otra cuando vuelve, y el panel muestra el estado de la base y cuánto espera. El
+que quiere entrar mientras tanto recibe, a los 10 segundos, un cartel de que no se puede cargar el personaje. Si se
+apaga el servidor con la base todavía caída, lo que no se pudo guardar queda en `data/rescate-AAAAMMDD-HHMMSS.json`, y el
+próximo arranque lo aplica antes de abrir.
+
 ### Importar y exportar
 
 Con el servidor **apagado**, contra la base que diga el `Server.ini`:
@@ -354,18 +361,17 @@ del archivo. La forma barata de no tener el problema es tener el servidor **fuer
 
 Un backup que nunca se restauró no es un backup. Conviene probarlo **una vez** antes de necesitarlo de verdad.
 
-**Con la base** (`data/coverao.db`):
+**Con la base** (SQLite o Postgres), con el servidor **apagado**:
 
 ```sh
-# 1. Parar el servidor.
-# 2. Guardar lo que hay AHORA, por si el backup elegido no era el que uno creía. Van los tres: el diario de la base
-#    (-wal) puede tener lo último que se escribió.
-mv data/coverao.db data/coverao.db.antes
-mv data/coverao.db-wal data/coverao.db-wal.antes 2>/dev/null; rm -f data/coverao.db-shm
-# 3. Copiar el backup elegido en su lugar. `ls data/backups/` los lista del más viejo al más nuevo.
-cp data/backups/coverao-20260808-030000.db data/coverao.db
-# 4. Arrancar.
+# `ls data/backups/` los lista del más viejo al más nuevo. Lo que hay AHORA no se pierde: con SQLite la base de antes queda
+# al lado (coverao.db.antes-de-importar-...); con Postgres, en un backup (data/backups/antes-de-restaurar-....zip).
+CoverAO.Server restaurar data/backups/coverao-20260808-030000.db --reemplazar    # SQLite
+CoverAO.Server restaurar data/backups/coverao-20260808-030000.zip --reemplazar   # Postgres
 ```
+
+Un backup de SQLite (`.db`) se puede restaurar también en Postgres; uno de Postgres (`.zip`), sólo en Postgres. Un
+backup de una versión anterior del servidor se restaura igual: las tablas se ponen al día al restaurar.
 
 **Con los archivos** (`data/Charfile/`, `data/Cuentas/`):
 

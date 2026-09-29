@@ -116,7 +116,7 @@ public sealed class LogRing : TextWriter
 }
 
 /// <summary>Datos fijos del server para el panel (se calculan al arrancar).</summary>
-public readonly record struct ServerInfo(int Maps, int Npcs, int Objects, string Version, bool Fixture);
+public readonly record struct ServerInfo(int Maps, int Npcs, int Objects, string Version, bool Fixture, string Base = "");
 
 /// <summary>
 /// Panel de administración web del servidor (reemplaza el frmMain del server VB6, rediseñado).
@@ -135,7 +135,6 @@ public sealed class AdminServer
     private readonly Action<bool> _shutdown;   // (backup) => apagar
     private readonly LogRing? _log;
     private readonly AdminConfig _admin;
-    private readonly string _bannedIpsPath;   // persistencia de IPs baneadas (data/banned-ips.txt)
     /// <summary>El Server.ini vivo. Es la ÚNICA autoridad de rango, así que dar o sacar staff desde el panel
     /// se hace escribiéndolo a él y recargando — nunca tocando el personaje.</summary>
     private readonly Data.ServerIni? _ini;
@@ -146,12 +145,11 @@ public sealed class AdminServer
     private readonly object _banLock = new();
 
     public AdminServer(int port, string token, World world, GameLoop loop, Persistence db,
-        ServerInfo info, Action<bool> shutdown, LogRing? log, AdminConfig admin, string bannedIpsPath,
+        ServerInfo info, Action<bool> shutdown, LogRing? log, AdminConfig admin,
         Func<string, string>? backup = null, Data.ServerIni? ini = null)
     {
         _port = port; _token = token; _world = world; _loop = loop; _db = db; _info = info; _shutdown = shutdown; _log = log; _admin = admin;
         _ini = ini;
-        _bannedIpsPath = bannedIpsPath;
         _backup = backup;
         var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "admin.html");
         _html = File.Exists(path) ? File.ReadAllText(path) : "<h1>admin.html no encontrado</h1>";
@@ -342,6 +340,16 @@ public sealed class AdminServer
                 autosaveMin = _admin.AutosaveMinutes, nextSaveSec,
                 walkMs = _admin.WalkIntervalMs, attackMs = _admin.AttackIntervalMs,
                 autoMsgMin = _admin.AutoMsgMinutes, autoMessages = _admin.AutoMessages, nextAutoMsgSec,
+            },
+            // LA BASE (fase5/postgres/DISENO.md, 3.5): dónde está, si responde, cuántos pedidos esperan y desde cuándo el más
+            // viejo. Con la base caída el juego sigue y lo que se guarda espera en memoria: esto es lo que lo muestra.
+            baseDeDatos = new
+            {
+                donde = _info.Base,
+                caida = _db.Cola.CaidaDesde is not null,
+                caidaHaceSec = _db.Cola.CaidaDesde is { } caida ? (long)(DateTime.UtcNow - caida).TotalSeconds : 0,
+                pendientes = _db.Cola.Pendientes,
+                esperandoHaceSec = _db.Cola.EsperandoDesde is { } desde ? (long)(DateTime.UtcNow - desde).TotalSeconds : 0,
             },
             banned = BannedList(),
             bannedIps = _admin.BannedIpList(),
@@ -560,21 +568,8 @@ public sealed class AdminServer
                 p.Connection?.Close("IP baneada");
     }
 
-    /// <summary>Persiste la lista de IPs baneadas a data/banned-ips.txt (se recarga al arrancar el server).</summary>
-    private void SaveBannedIps()
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(_bannedIpsPath);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);   // el data/ puede no existir aún (server fresco sin logins)
-            // Atomico igual que el resto: la lista de baneados tambien quedaba en cero mientras se
-            // reescribia, y un corte ahi le devuelve la entrada a todos los que el host habia echado.
-            Data.EscrituraAtomica.Escribir(_bannedIpsPath,
-                string.Concat(_admin.BannedIpList().Select(l => l + Environment.NewLine)),
-                System.Text.Encoding.UTF8);
-        }
-        catch (Exception ex) { Console.Error.WriteLine($"[admin] no se pudo guardar {_bannedIpsPath}: {ex.Message}"); }
-    }
+    /// <summary>Guarda la lista de IPs baneadas en la base (por la cola; se lee al arrancar el server).</summary>
+    private void SaveBannedIps() => _admin.PersistBannedIps?.Invoke();
 
     private string[] BannedList()
     {

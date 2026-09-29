@@ -90,6 +90,8 @@ public class LaBaseFueraDelLoopTests : IDisposable
         public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => real.GuardarLlavesVendidas(llaves);
         public int LeerRecord() => real.LeerRecord();
         public void GuardarRecord(int record) => real.GuardarRecord(record);
+        public IReadOnlyList<string> LeerIpsBaneadas() => real.LeerIpsBaneadas();
+        public void GuardarIpsBaneadas(IReadOnlyList<string> ips) => real.GuardarIpsBaneadas(ips);
         public string Backup(string destDir, string stem) => real.Backup(destDir, stem);
     }
 
@@ -242,6 +244,28 @@ public class LaBaseFueraDelLoopTests : IDisposable
         Assert.Equal(1, await EnElLoop(() => _world.Players.Count(p => p.Name == "Aldo")));
         var entro = a.Carteles().Contains(Cartel) ? b : a;
         Assert.Equal(entro.RemoteEndpoint, aldo.Connection!.RemoteEndpoint);
+    }
+
+    /// <summary>
+    /// CON LA BASE CAÍDA, EL QUE ENTRA NO SE QUEDA COLGADO (fase5/postgres/DISENO.md, 3.5): si la lectura del personaje no
+    /// vuelve en el plazo, recibe un cartel. Cuando la lectura por fin vuelve, el intento ya se abandonó: no entra solo, y
+    /// la reserva se suelta —si no, ese personaje no podría entrar nunca más—.
+    /// </summary>
+    [Fact]
+    public async Task Si_la_base_no_trae_al_personaje_a_tiempo_se_avisa_y_no_entra_despues()
+    {
+        CuentaConAldo();
+        _dispatcher.PlazoDeLaLecturaDeEntrada = TimeSpan.FromMilliseconds(300);
+        _almacen.Frenar("Aldo");
+
+        var t = Entrar("Aldo", "tcp:10.0.0.2:2222");
+
+        Assert.True(await Esperar(() => t.Carteles().Any(c => c.Contains("en este momento"))), "no se le avisó");
+        Assert.True(await EnElLoop(() => _world.EstaEntrando("Aldo")));   // la lectura sigue en vuelo, y la reserva también
+        _almacen.Soltar();
+        Assert.True(await EsperarEnElLoop(() => !_world.EstaEntrando("Aldo")), "la reserva no se soltó");
+        await Vueltas(3);
+        Assert.Equal(0, await EnElLoop(() => _world.Players.Count(p => p.Name == "Aldo")));
     }
 
     [Fact]

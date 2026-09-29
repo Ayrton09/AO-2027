@@ -104,17 +104,23 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
             throw new InvalidOperationException(
                 $"La base es de un servidor más nuevo: tiene el esquema {actual} y éste conoce hasta el {ultima}. " +
                 "Actualizá el servidor o restaurá un backup.");
-        foreach (var (version, nombre, sql) in versiones.Where(v => v.Version > actual))
+        foreach (var version in versiones.Where(v => v.Version > actual))
         {
             using var tx = Conexion.BeginTransaction();
-            using (var c = Comando(sql, tx)) c.ExecuteNonQuery();
-            if (version == 2) PasarElMundoATablas(tx);   // lo que la versión 1 tenía como JSON
-            using (var c = Comando("INSERT INTO migraciones (version, descripcion, aplicada_en) VALUES (@v, @d, @t)", tx))
-            {
-                Valores(c, ("@v", version), ("@d", nombre), ("@t", ValorDeFecha(DateTime.UtcNow)));
-                c.ExecuteNonQuery();
-            }
+            AplicarVersion(version, tx);
             tx.Commit();
+        }
+    }
+
+    /// <summary>Una versión del esquema, en la transacción dada, y anotada en <c>migraciones</c>.</summary>
+    protected void AplicarVersion((int Version, string Nombre, string Sql) version, DbTransaction tx)
+    {
+        using (var c = Comando(version.Sql, tx)) c.ExecuteNonQuery();
+        if (version.Version == 2) PasarElMundoATablas(tx);   // lo que la versión 1 tenía como JSON
+        using (var c = Comando("INSERT INTO migraciones (version, descripcion, aplicada_en) VALUES (@v, @d, @t)", tx))
+        {
+            Valores(c, ("@v", version.Version), ("@d", version.Nombre), ("@t", ValorDeFecha(DateTime.UtcNow)));
+            c.ExecuteNonQuery();
         }
     }
 
@@ -155,7 +161,8 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
         foreach (var sql in new[]
                  {
                      "DELETE FROM personajes", "DELETE FROM cuentas", "DELETE FROM clanes", "DELETE FROM rechazos_de_clan",
-                     "DELETE FROM correo", "DELETE FROM suelo", "DELETE FROM llaves_vendidas", "UPDATE mundo SET record_usuarios = 0",
+                     "DELETE FROM correo", "DELETE FROM suelo", "DELETE FROM llaves_vendidas", "DELETE FROM ips_baneadas",
+                     "UPDATE mundo SET record_usuarios = 0",
                  })
         {
             using var c = Comando(sql, tramo.Tx);
@@ -573,6 +580,16 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
         using var c = Comando("UPDATE mundo SET record_usuarios = @r WHERE id = 1", tx);
         Valores(c, ("@r", record)).ExecuteNonQuery();
     }
+
+    public IReadOnlyList<string> LeerIpsBaneadas() => Leer("SELECT ip FROM ips_baneadas ORDER BY ip", r => r.GetString(0));
+
+    public void GuardarIpsBaneadas(IReadOnlyList<string> ips) => EnTransaccion(tx =>
+    {
+        using (var c = Comando("DELETE FROM ips_baneadas", tx)) c.ExecuteNonQuery();
+        using var fila = Comando("INSERT INTO ips_baneadas (ip) VALUES (@ip)", tx);
+        foreach (var ip in ips.Select(i => i.Trim()).Where(i => i.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+            Valores(fila, ("@ip", ip)).ExecuteNonQuery();
+    });
 
     /// <summary>
     /// LA VERSIÓN 2 PASA EL MUNDO A TABLAS. Lo que la 1 guardaba como JSON en <c>mundo_json</c> —el mismo formato de los

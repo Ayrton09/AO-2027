@@ -66,22 +66,21 @@ public sealed class AdminConfig
     /// </summary>
     public bool CentinelActive { get; set; }
 
-    /// <summary>Volcado de la lista a disco. Lo engancha Program.cs (data/banned-ips.txt) y lo llaman los dos
+    /// <summary>Reemplaza la lista entera: la relectura de la base, cuando vuelve.</summary>
+    public void ReplaceBannedIps(IEnumerable<string> ips) { _bannedIps.Clear(); LoadBannedIps(ips); }
+
+    /// <summary>Volcado de la lista a la base. Lo engancha Program.cs y lo llaman los dos
     /// caminos que mutan la lista: el panel de admin y los comandos GM /BANIP y /UNBANIP —el VB6 persiste en
     /// los dos casos, porque BanIpAgrega/BanIpQuita terminan siempre en BanIpGuardar (Admin.bas:302/348)—.
     /// Queda null si el proceso no tiene dónde escribir (tests), y entonces el ban vive sólo en memoria.</summary>
     public Action? PersistBannedIps { get; set; }
 
-    /// <summary>Relectura de la lista desde disco (VB6 <c>BanIpCargar</c>), para el /BANIPRELOAD: vacía la
-    /// lista en memoria y la repuebla con lo que haya en el archivo. Devuelve cuántas IPs quedaron, o -1 si el
-    /// proceso no tiene de dónde leer. Lo engancha Program.cs junto con <see cref="PersistBannedIps"/>.</summary>
+    /// <summary>Relectura de la lista desde la base (VB6 <c>BanIpCargar</c>), para el /BANIPRELOAD: pide la lista y,
+    /// cuando vuelve, la reemplaza entera (<see cref="ReplaceBannedIps"/>) —mientras tanto sigue la de antes, sin un
+    /// hueco en el que una IP baneada pueda entrar—. Devuelve cuántas IPs hay, o -1 si el proceso no tiene de dónde
+    /// leer. Lo engancha Program.cs junto con <see cref="PersistBannedIps"/>.</summary>
     public Func<int>? ReloadBannedIpsFrom { get; set; }
 
-    /// <summary>Vacía y repuebla la lista desde disco. Devuelve la cantidad final (o -1 sin archivo).</summary>
-    public int ReloadBannedIps()
-    {
-        if (ReloadBannedIpsFrom is null) return -1;
-        _bannedIps.Clear();
-        return ReloadBannedIpsFrom();
-    }
+    /// <summary>Relee la lista de la base. Devuelve la cantidad que hay (o -1 sin de dónde leer).</summary>
+    public int ReloadBannedIps() => ReloadBannedIpsFrom?.Invoke() ?? -1;
 }
