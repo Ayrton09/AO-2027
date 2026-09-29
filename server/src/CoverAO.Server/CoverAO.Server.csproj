@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -16,10 +17,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="CoverAO.Protocol.Tests" />
+    <InternalsVisibleTo Include="CoverAO.Postgres.Tests" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Las versiones del esquema de la base (Data/AlmacenSqlite.cs las aplica al abrir). Van ADENTRO del ejecutable: un
+    <!-- Las versiones del esquema de la base (Data/AlmacenRelacional.cs las aplica al abrir, las de cada motor). Van ADENTRO del ejecutable: un
          esquema que viaja aparte se puede quedar atrás del servidor que lo usa. -->
     <EmbeddedResource Include="Data\Esquema\*.sql" LogicalName="Esquema/%(Filename)%(Extension)" />
   </ItemGroup>

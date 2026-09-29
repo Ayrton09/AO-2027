@@ -7,11 +7,13 @@ namespace CoverAO.Server.Data;
 /// IMPORTAR Y EXPORTAR (fase5/postgres/DISENO.md, sección 6), y el primer arranque que importa solo.
 ///
 /// <para><b>Qué se importa:</b> una carpeta de datos —<c>Charfile/</c>, <c>Cuentas/</c>, <c>Misc/</c>—, la nuestra o la de un
-/// servidor del ORIGINAL (el lector entiende sus claves, y su correo va adentro de cada <c>.chr</c>), o una
-/// <c>coverao.db</c> del SQLite viejo, el del texto del <c>.chr</c> en una columna.</para>
+/// servidor del ORIGINAL (el lector entiende sus claves, y su correo va adentro de cada <c>.chr</c>), una <c>coverao.db</c>
+/// del SQLite viejo, el del texto del <c>.chr</c> en una columna, o una base de SQLite de ahora —la que se pasa a Postgres,
+/// o un backup—.</para>
 ///
-/// <para><b>Todo o nada.</b> Se copia a una base TEMPORAL; sólo si la verificación da bien —cada personaje releído igual— pasa
-/// a ser la de verdad. Si no, se tira y no cambió nada.</para>
+/// <para><b>Todo o nada.</b> En SQLite se copia a una base TEMPORAL que sólo pasa a ser la de verdad si la verificación da
+/// bien —cada personaje releído igual—; si no, se tira. En Postgres se copia adentro de UNA transacción, que sólo se confirma
+/// si la verificación da bien. En los dos casos, si algo no cierra no cambió nada.</para>
 /// </summary>
 public static class Importador
 {
@@ -45,6 +47,64 @@ public static class Importador
         if (File.Exists(archivoDeLaBase))
             ApartarBase(archivoDeLaBase, $".antes-de-importar-{DateTime.Now:yyyyMMdd-HHmmss}");
         File.Move(temporal, archivoDeLaBase);
+        return informe;
+    }
+
+    /// <summary>
+    /// Importa <paramref name="origen"/> a una base de Postgres, todo en UNA transacción que sólo se confirma si la
+    /// verificación da bien. Una base con cuentas no se toca, salvo con <paramref name="reemplazar"/>: ahí antes se hace un
+    /// backup de lo que hay en <paramref name="carpetaDeBackups"/>, y lo de antes se borra adentro de la misma transacción.
+    /// </summary>
+    public static InformeDeCopia ImportarAPostgres(string origen, AlmacenPostgres destino, bool reemplazar, string carpetaDeBackups)
+    {
+        bool vacia = destino.EstaVacia();
+        if (!vacia && !reemplazar)
+            throw new InvalidOperationException("la base de Postgres ya tiene cuentas: para pisarla, --reemplazar (antes se hace un backup de lo que hay).");
+        if (!vacia)
+        {
+            // Sin el prefijo de los backups de siempre: la poda no lo cuenta ni lo borra.
+            string backup = destino.Backup(carpetaDeBackups, $"antes-de-importar-{DateTime.Now:yyyyMMdd-HHmmss}");
+            Console.WriteLine($"Lo que había en la base quedó en {backup}.");
+        }
+        var (almacen, correoAparte, liberar) = AbrirOrigen(origen);
+        try
+        {
+            return destino.EnUnaSolaTransaccion(() =>
+            {
+                if (!vacia) destino.Vaciar();
+                return CopiaDeAlmacen.Copiar(almacen, destino, correoAparte);
+            }, informe => informe.SalioBien);
+        }
+        finally { liberar?.Dispose(); }
+    }
+
+    /// <summary>
+    /// EL PRIMER ARRANQUE CON POSTGRES: si la base está vacía y en <c>data/</c> hay un mundo —la <c>coverao.db</c> de cuando
+    /// el servidor andaba con SQLite, o personajes en archivos—, se importa solo, y lo viejo queda renombrado a
+    /// <c>*.importado</c>. Así se pasa de SQLite a Postgres cambiando el <c>Tipo</c>. Devuelve el informe, o null si no
+    /// había nada que importar; si la verificación falla, no toca nada y tira.
+    /// </summary>
+    public static InformeDeCopia? ImportarAPostgresSiHaceFalta(string dataRoot, string archivoSqlite, AlmacenPostgres destino)
+    {
+        string origen;
+        if (File.Exists(archivoSqlite)) origen = archivoSqlite;
+        else if (HayPersonajesEnArchivos(dataRoot)) origen = dataRoot;
+        else return null;
+        if (!destino.EstaVacia())
+        {
+            Console.WriteLine($"[base] OJO: {origen} tiene un mundo que no se usa: la base es la de Postgres, que ya tiene cuentas.");
+            return null;
+        }
+
+        Console.WriteLine($"[base] la base de Postgres está vacía: importando {origen}");
+        var informe = ImportarAPostgres(origen, destino, reemplazar: false, Path.Combine(dataRoot, "backups"));
+        string ruta = Path.Combine(dataRoot, $"importacion-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+        EscrituraAtomica.Escribir(ruta, informe.Texto(), System.Text.Encoding.UTF8);
+        if (!informe.SalioBien) throw new InvalidOperationException($"La importación no dio bien y no se tocó nada: ver {ruta}.");
+        if (origen == archivoSqlite) ApartarBase(archivoSqlite, ".importado");
+        else ApartarCarpetas(dataRoot);
+        Console.WriteLine($"[base] importado: {informe.Personajes} personajes de {informe.Cuentas} cuentas, " +
+                          $"{informe.Avisos.Count} aviso(s). El informe está en {ruta}.");
         return informe;
     }
 
@@ -91,15 +151,21 @@ public static class Importador
             if (eraElSqliteViejo) Restituir(origen, archivoDeLaBase);
             throw new InvalidOperationException($"La importación no dio bien y no se tocó nada: ver {ruta}.");
         }
-        if (origen == dataRoot)
-            foreach (var carpeta in new[] { "Charfile", "Cuentas", "Misc" })
-            {
-                string vieja = Path.Combine(dataRoot, carpeta);
-                if (Directory.Exists(vieja)) Directory.Move(vieja, vieja + ".importado");
-            }
+        if (origen == dataRoot) ApartarCarpetas(dataRoot);
         Console.WriteLine($"[base] importado: {informe.Personajes} personajes de {informe.Cuentas} cuentas, " +
                           $"{informe.Avisos.Count} aviso(s). El informe está en {ruta}.");
         return informe;
+    }
+
+    /// <summary>Las carpetas de los archivos ya importadas, renombradas a <c>*.importado</c>: quedan de respaldo y no se
+    /// vuelven a importar.</summary>
+    private static void ApartarCarpetas(string dataRoot)
+    {
+        foreach (var carpeta in new[] { "Charfile", "Cuentas", "Misc" })
+        {
+            string vieja = Path.Combine(dataRoot, carpeta);
+            if (Directory.Exists(vieja)) Directory.Move(vieja, vieja + ".importado");
+        }
     }
 
     public static bool HayPersonajesEnArchivos(string dataRoot)
@@ -116,8 +182,14 @@ public static class Importador
         var sinCorreo = new Dictionary<string, IReadOnlyList<MailEntry>>();
         if (File.Exists(origen))
         {
-            var viejo = new SqliteStore(origen);
-            return (new AlmacenDeTexto(viejo), sinCorreo, viejo);
+            if (EsDelSqliteViejo(origen))
+            {
+                var viejo = new SqliteStore(origen);
+                return (new AlmacenDeTexto(viejo), sinCorreo, viejo);
+            }
+            // Una base de ahora: la de un servidor que pasa a Postgres, o un backup.
+            var deAhora = new AlmacenSqlite(origen);
+            return (deAhora, sinCorreo, deAhora);
         }
         if (!Directory.Exists(origen)) throw new InvalidOperationException($"no existe: {origen}");
         var store = new FileStore(origen, crearCarpetas: false);

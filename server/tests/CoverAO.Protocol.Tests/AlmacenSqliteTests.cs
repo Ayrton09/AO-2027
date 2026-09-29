@@ -169,7 +169,7 @@ public class AlmacenSqliteTests : IDisposable
             Assert.Equal(9, almacen.LeerRecord());
         }
         Assert.Equal(0, Escalar(Archivo, "SELECT count(*) FROM sqlite_master WHERE name = 'mundo_json'"));
-        Assert.Equal(2, Escalar(Archivo, "SELECT max(version) FROM migraciones"));
+        Assert.Equal(AlmacenSqlite.Versiones()[^1].Version, Escalar(Archivo, "SELECT max(version) FROM migraciones"));
     }
 
     /// <summary>Una base con un esquema MÁS NUEVO que el del servidor no se abre: escribirle con el esquema viejo la rompería.</summary>

@@ -236,8 +236,14 @@ Antes de actualizar, mirá que haya un backup reciente en `data/backups/` — es
 
 ## Dónde se guardan los personajes
 
-En una base SQLite: **un archivo, `data/coverao.db`**, y nada que instalar. Es lo que usa una instalación nueva. Ahí
-van los personajes, las cuentas y lo que guarda el mundo: clanes, correo, suelo, llaves vendidas y el récord de conectados.
+En una base de datos, con dos opciones y las mismas tablas en las dos:
+
+- **SQLite: un archivo, `data/coverao.db`**, y nada que instalar. Es lo que usa una instalación nueva, y alcanza para
+  un servidor solo.
+- **Postgres**, para un servidor con páginas web que lean la misma base (ver más abajo).
+
+Ahí van los personajes, las cuentas y lo que guarda el mundo: clanes, correo, suelo, llaves vendidas y el récord de
+conectados.
 
 Una instalación que ya tenía personajes en archivos —un `.chr` por personaje en `data/Charfile/` y un `.cnt` por
 cuenta en `data/Cuentas/`— o la base vieja de `COVERAO_DB=sqlite` **los importa sola en el primer arranque**. Lo viejo
@@ -250,27 +256,66 @@ Se elige en el `Server.ini`:
 
 ```ini
 [BASEDEDATOS]
-; sqlite (un archivo) o archivos (un .chr por personaje, como el original). Sin la clave, sqlite.
+; sqlite (un archivo), postgres (un servidor con paginas web) o archivos (un .chr por personaje, como el original).
+; Sin la clave, sqlite.
 Tipo=sqlite
-; El archivo de la base, en la carpeta data/.
+; Con sqlite: el archivo de la base, en la carpeta data/.
 Archivo=coverao.db
+; Con postgres: donde esta la base.
+Servidor=localhost
+Puerto=5432
+Base=coverao
+Usuario=coverao
+Clave=
 ```
 
 | Clave | Qué hace |
 |---|---|
-| `Tipo` | `sqlite` o `archivos`. Vacía: `sqlite`, importando lo que hubiera en archivos |
-| `Archivo` | el archivo de la base, relativo a `data/`. Por defecto `coverao.db` |
+| `Tipo` | `sqlite`, `postgres` o `archivos`. Vacía: `sqlite`, importando lo que hubiera en archivos |
+| `Archivo` | el archivo de SQLite, relativo a `data/`. Por defecto `coverao.db` |
+| `Servidor`, `Puerto` | dónde escucha Postgres. Por defecto `localhost` y `5432` |
+| `Base`, `Usuario`, `Clave` | la base de Postgres y con qué usuario entra el servidor. Por defecto `coverao` y `coverao` |
 
-Como el resto del `Server.ini`, se pisan desde el entorno: `COVERAO_BASEDEDATOS_TIPO`, `COVERAO_BASEDEDATOS_ARCHIVO`.
+Como el resto del `Server.ini`, se pisan desde el entorno: `COVERAO_BASEDEDATOS_TIPO`, `COVERAO_BASEDEDATOS_CLAVE`, etc.
+La clave, mejor por ahí que escrita en el archivo.
+
+### Con Postgres
+
+El servidor pone y actualiza las tablas solo; lo que hay que darle es **una base vacía y un usuario que sea su dueño**,
+en UTF8. Con `psql`, como administrador de Postgres:
+
+```sql
+CREATE USER coverao PASSWORD 'una-clave-larga';
+CREATE DATABASE coverao OWNER coverao ENCODING 'UTF8' TEMPLATE template0;
+```
+
+Con varios servidores en el mismo Postgres, una base por servidor (`Base=coverao_rojo`, `Base=coverao_azul`).
+
+**Pasar de SQLite a Postgres.** Con el servidor apagado, dos caminos:
+
+- Poner `Tipo=postgres` y arrancar: si la base de Postgres está vacía y en `data/` está la `coverao.db`, la importa
+  sola, la verifica y deja el archivo renombrado a `coverao.db.importado`, con el informe en `data/`.
+- O pasarla antes, mirar el informe, y recién después cambiar el `Tipo`:
+
+  ```sh
+  CoverAO.Server pasar-a-postgres
+  ```
+
+  Copia la base de SQLite —la de `Archivo=`, u otra si se la nombra— a la de Postgres del `Server.ini`, y deja la de
+  SQLite como estaba.
+
+Si Postgres no responde al arrancar, el servidor no arranca y dice por qué (sin mostrar la clave).
 
 ### Importar y exportar
 
-Con el servidor **apagado**:
+Con el servidor **apagado**, contra la base que diga el `Server.ini`:
 
 ```sh
-# Pasar a la base una carpeta de datos: la de otra instalación, o la del servidor ORIGINAL (su Charfile y sus Cuentas).
+# Pasar a la base una carpeta de datos (la de otra instalación, o la del servidor ORIGINAL: su Charfile y sus Cuentas)
+# o un archivo de SQLite (otra coverao.db, o un backup).
 CoverAO.Server importar /ruta/a/la/carpeta
-# Pisar una base que ya tiene cosas: la de antes queda al lado, como coverao.db.antes-de-importar-...
+# Pisar una base que ya tiene cosas. Con SQLite, la de antes queda al lado, como coverao.db.antes-de-importar-...;
+# con Postgres, lo que había queda en un backup, data/backups/antes-de-importar-....zip.
 CoverAO.Server importar /ruta/a/la/carpeta --reemplazar
 # Sacar todo a .chr y .cnt, para mirar un personaje con un editor o para volver atrás.
 CoverAO.Server exportar /ruta/a/una/carpeta/nueva
@@ -283,9 +328,11 @@ La importación es todo o nada: si algo no se puede verificar, la base queda com
 Cada 30 minutos se copia el mundo entero a `data/backups/` sin frenar a nadie, conservando las últimas 48.
 Antes de cada copia se guarda a los conectados. También hay un botón en el panel de administración.
 
-Con la base, cada backup es **un archivo** `coverao-AAAAMMDD-HHMMSS.db`, una copia consistente aunque el
-servidor esté escribiendo, más una carpeta con el mismo nombre para los archivos sueltos de `data/`, como la
-lista de IPs baneadas.
+Con la base, cada backup es **un archivo**, una copia consistente aunque el servidor esté escribiendo, más una
+carpeta con el mismo nombre para los archivos sueltos de `data/`, como la lista de IPs baneadas. Con SQLite es
+`coverao-AAAAMMDD-HHMMSS.db`, una base que se abre tal cual. Con Postgres es `coverao-AAAAMMDD-HHMMSS.zip`: cada tabla
+en CSV y un manifiesto con la versión de las tablas, hecho por el servidor mismo, sin necesitar `pg_dump`. Para quien
+sabe de Postgres, `pg_dump` sirve igual.
 
 **Copiando la carpeta `data/` se reconstruye el servidor completo en otra máquina.** Es lo único que no se
 puede volver a generar.

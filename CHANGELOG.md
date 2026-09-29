@@ -232,6 +232,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
   uno, y deja lo viejo al lado. `CoverAO.Server importar <carpeta>` hace lo mismo con cualquier carpeta de datos,
   también la de un servidor del original con su correo; `exportar` saca todo a `.chr` y `.cnt`.
 
+- **Para un servidor con páginas web, Postgres**: `[BASEDEDATOS] Tipo=postgres` y dónde está la base, con las mismas
+  tablas que SQLite. Con la base vacía, el primer arranque importa la `coverao.db`, o se la pasa antes con
+  `CoverAO.Server pasar-a-postgres`. El backup lo hace el servidor mismo, sin `pg_dump`.
+
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, si sus hechizos no

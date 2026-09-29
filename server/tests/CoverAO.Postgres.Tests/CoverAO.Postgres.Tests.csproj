@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- LAS PRUEBAS CONTRA POSTGRES (fase5/postgres/DISENO.md, sección 9). Aparte del proyecto de siempre y FUERA de la
+       solución, para que un `dotnet test` casual no pida Postgres: las corre la puerta (verificar.ps1), que lo prende. Sin
+       Postgres FALLAN, no se saltean. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CoverAO.Server\CoverAO.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- La batería de contrato es UNA para todos los almacenes: el archivo se comparte, no se copia. -->
+    <Compile Include="..\CoverAO.Protocol.Tests\ContratoDelAlmacenTests.cs" Link="ContratoDelAlmacenTests.cs" />
+  </ItemGroup>
+
+</Project>

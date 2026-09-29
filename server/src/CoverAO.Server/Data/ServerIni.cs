@@ -271,11 +271,19 @@ public sealed class ServerIni
     public int BackupsAConservar { get; private set; } = DefaultBackupsAConservar;
     public int LogDias { get; private set; } = 7;          // días de log en disco. 0 = no escribir archivo
 
-    /// <summary><c>[BASEDEDATOS] Tipo</c>: <c>sqlite</c> (una base en un archivo) o <c>archivos</c> (un <c>.chr</c> por
-    /// personaje, como el original). Vacío: el servidor elige (ver <see cref="Almacenes.Abrir"/>).</summary>
+    /// <summary><c>[BASEDEDATOS] Tipo</c>: <c>sqlite</c> (una base en un archivo), <c>postgres</c> (un servidor con páginas
+    /// web) o <c>archivos</c> (un <c>.chr</c> por personaje, como el original). Vacío: el servidor elige (ver
+    /// <see cref="Almacenes.Abrir"/>).</summary>
     public string TipoDeBase { get; private set; } = "";
     /// <summary><c>[BASEDEDATOS] Archivo</c>: el archivo de SQLite, relativo a la carpeta <c>data/</c>.</summary>
     public string ArchivoDeBase { get; private set; } = "coverao.db";
+    /// <summary><c>[BASEDEDATOS] Servidor</c>, <c>Puerto</c>, <c>Base</c>, <c>Usuario</c> y <c>Clave</c>: dónde está la base
+    /// de Postgres. La clave también puede venir del entorno (<c>COVERAO_BASEDEDATOS_CLAVE</c>), que es lo que usa Docker.</summary>
+    public string ServidorDeBase { get; private set; } = "localhost";
+    public int PuertoDeBase { get; private set; } = 5432;
+    public string NombreDeBase { get; private set; } = "coverao";
+    public string UsuarioDeBase { get; private set; } = "coverao";
+    public string ClaveDeBase { get; private set; } = "";
 
     // Relojes de COMBATE (VB6 [INTERVALOS]). Los defaults son los del Server.ini del install, no inventados.
     // 0 = desactivado, igual que el resto. Ver Game/CombatTiming.cs: los dos cruzados son ATAJOS, no gates.
@@ -1180,6 +1188,14 @@ public sealed class ServerIni
         cfg.TipoDeBase = ini.GetString("BASEDEDATOS", "Tipo").Trim().ToLowerInvariant();
         string archivoDeBase = ini.GetString("BASEDEDATOS", "Archivo").Trim();
         if (archivoDeBase.Length > 0) cfg.ArchivoDeBase = archivoDeBase;
+        string servidorDeBase = ini.GetString("BASEDEDATOS", "Servidor").Trim();
+        if (servidorDeBase.Length > 0) cfg.ServidorDeBase = servidorDeBase;
+        cfg.PuertoDeBase = Math.Clamp(ini.GetInt("BASEDEDATOS", "Puerto", cfg.PuertoDeBase), 1, 65535);
+        string nombreDeBase = ini.GetString("BASEDEDATOS", "Base").Trim();
+        if (nombreDeBase.Length > 0) cfg.NombreDeBase = nombreDeBase;
+        string usuarioDeBase = ini.GetString("BASEDEDATOS", "Usuario").Trim();
+        if (usuarioDeBase.Length > 0) cfg.UsuarioDeBase = usuarioDeBase;
+        cfg.ClaveDeBase = ini.GetString("BASEDEDATOS", "Clave");
         // Los relojes se acotan con PISO 1 minuto: un 0 (o un negativo) haría que el día entero durara una
         // vuelta del loop y el mundo amaneciera y anocheciera 25 veces por segundo, con su aviso de chat cada
         // vez. El techo de 1440 es un día real; más que eso el ciclo deja de ser un ciclo.

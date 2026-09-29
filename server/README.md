@@ -39,9 +39,12 @@ Con `--fixture` arranca el escenario de pruebas en lugar del mundo real.
 
 ## Persistencia
 
-Una base SQLite con una tabla por cosa (`data/coverao.db`, el esquema en `Data/Esquema/`), o —con
-`[BASEDEDATOS] Tipo=archivos`— los `.chr` y `.cnt` en el formato INI del original. Todo pasa por una cola con un
-solo escritor (`Data/ColaDeLaBase.cs`): el hilo del mundo nunca espera a la base. Los datos de un servidor original
-se importan con `CoverAO.Server importar <carpeta>`, y la instalación que tenía archivos los importa sola en el
-primer arranque. Las contraseñas se guardan con PBKDF2-HMAC-SHA256 (210 000 iteraciones); los hashes viejos se
+Una base con una tabla por cosa, el esquema en `Data/Esquema/` y el mismo SQL para los dos motores
+(`Data/AlmacenRelacional.cs`): SQLite (`data/coverao.db`, por defecto) o Postgres (`[BASEDEDATOS] Tipo=postgres`, para
+un servidor con páginas web). Con `Tipo=archivos`, los `.chr` y `.cnt` en el formato INI del original. Todo pasa por
+una cola con un solo escritor (`Data/ColaDeLaBase.cs`): el hilo del mundo nunca espera a la base. Los datos de un
+servidor original se importan con `CoverAO.Server importar <carpeta>`; la instalación que tenía archivos los importa
+sola en el primer arranque, y una base de Postgres vacía importa sola la `coverao.db` (o se pasa con
+`CoverAO.Server pasar-a-postgres`). Las pruebas contra Postgres están aparte, en `tests/CoverAO.Postgres.Tests`, y
+necesitan un Postgres andando (`COVERAO_PRUEBAS_POSTGRES`): las corre la puerta. Las contraseñas se guardan con PBKDF2-HMAC-SHA256 (210 000 iteraciones); los hashes viejos se
 migran en el primer login. El personaje se guarda al desconectar, en cada autosave y antes de cada backup.
