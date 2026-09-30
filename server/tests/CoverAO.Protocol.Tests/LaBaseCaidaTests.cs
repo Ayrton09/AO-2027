@@ -110,7 +110,9 @@ public sealed class LaBaseCaidaTests : IDisposable
         control.Falla(_ => null);   // vuelve
         Assert.True(cola.Vaciar(TimeSpan.FromSeconds(10)));
         Assert.Null(cola.CaidaDesde);
-        Assert.Equal(0, cola.Pendientes);
+        // `Vaciar` vuelve cuando se aplicó su marca, y la marca deja de contar como pendiente un instante DESPUÉS, en el
+        // `finally` del escritor: leerlo de una fallaba con la máquina cargada (30/09, una vez en la suite, cinco de cinco sola).
+        Assert.True(SpinWait.SpinUntil(() => cola.Pendientes == 0, TimeSpan.FromSeconds(5)), $"quedan {cola.Pendientes} pendientes");
     }
 
     /// <summary>Un error que no es de la base —un dato que no entra, un bug— no se reintenta: se anota y la cola sigue.</summary>

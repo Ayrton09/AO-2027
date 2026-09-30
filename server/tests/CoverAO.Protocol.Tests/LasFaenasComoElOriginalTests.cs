@@ -110,9 +110,19 @@ public class LasFaenasComoElOriginalTests : IDisposable
         Plantar(X + 1, Y, o => o.IsTree);
         await Clickear(s, X + 1, Y, GameLimits.SkillBotanica);
         Vueltas(s, p, 1);
-        await Asentar(t);
+        await HastaQueLlegue(t, m => m.StartsWith("¡Has obtenido raíces!("));
 
         Assert.Contains(t.Textos(), m => m.StartsWith("¡Has obtenido raíces!("));
+    }
+
+    /// <summary>
+    /// Espera a que llegue ESE texto, o cinco segundos. <see cref="Asentar"/> para cuando pasan 150 ms sin paquetes nuevos, y con
+    /// la máquina cargada el escritor de la sesión puede no haber mandado nada todavía: medido el 30/09, este test falló una vez
+    /// con la suite y cuatro servidores de bots andando, y pasó cinco de cinco solo.
+    /// </summary>
+    private static async Task HastaQueLlegue(Transporte t, Func<string, bool> cual)
+    {
+        for (int i = 0; i < 100 && !t.Textos().Any(cual); i++) await Task.Delay(50);
     }
 
     [Fact]
