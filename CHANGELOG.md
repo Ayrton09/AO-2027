@@ -282,7 +282,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   mapa seguro —aunque quede lejos— y vuelven a casa con la runa, en vez de cruzar el desierto; y si no encuentran
   dónde cazar, también. Salen a comprar pociones sólo si les alcanza para una. De un lugar lleno salen sin frenar en
   el camino, y el que viaja a otro mapa para trabajar se queda un rato. Desde el último nivel de novato eligen dónde
-  cazar por lo que rinde el mapa entero, hasta cuatro mapas más allá, y el Cazador pelea con el arco.
+  cazar por lo que rinde el mapa entero, hasta cuatro mapas más allá, y el Cazador pelea con el arco. No van a cazar
+  donde después no tienen cómo volver a comprar, y en el pueblo compran de una el equipo que los mejora.
 
 ## 1.0.0 — 2026-09-16
 
