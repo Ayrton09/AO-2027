@@ -1258,6 +1258,18 @@ public sealed class Bot
         // battleMode 1— donde nadie lo atendía. De los 863 mapas del mundo, 55 tienen battleMode 2 o 3 y 23 de
         // ésos tienen mercader: destinos sobran.
         var tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
+        // Y PASADO EL NOVATO, CON UNA RUNA QUE LO DEJA DONDE LE VENDEN, A COMPRAR NO SE CRUZA POR DONDE LO MATAN: si no hay tienda
+        // por un camino sin peligro, lo esencial se va a buscar con la runa (ver `VolverACasaAsync`). Medido en `paso16b` (29/09):
+        // tres bots de nivel 20 y 21 muertos por Arañas Gigantes en el Desierto de Rinkel (el 15 y el 16), yendo de compras a
+        // Rinkel desde el 13, que queda a cinco mapas por el desierto; una de ellas llevaba 94 pociones.
+        var pisableParaComprar = Pisable(sentidos);
+        if (sentidos.Nivel > GameLimits.NewbieMaxLevel && !_runaNoSirveParaComprar
+            && sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) != 0)
+        {
+            var pisable = pisableParaComprar;
+            var sinPeligro = PasaSinPeligro(sentidos, NingunMapa);
+            pisableParaComprar = m => pisable(m) && sinPeligro(m);
+        }
         // NO HAY NINGUNO A LA VISTA: se viaja. Se intenta DOS veces porque el primer destino se elige sin
         // conocer el mapa de llegada —desde otro mapa no se puede saber por dónde se va a entrar— y muchos
         // mercaderes están adentro de un edificio al que no se llega caminando: medido, en el mapa donde nacen
@@ -1266,7 +1278,7 @@ public sealed class Bot
         bool abrioUnaPuerta = false, llegoAlPueblo = false;
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende, Pisable(sentidos)) is not { } lugar)
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende, pisableParaComprar) is not { } lugar)
             {
                 // SIN TIENDA A LA QUE SE LLEGUE CAMINANDO, LA RUNA. Hay mapas a los que se entra y de los que no se
                 // sale a pie: medido, desde el mapa 62 no hay a pie ningún vendedor de piquetes ni de hachas, y la
@@ -1303,7 +1315,7 @@ public sealed class Bot
                 // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS: ver `PuebloConMercader`.
                 var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion,
                     m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
-                    Pisable(sentidos), PasaSinPeligro(sentidos, NingunMapa));
+                    pisableParaComprar, PasaSinPeligro(sentidos, NingunMapa));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto,
@@ -1313,8 +1325,9 @@ public sealed class Bot
                                                     vaPorAntidoto,
                                                     vaPorEquipo || hayArmaAlAlcance, vaPorHechizo);
                 // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
-                // tienda, no se la vuelve a usar para esto hasta cambiar de hogar.
-                bool leFaltaLoEsencial = vaPorPociones || vaPorComida || vaPorBebida;
+                // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
+                // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
+                bool leFaltaLoEsencial = LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia)) || vaPorComida || vaPorBebida;
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna)
                 {
@@ -3208,9 +3221,17 @@ public sealed class Bot
             if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene
         }
         int antes = sentidos.Mapa;
+        var dondeEstaba = sentidos.Posicion;
         if (!Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna)) return false;
-        for (int i = 0; i < 12 && sentidos.Mapa == antes; i++) await Task.Delay(250, ct);
+        for (int i = 0; i < 12 && sentidos.Mapa == antes && sentidos.Posicion == dondeEstaba; i++) await Task.Delay(250, ct);
         _runaDejoEn = sentidos.Mapa;
+        // Y SI DONDE LO DEJA NO LE VENDEN, la runa no le sirve para comprar hasta que cambie de hogar. Medido en `tardeM2`
+        // (29/09): Milo volvía con la runa a Illiandor, su hogar, se iba escapando de los guardias que van por él, cazaba sin
+        // pociones y volvía, ocho veces en la hora; y Nadia caminaba hasta Nix, la runa la dejaba en Nix —su hogar, donde nadie
+        // le vende a un ciudadano— y volvía a cazar, diecisiete veces. Se mira por la baldosa: la runa puede dejarlo en el mismo
+        // mapa.
+        bool loLlevo = sentidos.Mapa != antes || sentidos.Posicion != dondeEstaba;
+        if (loLlevo && !LeVendenAca(sentidos.Mapa)) _runaNoSirveParaComprar = true;
         return true;
     }
 

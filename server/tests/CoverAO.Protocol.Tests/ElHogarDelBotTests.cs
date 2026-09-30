@@ -50,6 +50,31 @@ public class ElHogarDelBotTests
         Assert.False(Bot.NoSeGraduaAhi(GameLimits.NewbieMaxLevel, d.MapZone(20)), "afuera del dungeon, sí");
     }
 
+    /// <summary>
+    /// A COMPRAR, PASADO EL NOVATO Y CON LA RUNA, NO SE CRUZA EL DESIERTO: desde el 13 Rinkel queda a cinco mapas por el 21 y el 16,
+    /// donde nacen Arañas Gigantes que pegan hasta 115. Medido en `paso16b`: tres bots de nivel 20 y 21 muertos ahí yendo de
+    /// compras. Buscando el pueblo sólo por donde no lo matan, desde ahí no hay: le toca la runa.
+    /// </summary>
+    [Fact]
+    public void A_comprar_no_se_cruza_el_desierto()
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return;
+        var nav = new Navegante(d);
+        const int nivel = 20, vida = 190;
+        Func<int, bool> pisable = m => Bot.PuedeEntrar(nivel, d.MapZone(m));
+        Func<int, bool> peligroso = m => d.MapSpawns.TryGetValue(m, out var sp)
+            && sp.Any(q => Bot.EsPeligrosoPara(d.Npc((short)q.NpcIndex), vida, nivel, conPociones: true, curaVeneno: false));
+        Func<int, bool> sinPeligro = m => pisable(m) && !peligroso(m);
+        Func<int, bool> vendePociones = m => Bot.ElMercaderLeVende(null, d.MapBattleMode(m), Player.StatusCiudadano)
+            && d.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => d.Npc((short)q.NpcIndex)?.StockItems is { Count: > 0 } st
+                   && st.Any(s => d.Obj((short)s.ObjIndex) is { IsPotion: true, SubType: 3 }));
+        var desde = ((byte)10, (byte)30);
+        Assert.True(peligroso(16), "premisa: en el 16 nace algo que lo mata");
+        Assert.Equal(20, Bot.PuebloConMercader(nav, 13, desde, vendePociones, pisable, sinPeligro)?.Mapa);
+        Assert.Null(Bot.PuebloConMercader(nav, 13, desde, vendePociones, sinPeligro, sinPeligro));
+    }
+
     /// <summary>Y en Rinkel le venden a un ciudadano, y al sacerdote se llega desde la entrada de la cuna —por donde el bot entra a
     /// comprar— abriendo una puerta del templo: sin abrirla, a cinco baldosas no se llega, y el /HOGAR pide cinco o menos.</summary>
     [Fact]
