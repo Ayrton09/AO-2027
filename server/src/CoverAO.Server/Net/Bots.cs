@@ -4630,6 +4630,9 @@ public sealed class Bot
                            sentidos.BaldosasOcupadas()) is not { } acercarse)
             { NoSeLlegaA(presa); return true; }
             rodeando = acercarse.Rodeando;
+            // NI PERSIGUIENDO SE METE A LA VISTA DE LO PELIGROSO: ver `EntraALaVistaDelPeligro`. Esa presa se deja un rato, como la
+            // que no se alcanza, para no volver a elegirla en la vuelta siguiente.
+            if (EntraALaVistaDelPeligro((x, y), acercarse.Paso, PeligrosALaVista(sentidos))) { NoSeLlegaA(presa); return true; }
             if (await UnPasoHaciaAsync(transporte, sentidos, acercarse.Paso.X - x, acercarse.Paso.Y - y, ct) is var r && r != Paso.Dado)
                 return r != Paso.SinConexion;
         }
@@ -5238,6 +5241,18 @@ public sealed class Bot
         int antes = peligros.Min(p => Math.Abs(p.X - desde.X) + Math.Abs(p.Y - desde.Y));
         return despues <= RadioDeSusto && despues <= antes;
     }
+
+    /// <summary>
+    /// ¿ESE PASO LO METE A LA VISTA DE ALGO PELIGROSO? Si lo deja adentro de la vista de algo peligroso (<see cref="AlAlcanceDeSuVista"/>)
+    /// que desde donde está todavía no lo ve. Lo que ya lo veía no cuenta: moverse adentro de su vista no cambia nada.
+    ///
+    /// <para>No empezar una pelea con algo peligroso a la vista se miraba sólo al empezar, y la persecución lo llevaba igual: medido en
+    /// `cadena2` (30/09), Elmo, nivel 13 con 102 de vida, persiguió en el 208 la misma presa ocho veces en un minuto, la última hacia
+    /// donde nace el Señor de las sombras —que lo tenía a catorce baldosas y camina hacia lo que ve—, y en cinco segundos estaba
+    /// al 37 %: pega hasta 75.</para>
+    /// </summary>
+    public static bool EntraALaVistaDelPeligro((byte X, byte Y) desde, (byte X, byte Y) hasta, IReadOnlyCollection<(byte X, byte Y)> peligros) =>
+        peligros.Any(o => AlAlcanceDeSuVista(hasta, o) && !AlAlcanceDeSuVista(desde, o));
 
     /// <summary>Dónde está, de lo que tiene a la vista, lo peligroso para él.</summary>
     private List<(byte X, byte Y)> PeligrosALaVista(SentidosDelBot sentidos)
