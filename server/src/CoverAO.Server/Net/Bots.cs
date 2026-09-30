@@ -2679,20 +2679,23 @@ public sealed class Bot
     /// <para>Y ENTRE LOS QUE RINDEN IGUAL, EL SUYO: <paramref name="desempate"/> ordena los empates de lo que rinde (ver
     /// <see cref="CuantoLeGusta"/>). Sin él gana siempre el más cercano, y todos los que salen del mismo lugar van al mismo
     /// coto.</para>
+    ///
+    /// <para>Con <paramref name="porLoQueSuma"/>, lo que rinde es lo que suma el mapa entero: ver <see cref="EligePorLoQueSuma"/>.</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? ElegirCoto(Navegante mapas, int mapa, (byte X, byte Y) desde,
                                                                      Func<int, bool> esPresa, Func<int, bool> paga,
                                                                      Func<int, int> rinde,
                                                                      Func<int, bool>? pisable, out bool porElOro,
                                                                      out int porLoQueRinde, Func<int, bool>? seCazaAhi = null,
-                                                                     Func<int, int>? desempate = null, Func<int, bool>? nunca = null)
+                                                                     Func<int, int>? desempate = null, Func<int, bool>? nunca = null,
+                                                                     bool porLoQueSuma = false)
     {
         if (seCazaAhi is not null
             && ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, seCazaAhi, desempate,
-                               out porElOro, out porLoQueRinde) is { } sinPeligro)
+                               out porElOro, out porLoQueRinde, porLoQueSuma) is { } sinPeligro)
             return sinPeligro;
         return ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, nunca is null ? null : m => !nunca(m), desempate,
-                               out porElOro, out porLoQueRinde);
+                               out porElOro, out porLoQueRinde, porLoQueSuma);
     }
 
     /// <summary><see cref="ElegirCoto"/> entre los mapas que cumplen <paramref name="sirve"/> (todos, si es null).</summary>
@@ -2700,7 +2703,8 @@ public sealed class Bot
                                                                            Func<int, bool> esPresa, Func<int, bool> paga,
                                                                            Func<int, int> rinde, Func<int, bool>? pisable,
                                                                            Func<int, bool>? sirve, Func<int, int>? desempate,
-                                                                           out bool porElOro, out int porLoQueRinde)
+                                                                           out bool porElOro, out int porLoQueRinde,
+                                                                           bool porLoQueSuma = false)
     {
         porLoQueRinde = 0;
         // LO QUE RINDE MANDA CUANDO LA DIFERENCIA ES GRANDE, y va primero: ni la cantidad ni el oro sirven para salir
@@ -2708,13 +2712,28 @@ public sealed class Bot
         // experiencia— y ahí se queda para siempre, mientras a dos mapas hay Esqueletos Guerreros de 270 desde el
         // nivel 13 y Orcos de 505 desde el 20. Con 53 presas, la cuna gana siempre por cantidad.
         // Donde está parado no rinde nada si ahí no se caza: con cualquier coto que sirva, se va.
-        var acaRinde = sirve is null || sirve(mapa) ? mapas.LoQueMasRinde(mapa, desde, rinde) : null;
-        if (mapas.CotoQueMasRinde(mapa, desde, rinde, SaltosHastaElCoto, pisable, sirve, desempate) is { } gordo && gordo.Mapa != mapa
-            && ValeMudarsePorLoQueRinde(acaRinde?.Rinde ?? 0, gordo.Rinde))
+        if (porLoQueSuma)
         {
-            porElOro = false;
-            porLoQueRinde = gordo.Rinde;
-            return (gordo.Mapa, gordo.X, gordo.Y, gordo.Saltos);
+            // PASADO EL NOVATO, LO QUE SUMA: ver `EligePorLoQueSuma`.
+            int acaSuma = sirve is null || sirve(mapa) ? mapas.LoQueSuma(mapa, desde, rinde)?.Suma ?? 0 : 0;
+            if (mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, pisable, sirve, desempate,
+                                     LoMinimoParaMudarse(acaSuma)) is { } rico && rico.Mapa != mapa)
+            {
+                porElOro = false;
+                porLoQueRinde = rico.Rinde;
+                return (rico.Mapa, rico.X, rico.Y, rico.Saltos);
+            }
+        }
+        else
+        {
+            var acaRinde = sirve is null || sirve(mapa) ? mapas.LoQueMasRinde(mapa, desde, rinde) : null;
+            if (mapas.CotoQueMasRinde(mapa, desde, rinde, SaltosHastaElCoto, pisable, sirve, desempate) is { } gordo && gordo.Mapa != mapa
+                && ValeMudarsePorLoQueRinde(acaRinde?.Rinde ?? 0, gordo.Rinde))
+            {
+                porElOro = false;
+                porLoQueRinde = gordo.Rinde;
+                return (gordo.Mapa, gordo.X, gordo.Y, gordo.Saltos);
+            }
         }
 
         Func<int, bool> conOro = f => esPresa(f) && paga(f);
@@ -2765,8 +2784,10 @@ public sealed class Bot
                                                                              Func<int, bool> esPresa, Func<int, bool> paga,
                                                                              Func<int, int> rinde, Func<int, bool>? pisable,
                                                                              Func<int, bool> sirve, Func<int, int>? desempate,
-                                                                             out bool porElOro, out int porLoQueRinde) =>
-        ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirve, desempate, out porElOro, out porLoQueRinde);
+                                                                             out bool porElOro, out int porLoQueRinde,
+                                                                             bool porLoQueSuma = false) =>
+        ElegirCotoEntre(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirve, desempate, out porElOro, out porLoQueRinde,
+                        porLoQueSuma);
 
     /// <summary>
     /// ¿SIRVE PARA IRSE AHÍ DE UN LUGAR LLENO? Si no está lleno también y no nace ahí NADA peligroso para él, sea el mapa seguro o
@@ -2800,17 +2821,17 @@ public sealed class Bot
                                                                                Func<int, bool> sirveParaIrseDelLleno,
                                                                                Func<int, int>? desempate,
                                                                                out bool porElOro, out int porLoQueRinde,
-                                                                               Func<int, bool>? nunca = null)
+                                                                               Func<int, bool>? nunca = null, bool porLoQueSuma = false)
     {
         if (sigueLleno(mapa)
             && OtroCotoSinPeligro(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirveParaIrseDelLleno, desempate,
-                                  out porElOro, out porLoQueRinde) is { } otro)
+                                  out porElOro, out porLoQueRinde, porLoQueSuma) is { } otro)
             return otro;
         var elegido = ElegirCoto(mapas, mapa, desde, esPresa, paga, rinde, pisable, out porElOro, out porLoQueRinde, seCazaAhi, desempate,
-                                 nunca);
+                                 nunca, porLoQueSuma);
         if (elegido is { } e && e.Mapa != mapa && sigueLleno(e.Mapa))
             return OtroCotoSinPeligro(mapas, mapa, desde, esPresa, paga, rinde, pisable, sirveParaIrseDelLleno, desempate,
-                                      out porElOro, out porLoQueRinde);
+                                      out porElOro, out porLoQueRinde, porLoQueSuma);
         return elegido;
     }
 
@@ -2896,9 +2917,24 @@ public sealed class Bot
     /// Escorpiones de 38 y lo mejor a dos mapas son Serpientes de 25, así que se queda —y hace bien—; el mismo bot en
     /// nivel 13 sigue con el Lobo de 115 teniendo Esqueletos Guerreros de 270 al lado, y ahí se muda.
     /// </summary>
-    public static bool ValeMudarsePorLoQueRinde(int rindeAca, int rindeAlla) => rindeAca <= 0 ? rindeAlla > 0 : rindeAlla >= rindeAca * VecesQueTieneQueRendir;
+    public static bool ValeMudarsePorLoQueRinde(int rindeAca, int rindeAlla) => rindeAlla >= LoMinimoParaMudarse(rindeAca);
 
-    private const int SaltosHastaElCoto = 2, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
+    /// <summary>Lo menos que tiene que rendir otro lugar para que valga mudarse (<see cref="ValeMudarsePorLoQueRinde"/>).</summary>
+    public static int LoMinimoParaMudarse(int rindeAca) => rindeAca <= 0 ? 1 : rindeAca * VecesQueTieneQueRendir;
+
+    /// <summary>
+    /// ¿ELIGE EL COTO POR LO QUE SUMA EL MAPA? Pasado el novato, sí: la experiencia de todas las presas que nacen ahí, y hasta
+    /// <see cref="SaltosHastaElCotoQueSuma"/> mapas. Antes, por la criatura más gorda a dos mapas, que es lo que lo saca de la cuna.
+    ///
+    /// <para>Por la más gorda, en el late gana un mapa con dos Zombies y el resto de relleno. Medido en `tardeL1` y `tardeL2`
+    /// (30/09): Elmo, de nivel 27, pasó las dos corridas enteras en el 14 —dos Zombies y diez Lobos— con el 18 a un mapa —doce Zombies y
+    /// doce Lobos—: la criatura más gorda es la misma de los dos lados y no valía mudarse. Y Nadia, de nivel 24, en el 25 —dos
+    /// Zombies entre Murciélagos y Serpientes— con el 18 a dos. Preguntado a la data: desde Rinkel, que es adonde vuelve a
+    /// comprar, un nivel 26 elegía los Lobos del 19, a dos mapas, con doce Zombies en el 13 y en el 18, a tres.</para>
+    /// </summary>
+    public static bool EligePorLoQueSuma(int nivel) => nivel > GameLimits.NewbieMaxLevel;
+
+    private const int SaltosHastaElCoto = 2, SaltosHastaElCotoQueSuma = 4, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
 
     /// <summary>
     /// Cuando hace rato que no aparece una presa, viajar a un mapa donde haya. Devuelve si se ocupó de esto.
@@ -2954,7 +2990,8 @@ public sealed class Bot
             hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
                                            CruzaSinPeligro(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
                                            m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
-                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca);
+                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca,
+                                           EligePorLoQueSuma(nivel));
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
         // SIN NINGÚN COTO, COMO EL VIAJE QUE NO LLEGA: al segundo, a casa con la runa (ver `SiEstaEncerrado`). Que no haya ninguno

@@ -659,6 +659,62 @@ public sealed class Navegante
         return mejor;
     }
 
+    /// <summary>
+    /// LO QUE SUMA ese mapa: la experiencia de todas las criaturas que nacen en baldosas a las que se llega caminando desde
+    /// <paramref name="desde"/>, según <paramref name="rinde"/>, con la más gorda y el punto más cercano donde nace. Es
+    /// <see cref="LoQueMasRinde"/> contando todas y no sólo la mejor.
+    /// </summary>
+    public (byte X, byte Y, int Rinde, int Suma)? LoQueSuma(int mapa, (byte X, byte Y) desde, Func<int, int> rinde)
+    {
+        if (!_datos.MapSpawns.TryGetValue(mapa, out var lista)) return null;
+        var alcanzables = Alcanzables(mapa, desde);
+        (byte X, byte Y, int Rinde)? mejor = null;
+        int mejorPasos = int.MaxValue, suma = 0;
+        foreach (var s in lista)
+        {
+            int da = rinde(s.NpcIndex);
+            if (da <= 0 || !alcanzables.Contains(Clave((byte)s.X, (byte)s.Y))) continue;
+            suma += da;
+            int pasos = Math.Abs(s.X - desde.X) + Math.Abs(s.Y - desde.Y);
+            if (mejor is { } ya && (da < ya.Rinde || (da == ya.Rinde && pasos >= mejorPasos))) continue;
+            mejor = ((byte)s.X, (byte)s.Y, da);
+            mejorPasos = pasos;
+        }
+        return mejor is { } m ? (m.X, m.Y, m.Rinde, suma) : null;
+    }
+
+    /// <summary>
+    /// EL COTO QUE MÁS SUMA a <paramref name="saltosMax"/> mapas o menos, contando el propio (<see cref="LoQueSuma"/>), entre los que
+    /// suman al menos <paramref name="minimo"/>. Entre los que suman tres cuartos del mejor o más, el que prefiere
+    /// <paramref name="desempate"/>: sin eso, todos los que salen del mismo lugar van al mismo mapa. Sin desempate, el que más suma, y
+    /// entre iguales el más cercano.
+    /// </summary>
+    public (int Mapa, byte X, byte Y, int Saltos, int Rinde, int Suma)? CotoQueMasSuma(int mapaActual, (byte X, byte Y) desde,
+                                                                                         Func<int, int> rinde, int saltosMax,
+                                                                                         Func<int, bool>? pisable = null,
+                                                                                         Func<int, bool>? cotoSirve = null,
+                                                                                         Func<int, int>? desempate = null,
+                                                                                         int minimo = 1)
+    {
+        var cotos = new List<(int Mapa, byte X, byte Y, int Saltos, int Rinde, int Suma)>();
+        void Probar(int mapa, (byte X, byte Y) entrada, int saltos)
+        {
+            if (cotoSirve is not null && !cotoSirve(mapa)) return;
+            if (LoQueSuma(mapa, entrada, rinde) is { } ahi && ahi.Suma >= minimo)
+                cotos.Add((mapa, ahi.X, ahi.Y, saltos, ahi.Rinde, ahi.Suma));
+        }
+        Probar(mapaActual, desde, 0);
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
+            Probar(mapa, entrada, saltos);
+        if (cotos.Count == 0) return null;
+        int mejor = cotos.Max(c => c.Suma);
+        var parejos = cotos.Where(c => (long)c.Suma * 4 >= (long)mejor * 3);
+        // El primero de cada orden es el más cercano: los mapas salen en orden de cercanía.
+        return desempate is null
+            ? cotos.First(c => c.Suma == mejor)
+            : parejos.Aggregate((a, b) => desempate(b.Mapa) > desempate(a.Mapa) ? b : a);
+    }
+
     /// <summary>Cuántas criaturas que cumplen <paramref name="sirve"/> nacen en baldosas de ese mapa a las que se llega caminando
     /// desde <paramref name="desde"/>.</summary>
     public int CuantasSeAlcanzan(int mapa, (byte X, byte Y) desde, Func<int, bool> sirve)

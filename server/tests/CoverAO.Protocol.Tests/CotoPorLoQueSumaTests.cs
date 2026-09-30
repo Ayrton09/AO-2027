@@ -1,0 +1,115 @@
+using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+using CoverAO.Server.Net;
+using Xunit;
+
+namespace CoverAO.Protocol.Tests;
+
+/// <summary>
+/// PASADO EL NOVATO, EL COTO POR LO QUE SUMA EL MAPA (30/09). Por la criatura más gorda a dos mapas, en el late ganaba un mapa con
+/// dos Zombies y el resto de relleno: en `tardeL1` y `tardeL2` Elmo, de nivel 27, pasó las dos corridas en el 14 con el 18 a un
+/// mapa, y Nadia, de nivel 24, en el 25 con el 18 a dos. Ver <see cref="Bot.EligePorLoQueSuma"/>.
+/// </summary>
+public class CotoPorLoQueSumaTests
+{
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(15, false)]
+    [InlineData(16, true)]
+    [InlineData(26, true)]
+    public void Se_elige_por_lo_que_suma_pasado_el_novato(int nivel, bool suma)
+    {
+        Assert.Equal(suma, Bot.EligePorLoQueSuma(nivel));
+    }
+
+    /// <summary>Lo mínimo para mudarse es lo mismo que pide <see cref="Bot.ValeMudarsePorLoQueRinde"/>: el doble, o algo donde no hay nada.</summary>
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1495, 2990)]
+    public void Lo_minimo_para_mudarse_es_el_doble_de_lo_de_aca(int aca, int minimo)
+    {
+        Assert.Equal(minimo, Bot.LoMinimoParaMudarse(aca));
+        Assert.True(Bot.ValeMudarsePorLoQueRinde(aca, minimo));
+        Assert.False(Bot.ValeMudarsePorLoQueRinde(aca, minimo - 1));
+    }
+
+    private sealed record Cazador(Navegante Mapas, GameData Datos, Func<int, bool> EsPresa, Func<int, int> Rinde,
+                                  Func<int, bool> SeCazaAhi, Func<int, bool> Nunca, Func<int, bool> Cruza);
+
+    /// <summary>Un ciudadano con pociones, con los mismos filtros que arma el bot para buscar coto y con el ini que se distribuye.</summary>
+    private static Cazador? UnCazador(int nivel, int vida)
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return null;
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (!File.Exists(ruta)) return null;
+        var ini = ServerIni.Cargar(ruta);
+        byte bando = Player.StatusCiudadano;
+        Func<int, bool> esPresa = f => Bot.EsPresaPara(d.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
+        Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(d.Npc((short)f), vida, nivel, true, false, bando, d, ini);
+        Func<int, IEnumerable<int>> nace = m => d.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
+        Func<int, bool> nunca = m => Bot.HayGuardiaQueVaPor(m, bando, nivel, d, ini) || Bot.NoSeGraduaAhi(nivel, d.MapZone(m));
+        Func<int, bool> seCazaAhi = m => Bot.SeCazaAhi(d.IsPkMap(m), nace(m), esPeligroso) && !nunca(m);
+        Func<int, int> rinde = f => esPresa(f) ? (int)(d.Npc((short)f)?.GiveExp ?? 0) : 0;
+        return new Cazador(new Navegante(d), d, esPresa, rinde, seCazaAhi, nunca,
+                           Bot.SeCruzaBuscando(d, ini, bando, nivel, vida, conPociones: true, curaVeneno: false));
+    }
+
+    private static (int Mapa, byte X, byte Y, int Saltos)? Coto(Cazador c, int mapa, (byte X, byte Y) desde, bool porLoQueSuma,
+                                                                Func<int, int>? desempate = null) =>
+        Bot.ElegirCoto(c.Mapas, mapa, desde, c.EsPresa, f => c.Datos.Npc((short)f)?.GiveGld > 0, c.Rinde, c.Cruza, out _, out _,
+                       c.SeCazaAhi, desempate, c.Nunca, porLoQueSuma);
+
+    /// <summary>
+    /// DESDE EL 14 SE VA AL 18: los dos tienen Zombies, que es lo más gordo que caza un nivel 27, pero el 14 tiene dos y el 18 doce.
+    /// Es Elmo en `tardeL1` y `tardeL2`, en la baldosa donde lo encontró la corrida.
+    /// </summary>
+    [Fact]
+    public void Del_mapa_de_dos_Zombies_se_va_al_de_doce()
+    {
+        if (UnCazador(27, 182) is not { } c) return;
+        var desde = ((byte)36, (byte)78);
+        Assert.Equal(c.Mapas.LoQueMasRinde(14, desde, c.Rinde)?.Rinde,
+                     c.Mapas.CotoQueMasRinde(14, desde, c.Rinde, 1, c.Cruza, m => m == 18)?.Rinde);
+        Assert.NotEqual(18, Coto(c, 14, desde, porLoQueSuma: false)?.Mapa);
+        Assert.Equal(18, Coto(c, 14, desde, porLoQueSuma: true)?.Mapa);
+    }
+
+    /// <summary>
+    /// DESDE RINKEL, ADONDE VUELVE A COMPRAR, A LOS ZOMBIES Y NO A LOS LOBOS DEL 19: por la más gorda a dos mapas, un nivel 26 elegía
+    /// los Lobos; por lo que suma, un mapa de los que suman tres cuartos del mejor o más, y no todos el mismo.
+    /// </summary>
+    [Fact]
+    public void Desde_Rinkel_el_nivel_26_va_a_los_Zombies_y_los_bots_se_reparten()
+    {
+        if (UnCazador(26, 260) is not { } c) return;
+        var llegada = c.Datos.MapExits.First(e => e.Key.Map == 37 && e.Value.DestMap == 20).Value;
+        var desde = ((byte)llegada.DestX, (byte)llegada.DestY);
+        Assert.Equal(19, Coto(c, 20, desde, porLoQueSuma: false)?.Mapa);
+        var mejor = c.Mapas.CotoQueMasSuma(20, desde, c.Rinde, 4, c.Cruza, c.SeCazaAhi);
+        Assert.Equal(18, mejor?.Mapa);
+        Assert.Equal(18, Coto(c, 20, desde, porLoQueSuma: true)?.Mapa);
+        var elegidos = new List<int>();
+        foreach (int propio in Enumerable.Range(1, 24))
+        {
+            Func<int, int> gusto = m => Bot.CuantoLeGusta(propio, m);
+            var suyo = c.Mapas.CotoQueMasSuma(20, desde, c.Rinde, 4, c.Cruza, c.SeCazaAhi, gusto)!.Value;
+            Assert.True(suyo.Suma * 4 >= mejor!.Value.Suma * 3, $"eligió el {suyo.Mapa}, que suma {suyo.Suma} contra {mejor.Value.Suma}");
+            Assert.Equal(suyo.Mapa, Coto(c, 20, desde, true, gusto)?.Mapa);
+            elegidos.Add(suyo.Mapa);
+        }
+        Assert.True(elegidos.Distinct().Count() >= 2, "todos los bots que salen de Rinkel van al mismo coto");
+    }
+
+    /// <summary>Y EN EL MEJOR, SE QUEDA, sea cual sea su gusto: nada suma el doble que los doce Zombies del 18, aunque el 13 y el 24
+    /// sumen parecido.</summary>
+    [Fact]
+    public void En_el_mapa_de_doce_Zombies_se_queda()
+    {
+        if (UnCazador(26, 285) is not { } c) return;
+        var desde = ((byte)56, (byte)23);
+        Assert.Equal(18, Coto(c, 18, desde, porLoQueSuma: true)?.Mapa);
+        foreach (int propio in Enumerable.Range(1, 24))
+            Assert.Equal(18, Coto(c, 18, desde, true, m => Bot.CuantoLeGusta(propio, m))?.Mapa);
+    }
+}
