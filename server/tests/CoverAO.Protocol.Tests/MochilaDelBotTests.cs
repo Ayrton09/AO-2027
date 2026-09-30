@@ -166,6 +166,25 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(Bot.DescansoDeCompras.Corto, Bot.DescansoTrasElViaje(compro: false, sigueFaltando: false));
     }
 
+    /// <summary>
+    /// Y SE VA CON POCIONES PROPIAS: la plata para el equipo es la que sobra después de ellas (<see cref="Bot.ReservaParaLasPociones"/>),
+    /// y el que compró y todavía no tiene con qué pelear sale ya a buscarlas (<see cref="Bot.LeFaltanPocionesParaPelear"/>). Medido
+    /// en `early2`: siete de los ocho bots que llegaron al 16 lo hicieron con cero pociones propias.
+    /// </summary>
+    [Fact]
+    public void Al_dejar_de_ser_novato_las_pociones_van_antes_que_el_equipo()
+    {
+        int precio = Bot.PrecioDeLaPocionEn(_datos);
+        if (precio == 0) return;   // sin la data del juego no hay tienda que mirar
+        Assert.Equal(_datos.Obj(38)?.Value, precio);   // la Poción Roja, la más barata que se vende
+        int reserva = Bot.ReservaParaLasPociones(propias: 0, precio);
+        Assert.True(reserva >= 10 * precio, $"sin pociones propias guarda {reserva}, que no alcanza ni para diez");
+        Assert.Equal(0, Bot.ReservaParaLasPociones(propias: 1_000, precio));
+
+        Assert.True(Bot.LeFaltanPocionesParaPelear(0));
+        Assert.False(Bot.LeFaltanPocionesParaPelear(1_000));
+    }
+
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
     /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     private static double Horas(int puntos, int vueltas) =>

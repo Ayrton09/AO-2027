@@ -1341,9 +1341,11 @@ public sealed class Bot
         // Y LO MISMO CON EL ARMA DEL CAMINO, si hay quien se la venda: ver `LeFaltaElArmaDelCamino`. El nivel 15 dura poco, y con
         // el descanso largo después de la comida el viaje al herrero llegaba ya en el 16. Medido en `oficios22`: los tres bots que
         // pasaron el 15 fueron del coto a la cuna por la comida y de vuelta al coto, y ninguno al herrero.
+        // Y LAS POCIONES PROPIAS: ver `LeFaltanPocionesParaPelear`.
         bool sigueFaltando = sentidos.Suma(PuntosDeComida) < ComidaMinima || sentidos.Suma(PuntosDeBebida) < BebidaMinima
                              || (hayArmaAlAlcance && LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)))
-                             || (hayRopaAlAlcance && LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)));
+                             || (hayRopaAlAlcance && LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
+                             || LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia));
         switch (DescansoTrasElViaje(compro, sigueFaltando))
         {
             case DescansoDeCompras.Ninguno: _descansoLargo = false; _proximaCompra = 0; break;
@@ -1371,6 +1373,14 @@ public sealed class Bot
     /// </summary>
     public static DescansoDeCompras DescansoTrasElViaje(bool compro, bool sigueFaltando) =>
         !compro ? DescansoDeCompras.Corto : sigueFaltando ? DescansoDeCompras.Ninguno : DescansoDeCompras.Largo;
+
+    /// <summary>
+    /// ¿LE FALTAN POCIONES PARA PELEAR? Menos de <see cref="PocionesParaPelear"/> propias, y entonces después de una compra no se
+    /// descansa (<see cref="DescansoTrasElViaje"/>). Las de novato no cuentan desde que se prepara para dejar de serlo, porque en
+    /// el 16 desaparecen: el que compraba la ropa y el arma se iba al descanso largo, y el 14 y el 15 se le pasaban adentro.
+    /// Medido en `early2`: Ciro compró en el 13 y llegó al 16 a los once minutos, sin volver a salir y sin una poción.
+    /// </summary>
+    public static bool LeFaltanPocionesParaPelear(int propias) => propias < PocionesParaPelear;
 
     /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres
@@ -1446,6 +1456,25 @@ public sealed class Bot
     /// <inheritdoc cref="PrecioDelAntidotoEn"/>
     private int CuestaElAntidoto =>
         _cuestaElAntidoto >= 0 ? _cuestaElAntidoto : _cuestaElAntidoto = PrecioDelAntidotoEn(_entorno.Datos);
+
+    /// <summary>Lo que cuesta la poción de vida más barata que alguien venda, o 0 si no la vende nadie. Sale de la DATA, igual que
+    /// el antídoto.</summary>
+    public static int PrecioDeLaPocionEn(GameData datos)
+    {
+        int mejor = int.MaxValue;
+        foreach (var npc in datos.Npcs.Values)
+            if (npc.StockItems is { } stock)
+                foreach (var (obj, _) in stock)
+                    if (datos.Obj((short)obj) is { Value: > 0, IsPotion: true, SubType: 3 } o)
+                        mejor = Math.Min(mejor, o.Value);
+        return mejor == int.MaxValue ? 0 : mejor;
+    }
+
+    private int _cuestaLaPocion = -1;
+
+    /// <inheritdoc cref="PrecioDeLaPocionEn"/>
+    private int CuestaLaPocion =>
+        _cuestaLaPocion >= 0 ? _cuestaLaPocion : _cuestaLaPocion = PrecioDeLaPocionEn(_entorno.Datos);
 
     public static double CostoPorPuntoEn(GameData datos, bool esBebida)
     {
@@ -3539,14 +3568,25 @@ public sealed class Bot
 
     /// <summary>
     /// Lo que puede gastar en lo que no es de supervivencia: lo que sobra después de asegurarse la comida, la bebida,
-    /// LA HERRAMIENTA DEL OFICIO y un colchón.
+    /// LAS POCIONES PROPIAS, LA HERRAMIENTA DEL OFICIO y un colchón.
     ///
     /// <para>La herramienta se reserva aparte porque es lo único que le da un ingreso propio, y se compra en la
     /// tienda que la venda: sin esta reserva, un Minero con lo justo se gastaba las monedas en un arma en el
     /// herrero y se quedaba sin piquete, que cuesta doscientas y tarda una hora de caza en juntarse.</para>
+    ///
+    /// <para>Y LAS POCIONES PROPIAS, que en el 16 son las únicas que le quedan: al prepararse para dejar de ser novato
+    /// (<see cref="PorDejarDeSerNovato"/>) la ropa y el arma salían de TODA la plata, y el viaje por las pociones no llegaba.
+    /// Medido en `early2`: siete de los ocho bots que llegaron al 16 lo hicieron con cero pociones propias; Ciro, en el 13, pagó
+    /// 19 mil de sus 20 mil monedas por una armadura.</para>
     /// </summary>
     private int PlataParaElEquipo(SentidosDelBot sentidos) =>
-        PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
+        PlataQueSobra(sentidos.Oro,
+                      ReservaPara(sentidos, comida: true, bebida: true) + ReservaParaLasPociones(sentidos.Suma(PocionPropia), CuestaLaPocion),
+                      CuestaLaHerramienta(sentidos), MonedasDeApuro);
+
+    /// <summary>Lo que cuesta llevar las pociones propias hasta las que quiere (<see cref="PocionesQueQuiere"/>) a
+    /// <paramref name="precio"/> cada una.</summary>
+    public static int ReservaParaLasPociones(int propias, int precio) => ReservaParaLoQueFalta(precio, propias, PocionesQueQuiere);
 
     /// <summary>Lo que queda para gustos después de lo que no se puede dejar de comprar.</summary>
     public static int PlataQueSobra(int oro, int reservaDeLaPanza, int cuestaLaHerramienta, int colchon) =>
