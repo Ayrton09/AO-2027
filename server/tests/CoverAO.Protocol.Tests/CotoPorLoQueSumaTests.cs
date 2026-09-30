@@ -14,10 +14,11 @@ public class CotoPorLoQueSumaTests
 {
     [Theory]
     [InlineData(1, false)]
-    [InlineData(15, false)]
+    [InlineData(14, false)]
+    [InlineData(15, true)]
     [InlineData(16, true)]
     [InlineData(26, true)]
-    public void Se_elige_por_lo_que_suma_pasado_el_novato(int nivel, bool suma)
+    public void Se_elige_por_lo_que_suma_desde_el_ultimo_nivel_de_novato(int nivel, bool suma)
     {
         Assert.Equal(suma, Bot.EligePorLoQueSuma(nivel));
     }
@@ -99,6 +100,19 @@ public class CotoPorLoQueSumaTests
             elegidos.Add(suyo.Mapa);
         }
         Assert.True(elegidos.Distinct().Count() >= 2, "todos los bots que salen de Rinkel van al mismo coto");
+    }
+
+    /// <summary>
+    /// EN EL 15, DEL 261 AL 262: diecisiete Esqueletos y tres Esqueletos Guerreros contra trece Esqueletos Guerreros y diez Zombies. Por
+    /// la criatura más gorda se quedaba, y en `cadena2` Gonzo pasó ahí treinta y seis minutos sin subir.
+    /// </summary>
+    [Fact]
+    public void En_el_15_del_261_se_va_al_262()
+    {
+        if (UnCazador(15, 157) is not { } c) return;
+        var desde = ((byte)30, (byte)40);
+        Assert.Equal(261, Coto(c, 261, desde, porLoQueSuma: false)?.Mapa);
+        Assert.Equal(262, Coto(c, 261, desde, porLoQueSuma: Bot.EligePorLoQueSuma(15))?.Mapa);
     }
 
     /// <summary>Y EN EL MEJOR, SE QUEDA, sea cual sea su gusto: nada suma el doble que los doce Zombies del 18, aunque el 13 y el 24

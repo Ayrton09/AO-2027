@@ -2968,16 +2968,23 @@ public sealed class Bot
     public static int LoMinimoParaMudarse(int rindeAca) => rindeAca <= 0 ? 1 : rindeAca * VecesQueTieneQueRendir;
 
     /// <summary>
-    /// ¿ELIGE EL COTO POR LO QUE SUMA EL MAPA? Pasado el novato, sí: la experiencia de todas las presas que nacen ahí, y hasta
-    /// <see cref="SaltosHastaElCotoQueSuma"/> mapas. Antes, por la criatura más gorda a dos mapas, que es lo que lo saca de la cuna.
+    /// ¿ELIGE EL COTO POR LO QUE SUMA EL MAPA? Desde el último nivel de novato, sí: la experiencia de todas las presas que nacen
+    /// ahí, y hasta <see cref="SaltosHastaElCotoQueSuma"/> mapas. Antes, por la criatura más gorda a dos mapas, que es lo que lo saca
+    /// de la cuna: por lo que suma, la cuna —cincuenta y tres criaturas— gana. En el último nivel de novato la cuna ya no cuenta
+    /// (<see cref="NoSeGraduaAhi"/>).
     ///
     /// <para>Por la más gorda, en el late gana un mapa con dos Zombies y el resto de relleno. Medido en `tardeL1` y `tardeL2`
     /// (30/09): Elmo, de nivel 27, pasó las dos corridas enteras en el 14 —dos Zombies y diez Lobos— con el 18 a un mapa —doce Zombies y
     /// doce Lobos—: la criatura más gorda es la misma de los dos lados y no valía mudarse. Y Nadia, de nivel 24, en el 25 —dos
     /// Zombies entre Murciélagos y Serpientes— con el 18 a dos. Preguntado a la data: desde Rinkel, que es adonde vuelve a
     /// comprar, un nivel 26 elegía los Lobos del 19, a dos mapas, con doce Zombies en el 13 y en el 18, a tres.</para>
+    ///
+    /// <para>Y EN EL 15 LO MISMO, con el 261 y el 262: medido en `cadena2` (30/09), Gonzo pasó treinta y seis minutos en el 15 en
+    /// el 261 —diecisiete Esqueletos de 66 y tres Esqueletos Guerreros, donde también cazaban Ciro, Lira e Ivo— sin juntar los trece
+    /// Esqueletos que pide ese nivel, con el 262 al lado —trece Esqueletos Guerreros y diez Zombies—. Preguntado a la data: desde
+    /// el 261, un nivel 15 se queda por la criatura más gorda y se va al 262 por lo que suma.</para>
     /// </summary>
-    public static bool EligePorLoQueSuma(int nivel) => nivel > GameLimits.NewbieMaxLevel;
+    public static bool EligePorLoQueSuma(int nivel) => nivel >= GameLimits.NewbieMaxLevel;
 
     private const int SaltosHastaElCoto = 2, SaltosHastaElCotoQueSuma = 4, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
 
