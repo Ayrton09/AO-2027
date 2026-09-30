@@ -4949,6 +4949,12 @@ public sealed class Bot
             if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m == vecino, pisable) is not { } afuera) continue;
             await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
             if (sentidos.Mapa == aca) _salidasQueNoAndan[(aca, vecino)] = Environment.TickCount64 + SalidaQueNoAndaMs;
+            // SI NI SE MOVIÓ, LA SALIDA QUE SIGUE, YA: la puerta de ese vecino le queda del lado de lo que lo persigue (el viaje no
+            // se arrima al peligro, ver `LoArrimaAlPeligro`), y la siguiente puede estar a un paso. Medido en `early8` (30/09):
+            // Milo, nivel 9 con 1500 pociones, escapando de un Goblin en (47,8) del 12 hacia el 11 —el vecino sin nada que lo
+            // mate, con la puerta a treinta y ocho baldosas, pasando por el Goblin— se quedó trece segundos sin dar un paso con
+            // la salida al 554 encima, y el Goblin lo mató. Así murió Gonzo dos veces, en `early6` y `cadena1`, también en el 12.
+            if (sentidos.Mapa == aca && sentidos.Posicion == antes && sentidos.Vivo) continue;
             return sentidos.Mapa != aca || sentidos.Posicion != antes;
         }
         return false;
@@ -5073,8 +5079,11 @@ public sealed class Bot
                                    : _entorno.Mapas.Camino(mapa, desde, meta, trabas);
             // Si esquivando no queda camino, lo que tapaba era el único paso: se espera a que se corra y se vuelve a
             // probar por donde se venía.
+            // ESCAPANDO NO SE ESPERA: lo que tapa es lo que lo persigue, y esperar es quedarse quieto recibiendo. Se vuelve ya, y
+            // `SalirDelMapaAsync` prueba otra salida.
             if ((camino is null || camino.Count == 0) && trabas.Count > 0)
             {
+                if (escapando) return false;
                 trabas.Clear();
                 await Task.Delay(_rng.Next(EsperaTrabaMinMs, EsperaTrabaMaxMs), ct);
                 continue;
