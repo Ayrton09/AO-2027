@@ -185,6 +185,19 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.LeFaltanPocionesParaPelear(1_000));
     }
 
+    /// <summary>
+    /// SIN POCIONES PROPIAS PARA PELEAR, LAS POCIONES ANTES QUE TODO (ver <see cref="Bot.PrimeroLasPociones"/>): en `paso16a` Aldo
+    /// llegó a Rinkel en el 16 sin ninguna y le compró anillos al Vendedor General, que estaba más cerca que el Alquimista; en
+    /// `early3`, en el 13, Gonzo y Fabia se gastaron quince mil monedas ahí y en comida, con las de novato encima y cero propias.
+    /// </summary>
+    [Fact]
+    public void Sin_pociones_propias_para_pelear_las_pociones_van_antes_que_todo()
+    {
+        Assert.True(Bot.PrimeroLasPociones(vaPorPociones: true, pocionesPropias: 0));
+        Assert.False(Bot.PrimeroLasPociones(vaPorPociones: true, pocionesPropias: 1_000), "con pociones propias para pelear, no");
+        Assert.False(Bot.PrimeroLasPociones(vaPorPociones: false, pocionesPropias: 0), "si no va por pociones, no");
+    }
+
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
     /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     private static double Horas(int puntos, int vueltas) =>

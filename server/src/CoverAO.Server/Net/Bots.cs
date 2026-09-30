@@ -1169,6 +1169,8 @@ public sealed class Bot
         // no se recupera la energía; el hambre puede esperar.
         bool primeroLaBebida = vaPorBebida && sentidos.ConSed && !sentidos.ConHambre;
         bool primeroLaComida = vaPorComida && sentidos.ConHambre && !sentidos.ConSed;
+        // Y SIN POCIONES PROPIAS PARA PELEAR, LAS POCIONES ANTES QUE TODO: ver `PrimeroLasPociones`.
+        bool primeroLasPociones = PrimeroLasPociones(vaPorPociones, sentidos.Suma(PocionPropia));
 
         // QUÉ MERCADER SIRVE. Si va por la herramienta, uno que la venda; si no, uno que le compre lo que trae.
         // Con el filtro de la herramienta siempre puesto, el bot con oficio quedaba atado para siempre a los
@@ -1223,6 +1225,7 @@ public sealed class Bot
         bool Sirve(int ficha)
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
+            if (primeroLasPociones) return stock.Any(s => EsPocionDeVida((short)s.ObjIndex));
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
             if (soloLaRopa) return VendeRopa(ficha);
             if (soloElArma) return VendeElArma(ficha);
@@ -1398,6 +1401,18 @@ public sealed class Bot
     /// Medido en `early2`: Ciro compró en el 13 y llegó al 16 a los once minutos, sin volver a salir y sin una poción.
     /// </summary>
     public static bool LeFaltanPocionesParaPelear(int propias) => propias < PocionesParaPelear;
+
+    /// <summary>
+    /// ¿LAS POCIONES ANTES QUE TODO? Si va por ellas y no tiene pociones PROPIAS ni para pelear: desde que se prepara para dejar de
+    /// ser novato, las de novato no cuentan, porque en el 16 desaparecen. El mercader se elige por el más cercano que atienda
+    /// CUALQUIER necesidad, y el de los gustos gana: medido en `paso16a` (29/09), Aldo llegó a Rinkel en el 16 con cero pociones y
+    /// veintitrés mil monedas y le compró dos veces al Vendedor General, que vende anillos y no pociones, y seguía sin ninguna; y en
+    /// `early3`, en el 13, Gonzo y Fabia —quince mil monedas, cero pociones propias y las mil cuatrocientas de novato encima— se
+    /// gastaron casi todo en el Vendedor General y en comida, y se quedaron sin con qué comprarlas. Como la comida o la bebida en
+    /// cero (ver <c>primeroLaBebida</c>).
+    /// </summary>
+    public static bool PrimeroLasPociones(bool vaPorPociones, int pocionesPropias) =>
+        vaPorPociones && LeFaltanPocionesParaPelear(pocionesPropias);
 
     /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres
