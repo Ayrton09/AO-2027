@@ -270,9 +270,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
   mapa. Dos niveles antes de dejar de ser novatos se compran pociones propias —antes que nada—, ropa, un arma y
   provisiones para el camino, aunque el herrero les quede lejos, si pueden llegar sin que los maten; y el último
   nivel de novato no lo pasan adentro del dungeon. Ponen su hogar en una ciudad donde les venden, y si se quedan sin
-  pociones, comida o bebida lejos de toda tienda, caminan hasta un mapa seguro y vuelven a casa con la runa, en vez
-  de cruzar el desierto. De un lugar lleno salen sin frenar en el camino, y el que viaja a otro mapa para trabajar
-  se queda un rato.
+  pociones, comida o bebida lejos de toda tienda, caminan hasta un mapa seguro —aunque quede lejos— y vuelven a casa
+  con la runa, en vez de cruzar el desierto; y si no encuentran dónde cazar, también. Salen a comprar pociones sólo si
+  les alcanza para una. De un lugar lleno salen sin frenar en el camino, y el que viaja a otro mapa para trabajar se
+  queda un rato.
 
 ## 1.0.0 — 2026-09-16
 
