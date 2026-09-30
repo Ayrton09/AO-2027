@@ -3224,7 +3224,13 @@ public sealed class Bot
         if (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return false;
         if (_entorno.Datos.IsPkMap(sentidos.Mapa))
         {
-            if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } seguro) return false;
+            // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS, como el pueblo de `PuebloConMercader`. Medido en `tardeL1` (30/09): para
+            // Milo, republicano de nivel 23, desde el 19 el mapa seguro más cercano es Rinkel, a seis —Ullathorpe, Nix y Banderbill
+            // tienen guardias imperiales que van por él—, y pasó la hora sin comida y con tres pociones.
+            var pisable = Pisable(sentidos);
+            if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
+                 ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
+                is not { } seguro) return false;
             await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
                                topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos));
             if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene

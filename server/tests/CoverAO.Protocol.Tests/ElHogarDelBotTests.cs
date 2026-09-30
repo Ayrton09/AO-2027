@@ -75,6 +75,32 @@ public class ElHogarDelBotTests
         Assert.Null(Bot.PuebloConMercader(nav, 13, desde, vendePociones, sinPeligro, sinPeligro));
     }
 
+    /// <summary>
+    /// EL REPUBLICANO DEL LADO DE NIX TIENE SU MAPA SEGURO MÁS LEJOS: con los guardias del ini que se distribuye, Ullathorpe, Nix
+    /// y Banderbill tienen guardias imperiales que van por él, y desde el 19 el primero que le sirve es Rinkel, a seis mapas —más
+    /// que los cinco de siempre—. Al ciudadano, Ullathorpe le sirve a cuatro. Medido en `tardeL1`: Milo pasó la hora sin comida.
+    /// </summary>
+    [Fact]
+    public void El_republicano_del_lado_de_Nix_tiene_su_mapa_seguro_a_seis()
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return;
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (!File.Exists(ruta)) return;
+        var ini = ServerIni.Cargar(ruta);
+        Assert.True(ini.GuardiasAtacan, "premisa: el ini que se distribuye trae los guardias que atacan");
+        var nav = new Navegante(d);
+        Func<int, bool> pisable = m => Bot.PuedeEntrar(23, d.MapZone(m));
+        Func<int, bool> seguroRepublicano = m => Bot.MapaSeguroPara(m, Player.StatusRepublicano, 23, d, ini);
+        Func<int, bool> seguroCiudadano = m => Bot.MapaSeguroPara(m, Player.StatusCiudadano, 23, d, ini);
+        Assert.False(seguroRepublicano(1));
+        Assert.True(seguroRepublicano(20), "en Rinkel los guardias no pelean");
+        var desde = ((byte)57, (byte)69);
+        Assert.Equal(1, nav.MapaMasCercano(19, desde, seguroCiudadano, pisable)?.Mapa);
+        Assert.Null(nav.MapaMasCercano(19, desde, seguroRepublicano, pisable));
+        Assert.Equal(20, nav.MapaMasCercano(19, desde, seguroRepublicano, pisable, Bot.SaltosHastaElPuebloLejano)?.Mapa);
+    }
+
     /// <summary>Y en Rinkel le venden a un ciudadano, y al sacerdote se llega desde la entrada de la cuna —por donde el bot entra a
     /// comprar— abriendo una puerta del templo: sin abrirla, a cinco baldosas no se llega, y el /HOGAR pide cinco o menos.</summary>
     [Fact]
