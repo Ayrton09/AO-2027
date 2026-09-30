@@ -2945,7 +2945,16 @@ public sealed class Bot
                                            m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
-        if (hallado is not { } coto) return false;
+        // SIN NINGÚN COTO, COMO EL VIAJE QUE NO LLEGA: al segundo, a casa con la runa (ver `SiEstaEncerrado`). Que no haya ninguno
+        // quiere decir que acá no hay nada que pueda cazar y que no hay otro lugar al que llegue sin peligro; sin esto no se viajaba
+        // nunca y la runa, que sale de los viajes fallidos, tampoco. Medido en `cadena1` (30/09): Hilda, Druida de nivel 3, fue a
+        // Lindos por el oro de sus Águilas y se quedó ahí cuarenta minutos sin subir; y Juana, de nivel 10, diez minutos más
+        // después de ir a comprar.
+        if (hallado is not { } coto)
+        {
+            SiEstaEncerrado(transporte, sentidos);
+            return false;
+        }
 
         // REPARTIRSE. El navegante devuelve siempre el MISMO spawn —el más cercano— así que todos los bots
         // que salían a buscar coto iban al mismo punto. Medido: desde la cuna y desde el mapa 1 elegía (67,25)
