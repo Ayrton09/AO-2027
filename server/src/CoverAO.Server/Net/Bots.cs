@@ -885,6 +885,33 @@ public sealed class Bot
     /// <summary>¿Lo puede matar de un golpe? El golpe máximo de su ficha contra la vida que le queda.</summary>
     public static bool UnGolpeLoMata(NpcInfo? n, int vida) => n is { MaxHit: > 0 } && n.MaxHit >= vida;
 
+    /// <summary>
+    /// ¿LO MATA DE DOS GOLPES? Lo hostil cuyo golpe máximo, dos veces, llega a su vida máxima: la poción cura lo que ya pegó, y entre
+    /// dos golpes así no alcanza a tomar las que hacen falta. Es lo que el camino de siempre no cruza (ver <see cref="NaceLoQueLoMataDeDos"/>).
+    /// </summary>
+    public static bool LoMataDeDosGolpes(NpcInfo? n, int vidaMaxima) => n is { Hostile: true, MaxHit: > 0 } && n.MaxHit * 2 >= vidaMaxima;
+
+    /// <summary>
+    /// ¿NACE EN ESE MAPA ALGO QUE LO MATA DE DOS GOLPES (<see cref="LoMataDeDosGolpes"/>)? Ahí no entra, vivo, ni por el camino de
+    /// siempre —el tercer escalón de <see cref="CaminoDelViaje"/>, que no mira lo peligroso—, salvo que sea el destino.
+    ///
+    /// <para>Medido en `early7` (30/09): Fabia, nivel 15 con 171 de vida y 1679 pociones, iba de compras del 263 a la cuna por el
+    /// camino de siempre —el 261 lo tenía tapado por haberse ido de ahí huyendo (<see cref="NoVuelveACruzar"/>)— y cruzó el 186, el
+    /// Lago de Suramei, donde nacen cuatro Ents que pegan hasta 90: uno la mató en cuatro segundos con la vida al 95 %. Cuatro
+    /// minutos antes, en el nivel 13, lo había cruzado por lo mismo yendo a cazar al 262 (ver <see cref="CruzaSinHuidas"/>).</para>
+    /// </summary>
+    public static bool NaceLoQueLoMataDeDos(GameData datos, int mapa, int vidaMaxima) =>
+        datos.MapSpawns.TryGetValue(mapa, out var nacen) && nacen.Any(s => LoMataDeDosGolpes(datos.Npc((short)s.NpcIndex), vidaMaxima));
+
+    /// <summary>
+    /// POR DÓNDE VA EL CAMINO DE SIEMPRE (el tercer escalón de <see cref="CaminoDelViaje"/>): lo que <paramref name="pisable"/> deja
+    /// pisar y <paramref name="sinHuidas"/> deja cruzar, y, vivo, ningún mapa donde nace lo que lo mata de dos golpes salvo el destino
+    /// (<see cref="NaceLoQueLoMataDeDos"/>). Al fantasma no lo ataca nadie.
+    /// </summary>
+    public static Func<int, bool> PorElCaminoDeSiempre(GameData datos, Func<int, bool> pisable, Func<int, bool> sinHuidas,
+                                                      int mapaDestino, int vidaMaxima, bool deMuerto) =>
+        m => pisable(m) && sinHuidas(m) && (deMuerto || m == mapaDestino || !NaceLoQueLoMataDeDos(datos, m, vidaMaxima));
+
     /// <summary>La regla de <see cref="EsPeligroso"/> sobre la ficha sola.</summary>
     public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
     {
@@ -2858,6 +2885,15 @@ public sealed class Bot
     public static bool NoVuelveACruzar(IReadOnlyDictionary<int, long> huyoDe, int mapa, int mapaDestino, long ahora) =>
         mapa != mapaDestino && huyoDe.TryGetValue(mapa, out long hasta) && ahora < hasta;
 
+    /// <summary>
+    /// ¿LO CRUZA BUSCANDO COTO? Lo de <paramref name="cruza"/> (<see cref="SeCruzaBuscando"/>) y que no sea un mapa que el viaje no
+    /// va a cruzar (<see cref="NoVuelveACruzar"/>): con filtros distintos, la búsqueda elegía un coto al que el viaje sólo llegaba por
+    /// el camino de siempre. Medido en `early7` (30/09): Fabia se fue del 261 huyendo, eligió cazar en el 262, que desde el 185 queda
+    /// justo detrás del 261, y el viaje la mandó por el Lago de Suramei, el de los Ents (ver <see cref="NaceLoQueLoMataDeDos"/>).
+    /// </summary>
+    public static Func<int, bool> CruzaSinHuidas(Func<int, bool> cruza, IReadOnlyDictionary<int, long> huyoDe, long ahora) =>
+        m => cruza(m) && !NoVuelveACruzar(huyoDe, m, 0, ahora);
+
     /// <summary>Los mapas de los que se fue huyendo, hasta cuándo no los cruza de viaje (ver <see cref="NoVuelveACruzar"/>).</summary>
     private readonly Dictionary<int, long> _huyoDe = new();
     private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
@@ -2986,9 +3022,11 @@ public sealed class Bot
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
         // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.
         var paraSuOficio = LoQueSaleACazarParaSuOficio(sentidos);
+        // Y SIN CONTAR COMO CAMINO LO QUE EL VIAJE NO VA A CRUZAR: ver `CruzaSinHuidas`.
+        var cruza = CruzaSinHuidas(CruzaSinPeligro(sentidos), _huyoDe, ahora);
         Func<int, bool> esPresaDelOficio = f => esPresa(f) && SueltaAlgoDe(_entorno.Datos.Npc(f), paraSuOficio);
         var hallado = paraSuOficio.Count > 0
-            ? CotoParaSuOficio(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresaDelOficio, CruzaSinPeligro(sentidos), seCazaAhi)
+            ? CotoParaSuOficio(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresaDelOficio, cruza, seCazaAhi)
             : null;
         bool porElOro = false;
         int porLoQueRinde = 0;
@@ -2997,7 +3035,7 @@ public sealed class Bot
         if (hallado is null)
         {
             hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
-                                           CruzaSinPeligro(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
+                                           cruza, seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
                                            m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
                                            m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca,
                                            EligePorLoQueSuma(nivel));
@@ -5009,7 +5047,9 @@ public sealed class Bot
                                                           m => pasa(m) && sinHuidas(m), topeDeMapas),
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
                                                           m => cruza(m) && sinHuidas(m), topeDeMapas),
-                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), m => pisable(m) && sinHuidas(m),
+                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
+                                                          PorElCaminoDeSiempre(_entorno.Datos, pisable, sinHuidas, mapaDestino,
+                                                                               sentidos.VidaMaxima, deMuerto),
                                                           topeDeMapas)) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
