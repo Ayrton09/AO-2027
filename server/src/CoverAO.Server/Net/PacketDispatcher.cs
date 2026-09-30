@@ -10084,17 +10084,22 @@ public sealed partial class PacketDispatcher
             { session.Send(ServerMessages.ConsoleMsg("Ciudad inválida.", FuenteInfo)); return; }
             if (hogar.Ciudad == p.HomeCity)
             { session.Send(ServerMessages.ConsoleMsg($"{ciudad} es tu hogar.", FuenteInfo)); return; }
-            bool puede = hogar.Bando switch
-            {
-                BandoDelHogar.Imperio => p.IsCitizen || p.IsArmada,
-                BandoDelHogar.Republica => p.IsRepublicano || p.IsMilicia,
-                _ => true,
-            };
-            if (!puede) { session.Send(ServerMessages.ConsoleMsg("Ciudad inválida.", FuenteInfo)); return; }
+            if (!PuedeSerHogarDe(p.Pos.Map, (byte)p.FactionStatus))
+            { session.Send(ServerMessages.ConsoleMsg("Ciudad inválida.", FuenteInfo)); return; }
             p.HomeCity = hogar.Ciudad;
             session.Send(ServerMessages.ConsoleMsg($"Tu nuevo hogar ahora es {ciudad}.", FuenteInfo));
         });
     }
+
+    /// <summary>¿Puede ese mapa ser el hogar de alguien de esa facción? El de una ciudad, y el de la ciudad de un bando sólo para
+    /// los suyos (<see cref="HandleSelectHome"/>). Los bots la miran para no pedir un hogar que se les va a negar.</summary>
+    public static bool PuedeSerHogarDe(int mapa, byte faccion) =>
+        HogarDelMapa.TryGetValue((short)mapa, out var hogar) && hogar.Bando switch
+        {
+            BandoDelHogar.Imperio => faccion is Player.StatusCiudadano or Player.StatusArmada,
+            BandoDelHogar.Republica => faccion is Player.StatusRepublicano or Player.StatusMilicia,
+            _ => true,
+        };
 
     private enum BandoDelHogar { Neutral, Imperio, Republica }
 

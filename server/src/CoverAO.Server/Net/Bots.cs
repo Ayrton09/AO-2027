@@ -742,6 +742,7 @@ public sealed class Bot
             if (await AprenderHechizosAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
             if (await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1311,11 +1312,16 @@ public sealed class Bot
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
                                                     vaPorAntidoto,
                                                     vaPorEquipo || hayArmaAlAlcance, vaPorHechizo);
-                if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna
-                    && !_entorno.Datos.IsPkMap(sentidos.Mapa))
+                // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
+                // tienda, no se la vuelve a usar para esto hasta cambiar de hogar.
+                bool leFaltaLoEsencial = vaPorPociones || vaPorComida || vaPorBebida;
+                if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
+                if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna)
                 {
                     _tiendasSinCamino = 0;
-                    Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
+                    if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, cerrada, ct)
+                                          : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
+                    { PostergarCompra(); return true; }
                 }
                 PostergarCompra(); return intento > 0;
             }
@@ -2902,7 +2908,9 @@ public sealed class Bot
         Func<int, IEnumerable<int>> loQueNace = m => _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
             ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
         // EN EL MAPA DE LOS GUARDIAS QUE VAN POR ÉL NO SE CAZA, tampoco en una ciudad del otro bando que no sea pk: ver `ElegirCoto`.
-        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !HayGuardiaQueLoAtaca(m);
+        // NI EN EL DUNGEON DE NOVATOS EN EL ÚLTIMO NIVEL: ver `NoSeGraduaAhi`.
+        Func<int, bool> nunca = m => HayGuardiaQueLoAtaca(m) || NoSeGraduaAhi(nivel, _entorno.Datos.MapZone(m));
+        Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
@@ -2921,7 +2929,7 @@ public sealed class Bot
             hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
                                            CruzaSinPeligro(sentidos), seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
                                            m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
-                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, HayGuardiaQueLoAtaca);
+                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
         if (hallado is not { } coto) return false;
@@ -3171,6 +3179,100 @@ public sealed class Bot
 
     /// <summary>VB6 <c>otRuna</c> (Declares.bas:615).</summary>
     private const int ObjTypeRuna = 38;
+
+    /// <summary>
+    /// A CASA CON LA RUNA, PARA COMPRAR, AUNQUE ESTÉ EN UN MAPA INSEGURO: ahí la runa no anda (el 468), así que primero se camina
+    /// hasta el mapa seguro más cercano, como el que se vuelve a la ciudad a reponer. Devuelve si hizo algo.
+    ///
+    /// <para>Medido en `tardeM1` (29/09): de los dieciocho bots de nivel 16 a 28, doce decían "sin tienda, ningún pueblo" una y otra
+    /// vez, con cero pociones y de 80 a 230 mil monedas encima, cazando del lado de Nix y de Ullathorpe, donde nadie le vende a un
+    /// ciudadano. La runa sólo se usaba en un mapa seguro al segundo intento fallido, y los que pasaban por Ullathorpe se iban
+    /// antes: el segundo intento los encontraba siempre en un mapa pk.</para>
+    /// </summary>
+    private async Task<bool> VolverACasaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return false;
+        if (_entorno.Datos.IsPkMap(sentidos.Mapa))
+        {
+            if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } seguro) return false;
+            await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
+                               topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos));
+            if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene
+        }
+        int antes = sentidos.Mapa;
+        if (!Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna)) return false;
+        for (int i = 0; i < 12 && sentidos.Mapa == antes; i++) await Task.Delay(250, ct);
+        _runaDejoEn = sentidos.Mapa;
+        return true;
+    }
+
+    /// <summary>Dónde lo dejó la runa la última vez que la usó para ir a comprar, y si ahí tampoco había tienda.</summary>
+    private int _runaDejoEn = -1;
+    private bool _runaNoSirveParaComprar;
+
+    /// <summary>
+    /// EL HOGAR, DONDE LE VENDEN. El ciudadano nace con el hogar en Nix o en el dungeon de novatos, y al pasar del 15 adentro del
+    /// dungeon el servidor lo manda a Nix y le pone el hogar ahí (VB6 Modulo_UsUaRiOs.bas:580-595); pero en Nix nadie le vende
+    /// (la regla del comercio del original: el comercio vive en Rinkel), así que la runa lo dejaba donde no podía comprar. Cuando
+    /// pasa por una ciudad que puede ser su hogar y donde le venden, le pide al sacerdote que lo sea, como cualquiera: el clic,
+    /// el /HOGAR y el sí. Una vez, y otra al dejar de ser novato, que puede habérselo cambiado. Devuelve si hizo algo.
+    /// </summary>
+    private async Task<bool> PonerElHogarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        int mapa = sentidos.Mapa, nivel = sentidos.Nivel;
+        // Mientras es novato el hogar no le hace falta: caza y compra alrededor de la cuna.
+        if (!PorDejarDeSerNovato(nivel) || !VuelveAPonerElHogar(_nivelDelHogar, nivel) || Environment.TickCount64 < _proximoHogar) return false;
+        if (!PacketDispatcher.PuedeSerHogarDe(mapa, _miBando) || !LeVendenAca(mapa)) return false;
+        if (!_entorno.Datos.MapSpawns.TryGetValue(mapa, out var nacen)
+            || nacen.FirstOrDefault(s => EsSacerdote((short)s.NpcIndex)) is not { NpcIndex: > 0 } templo) return false;
+        _proximoHogar = Environment.TickCount64 + EsperaDelHogarMs;
+        // EL SACERDOTE SUELE ESTAR ADENTRO DEL TEMPLO: se abre la puerta, como para llegar a un mercader (ver `AbrirUnaPuertaAsync`).
+        // El de Rinkel, en (52,47), no se alcanza a cinco baldosas sin abrir una de las dos puertas del templo.
+        if (!await IrHastaAsync(transporte, sentidos, mapa, (byte)templo.X, (byte)templo.Y, cerrada, ct, RadioDelHogar)
+            && !(await AbrirUnaPuertaAsync(transporte, sentidos, f => EsSacerdote((short)f), cerrada, ct)
+                 && await IrHastaAsync(transporte, sentidos, mapa, (byte)templo.X, (byte)templo.Y, cerrada, ct, RadioDelHogar)))
+            return true;
+        if (sentidos.MasCercano(EsSacerdote) is not { } cura
+            || Math.Abs(cura.Quien.X - sentidos.Posicion.X) + Math.Abs(cura.Quien.Y - sentidos.Posicion.Y) > RadioDelHogar) return true;
+        // NO JUSTO DEBAJO: el clic mira primero la baldosa de abajo, y ahí estaría él (ver `PedirResurreccion`).
+        if (sentidos.Posicion == (cura.Quien.X, (byte)(cura.Quien.Y + 1))
+            && await UnPasoHaciaAsync(transporte, sentidos, 1, 0, ct) != Paso.Dado) return true;
+        if (!transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(cura.Quien.X).WriteByte(cura.Quien.Y)))) return false;
+        await Task.Delay(_rng.Next(500, 1_200), ct);
+        if (!transporte.Mandar(Paquete(ClientPacketId.SeleccionarHogar, w => w.WriteByte(0)))) return false;
+        await Task.Delay(_rng.Next(1_000, 2_500), ct);   // lee la pregunta
+        if (!transporte.Mandar(Paquete(ClientPacketId.SeleccionarHogar, w => w.WriteByte(1)))) return false;
+        await Task.Delay(_rng.Next(500, 1_200), ct);
+        _nivelDelHogar = nivel;
+        _runaNoSirveParaComprar = false;
+        _runaDejoEn = -1;
+        return true;
+    }
+
+    /// <summary>
+    /// ¿EN EL ÚLTIMO NIVEL DE NOVATO, AHÍ NO SE CAZA? No en el dungeon de novatos: el que pasa del 15 parado ahí sale mandado a Nix
+    /// con el hogar en Nix (ver <see cref="PonerElHogarAsync"/>), y desde Nix el primer pueblo que le vende a un ciudadano sin pasar
+    /// por el dungeon queda a trece mapas. Medido en `tarde_b`: cuatro de los dieciocho bots tenían el hogar en Nix, y Nadia, Rufo
+    /// y Juana pasaron la hora en el 87 y en Nix sin una poción, cazando Gallos y sin poder comprar.
+    /// </summary>
+    public static bool NoSeGraduaAhi(int nivel, string? zona) =>
+        nivel == GameLimits.NewbieMaxLevel && string.Equals(zona?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>¿Le pide (otra vez) el hogar al sacerdote? Si nunca lo hizo, o si lo hizo siendo novato y ya no lo es.</summary>
+    public static bool VuelveAPonerElHogar(int nivelDelHogar, int nivel) =>
+        nivelDelHogar == 0 || (nivelDelHogar <= GameLimits.NewbieMaxLevel && nivel > GameLimits.NewbieMaxLevel);
+
+    /// <summary>¿Le venden en ese mapa? La regla del comercio de <see cref="IrDeComprasAsync"/>, y sin guardias que vayan por él.</summary>
+    private bool LeVendenAca(int mapa) =>
+        ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
+
+    /// <summary>El nivel con el que puso el hogar (0: nunca), y cuándo puede volver a intentarlo si no llegó al sacerdote.</summary>
+    private int _nivelDelHogar;
+    private long _proximoHogar;
+
+    /// <summary>A cuántas baldosas del sacerdote se para para el /HOGAR (el servidor pide cinco o menos) y cuánto espera para volver
+    /// a intentarlo si no llegó.</summary>
+    private const int RadioDelHogar = 4, EsperaDelHogarMs = 10 * 60_000;
 
     /// <summary>El sacerdote que resucita: <c>NpcType 1</c> (VB6 <c>eNPCType.Revividor</c>).</summary>
     private bool EsSacerdote(short ficha) => _entorno.Datos.Npc(ficha)?.NpcType == 1;
