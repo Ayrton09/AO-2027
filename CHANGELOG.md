@@ -17,6 +17,12 @@ y lo que quedó sin contar desde el 4 de septiembre.
   la ciudad y después vuelven a su puesto. A los newbies (hasta nivel 15) no los tocan. Y al guardia que te
   ataca le podés pegar, y tus mascotas también.
 
+- **Los guardias de Illiandor son todos republicanos.** Uno de sus Magos era imperial y, con los guardias que atacan,
+  iba por los republicanos en su propia capital.
+
+- **Los animales de las ciudades ya no te siguen**: el Gallo, la Vaca, el Cerdo, el Pato y otras criaturas tranquilas
+  deambulan. En el original caminaban hacia vos como si te fueran a atacar.
+
 - **Las puertas cerradas no se atraviesan.** Algunas de Tiama, Nueva Esperanza, Rinkel y Nix se podían cruzar
   hasta que alguien las abría y las cerraba.
 
@@ -71,8 +77,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **La gracia al entrar se corta apenas hacés algo**, caminar incluido.
 
-- **Más sonidos en la pelea**: el arco al acertar y al errar, y el golpe a otro jugador, que además deja sangre.
-  Y la flecha que acierta le borra al blanco el efecto del hechizo que tenía encima, como en el original.
+- **Más sonidos en la pelea**: el arco al acertar y al errar, y el golpe a otro jugador, que además deja sangre. Y
+  la flecha que acierta le borra al blanco el efecto del hechizo que tenía encima, como en el original. Lo que le
+  saca la flecha a una criatura aparece sobre tu personaje, como el número del golpe.
 
 - **Pelear contra otro jugador, como el original**: el escudo también frena las flechas, y el ladrón, el bardo y el
   gladiador desarman también con el arco. Montado o en barco se pega más fuerte, y el barco o la montura de la víctima
@@ -263,17 +270,19 @@ y lo que quedó sin contar desde el 4 de septiembre.
   `CoverAO.Server crear-usuario-web` lo crea.
 
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
-  guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
-  nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, y en un mapa inseguro
-  tampoco aguantando los golpes de lo que no les conviene pelear: se alejan, y si los sigue, se van de ahí por la
-  salida más cercana. Si sus hechizos no salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro
-  mapa. Dos niveles antes de dejar de ser novatos se compran pociones propias —antes que nada—, ropa, un arma y
-  provisiones para el camino, aunque el herrero les quede lejos, si pueden llegar sin que los maten; y el último
-  nivel de novato no lo pasan adentro del dungeon. Ponen su hogar en una ciudad donde les venden, y si se quedan sin
-  pociones, comida o bebida lejos de toda tienda, caminan hasta un mapa seguro —aunque quede lejos— y vuelven a casa
-  con la runa, en vez de cruzar el desierto; y si no encuentran dónde cazar, también. Salen a comprar pociones sólo si
-  les alcanza para una. De un lugar lleno salen sin frenar en el camino, y el que viaja a otro mapa para trabajar se
-  queda un rato.
+  guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde nace
+  algo que los mata de un golpe; y a ningún lado cruzan donde nace algo que los mata de dos. No se quedan peleando
+  con lo que no pueden lastimar, y en un mapa inseguro tampoco aguantando los golpes de lo que no les conviene
+  pelear: se alejan, y si los sigue, se van de ahí por la salida más cercana —y si esa no los deja dar un paso, por
+  otra—. Persiguiendo una presa no se meten a la vista de lo que los mata. Si sus hechizos no salen siguen con el
+  arma, y de muertos van al sacerdote aunque esté en otro mapa. Dos niveles antes de dejar de ser novatos se compran
+  pociones propias —antes que nada—, ropa, un arma y provisiones para el camino, aunque el herrero les quede lejos,
+  si pueden llegar sin que los maten; y el último nivel de novato no lo pasan adentro del dungeon. Ponen su hogar en
+  una ciudad donde les venden, y si se quedan sin pociones, comida o bebida lejos de toda tienda, caminan hasta un
+  mapa seguro —aunque quede lejos— y vuelven a casa con la runa, en vez de cruzar el desierto; y si no encuentran
+  dónde cazar, también. Salen a comprar pociones sólo si les alcanza para una. De un lugar lleno salen sin frenar en
+  el camino, y el que viaja a otro mapa para trabajar se queda un rato. Desde el último nivel de novato eligen dónde
+  cazar por lo que rinde el mapa entero, hasta cuatro mapas más allá, y el Cazador pelea con el arco.
 
 ## 1.0.0 — 2026-09-16
 
