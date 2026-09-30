@@ -859,8 +859,10 @@ public sealed class Persistence : IDisposable
         // "Ulla": pegado al Gallo (81,41) — Hostile=0 y GiveEXP=0 en su ficha, ni mercader ni con rol, así que
         // es de los pocos NPCs reales que pasan por el gate de NpcTryAttack. Su corral está cercado: se llega a
         // él por (80,41) y el resto del pueblo queda a 142 pasos rodeando, de ahí que el cazador vaya aparte.
+        // NACE EN (80,41), AL LADO DEL PUESTO DEL GALLO: el Gallo deambula (decisión del autor, 30/09; antes iba hacia el
+        // usuario que veía), y sin nadie en el mapa no se mueve, así que al entrar está ahí para pegarle.
         var ulla = CreateCharacter(acc, "Ulla", charIndex: 7, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
-        ulla.Pos = new WorldPos(1, 79, 41);
+        ulla.Pos = new WorldPos(1, 80, 41);
         SaveCharacter(ulla);
         // "Cazador": a 7 tiles de la Serpiente (22,40) — o sea FUERA de su AggroRange de 6, para poder ver cómo
         // se activa al acercarse. Es el ÚNICO bicho agresivo de Ullathorpe (Hostile=1, GiveEXP=25) y es débil
