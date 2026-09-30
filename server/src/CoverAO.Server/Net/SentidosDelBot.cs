@@ -57,7 +57,7 @@ public sealed class SentidosDelBot
     private byte _x, _y;
     private bool _tengoPosicion;
     private int _vida, _vidaMax = 1, _energia, _energiaMax = 1;
-    private int _mana, _manaMax = 1, _oro, _puntosLibres;
+    private int _mana, _manaMax = 1, _oro, _puntosLibres, _experiencia;
     private short _nivel, _mapa;
     private byte _hambre, _sed;
     private long _ultimoAvisoDeVeneno;
@@ -176,6 +176,9 @@ public sealed class SentidosDelBot
     public int EnergiaEnPuntos { get { lock (_candado) return _energia; } }
 
     public int Oro { get { lock (_candado) return _oro; } }
+
+    /// <summary>La experiencia acumulada en el nivel. Sube con cada golpe que da experiencia (<c>CalcularDarExp</c>), no sólo al matar.</summary>
+    public int Experiencia { get { lock (_candado) return _experiencia; } }
 
     /// <summary>Puntos de skill sin repartir. El servidor los anuncia al subir de nivel, y un jugador los
     /// gasta: dejarlos juntándose es de las cosas que más delatan que del otro lado no hay nadie.</summary>
@@ -752,7 +755,8 @@ public sealed class SentidosDelBot
                     int enerMax = l.Entero(), ener = l.Entero();
                     int oro = l.Largo();
                     short nivel = l.Entero();
-                    l.Largo(); l.Largo();                         // exp para subir, exp
+                    l.Largo();                                    // exp para subir
+                    int experiencia = l.Largo();
                     l.Byte(); l.Byte();                           // agilidad, fuerza
                     byte hambre = l.Byte(); l.Byte();
                     byte sed = l.Byte();
@@ -761,7 +765,7 @@ public sealed class SentidosDelBot
                         _vidaMax = vidaMax; _vida = vida;
                         _manaMax = manaMax; _mana = mana;
                         _energiaMax = enerMax; _energia = ener;
-                        _oro = oro;
+                        _oro = oro; _experiencia = experiencia;
                         _nivel = nivel; _hambre = hambre; _sed = sed;
                         if (vida <= 0) AlMorir();
                     }
@@ -782,6 +786,10 @@ public sealed class SentidosDelBot
 
                 case ServerPacketId.UpdateGold:
                     lock (_candado) _oro = l.Largo();
+                    break;
+
+                case ServerPacketId.UpdateExp:
+                    lock (_candado) _experiencia = l.Largo();
                     break;
 
                 // PUNTOS DE SKILL PARA REPARTIR. Van SUMANDO: el servidor avisa cuántos se ganaron en ESTE
@@ -865,12 +873,14 @@ public sealed class SentidosDelBot
                 {
                     int vidaMax = l.Entero(), manaMax = l.Entero(), enerMax = l.Entero();
                     short nivel = l.Entero();
+                    l.Largo();                                    // exp para subir
+                    int experiencia = l.Largo();
                     lock (_candado)
                     {
                         _vidaMax = vidaMax; _vida = vidaMax;
                         _manaMax = manaMax;
                         _energiaMax = enerMax;
-                        _nivel = nivel;
+                        _nivel = nivel; _experiencia = experiencia;
                     }
                     break;
                 }

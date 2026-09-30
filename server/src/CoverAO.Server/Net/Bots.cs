@@ -2835,6 +2835,33 @@ public sealed class Bot
     public static bool EstaLleno(int personasALaVista) => personasALaVista >= PersonasQueLlenan;
 
     /// <summary>
+    /// LAS BÚSQUEDAS DE COTO SEGUIDAS SIN GANAR NADA, en el mismo mapa: la cuenta sigue si desde la anterior no cambiaron el mapa, la
+    /// experiencia ni el nivel, y vuelve a uno si cambió algo. A las <see cref="BusquedasSinGanar"/> el mapa se deja como el lleno
+    /// (<see cref="EstaLleno"/>): la búsqueda llega cada medio minuto sin ninguna presa a la vista, y la experiencia sube con cada
+    /// golpe, así que son unos tres minutos sin pegarle a nada.
+    ///
+    /// <para>El lugar lleno se reconocía sólo por la gente a la vista, y en un mapa grande los que se reparten las presas no se ven.
+    /// Medido en `early9` y `early10` (30/09): los bots que salían de la cuna llena iban a Lindos por el oro de sus cuatro Águilas, y
+    /// con dos o tres cazándolas se quedaban ahí: Osmar 28 minutos en nivel 3, y Rufo 14 sin subir del 3 con la experiencia por
+    /// cincuenta, que es 900 por Águila. Cada búsqueda elegía otra vez Lindos.</para>
+    /// </summary>
+    public static (int Mapa, int Experiencia, int Nivel, int Seguidas) OtraBusquedaSinGanar(
+        (int Mapa, int Experiencia, int Nivel, int Seguidas) antes, int mapa, int experiencia, int nivel) =>
+        antes.Seguidas > 0 && antes.Mapa == mapa && antes.Experiencia == experiencia && antes.Nivel == nivel
+            ? (mapa, experiencia, nivel, antes.Seguidas + 1)
+            : (mapa, experiencia, nivel, 1);
+
+    /// <summary>
+    /// ¿LO ÚNICO QUE QUEDA ES QUEDARSE DONDE NO LE DA NADA? Si el coto que sale es el mismo mapa que <see cref="OtraBusquedaSinGanar"/>
+    /// dejó como lleno, no hay otro al que se llegue: es estar encerrado, y sale con la runa (<see cref="SiEstaEncerrado"/>). Del lugar
+    /// lleno de gente, en cambio, sin otro coto se queda: ahí algo caza.
+    ///
+    /// <para>Lindos es así para el que llega desde la cuna: se entra por un lado y la vuelta es un teleport detrás de una puerta que el
+    /// bot no abre, así que desde las Águilas a pie sólo se llega al 63 y al 64.</para>
+    /// </summary>
+    public static bool LoUnicoEsQuedarseSinGanar(int? mapaDelCoto, int mapa, bool noDaNada) => noDaNada && mapaDelCoto == mapa;
+
+    /// <summary>
     /// A DÓNDE IRSE DE UN LUGAR LLENO: <see cref="ElegirCoto"/> entre los mapas que <paramref name="sirve"/>
     /// (<see cref="SirveParaIrseDelLleno"/>), sin caer a elegir como siempre: null si no hay ninguno, y el bot se queda.
     /// </summary>
@@ -2894,6 +2921,8 @@ public sealed class Bot
     }
 
     private readonly Dictionary<int, long> _llenoHasta = new();
+    private (int Mapa, int Experiencia, int Nivel, int Seguidas) _busquedasSinGanar;
+    private readonly Dictionary<int, long> _noDaNadaHasta = new();
 
     /// <summary>
     /// ¿NO VUELVE A CRUZAR ESE MAPA? No lo cruza de viaje —salvo que sea el destino— si hace menos de un rato se fue de ahí
@@ -2987,6 +3016,8 @@ public sealed class Bot
     /// <summary>Los mapas de los que se fue huyendo, hasta cuándo no los cruza de viaje (ver <see cref="NoVuelveACruzar"/>).</summary>
     private readonly Dictionary<int, long> _huyoDe = new();
     private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
+    /// <summary>Cuántas búsquedas de coto seguidas sin ganar nada dejan el mapa como lleno: ver <see cref="OtraBusquedaSinGanar"/>.</summary>
+    public const int BusquedasSinGanar = 6;
 
     /// <summary>
     /// CUÁNTO LE GUSTA ESE MAPA A ESTE BOT, para desempatar entre cotos que rinden lo mismo. Sale de la semilla del nombre,
@@ -3119,6 +3150,13 @@ public sealed class Bot
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
+        // Y EL QUE NO LE DA NADA, IGUAL: ver `OtraBusquedaSinGanar`.
+        _busquedasSinGanar = OtraBusquedaSinGanar(_busquedasSinGanar, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel);
+        if (_busquedasSinGanar.Seguidas >= BusquedasSinGanar)
+        {
+            _llenoHasta[sentidos.Mapa] = _noDaNadaHasta[sentidos.Mapa] = ahora + LlenoMs;
+            _busquedasSinGanar = default;
+        }
         // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.
         var paraSuOficio = LoQueSaleACazarParaSuOficio(sentidos);
         // Y SIN CONTAR COMO CAMINO LO QUE EL VIAJE NO VA A CRUZAR: ver `CruzaSinHuidas`.
@@ -3135,7 +3173,8 @@ public sealed class Bot
         {
             hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
                                            cruza, seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
-                                           m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso),
+                                           m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso)
+                                                && !nunca(m),
                                            m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca,
                                            EligePorLoQueSuma(nivel));
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
@@ -3145,6 +3184,8 @@ public sealed class Bot
         // nunca y la runa, que sale de los viajes fallidos, tampoco. Medido en `cadena1` (30/09): Hilda, Druida de nivel 3, fue a
         // Lindos por el oro de sus Águilas y se quedó ahí cuarenta minutos sin subir; y Juana, de nivel 10, diez minutos más
         // después de ir a comprar.
+        // Y SI LO ÚNICO QUE QUEDA ES QUEDARSE DONDE NO LE DA NADA, ESTÁ ENCERRADO: ver `LoUnicoEsQuedarseSinGanar`.
+        if (LoUnicoEsQuedarseSinGanar(hallado?.Mapa, sentidos.Mapa, SigueLleno(_noDaNadaHasta, sentidos.Mapa, ahora))) hallado = null;
         if (hallado is not { } coto)
         {
             SiEstaEncerrado(transporte, sentidos);
