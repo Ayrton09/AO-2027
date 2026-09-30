@@ -1310,6 +1310,7 @@
     {
       "_index": 42,
       "Name": "Comidas Newbie Dungeon",
+      "Movement": "3",
       "Name2": "Provisiones",
       "PosOrig": "1",
       "Head": "4",
@@ -1341,6 +1342,7 @@
     {
       "_index": 43,
       "Name": "Tabernero Newbie Dungeon",
+      "Movement": "3",
       "Name2": "Provisiones",
       "PosOrig": "1",
       "Head": "17",
@@ -1398,6 +1400,7 @@
     {
       "_index": 45,
       "Name": "Espiritu",
+      "Movement": "3",
       "PosOrig": "1",
       "Head": "500",
       "Body": "8",
@@ -1767,6 +1770,7 @@
     {
       "_index": 58,
       "Name": "Pescador",
+      "Movement": "3",
       "PosOrig": "1",
       "Head": "101",
       "Body": "3",
@@ -1940,6 +1944,7 @@
     {
       "_index": 65,
       "Name": "Gallo",
+      "Movement": "3",
       "Info": "No atacable",
       "Head": "0",
       "Body": "5",
@@ -1955,6 +1960,7 @@
     {
       "_index": 66,
       "Name": "Cerdo",
+      "Movement": "3",
       "Info": "No atacable",
       "Head": "0",
       "Body": "6",
@@ -1970,6 +1976,7 @@
     {
       "_index": 67,
       "Name": "Vaca",
+      "Movement": "3",
       "Info": "No atacable",
       "Head": "0",
       "Body": "366",
@@ -2326,6 +2333,7 @@
     {
       "_index": 79,
       "Name": "Tortuga gigante",
+      "Movement": "3",
       "Head": "0",
       "Info": "No atacable",
       "Body": "74",
@@ -2805,6 +2813,7 @@
     {
       "_index": 97,
       "Name": "Pato",
+      "Movement": "3",
       "PosOrig": "1",
       "Head": "0",
       "Body": "88",
