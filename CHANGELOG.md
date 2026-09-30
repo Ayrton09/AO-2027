@@ -265,10 +265,14 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad. Se van del mapa de los
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde
   nace algo que los mata de un golpe. No se quedan peleando con lo que no pueden lastimar, y en un mapa inseguro
-  tampoco aguantando los golpes de lo que no les conviene pelear: se alejan, y si los sigue, se van de ahí. Si sus
-  hechizos no salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro mapa. Dos niveles antes
-  de dejar de ser novatos se compran ropa, un arma y provisiones para el camino, aunque el herrero les quede lejos,
-  si pueden llegar sin que los maten.
+  tampoco aguantando los golpes de lo que no les conviene pelear: se alejan, y si los sigue, se van de ahí por la
+  salida más cercana. Si sus hechizos no salen siguen con el arma, y de muertos van al sacerdote aunque esté en otro
+  mapa. Dos niveles antes de dejar de ser novatos se compran pociones propias —antes que nada—, ropa, un arma y
+  provisiones para el camino, aunque el herrero les quede lejos, si pueden llegar sin que los maten; y el último
+  nivel de novato no lo pasan adentro del dungeon. Ponen su hogar en una ciudad donde les venden, y si se quedan sin
+  pociones, comida o bebida lejos de toda tienda, caminan hasta un mapa seguro y vuelven a casa con la runa, en vez
+  de cruzar el desierto. De un lugar lleno salen sin frenar en el camino, y el que viaja a otro mapa para trabajar
+  se queda un rato.
 
 ## 1.0.0 — 2026-09-16
 
