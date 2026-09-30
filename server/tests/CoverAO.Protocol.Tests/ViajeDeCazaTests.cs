@@ -99,4 +99,21 @@ public class ViajeDeCazaTests
         var d = GameData.Load();
         Assert.False(Corta(Sentidos(Personaje(50, 50)), d, RadioCazador));
     }
+
+    /// <summary>
+    /// NI POR LO QUE EL CICLO NO VA A CAZAR: lo que no puede lastimar y lo que tiene anotado que no se alcanza. Medido en `early3`:
+    /// un Guerrero de nivel 1 pasó doce minutos en el mismo rincón del 5 cortando en el primer paso cada viaje a la cuna.
+    /// </summary>
+    [Fact]
+    public void No_frena_por_lo_que_no_puede_lastimar_ni_por_lo_que_no_alcanza()
+    {
+        var d = GameData.Load();
+        if (d.Npc(Murcielago) is null) return;
+        var escena = Sentidos(Personaje(50, 50), Criatura(d, 600, Murcielago, 50, 47));
+        Assert.True(Corta(escena, d, RadioCazador), "premisa: por el Murciélago a tres, frena");
+        Assert.False(Bot.HayAlgoQueCazarCerca(escena, d, VidaMaxima, nivel: 1, conPociones: true, curaVeneno: false,
+                                              radioSuyo: RadioCazador, noLaLastima: f => f == Murcielago));
+        Assert.False(Bot.HayAlgoQueCazarCerca(escena, d, VidaMaxima, nivel: 1, conPociones: true, curaVeneno: false,
+                                              radioSuyo: RadioCazador, sinCamino: new HashSet<short> { 600 }));
+    }
 }

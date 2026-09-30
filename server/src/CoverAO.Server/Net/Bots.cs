@@ -3018,10 +3018,17 @@ public sealed class Bot
     /// </summary>
     public static bool HayAlgoQueCazarCerca(SentidosDelBot sentidos, GameData datos, int vidaMaxima, int nivel,
                                             bool conPociones, bool curaVeneno, int radioSuyo, int rindeElDestino = 0,
-                                            Func<short, bool>? tambienPeligroso = null)
+                                            Func<short, bool>? tambienPeligroso = null,
+                                            Func<short, bool>? noLaLastima = null, IReadOnlySet<short>? sinCamino = null)
     {
+        // LO QUE EL CICLO NO VA A CAZAR TAMPOCO CORTA EL VIAJE: lo que no puede lastimar (`EsPresa`) y lo que tiene anotado que
+        // no se alcanza (`NoSeLlegaA`), las dos listas con las que el ciclo elige presa. Medido en `early3` (29/09): Ciro, un
+        // Guerrero de nivel 1, pasó doce minutos en el mismo rincón del 5 cortando en el primer paso cada viaje a la cuna, y no
+        // subió de nivel.
         var presa = sentidos.MasCercano(ficha => EsPresaPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno)
-                                                 && ValeFrenarElViaje((int)(datos.Npc(ficha)?.GiveExp ?? 0), rindeElDestino));
+                                                 && ValeFrenarElViaje((int)(datos.Npc(ficha)?.GiveExp ?? 0), rindeElDestino)
+                                                 && noLaLastima?.Invoke(ficha) != true,
+                                        sinCamino);
         var peligro = sentidos.MasCercano(ficha => EsPeligrosoPara(datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno)
                                                    || tambienPeligroso?.Invoke(ficha) == true);
         // Lo que paga se persigue desde más lejos, igual que al elegir presa.
@@ -3036,7 +3043,8 @@ public sealed class Bot
                                       int rindeElDestino = 0)
     {
         _cortoElViaje = HayAlgoQueCazarCerca(sentidos, _entorno.Datos, vidaMaxima, nivel, conPociones, curaVeneno,
-                                             RadioDeCazaSuyo, rindeElDestino, f => EsGuardiaQueVaPorEl(f, nivel));
+                                             RadioDeCazaSuyo, rindeElDestino, f => EsGuardiaQueVaPorEl(f, nivel),
+                                             NoLaLastima, SiguenSinCamino(_sinCamino, Environment.TickCount64));
         return _cortoElViaje;
     }
 
