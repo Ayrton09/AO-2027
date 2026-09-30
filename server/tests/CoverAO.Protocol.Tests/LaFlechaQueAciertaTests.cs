@@ -159,4 +159,26 @@ public class LaFlechaQueAciertaTests : IDisposable
         Assert.True(blanco.Hp < 1_000_000, "ninguna flecha entró");
         Assert.Contains((short)0, EfectosSobre(aMi.Enviados, blanco.CharIndex));
     }
+
+    /// <summary>
+    /// Y EL NÚMERO DE LO QUE LE SACÓ VA SOBRE LA CABEZA DEL QUE TIRA, como el del golpe: el original lo ancla en el personaje
+    /// (<c>UserDañoNpc</c>, SistemaCombate.bas:467), y la flecha llega ahí por la misma función que la espada (:932).
+    /// </summary>
+    [Fact]
+    public async Task El_numero_de_la_flecha_que_entra_va_sobre_el_que_tira()
+    {
+        var (w, d, s, yo, aMi) = Arquero();
+        var plantilla = new NpcInfo(Index: 900, Name: "Blanco", Body: 1, Head: 1, Heading: 3, MaxHp: 1_000_000, MinHit: 0,
+            MaxHit: 0, Def: 0, GiveExp: 0, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 0, Hostile: true, Attackable: true, Movement: 1);
+        var blanco = new Npc { CharIndex = w.AllocateCharIndex(), Template = plantilla, Hp = 1_000_000, Pos = new WorldPos(Mapa, X + 2, Y) };
+        w.AddNpc(blanco);
+
+        for (int i = 0; i < 20 && blanco.Hp == 1_000_000; i++)
+            await Tirar(d, s, X + 2, 1);
+
+        Assert.True(blanco.Hp < 1_000_000, "ninguna flecha entró");
+        var numeros = aMi.Enviados.Where((p) => p.Length == 8 && p[0] == (byte)ServerPacketId.ChatOverHeadLocale && p[7] == 2).ToList();
+        Assert.DoesNotContain(numeros, (p) => BitConverter.ToInt16(p, 1) == blanco.CharIndex);
+        Assert.Contains(numeros, (p) => BitConverter.ToInt16(p, 1) == yo.CharIndex && BitConverter.ToInt32(p, 3) > 0);
+    }
 }

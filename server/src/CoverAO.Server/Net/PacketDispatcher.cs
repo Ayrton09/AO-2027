@@ -2598,8 +2598,10 @@ public sealed partial class PacketDispatcher
         // `UserDañoNpc` (:932) que el melee, que es quien llama a `CalcularDarExp` en :470.
         CalcularDarExp(session, p, npc, damage);
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
-        // Sin texto y solo al tirador (UserDanoNpc, SistemaCombate.bas:467).
-        session.Send(ServerMessages.DamageOverHead(npc.CharIndex, damage));
+        // Sin texto y solo al tirador (UserDanoNpc, SistemaCombate.bas:467), Y SOBRE SU CABEZA, como el golpe: el original
+        // ancla el número en `UserList(UserIndex).Char.CharIndex`, y el tiro llega ahí por el mismo `UserDañoNpc` (:932). Acá
+        // iba sobre la criatura, que es como estaba el golpe antes de corregirlo; el fallo, más arriba, ya iba sobre el tirador.
+        session.Send(ServerMessages.DamageOverHead(p.CharIndex, damage));
         if (npc.Hp == 0) NpcKilledByPlayer(session, p, npc);
     }
 
