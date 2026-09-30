@@ -1422,7 +1422,9 @@ public sealed class Bot
         bool sigueFaltando = sentidos.Suma(PuntosDeComida) < ComidaMinima || sentidos.Suma(PuntosDeBebida) < BebidaMinima
                              || (hayArmaAlAlcance && LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)))
                              || (hayRopaAlAlcance && LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
-                             || LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia));
+                             || LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))
+                             // Y EN EL PUEBLO, TODO DE UNA: ver `HayMasParaComprarAca`.
+                             || (compro && HayMasParaComprarAca(sentidos));
         switch (DescansoTrasElViaje(compro, sigueFaltando))
         {
             case DescansoDeCompras.Ninguno: _descansoLargo = false; _proximaCompra = 0; break;
@@ -1430,6 +1432,26 @@ public sealed class Bot
             default: PostergarCompra(); break;
         }
         return true;
+    }
+
+    /// <summary>
+    /// ¿HAY ACÁ MISMO MÁS PARA COMPRAR? Si en el mapa donde está, que lo atiende, hay quien le venda equipo o un pergamino que lo
+    /// mejora y le alcanza la plata (<see cref="ValeElViajePorEso"/>, <see cref="ValeElViajePorElPergamino"/>). Entonces, después de
+    /// comprar, no se toma el descanso largo: sigue comprando, como cualquiera que ya está en el pueblo.
+    ///
+    /// <para>El equipo es un gusto, y el gusto no se va a buscar lejos: pasado el novato la tienda se busca por donde no hay peligro,
+    /// y desde los cotos buenos del late no hay camino así a ningún pueblo, así que el bot vuelve al pueblo sólo con la runa, por lo
+    /// esencial —y después de comprar lo esencial, el descanso largo lo sacaba de ahí—. Medido en `early9` (30/09): Ciro, nivel 24
+    /// con 230 mil monedas, seguía con la Daga de Corsario (golpe 4) que se compró apurado en el 16.</para>
+    /// </summary>
+    private bool HayMasParaComprarAca(SentidosDelBot sentidos)
+    {
+        if (!LeVendenAca(sentidos.Mapa) || !_entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var nacen)) return false;
+        double plata = PlataParaElEquipo(sentidos);
+        return nacen.Any(q => _entorno.Datos.Npc((short)q.NpcIndex) is { StockItems: { Count: > 0 } stock }
+                              && stock.Any(s => (plata >= OroParaMirarEquipo && ValeElViajePorEso(sentidos, (short)s.ObjIndex, plata))
+                                                || (sentidos.UsaMana && plata >= OroParaMirarHechizos
+                                                    && ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, plata))));
     }
 
     /// <summary>Cuánto se espera para la próxima compra después de un viaje. Ver <see cref="DescansoTrasElViaje"/>.</summary>
@@ -2894,6 +2916,74 @@ public sealed class Bot
     public static Func<int, bool> CruzaSinHuidas(Func<int, bool> cruza, IReadOnlyDictionary<int, long> huyoDe, long ahora) =>
         m => cruza(m) && !NoVuelveACruzar(huyoDe, m, 0, ahora);
 
+    /// <summary>
+    /// ¿DESDE ESE MAPA TIENE CÓMO VOLVER A COMPRAR? Si a <see cref="Navegante.TopeDeMapas"/> mapas o menos, por donde
+    /// <paramref name="pasa"/>, hay un mapa seguro donde usar la runa —y la runa lo lleva a donde le venden, <paramref name="conRuna"/>—
+    /// o un pueblo con quien le venda lo esencial (<paramref name="tieneTienda"/>). Se prueba desde cada baldosa de
+    /// <paramref name="desdeDonde"/>, que son de las zonas del mapa donde nacen las criaturas: un mapa puede tener zonas que no se tocan.
+    ///
+    /// <para>Ahí no se va a cazar (decisión del autor, 30/09: "que no se meta ahí", para todos). Medido en `tardeA` y `tardeB`:
+    /// Milo, republicano de nivel 23, cazaba en el 19, del lado imperial; sin comida ni pociones, el mapa seguro para su runa quedaba
+    /// a seis mapas —Ullathorpe, Nix y Banderbill tienen guardias imperiales que van por él— y el viaje largo va sólo por donde no hay
+    /// peligro: se quedó sin energía y lo mató un Lobo en las dos corridas. Cinco mapas es el viaje que puede tomar el camino de
+    /// siempre (<see cref="CaminoDelViaje"/>), que es el que queda cuando no hay pociones.</para>
+    /// </summary>
+    public static bool TieneComoVolver(Navegante mapas, int mapa, IEnumerable<(byte X, byte Y)> desdeDonde, Func<int, bool> pasa,
+                                       Func<int, bool> mapaSeguro, Func<int, bool> tieneTienda, bool conRuna) =>
+        (conRuna && mapaSeguro(mapa)) || tieneTienda(mapa)
+        || desdeDonde.Any(d => (conRuna && mapas.MapaMasCercano(mapa, d, mapaSeguro, pasa) is not null)
+                               || mapas.MapaMasCercano(mapa, d, tieneTienda, pasa) is not null);
+
+    /// <summary>
+    /// LOS FILTROS DE <see cref="TieneComoVolver"/> para un bando, un nivel y una vida: por dónde pasa —donde lo dejan entrar, sin
+    /// guardias que vayan por él y sin nada que lo mate de dos golpes (<see cref="NaceLoQueLoMataDeDos"/>)—, dónde anda la runa y
+    /// dónde le venden pociones, comida o bebida. Los usan el bot y los tests, para que sean los mismos.
+    /// </summary>
+    public static (Func<int, bool> Pasa, Func<int, bool> MapaSeguro, Func<int, bool> TieneTienda) FiltrosDeLaVuelta(
+        GameData datos, ServerIni? ini, byte bando, int nivel, int vida)
+    {
+        Func<int, bool> guardias = m => HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
+        Func<int, bool> pasa = m => PuedeEntrar(nivel, datos.MapZone(m)) && !guardias(m) && !NaceLoQueLoMataDeDos(datos, m, vida);
+        Func<int, bool> seguro = m => MapaSeguroPara(m, bando, nivel, datos, ini);
+        Func<int, bool> tienda = m => ElMercaderLeVende(ini, datos.MapBattleMode(m), bando) && !guardias(m)
+            && datos.MapSpawns.TryGetValue(m, out var nacen)
+            && nacen.Any(q => datos.Npc((short)q.NpcIndex) is { StockItems: { Count: > 0 } stock }
+                              && stock.Any(s => datos.Obj((short)s.ObjIndex) is { IsPotion: true, SubType: 3 } or { IsFood: true }
+                                                                                 or { IsDrink: true }));
+        return (pasa, seguro, tienda);
+    }
+
+    /// <summary>Desde dónde se mira <see cref="TieneComoVolver"/> en un mapa: hasta tres de las baldosas donde nacen sus criaturas —la
+    /// primera, la del medio y la última—, que suelen caer en las zonas que se cazan.</summary>
+    public static IReadOnlyList<(byte X, byte Y)> DesdeDondeSeCaza(GameData datos, int mapa)
+    {
+        var baldosas = new List<(byte X, byte Y)>();
+        if (datos.MapSpawns.TryGetValue(mapa, out var spawns) && spawns.Count > 0)
+            foreach (int i in new[] { 0, spawns.Count / 2, spawns.Count - 1 }.Distinct())
+                baldosas.Add(((byte)spawns[i].X, (byte)spawns[i].Y));
+        return baldosas;
+    }
+
+    /// <summary>
+    /// <see cref="TieneComoVolver"/> para este bot, con la runa si la tiene y lo lleva a donde le venden. Se guarda por mapa, nivel
+    /// y runa: buscarlo es recorrer varios mapas, y la búsqueda de coto lo pregunta por cada uno.
+    /// </summary>
+    private bool TieneComoVolverDesde(int mapa, SentidosDelBot sentidos)
+    {
+        bool conRuna = !_runaNoSirveParaComprar && sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) != 0;
+        int nivel = sentidos.Nivel;
+        if (_comoVolver.TryGetValue((mapa, nivel, conRuna), out bool sabido)) return sabido;
+        if (_comoVolver.Count > 2_000) _comoVolver.Clear();
+        var (pasa, seguro, tienda) = FiltrosDeLaVuelta(_entorno.Datos, _entorno.Ini, _miBando, nivel, sentidos.VidaMaxima);
+        var desde = DesdeDondeSeCaza(_entorno.Datos, mapa);
+        bool puede = desde.Count == 0 || TieneComoVolver(_entorno.Mapas, mapa, desde, pasa, seguro, tienda, conRuna);
+        _comoVolver[(mapa, nivel, conRuna)] = puede;
+        return puede;
+    }
+
+    /// <summary>Lo que ya se supo de <see cref="TieneComoVolverDesde"/>, por mapa, nivel y runa.</summary>
+    private readonly Dictionary<(int Mapa, int Nivel, bool ConRuna), bool> _comoVolver = new();
+
     /// <summary>Los mapas de los que se fue huyendo, hasta cuándo no los cruza de viaje (ver <see cref="NoVuelveACruzar"/>).</summary>
     private readonly Dictionary<int, long> _huyoDe = new();
     private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
@@ -3022,7 +3112,9 @@ public sealed class Bot
             ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
         // EN EL MAPA DE LOS GUARDIAS QUE VAN POR ÉL NO SE CAZA, tampoco en una ciudad del otro bando que no sea pk: ver `ElegirCoto`.
         // NI EN EL DUNGEON DE NOVATOS EN EL ÚLTIMO NIVEL: ver `NoSeGraduaAhi`.
-        Func<int, bool> nunca = m => HayGuardiaQueLoAtaca(m) || NoSeGraduaAhi(nivel, _entorno.Datos.MapZone(m));
+        // NI DONDE NO TIENE CÓMO VOLVER A COMPRAR: ver `TieneComoVolver`.
+        Func<int, bool> nunca = m => HayGuardiaQueLoAtaca(m) || NoSeGraduaAhi(nivel, _entorno.Datos.MapZone(m))
+                                     || !TieneComoVolverDesde(m, sentidos);
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
