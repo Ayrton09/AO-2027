@@ -219,6 +219,30 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// ESCAPANDO, POR LA PUERTA MÁS CERCANA. En (10,9) del 195 la salida (9,9) al 275 está al lado, pero la puerta que elige el
+    /// navegante es la (9,8), la primera de la data que da del otro lado a la baldosa de llegada, y para llegar hay que pasar por
+    /// (10,8). Medido en `early3`: una Druida escapando de un Lobo se quedó ahí dieciséis segundos, sin moverse, y murió. Si la de
+    /// al lado está tapada, la que sigue.
+    /// </summary>
+    [Fact]
+    public void Escapando_se_sale_por_la_puerta_mas_cercana()
+    {
+        if (Mundo() is not { } m) return;
+        Assert.Equal(275, m.Datos.MapExits[(195, 9, 9)].DestMap);
+        var puerta = m.Mapas.PuertaHacia(195, 275, (10, 9), (91, 8));
+        Assert.True(puerta is { } p && p.Puerta != ((byte)9, (byte)9), "premisa: la puerta de siempre no es la de al lado");
+
+        var camino = m.Mapas.CaminoALaPuertaMasCercana(195, (10, 9), 275);
+        Assert.Equal(new[] { ((byte)9, (byte)9) }, camino!.ToArray());
+
+        var rodeo = m.Mapas.CaminoALaPuertaMasCercana(195, (10, 9), 275, new HashSet<(byte X, byte Y)> { (9, 9) });
+        Assert.True(rodeo is { Count: > 0 }, "con la de al lado tapada no encuentra otra");
+        var otra = rodeo![^1];
+        Assert.NotEqual(((byte)9, (byte)9), otra);
+        Assert.Equal(275, m.Datos.MapExits[(195, otra.X, otra.Y)].DestMap);
+    }
+
+    /// <summary>
     /// Y PARA QUEDAR CERCA DE ALGO NO SE PARA ENCIMA DE UNA SALIDA. Hay criaturas que nacen sobre una —el Murciélago de (19,7)
     /// del 11 nace en la fila de la salida al 555— y el camino al coto terminaba ahí: medido en `early1`, dos bots de nivel 1
     /// pisaban la salida, caían en el 555, volvían al 11 y otra vez, seis y ocho veces seguidas.

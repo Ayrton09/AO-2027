@@ -222,6 +222,44 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// EL CAMINO A LA PUERTA MÁS CERCANA HACIA ESE MAPA, caminando desde donde está: la primera baldosa de salida hacia
+    /// <paramref name="mapaDestino"/> que encuentra la búsqueda en anchura, sin cruzar otras salidas ni lo que se pide evitar. null
+    /// si no hay ninguna. <see cref="PuertaHacia"/> elige la puerta por lo que hay del otro lado y en el orden de la data, no por la
+    /// distancia, y para escapar lo que cuenta es el paso: medido en `early3` (29/09), una Druida en (10,9) del 195, con un Lobo
+    /// pegándole, escapaba hacia el 275 por (9,8) —que pedía pasar por (10,8)— teniendo la salida (9,9) al lado, y murió ahí.
+    /// </summary>
+    public IReadOnlyList<(byte X, byte Y)>? CaminoALaPuertaMasCercana(int mapa, (byte X, byte Y) desde, int mapaDestino,
+                                                                    IReadOnlySet<(byte X, byte Y)>? evitar = null)
+    {
+        bool LlevaAlDestino(int x, int y) => _datos.MapExits.TryGetValue((mapa, x, y), out var sal) && sal.DestMap == mapaDestino;
+        var deDonde = new Dictionary<int, int>();
+        var cola = new Queue<int>();
+        int inicio = Clave(desde.X, desde.Y);
+        cola.Enqueue(inicio);
+        deDonde[inicio] = -1;
+        int vistos = 0;
+        while (cola.Count > 0 && vistos++ < TopeDeExploracion)
+        {
+            int actual = cola.Dequeue();
+            byte x = (byte)(actual & 0xff), y = (byte)(actual >> 8);
+            if (actual != inicio && LlevaAlDestino(x, y)) return Reconstruir(deDonde, actual);
+            for (byte rumbo = 1; rumbo <= 4; rumbo++)
+            {
+                var (dx, dy) = SentidosDelBot.Paso(rumbo);
+                int nx = x + dx, ny = y + dy;
+                if (!SePuedePisar(mapa, nx, ny) || evitar?.Contains(((byte)nx, (byte)ny)) == true) continue;
+                // Una salida a otro lado no se cruza (ver `Camino`); la del destino es la meta.
+                if (EsSalida(mapa, nx, ny) && !LlevaAlDestino(nx, ny)) continue;
+                int vecino = Clave((byte)nx, (byte)ny);
+                if (deDonde.ContainsKey(vecino)) continue;
+                deDonde[vecino] = actual;
+                cola.Enqueue(vecino);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// DÓNDE HAY UN NPC ASÍ. Busca primero en el mapa donde está y después en los que se alcanzan viajando,
     /// en orden de cercanía. Devuelve dónde aparece y a cuántos mapas queda.
     ///

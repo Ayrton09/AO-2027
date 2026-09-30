@@ -4803,7 +4803,11 @@ public sealed class Bot
             var pasa = PasaSinPeligro(sentidos, mapaDestino);
             var cruza = CruzaSinPeligroHacia(sentidos, mapaDestino);
             var pisable = Pisable(sentidos);
+            // ESCAPANDO, POR LA PUERTA MÁS CERCANA al mapa vecino: ver `Navegante.CaminoALaPuertaMasCercana`.
+            var porLaMasCercana = escapando && !esLaMeta
+                ? _entorno.Mapas.CaminoALaPuertaMasCercana(mapa, desde, mapaDestino, trabas) : null;
             if (esLaMeta) meta = (destinoX, destinoY);
+            else if (porLaMasCercana is { Count: > 0 }) meta = porLaMasCercana[^1];
             // POR DÓNDE: ver `CaminoDelViaje`.
             else if (CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas,
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
@@ -4830,6 +4834,7 @@ public sealed class Bot
             if (esLaMeta && Math.Abs(desde.X - destinoX) + Math.Abs(desde.Y - destinoY) <= tolerancia) return true;
 
             var camino = esLaMeta ? _entorno.Mapas.HayComoLlegar(mapa, desde, meta, tolerancia, trabas)
+                                   : porLaMasCercana is { Count: > 0 } ? porLaMasCercana
                                    : _entorno.Mapas.Camino(mapa, desde, meta, trabas);
             // Si esquivando no queda camino, lo que tapaba era el único paso: se espera a que se corra y se vuelve a
             // probar por donde se venía.
