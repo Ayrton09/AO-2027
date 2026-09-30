@@ -160,6 +160,23 @@ public sealed class Bot
     private const int FaenaMinMs = 1_100, FaenaMaxMs = 2_000;
     private const int EnfriamientoFaenaMinS = 60, EnfriamientoFaenaMaxS = 240;
 
+    /// <summary>
+    /// EL QUE VIAJA PARA TRABAJAR SE QUEDA VARIAS TANDAS, Y DESPUÉS NO VUELVE POR UN BUEN RATO. Con el descanso de uno a cuatro
+    /// minutos, el que tenía el agua o los árboles en otro mapa iba, trabajaba veinte segundos, se volvía a cazar y a los dos
+    /// minutos otra vez: medido en `early2`, Quim (Leñador) alternó diecisiete veces en la hora entre el viaje a trabajar y el de
+    /// cazar, y Dalia (Pescadora) dieciséis; los dos terminaron entre los más atrasados, en el 14 y el 12, con los demás del 16 al
+    /// 19. Donde el trabajo queda a mano, como siempre.
+    /// </summary>
+    private const int TandasAlViajar = 3, EnfriamientoFaenaLejosMinM = 10, EnfriamientoFaenaLejosMaxM = 20;
+
+    /// <summary>Cuántas faenas hace de una sentada: una tanda, o <see cref="TandasAlViajar"/> si viajó para trabajar.</summary>
+    public static int FaenasDeLaSentada(bool viajo) => FaenasPorTanda * (viajo ? TandasAlViajar : 1);
+
+    /// <summary>Entre cuántos y cuántos milisegundos vuelve a trabajar (ver <see cref="TandasAlViajar"/>).</summary>
+    public static (long Min, long Max) EsperaParaVolverATrabajar(bool viajo) =>
+        viajo ? (EnfriamientoFaenaLejosMinM * 60_000L, EnfriamientoFaenaLejosMaxM * 60_000L)
+              : (EnfriamientoFaenaMinS * 1_000L, EnfriamientoFaenaMaxS * 1_000L);
+
     /// <summary>Cuánto dura una sesión y cuánto se queda afuera después, en minutos.
     ///
     /// <para>Que un personaje esté conectado DÍAS SEGUIDOS es de las cosas que más delatan: nadie juega así.
@@ -2200,10 +2217,13 @@ public sealed class Bot
         var sirve = MapaParaSuFaena(sentidos);
         var punto = sirve(sentidos.Mapa)
             ? _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso) : null;
+        // Y SI VIAJÓ A OTRO MAPA PARA TRABAJAR, SE QUEDA: ver `TandasAlViajar`.
+        bool viajo = false;
         if (punto is null)
         {
             if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, CruzaSinPeligro(sentidos)) is not { } lejos) { PostergarFaena(); return false; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct)) { PostergarFaena(); return true; }
+            viajo = lejos.Saltos > 0;
             punto = _entorno.Mapas.DondeTrabajar(sentidos.Mapa, sentidos.Posicion, RadioDeFaena, agua, recurso);
             if (punto is null) { PostergarFaena(); return true; }
         }
@@ -2248,7 +2268,7 @@ public sealed class Bot
             : Math.Abs(punto.Value.Donde.X - fx) + Math.Abs(punto.Value.Donde.Y - fy) <= DistanciaParaFaenar;
         if (!llego) { PostergarFaena(); return true; }
 
-        for (int golpe = 0; golpe < FaenasPorTanda && !cerrada.IsCompleted; golpe++)
+        for (int golpe = 0; golpe < FaenasDeLaSentada(viajo) && !cerrada.IsCompleted; golpe++)
         {
             if (Urge(sentidos)) break;
             transporte.Mandar(Paquete(ClientPacketId.Work, w => w.WriteByte(skill)));
@@ -2256,12 +2276,15 @@ public sealed class Bot
                 w => w.WriteByte(punto.Value.Donde.X).WriteByte(punto.Value.Donde.Y).WriteByte(skill)));
             await Task.Delay(_rng.Next(FaenaMinMs, FaenaMaxMs), ct);
         }
-        PostergarFaena();
+        PostergarFaena(viajo);
         return true;
     }
 
-    private void PostergarFaena() =>
-        _proximaFaena = Environment.TickCount64 + _rng.Next(EnfriamientoFaenaMinS, EnfriamientoFaenaMaxS + 1) * 1_000L;
+    private void PostergarFaena(bool viajo = false)
+    {
+        var (min, max) = EsperaParaVolverATrabajar(viajo);
+        _proximaFaena = Environment.TickCount64 + min + (long)(_rng.NextDouble() * (max - min));
+    }
 
     /// <summary>
     /// FABRICAR LO SUYO con lo que juntó: el Carpintero con la leña, el Druida con las raíces y la Olla, el Sastre con las

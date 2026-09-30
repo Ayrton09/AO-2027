@@ -459,4 +459,19 @@ public class OficioDelBotTests
                 $"desde la cuna no se llega a nadie que venda {m.Datos.Obj(h)?.Name}: ese oficio no arranca");
         }
     }
+
+    /// <summary>
+    /// EL QUE VIAJA PARA TRABAJAR SE QUEDA VARIAS TANDAS Y NO VUELVE ENSEGUIDA (ver <see cref="Bot.FaenasDeLaSentada"/>). Medido en
+    /// `early2`: Quim y Dalia alternaron diecisiete y dieciséis veces en una hora entre el viaje a trabajar y el de cazar. Con el
+    /// trabajo a mano, como siempre.
+    /// </summary>
+    [Fact]
+    public void El_que_viaja_para_trabajar_se_queda_y_no_vuelve_enseguida()
+    {
+        Assert.True(Bot.FaenasDeLaSentada(viajo: true) > Bot.FaenasDeLaSentada(viajo: false));
+        var (cercaMin, cercaMax) = Bot.EsperaParaVolverATrabajar(viajo: false);
+        var (lejosMin, lejosMax) = Bot.EsperaParaVolverATrabajar(viajo: true);
+        Assert.True(cercaMin <= cercaMax && lejosMin <= lejosMax);
+        Assert.True(lejosMin > cercaMax, "el que viajó espera más que el que trabaja al lado, aun en el peor caso");
+    }
 }
