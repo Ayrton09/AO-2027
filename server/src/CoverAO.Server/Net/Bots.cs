@@ -1138,7 +1138,9 @@ public sealed class Bot
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
         // sin llevarse nada.
         bool enApuro = sentidos.Oro < MonedasDeApuro;
-        bool vaPorPociones = faltanPociones && !enApuro;
+        // Y POR LAS POCIONES, SÓLO SI LE ALCANZA PARA UNA, como el antídoto (ver `LeAlcanzaParaUna`).
+        bool vaPorPociones = faltanPociones && !enApuro
+                             && LeAlcanzaParaUna(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaPocion);
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
         bool vaPorEquipo = !enApuro && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
@@ -1327,7 +1329,7 @@ public sealed class Bot
                 // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
                 // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
-                bool leFaltaLoEsencial = LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia)) || vaPorComida || vaPorBebida;
+                bool leFaltaLoEsencial = (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))) || vaPorComida || vaPorBebida;
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna)
                 {
@@ -1432,6 +1434,16 @@ public sealed class Bot
     /// </summary>
     public static bool PrimeroLasPociones(bool vaPorPociones, int pocionesPropias) =>
         vaPorPociones && LeFaltanPocionesParaPelear(pocionesPropias);
+
+    /// <summary>
+    /// ¿LE ALCANZA PARA UNA? Con lo que gasta en una compra (lo mismo que <see cref="ReponerAsync"/>: el 80 %, o todo menos la moneda
+    /// que redondea la caja) y sin tocar lo que guarda para lo otro esencial. Sin esto, "le faltan pociones" y "tiene más de lo del
+    /// apuro" alcanzaban para viajar al Alquimista: medido en `early6` y `paso16c` (30/09), Milo, de nivel 13 y con 17 a 21 monedas,
+    /// fue once y catorce veces seguidas a comprar pociones de a 20 sin llevarse ninguna. Un <paramref name="precio"/> en cero es
+    /// que nadie las vende.
+    /// </summary>
+    public static bool LeAlcanzaParaUna(int oro, int reserva, int precio) =>
+        precio > 0 && Math.Max(oro * 0.8, oro - 1) - reserva >= precio;
 
     /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres

@@ -186,6 +186,21 @@ public class MochilaDelBotTests : IDisposable
     }
 
     /// <summary>
+    /// Y SE SALE POR POCIONES SÓLO SI ALCANZA PARA UNA (ver <see cref="Bot.LeAlcanzaParaUna"/>): en `early6` Milo, con 17 a 21
+    /// monedas, fue once veces seguidas al Alquimista por pociones de a 20. Lo guardado para comer y tomar no se toca.
+    /// </summary>
+    [Fact]
+    public void Se_sale_por_pociones_solo_si_alcanza_para_una()
+    {
+        int precio = Bot.PrecioDeLaPocionEn(_datos);
+        if (precio == 0) return;
+        Assert.False(Bot.LeAlcanzaParaUna(oro: precio, reserva: 0, precio), "con el precio justo no alcanza: se gasta el 80 % o todo menos una");
+        Assert.True(Bot.LeAlcanzaParaUna(oro: precio + 1, reserva: 0, precio));
+        Assert.False(Bot.LeAlcanzaParaUna(oro: precio * 3, reserva: precio * 3, precio), "lo de la comida y la bebida no se toca");
+        Assert.False(Bot.LeAlcanzaParaUna(oro: 1_000, reserva: 0, precio: 0), "si nadie las vende, no");
+    }
+
+    /// <summary>
     /// SIN POCIONES PROPIAS PARA PELEAR, LAS POCIONES ANTES QUE TODO (ver <see cref="Bot.PrimeroLasPociones"/>): en `paso16a` Aldo
     /// llegó a Rinkel en el 16 sin ninguna y le compró anillos al Vendedor General, que estaba más cerca que el Alquimista; en
     /// `early3`, en el 13, Gonzo y Fabia se gastaron quince mil monedas ahí y en comida, con las de novato encima y cero propias.
