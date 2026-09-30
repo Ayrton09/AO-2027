@@ -691,15 +691,24 @@ public sealed class Bot
                 // dos bolsillos de la cuna, uno con un Escorpión pegado y otro junto al spawn de una Serpiente con un Lobo a dos
                 // baldosas, y se tomó 159 pociones ahí. A lo que tiene pegado se le devuelve el golpe: mirar y pegar, como en
                 // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
+                // Y EL QUE TIRA CON ARCO, LE TIRA (ver `TiraConArco`): con el arco puesto no se pega.
                 if ((EstaAcorralado(_huidas.SinMoverse, _huidas.QueNoLoSacaron) || NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                     && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado)
                 {
-                    var (px, py) = sentidos.Posicion;
-                    byte haciaElQuePega = SentidosDelBot.RumboHacia(pegado.Quien.X - px, pegado.Quien.Y - py);
-                    if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(haciaElQuePega)))) return;
-                    if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return;
-                    await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                    bool leTira = ConElArcoListo(sentidos);
+                    if (leTira)
+                    {
+                        if (!Disparar(transporte, pegado.Quien.X, pegado.Quien.Y)) return;
+                    }
+                    else
+                    {
+                        var (px, py) = sentidos.Posicion;
+                        byte haciaElQuePega = SentidosDelBot.RumboHacia(pegado.Quien.X - px, pegado.Quien.Y - py);
+                        if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(haciaElQuePega)))) return;
+                        if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return;
+                    }
+                    await Task.Delay(leTira ? _rng.Next(TiroMinMs, TiroMaxMs) : _rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                     continue;
                 }
                 // LA SERIE: cuántas veces seguidas huyó de ESTA criatura. La cortan el cambio de amenaza y el reloj, y NADA más:
@@ -3531,15 +3540,24 @@ public sealed class Bot
             _equipoPedido = null;
         }
 
+        // EL QUE TIRA CON ARCO SE PONE EL ARCO Y LAS FLECHAS, y no un arma de mano, que le sacaría el arco: ver `TiraConArco`.
+        // Sin flechas, lo de siempre.
+        var arqueria = SuArcoYSusFlechas(sentidos);
+        if (arqueria is { } conArco)
+        {
+            if (!conArco.ArcoPuesto) return PedirQueSePonga(transporte, sentidos, conArco.Arco);
+            if (!conArco.FlechasPuestas) return PedirQueSePonga(transporte, sentidos, conArco.Flechas);
+        }
         // PRIMERO, SACARSE EL ARMA CON LA QUE NO SE PEGA: con el arco puesto el servidor contesta 127 a cada golpe.
-        if (ArmaQueNoPegaPuesta(sentidos, _entorno.Datos) is { } arco) return PedirQueSeSaque(transporte, arco);
-        foreach (var esDeEso in QueSePone)
+        else if (ArmaQueNoPegaPuesta(sentidos, _entorno.Datos) is { } arco) return PedirQueSeSaque(transporte, arco);
+        foreach (var esDeEso in arqueria is null ? QueSePone : QueSePoneConElArco)
             if (MejorParaPoner(sentidos, esDeEso) is { } ranura) return PedirQueSePonga(transporte, sentidos, ranura);
 
         // LOS NUDILLOS, SÓLO PARA EL QUE NO TIENE ARMA. El servidor saca uno al ponerse el otro (VB6
         // InvUsuario.bas:991-997 y :1051-1058), así que con los dos en la mochila el bot se pasaría la vida cambiando.
         // Medido con la sonda: un Gladiador sin arma, con los Nudillos de Hierro en la mochila sin poner.
-        if (!sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && (EsArma(puesto) || puesto.IsKnuckles))
+        if (arqueria is null
+            && !sentidos.LlevaPuesto(obj => _entorno.Datos.Obj(obj) is { } puesto && (EsArma(puesto) || puesto.IsKnuckles))
             && MejorParaPoner(sentidos, EsArma) is null
             && MejorParaPoner(sentidos, o => o.IsKnuckles) is { } nudillos)
             return PedirQueSePonga(transporte, sentidos, nudillos);
@@ -3547,15 +3565,83 @@ public sealed class Bot
     }
 
     /// <summary>
-    /// ¿ES UN ARMA QUE EL BOT SE PONE PARA PELEAR? Las de cuerpo a cuerpo: ni el arco ni las arrojadizas.
+    /// ¿ES UN ARMA QUE EL BOT SE PONE PARA PELEAR CUERPO A CUERPO? Ni el arco ni las arrojadizas.
     ///
-    /// <para>El bot pelea cuerpo a cuerpo (y castea), no dispara. Con un arma de PROYECTIL puesta el servidor no
-    /// deja pegar: contesta el 127 a cada golpe, igual que el original (Protocol.bas:1700-1706). El arco llegó a
-    /// contarse como arma porque el port lo dejaba pegar con su golpe de arma, y el Cazador —que nace con un Arco
-    /// Simple y nada más— peleaba así; ahora eso no existe, y con el arco puesto pelearía peor que a mano limpia.
-    /// Se lo saca (ver <see cref="ArmaQueNoPegaPuesta"/>) y pelea a mano hasta conseguir una de verdad.</para>
+    /// <para>Con un arma de PROYECTIL puesta el servidor no deja pegar: contesta el 127 a cada golpe, igual que el
+    /// original (Protocol.bas:1700-1706). El que no tira con arco (<see cref="TiraConArco"/>) se la saca (ver
+    /// <see cref="ArmaQueNoPegaPuesta"/>) y pelea a mano hasta conseguir una de verdad; el que tira, dispara.</para>
     /// </summary>
     public static bool EsArma(ObjInfo o) => o.IsWeapon && o.Proyectil == 0;
+
+    /// <summary>
+    /// ¿TIRA CON ARCO? El Cazador, que es la clase del arco: nace con él —el Arco Simple y 1500 flechas, y ninguna arma de mano— y
+    /// el Balance lo hace mejor tirando que pegando (acierto por daño, 1 × 1,1 con el arco contra 0,8 × 0,9 con el arma).
+    ///
+    /// <para>El bot no disparaba: se sacaba el arco y peleaba a mano limpia hasta comprarse un arma en el 13. Medido en
+    /// `early5`, `early7` y `cadena1` (30/09): Gonzo, el único Cazador, llegó al 13 entre los últimos en las tres —49, 37 y 104
+    /// minutos— y en `early6` y `cadena1` murió en el nivel 6, en el 12, sin poder sacarse de encima un Goblin y un
+    /// Esqueleto.</para>
+    /// </summary>
+    public static bool TiraConArco(byte clase) => clase == GameLimits.ClaseCazador;
+
+    /// <summary>
+    /// CON QUÉ TIRA: de lo que tiene —objeto, si está puesto, si se lo puede poner—, el arco —el puesto, o el que más pega— y las
+    /// flechas —las puestas, o las primeras—. null si le falta alguno de los dos.
+    /// </summary>
+    public static (byte Arco, bool ArcoPuesto, byte Flechas, bool FlechasPuestas)? ArcoYFlechas(
+        IEnumerable<(byte Ranura, ObjInfo Obj, bool Puesto, bool SeLoPuedePoner)> mochila)
+    {
+        (byte Ranura, bool Puesto, int Golpe)? arco = null;
+        (byte Ranura, bool Puesto)? flechas = null;
+        foreach (var (ranura, o, puesto, sePuede) in mochila)
+        {
+            if (!puesto && !sePuede) continue;
+            if (o.IsBow && (arco is not { } a || (puesto && !a.Puesto) || (puesto == a.Puesto && o.MaxHit > a.Golpe)))
+                arco = (ranura, puesto, o.MaxHit);
+            else if (o.IsAmmo && (flechas is not { } f || (puesto && !f.Puesto)))
+                flechas = (ranura, puesto);
+        }
+        return arco is { } conArco && flechas is { } conFlechas
+            ? (conArco.Ranura, conArco.Puesto, conFlechas.Ranura, conFlechas.Puesto) : null;
+    }
+
+    /// <summary><see cref="ArcoYFlechas"/> de este bot, si tira con arco; null si no tira o le falta algo.</summary>
+    private (byte Arco, bool ArcoPuesto, byte Flechas, bool FlechasPuestas)? SuArcoYSusFlechas(SentidosDelBot sentidos)
+    {
+        if (!TiraConArco(_clase)) return null;
+        var mochila = new List<(byte, ObjInfo, bool, bool)>();
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+        {
+            short obj = sentidos.QueHayEn(ranura);
+            if (_entorno.Datos.Obj(obj) is { } o && (o.IsBow || o.IsAmmo))
+                mochila.Add((ranura, o, sentidos.EstaPuesto(ranura), !_noSeLoPone.Contains(obj) && LoPuedeUsar(o, sentidos.Nivel)));
+        }
+        return ArcoYFlechas(mochila);
+    }
+
+    /// <summary>
+    /// ¿PUEDE TIRAR YA? El arco y las flechas puestos (<see cref="SuArcoYSusFlechas"/>) y la energía que pide el tiro: el
+    /// servidor no dispara con menos de <see cref="EnergiaParaTirar"/> (Protocol.bas:2813).
+    /// </summary>
+    private bool ConElArcoListo(SentidosDelBot sentidos) =>
+        SuArcoYSusFlechas(sentidos) is { ArcoPuesto: true, FlechasPuestas: true } && sentidos.EnergiaEnPuntos >= EnergiaParaTirar;
+
+    /// <summary>
+    /// EL TIRO: el clic sobre la baldosa de la criatura con la skill de Proyectiles, como el cliente después de elegir el arco
+    /// (VB6 HandleWorkLeftClick, <c>Case eSkill.Proyectiles</c>). El servidor busca el blanco en esa misma baldosa.
+    /// </summary>
+    private bool Disparar(TransporteDeBot transporte, byte x, byte y) =>
+        transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+            w => w.WriteByte(x).WriteByte(y).WriteByte((byte)GameLimits.SkillProyectiles)));
+
+    /// <summary>Desde dónde tira con el arco, por eje: la misma ventana del servidor que el hechizo, con el mismo margen
+    /// (ver <see cref="AlcanceHechizoX"/>).</summary>
+    private const int AlcanceArcoX = AlcanceHechizoX, AlcanceArcoY = AlcanceHechizoY;
+
+    /// <summary>La cadencia del tiro: el servidor deja uno cada <c>IntervaloFlechasCazadores</c> (1100 ms en el install).</summary>
+    private const int TiroMinMs = 1_200, TiroMaxMs = 1_700;
+
+    private const int EnergiaParaTirar = 10;
 
     /// <summary>La ranura de un arma de PROYECTIL que lleve puesta —con la que el servidor no lo deja pegar—, o
     /// null. Es lo primero que se saca al equiparse.</summary>
@@ -4118,6 +4204,9 @@ public sealed class Bot
         EsArma, o => o.IsArmor, o => o.IsShield, o => o.IsHelmet,
     };
 
+    /// <summary><see cref="QueSePone"/> sin el arma de mano, para el que tira con arco.</summary>
+    private static readonly Func<ObjInfo, bool>[] QueSePoneConElArco = QueSePone[1..];
+
     private const int EsperaEquipoMs = 1_500;
     private long _proximoEquipo;
     private (byte Ranura, short Obj)? _equipoPedido;
@@ -4464,14 +4553,27 @@ public sealed class Bot
                 continue;
             }
 
-            if (pasos == 1)
+            // EL QUE TIRA CON ARCO, DE LEJOS: ver `TiraConArco`.
+            bool tira = Math.Abs(dx) <= AlcanceArcoX && Math.Abs(dy) <= AlcanceArcoY && ConElArcoListo(sentidos);
+            // Y CON EL ARCO PUESTO SIN PODER TIRAR, TAMPOCO PEGA: el servidor no deja pegar con el arco (ver `EsArma`). Se aleja hasta
+            // que vuelva la energía del tiro.
+            if (!tira && pasos == 1 && ArmaQueNoPegaPuesta(sentidos, _entorno.Datos) is not null)
+                return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
+            if (tira || pasos == 1)
             {
-                // Pegado y de frente: mirar y pegar. El golpe resuelve contra la baldosa que el atacante MIRA
-                // (VB6 UsuarioAtaca), así que sin girar primero se le pega al aire.
-                byte rumbo = SentidosDelBot.RumboHacia(dx, dy);
-                if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(rumbo)))) return false;
-                if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
-                await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                if (tira)
+                {
+                    if (!Disparar(transporte, quien.X, quien.Y)) return false;
+                }
+                else
+                {
+                    // Pegado y de frente: mirar y pegar. El golpe resuelve contra la baldosa que el atacante MIRA
+                    // (VB6 UsuarioAtaca), así que sin girar primero se le pega al aire.
+                    byte rumbo = SentidosDelBot.RumboHacia(dx, dy);
+                    if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(rumbo)))) return false;
+                    if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
+                }
+                await Task.Delay(tira ? _rng.Next(TiroMinMs, TiroMaxMs) : _rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                 var (g, d) = sentidos.TomarLoQuePego();
                 golpes += g;
                 sacado += d;
