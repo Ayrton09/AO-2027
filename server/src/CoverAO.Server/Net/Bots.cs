@@ -3035,7 +3035,8 @@ public sealed class Bot
     private bool TieneComoVolverDesde(int mapa, SentidosDelBot sentidos)
     {
         bool conRuna = !_runaNoSirveParaComprar && sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) != 0;
-        int nivel = sentidos.Nivel;
+        // EN EL ÚLTIMO NIVEL DE NOVATO, LA VUELTA DEL QUE YA NO LO ES: ver `NivelParaLaVuelta`.
+        int nivel = NivelParaLaVuelta(sentidos.Nivel);
         if (_comoVolver.TryGetValue((mapa, nivel, conRuna), out bool sabido)) return sabido;
         if (_comoVolver.Count > 2_000) _comoVolver.Clear();
         var (pasa, seguro, tienda) = FiltrosDeLaVuelta(_entorno.Datos, _entorno.Ini, _miBando, nivel, sentidos.VidaMaxima);
@@ -3179,7 +3180,8 @@ public sealed class Bot
         // EN EL MAPA DE LOS GUARDIAS QUE VAN POR ÉL NO SE CAZA, tampoco en una ciudad del otro bando que no sea pk: ver `ElegirCoto`.
         // NI EN EL DUNGEON DE NOVATOS EN EL ÚLTIMO NIVEL, ni entre los guardias que van a ir por él al dejar de ser novato: ver
         // `NoSeGraduaAhi` y `NoSeGraduaEntreGuardias`.
-        // NI DONDE NO TIENE CÓMO VOLVER A COMPRAR: ver `TieneComoVolver`.
+        // NI DONDE NO TIENE CÓMO VOLVER A COMPRAR, y en el último nivel de novato como graduado: ver `TieneComoVolver` y
+        // `NivelParaLaVuelta`.
         // NI DE DONDE YA SE FUE HUYENDO DOS VECES EN ESTE NIVEL: ver `HuidasDelNivel`.
         Func<int, bool> nunca = m => HayGuardiaQueLoAtaca(m) || NoSeGraduaAhi(nivel, _entorno.Datos.MapZone(m))
                                      || NoSeGraduaEntreGuardias(m, _miBando, nivel, _entorno.Datos, _entorno.Ini)
@@ -3621,6 +3623,18 @@ public sealed class Bot
     /// </summary>
     public static bool NoSeGraduaEntreGuardias(int mapa, byte bando, int nivel, GameData datos, ServerIni? ini) =>
         nivel == GameLimits.NewbieMaxLevel && HayGuardiaQueVaPor(mapa, bando, nivel + 1, datos, ini);
+
+    /// <summary>
+    /// ¿CON QUÉ NIVEL SE MIRA SI TIENE CÓMO VOLVER A COMPRAR (<see cref="TieneComoVolver"/>)? En el último nivel de novato, con el
+    /// siguiente: el que se gradúa cazando ahí pierde el dungeon de novatos, los guardias del otro bando empiezan a ir por él y el
+    /// servidor le saca las pociones, la comida y la bebida de novato. Como <see cref="NoSeGraduaAhi"/> y
+    /// <see cref="NoSeGraduaEntreGuardias"/>.
+    ///
+    /// <para>Medido en `alto5` (01/10): Gonzo, republicano de nivel 15, salió de la cuna a cazar al 18 y subió al 16 en el 19, del
+    /// lado de Nix, sin pociones, comida ni bebida propias. Desde ahí el mapa seguro para su runa es Rinkel, a seis mapas: pasó ocho
+    /// minutos queriendo caminar hasta ahí sin llegar, y lo mató un Lobo.</para>
+    /// </summary>
+    public static int NivelParaLaVuelta(int nivel) => nivel == GameLimits.NewbieMaxLevel ? nivel + 1 : nivel;
 
     /// <summary>¿Le pide (otra vez) el hogar al sacerdote? Si nunca lo hizo, o si lo hizo siendo novato y ya no lo es.</summary>
     public static bool VuelveAPonerElHogar(int nivelDelHogar, int nivel) =>

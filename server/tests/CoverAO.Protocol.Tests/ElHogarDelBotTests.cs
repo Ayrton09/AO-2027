@@ -76,6 +76,71 @@ public class ElHogarDelBotTests
     }
 
     /// <summary>
+    /// NI DONDE, GRADUADO, NO TIENE CÓMO VOLVER A COMPRAR (<see cref="Bot.NivelParaLaVuelta"/>): para un republicano con runa, el 18
+    /// —del lado de Nix— tiene vuelta mientras es novato (Ullathorpe no lo ataca) y no la tiene en el 16. Es Gonzo en `alto5`, que salió
+    /// de la cuna a cazar al 18 en el último nivel de novato, se graduó en el 19 y no volvió.
+    /// </summary>
+    [Fact]
+    public void En_el_ultimo_nivel_de_novato_la_vuelta_a_comprar_es_la_del_graduado()
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return;
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (!File.Exists(ruta)) return;
+        var ini = ServerIni.Cargar(ruta);
+        const int ultimo = GameLimits.NewbieMaxLevel, vida = 163;
+        var nav = new Navegante(d);
+        bool TieneVuelta(int nivel)
+        {
+            var (pasa, seguro, tienda) = Bot.FiltrosDeLaVuelta(d, ini, Player.StatusRepublicano, nivel, vida);
+            return Bot.TieneComoVolver(nav, 18, Bot.DesdeDondeSeCaza(d, 18), pasa, seguro, tienda, conRuna: true);
+        }
+        Assert.True(TieneVuelta(ultimo), "premisa: de novato, desde el 18 tiene vuelta");
+        Assert.False(TieneVuelta(ultimo + 1), "premisa: graduado, no");
+        Assert.Equal(ultimo + 1, Bot.NivelParaLaVuelta(ultimo));
+        Assert.False(TieneVuelta(Bot.NivelParaLaVuelta(ultimo)));
+        Assert.Equal(ultimo - 1, Bot.NivelParaLaVuelta(ultimo - 1));
+        Assert.Equal(ultimo + 1, Bot.NivelParaLaVuelta(ultimo + 1));
+    }
+
+    /// <summary>
+    /// Y EL COTO DEL ÚLTIMO NIVEL DE NOVATO SE ELIGE CON ESA VUELTA, con el mismo filtro `nunca` que arma el bot: un republicano de 15
+    /// desde el 19 se iba al 18 y ahora va al 97, del lado de Rinkel; un ciudadano de 15 desde la cuna se iba al 262, del lado
+    /// republicano —donde, graduado, no tiene dónde comprar: así quedaron Ciro y Aldo en el 195— y ahora va al 18.
+    /// </summary>
+    [Fact]
+    public void El_coto_del_ultimo_nivel_de_novato_tiene_la_vuelta_del_graduado()
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return;
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (!File.Exists(ruta)) return;
+        var ini = ServerIni.Cargar(ruta);
+        var nav = new Navegante(d);
+        const int nivel = GameLimits.NewbieMaxLevel, vida = 163;
+        int? Coto(byte bando, int mapa, (byte X, byte Y) desde, int nivelDeLaVuelta)
+        {
+            Func<int, bool> esPresa = f => Bot.EsPresaPara(d.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
+            Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(d.Npc((short)f), vida, nivel, true, false, bando, d, ini);
+            Func<int, IEnumerable<int>> nace = m => d.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(q => q.NpcIndex) : Enumerable.Empty<int>();
+            Func<int, int> rinde = f => esPresa(f) ? (int)(d.Npc((short)f)?.GiveExp ?? 0) : 0;
+            var (pasa, seguro, tienda) = Bot.FiltrosDeLaVuelta(d, ini, bando, nivelDeLaVuelta, vida);
+            Func<int, bool> nunca = m => Bot.HayGuardiaQueVaPor(m, bando, nivel, d, ini) || Bot.NoSeGraduaAhi(nivel, d.MapZone(m))
+                || Bot.NoSeGraduaEntreGuardias(m, bando, nivel, d, ini)
+                || !(Bot.DesdeDondeSeCaza(d, m) is var dd && (dd.Count == 0 || Bot.TieneComoVolver(nav, m, dd, pasa, seguro, tienda, conRuna: true)));
+            Func<int, bool> seCazaAhi = m => Bot.SeCazaAhi(d.IsPkMap(m), nace(m), esPeligroso) && !nunca(m);
+            return Bot.ElegirCoto(nav, mapa, desde, esPresa, f => d.Npc((short)f)?.GiveGld > 0, rinde,
+                                  Bot.SeCruzaBuscando(d, ini, bando, nivel, vida, conPociones: true, curaVeneno: false),
+                                  out _, out _, seCazaAhi, null, nunca, Bot.EligePorLoQueSuma(nivel))?.Mapa;
+        }
+        byte republicano = Player.StatusRepublicano, ciudadano = Player.StatusCiudadano;
+        Assert.Equal(18, Coto(republicano, 19, (50, 50), nivel));
+        Assert.Equal(97, Coto(republicano, 19, (50, 50), Bot.NivelParaLaVuelta(nivel)));
+        Assert.Equal(262, Coto(ciudadano, 37, (60, 66), nivel));
+        Assert.Equal(18, Coto(ciudadano, 37, (60, 66), Bot.NivelParaLaVuelta(nivel)));
+    }
+
+    /// <summary>
     /// A COMPRAR, PASADO EL NOVATO Y CON LA RUNA, NO SE CRUZA EL DESIERTO: desde el 13 Rinkel queda a cinco mapas por el 21 y el 16,
     /// donde nacen Arañas Gigantes que pegan hasta 115. Medido en `paso16b`: tres bots de nivel 20 y 21 muertos ahí yendo de
     /// compras. Buscando el pueblo sólo por donde no lo matan, desde ahí no hay: le toca la runa.
