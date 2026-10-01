@@ -7,8 +7,9 @@ namespace CoverAO.Protocol.Tests;
 
 /// <summary>
 /// EL BOT NO VA A CAZAR DONDE NO TIENE CÓMO VOLVER A COMPRAR (decisión del autor, 30/09: "que no se meta ahí", para todos). Milo,
-/// republicano de nivel 23 con 177 de vida, cazaba en el 19, del lado imperial: el mapa seguro para su runa quedaba a seis mapas y
-/// murió sin energía en `tardeA` y en `tardeB`. Ver <see cref="Bot.TieneComoVolver"/>.
+/// republicano de nivel 23 con 177 de vida, cazaba en el 19, del lado imperial: el mapa seguro para su runa se daba a seis mapas y
+/// murió sin energía en `tardeA` y en `tardeB`. Ver <see cref="Bot.TieneComoVolver"/>. El "a seis" era el tope de zonas del
+/// navegante, que tapaba la entrada al Río Otoren: Rinkel está a dos (memoria `el-tope-que-tapa-rutas`).
 /// </summary>
 public class NoSeMeteDondeNoPuedeVolverTests
 {
@@ -26,13 +27,20 @@ public class NoSeMeteDondeNoPuedeVolverTests
         return Bot.TieneComoVolver(m.Mapas, mapa, Bot.DesdeDondeSeCaza(m.Datos, mapa), pasa, seguro, tienda, conRuna);
     }
 
+    /// <summary>
+    /// DEL LADO DE NIX EL REPUBLICANO NO TIENE CÓMO VOLVER Y EL CIUDADANO SÍ: en los Bosques de Nix (el 29) los pueblos cercanos son
+    /// del imperio, con guardias que van por el republicano. Y en el 19, que es por donde se fue Milo, ya vuelve los dos: Rinkel queda
+    /// a dos mapas, por el Río Otoren.
+    /// </summary>
     [Fact]
-    public void Del_19_el_republicano_no_tiene_como_volver_y_el_ciudadano_si()
+    public void Del_lado_de_Nix_el_republicano_no_tiene_como_volver_y_el_ciudadano_si()
     {
         if (Mundo() is not { } m) return;
         Assert.True(m.Ini.GuardiasAtacan, "premisa: el ini que se distribuye trae los guardias que atacan");
-        Assert.False(Vuelve(m, Player.StatusRepublicano, 23, 177, 19, conRuna: true));
-        Assert.True(Vuelve(m, Player.StatusCiudadano, 23, 177, 19, conRuna: true), "al ciudadano, Ullathorpe le sirve a cuatro");
+        Assert.False(Vuelve(m, Player.StatusRepublicano, 23, 177, 29, conRuna: true));
+        Assert.True(Vuelve(m, Player.StatusCiudadano, 23, 177, 29, conRuna: true));
+        Assert.True(Vuelve(m, Player.StatusRepublicano, 23, 177, 19, conRuna: true), "del 19, por el Río Otoren a Rinkel");
+        Assert.True(Vuelve(m, Player.StatusCiudadano, 23, 177, 19, conRuna: true));
     }
 
     /// <summary>
