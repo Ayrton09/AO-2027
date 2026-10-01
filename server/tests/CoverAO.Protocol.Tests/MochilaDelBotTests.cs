@@ -168,15 +168,19 @@ public class MochilaDelBotTests : IDisposable
 
     /// <summary>
     /// Y EL QUE FUE SÓLO POR GUSTO Y NO CONSIGUIÓ NADA ESPERA EL LARGO (ver <see cref="Bot.DescansoTrasElFracaso"/>): en `mid7`
-    /// los bots ricos salían por equipo cada minuto y medio, 228 viajes "sin tienda" en media hora. El que fue por algo que le
-    /// falta vuelve a probar pronto, como siempre.
+    /// Milo caminó siete veces en media hora a Rinkel por equipo y volvió sin nada. El que fue por algo que le falta —también el
+    /// antídoto o el arma del camino— vuelve a probar pronto, como siempre.
     /// </summary>
     [Fact]
     public void El_que_fue_solo_por_gusto_y_no_consiguio_nada_espera_el_largo()
     {
         Assert.True(Bot.SoloLeFaltanGustos(false, false, false, false), "premisa: sin nada esencial que falte, son gustos");
-        Assert.Equal(Bot.DescansoDeCompras.Largo, Bot.DescansoTrasElFracaso(soloGustos: true));
-        Assert.Equal(Bot.DescansoDeCompras.Corto, Bot.DescansoTrasElFracaso(soloGustos: false));
+        Assert.Equal(Bot.DescansoDeCompras.Largo, Bot.DescansoTrasElFracaso(soloGustos: true, vaPorAntidoto: false, vaPorElArma: false));
+        Assert.Equal(Bot.DescansoDeCompras.Corto, Bot.DescansoTrasElFracaso(soloGustos: false, vaPorAntidoto: false, vaPorElArma: false));
+        Assert.True(Bot.DescansoTrasElFracaso(soloGustos: true, vaPorAntidoto: true, vaPorElArma: false) == Bot.DescansoDeCompras.Corto,
+            "el antídoto no es un gusto");
+        Assert.True(Bot.DescansoTrasElFracaso(soloGustos: true, vaPorAntidoto: false, vaPorElArma: true) == Bot.DescansoDeCompras.Corto,
+            "el arma del camino tampoco");
     }
 
     /// <summary>

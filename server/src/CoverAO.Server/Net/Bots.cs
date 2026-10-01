@@ -1273,7 +1273,8 @@ public sealed class Bot
         // `battleMode` es 2 o 3). Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
         bool MapaAtiende(int mapa) => ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
         // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
-        void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos) == DescansoDeCompras.Largo);
+        void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)
+                                                 == DescansoDeCompras.Largo);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaElEquipo(sentidos);
 
@@ -1496,15 +1497,16 @@ public sealed class Bot
 
     /// <summary>
     /// ¿Y EL QUE NO CONSIGUIÓ NADA? El descanso corto, para volver a probar pronto lo que le hace falta. SALVO QUE EL VIAJE
-    /// FUERA SÓLO POR GUSTO (<see cref="SoloLeFaltanGustos"/>: equipo mejor, un pergamino, vender lo que junta) y no le falte nada
-    /// esencial: ése espera el largo, como el que compró. Lo esencial que falte después lo corta igual (<see cref="SaltaElDescanso"/>).
+    /// FUERA SÓLO POR GUSTO —equipo mejor, un pergamino, vender lo que junta—: sin nada esencial que falte
+    /// (<see cref="SoloLeFaltanGustos"/>), ni el antídoto, ni el arma del camino (<see cref="LeFaltaElArmaDelCamino"/>). Ése espera
+    /// el largo, como el que compró. La comida o la bebida que falten después lo cortan igual (<see cref="SaltaElDescanso"/>).
     ///
-    /// <para>Medido en `mid5` y `mid7` (01/10): en el mid todos salen de compras por gusto —con decenas de miles de monedas,
-    /// siempre hay equipo que mirar— y en treinta minutos hubo 228 viajes "sin tienda", unos trece por bot. Milo, Paladín de nivel
-    /// 21, caminaba del 97 a Rinkel cada tres minutos, no llegaba al mercader que buscaba y volvía a cazar.</para>
+    /// <para>Medido en `mid5` y `mid7` (01/10): Milo, Paladín de nivel 21 con 207 mil monedas y nada que le faltara, caminó siete
+    /// veces en media hora del 97 a Rinkel por equipo o un pergamino; llegaba, no alcanzaba al mercader que buscaba y volvía a
+    /// cazar.</para>
     /// </summary>
-    public static DescansoDeCompras DescansoTrasElFracaso(bool soloGustos) =>
-        soloGustos ? DescansoDeCompras.Largo : DescansoDeCompras.Corto;
+    public static DescansoDeCompras DescansoTrasElFracaso(bool soloGustos, bool vaPorAntidoto, bool vaPorElArma) =>
+        soloGustos && !vaPorAntidoto && !vaPorElArma ? DescansoDeCompras.Largo : DescansoDeCompras.Corto;
 
     /// <summary>
     /// ¿CUÁNTO DESCANSA DESPUÉS DE UN VIAJE DE COMPRAS? El que se llevó todo lo que fue a buscar, el descanso largo; el que no
