@@ -167,6 +167,19 @@ public class MochilaDelBotTests : IDisposable
     }
 
     /// <summary>
+    /// Y EL QUE FUE SÓLO POR GUSTO Y NO CONSIGUIÓ NADA ESPERA EL LARGO (ver <see cref="Bot.DescansoTrasElFracaso"/>): en `mid7`
+    /// los bots ricos salían por equipo cada minuto y medio, 228 viajes "sin tienda" en media hora. El que fue por algo que le
+    /// falta vuelve a probar pronto, como siempre.
+    /// </summary>
+    [Fact]
+    public void El_que_fue_solo_por_gusto_y_no_consiguio_nada_espera_el_largo()
+    {
+        Assert.True(Bot.SoloLeFaltanGustos(false, false, false, false), "premisa: sin nada esencial que falte, son gustos");
+        Assert.Equal(Bot.DescansoDeCompras.Largo, Bot.DescansoTrasElFracaso(soloGustos: true));
+        Assert.Equal(Bot.DescansoDeCompras.Corto, Bot.DescansoTrasElFracaso(soloGustos: false));
+    }
+
+    /// <summary>
     /// Y SE VA CON POCIONES PROPIAS: la plata para el equipo es la que sobra después de ellas (<see cref="Bot.ReservaParaLasPociones"/>),
     /// y el que compró y todavía no tiene con qué pelear sale ya a buscarlas (<see cref="Bot.LeFaltanPocionesParaPelear"/>). Medido
     /// en `early2`: siete de los ocho bots que llegaron al 16 lo hicieron con cero pociones propias.

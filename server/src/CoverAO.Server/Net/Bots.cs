@@ -1272,6 +1272,8 @@ public sealed class Bot
         // (`ElMercaderLeVende`: la del Server.ini, que por defecto es la del original — un ciudadano sólo compra donde el
         // `battleMode` es 2 o 3). Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
         bool MapaAtiende(int mapa) => ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
+        // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
+        void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos) == DescansoDeCompras.Largo);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaElEquipo(sentidos);
 
@@ -1407,16 +1409,16 @@ public sealed class Bot
                     _tiendasSinCamino = 0;
                     if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, cerrada, ct)
                                           : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
-                    { PostergarCompra(); return true; }
+                    { Fracaso(); return true; }
                 }
-                PostergarCompra(); return intento > 0;
+                Fracaso(); return intento > 0;
             }
             if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador)
                 && sentidos.Mapa != lugar.Mapa)
-            { PostergarCompra(); return true; }   // ni siquiera se llegó al mapa
+            { Fracaso(); return true; }   // ni siquiera se llegó al mapa
             tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         }
-        if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { PostergarCompra(); return true; }
+        if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { Fracaso(); return true; }
         _tiendasSinCamino = 0;
         var t = tienda.Value;
 
@@ -1426,7 +1428,7 @@ public sealed class Bot
         if (sentidos.Donde(t.Quien.CharIndex) is { } donde
             && Math.Abs(donde.X - sentidos.Posicion.X) + Math.Abs(donde.Y - sentidos.Posicion.Y) > RadioDelMostrador
             && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, donde.X, donde.Y, cerrada, ct, RadioDelMostrador))
-        { PostergarCompra(); return true; }
+        { Fracaso(); return true; }
 
         if (sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
         // SE ABRE CON DOBLE CLIC, no con clic + CommerceStart.
@@ -1439,7 +1441,7 @@ public sealed class Bot
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
 
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
-        if (!sentidos.Comerciando) { PostergarCompra(); return true; }   // no atendió (facción, distancia, o no era mercader)
+        if (!sentidos.Comerciando) { Fracaso(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
@@ -1491,6 +1493,18 @@ public sealed class Bot
 
     /// <summary>Cuánto se espera para la próxima compra después de un viaje. Ver <see cref="DescansoTrasElViaje"/>.</summary>
     public enum DescansoDeCompras { Ninguno, Corto, Largo }
+
+    /// <summary>
+    /// ¿Y EL QUE NO CONSIGUIÓ NADA? El descanso corto, para volver a probar pronto lo que le hace falta. SALVO QUE EL VIAJE
+    /// FUERA SÓLO POR GUSTO (<see cref="SoloLeFaltanGustos"/>: equipo mejor, un pergamino, vender lo que junta) y no le falte nada
+    /// esencial: ése espera el largo, como el que compró. Lo esencial que falte después lo corta igual (<see cref="SaltaElDescanso"/>).
+    ///
+    /// <para>Medido en `mid5` y `mid7` (01/10): en el mid todos salen de compras por gusto —con decenas de miles de monedas,
+    /// siempre hay equipo que mirar— y en treinta minutos hubo 228 viajes "sin tienda", unos trece por bot. Milo, Paladín de nivel
+    /// 21, caminaba del 97 a Rinkel cada tres minutos, no llegaba al mercader que buscaba y volvía a cazar.</para>
+    /// </summary>
+    public static DescansoDeCompras DescansoTrasElFracaso(bool soloGustos) =>
+        soloGustos ? DescansoDeCompras.Largo : DescansoDeCompras.Corto;
 
     /// <summary>
     /// ¿CUÁNTO DESCANSA DESPUÉS DE UN VIAJE DE COMPRAS? El que se llevó todo lo que fue a buscar, el descanso largo; el que no
