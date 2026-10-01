@@ -64,14 +64,17 @@ public class HuidaQueNoSirveTests
         Assert.True(Bot.NoSeLoSacaDeEncima(contadores.DeLaMismaCriatura));
     }
 
-    /// <summary>Y lo que el respiro SÍ tiene que borrar: los dos contadores que son de UNA huida.</summary>
+    /// <summary>Y lo que el respiro SÍ tiene que borrar: los dos contadores que son de UNA huida, y los hechizos que no salieron
+    /// devolviendo el golpe en ese rincón —en el próximo, el que sabe magia vuelve a probar con un hechizo—.</summary>
     [Fact]
     public void El_respiro_borra_los_contadores_del_rincon()
     {
-        var contadores = new Bot.ContadoresDeHuida { SinMoverse = 2, QueNoLoSacaron = 2 };
+        var contadores = new Bot.ContadoresDeHuida { SinMoverse = 2, QueNoLoSacaron = 2, HechizosEnVano = 3 };
+        Assert.True(Bot.DejaDeLanzarle(contadores.HechizosEnVano), "premisa: con tres en vano, acorralado pega con el arma");
         contadores.SalioDelPeligro();
         Assert.Equal(0, contadores.SinMoverse);
         Assert.Equal(0, contadores.QueNoLoSacaron);
+        Assert.False(Bot.DejaDeLanzarle(contadores.HechizosEnVano));
     }
 
     /// <summary>La serie la cortan las dos cosas que tienen que cortarla: otra criatura, o que haya pasado la ventana.</summary>

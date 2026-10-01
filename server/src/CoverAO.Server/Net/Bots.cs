@@ -698,6 +698,16 @@ public sealed class Bot
                     && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado)
                 {
+                    // Y EL QUE SABE MAGIA LE TIRA UN HECHIZO, como en `CazarAsync`, mientras los hechizos salgan (ver `DejaDeLanzarle`).
+                    // Medido: Bruma, Maga, murió acorralada en `hueco4`, `cadena2` y `alto2` devolviendo de veinte a treinta y ocho golpes
+                    // de arma o de puño —a un Goblin en el 12, a Zombies y Esqueletos en el 13— con Proyectil Mágico en el libro.
+                    int manaAntes = sentidos.ManaEnPuntos;
+                    if (!DejaDeLanzarle(_huidas.HechizosEnVano) && LanzarAlgo(transporte, sentidos, pegado.Quien))
+                    {
+                        await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                        _huidas.HechizosEnVano = sentidos.ManaEnPuntos < manaAntes ? 0 : _huidas.HechizosEnVano + 1;
+                        continue;
+                    }
                     bool leTira = ConElArcoListo(sentidos);
                     if (leTira)
                     {
@@ -4719,6 +4729,9 @@ public sealed class Bot
         /// <summary>Huidas de LA MISMA criatura adentro de la ventana: la serie.</summary>
         public int DeLaMismaCriatura;
 
+        /// <summary>Hechizos seguidos que no le cobraron el maná devolviendo el golpe acorralado (ver <see cref="DejaDeLanzarle"/>).</summary>
+        public int HechizosEnVano;
+
         private short _deQuien;
         private long _hastaCuando;
 
@@ -4731,13 +4744,14 @@ public sealed class Bot
         }
 
         /// <summary>
-        /// SE TERMINÓ EL PELIGRO: se olvidan los dos contadores del rincón, que son de esa huida y de ninguna otra. La serie no
-        /// se toca acá — el respiro entre alcance y alcance es parte de la persecución, no el final.
+        /// SE TERMINÓ EL PELIGRO: se olvidan los contadores del rincón, que son de esa huida y de ninguna otra, y los hechizos que
+        /// no salieron ahí. La serie no se toca acá — el respiro entre alcance y alcance es parte de la persecución, no el final.
         /// </summary>
         public void SalioDelPeligro()
         {
             SinMoverse = 0;
             QueNoLoSacaron = 0;
+            HechizosEnVano = 0;
         }
     }
 
