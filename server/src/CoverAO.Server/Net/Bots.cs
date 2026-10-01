@@ -3167,10 +3167,12 @@ public sealed class Bot
         Func<int, IEnumerable<int>> loQueNace = m => _entorno.Datos.MapSpawns.TryGetValue(m, out var nacen)
             ? nacen.Select(sp => sp.NpcIndex) : Enumerable.Empty<int>();
         // EN EL MAPA DE LOS GUARDIAS QUE VAN POR ÉL NO SE CAZA, tampoco en una ciudad del otro bando que no sea pk: ver `ElegirCoto`.
-        // NI EN EL DUNGEON DE NOVATOS EN EL ÚLTIMO NIVEL: ver `NoSeGraduaAhi`.
+        // NI EN EL DUNGEON DE NOVATOS EN EL ÚLTIMO NIVEL, ni entre los guardias que van a ir por él al dejar de ser novato: ver
+        // `NoSeGraduaAhi` y `NoSeGraduaEntreGuardias`.
         // NI DONDE NO TIENE CÓMO VOLVER A COMPRAR: ver `TieneComoVolver`.
         // NI DE DONDE YA SE FUE HUYENDO DOS VECES EN ESTE NIVEL: ver `HuidasDelNivel`.
         Func<int, bool> nunca = m => HayGuardiaQueLoAtaca(m) || NoSeGraduaAhi(nivel, _entorno.Datos.MapZone(m))
+                                     || NoSeGraduaEntreGuardias(m, _miBando, nivel, _entorno.Datos, _entorno.Ini)
                                      || !TieneComoVolverDesde(m, sentidos) || _huidasDelNivel.NoVuelve(m, nivel);
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
@@ -3256,11 +3258,12 @@ public sealed class Bot
         // original— lo que hay en el camino vale tanto como lo que hay en el destino, y nadie pasa al lado de un bicho que salió a
         // matar. Medido en `verdad2`: ocho bots caminando entre veinte y treinta y cuatro baldosas por minuto y setenta y dos
         // criaturas entre todos en quince minutos, con dos bots que no mataron ninguna.
-        // Y DEL LUGAR LLENO SE SALE SIN FRENAR: ver `FrenaEnElCamino`.
+        // Y DEL LUGAR LLENO SE SALE SIN FRENAR, ni se frena donde no se cazaría: ver `FrenaEnElCamino`. Va antes de mirar lo que hay a
+        // mano, que deja anotado en `_cortoElViaje` si vio algo.
         _cortoElViaje = false;
         _cortoPorElHueco = false;
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
-                                cortaSi: () => FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa, Environment.TickCount64)
+                                cortaSi: () => FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa, Environment.TickCount64, nunca)
                                                && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde)))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
@@ -3347,9 +3350,15 @@ public sealed class Bot
     /// <para>Medido en `early1` (29/09, 18 bots desde nivel 1): Petra eligió irse de la cuna al 35 nueve veces en seis minutos,
     /// con nivel 1, sin salir nunca de la cuna ni subir de nivel; Quim, trece veces en once minutos con nivel 8, y un rato antes,
     /// en el 35, había subido del 5 al 8 en medio minuto.</para>
+    ///
+    /// <para>NI DONDE NO SE CAZARÍA (<paramref name="noCazaAhi"/>, lo que la búsqueda de coto descarta): con algo a mano a la vista
+    /// no se vuelve a buscar coto, así que frenar ahí también es quedarse. Medido en `alto1` (01/10): Elmo, ciudadano de nivel 15,
+    /// dejó el 822 rumbo al 746, el viaje se cortó en el 814 —donde nacen un Paladín, dos Magos y un Bardo republicanos— y cazó ahí
+    /// hasta el 16, cuando los guardias fueron por él (ver <see cref="NoSeGraduaEntreGuardias"/>).</para>
     /// </summary>
-    public static bool FrenaEnElCamino(IReadOnlyDictionary<int, long> llenoHasta, int mapaAhora, int mapaDelCoto, long ahora) =>
-        mapaAhora == mapaDelCoto || !SigueLleno(llenoHasta, mapaAhora, ahora);
+    public static bool FrenaEnElCamino(IReadOnlyDictionary<int, long> llenoHasta, int mapaAhora, int mapaDelCoto, long ahora,
+                                       Func<int, bool> noCazaAhi) =>
+        (mapaAhora == mapaDelCoto || !SigueLleno(llenoHasta, mapaAhora, ahora)) && !noCazaAhi(mapaAhora);
 
     private bool _cortoElViaje;
 
@@ -3589,6 +3598,19 @@ public sealed class Bot
     /// </summary>
     public static bool NoSeGraduaAhi(int nivel, string? zona) =>
         nivel == GameLimits.NewbieMaxLevel && string.Equals(zona?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// ¿EN EL ÚLTIMO NIVEL DE NOVATO, AHÍ NO SE CAZA PORQUE AL DEJAR DE SERLO LOS GUARDIAS VAN A IR POR ÉL? Como el dungeon de
+    /// <see cref="NoSeGraduaAhi"/>: al novato los guardias del otro bando no lo atacan (regla de la casa `GuardiasAtacan`, con
+    /// `GuardiasAtacanNewbies` apagado en el ini que se distribuye), y el que pasa del 15 cazando entre ellos queda rodeado. Hay
+    /// dieciséis campos con criaturas y guardias adentro: ocho imperiales entre el 761 y el 779 y ocho republicanos entre el 806 y
+    /// el 824.
+    ///
+    /// <para>Medido en `alto1` (01/10): Elmo, ciudadano, compraba en la Avanzada republicana y cazaba en el 822 y el 814. Al subir al
+    /// 16 en el 814, salir del mapa falló dos veces y lo mató el Paladín, que pega hasta 240 contra sus 125 de vida.</para>
+    /// </summary>
+    public static bool NoSeGraduaEntreGuardias(int mapa, byte bando, int nivel, GameData datos, ServerIni? ini) =>
+        nivel == GameLimits.NewbieMaxLevel && HayGuardiaQueVaPor(mapa, bando, nivel + 1, datos, ini);
 
     /// <summary>¿Le pide (otra vez) el hogar al sacerdote? Si nunca lo hizo, o si lo hizo siendo novato y ya no lo es.</summary>
     public static bool VuelveAPonerElHogar(int nivelDelHogar, int nivel) =>

@@ -444,10 +444,25 @@ public class CotoDelBotTests
     public void Del_lugar_lleno_se_sale_sin_frenar_por_lo_que_aparece_a_mano()
     {
         var llenos = new Dictionary<int, long> { [37] = 300_000 };
-        Assert.False(Bot.FrenaEnElCamino(llenos, 37, 35, ahora: 100_000));
-        Assert.True(Bot.FrenaEnElCamino(llenos, 34, 35, ahora: 100_000), "ya afuera de la cuna, sí");
-        Assert.True(Bot.FrenaEnElCamino(llenos, 37, 37, ahora: 100_000), "con el coto en la misma cuna, sí");
-        Assert.True(Bot.FrenaEnElCamino(llenos, 37, 35, ahora: 300_000), "pasado el rato, sí");
+        Func<int, bool> cazaEnTodos = _ => false;
+        Assert.False(Bot.FrenaEnElCamino(llenos, 37, 35, ahora: 100_000, cazaEnTodos));
+        Assert.True(Bot.FrenaEnElCamino(llenos, 34, 35, ahora: 100_000, cazaEnTodos), "ya afuera de la cuna, sí");
+        Assert.True(Bot.FrenaEnElCamino(llenos, 37, 37, ahora: 100_000, cazaEnTodos), "con el coto en la misma cuna, sí");
+        Assert.True(Bot.FrenaEnElCamino(llenos, 37, 35, ahora: 300_000, cazaEnTodos), "pasado el rato, sí");
+    }
+
+    /// <summary>
+    /// NI SE FRENA DONDE NO SE CAZARÍA: lo que la búsqueda de coto descarta tampoco corta el viaje, aunque haya algo a mano. Medido
+    /// en `alto1`: Elmo, de nivel 15, dejó el 822 rumbo al 746, el viaje se cortó en el 814 y cazó ahí hasta que los guardias fueron
+    /// por él.
+    /// </summary>
+    [Fact]
+    public void Donde_no_se_cazaria_no_se_frena()
+    {
+        var nadaLleno = new Dictionary<int, long>();
+        Func<int, bool> noCazaAhi = m => m == 814;
+        Assert.False(Bot.FrenaEnElCamino(nadaLleno, 814, 746, ahora: 0, noCazaAhi));
+        Assert.True(Bot.FrenaEnElCamino(nadaLleno, 815, 746, ahora: 0, noCazaAhi), "en el mapa de al lado, sí");
     }
 
     /// <summary>

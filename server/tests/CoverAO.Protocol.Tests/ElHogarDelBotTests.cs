@@ -51,6 +51,31 @@ public class ElHogarDelBotTests
     }
 
     /// <summary>
+    /// NI ENTRE LOS GUARDIAS QUE VAN A IR POR ÉL AL DEJAR DE SER NOVATO: en el 814 nacen un Paladín, dos Magos y un Bardo
+    /// republicanos; al ciudadano de nivel 15 todavía no lo atacan, en el 16 sí, y al republicano nunca. Es Elmo en `alto1`. Del
+    /// lado imperial, al revés.
+    /// </summary>
+    [Fact]
+    public void En_el_ultimo_nivel_de_novato_no_se_caza_entre_los_guardias_que_van_a_ir_por_el()
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return;
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (!File.Exists(ruta)) return;
+        var ini = ServerIni.Cargar(ruta);
+        const int ultimo = GameLimits.NewbieMaxLevel;
+        byte ciudadano = Player.StatusCiudadano, republicano = Player.StatusRepublicano;
+        Assert.False(Bot.HayGuardiaQueVaPor(814, ciudadano, ultimo, d, ini), "premisa: al novato no lo atacan");
+        Assert.True(Bot.HayGuardiaQueVaPor(814, ciudadano, ultimo + 1, d, ini), "premisa: graduado, sí");
+        Assert.True(Bot.NoSeGraduaEntreGuardias(814, ciudadano, ultimo, d, ini));
+        Assert.False(Bot.NoSeGraduaEntreGuardias(814, ciudadano, ultimo - 1, d, ini), "antes del último nivel, sí");
+        Assert.False(Bot.NoSeGraduaEntreGuardias(814, republicano, ultimo, d, ini), "son los suyos");
+        Assert.False(Bot.NoSeGraduaEntreGuardias(746, ciudadano, ultimo, d, ini), "el 746, adonde iba, no tiene guardias");
+        Assert.True(Bot.NoSeGraduaEntreGuardias(761, republicano, ultimo, d, ini));
+        Assert.False(Bot.NoSeGraduaEntreGuardias(761, ciudadano, ultimo, d, ini));
+    }
+
+    /// <summary>
     /// A COMPRAR, PASADO EL NOVATO Y CON LA RUNA, NO SE CRUZA EL DESIERTO: desde el 13 Rinkel queda a cinco mapas por el 21 y el 16,
     /// donde nacen Arañas Gigantes que pegan hasta 115. Medido en `paso16b`: tres bots de nivel 20 y 21 muertos ahí yendo de
     /// compras. Buscando el pueblo sólo por donde no lo matan, desde ahí no hay: le toca la runa.

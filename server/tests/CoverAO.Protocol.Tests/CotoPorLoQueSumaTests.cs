@@ -49,7 +49,8 @@ public class CotoPorLoQueSumaTests
         Func<int, bool> esPresa = f => Bot.EsPresaPara(d.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
         Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(d.Npc((short)f), vida, nivel, true, false, bando, d, ini);
         Func<int, IEnumerable<int>> nace = m => d.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
-        Func<int, bool> nunca = m => Bot.HayGuardiaQueVaPor(m, bando, nivel, d, ini) || Bot.NoSeGraduaAhi(nivel, d.MapZone(m));
+        Func<int, bool> nunca = m => Bot.HayGuardiaQueVaPor(m, bando, nivel, d, ini) || Bot.NoSeGraduaAhi(nivel, d.MapZone(m))
+                                     || Bot.NoSeGraduaEntreGuardias(m, bando, nivel, d, ini);
         Func<int, bool> seCazaAhi = m => Bot.SeCazaAhi(d.IsPkMap(m), nace(m), esPeligroso) && !nunca(m);
         Func<int, int> rinde = f => esPresa(f) ? (int)(d.Npc((short)f)?.GiveExp ?? 0) : 0;
         return new Cazador(new Navegante(d), d, esPresa, rinde, seCazaAhi, nunca,
@@ -125,5 +126,20 @@ public class CotoPorLoQueSumaTests
         Assert.Equal(18, Coto(c, 18, desde, porLoQueSuma: true)?.Mapa);
         foreach (int propio in Enumerable.Range(1, 24))
             Assert.Equal(18, Coto(c, 18, desde, true, m => Bot.CuantoLeGusta(propio, m))?.Mapa);
+    }
+
+    /// <summary>
+    /// Y EN EL ÚLTIMO NIVEL DE NOVATO SE VA DE ENTRE LOS GUARDIAS QUE VAN A IR POR ÉL (<see cref="Bot.NoSeGraduaEntreGuardias"/>):
+    /// desde el 814 un ciudadano de nivel 14 se queda —para él es el mejor coto— y uno de 15 se va al 746, sin guardias. Es Elmo en
+    /// `alto1`, en la baldosa donde subió al 16; el Paladín lo mató ahí.
+    /// </summary>
+    [Fact]
+    public void En_el_ultimo_nivel_de_novato_se_va_de_entre_los_guardias()
+    {
+        const int ultimo = GameLimits.NewbieMaxLevel;
+        if (UnCazador(ultimo - 1, 112) is not { } antes || UnCazador(ultimo, 119) is not { } ultimoNivel) return;
+        var desde = ((byte)58, (byte)37);
+        Assert.Equal(814, Coto(antes, 814, desde, porLoQueSuma: Bot.EligePorLoQueSuma(ultimo - 1))?.Mapa);
+        Assert.Equal(746, Coto(ultimoNivel, 814, desde, porLoQueSuma: Bot.EligePorLoQueSuma(ultimo))?.Mapa);
     }
 }
