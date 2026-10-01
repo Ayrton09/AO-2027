@@ -682,6 +682,8 @@ public sealed class Bot
                         _llenoHasta[deDonde] = Environment.TickCount64 + LlenoMs;
                         // Y TAMPOCO SE LO VUELVE A CRUZAR DE VIAJE POR UN RATO: ver `NoVuelveACruzar`.
                         _huyoDe[deDonde] = Environment.TickCount64 + LlenoMs;
+                        // Y A LA SEGUNDA, AHÍ NO VUELVE A CAZAR HASTA SUBIR DE NIVEL: ver `HuidasDelNivel`.
+                        _huidasDelNivel.Anotar(deDonde, nivelAhora);
                         continue;
                     }
                     _proximaSalidaPorLaAmenaza = Environment.TickCount64 + ReintentoDeSalidaDelGuardiaMs;
@@ -971,6 +973,29 @@ public sealed class Bot
     /// </summary>
     public static bool LoDelHuecoEsLaAmenaza(bool mapaInseguro, NpcInfo? delHueco, int pasos, int? pasosDelPeligro) =>
         mapaInseguro && LoEstaAtacando(delHueco, pasos) && (pasosDelPeligro is not { } otro || pasos < otro);
+
+    /// <summary>
+    /// ¿LO DEL HUECO CORTA EL VIAJE? Si ya le pega en un mapa inseguro (<see cref="LoDelHuecoEsLaAmenaza"/>), sí, y la vuelta
+    /// siguiente del ciclo hace lo de siempre: se aleja y, si no se lo saca de encima, se va del mapa (<see cref="SeVaDelMapaPor"/>).
+    /// <paramref name="pasos"/> es null si no ve nada del hueco. Escapando o de muerto, el viaje sigue (lo decide el que llama).
+    ///
+    /// <para>La huida valía cazando y no viajando: el viaje seguía mientras la vida no bajara de <see cref="SeRetira"/>, tomando una
+    /// poción por golpe. Medido en `early11` (01/10): Aldo, de nivel 6 y 61 de vida, cruzaba el 19 camino al 27; lo mordieron varios
+    /// Lobos —del hueco para él— mientras caminaba, recién huyó con el 47 % y murió. DECIDIDO POR EL AUTOR (01/10).</para>
+    /// </summary>
+    public static bool LoDelHuecoCortaElViaje(bool mapaInseguro, NpcInfo? delHueco, int? pasos) =>
+        pasos is { } p && LoDelHuecoEsLaAmenaza(mapaInseguro, delHueco, p, null);
+
+    /// <summary><see cref="LoDelHuecoCortaElViaje"/> con lo que ve ahora.</summary>
+    private bool LoDelHuecoLePega(SentidosDelBot sentidos)
+    {
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        var delHueco = sentidos.MasCercano(f => EsDelHueco(f, vida, nivel, conPociones, curaVeneno));
+        return LoDelHuecoCortaElViaje(_entorno.Datos.IsPkMap(sentidos.Mapa),
+                                      delHueco is { } h ? _entorno.Datos.Npc(h.Quien.FichaNpc) : null, delHueco?.Pasos);
+    }
 
     /// <summary>
     /// CUÁNTAS DE LAS QUE NACEN EN ESE MAPA LO PUEDEN MATAR: lo peligroso (<see cref="EsPeligrosoParaElBot"/>) y lo del hueco
@@ -3144,8 +3169,9 @@ public sealed class Bot
         // EN EL MAPA DE LOS GUARDIAS QUE VAN POR ÉL NO SE CAZA, tampoco en una ciudad del otro bando que no sea pk: ver `ElegirCoto`.
         // NI EN EL DUNGEON DE NOVATOS EN EL ÚLTIMO NIVEL: ver `NoSeGraduaAhi`.
         // NI DONDE NO TIENE CÓMO VOLVER A COMPRAR: ver `TieneComoVolver`.
+        // NI DE DONDE YA SE FUE HUYENDO DOS VECES EN ESTE NIVEL: ver `HuidasDelNivel`.
         Func<int, bool> nunca = m => HayGuardiaQueLoAtaca(m) || NoSeGraduaAhi(nivel, _entorno.Datos.MapZone(m))
-                                     || !TieneComoVolverDesde(m, sentidos);
+                                     || !TieneComoVolverDesde(m, sentidos) || _huidasDelNivel.NoVuelve(m, nivel);
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
@@ -3188,8 +3214,7 @@ public sealed class Bot
         if (LoUnicoEsQuedarseSinGanar(hallado?.Mapa, sentidos.Mapa, SigueLleno(_noDaNadaHasta, sentidos.Mapa, ahora))) hallado = null;
         if (hallado is not { } coto)
         {
-            SiEstaEncerrado(transporte, sentidos);
-            return false;
+            return await SiEstaEncerradoAsync(transporte, sentidos, cerrada, ct);
         }
 
         // REPARTIRSE. El navegante devuelve siempre el MISMO spawn —el más cercano— así que todos los bots
@@ -3233,14 +3258,16 @@ public sealed class Bot
         // criaturas entre todos en quince minutos, con dos bots que no mataron ninguna.
         // Y DEL LUGAR LLENO SE SALE SIN FRENAR: ver `FrenaEnElCamino`.
         _cortoElViaje = false;
+        _cortoPorElHueco = false;
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
                                 cortaSi: () => FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa, Environment.TickCount64)
                                                && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde)))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
             if (_cortoElViaje) { _cortoElViaje = false; return true; }
-            SiEstaEncerrado(transporte, sentidos);
-            return false;
+            // Ni el que cortó porque lo del hueco le pega: la vuelta siguiente huye (ver `LoDelHuecoCortaElViaje`).
+            if (_cortoPorElHueco) { _cortoPorElHueco = false; return true; }
+            return await SiEstaEncerradoAsync(transporte, sentidos, cerrada, ct);
         }
         _cotosFallidos = 0;
 
@@ -3429,16 +3456,29 @@ public sealed class Bot
     /// no es PK (o si se está parado en una arena); si no, el servidor contesta el 468 y no mueve a nadie
     /// (VB6 InvUsuario.bas:1356-1372). Por eso se mira el mapa antes de pedirla, y se espera a haber fallado el
     /// viaje al coto un par de veces: a un rincón al que no se llega se le da una oportunidad antes de irse.</para>
+    ///
+    /// <para>EN UN MAPA INSEGURO, DONDE LA RUNA NO ANDA, SE CAMINA AL MAPA SEGURO MÁS CERCANO (decisión del autor, 01/10), como el
+    /// que se vuelve a la ciudad a reponer (<see cref="VolverACasaAsync"/>); desde ahí la búsqueda siguiente encuentra otro coto o
+    /// usa la runa. Antes no hacía nada. Medido en `early11` (01/10): Petra, de nivel 8, pasó veinte minutos entre el 392 —pk y sin
+    /// una sola criatura— y el 275, del que se iba por las Águilas que no lastima. Devuelve si caminó.</para>
     /// </summary>
-    private void SiEstaEncerrado(TransporteDeBot transporte, SentidosDelBot sentidos)
+    private async Task<bool> SiEstaEncerradoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (++_cotosFallidos < CotosFallidosAntesDeLaRuna) return;
+        if (++_cotosFallidos < CotosFallidosAntesDeLaRuna) return false;
         _cotosFallidos = 0;
-        if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return;
-        Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
+        if (!_entorno.Datos.IsPkMap(sentidos.Mapa))
+        {
+            Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
+            return false;
+        }
+        return _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is { } seguro
+               && await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct);
     }
 
     private int _cotosFallidos;
+
+    /// <summary>Si el último viaje al coto lo cortó lo del hueco que le pegaba (ver <see cref="LoDelHuecoCortaElViaje"/>).</summary>
+    private bool _cortoPorElHueco;
 
     /// <summary>Cuántos viajes fallidos al coto antes de volver a casa con la Runa.</summary>
     private const int CotosFallidosAntesDeLaRuna = 2;
@@ -4549,6 +4589,47 @@ public sealed class Bot
         (noLaLastima || (esDelHueco && mapaInseguro)) && NoSeLoSacaDeEncima(huidasDeLaMismaCriatura);
 
     /// <summary>
+    /// DE QUÉ MAPAS SE FUE HUYENDO EN ESTE NIVEL, Y CUÁNTAS VECES. A las <see cref="HuidasQueLoDejanAfuera"/> ese mapa no se elige de
+    /// coto hasta subir de nivel, que es cuando cambia lo que puede pelear; la marca de cada huida (<see cref="SigueLleno"/>) dura
+    /// cinco minutos y después el mapa vuelve a contar. No es esquivar de antemano: es lo que ya le pasó ahí, sea por lo que no
+    /// lastima o por lo del hueco. DECIDIDO POR EL AUTOR (01/10).
+    ///
+    /// <para>Medido en `early11` (01/10): Petra, de nivel 8, eligió cazar en el 275 cinco veces en veinte minutos; cada vez se fue
+    /// por las Águilas que no lastima al 392, que no tiene criaturas, y volvía cuando vencían los cinco minutos.</para>
+    /// </summary>
+    public sealed class HuidasDelNivel
+    {
+        private readonly Dictionary<int, int> _veces = new();
+        private int _nivel = -1;
+
+        /// <summary>Se fue huyendo de ese mapa.</summary>
+        public void Anotar(int mapa, int nivel)
+        {
+            OlvidarSiCambio(nivel);
+            _veces[mapa] = _veces.GetValueOrDefault(mapa) + 1;
+        }
+
+        /// <summary>¿Ese mapa quedó afuera del coto en este nivel?</summary>
+        public bool NoVuelve(int mapa, int nivel)
+        {
+            OlvidarSiCambio(nivel);
+            return _veces.GetValueOrDefault(mapa) >= HuidasQueLoDejanAfuera;
+        }
+
+        private void OlvidarSiCambio(int nivel)
+        {
+            if (nivel == _nivel) return;
+            _veces.Clear();
+            _nivel = nivel;
+        }
+    }
+
+    /// <summary>Cuántas huidas del mismo mapa, en el mismo nivel, lo dejan afuera del coto: ver <see cref="HuidasDelNivel"/>.</summary>
+    public const int HuidasQueLoDejanAfuera = 2;
+
+    private readonly HuidasDelNivel _huidasDelNivel = new();
+
+    /// <summary>
     /// ¿LA HUIDA NO SIRVIÓ? Si después de alejarse la amenaza sigue adentro del radio de susto, sí: es la misma distancia que
     /// vuelve a disparar la huida en la vuelta siguiente, así que el bot ya está condenado a repetirla.
     ///
@@ -5265,6 +5346,8 @@ public sealed class Bot
                         sentidos.CuantoTiene(EsPocionDeVida), HostilCerca(sentidos)))
                     como = Paso.Dado;
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
+                // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`.
+                if (!escapando && !deMuerto && LoDelHuecoLePega(sentidos)) { _cortoPorElHueco = true; return false; }
                 if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
                 if (_pasoTrabado) { trabas.Add(baldosa); break; }   // algo se paró en el camino: rodearlo
             }
