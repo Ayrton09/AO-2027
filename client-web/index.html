@@ -456,6 +456,63 @@
       background:radial-gradient(75% 70% at 50% 45%, transparent 40%, #000000cc 100%); }
     #login > * { position:relative; z-index:1; }
 
+    /* ======================== EL INGRESO DE COVERAO (01/10/2026) ===================================
+       El fondo y el logo los hizo el autor para esta pantalla. El fondo está pensado para ella: lo arriba al
+       centro queda para el logo y el centro de abajo, oscuro y tranquilo, para los paneles. Al costado del
+       ingreso van las NOTICIAS, como en el frmConnect del original: las mismas novedades que el server manda al
+       entrar, para que un update se vea antes de jugar. */
+    #login { flex-direction:column; justify-content:flex-start; gap:calc(var(--u)*0.9);
+      padding:max(14px, 3.2vh) 16px calc(var(--u)*3.4); overflow-y:auto;
+      background:#0b0906 url('./assets/login/fondo.jpg') center 40% / cover no-repeat; }
+    #login::before { mix-blend-mode:normal; background:linear-gradient(180deg, #00000000 0%, #00000014 45%, #00000070 100%); }
+    #login::after { background:radial-gradient(100% 95% at 50% 40%, transparent 60%, #00000080 100%); }
+    .login-logo { display:block; flex:none; width:min(620px, 84vw); height:auto; margin:auto auto 2.2vh;
+      user-select:none; pointer-events:none; filter:drop-shadow(0 6px 14px #000000a8); }
+    .login-centro { display:flex; gap:18px; align-items:stretch; justify-content:center; width:min(1040px, 100%);
+      margin:0 0 auto; }
+    .login-centro > .login-card { flex:0 1 440px; max-width:440px; background:linear-gradient(180deg, #1b130bf2, #110c07f0); }
+    /* El escudo y el título eran la cabecera de una tarjeta sola en el medio de la nada; arriba ya está el logo. */
+    .login-centro .login-crest, .login-centro .login-title, .login-centro .login-sub { display:none; }
+    .login-nov { flex:1 1 520px; max-width:560px; min-height:300px; display:flex; flex-direction:column; text-align:left;
+      padding:18px 20px 16px; background:linear-gradient(180deg, #17110af0, #0f0b07ee); position:relative;
+      box-shadow:0 24px 60px #000c, 0 0 0 1px #00000088; }
+    .login-nov[hidden] { display:none; }
+    .login-nov::before { content:''; position:absolute; inset:5px; border:1px solid #e8c87626; border-radius:5px; pointer-events:none; }
+    .nov-cab { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding-bottom:9px;
+      margin-bottom:8px; border-bottom:1px solid #e8c87633; }
+    .nov-titulo { font-family:var(--serif); font-size:calc(var(--u)*1.25); letter-spacing:.14em; text-transform:uppercase;
+      color:var(--gold-hi); text-shadow:0 2px 4px #000; }
+    .nov-version { font-size:calc(var(--u)*0.72); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); }
+    .nov-lista { flex:1 1 0; min-height:0; overflow-y:auto; padding-right:6px; overscroll-behavior:contain; }
+    .nov-lista h4 { margin:12px 0 5px; font-family:var(--serif); font-size:calc(var(--u)*0.9); letter-spacing:.08em;
+      color:var(--gold); }
+    .nov-lista h4:first-child { margin-top:2px; }
+    .nov-lista p { position:relative; margin:0 0 6px; padding-left:14px; font-size:calc(var(--u)*0.8); line-height:1.45;
+      color:var(--ink); }
+    .nov-lista p::before { content:'◆'; position:absolute; left:0; top:.1em; font-size:.62em; color:var(--gold-deep); }
+    #login > .login-barra { position:fixed; left:0; right:0; bottom:0; z-index:2; display:flex; align-items:center;
+      justify-content:space-between; gap:12px; padding:9px 16px; font-size:calc(var(--u)*0.78); color:var(--ink-dim);
+      background:linear-gradient(0deg, #000000c8, #00000000); }
+    .login-barra a { color:var(--gold); text-decoration:none; } .login-barra a:hover { color:var(--gold-hi); }
+    .login-musica { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+    .login-firma { font-family:var(--serif); font-size:calc(var(--u)*0.72); letter-spacing:.14em; color:#e8c876aa;
+      text-shadow:0 1px 3px #000; white-space:nowrap; }
+    @media (max-width: 700px) { #login > .login-barra { flex-wrap:wrap; justify-content:center; row-gap:4px; } }
+    .login-musica button { background:none; border:1px solid var(--gold-deep); border-radius:4px; color:var(--gold-hi);
+      font-size:calc(var(--u)*0.95); line-height:1; padding:3px 8px; cursor:pointer; }
+    .login-musica button.off { opacity:.4; }
+    .login-musica input[type=range] { width:8.5em; accent-color:var(--gold); }
+    #lm-vol-val { min-width:2.6em; text-align:right; }
+    /* Creando un personaje la tarjeta ocupa todo: el logo y las novedades se apartan, como antes el escudo. */
+    #login.creando .login-logo, #login.creando .login-nov { display:none; }
+    #login.creando .login-centro > .login-card { flex-basis:auto; max-width:none; }
+    @media (max-width: 900px) {
+      .login-centro { flex-direction:column; align-items:center; }
+      .login-centro > .login-card, .login-nov { width:min(440px, 100%); flex:none; }
+      .login-nov { max-height:42vh; }
+    }
+    @media (max-height: 760px) { .login-logo { width:min(460px, 72vw); margin-top:0; } }
+
     .login-crest { display:block; width:calc(var(--u)*3.4); height:auto; margin:0 auto 6px;
       filter:drop-shadow(0 2px 6px #000) drop-shadow(0 0 12px #e8c87633); }
     /* En la creación la tarjeta ya está llena: el escudo ahí sería ruido. */
@@ -722,6 +779,9 @@
 
   <!-- Pantalla de ingreso / creación (reemplaza el login hardcodeado). Se oculta al entrar al mundo. -->
   <div id="login">
+    <!-- El logo de CoverAO (ver el CSS de "EL INGRESO DE COVERAO"). -->
+    <img class="login-logo" src="./assets/login/logo.webp" alt="CoverAO" draggable="false">
+    <div class="login-centro">
     <div class="login-card ornate">
       <!-- Escudo heráldico. En SVG en línea a propósito: no agrega un archivo que pueda faltar, hereda el
            dorado del tema y escala sin pixelarse. La pantalla de ingreso era un formulario y nada más. -->
@@ -902,7 +962,26 @@
            entrar: lo que uno quiere saber es si hay alguien jugando, y /ONLINE sólo se lee estando conectado.
            Es un enlace común —no depende de nada del cliente— así que sigue andando aunque el juego no cargue.
            Si el host la apagó (PaginaPublica=0), la página abre igual y lo dice. -->
-      <div class="login-pie"><a href="./estado.html">Ver quién está jugando y la tabla de posiciones →</a></div>
+    </div>
+    <!-- LAS NOTICIAS DEL INGRESO, como el frmConnect del original: las novedades que el server manda al entrar
+         (data/updates.txt, que el paquete arma del CHANGELOG), publicadas también en `coverao-config.json` para
+         que se lean ANTES de entrar. Sin server que las publique —un http.server de desarrollo— no aparece. -->
+    <aside class="login-nov ornate" id="login-nov" hidden aria-label="Novedades">
+      <div class="nov-cab"><span class="nov-titulo">Novedades</span><span class="nov-version" id="nov-version"></span></div>
+      <div class="nov-lista" id="nov-lista"></div>
+    </aside>
+    </div>
+    <!-- LA PUERTA A LA PÁGINA PÚBLICA y la música. El enlace estaba al pie de la tarjeta: sirve ANTES de entrar
+         —saber si hay alguien jugando—, sigue andando aunque el juego no cargue y, si el host la apagó
+         (PaginaPublica=0), la página abre igual y lo dice. -->
+    <div class="login-barra">
+      <span><span id="lb-online"></span><a href="./estado.html">Quién está jugando y la tabla de posiciones →</a></span>
+      <span class="login-firma">by: Ayrton09</span>
+      <span class="login-musica">
+        <button type="button" id="lm-musica" title="música del inicio">♪</button>
+        <input type="range" min="0" max="100" step="5" data-op="volmusica" id="lm-vol" aria-label="volumen de la música">
+        <span id="lm-vol-val" data-op-val="volmusica"></span>
+      </span>
     </div>
   </div>
 
@@ -990,6 +1069,11 @@
     // ese precio: la música sigue estando entera —13 pistas— a un clic del botón ♪, y la elección se guarda.
     // Prender algo que suena es decisión del jugador; apagarlo no debería ser su primer acto en el juego.
     let musicaOff = localStorage.getItem('ao_musica') !== '1';
+    // LA MÚSICA DEL INGRESO es aparte y SÍ arranca prendida: el original suena al abrirse, y el pedido del tester
+    // (01/10) fue ése, con el volumen a mano para que no entre fuerte. La de los mapas sigue como se decidió
+    // arriba. El volumen es el mismo para las dos (`ao_volmusica`).
+    let musicaLoginOff = localStorage.getItem('ao_musicalogin') === '0';
+    let musicaLogin = null, esperandoGesto = false;
     // 30% por defecto: la música es de fondo y compite con los 164 efectos, que van al 50%. Arranca sonando
     // (como el original), así que el default tiene que poder dejarse puesto sin molestar. Ajustable en Opciones.
     let volMusica = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volmusica') ?? 0.30)));
@@ -1014,6 +1098,7 @@
       // Sin el `= null`, `__musica()` seguía informando `suena: true` con el audio pausado: el hook mira si el
       // objeto existe, no si está reproduciendo, y así el hook informaba mal si el mute había funcionado.
       if (on && musicaAudio) { try { musicaAudio.pause(); } catch (e) {} musicaAudio = null; }
+      if (on) pararMusicaLogin(); else ponerMusicaLogin();
       return on ? 'silencio' : 'con sonido';
     };
     function playWave(id) {
@@ -1743,6 +1828,52 @@
       a.play().then(() => { musicaAudio = a; }).catch(() => {});   // sin archivo (404) o sin gesto del usuario: silencio
     }
     window.__musica = () => ({ pista: musicaActual, suena: !!musicaAudio, volumen: musicaAudio ? musicaAudio.volume : null });
+
+    /**
+     * LA MÚSICA DEL INGRESO: el tema del original mientras se ve la pantalla de ingreso, y se corta al entrar al
+     * mundo, donde manda la del mapa. Es la que pasó el tester: la que trae el cliente VB6 que tenemos no es la
+     * original. Se emparejó en volumen con las pistas de los mapas (−18 LUFS) para que el mismo deslizador suene
+     * parecido en las dos.
+     *
+     * El navegador no deja sonar nada antes de que la persona toque la página: el primer `play()` falla y la
+     * música arranca con el primer clic o la primera tecla —escribir la cuenta, por ejemplo—.
+     */
+    function ponerMusicaLogin() {
+      const box = $('login');
+      if (!box || box.classList.contains('hidden') || muted || musicaLoginOff) { pararMusicaLogin(); return; }
+      if (!musicaLogin) { musicaLogin = new Audio('./assets/music/login.mp3'); musicaLogin.loop = true; }
+      musicaLogin.volume = volMusica;
+      if (musicaLogin.paused) musicaLogin.play().catch(esperarGesto);
+    }
+    function esperarGesto() {
+      if (esperandoGesto) return;
+      esperandoGesto = true;
+      const uno = () => {
+        document.removeEventListener('pointerdown', uno, true); document.removeEventListener('keydown', uno, true);
+        esperandoGesto = false; ponerMusicaLogin();
+      };
+      document.addEventListener('pointerdown', uno, true); document.addEventListener('keydown', uno, true);
+    }
+    function pararMusicaLogin() {
+      if (musicaLogin) { try { musicaLogin.pause(); } catch (e) {} musicaLogin = null; }
+    }
+    window.__musicaLogin = () => ({ suena: !!musicaLogin && !musicaLogin.paused, volumen: musicaLogin ? musicaLogin.volume : null,
+                                    apagada: musicaLoginOff });
+
+    /** Las NOVEDADES del ingreso (ver el `aside` de #login). Un renglón "== Tema ==" es el título de un grupo, igual
+     *  que en Menú → Novedades. */
+    function pintarNovedadesLogin(lineas, version) {
+      const caja = $('login-nov'), lista = $('nov-lista');
+      if (!caja || !lista || !Array.isArray(lineas) || !lineas.length) return;
+      lista.innerHTML = lineas.map((l) => {
+        const t = /^== (.+) ==$/.exec(String(l));
+        return t ? `<h4>${esc(t[1])}</h4>` : `<p>${esc(l)}</p>`;
+      }).join('');
+      const v = $('nov-version');
+      if (v && version) v.textContent = 'versión ' + version;
+      caja.hidden = false;
+    }
+    window.__novedadesLogin = pintarNovedadesLogin;   // sonda: pintar sin server
 
     /**
      * EL CARTEL DEL LUGAR: al entrar a un mapa se rotula dónde estás ("Ullathorpe", "Rinkel"…), como en el
@@ -3073,7 +3204,8 @@
                        if (cfg && cfg.wsPath) wsPath = String(cfg.wsPath);
                        if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente);
                        if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false;
-                       if (cfg && cfg.destinoPortales === false) destinoPortales = false; })
+                       if (cfg && cfg.destinoPortales === false) destinoPortales = false;
+                       if (cfg && Array.isArray(cfg.novedades)) pintarNovedadesLogin(cfg.novedades, cfg.version); })
       .catch(() => {})
       .finally(() => {
         // El auto-login sólo vale DESDE LA MISMA MÁQUINA (dev y capturas). Cablea las credenciales del
@@ -6737,6 +6869,7 @@
           volMusica = Math.min(1, Math.max(0, Number(el.value) / 100));
           guardarPref('ao_volmusica', String(volMusica));
           if (musicaAudio) musicaAudio.volume = volMusica;      // en vivo, sin cortar la pista
+          if (musicaLogin) musicaLogin.volume = volMusica;      // y la del ingreso, que es el mismo volumen
           rot(Math.round(volMusica * 100) + '%'); break;
         }
         case 'volefectos': {
@@ -6793,6 +6926,28 @@
     if (btnTeclas) { btnTeclas.title = 'opciones'; btnTeclas.addEventListener('click', () => abrirOpciones()); }
     pintarAudio();
     window.__audio = () => ({ musicaOff, muted, suena: !!musicaAudio });   // sonda de verificación
+
+    // EL CONTROL DE MÚSICA DEL INGRESO: el ♪ prende y apaga la del inicio, y el deslizador es el de Opciones
+    // (`data-op="volmusica"`, el mismo manejador de arriba).
+    const lmMusica = $('lm-musica'), lmVol = $('lm-vol'), lmVolVal = $('lm-vol-val');
+    const pintarMusicaLogin = () => {
+      if (lmMusica) { lmMusica.classList.toggle('off', musicaLoginOff);
+                      lmMusica.title = musicaLoginOff ? 'música del inicio apagada' : 'música del inicio'; }
+    };
+    if (lmVol) lmVol.value = String(Math.round(volMusica * 100));
+    if (lmVolVal) lmVolVal.textContent = Math.round(volMusica * 100) + '%';
+    if (lmMusica) lmMusica.addEventListener('click', () => {
+      musicaLoginOff = !musicaLoginOff;
+      guardarPref('ao_musicalogin', musicaLoginOff ? '0' : '1');
+      ponerMusicaLogin(); pintarMusicaLogin();
+    });
+    pintarMusicaLogin();
+    ponerMusicaLogin();
+    // CUÁNTOS HAY ADENTRO, de la página pública. Si el host la apagó (404) la barra queda sólo con el enlace.
+    fetch('./api/publico.json').then((r) => (r.ok ? r.json() : null)).then((e) => {
+      const n = e && e.servidor ? Number(e.servidor.online) : NaN, el = $('lb-online');
+      if (el && Number.isFinite(n)) el.textContent = (n === 1 ? '1 conectado' : n + ' conectados') + ' · ';
+    }).catch(() => {});
     chatbox.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') {
         // Enter con texto: manda y CIERRA. Enter vacío: cierra sin mandar — así la misma tecla abre y
@@ -7109,6 +7264,7 @@
       cerrarModalSiHay();
       selectLoginMode('in');
       $('login').classList.remove('hidden', 'creando', 'eligiendo');
+      ponerMusicaLogin();
     }
     /** Cierra la ventana modal si hay alguna abierta. Se usa al volver al login y al reconectar. */
     function cerrarModalSiHay() {
@@ -7124,6 +7280,7 @@
       const ae = document.activeElement;
       if (ae && ae !== document.body && box.contains(ae)) ae.blur();
       box.classList.add('hidden');
+      pararMusicaLogin();
     }
     function loginErr(msg) { const e = $('login-err'); if (e) e.textContent = msg || ''; }
     // Las líneas de `locale_error_es.ind` que el server manda por número (SendMsgBox con Modo > 0). Sólo las

@@ -109,10 +109,15 @@ public sealed class StaticFileServer
     /// <param name="alcanceDelHechizo">Si el cliente marca el alcance del hechizo al apuntar (Server.ini
     /// <c>AlcanceDelHechizo</c>). Viaja en el mismo JSON: es del server, no de cada jugador.</param>
     /// <param name="destinoDeLosPortales">Si cada portal dice a dónde lleva (Server.ini <c>DestinoDeLosPortales</c>).</param>
+    /// <param name="novedades">Las NOVEDADES del server (las que manda al entrar, <c>SendUpdate</c>), para que la pantalla de
+    /// ingreso las muestre ANTES de entrar, como las Noticias del frmConnect del original. Viajan en el mismo JSON: son las
+    /// mismas para todos y se cargan al arrancar.</param>
+    /// <param name="version">La versión del server, que el panel de novedades muestra en su cabecera.</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
                             Func<string>? estadoPublico = null,
                             Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
-                            bool alcanceDelHechizo = true, bool destinoDeLosPortales = true)
+                            bool alcanceDelHechizo = true, bool destinoDeLosPortales = true,
+                            IReadOnlyList<string>? novedades = null, string version = "")
     {
         _port = port;
         _wsPort = wsPort;
@@ -128,7 +133,9 @@ public sealed class StaticFileServer
             $"{{\"wsPort\":{anunciado},\"wsPath\":{ruta}," +
             $"\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}," +
             $"\"alcanceHechizo\":{(alcanceDelHechizo ? "true" : "false")}," +
-            $"\"destinoPortales\":{(destinoDeLosPortales ? "true" : "false")}}}");
+            $"\"destinoPortales\":{(destinoDeLosPortales ? "true" : "false")}," +
+            $"\"version\":{System.Text.Json.JsonSerializer.Serialize(version)}," +
+            $"\"novedades\":{System.Text.Json.JsonSerializer.Serialize(novedades ?? Array.Empty<string>())}}}");
     }
 
     /// <summary>El JSON que se baja el cliente, tal cual. Existe para poder testear QUÉ se le anuncia sin

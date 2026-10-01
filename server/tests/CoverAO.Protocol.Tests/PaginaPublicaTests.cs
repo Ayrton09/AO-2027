@@ -75,6 +75,22 @@ public class PaginaPublicaTests : IDisposable
         Assert.Contains("PaginaPublica", ServerIni.ClavesConocidas);
     }
 
+    /// <summary>
+    /// LAS NOVEDADES, ANTES DE ENTRAR: viajan en <c>coverao-config.json</c>, que el cliente baja al abrir la página, y la
+    /// pantalla de ingreso las muestra como las Noticias del frmConnect del original. Tal cual, con los títulos de grupo y
+    /// los acentos, y sin depender de la página pública (<c>PaginaPublica=0</c> no las apaga).
+    /// </summary>
+    [Fact]
+    public void Las_novedades_viajan_en_la_config_del_cliente()
+    {
+        var lineas = new[] { "== Combate y magia ==", "La magia pega con otra cuenta: \"depende\" del nivel." };
+        using var conNovedades = JsonDocument.Parse(new StaticFileServer(0, _root, 7667, novedades: lineas, version: "1.0.0").ConfigJson);
+        Assert.Equal(lineas, conNovedades.RootElement.GetProperty("novedades").EnumerateArray().Select(e => e.GetString()).ToArray());
+        Assert.Equal("1.0.0", conNovedades.RootElement.GetProperty("version").GetString());
+        using var sinNovedades = JsonDocument.Parse(new StaticFileServer(0, _root, 7667).ConfigJson);
+        Assert.Equal(0, sinNovedades.RootElement.GetProperty("novedades").GetArrayLength());
+    }
+
     /// <summary>Apagada, la ruta NO EXISTE. El servidor de estáticos la sirve sólo si le dieron de dónde
     /// sacarla; sin eso es un 404 como cualquier ruta inventada, que es lo que tiene que ver alguien de
     /// afuera: ni un JSON vacío ni un 403, que confirmarían que el servidor está y sólo no quiere contestar.</summary>
