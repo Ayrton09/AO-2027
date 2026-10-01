@@ -294,7 +294,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   a cazar donde no elegirían cazar, y acorralados, los que saben magia se defienden con hechizos. Si salen a comprar
   sólo por un gusto —equipo mejor, un pergamino— y vuelven sin nada, esperan un buen rato antes de volver a intentarlo.
   Al pueblo entran por donde se llega a la tienda, y no por la orilla de afuera de la muralla, y encuentran caminos que
-  antes no veían: de los Campos Abiertos a Rinkel por el Río Otoren, sin cruzar el desierto.
+  antes no veían: de los Campos Abiertos a Rinkel por el Río Otoren, sin cruzar el desierto. Si alguien se les para en el
+  camino, lo rodean o esperan a que se corra en vez de abandonar el viaje.
 
 ## 1.0.0 — 2026-09-16
 
