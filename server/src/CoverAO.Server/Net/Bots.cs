@@ -3458,8 +3458,8 @@ public sealed class Bot
     /// viaje al coto un par de veces: a un rincón al que no se llega se le da una oportunidad antes de irse.</para>
     ///
     /// <para>EN UN MAPA INSEGURO, DONDE LA RUNA NO ANDA, SE CAMINA AL MAPA SEGURO MÁS CERCANO (decisión del autor, 01/10), como el
-    /// que se vuelve a la ciudad a reponer (<see cref="VolverACasaAsync"/>); desde ahí la búsqueda siguiente encuentra otro coto o
-    /// usa la runa. Antes no hacía nada. Medido en `early11` (01/10): Petra, de nivel 8, pasó veinte minutos entre el 392 —pk y sin
+    /// que se vuelve a la ciudad a reponer (<see cref="IrAlMapaSeguroAsync"/>); desde ahí la búsqueda siguiente encuentra otro coto o
+    /// usa la runa. Medido en `early11` (01/10): Petra, de nivel 8, pasó veinte minutos entre el 392 —pk y sin
     /// una sola criatura— y el 275, del que se iba por las Águilas que no lastima. Devuelve si caminó.</para>
     /// </summary>
     private async Task<bool> SiEstaEncerradoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
@@ -3471,8 +3471,7 @@ public sealed class Bot
             Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
             return false;
         }
-        return _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is { } seguro
-               && await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct);
+        return await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct);
     }
 
     private int _cotosFallidos;
@@ -3500,15 +3499,7 @@ public sealed class Bot
         if (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return false;
         if (_entorno.Datos.IsPkMap(sentidos.Mapa))
         {
-            // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS, como el pueblo de `PuebloConMercader`. Medido en `tardeL1` (30/09): para
-            // Milo, republicano de nivel 23, desde el 19 el mapa seguro más cercano es Rinkel, a seis —Ullathorpe, Nix y Banderbill
-            // tienen guardias imperiales que van por él—, y pasó la hora sin comida y con tres pociones.
-            var pisable = Pisable(sentidos);
-            if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
-                 ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
-                is not { } seguro) return false;
-            await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
-                               topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos));
+            if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct)) return false;
             if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene
         }
         int antes = sentidos.Mapa;
@@ -3523,6 +3514,27 @@ public sealed class Bot
         // mapa.
         bool loLlevo = sentidos.Mapa != antes || sentidos.Posicion != dondeEstaba;
         if (loLlevo && !LeVendenAca(sentidos.Mapa)) _runaNoSirveParaComprar = true;
+        return true;
+    }
+
+    /// <summary>
+    /// A PIE HASTA EL MAPA SEGURO MÁS CERCANO, donde la runa anda: el que vuelve a comprar (<see cref="VolverACasaAsync"/>) y el que
+    /// se quedó sin coto en un mapa inseguro (<see cref="SiEstaEncerradoAsync"/>). Devuelve si hay alguno, llegue o no: el viaje que
+    /// no llega se vuelve a probar la vez siguiente.
+    ///
+    /// <para>Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS, como el pueblo de <see cref="PuebloConMercader"/>. Medido en `tardeL1`
+    /// (30/09): para Milo, republicano de nivel 23, desde el 19 el mapa seguro más cercano es Rinkel, a seis —Ullathorpe, Nix y
+    /// Banderbill tienen guardias imperiales que van por él—, y pasó la hora sin comida y con tres pociones. Y en `tardeE` (01/10),
+    /// sin coto en el 19 y sin esto, buscaba sólo a cinco y no salía nunca.</para>
+    /// </summary>
+    private async Task<bool> IrAlMapaSeguroAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        var pisable = Pisable(sentidos);
+        if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
+             ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
+            is not { } seguro) return false;
+        await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
+                           topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos));
         return true;
     }
 
