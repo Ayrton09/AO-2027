@@ -168,6 +168,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 ### Chat, mapa y pantalla
 
+- **La pantalla de ingreso es nueva**: fondo y logo de CoverAO, las novedades al costado para enterarte de cada
+  actualización antes de entrar, cuántos están conectados y la música del inicio, con su volumen a mano.
+
 - **Los errores y las sugerencias se reportan en GitHub**, como dice el cartel de bienvenida:
   github.com/Ayrton09/CoverAO/issues. El /GM queda para las dudas sobre el servidor donde jugás.
 
@@ -277,8 +280,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   otra—. Persiguiendo una presa no se meten a la vista de lo que los mata. Si sus hechizos no salen siguen con el
   arma, y de muertos van al sacerdote aunque esté en otro mapa. Dos niveles antes de dejar de ser novatos se compran
   pociones propias —antes que nada—, ropa, un arma y provisiones para el camino, aunque el herrero les quede lejos,
-  si pueden llegar sin que los maten; y el último nivel de novato no lo pasan adentro del dungeon ni entre los
-  guardias que los van a atacar al dejar de serlo. Ponen su hogar en
+  si pueden llegar sin que los maten; y el último nivel de novato no lo pasan adentro del dungeon, ni entre los
+  guardias que los van a atacar al dejar de serlo, ni donde ya no van a tener cómo volver a comprar. Ponen su hogar en
   una ciudad donde les venden, y si se quedan sin pociones, comida o bebida lejos de toda tienda, caminan hasta un
   mapa seguro —aunque quede lejos— y vuelven a casa con la runa, en vez de cruzar el desierto; y si no encuentran
   dónde cazar, también. Salen a comprar pociones sólo si les alcanza para una. De un lugar lleno salen sin frenar en
