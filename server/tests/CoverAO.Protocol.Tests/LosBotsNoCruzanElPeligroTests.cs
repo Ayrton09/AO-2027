@@ -181,6 +181,20 @@ public class LosBotsNoCruzanElPeligroTests
     }
 
     /// <summary>
+    /// LO QUE TAPA EL PASO NO GASTA EL VIAJE, hasta el tope (ver <see cref="Bot.TrabasPorViaje"/>): en `mid14`, cinco bots yendo a
+    /// Rinkel por el pasillo del Río Otoren se quedaron sin tramos a mitad de camino, con 9 a 12 trabas y ningún peligro. Escapando,
+    /// cada traba gasta como siempre: lo que tapa es lo que lo persigue.
+    /// </summary>
+    [Fact]
+    public void Lo_que_tapa_el_paso_no_gasta_el_viaje_hasta_el_tope()
+    {
+        Assert.False(Bot.LaTrabaGastaElViaje(escapando: false, 1));
+        Assert.False(Bot.LaTrabaGastaElViaje(escapando: false, Bot.TrabasPorViaje));
+        Assert.True(Bot.LaTrabaGastaElViaje(escapando: false, Bot.TrabasPorViaje + 1), "pasado el tope, sí");
+        Assert.True(Bot.LaTrabaGastaElViaje(escapando: true, 1), "escapando, siempre");
+    }
+
+    /// <summary>
     /// EL CAMINO DE UN VIAJE, POR ESCALONES: por donde no lo matan, por donde cazaría y por el de siempre; el viaje largo, sólo por
     /// los dos primeros. De muerto, por el de siempre: escrito como <c>deMuerto ? null : sinPeligro ?? (...)</c>, el cadáver no
     /// encontraba ninguna puerta y no llegaba nunca al sacerdote de otro mapa.

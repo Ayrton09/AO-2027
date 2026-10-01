@@ -149,6 +149,18 @@ public sealed class Bot
     private const int TramosPorViaje = 12;
     private const int EsperaTrabaMinMs = 800, EsperaTrabaMaxMs = 2_000;
 
+    /// <summary>
+    /// LO QUE TAPA EL PASO NO GASTA EL VIAJE, hasta tantas veces (<see cref="IrHastaAsync"/>): rodear al que se paró en el camino o
+    /// esperar a que se corra no es un tramo nuevo. Con cada traba gastando uno —y la espera que sigue, otro—, el viaje que cruzaba
+    /// un pasillo con otros bots se terminaba a mitad de camino: medido en `mid14` (01/10), Fabia, Ciro, Elmo, Milo y Lira yendo a
+    /// Rinkel por el Río Otoren, con 9 a 12 trabas, ningún peligro y los doce tramos gastados. El tope queda para lo que no se corre
+    /// nunca. Escapando no: ahí lo que tapa es lo que lo persigue, y se prueba otra salida.
+    /// </summary>
+    public const int TrabasPorViaje = 24;
+
+    /// <summary>¿Esta traba gasta un tramo del viaje? Escapando, sí; si no, sólo pasadas <see cref="TrabasPorViaje"/>.</summary>
+    public static bool LaTrabaGastaElViaje(bool escapando, int trabasDelViaje) => escapando || trabasDelViaje > TrabasPorViaje;
+
     /// <summary>Cuántas baldosas alrededor se busca dónde trabajar, cuántas unidades se hacen de una sentada,
     /// cuánto tarda cada una, y cuánto se descansa entre tandas. Trabajar sin parar toda la sesión no lo hace
     /// nadie, y además el servidor cobra energía por cada unidad.</summary>
@@ -5326,6 +5338,9 @@ public sealed class Bot
         var trabas = new HashSet<(byte X, byte Y)>();
         // UN TRAMO POR MAPA DE MÁS en un viaje largo (ver `PuebloConMercader`): cada puerta que se cruza gasta uno.
         int tramosDelViaje = TramosPorViaje + Math.Max(0, topeDeMapas - Navegante.TopeDeMapas);
+        // LO QUE TAPA EL PASO NO GASTA EL VIAJE: ver `TrabasPorViaje`.
+        int trabasDelViaje = 0;
+        bool trabadoPorAlguien = false;
         for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
@@ -5387,10 +5402,12 @@ public sealed class Bot
                 if (escapando) return false;
                 trabas.Clear();
                 await Task.Delay(_rng.Next(EsperaTrabaMinMs, EsperaTrabaMaxMs), ct);
+                if (trabadoPorAlguien && !LaTrabaGastaElViaje(escapando, trabasDelViaje)) tramos--;
                 continue;
             }
             if (camino is null || camino.Count == 0) return false;
 
+            trabadoPorAlguien = false;
             foreach (var baldosa in camino)
             {
                 if (cerrada.IsCompleted) return false;
@@ -5426,7 +5443,13 @@ public sealed class Bot
                 // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`.
                 if (!escapando && !deMuerto && LoDelHuecoLePega(sentidos)) { _cortoPorElHueco = true; return false; }
                 if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
-                if (_pasoTrabado) { trabas.Add(baldosa); break; }   // algo se paró en el camino: rodearlo
+                if (_pasoTrabado)   // algo se paró en el camino: rodearlo
+                {
+                    trabas.Add(baldosa);
+                    trabadoPorAlguien = true;
+                    if (!LaTrabaGastaElViaje(escapando, ++trabasDelViaje)) tramos--;
+                    break;
+                }
             }
         }
         return sentidos.Mapa == mapaDestino
