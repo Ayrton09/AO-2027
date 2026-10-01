@@ -277,7 +277,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   otra—. Persiguiendo una presa no se meten a la vista de lo que los mata. Si sus hechizos no salen siguen con el
   arma, y de muertos van al sacerdote aunque esté en otro mapa. Dos niveles antes de dejar de ser novatos se compran
   pociones propias —antes que nada—, ropa, un arma y provisiones para el camino, aunque el herrero les quede lejos,
-  si pueden llegar sin que los maten; y el último nivel de novato no lo pasan adentro del dungeon. Ponen su hogar en
+  si pueden llegar sin que los maten; y el último nivel de novato no lo pasan adentro del dungeon ni entre los
+  guardias que los van a atacar al dejar de serlo. Ponen su hogar en
   una ciudad donde les venden, y si se quedan sin pociones, comida o bebida lejos de toda tienda, caminan hasta un
   mapa seguro —aunque quede lejos— y vuelven a casa con la runa, en vez de cruzar el desierto; y si no encuentran
   dónde cazar, también. Salen a comprar pociones sólo si les alcanza para una. De un lugar lleno salen sin frenar en
@@ -286,7 +287,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   donde después no tienen cómo volver a comprar, y en el pueblo compran de una el equipo que los mejora. Si pasan unos
   minutos sin sacarle nada a un lugar se van a otro, y si no tienen por dónde salir, vuelven a casa con la runa. Si
   tienen que irse dos veces huyendo del mismo lugar, no vuelven a cazar ahí hasta subir de nivel; lo que les pega en el
-  camino también los hace huir, y sin dónde cazar en un mapa inseguro caminan hasta uno seguro.
+  camino también los hace huir, y sin dónde cazar en un mapa inseguro caminan hasta uno seguro. De camino no se quedan
+  a cazar donde no elegirían cazar, y acorralados, los que saben magia se defienden con hechizos.
 
 ## 1.0.0 — 2026-09-16
 
