@@ -284,7 +284,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
   el camino, y el que viaja a otro mapa para trabajar se queda un rato. Desde el último nivel de novato eligen dónde
   cazar por lo que rinde el mapa entero, hasta cuatro mapas más allá, y el Cazador pelea con el arco. No van a cazar
   donde después no tienen cómo volver a comprar, y en el pueblo compran de una el equipo que los mejora. Si pasan unos
-  minutos sin sacarle nada a un lugar se van a otro, y si no tienen por dónde salir, vuelven a casa con la runa.
+  minutos sin sacarle nada a un lugar se van a otro, y si no tienen por dónde salir, vuelven a casa con la runa. Si
+  tienen que irse dos veces huyendo del mismo lugar, no vuelven a cazar ahí hasta subir de nivel; lo que les pega en el
+  camino también los hace huir, y sin dónde cazar en un mapa inseguro caminan hasta uno seguro.
 
 ## 1.0.0 — 2026-09-16
 
