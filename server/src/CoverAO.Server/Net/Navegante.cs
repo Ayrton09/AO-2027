@@ -60,6 +60,18 @@ public sealed class Navegante
     /// <summary>De cada mapa vecino se prueban hasta tantas entradas a zonas que no se tocan.</summary>
     private const int ZonasPorMapa = 2;
 
+    /// <summary>
+    /// UNA ZONA QUE ENTRA EN UNA PANTALLA NO GASTA EL TOPE de <see cref="ZonasPorMapa"/>: es una franja del borde o un bolsón, no un
+    /// lugar. La pantalla del original es de 17 por 13 baldosas (VB6 <c>XWindow</c> y <c>YWindow</c>, Declares.bas:519-530, las
+    /// mismas que dan <see cref="GameLimits.MinXBorder"/>). Se recorre y se devuelve igual; sólo no ocupa el lugar de las grandes.
+    ///
+    /// <para>Medido contra la data (01/10): de las entradas al mapa 20 desde el 16, ninguna da al pueblo —son bolsones de 1 a 57
+    /// baldosas del lado de afuera de la muralla— y las dos primeras gastaban el tope, así que desde el Desierto de Rinkel la zona
+    /// del pueblo, a la que se entra por el 98, el 99 o el 101, no se miraba nunca. Como las zonas no se tocan, recorrer todas las
+    /// chicas cuesta, como mucho, lo que las baldosas del mapa.</para>
+    /// </summary>
+    private const int BaldosasDeUnaPantalla = 17 * 13;
+
     /// <summary>A cuántas baldosas de un NPC alcanza con quedar parado para poder hablarle: el mostrador
     /// atiende a tres (VB6 <c>Distancia</c>, Manhattan) y el doble clic no pide línea de vista.</summary>
     private const int RadioDeMostrador = 3;
@@ -173,7 +185,7 @@ public sealed class Navegante
                 if (probadas.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) continue;
                 probadas.Add(Alcanzables(destino, entrada));
                 if (HayComoLlegar(destino, entrada, objetivo, RadioDeMostrador) is not null) return ((x, y), 1);
-                if (probadas.Count >= ZonasPorMapa) break;
+                if (ZonasGrandes(probadas) >= ZonasPorMapa) break;
             }
         }
 
@@ -186,11 +198,20 @@ public sealed class Navegante
         // alcanzables desde 30 mapas con criaturas: 68 (5,5%) salían por la puerta equivocada, y el error crece con
         // la distancia — 0 de 79 a un salto, 4 de 150 a dos, 28 de 429 a cinco. Y no son errores sueltos: desde el
         // mapa 746 mandaba por la MISMA puerta mala a ocho destinos distintos, o sea entrando y volviendo por ahí.
+        //
+        // Y SI SE SABE ADÓNDE SE VA, POR LA ZONA DONDE QUEDA, como en el mapa de al lado: la primera zona del destino que aparece
+        // puede ser un bolsón del borde. Medido contra la data (01/10): desde el 16, la primera entrada al 20 es un bolsón de afuera
+        // de la muralla, y el pueblo se alcanza entrando por el 98. Si la meta no queda en ninguna, la primera, como antes.
         if (desde is { } origen)
         {
-            foreach (var (mapa, saltos, _, primera) in MapasPorSuEntrada(mapaActual, origen, pisable, topeDeSaltos))
-                if (mapa == mapaDestino) return (primera, saltos);
-            return null;
+            ((byte X, byte Y) Puerta, int Saltos)? cualquiera = null;
+            foreach (var (mapa, saltos, entrada, primera) in MapasPorSuEntrada(mapaActual, origen, pisable, topeDeSaltos))
+            {
+                if (mapa != mapaDestino) continue;
+                if (meta is not { } adonde || HayComoLlegar(mapa, entrada, adonde, RadioDeMostrador) is not null) return (primera, saltos);
+                cualquiera ??= (primera, saltos);
+            }
+            return cualquiera;
         }
 
         // SIN SABER DESDE DÓNDE no hay pies que valgan: queda el grafo de mapas pelado. Es lo que se responde a
@@ -321,9 +342,68 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// EL PUEBLO MÁS CERCANO DONDE SE LLEGA A ALGUIEN QUE SIRVE, con la baldosa por la que se entra: como
+    /// <see cref="MapaMasCercano"/>, pero la entrada cuenta sólo si desde ella se llega a un NPC que <paramref name="sirve"/>, a pie o
+    /// abriendo una puerta (<see cref="SeLlegaAbriendoUnaPuerta"/>). La primera entrada que aparece de un mapa puede ser una franja
+    /// del lado de afuera de la muralla.
+    ///
+    /// <para>Medido en `mid7` (01/10): Milo cazaba en el 97 e iba de compras a Rinkel, y el primer mapa con mercader del recorrido
+    /// era el 20 entrando por (10,8): una franja de 113 baldosas entre el borde y la muralla oeste, sin ningún mercader. La zona del
+    /// pueblo, por (10,69), salía segunda, a los mismos dos saltos. Llegaba, no había camino ni puerta, y volvía: siete veces en
+    /// media hora. Contra la data, desde la primera criatura de cada mapa de caza: en 17 de los 194 que tienen un pueblo a cinco
+    /// saltos, la primera entrada a ese pueblo no llevaba a ningún mercader (Rinkel desde el desierto y desde el 97, el 179 y el
+    /// 184).</para>
+    /// </summary>
+    public (int Mapa, byte X, byte Y, int Saltos)? PuebloMasCercano(int mapaActual, (byte X, byte Y) desde,
+                                                                   Func<int, bool> mapaSirve, Func<int, bool> sirve,
+                                                                   Func<int, bool>? pisable = null,
+                                                                   int topeDeSaltos = TopeDeMapas)
+    {
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos))
+            if (mapaSirve(mapa) && SeLlegaAbriendoUnaPuerta(mapa, entrada, sirve)) return (mapa, entrada.X, entrada.Y, saltos);
+        return null;
+    }
+
+    /// <summary>
+    /// ¿SE LLEGA A UNO QUE SIRVE, a pie o abriendo UNA puerta? Es lo que hace el bot ya en el mapa: <c>AbrirUnaPuertaAsync</c> abre
+    /// la que, sola, da camino (<see cref="AbrirlaDaCamino"/>), así que un mercader detrás de dos puertas seguidas no lo atiende
+    /// nunca. Alcanza con quedar a <see cref="RadioDeMostrador"/> del mostrador, como en <see cref="EnElMapa"/>. Sólo se prueban las
+    /// puertas que tocan lo que se alcanza a pie: abrir otra no cambia nada.
+    /// </summary>
+    public bool SeLlegaAbriendoUnaPuerta(int mapa, (byte X, byte Y) desde, Func<int, bool> sirve)
+    {
+        if (!_datos.MapSpawns.TryGetValue(mapa, out var lista) || !lista.Any(s => sirve(s.NpcIndex))) return false;
+        var aPie = Alcanzables(mapa, desde);
+        if (AlgunoQueSirveAlAlcance(lista, aPie, sirve)) return true;
+        if (!_datos.MapObjects.TryGetValue(mapa, out var objetos)) return false;
+        bool TocaLoQueSeAlcanza(int baldosa)
+        {
+            byte x = (byte)(baldosa & 0xff), y = (byte)(baldosa >> 8);
+            for (byte rumbo = 1; rumbo <= 4; rumbo++)
+            {
+                var (dx, dy) = SentidosDelBot.Paso(rumbo);
+                int nx = x + dx, ny = y + dy;
+                if (nx is >= 0 and <= 255 && ny is >= 0 and <= 255 && aPie.Contains(Clave((byte)nx, (byte)ny))) return true;
+            }
+            return false;
+        }
+        foreach (var o in objetos)
+        {
+            if (!Bot.PuertaQueSeAbre(_datos.Obj(o.ObjIndex))) continue;
+            var libres = BaldosasQueDestraba(((byte)o.X, (byte)o.Y));
+            if (libres.Any(TocaLoQueSeAlcanza) && AlgunoQueSirveAlAlcance(lista, Alcanzables(mapa, desde, libres), sirve)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Cuántas de esas zonas no entran en una pantalla (ver <see cref="BaldosasDeUnaPantalla"/>).</summary>
+    private static int ZonasGrandes(List<HashSet<int>> zonas) => zonas.Count(z => z.Count > BaldosasDeUnaPantalla);
+
+    /// <summary>
     /// Los mapas a los que se llega viajando desde <paramref name="desde"/>, en orden de cercanía, cada uno con la
     /// baldosa por la que se entra. Sólo cuentan las salidas a las que se llega caminando dentro de cada mapa, y de
-    /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan.
+    /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan, sin contar las que entran en una
+    /// pantalla (<see cref="BaldosasDeUnaPantalla"/>).
     /// </summary>
     private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
         MapasPorSuEntrada(int mapaActual, (byte X, byte Y) desde, Func<int, bool>? pisable = null,
@@ -341,7 +421,7 @@ public sealed class Navegante
             if (pisable is not null && !pisable(llegada.DestMap)) return;
             (byte X, byte Y) entrada = ((byte)llegada.DestX, (byte)llegada.DestY);
             if (!zonas.TryGetValue(llegada.DestMap, out var deEse)) zonas[llegada.DestMap] = deEse = new();
-            if (deEse.Count >= ZonasPorMapa || deEse.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) return;
+            if (ZonasGrandes(deEse) >= ZonasPorMapa || deEse.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) return;
             var zona = Alcanzables(llegada.DestMap, entrada);
             deEse.Add(zona);
             cola.Enqueue((llegada.DestMap, saltos, entrada, zona, primera ?? (x, y)));
@@ -472,10 +552,14 @@ public sealed class Navegante
     /// <para>Preguntarlo antes es la única forma: abriéndola para ver ya gastó el viaje, y de la puerta no se
     /// vuelve — el servidor no la cierra sola.</para>
     /// </summary>
-    public bool AbrirlaDaCamino(int mapa, (byte X, byte Y) desde, (byte X, byte Y) puerta, Func<int, bool> sirve)
+    public bool AbrirlaDaCamino(int mapa, (byte X, byte Y) desde, (byte X, byte Y) puerta, Func<int, bool> sirve) =>
+        _datos.MapSpawns.TryGetValue(mapa, out var lista)
+        && AlgunoQueSirveAlAlcance(lista, Alcanzables(mapa, desde, BaldosasQueDestraba(puerta)), sirve);
+
+    /// <summary>¿Alguno de los que nacen en <paramref name="lista"/> y sirven queda a <see cref="RadioDeMostrador"/> o menos de
+    /// alguna de esas baldosas? Es la distancia a la que atiende el mostrador, igual que en <see cref="EnElMapa"/>.</summary>
+    private static bool AlgunoQueSirveAlAlcance(IReadOnlyList<MapNpcSpawn> lista, HashSet<int> alcanzables, Func<int, bool> sirve)
     {
-        if (!_datos.MapSpawns.TryGetValue(mapa, out var lista)) return false;
-        var alcanzables = Alcanzables(mapa, desde, BaldosasQueDestraba(puerta));
         foreach (var s in lista)
         {
             if (!sirve(s.NpcIndex)) continue;

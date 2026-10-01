@@ -385,4 +385,66 @@ public class NaveganteTests
         Assert.Contains(elegida!.Value.Puerta, salidas);
         Assert.Equal(((byte)80, (byte)69), elegida.Value.Puerta);
     }
+
+    /// <summary>El Paladín de Rinkel, el que vende los pergaminos del Paladín, por la baldosa donde nace: está detrás de la puerta
+    /// (50,86), con los otros siete vendedores de pergaminos.</summary>
+    private static Func<int, bool> ElPaladinDeRinkel(GameData d)
+    {
+        int paladin = d.MapSpawns[20].First(s => s.X == 58 && s.Y == 80).NpcIndex;
+        return f => f == paladin;
+    }
+
+    /// <summary>
+    /// A RINKEL DESDE EL 97 SE ENTRA POR EL PUEBLO, NO POR LA FRANJA DE AFUERA (ver <see cref="Navegante.PuebloMasCercano"/>). Medido
+    /// en `mid7` (01/10): Milo cazaba en el 97 e iba a Rinkel por pergaminos, y la primera entrada al 20 del recorrido era (10,8),
+    /// una franja entre el borde y la muralla oeste, sin ningún mercader; llegaba, no había camino ni puerta, y volvía: siete veces
+    /// en media hora. La del pueblo está a los mismos dos saltos, y desde ahí el Paladín se alcanza abriendo la (50,86).
+    /// </summary>
+    [Fact]
+    public void A_Rinkel_desde_el_97_se_entra_por_el_pueblo_y_no_por_la_franja_de_afuera()
+    {
+        if (Mundo() is not { } m) return;
+        var esElPaladin = ElPaladinDeRinkel(m.Datos);
+        var primero = m.Mapas.MapaMasCercano(97, (25, 10), x => x == 20);
+        Assert.True(primero is { } p && p.X == 10 && p.Y == 8, $"premisa: la primera entrada al 20 era la franja; es {primero}");
+        Assert.False(m.Mapas.SeLlegaAbriendoUnaPuerta(20, (10, 8), esElPaladin), "desde la franja no se llega ni abriendo puertas");
+
+        var pueblo = m.Mapas.PuebloMasCercano(97, (25, 10), x => x == 20, esElPaladin);
+        Assert.NotNull(pueblo);
+        Assert.Equal(20, pueblo!.Value.Mapa);
+        Assert.Equal(primero!.Value.Saltos, pueblo.Value.Saltos);
+        var entrada = (pueblo.Value.X, pueblo.Value.Y);
+        Assert.Null(m.Mapas.HayComoLlegar(20, entrada, (58, 80), 3));   // a pie no: está detrás de la puerta
+        Assert.True(m.Mapas.AbrirlaDaCamino(20, entrada, (50, 86), esElPaladin), "abriendo la (50,86), sí");
+    }
+
+    /// <summary>
+    /// Y DESDE EL DESIERTO, LOS BOLSONES DEL BORDE NO TAPAN AL PUEBLO. Todas las entradas del 16 al 20 dan a bolsones de afuera de la
+    /// muralla, y las dos primeras gastaban el tope de zonas por mapa, así que la zona del pueblo no se miraba nunca desde ahí. Ahora
+    /// se encuentra, y el viaje que sigue las puertas del navegante —como el bot— termina en ella y no en un bolsón.
+    /// </summary>
+    [Fact]
+    public void Desde_el_desierto_los_bolsones_del_borde_no_tapan_al_pueblo()
+    {
+        if (Mundo() is not { } m) return;
+        var d = m.Datos;
+        var esElPaladin = ElPaladinDeRinkel(d);
+        var desde = ((byte)12, (byte)9);   // donde nace la primera criatura del 16
+        Assert.DoesNotContain(d.MapExits, s => s.Key.Map == 16 && s.Value.DestMap == 20
+                                               && m.Mapas.SeLlegaAbriendoUnaPuerta(20, ((byte)s.Value.DestX, (byte)s.Value.DestY), esElPaladin));
+
+        var pueblo = m.Mapas.PuebloMasCercano(16, desde, x => x == 20, esElPaladin);
+        Assert.NotNull(pueblo);
+        var meta = (pueblo!.Value.X, pueblo.Value.Y);
+        int mapa = 16; var aca = desde;
+        for (int i = 0; i < Navegante.TopeDeMapas + 2 && mapa != 20; i++)
+        {
+            var puerta = m.Mapas.PuertaHacia(mapa, 20, aca, meta);
+            Assert.True(puerta is not null, $"se cortó el camino en el {mapa}");
+            var llegada = d.MapExits[(mapa, puerta!.Value.Puerta.X, puerta.Value.Puerta.Y)];
+            mapa = llegada.DestMap; aca = ((byte)llegada.DestX, (byte)llegada.DestY);
+        }
+        Assert.Equal(20, mapa);
+        Assert.True(m.Mapas.SeLlegaAbriendoUnaPuerta(20, aca, esElPaladin), $"el viaje terminó en {aca}, un bolsón");
+    }
 }

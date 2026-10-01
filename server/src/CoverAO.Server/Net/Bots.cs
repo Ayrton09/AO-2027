@@ -1288,10 +1288,8 @@ public sealed class Bot
         bool hayUnoAlAlcance = vaPorHechizo && soloGustos && HayDondeComprarElPergamino(
             _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, VendePergamino, MapaAtiende,
                                     Pisable(sentidos)) is not null,
-            _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion,
-                m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var deEse)
-                     && deEse.Any(q => VendePergamino(q.NpcIndex)),
-                Pisable(sentidos)) is not null);
+            _entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaAtiende, VendePergamino,
+                                            Pisable(sentidos)) is not null);
         bool soloElPergamino = PrimeroElPergamino(vaPorHechizo, soloGustos, hayUnoAlAlcance);
 
         // Y VENDER NO ALCANZA PARA ELEGIRLO SI LE FALTA LO ESENCIAL: ver `VenderAlcanzaParaElegirlo`. Una sola
@@ -1389,8 +1387,7 @@ public sealed class Bot
                 // `DondeHay` nunca devuelve nada y el viaje no salía — pero el MAPA sí se encuentra. Ver
                 // `ValeViajarAlPueblo`.
                 // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS: ver `PuebloConMercader`.
-                var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion,
-                    m => MapaAtiende(m) && _entorno.Datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => Sirve(q.NpcIndex)),
+                var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaAtiende, Sirve,
                     pisableParaComprar, PasaSinPeligro(sentidos, NingunMapa));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
@@ -2009,7 +2006,7 @@ public sealed class Bot
         if (sentidos.Mapa == _armaAlAlcanceMapa && ahora < _armaAlAlcanceHasta) return _armaAlAlcance;
         _armaAlAlcanceMapa = sentidos.Mapa;
         _armaAlAlcanceHasta = ahora + 5 * 60_000;
-        return _armaAlAlcance = HayArmaAlAlcance(_entorno.Mapas, _entorno.Datos, sentidos.Mapa, sentidos.Posicion,
+        return _armaAlAlcance = HayArmaAlAlcance(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion,
             vendeElArma, mapaAtiende, Pisable(sentidos), PasaSinPeligro(sentidos, NingunMapa));
     }
 
@@ -2024,7 +2021,7 @@ public sealed class Bot
         if (sentidos.Mapa == _ropaAlAlcanceMapa && ahora < _ropaAlAlcanceHasta) return _ropaAlAlcance;
         _ropaAlAlcanceMapa = sentidos.Mapa;
         _ropaAlAlcanceHasta = ahora + 5 * 60_000;
-        return _ropaAlAlcance = HayArmaAlAlcance(_entorno.Mapas, _entorno.Datos, sentidos.Mapa, sentidos.Posicion,
+        return _ropaAlAlcance = HayArmaAlAlcance(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion,
             vendeRopa, mapaAtiende, Pisable(sentidos), PasaSinPeligro(sentidos, NingunMapa));
     }
 
@@ -4349,12 +4346,16 @@ public sealed class Bot
     /// <para>Y medido en `tienda2`, con el viaje largo por cualquier camino: tres bots de nivel 16 a 19 muertos en el Desierto de
     /// Rinkel (el 15 y el 16, Arañas gigantes que pegan hasta 115), que queda de camino a Rinkel; desde el mismo arranque y con el
     /// código anterior, `tienda1` no tuvo ninguna.</para>
+    ///
+    /// <para>El pueblo es uno que <paramref name="mapaAtiende"/> y la entrada, una desde la que se llega a quien
+    /// <paramref name="sirve"/> (<see cref="Navegante.PuebloMasCercano"/>): con sólo el mapa, desde el 97 Rinkel quedaba entrando
+    /// por la franja de afuera de la muralla oeste.</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? PuebloConMercader(Navegante mapas, int mapa, (byte X, byte Y) desde,
-                                                                           Func<int, bool> tieneMercader, Func<int, bool>? pisable,
-                                                                           Func<int, bool> cruzaSinPeligro) =>
-        mapas.MapaMasCercano(mapa, desde, tieneMercader, pisable)
-        ?? mapas.MapaMasCercano(mapa, desde, tieneMercader, cruzaSinPeligro, SaltosHastaElPuebloLejano);
+                                                                           Func<int, bool> mapaAtiende, Func<int, bool> sirve,
+                                                                           Func<int, bool>? pisable, Func<int, bool> cruzaSinPeligro) =>
+        mapas.PuebloMasCercano(mapa, desde, mapaAtiende, sirve, pisable)
+        ?? mapas.PuebloMasCercano(mapa, desde, mapaAtiende, sirve, cruzaSinPeligro, SaltosHastaElPuebloLejano);
 
     /// <summary>
     /// ¿HAY DÓNDE COMPRAR EL ARMA DEL CAMINO? Un herrero que le venda una que pueda usar y pagar, al que se llegue caminando, o un
@@ -4368,13 +4369,11 @@ public sealed class Bot
     /// a ONCE, y el camino cruza el Desierto de Rinkel. El arma se buscaba sólo a cinco mapas, así que no salía nunca. Ahora va
     /// cuando puede cruzar el desierto: con 260 de vida las Arañas Gigantes lo matan y espera; con 400, va.</para>
     /// </summary>
-    public static bool HayArmaAlAlcance(Navegante mapas, GameData datos, int mapa, (byte X, byte Y) desde,
+    public static bool HayArmaAlAlcance(Navegante mapas, int mapa, (byte X, byte Y) desde,
                                         Func<int, bool> vendeElArma, Func<int, bool> mapaAtiende,
                                         Func<int, bool> pisable, Func<int, bool> cruzaSinPeligro) =>
         mapas.DondeHay(mapa, desde, vendeElArma, mapaAtiende, pisable) is not null
-        || PuebloConMercader(mapas, mapa, desde,
-               m => mapaAtiende(m) && datos.MapSpawns.TryGetValue(m, out var conHerrero) && conHerrero.Any(q => vendeElArma(q.NpcIndex)),
-               pisable, cruzaSinPeligro) is not null;
+        || PuebloConMercader(mapas, mapa, desde, mapaAtiende, vendeElArma, pisable, cruzaSinPeligro) is not null;
 
     /// <summary>Un número de mapa que no existe: con <see cref="PasaSinPeligro"/>, ningún mapa es "el destino" y todos tienen
     /// que cruzarse sin peligro.</summary>

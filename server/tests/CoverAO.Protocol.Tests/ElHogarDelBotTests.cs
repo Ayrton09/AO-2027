@@ -76,9 +76,9 @@ public class ElHogarDelBotTests
     }
 
     /// <summary>
-    /// NI DONDE, GRADUADO, NO TIENE CÓMO VOLVER A COMPRAR (<see cref="Bot.NivelParaLaVuelta"/>): para un republicano con runa, el 18
-    /// —del lado de Nix— tiene vuelta mientras es novato (Ullathorpe no lo ataca) y no la tiene en el 16. Es Gonzo en `alto5`, que salió
-    /// de la cuna a cazar al 18 en el último nivel de novato, se graduó en el 19 y no volvió.
+    /// NI DONDE, GRADUADO, NO TIENE CÓMO VOLVER A COMPRAR (<see cref="Bot.NivelParaLaVuelta"/>): para un republicano con runa, el 29
+    /// —los Bosques de Nix— tiene vuelta mientras es novato (los guardias de Nix todavía no lo atacan) y no la tiene en el 16. Salió de
+    /// Gonzo en `alto5`, que se graduó en el 19 y no volvió; el 19 ya tiene vuelta, por el Río Otoren a Rinkel.
     /// </summary>
     [Fact]
     public void En_el_ultimo_nivel_de_novato_la_vuelta_a_comprar_es_la_del_graduado()
@@ -93,9 +93,9 @@ public class ElHogarDelBotTests
         bool TieneVuelta(int nivel)
         {
             var (pasa, seguro, tienda) = Bot.FiltrosDeLaVuelta(d, ini, Player.StatusRepublicano, nivel, vida);
-            return Bot.TieneComoVolver(nav, 18, Bot.DesdeDondeSeCaza(d, 18), pasa, seguro, tienda, conRuna: true);
+            return Bot.TieneComoVolver(nav, 29, Bot.DesdeDondeSeCaza(d, 29), pasa, seguro, tienda, conRuna: true);
         }
-        Assert.True(TieneVuelta(ultimo), "premisa: de novato, desde el 18 tiene vuelta");
+        Assert.True(TieneVuelta(ultimo), "premisa: de novato, desde el 29 tiene vuelta");
         Assert.False(TieneVuelta(ultimo + 1), "premisa: graduado, no");
         Assert.Equal(ultimo + 1, Bot.NivelParaLaVuelta(ultimo));
         Assert.False(TieneVuelta(Bot.NivelParaLaVuelta(ultimo)));
@@ -105,8 +105,9 @@ public class ElHogarDelBotTests
 
     /// <summary>
     /// Y EL COTO DEL ÚLTIMO NIVEL DE NOVATO SE ELIGE CON ESA VUELTA, con el mismo filtro `nunca` que arma el bot: un republicano de 15
-    /// desde el 19 se iba al 18 y ahora va al 97, del lado de Rinkel; un ciudadano de 15 desde la cuna se iba al 262, del lado
-    /// republicano —donde, graduado, no tiene dónde comprar: así quedaron Ciro y Aldo en el 195— y ahora va al 18.
+    /// en los Bosques de Nix se quedaba en el 29 —graduado, los guardias de Nix van por él— y ahora va al 18, que tiene vuelta por el
+    /// Río Otoren a Rinkel; un ciudadano de 15 desde la cuna se iba al 262, del lado republicano —donde, graduado, no tiene dónde
+    /// comprar: así quedaron Ciro y Aldo en el 195— y ahora va al 18.
     /// </summary>
     [Fact]
     public void El_coto_del_ultimo_nivel_de_novato_tiene_la_vuelta_del_graduado()
@@ -134,16 +135,18 @@ public class ElHogarDelBotTests
                                   out _, out _, seCazaAhi, null, nunca, Bot.EligePorLoQueSuma(nivel))?.Mapa;
         }
         byte republicano = Player.StatusRepublicano, ciudadano = Player.StatusCiudadano;
-        Assert.Equal(18, Coto(republicano, 19, (50, 50), nivel));
-        Assert.Equal(97, Coto(republicano, 19, (50, 50), Bot.NivelParaLaVuelta(nivel)));
+        Assert.Equal(29, Coto(republicano, 29, (90, 11), nivel));
+        Assert.Equal(18, Coto(republicano, 29, (90, 11), Bot.NivelParaLaVuelta(nivel)));
         Assert.Equal(262, Coto(ciudadano, 37, (60, 66), nivel));
         Assert.Equal(18, Coto(ciudadano, 37, (60, 66), Bot.NivelParaLaVuelta(nivel)));
     }
 
     /// <summary>
-    /// A COMPRAR, PASADO EL NOVATO Y CON LA RUNA, NO SE CRUZA EL DESIERTO: desde el 13 Rinkel queda a cinco mapas por el 21 y el 16,
-    /// donde nacen Arañas Gigantes que pegan hasta 115. Medido en `paso16b`: tres bots de nivel 20 y 21 muertos ahí yendo de
-    /// compras. Buscando el pueblo sólo por donde no lo matan, desde ahí no hay: le toca la runa.
+    /// A COMPRAR, PASADO EL NOVATO Y CON LA RUNA, NO SE CRUZA EL DESIERTO: desde el 13 Rinkel quedaba a cinco mapas por el 21 y el
+    /// 16, donde nacen Arañas Gigantes que pegan hasta 115. Medido en `paso16b`: tres bots de nivel 20 y 21 muertos ahí yendo de
+    /// compras. Queda a tres por los Campos Abiertos del 19 y el Río Otoren, entrando al pueblo y no a la franja de afuera de la
+    /// muralla: el tope de zonas tapaba la entrada al 98 (ver <c>Navegante.BaldosasDeUnaPantalla</c>) y, por donde no lo matan, se
+    /// lo daba por imposible.
     /// </summary>
     [Fact]
     public void A_comprar_no_se_cruza_el_desierto()
@@ -156,22 +159,32 @@ public class ElHogarDelBotTests
         Func<int, bool> peligroso = m => d.MapSpawns.TryGetValue(m, out var sp)
             && sp.Any(q => Bot.EsPeligrosoPara(d.Npc((short)q.NpcIndex), vida, nivel, conPociones: true, curaVeneno: false));
         Func<int, bool> sinPeligro = m => pisable(m) && !peligroso(m);
-        Func<int, bool> vendePociones = m => Bot.ElMercaderLeVende(null, d.MapBattleMode(m), Player.StatusCiudadano)
-            && d.MapSpawns.TryGetValue(m, out var sp) && sp.Any(q => d.Npc((short)q.NpcIndex)?.StockItems is { Count: > 0 } st
-                   && st.Any(s => d.Obj((short)s.ObjIndex) is { IsPotion: true, SubType: 3 }));
+        Func<int, bool> atiende = m => Bot.ElMercaderLeVende(null, d.MapBattleMode(m), Player.StatusCiudadano);
+        Func<int, bool> vendePociones = f => d.Npc((short)f)?.StockItems is { Count: > 0 } st
+            && st.Any(s => d.Obj((short)s.ObjIndex) is { IsPotion: true, SubType: 3 });
         var desde = ((byte)10, (byte)30);
         Assert.True(peligroso(16), "premisa: en el 16 nace algo que lo mata");
-        Assert.Equal(20, Bot.PuebloConMercader(nav, 13, desde, vendePociones, pisable, sinPeligro)?.Mapa);
-        Assert.Null(Bot.PuebloConMercader(nav, 13, desde, vendePociones, sinPeligro, sinPeligro));
+        foreach (var filtro in new[] { pisable, sinPeligro })
+        {
+            var rinkel = Bot.PuebloConMercader(nav, 13, desde, atiende, vendePociones, filtro, sinPeligro);
+            Assert.Equal(20, rinkel?.Mapa);
+            Assert.Equal(3, rinkel!.Value.Saltos);
+            var ruta = CotoDelBotTests.PorDondePasa(nav, d, 13, desde, 20, (rinkel.Value.X, rinkel.Value.Y), filtro);
+            Assert.Equal(20, ruta.LastOrDefault());
+            Assert.DoesNotContain(ruta, x => peligroso(x));
+            Assert.True(nav.SeLlegaAbriendoUnaPuerta(20, (rinkel.Value.X, rinkel.Value.Y), vendePociones), "entra al pueblo, no a la franja");
+        }
     }
 
     /// <summary>
-    /// EL REPUBLICANO DEL LADO DE NIX TIENE SU MAPA SEGURO MÁS LEJOS: con los guardias del ini que se distribuye, Ullathorpe, Nix
-    /// y Banderbill tienen guardias imperiales que van por él, y desde el 19 el primero que le sirve es Rinkel, a seis mapas —más
-    /// que los cinco de siempre—. Al ciudadano, Ullathorpe le sirve a cuatro. Medido en `tardeL1`: Milo pasó la hora sin comida.
+    /// EL REPUBLICANO DEL LADO DE NIX TIENE SU MAPA SEGURO EN RINKEL, A DOS MAPAS: con los guardias del ini que se distribuye,
+    /// Ullathorpe, Nix y Banderbill tienen guardias imperiales que van por él, y desde el 19 Rinkel queda pasando el Río Otoren (el
+    /// 98). Se lo daba a seis mapas, más que los cinco de siempre, porque el tope de zonas tapaba la entrada al 98 (ver
+    /// <c>Navegante.BaldosasDeUnaPantalla</c>). Al ciudadano también le sirve, antes que Ullathorpe. Medido en `tardeL1`: Milo pasó la
+    /// hora sin comida.
     /// </summary>
     [Fact]
-    public void El_republicano_del_lado_de_Nix_tiene_su_mapa_seguro_a_seis()
+    public void El_republicano_del_lado_de_Nix_tiene_su_mapa_seguro_en_Rinkel_a_dos_mapas()
     {
         var d = GameData.Load();
         if (d.MapExits.Count == 0) return;
@@ -186,9 +199,11 @@ public class ElHogarDelBotTests
         Assert.False(seguroRepublicano(1));
         Assert.True(seguroRepublicano(20), "en Rinkel los guardias no pelean");
         var desde = ((byte)57, (byte)69);
-        Assert.Equal(1, nav.MapaMasCercano(19, desde, seguroCiudadano, pisable)?.Mapa);
-        Assert.Null(nav.MapaMasCercano(19, desde, seguroRepublicano, pisable));
-        Assert.Equal(20, nav.MapaMasCercano(19, desde, seguroRepublicano, pisable, Bot.SaltosHastaElPuebloLejano)?.Mapa);
+        var rinkel = nav.MapaMasCercano(19, desde, seguroRepublicano, pisable);
+        Assert.Equal(20, rinkel?.Mapa);
+        Assert.Equal(2, rinkel!.Value.Saltos);
+        Assert.Equal(new List<int> { 98, 20 }, CotoDelBotTests.PorDondePasa(nav, d, 19, desde, 20, (rinkel.Value.X, rinkel.Value.Y), pisable));
+        Assert.Equal(20, nav.MapaMasCercano(19, desde, seguroCiudadano, pisable)?.Mapa);
     }
 
     /// <summary>Y en Rinkel le venden a un ciudadano, y al sacerdote se llega desde la entrada de la cuna —por donde el bot entra a
