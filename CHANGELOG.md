@@ -291,7 +291,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   minutos sin sacarle nada a un lugar se van a otro, y si no tienen por dónde salir, vuelven a casa con la runa. Si
   tienen que irse dos veces huyendo del mismo lugar, no vuelven a cazar ahí hasta subir de nivel; lo que les pega en el
   camino también los hace huir, y sin dónde cazar en un mapa inseguro caminan hasta uno seguro. De camino no se quedan
-  a cazar donde no elegirían cazar, y acorralados, los que saben magia se defienden con hechizos.
+  a cazar donde no elegirían cazar, y acorralados, los que saben magia se defienden con hechizos. Si salen a comprar
+  sólo por un gusto —equipo mejor, un pergamino— y vuelven sin nada, esperan un buen rato antes de volver a intentarlo.
 
 ## 1.0.0 — 2026-09-16
 
