@@ -300,7 +300,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   cazar; y lo que les pega y matan rápido —el Lobo, desde cierto nivel— se lo sacan de encima aunque no sea lo que salen a
   buscar. Huyendo corren, y si algo que los mata de dos golpes se les acerca dejan la pelea o el viaje; lo que se acerca
   tampoco los encuentra quietos. Una racha de golpes errados ya no les hace dar una criatura por imposible, y antes de
-  pelear se ponen el arma aunque vengan de trabajar con la herramienta en la mano.
+  pelear se ponen el arma aunque vengan de trabajar con la herramienta en la mano. Si tienen que irse de un mapa
+  huyendo, no se meten en un rincón del de al lado que no tiene otra salida que volver.
 
 ## 1.0.0 — 2026-09-16
 
