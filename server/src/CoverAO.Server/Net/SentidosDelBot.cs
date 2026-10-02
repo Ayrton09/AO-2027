@@ -185,23 +185,25 @@ public sealed class SentidosDelBot
     public int PuntosLibres { get { lock (_candado) return _puntosLibres; } }
 
     /// <summary>
-    /// LO QUE LE SACÓ A LO QUE LE PEGA desde la última vez que se preguntó: cuántos golpes cuerpo a cuerpo le resolvió el servidor
-    /// y la suma de lo que hicieron. Es el número que el servidor le pone sobre la cabeza a cada golpe (el modo 2 de
+    /// LO QUE LE SACÓ A LO QUE LE PEGA desde la última vez que se preguntó: cuántos golpes cuerpo a cuerpo le resolvió el servidor,
+    /// cuántos entraron —los que no dieron 0— y la suma de lo que hicieron. Es el número que el servidor le pone sobre la cabeza a
+    /// cada golpe (el modo 2 de
     /// <c>ChatOverHeadLocale</c>): 0 si erró, y NEGATIVO si la criatura se curó, porque el original le resta la defensa al golpe
     /// sin piso (SistemaCombate.bas:465). La puñalada suma lo suyo sin contar como otro golpe.
     /// </summary>
-    public (int Golpes, int Dano) TomarLoQuePego()
+    public (int Golpes, int Entraron, int Dano) TomarLoQuePego()
     {
         lock (_candado)
         {
-            var loQuePego = (_golpesDados, _danoDado);
+            var loQuePego = (_golpesDados, _golpesQueEntraron, _danoDado);
             _golpesDados = 0;
+            _golpesQueEntraron = 0;
             _danoDado = 0;
             return loQuePego;
         }
     }
 
-    private int _golpesDados, _danoDado;
+    private int _golpesDados, _golpesQueEntraron, _danoDado;
 
     /// <summary>El modo de <c>ChatOverHeadLocale</c> que lleva el número de un golpe (<see cref="ServerMessages.DamageOverHead"/>).</summary>
     private const byte ModoDelGolpe = 2;
@@ -976,7 +978,12 @@ public sealed class SentidosDelBot
                     int valor = l.Largo();
                     if (l.Byte() != ModoDelGolpe) break;
                     lock (_candado)
-                        if (ci == _miCharIndex) { _golpesDados++; _danoDado += valor; }
+                        if (ci == _miCharIndex)
+                        {
+                            _golpesDados++;
+                            if (valor != 0) _golpesQueEntraron++;
+                            _danoDado += valor;
+                        }
                     break;
                 }
 

@@ -621,8 +621,8 @@ public class SentidosDelBotTests
     }
 
     /// <summary>
-    /// LO QUE LE SACA A LO QUE LE PEGA: el número sobre SU cabeza cuenta como un golpe —0 si erró, negativo si la curó—, el que va
-    /// sobre otro no, un texto sobre la cabeza tampoco, y la puñalada suma sin ser otro golpe. Se toma una sola vez.
+    /// LO QUE LE SACA A LO QUE LE PEGA: el número sobre SU cabeza cuenta como un golpe —0 si erró, negativo si la curó— y entra si no
+    /// es 0, el que va sobre otro no, un texto sobre la cabeza tampoco, y la puñalada suma sin ser otro golpe. Se toma una sola vez.
     /// </summary>
     [Fact]
     public void Cuenta_lo_que_le_saca_a_lo_que_le_pega()
@@ -637,7 +637,7 @@ public class SentidosDelBotTests
         s.Recibir(ServerMessages.ConsoleMsg(ServerMessages.ApunalasteLaCriatura(24), 1));
         s.Recibir(ServerMessages.ConsoleMsg("Has apuñalado a Pepe por 50.", 1));
 
-        Assert.Equal((2, 22), s.TomarLoQuePego());
-        Assert.Equal((0, 0), s.TomarLoQuePego());
+        Assert.Equal((2, 1, 22), s.TomarLoQuePego());
+        Assert.Equal((0, 0, 0), s.TomarLoQuePego());
     }
 }

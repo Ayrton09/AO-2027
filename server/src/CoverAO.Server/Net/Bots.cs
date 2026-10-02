@@ -632,6 +632,7 @@ public sealed class Bot
             int vidaTope = sentidos.VidaMaxima;
             int nivelAhora = sentidos.Nivel;
             _conQuePelea = (ArmaEnLaMano(sentidos), nivelAhora);
+            _sinMagia = !sentidos.UsaMana;
             // Con qué se cura, leído ANTES de buscar por lo mismo que la vida: la búsqueda tiene el modelo bajo su candado.
             bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
             bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
@@ -3283,7 +3284,9 @@ public sealed class Bot
         {
             // NI A LA VISTA DE DONDE NACE ALGO PELIGROSO, que ahí vuelve a aparecer y camina hacia el que ve. Medido en `normal3`: de
             // las siete muertes de bots de nivel 1, dos fueron a la vista de donde nace el Lobo del medio de la cuna.
-            var peligros = spawns.Where(sp => EsPeligroso((short)sp.NpcIndex, vidaMaxima, nivel, conPociones, curaVeneno))
+            // Y DE DONDE NACE LO QUE NO PUEDE LASTIMAR (ver `NoLaLastima`), que también lo corre.
+            var peligros = spawns.Where(sp => EsPeligroso((short)sp.NpcIndex, vidaMaxima, nivel, conPociones, curaVeneno)
+                                              || NoLaLastima((short)sp.NpcIndex))
                                  .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
             var presas = spawns.Where(sp => sirve(sp.NpcIndex)).Select(sp => ((byte)sp.X, (byte)sp.Y)).Distinct().ToList();
             if (coto.Mapa == sentidos.Mapa)
@@ -4862,7 +4865,72 @@ public sealed class Bot
     /// <summary>Con qué pelea ahora: el arma en la mano y el nivel. Se toma en cada vuelta del ciclo.</summary>
     private (short Arma, int Nivel) _conQuePelea;
 
-    private bool NoLaLastima(short ficha) => _noLaLastima.TryGetValue(ficha, out var con) && con == _conQuePelea;
+    /// <summary>¿Pelea sin magia? Se toma en cada vuelta del ciclo, con <see cref="_conQuePelea"/>. Ver <see cref="NoLaLastima"/>.</summary>
+    private bool _sinMagia;
+
+    /// <summary>Lo que sabe de su golpe: ver <see cref="GolpeMedido"/>.</summary>
+    private readonly GolpeMedido _golpe = new();
+
+    /// <summary>
+    /// ¿NO LA PUEDE LASTIMAR? Lo anotado peleando con ella (<see cref="_noLaLastima"/>), o LO QUE YA SE VE CON SUS GOLPES
+    /// (<see cref="GolpeMedido"/>) contra la defensa y la vida de su ficha. Lo segundo, sólo con lo hostil que pega —un guardia o un
+    /// mercader de defensa alta no se esquivan— y sin magia: el que la tiene mata con hechizos lo que con el arma no lastima.
+    ///
+    /// <para>Lo anotado se olvida al subir de nivel, y así murió Lira, Ladrona de nivel 12 con la Daga +1, en `early24` y en `early31`
+    /// (01/10): fue al 24 por la experiencia del Esqueleto Guerrero (defensa 19, 200 de vida), lo dejó a los diez golpes, subió de
+    /// nivel ahí mismo, lo volvió a pelear y murió rodeada. Con esa daga su golpe va de 18 a 24 antes de la defensa: le saca un
+    /// promedio de 2 por golpe que entra.</para>
+    /// </summary>
+    private bool NoLaLastima(short ficha) =>
+        (_noLaLastima.TryGetValue(ficha, out var con) && con == _conQuePelea)
+        || (_sinMagia && _entorno.Datos.Npc(ficha) is { Hostile: true, Attackable: true, MaxHit: > 0 } n
+            && _golpe.NoLaVaALastimar(_conQuePelea.Arma, n.Def, n.MaxHp));
+
+    /// <summary>
+    /// LO QUE SABE DE SU GOLPE: de los últimos <see cref="GolpesQueRecuerda"/> golpes que dio con el arma que tiene en la mano, cuántos
+    /// entraron y lo que sacó cada uno MÁS la defensa de lo que le pegaba, que es su golpe antes de la defensa: el original se la
+    /// resta sin piso (SistemaCombate.bas:465). Con eso juzga una pelea antes de empezarla, con la cuenta de la pelea
+    /// (<see cref="NoLaVaAMatar"/>) sobre lo que esos golpes le habrían sacado a otra defensa. Con otra arma empieza de cero; al subir
+    /// de nivel el golpe crece de a poco, y la ventana lo sigue.
+    /// </summary>
+    public sealed class GolpeMedido
+    {
+        private readonly Queue<(int Golpes, int Entraron, int Crudo)> _ultimos = new();
+        private int _golpes, _entraron, _crudo;
+        private short _arma = -1;
+
+        /// <summary>Lo que resolvió el servidor de los golpes que dio con <paramref name="arma"/> a algo de esa defensa.</summary>
+        public void Anotar(short arma, int golpes, int entraron, int dano, int defensa)
+        {
+            if (arma != _arma)
+            {
+                _ultimos.Clear();
+                _golpes = _entraron = _crudo = 0;
+                _arma = arma;
+            }
+            if (golpes <= 0) return;
+            int crudo = dano + entraron * defensa;
+            _ultimos.Enqueue((golpes, entraron, crudo));
+            _golpes += golpes;
+            _entraron += entraron;
+            _crudo += crudo;
+            while (_golpes - _ultimos.Peek().Golpes >= GolpesQueRecuerda)
+            {
+                var (g, e, c) = _ultimos.Dequeue();
+                _golpes -= g;
+                _entraron -= e;
+                _crudo -= c;
+            }
+        }
+
+        /// <summary>¿Con esa arma, a algo de esa defensa y esa vida no la mata? Con otra arma, o con menos de
+        /// <see cref="GolpesParaJuzgar"/> golpes, no se juzga.</summary>
+        public bool NoLaVaALastimar(short arma, int defensa, int vida) =>
+            arma == _arma && NoLaVaAMatar(_golpes, _crudo - _entraron * defensa, vida);
+    }
+
+    /// <summary>Cuántos golpes recuerda <see cref="GolpeMedido"/>: los de unas pocas peleas.</summary>
+    public const int GolpesQueRecuerda = 40;
 
     /// <summary>El arma o los nudillos que tiene puestos, o 0.</summary>
     private short ArmaEnLaMano(SentidosDelBot s)
@@ -4937,9 +5005,11 @@ public sealed class Bot
                     if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
                 }
                 await Task.Delay(tira ? _rng.Next(TiroMinMs, TiroMaxMs) : _rng.Next(GolpeMinMs, GolpeMaxMs), ct);
-                var (g, d) = sentidos.TomarLoQuePego();
+                var (g, entraron, d) = sentidos.TomarLoQuePego();
                 golpes += g;
                 sacado += d;
+                // Y LO QUE APRENDE DE SU GOLPE: ver `GolpeMedido`.
+                _golpe.Anotar(ArmaEnLaMano(sentidos), g, entraron, d, _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0);
                 if (NoLaVaAMatar(golpes, sacado, _entorno.Datos.Npc(quien.FichaNpc)?.MaxHp ?? 0))
                 {
                     _conQuePelea = (ArmaEnLaMano(sentidos), sentidos.Nivel);

@@ -15,7 +15,7 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class LasPeleasQueNoSeGananTests
 {
-    private const short DagaDeNovato = 460, Lobo = 501, Goblin = 505, EsqueletoGuerrero = 508;
+    private const short DagaDeNovato = 460, DagaMasUno = 165, Lobo = 501, Goblin = 505, EsqueletoGuerrero = 508;
 
     /// <summary>El golpe más fuerte con la Daga de novato, con la cuenta del servidor (<see cref="Combat.CalcularDano"/>).</summary>
     private static long ElGolpeMasFuerte(GameData d, byte clase, int golpeDelNivel, int fuerza)
@@ -73,5 +73,55 @@ public class LasPeleasQueNoSeGananTests
         var d = GameData.Load();
         if (d.Npc(EsqueletoGuerrero) is not { } esqueleto) return;
         Assert.False(Bot.NoLaVaAMatar(golpes: 22, dano: 84, esqueleto.MaxHp));
+    }
+
+    /// <summary>
+    /// LO QUE SE VE CON SUS GOLPES (ver <see cref="Bot.GolpeMedido"/>): Lira, Ladrona de nivel 12 con la Daga +1 (golpe del nivel 12 a
+    /// 13 y Fuerza 21, del .chr de `early31`), pegándole a los Lobos (defensa 8), uno de cada dos golpes adentro. Con esos golpes sabe
+    /// que al Esqueleto guerrero (defensa 19, 200 de vida) no lo mata —murió peleándolo en `early24` y en `early31`— y al Lobo sí.
+    /// </summary>
+    [Fact]
+    public void Con_lo_que_le_pego_a_los_lobos_sabe_que_al_esqueleto_guerrero_no_lo_mata()
+    {
+        var d = GameData.Load();
+        if (d.Npc(Lobo) is not { } lobo || d.Npc(EsqueletoGuerrero) is not { } esqueleto || d.Obj(DagaMasUno) is not { } daga) return;
+        double mod = d.WeaponMod.TryGetValue(GameLimits.ClaseLadron, out var m) ? m : 1.0;
+        var golpe = new Bot.GolpeMedido();
+        for (int vuelta = 0; vuelta < 2; vuelta++)
+            for (int tirada = daga.MinHit; tirada <= daga.MaxHit; tirada++)
+                for (int delNivel = 12; delNivel <= 13; delNivel++)
+                {
+                    long crudo = Combat.CalcularDano(tirada, daga.MaxHit, delNivel, 21, mod);
+                    golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: (int)crudo - lobo.Def, lobo.Def);
+                    golpe.Anotar(DagaMasUno, golpes: 1, entraron: 0, dano: 0, lobo.Def);
+                }
+        Assert.True(golpe.NoLaVaALastimar(DagaMasUno, esqueleto.Def, esqueleto.MaxHp));
+        Assert.False(golpe.NoLaVaALastimar(DagaMasUno, lobo.Def, lobo.MaxHp));
+    }
+
+    /// <summary>Con menos de diez golpes no se juzga, ni con otra arma: el golpe es otro, y al cambiar de arma lo de la anterior se
+    /// olvida.</summary>
+    [Fact]
+    public void Sin_golpes_suficientes_o_con_otra_arma_no_se_juzga()
+    {
+        var golpe = new Bot.GolpeMedido();
+        for (int i = 0; i < 9; i++) golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: -5, defensa: 8);
+        Assert.False(golpe.NoLaVaALastimar(DagaMasUno, defensa: 8, vida: 75), "nueve golpes no alcanzan");
+        golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: -5, defensa: 8);
+        Assert.True(golpe.NoLaVaALastimar(DagaMasUno, defensa: 8, vida: 75));
+        Assert.False(golpe.NoLaVaALastimar(DagaDeNovato, defensa: 8, vida: 75), "con otra arma no se juzga");
+        golpe.Anotar(DagaDeNovato, golpes: 1, entraron: 1, dano: 20, defensa: 8);
+        Assert.False(golpe.NoLaVaALastimar(DagaMasUno, defensa: 8, vida: 75), "lo de la daga anterior se olvidó");
+    }
+
+    /// <summary>AL SUBIR DE NIVEL EL GOLPE CRECE, y los golpes viejos se van: pasados los que recuerda, cuentan sólo los nuevos.</summary>
+    [Fact]
+    public void Los_golpes_viejos_se_olvidan()
+    {
+        var golpe = new Bot.GolpeMedido();
+        for (int i = 0; i < Bot.GolpesQueRecuerda; i++) golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: 1, defensa: 19);
+        Assert.True(golpe.NoLaVaALastimar(DagaMasUno, defensa: 19, vida: 200));
+        for (int i = 0; i < Bot.GolpesQueRecuerda; i++) golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: 12, defensa: 19);
+        Assert.False(golpe.NoLaVaALastimar(DagaMasUno, defensa: 19, vida: 200));
     }
 }
