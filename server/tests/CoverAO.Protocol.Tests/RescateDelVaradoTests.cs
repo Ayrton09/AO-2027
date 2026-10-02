@@ -70,31 +70,72 @@ public class RescateDelVaradoTests
         Assert.Equal(13, adonde?.Saltos);
     }
 
+    /// <summary>La puerta que toma el viaje de un ciudadano (<c>Bot.PuertaDelViaje</c>) hasta <paramref name="adonde"/>, con el tope del
+    /// destino, sin los dos primeros escalones: nada pasa ni se cruza sin peligro, así que va por el camino de siempre o, en el rescate,
+    /// por donde se pueda.</summary>
+    private static ((byte X, byte Y) Puerta, int Saltos)? Puerta(Mundo w, int mapa, (byte X, byte Y) desde,
+                                                                 (int Mapa, byte X, byte Y, int Saltos) adonde, int nivel, int vida,
+                                                                 bool rescate) =>
+        Bot.PuertaDelViaje(w.Mapas, w.Datos, w.Ini, Player.StatusCiudadano, nivel, vida, mapa, desde, adonde.Mapa, (adonde.X, adonde.Y),
+                           Math.Max(Navegante.TopeDeMapas, adonde.Saltos), false, rescate, _ => false, _ => false, _ => true);
+
+    /// <summary>Los mapas que pisa ese viaje, puerta por puerta; null si en alguno no se llega.</summary>
+    private static List<int>? Viaje(Mundo w, int mapa, (byte X, byte Y) desde, (int Mapa, byte X, byte Y, int Saltos) adonde, int nivel,
+                                    int vida, bool rescate)
+    {
+        var pisados = new List<int>();
+        for (int i = 0; i < Bot.SaltosDelRescate && mapa != adonde.Mapa; i++)
+        {
+            if (Puerta(w, mapa, desde, adonde, nivel, vida, rescate) is not { } salida) return null;
+            var llegada = w.Datos.MapExits[(mapa, salida.Puerta.X, salida.Puerta.Y)];
+            mapa = llegada.DestMap;
+            desde = ((byte)llegada.DestX, (byte)llegada.DestY);
+            pisados.Add(mapa);
+        }
+        return mapa == adonde.Mapa ? pisados : null;
+    }
+
     /// <summary>
-    /// Y EL VIAJE DE ALDO AL 544, CON EL TOPE DEL DESTINO, tampoco pisa ningún mapa de guardias: mapa por mapa, la puerta del camino de
-    /// siempre y si no, la de por donde se pueda (los escalones tercero y cuarto de <c>Bot.IrHastaAsync</c> en el rescate; los dos
-    /// primeros ya no cruzan esos mapas).
+    /// Y EL VIAJE DEL RESCATE DE ALDO AL 544 tampoco pisa ningún mapa de guardias que van por él, ni por el camino de siempre ni por
+    /// donde se pueda.
     /// </summary>
     [Fact]
     public void El_viaje_del_rescate_de_Aldo_no_pisa_mapas_de_guardias()
     {
         if (ElMundo() is not { } w) return;
-        var pisable = Bot.PisableDelRescate(w.Datos, w.Ini, Player.StatusCiudadano, 19);
-        var deSiempre = Bot.PorElCaminoDeSiempre(w.Datos, pisable, _ => true, 544, 199, false);
-        int mapa = 195, tope = 13;
-        (byte X, byte Y) desde = (24, 88);
-        var pisados = new List<int>();
-        for (int i = 0; i < tope && mapa != 544; i++)
-        {
-            var salida = w.Mapas.PuertaHacia(mapa, 544, desde, (40, 8), deSiempre, tope)
-                         ?? w.Mapas.PuertaHacia(mapa, 544, desde, (40, 8), pisable, tope);
-            Assert.True(salida is not null, $"desde el {mapa} no se llega");
-            var llegada = w.Datos.MapExits[(mapa, salida!.Value.Puerta.X, salida.Value.Puerta.Y)];
-            mapa = llegada.DestMap;
-            desde = ((byte)llegada.DestX, (byte)llegada.DestY);
-            pisados.Add(mapa);
-        }
-        Assert.Equal(544, mapa);
-        Assert.DoesNotContain(pisados, m => Bot.HayGuardiaQueVaPor(m, Player.StatusCiudadano, 19, w.Datos, w.Ini));
+        var adonde = Destino(w, 195, (24, 88), 19, 199);
+        Assert.Equal(544, adonde?.Mapa);
+        var pisados = Viaje(w, 195, (24, 88), adonde!.Value, 19, 199, rescate: true);
+        Assert.NotNull(pisados);
+        Assert.DoesNotContain(pisados!, m => Bot.HayGuardiaQueVaPor(m, Player.StatusCiudadano, 19, w.Datos, w.Ini));
+    }
+
+    /// <summary>
+    /// SIN EL RESCATE, EL MISMO VIAJE NO SALE DEL 195: es largo, así que no va por el camino de siempre, y por donde se pueda va sólo el
+    /// rescate. Ése es el "desde acá no se llega" que lo dispara (<c>Bot.IrAlMapaSeguroAsync</c>).
+    /// </summary>
+    [Fact]
+    public void Sin_el_rescate_el_viaje_de_Aldo_no_sale_del_195()
+    {
+        if (ElMundo() is not { } w) return;
+        var adonde = Destino(w, 195, (24, 88), 19, 199)!.Value;
+        Assert.Null(Puerta(w, 195, (24, 88), adonde, 19, 199, rescate: false));
+        Assert.NotNull(Puerta(w, 195, (24, 88), adonde, 19, 199, rescate: true));
+    }
+
+    /// <summary>
+    /// EL VIAJE DEL RESCATE DE RUFO A RINKEL va por el camino de siempre: no pisa mapas de guardias que van por él ni, salvo el destino,
+    /// mapas donde nace lo que lo mata de dos golpes.
+    /// </summary>
+    [Fact]
+    public void El_viaje_del_rescate_de_Rufo_va_por_el_camino_de_siempre()
+    {
+        if (ElMundo() is not { } w) return;
+        var adonde = Destino(w, 34, (40, 88), 18, 138);
+        Assert.Equal(20, adonde?.Mapa);
+        var pisados = Viaje(w, 34, (40, 88), adonde!.Value, 18, 138, rescate: true);
+        Assert.NotNull(pisados);
+        Assert.DoesNotContain(pisados!, m => Bot.HayGuardiaQueVaPor(m, Player.StatusCiudadano, 18, w.Datos, w.Ini));
+        Assert.DoesNotContain(pisados!, m => m != 20 && Bot.NaceLoQueLoMataDeDos(w.Datos, m, 138));
     }
 }

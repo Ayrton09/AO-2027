@@ -5639,6 +5639,35 @@ public sealed class Bot
         deMuerto ? deSiempre() : sinPeligro() ?? porDondeCazaria() ?? (viajeLargo ? null : deSiempre());
 
     /// <summary>
+    /// QUÉ PUERTA TOMA EL VIAJE en <paramref name="mapa"/> para acercarse a <paramref name="mapaDestino"/>: la del camino que elige
+    /// <see cref="CaminoDelViaje"/> (por donde <paramref name="pasa"/>, por donde <paramref name="cruza"/> y el de siempre, los tres
+    /// sin lo que deja afuera <paramref name="sinHuidas"/>). null si desde acá no se llega.
+    ///
+    /// <para>EL RESCATE DEL VARADO (<paramref name="porCualquierCamino"/>, ver <see cref="RescatarseAsync"/>) va también por el de
+    /// siempre aunque el viaje sea largo, y si por ahí tampoco, por donde se pueda; y ni por uno ni por otro cruza los mapas de
+    /// guardias que van por él (<see cref="PisableDelRescate"/>). Los otros dos escalones ya no los cruzan. Fuera del rescate, lo que
+    /// se pisa es lo que lo deja entrar (<see cref="Pisable"/>).</para>
+    /// </summary>
+    public static ((byte X, byte Y) Puerta, int Saltos)? PuertaDelViaje(Navegante mapas, GameData datos, ServerIni? ini, byte bando,
+                                                                      int nivel, int vidaMaxima, int mapa, (byte X, byte Y) desde,
+                                                                      int mapaDestino, (byte X, byte Y) destino, int topeDeMapas,
+                                                                      bool deMuerto, bool porCualquierCamino, Func<int, bool> pasa,
+                                                                      Func<int, bool> cruza, Func<int, bool> sinHuidas)
+    {
+        Func<int, bool> pisable = porCualquierCamino ? PisableDelRescate(datos, ini, bando, nivel)
+                                                     : m => PuedeEntrar(nivel, datos.MapZone(m));
+        return CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas && !porCualquierCamino,
+                   () => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => pasa(m) && sinHuidas(m), topeDeMapas),
+                   () => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => cruza(m) && sinHuidas(m), topeDeMapas),
+                   () => mapas.PuertaHacia(mapa, mapaDestino, desde, destino,
+                                           PorElCaminoDeSiempre(datos, pisable, sinHuidas, mapaDestino, vidaMaxima, deMuerto),
+                                           topeDeMapas))
+               ?? (porCualquierCamino
+                   ? mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => pisable(m) && sinHuidas(m), topeDeMapas)
+                   : null);
+    }
+
+    /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.
     ///
     /// <para>Dos capas: el <see cref="Navegante"/> dice por dónde —las baldosas adentro del mapa, y qué
@@ -5684,9 +5713,6 @@ public sealed class Bot
             Func<int, bool> sinHuidas = m => escapando || deMuerto || !NoVuelveACruzar(_huyoDe, m, mapaDestino, ahoraDelTramo);
             var pasa = PasaSinPeligro(sentidos, mapaDestino);
             var cruza = CruzaSinPeligroHacia(sentidos, mapaDestino);
-            // EL RESCATE, NI POR EL CAMINO DE SIEMPRE NI POR DONDE SE PUEDA CRUZA LOS MAPAS DE GUARDIAS QUE VAN POR ÉL: ver
-            // `PisableDelRescate`. Los otros dos escalones ya no los cruzan.
-            var pisable = porCualquierCamino ? PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel) : Pisable(sentidos);
             // ESCAPANDO, POR LA PUERTA MÁS CERCANA al mapa vecino: ver `Navegante.CaminoALaPuertaMasCercana`.
             var porLaMasCercana = escapando && !esLaMeta
                 ? _entorno.Mapas.CaminoALaPuertaMasCercana(mapa, desde, mapaDestino, trabas) : null;
@@ -5694,22 +5720,10 @@ public sealed class Bot
             _desdeAcaNoSeLlega = true;
             if (esLaMeta) meta = (destinoX, destinoY);
             else if (porLaMasCercana is { Count: > 0 }) meta = porLaMasCercana[^1];
-            // POR DÓNDE: ver `CaminoDelViaje`.
-            // EL RESCATE DEL VARADO va también por el de siempre aunque el viaje sea largo, y si por ahí tampoco, por donde se pueda:
-            // ver `RescatarseAsync`.
-            else if ((CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas && !porCualquierCamino,
-                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                          m => pasa(m) && sinHuidas(m), topeDeMapas),
-                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                          m => cruza(m) && sinHuidas(m), topeDeMapas),
-                         () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
-                                                          PorElCaminoDeSiempre(_entorno.Datos, pisable, sinHuidas, mapaDestino,
-                                                                               sentidos.VidaMaxima, deMuerto),
-                                                          topeDeMapas))
-                      ?? (porCualquierCamino
-                          ? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), m => pisable(m) && sinHuidas(m),
-                                                       topeDeMapas)
-                          : null)) is { } salida)
+            // POR DÓNDE, Y EL RESCATE DEL VARADO: ver `PuertaDelViaje`.
+            else if (PuertaDelViaje(_entorno.Mapas, _entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel, sentidos.VidaMaxima, mapa,
+                                    desde, mapaDestino, (destinoX, destinoY), topeDeMapas, deMuerto, porCualquierCamino, pasa, cruza,
+                                    sinHuidas) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
             _desdeAcaNoSeLlega = false;
