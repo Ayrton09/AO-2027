@@ -3630,11 +3630,13 @@ public sealed class Bot
         if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
              ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
             is not { } seguro) return false;
+        int antes = sentidos.Mapa;
         if (!await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
                                 topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos))
-            && _desdeAcaNoSeLlega && sentidos.Vivo)
+            && _desdeAcaNoSeLlega && sentidos.Mapa == antes && sentidos.Vivo)
             // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`. Sólo si el viaje volvió por eso, no si lo
-            // cortó el peligro, la vida o las trabas.
+            // cortó el peligro, la vida o las trabas, y desde donde arrancó: si se quedó sin camino a mitad del viaje, se mira de nuevo
+            // la vez siguiente, desde ahí.
             await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
         return true;
     }
