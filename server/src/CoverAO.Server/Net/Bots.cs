@@ -3554,7 +3554,8 @@ public sealed class Bot
 
     private int _cotosFallidos;
 
-    /// <summary>Si el último viaje al coto lo cortó lo del hueco que le pegaba (ver <see cref="LoDelHuecoCortaElViaje"/>).</summary>
+    /// <summary>Si el último viaje al coto lo cortó lo del hueco que le pegaba (ver <see cref="LoDelHuecoCortaElViaje"/>) o lo que lo
+    /// mata, a tiro (<see cref="LoPeligrosoEstaATiro"/>).</summary>
     private bool _cortoPorElHueco;
 
     /// <summary>Cuántos viajes fallidos al coto antes de volver a casa con la Runa.</summary>
@@ -5004,6 +5005,11 @@ public sealed class Bot
         {
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
             if (sentidos.Donde(presa) is not { } quien) return true;
+            // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
+            // que curarse peleando, que con eso pegándole se repite sin llegar nunca acá: medido en `alto23` (02/10), Elmo, nivel 14,
+            // peleando en el 208 con el Señor de las sombras ya encima, se curó con magia tres veces seguidas, del 29 al 34 %, y murió
+            // sin dejar la pelea.
+            if (LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos))) return true;
             // LA POCIÓN SE TOMA PELEANDO. Es lo que hace cualquiera —se toma y se sigue— y no salir del ciclo
             // para curarse es la diferencia entre aguantar la pelea y llegar al 35 % con la criatura encima:
             // medido, sacar esto de acá dejaba un muerto cada ocho bots en diez minutos.
@@ -5577,6 +5583,9 @@ public sealed class Bot
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
                 // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`.
                 if (!escapando && !deMuerto && LoDelHuecoLePega(sentidos)) { _cortoPorElHueco = true; return false; }
+                // Y LO QUE LO MATA, A TIRO, TAMBIÉN: la vuelta del ciclo huye (ver `LoPeligrosoEstaATiro`).
+                if (!escapando && !deMuerto && LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos)))
+                { _cortoPorElHueco = true; return false; }
                 if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
                 if (_pasoTrabado)   // algo se paró en el camino: rodearlo
                 {
@@ -5778,6 +5787,43 @@ public sealed class Bot
 
     /// <summary>Lo que tarda un paso corriendo: el del cliente original con la tecla apretada (209 ms), con algo de holgura.</summary>
     public const int CorriendoMinMs = 210, CorriendoMaxMs = 240;
+
+    /// <summary>
+    /// ¿LO PELIGROSO ESTÁ A TIRO? Si algo de <paramref name="peligros"/> está a <see cref="RadioDeSusto"/> pasos o menos, la distancia a
+    /// la que el ciclo huye. Peleando se mira en cada golpe (<see cref="CazarAsync"/>) y viajando en cada paso (<see cref="IrHastaAsync"/>,
+    /// salvo escapando), con lo que lo mata de dos golpes (<see cref="LoQueLoMataALaVista"/>): la pelea o el viaje se dejan y la vuelta
+    /// del ciclo huye.
+    ///
+    /// <para>La pelea sólo se cortaba por la vida o la energía, y la de lo que ya le pega no mira lo peligroso a la vista (eso es para
+    /// elegir a quién atacar). Medido en `early45` (02/10): Aldo, nivel 1 con 17 de vida, recién escapado de un Lobo, se puso a pelear
+    /// con lo que lo picaba con el Lobo a cuatro baldosas, y el Lobo lo mató en el medio de la pelea.</para>
+    ///
+    /// <para>Y el viaje, sólo por la vida, que se cura en el camino. Medido en `alto20` (01/10): Milo, Paladín de nivel 16, yendo de
+    /// compras por el 746 se trabó en (54,55) al lado del Zombie Lóbrego, que pega de 55 a 80; se curó con magia tres veces sin moverse
+    /// de la baldosa, siempre arriba de <see cref="SeRetira"/>, hasta que un golpe lo mató.</para>
+    /// </summary>
+    public static bool LoPeligrosoEstaATiro((byte X, byte Y) yo, IReadOnlyCollection<(byte X, byte Y)> peligros) =>
+        peligros.Any(p => Math.Abs(p.X - yo.X) + Math.Abs(p.Y - yo.Y) <= RadioDeSusto);
+
+    /// <summary>
+    /// ¿LO MATA DE DOS GOLPES CON LA VIDA QUE TIENE? Lo hostil cuyo golpe máximo, dos veces, llega a la vida de ahora: la poción cura lo
+    /// que ya pegó, y entre dos golpes así no alcanza a tomar las que hacen falta (como <see cref="LoMataDeDosGolpes"/>, con la vida de
+    /// ahora). De lo peligroso, es lo que deja la pelea o corta el viaje (<see cref="LoPeligrosoEstaATiro"/>): el Lobo para el de nivel 1
+    /// (17 de vida), el Señor de las sombras (hasta 75) para Elmo, de nivel 14. Lo que pide más golpes se sigue peleando con pociones.
+    /// </summary>
+    public static bool LoMataDeDosGolpesAhora(NpcInfo? n, int vidaAhora) => n is { Hostile: true, MaxHit: > 0 } && n.MaxHit * 2 >= vidaAhora;
+
+    /// <summary>Dónde está, de lo peligroso que tiene a la vista, lo que lo mata de dos golpes con la vida que tiene
+    /// (<see cref="LoMataDeDosGolpesAhora"/>).</summary>
+    private List<(byte X, byte Y)> LoQueLoMataALaVista(SentidosDelBot sentidos)
+    {
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        int vidaAhora = (int)Math.Round(sentidos.Salud * vida);
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        return sentidos.DondeEstan(f => EsPeligroso(f, vida, nivel, conPociones, curaVeneno)
+                                        && LoMataDeDosGolpesAhora(_entorno.Datos.Npc(f), vidaAhora));
+    }
 
     /// <summary>
     /// ¿Hay algo más importante que lo que está haciendo? Muerto o con la vida en rojo.
