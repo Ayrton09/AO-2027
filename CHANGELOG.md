@@ -299,7 +299,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   matan y siguen. Por lo que vienen pegando saben de antemano a qué criatura no le van a sacar nada, y no la salen a
   cazar; y lo que les pega y matan rápido —el Lobo, desde cierto nivel— se lo sacan de encima aunque no sea lo que salen a
   buscar. Huyendo corren, y si algo que los mata de dos golpes se les acerca dejan la pelea o el viaje; lo que se acerca
-  tampoco los encuentra quietos.
+  tampoco los encuentra quietos. Una racha de golpes errados ya no les hace dar una criatura por imposible, y antes de
+  pelear se ponen el arma aunque vengan de trabajar con la herramienta en la mano.
 
 ## 1.0.0 — 2026-09-16
 
