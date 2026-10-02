@@ -1457,6 +1457,12 @@ public sealed class Bot
                                           : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
                     { Fracaso(); return true; }
                 }
+                // Y SI LE FALTA LO ESENCIAL, NO HAY PUEBLO POR DONDE NO HAY PELIGRO Y LA RUNA NO LO LLEVA A DONDE LE VENDEN, ESTÁ
+                // VARADO: ver `RescatarseAsync`.
+                if (leFaltaLoEsencial && conMercader is null && intento == 0
+                    && (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0)
+                    && await RescatarseAsync(transporte, sentidos, Sirve, cerrada, ct))
+                { llegoAlPueblo = true; continue; }
                 Fracaso(); return intento > 0;
             }
             if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador)
@@ -3618,10 +3624,68 @@ public sealed class Bot
         if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
              ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
             is not { } seguro) return false;
-        await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
-                           topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos));
+        int antes = sentidos.Mapa;
+        if (!await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
+                                topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos))
+            && sentidos.Mapa == antes && sentidos.Vivo)
+            // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`.
+            await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
         return true;
     }
+
+    /// <summary>
+    /// EL RESCATE DEL VARADO (DECIDIDO POR EL AUTOR, 02/10): sin tienda ni mapa seguro al alcance por donde no hay peligro, camina
+    /// hasta el pueblo más cercano que le venda lo que <paramref name="sirve"/> aunque el camino sea largo y cruce algo de peligro,
+    /// sólo para salir de ahí; si no hay pueblo, hasta el mapa seguro más cercano, donde la runa anda. Primero por el camino de
+    /// siempre (<see cref="PorDondeSeRescata"/>), que esquiva lo que lo mata de dos golpes, y si por ahí no hay, por donde se pueda:
+    /// el autor eligió rescatarlo aunque pueda morir en el camino, y el fantasma va al sacerdote, que también lo saca de ahí. "Que
+    /// no se meta ahí" (30/09, <see cref="TieneComoVolverDesde"/>) sigue valiendo para elegir coto: esto es para el que ya quedó
+    /// adentro. Una vez cada <see cref="EsperaEntreRescatesMs"/>. Devuelve si salió a caminar.
+    ///
+    /// <para>Medido en `mid34`-`mid37` (02/10): Rufo, ciudadano de nivel 18 con el hogar en Nix —donde no le venden— y 8 pociones,
+    /// ganó de 1.600 a 3.200 de experiencia por media hora, "sin tienda" y "sin coto" cada minuto, y Aldo, ciudadano de nivel 19 en
+    /// el 195, del lado republicano, de 40 a 58 mil, yendo una y otra vez al mapa seguro y "desde acá no se llega"; los demás, 70
+    /// mil o más. Los dos vienen de estados guardados con versiones viejas. Desde el 195 un ciudadano no tiene pueblo: los que le
+    /// venden pociones (Illiandor, Suramei, la Avanzada republicana) tienen guardias que van por él, y el mapa seguro más cercano, las
+    /// Costas de Suramei (544), queda a once mapas cruzando alguno donde nace lo que lo mata de dos golpes.</para>
+    /// </summary>
+    private async Task<bool> RescatarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<int, bool> sirve, Task cerrada,
+                                             CancellationToken ct)
+    {
+        long ahora = Environment.TickCount64;
+        if (ahora < _proximoRescate) return false;
+        _proximoRescate = ahora + EsperaEntreRescatesMs;
+        var pisable = Pisable(sentidos);
+        var porElDeSiempre = PorDondeSeRescata(_entorno.Datos, pisable, _huyoDe, ahora, sentidos.VidaMaxima);
+        var porDondeSea = CruzaSinHuidas(pisable, _huyoDe, ahora);
+        bool yaEnUnoSeguro = MapaSeguro(sentidos.Mapa);
+        (int Mapa, byte X, byte Y, int Saltos)? Destino(Func<int, bool> porDonde) =>
+            _entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, porDonde, SaltosDelRescate)
+            ?? (yaEnUnoSeguro ? null
+                : _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, porDonde, SaltosDelRescate));
+        if ((Destino(porElDeSiempre) ?? Destino(porDondeSea)) is not { } adonde) return false;
+        await IrHastaAsync(transporte, sentidos, adonde.Mapa, adonde.X, adonde.Y, cerrada, ct, ToleranciaDelCoto,
+                           topeDeMapas: Math.Max(Navegante.TopeDeMapas, adonde.Saltos), porCualquierCamino: true);
+        return true;
+    }
+
+    /// <summary>Por dónde se busca el pueblo del rescate: lo mismo por donde va el viaje (<see cref="PorElCaminoDeSiempre"/>,
+    /// sin los mapas de los que recién se fue huyendo), así no se elige un pueblo al que el viaje no llega.</summary>
+    public static Func<int, bool> PorDondeSeRescata(GameData datos, Func<int, bool> pisable, IReadOnlyDictionary<int, long> huyoDe,
+                                                    long ahora, int vidaMaxima) =>
+        CruzaSinHuidas(m => pisable(m) && !NaceLoQueLoMataDeDos(datos, m, vidaMaxima), huyoDe, ahora);
+
+    /// <summary>Si el mercader <paramref name="ficha"/> vende pociones de vida.</summary>
+    private bool VendePociones(int ficha) =>
+        _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } stock } && stock.Any(s => EsPocionDeVida((short)s.ObjIndex));
+
+    private long _proximoRescate;
+
+    /// <summary>Cada cuánto, como mucho, sale a rescatarse (<see cref="RescatarseAsync"/>): el camino puede cruzar peligro.</summary>
+    private const int EsperaEntreRescatesMs = 3 * 60_000;
+
+    /// <summary>Hasta cuántos mapas se busca el pueblo del rescate.</summary>
+    public const int SaltosDelRescate = 20;
 
     /// <summary>Dónde lo dejó la runa la última vez que la usó para ir a comprar, y si ahí tampoco había tienda.</summary>
     private int _runaDejoEn = -1;
@@ -5539,7 +5603,8 @@ public sealed class Bot
                                           int mapaDestino, byte destinoX, byte destinoY,
                                           Task cerrada, CancellationToken ct, int tolerancia = 1,
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
-                                          int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false)
+                                          int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false,
+                                          bool porCualquierCamino = false)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -5575,7 +5640,9 @@ public sealed class Bot
             if (esLaMeta) meta = (destinoX, destinoY);
             else if (porLaMasCercana is { Count: > 0 }) meta = porLaMasCercana[^1];
             // POR DÓNDE: ver `CaminoDelViaje`.
-            else if (CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas,
+            // EL RESCATE DEL VARADO va también por el de siempre aunque el viaje sea largo, y si por ahí tampoco, por donde se pueda:
+            // ver `RescatarseAsync`.
+            else if ((CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas && !porCualquierCamino,
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
                                                           m => pasa(m) && sinHuidas(m), topeDeMapas),
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
@@ -5583,7 +5650,11 @@ public sealed class Bot
                          () => _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY),
                                                           PorElCaminoDeSiempre(_entorno.Datos, pisable, sinHuidas, mapaDestino,
                                                                                sentidos.VidaMaxima, deMuerto),
-                                                          topeDeMapas)) is { } salida)
+                                                          topeDeMapas))
+                      ?? (porCualquierCamino
+                          ? _entorno.Mapas.PuertaHacia(mapa, mapaDestino, desde, (destinoX, destinoY), m => pisable(m) && sinHuidas(m),
+                                                       topeDeMapas)
+                          : null)) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
 
