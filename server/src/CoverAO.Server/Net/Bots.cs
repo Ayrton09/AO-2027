@@ -996,7 +996,8 @@ public sealed class Bot
     ///
     /// <para>DECIDIDO POR EL AUTOR (29/09): en un mapa inseguro, lo del hueco que ya le pega lo hace huir
     /// (<see cref="LoDelHuecoEsLaAmenaza"/>) y, si no se lo saca de encima, irse del mapa (<see cref="SeVaDelMapaPor"/>), al vecino
-    /// donde nace menos de lo que lo puede matar (<see cref="CuantasLoPuedenMatar"/>); en uno seguro, nada cambia. Lo que se elige
+    /// donde nace menos de lo que lo puede matar (<see cref="CuantasLoPuedenMatar"/>); en uno seguro, nada cambia, salvo con la vida
+    /// en rojo (02/10): huye, pero no se va del mapa. Lo que se elige
     /// de antemano —dónde cazar, por dónde viajar— queda como estaba:
     /// los de `ropa1` no eligieron el 13 para cazar, lo cruzaban de viaje a Ullathorpe y no tenían otro camino; y para un bot de
     /// 55 a 89 de vida el Lobo también es del hueco, así que esquivarlo de antemano le cerraba los mapas de Lobos y la cuna.</para>
@@ -1016,7 +1017,8 @@ public sealed class Bot
 
     /// <summary>
     /// ¿LO DEL HUECO ES LA AMENAZA DE LA QUE HUYE? Sólo en un mapa inseguro, cuando ya le pega (<see cref="LoEstaAtacando"/>) y
-    /// está más cerca que lo peligroso. En uno seguro lo del hueco se trata como siempre: ni se huye ni se pelea.
+    /// está más cerca que lo peligroso, salvo con la vida en rojo (02/10, abajo). En uno seguro y con la vida alta, lo del hueco se
+    /// trata como siempre: ni se huye ni se pelea.
     ///
     /// <para>Medido en `hueco3` (29/09), cuando también huía de él en un mapa seguro: un Paladín de 79 de vida pasó cuarenta
     /// minutos entre el nivel 9 y el 10 en la cuna, con setenta y un episodios del Lobo —del hueco de 55 a 89 de vida—, huyendo y
@@ -1024,18 +1026,18 @@ public sealed class Bot
     /// son los Zombies del 13, que es inseguro. DECIDIDO POR EL AUTOR (29/09).</para>
     ///
     /// <para>Y EN UNO SEGURO, CON LA VIDA EN ROJO (menos de <see cref="SeRetira"/>), TAMBIÉN: DECIDIDO POR EL AUTOR (02/10). Las dos
-    /// únicas muertes por Lobo en la cuna desde el nivel 5, en 204 corridas early, fueron al lado de la guarida del noroeste, donde
-    /// nacen cuatro: Quim, de nivel 8, en `early58`, y Rufo, Mago de nivel 10, en `early104`, trabado veinte segundos en un viaje
-    /// mientras un Lobo le pegaba, del 80 al 9 % tomando pociones, sin tomarlo nunca como amenaza. Con la vida alta sigue como el
-    /// 29/09, así que no vuelve lo del Paladín.</para>
+    /// únicas muertes por Lobo en la cuna desde el nivel 5, en las 109 corridas early (`early1` a `early109`), fueron al lado de la
+    /// guarida del noroeste, donde nacen cuatro: Quim, de nivel 8, en `early58`, y Rufo, Mago de nivel 10, en `early104`, trabado
+    /// veinte segundos en un viaje mientras un Lobo le pegaba, del 80 al 9 % tomando pociones, sin tomarlo nunca como amenaza. Con la
+    /// vida alta sigue como el 29/09, así que no vuelve lo del Paladín.</para>
     /// </summary>
     public static bool LoDelHuecoEsLaAmenaza(bool mapaInseguro, NpcInfo? delHueco, int pasos, int? pasosDelPeligro, double salud = 1.0) =>
         (mapaInseguro || salud < SeRetira) && LoEstaAtacando(delHueco, pasos) && (pasosDelPeligro is not { } otro || pasos < otro);
 
     /// <summary>
-    /// ¿LO DEL HUECO CORTA EL VIAJE? Si ya le pega en un mapa inseguro (<see cref="LoDelHuecoEsLaAmenaza"/>), sí, y la vuelta
-    /// siguiente del ciclo hace lo de siempre: se aleja y, si no se lo saca de encima, se va del mapa (<see cref="SeVaDelMapaPor"/>).
-    /// <paramref name="pasos"/> es null si no ve nada del hueco. Escapando o de muerto, el viaje sigue (lo decide el que llama).
+    /// ¿LO DEL HUECO CORTA EL VIAJE? Si ya le pega en un mapa inseguro, o con la vida en rojo (<see cref="LoDelHuecoEsLaAmenaza"/>),
+    /// sí, y la vuelta siguiente del ciclo hace lo de siempre: se aleja y, si no se lo saca de encima en un mapa inseguro, se va del
+    /// mapa (<see cref="SeVaDelMapaPor"/>). <paramref name="pasos"/> es null si no ve nada del hueco. Escapando o de muerto, el viaje sigue (lo decide el que llama).
     ///
     /// <para>La huida valía cazando y no viajando: el viaje seguía mientras la vida no bajara de <see cref="SeRetira"/>, tomando una
     /// poción por golpe. Medido en `early11` (01/10): Aldo, de nivel 6 y 61 de vida, cruzaba el 19 camino al 27; lo mordieron varios
@@ -3644,8 +3646,8 @@ public sealed class Bot
     ///
     /// <para>Medido en `mid34`-`mid37` (02/10): Rufo, ciudadano de nivel 18 con el hogar en Nix —donde no le venden— y 8 pociones,
     /// ganó de 1.600 a 3.200 de experiencia por media hora, "sin tienda" y "sin coto" cada minuto, y Aldo, ciudadano de nivel 19 en
-    /// el 195, del lado republicano, de 40 a 58 mil, yendo una y otra vez al mapa seguro y "desde acá no se llega"; los demás, 70
-    /// mil o más. Los dos vienen de estados guardados con versiones viejas. Desde el 195 un ciudadano no tiene pueblo: los que le
+    /// el 195, del lado republicano, de 40 a 58 mil, yendo una y otra vez al mapa seguro y "desde acá no se llega"; los demás, de 52
+    /// mil (Juana, en `mid34`) para arriba. Los dos vienen de estados guardados con versiones viejas. Desde el 195 un ciudadano no tiene pueblo: los que le
     /// venden pociones (Illiandor, Suramei, la Avanzada republicana) tienen guardias que van por él, y el mapa seguro más cercano, las
     /// Costas de Suramei (544), queda a once mapas cruzando alguno donde nace lo que lo mata de dos golpes.</para>
     /// </summary>
@@ -4770,7 +4772,8 @@ public sealed class Bot
     /// <summary>
     /// ¿SE VA DEL MAPA POR ESTA AMENAZA? Cuando no se la saca de encima (<see cref="NoSeLoSacaDeEncima"/>) y es algo que no puede
     /// lastimar —en cualquier mapa— o algo del hueco (<see cref="EsDelHuecoPara"/>) en un mapa inseguro. En uno seguro lo del hueco
-    /// ni siquiera es la amenaza (<see cref="LoDelHuecoEsLaAmenaza"/>), así que tampoco lo saca del mapa.
+    /// es la amenaza sólo con la vida en rojo (<see cref="LoDelHuecoEsLaAmenaza"/>, 02/10), y aunque huya de él no se va del mapa:
+    /// el mapa es seguro.
     ///
     /// <para>Medido en `hueco1` (29/09), cuando lo del hueco también lo sacaba de un mapa seguro: de 53 salidas que llegaron a otro
     /// mapa, 23 volvieron al mismo antes de cinco minutos —a comprar, a curarse el veneno— y casi todas eran de la cuna, por el Lobo
@@ -5722,7 +5725,9 @@ public sealed class Bot
                         sentidos.CuantoTiene(EsPocionDeVida), HostilCerca(sentidos)))
                     como = Paso.Dado;
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
-                // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO O CON LA VIDA EN ROJO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`.
+                // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`. Con la vida en rojo
+                // el viaje casi siempre ya lo cortó la urgencia de arriba, que no toma la poción bajo `SeRetira`; esto lo corta sólo si
+                // la vida cayó en rojo mientras la tomaba.
                 if (!escapando && !deMuerto && LoDelHuecoLePega(sentidos)) { _cortoPorElHueco = true; return false; }
                 // Y LO QUE LO MATA, A TIRO, TAMBIÉN: la vuelta del ciclo huye (ver `LoPeligrosoEstaATiro`).
                 if (!escapando && !deMuerto && LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos)))
