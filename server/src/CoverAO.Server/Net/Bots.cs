@@ -764,10 +764,10 @@ public sealed class Bot
                 var antesDeHuir = sentidos.Posicion;
                 if (!await AlejarseAsync(transporte, sentidos, amenaza.Quien, cerrada, ct)) return;
                 _huidas.SinMoverse = sentidos.Posicion == antesDeHuir ? _huidas.SinMoverse + 1 : 0;
-                // Y SI SE MOVIÓ PERO LA SIGUE TENIENDO CERCA, tampoco le sirvió: una criatura camina lo mismo que una persona,
-                // así que a la que te persigue no se le gana la carrera. Se cuenta aparte del rincón porque son dos problemas
-                // distintos con la misma salida: dejar de correr. Ver `LaHuidaNoSirvio` para por qué el tope es el radio de susto
-                // y no la baldosa de al lado.
+                // Y SI SE MOVIÓ PERO LA SIGUE TENIENDO CERCA, tampoco le sirvió: huyendo corre (ver `UnPasoCorriendo`), y si así no se
+                // la sacó de encima, el camino no le da para escaparse. Se cuenta aparte del rincón porque son dos problemas distintos con
+                // la misma salida: dejar de correr. Ver `LaHuidaNoSirvio` para por qué el tope es el radio de susto y no la baldosa de al
+                // lado.
                 var despues = sentidos.Donde(amenaza.Quien.CharIndex);
                 _huidas.QueNoLoSacaron = LaHuidaNoSirvio(despues is { } sigueAhi
                         ? Math.Abs(sigueAhi.X - sentidos.Posicion.X) + Math.Abs(sigueAhi.Y - sentidos.Posicion.Y) : -1)
@@ -4766,8 +4766,9 @@ public sealed class Bot
     /// <para>La primera son <see cref="HuidasParaAcorralado"/> huidas seguidas SIN MOVERSE de la baldosa: un rincón, o alguien
     /// tapando la única salida.</para>
     ///
-    /// <para>La segunda son huidas en las que SÍ se movió y la criatura le quedó pegada igual, porque camina al mismo paso que
-    /// él. Medido en `verdad3`: de 120 huidas de la corrida, 91 fueron de un mismo bot con un Lobo encima —84 veces a una
+    /// <para>La segunda son huidas en las que SÍ se movió y la criatura le quedó pegada igual: el camino no le da para escaparse.
+    /// Hasta que huyendo corrió (<see cref="UnPasoCorriendo"/>) era casi siempre el paso, que para muchos era el de la criatura. Medido en
+    /// `verdad3`: de 120 huidas de la corrida, 91 fueron de un mismo bot con un Lobo encima —84 veces a una
     /// baldosa— y la racha más larga fue de TREINTA Y SEIS huidas seguidas, con mil cuatrocientas pociones en la mochila. El
     /// contador viejo no lo veía nunca: se resetea apenas el bot da un paso, y el bot daba un paso siempre.</para>
     /// </summary>
@@ -5352,7 +5353,8 @@ public sealed class Bot
             byte rumbo = SentidosDelBot.RumboHacia(baldosa.X - donde.X, baldosa.Y - donde.Y);
             if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return false;
             sentidos.PredecirPaso(rumbo);
-            await Task.Delay(UnPaso(), ct);
+            // HUYENDO SE CORRE: ver `UnPasoCorriendo`.
+            await Task.Delay(UnPasoCorriendo(), ct);
             // El servidor corrige con un PosUpdate cuando el paso se rechaza: algo se paró adelante, y la vuelta que viene recalcula.
             if (sentidos.Posicion != baldosa) break;
             donde = baldosa;
@@ -5759,6 +5761,23 @@ public sealed class Bot
 
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
     private int UnPaso() => (int)(_rng.Next(PasoMinMs, PasoMaxMs) * _ritmo);
+
+    /// <summary>
+    /// UN PASO CORRIENDO, el que da huyendo (<see cref="AlejarseAsync"/>): el de quien deja apretada la tecla, igual para todos, y no el
+    /// propio.
+    ///
+    /// <para>El paso propio es el de referencia (<see cref="PasoMinMs"/> a <see cref="PasoMaxMs"/>) por el ritmo de cada uno, de 0,8 a
+    /// 1,3, y una criatura da un paso cada 400 ms (<see cref="NpcSystem.MoveEveryTicks"/>): Aldo, con 1,3, camina a 2,6 baldosas por
+    /// segundo y el Lobo a 2,5, así que huyendo no se lo sacaba de encima. Las muertes de nivel 1 en la cuna son casi todas de Aldo y
+    /// de Bruma (1,2), los dos más lentos, y en `early38` (01/10) Aldo tuvo al Lobo a dos o tres baldosas, huyendo, durante doce y
+    /// veinticinco segundos. En las 248 corridas guardadas Aldo murió 23 veces, y Quim, de su misma clase y con 1,1, nueve. El que huye
+    /// deja apretada la tecla: el cliente original da un paso cada 209 ms (32 píxeles a 8,5 por cuadro de 18 ms, TileEngine.bas:2808 y
+    /// :2846), y así le saca al Lobo casi dos baldosas por segundo.</para>
+    /// </summary>
+    private int UnPasoCorriendo() => _rng.Next(CorriendoMinMs, CorriendoMaxMs);
+
+    /// <summary>Lo que tarda un paso corriendo: el del cliente original con la tecla apretada (209 ms), con algo de holgura.</summary>
+    public const int CorriendoMinMs = 210, CorriendoMaxMs = 240;
 
     /// <summary>
     /// ¿Hay algo más importante que lo que está haciendo? Muerto o con la vida en rojo.
