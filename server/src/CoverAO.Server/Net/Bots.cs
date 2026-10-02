@@ -648,7 +648,8 @@ public sealed class Bot
             var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)
                 || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora) || NoLaLastima(ficha));
             // Y LO DEL HUECO QUE YA LE PEGA EN UN MAPA INSEGURO, TAMBIÉN: ver `LoDelHuecoEsLaAmenaza`.
-            if (sentidos.MasCercano(ficha => EsDelHueco(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)) is { } delHueco
+            // Menos lo que se mata rápido, que se lo saca de encima: ver `EsDelHuecoQueAsusta`.
+            if (sentidos.MasCercano(ficha => EsDelHuecoQueAsusta(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)) is { } delHueco
                 && LoDelHuecoEsLaAmenaza(_entorno.Datos.IsPkMap(sentidos.Mapa), _entorno.Datos.Npc(delHueco.Quien.FichaNpc),
                                          delHueco.Pasos, peligro?.Pasos))
                 peligro = delHueco;
@@ -779,8 +780,11 @@ public sealed class Bot
             // no le den ganas: esas reglas son para ELEGIR a quién atacar, no para dejarse picar. Medido en `normal1`: un Minero de
             // nivel 1 con 16 de vida se tomó 67 pociones seguidas en la llegada de la cuna sin cazar ni huir, y terminó la media hora
             // sin matar nada.
+            // Y LO QUE NO ES PRESA PERO SE MATA RÁPIDO, TAMBIÉN: ver `SeLaSacaDeEncima`.
             if (TieneFuelleParaPelear(sentidos)
-                && sentidos.MasCercano(f => EsPresa(f, vidaTope, nivelAhora, conPociones, curaVeneno) && LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } picando)
+                && sentidos.MasCercano(f => (EsPresa(f, vidaTope, nivelAhora, conPociones, curaVeneno)
+                                             || LaMataRapido(f, vidaTope, nivelAhora, conPociones, curaVeneno))
+                                            && LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } picando)
             {
                 if (!await CazarAsync(transporte, sentidos, picando.Quien.CharIndex, cerrada, ct)) return;
                 continue;
@@ -1005,6 +1009,11 @@ public sealed class Bot
     private bool EsDelHueco(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
         EsDelHuecoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
 
+    /// <summary>Lo del hueco que lo hace huir, cazando o de viaje: todo lo del hueco menos lo que se mata rápido, que se lo saca de
+    /// encima (<see cref="SeLaSacaDeEncima"/>).</summary>
+    private bool EsDelHuecoQueAsusta(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
+        EsDelHueco(ficha, vidaMaxima, nivel, conPociones, curaVeneno) && !LaMataRapido(ficha, vidaMaxima, nivel, conPociones, curaVeneno);
+
     /// <summary>
     /// ¿LO DEL HUECO ES LA AMENAZA DE LA QUE HUYE? Sólo en un mapa inseguro, cuando ya le pega (<see cref="LoEstaAtacando"/>) y
     /// está más cerca que lo peligroso. En uno seguro lo del hueco se trata como siempre: ni se huye ni se pelea.
@@ -1035,7 +1044,7 @@ public sealed class Bot
         int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
-        var delHueco = sentidos.MasCercano(f => EsDelHueco(f, vida, nivel, conPociones, curaVeneno));
+        var delHueco = sentidos.MasCercano(f => EsDelHuecoQueAsusta(f, vida, nivel, conPociones, curaVeneno));
         return LoDelHuecoCortaElViaje(_entorno.Datos.IsPkMap(sentidos.Mapa),
                                       delHueco is { } h ? _entorno.Datos.Npc(h.Quien.FichaNpc) : null, delHueco?.Pasos);
     }
@@ -4932,7 +4941,40 @@ public sealed class Bot
         /// <see cref="GolpesParaJuzgar"/> golpes, no se juzga.</summary>
         public bool NoLaVaALastimar(short arma, int defensa, int vida) =>
             arma == _arma && NoLaVaAMatar(_golpes, _crudo - _entraron * defensa, vida);
+
+        /// <summary>En cuántos golpes, contando los que erra, mata con esa arma a algo de esa defensa y esa vida; <see cref="int.MaxValue"/>
+        /// si no le saca nada, y null si no se sabe (otra arma, o menos de <see cref="GolpesParaJuzgar"/> golpes).</summary>
+        public int? GolpesParaMatar(short arma, int defensa, int vida)
+        {
+            if (arma != _arma || _golpes < GolpesParaJuzgar) return null;
+            long dano = _crudo - (long)_entraron * defensa;
+            return dano <= 0 ? int.MaxValue : (int)Math.Min(int.MaxValue, ((long)vida * _golpes + dano - 1) / dano);
+        }
     }
+
+    /// <summary>
+    /// ¿SE LA SACA DE ENCIMA AUNQUE NO SEA PRESA? Si con sus golpes la mata en <see cref="GolpesParaSacarselaDeEncima"/> o menos
+    /// (<see cref="GolpeMedido.GolpesParaMatar"/>), tiene pociones y no es de las que lo matan de pocos golpes (<see cref="EsPeligroso"/>).
+    /// Es lo del hueco que se mata rápido: lo que le pega se lo saca de encima en vez de dejarse morder o de irse del mapa.
+    ///
+    /// <para>EL AUTOR (01/10): "a un lobo de mierda debería matarlo un bot ya con cierto nivel". Para un bot de 55 a 89 de vida el
+    /// Lobo (golpe 18, 75 de vida) era del hueco: no lo cazaba, y en la cuna lo dejaba morder sin devolverle el golpe —un Paladín
+    /// de nivel 9 con 82 de vida—; en un mapa inseguro se iba. Eso es de nivel 5 a 8 para los que pelean y hasta el 12 para los
+    /// que no. Lo que quedaba del hueco por los Zombies del 13 (golpe 25-30, 320 de vida), que los bots de 107 y 122 de vida no
+    /// mataban, sigue igual: con esos golpes no los matan en veinte.</para>
+    /// </summary>
+    public static bool SeLaSacaDeEncima(int? golpesParaMatarla, bool conPociones, bool esPeligrosa) =>
+        conPociones && !esPeligrosa && golpesParaMatarla is <= GolpesParaSacarselaDeEncima;
+
+    /// <summary>Hasta cuántos golpes, contando los que erra, se pelea con lo que le pega sin ser presa: ver <see cref="SeLaSacaDeEncima"/>.</summary>
+    public const int GolpesParaSacarselaDeEncima = 20;
+
+    /// <summary><see cref="SeLaSacaDeEncima"/> para este bot: sólo sin magia, que es lo que mide <see cref="GolpeMedido"/>, y con lo hostil
+    /// que pega.</summary>
+    private bool LaMataRapido(short ficha, int vida, int nivel, bool conPociones, bool curaVeneno) =>
+        _sinMagia && _entorno.Datos.Npc(ficha) is { Hostile: true, Attackable: true, MaxHit: > 0 } n
+        && SeLaSacaDeEncima(_golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp), conPociones,
+                            EsPeligroso(ficha, vida, nivel, conPociones, curaVeneno));
 
     /// <summary>Cuántos golpes recuerda <see cref="GolpeMedido"/>: los de unas pocas peleas.</summary>
     public const int GolpesQueRecuerda = 40;
@@ -5703,7 +5745,8 @@ public sealed class Bot
                                    || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(f), conPociones, salud) || NoLaLastima(f)) is { } temible
                                && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
         return SeEmpiezaUnaPelea(salud, TieneFuelleParaPelear(sentidos), peligroALaVista)
-               && EsPresa(quien.FichaNpc, vida, nivel, conPociones, curaVeneno) ? quien.CharIndex : null;
+               && (EsPresa(quien.FichaNpc, vida, nivel, conPociones, curaVeneno)
+                   || LaMataRapido(quien.FichaNpc, vida, nivel, conPociones, curaVeneno)) ? quien.CharIndex : null;
     }
 
     /// <summary>

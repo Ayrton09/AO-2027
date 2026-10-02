@@ -15,7 +15,7 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class LasPeleasQueNoSeGananTests
 {
-    private const short DagaDeNovato = 460, DagaMasUno = 165, Lobo = 501, Goblin = 505, EsqueletoGuerrero = 508;
+    private const short DagaDeNovato = 460, DagaMasUno = 165, Lobo = 501, Zombie = 502, Goblin = 505, EsqueletoGuerrero = 508;
 
     /// <summary>El golpe más fuerte con la Daga de novato, con la cuenta del servidor (<see cref="Combat.CalcularDano"/>).</summary>
     private static long ElGolpeMasFuerte(GameData d, byte clase, int golpeDelNivel, int fuerza)
@@ -112,6 +112,50 @@ public class LasPeleasQueNoSeGananTests
         Assert.False(golpe.NoLaVaALastimar(DagaDeNovato, defensa: 8, vida: 75), "con otra arma no se juzga");
         golpe.Anotar(DagaDeNovato, golpes: 1, entraron: 1, dano: 20, defensa: 8);
         Assert.False(golpe.NoLaVaALastimar(DagaMasUno, defensa: 8, vida: 75), "lo de la daga anterior se olvidó");
+    }
+
+    /// <summary>
+    /// A LO QUE NO ES PRESA PERO SE MATA RÁPIDO SE LO SACA DE ENCIMA (ver <see cref="Bot.SeLaSacaDeEncima"/>): "a un lobo de mierda
+    /// debería matarlo un bot ya con cierto nivel" (el autor, 01/10). Con los golpes de Lira (Daga +1, golpe de 18 a 24 antes de la
+    /// defensa, uno de cada dos adentro) el Lobo cae en doce golpes; el Zombie (defensa 12, 320 de vida), el que mataba a los bots
+    /// de 107 y 122 de vida en `ropa1`, pide setenta: con ése sigue la huida.
+    /// </summary>
+    [Fact]
+    public void Al_lobo_se_lo_saca_de_encima_y_al_zombie_no()
+    {
+        var d = GameData.Load();
+        if (d.Npc(Lobo) is not { } lobo || d.Npc(Zombie) is not { } zombie || d.Obj(DagaMasUno) is not { } daga) return;
+        double mod = d.WeaponMod.TryGetValue(GameLimits.ClaseLadron, out var m) ? m : 1.0;
+        var golpe = new Bot.GolpeMedido();
+        for (int vuelta = 0; vuelta < 2; vuelta++)
+            for (int tirada = daga.MinHit; tirada <= daga.MaxHit; tirada++)
+                for (int delNivel = 12; delNivel <= 13; delNivel++)
+                {
+                    long crudo = Combat.CalcularDano(tirada, daga.MaxHit, delNivel, 21, mod);
+                    golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: (int)crudo - lobo.Def, lobo.Def);
+                    golpe.Anotar(DagaMasUno, golpes: 1, entraron: 0, dano: 0, lobo.Def);
+                }
+        var alLobo = golpe.GolpesParaMatar(DagaMasUno, lobo.Def, lobo.MaxHp);
+        var alZombie = golpe.GolpesParaMatar(DagaMasUno, zombie.Def, zombie.MaxHp);
+        Assert.True(alLobo is <= 15, $"al lobo, {alLobo}");
+        Assert.True(alZombie is > Bot.GolpesParaSacarselaDeEncima, $"al zombie, {alZombie}");
+        Assert.True(Bot.SeLaSacaDeEncima(alLobo, conPociones: true, esPeligrosa: false));
+        Assert.False(Bot.SeLaSacaDeEncima(alZombie, conPociones: true, esPeligrosa: false));
+        Assert.False(Bot.SeLaSacaDeEncima(alLobo, conPociones: false, esPeligrosa: false), "sin pociones, no");
+        Assert.False(Bot.SeLaSacaDeEncima(alLobo, conPociones: true, esPeligrosa: true), "lo que lo mata de pocos golpes, no");
+        Assert.False(Bot.SeLaSacaDeEncima(null, conPociones: true, esPeligrosa: false), "sin saber cómo pega, no");
+    }
+
+    /// <summary>En cuántos golpes la mata: con lo que no le saca nada, nunca; con otra arma o pocos golpes, no se sabe.</summary>
+    [Fact]
+    public void En_cuantos_golpes_la_mata()
+    {
+        var golpe = new Bot.GolpeMedido();
+        for (int i = 0; i < 10; i++) golpe.Anotar(DagaMasUno, golpes: 1, entraron: 1, dano: 10, defensa: 0);
+        Assert.Equal(8, golpe.GolpesParaMatar(DagaMasUno, defensa: 0, vida: 75));
+        Assert.Equal(int.MaxValue, golpe.GolpesParaMatar(DagaMasUno, defensa: 10, vida: 75));
+        Assert.Null(golpe.GolpesParaMatar(DagaDeNovato, defensa: 0, vida: 75));
+        Assert.Null(new Bot.GolpeMedido().GolpesParaMatar(DagaMasUno, defensa: 0, vida: 75));
     }
 
     /// <summary>AL SUBIR DE NIVEL EL GOLPE CRECE, y los golpes viejos se van: pasados los que recuerda, cuentan sólo los nuevos.</summary>
