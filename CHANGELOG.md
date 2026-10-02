@@ -295,7 +295,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
   sólo por un gusto —equipo mejor, un pergamino— y vuelven sin nada, esperan un buen rato antes de volver a intentarlo.
   Al pueblo entran por donde se llega a la tienda, y no por la orilla de afuera de la muralla, y encuentran caminos que
   antes no veían: de los Campos Abiertos a Rinkel por el Río Otoren, sin cruzar el desierto. Si alguien se les para en el
-  camino, lo rodean o esperan a que se corra en vez de abandonar el viaje.
+  camino, lo rodean o esperan a que se corra en vez de abandonar el viaje, y si es una criatura que pueden matar, la
+  matan y siguen. Por lo que vienen pegando saben de antemano a qué criatura no le van a sacar nada, y no la salen a
+  cazar.
 
 ## 1.0.0 — 2026-09-16
 
