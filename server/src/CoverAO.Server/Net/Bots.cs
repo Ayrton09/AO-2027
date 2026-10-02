@@ -828,7 +828,7 @@ public sealed class Bot
             // NI A LA VISTA DE ALGO PELIGROSO, que viene. Medido en `rojo1`: un Minero de nivel 1 recién escapado de un Lobo se puso a
             // pegarle a un Murciélago con el Lobo a dos y tres baldosas, dos veces seguidas, y el Lobo lo mató las dos.
             bool peligroALaVista = peligro is { } temible && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
-            if (presa is { } p && p.Pasos <= alcance && sentidos.Salud >= VuelveAPelear && conFuelle && !peligroALaVista && LeDanGanas())
+            if (presa is { } p && p.Pasos <= alcance && SeEmpiezaUnaPelea(sentidos.Salud, conFuelle, peligroALaVista) && LeDanGanas())
             {
                 // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
                 // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
@@ -5685,16 +5685,34 @@ public sealed class Bot
         return sentidos.DondeEstan(f => EsPeligroso(f, vida, nivel, conPociones, curaVeneno));
     }
 
-    /// <summary>La criatura parada en esa baldosa, si es presa para él y le quedan energía y vida para pelear (ver
-    /// <see cref="PeleasPorViaje"/>): con la vida bajo <see cref="SeRetira"/> la pelea se corta antes de empezar.</summary>
+    /// <summary>
+    /// La criatura parada en esa baldosa, si es presa para él y la pelea se empezaría como en el ciclo (ver
+    /// <see cref="PeleasPorViaje"/>): con energía, con la vida en <see cref="VuelveAPelear"/> o más y sin nada peligroso que lo tenga
+    /// a la vista, que viene. Medido en `early38` (01/10): Aldo, de nivel 1, se puso a pelear un Murciélago que le tapaba el paso en
+    /// la cuna y un Lobo lo mató en el medio.
+    /// </summary>
     private short? PresaQueTapa(SentidosDelBot sentidos, (byte X, byte Y) baldosa)
     {
-        if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira
-            || sentidos.QuienEstaEn(baldosa) is not { EsNpc: true } quien) return null;
+        if (sentidos.QuienEstaEn(baldosa) is not { EsNpc: true } quien) return null;
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        double salud = sentidos.Salud;
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
-        return EsPresa(quien.FichaNpc, sentidos.VidaMaxima, sentidos.Nivel, conPociones, curaVeneno) ? quien.CharIndex : null;
+        // Lo que asusta, con la misma cuenta que el ciclo.
+        bool peligroALaVista = sentidos.MasCercano(f => EsPeligroso(f, vida, nivel, conPociones, curaVeneno)
+                                   || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(f), conPociones, salud) || NoLaLastima(f)) is { } temible
+                               && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
+        return SeEmpiezaUnaPelea(salud, TieneFuelleParaPelear(sentidos), peligroALaVista)
+               && EsPresa(quien.FichaNpc, vida, nivel, conPociones, curaVeneno) ? quien.CharIndex : null;
     }
+
+    /// <summary>
+    /// ¿SE EMPIEZA UNA PELEA? Con la vida en <see cref="VuelveAPelear"/> o más, con energía para pegar y sin nada peligroso que lo
+    /// tenga a la vista, que camina hacia el que ve: empezar ahí es pelear con los dos. Es la regla del ciclo para salir a cazar, y
+    /// la misma para lo que le tapa el paso en un viaje (<see cref="PeleasPorViaje"/>).
+    /// </summary>
+    public static bool SeEmpiezaUnaPelea(double salud, bool conFuelle, bool peligroALaVista) =>
+        salud >= VuelveAPelear && conFuelle && !peligroALaVista;
 
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>
     private int UnPaso() => (int)(_rng.Next(PasoMinMs, PasoMaxMs) * _ritmo);

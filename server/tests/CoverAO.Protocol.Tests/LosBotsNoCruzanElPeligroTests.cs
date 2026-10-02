@@ -214,6 +214,20 @@ public class LosBotsNoCruzanElPeligroTests
     }
 
     /// <summary>
+    /// UNA PELEA SE EMPIEZA con la vida alta, con energía y sin nada peligroso que lo tenga a la vista (ver
+    /// <see cref="Bot.SeEmpiezaUnaPelea"/>), también la del viaje: en `early38`, Aldo, de nivel 1, se puso a pelear un Murciélago que
+    /// le tapaba el paso en la cuna y un Lobo lo mató en el medio.
+    /// </summary>
+    [Fact]
+    public void Una_pelea_se_empieza_con_la_vida_alta_y_sin_peligro_a_la_vista()
+    {
+        Assert.True(Bot.SeEmpiezaUnaPelea(salud: 1.0, conFuelle: true, peligroALaVista: false));
+        Assert.False(Bot.SeEmpiezaUnaPelea(salud: 1.0, conFuelle: true, peligroALaVista: true), "con el Lobo a la vista, no");
+        Assert.False(Bot.SeEmpiezaUnaPelea(salud: 0.5, conFuelle: true, peligroALaVista: false), "con la vida a medias, no");
+        Assert.False(Bot.SeEmpiezaUnaPelea(salud: 1.0, conFuelle: false, peligroALaVista: false), "sin energía, no");
+    }
+
+    /// <summary>
     /// EL CAMINO DE UN VIAJE, POR ESCALONES: por donde no lo matan, por donde cazaría y por el de siempre; el viaje largo, sólo por
     /// los dos primeros. De muerto, por el de siempre: escrito como <c>deMuerto ? null : sinPeligro ?? (...)</c>, el cadáver no
     /// encontraba ninguna puerta y no llegaba nunca al sacerdote de otro mapa.
