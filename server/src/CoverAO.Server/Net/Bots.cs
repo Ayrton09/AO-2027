@@ -854,7 +854,7 @@ public sealed class Bot
                 continue;
             }
 
-            if (MirarALaGente(transporte, sentidos)) { await Task.Delay(_rng.Next(1_200, 3_500), ct); continue; }
+            if (MirarALaGente(transporte, sentidos)) { await QuedarseAsync(sentidos, _rng.Next(1_200, 3_500), ct); continue; }
 
             // ACÁ NO HAY NADA QUE CAZAR, ASÍ QUE SE MUDA. Un paseo que pisa una puerta cambia de mapa, y el
             // bot toma el mapa nuevo como su zona; si cae en un pueblo —que no tiene criaturas— se queda
@@ -3715,13 +3715,18 @@ public sealed class Bot
 
     /// <summary>Quedarse quieto un rato, pero MIRANDO. La espera se parte en rebanadas y se corta si la vida
     /// bajó o si algo se le puso al lado: un bot que descansa cuarenta segundos con los ojos cerrados se
-    /// muere, y eso no es una figura — pasó, con la mochila llena de pociones.</summary>
-    private static async Task QuedarseAsync(SentidosDelBot sentidos, int ms, CancellationToken ct)
+    /// muere, y eso no es una figura — pasó, con la mochila llena de pociones.
+    ///
+    /// <para>Y SE CORTA CON LO PELIGROSO A TIRO (<see cref="LoPeligrosoEstaATiro"/>), que es cuando el ciclo huye: esperar a tenerlo al
+    /// lado es esperar su golpe. Medido en `early45` (02/10): Osmar, nivel 1, recién escapado de un Lobo que le quedó a seis baldosas,
+    /// se quedó quieto con la vida llena, y el Lobo lo mató sin que se moviera de la baldosa.</para></summary>
+    private async Task QuedarseAsync(SentidosDelBot sentidos, int ms, CancellationToken ct)
     {
         for (int pasado = 0; pasado < ms; pasado += RebanadaDePausaMs)
         {
             await Task.Delay(Math.Min(RebanadaDePausaMs, ms - pasado), ct);
-            if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()) return;
+            if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()
+                || LoPeligrosoEstaATiro(sentidos.Posicion, PeligrosALaVista(sentidos))) return;
         }
     }
 
@@ -5792,7 +5797,7 @@ public sealed class Bot
     /// ¿LO PELIGROSO ESTÁ A TIRO? Si algo de <paramref name="peligros"/> está a <see cref="RadioDeSusto"/> pasos o menos, la distancia a
     /// la que el ciclo huye. Peleando se mira en cada golpe (<see cref="CazarAsync"/>) y viajando en cada paso (<see cref="IrHastaAsync"/>,
     /// salvo escapando), con lo que lo mata de dos golpes (<see cref="LoQueLoMataALaVista"/>): la pelea o el viaje se dejan y la vuelta
-    /// del ciclo huye.
+    /// del ciclo huye. Quieto corta la pausa (<see cref="QuedarseAsync"/>), con todo lo peligroso.
     ///
     /// <para>La pelea sólo se cortaba por la vida o la energía, y la de lo que ya le pega no mira lo peligroso a la vista (eso es para
     /// elegir a quién atacar). Medido en `early45` (02/10): Aldo, nivel 1 con 17 de vida, recién escapado de un Lobo, se puso a pelear
