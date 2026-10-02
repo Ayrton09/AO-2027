@@ -3594,6 +3594,10 @@ public sealed class Bot
         {
             if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct)) return false;
             if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene
+            // Y SI LLEGÓ A UN PUEBLO DONDE LE VENDEN POCIONES —adonde lo lleva el rescate (`RescatarseAsync`)—, AHÍ COMPRA: la runa lo
+            // sacaría de ahí, y si su hogar es Nix, de vuelta a donde no le venden.
+            if (LeVendenAca(sentidos.Mapa) && _entorno.Mapas.SeLlegaAbriendoUnaPuerta(sentidos.Mapa, sentidos.Posicion, VendePociones))
+                return true;
         }
         int antes = sentidos.Mapa;
         var dondeEstaba = sentidos.Posicion;
