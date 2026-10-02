@@ -169,12 +169,17 @@ public sealed class Bot
     /// una persona y 25 una salida. Ciro, de nivel 21, se quedó sin tramos en (88,8) del 18 con dos Zombies y un Lobo en las tres
     /// baldosas libres, y Petra, de nivel 8, estuvo dieciocho segundos encerrada por tres Serpientes y un Murciélago. Escapando o de
     /// muerto, no: lo que tapa es lo que lo persigue, y al fantasma no lo atacan.
+    ///
+    /// <para>NI EN EL ÚLTIMO NIVEL DE NOVATO: la pelea lo puede graduar en el camino a comprar, y en el 16 el servidor se lleva lo de
+    /// novato y cambia por dónde puede pasar. Medido en `alto18` (01/10): Gonzo, Cazador de 15 sin nada propio, mató un Esqueleto
+    /// que le tapaba el paso yendo a Illiandor, subió ahí mismo, se quedó sin pociones ni arco, el viaje no tuvo más por dónde
+    /// seguir y murió envenenado.</para>
     /// </summary>
     public const int PeleasPorViaje = 8;
 
     /// <summary>¿Pelea con lo que le tapa el paso? Ver <see cref="PeleasPorViaje"/>.</summary>
-    public static bool PeleaConLoQueTapa(bool escapando, bool deMuerto, int peleasDelViaje) =>
-        !escapando && !deMuerto && peleasDelViaje < PeleasPorViaje;
+    public static bool PeleaConLoQueTapa(bool escapando, bool deMuerto, int peleasDelViaje, int nivel) =>
+        !escapando && !deMuerto && peleasDelViaje < PeleasPorViaje && nivel != GameLimits.NewbieMaxLevel;
 
     /// <summary>Cuántas baldosas alrededor se busca dónde trabajar, cuántas unidades se hacen de una sentada,
     /// cuánto tarda cada una, y cuánto se descansa entre tandas. Trabajar sin parar toda la sesión no lo hace
@@ -5532,7 +5537,7 @@ public sealed class Bot
                 if (_pasoTrabado)   // algo se paró en el camino: rodearlo
                 {
                     // Y SI LE PEGA Y SE MATA, SE MATA: ver `PeleasPorViaje`.
-                    if (PeleaConLoQueTapa(escapando, deMuerto, peleasDelViaje) && PresaQueTapa(sentidos, baldosa) is { } tapa)
+                    if (PeleaConLoQueTapa(escapando, deMuerto, peleasDelViaje, sentidos.Nivel) && PresaQueTapa(sentidos, baldosa) is { } tapa)
                     {
                         peleasDelViaje++;
                         if (!await CazarAsync(transporte, sentidos, tapa, cerrada, ct)) return false;
