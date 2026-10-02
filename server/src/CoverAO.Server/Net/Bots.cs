@@ -3640,16 +3640,18 @@ public sealed class Bot
     /// hasta el pueblo más cercano que le venda lo que <paramref name="sirve"/> aunque el camino sea largo y cruce algo de peligro,
     /// sólo para salir de ahí; si no hay pueblo, hasta el mapa seguro más cercano, donde la runa anda. Primero por el camino de
     /// siempre (<see cref="PorDondeSeRescata"/>), que esquiva lo que lo mata de dos golpes, y si por ahí no hay, por donde se pueda:
-    /// el autor eligió rescatarlo aunque pueda morir en el camino, y el fantasma va al sacerdote, que también lo saca de ahí. "Que
-    /// no se meta ahí" (30/09, <see cref="TieneComoVolverDesde"/>) sigue valiendo para elegir coto: esto es para el que ya quedó
-    /// adentro. Una vez cada <see cref="EsperaEntreRescatesMs"/>. Devuelve si salió a caminar.
+    /// el autor eligió rescatarlo aunque pueda morir en el camino, y el fantasma va al sacerdote, que también lo saca de ahí. Por
+    /// ninguno de los dos cruza los mapas de guardias que van por él (<see cref="PisableDelRescate"/>). "Que no se meta ahí" (30/09,
+    /// <see cref="TieneComoVolverDesde"/>) sigue valiendo para elegir coto: esto es para el que ya quedó adentro. Una vez cada
+    /// <see cref="EsperaEntreRescatesMs"/>. Devuelve si salió a caminar.
     ///
     /// <para>Medido en `mid34`-`mid37` (02/10): Rufo, ciudadano de nivel 18 con el hogar en Nix —donde no le venden— y 8 pociones,
     /// ganó de 1.600 a 3.200 de experiencia por media hora, "sin tienda" y "sin coto" cada minuto, y Aldo, ciudadano de nivel 19 en
     /// el 195, del lado republicano, de 40 a 58 mil, yendo una y otra vez al mapa seguro y "desde acá no se llega"; los demás, de 52
-    /// mil (Juana, en `mid34`) para arriba. Los dos vienen de estados guardados con versiones viejas. Desde el 195 un ciudadano no tiene pueblo: los que le
-    /// venden pociones (Illiandor, Suramei, la Avanzada republicana) tienen guardias que van por él, y el mapa seguro más cercano, las
-    /// Costas de Suramei (544), queda a once mapas cruzando alguno donde nace lo que lo mata de dos golpes.</para>
+    /// mil (Juana, en `mid34`) para arriba. Los dos vienen de estados guardados con versiones viejas. Desde el 195 un ciudadano no
+    /// tiene pueblo: los que le venden pociones (Illiandor, Suramei, la Avanzada republicana) tienen guardias que van por él, y el
+    /// mapa seguro más cercano, las Costas de Suramei (544), queda a trece mapas sin pisar ninguno de ésos, cruzando alguno donde
+    /// nace lo que lo mata de dos golpes.</para>
     /// </summary>
     private async Task<bool> RescatarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<int, bool> sirve, Task cerrada,
                                              CancellationToken ct)
@@ -3657,19 +3659,46 @@ public sealed class Bot
         long ahora = Environment.TickCount64;
         if (ahora < _proximoRescate) return false;
         _proximoRescate = ahora + EsperaEntreRescatesMs;
-        var pisable = Pisable(sentidos);
+        var pisable = PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel);
         var porElDeSiempre = PorDondeSeRescata(_entorno.Datos, pisable, _huyoDe, ahora, sentidos.VidaMaxima);
         var porDondeSea = CruzaSinHuidas(pisable, _huyoDe, ahora);
-        bool yaEnUnoSeguro = MapaSeguro(sentidos.Mapa);
-        (int Mapa, byte X, byte Y, int Saltos)? Destino(Func<int, bool> porDonde) =>
-            _entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, porDonde, SaltosDelRescate)
-            ?? (yaEnUnoSeguro ? null
-                : _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, porDonde, SaltosDelRescate));
-        if ((Destino(porElDeSiempre) ?? Destino(porDondeSea)) is not { } adonde) return false;
+        if (DestinoDelRescate(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, MapaSeguro, porElDeSiempre,
+                              porDondeSea) is not { } adonde) return false;
         await IrHastaAsync(transporte, sentidos, adonde.Mapa, adonde.X, adonde.Y, cerrada, ct, ToleranciaDelCoto,
                            topeDeMapas: Math.Max(Navegante.TopeDeMapas, adonde.Saltos), porCualquierCamino: true);
         return true;
     }
+
+    /// <summary>
+    /// ADÓNDE VA EL RESCATE: el pueblo más cercano donde le venden (<paramref name="leVenden"/>) y se llega a alguien que
+    /// <paramref name="sirve"/>, y si no hay, el mapa seguro más cercano, salvo que ya esté en uno; primero buscando por
+    /// <paramref name="porElDeSiempre"/> y si por ahí no hay nada, por <paramref name="porDondeSea"/>. Hasta
+    /// <see cref="SaltosDelRescate"/> mapas.
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? DestinoDelRescate(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                          Func<int, bool> leVenden, Func<int, bool> sirve,
+                                                                          Func<int, bool> mapaSeguro, Func<int, bool> porElDeSiempre,
+                                                                          Func<int, bool> porDondeSea)
+    {
+        bool yaEnUnoSeguro = mapaSeguro(mapa);
+        (int Mapa, byte X, byte Y, int Saltos)? Destino(Func<int, bool> porDonde) =>
+            mapas.PuebloMasCercano(mapa, desde, leVenden, sirve, porDonde, SaltosDelRescate)
+            ?? (yaEnUnoSeguro ? null : mapas.MapaMasCercano(mapa, desde, mapaSeguro, porDonde, SaltosDelRescate));
+        return Destino(porElDeSiempre) ?? Destino(porDondeSea);
+    }
+
+    /// <summary>
+    /// LO QUE PISA EL RESCATE, al buscar adónde ir y en el viaje (<see cref="IrHastaAsync"/> con <c>porCualquierCamino</c>): lo que
+    /// lo deja entrar, sin los mapas donde nacen guardias que van por él (<see cref="HayGuardiaQueVaPor"/>). El destino nunca es uno
+    /// de ésos: ni el pueblo donde le venden ni el mapa seguro.
+    ///
+    /// <para>Visto contra la data con el rescate de `6f45cb3e`: Aldo, ciudadano de nivel 19 en el 195, salía al 544 cruzando
+    /// Illiandor (194) de la baldosa (10,8) a la (10,94), donde nacen siete guardias que van por él, entre ellos un Asesino en (18,49)
+    /// que pega de 90 a 350 contra sus 199 de vida; y durante el viaje nada lo corta, porque los guardias no son hostiles (ver
+    /// <see cref="LoQueLoMataALaVista"/>). Sin Illiandor, el mismo 544 queda a trece mapas en vez de once.</para>
+    /// </summary>
+    public static Func<int, bool> PisableDelRescate(GameData datos, ServerIni? ini, byte bando, int nivel) =>
+        m => PuedeEntrar(nivel, datos.MapZone(m)) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
 
     /// <summary>Por dónde se busca el pueblo del rescate: lo mismo por donde va el viaje (<see cref="PorElCaminoDeSiempre"/>,
     /// sin los mapas de los que recién se fue huyendo), así no se elige un pueblo al que el viaje no llega.</summary>
@@ -5636,7 +5665,9 @@ public sealed class Bot
             Func<int, bool> sinHuidas = m => escapando || deMuerto || !NoVuelveACruzar(_huyoDe, m, mapaDestino, ahoraDelTramo);
             var pasa = PasaSinPeligro(sentidos, mapaDestino);
             var cruza = CruzaSinPeligroHacia(sentidos, mapaDestino);
-            var pisable = Pisable(sentidos);
+            // EL RESCATE, NI POR EL CAMINO DE SIEMPRE NI POR DONDE SE PUEDA CRUZA LOS MAPAS DE GUARDIAS QUE VAN POR ÉL: ver
+            // `PisableDelRescate`. Los otros dos escalones ya no los cruzan.
+            var pisable = porCualquierCamino ? PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel) : Pisable(sentidos);
             // ESCAPANDO, POR LA PUERTA MÁS CERCANA al mapa vecino: ver `Navegante.CaminoALaPuertaMasCercana`.
             var porLaMasCercana = escapando && !esLaMeta
                 ? _entorno.Mapas.CaminoALaPuertaMasCercana(mapa, desde, mapaDestino, trabas) : null;
