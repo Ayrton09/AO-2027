@@ -5001,6 +5001,20 @@ public sealed class Bot
         return 0;
     }
 
+    /// <summary>
+    /// EL ARMA EN LA MANO PARA PELEAR: sin arma ni nudillos puestos y con una que puede usar en la mochila, se la pone antes del
+    /// primer golpe. Ponerse el equipo (<see cref="Equiparse"/>) va en el ciclo DESPUÉS de pelear con lo que le pega, así que la
+    /// pelea que empieza apenas se queda sin nada que pegue en la mano —al graduarse el servidor se lleva el arma de novato, y el
+    /// que trabaja tiene puesta la herramienta (el Hacha, el Piquete, las Tijeras, el Costurero, la Olla), que no es un arma—
+    /// arranca sin el arma. Medido en `alto40` y `alto42` (02/10), los dos recién graduados: Gonzo, ya sin el arco de novato, empezó
+    /// una pelea con un Esqueleto guerrero con la Spatha en la mochila, y Rufo una con un Gallo Salvaje con la Daga +1 guardada. El
+    /// que tira con arco se arregla con lo suyo. Devuelve si lo pidió.
+    /// </summary>
+    private bool PonerseElArmaParaPelear(TransporteDeBot transporte, SentidosDelBot sentidos) =>
+        SuArcoYSusFlechas(sentidos) is null && ArmaEnLaMano(sentidos) == 0
+        && (MejorParaPoner(sentidos, EsArma) ?? MejorParaPoner(sentidos, o => o.IsKnuckles)) is { } ranura
+        && PedirQueSePonga(transporte, sentidos, ranura);
+
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
     /// false sólo si se cayó la conexión.</summary>
     private async Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
@@ -5008,6 +5022,8 @@ public sealed class Bot
     {
         int pasosGastados = 0;
         bool rodeando = false;
+        // EL ARMA EN LA MANO: ver `PonerseElArmaParaPelear`.
+        if (PonerseElArmaParaPelear(transporte, sentidos)) await Task.Delay(_rng.Next(400, 900), ct);
         // LO QUE LE VA SACANDO, para no quedarse peleando con lo que no puede matar (`NoLaVaAMatar`). Lo de antes no cuenta.
         sentidos.TomarLoQuePego();
         int golpes = 0, entraron = 0, sacado = 0;
