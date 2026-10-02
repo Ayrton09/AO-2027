@@ -3626,14 +3626,18 @@ public sealed class Bot
         if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
              ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
             is not { } seguro) return false;
-        int antes = sentidos.Mapa;
         if (!await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
                                 topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos))
-            && sentidos.Mapa == antes && sentidos.Vivo)
-            // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`.
+            && _desdeAcaNoSeLlega && sentidos.Vivo)
+            // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`. Sólo si el viaje volvió por eso, no si lo
+            // cortó el peligro, la vida o las trabas.
             await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
         return true;
     }
+
+    /// <summary>Si el último viaje (<see cref="IrHastaAsync"/>) volvió porque desde donde estaba no había camino por ningún escalón
+    /// ("desde acá no se llega"), y no por otra cosa: lo del hueco o lo peligroso a tiro, la vida, las trabas, una pelea.</summary>
+    private bool _desdeAcaNoSeLlega;
 
     /// <summary>
     /// EL RESCATE DEL VARADO (DECIDIDO POR EL AUTOR, 02/10): sin tienda ni mapa seguro al alcance por donde no hay peligro, camina
@@ -5649,6 +5653,7 @@ public sealed class Bot
         int trabasDelViaje = 0;
         bool trabadoPorAlguien = false;
         int peleasDelViaje = 0;
+        _desdeAcaNoSeLlega = false;
         for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
@@ -5671,6 +5676,8 @@ public sealed class Bot
             // ESCAPANDO, POR LA PUERTA MÁS CERCANA al mapa vecino: ver `Navegante.CaminoALaPuertaMasCercana`.
             var porLaMasCercana = escapando && !esLaMeta
                 ? _entorno.Mapas.CaminoALaPuertaMasCercana(mapa, desde, mapaDestino, trabas) : null;
+            // SI DESDE ACÁ NO SE LLEGA, QUEDA ANOTADO: ver `_desdeAcaNoSeLlega`.
+            _desdeAcaNoSeLlega = true;
             if (esLaMeta) meta = (destinoX, destinoY);
             else if (porLaMasCercana is { Count: > 0 }) meta = porLaMasCercana[^1];
             // POR DÓNDE: ver `CaminoDelViaje`.
@@ -5691,6 +5698,7 @@ public sealed class Bot
                           : null)) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
+            _desdeAcaNoSeLlega = false;
 
             // PARADO ENCIMA DE LA PUERTA: ver `RumboParaUsarLaPuerta`.
             if (!esLaMeta && meta == desde)
