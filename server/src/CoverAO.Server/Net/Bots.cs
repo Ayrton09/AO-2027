@@ -4859,9 +4859,16 @@ public sealed class Bot
     /// pasó 40 de 45 minutos peleando en `oficios11`, una sola pelea de 19; y una Ladrona de nivel 12 (golpe hasta 17), 6 minutos
     /// contra un Esqueleto guerrero (defensa 19) en `oficios14`. A lo que ya le pegaba se lo "sacaba de encima" mientras le
     /// duraran las pociones.</para>
+    ///
+    /// <para>SIN UN GOLPE QUE ENTRE NO SE JUZGA: los que erró no dicen cuánto le saca el que entra, y el acierto nunca baja del
+    /// 10 % (<see cref="Combat.HitChance"/>). Contando los errados como golpes que no sacan nada, diez seguidos alcanzaban para
+    /// dar por imposible cualquier criatura. Medido en `alto31` y `alto32` (02/10): Osmar, de nivel 12, dejó un Lobo con diez
+    /// golpes errados, y con lo medido de su arma —36 golpes, 10 adentro— lo mataba en unos once; y Rufo, de nivel 15, erró los
+    /// diez primeros golpes de su arma contra un Gallo Salvaje, y como lo medido de su golpe (<see cref="GolpeMedido"/>) decía que
+    /// no lastimaba a nada, se fue del mapa huyendo del Gallo.</para>
     /// </summary>
-    public static bool NoLaVaAMatar(int golpes, int dano, int vidaDeLaCriatura) =>
-        golpes >= GolpesParaJuzgar
+    public static bool NoLaVaAMatar(int golpes, int entraron, int dano, int vidaDeLaCriatura) =>
+        golpes >= GolpesParaJuzgar && entraron > 0
         && (dano <= 0 || (long)vidaDeLaCriatura * golpes > (long)dano * GolpesQueSeBanca);
 
     private const int GolpesParaJuzgar = 10, GolpesQueSeBanca = 100;
@@ -4944,16 +4951,16 @@ public sealed class Bot
             }
         }
 
-        /// <summary>¿Con esa arma, a algo de esa defensa y esa vida no la mata? Con otra arma, o con menos de
-        /// <see cref="GolpesParaJuzgar"/> golpes, no se juzga.</summary>
+        /// <summary>¿Con esa arma, a algo de esa defensa y esa vida no la mata? Con otra arma, con menos de
+        /// <see cref="GolpesParaJuzgar"/> golpes o sin ninguno que entró (ver <see cref="NoLaVaAMatar"/>), no se juzga.</summary>
         public bool NoLaVaALastimar(short arma, int defensa, int vida) =>
-            arma == _arma && NoLaVaAMatar(_golpes, _crudo - _entraron * defensa, vida);
+            arma == _arma && NoLaVaAMatar(_golpes, _entraron, _crudo - _entraron * defensa, vida);
 
         /// <summary>En cuántos golpes, contando los que erra, mata con esa arma a algo de esa defensa y esa vida; <see cref="int.MaxValue"/>
-        /// si no le saca nada, y null si no se sabe (otra arma, o menos de <see cref="GolpesParaJuzgar"/> golpes).</summary>
+        /// si no le saca nada, y null si no se sabe (otra arma, menos de <see cref="GolpesParaJuzgar"/> golpes o ninguno que entró).</summary>
         public int? GolpesParaMatar(short arma, int defensa, int vida)
         {
-            if (arma != _arma || _golpes < GolpesParaJuzgar) return null;
+            if (arma != _arma || _golpes < GolpesParaJuzgar || _entraron == 0) return null;
             long dano = _crudo - (long)_entraron * defensa;
             return dano <= 0 ? int.MaxValue : (int)Math.Min(int.MaxValue, ((long)vida * _golpes + dano - 1) / dano);
         }
@@ -5003,7 +5010,7 @@ public sealed class Bot
         bool rodeando = false;
         // LO QUE LE VA SACANDO, para no quedarse peleando con lo que no puede matar (`NoLaVaAMatar`). Lo de antes no cuenta.
         sentidos.TomarLoQuePego();
-        int golpes = 0, sacado = 0;
+        int golpes = 0, entraron = 0, sacado = 0;
         // Y LOS HECHIZOS QUE NO SALEN, para pasar al arma (`DejaDeLanzarle`).
         int lanzadosEnVano = 0;
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
@@ -5064,12 +5071,13 @@ public sealed class Bot
                     if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
                 }
                 await Task.Delay(tira ? _rng.Next(TiroMinMs, TiroMaxMs) : _rng.Next(GolpeMinMs, GolpeMaxMs), ct);
-                var (g, entraron, d) = sentidos.TomarLoQuePego();
+                var (g, e, d) = sentidos.TomarLoQuePego();
                 golpes += g;
+                entraron += e;
                 sacado += d;
                 // Y LO QUE APRENDE DE SU GOLPE: ver `GolpeMedido`.
-                _golpe.Anotar(ArmaEnLaMano(sentidos), g, entraron, d, _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0);
-                if (NoLaVaAMatar(golpes, sacado, _entorno.Datos.Npc(quien.FichaNpc)?.MaxHp ?? 0))
+                _golpe.Anotar(ArmaEnLaMano(sentidos), g, e, d, _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0);
+                if (NoLaVaAMatar(golpes, entraron, sacado, _entorno.Datos.Npc(quien.FichaNpc)?.MaxHp ?? 0))
                 {
                     _conQuePelea = (ArmaEnLaMano(sentidos), sentidos.Nivel);
                     _noLaLastima[quien.FichaNpc] = _conQuePelea;

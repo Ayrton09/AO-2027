@@ -15,7 +15,7 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class LasPeleasQueNoSeGananTests
 {
-    private const short DagaDeNovato = 460, DagaMasUno = 165, Lobo = 501, Zombie = 502, Goblin = 505, EsqueletoGuerrero = 508;
+    private const short DagaDeNovato = 460, DagaMasUno = 165, Spatha = 569, Lobo = 501, Zombie = 502, Goblin = 505, EsqueletoGuerrero = 508;
 
     /// <summary>El golpe más fuerte con la Daga de novato, con la cuenta del servidor (<see cref="Combat.CalcularDano"/>).</summary>
     private static long ElGolpeMasFuerte(GameData d, byte clase, int golpeDelNivel, int fuerza)
@@ -40,9 +40,9 @@ public class LasPeleasQueNoSeGananTests
     {
         var d = GameData.Load();
         if (d.Npc(Goblin) is not { } goblin) return;
-        Assert.True(Bot.NoLaVaAMatar(golpes: 10, dano: -14, goblin.MaxHp));
-        Assert.True(Bot.NoLaVaAMatar(golpes: 10, dano: 0, goblin.MaxHp));
-        Assert.False(Bot.NoLaVaAMatar(golpes: 9, dano: -14, goblin.MaxHp));
+        Assert.True(Bot.NoLaVaAMatar(golpes: 10, entraron: 7, dano: -14, goblin.MaxHp));
+        Assert.True(Bot.NoLaVaAMatar(golpes: 10, entraron: 4, dano: 0, goblin.MaxHp));
+        Assert.False(Bot.NoLaVaAMatar(golpes: 9, entraron: 7, dano: -14, goblin.MaxHp));
     }
 
     /// <summary>LA QUE SE MATA SE SIGUE PELEANDO: una Ladrona de nivel 18 con la Daga de novato le pega al Lobo de 19 a 22 contra
@@ -52,7 +52,7 @@ public class LasPeleasQueNoSeGananTests
     {
         var d = GameData.Load();
         if (d.Npc(Lobo) is not { } lobo) return;
-        Assert.False(Bot.NoLaVaAMatar(golpes: 10, dano: 5 * 11, lobo.MaxHp));
+        Assert.False(Bot.NoLaVaAMatar(golpes: 10, entraron: 5, dano: 5 * 11, lobo.MaxHp));
     }
 
     /// <summary>LA QUE PIDE DEMASIADOS GOLPES SE DEJA: la misma Ladrona contra el Esqueleto guerrero (defensa 19) saca de 0 a 3 por
@@ -62,7 +62,7 @@ public class LasPeleasQueNoSeGananTests
     {
         var d = GameData.Load();
         if (d.Npc(EsqueletoGuerrero) is not { } esqueleto) return;
-        Assert.True(Bot.NoLaVaAMatar(golpes: 10, dano: 15, esqueleto.MaxHp));
+        Assert.True(Bot.NoLaVaAMatar(golpes: 10, entraron: 7, dano: 15, esqueleto.MaxHp));
     }
 
     /// <summary>LA LENTA SE SIGUE PELEANDO: el Leñador de `pelea_b3`, con el Martillo de novato, le había sacado 84 de 200 al
@@ -72,7 +72,7 @@ public class LasPeleasQueNoSeGananTests
     {
         var d = GameData.Load();
         if (d.Npc(EsqueletoGuerrero) is not { } esqueleto) return;
-        Assert.False(Bot.NoLaVaAMatar(golpes: 22, dano: 84, esqueleto.MaxHp));
+        Assert.False(Bot.NoLaVaAMatar(golpes: 22, entraron: 11, dano: 84, esqueleto.MaxHp));
     }
 
     /// <summary>
@@ -112,6 +112,40 @@ public class LasPeleasQueNoSeGananTests
         Assert.False(golpe.NoLaVaALastimar(DagaDeNovato, defensa: 8, vida: 75), "con otra arma no se juzga");
         golpe.Anotar(DagaDeNovato, golpes: 1, entraron: 1, dano: 20, defensa: 8);
         Assert.False(golpe.NoLaVaALastimar(DagaMasUno, defensa: 8, vida: 75), "lo de la daga anterior se olvidó");
+    }
+
+    /// <summary>
+    /// LA PREMISA de <see cref="Sin_un_golpe_que_entre_no_se_juzga"/>, con la data y la cuenta del servidor: con Armas en cero, un
+    /// personaje de nivel 16 le acierta al Esqueleto guerrero (evasión 80) uno de cada cinco golpes, y diez errados seguidos le pasan
+    /// en una pelea de cada doce.
+    /// </summary>
+    [Fact]
+    public void Con_armas_en_cero_diez_errados_seguidos_no_son_raros()
+    {
+        var d = GameData.Load();
+        if (d.Npc(EsqueletoGuerrero) is not { } esqueleto) return;
+        long acierto = Combat.HitChance(Combat.PoderDeAtaque(skill: 0, agility: 16, level: 16, attackMod: 1.0), esqueleto.PoderEvasion);
+        Assert.Equal(22, acierto);
+        Assert.InRange(Math.Pow(1 - acierto / 100.0, 10), 1 / 13.0, 1 / 11.0);
+    }
+
+    /// <summary>
+    /// SIN UN GOLPE QUE ENTRE NO SE JUZGA (ver <see cref="Bot.NoLaVaAMatar"/>): diez errados no dicen cuánto le saca el golpe que
+    /// entra. Contándolos como golpes que no sacan nada, la pelea se daba por perdida, y lo medido de su golpe (<see cref="Bot.GolpeMedido"/>)
+    /// decía que con esa arma no lastimaba a ninguna criatura, ni al Murciélago.
+    /// </summary>
+    [Fact]
+    public void Sin_un_golpe_que_entre_no_se_juzga()
+    {
+        Assert.False(Bot.NoLaVaAMatar(golpes: 10, entraron: 0, dano: 0, vidaDeLaCriatura: 200));
+        var golpe = new Bot.GolpeMedido();
+        for (int i = 0; i < 10; i++) golpe.Anotar(Spatha, golpes: 1, entraron: 0, dano: 0, defensa: 19);
+        Assert.False(golpe.NoLaVaALastimar(Spatha, defensa: 19, vida: 200));
+        Assert.False(golpe.NoLaVaALastimar(Spatha, defensa: 0, vida: 15), "ni al Murciélago");
+        Assert.Null(golpe.GolpesParaMatar(Spatha, defensa: 19, vida: 200));
+        golpe.Anotar(Spatha, golpes: 1, entraron: 1, dano: 80, defensa: 19);
+        Assert.False(golpe.NoLaVaALastimar(Spatha, defensa: 19, vida: 200), "con uno que entró, al Esqueleto guerrero lo mata");
+        Assert.Equal(28, golpe.GolpesParaMatar(Spatha, defensa: 19, vida: 200));
     }
 
     /// <summary>
