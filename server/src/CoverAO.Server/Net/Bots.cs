@@ -5436,11 +5436,15 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         long ahora = Environment.TickCount64;
-        foreach (int vecino in VecinosDelMenosPeligroso(_entorno.Datos, aca, m => pisable(m) && !HayGuardiaQueLoAtaca(m),
-                     m => CuantasLoPuedenMatar(_entorno.Datos, _entorno.Ini, _miBando, m, vida, nivel, conPociones, curaVeneno)))
+        var vecinos = VecinosDelMenosPeligroso(_entorno.Datos, aca, m => pisable(m) && !HayGuardiaQueLoAtaca(m),
+            m => CuantasLoPuedenMatar(_entorno.Datos, _entorno.Ini, _miBando, m, vida, nivel, conPociones, curaVeneno)).ToList();
+        // NI A UN BOLSILLO, salvo que ninguna otra salida lo mueva: ver `LaPuertaDeLaHuidaDaAUnBolsillo`.
+        foreach (bool aceptaBolsillos in new[] { false, true })
+        foreach (int vecino in vecinos)
         {
             // LA SALIDA QUE RECIÉN NO LO SACÓ SE SALTEA: ver `SePruebaEsaSalida`.
             if (!SePruebaEsaSalida(_salidasQueNoAndan, aca, vecino, ahora)) continue;
+            if (!aceptaBolsillos && LaPuertaDeLaHuidaDaAUnBolsillo(_entorno.Mapas, _entorno.Datos, aca, antes, vecino, pisable)) continue;
             if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m == vecino, pisable) is not { } afuera) continue;
             await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
             if (sentidos.Mapa == aca) _salidasQueNoAndan[(aca, vecino)] = Environment.TickCount64 + SalidaQueNoAndaMs;
@@ -5454,6 +5458,24 @@ public sealed class Bot
         }
         return false;
     }
+
+    /// <summary>
+    /// ¿LA PUERTA POR LA QUE ESCAPARÍA HACIA <paramref name="vecino"/> DA A UN BOLSILLO? Escapando se sale por la puerta más cercana
+    /// a ese mapa (<see cref="Navegante.CaminoALaPuertaMasCercana"/>), y del otro lado puede haber una zona cuya única salida es
+    /// volver (<see cref="Navegante.EsUnBolsillo"/>). En un mapa inseguro, donde la runa no anda, de ahí no se sale hasta poder
+    /// volver a cruzar el mapa del que huyó (<see cref="NoVuelveACruzar"/>), y ahí sigue lo que lo hizo huir. Esa salida se deja
+    /// para cuando ninguna otra lo mueva.
+    ///
+    /// <para>Medido en `early99` (02/10): Rufo, Mago de nivel 10, se fue del 19 huyendo de un Lobo por el oeste, al norte del Río
+    /// Otoren (98), que sólo sale al 19, y pasó ahí los últimos quince minutos de la corrida, 31 veces "sin ganar". Lira, en
+    /// `early70`, cinco minutos en el mismo lugar.</para>
+    /// </summary>
+    public static bool LaPuertaDeLaHuidaDaAUnBolsillo(Navegante mapas, GameData datos, int aca, (byte X, byte Y) desde, int vecino,
+                                                      Func<int, bool>? pisable) =>
+        datos.IsPkMap(vecino)
+        && mapas.CaminoALaPuertaMasCercana(aca, desde, vecino) is { Count: > 0 } camino
+        && datos.MapExits.TryGetValue((aca, camino[^1].X, camino[^1].Y), out var puerta)
+        && mapas.EsUnBolsillo(vecino, ((byte)puerta.DestX, (byte)puerta.DestY), aca, pisable);
 
     /// <summary>
     /// ¿SE PRUEBA SALIR POR AHÍ? No, si hace menos de <see cref="SalidaQueNoAndaMs"/> esa misma salida no lo sacó del mapa: la

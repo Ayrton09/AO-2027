@@ -342,6 +342,13 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// ¿ES UN BOLSILLO? Desde esa entrada de <paramref name="mapa"/> no se llega a ningún otro mapa sin volver a
+    /// <paramref name="deDonde"/>: la zona de esa entrada sólo tiene salidas para atrás.
+    /// </summary>
+    public bool EsUnBolsillo(int mapa, (byte X, byte Y) entrada, int deDonde, Func<int, bool>? pisable = null) =>
+        MapaMasCercano(mapa, entrada, m => m != deDonde, m => m != deDonde && (pisable?.Invoke(m) ?? true), 1) is null;
+
+    /// <summary>
     /// EL PUEBLO MÁS CERCANO DONDE SE LLEGA A ALGUIEN QUE SIRVE, con la baldosa por la que se entra: como
     /// <see cref="MapaMasCercano"/>, pero la entrada cuenta sólo si desde ella se llega a un NPC que <paramref name="sirve"/>, a pie o
     /// abriendo una puerta (<see cref="SeLlegaAbriendoUnaPuerta"/>). La primera entrada que aparece de un mapa puede ser una franja

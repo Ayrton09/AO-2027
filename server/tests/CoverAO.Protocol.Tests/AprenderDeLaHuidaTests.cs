@@ -76,4 +76,23 @@ public class AprenderDeLaHuidaTests
             Assert.False(d.IsPkMap(seguro!.Value.Mapa));
         }
     }
+
+    /// <summary>
+    /// ESCAPANDO, NO A UN BOLSILLO (ver <see cref="Bot.LaPuertaDeLaHuidaDaAUnBolsillo"/>): desde donde Rufo (`early99`) y Lira
+    /// (`early70`) se fueron del 19 huyendo de un Lobo, la puerta más cercana al Río Otoren (98) da a su parte norte, que sólo sale
+    /// al 19. Por otro vecino, no.
+    /// </summary>
+    [Fact]
+    public void Del_19_la_puerta_mas_cercana_al_98_da_a_un_bolsillo()
+    {
+        var d = GameData.Load();
+        if (d.MapExits.Count == 0) return;
+        var mapas = new Navegante(d);
+        Func<int, bool> pisable = m => Bot.PuedeEntrar(10, d.MapZone(m));
+        Assert.True(d.IsPkMap(98), "premisa: el 98 es inseguro, ahí la runa no anda");
+        Assert.True(Bot.LaPuertaDeLaHuidaDaAUnBolsillo(mapas, d, 19, (22, 43), 98, pisable), "desde donde huyó Rufo");
+        Assert.True(Bot.LaPuertaDeLaHuidaDaAUnBolsillo(mapas, d, 19, (10, 9), 98, pisable), "desde donde huyó Lira");
+        var otros = Bot.VecinosDelMenosPeligroso(d, 19, m => m != 98 && pisable(m), _ => 0).ToList();
+        Assert.Contains(otros, v => !Bot.LaPuertaDeLaHuidaDaAUnBolsillo(mapas, d, 19, (22, 43), v, pisable));
+    }
 }
