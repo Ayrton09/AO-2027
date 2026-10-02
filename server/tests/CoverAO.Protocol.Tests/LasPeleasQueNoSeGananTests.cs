@@ -149,6 +149,25 @@ public class LasPeleasQueNoSeGananTests
     }
 
     /// <summary>
+    /// UNA RACHA NO ALCANZA PARA DEJARLA (ver <see cref="Bot.LaDejaPorImposible"/>): Quim en `alto32`, doce golpes y 22 de daño contra
+    /// un Esqueleto guerrero, que con lo medido de su arma mataba en unos 21. Sin nada medido, o con lo medido diciendo lo mismo,
+    /// se deja.
+    /// </summary>
+    [Fact]
+    public void Una_racha_no_alcanza_para_dejarla()
+    {
+        var golpe = new Bot.GolpeMedido();
+        golpe.Anotar(Spatha, golpes: 40, entraron: 16, dano: 693 - 16 * 19, defensa: 19);
+        int? conLoMedido = golpe.GolpesParaMatar(Spatha, defensa: 19, vida: 200);
+        Assert.Equal(21, conLoMedido);
+        Assert.True(Bot.NoLaVaAMatar(golpes: 12, entraron: 1, dano: 22, vidaDeLaCriatura: 200), "premisa: la pelea sola la daba por imposible");
+        Assert.False(Bot.LaDejaPorImposible(12, 1, 22, 200, conLoMedido));
+        Assert.True(Bot.LaDejaPorImposible(12, 1, 22, 200, null), "sin nada medido, la pelea decide");
+        Assert.True(Bot.LaDejaPorImposible(12, 1, 22, 200, 150), "y si lo medido dice lo mismo, también");
+        Assert.False(Bot.LaDejaPorImposible(12, 0, 0, 200, null), "sin un golpe que entre, nunca");
+    }
+
+    /// <summary>
     /// A LO QUE NO ES PRESA PERO SE MATA RÁPIDO SE LO SACA DE ENCIMA (ver <see cref="Bot.SeLaSacaDeEncima"/>): "a un lobo de mierda
     /// debería matarlo un bot ya con cierto nivel" (el autor, 01/10). Con los golpes de Lira (Daga +1, golpe de 18 a 24 antes de la
     /// defensa, uno de cada dos adentro) el Lobo cae en doce golpes; el Zombie (defensa 12, 320 de vida), el que mataba a los bots

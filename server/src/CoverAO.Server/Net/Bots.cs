@@ -4874,6 +4874,16 @@ public sealed class Bot
     private const int GolpesParaJuzgar = 10, GolpesQueSeBanca = 100;
 
     /// <summary>
+    /// ¿DEJA LA PELEA POR IMPOSIBLE? Si ésta no se gana (<see cref="NoLaVaAMatar"/>) y lo medido de su golpe con esa arma
+    /// (<see cref="GolpeMedido.GolpesParaMatar"/>, de los últimos <see cref="GolpesQueRecuerda"/>) tampoco dice que la mata en
+    /// <see cref="GolpesQueSeBanca"/> o menos. Los diez golpes de una pelea pueden ser una racha: medido en `alto32` (02/10), Quim, de
+    /// nivel 16, dejó un Esqueleto guerrero con doce golpes y 22 de daño, y con lo medido de su arma —40 golpes, 16 adentro— lo
+    /// mataba en unos 21.
+    /// </summary>
+    public static bool LaDejaPorImposible(int golpes, int entraron, int sacado, int vidaDeLaCriatura, int? golpesParaMatarConLoMedido) =>
+        NoLaVaAMatar(golpes, entraron, sacado, vidaDeLaCriatura) && golpesParaMatarConLoMedido is not <= GolpesQueSeBanca;
+
+    /// <summary>
     /// ¿DEJA DE LANZARLE? Después de <see cref="LanzadosEnVanoParaPegar"/> hechizos seguidos que no le cobraron el maná. El
     /// servidor corta sin cobrar todo lo que no sale —sin blanco, fuera de rango, la cadencia—, así que el maná que no baja es
     /// el hechizo que no salió. <c>LanzarAlgo</c> devuelve true por haber MANDADO los paquetes y arriba hay un <c>continue</c>:
@@ -5092,8 +5102,11 @@ public sealed class Bot
                 entraron += e;
                 sacado += d;
                 // Y LO QUE APRENDE DE SU GOLPE: ver `GolpeMedido`.
-                _golpe.Anotar(ArmaEnLaMano(sentidos), g, e, d, _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0);
-                if (NoLaVaAMatar(golpes, entraron, sacado, _entorno.Datos.Npc(quien.FichaNpc)?.MaxHp ?? 0))
+                var ficha = _entorno.Datos.Npc(quien.FichaNpc);
+                _golpe.Anotar(ArmaEnLaMano(sentidos), g, e, d, ficha?.Def ?? 0);
+                // Y SE DEJA SÓLO SI LO MEDIDO TAMPOCO DICE QUE LA MATA: ver `LaDejaPorImposible`.
+                if (LaDejaPorImposible(golpes, entraron, sacado, ficha?.MaxHp ?? 0,
+                                       _golpe.GolpesParaMatar(ArmaEnLaMano(sentidos), ficha?.Def ?? 0, ficha?.MaxHp ?? 0)))
                 {
                     _conQuePelea = (ArmaEnLaMano(sentidos), sentidos.Nivel);
                     _noLaLastima[quien.FichaNpc] = _conQuePelea;
