@@ -49,6 +49,8 @@ public class AprenderDeLaHuidaTests
         Assert.True(d.IsPkMap(19) && !d.IsPkMap(37), "premisa: el 19 es inseguro y la cuna no");
         Assert.True(Bot.LoDelHuecoCortaElViaje(d.IsPkMap(19), lobo, 1));
         Assert.False(Bot.LoDelHuecoCortaElViaje(d.IsPkMap(37), lobo, 1), "en un mapa seguro lo del hueco no es la amenaza");
+        Assert.True(Bot.LoDelHuecoCortaElViaje(d.IsPkMap(37), lobo, 1, salud: 0.3), "salvo con la vida en rojo (decisión del 02/10)");
+        Assert.False(Bot.LoDelHuecoCortaElViaje(d.IsPkMap(37), lobo, 1, salud: 0.5), "con la vida a la mitad, en la cuna sigue");
         Assert.False(Bot.LoDelHuecoCortaElViaje(d.IsPkMap(19), lobo, 2), "todavía no le pega");
         Assert.False(Bot.LoDelHuecoCortaElViaje(d.IsPkMap(19), null, null));
     }

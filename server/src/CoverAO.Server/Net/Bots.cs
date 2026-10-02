@@ -647,11 +647,11 @@ public sealed class Bot
             // Y LO QUE NO PUEDE LASTIMAR TAMBIÉN SE ESQUIVA: pegarle no sirve, y dejar que lo pique es tomar pociones para nada.
             var peligro = sentidos.MasCercano(ficha => EsPeligroso(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)
                 || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(ficha), conPociones, saludAhora) || NoLaLastima(ficha));
-            // Y LO DEL HUECO QUE YA LE PEGA EN UN MAPA INSEGURO, TAMBIÉN: ver `LoDelHuecoEsLaAmenaza`.
+            // Y LO DEL HUECO QUE YA LE PEGA EN UN MAPA INSEGURO, O CON LA VIDA EN ROJO, TAMBIÉN: ver `LoDelHuecoEsLaAmenaza`.
             // Menos lo que se mata rápido, que se lo saca de encima: ver `EsDelHuecoQueAsusta`.
             if (sentidos.MasCercano(ficha => EsDelHuecoQueAsusta(ficha, vidaTope, nivelAhora, conPociones, curaVeneno)) is { } delHueco
                 && LoDelHuecoEsLaAmenaza(_entorno.Datos.IsPkMap(sentidos.Mapa), _entorno.Datos.Npc(delHueco.Quien.FichaNpc),
-                                         delHueco.Pasos, peligro?.Pasos))
+                                         delHueco.Pasos, peligro?.Pasos, saludAhora))
                 peligro = delHueco;
             if (peligro is { } amenaza && amenaza.Pasos <= RadioDeSusto)
             {
@@ -1022,9 +1022,15 @@ public sealed class Bot
     /// minutos entre el nivel 9 y el 10 en la cuna, con setenta y un episodios del Lobo —del hueco de 55 a 89 de vida—, huyendo y
     /// devolviéndole el golpe en vez de cazar. En la cuna los Lobos del hueco no habían matado a nadie (`ropa1`); los que matan
     /// son los Zombies del 13, que es inseguro. DECIDIDO POR EL AUTOR (29/09).</para>
+    ///
+    /// <para>Y EN UNO SEGURO, CON LA VIDA EN ROJO (menos de <see cref="SeRetira"/>), TAMBIÉN: DECIDIDO POR EL AUTOR (02/10). Las dos
+    /// únicas muertes por Lobo en la cuna desde el nivel 5, en 204 corridas early, fueron al lado de la guarida del noroeste, donde
+    /// nacen cuatro: Quim, de nivel 8, en `early58`, y Rufo, Mago de nivel 10, en `early104`, trabado veinte segundos en un viaje
+    /// mientras un Lobo le pegaba, del 80 al 9 % tomando pociones, sin tomarlo nunca como amenaza. Con la vida alta sigue como el
+    /// 29/09, así que no vuelve lo del Paladín.</para>
     /// </summary>
-    public static bool LoDelHuecoEsLaAmenaza(bool mapaInseguro, NpcInfo? delHueco, int pasos, int? pasosDelPeligro) =>
-        mapaInseguro && LoEstaAtacando(delHueco, pasos) && (pasosDelPeligro is not { } otro || pasos < otro);
+    public static bool LoDelHuecoEsLaAmenaza(bool mapaInseguro, NpcInfo? delHueco, int pasos, int? pasosDelPeligro, double salud = 1.0) =>
+        (mapaInseguro || salud < SeRetira) && LoEstaAtacando(delHueco, pasos) && (pasosDelPeligro is not { } otro || pasos < otro);
 
     /// <summary>
     /// ¿LO DEL HUECO CORTA EL VIAJE? Si ya le pega en un mapa inseguro (<see cref="LoDelHuecoEsLaAmenaza"/>), sí, y la vuelta
@@ -1035,8 +1041,8 @@ public sealed class Bot
     /// poción por golpe. Medido en `early11` (01/10): Aldo, de nivel 6 y 61 de vida, cruzaba el 19 camino al 27; lo mordieron varios
     /// Lobos —del hueco para él— mientras caminaba, recién huyó con el 47 % y murió. DECIDIDO POR EL AUTOR (01/10).</para>
     /// </summary>
-    public static bool LoDelHuecoCortaElViaje(bool mapaInseguro, NpcInfo? delHueco, int? pasos) =>
-        pasos is { } p && LoDelHuecoEsLaAmenaza(mapaInseguro, delHueco, p, null);
+    public static bool LoDelHuecoCortaElViaje(bool mapaInseguro, NpcInfo? delHueco, int? pasos, double salud = 1.0) =>
+        pasos is { } p && LoDelHuecoEsLaAmenaza(mapaInseguro, delHueco, p, null, salud);
 
     /// <summary><see cref="LoDelHuecoCortaElViaje"/> con lo que ve ahora.</summary>
     private bool LoDelHuecoLePega(SentidosDelBot sentidos)
@@ -1046,7 +1052,7 @@ public sealed class Bot
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         var delHueco = sentidos.MasCercano(f => EsDelHuecoQueAsusta(f, vida, nivel, conPociones, curaVeneno));
         return LoDelHuecoCortaElViaje(_entorno.Datos.IsPkMap(sentidos.Mapa),
-                                      delHueco is { } h ? _entorno.Datos.Npc(h.Quien.FichaNpc) : null, delHueco?.Pasos);
+                                      delHueco is { } h ? _entorno.Datos.Npc(h.Quien.FichaNpc) : null, delHueco?.Pasos, sentidos.Salud);
     }
 
     /// <summary>
@@ -5645,7 +5651,7 @@ public sealed class Bot
                         sentidos.CuantoTiene(EsPocionDeVida), HostilCerca(sentidos)))
                     como = Paso.Dado;
                 if (como != Paso.Dado) return false;   // sin conexión, o algo más urgente que el viaje
-                // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`.
+                // Y LO DEL HUECO QUE YA LE PEGA, EN UN MAPA INSEGURO O CON LA VIDA EN ROJO, CORTA EL VIAJE: ver `LoDelHuecoCortaElViaje`.
                 if (!escapando && !deMuerto && LoDelHuecoLePega(sentidos)) { _cortoPorElHueco = true; return false; }
                 // Y LO QUE LO MATA, A TIRO, TAMBIÉN: la vuelta del ciclo huye (ver `LoPeligrosoEstaATiro`).
                 if (!escapando && !deMuerto && LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos)))
