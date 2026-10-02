@@ -297,7 +297,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
   antes no veían: de los Campos Abiertos a Rinkel por el Río Otoren, sin cruzar el desierto. Si alguien se les para en el
   camino, lo rodean o esperan a que se corra en vez de abandonar el viaje, y si es una criatura que pueden matar, la
   matan y siguen. Por lo que vienen pegando saben de antemano a qué criatura no le van a sacar nada, y no la salen a
-  cazar.
+  cazar; y lo que les pega y matan rápido —el Lobo, desde cierto nivel— se lo sacan de encima aunque no sea lo que salen a
+  buscar. Huyendo corren, y si algo que los mata de dos golpes se les acerca dejan la pelea o el viaje; lo que se acerca
+  tampoco los encuentra quietos.
 
 ## 1.0.0 — 2026-09-16
 
