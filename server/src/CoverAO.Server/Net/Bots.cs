@@ -1455,7 +1455,7 @@ public sealed class Bot
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna)
                 {
                     _tiendasSinCamino = 0;
-                    if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, cerrada, ct)
+                    if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, Sirve, cerrada, ct)
                                           : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
                     { Fracaso(); return true; }
                 }
@@ -3587,16 +3587,19 @@ public sealed class Bot
     /// ciudadano. La runa sólo se usaba en un mapa seguro al segundo intento fallido, y los que pasaban por Ullathorpe se iban
     /// antes: el segundo intento los encontraba siempre en un mapa pk.</para>
     /// </summary>
-    private async Task<bool> VolverACasaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    private async Task<bool> VolverACasaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<int, bool> sirve, Task cerrada,
+                                             CancellationToken ct)
     {
         if (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return false;
         if (_entorno.Datos.IsPkMap(sentidos.Mapa))
         {
             if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct)) return false;
             if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene
-            // Y SI LLEGÓ A UN PUEBLO DONDE LE VENDEN POCIONES —adonde lo lleva el rescate (`RescatarseAsync`)—, AHÍ COMPRA: la runa lo
-            // sacaría de ahí, y si su hogar es Nix, de vuelta a donde no le venden.
-            if (LeVendenAca(sentidos.Mapa) && _entorno.Mapas.SeLlegaAbriendoUnaPuerta(sentidos.Mapa, sentidos.Posicion, VendePociones))
+            // Y SI LO TRAJO EL RESCATE (`RescatarseAsync`) A UN PUEBLO DONDE LE VENDEN LO QUE VINO A COMPRAR (`sirve`), AHÍ COMPRA: la
+            // runa lo sacaría de ahí, y si su hogar es Nix, de vuelta a donde no le venden. El que llegó en el viaje común al mapa seguro
+            // usa la runa como antes.
+            if (_loTrajoElRescate && LeVendenAca(sentidos.Mapa)
+                && _entorno.Mapas.SeLlegaAbriendoUnaPuerta(sentidos.Mapa, sentidos.Posicion, sirve))
                 return true;
         }
         int antes = sentidos.Mapa;
@@ -3626,6 +3629,7 @@ public sealed class Bot
     /// </summary>
     private async Task<bool> IrAlMapaSeguroAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
+        _loTrajoElRescate = false;
         var pisable = Pisable(sentidos);
         if ((_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable)
              ?? _entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, pisable, SaltosHastaElPuebloLejano))
@@ -3637,9 +3641,13 @@ public sealed class Bot
             // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`. Sólo si el viaje volvió por eso, no si lo
             // cortó el peligro, la vida o las trabas, y desde donde arrancó: si se quedó sin camino a mitad del viaje, se mira de nuevo
             // la vez siguiente, desde ahí.
-            await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
+            _loTrajoElRescate = await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
         return true;
     }
+
+    /// <summary>Si el último viaje al mapa seguro (<see cref="IrAlMapaSeguroAsync"/>) terminó en el rescate (<see cref="RescatarseAsync"/>):
+    /// ver <see cref="VolverACasaAsync"/>.</summary>
+    private bool _loTrajoElRescate;
 
     /// <summary>Si el último viaje (<see cref="IrHastaAsync"/>) volvió porque desde donde estaba no había camino por ningún escalón
     /// ("desde acá no se llega"), y no por otra cosa: lo del hueco o lo peligroso a tiro, la vida, las trabas, una pelea.</summary>
