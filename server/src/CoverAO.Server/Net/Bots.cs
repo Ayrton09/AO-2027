@@ -161,6 +161,21 @@ public sealed class Bot
     /// <summary>¿Esta traba gasta un tramo del viaje? Escapando, sí; si no, sólo pasadas <see cref="TrabasPorViaje"/>.</summary>
     public static bool LaTrabaGastaElViaje(bool escapando, int trabasDelViaje) => escapando || trabasDelViaje > TrabasPorViaje;
 
+    /// <summary>
+    /// LO QUE LE TAPA EL PASO Y SE MATA, SE MATA, hasta tantas veces por viaje (<see cref="IrHastaAsync"/>): es presa y le pega, y
+    /// esperar a que se corra no sirve con lo que lo persigue, que rodeado vuelve a quedar adelante. La pelea no gasta el viaje.
+    /// Medido con `editar_sonda_traba.py` en `mid22`, `mid23`, `alto17` y `early33` (01/10): de los 1315 pasos trabados de los viajes
+    /// con diez trabas o más, 785 los tapaba un Lobo, 141 una Serpiente, 70 un Murciélago, 58 un Zombie y 41 un Esqueleto, contra 49
+    /// una persona y 25 una salida. Ciro, de nivel 21, se quedó sin tramos en (88,8) del 18 con dos Zombies y un Lobo en las tres
+    /// baldosas libres, y Petra, de nivel 8, estuvo dieciocho segundos encerrada por tres Serpientes y un Murciélago. Escapando o de
+    /// muerto, no: lo que tapa es lo que lo persigue, y al fantasma no lo atacan.
+    /// </summary>
+    public const int PeleasPorViaje = 8;
+
+    /// <summary>¿Pelea con lo que le tapa el paso? Ver <see cref="PeleasPorViaje"/>.</summary>
+    public static bool PeleaConLoQueTapa(bool escapando, bool deMuerto, int peleasDelViaje) =>
+        !escapando && !deMuerto && peleasDelViaje < PeleasPorViaje;
+
     /// <summary>Cuántas baldosas alrededor se busca dónde trabajar, cuántas unidades se hacen de una sentada,
     /// cuánto tarda cada una, y cuánto se descansa entre tandas. Trabajar sin parar toda la sesión no lo hace
     /// nadie, y además el servidor cobra energía por cada unidad.</summary>
@@ -5341,6 +5356,7 @@ public sealed class Bot
         // LO QUE TAPA EL PASO NO GASTA EL VIAJE: ver `TrabasPorViaje`.
         int trabasDelViaje = 0;
         bool trabadoPorAlguien = false;
+        int peleasDelViaje = 0;
         for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
@@ -5445,6 +5461,14 @@ public sealed class Bot
                 if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
                 if (_pasoTrabado)   // algo se paró en el camino: rodearlo
                 {
+                    // Y SI LE PEGA Y SE MATA, SE MATA: ver `PeleasPorViaje`.
+                    if (PeleaConLoQueTapa(escapando, deMuerto, peleasDelViaje) && PresaQueTapa(sentidos, baldosa) is { } tapa)
+                    {
+                        peleasDelViaje++;
+                        if (!await CazarAsync(transporte, sentidos, tapa, cerrada, ct)) return false;
+                        tramos--;
+                        break;
+                    }
                     trabas.Add(baldosa);
                     trabadoPorAlguien = true;
                     if (!LaTrabaGastaElViaje(escapando, ++trabasDelViaje)) tramos--;
@@ -5584,6 +5608,17 @@ public sealed class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         return sentidos.DondeEstan(f => EsPeligroso(f, vida, nivel, conPociones, curaVeneno));
+    }
+
+    /// <summary>La criatura parada en esa baldosa, si es presa para él y le quedan energía y vida para pelear (ver
+    /// <see cref="PeleasPorViaje"/>): con la vida bajo <see cref="SeRetira"/> la pelea se corta antes de empezar.</summary>
+    private short? PresaQueTapa(SentidosDelBot sentidos, (byte X, byte Y) baldosa)
+    {
+        if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira
+            || sentidos.QuienEstaEn(baldosa) is not { EsNpc: true } quien) return null;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        return EsPresa(quien.FichaNpc, sentidos.VidaMaxima, sentidos.Nivel, conPociones, curaVeneno) ? quien.CharIndex : null;
     }
 
     /// <summary>Lo que tarda ESTE bot en dar un paso.</summary>

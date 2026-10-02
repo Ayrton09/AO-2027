@@ -594,6 +594,24 @@ public class SentidosDelBotTests
         Assert.False(s.AlgoPegado());
     }
 
+    /// <summary>Quién está parado en una baldosa: la criatura o la persona que ve ahí, nunca él mismo, y nadie donde no hay nadie.
+    /// Es con lo que el viaje sabe si lo que le tapa el paso es una presa (ver <see cref="Bot.PeleasPorViaje"/>).</summary>
+    [Fact]
+    public void Sabe_quien_esta_parado_en_una_baldosa()
+    {
+        var s = Ubicado(50, 50);
+        s.Recibir(ServerMessages.CharacterCreate(Criatura(702, ficha: 501, 51, 50)));
+        s.Recibir(ServerMessages.CharacterCreate(Personaje(OtroIndice, "Rugura", 50, 51)));
+
+        Assert.Equal((short)501, s.QuienEstaEn((51, 50))?.FichaNpc);
+        Assert.Equal(OtroIndice, s.QuienEstaEn((50, 51))?.CharIndex);
+        Assert.Null(s.QuienEstaEn((50, 50)));
+        Assert.Null(s.QuienEstaEn((49, 50)));
+
+        s.Recibir(ServerMessages.CharacterMove(702, 52, 50));
+        Assert.Null(s.QuienEstaEn((51, 50)));
+    }
+
     private static SentidosDelBot Ubicado(byte x, byte y)
     {
         var s = new SentidosDelBot();

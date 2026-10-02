@@ -589,6 +589,17 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Quién está parado en esa baldosa, criatura o persona, de lo que ve y sin contarse a sí mismo.</summary>
+    public Visible? QuienEstaEn((byte X, byte Y) baldosa)
+    {
+        lock (_candado)
+        {
+            foreach (var v in _visibles.Values)
+                if (v.CharIndex != _miCharIndex && v.X == baldosa.X && v.Y == baldosa.Y) return v;
+            return null;
+        }
+    }
+
     /// <summary>Dónde está ese personaje ahora, si sigue a la vista.</summary>
     public Visible? Donde(short charIndex)
     {

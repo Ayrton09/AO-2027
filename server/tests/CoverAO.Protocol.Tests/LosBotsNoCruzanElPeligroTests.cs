@@ -195,6 +195,21 @@ public class LosBotsNoCruzanElPeligroTests
     }
 
     /// <summary>
+    /// LO QUE TAPA EL PASO Y SE MATA, SE MATA, hasta el tope (ver <see cref="Bot.PeleasPorViaje"/>): en `mid22`, Ciro, de nivel 21,
+    /// se quedó sin tramos en una esquina del 18 con dos Zombies y un Lobo tapándole las tres baldosas libres, esperando a que se
+    /// corrieran. Escapando o de muerto, no se pelea.
+    /// </summary>
+    [Fact]
+    public void Lo_que_tapa_el_paso_se_mata_hasta_el_tope()
+    {
+        Assert.True(Bot.PeleaConLoQueTapa(escapando: false, deMuerto: false, 0));
+        Assert.True(Bot.PeleaConLoQueTapa(escapando: false, deMuerto: false, Bot.PeleasPorViaje - 1));
+        Assert.False(Bot.PeleaConLoQueTapa(escapando: false, deMuerto: false, Bot.PeleasPorViaje), "pasado el tope, se rodea");
+        Assert.False(Bot.PeleaConLoQueTapa(escapando: true, deMuerto: false, 0), "escapando, lo que tapa es lo que lo persigue");
+        Assert.False(Bot.PeleaConLoQueTapa(escapando: false, deMuerto: true, 0), "de muerto no se pelea");
+    }
+
+    /// <summary>
     /// EL CAMINO DE UN VIAJE, POR ESCALONES: por donde no lo matan, por donde cazaría y por el de siempre; el viaje largo, sólo por
     /// los dos primeros. De muerto, por el de siempre: escrito como <c>deMuerto ? null : sinPeligro ?? (...)</c>, el cadáver no
     /// encontraba ninguna puerta y no llegaba nunca al sacerdote de otro mapa.
