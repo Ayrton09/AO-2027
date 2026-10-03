@@ -2182,10 +2182,10 @@ public sealed class Bot
         // entra sin comida, se quedaba frente al de Comidas de Illiandor (o del 815) la corrida entera, perdiendo unas 820
         // monedas por minuto y terminando con 6 o 27 pollos, sin salir nunca a cazar.
         if (o is { IsFood: true }
-            && !SobraOSeCambia(sentidos, PuntosDeComida, obj, ComidaQueSeLleva(sentidos.Nivel),
+            && !SobraOSeCambia(sentidos, ComidaPropia, obj, ComidaQueSeLleva(sentidos.Nivel),
                                SinNadaQueTomar(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
         if (o is { IsDrink: true }
-            && !SobraOSeCambia(sentidos, PuntosDeBebida, obj, BebidaQueSeLleva(sentidos.Nivel),
+            && !SobraOSeCambia(sentidos, BebidaPropia, obj, BebidaQueSeLleva(sentidos.Nivel),
                                SinNadaQueComer(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
         // Y LO MEJOR QUE TIENE DE CADA CLASE DE EQUIPO TAMPOCO: ver `EsLoMejorQueTieneDeEsaClase`. Sin esto el bot
         // vendía la armadura que acababa de comprar —o la que se le desequipó al morir— y la recompraba en el mismo
@@ -2358,8 +2358,11 @@ public sealed class Bot
         bool esComida = PuntosDeComida(obj) > 0, esBebida = PuntosDeBebida(obj) > 0;
         if ((!esComida && !esBebida) || enLaRanura <= 1) return enLaRanura;
         Func<short, int> rinde = esComida ? PuntosDeComida : PuntosDeBebida;
+        // Contra lo PROPIO, lo mismo que mira la compra (`ReponerAsync` con `ComidaPropia`): lo de novato no se vende ni cuenta para
+        // la reserva. Medido en `alto45` (03/10): Elmo, Clérigo de nivel 15 con 98 botellas de novato (2.940 puntos), vendía toda
+        // el agua que compraba porque ya pasaba los 2000, y la volvía a comprar: cuatro visitas seguidas, 4.640 monedas.
         int reserva = esComida ? ComidaQueSeLleva(s.Nivel) : BebidaQueSeLleva(s.Nivel);
-        int sobran = (s.Suma(rinde) - reserva) / rinde(obj);
+        int sobran = (s.Suma(esComida ? ComidaPropia : BebidaPropia) - reserva) / rinde(obj);
         return (short)Math.Clamp(sobran > 0 ? sobran : UnidadesDeApuro, 1, enLaRanura);
     }
 
