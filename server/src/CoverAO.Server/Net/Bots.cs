@@ -4931,27 +4931,31 @@ public sealed class Bot
         (noLaLastima || ((esDelHueco || !laPeleaSeGana) && mapaInseguro)) && NoSeLoSacaDeEncima(huidasDeLaMismaCriatura);
 
     /// <summary>
-    /// ¿LA PELEA SE GANA? (DECIDIDO POR EL AUTOR, 03/10) Si con lo medido de su golpe (<see cref="GolpeMedido.GolpesParaMatar"/>) la
+    /// ¿LA PELEA SE GANA? (DECIDIDO POR EL AUTOR, 03/10) Con lo medido de su golpe (<see cref="GolpeMedido.GolpesParaMatar"/>), si la
     /// mata antes de que ella le saque la vida que tiene ahora: sus golpes a su ritmo (<see cref="GolpeMinMs"/>-<see cref="GolpeMaxMs"/>)
     /// contra los de la criatura cada <see cref="NpcSystem.IntervaloAtaqueMs"/> con su golpe medio, sin contar pociones ni los que
-    /// erra ella. Sin medida (otra arma, magia, pocos golpes) no se sabe, y no se gana. Lo usan el acorralado, que pelea sólo si gana,
-    /// y la salida del mapa (<see cref="SeVaDelMapaPor"/>), que en un mapa inseguro lo saca de lo que no le gana.
+    /// erra ella. Sin medida (otra arma, pocos golpes, el que pelea con hechizos), lo que eligió el autor: si no lo mata de dos golpes
+    /// con la vida de ahora (<see cref="LoMataDeDosGolpesAhora"/>). Sólo cuenta el golpe cuerpo a cuerpo de la criatura: lo que pega
+    /// con hechizos no entra en la cuenta. Lo usan el acorralado, que pelea sólo si gana, y la salida del mapa
+    /// (<see cref="SeVaDelMapaPor"/>), que en un mapa inseguro lo saca de lo que no le gana.
     ///
-    /// <para>Medido (03/10, 493 corridas guardadas): 19 de 133 muertes fueron peleando acorralado con pociones, la causa número uno.
-    /// En `tardeN9` y `tardeN10` Aldo, Leñador de 219 de vida, peleó parado con un Ent en el Bosque de Suramei (283) —golpe 40-90,
-    /// 650 de vida, veneno— tomando una poción de 30 cada 2,5 s, y murió las dos veces con más de 160 pociones encima.</para>
+    /// <para>La cuenta con lo medido es más estricta que "no lo mata de dos golpes" a propósito. Medido en `tardeN9` y `tardeN10`
+    /// (03/10): Aldo, Leñador de 219 de vida, peleó parado con un Ent en el Bosque de Suramei (283) —golpe 40-90, 650 de vida,
+    /// veneno— tomando una poción de 30 cada 2,5 s, y murió las dos veces con más de 160 pociones encima; el Ent no lo mata de dos
+    /// golpes (180), pero tarda mucho más en matarlo él.</para>
     /// </summary>
     public static bool LaPeleaSeGana(int? golpesParaMatarla, int vidaAhora, NpcInfo ella)
     {
-        if (golpesParaMatarla is not { } golpes || golpes == int.MaxValue) return false;
+        if (golpesParaMatarla is not { } golpes) return !LoMataDeDosGolpesAhora(ella, vidaAhora);
+        if (golpes == int.MaxValue) return false;
         long msParaMatarla = (long)golpes * (GolpeMinMs + GolpeMaxMs) / 2;
         long golpesQueRecibe = (msParaMatarla + NpcSystem.IntervaloAtaqueMs - 1) / NpcSystem.IntervaloAtaqueMs;
         return golpesQueRecibe * (ella.MinHit + ella.MaxHit) / 2 < vidaAhora;
     }
 
-    /// <summary><see cref="LaPeleaSeGana"/> para este bot, con lo medido de su golpe de arma, también si sabe magia: es la pelea sin
-    /// hechizos, que alcanza para juzgar. Medido en `tardeN16` (03/10): con lo medido sólo sin magia, Milo, Paladín de nivel 23 con
-    /// el Martillo de Guerra, "no le ganaba" a un Lobo y se iba del 19. El que casi no pega con arma no tiene medida, y no pelea.</summary>
+    /// <summary><see cref="LaPeleaSeGana"/> para este bot, con lo medido de su golpe de arma, también si sabe magia. Medido en
+    /// `tardeN16` (03/10): Milo, Paladín de nivel 23 que caza con hechizos, no tenía medida (ningún golpe de arma) y, cuando la falta
+    /// de medida era "no gana", se iba del 19 por un Lobo.</summary>
     private bool LaPeleaSeGanaAca(short ficha, int vidaAhora) =>
         _entorno.Datos.Npc(ficha) is { } n
         && LaPeleaSeGana(_golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp), vidaAhora, n);

@@ -230,8 +230,6 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.PrimeroLasPociones(vaPorPociones: false, pocionesPropias: 0), "si no va por pociones, no");
     }
 
-    /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
-    /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     /// <summary>Sin pueblo al que ir y sin lo esencial, la runa a la primera compra sin tienda; si hay pueblo o no le falta lo
     /// esencial, a la segunda, como siempre.</summary>
     [Theory]
@@ -241,6 +239,8 @@ public class MochilaDelBotTests : IDisposable
     public void Sin_pueblo_y_sin_lo_esencial_la_runa_a_la_primera(bool leFaltaLoEsencial, bool hayPueblo, int fracasos) =>
         Assert.Equal(fracasos, Bot.FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo));
 
+    /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
+    /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     private static double Horas(int puntos, int vueltas) =>
         (double)puntos / Survival.DecayStep * vueltas * GameLoop.TickMs / 3_600_000;
 

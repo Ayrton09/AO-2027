@@ -335,9 +335,10 @@ public sealed class Navegante
     /// <para>Y DE ESE MAPA, POR DONDE SE ENTRA AL MAPA Y NO A UNA FRANJA: entre sus entradas a los mismos saltos, la primera cuya
     /// zona no entra en una pantalla (<see cref="BaldosasDeUnaPantalla"/>); si ninguna, la primera, como antes. Las entradas salen en
     /// el orden de la data, y la primera de un mapa puede ser una franja del lado de afuera de la muralla, como en
-    /// <see cref="PuebloMasCercano"/>. Medido (03/10, 262 corridas): desde el 98 la primera entrada a Rinkel es (10,8), una franja
-    /// de 113 baldosas entre el borde y la muralla oeste sin mercader ni sacerdote; la del pueblo, (10,69), salía segunda. Hubo 196
-    /// llegadas ahí: Petra y Osmar se sentaban a fabricar y después no llegaban al sacerdote ni a las tiendas, y Rufo, caminando al
+    /// <see cref="PuebloMasCercano"/>. Medido (03/10, en las corridas guardadas): desde el 98 la primera entrada a Rinkel es (10,8),
+    /// una franja de 113 baldosas entre el borde y la muralla oeste sin mercader ni sacerdote; la del pueblo, (10,69), salía segunda.
+    /// Hubo unas 185 llegadas ahí (Milo 69, Petra 65, Osmar 36): Petra y Osmar se sentaban a fabricar y después no llegaban al
+    /// sacerdote ni a las tiendas, y Rufo, caminando al
     /// mapa seguro, quedaba sin tienda y la runa lo devolvía a Nix, donde no le venden (en `mid52` murió rehaciendo el rescate).
     /// Lo mismo pasa entrando al Puerto de Illiandor (179) desde el 275.</para>
     /// </summary>

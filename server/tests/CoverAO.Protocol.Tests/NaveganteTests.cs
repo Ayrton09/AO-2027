@@ -423,8 +423,8 @@ public class NaveganteTests
     /// <summary>
     /// Y DESDE EL 98, EL MAPA SEGURO ES EL PUEBLO Y NO LA FRANJA (ver <see cref="Navegante.MapaMasCercano"/>): la primera entrada al 20
     /// en el orden de la data es (10,8), 113 baldosas afuera de la muralla oeste, y la del pueblo (10,69) sale segunda, a los mismos
-    /// saltos. Medido (03/10): Rufo, Milo, Petra y Osmar terminaban en la franja yendo al mapa seguro o a fabricar, 196 veces en
-    /// 262 corridas. Se rompe con la primera entrada, como antes.
+    /// saltos. Medido (03/10): Milo, Petra, Osmar y Rufo terminaban en la franja yendo al mapa seguro o a fabricar, unas 185 veces
+    /// en las corridas guardadas. Se rompe con la primera entrada, como antes.
     /// </summary>
     [Fact]
     public void Desde_el_98_el_mapa_seguro_es_el_pueblo_de_Rinkel_y_no_la_franja()

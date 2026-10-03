@@ -103,14 +103,16 @@ public class LoDelHuecoTests
     /// LA PELEA SE GANA SI LA MATA ANTES DE QUE ELLA LE SAQUE LA VIDA QUE TIENE: Aldo, Leñador de 219 de vida, contra un Ent
     /// (golpe 40-90, 650 de vida), si lo mata en 26 golpes tarda unos 36 s, en los que el Ent le pega 13 veces, 845: no gana (murió
     /// así en `tardeN9` y `tardeN10`). Contra el Lobo de la cuna (golpe 12-18, 75 de vida), si lo mata en 6 golpes, un bot de 80 de
-    /// vida recibe tres, 45: gana. Sin medida del golpe, o si no le saca nada, no se gana.
+    /// vida recibe tres, 45: gana. Si no le saca nada, no se gana; sin medida del golpe, se gana si no lo mata de dos golpes con la
+    /// vida de ahora (lo que eligió el autor): al Lobo sí (36 contra 80), al Ent no (180 contra 150).
     /// </summary>
     [Fact]
     public void La_pelea_se_gana_si_la_mata_antes()
     {
         Assert.False(Bot.LaPeleaSeGana(26, 219, Criatura(40, 90, 650)));
         Assert.True(Bot.LaPeleaSeGana(6, 80, Criatura(12, 18, 75)));
-        Assert.False(Bot.LaPeleaSeGana(null, 80, Criatura(12, 18, 75)));
+        Assert.True(Bot.LaPeleaSeGana(null, 80, Criatura(12, 18, 75)));
+        Assert.False(Bot.LaPeleaSeGana(null, 150, Criatura(40, 90, 650)));
         Assert.False(Bot.LaPeleaSeGana(int.MaxValue, 80, Criatura(12, 18, 75)));
     }
 
