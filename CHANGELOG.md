@@ -305,6 +305,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
   Con la vida en rojo, lo que les pega en un mapa seguro también los hace huir, y el que queda varado donde no le
   venden sale a pie a buscar el pueblo más cercano que le vende lo que le falta, sin cruzar los mapas donde los
   guardias van por él.
+  Ya no compran comida o bebida para revenderla en el mismo mostrador, y si la runa los deja donde les venden, compran
+  ahí. Acorralados por algo que los persigue pelean sólo si la pelea se gana; si no, se van del mapa. El rescate del
+  varado sigue si se corta en el camino, y al ir a un pueblo entran por el pueblo y no por un rincón de afuera de la
+  muralla.
 
 ## 1.0.0 — 2026-09-16
 
