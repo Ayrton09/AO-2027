@@ -240,7 +240,7 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(fracasos, Bot.FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo));
 
     /// <summary>
-    /// CON LA MOCHILA LLENA SE TIRA LO QUE NO VALE NADA Y NO LE SIRVE, para que entre el arma del camino (`alto45`: Hilda, cinco
+    /// CON LA MOCHILA LLENA SE TIRA LO QUE NO VALE NADA Y NO LE SIRVE, para que entre el arma del camino (`alto45`: Hilda, cinco o seis
     /// viajes al herrero sin poder comprar, con tres anillos y una pluma de botín). Lo de novato no: el servidor no lo deja tirar.
     /// </summary>
     [Fact]
@@ -262,6 +262,9 @@ public class MochilaDelBotTests : IDisposable
         Assert.False(Bot.EsParaTirar(Obj("Poción", 11, 0), false, false));
         Assert.False(Bot.EsParaTirar(Obj("Llave", 9, 0), false, false));
         Assert.False(Bot.EsParaTirar(Obj("Flecha", 32, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Oro", 5, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Barca", 31, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Montura", 44, 0), false, false));
     }
 
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja

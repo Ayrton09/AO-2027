@@ -1272,9 +1272,11 @@ public sealed class Bot
                              && LeAlcanzaParaUna(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaPocion);
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
-        bool vaPorEquipo = !enApuro && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
+        // CON LA MOCHILA LLENA NO ENTRA NADA NUEVO, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
+        bool hayLugar = sentidos.RanurasOcupadas().Count < GameLimits.MaxInventorySlots;
+        bool vaPorEquipo = !enApuro && hayLugar && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
         // Y EL QUE CASTEA APRENDE HECHIZOS NUEVOS, que es su forma de mejorar: el arma no le sirve de mucho.
-        bool vaPorHechizo = !enApuro && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
+        bool vaPorHechizo = !enApuro && hayLugar && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
         // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
         bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, sentidos.Oro, CuestaElAntidoto);
@@ -1287,8 +1289,6 @@ public sealed class Bot
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => ArmaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
         bool vaPorElArma = faltaArma && !enApuro;
-        // CON LA MOCHILA LLENA EL ARMA Y LA ROPA NO ENTRAN, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
-        bool hayLugar = sentidos.RanurasOcupadas().Count < GameLimits.MaxInventorySlots;
         bool hayArmaAlAlcance = vaPorElArma && hayLugar && ArmaAlAlcance(sentidos, VendeElArma, MapaAtiende);
         bool VendeRopa(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
@@ -2431,7 +2431,7 @@ public sealed class Bot
     /// levantar. Con las 25 ranuras ocupadas el servidor rechaza toda compra que no se apile (`FindSlotFor` en `HandleCommerceBuy`),
     /// y el bot no se enteraba: viajaba, no compraba y volvía a salir.
     ///
-    /// <para>Medido en `alto45` y `alto46` (03/10): Hilda, Druida de nivel 14 con la plata para la Daga +3, fue cinco o seis veces
+    /// <para>Medido en `alto45` y `alto46` (03/10): Hilda, Druida de nivel 14 con la plata para la Daga +2 y la +3, fue cinco o seis veces
     /// al Herrero Armas del 815 y volvió con las manos vacías, cazando sin arma unos trece minutos, hasta que en el 16 el servidor
     /// le sacó el kit de novato y le hizo lugar. Llevaba tres anillos de botín y una Pluma de Águila, que no valen nada. En los 184
     /// logs con la sonda del arma: 129 compras fallidas con la plata para pagarlas, todas de ella, en 23 corridas.</para>
