@@ -3593,7 +3593,7 @@ public sealed class Bot
         if (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return false;
         if (_entorno.Datos.IsPkMap(sentidos.Mapa))
         {
-            if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct)) return false;
+            if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct, sirve)) return false;
             if (_entorno.Datos.IsPkMap(sentidos.Mapa)) return true;   // no llegó: se vuelve a probar en la compra que viene
             // Y SI LO TRAJO EL RESCATE (`RescatarseAsync`) A UN PUEBLO DONDE LE VENDEN LO QUE VINO A COMPRAR (`sirve`), AHÍ COMPRA: la
             // runa lo sacaría de ahí, y si su hogar es Nix, de vuelta a donde no le venden. El que llegó en el viaje común al mapa seguro
@@ -3626,8 +3626,12 @@ public sealed class Bot
     /// (30/09): para Milo, republicano de nivel 23, desde el 19 el mapa seguro más cercano es Rinkel, a seis —Ullathorpe, Nix y
     /// Banderbill tienen guardias imperiales que van por él—, y pasó la hora sin comida y con tres pociones. Y en `tardeE` (01/10),
     /// sin coto en el 19 y sin esto, buscaba sólo a cinco y no salía nunca.</para>
+    ///
+    /// <para>Si sale el rescate, va al pueblo que le vende lo que <paramref name="sirve"/>: lo que vino a comprar el que vuelve a
+    /// casa (el que iba por comida no camina hasta un pueblo que vende sólo pociones); sin compra, el que vende pociones.</para>
     /// </summary>
-    private async Task<bool> IrAlMapaSeguroAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    private async Task<bool> IrAlMapaSeguroAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct,
+                                                Func<int, bool>? sirve = null)
     {
         _loTrajoElRescate = false;
         var pisable = Pisable(sentidos);
@@ -3641,7 +3645,7 @@ public sealed class Bot
             // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`. Sólo si el viaje volvió por eso, no si lo
             // cortó el peligro, la vida o las trabas, y desde donde arrancó: si se quedó sin camino a mitad del viaje, se mira de nuevo
             // la vez siguiente, desde ahí.
-            _loTrajoElRescate = await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
+            _loTrajoElRescate = await RescatarseAsync(transporte, sentidos, sirve ?? VendePociones, cerrada, ct);
         return true;
     }
 
