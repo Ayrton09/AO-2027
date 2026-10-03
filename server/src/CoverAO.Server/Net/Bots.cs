@@ -1520,6 +1520,7 @@ public sealed class Bot
         if (!sentidos.Comerciando) { Fracaso(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
+        if (compro) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
@@ -3168,6 +3169,36 @@ public sealed class Bot
     public const int BusquedasSinGanar = 6;
 
     /// <summary>
+    /// ¿SALE DEL POZO? En un mapa seguro del que no se llega a pie a ningún otro coto (Lindos: se entra por un lado y la vuelta es un
+    /// teleport detrás de una puerta que el bot no abre), el que acaba de comprar ahí se va con la runa, y el que caza se va en cuanto
+    /// pasa <see cref="PozoSinGanarMs"/> sin ganar experiencia, sin esperar las <see cref="BusquedasSinGanar"/> búsquedas, que con una
+    /// presa a la vista llegan cada <see cref="PacienciaSinPresaMs"/>. La runa del que está en un mapa seguro lo lleva a casa.
+    ///
+    /// <para>Medido (03/10) en `early110` a `early121`: 60 estadías en Lindos, 36 minutos de bot por corrida, 31 de ellos después de
+    /// la última subida de nivel; 27 eran de compras (Dalia por la Caña de Pesca, los que salían de Rinkel por el Sastre) y después de
+    /// comprar se quedaban con las cuatro Águilas, y la salida esperaba 4,4 minutos de mediana hasta "sin ganar" y otro más hasta la
+    /// runa. Salir caminando no ahorra nada: la runa del novato deja donde deja el teleport.</para>
+    /// </summary>
+    public static bool SaleDelPozo(bool recienCompro, long sinGanarMs) => recienCompro || sinGanarMs >= PozoSinGanarMs;
+
+    /// <summary>Cuánto sin ganar experiencia en un pozo antes de irse: ver <see cref="SaleDelPozo"/>.</summary>
+    public const int PozoSinGanarMs = 90_000;
+
+    /// <summary>Cuánto dura "recién compró ahí" para <see cref="SaleDelPozo"/>.</summary>
+    private const int RecienCompradoMs = 5 * 60_000;
+
+    /// <summary>Desde cuándo no cambia la experiencia, el nivel ni el mapa (ver <see cref="SaleDelPozo"/>).</summary>
+    public static (int Mapa, int Experiencia, int Nivel, long Desde) LaUltimaGanancia(
+        (int Mapa, int Experiencia, int Nivel, long Desde) antes, int mapa, int experiencia, int nivel, long ahora) =>
+        antes.Desde > 0 && antes.Mapa == mapa && antes.Experiencia == experiencia && antes.Nivel == nivel
+            ? antes : (mapa, experiencia, nivel, ahora);
+
+    private (int Mapa, int Experiencia, int Nivel, long Desde) _ganancia;
+
+    /// <summary>Dónde y cuándo compró por última vez (ver <see cref="SaleDelPozo"/>).</summary>
+    private (int Mapa, long Cuando) _comproEn;
+
+    /// <summary>
     /// CUÁNTO LE GUSTA ESE MAPA A ESTE BOT, para desempatar entre cotos que rinden lo mismo. Sale de la semilla del nombre,
     /// así que es siempre el mismo para el mismo bot —cada uno tiene "su" lugar— y distinto entre bots.
     ///
@@ -3321,15 +3352,29 @@ public sealed class Bot
         int porLoQueRinde = 0;
         Func<int, bool> sirve = esPresaDelOficio;
         Func<int, int> rinde = f => esPresa(f) ? (int)(_entorno.Datos.Npc(f)?.GiveExp ?? 0) : 0;
+        (int Mapa, byte X, byte Y, int Saltos)? CotoComoSiempre(Func<int, bool> noVa, out bool oro, out int porLoQueRindeMas) =>
+            CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
+                                 cruza, m => seCazaAhi(m) && !noVa(m), m => SigueLleno(_llenoHasta, m, ahora),
+                                 m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso)
+                                      && !nunca(m) && !noVa(m),
+                                 m => CuantoLeGusta(_propio, m), out oro, out porLoQueRindeMas, m => nunca(m) || noVa(m),
+                                 EligePorLoQueSuma(nivel));
         if (hallado is null)
         {
-            hallado = CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
-                                           cruza, seCazaAhi, m => SigueLleno(_llenoHasta, m, ahora),
-                                           m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso)
-                                                && !nunca(m),
-                                           m => CuantoLeGusta(_propio, m), out porElOro, out porLoQueRinde, nunca,
-                                           EligePorLoQueSuma(nivel));
+            hallado = CotoComoSiempre(_ => false, out porElOro, out porLoQueRinde);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
+        }
+        // Y DE UN POZO, CON LA RUNA EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
+        _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel, ahora);
+        // Menos donde la runa lo deja: ahí usarla no lo saca.
+        if (hallado?.Mapa == sentidos.Mapa && !_entorno.Datos.IsPkMap(sentidos.Mapa) && sentidos.Mapa != _runaDejoEn
+            && SaleDelPozo(_comproEn.Mapa == sentidos.Mapa && ahora - _comproEn.Cuando < RecienCompradoMs, ahora - _ganancia.Desde)
+            && CotoComoSiempre(m => m == sentidos.Mapa, out _, out _) is null)
+        {
+            _noDaNadaHasta[sentidos.Mapa] = _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
+            _comproEn = default;
+            _cotosFallidos = CotosFallidosAntesDeLaRuna - 1;
+            hallado = null;
         }
         // SIN NINGÚN COTO, COMO EL VIAJE QUE NO LLEGA: al segundo, a casa con la runa (ver `SiEstaEncerrado`). Que no haya ninguno
         // quiere decir que acá no hay nada que pueda cazar y que no hay otro lugar al que llegue sin peligro; sin esto no se viajaba

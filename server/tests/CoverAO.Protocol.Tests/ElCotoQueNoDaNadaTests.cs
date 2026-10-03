@@ -74,4 +74,22 @@ public class ElCotoQueNoDaNadaTests
                                                   m => Bot.SirveParaIrseDelLleno(Bot.SigueLleno(llenos, m, 0), Nacen(m), peligroso),
                                                   null, out _, out _);
     }
+
+    /// <summary>
+    /// DE UN POZO SE SALE CON LA RUNA RECIÉN COMPRADO O A LOS 90 S SIN GANAR (ver <see cref="Bot.SaleDelPozo"/>), y la cuenta del
+    /// tiempo sin ganar vuelve a cero con cualquier cambio de experiencia, de nivel o de mapa (<see cref="Bot.LaUltimaGanancia"/>).
+    /// </summary>
+    [Fact]
+    public void Del_pozo_se_sale_recien_comprado_o_a_los_noventa_segundos_sin_ganar()
+    {
+        Assert.True(Bot.SaleDelPozo(recienCompro: true, sinGanarMs: 0));
+        Assert.False(Bot.SaleDelPozo(recienCompro: false, sinGanarMs: Bot.PozoSinGanarMs - 1));
+        Assert.True(Bot.SaleDelPozo(recienCompro: false, sinGanarMs: Bot.PozoSinGanarMs));
+
+        var g = Bot.LaUltimaGanancia(default, 62, 100, 5, 1_000);
+        Assert.Equal(1_000, g.Desde);
+        Assert.Equal(1_000, Bot.LaUltimaGanancia(g, 62, 100, 5, 50_000).Desde);
+        Assert.Equal(50_000, Bot.LaUltimaGanancia(g, 62, 118, 5, 50_000).Desde);
+        Assert.Equal(50_000, Bot.LaUltimaGanancia(g, 37, 100, 5, 50_000).Desde);
+    }
 }
