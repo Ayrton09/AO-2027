@@ -1,0 +1,57 @@
+{
+  "name": "coverao-escritorio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CoverAO para escritorio: una ventana propia que carga el cliente web del server.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "windows": "electron-builder --win",
+    "linux": "electron-builder --linux",
+    "mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "ar.coverao.escritorio",
+    "productName": "CoverAO",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "elegir.html",
+      "build/icon.png"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "CoverAO"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.games",
+      "icon": "build/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  }
+}

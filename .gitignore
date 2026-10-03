@@ -3,6 +3,7 @@
 *.user
 *.tsbuildinfo
 node_modules/
+desktop/release/
 __pycache__/
 *.pyc
 *.log

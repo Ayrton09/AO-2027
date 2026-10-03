@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <title>CoverAO — Elegir server</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d0904; color: #e8dcc0; font: 15px/1.4 Georgia, serif; }
+    body { display: flex; align-items: center; justify-content: center; }
+    form { width: min(420px, 90vw); padding: 28px; background: #1c130a; border: 1px solid #5a4223; border-radius: 8px; }
+    h1 { margin: 0 0 4px; font-size: 22px; color: #e8c876; }
+    p { margin: 0 0 16px; color: #b8a888; font-size: 13px; }
+    label { display: block; margin-bottom: 6px; }
+    input { box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; color: inherit; background: #0d0904;
+            border: 1px solid #5a4223; border-radius: 4px; }
+    input:focus { outline: none; border-color: #e8c876; }
+    button { margin-top: 14px; width: 100%; padding: 9px; font: inherit; font-weight: bold; color: #1c130a; background: #e8c876;
+             border: 0; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #f3d98f; }
+    .error { margin-top: 12px; color: #e88a6e; font-size: 13px; min-height: 1em; }
+    .ayuda { margin-top: 14px; color: #8a7a5c; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <form id="f">
+    <h1>CoverAO</h1>
+    <p>¿A qué server te conectás?</p>
+    <label for="servidor">Dirección</label>
+    <input id="servidor" autofocus spellcheck="false" placeholder="localhost:7669" />
+    <button type="submit">Entrar</button>
+    <div class="error" id="error"></div>
+    <div class="ayuda">Queda guardado. Para cambiarlo después: Ctrl+Shift+S.</div>
+  </form>
+  <script>
+    const q = new URLSearchParams(location.search);
+    const campo = document.getElementById('servidor');
+    const error = document.getElementById('error');
+    campo.value = q.get('servidor') || '';
+    error.textContent = q.get('error') || '';
+    campo.select();
+    document.getElementById('f').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      error.textContent = '';
+      error.textContent = (await window.escritorio.elegirServidor(campo.value)) || '';
+    });
+  </script>
+</body>
+</html>
