@@ -86,6 +86,34 @@ public class LoDelHuecoTests
         Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, huidasDeLaMismaCriatura: 3));
     }
 
+    /// <summary>LO PELIGROSO QUE NO LE GANA, FUERA DEL MAPA, PERO SÓLO EN UNO INSEGURO (autor, 03/10): como lo del hueco.</summary>
+    [Fact]
+    public void Lo_peligroso_que_no_le_gana_lo_saca_de_un_mapa_inseguro()
+    {
+        Assert.True(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, huidasDeLaMismaCriatura: 3, laPeleaSeGana: false));
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: false, huidasDeLaMismaCriatura: 3, laPeleaSeGana: false));
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, huidasDeLaMismaCriatura: 2, laPeleaSeGana: false));
+    }
+
+    private static NpcInfo Criatura(int minHit, int maxHit, int vida) =>
+        new(Index: 900, Name: "de prueba", Body: 1, Head: 1, Heading: 3, MaxHp: vida, MinHit: minHit, MaxHit: maxHit, Def: 0,
+            GiveExp: 0, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 0, Hostile: true, Attackable: true);
+
+    /// <summary>
+    /// LA PELEA SE GANA SI LA MATA ANTES DE QUE ELLA LE SAQUE LA VIDA QUE TIENE: Aldo, Leñador de 219 de vida, contra un Ent
+    /// (golpe 40-90, 650 de vida), si lo mata en 26 golpes tarda unos 36 s, en los que el Ent le pega 13 veces, 845: no gana (murió
+    /// así en `tardeN9` y `tardeN10`). Contra el Lobo de la cuna (golpe 12-18, 75 de vida), si lo mata en 6 golpes, un bot de 80 de
+    /// vida recibe tres, 45: gana. Sin medida del golpe, o si no le saca nada, no se gana.
+    /// </summary>
+    [Fact]
+    public void La_pelea_se_gana_si_la_mata_antes()
+    {
+        Assert.False(Bot.LaPeleaSeGana(26, 219, Criatura(40, 90, 650)));
+        Assert.True(Bot.LaPeleaSeGana(6, 80, Criatura(12, 18, 75)));
+        Assert.False(Bot.LaPeleaSeGana(null, 80, Criatura(12, 18, 75)));
+        Assert.False(Bot.LaPeleaSeGana(int.MaxValue, 80, Criatura(12, 18, 75)));
+    }
+
     /// <summary>
     /// LA SALIDA QUE NO LO SACÓ SE SALTEA UN RATO (`hueco2`, `hueco3`): escapando, los bots elegían siempre la esquina (9,7) del 13,
     /// tapada por un Zombie, y morían ahí intentándolo. La vez siguiente prueba por otro vecino; pasado el rato, otra vez por esa.

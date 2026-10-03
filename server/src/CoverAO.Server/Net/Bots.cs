@@ -668,7 +668,8 @@ public sealed class Bot
                 // viaje que se acababa de cortar le había dejado de uno a dos minutos de espera, y murió.
                 bool sacerdoteAMano = Environment.TickCount64 >= _proximoPedidoAlSacerdote
                     && sentidos.MasCercano(EsSacerdote) is { } alLado && AlAlcanceDelAltar(sentidos, alLado.Quien);
-                bool unGolpeLoMata = UnGolpeLoMata(_entorno.Datos.Npc(amenaza.Quien.FichaNpc), (int)Math.Round(saludAhora * vidaTope));
+                int vidaAhora = (int)Math.Round(saludAhora * vidaTope);
+                bool unGolpeLoMata = UnGolpeLoMata(_entorno.Datos.Npc(amenaza.Quien.FichaNpc), vidaAhora);
                 var huida = ComoHuye(conPociones, saludAhora, unGolpeLoMata, sacerdoteAMano, !_entorno.Datos.IsPkMap(sentidos.Mapa),
                                      Environment.TickCount64 >= _proximaRunaDeHuida);
                 if (huida == Huida.Sacerdote)
@@ -701,13 +702,14 @@ public sealed class Bot
                 // lugar lleno: la criatura se queda donde lo dejó de ver, que suele ser la entrada. Medido en `pelea_b2`: una Ladrona
                 // echada del 262 por un Esqueleto guerrero volvió doce veces por la misma puerta a cazar los Zombies de ahí, y cada
                 // vez la esperaba el mismo Esqueleto.
-                // Y LO MISMO CON LO DEL HUECO, PERO SÓLO EN UN MAPA INSEGURO: ver `SeVaDelMapaPor`.
+                // Y LO MISMO CON LO DEL HUECO, PERO SÓLO EN UN MAPA INSEGURO, y con lo peligroso que no le gana: ver `SeVaDelMapaPor`.
                 // Y SI NO PUDO SALIR, NO LO REINTENTA EN LA VUELTA SIGUIENTE, como con el guardia: mientras tanto pelea o se aleja.
                 // Medido en `hueco2`: un bot Pescador en (10,11) del 12, con un Goblin tapándole la esquina (9,7) por donde salía, lo
                 // intentó cada doce segundos durante minutos sin moverse, devolviendo un golpe entre intento e intento.
                 if (SeVaDelMapaPor(NoLaLastima(amenaza.Quien.FichaNpc),
                                    EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno),
-                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura)
+                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura,
+                                   laPeleaSeGana: LaPeleaSeGanaAca(amenaza.Quien.FichaNpc, vidaAhora))
                     && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
                 {
                     int deDonde = sentidos.Mapa;
@@ -728,9 +730,12 @@ public sealed class Bot
                 // baldosas, y se tomó 159 pociones ahí. A lo que tiene pegado se le devuelve el golpe: mirar y pegar, como en
                 // `CazarAsync`, sin llamarlo, que con la vida baja vuelve a `AlejarseAsync`.
                 // Y EL QUE TIRA CON ARCO, LE TIRA (ver `TiraConArco`): con el arco puesto no se pega.
+                // Y SÓLO SI LA PELEA SE GANA (ver `LaPeleaSeGana`), salvo que no pueda moverse de la baldosa: si no, sigue huyendo, y
+                // en un mapa inseguro se va del mapa (`SeVaDelMapaPor`).
                 if ((EstaAcorralado(_huidas.SinMoverse, _huidas.QueNoLoSacaron) || NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                     && TieneFuelleParaPelear(sentidos)
-                    && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado)
+                    && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado
+                    && (_huidas.SinMoverse >= HuidasParaAcorralado || LaPeleaSeGanaAca(pegado.Quien.FichaNpc, vidaAhora)))
                 {
                     // Y EL QUE SABE MAGIA LE TIRA UN HECHIZO, como en `CazarAsync`, mientras los hechizos salgan (ver `DejaDeLanzarle`).
                     // Medido: Bruma, Maga, murió acorralada en `hueco4`, `cadena2` y `alto2` devolviendo de veinte a treinta y ocho golpes
@@ -4872,7 +4877,7 @@ public sealed class Bot
     /// ¿SE VA DEL MAPA POR ESTA AMENAZA? Cuando no se la saca de encima (<see cref="NoSeLoSacaDeEncima"/>) y es algo que no puede
     /// lastimar —en cualquier mapa— o algo del hueco (<see cref="EsDelHuecoPara"/>) en un mapa inseguro. En uno seguro lo del hueco
     /// es la amenaza sólo con la vida en rojo (<see cref="LoDelHuecoEsLaAmenaza"/>, 02/10), y aunque huya de él no se va del mapa:
-    /// el mapa es seguro.
+    /// el mapa es seguro. Y lo peligroso que no le gana (<see cref="LaPeleaSeGana"/>, 03/10), también sólo en un mapa inseguro.
     ///
     /// <para>Medido en `hueco1` (29/09), cuando lo del hueco también lo sacaba de un mapa seguro: de 53 salidas que llegaron a otro
     /// mapa, 23 volvieron al mismo antes de cinco minutos —a comprar, a curarse el veneno— y casi todas eran de la cuna, por el Lobo
@@ -4880,8 +4885,33 @@ public sealed class Bot
     /// En la cuna los Lobos del hueco no habían matado a nadie (`ropa1`); los que matan son los Zombies del 13, que es inseguro.
     /// DECIDIDO POR EL AUTOR (29/09).</para>
     /// </summary>
-    public static bool SeVaDelMapaPor(bool noLaLastima, bool esDelHueco, bool mapaInseguro, int huidasDeLaMismaCriatura) =>
-        (noLaLastima || (esDelHueco && mapaInseguro)) && NoSeLoSacaDeEncima(huidasDeLaMismaCriatura);
+    public static bool SeVaDelMapaPor(bool noLaLastima, bool esDelHueco, bool mapaInseguro, int huidasDeLaMismaCriatura,
+                                      bool laPeleaSeGana = true) =>
+        (noLaLastima || ((esDelHueco || !laPeleaSeGana) && mapaInseguro)) && NoSeLoSacaDeEncima(huidasDeLaMismaCriatura);
+
+    /// <summary>
+    /// ¿LA PELEA SE GANA? (DECIDIDO POR EL AUTOR, 03/10) Si con lo medido de su golpe (<see cref="GolpeMedido.GolpesParaMatar"/>) la
+    /// mata antes de que ella le saque la vida que tiene ahora: sus golpes a su ritmo (<see cref="GolpeMinMs"/>-<see cref="GolpeMaxMs"/>)
+    /// contra los de la criatura cada <see cref="NpcSystem.IntervaloAtaqueMs"/> con su golpe medio, sin contar pociones ni los que
+    /// erra ella. Sin medida (otra arma, magia, pocos golpes) no se sabe, y no se gana. Lo usan el acorralado, que pelea sólo si gana,
+    /// y la salida del mapa (<see cref="SeVaDelMapaPor"/>), que en un mapa inseguro lo saca de lo que no le gana.
+    ///
+    /// <para>Medido (03/10, 493 corridas guardadas): 19 de 133 muertes fueron peleando acorralado con pociones, la causa número uno.
+    /// En `tardeN9` y `tardeN10` Aldo, Leñador de 219 de vida, peleó parado con un Ent en el Bosque de Suramei (283) —golpe 40-90,
+    /// 650 de vida, veneno— tomando una poción de 30 cada 2,5 s, y murió las dos veces con más de 160 pociones encima.</para>
+    /// </summary>
+    public static bool LaPeleaSeGana(int? golpesParaMatarla, int vidaAhora, NpcInfo ella)
+    {
+        if (golpesParaMatarla is not { } golpes || golpes == int.MaxValue) return false;
+        long msParaMatarla = (long)golpes * (GolpeMinMs + GolpeMaxMs) / 2;
+        long golpesQueRecibe = (msParaMatarla + NpcSystem.IntervaloAtaqueMs - 1) / NpcSystem.IntervaloAtaqueMs;
+        return golpesQueRecibe * (ella.MinHit + ella.MaxHit) / 2 < vidaAhora;
+    }
+
+    /// <summary><see cref="LaPeleaSeGana"/> para este bot: lo medido sólo sin magia, como en <see cref="LaMataRapido"/>.</summary>
+    private bool LaPeleaSeGanaAca(short ficha, int vidaAhora) =>
+        _entorno.Datos.Npc(ficha) is { } n
+        && LaPeleaSeGana(_sinMagia ? _golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp) : null, vidaAhora, n);
 
     /// <summary>
     /// DE QUÉ MAPAS SE FUE HUYENDO EN ESTE NIVEL, Y CUÁNTAS VECES. A las <see cref="HuidasQueLoDejanAfuera"/> ese mapa no se elige de

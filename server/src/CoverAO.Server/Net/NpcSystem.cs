@@ -193,11 +193,14 @@ public sealed class NpcSystem
     private const short ElementalFuego = 93;     // AI_NPC.bas:45 ELEMENTALFUEGO: contra otra criatura castea, no pega
     private const int TipoDragon = 20;           // eNPCType.Dragon (Declares.bas:398): le contesta al elemental de fuego
 
+    /// <summary>Cada cuánto pega una criatura: <c>IntervaloPermiteAtacarNpc</c> (VB6 modNuevoTimer.bas:52).</summary>
+    public const int IntervaloAtaqueMs = 3000;
+
     /// <summary>
     /// Vueltas del loop entre ataque y ataque de UNA criatura: los 3000 ms de
     /// <c>IntervaloPermiteAtacarNpc</c> (VB6 modNuevoTimer.bas:52) sobre ticks de 40 ms.
     /// </summary>
-    private const long IntervaloAtaqueTicks = 3000 / Game.GameLoop.TickMs;
+    private const long IntervaloAtaqueTicks = IntervaloAtaqueMs / Game.GameLoop.TickMs;
 
     /// <summary>
     /// ¿Puede atacar esta criatura AHORA? Consume el intervalo si puede (VB6
