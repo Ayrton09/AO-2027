@@ -243,6 +243,26 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// LA PUERTA DE AL LADO: el camino a la salida más cercana que lleva al mismo mapa que <paramref name="puerta"/> Y a la misma zona
+    /// de llegada, sin pisar lo que se pide evitar (la puerta misma, si la tapa alguien). Una puerta suele tener varias baldosas de
+    /// ancho, y el viaje (<see cref="PuertaHacia"/>) elige siempre una sola; null si no hay otra.
+    ///
+    /// <para>Medido en `mid56` y `tardeN21` (03/10): la entrada oeste de Rinkel son cuatro baldosas, (9,69) a (9,72), y todo el que
+    /// salía iba a (9,69), a la que sólo se llega por (10,69). Cuando uno entraba con (10,69) ocupada caía en la legal más cercana,
+    /// que es (9,69), una salida: el que salía esperaba a que se corriera y el que entraba a que se le liberara (10,69), sin camino
+    /// ninguno de los dos, hasta que alguno usaba la runa. Hasta ocho bots apilados y cuatro minutos y medio.</para>
+    /// </summary>
+    public IReadOnlyList<(byte X, byte Y)>? CaminoAUnaPuertaHermana(int mapa, (byte X, byte Y) desde, (byte X, byte Y) puerta,
+                                                                  IReadOnlySet<(byte X, byte Y)> evitar)
+    {
+        if (!_datos.MapExits.TryGetValue((mapa, puerta.X, puerta.Y), out var aca)) return null;
+        var zona = Alcanzables(aca.DestMap, ((byte)aca.DestX, (byte)aca.DestY));
+        return CaminoALaPuertaMasCercana(mapa, desde, aca.DestMap, evitar,
+            (x, y) => (x, y) != (puerta.X, puerta.Y) && _datos.MapExits.TryGetValue((mapa, x, y), out var alla)
+                      && zona.Contains(Clave((byte)alla.DestX, (byte)alla.DestY)));
+    }
+
+    /// <summary>
     /// EL CAMINO A LA PUERTA MÁS CERCANA HACIA ESE MAPA, caminando desde donde está: la primera baldosa de salida hacia
     /// <paramref name="mapaDestino"/> que encuentra la búsqueda en anchura, sin cruzar otras salidas ni lo que se pide evitar. null
     /// si no hay ninguna. <see cref="PuertaHacia"/> elige la puerta por lo que hay del otro lado y en el orden de la data, no por la
@@ -250,9 +270,11 @@ public sealed class Navegante
     /// pegándole, escapaba hacia el 275 por (9,8) —que pedía pasar por (10,8)— teniendo la salida (9,9) al lado, y murió ahí.
     /// </summary>
     public IReadOnlyList<(byte X, byte Y)>? CaminoALaPuertaMasCercana(int mapa, (byte X, byte Y) desde, int mapaDestino,
-                                                                    IReadOnlySet<(byte X, byte Y)>? evitar = null)
+                                                                    IReadOnlySet<(byte X, byte Y)>? evitar = null,
+                                                                    Func<int, int, bool>? cuenta = null)
     {
-        bool LlevaAlDestino(int x, int y) => _datos.MapExits.TryGetValue((mapa, x, y), out var sal) && sal.DestMap == mapaDestino;
+        bool LlevaAlDestino(int x, int y) => _datos.MapExits.TryGetValue((mapa, x, y), out var sal) && sal.DestMap == mapaDestino
+                                             && (cuenta?.Invoke(x, y) ?? true);
         var deDonde = new Dictionary<int, int>();
         var cola = new Queue<int>();
         int inicio = Clave(desde.X, desde.Y);

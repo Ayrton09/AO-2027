@@ -439,6 +439,39 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// LA ENTRADA OESTE DE RINKEL SON CUATRO BALDOSAS (ver <see cref="Navegante.CaminoAUnaPuertaHermana"/>): con (9,69) tapada, desde
+    /// (10,69) hay otra salida al 98 que llega a la misma zona. Medido en `mid56` y `tardeN21` (03/10): los que salían esperaban a
+    /// que se corriera el que estaba parado en (9,69), hasta cuatro minutos y medio.
+    /// </summary>
+    [Fact]
+    public void Con_la_puerta_tapada_se_sale_por_la_de_al_lado()
+    {
+        if (Mundo() is not { } m) return;
+        var tapada = new HashSet<(byte X, byte Y)> { (9, 69) };
+        Assert.True(m.Mapas.Camino(20, (10, 69), (9, 69), tapada) is null or { Count: 0 }, "premisa: a (9,69) sólo se llega por ahí");
+        var hermana = m.Mapas.CaminoAUnaPuertaHermana(20, (10, 69), (9, 69), tapada);
+        Assert.NotNull(hermana);
+        var fin = hermana![^1];
+        Assert.NotEqual(((byte)9, (byte)69), fin);
+        Assert.True(m.Datos.MapExits.TryGetValue((20, fin.X, fin.Y), out var sal) && sal.DestMap == 98, $"sale al 98: {fin}");
+    }
+
+    /// <summary>
+    /// PARADO ENCIMA DE (9,69) DE RINKEL, EL PASO PARA USAR LA PUERTA NO VA A UNA SALIDA BLOQUEADA (ver
+    /// <see cref="Bot.RumboParaUsarLaPuerta"/>): (9,68) sale al 98 pero no se pisa; (9,70), sí. Medido en `mid56` (03/10).
+    /// </summary>
+    [Fact]
+    public void Parado_en_la_puerta_de_Rinkel_el_paso_no_va_a_una_salida_bloqueada()
+    {
+        if (Mundo() is not { } m) return;
+        Assert.True(m.Datos.IsBlockedTile(20, 9, 68), "premisa: (9,68) está bloqueada");
+        byte rumbo = Bot.RumboParaUsarLaPuerta(m.Datos.MapExits, 20, (9, 69), (x, y) => m.Datos.IsBlockedTile(20, x, y));
+        Assert.NotEqual(0, rumbo);
+        var (dx, dy) = SentidosDelBot.Paso(rumbo);
+        Assert.False(m.Datos.IsBlockedTile(20, 9 + dx, 69 + dy), $"el paso {rumbo} va a una baldosa que se pisa");
+    }
+
+    /// <summary>
     /// Y DESDE EL DESIERTO, LOS BOLSONES DEL BORDE NO TAPAN AL PUEBLO. Todas las entradas del 16 al 20 dan a bolsones de afuera de la
     /// muralla, y las dos primeras gastaban el tope de zonas por mapa, así que la zona del pueblo no se miraba nunca desde ahí. Ahora
     /// se encuentra, y el viaje que sigue las puertas del navegante —como el bot— termina en ella y no en un bolsón.

@@ -5876,6 +5876,10 @@ public sealed class Bot
             var camino = esLaMeta ? _entorno.Mapas.HayComoLlegar(mapa, desde, meta, tolerancia, trabas)
                                    : porLaMasCercana is { Count: > 0 } ? porLaMasCercana
                                    : _entorno.Mapas.Camino(mapa, desde, meta, trabas);
+            // Y SI LO QUE TAPA ES LA PUERTA, POR LA DE AL LADO: ver `Navegante.CaminoAUnaPuertaHermana`.
+            if ((camino is null || camino.Count == 0) && trabas.Count > 0 && !esLaMeta && porLaMasCercana is null
+                && _entorno.Mapas.CaminoAUnaPuertaHermana(mapa, desde, meta, trabas) is { Count: > 0 } porLaDeAlLado)
+                camino = porLaDeAlLado;
             // Si esquivando no queda camino, lo que tapaba era el único paso: se espera a que se corra y se vuelve a
             // probar por donde se venía.
             // ESCAPANDO NO SE ESPERA: lo que tapa es lo que lo persigue, y esperar es quedarse quieto recibiendo. Se vuelve ya, y
@@ -6036,7 +6040,9 @@ public sealed class Bot
             if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder || y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder) continue;
             if (salidas.TryGetValue((mapa, x, y), out var alla))
             {
-                if (alla.DestMap == aca.DestMap) return rumbo;
+                // Y QUE SE PUEDA PISAR: medido en `mid56` (03/10), parado en (9,69) de Rinkel daba el norte, (9,68), una salida al
+                // mismo 98 pero bloqueada, y el viaje se gastaba sin moverse teniendo (9,70) al sur.
+                if (alla.DestMap == aca.DestMap && !bloqueada(x, y)) return rumbo;
             }
             else if (sinSalir == 0 && !bloqueada(x, y)) sinSalir = rumbo;
         }
