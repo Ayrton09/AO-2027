@@ -239,6 +239,31 @@ public class MochilaDelBotTests : IDisposable
     public void Sin_pueblo_y_sin_lo_esencial_la_runa_a_la_primera(bool leFaltaLoEsencial, bool hayPueblo, int fracasos) =>
         Assert.Equal(fracasos, Bot.FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo));
 
+    /// <summary>
+    /// CON LA MOCHILA LLENA SE TIRA LO QUE NO VALE NADA Y NO LE SIRVE, para que entre el arma del camino (`alto45`: Hilda, cinco
+    /// viajes al herrero sin poder comprar, con tres anillos y una pluma de botín). Lo de novato no: el servidor no lo deja tirar.
+    /// </summary>
+    [Fact]
+    public void Con_la_mochila_llena_se_tiran_los_anillos_y_la_pluma_del_botin_y_nada_mas()
+    {
+        static ObjInfo Obj(string nombre, int tipo, int valor, int subTipo = 0, bool noSeTira = false) =>
+            new(1, nombre, ObjType: tipo, MaxModifier: 0, Value: valor, Anim: 0, SubType: subTipo, NoSeTira: noSeTira);
+
+        Assert.True(Bot.EsParaTirar(Obj("Anillo del Bardo (+30)", 21, 0), esDeSuOficio: false, seLoPodriaPoner: false));
+        Assert.True(Bot.EsParaTirar(Obj("Pluma de Águila", 47, 0), esDeSuOficio: false, seLoPodriaPoner: false));
+
+        Assert.False(Bot.EsParaTirar(Obj("Mapa (Newbies)", 16, 0), false, false));                 // el servidor no lo deja
+        Assert.False(Bot.EsParaTirar(Obj("Anillo Dorado", 21, 0, noSeTira: true), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Piel de Lobo", 30, 10), false, false));                 // vale: se vende
+        Assert.False(Bot.EsParaTirar(Obj("Raíz", 42, 0), esDeSuOficio: true, false));             // la junta para fabricar
+        Assert.False(Bot.EsParaTirar(Obj("Túnica", 3, 0), false, seLoPodriaPoner: true));
+        Assert.False(Bot.EsParaTirar(Obj("Manzana", 1, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Agua", 13, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Poción", 11, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Llave", 9, 0), false, false));
+        Assert.False(Bot.EsParaTirar(Obj("Flecha", 32, 0), false, false));
+    }
+
     /// <summary>Cuántas horas duran esos puntos, con el desgaste del servidor: baja
     /// <see cref="Survival.DecayStep"/> cada tantas vueltas de <see cref="GameLoop.TickMs"/>.</summary>
     private static double Horas(int puntos, int vueltas) =>

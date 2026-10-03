@@ -803,6 +803,7 @@ public sealed class Bot
             _nivelParaLoNovato = sentidos.Nivel;
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await AprenderHechizosAsync(transporte, sentidos, ct)) continue;
+            if (await HacerLugarAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await RetomarElRescateAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1286,11 +1287,13 @@ public sealed class Bot
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => ArmaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
         bool vaPorElArma = faltaArma && !enApuro;
-        bool hayArmaAlAlcance = vaPorElArma && ArmaAlAlcance(sentidos, VendeElArma, MapaAtiende);
+        // CON LA MOCHILA LLENA EL ARMA Y LA ROPA NO ENTRAN, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
+        bool hayLugar = sentidos.RanurasOcupadas().Count < GameLimits.MaxInventorySlots;
+        bool hayArmaAlAlcance = vaPorElArma && hayLugar && ArmaAlAlcance(sentidos, VendeElArma, MapaAtiende);
         bool VendeRopa(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => RopaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
-        bool hayRopaAlAlcance = faltaRopa && !enApuro && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
+        bool hayRopaAlAlcance = faltaRopa && !enApuro && hayLugar && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
         if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance) return false;
 
@@ -2421,7 +2424,57 @@ public sealed class Bot
     /// agachaba, no levantaba nada, y volvía a empezar. Medido: ocho bots con oro en CERO después de nueve
     /// minutos, porque ninguno llegó nunca a un botín de verdad.</para>
     /// </summary>
-    private bool SePuedeLevantar(short obj) => obj > 0 && SeLevantaDelPiso(_entorno.Datos.Obj(obj));
+    private bool SePuedeLevantar(short obj) => obj > 0 && SeLevantaDelPiso(_entorno.Datos.Obj(obj)) && !_loQueTiro.Contains(obj);
+
+    /// <summary>
+    /// HACER LUGAR EN LA MOCHILA LLENA: tira una cosa que no vale nada y no le sirve (<see cref="EsParaTirar"/>), y no la vuelve a
+    /// levantar. Con las 25 ranuras ocupadas el servidor rechaza toda compra que no se apile (`FindSlotFor` en `HandleCommerceBuy`),
+    /// y el bot no se enteraba: viajaba, no compraba y volvía a salir.
+    ///
+    /// <para>Medido en `alto45` y `alto46` (03/10): Hilda, Druida de nivel 14 con la plata para la Daga +3, fue cinco o seis veces
+    /// al Herrero Armas del 815 y volvió con las manos vacías, cazando sin arma unos trece minutos, hasta que en el 16 el servidor
+    /// le sacó el kit de novato y le hizo lugar. Llevaba tres anillos de botín y una Pluma de Águila, que no valen nada. En los 184
+    /// logs con la sonda del arma: 129 compras fallidas con la plata para pagarlas, todas de ella, en 23 corridas.</para>
+    /// </summary>
+    private async Task<bool> HacerLugarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        if (Environment.TickCount64 < _proximoLugar) return false;
+        var ocupadas = sentidos.RanurasOcupadas();
+        // El servidor no tira en medio de un comercio ni sobre otra cosa (VB6 Protocol.bas:2021 y el 262).
+        if (ocupadas.Count < GameLimits.MaxInventorySlots || sentidos.Comerciando || sentidos.EnElPiso(sentidos.Posicion) != 0)
+            return false;
+        foreach (byte ranura in ocupadas)
+        {
+            short obj = sentidos.QueHayEn(ranura);
+            if (sentidos.EstaPuesto(ranura) || _entorno.Datos.Obj(obj) is not { } o
+                || !EsParaTirar(o, obj == InsumoDeSuOficio || EsHerramientaDeSuOficio(obj),
+                                QueSePone.Any(esDeEso => esDeEso(o)) && LoPuedeUsar(o, sentidos.Nivel))) continue;
+            _loQueTiro.Add(obj);
+            transporte.Mandar(Paquete(ClientPacketId.Drop, w => w.WriteByte(ranura).WriteLong(short.MaxValue)));
+            await Task.Delay(_rng.Next(400, 900), ct);
+            // Si no se fue (el piso no lo dejó), no se insiste en cada vuelta.
+            _proximoLugar = Environment.TickCount64 + (sentidos.QueHayEn(ranura) == obj ? EsperaSiNoTiraMs : 0);
+            return true;
+        }
+        _proximoLugar = Environment.TickCount64 + EsperaSiNoTiraMs;
+        return false;
+    }
+
+    /// <summary>
+    /// ¿Eso se tira para hacer lugar? Lo que no vale nada (el mercader lo paga a cero, así que no es botín: ver <see cref="EsBotin"/>)
+    /// y no le sirve: ni lo de novato (el servidor no deja tirarlo, VB6 InvUsuario.bas:440, y se va solo en el 16), ni lo que no se
+    /// tira (<c>Destruir=1</c>), ni lo que come, toma o se cura, ni el insumo o la herramienta de su oficio, ni lo que se podría
+    /// poner, ni las llaves, la munición, los barcos o las monturas. Quedan los anillos y las plumas del botín.
+    /// </summary>
+    public static bool EsParaTirar(ObjInfo o, bool esDeSuOficio, bool seLoPodriaPoner) =>
+        o.Value <= 0 && !o.IsNewbie && !o.NoSeTira && !o.IsPotion && !o.IsFood && !o.IsDrink && !o.IsGold && !o.IsKey
+        && !o.IsAmmo && !o.IsBoat && !o.IsMount && !esDeSuOficio && !seLoPodriaPoner;
+
+    /// <summary>Lo que tiró para hacer lugar: no se vuelve a levantar.</summary>
+    private readonly HashSet<short> _loQueTiro = new();
+
+    private long _proximoLugar;
+    private const int EsperaSiNoTiraMs = 60_000;
 
     /// <summary>
     /// La regla de <see cref="SePuedeLevantar"/> sobre el objeto solo, que es la del servidor al levantar: `Agarrable` distinto de 1
