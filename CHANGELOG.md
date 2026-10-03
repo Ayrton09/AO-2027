@@ -309,6 +309,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   ahí. Acorralados por algo que los persigue pelean sólo si la pelea se gana; si no, se van del mapa. El rescate del
   varado sigue si se corta en el camino, y al ir a un pueblo entran por el pueblo y no por un rincón de afuera de la
   muralla.
+  Si la puerta por la que iban a salir está tapada, salen por la de al lado, y de un lugar como Lindos, del que no se
+  sale caminando, se van con la runa apenas compran o cuando dejan de ganar experiencia.
 
 ## 1.0.0 — 2026-09-16
 
