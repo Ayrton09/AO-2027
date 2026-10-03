@@ -2709,15 +2709,11 @@ public sealed class Bot
     ///
     /// <para>Con criaturas o sin ellas: fabricar ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba al Sastre
     /// sin dónde desde el 19, donde cazaba: el río del 98 corta el camino al 20, y a cinco saltos los únicos seguros son el mapa
-    /// 1 y la cuna, que tienen.</para>
+    /// 1 y la cuna, que tienen. Por <see cref="Navegante.MapaMasCercano"/>, que entra al mapa y no a una franja de afuera.</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y)? DondeSentarseAFabricar(Navegante mapas, int mapa, (byte X, byte Y) desde,
-                                                                     Func<int, bool> sirve, Func<int, bool>? pisable)
-    {
-        foreach (var (otro, _, entrada, _) in mapas.MapasAlcanzables(mapa, desde, Navegante.TopeDeMapas, pisable))
-            if (sirve(otro)) return (otro, entrada.X, entrada.Y);
-        return null;
-    }
+                                                                     Func<int, bool> sirve, Func<int, bool>? pisable) =>
+        mapas.MapaMasCercano(mapa, desde, sirve, pisable) is { } ahi ? (ahi.Mapa, ahi.X, ahi.Y) : null;
 
     /// <summary>Espera, sentado, a tener la energía de una fabricación más. Devuelve si la tiene; corta si algo urge o se
     /// acerca algo hostil.</summary>

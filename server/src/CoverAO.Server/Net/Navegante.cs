@@ -331,14 +331,33 @@ public sealed class Navegante
     /// EL MAPA MÁS CERCANO QUE SIRVE, con la baldosa por la que se entra. Es a dónde ir cuando lo que importa es el
     /// mapa y no algo adentro de él: un bot al que se le terminó la sesión en un mapa pk camina hasta uno seguro para
     /// irse a dormir. La entrada es la baldosa de llegada, así que ir hasta ella es cruzar la puerta.
+    ///
+    /// <para>Y DE ESE MAPA, POR DONDE SE ENTRA AL MAPA Y NO A UNA FRANJA: entre sus entradas a los mismos saltos, la primera cuya
+    /// zona no entra en una pantalla (<see cref="BaldosasDeUnaPantalla"/>); si ninguna, la primera, como antes. Las entradas salen en
+    /// el orden de la data, y la primera de un mapa puede ser una franja del lado de afuera de la muralla, como en
+    /// <see cref="PuebloMasCercano"/>. Medido (03/10, 262 corridas): desde el 98 la primera entrada a Rinkel es (10,8), una franja
+    /// de 113 baldosas entre el borde y la muralla oeste sin mercader ni sacerdote; la del pueblo, (10,69), salía segunda. Hubo 196
+    /// llegadas ahí: Petra y Osmar se sentaban a fabricar y después no llegaban al sacerdote ni a las tiendas, y Rufo, caminando al
+    /// mapa seguro, quedaba sin tienda y la runa lo devolvía a Nix, donde no le venden (en `mid52` murió rehaciendo el rescate).
+    /// Lo mismo pasa entrando al Puerto de Illiandor (179) desde el 275.</para>
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos)? MapaMasCercano(int mapaActual, (byte X, byte Y) desde,
                                                                  Func<int, bool> mapaSirve, Func<int, bool>? pisable = null,
                                                                  int topeDeSaltos = TopeDeMapas)
     {
+        (int Mapa, byte X, byte Y, int Saltos)? primera = null;
         foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos))
-            if (mapaSirve(mapa)) return (mapa, entrada.X, entrada.Y, saltos);
-        return null;
+        {
+            if (primera is { } p)
+            {
+                if (saltos > p.Saltos) break;
+                if (mapa != p.Mapa) continue;
+            }
+            else if (!mapaSirve(mapa)) continue;
+            if (Alcanzables(mapa, entrada).Count > BaldosasDeUnaPantalla) return (mapa, entrada.X, entrada.Y, saltos);
+            primera ??= (mapa, entrada.X, entrada.Y, saltos);
+        }
+        return primera;
     }
 
     /// <summary>

@@ -406,7 +406,7 @@ public class NaveganteTests
         if (Mundo() is not { } m) return;
         var esElPaladin = ElPaladinDeRinkel(m.Datos);
         var primero = m.Mapas.MapaMasCercano(97, (25, 10), x => x == 20);
-        Assert.True(primero is { } p && p.X == 10 && p.Y == 8, $"premisa: la primera entrada al 20 era la franja; es {primero}");
+        Assert.NotNull(primero);
         Assert.False(m.Mapas.SeLlegaAbriendoUnaPuerta(20, (10, 8), esElPaladin), "desde la franja no se llega ni abriendo puertas");
 
         var pueblo = m.Mapas.PuebloMasCercano(97, (25, 10), x => x == 20, esElPaladin);
@@ -416,6 +416,26 @@ public class NaveganteTests
         var entrada = (pueblo.Value.X, pueblo.Value.Y);
         Assert.Null(m.Mapas.HayComoLlegar(20, entrada, (58, 80), 3));   // a pie no: está detrás de la puerta
         Assert.True(m.Mapas.AbrirlaDaCamino(20, entrada, (50, 86), esElPaladin), "abriendo la (50,86), sí");
+        // Y el mapa más cercano, que no mira mercaderes, también entra por el pueblo (ver `Navegante.MapaMasCercano`).
+        Assert.Equal(entrada, (primero!.Value.X, primero.Value.Y));
+    }
+
+    /// <summary>
+    /// Y DESDE EL 98, EL MAPA SEGURO ES EL PUEBLO Y NO LA FRANJA (ver <see cref="Navegante.MapaMasCercano"/>): la primera entrada al 20
+    /// en el orden de la data es (10,8), 113 baldosas afuera de la muralla oeste, y la del pueblo (10,69) sale segunda, a los mismos
+    /// saltos. Medido (03/10): Rufo, Milo, Petra y Osmar terminaban en la franja yendo al mapa seguro o a fabricar, 196 veces en
+    /// 262 corridas. Se rompe con la primera entrada, como antes.
+    /// </summary>
+    [Fact]
+    public void Desde_el_98_el_mapa_seguro_es_el_pueblo_de_Rinkel_y_no_la_franja()
+    {
+        if (Mundo() is not { } m) return;
+        var seguro = m.Mapas.MapaMasCercano(98, (13, 39), x => x == 20);
+        Assert.NotNull(seguro);
+        Assert.Equal(20, seguro!.Value.Mapa);
+        Assert.NotEqual(((byte)10, (byte)8), (seguro.Value.X, seguro.Value.Y));
+        Assert.True(m.Mapas.SeLlegaAbriendoUnaPuerta(20, (seguro.Value.X, seguro.Value.Y), ElPaladinDeRinkel(m.Datos)),
+                    "por esa entrada se llega al pueblo");
     }
 
     /// <summary>
