@@ -3750,7 +3750,10 @@ public sealed class Bot
     {
         await IrHastaAsync(transporte, sentidos, adonde.Mapa, adonde.X, adonde.Y, cerrada, ct, ToleranciaDelCoto,
                            topeDeMapas: Math.Max(Navegante.TopeDeMapas, adonde.Saltos), porCualquierCamino: true);
-        if (sentidos.Mapa == adonde.Mapa) _rescateHacia = null;
+        // Y SI DESDE DONDE QUEDÓ NO SE LLEGA, SE SUELTA: retomarlo volvía en el acto, en cada vuelta. Medido en `tardeN16` (03/10):
+        // Dalia, a la que una huida le había vedado el 202, desde (10,8) del 275 lo retomó 2.917 veces en cuatro minutos y medio, unas
+        // once por segundo, sin cazar ni comprar.
+        if (sentidos.Mapa == adonde.Mapa || _desdeAcaNoSeLlega) _rescateHacia = null;
     }
 
     /// <summary>
@@ -4946,10 +4949,12 @@ public sealed class Bot
         return golpesQueRecibe * (ella.MinHit + ella.MaxHit) / 2 < vidaAhora;
     }
 
-    /// <summary><see cref="LaPeleaSeGana"/> para este bot: lo medido sólo sin magia, como en <see cref="LaMataRapido"/>.</summary>
+    /// <summary><see cref="LaPeleaSeGana"/> para este bot, con lo medido de su golpe de arma, también si sabe magia: es la pelea sin
+    /// hechizos, que alcanza para juzgar. Medido en `tardeN16` (03/10): con lo medido sólo sin magia, Milo, Paladín de nivel 23 con
+    /// el Martillo de Guerra, "no le ganaba" a un Lobo y se iba del 19. El que casi no pega con arma no tiene medida, y no pelea.</summary>
     private bool LaPeleaSeGanaAca(short ficha, int vidaAhora) =>
         _entorno.Datos.Npc(ficha) is { } n
-        && LaPeleaSeGana(_sinMagia ? _golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp) : null, vidaAhora, n);
+        && LaPeleaSeGana(_golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp), vidaAhora, n);
 
     /// <summary>
     /// DE QUÉ MAPAS SE FUE HUYENDO EN ESTE NIVEL, Y CUÁNTAS VECES. A las <see cref="HuidasQueLoDejanAfuera"/> ese mapa no se elige de
