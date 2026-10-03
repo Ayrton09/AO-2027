@@ -1204,6 +1204,7 @@ public sealed class Bot
     private async Task<bool> IrDeComprasAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                               CancellationToken ct)
     {
+        int mapaAlSalir = sentidos.Mapa;
         // ENFRIAMIENTO. Sin esto el bot vuelve a la tienda en el instante siguiente: si el mercader NO le
         // compra lo que le ofrece —cada uno acepta un tipo de objeto y nada más— la mochila queda igual, la
         // condición se vuelve a cumplir, y el bot queda pegado al mostrador ofreciendo lo mismo para siempre.
@@ -1520,7 +1521,8 @@ public sealed class Bot
         if (!sentidos.Comerciando) { Fracaso(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
-        if (compro) _comproEn = (sentidos.Mapa, Environment.TickCount64);
+        // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
+        if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
@@ -3170,11 +3172,11 @@ public sealed class Bot
 
     /// <summary>
     /// ¿SALE DEL POZO? En un mapa seguro del que no se llega a pie a ningún otro coto (Lindos: se entra por un lado y la vuelta es un
-    /// teleport detrás de una puerta que el bot no abre), el que acaba de comprar ahí se va con la runa, y el que caza se va en cuanto
+    /// teleport detrás de una puerta que el bot no abre), el que acaba de llegar a comprar se va con la runa, y el que caza se va en cuanto
     /// pasa <see cref="PozoSinGanarMs"/> sin ganar experiencia, sin esperar las <see cref="BusquedasSinGanar"/> búsquedas, que con una
     /// presa a la vista llegan cada <see cref="PacienciaSinPresaMs"/>. La runa del que está en un mapa seguro lo lleva a casa.
     ///
-    /// <para>Medido (03/10) en `early110` a `early121`: 60 estadías en Lindos, 36 minutos de bot por corrida, 31 de ellos después de
+    /// <para>Medido (02-03/10) en `early110` a `early121`: 60 estadías en Lindos, 36 minutos de bot por corrida, 31 de ellos después de
     /// la última subida de nivel; 27 eran de compras (Dalia por la Caña de Pesca, los que salían de Rinkel por el Sastre) y después de
     /// comprar se quedaban con las cuatro Águilas, y la salida esperaba 4,4 minutos de mediana hasta "sin ganar" y otro más hasta la
     /// runa. Salir caminando no ahorra nada: la runa del novato deja donde deja el teleport.</para>
@@ -3364,7 +3366,7 @@ public sealed class Bot
             hallado = CotoComoSiempre(_ => false, out porElOro, out porLoQueRinde);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
-        // Y DE UN POZO, CON LA RUNA EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
+        // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
         _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel, ahora);
         // Menos donde la runa lo deja: ahí usarla no lo saca.
         if (hallado?.Mapa == sentidos.Mapa && !_entorno.Datos.IsPkMap(sentidos.Mapa) && sentidos.Mapa != _runaDejoEn
