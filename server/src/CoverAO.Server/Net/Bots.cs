@@ -804,6 +804,7 @@ public sealed class Bot
             if (RepartirPuntos(transporte, sentidos)) { await Task.Delay(_rng.Next(900, 2_500), ct); continue; }
             if (await AprenderHechizosAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await RetomarElRescateAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
@@ -3739,10 +3740,48 @@ public sealed class Bot
         var porDondeSea = CruzaSinHuidas(pisable, _huyoDe, ahora);
         if (DestinoDelRescate(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, MapaSeguro, porElDeSiempre,
                               porDondeSea) is not { } adonde) return false;
-        await IrHastaAsync(transporte, sentidos, adonde.Mapa, adonde.X, adonde.Y, cerrada, ct, ToleranciaDelCoto,
-                           topeDeMapas: Math.Max(Navegante.TopeDeMapas, adonde.Saltos), porCualquierCamino: true);
+        _rescateHacia = adonde;
+        _rescateHasta = ahora + RescateDuraMs;
+        await ViajeDelRescateAsync(transporte, sentidos, adonde, cerrada, ct);
         return true;
     }
+
+    private async Task ViajeDelRescateAsync(TransporteDeBot transporte, SentidosDelBot sentidos, (int Mapa, byte X, byte Y, int Saltos) adonde,
+                                            Task cerrada, CancellationToken ct)
+    {
+        await IrHastaAsync(transporte, sentidos, adonde.Mapa, adonde.X, adonde.Y, cerrada, ct, ToleranciaDelCoto,
+                           topeDeMapas: Math.Max(Navegante.TopeDeMapas, adonde.Saltos), porCualquierCamino: true);
+        if (sentidos.Mapa == adonde.Mapa) _rescateHacia = null;
+    }
+
+    /// <summary>
+    /// EL RESCATE SE RETOMA (DECIDIDO POR EL AUTOR, 03/10): si el viaje de <see cref="RescatarseAsync"/> se cortó —un golpe que lo
+    /// bajó, los tramos— y quedó en un mapa inseguro, en la vuelta siguiente sigue hacia el mismo destino, después de curarse o
+    /// escapar, en vez de volver al ciclo común; hasta llegar, hasta estar en un mapa seguro (donde la runa anda) o hasta
+    /// <see cref="RescateDuraMs"/>. Devuelve si salió a caminar.
+    ///
+    /// <para>Medido en `tardeN9` y `tardeN10` (03/10): el rescate de Aldo del 195 al 544 se cortaba en el Bosque de Suramei (283) y
+    /// nada lo retomaba —el rescate sólo sale con "desde acá no se llega", y desde ahí el 544 es vecino—; el coto de repuesto era el
+    /// mismo 283, y murió las dos veces peleando con un Ent.</para>
+    /// </summary>
+    private async Task<bool> RetomarElRescateAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (_rescateHacia is not { } adonde) return false;
+        if (sentidos.Mapa == adonde.Mapa || !_entorno.Datos.IsPkMap(sentidos.Mapa) || Environment.TickCount64 >= _rescateHasta)
+        {
+            _rescateHacia = null;
+            return false;
+        }
+        await ViajeDelRescateAsync(transporte, sentidos, adonde, cerrada, ct);
+        return true;
+    }
+
+    /// <summary>Adónde va el rescate que está en curso (<see cref="RetomarElRescateAsync"/>), y hasta cuándo se lo retoma.</summary>
+    private (int Mapa, byte X, byte Y, int Saltos)? _rescateHacia;
+    private long _rescateHasta;
+
+    /// <summary>Cuánto se retoma, como mucho, un rescate que no llega: lo que tardó el más largo medido (unos diez minutos), y algo más.</summary>
+    private const int RescateDuraMs = 15 * 60_000;
 
     /// <summary>
     /// ADÓNDE VA EL RESCATE: el pueblo más cercano donde le venden (<paramref name="leVenden"/>) y se llega a alguien que
@@ -5772,8 +5811,10 @@ public sealed class Bot
         // mismo hasta gastar todos los tramos. Medido: tres bots de la cuna sin llegar nunca a la comida, uno
         // doce veces contra la misma baldosa y dos atascados uno detrás del otro en el mismo pasillo.
         var trabas = new HashSet<(byte X, byte Y)>();
-        // UN TRAMO POR MAPA DE MÁS en un viaje largo (ver `PuebloConMercader`): cada puerta que se cruza gasta uno.
-        int tramosDelViaje = TramosPorViaje + Math.Max(0, topeDeMapas - Navegante.TopeDeMapas);
+        // UN TRAMO POR MAPA DE MÁS en un viaje largo (ver `PuebloConMercader`): cada puerta que se cruza gasta uno. Y EL RESCATE
+        // (`porCualquierCamino`), OTRO POR MAPA: cruza peligro, y cada rodeo de lo que lo mata gasta uno. Medido en `tardeN10` (03/10):
+        // Aldo se quedó sin tramos (16 de 15, ocho peligros) en el Bosque de Suramei, a una puerta del 544.
+        int tramosDelViaje = TramosPorViaje + Math.Max(0, topeDeMapas - Navegante.TopeDeMapas) + (porCualquierCamino ? topeDeMapas : 0);
         // LO QUE TAPA EL PASO NO GASTA EL VIAJE: ver `TrabasPorViaje`.
         int trabasDelViaje = 0;
         bool trabadoPorAlguien = false;
