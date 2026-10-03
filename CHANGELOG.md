@@ -302,6 +302,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   tampoco los encuentra quietos. Una racha de golpes errados ya no les hace dar una criatura por imposible, y antes de
   pelear se ponen el arma aunque vengan de trabajar con la herramienta en la mano. Si tienen que irse de un mapa
   huyendo, no se meten en un rincón del de al lado que no tiene otra salida que volver.
+  Con la vida en rojo, lo que les pega en un mapa seguro también los hace huir, y el que queda varado donde no le
+  venden sale a pie a buscar el pueblo más cercano, sin cruzar los mapas donde los guardias van por él.
 
 ## 1.0.0 — 2026-09-16
 
