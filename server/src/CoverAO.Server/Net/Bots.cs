@@ -1460,7 +1460,8 @@ public sealed class Bot
                 // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
                 bool leFaltaLoEsencial = (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))) || vaPorComida || vaPorBebida;
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
-                if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna)
+                if (intento == 0 && vaAComprar
+                    && ++_tiendasSinCamino >= FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo: conMercader is not null))
                 {
                     _tiendasSinCamino = 0;
                     if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, LoEsencial, cerrada, ct)
@@ -3611,6 +3612,15 @@ public sealed class Bot
 
     /// <summary>Cuántos viajes fallidos al coto antes de volver a casa con la Runa.</summary>
     private const int CotosFallidosAntesDeLaRuna = 2;
+
+    /// <summary>
+    /// CUÁNTAS COMPRAS SIN TIENDA ANTES DE LA RUNA: dos, porque el primer destino puede estar mal elegido; pero si le falta lo
+    /// esencial y no hay NINGÚN pueblo por donde ir ("pueblo=ninguno"), no hay destino que corregir, y la segunda vuelta la pasaba
+    /// cazando sin pociones. Medido en `tardeN9` y `tardeN10` (03/10): Aldo revivía en el 839 sin pociones ni ropa, "sin tienda,
+    /// pueblo=ninguno", y salía a cazar; en `tardeN10` se quedó sin energía por el frío y lo mató una Rata Gigante en el 772.
+    /// </summary>
+    public static int FracasosAntesDeLaRuna(bool leFaltaLoEsencial, bool hayPueblo) =>
+        leFaltaLoEsencial && !hayPueblo ? 1 : CotosFallidosAntesDeLaRuna;
 
     /// <summary>VB6 <c>otRuna</c> (Declares.bas:615).</summary>
     private const int ObjTypeRuna = 38;
