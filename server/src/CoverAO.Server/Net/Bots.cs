@@ -1376,15 +1376,13 @@ public sealed class Bot
                    && hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
-        // Y PARA EL VIAJE LARGO, SÓLO LO ESENCIAL: a casa con la runa (`VolverACasaAsync`) o a pie cruzando peligro
-        // (`RescatarseAsync`) se va por la comida, la bebida o las pociones que faltan para pelear, no por equipo ni por vender:
-        // con `Sirve`, el que tenía hambre y plata para equipo terminaba en Rinkel, donde nadie vende comida.
+        // Y PARA EL VIAJE LARGO, SÓLO LO ESENCIAL: ver `LoEsencialQueBusca`.
+        var esencial = LoEsencialQueBusca(primeroLasPociones, primeroLaBebida, primeroLaComida, vaPorComida, vaPorBebida);
         bool LoEsencial(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } stock }
-            && ((vaPorComida && stock.Any(s => EsComida((short)s.ObjIndex)))
-                || (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex)))
-                || (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))
-                    && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))));
+            && ((esencial.HasFlag(Esencial.Comida) && stock.Any(s => EsComida((short)s.ObjIndex)))
+                || (esencial.HasFlag(Esencial.Bebida) && stock.Any(s => EsBebida((short)s.ObjIndex)))
+                || (esencial.HasFlag(Esencial.Pociones) && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))));
 
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
         // es 2 ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos. Sin este
@@ -1606,6 +1604,24 @@ public sealed class Bot
     /// </summary>
     public static bool PrimeroLasPociones(bool vaPorPociones, int pocionesPropias) =>
         vaPorPociones && LeFaltanPocionesParaPelear(pocionesPropias);
+
+    /// <summary>Lo que se busca en un viaje largo por lo esencial (<see cref="LoEsencialQueBusca"/>).</summary>
+    [Flags]
+    public enum Esencial { Nada = 0, Comida = 1, Bebida = 2, Pociones = 4 }
+
+    /// <summary>
+    /// LO ESENCIAL QUE BUSCA EN UN VIAJE LARGO: a casa con la runa (<see cref="VolverACasaAsync"/>) o a pie cruzando peligro
+    /// (<see cref="RescatarseAsync"/>) se va por la comida, la bebida o las pociones que faltan para pelear, no por equipo ni por
+    /// vender; con el <c>Sirve</c> de la compra, el que tenía hambre y plata para equipo podía terminar en Rinkel, donde de lo
+    /// esencial sólo se venden pociones. Con las mismas prioridades que la compra: sin pociones para pelear, sólo pociones; con
+    /// la sed en cero y el hambre aguantando, sólo bebida; al revés, sólo comida; si no, la comida y la bebida que le falten.
+    /// </summary>
+    public static Esencial LoEsencialQueBusca(bool primeroLasPociones, bool primeroLaBebida, bool primeroLaComida,
+                                              bool vaPorComida, bool vaPorBebida) =>
+        primeroLasPociones ? Esencial.Pociones
+        : primeroLaBebida ? Esencial.Bebida
+        : primeroLaComida ? Esencial.Comida
+        : (vaPorComida ? Esencial.Comida : Esencial.Nada) | (vaPorBebida ? Esencial.Bebida : Esencial.Nada);
 
     /// <summary>
     /// ¿LE ALCANZA PARA UNA? Con lo que gasta en una compra (lo mismo que <see cref="ReponerAsync"/>: el 80 %, o todo menos la moneda

@@ -55,14 +55,28 @@ public class RescateDelVaradoTests
         Assert.Equal(20, Destino(w, 34, (40, 88), 18, 138)?.Mapa);
     }
 
-    /// <summary>Y SI VINO POR COMIDA, NO A RINKEL: ahí sólo el Alquimista vende, y pociones. El rescate busca a quien le vende lo que
-    /// vino a buscar (<c>LoEsencial</c> de la compra).</summary>
+    /// <summary>Y SI VINO POR COMIDA, NO A RINKEL: ahí, de lo esencial, sólo el Alquimista vende, y pociones. Con un filtro de comida
+    /// (lo que arma <c>LoEsencial</c> de la compra con <see cref="Bot.Esencial.Comida"/>), el Puerto de Rinkel, al lado, que vende
+    /// comida y bebida.</summary>
     [Fact]
-    public void Rufo_por_comida_no_va_a_Rinkel()
+    public void Rufo_por_comida_va_al_Puerto_de_Rinkel()
     {
         if (ElMundo() is not { } w) return;
-        Assert.NotEqual(20, Destino(w, 34, (40, 88), 18, 138, VendeComida(w.Datos))?.Mapa);
+        Assert.Equal(99, Destino(w, 34, (40, 88), 18, 138, VendeComida(w.Datos))?.Mapa);
     }
+
+    /// <summary>LO ESENCIAL, CON LAS PRIORIDADES DE LA COMPRA: sin pociones para pelear, sólo pociones, aunque tenga hambre; con la sed
+    /// en cero y el hambre aguantando, sólo bebida; al revés, sólo comida; si no, las dos.</summary>
+    [Theory]
+    [InlineData(true, false, false, true, true, Bot.Esencial.Pociones)]
+    [InlineData(false, true, false, true, true, Bot.Esencial.Bebida)]
+    [InlineData(false, false, true, true, true, Bot.Esencial.Comida)]
+    [InlineData(false, false, false, true, true, Bot.Esencial.Comida | Bot.Esencial.Bebida)]
+    [InlineData(false, false, false, true, false, Bot.Esencial.Comida)]
+    [InlineData(false, false, false, false, false, Bot.Esencial.Nada)]
+    public void Lo_esencial_con_las_prioridades_de_la_compra(bool primeroLasPociones, bool primeroLaBebida, bool primeroLaComida,
+                                                            bool vaPorComida, bool vaPorBebida, Bot.Esencial esperado) =>
+        Assert.Equal(esperado, Bot.LoEsencialQueBusca(primeroLasPociones, primeroLaBebida, primeroLaComida, vaPorComida, vaPorBebida));
 
     /// <summary>
     /// ALDO, ciudadano de nivel 19 (199 de vida) en el 195, del lado republicano: los pueblos que le venderían pociones tienen guardias que
