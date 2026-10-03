@@ -1465,7 +1465,14 @@ public sealed class Bot
                     _tiendasSinCamino = 0;
                     if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, LoEsencial, cerrada, ct)
                                           : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
-                    { Fracaso(); return true; }
+                    {
+                        // Y SI LA RUNA LO DEJÓ DONDE LE VENDEN, COMPRA AHÍ MISMO, como el rescate. Con el descanso de la compra
+                        // (`Fracaso`) salía a cazar recién llegado y el descanso vencía a mitad del viaje, ya afuera. Medido en
+                        // `tardeN7` y `tardeN9` (03/10): Milo volvía con la runa a Illiandor con 3 pociones y el hambre en cero, y
+                        // se iba al 275 sin comprarle a nadie, cinco a siete veces por corrida.
+                        if (leFaltaLoEsencial && LeVendenAca(sentidos.Mapa)) { llegoAlPueblo = true; continue; }
+                        Fracaso(); return true;
+                    }
                 }
                 // Y SI LE FALTA LO ESENCIAL, NO HAY PUEBLO POR DONDE NO HAY PELIGRO Y LA RUNA NO LO LLEVA A DONDE LE VENDEN, ESTÁ
                 // VARADO: ver `RescatarseAsync`.
@@ -2162,12 +2169,16 @@ public sealed class Bot
         // mismo objeto, así que sin reserva el bot vendía a dos lo que acababa de pagar siete, y volvía a comprar.
         // Medido: un bot que gastó cuatro de sus cinco monedas en dos tartas y en el viaje siguiente las vendió por
         // una. Se vende lo que pasa de la reserva, y por debajo sólo en un apuro: sin una gota encima, con la sed
-        // en cero y sin plata para el agua, la comida se cambia por agua (y al revés).
+        // en cero y sin plata para el agua, la comida se cambia por agua (y al revés). Y LA RESERVA ES LO MISMO QUE SE
+        // COMPRA (`ComidaQueSeLleva`): con 400 contra los 2000 que se lleva desde el 13, vendía todo lo que pasaba de 400 y
+        // lo volvía a comprar en la misma visita. Medido en `tardeN6`, `N8` y `N10` (03/10): Milo, Paladín de nivel 23 que
+        // entra sin comida, se quedaba frente al de Comidas de Illiandor (o del 815) la corrida entera, perdiendo unas 820
+        // monedas por minuto y terminando con 6 o 27 pollos, sin salir nunca a cazar.
         if (o is { IsFood: true }
-            && !SobraOSeCambia(sentidos, PuntosDeComida, obj, ComidaQueQuiere,
+            && !SobraOSeCambia(sentidos, PuntosDeComida, obj, ComidaQueSeLleva(sentidos.Nivel),
                                SinNadaQueTomar(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
         if (o is { IsDrink: true }
-            && !SobraOSeCambia(sentidos, PuntosDeBebida, obj, BebidaQueQuiere,
+            && !SobraOSeCambia(sentidos, PuntosDeBebida, obj, BebidaQueSeLleva(sentidos.Nivel),
                                SinNadaQueComer(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
         // Y LO MEJOR QUE TIENE DE CADA CLASE DE EQUIPO TAMPOCO: ver `EsLoMejorQueTieneDeEsaClase`. Sin esto el bot
         // vendía la armadura que acababa de comprar —o la que se le desequipó al morir— y la recompraba en el mismo
@@ -2340,7 +2351,7 @@ public sealed class Bot
         bool esComida = PuntosDeComida(obj) > 0, esBebida = PuntosDeBebida(obj) > 0;
         if ((!esComida && !esBebida) || enLaRanura <= 1) return enLaRanura;
         Func<short, int> rinde = esComida ? PuntosDeComida : PuntosDeBebida;
-        int reserva = esComida ? ComidaQueQuiere : BebidaQueQuiere;
+        int reserva = esComida ? ComidaQueSeLleva(s.Nivel) : BebidaQueSeLleva(s.Nivel);
         int sobran = (s.Suma(rinde) - reserva) / rinde(obj);
         return (short)Math.Clamp(sobran > 0 ? sobran : UnidadesDeApuro, 1, enLaRanura);
     }
