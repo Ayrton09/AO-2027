@@ -1376,6 +1376,16 @@ public sealed class Bot
                    && hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
+        // Y PARA EL VIAJE LARGO, SÓLO LO ESENCIAL: a casa con la runa (`VolverACasaAsync`) o a pie cruzando peligro
+        // (`RescatarseAsync`) se va por la comida, la bebida o las pociones que faltan para pelear, no por equipo ni por vender:
+        // con `Sirve`, el que tenía hambre y plata para equipo terminaba en Rinkel, donde nadie vende comida.
+        bool LoEsencial(int ficha) =>
+            _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } stock }
+            && ((vaPorComida && stock.Any(s => EsComida((short)s.ObjIndex)))
+                || (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex)))
+                || (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))
+                    && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))));
+
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
         // es 2 ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos. Sin este
         // filtro el viaje terminaba siempre en el mapa vecino —que tiene los tres vendedores de herramientas y
@@ -1455,7 +1465,7 @@ public sealed class Bot
                 if (intento == 0 && vaAComprar && ++_tiendasSinCamino >= CotosFallidosAntesDeLaRuna)
                 {
                     _tiendasSinCamino = 0;
-                    if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, Sirve, cerrada, ct)
+                    if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, LoEsencial, cerrada, ct)
                                           : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
                     { Fracaso(); return true; }
                 }
@@ -1463,7 +1473,7 @@ public sealed class Bot
                 // VARADO: ver `RescatarseAsync`.
                 if (leFaltaLoEsencial && conMercader is null && intento == 0
                     && (_runaNoSirveParaComprar || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0)
-                    && await RescatarseAsync(transporte, sentidos, Sirve, cerrada, ct))
+                    && await RescatarseAsync(transporte, sentidos, LoEsencial, cerrada, ct))
                 { llegoAlPueblo = true; continue; }
                 Fracaso(); return intento > 0;
             }
@@ -3627,8 +3637,9 @@ public sealed class Bot
     /// Banderbill tienen guardias imperiales que van por él—, y pasó la hora sin comida y con tres pociones. Y en `tardeE` (01/10),
     /// sin coto en el 19 y sin esto, buscaba sólo a cinco y no salía nunca.</para>
     ///
-    /// <para>Si sale el rescate, va al pueblo que le vende lo que <paramref name="sirve"/>: lo que vino a comprar el que vuelve a
-    /// casa (el que iba por comida no camina hasta un pueblo que vende sólo pociones); sin compra, el que vende pociones.</para>
+    /// <para>Si sale el rescate, va al pueblo que le vende lo que <paramref name="sirve"/>: lo esencial que vino a comprar el que
+    /// vuelve a casa (el que iba por comida no camina hasta un pueblo que vende sólo pociones); sin compra, el que vende
+    /// pociones.</para>
     /// </summary>
     private async Task<bool> IrAlMapaSeguroAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct,
                                                 Func<int, bool>? sirve = null)

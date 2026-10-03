@@ -30,14 +30,19 @@ public class RescateDelVaradoTests
     private static Func<int, bool> VendePociones(GameData d) => f =>
         d.Npc((short)f) is { StockItems: { Count: > 0 } stock } && stock.Any(s => d.Obj((short)s.ObjIndex) is { IsPotion: true, SubType: 3 });
 
+    private static Func<int, bool> VendeComida(GameData d) => f =>
+        d.Npc((short)f) is { StockItems: { Count: > 0 } stock } && stock.Any(s => d.Obj((short)s.ObjIndex) is { IsFood: true });
+
     private static Func<int, bool> Seguro(Mundo w, int nivel) => m => Bot.MapaSeguroPara(m, Player.StatusCiudadano, nivel, w.Datos, w.Ini);
 
-    /// <summary>Adónde va el rescate de un ciudadano de ese nivel y esa vida, con los filtros del bot.</summary>
-    private static (int Mapa, byte X, byte Y, int Saltos)? Destino(Mundo w, int mapa, (byte X, byte Y) desde, int nivel, int vida)
+    /// <summary>Adónde va el rescate de un ciudadano de ese nivel y esa vida, con los filtros del bot; por defecto, a quien vende
+    /// pociones.</summary>
+    private static (int Mapa, byte X, byte Y, int Saltos)? Destino(Mundo w, int mapa, (byte X, byte Y) desde, int nivel, int vida,
+                                                                   Func<int, bool>? sirve = null)
     {
         var pisable = Bot.PisableDelRescate(w.Datos, w.Ini, Player.StatusCiudadano, nivel);
         var sinHuidas = new Dictionary<int, long>();
-        return Bot.DestinoDelRescate(w.Mapas, mapa, desde, LeVenden(w, nivel), VendePociones(w.Datos), Seguro(w, nivel),
+        return Bot.DestinoDelRescate(w.Mapas, mapa, desde, LeVenden(w, nivel), sirve ?? VendePociones(w.Datos), Seguro(w, nivel),
                                      Bot.PorDondeSeRescata(w.Datos, pisable, sinHuidas, 0, vida), Bot.CruzaSinHuidas(pisable, sinHuidas, 0));
     }
 
@@ -48,6 +53,15 @@ public class RescateDelVaradoTests
     {
         if (ElMundo() is not { } w) return;
         Assert.Equal(20, Destino(w, 34, (40, 88), 18, 138)?.Mapa);
+    }
+
+    /// <summary>Y SI VINO POR COMIDA, NO A RINKEL: ahí sólo el Alquimista vende, y pociones. El rescate busca a quien le vende lo que
+    /// vino a buscar (<c>LoEsencial</c> de la compra).</summary>
+    [Fact]
+    public void Rufo_por_comida_no_va_a_Rinkel()
+    {
+        if (ElMundo() is not { } w) return;
+        Assert.NotEqual(20, Destino(w, 34, (40, 88), 18, 138, VendeComida(w.Datos))?.Mapa);
     }
 
     /// <summary>
