@@ -3464,6 +3464,7 @@ public sealed class Bot
             hallado = lejos;
             sirve = esPresa;
             porElOro = false;
+            porLoQueRinde = _entorno.Mapas.LoQueSuma(lejos.Mapa, (lejos.X, lejos.Y), rinde)?.Rinde ?? 0;
             cruzandoPeligro = true;
         }
         // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
