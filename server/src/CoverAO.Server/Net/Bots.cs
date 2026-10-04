@@ -1297,7 +1297,9 @@ public sealed class Bot
             && suStock.Any(s => RopaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaLaRopa));
         bool hayRopaAlAlcance = faltaRopa && !enApuro && hayLugar && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
         // Y DESNUDO, LA ROPA ES LO ESENCIAL: ver `LaRopaEsEsencial`.
-        bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar;
+        // Y SÓLO SI LE ALCANZA PARA LA MÁS BARATA: ver `LaRopaMasBarata`.
+        bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar
+                       && LoPuedePagar(LaRopaMasBarata(sentidos), sobraParaLaRopa);
         if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 
@@ -4634,6 +4636,26 @@ public sealed class Bot
     /// las pociones del 16, y desnudo no pelea: las pociones no le sirven. Medido en `tardeN15`, `N20` y `N25`: Dalia llegó viva a
     /// Rinkel con 222 monedas y las gastó en pociones (quedó con 2), con las Vestimentas de Mujer a 50 en el sastre.
     /// </summary>
+    /// <summary>
+    /// Lo que cuesta la ropa más barata que se puede poner entre las que vende algún mercader del mundo (int.MaxValue si ninguna). Sin
+    /// esto el desnudo sin plata salía de compras igual: medido en la ronda 30 (04/10), Juana, de nivel 16 y con 7 monedas en Rinkel,
+    /// fue 17 a 20 veces por corrida a la runa o al rescate por una ropa que no podía pagar.
+    /// </summary>
+    private int LaRopaMasBarata(SentidosDelBot sentidos)
+    {
+        if (_ropaMasBarata is { } ya && ya.Nivel == sentidos.Nivel) return ya.Precio;
+        int precio = int.MaxValue;
+        foreach (var npc in _entorno.Datos.Npcs.Values)
+            if (npc.StockItems is { Count: > 0 } stock)
+                foreach (var s in stock)
+                    if (RopaQueLeSirve(sentidos, (short)s.ObjIndex, double.MaxValue) && _entorno.Datos.Obj((short)s.ObjIndex) is { } o)
+                        precio = Math.Min(precio, o.Value);
+        _ropaMasBarata = (sentidos.Nivel, precio);
+        return precio;
+    }
+
+    private (int Nivel, int Precio)? _ropaMasBarata;
+
     private int PlataParaLaRopa(SentidosDelBot sentidos) =>
         PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
 
