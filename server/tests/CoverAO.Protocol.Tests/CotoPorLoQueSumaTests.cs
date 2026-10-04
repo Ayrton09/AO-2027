@@ -35,17 +35,16 @@ public class CotoPorLoQueSumaTests
     }
 
     private sealed record Cazador(Navegante Mapas, GameData Datos, Func<int, bool> EsPresa, Func<int, int> Rinde,
-                                  Func<int, bool> SeCazaAhi, Func<int, bool> Nunca, Func<int, bool> Cruza);
+                                  Func<int, bool> SeCazaAhi, Func<int, bool> Nunca, Func<int, bool> Cruza, Func<int, bool> Rescate);
 
-    /// <summary>Un ciudadano con pociones, con los mismos filtros que arma el bot para buscar coto y con el ini que se distribuye.</summary>
-    private static Cazador? UnCazador(int nivel, int vida)
+    /// <summary>Un ciudadano (o del <paramref name="bando"/> que se pida) con pociones, con los mismos filtros que arma el bot para buscar coto y con el ini que se distribuye.</summary>
+    private static Cazador? UnCazador(int nivel, int vida, byte bando = Player.StatusCiudadano)
     {
         var d = GameData.Load();
         if (d.MapExits.Count == 0) return null;
         var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
         if (!File.Exists(ruta)) return null;
         var ini = ServerIni.Cargar(ruta);
-        byte bando = Player.StatusCiudadano;
         Func<int, bool> esPresa = f => Bot.EsPresaPara(d.Npc((short)f), vida, nivel, conPociones: true, curaVeneno: false);
         Func<int, bool> esPeligroso = f => Bot.EsPeligrosoParaElBot(d.Npc((short)f), vida, nivel, true, false, bando, d, ini);
         Func<int, IEnumerable<int>> nace = m => d.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
@@ -54,7 +53,8 @@ public class CotoPorLoQueSumaTests
         Func<int, bool> seCazaAhi = m => Bot.SeCazaAhi(d.IsPkMap(m), nace(m), esPeligroso) && !nunca(m);
         Func<int, int> rinde = f => esPresa(f) ? (int)(d.Npc((short)f)?.GiveExp ?? 0) : 0;
         return new Cazador(new Navegante(d), d, esPresa, rinde, seCazaAhi, nunca,
-                           Bot.SeCruzaBuscando(d, ini, bando, nivel, vida, conPociones: true, curaVeneno: false));
+                           Bot.SeCruzaBuscando(d, ini, bando, nivel, vida, conPociones: true, curaVeneno: false),
+                           Bot.PisableDelRescate(d, ini, bando, nivel));
     }
 
     private static (int Mapa, byte X, byte Y, int Saltos)? Coto(Cazador c, int mapa, (byte X, byte Y) desde, bool porLoQueSuma,
@@ -126,6 +126,28 @@ public class CotoPorLoQueSumaTests
         Assert.Equal(18, Coto(c, 18, desde, porLoQueSuma: true)?.Mapa);
         foreach (int propio in Enumerable.Range(1, 24))
             Assert.Equal(18, Coto(c, 18, desde, true, m => Bot.CuantoLeGusta(propio, m))?.Mapa);
+    }
+
+    /// <summary>
+    /// DE LOS BOSQUES DE ILLIANDOR, CRUZANDO PELIGRO, A UN COTO QUE SUMA EL DOBLE (<see cref="Bot.CotoCruzandoPeligro"/>, decisión del
+    /// autor del 04/10). Es Gonzo, nivel 22, en la baldosa donde lo encontró `tardeN21`: sin cruzar peligro lo mejor son los trece Lobos
+    /// del 195 (es republicano: Illiandor no lo echa); el coto que elige está a cuatro mapas o menos y suma por lo menos el doble. Y en el mapa de doce Zombies se queda.
+    /// </summary>
+    [Fact]
+    public void De_los_bosques_de_Illiandor_cruza_el_peligro_a_un_coto_que_suma_el_doble()
+    {
+        if (UnCazador(22, 238, Player.StatusRepublicano) is not { } c) return;
+        var desde = ((byte)10, (byte)8);
+        var sinPeligro = c.Mapas.CotoQueMasSuma(195, desde, c.Rinde, 4, c.Cruza, c.SeCazaAhi);
+        Assert.Equal(1495, sinPeligro?.Suma);
+        var coto = Bot.CotoCruzandoPeligro(c.Mapas, 195, desde, c.Rinde, c.Cruza, c.Rescate, c.SeCazaAhi);
+        Assert.NotNull(coto);
+        var alla = c.Mapas.CotoQueMasSuma(195, desde, c.Rinde, 4, c.Rescate, m => m == coto!.Value.Mapa);
+        Assert.True(alla?.Suma >= 2 * 1495, $"elige el {coto!.Value.Mapa}, que suma {alla?.Suma}");
+
+        if (UnCazador(26, 285) is not { } enElMejor) return;
+        Assert.Null(Bot.CotoCruzandoPeligro(enElMejor.Mapas, 18, ((byte)56, (byte)23), enElMejor.Rinde, enElMejor.Cruza,
+                                            enElMejor.Rescate, enElMejor.SeCazaAhi));
     }
 
     /// <summary>

@@ -3344,6 +3344,33 @@ public sealed class Bot
     private const int SaltosHastaElCoto = 2, SaltosHastaElCotoQueSuma = 4, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
 
     /// <summary>
+    /// EL COTO AL QUE SÓLO SE LLEGA CRUZANDO PELIGRO, si suma el doble de lo mejor que tiene sin cruzarlo (acá o a
+    /// <see cref="SaltosHastaElCotoQueSuma"/> mapas o menos por donde <paramref name="cruzaSinPeligro"/>); null si no hay. El coto en sí
+    /// tiene que servir (<paramref name="seCazaAhi"/>: sin nada peligroso que nazca ahí y con cómo volver a comprar); lo que cruza es
+    /// el camino, por donde va el rescate del varado (<paramref name="pisable"/>, ver <see cref="PisableDelRescate"/>). Sin nada que
+    /// cazar sin peligro, null: eso lo resuelve <see cref="SiEstaEncerradoAsync"/>.
+    ///
+    /// <para>Decisión del autor (04/10): <i>"si rinde sí, de última si se muere que se joda"</i>. Medido en las 42 corridas desde
+    /// `armar2.estado`: Gonzo, Cazador republicano de nivel 22, daba 3,4 a 3,6 mil de experiencia por minuto contra 8 a 13 de los
+    /// demás, en los Bosques de Illiandor (195 y 196: trece Lobos, suman 1495). Ese bolsón está cerrado por el Oso Pardo (193 y 203),
+    /// el Basilisco (202) y la Araña Gigante (273): sin cruzarlos no hay otro coto ni a nueve mapas, y cruzándolos, a cuatro, el 191
+    /// suma 3415.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? CotoCruzandoPeligro(Navegante mapas, int mapa, (byte X, byte Y) desde,
+                                                                             Func<int, int> rinde, Func<int, bool> cruzaSinPeligro,
+                                                                             Func<int, bool> pisable, Func<int, bool> seCazaAhi,
+                                                                             Func<int, int>? desempate = null)
+    {
+        int aca = seCazaAhi(mapa) ? mapas.LoQueSuma(mapa, desde, rinde)?.Suma ?? 0 : 0;
+        int sinPeligro = Math.Max(aca, mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, cruzaSinPeligro, seCazaAhi)?.Suma ?? 0);
+        if (sinPeligro <= 0) return null;
+        return mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, pisable, seCazaAhi, desempate,
+                                    LoMinimoParaMudarse(sinPeligro)) is { } alla && alla.Mapa != mapa
+            ? (alla.Mapa, alla.X, alla.Y, alla.Saltos)
+            : null;
+    }
+
+    /// <summary>
     /// Cuando hace rato que no aparece una presa, viajar a un mapa donde haya. Devuelve si se ocupó de esto.
     ///
     /// <para>La PACIENCIA es lo que hace que esto no sea un bot que vive viajando: recién se mueve después de
@@ -3419,6 +3446,18 @@ public sealed class Bot
             hallado = CotoComoSiempre(_ => false, out porElOro, out porLoQueRinde);
             sirve = porElOro ? (f => esPresa(f) && PagaOro((short)f)) : esPresa;
         }
+        // Y SI CRUZANDO PELIGRO HAY UNO QUE SUMA EL DOBLE, VA: ver `CotoCruzandoPeligro`.
+        bool cruzandoPeligro = false;
+        if (paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel)
+            && CotoCruzandoPeligro(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, rinde, cruza,
+                                   PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
+                                   m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora), m => CuantoLeGusta(_propio, m)) is { } lejos)
+        {
+            hallado = lejos;
+            sirve = esPresa;
+            porElOro = false;
+            cruzandoPeligro = true;
+        }
         // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
         _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel, ahora);
         // Menos donde la runa lo deja: ahí usarla no lo saca.
@@ -3490,7 +3529,9 @@ public sealed class Bot
         _cortoPorElHueco = false;
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
                                 cortaSi: () => FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa, Environment.TickCount64, nunca)
-                                               && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde)))
+                                               && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde),
+                                topeDeMapas: cruzandoPeligro ? Math.Max(Navegante.TopeDeMapas, coto.Saltos) : Navegante.TopeDeMapas,
+                                porCualquierCamino: cruzandoPeligro))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
             if (_cortoElViaje) { _cortoElViaje = false; return true; }
