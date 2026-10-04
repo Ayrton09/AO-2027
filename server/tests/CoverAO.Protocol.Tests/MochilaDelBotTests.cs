@@ -239,6 +239,15 @@ public class MochilaDelBotTests : IDisposable
     public void Sin_pueblo_y_sin_lo_esencial_la_runa_a_la_primera(bool leFaltaLoEsencial, bool hayPueblo, int fracasos) =>
         Assert.Equal(fracasos, Bot.FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo));
 
+    /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
+    /// 3 monedas); con ropa, o sin ninguna a la venta, la reserva es la de siempre.</summary>
+    [Theory]
+    [InlineData(100, true, 25, 125)]
+    [InlineData(100, false, 25, 100)]
+    [InlineData(100, true, int.MaxValue, 100)]
+    public void Las_pociones_guardan_lo_de_la_ropa_mas_barata_si_le_falta(int panza, bool falta, int ropa, int reserva) =>
+        Assert.Equal(reserva, Bot.ConLaRopaGuardada(panza, falta, ropa));
+
     /// <summary>DESNUDO PASADO EL NOVATO, LA ROPA ES LO ESENCIAL (Dalia en tardeN24, muerta con la energía en cero): antes del 16 la de
     /// novato todavía abriga, y con ropa propia no hace falta.</summary>
     [Theory]

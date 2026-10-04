@@ -1269,7 +1269,7 @@ public sealed class Bot
         bool enApuro = sentidos.Oro < MonedasDeApuro;
         // Y POR LAS POCIONES, SÓLO SI LE ALCANZA PARA UNA, como el antídoto (ver `LeAlcanzaParaUna`).
         bool vaPorPociones = faltanPociones && !enApuro
-                             && LeAlcanzaParaUna(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaPocion);
+                             && LeAlcanzaParaUna(sentidos.Oro, ReservaDeLasPociones(sentidos), CuestaLaPocion);
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
         // CON LA MOCHILA LLENA NO ENTRA NADA NUEVO, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
@@ -1836,7 +1836,7 @@ public sealed class Bot
         // LA ROPA DEL CAMINO, ANTES QUE LAS POCIONES: ver `LeFaltaLaRopaDelCamino` y `PlataParaLaRopa`.
         if (LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
             compro |= await ComprarLaRopaDelCaminoAsync(transporte, sentidos, ct);
-        compro |= await ReponerAsync(transporte, sentidos, PocionPropia, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
+        compro |= await ReponerAsync(transporte, sentidos, PocionPropia, PocionesQueQuiere, ct, ReservaDeLasPociones(sentidos));
         // EL ANTIDOTO, que cuesta DIEZ monedas y es la diferencia entre seguir cazando y perder la vida de a
         // poco. Se compra acá, donde el bot ya está parado, y no se viaja por él: lo vende el Alquimista, que
         // tiene 21 puestos —uno en la cuna y otro en el 62, que es donde los bots cazan— mientras que criaturas
@@ -4641,6 +4641,24 @@ public sealed class Bot
     /// las pociones del 16, y desnudo no pelea: las pociones no le sirven. Medido en `tardeN15`, `N20` y `N25`: Dalia llegó viva a
     /// Rinkel con 222 monedas y las gastó en pociones (quedó con 2), con las Vestimentas de Hombre a 50 en el sastre.
     /// </summary>
+    /// <summary>Lo que no se toca al comprar pociones: la comida y la bebida, y la ropa más barata si le falta (ver
+    /// <see cref="ConLaRopaGuardada"/>).</summary>
+    private int ReservaDeLasPociones(SentidosDelBot sentidos) =>
+        ConLaRopaGuardada(ReservaPara(sentidos, comida: true, bebida: true),
+                          LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)), LaRopaMasBarata(sentidos));
+
+    /// <summary>
+    /// LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA cuando le falta la ropa del camino. Comprar la ropa antes que las pociones
+    /// (<see cref="PlataParaLaRopa"/>) sólo ordena las compras en un mismo mostrador; entre mostradores gana el más cercano, y si el
+    /// sastre de ahí no le vende nada que pueda usar, el Alquimista se llevaba todo. Medido al rearmar el late (04/10, x200,
+    /// `rearmarB_t2`): Milo, Paladín de raza baja, llegó al 16 a Illiandor desnuda con 1802 monedas; el sastre de Illiandor no le vende
+    /// nada que se pueda poner (lo más barato, las Vestimentas de Baja a 25, está en Rinkel y en la Avanzada), gastó 1700 en 85
+    /// pociones y 99 en pollos, y se quedó con 3: desnuda no recupera energía, no caza y no junta para la ropa. Sin ninguna ropa a la
+    /// venta (<paramref name="ropaMasBarata"/> en int.MaxValue), no se guarda nada.
+    /// </summary>
+    public static int ConLaRopaGuardada(int reservaDeLaPanza, bool leFaltaLaRopa, int ropaMasBarata) =>
+        reservaDeLaPanza + (leFaltaLaRopa && ropaMasBarata < int.MaxValue ? ropaMasBarata : 0);
+
     private int PlataParaLaRopa(SentidosDelBot sentidos) =>
         PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
 
