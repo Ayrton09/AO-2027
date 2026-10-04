@@ -4630,12 +4630,20 @@ public sealed class Bot
     /// Medido en `early2`: siete de los ocho bots que llegaron al 16 lo hicieron con cero pociones propias; Ciro, en el 13, pagó
     /// 19 mil de sus 20 mil monedas por una armadura.</para>
     /// </summary>
+    private int PlataParaElEquipo(SentidosDelBot sentidos) =>
+        PlataQueSobra(sentidos.Oro,
+                      ReservaPara(sentidos, comida: true, bebida: true) + ReservaParaLasPociones(sentidos.Suma(PocionPropia), CuestaLaPocion),
+                      CuestaLaHerramienta(sentidos), MonedasDeApuro);
+
     /// <summary>
     /// Lo que puede gastar en la ROPA DEL CAMINO cuando con <see cref="PlataParaElEquipo"/> no le alcanza: lo mismo pero sin apartar lo
     /// de las pociones, y sólo para la más barata que le sirve (<see cref="ComprarLaRopaDelCaminoAsync"/>). Una ropa de 50 no le saca
     /// las pociones del 16, y desnudo no pelea: las pociones no le sirven. Medido en `tardeN15`, `N20` y `N25`: Dalia llegó viva a
-    /// Rinkel con 222 monedas y las gastó en pociones (quedó con 2), con las Vestimentas de Mujer a 50 en el sastre.
+    /// Rinkel con 222 monedas y las gastó en pociones (quedó con 2), con las Vestimentas de Hombre a 50 en el sastre.
     /// </summary>
+    private int PlataParaLaRopa(SentidosDelBot sentidos) =>
+        PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
+
     /// <summary>
     /// Lo que cuesta la ropa más barata que se puede poner entre las que vende algún mercader del mundo (int.MaxValue si ninguna). Sin
     /// esto el desnudo sin plata salía de compras igual: medido en la ronda 30 (04/10), Juana, de nivel 16 y con 7 monedas en Rinkel,
@@ -4655,14 +4663,6 @@ public sealed class Bot
     }
 
     private (int Nivel, int Precio)? _ropaMasBarata;
-
-    private int PlataParaLaRopa(SentidosDelBot sentidos) =>
-        PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
-
-    private int PlataParaElEquipo(SentidosDelBot sentidos) =>
-        PlataQueSobra(sentidos.Oro,
-                      ReservaPara(sentidos, comida: true, bebida: true) + ReservaParaLasPociones(sentidos.Suma(PocionPropia), CuestaLaPocion),
-                      CuestaLaHerramienta(sentidos), MonedasDeApuro);
 
     /// <summary>Lo que cuesta llevar las pociones propias hasta las que quiere (<see cref="PocionesQueQuiere"/>) a
     /// <paramref name="precio"/> cada una.</summary>
