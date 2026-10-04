@@ -20,7 +20,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Los guardias de Illiandor son todos republicanos.** Uno de sus Magos era imperial y, con los guardias que atacan,
   iba por los republicanos en su propia capital.
 
-- **El Sastre de Illiandor vende las Vestimentas de Enano y de Enana**, a 25: los de raza baja ya no tienen que ir hasta
+- **Los Sastres de Illiandor y de Suramei venden las Vestimentas de Enano y de Enana**, a 25: los de raza baja ya no tienen que ir hasta
   Rinkel o la Avanzada por la ropa más barata.
 
 - **Los animales de las ciudades ya no te siguen**: el Gallo, la Vaca, el Cerdo, el Pato y otras criaturas tranquilas

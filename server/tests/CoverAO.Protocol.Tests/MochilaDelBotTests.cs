@@ -240,17 +240,20 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(fracasos, Bot.FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo));
 
     /// <summary>
-    /// EL SASTRE DE ILLIANDOR VISTE A LOS DE RAZA BAJA POR 25, como el de Rinkel (decisión del autor, 04/10). Antes lo más barato que
-    /// les vendía era 200 para ellos y 8000 para ellas, y Milo, Paladín de raza baja, llegó al 16 a Illiandor desnuda (`rearmarB_t2`).
+    /// LOS SASTRES DE ILLIANDOR Y SURAMEI VISTEN A LOS DE RAZA BAJA POR 25, como el de Rinkel (decisión del autor, 04/10). Antes lo más
+    /// barato que les vendían era 200 para ellos y 8000 o 12000 para ellas, y Milo, Paladín de raza baja, llegó al 16 a Illiandor desnuda (`rearmarB_t2`).
     /// </summary>
     [Fact]
-    public void El_sastre_de_Illiandor_viste_a_los_de_raza_baja_por_25()
+    public void Los_sastres_republicanos_visten_a_los_de_raza_baja_por_25()
     {
         var d = GameData.Load();
-        if (d.Npcs.Values.FirstOrDefault(n => n.Name == "SastreIlliandor") is not { StockItems: { Count: > 0 } stock }) return;
-        foreach (byte genero in new byte[] { 1, 2 })
-            Assert.Contains(stock, s => d.Obj((short)s.ObjIndex) is { IsArmor: true, IsNewbie: false, Value: <= 25 } o
-                                        && Bot.PuedeUsarlo(o, 1, 4, genero, 16));
+        foreach (var sastre in new[] { "SastreIlliandor", "SastreSuramei" })
+        {
+            if (d.Npcs.Values.FirstOrDefault(n => n.Name == sastre) is not { StockItems: { Count: > 0 } stock }) continue;
+            foreach (byte genero in new byte[] { 1, 2 })
+                Assert.Contains(stock, s => d.Obj((short)s.ObjIndex) is { IsArmor: true, IsNewbie: false, Value: <= 25 } o
+                                            && Bot.PuedeUsarlo(o, 1, 4, genero, 16));
+        }
     }
 
     /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
