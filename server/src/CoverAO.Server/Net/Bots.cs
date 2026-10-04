@@ -3350,11 +3350,19 @@ public sealed class Bot
     /// el camino, por donde va el rescate del varado (<paramref name="pisable"/>, ver <see cref="PisableDelRescate"/>). Sin nada que
     /// cazar sin peligro, null: eso lo resuelve <see cref="SiEstaEncerradoAsync"/>.
     ///
-    /// <para>Decisión del autor (04/10): <i>"si rinde sí, de última si se muere que se joda"</i>. Medido en las 42 corridas desde
-    /// `armar2.estado`: Gonzo, Cazador republicano de nivel 22, daba 3,4 a 3,6 mil de experiencia por minuto contra 8 a 13 de los
-    /// demás, en los Bosques de Illiandor (195 y 196: trece Lobos, suman 1495). Ese bolsón está cerrado por el Oso Pardo (193 y 203),
-    /// el Basilisco (202) y la Araña Gigante (273): sin cruzarlos no hay otro coto ni a nueve mapas, y cruzándolos, a cuatro, el 191
-    /// suma 3415.</para>
+    /// <para>Decisión del autor (04/10): <i>"si rinde sí, de última si se muere que se joda"</i>. Medido en las 32 corridas de 30
+    /// minutos desde `armar2.estado` (`fase5/campo`, de `tardeD` a `tardeN26`; experiencia con `experiencia_ganada.py`): Gonzo,
+    /// Cazador republicano de nivel 22, ganó de 2,5 a 3,7 mil de experiencia por minuto en 19 y de 5,9 a 7,4 en 13, y quedó entre
+    /// el 7.º y el 12.º de los 12 bots de nivel 17 o más; la mediana de los otros once va de 4,6 a 9,1 según la corrida. En las
+    /// dos modas pasó casi todo el tiempo en los Bosques de Illiandor (195 y 196: trece Lobos, suman 1495): 24 minutos en
+    /// `tardeN23` y 23 en `tardeN1`, de las altas, y 24 en `tardeN25`, de las bajas. Ese bolsón está cerrado por el Oso Pardo
+    /// (193 y 203), el Basilisco (202) y la Araña Gigante (273): sin cruzarlos no hay otro coto ni a nueve mapas, y cruzándolos,
+    /// a cuatro, el 191 suma 3415.</para>
+    ///
+    /// <para>Con el cruce, en `tardeN22`, `tardeN24` y `tardeN26` Gonzo ganó 203,8, 199,4 y 222,4 mil en los 30 minutos; sin él,
+    /// en `tardeN23` y `tardeN25`, 204,5 y 102,3: tres corridas contra dos no se separan de la moda alta que ya tenía. Por el
+    /// camino frena a cazar lo que rinda parecido (<see cref="ValeFrenarElViaje"/>): 33, 33 y 34 veces, y pasó entre 7 y 14
+    /// minutos en cada uno de los mapas 193 y 192, y 9, 2 y 7 en el 191.</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? CotoCruzandoPeligro(Navegante mapas, int mapa, (byte X, byte Y) desde,
                                                                              Func<int, int> rinde, Func<int, bool> cruzaSinPeligro,

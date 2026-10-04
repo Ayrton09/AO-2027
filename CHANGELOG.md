@@ -313,7 +313,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   caza caminando a ningún otro lado, se van con la runa apenas compran o cuando dejan de ganar experiencia.
   Con la mochila llena tiran lo que no vale nada ni les sirve, como los anillos y las plumas del botín, para que entre el
   arma o la ropa que van a comprar.
-  Si a pocos mapas hay un lugar de caza que rinde el doble y para llegar hay que cruzar peligro, lo cruzan.
+  Si a cuatro mapas o menos hay un lugar de caza donde las criaturas suman el doble de experiencia que en el mejor que
+  tienen sin cruzar peligro, lo cruzan para ir, y por el camino cazan lo que rinda parecido.
 
 ## 1.0.0 — 2026-09-16
 
