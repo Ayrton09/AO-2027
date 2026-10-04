@@ -1290,12 +1290,16 @@ public sealed class Bot
             && suStock.Any(s => ArmaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
         bool vaPorElArma = faltaArma && !enApuro;
         bool hayArmaAlAlcance = vaPorElArma && hayLugar && ArmaAlAlcance(sentidos, VendeElArma, MapaAtiende);
+        // LA ROPA, CON LA PLATA DE LAS POCIONES SI HACE FALTA: ver `PlataParaLaRopa`.
+        double sobraParaLaRopa = PlataParaLaRopa(sentidos);
         bool VendeRopa(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
-            && suStock.Any(s => RopaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
+            && suStock.Any(s => RopaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaLaRopa));
         bool hayRopaAlAlcance = faltaRopa && !enApuro && hayLugar && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
+        // Y DESNUDO, LA ROPA ES LO ESENCIAL: ver `LaRopaEsEsencial`.
+        bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar;
         if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
-            && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance) return false;
+            && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -1378,7 +1382,7 @@ public sealed class Bot
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
             if (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex))) return true;
-            if (hayRopaAlAlcance && VendeRopa(ficha)) return true;
+            if ((hayRopaAlAlcance || desnudo) && VendeRopa(ficha)) return true;
             if (hayArmaAlAlcance && VendeElArma(ficha)) return true;
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             if (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
@@ -1387,12 +1391,14 @@ public sealed class Bot
         }
 
         // Y PARA EL VIAJE LARGO, SÓLO LO ESENCIAL: ver `LoEsencialQueBusca`.
-        var esencial = LoEsencialQueBusca(primeroLasPociones, primeroLaBebida, primeroLaComida, vaPorComida, vaPorBebida);
+        var esencial = LoEsencialQueBusca(primeroLasPociones, primeroLaBebida, primeroLaComida, vaPorComida, vaPorBebida)
+                       | (desnudo ? Esencial.Ropa : Esencial.Nada);
         bool LoEsencial(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } stock }
             && ((esencial.HasFlag(Esencial.Comida) && stock.Any(s => EsComida((short)s.ObjIndex)))
                 || (esencial.HasFlag(Esencial.Bebida) && stock.Any(s => EsBebida((short)s.ObjIndex)))
-                || (esencial.HasFlag(Esencial.Pociones) && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))));
+                || (esencial.HasFlag(Esencial.Pociones) && stock.Any(s => EsPocionDeVida((short)s.ObjIndex)))
+                || (esencial.HasFlag(Esencial.Ropa) && VendeRopa(ficha)));
 
         // Y EL MAPA TIENE QUE ATENDER. Un mercader no le vende a un ciudadano donde el `battleMode` del mapa no
         // es 2 ni 3 (VB6 Protocol.bas:5205, portado igual), y TODOS los personajes nacen ciudadanos. Sin este
@@ -1464,11 +1470,12 @@ public sealed class Bot
                 { llegoAlPueblo = true; continue; }
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
                                                     vaPorAntidoto,
-                                                    vaPorEquipo || hayArmaAlAlcance, vaPorHechizo);
+                                                    vaPorEquipo || hayArmaAlAlcance || desnudo, vaPorHechizo);
                 // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
                 // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
-                bool leFaltaLoEsencial = (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))) || vaPorComida || vaPorBebida;
+                bool leFaltaLoEsencial = (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))) || vaPorComida || vaPorBebida
+                                         || desnudo;
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
                 if (intento == 0 && vaAComprar
                     && ++_tiendasSinCamino >= FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo: conMercader is not null))
@@ -1540,7 +1547,7 @@ public sealed class Bot
         // Y LAS POCIONES PROPIAS: ver `LeFaltanPocionesParaPelear`.
         bool sigueFaltando = sentidos.Suma(PuntosDeComida) < ComidaMinima || sentidos.Suma(PuntosDeBebida) < BebidaMinima
                              || (hayArmaAlAlcance && LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)))
-                             || (hayRopaAlAlcance && LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
+                             || ((hayRopaAlAlcance || desnudo) && LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
                              || LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))
                              // Y EN EL PUEBLO, TODO DE UNA: ver `HayMasParaComprarAca`.
                              || (compro && HayMasParaComprarAca(sentidos));
@@ -1627,7 +1634,19 @@ public sealed class Bot
 
     /// <summary>Lo que se busca en un viaje largo por lo esencial (<see cref="LoEsencialQueBusca"/>).</summary>
     [Flags]
-    public enum Esencial { Nada = 0, Comida = 1, Bebida = 2, Pociones = 4 }
+    public enum Esencial { Nada = 0, Comida = 1, Bebida = 2, Pociones = 4, Ropa = 8 }
+
+    /// <summary>
+    /// ¿LA ROPA ES LO ESENCIAL? Pasado el último nivel de novato y sin ropa propia: el servidor le sacó la de novato
+    /// (<c>QuitarEquipoNovato</c>) y el DESNUDO NO RECUPERA ENERGÍA (<see cref="Survival.RecuperaEnergia"/>), así que no pelea.
+    /// Entonces la ropa va como la comida: si no hay sastre por donde no hay peligro, con la runa a casa o a pie (ver
+    /// <see cref="VolverACasaAsync"/> y <see cref="RescatarseAsync"/>).
+    ///
+    /// <para>Medido el 04/10 en las corridas guardadas: de 142 muertes, 38 con la energía en cero, 28 en el nivel 16. Dalia, de nivel 16
+    /// en `armar2.estado`, arranca desnuda con 222 monedas en los Bosques de Illiandor: sin sastre al que llegue sin peligro, cazó sin
+    /// poder pegar, gastó 112 pociones en 25 minutos sin subir y la mató un Águila con la energía en cero (`tardeN24`).</para>
+    /// </summary>
+    public static bool LaRopaEsEsencial(int nivel, bool tieneRopaPropia) => nivel > GameLimits.NewbieMaxLevel && !tieneRopaPropia;
 
     /// <summary>
     /// LO ESENCIAL QUE BUSCA EN UN VIAJE LARGO: a casa con la runa (<see cref="VolverACasaAsync"/>) o a pie cruzando peligro
@@ -1812,6 +1831,9 @@ public sealed class Bot
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
             compro |= await ReponerAsync(transporte, sentidos, BebidaPropia, BebidaQueSeLleva(sentidos.Nivel), ct,
                                          ReservaPara(sentidos, comida: true, bebida: false));
+        // LA ROPA DEL CAMINO, ANTES QUE LAS POCIONES: ver `LeFaltaLaRopaDelCamino` y `PlataParaLaRopa`.
+        if (LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
+            compro |= await ComprarLaRopaDelCaminoAsync(transporte, sentidos, ct);
         compro |= await ReponerAsync(transporte, sentidos, PocionPropia, PocionesQueQuiere, ct, ReservaPara(sentidos, comida: true, bebida: true));
         // EL ANTIDOTO, que cuesta DIEZ monedas y es la diferencia entre seguir cazando y perder la vida de a
         // poco. Se compra acá, donde el bot ya está parado, y no se viaja por él: lo vende el Alquimista, que
@@ -1819,9 +1841,6 @@ public sealed class Bot
         // venenosas hay 709 repartidas en 93 mapas. Ver `CuraElVeneno`.
         compro |= await ReponerAsync(transporte, sentidos, AntidotoPropio, AntidotosQueQuiere, ct,
                                      ReservaPara(sentidos, comida: true, bebida: true));
-        // LA ROPA DEL CAMINO, ANTES QUE EL ARMA: ver `LeFaltaLaRopaDelCamino`.
-        if (LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
-            compro |= await ComprarLaRopaDelCaminoAsync(transporte, sentidos, ct);
         // EL ARMA DEL CAMINO, ANTES QUE LOS GUSTOS: ver `LeFaltaElArmaDelCamino`.
         if (LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)))
             compro |= await ComprarElArmaDelCaminoAsync(transporte, sentidos, ct);
@@ -4496,14 +4515,19 @@ public sealed class Bot
     /// defiende, cualquiera. Ponérsela es cosa de <see cref="Equiparse"/>, que al desnudo le pone lo que haya.</summary>
     private async Task<bool> ComprarLaRopaDelCaminoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
+        if (!sentidos.Comerciando) return false;
         double plata = PlataParaElEquipo(sentidos);
-        if (plata <= 0 || !sentidos.Comerciando) return false;
         int Abriga(short obj) => RopaQueLeSirve(sentidos, obj, plata) && _entorno.Datos.Obj(obj) is { } o ? Math.Max(1, ValorDeCombate(o)) : 0;
-        if (sentidos.LoMejorDeLaVitrina(Abriga, plata) is not { } oferta) return false;
-        int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
-        transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
+        // Y SI CON LO QUE SOBRA NO ALCANZA, LA MÁS BARATA CON LA PLATA DE LAS POCIONES: ver `PlataParaLaRopa`.
+        double justa = PlataParaLaRopa(sentidos);
+        int Barata(short obj) => RopaQueLeSirve(sentidos, obj, justa) && _entorno.Datos.Obj(obj) is { } o ? int.MaxValue - Math.Max(0, o.Value) : 0;
+        var oferta = (plata > 0 ? sentidos.LoMejorDeLaVitrina(Abriga, plata) : null)
+                     ?? (justa > 0 ? sentidos.LoMejorDeLaVitrina(Barata, justa) : null);
+        if (oferta is not { } laQueCompra) return false;
+        int teniaAntes = sentidos.CuantoTiene(obj => obj == laQueCompra.Obj);
+        transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(laQueCompra.Ranura).WriteInteger(1)));
         await Task.Delay(_rng.Next(600, 1_400), ct);
-        return sentidos.CuantoTiene(obj => obj == oferta.Obj) > teniaAntes;
+        return sentidos.CuantoTiene(obj => obj == laQueCompra.Obj) > teniaAntes;
     }
 
     /// <summary>¿Es ropa de cuerpo que no es de novato, se la puede poner, el servidor no se la rechazó y la puede pagar? La del
@@ -4604,6 +4628,15 @@ public sealed class Bot
     /// Medido en `early2`: siete de los ocho bots que llegaron al 16 lo hicieron con cero pociones propias; Ciro, en el 13, pagó
     /// 19 mil de sus 20 mil monedas por una armadura.</para>
     /// </summary>
+    /// <summary>
+    /// Lo que puede gastar en la ROPA DEL CAMINO cuando con <see cref="PlataParaElEquipo"/> no le alcanza: lo mismo pero sin apartar lo
+    /// de las pociones, y sólo para la más barata que le sirve (<see cref="ComprarLaRopaDelCaminoAsync"/>). Una ropa de 50 no le saca
+    /// las pociones del 16, y desnudo no pelea: las pociones no le sirven. Medido en `tardeN15`, `N20` y `N25`: Dalia llegó viva a
+    /// Rinkel con 222 monedas y las gastó en pociones (quedó con 2), con las Vestimentas de Mujer a 50 en el sastre.
+    /// </summary>
+    private int PlataParaLaRopa(SentidosDelBot sentidos) =>
+        PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
+
     private int PlataParaElEquipo(SentidosDelBot sentidos) =>
         PlataQueSobra(sentidos.Oro,
                       ReservaPara(sentidos, comida: true, bebida: true) + ReservaParaLasPociones(sentidos.Suma(PocionPropia), CuestaLaPocion),

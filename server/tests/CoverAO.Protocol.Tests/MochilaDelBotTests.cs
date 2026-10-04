@@ -239,6 +239,16 @@ public class MochilaDelBotTests : IDisposable
     public void Sin_pueblo_y_sin_lo_esencial_la_runa_a_la_primera(bool leFaltaLoEsencial, bool hayPueblo, int fracasos) =>
         Assert.Equal(fracasos, Bot.FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo));
 
+    /// <summary>DESNUDO PASADO EL NOVATO, LA ROPA ES LO ESENCIAL (Dalia en tardeN24, muerta con la energía en cero): antes del 16 la de
+    /// novato todavía abriga, y con ropa propia no hace falta.</summary>
+    [Theory]
+    [InlineData(15, false, false)]
+    [InlineData(16, false, true)]
+    [InlineData(16, true, false)]
+    [InlineData(30, false, true)]
+    public void Desnudo_pasado_el_novato_la_ropa_es_lo_esencial(int nivel, bool tieneRopaPropia, bool esencial) =>
+        Assert.Equal(esencial, Bot.LaRopaEsEsencial(nivel, tieneRopaPropia));
+
     /// <summary>
     /// CON LA MOCHILA LLENA SE TIRA LO QUE NO VALE NADA Y NO LE SIRVE, para que entre el arma del camino (`alto45`: Hilda, cinco o seis
     /// viajes al herrero sin poder comprar, con tres anillos y una pluma de botín). Lo de novato no: el servidor no lo deja tirar.

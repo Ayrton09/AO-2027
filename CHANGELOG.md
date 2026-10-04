@@ -315,6 +315,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   arma o la ropa que van a comprar.
   Si a cuatro mapas o menos hay un lugar de caza donde las criaturas suman el doble de experiencia que en el mejor que
   tienen sin cruzar peligro, lo cruzan para ir, y por el camino cazan lo que rinda parecido.
+  Desnudos, sin la ropa de novato, van por ropa antes que por pociones, y si no hay sastre al que lleguen sin peligro,
+  vuelven con la runa o a pie, como cuando les falta comida.
 
 ## 1.0.0 — 2026-09-16
 
