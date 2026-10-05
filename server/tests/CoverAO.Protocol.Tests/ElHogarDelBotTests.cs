@@ -104,10 +104,11 @@ public class ElHogarDelBotTests
     }
 
     /// <summary>
-    /// Y EL COTO DEL ÚLTIMO NIVEL DE NOVATO SE ELIGE CON ESA VUELTA, con el mismo filtro `nunca` que arma el bot: un republicano de 15
-    /// en los Bosques de Nix se quedaba en el 29 —graduado, los guardias de Nix van por él— y ahora va al 18, que tiene vuelta por el
-    /// Río Otoren a Rinkel; un ciudadano de 15 desde la cuna se iba al 262, del lado republicano —donde, graduado, no tiene dónde
-    /// comprar: así quedaron Ciro y Aldo en el 195— y ahora va al 18.
+    /// Y EL COTO DEL ÚLTIMO NIVEL DE NOVATO SE ELIGE CON ESA VUELTA, con el mismo filtro `nunca` que arma el bot: un ciudadano de 15
+    /// desde la cuna se iba al 262, del lado republicano —donde, graduado, no tiene dónde comprar: así quedaron Ciro y Aldo en el
+    /// 195— y ahora va al 18. Un republicano de 15 en los Bosques de Nix —graduado, los guardias de Nix van por él— va al 18, que
+    /// tiene vuelta por el Río Otoren a Rinkel; desde que se muda por una vez y media lo que suma (<see cref="Bot.LoMinimoParaMudarsePorLaSuma"/>)
+    /// se va con cualquiera de las dos vueltas.
     /// </summary>
     [Fact]
     public void El_coto_del_ultimo_nivel_de_novato_tiene_la_vuelta_del_graduado()
@@ -135,7 +136,6 @@ public class ElHogarDelBotTests
                                   out _, out _, seCazaAhi, null, nunca, Bot.EligePorLoQueSuma(nivel))?.Mapa;
         }
         byte republicano = Player.StatusRepublicano, ciudadano = Player.StatusCiudadano;
-        Assert.Equal(29, Coto(republicano, 29, (90, 11), nivel));
         Assert.Equal(18, Coto(republicano, 29, (90, 11), Bot.NivelParaLaVuelta(nivel)));
         Assert.Equal(262, Coto(ciudadano, 37, (60, 66), nivel));
         Assert.Equal(18, Coto(ciudadano, 37, (60, 66), Bot.NivelParaLaVuelta(nivel)));
