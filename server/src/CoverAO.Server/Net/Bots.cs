@@ -236,10 +236,21 @@ public sealed class Bot
     /// el tope es para no quedarse sentado toda la sesión si el maná no sube.</summary>
     private const int MeditaTopeMs = 45_000;
 
-    /// <summary>Cuántas pociones de vida quiere tener encima, y desde cuántos pasos se acerca a un mercader.
-    /// El kit de novato trae mil quinientas, así que el bot recién sale a comprar cuando gastó casi todas — lo
-    /// que dispara la visita al mercader, en la práctica, es tener botín para vender.</summary>
+    /// <summary>Cuántas pociones de vida quiere tener encima, y desde cuántos pasos se acerca a un mercader. Mientras es novato
+    /// cuentan las del kit, que trae mil quinientas; pasado el 16, sólo las propias (`PocionPropia`). Sale a buscarlas recién con
+    /// menos de <see cref="PocionesMinimas"/> (<see cref="FaltanPociones"/>).</summary>
     private const int PocionesQueQuiere = 200, RadioDeCompras = 15;
+
+    /// <summary>
+    /// ¿SALE A COMPRAR POCIONES? Con menos de <see cref="PocionesMinimas"/>, y en el mostrador llena hasta
+    /// <see cref="PocionesQueQuiere"/>, como la comida y la bebida (<see cref="ComidaMinima"/> y <see cref="ComidaQueQuiere"/>). Con
+    /// el mismo número para salir y para llenar, una poción tomada ya era un viaje. Medido en `mid70` (05/10): Lira, nivel 23, con
+    /// 218 a 301 mil monedas, fue del 18 a Rinkel a las 10:46, 10:57 y 11:05 con 187, 197 y 199 pociones, unos 4,6 minutos cada
+    /// vez; en las once corridas mid de 20 minutos (mid60 a mid70), 32 viajes y 149 minutos salieron así con 190 o más.
+    /// </summary>
+    public static bool FaltanPociones(int propias) => propias < PocionesMinimas;
+
+    private const int PocionesMinimas = 100;
 
     /// <summary>Cuántos antídotos lleva encima. Son pocos porque el veneno no es constante y cada uno cura
     /// del todo: lo que importa es no quedarse sin ninguno, no acumular.</summary>
@@ -1235,7 +1246,7 @@ public sealed class Bot
             _proximaCompra = 0;
         if (Environment.TickCount64 < _proximaCompra) return false;
 
-        bool faltanPociones = sentidos.Suma(PocionPropia) < PocionesQueQuiere;
+        bool faltanPociones = FaltanPociones(sentidos.Suma(PocionPropia));
         // LA COMIDA Y LA BEBIDA SE REPONEN ANTES DE QUE SE ACABEN. El kit de novato trae cien de cada una y el bot
         // nunca compraba más: después de horas de juego se le terminaban, el hambre y la sed llegaban a cero, y
         // con cualquiera de las dos en cero el servidor deja de regenerar. Sin energía `CazarAsync` se aleja en

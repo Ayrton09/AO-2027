@@ -256,6 +256,21 @@ public class MochilaDelBotTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A COMPRAR POCIONES SE SALE CON MENOS DE CIEN, no con una menos de las que llena (<see cref="Bot.FaltanPociones"/>): Lira iba a
+    /// Rinkel con 187, 197 y 199 (`mid70`).
+    /// </summary>
+    [Theory]
+    [InlineData(199, false)]
+    [InlineData(187, false)]
+    [InlineData(100, false)]
+    [InlineData(99, true)]
+    [InlineData(0, true)]
+    public void A_comprar_pociones_se_sale_con_menos_de_cien(int propias, bool sale)
+    {
+        Assert.Equal(sale, Bot.FaltanPociones(propias));
+    }
+
     /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
     /// 3 monedas); con ropa, o sin ninguna a la venta, la reserva es la de siempre.</summary>
     [Theory]
