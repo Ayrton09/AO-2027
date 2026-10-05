@@ -96,6 +96,22 @@ function crearVentana() {
     if (input.key === 'F11') { ponerPantallaCompleta(!ventana.isFullScreen()); e.preventDefault(); }
     else if (input.control && input.shift && input.key.toLowerCase() === 's') { abrirMenu(); e.preventDefault(); }
     else if (input.control && input.shift && input.key.toLowerCase() === 'i') { ventana.webContents.toggleDevTools(); e.preventDefault(); }
+    else if (input.alt && (input.key === 'ArrowLeft' || input.key === 'ArrowRight')) {
+      if (input.key === 'ArrowLeft') atras();
+      e.preventDefault();
+    }
+  });
+
+  // EL "ATRÁS" (el botón lateral del mouse, Alt+Izquierda) NO RECORRE EL HISTORIAL: desde el juego vuelve al menú y en el menú a la
+  // pantalla principal, como el Esc. Recorriendo el historial caía en lo que quedara atrás: la página de un server que no había
+  // cargado, que es negra (el autor, 05/10: "al poner entrar y luego volver atrás se queda en negro todo").
+  ventana.on('app-command', (e, comando) => {
+    if (comando === 'browser-backward') { e.preventDefault(); atras(); }
+    else if (comando === 'browser-forward') e.preventDefault();
+  });
+  // Y cada vez que se carga el menú el historial arranca de cero.
+  ventana.webContents.on('did-finish-load', () => {
+    if (ventana.webContents.getURL().startsWith('file:')) ventana.webContents.navigationHistory.clear();
   });
 
   // Si el server no contesta, de vuelta al menú, en la lista y con el motivo.
@@ -173,9 +189,18 @@ ipcMain.handle('quitar', (_e, direccion) => {
 
 ipcMain.handle('consultar', (_e, direccion) => (normalizar(direccion) ? consultar(normalizar(direccion)) : null));
 
-ipcMain.handle('entrar', (_e, direccion) => {
+/** El "atrás": del juego al menú; en el menú, a la pantalla principal (el mismo Esc que entiende menu.html). */
+function atras() {
+  if (!ventana.webContents.getURL().startsWith('file:')) return abrirMenu();
+  ventana.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))").catch(() => {});
+}
+
+ipcMain.handle('entrar', async (_e, direccion) => {
   const elegido = normalizar(direccion);
   if (!elegido) return 'Esa dirección no es válida.';
+  // SI NO RESPONDE, NO SE SALE DEL MENÚ: el aviso va en la lista y la música sigue. Antes se intentaba cargar, fallaba y el menú se
+  // volvía a abrir entero con el error, con la música desde el principio y la página fallida en el historial.
+  if (!(await consultar(elegido)).enLinea) return `${elegido.replace(/^https?:\/\//, '').replace(/\/$/, '')} no responde: ¿está prendido?`;
   servidor = config.servidor = elegido;
   if (!config.servidores.some((s) => s.direccion === elegido)) config.servidores.push({ direccion: elegido, nombre: '' });
   guardarConfig(config);
