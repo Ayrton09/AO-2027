@@ -1261,7 +1261,9 @@ public sealed class Bot
         bool faltaComida = sentidos.Suma(ComidaPropia) < ComidaMinima;
         bool faltaBebida = sentidos.Suma(BebidaPropia) < BebidaMinima;
         bool hayQueVender = sentidos.EnLaMochila(obj => EsBotin(sentidos, obj)) is not null;
-        // Y SÓLO A VENDER SE SALE POR UN BOTÍN QUE VALE EL VIAJE: ver `ValeElViajeParaVender`. En el pueblo vende igual.
+        // Y SÓLO A VENDER SE SALE POR UN BOTÍN QUE VALE EL VIAJE, y por eso solo un mercader no sirve de destino (`Sirve`): ver
+        // `ValeElViajeParaVender`. En el pueblo vende igual. Al rico `vaPorEquipo` le da siempre, y sin mejora en ninguna vitrina
+        // `Sirve` lo mandaba al que le compra la leña: llegaba, no compraba nada y a los dos minutos volvía (ronda 40, 05/10).
         bool vaAVender = hayQueVender
                          && ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
                                                                      (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
@@ -1405,7 +1407,7 @@ public sealed class Bot
             if (soloGustos)
                 return (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
-                    || (hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null);
+                    || (vaAVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null);
             if (primeroLaBebida) return stock.Any(s => EsBebida((short)s.ObjIndex));
             if (primeroLaComida) return stock.Any(s => EsComida((short)s.ObjIndex));
             // CADA NECESIDAD, A QUIEN LA ATIENDE. Antes, sin nada que vender, servía cualquier mercader, y así se
@@ -1420,7 +1422,7 @@ public sealed class Bot
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             if (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
             return venderAlcanza
-                   && hayQueVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
+                   && vaAVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null;
         }
 
         // Y PARA EL VIAJE LARGO, SÓLO LO ESENCIAL: ver `LoEsencialQueBusca`.
