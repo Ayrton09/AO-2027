@@ -129,6 +129,19 @@ public class CotoPorLoQueSumaTests
     }
 
     /// <summary>
+    /// DEL 12 AL 18 POR UNA VEZ Y MEDIA (<see cref="Bot.LoMinimoParaMudarsePorLaSuma"/>): Kael, nivel 25, en la baldosa donde lo dejó
+    /// `armar3.estado`. El 18 suma 4920 contra 2510: no llega al doble y sí a una vez y media.
+    /// </summary>
+    [Fact]
+    public void Del_12_se_va_al_18_que_suma_una_vez_y_media()
+    {
+        if (UnCazador(25, 199) is not { } c) return;
+        var desde = ((byte)33, (byte)87);
+        Assert.Equal(18, Coto(c, 12, desde, porLoQueSuma: true)?.Mapa);
+        Assert.Equal(3765, Bot.LoMinimoParaMudarsePorLaSuma(2510));
+    }
+
+    /// <summary>
     /// DE LOS BOSQUES DE ILLIANDOR, CRUZANDO PELIGRO, A UN COTO QUE SUMA EL DOBLE (<see cref="Bot.CotoCruzandoPeligro"/>, decisión del
     /// autor del 04/10). Es Gonzo, nivel 22, en la baldosa donde lo encontró `tardeN21`: sin cruzar peligro lo mejor son los trece Lobos
     /// del 195 (es republicano: Illiandor no lo echa); el coto que elige está a cuatro mapas o menos y suma por lo menos el doble. Y en el mapa de doce Zombies se queda.

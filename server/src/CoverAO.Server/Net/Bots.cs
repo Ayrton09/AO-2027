@@ -2999,7 +2999,7 @@ public sealed class Bot
             // PASADO EL NOVATO, LO QUE SUMA: ver `EligePorLoQueSuma`.
             int acaSuma = sirve is null || sirve(mapa) ? mapas.LoQueSuma(mapa, desde, rinde)?.Suma ?? 0 : 0;
             if (mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, pisable, sirve, desempate,
-                                     LoMinimoParaMudarse(acaSuma)) is { } rico && rico.Mapa != mapa)
+                                     LoMinimoParaMudarsePorLaSuma(acaSuma)) is { } rico && rico.Mapa != mapa)
             {
                 porElOro = false;
                 porLoQueRinde = rico.Rinde;
@@ -3339,6 +3339,15 @@ public sealed class Bot
     /// nivel 13 sigue con el Lobo de 115 teniendo Esqueletos Guerreros de 270 al lado, y ahí se muda.
     /// </summary>
     public static bool ValeMudarsePorLoQueRinde(int rindeAca, int rindeAlla) => rindeAlla >= LoMinimoParaMudarse(rindeAca);
+
+    /// <summary>
+    /// LO MENOS QUE TIENE QUE SUMAR OTRO MAPA PARA MUDARSE, pasado el novato (<see cref="EligePorLoQueSuma"/>): una vez y media lo de acá,
+    /// no el doble. La suma premia los mapas con muchas presas flojas, y en el late las bajas por minuto son parejas (unas 1,3 por bot,
+    /// medido en `tardeP1` a `P4`, 04/10): lo que decide es lo que da cada una. Kael, de nivel 25 en el 12 (Serpientes, Esqueletos y
+    /// Goblins, suma 2510, 84 por presa) se quedaba con el 18 a un mapa (Zombies y Lobos, suma 4920, 205 por presa) por un 2 %, y hacía
+    /// 5 mil de experiencia por minuto contra los 17 mil de Rufo en el 18. Para cruzar peligro sigue el doble (<see cref="CotoCruzandoPeligro"/>).
+    /// </summary>
+    public static int LoMinimoParaMudarsePorLaSuma(int sumaAca) => sumaAca <= 0 ? 1 : sumaAca * 3 / 2;
 
     /// <summary>Lo menos que tiene que rendir otro lugar para que valga mudarse (<see cref="ValeMudarsePorLoQueRinde"/>).</summary>
     public static int LoMinimoParaMudarse(int rindeAca) => rindeAca <= 0 ? 1 : rindeAca * VecesQueTieneQueRendir;
