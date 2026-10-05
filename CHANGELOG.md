@@ -180,6 +180,14 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **La música y los efectos vienen al 20 %.**
 
+- **"Recordarme" en el ingreso**: el juego para escritorio guarda la cuenta y la contraseña de cada server, cifradas, y la
+  próxima vez el ingreso ya viene completo; en el navegador recuerda la cuenta.
+
+- **Opciones también desde el ingreso** (el ⚙ de abajo), y con la música del inicio. En el juego para escritorio, el ingreso
+  tiene "← Volver" y "Salir", y Opciones suma la pantalla completa, "Volver al menú" y "Salir del juego".
+
+- **Apagar la música la apaga**: al entrar al mundo podían quedar dos temas sonando y el botón cortaba uno solo.
+
 - **La tabla de posiciones se abre encima del ingreso**, sin cortar la música del inicio: se cierra con la ×, con Esc
   o con "entrar al juego".
 

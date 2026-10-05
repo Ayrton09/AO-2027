@@ -35,4 +35,17 @@ if (location.protocol === 'file:') {
   };
   window.addEventListener('pagehide', devolver);
   setInterval(devolver, 5000);
+
+  // RECORDARME: la cuenta y la contraseña de ESTE server, guardadas cifradas por el juego de escritorio (ver main.js). La página
+  // no dice de qué server es: el proceso principal lo saca de la dirección del marco que pregunta.
+  contextBridge.exposeInMainWorld('coveraoEscritorio', {
+    leer: () => ipcRenderer.invoke('recordar-leer'),
+    guardar: (cuenta, clave) => ipcRenderer.invoke('recordar-guardar', String(cuenta ?? ''), String(clave ?? '')),
+    olvidar: () => ipcRenderer.invoke('recordar-olvidar'),
+    // Y lo que el juego le pide al juego de escritorio desde sus Opciones y su ingreso: volver al menú, salir y la pantalla completa.
+    volverAlMenu: () => ipcRenderer.invoke('volver-al-menu'),
+    salir: () => ipcRenderer.invoke('salir'),
+    estaEnPantallaCompleta: () => ipcRenderer.invoke('esta-en-pantalla-completa'),
+    pantallaCompleta: (si) => ipcRenderer.invoke('pantalla-completa', !!si),
+  });
 }

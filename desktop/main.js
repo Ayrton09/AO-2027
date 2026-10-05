@@ -3,7 +3,7 @@
 // pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
 // 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
 // con la música del inicio sonando hasta que se entra a un server.
-const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -255,6 +255,43 @@ ipcMain.on('ajustes-del-juego', (_e, ajustes) => {
 });
 
 ipcMain.handle('salir', () => app.quit());
+
+ipcMain.handle('volver-al-menu', () => abrirMenu());
+
+// RECORDARME (el autor, 05/10): la cuenta y la contraseña de cada server, la contraseña cifrada con `safeStorage` (en Windows,
+// DPAPI: sólo la lee este usuario de Windows en esta PC). El server se saca de la dirección del marco que pregunta —nunca de lo
+// que diga la página—, y sólo del marco principal: un server lee únicamente lo suyo. Sin cifrado disponible no se guarda la
+// contraseña, sólo la cuenta.
+const servidorDelPedido = (e) => {
+  const marco = e.senderFrame;
+  if (!marco || marco.parent || !/^https?:/.test(marco.url)) return null;
+  try { return new URL(marco.url).origin; } catch { return null; }
+};
+config.recordados = config.recordados && typeof config.recordados === 'object' ? config.recordados : {};
+
+ipcMain.handle('recordar-leer', (e) => {
+  const origen = servidorDelPedido(e);
+  const r = origen && config.recordados[origen];
+  if (!r) return null;
+  let clave = '';
+  try { if (r.clave && safeStorage.isEncryptionAvailable()) clave = safeStorage.decryptString(Buffer.from(r.clave, 'base64')); } catch { }
+  return { cuenta: r.cuenta, clave };
+});
+
+ipcMain.handle('recordar-guardar', (e, cuenta, clave) => {
+  const origen = servidorDelPedido(e);
+  if (!origen || typeof cuenta !== 'string' || !cuenta || cuenta.length > 64 || typeof clave !== 'string' || clave.length > 256) return;
+  const cifrada = clave && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(clave).toString('base64') : '';
+  config.recordados[origen] = { cuenta, clave: cifrada };
+  guardarConfig(config);
+});
+
+ipcMain.handle('recordar-olvidar', (e) => {
+  const origen = servidorDelPedido(e);
+  if (!origen || !config.recordados[origen]) return;
+  delete config.recordados[origen];
+  guardarConfig(config);
+});
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);

@@ -310,6 +310,8 @@
     #modal { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
       background:#05040799; backdrop-filter:blur(2px); }
     #modal.on { display:flex; }
+    /* Abierto desde el ingreso (el ⚙ de la barra), por encima de él: el ingreso está en 40. */
+    #modal.sobre-ingreso { z-index:45; }
     .card { width:min(520px,86vw); max-height:82vh; overflow:auto; padding:0; }
     /* EL COMERCIO Y EL BANCO VAN MÁS ANCHOS. Los 520px alcanzan para un formulario, pero esas dos ventanas
        parten el ancho en DOS columnas —el mercader y vos, la bóveda y vos— y cada mitad entraba dos objetos
@@ -418,6 +420,9 @@
       letter-spacing:.03em; text-transform:uppercase; }
     .login-form input, .login-form select { background:#0a0705; border:1px solid var(--gold-deep); color:var(--ink);
       padding:8px 9px; border-radius:4px; font-family:system-ui,sans-serif; font-size:calc(var(--u)*1); }
+    .login-form label.recordarme { flex-direction:row; align-items:center; gap:7px; text-transform:none; letter-spacing:0;
+      cursor:pointer; user-select:none; }
+    .login-form label.recordarme input { width:15px; height:15px; margin:0; padding:0; accent-color:var(--gold); cursor:pointer; }
     /* ---- Selección de personaje (flujo cuenta → lista, como el AO original) ---- */
     #charsel { display:flex; flex-direction:column; }
     #charsel.hidden { display:none; }
@@ -825,6 +830,7 @@
       <form class="login-form on" id="lf-in" autocomplete="off">
         <label>Cuenta <input name="acc" required></label>
         <label>Contraseña <input name="pw" type="password" required></label>
+        <label class="recordarme"><input name="recordar" type="checkbox"> Recordarme</label>
         <button class="goldbtn" type="submit">Conectar</button>
         <div class="login-hint">Elegís el personaje después. Una cuenta puede tener varios.</div>
       </form>
@@ -992,6 +998,9 @@
         <button type="button" id="lm-musica" title="música del inicio">♪</button>
         <input type="range" min="0" max="100" step="5" data-op="volmusica" id="lm-vol" aria-label="volumen de la música">
         <span id="lm-vol-val" data-op-val="volmusica"></span>
+        <button type="button" id="lm-opciones" title="opciones">⚙</button>
+        <button type="button" id="lm-volver" title="volver al menú" hidden>← Volver</button>
+        <button type="button" id="lm-salir" title="salir del juego" hidden>Salir</button>
       </span>
     </div>
   </div>
@@ -1844,7 +1853,11 @@
       if (!pista || muted || musicaOff || (enElIngreso() && !ingresoConLaDelMapa)) return;
       const a = new Audio(`./assets/music/${pista}.mp3`);
       a.loop = true; a.volume = volMusica;
-      a.play().then(() => { musicaAudio = a; }).catch(() => {});   // sin archivo (404) o sin gesto del usuario: silencio
+      // SE ANOTA YA, NO CUANDO ARRANCA. Anotándola al resolver el `play()`, dos pedidos seguidos —el mapa de fondo del ingreso y el
+      // mapa al entrar— dejaban sonando la primera sin nadie que la parara: el ♪ y Opciones apagaban sólo la segunda (el autor,
+      // 05/10: "tocando esos botones no se me apaga"). Sin archivo (404) o sin gesto del usuario: silencio, y se suelta.
+      musicaAudio = a;
+      a.play().catch(() => { if (musicaAudio === a) musicaAudio = null; });
     }
     window.__musica = () => ({ pista: musicaActual, suena: !!musicaAudio, volumen: musicaAudio ? musicaAudio.volume : null });
 
@@ -3347,7 +3360,7 @@
       modalCard.querySelector('.cx').onclick = closeModal;
     }
     function closeModal() {
-      modalEl.classList.remove('on');
+      modalEl.classList.remove('on', 'sobre-ingreso');
       endShopIfOpen();
       modalKind = null;
       // DESARMAR EL REASIGNADOR DE TECLAS. Queda cebado al tocar "reasignar" en el panel de Opciones y se
@@ -3734,6 +3747,18 @@
                            if (!macroOn) { macroSoltarTodo(); }
                            abrirOpciones(); return;
           case 'teclas':   abrirTeclas(); return;
+          // LAS DE LA PANTALLA DEL MENÚ, TAMBIÉN ACÁ (el autor, 05/10: "donde están todas las opciones que tiene como el del menú", y
+          // "un botón de salir dentro de las opciones del juego"). Las tres últimas sólo existen desde el juego de escritorio.
+          case 'musicalogin': musicaLoginOff = !musicaLoginOff; guardarPref('ao_musicalogin', musicaLoginOff ? '0' : '1');
+                           ponerMusicaLogin(); pintarMusicaLogin(); abrirOpciones(); return;
+          case 'completa': {
+            const esc = window.coveraoEscritorio;
+            if (esc) esc.estaEnPantallaCompleta().then((si) => esc.pantallaCompleta(!si))
+              .then((si) => { op.textContent = si ? 'sí' : 'no'; }).catch(() => {});
+            return;
+          }
+          case 'volvermenu': if (window.coveraoEscritorio) window.coveraoEscritorio.volverAlMenu(); return;
+          case 'salirjuego': if (window.coveraoEscritorio) window.coveraoEscritorio.salir(); return;
         }
       }
       const mvb = ev.target.closest('.mvb');   // ▲/▼ en la bóveda → MoveBank(upwards, slot)
@@ -4032,6 +4057,8 @@
         <div class="fsec">Audio</div>
         <div class="frow" style="justify-content:space-between"><span>Música</span>
           <button class="sbtn ghost" data-op="musica" style="min-width:5em">${musicaOff ? 'apagada' : 'encendida'}</button></div>
+        <div class="frow" style="justify-content:space-between"><span>Música del inicio</span>
+          <button class="sbtn ghost" data-op="musicalogin" style="min-width:5em">${musicaLoginOff ? 'apagada' : 'encendida'}</button></div>
         <div class="frow" style="justify-content:space-between"><span>Volumen de la música</span>
           <input type="range" min="0" max="100" step="5" value="${Math.round(volMusica * 100)}" data-op="volmusica" style="flex:1;max-width:12em">
           <span data-op-val="volmusica" style="min-width:3em;text-align:right">${Math.round(volMusica * 100)}%</span></div>
@@ -4042,6 +4069,8 @@
           <span data-op-val="volefectos" style="min-width:3em;text-align:right">${Math.round(volEfectos * 100)}%</span></div>
 
         <div class="fsec">Video</div>
+        ${window.coveraoEscritorio ? `<div class="frow" style="justify-content:space-between"><span>Pantalla completa</span>
+          <button class="sbtn ghost" data-op="completa" style="min-width:5em">…</button></div>` : ''}
         <div class="frow" style="justify-content:space-between"><span>Tope de FPS</span>
           <select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'sin límite')).join('')}
             ${FPS_OPCIONES.includes(fpsCap) ? '<option value="custom">otro…</option>'
@@ -4078,7 +4107,13 @@
 
         <div class="fsec">Controles</div>
         <div class="frow"><button class="sbtn" data-op="teclas">Configuración de controles</button>
-          <span class="fhint">reasignar cualquier tecla</span></div>`, true, 'opciones');
+          <span class="fhint">reasignar cualquier tecla</span></div>
+        ${window.coveraoEscritorio ? `<div class="fsec">Salir</div>
+        <div class="frow"><button class="sbtn ghost" data-op="volvermenu">Volver al menú</button>
+          <button class="sbtn ghost" data-op="salirjuego">Salir del juego</button></div>` : ''}`, true, 'opciones');
+      // La pantalla completa la sabe el juego de escritorio, no la página.
+      const completa = modalCard.querySelector('[data-op=completa]');
+      if (completa) window.coveraoEscritorio.estaEnPantallaCompleta().then((si) => { completa.textContent = si ? 'sí' : 'no'; }).catch(() => {});
     }
     window.__abrirOpciones = abrirOpciones;
     window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, macroOn, ocultarLluviaBajoTecho });
@@ -6951,6 +6986,18 @@
     };
     if (lmVol) lmVol.value = String(Math.round(volMusica * 100));
     if (lmVolVal) lmVolVal.textContent = Math.round(volMusica * 100) + '%';
+    // OPCIONES TAMBIÉN EN EL INGRESO (el autor, 05/10: "no debe estar solamente en el menú, acá también"): el mismo panel de adentro
+    // del juego, por encima del ingreso.
+    const lmOpciones = $('lm-opciones');
+    if (lmOpciones) lmOpciones.addEventListener('click', () => { modalEl.classList.add('sobre-ingreso'); abrirOpciones(); });
+    // Y DESDE EL JUEGO DE ESCRITORIO, VOLVER A SU MENÚ Y SALIR (el autor, 05/10: "un botón de atrás en el menú" y "un botón de salir en
+    // el menú también"). En el navegador no aparecen: la pestaña la cierra uno.
+    if (window.coveraoEscritorio) {
+      for (const [id, accion] of [['lm-volver', 'volverAlMenu'], ['lm-salir', 'salir']]) {
+        const b = $(id);
+        if (b) { b.hidden = false; b.addEventListener('click', () => window.coveraoEscritorio[accion]()); }
+      }
+    }
     if (lmMusica) lmMusica.addEventListener('click', () => {
       if (ingresoConLaDelMapa) { toggleMusica(); pintarMusicaLogin(); return; }
       musicaLoginOff = !musicaLoginOff;
@@ -7533,6 +7580,36 @@
       loginErr('');
     }));
     const V = (w) => w.writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2]);
+    /**
+     * RECORDARME (el autor, 05/10: "¿no hay una opción para recordar la cuenta, así no me logueo cada vez?"). En el juego de
+     * escritorio se guardan la cuenta y la contraseña de ESTE server, cifradas por Windows (`window.coveraoEscritorio`, que pone
+     * desktop/preload.js; cada server lee sólo las suyas): la próxima vez el ingreso viene completo. En el navegador, sólo la
+     * cuenta. Se anota cuando el server ACEPTA la cuenta (`showCharList`), así nunca queda guardada una contraseña equivocada; y
+     * entrar con la casilla sin tildar lo olvida.
+     */
+    const escritorio = window.coveraoEscritorio || null;
+    const casillaRecordar = $('lf-in').elements.recordar;
+    (async () => {
+      try {
+        const f = $('lf-in').elements;
+        if (escritorio) {
+          const r = await escritorio.leer();
+          if (r && r.cuenta) { f.acc.value = r.cuenta; f.pw.value = r.clave || ''; casillaRecordar.checked = true; }
+        } else {
+          const cuenta = localStorage.getItem('ao_cuenta_recordada');
+          if (cuenta) { f.acc.value = cuenta; casillaRecordar.checked = true; }
+        }
+      } catch (e) { /* sin guardado: el ingreso viene vacío */ }
+    })();
+    function anotarRecordarme() {
+      if (!accName) return;
+      try {
+        if (casillaRecordar.checked) {
+          if (escritorio) escritorio.guardar(accName, accPass || ''); else localStorage.setItem('ao_cuenta_recordada', accName);
+        } else if (escritorio) escritorio.olvidar(); else localStorage.removeItem('ao_cuenta_recordada');
+      } catch (e) { /* modo privado: no se recuerda */ }
+    }
+
     $('lf-in').addEventListener('submit', (ev) => {             // Conectar → ConnectAccount → lista de personajes
       ev.preventDefault(); const e = ev.target.elements;
       accName = e.acc.value.trim(); accPass = e.pw.value;
@@ -7669,6 +7746,7 @@
     // pedirla significaría re-loguear, y eso es un viaje de ida y vuelta para deshacer un clic.
     let ultimoRoster = null;
     function showCharList(account, list) {
+      anotarRecordarme();
       ultimoRoster = { account, list };
       csAccEl.textContent = account; charlistEl.innerHTML = '';
       const pending = [];
