@@ -256,9 +256,10 @@
     });
 
     // ---- Ajustes: los del juego, con sus mismas claves y valores (`localStorage` del cliente web). ----
-    // Los valores por defecto son los del juego (client-web/index.html), salvo el volumen de la música: 20 % (el autor, 05/10).
+    // Los valores por defecto son los del juego (client-web/index.html), salvo la música: al 20 % y también adentro del juego
+    // (el autor, 05/10). Son los mismos que pone main.js.
     const POR_DEFECTO = {
-      ao_musicalogin: '1', ao_musica: '0', ao_volmusica: '0.2', ao_mute: '0', ao_volefectos: '0.5',
+      ao_musicalogin: '1', ao_musica: '1', ao_volmusica: '0.2', ao_mute: '0', ao_volefectos: '0.5',
       ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_macro: '1',
     };
     let ajustes = {};
