@@ -271,6 +271,23 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(sale, Bot.FaltanPociones(propias));
     }
 
+    /// <summary>
+    /// EL PERGAMINO DE UN HECHIZO QUE NO PUEDE LANZAR NO SE COMPRA (<see cref="Bot.LoPuedeLanzar"/>): "Te Violo", el que enseña el
+    /// pergamino 541 a doscientas mil, pide mil de energía y magia 100. Curar Heridas Leves sí.
+    /// </summary>
+    [Fact]
+    public void El_pergamino_de_un_hechizo_que_no_puede_lanzar_no_se_compra()
+    {
+        var d = GameData.Load();
+        if (d.Spell(30) is not { } teViolo || d.Obj(541) is not { IsPergamino: true } pergamino) return;
+        Assert.Equal(30, pergamino.HechizoIndex);
+        Assert.False(Bot.LoPuedeLanzar(teViolo, energiaMaxima: 400, manaMaximo: 900, magia: 100));
+        Assert.False(Bot.LoPuedeLanzar(teViolo, energiaMaxima: 400, manaMaximo: 900, magia: -1));
+        var leves = d.Spells.Values.First(h => h.Name.StartsWith("Curar Heridas Leves", StringComparison.OrdinalIgnoreCase));
+        Assert.True(Bot.LoPuedeLanzar(leves, energiaMaxima: 100, manaMaximo: 100, magia: -1));
+        Assert.Equal(leves.MinSkill <= 5, Bot.LoPuedeLanzar(leves, energiaMaxima: 100, manaMaximo: 100, magia: 5));
+    }
+
     /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
     /// 3 monedas); con ropa, o sin ninguna a la venta, la reserva es la de siempre.</summary>
     [Theory]

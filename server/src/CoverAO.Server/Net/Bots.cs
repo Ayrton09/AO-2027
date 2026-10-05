@@ -5763,9 +5763,22 @@ public sealed class Bot
     private SpellInfo? QueEnsena(short obj) =>
         _entorno.Datos.Obj(obj) is { IsPergamino: true } o ? _entorno.Datos.Spell((short)o.HechizoIndex) : null;
 
-    /// <summary>¿Ese pergamino de la vitrina le sirve a este bot?</summary>
+    /// <summary>¿Ese pergamino de la vitrina le sirve a este bot? Y si lo puede lanzar: ver <see cref="LoPuedeLanzar"/>.</summary>
     private bool LeSirveElPergamino(SentidosDelBot sentidos, short obj) =>
-        sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos());
+        sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos())
+        && LoPuedeLanzar(QueEnsena(obj)!, sentidos.EnergiaMaxima, sentidos.ManaMaximo, sentidos.Skill(GameLimits.SkillMagia));
+
+    /// <summary>
+    /// ¿ESE HECHIZO LO PUEDE LANZAR ALGUNA VEZ? Con la energía y el maná máximos que tiene, sin un anillo que no lleva y con la magia
+    /// que pide (si todavía no sabe su magia, eso no se mira): es lo que mira el servidor al lanzar (VB6 PuedeLanzar,
+    /// modHechizos.bas:319-344). Elegía el pergamino por lo que pega, y el que más pega de la data es "Te Violo" (el 30, que enseña
+    /// el pergamino "Ceguera", el 541, a doscientas mil): diez mil de daño, pero pide mil de energía y magia 100. En los logs de
+    /// economía guardados hay 161 compras del 541 (Elmo 88, Milo 55, Juana 16) y ningún bot llega a lanzarlo; Milo gastaba ahí 177
+    /// mil y le quedaba para un Mandoble, y la Spatha llegaba en el viaje siguiente (05/10).
+    /// </summary>
+    public static bool LoPuedeLanzar(SpellInfo hechizo, int energiaMaxima, int manaMaximo, int magia) =>
+        hechizo.StaRequerido <= energiaMaxima && hechizo.ManaCost <= manaMaximo && hechizo.Anillo == 0
+        && (magia < 0 || hechizo.MinSkill <= magia);
 
     /// <inheritdoc cref="ValeElViajePorEso"/>
     private bool ValeElViajePorElPergamino(SentidosDelBot sentidos, short obj, double plata) =>

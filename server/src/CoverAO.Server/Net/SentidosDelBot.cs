@@ -175,6 +175,12 @@ public sealed class SentidosDelBot
     /// (<c>p.Stamina &lt; spell.StaRequerido</c>). <see cref="Fuelle"/> es la fracción, que sirve para otra cosa.</summary>
     public int EnergiaEnPuntos { get { lock (_candado) return _energia; } }
 
+    /// <summary>La energía y el maná máximos, en puntos: lo que tiene que alcanzar para lanzar un hechizo que pide tanto.</summary>
+    public int EnergiaMaxima { get { lock (_candado) return _energiaMax; } }
+
+    /// <inheritdoc cref="EnergiaMaxima"/>
+    public int ManaMaximo { get { lock (_candado) return _manaMax; } }
+
     public int Oro { get { lock (_candado) return _oro; } }
 
     /// <summary>La experiencia acumulada en el nivel. Sube con cada golpe que da experiencia (<c>CalcularDarExp</c>), no sólo al matar.</summary>

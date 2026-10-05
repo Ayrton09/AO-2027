@@ -325,6 +325,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
   Camino a un lugar de caza frenan por lo que aparece sólo si tienen ganas de pelear, y entonces lo cazan; trabados por
   una criatura a media vida se toman la poción, y si no llegan al sacerdote para curarse el veneno usan la runa.
   Salen a comprar pociones cuando les quedan menos de cien, no apenas toman una.
+  No compran el pergamino de un hechizo que no pueden lanzar, como el de doscientas mil que pide mil de energía.
 
 ## 1.0.0 — 2026-09-16
 
