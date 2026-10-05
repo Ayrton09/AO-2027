@@ -1085,13 +1085,13 @@
     // arriba. El volumen es el mismo para las dos (`ao_volmusica`).
     let musicaLoginOff = localStorage.getItem('ao_musicalogin') === '0';
     let musicaLogin = null, esperandoGesto = false;
-    // 30% por defecto: la música es de fondo y compite con los 164 efectos, que van al 50%. Arranca sonando
-    // (como el original), así que el default tiene que poder dejarse puesto sin molestar. Ajustable en Opciones.
-    let volMusica = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volmusica') ?? 0.30)));
+    // AL 20 % POR DEFECTO, la música y los efectos (el autor, 05/10: "por defecto todos los sonidos, incluida la música, en 20 %").
+    // Antes eran 30 y 50. Arranca sonando (como el original), así que el default tiene que poder dejarse puesto sin molestar.
+    let volMusica = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volmusica') ?? 0.20)));
     // Y LOS EFECTOS. El 50% era una constante escrita en `playWave` y no había forma de moverla: el jugador
     // sólo podía apagarlos del todo. Un golpe, un hechizo y el ruido del oficio suenan todo el tiempo, así
-    // que el que quiere bajarlos sin quedarse en silencio necesitaba este deslizador. Mismo default que antes.
-    let volEfectos = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volefectos') ?? 0.50)));
+    // que el que quiere bajarlos sin quedarse en silencio necesitaba este deslizador. Al 20 %, como la música.
+    let volEfectos = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volefectos') ?? 0.20)));
     // localStorage tira en modo privado con las cookies bloqueadas: una preferencia que no se puede guardar
     // no puede tumbar el juego. Se declaran acá arriba porque los usan tanto los botones del encabezado como
     // el panel de Opciones, y se asignan más abajo, cuando ya existe el DOM.
@@ -6942,13 +6942,17 @@
     // EL CONTROL DE MÚSICA DEL INGRESO: el ♪ prende y apaga la del inicio, y el deslizador es el de Opciones
     // (`data-op="volmusica"`, el mismo manejador de arriba).
     const lmMusica = $('lm-musica'), lmVol = $('lm-vol'), lmVolVal = $('lm-vol-val');
+    // DESDE EL JUEGO DE ESCRITORIO el ingreso suena con la del mapa (ver `ingresoConLaDelMapa`), así que el ♪ prende y apaga ÉSA:
+    // tocando el de la del inicio, que allá está callada, no pasaba nada (el autor, 05/10).
     const pintarMusicaLogin = () => {
-      if (lmMusica) { lmMusica.classList.toggle('off', musicaLoginOff);
-                      lmMusica.title = musicaLoginOff ? 'música del inicio apagada' : 'música del inicio'; }
+      const apagada = ingresoConLaDelMapa ? musicaOff : musicaLoginOff;
+      if (lmMusica) { lmMusica.classList.toggle('off', apagada);
+                      lmMusica.title = apagada ? 'música apagada' : (ingresoConLaDelMapa ? 'música' : 'música del inicio'); }
     };
     if (lmVol) lmVol.value = String(Math.round(volMusica * 100));
     if (lmVolVal) lmVolVal.textContent = Math.round(volMusica * 100) + '%';
     if (lmMusica) lmMusica.addEventListener('click', () => {
+      if (ingresoConLaDelMapa) { toggleMusica(); pintarMusicaLogin(); return; }
       musicaLoginOff = !musicaLoginOff;
       guardarPref('ao_musicalogin', musicaLoginOff ? '0' : '1');
       ponerMusicaLogin(); pintarMusicaLogin();

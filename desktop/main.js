@@ -59,9 +59,9 @@ const AJUSTES_DEL_JUEGO = new Set(['ao_musicalogin', 'ao_musica', 'ao_volmusica'
   'ao_escalado', 'ao_zoom', 'ao_ssmax', 'ao_nombres', 'ao_macro', 'ao_teclas']);
 const soloAjustes = (o) => Object.fromEntries(Object.entries(o ?? {})
   .filter(([k, v]) => AJUSTES_DEL_JUEGO.has(k) && typeof v === 'string' && v.length < 4000));
-// La música, al 20 % de entrada, y también la de adentro del juego prendida (el autor, 05/10); el juego en el navegador trae 30 % y
-// la de los mapas apagada.
-config.ajustes = { ao_volmusica: '0.2', ao_musica: '1', ...soloAjustes(config.ajustes) };
+// La música y los efectos al 20 %, y la de adentro del juego prendida (el autor, 05/10); en el navegador la de los mapas viene
+// apagada.
+config.ajustes = { ao_volmusica: '0.2', ao_volefectos: '0.2', ao_musica: '1', ...soloAjustes(config.ajustes) };
 delete config.opciones;
 
 // `--servidor=<dirección>` entra directo a ese server sin pasar por el menú ni tocar el guardado: un acceso directo por server.

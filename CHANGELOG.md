@@ -178,6 +178,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 - **En el ingreso suena sólo su música**: la del mapa arranca al entrar al mundo.
 
+- **La música y los efectos vienen al 20 %.**
+
 - **La tabla de posiciones se abre encima del ingreso**, sin cortar la música del inicio: se cierra con la ×, con Esc
   o con "entrar al juego".
 
