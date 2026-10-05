@@ -14,15 +14,16 @@
                   background: radial-gradient(100% 95% at 50% 40%, transparent 55%, #000000a0 100%),
                               linear-gradient(180deg, #00000000 0%, #00000020 45%, #00000080 100%); }
     .escena { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; align-items: center;
-              padding: max(14px, 3vh) 16px 56px; box-sizing: border-box; }
+              padding: max(14px, 3vh) 16px 48px; box-sizing: border-box; }
     .logo { width: min(560px, 80vw); height: auto; flex: none; margin: 0 auto 2vh; user-select: none; pointer-events: none;
             filter: drop-shadow(0 6px 14px #000000a8); }
-    .vista { display: none; width: min(560px, 92vw); }
-    .vista.on { display: block; }
-    .panel { padding: 22px 26px; background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 8px;
-             box-shadow: 0 10px 40px #000000a0; }
-    h2 { margin: 0 0 14px; font-size: 20px; color: var(--oro); font-weight: normal; display: flex; align-items: baseline;
-         justify-content: space-between; gap: 12px; }
+    .escena.chica .logo { width: min(380px, 60vw); margin-bottom: 1.2vh; }
+    .vista { display: none; width: min(600px, 92vw); min-height: 0; }
+    .vista.on { display: flex; flex-direction: column; }
+    .panel { padding: 20px 26px; background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 8px;
+             box-shadow: 0 10px 40px #000000a0; min-height: 0; display: flex; flex-direction: column; }
+    h2 { margin: 0 0 12px; font-size: 20px; color: var(--oro); font-weight: normal; display: flex; align-items: baseline;
+         justify-content: space-between; gap: 12px; flex: none; }
 
     /* El menú principal: botones grandes, uno abajo del otro. */
     .menu { display: flex; flex-direction: column; gap: 10px; width: min(340px, 86vw); margin: 0 auto; }
@@ -32,7 +33,6 @@
     .menu button:hover, .menu button:focus-visible { outline: none; color: var(--oro-claro); border-color: var(--oro); background: #2a1c0ee6; }
     .menu button.principal { color: #1c130a; background: var(--oro); border-color: var(--oro); font-weight: bold; }
     .menu button.principal:hover, .menu button.principal:focus-visible { color: #1c130a; background: var(--oro-claro); }
-    .menu .sub { display: block; font-size: 12px; font-weight: normal; letter-spacing: 0; opacity: .75; margin-top: 2px; }
 
     .volver { background: none; border: 0; padding: 0; color: var(--tenue); font: inherit; font-size: 13px; cursor: pointer; }
     .volver:hover { color: var(--oro); }
@@ -44,6 +44,7 @@
     ul { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow-y: auto; border-top: 1px solid #3a2a16; }
     li { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid #3a2a16; cursor: pointer; }
     li:hover, li:focus-visible { background: #261a0d; outline: none; }
+    li.ultimo { background: #2a1c0e; }
     li.ultimo .nombre::after { content: "  · el último"; color: var(--apagado); font-size: 12px; font-weight: normal; }
     .luz { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a4a34; }
     .luz.si { background: #7bc46a; box-shadow: 0 0 6px #7bc46a88; }
@@ -56,6 +57,9 @@
     .boton-chico { flex: none; background: none; border: 1px solid var(--oro-hondo); color: var(--tenue); font: inherit; font-size: 12px;
                    cursor: pointer; padding: 2px 8px; border-radius: 4px; }
     .boton-chico:hover { color: var(--oro); border-color: var(--oro); }
+    .entrar { flex: none; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: bold; color: #1c130a; background: var(--oro);
+              border: 0; border-radius: 4px; cursor: pointer; }
+    .entrar:hover { background: var(--oro-claro); }
     .quitar { flex: none; background: none; border: 0; color: var(--apagado); font-size: 18px; line-height: 1; cursor: pointer;
               padding: 2px 6px; border-radius: 4px; }
     .quitar:hover { color: #e88a6e; background: #2e1c10; }
@@ -64,30 +68,42 @@
     form { margin-top: 16px; }
     h3 { margin: 0 0 8px; font-size: 15px; color: var(--oro); font-weight: normal; }
     .fila { display: flex; gap: 8px; }
-    input[type=text] { box-sizing: border-box; min-width: 0; padding: 8px 10px; font: inherit; color: inherit; background: #0d0904;
-            border: 1px solid var(--oro-hondo); border-radius: 4px; }
-    input[type=text]:focus { outline: none; border-color: var(--oro); }
+    input[type=text], input[type=number], select { box-sizing: border-box; min-width: 0; padding: 7px 10px; font: inherit; color: inherit;
+            background: #0d0904; border: 1px solid var(--oro-hondo); border-radius: 4px; }
+    input[type=text]:focus, input[type=number]:focus, select:focus { outline: none; border-color: var(--oro); }
     #direccion { flex: 3; }
     #nombre { flex: 2; }
     .boton { flex: none; padding: 8px 14px; font: inherit; font-weight: bold; color: #1c130a; background: var(--oro);
              border: 0; border-radius: 4px; cursor: pointer; }
     .boton:hover { background: var(--oro-claro); }
     .error { margin-top: 10px; color: #e88a6e; font-size: 13px; min-height: 1em; }
-    .ayuda { margin-top: 8px; color: var(--apagado); font-size: 12px; }
+    .ayuda { margin-top: 4px; color: var(--apagado); font-size: 12px; }
 
-    /* Opciones. */
-    .opcion { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #3a2a16; }
-    .opcion:last-of-type { border-bottom: 0; }
-    .opcion .que { font-size: 15px; }
-    .opcion .que small { display: block; color: var(--apagado); font-size: 12px; }
+    /* Opciones: las mismas del juego (Opciones adentro), con pestañas. */
+    .pestanas { display: flex; gap: 4px; border-bottom: 1px solid #3a2a16; margin-bottom: 4px; flex: none; }
+    .pestanas button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--tenue); font: inherit;
+                       padding: 6px 12px; cursor: pointer; }
+    .pestanas button.on { color: var(--oro); border-bottom-color: var(--oro); }
+    .pestanas button:hover { color: var(--oro-claro); }
+    .secciones { overflow-y: auto; min-height: 0; max-height: 52vh; padding-right: 4px; }
+    .seccion { display: none; }
+    .seccion.on { display: block; }
+    .opcion { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #3a2a16; }
+    .opcion:last-child { border-bottom: 0; }
+    .opcion .que small { display: block; color: var(--apagado); font-size: 12px; max-width: 30em; }
+    .control { display: flex; align-items: center; gap: 8px; flex: none; }
     .interruptor { width: 44px; height: 24px; flex: none; border-radius: 12px; border: 1px solid var(--oro-hondo); background: #0d0904;
                    position: relative; cursor: pointer; }
     .interruptor::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
                           background: var(--apagado); transition: left .12s, background .12s; }
     .interruptor[aria-checked=true] { border-color: var(--oro); }
     .interruptor[aria-checked=true]::after { left: 23px; background: var(--oro); }
-    input[type=range] { width: 180px; accent-color: var(--oro); }
-    .valor { width: 3em; text-align: right; color: var(--tenue); font-variant-numeric: tabular-nums; }
+    input[type=range] { width: 170px; accent-color: var(--oro); }
+    .valor { min-width: 3.4em; text-align: right; color: var(--tenue); font-variant-numeric: tabular-nums; }
+    .tecla { min-width: 5em; padding: 4px 10px; font: inherit; color: var(--oro-claro); background: #0d0904; border: 1px solid var(--oro-hondo);
+             border-radius: 4px; cursor: pointer; text-transform: uppercase; }
+    .tecla:hover, .tecla.esperando { border-color: var(--oro); }
+    .aviso { color: var(--apagado); font-size: 12px; margin: 8px 0 0; }
 
     /* El top de un server, encima de todo. */
     #top { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; background: #000000b8; }
@@ -101,29 +117,29 @@
     .pie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
            padding: 8px 16px; font-size: 12px; color: var(--apagado); background: linear-gradient(0deg, #000000b0, transparent); }
     .firma { font-style: italic; }
-    .musica { display: flex; align-items: center; gap: 8px; }
-    .musica button { background: none; border: 1px solid var(--oro-hondo); border-radius: 4px; color: var(--oro-claro); cursor: pointer;
-                     font-size: 13px; padding: 1px 7px; }
-    .musica button.off { opacity: .4; }
+    .pie button { background: none; border: 1px solid var(--oro-hondo); border-radius: 4px; color: var(--oro-claro); cursor: pointer;
+                  font-size: 13px; padding: 1px 7px; }
+    .pie button.off { opacity: .4; }
   </style>
 </head>
 <body>
-  <div class="escena">
+  <div class="escena" id="escena">
     <img class="logo" src="menu/logo.webp" alt="CoverAO" draggable="false" />
 
     <!-- EL MENÚ PRINCIPAL. Es lo primero que se ve al abrir el juego (el autor, 05/10). -->
     <section class="vista on" id="v-principal">
       <div class="menu">
-        <button type="button" class="principal" id="b-jugar">Jugar<span class="sub" id="b-jugar-sub"></span></button>
-        <button type="button" id="b-servidores">Servidores</button>
+        <button type="button" class="principal" id="b-jugar">Jugar</button>
         <button type="button" id="b-opciones">Opciones</button>
         <button type="button" id="b-salir">Salir</button>
       </div>
     </section>
 
-    <section class="vista" id="v-servidores">
+    <!-- JUGAR: la lista de servers. Un solo botón para las dos cosas (el autor, 05/10: "jugar y servidores parecen ser lo
+         mismo"): el último queda marcado y con Enter se entra. -->
+    <section class="vista" id="v-jugar">
       <div class="panel">
-        <h2><span>Servidores</span><button class="enlace" id="actualizar" type="button">Actualizar</button></h2>
+        <h2><span>Elegí un server</span><button class="enlace" id="actualizar" type="button">Actualizar</button></h2>
         <ul id="lista"></ul>
         <form id="f">
           <h3>Agregar por dirección</h3>
@@ -134,28 +150,69 @@
           </div>
         </form>
         <div class="error" id="error"></div>
-        <div class="ayuda">Doble clic o Enter en un server para entrar. Desde el juego, Ctrl+Shift+S vuelve a este menú.</div>
+        <div class="ayuda">Doble clic, Enter o Entrar. Desde el juego, Ctrl+Shift+S vuelve a este menú.</div>
         <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
       </div>
     </section>
 
+    <!-- OPCIONES: las MISMAS del juego (Opciones adentro), guardadas por el juego de escritorio y puestas en cada server al entrar
+         (ver main.js, `AJUSTES_DEL_JUEGO`). Lo que se cambia adentro vuelve acá. -->
     <section class="vista" id="v-opciones">
       <div class="panel">
         <h2><span>Opciones</span></h2>
-        <div class="opcion">
-          <div class="que">Música del menú</div>
-          <div class="interruptor" role="switch" tabindex="0" id="o-musica" aria-label="Música del menú"></div>
+        <div class="pestanas" role="tablist">
+          <button type="button" class="on" data-pestana="audio">Audio</button>
+          <button type="button" data-pestana="video">Video</button>
+          <button type="button" data-pestana="juego">Juego</button>
+          <button type="button" data-pestana="controles">Controles</button>
         </div>
-        <div class="opcion">
-          <div class="que">Volumen de la música</div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input type="range" min="0" max="100" step="5" id="o-volumen" aria-label="Volumen de la música" />
-            <span class="valor" id="o-volumen-val"></span>
+        <div class="secciones">
+          <div class="seccion on" data-seccion="audio">
+            <div class="opcion"><div class="que">Música del menú y del ingreso</div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_musicalogin"></div></div></div>
+            <div class="opcion"><div class="que">Música adentro del juego<small>La de cada mapa.</small></div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_musica"></div></div></div>
+            <div class="opcion"><div class="que">Volumen de la música</div>
+              <div class="control"><input type="range" min="0" max="100" step="5" data-ajuste="ao_volmusica" /><span class="valor" data-valor="ao_volmusica"></span></div></div>
+            <div class="opcion"><div class="que">Efectos de sonido</div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_mute"></div></div></div>
+            <div class="opcion"><div class="que">Volumen de los efectos</div>
+              <div class="control"><input type="range" min="0" max="100" step="5" data-ajuste="ao_volefectos" /><span class="valor" data-valor="ao_volefectos"></span></div></div>
           </div>
-        </div>
-        <div class="opcion">
-          <div class="que">Pantalla completa<small>También con F11, adentro del juego.</small></div>
-          <div class="interruptor" role="switch" tabindex="0" id="o-completa" aria-label="Pantalla completa"></div>
+          <div class="seccion" data-seccion="video">
+            <div class="opcion"><div class="que">Pantalla completa<small>También con F11.</small></div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" id="o-completa"></div></div></div>
+            <div class="opcion"><div class="que">Tope de FPS<small>Sin límite sigue el refresco de tu monitor, que es lo más parejo.</small></div>
+              <div class="control">
+                <select data-ajuste="ao_fpscap" id="o-fps">
+                  <option value="0">sin límite</option><option value="30">30 FPS</option><option value="60">60 FPS</option>
+                  <option value="120">120 FPS</option><option value="144">144 FPS</option><option value="240">240 FPS</option>
+                  <option value="otro">otro…</option>
+                </select>
+                <input type="number" min="10" max="1000" step="1" id="o-fps-otro" placeholder="nro" style="width:5.5em;display:none" />
+              </div></div>
+            <div class="opcion"><div class="que">Escalado del mundo<small>Nítido suaviza; pixelado deja el píxel tal cual.</small></div>
+              <div class="control"><select data-ajuste="ao_escalado"><option value="1">nítido</option><option value="0">pixelado</option></select></div></div>
+            <div class="opcion"><div class="que">Zoom (alto de la cámara)</div>
+              <div class="control"><input type="range" min="9" max="22" step="1" data-ajuste="ao_zoom" /><span class="valor" data-valor="ao_zoom"></span></div></div>
+            <div class="opcion"><div class="que">Resolución de render<small>Si en pantalla completa se te caen los cuadros, bajala.</small></div>
+              <div class="control"><select data-ajuste="ao_ssmax">
+                <option value="4">Alta (más nítida)</option><option value="3">Media</option><option value="2">Baja</option><option value="1">Mínima (más rápida)</option>
+              </select></div></div>
+          </div>
+          <div class="seccion" data-seccion="juego">
+            <div class="opcion"><div class="que">Ver nombres de los jugadores</div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_nombres"></div></div></div>
+            <div class="opcion"><div class="que">Ocultar la lluvia bajo techo y en cuevas<small>Apagado es lo del original: llueve en todos lados.</small></div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_lluviatecho"></div></div></div>
+            <div class="opcion"><div class="que">Macro (repetir con la tecla apretada)<small>Mantener Ctrl sigue golpeando y una F1–F10 sigue usando lo que tenga atado.</small></div>
+              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_macro"></div></div></div>
+          </div>
+          <div class="seccion" data-seccion="controles">
+            <div id="teclas"></div>
+            <p class="aviso">Las flechas, Ctrl (atacar), Enter (chat), Esc y F1–F10 no se reasignan.</p>
+            <div style="margin-top:8px"><button type="button" class="boton-chico" id="teclas-original">Volver a las del original</button></div>
+          </div>
         </div>
         <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
       </div>
@@ -171,9 +228,7 @@
 
   <div class="pie">
     <span class="firma">by: Ayrton09</span>
-    <span class="musica">
-      <button type="button" id="p-musica" title="Música del menú">♪</button>
-    </span>
+    <button type="button" id="p-musica" title="Música del menú">♪</button>
   </div>
 
   <audio id="musica" src="menu/musica.mp3" loop preload="auto"></audio>
@@ -187,61 +242,162 @@
     // ---- Vistas. La música sigue sonando entre ellas: es la misma página. Se corta sólo al entrar a un server. ----
     function mostrar(vista) {
       for (const v of document.querySelectorAll('.vista')) v.classList.toggle('on', v.id === 'v-' + vista);
-      if (vista === 'servidores') { dibujar(); consultarTodos(); }
-      if (vista === 'principal') pintarJugar();
-      const primero = document.querySelector('.vista.on button, .vista.on input');
-      if (vista === 'principal' && primero) primero.focus();
+      $('escena').classList.toggle('chica', vista !== 'principal');
+      if (vista === 'jugar') { dibujar(true); consultarTodos(); }
+      if (vista === 'principal') $('b-jugar').focus();
     }
     for (const b of document.querySelectorAll('[data-volver]')) b.addEventListener('click', () => mostrar('principal'));
-    $('b-servidores').addEventListener('click', () => mostrar('servidores'));
+    $('b-jugar').addEventListener('click', () => mostrar('jugar'));
     $('b-opciones').addEventListener('click', () => mostrar('opciones'));
     $('b-salir').addEventListener('click', () => window.escritorio.salir());
     document.addEventListener('keydown', (e) => {
+      if (capturando) return;
       if (e.key !== 'Escape') return;
       if ($('top').classList.contains('on')) cerrarTop();
       else if (!$('v-principal').classList.contains('on')) mostrar('principal');
     });
 
-    // ---- Música. ----
-    const musica = $('musica');
-    let opciones = { musica: true, volumen: 0.3, pantallaCompleta: false };
-    function aplicarMusica() {
-      musica.volume = opciones.volumen;
-      $('p-musica').classList.toggle('off', !opciones.musica);
-      $('o-musica').setAttribute('aria-checked', String(opciones.musica));
-      $('o-volumen').value = Math.round(opciones.volumen * 100);
-      $('o-volumen-val').textContent = Math.round(opciones.volumen * 100) + '%';
-      if (opciones.musica) musica.play().catch(() => {}); else musica.pause();
+    // ---- Ajustes: los del juego, con sus mismas claves y valores (`localStorage` del cliente web). ----
+    // Los valores por defecto son los del juego (client-web/index.html), salvo el volumen de la música: 20 % (el autor, 05/10).
+    const POR_DEFECTO = {
+      ao_musicalogin: '1', ao_musica: '0', ao_volmusica: '0.2', ao_mute: '0', ao_volefectos: '0.5',
+      ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_lluviatecho: '0', ao_macro: '1',
+    };
+    let ajustes = {};
+    const valor = (k) => ajustes[k] ?? POR_DEFECTO[k];
+    // Cómo lee cada interruptor el juego: la mayoría es "1 = sí"; los efectos se guardan al revés (ao_mute = 1 es APAGADOS),
+    // y la música del ingreso, los nombres y el macro vienen prendidos salvo un "0".
+    const prendido = (k) => k === 'ao_mute' ? valor(k) !== '1'
+      : (k === 'ao_musicalogin' || k === 'ao_nombres' || k === 'ao_macro') ? valor(k) !== '0' : valor(k) === '1';
+    const comoGuardar = (k, si) => k === 'ao_mute' ? (si ? '0' : '1') : (si ? '1' : '0');
+    async function cambiar(k, v) {
+      ajustes[k] = v;
+      pintarAjustes();
+      if (k === 'ao_musicalogin' || k === 'ao_volmusica') aplicarMusica();
+      await window.escritorio.guardarAjustes({ [k]: v });
     }
-    async function guardarOpciones() { await window.escritorio.guardarOpciones(opciones); }
-    function alternarMusica() { opciones.musica = !opciones.musica; aplicarMusica(); guardarOpciones(); }
-    $('p-musica').addEventListener('click', alternarMusica);
-    for (const id of ['o-musica', 'o-completa']) $(id).addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); $(id).click(); } });
-    $('o-musica').addEventListener('click', alternarMusica);
-    $('o-volumen').addEventListener('input', () => { opciones.volumen = Number($('o-volumen').value) / 100; aplicarMusica(); });
-    $('o-volumen').addEventListener('change', guardarOpciones);
+    function pintarAjustes() {
+      for (const el of document.querySelectorAll('[data-ajuste]')) {
+        const k = el.dataset.ajuste;
+        if (el.classList.contains('interruptor')) el.setAttribute('aria-checked', String(prendido(k)));
+        else if (el.type === 'range') el.value = k === 'ao_zoom' ? valor(k) : Math.round(Number(valor(k)) * 100);
+        else if (el.id === 'o-fps') {
+          const fps = String(Number(valor(k)) || 0);
+          const conocido = [...el.options].some((o) => o.value === fps);
+          el.value = conocido ? fps : 'otro';
+          $('o-fps-otro').style.display = conocido ? 'none' : '';
+          if (!conocido) $('o-fps-otro').value = fps;
+        } else el.value = valor(k);
+      }
+      for (const el of document.querySelectorAll('[data-valor]')) {
+        const k = el.dataset.valor;
+        el.textContent = k === 'ao_zoom' ? valor(k) + ' tiles' : Math.round(Number(valor(k)) * 100) + '%';
+      }
+      $('p-musica').classList.toggle('off', !prendido('ao_musicalogin'));
+    }
+    for (const el of document.querySelectorAll('.interruptor[data-ajuste]')) {
+      el.addEventListener('click', () => cambiar(el.dataset.ajuste, comoGuardar(el.dataset.ajuste, !prendido(el.dataset.ajuste))));
+    }
+    for (const el of document.querySelectorAll('.interruptor')) {
+      el.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); } });
+    }
+    for (const el of document.querySelectorAll('input[type=range][data-ajuste]')) {
+      const k = el.dataset.ajuste;
+      const leer = () => (k === 'ao_zoom' ? String(el.value) : String(Number(el.value) / 100));
+      el.addEventListener('input', () => { ajustes[k] = leer(); pintarAjustes(); if (k === 'ao_volmusica') aplicarMusica(); });
+      el.addEventListener('change', () => cambiar(k, leer()));
+    }
+    for (const el of document.querySelectorAll('select[data-ajuste]')) {
+      el.addEventListener('change', () => {
+        if (el.id === 'o-fps' && el.value === 'otro') { $('o-fps-otro').style.display = ''; $('o-fps-otro').focus(); return; }
+        cambiar(el.dataset.ajuste, el.value);
+      });
+    }
+    $('o-fps-otro').addEventListener('change', () => {
+      const n = Math.round(Number($('o-fps-otro').value));
+      if (n >= 10 && n <= 1000) cambiar('ao_fpscap', String(n));
+    });
+    $('p-musica').addEventListener('click', () => cambiar('ao_musicalogin', prendido('ao_musicalogin') ? '0' : '1'));
+    for (const b of document.querySelectorAll('[data-pestana]')) {
+      b.addEventListener('click', () => {
+        for (const x of document.querySelectorAll('[data-pestana]')) x.classList.toggle('on', x === b);
+        for (const s of document.querySelectorAll('[data-seccion]')) s.classList.toggle('on', s.dataset.seccion === b.dataset.pestana);
+      });
+    }
     $('o-completa').addEventListener('click', async () => {
-      opciones.pantallaCompleta = await window.escritorio.pantallaCompleta(!opciones.pantallaCompleta);
-      $('o-completa').setAttribute('aria-checked', String(opciones.pantallaCompleta));
+      const ahora = $('o-completa').getAttribute('aria-checked') === 'true';
+      $('o-completa').setAttribute('aria-checked', String(await window.escritorio.pantallaCompleta(!ahora)));
     });
 
-    // ---- Jugar: el último server. Sin ninguno, a la lista. ----
-    let datos = { servidores: [], ultimo: null, porDefecto: 'http://localhost:7669/' };
-    function pintarJugar() {
-      const ultimo = datos.servidores.find((s) => s.direccion === datos.ultimo);
-      $('b-jugar-sub').textContent = ultimo ? (ultimo.nombre || sinProtocolo(ultimo.direccion)) : 'elegí un server';
+    // ---- Controles: las teclas del juego. Las acciones, sus nombres y sus teclas de fábrica son las de client-web/index.html
+    // (`TECLAS_DEF` y `TECLAS_NOMBRE`): si el juego agrega una, va acá también. ----
+    const TECLAS_DEF = {
+      combate: 'c', agarrar: 'a', tirar: 't', usar: 'u', equipar: 'e', domar: 'd', robar: 'r',
+      seguroRes: 's', ocultarse: 'o', nombres: 'n', actualizar: 'l',
+      hechizos: 'h', info: 'i', clan: 'j', meditar: 'm', habilidades: 'k', lanzar: 'f', escalado: 'p',
+    };
+    const TECLAS_NOMBRE = {
+      combate: 'modo combate', agarrar: 'agarrar del piso', tirar: 'tirar el elegido',
+      usar: 'usar el elegido', equipar: 'equipar el elegido', domar: 'domar', robar: 'robar',
+      seguroRes: 'seguro de resurrección', ocultarse: 'ocultarse', nombres: 'nombres on/off',
+      actualizar: 'actualizar posición', hechizos: 'libro de hechizos', info: 'estadísticas',
+      clan: 'panel de clan', meditar: 'meditar', habilidades: 'habilidades', lanzar: 'lanzar hechizo',
+      escalado: 'escalado del mundo',
+    };
+    // Las mismas que deja el juego: letras, números y algunas con nombre. Las flechas, Enter, Esc y F1-F10 son del juego.
+    const CON_NOMBRE = new Set(['shift', 'control', 'alt', 'delete', 'end', 'home', 'insert', 'pageup', 'pagedown', 'tab', ' ', 'backspace']);
+    const NOMBRE_DE_TECLA = { ' ': 'espacio', control: 'ctrl', delete: 'supr', pageup: 're pág', pagedown: 'av pág', backspace: 'borrar' };
+    let capturando = null;
+    function teclasActuales() {
+      let t = { ...TECLAS_DEF };
+      try { if (ajustes.ao_teclas) t = { ...t, ...JSON.parse(ajustes.ao_teclas) }; } catch {}
+      return t;
     }
-    $('b-jugar').addEventListener('click', () => {
-      if (datos.ultimo) entrar(datos.ultimo); else mostrar('servidores');
+    function pintarTeclas() {
+      const t = teclasActuales();
+      $('teclas').innerHTML = Object.keys(TECLAS_DEF).map((a) => `<div class="opcion"><div class="que">${esc(TECLAS_NOMBRE[a] || a)}</div>
+        <div class="control"><button type="button" class="tecla" data-tecla="${a}">${esc(t[a] ? (NOMBRE_DE_TECLA[t[a]] || t[a]) : '—')}</button></div></div>`).join('');
+    }
+    $('teclas').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tecla]');
+      if (!b) return;
+      const accion = b.dataset.tecla;
+      b.textContent = '…';
+      b.classList.add('esperando');
+      capturando = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();   // la tecla es para esto: ni el Esc vuelve al menú
+        capturando = null;
+        const k = (ev.key || '').toLowerCase();
+        if (k === 'escape') { pintarTeclas(); return; }
+        const valida = (k.length === 1 && /[a-z0-9]/.test(k)) || CON_NOMBRE.has(k);
+        if (!valida) { pintarTeclas(); return; }
+        const t = teclasActuales();
+        // Si la tecla ya estaba usada, se la saca de la otra acción, como en el juego.
+        for (const a in t) if (t[a] === k && a !== accion) delete t[a];
+        t[accion] = k;
+        cambiar('ao_teclas', JSON.stringify(t));
+        pintarTeclas();
+      };
     });
+    document.addEventListener('keydown', (e) => { if (capturando) capturando(e); }, true);
+    $('teclas-original').addEventListener('click', () => { cambiar('ao_teclas', JSON.stringify(TECLAS_DEF)); pintarTeclas(); });
+
+    // ---- Música del menú. ----
+    const musica = $('musica');
+    function aplicarMusica() {
+      musica.volume = Math.min(1, Math.max(0, Number(valor('ao_volmusica'))));
+      if (prendido('ao_musicalogin')) musica.play().catch(() => {}); else musica.pause();
+    }
+
+    // ---- Jugar: la lista de servers. ----
+    const lista = $('lista'), error = $('error'), campo = $('direccion'), nombre = $('nombre');
+    let datos = { servidores: [], ultimo: null, porDefecto: 'http://localhost:7669/' };
+    let estados = new Map();
 
     async function entrar(direccion) {
-      $('error').textContent = (await window.escritorio.entrar(direccion)) || '';
+      error.textContent = (await window.escritorio.entrar(direccion)) || '';
     }
-
-    // ---- Servidores. ----
-    const lista = $('lista'), error = $('error'), campo = $('direccion'), nombre = $('nombre');
-    let estados = new Map();
 
     function textoDelEstado(e) {
       if (!e) return 'buscando…';
@@ -253,20 +409,23 @@
       return partes.join(' · ');
     }
 
-    async function dibujar() {
+    async function dibujar(enfocar = false) {
       datos = await window.escritorio.listar();
+      const enfocado = document.activeElement?.closest?.('li')?.dataset.direccion;
       lista.textContent = '';
       if (datos.servidores.length === 0) {
         const li = document.createElement('li');
         li.className = 'vacia';
-        li.textContent = 'Todavía no agregaste ningún server. Si es en esta misma PC, la dirección es ' + sinProtocolo(datos.porDefecto) + '.';
+        li.textContent = 'Todavía no agregaste ningún server. Si es en esta misma PC, la dirección es ' + sinProtocolo(datos.porDefecto) + ': tocá Agregar.';
         lista.append(li);
         if (!campo.value) campo.value = sinProtocolo(datos.porDefecto);
+        if (enfocar) campo.focus();
         return;
       }
       for (const s of datos.servidores) {
         const li = document.createElement('li');
         li.tabIndex = 0;
+        li.dataset.direccion = s.direccion;
         if (s.direccion === datos.ultimo) li.classList.add('ultimo');
         const e = estados.get(s.direccion);
         const luz = document.createElement('span');
@@ -287,6 +446,11 @@
           top.addEventListener('click', (ev) => { ev.stopPropagation(); abrirTop(s.direccion); });
           li.append(top);
         }
+        const ir = document.createElement('button');
+        ir.className = 'entrar';
+        ir.type = 'button';
+        ir.textContent = 'Entrar';
+        ir.addEventListener('click', (ev) => { ev.stopPropagation(); entrar(s.direccion); });
         const quitar = document.createElement('button');
         quitar.className = 'quitar';
         quitar.type = 'button';
@@ -298,18 +462,21 @@
           estados.delete(s.direccion);
           dibujar();
         });
-        li.append(quitar);
+        li.append(ir, quitar);
         li.addEventListener('dblclick', () => entrar(s.direccion));
-        li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') entrar(s.direccion); });
+        li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target === li) entrar(s.direccion); });
         lista.append(li);
       }
+      // Al abrir, el último queda elegido: Enter y adentro.
+      const foco = enfocar ? (datos.ultimo ?? datos.servidores[0].direccion) : enfocado;
+      if (foco) [...lista.children].find((li) => li.dataset.direccion === foco)?.focus();
     }
 
     async function consultarTodos() {
       const { servidores } = await window.escritorio.listar();
       await Promise.all(servidores.map(async (s) => {
         estados.set(s.direccion, await window.escritorio.consultar(s.direccion));
-        if ($('v-servidores').classList.contains('on')) dibujar();
+        if ($('v-jugar').classList.contains('on')) dibujar();
       }));
     }
 
@@ -327,7 +494,7 @@
     });
     $('actualizar').addEventListener('click', () => { estados = new Map(); dibujar(); consultarTodos(); });
     // Mientras la lista está a la vista, el estado se refresca solo.
-    setInterval(() => { if ($('v-servidores').classList.contains('on')) consultarTodos(); }, 15000);
+    setInterval(() => { if ($('v-jugar').classList.contains('on')) consultarTodos(); }, 15000);
 
     // ---- El top de un server, encima del menú: la música sigue. ----
     let topDe = null;
@@ -347,13 +514,13 @@
 
     // ---- Arranque. ----
     (async () => {
-      opciones = { ...opciones, ...(await window.escritorio.leerOpciones()) };
-      $('o-completa').setAttribute('aria-checked', String(opciones.pantallaCompleta));
+      ajustes = await window.escritorio.leerAjustes();
+      $('o-completa').setAttribute('aria-checked', String(await window.escritorio.estaEnPantallaCompleta()));
+      pintarAjustes();
+      pintarTeclas();
       aplicarMusica();
-      datos = await window.escritorio.listar();
-      pintarJugar();
       // Si se volvió acá porque no se pudo entrar, a la lista, con el motivo.
-      if (q.get('error')) { mostrar('servidores'); error.textContent = q.get('error'); }
+      if (q.get('error')) { mostrar('jugar'); error.textContent = q.get('error'); }
       else $('b-jugar').focus();
     })();
   </script>

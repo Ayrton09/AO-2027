@@ -1,5 +1,5 @@
 // Sólo el menú (la página local, file://) habla con el proceso principal; la página del server, que viene de afuera, no recibe
-// nada: es la misma que en el navegador.
+// nada: es la misma que en el navegador. A ella sólo se le ponen las opciones del juego en su `localStorage` (abajo).
 const { contextBridge, ipcRenderer } = require('electron');
 
 if (location.protocol === 'file:') {
@@ -9,9 +9,28 @@ if (location.protocol === 'file:') {
     quitar: (direccion) => ipcRenderer.invoke('quitar', direccion),
     consultar: (direccion) => ipcRenderer.invoke('consultar', direccion),
     entrar: (direccion) => ipcRenderer.invoke('entrar', direccion),
-    leerOpciones: () => ipcRenderer.invoke('leer-opciones'),
-    guardarOpciones: (opciones) => ipcRenderer.invoke('guardar-opciones', opciones),
+    leerAjustes: () => ipcRenderer.invoke('leer-ajustes'),
+    guardarAjustes: (cambios) => ipcRenderer.invoke('guardar-ajustes', cambios),
+    estaEnPantallaCompleta: () => ipcRenderer.invoke('esta-en-pantalla-completa'),
     pantallaCompleta: (si) => ipcRenderer.invoke('pantalla-completa', si),
     salir: () => ipcRenderer.invoke('salir'),
   });
+} else if (/^https?:$/.test(location.protocol)) {
+  // LAS OPCIONES DEL MENÚ, EN EL JUEGO: se escriben en el `localStorage` de este server antes de que corra su página, que las lee
+  // al arrancar (ver main.js, `AJUSTES_DEL_JUEGO`). Y lo que se cambie adentro vuelve al menú: cada tanto y al irse.
+  try {
+    for (const [k, v] of Object.entries(ipcRenderer.sendSync('ajustes-para-el-juego') ?? {})) localStorage.setItem(k, v);
+  } catch { /* sin localStorage (modo privado): el juego arranca con lo suyo */ }
+  const devolver = () => {
+    try {
+      const ajustes = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('ao_')) ajustes[k] = localStorage.getItem(k);
+      }
+      ipcRenderer.send('ajustes-del-juego', ajustes);
+    } catch { /* nada que devolver */ }
+  };
+  window.addEventListener('pagehide', devolver);
+  setInterval(devolver, 5000);
 }

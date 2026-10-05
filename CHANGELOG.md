@@ -177,9 +177,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **La tabla de posiciones se abre encima del ingreso**, sin cortar la música del inicio: se cierra con la ×, con Esc
   o con "entrar al juego".
 
-- **El juego para escritorio abre con un menú**: Jugar (al último server), Servidores, Opciones y Salir, con la música del
-  inicio sonando hasta que entrás. En Servidores los agregás por su dirección o IP, con el nombre que quieras, y ves cuáles
-  están en línea, cuántos juegan, el ping y su tabla de posiciones. Desde el juego, Ctrl+Shift+S vuelve al menú.
+- **El juego para escritorio abre con un menú**: Jugar, Opciones y Salir, en pantalla completa y con la música del inicio
+  sonando hasta que entrás. Jugar muestra tus servers con el último elegido: los agregás por su dirección o IP, con el nombre
+  que quieras, y ves cuáles están en línea, cuántos juegan, el ping y su tabla de posiciones. Opciones tiene las mismas del
+  juego —audio, video, juego y controles— y valen para todos los servers. Desde el juego, Ctrl+Shift+S vuelve al menú.
 
 - **Los errores y las sugerencias se reportan en GitHub**, como dice el cartel de bienvenida:
   github.com/Ayrton09/CoverAO/issues. El /GM queda para las dudas sobre el servidor donde jugás.

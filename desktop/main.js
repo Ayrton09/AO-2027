@@ -46,8 +46,17 @@ if (config.servidor && !config.servidores.some((s) => s.direccion === config.ser
   config.servidores.unshift({ direccion: config.servidor, nombre: '' });
 let ventana = null;
 
-// Lo que se elige en Opciones. La pantalla completa no va acá: es el estado de la ventana, que ya se guarda al cerrar.
-config.opciones = { musica: true, volumen: 0.3, ...(config.opciones ?? {}) };
+// LAS OPCIONES DEL JUEGO, guardadas acá y puestas en cada server al entrar (el autor, 05/10: "las opciones deberían tener todas
+// las opciones que tiene el juego"). Son las claves del `localStorage` del cliente web, con sus mismos valores: el menú las muestra
+// y las cambia, el `preload` las copia a la página del server antes de que arranque el juego y le devuelve acá lo que se cambie
+// adentro. Así valen para todos los servers. Sólo pasan éstas: el resto del `localStorage` de cada server es suyo.
+const AJUSTES_DEL_JUEGO = new Set(['ao_musicalogin', 'ao_musica', 'ao_volmusica', 'ao_mute', 'ao_volefectos', 'ao_fpscap',
+  'ao_escalado', 'ao_zoom', 'ao_ssmax', 'ao_nombres', 'ao_lluviatecho', 'ao_macro', 'ao_teclas']);
+const soloAjustes = (o) => Object.fromEntries(Object.entries(o ?? {})
+  .filter(([k, v]) => AJUSTES_DEL_JUEGO.has(k) && typeof v === 'string' && v.length < 4000));
+// La música, al 20 % de entrada (el autor, 05/10); el juego trae 30.
+config.ajustes = { ao_volmusica: '0.2', ...soloAjustes(config.ajustes) };
+delete config.opciones;
 
 // `--servidor=<dirección>` entra directo a ese server sin pasar por el menú ni tocar el guardado: un acceso directo por server.
 const servidorDelAcceso = normalizar(process.argv.find((a) => a.startsWith('--servidor='))?.slice('--servidor='.length));
@@ -58,7 +67,8 @@ function abrirMenu(error) {
 }
 
 function crearVentana() {
-  const lugar = config.ventana ?? {};
+  // LA PRIMERA VEZ, EN PANTALLA COMPLETA (el autor, 05/10); después, como se dejó.
+  const lugar = config.ventana ?? { pantallaCompleta: true };
   ventana = new BrowserWindow({
     width: lugar.width ?? 1280, height: lugar.height ?? 800, x: lugar.x, y: lugar.y,
     minWidth: 800, minHeight: 600,
@@ -172,17 +182,27 @@ ipcMain.handle('entrar', (_e, direccion) => {
   return null;
 });
 
-ipcMain.handle('leer-opciones', () => ({ ...config.opciones, pantallaCompleta: ventana.isFullScreen() }));
+ipcMain.handle('leer-ajustes', () => ({ ...config.ajustes }));
 
-ipcMain.handle('guardar-opciones', (_e, opciones) => {
-  config.opciones = {
-    musica: opciones?.musica !== false,
-    volumen: Math.min(1, Math.max(0, Number(opciones?.volumen) || 0)),
-  };
+ipcMain.handle('guardar-ajustes', (_e, cambios) => {
+  config.ajustes = { ...config.ajustes, ...soloAjustes(cambios) };
   guardarConfig(config);
 });
 
+ipcMain.handle('esta-en-pantalla-completa', () => ventana.isFullScreen());
+
 ipcMain.handle('pantalla-completa', (_e, si) => { ventana.setFullScreen(!!si); return ventana.isFullScreen(); });
+
+// La página del server (ver preload.js): al cargar pide los ajustes —sincrónico, para tenerlos antes que el juego— y después
+// devuelve lo que se haya cambiado adentro.
+ipcMain.on('ajustes-para-el-juego', (e) => { e.returnValue = { ...config.ajustes }; });
+
+ipcMain.on('ajustes-del-juego', (_e, ajustes) => {
+  const nuevos = soloAjustes(ajustes);
+  if (Object.entries(nuevos).every(([k, v]) => config.ajustes[k] === v)) return;
+  config.ajustes = { ...config.ajustes, ...nuevos };
+  guardarConfig(config);
+});
 
 ipcMain.handle('salir', () => app.quit());
 
