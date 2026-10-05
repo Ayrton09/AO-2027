@@ -67,8 +67,10 @@ function abrirMenu(error) {
 }
 
 function crearVentana() {
-  // LA PRIMERA VEZ, EN PANTALLA COMPLETA (el autor, 05/10); después, como se dejó.
-  const lugar = config.ventana ?? { pantallaCompleta: true };
+  // EN PANTALLA COMPLETA, salvo que se haya apagado en Opciones o con F11 (el autor, 05/10: "la pantalla completa debería ser lo
+  // default"). Es una preferencia aparte del lugar de la ventana: antes salía de cómo había quedado la ventana al cerrarse, y la
+  // versión que todavía no arrancaba en pantalla completa dejaba guardado "en ventana" para siempre.
+  const lugar = config.ventana ?? {};
   ventana = new BrowserWindow({
     width: lugar.width ?? 1280, height: lugar.height ?? 800, x: lugar.x, y: lugar.y,
     minWidth: 800, minHeight: 600,
@@ -84,14 +86,14 @@ function crearVentana() {
     },
   });
   if (lugar.maximizada) ventana.maximize();
-  if (lugar.pantallaCompleta) ventana.setFullScreen(true);
+  if (config.pantallaCompleta !== false) ventana.setFullScreen(true);
   ventana.once('ready-to-show', () => ventana.show());
 
   // F11 alterna la pantalla completa, como en el navegador pero sin la cruz arriba; Ctrl+Shift+S vuelve al menú. F1 a F10 son
   // macros del juego: no se tocan.
   ventana.webContents.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown') return;
-    if (input.key === 'F11') { ventana.setFullScreen(!ventana.isFullScreen()); e.preventDefault(); }
+    if (input.key === 'F11') { ponerPantallaCompleta(!ventana.isFullScreen()); e.preventDefault(); }
     else if (input.control && input.shift && input.key.toLowerCase() === 's') { abrirMenu(); e.preventDefault(); }
     else if (input.control && input.shift && input.key.toLowerCase() === 'i') { ventana.webContents.toggleDevTools(); e.preventDefault(); }
   });
@@ -118,7 +120,6 @@ function crearVentana() {
     config.ventana = {
       ...ventana.getNormalBounds(),
       maximizada: ventana.isMaximized(),
-      pantallaCompleta: ventana.isFullScreen(),
     };
     guardarConfig(config);
   });
@@ -191,7 +192,15 @@ ipcMain.handle('guardar-ajustes', (_e, cambios) => {
 
 ipcMain.handle('esta-en-pantalla-completa', () => ventana.isFullScreen());
 
-ipcMain.handle('pantalla-completa', (_e, si) => { ventana.setFullScreen(!!si); return ventana.isFullScreen(); });
+/** La pantalla completa, y queda como preferencia para la próxima vez. */
+function ponerPantallaCompleta(si) {
+  ventana.setFullScreen(!!si);
+  config.pantallaCompleta = !!si;
+  guardarConfig(config);
+  return ventana.isFullScreen();
+}
+
+ipcMain.handle('pantalla-completa', (_e, si) => ponerPantallaCompleta(si));
 
 // La página del server (ver preload.js): al cargar pide los ajustes —sincrónico, para tenerlos antes que el juego— y después
 // devuelve lo que se haya cambiado adentro.
