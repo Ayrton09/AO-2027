@@ -3,46 +3,165 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
-  <title>CoverAO — Elegir server</title>
+  <title>CoverAO — Servers</title>
   <style>
     html, body { margin: 0; height: 100%; background: #0d0904; color: #e8dcc0; font: 15px/1.4 Georgia, serif; }
     body { display: flex; align-items: center; justify-content: center; }
-    form { width: min(420px, 90vw); padding: 28px; background: #1c130a; border: 1px solid #5a4223; border-radius: 8px; }
-    h1 { margin: 0 0 4px; font-size: 22px; color: #e8c876; }
-    p { margin: 0 0 16px; color: #b8a888; font-size: 13px; }
-    label { display: block; margin-bottom: 6px; }
-    input { box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; color: inherit; background: #0d0904;
+    main { width: min(560px, 92vw); padding: 24px 28px; background: #1c130a; border: 1px solid #5a4223; border-radius: 8px; }
+    h1 { margin: 0 0 2px; font-size: 22px; color: #e8c876; }
+    .bajada { margin: 0 0 16px; color: #b8a888; font-size: 13px; }
+    .cabecera { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .actualizar { background: none; border: 0; padding: 0; color: #b8a888; font: inherit; font-size: 12px; cursor: pointer;
+                  text-decoration: underline; }
+    .actualizar:hover { color: #e8c876; }
+    ul { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; border-top: 1px solid #3a2a16; }
+    li { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid #3a2a16; cursor: pointer; }
+    li:hover, li:focus-visible { background: #261a0d; outline: none; }
+    li.ultimo .nombre::after { content: "  · el último"; color: #8a7a5c; font-size: 12px; font-weight: normal; }
+    .luz { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a4a34; }
+    .luz.si { background: #7bc46a; box-shadow: 0 0 6px #7bc46a88; }
+    .luz.no { background: #c4584a; }
+    .datos { flex: 1; min-width: 0; }
+    .nombre { font-weight: bold; color: #e8dcc0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .direccion { color: #8a7a5c; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .estado { flex: none; text-align: right; font-size: 12px; color: #b8a888; font-variant-numeric: tabular-nums; }
+    .estado b { color: #e8dcc0; font-weight: normal; }
+    .quitar { flex: none; background: none; border: 0; color: #8a7a5c; font-size: 18px; line-height: 1; cursor: pointer;
+              padding: 2px 6px; border-radius: 4px; }
+    .quitar:hover { color: #e88a6e; background: #2e1c10; }
+    .vacia { padding: 14px 6px; color: #8a7a5c; font-size: 13px; border-bottom: 1px solid #3a2a16; }
+    form { margin-top: 18px; }
+    h2 { margin: 0 0 8px; font-size: 15px; color: #e8c876; font-weight: normal; }
+    .fila { display: flex; gap: 8px; }
+    input { box-sizing: border-box; min-width: 0; padding: 8px 10px; font: inherit; color: inherit; background: #0d0904;
             border: 1px solid #5a4223; border-radius: 4px; }
     input:focus { outline: none; border-color: #e8c876; }
-    button { margin-top: 14px; width: 100%; padding: 9px; font: inherit; font-weight: bold; color: #1c130a; background: #e8c876;
-             border: 0; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #f3d98f; }
-    .error { margin-top: 12px; color: #e88a6e; font-size: 13px; min-height: 1em; }
-    .ayuda { margin-top: 14px; color: #8a7a5c; font-size: 12px; }
+    #direccion { flex: 3; }
+    #nombre { flex: 2; }
+    button[type=submit] { flex: none; padding: 8px 14px; font: inherit; font-weight: bold; color: #1c130a; background: #e8c876;
+                          border: 0; border-radius: 4px; cursor: pointer; }
+    button[type=submit]:hover { background: #f3d98f; }
+    .error { margin-top: 10px; color: #e88a6e; font-size: 13px; min-height: 1em; }
+    .ayuda { margin-top: 10px; color: #8a7a5c; font-size: 12px; }
   </style>
 </head>
 <body>
-  <form id="f">
-    <h1>CoverAO</h1>
-    <p>¿A qué server te conectás?</p>
-    <label for="servidor">Dirección</label>
-    <input id="servidor" autofocus spellcheck="false" placeholder="localhost:7669" />
-    <button type="submit">Entrar</button>
+  <main>
+    <div class="cabecera">
+      <h1>CoverAO</h1>
+      <button class="actualizar" id="actualizar" type="button">Actualizar</button>
+    </div>
+    <p class="bajada">Elegí un server para entrar.</p>
+    <ul id="lista"></ul>
+    <form id="f">
+      <h2>Agregar por dirección</h2>
+      <div class="fila">
+        <input id="direccion" spellcheck="false" placeholder="IP o dirección, ej. 190.1.2.3:7669" aria-label="Dirección" />
+        <input id="nombre" spellcheck="false" placeholder="Nombre (opcional)" aria-label="Nombre" />
+        <button type="submit">Agregar</button>
+      </div>
+    </form>
     <div class="error" id="error"></div>
-    <div class="ayuda">Queda guardado. Para cambiarlo después: Ctrl+Shift+S.</div>
-  </form>
+    <div class="ayuda">Doble clic o Enter en un server para entrar. Para volver a esta lista desde el juego: Ctrl+Shift+S.</div>
+  </main>
   <script>
     const q = new URLSearchParams(location.search);
-    const campo = document.getElementById('servidor');
+    const lista = document.getElementById('lista');
     const error = document.getElementById('error');
-    campo.value = q.get('servidor') || '';
+    const campo = document.getElementById('direccion');
+    const nombre = document.getElementById('nombre');
     error.textContent = q.get('error') || '';
-    campo.select();
-    document.getElementById('f').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    let estados = new Map();
+
+    const sinProtocolo = (d) => d.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    function textoDelEstado(e) {
+      if (!e) return 'buscando…';
+      if (!e.enLinea) return 'no responde';
+      const partes = [];
+      if (e.jugadores !== null) partes.push(`<b>${e.jugadores}</b> ${e.jugadores === 1 ? 'jugador' : 'jugadores'}`);
+      partes.push(`<b>${e.ping}</b> ms`);
+      if (e.version) partes.push(`v${e.version.replace(/[<>&]/g, '')}`);
+      return partes.join(' · ');
+    }
+
+    async function entrar(direccion) {
+      error.textContent = (await window.escritorio.entrar(direccion)) || '';
+    }
+
+    async function dibujar() {
+      const { servidores, ultimo, porDefecto } = await window.escritorio.listar();
+      lista.textContent = '';
+      if (servidores.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'vacia';
+        li.textContent = 'Todavía no agregaste ningún server. Si es en esta misma PC, la dirección es ' + sinProtocolo(porDefecto) + '.';
+        lista.append(li);
+        if (!campo.value) campo.value = sinProtocolo(porDefecto);
+        return;
+      }
+      for (const s of servidores) {
+        const li = document.createElement('li');
+        li.tabIndex = 0;
+        if (s.direccion === ultimo) li.classList.add('ultimo');
+        const e = estados.get(s.direccion);
+        const luz = document.createElement('span');
+        luz.className = 'luz' + (e ? (e.enLinea ? ' si' : ' no') : '');
+        const datos = document.createElement('div');
+        datos.className = 'datos';
+        const n = document.createElement('div');
+        n.className = 'nombre';
+        n.textContent = s.nombre || sinProtocolo(s.direccion);
+        const d = document.createElement('div');
+        d.className = 'direccion';
+        d.textContent = sinProtocolo(s.direccion);
+        datos.append(n, d);
+        const estado = document.createElement('div');
+        estado.className = 'estado';
+        estado.innerHTML = textoDelEstado(e);
+        const quitar = document.createElement('button');
+        quitar.className = 'quitar';
+        quitar.type = 'button';
+        quitar.title = 'Quitar de la lista';
+        quitar.textContent = '×';
+        quitar.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          await window.escritorio.quitar(s.direccion);
+          estados.delete(s.direccion);
+          dibujar();
+        });
+        li.append(luz, datos, estado, quitar);
+        li.addEventListener('dblclick', () => entrar(s.direccion));
+        li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') entrar(s.direccion); });
+        lista.append(li);
+      }
+    }
+
+    async function consultarTodos() {
+      const { servidores } = await window.escritorio.listar();
+      await Promise.all(servidores.map(async (s) => {
+        estados.set(s.direccion, await window.escritorio.consultar(s.direccion));
+        dibujar();
+      }));
+    }
+
+    document.getElementById('f').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
       error.textContent = '';
-      error.textContent = (await window.escritorio.elegirServidor(campo.value)) || '';
+      const r = await window.escritorio.agregar(campo.value, nombre.value);
+      if (r.error) { error.textContent = r.error; return; }
+      campo.value = '';
+      nombre.value = '';
+      estados.delete(r.direccion);
+      await dibujar();
+      estados.set(r.direccion, await window.escritorio.consultar(r.direccion));
+      dibujar();
     });
+    document.getElementById('actualizar').addEventListener('click', () => { estados = new Map(); dibujar(); consultarTodos(); });
+
+    dibujar().then(consultarTodos);
+    // Mientras la lista está a la vista, el estado se refresca solo.
+    setInterval(consultarTodos, 15000);
   </script>
 </body>
 </html>
