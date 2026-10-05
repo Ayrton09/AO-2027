@@ -48,6 +48,45 @@ public class CotoPorLoQueSumaTests
         Assert.True(Bot.LoDejaHasta(dejo, porqueNoLeDaNada: false) < alLleno);
     }
 
+    /// <summary>
+    /// EL VIAJE AL COTO FRENA SÓLO CON GANAS DE PELEAR (<see cref="Bot.FrenaConGanas"/>): Kael, Paseante, frenaba camino al 13 por
+    /// los Goblins del 12 y el ciclo no los cazaba (`tardeR5`).
+    /// </summary>
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    public void El_viaje_al_coto_frena_solo_con_ganas_de_pelear(bool ganas, bool frenaEnElCamino, bool frena)
+    {
+        Assert.Equal(frena, Bot.FrenaConGanas(ganas, frenaEnElCamino));
+    }
+
+    /// <summary>
+    /// TRABADO POR UNA CRIATURA CON LA VIDA ENTRE LA POCIÓN Y LA PELEA, LA POCIÓN (<see cref="Bot.SeCuraParaPelearLoQueTapa"/>): Aldo
+    /// con 139 de 199 en el 271 (`mid67`). Con pocas pociones no: es la regla del ciclo.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, true, 0.70, 40, true)]
+    [InlineData(false, false, true, 0.70, 5, false)]
+    [InlineData(false, false, false, 0.70, 40, false)]
+    [InlineData(true, false, true, 0.70, 40, false)]
+    [InlineData(false, false, true, 0.50, 5, true)]
+    [InlineData(false, false, true, 0.90, 40, false)]
+    public void Trabado_por_una_criatura_se_toma_la_pocion_como_en_el_ciclo(bool escapando, bool deMuerto, bool criatura,
+                                                                           double salud, int pociones, bool toma)
+    {
+        Assert.Equal(toma, Bot.SeCuraParaPelearLoQueTapa(escapando, deMuerto, criatura, salud, pociones));
+    }
+
+    /// <summary>EL TEMPLO AL QUE EL VIAJE NO LLEGA CUENTA PARA LA RUNA (<see cref="Bot.OtraCuraSinCamino"/>), como el que no hay.</summary>
+    [Fact]
+    public void El_templo_al_que_no_se_llega_cuenta_como_sin_camino()
+    {
+        Assert.Equal(1, Bot.OtraCuraSinCamino(0, llego: false));
+        Assert.Equal(2, Bot.OtraCuraSinCamino(1, llego: false));
+        Assert.Equal(0, Bot.OtraCuraSinCamino(1, llego: true));
+    }
+
     private sealed record Cazador(Navegante Mapas, GameData Datos, Func<int, bool> EsPresa, Func<int, int> Rinde,
                                   Func<int, bool> SeCazaAhi, Func<int, bool> Nunca, Func<int, bool> Cruza, Func<int, bool> Rescate);
 

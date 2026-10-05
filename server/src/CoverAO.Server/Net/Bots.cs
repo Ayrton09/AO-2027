@@ -177,6 +177,17 @@ public sealed class Bot
     /// </summary>
     public const int PeleasPorViaje = 8;
 
+    /// <summary>
+    /// ¿SE TOMA LA POCIÓN PARA PELEAR CON LO QUE LE TAPA EL PASO? Cuando la toma el ciclo (<see cref="HoraDeTomarPocion"/>): con la
+    /// vida entre la poción y la pelea, el viaje ni se curaba —eso es bajo <see cref="TomaPocion"/>— ni peleaba con lo que lo tapaba
+    /// —eso pide <see cref="VuelveAPelear"/>—, y rodeándolo gastaba los tramos. Medido en `mid67` (05/10): Aldo, nivel 19, con
+    /// 139 de 199 de vida, encerrado en (10,63) del 271 entre una salida al 195 y tres Hormigas, cortó el rescate con "se acabaron
+    /// los tramos (61/33) trabas=48", y apenas cortado se tomó una poción. En todas las corridas guardadas, 692 viajes cortados
+    /// así, con más de 24 trabas; en 135 de 255 la vida al cortar estaba entre el 60 y el 80 %.
+    /// </summary>
+    public static bool SeCuraParaPelearLoQueTapa(bool escapando, bool deMuerto, bool loTapaUnaCriatura, double salud, int pociones) =>
+        !escapando && !deMuerto && loTapaUnaCriatura && HoraDeTomarPocion(salud, pociones);
+
     /// <summary>¿Pelea con lo que le tapa el paso? Ver <see cref="PeleasPorViaje"/>.</summary>
     public static bool PeleaConLoQueTapa(bool escapando, bool deMuerto, int peleasDelViaje, int nivel) =>
         !escapando && !deMuerto && peleasDelViaje < PeleasPorViaje && nivel != GameLimits.NewbieMaxLevel;
@@ -839,7 +850,11 @@ public sealed class Bot
             // NI A LA VISTA DE ALGO PELIGROSO, que viene. Medido en `rojo1`: un Minero de nivel 1 recién escapado de un Lobo se puso a
             // pegarle a un Murciélago con el Lobo a dos y tres baldosas, dos veces seguidas, y el Lobo lo mató las dos.
             bool peligroALaVista = peligro is { } temible && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
-            if (presa is { } p && p.Pasos <= alcance && SeEmpiezaUnaPelea(sentidos.Salud, conFuelle, peligroALaVista) && LeDanGanas())
+            // Y EL QUE FRENÓ EL VIAJE PARA CAZAR, CAZA: ver `FrenaConGanas`.
+            bool frenoParaCazar = _frenoParaCazar;
+            _frenoParaCazar = false;
+            if (presa is { } p && p.Pasos <= alcance && SeEmpiezaUnaPelea(sentidos.Salud, conFuelle, peligroALaVista)
+                && (frenoParaCazar || LeDanGanas()))
             {
                 // SI LO ÚNICO A MANO NO PAGA, ANTES DE PEGARLE SE PRUEBA IR A DONDE HAYA ALGO QUE SÍ. Sin esto,
                 // tener cualquier presa a la vista cortaba el ciclo acá y nunca se llegaba a preguntar si convenía
@@ -3577,16 +3592,19 @@ public sealed class Bot
         // criaturas entre todos en quince minutos, con dos bots que no mataron ninguna.
         // Y DEL LUGAR LLENO SE SALE SIN FRENAR, ni se frena donde no se cazaría: ver `FrenaEnElCamino`. Va antes de mirar lo que hay a
         // mano, que deja anotado en `_cortoElViaje` si vio algo.
+        // Y SÓLO FRENA EL QUE TIENE GANAS DE PELEAR: ver `FrenaConGanas`.
         _cortoElViaje = false;
         _cortoPorElHueco = false;
+        bool conGanas = LeDanGanas();
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
-                                cortaSi: () => FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa, Environment.TickCount64, nunca)
+                                cortaSi: () => FrenaConGanas(conGanas, FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa,
+                                                                                      Environment.TickCount64, nunca))
                                                && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde),
                                 topeDeMapas: cruzandoPeligro ? Math.Max(Navegante.TopeDeMapas, coto.Saltos) : Navegante.TopeDeMapas,
                                 porCualquierCamino: cruzandoPeligro))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
-            if (_cortoElViaje) { _cortoElViaje = false; return true; }
+            if (_cortoElViaje) { _cortoElViaje = false; _frenoParaCazar = true; return true; }
             // Ni el que cortó porque lo del hueco le pega: la vuelta siguiente huye (ver `LoDelHuecoCortaElViaje`).
             if (_cortoPorElHueco) { _cortoPorElHueco = false; return true; }
             return await SiEstaEncerradoAsync(transporte, sentidos, cerrada, ct);
@@ -3680,6 +3698,25 @@ public sealed class Bot
         (mapaAhora == mapaDelCoto || !SigueLleno(llenoHasta, mapaAhora, ahora)) && !noCazaAhi(mapaAhora);
 
     private bool _cortoElViaje;
+
+    /// <summary>
+    /// ¿FRENA EL VIAJE AL COTO POR LO QUE HAYA A MANO? Sólo si le dieron ganas de pelear, sorteadas una vez por viaje con su
+    /// temperamento: el ciclo no pelea sin ganas, así que el que frenaba sin ellas no cazaba nada y el paseo lo devolvía a su zona,
+    /// y a los treinta segundos salía el mismo viaje y frenaba en el mismo lugar. Sorteadas en cada paso, alguna salía siempre. Y el
+    /// que frenó con ganas caza lo que lo hizo frenar sin volver a sortearlas (<see cref="_frenoParaCazar"/>).
+    ///
+    /// <para>Medido en las rondas 34 y 35 y en el historial (05/10): de los viajes cortados por lo que aparece que vuelven a salir
+    /// desde atrás, 127 de 616 del Paseante —15 % de ganas—, 16 de 203 del Tranquilo y 26 de 619 del Cazador. Kael, Paseante de
+    /// nivel 25, hizo diez viajes del 12 al 13 en `tardeR5`, nueve cortados en el primer tramo por Goblins, y llegó a los ocho
+    /// minutos y medio; Gonzo, también Paseante, frenaba en el 193 por Lobos camino al 191: diecinueve rachas y 217 minutos de bot
+    /// en dieciséis corridas tarde. Ivo, Tranquilo de nivel 4, cortó cinco veces en la misma baldosa del 5 el viaje a la cuna
+    /// (`early134`).</para>
+    /// </summary>
+    public static bool FrenaConGanas(bool leDieronGanas, bool frenaEnElCamino) => leDieronGanas && frenaEnElCamino;
+
+    /// <summary>Si la última búsqueda de coto cortó el viaje por una presa con ganas de pelear: la vuelta siguiente del ciclo la caza
+    /// sin volver a sortear las ganas (<see cref="FrenaConGanas"/>).</summary>
+    private bool _frenoParaCazar;
 
     /// <summary>Cuánto aguanta sin ver nada que cazar antes de mudarse.</summary>
     /// <summary>El nivel con el que eligió el coto donde está; cuando cambia, vuelve a mirar.</summary>
@@ -5024,6 +5061,15 @@ public sealed class Bot
     /// `.chr`, tomando poción tras poción. Lo que hace una persona es tomar la poción violeta si tiene, o ir al
     /// sacerdote, que al que llega vivo y herido lo cura (VB6 Acciones.bas:316).</para>
     /// </summary>
+    /// <summary>
+    /// LAS VECES SEGUIDAS QUE NO LLEGÓ A UN SACERDOTE PARA CURARSE EL VENENO, haya templo para el navegante o no: a las
+    /// <see cref="CotosFallidosAntesDeLaRuna"/>, la runa. El navegante encuentra el templo con un filtro y el viaje camina con otro,
+    /// más estricto; contar sólo "no hay templo" dejaba al que lo encontraba y no llegaba reintentando cada uno o dos minutos con el
+    /// veneno encima. Medido en las rondas 34 y 35 (05/10) y en el historial: 248 viajes al templo con "desde acá no se llega", y
+    /// Elmo, del 382 a la cuna, nueve rachas en las early.
+    /// </summary>
+    public static int OtraCuraSinCamino(int antes, bool llego) => llego ? 0 : antes + 1;
+
     private async Task<bool> CurarVenenoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                               CancellationToken ct)
     {
@@ -5051,15 +5097,16 @@ public sealed class Bot
         }
 
         var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos));
-        if (templo is not null) _curasSinCamino = 0;
-        if (templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar))
-            return true;
+        bool llego = templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar);
+        // Y EL TEMPLO AL QUE EL VIAJE NO LLEGA CUENTA COMO SIN CAMINO: ver `OtraCuraSinCamino`.
+        _curasSinCamino = OtraCuraSinCamino(_curasSinCamino, llego);
+        if (llego) return true;
 
         // SIN SACERDOTE AL QUE SE LLEGUE CAMINANDO, LA RUNA A CASA, que en la cuna hay uno. Medido sin servidor: desde
         // el mapa 62 no se llega a pie a ningún sacerdote —la única salida hacia la cuna está en un cuarto cerrado—,
         // y una Pescadora envenenada ahí siguió cazando con el veneno encima. Después de un par de intentos, igual que
         // con el coto y con las tiendas; el contador es otro porque cada cosa se destraba por su lado.
-        if (templo is null && ++_curasSinCamino >= CotosFallidosAntesDeLaRuna && !_entorno.Datos.IsPkMap(sentidos.Mapa))
+        if (_curasSinCamino >= CotosFallidosAntesDeLaRuna && !_entorno.Datos.IsPkMap(sentidos.Mapa))
         {
             _curasSinCamino = 0;
             if (Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
@@ -6182,6 +6229,10 @@ public sealed class Bot
                 if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
                 if (_pasoTrabado)   // algo se paró en el camino: rodearlo
                 {
+                    // CON LA VIDA ENTRE LA POCIÓN Y LA PELEA, LA POCIÓN: ver `SeCuraParaPelearLoQueTapa`.
+                    if (SeCuraParaPelearLoQueTapa(escapando, deMuerto, sentidos.QuienEstaEn(baldosa) is { EsNpc: true },
+                                                  sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida)))
+                        await CuidarseAsync(transporte, sentidos, ct);
                     // Y SI LE PEGA Y SE MATA, SE MATA: ver `PeleasPorViaje`.
                     if (PeleaConLoQueTapa(escapando, deMuerto, peleasDelViaje, sentidos.Nivel) && PresaQueTapa(sentidos, baldosa) is { } tapa)
                     {

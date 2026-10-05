@@ -322,6 +322,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   vuelven con la runa o a pie, como cuando les falta comida; y en las pociones no se gastan lo de la ropa.
   Pasado el novato se mudan a un lugar de caza que sume una vez y media lo del suyo, no el doble.
   Un lugar de caza que dejan porque no les da nada no lo vuelven a elegir por quince minutos, en vez de cinco.
+  Camino a un lugar de caza frenan por lo que aparece sólo si tienen ganas de pelear, y entonces lo cazan; trabados por
+  una criatura a media vida se toman la poción, y si no llegan al sacerdote para curarse el veneno usan la runa.
 
 ## 1.0.0 — 2026-09-16
 
