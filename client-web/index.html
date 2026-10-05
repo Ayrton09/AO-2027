@@ -1828,6 +1828,11 @@
      */
     let musicaActual = null, musicaAudio = null;
     const enElIngreso = () => { const b = $('login'); return !!b && !b.classList.contains('hidden'); };
+    // DESDE EL JUEGO DE ESCRITORIO, EL INGRESO SUENA CON LA MÚSICA DEL MAPA. Allá la del inicio ya sonó en su menú, y al entrar al
+    // server se corta y suena la del mapa de fondo (el autor, 05/10: "cuando entrabas al server debería escucharse ése y apagarse
+    // la del menú"). El juego de escritorio deja esta marca antes de que corra la página (desktop/preload.js); en el navegador
+    // no está y el ingreso sigue con la suya.
+    const ingresoConLaDelMapa = (() => { try { return localStorage.getItem('ao_ingreso_con_mapa') === '1'; } catch (e) { return false; } })();
     function ponerMusica(m) {
       const pista = m && (m.music || '').trim();
       if (pista === musicaActual) return;                     // el mismo tema no se reinicia al cambiar de mapa
@@ -1836,7 +1841,7 @@
       // EN EL INGRESO, SÓLO LA SUYA. Detrás del ingreso se carga un mapa, y con la música de los mapas prendida sonaban las dos a
       // la vez (el autor, 05/10, en el juego de escritorio, donde nada espera el primer clic). La del mapa arranca al entrar
       // (`hideLogin`) y se corta al volver al ingreso (`showLogin`).
-      if (!pista || muted || musicaOff || enElIngreso()) return;
+      if (!pista || muted || musicaOff || (enElIngreso() && !ingresoConLaDelMapa)) return;
       const a = new Audio(`./assets/music/${pista}.mp3`);
       a.loop = true; a.volume = volMusica;
       a.play().then(() => { musicaAudio = a; }).catch(() => {});   // sin archivo (404) o sin gesto del usuario: silencio
@@ -1854,7 +1859,7 @@
      */
     function ponerMusicaLogin() {
       const box = $('login');
-      if (!box || box.classList.contains('hidden') || muted || musicaLoginOff) { pararMusicaLogin(); return; }
+      if (!box || box.classList.contains('hidden') || muted || musicaLoginOff || ingresoConLaDelMapa) { pararMusicaLogin(); return; }
       if (!musicaLogin) { musicaLogin = new Audio('./assets/music/login.mp3'); musicaLogin.loop = true; }
       musicaLogin.volume = volMusica;
       if (musicaLogin.paused) musicaLogin.play().catch(esperarGesto);
@@ -7271,7 +7276,7 @@
       cerrarModalSiHay();
       selectLoginMode('in');
       $('login').classList.remove('hidden', 'creando', 'eligiendo');
-      if (musicaAudio) { try { musicaAudio.pause(); } catch (e) {} musicaAudio = null; }
+      if (!ingresoConLaDelMapa && musicaAudio) { try { musicaAudio.pause(); } catch (e) {} musicaAudio = null; }
       ponerMusicaLogin();
     }
     /** Cierra la ventana modal si hay alguna abierta. Se usa al volver al login y al reconectar. */

@@ -20,6 +20,8 @@ if (location.protocol === 'file:') {
   // al arrancar (ver main.js, `AJUSTES_DEL_JUEGO`). Y lo que se cambie adentro vuelve al menú: cada tanto y al irse.
   try {
     for (const [k, v] of Object.entries(ipcRenderer.sendSync('ajustes-para-el-juego') ?? {})) localStorage.setItem(k, v);
+    // Y la marca de que se juega desde acá: el ingreso suena con la música del mapa, porque la del inicio ya sonó en el menú.
+    localStorage.setItem('ao_ingreso_con_mapa', '1');
   } catch { /* sin localStorage (modo privado): el juego arranca con lo suyo */ }
   const devolver = () => {
     try {
