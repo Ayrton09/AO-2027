@@ -55,7 +55,7 @@
       <h1>CoverAO</h1>
       <div class="sub" id="resumen">cargando…</div>
     </div>
-    <div><a href="./">← entrar al juego</a></div>
+    <div><a href="./" id="al-juego">← entrar al juego</a></div>
   </header>
 
   <h2><span class="puntito" id="luz"></span>Conectados ahora</h2>
@@ -174,5 +174,15 @@
   setInterval(refrescar, 10000);
 })();
 </script>
+  <script>
+    // ABIERTA ENCIMA DEL INGRESO (la capa del top de index.html), "entrar al juego" cierra la capa en vez de cargar el juego
+    // adentro del recuadro.
+    if (window.parent !== window) {
+      document.getElementById('al-juego').addEventListener('click', (e) => {
+        e.preventDefault();
+        window.parent.postMessage('coverao:cerrar-top', location.origin);
+      });
+    }
+  </script>
 </body>
 </html>

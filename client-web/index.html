@@ -490,6 +490,16 @@
     .nov-lista p { position:relative; margin:0 0 6px; padding-left:14px; font-size:calc(var(--u)*0.8); line-height:1.45;
       color:var(--ink); }
     .nov-lista p::before { content:'◆'; position:absolute; left:0; top:.1em; font-size:.62em; color:var(--gold-deep); }
+    /* EL TOP ENCIMA DEL INGRESO, sin salir de la página: ver `abrirTop`. Se muestra con la clase y no con `hidden`, que un
+       `display` propio pisa. */
+    #top-capa { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center; background:#000000b8; }
+    #top-capa.on { display:flex; }
+    #top-capa .top-marco { position:relative; width:min(1000px, 94vw); height:min(820px, 90vh); border:1px solid var(--gold-deep);
+      border-radius:8px; overflow:hidden; background:#0d0904; box-shadow:0 10px 40px #000; }
+    #top-capa iframe { width:100%; height:100%; border:0; display:block; }
+    #top-capa .top-cerrar { position:absolute; top:8px; right:10px; z-index:1; background:#1c130acc; border:1px solid var(--gold-deep);
+      border-radius:4px; color:var(--gold-hi); font-size:20px; line-height:1; padding:3px 9px; cursor:pointer; }
+    #top-capa .top-cerrar:hover { background:#2e1c10; }
     #login > .login-barra { position:fixed; left:0; right:0; bottom:0; z-index:2; display:flex; align-items:center;
       justify-content:space-between; gap:12px; padding:9px 16px; font-size:calc(var(--u)*0.78); color:var(--ink-dim);
       background:linear-gradient(0deg, #000000c8, #00000000); }
@@ -975,7 +985,7 @@
          —saber si hay alguien jugando—, sigue andando aunque el juego no cargue y, si el host la apagó
          (PaginaPublica=0), la página abre igual y lo dice. -->
     <div class="login-barra">
-      <span><span id="lb-online"></span><a href="./estado.html">Quién está jugando y la tabla de posiciones →</a></span>
+      <span><span id="lb-online"></span><a href="./estado.html" id="lb-top">Quién está jugando y la tabla de posiciones →</a></span>
       <span class="login-firma">by: Ayrton09</span>
       <span class="login-musica">
         <button type="button" id="lm-musica" title="música del inicio">♪</button>
@@ -7722,6 +7732,39 @@
     renderReady = true; resize();
     if (atajoDeLoginPermitido) hideLogin();   // auto-login: saltar la pantalla (sólo desde esta máquina)
     log('Conectando al servidor…', '#8a9');
+  </script>
+  <!-- EL TOP ENCIMA DEL INGRESO. El enlace llevaba a `estado.html` y con el cambio de página se cortaba la música del ingreso
+       (el autor, 05/10: "la música del menú no debe pararse por ver el top, sólo al entrar a un server"). Ahora la página se
+       abre en esta capa y la música sigue; se corta al entrar al mundo (`hideLogin`). Con Ctrl, Shift o la rueda el enlace
+       abre como siempre. -->
+  <div id="top-capa" role="dialog" aria-label="Quién está jugando y la tabla de posiciones">
+    <div class="top-marco">
+      <button type="button" class="top-cerrar" id="top-cerrar" title="Cerrar (Esc)">×</button>
+      <iframe id="top-marco" title="Quién está jugando y la tabla de posiciones"></iframe>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const capa = document.getElementById('top-capa'), marco = document.getElementById('top-marco');
+      const enlace = document.getElementById('lb-top');
+      const cerrar = () => { capa.classList.remove('on'); marco.removeAttribute('src'); };
+      // Cada vez de nuevo: lo que muestra es quién está conectado ahora.
+      const abrirTop = () => { marco.src = './estado.html'; capa.classList.add('on'); document.getElementById('top-cerrar').focus(); };
+      enlace?.addEventListener('click', (e) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        abrirTop();
+      });
+      document.getElementById('top-cerrar').addEventListener('click', cerrar);
+      capa.addEventListener('click', (e) => { if (e.target === capa) cerrar(); });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && capa.classList.contains('on')) { e.preventDefault(); e.stopPropagation(); cerrar(); }
+      }, true);
+      // El "entrar al juego" de la página del top, abierta acá adentro, cierra la capa (ver estado.html).
+      window.addEventListener('message', (e) => {
+        if (e.origin === location.origin && e.data === 'coverao:cerrar-top') cerrar();
+      });
+    })();
   </script>
 </body>
 </html>

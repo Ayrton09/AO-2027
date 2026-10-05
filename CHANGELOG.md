@@ -174,6 +174,12 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **La pantalla de ingreso es nueva**: fondo y logo de CoverAO, las novedades al costado para enterarte de cada
   actualización antes de entrar, cuántos están conectados y la música del inicio, con su volumen a mano.
 
+- **La tabla de posiciones se abre encima del ingreso**, sin cortar la música del inicio: se cierra con la ×, con Esc
+  o con "entrar al juego".
+
+- **El juego para escritorio tiene una lista de servers**: los agregás por su dirección o IP, con el nombre que quieras,
+  y ves cuáles están en línea, cuántos juegan y el ping. Doble clic para entrar; Ctrl+Shift+S vuelve a la lista.
+
 - **Los errores y las sugerencias se reportan en GitHub**, como dice el cartel de bienvenida:
   github.com/Ayrton09/CoverAO/issues. El /GM queda para las dudas sobre el servidor donde jugás.
 
