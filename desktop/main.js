@@ -1,13 +1,15 @@
 // EL ENVOLTORIO DE ESCRITORIO (decidido por el autor, 01/10 y 03/10): una ventana propia que CARGA LA PÁGINA DEL SERVER,
 // no los archivos del cliente, así cada actualización del server sigue llegando sola, como en el navegador. Lo que suma:
-// pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio y la lista de servers.
+// pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
+// 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
+// con la música del inicio sonando hasta que se entra a un server.
 const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
 // El puerto web es StartPort + 3 (hosting/Server.ini.ejemplo): con el StartPort de siempre, 7666, el juego está en el 7669.
 const SERVIDOR_POR_DEFECTO = 'http://localhost:7669/';
-const ELEGIR = path.join(__dirname, 'elegir.html');
+const MENU = path.join(__dirname, 'menu.html');
 // Cuánto se espera la respuesta de un server de la lista antes de darlo por apagado.
 const ESPERA_DE_LA_CONSULTA_MS = 4000;
 
@@ -44,17 +46,15 @@ if (config.servidor && !config.servidores.some((s) => s.direccion === config.ser
   config.servidores.unshift({ direccion: config.servidor, nombre: '' });
 let ventana = null;
 
-// `--servidor=<dirección>` entra directo a ese server sin tocar el guardado: un acceso directo por server.
+// Lo que se elige en Opciones. La pantalla completa no va acá: es el estado de la ventana, que ya se guarda al cerrar.
+config.opciones = { musica: true, volumen: 0.3, ...(config.opciones ?? {}) };
+
+// `--servidor=<dirección>` entra directo a ese server sin pasar por el menú ni tocar el guardado: un acceso directo por server.
 const servidorDelAcceso = normalizar(process.argv.find((a) => a.startsWith('--servidor='))?.slice('--servidor='.length));
 let servidor = servidorDelAcceso ?? config.servidor;
 
-function abrirElegir(error) {
-  ventana.loadFile(ELEGIR, { query: { error: error ?? '' } });
-}
-
-function abrirServidor() {
-  if (!servidor) return abrirElegir();
-  ventana.loadURL(servidor);
+function abrirMenu(error) {
+  ventana.loadFile(MENU, { query: { error: error ?? '' } });
 }
 
 function crearVentana() {
@@ -77,19 +77,19 @@ function crearVentana() {
   if (lugar.pantallaCompleta) ventana.setFullScreen(true);
   ventana.once('ready-to-show', () => ventana.show());
 
-  // F11 alterna la pantalla completa, como en el navegador pero sin la cruz arriba; Ctrl+Shift+S vuelve a la lista de
-  // servers. F1 a F10 son macros del juego: no se tocan.
+  // F11 alterna la pantalla completa, como en el navegador pero sin la cruz arriba; Ctrl+Shift+S vuelve al menú. F1 a F10 son
+  // macros del juego: no se tocan.
   ventana.webContents.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown') return;
     if (input.key === 'F11') { ventana.setFullScreen(!ventana.isFullScreen()); e.preventDefault(); }
-    else if (input.control && input.shift && input.key.toLowerCase() === 's') { abrirElegir(); e.preventDefault(); }
+    else if (input.control && input.shift && input.key.toLowerCase() === 's') { abrirMenu(); e.preventDefault(); }
     else if (input.control && input.shift && input.key.toLowerCase() === 'i') { ventana.webContents.toggleDevTools(); e.preventDefault(); }
   });
 
-  // Si el server no contesta, de vuelta a la lista, con el motivo.
+  // Si el server no contesta, de vuelta al menú, en la lista y con el motivo.
   ventana.webContents.on('did-fail-load', (_e, codigo, descripcion, url, principal) => {
     if (!principal || codigo === -3 || url.startsWith('file:')) return;   // -3: la carga se reemplazó por otra
-    abrirElegir(`No se pudo entrar a ${url} (${descripcion}).`);
+    abrirMenu(`No se pudo entrar a ${url} (${descripcion}).`);
   });
 
   // Los enlaces a otros sitios (el código fuente, la página de un clan) se abren en el navegador, no en la ventana del juego.
@@ -113,7 +113,7 @@ function crearVentana() {
     guardarConfig(config);
   });
 
-  abrirServidor();
+  if (servidorDelAcceso) ventana.loadURL(servidorDelAcceso); else abrirMenu();
 }
 
 /**
@@ -141,7 +141,7 @@ async function consultar(direccion) {
   }
 }
 
-// La pantalla de la lista es la única que habla con este proceso (ver preload.js).
+// El menú es la única pantalla que habla con este proceso (ver preload.js).
 ipcMain.handle('listar', () => ({ servidores: config.servidores, ultimo: config.servidor ?? null, porDefecto: SERVIDOR_POR_DEFECTO }));
 
 ipcMain.handle('agregar', (_e, texto, nombre) => {
@@ -171,6 +171,20 @@ ipcMain.handle('entrar', (_e, direccion) => {
   ventana.loadURL(servidor);
   return null;
 });
+
+ipcMain.handle('leer-opciones', () => ({ ...config.opciones, pantallaCompleta: ventana.isFullScreen() }));
+
+ipcMain.handle('guardar-opciones', (_e, opciones) => {
+  config.opciones = {
+    musica: opciones?.musica !== false,
+    volumen: Math.min(1, Math.max(0, Number(opciones?.volumen) || 0)),
+  };
+  guardarConfig(config);
+});
+
+ipcMain.handle('pantalla-completa', (_e, si) => { ventana.setFullScreen(!!si); return ventana.isFullScreen(); });
+
+ipcMain.handle('salir', () => app.quit());
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);

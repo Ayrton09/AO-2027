@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src file:; media-src file:; frame-src http: https:" />
+  <title>CoverAO</title>
+  <style>
+    :root { --oro: #e8c876; --oro-claro: #f3d98f; --oro-hondo: #5a4223; --tinta: #e8dcc0; --tenue: #b8a888; --apagado: #8a7a5c;
+            --panel: #1c130ae6; --fondo: #0b0906; }
+    html, body { margin: 0; height: 100%; color: var(--tinta); font: 15px/1.4 Georgia, serif; background: var(--fondo); overflow: hidden; }
+    body { background: var(--fondo) url('menu/fondo.jpg') center 40% / cover no-repeat; }
+    body::after { content: ''; position: fixed; inset: 0; pointer-events: none;
+                  background: radial-gradient(100% 95% at 50% 40%, transparent 55%, #000000a0 100%),
+                              linear-gradient(180deg, #00000000 0%, #00000020 45%, #00000080 100%); }
+    .escena { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; align-items: center;
+              padding: max(14px, 3vh) 16px 56px; box-sizing: border-box; }
+    .logo { width: min(560px, 80vw); height: auto; flex: none; margin: 0 auto 2vh; user-select: none; pointer-events: none;
+            filter: drop-shadow(0 6px 14px #000000a8); }
+    .vista { display: none; width: min(560px, 92vw); }
+    .vista.on { display: block; }
+    .panel { padding: 22px 26px; background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 8px;
+             box-shadow: 0 10px 40px #000000a0; }
+    h2 { margin: 0 0 14px; font-size: 20px; color: var(--oro); font-weight: normal; display: flex; align-items: baseline;
+         justify-content: space-between; gap: 12px; }
+
+    /* El menú principal: botones grandes, uno abajo del otro. */
+    .menu { display: flex; flex-direction: column; gap: 10px; width: min(340px, 86vw); margin: 0 auto; }
+    .menu button { padding: 12px 16px; font: inherit; font-size: 18px; letter-spacing: .04em; color: var(--tinta); text-align: center;
+                   background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 6px; cursor: pointer;
+                   box-shadow: 0 6px 20px #00000080; transition: border-color .12s, color .12s, background .12s; }
+    .menu button:hover, .menu button:focus-visible { outline: none; color: var(--oro-claro); border-color: var(--oro); background: #2a1c0ee6; }
+    .menu button.principal { color: #1c130a; background: var(--oro); border-color: var(--oro); font-weight: bold; }
+    .menu button.principal:hover, .menu button.principal:focus-visible { color: #1c130a; background: var(--oro-claro); }
+    .menu .sub { display: block; font-size: 12px; font-weight: normal; letter-spacing: 0; opacity: .75; margin-top: 2px; }
+
+    .volver { background: none; border: 0; padding: 0; color: var(--tenue); font: inherit; font-size: 13px; cursor: pointer; }
+    .volver:hover { color: var(--oro); }
+    .enlace { background: none; border: 0; padding: 0; color: var(--tenue); font: inherit; font-size: 12px; cursor: pointer;
+              text-decoration: underline; }
+    .enlace:hover { color: var(--oro); }
+
+    /* Servidores. */
+    ul { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow-y: auto; border-top: 1px solid #3a2a16; }
+    li { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid #3a2a16; cursor: pointer; }
+    li:hover, li:focus-visible { background: #261a0d; outline: none; }
+    li.ultimo .nombre::after { content: "  · el último"; color: var(--apagado); font-size: 12px; font-weight: normal; }
+    .luz { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a4a34; }
+    .luz.si { background: #7bc46a; box-shadow: 0 0 6px #7bc46a88; }
+    .luz.no { background: #c4584a; }
+    .datos { flex: 1; min-width: 0; }
+    .nombre { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .direccion { color: var(--apagado); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .estado { flex: none; text-align: right; font-size: 12px; color: var(--tenue); font-variant-numeric: tabular-nums; }
+    .estado b { color: var(--tinta); font-weight: normal; }
+    .boton-chico { flex: none; background: none; border: 1px solid var(--oro-hondo); color: var(--tenue); font: inherit; font-size: 12px;
+                   cursor: pointer; padding: 2px 8px; border-radius: 4px; }
+    .boton-chico:hover { color: var(--oro); border-color: var(--oro); }
+    .quitar { flex: none; background: none; border: 0; color: var(--apagado); font-size: 18px; line-height: 1; cursor: pointer;
+              padding: 2px 6px; border-radius: 4px; }
+    .quitar:hover { color: #e88a6e; background: #2e1c10; }
+    .vacia { padding: 14px 6px; color: var(--apagado); font-size: 13px; cursor: default; }
+    .vacia:hover { background: none; }
+    form { margin-top: 16px; }
+    h3 { margin: 0 0 8px; font-size: 15px; color: var(--oro); font-weight: normal; }
+    .fila { display: flex; gap: 8px; }
+    input[type=text] { box-sizing: border-box; min-width: 0; padding: 8px 10px; font: inherit; color: inherit; background: #0d0904;
+            border: 1px solid var(--oro-hondo); border-radius: 4px; }
+    input[type=text]:focus { outline: none; border-color: var(--oro); }
+    #direccion { flex: 3; }
+    #nombre { flex: 2; }
+    .boton { flex: none; padding: 8px 14px; font: inherit; font-weight: bold; color: #1c130a; background: var(--oro);
+             border: 0; border-radius: 4px; cursor: pointer; }
+    .boton:hover { background: var(--oro-claro); }
+    .error { margin-top: 10px; color: #e88a6e; font-size: 13px; min-height: 1em; }
+    .ayuda { margin-top: 8px; color: var(--apagado); font-size: 12px; }
+
+    /* Opciones. */
+    .opcion { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #3a2a16; }
+    .opcion:last-of-type { border-bottom: 0; }
+    .opcion .que { font-size: 15px; }
+    .opcion .que small { display: block; color: var(--apagado); font-size: 12px; }
+    .interruptor { width: 44px; height: 24px; flex: none; border-radius: 12px; border: 1px solid var(--oro-hondo); background: #0d0904;
+                   position: relative; cursor: pointer; }
+    .interruptor::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+                          background: var(--apagado); transition: left .12s, background .12s; }
+    .interruptor[aria-checked=true] { border-color: var(--oro); }
+    .interruptor[aria-checked=true]::after { left: 23px; background: var(--oro); }
+    input[type=range] { width: 180px; accent-color: var(--oro); }
+    .valor { width: 3em; text-align: right; color: var(--tenue); font-variant-numeric: tabular-nums; }
+
+    /* El top de un server, encima de todo. */
+    #top { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; background: #000000b8; }
+    #top.on { display: flex; }
+    #top .marco { position: relative; width: min(1000px, 94vw); height: min(820px, 90vh); border: 1px solid var(--oro-hondo);
+                  border-radius: 8px; overflow: hidden; background: #0d0904; box-shadow: 0 10px 40px #000; }
+    #top iframe { width: 100%; height: 100%; border: 0; display: block; }
+    #top .cerrar { position: absolute; top: 8px; right: 10px; z-index: 1; background: #1c130acc; border: 1px solid var(--oro-hondo);
+                   border-radius: 4px; color: var(--oro-claro); font-size: 20px; line-height: 1; padding: 3px 9px; cursor: pointer; }
+
+    .pie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+           padding: 8px 16px; font-size: 12px; color: var(--apagado); background: linear-gradient(0deg, #000000b0, transparent); }
+    .firma { font-style: italic; }
+    .musica { display: flex; align-items: center; gap: 8px; }
+    .musica button { background: none; border: 1px solid var(--oro-hondo); border-radius: 4px; color: var(--oro-claro); cursor: pointer;
+                     font-size: 13px; padding: 1px 7px; }
+    .musica button.off { opacity: .4; }
+  </style>
+</head>
+<body>
+  <div class="escena">
+    <img class="logo" src="menu/logo.webp" alt="CoverAO" draggable="false" />
+
+    <!-- EL MENÚ PRINCIPAL. Es lo primero que se ve al abrir el juego (el autor, 05/10). -->
+    <section class="vista on" id="v-principal">
+      <div class="menu">
+        <button type="button" class="principal" id="b-jugar">Jugar<span class="sub" id="b-jugar-sub"></span></button>
+        <button type="button" id="b-servidores">Servidores</button>
+        <button type="button" id="b-opciones">Opciones</button>
+        <button type="button" id="b-salir">Salir</button>
+      </div>
+    </section>
+
+    <section class="vista" id="v-servidores">
+      <div class="panel">
+        <h2><span>Servidores</span><button class="enlace" id="actualizar" type="button">Actualizar</button></h2>
+        <ul id="lista"></ul>
+        <form id="f">
+          <h3>Agregar por dirección</h3>
+          <div class="fila">
+            <input type="text" id="direccion" spellcheck="false" placeholder="IP o dirección, ej. 190.1.2.3:7669" aria-label="Dirección" />
+            <input type="text" id="nombre" spellcheck="false" placeholder="Nombre (opcional)" aria-label="Nombre" />
+            <button class="boton" type="submit">Agregar</button>
+          </div>
+        </form>
+        <div class="error" id="error"></div>
+        <div class="ayuda">Doble clic o Enter en un server para entrar. Desde el juego, Ctrl+Shift+S vuelve a este menú.</div>
+        <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
+      </div>
+    </section>
+
+    <section class="vista" id="v-opciones">
+      <div class="panel">
+        <h2><span>Opciones</span></h2>
+        <div class="opcion">
+          <div class="que">Música del menú</div>
+          <div class="interruptor" role="switch" tabindex="0" id="o-musica" aria-label="Música del menú"></div>
+        </div>
+        <div class="opcion">
+          <div class="que">Volumen de la música</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" min="0" max="100" step="5" id="o-volumen" aria-label="Volumen de la música" />
+            <span class="valor" id="o-volumen-val"></span>
+          </div>
+        </div>
+        <div class="opcion">
+          <div class="que">Pantalla completa<small>También con F11, adentro del juego.</small></div>
+          <div class="interruptor" role="switch" tabindex="0" id="o-completa" aria-label="Pantalla completa"></div>
+        </div>
+        <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="top" role="dialog" aria-label="Tabla de posiciones">
+    <div class="marco">
+      <button type="button" class="cerrar" id="top-cerrar" title="Cerrar (Esc)">×</button>
+      <iframe id="top-marco" title="Tabla de posiciones"></iframe>
+    </div>
+  </div>
+
+  <div class="pie">
+    <span class="firma">by: Ayrton09</span>
+    <span class="musica">
+      <button type="button" id="p-musica" title="Música del menú">♪</button>
+    </span>
+  </div>
+
+  <audio id="musica" src="menu/musica.mp3" loop preload="auto"></audio>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const q = new URLSearchParams(location.search);
+    const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+    const sinProtocolo = (d) => d.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    // ---- Vistas. La música sigue sonando entre ellas: es la misma página. Se corta sólo al entrar a un server. ----
+    function mostrar(vista) {
+      for (const v of document.querySelectorAll('.vista')) v.classList.toggle('on', v.id === 'v-' + vista);
+      if (vista === 'servidores') { dibujar(); consultarTodos(); }
+      if (vista === 'principal') pintarJugar();
+      const primero = document.querySelector('.vista.on button, .vista.on input');
+      if (vista === 'principal' && primero) primero.focus();
+    }
+    for (const b of document.querySelectorAll('[data-volver]')) b.addEventListener('click', () => mostrar('principal'));
+    $('b-servidores').addEventListener('click', () => mostrar('servidores'));
+    $('b-opciones').addEventListener('click', () => mostrar('opciones'));
+    $('b-salir').addEventListener('click', () => window.escritorio.salir());
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if ($('top').classList.contains('on')) cerrarTop();
+      else if (!$('v-principal').classList.contains('on')) mostrar('principal');
+    });
+
+    // ---- Música. ----
+    const musica = $('musica');
+    let opciones = { musica: true, volumen: 0.3, pantallaCompleta: false };
+    function aplicarMusica() {
+      musica.volume = opciones.volumen;
+      $('p-musica').classList.toggle('off', !opciones.musica);
+      $('o-musica').setAttribute('aria-checked', String(opciones.musica));
+      $('o-volumen').value = Math.round(opciones.volumen * 100);
+      $('o-volumen-val').textContent = Math.round(opciones.volumen * 100) + '%';
+      if (opciones.musica) musica.play().catch(() => {}); else musica.pause();
+    }
+    async function guardarOpciones() { await window.escritorio.guardarOpciones(opciones); }
+    function alternarMusica() { opciones.musica = !opciones.musica; aplicarMusica(); guardarOpciones(); }
+    $('p-musica').addEventListener('click', alternarMusica);
+    for (const id of ['o-musica', 'o-completa']) $(id).addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); $(id).click(); } });
+    $('o-musica').addEventListener('click', alternarMusica);
+    $('o-volumen').addEventListener('input', () => { opciones.volumen = Number($('o-volumen').value) / 100; aplicarMusica(); });
+    $('o-volumen').addEventListener('change', guardarOpciones);
+    $('o-completa').addEventListener('click', async () => {
+      opciones.pantallaCompleta = await window.escritorio.pantallaCompleta(!opciones.pantallaCompleta);
+      $('o-completa').setAttribute('aria-checked', String(opciones.pantallaCompleta));
+    });
+
+    // ---- Jugar: el último server. Sin ninguno, a la lista. ----
+    let datos = { servidores: [], ultimo: null, porDefecto: 'http://localhost:7669/' };
+    function pintarJugar() {
+      const ultimo = datos.servidores.find((s) => s.direccion === datos.ultimo);
+      $('b-jugar-sub').textContent = ultimo ? (ultimo.nombre || sinProtocolo(ultimo.direccion)) : 'elegí un server';
+    }
+    $('b-jugar').addEventListener('click', () => {
+      if (datos.ultimo) entrar(datos.ultimo); else mostrar('servidores');
+    });
+
+    async function entrar(direccion) {
+      $('error').textContent = (await window.escritorio.entrar(direccion)) || '';
+    }
+
+    // ---- Servidores. ----
+    const lista = $('lista'), error = $('error'), campo = $('direccion'), nombre = $('nombre');
+    let estados = new Map();
+
+    function textoDelEstado(e) {
+      if (!e) return 'buscando…';
+      if (!e.enLinea) return 'no responde';
+      const partes = [];
+      if (e.jugadores !== null) partes.push(`<b>${e.jugadores}</b> ${e.jugadores === 1 ? 'jugador' : 'jugadores'}`);
+      partes.push(`<b>${e.ping}</b> ms`);
+      if (e.version) partes.push('v' + esc(e.version));
+      return partes.join(' · ');
+    }
+
+    async function dibujar() {
+      datos = await window.escritorio.listar();
+      lista.textContent = '';
+      if (datos.servidores.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'vacia';
+        li.textContent = 'Todavía no agregaste ningún server. Si es en esta misma PC, la dirección es ' + sinProtocolo(datos.porDefecto) + '.';
+        lista.append(li);
+        if (!campo.value) campo.value = sinProtocolo(datos.porDefecto);
+        return;
+      }
+      for (const s of datos.servidores) {
+        const li = document.createElement('li');
+        li.tabIndex = 0;
+        if (s.direccion === datos.ultimo) li.classList.add('ultimo');
+        const e = estados.get(s.direccion);
+        const luz = document.createElement('span');
+        luz.className = 'luz' + (e ? (e.enLinea ? ' si' : ' no') : '');
+        const d = document.createElement('div');
+        d.className = 'datos';
+        d.innerHTML = `<div class="nombre">${esc(s.nombre || sinProtocolo(s.direccion))}</div><div class="direccion">${esc(sinProtocolo(s.direccion))}</div>`;
+        const estado = document.createElement('div');
+        estado.className = 'estado';
+        estado.innerHTML = textoDelEstado(e);
+        li.append(luz, d, estado);
+        if (e?.enLinea && e.jugadores !== null) {
+          const top = document.createElement('button');
+          top.className = 'boton-chico';
+          top.type = 'button';
+          top.textContent = 'Top';
+          top.title = 'Quién está jugando y la tabla de posiciones';
+          top.addEventListener('click', (ev) => { ev.stopPropagation(); abrirTop(s.direccion); });
+          li.append(top);
+        }
+        const quitar = document.createElement('button');
+        quitar.className = 'quitar';
+        quitar.type = 'button';
+        quitar.title = 'Quitar de la lista';
+        quitar.textContent = '×';
+        quitar.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          await window.escritorio.quitar(s.direccion);
+          estados.delete(s.direccion);
+          dibujar();
+        });
+        li.append(quitar);
+        li.addEventListener('dblclick', () => entrar(s.direccion));
+        li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') entrar(s.direccion); });
+        lista.append(li);
+      }
+    }
+
+    async function consultarTodos() {
+      const { servidores } = await window.escritorio.listar();
+      await Promise.all(servidores.map(async (s) => {
+        estados.set(s.direccion, await window.escritorio.consultar(s.direccion));
+        if ($('v-servidores').classList.contains('on')) dibujar();
+      }));
+    }
+
+    $('f').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      error.textContent = '';
+      const r = await window.escritorio.agregar(campo.value, nombre.value);
+      if (r.error) { error.textContent = r.error; return; }
+      campo.value = '';
+      nombre.value = '';
+      estados.delete(r.direccion);
+      await dibujar();
+      estados.set(r.direccion, await window.escritorio.consultar(r.direccion));
+      dibujar();
+    });
+    $('actualizar').addEventListener('click', () => { estados = new Map(); dibujar(); consultarTodos(); });
+    // Mientras la lista está a la vista, el estado se refresca solo.
+    setInterval(() => { if ($('v-servidores').classList.contains('on')) consultarTodos(); }, 15000);
+
+    // ---- El top de un server, encima del menú: la música sigue. ----
+    let topDe = null;
+    function abrirTop(direccion) {
+      topDe = direccion;
+      $('top-marco').src = new URL('estado.html', direccion).href;
+      $('top').classList.add('on');
+      $('top-cerrar').focus();
+    }
+    function cerrarTop() { $('top').classList.remove('on'); $('top-marco').removeAttribute('src'); topDe = null; }
+    $('top-cerrar').addEventListener('click', cerrarTop);
+    $('top').addEventListener('click', (e) => { if (e.target === $('top')) cerrarTop(); });
+    // El "entrar al juego" de la página del top entra a ese server (ver estado.html).
+    window.addEventListener('message', (e) => {
+      if (e.data === 'coverao:cerrar-top' && topDe && e.origin === new URL(topDe).origin) entrar(topDe);
+    });
+
+    // ---- Arranque. ----
+    (async () => {
+      opciones = { ...opciones, ...(await window.escritorio.leerOpciones()) };
+      $('o-completa').setAttribute('aria-checked', String(opciones.pantallaCompleta));
+      aplicarMusica();
+      datos = await window.escritorio.listar();
+      pintarJugar();
+      // Si se volvió acá porque no se pudo entrar, a la lista, con el motivo.
+      if (q.get('error')) { mostrar('servidores'); error.textContent = q.get('error'); }
+      else $('b-jugar').focus();
+    })();
+  </script>
+</body>
+</html>

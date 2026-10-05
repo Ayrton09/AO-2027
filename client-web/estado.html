@@ -175,12 +175,13 @@
 })();
 </script>
   <script>
-    // ABIERTA ENCIMA DEL INGRESO (la capa del top de index.html), "entrar al juego" cierra la capa en vez de cargar el juego
-    // adentro del recuadro.
+    // ABIERTA ENCIMA DE OTRA PÁGINA, "entrar al juego" no carga el juego adentro del recuadro: le avisa a la de afuera. En el
+    // ingreso (index.html) cierra la capa; en el menú del juego de escritorio entra a este server. Va a cualquier origen porque
+    // el menú es una página local (file://); el mensaje no lleva nada más que el aviso, y cada una mira de dónde viene.
     if (window.parent !== window) {
       document.getElementById('al-juego').addEventListener('click', (e) => {
         e.preventDefault();
-        window.parent.postMessage('coverao:cerrar-top', location.origin);
+        window.parent.postMessage('coverao:cerrar-top', '*');
       });
     }
   </script>

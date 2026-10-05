@@ -20,7 +20,8 @@
     "files": [
       "main.js",
       "preload.js",
-      "elegir.html",
+      "menu.html",
+      "menu/**",
       "build/icon.png"
     ],
     "win": {
