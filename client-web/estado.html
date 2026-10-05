@@ -16,6 +16,13 @@
       --wood:#2a1c0e; --wood-hi:#3d2a15; --wood-lo:#1a1108;
       --serif:'Trajan Pro','Cinzel','Georgia',serif;
     }
+    /* LAS BARRAS DE DESPLAZAMIENTO, oscuras y doradas: las de Chrome por defecto son blancas y se veían "feas" abiertas encima
+       del juego (el autor, 05/10). */
+    html { color-scheme: dark; scrollbar-color: #5c3f15 #120c06; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #120c06; }
+    ::-webkit-scrollbar-thumb { background: #5c3f15; border-radius: 5px; border: 2px solid #120c06; }
+    ::-webkit-scrollbar-thumb:hover { background: #9a7326; }
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
       font-family:system-ui, sans-serif; font-size:15px; line-height:1.5;

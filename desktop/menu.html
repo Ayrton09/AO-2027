@@ -8,6 +8,13 @@
   <style>
     :root { --oro: #e8c876; --oro-claro: #f3d98f; --oro-hondo: #5a4223; --tinta: #e8dcc0; --tenue: #b8a888; --apagado: #8a7a5c;
             --panel: #1c130ae6; --fondo: #0b0906; }
+    /* LAS BARRAS DE DESPLAZAMIENTO, oscuras y doradas: las de Chrome por defecto son blancas y se veían "feas" abiertas encima
+       del juego (el autor, 05/10). */
+    html { color-scheme: dark; scrollbar-color: #5c3f15 #120c06; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #120c06; }
+    ::-webkit-scrollbar-thumb { background: #5c3f15; border-radius: 5px; border: 2px solid #120c06; }
+    ::-webkit-scrollbar-thumb:hover { background: #9a7326; }
     html, body { margin: 0; height: 100%; color: var(--tinta); font: 15px/1.4 Georgia, serif; background: var(--fondo); overflow: hidden; }
     body { background: var(--fondo) url('menu/fondo.jpg') center 40% / cover no-repeat; }
     body::after { content: ''; position: fixed; inset: 0; pointer-events: none;

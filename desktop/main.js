@@ -3,7 +3,7 @@
 // pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
 // 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
 // con la música del inicio sonando hasta que se entra a un server.
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -12,6 +12,11 @@ const SERVIDOR_POR_DEFECTO = 'http://localhost:7669/';
 const MENU = path.join(__dirname, 'menu.html');
 // Cuánto se espera la respuesta de un server de la lista antes de darlo por apagado.
 const ESPERA_DE_LA_CONSULTA_MS = 4000;
+
+const BARRA_DEL_TOP = `html { color-scheme: dark; scrollbar-color: #5c3f15 #120c06; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: #120c06; }
+  ::-webkit-scrollbar-thumb { background: #5c3f15; border-radius: 5px; border: 2px solid #120c06; }
+  ::-webkit-scrollbar-thumb:hover { background: #9a7326; }`;
 
 const archivoDeConfig = () => path.join(app.getPath('userData'), 'config.json');
 
@@ -110,6 +115,16 @@ function crearVentana() {
     if (comando === 'browser-backward') { e.preventDefault(); atras(); }
     else if (comando === 'browser-forward') e.preventDefault();
   });
+  // EL TOP DE UN SERVER VIEJO, CON LAS BARRAS OSCURAS: `estado.html` las trae desde el 05/10, y a la de un server de antes se le
+  // ponen acá al cargar adentro del menú. Sólo el estilo de la barra: el resto de la página es del server.
+  ventana.webContents.on('did-frame-finish-load', (_e, principal, proceso, rutina) => {
+    if (principal) return;
+    const marco = webFrameMain.fromId(proceso, rutina);
+    if (!marco || !/\/estado\.html(\?|$)/.test(marco.url)) return;
+    marco.executeJavaScript(`(() => { const s = document.createElement('style'); s.textContent = ${JSON.stringify(BARRA_DEL_TOP)};
+      document.head.append(s); })()`).catch(() => {});
+  });
+
   // Y cada vez que se carga el menú el historial arranca de cero.
   ventana.webContents.on('did-finish-load', () => {
     if (ventana.webContents.getURL().startsWith('file:')) ventana.webContents.navigationHistory.clear();
