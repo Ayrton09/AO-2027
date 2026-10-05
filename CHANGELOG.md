@@ -174,6 +174,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **La pantalla de ingreso es nueva**: fondo y logo de CoverAO, las novedades al costado para enterarte de cada
   actualización antes de entrar, cuántos están conectados y la música del inicio, con su volumen a mano.
 
+- **El nombre del personaje admite números**, siempre que empiece con una letra: "Ayrton09" vale.
+
+- **En el ingreso suena sólo su música**: la del mapa arranca al entrar al mundo.
+
 - **La tabla de posiciones se abre encima del ingreso**, sin cortar la música del inicio: se cierra con la ×, con Esc
   o con "entrar al juego".
 

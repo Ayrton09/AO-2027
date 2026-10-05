@@ -14,11 +14,15 @@ public class NamingTests
     [Theory]
     [InlineData("Rugura")]
     [InlineData("Don Pepito")]      // el espacio interno sí vale
+    [InlineData("Ayrton09")]        // con números, si empieza con letra (el autor, 05/10)
+    [InlineData("Rug500")]
+    [InlineData("Don Pepito 2")]
     public void Nombre_de_personaje_valido(string name) => Assert.True(Naming.IsValidCharName(name));
 
     [Theory]
     [InlineData("500")]             // el peligroso: se renderizaría como la criatura 500
-    [InlineData("Rug500")]          // éste no confundiría a nadie, pero el VB6 tampoco lo acepta
+    [InlineData("1Rugura")]         // empieza con un número
+    [InlineData("1e5")]             // y no puede parecer un número, ni en notación científica
     [InlineData("Rug_ura")]         // el guión bajo lo acepta la CUENTA, no el personaje
     [InlineData("")]
     [InlineData(" Rugura")]         // espacio al borde

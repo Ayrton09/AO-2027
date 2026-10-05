@@ -79,14 +79,15 @@ public static class Naming
 
     public const int MaxCharNameLength = 18;   // VB6 ValidarNombre: `If Len(Nombre) < 1 Or Len(Nombre) > 18`
 
-    /// <summary>Nombre de PERSONAJE (VB6 <c>ValidarNombre</c>, TCP.bas:181): sólo letras y espacio, hasta 18 —
-    /// ni dígitos ni guión bajo, que <see cref="IsValidName"/> sí acepta para las cuentas.
+    /// <summary>Nombre de PERSONAJE: letras, números y espacio, EMPEZANDO CON UNA LETRA, hasta 18; sin guión bajo, que
+    /// <see cref="IsValidName"/> sí acepta para las cuentas. El original (VB6 <c>ValidarNombre</c>, TCP.bas:181) no deja
+    /// números; el autor los pidió (05/10: "debería dejarme poner números", con "Ayrton09").
     ///
-    /// La diferencia no es cosmética: el <c>CharacterCreate</c> de un NPC manda su NÚMERO de ficha en el campo
-    /// del nombre, y el cliente distingue NPC de usuario preguntando si ese nombre es NUMÉRICO (VB6
-    /// <c>IsNumeric</c>, Protocol.bas:1733). Un personaje llamado "500" se renderizaría como la criatura 500:
-    /// nombre ajeno, color ajeno y la etiqueta escondida bajo la regla de los NPCs. Que el original prohíba los
-    /// dígitos es JUSTAMENTE lo que hace que ese truco sea seguro.</summary>
+    /// Lo de empezar con una letra no es cosmético: el <c>CharacterCreate</c> de un NPC manda su NÚMERO de ficha en el
+    /// campo del nombre, y el cliente distingue NPC de usuario preguntando si ese nombre es NUMÉRICO (VB6 <c>IsNumeric</c>,
+    /// Protocol.bas:1733; el web, <c>Number(nombre)</c>). Un personaje llamado "500" se renderizaría como la criatura 500:
+    /// nombre ajeno, color ajeno y la etiqueta escondida bajo la regla de los NPCs. Un nombre que empieza con una letra
+    /// nunca es numérico, así que el truco sigue siendo seguro.</summary>
     public static bool IsValidCharName(string? name) => IsValidCharNameShape(name) && !IsForbiddenName(name);
 
     /// <summary>Las reglas de <see cref="IsValidCharName"/> sin la lista de prohibidos. Separa los dos avisos del
@@ -95,8 +96,10 @@ public static class Naming
     public static bool IsValidCharNameShape(string? name)
     {
         if (!FormaValida(name) || name!.Length > MaxCharNameLength) return false;
+        static bool Letra(char c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        if (!Letra(name[0])) return false;
         foreach (char c in name)
-            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == ' ')) return false;
+            if (!(Letra(c) || (c >= '0' && c <= '9') || c == ' ')) return false;
         return true;
     }
 

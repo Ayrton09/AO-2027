@@ -879,11 +879,12 @@
 
         <div class="crear-grid">
           <div class="crear-col">
-            <!-- Sólo letras y espacios, como el ValidarNombre del original (TCP.bas:181). El server lo rechaza
-                 igual; el patrón está acá para avisar ANTES de mandar el paquete. Nada de dígitos: un nombre
-                 numérico chocaría con el número de ficha con el que viajan los NPCs. -->
+            <!-- Letras, números y espacios, empezando con una letra (Naming.IsValidCharName; el original no deja
+                 números, el autor los pidió el 05/10). El server lo rechaza igual; el patrón está acá para avisar
+                 ANTES de mandar el paquete. Empezar con letra es lo que impide un nombre numérico, que chocaría con
+                 el número de ficha con el que viajan los NPCs. -->
             <label>Nombre del personaje <input name="name" required maxlength="18"
-                   pattern="[A-Za-z]+( [A-Za-z]+)*" title="Sólo letras y espacios (sin números)"></label>
+                   pattern="[A-Za-z][A-Za-z0-9]*( [A-Za-z0-9]+)*" title="Letras y números, empezando con una letra"></label>
 
             <div class="bloque">
               <h4>Raza</h4>
@@ -1826,12 +1827,16 @@
      * valor es un NOMBRE y no un número. Por eso "3-1" se pide tal cual y no es un 3 mal parseado.
      */
     let musicaActual = null, musicaAudio = null;
+    const enElIngreso = () => { const b = $('login'); return !!b && !b.classList.contains('hidden'); };
     function ponerMusica(m) {
       const pista = m && (m.music || '').trim();
       if (pista === musicaActual) return;                     // el mismo tema no se reinicia al cambiar de mapa
       musicaActual = pista;
       if (musicaAudio) { musicaAudio.pause(); musicaAudio = null; }
-      if (!pista || muted || musicaOff) return;
+      // EN EL INGRESO, SÓLO LA SUYA. Detrás del ingreso se carga un mapa, y con la música de los mapas prendida sonaban las dos a
+      // la vez (el autor, 05/10, en el juego de escritorio, donde nada espera el primer clic). La del mapa arranca al entrar
+      // (`hideLogin`) y se corta al volver al ingreso (`showLogin`).
+      if (!pista || muted || musicaOff || enElIngreso()) return;
       const a = new Audio(`./assets/music/${pista}.mp3`);
       a.loop = true; a.volume = volMusica;
       a.play().then(() => { musicaAudio = a; }).catch(() => {});   // sin archivo (404) o sin gesto del usuario: silencio
@@ -7266,6 +7271,7 @@
       cerrarModalSiHay();
       selectLoginMode('in');
       $('login').classList.remove('hidden', 'creando', 'eligiendo');
+      if (musicaAudio) { try { musicaAudio.pause(); } catch (e) {} musicaAudio = null; }
       ponerMusicaLogin();
     }
     /** Cierra la ventana modal si hay alguna abierta. Se usa al volver al login y al reconectar. */
@@ -7283,6 +7289,7 @@
       if (ae && ae !== document.body && box.contains(ae)) ae.blur();
       box.classList.add('hidden');
       pararMusicaLogin();
+      const m = musicaActual; musicaActual = null; ponerMusica({ music: m });   // y ahora sí, la del mapa
     }
     function loginErr(msg) { const e = $('login-err'); if (e) e.textContent = msg || ''; }
     // Las líneas de `locale_error_es.ind` que el server manda por número (SendMsgBox con Modo > 0). Sólo las
