@@ -202,7 +202,8 @@ y lo que quedó sin contar desde el 4 de septiembre.
   existe seguís en la misma pantalla para corregirlo. Una cuenta que no existe contesta como una contraseña mal
   puesta, para que nadie pueda averiguar qué cuentas hay.
 
-- **El juego anda más liviano**, y en Opciones, Juego, podés ocultar la lluvia bajo techo.
+- **El juego anda más liviano**, y **no llueve bajo techo ni en las cuevas**: la lluvia se corta en las cuevas y se desvanece
+  al entrar bajo techo. El que hostea puede volver a lo del original, que llueve en todos lados (`LluviaBajoTecho=1`).
 
 - **El tope de FPS llega a lo que elegís**: en 240 ya no se queda en 180.
 

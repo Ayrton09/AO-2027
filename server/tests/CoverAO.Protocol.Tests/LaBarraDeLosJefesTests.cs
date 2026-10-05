@@ -128,6 +128,10 @@ public class LaBarraDeLosJefesTests
         Assert.False(Ini("DestinoDeLosPortales=0\n").DestinoDeLosPortales);
         Assert.Contains("VidaMinimaDeJefe", ServerIni.ClavesConocidas);
         Assert.Contains("DestinoDeLosPortales", ServerIni.ClavesConocidas);
+        // LA LLUVIA BAJO TECHO viene APAGADA (no llueve adentro), y se prende desde el ini (el autor, 05/10).
+        Assert.False(porDefecto.LluviaBajoTecho);
+        Assert.True(Ini("LluviaBajoTecho=1\n").LluviaBajoTecho);
+        Assert.Contains("LluviaBajoTecho", ServerIni.ClavesConocidas);
 
         var raiz = Path.Combine(Path.GetTempPath(), "coverao-portales-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(raiz);
@@ -138,6 +142,8 @@ public class LaBarraDeLosJefesTests
             Assert.Contains("\"destinoPortales\":false", apagado.ConfigJson);
             using var json = System.Text.Json.JsonDocument.Parse(apagado.ConfigJson);   // y sigue siendo JSON válido
             Assert.True(json.RootElement.GetProperty("alcanceHechizo").GetBoolean());
+            Assert.False(json.RootElement.GetProperty("lluviaBajoTecho").GetBoolean());
+            Assert.Contains("\"lluviaBajoTecho\":true", new StaticFileServer(7669, raiz, 7667, lluviaBajoTecho: true).ConfigJson);
         }
         finally { Directory.Delete(raiz, recursive: true); }
     }

@@ -979,7 +979,8 @@ if (habraWeb)
     webTask = new CoverAO.Server.Net.StaticFileServer(
         webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico,
         estadoPublico, wsServer.AceptarAsync, serverIni.AlcanceDelHechizo, serverIni.DestinoDeLosPortales,
-        novedades: serverContent.Updates, version: CoverAO.Server.Build.Version).RunAsync(cts.Token);
+        novedades: serverContent.Updates, version: CoverAO.Server.Build.Version,
+        lluviaBajoTecho: serverIni.LluviaBajoTecho).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se

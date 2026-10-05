@@ -109,6 +109,7 @@ public sealed class StaticFileServer
     /// <param name="alcanceDelHechizo">Si el cliente marca el alcance del hechizo al apuntar (Server.ini
     /// <c>AlcanceDelHechizo</c>). Viaja en el mismo JSON: es del server, no de cada jugador.</param>
     /// <param name="destinoDeLosPortales">Si cada portal dice a dónde lleva (Server.ini <c>DestinoDeLosPortales</c>).</param>
+    /// <param name="lluviaBajoTecho">Si llueve también bajo techo y en las cuevas (Server.ini <c>LluviaBajoTecho</c>).</param>
     /// <param name="novedades">Las NOVEDADES del server (las que manda al entrar, <c>SendUpdate</c>), para que la pantalla de
     /// ingreso las muestre ANTES de entrar, como las Noticias del frmConnect del original. Viajan en el mismo JSON: son las
     /// mismas para todos y se cargan al arrancar.</param>
@@ -117,7 +118,7 @@ public sealed class StaticFileServer
                             Func<string>? estadoPublico = null,
                             Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
                             bool alcanceDelHechizo = true, bool destinoDeLosPortales = true,
-                            IReadOnlyList<string>? novedades = null, string version = "")
+                            IReadOnlyList<string>? novedades = null, string version = "", bool lluviaBajoTecho = false)
     {
         _port = port;
         _wsPort = wsPort;
@@ -134,6 +135,7 @@ public sealed class StaticFileServer
             $"\"codigoFuente\":{System.Text.Json.JsonSerializer.Serialize(codigoFuente)}," +
             $"\"alcanceHechizo\":{(alcanceDelHechizo ? "true" : "false")}," +
             $"\"destinoPortales\":{(destinoDeLosPortales ? "true" : "false")}," +
+            $"\"lluviaBajoTecho\":{(lluviaBajoTecho ? "true" : "false")}," +
             $"\"version\":{System.Text.Json.JsonSerializer.Serialize(version)}," +
             $"\"novedades\":{System.Text.Json.JsonSerializer.Serialize(novedades ?? Array.Empty<string>())}}}");
     }

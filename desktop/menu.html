@@ -203,8 +203,6 @@
           <div class="seccion" data-seccion="juego">
             <div class="opcion"><div class="que">Ver nombres de los jugadores</div>
               <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_nombres"></div></div></div>
-            <div class="opcion"><div class="que">Ocultar la lluvia bajo techo y en cuevas<small>Apagado es lo del original: llueve en todos lados.</small></div>
-              <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_lluviatecho"></div></div></div>
             <div class="opcion"><div class="que">Macro (repetir con la tecla apretada)<small>Mantener Ctrl sigue golpeando y una F1–F10 sigue usando lo que tenga atado.</small></div>
               <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_macro"></div></div></div>
           </div>
@@ -261,7 +259,7 @@
     // Los valores por defecto son los del juego (client-web/index.html), salvo el volumen de la música: 20 % (el autor, 05/10).
     const POR_DEFECTO = {
       ao_musicalogin: '1', ao_musica: '0', ao_volmusica: '0.2', ao_mute: '0', ao_volefectos: '0.5',
-      ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_lluviatecho: '0', ao_macro: '1',
+      ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_macro: '1',
     };
     let ajustes = {};
     const valor = (k) => ajustes[k] ?? POR_DEFECTO[k];

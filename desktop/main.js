@@ -51,7 +51,7 @@ let ventana = null;
 // y las cambia, el `preload` las copia a la página del server antes de que arranque el juego y le devuelve acá lo que se cambie
 // adentro. Así valen para todos los servers. Sólo pasan éstas: el resto del `localStorage` de cada server es suyo.
 const AJUSTES_DEL_JUEGO = new Set(['ao_musicalogin', 'ao_musica', 'ao_volmusica', 'ao_mute', 'ao_volefectos', 'ao_fpscap',
-  'ao_escalado', 'ao_zoom', 'ao_ssmax', 'ao_nombres', 'ao_lluviatecho', 'ao_macro', 'ao_teclas']);
+  'ao_escalado', 'ao_zoom', 'ao_ssmax', 'ao_nombres', 'ao_macro', 'ao_teclas']);
 const soloAjustes = (o) => Object.fromEntries(Object.entries(o ?? {})
   .filter(([k, v]) => AJUSTES_DEL_JUEGO.has(k) && typeof v === 'string' && v.length < 4000));
 // La música, al 20 % de entrada (el autor, 05/10); el juego trae 30.

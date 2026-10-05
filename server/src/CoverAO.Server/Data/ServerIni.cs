@@ -145,6 +145,14 @@ public sealed class ServerIni
     public bool DestinoDeLosPortales { get; private set; } = true;
 
     /// <summary>
+    /// REGLA DE LA CASA — <c>LluviaBajoTecho</c> (default <b>0</b>): con 0 no llueve bajo techo ni en las cuevas —la lluvia se
+    /// corta en las cuevas y se desvanece al entrar bajo techo—; con 1 llueve en todos lados, como el original, que dibuja la
+    /// partícula sin ninguna condición (TileEngine.bas:2295). Era una opción de cada jugador y apagada; el autor la pasó al
+    /// Server.ini, prendida (2026-10-05): es del server, no de cada uno. Le llega al cliente en <c>coverao-config.json</c>.
+    /// </summary>
+    public bool LluviaBajoTecho { get; private set; }
+
+    /// <summary>
     /// REGLA DE LA CASA — <c>VidaMinimaDeJefe</c> (default <b>50000</b>): desde cuánta vida máxima una criatura hostil que da
     /// experiencia es un JEFE, y el cliente web muestra su vida en una barra grande arriba de la pantalla mientras está a la
     /// vista. Con 50.000 son 16: los dragones grandes y el Rey Dragón, Garveloth, los gólems, los yetis, el Guardián, el
@@ -195,7 +203,7 @@ public sealed class ServerIni
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
         "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
-        "PorcentajeLluvia",
+        "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
     };
@@ -1247,6 +1255,7 @@ public sealed class ServerIni
         cfg.OroPorMonton = Math.Clamp(ini.GetInt("INIT", "OroPorMonton", 10_000), 1, short.MaxValue);
         cfg.AlcanceDelHechizo = ini.GetInt("INIT", "AlcanceDelHechizo", 1) != 0;
         cfg.DestinoDeLosPortales = ini.GetInt("INIT", "DestinoDeLosPortales", 1) != 0;
+        cfg.LluviaBajoTecho = ini.GetInt("INIT", "LluviaBajoTecho", 0) != 0;
         // 0 apaga; un negativo también (no hay jefes "de menos vida que ninguna").
         cfg.VidaMinimaDeJefe = Math.Max(0, ini.GetInt("INIT", "VidaMinimaDeJefe", 50_000));
         cfg.GuardiasPersiguen = ini.GetInt("INIT", "GuardiasPersiguen", 1) != 0;

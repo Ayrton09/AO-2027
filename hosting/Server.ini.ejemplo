@@ -69,6 +69,8 @@ OroPorMonton=10000
 AlcanceDelHechizo=1
 ; Cada portal dice a donde lleva: un cartel arriba y el texto al clickearlo (1) o no (0).
 DestinoDeLosPortales=1
+; Si llueve tambien bajo techo y en las cuevas (1, como el original) o no (0).
+LluviaBajoTecho=0
 ; Desde cuanta vida maxima una criatura hostil es un JEFE y muestra su vida en una barra
 ; arriba de la pantalla (0 = sin barra). Con 50000 son los dragones grandes, los golems, etc.
 VidaMinimaDeJefe=50000
