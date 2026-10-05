@@ -288,6 +288,41 @@ public class MochilaDelBotTests : IDisposable
         Assert.Equal(leves.MinSkill <= 5, Bot.LoPuedeLanzar(leves, energiaMaxima: 100, manaMaximo: 100, magia: 5));
     }
 
+    /// <summary>
+    /// A VENDER SE SALE POR UN BOTÍN QUE VALE EL VIAJE (<see cref="Bot.ValeElViajeParaVender"/>): Quim, con 195 mil, caminaba cinco
+    /// minutos por 1.450 de leña. El que no tiene nada vende cualquier cosa.
+    /// </summary>
+    [Theory]
+    [InlineData(1450, 195_000, false)]
+    [InlineData(10_000, 195_000, true)]
+    [InlineData(30, 0, true)]
+    [InlineData(30, 500, true)]
+    [InlineData(0, 0, false)]
+    public void A_vender_se_sale_por_un_botin_que_vale_el_viaje(long loQueSacaria, int oro, bool sale)
+    {
+        Assert.Equal(sale, Bot.ValeElViajeParaVender(loQueSacaria, oro));
+    }
+
+    /// <summary>
+    /// A FABRICAR LEJOS SE VA CON MATERIAL PARA UNA TANDA (<see cref="Bot.ValeViajarAFabricar"/>): Petra iba a Rinkel con dos a
+    /// cuatro Pieles de Lobo. Las Vestimentas del Sastre, con los materiales de la data.
+    /// </summary>
+    [Fact]
+    public void A_fabricar_lejos_se_va_con_material_para_una_tanda()
+    {
+        Assert.False(Bot.ValeViajarAFabricar(2));
+        Assert.True(Bot.ValeViajarAFabricar(6));
+        var d = GameData.Load();
+        if (d.Obj(31) is not { } vestimenta) return;
+        var regla = Oficios.Sastreria;
+        var materiales = regla.Materiales(vestimenta).Where(m => m.PorUnidad > 0).ToArray();
+        if (materiales.Length == 0) return;
+        Func<int, int> conCuatroPieles = obj => obj == materiales[0].Obj ? 4 : 0;
+        Assert.True(Bot.CuantasAlcanzan(d, 31, regla, conCuatroPieles) < 6);
+        Func<int, int> conDeSobra = obj => materiales.Any(m => m.Obj == obj) ? 1000 : 0;
+        Assert.True(Bot.ValeViajarAFabricar(Bot.CuantasAlcanzan(d, 31, regla, conDeSobra)));
+    }
+
     /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
     /// 3 monedas); con ropa, o sin ninguna a la venta, la reserva es la de siempre.</summary>
     [Theory]

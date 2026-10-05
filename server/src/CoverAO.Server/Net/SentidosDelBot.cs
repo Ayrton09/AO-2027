@@ -351,6 +351,19 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Lo que vale lo que NO lleva puesto y cumple la condición, con <paramref name="precio"/> por objeto y cantidad.</summary>
+    public long LoQueVale(Func<short, bool> sirve, Func<short, int, long> precio)
+    {
+        lock (_candado)
+        {
+            long total = 0;
+            for (byte s = 1; s < _inventario.Length; s++)
+                if (_inventario[s].Obj > 0 && _inventario[s].Cantidad > 0 && !_inventario[s].Puesto && sirve(_inventario[s].Obj))
+                    total += precio(_inventario[s].Obj, _inventario[s].Cantidad);
+            return total;
+        }
+    }
+
     /// <summary>¿Lleva PUESTO algo que cumpla la condición?</summary>
     public bool LlevaPuesto(Func<short, bool> sirve)
     {

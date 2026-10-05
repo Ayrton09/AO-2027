@@ -1261,6 +1261,11 @@ public sealed class Bot
         bool faltaComida = sentidos.Suma(ComidaPropia) < ComidaMinima;
         bool faltaBebida = sentidos.Suma(BebidaPropia) < BebidaMinima;
         bool hayQueVender = sentidos.EnLaMochila(obj => EsBotin(sentidos, obj)) is not null;
+        // Y SÓLO A VENDER SE SALE POR UN BOTÍN QUE VALE EL VIAJE: ver `ValeElViajeParaVender`. En el pueblo vende igual.
+        bool vaAVender = hayQueVender
+                         && ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
+                                                                     (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
+                                                  sentidos.Oro);
         short laQueFalta = HerramientaQueLeFalta(sentidos);
         bool faltaHerramienta = laQueFalta != 0;
         // EL ARMA PARA EL CAMINO: ver `LeFaltaElArmaDelCamino`.
@@ -1326,7 +1331,7 @@ public sealed class Bot
         // Y SÓLO SI LE ALCANZA PARA LA MÁS BARATA: ver `LaRopaMasBarata`.
         bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar
                        && LoPuedePagar(LaRopaMasBarata(sentidos), sobraParaLaRopa);
-        if (!hayQueVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
+        if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
@@ -2679,6 +2684,9 @@ public sealed class Bot
         // EN UN MAPA INSEGURO SE VA A FABRICAR A UNO SEGURO, como el que vuelve al pueblo a coser. Medido en `oficios3`: el
         // Sastre cazó Lobos en el 19 y el 24, los dos pk, juntó 49 pieles y no fabricó nada en toda la corrida: no volvió
         // a un mapa seguro, y fabricar sólo se hacía en el mapa donde estaba parado.
+        // Y SE VIAJA CON MATERIAL PARA UNA TANDA: ver `ValeViajarAFabricar`.
+        if (!MapaSeguro(sentidos.Mapa) && !ValeViajarAFabricar(CuantasAlcanzan(_entorno.Datos, primera, fab.Regla, tiene)))
+        { PostergarFabricacion(); return false; }
         if (!MapaSeguro(sentidos.Mapa))
         {
             if (DondeSentarseAFabricar(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } lugar)
@@ -2744,6 +2752,19 @@ public sealed class Bot
         }
         return mejor;
     }
+
+    /// <summary>Cuántas unidades de esa receta alcanzan con los materiales que tiene.</summary>
+    public static int CuantasAlcanzan(GameData datos, short receta, Oficios.Fabricacion regla, Func<int, int> cuantoTiene) =>
+        datos.Obj(receta) is not { } o ? 0
+        : regla.Materiales(o).Where(m => m.PorUnidad > 0).Select(m => cuantoTiene(m.Obj) / m.PorUnidad).DefaultIfEmpty(0).Min();
+
+    /// <summary>
+    /// ¿VALE IR A UN MAPA SEGURO A FABRICAR? Con material para una tanda entera (<see cref="FabricacionesPorTanda"/>): el que se
+    /// sienta a coser junta antes de volver al pueblo, y con lo que tenga cose igual cuando pasa por un mapa seguro a otra cosa.
+    /// Medido en la ronda 39 (05/10): Petra, Sastre de nivel 22, hizo cuatro viajes por corrida del 19 o el 24 a Rinkel con dos a
+    /// cuatro Pieles de Lobo, y se le fueron ocho de los veinte minutos.
+    /// </summary>
+    public static bool ValeViajarAFabricar(int unidadesQueAlcanzan) => unidadesQueAlcanzan >= FabricacionesPorTanda;
 
     /// <summary>¿Vale sentarse a fabricar? Mientras la skill pueda subir —el tope es por nivel, <see cref="SkillProgression"/>—
     /// o si lo que sale le hace falta.</summary>
@@ -4751,6 +4772,17 @@ public sealed class Bot
     }
 
     private (int Nivel, int Precio)? _ropaMasBarata;
+
+    /// <summary>
+    /// ¿VALE EL VIAJE SÓLO PARA VENDER? Si lo que sacaría es al menos la vigésima parte del oro que lleva: el que no tiene nada vende
+    /// cualquier cosa, y el rico no camina cinco minutos por unas monedas; lo vende cuando pasa por el pueblo a otra cosa. Medido
+    /// en la ronda 39 (05/10): Quim, Leñador de nivel 22 con 195 mil monedas, caminaba de cuatro a seis minutos para vender leña
+    /// por 1.450 y 1.223, y dos veces por corrida iba al Vendedor General sin comprar nada; Aldo, con unas cien mil, cinco minutos
+    /// por cada tanda de leña.
+    /// </summary>
+    public static bool ValeElViajeParaVender(long loQueSacaria, int oro) => loQueSacaria > 0 && loQueSacaria * VecesElOroParaVender >= oro;
+
+    private const int VecesElOroParaVender = 20;
 
     /// <summary>Lo que cuesta llevar las pociones propias hasta las que quiere (<see cref="PocionesQueQuiere"/>) a
     /// <paramref name="precio"/> cada una.</summary>
