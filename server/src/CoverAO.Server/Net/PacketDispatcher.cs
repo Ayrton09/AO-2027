@@ -1296,9 +1296,10 @@ public sealed partial class PacketDispatcher
         }
         // VB6 Protocol.bas:1154-1185: el nombre (64), que exista (38) y que sea de la cuenta (37), cada uno con su
         // cartel y la conexión cerrada. El nombre se valida antes de mirar el disco (path traversal).
-        // El nombre: `AsciiValidos` del original (sólo letras y espacio: "Pepe1" es 64, no "no existe") y, además, la forma
-        // segura para el disco.
-        if (!Naming.IsValidName(charName) || !charName.All(c => char.IsAsciiLetter(c) || c == ' '))
+        // El nombre: la forma de un nombre de personaje (`Naming.IsValidCharNameShape`: letras, números y espacio, empezando con
+        // letra; el `AsciiValidos` del original no deja números, y "Pepe1" era 64) y, además, la forma segura para el disco. Con
+        // la regla vieja acá, un personaje creado con números no podía volver a entrar.
+        if (!Naming.IsValidName(charName) || !Naming.IsValidCharNameShape(charName))
         { RechazarConCartel(session, CartelNombreInvalido, "nombre invalido"); return; }
         if (!acc.Characters.Contains(charName, StringComparer.OrdinalIgnoreCase))
         {

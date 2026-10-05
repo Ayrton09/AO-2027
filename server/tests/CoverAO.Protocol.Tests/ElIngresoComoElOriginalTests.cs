@@ -189,18 +189,34 @@ public class ElIngresoComoElOriginalTests : IDisposable
         Assert.Equal(["El personaje no existe."], Carteles(inexistente));
     }
 
-    /// <summary>El nombre con dígitos no es de personaje (VB6 AsciiValidos): "Nombre inválido.", no "no existe". Lo encontró
-    /// la sonda contra el VB6 (`fase0/parity/comparar_ingreso.py`).</summary>
+    /// <summary>El nombre que no puede ser de personaje (VB6 AsciiValidos; acá, que empiece con un número): "Nombre inválido.", no
+    /// "no existe". Lo encontró la sonda contra el VB6 (`fase0/parity/comparar_ingreso.py`). Desde el 05/10 los números valen si
+    /// el nombre empieza con letra (ver el test de abajo).</summary>
     [Fact]
     public async Task Entrar_con_un_nombre_con_digitos_es_nombre_invalido()
     {
         CuentaCon("cuenta", "Aldo");
 
-        var t = Mandar(Entrar("cuenta", Clave, "Pepe1"));
+        var t = Mandar(Entrar("cuenta", Clave, "1Pepe"));
 
         Assert.True(await Esperar(() => Carteles(t).Count > 0));
         Assert.Equal(["Nombre inválido."], Carteles(t));
         Assert.True(t.Cerrado);
+    }
+
+    /// <summary>EL NOMBRE CON NÚMEROS QUE EMPIEZA CON LETRA PASA (el autor, 05/10): la entrada lo validaba con el AsciiValidos del
+    /// original y un personaje creado como "Ayrton09" no podía volver a entrar. Siendo de otra cuenta, el cartel es el del personaje
+    /// ajeno, no el del nombre.</summary>
+    [Fact]
+    public async Task Entrar_con_un_nombre_con_numeros_que_empieza_con_letra_pasa_el_nombre()
+    {
+        CuentaCon("cuenta", "Aldo");
+        CuentaCon("otra", "Ayrton09");
+
+        var t = Mandar(Entrar("cuenta", Clave, "Ayrton09"));
+
+        Assert.True(await Esperar(() => Carteles(t).Count > 0));
+        Assert.Equal(["Personaje invalido."], Carteles(t));
     }
 
     [Fact]
@@ -264,7 +280,7 @@ public class ElIngresoComoElOriginalTests : IDisposable
     // ── Crear el personaje ──────────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("Pepe1", "Nombre inválido.")]
+    [InlineData("1Pepe", "Nombre inválido.")]
     [InlineData("A", "El nombre es muy corto.")]
     [InlineData("Unnombrequetienemuchasmasdetreintaletras", "El nombre es muy largo.")]
     [InlineData("Unnombredeveinteletras", "Nombre inválido.")]
