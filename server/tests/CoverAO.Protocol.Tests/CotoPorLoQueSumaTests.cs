@@ -34,6 +34,20 @@ public class CotoPorLoQueSumaTests
         Assert.False(Bot.ValeMudarsePorLoQueRinde(aca, minimo - 1));
     }
 
+    /// <summary>
+    /// EL QUE NO LE DIO NADA NO VUELVE A LOS SEIS MINUTOS (<see cref="Bot.LoDejaHasta"/>): Rufo salió del pozo de Lindos a las 09:06:01
+    /// y lo volvió a elegir a las 09:12:18 (`early131`); Ivo dejó el 823 a las 09:12:07 y volvió a las 09:18:53 (`tardeR1`). El lleno de
+    /// gente a la vista sigue durando un rato.
+    /// </summary>
+    [Fact]
+    public void El_mapa_que_no_le_dio_nada_no_se_vuelve_a_elegir_a_los_seis_minutos()
+    {
+        const long dejo = 1_000_000, volvio = dejo + 377_000, alLleno = dejo + 6 * 60_000;
+        Assert.True(Bot.LoDejaHasta(dejo, porqueNoLeDaNada: true) > volvio);
+        Assert.True(Bot.LoDejaHasta(dejo, porqueNoLeDaNada: true) > dejo + 406_000);
+        Assert.True(Bot.LoDejaHasta(dejo, porqueNoLeDaNada: false) < alLleno);
+    }
+
     private sealed record Cazador(Navegante Mapas, GameData Datos, Func<int, bool> EsPresa, Func<int, int> Rinde,
                                   Func<int, bool> SeCazaAhi, Func<int, bool> Nunca, Func<int, bool> Cruza, Func<int, bool> Rescate);
 

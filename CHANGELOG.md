@@ -321,6 +321,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
   Desnudos, sin la ropa de novato, van por ropa antes que por pociones, y si no hay sastre al que lleguen sin peligro,
   vuelven con la runa o a pie, como cuando les falta comida; y en las pociones no se gastan lo de la ropa.
   Pasado el novato se mudan a un lugar de caza que sume una vez y media lo del suyo, no el doble.
+  Un lugar de caza que dejan porque no les da nada no lo vuelven a elegir por quince minutos, en vez de cinco.
 
 ## 1.0.0 — 2026-09-16
 

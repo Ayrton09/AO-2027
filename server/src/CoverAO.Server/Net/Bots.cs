@@ -3241,6 +3241,19 @@ public sealed class Bot
     /// <summary>Los mapas de los que se fue huyendo, hasta cuándo no los cruza de viaje (ver <see cref="NoVuelveACruzar"/>).</summary>
     private readonly Dictionary<int, long> _huyoDe = new();
     private const int PersonasQueLlenan = 3, LlenoMs = 5 * 60_000;
+
+    /// <summary>
+    /// HASTA CUÁNDO NO VUELVE A UN MAPA QUE DEJA: el lleno de gente a la vista (<see cref="EstaLleno"/>), un rato; el que no le dio nada
+    /// —seis búsquedas sin ganar (<see cref="OtraBusquedaSinGanar"/>) o el pozo (<see cref="SaleDelPozo"/>)—, el triple. Con el mismo
+    /// rato para los dos, volvía apenas se le vencía. Medido en la ronda 34 (05/10): en `early131` Rufo, Mago de nivel 1, salió del pozo
+    /// de Lindos a las 09:06:01 y lo volvió a elegir a las 09:12:18; once viajes entre la cuna, el 58 y Lindos y casi veinte minutos
+    /// hasta el nivel 5, contra 1,8 de la mediana. Y en `tardeR1` Ivo, nivel 25, dejó el 823 sin ganar a las 09:12:07 por el 824, dejó
+    /// el 824 a las 09:18:26 y volvió al 823, con el 746 —que suma más que los dos— a dos mapas: los cinco republicanos se
+    /// amontonaban en el 823 y el 824 a unos 5 mil por minuto cada uno, y Ivo solo en el 824 sacaba de 9 a 13 mil.
+    /// </summary>
+    public static long LoDejaHasta(long ahora, bool porqueNoLeDaNada) => ahora + (porqueNoLeDaNada ? NoLeDaNadaMs : LlenoMs);
+
+    private const int NoLeDaNadaMs = 3 * LlenoMs;
     /// <summary>Cuántas búsquedas de coto seguidas sin ganar nada dejan el mapa como lleno: ver <see cref="OtraBusquedaSinGanar"/>.</summary>
     public const int BusquedasSinGanar = 6;
 
@@ -3452,12 +3465,12 @@ public sealed class Bot
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
-        if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
-        // Y EL QUE NO LE DA NADA, IGUAL: ver `OtraBusquedaSinGanar`.
+        if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, false);
+        // Y EL QUE NO LE DA NADA, POR MÁS RATO: ver `OtraBusquedaSinGanar` y `LoDejaHasta`.
         _busquedasSinGanar = OtraBusquedaSinGanar(_busquedasSinGanar, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel);
         if (_busquedasSinGanar.Seguidas >= BusquedasSinGanar)
         {
-            _llenoHasta[sentidos.Mapa] = _noDaNadaHasta[sentidos.Mapa] = ahora + LlenoMs;
+            _llenoHasta[sentidos.Mapa] = _noDaNadaHasta[sentidos.Mapa] = LoDejaHasta(ahora, true);
             _busquedasSinGanar = default;
         }
         // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.
@@ -3504,7 +3517,7 @@ public sealed class Bot
             && SaleDelPozo(_comproEn.Mapa == sentidos.Mapa && ahora - _comproEn.Cuando < RecienCompradoMs, ahora - _ganancia.Desde)
             && CotoComoSiempre(m => m == sentidos.Mapa, out _, out _) is null)
         {
-            _noDaNadaHasta[sentidos.Mapa] = _llenoHasta[sentidos.Mapa] = ahora + LlenoMs;
+            _noDaNadaHasta[sentidos.Mapa] = _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, true);
             _comproEn = default;
             _cotosFallidos = CotosFallidosAntesDeLaRuna - 1;
             hallado = null;
