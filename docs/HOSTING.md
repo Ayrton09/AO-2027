@@ -16,8 +16,8 @@ Con `-Comprimir` deja además el archivo para publicar, con el formato que corre
 > **Ojo con el permiso de ejecución.** Antes acá decía que el `.tar.gz` se usa *porque el zip no guarda el
 > permiso de ejecución*, y eso es media verdad: **armado desde Windows, el `.tar.gz` tampoco lo guarda**.
 > Medido sobre el paquete publicado, recién descomprimido en Ubuntu, tanto el binario como `servidor.sh`
-> salen `-rw-rw-rw-`. Lo que hace que igual arranque es el `chmod +x` que `servidor.sh` se hace a sí mismo
-> — y por eso el `bash` de adelante no es un detalle de estilo.
+> salen `-rw-rw-rw-`. Lo que hace que igual arranque es el `chmod +x` que `servidor.sh` se hace a sí mismo,
+> y por eso el `bash` de adelante no es un detalle de estilo.
 
 ```powershell
 pwsh hosting/publish.ps1 -Comprimir -Version 1.0.0
@@ -36,7 +36,7 @@ CoverAO-win-x64/
   data/                 cuentas, personajes, backups y logs (se crea al arrancar)
 ```
 
-En Linux: `bash servidor.sh`. El `bash` adelante importa — el comprimido no conserva el bit de ejecución y el
+En Linux: `bash servidor.sh`. El `bash` adelante importa: el comprimido no conserva el bit de ejecución y el
 script se lo pone al binario.
 
 ## Puertos
@@ -45,9 +45,9 @@ Se configura uno solo, `StartPort`, y de ahí salen los otros tres:
 
 | puerto | servicio |
 |---|---|
-| `StartPort` | juego (protocolo AO clásico) — no hace falta abrirlo, ver más abajo |
-| `StartPort + 1` | WebSocket suelto — **compatibilidad**, ya no hace falta abrirlo |
-| `StartPort + 2` | panel de administración — **sólo loopback** |
+| `StartPort` | juego (protocolo AO clásico): no hace falta abrirlo, ver más abajo |
+| `StartPort + 1` | WebSocket suelto: **compatibilidad**, ya no hace falta abrirlo |
+| `StartPort + 2` | panel de administración: **sólo loopback** |
 | `StartPort + 3` | cliente web: la página **y el juego**, en `/ws` |
 
 El servidor los imprime al arrancar y quedan en el log del día.
@@ -56,7 +56,7 @@ El servidor los imprime al arrancar y quedan en el log del día.
 puerto, así que el jugador baja la página y juega por la misma dirección. **El del juego (`StartPort`) no
 hace falta abrirlo**: ver más abajo por qué el cliente clásico de Windows no puede entrar.
 
-> Antes hacían falta **dos** —el de la página y el del WebSocket— y ésa era la trampa más cara del hosteo:
+> Antes hacían falta **dos** (el de la página y el del WebSocket) y ésa era la trampa más cara del hosteo:
 > abriendo uno solo, el amigo veía la página, veía el login, y el socket se moría contra un puerto cerrado.
 > Del lado del servidor no quedaba ni un renglón, porque esa conexión no llegaba nunca.
 
@@ -90,8 +90,8 @@ esté bien hecho. Todo lo demás del camino "un amigo abre la URL y juega" está
 
 ### El cliente clásico de Windows NO puede entrar
 
-El puerto de juego (`StartPort`) habla el **protocolo AO clásico byte a byte** —es lo que se compara contra el
-servidor VB6 original— y el cliente clásico conecta y sus paquetes se entienden. Pero **no pasa del login**, y
+El puerto de juego (`StartPort`) habla el **protocolo AO clásico byte a byte** (es lo que se compara contra el
+servidor VB6 original) y el cliente clásico conecta y sus paquetes se entienden. Pero **no pasa del login**, y
 la causa es la contraseña: el cliente VB6 la manda ofuscada con `SEncriptar`
 (`Cliente/Codigo/Protocol.bas:4454`), que le suma a cada carácter **un número al azar entre 10 y 98** y pega
 dos caracteres diciendo cuál fue. El servidor VB6 lo deshace con `SDesencriptar` antes de validar
@@ -104,11 +104,11 @@ Medido contra el servidor, con el control adentro:
 |---|---|
 | contraseña en claro (lo que manda el cliente web) | entra |
 | contraseña con `SEncriptar` (lo que manda el clásico) | *Cuenta o contraseña inválida* |
-| cuenta creada con `SEncriptar` y reentrada **con los mismos bytes** | entra — o sea que la cuenta existe |
+| cuenta creada con `SEncriptar` y reentrada **con los mismos bytes** | entra, o sea que la cuenta existe |
 | esa misma cuenta, reentrada con `SEncriptar` **de nuevo** | *Cuenta o contraseña inválida* |
 
 Las dos últimas filas son las que cierran el caso: como el corrimiento cambia en cada envío, **ni siquiera un
-servidor que sólo viera clientes clásicos funcionaría** — la cuenta que el cliente crea no la puede volver a
+servidor que sólo viera clientes clásicos funcionaría**: la cuenta que el cliente crea no la puede volver a
 abrir. Por eso el `StartPort` no hace falta abrirlo en el router.
 
 Que funcione es posible y tiene un solo camino: portar `SDesencriptar` al servidor **y** que el cliente web
@@ -168,26 +168,26 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `GolpeParalizanteVueltasPvP` | Lo mismo contra un **jugador**: 150 = 6 s. Al jugador lo deja quieto **menos** que a una criatura (11,4 s), aunque su número sea más grande: son dos relojes distintos. **Default = el del original** |
 | `GolpeParalizanteDado` | Cada cuánto **sale** el golpe que paraliza. La chance es `Lucha sin armas × 0,2 + nivel × 0,66` contra un dado de 1 a este número, así que **bajarlo lo hace más frecuente**. **Default 500 = el del original**. La fórmula no se expone a propósito: es la misma que la de desarmar, y moverla cambiaría las dos cosas de una |
 | `GolpeParalizanteDadoGladiadorBardo` | El dado de las dos clases que pelean sin arma. Con 300 les sale ~1,7 veces más seguido que al resto. La clase cambia la **probabilidad**, nunca la duración. **Default = el del original** |
-| `PasesDeRinkel` | 1 = los dos pases que vende el pirata del Puerto de Rinkel se pueden usar. **0 = como el install**, donde no se pueden usar en ningún lado: su ficha dice que salen de la ciudad (mapa 20) y el único transportador de Rinkel está en el puerto (mapa 99), así que el pirata te los cobra y después no te los acepta. Es un bug de la data del install — pasa igual en el servidor original. **El ejemplo lo trae en 0** |
+| `PasesDeRinkel` | 1 = los dos pases que vende el pirata del Puerto de Rinkel se pueden usar. **0 = como el install**, donde no se pueden usar en ningún lado: su ficha dice que salen de la ciudad (mapa 20) y el único transportador de Rinkel está en el puerto (mapa 99), así que el pirata te los cobra y después no te los acepta. Es un bug de la data del install: pasa igual en el servidor original. **El ejemplo lo trae en 0** |
 | `HipocamposEnMarAbierto` | 1 = con la **red de pesca** en un mapa de mar abierto se saca **Hipocampo** en vez de los cuatro peces de siempre. 0 = como el install, donde el hipocampo no se puede conseguir por ningun camino. **Viene PRENDIDA**; la caña no cambia. |
 | `NavegacionParaCruzar` | Los puntos de **Navegación** que pide un **pasaje que cruza el agua a otra tierra**. Las tierras salen de los mapas: el continente de Ullathorpe, Nix, Banderbill, Arghâl y Rinkel; el de Illiandor y Suramei; y las islas de Tiama, Orac, Lindos y Nueva Esperanza. Entre puertos de la misma tierra el pasaje no pide nada. Al que no llega, el pasaje no lo lleva y le avisa cuántos puntos necesita, con el mismo aviso del barco; al GM no lo frena. **0 = como el original**, donde ningún pasaje pide Navegación. **Viene en 80**; el tope es 100 |
-| `DropGlobal` | **Una de cada cuántas** criaturas muertas suelta, además de su botín propio, **un** ítem de la tabla de `DropGlobal.dat` (26 accesorios de los mejores del juego). `10000` (el default) = una cada diez mil, que con la data del juego es **alrededor de un ítem por personaje en todo el camino hasta nivel 40** — a nivel 30 son ~1.900 muertes, a 40 ~12.900 y a 50 ~81.000. `0` lo apaga y vuelve al install, donde esa tabla existe en la data y ningún código del servidor original la abre nunca. Los porcentajes del archivo se usan como **pesos** —qué sale cuando sale—, no como probabilidades: sumados dan 482 %. **Viene PRENDIDA en 10000** |
-| `MetamorfosisDelDruida` | Cuánto dura la transformación de los once hechizos de metamorfosis (Murciélago, Lobo, Jabalí, Tigre, Oso Pardo, Tortuga, Araña, Demonio, Árbol, Gólem y Dragón): `-1` **permanente**, `0` apagada, o los **segundos** que dura (hasta 3600). El druida toma el cuerpo de la criatura y sus bonos al golpe y a la defensa, todos de la data del install (del +6/+20 del murciélago al +50/+20 del dragón), y **las criaturas más débiles que su forma dejan de atacarlo** (el `asusta` del hechizo, 1..10, contra el `Nivel` de la criatura, 1..100). Morir o desconectarse la corta —tampoco sobrevive a un reinicio del servidor—, lanzar otra la pisa, y no se puede lanzar montado ni en barca. `0` vuelve al install, donde esos hechizos se venden hasta por 2.200.000 de oro y lanzarlos no hace nada. **Viene PRENDIDA y PERMANENTE**, que es como se comporta en el AO clásico; el original no dejó escrita ninguna duración (su `[INTERVALOS]` tiene 34 entradas y ninguna es de esto) |
-| `AtacarAliadoVuelveCriminal` | 1 = **atacar a un ciudadano o a un soldado** —sin guerra de clanes ni facción enemiga de por medio— te vuelve **criminal** y te echa del ejército, con el aviso *"Has atacado a un aliado. Ahora eres CRIMINAL."*. Vale igual para el golpe y para la magia. **0 = atacar no cambia el estado de nadie**, que es lo que dice el fuente del original: ahí renegado sólo se vuelve el que deja una facción. **Viene PRENDIDA** por decisión del autor, que la recuerda del juego |
-| `GuardiasAtacan` | 1 = los **guardias de las ciudades atacan** a las facciones enemigas de su bando. El bando es el de la ficha del guardia: **imperial** (122 guardias: Ullathorpe, Nix, Banderbill, Arghûl, Avanzada Imperial…), **republicano** (91: Lindos, Suramei, Illiandor, Avanzada republicana…) y **del Caos** (33: Orac, Ruinas Caóticas, Fortaleza Kerthon…). Pelean con los números de la data —nivel 50, 40.000 de vida, golpes de 250 a 280 y sus hechizos—, así que un enemigo que se acerca a una ciudad ajena la pasa muy mal. Al GM, al muerto, al invisible y al oculto no los tocan, como ninguna criatura. No pelean los que la data dejó sin golpe ni hechizo que lastime: los cuatro de Rinkel, los Cazadores y las dos Torres del Distrito Real. **0 = como el original**, donde ningún guardia pelea ni se mueve: su IA quedó apagada con un comentario de *"temporal"*. **Viene PRENDIDA** por decisión del autor |
+| `DropGlobal` | **Una de cada cuántas** criaturas muertas suelta, además de su botín propio, **un** ítem de la tabla de `DropGlobal.dat` (26 accesorios de los mejores del juego). `10000` (el default) = una cada diez mil, que con la data del juego es **alrededor de un ítem por personaje en todo el camino hasta nivel 40**: a nivel 30 son ~1.900 muertes, a 40 ~12.900 y a 50 ~81.000. `0` lo apaga y vuelve al install, donde esa tabla existe en la data y ningún código del servidor original la abre nunca. Los porcentajes del archivo se usan como **pesos** (qué sale cuando sale), no como probabilidades: sumados dan 482 %. **Viene PRENDIDA en 10000** |
+| `MetamorfosisDelDruida` | Cuánto dura la transformación de los once hechizos de metamorfosis (Murciélago, Lobo, Jabalí, Tigre, Oso Pardo, Tortuga, Araña, Demonio, Árbol, Gólem y Dragón): `-1` **permanente**, `0` apagada, o los **segundos** que dura (hasta 3600). El druida toma el cuerpo de la criatura y sus bonos al golpe y a la defensa, todos de la data del install (del +6/+20 del murciélago al +50/+20 del dragón), y **las criaturas más débiles que su forma dejan de atacarlo** (el `asusta` del hechizo, 1..10, contra el `Nivel` de la criatura, 1..100). Morir o desconectarse la corta (tampoco sobrevive a un reinicio del servidor), lanzar otra la pisa, y no se puede lanzar montado ni en barca. `0` vuelve al install, donde esos hechizos se venden hasta por 2.200.000 de oro y lanzarlos no hace nada. **Viene PRENDIDA y PERMANENTE**, que es como se comporta en el AO clásico; el original no dejó escrita ninguna duración (su `[INTERVALOS]` tiene 34 entradas y ninguna es de esto) |
+| `AtacarAliadoVuelveCriminal` | 1 = **atacar a un ciudadano o a un soldado** (sin guerra de clanes ni facción enemiga de por medio) te vuelve **criminal** y te echa del ejército, con el aviso *"Has atacado a un aliado. Ahora eres CRIMINAL."*. Vale igual para el golpe y para la magia. **0 = atacar no cambia el estado de nadie**, que es lo que dice el fuente del original: ahí renegado sólo se vuelve el que deja una facción. **Viene PRENDIDA** por decisión del autor, que la recuerda del juego |
+| `GuardiasAtacan` | 1 = los **guardias de las ciudades atacan** a las facciones enemigas de su bando. El bando es el de la ficha del guardia: **imperial** (122 guardias: Ullathorpe, Nix, Banderbill, Arghûl, Avanzada Imperial…), **republicano** (91: Lindos, Suramei, Illiandor, Avanzada republicana…) y **del Caos** (33: Orac, Ruinas Caóticas, Fortaleza Kerthon…). Pelean con los números de la data (nivel 50, 40.000 de vida, golpes de 250 a 280 y sus hechizos), así que un enemigo que se acerca a una ciudad ajena la pasa muy mal. Al GM, al muerto, al invisible y al oculto no los tocan, como ninguna criatura. No pelean los que la data dejó sin golpe ni hechizo que lastime: los cuatro de Rinkel, los Cazadores y las dos Torres del Distrito Real. **0 = como el original**, donde ningún guardia pelea ni se mueve: su IA quedó apagada con un comentario de *"temporal"*. **Viene PRENDIDA** por decisión del autor |
 | `GuardiasPersiguen` | 1 = el guardia que ve a un enemigo sale de su puesto a buscarlo y **no lo suelta mientras siga en su ciudad**, aunque se le vaya de la vista; cuando se va (o muere, o se hace invisible) vuelve a su puesto. 0 = quietos: pegan al que les pasa al lado y los que saben magia le tiran al que ven. **Viene en 1** |
-| `GuardiasAtacanNewbies` | 1 = los guardias atacan también a los newbies (hasta nivel 15) del otro bando. Todo personaje nace ciudadano —o republicano si nace en Illiandor—, así que con 1 el recién llegado que entra a una ciudad del otro bando muere de un golpe. **Viene en 0** |
+| `GuardiasAtacanNewbies` | 1 = los guardias atacan también a los newbies (hasta nivel 15) del otro bando. Todo personaje nace ciudadano (o republicano si nace en Illiandor), así que con 1 el recién llegado que entra a una ciudad del otro bando muere de un golpe. **Viene en 0** |
 | `GuardiasImperialesAtacanA`, `GuardiasRepublicanosAtacanA`, `GuardiasDelCaosAtacanA` | A qué facciones ataca cada bando, separadas por coma: `Renegado`, `Ciudadano`, `Republicano`, `Caos`, `Armada` y `Milicia` (mayúsculas, acentos y plural dan igual). **Vacía = ese bando no ataca a nadie.** Un nombre que no existe se ignora y el arranque lo avisa. Por defecto cada bando ataca a todos menos a los suyos: el imperial a todos menos Ciudadano y Armada, el republicano a todos menos Republicano y Milicia, el del Caos a todos menos Caos |
-| `Bots` | Cuántos **personajes que juegan solos** puebla el servidor. `0` (el default) = ninguno. Un bot no es un NPC: entra por el **mismo login** que un jugador y lo que hace pasa por el mismo dispatcher, los mismos intervalos y el mismo anticheat, así que **no puede hacer nada que un jugador no pueda**. Cuesta lo que cuesta un jugador: ocupa lugar en `MaxUsers`, sale en el `/ONLINE` y en la página pública, y su actividad entra en los logs igual que la de cualquiera. **Juegan**: cazan criaturas que les queden chicas —a mano o con hechizos, si su clase sabe—, huyen de las que les quedan grandes, levantan lo que dejan, toman pociones en medio de la pelea, comen, beben, meditan, reparten los puntos que da subir de nivel, le venden el botín a un mercader y le compran pociones, suben de nivel, y se desconectan cuando llevan un rato para volver más tarde. Cada uno tiene un temperamento que sale de su nombre —hay cazadores, tranquilos y paseantes— así que no se mueven todos igual. Lo único que **no hacen es hablar**. Si mueren se quedan cadáver donde cayeron: revivir necesita un sacerdote a la vista, y sólo lo intentan si les queda cerca. Sus cuentas llevan el sufijo `_bot` y quedan anotadas, con su contraseña, en `data/bots.txt` —que no viaja en el paquete, pero sí en cada backup—. Esa contraseña **no sirve desde afuera**: la cuenta de un bot queda marcada en su `.cnt` y sólo se abre desde adentro del servidor, así que leer el archivo no le da a nadie el personaje. El máximo son **48**, que son los nombres que hay para repartir. Con `--fixture` no arrancan aunque estén pedidos, y el arranque lo dice: un bot caminando cerca le mete a un flow de paridad movimientos que el flow no pidió. **Viene APAGADO** |
+| `Bots` | Cuántos **personajes que juegan solos** puebla el servidor. `0` (el default) = ninguno. Un bot no es un NPC: entra por el **mismo login** que un jugador y lo que hace pasa por el mismo dispatcher, los mismos intervalos y el mismo anticheat, así que **no puede hacer nada que un jugador no pueda**. Cuesta lo que cuesta un jugador: ocupa lugar en `MaxUsers`, sale en el `/ONLINE` y en la página pública, y su actividad entra en los logs igual que la de cualquiera. **Juegan**: cazan criaturas que les queden chicas (a mano o con hechizos, si su clase sabe), huyen de las que les quedan grandes, levantan lo que dejan, toman pociones en medio de la pelea, comen, beben, meditan, reparten los puntos que da subir de nivel, le venden el botín a un mercader y le compran pociones, suben de nivel, y se desconectan cuando llevan un rato para volver más tarde. Cada uno tiene un temperamento que sale de su nombre (hay cazadores, tranquilos y paseantes) así que no se mueven todos igual. Lo único que **no hacen es hablar**. Si mueren se quedan cadáver donde cayeron: revivir necesita un sacerdote a la vista, y sólo lo intentan si les queda cerca. Sus cuentas llevan el sufijo `_bot` y quedan anotadas, con su contraseña, en `data/bots.txt` (que no viaja en el paquete, pero sí en cada backup). Esa contraseña **no sirve desde afuera**: la cuenta de un bot queda marcada en su `.cnt` y sólo se abre desde adentro del servidor, así que leer el archivo no le da a nadie el personaje. El máximo son **48**, que son los nombres que hay para repartir. Con `--fixture` no arrancan aunque estén pedidos, y el arranque lo dice: un bot caminando cerca le mete a un flow de paridad movimientos que el flow no pidió. **Viene APAGADO** |
 | `MinutosGuardarUsuarios` | autosave. 0 = sólo al salir |
 | `MinutosBackup` | copia del mundo. 0 = desactivado |
 | `BackupsAConservar` | cuántas copias guardar. 0 = todas |
 | `LogDias` | días de log a conservar. 0 = sólo consola |
 | `CodigoFuente` | URL del código de este servidor |
 | `PuertoWebSocketPublico` | sólo si el hosting remapea puertos: el que se le anuncia al cliente |
-| `Version` | la versión de cliente que este servidor acepta. Los cinco paquetes de ingreso traen la del cliente y el servidor la compara **como texto**: si no coincide, cartel de *juego desactualizado* y se corta la conexión. **Vacía (el default) = sin control**, que es lo que hacía el servidor hasta ahora. El cliente web que viene con esta versión manda `1.0.0`. Encendela sólo si sabés qué cliente repartiste: la comparación es exacta, así que un valor que no sea el del cliente desplegado deja a **todos** afuera. Sirve para dos cosas — que no se conecte un cliente ajeno al puerto del juego, y forzar a que actualicen cuando publiques una versión nueva. **Se reparte VACÍA por decisión del autor (2026-09-08)**: con el cliente cacheado en el navegador de cada jugador, el cartel de *juego desactualizado* le sale a quien sólo necesita recargar |
-| `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa** — no cambia ninguna mecánica —, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
-| `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina** — gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
+| `Version` | la versión de cliente que este servidor acepta. Los cinco paquetes de ingreso traen la del cliente y el servidor la compara **como texto**: si no coincide, cartel de *juego desactualizado* y se corta la conexión. **Vacía (el default) = sin control**, que es lo que hacía el servidor hasta ahora. El cliente web que viene con esta versión manda `1.0.0`. Encendela sólo si sabés qué cliente repartiste: la comparación es exacta, así que un valor que no sea el del cliente desplegado deja a **todos** afuera. Sirve para dos cosas: que no se conecte un cliente ajeno al puerto del juego, y forzar a que actualicen cuando publiques una versión nueva. **Se reparte VACÍA por decisión del autor (2026-09-08)**: con el cliente cacheado en el navegador de cada jugador, el cartel de *juego desactualizado* le sale a quien sólo necesita recargar |
+| `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa**: no cambia ninguna mecánica, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
+| `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina**: gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
 
 **Ser GM**: en `[INIT]` poner `Dioses=1` y agregar la sección:
 
@@ -234,7 +234,7 @@ version que agrega una opcion no te la escribe. El servidor las lista al arranca
 `NUEVAS EN ESTA VERSION`, con el aviso de que estan corriendo con su valor por defecto; si querés
 cambiarlas, copiá esas lineas de `Server.ini.ejemplo`.
 
-Antes de actualizar, mirá que haya un backup reciente en `data/backups/` — es el unico "deshacer" que hay.
+Antes de actualizar, mirá que haya un backup reciente en `data/backups/`: es el unico "deshacer" que hay.
 
 ## Dónde se guardan los personajes
 
@@ -247,17 +247,17 @@ En una base de datos, con dos opciones y las mismas tablas en las dos:
 **Cómo elegir.** Para jugar solo, en LAN o en un servidor sin página web: SQLite. Los jugadores se conectan al
 servidor, no a la base, así que la cantidad de gente no cambia la elección: la base la usa un solo proceso, y un
 guardado entero es un milisegundo. Postgres conviene cuando algo más tiene que leer la misma base mientras el juego
-corre —una web con la tabla de posiciones, los clanes o los conectados—, o cuando ya hay un Postgres administrado
+corre (una web con la tabla de posiciones, los clanes o los conectados), o cuando ya hay un Postgres administrado
 (con sus copias y sus réplicas). Se puede empezar con SQLite y pasar a Postgres cuando haga falta: ver "Con Postgres".
 
 Ahí van los personajes, las cuentas y lo que guarda el mundo: clanes, correo, suelo, llaves vendidas y el récord de
 conectados.
 
-Una instalación que ya tenía personajes en archivos —un `.chr` por personaje en `data/Charfile/` y un `.cnt` por
-cuenta en `data/Cuentas/`— o la base vieja de `COVERAO_DB=sqlite` **los importa sola en el primer arranque**. Lo viejo
+Una instalación que ya tenía personajes en archivos (un `.chr` por personaje en `data/Charfile/` y un `.cnt` por
+cuenta en `data/Cuentas/`) o la base vieja de `COVERAO_DB=sqlite` **los importa sola en el primer arranque**. Lo viejo
 queda al lado, renombrado a `*.importado`, y en `data/` queda un informe `importacion-AAAAMMDD-HHMMSS.txt` con lo
-importado y lo que no cerraba (un personaje sin cuenta, un amigo que no existe). Si la verificación no da —cada
-personaje se relee de la base y se compara con el archivo—, no se toca nada y el servidor no arranca: el informe dice
+importado y lo que no cerraba (un personaje sin cuenta, un amigo que no existe). Si la verificación no da (cada
+personaje se relee de la base y se compara con el archivo), no se toca nada y el servidor no arranca: el informe dice
 por qué.
 
 Se elige en el `Server.ini`:
@@ -308,7 +308,7 @@ Con varios servidores en el mismo Postgres, una base por servidor (`Base=coverao
   CoverAO.Server pasar-a-postgres
   ```
 
-  Copia entera la base de SQLite —la de `Archivo=`, u otra si se la nombra—, tabla por tabla y con las fechas de alta
+  Copia entera la base de SQLite (la de `Archivo=`, u otra si se la nombra), tabla por tabla y con las fechas de alta
   y los personajes borrados, a la de Postgres del `Server.ini`, y deja la de SQLite como estaba.
 
 Si Postgres no responde al arrancar, el servidor no arranca y dice por qué (sin mostrar la clave).
@@ -316,7 +316,7 @@ Si Postgres no responde al arrancar, el servidor no arranca y dice por qué (sin
 **Una página web sobre la base.** La web se conecta a la misma base con un usuario propio que **sólo puede leer** el
 esquema `publico`: vistas con los personajes, la tabla de posiciones, los clanes y sus miembros, los conectados, la
 versión y el récord del servidor, y el catálogo del juego (objetos, hechizos, clases, razas y mapas, con sus nombres).
-No ve nada de las cuentas —ni contraseñas, ni IPs, ni baneos—, ni el oro, la bóveda, la posición o el inventario, y el
+No ve nada de las cuentas (ni contraseñas, ni IPs, ni baneos), ni el oro, la bóveda, la posición o el inventario, y el
 staff del `Server.ini` y los personajes borrados quedan afuera. Se crea una vez, con el servidor apagado y los datos de
 un administrador de Postgres en el entorno:
 
@@ -327,12 +327,12 @@ COVERAO_PG_ADMIN_USUARIO=postgres COVERAO_PG_ADMIN_CLAVE=... CoverAO.Server crea
 Imprime la clave del usuario `coverao_web`, que no se vuelve a mostrar (correrlo otra vez le pone una nueva). Hace falta
 Postgres 15 o más nuevo.
 
-**Si la base se cae con el servidor andando** —Postgres que se reinicia, un disco lleno, el archivo tomado por un
-antivirus—, el juego sigue: lo que se guarda espera en orden, en memoria, y se reintenta solo cada unos segundos. La
+**Si la base se cae con el servidor andando** (Postgres que se reinicia, un disco lleno, el archivo tomado por un
+antivirus), el juego sigue: lo que se guarda espera en orden, en memoria, y se reintenta solo cada unos segundos. La
 consola lo avisa una vez cuando se cae y otra cuando vuelve, y el panel muestra el estado de la base y cuánto espera. El
 que quiere entrar mientras tanto recibe, a los 10 segundos, un cartel de que no se puede entrar en ese momento. Si se
 apaga el servidor con la base todavía caída, no se la espera: lo que no se pudo guardar queda enseguida en
-`data/rescate-AAAAMMDD-HHMMSS.json` —cerrar la ventana da unos pocos segundos— y el próximo arranque lo aplica antes de
+`data/rescate-AAAAMMDD-HHMMSS.json` (cerrar la ventana da unos pocos segundos) y el próximo arranque lo aplica antes de
 abrir. Si en vez de eso se restaura un backup o se importa, lo rescatado es de la base de antes y no se aplica encima:
 queda al lado, como `*.sin-aplicar`.
 
@@ -372,8 +372,8 @@ puede volver a generar.
 
 ### No dejes `data/` adentro de una carpeta que sincroniza sola
 
-Un programa que sincroniza o escanea la carpeta —OneDrive o Dropbox sincronizando `Documentos`, el antivirus
-escaneando al vuelo, el agente de backup del hosting— **se agarra la base** (`data/coverao.db` y su diario, el
+Un programa que sincroniza o escanea la carpeta (OneDrive o Dropbox sincronizando `Documentos`, el antivirus
+escaneando al vuelo, el agente de backup del hosting) **se agarra la base** (`data/coverao.db` y su diario, el
 `-wal`) mientras el servidor escribe. El servidor lo aguanta: lo que se guarda espera y se reintenta, y la consola
 avisa que la base no responde. Pero la copia que hace ese programa de una base abierta puede salir a medio escribir,
 y ésa no sirve para volver atrás: para eso están los backups de `data/backups/`, que son copias consistentes. La forma
@@ -416,7 +416,7 @@ Una instalación completa por servidor, cada una en su carpeta. Así cada uno ti
 configuración y hasta su versión. Lo único que hay que cuidar es no repetir puertos: separar `StartPort` de a
 10. Cada servidor usa unos 190 MB de RAM con el mundo cargado.
 
-**Windows** — [`hosting/coverao.ps1`](../hosting/coverao.ps1) va en la carpeta que contiene a los servidores:
+**Windows**: [`hosting/coverao.ps1`](../hosting/coverao.ps1) va en la carpeta que contiene a los servidores:
 
 ```powershell
 .\coverao.ps1 nueva rojo        # copia una instalación y le asigna puertos libres
@@ -430,7 +430,7 @@ configuración y hasta su versión. Lo único que hay que cuidar es no repetir p
 > el camino recomendado: el juego se levanta a mano y se apaga a mano. Los dos existen para quien tenga un
 > servidor dedicado y los quiera, pero no se registran solos ni hacen falta para jugar con amigos.
 
-**Linux** — [`hosting/coverao@.service`](../hosting/coverao@.service) es una unit plantilla:
+**Linux**: [`hosting/coverao@.service`](../hosting/coverao@.service) es una unit plantilla:
 
 ```bash
 sudo useradd --system --home /srv/coverao --shell /usr/sbin/nologin coverao
@@ -443,7 +443,7 @@ journalctl -u coverao@rojo -f
 
 Para un solo servidor está [`hosting/coverao.service`](../hosting/coverao.service), sin el `@nombre`.
 
-**Docker** — un contenedor por servidor:
+**Docker**: un contenedor por servidor:
 
 ```bash
 docker compose up -d
@@ -462,7 +462,7 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 
 El servidor espera a que Postgres conteste antes de arrancar, y si en `coverao-data` ya había una `coverao.db` de
 cuando andaba con SQLite, la importa sola. El volumen de la base, `coverao-pg`, tampoco se regenera. El puerto de
-Postgres no se publica: el juego —y una web en el mismo compose— le llegan por la red interna.
+Postgres no se publica: el juego (y una web en el mismo compose) le llegan por la red interna.
 
 ## Con dominio y HTTPS
 
@@ -503,10 +503,10 @@ server {
 
 Con el proxy puesto, en el router se abre **el 443 y nada más**: ni el 7669 ni el 7667 tienen que llegar desde
 afuera. El **7666** (el del protocolo clásico) es aparte y no pasa por el proxy: ése va en claro salvo que
-arranques con `--tls cert.pfx` — y hoy no hace falta abrirlo, porque el cliente clásico no puede entrar.
+arranques con `--tls cert.pfx`, y hoy no hace falta abrirlo, porque el cliente clásico no puede entrar.
 
 **Verificado ejecutándolo** (2026-09-01), y no sólo leído: con un proxy TLS delante del servidor, la página se
-sirve por `https://`, el cliente abre `wss://<mismo host>/ws` y se juega — login, caminata, clic sobre una
+sirve por `https://`, el cliente abre `wss://<mismo host>/ws` y se juega: login, caminata, clic sobre una
 criatura y hechizo de área, sin desincronizar el stream. La receta anterior pedía **dos** nombres (uno para la
 página y otro para el socket) y traía una regla `reverse_proxy /ws* localhost:7667` que no podía engancharse
 nunca, porque el cliente de entonces no pedía ninguna ruta: abría el socket contra la raíz de otro puerto.

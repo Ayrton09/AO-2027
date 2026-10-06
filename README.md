@@ -1,4 +1,4 @@
-# CoverAO — servidor moderno + cliente web
+# CoverAO: servidor moderno + cliente web
 
 Port del servidor de Argentum Online **CoverAO-2021** (Visual Basic 6) a **C#/.NET 10**, hablando el
 **protocolo AO clásico byte a byte**, con un **cliente web** (TypeScript/canvas) que se conecta por
@@ -8,7 +8,7 @@ WebSocket. El objetivo no es un juego nuevo: es una réplica fiel de esa variant
   [`gamedata/`](gamedata/), y los gráficos, sonidos y música están en
   [`client-web/assets/`](client-web/assets/).
 - **Cliente web**: se juega desde el navegador, sin instalar nada. El puerto de juego habla el protocolo AO
-  clásico byte a byte —es contra lo que se compara este port—, pero el **cliente clásico de Windows no llega
+  clásico byte a byte (es contra lo que se compara este port), pero el **cliente clásico de Windows no llega
   a entrar**: manda la contraseña ofuscada con `SEncriptar` (un corrimiento distinto en cada envío) y este
   servidor no la deshace. Medido; ver [`docs/HOSTING.md`](docs/HOSTING.md).
 
@@ -47,12 +47,12 @@ Con el servidor andando, el cliente web se sirve solo en `StartPort+3`:
 http://localhost:7669/
 ```
 
-Se le pasa esa dirección a quien quiera entrar —cambiando `localhost` por la IP o el dominio del servidor— y
+Se le pasa esa dirección a quien quiera entrar (cambiando `localhost` por la IP o el dominio del servidor) y
 juega desde el navegador. El cliente descubre el puerto del WebSocket preguntándoselo al servidor, así que
 funciona con cualquier configuración de puertos.
 
 Renderiza el mundo completo (terreno, capas, personajes con equipo, ítems en el suelo, clima, día/noche y
-FX), y permite moverse, atacar, lanzar hechizos, comerciar y banquear con NPCs, fabricar, equipar y lootear —
+FX), y permite moverse, atacar, lanzar hechizos, comerciar y banquear con NPCs, fabricar, equipar y lootear:
 todo decidido por el servidor. Se reconecta solo si el servidor reinicia.
 
 ## Hostear
@@ -73,7 +73,7 @@ Lo esencial:
 - **Docker**: `docker compose up -d`.
 - **Apagar sin perder progreso**: al apagarse bien, el servidor guarda a todos los conectados. Sirve cerrar
   la ventana, `Ctrl+C`, el botón del panel, `systemctl stop`, o crear un archivo vacío llamado `detener` al
-  lado del ejecutable — que es lo único que funciona con un servidor de fondo en Windows, donde no hay
+  lado del ejecutable, que es lo único que funciona con un servidor de fondo en Windows, donde no hay
   ventana a la que mandarle la señal.
 - **Backups**: copia del mundo entero cada 30 minutos, conservando las últimas 48, sin frenar a los que
   juegan. Copiando la carpeta `data/` se reconstruye el servidor completo en otra máquina.
@@ -91,9 +91,9 @@ Lo esencial:
 ## Qué no tiene, a propósito
 
 Es una réplica fiel de esta variante, no un superset. Lo único que queda afuera es lo que **el original no
-tiene cableado**: el **comercio entre usuarios** es código muerto en CoverAO-2021 —el módulo existe, pero el
+tiene cableado**: el **comercio entre usuarios** es código muerto en CoverAO-2021 (el módulo existe, pero el
 handler no tiene rama para otro usuario, los entry-points no tienen llamadores y el cliente VB6 no trae ni el
-formulario ni los paquetes para participar—, así que portarlo sería inventarlo.
+formulario ni los paquetes para participar), así que portarlo sería inventarlo.
 
 ## Reportar errores y proponer cambios
 
@@ -105,7 +105,7 @@ Menú → Licencia cuando el `Server.ini` trae `CodigoFuente`.
 
 ## Licencia
 
-**[AGPL-3.0](LICENSE)** — software libre con copyleft. No fue una elección de gusto: el material del que esto
+**[AGPL-3.0](LICENSE)**: software libre con copyleft. No fue una elección de gusto: el material del que esto
 deriva llegó bajo la Affero GPL v1 *"or any later version"*, declarada en el encabezado de 48 de los 79
 archivos del servidor VB6. Ese "or any later version" permite subir a la 3; no permite bajar a una permisiva.
 

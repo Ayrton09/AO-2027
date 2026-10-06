@@ -3,8 +3,7 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
-## 1.0.0 — 2026-10-06
-
+## 1.0.0 (2026-10-06)
 Lo nuevo desde el paquete del 5 de octubre.
 
 ### Chat, mapa y pantalla
@@ -41,8 +40,7 @@ Lo nuevo desde el paquete del 5 de octubre.
   (antes, sólo por el máximo, y algunos se compraban un arma que pegaba menos), y no viajan al pueblo por una pieza
   apenas mejor que la que tienen.
 
-## 1.0.0 — 2026-10-05
-
+## 1.0.0 (2026-10-05)
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
 
 ### Facciones y mundo
@@ -164,7 +162,7 @@ Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escrito
 - **El juego para escritorio abre con un menú**: Jugar, Opciones y Salir, en pantalla completa y con la música del inicio
   sonando hasta que entrás. Jugar muestra tus servers con el último elegido: los agregás por su dirección o IP, con el nombre
   que quieras, y ves cuáles están en línea, cuántos juegan, el ping y su tabla de posiciones. Opciones tiene las mismas del
-  juego —audio, video, juego y controles— y valen para todos los servers. Desde el juego, Ctrl+Shift+S vuelve al menú.
+  juego (audio, video, juego y controles) y valen para todos los servers. Desde el juego, Ctrl+Shift+S vuelve al menú.
 
 - **Los errores y las sugerencias se reportan en GitHub**, como dice el cartel de bienvenida:
   github.com/Ayrton09/CoverAO/issues. El /GM queda para las dudas sobre el servidor donde jugás.
@@ -208,15 +206,15 @@ Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escrito
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
   `[NIVELMINIMO]`, `MinutosDeFogata`, `MetamorfosisDelDruida`, `AtacarAliadoVuelveCriminal` y `EventoAlRematar`.
-  Con 0 —o la tabla de cuevas vacía— cada una vuelve a ser como el original.
+  Con 0 (o la tabla de cuevas vacía) cada una vuelve a ser como el original.
 
 - **A quién le vende el mercader se elige en el Server.ini**, por zona y por facción: `ComercioEnRinkel`,
   `ComercioEnLindos`, `ComercioEnCiudadesViejas` y `ComercioEnElResto`. Vienen como el original, y los bots compran
   donde les venden.
 
 - **Las tasas `Exp` y `Oro` multiplican directo** (1 es lo normal), y el panel las muestra aparte de los eventos.
-  Como en el original, el evento de experiencia no multiplica lo que se cobra al matar a la criatura —todo lo del
-  hechizo que la mata—; con `EventoAlRematar=1` en el Server.ini, sí.
+  Como en el original, el evento de experiencia no multiplica lo que se cobra al matar a la criatura (todo lo del
+  hechizo que la mata); con `EventoAlRematar=1` en el Server.ini, sí.
 
 - **El mundo no se frena al leer o guardar personajes**: la base trabaja aparte, de a uno y en orden. Un baneo desde
   el panel, un /MOD o una transferencia a alguien que justo está entrando ya no se pierden.
@@ -245,8 +243,8 @@ Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escrito
 
 - **La base es de un servidor a la vez**: un segundo servidor sobre la misma base no arranca, y los comandos de la
   base no la tocan con el servidor andando. Pasar a Postgres o restaurar un backup la lleva entera, con las fechas y
-  los personajes borrados, y no le aplica encima un rescate viejo. Una cuenta de más de 20 letras —la 1.0.0 las
-  dejaba crear y ya no podían entrar— no frena la actualización: queda anotada en el informe.
+  los personajes borrados, y no le aplica encima un rescate viejo. Una cuenta de más de 20 letras (la 1.0.0 las
+  dejaba crear y ya no podían entrar) no frena la actualización: queda anotada en el informe.
 
 - **Una web puede leer la base de Postgres** con un usuario que sólo ve lo público: personajes, tabla de posiciones,
   clanes, conectados y el catálogo del juego con sus nombres, sin nada de las cuentas y sin el staff.
@@ -256,14 +254,14 @@ Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escrito
   guardias del otro bando, y para cazar o trabajar no cruzan los mapas inseguros donde los matan ni van a donde nace
   algo que los mata de un golpe; y a ningún lado cruzan donde nace algo que los mata de dos. No se quedan peleando
   con lo que no pueden lastimar, y en un mapa inseguro tampoco aguantando los golpes de lo que no les conviene
-  pelear: se alejan, y si los sigue, se van de ahí por la salida más cercana —y si esa no los deja dar un paso, por
-  otra—. Persiguiendo una presa no se meten a la vista de lo que los mata. Si sus hechizos no salen siguen con el
+  pelear: se alejan, y si los sigue, se van de ahí por la salida más cercana (y si esa no los deja dar un paso, por
+  otra). Persiguiendo una presa no se meten a la vista de lo que los mata. Si sus hechizos no salen siguen con el
   arma, y de muertos van al sacerdote aunque esté en otro mapa. Dos niveles antes de dejar de ser novatos se compran
-  pociones propias —antes que nada—, ropa, un arma y provisiones para el camino, aunque el herrero les quede lejos,
+  pociones propias (antes que nada), ropa, un arma y provisiones para el camino, aunque el herrero les quede lejos,
   si pueden llegar sin que los maten; y el último nivel de novato no lo pasan adentro del dungeon, ni entre los
   guardias que los van a atacar al dejar de serlo, ni donde ya no van a tener cómo volver a comprar. Ponen su hogar en
   una ciudad donde les venden, y si se quedan sin pociones, comida o bebida lejos de toda tienda, caminan hasta un
-  mapa seguro —aunque quede lejos— y vuelven a casa con la runa, en vez de cruzar el desierto; y si no encuentran
+  mapa seguro (aunque quede lejos) y vuelven a casa con la runa, en vez de cruzar el desierto; y si no encuentran
   dónde cazar, también. Salen a comprar pociones sólo si les alcanza para una. De un lugar lleno salen sin frenar en
   el camino, y el que viaja a otro mapa para trabajar se queda un rato. Desde el último nivel de novato eligen dónde
   cazar por lo que rinde el mapa entero, hasta cuatro mapas más allá, y el Cazador pelea con el arco. No van a cazar
@@ -272,12 +270,12 @@ Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escrito
   tienen que irse dos veces huyendo del mismo lugar, no vuelven a cazar ahí hasta subir de nivel; lo que les pega en el
   camino también los hace huir, y sin dónde cazar en un mapa inseguro caminan hasta uno seguro. De camino no se quedan
   a cazar donde no elegirían cazar, y acorralados, los que saben magia se defienden con hechizos. Si salen a comprar
-  sólo por un gusto —equipo mejor, un pergamino— y vuelven sin nada, esperan un buen rato antes de volver a intentarlo.
+  sólo por un gusto (equipo mejor, un pergamino) y vuelven sin nada, esperan un buen rato antes de volver a intentarlo.
   Al pueblo entran por donde se llega a la tienda, y no por la orilla de afuera de la muralla, y encuentran caminos que
   antes no veían: de los Campos Abiertos a Rinkel por el Río Otoren, sin cruzar el desierto. Si alguien se les para en el
   camino, lo rodean o esperan a que se corra en vez de abandonar el viaje, y si es una criatura que pueden matar, la
   matan y siguen. Por lo que vienen pegando saben de antemano a qué criatura no le van a sacar nada, y no la salen a
-  cazar; y lo que les pega y matan rápido —el Lobo, desde cierto nivel— se lo sacan de encima aunque no sea lo que salen a
+  cazar; y lo que les pega y matan rápido (el Lobo, desde cierto nivel) se lo sacan de encima aunque no sea lo que salen a
   buscar. Huyendo corren, y si algo que los mata de dos golpes se les acerca dejan la pelea o el viaje; lo que se acerca
   tampoco los encuentra quietos. Una racha de golpes errados ya no les hace dar una criatura por imposible, y antes de
   pelear se ponen el arma aunque vengan de trabajar con la herramienta en la mano. Si tienen que irse de un mapa
@@ -306,8 +304,7 @@ Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escrito
   Con mucho oro no caminan al pueblo sólo para vender unas monedas de botín, y para fabricar lejos juntan material para una
   tanda entera antes de ir.
 
-## 1.0.0 — 2026-09-24
-
+## 1.0.0 (2026-09-24)
 La mayor parte sale de cruzar el servidor contra el original sistema por sistema; el resto son pedidos del tester
 y lo que quedó sin contar desde el 4 de septiembre.
 
@@ -420,7 +417,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
   cliente web, Shift+clic en el mapa te lleva a esa baldosa.
 
 - **Lo nuevo se ajusta en el Server.ini**: `GuardiasAtacan` y sus claves, `NavegacionParaCruzar`,
-  `[NIVELMINIMO]`, `MinutosDeFogata` y `MetamorfosisDelDruida`. Con 0 —o la tabla de cuevas vacía— cada una
+  `[NIVELMINIMO]`, `MinutosDeFogata` y `MetamorfosisDelDruida`. Con 0 (o la tabla de cuevas vacía) cada una
   vuelve a ser como el original.
 
 - **Las tasas `Exp` y `Oro` multiplican directo** (1 es lo normal), y el panel las muestra aparte de los eventos.
@@ -431,8 +428,7 @@ y lo que quedó sin contar desde el 4 de septiembre.
 - **Bots que juegan solos**, apagados de fábrica: se prenden con `Bots=` y la cantidad.
 
 
-## 1.0.0 — 2026-09-16
-
+## 1.0.0 (2026-09-16)
 Casi toda esta tanda sale del informe del tester del 14 de septiembre, más dos cosas que aparecieron
 midiendo el combate contra el servidor original.
 
@@ -448,7 +444,7 @@ midiendo el combate contra el servidor original.
 
 - **Las criaturas reaccionan como en el original.** Pensaban una vez por segundo, cuando el juego original
   las hace pensar dos veces y media más seguido. Se notaba en que tardaban en verte, en que no podían
-  perseguirte —se movían una baldosa por segundo contra las casi cinco tuyas— y en que pegaban más
+  perseguirte (se movían una baldosa por segundo contra las casi cinco tuyas) y en que pegaban más
   espaciado de lo que les corresponde.
 
 - **Los bichos grandes tardan en volver.** Reaparecían todos a los cinco segundos, del más chico al más
@@ -460,8 +456,7 @@ midiendo el combate contra el servidor original.
   parejo, igual que la evasión, que siempre lo hizo así.
 
 
-## 1.0.0 — 2026-09-04
-
+## 1.0.0 (2026-09-04)
 Esta tanda es de **juego**: cosas que se sienten peleando, comerciando o entrando al mundo. Varias las
 encontró el tester jugando, y otras salieron de cruzar el servidor contra el original línea por línea.
 
@@ -497,7 +492,7 @@ encontró el tester jugando, y otras salieron de cruzar el servidor contra el or
   que el que llega después no te la roba parándose en el medio. La marca dura mientras la sigas golpeando.
 
 - **El mercader dice la verdad.** La vitrina mostraba el stock de antes de comprar, algunos precios salían de
-  la ranura y no del objeto, y a los mercaderes que nunca se quedan sin nada —el alquimista, el herrero— se
+  la ranura y no del objeto, y a los mercaderes que nunca se quedan sin nada (el alquimista, el herrero) se
   les agotaba la mercadería.
 
 - **Fabricar de más se rechaza en vez de recortarse.** Pedir cien flechas con material para diez te daba diez
@@ -509,13 +504,12 @@ encontró el tester jugando, y otras salieron de cruzar el servidor contra el or
 - **La alineación del clan se mostraba mal**: las cuatro salían cambiadas.
 
 
-## 1.0.0 — 2026-08-28
-
+## 1.0.0 (2026-08-28)
 Esta tanda es casi toda **dibujo**: se cruzó el cliente entero contra el motor del juego original y se
 corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que más se nota:
 
-- **El mundo se mueve a la velocidad de siempre.** Todo lo animado —la caminata, el oleaje, las antorchas, la
-  lava, las cataratas— iba al doble de rápido, y algunas baldosas hasta seis veces. Por eso el muñeco parecía
+- **El mundo se mueve a la velocidad de siempre.** Todo lo animado (la caminata, el oleaje, las antorchas, la
+  lava, las cataratas) iba al doble de rápido, y algunas baldosas hasta seis veces. Por eso el muñeco parecía
   patinar contra el piso al caminar.
 
 - **Los efectos de los hechizos caen donde tienen que caer.** Salían hasta tres baldosas y media más abajo:
@@ -533,8 +527,8 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 - **Al que se oculta lo seguís viendo como una silueta que va y viene.** Ocultarse nunca te borró de la
   pantalla de los demás en el juego original; esto cambia bastante el enfrentamiento entre jugadores.
 
-- **Las puertas, los estandartes y las antorchas de pie tapan al que está detrás.** Antes el personaje —y su
-  nombre— quedaban flotando por delante del frente de la casa. Lo mismo con los objetos tirados en el piso.
+- **Las puertas, los estandartes y las antorchas de pie tapan al que está detrás.** Antes el personaje (y su
+  nombre) quedaban flotando por delante del frente de la casa. Lo mismo con los objetos tirados en el piso.
 
 - **El equipo de tope tiene su resplandor.** Quince objetos del juego traen aura y no se dibujaba ninguna.
 
@@ -574,7 +568,7 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 
 - **El teleport que planta un GM se ve.** Gira y alumbra, como en el juego original; antes quedaba invisible.
 
-- **La fogata prendida arde.** Antes era idéntica a las ramitas apagadas —el mismo montón de leña— y sólo la
+- **La fogata prendida arde.** Antes era idéntica a las ramitas apagadas (el mismo montón de leña) y sólo la
   prendida sirve para descansar, así que no había forma de saber si te había salido. Ahora se ve el fuego.
 
 - **Podés ver quién está jugando sin entrar.** Hay una página con los conectados y una tabla de posiciones, y
@@ -597,8 +591,8 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   era el suyo. Ahora el precio sale siempre del objeto, como en el juego original.
 
 - **Montar pide saber montar.** Cualquiera se subía a una montura con la habilidad de Equitación en cero, y
-  arriba del animal se pega más fuerte. Ahora cada montura exige los puntos que pide en el juego original —de
-  25 a 65 según cuál sea—, igual que los barcos piden Navegación.
+  arriba del animal se pega más fuerte. Ahora cada montura exige los puntos que pide en el juego original (de
+  25 a 65 según cuál sea), igual que los barcos piden Navegación.
 
 - **Meditar no aguanta que te peguen.** La meditación seguía dándote maná mientras te estaban golpeando. Ahora
   un jugador te la corta de un golpe y una criatura también, si el golpe es lo bastante fuerte para tu
@@ -613,13 +607,13 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   encima de la primera.
 
 - **El líder no puede abandonar su propio clan.** Si lo hacía, el clan quedaba sin nadie que pudiera aceptar,
-  echar, declarar la guerra o firmar la paz — y no había forma de arreglarlo desde adentro del juego.
+  echar, declarar la guerra o firmar la paz, y no había forma de arreglarlo desde adentro del juego.
 
 - **El servidor deja constancia de los intentos de trampa.** No había ninguno registrado: donde el juego
   original anota y corta, acá se recortaba el pedido en silencio y el que hostea no se enteraba nunca. Ahora
   quedan en el registro del servidor y se ven en el panel.
 
-- **Repartir más puntos de habilidad de los que tenés corta la conexión**, y no aplica ninguno — es lo que
+- **Repartir más puntos de habilidad de los que tenés corta la conexión**, y no aplica ninguno: es lo que
   hace el original. El panel de Habilidades del cliente ahora no te deja pasarte, y te muestra cuántos te
   quedan mientras repartís.
 
@@ -651,39 +645,38 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 
 - **Macro: mantené la tecla apretada y la acción se repite.** Sostener **Ctrl** sigue golpeando y sostener
   una **F1–F10** sigue usando lo que tengas atado, a la velocidad del cliente original. Viene puesto; si
-  preferís apretar una vez por golpe, se apaga en Opciones → Juego. Los oficios —minar, talar, pescar,
-  fundir— siguen repitiéndose solos como siempre, prendas o no el macro.
+  preferís apretar una vez por golpe, se apaga en Opciones → Juego. Los oficios (minar, talar, pescar,
+  fundir) siguen repitiéndose solos como siempre, prendas o no el macro.
 
 - **Las metamorfosis del druida funcionan.** Los once hechizos (Murciélago, Lobo, Jabalí, Tigre, Oso Pardo,
   Tortuga, Araña, Demonio, Árbol, Gólem y Dragón) transforman al druida en la criatura, con los bonos al
   golpe y a la defensa que dice cada hechizo. **Y las criaturas más débiles que tu forma no te atacan**: con
   el murciélago te dejan de molestar las ratas, con el dragón te ignora todo salvo los doce bichos de tope.
-  Por eso el Árbol vale aunque casi no pegue — es para pasar desapercibido. Dura **dos minutos**; morir o
+  Por eso el Árbol vale aunque casi no pegue: es para pasar desapercibido. Dura **dos minutos**; morir o
   desconectarse la corta, y no se puede lanzar montado ni arriba de una barca. (En el juego original esos
   pergaminos se vendían hasta por 2.200.000 de oro y lanzarlos no hacía nada. Quien hostea cambia la duración
   con `MetamorfosisDelDruida`.)
 
-- **Drop global: cualquier criatura puede soltar un accesorio de los buenos.** Es raro de verdad —del orden
-  de uno por personaje en todo el camino hasta nivel 40—, así que sigue siendo un hallazgo y no una fuente;
+- **Drop global: cualquier criatura puede soltar un accesorio de los buenos.** Es raro de verdad (del orden
+  de uno por personaje en todo el camino hasta nivel 40), así que sigue siendo un hallazgo y no una fuente;
   quien hostea lo cambia con `DropGlobal`. La lista de los veintiséis objetos y qué tan raro es cada uno son
   las del juego original, que traía la tabla hecha y nunca la usó.
 
 
-## 1.0.0 — 2026-08-01
-
+## 1.0.0 (2026-08-01)
 - **Cada raza usa la ropa que le corresponde.** El elfo, el humano, el drow y el orco son razas altas y visten
   igual; el enano y el gnomo son bajos y tienen su propia ropa. Antes el elfo y el gnomo estaban cambiados: al
   elfo sólo le entraba ropa de bajos.
 
-- **Pasá el mouse por un objeto y te dice todo.** Qué es, cuánta defensa o daño da, qué nivel pide —y si
-  todavía no lo alcanzás— y a qué clases y razas les está prohibido. También en la tienda, así te enterás
+- **Pasá el mouse por un objeto y te dice todo.** Qué es, cuánta defensa o daño da, qué nivel pide (y si
+  todavía no lo alcanzás) y a qué clases y razas les está prohibido. También en la tienda, así te enterás
   ANTES de comprarlo.
 
 - **Las ventanas del comercio y del banco son más anchas.** Entran cuatro objetos por fila en vez de dos, así
   se ve el stock del mercader y tu inventario de una sola mirada, sin tanto scroll.
 
 - **Tres habilidades que no subían nunca ahora suben usándolas.** **Tácticas** la entrena el que RECIBE los
-  golpes de una criatura —acierte o falle el bicho—, que es como se sube la evasión; **Supervivencia** ahora
+  golpes de una criatura (acierte o falle el bicho), que es como se sube la evasión; **Supervivencia** ahora
   también sube al hacer fogatas, no sólo al encenderlas; y **Domar** sube cada vez que domás una criatura.
   (Recordá que con hambre o sed en cero no sube ninguna habilidad, y viajar en barco te deja las dos en cero.)
 
@@ -719,9 +712,9 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
 
 - **Los Magos, Druidas y Cazadores tienen familiar.** Se elige al crear el personaje y se le pone nombre: el
   Mago puede llevar un Fuego Fatuo, un Elemental, un Ely, un Duende o un Hada; el Druida y el Cazador, bestias
-  —Ent, Lobo, Tigre u Oso—. Al elegirlo te entra al libro el hechizo **Llamado al familiar**, que no vende
+  (Ent, Lobo, Tigre u Oso). Al elegirlo te entra al libro el hechizo **Llamado al familiar**, que no vende
   nadie: lanzalo para sacarlo y lanzalo otra vez para guardarlo. Pelea con vos, gana la misma experiencia que
-  vos mientras está afuera, sube de nivel y va aprendiendo habilidades — envenenar, paralizar, desarmar, cegar,
+  vos mientras está afuera, sube de nivel y va aprendiendo habilidades: envenenar, paralizar, desarmar, cegar,
   o tirar hechizos si es de los mágicos. El Ely aprende a **curarte a vos** cuando te ve herido. Si lo matan
   queda muerto y hay que llevarlo a la **Veterinaria**, que también lo cura. Su ficha está en el panel de
   estadísticas.
@@ -738,8 +731,8 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   suelo y te quedabas sin la mochila. (Quien hostea puede apagarlo con `PersistirSuelo=0`.)
 
 - **El juego te explica los rechazos que confunden.** Cuando el servidor te frena por algo que parece un bug y
-  no lo es —"estás muy lejos" del banquero, "primero hacé clic" estando al lado del mercader, no poder tirar el
-  equipo de novato— te aparece una línea de contexto abajo, una sola vez por sesión. Y al equipar una
+  no lo es ("estás muy lejos" del banquero, "primero hacé clic" estando al lado del mercader, no poder tirar el
+  equipo de novato) te aparece una línea de contexto abajo, una sola vez por sesión. Y al equipar una
   herramienta te avisa que todavía falta usarla para ponerte a trabajar.
 
 - **Crear personaje pasó a estar dentro de tu cuenta.** La pantalla de inicio ofrece sólo conectarse y crear
@@ -752,7 +745,7 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   pide skill de Minería, así que si te rebota es que todavía te falta oficio.
 - Darle rango de GM a alguien desde el panel de administración ahora tiene efecto. Antes el panel decía que sí
   y la persona seguía sin poder usar los comandos.
-- Ya no se pierde lo que hiciste si otro programa toca la carpeta del servidor mientras jugás — el antivirus,
+- Ya no se pierde lo que hiciste si otro programa toca la carpeta del servidor mientras jugás: el antivirus,
   una copia de seguridad o una carpeta sincronizada alcanzaban para que un guardado se perdiera en silencio.
 
 - Al crear el personaje se elige bando: Nix te hace del Imperio e Illiandor de la República. Antes la
@@ -779,8 +772,8 @@ corrigió todo lo que no coincidía. Son unos setenta y cinco arreglos; lo que m
   Botas de Celeridad (+10) y Anillo del Carisma (+10).
 - Meditar devuelve maná según tu maná máximo, y la habilidad Meditar por fin sirve: entrenada acierta siete
   veces más seguido.
-- Los hechizos que van sobre uno mismo —invisibilidad, las metamorfosis, Aura sagrada, Golpe certero,
-  Inspiración, Honor del Paladín— se lanzan solos, sin pedir un objetivo.
+- Los hechizos que van sobre uno mismo (invisibilidad, las metamorfosis, Aura sagrada, Golpe certero,
+  Inspiración, Honor del Paladín) se lanzan solos, sin pedir un objetivo.
 - Los sacos de créditos, el de tiempo de donador y el Anillo Dorado ya no se pueden tirar al piso sin querer.
 - Los comandos de administración se pueden usar desde el cliente web: /telep, /ci, /carcel, /sum,
   /invisible y 73 más. Se listan con /ayudagm. Antes el cliente contestaba "comando desconocido"

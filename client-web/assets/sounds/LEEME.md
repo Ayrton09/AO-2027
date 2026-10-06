@@ -1,9 +1,9 @@
 # Los sonidos, y el único que NO es el del install
 
 Estos `.wav` salen del `Sounds.cao` de `CoverAO-2021`, que es el paquete que lee el cliente original. El
-extractor es `fase0/transcode/decode_sounds.py` y la lista de cuáles hacen falta se **deriva de la data** —el
+extractor es `fase0/transcode/decode_sounds.py` y la lista de cuáles hacen falta se **deriva de la data** (el
 `WAV` de cada hechizo, los `Snd1/2/3` de cada criatura y de cada objeto, las constantes del server y los pasos
-que elige el cliente—, no se escribe a mano. Lo comprueba `client-web/check-assets.mjs` en cada `npm test`.
+que elige el cliente), no se escribe a mano. Lo comprueba `client-web/check-assets.mjs` en cada `npm test`.
 
 ## La excepción: el 20 (Resucitar)
 
@@ -19,7 +19,7 @@ Verificado antes de tocarlo, en cuatro fuentes:
 | | |
 |---|---|
 | `Servidor/Dat/Hechizos.dat` | `WAV=20` para Resucitar |
-| nuestro `Hechizos.json` | `WAV: "20"` — coincide |
+| nuestro `Hechizos.json` | `WAV: "20"`: coincide |
 | `Herramientas/.../Descomprimido/Sounds/20.wav` | idéntico al que teníamos |
 | **`Cliente/Recursos/Sounds.cao`** (lo que el cliente REAL carga) | también idéntico |
 
@@ -29,7 +29,7 @@ del autor y prefirió el sonido clásico.
 **No toca el protocolo ni la paridad.** El server sigue mandando `PlayWave(20)`; lo único distinto es qué
 reproduce el cliente al recibirlo. El oráculo VB6 no ve ninguna diferencia.
 
-## El resto NO se toca — decidido el 2026-08-21
+## El resto NO se toca: decidido el 2026-08-21
 
 De los 181 `.wav`, **157 son byte por byte iguales** a la librería del AO clásico y sólo **24 difieren**:
 
