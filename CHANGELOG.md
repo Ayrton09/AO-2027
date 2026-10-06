@@ -6,6 +6,11 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 ## 1.0.0 (2026-10-06)
 Lo nuevo desde el paquete del 5 de octubre.
 
+### Facciones
+
+- **Al enlistarse en la Armada, la Milicia o el Caos, el enlistador te da tus vestimentas** del bando (la de tu clase, o la de
+  enanos y gnomos) y te dice su bienvenida, como en el original. El que estaba en un clan queda afuera del clan.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo ya no repite las uniones entre mapas**: cada pedazo muestra sólo lo suyo, y la costa de Nix, por ejemplo,

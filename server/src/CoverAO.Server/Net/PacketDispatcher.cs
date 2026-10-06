@@ -6851,17 +6851,19 @@ public sealed partial class PacketDispatcher
     /// <summary>VB6 <c>m_EcharMiembroDeClan</c> + <c>m_PuedeSalirDeClan</c> (modGuilds.bas:320): saca a <paramref name="nombre"/>
     /// de su clan si <paramref name="quien"/> puede. Un usuario sólo echa si es el líder de ESE clan o si se va él; el
     /// staff, a cualquiera. Al líder no lo saca nadie. Devuelve el clan, o null en silencio.</summary>
-    private Guild? EcharDelClan(Player quien, string nombre)
+    private Guild? EcharDelClan(Player quien, string nombre, bool porElSistema = false)
     {
         var t = _world.PlayerByName(nombre);
         var g = t is not null
             ? (string.IsNullOrEmpty(t.GuildName) ? null : _world.GuildByName(t.GuildName))
             : _world.AllGuilds.FirstOrDefault(x => x.Members.Contains(nombre));
         if (g is null) return null;
-        if ((quien.Privileges & PrivUser) != 0
+        if (!porElSistema && (quien.Privileges & PrivUser) != 0
             && !string.Equals(quien.Name, g.LeaderName, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(quien.Name, nombre, StringComparison.OrdinalIgnoreCase)) return null;
-        if (string.Equals(nombre, g.LeaderName, StringComparison.OrdinalIgnoreCase)) return null;
+        // `porElSistema` es el `-1` del original (m_PuedeSalirDeClan, modGuilds.bas): "la rutina de expulsión automática de clanes
+        // por antifacciones", que saca a cualquiera, incluido el líder, sin mirar quién echa. La usa el enlistarse.
+        if (!porElSistema && string.Equals(nombre, g.LeaderName, StringComparison.OrdinalIgnoreCase)) return null;
         var miembro = g.Members.FirstOrDefault(m => string.Equals(m, nombre, StringComparison.OrdinalIgnoreCase));
         if (miembro is null) return null;
         g.Members.Remove(miembro);
@@ -8080,6 +8082,8 @@ public sealed partial class PacketDispatcher
         // El NPC te habla A VOS: las frases de ModFacciones.bas salen por `WriteChatOverHead(UserIndex, ...)`,
         // que es al socket del jugador. Acá se emitían al área y las escuchaba media ciudad.
         void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
+        // El aura de meditar depende del bando (`ParticleToLevel`): el original la toma antes y la cambia al final.
+        short auraAntes = p.Meditating ? (short)ParticleToLevel(p) : (short)0;
 
         if (npc.FactionEnlist == Player.StatusArmada)   // Armada Real (VB6 EnlistarArmadaReal:301)
         {
@@ -8109,11 +8113,48 @@ public sealed partial class PacketDispatcher
             p.CambiarFaccion(Player.StatusCaos);
         }
         p.FactionRank = 1;
+        // LO QUE PASA AL ENTRAR, como el original (ModFacciones.bas, el final de las tres): las VESTIMENTAS del bando, el que
+        // estaba en un clan queda afuera, y el saludo con su frase. Acá sólo se cambiaba el bando, con un saludo nuestro (el
+        // autor, 06/10: "portealo").
+        DarSiNoLaTiene(session, p, ArmaduraAlEnlistarse(p));
+        if (!string.IsNullOrEmpty(p.GuildName) && EcharDelClan(p, p.Name, porElSistema: true) is not null)
+            session.Send(ServerMessages.LocaleMsg(1, p.Name));
+        Say(p.IsArmada ? "Bienvenido al Ejército Imperial, aquí tienes tus vestimentas. Cumple bien tu labor exterminando criminales y me encargaré de recompensarte."
+            : p.IsMilicia ? "Bienvenido a la Milicia Republicana, aquí tienes tu Armadura. Cumple bien tu labor exterminando criminales y me encargaré de recompensarte."
+            : "¡¡¡Bienvenido a las Hordas del Caos!!!, aquí tienes tus vestimentas. Cumple bien tu labor exterminando criminales y me encargaré de recompensarte.");
         // VB6 ModFacciones.bas:44/98/204: el cambio de bando se difunde al área con CharStatus (charIndex +
         // status), no re-mandando el CharacterChange entero — que además ni siquiera lleva el status.
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
         session.Send(ServerMessages.UpdateUserStats(p));
-        Say($"¡Bienvenido, {FactionTitle(p)}! Ve a combatir a nuestros enemigos.");
+        // Y MEDITANDO, EL AURA DEL BANDO NUEVO: la nueva prendida y la vieja apagada, al área.
+        if (p.Meditating && (short)ParticleToLevel(p) is var auraNueva && auraNueva != auraAntes)
+        {
+            _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, auraNueva, -1f, false));
+            _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, auraAntes, 0f, true));
+        }
+    }
+
+    /// <summary>
+    /// LAS VESTIMENTAS AL ENLISTARSE (ModFacciones.bas): la Armada da la de su clase desde el 1544 y el Caos desde el 1500 (los
+    /// mismos saltos por clase que las de la segunda jerarquía, <see cref="FactionArmorOffset"/>), con la variante de enanos y
+    /// gnomos un número más arriba; la Milicia, una sola: las Vestimentas de Miliciano de 1ª Jerarquía, 1588, y 1589 la de enanos y
+    /// gnomos. Las clases que no tienen (los oficios y el Ladrón) no reciben nada (0), igual que en el original, donde quedaban sin
+    /// caso.
+    ///
+    /// <para>El original le da a los enanos y gnomos de la Milicia el <b>1587</b>, que en la data es la "Armadura de Nigromante
+    /// Imperial de 2ª Jerarquía (Bajos)": la del bando enemigo. Es un número corrido (la serie de la Milicia es 1588-1593 y la
+    /// de los bajos va un número arriba), así que se porta la intención, el 1589.</para>
+    /// </summary>
+    internal static short ArmaduraAlEnlistarse(Player p)
+    {
+        bool bajos = p.Race is RaceGnomo or RaceEnano;
+        if (p.IsMilicia) return (short)(bajos ? 1589 : 1588);
+        // El Nigromante SÍ está acá (1564 / 1520): el `Case eClass.Bardo` repetido que lo deja sin armadura es sólo de la
+        // 2ª jerarquía (ver FactionArmorOffset); el Select de enlistarse lo lista bien.
+        int offset;
+        if (p.Class == 18) offset = 20;
+        else if (!FactionArmorOffset.TryGetValue(p.Class, out offset)) return 0;
+        return (short)((p.IsArmada ? 1544 : 1500) + offset + (bajos ? 1 : 0));
     }
 
     /// <summary>Convertidor (VB6 EntrarImperial :64 / EntrarRepublica :11, vía Acciones.bas:225): le da la
@@ -8262,6 +8303,14 @@ public sealed partial class PacketDispatcher
             if (!FactionArmorOffset.TryGetValue(p.Class, out var offset)) return;   // clase sin armadura faccionaria
             obj = (short)((p.IsArmada ? 1566 : 1522) + offset + bajos);
         }
+        DarSiNoLaTiene(session, p, obj);
+    }
+
+    /// <summary>Le da UNO de ese objeto si no lo tiene ya en la mochila (VB6 <c>TieneObjetos</c>); si no entra, cae al piso (VB6
+    /// <c>TirarItemAlPiso</c>). 0 = nada.</summary>
+    private void DarSiNoLaTiene(ClientSession session, Player p, short obj)
+    {
+        if (obj <= 0) return;
         for (int i = 1; i <= GameLimits.MaxInventorySlots; i++)                 // VB6 TieneObjetos: ya la tiene → nada
             if (!p.Inventory[i].IsEmpty && p.Inventory[i].ObjIndex == obj) return;
 
