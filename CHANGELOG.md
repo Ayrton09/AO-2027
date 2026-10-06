@@ -8,6 +8,8 @@ Lo nuevo desde el paquete del 5 de octubre.
 
 ### Chat, mapa y pantalla
 
+- **Al mirar a alguien, la vida en rojo y el nivel en celeste**, separados con un espacio: "Ves a Lobo nivel 8 64% de vida".
+
 - **Al crear el personaje se ven los atributos con los que nace**: la base de la clase, lo que suma o resta la raza y el
   total (por ejemplo, un Gnomo Mago: Fuerza 6 −5 = 1). Antes se veía sólo lo de la raza.
 

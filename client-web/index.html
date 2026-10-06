@@ -3066,9 +3066,22 @@
       [100,80,150,0,1],  [128,128,0,0,1],   [251,168,70,0,1],  [75,172,217,0,1],
     ].map(([r, g, b, n, c]) => ({ c: `rgb(${r},${g},${b})`, n, i: c })));
 
+    // `msg` puede ser un texto o una lista de partes `[texto, color]` (color null = el de la línea): así una línea lleva
+    // pedazos de otro color, como la vida y el nivel de lo que se mira (ver `CharMsgStatus`). El filtro del chat mira
+    // el texto entero.
+    const COLOR_VIDA = '#e8654f', COLOR_NIVEL = '#6fc3ec';   // al mirar a alguien: la vida en rojo, el nivel en celeste
     function log(msg, estilo) {
       const d = document.createElement('div');
-      d.textContent = msg; d._t = msg;
+      if (Array.isArray(msg)) {
+        for (const [texto, color] of msg) {
+          const s = document.createElement('span');
+          s.textContent = texto;
+          if (color) s.style.color = color;
+          d.appendChild(s);
+        }
+        msg = msg.map((x) => x[0]).join('');
+      } else d.textContent = msg;
+      d._t = msg;
       // Un string sigue siendo un color suelto (lo usan los mensajes que fabrica el cliente); un objeto es
       // una fuente del original, con su negrita y su cursiva.
       if (typeof estilo === 'string') d.style.color = estilo;
@@ -3082,6 +3095,7 @@
       while (chatEl.childElementCount > 400) chatEl.removeChild(chatEl.firstChild);   // acota memoria
       chatEl.scrollTop = chatEl.scrollHeight;
     }
+    window.__log = log;   // sonda de verificación
 
     // ---- PISTAS: explicar los rechazos que SON FIELES ------------------------------------------
     //
@@ -5048,9 +5062,12 @@
           // 255 no es un nivel: es el server escondiéndolo porque el objetivo está >5 niveles por encima.
           const nivel = f.nivel === 255 ? 'nivel desconocido' : 'nivel ' + f.nivel;
           const bando = ESTADO_NOMBRE[f.status] || '';
-          const partes = [quien, bando, nivel, f.porcVida + '% de vida'];
-          if (f.pareja) partes.push('casado con ' + f.pareja);
-          log('Ves a ' + partes.filter(Boolean).join(' — '));
+          // LA VIDA EN ROJO Y EL NIVEL EN CELESTE, separados con un espacio y no con rayas (el autor, 06/10).
+          const partes = [[quien], [bando], [nivel, COLOR_NIVEL], [f.porcVida + '% de vida', COLOR_VIDA]];
+          if (f.pareja) partes.push(['casado con ' + f.pareja]);
+          const linea = [['Ves a ']];
+          partes.filter((x) => x[0]).forEach((x, i) => { if (i) linea.push([' ']); linea.push([x[0], x[1] || null]); });
+          log(linea);
           if (f.desc) log('"' + f.desc + '"');
           break;
         }
@@ -5063,7 +5080,7 @@
           // locale por su número (`General_Locale_NPCs(numero, 0)`, Protocol.bas:9401). Acá se mostraba
           // "la criatura #500" porque el cliente todavía no tenía esa tabla.
           const ficha = npcsIdx && npcsIdx[String(f.numero)];
-          log('Ves a ' + (ficha ? ficha.n : 'la criatura #' + f.numero) + ' — ' + nivel + ' — ' + vida + extra);
+          log([['Ves a ' + (ficha ? ficha.n : 'la criatura #' + f.numero) + ' '], [nivel, COLOR_NIVEL], [' '], [vida, COLOR_VIDA], [extra]]);
           break;
         }
         case 'ConsoleMsg':
