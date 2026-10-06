@@ -757,8 +757,18 @@ public sealed partial class Bot
                 if ((EstaAcorralado(_huidas.SinMoverse, _huidas.QueNoLoSacaron) || NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                     && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado
-                    && (_huidas.SinMoverse >= HuidasParaAcorralado || LaPeleaSeGanaAca(pegado.Quien.FichaNpc, vidaAhora)))
+                    && (_huidas.SinMoverse >= HuidasParaAcorralado
+                        || LaPeleaSeGanaContraTodas(LasQueLePegan(sentidos, pegado.Quien), vidaAhora)))
                 {
+                    // RODEADO Y CON LA VIDA BAJA, PRIMERO LA POCIÓN: ver `RodeadoSeCuraPrimero`.
+                    if (RodeadoSeCuraPrimero(EstaRodeado(sentidos.Posicion, VecinasTapadas(sentidos.Posicion, sentidos.BaldosasOcupadas()),
+                                                         (x, y) => !_entorno.Datos.IsBlockedTile(sentidos.Mapa, x, y)),
+                                             sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))
+                        && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 }))
+                    {
+                        await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                        continue;
+                    }
                     // Y EL QUE SABE MAGIA LE TIRA UN HECHIZO, como en `CazarAsync`, mientras los hechizos salgan (ver `DejaDeLanzarle`).
                     // Medido: Bruma, Maga, murió acorralada en `hueco4`, `cadena2` y `alto2` devolviendo de veinte a treinta y ocho golpes
                     // de arma o de puño —a un Goblin en el 12, a Zombies y Esqueletos en el 13— con Proyectil Mágico en el libro.
@@ -5346,6 +5356,53 @@ public sealed partial class Bot
         long golpesQueRecibe = (msParaMatarla + NpcSystem.IntervaloAtaqueMs - 1) / NpcSystem.IntervaloAtaqueMs;
         return golpesQueRecibe * (ella.MinHit + ella.MaxHit) / 2 < vidaAhora;
     }
+
+    /// <summary>
+    /// ¿LA PELEA SE GANA CONTRA TODAS LAS QUE LE PEGAN? La misma cuenta que <see cref="LaPeleaSeGana"/> (DECIDIDO POR EL AUTOR, 03/10:
+    /// acorralado pelea sólo si gana), pero con TODAS las criaturas pegadas que lo están atacando y no con la más cercana sola (el
+    /// autor, 06/10). Las mata de a una, primero la que menos golpes pide, y mientras tanto le pegan todas las que siguen vivas. Sin
+    /// medida de alguna, que entre todas no lo maten de dos golpes. Medido en la ronda 46 (06/10): Gonzo, nivel 7, rodeado por cuatro
+    /// Lobos en el 195, dio "gana" dos veces contra UN Lobo, peleó y murió.
+    /// </summary>
+    public static bool LaPeleaSeGanaContraTodas(IReadOnlyList<(int? Golpes, NpcInfo Ella)> todas, int vidaAhora)
+    {
+        if (todas.Count == 0) return true;
+        if (todas.Count == 1) return LaPeleaSeGana(todas[0].Golpes, vidaAhora, todas[0].Ella);
+        if (todas.Any(t => t.Golpes is null)) return 2L * todas.Sum(t => (long)t.Ella.MaxHit) < vidaAhora;
+        if (todas.Any(t => t.Golpes == int.MaxValue)) return false;
+        var enOrden = todas.OrderBy(t => t.Golpes!.Value).ToList();
+        long recibe = 0;
+        for (int i = 0; i < enOrden.Count; i++)
+        {
+            long ms = (long)enOrden[i].Golpes!.Value * (GolpeMinMs + GolpeMaxMs) / 2;
+            long golpesQueRecibe = (ms + NpcSystem.IntervaloAtaqueMs - 1) / NpcSystem.IntervaloAtaqueMs;
+            long porGolpe = 0;
+            for (int j = i; j < enOrden.Count; j++) porGolpe += (enOrden[j].Ella.MinHit + enOrden[j].Ella.MaxHit) / 2;
+            recibe += golpesQueRecibe * porGolpe;
+            if (recibe >= vidaAhora) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Las criaturas pegadas que lo están atacando (siempre con <paramref name="pegado"/>), con lo medido de su golpe contra
+    /// cada una: para <see cref="LaPeleaSeGanaContraTodas"/>.</summary>
+    private List<(int? Golpes, NpcInfo Ella)> LasQueLePegan(SentidosDelBot sentidos, SentidosDelBot.Visible pegado)
+    {
+        var lista = new List<(int? Golpes, NpcInfo Ella)>();
+        foreach (var v in sentidos.CriaturasPegadas(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)))
+            if (_entorno.Datos.Npc(v.FichaNpc) is { } n) lista.Add((_golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp), n));
+        if (lista.Count == 0 && _entorno.Datos.Npc(pegado.FichaNpc) is { } sola)
+            lista.Add((_golpe.GolpesParaMatar(_conQuePelea.Arma, sola.Def, sola.MaxHp), sola));
+        return lista;
+    }
+
+    /// <summary>
+    /// ¿RODEADO, PRIMERO SE CURA? Si está rodeado (<see cref="EstaRodeado"/>), tiene pociones y la vida está por debajo de
+    /// <see cref="TomaPocion"/>, toma una en vez de pegar (el autor, 06/10). Rodeado no hay adónde ir, y peleando se tomaba una poción
+    /// por vuelta del acorralado, cada unos 2,4 s (30 de vida contra unos 20 por segundo de cuatro Lobos); sin pegar las toma a su
+    /// ritmo (<see cref="PocionMinMs"/>-<see cref="PocionMaxMs"/>) y vuelve a pegar arriba de esa vida.
+    /// </summary>
+    public static bool RodeadoSeCuraPrimero(bool rodeado, double salud, int pociones) => rodeado && pociones > 0 && salud < TomaPocion;
 
     /// <summary><see cref="LaPeleaSeGana"/> para este bot, con lo medido de su golpe de arma, también si sabe magia. Medido en
     /// `tardeN16` (03/10): Milo, Paladín de nivel 23 que caza con hechizos, no tenía medida (ningún golpe de arma) y, cuando la falta

@@ -48,4 +48,38 @@ public class ElBotRodeadoTests
     {
         Assert.False(Bot.EstaRodeado(Aca, Bot.VecinasTapadas(Aca, Ocupadas()), (_, _) => false));
     }
+
+    /// <summary>CONTRA UNA SOLA, LA CUENTA DE SIEMPRE; contra cuatro Lobos con 84 de vida (Gonzo en la ronda 46), no gana aunque contra
+    /// uno sí.</summary>
+    [Fact]
+    public void Contra_cuatro_Lobos_no_gana_aunque_contra_uno_si()
+    {
+        var datos = CoverAO.Server.Data.GameData.Load();
+        if (datos.Npc(501) is not { } lobo) return;
+        int? golpes = 3;
+        Assert.Equal(Bot.LaPeleaSeGana(golpes, 84, lobo), Bot.LaPeleaSeGanaContraTodas(new[] { (golpes, lobo) }, 84));
+        Assert.True(Bot.LaPeleaSeGana(golpes, 84, lobo), "la premisa: contra un Lobo gana");
+        Assert.False(Bot.LaPeleaSeGanaContraTodas(new[] { (golpes, lobo), (golpes, lobo), (golpes, lobo), (golpes, lobo) }, 84));
+    }
+
+    [Fact]
+    public void Sin_medida_cuenta_los_dos_golpes_de_todas()
+    {
+        var datos = CoverAO.Server.Data.GameData.Load();
+        if (datos.Npc(501) is not { } lobo) return;
+        int? sinMedida = null;
+        Assert.True(Bot.LaPeleaSeGanaContraTodas(new[] { (sinMedida, lobo), (sinMedida, lobo) }, 4 * lobo.MaxHit + 1));
+        Assert.False(Bot.LaPeleaSeGanaContraTodas(new[] { (sinMedida, lobo), (sinMedida, lobo) }, 4 * lobo.MaxHit));
+    }
+
+    /// <summary>RODEADO Y CON LA VIDA BAJA, PRIMERO LA POCIÓN; sin rodear, con la vida alta o sin pociones, pega.</summary>
+    [Theory]
+    [InlineData(true, 0.4, 50, true)]
+    [InlineData(false, 0.4, 50, false)]
+    [InlineData(true, 0.9, 50, false)]
+    [InlineData(true, 0.4, 0, false)]
+    public void Rodeado_con_la_vida_baja_primero_la_pocion(bool rodeado, double salud, int pociones, bool seCura)
+    {
+        Assert.Equal(seCura, Bot.RodeadoSeCuraPrimero(rodeado, salud, pociones));
+    }
 }

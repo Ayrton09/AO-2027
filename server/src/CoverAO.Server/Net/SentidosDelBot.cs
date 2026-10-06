@@ -574,6 +574,20 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Las criaturas pegadas (a un paso, en cruz) que cumplen <paramref name="sirve"/>: las que le pueden estar pegando.</summary>
+    public List<Visible> CriaturasPegadas(Func<short, bool> sirve)
+    {
+        lock (_candado)
+        {
+            var pegadas = new List<Visible>();
+            if (!_tengoPosicion) return pegadas;
+            foreach (var v in _visibles.Values)
+                if (v.EsNpc && v.CharIndex != _miCharIndex && Math.Abs(v.X - _x) + Math.Abs(v.Y - _y) <= 1 && sirve(v.FichaNpc))
+                    pegadas.Add(v);
+            return pegadas;
+        }
+    }
+
     /// <summary>La PERSONA más cercana (no criatura), sin contarse a sí mismo.</summary>
     public (Visible Quien, int Pasos)? PersonaMasCercana()
     {
