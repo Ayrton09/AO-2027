@@ -54,19 +54,25 @@ public sealed partial class Bot
 
     /// <summary>
     /// ¿PASA POR EL BANQUERO A DEPOSITAR? Pasado el novato (el novato muere en la cuna, que es segura, y compra donde no hay banco), si
-    /// le sobran por lo menos <see cref="MinimoParaDepositar"/> por encima de <paramref name="bolsillo"/>. Y si no sabe lo que tiene
-    /// guardado (<paramref name="banco"/> en -1), también: en una vida anterior pudo haber dejado plata, y sin saberlo se cree pobre.
+    /// le sobran por lo menos <see cref="MinimoParaDepositar"/> por encima de <paramref name="bolsillo"/> y lo de encima SE CAERÍA al
+    /// morir: con la regla apagada (<paramref name="tope"/> en 0) o con más que el tope encima no se cae nada, y bajarlo al bolsillo
+    /// lo expone. Medido en la ronda 42 (06/10) depositando siempre: Milo, Petra, Nadia y Aldo, que llevaban 150 a 240 mil a salvo,
+    /// quedaban en 8878 y volvían a juntar decenas de miles expuestos; el oro en riesgo al final bajó sólo un 6 %.
+    /// Y si no sabe lo que tiene guardado (<paramref name="banco"/> en -1), pasa igual a mirar: en una vida anterior pudo haber
+    /// dejado plata, y sin saberlo se cree pobre.
     /// </summary>
-    public static bool ValeDepositar(int nivel, int oro, int banco, int bolsillo) =>
-        nivel > GameLimits.NewbieMaxLevel && (banco < 0 || oro - bolsillo >= MinimoParaDepositar);
+    public static bool ValeDepositar(int nivel, int oro, int banco, int bolsillo, int tope) =>
+        nivel > GameLimits.NewbieMaxLevel
+        && (banco < 0 || (tope > 0 && oro <= tope && oro - bolsillo >= MinimoParaDepositar));
 
     /// <summary>
     /// ¿ESTA COMPRA NECESITA LO DE LA BÓVEDA? Si tiene algo guardado y lo de encima no alcanza para lo de las compras, o si va sólo
-    /// por gustos (equipo, pergaminos), que cuestan más que el bolsillo. Entonces sólo sirve un pueblo con banquero, y ahí retira
-    /// antes de ir al mostrador.
+    /// por gustos (equipo, pergaminos) y lo guardado es más que lo que le sobra encima: el gusto se elige con toda la plata, y con
+    /// la mayor parte en el banco no se paga con lo de encima. Entonces sólo sirve un pueblo con banquero, y ahí retira antes de ir
+    /// al mostrador. Con "sólo por gustos" a secas, en la ronda 42 Elmo fue al banquero a retirar 2928 con 34656 encima.
     /// </summary>
     public static bool NecesitaElBanco(int banco, int oro, int bolsillo, bool soloGustos) =>
-        banco > 0 && (oro < bolsillo || soloGustos);
+        banco > 0 && (oro < bolsillo || (soloGustos && banco > oro - bolsillo));
 
     private bool EsBanquero(short ficha) => _entorno.Datos.Npc(ficha) is { NpcType: NpcTypeBanquero };
 
@@ -131,10 +137,12 @@ public sealed partial class Bot
     /// <summary>Al terminar las compras en un pueblo con banquero: deja en la bóveda lo que no es de las compras.</summary>
     private async Task DepositarLoQueSobraAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (!ValeDepositar(sentidos.Nivel, sentidos.Oro, sentidos.Banco, Bolsillo(sentidos)) || !TieneBanquero(sentidos.Mapa)) return;
+        int tope = _entorno.Ini.OroQueSeCaeAlMorir;
+        if (!ValeDepositar(sentidos.Nivel, sentidos.Oro, sentidos.Banco, Bolsillo(sentidos), tope) || !TieneBanquero(sentidos.Mapa)) return;
         if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct)) return;
-        int sobra = sentidos.Oro - Bolsillo(sentidos);
-        if (sobra >= MinimoParaDepositar) await MoverAlBancoAsync(transporte, sentidos, sobra, ct);
+        // Ya con el saldo a la vista (si era la visita para mirarlo): la misma cuenta, ahora sabiendo el banco.
+        if (ValeDepositar(sentidos.Nivel, sentidos.Oro, Math.Max(0, sentidos.Banco), Bolsillo(sentidos), tope))
+            await MoverAlBancoAsync(transporte, sentidos, sentidos.Oro - Bolsillo(sentidos), ct);
     }
 
     /// <summary>Antes del mostrador, cuando la compra necesita lo guardado: retira todo (lo que sobre vuelve a la bóveda al

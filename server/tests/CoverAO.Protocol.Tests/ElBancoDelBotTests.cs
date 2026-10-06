@@ -42,16 +42,21 @@ public class ElBancoDelBotTests
         Assert.Equal(-1, s.Banco);
     }
 
-    /// <summary>DEPOSITA PASADO EL NOVATO, con lo que sobra del bolsillo; y sin saber lo que guardó, pasa a mirar.</summary>
+    /// <summary>DEPOSITA PASADO EL NOVATO lo que sobra del bolsillo, SÓLO si eso se caería al morir: con la regla apagada o con más
+    /// que el tope encima no se cae nada. Y sin saber lo que guardó, pasa a mirar.</summary>
     [Theory]
-    [InlineData(15, 50_000, 0, 8_000, false)]   // el novato no
-    [InlineData(16, 50_000, 0, 8_000, true)]
-    [InlineData(16, 9_999, 0, 8_000, false)]    // sobran 1999
-    [InlineData(16, 10_000, 0, 8_000, true)]    // sobran 2000
-    [InlineData(16, 100, -1, 8_000, true)]      // no sabe lo que guardó
-    public void Deposita_pasado_el_novato_lo_que_sobra(int nivel, int oro, int banco, int bolsillo, bool deposita)
+    [InlineData(15, 50_000, 0, 8_000, 100_000, false)]   // el novato no
+    [InlineData(16, 50_000, 0, 8_000, 100_000, true)]
+    [InlineData(16, 9_999, 0, 8_000, 100_000, false)]    // sobran 1999
+    [InlineData(16, 10_000, 0, 8_000, 100_000, true)]    // sobran 2000
+    [InlineData(16, 100_000, 0, 8_000, 100_000, true)]   // con el tope justo se cae todo
+    [InlineData(16, 162_370, 0, 8_878, 100_000, false)]  // Milo en la ronda 42: a salvo con más que el tope
+    [InlineData(16, 50_000, 0, 8_000, 0, false)]         // la regla apagada
+    [InlineData(16, 100, -1, 8_000, 100_000, true)]      // no sabe lo que guardó
+    [InlineData(16, 100, -1, 8_000, 0, true)]
+    public void Deposita_pasado_el_novato_lo_que_se_caeria(int nivel, int oro, int banco, int bolsillo, int tope, bool deposita)
     {
-        Assert.Equal(deposita, Bot.ValeDepositar(nivel, oro, banco, bolsillo));
+        Assert.Equal(deposita, Bot.ValeDepositar(nivel, oro, banco, bolsillo, tope));
     }
 
     /// <summary>LA COMPRA NECESITA LO GUARDADO si hay algo guardado y lo de encima no alcanza para las compras, o si es por gustos.</summary>
@@ -60,7 +65,8 @@ public class ElBancoDelBotTests
     [InlineData(-1, 100, 8_000, true, false)]      // no sabe
     [InlineData(50_000, 100, 8_000, false, true)]  // le robaron el bolsillo (murió)
     [InlineData(50_000, 9_000, 8_000, false, false)]
-    [InlineData(50_000, 9_000, 8_000, true, true)] // el equipo cuesta más que el bolsillo
+    [InlineData(50_000, 9_000, 8_000, true, true)] // el equipo se eligió con lo guardado
+    [InlineData(2_928, 34_656, 8_878, true, false)] // Elmo en la ronda 42: lo de encima paga
     public void La_compra_necesita_lo_guardado(int banco, int oro, int bolsillo, bool soloGustos, bool necesita)
     {
         Assert.Equal(necesita, Bot.NecesitaElBanco(banco, oro, bolsillo, soloGustos));
