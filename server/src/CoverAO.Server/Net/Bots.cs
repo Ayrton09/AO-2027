@@ -6092,6 +6092,9 @@ public sealed partial class Bot
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         long ahora = Environment.TickCount64;
+        // RODEADO NO RECORRE LAS SALIDAS: ver `EstaRodeado`. Y si queda un hueco, el viaje arranca sabiendo cuáles están tapadas.
+        var tapadas = VecinasTapadas(antes, sentidos.BaldosasOcupadas());
+        if (EstaRodeado(antes, tapadas, (x, y) => !_entorno.Datos.IsBlockedTile(aca, x, y))) return false;
         var vecinos = VecinosDelMenosPeligroso(_entorno.Datos, aca, m => pisable(m) && !HayGuardiaQueLoAtaca(m),
             m => CuantasLoPuedenMatar(_entorno.Datos, _entorno.Ini, _miBando, m, vida, nivel, conPociones, curaVeneno)).ToList();
         // NI A UN BOLSILLO, salvo que ninguna otra salida lo mueva: ver `LaPuertaDeLaHuidaDaAUnBolsillo`.
@@ -6102,7 +6105,8 @@ public sealed partial class Bot
             if (!SePruebaEsaSalida(_salidasQueNoAndan, aca, vecino, ahora)) continue;
             if (!aceptaBolsillos && LaPuertaDeLaHuidaDaAUnBolsillo(_entorno.Mapas, _entorno.Datos, aca, antes, vecino, pisable)) continue;
             if (_entorno.Mapas.MapaMasCercano(aca, antes, m => m == vecino, pisable) is not { } afuera) continue;
-            await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true);
+            await IrHastaAsync(transporte, sentidos, afuera.Mapa, afuera.X, afuera.Y, cerrada, ct, ToleranciaDelCoto, escapando: true,
+                               empiezaTrabado: tapadas);
             if (sentidos.Mapa == aca) _salidasQueNoAndan[(aca, vecino)] = Environment.TickCount64 + SalidaQueNoAndaMs;
             // SI NI SE MOVIÓ, LA SALIDA QUE SIGUE, YA: la puerta de ese vecino le queda del lado de lo que lo persigue (el viaje no
             // se arrima al peligro, ver `LoArrimaAlPeligro`), y la siguiente puede estar a un paso. Medido en `early8` (30/09):
@@ -6113,6 +6117,36 @@ public sealed partial class Bot
             return sentidos.Mapa != aca || sentidos.Posicion != antes;
         }
         return false;
+    }
+
+    /// <summary>Las cuatro baldosas pegadas (el bot camina en cruz) que tiene ocupadas alguien que ve.</summary>
+    public static IReadOnlyCollection<(byte X, byte Y)> VecinasTapadas((byte X, byte Y) aca, IReadOnlySet<(byte X, byte Y)> ocupadas)
+    {
+        var tapadas = new List<(byte X, byte Y)>(4);
+        foreach (var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) })
+        {
+            var b = ((byte)(aca.X + dx), (byte)(aca.Y + dy));
+            if (ocupadas.Contains(b)) tapadas.Add(b);
+        }
+        return tapadas;
+    }
+
+    /// <summary>
+    /// ¿ESTÁ RODEADO? Cada baldosa pegada es pared o la tiene ocupada alguien (<paramref name="tapadas"/>), y alguna es alguien. Entonces
+    /// ninguna salida lo saca: `SalirDelMapaAsync` probaba las cuatro una tras otra y en cada una chocaba con cada criatura pegada antes
+    /// de rendirse, de 2 a 14 s quieto recibiendo, y recién después peleaba. Medido (investigación del 06/10, ronda 46): Bruma y Gonzo,
+    /// nivel 7-8, rodeados por tres o cuatro Lobos en el 195, murieron así; en todas las corridas guardadas, 110 episodios con el código
+    /// de hoy y 5 muertes. Rodeado, la vuelta pasa en el acto a la rama del acorralado.
+    /// </summary>
+    public static bool EstaRodeado((byte X, byte Y) aca, IReadOnlyCollection<(byte X, byte Y)> tapadas, Func<int, int, bool> libre)
+    {
+        if (tapadas.Count == 0) return false;
+        foreach (var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) })
+        {
+            int x = aca.X + dx, y = aca.Y + dy;
+            if (libre(x, y) && !tapadas.Contains(((byte)x, (byte)y))) return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -6219,13 +6253,13 @@ public sealed partial class Bot
                                           Task cerrada, CancellationToken ct, int tolerancia = 1,
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
                                           int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false,
-                                          bool porCualquierCamino = false)
+                                          bool porCualquierCamino = false, IReadOnlyCollection<(byte X, byte Y)>? empiezaTrabado = null)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
         // mismo hasta gastar todos los tramos. Medido: tres bots de la cuna sin llegar nunca a la comida, uno
         // doce veces contra la misma baldosa y dos atascados uno detrás del otro en el mismo pasillo.
-        var trabas = new HashSet<(byte X, byte Y)>();
+        var trabas = empiezaTrabado is null ? new HashSet<(byte X, byte Y)>() : new HashSet<(byte X, byte Y)>(empiezaTrabado);
         // UN TRAMO POR MAPA DE MÁS en un viaje largo (ver `PuebloConMercader`): cada puerta que se cruza gasta uno. Y EL RESCATE
         // (`porCualquierCamino`), OTRO POR MAPA: cruza peligro, y cada rodeo de lo que lo mata gasta uno. Medido en `tardeN10` (03/10):
         // Aldo se quedó sin tramos (16 de 15, ocho peligros) en el Bosque de Suramei, a una puerta del 544.
