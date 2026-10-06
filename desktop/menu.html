@@ -85,6 +85,7 @@
     .boton:hover { background: var(--oro-claro); }
     .error { margin-top: 10px; color: #e88a6e; font-size: 13px; min-height: 1em; }
     .ayuda { margin-top: 4px; color: var(--apagado); font-size: 12px; }
+    .creditos p { margin: 0 0 10px; line-height: 1.5; }
 
     /* Opciones: las mismas del juego (Opciones adentro), con pestañas. */
     .pestanas { display: flex; gap: 4px; border-bottom: 1px solid #3a2a16; margin-bottom: 4px; flex: none; }
@@ -138,6 +139,7 @@
       <div class="menu">
         <button type="button" class="principal" id="b-jugar">Jugar</button>
         <button type="button" id="b-opciones">Opciones</button>
+        <button type="button" id="b-creditos">Créditos</button>
         <button type="button" id="b-salir">Salir</button>
       </div>
     </section>
@@ -222,6 +224,18 @@
         <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
       </div>
     </section>
+
+    <!-- CRÉDITOS (el autor, 06/10): el agradecimiento a Francotirador, el mismo texto que el Menú → Créditos del juego. -->
+    <section class="vista" id="v-creditos">
+      <div class="panel creditos">
+        <h2><span>Créditos</span></h2>
+        <h3>Agradecimiento especial</h3>
+        <p><b>Francotirador</b>, que tuvo la idea de este proyecto y lo banca para que siga adelante. ¡Gracias!</p>
+        <p class="ayuda">CoverAO es un port de CoverAO-2021, una variante de Argentum Online. Lo que viene de cada lado y a quiénes
+          se les debe está en CREDITOS.md.</p>
+        <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
+      </div>
+    </section>
   </div>
 
   <div id="top" role="dialog" aria-label="Tabla de posiciones">
@@ -254,6 +268,7 @@
     for (const b of document.querySelectorAll('[data-volver]')) b.addEventListener('click', () => mostrar('principal'));
     $('b-jugar').addEventListener('click', () => mostrar('jugar'));
     $('b-opciones').addEventListener('click', () => mostrar('opciones'));
+    $('b-creditos').addEventListener('click', () => mostrar('creditos'));
     $('b-salir').addEventListener('click', () => window.escritorio.salir());
     document.addEventListener('keydown', (e) => {
       if (capturando) return;

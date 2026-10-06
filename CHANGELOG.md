@@ -7,6 +7,11 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 Lo nuevo desde el paquete del 5 de octubre.
 
+### Créditos
+
+- **Gracias, Francotirador**: un botón Créditos en el menú del juego de escritorio y en Menú → Créditos, con el
+  agradecimiento a Francotirador, que tuvo la idea de este proyecto y lo banca para que siga adelante.
+
 ### Combate y magia
 
 - **La vida que se gana al subir de nivel, como en el original**: el Gladiador perdía 1 punto por nivel con

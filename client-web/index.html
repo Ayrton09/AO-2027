@@ -788,6 +788,7 @@
           <div class="menubtn" data-menu="skills">Habilidades</div>
           <div class="menubtn" data-menu="varios">Acciones</div>
           <div class="menubtn" data-menu="novedades">Novedades</div>
+          <div class="menubtn" data-menu="creditos">Créditos</div>
           <div class="menubtn" data-menu="online">En línea</div>
           <div class="menubtn" data-menu="uptime">Uptime</div>
           <div class="menubtn" data-menu="licencia">Licencia</div>
@@ -5370,6 +5371,13 @@
       else if (m === 'novedades') showModal('📰 Novedades', novedades.length
         ? novedades.map((l) => { const t = /^== (.+) ==$/.exec(l); return t ? `<b>${esc(t[1])}</b>` : esc(l); })
         : ['El servidor no publicó novedades.'], true, 'novedades');
+      // LOS CRÉDITOS (el autor, 06/10): el mismo texto que el botón Créditos del menú del juego de escritorio.
+      else if (m === 'creditos') showModal('✦ Créditos', [
+        '<b>Agradecimiento especial</b>',
+        '<b>Francotirador</b>, que tuvo la idea de este proyecto y lo banca para que siga adelante. ¡Gracias!',
+        '',
+        'CoverAO es un port de CoverAO-2021, una variante de Argentum Online. Lo que viene de cada lado y a quiénes se les debe está en CREDITOS.md.',
+      ], true, 'creditos');
       // LA LICENCIA, VISIBLE PARA EL JUGADOR. No es un adorno legal: AO2026 es AGPL-3.0 y su cláusula de red
       // obliga a ofrecerle el código a quien interactúa con el servidor POR LA RED, o sea a cada persona que
       // entra a jugar. Un host que sólo levanta el ejecutable no tiene forma de cumplirlo salvo que el juego
