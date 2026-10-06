@@ -3,7 +3,7 @@
 /// <summary>
 /// Level progression, ported faithfully from CheckUserLevel (Modulo_UsUaRiOs.bas:357) — the
 /// DETERMINISTIC part: consuming Exp, advancing ELV, and setting ELU from the Niveles.dat curve
-/// (levelELU). The HP/mana/stamina gains in the original are RNG-based and are not modeled here.
+/// (levelELU). Las ganancias de vida, maná, energía y golpe van en <see cref="ApplyLevelGains"/>.
 ///
 /// FIDELITY NOTE: the source does `.Stats.ELU = levelELU(.Stats.ELV)` BEFORE `.Stats.ELV = .Stats.ELV + 1`,
 /// so ELU lags the curve by one step (both L1->L2 and L2->L3 cost Nivel1). This port reproduces that
@@ -128,6 +128,31 @@ public sealed class Leveling
     }
 
     /// <summary>
+    /// La vida que gana un nivel (VB6 CheckUserLevel, Modulo_UsUaRiOs.bas:398-440), con <paramref name="aux"/> la tirada
+    /// de <c>RandomNumber(0, 100)</c>. Dos cosas del original que acá no estaban:
+    /// <list type="bullet">
+    /// <item><c>Dim AumentoHP As Integer</c>: el VB6 REDONDEA al guardar (al par en el medio) y el cast de C# truncaba. Sólo
+    /// se nota con un MODVIDA que no es entero ni medio: el Gladiador (9.9) perdía 1 de vida por nivel con Constitución
+    /// impar (12/11/10/9/8 → 11/10/9/8/7).</item>
+    /// <item>En el promedio entero el primer tramo se arma con <c>DistribucionSemienteraVida(1)</c> (:424), no con la entera:
+    /// con S1=25 y E=20 los cortes quedan 25/45/65/85, así que el +2 sale un poco más y el −2 un poco menos.</item>
+    /// </list>
+    /// Los tramos son los de Balance.dat §DISTRIBUCION (S = 25×4, E = 20×5).
+    /// </summary>
+    public static int AumentoDeVida(double modVida, int constitucion, int aux)
+    {
+        const int S1 = 25, S = 25, E = 20;
+        double promedio = modVida - (21 - constitucion) * 0.5;
+        double aumento;
+        if (Math.Abs(promedio - Math.Floor(promedio) - 0.5) < 1e-9)   // promedio semientero → 4 tramos
+            aumento = aux <= S1 ? promedio + 1.5 : aux <= S1 + S ? promedio + 0.5 : aux <= S1 + 2 * S ? promedio - 0.5 : promedio - 1.5;
+        else                                                          // promedio entero → 5 tramos, el primero de la semientera
+            aumento = aux <= S1 ? promedio + 2 : aux <= S1 + E ? promedio + 1 : aux <= S1 + 2 * E ? promedio
+                    : aux <= S1 + 3 * E ? promedio - 1 : promedio - 2;
+        return (int)Matematicas.AEntero(aumento);
+    }
+
+    /// <summary>
     /// Ganancias de un nivel (VB6 CheckUserLevel, Modulo_UsUaRiOs.bas:397-560). Antes subir de nivel era
     /// puramente cosmético: un personaje de nivel 50 seguía con los 100 HP del nivel 1.
     ///
@@ -143,14 +168,8 @@ public sealed class Leveling
         double modVida = _lifeMod.TryGetValue(p.Class, out var mv) ? mv : 0;
         if (modVida > 0)
         {
-            double promedio = modVida - (21 - p.Attributes[GameLimits.AttrConstitucion]) * 0.5;
-            int aux = _rng.Next(0, 101);
-            double aumentoHp;
-            if (Math.Abs(promedio - Math.Floor(promedio) - 0.5) < 1e-9)   // promedio semientero → 4 tramos de 25
-                aumentoHp = aux <= 25 ? promedio + 1.5 : aux <= 50 ? promedio + 0.5 : aux <= 75 ? promedio - 0.5 : promedio - 1.5;
-            else                                                          // promedio entero → 5 tramos de 20
-                aumentoHp = aux <= 20 ? promedio + 2 : aux <= 40 ? promedio + 1 : aux <= 60 ? promedio : aux <= 80 ? promedio - 1 : promedio - 2;
-            if (aumentoHp > 0) { ganadoHp = (int)aumentoHp; p.MaxHp = Math.Min(MaxHpCap, p.MaxHp + ganadoHp); }
+            int aumentoHp = AumentoDeVida(modVida, p.Attributes[GameLimits.AttrConstitucion], _rng.Next(0, 101));
+            if (aumentoHp > 0) { ganadoHp = aumentoHp; p.MaxHp = Math.Min(MaxHpCap, p.MaxHp + ganadoHp); }
         }
 
         int ganadoSta = StaminaGain(p.Class);

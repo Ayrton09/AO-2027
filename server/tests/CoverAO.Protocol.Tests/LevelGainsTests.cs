@@ -166,6 +166,40 @@ public class LevelGainsTests
         Assert.Equal(1, p.Stamina);
     }
 
+    /// <summary>REGRESIÓN: el VB6 guarda la vida en un Integer, que REDONDEA; se truncaba. Con el MODVIDA 9.9 del Gladiador y
+    /// Constitución 21 el promedio es 9.9 y los cinco tramos dan 11.9/10.9/9.9/8.9/7.9: el original suma 12..8, no 11..7.</summary>
+    [Theory]
+    [InlineData(0, 12)]
+    [InlineData(30, 11)]
+    [InlineData(50, 10)]
+    [InlineData(70, 9)]
+    [InlineData(100, 8)]
+    public void Gladiator_life_rounds_like_the_vb6_integer(int aux, int esperado) =>
+        Assert.Equal(esperado, Leveling.AumentoDeVida(9.9, 21, aux));
+
+    /// <summary>REGRESIÓN: en el promedio entero el primer tramo del original es <c>DistribucionSemienteraVida(1)</c> = 25, no
+    /// 20 (Modulo_UsUaRiOs.bas:424). Guerrero (10) con Constitución 21: promedio 10, cortes 25/45/65/85.</summary>
+    [Theory]
+    [InlineData(25, 12)]
+    [InlineData(26, 11)]
+    [InlineData(45, 11)]
+    [InlineData(46, 10)]
+    [InlineData(65, 10)]
+    [InlineData(66, 9)]
+    [InlineData(85, 9)]
+    [InlineData(86, 8)]
+    public void Whole_average_uses_the_first_cut_of_the_half_table(int aux, int esperado) =>
+        Assert.Equal(esperado, Leveling.AumentoDeVida(10, 21, aux));
+
+    /// <summary>El promedio semientero no cambia: Guerrero con Constitución 22 da 10.5, cuatro tramos de 25.</summary>
+    [Theory]
+    [InlineData(25, 12)]
+    [InlineData(50, 11)]
+    [InlineData(75, 10)]
+    [InlineData(76, 9)]
+    public void Half_average_keeps_four_cuts_of_25(int aux, int esperado) =>
+        Assert.Equal(esperado, Leveling.AumentoDeVida(10, 22, aux));
+
     [Fact]
     public void Without_lifemod_data_progression_still_works()
     {

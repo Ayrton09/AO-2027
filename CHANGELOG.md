@@ -42,6 +42,9 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 ### Combate y magia
 
+- **La vida que se gana al subir de nivel, como en el original**: el Gladiador perdía 1 punto por nivel con
+  Constitución impar, y en las demás clases la tirada alta salía un poco menos de lo que debía.
+
 - **Matar a otro jugador avisa como en el original**: a los dos, con la experiencia que ganaste. Si le llevás
   más de diez niveles, no hay aviso ni experiencia.
 
