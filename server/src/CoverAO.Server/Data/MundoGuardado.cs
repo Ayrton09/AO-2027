@@ -81,3 +81,9 @@ public readonly record struct ObjetoEnElSuelo(WorldPos Posicion, short Objeto, s
 
 /// <summary>Una llave de casa ya vendida (<see cref="World.LlavesVendidas"/>): la ficha del mercader, su ranura y la llave.</summary>
 public readonly record struct LlaveVendida(int Mercader, int Ranura, short Objeto);
+
+/// <summary>El Centro de Subastas tal como se guarda: las abiertas y lo que le debe a cada personaje.</summary>
+public sealed record SubastasGuardadas(IReadOnlyList<Subasta> Abiertas, IReadOnlyList<EntregaDeSubasta> Pendientes)
+{
+    public static readonly SubastasGuardadas Vacio = new(Array.Empty<Subasta>(), Array.Empty<EntregaDeSubasta>());
+}

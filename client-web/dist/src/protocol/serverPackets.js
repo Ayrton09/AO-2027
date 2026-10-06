@@ -111,6 +111,8 @@ export var ServerPacketId;
     ServerPacketId[ServerPacketId["FamiliarInfo"] = 107] = "FamiliarInfo";
     // LA VIDA DE UN JEFE. AGREGADO NUESTRO, el segundo después de FamiliarInfo: alimenta la barra de arriba de la pantalla.
     ServerPacketId[ServerPacketId["VidaDelJefe"] = 108] = "VidaDelJefe";
+    // EL CENTRO DE SUBASTAS. AGREGADO NUESTRO (pedido del tester, 06/10): la lista entera, que abre la ventana o la refresca.
+    ServerPacketId[ServerPacketId["SubastasLista"] = 109] = "SubastasLista";
     // El cuadro de dialogo del server. Es EL paquete de los rechazos de login (personaje ya conectado, otra
     // sesion de la misma cuenta): sin decodificarlo, el cliente quedaba en "logueando..." para siempre y ademas
     // se le desincronizaba el stream, porque no sabia cuantos bytes comerse.
@@ -365,6 +367,19 @@ function readOne(r, id) {
         // La ficha del familiar. `estado` trae los dos bits juntos: 1 = esta puesto en el mundo, 2 = muerto.
         // La vida va en Long: la de un jefe pasa del Integer (el Rey Dragón tiene 900.000).
         case ServerPacketId.VidaDelJefe: return { charIndex: r.readInteger(), vida: r.readLong(), vidaMaxima: r.readLong() };
+        // La lista del Centro de Subastas. `comprador` vacío = nadie ofertó; `segundos` = lo que le queda.
+        case ServerPacketId.SubastasLista: {
+            const abrir = r.readByte() !== 0;
+            const n = r.readInteger();
+            const subastas = [];
+            for (let i = 0; i < n; i++) {
+                subastas.push({
+                    id: r.readLong(), objIndex: r.readInteger(), cantidad: r.readInteger(), precioActual: r.readLong(),
+                    precioFinal: r.readLong(), vendedor: r.readAsciiString(), segundos: r.readLong(), comprador: r.readAsciiString(),
+                });
+            }
+            return { abrir, subastas };
+        }
         case ServerPacketId.FamiliarInfo: {
             const tipo = r.readByte(), nombre = r.readAsciiString(), nivel = r.readByte();
             const exp = r.readLong(), elu = r.readLong();

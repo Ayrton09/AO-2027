@@ -99,6 +99,8 @@ public class LaBaseFueraDelLoopTests : IDisposable
         public void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo) => real.GuardarSuelo(suelo);
         public IReadOnlyList<LlaveVendida> LeerLlavesVendidas() => real.LeerLlavesVendidas();
         public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => real.GuardarLlavesVendidas(llaves);
+        public SubastasGuardadas LeerSubastas() => real.LeerSubastas();
+        public void GuardarSubastas(SubastasGuardadas subastas) => real.GuardarSubastas(subastas);
         public int LeerRecord() => real.LeerRecord();
         public void GuardarRecord(int record) => real.GuardarRecord(record);
         public IReadOnlyList<string> LeerIpsBaneadas() => real.LeerIpsBaneadas();

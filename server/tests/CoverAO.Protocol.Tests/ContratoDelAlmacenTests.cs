@@ -382,6 +382,29 @@ public abstract class ContratoDelAlmacen : IDisposable
     }
 
     [Fact]
+    public void Las_subastas_se_leen_igual_y_se_reemplazan()
+    {
+        Assert.Empty(Almacen.LeerSubastas().Abiertas);
+        Assert.Empty(Almacen.LeerSubastas().Pendientes);
+
+        var abiertas = new[]
+        {
+            new Subasta(3, "Aldo", 38, 30, 4_500_000, 5_000_000, 0, null, 1_800_000_000),
+            new Subasta(7, "Bruma", 2, 1, 100, 0, 250, "Ciro", 1_800_003_600),
+        };
+        var pendientes = new[] { new EntregaDeSubasta("Ciro", 0, 0, 90), new EntregaDeSubasta("Aldo", 474, 1, 0) };
+        Almacen.GuardarSubastas(new SubastasGuardadas(abiertas, pendientes));
+
+        var leidas = Almacen.LeerSubastas();
+        Assert.Equal(abiertas, leidas.Abiertas.OrderBy(s => s.Id));
+        Assert.Equal(pendientes, leidas.Pendientes);   // en el orden en que se debieron
+
+        Almacen.GuardarSubastas(new SubastasGuardadas(new[] { abiertas[1] }, Array.Empty<EntregaDeSubasta>()));
+        Assert.Equal(new[] { abiertas[1] }, Almacen.LeerSubastas().Abiertas);
+        Assert.Empty(Almacen.LeerSubastas().Pendientes);
+    }
+
+    [Fact]
     public void Las_ips_baneadas_se_leen_igual_y_se_reemplazan()
     {
         Assert.Empty(Almacen.LeerIpsBaneadas());

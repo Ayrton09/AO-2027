@@ -465,6 +465,11 @@ public sealed partial class PacketDispatcher
             case ClientPacketId.CreateNewAccount: HandleCreateNewAccount(session, reader); break;
             case ClientPacketId.LoginNewChar: HandleLoginNewChar(session, reader); break;
             case ClientPacketId.ElegirFamiliar: HandleElegirFamiliar(session, reader); break;
+            case ClientPacketId.SubastasPedir: HandleSubastasPedir(session); break;
+            case ClientPacketId.SubastaPublicar: HandleSubastaPublicar(session, reader); break;
+            case ClientPacketId.SubastaOfertar: HandleSubastaOfertar(session, reader); break;
+            case ClientPacketId.SubastaComprar: HandleSubastaComprar(session, reader); break;
+            case ClientPacketId.SubastaCancelar: HandleSubastaCancelar(session, reader); break;
             case ClientPacketId.Walk: HandleWalk(session, reader); break;
             case ClientPacketId.ChangeHeading: HandleChangeHeading(session, reader); break;
             case ClientPacketId.attack: HandleAttack(session); break;
@@ -1716,6 +1721,8 @@ public sealed partial class PacketDispatcher
         // de "tenés carta" (TCP.bas:1172, `If .flags.RecibioCorreo > 0 Then WriteMensajeSigno 1`). Las cartas
         // se leen y los adjuntos se retiran en el buzón, con doble clic sobre el objeto de correo.
         if (_world.PeekMail(player.Name).Count > 0) session.Send(ServerMessages.MensajeSigno(true));
+        // Lo que el Centro de Subastas le dejó mientras no estaba, a la bóveda.
+        EntregarLoDeLasSubastas(player);
         // Y avisarle a los amigos que llegó (VB6 ConnectUser → ObtenerIndexAmigos(_, False)). Va al final,
         // con el jugador ya adentro del mundo: el aviso viaja al socket del OTRO, así que no toca el orden
         // de paquetes de este login. Sólo el 240 de la despedida estaba portado — la llegada era muda.
@@ -8879,7 +8886,8 @@ public sealed partial class PacketDispatcher
     public void VolcarPersistenciaDiferida(bool forzar = false)
     {
         bool sueloSucio = _ini.PersistirSuelo && _world.SueloCambios != _sueloGuardado;
-        if (!_clanesSucios && _casillasSucias.Count == 0 && !sueloSucio && !_llavesSucias && _world.RecordUsuarios == _recordGuardado) return;
+        if (!_clanesSucios && _casillasSucias.Count == 0 && !sueloSucio && !_llavesSucias && !SubastasSucias
+            && _world.RecordUsuarios == _recordGuardado) return;
         long ahora = Environment.TickCount64;
         if (!forzar && ahora - _ultimaPersistenciaMs < IntervaloPersistenciaMs) return;
         _ultimaPersistenciaMs = ahora;
@@ -8907,6 +8915,7 @@ public sealed partial class PacketDispatcher
             try { _db.SaveRecordUsuarios(_world.RecordUsuarios); _recordGuardado = _world.RecordUsuarios; }
             catch (Exception ex) { Console.Error.WriteLine($"[persistencia] record: {ex.Message}"); }
         }
+        if (SubastasSucias) GuardarLasSubastas();
         if (_llavesSucias)
         {
             try { _db.SaveLlavesVendidas(_world.LlavesVendidas); _llavesSucias = false; }
@@ -9727,6 +9736,8 @@ public sealed partial class PacketDispatcher
             // y nada más. Acá iba además un ConsoleMsg ("estas son las criaturas que puedo entrenar") que el VB6
             // no emite — el mismo patrón de mensaje espurio que el barrido del oráculo cerró 16 veces.
             if (npc.TrainerCreatures is not null) { session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
+            // El Subastador: el Centro de Subastas (agregado nuestro, ver PacketDispatcher.Subastas).
+            if (npc.IsSubastador) { AbrirSubastas(session); return; }
             // DESVIACIÓN DELIBERADA DEL SLICE (decidida, no olvidada). El original CALLA acá: su `Accion` rutea
             // por NPCtype y no tiene rama `Else`, así que un NPC sin rol no contesta nada al doble clic. Se
             // mantiene el diálogo porque sin él las criaturas quedan mudas.

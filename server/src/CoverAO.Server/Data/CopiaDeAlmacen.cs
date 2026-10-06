@@ -132,6 +132,7 @@ public static class CopiaDeAlmacen
         informe.Cartas = correo.Values.Sum(c => c.Count);
         destino.GuardarSuelo(origen.LeerSuelo());
         destino.GuardarLlavesVendidas(origen.LeerLlavesVendidas());
+        destino.GuardarSubastas(origen.LeerSubastas());
         destino.GuardarRecord(origen.LeerRecord());
         var ips = origen.LeerIpsBaneadas().Concat(ipsAparte ?? Array.Empty<string>())
             .Select(i => i.Trim()).Where(i => i.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();

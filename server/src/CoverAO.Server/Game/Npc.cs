@@ -77,6 +77,9 @@ public sealed class Npc
     /// <summary>True for banker NPCs (open the vault).</summary>
     public bool IsBanker { get; set; }
 
+    /// <summary>El Subastador (eNPCType.Subastadores = 16): el doble clic abre el Centro de Subastas.</summary>
+    public bool IsSubastador { get; set; }
+
     /// <summary>True for a Revividor (sacerdote): al hacerle doble-clic, revive al jugador muerto cercano
     /// (VB6 eNPCType.Revividor).</summary>
     public bool IsReviver { get; set; }

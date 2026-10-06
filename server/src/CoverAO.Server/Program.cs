@@ -263,6 +263,11 @@ if (fixtureMode)
 // LAS LLAVES YA VENDIDAS, antes de poblar: los mercaderes de Propiedades cargan su mostrador con esas ranuras en
 // cero, como el original lee su NPCs.dat ya reescrito (ver World.LlavesVendidas).
 foreach (var (ficha, ranuras) in db.LoadLlavesVendidas()) world.LlavesVendidas[ficha] = ranuras;
+// El Centro de Subastas, con lo que quedó abierto y lo que falta entregar.
+{
+    var subastas = db.LoadSubastas();
+    world.Subastas.Cargar(subastas.Abiertas, subastas.Pendientes);
+}
 
 // El mundo real: la población y los objetos que cada mapa trae en su .csm (ver WorldPopulator, que es donde
 // vive la lógica — acá adentro no se podía testear y por eso se comió el truncamiento del nº de mapa a byte).
@@ -390,6 +395,8 @@ loop.OnTickHandler = tick =>
     // Clanes y correo: se escriben acá, agrupados, y no una vez por acción de clan (ver
     // PacketDispatcher.VolcarPersistenciaDiferida). Es barato: si no hay nada sucio, sale en el primer if.
     dispatcher?.VolcarPersistenciaDiferida();
+    // Las subastas vencidas y lo que el Centro de Subastas tiene para entregar a los conectados.
+    dispatcher?.SubastasAlDia();
     // Las fogatas que cumplieron su plazo (regla de la casa `MinutosDeFogata`; apagada, no hace nada).
     dispatcher?.ApagarFogatasVencidas(tick);
     // Autosave periódico (config del panel, "MinutosGuardarUsuarios" del VB6). Corre aunque esté pausado.

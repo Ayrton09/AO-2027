@@ -124,4 +124,8 @@ public enum ServerPacketId : byte
     /// jefe está a la vista (pedido del tester, 2026-09-27). Lo manda <c>VidaDeLosJefes</c>, y sólo si el Server.ini tiene
     /// <c>VidaMinimaDeJefe</c> mayor que 0.</summary>
     VidaDelJefe = 108,
+
+    /// <summary>EL CENTRO DE SUBASTAS. <b>No existe en el original</b> (ver <c>Game/Subastas.cs</c>): la lista entera, que
+    /// abre la ventana o la refresca si ya está abierta. Layout en <c>ServerMessages.SubastasLista</c>.</summary>
+    SubastasLista = 109,
 }

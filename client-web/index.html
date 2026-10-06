@@ -697,6 +697,29 @@
     @media (max-width:720px) { .shop2 { grid-template-columns:1fr; } }
     /* La caja de CANTIDAD: una sola por ventana y vale para las dos listas, como el original. */
     .cantbox { width:5em; background:#1a1408; color:#e8d9a0; border:1px solid #6b5a2a; border-radius:3px; padding:2px 4px; font:inherit; }
+    /* EL CENTRO DE SUBASTAS: la lista con la caja de búsqueda arriba y la oferta abajo, como el original. */
+    .card:has(.subtabla), .card:has(.nsub) { width:min(940px,94vw); }
+    .subtop { display:flex; align-items:center; gap:8px; padding:10px 12px; flex-wrap:wrap; }
+    .subtop .shopcell { width:64px; padding:4px; } .subtop .shopcell .sn, .subtop .shopcell .sp2 { display:none; }
+    .subvacio { width:64px; height:64px; border:1px solid var(--gold-deep); border-radius:5px; background:#0c0804; }
+    .subbus { display:flex; flex-direction:column; gap:2px; flex:1; min-width:10em; }
+    .subbus input { background:#1a1408; color:#e8d9a0; border:1px solid #6b5a2a; border-radius:3px; padding:3px 6px; font:inherit; }
+    .subtabla { max-height:52vh; overflow:auto; margin:0 12px; border:1px solid var(--gold-deep); }
+    .subtabla table { width:100%; border-collapse:collapse; font-size:calc(var(--u)*0.8); }
+    .subtabla th { position:sticky; top:0; background:#21170b; color:var(--gold); text-align:left; padding:4px 6px; font-weight:normal; }
+    .subtabla td { padding:3px 6px; border-top:1px solid #2a1f10; white-space:nowrap; }
+    .subtabla tr[data-subasta] { cursor:pointer; } .subtabla tr[data-subasta]:hover { background:#20170c; }
+    .subtabla tr.on { background:#3a2a10; }
+    .subpie { display:flex; align-items:center; gap:8px; padding:10px 12px; flex-wrap:wrap; }
+    .subpie label { margin-left:auto; display:flex; align-items:center; gap:4px; }
+    .sbtn.off { opacity:.4; cursor:default; }
+    .nsub { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:0 12px 12px; }
+    .nscol { display:flex; flex-direction:column; gap:8px; }
+    .nscol label { display:flex; flex-direction:column; gap:2px; } .nscol label .cantbox { width:auto; }
+    .nslista { max-height:46vh; overflow:auto; border:1px solid var(--gold-deep); background:#0c0804; }
+    .nsitem { padding:3px 8px; cursor:pointer; } .nsitem:hover { background:#20170c; } .nsitem.on { background:#3a2a10; }
+    .nsdep { font-size:calc(var(--u)*1.0); color:var(--gold-hi); }
+    @media (max-width:720px) { .nsub { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -1014,7 +1037,7 @@
     // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
     // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
     import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=34';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=35';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
@@ -1057,6 +1080,8 @@
       RequestPositionUpdate: 5, EquiparSkin: 30, Ping: 91, AbrirForms: 112, DesconectarCuenta: 113,
       BorrarPersonaje: 114,   // NO existe en el original: el 114 es nuestro (ver ClientPacketId.cs)
       ElegirFamiliar: 115,    // tampoco existe en el original: el subsistema de familiares es un agregado
+      // El Centro de Subastas: agregado nuestro (pedido del tester, 06/10). Ver ClientPacketId.cs.
+      SubastasPedir: 116, SubastaPublicar: 117, SubastaOfertar: 118, SubastaComprar: 119, SubastaCancelar: 120,
       // El servidor lo atiende entero (difunde la particula al area del objetivo) y el cliente no tenia
       // como pedirlo. Va como /particula, fuera de la tabla de GM porque es paquete propio, no subcomando.
       ParticulaUsuario: 100 };
@@ -3693,6 +3718,121 @@
         + `<div class="frow" style="padding:0 12px 12px"><span class="buy" data-boveda="1">ver bóveda</span></div>`;
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal;
     }
+    // EL CENTRO DE SUBASTAS (pedido del tester, 06/10; agregado nuestro, ver server/.../Game/Subastas.cs). Lo abre el doble clic al
+    // Subastador con `SubastasLista`. Dos vistas en el mismo modal, como las dos ventanas del original: la lista ('subastas') y
+    // "Nueva subasta" ('nuevasubasta'), que elige de la mochila. El server valida todo; acá sólo se arma el pedido.
+    let subastas = [], subastasRecibidas = 0, subastaSel = null, subastaFiltro = '', subastasMias = false;
+    let nuevaSub = { slot: 0, cant: 1, ini: 1, fin: 0, horas: 3 };
+    const SUB_HORAS = [3, 6, 12, 24, 36];
+    const subDeposito = (horas, ini, fin) => 10 * horas + Math.floor(Math.max(ini, fin) / 100);
+    const miNombre = () => (((chars.get(myCharIndex) || {}).name) || '').split(' <')[0].trim().toLowerCase();
+    const subRestante = (s) => {
+      const seg = Math.max(0, s.segundos - Math.floor((Date.now() - subastasRecibidas) / 1000));
+      const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : 'menos de 1m';
+    };
+    const subNum = (sel, def) => { const i = modalCard.querySelector(sel); const n = i ? parseInt(i.value, 10) : NaN; return Number.isFinite(n) ? n : def; };
+    function renderSubastas() {
+      if (modalKind === 'subastas') { const q = modalCard.querySelector('.sbq'); if (q) subastaFiltro = q.value; }
+      modalKind = 'subastas';
+      const yo = miNombre(), filtro = subastaFiltro.trim().toLowerCase();
+      const visibles = subastas.filter((s) => (!subastasMias || s.vendedor.toLowerCase() === yo)
+        && (!filtro || itemName(s.objIndex).toLowerCase().includes(filtro)));
+      if (subastaSel != null && !subastas.some((s) => s.id === subastaSel)) subastaSel = null;
+      const sel = subastas.find((s) => s.id === subastaSel);
+      const filas = visibles.map((s, i) => `<tr class="${s.id === subastaSel ? 'on' : ''}" data-subasta="${s.id}">`
+        + `<td>${i + 1} - ${esc(itemName(s.objIndex))}</td><td>${s.cantidad}</td><td>${s.precioActual}</td><td>${s.precioFinal || '-'}</td>`
+        + `<td>${esc(s.vendedor)}</td><td>${subRestante(s)}</td><td>${s.comprador ? esc(s.comprador) : 'Ninguno'}</td></tr>`).join('');
+      const esMia = sel && sel.vendedor.toLowerCase() === yo;
+      modalCard.innerHTML = `<div class="cardT">Centro de Subastas<span class="cx" title="cerrar">✕</span></div>`
+        + `<div class="subtop">${sel ? shopCell(sel.objIndex, `x${sel.cantidad}`, '') : '<div class="subvacio"></div>'}`
+        +   `<div class="subbus"><span class="fhint">Buscar items</span><input class="sbq" type="text" maxlength="40" value="${esc(subastaFiltro)}"></div>`
+        +   `<span class="buy sbtn ghost" data-sub="buscar">Buscar</span><span class="buy sbtn ghost" data-sub="actualizar">Actualizar</span>`
+        +   `<span class="buy sbtn ghost" data-sub="salir">Salir</span><span class="buy sbtn" data-sub="nueva">Nueva subasta</span></div>`
+        + `<div class="subtabla"><table><thead><tr><th>Item</th><th>Cantidad</th><th>Precio (Actual)</th><th>Precio (Final)</th>`
+        +   `<th>Subastador</th><th>Tiempo restante</th><th>Comprador</th></tr></thead>`
+        +   `<tbody>${filas || '<tr><td colspan="7" class="fhint">(no hay subastas)</td></tr>'}</tbody></table></div>`
+        + `<div class="subpie"><span>Monedas de oro</span><input class="sbo cantbox" type="number" min="1" value="${sel ? (sel.comprador ? sel.precioActual + 1 : sel.precioActual) : ''}">`
+        +   `<span class="buy sbtn ghost${sel && !esMia ? '' : ' off'}" data-sub="ofertar">Ofertar</span>`
+        +   `<span class="buy sbtn ghost${sel && !esMia && sel.precioFinal ? '' : ' off'}" data-sub="comprar">Comprar (Directo)</span>`
+        +   (esMia && !sel.comprador ? `<span class="buy sbtn ghost" data-sub="cancelar">Cancelar subasta</span>` : '')
+        +   `<label class="fhint"><input type="checkbox" class="sbmias"${subastasMias ? ' checked' : ''}> Mostrar solamente mis subastas</label></div>`;
+      modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
+    }
+    function renderNuevaSubasta() {
+      modalKind = 'nuevasubasta';
+      const slots = Object.keys(inventory).map(Number).sort((a, b) => a - b).filter((s) => inventory[s]);
+      if (!inventory[nuevaSub.slot]) nuevaSub.slot = slots[0] || 0;
+      const it = inventory[nuevaSub.slot];
+      const lista = slots.map((s) => `<div class="nsitem${s === nuevaSub.slot ? ' on' : ''}" data-nsslot="${s}">${esc(itemName(inventory[s].objIndex))}`
+        + `${inventory[s].amount > 1 ? ` <span class="fhint">x${inventory[s].amount}</span>` : ''}</div>`).join('');
+      modalCard.innerHTML = `<div class="cardT">Nueva subasta<span class="cx" title="cerrar">✕</span></div>`
+        + `<div class="nsub"><div class="nscol">`
+        +   `<div class="subtop">${it ? shopCell(it.objIndex, '', '') : '<div class="subvacio"></div>'}`
+        +     `<div class="subbus"><span class="fhint">Cantidad</span><input class="nscant cantbox" type="number" min="1" max="${it ? it.amount : 1}" value="${nuevaSub.cant}"></div></div>`
+        +   `<div class="nslista">${lista || '<div class="fhint">(tu mochila está vacía)</div>'}</div></div>`
+        + `<div class="nscol"><div class="fhint">El costo de la subasta depende de la duración y el precio inicial o final.</div>`
+        +   `<label>Precio Inicial<input class="nsini cantbox" type="number" min="1" value="${nuevaSub.ini}"></label>`
+        +   `<label>Precio Final (opcional)<input class="nsfin cantbox" type="number" min="0" value="${nuevaSub.fin}"></label>`
+        +   `<label>Duración Máxima<select class="nshoras cantbox">${SUB_HORAS.map((h) => `<option value="${h}"${h === nuevaSub.horas ? ' selected' : ''}>${h}hs</option>`).join('')}</select></label>`
+        +   `<div class="nsdep">Depósito: <b>${subDeposito(nuevaSub.horas, nuevaSub.ini, nuevaSub.fin)}</b> monedas</div>`
+        +   `<div class="frow"><span class="buy sbtn ghost" data-sub="volver">Cancelar</span><span class="buy sbtn" data-sub="publicar">Aceptar</span></div>`
+        + `</div></div>`;
+      modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
+    }
+    function leerNuevaSubasta() {
+      nuevaSub.cant = Math.max(1, subNum('.nscant', nuevaSub.cant));
+      nuevaSub.ini = Math.max(0, subNum('.nsini', nuevaSub.ini));
+      nuevaSub.fin = Math.max(0, subNum('.nsfin', nuevaSub.fin));
+      nuevaSub.horas = subNum('.nshoras', nuevaSub.horas);
+    }
+    /** Los clics de las dos vistas. true si el clic era de acá. */
+    function clicDeSubastas(ev) {
+      const fila = ev.target.closest('[data-subasta]');
+      if (fila) { subastaSel = +fila.dataset.subasta; renderSubastas(); return true; }
+      const ns = ev.target.closest('[data-nsslot]');
+      if (ns) { leerNuevaSubasta(); nuevaSub.slot = +ns.dataset.nsslot; nuevaSub.cant = 1; renderNuevaSubasta(); return true; }
+      if (ev.target.closest('.sbmias')) { subastasMias = ev.target.closest('.sbmias').checked; renderSubastas(); return true; }
+      const b = ev.target.closest('[data-sub]');
+      if (!b) return false;
+      if (b.classList.contains('off')) return true;
+      const id = subastaSel;
+      switch (b.dataset.sub) {
+        case 'buscar': renderSubastas(); break;
+        case 'actualizar': send(W().writeByte(CLIENT.SubastasPedir)); break;
+        case 'salir': closeModal(); break;
+        case 'nueva': renderNuevaSubasta(); break;
+        case 'volver': leerNuevaSubasta(); renderSubastas(); break;
+        case 'ofertar': {
+          const monto = subNum('.sbo', 0);
+          if (id != null && monto > 0) send(W().writeByte(CLIENT.SubastaOfertar).writeLong(id).writeLong(monto));
+          break;
+        }
+        case 'comprar': if (id != null) send(W().writeByte(CLIENT.SubastaComprar).writeLong(id)); break;
+        case 'cancelar': if (id != null) send(W().writeByte(CLIENT.SubastaCancelar).writeLong(id)); break;
+        case 'publicar': {
+          leerNuevaSubasta();
+          if (!nuevaSub.slot) break;
+          send(W().writeByte(CLIENT.SubastaPublicar).writeByte(nuevaSub.slot).writeInteger(nuevaSub.cant)
+            .writeLong(nuevaSub.ini).writeLong(nuevaSub.fin).writeByte(nuevaSub.horas));
+          nuevaSub = { slot: 0, cant: 1, ini: 1, fin: 0, horas: 3 };
+          renderSubastas();
+          break;
+        }
+      }
+      return true;
+    }
+    // El depósito se recalcula mientras se tipea, sin rearmar la ventana (que se comería el foco).
+    modalCard.addEventListener('input', () => {
+      if (modalKind !== 'nuevasubasta') return;
+      leerNuevaSubasta();
+      const d = modalCard.querySelector('.nsdep b');
+      if (d) d.textContent = subDeposito(nuevaSub.horas, nuevaSub.ini, nuevaSub.fin);
+    });
+    // Enter en el buscador busca.
+    modalCard.addEventListener('keydown', (ev) => {
+      if (modalKind === 'subastas' && ev.key === 'Enter' && ev.target.classList.contains('sbq')) { ev.preventDefault(); renderSubastas(); }
+    });
     const itemName = (oi) => (items && items[oi] && items[oi][1]) || ('objeto ' + oi);
     const spellName = (id) => (spellNames && spellNames[id]) || ('hechizo ' + id);
     const spellSelfText = (id) => (spellSelf && spellSelf[id]) || undefined;
@@ -3761,6 +3901,7 @@
           case 'salirjuego': if (window.coveraoEscritorio) window.coveraoEscritorio.salir(); return;
         }
       }
+      if ((modalKind === 'subastas' || modalKind === 'nuevasubasta') && clicDeSubastas(ev)) return;
       const mvb = ev.target.closest('.mvb');   // ▲/▼ en la bóveda → MoveBank(upwards, slot)
       if (mvb) { if (ws.readyState === 1) send(W().writeByte(CLIENT.MoveBank).writeByte(mvb.dataset.mvbu != null ? 1 : 0).writeByte(+(mvb.dataset.mvbu || mvb.dataset.mvbd))); return; }
       const b = ev.target.closest('.buy'); if (!b || ws.readyState !== 1) return;
@@ -4726,6 +4867,12 @@
           else { bankOpen = true; renderBank(); }
           break;
         case 'ChangeBankSlot': bankItems[f.slot] = { objIndex: f.objIndex, amount: f.amount, value: f.value }; if (bankOpen) scheduleBank(); break;
+        // El Centro de Subastas: abre la ventana (doble clic al Subastador) o refresca la lista si está a la vista.
+        case 'SubastasLista':
+          subastas = f.subastas; subastasRecibidas = Date.now();
+          if (f.abrir) { endShopIfOpen(); subastaSel = null; renderSubastas(); }
+          else if (modalKind === 'subastas') renderSubastas();
+          break;
         // Not in a guild: the server answers with the plain list of every clan (VB6 WriteGuildList).
         case 'GuildList': {
           // esc(): los nombres de clan los elige un jugador (CreateNewGuild) y van a innerHTML → sin escapar es XSS.

@@ -139,6 +139,13 @@ public static class JsonDelMundo
                .SelectMany(m => m.Value.Select(r => new LlaveVendida(m.Key, r.Key, r.Value))).ToList()
            ?? new();
 
+    // ── El Centro de Subastas ("subastas") ───────────────────────────────────────────────────────────────────────
+
+    public static string Subastas(SubastasGuardadas subastas) => JsonSerializer.Serialize(subastas);
+
+    public static SubastasGuardadas Subastas(string? json) =>
+        Leer<SubastasGuardadas>(json, "subastas") is { Abiertas: not null, Pendientes: not null } s ? s : SubastasGuardadas.Vacio;
+
     // ── Récord de conectados ("record") ─────────────────────────────────────────────────────────────────────────
 
     public static string Record(int record) => record.ToString(CultureInfo.InvariantCulture);

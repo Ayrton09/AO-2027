@@ -153,6 +153,9 @@ public sealed class AlmacenDeTexto : IAlmacen
     public IReadOnlyList<LlaveVendida> LeerLlavesVendidas() => JsonDelMundo.Llaves(_store.ReadMisc("propiedades"));
     public void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves) => _store.WriteMisc("propiedades", JsonDelMundo.Llaves(llaves));
 
+    public SubastasGuardadas LeerSubastas() => JsonDelMundo.Subastas(_store.ReadMisc("subastas"));
+    public void GuardarSubastas(SubastasGuardadas subastas) => _store.WriteMisc("subastas", JsonDelMundo.Subastas(subastas));
+
     public int LeerRecord() => JsonDelMundo.Record(_store.ReadMisc("record"));
     public void GuardarRecord(int record) => _store.WriteMisc("record", JsonDelMundo.Record(record));
 

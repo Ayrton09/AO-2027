@@ -174,6 +174,15 @@ public sealed class Persistence : IDisposable
         return vendidas;
     }
 
+    /// <summary>El Centro de Subastas entero: la foto se arma acá, en el hilo del mundo.</summary>
+    public void SaveSubastas(Game.CentroDeSubastas centro)
+    {
+        var foto = new SubastasGuardadas(centro.Abiertas.ToArray(), centro.Pendientes.ToArray());
+        _cola.Escribir("guardar las subastas", a => a.GuardarSubastas(foto), new RescateDeSubastas(foto));
+    }
+
+    public SubastasGuardadas LoadSubastas() => Esperar("leer las subastas", null, a => a.LeerSubastas());
+
     /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini; acá va con el
     /// resto del mundo, así entra en el backup.</summary>
     public void SaveRecordUsuarios(int record)

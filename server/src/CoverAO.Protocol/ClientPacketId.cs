@@ -134,4 +134,21 @@ public enum ClientPacketId : byte
     /// del original y agregarle campos lo sacaría de la paridad de bytes, con lo que el oráculo dejaría de
     /// poder medir la creación de personajes — que es de las cosas que más nos importa que no se mueva.</para></summary>
     ElegirFamiliar = 115,
+
+    /// <summary>EL CENTRO DE SUBASTAS (regla de la casa, 06/10; ver <c>Game/Subastas.cs</c>). <b>No existe en el original</b>,
+    /// que sólo dejó al Subastador y sus textos. Pedir la lista otra vez (el botón Actualizar), sin datos.</summary>
+    SubastasPedir = 116,
+
+    /// <summary>Publicar: Byte(ranura de la mochila), Integer(cantidad), Long(precio inicial), Long(precio final, 0 = sin
+    /// compra directa), Byte(horas).</summary>
+    SubastaPublicar = 117,
+
+    /// <summary>Ofertar: Long(id de la subasta), Long(monto).</summary>
+    SubastaOfertar = 118,
+
+    /// <summary>Comprar directo, al precio final: Long(id de la subasta).</summary>
+    SubastaComprar = 119,
+
+    /// <summary>Retirar una subasta propia sin ofertas: Long(id de la subasta).</summary>
+    SubastaCancelar = 120,
 }

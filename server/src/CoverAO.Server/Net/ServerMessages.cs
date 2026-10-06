@@ -807,6 +807,30 @@ public static class ServerMessages
         return w.ToArray();
     }
 
+    /// <summary>Una fila de la ventana del Centro de Subastas, con los segundos que le quedan ya contados. El nombre y el
+    /// gráfico del objeto los pone el cliente, como en la mochila. <see cref="Comprador"/> vacío = nadie ofertó.</summary>
+    public readonly record struct FilaDeSubasta(int Id, short Objeto, short Cantidad, long PrecioActual, long PrecioFinal,
+        string Vendedor, long Segundos, string Comprador);
+
+    /// <summary>
+    /// <see cref="ServerPacketId.SubastasLista"/> (nuestro, no existe en el original). Layout: Byte(abrir: 1 abre la
+    /// ventana, 0 sólo la refresca si está abierta), Integer(cantidad) y por cada subasta Long(id), Integer(objeto),
+    /// Integer(cantidad), Long(precio actual), Long(precio final), ASCIIString(vendedor),
+    /// Long(segundos que le quedan), ASCIIString(comprador, vacío si nadie ofertó). Los precios caben en un Long: el tope es
+    /// el oro de un personaje, 90 millones.
+    /// </summary>
+    public static byte[] SubastasLista(bool abrir, IReadOnlyList<FilaDeSubasta> filas)
+    {
+        var w = new ByteQueueWriter().WritePacketId(ServerPacketId.SubastasLista)
+            .WriteByte(abrir ? (byte)1 : (byte)0)
+            .WriteInteger((short)Math.Min(short.MaxValue, filas.Count));
+        foreach (var f in filas.Take(short.MaxValue))
+            w.WriteLong(f.Id).WriteInteger(f.Objeto).WriteInteger(f.Cantidad)
+             .WriteLong((int)f.PrecioActual).WriteLong((int)f.PrecioFinal).WriteAsciiString(f.Vendedor)
+             .WriteLong((int)Math.Clamp(f.Segundos, 0, int.MaxValue)).WriteAsciiString(f.Comprador);
+        return w.ToArray();
+    }
+
     // ---- Actualizaciones GRANULARES de stats -------------------------------------------------------------
     //
     // El original manda un paquete de 3-5 bytes cuando cambia UN stat, y reserva el UpdateUserStats gordo

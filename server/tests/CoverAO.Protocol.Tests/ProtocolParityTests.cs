@@ -76,6 +76,13 @@ public class ProtocolParityTests
         // paquete aparte y no como campos nuevos de `LoginNewChar` para no sacar de la paridad de bytes al
         // paquete de creación, que sí es del original.
         [115] = "ElegirFamiliar",
+        // El Centro de Subastas (pedido del tester, 06/10). El original dejó al Subastador, los textos de la ventana y los
+        // mensajes 318-321, sin código ni paquetes.
+        [116] = "SubastasPedir",
+        [117] = "SubastaPublicar",
+        [118] = "SubastaOfertar",
+        [119] = "SubastaComprar",
+        [120] = "SubastaCancelar",
     };
 
     /// <summary>Lo mismo, del lado del SERVIDOR. Va aparte porque el techo del VB6 no es el mismo en las dos
@@ -89,6 +96,8 @@ public class ProtocolParityTests
         // La vida de un jefe, para la barra de arriba de la pantalla (pedido del tester, 2026-09-27). El original no
         // muestra la vida de ninguna criatura.
         [108] = "VidaDelJefe",
+        // La lista del Centro de Subastas (pedido del tester, 06/10).
+        [109] = "SubastasLista",
     };
 
     /// <summary>El último id que usa el protocolo del VB6 en cada dirección. Todo lo nuestro va por encima.</summary>
@@ -182,6 +191,7 @@ public class ProtocolParityTests
         Assert.Equal(107 + ExtensionesPropiasDelServidor.Count, Enum.GetValues<ServerPacketId>().Length);
         Assert.Equal(107, (int)ServerPacketId.FamiliarInfo);   // el primero que es nuestro
         Assert.Equal(108, (int)ServerPacketId.VidaDelJefe);
+        Assert.Equal(109, (int)ServerPacketId.SubastasLista);
         Assert.Equal(0, (int)ServerPacketId.LoggedSuccessful);
         Assert.Equal(9, (int)ServerPacketId.CommerceInit);
         Assert.Equal(10, (int)ServerPacketId.BankInit);
@@ -204,6 +214,8 @@ public class ProtocolParityTests
         Assert.Equal(114 + ExtensionesPropias.Count, Enum.GetValues<ClientPacketId>().Length);
         Assert.Equal(114, (int)ClientPacketId.BorrarPersonaje);   // el primero que es nuestro
         Assert.Equal(115, (int)ClientPacketId.ElegirFamiliar);
+        Assert.Equal(116, (int)ClientPacketId.SubastasPedir);
+        Assert.Equal(120, (int)ClientPacketId.SubastaCancelar);
         Assert.Equal(0, (int)ClientPacketId.Walk);
         Assert.Equal(17, (int)ClientPacketId.DropDestroy);
         Assert.Equal(20, (int)ClientPacketId.DoubleClick);

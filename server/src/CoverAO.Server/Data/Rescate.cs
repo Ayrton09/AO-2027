@@ -20,6 +20,7 @@ namespace CoverAO.Server.Data;
 [JsonDerivedType(typeof(RescateDeCorreo), "correo")]
 [JsonDerivedType(typeof(RescateDelSuelo), "suelo")]
 [JsonDerivedType(typeof(RescateDeLlaves), "llaves")]
+[JsonDerivedType(typeof(RescateDeSubastas), "subastas")]
 [JsonDerivedType(typeof(RescateDelRecord), "record")]
 [JsonDerivedType(typeof(RescateDeIpsBaneadas), "ips-baneadas")]
 public abstract record Rescate
@@ -78,6 +79,11 @@ public sealed record RescateDelSuelo(IReadOnlyList<ObjetoEnElSuelo> Suelo) : Res
 public sealed record RescateDeLlaves(IReadOnlyList<LlaveVendida> Llaves) : Rescate
 {
     public override void Aplicar(IAlmacen almacen) => almacen.GuardarLlavesVendidas(Llaves);
+}
+
+public sealed record RescateDeSubastas(SubastasGuardadas Subastas) : Rescate
+{
+    public override void Aplicar(IAlmacen almacen) => almacen.GuardarSubastas(Subastas);
 }
 
 public sealed record RescateDelRecord(int Record) : Rescate

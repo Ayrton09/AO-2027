@@ -144,6 +144,11 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 ### Comercio, banco y hogar
 
+- **El Centro de Subastas**: doble clic al Subastador. Se publica un objeto de la mochila con precio inicial,
+  precio final opcional (para comprar directo) y una duración de 3 a 36 horas; el depósito es de 10 monedas por
+  hora más el 1 % del precio. Uno solo para todo el mundo. El objeto ganado, el oro de la venta, lo que no se
+  vendió y la oferta superada van a la bóveda, aunque estés desconectado.
+
 - **El mercader, como en el original**: vende lo del original, se repone solo, y la llave de una casa se vende
   una sola vez. Si otro compra en la misma tienda, lo ves al momento.
 

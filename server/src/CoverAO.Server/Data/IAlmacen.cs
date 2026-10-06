@@ -64,6 +64,11 @@ public interface IAlmacen
     /// <summary>Reemplaza todas las llaves vendidas.</summary>
     void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves);
 
+    /// <summary>El Centro de Subastas (<see cref="CentroDeSubastas"/>): las abiertas y lo que falta entregar.</summary>
+    SubastasGuardadas LeerSubastas();
+    /// <summary>Reemplaza todo: las dos listas juntas, para que una subasta cerrada y su entrega no queden a medias.</summary>
+    void GuardarSubastas(SubastasGuardadas subastas);
+
     /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>); 0 si no hay.</summary>
     int LeerRecord();
     void GuardarRecord(int record);

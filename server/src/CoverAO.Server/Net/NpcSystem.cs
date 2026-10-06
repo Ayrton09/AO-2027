@@ -1268,6 +1268,7 @@ public sealed class NpcSystem
         if (s.Template.NpcType == 1) npc.IsReviver = true;                       // eNPCType.Revividor
         if (s.Template.NpcType == 11) npc.IsVeterinaria = true;                  // eNPCType.Veterinarias
         if (s.Template.NpcType == 4) npc.IsBanker = true;                        // eNPCType.Banquero
+        if (s.Template.NpcType == 16) npc.IsSubastador = true;                   // eNPCType.Subastadores (ver PacketDispatcher.Subastas)
         if (s.Template.NpcType == 7) npc.IsTransportador = true;                 // eNPCType.transportadores (el pirata del pasaje)
         // LOS ENLISTADORES Y LOS CONVERTIDORES, de su ficha: el original los rutea por NPCtype y `flags.Status`
         // (Acciones.bas:214-268). Sólo los ponía el fixture, así que en el mundo nadie podía enlistarse ni convertirse.

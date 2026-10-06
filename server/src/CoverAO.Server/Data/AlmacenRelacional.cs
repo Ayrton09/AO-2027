@@ -177,6 +177,7 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
                  {
                      "DELETE FROM personajes", "DELETE FROM cuentas", "DELETE FROM clanes", "DELETE FROM rechazos_de_clan",
                      "DELETE FROM correo", "DELETE FROM suelo", "DELETE FROM llaves_vendidas", "DELETE FROM ips_baneadas",
+                     "DELETE FROM subastas", "DELETE FROM subastas_entregas",
                      "UPDATE mundo SET record_usuarios = 0",
                  })
         {
@@ -584,6 +585,30 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
         using (var c = Comando("DELETE FROM llaves_vendidas", tx)) c.ExecuteNonQuery();
         using var fila = Comando("INSERT INTO llaves_vendidas (mercader, ranura, objeto) VALUES (@m, @r, @o)", tx);
         foreach (var l in llaves) Valores(fila, ("@m", l.Mercader), ("@r", l.Ranura), ("@o", l.Objeto)).ExecuteNonQuery();
+    }
+
+    public SubastasGuardadas LeerSubastas() => new(
+        Leer("SELECT id, vendedor, objeto, cantidad, precio_inicial, precio_final, oferta, comprador, termina FROM subastas ORDER BY id",
+            r => new Subasta((int)Entero(r, 0), r.GetString(1), (short)Entero(r, 2), (short)Entero(r, 3), Entero(r, 4), Entero(r, 5),
+                Entero(r, 6), r.GetString(7) is { Length: > 0 } c ? c : null, Entero(r, 8))),
+        Leer("SELECT personaje, objeto, cantidad, oro FROM subastas_entregas ORDER BY orden",
+            r => new EntregaDeSubasta(r.GetString(0), (short)Entero(r, 1), (short)Entero(r, 2), Entero(r, 3))));
+
+    public void GuardarSubastas(SubastasGuardadas subastas) => EnTransaccion(tx => EscribirSubastas(subastas, tx));
+
+    private void EscribirSubastas(SubastasGuardadas subastas, DbTransaction tx)
+    {
+        using (var c = Comando("DELETE FROM subastas", tx)) c.ExecuteNonQuery();
+        using (var c = Comando("DELETE FROM subastas_entregas", tx)) c.ExecuteNonQuery();
+        using (var fila = Comando("INSERT INTO subastas (id, vendedor, objeto, cantidad, precio_inicial, precio_final, oferta, comprador, " +
+                                  "termina) VALUES (@i, @v, @o, @c, @pi, @pf, @of, @co, @t)", tx))
+            foreach (var s in subastas.Abiertas)
+                Valores(fila, ("@i", s.Id), ("@v", s.Vendedor), ("@o", s.Objeto), ("@c", s.Cantidad), ("@pi", s.PrecioInicial),
+                    ("@pf", s.PrecioFinal), ("@of", s.Oferta), ("@co", s.Comprador ?? ""), ("@t", s.Termina)).ExecuteNonQuery();
+        using var entrega = Comando("INSERT INTO subastas_entregas (orden, personaje, objeto, cantidad, oro) VALUES (@n, @p, @o, @c, @g)", tx);
+        int orden = 0;
+        foreach (var e in subastas.Pendientes)
+            Valores(entrega, ("@n", ++orden), ("@p", e.Personaje), ("@o", e.Objeto), ("@c", e.Cantidad), ("@g", e.Oro)).ExecuteNonQuery();
     }
 
     public int LeerRecord() => Leer("SELECT record_usuarios FROM mundo WHERE id = 1", r => (int)Entero(r, 0)).FirstOrDefault();
