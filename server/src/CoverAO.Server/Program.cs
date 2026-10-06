@@ -190,7 +190,15 @@ switch (CoverAO.Server.Build.SellarMundo(dataRoot, out string versionPrevia))
         break;
 }
 // DÓNDE SE GUARDA: [BASEDEDATOS] del Server.ini (ver Data.Almacenes).
-var (almacen, dondeSeGuarda) = Almacenes.Abrir(serverIni, dataRoot);
+// Y SI LA BASE ESTÁ DAÑADA, SE EXPLICA CÓMO VOLVER AL BACKUP en vez de caerse con la pila de SQLite (ver Data.BaseDaniada).
+(IAlmacen Almacen, string Descripcion) abierta;
+try { abierta = Almacenes.Abrir(serverIni, dataRoot); }
+catch (Exception ex) when (BaseDaniada.Es(ex))
+{
+    Console.Error.WriteLine(BaseDaniada.Aviso(dataRoot, ex));
+    return 1;
+}
+var (almacen, dondeSeGuarda) = abierta;
 // Lo que quedó sin guardar la última vez porque la base no respondía al apagar (Data.Rescates): antes de leer nada.
 Rescates.AplicarLosPendientes(dataRoot, almacen);
 var db = new Persistence(almacen, leveling);
