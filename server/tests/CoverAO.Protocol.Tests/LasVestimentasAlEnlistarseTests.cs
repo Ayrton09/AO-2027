@@ -38,4 +38,16 @@ public class LasVestimentasAlEnlistarseTests
     {
         Assert.Equal(0, Vestimenta(Player.StatusArmada, Humano, Ladron));
     }
+
+    /// <summary>LA 2ª JERARQUÍA DEL NIGROMANTE (el autor, 06/10): el original no se la daba por un Case repetido; ahora sí.</summary>
+    [Theory]
+    [InlineData(Player.StatusArmada, Humano, 1586, "Armadura de Nigromante Imperial de 2ª Jerarquía")]
+    [InlineData(Player.StatusArmada, Gnomo, 1587, "Armadura de Nigromante Imperial de 2ª Jerarquía (Bajos)")]
+    [InlineData(Player.StatusCaos, Humano, 1542, "Armadura de Nigromante del Caos de 2ª Jerarquía")]
+    public void El_Nigromante_recibe_su_armadura_de_segunda_jerarquia(byte estado, byte raza, short obj, string nombre)
+    {
+        var p = new Player { CharIndex = 1, Name = "Aldo", Account = "aldo", FactionStatus = estado, Race = raza, Class = Nigromante };
+        Assert.Equal(obj, PacketDispatcher.ArmaduraDeSegundaJerarquia(p));
+        if (GameData.Load().Obj(obj) is { } o) Assert.Equal(nombre, o.Name);
+    }
 }

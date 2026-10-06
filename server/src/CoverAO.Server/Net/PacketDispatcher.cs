@@ -8149,11 +8149,7 @@ public sealed partial class PacketDispatcher
     {
         bool bajos = p.Race is RaceGnomo or RaceEnano;
         if (p.IsMilicia) return (short)(bajos ? 1589 : 1588);
-        // El Nigromante SÍ está acá (1564 / 1520): el `Case eClass.Bardo` repetido que lo deja sin armadura es sólo de la
-        // 2ª jerarquía (ver FactionArmorOffset); el Select de enlistarse lo lista bien.
-        int offset;
-        if (p.Class == 18) offset = 20;
-        else if (!FactionArmorOffset.TryGetValue(p.Class, out offset)) return 0;
+        if (!FactionArmorOffset.TryGetValue(p.Class, out var offset)) return 0;
         return (short)((p.IsArmada ? 1544 : 1500) + offset + (bajos ? 1 : 0));
     }
 
@@ -8258,10 +8254,10 @@ public sealed partial class PacketDispatcher
 
     /// <summary>Desplazamiento del ítem por clase para la armadura faccionaria de 2ª jerarquía (VB6
     /// RecompensaArmadaReal:427 / RecompensaCaos:548): base 1566 (Armada) / 1522 (Caos), +2 por clase en el orden
-    /// Clérigo, Mago, Guerrero, Asesino, Bardo, Druida, Gladiador, Paladín, Cazador, Mercenario.
-    /// Las clases que el VB6 no lista (ladrón, trabajadores y **nigromante**) no reciben nada. Lo del nigromante es
-    /// un BUG del original —el último Case repite `eClass.Bardo` en vez de `eClass.Nigromante`, así que su armadura
-    /// (1586/1542) queda inalcanzable—, y se porta tal cual: manda la paridad.</summary>
+    /// Clérigo, Mago, Guerrero, Asesino, Bardo, Druida, Gladiador, Paladín, Cazador, Mercenario y Nigromante.
+    /// Las clases que el VB6 no lista (ladrón y trabajadores) no reciben nada. EL NIGROMANTE SÍ, aunque en el original no: el
+    /// último Case repite `eClass.Bardo` en vez de `eClass.Nigromante`, así que su armadura (1586 / 1542, y 1587 / 1543 la de
+    /// enanos y gnomos, que están en la data) quedaba inalcanzable. Se portaba tal cual; el autor eligió arreglarlo (06/10).</summary>
     private static readonly IReadOnlyDictionary<byte, int> FactionArmorOffset = new Dictionary<byte, int>
     {
         [1] = 0,    // Clérigo
@@ -8274,6 +8270,7 @@ public sealed partial class PacketDispatcher
         [9] = 14,   // Paladín
         [10] = 16,  // Cazador
         [17] = 18,  // Mercenario
+        [18] = 20,  // Nigromante (el original lo deja afuera por un Case repetido: ver arriba)
     };
 
     private const byte RaceGnomo = 4, RaceEnano = 5;   // Declares.bas eRaza (las razas "bajas" usan la variante +1)
@@ -8288,22 +8285,20 @@ public sealed partial class PacketDispatcher
     /// <summary>Entrega la armadura faccionaria (VB6): la del bando y la clase, con la variante "Bajos" (+1) si la
     /// raza es enano o gnomo. Si ya la tiene no le da otra; si no entra en el inventario, cae al piso (VB6
     /// TirarItemAlPiso).</summary>
-    private void GrantFactionArmor(ClientSession session, Player p)
+    private void GrantFactionArmor(ClientSession session, Player p) => DarSiNoLaTiene(session, p, ArmaduraDeSegundaJerarquia(p));
+
+    /// <summary>La armadura de la jerarquía superior del bando y la clase (0 = la clase no tiene): ver <see cref="GrantFactionArmor"/>.</summary>
+    internal static short ArmaduraDeSegundaJerarquia(Player p)
     {
         int bajos = p.Race is RaceGnomo or RaceEnano ? 1 : 0;
-        short obj;
         if (p.IsMilicia)
         {
-            if (MiliciaMagicClasses.Contains(p.Class)) obj = (short)(1592 + bajos);
-            else if (MiliciaFighterClasses.Contains(p.Class)) obj = (short)(1590 + bajos);
-            else return;                                                        // clase sin armadura de Milicia
+            if (MiliciaMagicClasses.Contains(p.Class)) return (short)(1592 + bajos);
+            if (MiliciaFighterClasses.Contains(p.Class)) return (short)(1590 + bajos);
+            return 0;                                                           // clase sin armadura de Milicia
         }
-        else
-        {
-            if (!FactionArmorOffset.TryGetValue(p.Class, out var offset)) return;   // clase sin armadura faccionaria
-            obj = (short)((p.IsArmada ? 1566 : 1522) + offset + bajos);
-        }
-        DarSiNoLaTiene(session, p, obj);
+        if (!FactionArmorOffset.TryGetValue(p.Class, out var offset)) return 0;   // clase sin armadura faccionaria
+        return (short)((p.IsArmada ? 1566 : 1522) + offset + bajos);
     }
 
     /// <summary>Le da UNO de ese objeto si no lo tiene ya en la mochila (VB6 <c>TieneObjetos</c>); si no entra, cae al piso (VB6
