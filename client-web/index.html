@@ -678,6 +678,14 @@
     .fsec { font-family:var(--serif); font-size:calc(var(--u)*0.8); letter-spacing:.06em; text-transform:uppercase;
       color:var(--gold); border-bottom:1px solid var(--gold-deep); padding-bottom:2px; margin-top:4px; }
     .fhint { font-size:calc(var(--u)*0.76); color:var(--ink-dim); }
+    /* La ventana de `preguntar` (en vez del `prompt()` del navegador, que el juego de escritorio no tiene). */
+    .preg-fondo { position:fixed; inset:0; z-index:10000; background:#000000b0; display:flex; align-items:center; justify-content:center; }
+    .preg { background:var(--wood-lo); padding:16px 18px; width:min(440px, 90vw); }
+    .preg-t { white-space:pre-line; color:var(--ink); margin-bottom:10px; }
+    .preg-in { width:100%; background:#0a0705; border:1px solid var(--gold-deep); color:var(--ink); padding:7px 9px; border-radius:4px;
+               font:inherit; }
+    .preg-in:focus { outline:none; border-color:var(--gold); }
+    .preg-b { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
     /* OPCIONES CON PESTAÑAS, las del menú del juego de escritorio (desktop/menu.html), con los colores de acá. */
     .opc-pestanas { display:flex; gap:4px; border-bottom:1px solid var(--gold-deep); margin-bottom:4px; }
     .opc-pestanas button { background:none; border:0; border-bottom:2px solid transparent; color:var(--ink-dim); font:inherit;
@@ -1739,11 +1747,11 @@
       }
     }
     hotbarEl.addEventListener('click', (ev) => { const s = ev.target.closest('.hbslot'); if (s) fireHotbar(+s.dataset.i); });
-    hotbarEl.addEventListener('contextmenu', (ev) => {
+    hotbarEl.addEventListener('contextmenu', async (ev) => {
       ev.preventDefault(); const s = ev.target.closest('.hbslot'); if (!s) return;
       const i = +s.dataset.i;
       if (hotbar[i]) { hotbar[i] = null; saveHotbar(); buildHotbar(); return; }   // slot ocupado → vaciar
-      const text = preguntar(`Macro de comando/texto para F${i + 1}\n(ej: /resucitar, /meditar, /est … o texto para decir en voz alta)`);
+      const text = await preguntar(`Macro de comando/texto para F${i + 1}\n(ej: /resucitar, /meditar, /est … o texto para decir en voz alta)`);
       if (text && text.trim()) { hotbar[i] = { kind: 'cmd', text: text.trim() }; saveHotbar(); buildHotbar(); }
     });
     let items = null;              // objIndex -> [grhIndex, name, objType]  (from obj.dat)
@@ -6727,7 +6735,34 @@
      * que sueltan primero. Van envueltos y no con una llamada suelta en cada sitio para que el que agregue
      * un diálogo mañana no tenga que acordarse: si usa estos, ya está cubierto.
      */
-    const preguntar = (texto) => { soltarTeclas(); return prompt(texto); };
+    // PREGUNTAR CON UNA VENTANA DEL JUEGO, NO CON `prompt()`. El juego de escritorio (Electron) no implementa `prompt()`: no
+    // aparece nada y vuelve vacío, así que en el .exe no se podía borrar un personaje (pide escribir el nombre) ni atar un
+    // texto a una F1-F10 (el tester, 06/10). Devuelve una promesa con lo escrito, o null si se cancela. El teclado no se le
+    // pasa al juego mientras se escribe.
+    const preguntar = (texto) => new Promise((resolver) => {
+      soltarTeclas();
+      const fondo = document.createElement('div');
+      fondo.className = 'preg-fondo';
+      fondo.innerHTML = '<div class="preg ornate"><div class="preg-t"></div><input class="preg-in" maxlength="200">'
+        + '<div class="preg-b"><button type="button" class="sbtn" data-preg="si">Aceptar</button>'
+        + '<button type="button" class="sbtn ghost" data-preg="no">Cancelar</button></div></div>';
+      fondo.querySelector('.preg-t').textContent = texto;
+      const campo = fondo.querySelector('.preg-in');
+      const terminar = (valor) => { fondo.remove(); resolver(valor); };
+      fondo.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-preg]');
+        if (b) terminar(b.dataset.preg === 'si' ? campo.value : null);
+        else if (ev.target === fondo) terminar(null);
+      });
+      campo.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { ev.preventDefault(); terminar(campo.value); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); terminar(null); }
+      });
+      document.body.appendChild(fondo);
+      campo.focus();
+    });
+    window.__preguntar = preguntar;   // sonda de verificación
     const confirmar = (texto) => { soltarTeclas(); return confirm(texto); };
     addEventListener('blur', soltarTeclas);
     // En CAPTURA y en el documento: cubre cualquier `draggable`, esté donde esté, y corre antes que el
@@ -7963,10 +7998,10 @@
         // eso el jugador no lo sabe y no tiene forma de recuperarlo solo.
         const del = document.createElement('span'); del.className = 'play'; del.textContent = '🗑';
         del.title = 'Borrar este personaje';
-        del.addEventListener('click', (ev) => {
+        del.addEventListener('click', async (ev) => {
           ev.stopPropagation();      // el clic de la tarjeta ENTRA al juego: no puede dispararse también
           if (!confirmar(`¿Borrar a ${c.name}? Se pierde el personaje, su inventario y su banco.`)) return;
-          const escrito = preguntar(`Escribí el nombre para confirmar: ${c.name}`);
+          const escrito = await preguntar(`Escribí el nombre para confirmar: ${c.name}`);
           if (!escrito || escrito.trim().toLowerCase() !== c.name.toLowerCase()) return;
           ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.BorrarPersonaje)
             .writeAsciiString(accName).writeAsciiString(accPass).writeAsciiString(c.name).toBytes(), myKey));
