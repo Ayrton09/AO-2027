@@ -676,6 +676,33 @@
     .fsec { font-family:var(--serif); font-size:calc(var(--u)*0.8); letter-spacing:.06em; text-transform:uppercase;
       color:var(--gold); border-bottom:1px solid var(--gold-deep); padding-bottom:2px; margin-top:4px; }
     .fhint { font-size:calc(var(--u)*0.76); color:var(--ink-dim); }
+    /* OPCIONES CON PESTAÑAS, las del menú del juego de escritorio (desktop/menu.html), con los colores de acá. */
+    .opc-pestanas { display:flex; gap:4px; border-bottom:1px solid var(--gold-deep); margin-bottom:4px; }
+    .opc-pestanas button { background:none; border:0; border-bottom:2px solid transparent; color:var(--ink-dim); font:inherit;
+                           padding:6px 12px; cursor:pointer; }
+    .opc-pestanas button.on { color:var(--gold); border-bottom-color:var(--gold); }
+    .opc-pestanas button:hover { color:var(--gold-hi); }
+    .card:has(.opc-pestanas) { width:min(640px, 92vw); }
+    .opc-secciones { max-height:58vh; overflow-y:auto; padding-right:4px; }
+    .opc-seccion { display:none; }
+    .opc-seccion.on { display:block; }
+    .opc-fila { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 0; border-bottom:1px solid var(--gold-deep); }
+    .opc-fila:last-child { border-bottom:0; }
+    .opc-que small { display:block; color:var(--ink-dim); opacity:.8; font-size:calc(var(--u)*0.74); max-width:30em; }
+    .opc-control { display:flex; align-items:center; gap:8px; flex:none; }
+    .opc-control input[type=range] { width:170px; accent-color:var(--gold); }
+    .opc-valor { min-width:3.6em; text-align:right; color:var(--ink-dim); font-variant-numeric:tabular-nums; }
+    .opc-llave { width:44px; height:24px; flex:none; padding:0; border-radius:12px; border:1px solid var(--gold-deep); background:#0d0904;
+                 position:relative; cursor:pointer; }
+    .opc-llave::after { content:''; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%;
+                        background:var(--ink-dim); opacity:.6; transition:left .12s, background .12s; }
+    .opc-llave[aria-checked=true] { border-color:var(--gold); }
+    .opc-llave[aria-checked=true]::after { left:23px; background:var(--gold); opacity:1; }
+    .opc-tecla { min-width:5em; padding:4px 10px; font:inherit; color:var(--gold-hi); background:#0d0904; border:1px solid var(--gold-deep);
+                 border-radius:4px; cursor:pointer; text-transform:uppercase; }
+    .opc-tecla:hover { border-color:var(--gold); }
+    .opc-aviso { color:var(--ink-dim); opacity:.8; font-size:calc(var(--u)*0.74); margin:8px 0 0; }
+    .opc-pie { display:flex; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--gold-deep); }
     .skgrid { display:grid; grid-template-columns:1fr auto auto auto; gap:4px 8px; align-items:center; max-height:46vh; overflow:auto; padding-right:8px; }
     .skgrid .kn { font-size:calc(var(--u)*0.88); } .skgrid .kv { font-family:ui-monospace,monospace; color:var(--gold-hi); text-align:right; min-width:2.4em; }
     .stepbtn { width:1.7em; height:1.7em; line-height:1; padding:0; text-align:center; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
@@ -3877,13 +3904,13 @@
       if (ev.target.closest('[data-tecla-reset]')) { teclas = { ...TECLAS_DEF }; guardarTeclas(); abrirTeclas(); return; }
       // Botones del panel de Opciones. Cada uno aplica el cambio EN VIVO, lo persiste, y vuelve a dibujar el
       // panel para que la etiqueta diga el estado nuevo (no hay estado duplicado que se pueda desincronizar).
+      const pest = ev.target.closest('[data-op-pestana]');
+      if (pest) { pestanaOpciones = pest.dataset.opPestana; abrirOpciones(); return; }
       const op = ev.target.closest('[data-op]');
       if (op && op.tagName === 'BUTTON') {
         switch (op.dataset.op) {
           case 'musica':   toggleMusica(); abrirOpciones(); return;
           case 'sonido':   toggleSonido(); abrirOpciones(); return;
-          case 'escalado': smoothWorld = !smoothWorld; canvas.style.imageRendering = smoothWorld ? 'auto' : 'pixelated';
-                           guardarPref('ao_escalado', smoothWorld ? '1' : '0'); abrirOpciones(); return;
           case 'nombres':  mostrarNombres = !mostrarNombres; guardarPref('ao_nombres', mostrarNombres ? '1' : '0');
                            draw(); abrirOpciones(); return;
           // Apagarlo suelta lo que estuviera repitiendo: si no, una tecla que quedó apretada seguía
@@ -3899,7 +3926,7 @@
           case 'completa': {
             const esc = window.coveraoEscritorio;
             if (esc) esc.estaEnPantallaCompleta().then((si) => esc.pantallaCompleta(!si))
-              .then((si) => { op.textContent = si ? 'sí' : 'no'; }).catch(() => {});
+              .then((si) => { op.setAttribute('aria-checked', String(si)); }).catch(() => {});
             return;
           }
           case 'volvermenu': if (window.coveraoEscritorio) window.coveraoEscritorio.volverAlMenu(); return;
@@ -4174,14 +4201,9 @@
     function guardarTeclas() {
       try { localStorage.setItem('ao_teclas', JSON.stringify(teclas)); } catch (e) {}
     }
-    function abrirTeclas() {
-      const fila = (a) => `<div class="frow" style="justify-content:space-between">
-        <span>${esc(TECLAS_NOMBRE[a] || a)}</span>
-        <button class="sbtn ghost" data-tecla="${a}" style="min-width:4.5em">${esc((teclas[a] || '—').toUpperCase())}</button></div>`;
-      showModal('Teclas', `<div style="max-height:60vh;overflow:auto">${Object.keys(TECLAS_DEF).map(fila).join('')}</div>
-        <div class="frow" style="margin-top:.6em"><button class="sbtn ghost" data-tecla-reset="1">Volver a las del original</button></div>
-        <div class="sp2" style="margin-top:.4em">Las flechas, Ctrl (atacar), Enter (chat) y F1-F10 no se reasignan: son fijas también en el original.</div>`, true);
-    }
+    // LAS TECLAS VIVEN EN LA PESTAÑA CONTROLES DE OPCIONES: abrirlas es abrir Opciones ahí (el que reasigna una tecla vuelve a dibujar
+    // el panel por acá y queda en la misma pestaña).
+    function abrirTeclas() { pestanaOpciones = 'controles'; abrirOpciones(); }
     window.__abrirTeclas = abrirTeclas;   // sonda de verificación
 
     /**
@@ -4197,69 +4219,63 @@
     // Los topes que pidió el usuario, más "custom" para el que tenga un refresco raro (165, 180, 360…).
     // "Sin límite" va PRIMERO y es el default: sigue el vsync del monitor, que es lo más parejo que hay.
     const FPS_OPCIONES = [0, 30, 60, 120, 144, 240];
+    // OPCIONES CON PESTAÑAS, como las del menú del juego de escritorio (el autor, 06/10: "que el menú de opciones del menú principal
+    // sea el mismo dentro del juego, lo hiciste más organizado"): Audio, Video, Juego y Controles, un interruptor por cosa que se
+    // prende o se apaga, y la ayuda en letra chica debajo de cada una. Son las MISMAS opciones de antes, con los mismos `data-op`, y
+    // las teclas viven en la pestaña Controles. La pestaña elegida sobrevive al redibujo de cada toque.
+    let pestanaOpciones = 'audio';
     function abrirOpciones() {
       const sel = (v, cur, txt) => `<option value="${v}"${v === cur ? ' selected' : ''}>${txt}</option>`;
+      const fila = (que, ayuda, control) => `<div class="opc-fila"><div class="opc-que">${que}${ayuda ? `<small>${ayuda}</small>` : ''}</div>
+        <div class="opc-control">${control}</div></div>`;
+      const llave = (op, prendida) => `<button type="button" class="opc-llave" role="switch" aria-checked="${prendida}" data-op="${op}"></button>`;
+      const pestana = (id, txt) => `<button type="button" class="${pestanaOpciones === id ? 'on' : ''}" data-op-pestana="${id}">${txt}</button>`;
+      const seccion = (id, html) => `<div class="opc-seccion${pestanaOpciones === id ? ' on' : ''}">${html}</div>`;
+      const tecla = (a) => fila(esc(TECLAS_NOMBRE[a] || a), '',
+        `<button type="button" class="opc-tecla" data-tecla="${a}">${esc((teclas[a] || '—').toUpperCase())}</button>`);
       showModal('Opciones', `
-        <div class="fsec">Audio</div>
-        <div class="frow" style="justify-content:space-between"><span>Música</span>
-          <button class="sbtn ghost" data-op="musica" style="min-width:5em">${musicaOff ? 'apagada' : 'encendida'}</button></div>
-        <div class="frow" style="justify-content:space-between"><span>Música del inicio</span>
-          <button class="sbtn ghost" data-op="musicalogin" style="min-width:5em">${musicaLoginOff ? 'apagada' : 'encendida'}</button></div>
-        <div class="frow" style="justify-content:space-between"><span>Volumen de la música</span>
-          <input type="range" min="0" max="100" step="5" value="${Math.round(volMusica * 100)}" data-op="volmusica" style="flex:1;max-width:12em">
-          <span data-op-val="volmusica" style="min-width:3em;text-align:right">${Math.round(volMusica * 100)}%</span></div>
-        <div class="frow" style="justify-content:space-between"><span>Efectos de sonido</span>
-          <button class="sbtn ghost" data-op="sonido" style="min-width:5em">${muted ? 'apagados' : 'encendidos'}</button></div>
-        <div class="frow" style="justify-content:space-between"><span>Volumen de los efectos</span>
-          <input type="range" min="0" max="100" step="5" value="${Math.round(volEfectos * 100)}" data-op="volefectos" style="flex:1;max-width:12em">
-          <span data-op-val="volefectos" style="min-width:3em;text-align:right">${Math.round(volEfectos * 100)}%</span></div>
-
-        <div class="fsec">Video</div>
-        ${window.coveraoEscritorio ? `<div class="frow" style="justify-content:space-between"><span>Pantalla completa</span>
-          <button class="sbtn ghost" data-op="completa" style="min-width:5em">…</button></div>` : ''}
-        <div class="frow" style="justify-content:space-between"><span>Tope de FPS</span>
-          <select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'sin límite')).join('')}
-            ${FPS_OPCIONES.includes(fpsCap) ? '<option value="custom">otro…</option>'
-                                            : `<option value="custom" selected>otro (${fpsCap})</option>`}</select>
-          <input type="number" min="10" max="1000" step="1" value="${fpsCap || ''}" data-op="fpscustom"
-                 placeholder="nro" style="max-width:5.5em${FPS_OPCIONES.includes(fpsCap) ? ';display:none' : ''}"></div>
-        <div class="sp2">Sin límite sigue el refresco de tu monitor, que es lo más parejo. Un tope que no sea
-          divisor exacto de tu refresco reparte los frames desparejo y se siente a tirones.</div>
-        <div class="frow" style="justify-content:space-between"><span>Escalado del mundo</span>
-          <button class="sbtn ghost" data-op="escalado" style="min-width:8em">${smoothWorld ? 'nítido' : 'pixelado'}</button></div>
-        <div class="frow" style="justify-content:space-between"><span>Zoom (alto de la cámara)</span>
-          <input type="range" min="9" max="22" value="${VTILES_H}" data-op="zoom" style="flex:1;max-width:12em">
-          <span data-op-val="zoom" style="min-width:4em;text-align:right">${VTILES_H} tiles</span></div>
-        <div class="frow" style="justify-content:space-between"><span>Resolución de render</span>
-          <select data-op="resolucion" style="max-width:11em">
-            <option value="4"${ssMax >= 4 ? ' selected' : ''}>Alta (más nítida)</option>
-            <option value="3"${ssMax === 3 ? ' selected' : ''}>Media</option>
-            <option value="2"${ssMax === 2 ? ' selected' : ''}>Baja</option>
-            <option value="1"${ssMax <= 1 ? ' selected' : ''}>Mínima (más rápida)</option>
-          </select></div>
-        <div class="sp2">El mundo se dibuja a más resolución de la que se muestra, para que el pixel-art quede
-          nítido. Cuesta: al agrandar la ventana esa escala sube de a un entero y los píxeles a dibujar pueden
-          crecer casi el doble de golpe. Si al poner pantalla completa se te caen los cuadros, bajala.</div>
-
-        <div class="fsec">Juego</div>
-        <div class="frow" style="justify-content:space-between"><span>Ver nombres de los jugadores</span>
-          <button class="sbtn ghost" data-op="nombres" style="min-width:5em">${mostrarNombres ? 'sí' : 'no'}</button></div>
-        <div class="frow" style="justify-content:space-between"><span>Macro (repetir con la tecla apretada)</span>
-          <button class="sbtn ghost" data-op="macro" style="min-width:5em">${macroOn ? 'sí' : 'no'}</button></div>
-        <div class="sp2">Viene puesto: mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue
-          usando lo que tenga atado, a la cadencia del cliente original (1,2 s el golpe, 1,4 s un hechizo,
-          1 s un ítem). Apagalo si preferís una acción por cada vez que apretás, que es como el original.
-          Los oficios —minar, talar, pescar, fundir— se repiten solos siempre, no dependen de esto.</div>
-
-        <div class="fsec">Controles</div>
-        <div class="frow"><button class="sbtn" data-op="teclas">Configuración de controles</button>
-          <span class="fhint">reasignar cualquier tecla</span></div>
-        ${window.coveraoEscritorio ? `<div class="fsec">Salir</div>
-        <div class="frow"><button class="sbtn ghost" data-op="volvermenu">Volver al menú</button>
+        <div class="opc-pestanas" role="tablist">${pestana('audio', 'Audio')}${pestana('video', 'Video')}${pestana('juego', 'Juego')}${pestana('controles', 'Controles')}</div>
+        <div class="opc-secciones">
+        ${seccion('audio',
+          fila('Música del menú y del ingreso', '', llave('musicalogin', !musicaLoginOff))
+          + fila('Música adentro del juego', 'La de cada mapa.', llave('musica', !musicaOff))
+          + fila('Volumen de la música', '', `<input type="range" min="0" max="100" step="5" value="${Math.round(volMusica * 100)}" data-op="volmusica">
+              <span class="opc-valor" data-op-val="volmusica">${Math.round(volMusica * 100)}%</span>`)
+          + fila('Efectos de sonido', '', llave('sonido', !muted))
+          + fila('Volumen de los efectos', '', `<input type="range" min="0" max="100" step="5" value="${Math.round(volEfectos * 100)}" data-op="volefectos">
+              <span class="opc-valor" data-op-val="volefectos">${Math.round(volEfectos * 100)}%</span>`))}
+        ${seccion('video',
+          (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false)) : '')
+          + fila('Tope de FPS', 'Sin límite sigue el refresco de tu monitor, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
+              `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'sin límite')).join('')}
+                ${FPS_OPCIONES.includes(fpsCap) ? '<option value="custom">otro…</option>'
+                                                : `<option value="custom" selected>otro (${fpsCap})</option>`}</select>
+              <input type="number" min="10" max="1000" step="1" value="${fpsCap || ''}" data-op="fpscustom"
+                     placeholder="nro" style="width:5.5em${FPS_OPCIONES.includes(fpsCap) ? ';display:none' : ''}">`)
+          + fila('Escalado del mundo', 'Nítido suaviza; pixelado deja el píxel tal cual. También con la tecla P.',
+              `<select data-op="escalado">${sel(1, smoothWorld ? 1 : 0, 'nítido')}${sel(0, smoothWorld ? 1 : 0, 'pixelado')}</select>`)
+          + fila('Zoom (alto de la cámara)', '', `<input type="range" min="9" max="22" value="${VTILES_H}" data-op="zoom">
+              <span class="opc-valor" data-op-val="zoom">${VTILES_H} tiles</span>`)
+          + fila('Resolución de render', 'El mundo se dibuja a más resolución de la que se muestra, para que el pixel-art quede nítido. Si en pantalla completa se te caen los cuadros, bajala.',
+              `<select data-op="resolucion">
+                <option value="4"${ssMax >= 4 ? ' selected' : ''}>Alta (más nítida)</option>
+                <option value="3"${ssMax === 3 ? ' selected' : ''}>Media</option>
+                <option value="2"${ssMax === 2 ? ' selected' : ''}>Baja</option>
+                <option value="1"${ssMax <= 1 ? ' selected' : ''}>Mínima (más rápida)</option></select>`))}
+        ${seccion('juego',
+          fila('Ver nombres de los jugadores', 'También con la tecla N.', llave('nombres', mostrarNombres))
+          + fila('Macro (repetir con la tecla apretada)', 'Mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue usando lo que tenga atado, a la cadencia del cliente original (1,2 s el golpe, 1,4 s un hechizo, 1 s un ítem). Apagalo si preferís una acción por cada vez que apretás, que es como el original. Los oficios se repiten solos siempre.',
+              llave('macro', macroOn)))}
+        ${seccion('controles',
+          Object.keys(TECLAS_DEF).map(tecla).join('')
+          + `<div class="opc-aviso">Las flechas, Ctrl (atacar), Enter (chat), Esc y F1–F10 no se reasignan: son fijas también en el original.</div>
+             <div style="margin-top:8px"><button type="button" class="sbtn ghost" data-tecla-reset="1">Volver a las del original</button></div>`)}
+        </div>
+        ${window.coveraoEscritorio ? `<div class="opc-pie"><button class="sbtn ghost" data-op="volvermenu">Volver al menú</button>
           <button class="sbtn ghost" data-op="salirjuego">Salir del juego</button></div>` : ''}`, true, 'opciones');
       // La pantalla completa la sabe el juego de escritorio, no la página.
       const completa = modalCard.querySelector('[data-op=completa]');
-      if (completa) window.coveraoEscritorio.estaEnPantallaCompleta().then((si) => { completa.textContent = si ? 'sí' : 'no'; }).catch(() => {});
+      if (completa) window.coveraoEscritorio.estaEnPantallaCompleta().then((si) => completa.setAttribute('aria-checked', String(si))).catch(() => {});
     }
     window.__abrirOpciones = abrirOpciones;
     window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, macroOn, ocultarLluviaBajoTecho });
@@ -7090,6 +7106,12 @@
           VTILES_H = Math.min(22, Math.max(9, Number(el.value) || 13));
           guardarPref('ao_zoom', String(VTILES_H)); resize();
           rot(VTILES_H + ' tiles'); break;
+        }
+        case 'escalado': {
+          smoothWorld = el.value === '1';
+          canvas.style.imageRendering = smoothWorld ? 'auto' : 'pixelated';
+          guardarPref('ao_escalado', smoothWorld ? '1' : '0');
+          break;
         }
         case 'resolucion': {
           ssMax = Math.min(4, Math.max(1, Number(el.value) || 4));
