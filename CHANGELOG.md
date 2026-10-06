@@ -29,6 +29,9 @@ Lo nuevo desde el paquete del 5 de octubre.
   al terminar las compras en un pueblo con banquero, el que lleva encima lo que se le caería deja en la bóveda lo
   que no necesita para la próxima compra, y lo retira cuando una compra lo pide.
 
+- **Los bots que empiezan compran el antídoto** y ya no salen de compras cada minuto y medio desde un rincón del
+  que sólo se sale por un mapa del que acaban de huir.
+
 ## 1.0.0 — 2026-10-05
 
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
