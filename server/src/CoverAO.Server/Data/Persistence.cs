@@ -449,6 +449,16 @@ public sealed class Persistence : IDisposable
     // Clases con maná al nacer (TCP.bas:509-520 Select Case UserClase). El Mago recibe Inteligencia*3 y el
     // resto de los lanzadores 50 fijo. OJO: el original tiene ahí un `If Not eClass.Paladin Then` que NO hace
     // lo que aparenta —`Not 9` es -10, siempre distinto de cero— así que el Paladín TAMBIÉN cobra sus 50.
+    /// <summary>La base de atributos de cada clase (VB6 <c>AsignarAtributos</c>, TCP.bas:309-347): fuerza, agilidad, inteligencia,
+    /// carisma y constitución, antes del modificador de la raza. La pantalla de creación la muestra desde
+    /// <c>client-web/assets/creacion.json</c>, y un test los compara.</summary>
+    public static (int f, int a, int i, int c, int co) AtributosBaseDeClase(byte clase) => clase switch
+    {
+        ClsClerigo or ClsAsesino or ClsBardo or ClsDruida or ClsPaladin or ClsNigromante => (14, 14, 18, 10, 18),
+        ClsMago => (6, 18, 18, 10, 18),
+        _ => (18, 18, 6, 10, 18),
+    };
+
     private const byte ClsClerigo = 1, ClsMago = 2, ClsAsesino = 4, ClsBardo = 6, ClsDruida = 7,
         ClsPaladin = 9, ClsNigromante = 18;
 
@@ -574,12 +584,7 @@ public sealed class Persistence : IDisposable
         //
         // El barrido del oráculo no podía verlo: compara el TIPO de paquete, y `RequestAtributes` respondía
         // `atributes` en los dos servers — con los cinco bytes distintos adentro.
-        (int f, int a, int i, int c, int co) baseAttrs = @class switch
-        {
-            ClsClerigo or ClsAsesino or ClsBardo or ClsDruida or ClsPaladin or ClsNigromante => (14, 14, 18, 10, 18),
-            ClsMago => (6, 18, 18, 10, 18),
-            _ => (18, 18, 6, 10, 18),
-        };
+        var baseAttrs = AtributosBaseDeClase(@class);
         int[] bases = [0, baseAttrs.f, baseAttrs.a, baseAttrs.i, baseAttrs.c, baseAttrs.co];
         // El clamp a 0 sólo lo tiene la INTELIGENCIA en el original (`IIf(... < 0, 0, ...)`, TCP.bas:345); los
         // otros cuatro no lo llevan. Con la base correcta el margen se achica: un Enano u Orco (−5 int) sobre

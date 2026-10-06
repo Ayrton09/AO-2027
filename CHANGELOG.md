@@ -8,6 +8,9 @@ Lo nuevo desde el paquete del 5 de octubre.
 
 ### Chat, mapa y pantalla
 
+- **Al crear el personaje se ven los atributos con los que nace**: la base de la clase, lo que suma o resta la raza y el
+  total (por ejemplo, un Gnomo Mago: Fuerza 6 −5 = 1). Antes se veía sólo lo de la raza.
+
 - **Opciones con pestañas, adentro del juego igual que en el menú**: Audio, Video, Juego y Controles, con interruptores y la
   ayuda debajo de cada opción. Son las mismas de antes, y las teclas se reasignan en la pestaña Controles.
 

@@ -573,6 +573,8 @@
     .mods span { color:var(--ink-dim); }
     .mods b { font-variant-numeric:tabular-nums; }
     .mods b.mas { color:#8fd694; } .mods b.menos { color:#e08b7a; } .mods b.cero { color:var(--ink-dim); }
+    .mods b.total { color:var(--gold); }
+    .mods-tit { flex-basis:100%; color:var(--ink-dim); font-size:calc(var(--u)*0.74); }
 
     /* Las cinco varas de la clase. El ancho es relativo al MAXIMO de esa vara entre las 18 clases, asi que
        comparar dos clases se hace de un vistazo y no leyendo decimales. */
@@ -7604,15 +7606,26 @@
       return marcar;
     };
 
+    // LOS ATRIBUTOS CON LOS QUE NACE: la base de la CLASE más el modificador de la RAZA, como el server
+    // (`AsignarAtributos` del original, TCP.bas:310) y como la pantalla del original, que mostraba la base
+    // (lbAtt) y al lado el bonificador (lbBonificador). Acá se mostraba sólo el bonificador, y un Gnomo Mago
+    // con "Fue -5" parecía nacer con 13 de fuerza y nacía con 1, porque el Mago tiene base 6 (el tester, 06/10).
+    // La inteligencia no baja de 0 (el `IIf` del original).
     const pintarModsDeRaza = (id) => {
       const d = $('raza-mods'); if (!d) return;
       const r = CREACION && CREACION.razas.find((x) => x.id === id);
       if (!r) { d.textContent = ''; return; }
-      d.innerHTML = Object.keys(ATRIB_CORTO).map((k) => {
-        const v = r.mods[k] || 0;
-        const cls = v > 0 ? 'mas' : v < 0 ? 'menos' : 'cero';
-        return '<span>' + ATRIB_CORTO[k] + ' <b class="' + cls + '">' + (v > 0 ? '+' : '') + v + '</b></span>';
-      }).join('');
+      const c = CREACION.clases.find((x) => x.id === (+lfCh.klass.value || 1));
+      const signo = (v) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v);
+      d.innerHTML = (c && c.atributos ? '<div class="mods-tit">Atributos al nacer (base de la clase y raza)</div>' : '')
+        + Object.keys(ATRIB_CORTO).map((k) => {
+          const v = r.mods[k] || 0;
+          const cls = v > 0 ? 'mas' : v < 0 ? 'menos' : 'cero';
+          if (!c || !c.atributos) return '<span>' + ATRIB_CORTO[k] + ' <b class="' + cls + '">' + (v > 0 ? '+' : '') + v + '</b></span>';
+          const base = c.atributos[k] || 0;
+          const total = k === 'inteligencia' ? Math.max(0, base + v) : base + v;
+          return '<span>' + ATRIB_CORTO[k] + ' ' + base + ' <b class="' + cls + '">' + signo(v) + '</b> = <b class="total">' + total + '</b></span>';
+        }).join('');
     };
 
     // LOS FAMILIARES, por clase. Los cinco del Mago son los de la lamina del original -- Elemental de Fuego,
@@ -7695,7 +7708,7 @@
     fichas($('pick-genero'), GENEROS, lfCh.gender);
     // El familiar NO sale de creacion.json: la lista es del cliente, asi que se pinta aunque ese archivo
     // falte -- por eso cuelga del mismo `change` de la clase y no de `pintarClase`, que sin datos sale antes.
-    fichas($('pick-clase'), CLASES, lfCh.klass, (id) => { pintarClase(id); pintarFamiliar(id); });
+    fichas($('pick-clase'), CLASES, lfCh.klass, (id) => { pintarClase(id); pintarFamiliar(id); pintarModsDeRaza(+lfCh.race.value || 1); });
     pintarBandos();
     pintarModsDeRaza(+lfCh.race.value || 1);
     pintarClase(+lfCh.klass.value || 1);
