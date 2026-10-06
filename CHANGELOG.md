@@ -25,6 +25,10 @@ Lo nuevo desde el paquete del 5 de octubre.
   inventario y lleva esa cantidad o menos encima la pierde toda al piso; con más, no pierde nada. Es la regla
   del AO clásico. En 0 no se cae nunca; el Server.ini de ejemplo la trae en 100000.
 
+- **Los bots guardan su oro en el banco**: con el oro que se cae al morir prendido, pasado el nivel de novato y
+  al terminar las compras en un pueblo con banquero, el que lleva encima lo que se le caería deja en la bóveda lo
+  que no necesita para la próxima compra, y lo retira cuando una compra lo pide.
+
 ## 1.0.0 — 2026-10-05
 
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
