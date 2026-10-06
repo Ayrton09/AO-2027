@@ -19,8 +19,7 @@ comunidad que lo forkeó, lo tradujo y lo mantuvo vivo.
 
 ## Agradecimiento especial
 
-**Francotirador**, que tuvo la idea de este proyecto y lo banca para que siga adelante. El juego lo dice también en
-el botón Créditos del menú del juego de escritorio y en Menú → Créditos.
+**Francotirador**, que tuvo la idea de este proyecto y lo banca para que siga adelante.
 
 ## Qué aporta este repositorio
 
