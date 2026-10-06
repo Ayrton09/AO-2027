@@ -73,4 +73,35 @@ public class ElOroDeLoQueMataLaMagiaTests : IDisposable
         Assert.Null(_world.NpcByIndex(npc.CharIndex));
         Assert.Equal(50L * 32767, p.Gold);
     }
+
+    /// <summary>EL NEWBIE QUE SUBE MUCHOS NIVELES DE GOLPE (el tester: Mago Gnomo newbie): con x32767 de experiencia un Lobo lo pasa
+    /// del 15, deja de ser novato y la cuna lo manda a su ciudad. El oro se cobra igual.</summary>
+    [Fact]
+    public async Task El_newbie_que_deja_de_serlo_con_ese_Lobo_cobra_el_oro_igual()
+    {
+        if (_datos.Npc(501) is not { Name: "Lobo", GiveGld: 50 } lobo || _datos.Spell(ProyectilMagico) is null) return;
+        const short Cuna = 37;
+        var p = new Player
+        {
+            CharIndex = _world.AllocateCharIndex(), Name = "Gnomito", Account = "gnomito", Pos = new WorldPos(Cuna, 60, 60), Heading = 2,
+            Hp = 100, MaxHp = 100, Level = 1, Class = 2, Race = 4, CombatMode = true, Mana = 5000, MaxMana = 5000, Stamina = 5000, MaxStamina = 5000,
+        };
+        new Leveling(_datos.LevelExp).InitNewCharacter(p);   // la tabla de niveles del personaje nuevo
+        p.Skills[GameLimits.SkillMagia] = 100;
+        p.Spells[1] = ProyectilMagico;
+        _world.Add(p);
+        var sesion = new ClientSession(new Transporte(), _dispatcher);
+        sesion.Player = p; p.Connection = sesion;
+        var npc = new Npc { CharIndex = _world.AllocateCharIndex(), Template = lobo, Hp = 1, Pos = new WorldPos(Cuna, 62, 60), Hostile = true };
+        _world.AddNpc(npc);
+
+        _dispatcher.HandleOne(sesion, new ByteQueueReader(new[] { (byte)ClientPacketId.CastSpell, (byte)1 }));
+        await Task.Delay(150);
+        _dispatcher.HandleOne(sesion, new ByteQueueReader(new[] { (byte)ClientPacketId.WorkLeftClick, (byte)62, (byte)60, (byte)GameLimits.SkillMagia }));
+        await Task.Delay(400);
+
+        Assert.Null(_world.NpcByIndex(npc.CharIndex));
+        Assert.True(p.Level > GameLimits.NewbieMaxLevel, $"premisa: tenia que dejar de ser novato y quedo en {p.Level}, exp {p.Exp}, oro {p.Gold}, mapa {p.Pos.Map}");
+        Assert.Equal(50L * 32767, p.Gold);
+    }
 }
