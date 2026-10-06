@@ -86,4 +86,18 @@ public class ElBancoDelBotTests
     {
         Assert.Equal(2 * (4000 + 400 + 100) + 200, Bot.LoDeLasCompras(4000, 400, 100, 200) - Bot.LoDeLasCompras(0, 0, 0, 0));
     }
+
+    /// <summary>LOS BANQUEROS DE RINKEL ESTÁN ADENTRO DEL BANCO: desde el herrero (19,16) no hay camino, y abrir una de las puertas
+    /// del mapa lo da. En la ronda 42 (06/10) Elmo salía "sin camino" y no depositaba nunca en el pueblo donde compran casi todos.</summary>
+    [Fact]
+    public void A_los_banqueros_de_Rinkel_se_llega_abriendo_una_puerta()
+    {
+        var datos = GameData.Load();
+        if (datos.MapExits.Count == 0 || !datos.MapObjects.TryGetValue(20, out var objetos)) return;
+        var mapas = new Navegante(datos);
+        bool EsBanquero(int ficha) => datos.Npc((short)ficha) is { NpcType: 4 };
+        var puertas = Bot.PuertasQueElMapaTiene(objetos, (19, 16), obj => Bot.PuertaQueSeAbre(datos.Obj((short)obj)));
+        Assert.NotEmpty(puertas);
+        Assert.Contains(puertas, p => mapas.AbrirlaDaCamino(20, (19, 16), p.Donde, EsBanquero));
+    }
 }

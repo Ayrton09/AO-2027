@@ -83,9 +83,14 @@ public sealed partial class Bot
     private async Task<bool> AbrirElBancoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         if (BanqueroDelMapa(sentidos.Mapa) is not { } nace) return false;
-        // Primero adonde nace (desde el mostrador casi nunca está a la vista); de cerca, adonde está.
-        if (sentidos.MasCercano(EsBanquero) is not { Pasos: <= RadioDelBanquero })
-            await IrHastaAsync(transporte, sentidos, sentidos.Mapa, nace.X, nace.Y, cerrada, ct, RadioDelBanquero);
+        // Primero adonde nace (desde el mostrador casi nunca está a la vista); de cerca, adonde está. Y SI NO HAY CAMINO, LA
+        // PUERTA, como con el mercader (`AbrirUnaPuertaAsync`): los dos banqueros de Rinkel están adentro del banco, y en la
+        // ronda 42 Elmo salía "sin camino" desde el herrero.
+        for (int intento = 0; intento < 2 && sentidos.MasCercano(EsBanquero) is not { Pasos: <= RadioDelBanquero }; intento++)
+        {
+            if (await IrHastaAsync(transporte, sentidos, sentidos.Mapa, nace.X, nace.Y, cerrada, ct, RadioDelBanquero)) break;
+            if (!await AbrirUnaPuertaAsync(transporte, sentidos, ficha => EsBanquero((short)ficha), cerrada, ct)) break;
+        }
         if (sentidos.MasCercano(EsBanquero) is not { } banquero) return false;
         if (banquero.Pasos > RadioDelBanquero
             && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, banquero.Quien.X, banquero.Quien.Y, cerrada, ct, RadioDelBanquero))
