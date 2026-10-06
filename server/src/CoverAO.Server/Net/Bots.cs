@@ -1581,8 +1581,6 @@ public sealed partial class Bot
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
-        // Y LO QUE NO ES DE LAS COMPRAS, A LA BÓVEDA (Bots.Banco.cs).
-        await DepositarLoQueSobraAsync(transporte, sentidos, cerrada, ct);
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
         // de la tienda con lo que fue a buscar se le da el descanso largo; al que sólo pasó a cambiar el
         // botín, el corto — si no, un Pescador que vive de vender pescado se pasaría la sesión esperando.
@@ -1599,7 +1597,11 @@ public sealed partial class Bot
                              || LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))
                              // Y EN EL PUEBLO, TODO DE UNA: ver `HayMasParaComprarAca`.
                              || (compro && HayMasParaComprarAca(sentidos));
-        switch (DescansoTrasElViaje(compro, sigueFaltando))
+        var descanso = DescansoTrasElViaje(compro, sigueFaltando);
+        // Y LO QUE NO ES DE LAS COMPRAS, A LA BÓVEDA (Bots.Banco.cs), cuando ya no compra más acá: depositando al salir de cada
+        // mostrador, con más para comprar en el pueblo lo retiraba en el viaje siguiente (Elmo en la ronda 42, en un minuto).
+        if (descanso != DescansoDeCompras.Ninguno) await DepositarLoQueSobraAsync(transporte, sentidos, cerrada, ct);
+        switch (descanso)
         {
             case DescansoDeCompras.Ninguno: _descansoLargo = false; _proximaCompra = 0; break;
             case DescansoDeCompras.Largo: PostergarCompra(exito: true); break;
