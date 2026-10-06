@@ -14229,6 +14229,25 @@ public sealed partial class PacketDispatcher
             p.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, p.Inventory[slot].ObjIndex,
                 p.Inventory[slot].Amount, p.Inventory[slot].Equipped, 0f, p.Inventory[slot].IsEmpty ? (byte)0 : (byte)1));
         }
+        TirarOroAlMorir(world, p);
+    }
+
+    /// <summary>EL ORO QUE SE CAE AL MORIR (regla de la casa <c>OroQueSeCaeAlMorir</c>, ver <see cref="ServerIni.OroQueSeCaeAlMorir"/>):
+    /// con el tope o menos encima, todo al piso en montones de <see cref="World.OroPorMonton"/>; con más, nada. Corre con las
+    /// mismas compuertas que el inventario (mapa inseguro, fuera de zona segura, sin el Pendiente del Sacrificio).</summary>
+    internal static void TirarOroAlMorir(World world, Player p)
+    {
+        if (world.OroQueSeCaeAlMorir <= 0 || p.Gold <= 0 || p.Gold > world.OroQueSeCaeAlMorir) return;
+        int antes = p.Gold;
+        for (int vueltas = 0; p.Gold > 0 && vueltas <= 100; vueltas++)
+        {
+            if (FreeGroundNear(world, p.Pos) is not { } donde) break;   // sin baldosa libre, lo que queda se queda encima
+            short monton = (short)Math.Min(p.Gold, world.OroPorMonton);
+            world.SetGround(donde, (short)GameLimits.ObjOro, monton);
+            world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, (short)GameLimits.ObjOro, monton));
+            p.Gold -= monton;
+        }
+        if (p.Gold != antes) p.Connection?.Send(ServerMessages.UpdateGold(p.Gold));
     }
 
     /// <summary>Desequipa TODO (VB6 UserDie:1343-1390: armadura, arma, nudillo, casco, herramienta/anillo,

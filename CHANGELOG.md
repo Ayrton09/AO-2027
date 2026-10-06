@@ -250,6 +250,10 @@ y lo que quedó sin contar desde el 4 de septiembre.
 
 ### Para GMs y para el que hostea
 
+- **El oro que se cae al morir, en el Server.ini** (`OroQueSeCaeAlMorir`): el que muere donde se cae el
+  inventario y lleva esa cantidad o menos encima la pierde toda al piso; con más, no pierde nada. Es la regla
+  del AO clásico. En 0 no se cae nunca; el Server.ini de ejemplo la trae en 100000.
+
 - **GMs**: /TELEP, /IRA, /SUM, /ACC e /INVISIBLE como en el original; pausar frena sólo a las criaturas; en el
   cliente web, Shift+clic en el mapa te lleva a esa baldosa. Las denuncias les llegan como en el original.
 

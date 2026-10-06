@@ -87,6 +87,9 @@ MinutosDelDia=24
 MinutosDeClima=18
 PorcentajeLluvia=18
 OroAlSubirNivel=0
+; Al morir donde se cae el inventario, el que lleva este oro o menos encima lo pierde todo al piso (con mas, nada).
+; 0 = no se cae nunca, como el original de 2021.
+OroQueSeCaeAlMorir=100000
 CuraAlSubirNivel=1
 QuitarEquipoNovato=1
 ; Que lo tirado al piso sobreviva al reinicio.

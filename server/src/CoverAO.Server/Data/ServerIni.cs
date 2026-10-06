@@ -202,7 +202,7 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
-        "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
@@ -484,6 +484,13 @@ public sealed class ServerIni
     /// CERO: `SubirNivel` (Modulo_UsUaRiOs.bas:387) reparte vida, maná, energía, golpe y skillpoints, y no
     /// toca el oro. 0 = como el original.</summary>
     public int OroAlSubirNivel { get; private set; }
+
+    /// <summary>EL ORO QUE SE CAE AL MORIR (pedido del tester, 06/10: "eso le daba adrenalina a los newbies"). Con N &gt; 0,
+    /// el que muere donde se le cae el inventario y lleva N monedas o menos encima las pierde TODAS al piso; con más de N
+    /// no pierde ninguna. Es la regla del AO clásico, que en el CoverAO de 2021 quedó comentada en <c>TirarOro</c>
+    /// (InvUsuario.bas:163, <c>'If Cantidad &gt; 100000 Then Exit Sub</c>) y sin la llamada desde <c>TirarTodo</c>.
+    /// 0 = como el original de 2021, que no tira oro al morir. El <c>Server.ini</c> de ejemplo lo trae en 100000.</summary>
+    public int OroQueSeCaeAlMorir { get; private set; }
 
     /// <summary>¿Corre el CENTINELA anti-macro? (reporte del tester, 2026-08-24). El módulo del original está
     /// completo pero DESENCHUFADO: sus dos llamadas están comentadas en la fuente (frmMain.frm:749 y
@@ -1213,6 +1220,7 @@ public sealed class ServerIni
         // Las reglas de la casa. El tope del oro es alto a propósito (no es una opinión sobre cuánto está
         // bien) pero no infinito: un valor absurdo desbalancea el mercado del server sin que nadie lo note.
         cfg.OroAlSubirNivel = Math.Clamp(ini.GetInt("INIT", "OroAlSubirNivel", 0), 0, 1_000_000);
+        cfg.OroQueSeCaeAlMorir = Math.Clamp(ini.GetInt("INIT", "OroQueSeCaeAlMorir", 0), 0, 90_000_000);
         cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
         cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
         // LA TABLA DE NIVELES MÍNIMOS: una línea `mapa=nivel` por mapa. Sin la sección queda vacía y la

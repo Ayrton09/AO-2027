@@ -143,6 +143,11 @@ public sealed class World
     /// .dat" (Comercio.bas:106-109): acá esa línea reescrita vive en este mapa, que persiste en
     /// <c>Misc/PROPIEDADES.json</c>, y <see cref="InventarioDelMercader.LineasDe"/> la aplica sobre la ficha.</summary>
     public Dictionary<int, Dictionary<int, short>> LlavesVendidas { get; } = new();
+    /// <summary>Con cuánto oro encima o menos se pierde todo al morir; 0 = no se cae (regla de la casa
+    /// <c>OroQueSeCaeAlMorir</c> del Server.ini). Vive acá porque la muerte (<c>PacketDispatcher.KillPlayer</c>) no ve el ini.</summary>
+    public int OroQueSeCaeAlMorir { get; set; }
+    /// <summary>Cuánto oro entra en cada montón del piso (<c>OroPorMonton</c> del Server.ini).</summary>
+    public int OroPorMonton { get; set; } = 10_000;
     /// <summary>El Centro de Subastas, uno solo para todo el mundo (ver <see cref="CentroDeSubastas"/>).</summary>
     public CentroDeSubastas Subastas { get; } = new();
     /// <summary>El motivo del rechazo de un aspirante que estaba desconectado (VB6 <c>[GUILD] MotivoRechazo</c> del .chr,
