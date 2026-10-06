@@ -3724,7 +3724,11 @@
     let subastas = [], subastasRecibidas = 0, subastaSel = null, subastaFiltro = '', subastasMias = false;
     let nuevaSub = { slot: 0, cant: 1, ini: 1, fin: 0, horas: 3 };
     const SUB_HORAS = [3, 6, 12, 24, 36];
-    const subDeposito = (horas, ini, fin) => 10 * horas + Math.floor(Math.max(ini, fin) / 100);
+    // El 1 % redondea al par, igual que el server (Matematicas.Porcentaje): lo que se muestra es lo que se cobra.
+    const subDeposito = (horas, ini, fin) => {
+      const x = Math.max(ini, fin) / 100, piso = Math.floor(x), resto = x - piso;
+      return 10 * horas + (resto > 0.5 || (resto === 0.5 && piso % 2 === 1) ? piso + 1 : piso);
+    };
     const miNombre = () => (((chars.get(myCharIndex) || {}).name) || '').split(' <')[0].trim().toLowerCase();
     const subRestante = (s) => {
       const seg = Math.max(0, s.segundos - Math.floor((Date.now() - subastasRecibidas) / 1000));

@@ -66,9 +66,10 @@ public sealed class CentroDeSubastas
     public IReadOnlyList<Subasta> Abiertas => _subastas;
     public IReadOnlyList<EntregaDeSubasta> Pendientes => _pendientes;
 
-    /// <summary>Lo que se cobra al publicar.</summary>
+    /// <summary>Lo que se cobra al publicar. El 1 % redondea al par, como todo porcentaje del juego (el cliente hace la misma
+    /// cuenta para mostrarlo antes de publicar).</summary>
     public static long Deposito(int horas, long precioInicial, long precioFinal) =>
-        10L * horas + Math.Max(precioInicial, precioFinal) / 100;
+        10L * horas + Matematicas.Porcentaje(Math.Max(precioInicial, precioFinal), 1);
 
     /// <summary>Lo guardado, al arrancar.</summary>
     public void Cargar(IEnumerable<Subasta> subastas, IEnumerable<EntregaDeSubasta> pendientes)
