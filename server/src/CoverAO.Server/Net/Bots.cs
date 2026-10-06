@@ -1407,8 +1407,11 @@ public sealed partial class Bot
             if (soloLaRopa) return VendeRopa(ficha);
             if (soloElArma) return VendeElArma(ficha);
             if (soloElPergamino) return VendePergamino(ficha);
+            // EL ANTÍDOTO TAMBIÉN ELIGE EL DESTINO: con el antídoto como única falta el viaje es "sólo gustos", y acá no se lo
+            // aceptaba, así que nunca se compraba y cada fracaso tomaba el descanso corto del antídoto (`DescansoTrasElFracaso`).
             if (soloGustos)
-                return (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
+                return (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex)))
+                    || (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (vaAVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null);
             if (primeroLaBebida) return stock.Any(s => EsBebida((short)s.ObjIndex));
@@ -1456,6 +1459,11 @@ public sealed partial class Bot
             var sinPeligro = PasaSinPeligro(sentidos, NingunMapa);
             pisableParaComprar = m => pisable(m) && sinPeligro(m);
         }
+        // Y NI POR UN MAPA DEL QUE RECIÉN HUYÓ: el viaje no lo cruza (`NoVuelveACruzar`), así que buscar el pueblo por ahí es elegir
+        // un viaje que se corta en el primer tramo. Medido (investigación del 06/10, `early122` a `early138`): los casters de los
+        // bolsones 382/394/66 y 275, que salen sólo por el 65 o el 195 y huyen de sus Lobos, salían a Rinkel cada minuto y medio y
+        // el viaje daba "desde acá no se llega" en el acto: 89 de 89 dentro de los cinco minutos de una huida.
+        pisableParaComprar = SinHuidas(pisableParaComprar, sentidos.Mapa);
         // NO HAY NINGUNO A LA VISTA: se viaja. Se intenta DOS veces porque el primer destino se elige sin
         // conocer el mapa de llegada —desde otro mapa no se puede saber por dónde se va a entrar— y muchos
         // mercaderes están adentro de un edificio al que no se llega caminando: medido, en el mapa donde nacen
@@ -1500,7 +1508,7 @@ public sealed partial class Bot
                 // `ValeViajarAlPueblo`.
                 // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS: ver `PuebloConMercader`.
                 var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaDondeCompra, Sirve,
-                    pisableParaComprar, PasaSinPeligro(sentidos, NingunMapa));
+                    pisableParaComprar, SinHuidas(PasaSinPeligro(sentidos, NingunMapa), sentidos.Mapa));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto,
@@ -3231,6 +3239,15 @@ public sealed partial class Bot
     /// </summary>
     public static bool NoVuelveACruzar(IReadOnlyDictionary<int, long> huyoDe, int mapa, int mapaDestino, long ahora) =>
         mapa != mapaDestino && huyoDe.TryGetValue(mapa, out long hasta) && ahora < hasta;
+
+    /// <summary>Lo pisable de una BÚSQUEDA con el mismo filtro de huidas que el viaje (<see cref="NoVuelveACruzar"/>): lo que se
+    /// busca por un mapa que el viaje no va a cruzar es un viaje que se corta en el primer tramo. El mapa donde está no cuenta: de
+    /// ahí se sale igual.</summary>
+    private Func<int, bool> SinHuidas(Func<int, bool> pisable, int dondeEsta)
+    {
+        long ahora = Environment.TickCount64;
+        return m => pisable(m) && (m == dondeEsta || !NoVuelveACruzar(_huyoDe, m, NingunMapa, ahora));
+    }
 
     /// <summary>
     /// ¿LO CRUZA BUSCANDO COTO? Lo de <paramref name="cruza"/> (<see cref="SeCruzaBuscando"/>) y que no sea un mapa que el viaje no
@@ -5164,7 +5181,7 @@ public sealed partial class Bot
             return true;
         }
 
-        var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos));
+        var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: SinHuidas(Pisable(sentidos), sentidos.Mapa));
         bool llego = templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar);
         // Y EL TEMPLO AL QUE EL VIAJE NO LLEGA CUENTA COMO SIN CAMINO: ver `OtraCuraSinCamino`.
         _curasSinCamino = OtraCuraSinCamino(_curasSinCamino, llego);
