@@ -4574,8 +4574,24 @@ public sealed partial class Bot
         return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)));
     }
 
-    /// <summary>Lo que vale en combate: el golpe si pega, la defensa si se viste.</summary>
-    public static int ValorDeCombate(ObjInfo o) => o.IsWeapon || o.IsKnuckles ? o.MaxHit : o.MaxDef;
+    /// <summary>
+    /// Lo que vale en combate: el golpe si pega, la defensa si se viste. CON EL MÍNIMO Y EL MÁXIMO, como el arnés de combate del
+    /// juego (<c>PlantillaDeCombate</c>): el golpe sale de una tirada entre los dos (<c>Combat</c>). Con el máximo solo, Ivo cambiaba el
+    /// Martillo de Guerra (22-22) por la Hacha Orca (18-23), que en promedio pega menos, y viajaba a Rinkel a pagarla 13139 en 11 de
+    /// las 12 corridas mid de las rondas 42 y 43 (investigación del 06/10); en las vitrinas hay 17 pares de armas así.
+    /// </summary>
+    public static int ValorDeCombate(ObjInfo o) => o.IsWeapon || o.IsKnuckles ? o.MinHit + o.MaxHit : o.MinDef + o.MaxDef;
+
+    /// <summary>
+    /// ¿EL SALTO VALE EL VIAJE? Una pieza que no tiene, sí; si ya tiene una, sólo si la nueva vale por lo menos un
+    /// <see cref="MejoraQueValeElViaje"/> % más. Comprar se compra igual estando en el mostrador (<see cref="MejorarElEquipoAsync"/>):
+    /// lo que no se hace es viajar por un escalón. Medido (investigación del 06/10, mid105-116): 35 viajes en 12 corridas por
+    /// escalones de menos del 20 % (Bruma por la Túnica Arcana, +4 % de defensa, en las 12; Hilda por la de Druida, 8 de 12).
+    /// </summary>
+    public static bool ElSaltoValeElViaje(int nuevo, int tengo) => tengo <= 0 || nuevo * 100L >= tengo * (100L + MejoraQueValeElViaje);
+
+    /// <summary>Cuánto mejor (en %) tiene que ser una pieza para viajar a comprarla: ver <see cref="ElSaltoValeElViaje"/>.</summary>
+    public const int MejoraQueValeElViaje = 20;
 
     /// <summary>
     /// ¿LO PUEDE USAR? La clase, LA RAZA, EL GÉNERO y el nivel: todo lo que el servidor va a mirar cuando se lo
@@ -4690,7 +4706,8 @@ public sealed partial class Bot
     {
         if (_entorno.Datos.Obj(obj) is not { } o || !LoPuedeUsar(o, sentidos.Nivel)) return false;
         foreach (var esDeEso in QueSePone)
-            if (esDeEso(o) && ValorDeCombate(o) > LoMejorQueTiene(sentidos, esDeEso)) return true;
+            if (esDeEso(o) && ValorDeCombate(o) > LoMejorQueTiene(sentidos, esDeEso)
+                && ElSaltoValeElViaje(ValorDeCombate(o), LoMejorQueTiene(sentidos, esDeEso))) return true;
         return false;
     }
 
