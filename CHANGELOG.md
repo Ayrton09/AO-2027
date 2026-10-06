@@ -8,6 +8,9 @@ Lo nuevo desde el paquete del 5 de octubre.
 
 ### Chat, mapa y pantalla
 
+- **El mapa del mundo ya no repite las uniones entre mapas**: cada pedazo muestra sólo lo suyo, y la costa de Nix, por ejemplo,
+  ya no se ve doble.
+
 - **Al mirar a alguien, la vida en rojo y el nivel en celeste**, separados con un espacio: "Ves a Lobo nivel 8 64% de vida".
 
 - **Al crear el personaje se ven los atributos con los que nace**: la base de la clase, lo que suma o resta la raza y el
