@@ -32,6 +32,10 @@ Lo nuevo desde el paquete del 5 de octubre.
 - **Los bots que empiezan compran el antídoto** y ya no salen de compras cada minuto y medio desde un rincón del
   que sólo se sale por un mapa del que acaban de huir.
 
+- **Los bots eligen mejor el equipo**: comparan las armas y las armaduras por su golpe o defensa mínimo y máximo
+  (antes, sólo por el máximo, y algunos se compraban un arma que pegaba menos), y no viajan al pueblo por una pieza
+  apenas mejor que la que tienen.
+
 ## 1.0.0 — 2026-10-05
 
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
