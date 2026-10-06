@@ -58,6 +58,7 @@ public sealed class SentidosDelBot
     private bool _tengoPosicion;
     private int _vida, _vidaMax = 1, _energia, _energiaMax = 1;
     private int _mana, _manaMax = 1, _oro, _puntosLibres, _experiencia;
+    private int _banco = -1, _vecesQueVioElBanco;
     private short _nivel, _mapa;
     private byte _hambre, _sed;
     private long _ultimoAvisoDeVeneno;
@@ -182,6 +183,23 @@ public sealed class SentidosDelBot
     public int ManaMaximo { get { lock (_candado) return _manaMax; } }
 
     public int Oro { get { lock (_candado) return _oro; } }
+
+    /// <summary>EL ORO DE LA BÓVEDA, -1 mientras no lo sabe. Lo dice el panel del oro del banquero (el <c>BankInit</c> del doble
+    /// clic); el servidor no lo manda al entrar, así que un bot recién conectado no sabe lo que guardó en la vida anterior hasta
+    /// que vuelve a un banquero.</summary>
+    public int Banco { get { lock (_candado) return _banco; } }
+
+    /// <summary>Toda su plata: la que lleva encima más la de la bóveda (si no la sabe, sólo la de encima).</summary>
+    public int Plata { get { lock (_candado) return _oro + Math.Max(0, _banco); } }
+
+    /// <summary>Cuántas veces se abrió el panel del oro: sirve para esperar la respuesta del doble clic al banquero.</summary>
+    public int VecesQueVioElBanco { get { lock (_candado) return _vecesQueVioElBanco; } }
+
+    /// <summary>Anota lo que se acaba de depositar (positivo) o retirar (negativo), ya confirmado por el oro de encima.</summary>
+    public void MovioAlBanco(int monto)
+    {
+        lock (_candado) if (_banco >= 0) _banco = Math.Max(0, _banco + monto);
+    }
 
     /// <summary>La experiencia acumulada en el nivel. Sube con cada golpe que da experiencia (<c>CalcularDarExp</c>), no sólo al matar.</summary>
     public int Experiencia { get { lock (_candado) return _experiencia; } }
@@ -861,6 +879,15 @@ public sealed class SentidosDelBot
                 case ServerPacketId.CommerceInit:
                     lock (_candado) _comerciando = true;
                     break;
+
+                // EL PANEL DEL ORO (goliath = 1) trae el oro de la bóveda; la bóveda de ítems lo manda en cero, así que ése no se lee.
+                case ServerPacketId.BankInit:
+                {
+                    bool panelDelOro = l.Byte() != 0;
+                    int enLaBoveda = l.Largo();
+                    if (panelDelOro) lock (_candado) { _banco = enLaBoveda; _vecesQueVioElBanco++; }
+                    break;
+                }
 
                 case ServerPacketId.CommerceEnd:
                     lock (_candado) { _comerciando = false; _tienda.Clear(); }

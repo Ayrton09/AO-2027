@@ -53,7 +53,7 @@ internal enum Temperamento
 /// <c>IntervaloParaCaminar</c> y el techo de paquetes por segundo lo corta la sesión. Los números de acá
 /// están holgados contra los dos.</para>
 /// </summary>
-public sealed class Bot
+public sealed partial class Bot
 {
     // ── El ritmo humano ───────────────────────────────────────────────────────────────────────────────
     private const int PasoMinMs = 180, PasoMaxMs = 420;         // entre dos pasos de una misma caminata
@@ -1242,7 +1242,7 @@ public sealed class Bot
         // rato se le terminaban la comida o la bebida seguía esperando con el hambre o la sed en cero, sin regenerar. Medido en
         // `sano1`: un Gladiador compró dos pociones y pasó doce minutos sin volver, con 215 monedas encima y la comida y la
         // bebida en cero. El descanso corto de un viaje fallido sí se respeta: sin él reintentaría en cada vuelta.
-        if (SaltaElDescanso(_descansoLargo, sentidos.Oro, sentidos.Suma(PuntosDeComida), sentidos.Suma(PuntosDeBebida)))
+        if (SaltaElDescanso(_descansoLargo, PlataDe(sentidos), sentidos.Suma(PuntosDeComida), sentidos.Suma(PuntosDeBebida)))
             _proximaCompra = 0;
         if (Environment.TickCount64 < _proximaCompra) return false;
 
@@ -1267,7 +1267,7 @@ public sealed class Bot
         bool vaAVender = hayQueVender
                          && ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
                                                                      (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
-                                                  sentidos.Oro);
+                                                  PlataDe(sentidos));
         short laQueFalta = HerramientaQueLeFalta(sentidos);
         bool faltaHerramienta = laQueFalta != 0;
         // EL ARMA PARA EL CAMINO: ver `LeFaltaElArmaDelCamino`.
@@ -1294,15 +1294,15 @@ public sealed class Bot
         // tiradas, y se cae al morir. Medido: un Minero compró el piquete dos veces y los dos se le cayeron muriendo en el
         // camino a una mina; todas las minas del mundo están en mapas pk.
         // La de FABRICAR no pide lugar: se fabrica parado donde sea (el servidor no mira el mapa).
-        bool vaPorLaHerramienta = faltaHerramienta && sentidos.Oro >= cuestaLaHerramienta
+        bool vaPorLaHerramienta = faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
                                   && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos));
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
         // sin llevarse nada.
-        bool enApuro = sentidos.Oro < MonedasDeApuro;
+        bool enApuro = PlataDe(sentidos) < MonedasDeApuro;
         // Y POR LAS POCIONES, SÓLO SI LE ALCANZA PARA UNA, como el antídoto (ver `LeAlcanzaParaUna`).
         bool vaPorPociones = faltanPociones && !enApuro
-                             && LeAlcanzaParaUna(sentidos.Oro, ReservaDeLasPociones(sentidos), CuestaLaPocion);
+                             && LeAlcanzaParaUna(PlataDe(sentidos), ReservaDeLasPociones(sentidos), CuestaLaPocion);
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
         // CON LA MOCHILA LLENA NO ENTRA NADA NUEVO, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
@@ -1312,7 +1312,7 @@ public sealed class Bot
         bool vaPorHechizo = !enApuro && hayLugar && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
         // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
-        bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, sentidos.Oro, CuestaElAntidoto);
+        bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto);
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
         // Y EL ARMA, SI HAY QUIEN LE VENDA UNA QUE SIRVA: ver `PrimeroElArma`. Alcanza con el MAPA, como con el pergamino
@@ -1371,6 +1371,9 @@ public sealed class Bot
         // (`ElMercaderLeVende`: la del Server.ini, que por defecto es la del original — un ciudadano sólo compra donde el
         // `battleMode` es 2 o 3). Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
         bool MapaAtiende(int mapa) => ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
+        // Y SI LA COMPRA NECESITA LO DE LA BÓVEDA, SÓLO DONDE HAY BANQUERO: ver `NecesitaElBanco`.
+        bool conLaDelBanco = NecesitaElBanco(sentidos.Banco, sentidos.Oro, Bolsillo(sentidos), soloGustos);
+        bool MapaDondeCompra(int mapa) => MapaAtiende(mapa) && (!conLaDelBanco || TieneBanquero(mapa));
         // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
         void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)
                                                  == DescansoDeCompras.Largo);
@@ -1393,7 +1396,7 @@ public sealed class Bot
 
         // Y VENDER NO ALCANZA PARA ELEGIRLO SI LE FALTA LO ESENCIAL: ver `VenderAlcanzaParaElegirlo`. Una sola
         // vez, igual que `sobraParaEquipo`: `Sirve` corre por cada mercader del mapa.
-        bool venderAlcanza = VenderAlcanzaParaElegirlo(faltaComida || faltaBebida, sentidos.Oro,
+        bool venderAlcanza = VenderAlcanzaParaElegirlo(faltaComida || faltaBebida, PlataDe(sentidos),
                                                        ReservaPara(sentidos, comida: true, bebida: true));
 
         bool Sirve(int ficha)
@@ -1440,7 +1443,7 @@ public sealed class Bot
         // filtro el viaje terminaba siempre en el mapa vecino —que tiene los tres vendedores de herramientas y
         // battleMode 1— donde nadie lo atendía. De los 863 mapas del mundo, 55 tienen battleMode 2 o 3 y 23 de
         // ésos tienen mercader: destinos sobran.
-        var tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
+        var tienda = MapaDondeCompra(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         // Y PASADO EL NOVATO, CON UNA RUNA QUE LO DEJA DONDE LE VENDEN, A COMPRAR NO SE CRUZA POR DONDE LO MATAN: si no hay tienda
         // por un camino sin peligro, lo esencial se va a buscar con la runa (ver `VolverACasaAsync`). Medido en `paso16b` (29/09):
         // tres bots de nivel 20 y 21 muertos por Arañas Gigantes en el Desierto de Rinkel (el 15 y el 16), yendo de compras a
@@ -1461,7 +1464,7 @@ public sealed class Bot
         bool abrioUnaPuerta = false, llegoAlPueblo = false;
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaAtiende, pisableParaComprar) is not { } lugar)
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaDondeCompra, pisableParaComprar) is not { } lugar)
             {
                 // SIN TIENDA A LA QUE SE LLEGUE CAMINANDO, LA RUNA. Hay mapas a los que se entra y de los que no se
                 // sale a pie: medido, desde el mapa 62 no hay a pie ningún vendedor de piquetes ni de hachas, y la
@@ -1477,7 +1480,7 @@ public sealed class Bot
                 bool hayQuienLeVendaAca = _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var paraLaPuerta)
                                           && paraLaPuerta.Any(q => Sirve(q.NpcIndex));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo)
-                    && ValeBuscarLaPuertaAca(MapaAtiende(sentidos.Mapa), hayQuienLeVendaAca)
+                    && ValeBuscarLaPuertaAca(MapaDondeCompra(sentidos.Mapa), hayQuienLeVendaAca)
                     && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) { abrioUnaPuerta = true; continue; }
 
                 // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
@@ -1486,7 +1489,7 @@ public sealed class Bot
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo)
                     && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var losDeAca)
                     && losDeAca.FirstOrDefault(q => Sirve(q.NpcIndex)) is { NpcIndex: > 0 } elMercader
-                    && ValeAcercarseAunqueNoLlegue(MapaAtiende(sentidos.Mapa), false)
+                    && ValeAcercarseAunqueNoLlegue(MapaDondeCompra(sentidos.Mapa), false)
                     && await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)elMercader.X, (byte)elMercader.Y,
                                           cerrada, ct, ParaQueLaPuertaEntreEnVista)
                     && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) continue;
@@ -1496,7 +1499,7 @@ public sealed class Bot
                 // `DondeHay` nunca devuelve nada y el viaje no salía — pero el MAPA sí se encuentra. Ver
                 // `ValeViajarAlPueblo`.
                 // Y SI A CINCO MAPAS NO HAY NINGUNO, MÁS LEJOS: ver `PuebloConMercader`.
-                var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaAtiende, Sirve,
+                var conMercader = PuebloConMercader(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaDondeCompra, Sirve,
                     pisableParaComprar, PasaSinPeligro(sentidos, NingunMapa));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
@@ -1538,11 +1541,19 @@ public sealed class Bot
             if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador)
                 && sentidos.Mapa != lugar.Mapa)
             { Fracaso(); return true; }   // ni siquiera se llegó al mapa
-            tienda = MapaAtiende(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
+            tienda = MapaDondeCompra(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         }
         if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { Fracaso(); return true; }
         _tiendasSinCamino = 0;
         var t = tienda.Value;
+
+        // LO GUARDADO, ANTES DEL MOSTRADOR (ver `NecesitaElBanco`), y del banquero se vuelve adonde estaba el mercader.
+        if (conLaDelBanco && sentidos.Donde(t.Quien.CharIndex) is { } antesDelBanco)
+        {
+            await RetirarParaComprarAsync(transporte, sentidos, cerrada, ct);
+            if (sentidos.Donde(t.Quien.CharIndex) is null)
+                await IrHastaAsync(transporte, sentidos, sentidos.Mapa, antesDelBanco.X, antesDelBanco.Y, cerrada, ct, RadioDelMostrador);
+        }
 
         // Acercarse al mostrador. Va por el navegante y no a los tumbos: el mercader atiende hasta tres
         // baldosas (VB6 HandleCommerceStart) y el paso codicioso se traba con cualquier mesa en el medio, que
@@ -1570,6 +1581,8 @@ public sealed class Bot
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
+        // Y LO QUE NO ES DE LAS COMPRAS, A LA BÓVEDA (Bots.Banco.cs).
+        await DepositarLoQueSobraAsync(transporte, sentidos, cerrada, ct);
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
         // de la tienda con lo que fue a buscar se le da el descanso largo; al que sólo pasó a cambiar el
         // botín, el corto — si no, un Pescador que vive de vender pescado se pasaría la sesión esperando.
@@ -1819,6 +1832,14 @@ public sealed class Bot
     /// se llevó algo.</summary>
     private async Task<bool> VenderYComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                  short fichaDelMercader, CancellationToken ct)
+    {
+        _enElMostrador = true;
+        try { return await VenderYComprarEnElMostradorAsync(transporte, sentidos, fichaDelMercader, ct); }
+        finally { _enElMostrador = false; }
+    }
+
+    private async Task<bool> VenderYComprarEnElMostradorAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                                              short fichaDelMercader, CancellationToken ct)
     {
         bool compro = false;
         for (int i = 0; i < VentasPorVisita && sentidos.Comerciando; i++)
@@ -2210,7 +2231,7 @@ public sealed class Bot
         // mochila una Runa del kit de valor 100, que el Vendedor General del mapa 20 —a un salto de la cuna— paga 33,
         // cuando la comida y la bebida cuestan del orden de una moneda cada diez puntos. Lo de novato, las pociones y lo
         // que no vale nada siguen afuera (abajo), y lo puesto ya lo descarta la mochila.
-        bool enElPozo = EnElPozo(sentidos.Oro, SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
+        bool enElPozo = EnElPozo(PlataDe(sentidos), SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
         if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo) || EsHerramientaDeSuOficio(obj)) return false;
         // NI LO QUE JUNTA PARA FABRICAR: la leña del Carpintero o la piel del Sastre aparecen durante la sesión como
         // cualquier botín, y vendiéndolas no fabricaría nunca.
@@ -2243,10 +2264,10 @@ public sealed class Bot
         // monedas por minuto y terminando con 6 o 27 pollos, sin salir nunca a cazar.
         if (o is { IsFood: true }
             && !SobraOSeCambia(sentidos, ComidaPropia, obj, ComidaQueSeLleva(sentidos.Nivel),
-                               SinNadaQueTomar(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
+                               SinNadaQueTomar(sentidos) && PlataDe(sentidos) < MonedasDeApuro)) return false;
         if (o is { IsDrink: true }
             && !SobraOSeCambia(sentidos, BebidaPropia, obj, BebidaQueSeLleva(sentidos.Nivel),
-                               SinNadaQueComer(sentidos) && sentidos.Oro < MonedasDeApuro)) return false;
+                               SinNadaQueComer(sentidos) && PlataDe(sentidos) < MonedasDeApuro)) return false;
         // Y LO MEJOR QUE TIENE DE CADA CLASE DE EQUIPO TAMPOCO: ver `EsLoMejorQueTieneDeEsaClase`. Sin esto el bot
         // vendía la armadura que acababa de comprar —o la que se le desequipó al morir— y la recompraba en el mismo
         // segundo, perdiendo dos tercios del valor en cada vuelta.
@@ -4724,7 +4745,7 @@ public sealed class Bot
     /// 19 mil de sus 20 mil monedas por una armadura.</para>
     /// </summary>
     private int PlataParaElEquipo(SentidosDelBot sentidos) =>
-        PlataQueSobra(sentidos.Oro,
+        PlataQueSobra(PlataDe(sentidos),
                       ReservaPara(sentidos, comida: true, bebida: true) + ReservaParaLasPociones(sentidos.Suma(PocionPropia), CuestaLaPocion),
                       CuestaLaHerramienta(sentidos), MonedasDeApuro);
 
@@ -4753,7 +4774,7 @@ public sealed class Bot
         reservaDeLaPanza + (leFaltaLaRopa && ropaMasBarata < int.MaxValue ? ropaMasBarata : 0);
 
     private int PlataParaLaRopa(SentidosDelBot sentidos) =>
-        PlataQueSobra(sentidos.Oro, ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
+        PlataQueSobra(PlataDe(sentidos), ReservaPara(sentidos, comida: true, bebida: true), CuestaLaHerramienta(sentidos), MonedasDeApuro);
 
     /// <summary>
     /// Lo que cuesta la ropa más barata que se puede poner entre las que vende algún mercader del mundo (int.MaxValue si ninguna). Sin
