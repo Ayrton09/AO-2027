@@ -691,6 +691,11 @@
     .opc-que small { display:block; color:var(--ink-dim); opacity:.8; font-size:calc(var(--u)*0.74); max-width:30em; }
     .opc-control { display:flex; align-items:center; gap:8px; flex:none; }
     .opc-control input[type=range] { width:170px; accent-color:var(--gold); }
+    /* Los selectores y el número, oscuros como en el menú: con el estilo del navegador salían blancos (el autor, 06/10). */
+    .opc-control select, .opc-control input[type=number] { background:#0a0705; border:1px solid var(--gold-deep); color:var(--ink);
+      padding:5px 8px; border-radius:4px; font:inherit; color-scheme:dark; }
+    .opc-control select:focus, .opc-control input[type=number]:focus { outline:none; border-color:var(--gold); }
+    .opc-control select option { background:#0a0705; color:var(--ink); }
     .opc-valor { min-width:3.6em; text-align:right; color:var(--ink-dim); font-variant-numeric:tabular-nums; }
     .opc-llave { width:44px; height:24px; flex:none; padding:0; border-radius:12px; border:1px solid var(--gold-deep); background:#0d0904;
                  position:relative; cursor:pointer; }
