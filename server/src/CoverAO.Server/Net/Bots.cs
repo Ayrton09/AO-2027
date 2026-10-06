@@ -3139,23 +3139,6 @@ public sealed partial class Bot
     public static bool EstaLleno(int personasALaVista) => personasALaVista >= PersonasQueLlenan;
 
     /// <summary>
-    /// ¿EL LUGAR DONDE ESTÁ PARADO SE DEJA POR LLENO? Sin presa a la vista, con <see cref="PersonasQueLlenan"/> o más personas, y SÓLO
-    /// SI ES UN LUGAR DONDE SE CAZA: con alguna criatura que nace a la vista (<see cref="NaceAlgoALaVista"/>). La gente de una plaza no
-    /// compite por nada. Medido (investigación del 06/10, `early100` a `early144`): los 18 bots entran en la plaza de la cuna (57,74),
-    /// donde no nace nada a la vista, y la primera búsqueda de coto vetaba la cuna 5 minutos para el 89 % de ellos; se iban a
-    /// Ullathorpe (una Serpiente), al 58 y de ahí al pozo de Lindos, y llegaban al nivel 10 en 680 s de mediana contra 267 s de los
-    /// que se quedaban. La runa los devuelve a esa plaza, y el veto volvía a saltar ahí.
-    /// </summary>
-    public static bool ElLugarEstaLleno(bool veAlgunaPresa, int personasALaVista, bool naceAlgoALaVista) =>
-        !veAlgunaPresa && naceAlgoALaVista && EstaLleno(personasALaVista);
-
-    /// <summary>¿Nace alguna criatura hostil a la vista de <paramref name="donde"/>? La vista es la pantalla del cliente: ocho
-    /// baldosas a los costados y seis arriba y abajo (VB6 <c>MinXBorder</c>/<c>MinYBorder</c>).</summary>
-    public static bool NaceAlgoALaVista(IReadOnlyList<MapNpcSpawn>? nacen, (byte X, byte Y) donde, Func<int, bool> esHostil) =>
-        nacen is not null && nacen.Any(n => Math.Abs(n.X - donde.X) <= GameLimits.MinXBorder - 1
-                                            && Math.Abs(n.Y - donde.Y) <= GameLimits.MinYBorder - 1 && esHostil(n.NpcIndex));
-
-    /// <summary>
     /// LAS BÚSQUEDAS DE COTO SEGUIDAS SIN GANAR NADA, en el mismo mapa: la cuenta sigue si desde la anterior no cambiaron el mapa, la
     /// experiencia ni el nivel, y vuelve a uno si cambió algo. A las <see cref="BusquedasSinGanar"/> el mapa se deja como el lleno
     /// (<see cref="EstaLleno"/>): la búsqueda llega cada medio minuto sin ninguna presa a la vista, y la experiencia sube con cada
@@ -3571,10 +3554,7 @@ public sealed partial class Bot
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         long ahora = Environment.TickCount64;
-        if (ElLugarEstaLleno(veAlgunaPresa, sentidos.PersonasALaVista(),
-                             NaceAlgoALaVista(_entorno.Datos.MapSpawns.GetValueOrDefault(sentidos.Mapa), sentidos.Posicion,
-                                              f => _entorno.Datos.Npc((short)f) is { Hostile: true })))
-            _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, false);
+        if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, false);
         // Y EL QUE NO LE DA NADA, POR MÁS RATO: ver `OtraBusquedaSinGanar` y `LoDejaHasta`.
         _busquedasSinGanar = OtraBusquedaSinGanar(_busquedasSinGanar, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel);
         if (_busquedasSinGanar.Seguidas >= BusquedasSinGanar)
