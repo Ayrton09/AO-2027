@@ -54,6 +54,8 @@ Lo nuevo desde el paquete del 5 de octubre.
 - **Los bots eligen mejor el equipo**: comparan las armas y las armaduras por su golpe o defensa mínimo y máximo
   (antes, sólo por el máximo, y algunos se compraban un arma que pegaba menos), y no viajan al pueblo por una pieza
   apenas mejor que la que tienen.
+- **Los bots, entre dos caminos igual de largos, toman el que no cruza criaturas que no pueden cazar**: de Illiandor
+  a cazar Cuervos van por el Puerto y no por los Lobos.
 
 ## 1.0.0 (2026-10-05)
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
