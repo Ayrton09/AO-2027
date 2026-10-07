@@ -61,6 +61,9 @@ public sealed partial class Bot
     private const int PausaMinMs = 1_500, PausaMaxMs = 9_000;   // parado entre caminata y caminata
     private const int QuedoMinMs = 15_000, QuedoMaxMs = 60_000; // el rato largo sin hacer nada
     private const int UnaDeCadaTantas = 8;                      // cada cuántas pausas toca una larga
+    // Cazando sin nada al alcance, más corto: ver `LaPausaDespuesDelPaseo`.
+    public const int PausaCazandoMinMs = 500, PausaCazandoMaxMs = 2_000;
+    public const int UnaDeCadaTantasCazando = 30;
     private const int MirarAlrededorMs = 900;                   // lo que tarda en dar el primer paso al entrar
 
     /// <summary>Cuánto se le da al servidor para contestar un paso del login. Generoso a propósito: verificar
@@ -909,9 +912,30 @@ public sealed partial class Bot
                                             cerrada, ct)) continue;
 
             if (!await PasearAsync(transporte, sentidos, cerrada, ct, presa?.Quien)) return;
-            bool larga = ++pausas % UnaDeCadaTantas == 0;
-            await QuedarseAsync(sentidos, larga ? _rng.Next(QuedoMinMs, QuedoMaxMs) : _rng.Next(PausaMinMs, PausaMaxMs), ct);
+            // BUSCANDO: nada al alcance en un mapa donde nace lo que caza. En un pueblo, el ritmo de siempre.
+            bool buscando = (presa is not { } vista || vista.Pasos > alcance)
+                && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var nacenAca)
+                && nacenAca.Any(sp => EsPresa((short)sp.NpcIndex, vidaMaxima, nivelAhora, conPociones, curaVeneno));
+            var (pausaMin, pausaMax) = LaPausaDespuesDelPaseo(++pausas, buscando);
+            await QuedarseAsync(sentidos, _rng.Next(pausaMin, pausaMax), ct);
         }
+    }
+
+    /// <summary>
+    /// CUÁNTO SE QUEDA PARADO DESPUÉS DE UN PASEO (la <paramref name="pausas"/>-ésima). Con una presa al alcance que no le dio ganas,
+    /// el ritmo de siempre: de <see cref="PausaMinMs"/> a <see cref="PausaMaxMs"/>, y una de cada <see cref="UnaDeCadaTantas"/> el rato
+    /// largo; y en un pueblo, igual. BUSCANDO, sin nada al alcance en un mapa donde nace lo que caza (<paramref name="buscando"/>), de <see cref="PausaCazandoMinMs"/> a
+    /// <see cref="PausaCazandoMaxMs"/>, y el rato largo una de cada <see cref="UnaDeCadaTantasCazando"/>.
+    ///
+    /// <para>DECIDIDO POR EL AUTOR (07/10). El censo de las corridas recientes (mid105-122, tardeU1-6) daba unos 40 % del tiempo de mid
+    /// y late paseando y parado en el coto sin presa a la vista, y por las constantes ~85 % de ese paseo era estar quieto. Una persona
+    /// que caza y no ve nada sigue caminando a buscar; las pausas largas quedan para el pueblo y para la presa que no le dio ganas.</para>
+    /// </summary>
+    public static (int Min, int Max) LaPausaDespuesDelPaseo(int pausas, bool buscando)
+    {
+        bool larga = pausas % (buscando ? UnaDeCadaTantasCazando : UnaDeCadaTantas) == 0;
+        if (larga) return (QuedoMinMs, QuedoMaxMs);
+        return buscando ? (PausaCazandoMinMs, PausaCazandoMaxMs) : (PausaMinMs, PausaMaxMs);
     }
 
     /// <summary>
