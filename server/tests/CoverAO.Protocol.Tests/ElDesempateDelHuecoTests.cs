@@ -68,6 +68,37 @@ public class ElDesempateDelHuecoTests
     }
 
     [Fact]
+    public void El_rescate_del_varado_no_usa_el_desempate()
+    {
+        if (ElMundo() is not { } w) return;
+        var sin = Bot.SinLoDelHueco(w.Datos, 275, Vida, Nivel, conPociones: true, curaVeneno: false);
+
+        ((byte X, byte Y) Puerta, int Saltos)? Rescate(Func<int, bool>? desempate) =>
+            Bot.PuertaDelViaje(w.Mapas, w.Datos, w.Ini, Player.StatusCiudadano, Nivel, Vida, 194, EnIlliandor, 275, Coto,
+                               Navegante.TopeDeMapas, false, true, _ => true, _ => true, _ => true, desempate);
+
+        var sinDesempate = Rescate(null);
+        Assert.NotNull(sinDesempate);
+        Assert.Equal(195, w.Datos.MapExits[(194, sinDesempate.Value.Puerta.X, sinDesempate.Value.Puerta.Y)].DestMap);
+        Assert.Equal(sinDesempate, Rescate(sin));
+    }
+
+    [Fact]
+    public void Escapando_o_de_muerto_el_viaje_no_tiene_desempate()
+    {
+        int armados = 0;
+        Func<int, bool> sin = _ => true;
+        Func<int, bool> Armar() { armados++; return sin; }
+
+        Assert.Null(Bot.DesempateDelViaje(escapando: true, deMuerto: false, Armar));
+        Assert.Null(Bot.DesempateDelViaje(escapando: false, deMuerto: true, Armar));
+        Assert.Null(Bot.DesempateDelViaje(escapando: true, deMuerto: true, Armar));
+        Assert.Equal(0, armados);
+        Assert.Same(sin, Bot.DesempateDelViaje(escapando: false, deMuerto: false, Armar));
+        Assert.Equal(1, armados);
+    }
+
+    [Fact]
     public void Si_el_camino_sin_lo_del_hueco_es_mas_largo_va_por_el_corto()
     {
         ((byte, byte), int)? Buscar(Func<int, bool> f) => f(5) ? (((byte)1, (byte)1), 2) : (((byte)2, (byte)2), 3);

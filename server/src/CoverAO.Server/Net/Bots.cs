@@ -6303,9 +6303,9 @@ public sealed partial class Bot
     /// No cierra ningún mapa: si el único camino corto cruza lo del hueco, lo cruza como siempre.
     ///
     /// <para>DECIDIDO POR EL AUTOR (07/10), como desempate de la regla del 29/09 (lo del hueco no se esquiva de antemano). Medido
-    /// en las 156 corridas early: 270 viajes de coto de Illiandor (194) al 275 en nivel 7 a 9 cruzaron los Lobos del 195, que para
-    /// 55 a 89 de vida son del hueco; el 44 % huyó en el camino y 3 murieron ahí. Por el Puerto (179), una ciudad, son los mismos
-    /// dos saltos, y sólo 6 fueron por ahí.</para>
+    /// en las 156 corridas early: de 270 viajes de coto de Illiandor (194) al 275, de nivel 3 a 9, 264 cruzaron los Lobos del 195,
+    /// que para 56 a 89 de vida son del hueco; 120 (45 %) se fueron del 195 por lo del hueco (`[SONDA-HUECO-SALE]`) y 3 murieron
+    /// ahí. Por el Puerto (179), una ciudad, son los mismos dos saltos, y sólo 6 fueron por ahí.</para>
     /// </summary>
     public static ((byte X, byte Y) Puerta, int Saltos)? ElDeMenosSustoSiDaIgual(
         Func<Func<int, bool>, ((byte X, byte Y) Puerta, int Saltos)?> buscar, Func<int, bool> filtro, Func<int, bool>? sinLoDelHueco)
@@ -6317,14 +6317,20 @@ public sealed partial class Bot
     }
 
     /// <summary>
-    /// ¿SE PASA POR ESE MAPA SIN LO DEL HUECO? Sí, si es el destino, si es seguro (ahí lo del hueco no lo hace huir, ver
-    /// <see cref="EsDelHuecoPara"/>) o si no nace nada hostil del hueco para él. Es el desempate de <see cref="ElDeMenosSustoSiDaIgual"/>.
+    /// ¿SE PASA POR ESE MAPA SIN LO DEL HUECO? Sí, si es el destino, si es seguro (ahí lo del hueco sólo lo hace huir con la
+    /// vida en rojo, ver <see cref="LoDelHuecoEsLaAmenaza"/>) o si no nace nada hostil del hueco para él. Es el desempate de <see cref="ElDeMenosSustoSiDaIgual"/>.
     /// </summary>
     public static Func<int, bool> SinLoDelHueco(GameData datos, int mapaDestino, int vidaMaxima, int nivel, bool conPociones,
                                                 bool curaVeneno) =>
         m => m == mapaDestino || !datos.IsPkMap(m)
              || !(datos.MapSpawns.TryGetValue(m, out var nacen)
                   && nacen.Any(sp => EsDelHuecoPara(datos.Npc((short)sp.NpcIndex), vidaMaxima, nivel, conPociones, curaVeneno)));
+
+    /// <summary>
+    /// EL DESEMPATE DE UN VIAJE: <paramref name="armar"/> (<see cref="SinLoDelHueco"/>), salvo escapando o de muerto, que no lo tienen.
+    /// </summary>
+    public static Func<int, bool>? DesempateDelViaje(bool escapando, bool deMuerto, Func<Func<int, bool>> armar) =>
+        escapando || deMuerto ? null : armar();
 
     /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.
@@ -6375,9 +6381,9 @@ public sealed partial class Bot
             var pasa = PasaSinPeligro(sentidos, mapaDestino);
             var cruza = CruzaSinPeligroHacia(sentidos, mapaDestino);
             // A IGUAL CANTIDAD DE MAPAS, POR DONDE NO NACE LO DEL HUECO: ver `ElDeMenosSustoSiDaIgual`. Escapando o de muerto, no.
-            var sinLoDelHueco = escapando || deMuerto ? null
-                : SinLoDelHueco(_entorno.Datos, mapaDestino, sentidos.VidaMaxima, sentidos.Nivel,
-                                sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear, sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0);
+            var sinLoDelHueco = DesempateDelViaje(escapando, deMuerto,
+                () => SinLoDelHueco(_entorno.Datos, mapaDestino, sentidos.VidaMaxima, sentidos.Nivel,
+                                    sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear, sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0));
             // ESCAPANDO, POR LA PUERTA MÁS CERCANA al mapa vecino: ver `Navegante.CaminoALaPuertaMasCercana`.
             var porLaMasCercana = escapando && !esLaMeta
                 ? _entorno.Mapas.CaminoALaPuertaMasCercana(mapa, desde, mapaDestino, trabas) : null;
