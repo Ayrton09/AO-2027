@@ -913,13 +913,20 @@ public sealed partial class Bot
 
             if (!await PasearAsync(transporte, sentidos, cerrada, ct, presa?.Quien)) return;
             // BUSCANDO: nada al alcance en un mapa donde nace lo que caza. En un pueblo, el ritmo de siempre.
-            bool buscando = (presa is not { } vista || vista.Pasos > alcance)
-                && _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var nacenAca)
-                && nacenAca.Any(sp => EsPresa((short)sp.NpcIndex, vidaMaxima, nivelAhora, conPociones, curaVeneno));
+            bool buscando = EstaBuscandoPresa(presa?.Pasos, alcance,
+                _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var nacenAca) ? nacenAca.Select(sp => sp.NpcIndex) : null,
+                f => EsPresa((short)f, vidaMaxima, nivelAhora, conPociones, curaVeneno));
             var (pausaMin, pausaMax) = LaPausaDespuesDelPaseo(++pausas, buscando);
             await QuedarseAsync(sentidos, _rng.Next(pausaMin, pausaMax), ct);
         }
     }
+
+    /// <summary>
+    /// ¿ESTÁ BUSCANDO PRESA? Sin ninguna al alcance (<see cref="VeUnaPresaQueIriaABuscar"/>) en un mapa donde nace algo que es presa
+    /// para él. <paramref name="nacenAca"/> es lo que nace en el mapa (<c>null</c> si no figura); en un pueblo, nada.
+    /// </summary>
+    public static bool EstaBuscandoPresa(int? pasosHastaLaPresa, int alcance, IEnumerable<int>? nacenAca, Func<int, bool> esPresa) =>
+        !VeUnaPresaQueIriaABuscar(pasosHastaLaPresa, alcance) && nacenAca is not null && nacenAca.Any(esPresa);
 
     /// <summary>
     /// CUÁNTO SE QUEDA PARADO DESPUÉS DE UN PASEO (la <paramref name="pausas"/>-ésima). Con una presa al alcance que no le dio ganas,
@@ -927,9 +934,10 @@ public sealed partial class Bot
     /// largo; y en un pueblo, igual. BUSCANDO, sin nada al alcance en un mapa donde nace lo que caza (<paramref name="buscando"/>), de <see cref="PausaCazandoMinMs"/> a
     /// <see cref="PausaCazandoMaxMs"/>, y el rato largo una de cada <see cref="UnaDeCadaTantasCazando"/>.
     ///
-    /// <para>DECIDIDO POR EL AUTOR (07/10). El censo de las corridas recientes (mid105-122, tardeU1-6) daba unos 40 % del tiempo de mid
-    /// y late paseando y parado en el coto sin presa a la vista, y por las constantes ~85 % de ese paseo era estar quieto. Una persona
-    /// que caza y no ve nada sigue caminando a buscar; las pausas largas quedan para el pueblo y para la presa que no le dio ganas.</para>
+    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en `mid123`, `mid125` y `mid127` (ronda 49, con el ritmo de siempre; `fase5/campo`,
+    /// sumadas con `fase5/herramientas/bots/analizar_pausas.py`): los bots pasaban 27-28 % del tiempo parados buscando presa en el
+    /// coto, 30-31 % parados en total, con una pausa larga cada ocho (118-121 largas en 1008-1031 pausas). Una persona que caza y no ve
+    /// nada sigue caminando a buscar; las pausas largas quedan para el pueblo y para la presa que no le dio ganas.</para>
     /// </summary>
     public static (int Min, int Max) LaPausaDespuesDelPaseo(int pausas, bool buscando)
     {

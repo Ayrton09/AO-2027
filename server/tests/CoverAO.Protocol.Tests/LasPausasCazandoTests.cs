@@ -35,4 +35,31 @@ public class LasPausasCazandoTests
         Assert.Equal(240 / Bot.UnaDeCadaTantasCazando, largasBuscando);
         Assert.Equal(240 / 8, largasDeSiempre);
     }
+
+    // `EstaBuscandoPresa`: sin presa al alcance, en un mapa donde nace algo que es presa para el bot. Los números son fichas de NPC;
+    // acá son presa las menores a 100.
+    private static bool Presa(int ficha) => ficha < 100;
+
+    [Fact]
+    public void Sin_presa_a_la_vista_en_un_mapa_donde_nace_presa_esta_buscando()
+        => Assert.True(Bot.EstaBuscandoPresa(null, 12, new[] { 500, 7 }, Presa));
+
+    [Fact]
+    public void Con_una_presa_lejos_para_pelearla_tambien_esta_buscando()
+        => Assert.True(Bot.EstaBuscandoPresa(13, 12, new[] { 7 }, Presa));
+
+    [Fact]
+    public void Con_una_presa_al_alcance_no_esta_buscando()
+    {
+        Assert.False(Bot.EstaBuscandoPresa(12, 12, new[] { 7 }, Presa));
+        Assert.False(Bot.EstaBuscandoPresa(0, 12, new[] { 7 }, Presa));
+    }
+
+    [Fact]
+    public void En_un_pueblo_o_donde_no_nace_presa_no_esta_buscando()
+    {
+        Assert.False(Bot.EstaBuscandoPresa(null, 12, null, Presa));
+        Assert.False(Bot.EstaBuscandoPresa(null, 12, Array.Empty<int>(), Presa));
+        Assert.False(Bot.EstaBuscandoPresa(null, 12, new[] { 500, 600 }, Presa));
+    }
 }
