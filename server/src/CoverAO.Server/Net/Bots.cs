@@ -6303,8 +6303,8 @@ public sealed partial class Bot
     /// No cierra ningún mapa: si el único camino corto cruza lo del hueco, lo cruza como siempre.
     ///
     /// <para>DECIDIDO POR EL AUTOR (07/10), como desempate de la regla del 29/09 (lo del hueco no se esquiva de antemano). Medido
-    /// en las 156 corridas early: de 270 viajes de coto de Illiandor (194) al 275, de nivel 3 a 9, 264 cruzaron los Lobos del 195,
-    /// que para 56 a 89 de vida son del hueco; 120 (45 %) se fueron del 195 por lo del hueco (`[SONDA-HUECO-SALE]`) y 3 murieron
+    /// en las 156 corridas early: de 270 viajes de coto de Illiandor (194) al 275, de nivel 6 a 9, 264 cruzaron los Lobos del 195,
+    /// que para los bots, de 56 a 89 de vida máxima, son del hueco; 120 (45 %) se fueron del 195 por lo del hueco (`[SONDA-HUECO-SALE]`) y 3 murieron
     /// ahí. Por el Puerto (179), una ciudad, son los mismos dos saltos, y sólo 6 fueron por ahí.</para>
     /// </summary>
     public static ((byte X, byte Y) Puerta, int Saltos)? ElDeMenosSustoSiDaIgual(

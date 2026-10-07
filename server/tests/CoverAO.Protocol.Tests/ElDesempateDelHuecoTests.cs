@@ -7,7 +7,7 @@ namespace CoverAO.Protocol.Tests;
 
 /// <summary>
 /// A IGUAL CANTIDAD DE MAPAS, EL CAMINO SIN LO DEL HUECO (DECIDIDO POR EL AUTOR, 07/10; ver <c>Bot.ElDeMenosSustoSiDaIgual</c>). El caso
-/// medido: de Illiandor (194) al coto de Cuervos del 275 en nivel 7 a 9, por los Lobos del 195 o por el Puerto (179), los dos a dos saltos.
+/// medido: de Illiandor (194) al coto de Cuervos del 275 en nivel 6 a 9, por los Lobos del 195 o por el Puerto (179), los dos a dos saltos.
 /// </summary>
 public class ElDesempateDelHuecoTests
 {
