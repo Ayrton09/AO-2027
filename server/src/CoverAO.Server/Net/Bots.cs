@@ -6279,20 +6279,52 @@ public sealed partial class Bot
                                                                       int nivel, int vidaMaxima, int mapa, (byte X, byte Y) desde,
                                                                       int mapaDestino, (byte X, byte Y) destino, int topeDeMapas,
                                                                       bool deMuerto, bool porCualquierCamino, Func<int, bool> pasa,
-                                                                      Func<int, bool> cruza, Func<int, bool> sinHuidas)
+                                                                      Func<int, bool> cruza, Func<int, bool> sinHuidas,
+                                                                      Func<int, bool>? sinLoDelHueco = null)
     {
         Func<int, bool> pisable = porCualquierCamino ? PisableDelRescate(datos, ini, bando, nivel)
                                                      : m => PuedeEntrar(nivel, datos.MapZone(m));
+        // EL DESEMPATE DEL HUECO, en los tres escalones; el rescate no lo usa.
+        var desempate = porCualquierCamino ? null : sinLoDelHueco;
+        ((byte X, byte Y) Puerta, int Saltos)? Por(Func<int, bool> filtro) =>
+            ElDeMenosSustoSiDaIgual(f => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, f, topeDeMapas), filtro, desempate);
         return CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas && !porCualquierCamino,
-                   () => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => pasa(m) && sinHuidas(m), topeDeMapas),
-                   () => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => cruza(m) && sinHuidas(m), topeDeMapas),
-                   () => mapas.PuertaHacia(mapa, mapaDestino, desde, destino,
-                                           PorElCaminoDeSiempre(datos, pisable, sinHuidas, mapaDestino, vidaMaxima, deMuerto),
-                                           topeDeMapas))
+                   () => Por(m => pasa(m) && sinHuidas(m)),
+                   () => Por(m => cruza(m) && sinHuidas(m)),
+                   () => Por(PorElCaminoDeSiempre(datos, pisable, sinHuidas, mapaDestino, vidaMaxima, deMuerto)))
                ?? (porCualquierCamino
                    ? mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => pisable(m) && sinHuidas(m), topeDeMapas)
                    : null);
     }
+
+    /// <summary>
+    /// A IGUAL CANTIDAD DE MAPAS, EL CAMINO SIN LO DEL HUECO. <paramref name="buscar"/> da la puerta por lo que deja pasar
+    /// <paramref name="filtro"/>; si con <paramref name="sinLoDelHueco"/> además se llega en los mismos saltos o menos, va por ahí.
+    /// No cierra ningún mapa: si el único camino corto cruza lo del hueco, lo cruza como siempre.
+    ///
+    /// <para>DECIDIDO POR EL AUTOR (07/10), como desempate de la regla del 29/09 (lo del hueco no se esquiva de antemano). Medido
+    /// en las 156 corridas early: 270 viajes de coto de Illiandor (194) al 275 en nivel 7 a 9 cruzaron los Lobos del 195, que para
+    /// 55 a 89 de vida son del hueco; el 44 % huyó en el camino y 3 murieron ahí. Por el Puerto (179), una ciudad, son los mismos
+    /// dos saltos, y sólo 6 fueron por ahí.</para>
+    /// </summary>
+    public static ((byte X, byte Y) Puerta, int Saltos)? ElDeMenosSustoSiDaIgual(
+        Func<Func<int, bool>, ((byte X, byte Y) Puerta, int Saltos)?> buscar, Func<int, bool> filtro, Func<int, bool>? sinLoDelHueco)
+    {
+        var corto = buscar(filtro);
+        // A un salto no hay mapa de paso que esquivar.
+        if (sinLoDelHueco is null || corto is not { Saltos: > 1 } c) return corto;
+        return buscar(m => filtro(m) && sinLoDelHueco(m)) is { } tranquilo && tranquilo.Saltos <= c.Saltos ? tranquilo : corto;
+    }
+
+    /// <summary>
+    /// ¿SE PASA POR ESE MAPA SIN LO DEL HUECO? Sí, si es el destino, si es seguro (ahí lo del hueco no lo hace huir, ver
+    /// <see cref="EsDelHuecoPara"/>) o si no nace nada hostil del hueco para él. Es el desempate de <see cref="ElDeMenosSustoSiDaIgual"/>.
+    /// </summary>
+    public static Func<int, bool> SinLoDelHueco(GameData datos, int mapaDestino, int vidaMaxima, int nivel, bool conPociones,
+                                                bool curaVeneno) =>
+        m => m == mapaDestino || !datos.IsPkMap(m)
+             || !(datos.MapSpawns.TryGetValue(m, out var nacen)
+                  && nacen.Any(sp => EsDelHuecoPara(datos.Npc((short)sp.NpcIndex), vidaMaxima, nivel, conPociones, curaVeneno)));
 
     /// <summary>
     /// IR HASTA UN LUGAR, cruzando mapas si hace falta. Devuelve si llegó.
@@ -6342,6 +6374,10 @@ public sealed partial class Bot
             Func<int, bool> sinHuidas = m => escapando || deMuerto || !NoVuelveACruzar(_huyoDe, m, mapaDestino, ahoraDelTramo);
             var pasa = PasaSinPeligro(sentidos, mapaDestino);
             var cruza = CruzaSinPeligroHacia(sentidos, mapaDestino);
+            // A IGUAL CANTIDAD DE MAPAS, POR DONDE NO NACE LO DEL HUECO: ver `ElDeMenosSustoSiDaIgual`. Escapando o de muerto, no.
+            var sinLoDelHueco = escapando || deMuerto ? null
+                : SinLoDelHueco(_entorno.Datos, mapaDestino, sentidos.VidaMaxima, sentidos.Nivel,
+                                sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear, sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0);
             // ESCAPANDO, POR LA PUERTA MÁS CERCANA al mapa vecino: ver `Navegante.CaminoALaPuertaMasCercana`.
             var porLaMasCercana = escapando && !esLaMeta
                 ? _entorno.Mapas.CaminoALaPuertaMasCercana(mapa, desde, mapaDestino, trabas) : null;
@@ -6352,7 +6388,7 @@ public sealed partial class Bot
             // POR DÓNDE, Y EL RESCATE DEL VARADO: ver `PuertaDelViaje`.
             else if (PuertaDelViaje(_entorno.Mapas, _entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel, sentidos.VidaMaxima, mapa,
                                     desde, mapaDestino, (destinoX, destinoY), topeDeMapas, deMuerto, porCualquierCamino, pasa, cruza,
-                                    sinHuidas) is { } salida)
+                                    sinHuidas, sinLoDelHueco) is { } salida)
                 meta = salida.Puerta;
             else return false;   // desde acá no se llega
             _desdeAcaNoSeLlega = false;
