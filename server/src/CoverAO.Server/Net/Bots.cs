@@ -888,7 +888,10 @@ public sealed partial class Bot
                 // `BuscarDondeCazarAsync` es para "no veo nada", y en la cuna siempre hay algo que cazar: nunca se
                 // agotaba, así que el bot no se preguntaba jamás si eso todavía le rendía. Subir de nivel es
                 // justamente cuando una persona mira alrededor y decide si se queda.
-                if (HayQueRevisarElCoto(_nivelDelCoto, nivelAhora))
+                // MENOS EL QUE FRENÓ EL VIAJE POR ESA PRESA: primero la pelea, y la revisión en la vuelta que sigue (`frenoParaCazar` ya está
+                // en false). Medido en early145-168: 416 veces se fue a otro mapa en el mismo segundo en que frenó por una presa, con la
+                // revisión del nivel pendiente, y 26 sin ella.
+                if (!frenoParaCazar && HayQueRevisarElCoto(_nivelDelCoto, nivelAhora))
                 {
                     _nivelDelCoto = nivelAhora;
                     _ultimaPresaQuePaga = 0;
@@ -4696,7 +4699,21 @@ public sealed partial class Bot
     /// mientras viaja no caza, la plata no le crecía nunca. Medido en `seguir1`: Ciro, nivel 13 con 2445 monedas, doce
     /// minutos entre la cuna y el Herrero Rinkel —Armadura de Cuero a 3000— sin matar una criatura.</summary>
     private bool ValeElViajePorEso(SentidosDelBot sentidos, short obj, double plata) =>
-        MejoraLoQueTiene(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata);
+        MejoraLoQueTiene(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata)
+        && CuestaComoParaElViaje(_entorno.Datos.Obj(obj)?.Value ?? 0);
+
+    /// <summary>
+    /// ¿CUESTA COMO PARA VIAJAR A COMPRARLO? Desde <see cref="PrecioQueValeElViaje"/>. Lo más barato se compra si pasa por el mercader
+    /// (<see cref="MejorarElEquipoAsync"/> no lo mira), pero no se sale a buscarlo.
+    ///
+    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 116 viajes (242 minutos de bot en 24 corridas) a Rinkel antes del
+    /// nivel 13 por una pieza de menos de 1000, que en el Herrero de Armaduras son el Escudo de Tortuga (300) y el de Madera (500): el
+    /// primer escudo, al que la regla del 20 % (<see cref="ElSaltoValeElViaje"/>) deja pasar siempre porque no tenía ninguno.</para>
+    /// </summary>
+    public static bool CuestaComoParaElViaje(int precio) => precio >= PrecioQueValeElViaje;
+
+    /// <summary>Desde cuánto una pieza de equipo vale un viaje: ver <see cref="CuestaComoParaElViaje"/>.</summary>
+    public const int PrecioQueValeElViaje = 1_000;
 
     /// <summary>¿Es un arma que se puede poner, que puede pagar y que el servidor no le rechazó? La del camino: ver
     /// <see cref="LeFaltaElArmaDelCamino"/>.</summary>
@@ -5214,6 +5231,18 @@ public sealed partial class Bot
     /// </summary>
     public static int OtraCuraSinCamino(int antes, bool llego) => llego ? 0 : antes + 1;
 
+    /// <summary>
+    /// ¿VA AL TEMPLO POR EL VENENO? Sí si el templo está en este mapa, o si no tiene <see cref="PocionesParaPelear"/> pociones de vida:
+    /// con ellas, el veneno (de uno a cinco cada veinte segundos) cuesta una poción cada tres o cuatro minutos, y se lo saca el antídoto
+    /// o el sacerdote cuando pase por un pueblo (los dos de antes, en <see cref="CurarVenenoAsync"/>).
+    ///
+    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 248 viajes al templo de la cuna por el veneno de Serpientes y
+    /// Escorpiones, de nivel 4 a 10, desde el 11, el 35 y el 12, a dos o tres mapas: 453 minutos de bot en 24 corridas (3,5 % del
+    /// early), y en 106 la vuelta terminaba en otro coto. Ninguna de las 5 muertes de esas corridas fue por veneno.</para>
+    /// </summary>
+    public static bool VaAlTemploPorElVeneno(int pocionesDeVida, bool temploEnEsteMapa) =>
+        temploEnEsteMapa || pocionesDeVida < PocionesParaPelear;
+
     private async Task<bool> CurarVenenoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                               CancellationToken ct)
     {
@@ -5241,6 +5270,12 @@ public sealed partial class Bot
         }
 
         var templo = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: SinHuidas(Pisable(sentidos), sentidos.Mapa));
+        // CON POCIONES PARA PELEAR, EL VENENO NO VALE UN VIAJE: ver `VaAlTemploPorElVeneno`.
+        if (templo is { } lejos && !VaAlTemploPorElVeneno(sentidos.CuantoTiene(EsPocionDeVida), lejos.Mapa == sentidos.Mapa))
+        {
+            _proximaCura = Environment.TickCount64 + _rng.Next(EsperaCuraMinMs, EsperaCuraMaxMs);
+            return false;
+        }
         bool llego = templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar);
         // Y EL TEMPLO AL QUE EL VIAJE NO LLEGA CUENTA COMO SIN CAMINO: ver `OtraCuraSinCamino`.
         _curasSinCamino = OtraCuraSinCamino(_curasSinCamino, llego);
