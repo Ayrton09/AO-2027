@@ -738,7 +738,8 @@
     .shop2 > .col { display:grid; grid-template-columns:repeat(auto-fill, minmax(96px,1fr)); gap:8px; align-content:start; }
     @media (max-width:720px) { .shop2 { grid-template-columns:1fr; } }
     /* La caja de CANTIDAD: una sola por ventana y vale para las dos listas, como el original. */
-    .cantbox { width:5em; background:#1a1408; color:#e8d9a0; border:1px solid #6b5a2a; border-radius:3px; padding:2px 4px; font:inherit; }
+    .cantbox { width:5em; background:#1a1408; color:#e8d9a0; border:1px solid #6b5a2a; border-radius:3px; padding:2px 4px; font:inherit;
+               color-scheme:dark; }
     /* EL CENTRO DE SUBASTAS: la lista con la caja de búsqueda arriba y la oferta abajo, como el original. */
     .card:has(.subtabla), .card:has(.nsub) { width:min(940px,94vw); }
     .subtop { display:flex; align-items:center; gap:8px; padding:10px 12px; flex-wrap:wrap; }
@@ -3694,14 +3695,17 @@
     // La CANTIDAD del original: `frmComerciar` tiene UNA caja `Cantidad` que vale para las dos listas, así que
     // la misma acota comprar y vender. Se guarda en una variable porque la ventana se rearma entera cada vez
     // que cambia un slot, y sin eso lo tipeado se perdía en el repintado.
+    // Vuelve a 1 con cada tienda que se abre (`nueva`): en el original la ventana se descarga al cerrarla y la caja
+    // arranca otra vez en 1. Acá quedaba lo de la tienda anterior (el tester, 06/10).
     let comercioQty = 1;
     const leerComercioQty = () => {
       const i = modalCard.querySelector('.comq');
       const n = i ? parseInt(i.value, 10) : comercioQty;
       return Math.max(1, Math.min(10000, Number.isFinite(n) ? n : 1));
     };
-    function renderCommerce() {
-      if (modalKind === 'commerce') comercioQty = leerComercioQty();
+    function renderCommerce(nueva) {
+      if (nueva) comercioQty = 1;
+      else if (modalKind === 'commerce') comercioQty = leerComercioQty();
       modalKind = 'commerce';
       const slots = Object.keys(commerceItems).map(Number).sort((a, b) => a - b).filter((s) => commerceItems[s].amount > 0);
       const cells = slots.map((s) => { const it = commerceItems[s]; return shopCell(it.objIndex, `${Math.round(it.price)} oro · x${it.amount}`, `<span class="buy" data-slot="${s}">comprar</span>`); });
@@ -3734,8 +3738,9 @@
       const n = i ? parseInt(i.value, 10) : bancoQty;
       return Math.max(1, Math.min(10000, Number.isFinite(n) ? n : 1));
     };
-    function renderBank() {
-      if (modalKind === 'bank') bancoQty = leerBancoQty();
+    function renderBank(nueva) {
+      if (nueva) bancoQty = 1;
+      else if (modalKind === 'bank') bancoQty = leerBancoQty();
       modalKind = 'bank';
       const vault = Object.keys(bankItems).map(Number).sort((a, b) => a - b)
         .filter((s) => bankItems[s].objIndex > 0 && bankItems[s].amount > 0)
@@ -4903,7 +4908,7 @@
         case 'GuildDetails': openPanel('🏰 ' + esc(f.name), `Líder: <b>${esc(f.leader)}</b><br>Alineación: ${esc(f.alignment)}<br>Miembros: ${f.memberCount} · Enemigos: ${f.enemies} · Aliados: ${f.allies}${f.electionsOpen ? ' · <b>elecciones abiertas</b>' : ''}<br>${f.url ? ('URL: ' + esc(f.url) + '<br>') : ''}${esc(f.desc || '(sin descripción)')}`); break;
         // LAS RANURAS LLEGAN ANTES que el CommerceInit, las 25 y las vacías también (IniciarComercioNPC,
         // Comercio.bas:196-204), y pisan todas las de la tienda anterior: vaciar acá borraba la que llegaba.
-        case 'CommerceInit': renderCommerce(); break;                                   // merchant window opening
+        case 'CommerceInit': renderCommerce(true); break;                                   // merchant window opening
         // El stock de un mercader llega SLOT POR SLOT, y cada uno reconstruía la ventana ENTERA: con 40
         // productos son 40 innerHTML completos, ~1600 <canvas> creados y tirados, y 1600 blits — el tirón de
         // medio segundo al abrir una tienda. Igual el banco. Se agrupa con el mismo debounce de 120 ms que el
@@ -4914,7 +4919,7 @@
         // ranuras llegaron ANTES, así que acá no se vacía nada.
         case 'BankInit':
           if (f.goliath) { bankGold = f.gold; bankCount = f.count; renderPanelDelOro(); }
-          else { bankOpen = true; renderBank(); }
+          else { bankOpen = true; renderBank(true); }
           break;
         case 'ChangeBankSlot': bankItems[f.slot] = { objIndex: f.objIndex, amount: f.amount, value: f.value }; if (bankOpen) scheduleBank(); break;
         // El Centro de Subastas: abre la ventana (doble clic al Subastador) o refresca la lista si está a la vista.

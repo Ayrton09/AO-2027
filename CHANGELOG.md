@@ -35,6 +35,8 @@ Lo nuevo desde el paquete del 5 de octubre.
   precio final opcional (para comprar directo) y una duración de 3 a 36 horas; el depósito es de 10 monedas por
   hora más el 1 % del precio. Uno solo para todo el mundo. El objeto ganado, el oro de la venta, lo que no se
   vendió y la oferta superada van a la bóveda, aunque estés desconectado.
+- **La cantidad del comercio y de la bóveda vuelve a 1** cada vez que se abre una tienda o la bóveda, como en el
+  original. Las flechitas de las cajas de cantidad ya no salen blancas.
 
 ### Para GMs y para el que hostea
 
