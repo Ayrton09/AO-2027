@@ -4701,7 +4701,7 @@ public sealed partial class Bot
     /// minutos entre la cuna y el Herrero Rinkel —Armadura de Cuero a 3000— sin matar una criatura.</summary>
     private bool ValeElViajePorEso(SentidosDelBot sentidos, short obj, double plata) =>
         MejoraLoQueTiene(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata)
-        && CuestaComoParaElViaje(_entorno.Datos.Obj(obj)?.Value ?? 0);
+        && _entorno.Datos.Obj(obj) is { } o && CuestaComoParaElViaje(o.Value, EsArma(o));
 
     /// <summary>
     /// ¿CUESTA COMO PARA VIAJAR A COMPRARLO? Desde <see cref="PrecioQueValeElViaje"/>. Lo más barato se compra si pasa por el mercader
@@ -4712,13 +4712,11 @@ public sealed partial class Bot
     /// Tortuga (300) y el de Madera (500): el primer escudo, al que la regla del 20 % (<see cref="ElSaltoValeElViaje"/>) deja pasar
     /// siempre porque no tenía ninguno.</para>
     ///
-    /// <para>CORTA TAMBIÉN LAS ARMAS BARATAS, porque <see cref="MejoraLoQueTiene"/> mira las cuatro clases de <c>QueSePone</c>: del Herrero
-    /// de Armas de Rinkel, la Espada Larga (350), la Lanza (54) y la Daga +2 (800) ya no valen el viaje, ni cuentan en
-    /// <see cref="HayMasParaComprarAca"/>. El arma del camino (<see cref="LeFaltaElArmaDelCamino"/>), la del bot que no tiene ninguna, no
-    /// pasa por acá. Compras en un Herrero de Armas antes del nivel 13 en la ronda 51 (tres corridas de unos 23 minutos): 25 en
-    /// early169/171/173 sin este cambio y 7 en early170/172/174 con él.</para>
+    /// <para>LAS ARMAS NO (<paramref name="esArma"/>): un arma mejor sube lo que pega, y vale el viaje aunque sea barata. DECIDIDO POR EL
+    /// AUTOR (08/10): la primera versión del filtro también las cortaba (la Espada Larga a 350 y la Daga +2 a 800 del Herrero de Armas
+    /// de Rinkel), y las compras en un Herrero de Armas antes del nivel 13 bajaron de 25 a 7 en la ronda 51.</para>
     /// </summary>
-    public static bool CuestaComoParaElViaje(int precio) => precio >= PrecioQueValeElViaje;
+    public static bool CuestaComoParaElViaje(int precio, bool esArma = false) => esArma || precio >= PrecioQueValeElViaje;
 
     /// <summary>Desde cuánto una pieza de equipo vale un viaje: ver <see cref="CuestaComoParaElViaje"/>.</summary>
     public const int PrecioQueValeElViaje = 1_000;

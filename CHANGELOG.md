@@ -59,7 +59,7 @@ Lo nuevo desde el paquete del 5 de octubre.
 - **Los bots cazan con menos pausas**: buscando presa en el coto se quedan quietos poco entre paseo y paseo; en el pueblo
   siguen con el ritmo de siempre.
 - **Los bots que empiezan viajan menos**: envenenados y con pociones siguen cazando hasta curarse con el antídoto o con un
-  sacerdote que tengan a mano, no salen de viaje por una pieza de equipo de menos de 1000 monedas (escudos y armas baratas),
+  sacerdote que tengan a mano, no salen de viaje por una pieza de equipo de menos de 1000 monedas (salvo un arma),
   y si frenan para cazar algo, primero lo cazan.
 
 ## 1.0.0 (2026-10-05)

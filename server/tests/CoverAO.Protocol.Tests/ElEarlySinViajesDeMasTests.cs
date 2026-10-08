@@ -38,14 +38,16 @@ public class ElEarlySinViajesDeMasTests
         Assert.False(Bot.CuestaComoParaElViaje(Bot.PrecioQueValeElViaje - 1));
         Assert.True(Bot.CuestaComoParaElViaje(Bot.PrecioQueValeElViaje));
         Assert.True(Bot.CuestaComoParaElViaje(3_000));   // Armadura de Cuero
+        Assert.True(Bot.CuestaComoParaElViaje(350, esArma: true));   // Espada Larga
     }
 
     /// <summary>
     /// EL CABLEADO DEL FILTRO: <c>ValeElViajePorEso</c>, la pregunta del viaje al mercader, con un bot sin nada puesto y plata de sobra.
-    /// Lo barato no vale el viaje, sea escudo o arma (la Espada Larga a 350 del Herrero de Armas); lo que cuesta 1000 o más y lo mejora, sí.
+    /// El escudo barato no vale el viaje; lo que cuesta 1000 o más y lo mejora, sí, y un arma que lo mejora también aunque sea barata (la
+    /// Espada Larga a 350 del Herrero de Armas: el autor, 08/10).
     /// </summary>
     [Fact]
-    public void El_viaje_al_mercader_no_se_hace_por_una_pieza_barata_ni_armas_ni_escudos()
+    public void El_viaje_al_mercader_no_se_hace_por_un_escudo_barato_y_por_un_arma_barata_si()
     {
         var datos = GameData.Load();
         Assert.True(datos.Objects.Count > 0, "No se cargó gamedata/obj.json");
@@ -62,7 +64,7 @@ public class ElEarlySinViajesDeMasTests
 
         var bots = PobladoDeBots.Nombres.Select(n => new Bot(n, null, entorno, 1)).ToList();
         Assert.All(bots, bot => Assert.False(Vale(bot, EscudoDeMadera)));
-        Assert.All(bots, bot => Assert.False(Vale(bot, EspadaLarga)));
+        Assert.Contains(bots, bot => Vale(bot, EspadaLarga));
         // El control: sin él el test pasaría igual si ningún bot pudiera usar nada.
         Assert.Contains(bots, bot => Vale(bot, ArmaduraDeCuero));
         Assert.Contains(bots, bot => Vale(bot, EspadaCorta));
