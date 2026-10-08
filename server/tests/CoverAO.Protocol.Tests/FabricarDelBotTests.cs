@@ -1,3 +1,5 @@
+using System.Reflection;
+using CoverAO.Protocol;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using CoverAO.Server.Net;
@@ -186,5 +188,70 @@ public class FabricarDelBotTests
         int minima = d.Spell(2)!.MinSkill;
         Assert.Equal(5, minima);   // si la data cambia, este test tiene que decirlo
         Assert.Equal(falta, Bot.LeFaltaMagiaParaCastear(magia, minima));
+    }
+
+    private static readonly MethodInfo FabricarAsync = typeof(Bot).GetMethod("FabricarAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    /// <summary>
+    /// EL VIAJE A FABRICAR CUENTA EL SALTO QUE HAY QUE DAR. El Sastre está en el 823, que es pk (MapInfo.json), con 36 pieles de lobo
+    /// y el Costurero en la mochila, a un paso de la salida al 815, que no es pk (MapExits.json: la salida está en (10,7)). Con la
+    /// skill en 10 y el tope del nivel 5 en 13 (<c>SkillProgression.CapForLevel</c>) le faltan 3 puntos para aprender: menos que
+    /// <c>Bot.FabricacionesPorTanda</c>, pero a un solo mapa se va igual (<c>Bot.ValeViajarAFabricar</c> con <c>saltos</c> 1). El
+    /// primer paso del viaje es hacia la salida, al norte.
+    /// </summary>
+    [Fact]
+    public async Task El_sastre_con_menos_de_seis_puntos_para_aprender_viaja_al_seguro_de_al_lado()
+    {
+        var d = GameData.Load();
+        Assert.True(d.IsPkMap(823), "premisa: el 823 es pk (MapInfo.json)");
+        Assert.False(d.IsPkMap(815), "premisa: el 815 no es pk (MapInfo.json)");
+        Assert.True(d.MapExits.TryGetValue((823, 10, 7), out var salida) && salida.DestMap == 815,
+                    "premisa: la salida del 823 al 815 está en (10,7) (MapExits.json)");
+        Assert.Equal(13, SkillProgression.CapForLevel(5));   // el tope de la tabla del original a nivel 5
+        byte clase = (byte)(Array.IndexOf(GameLimits.NombresDeClase, "Sastre") + 1);
+        string nombre = PobladoDeBots.Nombres.First(n => Bot.ClaseQueLeToca(PobladoDeBots.LugarEnElPoblado(n)) == clase);
+
+        var s = new SentidosDelBot();
+        var p = new Player
+        {
+            CharIndex = 500, Name = nombre, Account = nombre + "_test", Pos = new WorldPos(823, 10, 8), Level = 5,
+            MaxHp = 100, Hp = 100, MaxMana = 0, Mana = 0, MaxStamina = 80, Stamina = 80,
+        };
+        s.Recibir(ServerMessages.UserIndexInServer(500));
+        s.Recibir(ServerMessages.ChangeMap(823));
+        s.Recibir(ServerMessages.CharacterCreate(p));
+        s.Recibir(ServerMessages.UpdateUserStats(p));
+        var skills = new byte[GameLimits.NumSkills + 1];
+        skills[GameLimits.SkillSastreria] = 10;
+        s.Recibir(ServerMessages.SendSkills(skills));
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, (short)GameLimits.SkinWolfObj, 36, false, 0f, 0));   // seis Vestimentas
+        s.Recibir(ServerMessages.ChangeInventorySlot(2, 886, 1, false, 0f, 0));                               // el Costurero
+
+        var bot = new Bot(nombre, null, new EntornoDeBots(null!, null!, 0, 0, d, new Navegante(d), null!), 1);
+        var t = new TransporteDeBot(nombre);
+        var cerrada = new TaskCompletionSource();
+        var viaje = (Task<bool>)FabricarAsync.Invoke(bot, new object[] { t, s, cerrada.Task, CancellationToken.None })!;
+        var primero = await Proximo(t, 2_000);
+        Assert.NotNull(primero);
+        Assert.Equal((byte)ClientPacketId.Walk, primero![0]);
+        Assert.Equal(SentidosDelBot.RumboHacia(0, -1), primero[1]);
+        cerrada.SetResult();
+        Assert.True(await viaje.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    /// <summary>El próximo paquete que mandó el bot, o null si no mandó ninguno en <paramref name="ms"/> milisegundos.</summary>
+    private static async Task<byte[]?> Proximo(TransporteDeBot t, int ms)
+    {
+        using var cts = new CancellationTokenSource(ms);
+        var buffer = new byte[4096];
+        try
+        {
+            int n = await t.ReceiveAsync(buffer, cts.Token);
+            if (n == 0) return null;
+            var paquete = new byte[n];
+            for (int i = 0; i < n; i++) paquete[i] = (byte)(buffer[i] ^ t.Clave);
+            return paquete;
+        }
+        catch (OperationCanceledException) { return null; }
     }
 }
