@@ -2861,8 +2861,9 @@ public sealed partial class Bot
     ///
     /// <para>Y CON UNA TANDA PARA APRENDER: si al tope de su nivel le faltan menos de <see cref="FabricacionesPorTanda"/> puntos
     /// (<paramref name="lePuedeEnsenar"/>), el viaje espera a que suba más niveles, salvo que lo que fabrica le haga falta
-    /// (<paramref name="leFalta"/>, el antídoto del Druida). Medido en mid111-128 (07/10): Osmar, Carpintero, viajaba del 13 al 1 cada
-    /// vez que subía de nivel (32 viajes, unos 155 s cada uno) para hacer las 2 o 3 Flechas que le dejaba el tope nuevo.</para>
+    /// (<paramref name="leFalta"/>, el antídoto del Druida). Medido en mid111-128 (06 y 07/10, `viajes_a_fabricar.py`): Osmar, Carpintero,
+    /// viajaba del 13 al 1 cada vez que subía de nivel (35 viajes; de 29 se vio la vuelta y la caza, unos 160 s en promedio hasta
+    /// volver a cazar) para hacer las 2 o 3 Flechas que le dejaba el tope nuevo.</para>
     ///
     /// <para>Sólo en un viaje de <see cref="SaltosQuePidenAprender"/> mapas o más (<paramref name="saltos"/>): al de al lado se va igual.
     /// Medido en la ronda 52: Hilda, Druida, iba del 823 al 815 de al lado en 25 a 30 s, y con la regla dejó de ir y terminó cinco
