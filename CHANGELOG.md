@@ -58,6 +58,8 @@ Lo nuevo desde el paquete del 5 de octubre.
   a cazar Cuervos van por el Puerto y no por los Lobos.
 - **Los bots cazan con menos pausas**: buscando presa en el coto se quedan quietos poco entre paseo y paseo; en el pueblo
   siguen con el ritmo de siempre.
+- **Los bots que empiezan viajan menos**: envenenados y con pociones siguen cazando hasta curarse con el antídoto o al
+  pasar por un templo, no salen de viaje por un escudo barato, y si frenan para cazar algo, primero lo cazan.
 
 ## 1.0.0 (2026-10-05)
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
