@@ -5485,7 +5485,8 @@ public sealed partial class Bot
     /// es lo pegado: la pelea contra lo pegado se gana, pero mientras tanto llega el otro. Medido en `early159`: Elmo, Clérigo de nivel 13
     /// con 77 de vida, huía del Señor de las sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que
     /// lo picaba (`gana=True`, una sola pegada); el Señor, a tres baldosas, lo mató dos segundos después. De los 158 encuentros con el Señor
-    /// a tres baldosas o menos en el 208 desde el 02/10, 55 terminaron en esa rama (`fase5/herramientas/bots/senor208_encuentros.py`).
+    /// a tres baldosas o menos en el 208 desde el 02/10 hasta el 08/10 a las 12:21, 55 terminaron en esa rama
+    /// (`fase5/herramientas/bots/senor208_encuentros.py`).
     /// </summary>
     public static bool LaAmenazaDejaPelearParado((byte X, byte Y) yo, IReadOnlyCollection<(byte X, byte Y)> loQueLoMata,
                                                  (byte X, byte Y) pegado) =>
