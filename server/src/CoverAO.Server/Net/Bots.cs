@@ -2510,7 +2510,13 @@ public sealed partial class Bot
     private async Task<bool> LevantarBotinAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
                                                 CancellationToken ct)
     {
-        if (sentidos.BotinMasCercano(SePuedeLevantar) is not { } botin || botin.Pasos > RadioDeBotin
+        // EL BOTÍN QUE QUEDA AL LADO DE LO PELIGROSO NI SE ELIGE (ver `ArrimaAlPeligroAlBotin`). Si se lo eligiera y después se lo cortara,
+        // el que seguía más cerca no se miraba mientras el peligro estuviera a la vista. Medido en `early175` (08/10): Petra se cortó 23
+        // veces contra el mismo botín, en (75,44).
+        var yo = sentidos.Posicion;
+        var peligros = PeligrosALaVista(sentidos);
+        if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !ArrimaAlPeligroAlBotin(yo, baldosa, peligros)) is not { } botin
+            || botin.Pasos > RadioDeBotin
             || _nadaQueHacerAca.Contains((sentidos.Mapa, botin.Donde.X, botin.Donde.Y))) return false;
 
         bool llego = false;
@@ -2522,7 +2528,7 @@ public sealed partial class Bot
             // escapaba del Señor de las sombras, que estaba a cinco baldosas, y lo siguiente que hizo fue caminar a levantar un objeto
             // al lado del Sacerdote; murió con el 87 % de vida en menos de tres segundos.
             // Parado encima, se levanta: no hay paso que dar (en la ronda 52 se cortaba a Petra sobre el botín).
-            if (sentidos.Posicion != botin.Donde && LoArrimaAlPeligro(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
+            if (ArrimaAlPeligroAlBotin(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
             var (x, y) = sentidos.Posicion;
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
             if (dx == 0 && dy == 0)
@@ -6720,6 +6726,17 @@ public sealed partial class Bot
         int antes = peligros.Min(p => Math.Abs(p.X - desde.X) + Math.Abs(p.Y - desde.Y));
         return despues <= RadioDeSusto && despues <= antes;
     }
+
+    /// <summary>
+    /// ¿EL BOTÍN QUEDA AL LADO DE LO PELIGROSO, así que no se va a buscar? Es <see cref="LoArrimaAlPeligro"/> para la baldosa del botín,
+    /// salvo parado encima: no hay paso que dar, se levanta. Lo usan <see cref="LevantarBotinAsync"/> al elegir el botín y al caminar
+    /// hacia él, con la misma cuenta.
+    ///
+    /// <para>Parado encima no se corta: levantarlo no es dar un paso hacia lo peligroso. Medido en `early177` (08/10): Petra se cortó de
+    /// pie sobre el botín, con un peligro a dos pasos.</para>
+    /// </summary>
+    public static bool ArrimaAlPeligroAlBotin((byte X, byte Y) yo, (byte X, byte Y) botin, IReadOnlyCollection<(byte X, byte Y)> peligros) =>
+        yo != botin && LoArrimaAlPeligro(yo, botin, peligros);
 
     /// <summary>
     /// ¿ESE PASO LO METE A LA VISTA DE ALGO PELIGROSO? Si lo deja adentro de la vista de algo peligroso (<see cref="AlAlcanceDeSuVista"/>)

@@ -458,8 +458,9 @@ public sealed class SentidosDelBot
     }
 
     /// <summary>La baldosa con algo tirado más cercana, y a cuántos pasos. Es lo que deja una criatura al
-    /// morir.</summary>
-    public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano(Func<short, bool> vale)
+    /// morir. <paramref name="sirveLaBaldosa"/> deja afuera baldosas aunque lo tirado sirva: el botín que queda al lado de lo
+    /// peligroso no se elige (ver <c>Bot.ArrimaAlPeligroAlBotin</c>).</summary>
+    public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano(Func<short, bool> vale, Func<(byte X, byte Y), bool>? sirveLaBaldosa = null)
     {
         lock (_candado)
         {
@@ -467,7 +468,7 @@ public sealed class SentidosDelBot
             ((byte, byte), int)? mejor = null;
             foreach (var (baldosa, obj) in _enElPiso)
             {
-                if (!vale(obj)) continue;
+                if (!vale(obj) || sirveLaBaldosa?.Invoke(baldosa) == false) continue;
                 int pasos = Math.Abs(baldosa.X - _x) + Math.Abs(baldosa.Y - _y);
                 if (mejor is null || pasos < mejor.Value.Item2) mejor = (baldosa, pasos);
             }
