@@ -761,7 +761,9 @@ public sealed partial class Bot
                     && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado
                     && (_huidas.SinMoverse >= HuidasParaAcorralado
-                        || LaPeleaSeGanaContraTodas(LasQueLePegan(sentidos, pegado.Quien), vidaAhora)))
+                        || (LaPeleaSeGanaContraTodas(LasQueLePegan(sentidos, pegado.Quien), vidaAhora)
+                            && LaAmenazaDejaPelearParado(_entorno.Datos.Npc(amenaza.Quien.FichaNpc),
+                                                         amenaza.Quien.CharIndex == pegado.Quien.CharIndex, amenaza.Pasos, vidaAhora))))
                 {
                     // RODEADO Y CON LA VIDA BAJA, PRIMERO LA POCIÓN: ver `RodeadoSeCuraPrimero`.
                     if (RodeadoSeCuraPrimero(EstaRodeado(sentidos.Posicion, VecinasTapadas(sentidos.Posicion, sentidos.BaldosasOcupadas()),
@@ -2515,6 +2517,11 @@ public sealed partial class Bot
         short queHabia = 0, hayAhora = 0;
         for (int intentos = 0; intentos < RadioDeBotin * 2 && !cerrada.IsCompleted; intentos++)
         {
+            // NI UN PASO HACIA EL BOTÍN SI LO DEJA AL LADO DE ALGO PELIGROSO (ver `LoArrimaAlPeligro`): se lo deja en el piso, sin
+            // anotar la baldosa, y se vuelve a mirar en la vuelta siguiente. Medido en `early147`: Elmo, Clérigo de nivel 12 en el 208,
+            // escapaba del Señor de las sombras, que estaba a cinco baldosas, y lo siguiente que hizo fue caminar a levantar un objeto
+            // al lado del Sacerdote; murió con el 87 % de vida en menos de tres segundos.
+            if (LoArrimaAlPeligro(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
             var (x, y) = sentidos.Posicion;
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
             if (dx == 0 && dy == 0)
@@ -5469,6 +5476,17 @@ public sealed partial class Bot
 
     /// <summary>Las criaturas pegadas que lo están atacando (siempre con <paramref name="pegado"/>), con lo medido de su golpe contra
     /// cada una: para <see cref="LaPeleaSeGanaContraTodas"/>.</summary>
+    /// <summary>
+    /// ¿LA AMENAZA LO DEJA PELEAR PARADO CON LO QUE TIENE PEGADO? No si la amenaza es otra criatura, está a <see cref="RadioDeSusto"/>
+    /// pasos o menos y lo mata de dos golpes con la vida que tiene (<see cref="LoMataDeDosGolpesAhora"/>): la pelea contra lo pegado se
+    /// gana, pero mientras tanto llega la otra. Medido en `early159`: Elmo, Clérigo de nivel 13 con 77 de vida, huía del Señor de las
+    /// sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que lo picaba (`gana=True`, una sola
+    /// pegada); el Señor, a tres baldosas, lo mató dos segundos después. En 127 encuentros con el Señor en el 208 desde el corte de
+    /// `CazarAsync`, 55 terminaron en esa rama.
+    /// </summary>
+    public static bool LaAmenazaDejaPelearParado(NpcInfo? amenaza, bool esLoPegado, int pasosDeLaAmenaza, int vidaAhora) =>
+        esLoPegado || pasosDeLaAmenaza > RadioDeSusto || !LoMataDeDosGolpesAhora(amenaza, vidaAhora);
+
     private List<(int? Golpes, NpcInfo Ella)> LasQueLePegan(SentidosDelBot sentidos, SentidosDelBot.Visible pegado)
     {
         var lista = new List<(int? Golpes, NpcInfo Ella)>();
