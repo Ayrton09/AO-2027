@@ -63,8 +63,8 @@ Lo nuevo desde el paquete del 5 de octubre.
   y si frenan para cazar algo, primero lo cazan.
 - **Los bots se cuidan más del Señor de las sombras**: acorralados no se quedan peleando con lo que tienen pegado si a
   tres baldosas o menos hay algo que los mata de dos golpes, salvo que no puedan moverse de la baldosa, y no van a
-  levantar un botín que los deja al lado de un peligro. Los que fabrican no viajan lejos por menos de seis puntos de
-  skill.
+  levantar un botín que los deja al lado de un peligro. Los que fabrican no viajan lejos, a dos mapas o más, por menos
+  de seis puntos de skill.
 
 ## 1.0.0 (2026-10-05)
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
