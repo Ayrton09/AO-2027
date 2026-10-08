@@ -889,8 +889,8 @@ public sealed partial class Bot
                 // agotaba, así que el bot no se preguntaba jamás si eso todavía le rendía. Subir de nivel es
                 // justamente cuando una persona mira alrededor y decide si se queda.
                 // MENOS EL QUE FRENÓ EL VIAJE POR ESA PRESA: primero la pelea, y la revisión en la vuelta que sigue (`frenoParaCazar` ya está
-                // en false). Medido en early145-168: 416 veces se fue a otro mapa en el mismo segundo en que frenó por una presa, con la
-                // revisión del nivel pendiente, y 26 sin ella.
+                // en false). Medido en la ronda 51 (tres corridas de unos 23 minutos), sin este cambio: de 193 revisiones del nivel hechas
+                // en la vuelta en que frenó por una presa, 55 terminaron en otro mapa (`se muda por nivel-tras-freno`, early169/171/173).
                 if (!frenoParaCazar && HayQueRevisarElCoto(_nivelDelCoto, nivelAhora))
                 {
                     _nivelDelCoto = nivelAhora;
@@ -1410,7 +1410,8 @@ public sealed partial class Bot
         // cercano que atienda CUALQUIERA de las necesidades, y el de comida siempre está más cerca —en la cuna hay
         // uno y herrero no hay ninguno—, así que al herrero no se llegaba nunca. Medido en `acelerada1`: una
         // Pescadora de nivel 11 con 4755 monedas seguía con el Martillo de Piedra del kit (golpe 5) mientras el
-        // Herrero General de su mapa vendía una Espada Larga (golpe 8) a 350.
+        // Herrero General de su mapa vendía una Espada Larga (golpe 8) a 350. Por una pieza de menos de 1000 como esa ya no se sale
+        // de viaje: ver `CuestaComoParaElViaje`.
         bool soloGustos = SoloLeFaltanGustos(faltaComida, faltaBebida, faltanPociones, faltaHerramienta, faltaRopa: hayRopaAlAlcance);
         // Y EL MAPA TIENE QUE ATENDER: que su mercader le venda a la facción del bot, con la MISMA regla que el server
         // (`ElMercaderLeVende`: la del Server.ini, que por defecto es la del original — un ciudadano sólo compra donde el
@@ -4706,9 +4707,16 @@ public sealed partial class Bot
     /// ¿CUESTA COMO PARA VIAJAR A COMPRARLO? Desde <see cref="PrecioQueValeElViaje"/>. Lo más barato se compra si pasa por el mercader
     /// (<see cref="MejorarElEquipoAsync"/> no lo mira), pero no se sale a buscarlo.
     ///
-    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 116 viajes (242 minutos de bot en 24 corridas) a Rinkel antes del
-    /// nivel 13 por una pieza de menos de 1000, que en el Herrero de Armaduras son el Escudo de Tortuga (300) y el de Madera (500): el
-    /// primer escudo, al que la regla del 20 % (<see cref="ElSaltoValeElViaje"/>) deja pasar siempre porque no tenía ninguno.</para>
+    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 184 episodios de compras (ida, pueblo y vuelta: 400 minutos de bot en
+    /// 24 corridas) antes del nivel 13 con una compra en un Herrero de Armaduras y ninguna pieza de 1000 o más, que en el de Rinkel son el
+    /// Escudo de Tortuga (300) y el de Madera (500): el primer escudo, al que la regla del 20 % (<see cref="ElSaltoValeElViaje"/>) deja
+    /// pasar siempre porque no tenía ninguno.</para>
+    ///
+    /// <para>CORTA TAMBIÉN LAS ARMAS BARATAS, porque <see cref="MejoraLoQueTiene"/> mira las cuatro clases de <c>QueSePone</c>: del Herrero
+    /// de Armas de Rinkel, la Espada Larga (350), la Lanza (54) y la Daga +2 (800) ya no valen el viaje, ni cuentan en
+    /// <see cref="HayMasParaComprarAca"/>. El arma del camino (<see cref="LeFaltaElArmaDelCamino"/>), la del bot que no tiene ninguna, no
+    /// pasa por acá. Compras en un Herrero de Armas antes del nivel 13 en la ronda 51 (tres corridas de unos 23 minutos): 25 en
+    /// early169/171/173 sin este cambio y 7 en early170/172/174 con él.</para>
     /// </summary>
     public static bool CuestaComoParaElViaje(int precio) => precio >= PrecioQueValeElViaje;
 
@@ -5234,11 +5242,12 @@ public sealed partial class Bot
     /// <summary>
     /// ¿VA AL TEMPLO POR EL VENENO? Sí si el templo está en este mapa, o si no tiene <see cref="PocionesParaPelear"/> pociones de vida:
     /// con ellas, el veneno (de uno a cinco cada veinte segundos) cuesta una poción cada tres o cuatro minutos, y se lo saca el antídoto
-    /// o el sacerdote cuando pase por un pueblo (los dos de antes, en <see cref="CurarVenenoAsync"/>).
+    /// o el sacerdote si lo tiene a mano (los dos de antes, en <see cref="CurarVenenoAsync"/>). Al que no viaja se le pone la espera de
+    /// <see cref="EsperaCuraMinMs"/> a <see cref="EsperaCuraMaxMs"/>, y hasta que pasa no prueba ni el antídoto ni el sacerdote.
     ///
-    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 248 viajes al templo de la cuna por el veneno de Serpientes y
-    /// Escorpiones, de nivel 4 a 10, desde el 11, el 35 y el 12, a dos o tres mapas: 453 minutos de bot en 24 corridas (3,5 % del
-    /// early), y en 106 la vuelta terminaba en otro coto. Ninguna de las 5 muertes de esas corridas fue por veneno.</para>
+    /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 248 viajes al templo por el veneno, 205 de nivel 4 a 10, 142 desde los
+    /// mapas 11, 35 y 12 y 237 al templo del mapa 37: 453 minutos de bot en 24 corridas (3,5 % del early), y en 106 la vuelta a cazar
+    /// terminaba en otro mapa que el de salida. Ninguna de las 5 muertes de esas corridas fue por veneno.</para>
     /// </summary>
     public static bool VaAlTemploPorElVeneno(int pocionesDeVida, bool temploEnEsteMapa) =>
         temploEnEsteMapa || pocionesDeVida < PocionesParaPelear;
