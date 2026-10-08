@@ -2523,11 +2523,11 @@ public sealed partial class Bot
         short queHabia = 0, hayAhora = 0;
         for (int intentos = 0; intentos < RadioDeBotin * 2 && !cerrada.IsCompleted; intentos++)
         {
-            // NI UN PASO HACIA EL BOTÍN SI LO DEJA AL LADO DE ALGO PELIGROSO (ver `LoArrimaAlPeligro`): se lo deja en el piso, sin
+            // NI UN PASO HACIA EL BOTÍN SI LO DEJA AL LADO DE ALGO PELIGROSO (ver `ArrimaAlPeligroAlBotin`): se lo deja en el piso, sin
             // anotar la baldosa, y se vuelve a mirar en la vuelta siguiente. Medido en `early147`: Elmo, Clérigo de nivel 12 en el 208,
-            // escapaba del Señor de las sombras, que estaba a cinco baldosas, y lo siguiente que hizo fue caminar a levantar un objeto
-            // al lado del Sacerdote; murió con el 87 % de vida en menos de tres segundos.
-            // Parado encima, se levanta: no hay paso que dar (en la ronda 52 se cortaba a Petra sobre el botín).
+            // escapaba del Señor de las sombras, que estaba a cinco baldosas, y caminó a levantar un objeto; un Lobo lo mató unos tres
+            // segundos después, con el 87 % de vida al empezar.
+            // Parado encima, ver `ArrimaAlPeligroAlBotin`.
             if (ArrimaAlPeligroAlBotin(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
             var (x, y) = sentidos.Posicion;
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
