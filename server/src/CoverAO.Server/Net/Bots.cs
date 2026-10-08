@@ -5474,19 +5474,19 @@ public sealed partial class Bot
         return true;
     }
 
-    /// <summary>Las criaturas pegadas que lo están atacando (siempre con <paramref name="pegado"/>), con lo medido de su golpe contra
-    /// cada una: para <see cref="LaPeleaSeGanaContraTodas"/>.</summary>
     /// <summary>
     /// ¿LA AMENAZA LO DEJA PELEAR PARADO CON LO QUE TIENE PEGADO? No si la amenaza es otra criatura, está a <see cref="RadioDeSusto"/>
     /// pasos o menos y lo mata de dos golpes con la vida que tiene (<see cref="LoMataDeDosGolpesAhora"/>): la pelea contra lo pegado se
     /// gana, pero mientras tanto llega la otra. Medido en `early159`: Elmo, Clérigo de nivel 13 con 77 de vida, huía del Señor de las
     /// sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que lo picaba (`gana=True`, una sola
-    /// pegada); el Señor, a tres baldosas, lo mató dos segundos después. En 127 encuentros con el Señor en el 208 desde el corte de
-    /// `CazarAsync`, 55 terminaron en esa rama.
+    /// pegada); el Señor, a tres baldosas, lo mató dos segundos después. De los 158 encuentros con el Señor a tres baldosas o menos en el
+    /// 208 desde el 02/10, 55 terminaron en esa rama (`fase5/herramientas/bots/senor208_encuentros.py`).
     /// </summary>
     public static bool LaAmenazaDejaPelearParado(NpcInfo? amenaza, bool esLoPegado, int pasosDeLaAmenaza, int vidaAhora) =>
         esLoPegado || pasosDeLaAmenaza > RadioDeSusto || !LoMataDeDosGolpesAhora(amenaza, vidaAhora);
 
+    /// <summary>Las criaturas pegadas que lo están atacando (siempre con <paramref name="pegado"/>), con lo medido de su golpe contra
+    /// cada una: para <see cref="LaPeleaSeGanaContraTodas"/>.</summary>
     private List<(int? Golpes, NpcInfo Ella)> LasQueLePegan(SentidosDelBot sentidos, SentidosDelBot.Visible pegado)
     {
         var lista = new List<(int? Golpes, NpcInfo Ella)>();
