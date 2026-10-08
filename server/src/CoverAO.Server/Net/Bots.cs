@@ -762,8 +762,8 @@ public sealed partial class Bot
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado
                     && (_huidas.SinMoverse >= HuidasParaAcorralado
                         || (LaPeleaSeGanaContraTodas(LasQueLePegan(sentidos, pegado.Quien), vidaAhora)
-                            && LaAmenazaDejaPelearParado(_entorno.Datos.Npc(amenaza.Quien.FichaNpc),
-                                                         amenaza.Quien.CharIndex == pegado.Quien.CharIndex, amenaza.Pasos, vidaAhora))))
+                            && LaAmenazaDejaPelearParado(sentidos.Posicion, LoQueLoMataALaVista(sentidos),
+                                                         (pegado.Quien.X, pegado.Quien.Y)))))
                 {
                     // RODEADO Y CON LA VIDA BAJA, PRIMERO LA POCIÓN: ver `RodeadoSeCuraPrimero`.
                     if (RodeadoSeCuraPrimero(EstaRodeado(sentidos.Posicion, VecinasTapadas(sentidos.Posicion, sentidos.BaldosasOcupadas()),
@@ -5483,15 +5483,16 @@ public sealed partial class Bot
     }
 
     /// <summary>
-    /// ¿LA AMENAZA LO DEJA PELEAR PARADO CON LO QUE TIENE PEGADO? No si la amenaza es otra criatura, está a <see cref="RadioDeSusto"/>
-    /// pasos o menos y lo mata de dos golpes con la vida que tiene (<see cref="LoMataDeDosGolpesAhora"/>): la pelea contra lo pegado se
-    /// gana, pero mientras tanto llega la otra. Medido en `early159`: Elmo, Clérigo de nivel 13 con 77 de vida, huía del Señor de las
-    /// sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que lo picaba (`gana=True`, una sola
-    /// pegada); el Señor, a tres baldosas, lo mató dos segundos después. De los 158 encuentros con el Señor a tres baldosas o menos en el
-    /// 208 desde el 02/10, 55 terminaron en esa rama (`fase5/herramientas/bots/senor208_encuentros.py`).
+    /// ¿LO QUE LO MATA DE DOS GOLPES LO DEJA PELEAR PARADO CON LO QUE TIENE PEGADO? No si hay algo a <see cref="RadioDeSusto"/> pasos o
+    /// menos que lo mata de dos golpes con la vida que tiene (<paramref name="loQueLoMata"/>, <see cref="LoQueLoMataALaVista"/>) y que no
+    /// es lo pegado: la pelea contra lo pegado se gana, pero mientras tanto llega el otro. Medido en `early159`: Elmo, Clérigo de nivel 13
+    /// con 77 de vida, huía del Señor de las sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que
+    /// lo picaba (`gana=True`, una sola pegada); el Señor, a tres baldosas, lo mató dos segundos después. De los 158 encuentros con el Señor
+    /// a tres baldosas o menos en el 208 desde el 02/10, 55 terminaron en esa rama (`fase5/herramientas/bots/senor208_encuentros.py`).
     /// </summary>
-    public static bool LaAmenazaDejaPelearParado(NpcInfo? amenaza, bool esLoPegado, int pasosDeLaAmenaza, int vidaAhora) =>
-        esLoPegado || pasosDeLaAmenaza > RadioDeSusto || !LoMataDeDosGolpesAhora(amenaza, vidaAhora);
+    public static bool LaAmenazaDejaPelearParado((byte X, byte Y) yo, IReadOnlyCollection<(byte X, byte Y)> loQueLoMata,
+                                                 (byte X, byte Y) pegado) =>
+        !LoPeligrosoEstaATiro(yo, loQueLoMata.Where(p => p != pegado).ToList());
 
     /// <summary>Las criaturas pegadas que lo están atacando (siempre con <paramref name="pegado"/>), con lo medido de su golpe contra
     /// cada una: para <see cref="LaPeleaSeGanaContraTodas"/>.</summary>

@@ -19,17 +19,23 @@ public class ElSenorDelDosCientosOchoTests
         var senor = GameData.Load().Npc(SenorDeLasSombras);
         Assert.NotNull(senor);
         Assert.True(senor!.MaxHit * 2 >= 77, "el Señor tiene que matar de dos golpes a Elmo con 77 de vida");
-        Assert.False(Bot.LaAmenazaDejaPelearParado(senor, esLoPegado: false, pasosDeLaAmenaza: 3, vidaAhora: 77));
-        Assert.False(Bot.LaAmenazaDejaPelearParado(senor, esLoPegado: false, pasosDeLaAmenaza: 1, vidaAhora: 77));
+        // Elmo en (57,51), el Escorpión pegado en (57,52), y el Señor, que lo mata de dos, a tres baldosas (60,51) o a una (58,51).
+        Assert.False(Bot.LaAmenazaDejaPelearParado((57, 51), new[] { ((byte)60, (byte)51) }, (57, 52)));
+        Assert.False(Bot.LaAmenazaDejaPelearParado((57, 51), new[] { ((byte)58, (byte)51) }, (57, 52)));
     }
 
     [Fact]
-    public void Lejos_o_si_la_amenaza_es_lo_pegado_o_si_no_lo_mata_de_dos_pelea_como_siempre()
+    public void Lo_pegado_que_tambien_mata_de_dos_no_tapa_al_Senor_a_tres_baldosas()
     {
-        var senor = GameData.Load().Npc(SenorDeLasSombras)!;
-        Assert.True(Bot.LaAmenazaDejaPelearParado(senor, esLoPegado: false, pasosDeLaAmenaza: 4, vidaAhora: 77));
-        Assert.True(Bot.LaAmenazaDejaPelearParado(senor, esLoPegado: true, pasosDeLaAmenaza: 1, vidaAhora: 77));
-        Assert.True(Bot.LaAmenazaDejaPelearParado(senor, esLoPegado: false, pasosDeLaAmenaza: 2, vidaAhora: senor.MaxHit * 2 + 1));
+        Assert.False(Bot.LaAmenazaDejaPelearParado((57, 51), new[] { ((byte)57, (byte)52), ((byte)60, (byte)51) }, (57, 52)));
+    }
+
+    [Fact]
+    public void Lejos_o_si_lo_que_mata_de_dos_es_lo_pegado_pelea_como_siempre()
+    {
+        Assert.True(Bot.LaAmenazaDejaPelearParado((57, 51), new[] { ((byte)61, (byte)51) }, (57, 52)), "el Señor a cuatro baldosas");
+        Assert.True(Bot.LaAmenazaDejaPelearParado((57, 51), new[] { ((byte)57, (byte)52) }, (57, 52)), "lo pegado, solo");
+        Assert.True(Bot.LaAmenazaDejaPelearParado((57, 51), Array.Empty<(byte, byte)>(), (57, 52)), "nada que mate de dos a tiro");
     }
 
     [Fact]
