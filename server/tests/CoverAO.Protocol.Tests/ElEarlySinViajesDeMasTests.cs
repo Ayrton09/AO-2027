@@ -48,24 +48,21 @@ public class ElEarlySinViajesDeMasTests
     public void El_viaje_al_mercader_no_se_hace_por_una_pieza_barata_ni_armas_ni_escudos()
     {
         var datos = GameData.Load();
-        if (datos.Objects.Count == 0) return;   // sin gamedata local no hay nada que verificar
+        Assert.True(datos.Objects.Count > 0, "No se cargó gamedata/obj.json");
         var vale = typeof(Bot).GetMethod("ValeElViajePorEso", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var entorno = new EntornoDeBots(null!, null!, 0, 0, datos, null!, null!);
         var sentidos = new SentidosDelBot();
         bool Vale(Bot bot, short obj) => (bool)vale.Invoke(bot, new object[] { sentidos, obj, 100_000d })!;
 
-        const short EscudoDeTortuga = 404, EspadaLarga = 2, ArmaduraDeCuero = 30, EspadaCorta = 164;
-        Assert.True(datos.Obj(EscudoDeTortuga)!.Value < Bot.PrecioQueValeElViaje);
+        const short EscudoDeMadera = 997, EspadaLarga = 2, ArmaduraDeCuero = 30, EspadaCorta = 164;
+        Assert.True(datos.Obj(EscudoDeMadera)!.Value < Bot.PrecioQueValeElViaje);
         Assert.True(datos.Obj(EspadaLarga)!.Value < Bot.PrecioQueValeElViaje);
         Assert.True(datos.Obj(ArmaduraDeCuero)!.Value >= Bot.PrecioQueValeElViaje);
         Assert.True(datos.Obj(EspadaCorta)!.Value >= Bot.PrecioQueValeElViaje);
 
         var bots = PobladoDeBots.Nombres.Select(n => new Bot(n, null, entorno, 1)).ToList();
-        Assert.All(bots, bot =>
-        {
-            Assert.False(Vale(bot, EscudoDeTortuga));
-            Assert.False(Vale(bot, EspadaLarga));
-        });
+        Assert.All(bots, bot => Assert.False(Vale(bot, EscudoDeMadera)));
+        Assert.All(bots, bot => Assert.False(Vale(bot, EspadaLarga)));
         // El control: sin él el test pasaría igual si ningún bot pudiera usar nada.
         Assert.Contains(bots, bot => Vale(bot, ArmaduraDeCuero));
         Assert.Contains(bots, bot => Vale(bot, EspadaCorta));

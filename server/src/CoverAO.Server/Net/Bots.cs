@@ -4708,9 +4708,9 @@ public sealed partial class Bot
     /// (<see cref="MejorarElEquipoAsync"/> no lo mira), pero no se sale a buscarlo.
     ///
     /// <para>DECIDIDO POR EL AUTOR (07/10). Medido en early145-168: 184 episodios de compras (ida, pueblo y vuelta: 400 minutos de bot en
-    /// 24 corridas) antes del nivel 13 con una compra en un Herrero de Armaduras y ninguna pieza de 1000 o más, que en el de Rinkel son el
-    /// Escudo de Tortuga (300) y el de Madera (500): el primer escudo, al que la regla del 20 % (<see cref="ElSaltoValeElViaje"/>) deja
-    /// pasar siempre porque no tenía ninguno.</para>
+    /// 24 corridas) antes del nivel 13 con una compra en un Herrero de Armaduras. Entre lo más barato del de Rinkel están el Escudo de
+    /// Tortuga (300) y el de Madera (500): el primer escudo, al que la regla del 20 % (<see cref="ElSaltoValeElViaje"/>) deja pasar
+    /// siempre porque no tenía ninguno.</para>
     ///
     /// <para>CORTA TAMBIÉN LAS ARMAS BARATAS, porque <see cref="MejoraLoQueTiene"/> mira las cuatro clases de <c>QueSePone</c>: del Herrero
     /// de Armas de Rinkel, la Espada Larga (350), la Lanza (54) y la Daga +2 (800) ya no valen el viaje, ni cuentan en
