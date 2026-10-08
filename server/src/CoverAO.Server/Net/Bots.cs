@@ -2764,7 +2764,9 @@ public sealed partial class Bot
         // Sastre cazó Lobos en el 19 y el 24, los dos pk, juntó 49 pieles y no fabricó nada en toda la corrida: no volvió
         // a un mapa seguro, y fabricar sólo se hacía en el mapa donde estaba parado.
         // Y SE VIAJA CON MATERIAL PARA UNA TANDA: ver `ValeViajarAFabricar`.
-        if (!MapaSeguro(sentidos.Mapa) && !ValeViajarAFabricar(CuantasAlcanzan(_entorno.Datos, primera, fab.Regla, tiene)))
+        if (!MapaSeguro(sentidos.Mapa)
+            && !ValeViajarAFabricar(CuantasAlcanzan(_entorno.Datos, primera, fab.Regla, tiene),
+                                    SkillProgression.CapForLevel(sentidos.Nivel) - skill, leFalta))
         { PostergarFabricacion(); return false; }
         if (!MapaSeguro(sentidos.Mapa))
         {
@@ -2842,8 +2844,14 @@ public sealed partial class Bot
     /// sienta a coser junta antes de volver al pueblo, y con lo que tenga cose igual cuando pasa por un mapa seguro a otra cosa.
     /// Medido en la ronda 39 (05/10): Petra, Sastre de nivel 22, hizo cuatro viajes por corrida del 19 o el 24 a Rinkel con dos a
     /// cuatro Pieles de Lobo, y se le fueron ocho de los veinte minutos.
+    ///
+    /// <para>Y CON UNA TANDA PARA APRENDER: si al tope de su nivel le faltan menos de <see cref="FabricacionesPorTanda"/> puntos
+    /// (<paramref name="lePuedeEnsenar"/>), el viaje espera a que suba más niveles, salvo que lo que fabrica le haga falta
+    /// (<paramref name="leFalta"/>, el antídoto del Druida). Medido en mid111-128 (07/10): Osmar, Carpintero, viajaba del 13 al 1 cada
+    /// vez que subía de nivel (32 viajes, unos 155 s cada uno) para hacer las 2 o 3 Flechas que le dejaba el tope nuevo.</para>
     /// </summary>
-    public static bool ValeViajarAFabricar(int unidadesQueAlcanzan) => unidadesQueAlcanzan >= FabricacionesPorTanda;
+    public static bool ValeViajarAFabricar(int unidadesQueAlcanzan, int lePuedeEnsenar = int.MaxValue, bool leFalta = false) =>
+        (leFalta ? unidadesQueAlcanzan : Math.Min(unidadesQueAlcanzan, lePuedeEnsenar)) >= FabricacionesPorTanda;
 
     /// <summary>¿Vale sentarse a fabricar? Mientras la skill pueda subir —el tope es por nivel, <see cref="SkillProgression"/>—
     /// o si lo que sale le hace falta.</summary>
@@ -2939,7 +2947,8 @@ public sealed partial class Bot
 
     /// <summary>Cuántas fabrica de una sentada, cuánto tarda cada una (lo que se tarda en apretar "construir" otra vez) y
     /// con cuánta energía se sienta a fabricar: la mitad larga, porque la otra mitad es para pelear.</summary>
-    private const int FabricacionesPorTanda = 6, FabricarMinMs = 900, FabricarMaxMs = 2_200;
+    public const int FabricacionesPorTanda = 6;
+    private const int FabricarMinMs = 900, FabricarMaxMs = 2_200;
     private const double FuelleParaFabricar = 0.6;
 
     /// <summary>Cuánto de lo que junta para fabricar guarda antes de dejar de juntar.</summary>

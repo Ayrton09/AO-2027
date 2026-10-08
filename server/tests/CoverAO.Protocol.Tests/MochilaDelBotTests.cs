@@ -323,6 +323,20 @@ public class MochilaDelBotTests : IDisposable
         Assert.True(Bot.ValeViajarAFabricar(Bot.CuantasAlcanzan(d, 31, regla, conDeSobra)));
     }
 
+    /// <summary>
+    /// Y CON UNA TANDA PARA APRENDER: con el tope a 2 o 3 puntos (Osmar, cada vez que subía de nivel), no viaja aunque le sobre material,
+    /// salvo que lo que fabrica le haga falta.
+    /// </summary>
+    [Fact]
+    public void A_fabricar_lejos_no_se_va_por_dos_o_tres_puntos_de_skill()
+    {
+        Assert.False(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: 3));
+        Assert.False(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: Bot.FabricacionesPorTanda - 1));
+        Assert.True(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: Bot.FabricacionesPorTanda));
+        Assert.True(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: 0, leFalta: true));
+        Assert.False(Bot.ValeViajarAFabricar(2, lePuedeEnsenar: 40));
+    }
+
     /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
     /// 3 monedas); con ropa, o sin ninguna a la venta, la reserva es la de siempre.</summary>
     [Theory]
