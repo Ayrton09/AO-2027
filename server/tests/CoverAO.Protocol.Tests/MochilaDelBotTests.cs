@@ -328,7 +328,7 @@ public class MochilaDelBotTests : IDisposable
     /// salvo que lo que fabrica le haga falta.
     /// </summary>
     [Fact]
-    public void A_fabricar_lejos_no_se_va_por_dos_o_tres_puntos_de_skill()
+    public void A_fabricar_lejos_no_se_va_con_menos_de_seis_puntos_de_skill()
     {
         Assert.False(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: 3));
         Assert.False(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: Bot.FabricacionesPorTanda - 1));
