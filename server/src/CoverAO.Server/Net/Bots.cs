@@ -2521,7 +2521,8 @@ public sealed partial class Bot
             // anotar la baldosa, y se vuelve a mirar en la vuelta siguiente. Medido en `early147`: Elmo, Clérigo de nivel 12 en el 208,
             // escapaba del Señor de las sombras, que estaba a cinco baldosas, y lo siguiente que hizo fue caminar a levantar un objeto
             // al lado del Sacerdote; murió con el 87 % de vida en menos de tres segundos.
-            if (LoArrimaAlPeligro(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
+            // Parado encima, se levanta: no hay paso que dar (en la ronda 52 se cortaba a Petra sobre el botín).
+            if (sentidos.Posicion != botin.Donde && LoArrimaAlPeligro(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
             var (x, y) = sentidos.Posicion;
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
             if (dx == 0 && dy == 0)
@@ -2771,13 +2772,11 @@ public sealed partial class Bot
         // Sastre cazó Lobos en el 19 y el 24, los dos pk, juntó 49 pieles y no fabricó nada en toda la corrida: no volvió
         // a un mapa seguro, y fabricar sólo se hacía en el mapa donde estaba parado.
         // Y SE VIAJA CON MATERIAL PARA UNA TANDA: ver `ValeViajarAFabricar`.
-        if (!MapaSeguro(sentidos.Mapa)
-            && !ValeViajarAFabricar(CuantasAlcanzan(_entorno.Datos, primera, fab.Regla, tiene),
-                                    SkillProgression.CapForLevel(sentidos.Nivel) - skill, leFalta))
-        { PostergarFabricacion(); return false; }
         if (!MapaSeguro(sentidos.Mapa))
         {
-            if (DondeSentarseAFabricar(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } lugar)
+            if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is not { } lugar
+                || !ValeViajarAFabricar(CuantasAlcanzan(_entorno.Datos, primera, fab.Regla, tiene),
+                                        SkillProgression.CapForLevel(sentidos.Nivel) - skill, leFalta, lugar.Saltos))
             { PostergarFabricacion(); return false; }
             if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, ToleranciaDelCoto))
                 PostergarFabricacion();
@@ -2856,9 +2855,18 @@ public sealed partial class Bot
     /// (<paramref name="lePuedeEnsenar"/>), el viaje espera a que suba más niveles, salvo que lo que fabrica le haga falta
     /// (<paramref name="leFalta"/>, el antídoto del Druida). Medido en mid111-128 (07/10): Osmar, Carpintero, viajaba del 13 al 1 cada
     /// vez que subía de nivel (32 viajes, unos 155 s cada uno) para hacer las 2 o 3 Flechas que le dejaba el tope nuevo.</para>
+    ///
+    /// <para>Sólo en un viaje de <see cref="SaltosQuePidenAprender"/> mapas o más (<paramref name="saltos"/>): al de al lado se va igual.
+    /// Medido en la ronda 52: Hilda, Druida, iba del 823 al 815 de al lado en 25 a 30 s, y con la regla dejó de ir y terminó cinco
+    /// puntos abajo, por un ahorro de 55 s.</para>
     /// </summary>
-    public static bool ValeViajarAFabricar(int unidadesQueAlcanzan, int lePuedeEnsenar = int.MaxValue, bool leFalta = false) =>
-        (leFalta ? unidadesQueAlcanzan : Math.Min(unidadesQueAlcanzan, lePuedeEnsenar)) >= FabricacionesPorTanda;
+    public static bool ValeViajarAFabricar(int unidadesQueAlcanzan, int lePuedeEnsenar = int.MaxValue, bool leFalta = false,
+                                           int saltos = SaltosQuePidenAprender) =>
+        (leFalta || saltos < SaltosQuePidenAprender ? unidadesQueAlcanzan : Math.Min(unidadesQueAlcanzan, lePuedeEnsenar))
+        >= FabricacionesPorTanda;
+
+    /// <summary>Desde cuántos mapas el viaje a fabricar pide una tanda que enseñe: ver <see cref="ValeViajarAFabricar"/>.</summary>
+    public const int SaltosQuePidenAprender = 2;
 
     /// <summary>¿Vale sentarse a fabricar? Mientras la skill pueda subir —el tope es por nivel, <see cref="SkillProgression"/>—
     /// o si lo que sale le hace falta.</summary>

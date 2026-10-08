@@ -335,6 +335,9 @@ public class MochilaDelBotTests : IDisposable
         Assert.True(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: Bot.FabricacionesPorTanda));
         Assert.True(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: 0, leFalta: true));
         Assert.False(Bot.ValeViajarAFabricar(2, lePuedeEnsenar: 40));
+        // Al mapa de al lado se va igual (Hilda, del 823 al 815).
+        Assert.True(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: 3, saltos: 1));
+        Assert.False(Bot.ValeViajarAFabricar(36, lePuedeEnsenar: 3, saltos: Bot.SaltosQuePidenAprender));
     }
 
     /// <summary>LAS POCIONES GUARDAN LO DE LA ROPA MÁS BARATA si le falta (Milo en `rearmarB_t2`: 1700 en pociones y quedó desnuda con
