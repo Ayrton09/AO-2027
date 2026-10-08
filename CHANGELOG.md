@@ -61,6 +61,9 @@ Lo nuevo desde el paquete del 5 de octubre.
 - **Los bots que empiezan viajan menos**: envenenados y con pociones siguen cazando hasta curarse con el antídoto o con un
   sacerdote que tengan a mano, no salen de viaje por una pieza de equipo de menos de 1000 monedas (salvo un arma),
   y si frenan para cazar algo, primero lo cazan.
+- **Los bots se cuidan más del Señor de las sombras**: acorralados no se quedan peleando con lo que tienen pegado si
+  al lado hay algo que los mata de dos golpes, y no van a levantar un botín que los deja al lado de un peligro. Los
+  que fabrican no viajan lejos por dos o tres puntos de skill.
 
 ## 1.0.0 (2026-10-05)
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
