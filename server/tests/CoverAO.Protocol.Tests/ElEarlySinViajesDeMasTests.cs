@@ -1,3 +1,5 @@
+using System.Reflection;
+using CoverAO.Server.Data;
 using CoverAO.Server.Net;
 using Xunit;
 
@@ -9,17 +11,21 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public class ElEarlySinViajesDeMasTests
 {
+    /// <summary>Las pociones de vida que el bot quiere para pelear: la constante privada de <c>Bot</c>, leída y no copiada.</summary>
+    private static int PocionesParaPelear =>
+        (int)typeof(Bot).GetField("PocionesParaPelear", BindingFlags.NonPublic | BindingFlags.Static)!.GetRawConstantValue()!;
+
     [Fact]
     public void Envenenado_con_pociones_no_va_a_un_templo_de_otro_mapa()
     {
         Assert.False(Bot.VaAlTemploPorElVeneno(pocionesDeVida: 200, temploEnEsteMapa: false));
-        Assert.False(Bot.VaAlTemploPorElVeneno(pocionesDeVida: 10, temploEnEsteMapa: false));
+        Assert.False(Bot.VaAlTemploPorElVeneno(pocionesDeVida: PocionesParaPelear, temploEnEsteMapa: false));
     }
 
     [Fact]
     public void Envenenado_sin_pociones_o_con_el_templo_aca_va()
     {
-        Assert.True(Bot.VaAlTemploPorElVeneno(pocionesDeVida: 9, temploEnEsteMapa: false));
+        Assert.True(Bot.VaAlTemploPorElVeneno(pocionesDeVida: PocionesParaPelear - 1, temploEnEsteMapa: false));
         Assert.True(Bot.VaAlTemploPorElVeneno(pocionesDeVida: 0, temploEnEsteMapa: false));
         Assert.True(Bot.VaAlTemploPorElVeneno(pocionesDeVida: 200, temploEnEsteMapa: true));
     }
@@ -29,8 +35,39 @@ public class ElEarlySinViajesDeMasTests
     {
         Assert.False(Bot.CuestaComoParaElViaje(300));    // Escudo de Tortuga
         Assert.False(Bot.CuestaComoParaElViaje(500));    // Escudo de Madera
-        Assert.False(Bot.CuestaComoParaElViaje(999));
-        Assert.True(Bot.CuestaComoParaElViaje(1_000));
+        Assert.False(Bot.CuestaComoParaElViaje(Bot.PrecioQueValeElViaje - 1));
+        Assert.True(Bot.CuestaComoParaElViaje(Bot.PrecioQueValeElViaje));
         Assert.True(Bot.CuestaComoParaElViaje(3_000));   // Armadura de Cuero
+    }
+
+    /// <summary>
+    /// EL CABLEADO DEL FILTRO: <c>ValeElViajePorEso</c>, la pregunta del viaje al mercader, con un bot sin nada puesto y plata de sobra.
+    /// Lo barato no vale el viaje, sea escudo o arma (la Espada Larga a 350 del Herrero de Armas); lo que cuesta 1000 o más y lo mejora, sí.
+    /// </summary>
+    [Fact]
+    public void El_viaje_al_mercader_no_se_hace_por_una_pieza_barata_ni_armas_ni_escudos()
+    {
+        var datos = GameData.Load();
+        if (datos.Objects.Count == 0) return;   // sin gamedata local no hay nada que verificar
+        var vale = typeof(Bot).GetMethod("ValeElViajePorEso", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var entorno = new EntornoDeBots(null!, null!, 0, 0, datos, null!, null!);
+        var sentidos = new SentidosDelBot();
+        bool Vale(Bot bot, short obj) => (bool)vale.Invoke(bot, new object[] { sentidos, obj, 100_000d })!;
+
+        const short EscudoDeTortuga = 404, EspadaLarga = 2, ArmaduraDeCuero = 30, EspadaCorta = 164;
+        Assert.True(datos.Obj(EscudoDeTortuga)!.Value < Bot.PrecioQueValeElViaje);
+        Assert.True(datos.Obj(EspadaLarga)!.Value < Bot.PrecioQueValeElViaje);
+        Assert.True(datos.Obj(ArmaduraDeCuero)!.Value >= Bot.PrecioQueValeElViaje);
+        Assert.True(datos.Obj(EspadaCorta)!.Value >= Bot.PrecioQueValeElViaje);
+
+        var bots = PobladoDeBots.Nombres.Select(n => new Bot(n, null, entorno, 1)).ToList();
+        Assert.All(bots, bot =>
+        {
+            Assert.False(Vale(bot, EscudoDeTortuga));
+            Assert.False(Vale(bot, EspadaLarga));
+        });
+        // El control: sin él el test pasaría igual si ningún bot pudiera usar nada.
+        Assert.Contains(bots, bot => Vale(bot, ArmaduraDeCuero));
+        Assert.Contains(bots, bot => Vale(bot, EspadaCorta));
     }
 }
