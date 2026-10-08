@@ -5484,9 +5484,11 @@ public sealed partial class Bot
     /// menos que lo mata de dos golpes con la vida que tiene (<paramref name="loQueLoMata"/>, <see cref="LoQueLoMataALaVista"/>) y que no
     /// es lo pegado: la pelea contra lo pegado se gana, pero mientras tanto llega el otro. Medido en `early159`: Elmo, Clérigo de nivel 13
     /// con 77 de vida, huía del Señor de las sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que
-    /// lo picaba (`gana=True`, una sola pegada); el Señor, a tres baldosas, lo mató dos segundos después. De los 158 encuentros con el Señor
-    /// a tres baldosas o menos en el 208 desde el 02/10 hasta el 08/10 a las 12:21, 55 terminaron en esa rama
-    /// (`fase5/herramientas/bots/senor208_encuentros.py`).
+    /// lo picaba (`gana=True`, una sola pegada); el Señor, a tres baldosas, lo mató dos segundos después. Desde el 02/10 hasta el 08/10 a
+    /// las 12:21 hubo 158 encuentros en el 208 con algo peligroso a tres baldosas o menos: 146 con la línea de carrera del Señor (npc534)
+    /// y 12 sólo con una línea de lo peligroso a tiro, que no nombra la criatura. De esos 158, 55 tuvieron alguna pelea acorralada, con
+    /// cualquier criatura (`fase5/herramientas/bots/senor208_encuentros.py`, sin los encuentros posteriores a ese corte: el script no
+    /// filtra por fecha).
     /// </summary>
     public static bool LaAmenazaDejaPelearParado((byte X, byte Y) yo, IReadOnlyCollection<(byte X, byte Y)> loQueLoMata,
                                                  (byte X, byte Y) pegado) =>
