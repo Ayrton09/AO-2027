@@ -330,7 +330,7 @@ public class CotoDelBotTests
         foreach (var (mapa, x, y) in new (int, byte, byte)[] { (19, 75, 55), (19, 68, 46), (24, 60, 65), (24, 32, 11), (8, 91, 50) })
         {
             Assert.True(d.IsPkMap(mapa), $"el {mapa} no es inseguro: el test no prueba nada");
-            var lugar = Bot.DondeSentarseAFabricar(m.Mapas, mapa, (x, y), seguro, pisable);
+            var lugar = m.Mapas.MapaMasCercano(mapa, (x, y), seguro, pisable);
             Assert.True(lugar is not null, $"desde el {mapa} ({x},{y}) no hay dónde sentarse a fabricar");
             Assert.True(seguro(lugar.Value.Mapa) && pisable(lugar.Value.Mapa), $"desde el {mapa} eligió el {lugar.Value.Mapa}");
         }

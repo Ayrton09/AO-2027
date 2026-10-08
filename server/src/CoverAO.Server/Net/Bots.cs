@@ -2753,8 +2753,10 @@ public sealed partial class Bot
     /// la mochila.</para>
     ///
     /// <para>En un mapa seguro y sin nada hostil cerca, como cualquiera que se sienta a coser, y con la energía que sobra:
-    /// es la misma que hace falta para pelear. Si tiene qué fabricar y está en un mapa inseguro, va a uno seguro
-    /// (<see cref="DondeSentarseAFabricar"/>).</para>
+    /// es la misma que hace falta para pelear. Si tiene qué fabricar y está en un mapa inseguro, va al seguro más cercano
+    /// (<see cref="Navegante.MapaMasCercano"/>, que entra al mapa y no a una franja de afuera). Con criaturas o sin ellas: fabricar
+    /// ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba al Sastre sin dónde desde el 19, donde cazaba: el
+    /// río del 98 corta el camino al 20, y a cinco saltos los únicos seguros son el mapa 1 y la cuna, que tienen.</para>
     /// </summary>
     private async Task<bool> FabricarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
@@ -2934,18 +2936,6 @@ public sealed partial class Bot
     }
 
     private static readonly IReadOnlySet<int> NadaQueCazar = new HashSet<int>();
-
-    /// <summary>
-    /// DÓNDE SENTARSE A FABRICAR estando en un mapa inseguro: el más cercano de los que <paramref name="sirve"/> —los seguros—, con la
-    /// baldosa por la que se entra. null si no hay ninguno a <see cref="Navegante.TopeDeMapas"/> saltos.
-    ///
-    /// <para>Con criaturas o sin ellas: fabricar ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba al Sastre
-    /// sin dónde desde el 19, donde cazaba: el río del 98 corta el camino al 20, y a cinco saltos los únicos seguros son el mapa
-    /// 1 y la cuna, que tienen. Por <see cref="Navegante.MapaMasCercano"/>, que entra al mapa y no a una franja de afuera.</para>
-    /// </summary>
-    public static (int Mapa, byte X, byte Y)? DondeSentarseAFabricar(Navegante mapas, int mapa, (byte X, byte Y) desde,
-                                                                     Func<int, bool> sirve, Func<int, bool>? pisable) =>
-        mapas.MapaMasCercano(mapa, desde, sirve, pisable) is { } ahi ? (ahi.Mapa, ahi.X, ahi.Y) : null;
 
     /// <summary>Espera, sentado, a tener la energía de una fabricación más. Devuelve si la tiene; corta si algo urge o se
     /// acerca algo hostil.</summary>
