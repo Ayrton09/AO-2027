@@ -6724,8 +6724,9 @@ public sealed partial class Bot
     /// salvo parado encima: no hay paso que dar, se levanta. Lo usan <see cref="LevantarBotinAsync"/> al elegir el botín y al caminar
     /// hacia él, con la misma cuenta.
     ///
-    /// <para>Parado encima no se corta: levantarlo no es dar un paso hacia lo peligroso. Medido en `early177` (08/10): Petra se cortó de
-    /// pie sobre el botín, con un peligro a dos pasos.</para>
+    /// <para>Parado encima no se corta: levantarlo no es dar un paso hacia lo peligroso. Petra se cortó parada en la casilla donde Quim
+    /// había levantado el botín, con un peligro a dos pasos (`early177.log`, líneas 292, 304 y 305). Ese caso no tenía botín, así que no
+    /// mide la excepción.</para>
     /// </summary>
     public static bool ArrimaAlPeligroAlBotin((byte X, byte Y) yo, (byte X, byte Y) botin, IReadOnlyCollection<(byte X, byte Y)> peligros) =>
         yo != botin && LoArrimaAlPeligro(yo, botin, peligros);
