@@ -2514,7 +2514,7 @@ public sealed partial class Bot
         // el que seguía más cerca no se miraba mientras el peligro estuviera a la vista. Medido en `early175` (08/10): Petra se cortó 23
         // veces contra el mismo botín, en (75,44).
         // LO MISMO CON LA BALDOSA QUE YA NO SIRVIÓ (`_nadaQueHacerAca`): descartarla después de elegirla dejaba sin mirar el botín que
-        // seguía, hasta morir (la lista se limpia sólo ahí).
+        // seguía, y la baldosa queda anotada por el resto de la sesión (la lista se limpia sólo al entrar, en `ComportarseAsync`).
         var yo = sentidos.Posicion;
         var peligros = PeligrosALaVista(sentidos);
         short mapa = sentidos.Mapa;
