@@ -734,7 +734,8 @@ public sealed partial class Bot
                 if (SeVaDelMapaPor(NoLaLastima(amenaza.Quien.FichaNpc),
                                    EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno),
                                    _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura,
-                                   laPeleaSeGana: SeGanaConEnergia(sentidos.Fuelle, LaPeleaSeGanaAca(amenaza.Quien.FichaNpc, vidaAhora)))
+                                   laPeleaSeGana: SeGanaConEnergia(TieneFuelleParaPelear(sentidos),
+                                                                   LaPeleaSeGanaAca(amenaza.Quien.FichaNpc, vidaAhora)))
                     && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
                 {
                     int deDonde = sentidos.Mapa;
@@ -5416,12 +5417,16 @@ public sealed partial class Bot
         huidasDeLaMismaCriatura >= HuidasParaAcorralado;
 
     /// <summary>
-    /// ¿LA PELEA SE GANA CON LA ENERGÍA QUE TIENE? Sin energía no se pega (el servidor pide la del golpe, como el VB6
-    /// SistemaCombate.bas:1002), así que una pelea que se ganaría no se gana. Medido en `early181` (09/10): Fabia, nivel 16, llegó
-    /// desnuda al 16 (le sacaron lo de novato y no había pasado a comprar ropa), el frío le dejó la energía en 0, y una Serpiente la
-    /// mató en el 27 en dos minutos y medio de huidas sin salir del mapa: contra la Serpiente "se ganaba".
+    /// ¿LA PELEA SE GANA CON LA ENERGÍA QUE TIENE? Sólo si tiene fuelle para pelear (<see cref="TieneFuelleParaPelear"/>, la misma regla
+    /// con la que entra a pelear): sin él no pelea, así que la pelea no se gana aunque la cuenta diga que sí. Con poca energía tampoco
+    /// pega: el golpe pide la del arma (<c>StaRequerido</c>, 10 si la data no la trae) o de 1 a 10 sin arma (VB6 SistemaCombate.bas:995-1002).
+    ///
+    /// <para>Visto en `early181` (09/10): Fabia, nivel 16, sin ropa, comida ni bebida en la mochila (`[SONDA-NIVEL]` de las 14:50:16),
+    /// murió en el 27 con la energía en 0 contra una Serpiente (`[evento] ... murio`, 14:54:36) después de dos minutos y medio de huidas
+    /// de la misma criatura (`[SONDA-CARRERA]`, de 14:52:08 a 14:54:33) sin salir del mapa. Que no salió porque la pelea "se ganaba" sale
+    /// de leer el código: `gana=False` aparece recién a las 14:54:36, con 2 de vida, y ninguna sonda imprimió la energía antes.</para>
     /// </summary>
-    public static bool SeGanaConEnergia(double fuelle, bool laPeleaSeGana) => fuelle > 0 && laPeleaSeGana;
+    public static bool SeGanaConEnergia(bool tieneFuelle, bool laPeleaSeGana) => tieneFuelle && laPeleaSeGana;
 
     /// <summary>
     /// ¿SE VA DEL MAPA POR ESTA AMENAZA? Cuando no se la saca de encima (<see cref="NoSeLoSacaDeEncima"/>) y es algo que no puede
