@@ -2758,8 +2758,7 @@ public sealed partial class Bot
     /// <para>En un mapa seguro y sin nada hostil cerca, como cualquiera que se sienta a coser, y con la energía que sobra:
     /// es la misma que hace falta para pelear. Si tiene qué fabricar y está en un mapa inseguro, va al seguro más cercano
     /// (<see cref="Navegante.MapaMasCercano"/>, que entra al mapa y no a una franja de afuera). Con criaturas o sin ellas: fabricar
-    /// ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba sin dónde al Sastre que cazaba Lobos en el 19 y el
-    /// 24 (`99cf2972`, 18/09: juntó 49 pieles y no fabricó nada en toda la corrida).</para>
+    /// ya pide que no haya nada hostil cerca.</para>
     /// </summary>
     private async Task<bool> FabricarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
