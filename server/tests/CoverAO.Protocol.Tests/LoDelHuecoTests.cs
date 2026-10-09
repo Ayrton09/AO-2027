@@ -86,6 +86,19 @@ public class LoDelHuecoTests
         Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, huidasDeLaMismaCriatura: 3));
     }
 
+    /// <summary>Sin energía no se pega: la pelea que se ganaría no se gana, y en un mapa inseguro se va del mapa (Fabia en early181).</summary>
+    [Fact]
+    public void Sin_energia_la_pelea_no_se_gana_y_se_va_del_mapa_inseguro()
+    {
+        Assert.False(Bot.SeGanaConEnergia(0, laPeleaSeGana: true));
+        Assert.True(Bot.SeGanaConEnergia(0.05, laPeleaSeGana: true));
+        Assert.False(Bot.SeGanaConEnergia(1, laPeleaSeGana: false));
+        Assert.True(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, huidasDeLaMismaCriatura: 3,
+                                       laPeleaSeGana: Bot.SeGanaConEnergia(0, laPeleaSeGana: true)));
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: false, huidasDeLaMismaCriatura: 3,
+                                        laPeleaSeGana: Bot.SeGanaConEnergia(0, laPeleaSeGana: true)));
+    }
+
     /// <summary>LO PELIGROSO QUE NO LE GANA, FUERA DEL MAPA, PERO SÓLO EN UNO INSEGURO (autor, 03/10): como lo del hueco.</summary>
     [Fact]
     public void Lo_peligroso_que_no_le_gana_lo_saca_de_un_mapa_inseguro()

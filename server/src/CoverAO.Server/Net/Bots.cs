@@ -734,7 +734,7 @@ public sealed partial class Bot
                 if (SeVaDelMapaPor(NoLaLastima(amenaza.Quien.FichaNpc),
                                    EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno),
                                    _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura,
-                                   laPeleaSeGana: LaPeleaSeGanaAca(amenaza.Quien.FichaNpc, vidaAhora))
+                                   laPeleaSeGana: SeGanaConEnergia(sentidos.Fuelle, LaPeleaSeGanaAca(amenaza.Quien.FichaNpc, vidaAhora)))
                     && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
                 {
                     int deDonde = sentidos.Mapa;
@@ -5415,6 +5415,14 @@ public sealed partial class Bot
     /// </summary>
     public static bool NoSeLoSacaDeEncima(int huidasDeLaMismaCriatura) =>
         huidasDeLaMismaCriatura >= HuidasParaAcorralado;
+
+    /// <summary>
+    /// ¿LA PELEA SE GANA CON LA ENERGÍA QUE TIENE? Sin energía no se pega (el servidor pide la del golpe, como el VB6
+    /// SistemaCombate.bas:1002), así que una pelea que se ganaría no se gana. Medido en `early181` (09/10): Fabia, nivel 16, llegó
+    /// desnuda al 16 (le sacaron lo de novato y no había pasado a comprar ropa), el frío le dejó la energía en 0, y una Serpiente la
+    /// mató en el 27 en dos minutos y medio de huidas sin salir del mapa: contra la Serpiente "se ganaba".
+    /// </summary>
+    public static bool SeGanaConEnergia(double fuelle, bool laPeleaSeGana) => fuelle > 0 && laPeleaSeGana;
 
     /// <summary>
     /// ¿SE VA DEL MAPA POR ESTA AMENAZA? Cuando no se la saca de encima (<see cref="NoSeLoSacaDeEncima"/>) y es algo que no puede
