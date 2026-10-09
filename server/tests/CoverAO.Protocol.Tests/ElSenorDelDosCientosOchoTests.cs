@@ -27,6 +27,7 @@ public class ElSenorDelDosCientosOchoTests
     private static readonly MethodInfo LevantarBotinAsync = typeof(Bot).GetMethod("LevantarBotinAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
     private static readonly MethodInfo ComportarseAsync = typeof(Bot).GetMethod("ComportarseAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
     private static readonly FieldInfo Huidas = typeof(Bot).GetField("_huidas", BindingFlags.NonPublic | BindingFlags.Instance)!;
+    private static readonly FieldInfo NadaQueHacerAca = typeof(Bot).GetField("_nadaQueHacerAca", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     [Fact]
     public void Con_el_Senor_a_tres_baldosas_no_pelea_parado_con_el_Escorpion()
@@ -155,6 +156,41 @@ public class ElSenorDelDosCientosOchoTests
         Assert.Equal((byte)ClientPacketId.PickUp, mandado[^1][0]);
     }
 
+    /// <summary>Con dos botines, el más cercano en una baldosa que ya no sirvió (<c>_nadaQueHacerAca</c>) no se elige: se camina al otro
+    /// y se lo levanta.</summary>
+    [Fact]
+    public async Task Con_dos_botines_se_va_al_que_no_esta_en_una_baldosa_que_no_sirvio()
+    {
+        var s = Elmo(60, 51, vidaMax: 131, vida: 131);
+        s.Recibir(ServerMessages.ChangeMap(Mapa));                   // la baldosa anotada lleva el mapa
+        s.Recibir(ServerMessages.ObjectCreate(57, 51, Botin, 1));    // el más cercano, a tres pasos al oeste
+        s.Recibir(ServerMessages.ObjectCreate(64, 51, Botin, 1));    // a cuatro pasos al este
+        var bot = NuevoBot();
+        NoSirvio(bot, 57, 51);
+        var t = new TransporteDeBot("Elmo");
+        Assert.True(await Levantar(bot, s, t));
+        var mandado = await Mandado(t);
+        Assert.Equal((byte)ClientPacketId.Walk, mandado[0][0]);
+        Assert.Equal(SentidosDelBot.RumboHacia(1, 0), mandado[0][1]);
+        Assert.Equal((byte)ClientPacketId.PickUp, mandado[^1][0]);
+    }
+
+    /// <summary>El control de la prueba de arriba: sin la baldosa anotada, se camina al más cercano.</summary>
+    [Fact]
+    public async Task Con_dos_botines_y_ninguna_baldosa_anotada_se_va_al_mas_cercano()
+    {
+        var s = Elmo(60, 51, vidaMax: 131, vida: 131);
+        s.Recibir(ServerMessages.ChangeMap(Mapa));
+        s.Recibir(ServerMessages.ObjectCreate(57, 51, Botin, 1));
+        s.Recibir(ServerMessages.ObjectCreate(64, 51, Botin, 1));
+        var t = new TransporteDeBot("Elmo");
+        Assert.True(await Levantar(NuevoBot(), s, t));
+        var mandado = await Mandado(t);
+        Assert.Equal((byte)ClientPacketId.Walk, mandado[0][0]);
+        Assert.Equal(SentidosDelBot.RumboHacia(-1, 0), mandado[0][1]);
+        Assert.Equal((byte)ClientPacketId.PickUp, mandado[^1][0]);
+    }
+
     /// <summary>El corte en el camino: el bot ya va hacia el botín cuando aparece el Señor a tres baldosas de él. Deja de caminar y no
     /// lo levanta.</summary>
     [Fact]
@@ -207,6 +243,10 @@ public class ElSenorDelDosCientosOchoTests
         var huidas = Huidas.GetValue(bot)!;
         huidas.GetType().GetField("QueNoLoSacaron")!.SetValue(huidas, 3);
     }
+
+    /// <summary>La baldosa, anotada como una donde ya se agachó y no levantó nada (ver <c>Bot.BaldosaQueNoSirve</c>).</summary>
+    private static void NoSirvio(Bot bot, byte x, byte y) =>
+        ((HashSet<(short, byte, byte)>)NadaQueHacerAca.GetValue(bot)!).Add(((short)Mapa, x, y));
 
     /// <summary>Corre el ciclo del bot hasta su primera decisión de caminar, girar o pegar, y devuelve el id de ese paquete (null si no
     /// decidió nada en quince segundos).</summary>
