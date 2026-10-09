@@ -574,7 +574,7 @@ public sealed partial class Bot
         _viajesAlTemploFallidos = 0;
         _cotosFallidos = 0;
         _traidoDeCasa.Clear();
-        _nadaQueHacerAca.Clear();   // las baldosas descartadas eran de la vida anterior
+        _nadaQueHacerAca.Clear();   // las baldosas descartadas eran de la sesión anterior
         foreach (byte ranura in sentidos.RanurasOcupadas()) _traidoDeCasa.Add(sentidos.QueHayEn(ranura));
         await Task.Delay(_rng.Next(MirarAlrededorMs, MirarAlrededorMs * 4), ct);
         // El modo combate es un interruptor y hay que prenderlo: sin él, el servidor contesta el aviso 102 y no
