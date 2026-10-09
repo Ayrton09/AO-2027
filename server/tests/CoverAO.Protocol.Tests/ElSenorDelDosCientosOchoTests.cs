@@ -53,11 +53,25 @@ public class ElSenorDelDosCientosOchoTests
         Assert.True(Bot.LaAmenazaDejaPelearParado((57, 51), Array.Empty<(byte, byte)>(), (57, 52)), "nada que mate de dos a tiro");
     }
 
+    /// <summary>
+    /// El acorralado que no se puede mover pelea aunque pierda o la amenaza no lo deje (decisión del autor, 09/10); el que se puede
+    /// mover, sólo si se gana y la amenaza lo deja.
+    /// </summary>
+    [Fact]
+    public void El_acorralado_que_no_se_puede_mover_pelea_igual()
+    {
+        int quieto = Bot.HuidasParaAcorralado, seMueve = Bot.HuidasParaAcorralado - 1;
+        Assert.True(Bot.PeleaAcorralado(quieto, () => false, () => false));
+        Assert.False(Bot.PeleaAcorralado(seMueve, () => true, () => false));
+        Assert.False(Bot.PeleaAcorralado(seMueve, () => false, () => true));
+        Assert.True(Bot.PeleaAcorralado(seMueve, () => true, () => true));
+    }
+
     [Fact]
     public void El_botin_al_lado_del_peligro_no_se_va_a_buscar()
     {
         var peligro = new[] { ((byte)55, (byte)50) };
-        Assert.True(Bot.LoArrimaAlPeligro((60, 51), (57, 51), peligro));    // como Elmo en early147
+        Assert.True(Bot.LoArrimaAlPeligro((60, 51), (57, 51), peligro));    // hacia el peligro
         Assert.False(Bot.LoArrimaAlPeligro((60, 51), (62, 51), peligro));   // alejándose
         Assert.False(Bot.LoArrimaAlPeligro((60, 51), (57, 51), Array.Empty<(byte, byte)>()));
     }

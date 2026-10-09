@@ -760,10 +760,10 @@ public sealed partial class Bot
                 if ((EstaAcorralado(_huidas.SinMoverse, _huidas.QueNoLoSacaron) || NoSeLoSacaDeEncima(_huidas.DeLaMismaCriatura))
                     && TieneFuelleParaPelear(sentidos)
                     && sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1) && !NoLaLastima(f)) is { Pasos: <= 1 } pegado
-                    && (_huidas.SinMoverse >= HuidasParaAcorralado
-                        || (LaPeleaSeGanaContraTodas(LasQueLePegan(sentidos, pegado.Quien), vidaAhora)
-                            && LaAmenazaDejaPelearParado(sentidos.Posicion, LoQueLoMataALaVista(sentidos),
-                                                         (pegado.Quien.X, pegado.Quien.Y)))))
+                    && PeleaAcorralado(_huidas.SinMoverse,
+                                       () => LaPeleaSeGanaContraTodas(LasQueLePegan(sentidos, pegado.Quien), vidaAhora),
+                                       () => LaAmenazaDejaPelearParado(sentidos.Posicion, LoQueLoMataALaVista(sentidos),
+                                                                       (pegado.Quien.X, pegado.Quien.Y))))
                 {
                     // RODEADO Y CON LA VIDA BAJA, PRIMERO LA POCIÓN: ver `RodeadoSeCuraPrimero`.
                     if (RodeadoSeCuraPrimero(EstaRodeado(sentidos.Posicion, VecinasTapadas(sentidos.Posicion, sentidos.BaldosasOcupadas()),
@@ -2513,11 +2513,14 @@ public sealed partial class Bot
         // EL BOTÍN QUE QUEDA AL LADO DE LO PELIGROSO NI SE ELIGE (ver `ArrimaAlPeligroAlBotin`). Si se lo eligiera y después se lo cortara,
         // el que seguía más cerca no se miraba mientras el peligro estuviera a la vista. Medido en `early175` (08/10): Petra se cortó 23
         // veces contra el mismo botín, en (75,44).
+        // LO MISMO CON LA BALDOSA QUE YA NO SIRVIÓ (`_nadaQueHacerAca`): descartarla después de elegirla dejaba sin mirar el botín que
+        // seguía, hasta morir (la lista se limpia sólo ahí).
         var yo = sentidos.Posicion;
         var peligros = PeligrosALaVista(sentidos);
-        if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !ArrimaAlPeligroAlBotin(yo, baldosa, peligros)) is not { } botin
-            || botin.Pasos > RadioDeBotin
-            || _nadaQueHacerAca.Contains((sentidos.Mapa, botin.Donde.X, botin.Donde.Y))) return false;
+        short mapa = sentidos.Mapa;
+        if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !_nadaQueHacerAca.Contains((mapa, baldosa.X, baldosa.Y))
+                                                                  && !ArrimaAlPeligroAlBotin(yo, baldosa, peligros)) is not { } botin
+            || botin.Pasos > RadioDeBotin) return false;
 
         bool llego = false;
         short queHabia = 0, hayAhora = 0;
@@ -2755,8 +2758,8 @@ public sealed partial class Bot
     /// <para>En un mapa seguro y sin nada hostil cerca, como cualquiera que se sienta a coser, y con la energía que sobra:
     /// es la misma que hace falta para pelear. Si tiene qué fabricar y está en un mapa inseguro, va al seguro más cercano
     /// (<see cref="Navegante.MapaMasCercano"/>, que entra al mapa y no a una franja de afuera). Con criaturas o sin ellas: fabricar
-    /// ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba al Sastre sin dónde desde el 19, donde cazaba: el
-    /// río del 98 corta el camino al 20, y a cinco saltos los únicos seguros son el mapa 1 y la cuna, que tienen.</para>
+    /// ya pide que no haya nada hostil cerca. Pedir un pueblo sin ninguna dejaba sin dónde al Sastre que cazaba Lobos en el 19 y el
+    /// 24 (`99cf2972`, 18/09: juntó 49 pieles y no fabricó nada en toda la corrida).</para>
     /// </summary>
     private async Task<bool> FabricarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
@@ -5480,6 +5483,16 @@ public sealed partial class Bot
     }
 
     /// <summary>
+    /// ¿EL ACORRALADO PELEA CON LO QUE TIENE PEGADO? Si la pelea se gana (<paramref name="seGana"/>) y lo que lo mata de dos golpes lo deja
+    /// (<paramref name="laAmenazaDeja"/>, <see cref="LaAmenazaDejaPelearParado"/>). SALVO QUE NO PUEDA MOVERSE: con
+    /// <see cref="HuidasParaAcorralado"/> huidas sin dar un paso pelea igual, aunque pierda o tenga al Señor de las sombras a tres
+    /// baldosas: quieto sin pegar es peor. DECIDIDO POR EL AUTOR (09/10). Medido en `early177` (08/10): Ivo, por esta rama (`gana=False`, el
+    /// Señor a un paso), bajó de 86 a unos 20 de 131 de vida y salió vivo del 208.
+    /// </summary>
+    public static bool PeleaAcorralado(int huidasSinMoverse, Func<bool> seGana, Func<bool> laAmenazaDeja) =>
+        huidasSinMoverse >= HuidasParaAcorralado || (seGana() && laAmenazaDeja());
+
+    /// <summary>
     /// ¿LO QUE LO MATA DE DOS GOLPES LO DEJA PELEAR PARADO CON LO QUE TIENE PEGADO? No si hay algo a <see cref="RadioDeSusto"/> pasos o
     /// menos que lo mata de dos golpes con la vida que tiene (<paramref name="loQueLoMata"/>, <see cref="LoQueLoMataALaVista"/>) y que no
     /// es lo pegado: la pelea contra lo pegado se gana, pero mientras tanto llega el otro. Medido en `early159`: Elmo, Clérigo de nivel 13
@@ -5594,7 +5607,7 @@ public sealed partial class Bot
     /// <summary>¿Lo está atacando? Una criatura hostil que pega, pegada en cruz, que es desde donde se pega en el juego.</summary>
     public static bool LoEstaAtacando(NpcInfo? n, int pasos) => pasos <= 1 && n is { Hostile: true, MaxHit: > 0 };
 
-    private const int HuidasParaAcorralado = 3;
+    public const int HuidasParaAcorralado = 3;
     private readonly ContadoresDeHuida _huidas = new();
 
     /// <summary>

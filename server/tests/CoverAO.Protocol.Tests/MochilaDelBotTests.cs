@@ -324,7 +324,7 @@ public class MochilaDelBotTests : IDisposable
     }
 
     /// <summary>
-    /// Y CON UNA TANDA PARA APRENDER: con el tope a 2 o 3 puntos (Osmar, cada vez que subía de nivel), no viaja aunque le sobre material,
+    /// Y CON UNA TANDA PARA APRENDER: con el tope a menos de seis puntos (Osmar, de 2 o 3 cada vez que subía de nivel), no viaja aunque le sobre material,
     /// salvo que lo que fabrica le haga falta.
     /// </summary>
     [Fact]
