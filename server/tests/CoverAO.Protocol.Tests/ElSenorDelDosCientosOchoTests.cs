@@ -68,6 +68,18 @@ public class ElSenorDelDosCientosOchoTests
         Assert.True(Bot.PeleaAcorralado(seMueve, () => true, () => true));
     }
 
+    /// <summary>La baldosa que no sirvió queda anotada cinco minutos y después vuelve a valer (decisión del autor, 09/10).</summary>
+    [Fact]
+    public void La_baldosa_que_no_sirvio_se_olvida_a_los_cinco_minutos()
+    {
+        var anotadas = new Dictionary<(short, byte, byte), long> { [((short)1, (byte)50, (byte)50)] = 1_000 + Bot.OlvidoDeLaBaldosaMs };
+        Assert.True(Bot.SigueSinServir(anotadas, (1, 50, 50), 1_000));
+        Assert.True(Bot.SigueSinServir(anotadas, (1, 50, 50), 1_000 + Bot.OlvidoDeLaBaldosaMs - 1));
+        Assert.False(Bot.SigueSinServir(anotadas, (1, 50, 50), 1_000 + Bot.OlvidoDeLaBaldosaMs));
+        Assert.False(Bot.SigueSinServir(anotadas, (2, 50, 50), 1_000));
+        Assert.Equal(5 * 60_000, Bot.OlvidoDeLaBaldosaMs);
+    }
+
     [Fact]
     public void El_botin_al_lado_del_peligro_no_se_va_a_buscar()
     {
@@ -246,7 +258,7 @@ public class ElSenorDelDosCientosOchoTests
 
     /// <summary>La baldosa, anotada como una donde ya se agachó y no levantó nada (ver <c>Bot.BaldosaQueNoSirve</c>).</summary>
     private static void NoSirvio(Bot bot, byte x, byte y) =>
-        ((HashSet<(short, byte, byte)>)NadaQueHacerAca.GetValue(bot)!).Add(((short)Mapa, x, y));
+        ((Dictionary<(short, byte, byte), long>)NadaQueHacerAca.GetValue(bot)!)[((short)Mapa, x, y)] = Environment.TickCount64 + Bot.OlvidoDeLaBaldosaMs;
 
     /// <summary>Corre el ciclo del bot hasta su primera decisión de caminar, girar o pegar, y devuelve el id de ese paquete (null si no
     /// decidió nada en quince segundos).</summary>

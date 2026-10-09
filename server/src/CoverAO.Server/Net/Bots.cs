@@ -2515,11 +2515,12 @@ public sealed partial class Bot
         // el que seguía más cerca no se miraba mientras el peligro estuviera a la vista. Medido en `early175` (08/10): Petra se cortó 23
         // veces contra el mismo botín, en (75,44).
         // LO MISMO CON LA BALDOSA QUE YA NO SIRVIÓ (`_nadaQueHacerAca`): descartarla después de elegirla dejaba sin mirar el botín que
-        // seguía, y la baldosa queda anotada por el resto de la sesión (la lista se limpia sólo al entrar, en `ComportarseAsync`).
+        // seguía. La baldosa queda anotada cinco minutos (ver `SigueSinServir`).
         var yo = sentidos.Posicion;
         var peligros = PeligrosALaVista(sentidos);
         short mapa = sentidos.Mapa;
-        if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !_nadaQueHacerAca.Contains((mapa, baldosa.X, baldosa.Y))
+        long ahora = Environment.TickCount64;
+        if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !SigueSinServir(_nadaQueHacerAca, (mapa, baldosa.X, baldosa.Y), ahora)
                                                                   && !ArrimaAlPeligroAlBotin(yo, baldosa, peligros)) is not { } botin
             || botin.Pasos > RadioDeBotin) return false;
 
@@ -2548,7 +2549,7 @@ public sealed partial class Bot
                 return r != Paso.SinConexion;
         }
         if (BaldosaQueNoSirve(llego, queHabia, hayAhora))
-            _nadaQueHacerAca.Add((sentidos.Mapa, botin.Donde.X, botin.Donde.Y));
+            _nadaQueHacerAca[(sentidos.Mapa, botin.Donde.X, botin.Donde.Y)] = Environment.TickCount64 + OlvidoDeLaBaldosaMs;
         return true;
     }
 
@@ -2635,8 +2636,19 @@ public sealed partial class Bot
     /// </summary>
     public static bool SeLevantaDelPiso(ObjInfo? o) => o is not null && !o.IsDoor && o.IsPickable;
 
-    /// <summary>Baldosas donde ya se agachó y no levantó nada.</summary>
-    private readonly HashSet<(short Mapa, byte X, byte Y)> _nadaQueHacerAca = new();
+    /// <summary>Baldosas donde ya se agachó y no levantó nada, con hasta cuándo no se las vuelve a elegir.</summary>
+    private readonly Dictionary<(short Mapa, byte X, byte Y), long> _nadaQueHacerAca = new();
+
+    /// <summary>
+    /// ¿LA BALDOSA SIGUE ANOTADA COMO QUE NO SIRVE? Hasta que pasa <see cref="OlvidoDeLaBaldosaMs"/> desde que se la anotó: después vuelve
+    /// a valer, por si cayó otro botín ahí. DECIDIDO POR EL AUTOR (09/10): antes quedaba anotada toda la sesión, de 20 a 90 minutos.
+    /// </summary>
+    public static bool SigueSinServir(IReadOnlyDictionary<(short Mapa, byte X, byte Y), long> anotadas, (short Mapa, byte X, byte Y) baldosa,
+                                      long ahora) =>
+        anotadas.TryGetValue(baldosa, out long hasta) && ahora < hasta;
+
+    /// <summary>Cuánto queda anotada una baldosa que no sirvió: ver <see cref="SigueSinServir"/>.</summary>
+    public const long OlvidoDeLaBaldosaMs = 5 * 60_000;
 
     /// <summary>
     /// TRABAJAR EL OFICIO: pescar, talar o minar. Devuelve si se ocupó de esto.
