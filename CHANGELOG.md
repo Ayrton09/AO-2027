@@ -3,8 +3,8 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
-## 1.0.0 (2026-10-06)
-Lo nuevo desde el paquete del 5 de octubre.
+## 1.0.0 (2026-10-09)
+Lo nuevo desde el paquete del 6 de octubre.
 
 ### Facciones
 
@@ -17,6 +17,32 @@ Lo nuevo desde el paquete del 5 de octubre.
   ya no se ve doble.
 
 - **Al mirar a alguien, la vida en rojo y el nivel en celeste**, separados con un espacio: "Ves a Lobo nivel 8 64% de vida".
+
+### Comercio, banco y hogar
+
+- **La cantidad del comercio y de la bóveda vuelve a 1** cada vez que se abre una tienda o la bóveda, como en el
+  original. Las flechitas de las cajas de cantidad ya no salen blancas.
+
+### Para GMs y para el que hostea
+
+- **Los bots, entre dos caminos igual de largos, toman el que no cruza criaturas que no pueden cazar**: de Illiandor
+  a cazar Cuervos van por el Puerto y no por los Lobos.
+- **Los bots cazan con menos pausas**: buscando presa en el coto se quedan quietos poco entre paseo y paseo; en el pueblo
+  siguen con el ritmo de siempre.
+- **Los bots que empiezan viajan menos**: envenenados y con pociones siguen cazando hasta curarse con el antídoto o con un
+  sacerdote que tengan a mano, no salen de viaje por una pieza de equipo de menos de 1000 monedas (salvo un arma),
+  y si frenan para cazar algo, primero lo cazan.
+- **Los bots se cuidan más del peligro**: acorralados, no se quedan peleando con lo que tienen pegado si a tres baldosas
+  o menos hay otra criatura que los mata de dos golpes, salvo que no puedan moverse de la baldosa. Tampoco van a
+  levantar un botín que queda a tres baldosas o menos de un peligro. Sin energía para pelear, en un mapa inseguro, se
+  van del mapa en vez de quedarse huyendo de lo que los persigue.
+- **Los bots que fabrican viajan menos**: no van a dos mapas o más a fabricar si les quedan menos de seis puntos para
+  llegar al tope de su nivel, salvo que lo que fabrican les haga falta.
+
+## 1.0.0 (2026-10-06)
+Lo nuevo desde el paquete del 5 de octubre.
+
+### Chat, mapa y pantalla
 
 - **Al crear el personaje se ven los atributos con los que nace**: la base de la clase, lo que suma o resta la raza y el
   total (por ejemplo, un Gnomo Mago: Fuerza 6 −5 = 1). Antes se veía sólo lo de la raza.
@@ -35,8 +61,6 @@ Lo nuevo desde el paquete del 5 de octubre.
   precio final opcional (para comprar directo) y una duración de 3 a 36 horas; el depósito es de 10 monedas por
   hora más el 1 % del precio. Uno solo para todo el mundo. El objeto ganado, el oro de la venta, lo que no se
   vendió y la oferta superada van a la bóveda, aunque estés desconectado.
-- **La cantidad del comercio y de la bóveda vuelve a 1** cada vez que se abre una tienda o la bóveda, como en el
-  original. Las flechitas de las cajas de cantidad ya no salen blancas.
 
 ### Para GMs y para el que hostea
 
@@ -54,19 +78,6 @@ Lo nuevo desde el paquete del 5 de octubre.
 - **Los bots eligen mejor el equipo**: comparan las armas y las armaduras por su golpe o defensa mínimo y máximo
   (antes, sólo por el máximo, y algunos se compraban un arma que pegaba menos), y no viajan al pueblo por una pieza
   apenas mejor que la que tienen.
-- **Los bots, entre dos caminos igual de largos, toman el que no cruza criaturas que no pueden cazar**: de Illiandor
-  a cazar Cuervos van por el Puerto y no por los Lobos.
-- **Los bots cazan con menos pausas**: buscando presa en el coto se quedan quietos poco entre paseo y paseo; en el pueblo
-  siguen con el ritmo de siempre.
-- **Los bots que empiezan viajan menos**: envenenados y con pociones siguen cazando hasta curarse con el antídoto o con un
-  sacerdote que tengan a mano, no salen de viaje por una pieza de equipo de menos de 1000 monedas (salvo un arma),
-  y si frenan para cazar algo, primero lo cazan.
-- **Los bots se cuidan más del peligro**: acorralados, no se quedan peleando con lo que tienen pegado si a tres baldosas
-  o menos hay otra criatura que los mata de dos golpes, salvo que no puedan moverse de la baldosa. Tampoco van a
-  levantar un botín que queda a tres baldosas o menos de un peligro. Sin energía para pelear, en un mapa inseguro, se
-  van del mapa en vez de quedarse huyendo de lo que los persigue.
-- **Los bots que fabrican viajan menos**: no van a dos mapas o más a fabricar si les quedan menos de seis puntos para
-  llegar al tope de su nivel, salvo que lo que fabrican les haga falta.
 
 ## 1.0.0 (2026-10-05)
 Lo que se sumó entre el 24 de septiembre y el 5 de octubre: el juego de escritorio, los bots y lo que pidió el tester.
