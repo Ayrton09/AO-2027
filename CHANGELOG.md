@@ -61,10 +61,10 @@ Lo nuevo desde el paquete del 5 de octubre.
 - **Los bots que empiezan viajan menos**: envenenados y con pociones siguen cazando hasta curarse con el antídoto o con un
   sacerdote que tengan a mano, no salen de viaje por una pieza de equipo de menos de 1000 monedas (salvo un arma),
   y si frenan para cazar algo, primero lo cazan.
-- **Los bots acorralados se cuidan más**: no se quedan peleando con lo que tienen pegado si a tres baldosas o menos hay
-  otra criatura que los mata de dos golpes, salvo que no puedan moverse de la baldosa. Tampoco van a levantar un botín
-  que queda a tres baldosas o menos de un peligro. Sin energía para pegar, en un mapa inseguro, se van del mapa en
-  vez de quedarse huyendo de lo que los persigue.
+- **Los bots se cuidan más del peligro**: acorralados, no se quedan peleando con lo que tienen pegado si a tres baldosas
+  o menos hay otra criatura que los mata de dos golpes, salvo que no puedan moverse de la baldosa. Tampoco van a
+  levantar un botín que queda a tres baldosas o menos de un peligro. Sin energía para pegar, en un mapa inseguro, se
+  van del mapa en vez de quedarse huyendo de lo que los persigue.
 - **Los bots que fabrican viajan menos**: no van a dos mapas o más a fabricar si les quedan menos de seis puntos para
   llegar al tope de su nivel, salvo que lo que fabrican les haga falta.
 
