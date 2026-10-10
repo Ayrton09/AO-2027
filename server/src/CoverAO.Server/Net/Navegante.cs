@@ -445,6 +445,71 @@ public sealed class Navegante
         return false;
     }
 
+    /// <summary>
+    /// ¿SE LLEGA A UNO QUE SIRVE ABRIENDO HASTA <paramref name="puertas"/> PUERTAS? Como <see cref="SeLlegaAbriendoUnaPuerta"/>, para los
+    /// que viven detrás de más de una: a Jerek, el enlistador de la Armada (Distrito Real, 60), se llega desde la entrada de Banderbill
+    /// pasando las puertas de (73,76) y de (73,42). Ver <see cref="PuertasDelCamino"/>.
+    /// </summary>
+    public bool SeLlegaAbriendoPuertas(int mapa, (byte X, byte Y) desde, Func<int, bool> sirve, int puertas) =>
+        _datos.MapSpawns.TryGetValue(mapa, out var lista)
+        && lista.Where(s => sirve(s.NpcIndex)).Select(s => ((byte)s.X, (byte)s.Y)).ToList() is { Count: > 0 } metas
+        && PuertasDelCamino(mapa, desde, metas, RadioDeMostrador) is { } enElCamino && enElCamino.Count <= puertas;
+
+    /// <summary>
+    /// LAS PUERTAS QUE HAY QUE ABRIR, en orden, para quedar a <paramref name="radio"/> o menos de alguna de <paramref name="metas"/>: el
+    /// camino más corto contando como libres todas las puertas cerradas que se abren, y de ese camino, las que todavía están cerradas.
+    /// Vacía si se llega sin abrir ninguna; null si ni abriéndolas todas.
+    ///
+    /// <para>Elegir de a una "la que más acerca" en línea recta no sirve: en el 60 la zona de la izquierda, sin puertas, queda más
+    /// cerca de Jerek que lo que abre cualquier puerta, y del otro lado de una pared.</para>
+    /// </summary>
+    public IReadOnlyList<(byte X, byte Y)>? PuertasDelCamino(int mapa, (byte X, byte Y) desde, IReadOnlyList<(byte X, byte Y)> metas,
+                                                            int radio)
+    {
+        var puertaDe = new Dictionary<int, (byte X, byte Y)>();
+        if (_datos.MapObjects.TryGetValue(mapa, out var objetos))
+            foreach (var o in objetos)
+                if (Bot.PuertaQueSeAbre(_datos.Obj(o.ObjIndex)))
+                    foreach (int b in BaldosasQueDestraba(((byte)o.X, (byte)o.Y))) puertaDe.TryAdd(b, ((byte)o.X, (byte)o.Y));
+        var libres = puertaDe.Keys.ToHashSet();
+        bool EsMeta(byte x, byte y)
+        {
+            foreach (var m in metas) if (Math.Abs(x - m.X) + Math.Abs(y - m.Y) <= radio) return true;
+            return false;
+        }
+        var deDonde = new Dictionary<int, int>();
+        var cola = new Queue<int>();
+        int inicio = Clave(desde.X, desde.Y);
+        deDonde[inicio] = -1;
+        cola.Enqueue(inicio);
+        while (cola.Count > 0 && deDonde.Count < TopeDeExploracion)
+        {
+            int actual = cola.Dequeue();
+            byte x = (byte)(actual & 0xff), y = (byte)(actual >> 8);
+            if (EsMeta(x, y) && !EsSalida(mapa, x, y))
+            {
+                var orden = new List<(byte X, byte Y)>();
+                var camino = Reconstruir(deDonde, actual);
+                foreach (var (cx, cy) in camino)
+                    if (puertaDe.TryGetValue(Clave(cx, cy), out var puerta) && _datos.IsBlockedTile(mapa, cx, cy) && !orden.Contains(puerta))
+                        orden.Add(puerta);
+                return orden;
+            }
+            for (byte rumbo = 1; rumbo <= 4; rumbo++)
+            {
+                var (dx, dy) = SentidosDelBot.Paso(rumbo);
+                int nx = x + dx, ny = y + dy;
+                if (!SePuedePisar(mapa, nx, ny, libres)) continue;
+                int vecino = Clave((byte)nx, (byte)ny);
+                if (deDonde.ContainsKey(vecino)) continue;
+                deDonde[vecino] = actual;
+                // A una salida se llega, pero no se sigue de largo: pisarla saca del mapa.
+                if (!EsSalida(mapa, nx, ny)) cola.Enqueue(vecino);
+            }
+        }
+        return null;
+    }
+
     /// <summary>Cuántas de esas zonas no entran en una pantalla (ver <see cref="BaldosasDeUnaPantalla"/>).</summary>
     private static int ZonasGrandes(List<HashSet<int>> zonas) => zonas.Count(z => z.Count > BaldosasDeUnaPantalla);
 

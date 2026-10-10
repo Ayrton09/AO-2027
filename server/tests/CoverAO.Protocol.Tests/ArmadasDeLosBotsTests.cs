@@ -124,4 +124,27 @@ public class ArmadasDeLosBotsTests
         s.Recibir(ServerMessages.CharStatus(42, Player.StatusCriminal));
         Assert.Equal(Player.StatusCriminal, s.MiEstado);
     }
+
+    /// <summary>
+    /// A JEREK (Armada, Distrito Real 60) se llega desde la entrada de Banderbill abriendo dos puertas seguidas, (73,76) y (73,42); y
+    /// por tierra, sin la zona de novatos, desde los Campos Abiertos (18) por la entrada de Banderbill Central (59). Al Caos, desde el 18
+    /// por la Fortaleza Kerthon (838), y a la Milicia desde el puerto de Illiandor (179).
+    /// </summary>
+    [Fact]
+    public void Contra_la_data_se_llega_a_los_tres_enlistadores()
+    {
+        var datos = GameData.Load();
+        Assert.False(datos.SourceDir is null, "el test necesita la gamedata en disco");
+        var mapas = new Navegante(datos);
+        Func<int, bool> Enlista(byte ejercito) => f => datos.Npc(f) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == ejercito;
+        Func<int, bool> pisable = m => Bot.PuedeEntrar(26, datos.MapZone(m));
+
+        Assert.Equal(new (byte, byte)[] { (73, 76), (73, 42) }, mapas.PuertasDelCamino(60, (25, 92), new (byte, byte)[] { (73, 23) }, 3));
+        Assert.False(mapas.SeLlegaAbriendoUnaPuerta(60, (25, 92), Enlista(Arm)));   // premisa: con una sola no alcanza
+        Assert.True(mapas.SeLlegaAbriendoPuertas(60, (25, 92), Enlista(Arm), Bot.PuertasHastaElEnlistador));
+
+        Assert.Equal(59, Bot.EntradaAlEnlistador(datos, mapas, Enlista(Arm), 18, (48, 69), pisable)?.Mapa);
+        Assert.NotNull(Bot.EntradaAlEnlistador(datos, mapas, Enlista(Cao), 18, (48, 69), pisable));
+        Assert.NotNull(Bot.EntradaAlEnlistador(datos, mapas, Enlista(Mil), 179, (68, 50), pisable));
+    }
 }

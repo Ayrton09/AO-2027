@@ -1,4 +1,5 @@
 using CoverAO.Protocol;
+using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;
@@ -112,6 +113,48 @@ public sealed partial class Bot
         return Escalon(bajas) >= 0 && Escalon(bajas) > Escalon(bajasEnLaUltima);
     }
 
+    /// <summary>Hasta cuántos mapas se busca el camino al enlistador: los de la Armada y la Milicia quedan en Banderbill y en Suramei,
+    /// y pasado el novato no se entra por la zona de novatos, así que el camino a pie es largo (de los Campos Abiertos a Banderbill,
+    /// trece mapas por la costa este).</summary>
+    public const int SaltosHastaElEnlistador = 20;
+
+    /// <summary>Cuántas puertas seguidas abre para llegar al enlistador (a Jerek, dos).</summary>
+    public const int PuertasHastaElEnlistador = 3;
+
+    /// <summary>
+    /// POR DÓNDE SE ENTRA AL ENLISTADOR: la salida de otro mapa que deja, en el mapa del enlistador, en un lugar desde donde se lo
+    /// alcanza a pie o abriendo una puerta; de ésas, la más cercana a la que se llega. Devuelve la baldosa de la salida (pisarla es
+    /// entrar) y a cuántos mapas queda; null si no hay ninguna.
+    ///
+    /// <para>Hace falta porque los enlistadores viven adentro: a Jerek (Armada, Distrito Real 60) no se llega desde ninguna entrada de
+    /// Banderbill, sólo bajando del castillo (255), que se sube desde el mismo 60; y el navegante no arma un camino que sale de un mapa
+    /// para volver a entrar a otra parte del mismo.</para>
+    /// </summary>
+    public static (int Mapa, byte X, byte Y, int Saltos)? EntradaAlEnlistador(GameData datos, Navegante mapas, Func<int, bool> sirve,
+                                                                             int mapa, (byte X, byte Y) desde, Func<int, bool>? pisable)
+    {
+        var dondeEsta = datos.MapSpawns.Where(kv => kv.Value.Any(s => sirve(s.NpcIndex))).Select(kv => kv.Key).ToHashSet();
+        (int Mapa, byte X, byte Y, int Saltos)? mejor = null;
+        foreach (var porMapa in datos.MapExits.Where(e => dondeEsta.Contains(e.Value.DestMap) && e.Key.Map != e.Value.DestMap)
+                                              .GroupBy(e => e.Key.Map))
+        {
+            // De cada mapa, la primera salida (de unas pocas de muestra) que deja donde se alcanza: las de un mismo borde dejan en la
+            // misma zona, y probarlas todas es una búsqueda por baldosa.
+            var salidas = porMapa.OrderBy(e => (e.Key.X, e.Key.Y)).ToList();
+            var muestra = new[] { salidas[0], salidas[salidas.Count / 2], salidas[^1] };
+            KeyValuePair<(int Map, int X, int Y), (int DestMap, int DestX, int DestY)>? sirveEsta = null;
+            foreach (var e in muestra)
+                if (mapas.SeLlegaAbriendoPuertas(e.Value.DestMap, ((byte)e.Value.DestX, (byte)e.Value.DestY), sirve, PuertasHastaElEnlistador))
+                { sirveEsta = e; break; }
+            if (sirveEsta is not { } esa) continue;
+            (byte X, byte Y) salida = ((byte)esa.Key.X, (byte)esa.Key.Y);
+            int? saltos = porMapa.Key == mapa ? (mapas.HayComoLlegar(mapa, desde, salida, 1) is not null ? 0 : null)
+                        : mapas.PuertaHacia(mapa, porMapa.Key, desde, salida, pisable, SaltosHastaElEnlistador)?.Saltos;
+            if (saltos is { } n && (mejor is null || n < mejor.Value.Saltos)) mejor = (porMapa.Key, salida.X, salida.Y, n);
+        }
+        return mejor;
+    }
+
     private void PedirLaFicha(TransporteDeBot transporte, bool ya = false)
     {
         long ahora = Environment.TickCount64;
@@ -189,18 +232,32 @@ public sealed partial class Bot
         _proximoViajeAlEjercito = ahora + EntreViajesAlEjercitoMs;
 
         bool Sirve(int ficha) => _entorno.Datos.Npc(ficha) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == ejercito;
-        if (!_entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var aca) || !aca.Any(s => Sirve(s.NpcIndex)))
+        // Si desde donde está no lo alcanza, hasta la salida que lo deja donde sí, y la pisa: ver `EntradaAlEnlistador`.
+        if (!_entorno.Mapas.SeLlegaAbriendoPuertas(sentidos.Mapa, sentidos.Posicion, Sirve, PuertasHastaElEnlistador))
         {
-            if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, m => !HayGuardiaQueLoAtaca(m), Sirve, Pisable(sentidos),
-                                                SaltosHastaElPuebloLejano) is not { } lugar) return false;
-            await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, ToleranciaDelCoto,
-                               topeDeMapas: Math.Max(Navegante.TopeDeMapas, lugar.Saltos));
-            if (sentidos.Mapa != lugar.Mapa || !_entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out aca)) return true;
+            if (EntradaAlEnlistador(_entorno.Datos, _entorno.Mapas, Sirve, sentidos.Mapa, sentidos.Posicion, Pisable(sentidos))
+                is not { } entrada) return false;
+            if (sentidos.Mapa != entrada.Mapa
+                || Math.Abs(sentidos.Posicion.X - entrada.X) + Math.Abs(sentidos.Posicion.Y - entrada.Y) > 1)
+                await IrHastaAsync(transporte, sentidos, entrada.Mapa, entrada.X, entrada.Y, cerrada, ct, 1,
+                                   topeDeMapas: Math.Max(Navegante.TopeDeMapas, entrada.Saltos));
+            int dx = entrada.X - sentidos.Posicion.X, dy = entrada.Y - sentidos.Posicion.Y;
+            if (sentidos.Mapa != entrada.Mapa || Math.Abs(dx) + Math.Abs(dy) != 1) return true;
+            if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, puedeSalir: true) == Paso.SinConexion) return true;
+            await Task.Delay(_rng.Next(400, 900), ct);
+            if (!_entorno.Mapas.SeLlegaAbriendoPuertas(sentidos.Mapa, sentidos.Posicion, Sirve, PuertasHastaElEnlistador)) return true;
         }
-        if (!aca.Any(s => Sirve(s.NpcIndex))) return true;
+        if (!_entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var aca) || !aca.Any(s => Sirve(s.NpcIndex))) return true;
         var donde = aca.First(s => Sirve(s.NpcIndex));
-        if (!await IrAbriendoAsync(transporte, sentidos, sentidos.Mapa, (byte)donde.X, (byte)donde.Y, cerrada, ct, RadioDelMostrador, Sirve))
-            return true;
+        // Y LAS PUERTAS DEL CAMINO, una por una: ver `Navegante.PuertasDelCamino`.
+        for (int abiertas = 0; ; abiertas++)
+        {
+            if (await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)donde.X, (byte)donde.Y, cerrada, ct, RadioDelMostrador)) break;
+            if (abiertas == PuertasHastaElEnlistador
+                || _entorno.Mapas.PuertasDelCamino(sentidos.Mapa, sentidos.Posicion, new[] { ((byte)donde.X, (byte)donde.Y) }, RadioDelMostrador)
+                    is not { Count: > 0 } puertas
+                || !await AbrirLaPuertaQueAsync(transporte, sentidos, d => d == puertas[0], cerrada, ct)) return true;
+        }
         if (sentidos.MasCercano(f => Sirve(f)) is not { Pasos: <= RadioDelMostrador } enlistador) return true;
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(enlistador.Quien.X).WriteByte(enlistador.Quien.Y)));
         if (recompensa) _bajasEnLaUltimaRecompensa = cuantas;
