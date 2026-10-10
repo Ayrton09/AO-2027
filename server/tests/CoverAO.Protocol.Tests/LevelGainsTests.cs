@@ -1,4 +1,5 @@
 using System.Linq;
+using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using Xunit;
 
@@ -208,5 +209,21 @@ public class LevelGainsTests
         new Leveling(Curve).Grant(p, 100);
         Assert.Equal(2, p.Level);
         Assert.Equal(100, p.MaxHp);
+    }
+    /// <summary>
+    /// LA VIDA DE NIVEL 1 según el Server.ini (`VidaInicial`): por defecto la del original (15 + de 1 a Constitución/3); fija 20;
+    /// 15 + Constitución/3 sin azar; y 10 + la tirada de su clase. Un Enano (Constitución 22) Guerrero (MODVIDA 10).
+    /// </summary>
+    [Fact]
+    public void La_vida_de_nivel_uno_sale_del_modo_del_server_ini()
+    {
+        Func<int, int, int> alMinimo = (min, _) => min, alMaximo = (_, max) => max;
+        Assert.Equal(16, Persistence.VidaDeNivelUno("original", 22, 10, alMinimo));
+        Assert.Equal(22, Persistence.VidaDeNivelUno("original", 22, 10, alMaximo));
+        Assert.Equal(16, Persistence.VidaDeNivelUno("cualquier cosa", 22, 10, alMinimo));   // lo que no se entiende, como el original
+        Assert.Equal(20, Persistence.VidaDeNivelUno("fija", 22, 10, alMaximo));
+        Assert.Equal(22, Persistence.VidaDeNivelUno("constitucion", 22, 10, alMinimo));
+        Assert.Equal(22, Persistence.VidaDeNivelUno("clase", 22, 10, alMinimo));   // tirada 0: promedio 10,5 + 1,5 = 12
+        Assert.Equal(19, Persistence.VidaDeNivelUno("clase", 22, 10, alMaximo));   // tirada 100: 10,5 - 1,5 = 9
     }
 }

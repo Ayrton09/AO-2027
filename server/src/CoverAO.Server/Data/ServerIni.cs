@@ -202,7 +202,7 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
-        "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
@@ -491,6 +491,12 @@ public sealed class ServerIni
     /// (InvUsuario.bas:163, <c>'If Cantidad &gt; 100000 Then Exit Sub</c>) y sin la llamada desde <c>TirarTodo</c>.
     /// 0 = como el original de 2021, que no tira oro al morir. El <c>Server.ini</c> de ejemplo lo trae en 100000.</summary>
     public int OroQueSeCaeAlMorir { get; private set; }
+
+    /// <summary>LA VIDA DE NIVEL 1 (propuesta del tester, 10/10; el autor: "dejalo como lo tenemos, pero que el que quiera lo pueda
+    /// cambiar"). <c>original</c> (por defecto, el VB6): 15 + de 1 a Constitución/3 al azar. <c>fija</c>: 20 para todos.
+    /// <c>constitucion</c>: 15 + Constitución/3, sin azar. <c>clase</c>: 10 + la vida que gana su clase al subir de nivel (la tirada
+    /// de <see cref="CoverAO.Server.Game.Leveling.AumentoDeVida"/>). Ver <see cref="CoverAO.Server.Data.Persistence.VidaDeNivelUno"/>.</summary>
+    public string VidaInicial { get; private set; } = "original";
 
     /// <summary>¿Corre el CENTINELA anti-macro? (reporte del tester, 2026-08-24). El módulo del original está
     /// completo pero DESENCHUFADO: sus dos llamadas están comentadas en la fuente (frmMain.frm:749 y
@@ -1221,6 +1227,8 @@ public sealed class ServerIni
         // bien) pero no infinito: un valor absurdo desbalancea el mercado del server sin que nadie lo note.
         cfg.OroAlSubirNivel = Math.Clamp(ini.GetInt("INIT", "OroAlSubirNivel", 0), 0, 1_000_000);
         cfg.OroQueSeCaeAlMorir = Math.Clamp(ini.GetInt("INIT", "OroQueSeCaeAlMorir", 0), 0, 90_000_000);
+        var vidaInicial = (ini.GetString("INIT", "VidaInicial", "") ?? "").Trim().ToLowerInvariant();
+        cfg.VidaInicial = vidaInicial is "fija" or "constitucion" or "clase" ? vidaInicial : "original";
         cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
         cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
         // LA TABLA DE NIVELES MÍNIMOS: una línea `mapa=nivel` por mapa. Sin la sección queda vacía y la

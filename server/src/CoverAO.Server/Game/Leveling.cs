@@ -127,6 +127,9 @@ public sealed class Leveling
         return gained;
     }
 
+    /// <summary>El MODVIDA de la clase (0 si no lo tiene).</summary>
+    public double ModVidaDe(byte clase) => _lifeMod.TryGetValue(clase, out var mv) ? mv : 0;
+
     /// <summary>
     /// La vida que gana un nivel (VB6 CheckUserLevel, Modulo_UsUaRiOs.bas:398-440), con <paramref name="aux"/> la tirada
     /// de <c>RandomNumber(0, 100)</c>. Dos cosas del original que acá no estaban:

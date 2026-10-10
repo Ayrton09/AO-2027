@@ -211,6 +211,7 @@ Console.WriteLine($"Persistencia en {dataRoot}: {dondeSeGuarda}.");
 var world = new World();
 // El oro que se cae al morir (regla de la casa). Con --fixture no: los flows que matan con oro encima miden otra cosa.
 world.OroQueSeCaeAlMorir = fixtureMode ? 0 : serverIni.OroQueSeCaeAlMorir;
+db.VidaInicial = fixtureMode ? "original" : serverIni.VidaInicial;   // la vida de nivel 1 (Server.ini `VidaInicial`)
 world.OroPorMonton = serverIni.OroPorMonton;
 world.LoadGuilds(db.LoadGuilds());       // restore persisted clans
 foreach (var (nombre, motivo) in db.LoadMotivosDeRechazo()) world.MotivosDeRechazo[nombre] = motivo;

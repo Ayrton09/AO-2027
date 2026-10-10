@@ -90,6 +90,9 @@ OroAlSubirNivel=0
 ; Al morir donde se cae el inventario, el que lleva este oro o menos encima lo pierde todo al piso (con mas, nada).
 ; 0 = no se cae nunca, como el original de 2021.
 OroQueSeCaeAlMorir=100000
+; La vida de nivel 1. original = 15 + de 1 a Constitucion/3 al azar (el AO de siempre); fija = 20 para todos;
+; constitucion = 15 + Constitucion/3, sin azar; clase = 10 + la vida que gana su clase al subir de nivel.
+VidaInicial=original
 CuraAlSubirNivel=1
 QuitarEquipoNovato=1
 ; Que lo tirado al piso sobreviva al reinicio.

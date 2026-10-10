@@ -31,6 +31,10 @@ Lo nuevo desde el paquete del 6 de octubre.
 
 ### Para GMs y para el que hostea
 
+- **La vida de nivel 1, en el Server.ini** (`VidaInicial`): `original` (la de siempre: 15 más de 1 a la
+  Constitución dividida 3, al azar), `fija` (20 para todos), `constitucion` (15 más la Constitución dividida 3,
+  sin azar) o `clase` (10 más la vida que gana la clase al subir de nivel). El Server.ini de ejemplo la trae en
+  `original`.
 - **Los bots, entre dos caminos igual de largos, toman el que no cruza criaturas que no pueden cazar**: de Illiandor
   a cazar Cuervos van por el Puerto y no por los Lobos.
 - **Los bots cazan con menos pausas**: buscando presa en el coto se quedan quietos poco entre paseo y paseo; en el pueblo

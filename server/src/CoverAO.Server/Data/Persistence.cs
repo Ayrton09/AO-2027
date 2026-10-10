@@ -465,6 +465,26 @@ public sealed class Persistence : IDisposable
     private static bool IsCaster(byte klass) =>
         klass is ClsMago or ClsClerigo or ClsDruida or ClsBardo or ClsAsesino or ClsNigromante or ClsPaladin;
 
+    /// <summary>Cómo se calcula la vida de nivel 1 (<c>VidaInicial</c> del Server.ini). Lo pone <c>Program</c>.</summary>
+    public string VidaInicial { get; set; } = "original";
+
+    /// <summary>
+    /// LA VIDA DE NIVEL 1 según <paramref name="modo"/>: <c>original</c> (VB6 ConnectNewUser, TCP.bas:519-520) 15 + de 1 a
+    /// Constitución/3; <c>fija</c> 20; <c>constitucion</c> 15 + Constitución/3, sin azar; <c>clase</c> 10 + lo que gana su clase al subir
+    /// de nivel (<see cref="Leveling.AumentoDeVida"/>). <paramref name="tirada"/> da un entero entre los dos extremos, incluidos.
+    /// </summary>
+    public static int VidaDeNivelUno(string modo, int constitucion, double modVida, Func<int, int, int> tirada)
+    {
+        int tercio = Math.Max(1, constitucion / 3);
+        return modo switch
+        {
+            "fija" => 20,
+            "constitucion" => 15 + tercio,
+            "clase" when modVida > 0 => 10 + Leveling.AumentoDeVida(modVida, constitucion, tirada(0, 100)),
+            _ => 15 + tirada(1, tercio),
+        };
+    }
+
     /// <summary>
     /// Stats con los que nace un personaje REAL (VB6 ConnectNewUser, TCP.bas:517-560): vida y stamina por
     /// tirada sobre Constitución/Agilidad, maná por clase, golpe 1-2, cero oro y CERO skills — los 10
@@ -473,8 +493,9 @@ public sealed class Persistence : IDisposable
     private void ApplyNewCharacterStats(Player p)
     {
         // VB6 RandomNumber(1, X) es inclusivo en X; Random.Next(1, X+1) es el equivalente.
-        int cons = Math.Max(1, p.Attributes[GameLimits.AttrConstitucion] / 3);
-        p.MaxHp = p.Hp = 15 + _rng.Next(1, cons + 1);                       // :519-520
+        // LA VIDA DE NIVEL 1, como la elija el Server.ini (`VidaInicial`); por defecto la del original (:519-520).
+        p.MaxHp = p.Hp = VidaDeNivelUno(VidaInicial, p.Attributes[GameLimits.AttrConstitucion], _leveling.ModVidaDe(p.Class),
+                                        (min, max) => _rng.Next(min, max + 1));
 
         int agi = Math.Max(1, p.Attributes[GameLimits.AttrAgilidad] / 6);
         int mi = _rng.Next(1, agi + 1);
