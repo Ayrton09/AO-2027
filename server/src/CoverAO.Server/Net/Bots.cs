@@ -4103,8 +4103,8 @@ public sealed partial class Bot
     /// y salir al mapa vecino lo deja igual de indefenso en otro mapa inseguro. Va como el rescate (<see cref="SinFuelleAlSeguroAsync"/>).
     ///
     /// <para>DECIDIDO POR EL AUTOR (09/10), con la ronda 54 medida (`fuelle1` a `fuelle7`, seis bots de nivel 16 a 20 desnudos, sin
-    /// pociones y con la energía en 0 en el 27): saliendo al vecino (`2f595f47`), 12 de 24 se fueron del 27 y murieron 7 de 24, los siete
-    /// en el 19 por Lobos; sin la regla, 8 de 18, siete en el 27.</para>
+    /// pociones y con la energía en 0 en el 27): saliendo al vecino (`2f595f47`), 12 de 24 se fueron del 27 por esa salida (los otros 12,
+    /// en el viaje de compras) y murieron 7 de 24, los siete en el 19 por Lobos; sin la regla, 8 de 18, siete en el 27.</para>
     ///
     /// <para>EN LA RONDA 57 NO SE DISTINGUE DE LA SALIDA AL VECINO (`seguro8` a `seguro14`, el mismo estado). El brazo de esta regla
     /// trae también la serie de la amenaza de enfrente (`2456e374`, `ContadoresDeHuida.SerieDe`), y el de la salida al vecino
