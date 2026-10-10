@@ -385,4 +385,25 @@ public class PuertasDelBotTests
         Assert.Equal(7392, ancho * alto);
         Assert.True(ancho * alto < 10_000, "el recuadro pisable es MENOR que el mapa crudo: ahí estuvo el error");
     }
+    /// <summary>
+    /// EN RINKEL, EL SASTRE Y EL SACERDOTE ESTÁN DETRÁS DE UNA PUERTA: desde la entrada (74,54) no se llega a ninguno, y la puerta (76,24)
+    /// destraba al SastreRinkel (77,14) y la (50,57) al Sacerdote (52,47). Es lo que usa `IrAbriendoAsync` cuando el viaje se queda sin
+    /// camino adentro del mapa (Hilda en `early176`: "sin camino" y 719 s de descanso, sin probar la puerta).
+    /// </summary>
+    [Fact]
+    public void En_Rinkel_el_sastre_y_el_sacerdote_se_destraban_con_su_puerta()
+    {
+        var datos = Datos();
+        var mapas = new Navegante(datos);
+        (byte X, byte Y) entrada = (74, 54), sastre = (77, 14), puerta = (76, 24);
+        Func<int, bool> esElSastre = f => datos.MapSpawns[20].Any(s => s.NpcIndex == f && s.X == sastre.X && s.Y == sastre.Y);
+        Assert.Null(mapas.HayComoLlegar(20, entrada, sastre, 3));   // premisa: desde la entrada no se llega
+
+        Assert.True(mapas.AbrirlaDaCamino(20, entrada, puerta, esElSastre));
+
+        (byte X, byte Y) sacerdote = (52, 47);
+        Func<int, bool> esElSacerdote = f => datos.MapSpawns[20].Any(s => s.NpcIndex == f && s.X == sacerdote.X && s.Y == sacerdote.Y);
+        Assert.Null(mapas.HayComoLlegar(20, entrada, sacerdote, 3));
+        Assert.True(mapas.AbrirlaDaCamino(20, entrada, (50, 57), esElSacerdote));
+    }
 }

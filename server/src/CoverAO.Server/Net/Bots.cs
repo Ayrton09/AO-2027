@@ -1605,7 +1605,7 @@ public sealed partial class Bot
                 { llegoAlPueblo = true; continue; }
                 Fracaso(); return intento > 0;
             }
-            if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador)
+            if (!await IrAbriendoAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador, Sirve)
                 && sentidos.Mapa != lugar.Mapa)
             { Fracaso(); return true; }   // ni siquiera se llegó al mapa
             tienda = MapaDondeCompra(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
@@ -5081,6 +5081,21 @@ public sealed partial class Bot
     }
 
     /// <summary>
+    /// IR, Y SI YA EN ESE MAPA NO HAY CAMINO, ABRIR LA PUERTA QUE LO DESTRABA (<see cref="AbrirUnaPuertaAsync"/>) y volver a probar. Lo que
+    /// <paramref name="sirve"/> es a quién se va. El que sólo buscaba la puerta cuando no encontraba a nadie no la probaba nunca si el
+    /// lugar aparecía igual: medido en `early176` (08/10), Hilda en la entrada de Rinkel (74,54), "sin camino" al SastreRinkel (77,14),
+    /// detrás de la puerta (76,24), y a descansar 719 s. En las corridas guardadas hasta el 09/10, 360 viajes terminaron "sin camino" al
+    /// Sastre y 474 al Sacerdote (52,47), los dos con una puerta que los destraba.
+    /// </summary>
+    private async Task<bool> IrAbriendoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int mapa, byte x, byte y,
+                                             Task cerrada, CancellationToken ct, int tolerancia, Func<int, bool> sirve)
+    {
+        if (await IrHastaAsync(transporte, sentidos, mapa, x, y, cerrada, ct, tolerancia)) return true;
+        return sentidos.Mapa == mapa && await AbrirUnaPuertaAsync(transporte, sentidos, sirve, cerrada, ct)
+               && await IrHastaAsync(transporte, sentidos, mapa, x, y, cerrada, ct, tolerancia);
+    }
+
+    /// <summary>
     /// ABRIR LA PUERTA QUE DA CAMINO a un mercader de este mapa. Devuelve si la abrió.
     ///
     /// <para>Se acerca por el navegante —una puerta suele estar en una pared, y el paso codicioso se traba— y manda
@@ -5362,7 +5377,8 @@ public sealed partial class Bot
             _proximaCura = Environment.TickCount64 + _rng.Next(EsperaCuraMinMs, EsperaCuraMaxMs);
             return false;
         }
-        bool llego = templo is { } t && await IrHastaAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar);
+        bool llego = templo is { } t
+                     && await IrAbriendoAsync(transporte, sentidos, t.Mapa, t.X, t.Y, cerrada, ct, RadioDelAltar, f => EsSacerdote((short)f));
         // Y EL TEMPLO AL QUE EL VIAJE NO LLEGA CUENTA COMO SIN CAMINO: ver `OtraCuraSinCamino`.
         _curasSinCamino = OtraCuraSinCamino(_curasSinCamino, llego);
         if (llego) return true;
@@ -5413,7 +5429,8 @@ public sealed partial class Bot
         if (Environment.TickCount64 < _proximaSanacion) return false;
 
         if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), pisable: Pisable(sentidos)) is { Saltos: <= SaltosHastaElSacerdote } templo
-            && await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar))
+            && await IrAbriendoAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct, RadioDelAltar,
+                                     f => EsSacerdote((short)f)))
         {
             // LLEGÓ PERO NO LO TIENE AL ALCANCE (el sacerdote no está en su lugar): la misma espera, por lo mismo.
             if (sentidos.MasCercano(EsSacerdote) is not { } visto || !AlAlcanceDelAltar(sentidos, visto.Quien))
