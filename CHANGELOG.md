@@ -35,7 +35,7 @@ Lo nuevo desde el paquete del 6 de octubre.
 - **Los bots se cuidan más del peligro**: acorralados, no se quedan peleando con lo que tienen pegado si a tres baldosas
   o menos hay otra criatura que los mata de dos golpes, salvo que no puedan moverse de la baldosa. Tampoco van a
   levantar un botín que queda a tres baldosas o menos de un peligro. Sin energía para pelear, en un mapa inseguro, se
-  van al mapa seguro más cercano en vez de quedarse huyendo de lo que los persigue.
+  van caminando al pueblo más cercano que les vende pociones (o, si no hay, al mapa seguro) en vez de quedarse huyendo.
 - **Los bots que fabrican viajan menos**: no van a dos mapas o más a fabricar si les quedan menos de seis puntos para
   llegar al tope de su nivel, salvo que lo que fabrican les haga falta.
 
