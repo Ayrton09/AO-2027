@@ -739,7 +739,9 @@ public sealed partial class Bot
                     && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
                 {
                     int deDonde = sentidos.Mapa;
-                    // SIN FUELLE, AL MAPA SEGURO Y NO AL VECINO: ver `SinFuelleVaAlSeguro`.
+                    // SIN FUELLE, AL MAPA SEGURO Y NO AL VECINO: ver `SinFuelleVaAlSeguro`. No anota la huida como la salida de abajo
+                    // (`_llenoHasta`, `_huyoDe`, `_huidasDelNivel`): lo que lo saca es la energía, no el mapa, y con la energía de vuelta
+                    // ese coto le sirve igual. Así se midió en las rondas 54 y 57.
                     if (SinFuelleVaAlSeguro(TieneFuelleParaPelear(sentidos), _entorno.Datos.IsPkMap(sentidos.Mapa))
                         && await SinFuelleAlSeguroAsync(transporte, sentidos, cerrada, ct))
                     {
