@@ -146,7 +146,7 @@ GuardiasDelCaosAtacanA=Renegado, Ciudadano, Republicano, Armada, Milicia
 
 ; --- Bots --------------------------------------------------------------------
 ; Personajes que juegan solos, para que el mundo no se vea vacio. VIENEN
-; APAGADOS: 0 = ninguno, y el maximo son 48 (los nombres que hay para repartir).
+; APAGADOS: 0 = ninguno, y el maximo son 96 (los nombres que hay para repartir).
 ; Cada bot entra por el mismo login que un jugador: ocupa un lugar de MaxUsers,
 ; sale en el /ONLINE y en la pagina publica, y no puede hacer nada que un
 ; jugador no pueda. Cazan, huyen de lo que les queda grande, levantan el botin,

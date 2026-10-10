@@ -900,7 +900,7 @@ public sealed class ServerIni
 
     /// <summary>El techo de <see cref="Bots"/>: son los nombres que trae la lista de
     /// <see cref="Net.PobladoDeBots.Nombres"/>. Un test cuida que los dos números no se separen.</summary>
-    public const int MaxBots = 48;
+    public const int MaxBots = 96;
 
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>

@@ -52,6 +52,18 @@ public class BotsTests
             $"el ini permite {ServerIni.MaxBots} bots y hay {PobladoDeBots.Nombres.Count} nombres");
     }
 
+    /// <summary>Los nuevos entran de a seis cada cinco minutos (no se amontonan en la cuna); los que ya tienen personaje, todos al
+    /// arrancar, como siempre.</summary>
+    [Fact]
+    public void Los_bots_nuevos_entran_por_tandas_y_los_viejos_de_una()
+    {
+        Assert.Equal(0, PobladoDeBots.RetardoDeEntrada(esNuevo: true, 0));
+        Assert.True(PobladoDeBots.RetardoDeEntrada(true, PobladoDeBots.NuevosPorTanda - 1) < 60_000);
+        Assert.Equal(PobladoDeBots.EntreTandasMs, PobladoDeBots.RetardoDeEntrada(true, PobladoDeBots.NuevosPorTanda));
+        Assert.Equal(2 * PobladoDeBots.EntreTandasMs, PobladoDeBots.RetardoDeEntrada(true, 2 * PobladoDeBots.NuevosPorTanda));
+        Assert.True(PobladoDeBots.RetardoDeEntrada(esNuevo: false, 95) < 3 * 60_000);
+    }
+
     /// <summary>Los nombres pasan por las MISMAS reglas que las de un jugador: la del personaje (sólo letras y
     /// espacios) y la de la cuenta, que lleva el sufijo. Un nombre que el servidor rechazaría sería un bot que
     /// no entra nunca.</summary>

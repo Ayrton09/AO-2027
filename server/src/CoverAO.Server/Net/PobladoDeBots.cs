@@ -115,6 +115,12 @@ public sealed class PobladoDeBots
         "Yago", "Zaira", "Bruno", "Celia", "Dorian", "Enzo", "Fausto", "Greta",
         "Homero", "Ilse", "Jonas", "Karim", "Lucho", "Maga", "Nilo", "Otto",
         "Pina", "Ramiro", "Sonia", "Tobal", "Urso", "Vito", "Wanda", "Zoe",
+        "Abril", "Benito", "Carmela", "Dario", "Elena", "Fito", "Gala", "Hugo",
+        "Ines", "Julian", "Lola", "Mateo", "Nora", "Oscar", "Paula", "Ruben",
+        "Selva", "Tadeo", "Uma", "Valen", "Walter", "Ximena", "Yamila", "Zeno",
+        "Amparo", "Bauti", "Chela", "Delfina", "Emilio", "Flora", "Gaspar", "Hebe",
+        "Ismael", "Jazmin", "Lautaro", "Mirta", "Nahuel", "Olga", "Pancho", "Rocio",
+        "Santino", "Tere", "Ulises", "Vilma", "Yanina", "Zulema", "Alma", "Cosme",
     };
 
     /// <summary>En qué lugar de la lista está ese nombre, o -1. Es lo que decide qué clase le toca: ver
@@ -130,6 +136,20 @@ public sealed class PobladoDeBots
     /// motivos: cada alta de cuenta es un PBKDF2, y una tanda de gente que aparece toda junta en el mismo
     /// segundo no se parece a nadie entrando a jugar.</summary>
     private const int EntreUnoYOtroMs = 1_500;
+
+    /// <summary>LOS NUEVOS ENTRAN POR TANDAS: un personaje que se crea nace en el pueblo de inicio, y dieciocho recién nacidos en la
+    /// misma plaza se reparten un coto que no da para tantos (medido el 06/10 en `early100` a `early144`: la primera búsqueda de coto
+    /// los mandaba al 58 y a Lindos por "lleno"). De a <see cref="NuevosPorTanda"/>, la tanda anterior ya salió de la cuna cuando
+    /// llega la siguiente. Los que ya tienen personaje entran como siempre: cada uno vuelve a donde estaba.</summary>
+    public const int NuevosPorTanda = 6;
+
+    /// <summary>Cuánto se espera entre una tanda de nuevos y la siguiente.</summary>
+    public const int EntreTandasMs = 5 * 60_000;
+
+    /// <summary>Cuánto espera para entrar el bot que es el <paramref name="orden"/>-ésimo de los suyos (nuevos o con personaje).</summary>
+    public static int RetardoDeEntrada(bool esNuevo, int orden) =>
+        esNuevo ? orden / NuevosPorTanda * EntreTandasMs + orden % NuevosPorTanda * EntreUnoYOtroMs
+                : orden * EntreUnoYOtroMs;
 
     private readonly List<Bot> _bots = new();
     public IReadOnlyList<Bot> Bots => _bots;
@@ -150,13 +170,15 @@ public sealed class PobladoDeBots
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.
         var usables = Nombres.Where(n => Naming.IsValidCharName(n) && Naming.IsValidName(n + "_bot")).ToList();
         int cuantos = Math.Min(cantidad, usables.Count);
+        int nuevos = 0, conPersonaje = 0;
 
         for (int i = 0; i < cuantos; i++)
         {
             string nombre = usables[i];
-            var bot = new Bot(nombre, credenciales.Clave(nombre), entorno, semilla: Environment.TickCount + i * 7919);
+            string? clave = credenciales.Clave(nombre);
+            var bot = new Bot(nombre, clave, entorno, semilla: Environment.TickCount + i * 7919);
             poblado._bots.Add(bot);
-            int retardo = i * EntreUnoYOtroMs;
+            int retardo = clave is null ? RetardoDeEntrada(true, nuevos++) : RetardoDeEntrada(false, conPersonaje++);
             _ = Task.Run(async () =>
             {
                 try { await Task.Delay(retardo, ct); } catch (OperationCanceledException) { return; }
@@ -165,6 +187,8 @@ public sealed class PobladoDeBots
         }
 
         Console.WriteLine($"BOTS: {cuantos} ({string.Join(", ", poblado._bots.Select(b => b.Nombre))})");
+        if (nuevos > NuevosPorTanda)
+            Console.WriteLine($"   {nuevos} son nuevos: entran de a {NuevosPorTanda} cada {EntreTandasMs / 60_000} minutos.");
         if (cantidad > usables.Count)
             Console.WriteLine($"   pedidos {cantidad}, pero hay {usables.Count} nombres disponibles.");
         return poblado;
