@@ -10,6 +10,8 @@ Lo nuevo desde el paquete del 6 de octubre.
 
 - **Al enlistarse en la Armada, la Milicia o el Caos, el enlistador te da tus vestimentas** del bando (la de tu clase, o la de
   enanos y gnomos) y te dice su bienvenida, como en el original. El que estaba en un clan queda afuera del clan.
+- **Los guardias del Caos ya no atacan a los renegados**: el renegado es el que se enlista con el Demonio, y antes no
+  llegaba vivo a la Fortaleza. El que hostea lo puede cambiar en el Server.ini (`GuardiasDelCaosAtacanA`).
 
 ### Combate y magia
 
@@ -44,7 +46,8 @@ Lo nuevo desde el paquete del 6 de octubre.
   y si frenan para cazar algo, primero lo cazan.
 - **Los bots se cuidan más del peligro**: acorralados, no se quedan peleando con lo que tienen pegado si a tres baldosas
   o menos hay otra criatura que los mata de dos golpes, salvo que no puedan moverse de la baldosa. Tampoco van a
-  levantar un botín que queda a tres baldosas o menos de un peligro. Sin energía para pelear, en un mapa inseguro, se
+  levantar un botín que queda a tres baldosas o menos de un peligro (ni, con la vida en rojo y sin pociones, de cualquier
+  criatura que pega). Sin energía para pelear, en un mapa inseguro, se
   van caminando al pueblo más cercano que les vende pociones (o, si no hay, al mapa seguro) en vez de quedarse huyendo.
 - **Los bots que fabrican viajan menos**: no van a dos mapas o más a fabricar si les quedan menos de seis puntos para
   llegar al tope de su nivel, salvo que lo que fabrican les haga falta.
@@ -52,7 +55,8 @@ Lo nuevo desde el paquete del 6 de octubre.
   enemigo a los que atacar no los vuelve criminales (renegados y Caos; los soldados, además, al ejército enemigo), y se
   defienden del que les pega. Con el nivel y las bajas que pide el enlistador entran a la Armada (los ciudadanos) o a la
   Milicia (los republicanos) y vuelven a cobrar la recompensa de cada rango. Algunos cazadores son agresivos: le pegan también
-  a los civiles del otro bando, se vuelven renegados y a nivel 40 van a la Legión del Caos.
+  a los civiles del otro bando, se vuelven renegados y a nivel 40 van a la Legión del Caos. Al enlistador van desde lejos,
+  sin pisar las ciudades con guardias que los atacan, y si algo los corta en el camino vuelven a salir enseguida.
 - **Hasta 96 bots** (la clave `Bots`). Los que entran por primera vez lo hacen de a 6 cada 5 minutos, para no amontonarse
   en el pueblo de inicio.
 - **Los bots abren la puerta que les da la salida**: si desde donde están no hay camino a otro mapa, abren la puerta que se
