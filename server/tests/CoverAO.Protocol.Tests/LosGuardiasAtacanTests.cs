@@ -127,7 +127,8 @@ public class LosGuardiasAtacanTests
 
     // ── LOS BANDOS DEL INI ────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Los defaults son los del tester: cada bando ataca a todos menos a los suyos.</summary>
+    /// <summary>Los defaults son los del tester: cada bando ataca a todos menos a los suyos. Los del Caos son el Caos y el renegado,
+    /// que se enlista con el Demonio: con el renegado en la lista, ninguno llegaba a enlistarse.</summary>
     [Theory]
     [InlineData(ServerIni.GuardiaImperial, Player.StatusCriminal, true)]
     [InlineData(ServerIni.GuardiaImperial, Player.StatusRepublicano, true)]
@@ -140,7 +141,7 @@ public class LosGuardiasAtacanTests
     [InlineData(ServerIni.GuardiaRepublicano, Player.StatusCriminal, true)]
     [InlineData(ServerIni.GuardiaRepublicano, Player.StatusRepublicano, false)]
     [InlineData(ServerIni.GuardiaRepublicano, Player.StatusMilicia, false)]
-    [InlineData(ServerIni.GuardiaDelCaos, Player.StatusCriminal, true)]
+    [InlineData(ServerIni.GuardiaDelCaos, Player.StatusCriminal, false)]
     [InlineData(ServerIni.GuardiaDelCaos, Player.StatusCiudadano, true)]
     [InlineData(ServerIni.GuardiaDelCaos, Player.StatusCaos, false)]
     public void Por_defecto_cada_bando_ataca_a_todos_menos_a_los_suyos(int bando, byte faccion, bool ataca)

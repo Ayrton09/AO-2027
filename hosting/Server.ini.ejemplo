@@ -139,10 +139,11 @@ GuardiasPersiguen=1
 ; 0 = a los newbies (hasta nivel 15) no los tocan aunque sean del otro bando.
 GuardiasAtacanNewbies=0
 ; A quien ataca cada bando. Facciones: Renegado, Ciudadano, Republicano, Caos,
-; Armada y Milicia. Vacio = ese bando no ataca a nadie.
+; Armada y Milicia. Vacio = ese bando no ataca a nadie. El del Caos no ataca al
+; Renegado: es el que se enlista ahi.
 GuardiasImperialesAtacanA=Renegado, Republicano, Caos, Milicia
 GuardiasRepublicanosAtacanA=Renegado, Ciudadano, Caos, Armada
-GuardiasDelCaosAtacanA=Renegado, Ciudadano, Republicano, Armada, Milicia
+GuardiasDelCaosAtacanA=Ciudadano, Republicano, Armada, Milicia
 
 ; --- Bots --------------------------------------------------------------------
 ; Personajes que juegan solos, para que el mundo no se vea vacio. VIENEN

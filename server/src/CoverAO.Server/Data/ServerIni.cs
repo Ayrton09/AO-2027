@@ -787,7 +787,8 @@ public sealed class ServerIni
     /// <summary>A quién ataca cada bando de guardias: el <c>Faccion.Status</c> de los jugadores (1 Renegado,
     /// 2 Ciudadano, 3 Republicano, 4 Caos, 5 Armada, 6 Milicia), por el <c>Status</c> del guardia (1, 2 o 4).
     /// En el ini van por nombre: <c>GuardiasImperialesAtacanA</c>, <c>GuardiasRepublicanosAtacanA</c> y
-    /// <c>GuardiasDelCaosAtacanA</c>. Los defaults son los del tester: cada bando ataca a todos menos a los suyos.</summary>
+    /// <c>GuardiasDelCaosAtacanA</c>. Los defaults son los del tester: cada bando ataca a todos menos a los suyos, y los del Caos son
+    /// el Caos y el renegado, que es el que se enlista con el Demonio (como el ciudadano en la Armada y el republicano en la Milicia).</summary>
     public IReadOnlyDictionary<int, IReadOnlySet<byte>> EnemigosDeLosGuardias { get; private set; } = new Dictionary<int, IReadOnlySet<byte>>
     {
         [GuardiaImperial] = LeerEnemigos(ImperialesAtacanPorDefecto, null),
@@ -798,7 +799,7 @@ public sealed class ServerIni
     // Los defaults van escritos como los escribiría el host: cada bando, a todos menos a los suyos.
     private const string ImperialesAtacanPorDefecto = "Renegado, Republicano, Caos, Milicia";
     private const string RepublicanosAtacanPorDefecto = "Renegado, Ciudadano, Caos, Armada";
-    private const string DelCaosAtacanPorDefecto = "Renegado, Ciudadano, Republicano, Armada, Milicia";
+    private const string DelCaosAtacanPorDefecto = "Ciudadano, Republicano, Armada, Milicia";
 
     /// <summary>El <c>Status</c> del NPCs.dat que marca el bando de un guardia.</summary>
     public const int GuardiaImperial = 1, GuardiaRepublicano = 2, GuardiaDelCaos = 4;
