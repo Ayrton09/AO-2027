@@ -4106,9 +4106,14 @@ public sealed partial class Bot
     /// pociones y con la energía en 0 en el 27): saliendo al vecino (`2f595f47`), 12 de 24 se fueron del 27 y murieron 7 de 24, los siete
     /// en el 19 por Lobos; sin la regla, 8 de 18, siete en el 27.</para>
     ///
-    /// <para>Con esto, en la ronda 57 (`seguro8` a `seguro14`, el mismo estado, contra la salida al vecino): llegaron vivos a un mapa
-    /// seguro 20 de 24, contra 15 de 18, y ninguno quedó sin llegar (uno en el otro brazo). Las muertes, 4 de 24 contra 2 de 18, son
-    /// ruido: la salida al vecino dio 7 de 24 en la ronda 54 y 2 de 18 en la 56, con el mismo estado.</para>
+    /// <para>EN LA RONDA 57 NO SE DISTINGUE DE LA SALIDA AL VECINO (`seguro8` a `seguro14`, el mismo estado). El brazo de esta regla
+    /// trae también la serie de la amenaza de enfrente (`2456e374`, `ContadoresDeHuida.SerieDe`), y el de la salida al vecino
+    /// (`621a37e6`) no trae ninguna de las dos. Llegaron vivos a un mapa seguro 20 de 24 contra 15 de 18, la misma tasa (5 de cada 6),
+    /// y ninguno se quedó sin llegar ni morir (en el otro brazo, uno). Murieron 4 de 24 contra 2 de 18 (1 de cada 6 contra 1 de cada
+    /// 9), los cuatro en el 19 por Lobos, como los siete de la ronda 54, y con un rescate de esta regla en curso que no los había sacado
+    /// del 19: en ese viaje, Fabia en (84,51) de `seguro8`, que bajó de 84 % a 50 % de vida, y Aldo en (71,46) de `seguro12` y en
+    /// (89,66) de `seguro14` no se movieron de la baldosa. Con el mismo estado, la salida al vecino dio 7 muertes de 24 en la ronda 54
+    /// y 2 de 18 en la 56.</para>
     /// </summary>
     public static bool SinFuelleVaAlSeguro(bool tieneFuelle, bool mapaInseguro) => !tieneFuelle && mapaInseguro;
 
