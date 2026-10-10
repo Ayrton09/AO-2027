@@ -456,9 +456,9 @@ public sealed class Navegante
     /// </summary>
     private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
         MapasPorSuEntrada(int mapaActual, (byte X, byte Y) desde, Func<int, bool>? pisable = null,
-                          int topeDeSaltos = TopeDeMapas)
+                          int topeDeSaltos = TopeDeMapas, IReadOnlySet<int>? libresAca = null)
     {
-        var alcanzables = Alcanzables(mapaActual, desde);
+        var alcanzables = Alcanzables(mapaActual, desde, libresAca);
         var zonas = new Dictionary<int, List<HashSet<int>>>();
         var cola = new Queue<(int Mapa, int Saltos, (byte X, byte Y) Entrada, HashSet<int> Zona,
                               (byte X, byte Y) PrimeraPuerta)>();
@@ -585,6 +585,29 @@ public sealed class Navegante
         var libres = new HashSet<int> { Clave(puerta.X, puerta.Y) };
         if (puerta.X > GameLimits.MinXBorder) libres.Add(Clave((byte)(puerta.X - 1), puerta.Y));
         return libres;
+    }
+
+    /// <summary>
+    /// ¿ABRIR ESA PUERTA LE DA UNA SALIDA hacia <paramref name="mapaDestino"/>? Como <see cref="AbrirlaDaCamino"/>, pero para el viaje:
+    /// primero, que abrirla deje a pie alguna salida del mapa que antes no se alcanzaba (es barato, y descarta casi todas las puertas de
+    /// un pueblo); y de esas, que por alguna se llegue al destino en <paramref name="topeDeSaltos"/> mapas.
+    ///
+    /// <para>Es el arreglo de fondo de Lindos (62): la vuelta a Illiandor (194) es el teleport (51,73), detrás de la puerta (50,85), y
+    /// con la puerta cerrada desde las Águilas sólo se llega a pie al 63 y al 64. Lo medido el 30/09: Osmar 28 minutos en el nivel 3 en
+    /// Lindos (`early9`).</para>
+    /// </summary>
+    public bool AbrirlaDaSalidaHacia(int mapa, (byte X, byte Y) desde, (byte X, byte Y) puerta, int mapaDestino,
+                                     (byte X, byte Y)? meta, Func<int, bool>? pisable, int topeDeSaltos = TopeDeMapas)
+    {
+        if (mapa == mapaDestino) return false;
+        var libres = BaldosasQueDestraba(puerta);
+        var antes = Alcanzables(mapa, desde);
+        var despues = Alcanzables(mapa, desde, libres);
+        if (!Salidas(mapa).Any(s => despues.Contains(Clave(s.X, s.Y)) && !antes.Contains(Clave(s.X, s.Y)))) return false;
+        foreach (var (m, _, entrada, _) in MapasPorSuEntrada(mapa, desde, pisable, topeDeSaltos, libres))
+            if (m == mapaDestino && (meta is not { } adonde || HayComoLlegar(m, entrada, adonde, RadioDeMostrador) is not null))
+                return true;
+        return false;
     }
 
     /// <summary>

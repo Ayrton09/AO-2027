@@ -147,6 +147,21 @@ public sealed partial class Bot
     /// <summary>Desde cuántas baldosas se da vuelta a mirar a alguien, y cada cuántas decisiones le pasa.</summary>
     private const int RadioDeMirar = 6, ChanceDeMirar = 25;
 
+    /// <summary>
+    /// ¿EL VIAJE SE AGOTÓ ESQUIVANDO PELIGROS? Sí, si se gastaron los tramos y la mitad o más se cortaron por algo que lo mata a la vista
+    /// (<see cref="LoArrimaAlPeligro"/>). Es lo que dispara el rescate (<see cref="RescatarseAsync"/>) igual que el "desde acá no se
+    /// llega": el viaje de compras que se agota así, con lo esencial faltando, y el que va al mapa seguro.
+    ///
+    /// <para>Pedido por el autor el 10/10 (la "opción C" de Fabia). Medido en `early181` (09/10): Fabia, nivel 16, sin pociones y con
+    /// 40 mil monedas, salía del 27 a comprar a Rinkel y gastaba los 12 tramos en un segundo, 10 cortados por un peligro; se iba a
+    /// descansar y volvía a cazar sin pociones.</para>
+    /// </summary>
+    public static bool AgotadoPorPeligro(int cortesPorPeligro, int tramosDelViaje) =>
+        tramosDelViaje > 0 && cortesPorPeligro * 2 >= tramosDelViaje;
+
+    /// <summary>Si el último viaje (<see cref="IrHastaAsync"/>) se agotó esquivando peligros (<see cref="AgotadoPorPeligro"/>).</summary>
+    private bool _agotadoPorPeligro;
+
     /// <summary>Tramos de un viaje: cada uno es "caminar hasta la próxima puerta, o hasta el destino". Doce
     /// alcanzan para cruzar varios mapas y recalcular unas cuantas veces en el camino.</summary>
     private const int TramosPorViaje = 12;
@@ -1495,6 +1510,8 @@ public sealed partial class Bot
         // Y PARA EL VIAJE LARGO, SÓLO LO ESENCIAL: ver `LoEsencialQueBusca`.
         var esencial = LoEsencialQueBusca(primeroLasPociones, primeroLaBebida, primeroLaComida, vaPorComida, vaPorBebida)
                        | (desnudo ? Esencial.Ropa : Esencial.Nada);
+        bool LeFaltaLoEsencial() => (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))) || vaPorComida
+                                    || vaPorBebida || desnudo;
         bool LoEsencial(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } stock }
             && ((esencial.HasFlag(Esencial.Comida) && stock.Any(s => EsComida((short)s.ObjIndex)))
@@ -1581,8 +1598,7 @@ public sealed partial class Bot
                 // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
                 // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
-                bool leFaltaLoEsencial = (vaPorPociones && LeFaltanPocionesParaPelear(sentidos.Suma(PocionPropia))) || vaPorComida || vaPorBebida
-                                         || desnudo;
+                bool leFaltaLoEsencial = LeFaltaLoEsencial();
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
                 if (intento == 0 && vaAComprar
                     && ++_tiendasSinCamino >= FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo: conMercader is not null))
@@ -1609,7 +1625,13 @@ public sealed partial class Bot
             }
             if (!await IrAbriendoAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador, Sirve)
                 && sentidos.Mapa != lugar.Mapa)
-            { Fracaso(); return true; }   // ni siquiera se llegó al mapa
+            {
+                // Y SI SE AGOTÓ ESQUIVANDO PELIGROS CON LO ESENCIAL FALTANDO, EL RESCATE: ver `AgotadoPorPeligro`.
+                if (_agotadoPorPeligro && LeFaltaLoEsencial() && sentidos.Vivo
+                    && await RescatarseAsync(transporte, sentidos, LoEsencial, cerrada, ct))
+                { llegoAlPueblo = true; continue; }
+                Fracaso(); return true;   // ni siquiera se llegó al mapa
+            }
             tienda = MapaDondeCompra(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         }
         if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { Fracaso(); return true; }
@@ -4092,10 +4114,10 @@ public sealed partial class Bot
         int antes = sentidos.Mapa;
         if (!await IrHastaAsync(transporte, sentidos, seguro.Mapa, seguro.X, seguro.Y, cerrada, ct, ToleranciaDelCoto,
                                 topeDeMapas: Math.Max(Navegante.TopeDeMapas, seguro.Saltos))
-            && _desdeAcaNoSeLlega && sentidos.Mapa == antes && sentidos.Vivo)
-            // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`. Sólo si el viaje volvió por eso, no si lo
-            // cortó el peligro, la vida o las trabas, y desde donde arrancó: si se quedó sin camino a mitad del viaje, se mira de nuevo
-            // la vez siguiente, desde ahí.
+            && (_desdeAcaNoSeLlega || _agotadoPorPeligro) && sentidos.Mapa == antes && sentidos.Vivo)
+            // Y SI POR DONDE NO HAY PELIGRO NO SE LLEGA, ESTÁ VARADO: ver `RescatarseAsync`. Sólo si el viaje volvió por eso o se agotó
+            // esquivando peligros (`AgotadoPorPeligro`), no si lo cortó lo del hueco, la vida o las trabas, y desde donde arrancó: si se
+            // quedó sin camino a mitad del viaje, se mira de nuevo la vez siguiente, desde ahí.
             _loTrajoElRescate = await RescatarseAsync(transporte, sentidos, sirve ?? VendePociones, cerrada, ct);
         return true;
     }
@@ -5104,15 +5126,20 @@ public sealed partial class Bot
     /// el mismo doble clic que el cliente. Que se haya abierto se verifica mirando el piso: el servidor cambia el
     /// objeto por su versión abierta, así que si la baldosa sigue con el mismo objeto no pasó nada.</para>
     /// </summary>
-    private async Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
-                                                 Func<int, bool> sirve, Task cerrada, CancellationToken ct)
+    private Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                           Func<int, bool> sirve, Task cerrada, CancellationToken ct) =>
+        AbrirLaPuertaQueAsync(transporte, sentidos,
+            donde => _entorno.Mapas.AbrirlaDaCamino(sentidos.Mapa, sentidos.Posicion, donde, sirve), cerrada, ct);
+
+    /// <summary>Abre la puerta más cercana de este mapa para la que <paramref name="daCamino"/> (dónde está) dice que sí. Devuelve si
+    /// la abrió (o ya estaba abierta).</summary>
+    private async Task<bool> AbrirLaPuertaQueAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                                   Func<(byte X, byte Y), bool> daCamino, Task cerrada, CancellationToken ct)
     {
         var candidatas = PuertasQueElMapaTiene(_entorno.Datos.MapObjects.GetValueOrDefault(sentidos.Mapa),
                                                sentidos.Posicion,
                                                obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj)));
-        if (LaPuertaQueConviene(candidatas,
-                donde => _entorno.Mapas.AbrirlaDaCamino(sentidos.Mapa, sentidos.Posicion, donde, sirve))
-            is not { } puerta) return false;
+        if (LaPuertaQueConviene(candidatas, daCamino) is not { } puerta) return false;
 
         var (x, y) = sentidos.Posicion;
         if (!AlAlcanceDeLaPuerta(x - puerta.Donde.X, y - puerta.Donde.Y)
@@ -6591,7 +6618,10 @@ public sealed partial class Bot
         int trabasDelViaje = 0;
         bool trabadoPorAlguien = false;
         int peleasDelViaje = 0;
+        bool abrioUnaPuerta = false;
+        int cortesPorPeligro = 0;
         _desdeAcaNoSeLlega = false;
+        _agotadoPorPeligro = false;
         for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
@@ -6624,6 +6654,18 @@ public sealed partial class Bot
                                     desde, mapaDestino, (destinoX, destinoY), topeDeMapas, deMuerto, porCualquierCamino, pasa, cruza,
                                     sinHuidas, sinLoDelHueco) is { } salida)
                 meta = salida.Puerta;
+            // Y SI DESDE ACÁ NO SE LLEGA, LA PUERTA QUE DA LA SALIDA: ver `Navegante.AbrirlaDaSalidaHacia`. Una por viaje, y no de muerto
+            // ni escapando. Abierta, el navegante la ve abierta (es la misma data del servidor) y el tramo siguiente sale por ahí.
+            else if (!abrioUnaPuerta && !deMuerto && !escapando
+                     && await AbrirLaPuertaQueAsync(transporte, sentidos,
+                            donde => _entorno.Mapas.AbrirlaDaSalidaHacia(mapa, desde, donde, mapaDestino, (destinoX, destinoY),
+                                         m => PuedeEntrar(sentidos.Nivel, _entorno.Datos.MapZone(m)) && sinHuidas(m), topeDeMapas),
+                            cerrada, ct))
+            {
+                abrioUnaPuerta = true;
+                tramos--;
+                continue;
+            }
             else return false;   // desde acá no se llega
             _desdeAcaNoSeLlega = false;
 
@@ -6674,7 +6716,7 @@ public sealed partial class Bot
                 if (Math.Abs(dx) + Math.Abs(dy) != 1) break;
                 // NI EL VIAJE SE ARRIMA A LO QUE LO MATA (ver `LoArrimaAlPeligro`): esa baldosa pasa a ser una traba y el camino se
                 // recalcula rodeándola. De muerto da igual, que al fantasma no lo atacan.
-                if (!deMuerto && LoArrimaAlPeligro((x, y), baldosa, PeligrosALaVista(sentidos))) { trabas.Add(baldosa); break; }
+                if (!deMuerto && LoArrimaAlPeligro((x, y), baldosa, PeligrosALaVista(sentidos))) { trabas.Add(baldosa); cortesPorPeligro++; break; }
                 var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto, puedeSalir: true);
                 // CURARSE EN EL CAMINO EN VEZ DE VOLVERSE. Un golpe que bajaba la vida del umbral de la poción
                 // abortaba el viaje entero aunque el bot tuviera mil pociones encima, y el intento siguiente
@@ -6724,6 +6766,7 @@ public sealed partial class Bot
                 }
             }
         }
+        _agotadoPorPeligro = !ct.IsCancellationRequested && !cerrada.IsCompleted && AgotadoPorPeligro(cortesPorPeligro, tramosDelViaje);
         return sentidos.Mapa == mapaDestino
             && Math.Abs(sentidos.Posicion.X - destinoX) + Math.Abs(sentidos.Posicion.Y - destinoY) <= tolerancia;
     }

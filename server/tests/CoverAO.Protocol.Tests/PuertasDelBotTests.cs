@@ -406,4 +406,24 @@ public class PuertasDelBotTests
         Assert.Null(mapas.HayComoLlegar(20, entrada, sacerdote, 3));
         Assert.True(mapas.AbrirlaDaCamino(20, entrada, (50, 57), esElSacerdote));
     }
+
+    /// <summary>
+    /// EL VIAJE ABRE LA PUERTA QUE DA LA SALIDA: en Lindos (62), desde donde nacen las Águilas no se llega a pie a Illiandor (194),
+    /// y abriendo la puerta (50,85) sí, por el teleport (51,73). Es lo que usa `IrHastaAsync` cuando desde acá no se llega.
+    /// </summary>
+    [Fact]
+    public void En_Lindos_la_puerta_del_teleport_da_la_salida_a_Illiandor()
+    {
+        var datos = Datos();
+        var mapas = new Navegante(datos);
+        var aguilas = datos.MapSpawns[62].Where(s => datos.Npc((short)s.NpcIndex)?.Name?.Contains("guila") == true).ToList();
+        Assert.NotEmpty(aguilas);
+        var desdeAca = aguilas.Select(s => ((byte)s.X, (byte)s.Y))
+                              .Where(d => mapas.PuertaHacia(62, 194, d) is null).ToList();
+        Assert.NotEmpty(desdeAca);   // premisa: con la puerta cerrada, desde ahí no se llega
+        var desde = desdeAca[0];
+        Assert.True(mapas.AbrirlaDaSalidaHacia(62, desde, (50, 85), 194, null, null));
+        // Y una puerta que no tiene nada que ver, no.
+        Assert.False(mapas.AbrirlaDaSalidaHacia(62, desde, (5, 5), 194, null, null));
+    }
 }

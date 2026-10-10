@@ -195,4 +195,15 @@ public class LoDelHuecoTests
         Assert.True(orden.IndexOf(553) > orden.IndexOf(12) && orden.IndexOf(553) > orden.IndexOf(19));
         Assert.Equal(15, orden[^1]);
     }
+
+    /// <summary>El viaje agotado esquivando peligros (la opción C de Fabia, 10/10): la mitad o más de los tramos cortados por un
+    /// peligro. Fabia en `early181`: 10 de 12.</summary>
+    [Fact]
+    public void El_viaje_que_se_agota_esquivando_peligros_pide_el_rescate()
+    {
+        Assert.True(Bot.AgotadoPorPeligro(10, 12));
+        Assert.True(Bot.AgotadoPorPeligro(6, 12));
+        Assert.False(Bot.AgotadoPorPeligro(5, 12));
+        Assert.False(Bot.AgotadoPorPeligro(0, 0));
+    }
 }
