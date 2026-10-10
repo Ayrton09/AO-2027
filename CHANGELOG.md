@@ -11,6 +11,12 @@ Lo nuevo desde el paquete del 6 de octubre.
 - **Al enlistarse en la Armada, la Milicia o el Caos, el enlistador te da tus vestimentas** del bando (la de tu clase, o la de
   enanos y gnomos) y te dice su bienvenida, como en el original. El que estaba en un clan queda afuera del clan.
 
+### Combate y magia
+
+- **Balance de tres clases**: el Nigromante pega con hechizos un poco menos que el Mago (como el Clérigo) y
+  resiste algo la magia; el Gladiador acierta más golpes cuerpo a cuerpo, y él y el Mercenario resisten la
+  magia como el Cazador.
+
 ### Chat, mapa y pantalla
 
 - **El mapa del mundo ya no repite las uniones entre mapas**: cada pedazo muestra sólo lo suyo, y la costa de Nix, por ejemplo,

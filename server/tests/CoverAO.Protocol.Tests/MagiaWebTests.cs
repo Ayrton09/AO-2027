@@ -152,8 +152,13 @@ public class MagiaWebTests
         Assert.Equal(0.78, MagiaWeb.ModDanoDeLaClase(paladin));
         Assert.Equal(6, MagiaWeb.ModResistenciaDeLaClase(cazador));
 
-        // EL GLADIADOR NO ESTA EN LA TABLA DE AOWEB: le tocan los valores por defecto, no los del Paladin.
+        // LAS TRES QUE NO ESTAN EN LA TABLA DE AOWEB (autor, 10/10): el Nigromante dana como el Clerigo y resiste como el Druida;
+        // Mercenario y Gladiador resisten como el Cazador. El dano del Gladiador sigue en el por defecto: no tiene mana.
+        const int mercenario = 17, nigromante = 18;
+        Assert.Equal(0.88, MagiaWeb.ModDanoDeLaClase(nigromante));
+        Assert.Equal(3, MagiaWeb.ModResistenciaDeLaClase(nigromante));
+        Assert.Equal(6, MagiaWeb.ModResistenciaDeLaClase(mercenario));
         Assert.Equal(1.0, MagiaWeb.ModDanoDeLaClase(gladiador));
-        Assert.Equal(0, MagiaWeb.ModResistenciaDeLaClase(gladiador));
+        Assert.Equal(6, MagiaWeb.ModResistenciaDeLaClase(gladiador));
     }
 }

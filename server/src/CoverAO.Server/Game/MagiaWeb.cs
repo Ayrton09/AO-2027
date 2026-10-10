@@ -133,6 +133,9 @@ public static class MagiaWeb
         [7] = 0.92,   // Druida
         [9] = 0.78,   // Paladín
         [10] = 0.00,  // Cazador
+        // EL NIGROMANTE NO ESTABA en la tabla de aoweb y caía al 1.00 del Mago, con más vida, golpe y armadura que él. DECIDIDO POR EL
+        // AUTOR (10/10): el del Clérigo, el otro lanzador con armadura.
+        [18] = 0.88,  // Nigromante
     };
 
     private static readonly System.Collections.Generic.Dictionary<int, int> ResistenciaPorClase = new()
@@ -145,6 +148,11 @@ public static class MagiaWeb
         [7] = 3,    // Druida
         [9] = 5,    // Paladín
         [10] = 6,   // Cazador
+        // LOS QUE NO ESTABAN en la tabla de aoweb caían a 0. DECIDIDO POR EL AUTOR (10/10): el Nigromante como el Druida, y los
+        // luchadores Mercenario y Gladiador como el Cazador.
+        [18] = 3,   // Nigromante
+        [17] = 6,   // Mercenario
+        [8] = 6,    // Gladiador
     };
 
     /// <summary>
