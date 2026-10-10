@@ -2568,7 +2568,7 @@ public sealed partial class Bot
         // LO MISMO CON LA BALDOSA QUE YA NO SIRVIÓ (`_nadaQueHacerAca`): descartarla después de elegirla dejaba sin mirar el botín que
         // seguía. La baldosa queda anotada cinco minutos (ver `SigueSinServir`).
         var yo = sentidos.Posicion;
-        var peligros = PeligrosALaVista(sentidos);
+        var peligros = LoQueLoHaceHuirALaVista(sentidos);
         short mapa = sentidos.Mapa;
         long ahora = Environment.TickCount64;
         if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !SigueSinServir(_nadaQueHacerAca, (mapa, baldosa.X, baldosa.Y), ahora)
@@ -2584,7 +2584,7 @@ public sealed partial class Bot
             // escapaba del Señor de las sombras, que estaba a cinco baldosas, y caminó a levantar un objeto; un Lobo lo mató unos tres
             // segundos después, con el 87 % de vida al empezar.
             // Parado encima, ver `ArrimaAlPeligroAlBotin`.
-            if (ArrimaAlPeligroAlBotin(sentidos.Posicion, botin.Donde, PeligrosALaVista(sentidos))) return false;
+            if (ArrimaAlPeligroAlBotin(sentidos.Posicion, botin.Donde, LoQueLoHaceHuirALaVista(sentidos))) return false;
             var (x, y) = sentidos.Posicion;
             int dx = botin.Donde.X - x, dy = botin.Donde.Y - y;
             if (dx == 0 && dy == 0)
@@ -5625,7 +5625,8 @@ public sealed partial class Bot
     /// <summary>
     /// ¿LO QUE LO MATA DE DOS GOLPES LO DEJA PELEAR PARADO CON LO QUE TIENE PEGADO? No si hay algo a <see cref="RadioDeSusto"/> pasos o
     /// menos que lo mata de dos golpes con la vida que tiene (<paramref name="loQueLoMata"/>, <see cref="LoQueLoMataALaVista"/>) y que no
-    /// es lo pegado: la pelea contra lo pegado se gana, pero mientras tanto llega el otro. Medido en `early159`: Elmo, Clérigo de nivel 13
+    /// es lo pegado: la pelea contra lo pegado se gana, pero mientras tanto llega el otro. Y OTRA CRIATURA PEGADA que también lo mata de
+    /// dos golpes la veta igual: está a un paso, adentro del radio. Medido en `early159`: Elmo, Clérigo de nivel 13
     /// con 77 de vida, huía del Señor de las sombras en el 208 (pega de 60 a 75) y a la cuarta huida se quedó peleando con el Escorpión que
     /// lo picaba (`gana=True`, una sola pegada); el Señor, a tres baldosas, lo mató dos segundos después. Desde el 02/10 hasta el 08/10 a
     /// las 12:21 hubo 158 encuentros en el 208 con algo peligroso a tres baldosas o menos: 146 con la línea de carrera del Señor (npc534)
@@ -6928,6 +6929,22 @@ public sealed partial class Bot
     /// </summary>
     public static bool EntraALaVistaDelPeligro((byte X, byte Y) desde, (byte X, byte Y) hasta, IReadOnlyCollection<(byte X, byte Y)> peligros) =>
         peligros.Any(o => AlAlcanceDeSuVista(hasta, o) && !AlAlcanceDeSuVista(desde, o));
+
+    /// <summary>
+    /// Dónde está, de lo que tiene a la vista, lo que lo hace huir en el ciclo: lo peligroso, con la vida en rojo y sin pociones todo lo
+    /// que pega (<see cref="AsustaConLaVidaEnRojo"/>), y lo que no puede lastimar (<see cref="NoLaLastima"/>). Es la cuenta del botín
+    /// (<see cref="LevantarBotinAsync"/>): con la de <see cref="PeligrosALaVista"/>, sin las otras dos, podía elegir un botín al lado de algo
+    /// que al llegar lo hacía huir, y alejado volver a elegirlo (lo señaló el verificador el 08/10; no medido en campo).
+    /// </summary>
+    private List<(byte X, byte Y)> LoQueLoHaceHuirALaVista(SentidosDelBot sentidos)
+    {
+        int vida = sentidos.VidaMaxima, nivel = sentidos.Nivel;
+        double salud = sentidos.Salud;
+        bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        return sentidos.DondeEstan(f => EsPeligroso(f, vida, nivel, conPociones, curaVeneno)
+                                        || AsustaConLaVidaEnRojo(_entorno.Datos.Npc(f), conPociones, salud) || NoLaLastima(f));
+    }
 
     /// <summary>Dónde está, de lo que tiene a la vista, lo peligroso para él.</summary>
     private List<(byte X, byte Y)> PeligrosALaVista(SentidosDelBot sentidos)
