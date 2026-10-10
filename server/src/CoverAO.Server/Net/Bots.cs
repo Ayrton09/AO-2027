@@ -6553,26 +6553,29 @@ public sealed partial class Bot
     /// siempre aunque el viaje sea largo, y si por ahí tampoco, por donde se pueda; y ni por uno ni por otro cruza los mapas de
     /// guardias que van por él (<see cref="PisableDelRescate"/>). Los otros dos escalones ya no los cruzan. Fuera del rescate, lo que
     /// se pisa es lo que lo deja entrar (<see cref="Pisable"/>).</para>
+    ///
+    /// <para>Con <paramref name="soloALaMeta"/>, sólo por donde se cae en la parte del mapa desde la que se llega al destino (ver
+    /// <see cref="Navegante.PuertaHacia"/>).</para>
     /// </summary>
     public static ((byte X, byte Y) Puerta, int Saltos)? PuertaDelViaje(Navegante mapas, GameData datos, ServerIni? ini, byte bando,
                                                                       int nivel, int vidaMaxima, int mapa, (byte X, byte Y) desde,
                                                                       int mapaDestino, (byte X, byte Y) destino, int topeDeMapas,
                                                                       bool deMuerto, bool porCualquierCamino, Func<int, bool> pasa,
                                                                       Func<int, bool> cruza, Func<int, bool> sinHuidas,
-                                                                      Func<int, bool>? sinLoDelHueco = null)
+                                                                      Func<int, bool>? sinLoDelHueco = null, bool soloALaMeta = false)
     {
         Func<int, bool> pisable = porCualquierCamino ? PisableDelRescate(datos, ini, bando, nivel)
                                                      : m => PuedeEntrar(nivel, datos.MapZone(m));
         // EL DESEMPATE DEL HUECO, en los tres escalones; el rescate no lo usa.
         var desempate = porCualquierCamino ? null : sinLoDelHueco;
         ((byte X, byte Y) Puerta, int Saltos)? Por(Func<int, bool> filtro) =>
-            ElDeMenosSustoSiDaIgual(f => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, f, topeDeMapas), filtro, desempate);
+            ElDeMenosSustoSiDaIgual(f => mapas.PuertaHacia(mapa, mapaDestino, desde, destino, f, topeDeMapas, soloALaMeta), filtro, desempate);
         return CaminoDelViaje(deMuerto, topeDeMapas > Navegante.TopeDeMapas && !porCualquierCamino,
                    () => Por(m => pasa(m) && sinHuidas(m)),
                    () => Por(m => cruza(m) && sinHuidas(m)),
                    () => Por(PorElCaminoDeSiempre(datos, pisable, sinHuidas, mapaDestino, vidaMaxima, deMuerto)))
                ?? (porCualquierCamino
-                   ? mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => pisable(m) && sinHuidas(m), topeDeMapas)
+                   ? mapas.PuertaHacia(mapa, mapaDestino, desde, destino, m => pisable(m) && sinHuidas(m), topeDeMapas, soloALaMeta)
                    : null);
     }
 
@@ -6627,7 +6630,8 @@ public sealed partial class Bot
                                           Task cerrada, CancellationToken ct, int tolerancia = 1,
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
                                           int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false,
-                                          bool porCualquierCamino = false, IReadOnlyCollection<(byte X, byte Y)>? empiezaTrabado = null)
+                                          bool porCualquierCamino = false, IReadOnlyCollection<(byte X, byte Y)>? empiezaTrabado = null,
+                                          bool soloALaMeta = false)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -6676,7 +6680,7 @@ public sealed partial class Bot
             // POR DÓNDE, Y EL RESCATE DEL VARADO: ver `PuertaDelViaje`.
             else if (PuertaDelViaje(_entorno.Mapas, _entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel, sentidos.VidaMaxima, mapa,
                                     desde, mapaDestino, (destinoX, destinoY), topeDeMapas, deMuerto, porCualquierCamino, pasa, cruza,
-                                    sinHuidas, sinLoDelHueco) is { } salida)
+                                    sinHuidas, sinLoDelHueco, soloALaMeta) is { } salida)
                 meta = salida.Puerta;
             // Y SI DESDE ACÁ NO SE LLEGA, LA PUERTA QUE DA LA SALIDA: ver `Navegante.AbrirlaDaSalidaHacia`. Una por viaje, y no de muerto
             // ni escapando. Abierta, el navegante la ve abierta (es la misma data del servidor) y el tramo siguiente sale por ahí.

@@ -152,17 +152,24 @@ public sealed class Navegante
     ///
     /// <para>Es una búsqueda en anchura sobre el grafo de mapas: encuentra la ruta entera y devuelve la
     /// primera puerta, que es lo único que el bot necesita para dar el próximo paso del viaje.</para>
+    ///
+    /// <para>Con <paramref name="meta"/>, si ninguna entrada al destino deja a <see cref="RadioDeMostrador"/> de ella, la primera que se
+    /// encontró. Con <paramref name="soloALaMeta"/>, null, y la entrada tiene que dejar AL LADO de la meta, que es una salida y se pisa.
+    /// El 185, por el que se entra a Suramei, está partido: desde el 186 y desde el 261 se cae lejos de la salida (9,94), y en la ronda
+    /// 62 Lira entraba por ahí y quedaba "sin camino".</para>
     /// </summary>
     public ((byte X, byte Y) Puerta, int Saltos)? PuertaHacia(int mapaActual, int mapaDestino,
                                                              (byte X, byte Y)? desde = null,
                                                              (byte X, byte Y)? meta = null,
                                                              Func<int, bool>? pisable = null,
-                                                             int topeDeSaltos = TopeDeMapas)
+                                                             int topeDeSaltos = TopeDeMapas,
+                                                             bool soloALaMeta = false)
     {
         if (mapaActual == mapaDestino) return null;
         // UN MAPA QUE NO DEJA ENTRAR NO ES DESTINO NI CAMINO. El que llama dice cuáles con `pisable`: para el bot, la zona NEWBIE a
         // partir del nivel 16, que el servidor rebota a la baldosa de al lado sin cambiar de mapa.
         if (pisable is not null && !pisable(mapaDestino)) return null;
+        int alcance = soloALaMeta ? 1 : RadioDeMostrador;
 
         // SÓLO PUERTAS A LAS QUE SE LLEGA CAMINANDO, si se sabe desde dónde. Una salida suele ser una fila
         // entera de baldosas, y acá se tomaba la primera baldosa hacia cada mapa sin mirar si se alcanzaba: el
@@ -184,7 +191,7 @@ public sealed class Navegante
                 (byte X, byte Y) entrada = ((byte)llegada.DestX, (byte)llegada.DestY);
                 if (probadas.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) continue;
                 probadas.Add(Alcanzables(destino, entrada));
-                if (HayComoLlegar(destino, entrada, objetivo, RadioDeMostrador) is not null) return ((x, y), 1);
+                if (HayComoLlegar(destino, entrada, objetivo, alcance) is not null) return ((x, y), 1);
                 if (ZonasGrandes(probadas) >= ZonasPorMapa) break;
             }
         }
@@ -208,10 +215,10 @@ public sealed class Navegante
             foreach (var (mapa, saltos, entrada, primera) in MapasPorSuEntrada(mapaActual, origen, pisable, topeDeSaltos))
             {
                 if (mapa != mapaDestino) continue;
-                if (meta is not { } adonde || HayComoLlegar(mapa, entrada, adonde, RadioDeMostrador) is not null) return (primera, saltos);
+                if (meta is not { } adonde || HayComoLlegar(mapa, entrada, adonde, alcance) is not null) return (primera, saltos);
                 cualquiera ??= (primera, saltos);
             }
-            return cualquiera;
+            return soloALaMeta && meta is not null ? null : cualquiera;
         }
 
         // SIN SABER DESDE DÓNDE no hay pies que valgan: queda el grafo de mapas pelado. Es lo que se responde a

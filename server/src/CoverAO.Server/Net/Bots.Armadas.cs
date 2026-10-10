@@ -133,11 +133,16 @@ public sealed partial class Bot
     /// <para>Hace falta porque los enlistadores viven adentro: a Jerek (Armada, Distrito Real 60) no se llega desde ninguna entrada de
     /// Banderbill, sólo bajando del castillo (255), que se sube desde el mismo 60; y el navegante no arma un camino que sale de un mapa
     /// para volver a entrar a otra parte del mismo.</para>
+    ///
+    /// <para>Y A LA SALIDA SE TIENE QUE LLEGAR desde donde se cae al entrar a su mapa: el 185, por el que se entra a Suramei, está
+    /// partido, y a su salida (9,94) no se llega ni desde el 186 ni desde el 261 (ronda 62: Lira entraba y quedaba "sin camino").</para>
     /// </summary>
     public static (int Mapa, byte X, byte Y, int Saltos)? EntradaAlEnlistador(GameData datos, Navegante mapas, Func<int, bool> sirve,
                                                                              int mapa, (byte X, byte Y) desde, Func<int, bool>? pisable)
     {
         var dondeEsta = datos.MapSpawns.Where(kv => kv.Value.Any(s => sirve(s.NpcIndex))).Select(kv => kv.Key).ToHashSet();
+        // Por dónde se entra a cada mapa al que se llega, y a cuántos saltos.
+        var entradas = mapas.MapasAlcanzables(mapa, desde, SaltosHastaElEnlistador, pisable).ToList();
         (int Mapa, byte X, byte Y, int Saltos)? mejor = null;
         foreach (var porMapa in datos.MapExits.Where(e => dondeEsta.Contains(e.Value.DestMap) && e.Key.Map != e.Value.DestMap)
                                               .GroupBy(e => e.Key.Map))
@@ -145,16 +150,16 @@ public sealed partial class Bot
             // De cada mapa, la primera salida (de unas pocas de muestra) que deja donde se alcanza: las de un mismo borde dejan en la
             // misma zona, y probarlas todas es una búsqueda por baldosa.
             var salidas = porMapa.OrderBy(e => (e.Key.X, e.Key.Y)).ToList();
-            var muestra = new[] { salidas[0], salidas[salidas.Count / 2], salidas[^1] };
-            KeyValuePair<(int Map, int X, int Y), (int DestMap, int DestX, int DestY)>? sirveEsta = null;
-            foreach (var e in muestra)
-                if (mapas.SeLlegaAbriendoPuertas(e.Value.DestMap, ((byte)e.Value.DestX, (byte)e.Value.DestY), sirve, PuertasHastaElEnlistador))
-                { sirveEsta = e; break; }
-            if (sirveEsta is not { } esa) continue;
-            (byte X, byte Y) salida = ((byte)esa.Key.X, (byte)esa.Key.Y);
-            int? saltos = porMapa.Key == mapa ? (mapas.HayComoLlegar(mapa, desde, salida, 1) is not null ? 0 : null)
-                        : mapas.PuertaHacia(mapa, porMapa.Key, desde, salida, pisable, SaltosHastaElEnlistador)?.Saltos;
-            if (saltos is { } n && (mejor is null || n < mejor.Value.Saltos)) mejor = (porMapa.Key, salida.X, salida.Y, n);
+            foreach (var e in new[] { salidas[0], salidas[salidas.Count / 2], salidas[^1] }.Distinct())
+            {
+                if (!mapas.SeLlegaAbriendoPuertas(e.Value.DestMap, ((byte)e.Value.DestX, (byte)e.Value.DestY), sirve, PuertasHastaElEnlistador))
+                    continue;
+                (byte X, byte Y) salida = ((byte)e.Key.X, (byte)e.Key.Y);
+                int? saltos = porMapa.Key == mapa ? (mapas.HayComoLlegar(mapa, desde, salida, 1) is not null ? 0 : null)
+                            : entradas.Where(en => en.Mapa == porMapa.Key && mapas.HayComoLlegar(en.Mapa, en.Entrada, salida, 1) is not null)
+                                      .Select(en => (int?)en.Saltos).Min();
+                if (saltos is { } n && (mejor is null || n < mejor.Value.Saltos)) mejor = (porMapa.Key, salida.X, salida.Y, n);
+            }
         }
         return mejor;
     }
@@ -269,7 +274,7 @@ public sealed partial class Bot
             if (sentidos.Mapa != entrada.Mapa
                 || Math.Abs(sentidos.Posicion.X - entrada.X) + Math.Abs(sentidos.Posicion.Y - entrada.Y) > 1)
                 await IrHastaAsync(transporte, sentidos, entrada.Mapa, entrada.X, entrada.Y, cerrada, ct, 1,
-                                   topeDeMapas: Math.Max(Navegante.TopeDeMapas, entrada.Saltos), porCualquierCamino: true);
+                                   topeDeMapas: Math.Max(Navegante.TopeDeMapas, entrada.Saltos), porCualquierCamino: true, soloALaMeta: true);
             int dx = entrada.X - sentidos.Posicion.X, dy = entrada.Y - sentidos.Posicion.Y;
             if (sentidos.Mapa != entrada.Mapa || Math.Abs(dx) + Math.Abs(dy) != 1) { ViajeAlEjercitoCortado(); return true; }
             if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, puedeSalir: true) == Paso.SinConexion) return true;
