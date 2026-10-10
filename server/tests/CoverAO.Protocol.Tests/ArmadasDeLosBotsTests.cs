@@ -128,7 +128,9 @@ public class ArmadasDeLosBotsTests
     /// <summary>
     /// A JEREK (Armada, Distrito Real 60) se llega desde la entrada de Banderbill abriendo dos puertas seguidas, (73,76) y (73,42); y
     /// por tierra, sin la zona de novatos, desde los Campos Abiertos (18) por la entrada de Banderbill Central (59). Al Caos, desde el 18
-    /// por la Fortaleza Kerthon (838), y a la Milicia desde el puerto de Illiandor (179).
+    /// por la Fortaleza Kerthon (838), y a la Milicia desde el puerto de Illiandor (179). Todo sin pisar los mapas donde nacen guardias
+    /// que van por él, con los bandos del Server.ini por defecto: el renegado al Caos, que con el renegado en la lista de los guardias
+    /// del Caos no tenía por dónde (ronda 62: Elmo murió dos veces en la puerta de la Fortaleza).
     /// </summary>
     [Fact]
     public void Contra_la_data_se_llega_a_los_tres_enlistadores()
@@ -137,14 +139,30 @@ public class ArmadasDeLosBotsTests
         Assert.False(datos.SourceDir is null, "el test necesita la gamedata en disco");
         var mapas = new Navegante(datos);
         Func<int, bool> Enlista(byte ejercito) => f => datos.Npc(f) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == ejercito;
-        Func<int, bool> pisable = m => Bot.PuedeEntrar(26, datos.MapZone(m));
+        var ini = new ServerIni();
 
         Assert.Equal(new (byte, byte)[] { (73, 76), (73, 42) }, mapas.PuertasDelCamino(60, (25, 92), new (byte, byte)[] { (73, 23) }, 3));
         Assert.False(mapas.SeLlegaAbriendoUnaPuerta(60, (25, 92), Enlista(Arm)));   // premisa: con una sola no alcanza
         Assert.True(mapas.SeLlegaAbriendoPuertas(60, (25, 92), Enlista(Arm), Bot.PuertasHastaElEnlistador));
 
-        Assert.Equal(59, Bot.EntradaAlEnlistador(datos, mapas, Enlista(Arm), 18, (48, 69), pisable)?.Mapa);
-        Assert.NotNull(Bot.EntradaAlEnlistador(datos, mapas, Enlista(Cao), 18, (48, 69), pisable));
-        Assert.NotNull(Bot.EntradaAlEnlistador(datos, mapas, Enlista(Mil), 179, (68, 50), pisable));
+        Assert.Equal(59, Bot.EntradaAlEnlistador(datos, mapas, Enlista(Arm), 18, (48, 69), Bot.PisableDelRescate(datos, ini, Ciu, 26))?.Mapa);
+        Assert.Equal(838, Bot.EntradaAlEnlistador(datos, mapas, Enlista(Cao), 18, (25, 82), Bot.PisableDelRescate(datos, ini, Ren, 40))?.Mapa);
+        Assert.Equal(185, Bot.EntradaAlEnlistador(datos, mapas, Enlista(Mil), 179, (10, 10), Bot.PisableDelRescate(datos, ini, Rep, 25))?.Mapa);
+        // Premisa: la Fortaleza tiene guardias del Caos, y con los bandos por defecto no van por el renegado.
+        Assert.True(Bot.HayGuardiaQueVaPor(838, Ciu, 40, datos, ini));
+        Assert.False(Bot.HayGuardiaQueVaPor(838, Ren, 40, datos, ini));
+    }
+
+    /// <summary>
+    /// EL VIAJE AL ENLISTADOR QUE CORTÓ EL PELIGRO vuelve a salir en medio minuto, hasta seis veces seguidas; el que no llegó por otra
+    /// cosa, o el séptimo corte seguido, en diez minutos.
+    /// </summary>
+    [Fact]
+    public void El_viaje_al_enlistador_cortado_por_el_peligro_se_retoma_enseguida()
+    {
+        Assert.Equal(1_000 + Bot.ReintentoDelEjercitoMs, Bot.ProximoViajeAlEjercito(1_000, true, 1));
+        Assert.Equal(1_000 + Bot.ReintentoDelEjercitoMs, Bot.ProximoViajeAlEjercito(1_000, true, Bot.CortesSeguidosAlEjercito));
+        Assert.Equal(1_000 + Bot.EntreViajesAlEjercitoMs, Bot.ProximoViajeAlEjercito(1_000, true, Bot.CortesSeguidosAlEjercito + 1));
+        Assert.Equal(1_000 + Bot.EntreViajesAlEjercitoMs, Bot.ProximoViajeAlEjercito(1_000, false, 0));
     }
 }

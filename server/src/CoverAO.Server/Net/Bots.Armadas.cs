@@ -49,14 +49,18 @@ public sealed partial class Bot
     private const int RadioDeDefensa = 8;
 
     /// <summary>Entre un viaje al enlistador y el siguiente.</summary>
-    private const int EntreViajesAlEjercitoMs = 10 * 60_000;
+    public const int EntreViajesAlEjercitoMs = 10 * 60_000;
+
+    /// <summary>Si el viaje lo cortó lo que lo mata, a tiro, vuelve a salir a este rato (la vuelta del ciclo huye o pelea primero), hasta
+    /// <see cref="CortesSeguidosAlEjercito"/> veces seguidas.</summary>
+    public const int ReintentoDelEjercitoMs = 30_000, CortesSeguidosAlEjercito = 6;
 
     /// <summary>Cada cuánto pide la ficha de estadísticas, además de después de cada pelea con gente.</summary>
     private const int EntreFichasMs = 5 * 60_000;
 
     private readonly Dictionary<short, long> _genteDejada = new();
     private long _proximoViajeAlEjercito, _proximaFicha;
-    private int _bajasEnLaUltimaRecompensa = -1;
+    private int _bajasEnLaUltimaRecompensa = -1, _cortesAlEjercito;
 
     /// <summary>
     /// ¿ES DE TEMPERAMENTO AGRESIVO? Sale del nombre, como el temperamento: uno de cada nueve, todos cazadores. Es el único que va al
@@ -155,6 +159,24 @@ public sealed partial class Bot
         return mejor;
     }
 
+    /// <summary>
+    /// ¿CUÁNDO VUELVE A SALIR AL ENLISTADOR? Si el viaje lo cortó lo que lo mata, a tiro (<paramref name="cortoPorPeligro"/>), en
+    /// <see cref="ReintentoDelEjercitoMs"/>, mientras no lleve más de <see cref="CortesSeguidosAlEjercito"/> cortes seguidos
+    /// (<paramref name="cortesSeguidos"/>, contando éste); si no, en <see cref="EntreViajesAlEjercitoMs"/>. Visto en la ronda 62: Lira,
+    /// a un mapa de Barinke, cortó el viaje en el 186 y no volvía a salir en diez minutos.
+    /// </summary>
+    public static long ProximoViajeAlEjercito(long ahora, bool cortoPorPeligro, int cortesSeguidos) =>
+        ahora + (cortoPorPeligro && cortesSeguidos <= CortesSeguidosAlEjercito ? ReintentoDelEjercitoMs : EntreViajesAlEjercitoMs);
+
+    /// <summary>Lo que hace el viaje que no llegó con <see cref="ProximoViajeAlEjercito"/>.</summary>
+    private void ViajeAlEjercitoCortado()
+    {
+        bool porPeligro = _cortoPorElHueco || _agotadoPorPeligro;
+        _cortoPorElHueco = false;
+        _cortesAlEjercito = porPeligro ? _cortesAlEjercito + 1 : 0;
+        _proximoViajeAlEjercito = ProximoViajeAlEjercito(Environment.TickCount64, porPeligro, _cortesAlEjercito);
+    }
+
     private void PedirLaFicha(TransporteDeBot transporte, bool ya = false)
     {
         long ahora = Environment.TickCount64;
@@ -214,8 +236,13 @@ public sealed partial class Bot
 
     /// <summary>
     /// AL ENLISTADOR: a enlistarse (<see cref="EjercitoQueBusca"/>) o a cobrar la recompensa (<see cref="TocaRecompensa"/>). Va
-    /// caminando hasta el enlistador de su ejército más cercano, por mapas sin guardias que vayan por él, y le hace doble clic, que es
-    /// lo que hace el cliente: al que no es de su bando lo enlista y al que sí le da la recompensa. Devuelve si salió a hacerlo.
+    /// caminando hasta el enlistador de su ejército más cercano, por mapas sin guardias que vayan por él (<see cref="PisableDelRescate"/>),
+    /// y le hace doble clic, que es lo que hace el cliente: al que no es de su bando lo enlista y al que sí le da la recompensa. Devuelve
+    /// si salió a hacerlo.
+    ///
+    /// <para>EL VIAJE VA COMO EL DEL RESCATE (<c>porCualquierCamino</c>): por donde no hay peligro si hay por dónde, y si no, por el camino
+    /// de siempre. Un viaje largo común sólo va por los dos primeros, y en la ronda 62 Gonzo, a doce mapas de Barinke desde el puerto de
+    /// Illiandor, no salía ("desde acá no se llega").</para>
     /// </summary>
     private async Task<bool> IrAlEjercitoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
@@ -230,19 +257,21 @@ public sealed partial class Bot
         if (recompensa) ejercito = bando;
         if (ejercito == 0) return false;
         _proximoViajeAlEjercito = ahora + EntreViajesAlEjercitoMs;
+        var pisable = PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel);
 
         bool Sirve(int ficha) => _entorno.Datos.Npc(ficha) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == ejercito;
         // Si desde donde está no lo alcanza, hasta la salida que lo deja donde sí, y la pisa: ver `EntradaAlEnlistador`.
         if (!_entorno.Mapas.SeLlegaAbriendoPuertas(sentidos.Mapa, sentidos.Posicion, Sirve, PuertasHastaElEnlistador))
         {
-            if (EntradaAlEnlistador(_entorno.Datos, _entorno.Mapas, Sirve, sentidos.Mapa, sentidos.Posicion, Pisable(sentidos))
+            if (EntradaAlEnlistador(_entorno.Datos, _entorno.Mapas, Sirve, sentidos.Mapa, sentidos.Posicion, pisable)
                 is not { } entrada) return false;
+            _cortoPorElHueco = false;
             if (sentidos.Mapa != entrada.Mapa
                 || Math.Abs(sentidos.Posicion.X - entrada.X) + Math.Abs(sentidos.Posicion.Y - entrada.Y) > 1)
                 await IrHastaAsync(transporte, sentidos, entrada.Mapa, entrada.X, entrada.Y, cerrada, ct, 1,
-                                   topeDeMapas: Math.Max(Navegante.TopeDeMapas, entrada.Saltos));
+                                   topeDeMapas: Math.Max(Navegante.TopeDeMapas, entrada.Saltos), porCualquierCamino: true);
             int dx = entrada.X - sentidos.Posicion.X, dy = entrada.Y - sentidos.Posicion.Y;
-            if (sentidos.Mapa != entrada.Mapa || Math.Abs(dx) + Math.Abs(dy) != 1) return true;
+            if (sentidos.Mapa != entrada.Mapa || Math.Abs(dx) + Math.Abs(dy) != 1) { ViajeAlEjercitoCortado(); return true; }
             if (await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, puedeSalir: true) == Paso.SinConexion) return true;
             await Task.Delay(_rng.Next(400, 900), ct);
             if (!_entorno.Mapas.SeLlegaAbriendoPuertas(sentidos.Mapa, sentidos.Posicion, Sirve, PuertasHastaElEnlistador)) return true;
@@ -252,7 +281,9 @@ public sealed partial class Bot
         // Y LAS PUERTAS DEL CAMINO, una por una: ver `Navegante.PuertasDelCamino`.
         for (int abiertas = 0; ; abiertas++)
         {
+            _cortoPorElHueco = false;
             if (await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)donde.X, (byte)donde.Y, cerrada, ct, RadioDelMostrador)) break;
+            if (_cortoPorElHueco || _agotadoPorPeligro) { ViajeAlEjercitoCortado(); return true; }
             if (abiertas == PuertasHastaElEnlistador
                 || _entorno.Mapas.PuertasDelCamino(sentidos.Mapa, sentidos.Posicion, new[] { ((byte)donde.X, (byte)donde.Y) }, RadioDelMostrador)
                     is not { Count: > 0 } puertas
@@ -260,6 +291,7 @@ public sealed partial class Bot
         }
         if (sentidos.MasCercano(f => Sirve(f)) is not { Pasos: <= RadioDelMostrador } enlistador) return true;
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(enlistador.Quien.X).WriteByte(enlistador.Quien.Y)));
+        _cortesAlEjercito = 0;
         if (recompensa) _bajasEnLaUltimaRecompensa = cuantas;
         await Task.Delay(_rng.Next(800, 1_600), ct);
         PedirLaFicha(transporte, ya: true);
