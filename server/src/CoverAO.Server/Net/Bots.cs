@@ -5703,8 +5703,11 @@ public sealed partial class Bot
         /// <summary>
         /// LA SERIE DE ESA CRIATURA: las huidas seguidas de ella, o 0 si la serie es de otra. Lo que decide irse del mapa tiene que mirar
         /// la serie de la amenaza que tiene enfrente, no la última que hubo. Medido en `fuelle7` (ronda 54, 09/10): Gonzo, nivel 17 y sin
-        /// energía, se fue del 95 por un Lobo y en el 94 se volvió a ir apenas llegó por un Esqueleto, sin huir de él ni una vez, y así
-        /// 1582 veces en 11 minutos entre (10,9) del 95 y (91,9) del 94: la serie del Lobo seguía en tres.
+        /// energía, huyó tres veces de una Serpiente en el 27 (las tres `[SONDA-CARRERA]` de su corrida, de 20:49:22 a 20:49:25) y se fue
+        /// del mapa. Desde ahí se fue de cada mapa sin huir: del 24, del 96 y del 95 por un Lobo, del 94 por un Esqueleto, y entre el 95 y
+        /// el 94 hubo 1582 salidas de las 20:52:05 a las 21:03:22 (`[SONDA-HUECO-SALE]`: 792 desde el 95 y 790 desde el 94, todas de la
+        /// fila 8 a la 10 y casi todas desde la columna 10 del 95 y la 91 del 94). La serie seguía en tres y era la de la Serpiente del 27:
+        /// no había huido de ningún Lobo ni Esqueleto.
         /// </summary>
         public int SerieDe(short quien) => quien == _deQuien ? DeLaMismaCriatura : 0;
 
