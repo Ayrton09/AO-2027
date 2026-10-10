@@ -879,6 +879,13 @@ public sealed partial class Bot
             if (await HacerLugarAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await RetomarElRescateAsync(transporte, sentidos, cerrada, ct)) continue;
+            // GENTE DEL BANDO ENEMIGO A LA VISTA, antes de irse de compras o a cazar criaturas: ver `AQuienSaleAPegarle`. Sin las
+            // pociones de pelear no sale, así que la compra que hace falta no se pierde.
+            if (AQuienSaleAPegarle(sentidos) is { } blanco)
+            {
+                if (!await PelearConGenteAsync(transporte, sentidos, blanco, cerrada, ct)) return;
+                continue;
+            }
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
             if (await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -886,12 +893,6 @@ public sealed partial class Bot
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
             if (await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
-            // GENTE DEL BANDO ENEMIGO, antes que las criaturas: ver `AQuienSaleAPegarle`.
-            if (AQuienSaleAPegarle(sentidos) is { } blanco)
-            {
-                if (!await PelearConGenteAsync(transporte, sentidos, blanco, cerrada, ct)) return;
-                continue;
-            }
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
