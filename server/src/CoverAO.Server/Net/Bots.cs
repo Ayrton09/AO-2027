@@ -598,6 +598,8 @@ public sealed partial class Bot
         // Y MIRA SUS SKILLS, como el que abre la ventana de habilidades al entrar: el servidor las manda sólo si hay
         // puntos libres, y para fabricar hace falta saber qué receta le alcanza (ver `SentidosDelBot.Skill`).
         transporte.Mandar(Paquete(ClientPacketId.RequestSkills, _ => { }));
+        // Y SUS BAJAS, para el enlistador (ver `Bots.Armadas.cs`).
+        PedirLaFicha(transporte, ya: true);
 
         int pausas = 0;
         long proximaResurreccion = 0;
@@ -859,6 +861,12 @@ public sealed partial class Bot
                 if (!await CazarAsync(transporte, sentidos, picando.Quien.CharIndex, cerrada, ct)) return;
                 continue;
             }
+            // Y LA PERSONA QUE LE PEGA, TAMBIÉN: ver `AQuienSeDefiende`.
+            if (AQuienSeDefiende(sentidos) is { } agresor)
+            {
+                if (!await PelearConGenteAsync(transporte, sentidos, agresor, cerrada, ct)) return;
+                continue;
+            }
 
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -872,10 +880,18 @@ public sealed partial class Bot
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await RetomarElRescateAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
+            // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
+            if (await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
             if (await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
+            // GENTE DEL BANDO ENEMIGO, antes que las criaturas: ver `AQuienSaleAPegarle`.
+            if (AQuienSaleAPegarle(sentidos) is { } blanco)
+            {
+                if (!await PelearConGenteAsync(transporte, sentidos, blanco, cerrada, ct)) return;
+                continue;
+            }
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
@@ -5981,10 +5997,13 @@ public sealed partial class Bot
         && PedirQueSePonga(transporte, sentidos, ranura);
 
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
-    /// false sólo si se cayó la conexión.</summary>
+    /// false sólo si se cayó la conexión. Con <paramref name="aGente"/> la presa es una persona (ver <c>Bots.Armadas.cs</c>): no se
+    /// aprende nada de su ficha, y la pelea tiene un tope de tiempo y de golpes sin respuesta.</summary>
     private async Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
-                                        Task cerrada, CancellationToken ct)
+                                        Task cerrada, CancellationToken ct, bool aGente = false)
     {
+        long hasta = aGente ? Environment.TickCount64 + PeleaConGenteMaxMs : long.MaxValue;
+        int sinRespuesta = 0;
         int pasosGastados = 0;
         bool rodeando = false;
         // EL ARMA EN LA MANO: ver `PonerseElArmaParaPelear`.
@@ -5998,6 +6017,8 @@ public sealed partial class Bot
         {
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
             if (sentidos.Donde(presa) is not { } quien) return true;
+            // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
+            if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
             // que curarse peleando, que con eso pegándole se repite sin llegar nunca acá: medido en `alto23` (02/10), Elmo, nivel 14,
             // peleando en el 208 con el Señor de las sombras ya encima, se curó con magia tres veces seguidas, del 29 al 34 %, y murió
@@ -6056,6 +6077,7 @@ public sealed partial class Bot
                 golpes += g;
                 entraron += e;
                 sacado += d;
+                if (aGente) { sinRespuesta = g > 0 ? 0 : sinRespuesta + 1; continue; }
                 // Y LO QUE APRENDE DE SU GOLPE: ver `GolpeMedido`.
                 var ficha = _entorno.Datos.Npc(quien.FichaNpc);
                 _golpe.Anotar(ArmaEnLaMano(sentidos), g, e, d, ficha?.Def ?? 0);

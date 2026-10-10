@@ -1,0 +1,127 @@
+using System;
+using System.Linq;
+using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+using CoverAO.Server.Net;
+using Xunit;
+
+namespace CoverAO.Protocol.Tests;
+
+/// <summary>
+/// LOS BOTS EN LAS ARMADAS (pedido del autor, 10/10): a quién le pegan, qué bajas les cuentan, cuándo van al enlistador y la ficha de
+/// estadísticas de la que leen las bajas. Ver <c>Bots.Armadas.cs</c>.
+/// </summary>
+public class ArmadasDeLosBotsTests
+{
+    private const byte Ren = Player.StatusCriminal, Ciu = Player.StatusCiudadano, Rep = Player.StatusRepublicano,
+                       Cao = Player.StatusCaos, Arm = Player.StatusArmada, Mil = Player.StatusMilicia;
+
+    [Fact]
+    public void El_que_no_es_agresivo_sólo_le_pega_a_quien_no_lo_vuelve_criminal()
+    {
+        Assert.True(Bot.EsBlanco(Ciu, Ren, agresivo: false, atacarAliadoVuelveCriminal: true));
+        Assert.True(Bot.EsBlanco(Ciu, Cao, false, true));
+        Assert.False(Bot.EsBlanco(Ciu, Rep, false, true));    // lo volvería criminal
+        Assert.False(Bot.EsBlanco(Ciu, Ciu, false, true));    // el servidor no los deja
+        Assert.False(Bot.EsBlanco(Ciu, Arm, false, true));
+        Assert.True(Bot.EsBlanco(Arm, Mil, false, true));     // ejércitos enemigos
+        Assert.False(Bot.EsBlanco(Arm, Rep, false, true));
+        Assert.True(Bot.EsBlanco(Mil, Arm, false, true));
+        Assert.False(Bot.EsBlanco(Rep, Mil, false, true));
+        Assert.True(Bot.EsBlanco(Rep, Ren, false, true));
+        // Con la regla de la casa apagada, el civil del otro bando también.
+        Assert.True(Bot.EsBlanco(Ciu, Rep, false, atacarAliadoVuelveCriminal: false));
+        // A un GM (7 a 9) nunca, ni a quien no se le ve el bando.
+        Assert.False(Bot.EsBlanco(Ciu, 7, false, true));
+        Assert.False(Bot.EsBlanco(Ren, 0, true, true));
+    }
+
+    [Fact]
+    public void El_agresivo_le_pega_al_civil_del_otro_bando_y_ya_renegado_a_cualquiera_menos_al_Caos_si_es_del_Caos()
+    {
+        Assert.True(Bot.EsBlanco(Ciu, Rep, agresivo: true, atacarAliadoVuelveCriminal: true));
+        Assert.True(Bot.EsBlanco(Rep, Ciu, true, true));
+        Assert.False(Bot.EsBlanco(Ciu, Arm, true, true));     // el servidor no lo deja
+        foreach (byte el in new[] { Ren, Ciu, Rep, Cao, Arm, Mil }) Assert.True(Bot.EsBlanco(Ren, el, true, true));
+        Assert.False(Bot.EsBlanco(Cao, Cao, true, true));
+        Assert.True(Bot.EsBlanco(Cao, Ciu, true, true));
+    }
+
+    /// <summary>Lo que el bot cuenta es lo mismo que el enlistador le cuenta al jugador (<c>Player.KillsEnemigos*</c>).</summary>
+    [Fact]
+    public void Las_bajas_que_cuenta_el_bot_son_las_del_enlistador()
+    {
+        var p = new Player { CharIndex = 1, Name = "Prueba", Account = "prueba", RenegadosMatados = 1, CiudadanosMatados = 2, RepublicanosMatados = 4, CaosMatados = 8, ArmadaMatados = 16,
+                             MilicianosMatados = 32 };
+        var b = new SentidosDelBot.Bajas(Ciudadanos: 2, Renegados: 1, Republicanos: 4, Caos: 8, Armada: 16, Milicianos: 32);
+        Assert.Equal(p.KillsEnemigosArmada, Bot.BajasParaSuBando(Ciu, b));
+        Assert.Equal(p.KillsEnemigosArmada, Bot.BajasParaSuBando(Arm, b));
+        Assert.Equal(p.KillsEnemigosMilicia, Bot.BajasParaSuBando(Rep, b));
+        Assert.Equal(p.KillsEnemigosMilicia, Bot.BajasParaSuBando(Mil, b));
+        Assert.Equal(p.KillsEnemigosCaos, Bot.BajasParaSuBando(Ren, b));
+        Assert.Equal(p.KillsEnemigosCaos, Bot.BajasParaSuBando(Cao, b));
+    }
+
+    [Fact]
+    public void Se_enlista_con_el_nivel_y_las_bajas_del_enlistador_y_al_Caos_sólo_el_agresivo()
+    {
+        Assert.Equal(Arm, Bot.EjercitoQueBusca(Ciu, agresivo: false, nivel: 25, bajas: 15));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, false, 24, 15));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, false, 25, 14));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, agresivo: true, 30, 30));
+        Assert.Equal(Mil, Bot.EjercitoQueBusca(Rep, false, 25, 15));
+        Assert.Equal(Cao, Bot.EjercitoQueBusca(Ren, agresivo: true, 40, 30));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, true, 39, 30));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, agresivo: false, 40, 30));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Arm, false, 40, 100));   // ya está adentro
+    }
+
+    [Fact]
+    public void Va_a_cobrar_la_recompensa_cada_vez_que_cruza_un_escalón()
+    {
+        Assert.False(Bot.TocaRecompensa(Arm, 19, -1));
+        Assert.True(Bot.TocaRecompensa(Arm, 20, -1));
+        Assert.False(Bot.TocaRecompensa(Arm, 24, 20));
+        Assert.True(Bot.TocaRecompensa(Arm, 25, 20));
+        Assert.True(Bot.TocaRecompensa(Mil, 25, 22));
+        Assert.False(Bot.TocaRecompensa(Cao, 29, 20));
+        Assert.True(Bot.TocaRecompensa(Cao, 30, 20));
+        Assert.False(Bot.TocaRecompensa(Ciu, 100, -1));   // sin ejército no hay recompensa
+    }
+
+    /// <summary>Uno de cada nueve, todos cazadores: con los 96 nombres, unos cuantos y no la mitad.</summary>
+    [Fact]
+    public void Los_agresivos_son_pocos_y_todos_cazadores()
+    {
+        var agresivos = PobladoDeBots.Nombres.Where(Bot.EsAgresivo).ToList();
+        Assert.InRange(agresivos.Count, 4, 24);
+        Assert.All(agresivos, n => Assert.Equal(0, Math.Abs(Bot.SemillaDelNombre(n)) % 3));   // 0 = Cazador
+    }
+
+    /// <summary>Contra la data: hay un enlistador de cada ejército en el mundo (Jerek, Barinke Fauster y el Demonio).</summary>
+    [Fact]
+    public void En_el_mundo_hay_un_enlistador_de_cada_ejército()
+    {
+        var datos = GameData.Load();
+        Assert.False(datos.SourceDir is null, "el test necesita la gamedata en disco");
+        foreach (byte ejercito in new[] { Arm, Mil, Cao })
+            Assert.Contains(datos.MapSpawns.Values.SelectMany(l => l),
+                s => datos.Npc(s.NpcIndex) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == ejercito);
+    }
+
+    /// <summary>Las bajas salen de la ficha de estadísticas tal como la arma el servidor, y el bando que cambia, del CharStatus.</summary>
+    [Fact]
+    public void El_bot_lee_sus_bajas_de_la_ficha_y_su_bando_del_CharStatus()
+    {
+        var p = new Player { CharIndex = 1, Name = "Prueba", Account = "prueba", RenegadosMatados = 3, CiudadanosMatados = 1, RepublicanosMatados = 5, CaosMatados = 7, ArmadaMatados = 2,
+                             MilicianosMatados = 9 };
+        var s = new SentidosDelBot();
+        Assert.Null(s.MisBajas);
+        s.Recibir(ServerMessages.MiniStats(p));
+        Assert.Equal(new SentidosDelBot.Bajas(1, 3, 5, 7, 2, 9), s.MisBajas);
+
+        s.Recibir(ServerMessages.UserCharIndexInServer(42));
+        s.Recibir(ServerMessages.CharStatus(42, Player.StatusCriminal));
+        Assert.Equal(Player.StatusCriminal, s.MiEstado);
+    }
+}

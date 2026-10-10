@@ -83,6 +83,26 @@ public sealed class Player
         else StatusCivilBajoStaff = status;
     }
 
+    /// <summary>Los ocho pares de bandos que el original no deja pelear (SistemaCombate.bas <c>PuedeAtacar</c>, LocaleMsg 97). Lo usan
+    /// el servidor (<c>PacketDispatcher.PuedeAtacar</c>) y los bots, para elegir a quién atacar.</summary>
+    public static bool BandosQueNoSePelean(byte atacante, byte victima) =>
+           (victima == StatusRepublicano && atacante == StatusRepublicano) || (victima == StatusMilicia && atacante == StatusMilicia)
+        || (victima == StatusRepublicano && atacante == StatusMilicia)     || (victima == StatusMilicia && atacante == StatusRepublicano)
+        || (victima == StatusCiudadano && atacante == StatusCiudadano)     || (victima == StatusCiudadano && atacante == StatusArmada)
+        || (victima == StatusArmada && atacante == StatusCiudadano)        || (victima == StatusArmada && atacante == StatusArmada);
+
+    /// <summary>¿Atacarlo es atacar a un aliado (la regla de la casa <c>AtacarAliadoVuelveCriminal</c>)? Un legal (ciudadano,
+    /// republicano o de un ejército) que no es enemigo sancionado (Caos contra los ejércitos, Armada contra Milicia), atacado por
+    /// alguien que no es renegado ni del Caos. La guerra de clanes y la arena, el servidor las mira aparte.</summary>
+    public static bool AtacarloEsAtacarAUnAliado(byte atacante, byte victima)
+    {
+        bool aEjercito = atacante is StatusArmada or StatusMilicia, vEjercito = victima is StatusArmada or StatusMilicia;
+        bool enemigos = (aEjercito && victima == StatusCaos) || (atacante == StatusCaos && vEjercito)
+                     || (atacante == StatusArmada && victima == StatusMilicia) || (atacante == StatusMilicia && victima == StatusArmada);
+        bool legal = victima is StatusCiudadano or StatusRepublicano || vEjercito;
+        return !enemigos && atacante != StatusCaos && atacante != StatusCriminal && legal;
+    }
+
     public bool IsCitizen => FactionStatus == StatusCiudadano;        // ciudadano imperial (VB6 esCiuda)
     public bool IsRepublicano => FactionStatus == StatusRepublicano;  // VB6 esRepu
     public bool IsArmada => FactionStatus == StatusArmada;

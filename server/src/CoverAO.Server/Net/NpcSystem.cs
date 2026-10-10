@@ -1246,6 +1246,10 @@ public sealed class NpcSystem
         return true;
     }
 
+    /// <summary>El ejército en el que enlista un NPC de facciones (VB6 <c>eNPCType.facciones</c> = 5, por su <c>Status</c>), o 0 si no
+    /// es un enlistador. Lo usan el servidor al poblar y los bots para buscar al suyo.</summary>
+    public static byte EjercitoDelEnlistador(int npcType, int status) => npcType != 5 ? (byte)0 : status switch
+    { 1 => Player.StatusArmada, 2 => Player.StatusMilicia, 4 => Player.StatusCaos, _ => (byte)0 };
 
     private void SpawnNow(Spawn s, WorldPos? donde = null)
     {
@@ -1272,9 +1276,7 @@ public sealed class NpcSystem
         if (s.Template.NpcType == 7) npc.IsTransportador = true;                 // eNPCType.transportadores (el pirata del pasaje)
         // LOS ENLISTADORES Y LOS CONVERTIDORES, de su ficha: el original los rutea por NPCtype y `flags.Status`
         // (Acciones.bas:214-268). Sólo los ponía el fixture, así que en el mundo nadie podía enlistarse ni convertirse.
-        if (s.Template.NpcType == 5)                                              // eNPCType.facciones
-            npc.FactionEnlist = s.Template.Status switch
-            { 1 => Player.StatusArmada, 2 => Player.StatusMilicia, 4 => Player.StatusCaos, _ => (byte)0 };
+        if (s.Template.NpcType == 5) npc.FactionEnlist = EjercitoDelEnlistador(s.Template.NpcType, s.Template.Status);
         if (s.Template.NpcType == 18)                                             // eNPCType.Convertidores
             npc.FactionConvert = s.Template.Status switch
             { 1 => Player.StatusCiudadano, 2 => Player.StatusRepublicano, _ => (byte)0 };

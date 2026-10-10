@@ -8372,12 +8372,7 @@ public sealed partial class PacketDispatcher
         // Los ocho pares de facción que el original prohíbe (LocaleMsg 97). Ciudadano+Ciudadano está entre
         // ellos: en esta variante dos civiles NO se pueden pelear, hay que hacerse criminal o enlistarse en
         // bandos opuestos. Es el gate que más cambia el juego y es el que la fuente dice, textual.
-        bool bloqueoDeFaccion =
-               (victima.IsRepublicano && p.IsRepublicano) || (victima.IsMilicia && p.IsMilicia)
-            || (victima.IsRepublicano && p.IsMilicia)     || (victima.IsMilicia && p.IsRepublicano)
-            || (victima.IsCitizen && p.IsCitizen)         || (victima.IsCitizen && p.IsArmada)
-            || (victima.IsArmada && p.IsCitizen)          || (victima.IsArmada && p.IsArmada);
-        if (bloqueoDeFaccion) { session.Send(ServerMessages.LocaleMsg(97)); return false; }
+        if (Player.BandosQueNoSePelean(p.FactionStatus, victima.FactionStatus)) { session.Send(ServerMessages.LocaleMsg(97)); return false; }
         // Arena (TriggerZonaPelea): los dos adentro habilita; uno solo adentro prohíbe; ninguno de los dos
         // deja pasar al último gate, que es el que protege a los GMs fuera de la arena.
         bool yoEnArena = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y);
@@ -8442,15 +8437,10 @@ public sealed partial class PacketDispatcher
         MascotasAtacanAlUsuario(victima: p, amo: target);
         CancelarSalida(target);   // :1477 — al agredido se le cancela el /SALIR en curso (es anti-escape)
         // Bandos enfrentados del VB6: Caos ↔ (Armada|Milicia), e Imperio ↔ República (Armada ↔ Milicia). Entre
-        // ellos el combate está sancionado y no penaliza.
-        bool pEjercito = p.IsArmada || p.IsMilicia, tEjercito = target.IsArmada || target.IsMilicia;
-        bool esEnemigoDeFaccion = (pEjercito && target.IsCaos) || (p.IsCaos && tEjercito)
-                               || (p.IsArmada && target.IsMilicia) || (p.IsMilicia && target.IsArmada);
-        // "Legales" son los civiles con ciudadanía y sus ejércitos (imperiales y republicanos).
-        bool objetivoLegal = target.IsCitizen || target.IsRepublicano || tEjercito;
-        // El que ya es renegado no se vuelve "más" criminal: sin esto, cada golpe le repetía el aviso y le volvía a
-        // difundir el estado.
-        if (esEnemigoDeFaccion || p.IsCaos || p.IsRenegado || !objetivoLegal || AtWar(p, target)) return;
+        // ellos el combate está sancionado y no penaliza. "Legales" son los civiles con ciudadanía y sus ejércitos
+        // (imperiales y republicanos). El que ya es renegado no se vuelve "más" criminal: sin esto, cada golpe le
+        // repetía el aviso y le volvía a difundir el estado. Ver `Player.AtacarloEsAtacarAUnAliado`.
+        if (!Player.AtacarloEsAtacarAUnAliado(p.FactionStatus, target.FactionStatus) || AtWar(p, target)) return;
         if (!_ini.AtacarAliadoVuelveCriminal) return;   // regla de la casa: con 0, como el fuente del original
         p.CambiarFaccion(Player.StatusCriminal);
         p.FactionRank = 0;   // atacar a un legal expulsa de la Armada

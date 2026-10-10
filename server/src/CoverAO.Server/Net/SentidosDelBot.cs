@@ -36,8 +36,14 @@ public sealed class SentidosDelBot
         public bool EsNpc => FichaNpc > 0;
     }
 
+    /// <summary>Las bajas de personas por el bando de la víctima, como las cuenta el servidor (la ficha de estadísticas, MiniStats).
+    /// Es lo que piden el enlistador y la recompensa (ver <c>Bot.BajasParaSuBando</c>).</summary>
+    public readonly record struct Bajas(int Ciudadanos, int Renegados, int Republicanos, int Caos, int Armada, int Milicianos);
+
     private readonly object _candado = new();
     private byte _miEstado;
+    private Bajas? _bajas;
+    private long _ultimaBajaDeVida;
     private readonly Dictionary<short, Visible> _visibles = new();
     private readonly (short Obj, short Cantidad, bool Puesto)[] _inventario =
         new (short, short, bool)[GameLimits.MaxInventorySlots + 1];
@@ -71,6 +77,14 @@ public sealed class SentidosDelBot
     /// <summary>Su bando, el que dice su propio <c>CharacterCreate</c> (o un <c>UpdateTagAndStatus</c> después). 0 mientras no
     /// lo sabe.</summary>
     public byte MiEstado { get { lock (_candado) return _miEstado; } }
+
+    /// <summary>Las bajas de la última ficha de estadísticas que mandó el servidor, o null si todavía no pidió ninguna.</summary>
+    public Bajas? MisBajas { get { lock (_candado) return _bajas; } }
+
+    /// <summary>Hace cuánto (ms) le bajó la vida por última vez; <see cref="long.MaxValue"/> si nunca. Es lo que dice que alguien le
+    /// está pegando aunque no se vea una criatura encima.</summary>
+    public long HaceCuantoLeBajoLaVida
+    { get { lock (_candado) return _ultimaBajaDeVida == 0 ? long.MaxValue : Environment.TickCount64 - _ultimaBajaDeVida; } }
     public bool Ubicado { get { lock (_candado) return _tengoPosicion; } }
     public (byte X, byte Y) Posicion { get { lock (_candado) return (_x, _y); } }
     public short Nivel { get { lock (_candado) return _nivel; } }
@@ -606,6 +620,24 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>La PERSONA más cercana que <paramref name="sirve"/> (por quién es), sin contarse a sí mismo ni a las de
+    /// <paramref name="salvo"/>.</summary>
+    public (Visible Quien, int Pasos)? PersonaMasCercana(Func<Visible, bool> sirve, IReadOnlySet<short>? salvo = null)
+    {
+        lock (_candado)
+        {
+            if (!_tengoPosicion) return null;
+            (Visible, int)? mejor = null;
+            foreach (var v in _visibles.Values)
+            {
+                if (v.EsNpc || v.CharIndex == _miCharIndex || (salvo?.Contains(v.CharIndex) ?? false) || !sirve(v)) continue;
+                int pasos = Math.Abs(v.X - _x) + Math.Abs(v.Y - _y);
+                if (mejor is null || pasos < mejor.Value.Item2) mejor = (v, pasos);
+            }
+            return mejor;
+        }
+    }
+
     /// <summary>Dónde están las criaturas que <paramref name="sirve"/>, de las que ve.</summary>
     public List<(byte X, byte Y)> DondeEstan(Func<short, bool> sirve)
     {
@@ -767,6 +799,31 @@ public sealed class SentidosDelBot
                     break;
                 }
 
+                // EL BANDO QUE CAMBIA, como lo manda el original (CharStatus: charIndex + estado): enlistarse, volverse criminal.
+                case ServerPacketId.CharStatus:
+                {
+                    short ci = l.Entero();
+                    byte estado = l.Byte();
+                    lock (_candado)
+                    {
+                        if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { Estado = estado };
+                        if (ci == _miCharIndex) _miEstado = estado;
+                    }
+                    break;
+                }
+
+                // LA FICHA DE ESTADÍSTICAS (VB6 WriteMiniStats): de acá sólo las bajas por bando.
+                case ServerPacketId.MiniStats:
+                {
+                    int ciudadanos = l.Largo(), renegados = l.Largo();
+                    l.Largo(); l.Entero();                    // usuarios matados, criaturas
+                    l.Byte(); l.Byte(); l.Byte(); l.Largo();  // clase, raza, género, muertes
+                    l.Byte();                                 // estado
+                    int republicanos = l.Largo(), caos = l.Largo(), armada = l.Largo(), milicianos = l.Largo();
+                    lock (_candado) _bajas = new Bajas(ciudadanos, renegados, republicanos, caos, armada, milicianos);
+                    break;
+                }
+
                 case ServerPacketId.CharacterMove:
                 {
                     short ci = l.Entero();
@@ -840,7 +897,9 @@ public sealed class SentidosDelBot
                 case ServerPacketId.UpdateHP:
                     lock (_candado)
                     {
+                        int antes = _vida;
                         _vida = l.Entero();
+                        if (_vida < antes) _ultimaBajaDeVida = Environment.TickCount64;
                         if (_vida <= 0) AlMorir();
                     }
                     break;
