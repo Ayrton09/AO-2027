@@ -99,6 +99,15 @@ public class LoDelHuecoTests
                                         laPeleaSeGana: Bot.SeGanaConEnergia(tieneFuelle: false, laPeleaSeGana: true)));
     }
 
+    /// <summary>Sin fuelle en un mapa inseguro va al mapa seguro, no al vecino (autor, 09/10); con fuelle, o en uno seguro, no.</summary>
+    [Fact]
+    public void Sin_fuelle_en_un_mapa_inseguro_va_al_seguro()
+    {
+        Assert.True(Bot.SinFuelleVaAlSeguro(tieneFuelle: false, mapaInseguro: true));
+        Assert.False(Bot.SinFuelleVaAlSeguro(tieneFuelle: true, mapaInseguro: true));
+        Assert.False(Bot.SinFuelleVaAlSeguro(tieneFuelle: false, mapaInseguro: false));
+    }
+
     /// <summary>LO PELIGROSO QUE NO LE GANA, FUERA DEL MAPA, PERO SÓLO EN UNO INSEGURO (autor, 03/10): como lo del hueco.</summary>
     [Fact]
     public void Lo_peligroso_que_no_le_gana_lo_saca_de_un_mapa_inseguro()

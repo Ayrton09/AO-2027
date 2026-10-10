@@ -739,6 +739,14 @@ public sealed partial class Bot
                     && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
                 {
                     int deDonde = sentidos.Mapa;
+                    // SIN FUELLE, AL MAPA SEGURO Y NO AL VECINO: ver `SinFuelleVaAlSeguro`.
+                    if (SinFuelleVaAlSeguro(TieneFuelleParaPelear(sentidos), _entorno.Datos.IsPkMap(sentidos.Mapa))
+                        && await SinFuelleAlSeguroAsync(transporte, sentidos, cerrada, ct))
+                    {
+                        if (sentidos.Mapa == deDonde) _proximaSalidaPorLaAmenaza = Environment.TickCount64 + ReintentoDeSalidaDelGuardiaMs;
+                        else _huidas.OlvidarLaSerie();
+                        continue;
+                    }
                     if (await SalirDelMapaAsync(transporte, sentidos, cerrada, ct))
                     {
                         _llenoHasta[deDonde] = Environment.TickCount64 + LlenoMs;
@@ -4088,6 +4096,34 @@ public sealed partial class Bot
             // la vez siguiente, desde ahí.
             _loTrajoElRescate = await RescatarseAsync(transporte, sentidos, sirve ?? VendePociones, cerrada, ct);
         return true;
+    }
+
+    /// <summary>
+    /// ¿SIN FUELLE SE VA AL MAPA SEGURO? En un mapa inseguro, sí: el que no tiene energía para pelear no pega (ver <see cref="SeGanaConEnergia"/>),
+    /// y salir al mapa vecino lo deja igual de indefenso en otro mapa inseguro. Va como el rescate (<see cref="SinFuelleAlSeguroAsync"/>).
+    ///
+    /// <para>DECIDIDO POR EL AUTOR (09/10), con la ronda 54 medida (`fuelle1` a `fuelle7`, seis bots de nivel 16 a 20 desnudos, sin
+    /// pociones y con la energía en 0 en el 27): saliendo al vecino (`2f595f47`), 12 de 24 se fueron del 27 y murieron 7 de 24, los siete
+    /// en el 19 por Lobos; sin la regla, 8 de 18, siete en el 27.</para>
+    ///
+    /// <para>Con esto, en la ronda 57 (`seguro8` a `seguro14`, el mismo estado, contra la salida al vecino): llegaron vivos a un mapa
+    /// seguro 20 de 24, contra 15 de 18, y ninguno quedó sin llegar (uno en el otro brazo). Las muertes, 4 de 24 contra 2 de 18, son
+    /// ruido: la salida al vecino dio 7 de 24 en la ronda 54 y 2 de 18 en la 56, con el mismo estado.</para>
+    /// </summary>
+    public static bool SinFuelleVaAlSeguro(bool tieneFuelle, bool mapaInseguro) => !tieneFuelle && mapaInseguro;
+
+    /// <summary>
+    /// EL QUE NO TIENE FUELLE, AL MAPA SEGURO: sigue el rescate que tenga en curso o sale uno (<see cref="RescatarseAsync"/>, que cruza
+    /// peligro). Devuelve si salió a caminar; si no (el rescate espera entre uno y otro), la salida al vecino de siempre.
+    /// </summary>
+    private async Task<bool> SinFuelleAlSeguroAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (_rescateHacia is { } adonde && sentidos.Mapa != adonde.Mapa && Environment.TickCount64 < _rescateHasta)
+        {
+            await ViajeDelRescateAsync(transporte, sentidos, adonde, cerrada, ct);
+            return true;
+        }
+        return await RescatarseAsync(transporte, sentidos, VendePociones, cerrada, ct);
     }
 
     /// <summary>Si el último viaje al mapa seguro (<see cref="IrAlMapaSeguroAsync"/>) terminó en el rescate (<see cref="RescatarseAsync"/>):
