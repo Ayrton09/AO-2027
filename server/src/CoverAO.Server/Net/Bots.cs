@@ -733,7 +733,7 @@ public sealed partial class Bot
                 // intentó cada doce segundos durante minutos sin moverse, devolviendo un golpe entre intento e intento.
                 if (SeVaDelMapaPor(NoLaLastima(amenaza.Quien.FichaNpc),
                                    EsDelHueco(amenaza.Quien.FichaNpc, vidaTope, nivelAhora, conPociones, curaVeneno),
-                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.DeLaMismaCriatura,
+                                   _entorno.Datos.IsPkMap(sentidos.Mapa), _huidas.SerieDe(amenaza.Quien.CharIndex),
                                    laPeleaSeGana: SeGanaConEnergia(TieneFuelleParaPelear(sentidos),
                                                                    LaPeleaSeGanaAca(amenaza.Quien.FichaNpc, vidaAhora)))
                     && Environment.TickCount64 >= _proximaSalidaPorLaAmenaza)
@@ -746,6 +746,8 @@ public sealed partial class Bot
                         _huyoDe[deDonde] = Environment.TickCount64 + LlenoMs;
                         // Y A LA SEGUNDA, AHÍ NO VUELVE A CAZAR HASTA SUBIR DE NIVEL: ver `HuidasDelNivel`.
                         _huidasDelNivel.Anotar(deDonde, nivelAhora);
+                        // Y LA SERIE QUEDA ATRÁS: ver `ContadoresDeHuida.SerieDe`.
+                        _huidas.OlvidarLaSerie();
                         continue;
                     }
                     _proximaSalidaPorLaAmenaza = Environment.TickCount64 + ReintentoDeSalidaDelGuardiaMs;
@@ -5661,6 +5663,22 @@ public sealed partial class Bot
 
         private short _deQuien;
         private long _hastaCuando;
+
+        /// <summary>
+        /// LA SERIE DE ESA CRIATURA: las huidas seguidas de ella, o 0 si la serie es de otra. Lo que decide irse del mapa tiene que mirar
+        /// la serie de la amenaza que tiene enfrente, no la última que hubo. Medido en `fuelle7` (ronda 54, 09/10): Gonzo, nivel 17 y sin
+        /// energía, se fue del 95 por un Lobo y en el 94 se volvió a ir apenas llegó por un Esqueleto, sin huir de él ni una vez, y así
+        /// 1582 veces en 11 minutos entre (10,9) del 95 y (91,9) del 94: la serie del Lobo seguía en tres.
+        /// </summary>
+        public int SerieDe(short quien) => quien == _deQuien ? DeLaMismaCriatura : 0;
+
+        /// <summary>Se fue del mapa: la criatura de la serie quedó del otro lado.</summary>
+        public void OlvidarLaSerie()
+        {
+            DeLaMismaCriatura = 0;
+            _deQuien = 0;
+            _hastaCuando = 0;
+        }
 
         /// <summary>Una huida más: sigue la serie si es la misma criatura y todavía está adentro de la ventana.</summary>
         public void Huyo(short deQuien, long ahora, int ventanaMs)

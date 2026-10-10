@@ -91,6 +91,25 @@ public class HuidaQueNoSirveTests
         Assert.Equal(1, contadores.DeLaMismaCriatura);
     }
 
+    /// <summary>
+    /// La serie es de UNA criatura: la que tiene enfrente, si es otra, no la hereda; y al irse del mapa se olvida (Gonzo en `fuelle7`,
+    /// que rebotó entre el 94 y el 95 sin huir ni una vez de lo que lo esperaba en cada entrada).
+    /// </summary>
+    [Fact]
+    public void La_serie_es_de_la_criatura_que_tiene_enfrente_y_se_olvida_al_irse_del_mapa()
+    {
+        var contadores = new Bot.ContadoresDeHuida();
+        for (int i = 0; i < 3; i++) contadores.Huyo(501, 1_000 + i, 60_000);
+        Assert.True(Bot.NoSeLoSacaDeEncima(contadores.SerieDe(501)));
+        Assert.Equal(0, contadores.SerieDe(777));
+        Assert.False(Bot.SeVaDelMapaPor(noLaLastima: false, esDelHueco: false, mapaInseguro: true, contadores.SerieDe(777),
+                                        laPeleaSeGana: false));
+        contadores.OlvidarLaSerie();
+        Assert.Equal(0, contadores.SerieDe(501));
+        contadores.Huyo(501, 2_000, 60_000);
+        Assert.Equal(1, contadores.SerieDe(501));
+    }
+
     /// <summary>Y LA REGLA VIEJA SIGUE VALIENDO tal cual para el que sólo mira el rincón.</summary>
     [Fact]
     public void La_regla_del_rincon_no_cambia()
