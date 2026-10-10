@@ -48,6 +48,16 @@ Lo nuevo desde el paquete del 6 de octubre.
   van caminando al pueblo más cercano que les vende pociones (o, si no hay, al mapa seguro) en vez de quedarse huyendo.
 - **Los bots que fabrican viajan menos**: no van a dos mapas o más a fabricar si les quedan menos de seis puntos para
   llegar al tope de su nivel, salvo que lo que fabrican les haga falta.
+- **Los bots pelean con gente y se enlistan**: desde nivel 20, en mapas inseguros, le pegan a bots y jugadores del bando
+  enemigo a los que atacar no los vuelve criminales (renegados y Caos; los soldados, además, al ejército enemigo), y se
+  defienden del que les pega. Con el nivel y las bajas que pide el enlistador entran a la Armada (los ciudadanos) o a la
+  Milicia (los republicanos) y vuelven a cobrar la recompensa de cada rango. Algunos cazadores son agresivos: le pegan también
+  a los civiles del otro bando, se vuelven renegados y a nivel 40 van a la Legión del Caos.
+- **Hasta 96 bots** (la clave `Bots`). Los que entran por primera vez lo hacen de a 6 cada 5 minutos, para no amontonarse
+  en el pueblo de inicio.
+- **Los bots abren la puerta que les da la salida**: si desde donde están no hay camino a otro mapa, abren la puerta que se
+  lo da (en Lindos, la del teleporte a Illiandor). Y si un viaje se les agota esquivando peligros y les falta lo esencial,
+  van caminando al pueblo como en el rescate.
 
 ## 1.0.0 (2026-10-06)
 Lo nuevo desde el paquete del 5 de octubre.
