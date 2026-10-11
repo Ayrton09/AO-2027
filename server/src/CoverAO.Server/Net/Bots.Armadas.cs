@@ -39,8 +39,10 @@ public sealed partial class Bot
     /// <summary>Golpes seguidos sin respuesta del servidor (un fantasma, alguien que no se puede atacar) antes de dejar la pelea.</summary>
     private const int GolpesSinRespuestaConGente = 5;
 
-    /// <summary>A la persona con la que ya peleó y sigue en pie no la vuelve a elegir por este rato.</summary>
-    private const int GenteDejadaMs = 5 * 60_000;
+    /// <summary>A la persona con la que ya peleó, quede en pie o no, no la vuelve a buscar por este rato; si ella le pega, se defiende
+    /// igual (<see cref="AQuienSeDefiende"/>). Eran 5 minutos y sólo para la que quedaba en pie: en la ronda 62 Elmo, renegado de nivel
+    /// 40, mató en el 13 a Quim y a Dalia, de nivel 21 a 24, dos veces a cada uno (el muerto revive y vuelve a donde cazaba).</summary>
+    public const int GenteDejadaMs = 15 * 60_000;
 
     /// <summary>Si le bajó la vida hace menos que esto y no tiene una criatura encima, le está pegando una persona.</summary>
     private const int LePeganHaceMs = 2_500;
@@ -61,6 +63,7 @@ public sealed partial class Bot
     private readonly Dictionary<short, long> _genteDejada = new();
     private long _proximoViajeAlEjercito, _proximaFicha;
     private int _bajasEnLaUltimaRecompensa = -1, _cortesAlEjercito;
+    private bool _runaAlEjercito;
 
     /// <summary>
     /// ¿ES DE TEMPERAMENTO AGRESIVO? Sale del nombre, como el temperamento: uno de cada nueve, todos cazadores. Es el único que va al
@@ -173,6 +176,32 @@ public sealed partial class Bot
     public static long ProximoViajeAlEjercito(long ahora, bool cortoPorPeligro, int cortesSeguidos) =>
         ahora + (cortoPorPeligro && cortesSeguidos <= CortesSeguidosAlEjercito ? ReintentoDelEjercitoMs : EntreViajesAlEjercitoMs);
 
+    /// <summary>
+    /// SIN CAMINO AL ENLISTADOR, A CASA CON LA RUNA. Del lado de Orac (la Fortaleza Kerthon, el 815, el 823 y el 824, unos ochenta
+    /// mapas) no se sale a pie, ni pasado el novato ni antes: se entra por el teleporte de Rinkel al 457, que es de una sola mano, y sus
+    /// pasajes cruzan el mar (piden Navegación). Ahí cazan republicanos como Hilda y Bruma, con hogar en Illiandor, desde donde la
+    /// Milicia queda a mano. Camina hasta el mapa seguro más cercano, donde la runa anda, la usa, y el viaje se vuelve a probar en
+    /// <see cref="ReintentoDelEjercitoMs"/>. Una vez por cada vez que se queda sin camino: si desde el hogar tampoco hay, espera lo de
+    /// siempre. Devuelve si hizo algo.
+    /// </summary>
+    private async Task<bool> ALaCasaParaElEjercitoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (_runaAlEjercito || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return false;
+        if (_entorno.Datos.IsPkMap(sentidos.Mapa))
+        {
+            if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct)) return false;
+            // Si no llegó, se vuelve a probar enseguida, como el viaje que cortó el peligro.
+            if (_entorno.Datos.IsPkMap(sentidos.Mapa)) { ViajeAlEjercitoCortado(); return true; }
+        }
+        _runaAlEjercito = true;
+        int antes = sentidos.Mapa;
+        var dondeEstaba = sentidos.Posicion;
+        if (!Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna)) return false;
+        for (int i = 0; i < 12 && sentidos.Mapa == antes && sentidos.Posicion == dondeEstaba; i++) await Task.Delay(250, ct);
+        _proximoViajeAlEjercito = Environment.TickCount64 + ReintentoDelEjercitoMs;
+        return true;
+    }
+
     /// <summary>Lo que hace el viaje que no llegó con <see cref="ProximoViajeAlEjercito"/>.</summary>
     private void ViajeAlEjercitoCortado()
     {
@@ -207,13 +236,14 @@ public sealed partial class Bot
     /// <summary>
     /// ¿A QUIÉN LE DEVUELVE EL GOLPE? Si le bajó la vida recién, no tiene una criatura que lo esté atacando encima y hay a la vista
     /// alguien a quien le puede pegar: el que le pega a un legal se vuelve renegado, así que el agresor casi siempre es un blanco.
+    /// También al que dejó hace poco (<see cref="GenteDejadaMs"/>): eso es para no ir a buscarlo, no para dejarse pegar.
     /// </summary>
     private short? AQuienSeDefiende(SentidosDelBot sentidos)
     {
         if (!_entorno.Datos.IsPkMap(sentidos.Mapa) || sentidos.HaceCuantoLeBajoLaVida > LePeganHaceMs) return null;
         if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira) return null;
         if (sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 }) return null;
-        return sentidos.PersonaMasCercana(EsBlancoParaMi(), GenteDejada()) is { Pasos: <= RadioDeDefensa } quien
+        return sentidos.PersonaMasCercana(EsBlancoParaMi()) is { Pasos: <= RadioDeDefensa } quien
             ? quien.Quien.CharIndex : null;
     }
 
@@ -228,13 +258,13 @@ public sealed partial class Bot
             ? quien.Quien.CharIndex : null;
     }
 
-    /// <summary>Pelea con esa persona (<see cref="CazarAsync"/>), y después pide la ficha para ver si sumó la baja. La que sigue en pie
-    /// queda dejada un rato. Devuelve false sólo si se cayó la conexión.</summary>
+    /// <summary>Pelea con esa persona (<see cref="CazarAsync"/>), y después pide la ficha para ver si sumó la baja. Quede en pie o no,
+    /// queda dejada un rato (<see cref="GenteDejadaMs"/>). Devuelve false sólo si se cayó la conexión.</summary>
     private async Task<bool> PelearConGenteAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short quien, Task cerrada,
                                                  CancellationToken ct)
     {
         bool sigue = await CazarAsync(transporte, sentidos, quien, cerrada, ct, aGente: true);
-        if (sentidos.Donde(quien) is not null) _genteDejada[quien] = Environment.TickCount64 + GenteDejadaMs;
+        _genteDejada[quien] = Environment.TickCount64 + GenteDejadaMs;
         PedirLaFicha(transporte, ya: true);
         return sigue;
     }
@@ -269,7 +299,8 @@ public sealed partial class Bot
         if (!_entorno.Mapas.SeLlegaAbriendoPuertas(sentidos.Mapa, sentidos.Posicion, Sirve, PuertasHastaElEnlistador))
         {
             if (EntradaAlEnlistador(_entorno.Datos, _entorno.Mapas, Sirve, sentidos.Mapa, sentidos.Posicion, pisable)
-                is not { } entrada) return false;
+                is not { } entrada) return await ALaCasaParaElEjercitoAsync(transporte, sentidos, cerrada, ct);
+            _runaAlEjercito = false;
             _cortoPorElHueco = false;
             if (sentidos.Mapa != entrada.Mapa
                 || Math.Abs(sentidos.Posicion.X - entrada.X) + Math.Abs(sentidos.Posicion.Y - entrada.Y) > 1)

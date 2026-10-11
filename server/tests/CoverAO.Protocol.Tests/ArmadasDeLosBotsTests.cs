@@ -178,6 +178,23 @@ public class ArmadasDeLosBotsTests
         Assert.True(LlegaALaSalida(mapas, 262, (50, 73), pisable, entrada));
     }
 
+    /// <summary>
+    /// DEL LADO DE ORAC NO SE LLEGA A LA MILICIA A PIE, y desde Illiandor, el hogar de los republicanos que cazan ahí (Hilda y Bruma, en
+    /// el 823), sí: es la premisa de la runa del viaje al enlistador (<c>ALaCasaParaElEjercitoAsync</c>).
+    /// </summary>
+    [Fact]
+    public void Del_lado_de_Orac_no_se_llega_a_la_Milicia_y_desde_Illiandor_si()
+    {
+        var datos = GameData.Load();
+        Assert.False(datos.SourceDir is null, "el test necesita la gamedata en disco");
+        var mapas = new Navegante(datos);
+        var pisable = Bot.PisableDelRescate(datos, new ServerIni(), Rep, 25);
+        Func<int, bool> milicia = f => datos.Npc(f) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == Mil;
+        Assert.Null(Bot.EntradaAlEnlistador(datos, mapas, milicia, 823, (48, 18), pisable));
+        Assert.NotNull(Bot.EntradaAlEnlistador(datos, mapas, milicia, 194, (52, 79), pisable));
+        Assert.False(datos.IsPkMap(815), "premisa: el 815, a un mapa del 823, es seguro y ahí la runa anda");
+    }
+
     /// <summary>Si a la salida de <paramref name="entrada"/> se llega a pie, entrando a su mapa por alguna de las entradas a las que se
     /// llega desde <paramref name="desde"/>.</summary>
     private static bool LlegaALaSalida(Navegante mapas, int mapa, (byte X, byte Y) desde, Func<int, bool> pisable,
