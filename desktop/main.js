@@ -89,6 +89,9 @@ function crearVentana() {
       autoplayPolicy: 'no-user-gesture-required',
       // Minimizado sigue andando igual que en primer plano: el navegador frena los timers de una pestaña escondida.
       backgroundThrottling: false,
+      // LAS HERRAMIENTAS DE DESARROLLO, SÓLO SIN EMPAQUETAR (`npm start`): en el juego instalado no se abren. No es una barrera
+      // (el mismo juego se abre en el navegador, que las tiene); es que el juego de escritorio no las ofrezca.
+      devTools: !app.isPackaged,
     },
   });
   if (lugar.maximizada) ventana.maximize();
@@ -101,7 +104,9 @@ function crearVentana() {
     if (input.type !== 'keyDown') return;
     if (input.key === 'F11') { ponerPantallaCompleta(!ventana.isFullScreen()); e.preventDefault(); }
     else if (input.control && input.shift && input.key.toLowerCase() === 's') { abrirMenu(); e.preventDefault(); }
-    else if (input.control && input.shift && input.key.toLowerCase() === 'i') { ventana.webContents.toggleDevTools(); e.preventDefault(); }
+    else if (!app.isPackaged && input.control && input.shift && input.key.toLowerCase() === 'i') {
+      ventana.webContents.toggleDevTools(); e.preventDefault();
+    }
     else if (input.alt && (input.key === 'ArrowLeft' || input.key === 'ArrowRight')) {
       if (input.key === 'ArrowLeft') atras();
       e.preventDefault();
