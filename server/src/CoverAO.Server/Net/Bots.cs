@@ -883,7 +883,9 @@ public sealed partial class Bot
             // pociones de pelear no sale, así que la compra que hace falta no se pierde.
             if (AQuienSaleAPegarle(sentidos) is { } blanco)
             {
-                if (!await PelearConGenteAsync(transporte, sentidos, blanco, cerrada, ct)) return;
+                // ANTES DE IR, LO MIRA (ver `SeLoBusca`): la ficha llega enseguida, y la vuelta que sigue decide.
+                if (blanco.Mirarlo) { MirarA(transporte, sentidos, blanco.Quien); await Task.Delay(_rng.Next(600, 1_200), ct); continue; }
+                if (!await PelearConGenteAsync(transporte, sentidos, blanco.Quien, cerrada, ct)) return;
                 continue;
             }
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;

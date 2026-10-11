@@ -44,6 +44,15 @@ public sealed partial class Bot
     /// 40, mató en el 13 a Quim y a Dalia, de nivel 21 a 24, dos veces a cada uno (el muerto revive y vuelve a donde cazaba).</summary>
     public const int GenteDejadaMs = 15 * 60_000;
 
+    /// <summary>Hasta cuándo vale el nivel que se vio al mirar a alguien.</summary>
+    private const int NivelVistoMs = 5 * 60_000;
+
+    /// <summary>Al que ya miró y no contestó (el que apagó su nombre, o se fue del rango del clic), no lo vuelve a mirar por este rato:
+    /// sale a pegarle sin saber su nivel, como antes.</summary>
+    private const int MirarDeNuevoMs = 30_000;
+
+    private readonly Dictionary<short, long> _miradoEn = new();
+
     /// <summary>Si le bajó la vida hace menos que esto y no tiene una criatura encima, le está pegando una persona.</summary>
     private const int LePeganHaceMs = 2_500;
 
@@ -247,15 +256,43 @@ public sealed partial class Bot
             ? quien.Quien.CharIndex : null;
     }
 
+    /// <summary>
+    /// ¿LO SALE A BUSCAR, POR SU NIVEL? <paramref name="nivelVisto"/> es lo que dijo su ficha al mirarlo
+    /// (<see cref="SentidosDelBot.NivelDe"/>). Al que está más de 5 niveles por encima (<see cref="SentidosDelBot.NivelEscondido"/>)
+    /// no; al que no miró todavía, sólo si está adonde llega el clic (<see cref="NpcSystem.RangoVisionX"/> por
+    /// <see cref="NpcSystem.RangoVisionY"/>), para mirarlo primero. Visto en la ronda 64: Dalia, ciudadana de nivel 21, salió a pegarle a
+    /// Elmo, renegado de nivel 40, y murió.
+    /// </summary>
+    public static bool SeLoBusca(short? nivelVisto, int dx, int dy) =>
+        nivelVisto != SentidosDelBot.NivelEscondido
+        && (nivelVisto is not null || (Math.Abs(dx) <= NpcSystem.RangoVisionX && Math.Abs(dy) <= NpcSystem.RangoVisionY));
+
     /// <summary>¿A QUIÉN SALE A PEGARLE? Desde <see cref="NivelParaPelearConGente"/>, en un mapa inseguro, con la vida arriba de
-    /// <see cref="SaludParaPelearConGente"/>, energía y las pociones de pelear.</summary>
-    private short? AQuienSaleAPegarle(SentidosDelBot sentidos)
+    /// <see cref="SaludParaPelearConGente"/>, energía y las pociones de pelear, al que se busca por su nivel (<see cref="SeLoBusca"/>).
+    /// <c>Mirarlo</c>: antes de ir, mirarlo (<see cref="MirarA"/>), si no se sabe su nivel y no lo miró hace poco.</summary>
+    private (short Quien, bool Mirarlo)? AQuienSaleAPegarle(SentidosDelBot sentidos)
     {
         if (sentidos.Nivel < NivelParaPelearConGente || !_entorno.Datos.IsPkMap(sentidos.Mapa)) return null;
         if (sentidos.Salud < SaludParaPelearConGente || !TieneFuelleParaPelear(sentidos)) return null;
         if (sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear) return null;
-        return sentidos.PersonaMasCercana(EsBlancoParaMi(), GenteDejada()) is { Pasos: <= RadioDeCaza } quien
-            ? quien.Quien.CharIndex : null;
+        var esBlanco = EsBlancoParaMi();
+        var (x, y) = sentidos.Posicion;
+        if (sentidos.PersonaMasCercana(v => esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y),
+                                       GenteDejada()) is not { Pasos: <= RadioDeCaza } quien) return null;
+        short ci = quien.Quien.CharIndex;
+        bool mirarlo = sentidos.NivelDe(ci, NivelVistoMs) is null
+                       && (!_miradoEn.TryGetValue(ci, out long cuando) || Environment.TickCount64 - cuando > MirarDeNuevoMs);
+        return (ci, mirarlo);
+    }
+
+    /// <summary>LO MIRA: el clic del cliente sobre esa persona, que contesta con su ficha (<see cref="SentidosDelBot.NivelDe"/>). El clic
+    /// mira primero la baldosa de abajo (<c>LookatTile</c>), así que se clickea la de arriba de sus pies si cae en el rango del clic.</summary>
+    private void MirarA(TransporteDeBot transporte, SentidosDelBot sentidos, short quien)
+    {
+        _miradoEn[quien] = Environment.TickCount64;
+        if (sentidos.Donde(quien) is not { } v) return;
+        byte y = v.Y > GameLimits.MinYBorder && Math.Abs(v.Y - 1 - sentidos.Posicion.Y) <= NpcSystem.RangoVisionY ? (byte)(v.Y - 1) : v.Y;
+        transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(v.X).WriteByte(y)));
     }
 
     /// <summary>Pelea con esa persona (<see cref="CazarAsync"/>), y después pide la ficha para ver si sumó la baja. Quede en pie o no,

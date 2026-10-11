@@ -81,6 +81,20 @@ public sealed class SentidosDelBot
     /// <summary>Las bajas de la última ficha de estadísticas que mandó el servidor, o null si todavía no pidió ninguna.</summary>
     public Bajas? MisBajas { get { lock (_candado) return _bajas; } }
 
+    /// <summary>El nivel que llega en la ficha de una persona (<c>CharMsgStatus</c>, la respuesta al clic) cuando está más de 5 niveles
+    /// por encima del que mira: el original lo esconde (Protocol.bas:17082).</summary>
+    public const short NivelEscondido = 255;
+
+    private readonly Dictionary<short, (short Nivel, long Cuando)> _nivelDe = new();
+
+    /// <summary>El nivel de esa persona según la última ficha que llegó de ella, si llegó hace menos de <paramref name="vigenciaMs"/>;
+    /// <see cref="NivelEscondido"/> si está más de 5 niveles por encima; null si no se sabe.</summary>
+    public short? NivelDe(short charIndex, long vigenciaMs)
+    {
+        lock (_candado)
+            return _nivelDe.TryGetValue(charIndex, out var n) && Environment.TickCount64 - n.Cuando < vigenciaMs ? n.Nivel : null;
+    }
+
     /// <summary>Hace cuánto (ms) le bajó la vida por última vez; <see cref="long.MaxValue"/> si nunca. Es lo que dice que alguien le
     /// está pegando aunque no se vea una criatura encima.</summary>
     public long HaceCuantoLeBajoLaVida
@@ -809,6 +823,17 @@ public sealed class SentidosDelBot
                         if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { Estado = estado };
                         if (ci == _miCharIndex) _miEstado = estado;
                     }
+                    break;
+                }
+
+                // LA FICHA DE UNA PERSONA, la respuesta al clic (VB6 WriteCharMsgStatus): de acá sólo el nivel, que viene escondido
+                // (255) si está más de 5 por encima.
+                case ServerPacketId.CharMsgStatus:
+                {
+                    short ci = l.Entero();
+                    l.Byte(); l.Largo(); l.Entero(); l.Byte(); l.Byte();   // estado, vida en %, estados, estados extra, clase
+                    short nivel = l.Entero();
+                    lock (_candado) _nivelDe[ci] = (nivel, Environment.TickCount64);
                     break;
                 }
 

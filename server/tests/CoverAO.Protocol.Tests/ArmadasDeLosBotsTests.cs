@@ -205,6 +205,32 @@ public class ArmadasDeLosBotsTests
                    .Any(en => en.Mapa == e.Mapa && en.Saltos == e.Saltos && mapas.HayComoLlegar(e.Mapa, en.Entrada, (e.X, e.Y), 1) is not null));
 
     /// <summary>
+    /// EL NIVEL DEL OTRO, de su ficha (<c>CharMsgStatus</c>, la respuesta al clic): el que está más de 5 niveles por encima del que mira
+    /// llega escondido (255), y a ése no se lo sale a buscar; al que no se miró, sólo adonde llega el clic.
+    /// </summary>
+    [Fact]
+    public void Al_que_esta_mas_de_cinco_niveles_por_encima_no_lo_sale_a_buscar()
+    {
+        var elmo = new Player { CharIndex = 40, Name = "Elmo", Account = "elmo", Level = 40, MaxHp = 400, Hp = 400,
+                                FactionStatus = Player.StatusCriminal, SpouseName = "", Description = "" };
+        var dalia = new Player { CharIndex = 21, Name = "Dalia", Account = "dalia", Level = 21, MaxHp = 200, Hp = 200,
+                                 FactionStatus = Player.StatusCiudadano, SpouseName = "", Description = "" };
+        var s = new SentidosDelBot();
+        Assert.Null(s.NivelDe(40, 60_000));
+        s.Recibir(ServerMessages.CharMsgStatus(elmo, dalia, 0));
+        Assert.Equal(SentidosDelBot.NivelEscondido, s.NivelDe(40, 60_000));
+        dalia.Level = 36;
+        s.Recibir(ServerMessages.CharMsgStatus(elmo, dalia, 0));
+        Assert.Equal((short)40, s.NivelDe(40, 60_000));
+
+        Assert.False(Bot.SeLoBusca(SentidosDelBot.NivelEscondido, 1, 1));
+        Assert.True(Bot.SeLoBusca(30, 12, 0));
+        Assert.True(Bot.SeLoBusca(null, NpcSystem.RangoVisionX, NpcSystem.RangoVisionY));
+        Assert.False(Bot.SeLoBusca(null, NpcSystem.RangoVisionX + 1, 0));
+        Assert.False(Bot.SeLoBusca(null, 0, NpcSystem.RangoVisionY + 1));
+    }
+
+    /// <summary>
     /// EL VIAJE AL ENLISTADOR QUE CORTÓ EL PELIGRO vuelve a salir en medio minuto, hasta seis veces seguidas; el que no llegó por otra
     /// cosa, o el séptimo corte seguido, en diez minutos.
     /// </summary>
