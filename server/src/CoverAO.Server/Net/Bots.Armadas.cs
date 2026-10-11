@@ -292,7 +292,9 @@ public sealed partial class Bot
         if (recompensa) ejercito = bando;
         if (ejercito == 0) return false;
         _proximoViajeAlEjercito = ahora + EntreViajesAlEjercitoMs;
-        var pisable = PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel);
+        // Y SIN LOS MAPAS DE LOS QUE RECIÉN SE FUE HUYENDO, que el viaje no cruza (ver `SinHuidas`). Visto en la ronda 64: Hilda huyó del
+        // 277, la entrada elegida volvía a pasar por ahí, y el viaje decía "desde acá no se llega" y esperaba diez minutos.
+        var pisable = SinHuidas(PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel), sentidos.Mapa);
 
         bool Sirve(int ficha) => _entorno.Datos.Npc(ficha) is { } n && NpcSystem.EjercitoDelEnlistador(n.NpcType, n.Status) == ejercito;
         // Si desde donde está no lo alcanza, hasta la salida que lo deja donde sí, y la pisa: ver `EntradaAlEnlistador`.
