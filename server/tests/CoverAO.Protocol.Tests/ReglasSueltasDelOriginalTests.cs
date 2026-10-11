@@ -316,4 +316,63 @@ public class ReglasSueltasDelOriginalTests : IDisposable
         _dispatcher.TickTrabajo(sesion, p, ahora + _dispatcher.IntervaloTrabajoMs);
         Assert.False(p.Laborando, "con menos de 2, la vuelta siguiente corta la faena");
     }
+
+    // ---- LO QUE EL CLIENTE NO MANDA ---------------------------------------------------------------------------
+
+    /// <summary>Un rumbo fuera de 1..4 no se guarda: el cliente web dibuja el cuerpo con <c>walk[heading - 1]</c> y el
+    /// personaje quedaba invisible para los demás.</summary>
+    [Fact]
+    public async Task Caminar_con_un_rumbo_invalido_no_lo_guarda_ni_lo_mueve()
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.Walk).WriteByte(5).ToArray());
+        Assert.Equal(2, p.Heading);
+        Assert.Equal(new WorldPos(1, 50, 50), p.Pos);
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.Walk).WriteByte(0).ToArray());
+        Assert.Equal(2, p.Heading);
+    }
+
+    [Fact]
+    public void La_ficha_con_un_rumbo_invalido_se_carga_mirando_al_sur()
+    {
+        Assert.Equal(3, new FichaDePersonaje { Nombre = "Rumbo", Rumbo = 9 }.CrearPlayer(1, "rumbo").Heading);
+        Assert.Equal(4, new FichaDePersonaje { Nombre = "Rumbo", Rumbo = 4 }.CrearPlayer(1, "rumbo").Heading);
+    }
+
+    /// <summary>Cero o menos no mueve nada (el original: <c>If num > 0</c>, <c>Cantidad > 0</c>, <c>Cantidad < 1 Then Exit
+    /// Sub</c>); el recorte a 1 movía una unidad, y destruir con un negativo en el original duplica.</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task Tirar_o_destruir_cero_o_menos_no_hace_nada(int cantidad)
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        p.Inventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 5 };
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.Drop).WriteByte(1).WriteLong(cantidad).ToArray());
+        Assert.Equal(5, p.Inventory[1].Amount);
+        Assert.False(_world.TryGetGround(p.Pos, out _), "no tenía que quedar nada en el piso");
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.DropDestroy).WriteByte(1).WriteLong(cantidad).ToArray());
+        Assert.Equal(5, p.Inventory[1].Amount);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task Depositar_o_retirar_cero_o_menos_no_hace_nada(short cantidad)
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        var banquero = Banquero(new WorldPos(1, 51, 50));
+        p.BankOpen = true;
+        p.TargetNpc = (short)banquero.CharIndex;
+        p.Inventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 5 };
+        p.BankInventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 7 };
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.BankDeposit).WriteByte(1).WriteInteger(cantidad).ToArray());
+        Assert.Equal(5, p.Inventory[1].Amount);
+        Assert.Equal(7, p.BankInventory[1].Amount);
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.BankExtractItem).WriteByte(1).WriteInteger(cantidad).ToArray());
+        Assert.Equal(5, p.Inventory[1].Amount);
+        Assert.Equal(7, p.BankInventory[1].Amount);
+        await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.BankDeposit).WriteByte(1).WriteInteger(2).ToArray());
+        Assert.Equal(3, p.Inventory[1].Amount);                                    // el control: con 2 deposita
+    }
 }

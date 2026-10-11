@@ -1736,6 +1736,16 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null) return;
+            // UN RUMBO QUE NO ES 1..4 NO SE GUARDA. Se guardaba en dos lugares (el rechazo por cadencia y antes de
+            // mirar el paso), se persistía y viajaba en el CharacterCreate: el cliente web dibuja el cuerpo con
+            // `walk[heading - 1]`, así que con un `Walk(5)` el personaje quedaba sin dibujar para los demás, aun
+            // después de reloguear. El original sólo asigna el rumbo con el paso legal (Modulo_UsUaRiOs.bas:790) y,
+            // con uno inválido, la baldosa destino es la propia y contesta PosUpdate.
+            if (heading is < 1 or > 4)
+            {
+                session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y));
+                return;
+            }
             // PARALIZADO: el original no mueve, no gira y NO manda PosUpdate — sólo el aviso 54, y una sola vez
             // (VB6 HandleWalk, Protocol.bas:1632-1640: `If Not .flags.UltimoMensaje = 1`). Acá mandábamos
             // PosUpdate + LocaleMsg en CADA tecla: diez intentos de caminar paralizado eran veinte paquetes
@@ -9058,7 +9068,9 @@ public sealed partial class PacketDispatcher
             if (p.Navigating || p.Mounted || EsConsejeroSinRoleMaster(p)) return;
             if (p.Comerciando) return;   // :2113, con el mismo comentario de trampa que el de tirar
             var inv = p.Inventory[slot];
-            if (inv.IsEmpty) return;
+            // CERO O MENOS NO DESTRUYE NADA. El recorte destruía uno; el original resta el negativo y DUPLICA
+            // (`QuitarUserInvItem`, InvUsuario.bas:288), que no se porta.
+            if (inv.IsEmpty || amount <= 0) return;
             int destroy = Math.Clamp((int)amount, 1, inv.Amount);
             var name = _data.Obj(inv.ObjIndex)?.Name ?? "objeto";
             DesequiparSiSeVaEntero(session, p, slot, destroy);
@@ -12605,6 +12617,8 @@ public sealed partial class PacketDispatcher
             // de donador y el Anillo Dorado—, y son justamente los que uno no quiere perder por un click.
             if (_data.Obj(inv.ObjIndex) is { NoSeTira: true })
             { session.Send(ServerMessages.ShowMessageBox("", esPregunta: true, accion: 1)); return; }
+            // CERO O MENOS NO TIRA NADA (DropObj, InvUsuario.bas:421: `If num > 0`); el recorte de abajo tiraba una.
+            if (amount <= 0) return;
             // UN NOVATO NO TIRA SU EQUIPO INICIAL (VB6 InvUsuario.bas:440: `If ItemNewbie(...) And Privilegios
             // And PlayerType.User` → LocaleMsg 260 y Exit Sub). El gate es sólo para el jugador común: un GM sí
             // puede. Estaba muerto porque la clave `Newbie` no existe en esta data; ver ObjInfo.IsNewbie.
@@ -13554,7 +13568,8 @@ public sealed partial class PacketDispatcher
             if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
             if (!p.BankOpen || BanqueroDelTarget(p) is null) return;
             var inv = p.Inventory[slot];
-            if (inv.IsEmpty) return;
+            // CERO O MENOS NO DEPOSITA (UserDepositaItem, modBanco.bas:250: `Cantidad > 0`); el recorte depositaba uno.
+            if (inv.IsEmpty || amount <= 0) return;
             int move = Math.Clamp((int)amount, 1, inv.Amount);
             int bslot = FindBankSlotFor(p, inv.ObjIndex, move);
             if (bslot == 0) { session.Send(ServerMessages.LocaleMsg(149)); return; }
@@ -13585,7 +13600,8 @@ public sealed partial class PacketDispatcher
             if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
             if (!p.BankOpen || BanqueroDelTarget(p) is null) return;
             var bk = p.BankInventory[slot];
-            if (bk.IsEmpty) return;
+            // CERO O MENOS NO RETIRA (UserRetiraItem, modBanco.bas:119: `If Cantidad < 1 Then Exit Sub`); el recorte retiraba uno.
+            if (bk.IsEmpty || amount <= 0) return;
             int move = Math.Clamp((int)amount, 1, bk.Amount);
             int islot = FindSlotFor(p, bk.ObjIndex, move);
             if (islot == 0) { session.Send(ServerMessages.LocaleMsg(25)); return; }

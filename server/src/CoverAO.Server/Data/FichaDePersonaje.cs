@@ -277,7 +277,8 @@ public sealed record FichaDePersonaje
         p.JailMinutesLeft = MinutosDeCarcel;
         p.Class = Clase;
         p.Description = Descripcion;
-        p.Heading = Rumbo;
+        // Un rumbo fuera de 1..4 deja al personaje sin dibujar en el cliente web (ver HandleWalk): se carga mirando al sur.
+        p.Heading = Rumbo is >= 1 and <= 4 ? Rumbo : (byte)3;
         p.Head = Cabeza;
         p.Body = Cuerpo;
         p.WeaponAnim = AnimArma;
