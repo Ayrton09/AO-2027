@@ -572,7 +572,10 @@ public sealed partial class PacketDispatcher
             // enum y nunca las compara contra `.flags.Privilegios`, así que en VB6 es `If <distinto de cero>`
             // — siempre verdadero. Cualquiera puede ponerle una partícula a cualquiera, allá y acá.
             // NO agregarle un gate: sería divergir del oráculo en un paquete que el barrido compara.
-            case ClientPacketId.ParticulaUsuario: { string ptName = reader.ReadAsciiString(); short particle = reader.ReadInteger(); _loop.Enqueue(() => { if (session.Player is null) return; var t = _world.PlayerByName(ptName); if (t is not null) { _world.BroadcastToObservers(t.Pos, ServerMessages.EfectoCharParticula(t.CharIndex, particle, -1f, false)); session.Send(ServerMessages.LocaleMsg(461, t.Name)); } else session.Send(ServerMessages.LocaleMsg(_db.CharacterExists(ptName) ? (short)75 : (short)80)); }); break; }
+            // Y SE DIBUJA EN EL ÁREA DEL QUE LA MANDA (`SendTarget.ToPCArea, UserIndex`, :15652), no en la del objetivo:
+            // acá iba al área del objetivo, y cualquiera le ponía partículas a cualquiera en todo el mundo. Allá sólo
+            // se ve si el objetivo está cerca del que la manda.
+            case ClientPacketId.ParticulaUsuario: { string ptName = reader.ReadAsciiString(); short particle = reader.ReadInteger(); _loop.Enqueue(() => { if (session.Player is not { } yo) return; var t = _world.PlayerByName(ptName); if (t is not null) { _world.BroadcastToObservers(yo.Pos, ServerMessages.EfectoCharParticula(t.CharIndex, particle, -1f, false)); session.Send(ServerMessages.LocaleMsg(461, t.Name)); } else session.Send(ServerMessages.LocaleMsg(_db.CharacterExists(ptName) ? (short)75 : (short)80)); }); break; }
             // /CENTINELA <clave>. Con el centinela apagado —el default, y lo que hace el original— se lee el
             // entero y no se contesta nada, exactamente como antes. Ver PacketDispatcher.Centinela.cs.
             case ClientPacketId.CentinelReport:
