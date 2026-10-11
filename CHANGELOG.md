@@ -21,6 +21,9 @@ Lo nuevo desde el paquete del 6 de octubre.
 
 ### Chat, mapa y pantalla
 
+- **Pegar un texto muy largo en el chat ya no te desconecta**: sale el aviso de mensaje demasiado largo, como con
+  cualquier mensaje largo.
+- **El doble clic en el personaje al entrar ya no te puede echar del juego**: entra una sola vez.
 - **El mapa del mundo ya no repite las uniones entre mapas**: cada pedazo muestra sólo lo suyo, y la costa de Nix, por ejemplo,
   ya no se ve doble.
 
@@ -33,6 +36,10 @@ Lo nuevo desde el paquete del 6 de octubre.
 
 ### Para GMs y para el que hostea
 
+- **Se cerró una trampa que dejaba a un personaje sin dibujar para los demás**, y tirar, destruir o mover al banco
+  una cantidad de cero o menos ya no mueve nada.
+- **`/banip` y `/darpun` andan desde el cliente web**: `/banip <IP o nombre> <motivo>` y `/darpun <nombre>@<puntos>`.
+- **El juego de escritorio instalado no abre las herramientas de desarrollo.**
 - **La vida de nivel 1, en el Server.ini** (`VidaInicial`): `original` (la de siempre: 15 más de 1 a la
   Constitución dividida 3, al azar), `fija` (20 para todos), `constitucion` (15 más la Constitución dividida 3,
   sin azar) o `clase` (10 más la vida que gana la clase al subir de nivel). El Server.ini de ejemplo la trae en
