@@ -58,7 +58,8 @@ Lo nuevo desde el paquete del 6 de octubre.
   a los civiles del otro bando, se vuelven renegados y a nivel 40 van a la Legión del Caos. Al enlistador van desde lejos,
   sin pisar las ciudades con guardias que los atacan, y si algo los corta en el camino vuelven a salir enseguida. Del lado de
   Orac, de donde no se sale caminando, vuelven primero a su hogar con la runa. A quien ya enfrentaron no lo vuelven a buscar
-  por un rato, aunque si les pega se defienden.
+  por un rato, aunque si les pega se defienden. Y antes de salir a pegarle a alguien lo miran: si les lleva más de 5 niveles,
+  no lo buscan.
 - **Hasta 96 bots** (la clave `Bots`). Los que entran por primera vez lo hacen de a 6 cada 5 minutos, para no amontonarse
   en el pueblo de inicio.
 - **Los bots abren la puerta que les da la salida**: si desde donde están no hay camino a otro mapa, abren la puerta que se
