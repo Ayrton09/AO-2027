@@ -2,7 +2,7 @@
  * Byte-exact tests for the TypeScript codec — the same vectors as the Python and C# codecs, so all
  * three agree byte-for-byte with the VB6 peer.  Run:  npm test
  */
-import { ByteQueueWriter, ByteQueueReader, xorBuffer, DEFAULT_XOR_KEY, NotEnoughData, } from '../src/codec/bytequeue.js';
+import { ByteQueueWriter, ByteQueueReader, xorBuffer, DEFAULT_XOR_KEY, NotEnoughData, MAX_CADENA, } from '../src/codec/bytequeue.js';
 import { textoDelFlotante } from '../src/protocol/localeSmg.js';
 let passed = 0;
 let failed = 0;
@@ -44,6 +44,12 @@ check('bool false', new ByteQueueWriter().writeBoolean(false).toBytes(), bytes(0
 check('ascii AB', new ByteQueueWriter().writeAsciiString('AB').toBytes(), bytes(0x02, 0x00, 0x41, 0x42));
 check('ascii empty', new ByteQueueWriter().writeAsciiString('').toBytes(), bytes(0x00, 0x00));
 check('ascii a-acute', new ByteQueueWriter().writeAsciiString('á').toBytes(), bytes(0x01, 0x00, 0xe1));
+check('ascii fuera de Latin-1 sale como ?', new ByteQueueWriter().writeAsciiString('aču').toBytes(), bytes(0x03, 0x00, 0x61, 0x3f, 0x75));
+{
+    const largo = new ByteQueueWriter().writeAsciiString('x'.repeat(70000)).toBytes();
+    check('ascii recortado al tope del server', largo.slice(0, 2), bytes(MAX_CADENA & 0xff, MAX_CADENA >> 8));
+    assert('ascii recortado: el largo', largo.length === 2 + MAX_CADENA);
+}
 // unicode var string: int16 char-count prefix + UTF-16LE
 check('unicode AB', new ByteQueueWriter().writeUnicodeString('AB').toBytes(), bytes(0x02, 0x00, 0x41, 0x00, 0x42, 0x00));
 // composite frame [id=3][ascii "Hola AO"]

@@ -1080,7 +1080,7 @@
     // siempre y se baja solo lo que cambió (StaticFileServer.cs:146-153). Cuando este comentario se escribió
     // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
     // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
-    import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=31';
+    import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=32';
     import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=35';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';
     window.__errs = [];
@@ -3164,10 +3164,21 @@
     // último para re-enviarlo si la conexión se cae (auto-reconexión sin perder la sesión).
     let ws, loginBytes = null, loggedIn = false, lastReject = null;
     let reintentoSesion = 0;   // reintentos tras un choque de sesión (ver el case 'ShowMessageBox')
+    let reintentoTimer = null;  // el reintento programado, que se cancela al entrar
+    // UN INGRESO A LA VEZ: cuándo salió el último LoginExistingChar / LoginNewChar que todavía no tuvo respuesta.
+    let entrandoDesde = 0;
     // Los dos avisos del gate de sesión del server (el personaje sigue adentro): con ésos se reintenta, con nada más.
     const CHOQUE_DE_SESION = new Set(['El personaje está online, espere mientras es desconectado.',
                                       'El personaje está saliendo del juego.']);
     function sendLogin(bytes) {                 // arma+manda un paquete de login (clave inicial 13, pre-Logged)
+      // NINGÚN PAQUETE DE LOGIN CON EL PERSONAJE ADENTRO, NI DOS INGRESOS SEGUIDOS. El server cuenta como trampa el
+      // paquete de login que llega con el personaje ya en el mundo (PacketDispatcher.HandleOne), y el cliente lo
+      // mandaba sin trampa de por medio: el doble clic en la tarjeta del personaje, el doble envío de "Crear y
+      // entrar", o el reintento demorado que salía después de haber entrado por otro clic. Mientras un ingreso
+      // espera respuesta (sin rechazo y hasta 8 s) los demás se ignoran.
+      if (loggedIn) return;
+      if (entrandoDesde && lastReject === null && Date.now() - entrandoDesde < 8000) return;
+      if (bytes[0] === CLIENT.LoginExistingChar || bytes[0] === CLIENT.LoginNewChar) entrandoDesde = Date.now();
       loginBytes = bytes; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
       // OJO EL ESTADO 0 (CONNECTING): el socket ya está en camino y su `onopen` va a mandar `loginBytes` solo.
@@ -3259,6 +3270,7 @@
       };
       ws.onclose = (ev) => {
         const wasLogged = loggedIn; loggedIn = false;      // reset por conexión: 'Logged' lo vuelve a poner true
+        myKey = DEFAULT_XOR_KEY; entrandoDesde = 0;         // la clave es de la conexión: la siguiente arranca en 13
         enCombate = false;                                 // el original también la apaga al caerse (frmMain.frm:2966)
         pausaDelServer = false;                            // ídem (`pausa = False`, frmMain.frm:2970)
         chars.clear(); myCharIndex = null;                 // drop the stale world before reconnecting
@@ -4471,7 +4483,8 @@
       recentPackets.push(e.name); if (recentPackets.length > 60) recentPackets.shift();
       const f = e.fields;
       switch (e.name) {
-        case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = 0; cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
+        case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = 0; entrandoDesde = 0;
+          clearTimeout(reintentoTimer); cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
           // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
           // original y no se le agregan campos. Va una sola vez.
           if (familiarPendiente) {
@@ -4507,7 +4520,7 @@
             if (CHOQUE_DE_SESION.has(f.message) && reintentoSesion < 4 && loginBytes) {
               reintentoSesion++;
               const bytes = loginBytes;
-              setTimeout(() => { loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
+              reintentoTimer = setTimeout(() => { loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
             }
           }
           // LA PREGUNTA DEL HOGAR (VB6 frmPregunta.SetAccion 5): "¿Deseas que <ciudad> sea tu nuevo hogar?" con el
@@ -6916,7 +6929,7 @@
       '/reloadnpcs': [81, ''],
       '/reloadhechizos': [83, ''],
       '/reloadobj': [84, ''],
-      '/darpun usuario@cantidad': [86, ''],
+      '/darpun': [86, ''],
       // LOS DIEZ QUE EL SERVER DESPACHABA Y ACÁ NO SE PODÍAN PEDIR. Esta tabla se escribió a mano y
       // `buscarComandoGm` devuelve null para todo lo que no esté acá: no hay camino genérico, así que un id
       // que falte no es "difícil de encontrar", es inalcanzable. Cruzados por ID contra el switch del server
@@ -6975,6 +6988,25 @@
         const t = arg.split(/\s+/).filter(Boolean);
         if (t.length < 3) { log('uso: /carcel <nombre> <motivo> <minutos>', '#b94'); return false; }
         piezas = [t[0], t.slice(1, -1).join(' '), t[t.length - 1]];
+      } else if (clave === '/banip') {
+        // /banip <IP o nombre> <motivo>. El wire es CONDICIONAL (VB6 WriteBanIP): Boolean(porIP), después los 4 bytes de
+        // la IP o el nombre, y siempre el motivo. Iba sin argumentos y el server los leía igual de lo que viniera
+        // después: a cualquiera que lo tipeara le desacomodaba los paquetes siguientes.
+        const sp = arg.search(/\s/);
+        const quien = sp < 0 ? arg : arg.slice(0, sp), motivo = sp < 0 ? '' : arg.slice(sp + 1).trim();
+        if (!quien) { log('uso: /banip <IP o nombre> <motivo>', '#b94'); return false; }
+        const ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(quien);
+        if (ip && ip.slice(1).every((o) => +o <= 255)) { w.writeBoolean(true); for (const o of ip.slice(1)) w.writeByte(+o); }
+        else w.writeBoolean(false).writeAsciiString(quien);
+        w.writeAsciiString(motivo);
+        return true;
+      } else if (clave === '/darpun') {
+        // /darpun <nombre>@<puntos> (VB6 HandleDarpun): el nombre y los puntos como Long. Iba sin argumentos, igual
+        // que /banip.
+        const m = /^(.+)@\s*(-?\d+)$/.exec(arg.trim());
+        if (!m) { log('uso: /darpun <nombre>@<puntos>', '#b94'); return false; }
+        w.writeAsciiString(m[1].trim()).writeLong(+m[2]);
+        return true;
       } else if (clave === '/mod') {
         const t = arg.split(/\s+/).filter(Boolean);
         if (t.length < 3) { log('uso: /mod <nombre> <opcion> <valor> [valor2]', '#b94'); return false; }

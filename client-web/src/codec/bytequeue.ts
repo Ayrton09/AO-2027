@@ -12,6 +12,9 @@
 
 const scratch = new DataView(new ArrayBuffer(8));
 
+/** El texto más largo que acepta el server de un cliente (ClientSession.MaxCadenaDelCliente). */
+export const MAX_CADENA = 2048;
+
 export class ByteQueueWriter {
   private buf: number[] = [];
 
@@ -40,10 +43,21 @@ export class ByteQueueWriter {
     return this;
   }
 
-  /** Variable ASCII string: int16 char-count prefix (LE) + one byte per char (Latin-1/cp1252). */
+  /**
+   * Variable ASCII string: int16 char-count prefix (LE) + one byte per char (Latin-1/cp1252).
+   *
+   * HASTA `MAX_CADENA` CARACTERES, y lo que no es Latin-1 sale como `?`. Un texto pegado de más de 2048 hacía que
+   * el server cortara la conexión ("cadena demasiado larga", ClientSession.MaxCadenaDelCliente), y con 65536 o más
+   * el largo daba la vuelta y el resto del texto se leía como paquetes. Y el `& 0xff` convertía cualquier carácter
+   * de afuera en otro byte: una `č` (U+010D) salía como un salto de línea.
+   */
   writeAsciiString(s: string): this {
-    this.writeInteger(s.length);
-    for (let i = 0; i < s.length; i++) this.buf.push(s.charCodeAt(i) & 0xff);
+    const n = Math.min(s.length, MAX_CADENA);
+    this.writeInteger(n);
+    for (let i = 0; i < n; i++) {
+      const c = s.charCodeAt(i);
+      this.buf.push(c <= 0xff ? c : 0x3f);
+    }
     return this;
   }
 
