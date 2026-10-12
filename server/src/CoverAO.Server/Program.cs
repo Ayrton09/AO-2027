@@ -1031,7 +1031,7 @@ if (serverIni.Bots > 0)
     if (fixtureMode)
         Console.WriteLine($"BOTS: {serverIni.Bots} pedidos, pero --fixture los apaga (contaminarian los flows).");
     else
-        CoverAO.Server.Net.PobladoDeBots.Arrancar(serverIni.Bots, dispatcher, serverIni, dataRoot,
+        CoverAO.Server.Net.PobladoDeBots.Arrancar(serverIni.Bots, dispatcher, serverIni, db, dataRoot,
             authTimeoutMs, maxInboundBytes, gameData, cts.Token);
 }
 

@@ -540,6 +540,9 @@ public sealed partial class Bot
             }
             _como = ComoEntrar.Entrar;   // ya existen la cuenta y el personaje: de acá en más entra como cualquiera
             _yaEntro = true;
+            // La clave que no llegó a data/bots.txt al crear la cuenta (el archivo tomado por otro programa) se vuelve a
+            // escribir ahora: sin eso, en el próximo arranque nadie conoce la clave de esta cuenta. Si ya está, no escribe.
+            if (_clave is not null) _entorno.GuardarClave(Nombre, _clave);
             await ComportarseAsync(transporte, sentidos, cerrada.Task, ct);
             return true;
         }
