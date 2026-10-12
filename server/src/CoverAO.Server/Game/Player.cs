@@ -209,7 +209,12 @@ public sealed class Player
     // Un char con esto en true no puede entrar al mundo, aunque su cuenta esté limpia. Lo pone /BAN.
     public bool Banned { get; set; }
     /// <summary>Trampas acumuladas en la CUENTA (se carga al entrar y la suma RegistrarTrampa). Lo muestra el panel.</summary>
-    public int Trampas { get; set; }
+    public int Trampas { get => Volatile.Read(ref _trampas); set => Volatile.Write(ref _trampas, value); }
+    private int _trampas;
+
+    /// <summary>Suma una trampa y devuelve cuántas lleva. Atómica: las trampas se anotan también desde el hilo del socket
+    /// (PacketDispatcher.Imposible, el login con el personaje adentro) y dos a la vez perdían una (auditoría del 12/10).</summary>
+    public int SumarTrampa() => Interlocked.Increment(ref _trampas);
 
     // Guild-fundation flow: chosen alignment (0 = not founding).
     public byte FoundingAlignment { get; set; }

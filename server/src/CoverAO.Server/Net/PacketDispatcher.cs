@@ -139,7 +139,7 @@ public sealed partial class PacketDispatcher
     private bool CreacionBloqueada(ClientSession session)
     {
         if (_creaciones is null) return false;
-        if (!_creaciones.IsBlocked(ConnectionGuard.IpOf(session.RemoteEndpoint))) return false;
+        if (!_creaciones.IsBlocked(ConnectionGuard.NormalizeIp(session.RemoteEndpoint))) return false;
         Reject(session, "Demasiadas cuentas creadas desde esta dirección. Esperá unos minutos.");
         return true;
     }
@@ -148,12 +148,38 @@ public sealed partial class PacketDispatcher
     private bool LoginBlocked(ClientSession session)
     {
         if (_throttle is null) return false;
-        string ip = ConnectionGuard.IpOf(session.RemoteEndpoint);
+        // La IP SIN el prefijo del transporte (`NormalizeIp`): con `IpOf` quedaba "tcp:1.2.3.4" y "ws:1.2.3.4", dos frenos para
+        // la misma dirección.
+        string ip = ConnectionGuard.NormalizeIp(session.RemoteEndpoint);
         if (_throttle.IsBlocked(ip)) { Reject(session, "Demasiados intentos fallidos. Esperá unos minutos."); return true; }
         return false;
     }
-    private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));
-    private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.IpOf(session.RemoteEndpoint));
+    private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.NormalizeIp(session.RemoteEndpoint));
+    private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.NormalizeIp(session.RemoteEndpoint));
+
+    /// <summary>
+    /// EL TURNO DE UNA VERIFICACIÓN, el PBKDF2 que corre fuera del loop. Va una por conexión (<see cref="ClientSession.TomarVerificacion"/>);
+    /// la que llega con otra en vuelo espera a la vuelta siguiente, y como mucho <see cref="EsperasPorConexion"/> a la vez: el
+    /// cliente manda un ingreso a la vez (cuenta y personaje, seguidos), y una ráfaga de cientos encolaba un reintento por paquete en
+    /// cada vuelta. Y los frenos (<paramref name="frenado"/>: el de intentos fallidos, el de cuentas nuevas) se miran AL TOMAR EL
+    /// TURNO, no sólo al llegar el paquete: los de una ráfaga pasaban todos antes de que el primer hash anotara el primer fallo, y
+    /// así se probaba el código de recuperación en masa (auditoría del 12/10). Devuelve si se puede verificar ya.
+    /// </summary>
+    private bool TurnoDeVerificar(ClientSession session, Action reintentar, Func<bool> frenado)
+    {
+        if (session.Cerrada) return false;
+        if (!session.TomarVerificacion())
+        {
+            if (session.EsperasDeVerificacion >= EsperasPorConexion) return false;   // lo que pasa de ahí se descarta
+            session.EsperasDeVerificacion++;
+            _loop.Enqueue(() => { session.EsperasDeVerificacion--; reintentar(); });
+            return false;
+        }
+        if (frenado()) { SoltarYReanudar(session); return false; }
+        return true;
+    }
+
+    private const int EsperasPorConexion = 3;
 
     /// <summary>La cuenta abrió con la contraseña bien: cuenta para el freno de intentos y anota el último ingreso y la IP,
     /// como el original al entrar a la cuenta (VB6 <c>EntrarCuenta</c>, Cuentas.bas:443-444).</summary>
@@ -254,15 +280,9 @@ public sealed partial class PacketDispatcher
                                  Action<Data.Account?, bool, bool> alTerminar)
     {
         if (session.Cerrada) return;
-        if (!session.TomarVerificacion())
-        {
-            // Ya hay una verificación en vuelo para esta conexión: pasa cuando el cliente manda
-            // ConnectAccount y LoginExistingChar seguidos, porque las dos arrancan desde el loop y no desde
-            // el despacho del paquete. NO se descarta —descartarla dejaría al cliente esperando para
-            // siempre—: se reintenta en la vuelta siguiente, o sea ~40 ms, contra los 25 que tarda el hash.
-            _loop.Enqueue(() => VerificarCuenta(session, account, password, alTerminar));
-            return;
-        }
+        // Con otra verificación en vuelo para esta conexión (ConnectAccount y LoginExistingChar seguidos, que arrancan desde el
+        // loop) se reintenta en la vuelta siguiente, ~40 ms contra los 25 del hash: descartarla dejaba al cliente esperando.
+        if (!TurnoDeVerificar(session, () => VerificarCuenta(session, account, password, alTerminar), () => LoginBlocked(session))) return;
         Task.Run(() =>
         {
             Data.Account? acc = null;
@@ -777,7 +797,8 @@ public sealed partial class PacketDispatcher
     private void CrearCuentaFueraDelLoop(ClientSession session, string account, string password, string userCode)
     {
         if (session.Cerrada) return;
-        if (!session.TomarVerificacion()) { _loop.Enqueue(() => CrearCuentaFueraDelLoop(session, account, password, userCode)); return; }
+        if (!TurnoDeVerificar(session, () => CrearCuentaFueraDelLoop(session, account, password, userCode),
+                              () => CreacionBloqueada(session) || LoginBlocked(session))) return;
         Task.Run(() =>
         {
             bool existia = false, creada = false;
@@ -813,7 +834,7 @@ public sealed partial class PacketDispatcher
                     if (existia) { LoginFail(session); Cartel(session, CartelYaExisteLaCuenta); return; }
                     if (!creada) { AvisoNumeradoYCerrar(session, 36, "no se pudo crear la cuenta"); return; }   // el aviso genérico de error
                     LoginOk(session);
-                    _creaciones?.RecordFailure(ConnectionGuard.IpOf(session.RemoteEndpoint));   // una creación que salió consume cupo
+                    _creaciones?.RecordFailure(ConnectionGuard.NormalizeIp(session.RemoteEndpoint));   // una creación que salió consume cupo
                     Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
                     // Lista de personajes vacía, para que el cliente siga a crear el primero.
                     session.Send(ServerMessages.AddPj(account, Array.Empty<CharacterSummary>()));
@@ -883,13 +904,18 @@ public sealed partial class PacketDispatcher
         });
     }
 
+    /// <summary>Suelta el turno de verificar y retoma lo que quedó esperando en el buffer, como hacen el login, el alta y el
+    /// cambio de clave al terminar: el borrado soltaba el turno y no retomaba, y lo que el cliente había mandado detrás se
+    /// quedaba ahí hasta el próximo segmento (auditoría del 12/10).</summary>
+    private static void SoltarYReanudar(ClientSession session) { session.SoltarVerificacion(); session.ReanudarInbound(); }
+
     /// <summary>La parte cara del borrado: verificar la clave es un PBKDF2. Mismo patrón que el cambio de
     /// clave — una operación en vuelo por conexión y el veredicto vuelve por el loop.</summary>
     private void BorrarPersonajeFueraDelLoop(ClientSession session, string cuenta, string clave, string personaje)
     {
         if (session.Cerrada) return;
-        if (!session.TomarVerificacion())
-        { _loop.Enqueue(() => BorrarPersonajeFueraDelLoop(session, cuenta, clave, personaje)); return; }
+        if (!TurnoDeVerificar(session, () => BorrarPersonajeFueraDelLoop(session, cuenta, clave, personaje), () => LoginBlocked(session)))
+            return;
         Task.Run(() =>
         {
             Data.Account? acc = null;
@@ -897,6 +923,9 @@ public sealed partial class PacketDispatcher
             try
             {
                 (respondio, acc) = LeerCuentaConPlazo(cuenta);
+                // LA CUENTA DE UN BOT SÓLO SE ABRE DESDE UN BOT (ver VerificarCuenta): con la clave de bots.txt se archivaban
+                // sus personajes desde una conexión de persona.
+                if (acc is not null && acc.EsBot != session.EsBot) acc = null;
                 if (acc is null) { if (respondio) PasswordHasher.DummyVerify(clave); }
                 else
                 {
@@ -910,16 +939,16 @@ public sealed partial class PacketDispatcher
             }
             _loop.Enqueue(() =>
             {
-                if (session.Cerrada) { session.SoltarVerificacion(); return; }
+                if (session.Cerrada) { SoltarYReanudar(session); return; }
                 if (!respondio)
                 {
-                    session.SoltarVerificacion();
+                    SoltarYReanudar(session);
                     session.Send(ServerMessages.SendMsgBox(CartelLaBaseNoResponde, 1));
                     return;
                 }
                 if (acc is null || !claveOk)
                 {
-                    session.SoltarVerificacion();
+                    SoltarYReanudar(session);
                     LoginFail(session);
                     session.Send(ServerMessages.SendMsgBox(acc is null ? ErrCuentaNoExiste : ErrClaveIncorrecta, 1));
                     return;
@@ -927,7 +956,7 @@ public sealed partial class PacketDispatcher
                 LoginOk(session);
                 if (!eraSuyo)
                 {
-                    session.SoltarVerificacion();
+                    SoltarYReanudar(session);
                     session.Send(ServerMessages.SendMsgBox("Ese personaje no es de esta cuenta.", 1));
                     return;
                 }
@@ -945,10 +974,10 @@ public sealed partial class PacketDispatcher
     /// </summary>
     private void ApartarSiNoEstaAdentro(ClientSession session, string cuenta, string personaje)
     {
-        if (session.Cerrada) { session.SoltarVerificacion(); return; }
+        if (session.Cerrada) { SoltarYReanudar(session); return; }
         if (_world.PlayerByName(personaje) is not null || _world.EstaEntrando(personaje))
         {
-            session.SoltarVerificacion();
+            SoltarYReanudar(session);
             session.Send(ServerMessages.SendMsgBox("Ese personaje está conectado. Salí del juego y volvé a intentarlo.", 1));
             return;
         }
@@ -975,7 +1004,7 @@ public sealed partial class PacketDispatcher
             _loop.Enqueue(() =>
             {
                 _world.SoltarEntrada(personaje);
-                session.SoltarVerificacion();
+                SoltarYReanudar(session);
                 if (session.Cerrada) return;
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
                 session.Send(ServerMessages.AddPj(cuenta, roster));   // la pantalla de seleccion, ya sin el
@@ -1017,8 +1046,8 @@ public sealed partial class PacketDispatcher
     {
         bool corta = nuevaClave.Length < _ini.ClaveMinima;   // ClaveMinima del Server.ini; se contesta después del pin
         if (session.Cerrada) return;
-        if (!session.TomarVerificacion())
-        { _loop.Enqueue(() => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo)); return; }
+        if (!TurnoDeVerificar(session, () => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo), () => LoginBlocked(session)))
+            return;
         Task.Run(() =>
         {
             Data.Account? acc = null;
@@ -1026,6 +1055,9 @@ public sealed partial class PacketDispatcher
             try
             {
                 (respondio, acc) = LeerCuentaConPlazo(account);
+                // LA CUENTA DE UN BOT SÓLO SE ABRE DESDE UN BOT (ver VerificarCuenta): con la clave de bots.txt se le cambiaba la
+                // contraseña desde una conexión de persona y el bot no volvía a entrar.
+                if (acc is not null && acc.EsBot != session.EsBot) acc = null;
                 // Sin cuenta se quema el mismo tiempo igual, como en el login (PasswordHasher.DummyVerify).
                 if (acc is null) { if (respondio) PasswordHasher.DummyVerify(pin); }
                 else
@@ -1108,6 +1140,7 @@ public sealed partial class PacketDispatcher
             if (!_ini.PuedeCrearPersonajes)
             { RechazarConCartel(session, MensajeCreacionCerrada, "creacion cerrada"); return; }
             if (EnPausaNoSeEntra(session)) return;
+            if (TopeDePersonajesPorIp(session)) return;
             // La cuenta admite dígitos y guión bajo; el PERSONAJE no (VB6 ValidarNombre, TCP.bas:181 — sólo
             // letras y espacio). Ver el porqué en Naming.IsValidCharName: un nombre numérico haría que el
             // cliente confundiera al personaje con una criatura.
@@ -1448,8 +1481,9 @@ public sealed partial class PacketDispatcher
         // `EsGmChar(UserName)` (Cuentas.bas:347), que consulta las listas del ini.
         //
         // Sin listas en el ini se cae al privilegio en memoria, que es lo que mantiene vivo el GM cableado del
-        // fixture (Rugura), del que dependen los flows de comandos GM.
-        bool esStaff = _ini.CantidadStaff > 0 ? _ini.EsStaff(player.Name) : player.IsGm;
+        // fixture (Rugura), del que dependen los flows de comandos GM. Sólo con --fixture: en un server de verdad un `.chr`
+        // viejo con privilegios de staff pasaba el mantenimiento.
+        bool esStaff = _ini.CantidadStaff > 0 ? _ini.EsStaff(player.Name) : _fixtureMode && player.IsGm;
         if (_admin?.OnlyGms == true && !esStaff) { RechazarConCartel(session, MensajeSoloGms, "solo GMs"); return; }
         SpawnIntoWorld(session, player, version);
     }
@@ -1475,23 +1509,27 @@ public sealed partial class PacketDispatcher
                 "Ya hay un usuario conectado con esta cuenta, solo puedes logear un personaje por cuenta."));
             return true;
         }
-        // TOPE DE PERSONAJES EN EL MUNDO POR IP. El original tiene un tope fijo de 10 CONEXIONES por IP y un
-        // AllowMultiLogins todo-o-nada; acá se cuenta lo que importa para el juego —cuántos están JUGANDO desde
-        // una misma dirección— y se configura. Es la trampa más común del AO: la manada de alts para farmear
-        // o inclinar un evento. Con --fixture el tope es 0 salvo que el ini lo escriba (los flows entran de a varios).
-        if (_maxPersonajesPorIp > 0)
-        {
-            string ipNueva = ConnectionGuard.IpOf(session.RemoteEndpoint);
-            int desdeEstaIp = _world.Players.Count(pl => pl.Connection is not null
-                && ConnectionGuard.IpOf(pl.Connection.RemoteEndpoint) == ipNueva);
-            if (desdeEstaIp >= _maxPersonajesPorIp)
-            {
-                session.Send(ServerMessages.ShowMessageBox(
-                    $"Ya hay {desdeEstaIp} personaje(s) jugando desde tu conexión; el máximo es {_maxPersonajesPorIp}."));
-                return true;
-            }
-        }
-        return false;
+        return TopeDePersonajesPorIp(session);
+    }
+
+    /// <summary>
+    /// TOPE DE PERSONAJES EN EL MUNDO POR IP. El original tiene un tope fijo de 10 CONEXIONES por IP y un AllowMultiLogins
+    /// todo-o-nada; acá se cuenta lo que importa para el juego —cuántos están JUGANDO desde una misma dirección— y se configura. Es
+    /// la trampa más común del AO: la manada de alts para farmear o inclinar un evento. Con --fixture el tope es 0 salvo que el ini
+    /// lo escriba (los flows entran de a varios). Vale al entrar con uno existente Y al crear uno nuevo, que también entra al mundo:
+    /// por el alta la manada pasaba de largo (auditoría del 12/10). La IP sin el prefijo del transporte, para que TCP y WebSocket
+    /// sumen juntos.
+    /// </summary>
+    private bool TopeDePersonajesPorIp(ClientSession session)
+    {
+        if (_maxPersonajesPorIp <= 0) return false;
+        string ipNueva = ConnectionGuard.NormalizeIp(session.RemoteEndpoint);
+        int desdeEstaIp = _world.Players.Count(pl => pl.Connection is not null
+            && ConnectionGuard.NormalizeIp(pl.Connection.RemoteEndpoint) == ipNueva);
+        if (desdeEstaIp < _maxPersonajesPorIp) return false;
+        session.Send(ServerMessages.ShowMessageBox(
+            $"Ya hay {desdeEstaIp} personaje(s) jugando desde tu conexión; el máximo es {_maxPersonajesPorIp}."));
+        return true;
     }
 
     /// <summary>¿Hay ya alguien EN EL MUNDO desde la misma IP? (VB6 <c>CheckForSameIP</c>, Cuentas.bas:369).
@@ -1606,6 +1644,10 @@ public sealed partial class PacketDispatcher
         // puede saber si el que acaba de entrar fue el que lo rompió.
         int recordPrevio = _world.RecordUsuarios;
         _world.Add(player);
+        // SI LA CONEXIÓN SE CORTÓ MIENTRAS ENTRABA, sale en la vuelta siguiente: el corte corre en otro hilo, y si llegaba antes de
+        // que `session.Player` quedara puesto no sacaba a nadie, y el personaje quedaba en el mundo sin conexión, ocupando la cuenta
+        // hasta reiniciar (auditoría del 12/10). OnDisconnect no saca dos veces al mismo.
+        if (session.Cerrada) OnDisconnect(session, "se corto al entrar");
 
         // In-world login sequence — ORDER matches the original server's ConnectUser (TCP.bas:975),
         // verified via the parity harness. Two facts that were wrong in the first draft and are now
@@ -2051,6 +2093,9 @@ public sealed partial class PacketDispatcher
         _world.BroadcastToObservers(from, ServerMessages.RemoveCharDialog(t.CharIndex), t.CharIndex);
         t.Connection?.Send(ServerMessages.RemoveDialogs());
         t.Pos = dest;
+        // EL SALTO CORTA LA FAENA, como caminar (HandleWalk, con el mismo aviso): el oficio no vuelve a mirar el terreno, y con
+        // un pergamino o la runa se seguía pescando o talando en medio de la ciudad (auditoría del 12/10).
+        if (t.Laborando) { t.Laborando = false; t.Connection?.Send(ServerMessages.LocaleMsg(391, "", 1)); }
         DisembarkIfStranded(t);                           // no dejar a un navegante varado en tierra tras el salto
         alCaer?.Invoke();
         if (dest.Map != from.Map)
@@ -3447,8 +3492,12 @@ public sealed partial class PacketDispatcher
     /// Compartido por el melee (<see cref="AttackNpc"/>), por la magia de daño (<see cref="CastDamageOnNpc"/>) y
     /// por lo que mata la mascota del jugador (<see cref="NpcSystem.CobrarLaMuerteParaElAmo"/>), para que la
     /// recompensa sea exactamente la misma.</summary>
-    private void NpcKilledByPlayer(ClientSession session, Player p, Npc npc)
+    internal void NpcKilledByPlayer(ClientSession session, Player p, Npc npc)
     {
+        // UNA MUERTE SE COBRA UNA VEZ. La puñalada que remata la cierra adentro de DoApunalar y AttackNpc, al ver la vida
+        // en 0, la volvía a cerrar: el oro, el botín y el drop global salían dos veces. La criatura que ya no está en el
+        // mundo (o cuyo índice ya es de otra) ya se cobró.
+        if (!ReferenceEquals(_world.NpcByIndex(npc.CharIndex), npc)) return;
         _world.RemoveNpc(npc.CharIndex);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         // EL GRITO AL MORIR (VB6 MODULO_NPCs.bas:101), y va justo acá: el original lo emite apenas `QuitarNPC`
@@ -3651,6 +3700,9 @@ public sealed partial class PacketDispatcher
         byte color = 2;
         // `Exit Sub` pelado: queda lanzado si algo ya había hecho efecto (y se cobra), sin avisos.
         bool Cortar() { if (casteado && !desdeObjeto) { SpellCasted(session, p, spell); EmitirCostoDelHechizo(session, p); } return casteado; }
+        // AL QUE NO SE PUEDE AYUDAR, también `Cortar`: el original pone `HechizoCasteado = False` y sale, y lo que el mismo hechizo ya
+        // había hecho queda hecho y sin cobrar. Prevención del mal (invisibilidad y agilidad) tirada sobre un enemigo dejaba al que
+        // la tira invisible gratis, una y otra vez (auditoría del 12/10). Si antes no hubo efecto, es lo mismo que salir.
         bool NoSePuedeAyudar(bool exentaEnArena)
         {
             if ((exentaEnArena && arena) || PuedeAyudar(p, target)) return false;
@@ -3661,7 +3713,7 @@ public sealed partial class PacketDispatcher
         // SANACIÓN (:1049-1057): PuedeAyudar SIN la excepción de la arena. Apaga el fuego y el veneno.
         if (spell.IsSanacion)
         {
-            if (NoSePuedeAyudar(exentaEnArena: false)) return false;
+            if (NoSePuedeAyudar(exentaEnArena: false)) return Cortar();
             target.Incinerado = false;
             target.PoisonedUntilTick = 0;
             casteado = true;
@@ -3740,7 +3792,7 @@ public sealed partial class PacketDispatcher
         // REMOVER PARÁLISIS (:1169-1180): sólo si está quieto, y sólo a quien se puede ayudar.
         if (spell.IsRemoveParalysis && target.ParalyzedUntilTick > now)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return Cortar();
             target.ParalyzedUntilTick = 0;
             target.ParalyzedByCharIndex = 0;
             if (target.ClientParalyzed) { target.ClientParalyzed = false; target.Connection?.Send(ServerMessages.ParalizeOK()); }
@@ -3760,7 +3812,7 @@ public sealed partial class PacketDispatcher
         // con `HechizoCasteado = False`.
         if (spell.SubeAgilidad == 1)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return Cortar();
             dano = _rng.Next(spell.MinAgilidad, spell.MaxAgilidad + 1);
             target.ApplyAttrBonus(2, (int)dano, now, AttrBuffDurationTicks);
             target.Connection?.Send(ServerMessages.UpdateDexterity(target.Agility));
@@ -3777,7 +3829,7 @@ public sealed partial class PacketDispatcher
         }
         if (spell.SubeFuerza == 1)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return Cortar();
             dano = _rng.Next(spell.MinFuerza, spell.MaxFuerza + 1);
             target.ApplyAttrBonus(1, (int)dano, now, AttrBuffDurationTicks);
             target.Connection?.Send(ServerMessages.UpdateStrenght(target.Strength));
@@ -3799,7 +3851,7 @@ public sealed partial class PacketDispatcher
         // (:372-384): antes de las palabras mágicas, los avisos 497/498 y el cobro, que salen después del Select.
         if (spell.SubeHp == 1)
         {
-            if (NoSePuedeAyudar(exentaEnArena: true)) return false;
+            if (NoSePuedeAyudar(exentaEnArena: true)) return Cortar();
             dano = Combat.EfectoHechizoArea3Pct(amount, p.Level);
             target.Hp = (int)Math.Min(target.MaxHp, target.Hp + dano);
             target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
@@ -5670,6 +5722,9 @@ public sealed partial class PacketDispatcher
         if (!RequireGm(session, p)) return;
         var t = _world.PlayerByName(nick.Replace('+', ' ').Trim());
         if (t is null || !t.IsAlive) { session.Send(ServerMessages.LocaleMsg(75)); return; }   // OnlineCheck falla → "Usuario offline"
+        // NO SE EJECUTA A UN SUPERIOR, como no se lo echa (GmKick): el original no lo mira, y un Consejero mataba a un Admin
+        // con anuncio a todo el server (auditoría del 12/10).
+        if (t.Privileges > p!.Privileges) { session.Send(ServerMessages.LocaleMsg(298)); return; }
         KillPlayer(_world, _data, t, $"lo ejecuto {p.Name}");
         _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterChange(t));   // apariencia de cadáver al área
         _world.Broadcast(ServerMessages.LocaleMsg(458, $"{t.Name}%{p!.Name}"));  // anuncio global (VB6 ToAll)
@@ -6648,7 +6703,9 @@ public sealed partial class PacketDispatcher
             { session.Send(ServerMessages.ConsoleMsg("No hay más slots para fundar clanes. Consulte a un administrador.", FuenteClan)); return; }
             var guild = _world.CreateGuild(name, p.Name, desc);
             if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", FuenteClan)); return; }
-            guild.Alignment = p.FoundingAlignment; // from the GuildFundation step (0 if founded directly)
+            // LA DEL PASO DE LA FACCIÓN, y si se lo salteó (CreateNewGuild directo, que el cliente no hace), la de su facción ahora:
+            // con 0 el clan aceptaba a cualquier bando (PuedeEntrarAlClan) (auditoría del 12/10).
+            guild.Alignment = p.FoundingAlignment != 0 ? p.FoundingAlignment : AlineacionPorFaccion(p);
             p.FoundingAlignment = 0;
             string alineacion = Guild.NombreDeAlineacion(guild.Alignment);
             guild.News = "Clan creado con alineación: " + alineacion;          // `.SetGuildNews` (modGuilds.bas:510)
@@ -7068,7 +7125,11 @@ public sealed partial class PacketDispatcher
     private void AnotarFogataPrendida(WorldPos pos)
     {
         if (_ini.MinutosDeFogata <= 0) return;     // el default: no se apagan nunca, como el original
-        _fogatasPrendidas.Add((pos, TickEnQueSeApaga(_loop.Tick, _ini.MinutosDeFogata)));
+        // EN ORDEN DE VENCIMIENTO: el plazo sale del ini y se puede cambiar en caliente (/RELOADSINI), así que agregar al final
+        // dejaba una de un minuto detrás de una de treinta, y ApagarFogatasVencidas mira sólo la primera (auditoría del 12/10).
+        long vence = TickEnQueSeApaga(_loop.Tick, _ini.MinutosDeFogata);
+        int antes = _fogatasPrendidas.FindIndex(f => f.Vence > vence);
+        if (antes < 0) _fogatasPrendidas.Add((pos, vence)); else _fogatasPrendidas.Insert(antes, (pos, vence));
     }
 
     /// <summary>
@@ -7920,6 +7981,11 @@ public sealed partial class PacketDispatcher
     /// una: los literales sueltos hacen que arreglar una mitad parezca arreglar el hallazgo entero.</summary>
     private const int MaxDescClan = 255, MaxCodexClan = 500, MaxUrlClan = 128, MaxNoticiasClan = 512;
 
+    /// <summary>Las noticias del clan, como mucho <c>NEWSLENGTH</c> (1024) caracteres: el original las corta en cada escritura
+    /// (clsClan.SetGuildNews, <c>Left$(News, NEWSLENGTH)</c>), también al anteponer un rechazo, y acá esos rechazos las hacían
+    /// crecer sin fin (auditoría del 12/10).</summary>
+    private static string NoticiasConTope(string noticias) => noticias.Length <= 1024 ? noticias : noticias[..1024];
+
     /// <summary>
     /// Descripción + códex del clan (VB6 ChangeCodexAndDesc, modGuilds.bas:402). Sólo el líder, y NO responde
     /// ningún paquete — el cliente ya tiene el texto que acaba de mandar. Antes se leían los dos strings y se
@@ -7982,7 +8048,7 @@ public sealed partial class PacketDispatcher
             if (!mine.AllianceOffers.ContainsKey(other.Name))
             { session.Send(ServerMessages.ConsoleMsg($"No hay propuesta de alianza del clan {name}", FuenteClan)); return; }
             AnularPropuestas(mine, other);
-            other.News = $"{mine.Name} ha rechazado nuestra propuesta de alianza. " + other.News;
+            other.News = NoticiasConTope($"{mine.Name} ha rechazado nuestra propuesta de alianza. " + other.News);
             PersistGuilds();
             EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"Tu clan rechazado la propuesta de alianza de {name}", FuenteClan));
             EnviarAlClan(other.Name, ServerMessages.ConsoleMsg($"{mine.Name} ha rechazado nuestra propuesta de alianza con su clan.", FuenteClan));
@@ -7998,7 +8064,7 @@ public sealed partial class PacketDispatcher
             if (!mine.PeaceOffers.ContainsKey(other.Name))
             { session.Send(ServerMessages.ConsoleMsg($"No hay propuesta de paz del clan {name}", FuenteClan)); return; }
             AnularPropuestas(mine, other);
-            other.News = $"{mine.Name} ha rechazado nuestra propuesta de paz. " + other.News;
+            other.News = NoticiasConTope($"{mine.Name} ha rechazado nuestra propuesta de paz. " + other.News);
             PersistGuilds();
             EnviarAlClan(mine.Name, ServerMessages.ConsoleMsg($"Tu clan rechazado la propuesta de paz de {name}.", FuenteClan));
             EnviarAlClan(other.Name, ServerMessages.ConsoleMsg($"{mine.Name} ha rechazado nuestra propuesta de paz con su clan.", FuenteClan));
@@ -8678,7 +8744,11 @@ public sealed partial class PacketDispatcher
 
             // El umbral (mayoría absoluta de los miembros) vive en Guild.GanadorDeLaEleccion, donde se puede
             // testear: es una regla de una línea que si se afloja entrega el clan al primero que vota.
-            var ganador = Guild.GanadorDeLaEleccion(g.Votes.Values, g.Members.Count);
+            // SÓLO LOS VOTOS DE LOS MIEMBROS DE AHORA, y para miembros de ahora (clsClan.cls:638-643, ContarVotos recorre los
+            // miembros actuales): los de quien ya se fue seguían contando, y el que se había ido podía ganar y dejar al clan sin
+            // líder (auditoría del 12/10).
+            var vigentes = g.Votes.Where(v => g.Members.Contains(v.Key) && g.Members.Contains(v.Value)).Select(v => v.Value);
+            var ganador = Guild.GanadorDeLaEleccion(vigentes, g.Members.Count);
             if (ganador is not null && !string.Equals(ganador, g.LeaderName, StringComparison.OrdinalIgnoreCase))
             {
                 g.LeaderName = ganador;
@@ -9047,6 +9117,7 @@ public sealed partial class PacketDispatcher
                 // Una ranura fuera del inventario es un error de subíndice en el original: el paquete muere
                 // sin respuesta.
                 if (ranura < 1 || ranura > GameLimits.MaxInventorySlots) return;
+                if (BarcoEnUso(session, p, ranura)) return;
                 var inv = p.Inventory[ranura];
                 // El original cuenta con `TieneObjetos` en TODO el inventario pero saca de UNA ranura
                 // (`QuitarUserInvItem`, que se queda en cero): adjuntar 8 teniendo 5 y 5 le mandaba 8 al otro
@@ -9060,6 +9131,10 @@ public sealed partial class PacketDispatcher
             }
             p.Gold -= CostoDelCorreo;                       // VB6 mod_Correos.bas:47
             session.Send(ServerMessages.UpdateGold(p.Gold)); // …y su WriteUpdateGold (:48)
+            // EL REMITENTE SE GUARDA YA, antes que el buzón (la cola de la base los escribe en orden): el adjunto salía de su
+            // mochila en memoria y entraba al buzón, que se guarda enseguida, mientras la ficha esperaba al próximo guardado, y una
+            // caída en el medio duplicaba el objeto. Así, lo peor de una caída es perderlo (auditoría del 12/10).
+            if (attachObj != 0) _db.SaveCharacter(p);
             _world.DeliverMail(dest, new MailEntry(p.Name, message, attachObj, attachAmt));
             PersistMail(dest);
             // Si está conectado se le prende el INDICADOR de carta y se le avisa (mod_Correos.bas:68-75); la
@@ -9094,6 +9169,7 @@ public sealed partial class PacketDispatcher
             // CERO O MENOS NO DESTRUYE NADA. El recorte destruía uno; el original resta el negativo y DUPLICA
             // (`QuitarUserInvItem`, InvUsuario.bas:288), que no se porta.
             if (inv.IsEmpty || amount <= 0) return;
+            if (BarcoEnUso(session, p, slot)) return;
             int destroy = Math.Clamp((int)amount, 1, inv.Amount);
             var name = _data.Obj(inv.ObjIndex)?.Name ?? "objeto";
             DesequiparSiSeVaEntero(session, p, slot, destroy);
@@ -10321,6 +10397,8 @@ public sealed partial class PacketDispatcher
             var p = session.Player;
             if (p is null || a < 1 || a > GameLimits.MaxInventorySlots || b < 1 || b > GameLimits.MaxInventorySlots) return;
             (p.Inventory[a], p.Inventory[b]) = (p.Inventory[b], p.Inventory[a]);
+            // El barco en uso se lleva su ranura: si no, lo que quedaba en la vieja contaba como barco en el daño.
+            if (p.BoatSlot == a) p.BoatSlot = b; else if (p.BoatSlot == b) p.BoatSlot = a;
             var ia = p.Inventory[a]; var ib = p.Inventory[b];
             session.Send(ServerMessages.ChangeInventorySlot(a, ia.ObjIndex, ia.Amount, ia.Equipped, 0f, (byte)(ia.IsEmpty ? 0 : 1)));
             session.Send(ServerMessages.ChangeInventorySlot(b, ib.ObjIndex, ib.Amount, ib.Equipped, 0f, (byte)(ib.IsEmpty ? 0 : 1)));
@@ -12370,8 +12448,7 @@ public sealed partial class PacketDispatcher
         if (p is null) return;
         // La cuenta en memoria es la del personaje (se copió al entrar); la guardada se corrige en la cola de la base
         // sin esperarla. El máximo cubre al que tuviera más trampas anotadas en la cuenta que en el personaje.
-        int n = p.Trampas + 1;
-        p.Trampas = n;
+        int n = p.SumarTrampa();
         int echar = _ini.TrampasParaEchar, banear = _ini.TrampasParaBanear;
         bool ban = banear > 0 && n >= banear;
         _ = _db.CambiarCuentaAsync(p.Account, cuenta =>
@@ -12415,6 +12492,19 @@ public sealed partial class PacketDispatcher
     }
 
     private static bool RanuraDeInventario(int ranura) => ranura is >= 1 and <= GameLimits.MaxInventorySlots;
+
+    /// <summary>
+    /// EL BARCO CON EL QUE SE NAVEGA NO SALE DE LA MOCHILA. Tirarlo ya estaba frenado (HandleDrop), pero depositarlo, venderlo,
+    /// subastarlo, mandarlo por correo o destruirlo no: la ranura quedaba vacía con <c>Navigating</c> prendido y persistido (varado
+    /// en el mar), y lo que cayera después en esa ranura contaba como barco en el daño (auditoría del 12/10). Avisa y devuelve
+    /// true si es ése.
+    /// </summary>
+    private bool BarcoEnUso(ClientSession session, Player p, int ranura)
+    {
+        if (!p.Navigating || p.BoatSlot != ranura) return false;
+        session.Send(ServerMessages.ConsoleMsg("No podés deshacerte del barco mientras navegás.", FuenteInfo));
+        return true;
+    }
 
     internal static void LogIntentoDeTrampa(ClientSession session, Player? p, string motivo)
         => Console.WriteLine($"[TRAMPA] {p?.Name ?? "(sin personaje)"} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} - {ParaElLog(motivo)}");
@@ -13124,7 +13214,7 @@ public sealed partial class PacketDispatcher
             // (ver fase5/GAPS-CODIGO-MUERTO.md §4q).
             if (obj.ObjType == Bolsa)
             {
-                p.Gold += obj.Value;
+                p.Gold = (int)Math.Min((long)p.Gold + obj.Value, MaxOro);   // con el tope, como el resto del oro que entra
                 _economia?.Anotar($"bolsa {p.Name}: abre {obj.Name} (+{obj.Value} oro -> {p.Gold})");
                 session.Send(ServerMessages.LocaleMsg(471, $"{obj.Name}%{obj.Value}"));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
@@ -13438,6 +13528,7 @@ public sealed partial class PacketDispatcher
             if (MonturaEnUso(session, p, slot)) return;   // el mismo gate, y con el slot DEL MERCADER: ver el helper
             var npc = _world.NpcByIndex(p.TradingWith);
             if (npc?.Stock is null || slot > GameLimits.MaxInventorySlots) return;
+            if (DistanciaVB6(p.Pos, npc.Pos) > DistanciaDeOperar) return;
             var st = InventarioDelMercader.Ranura(npc, slot);
             // EL ÚNICO BANEO AUTOMÁTICO DEL ORIGINAL (Comercio.bas:66-78). Pedir más de `MAX_INVENTORY_OBJS`
             // unidades de una no es un número a recortar: el VB6 lo anuncia a TODO el servidor, banea, avisa
@@ -13503,6 +13594,7 @@ public sealed partial class PacketDispatcher
             if (slot > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[slot];
             if (inv.IsEmpty) return;
+            if (BarcoEnUso(session, p, slot)) return;
 
             // QUÉ ACEPTA COMPRARTE EL MERCADER (VB6 Comercio.bas:123). Rechaza con LocaleMsg 148 si el
             // `TipoItems` del NPC no coincide con el `ObjType` del objeto —salvo `otCualquiera`, que compra
@@ -13513,6 +13605,7 @@ public sealed partial class PacketDispatcher
             // se portan: `Newbie`, `Shop`, `Real`, `Caos` y `Milicia` aparecen CERO veces en el obj.dat
             // crudo, y los mercaderes especiales que los atienden ("SR", "SC", "SM") no existen en NPCs.dat.
             var mercader = _world.NpcByIndex(p.TradingWith);
+            if (mercader is null || DistanciaVB6(p.Pos, mercader.Pos) > DistanciaDeOperar) return;
             var aVender = _data.Obj(inv.ObjIndex);
             if (mercader is not null && aVender is not null
                 && !mercader.Template.CompraObjeto(aVender.ObjType, inv.ObjIndex))
@@ -13641,6 +13734,7 @@ public sealed partial class PacketDispatcher
             var inv = p.Inventory[slot];
             // CERO O MENOS NO DEPOSITA (UserDepositaItem, modBanco.bas:250: `Cantidad > 0`); el recorte depositaba uno.
             if (inv.IsEmpty || amount <= 0) return;
+            if (BarcoEnUso(session, p, slot)) return;
             int move = Math.Clamp((int)amount, 1, inv.Amount);
             int bslot = FindBankSlotFor(p, inv.ObjIndex, move);
             if (bslot == 0) { session.Send(ServerMessages.LocaleMsg(149)); return; }
@@ -13695,7 +13789,15 @@ public sealed partial class PacketDispatcher
     /// no hay ninguno targeteado o si el que hay no es banquero — las dos ramas en que el original sale sin
     /// hacer nada.</summary>
     private Npc? BanqueroDelTarget(Player p) =>
-        _world.NpcByIndex(p.TargetNpc) is { IsBanker: true } b ? b : null;
+        _world.NpcByIndex(p.TargetNpc) is { IsBanker: true } b && DistanciaVB6(p.Pos, b.Pos) <= DistanciaDeOperar ? b : null;
+
+    /// <summary>
+    /// A CUÁNTO SE OPERA CON LA VENTANA ABIERTA: la bóveda y la tienda se abren de cerca, pero después cada operación sólo
+    /// pedía el banquero o el mercader de objetivo, y con la ventana abierta se depositaba, retiraba, compraba y vendía desde
+    /// cualquier parte del mapa (auditoría del 12/10). Son las 10 baldosas del oro (<see cref="BanqueroParaElOro"/>), que el
+    /// original ya pide; más lejos, la operación no sale.
+    /// </summary>
+    private const int DistanciaDeOperar = 10;
 
     /// <summary>Las compuertas del oro, las del original (<c>HandleBankDepositGold</c> :6041-6056 y
     /// <c>HandleBankExtractGold</c>): sin nada clickeado el 22; lo clickeado a más de 10 baldosas, el 8 —cualquiera
@@ -13755,6 +13857,10 @@ public sealed partial class PacketDispatcher
             if (BanqueroParaElOro(session, p) is not { } banquero) return;
             if (amount <= 0 || amount > p.Bank)
                 session.Send(ServerMessages.ChatOverHead("No tienes esa cantidad.", banquero.CharIndex, 0));
+            // NO MÁS DE LO QUE SE PUEDE LLEVAR (MaxOro): la bóveda no tiene tope, el oro encima sí, y retirar de más daba la
+            // vuelta al entero y lo dejaba negativo (auditoría del 12/10).
+            else if (p.Gold + (long)amount > MaxOro)
+                session.Send(ServerMessages.ChatOverHead("No puedes llevar tanto oro encima.", banquero.CharIndex, 0));
             else
             {
                 p.Bank -= amount; p.Gold += amount;
@@ -14413,7 +14519,9 @@ public sealed partial class PacketDispatcher
     private void GmArmar(ClientSession session, byte clase, short nivel)
     {
         var p = session.Player;
-        if (p is null || !RequireGm(session, p)) return;
+        // SÓLO DIOS, como /CI (GmCreateItem): arma equipo y quinientas pociones de la nada, y con el gate de cualquier GM lo
+        // hacía también un Consejero (auditoría del 12/10).
+        if (p is null || !RequireGm(session, p) || !IsDios(p)) return;
         if (clase < 1 || clase > 18) { session.Send(ServerMessages.ConsoleMsg("Clase invalida (1..18).", FuenteInfo)); return; }
 
         int puestos = PlantillaDeCombate.Armar(p, _data, _leveling, clase, nivel);
@@ -14749,6 +14857,9 @@ public sealed partial class PacketDispatcher
     {
         p.Laborando = false;   // salir del mundo corta la faena (el corte y el /SALIR ya la cortaron en CerrarUsuario)
         LiberarAlQueLoPersigue(_world, p);   // VB6 CloseUser (TCP.bas:1579-1584)
+        // Y LAS CRIATURAS QUE LE PERTENECÍAN quedan libres: la marca guarda su índice, que al salir se libera y después le toca a
+        // otro, y la criatura lo perseguía como si fuera su dueño (auditoría del 12/10).
+        foreach (var suya in _world.Npcs) if (suya.ApropiadoPor == p.CharIndex) suya.ApropiadoPor = 0;
         // La muerte AHORA PERSISTE entre sesiones (VB6 FileIO.bas:1626 guarda Muerto=1): si te desconectás
         // muerto, reconectás muerto. CharacterFile guarda la cabeza VIVA (OrigHead) para que la de cadáver
         // (500) no quede pegada, y SpawnIntoWorld re-aplica la apariencia de cadáver al entrar sin vida.

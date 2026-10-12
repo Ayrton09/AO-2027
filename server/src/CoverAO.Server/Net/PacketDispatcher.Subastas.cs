@@ -60,6 +60,7 @@ public sealed partial class PacketDispatcher
             if (ranura < 1 || ranura > GameLimits.MaxInventorySlots) return;
             var inv = p.Inventory[ranura];
             if (inv.IsEmpty) return;
+            if (BarcoEnUso(session, p, ranura)) return;
             if (cantidad < 1 || cantidad > inv.Amount)
             { session.Send(ServerMessages.ConsoleMsg("No tienes esa cantidad.", FuenteInfo)); return; }
             // Lo que no se tira tampoco se subasta: lo que se destruye al tirarlo y el equipo de novato.
@@ -72,6 +73,9 @@ public sealed partial class PacketDispatcher
                     session.Send(ServerMessages.ConsoleMsg($"No podés tener más de {CentroDeSubastas.MaximoPorVendedor} subastas a la vez.", FuenteInfo));
                     return;
                 case ResultadoDeSubasta.DuracionInvalida: return;
+                case ResultadoDeSubasta.CentroLleno:
+                    session.Send(ServerMessages.ConsoleMsg("El centro de subastas está lleno: probá más tarde.", FuenteInfo));
+                    return;
                 default:
                     session.Send(ServerMessages.ConsoleMsg("El precio final tiene que ser mayor que el inicial.", FuenteInfo));
                     return;
@@ -83,6 +87,11 @@ public sealed partial class PacketDispatcher
             p.Gold -= (int)deposito;
             session.Send(ServerMessages.UpdateGold(p.Gold));
             var s = _world.Subastas.Publicar(p.Name, objeto, cantidad, inicial, final, horas, RelojDeSubastas());
+            // EL PERSONAJE Y LAS SUBASTAS SE GUARDAN YA, y en ese orden (la cola de la base los escribe en orden): el objeto salía
+            // de la mochila en memoria y entraba a la subasta, cada uno con su guardado a su tiempo, y una caída entre los dos lo
+            // duplicaba. Así, lo peor de una caída en el medio es perderlo (auditoría del 12/10).
+            _db.SaveCharacter(p);
+            GuardarLasSubastas();
             _economia?.Anotar($"subasta {s.Id} de {p.Name}: {cantidad} x obj {objeto}, desde {inicial} (final {final}), {horas} h, deposito {deposito}");
             session.Send(ServerMessages.ConsoleMsg($"Publicaste la subasta. Pagaste {deposito} monedas de depósito.", FuenteInfo));
             session.Send(ListaDeSubastas(abrir: false));

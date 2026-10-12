@@ -1410,6 +1410,10 @@ public sealed class NpcSystem
     private bool NpcLanzaUnHechizo(Npc npc, Player player, IReadOnlyList<int>? entre = null)
     {
         if (player.Invisible || player.Oculto) return false;
+        // A UN MUERTO NO SE LE TIRA NADA: la criatura que te tenía marcado te sigue el cadáver (el bloque del dueño no mira si
+        // está vivo) y le tiraba hechizos; uno de daño lo volvía a matar, y con el Pendiente del Sacrificio puesto la segunda
+        // muerte le tiraba el inventario (auditoría del 12/10). Las demás ramas que le tiran a un jugador ya lo miraban.
+        if (!player.IsAlive) return false;
         // EL MISMO CONTADOR QUE EL GOLPE (VB6 modHechizos.bas:100: `If Not IntervaloPermiteAtacarNpc(...)
         // Then Exit Sub`). Se consume acá y no en el caller, igual que en el original, así que una criatura
         // maga castea O pega en una vuelta, nunca las dos cosas.

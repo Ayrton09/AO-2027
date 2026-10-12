@@ -483,4 +483,88 @@ public class ReglasSueltasDelOriginalTests : IDisposable
         await Mandar(sesion, paquete);
         Assert.True(p.Trampas == 0, $"{caso}: {p.Trampas} trampas");
     }
+
+    /// <summary>Una muerte se cobra una vez: la puñalada que remata la cerraba adentro de DoApunalar y AttackNpc la volvía a
+    /// cerrar, con el oro y el botín dos veces (auditoría del 12/10).</summary>
+    [Fact]
+    public void La_muerte_de_una_criatura_se_cobra_una_sola_vez()
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        var ficha = new NpcInfo(Index: 902, Name: "Rata de prueba", Body: 1, Head: 1, Heading: 3, MaxHp: 10, MinHit: 0,
+            MaxHit: 0, Def: 0, GiveExp: 0, GiveGld: 100, PoderEvasion: 0, PoderAtaque: 0, NpcType: 0);
+        var rata = new Npc { CharIndex = _world.AllocateCharIndex(), Template = ficha, Hp = 0, Pos = new WorldPos(1, 51, 50) };
+        _world.AddNpc(rata);
+        p.Gold = 0;
+        _dispatcher.NpcKilledByPlayer(sesion, p, rata);
+        int cobrado = p.Gold;
+        Assert.True(cobrado > 0, "la primera vez se cobra");
+        _dispatcher.NpcKilledByPlayer(sesion, p, rata);
+        Assert.Equal(cobrado, p.Gold);
+    }
+
+    // ---- AUDITORÍA DEL 12/10 ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task No_se_retira_mas_oro_del_que_se_puede_llevar()
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        var banquero = Banquero(new WorldPos(1, 51, 50));
+        p.TargetNpc = (short)banquero.CharIndex;
+        p.Gold = 89_999_990; p.Bank = 1_000;
+        await Mandar(sesion, P(ClientPacketId.BankExtractGold, w => w.WriteLong(500)));
+        Assert.Equal(89_999_990, p.Gold);                                          // pasaría el tope de 90 millones
+        Assert.Equal(1_000, p.Bank);
+        await Mandar(sesion, P(ClientPacketId.BankExtractGold, w => w.WriteLong(5)));
+        Assert.Equal(89_999_995, p.Gold);                                          // el control: lo que entra, sale
+    }
+
+    [Fact]
+    public async Task La_boveda_no_opera_lejos_del_banquero()
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        var banquero = Banquero(new WorldPos(1, 70, 50));                          // a 20 baldosas
+        p.BankOpen = true;
+        p.TargetNpc = (short)banquero.CharIndex;
+        p.Inventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 5 };
+        await Mandar(sesion, P(ClientPacketId.BankDeposit, w => w.WriteByte(1).WriteInteger(5)));
+        Assert.Equal(5, p.Inventory[1].Amount);
+    }
+
+    [Fact]
+    public async Task El_barco_con_el_que_se_navega_no_se_deposita_y_se_lleva_su_ranura()
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        var banquero = Banquero(new WorldPos(1, 51, 50));
+        p.BankOpen = true;
+        p.TargetNpc = (short)banquero.CharIndex;
+        p.Inventory[3] = new InventorySlot { ObjIndex = Barca, Amount = 1 };
+        p.Navigating = true; p.BoatSlot = 3;
+        await Mandar(sesion, P(ClientPacketId.BankDeposit, w => w.WriteByte(3).WriteInteger(1)));
+        Assert.Equal(Barca, p.Inventory[3].ObjIndex);
+        await Mandar(sesion, P(ClientPacketId.SwapObjects, w => w.WriteByte(3).WriteByte(7)));
+        Assert.Equal(Barca, p.Inventory[7].ObjIndex);
+        Assert.Equal(7, p.BoatSlot);                                               // la ranura sigue al barco
+    }
+
+    [Fact]
+    public void Un_ingreso_bien_no_borra_los_fallos_de_la_ip()
+    {
+        var freno = new LoginThrottle(maxFails: 3, windowMs: 60_000, blockMs: 60_000);
+        freno.RecordFailure("1.2.3.4"); freno.RecordFailure("1.2.3.4");
+        freno.RecordSuccess("1.2.3.4");                                            // con una cuenta propia
+        freno.RecordFailure("1.2.3.4");
+        Assert.True(freno.IsBlocked("1.2.3.4"));
+    }
+
+    [Fact]
+    public void Detras_de_un_proxy_de_confianza_la_ip_sale_de_la_cabecera()
+    {
+        string[] proxy = { "127.0.0.1" };
+        Assert.Equal("200.1.2.3:0", WebSocketGameServer.DireccionDelCliente("127.0.0.1:5000", "10.0.0.9, 200.1.2.3", proxy));
+        Assert.Equal("[2001:db8::1]:0", WebSocketGameServer.DireccionDelCliente("127.0.0.1:5000", "2001:db8::1", proxy));
+        // De otro par, o sin la clave, la cabecera no vale: la escribe el cliente.
+        Assert.Equal("8.8.8.8:5000", WebSocketGameServer.DireccionDelCliente("8.8.8.8:5000", "200.1.2.3", proxy));
+        Assert.Equal("127.0.0.1:5000", WebSocketGameServer.DireccionDelCliente("127.0.0.1:5000", "200.1.2.3", System.Array.Empty<string>()));
+        Assert.Equal("127.0.0.1:5000", WebSocketGameServer.DireccionDelCliente("127.0.0.1:5000", "no es una ip", proxy));
+    }
 }

@@ -28,6 +28,7 @@ public enum ResultadoDeSubasta
     TieneOfertas,
     DuracionInvalida,
     DemasiadasSubastas,
+    CentroLleno,
 }
 
 /// <summary>
@@ -52,6 +53,10 @@ public sealed class CentroDeSubastas
 
     /// <summary>Cuántas subastas abiertas puede tener un mismo personaje.</summary>
     public const int MaximoPorVendedor = 10;
+
+    /// <summary>Las subastas abiertas en todo el centro, como mucho. Sin tope global, con varias cuentas la lista crecía sin
+    /// fin, y se recorre entera cada pocos segundos y se manda entera a cada uno que la pide (auditoría del 12/10).</summary>
+    public const int MaximoEnElCentro = 2000;
 
     /// <summary>El tope de cualquier precio: el oro que puede llevar un personaje.</summary>
     public const long PrecioMaximo = 90_000_000;
@@ -89,6 +94,7 @@ public sealed class CentroDeSubastas
             || (precioFinal > 0 && precioFinal <= precioInicial))
             return ResultadoDeSubasta.PrecioInvalido;
         if (_subastas.Count(s => Mismo(s.Vendedor, vendedor)) >= MaximoPorVendedor) return ResultadoDeSubasta.DemasiadasSubastas;
+        if (_subastas.Count >= MaximoEnElCentro) return ResultadoDeSubasta.CentroLleno;
         return ResultadoDeSubasta.Ok;
     }
 

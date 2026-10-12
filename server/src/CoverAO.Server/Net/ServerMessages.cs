@@ -388,8 +388,12 @@ public static class ServerMessages
     /// números; la bóveda de ítems los manda en CERO, como el original.</summary>
     public static byte[] BankInit(bool goliath, long bankGold = 0, byte bankItemCount = 0) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.BankInit)
-            .WriteByte((byte)(goliath ? 1 : 0)).WriteLong(goliath ? (int)bankGold : 0)
+            .WriteByte((byte)(goliath ? 1 : 0)).WriteLong(goliath ? Tope32(bankGold) : 0)
             .WriteByte(goliath ? bankItemCount : (byte)0).ToArray();
+
+    /// <summary>Un monto que viaja en un Long del protocolo (32 bits): la bóveda es un long y pasando los 2.147 millones el
+    /// cast daba la vuelta y el cliente mostraba un saldo negativo (auditoría del 12/10). Se muestra el tope.</summary>
+    private static int Tope32(long monto) => (int)Math.Clamp(monto, int.MinValue, int.MaxValue);
 
     public static byte[] BankEnd() =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.BankEnd).ToArray();
@@ -549,7 +553,7 @@ public static class ServerMessages
             .WriteAsciiString(p.Name)
             .WriteByte(p.Race).WriteByte(p.Class).WriteByte(p.Gender)
             .WriteByte(p.Level)
-            .WriteLong((int)p.Gold).WriteLong((int)p.Bank)
+            .WriteLong(p.Gold).WriteLong(Tope32(p.Bank))
             .WriteAsciiString("").WriteAsciiString(p.GuildName).WriteAsciiString("")
             .WriteBoolean(false).WriteBoolean(false)
             .WriteLong(0).WriteLong(0)
@@ -567,7 +571,7 @@ public static class ServerMessages
             .WriteLong(p.CiudadanosMatados)
             .WriteLong(p.RenegadosMatados)
             .WriteLong(p.UsersKilled)          // UsuariosMatados
-            .WriteInteger((short)p.NpcsKilled) // NPCsMuertos
+            .WriteInteger((short)Math.Min(p.NpcsKilled, short.MaxValue)) // NPCsMuertos, sin dar la vuelta
             .WriteByte(p.Class).WriteByte(p.Race).WriteByte(p.Gender)
             .WriteLong(p.Deaths)               // MuertesUsuario (veces que murió)
             .WriteByte(p.FactionStatus)
