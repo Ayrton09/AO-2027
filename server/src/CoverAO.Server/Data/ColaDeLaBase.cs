@@ -24,6 +24,10 @@ namespace CoverAO.Server.Data;
 /// vez cuando se cae y otra cuando vuelve (DISENO.md, 3.5). Un pedido que falla por OTRA cosa se anota y la cola sigue: un
 /// personaje que no se pudo guardar no puede frenar a los demás.</para>
 ///
+/// <para><b>La lectura que se puede abandonar</b> (como la cuenta del ingreso, que deja de esperar a los 10 s) no se hace si el
+/// que la pidió ya se fue: sale de la cola sin tocar la base. Y las que esperan tienen tope: pasado, la lectura falla en el acto
+/// con <see cref="LaBaseNoResponde"/>. Las escrituras no tienen tope: se guardan siempre.</para>
+///
 /// <para><b>Al apagar</b> se espera a que se vacíe; si la base sigue sin responder, la cola se rinde y devuelve lo que no se
 /// aplicó, para el archivo de rescate (<see cref="Rescates"/>).</para>
 /// </summary>
@@ -31,12 +35,19 @@ public sealed class ColaDeLaBase : IDisposable
 {
     /// <summary>Un pedido: qué es (para el log), cómo se hace, qué hacer si falla o si la cola se rinde, y —si es una
     /// escritura que se puede guardar para el próximo arranque— su rescate.</summary>
-    private sealed class Pedido(string que, Action<IAlmacen> hacer, Action<Exception> fallo, Rescate? rescate)
+    private sealed class Pedido(string que, Action<IAlmacen> hacer, Action<Exception> fallo, Func<Rescate?>? rescate,
+        CancellationToken abandono = default)
     {
         public readonly string Que = que;
         public readonly Action<IAlmacen> Hacer = hacer;
         public readonly Action<Exception> Fallo = fallo;
-        public readonly Rescate? Rescate = rescate;
+        /// <summary>Arma el rescate en el momento de apartarlo: el de una suma necesita saber hasta dónde llegó
+        /// (<see cref="Persistence.AcreditarBovedaAsync"/>).</summary>
+        public readonly Func<Rescate?>? Rescate = rescate;
+        /// <summary>El rescate con el que quedó apartado, o null.</summary>
+        public Rescate? Rescatado;
+        /// <summary>Se cancela cuando el que lo pidió deja de esperarlo. Sólo lo traen las lecturas que se pueden abandonar.</summary>
+        public readonly CancellationToken Abandono = abandono;
         public readonly DateTime Encolado = DateTime.UtcNow;
         /// <summary>El lugar en la cola. Lo que no se aplicó vuelve en este orden: dos guardados del mismo personaje
         /// rescatados al revés dejarían el viejo.</summary>
@@ -47,6 +58,11 @@ public sealed class ColaDeLaBase : IDisposable
 
     /// <summary>Las esperas entre reintentos mientras la base no responde; la última se repite.</summary>
     internal static readonly TimeSpan[] Esperas = { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10) };
+
+    /// <summary>Cuántas lecturas que se pueden abandonar esperan a la vez, como mucho. El ingreso tiene una en vuelo por
+    /// conexión (<c>ClientSession.TomarVerificacion</c>), y 4000 es el tope de conexiones por defecto (Program.cs,
+    /// <c>ConnectionGuard</c>).</summary>
+    internal const int TopeDeLecturasAbandonables = 4000;
 
     private readonly IAlmacen _almacen;
     private readonly BlockingCollection<Pedido> _pedidos = new();
@@ -59,6 +75,8 @@ public sealed class ColaDeLaBase : IDisposable
     private readonly object _orden = new();
     private long _siguiente;
     private int _pendientes;
+    private int _abandonables;
+    private readonly int _topeDeAbandonables;
     private Pedido? _enCurso;
     private bool _rendida;
     private DateTime? _caidaDesde;
@@ -66,10 +84,12 @@ public sealed class ColaDeLaBase : IDisposable
     public ColaDeLaBase(IAlmacen almacen) : this(almacen, Esperas) { }
 
     /// <param name="esperas">Las esperas entre reintentos. Las pruebas las acortan.</param>
-    internal ColaDeLaBase(IAlmacen almacen, TimeSpan[] esperas)
+    /// <param name="topeDeLecturas">El tope de las lecturas que se pueden abandonar. Las pruebas lo achican.</param>
+    internal ColaDeLaBase(IAlmacen almacen, TimeSpan[] esperas, int topeDeLecturas = TopeDeLecturasAbandonables)
     {
         _almacen = almacen;
         _esperas = esperas;
+        _topeDeAbandonables = topeDeLecturas;
         _escritor = new Thread(Correr) { IsBackground = true, Name = "cola-de-la-base" };
         _escritor.Start();
     }
@@ -89,22 +109,43 @@ public sealed class ColaDeLaBase : IDisposable
     /// <summary>Encola una escritura y sigue: no espera nada. Si falla, se anota con <paramref name="que"/>. Con
     /// <paramref name="rescate"/>, si al apagar la base no respondía, va al archivo de rescate en vez de perderse.</summary>
     public void Escribir(string que, Action<IAlmacen> escritura, Rescate? rescate = null)
-        => Encolar(new Pedido(que, escritura, ex => Console.Error.WriteLine($"[base] {que}: {ex.Message}"), rescate));
+        => Encolar(new Pedido(que, escritura, ex => Console.Error.WriteLine($"[base] {que}: {ex.Message}"),
+                              rescate is null ? null : () => rescate));
 
     /// <summary>
     /// Pide algo al almacén y devuelve una tarea con la respuesta. La continuación NO corre en el escritor
     /// (<see cref="TaskCreationOptions.RunContinuationsAsynchronously"/>): lo que venga después —un hash de contraseña, por
     /// ejemplo— no puede frenar a la cola.
+    ///
+    /// <para>Con <paramref name="abandono"/>, es una lectura que el que la pide puede dejar de esperar: cancelado, la lectura
+    /// sale de la cola sin hacerse. Si ya hay <see cref="TopeDeLecturasAbandonables"/> de ésas esperando, falla en el acto con
+    /// <see cref="LaBaseNoResponde"/>.</para>
+    ///
+    /// <para>Con <paramref name="rescate"/>, si al apagar la base no respondía, va al archivo de rescate con lo que devuelva
+    /// <paramref name="rescate"/> en ese momento, y la tarea queda sin terminar: lo suyo se aplica en el próximo arranque, y
+    /// avisarle que falló lo haría deshacer algo que igual se va a hacer.</para>
     /// </summary>
-    public Task<T> PedirAsync<T>(string que, Func<IAlmacen, T> pedido)
+    public Task<T> PedirAsync<T>(string que, Func<IAlmacen, T> pedido, CancellationToken abandono = default,
+        Func<Rescate?>? rescate = null)
     {
+        if (abandono.CanBeCanceled && Interlocked.Increment(ref _abandonables) > _topeDeAbandonables)
+        {
+            Interlocked.Decrement(ref _abandonables);
+            return Task.FromException<T>(new LaBaseNoResponde($"{que}: ya hay {_topeDeAbandonables} lecturas esperando a la base"));
+        }
         var respuesta = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         // TrySet: si la cola se rindió al apagar, el que esperaba ya se enteró, y lo que estaba corriendo puede terminar igual.
         Encolar(new Pedido(que, a => respuesta.TrySetResult(pedido(a)), ex =>
         {
+            // La abandonada no se anota: el que la pidió ya se fue.
+            if (ex is OperationCanceledException cancelada && abandono.CanBeCanceled && cancelada.CancellationToken == abandono)
+            {
+                respuesta.TrySetCanceled(abandono);
+                return;
+            }
             Console.Error.WriteLine($"[base] {que}: {ex.Message}");
             respuesta.TrySetException(ex);
-        }, rescate: null));
+        }, rescate, abandono));
         return respuesta.Task;
     }
 
@@ -125,8 +166,15 @@ public sealed class ColaDeLaBase : IDisposable
         catch (InvalidOperationException)
         {
             try { lock (_deAUno) Aplicar(pedido, reintentar: false); }
-            finally { Interlocked.Decrement(ref _pendientes); }
+            finally { Salio(pedido); }
         }
+    }
+
+    /// <summary>El pedido ya no está en la cola: aplicado, abandonado o apartado.</summary>
+    private void Salio(Pedido pedido)
+    {
+        Interlocked.Decrement(ref _pendientes);
+        if (pedido.Abandono.CanBeCanceled) Interlocked.Decrement(ref _abandonables);
     }
 
     /// <summary>
@@ -156,7 +204,7 @@ public sealed class ColaDeLaBase : IDisposable
             finally
             {
                 lock (_estado) _enCurso = null;
-                Interlocked.Decrement(ref _pendientes);
+                Salio(pedido);
             }
         }
     }
@@ -167,6 +215,12 @@ public sealed class ColaDeLaBase : IDisposable
     {
         for (int intento = 0; ; intento++)
         {
+            // La abandonada no se hace, tampoco a mitad de los reintentos: con la base caída, el resto esperaba detrás de ella.
+            if (pedido.Abandono.IsCancellationRequested)
+            {
+                pedido.Fallo(new OperationCanceledException(pedido.Abandono));
+                return;
+            }
             try
             {
                 pedido.Hacer(_almacen);
@@ -182,6 +236,8 @@ public sealed class ColaDeLaBase : IDisposable
             }
             catch (Exception ex)
             {
+                // Lo que el apagado ya apartó con su rescate no falla: va al próximo arranque.
+                lock (_estado) if (pedido.Rescatado is not null) return;
                 pedido.Fallo(ex);
                 return;
             }
@@ -195,13 +251,15 @@ public sealed class ColaDeLaBase : IDisposable
         lock (_estado) return !_rendida;
     }
 
-    /// <summary>Un pedido que no se va a aplicar: queda para el rescate, y el que esperaba una respuesta se entera.</summary>
+    /// <summary>Un pedido que no se va a aplicar: queda para el rescate, y el que esperaba una respuesta se entera. La lectura
+    /// abandonada no: no la espera nadie.</summary>
     private void Apartar(Pedido pedido)
     {
-        if (pedido.Apartado) return;
+        if (pedido.Apartado || pedido.Abandono.IsCancellationRequested) return;
         pedido.Apartado = true;
+        pedido.Rescatado = pedido.Rescate?.Invoke();
         _sinAplicar.Add(pedido);
-        if (pedido.Rescate is null) pedido.Fallo(new InvalidOperationException("la base no respondía y el servidor se apagó"));
+        if (pedido.Rescatado is null) pedido.Fallo(new InvalidOperationException("la base no respondía y el servidor se apagó"));
     }
 
     private void Cayo(Exception ex, string que)
@@ -275,7 +333,7 @@ public sealed class ColaDeLaBase : IDisposable
                 while (_pedidos.TryTake(out var resto))
                 {
                     Apartar(resto);
-                    Interlocked.Decrement(ref _pendientes);
+                    Salio(resto);
                 }
             }
             // El que esperaba para reintentar se entera ya, y sale: un momento para que termine. Al que quedó trabado adentro
@@ -288,7 +346,7 @@ public sealed class ColaDeLaBase : IDisposable
 
         IReadOnlyList<(string, Rescate?)> Resultado()
         {
-            lock (_estado) return _sinAplicar.OrderBy(p => p.Orden).Select(p => (p.Que, p.Rescate)).ToList();
+            lock (_estado) return _sinAplicar.OrderBy(p => p.Orden).Select(p => (p.Que, p.Rescatado)).ToList();
         }
     }
 

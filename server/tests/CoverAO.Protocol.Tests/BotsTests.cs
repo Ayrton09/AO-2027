@@ -86,6 +86,47 @@ public class BotsTests
             PobladoDeBots.Nombres.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
+    /// <summary>EL NOMBRE QUE YA ES DE UN JUGADOR NO LO TOMA UN BOT: el personaje en otra cuenta, o la cuenta <c>_bot</c>
+    /// registrada por una persona. El del bot mismo, sí.</summary>
+    [Fact]
+    public void El_nombre_que_ya_es_de_un_jugador_no_lo_toma_un_bot()
+    {
+        using var db = new Persistence(AlmacenSqlite.EnMemoria(), new CoverAO.Server.Game.Leveling(new Dictionary<int, long> { [1] = 300 }));
+        var persona = db.CreateAccount("Persona", "clave");
+        db.CreateCharacter(persona, "Milo", 1, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+        db.CreateAccount("Lira_bot", "clave");
+        var deNadia = db.CreateAccount("Nadia_bot", "clave", esBot: true);
+        db.CreateCharacter(deNadia, "Nadia", 2, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+        db.CreateAccount("Kael_bot", "clave", esBot: true);   // el bot creó su cuenta, y el personaje lo tomó otro
+        db.CreateCharacter(persona, "Kael", 3, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+
+        Assert.True(PobladoDeBots.NombreAjeno("Milo", db));
+        Assert.True(PobladoDeBots.NombreAjeno("Lira", db));
+        Assert.True(PobladoDeBots.NombreAjeno("Kael", db));
+        Assert.False(PobladoDeBots.NombreAjeno("Nadia", db));
+        Assert.False(PobladoDeBots.NombreAjeno("Ciro", db));
+    }
+
+    /// <summary>LA CLAVE QUE NO LLEGÓ A <c>bots.txt</c> SE ESCRIBE EN EL PRÓXIMO LLAMADO, aunque sea con la misma clave: es
+    /// el que hace el bot al entrar. Sin eso, en el próximo arranque nadie conocía la clave de su cuenta.</summary>
+    [Fact]
+    public void La_clave_que_no_llego_al_archivo_se_escribe_en_el_proximo_llamado()
+    {
+        string raiz = Path.Combine(Path.GetTempPath(), "coverao_botstxt_" + Guid.NewGuid().ToString("N"));
+        string tomado = Path.Combine(raiz, "bots.txt");
+        Directory.CreateDirectory(tomado);   // en el lugar del archivo, algo que no se deja pisar
+        try
+        {
+            var credenciales = new CredencialesDeBots(raiz);
+            Assert.False(credenciales.Guardar("Milo", "clave-de-prueba"));
+
+            Directory.Delete(tomado);
+            Assert.True(credenciales.Guardar("Milo", "clave-de-prueba"));
+            Assert.Equal("clave-de-prueba", new CredencialesDeBots(raiz).Clave("Milo"));
+        }
+        finally { try { Directory.Delete(raiz, recursive: true); } catch (IOException) { } }
+    }
+
     // ── El transporte ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>

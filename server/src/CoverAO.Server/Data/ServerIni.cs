@@ -962,34 +962,44 @@ public sealed class ServerIni
     {
         if (Ruta is null || string.IsNullOrWhiteSpace(nombre)) return false;
         nombre = nombre.Trim();
-        try
+        // Leer, cambiar, guardar y recargar, todo bajo el candado: con el candado sólo en el guardado, otro cambio del panel
+        // que había leído antes pisaba éste (un rango sacado volvía).
+        lock (IniFile.PuertaDeEscritura)
         {
-            var ini = File.Exists(Ruta) ? IniFile.Load(Ruta) : new IniFile();
-            // El nombre sale de TODAS las listas antes de entrar en la suya: sin esto, subir a un Consejero a
-            // Dios lo dejaría en las dos y el desempate por autoridad taparía el rastro.
-            foreach (var (_, seccion, clave, _) in Rangos)
+            try
             {
-                var quedan = LeerLista(ini, seccion, clave)
-                    .Where(n => !string.Equals(n, nombre, StringComparison.OrdinalIgnoreCase)).ToList();
-                EscribirLista(ini, seccion, clave, quedan);
+                var ini = File.Exists(Ruta) ? IniFile.Load(Ruta) : new IniFile();
+                // El nombre sale de TODAS las listas antes de entrar en la suya: sin esto, subir a un Consejero a
+                // Dios lo dejaría en las dos y el desempate por autoridad taparía el rastro.
+                foreach (var (_, seccion, clave, _) in Rangos)
+                {
+                    var quedan = LeerLista(ini, seccion, clave)
+                        .Where(n => !string.Equals(n, nombre, StringComparison.OrdinalIgnoreCase)).ToList();
+                    EscribirLista(ini, seccion, clave, quedan);
+                }
+                if (priv != 1)
+                {
+                    var rango = Array.Find(Rangos, r => r.Priv == priv);
+                    if (rango.Seccion is null) return false;                    // rango desconocido: no se inventa
+                    var lista = LeerLista(ini, rango.Seccion, rango.Clave).ToList();
+                    lista.Add(nombre);
+                    EscribirLista(ini, rango.Seccion, rango.Clave, lista);
+                }
+                ini.Save(Ruta);
             }
-            if (priv != 1)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
-                var rango = Array.Find(Rangos, r => r.Priv == priv);
-                if (rango.Seccion is null) return false;                    // rango desconocido: no se inventa
-                var lista = LeerLista(ini, rango.Seccion, rango.Clave).ToList();
-                lista.Add(nombre);
-                EscribirLista(ini, rango.Seccion, rango.Clave, lista);
+                Console.Error.WriteLine($"[ini] no se pudo escribir '{Ruta}' ({ex.GetType().Name}: {ex.Message}).");
+                return false;
             }
-            ini.Save(Ruta);
+            return Recargar();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-        {
-            Console.Error.WriteLine($"[ini] no se pudo escribir '{Ruta}' ({ex.GetType().Name}: {ex.Message}).");
-            return false;
-        }
-        return Recargar();
     }
+
+    /// <summary>El techo de una lista de staff: el contador viene del archivo y se usa como tope de un for, y sin techo un
+    /// <c>Dioses=2000000000</c> (un cero de más al editar) cuelga el arranque y el cambio de rango del panel. 1000 es holgado:
+    /// el install original lista una decena.</summary>
+    private const int TopeDeLaLista = 1000;
 
     /// <summary>El CONTADOR vive en <c>[INIT]</c>, no adentro de la sección. Es donde lo pone el formato del
     /// original y —lo que importa— donde lo lee <see cref="Cargar"/> al arrancar. Acá se leía y se escribía
@@ -1001,7 +1011,7 @@ public sealed class ServerIni
     private static List<string> LeerLista(IniFile ini, string seccion, string clave)
     {
         var salida = new List<string>();
-        int n = ini.GetInt("INIT", seccion, 0);
+        int n = Math.Clamp(ini.GetInt("INIT", seccion, 0), 0, TopeDeLaLista);
         for (int i = 1; i <= n; i++)
         {
             string v = ini.GetString(seccion, clave + i, "").Trim();
@@ -1015,7 +1025,7 @@ public sealed class ServerIni
         // Se reescriben TODAS las claves viejas en blanco antes de poner las nuevas: si la lista se achica, las
         // sobrantes (`Dios5=PEPE` con el contador en 4) quedarían en el archivo y volverían al recargar si
         // alguien sube el contador a mano.
-        int viejo = ini.GetInt("INIT", seccion, 0);
+        int viejo = Math.Clamp(ini.GetInt("INIT", seccion, 0), 0, TopeDeLaLista);
         for (int i = 1; i <= Math.Max(viejo, nombres.Count); i++)
             ini.Set(seccion, clave + i, i <= nombres.Count ? nombres[i - 1] : "");
         // El contador va a [INIT], que es de donde lo lee el arranque (ver la nota de LeerLista).
@@ -1042,11 +1052,15 @@ public sealed class ServerIni
     public bool Recargar()
     {
         if (Ruta is null) return false;
-        var nuevo = Cargar(Ruta);
-        foreach (var prop in typeof(ServerIni).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-            if (prop.CanWrite && prop.Name != nameof(Ruta))
-                prop.SetValue(this, prop.GetValue(nuevo));
-        _staff = nuevo._staff;
+        // Bajo el candado de las escrituras: una recarga que leyó antes de un cambio no pisa, al aplicarse, la del cambio.
+        lock (IniFile.PuertaDeEscritura)
+        {
+            var nuevo = Cargar(Ruta);
+            foreach (var prop in typeof(ServerIni).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                if (prop.CanWrite && prop.Name != nameof(Ruta))
+                    prop.SetValue(this, prop.GetValue(nuevo));
+            _staff = nuevo._staff;
+        }
         return true;
     }
 
@@ -1329,7 +1343,7 @@ public sealed class ServerIni
             // (un cero de más al editar) cuelga el arranque miles de millones de vueltas ANTES de abrir el
             // puerto y sin imprimir nada, o sea que el host ve el proceso vivo y el server "no levanta". 1000
             // es holgado: el install original lista una decena.
-            int n = Math.Clamp(ini.GetInt("INIT", contador, 0), 0, 1000);
+            int n = Math.Clamp(ini.GetInt("INIT", contador, 0), 0, TopeDeLaLista);
             for (int i = 1; i <= n; i++)
             {
                 string nombre = (ini.GetString(seccion, clave + i, "") ?? "").Trim();

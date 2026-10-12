@@ -258,8 +258,10 @@ public sealed class Persistence : IDisposable
 
     /// <summary>Sincrónicas, para quien no es el loop (ver <see cref="Esperar"/>).</summary>
     public Account? LoadAccount(string name) => Esperar("leer una cuenta", name, a => a.LeerCuenta(name));
-    /// <summary>La misma lectura, sin esperarla: para el que le pone un plazo (el ingreso, con la base caída).</summary>
-    public Task<Account?> LeerCuentaAsync(string name) => _cola.PedirAsync($"leer una cuenta ({name})", a => a.LeerCuenta(name));
+    /// <summary>La misma lectura, sin esperarla: para el que le pone un plazo (el ingreso, con la base caída). Con
+    /// <paramref name="abandono"/> cancelado, sale de la cola sin hacerse (ver <see cref="ColaDeLaBase.PedirAsync{T}"/>).</summary>
+    public Task<Account?> LeerCuentaAsync(string name, CancellationToken abandono = default)
+        => _cola.PedirAsync($"leer una cuenta ({name})", a => a.LeerCuenta(name), abandono);
     public IEnumerable<string> AllAccountNames() => Esperar("listar las cuentas", null, a => a.NombresDeCuentas().ToList());
     public Player? LoadCharacter(string name, short charIndex, string account)
         => Esperar("leer un personaje", name, a => a.LeerPersonaje(name))?.CrearPlayer(charIndex, account);
@@ -396,10 +398,17 @@ public sealed class Persistence : IDisposable
     /// saldo de antes —acreditar 0 lo devuelve sin cambiarlo—, y un reintento que lo encuentra ya sumado sabe que el
     /// anterior entró aunque la respuesta se haya perdido.</para>
     ///
+    /// <para>SI AL APAGAR LA BASE NO RESPONDE, LA SUMA VA AL RESCATE (<see cref="RescateDeAcreditacion"/>): el que la mandó ya se
+    /// guardó con el oro descontado, y sin esto el oro no llegaba a nadie. Una suma no puede entrar dos veces, así que el rescate
+    /// lleva el saldo de antes si la suma llegó a pedirse a la base —pudo haber entrado— y, si no, la cola ya no la deja empezar.
+    /// </para>
+    ///
     /// <para>Devuelve el saldo que quedó, o <c>null</c> si no existe el personaje.</para></summary>
     public Task<long?> AcreditarBovedaAsync(string nombre, long monto)
     {
         long? antes = null;
+        bool sumando = false, apartada = false;
+        var candado = new object();
         return _cola.PedirAsync($"acreditar a la bóveda de {nombre}", a =>
         {
             if (antes is { } previo)
@@ -407,7 +416,19 @@ public sealed class Persistence : IDisposable
                 if (a.AcreditarBoveda(nombre, 0) is { } ahora && ahora == previo + monto) return ahora;
             }
             else antes = a.AcreditarBoveda(nombre, 0);
+            lock (candado)
+            {
+                if (apartada) throw new InvalidOperationException("quedó para el rescate");
+                sumando = true;
+            }
             return a.AcreditarBoveda(nombre, monto);
+        }, rescate: () =>
+        {
+            lock (candado)
+            {
+                apartada = true;
+                return new RescateDeAcreditacion(nombre, monto, sumando ? antes : null);
+            }
         });
     }
 
@@ -789,12 +810,37 @@ public sealed class Persistence : IDisposable
         return acc;
     }
 
-    /// <summary>Seeds a demo account + characters on first run so the flows work out of the box.</summary>
+    /// <summary>La cuenta demo de <c>--fixture</c> y su clave, que está acá, a la vista.</summary>
+    internal const string CuentaDemo = "cuenta_test", ClaveDemo = "hash_password";
+
+    /// <summary>
+    /// SIN <c>--fixture</c>, LA CUENTA DEMO NO ENTRA. Un <c>data/</c> sembrado alguna vez con <c>--fixture</c> la tiene, con la
+    /// clave de <see cref="ClaveDemo"/>, diez personajes y oro, y hosteado después sin fixture cualquiera entraba con esa clave.
+    /// Si sigue con la clave demo, se le pone una al azar que no se anota en ningún lado; sus personajes quedan, sin acceso. Una
+    /// <c>cuenta_test</c> con otra clave es de alguien y no se toca. Devuelve si la cerró.
+    /// </summary>
+    public bool CerrarLaCuentaDemo()
+    {
+        if (!AccountExists(CuentaDemo) || LoadAccount(CuentaDemo)?.VerifyPassword(ClaveDemo) != true) return false;
+        string hash = PasswordHasher.HashModern(Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+        return CambiarCuenta(CuentaDemo, c => { c.PasswordHash = hash; c.Salt = ""; }) is not null;
+    }
+
+    /// <summary>Seeds a demo account + characters on first run so the flows work out of the box. Si la cuenta ya estaba y un
+    /// arranque sin fixture le cerró la clave (<see cref="CerrarLaCuentaDemo"/>), se la devuelve.</summary>
     public void SeedDemoIfEmpty()
     {
-        const string account = "cuenta_test";
-        const string password = "hash_password";
-        if (AccountExists(account)) return;
+        const string account = CuentaDemo;
+        const string password = ClaveDemo;
+        if (AccountExists(account))
+        {
+            if (LoadAccount(account)?.VerifyPassword(password) == false)
+            {
+                string demo = PasswordHasher.HashModern(password);
+                CambiarCuenta(account, c => { c.PasswordHash = demo; c.Salt = ""; });
+            }
+            return;
+        }
         var acc = CreateAccount(account, password);
         // Los chars del FIXTURE se fijan en (15,50,50): el mapa 15 es un mapa ABIERTO (sin paredes en la zona de
         // juego), compatible con el gate de blocking; los NPCs de test (Program.cs, FixtureMap=15) y las rutas de

@@ -94,4 +94,46 @@ public class PanelDeStaffTests
         }
         finally { Limpiar(ruta); }
     }
+
+    /// <summary>Dos cambios de rango a la vez (el panel atiende cada pedido en su hilo): ninguno pisa al otro.</summary>
+    [Fact]
+    public void Dos_cambios_de_rango_a_la_vez_no_se_pisan()
+    {
+        string ruta = IniNuevo("[INIT]", "MaxUsers=0");
+        try
+        {
+            var ini = ServerIni.Cargar(ruta);
+            var tandas = Enumerable.Range(0, 2).Select(h => Enumerable.Range(0, 15).Select(i => $"Gm{h}x{i}").ToList()).ToList();
+            using var largada = new Barrier(tandas.Count);
+            var hilos = tandas.Select(tanda => new Thread(() =>
+            {
+                largada.SignalAndWait();
+                foreach (var nombre in tanda) ini.GuardarStaff(nombre, 8);
+            })).ToList();
+            hilos.ForEach(h => h.Start());
+            hilos.ForEach(h => h.Join());
+
+            var despues = ServerIni.Cargar(ruta);
+            foreach (var nombre in tandas.SelectMany(t => t)) Assert.Equal(8, despues.PrivilegioDe(nombre));
+        }
+        finally { Limpiar(ruta); }
+    }
+
+    /// <summary>Un contador disparatado en el archivo no cuelga el cambio de rango: la lista tiene el techo del arranque.</summary>
+    [Fact]
+    public void Un_contador_disparatado_no_cuelga_el_cambio_de_rango()
+    {
+        string ruta = IniNuevo("[INIT]", "Dioses=1000000", "[Dioses]", "Dios1=Merlin");
+        try
+        {
+            var ini = ServerIni.Cargar(ruta);
+            Assert.True(ini.GuardarStaff("Rugura", 8));
+
+            var despues = ServerIni.Cargar(ruta);
+            Assert.Equal(8, despues.PrivilegioDe("Merlin"));
+            Assert.Equal(8, despues.PrivilegioDe("Rugura"));
+            Assert.DoesNotContain("Dios1001=", File.ReadAllText(ruta));
+        }
+        finally { Limpiar(ruta); }
+    }
 }

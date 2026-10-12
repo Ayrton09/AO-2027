@@ -174,20 +174,37 @@ public static class Importador
     public static InformeDeCopia? ImportarSiHaceFalta(string dataRoot, string archivoDeLaBase)
     {
         string origen;
-        bool eraElSqliteViejo = false;
+        bool eraElSqliteViejo = false, encimaDeLaVacia = false;
         if (File.Exists(archivoDeLaBase))
         {
-            if (!EsDelSqliteViejo(archivoDeLaBase)) return null;
-            // El SQLite viejo tiene el mismo nombre de archivo que la base: se lo aparta primero y se importa desde ahí.
-            origen = ApartarBase(archivoDeLaBase, ".importado");
-            eraElSqliteViejo = true;
+            if (EsDelSqliteViejo(archivoDeLaBase))
+            {
+                // El SQLite viejo tiene el mismo nombre de archivo que la base: se lo aparta primero y se importa desde ahí.
+                origen = ApartarBase(archivoDeLaBase, ".importado");
+                eraElSqliteViejo = true;
+            }
+            else if (!HayPersonajesEnArchivos(dataRoot)) return null;
+            // UNA BASE NUEVA SIN NADIE NO TAPA LOS ARCHIVOS: un arranque sobre una carpeta limpia la deja creada, y los
+            // Charfile/ y Cuentas/ copiados después no se importaban nunca, sin aviso. Vacía, se importa encima (la de antes
+            // queda al lado); con cuentas, se avisa, como en Postgres.
+            else if (NoTieneANadie(archivoDeLaBase))
+            {
+                origen = dataRoot;
+                encimaDeLaVacia = true;
+            }
+            else
+            {
+                Console.WriteLine($"[base] OJO: {dataRoot} tiene personajes en archivos que no se usan: la base {archivoDeLaBase} ya " +
+                                  $"tiene cuentas. Para importarlos encima: CoverAO.Server importar {dataRoot} --reemplazar.");
+                return null;
+            }
         }
         else if (HayPersonajesEnArchivos(dataRoot)) origen = dataRoot;
         else return null;
 
         Console.WriteLine($"[base] primer arranque con base: importando {origen}");
         InformeDeCopia informe;
-        try { informe = Importar(origen, archivoDeLaBase); }
+        try { informe = Importar(origen, archivoDeLaBase, reemplazar: encimaDeLaVacia); }
         catch
         {
             if (eraElSqliteViejo) Restituir(origen, archivoDeLaBase);
@@ -313,6 +330,22 @@ public static class Importador
         using var c = con.CreateCommand();
         c.CommandText = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'characters'";
         return (long)c.ExecuteScalar()! > 0;
+    }
+
+    /// <summary>¿Una base de ahora sin cuentas ni personajes (como <see cref="AlmacenRelacional.EstaVacia"/>)? Sin las tablas
+    /// —un archivo vacío—, también.</summary>
+    private static bool NoTieneANadie(string archivo)
+    {
+        using var con = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = archivo, Mode = SqliteOpenMode.ReadOnly, Pooling = false,
+        }.ToString());
+        con.Open();
+        using var c = con.CreateCommand();
+        c.CommandText = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('cuentas', 'personajes')";
+        if ((long)c.ExecuteScalar()! < 2) return true;
+        c.CommandText = "SELECT EXISTS (SELECT 1 FROM cuentas) OR EXISTS (SELECT 1 FROM personajes)";
+        return (long)c.ExecuteScalar()! == 0;
     }
 
     /// <summary>La base y sus archivos de al lado (el diario, la memoria compartida), renombrados con el mismo sufijo.

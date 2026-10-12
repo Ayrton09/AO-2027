@@ -53,6 +53,8 @@ public sealed class CredencialesDeBots
     private readonly string _ruta;
     private readonly Dictionary<string, string> _claves = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _candado = new();
+    /// <summary>Hay una clave en memoria que no llegó al archivo.</summary>
+    private bool _sinGuardar;
 
     public CredencialesDeBots(string dataRoot)
     {
@@ -77,17 +79,32 @@ public sealed class CredencialesDeBots
     }
 
     /// <summary>Anota la contraseña de un bot y reescribe el archivo. Se llama una vez por bot en la vida de
-    /// una instalación, así que reescribirlo entero no cuesta nada y evita un archivo a medio escribir.</summary>
-    public void Guardar(string nombre, string clave)
+    /// una instalación, así que reescribirlo entero no cuesta nada y evita un archivo a medio escribir.
+    ///
+    /// <para>Si el archivo no se pudo escribir (un antivirus o una sincronización que lo tiene tomado), la clave queda
+    /// pendiente y se vuelve a escribir en el próximo llamado, aunque sea con la misma clave: el bot lo llama otra vez al
+    /// entrar. Con todo ya en el archivo, ese llamado no escribe nada. Devuelve si quedó en el archivo.</para></summary>
+    public bool Guardar(string nombre, string clave)
     {
         lock (_candado)
         {
+            if (!_sinGuardar && _claves.TryGetValue(nombre, out var anotada) && anotada == clave) return true;
             _claves[nombre] = clave;
             var texto = new System.Text.StringBuilder(Encabezado);
             foreach (var par in _claves.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
                 texto.Append(par.Key).Append('=').Append(par.Value).Append("\r\n");
-            try { EscrituraAtomica.Escribir(_ruta, texto.ToString(), new System.Text.UTF8Encoding(false)); }
-            catch (IOException ex) { Console.Error.WriteLine($"[bots] no pude guardar {_ruta}: {ex.Message}"); }
+            try
+            {
+                EscrituraAtomica.Escribir(_ruta, texto.ToString(), new System.Text.UTF8Encoding(false));
+                _sinGuardar = false;
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _sinGuardar = true;
+                Console.Error.WriteLine($"[bots] no pude guardar {_ruta}: {ex.Message}");
+                return false;
+            }
         }
     }
 }
@@ -156,8 +173,23 @@ public sealed class PobladoDeBots
 
     private PobladoDeBots() { }
 
+    /// <summary>
+    /// ¿El nombre ya es de otro? Un personaje con ese nombre en una cuenta que no es la del bot, o la cuenta
+    /// <c>&lt;nombre&gt;_bot</c> registrada por una persona. El bot no podría entrar nunca: el servidor le contesta que el
+    /// personaje o la cuenta ya existen, y en cada arranque gastaba sus tres intentos y se quedaba afuera.
+    /// </summary>
+    internal static bool NombreAjeno(string nombre, Persistence db)
+    {
+        string cuenta = nombre + "_bot";
+        if (!db.AccountExists(cuenta)) return db.CharacterExists(nombre);
+        var suya = db.LoadAccount(cuenta);
+        if (suya is null) return db.CharacterExists(nombre);
+        if (!suya.EsBot) return true;
+        return db.CharacterExists(nombre) && !suya.Characters.Contains(nombre, StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>Enciende <paramref name="cantidad"/> bots. Devuelve null si no hay ninguno que encender.</summary>
-    public static PobladoDeBots? Arrancar(int cantidad, PacketDispatcher dispatcher, ServerIni ini,
+    public static PobladoDeBots? Arrancar(int cantidad, PacketDispatcher dispatcher, ServerIni ini, Persistence db,
         string dataRoot, long authTimeoutMs, int maxInboundBytes, GameData datos, CancellationToken ct)
     {
         if (cantidad <= 0) return null;
@@ -168,7 +200,9 @@ public sealed class PobladoDeBots
 
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.
-        var usables = Nombres.Where(n => Naming.IsValidCharName(n) && Naming.IsValidName(n + "_bot")).ToList();
+        // Y se saltea el nombre que ya es de otro (NombreAjeno): su lugar lo toma el siguiente de la lista.
+        var ajenos = Nombres.Where(n => NombreAjeno(n, db)).ToList();
+        var usables = Nombres.Where(n => Naming.IsValidCharName(n) && Naming.IsValidName(n + "_bot") && !ajenos.Contains(n)).ToList();
         int cuantos = Math.Min(cantidad, usables.Count);
         int nuevos = 0, conPersonaje = 0;
 
@@ -187,6 +221,8 @@ public sealed class PobladoDeBots
         }
 
         Console.WriteLine($"BOTS: {cuantos} ({string.Join(", ", poblado._bots.Select(b => b.Nombre))})");
+        if (ajenos.Count > 0)
+            Console.WriteLine($"   no entran como bots, porque el nombre (o su cuenta _bot) ya es de un jugador: {string.Join(", ", ajenos)}.");
         if (nuevos > NuevosPorTanda)
             Console.WriteLine($"   {nuevos} son nuevos: entran de a {NuevosPorTanda} cada {EntreTandasMs / 60_000} minutos.");
         if (cantidad > usables.Count)
