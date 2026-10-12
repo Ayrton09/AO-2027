@@ -1261,6 +1261,9 @@
     const $ = (id) => document.getElementById(id);
     const W = () => new ByteQueueWriter();                          // atajo: nuevo writer
     const send = (w) => { if (ws && ws.readyState === 1) ws.send(xorBuffer(w.toBytes(), myKey)); };  // manda un paquete ya armado
+    // LO QUE ENTRA EN UN Integer Y EN UN Long DEL PROTOCOLO. `writeInteger` y `writeLong` se quedan con los 16 y 32 bits de
+    // abajo (un 65537 viajaba como 1), así que los montos que escribe el jugador se acotan a esto antes de mandarse.
+    const MAX_INTEGER = 32767, MAX_LONG = 2147483647;
     const esc = (s) => String(s == null ? '' : s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));  // sanitiza texto de usuario en HTML (la comilla simple: que un atributo inline nunca se abra solo)
     const statusEl = $('status');
     const coordsEl = $('coords');
@@ -3796,7 +3799,7 @@
     const leerOroQty = () => {
       const i = modalCard.querySelector('.orq');
       const n = i ? parseInt(i.value, 10) : oroQty;
-      return Math.max(1, Number.isFinite(n) ? n : 1);
+      return Math.max(1, Math.min(MAX_LONG, Number.isFinite(n) ? n : 1));
     };
     function renderPanelDelOro() {
       if (modalKind === 'bankgold') oroQty = leerOroQty();
@@ -3875,9 +3878,9 @@
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
     }
     function leerNuevaSubasta() {
-      nuevaSub.cant = Math.max(1, subNum('.nscant', nuevaSub.cant));
-      nuevaSub.ini = Math.max(0, subNum('.nsini', nuevaSub.ini));
-      nuevaSub.fin = Math.max(0, subNum('.nsfin', nuevaSub.fin));
+      nuevaSub.cant = Math.max(1, Math.min(MAX_INTEGER, subNum('.nscant', nuevaSub.cant)));
+      nuevaSub.ini = Math.max(0, Math.min(MAX_LONG, subNum('.nsini', nuevaSub.ini)));
+      nuevaSub.fin = Math.max(0, Math.min(MAX_LONG, subNum('.nsfin', nuevaSub.fin)));
       nuevaSub.horas = subNum('.nshoras', nuevaSub.horas);
     }
     /** Los clics de las dos vistas. true si el clic era de acá. */
@@ -3898,7 +3901,7 @@
         case 'nueva': renderNuevaSubasta(); break;
         case 'volver': leerNuevaSubasta(); renderSubastas(); break;
         case 'ofertar': {
-          const monto = subNum('.sbo', 0);
+          const monto = Math.min(MAX_LONG, subNum('.sbo', 0));
           if (id != null && monto > 0) send(W().writeByte(CLIENT.SubastaOfertar).writeLong(id).writeLong(monto));
           break;
         }
@@ -4474,7 +4477,7 @@
           for (const k of Object.keys(skPend)) { const c = modalCard.querySelector('#sk-' + k); if (c) c.textContent = '0'; delete skPend[k]; }
           refrescarLibresPend();
         }
-        else if (a === 'xf-send') { const to = pv('xf-to'), amt = +pv('xf-amt') || 0; if (to && amt > 0) send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(to).writeLong(amt)); }
+        else if (a === 'xf-send') { const to = pv('xf-to'), amt = Math.min(MAX_LONG, Math.floor(+pv('xf-amt') || 0)); if (to && amt > 0) send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(to).writeLong(amt)); }
         else if (a === 'home-set') send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0));   // el /HOGAR: pregunta el server
         else if (a === 'home-go') send(W().writeByte(CLIENT.RegresarHogar));
         else if (a === 'safe-res') send(W().writeByte(CLIENT.ResuscitationSafeToggle));
@@ -7129,12 +7132,16 @@
         if (cmd === '/hogar') { send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0)); return; }
         if (CHAT_NOARG[cmd] !== undefined) w.writeByte(CHAT_NOARG[cmd]);
         else if (CHAT_ARGSTR[cmd] !== undefined) { if (!arg) { log('uso: ' + cmd + ' <texto>', '#b94'); return; } w.writeByte(CHAT_ARGSTR[cmd]).writeAsciiString(arg); }
-        else if (cmd === '/apostar') w.writeByte(CLIENT.Gamble).writeInteger(parseInt(arg) || 0);
+        else if (cmd === '/apostar') {
+          const n = parseInt(arg);
+          if (!(n > 0 && n <= MAX_INTEGER)) { log('uso: /apostar <cantidad de oro>', '#b94'); return; }
+          w.writeByte(CLIENT.Gamble).writeInteger(n);
+        }
         // Los tres del diff contra el parser del original que llevan argumento propio. La bóveda ya se
         // opera por panel, pero el original deposita y retira POR COMANDO y sin abrirla.
         else if (cmd === '/depositar' || cmd === '/retirar') {
           const n = parseInt(arg);
-          if (!(n > 0)) { log('uso: ' + cmd + ' <cantidad de oro>', '#b94'); return; }
+          if (!(n > 0 && n <= MAX_LONG)) { log('uso: ' + cmd + ' <cantidad de oro>', '#b94'); return; }
           w.writeByte(cmd === '/depositar' ? CLIENT.BankDepositGold : CLIENT.BankExtractGold).writeLong(n);
         }
         // /FADD y /FACCEPT mandan el mismo paquete, y el byte final los distingue: 1 pide la amistad y 2 la
@@ -7155,7 +7162,7 @@
           const sp2 = arg.search(/\s/);
           const quien = sp2 < 0 ? arg : arg.slice(0, sp2);
           const cual = parseInt(sp2 < 0 ? '' : arg.slice(sp2 + 1), 10);
-          if (!quien || !Number.isFinite(cual)) { log('uso: /particula <nombre> <numero>', '#b94'); return; }
+          if (!quien || !(cual > 0 && cual <= MAX_INTEGER)) { log('uso: /particula <nombre> <numero>', '#b94'); return; }
           w.writeByte(CLIENT.ParticulaUsuario).writeAsciiString(quien).writeInteger(cual);
         }
         else if (cmd === '/susurrar' || cmd === '/w') {
