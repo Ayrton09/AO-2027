@@ -107,4 +107,28 @@ public class PersistenceTests : IDisposable
         var summary = _db.LoadSummary("Rugura")!;
         Assert.Equal("Rugura", summary.Name);
     }
+
+    /// <summary>Sin --fixture, la cuenta demo deja de entrar con la clave que está en el código; el fixture se la devuelve.</summary>
+    [Fact]
+    public void Sin_fixture_la_cuenta_demo_no_entra_con_su_clave()
+    {
+        _db.SeedDemoIfEmpty();
+
+        Assert.True(_db.CerrarLaCuentaDemo());
+        Assert.False(_db.LoadAccount("cuenta_test")!.VerifyPassword("hash_password"));
+        Assert.Contains("Rugura", _db.LoadAccount("cuenta_test")!.Characters);
+
+        _db.SeedDemoIfEmpty();
+        Assert.True(_db.LoadAccount("cuenta_test")!.VerifyPassword("hash_password"));
+    }
+
+    /// <summary>Una cuenta_test con otra clave es de alguien: no se toca.</summary>
+    [Fact]
+    public void Una_cuenta_test_con_otra_clave_no_se_cierra()
+    {
+        _db.CreateAccount("cuenta_test", "otra_clave");
+
+        Assert.False(_db.CerrarLaCuentaDemo());
+        Assert.True(_db.LoadAccount("cuenta_test")!.VerifyPassword("otra_clave"));
+    }
 }

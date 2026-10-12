@@ -203,6 +203,9 @@ var (almacen, dondeSeGuarda) = abierta;
 Rescates.AplicarLosPendientes(dataRoot, almacen);
 var db = new Persistence(almacen, leveling);
 if (fixtureMode) db.SeedDemoIfEmpty();   // sin fixture no hay cuenta demo (cuenta_test/Rugura/…): como un server real
+else if (db.CerrarLaCuentaDemo())
+    Console.WriteLine("OJO: la base tenía la cuenta demo de --fixture (cuenta_test) con su clave de prueba: se le puso una " +
+                      "clave al azar y ya no entra nadie. Sus personajes quedan en la base.");
 // Lo que leen las webs: el staff —sólo para dejarlo afuera de lo público—, el catálogo del juego y la versión (Data.AlmacenRelacional).
 db.PrepararParaLasWebs(serverIni.Staff.Select(s => s.Nombre), CatalogoParaLasWebs.Desde(gameData), CoverAO.Server.Build.Version);
 Console.WriteLine($"Persistencia en {dataRoot}: {dondeSeGuarda}.");

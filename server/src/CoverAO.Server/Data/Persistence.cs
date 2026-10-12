@@ -810,12 +810,37 @@ public sealed class Persistence : IDisposable
         return acc;
     }
 
-    /// <summary>Seeds a demo account + characters on first run so the flows work out of the box.</summary>
+    /// <summary>La cuenta demo de <c>--fixture</c> y su clave, que está acá, a la vista.</summary>
+    internal const string CuentaDemo = "cuenta_test", ClaveDemo = "hash_password";
+
+    /// <summary>
+    /// SIN <c>--fixture</c>, LA CUENTA DEMO NO ENTRA. Un <c>data/</c> sembrado alguna vez con <c>--fixture</c> la tiene, con la
+    /// clave de <see cref="ClaveDemo"/>, diez personajes y oro, y hosteado después sin fixture cualquiera entraba con esa clave.
+    /// Si sigue con la clave demo, se le pone una al azar que no se anota en ningún lado; sus personajes quedan, sin acceso. Una
+    /// <c>cuenta_test</c> con otra clave es de alguien y no se toca. Devuelve si la cerró.
+    /// </summary>
+    public bool CerrarLaCuentaDemo()
+    {
+        if (!AccountExists(CuentaDemo) || LoadAccount(CuentaDemo)?.VerifyPassword(ClaveDemo) != true) return false;
+        string hash = PasswordHasher.HashModern(Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+        return CambiarCuenta(CuentaDemo, c => { c.PasswordHash = hash; c.Salt = ""; }) is not null;
+    }
+
+    /// <summary>Seeds a demo account + characters on first run so the flows work out of the box. Si la cuenta ya estaba y un
+    /// arranque sin fixture le cerró la clave (<see cref="CerrarLaCuentaDemo"/>), se la devuelve.</summary>
     public void SeedDemoIfEmpty()
     {
-        const string account = "cuenta_test";
-        const string password = "hash_password";
-        if (AccountExists(account)) return;
+        const string account = CuentaDemo;
+        const string password = ClaveDemo;
+        if (AccountExists(account))
+        {
+            if (LoadAccount(account)?.VerifyPassword(password) == false)
+            {
+                string demo = PasswordHasher.HashModern(password);
+                CambiarCuenta(account, c => { c.PasswordHash = demo; c.Salt = ""; });
+            }
+            return;
+        }
         var acc = CreateAccount(account, password);
         // Los chars del FIXTURE se fijan en (15,50,50): el mapa 15 es un mapa ABIERTO (sin paredes en la zona de
         // juego), compatible con el gate de blocking; los NPCs de test (Program.cs, FixtureMap=15) y las rutas de
