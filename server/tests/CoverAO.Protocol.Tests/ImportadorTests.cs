@@ -370,6 +370,48 @@ public class ImportadorTests : IDisposable
         Assert.DoesNotContain("importada", dice);
     }
 
+    /// <summary>Un arranque sobre la carpeta limpia deja la base creada y vacía; los archivos copiados después se importan igual
+    /// en el arranque siguiente, y la base vacía queda al lado.</summary>
+    [Fact]
+    public void Los_archivos_copiados_despues_de_crear_la_base_vacia_se_importan()
+    {
+        Directory.CreateDirectory(Datos);
+        var (vacia, _) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        (vacia as IDisposable)?.Dispose();
+        var (fichas, _) = CarpetaNuestra();
+
+        var (almacen, dondeSeGuarda) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        try
+        {
+            FichasDePrueba.AssertIgual(fichas[0], Assert.IsType<AlmacenSqlite>(almacen).LeerPersonaje("Aldo")!);
+            Assert.Contains("importada", dondeSeGuarda);
+        }
+        finally { (almacen as IDisposable)?.Dispose(); }
+        Assert.Single(Directory.GetFiles(Datos, "coverao.db.antes-de-importar-*"), f => char.IsDigit(f[^1]));   // y su diario al lado
+        Assert.True(Directory.Exists(Path.Combine(Datos, "Charfile.importado")));
+    }
+
+    /// <summary>Con cuentas en la base, los archivos de al lado no se importan encima: se avisa y quedan donde están.</summary>
+    [Fact]
+    public void Con_cuentas_en_la_base_los_archivos_de_al_lado_no_se_importan()
+    {
+        Directory.CreateDirectory(Datos);
+        var (conGente, _) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        conGente.GuardarCuenta(Cuenta("YaEstaba"));
+        (conGente as IDisposable)?.Dispose();
+        CarpetaNuestra();
+
+        var (almacen, dondeSeGuarda) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        try
+        {
+            Assert.DoesNotContain("importada", dondeSeGuarda);
+            Assert.NotNull(almacen.LeerCuenta("YaEstaba"));
+            Assert.Null(almacen.LeerPersonaje("Aldo"));
+        }
+        finally { (almacen as IDisposable)?.Dispose(); }
+        Assert.True(Directory.Exists(Path.Combine(Datos, "Charfile")));
+    }
+
     [Fact]
     public void El_primer_arranque_importa_el_sqlite_viejo()
     {
