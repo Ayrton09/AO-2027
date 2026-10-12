@@ -36,6 +36,10 @@ Lo nuevo desde el paquete del 6 de octubre.
 
 ### Para GMs y para el que hostea
 
+- **El anticheat, por ahora, sólo anota**: ninguna trampa echa ni banea, todas quedan en `data/logs/trampas-*.log` y en
+  el aviso a los GMs conectados. Para sancionar, `TrampasParaEchar` y `TrampasParaBanear` en el Server.ini (por ejemplo 3 y 6).
+- **Cuenta como trampa todo lo que el cliente no puede mandar**: una ranura que no existe, una cantidad negativa, un
+  rumbo inválido, una opción que no está en ningún botón.
 - **Se cerró una trampa que dejaba a un personaje sin dibujar para los demás**, y tirar, destruir o mover al banco
   una cantidad de cero o menos ya no mueve nada.
 - **`/banip` y `/darpun` andan desde el cliente web**: `/banip <IP o nombre> <motivo>` y `/darpun <nombre>@<puntos>`.
