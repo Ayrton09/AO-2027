@@ -6715,9 +6715,9 @@ public sealed partial class PacketDispatcher
             { session.Send(ServerMessages.ConsoleMsg("No hay más slots para fundar clanes. Consulte a un administrador.", FuenteClan)); return; }
             var guild = _world.CreateGuild(name, p.Name, desc);
             if (guild is null) { session.Send(ServerMessages.ConsoleMsg("Ya existe un clan con ese nombre.", FuenteClan)); return; }
-            // LA DEL PASO DE LA FACCIÓN, y si se lo salteó (CreateNewGuild directo, que el cliente no hace), la de su facción ahora:
-            // con 0 el clan aceptaba a cualquier bando (PuedeEntrarAlClan) (auditoría del 12/10).
-            guild.Alignment = p.FoundingAlignment != 0 ? p.FoundingAlignment : AlineacionPorFaccion(p);
+            // LA DEL PASO DE LA FACCIÓN, y 0 si se lo salteó (CreateNewGuild directo): como el original, que funda con
+            // `.FundandoGuildAlineacion` en 0 y a ese clan lo deja entrar a cualquiera (m_EstadoPermiteEntrar, Case Else).
+            guild.Alignment = p.FoundingAlignment;
             p.FoundingAlignment = 0;
             string alineacion = Guild.NombreDeAlineacion(guild.Alignment);
             guild.News = "Clan creado con alineación: " + alineacion;          // `.SetGuildNews` (modGuilds.bas:510)
