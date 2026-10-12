@@ -1451,12 +1451,20 @@ public sealed partial class PacketDispatcher
     /// LA CUENTA, CON PLAZO: la leen el ingreso, el borrado y el cambio de clave, desde el pool. Con la base caída la lectura
     /// espera en la cola, y sin plazo el cliente quedaba colgado sin aviso —hasta que lo cortaba el tiempo de autenticación—
     /// con un hilo del pool tomado mientras durara la caída. Pasado <see cref="PlazoDeLaLecturaDeEntrada"/> se abandona:
-    /// <c>Respondio</c> en false, y el que llama avisa. La lectura sigue en la cola y, cuando vuelva la base, nadie la espera.
+    /// <c>Respondio</c> en false, el que llama avisa, y la lectura sale de la cola sin hacerse. Si ya hay demasiadas
+    /// esperando (<see cref="Data.ColaDeLaBase.TopeDeLecturasAbandonables"/>), <c>Respondio</c> en false sin esperar.
     /// </summary>
     private (bool Respondio, Data.Account? Cuenta) LeerCuentaConPlazo(string cuenta)
     {
-        var lectura = _db.LeerCuentaAsync(cuenta);
-        return lectura.Wait(PlazoDeLaLecturaDeEntrada) ? (true, lectura.Result) : (false, null);
+        using var abandono = new CancellationTokenSource();
+        var lectura = _db.LeerCuentaAsync(cuenta, abandono.Token);
+        try
+        {
+            if (lectura.Wait(PlazoDeLaLecturaDeEntrada)) return (true, lectura.Result);
+        }
+        catch (AggregateException ex) when (ex.InnerException is Data.LaBaseNoResponde) { return (false, null); }
+        abandono.Cancel();
+        return (false, null);
     }
 
     /// <summary>La última mitad de la entrada al mundo, con el personaje ya leído. Vuelve a mirar lo que pudo cambiar
@@ -5411,10 +5419,14 @@ public sealed partial class PacketDispatcher
         }
         try
         {
-            var ini = Data.IniFile.Load(_ini.Ruta);
-            ini.Set(seccion, clave, valor);
-            ini.Save(_ini.Ruta);
-            _ini.Recargar();
+            // Bajo el candado de las escrituras: el panel le cambia el rango a alguien desde otro hilo (ver IniFile.PuertaDeEscritura).
+            lock (Data.IniFile.PuertaDeEscritura)
+            {
+                var ini = Data.IniFile.Load(_ini.Ruta);
+                ini.Set(seccion, clave, valor);
+                ini.Save(_ini.Ruta);
+                _ini.Recargar();
+            }
             session.Send(ServerMessages.ConsoleMsg($"Modificó {seccion} {clave} a {valor}.", FuenteInfo));
             Console.WriteLine($"[{session.RemoteEndpoint}] /SETINIVAR {p.Name}: [{seccion}] {clave}={valor}");
         }
