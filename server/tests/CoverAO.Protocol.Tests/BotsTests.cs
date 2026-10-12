@@ -70,7 +70,7 @@ public class BotsTests
     [Fact]
     public void Los_nombres_los_aceptaria_el_servidor()
     {
-        foreach (var n in PobladoDeBots.Nombres)
+        foreach (var n in PobladoDeBots.Nombres.Concat(PobladoDeBots.Suplentes))
         {
             Assert.True(Naming.IsValidCharName(n), $"'{n}' no es un nombre de personaje válido");
             Assert.True(Naming.IsValidName(n + "_bot"), $"la cuenta de '{n}' no sería válida");
@@ -82,8 +82,28 @@ public class BotsTests
     [Fact]
     public void Los_nombres_no_se_repiten()
     {
-        Assert.Equal(PobladoDeBots.Nombres.Count,
-            PobladoDeBots.Nombres.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        var todos = PobladoDeBots.Nombres.Concat(PobladoDeBots.Suplentes).ToList();
+        Assert.Equal(todos.Count, todos.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    /// <summary>LOS DE RESERVA: con el máximo pedido y dos nombres que ya son de jugadores, entran igual el máximo, con los dos
+    /// primeros de reserva al final. Con menos pedidos, el lugar del que falta lo toma el siguiente de la lista, como antes.</summary>
+    [Fact]
+    public void Un_nombre_tomado_lo_reemplaza_uno_de_reserva()
+    {
+        var tomados = new HashSet<string> { "Ciro", "Lira" };
+        var todos = PobladoDeBots.NombresParaArrancar(ServerIni.MaxBots, tomados.Contains);
+        Assert.Equal(ServerIni.MaxBots, todos.Count);
+        Assert.DoesNotContain("Ciro", todos);
+        Assert.DoesNotContain("Lira", todos);
+        Assert.Equal(new[] { PobladoDeBots.Suplentes[0], PobladoDeBots.Suplentes[1] }, todos.TakeLast(2));
+
+        var pocos = PobladoDeBots.NombresParaArrancar(10, tomados.Contains);
+        Assert.Equal(PobladoDeBots.Nombres.Where(n => !tomados.Contains(n)).Take(10), pocos);
+        Assert.Empty(PobladoDeBots.NombresParaArrancar(0, _ => false));
+
+        Assert.Equal(PobladoDeBots.Nombres.Count, PobladoDeBots.LugarEnElPoblado(PobladoDeBots.Suplentes[0]));
+        Assert.Equal(PobladoDeBots.Nombres.Count + 1, PobladoDeBots.LugarEnElPoblado(PobladoDeBots.Suplentes[1].ToUpperInvariant()));
     }
 
     /// <summary>EL NOMBRE QUE YA ES DE UN JUGADOR NO LO TOMA UN BOT: el personaje en otra cuenta, o la cuenta <c>_bot</c>

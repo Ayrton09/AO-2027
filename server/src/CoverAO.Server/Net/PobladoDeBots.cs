@@ -140,14 +140,33 @@ public sealed class PobladoDeBots
         "Santino", "Tere", "Ulises", "Vilma", "Yanina", "Zulema", "Alma", "Cosme",
     };
 
-    /// <summary>En qué lugar de la lista está ese nombre, o -1. Es lo que decide qué clase le toca: ver
-    /// <see cref="Bot.Reparto"/>.</summary>
+    /// <summary>LOS DE RESERVA: el nombre de <see cref="Nombres"/> que ya es de un jugador (<see cref="NombreAjeno"/>) deja su
+    /// lugar al primero de éstos que esté libre, así un <c>Bots=96</c> son 96 aunque alguien se haya quedado con uno (auditoría
+    /// del 12/10: hasta ahí era un bot menos). En <see cref="LugarEnElPoblado"/> van después de los de la lista.</summary>
+    public static readonly IReadOnlyList<string> Suplentes = new[]
+    {
+        "Aurelio", "Brenda", "Camilo", "Diana", "Ernesto", "Fermin", "Gisela", "Hernan",
+        "Irene", "Joaquin", "Leandro", "Marisa", "Nemesio", "Ofelia", "Pascual", "Renata",
+        "Sabino", "Telma", "Valeria", "Anselmo", "Berta", "Cirilo", "Dora", "Eladio",
+    };
+
+    /// <summary>En qué lugar del poblado está ese nombre (los de reserva, después de los de la lista), o -1. Es lo que decide
+    /// qué clase le toca: ver <see cref="Bot.Reparto"/>.</summary>
     public static int LugarEnElPoblado(string nombre)
     {
         for (int i = 0; i < Nombres.Count; i++)
             if (string.Equals(Nombres[i], nombre, StringComparison.OrdinalIgnoreCase)) return i;
+        for (int i = 0; i < Suplentes.Count; i++)
+            if (string.Equals(Suplentes[i], nombre, StringComparison.OrdinalIgnoreCase)) return Nombres.Count + i;
         return -1;
     }
+
+    /// <summary>Los nombres de <paramref name="cantidad"/> bots: los de la lista en orden y después los de reserva, salteando el
+    /// que el servidor no aceptaría como nombre (las mismas reglas que para un jugador) y el que ya es de otro.</summary>
+    internal static List<string> NombresParaArrancar(int cantidad, Func<string, bool> esAjeno) =>
+        Nombres.Concat(Suplentes)
+            .Where(n => Naming.IsValidCharName(n) && Naming.IsValidName(n + "_bot") && !esAjeno(n))
+            .Take(Math.Max(0, cantidad)).ToList();
 
     /// <summary>Cuánto se espera entre el arranque de un bot y el del siguiente. Entran de a poco por dos
     /// motivos: cada alta de cuenta es un PBKDF2, y una tanda de gente que aparece toda junta en el mismo
@@ -200,15 +219,15 @@ public sealed class PobladoDeBots
 
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.
-        // Y se saltea el nombre que ya es de otro (NombreAjeno): su lugar lo toma el siguiente de la lista.
-        var ajenos = Nombres.Where(n => NombreAjeno(n, db)).ToList();
-        var usables = Nombres.Where(n => Naming.IsValidCharName(n) && Naming.IsValidName(n + "_bot") && !ajenos.Contains(n)).ToList();
-        int cuantos = Math.Min(cantidad, usables.Count);
+        // Y se saltea el nombre que ya es de otro (NombreAjeno): su lugar lo toma el siguiente, y al final los de reserva.
+        var ajenos = Nombres.Concat(Suplentes).Where(n => NombreAjeno(n, db)).ToList();
+        var elegidos = NombresParaArrancar(cantidad, ajenos.Contains);
+        int cuantos = elegidos.Count;
         int nuevos = 0, conPersonaje = 0;
 
         for (int i = 0; i < cuantos; i++)
         {
-            string nombre = usables[i];
+            string nombre = elegidos[i];
             string? clave = credenciales.Clave(nombre);
             var bot = new Bot(nombre, clave, entorno, semilla: Environment.TickCount + i * 7919);
             poblado._bots.Add(bot);
@@ -225,8 +244,8 @@ public sealed class PobladoDeBots
             Console.WriteLine($"   no entran como bots, porque el nombre (o su cuenta _bot) ya es de un jugador: {string.Join(", ", ajenos)}.");
         if (nuevos > NuevosPorTanda)
             Console.WriteLine($"   {nuevos} son nuevos: entran de a {NuevosPorTanda} cada {EntreTandasMs / 60_000} minutos.");
-        if (cantidad > usables.Count)
-            Console.WriteLine($"   pedidos {cantidad}, pero hay {usables.Count} nombres disponibles.");
+        if (cantidad > cuantos)
+            Console.WriteLine($"   pedidos {cantidad}, pero hay {cuantos} nombres disponibles.");
         return poblado;
     }
 }
