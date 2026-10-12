@@ -20,6 +20,10 @@ PuertoWebSocketPublico=0
 PaginaPublica=1
 ; Origenes que puede tener el navegador, separados por coma. Vacio = cualquiera.
 OrigenesPermitidos=
+; Con un reverse-proxy delante (HOSTING.md): sus direcciones, separadas por coma
+; (127.0.0.1,::1 si corre en esta maquina). Sin esto, detras del proxy todos los
+; jugadores tienen la misma IP y los topes por IP los frenan a todos juntos.
+ProxyDeConfianza=
 ; 1 = solo se juega con la app de escritorio: el navegador ve una pagina para
 ; bajarla y el puerto del protocolo clasico no se abre. Prenderlo cuando los
 ; jugadores tengan la app; antes deja afuera a todos.

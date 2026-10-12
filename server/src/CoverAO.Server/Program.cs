@@ -952,7 +952,7 @@ var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTime
     // El Origin que declara el navegador: sin este chequeo, cualquier pagina que abra un jugador
     // puede abrirle sockets a este servidor desde SU maquina.
     origenesPermitidos: serverIni.OrigenesPermitidos, // web client (Fase 3), same world
-    soloEscritorio: soloEscritorio);
+    soloEscritorio: soloEscritorio, proxysDeConfianza: serverIni.ProxyDeConfianza);
 
 // Ejemplo de suscripcion al event bus (decoupling de reglas y efectos).
 world.Events.Subscribe<PlayerLoggedIn>(e =>

@@ -53,6 +53,10 @@ public sealed class ClientSession : IConnection
     public bool TomarVerificacion() => Interlocked.CompareExchange(ref _verificando, 1, 0) == 0;
     public void SoltarVerificacion() => Interlocked.Exchange(ref _verificando, 0);
 
+    /// <summary>Cuántos ingresos de esta sesión esperan turno de verificar (PacketDispatcher.TurnoDeVerificar). Lo tocan sólo
+    /// el loop: la espera se anota y se descuenta adentro de él.</summary>
+    public int EsperasDeVerificacion { get; set; }
+
     public string RemoteEndpoint { get; }
 
     /// <summary>La sesión es de un bot de este mismo servidor. Lo decide el TRANSPORTE, y por eso vale como

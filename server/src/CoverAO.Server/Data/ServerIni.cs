@@ -203,7 +203,7 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
-        "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "SoloEscritorio", "DescargaEscritorio",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
@@ -673,6 +673,15 @@ public sealed class ServerIni
     /// cualquiera abra sockets desde el navegador de un jugador, le gaste el cupo de conexiones y le haga
     /// bloquear su propia IP con intentos de login fallidos.</para></summary>
     public string[] OrigenesPermitidos { get; private set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// <c>ProxyDeConfianza</c>: las direcciones del reverse-proxy que está delante del cliente web (las de la receta de HOSTING.md
+    /// son 127.0.0.1 y ::1), separadas por coma. De una conexión que viene de ahí, la IP del jugador se toma de la cabecera
+    /// <c>X-Forwarded-For</c> que agrega el proxy. Sin esto, detrás del proxy todos los jugadores web tenían la misma IP: el tope
+    /// de conexiones por IP pasaba a ser un tope para toda la web, y el freno de login de uno bloqueaba a todos (auditoría del
+    /// 12/10). Vacío = no se le cree a ninguna cabecera.
+    /// </summary>
+    public string[] ProxyDeConfianza { get; private set; } = Array.Empty<string>();
 
     /// <summary>
     /// REGLA DE LA CASA — <c>DropGlobal</c> (default <b>10000</b>, o sea PRENDIDA). Es <b>una de cada cuántas</b>
@@ -1275,6 +1284,9 @@ public sealed class ServerIni
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
         cfg.SoloEscritorio = ini.GetInt("INIT", "SoloEscritorio", 0) != 0;
         cfg.DescargaEscritorio = ini.GetString("INIT", "DescargaEscritorio").Trim();
+        cfg.ProxyDeConfianza = ini.GetString("INIT", "ProxyDeConfianza")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(Net.ConnectionGuard.NormalizeIp).ToArray();
         cfg.OrigenesPermitidos = ini.GetString("INIT", "OrigenesPermitidos")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no

@@ -22,12 +22,13 @@ public sealed class WebSocketGameServer
     private readonly AdminConfig? _admin;   // baneo por IP en vivo (lo muta el panel)
     private readonly string[] _origenesPermitidos;   // dominios extra que pueden abrir el socket (Server.ini)
     private readonly bool _soloEscritorio;           // sólo entra la app de escritorio (Server.ini SoloEscritorio, ver Escritorio)
+    private readonly string[] _proxysDeConfianza;    // Server.ini ProxyDeConfianza: de ésos, la IP sale de X-Forwarded-For
 
     public WebSocketGameServer(int port, PacketDispatcher dispatcher,
         ConnectionGuard? guard = null, long authTimeoutMs = 0, int maxInboundBytes = 0, AdminConfig? admin = null,
         int paquetesPorSegundo = 0, int rafagaDePaquetes = 200,
         int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10,
-        string[]? origenesPermitidos = null, bool soloEscritorio = false)
+        string[]? origenesPermitidos = null, bool soloEscritorio = false, string[]? proxysDeConfianza = null)
     {
         _port = port;
         _dispatcher = dispatcher;
@@ -41,6 +42,21 @@ public sealed class WebSocketGameServer
         _admin = admin;
         _origenesPermitidos = origenesPermitidos ?? Array.Empty<string>();
         _soloEscritorio = soloEscritorio;
+        _proxysDeConfianza = proxysDeConfianza ?? Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// LA DIRECCIÓN DEL JUGADOR. Si la conexión viene de un proxy de confianza (Server.ini <c>ProxyDeConfianza</c>), la IP es la
+    /// ÚLTIMA de <c>X-Forwarded-For</c>: la que escribió ese proxy. Las anteriores las pudo poner el propio cliente, así que no se
+    /// les cree. Si no, o si la cabecera no trae una IP, la del par TCP, como siempre.
+    /// </summary>
+    public static string DireccionDelCliente(string par, string? reenviadoPara, IReadOnlyCollection<string> proxysDeConfianza)
+    {
+        if (proxysDeConfianza.Count == 0 || string.IsNullOrWhiteSpace(reenviadoPara)) return par;
+        if (!proxysDeConfianza.Contains(ConnectionGuard.NormalizeIp(par))) return par;
+        string ultima = reenviadoPara.Split(',')[^1].Trim();
+        if (!IPAddress.TryParse(ultima, out var ip)) return par;
+        return ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{ip}]:0" : $"{ip}:0";
     }
 
     public async Task RunAsync(CancellationToken token)
@@ -97,7 +113,8 @@ public sealed class WebSocketGameServer
     /// uno de los dos se quedara sin alguno.</para></summary>
     public async Task AceptarAsync(HttpListenerContext ctx, CancellationToken token)
     {
-        var remote = ctx.Request.RemoteEndPoint?.ToString() ?? "?";
+        var remote = DireccionDelCliente(ctx.Request.RemoteEndPoint?.ToString() ?? "?", ctx.Request.Headers["X-Forwarded-For"],
+                                         _proxysDeConfianza);
         string ip = ConnectionGuard.NormalizeIp(remote);   // IP canónica (igual forma que el ban del panel)
         // ANTES del cupo de conexiones, y el orden importa: `Reservar` TOMA la ranura, así que rechazando
         // después habría que acordarse de devolverla — y un rechazo que filtra un slot convierte el guardia en
@@ -105,7 +122,10 @@ public sealed class WebSocketGameServer
         if (!OrigenAceptable(ctx.Request))
         {
             ctx.Response.StatusCode = 403; ctx.Response.Close();
-            Console.WriteLine($"[ws:{remote}] rechazado (Origin ajeno: {ctx.Request.Headers["Origin"]})");
+            // El Origin lo escribe el cliente: al log va recortado, que si no un pedido con una cabecera enorme era una línea enorme
+            // en el disco por cada intento (auditoría del 12/10).
+            string ajeno = ctx.Request.Headers["Origin"] ?? "";
+            Console.WriteLine($"[ws:{remote}] rechazado (Origin ajeno: {(ajeno.Length > 100 ? ajeno[..100] + "…" : ajeno)})");
             return;
         }
         // SÓLO LA APP DE ESCRITORIO, si el server es para ella (ver Escritorio). También antes del cupo.

@@ -190,6 +190,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa**: no cambia ninguna mecánica, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
 | `SoloEscritorio` | 1 = sólo se juega con la app de escritorio: la app agrega su cabecera a cada pedido y sin ella el WebSocket se rechaza, la página del juego se cambia por una para bajar la app y el puerto del protocolo clásico no se abre. La página pública de estado sigue abierta. No frena al que escribe su propio programa (para eso está lo que el server no acepta): saca del medio la consola del navegador, las extensiones y los scripts. **Viene APAGADA**: prenderla cuando los jugadores tengan la app, antes deja afuera a todos |
 | `DescargaEscritorio` | el enlace que muestra esa página para bajar la app (la página de versiones del repo de descargas). Vacío = la página dice que le pidan el instalador al que hostea |
+| `ProxyDeConfianza` | las direcciones del reverse-proxy que está delante del cliente web, separadas por coma (`127.0.0.1,::1` si corre en la misma máquina). De una conexión que viene de ahí, la IP del jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy; sin esto, detrás del proxy todos los jugadores tienen la misma IP y los topes por IP los frenan a todos juntos. Vacío = no se le cree a ninguna cabecera |
 | `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina**: gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
 
 **Ser GM**: en `[INIT]` poner `Dioses=1` y agregar la sección:
@@ -500,9 +501,16 @@ server {
         proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host       $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 ```
+
+**Y en el `Server.ini`, `ProxyDeConfianza=127.0.0.1,::1`** (o la dirección del proxy, si corre en otra máquina). Detrás del
+proxy todas las conexiones llegan desde él, y sin esta clave el server ve a todos los jugadores con la misma IP: el tope de
+conexiones por IP pasa a ser un tope para toda la web, y el freno de intentos de login de uno bloquea a todos. Con la clave, la
+IP de cada jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy (Caddy la pone solo; en nginx va
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` junto a las otras).
 
 Con el proxy puesto, en el router se abre **el 443 y nada más**: ni el 7669 ni el 7667 tienen que llegar desde
 afuera. El **7666** (el del protocolo clásico) es aparte y no pasa por el proxy: ése va en claro salvo que

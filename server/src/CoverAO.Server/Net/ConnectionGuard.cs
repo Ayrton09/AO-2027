@@ -94,7 +94,7 @@ public sealed class ConnectionGuard
 
 /// <summary>Rate-limit de intentos de login por IP (SEC-3). Frena la fuerza bruta de contraseñas y la
 /// amplificación de DoS por PBKDF2 (cada intento válido-de-cuenta cuesta 210k iteraciones al server). Tras
-/// <c>maxFails</c> fallos dentro de una ventana, bloquea la IP por <c>blockMs</c>. Un login exitoso resetea.</summary>
+/// <c>maxFails</c> fallos dentro de una ventana, bloquea la IP por <c>blockMs</c>. Un login exitoso no resetea nada.</summary>
 public sealed class LoginThrottle
 {
     private readonly int _maxFails;
@@ -143,8 +143,7 @@ public sealed class LoginThrottle
         }
     }
 
-    public void RecordSuccess(string ip)
-    {
-        lock (_gate) _map.Remove(ip);
-    }
+    /// <summary>Un ingreso que salió bien NO borra los fallos de la IP: con una cuenta propia se reseteaba el freno entre intento
+    /// e intento contra otra (auditoría del 12/10). Los fallos vencen solos con la ventana y el bloqueo con su plazo.</summary>
+    public void RecordSuccess(string ip) { }
 }

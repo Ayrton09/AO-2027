@@ -105,7 +105,15 @@ public sealed class TcpGameServer
             if (_tlsCert is not null)   // TLS opt-in: handshake de servidor antes de framear
             {
                 var ssl = new SslStream(client.GetStream(), leaveInnerStreamOpen: false);
-                await ssl.AuthenticateAsServerAsync(_tlsCert, clientCertificateRequired: false, checkCertificateRevocation: false);
+                // CON PLAZO: el de entrar al juego arranca recién en la sesión, después del handshake, y un socket que nunca mandaba
+                // el saludo de TLS dejaba su lugar del cupo tomado para siempre (auditoría del 12/10).
+                using var plazo = CancellationTokenSource.CreateLinkedTokenSource(token);
+                plazo.CancelAfter(TimeSpan.FromSeconds(15));
+                await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+                {
+                    ServerCertificate = _tlsCert, ClientCertificateRequired = false,
+                    CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
+                }, plazo.Token);
                 stream = ssl;
             }
             var transport = new TcpTransport(client, stream);
