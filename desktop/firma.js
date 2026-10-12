@@ -1,0 +1,68 @@
+// LA FIRMA DEL CLIENTE (decisión del autor, 12/10). Cada server sirve el cliente, como siempre, pero firmado por el autor: al
+// empaquetar, `firmar.js` anota el SHA-256 de cada archivo del cliente en `firma.json` y lo firma con la clave privada del autor
+// (Ed25519, guardada fuera del repo). La app trae la clave pública y, antes de dejar correr un archivo del server, mira que su
+// contenido sea el firmado. Un cliente cambiado (por el que hostea o en el camino) no corre: así las actualizaciones siguen
+// llegando solas por cada server y nadie puede servir un cliente con trampas a los que juegan con la app.
+//
+// Lo usan el proceso principal de la app (main.js) y la herramienta de firma (firmar.js). Sin Electron adentro: se prueba con
+// `node test-firma.js`.
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const ARCHIVO = 'firma.json';
+
+// Lo que el server arma en el momento (ver StaticFileServer.cs): no es un archivo del cliente, así que ni se firma ni se mira.
+const SINTETICAS = new Set(['coverao-config.json', 'api/publico.json', ARCHIVO]);
+
+const hashDe = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+
+// Lo que se firma: cada ruta con su hash, ordenadas, una por renglón. Igual de los dos lados, sin depender de cómo se
+// serialice el JSON.
+const textoAFirmar = (archivos) => Object.keys(archivos).sort().map((r) => `${r} ${archivos[r]}\n`).join('');
+
+/** Los archivos de la carpeta del cliente, con su ruta relativa en `/`, sin la firma misma ni las notas `.md`. */
+function archivosDe(dir) {
+  const salida = [];
+  const recorrer = (sub) => {
+    for (const e of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
+      const rel = sub ? `${sub}/${e.name}` : e.name;
+      if (e.isDirectory()) recorrer(rel);
+      else if (rel !== ARCHIVO && !rel.toLowerCase().endsWith('.md')) salida.push(rel);
+    }
+  };
+  recorrer('');
+  return salida;
+}
+
+/** El manifiesto firmado de la carpeta `dir` con la clave privada (PEM). */
+function firmarCarpeta(dir, clavePrivada) {
+  const archivos = {};
+  for (const rel of archivosDe(dir)) archivos[rel] = hashDe(fs.readFileSync(path.join(dir, rel)));
+  const firma = crypto.sign(null, Buffer.from(textoAFirmar(archivos)), clavePrivada).toString('base64');
+  return { version: 1, archivos, firma };
+}
+
+/** Los archivos del manifiesto si la firma es de la clave pública (PEM); null si no lo es o el manifiesto está mal armado. */
+function verificarManifiesto(manifiesto, clavePublica) {
+  if (!manifiesto || manifiesto.version !== 1 || typeof manifiesto.firma !== 'string') return null;
+  const archivos = manifiesto.archivos;
+  if (!archivos || typeof archivos !== 'object' || Array.isArray(archivos)) return null;
+  if (!Object.values(archivos).every((h) => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h))) return null;
+  try {
+    const ok = crypto.verify(null, Buffer.from(textoAFirmar(archivos)), clavePublica, Buffer.from(manifiesto.firma, 'base64'));
+    return ok ? archivos : null;
+  } catch { return null; }
+}
+
+/** La ruta de un pedido dentro del cliente: sin el `?v=` del cache-bust, y la raíz o una carpeta es su `index.html`. */
+function rutaDe(url) {
+  let rel = decodeURIComponent(new URL(url).pathname).replace(/^\/+/, '');
+  if (rel === '' || rel.endsWith('/')) rel += 'index.html';
+  return rel;
+}
+
+/** ¿Lo que llegó para esa ruta es lo firmado? Una ruta que no está en el manifiesto no pasa: no se agregan archivos. */
+const esLoFirmado = (archivos, rel, bytes) => Object.prototype.hasOwnProperty.call(archivos, rel) && archivos[rel] === hashDe(bytes);
+
+module.exports = { ARCHIVO, SINTETICAS, hashDe, firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado };

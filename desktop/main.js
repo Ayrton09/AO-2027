@@ -3,9 +3,17 @@
 // pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
 // 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
 // con la música del inicio sonando hasta que se entra a un server.
-const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const firma = require('./firma');
+
+// LA APP NO ARRANCA EN MODO DEPURACIÓN. Con estos interruptores cualquiera se cuelga del juego desde afuera (el puerto de
+// depuración de Chromium deja leer y cambiar la página entera); los fuses del paquete (package.json, `electronFuses`) cierran los de
+// Node, y éstos los cierra la app al arrancar. Sin empaquetar (`npm start`) se permiten: es el desarrollo.
+const DEPURACION = ['--remote-debugging-port', '--remote-debugging-pipe', '--remote-debugging-address', '--inspect', '--inspect-brk',
+  '--inspect-port', '--js-flags'];
+if (app.isPackaged && process.argv.some((a) => DEPURACION.some((d) => a === d || a.startsWith(d + '=')))) app.exit(1);
 
 // El puerto web es StartPort + 3 (hosting/Server.ini.ejemplo): con el StartPort de siempre, 7666, el juego está en el 7669.
 const SERVIDOR_POR_DEFECTO = 'http://localhost:7669/';
@@ -70,6 +78,75 @@ let servidor = servidorDelAcceso ?? config.servidor;
 
 function abrirMenu(error) {
   ventana.loadFile(MENU, { query: { error: error ?? '' } });
+}
+
+// LA FIRMA DEL CLIENTE (ver firma.js): antes de entrar a un server se baja su `firma.json` y se verifica con la clave pública que
+// trae la app; después, cada archivo que pide la página pasa por `interceptar` y tiene que ser el firmado. Sin empaquetar se juega
+// con el cliente de desarrollo, que no está firmado: `COVERAO_VERIFICAR=1` prueba la verificación igual.
+const VERIFICAR = app.isPackaged || process.env.COVERAO_VERIFICAR === '1';
+const CLAVE_PUBLICA = (() => { try { return fs.readFileSync(path.join(__dirname, 'clave-publica.pem'), 'utf8'); } catch { return null; } })();
+const firmados = new Map();   // origen del server -> { ruta: hash } de su manifiesto verificado
+const CABECERA = 'X-CoverAO-Escritorio';
+const sinCaptura = (url, init = {}) => {
+  const encabezados = new Headers(init.headers ?? {});
+  encabezados.set(CABECERA, app.getVersion());
+  return net.fetch(url, { ...init, headers: encabezados, bypassCustomProtocolHandlers: true });
+};
+const nombreDe = (direccion) => direccion.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+/** Baja y verifica la firma del cliente de ese server. Devuelve el motivo para no entrar, o null. */
+async function prepararFirma(direccion) {
+  if (!VERIFICAR) return null;
+  if (!CLAVE_PUBLICA) return 'Esta versión del juego no trae la clave para verificar el cliente: bajate la última.';
+  try {
+    const r = await sinCaptura(new URL(firma.ARCHIVO, direccion).href, { cache: 'no-store' });
+    const archivos = r.ok ? firma.verificarManifiesto(await r.json(), CLAVE_PUBLICA) : null;
+    if (!archivos) return `${nombreDe(direccion)} tiene un cliente sin la firma del juego: no se puede entrar.`;
+    firmados.set(new URL(direccion).origin, archivos);
+    console.log(`[firma] ${nombreDe(direccion)}: cliente firmado, ${Object.keys(archivos).length} archivos`);
+    return null;
+  } catch {
+    return `No se pudo verificar el cliente de ${nombreDe(direccion)}.`;
+  }
+}
+
+/** Un archivo del server que no es el firmado: no se juega ahí, de vuelta al menú con el motivo. */
+function clienteModificado(origen, rel) {
+  if (!firmados.delete(origen)) return;
+  console.error(`[firma] ${origen}/${rel} no es el firmado`);
+  abrirMenu(`El cliente de ${nombreDe(origen)} fue modificado (${rel}): no se puede jugar ahí.`);
+}
+
+function interceptar(esquema) {
+  protocol.handle(esquema, async (pedido) => {
+    const origen = new URL(pedido.url).origin;
+    const archivos = firmados.get(origen);
+    const rel = firma.rutaDe(pedido.url);
+    // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y lo que no
+    // es un GET, pasa derecho.
+    if (!archivos || firma.SINTETICAS.has(rel) || pedido.method !== 'GET') {
+      return net.fetch(pedido, { bypassCustomProtocolHandlers: true });
+    }
+    // Sin las preguntas de caché ni de pedazos de la página: para mirarlo hace falta el archivo entero (el caché de la red sigue
+    // andando por debajo).
+    const encabezados = new Headers(pedido.headers);
+    for (const h of ['if-none-match', 'if-modified-since', 'range']) encabezados.delete(h);
+    const r = await sinCaptura(pedido.url, { headers: encabezados });
+    if (!r.ok) return r;
+    const cuerpo = Buffer.from(await r.arrayBuffer());
+    if (!firma.esLoFirmado(archivos, rel, cuerpo)) { clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
+    const salida = new Headers(r.headers);
+    salida.delete('content-encoding'); salida.delete('content-length');   // el cuerpo ya viene descomprimido
+    return new Response(cuerpo, { status: r.status, headers: salida });
+  });
+}
+
+/** Entra al server: primero su firma, después la página. */
+async function cargarServidor(direccion) {
+  const error = await prepararFirma(direccion);
+  if (error) { console.error(`[firma] ${error}`); abrirMenu(error); return error; }
+  ventana.loadURL(direccion);
+  return null;
 }
 
 function crearVentana() {
@@ -161,7 +238,7 @@ function crearVentana() {
     guardarConfig(config);
   });
 
-  if (servidorDelAcceso) ventana.loadURL(servidorDelAcceso); else abrirMenu();
+  if (servidorDelAcceso) cargarServidor(servidorDelAcceso); else abrirMenu();
 }
 
 /**
@@ -222,6 +299,9 @@ ipcMain.handle('entrar', async (_e, direccion) => {
   // SI NO RESPONDE, NO SE SALE DEL MENÚ: el aviso va en la lista y la música sigue. Antes se intentaba cargar, fallaba y el menú se
   // volvía a abrir entero con el error, con la música desde el principio y la página fallida en el historial.
   if (!(await consultar(elegido)).enLinea) return `${elegido.replace(/^https?:\/\//, '').replace(/\/$/, '')} no responde: ¿está prendido?`;
+  // SIN LA FIRMA, TAMPOCO SE SALE DEL MENÚ: el motivo va en la lista, como el del server apagado.
+  const sinFirma = await prepararFirma(elegido);
+  if (sinFirma) return sinFirma;
   servidor = config.servidor = elegido;
   if (!config.servidores.some((s) => s.direccion === elegido)) config.servidores.push({ direccion: elegido, nombre: '' });
   guardarConfig(config);
@@ -300,6 +380,13 @@ ipcMain.handle('recordar-olvidar', (e) => {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+  // LA CABECERA DE LA APP en cada pedido, la página y el WebSocket del juego incluidos (ver `Escritorio.cs` en el server): con
+  // `SoloEscritorio=1` el server sólo deja jugar a quien la manda, y un navegador no puede ponérsela.
+  session.defaultSession.webRequest.onBeforeSendHeaders((detalles, listo) => {
+    detalles.requestHeaders['X-CoverAO-Escritorio'] = app.getVersion();
+    listo({ requestHeaders: detalles.requestHeaders });
+  });
+  if (VERIFICAR) { interceptar('http'); interceptar('https'); }
   crearVentana();
 });
 

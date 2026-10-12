@@ -75,6 +75,18 @@ Copy-Item -Recurse -Force (Join-Path $Root "client-web\assets") (Join-Path $web 
 # la bitacora de como se hizo.
 Get-ChildItem $web -Recurse -Filter *.md -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
+# LA FIRMA DEL CLIENTE (desktop/firma.js): la app de escritorio solo corre un cliente firmado por el autor. Se firma con la
+# clave privada de ~/.coverao-firma, que vive fuera del repo; sin ella el paquete sale igual, SIN FIRMA, y la app no va a
+# entrar a este server. Va despues de la ultima vez que se toca la carpeta del cliente.
+$clave = Join-Path $HOME ".coverao-firma\clave-privada.pem"
+$node = Get-Command node -ErrorAction SilentlyContinue
+if ((Test-Path $clave) -and $node) {
+  & $node.Source (Join-Path $Root "desktop\firmar.js") $web
+  if ($LASTEXITCODE -ne 0) { throw "la firma del cliente fallo" }
+} else {
+  Write-Host "   cliente SIN FIRMAR (falta la clave en $clave o node): la app de escritorio no va a entrar a este server" -ForegroundColor Yellow
+}
+
 # Server.ini: la configuración del host (puerto, rates, y sobre todo QUIÉN ES GM). Va al lado del .exe, que es
 # donde el servidor lo busca. Se copia comentado y con las listas de staff vacías: el server arranca igual, y el
 # host tiene el archivo delante para editarlo en vez de tener que averiguar que existe.

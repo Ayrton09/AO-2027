@@ -2,13 +2,15 @@
   "name": "coverao-escritorio",
   "version": "1.0.0",
   "private": true,
-  "description": "CoverAO para escritorio: una ventana propia que carga el cliente web del server.",
+  "description": "CoverAO para escritorio: una ventana propia que carga el cliente del server, verificado con la firma del autor.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "windows": "electron-builder --win",
     "linux": "electron-builder --linux",
-    "mac": "electron-builder --mac"
+    "mac": "electron-builder --mac",
+    "test": "node test-firma.js",
+    "firmar": "node firmar.js"
   },
   "build": {
     "appId": "ar.coverao.escritorio",
@@ -20,10 +22,20 @@
     "files": [
       "main.js",
       "preload.js",
+      "firma.js",
+      "clave-publica.pem",
       "menu.html",
       "menu/**",
       "build/icon.png"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
     "win": {
       "target": [
         "nsis",
