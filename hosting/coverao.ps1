@@ -88,6 +88,28 @@ function Existe($n) {
   if (-not (Test-Path (ExeDe $n))) { throw "No hay un servidor '$n' en $Raiz. Crealo con:  .\coverao.ps1 nueva $n" }
 }
 
+# Se avisa ANTES de intentar: sin esto el usuario recibe "Register-ScheduledTask : Acceso denegado" con su volcado de
+# CimException, que no dice que hay que reabrir la consola como Administrador.
+function ExigirAdministrador($que, $accion) {
+  $yo = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+  if (-not $yo.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "$que pide una consola COMO ADMINISTRADOR. Abri PowerShell con boton derecho -> 'Ejecutar como administrador' y corre de nuevo:  .\coverao.ps1 $accion $Nombre"
+  }
+}
+
+# La cuenta con la que corre el arranque automatico, LOCAL SERVICE, por su SID: el nombre cambia con el idioma de Windows
+# ("NT AUTHORITY\SERVICIO LOCAL" en castellano).
+$SidDelServicio = "S-1-5-19"
+function CuentaDelServicio {
+  (New-Object Security.Principal.SecurityIdentifier $SidDelServicio).Translate([Security.Principal.NTAccount]).Value
+}
+
+# Los dos puertos HTTP que se abren en toda interfaz: el WebSocket (StartPort+1) y el cliente web (StartPort+3).
+function UrlsDe($n) {
+  $p = PuertoDe $n
+  "http://+:$($p + 1)/", "http://+:$($p + 3)/"
+}
+
 function Ayuda {
   Write-Host ""
   Write-Host "  CoverAO - gestor de servidores (Windows, sin Docker)" -ForegroundColor Cyan
@@ -209,26 +231,45 @@ switch ($Accion.ToLowerInvariant()) {
     # Control Manager, que es codigo que este servidor no tiene (y agregarlo lo ataria a Windows). La tarea
     # arranca al prender la maquina sin que nadie inicie sesion y reintenta si se cae, que es lo que hace
     # falta. Registrarla a nivel maquina pide PowerShell COMO ADMINISTRADOR.
-    # Se avisa ANTES de intentar: sin esto el usuario recibe "Register-ScheduledTask : Acceso denegado" con
-    # su volcado de CimException, que no dice que hay que reabrir la consola como Administrador.
-    $yo = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-    if (-not $yo.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-      throw "Registrar el arranque automatico pide una consola COMO ADMINISTRADOR. Abri PowerShell con boton derecho -> 'Ejecutar como administrador' y corre de nuevo:  .\coverao.ps1 arranque $Nombre"
-    }
+    ExigirAdministrador "Registrar el arranque automatico" "arranque"
     $d = CarpetaDe $Nombre
+    # CORRE COMO "LOCAL SERVICE", NO COMO SYSTEM (auditoria del 12/10). SYSTEM es el dueno de la maquina: un agujero en el
+    # servidor era un agujero en todo Windows. Esta cuenta no puede mas que lo que se le da aca: escribir en la carpeta del
+    # servidor (los personajes, los logs, el Server.ini) y abrir sus dos puertos HTTP, el WebSocket y el cliente web, en toda
+    # interfaz, que sin ser Administrador pide una reserva de URL (ver HttpBind.cs). El panel de admin es solo local: no la pide.
+    $cuenta = CuentaDelServicio
+    icacls $d /grant "*$($SidDelServicio):(OI)(CI)M" /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo darle permiso de escritura a '$cuenta' sobre $d." }
+    foreach ($url in UrlsDe $Nombre) {
+      $ya = netsh http show urlacl url=$url | Out-String
+      if ($ya -match [regex]::Escape($cuenta)) { continue }
+      if ($ya -match [regex]::Escape($url)) {
+        Write-Host "  Ya hay una reserva de $url para otra cuenta: hasta borrarla (netsh http delete urlacl url=$url) ese puerto queda solo para esta maquina." -ForegroundColor Yellow
+        continue
+      }
+      netsh http add urlacl url=$url "sddl=D:(A;;GX;;;LS)" | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "No se pudo reservar $url para '$cuenta'." }
+    }
     $accionT = New-ScheduledTaskAction -Execute (ExeDe $Nombre) -WorkingDirectory $d
     $disparo = New-ScheduledTaskTrigger -AtStartup
     $opts = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
               -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $principal = New-ScheduledTaskPrincipal -UserId $cuenta -LogonType ServiceAccount -RunLevel Limited
     Register-ScheduledTask -TaskName "CoverAO $Nombre" -Action $accionT -Trigger $disparo `
       -Settings $opts -Principal $principal -Force | Out-Null
-    Write-Host "'$Nombre' va a arrancar solo al prender la maquina." -ForegroundColor Green
+    Write-Host "'$Nombre' va a arrancar solo al prender la maquina, como '$cuenta'." -ForegroundColor Green
   }
 
   "sin-arranque" {
     Existe $Nombre
+    ExigirAdministrador "Sacar el arranque automatico" "sin-arranque"
     Unregister-ScheduledTask -TaskName "CoverAO $Nombre" -Confirm:$false
+    # Y lo que le dio `arranque` a la cuenta del servicio: las reservas de URL que son suyas y el permiso sobre la carpeta.
+    $cuenta = CuentaDelServicio
+    foreach ($url in UrlsDe $Nombre) {
+      if ((netsh http show urlacl url=$url | Out-String) -match [regex]::Escape($cuenta)) { netsh http delete urlacl url=$url | Out-Null }
+    }
+    icacls (CarpetaDe $Nombre) /remove:g "*$SidDelServicio" /Q | Out-Null
     Write-Host "'$Nombre' ya no arranca solo." -ForegroundColor Green
   }
 

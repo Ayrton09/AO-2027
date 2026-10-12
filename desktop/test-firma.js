@@ -4,7 +4,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, SINTETICAS } = require('./firma');
+const { spawnSync } = require('child_process');
+const { firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, SINTETICAS, estaCifrada, cargarPrivada, cifrarPrivada,
+  publicaDe } = require('./firma');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coverao-firma-'));
 try {
@@ -54,6 +56,36 @@ try {
   assert.strictEqual(rutaDe('http://srv:7669/dist/src/codec/bytequeue.js?v=32'), 'dist/src/codec/bytequeue.js');
   assert.strictEqual(rutaDe('http://srv:7669/assets/mapas%20viejos/a.json'), 'assets/mapas viejos/a.json');
   assert.ok(SINTETICAS.has('coverao-config.json') && SINTETICAS.has('api/publico.json'));
+
+  // LA CLAVE CON CONTRASEÑA.
+  const cifrada = cifrarPrivada(privateKey, 'una contraseña larga');
+  assert.ok(estaCifrada(cifrada) && !estaCifrada(priv), 'el PEM cifrado se reconoce');
+  assert.strictEqual(publicaDe(cargarPrivada(cifrada, 'una contraseña larga')), pub, 'con la contraseña da la misma clave');
+  assert.throws(() => cargarPrivada(cifrada, 'otra contraseña'), /no es la contraseña/);
+  assert.throws(() => cargarPrivada(cifrada, undefined), /falta la contraseña/);
+  assert.ok(verificarManifiesto(firmarCarpeta(dir, cargarPrivada(cifrada, 'una contraseña larga')), pub), 'y firma igual');
+  assert.strictEqual(publicaDe(cargarPrivada(priv)), pub, 'la de antes, sin cifrar, se abre sin contraseña');
+
+  // firmar.js, sin consola: la contraseña va en las variables.
+  const k = path.join(dir, 'clave.pem');
+  fs.writeFileSync(k, priv);
+  const firmar = (extra, env = {}) => spawnSync(process.execPath, [path.join(__dirname, 'firmar.js'), ...extra, '--clave', k],
+    { env: { ...process.env, COVERAO_FIRMA_CLAVE: undefined, COVERAO_FIRMA_CLAVE_NUEVA: undefined, ...env }, encoding: 'utf8' });
+  assert.strictEqual(firmar(['--poner-clave'], { COVERAO_FIRMA_CLAVE_NUEVA: 'corta' }).status, 5, 'una contraseña corta no va');
+  assert.ok(!estaCifrada(fs.readFileSync(k, 'utf8')), 'y la clave quedó como estaba');
+  assert.strictEqual(firmar(['--poner-clave'], { COVERAO_FIRMA_CLAVE_NUEVA: 'la contraseña nueva' }).status, 0);
+  const enDisco = fs.readFileSync(k, 'utf8');
+  assert.ok(estaCifrada(enDisco), '--poner-clave la deja cifrada');
+  assert.strictEqual(publicaDe(cargarPrivada(enDisco, 'la contraseña nueva')), pub, 'y es la misma clave');
+  const cliente = path.join(dir, 'dist');
+  assert.strictEqual(firmar([cliente]).status, 3, 'sin la contraseña ni consola, no firma');
+  assert.strictEqual(firmar([cliente], { COVERAO_FIRMA_CLAVE: 'otra' }).status, 3, 'con otra contraseña, tampoco');
+  // Con la buena la abre y firma; no la escribe porque no es la clave de la app (desktop/clave-publica.pem).
+  assert.strictEqual(firmar([cliente], { COVERAO_FIRMA_CLAVE: 'la contraseña nueva' }).status, 4, 'con la buena, la abre');
+  const copia = path.join(dir, 'copia.pem');
+  assert.strictEqual(firmar(['--copia', copia]).status, 0);
+  assert.strictEqual(fs.readFileSync(copia, 'utf8'), enDisco, 'la copia de una cifrada es el mismo archivo');
+  assert.strictEqual(firmar(['--copia', copia]).status, 1, 'la copia no pisa un archivo');
   console.log('test-firma: OK');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

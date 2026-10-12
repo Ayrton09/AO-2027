@@ -77,12 +77,13 @@ Get-ChildItem $web -Recurse -Filter *.md -ErrorAction SilentlyContinue | Remove-
 
 # LA FIRMA DEL CLIENTE (desktop/firma.js): la app de escritorio solo corre un cliente firmado por el autor. Se firma con la
 # clave privada de ~/.coverao-firma, que vive fuera del repo; sin ella el paquete sale igual, SIN FIRMA, y la app no va a
-# entrar a este server. Va despues de la ultima vez que se toca la carpeta del cliente.
+# entrar a este server. Va despues de la ultima vez que se toca la carpeta del cliente. Con la clave CIFRADA (firmar.js
+# --poner-clave), firmar.js pregunta la contrasena en esta consola o la toma de la variable COVERAO_FIRMA_CLAVE.
 $clave = Join-Path $HOME ".coverao-firma\clave-privada.pem"
 $node = Get-Command node -ErrorAction SilentlyContinue
 if ((Test-Path $clave) -and $node) {
   & $node.Source (Join-Path $Root "desktop\firmar.js") $web
-  if ($LASTEXITCODE -ne 0) { throw "la firma del cliente fallo" }
+  if ($LASTEXITCODE -ne 0) { throw "la firma del cliente fallo (con la clave cifrada: correr desde una consola, o con la contrasena en COVERAO_FIRMA_CLAVE)" }
 } else {
   Write-Host "   cliente SIN FIRMAR (falta la clave en $clave o node): la app de escritorio no va a entrar a este server" -ForegroundColor Yellow
 }

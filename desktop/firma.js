@@ -75,4 +75,24 @@ function rutaDe(url) {
 /** ¿Lo que llegó para esa ruta es lo firmado? Una ruta que no está en el manifiesto no pasa: no se agregan archivos. */
 const esLoFirmado = (archivos, rel, bytes) => Object.prototype.hasOwnProperty.call(archivos, rel) && archivos[rel] === hashDe(bytes);
 
-module.exports = { ARCHIVO, SINTETICAS, hashDe, firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado };
+// LA CLAVE PRIVADA CON CONTRASEÑA (auditoría del 12/10): en el disco va cifrada, así una copia del archivo (un backup, la carpeta
+// sincronizada, otro usuario de la PC) no alcanza para firmar un cliente con trampas.
+/** ¿El PEM de la clave privada está cifrado? */
+const estaCifrada = (pem) => /-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(pem);
+
+/** La clave privada del PEM; si está cifrada, con la contraseña. Tira si falta o no es la contraseña. */
+function cargarPrivada(pem, contrasena) {
+  if (!estaCifrada(pem)) return crypto.createPrivateKey(pem);
+  if (!contrasena) throw new Error('la clave está cifrada y falta la contraseña');
+  try { return crypto.createPrivateKey({ key: pem, format: 'pem', passphrase: contrasena }); }
+  catch { throw new Error('esa no es la contraseña de la clave'); }
+}
+
+/** El PEM de la clave privada cifrado con la contraseña. */
+const cifrarPrivada = (clave, contrasena) => clave.export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase: contrasena });
+
+/** La clave pública (PEM) de una privada: para comparar dos claves sin mirar la privada. */
+const publicaDe = (clave) => crypto.createPublicKey(clave).export({ type: 'spki', format: 'pem' });
+
+module.exports = { ARCHIVO, SINTETICAS, hashDe, firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, estaCifrada, cargarPrivada,
+  cifrarPrivada, publicaDe };

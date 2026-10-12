@@ -15,6 +15,12 @@ const DEPURACION = ['--remote-debugging-port', '--remote-debugging-pipe', '--rem
   '--inspect-port', '--js-flags'];
 if (app.isPackaged && process.argv.some((a) => DEPURACION.some((d) => a === d || a.startsWith(d + '=')))) app.exit(1);
 
+// UNA SOLA VENTANA DEL JUEGO (auditoría del 12/10): con dos abiertas, cada una guardaba su copia del config.json encima de la
+// otra y se perdían servers agregados, ajustes y cuentas recordadas. Abrir la app otra vez trae al frente la que ya está, y un
+// acceso directo con `--servidor=` entra a ese server en ella (ver 'second-instance', abajo).
+const unica = app.requestSingleInstanceLock();
+if (!unica) app.quit();
+
 // El puerto web es StartPort + 3 (hosting/Server.ini.ejemplo): con el StartPort de siempre, 7666, el juego está en el 7669.
 const SERVIDOR_POR_DEFECTO = 'http://localhost:7669/';
 const MENU = path.join(__dirname, 'menu.html');
@@ -427,7 +433,17 @@ ipcMain.handle('recordar-olvidar', (e) => {
   guardarConfig(config);
 });
 
+app.on('second-instance', (_e, argv) => {
+  if (!ventana) return;
+  if (ventana.isMinimized()) ventana.restore();
+  ventana.show();
+  ventana.focus();
+  const otro = normalizar(argv.find((a) => a.startsWith('--servidor='))?.slice('--servidor='.length));
+  if (otro) { servidor = otro; cargarServidor(otro); }
+});
+
 app.whenReady().then(() => {
+  if (!unica) return;
   Menu.setApplicationMenu(null);
   // LA CABECERA DE LA APP en cada pedido, la página y el WebSocket del juego incluidos (ver `Escritorio.cs` en el server): con
   // `SoloEscritorio=1` el server sólo deja jugar a quien la manda, y un navegador no puede ponérsela.
