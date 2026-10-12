@@ -36,6 +36,10 @@ Lo nuevo desde el paquete del 6 de octubre.
 
 ### Para GMs y para el que hostea
 
+- **El juego de escritorio sólo corre el cliente original**: cada server lo sirve firmado y, si alguien lo cambió, el juego no
+  entra y lo dice.
+- **`SoloEscritorio` en el Server.ini**: en 1, sólo se juega con el juego de escritorio. El navegador ve una página para bajarlo
+  (con el enlace de `DescargaEscritorio`) y el puerto del protocolo clásico no se abre. Viene en 0.
 - **El anticheat, por ahora, sólo anota**: ninguna trampa echa ni banea, todas quedan en `data/logs/trampas-*.log` y en
   el aviso a los GMs conectados. Para sancionar, `TrampasParaEchar` y `TrampasParaBanear` en el Server.ini (por ejemplo 3 y 6).
 - **Cuenta como trampa todo lo que el cliente no puede mandar**: una ranura que no existe, una cantidad negativa, un
