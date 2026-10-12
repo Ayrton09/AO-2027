@@ -128,7 +128,9 @@ public sealed class IniFile
 
     /// <summary>El candado de las escrituras del ini. Al <c>Server.ini</c> lo reescriben DOS hilos: el del
     /// game loop (<c>/SETINIVAR</c>) y el HTTP del panel (cambiarle el rango a alguien), y los dos hacen
-    /// leer-modificar-guardar sobre el mismo archivo. Sin esto, dos cambios a la vez se pisan.</summary>
+    /// leer-modificar-guardar sobre el mismo archivo. Sin esto, dos cambios a la vez se pisan. Por eso
+    /// <c>ServerIni.GuardarStaff</c> lo toma alrededor de las tres cosas, no sólo en <see cref="Save"/>, que lo vuelve a
+    /// tomar adentro.</summary>
     internal static readonly object PuertaDeEscritura = new();
 
     /// <summary>Guarda pasando por un temporal: este archivo decide QUIEN ES STAFF, los puertos y las reglas
