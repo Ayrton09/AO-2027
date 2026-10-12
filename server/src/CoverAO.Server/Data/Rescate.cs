@@ -9,7 +9,7 @@ namespace CoverAO.Server.Data;
 /// UNA ESCRITURA QUE SOBREVIVE A UNA BASE CAÍDA (fase5/postgres/DISENO.md, 3.5). Si al apagar la base no responde y la cola no
 /// se vació, lo que quedaba se escribe en <c>data/rescate-AAAAMMDD-HHMMSS.json</c>, y el próximo arranque lo aplica ANTES de
 /// cargar el mundo y de abrir los puertos. Cada uno guarda un estado entero —el personaje, la cuenta, los clanes—: aplicarlo
-/// dos veces da lo mismo.
+/// dos veces da lo mismo. Menos la suma a una bóveda, que se cuida aparte (<see cref="RescateDeAcreditacion"/>).
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "tipo")]
 [JsonDerivedType(typeof(RescateDePersonaje), "personaje")]
@@ -23,6 +23,7 @@ namespace CoverAO.Server.Data;
 [JsonDerivedType(typeof(RescateDeSubastas), "subastas")]
 [JsonDerivedType(typeof(RescateDelRecord), "record")]
 [JsonDerivedType(typeof(RescateDeIpsBaneadas), "ips-baneadas")]
+[JsonDerivedType(typeof(RescateDeAcreditacion), "acreditacion")]
 public abstract record Rescate
 {
     public abstract void Aplicar(IAlmacen almacen);
@@ -96,6 +97,32 @@ public sealed record RescateDeIpsBaneadas(IReadOnlyList<string> Ips) : Rescate
     public override void Aplicar(IAlmacen almacen) => almacen.GuardarIpsBaneadas(Ips);
 }
 
+/// <summary>
+/// Una suma a la bóveda de un desconectado: la transferencia de oro (<see cref="Persistence.AcreditarBovedaAsync"/>). Es la
+/// única que NO guarda un estado entero, así que aplicarla dos veces duplicaría el oro. Con <see cref="Antes"/>, el saldo que
+/// tenía antes de la suma: si ya es <c>Antes + Monto</c>, entró y no se suma de nuevo. Sin él, la suma no llegó a empezar, y
+/// <see cref="Rescates.AplicarLosPendientes"/> anota el saldo en el archivo antes de sumar.
+/// </summary>
+public sealed record RescateDeAcreditacion(string Nombre, long Monto, long? Antes) : Rescate
+{
+    public override void Aplicar(IAlmacen almacen)
+    {
+        long saldo = almacen.AcreditarBoveda(Nombre, 0) ?? throw new InvalidOperationException($"{Nombre} no existe");
+        if (Antes is { } antes)
+        {
+            if (saldo == antes + Monto) return;   // ya había entrado
+            if (saldo != antes)
+                throw new InvalidOperationException($"la bóveda de {Nombre} tiene {saldo}, y no {antes} ni {antes + Monto}: no se sabe si entró");
+        }
+        almacen.AcreditarBoveda(Nombre, Monto);
+    }
+
+    /// <summary>La misma, con el saldo de ahora como el de antes (si el personaje existe).</summary>
+    public RescateDeAcreditacion ConElSaldoDe(IAlmacen almacen) => this with { Antes = almacen.AcreditarBoveda(Nombre, 0) };
+
+    public override string Describir() => $"acreditar {Monto} a la bóveda de {Nombre}";
+}
+
 /// <summary>El archivo de rescate: lo que se escribe al apagar y lo que aplica el arranque.</summary>
 public static class Rescates
 {
@@ -140,10 +167,18 @@ public static class Rescates
             var archivo = JsonSerializer.Deserialize<Archivo>(File.ReadAllText(ruta, Encoding.UTF8), Opciones)
                 ?? throw new InvalidOperationException($"{ruta} está vacío");
             var sinAplicar = new List<string>();
-            foreach (var rescate in archivo.Rescates)
+            for (int i = 0; i < archivo.Rescates.Count; i++)
             {
+                var rescate = archivo.Rescates[i];
                 try
                 {
+                    // UNA SUMA ANOTA EL SALDO DE ANTES EN EL ARCHIVO, ANTES DE SUMAR: si la base se cae en el medio y el archivo
+                    // se vuelve a aplicar en el próximo arranque, la que ya entró no se suma otra vez.
+                    if (rescate is RescateDeAcreditacion { Antes: null } suma)
+                    {
+                        archivo.Rescates[i] = rescate = suma.ConElSaldoDe(almacen);
+                        EscrituraAtomica.Escribir(ruta, JsonSerializer.Serialize(archivo, Opciones), new UTF8Encoding(false));
+                    }
                     rescate.Aplicar(almacen);
                     aplicadas++;
                 }

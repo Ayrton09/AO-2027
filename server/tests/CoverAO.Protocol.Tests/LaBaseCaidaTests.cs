@@ -132,6 +132,29 @@ public sealed class LaBaseCaidaTests : IDisposable
         FichasDePrueba.AssertIgual(FichasDePrueba.Llena("Uno", 4), _real.LeerPersonaje("Uno")!);
     }
 
+    /// <summary>LA LECTURA ABANDONADA SALE DE LA COLA con la base todavía caída, y las que esperan tienen tope: el ingreso deja
+    /// de esperar a los 10 s, y cada intento con la base caída dejaba su lectura en la cola, reintentándose sin fin.</summary>
+    [Fact]
+    public void Una_lectura_abandonada_sale_de_la_cola_y_las_que_esperan_tienen_tope()
+    {
+        var (almacen, _) = AlmacenQueFalla.Crear(_real, _ => Trabada());
+        using var cola = new ColaDeLaBase(almacen, Rapido, topeDeLecturas: 2);
+        using var abandono = new CancellationTokenSource();
+
+        var una = cola.PedirAsync("leer una cuenta (Una)", a => a.LeerCuenta("Una"), abandono.Token);
+        cola.PedirAsync("leer una cuenta (Otra)", a => a.LeerCuenta("Otra"), abandono.Token);
+        var deMas = cola.PedirAsync("leer una cuenta (Tercera)", a => a.LeerCuenta("Tercera"), abandono.Token);
+        Assert.IsType<LaBaseNoResponde>(deMas.Exception?.InnerException);
+        Assert.True(SpinWait.SpinUntil(() => cola.CaidaDesde is not null, TimeSpan.FromSeconds(5)));
+
+        abandono.Cancel();
+
+        Assert.True(SpinWait.SpinUntil(() => cola.Pendientes == 0, TimeSpan.FromSeconds(5)), $"quedan {cola.Pendientes} pendientes");
+        Assert.True(SpinWait.SpinUntil(() => una.IsCanceled, TimeSpan.FromSeconds(5)));
+        using var otro = new CancellationTokenSource();
+        Assert.False(cola.PedirAsync("leer una cuenta (Cuarta)", a => a.LeerCuenta("Cuarta"), otro.Token).IsFaulted);
+    }
+
     /// <summary>AL APAGAR CON LA BASE CAÍDA la cola se rinde y devuelve lo que no se aplicó, en orden: lo que tiene rescate, con
     /// su rescate; lo demás, anotado. El que esperaba una respuesta se entera.</summary>
     [Fact]
@@ -419,6 +442,53 @@ public sealed class LaBaseCaidaTests : IDisposable
 
         Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
         db.Dispose();
+    }
+
+    /// <summary>LA TRANSFERENCIA A UN DESCONECTADO NO PIERDE EL ORO SI LA BASE NO RESPONDE AL APAGAR: la suma va al rescate y el
+    /// que esperaba no se entera (devolverle el oro al que la mandó lo duplicaría). Y aplicar el mismo rescate otra vez —la
+    /// base se cayó antes de dejarlo como aplicado— no suma de nuevo.</summary>
+    [Fact]
+    public void Con_la_base_caida_al_apagar_la_acreditacion_queda_en_el_rescate()
+    {
+        ConPersonajes("Uno");
+        long antes = _real.LeerPersonaje("Uno")!.OroEnBanco;
+        var (almacen, control) = AlmacenQueFalla.Crear(_real, _ => null);
+        var db = new Persistence(almacen, Niveles());
+        control.Falla(_ => Trabada());
+
+        var credito = db.AcreditarBovedaAsync("Uno", 300);
+        db.Cerrar(_raiz, TimeSpan.FromMilliseconds(300));
+
+        Assert.False(credito.IsCompleted);
+        string archivo = Assert.Single(Directory.GetFiles(_raiz, "rescate-*.json"));
+        Assert.Equal(1, Rescates.AplicarLosPendientes(_raiz, _real));
+        Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
+
+        File.Move(archivo + ".aplicado", archivo);
+        Assert.Equal(1, Rescates.AplicarLosPendientes(_raiz, _real));
+        Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
+    }
+
+    /// <summary>Y la suma que llegó a la base, con la respuesta perdida justo antes de rendirse, el rescate la reconoce por el
+    /// saldo de antes y no la repite.</summary>
+    [Fact]
+    public void Una_acreditacion_que_entro_antes_de_apagar_no_se_repite_con_el_rescate()
+    {
+        ConPersonajes("Uno");
+        long antes = _real.LeerPersonaje("Uno")!.OroEnBanco;
+        int caida = 0;
+        var (almacen, control) = AlmacenQueFalla.Crear(_real, _ => Volatile.Read(ref caida) == 1 ? Trabada() : null);
+        var db = new Persistence(almacen, Niveles());
+        control.FallaDespues((m, args) => m == nameof(IAlmacen.AcreditarBoveda) && (long)args[1]! != 0
+                                          && Interlocked.Exchange(ref caida, 1) == 0 ? Trabada() : null);
+
+        db.AcreditarBovedaAsync("Uno", 300);
+        Assert.True(SpinWait.SpinUntil(() => db.Cola.CaidaDesde is not null, TimeSpan.FromSeconds(5)));
+        db.Cerrar(_raiz, TimeSpan.FromMilliseconds(300));
+
+        Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
+        Assert.Equal(1, Rescates.AplicarLosPendientes(_raiz, _real));
+        Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
     }
 
     /// <summary>Lo mismo con un cambio de cuenta: la trampa que se suma, el donador que se da vuelta.</summary>
