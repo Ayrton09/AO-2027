@@ -256,13 +256,14 @@ function crearVentana() {
   });
 
   // Los enlaces a otros sitios (el código fuente, la página de un clan) se abren en el navegador, no en la ventana del juego.
-  const mismoServidor = (url) => servidor && url.startsWith(new URL(servidor).origin);
+  // Adentro sólo se navega al MISMO ORIGEN del server, no a uno que empiece igual, y a una página local sólo desde el menú.
+  const mismoServidor = (url) => { try { return !!servidor && new URL(url).origin === new URL(servidor).origin; } catch { return false; } };
   ventana.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   ventana.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file:') || mismoServidor(url)) return;
+    if (url.startsWith('file:') ? ventana.webContents.getURL().startsWith('file:') : mismoServidor(url)) return;
     e.preventDefault();
     if (/^https?:/i.test(url)) shell.openExternal(url);
   });
@@ -423,6 +424,10 @@ app.whenReady().then(() => {
     detalles.requestHeaders['X-CoverAO-Escritorio'] = app.getVersion();
     listo({ requestHeaders: detalles.requestHeaders });
   });
+  // NINGÚN PERMISO (cámara, micrófono, portapapeles, notificaciones): ni el menú ni el juego piden ninguno, y sin estos dos
+  // Electron se los da a cualquier página que los pida.
+  session.defaultSession.setPermissionRequestHandler((_contenido, _permiso, responder) => responder(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
   if (VERIFICAR) { interceptar('http'); interceptar('https'); }
   crearVentana();
 });
