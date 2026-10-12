@@ -35,7 +35,10 @@ function leerConfig() {
 function guardarConfig(config) {
   try {
     fs.mkdirSync(path.dirname(archivoDeConfig()), { recursive: true });
-    fs.writeFileSync(archivoDeConfig(), JSON.stringify(config, null, 2));
+    // Primero a un archivo aparte y después se le cambia el nombre: un corte a mitad de camino deja entero el anterior.
+    const temporal = archivoDeConfig() + '.tmp';
+    fs.writeFileSync(temporal, JSON.stringify(config, null, 2), { flush: true });
+    fs.renameSync(temporal, archivoDeConfig());
   } catch { /* sin config guardada, la próxima vez pregunta de nuevo */ }
 }
 
