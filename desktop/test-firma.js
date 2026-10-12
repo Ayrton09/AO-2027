@@ -29,6 +29,21 @@ try {
   assert.strictEqual(verificarManifiesto(null, pub), null);
   assert.strictEqual(verificarManifiesto({ version: 1, archivos: [], firma: '' }, pub), null);
 
+  // LA FECHA DE LA FIRMA y el mínimo que puede pedir la app.
+  assert.ok(m.version === 2 && /^\d{4}-\d{2}-\d{2}T/.test(m.fecha), 'el manifiesto lleva la fecha');
+  assert.strictEqual(verificarManifiesto({ ...m, fecha: undefined }, pub), null, 'la versión 2 sin fecha no pasa');
+  const vieja = firmarCarpeta(dir, priv, new Date('2026-10-01T00:00:00Z'));
+  assert.ok(verificarManifiesto(vieja, pub), 'sin mínimo, una firma vieja pasa');
+  assert.ok(verificarManifiesto(vieja, pub, '2026-10-01T00:00:00Z'), 'la firmada justo en el mínimo pasa');
+  assert.strictEqual(verificarManifiesto(vieja, pub, '2026-10-12T00:00:00Z'), null, 'la firmada antes del mínimo no pasa');
+  assert.strictEqual(verificarManifiesto({ ...vieja, fecha: '2026-10-20T00:00:00.000Z' }, pub, '2026-10-12T00:00:00Z'), null,
+    'cambiarle la fecha rompe la firma');
+  const texto1 = Object.keys(m.archivos).sort().map((r) => `${r} ${m.archivos[r]}\n`).join('');
+  const v1 = { version: 1, archivos: m.archivos, firma: crypto.sign(null, Buffer.from(texto1), priv).toString('base64') };
+  assert.ok(verificarManifiesto(v1, pub), 'la versión 1, sin fecha, pasa sin mínimo');
+  assert.strictEqual(verificarManifiesto(v1, pub, '2026-10-12T00:00:00Z'), null, 'y con mínimo no pasa');
+  assert.strictEqual(verificarManifiesto({ ...v1, version: 2, fecha: m.fecha }, pub), null, 'su firma no vale como de la versión 2');
+
   assert.ok(esLoFirmado(archivos, 'index.html', Buffer.from('<html>juego</html>')), 'el archivo tal cual pasa');
   assert.ok(!esLoFirmado(archivos, 'index.html', Buffer.from('<html>juego con trampa</html>')), 'cambiado no pasa');
   assert.ok(!esLoFirmado(archivos, 'trampa.js', Buffer.from('')), 'uno que no está en el manifiesto no pasa');

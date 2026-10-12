@@ -85,6 +85,9 @@ function abrirMenu(error) {
 // con el cliente de desarrollo, que no está firmado: `COVERAO_VERIFICAR=1` prueba la verificación igual.
 const VERIFICAR = app.isPackaged || process.env.COVERAO_VERIFICAR === '1';
 const CLAVE_PUBLICA = (() => { try { return fs.readFileSync(path.join(__dirname, 'clave-publica.pem'), 'utf8'); } catch { return null; } })();
+// EL CLIENTE MÁS VIEJO QUE SE ACEPTA: con una fecha ISO (por ejemplo '2026-10-12T00:00:00Z'), un cliente firmado antes no corre,
+// ni uno de la versión 1 de la firma, que no tiene fecha. null: sin tope.
+const FIRMADO_DESDE = null;
 const firmados = new Map();   // origen del server -> { ruta: hash } de su manifiesto verificado
 const bloqueados = new Set();   // origen de un server con el cliente modificado: no se le pide nada hasta volver a entrar
 const CABECERA = 'X-CoverAO-Escritorio';
@@ -131,8 +134,13 @@ async function prepararFirma(direccion) {
   if (!CLAVE_PUBLICA) return 'Esta versión del juego no trae la clave para verificar el cliente: bajate la última.';
   try {
     const { cuerpo } = await bajar(new URL(firma.ARCHIVO, direccion).href, { cache: 'no-store' });
-    const archivos = cuerpo ? firma.verificarManifiesto(JSON.parse(cuerpo.toString('utf8')), CLAVE_PUBLICA) : null;
-    if (!archivos) return `${nombreDe(direccion)} tiene un cliente sin la firma del juego: no se puede entrar.`;
+    const manifiesto = cuerpo ? JSON.parse(cuerpo.toString('utf8')) : null;
+    const archivos = firma.verificarManifiesto(manifiesto, CLAVE_PUBLICA, FIRMADO_DESDE);
+    if (!archivos) {
+      return firma.verificarManifiesto(manifiesto, CLAVE_PUBLICA)
+        ? `${nombreDe(direccion)} tiene un cliente viejo, que este juego ya no acepta: no se puede entrar.`
+        : `${nombreDe(direccion)} tiene un cliente sin la firma del juego: no se puede entrar.`;
+    }
     bloqueados.delete(new URL(direccion).origin);
     firmados.set(new URL(direccion).origin, archivos);
     console.log(`[firma] ${nombreDe(direccion)}: cliente firmado, ${Object.keys(archivos).length} archivos`);

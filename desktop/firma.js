@@ -18,8 +18,11 @@ const SINTETICAS = new Set(['coverao-config.json', 'api/publico.json', ARCHIVO])
 const hashDe = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 // Lo que se firma: cada ruta con su hash, ordenadas, una por renglón. Igual de los dos lados, sin depender de cómo se
-// serialice el JSON.
-const textoAFirmar = (archivos) => Object.keys(archivos).sort().map((r) => `${r} ${archivos[r]}\n`).join('');
+// serialice el JSON. DESDE LA VERSIÓN 2 va adelante la fecha de la firma, así la app puede no aceptar un cliente firmado antes
+// de un mínimo; la versión 1 no la tiene.
+const textoAFirmar = (archivos, fecha) => (fecha === undefined ? '' : `version 2\nfecha ${fecha}\n`)
+  + Object.keys(archivos).sort().map((r) => `${r} ${archivos[r]}\n`).join('');
+const FECHA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
 /** Los archivos de la carpeta del cliente, con su ruta relativa en `/`, sin la firma misma ni las notas `.md`. */
 function archivosDe(dir) {
@@ -35,22 +38,29 @@ function archivosDe(dir) {
   return salida;
 }
 
-/** El manifiesto firmado de la carpeta `dir` con la clave privada (PEM). */
-function firmarCarpeta(dir, clavePrivada) {
+/** El manifiesto firmado de la carpeta `dir` con la clave privada (PEM), con la fecha de hoy (o `cuando`). */
+function firmarCarpeta(dir, clavePrivada, cuando = new Date()) {
   const archivos = {};
   for (const rel of archivosDe(dir)) archivos[rel] = hashDe(fs.readFileSync(path.join(dir, rel)));
-  const firma = crypto.sign(null, Buffer.from(textoAFirmar(archivos)), clavePrivada).toString('base64');
-  return { version: 1, archivos, firma };
+  const fecha = cuando.toISOString();
+  const firma = crypto.sign(null, Buffer.from(textoAFirmar(archivos, fecha)), clavePrivada).toString('base64');
+  return { version: 2, fecha, archivos, firma };
 }
 
-/** Los archivos del manifiesto si la firma es de la clave pública (PEM); null si no lo es o el manifiesto está mal armado. */
-function verificarManifiesto(manifiesto, clavePublica) {
-  if (!manifiesto || manifiesto.version !== 1 || typeof manifiesto.firma !== 'string') return null;
+/**
+ * Los archivos del manifiesto si la firma es de la clave pública (PEM); null si no lo es o el manifiesto está mal armado. Con
+ * `firmadoDesde` (una fecha ISO), tampoco pasa uno firmado antes ni uno de la versión 1, que no tiene fecha.
+ */
+function verificarManifiesto(manifiesto, clavePublica, firmadoDesde = null) {
+  if (!manifiesto || (manifiesto.version !== 1 && manifiesto.version !== 2) || typeof manifiesto.firma !== 'string') return null;
+  const fecha = manifiesto.version === 2 ? manifiesto.fecha : undefined;
+  if (manifiesto.version === 2 && (typeof fecha !== 'string' || !FECHA.test(fecha))) return null;
+  if (firmadoDesde != null && !(fecha !== undefined && Date.parse(fecha) >= Date.parse(firmadoDesde))) return null;
   const archivos = manifiesto.archivos;
   if (!archivos || typeof archivos !== 'object' || Array.isArray(archivos)) return null;
   if (!Object.values(archivos).every((h) => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h))) return null;
   try {
-    const ok = crypto.verify(null, Buffer.from(textoAFirmar(archivos)), clavePublica, Buffer.from(manifiesto.firma, 'base64'));
+    const ok = crypto.verify(null, Buffer.from(textoAFirmar(archivos, fecha)), clavePublica, Buffer.from(manifiesto.firma, 'base64'));
     return ok ? archivos : null;
   } catch { return null; }
 }
