@@ -50,9 +50,10 @@ public sealed class ServerIni
     public int MaxUsers { get; private set; }              // 0 = sin tope
     public bool AllowMultiLogins { get; private set; } = true;
     public int LimiteConexionesPorIp { get; private set; } // 0 = sin tope
-    // ANTICHEAT: sanción escalonada por cuenta (ver PacketDispatcher.RegistrarTrampa). 0 = ese escalón apagado.
-    public int TrampasParaEchar { get; private set; } = 3;
-    public int TrampasParaBanear { get; private set; } = 6;
+    // ANTICHEAT: sanción escalonada por cuenta (ver PacketDispatcher.RegistrarTrampa). 0 = ese escalón apagado, y con los dos en
+    // 0 (el default, por decisión del autor el 12/10) ninguna trampa echa ni banea: todas van sólo al log y al aviso de los GMs.
+    public int TrampasParaEchar { get; private set; }
+    public int TrampasParaBanear { get; private set; }
     // REGISTRO DE ECONOMÍA: los movimientos de oro de este monto o más van a data/logs/economia-*.log.
     public int EconomiaUmbralOro { get; private set; } = 1000;
     // PERSONAJES EN EL MUNDO POR IP (el original: tope fijo de 10 CONEXIONES por IP y AllowMultiLogins todo o
@@ -1137,8 +1138,8 @@ public sealed class ServerIni
         cfg.PuertoWebSocketPublico = wsPublico is >= 1 and <= 65535 ? wsPublico : 0;
         cfg.AllowMultiLogins = ini.GetInt("INIT", "AllowMultiLogins", 1) != 0;
         cfg.LimiteConexionesPorIp = ini.GetInt("INIT", "LimiteConexionesPorIp", 0);
-        cfg.TrampasParaEchar = Math.Max(0, ini.GetInt("INIT", "TrampasParaEchar", 3));
-        cfg.TrampasParaBanear = Math.Max(0, ini.GetInt("INIT", "TrampasParaBanear", 6));
+        cfg.TrampasParaEchar = Math.Max(0, ini.GetInt("INIT", "TrampasParaEchar", 0));
+        cfg.TrampasParaBanear = Math.Max(0, ini.GetInt("INIT", "TrampasParaBanear", 0));
         cfg.EconomiaUmbralOro = Math.Max(0, ini.GetInt("INIT", "EconomiaUmbralOro", 1000));
         cfg.MaxPersonajesPorIp = Math.Max(0, ini.GetInt("INIT", "MaxPersonajesPorIp", 10));
         cfg.CuentasNuevasPorIp = Math.Max(0, ini.GetInt("INIT", "CuentasNuevasPorIp", 3));

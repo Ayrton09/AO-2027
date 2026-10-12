@@ -51,6 +51,8 @@ public sealed partial class PacketDispatcher
         short cantidad = r.ReadInteger();
         long inicial = r.ReadLong(), final = r.ReadLong();
         byte horas = r.ReadByte();
+        if ((!RanuraDeInventario(ranura) || !CentroDeSubastas.Duraciones.Contains(horas))
+            && Imposible(session, $"publicó la ranura {ranura} por {horas} horas")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -91,6 +93,7 @@ public sealed partial class PacketDispatcher
     {
         int id = r.ReadLong();
         long monto = r.ReadLong();
+        if (id < 1 && Imposible(session, $"ofertó por la subasta {id}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -118,6 +121,7 @@ public sealed partial class PacketDispatcher
     private void HandleSubastaComprar(ClientSession session, ByteQueueReader r)
     {
         int id = r.ReadLong();
+        if (id < 1 && Imposible(session, $"compró la subasta {id}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -142,6 +146,7 @@ public sealed partial class PacketDispatcher
     private void HandleSubastaCancelar(ClientSession session, ByteQueueReader r)
     {
         int id = r.ReadLong();
+        if (id < 1 && Imposible(session, $"canceló la subasta {id}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;

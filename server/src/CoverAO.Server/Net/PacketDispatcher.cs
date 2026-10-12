@@ -560,7 +560,7 @@ public sealed partial class PacketDispatcher
             case ClientPacketId.InitCrafting: reader.ReadLong(); reader.ReadInteger(); break; // VB6 HandleInitCrafting solo setea el estado interno de fabricación (Cantidad/PorCiclo); no emite ningún paquete
             case ClientPacketId.Work: HandleWork(session, reader); break;
             case ClientPacketId.HayEventos: HandleHayEventos(session); break;
-            case ClientPacketId.AbrirForms: { byte form = reader.ReadByte(); _loop.Enqueue(() => { if (session.Player is null) return; if (form == 1) session.Send(ServerMessages.AbrirFormularios(9)); }); break; } // VB6 HandleAbrirForms: Case 1 -> donador?AbrirForm(10):AbrirForm(9); el slice no modela donador -> 9. Otros forms: silencio.
+            case ClientPacketId.AbrirForms: { byte form = reader.ReadByte(); if (form != 1 && Imposible(session, $"abrió el formulario {form}")) break; _loop.Enqueue(() => { if (session.Player is null) return; if (form == 1) session.Send(ServerMessages.AbrirFormularios(9)); }); break; } // VB6 HandleAbrirForms: Case 1 -> donador?AbrirForm(10):AbrirForm(9); el slice no modela donador -> 9. Otros forms: silencio.
             case ClientPacketId.ProcesosLogin: HandleProcesosLogin(session, reader); break;
             case ClientPacketId.PidePremios: HandlePidePremios(session); break;
             case ClientPacketId.RPremios: HandleRPremios(session, reader); break;
@@ -1735,6 +1735,7 @@ public sealed partial class PacketDispatcher
     private void HandleWalk(ClientSession session, ByteQueueReader r)
     {
         byte heading = r.ReadByte();
+        if (heading is < 1 or > 4 && Imposible(session, $"caminó con el rumbo {heading}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -1833,6 +1834,8 @@ public sealed partial class PacketDispatcher
                         break;
                     case DetectorDeSpeedHack.Veredicto.Echar:
                         RegistrarTrampa(session, p, "34 pasos en menos de 5,2 s por segunda vez: SH");
+                        // ECHA SÓLO SI EL SERVER ECHA (`TrampasParaEchar` > 0): con 0 la trampa queda en el log y el paso sigue.
+                        if (_ini.TrampasParaEchar == 0 || session.Cerrada) break;
                         // El original se lo anuncia al staff conectado, no a todo el servidor (:1615).
                         BroadcastToAdmins(ServerMessages.ConsoleMsg(
                             $"Servidor> {p.Name} ha sido echado por el servidor por posible uso de SH.", FuenteCombate));
@@ -7205,7 +7208,8 @@ public sealed partial class PacketDispatcher
     /// (abre el form de fundación), NO un texto; si ya fundó un clan (HasFound) hace LogCheating + Exit Sub.</summary>
     private void HandleGuildFundation(ClientSession session, ByteQueueReader r)
     {
-        r.ReadByte();   // el byte de ClanType del cliente se LEE y se descarta: ver abajo
+        byte alineacion = r.ReadByte();   // el byte de ClanType del cliente se LEE y se descarta: ver abajo
+        if (alineacion > 2 && Imposible(session, $"fundó un clan con la alineación {alineacion}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -7253,6 +7257,7 @@ public sealed partial class PacketDispatcher
     private void HandleRPremios(ClientSession session, ByteQueueReader r)
     {
         int index = r.ReadInteger();   // 1-based (VB6 PremiosInfo(index))
+        if ((index < 1 || index > PrizeCatalog.Length) && Imposible(session, $"pidió el premio {index}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -7335,6 +7340,8 @@ public sealed partial class PacketDispatcher
     private void HandleWork(ClientSession session, ByteQueueReader r)
     {
         byte skill = r.ReadByte();
+        // El cliente sólo manda el 11 (ocultarse); los bots, los oficios.
+        if (skill is not (11 or 12 or 14 or 18 or 19 or 20 or 21 or 88) && Imposible(session, $"trabajó con el skill {skill}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -7659,7 +7666,8 @@ public sealed partial class PacketDispatcher
     /// observable: LocaleMsg(377) + CharacterChange con la apariencia actual (cierra el último DATA del barrido).</summary>
     private void HandleEquiparSkin(ClientSession session, ByteQueueReader r)
     {
-        r.ReadByte(); r.ReadByte(); // Byte(Equipo) + Byte(BackOrNext)
+        byte equipo = r.ReadByte(), sentido = r.ReadByte(); // Byte(Equipo) + Byte(BackOrNext)
+        if ((equipo != 1 || sentido > 1) && Imposible(session, $"pidió el aspecto {equipo}/{sentido}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -8048,8 +8056,11 @@ public sealed partial class PacketDispatcher
     /// a direction flag + the slot and swaps it with its neighbour (up → slot-1, down → slot+1).</summary>
     private void HandleMoveBank(ClientSession session, ByteQueueReader r)
     {
-        bool upwards = r.ReadBoolean();
+        byte sentido = r.ReadByte();
+        bool upwards = sentido != 0;
         byte slot = r.ReadByte();
+        if ((sentido > 1 || slot is < 1 or > GameLimits.MaxBankSlots)
+            && Imposible(session, $"movió la ranura {slot} de la bóveda con el sentido {sentido}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -8779,6 +8790,7 @@ public sealed partial class PacketDispatcher
     private void HandleCraftBlacksmith(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        if (FabricarImposible(session, item, cant)) return;
         _loop.Enqueue(() => DoCraft(session, item, cant, "forjar", "Forjaste", _data.BlacksmithRecipes,
             GameLimits.SkillHerreria, o => o.SkillBlacksmith, o => new[]
             {
@@ -8793,6 +8805,7 @@ public sealed partial class PacketDispatcher
     private void HandleCraftCarpenter(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        if (FabricarImposible(session, item, cant)) return;
         // VB6 CarpinteroConstruirItem (Trabajo.bas:765): 20 de energía, LocaleMsg 206. La regla vive en `Oficios`,
         // que es también la que usan los bots para elegir qué fabricar.
         var f = Oficios.Carpinteria;
@@ -8804,6 +8817,7 @@ public sealed partial class PacketDispatcher
     private void HandleCraftSastre(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        if (FabricarImposible(session, item, cant)) return;
         // VB6 SastreConstruirItem: exige el Costurero (886); Trabajo.bas:395: 50 de energía, y ES el único que manda el 93.
         var f = Oficios.Sastreria;
         _loop.Enqueue(() => DoCraft(session, item, cant, "confeccionar", "Confeccionaste", _data.TailorItems,
@@ -8814,11 +8828,16 @@ public sealed partial class PacketDispatcher
     private void HandleCraftAlquimia(ClientSession session, ByteQueueReader r)
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
+        if (FabricarImposible(session, item, cant)) return;
         // VB6 druidaConstruirItem: exige la Olla (887); Trabajo.bas:2433: 30 de energía, LocaleMsg 206.
         var f = Oficios.Alquimia;
         _loop.Enqueue(() => DoCraft(session, item, cant, "preparar", "Preparaste", _data.AlchemyItems,
             f.Skill, f.Pide, f.Materiales, requiredTool: f.Herramienta, staminaCost: f.Energia));
     }
+
+    /// <summary>Fabricar: el cliente pide de 1 a 1000 de una receta de su lista (ver <see cref="Imposible"/>).</summary>
+    private bool FabricarImposible(ClientSession session, short item, short cant) =>
+        (item < 1 || cant is < 1 or > 1000) && Imposible(session, $"pidió fabricar {cant} de {item}");
 
     /// <summary>Shared crafting: validate the recipe, skill, and materials, then consume the materials and
     /// add the produced item. `materials` maps the object to the per-unit amount required.</summary>
@@ -9059,6 +9078,7 @@ public sealed partial class PacketDispatcher
     {
         byte slot = r.ReadByte();
         int amount = r.ReadLong();
+        if ((!RanuraDeInventario(slot) || amount <= 0) && Imposible(session, $"destruyó {amount} de la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -9280,6 +9300,7 @@ public sealed partial class PacketDispatcher
     /// </summary>
     private void HandleTrain(ClientSession session, byte petIndex)
     {
+        if (petIndex is not (1 or 2) && Imposible(session, $"entrenó la criatura {petIndex}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10026,6 +10047,8 @@ public sealed partial class PacketDispatcher
     {
         var inc = new byte[GameLimits.NumSkills + 1];
         for (int i = 1; i <= GameLimits.NumSkills; i++) inc[i] = r.ReadByte();
+        // Un skill no pasa de 100, así que el cliente no le pide más que eso a ninguno.
+        if (inc.Any(n => n > 100) && Imposible(session, $"pidió {inc.Max()} puntos para un skill")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10040,7 +10063,7 @@ public sealed partial class PacketDispatcher
             if (pedido > p.FreeSkillPoints)
             {
                 RegistrarTrampa(session, p, $"trató de hackear los skills (pidió {pedido} con {p.FreeSkillPoints})");
-                session.Close("anticheat: skills");
+                if (_ini.TrampasParaEchar > 0) session.Close("anticheat: skills");   // con 0, sólo al log: el pedido igual no se aplica
                 return;
             }
             for (int i = 1; i <= GameLimits.NumSkills; i++)
@@ -10126,6 +10149,7 @@ public sealed partial class PacketDispatcher
     private void HandleSelectHome(ClientSession session, ByteQueueReader r)
     {
         byte modo = r.ReadByte();
+        if (modo > 1 && Imposible(session, $"eligió el hogar en el modo {modo}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10266,8 +10290,11 @@ public sealed partial class PacketDispatcher
     /// <summary>MoveSpell (id 38): upwards(byte), slot(byte). Swaps the spell with its neighbour.</summary>
     private void HandleMoveSpell(ClientSession session, ByteQueueReader r)
     {
-        bool upwards = r.ReadByte() != 0;
+        byte sentido = r.ReadByte();
+        bool upwards = sentido != 0;
         byte slot = r.ReadByte();
+        if ((sentido > 1 || slot is < 1 or > GameLimits.MaxUserSpells)
+            && Imposible(session, $"movió el hechizo {slot} con el sentido {sentido}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10288,6 +10315,7 @@ public sealed partial class PacketDispatcher
     private void HandleSwapObjects(ClientSession session, ByteQueueReader r)
     {
         byte a = r.ReadByte(), b = r.ReadByte();
+        if ((!RanuraDeInventario(a) || !RanuraDeInventario(b)) && Imposible(session, $"cambió las ranuras {a} y {b}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10375,6 +10403,7 @@ public sealed partial class PacketDispatcher
     {
         string name = r.ReadAsciiString().Trim();
         byte caso = r.ReadByte();
+        if (caso is not (1 or 2) && Imposible(session, $"pidió la amistad en el caso {caso}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10705,6 +10734,9 @@ public sealed partial class PacketDispatcher
     {
         byte tx = r.ReadByte(); byte ty = r.ReadByte();   // tile objetivo (VB6 LookatTile) — lo usa el arco
         byte skill = r.ReadByte();
+        // Los que pide el server con WorkRequestTarget, los botones de trabajo del cliente y el 21 de los bots druidas.
+        if (skill is not (5 or 6 or 8 or 12 or 14 or 18 or 19 or 20 or 21 or 88)
+            && Imposible(session, $"apuntó con el skill {skill}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -11847,6 +11879,7 @@ public sealed partial class PacketDispatcher
     private void HandleCastSpell(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte();
+        if (slot is < 1 or > GameLimits.MaxUserSpells && Imposible(session, $"lanzó el hechizo de la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -12170,6 +12203,7 @@ public sealed partial class PacketDispatcher
     private void HandleChangeHeading(ClientSession session, ByteQueueReader r)
     {
         byte heading = r.ReadByte();
+        if (heading is < 1 or > 4 && Imposible(session, $"giró al rumbo {heading}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -12361,6 +12395,27 @@ public sealed partial class PacketDispatcher
         }
     }
 
+    /// <summary>
+    /// UN VALOR QUE EL CLIENTE OFICIAL NO MANDA NUNCA: una ranura 0 o 200, una cantidad negativa, un rumbo 5. El cliente los acota
+    /// antes de mandar (sus ranuras salen de la grilla, sus cantidades de cajas con tope, sus opciones de botones fijos), así que
+    /// llegan sólo de un cliente modificado, y se cuentan como trampa sin heurística: un clic normal no los produce, sea cual sea
+    /// el momento. Lo que depende del estado (muerto, sin comercio abierto, el objeto que ya no está) NO va por acá: el cliente lo
+    /// puede mandar antes de enterarse del cambio.
+    ///
+    /// <para>Se mira AL LEER, en el hilo del socket, como el login con el personaje adentro (<see cref="HandleOne"/>): si la trampa
+    /// echa, la sesión se cierra y el resto del segmento no se despacha, en vez de encolar un paquete más por cada uno que ya
+    /// venía. Después el paquete sigue igual que antes, así que lo que se emite no cambia. Los bots pasan por acá y no mandan
+    /// ninguno de estos valores. Devuelve si la sesión quedó cerrada.</para>
+    /// </summary>
+    private bool Imposible(ClientSession session, string motivo)
+    {
+        if (session.Player is not { } p) return false;
+        RegistrarTrampa(session, p, motivo);
+        return session.Cerrada;
+    }
+
+    private static bool RanuraDeInventario(int ranura) => ranura is >= 1 and <= GameLimits.MaxInventorySlots;
+
     internal static void LogIntentoDeTrampa(ClientSession session, Player? p, string motivo)
         => Console.WriteLine($"[TRAMPA] {p?.Name ?? "(sin personaje)"} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} - {ParaElLog(motivo)}");
 
@@ -12376,6 +12431,7 @@ public sealed partial class PacketDispatcher
     {
         string chat = r.ReadAsciiString();
         byte talkMode = r.ReadByte();
+        if (talkMode is < 1 or > 3 && Imposible(session, $"habló en el modo {talkMode}")) return;
         if (Frenado(session, ruidosa: true)) return;
         _loop.Enqueue(() =>
         {
@@ -12472,6 +12528,7 @@ public sealed partial class PacketDispatcher
     private void HandlePing(ClientSession session, ByteQueueReader r)
     {
         int time = r.ReadLong();
+        if (time < 0 && Imposible(session, $"mandó el ping {time}")) return;   // el cliente manda `performance.now() & 0x7FFFFFFF`
         session.Send(ServerMessages.Pong(time)); // echo immediately; no game state involved
     }
 
@@ -12572,6 +12629,10 @@ public sealed partial class PacketDispatcher
     {
         byte slot = r.ReadByte();
         long amount = r.ReadLong();
+        // La ranura del oro es la 26 (FLAGORO), y el cliente tira de a 100.000 como mucho.
+        bool oro = slot == GameLimits.MaxInventorySlots + 1;
+        if ((!RanuraDeInventario(slot) && !oro || amount <= 0 || oro && amount > 100_000)
+            && Imposible(session, $"tiró {amount} de la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -12694,6 +12755,7 @@ public sealed partial class PacketDispatcher
     private void HandleUseItem(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte();
+        if (!RanuraDeInventario(slot) && Imposible(session, $"usó la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -13355,6 +13417,7 @@ public sealed partial class PacketDispatcher
     {
         byte slot = r.ReadByte();
         short amount = r.ReadInteger();
+        if (amount < 1 && Imposible(session, $"compró {amount}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -13383,6 +13446,7 @@ public sealed partial class PacketDispatcher
             if (amount > GameLimits.MaxInventoryObjs)
             {
                 RegistrarTrampa(session, p, $"quiso comprar {amount} unidades de una");
+                if (_ini.TrampasParaBanear == 0 || session.Cerrada) return;   // con 0, sólo al log: la compra igual no sale
                 _world.Broadcast(ServerMessages.ConsoleMsg($"{p.Name} ha sido baneado por el sistema anti-cheats.", FuenteCombate));
                 p.Banned = true;
                 session.Send(ServerMessages.SendMsgBox("Has sido baneado por el Sistema AntiCheat."));
@@ -13421,6 +13485,8 @@ public sealed partial class PacketDispatcher
     {
         byte slot = r.ReadByte();
         short amount = r.ReadInteger();
+        if ((!RanuraDeInventario(slot) || amount is < 1 or > GameLimits.MaxInventoryObjs)
+            && Imposible(session, $"vendió {amount} de la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -13561,6 +13627,8 @@ public sealed partial class PacketDispatcher
     private void HandleBankDeposit(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte(); short amount = r.ReadInteger();
+        if ((!RanuraDeInventario(slot) || amount is < 1 or > GameLimits.MaxInventoryObjs)
+            && Imposible(session, $"depositó {amount} de la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -13595,6 +13663,8 @@ public sealed partial class PacketDispatcher
     private void HandleBankExtract(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte(); short amount = r.ReadInteger();
+        if ((slot is < 1 or > GameLimits.MaxBankSlots || amount is < 1 or > GameLimits.MaxInventoryObjs)
+            && Imposible(session, $"retiró {amount} de la ranura {slot} de la bóveda")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -13742,6 +13812,7 @@ public sealed partial class PacketDispatcher
     private void HandleEquipItem(ClientSession session, ByteQueueReader r)
     {
         byte slot = r.ReadByte();
+        if (!RanuraDeInventario(slot) && Imposible(session, $"equipó la ranura {slot}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;

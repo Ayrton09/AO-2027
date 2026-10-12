@@ -18,8 +18,8 @@ public class AnticheatEscalonadoTests
     public void Los_umbrales_tienen_default_y_se_leen_del_ini()
     {
         var sin = new ServerIni();
-        Assert.Equal(3, sin.TrampasParaEchar);
-        Assert.Equal(6, sin.TrampasParaBanear);
+        Assert.Equal(0, sin.TrampasParaEchar);    // sin la clave, ninguna trampa sanciona: sólo al log
+        Assert.Equal(0, sin.TrampasParaBanear);
         Assert.Equal(1000, sin.EconomiaUmbralOro);
 
         string ruta = Path.Combine(Path.GetTempPath(), "coverao_ini_" + Guid.NewGuid().ToString("N") + ".ini");

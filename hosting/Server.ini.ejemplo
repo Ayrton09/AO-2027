@@ -33,8 +33,11 @@ RafagaDePaquetes=200
 ; --- Seguridad y anticheat ---------------------------------------------------
 ; Trampas detectadas que hacen falta para echar y para banear. 0 = ese escalon
 ; apagado. Las trampas se cuentan en la CUENTA y sobreviven al relog.
-TrampasParaEchar=3
-TrampasParaBanear=6
+; Con los dos en 0 (asi viene) ninguna trampa echa ni banea: todas quedan en
+; data/logs/trampas-*.log y en el aviso a los GMs conectados. Para sancionar,
+; por ejemplo 3 y 6.
+TrampasParaEchar=0
+TrampasParaBanear=0
 ; Personajes de una misma IP jugando a la vez, y cuentas nuevas que esa IP
 ; puede crear cada diez minutos. 0 = sin tope.
 MaxPersonajesPorIp=10

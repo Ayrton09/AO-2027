@@ -40,6 +40,7 @@ public sealed partial class PacketDispatcher
     {
         byte tipo = r.ReadByte();
         string nombre = r.ReadAsciiString();
+        if (tipo is < 1 or > Familiar.TipoMaximo && Imposible(session, $"eligió el familiar {tipo}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;

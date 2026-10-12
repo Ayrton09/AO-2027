@@ -1283,16 +1283,18 @@ public sealed partial class Bot
         if (SuFabricacion is not null && sentidos.UsaMana
             && LeFaltaMagiaParaCastear(sentidos.Skill(GameLimits.SkillMagia), MagiaDelHechizoDeNacimiento))
             propia = (byte)GameLimits.SkillMagia;
+        // HASTA 100 POR SKILL, como el cliente: un skill no pasa de 100, y el server cuenta como trampa el pedido de más
+        // (PacketDispatcher.HandleModifySkills). Con más de 200 puntos libres, la mitad para la suya pasaba de 100.
         if (propia > 0 && libres > 0)
         {
-            byte suyos = (byte)Math.Min(libres, Math.Max(1, libres / 2));
+            byte suyos = (byte)Math.Min(100, Math.Min(libres, Math.Max(1, libres / 2)));
             reparto[propia] = suyos;
             gastados = suyos;
         }
         for (int i = gastados; i < libres; i++)
         {
             int skill = _rng.Next(1, GameLimits.NumSkills + 1);
-            if (reparto[skill] == byte.MaxValue) continue;
+            if (reparto[skill] >= 100) continue;
             reparto[skill]++;
             gastados++;
         }

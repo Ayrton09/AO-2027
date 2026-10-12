@@ -375,4 +375,112 @@ public class ReglasSueltasDelOriginalTests : IDisposable
         await Mandar(sesion, new ByteQueueWriter().WriteByte((byte)ClientPacketId.BankDeposit).WriteByte(1).WriteInteger(2).ToArray());
         Assert.Equal(3, p.Inventory[1].Amount);                                    // el control: con 2 deposita
     }
+
+    // ---- LO QUE EL CLIENTE NO MANDA NUNCA, CUENTA COMO TRAMPA -------------------------------------------------
+
+    private static byte[] P(ClientPacketId id, Action<ByteQueueWriter> armar)
+    {
+        var w = new ByteQueueWriter().WriteByte((byte)id);
+        armar(w);
+        return w.ToArray();
+    }
+
+    private static byte[] Skills(byte cuantos) => P(ClientPacketId.ModifySkills, w =>
+    {
+        for (int i = 1; i <= GameLimits.NumSkills; i++) w.WriteByte(i == 1 ? cuantos : (byte)0);
+    });
+
+    /// <summary>Valores que el cliente oficial no puede producir nunca (PacketDispatcher.Imposible).</summary>
+    public static TheoryData<string, byte[]> PaquetesImposibles => new()
+    {
+        { "caminar con el rumbo 5", P(ClientPacketId.Walk, w => w.WriteByte(5)) },
+        { "girar al rumbo 0", P(ClientPacketId.ChangeHeading, w => w.WriteByte(0)) },
+        { "el hechizo 0", P(ClientPacketId.CastSpell, w => w.WriteByte(0)) },
+        { "el hechizo 36", P(ClientPacketId.CastSpell, w => w.WriteByte(36)) },
+        { "usar la ranura 26", P(ClientPacketId.UseItem, w => w.WriteByte(26)) },
+        { "equipar la ranura 0", P(ClientPacketId.EquipItem, w => w.WriteByte(0)) },
+        { "tirar 0", P(ClientPacketId.Drop, w => w.WriteByte(1).WriteLong(0)) },
+        { "tirar de la ranura 27", P(ClientPacketId.Drop, w => w.WriteByte(27).WriteLong(1)) },
+        { "tirar 100.001 de oro", P(ClientPacketId.Drop, w => w.WriteByte(26).WriteLong(100_001)) },
+        { "destruir -1", P(ClientPacketId.DropDestroy, w => w.WriteByte(1).WriteLong(-1)) },
+        { "cambiar con la ranura 30", P(ClientPacketId.SwapObjects, w => w.WriteByte(1).WriteByte(30)) },
+        { "mover un hechizo con el sentido 2", P(ClientPacketId.MoveSpell, w => w.WriteByte(2).WriteByte(1)) },
+        { "mover la ranura 41 de la bóveda", P(ClientPacketId.MoveBank, w => w.WriteByte(1).WriteByte(41)) },
+        { "depositar 10.001", P(ClientPacketId.BankDeposit, w => w.WriteByte(1).WriteInteger(10_001)) },
+        { "retirar de la ranura 41", P(ClientPacketId.BankExtractItem, w => w.WriteByte(41).WriteInteger(1)) },
+        { "comprar 0", P(ClientPacketId.CommerceBuy, w => w.WriteByte(1).WriteInteger(0)) },
+        { "vender -5", P(ClientPacketId.CommerceSell, w => w.WriteByte(1).WriteInteger(-5)) },
+        { "forjar 1001", P(ClientPacketId.CraftBlacksmith, w => w.WriteInteger(1).WriteInteger(1001)) },
+        { "la receta 0 de carpintería", P(ClientPacketId.CraftCarpenter, w => w.WriteInteger(0).WriteInteger(1)) },
+        { "confeccionar 0", P(ClientPacketId.CraftSastre, w => w.WriteInteger(1).WriteInteger(0)) },
+        { "preparar 2000", P(ClientPacketId.Craftalquimia, w => w.WriteInteger(1).WriteInteger(2000)) },
+        { "entrenar la criatura 3", P(ClientPacketId.Train, w => w.WriteByte(3)) },
+        { "101 puntos a un skill", Skills(101) },
+        { "el aspecto 2", P(ClientPacketId.EquiparSkin, w => w.WriteByte(2).WriteByte(0)) },
+        { "el familiar 10", P(ClientPacketId.ElegirFamiliar, w => w.WriteByte(10).WriteAsciiString("Fido")) },
+        { "hablar en el modo 4", P(ClientPacketId.Talk, w => w.WriteAsciiString("hola").WriteByte(4)) },
+        { "apuntar con el skill 7", P(ClientPacketId.WorkLeftClick, w => w.WriteByte(50).WriteByte(50).WriteByte(7)) },
+        { "trabajar con el skill 2", P(ClientPacketId.Work, w => w.WriteByte(2)) },
+        { "el formulario 2", P(ClientPacketId.AbrirForms, w => w.WriteByte(2)) },
+        { "el hogar en el modo 2", P(ClientPacketId.SeleccionarHogar, w => w.WriteByte(2)) },
+        { "la amistad en el caso 3", P(ClientPacketId.AddAmigos, w => w.WriteAsciiString("Nadie").WriteByte(3)) },
+        { "el premio 0", P(ClientPacketId.RPremios, w => w.WriteInteger(0)) },
+        { "subastar por 5 horas", P(ClientPacketId.SubastaPublicar, w => w.WriteByte(1).WriteInteger(1).WriteLong(10).WriteLong(20).WriteByte(5)) },
+        { "ofertar por la subasta 0", P(ClientPacketId.SubastaOfertar, w => w.WriteLong(0).WriteLong(10)) },
+        { "comprar la subasta -1", P(ClientPacketId.SubastaComprar, w => w.WriteLong(-1)) },
+        { "cancelar la subasta 0", P(ClientPacketId.SubastaCancelar, w => w.WriteLong(0)) },
+        { "un clan con la alineación 3", P(ClientPacketId.GuildFundation, w => w.WriteByte(3)) },
+        { "un ping negativo", P(ClientPacketId.Ping, w => w.WriteLong(-1)) },
+    };
+
+    [Theory]
+    [MemberData(nameof(PaquetesImposibles))]
+    public async Task Lo_que_el_cliente_no_manda_nunca_cuenta_una_trampa(string caso, byte[] paquete)
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        p.FreeSkillPoints = 200;   // para que el reparto de skills no sea, además, pedir más de lo que tiene
+        await Mandar(sesion, paquete);
+        Assert.True(p.Trampas == 1, $"{caso}: {p.Trampas} trampas");
+    }
+
+    /// <summary>Con el Server.ini por defecto (<c>TrampasParaEchar</c> y <c>TrampasParaBanear</c> en 0) ninguna trampa echa ni
+    /// banea: se cuentan y van al log.</summary>
+    [Fact]
+    public async Task Por_defecto_las_trampas_solo_se_anotan()
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        for (int i = 0; i < 7; i++) await Mandar(sesion, P(ClientPacketId.Walk, w => w.WriteByte(9)));
+        Assert.Equal(7, p.Trampas);
+        Assert.False(p.Banned);
+        Assert.False(sesion.Cerrada);
+    }
+
+    /// <summary>Los bordes que el cliente (o un bot) SÍ manda: no cuentan.</summary>
+    public static TheoryData<string, byte[]> PaquetesEnElBorde => new()
+    {
+        { "caminar con el rumbo 4", P(ClientPacketId.Walk, w => w.WriteByte(4)) },
+        { "el hechizo 35", P(ClientPacketId.CastSpell, w => w.WriteByte(35)) },
+        { "usar la ranura 25", P(ClientPacketId.UseItem, w => w.WriteByte(25)) },
+        { "tirar 100.000 de oro", P(ClientPacketId.Drop, w => w.WriteByte(26).WriteLong(100_000)) },
+        { "tirar 32767, como los bots", P(ClientPacketId.Drop, w => w.WriteByte(1).WriteLong(short.MaxValue)) },
+        { "depositar 10.000", P(ClientPacketId.BankDeposit, w => w.WriteByte(25).WriteInteger(10_000)) },
+        { "retirar de la ranura 40", P(ClientPacketId.BankExtractItem, w => w.WriteByte(40).WriteInteger(1)) },
+        { "fabricar 1000", P(ClientPacketId.CraftBlacksmith, w => w.WriteInteger(1).WriteInteger(1000)) },
+        { "100 puntos a un skill", Skills(100) },
+        { "hablar en el modo 3", P(ClientPacketId.Talk, w => w.WriteAsciiString(";hola").WriteByte(3)) },
+        { "apuntar con el 21, como los druidas", P(ClientPacketId.WorkLeftClick, w => w.WriteByte(50).WriteByte(50).WriteByte(21)) },
+        { "trabajar con el 11", P(ClientPacketId.Work, w => w.WriteByte(11)) },
+        { "subastar por 36 horas", P(ClientPacketId.SubastaPublicar, w => w.WriteByte(1).WriteInteger(1).WriteLong(10).WriteLong(20).WriteByte(36)) },
+        { "un ping en 0", P(ClientPacketId.Ping, w => w.WriteLong(0)) },
+    };
+
+    [Theory]
+    [MemberData(nameof(PaquetesEnElBorde))]
+    public async Task Lo_que_el_cliente_manda_no_cuenta(string caso, byte[] paquete)
+    {
+        var (p, sesion) = Jugador(1, 50, 50);
+        p.FreeSkillPoints = 200;   // para que el reparto de skills no sea, además, pedir más de lo que tiene
+        await Mandar(sesion, paquete);
+        Assert.True(p.Trampas == 0, $"{caso}: {p.Trampas} trampas");
+    }
 }
