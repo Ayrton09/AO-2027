@@ -204,6 +204,7 @@ public sealed class ServerIni
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
         "MinutosDeFogata", "OrigenesPermitidos", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "SoloEscritorio", "DescargaEscritorio",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
@@ -646,6 +647,19 @@ public sealed class ServerIni
     /// gente, ni cuentas ni IPs. En 0 la ruta directamente no existe (404).</para>
     /// </summary>
     public bool PaginaPublica { get; private set; } = true;
+
+    /// <summary>
+    /// SÓLO SE JUEGA CON LA APP DE ESCRITORIO (decisión del autor, 12/10). Sin la cabecera de la app el WebSocket se
+    /// rechaza, la página del juego se cambia por la de descarga y el puerto clásico (TCP) no se abre. Ver
+    /// <see cref="Net.Escritorio"/>. Con <c>--fixture</c> vale 0 salvo que el ini del flow lo escriba: los flows y las
+    /// pruebas del cliente entran por el navegador y por el puerto clásico. Viene APAGADA: se prende cuando los jugadores
+    /// tengan la app que manda la cabecera; antes dejaría afuera a todos.
+    /// </summary>
+    public bool SoloEscritorio { get; private set; }
+
+    /// <summary>A dónde manda la página de descarga para bajar la app (la página de las versiones del repo de
+    /// descargas). Vacía = la página dice que se lo pidan al que hostea.</summary>
+    public string DescargaEscritorio { get; private set; } = "";
 
     /// <summary>
     /// <c>OrigenesPermitidos</c> — dominios EXTRA desde los que se acepta abrir el WebSocket del juego,
@@ -1259,6 +1273,8 @@ public sealed class ServerIni
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
         cfg.NavegacionParaCruzar = Math.Clamp(ini.GetInt("INIT", "NavegacionParaCruzar", 80), 0, SkillProgression.MaxSkillPoints);
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
+        cfg.SoloEscritorio = ini.GetInt("INIT", "SoloEscritorio", 0) != 0;
+        cfg.DescargaEscritorio = ini.GetString("INIT", "DescargaEscritorio").Trim();
         cfg.OrigenesPermitidos = ini.GetString("INIT", "OrigenesPermitidos")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no

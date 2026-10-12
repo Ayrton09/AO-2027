@@ -933,6 +933,9 @@ dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkInter
 // Las fogatas que quedaron prendidas del arranque anterior arrancan su plazo acá: el suelo se restaura mucho
 // más arriba y la lista de vencimientos es del dispatcher, que recién existe ahora.
 dispatcher.AnotarFogatasDelSueloRestaurado();
+// SÓLO LA APP DE ESCRITORIO (Server.ini SoloEscritorio, ver Net.Escritorio). Con --fixture vale 0 salvo que el ini del flow lo
+// escriba: los flows hablan por el puerto clásico y las pruebas del cliente entran por el navegador.
+bool soloEscritorio = serverIni.SoloEscritorio && (!fixtureMode || serverIni.InitEscrita("SoloEscritorio"));
 var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
@@ -948,7 +951,8 @@ var wsServer = new WebSocketGameServer(port + 1, dispatcher, connGuard, authTime
     msPorConsulta: serverIni.MsEntreConsultas, rafagaConsultas: serverIni.RafagaDeConsultas,
     // El Origin que declara el navegador: sin este chequeo, cualquier pagina que abra un jugador
     // puede abrirle sockets a este servidor desde SU maquina.
-    origenesPermitidos: serverIni.OrigenesPermitidos); // web client (Fase 3), same world
+    origenesPermitidos: serverIni.OrigenesPermitidos, // web client (Fase 3), same world
+    soloEscritorio: soloEscritorio);
 
 // Ejemplo de suscripcion al event bus (decoupling de reglas y efectos).
 world.Events.Subscribe<PlayerLoggedIn>(e =>
@@ -999,7 +1003,8 @@ if (habraWeb)
         webPort, webRoot!, port + 1, serverIni.CodigoFuente, serverIni.PuertoWebSocketPublico,
         estadoPublico, wsServer.AceptarAsync, serverIni.AlcanceDelHechizo, serverIni.DestinoDeLosPortales,
         novedades: serverContent.Updates, version: CoverAO.Server.Build.Version,
-        lluviaBajoTecho: serverIni.LluviaBajoTecho).RunAsync(cts.Token);
+        lluviaBajoTecho: serverIni.LluviaBajoTecho,
+        soloEscritorio: soloEscritorio, descargaEscritorio: serverIni.DescargaEscritorio).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se
@@ -1029,7 +1034,9 @@ if (serverIni.Bots > 0)
 
 try
 {
-    await Task.WhenAll(server.RunAsync(cts.Token), wsServer.RunAsync(cts.Token), adminTask, webTask);
+    // El puerto clásico no se abre con SoloEscritorio: por ahí entra cualquier programa que hable el protocolo.
+    if (soloEscritorio) Console.WriteLine($"Puerto {port} (protocolo clasico) CERRADO: SoloEscritorio=1, se juega con la app de escritorio.");
+    await Task.WhenAll(soloEscritorio ? Task.CompletedTask : server.RunAsync(cts.Token), wsServer.RunAsync(cts.Token), adminTask, webTask);
 }
 // Se atrapa CUALQUIER excepción, no sólo la cancelación: si un listener se cae por otra cosa —el caso
 // concreto es arrancar un segundo servidor con el mismo StartPort, que muere con SocketException porque

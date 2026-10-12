@@ -20,6 +20,12 @@ PuertoWebSocketPublico=0
 PaginaPublica=1
 ; Origenes que puede tener el navegador, separados por coma. Vacio = cualquiera.
 OrigenesPermitidos=
+; 1 = solo se juega con la app de escritorio: el navegador ve una pagina para
+; bajarla y el puerto del protocolo clasico no se abre. Prenderlo cuando los
+; jugadores tengan la app; antes deja afuera a todos.
+SoloEscritorio=0
+; El enlace de esa pagina para bajar la app. Vacio = "pedile el instalador".
+DescargaEscritorio=
 
 ; --- Cupos y limites ---------------------------------------------------------
 ; 0 = sin tope, en todos los que dicen 0.

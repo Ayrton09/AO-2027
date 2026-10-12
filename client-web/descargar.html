@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CoverAO — bajá el juego</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23281a0a'/%3E%3Cpath d='M16 5l3 8h8l-6.5 5 2.5 8-7-5-7 5 2.5-8L5 13h8z' fill='%23e8c876'/%3E%3C/svg%3E" />
+  <style>
+    /* LA PÁGINA QUE VE EL NAVEGADOR cuando el server es sólo para la app de escritorio (Server.ini SoloEscritorio, ver
+       Escritorio.cs): se sirve en la misma dirección que el juego. La paleta, el fondo y el logo son los del ingreso. */
+    :root {
+      --ink:#e8dcc0; --ink-dim:#b6a882; --gold:#e8c876; --gold-lo:#9a7326; --gold-deep:#5c3f15;
+      --wood:#2a1c0e; --wood-lo:#1a1108; --serif:'Trajan Pro','Cinzel','Georgia',serif;
+    }
+    html { color-scheme: dark; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--ink); font-family:system-ui, sans-serif; font-size:16px; line-height:1.55;
+      background:#0b0906 url('./assets/login/fondo.jpg') center 40% / cover no-repeat;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 16px; }
+    .logo { width:min(560px, 84vw); height:auto; margin-bottom:2.5vh; }
+    .tarjeta { width:min(560px, 100%); background:linear-gradient(#2a1c0ef2, #1a1108f2); border:1px solid var(--gold-deep);
+      border-radius:10px; padding:22px 24px; box-shadow:0 10px 40px #000a; text-align:center; }
+    h1 { font-family:var(--serif); color:var(--gold); font-size:1.35rem; font-weight:normal; margin:0 0 10px; letter-spacing:.04em; }
+    p { margin:8px 0; color:var(--ink-dim); }
+    .boton { display:inline-block; margin:14px 0 6px; padding:11px 26px; border-radius:6px; text-decoration:none;
+      background:linear-gradient(#e8c876, #9a7326); color:#1a1108; font-weight:600; border:1px solid #5c3f15; }
+    .boton:hover { filter:brightness(1.08); }
+    .direccion { display:inline-flex; gap:8px; align-items:center; margin-top:6px; padding:6px 10px; border-radius:6px;
+      background:#0008; border:1px solid var(--gold-deep); font-family:ui-monospace, monospace; color:var(--ink); }
+    .direccion button { background:none; border:1px solid var(--gold-lo); color:var(--gold); border-radius:4px; cursor:pointer;
+      padding:2px 8px; font:inherit; font-size:.85em; }
+    .pie { margin-top:14px; font-size:.9em; }
+    .pie a { color:var(--gold); }
+    [hidden] { display:none !important; }
+  </style>
+</head>
+<body>
+  <img class="logo" src="./assets/login/logo.webp" alt="CoverAO" draggable="false">
+  <div class="tarjeta">
+    <h1>CoverAO se juega con la app</h1>
+    <p>Este servidor no se juega desde el navegador. Bajate el juego para Windows o Linux, abrilo y agregá este servidor
+      con su dirección:</p>
+    <div class="direccion"><span id="dir"></span><button id="copiar" type="button">copiar</button></div>
+    <div id="con-enlace" hidden><a class="boton" id="enlace" href="#">Bajar CoverAO</a></div>
+    <p id="sin-enlace" hidden>Pedile el instalador a quien hostea este servidor.</p>
+    <p class="pie" id="pie-estado" hidden><a href="./estado.html">Quién está jugando ahora</a></p>
+  </div>
+  <script>
+    // La dirección para agregar en la lista de servers de la app, y el enlace de descarga del Server.ini (DescargaEscritorio),
+    // que llega por el mismo JSON que la config del cliente.
+    const dir = document.getElementById('dir');
+    dir.textContent = location.host;
+    document.getElementById('copiar').addEventListener('click', () => {
+      navigator.clipboard?.writeText(location.host).then(() => { document.getElementById('copiar').textContent = 'copiada'; }, () => {});
+    });
+    fetch('./coverao-config.json').then((r) => (r.ok ? r.json() : null)).catch(() => null).then((cfg) => {
+      const url = cfg && typeof cfg.descarga === 'string' && /^https?:\/\//i.test(cfg.descarga) ? cfg.descarga : '';
+      if (url) { document.getElementById('enlace').href = url; document.getElementById('con-enlace').hidden = false; }
+      else document.getElementById('sin-enlace').hidden = false;
+    });
+    fetch('./api/publico.json', { method: 'HEAD' }).then((r) => { if (r.ok) document.getElementById('pie-estado').hidden = false; }, () => {});
+  </script>
+</body>
+</html>

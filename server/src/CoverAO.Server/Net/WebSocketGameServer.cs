@@ -21,12 +21,13 @@ public sealed class WebSocketGameServer
     private readonly int _maxInboundBytes;
     private readonly AdminConfig? _admin;   // baneo por IP en vivo (lo muta el panel)
     private readonly string[] _origenesPermitidos;   // dominios extra que pueden abrir el socket (Server.ini)
+    private readonly bool _soloEscritorio;           // sólo entra la app de escritorio (Server.ini SoloEscritorio, ver Escritorio)
 
     public WebSocketGameServer(int port, PacketDispatcher dispatcher,
         ConnectionGuard? guard = null, long authTimeoutMs = 0, int maxInboundBytes = 0, AdminConfig? admin = null,
         int paquetesPorSegundo = 0, int rafagaDePaquetes = 200,
         int msPorMensaje = 0, int rafagaMensajes = 5, int msPorConsulta = 0, int rafagaConsultas = 10,
-        string[]? origenesPermitidos = null)
+        string[]? origenesPermitidos = null, bool soloEscritorio = false)
     {
         _port = port;
         _dispatcher = dispatcher;
@@ -39,6 +40,7 @@ public sealed class WebSocketGameServer
         _maxInboundBytes = maxInboundBytes;
         _admin = admin;
         _origenesPermitidos = origenesPermitidos ?? Array.Empty<string>();
+        _soloEscritorio = soloEscritorio;
     }
 
     public async Task RunAsync(CancellationToken token)
@@ -104,6 +106,13 @@ public sealed class WebSocketGameServer
         {
             ctx.Response.StatusCode = 403; ctx.Response.Close();
             Console.WriteLine($"[ws:{remote}] rechazado (Origin ajeno: {ctx.Request.Headers["Origin"]})");
+            return;
+        }
+        // SÓLO LA APP DE ESCRITORIO, si el server es para ella (ver Escritorio). También antes del cupo.
+        if (_soloEscritorio && !Escritorio.EsLaApp(ctx.Request.Headers[Escritorio.Cabecera]))
+        {
+            ctx.Response.StatusCode = 403; ctx.Response.Close();
+            Console.WriteLine($"[ws:{remote}] rechazado (no es el juego de escritorio)");
             return;
         }
         // LOS RECHAZOS AL ACEPTAR, en el orden del original (wskapiAO.bas:501-552): el servidor lleno y la IP bloqueada

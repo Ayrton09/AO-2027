@@ -87,6 +87,7 @@ public sealed class StaticFileServer
     private readonly int _wsPort;
     private readonly Func<string>? _estadoPublico;
     private readonly Func<HttpListenerContext, CancellationToken, Task>? _juegoPorWebSocket;
+    private readonly bool _soloEscritorio;   // el navegador ve la página de descarga en vez del juego (ver Escritorio)
 
     /// <param name="wsPort">El puerto que abrió DE VERDAD el <see cref="WebSocketGameServer"/>.</param>
     /// <param name="codigoFuente">URL del código de ESTE servidor (Server.ini [INIT] CodigoFuente). Viaja por
@@ -114,12 +115,16 @@ public sealed class StaticFileServer
     /// ingreso las muestre ANTES de entrar, como las Noticias del frmConnect del original. Viajan en el mismo JSON: son las
     /// mismas para todos y se cargan al arrancar.</param>
     /// <param name="version">La versión del server, que el panel de novedades muestra en su cabecera.</param>
+    /// <param name="soloEscritorio">Server.ini <c>SoloEscritorio</c>: el que no viene de la app ve la página de descarga.</param>
+    /// <param name="descargaEscritorio">Server.ini <c>DescargaEscritorio</c>: el enlace de esa página, por el mismo JSON.</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
                             Func<string>? estadoPublico = null,
                             Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
                             bool alcanceDelHechizo = true, bool destinoDeLosPortales = true,
-                            IReadOnlyList<string>? novedades = null, string version = "", bool lluviaBajoTecho = false)
+                            IReadOnlyList<string>? novedades = null, string version = "", bool lluviaBajoTecho = false,
+                            bool soloEscritorio = false, string descargaEscritorio = "")
     {
+        _soloEscritorio = soloEscritorio;
         _port = port;
         _wsPort = wsPort;
         _estadoPublico = estadoPublico;
@@ -137,6 +142,7 @@ public sealed class StaticFileServer
             $"\"destinoPortales\":{(destinoDeLosPortales ? "true" : "false")}," +
             $"\"lluviaBajoTecho\":{(lluviaBajoTecho ? "true" : "false")}," +
             $"\"version\":{System.Text.Json.JsonSerializer.Serialize(version)}," +
+            $"\"descarga\":{System.Text.Json.JsonSerializer.Serialize(descargaEscritorio)}," +
             $"\"novedades\":{System.Text.Json.JsonSerializer.Serialize(novedades ?? Array.Empty<string>())}}}");
     }
 
@@ -183,6 +189,10 @@ public sealed class StaticFileServer
             if (req.HttpMethod != "GET" && req.HttpMethod != "HEAD") { res.StatusCode = 405; res.Close(); return; }
             string rel = Uri.UnescapeDataString(req.Url?.AbsolutePath ?? "/").TrimStart('/');
             if (rel.Length == 0) rel = "index.html";
+            // LA PÁGINA DEL JUEGO, SÓLO PARA LA APP (ver Escritorio): al navegador se le sirve la de descarga en la misma
+            // dirección. Lo que sale depende de la cabecera, así que `variante` la suma al Vary de la respuesta.
+            bool variante = _soloEscritorio && string.Equals(rel, "index.html", StringComparison.OrdinalIgnoreCase);
+            if (variante) rel = Escritorio.RutaAServir(rel, true, Escritorio.EsLaApp(req.Headers[Escritorio.Cabecera]));
             // La config es SINTÉTICA y gana sobre el disco: si quedara un archivo viejo con ese nombre en la
             // carpeta del cliente, publicaría un puerto que no es el que este proceso abrió.
             if (string.Equals(rel, RutaConfig, StringComparison.OrdinalIgnoreCase))
@@ -234,7 +244,7 @@ public sealed class StaticFileServer
             {
                 byte[] cuerpo = GzipDe(full, info.Length, mtime);
                 res.Headers["Content-Encoding"] = "gzip";
-                res.Headers["Vary"] = "Accept-Encoding";   // el proxy de por medio no puede servirle esto a un cliente sin gzip
+                res.Headers["Vary"] = variante ? $"Accept-Encoding, {Escritorio.Cabecera}" : "Accept-Encoding";   // el proxy de por medio no puede servirle esto a un cliente sin gzip
                 res.ContentLength64 = cuerpo.Length;
                 if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
             }
@@ -244,6 +254,7 @@ public sealed class StaticFileServer
                 // hasta 8 MB no se comprimen) y cargarlos enteros por request era amplificación de memoria —
                 // N descargas paralelas eran N archivos completos en el heap. Así viajan de a bloques y la
                 // contrapresión del socket manda.
+                if (variante) res.Headers["Vary"] = Escritorio.Cabecera;
                 res.ContentLength64 = info.Length;
                 if (req.HttpMethod == "GET")
                 {
