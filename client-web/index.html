@@ -1261,6 +1261,9 @@
     const $ = (id) => document.getElementById(id);
     const W = () => new ByteQueueWriter();                          // atajo: nuevo writer
     const send = (w) => { if (ws && ws.readyState === 1) ws.send(xorBuffer(w.toBytes(), myKey)); };  // manda un paquete ya armado
+    // LO QUE ENTRA EN UN Integer Y EN UN Long DEL PROTOCOLO. `writeInteger` y `writeLong` se quedan con los 16 y 32 bits de
+    // abajo (un 65537 viajaba como 1), así que los montos que escribe el jugador se acotan a esto antes de mandarse.
+    const MAX_INTEGER = 32767, MAX_LONG = 2147483647;
     const esc = (s) => String(s == null ? '' : s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));  // sanitiza texto de usuario en HTML (la comilla simple: que un atributo inline nunca se abra solo)
     const statusEl = $('status');
     const coordsEl = $('coords');
@@ -3170,7 +3173,16 @@
     // Los dos avisos del gate de sesión del server (el personaje sigue adentro): con ésos se reintenta, con nada más.
     const CHOQUE_DE_SESION = new Set(['El personaje está online, espere mientras es desconectado.',
                                       'El personaje está saliendo del juego.']);
-    function sendLogin(bytes) {                 // arma+manda un paquete de login (clave inicial 13, pre-Logged)
+    // EL ALTA NO SE REPITE AL RECONECTAR. `loginBytes` se reenvía en cada reconexión, y un CreateNewAccount o un
+    // LoginNewChar que ya salieron vuelven con "Ya existe la cuenta" o "Ya existe el personaje" (este último con el
+    // ingreso escondido, o sea un mundo vacío hasta el `auth timeout`). El alta viaja con el paquete de ingreso de lo
+    // que crea, y cuando sale (`altaHecha`) ése pasa a ser el que se reenvía.
+    let reingresoTrasAlta = null;
+    function altaHecha(id) {
+      if (!reingresoTrasAlta || !loginBytes || loginBytes[0] !== id) return;
+      loginBytes = reingresoTrasAlta; reingresoTrasAlta = null;
+    }
+    function sendLogin(bytes, reingreso) {      // arma+manda un paquete de login (clave inicial 13, pre-Logged)
       // NINGÚN PAQUETE DE LOGIN CON EL PERSONAJE ADENTRO, NI DOS INGRESOS SEGUIDOS. El server cuenta como trampa el
       // paquete de login que llega con el personaje ya en el mundo (PacketDispatcher.HandleOne), y el cliente lo
       // mandaba sin trampa de por medio: el doble clic en la tarjeta del personaje, el doble envío de "Crear y
@@ -3179,7 +3191,7 @@
       if (loggedIn) return;
       if (entrandoDesde && lastReject === null && Date.now() - entrandoDesde < 8000) return;
       if (bytes[0] === CLIENT.LoginExistingChar || bytes[0] === CLIENT.LoginNewChar) entrandoDesde = Date.now();
-      loginBytes = bytes; lastReject = null; loginErr('');
+      loginBytes = bytes; reingresoTrasAlta = reingreso || null; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
       // OJO EL ESTADO 0 (CONNECTING): el socket ya está en camino y su `onopen` va a mandar `loginBytes` solo.
       // Llamar a connect() acá abría un SEGUNDO WebSocket que también logueaba, así que el mismo jugador
@@ -3250,8 +3262,13 @@
       if (wsPath) return `${wsProto}//${location.host}${wsPath}`;
       return `${wsProto}//${location.hostname || 'localhost'}:${wsPort}/`;
     }
+    let reconexionTimer = null;   // la reconexión que deja programada un cierre
     function connect() {
-      ws = new WebSocket(urlDelSocket());
+      // UN SOLO SOCKET. La reconexión que programa un cierre y el ingreso mandado en ese segundo y medio abrían dos, y el
+      // que sobraba, al cerrarse, le borraba el estado al que estaba en uso y programaba otra reconexión.
+      clearTimeout(reconexionTimer);
+      if (ws && ws.readyState <= 1) return;                // ya hay uno abierto o abriéndose
+      const sock = ws = new WebSocket(urlDelSocket());
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
         statusEl.textContent = loginBytes ? 'conectado — logueando…' : 'conectado';
@@ -3266,9 +3283,11 @@
         // No hace falta marcar nada: `frame()` redibuja de forma CONTINUA, porque las partículas, los FX y la
         // interpolación de caminata necesitan frames aunque no llegue un solo paquete. Por eso mismo un flag
         // tipo `dirty` sería peor que este borrado: congelaría todo lo que anima solo.
+        if (ws !== sock) return;                           // un socket viejo no toca el estado del que está en uso
         for (const e of decodeServerStream(new Uint8Array(ev.data))) apply(e);
       };
       ws.onclose = (ev) => {
+        if (ws !== sock) return;
         const wasLogged = loggedIn; loggedIn = false;      // reset por conexión: 'Logged' lo vuelve a poner true
         myKey = DEFAULT_XOR_KEY; entrandoDesde = 0;         // la clave es de la conexión: la siguiente arranca en 13
         enCombate = false;                                 // el original también la apaga al caerse (frmMain.frm:2966)
@@ -3305,7 +3324,7 @@
           return;
         }
         statusEl.textContent = 'desconectado — reintentando…';   // caída mid-juego (o pre-login sin rechazo) → reconectar y re-loguear
-        setTimeout(connect, 1500);
+        reconexionTimer = setTimeout(connect, 1500);
       };
       // El cartel nombra la dirección QUE SE INTENTÓ, no un puerto supuesto: desde que el socket puede ir por
       // esta misma dirección (`/ws`), decir ":7667" mandaba a revisar un puerto con el que ya no se cuenta.
@@ -3780,7 +3799,7 @@
     const leerOroQty = () => {
       const i = modalCard.querySelector('.orq');
       const n = i ? parseInt(i.value, 10) : oroQty;
-      return Math.max(1, Number.isFinite(n) ? n : 1);
+      return Math.max(1, Math.min(MAX_LONG, Number.isFinite(n) ? n : 1));
     };
     function renderPanelDelOro() {
       if (modalKind === 'bankgold') oroQty = leerOroQty();
@@ -3859,9 +3878,9 @@
       modalEl.classList.add('on'); modalCard.querySelector('.cx').onclick = closeModal; blitShopIcons();
     }
     function leerNuevaSubasta() {
-      nuevaSub.cant = Math.max(1, subNum('.nscant', nuevaSub.cant));
-      nuevaSub.ini = Math.max(0, subNum('.nsini', nuevaSub.ini));
-      nuevaSub.fin = Math.max(0, subNum('.nsfin', nuevaSub.fin));
+      nuevaSub.cant = Math.max(1, Math.min(MAX_INTEGER, subNum('.nscant', nuevaSub.cant)));
+      nuevaSub.ini = Math.max(0, Math.min(MAX_LONG, subNum('.nsini', nuevaSub.ini)));
+      nuevaSub.fin = Math.max(0, Math.min(MAX_LONG, subNum('.nsfin', nuevaSub.fin)));
       nuevaSub.horas = subNum('.nshoras', nuevaSub.horas);
     }
     /** Los clics de las dos vistas. true si el clic era de acá. */
@@ -3882,7 +3901,7 @@
         case 'nueva': renderNuevaSubasta(); break;
         case 'volver': leerNuevaSubasta(); renderSubastas(); break;
         case 'ofertar': {
-          const monto = subNum('.sbo', 0);
+          const monto = Math.min(MAX_LONG, subNum('.sbo', 0));
           if (id != null && monto > 0) send(W().writeByte(CLIENT.SubastaOfertar).writeLong(id).writeLong(monto));
           break;
         }
@@ -4458,7 +4477,7 @@
           for (const k of Object.keys(skPend)) { const c = modalCard.querySelector('#sk-' + k); if (c) c.textContent = '0'; delete skPend[k]; }
           refrescarLibresPend();
         }
-        else if (a === 'xf-send') { const to = pv('xf-to'), amt = +pv('xf-amt') || 0; if (to && amt > 0) send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(to).writeLong(amt)); }
+        else if (a === 'xf-send') { const to = pv('xf-to'), amt = Math.min(MAX_LONG, Math.floor(+pv('xf-amt') || 0)); if (to && amt > 0) send(W().writeByte(CLIENT.TransferGOLD).writeAsciiString(to).writeLong(amt)); }
         else if (a === 'home-set') send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0));   // el /HOGAR: pregunta el server
         else if (a === 'home-go') send(W().writeByte(CLIENT.RegresarHogar));
         else if (a === 'safe-res') send(W().writeByte(CLIENT.ResuscitationSafeToggle));
@@ -4484,6 +4503,7 @@
       const f = e.fields;
       switch (e.name) {
         case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = 0; entrandoDesde = 0;
+          altaHecha(CLIENT.LoginNewChar);
           clearTimeout(reintentoTimer); cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
           // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
           // original y no se le agregan campos. Va una sola vez.
@@ -4497,7 +4517,7 @@
           // se agenda para cuando ya estén todos: si corriera acá encontraría las dos listas vacías.
           setTimeout(autollenarHotbar, 1200);
           break;
-        case 'AddPJ': showCharList(f.account, f.chars); break;   // lista de personajes de la cuenta (flujo AO original)
+        case 'AddPJ': altaHecha(CLIENT.CreateNewAccount); showCharList(f.account, f.chars); break;   // lista de personajes de la cuenta (flujo AO original)
         // form 1 = selección de personaje: actuamos sobre AddPJ, que ya trae la lista. form 9/10 = el
         // formulario de SKINS, que el server manda como respuesta a /SKIN (AbrirForms 112).
         case 'AbrirFormularios': if (f.form === 9 || f.form === 10) abrirSkins(); break;
@@ -7112,12 +7132,16 @@
         if (cmd === '/hogar') { send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0)); return; }
         if (CHAT_NOARG[cmd] !== undefined) w.writeByte(CHAT_NOARG[cmd]);
         else if (CHAT_ARGSTR[cmd] !== undefined) { if (!arg) { log('uso: ' + cmd + ' <texto>', '#b94'); return; } w.writeByte(CHAT_ARGSTR[cmd]).writeAsciiString(arg); }
-        else if (cmd === '/apostar') w.writeByte(CLIENT.Gamble).writeInteger(parseInt(arg) || 0);
+        else if (cmd === '/apostar') {
+          const n = parseInt(arg);
+          if (!(n > 0 && n <= MAX_INTEGER)) { log('uso: /apostar <cantidad de oro>', '#b94'); return; }
+          w.writeByte(CLIENT.Gamble).writeInteger(n);
+        }
         // Los tres del diff contra el parser del original que llevan argumento propio. La bóveda ya se
         // opera por panel, pero el original deposita y retira POR COMANDO y sin abrirla.
         else if (cmd === '/depositar' || cmd === '/retirar') {
           const n = parseInt(arg);
-          if (!(n > 0)) { log('uso: ' + cmd + ' <cantidad de oro>', '#b94'); return; }
+          if (!(n > 0 && n <= MAX_LONG)) { log('uso: ' + cmd + ' <cantidad de oro>', '#b94'); return; }
           w.writeByte(cmd === '/depositar' ? CLIENT.BankDepositGold : CLIENT.BankExtractGold).writeLong(n);
         }
         // /FADD y /FACCEPT mandan el mismo paquete, y el byte final los distingue: 1 pide la amistad y 2 la
@@ -7138,7 +7162,7 @@
           const sp2 = arg.search(/\s/);
           const quien = sp2 < 0 ? arg : arg.slice(0, sp2);
           const cual = parseInt(sp2 < 0 ? '' : arg.slice(sp2 + 1), 10);
-          if (!quien || !Number.isFinite(cual)) { log('uso: /particula <nombre> <numero>', '#b94'); return; }
+          if (!quien || !(cual > 0 && cual <= MAX_INTEGER)) { log('uso: /particula <nombre> <numero>', '#b94'); return; }
           w.writeByte(CLIENT.ParticulaUsuario).writeAsciiString(quien).writeInteger(cual);
         }
         else if (cmd === '/susurrar' || cmd === '/w') {
@@ -7916,7 +7940,8 @@
       // decía nada. Lo reportó el tester como "no deja borrar personaje".
       accName = e.acc.value.trim(); accPass = e.pw.value;
       const w = new ByteQueueWriter().writeByte(CLIENT.CreateNewAccount).writeAsciiString(accName).writeAsciiString(e.pw.value).writeAsciiString(e.code.value);
-      V(w); sendLogin(w.toBytes());
+      V(w); sendLogin(w.toBytes(), new ByteQueueWriter().writeByte(CLIENT.ConnectAccount).writeAsciiString(accName).writeAsciiString(accPass)
+        .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2]).writeAsciiString('web').writeLong(1).toBytes());
       loginErr('Creando la cuenta…');
     });
     // Cambiar / recuperar la contraseña → ProcesosLogin. El Tipo decide qué secreto verifica el server: 1 la
@@ -7949,7 +7974,10 @@
       const tipoFam = +($('pick-familiar').querySelector('.ficha.on') || {}).dataset?.v || 0;
       const nomFam = ($('fam-nombre').value || '').trim();
       if (tipoFam && nomFam.length >= 2) familiarPendiente = { tipo: tipoFam, nombre: nomFam };
-      loginErr('Creando personaje…'); sendLogin(w.toBytes());
+      loginErr('Creando personaje…');
+      sendLogin(w.toBytes(), new ByteQueueWriter().writeByte(CLIENT.LoginExistingChar).writeAsciiString(e.acc.value.trim()).writeAsciiString(e.pw.value)
+        .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2])
+        .writeAsciiString(e.name.value.trim()).writeAsciiString('web').writeLong(1).toBytes());
     });
 
     // ---- Selección de personaje (flujo cuenta → lista, como el AO original: una cuenta tiene varios PJ) ----
