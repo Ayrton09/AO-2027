@@ -83,6 +83,8 @@ function ProcesoDe($n) {
 
 function Existe($n) {
   if (-not $n) { throw "Falta el nombre del servidor." }
+  # El nombre es UNA carpeta de la raiz: con barras, ':' o '..' apuntaria a cualquier otro lado.
+  if ($n -match '[\\/:]' -or $n -in '.', '..') { throw "'$n' no es un nombre de servidor: va sin barras, ':' ni '..'." }
   if (-not (Test-Path (ExeDe $n))) { throw "No hay un servidor '$n' en $Raiz. Crealo con:  .\coverao.ps1 nueva $n" }
 }
 

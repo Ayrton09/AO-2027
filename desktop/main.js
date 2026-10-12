@@ -35,7 +35,10 @@ function leerConfig() {
 function guardarConfig(config) {
   try {
     fs.mkdirSync(path.dirname(archivoDeConfig()), { recursive: true });
-    fs.writeFileSync(archivoDeConfig(), JSON.stringify(config, null, 2));
+    // Primero a un archivo aparte y después se le cambia el nombre: un corte a mitad de camino deja entero el anterior.
+    const temporal = archivoDeConfig() + '.tmp';
+    fs.writeFileSync(temporal, JSON.stringify(config, null, 2), { flush: true });
+    fs.renameSync(temporal, archivoDeConfig());
   } catch { /* sin config guardada, la próxima vez pregunta de nuevo */ }
 }
 
@@ -85,7 +88,11 @@ function abrirMenu(error) {
 // con el cliente de desarrollo, que no está firmado: `COVERAO_VERIFICAR=1` prueba la verificación igual.
 const VERIFICAR = app.isPackaged || process.env.COVERAO_VERIFICAR === '1';
 const CLAVE_PUBLICA = (() => { try { return fs.readFileSync(path.join(__dirname, 'clave-publica.pem'), 'utf8'); } catch { return null; } })();
+// EL CLIENTE MÁS VIEJO QUE SE ACEPTA: con una fecha ISO (por ejemplo '2026-10-12T00:00:00Z'), un cliente firmado antes no corre,
+// ni uno de la versión 1 de la firma, que no tiene fecha. null: sin tope.
+const FIRMADO_DESDE = null;
 const firmados = new Map();   // origen del server -> { ruta: hash } de su manifiesto verificado
+const bloqueados = new Set();   // origen de un server con el cliente modificado: no se le pide nada hasta volver a entrar
 const CABECERA = 'X-CoverAO-Escritorio';
 const sinCaptura = (url, init = {}) => {
   const encabezados = new Headers(init.headers ?? {});
@@ -94,14 +101,50 @@ const sinCaptura = (url, init = {}) => {
 };
 const nombreDe = (direccion) => direccion.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
+// LO QUE SE ESPERA AL VERIFICAR: si pasa ESPERA_SIN_DATOS_MS sin que llegue nada, el pedido se corta, y un archivo más grande
+// que TOPE_DEL_ARCHIVO no se junta en memoria. El más grande del cliente es `assets/music/8.mp3`, de 10,5 MB (12/10).
+const ESPERA_SIN_DATOS_MS = 15000;
+const TOPE_DEL_ARCHIVO = 64 * 1024 * 1024;
+
+/**
+ * Un archivo del server para verificarlo, SIN SEGUIR REDIRECCIONES y con la espera y el tope de arriba. Devuelve la respuesta y
+ * su cuerpo entero, que es null si la respuesta no es 2xx. Tira si el server redirige, deja de mandar o pasa del tope.
+ */
+async function bajar(url, init = {}) {
+  const corte = new AbortController();
+  const aTiempo = (promesa) => {
+    let reloj;
+    const vencida = new Promise((_, mal) => { reloj = setTimeout(() => mal(new Error('el server dejó de mandar')), ESPERA_SIN_DATOS_MS); });
+    return Promise.race([promesa, vencida]).finally(() => clearTimeout(reloj));
+  };
+  try {
+    const r = await aTiempo(sinCaptura(url, { ...init, redirect: 'error', signal: corte.signal }));
+    if (!r.ok || !r.body) { corte.abort(); return { r, cuerpo: r.ok ? Buffer.alloc(0) : null }; }
+    const lector = r.body.getReader();
+    const partes = [];
+    for (let total = 0; ;) {
+      const { done, value } = await aTiempo(lector.read());
+      if (done) return { r, cuerpo: Buffer.concat(partes) };
+      if ((total += value.byteLength) > TOPE_DEL_ARCHIVO) throw new Error('el archivo pasa del tope');
+      partes.push(Buffer.from(value));
+    }
+  } catch (e) { corte.abort(); throw e; }
+}
+
 /** Baja y verifica la firma del cliente de ese server. Devuelve el motivo para no entrar, o null. */
 async function prepararFirma(direccion) {
   if (!VERIFICAR) return null;
   if (!CLAVE_PUBLICA) return 'Esta versión del juego no trae la clave para verificar el cliente: bajate la última.';
   try {
-    const r = await sinCaptura(new URL(firma.ARCHIVO, direccion).href, { cache: 'no-store' });
-    const archivos = r.ok ? firma.verificarManifiesto(await r.json(), CLAVE_PUBLICA) : null;
-    if (!archivos) return `${nombreDe(direccion)} tiene un cliente sin la firma del juego: no se puede entrar.`;
+    const { cuerpo } = await bajar(new URL(firma.ARCHIVO, direccion).href, { cache: 'no-store' });
+    const manifiesto = cuerpo ? JSON.parse(cuerpo.toString('utf8')) : null;
+    const archivos = firma.verificarManifiesto(manifiesto, CLAVE_PUBLICA, FIRMADO_DESDE);
+    if (!archivos) {
+      return firma.verificarManifiesto(manifiesto, CLAVE_PUBLICA)
+        ? `${nombreDe(direccion)} tiene un cliente viejo, que este juego ya no acepta: no se puede entrar.`
+        : `${nombreDe(direccion)} tiene un cliente sin la firma del juego: no se puede entrar.`;
+    }
+    bloqueados.delete(new URL(direccion).origin);
     firmados.set(new URL(direccion).origin, archivos);
     console.log(`[firma] ${nombreDe(direccion)}: cliente firmado, ${Object.keys(archivos).length} archivos`);
     return null;
@@ -110,9 +153,11 @@ async function prepararFirma(direccion) {
   }
 }
 
-/** Un archivo del server que no es el firmado: no se juega ahí, de vuelta al menú con el motivo. */
+/** Un archivo del server que no es el firmado: no se juega ahí, de vuelta al menú con el motivo, y el server queda bloqueado. */
 function clienteModificado(origen, rel) {
-  if (!firmados.delete(origen)) return;
+  if (bloqueados.has(origen)) return;
+  firmados.delete(origen);
+  bloqueados.add(origen);
   console.error(`[firma] ${origen}/${rel} no es el firmado`);
   abrirMenu(`El cliente de ${nombreDe(origen)} fue modificado (${rel}): no se puede jugar ahí.`);
 }
@@ -120,6 +165,7 @@ function clienteModificado(origen, rel) {
 function interceptar(esquema) {
   protocol.handle(esquema, async (pedido) => {
     const origen = new URL(pedido.url).origin;
+    if (bloqueados.has(origen)) return new Response(null, { status: 403 });
     const archivos = firmados.get(origen);
     const rel = firma.rutaDe(pedido.url);
     // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y lo que no
@@ -131,9 +177,11 @@ function interceptar(esquema) {
     // andando por debajo).
     const encabezados = new Headers(pedido.headers);
     for (const h of ['if-none-match', 'if-modified-since', 'range']) encabezados.delete(h);
-    const r = await sinCaptura(pedido.url, { headers: encabezados });
-    if (!r.ok) return r;
-    const cuerpo = Buffer.from(await r.arrayBuffer());
+    let r, cuerpo;
+    try { ({ r, cuerpo } = await bajar(pedido.url, { headers: encabezados })); }
+    catch { return new Response(null, { status: 502 }); }
+    // LO QUE NO ES 2xx (un 404, un error del server) llega a la página sin el cuerpo ni las cabeceras del server: sólo el código.
+    if (!r.ok) return new Response(null, { status: r.status });
     if (!firma.esLoFirmado(archivos, rel, cuerpo)) { clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
     const salida = new Headers(r.headers);
     salida.delete('content-encoding'); salida.delete('content-length');   // el cuerpo ya viene descomprimido
@@ -219,13 +267,14 @@ function crearVentana() {
   });
 
   // Los enlaces a otros sitios (el código fuente, la página de un clan) se abren en el navegador, no en la ventana del juego.
-  const mismoServidor = (url) => servidor && url.startsWith(new URL(servidor).origin);
+  // Adentro sólo se navega al MISMO ORIGEN del server, no a uno que empiece igual, y a una página local sólo desde el menú.
+  const mismoServidor = (url) => { try { return !!servidor && new URL(url).origin === new URL(servidor).origin; } catch { return false; } };
   ventana.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   ventana.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file:') || mismoServidor(url)) return;
+    if (url.startsWith('file:') ? ventana.webContents.getURL().startsWith('file:') : mismoServidor(url)) return;
     e.preventDefault();
     if (/^https?:/i.test(url)) shell.openExternal(url);
   });
@@ -245,13 +294,13 @@ function crearVentana() {
  * CÓMO ESTÁ UN SERVER DE LA LISTA: si contesta, cuántos hay conectados, qué versión corre y cuánto tarda en contestar. Se pregunta
  * desde acá y no desde la página porque la página es local (file://) y el server no tiene por qué dejarla leer. Lo que se pide
  * es `api/publico.json`, lo mismo que muestra su página de estado; si el host la apagó (`PaginaPublica=0`) contesta 404 y el
- * server igual figura en línea, sin jugadores.
+ * server igual figura en línea, sin jugadores. Una redirección no se sigue: el server figura en línea, sin datos.
  */
 async function consultar(direccion) {
   const inicio = performance.now();
   try {
     const r = await fetch(new URL('api/publico.json', direccion), {
-      cache: 'no-store', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
+      cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
     });
     const ping = Math.round(performance.now() - inicio);
     if (!r.ok) return { enLinea: true, ping, jugadores: null, version: null };
@@ -386,6 +435,10 @@ app.whenReady().then(() => {
     detalles.requestHeaders['X-CoverAO-Escritorio'] = app.getVersion();
     listo({ requestHeaders: detalles.requestHeaders });
   });
+  // NINGÚN PERMISO (cámara, micrófono, portapapeles, notificaciones): ni el menú ni el juego piden ninguno, y sin estos dos
+  // Electron se los da a cualquier página que los pida.
+  session.defaultSession.setPermissionRequestHandler((_contenido, _permiso, responder) => responder(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
   if (VERIFICAR) { interceptar('http'); interceptar('https'); }
   crearVentana();
 });

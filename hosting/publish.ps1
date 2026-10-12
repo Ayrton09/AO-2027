@@ -99,7 +99,8 @@ if ((Test-Path $clave) -and $node) {
 # pero quien hostea no tenía delante ni una sola de esas opciones.
 #
 # Entonces, cuando el destino es la carpeta de armado o se va a comprimir, el ini se repone del ejemplo y el
-# anterior se guarda AFUERA del paquete, por si tenía algo que alguien quería.
+# anterior se guarda AFUERA del paquete, por si tenía algo que alguien quería: con la fecha en el nombre, que la
+# corrida siguiente no lo pise, y sólo si no es el mismo ejemplo.
 $esPaquete = $Comprimir -or ($OutDir -eq (Join-Path $Root "dist\CoverAO-$Rid"))
 $ejemplo = Join-Path $PSScriptRoot "Server.ini.ejemplo"
 $iniDestino = Join-Path $OutDir "Server.ini"
@@ -109,9 +110,9 @@ Copy-Item -Force $ejemplo (Join-Path $OutDir "Server.ini.ejemplo")
 if ((Test-Path $iniDestino) -and -not $esPaquete) {
   Write-Host "   Server.ini: ya existia, se RESPETA (el de ejemplo queda como Server.ini.ejemplo)" -ForegroundColor Yellow
 } else {
-  if (Test-Path $iniDestino) {
-    $apartado = Join-Path (Split-Path $OutDir -Parent) "Server.ini.anterior-$Rid.txt"
-    Move-Item -Force $iniDestino $apartado
+  if ((Test-Path $iniDestino) -and (Get-FileHash $iniDestino).Hash -ne (Get-FileHash $ejemplo).Hash) {
+    $apartado = Join-Path (Split-Path $OutDir -Parent) ("Server.ini.anterior-$Rid-{0:yyyyMMdd-HHmmss}.txt" -f (Get-Date))
+    Move-Item $iniDestino $apartado
     Write-Host "   Server.ini: REPUESTO del ejemplo (el anterior quedo en $apartado, afuera del paquete)" -ForegroundColor Yellow
   }
   Copy-Item -Force $ejemplo $iniDestino
@@ -444,7 +445,9 @@ else                     { Write-Host "Probalo:  cd `"$OutDir`"; .\CoverAO.Serve
 #
 # El paquete se reparte con `data\` VACIA: el server crea lo que necesita al arrancar. Lo unico que sigue
 # viajando de ahi son los dos archivos que el propio armador escribe (las novedades y la version).
-$noViajan = @('data/Cuentas/', 'data/Charfile/', 'data/Misc/', 'data/logs/', 'data/backups/', 'admin-token.txt',
+# Las tres carpetas de los archivos van sin la barra: el patron agarra tambien las que deja apartadas la importacion
+# a la base (`Cuentas.importado`, `Charfile.importado-<fecha>`), que tienen las mismas cuentas y personajes.
+$noViajan = @('data/Cuentas', 'data/Charfile', 'data/Misc', 'data/logs/', 'data/backups/', 'admin-token.txt',
               # El SELLO DEL MUNDO lo escribe el SERVIDOR al arrancar, para saber de que version viene un
               # mundo al actualizarlo. No es contenido del paquete: si viaja, el que lo recibe empieza con un
               # mundo ya sellado por la maquina del que publico. Lo unico de `data/` que si es del paquete es

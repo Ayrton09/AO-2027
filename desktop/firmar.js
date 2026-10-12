@@ -51,4 +51,4 @@ if (fs.existsSync(PUBLICA_DE_LA_APP) && !verificarManifiesto(manifiesto, fs.read
   process.exit(4);
 }
 fs.writeFileSync(path.join(carpeta, ARCHIVO), JSON.stringify(manifiesto));
-console.log(`Cliente firmado: ${Object.keys(manifiesto.archivos).length} archivos (${path.join(carpeta, ARCHIVO)})`);
+console.log(`Cliente firmado: ${Object.keys(manifiesto.archivos).length} archivos, el ${manifiesto.fecha} (${path.join(carpeta, ARCHIVO)})`);
