@@ -67,6 +67,14 @@ Lo nuevo desde el paquete del 6 de octubre.
   una cantidad de cero o menos ya no mueve nada.
 - **`/banip` y `/darpun` andan desde el cliente web**: `/banip <IP o nombre> <motivo>` y `/darpun <nombre>@<puntos>`.
 - **El juego de escritorio instalado no abre las herramientas de desarrollo.**
+- **El juego de escritorio se abre una sola vez**: abrirlo de nuevo trae al frente el que ya está, y un acceso directo a un
+  server entra ahí. Con dos abiertos se pisaban la lista de servers, las opciones y las cuentas recordadas.
+- **En la lista de servers, uno por `http://` que no está en tu PC sale marcado "sin cifrar"**: la contraseña viaja legible.
+- **`coverao.ps1 arranque` corre el server como `LOCAL SERVICE`**, no como SYSTEM, con permiso sólo sobre su carpeta y sus
+  puertos. `sin-arranque` saca todo.
+- **La clave que firma el cliente puede llevar contraseña** (`node desktop/firmar.js --poner-clave`), y `--copia` guarda una
+  copia cifrada para el backup.
+- **Con `Bots=96`, un nombre que ya es de un jugador lo reemplaza uno de reserva**: antes era un bot menos.
 - **La vida de nivel 1, en el Server.ini** (`VidaInicial`): `original` (la de siempre: 15 más de 1 a la
   Constitución dividida 3, al azar), `fija` (20 para todos), `constitucion` (15 más la Constitución dividida 3,
   sin azar) o `clase` (10 más la vida que gana la clase al subir de nivel). El Server.ini de ejemplo la trae en
