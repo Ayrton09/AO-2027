@@ -3170,7 +3170,16 @@
     // Los dos avisos del gate de sesión del server (el personaje sigue adentro): con ésos se reintenta, con nada más.
     const CHOQUE_DE_SESION = new Set(['El personaje está online, espere mientras es desconectado.',
                                       'El personaje está saliendo del juego.']);
-    function sendLogin(bytes) {                 // arma+manda un paquete de login (clave inicial 13, pre-Logged)
+    // EL ALTA NO SE REPITE AL RECONECTAR. `loginBytes` se reenvía en cada reconexión, y un CreateNewAccount o un
+    // LoginNewChar que ya salieron vuelven con "Ya existe la cuenta" o "Ya existe el personaje" (este último con el
+    // ingreso escondido, o sea un mundo vacío hasta el `auth timeout`). El alta viaja con el paquete de ingreso de lo
+    // que crea, y cuando sale (`altaHecha`) ése pasa a ser el que se reenvía.
+    let reingresoTrasAlta = null;
+    function altaHecha(id) {
+      if (!reingresoTrasAlta || !loginBytes || loginBytes[0] !== id) return;
+      loginBytes = reingresoTrasAlta; reingresoTrasAlta = null;
+    }
+    function sendLogin(bytes, reingreso) {      // arma+manda un paquete de login (clave inicial 13, pre-Logged)
       // NINGÚN PAQUETE DE LOGIN CON EL PERSONAJE ADENTRO, NI DOS INGRESOS SEGUIDOS. El server cuenta como trampa el
       // paquete de login que llega con el personaje ya en el mundo (PacketDispatcher.HandleOne), y el cliente lo
       // mandaba sin trampa de por medio: el doble clic en la tarjeta del personaje, el doble envío de "Crear y
@@ -3179,7 +3188,7 @@
       if (loggedIn) return;
       if (entrandoDesde && lastReject === null && Date.now() - entrandoDesde < 8000) return;
       if (bytes[0] === CLIENT.LoginExistingChar || bytes[0] === CLIENT.LoginNewChar) entrandoDesde = Date.now();
-      loginBytes = bytes; lastReject = null; loginErr('');
+      loginBytes = bytes; reingresoTrasAlta = reingreso || null; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
       // OJO EL ESTADO 0 (CONNECTING): el socket ya está en camino y su `onopen` va a mandar `loginBytes` solo.
       // Llamar a connect() acá abría un SEGUNDO WebSocket que también logueaba, así que el mismo jugador
@@ -4484,6 +4493,7 @@
       const f = e.fields;
       switch (e.name) {
         case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = 0; entrandoDesde = 0;
+          altaHecha(CLIENT.LoginNewChar);
           clearTimeout(reintentoTimer); cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
           // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
           // original y no se le agregan campos. Va una sola vez.
@@ -4497,7 +4507,7 @@
           // se agenda para cuando ya estén todos: si corriera acá encontraría las dos listas vacías.
           setTimeout(autollenarHotbar, 1200);
           break;
-        case 'AddPJ': showCharList(f.account, f.chars); break;   // lista de personajes de la cuenta (flujo AO original)
+        case 'AddPJ': altaHecha(CLIENT.CreateNewAccount); showCharList(f.account, f.chars); break;   // lista de personajes de la cuenta (flujo AO original)
         // form 1 = selección de personaje: actuamos sobre AddPJ, que ya trae la lista. form 9/10 = el
         // formulario de SKINS, que el server manda como respuesta a /SKIN (AbrirForms 112).
         case 'AbrirFormularios': if (f.form === 9 || f.form === 10) abrirSkins(); break;
@@ -7916,7 +7926,8 @@
       // decía nada. Lo reportó el tester como "no deja borrar personaje".
       accName = e.acc.value.trim(); accPass = e.pw.value;
       const w = new ByteQueueWriter().writeByte(CLIENT.CreateNewAccount).writeAsciiString(accName).writeAsciiString(e.pw.value).writeAsciiString(e.code.value);
-      V(w); sendLogin(w.toBytes());
+      V(w); sendLogin(w.toBytes(), new ByteQueueWriter().writeByte(CLIENT.ConnectAccount).writeAsciiString(accName).writeAsciiString(accPass)
+        .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2]).writeAsciiString('web').writeLong(1).toBytes());
       loginErr('Creando la cuenta…');
     });
     // Cambiar / recuperar la contraseña → ProcesosLogin. El Tipo decide qué secreto verifica el server: 1 la
@@ -7949,7 +7960,10 @@
       const tipoFam = +($('pick-familiar').querySelector('.ficha.on') || {}).dataset?.v || 0;
       const nomFam = ($('fam-nombre').value || '').trim();
       if (tipoFam && nomFam.length >= 2) familiarPendiente = { tipo: tipoFam, nombre: nomFam };
-      loginErr('Creando personaje…'); sendLogin(w.toBytes());
+      loginErr('Creando personaje…');
+      sendLogin(w.toBytes(), new ByteQueueWriter().writeByte(CLIENT.LoginExistingChar).writeAsciiString(e.acc.value.trim()).writeAsciiString(e.pw.value)
+        .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2])
+        .writeAsciiString(e.name.value.trim()).writeAsciiString('web').writeLong(1).toBytes());
     });
 
     // ---- Selección de personaje (flujo cuenta → lista, como el AO original: una cuenta tiene varios PJ) ----
