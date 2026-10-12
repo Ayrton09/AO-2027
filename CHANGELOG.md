@@ -18,9 +18,13 @@ Lo nuevo desde el paquete del 6 de octubre.
 - **Balance de tres clases**: el Nigromante pega con hechizos un poco menos que el Mago (como el Clérigo) y
   resiste algo la magia; el Gladiador acierta más golpes cuerpo a cuerpo, y él y el Mercenario resisten la
   magia como el Cazador.
+- **Rematar una criatura con una puñalada ya no cobra el oro y el botín dos veces.**
+- **Un mago que te tenía marcado ya no le tira hechizos a tu cadáver**: uno de daño te volvía a matar.
+- **Prevención del mal tirada sobre alguien del otro bando se cobra**: dejaba al que la tiraba invisible gratis.
 
 ### Chat, mapa y pantalla
 
+- **Al volver a conectarte después de crear la cuenta o el personaje, entrás**: el cliente repetía el alta y se quedaba colgado.
 - **Pegar un texto muy largo en el chat ya no te desconecta**: sale el aviso de mensaje demasiado largo, como con
   cualquier mensaje largo.
 - **El doble clic en el personaje al entrar ya no te puede echar del juego**: entra una sola vez.
@@ -30,6 +34,12 @@ Lo nuevo desde el paquete del 6 de octubre.
 - **Al mirar a alguien, la vida en rojo y el nivel en celeste**, separados con un espacio: "Ves a Lobo nivel 8 64% de vida".
 
 ### Comercio, banco y hogar
+
+- **La bóveda y la tienda operan de cerca**: con la ventana abierta se seguía depositando, retirando, comprando y vendiendo desde
+  cualquier parte del mapa. Ahora, a más de 10 baldosas del banquero o del mercader, la operación no sale.
+- **No se retira de la bóveda más oro del que se puede llevar encima**, y una transferencia a alguien desconectado ya no se
+  pierde si el server se apaga con la base caída.
+- **El barco con el que navegás no se deposita, vende, subasta, manda ni destruye.**
 
 - **La cantidad del comercio y de la bóveda vuelve a 1** cada vez que se abre una tienda o la bóveda, como en el
   original. Las flechitas de las cajas de cantidad ya no salen blancas.
@@ -44,6 +54,15 @@ Lo nuevo desde el paquete del 6 de octubre.
   el aviso a los GMs conectados. Para sancionar, `TrampasParaEchar` y `TrampasParaBanear` en el Server.ini (por ejemplo 3 y 6).
 - **Cuenta como trampa todo lo que el cliente no puede mandar**: una ranura que no existe, una cantidad negativa, un
   rumbo inválido, una opción que no está en ningún botón.
+- **Auditoría general del código**: se cerró el duplicador de la puñalada; el freno de intentos de login ya no se esquiva
+  mandando muchos de golpe ni entrando con una cuenta propia; los topes por IP valen también al crear personaje; las
+  elecciones de clan cuentan sólo los votos de los miembros actuales; `/EJECUTAR` no mata a un superior y `/ARMAR` es sólo de
+  Dios.
+- **`ProxyDeConfianza` en el Server.ini**: detrás de un reverse-proxy, la IP de cada jugador sale de la cabecera que agrega el
+  proxy. Sin esto, todos los jugadores web tenían la misma IP y los topes por IP los frenaban a todos juntos.
+- **La cuenta de prueba del modo `--fixture` no entra en un server de verdad**, el zip del paquete no lleva cuentas viejas
+  importadas, el `Server.ini` del host no se pierde al republicar, y con una base vacía los personajes de los archivos se
+  importan al arrancar.
 - **Se cerró una trampa que dejaba a un personaje sin dibujar para los demás**, y tirar, destruir o mover al banco
   una cantidad de cero o menos ya no mueve nada.
 - **`/banip` y `/darpun` andan desde el cliente web**: `/banip <IP o nombre> <motivo>` y `/darpun <nombre>@<puntos>`.
