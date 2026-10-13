@@ -50,8 +50,23 @@ function guardarConfig(config) {
     fs.mkdirSync(path.dirname(archivoDeConfig()), { recursive: true });
     // Primero a un archivo aparte y después se le cambia el nombre: un corte a mitad de camino deja entero el anterior.
     const temporal = archivoDeConfig() + '.tmp';
-    fs.writeFileSync(temporal, JSON.stringify(config, null, 2), { flush: true });
-    fs.renameSync(temporal, archivoDeConfig());
+    const texto = JSON.stringify(config, null, 2);
+    fs.writeFileSync(temporal, texto, { flush: true });
+    // EL CAMBIO DE NOMBRE SE REINTENTA, y si no sale se escribe directo: un antivirus que revisa el archivo recién escrito lo
+    // tiene abierto un momento y el cambio de nombre falla. La primera apertura del instalado (12/10) no guardó nada: ni los
+    // ajustes ni la pantalla completa que se le tocó.
+    for (let intento = 1; ; intento++) {
+      try { fs.renameSync(temporal, archivoDeConfig()); return; }
+      catch (e) {
+        if (intento >= 5) {
+          console.error(`[config] no se pudo cambiar el nombre (${e?.code ?? e}): se escribe directo`);
+          fs.writeFileSync(archivoDeConfig(), texto, { flush: true });
+          try { fs.rmSync(temporal, { force: true }); } catch { }
+          return;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60 * intento);
+      }
+    }
   } catch (e) { console.error(`[config] no se pudo guardar: ${e?.message ?? e}`); }   // la próxima vez pregunta de nuevo
 }
 
