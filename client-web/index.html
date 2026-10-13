@@ -3167,7 +3167,7 @@
     // último para re-enviarlo si la conexión se cae (auto-reconexión sin perder la sesión).
     let ws, loginBytes = null, loggedIn = false, lastReject = null;
     let reintentoSesion = 0;   // reintentos tras un choque de sesión (ver el case 'ShowMessageBox')
-    let reintentoTimer = null;  // el reintento programado, que se cancela al entrar
+    let reintentoTimer = null;  // el reintento programado, que se cancela al entrar o con otro ingreso
     // UN INGRESO A LA VEZ: cuándo salió el último LoginExistingChar / LoginNewChar que todavía no tuvo respuesta.
     let entrandoDesde = 0;
     // Los dos avisos del gate de sesión del server (el personaje sigue adentro): con ésos se reintenta, con nada más.
@@ -3191,6 +3191,8 @@
       if (loggedIn) return;
       if (entrandoDesde && lastReject === null && Date.now() - entrandoDesde < 8000) return;
       if (bytes[0] === CLIENT.LoginExistingChar || bytes[0] === CLIENT.LoginNewChar) entrandoDesde = Date.now();
+      // UN INGRESO NUEVO CANCELA EL REINTENTO DEL ANTERIOR, que lleva la cuenta y el personaje de aquel intento.
+      clearTimeout(reintentoTimer);
       loginBytes = bytes; reingresoTrasAlta = reingreso || null; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
       // OJO EL ESTADO 0 (CONNECTING): el socket ya está en camino y su `onopen` va a mandar `loginBytes` solo.
@@ -3213,7 +3215,7 @@
       'expulsado por el administrador': 'El administrador te expulsó del servidor.',
       'expulsion masiva de un GM': 'Un GM expulsó a todos los jugadores.',
       'servidor: expulsion masiva': 'El servidor expulsó a todos los jugadores.',
-      'auth timeout': 'Tardaste demasiado en identificarte.',
+      'auth timeout': 'Tardaste demasiado en entrar. Volvé a ingresar.',
     };
     /**
      * PUERTO DEL WEBSOCKET. Era 7667 cableado, y eso rompía al host que tocara `StartPort` en su Server.ini:
@@ -3272,7 +3274,13 @@
       if (compilacionDelServer && yaHuboConexion && !versionVerificada && !(ws && ws.readyState <= 1)) {
         if (verificandoVersion) return;
         verificandoVersion = true;
-        fetch('./coverao-config.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((cfg) => {
+        // CON PLAZO: mientras esto no vuelve, cada connect() sale por el `return` de arriba sin abrir socket ni
+        // programar otro intento, así que un pedido que no contesta dejaba la reconexión trabada. A los 5 s se
+        // corta, se sigue como si no hubiera respuesta y se conecta.
+        const corte = new AbortController();
+        const plazo = setTimeout(() => corte.abort(), 5000);
+        fetch('./coverao-config.json', { cache: 'no-store', signal: corte.signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((cfg) => {
+          clearTimeout(plazo);
           verificandoVersion = false;
           if (cfg && typeof cfg.compilacion === 'string' && cfg.compilacion && cfg.compilacion !== compilacionDelServer) {
             statusEl.textContent = 'el server se actualizó — cargando el cliente nuevo…';
@@ -3335,10 +3343,13 @@
         // deshacía solo, porque el cliente se volvía a loguear 1,5 s después de que el server lo sacara.
         // Una caída de red da 1006 SIN motivo, y ésa sí se reconecta, que es para lo que existe el reintento.
         //
-        // EXCEPCIÓN: el `auth timeout` de quien todavía NO entró. No es echar a nadie, es higiene de sockets — le
-        // pasa a cualquiera que deje la pantalla de login abierta un rato. Ahí se reconecta calladito: mostrarle
-        // un error rojo por no haberse apurado a tipear sería peor que el bug que esto arregla.
-        if (ev && ev.reason && !(ev.reason === 'auth timeout' && !wasLogged)) {
+        // EXCEPCIÓN: el `auth timeout` de quien todavía NO entró y no mandó nada. No es echar a nadie, es higiene de
+        // sockets — le pasa a cualquiera que deje la pantalla de login abierta un rato. Ahí se reconecta calladito:
+        // mostrarle un error rojo por no haberse apurado a tipear sería peor que el bug que esto arregla.
+        // CON UN INGRESO MANDADO (la cuenta en la lista de personajes, o un ingreso sin respuesta) NO: reconectar
+        // reenviaba `loginBytes`, la clave de la cuenta, en cada vuelta y sin que el jugador tocara nada. Corta
+        // como los demás: se olvida el paquete y vuelve al ingreso con el aviso.
+        if (ev && ev.reason && !(ev.reason === 'auth timeout' && !wasLogged && !loginBytes)) {
           statusEl.textContent = 'desconectado: ' + ev.reason;
           loginBytes = null;
           showLogin(); loginErr(MOTIVO_CIERRE[ev.reason] || ('El servidor cerró la conexión: ' + ev.reason + '.'));
@@ -4525,15 +4536,18 @@
       const f = e.fields;
       switch (e.name) {
         case 'Logged': myKey = f.redundance; loggedIn = true; lastReject = null; reintentoSesion = 0; entrandoDesde = 0;
-          altaHecha(CLIENT.LoginNewChar);
           clearTimeout(reintentoTimer); cerrarModalSiHay(); hideLogin(); statusEl.textContent = 'en el mundo'; pintarEstados();
           // El familiar elegido en la creacion se manda ACA y no con el paquete de creacion: aquel es del
-          // original y no se le agregan campos. Va una sola vez.
+          // original y no se le agregan campos. Va una sola vez, y SÓLO SI SE ENTRÓ POR EL ALTA (`loginBytes` es
+          // el LoginNewChar, antes de que `altaHecha` lo cambie por el reingreso). Un alta rechazada lo dejaba
+          // vivo, y el próximo personaje que entrara de la misma clase y sin familiar se quedaba con él.
           if (familiarPendiente) {
-            ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ElegirFamiliar)
-              .writeByte(familiarPendiente.tipo).writeAsciiString(familiarPendiente.nombre).toBytes(), myKey));
+            if (loginBytes && loginBytes[0] === CLIENT.LoginNewChar)
+              ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ElegirFamiliar)
+                .writeByte(familiarPendiente.tipo).writeAsciiString(familiarPendiente.nombre).toBytes(), myKey));
             familiarPendiente = null;
           }
+          altaHecha(CLIENT.LoginNewChar);
           send(W().writeByte(CLIENT.RequestAtributes));   // pide Fuerza/Agilidad para el panel (llega por 'Atributes')
           // El inventario y los hechizos llegan durante el bootstrap, así que el autollenado de la hotbar
           // se agenda para cuando ya estén todos: si corriera acá encontraría las dos listas vacías.
@@ -4562,7 +4576,9 @@
             if (CHOQUE_DE_SESION.has(f.message) && reintentoSesion < 4 && loginBytes) {
               reintentoSesion++;
               const bytes = loginBytes;
-              reintentoTimer = setTimeout(() => { loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
+              // Sólo si el ingreso pendiente sigue siendo el que chocó: otro intento lo reemplaza, y un cierre con
+              // rechazo o con motivo lo borra.
+              reintentoTimer = setTimeout(() => { if (loginBytes !== bytes) return; loginErr('Reintentando…'); sendLogin(bytes); }, 2500);
             }
           }
           // LA PREGUNTA DEL HOGAR (VB6 frmPregunta.SetAccion 5): "¿Deseas que <ciudad> sea tu nuevo hogar?" con el
@@ -8118,9 +8134,10 @@
       document.querySelectorAll('.login-form').forEach((f) => f.classList.remove('on'));
       document.querySelector('#login .login-modes').style.display = 'none';
       // SI ESTÁS CREANDO UN PERSONAJE, NO SE TE SACA DE AHÍ. La lista se reconstruye igual —queda lista para
-      // cuando vuelvas— pero la pantalla no cambia. Esto llega solo, sin que toques nada: el server cierra el
-      // socket de quien todavía no entró (`auth timeout`) y el cliente reconecta y se re-loguea calladito, con
-      // lo cual el `AddPJ` de la cuenta aterriza en medio del formulario. Se veía como que el menú "se vuelve
+      // cuando vuelvas— pero la pantalla no cambia. Esto puede llegar solo, sin que toques nada: una caída de la
+      // conexión (cierre sin motivo) hace que el cliente reconecte y se re-loguee calladito, con lo cual el
+      // `AddPJ` de la cuenta aterriza en medio del formulario. Antes lo disparaba también el `auth timeout` de quien
+      // todavía no entró, que ahora vuelve al ingreso sin reenviar la cuenta. Se veía como que el menú "se vuelve
       // atrás" mientras elegías, y lo tipeado se perdía.
       if ($('login').classList.contains('creando')) { loginErr(''); return; }
       charselEl.classList.remove('hidden'); loginErr('');
@@ -8139,7 +8156,7 @@
     // ESCONDEN. El paquete las sigue llevando; lo que se saca es volver a pedírselas a alguien que ya entró.
     $('cs-volver').addEventListener('click', () => {
       // Sale del modo creación ANTES de repintar: si no, el guardia que impide que la lista te saque del
-      // formulario -el que arregla el salto por `auth timeout`- también impediría volver a propósito.
+      // formulario -el que arregla el salto por una reconexión- también impediría volver a propósito.
       $('login').classList.remove('creando');
       if (ultimoRoster) showCharList(ultimoRoster.account, ultimoRoster.list);
       else selectLoginMode('in');
