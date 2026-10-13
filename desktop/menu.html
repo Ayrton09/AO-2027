@@ -129,6 +129,15 @@
     .pie button { background: none; border: 1px solid var(--oro-hondo); border-radius: 4px; color: var(--oro-claro); cursor: pointer;
                   font-size: 13px; padding: 1px 7px; }
     .pie button.off { opacity: .4; }
+    #aviso-act { color: var(--oro-claro); }
+    #aviso-act button { margin-left: 6px; color: #1c130a; background: var(--oro); border-color: var(--oro); }
+
+    /* Novedades: las mismas que muestra el juego al entrar, en una lista que se desplaza. */
+    #nov-lista { overflow-y: auto; max-height: 52vh; padding-right: 6px; }
+    #nov-lista h4 { margin: 12px 0 6px; font-size: 15px; color: var(--oro); font-weight: normal; }
+    #nov-lista h4:first-child { margin-top: 0; }
+    #nov-lista p { margin: 0 0 7px; line-height: 1.45; }
+    #nov-de { font-size: 12px; color: var(--apagado); }
   </style>
 </head>
 <body>
@@ -139,6 +148,7 @@
     <section class="vista on" id="v-principal">
       <div class="menu">
         <button type="button" class="principal" id="b-jugar">Jugar</button>
+        <button type="button" id="b-novedades">Novedades</button>
         <button type="button" id="b-opciones">Opciones</button>
         <button type="button" id="b-creditos">Créditos</button>
         <button type="button" id="b-salir">Salir</button>
@@ -226,6 +236,16 @@
       </div>
     </section>
 
+    <!-- NOVEDADES (el autor, 12/10: "que en la app aparezcan las novedades"): las del último server en el que se jugó, las mismas
+         que manda al entrar; sin server, o si no contesta, las que trae la app (ver main.js, 'novedades'). -->
+    <section class="vista" id="v-novedades">
+      <div class="panel">
+        <h2><span>Novedades</span><span id="nov-de"></span></h2>
+        <div id="nov-lista"></div>
+        <div style="margin-top:12px"><button class="volver" type="button" data-volver>← Volver</button></div>
+      </div>
+    </section>
+
     <!-- CRÉDITOS (el autor, 06/10): el agradecimiento a Francotirador, el mismo texto que el Menú → Créditos del juego. -->
     <section class="vista" id="v-creditos">
       <div class="panel creditos">
@@ -248,6 +268,7 @@
 
   <div class="pie">
     <span class="firma">by: Ayrton09</span>
+    <span id="aviso-act" hidden>Hay una versión nueva del juego: se instala al cerrar.<button type="button" id="b-actualizar">Actualizar ahora</button></span>
     <button type="button" id="p-musica" title="Música del menú">♪</button>
   </div>
 
@@ -276,6 +297,7 @@
     }
     for (const b of document.querySelectorAll('[data-volver]')) b.addEventListener('click', () => mostrar('principal'));
     $('b-jugar').addEventListener('click', () => mostrar('jugar'));
+    $('b-novedades').addEventListener('click', () => { mostrar('novedades'); cargarNovedades(); });
     $('b-opciones').addEventListener('click', () => mostrar('opciones'));
     $('b-creditos').addEventListener('click', () => mostrar('creditos'));
     $('b-salir').addEventListener('click', () => window.escritorio.salir());
@@ -544,6 +566,36 @@
       if (e.data === 'coverao:cerrar-top' && topDe && e.origin === new URL(topDe).origin) entrar(topDe);
     });
 
+    // ---- Novedades: las del último server (o el primero de la lista); si no contesta, las que trae la app. Recién actualizada,
+    // las que trae la app (`propias`). ----
+    async function cargarNovedades(propias = false) {
+      const lista = $('nov-lista');
+      lista.textContent = 'Buscando…';
+      $('nov-de').textContent = '';
+      const { servidores, ultimo } = await window.escritorio.listar();
+      const n = await window.escritorio.novedades(propias ? null : ultimo ?? servidores[0]?.direccion ?? '');
+      $('nov-de').textContent = n.propias ? 'lo nuevo de esta actualización'
+        : n.de ? n.de + (n.version ? ' · versión ' + n.version : '')
+        : n.sinRespuesta ? n.sinRespuesta + ' no responde: las de esta versión del juego'
+        : n.lineas.length ? 'las de esta versión del juego' : '';
+      lista.innerHTML = n.lineas.length
+        ? n.lineas.map((l) => {
+          const t = /^== (.+) ==$/.exec(l);
+          return t ? `<h4>${esc(t[1])}</h4>` : `<p>${esc(l)}</p>`;
+        }).join('')
+        : '<p class="ayuda">Todavía no hay novedades. Agregá un server en Jugar y acá vas a ver las suyas.</p>';
+    }
+
+    // ---- La versión nueva del juego de escritorio: ya bajada y verificada (ver main.js), se instala al cerrar o ahora. ----
+    const avisarActualizacion = () => { $('aviso-act').hidden = false; };
+    window.escritorio.alHaberActualizacion(avisarActualizacion);
+    window.escritorio.hayActualizacion().then((si) => { if (si) avisarActualizacion(); });
+    $('b-actualizar').addEventListener('click', () => {
+      $('b-actualizar').disabled = true;
+      $('b-actualizar').textContent = 'Actualizando…';
+      window.escritorio.actualizarAhora();
+    });
+
     // ---- Arranque. ----
     (async () => {
       ajustes = await window.escritorio.leerAjustes();
@@ -553,6 +605,7 @@
       aplicarMusica();
       // Si se volvió acá porque no se pudo entrar, a la lista, con el motivo.
       if (q.get('error')) { mostrar('jugar'); error.textContent = q.get('error'); }
+      else if (await window.escritorio.recienActualizada()) { mostrar('novedades'); cargarNovedades(true); }
       else $('b-jugar').focus();
     })();
   </script>

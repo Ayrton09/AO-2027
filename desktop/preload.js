@@ -14,6 +14,11 @@ if (location.protocol === 'file:') {
     estaEnPantallaCompleta: () => ipcRenderer.invoke('esta-en-pantalla-completa'),
     pantallaCompleta: (si) => ipcRenderer.invoke('pantalla-completa', si),
     salir: () => ipcRenderer.invoke('salir'),
+    novedades: (direccion) => ipcRenderer.invoke('novedades', direccion),
+    recienActualizada: () => ipcRenderer.invoke('recien-actualizada'),
+    hayActualizacion: () => ipcRenderer.invoke('actualizacion'),
+    actualizarAhora: () => ipcRenderer.invoke('actualizar-ahora'),
+    alHaberActualizacion: (hacer) => ipcRenderer.on('actualizacion-lista', () => hacer()),
   });
 } else if (/^https?:$/.test(location.protocol)) {
   // LAS OPCIONES DEL MENÚ, EN EL JUEGO: se escriben en el `localStorage` de este server antes de que corra su página, que las lee

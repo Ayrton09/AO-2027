@@ -9,8 +9,9 @@
     "windows": "electron-builder --win",
     "linux": "electron-builder --linux",
     "mac": "electron-builder --mac",
-    "test": "node test-firma.js",
-    "firmar": "node firmar.js"
+    "test": "node test-firma.js && node test-actualizacion.js",
+    "firmar": "node firmar.js",
+    "armar": "node armar.js"
   },
   "build": {
     "appId": "ar.coverao.escritorio",
@@ -23,6 +24,8 @@
       "main.js",
       "preload.js",
       "firma.js",
+      "actualizacion.js",
+      "compilacion.json",
       "clave-publica.pem",
       "menu.html",
       "menu/**",
@@ -38,15 +41,15 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "CoverAO"
+      "shortcutName": "CoverAO",
+      "artifactName": "CoverAO-Setup.${ext}"
     },
     "linux": {
       "target": [

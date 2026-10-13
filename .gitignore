@@ -4,6 +4,7 @@
 *.tsbuildinfo
 node_modules/
 desktop/release/
+desktop/compilacion.json
 # La clave privada de la firma del cliente (desktop/firmar.js) vive fuera del repo.
 clave-privada.pem
 __pycache__/

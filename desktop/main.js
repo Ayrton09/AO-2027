@@ -6,7 +6,10 @@
 const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
 const firma = require('./firma');
+const actualizacion = require('./actualizacion');
 
 // LA APP NO ARRANCA EN MODO DEPURACIÓN. Con estos interruptores cualquiera se cuelga del juego desde afuera (el puerto de
 // depuración de Chromium deja leer y cambiar la página entera); los fuses del paquete (package.json, `electronFuses`) cierran los de
@@ -321,7 +324,121 @@ async function consultar(direccion) {
   }
 }
 
+// LA COMPILACIÓN DE ESTA APP (la escribe armar.js al armar el instalador): su fecha, que decide si un instalador del release es
+// más nuevo, y las novedades del CHANGELOG de ese momento. Sin empaquetar no está: sin fecha y sin novedades propias.
+const COMPILACION = (() => {
+  try {
+    const c = JSON.parse(fs.readFileSync(path.join(__dirname, 'compilacion.json'), 'utf8'));
+    return { id: typeof c.id === 'string' ? c.id : '', novedades: Array.isArray(c.novedades) ? c.novedades.map(String) : [] };
+  } catch { return { id: '', novedades: [] }; }
+})();
+
+/**
+ * LAS NOVEDADES DE UN SERVER: las que manda al entrar, publicadas en su `coverao-config.json` (ver StaticFileServer.cs), con la
+ * versión que corre. null si no contesta. Como `consultar`, se pide desde acá y no desde la página.
+ */
+async function novedadesDe(direccion) {
+  try {
+    const r = await fetch(new URL('coverao-config.json', direccion), {
+      cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
+    });
+    if (!r.ok) return null;
+    const c = await r.json();
+    if (!Array.isArray(c?.novedades)) return null;
+    return {
+      lineas: c.novedades.filter((l) => typeof l === 'string').slice(0, 400).map((l) => l.slice(0, 2000)),
+      version: typeof c.version === 'string' ? c.version.slice(0, 40) : null,
+    };
+  } catch { return null; }
+}
+
+// LA ACTUALIZACIÓN (ver actualizacion.js): al abrir se baja el aviso del release; si es del autor y más nuevo que esta compilación,
+// se baja el instalador y, si es el firmado, el menú ofrece instalarlo. Si no se toca, se instala al cerrar. Sin empaquetar no
+// se busca: `COVERAO_ACTUALIZAR=1` lo prueba igual.
+const DESCARGAS = 'https://github.com/Ayrton09/CoverAO-Descargas/releases/latest/download/';
+const BUSCAR_ACTUALIZACION = app.isPackaged || process.env.COVERAO_ACTUALIZAR === '1';
+const TOPE_DEL_INSTALADOR = 512 * 1024 * 1024;
+let lista = null;        // { ruta, id } del instalador ya bajado y verificado
+let instalando = false;
+
+async function buscarActualizacion() {
+  if (!BUSCAR_ACTUALIZACION || !CLAVE_PUBLICA) return;
+  try {
+    const r = await net.fetch(DESCARGAS + 'actualizacion.json', { cache: 'no-store', bypassCustomProtocolHandlers: true });
+    if (!r.ok) return;
+    const aviso = actualizacion.verificarActualizacion(await r.json(), CLAVE_PUBLICA, COMPILACION.id);
+    if (!aviso) { console.log('[actualizacion] ya es la última'); return; }
+    const dir = path.join(app.getPath('userData'), 'actualizacion');
+    fs.mkdirSync(dir, { recursive: true });
+    const ruta = path.join(dir, aviso.archivo);
+    if (!fs.existsSync(ruta) || fs.statSync(ruta).size !== aviso.tamano || !(await esElFirmado(ruta, aviso.sha256))) {
+      if (aviso.tamano > TOPE_DEL_INSTALADOR) return;
+      const ri = await net.fetch(DESCARGAS + aviso.archivo, { cache: 'no-store', bypassCustomProtocolHandlers: true });
+      if (!ri.ok || !ri.body) return;
+      const temporal = ruta + '.bajando';
+      const hash = crypto.createHash('sha256');
+      const salida = fs.createWriteStream(temporal);
+      let total = 0;
+      for await (const pedazo of ri.body) {
+        total += pedazo.byteLength;
+        if (total > aviso.tamano) { salida.destroy(); fs.rmSync(temporal, { force: true }); return; }
+        hash.update(pedazo);
+        if (!salida.write(pedazo)) await new Promise((listo) => salida.once('drain', listo));
+      }
+      await new Promise((listo, mal) => salida.end((e) => (e ? mal(e) : listo())));
+      if (total !== aviso.tamano || hash.digest('hex') !== aviso.sha256) {
+        fs.rmSync(temporal, { force: true });
+        console.error('[actualizacion] el instalador bajado no es el firmado');
+        return;
+      }
+      fs.renameSync(temporal, ruta);
+    }
+    lista = { ruta, id: aviso.id };
+    console.log(`[actualizacion] lista la del ${aviso.id}`);
+    if (ventana && !ventana.isDestroyed()) ventana.webContents.send('actualizacion-lista');
+  } catch (e) { console.error(`[actualizacion] ${e?.message ?? e}`); }
+}
+
+/** ¿El archivo es el del hash? */
+function esElFirmado(ruta, sha256) {
+  return new Promise((listo) => {
+    const hash = crypto.createHash('sha256');
+    fs.createReadStream(ruta).on('data', (d) => hash.update(d)).on('error', () => listo(false))
+      .on('end', () => listo(hash.digest('hex') === sha256));
+  });
+}
+
+/** Corre el instalador en silencio; `--updated` le dice que es una actualización y `--force-run` que abra la app al terminar. */
+function instalar(reabrir) {
+  if (!lista || instalando) return false;
+  instalando = true;
+  spawn(lista.ruta, ['/S', '--updated', ...(reabrir ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' }).unref();
+  return true;
+}
+
+app.on('quit', () => instalar(false));
+
+// RECIÉN ACTUALIZADA (el autor, 12/10: "si sacamos una nueva version de la app al actualizarse deberian aparecer las
+// novedades"): la primera vez que abre una compilación distinta de la última que se abrió, el menú muestra solo las novedades
+// que trae. La primera instalación no cuenta: no hay una anterior.
+let recienActualizada = !!COMPILACION.id && !!config.compilacionVista && config.compilacionVista !== COMPILACION.id;
+if (COMPILACION.id && config.compilacionVista !== COMPILACION.id) { config.compilacionVista = COMPILACION.id; guardarConfig(config); }
+
+ipcMain.handle('recien-actualizada', () => { const si = recienActualizada; recienActualizada = false; return si; });
+
 // El menú es la única pantalla que habla con este proceso (ver preload.js).
+ipcMain.handle('novedades', async (_e, direccion) => {
+  if (direccion === null) return { lineas: COMPILACION.novedades, version: null, de: null, propias: true };
+  const d = normalizar(direccion);
+  const delServer = d ? await novedadesDe(d) : null;
+  if (delServer?.lineas.length) return { ...delServer, de: nombreDe(d) };
+  return { lineas: COMPILACION.novedades, version: null, de: null, sinRespuesta: d ? nombreDe(d) : null };
+});
+
+ipcMain.handle('actualizacion', () => !!lista);
+
+ipcMain.handle('actualizar-ahora', () => { if (instalar(true)) app.quit(); });
+
 ipcMain.handle('listar', () => ({ servidores: config.servidores, ultimo: config.servidor ?? null, porDefecto: SERVIDOR_POR_DEFECTO }));
 
 ipcMain.handle('agregar', (_e, texto, nombre) => {
@@ -457,6 +574,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   if (VERIFICAR) { interceptar('http'); interceptar('https'); }
   crearVentana();
+  buscarActualizacion();
 });
 
 app.on('window-all-closed', () => app.quit());
