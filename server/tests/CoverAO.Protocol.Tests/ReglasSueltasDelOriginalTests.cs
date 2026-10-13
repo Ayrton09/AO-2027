@@ -414,7 +414,8 @@ public class ReglasSueltasDelOriginalTests : IDisposable
         { "la receta 0 de carpintería", P(ClientPacketId.CraftCarpenter, w => w.WriteInteger(0).WriteInteger(1)) },
         { "confeccionar 0", P(ClientPacketId.CraftSastre, w => w.WriteInteger(1).WriteInteger(0)) },
         { "preparar 2000", P(ClientPacketId.Craftalquimia, w => w.WriteInteger(1).WriteInteger(2000)) },
-        { "entrenar la criatura 3", P(ClientPacketId.Train, w => w.WriteByte(3)) },
+        // La 3, la 4 y la 5 no: el cliente del original lista todas las del entrenador (auditoría del 13/10).
+        { "entrenar la criatura 0", P(ClientPacketId.Train, w => w.WriteByte(0)) },
         { "101 puntos a un skill", Skills(101) },
         { "el aspecto 2", P(ClientPacketId.EquiparSkin, w => w.WriteByte(2).WriteByte(0)) },
         { "el familiar 10", P(ClientPacketId.ElegirFamiliar, w => w.WriteByte(10).WriteAsciiString("Fido")) },

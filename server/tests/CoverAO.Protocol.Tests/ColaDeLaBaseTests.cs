@@ -32,7 +32,8 @@ public class ColaDeLaBaseTests : IDisposable
     [Fact]
     public void La_copia_de_la_cuenta_lleva_todos_los_campos()
     {
-        var propiedades = typeof(Account).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        // Las que se pueden escribir: una calculada (CodigoLegado) sale de las otras y se copia sola.
+        var propiedades = typeof(Account).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.CanWrite).ToArray();
         var original = new Account { Name = "Cuenta" };
         foreach (var prop in propiedades)
         {

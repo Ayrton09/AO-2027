@@ -3168,6 +3168,8 @@
     let ws, loginBytes = null, loggedIn = false, lastReject = null;
     let reintentoSesion = 0;   // reintentos tras un choque de sesión (ver el case 'ShowMessageBox')
     let reintentoTimer = null;  // el reintento programado, que se cancela al entrar o con otro ingreso
+    // La cuenta contestó con la lista de personajes y el jugador todavía no mandó otro ingreso (ver el `auth timeout`).
+    let cuentaAceptada = false;
     // UN INGRESO A LA VEZ: cuándo salió el último LoginExistingChar / LoginNewChar que todavía no tuvo respuesta.
     let entrandoDesde = 0;
     // Los dos avisos del gate de sesión del server (el personaje sigue adentro): con ésos se reintenta, con nada más.
@@ -3193,6 +3195,7 @@
       if (bytes[0] === CLIENT.LoginExistingChar || bytes[0] === CLIENT.LoginNewChar) entrandoDesde = Date.now();
       // UN INGRESO NUEVO CANCELA EL REINTENTO DEL ANTERIOR, que lleva la cuenta y el personaje de aquel intento.
       clearTimeout(reintentoTimer);
+      cuentaAceptada = false;
       loginBytes = bytes; reingresoTrasAlta = reingreso || null; lastReject = null; loginErr('');
       if (ws && ws.readyState === 1) { ws.send(xorBuffer(bytes, DEFAULT_XOR_KEY)); return; }
       // OJO EL ESTADO 0 (CONNECTING): el socket ya está en camino y su `onopen` va a mandar `loginBytes` solo.
@@ -3343,15 +3346,16 @@
         // deshacía solo, porque el cliente se volvía a loguear 1,5 s después de que el server lo sacara.
         // Una caída de red da 1006 SIN motivo, y ésa sí se reconecta, que es para lo que existe el reintento.
         //
-        // EXCEPCIÓN: el `auth timeout` de quien todavía NO entró y no mandó nada. No es echar a nadie, es higiene de
-        // sockets — le pasa a cualquiera que deje la pantalla de login abierta un rato. Ahí se reconecta calladito:
-        // mostrarle un error rojo por no haberse apurado a tipear sería peor que el bug que esto arregla.
-        // CON UN INGRESO MANDADO (la cuenta en la lista de personajes, o un ingreso sin respuesta) NO: reconectar
-        // reenviaba `loginBytes`, la clave de la cuenta, en cada vuelta y sin que el jugador tocara nada. Corta
-        // como los demás: se olvida el paquete y vuelve al ingreso con el aviso.
-        if (ev && ev.reason && !(ev.reason === 'auth timeout' && !wasLogged && !loginBytes)) {
+        // EXCEPCIÓN: el `auth timeout` de quien todavía NO entró. No es echar a nadie, es higiene de sockets — le pasa a
+        // cualquiera que deje la pantalla de login abierta un rato. Ahí se reconecta calladito, y si recién mandó un ingreso
+        // (que se cruzó con el cierre) se le reenvía: mostrarle un error rojo por no haberse apurado a tipear sería peor que
+        // el bug que esto arregla.
+        // CON LA CUENTA YA ADENTRO, mirando la lista de personajes, NO: reconectar reenviaba `loginBytes`, la clave de la
+        // cuenta, en cada vuelta y sin que el jugador tocara nada. Corta como los demás: se olvida el paquete y vuelve al
+        // ingreso con el aviso.
+        if (ev && ev.reason && !(ev.reason === 'auth timeout' && !wasLogged && !cuentaAceptada)) {
           statusEl.textContent = 'desconectado: ' + ev.reason;
-          loginBytes = null;
+          loginBytes = null; cuentaAceptada = false;
           showLogin(); loginErr(MOTIVO_CIERRE[ev.reason] || ('El servidor cerró la conexión: ' + ev.reason + '.'));
           return;
         }
@@ -4553,7 +4557,7 @@
           // se agenda para cuando ya estén todos: si corriera acá encontraría las dos listas vacías.
           setTimeout(autollenarHotbar, 1200);
           break;
-        case 'AddPJ': altaHecha(CLIENT.CreateNewAccount); showCharList(f.account, f.chars); break;   // lista de personajes de la cuenta (flujo AO original)
+        case 'AddPJ': altaHecha(CLIENT.CreateNewAccount); cuentaAceptada = true; showCharList(f.account, f.chars); break;   // lista de personajes de la cuenta (flujo AO original)
         // form 1 = selección de personaje: actuamos sobre AddPJ, que ya trae la lista. form 9/10 = el
         // formulario de SKINS, que el server manda como respuesta a /SKIN (AbrirForms 112).
         case 'AbrirFormularios': if (f.form === 9 || f.form === 10) abrirSkins(); break;
