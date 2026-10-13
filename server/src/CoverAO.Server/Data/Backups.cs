@@ -46,7 +46,9 @@ public static class Backups
     /// base). Sin esto la copia se veia completa y no lo era: restaurar en otra maquina traia los personajes
     /// y perdia la lista de baneos por IP, en silencio. Un backup que no alcanza para levantar el servidor
     /// entero es peor que no tenerlo, porque uno se confia.</param>
-    public static string Crear(IAlmacen almacen, string dir, DateTime cuando, string? dataRoot = null)
+    /// <param name="sinCopiar">Acá van los sueltos que no se pudieron copiar (un archivo tomado por otro proceso no voltea el
+    /// backup, pero tampoco se calla: queda en el log, y quien pide la lista decide si le alcanza).</param>
+    public static string Crear(IAlmacen almacen, string dir, DateTime cuando, string? dataRoot = null, ICollection<string>? sinCopiar = null)
     {
         Directory.CreateDirectory(dir);
         string ruta = almacen.Backup(dir, Stem(cuando));
@@ -62,8 +64,14 @@ public static class Backups
                 // LA BASE NO: su copia es la de arriba, consistente. Copiar el archivo vivo —y su diario— da una base a
                 // medio escribir, del doble de tamaño, que encima parece un backup.
                 if (EsDeLaBase(f)) continue;
+                // EL TOKEN DEL PANEL TAMPOCO: vale mientras dure la sesión, y un backup se baja, se manda y se muda.
+                if (Path.GetFileName(f).Equals(Net.AdminServer.NombreDelArchivoDelToken, StringComparison.OrdinalIgnoreCase)) continue;
                 try { File.Copy(f, Path.Combine(destino, Path.GetFileName(f)), overwrite: true); }
-                catch (IOException) { /* un archivo tomado por otro proceso no puede voltear el backup */ }
+                catch (IOException ex)
+                {
+                    Console.Error.WriteLine($"[backup] no se pudo copiar {Path.GetFileName(f)}: {ex.Message}");
+                    sinCopiar?.Add(Path.GetFileName(f));
+                }
             }
         }
         return ruta;

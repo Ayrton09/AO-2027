@@ -16,11 +16,14 @@ namespace CoverAO.Server.Data;
 /// <list type="number">
 /// <item>Abre el paquete aparte (<c>actualizacion/paquete</c>) y verifica que esté firmado por el autor, que sea para esta
 /// plataforma, que sea más nuevo que lo instalado y que cada archivo sea el firmado.</item>
-/// <item>Backup completo de la base y de <c>data/</c>, como el de siempre. Si no sale, no actualiza.</item>
+/// <item>Backup completo de la base y de <c>data/</c>, como el de siempre. Si no sale, o le falta un archivo, no actualiza.</item>
 /// <item>Decide archivo por archivo (<see cref="Actualizacion.Plan"/>): lo oficial que el host no tocó se reemplaza, lo que
 /// modificó queda y el nuevo va a <c>actualizacion/sin-aplicar</c>. Lo reemplazado queda en <c>actualizacion/anterior</c>.</item>
 /// <item>Aplica moviendo archivos (rápido, en el mismo disco); si un movimiento falla, deshace los anteriores.</item>
 /// <item>Rearma el Server.ini con los valores del host (<see cref="RearmadoDelIni"/>); si cambiaría algo, no lo toca.</item>
+/// <item>Anota la versión instalada: <c>archivos.json</c> y, LO ÚLTIMO, <c>compilacion.json</c>, con la fecha del manifiesto
+/// firmado (el del paquete no va firmado). Si algo falla antes, la versión anotada sigue siendo la de antes y volver a correr
+/// <c>actualizar</c> rehace todo.</item>
 /// </list>
 /// </summary>
 public static class Actualizador
@@ -44,16 +47,27 @@ public static class Actualizador
     public static int Correr(string[] args, string baseDir, string dataRoot, ServerIni ini) =>
         Correr(args, baseDir, dataRoot, ini, Actualizacion.ClavePublicaDelAutor, Console.Out);
 
-    internal static int Correr(string[] args, string baseDir, string dataRoot, ServerIni ini, string clave, TextWriter salida)
+    /// <param name="otrosServers">La ruta de cada otro proceso del server (ver <see cref="OtroServerCorriendo(string?, IEnumerable{Func{string?}})"/>);
+    /// null = los de esta máquina.</param>
+    internal static int Correr(string[] args, string baseDir, string dataRoot, ServerIni ini, string clave, TextWriter salida,
+        IEnumerable<Func<string?>>? otrosServers = null)
     {
         string? desde = Opcion(args, "--desde") ?? args.Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
         bool forzar = args.Any(a => a.Equals("--forzar", StringComparison.OrdinalIgnoreCase));
         string dir = Path.Combine(baseDir, "actualizacion");
         string preparado = Path.Combine(dir, "paquete");
+        string? aMedias = null;   // qué quedó hecho y qué falta, desde que se reemplazó el primer archivo
         try
         {
-            if (OtroServerCorriendo()) throw new Problema("El server está prendido en esta carpeta: apagalo primero (coverao.ps1 detener, " +
-                                                          "Ctrl+C en su ventana o systemctl stop) y volvé a correr esto.");
+            var otro = otrosServers is null ? OtroServerCorriendo() : OtroServerCorriendo(Environment.ProcessPath, otrosServers);
+            if (otro == OtroServer.EnEstaCarpeta)
+                throw new Problema("El server está prendido en esta carpeta: apagalo primero (coverao.ps1 detener, " +
+                                   "Ctrl+C en su ventana o systemctl stop) y volvé a correr esto.");
+            if (otro == OtroServer.SinSaberDonde && !forzar)
+                throw new Problema("Hay un server de CoverAO prendido con otra cuenta y no se puede ver de qué carpeta es (el arranque " +
+                                   "automático de coverao.ps1 corre como LOCAL SERVICE). Si es éste, apagalo primero (coverao.ps1 detener " +
+                                   "desde una consola de Administrador, o systemctl stop) y volvé a correr esto. Si es el de otra carpeta, " +
+                                   "corré esto como Administrador (o con sudo) para que se vea, o con --forzar.");
             string? idLocal = IdInstalado(baseDir);
             Directory.CreateDirectory(dir);
 
@@ -85,10 +99,11 @@ public static class Actualizador
             // 2. EL BACKUP, antes de tocar nada.
             salida.WriteLine("Backup de los personajes y la base...");
             string backup;
+            var sinCopiar = new List<string>();
             try
             {
                 var (almacen, _) = Almacenes.Abrir(ini, dataRoot);
-                try { backup = Backups.Crear(almacen, Path.Combine(dataRoot, "backups"), DateTime.Now, dataRoot); }
+                try { backup = Backups.Crear(almacen, Path.Combine(dataRoot, "backups"), DateTime.Now, dataRoot, sinCopiar); }
                 finally { (almacen as IDisposable)?.Dispose(); }
             }
             catch (Exception e) when (e is not Problema)
@@ -96,12 +111,21 @@ public static class Actualizador
                 throw new Problema($"No se pudo hacer el backup ({e.Message}): no se actualiza sin backup.");
             }
             salida.WriteLine($"  {backup}");
+            if (sinCopiar.Count > 0)
+            {
+                if (!forzar)
+                    throw new Problema($"El backup salió incompleto: no se pudo copiar {string.Join(", ", sinCopiar)} de data/ (lo tiene abierto " +
+                                       "otro programa, como un antivirus o el server prendido). No se actualiza sin el backup entero: cerralo " +
+                                       "y volvé a correr esto, o corré con --forzar.");
+                salida.WriteLine($"  OJO: el backup salió sin {string.Join(", ", sinCopiar)} (--forzar).");
+            }
 
             // 3 y 4. QUÉ REEMPLAZAR, Y REEMPLAZARLO.
             var viejos = LeerManifiestoInstalado(baseDir);
             if (viejos is null)
                 salida.WriteLine("  Esta instalación no sabe cuáles de sus archivos son los oficiales (es de antes de las actualizaciones): " +
-                                 "se reemplaza todo lo del paquete, y lo de antes queda en actualizacion/anterior.");
+                                 "se reemplaza todo lo del paquete, también los mapas y la data del juego que hayas modificado, y lo de " +
+                                 "antes queda en actualizacion/anterior.");
             var plan = Actualizacion.Plan(viejos?.Archivos, nuevo.Archivos, rel =>
             {
                 string f = Path.Combine(baseDir, rel);
@@ -109,15 +133,13 @@ public static class Actualizador
             });
             string anterior = Path.Combine(dir, "anterior");
             string sinAplicar = Path.Combine(dir, "sin-aplicar");
+            if (Directory.Exists(anterior) || Directory.Exists(sinAplicar))
+                salida.WriteLine("  Se borra lo que dejó la actualización anterior en actualizacion/anterior y actualizacion/sin-aplicar.");
             BorrarCarpeta(anterior);
             BorrarCarpeta(sinAplicar);
             Aplicar(plan, raiz, baseDir, anterior, sinAplicar);
-            foreach (var propio in new[] { Actualizacion.Manifiesto, Actualizacion.Compilacion })
-            {
-                string actual = Path.Combine(baseDir, propio);
-                if (File.Exists(actual)) Mover(actual, Path.Combine(anterior, propio), null);
-                File.Copy(Path.Combine(raiz, propio), actual, overwrite: true);
-            }
+            aMedias = $"ya están puestos los archivos de la versión del {nuevo.Id} (los de antes, en actualizacion/anterior), y falta " +
+                      "rearmar el Server.ini y anotar la versión instalada";
             if (!OperatingSystem.IsWindows())
                 foreach (var ejecutable in new[] { Actualizacion.Ejecutable, "servidor.sh" })
                 {
@@ -142,10 +164,23 @@ public static class Actualizador
 
             // 5. EL SERVER.INI.
             RearmarIni(baseDir, anterior, resumen);
+            aMedias = $"ya están puestos los archivos de la versión del {nuevo.Id} y el Server.ini, y falta anotar la versión instalada";
 
+            // 6. LA VERSIÓN INSTALADA, LO ÚLTIMO. Hasta acá sigue anotada la de antes: un reintento rehace todo.
+            Directory.CreateDirectory(anterior);
+            string manifiesto = Path.Combine(baseDir, Actualizacion.Manifiesto);
+            if (File.Exists(manifiesto)) File.Copy(manifiesto, Path.Combine(anterior, Actualizacion.Manifiesto), overwrite: true);
+            File.Copy(Path.Combine(raiz, Actualizacion.Manifiesto), manifiesto + ".tmp", overwrite: true);
+            EscrituraAtomica.Renombrar(manifiesto + ".tmp", manifiesto);
             BorrarCarpeta(preparado);
             if (desde is null) try { File.Delete(paquete); } catch (IOException) { }
             EscrituraAtomica.Escribir(Path.Combine(dir, "ultima.txt"), resumen.ToString(), new UTF8Encoding(false));
+            // La fecha, del manifiesto que se verificó: el compilacion.json del paquete no va firmado.
+            string compilacion = Path.Combine(baseDir, Actualizacion.Compilacion);
+            if (File.Exists(compilacion)) File.Copy(compilacion, Path.Combine(anterior, Actualizacion.Compilacion), overwrite: true);
+            EscrituraAtomica.Escribir(compilacion, JsonSerializer.Serialize(new { id = nuevo.Id }), new UTF8Encoding(false));
+            aMedias = null;
+
             salida.Write(resumen.ToString());
             salida.WriteLine("Listo. Ya podés arrancar el server.");
             return 0;
@@ -153,6 +188,8 @@ public static class Actualizador
         catch (Exception e) when (e is Problema or IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException)
         {
             salida.WriteLine(e is Problema ? e.Message : $"No se pudo actualizar: {e.Message}");
+            if (aMedias is not null)
+                salida.WriteLine($"OJO, QUEDÓ A MEDIAS: {aMedias}. Volvé a correr actualizar, que rehace lo que falta.");
             try { BorrarCarpeta(preparado); } catch (Exception) { }
             return 1;
         }
@@ -170,22 +207,44 @@ public static class Actualizador
         catch (IOException) { return null; }
     }
 
+    internal enum OtroServer { Ninguno, EnEstaCarpeta, SinSaberDonde }
+
     /// <summary>¿Corre otro server con ESTE ejecutable? Con el server prendido no se actualiza: tiene la base abierta, y sus
-    /// archivos en uso.</summary>
-    private static bool OtroServerCorriendo()
+    /// archivos en uso.
+    ///
+    /// <para>UNO CUYA RUTA NO SE PUEDE LEER CUENTA COMO PRENDIDO (auditoría del 13/10). Desde una consola sin Administrador,
+    /// Windows no deja ver la ruta de un proceso de otra cuenta, y el arranque automático de coverao.ps1 corre como LOCAL
+    /// SERVICE: tomarlo como apagado dejaba actualizar encima del server prendido. <c>--forzar</c> lo saltea.</para></summary>
+    /// <param name="rutas">La ruta del ejecutable de cada otro proceso con el nombre del server: null o una excepción si no se
+    /// puede leer.</param>
+    internal static OtroServer OtroServerCorriendo(string? yo, IEnumerable<Func<string?>> rutas)
     {
-        string? yo = Environment.ProcessPath;
-        if (yo is null) return false;
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(Actualizacion.Ejecutable)))
+        if (yo is null) return OtroServer.Ninguno;
+        var r = OtroServer.Ninguno;
+        foreach (var ruta in rutas)
         {
-            using (p)
+            string? f;
+            try { f = ruta(); }
+            catch (InvalidOperationException) { continue; }   // terminó mientras se lo miraba
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or UnauthorizedAccessException or IOException or NotSupportedException)
             {
-                if (p.Id == Environment.ProcessId) continue;
-                try { if (string.Equals(p.MainModule?.FileName, yo, StringComparison.OrdinalIgnoreCase)) return true; }
-                catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+                f = null;
             }
+            if (f is null) r = OtroServer.SinSaberDonde;
+            else if (string.Equals(f, yo, StringComparison.OrdinalIgnoreCase)) return OtroServer.EnEstaCarpeta;
         }
-        return false;
+        return r;
+    }
+
+    private static OtroServer OtroServerCorriendo()
+    {
+        var procesos = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(Actualizacion.Ejecutable));
+        try
+        {
+            return OtroServerCorriendo(Environment.ProcessPath, procesos.Where(p => p.Id != Environment.ProcessId)
+                .Select(p => (Func<string?>)(() => p.MainModule?.FileName)));
+        }
+        finally { foreach (var p in procesos) p.Dispose(); }
     }
 
     private static string Bajar(string dir, TextWriter salida)
@@ -327,7 +386,8 @@ public static class Actualizador
                     avisada = id;
                     avisar($"[actualizacion] Hay una versión nueva del server (del {id}). Para instalarla, apagalo y corré " +
                            (OperatingSystem.IsWindows() ? "coverao.ps1 actualizar <nombre>, o Actualizar.bat" : "./servidor.sh actualizar") +
-                           ". Tus personajes, tu Server.ini y lo que hayas modificado no se tocan.");
+                           ". Tus personajes no se tocan y tu Server.ini queda con tus valores. Si modificaste la data del juego " +
+                           "queda la tuya, y la nueva va a actualizacion/sin-aplicar; el cliente web y el ejecutable se reemplazan siempre.");
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }

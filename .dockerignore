@@ -36,3 +36,8 @@ fase*/
 **/data/Misc/
 **/data/backups/
 **/data/logs/
+
+# Del cliente, lo mismo que deja afuera publish.ps1: sus tests (tsc los compila al mismo dist/) y las notas internas
+# en .md de assets/, que el server publicaria por HTTP.
+client-web/dist/test/
+client-web/assets/**/*.md

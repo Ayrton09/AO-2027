@@ -155,19 +155,28 @@ public sealed class AdminServer
         _html = File.Exists(path) ? File.ReadAllText(path) : "<h1>admin.html no encontrado</h1>";
     }
 
+    public const string NombreDelArchivoDelToken = "admin-token.txt";
+
     /// <summary>Dónde se deja el token cuando la salida está redirigida y no hay consola donde imprimirlo.
-    /// Va al lado del ejecutable y no adentro de <c>data/</c>: esa carpeta es la que entra en los backups y la
-    /// que se copia para mudar un servidor.</summary>
+    /// Va adentro de <c>data/</c> (auditoría del 13/10): es la carpeta que dejan escribir coverao.service y la imagen de
+    /// Docker; al lado del ejecutable no se podía guardar y el panel quedaba inaccesible. Los backups no lo copian
+    /// (<see cref="Data.Backups.Crear"/>).</summary>
     internal static string ArchivoDelToken() =>
-        Path.Combine(AppContext.BaseDirectory, "admin-token.txt");
+        Path.Combine(AppContext.BaseDirectory, "data", NombreDelArchivoDelToken);
+
+    /// <summary>¿Corre adentro de un contenedor? Lo dicen las imágenes de .NET (y el Dockerfile, por las dudas).</summary>
+    private static bool EnContenedor =>
+        string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase);
 
     public async Task RunAsync(CancellationToken token)
     {
-        // `soloLocal: true` a propósito y para siempre: el panel puede apagar el server, kickear a todos,
-        // banear y bajarse un backup. No se publica ni con urlacl — desde afuera se llega por túnel SSH.
+        // `soloLocal: true` a propósito: el panel puede apagar el server, kickear a todos, banear y bajarse un
+        // backup. No se publica ni con urlacl — desde afuera se llega por túnel SSH.
+        // ADENTRO DE UN CONTENEDOR, EN TODAS SUS INTERFACES: su loopback es el del contenedor, al que no llega ningún
+        // puerto publicado. Lo que lo deja sólo local es el compose, que lo publica en el 127.0.0.1 del host.
         // Va por HttpBind igual que los otros dos por el CORTE AL APAGAR: sin él, `GetContextAsync()` deja el
         // proceso colgado para siempre en el apagado (ver el comentario largo en HttpBind.Abrir).
-        var bind = HttpBind.Abrir(_port, "Panel admin", token, soloLocal: true);
+        var bind = HttpBind.Abrir(_port, "Panel admin", token, soloLocal: !EnContenedor);
         if (bind is null) return;
         var listener = bind.Value.Listener;
         // La URL con el token va DIRECTO a la consola real, no por Console.Out — que desde que existe el log a
@@ -186,8 +195,8 @@ public sealed class AdminServer
         // el 2026-09-03 arrancando el server con la salida redirigida. Justamente el host que corre como
         // servicio es el que después manda ese archivo para que le miren el problema.
         //
-        // Con la salida redirigida no hay dónde imprimirlo, así que se lo deja en un archivo AL LADO DEL
-        // EJECUTABLE y la línea visible dice dónde. Se reescribe en cada arranque; el token es de sesión, así
+        // Con la salida redirigida no hay dónde imprimirlo, así que se lo deja en un archivo EN `data/`
+        // (ArchivoDelToken) y la línea visible dice dónde. Se reescribe en cada arranque; el token es de sesión, así
         // que el que quede de una corrida vieja no sirve para nada.
         if (!Console.IsOutputRedirected)
         {

@@ -1,7 +1,7 @@
 # CoverAO — imagen del servidor.
 #
 #   docker build -t coverao .
-#   docker run -d --name coverao -p 7666-7669:7666-7669 -v coverao-data:/app/data coverao
+#   docker run -d --name coverao -p 7666:7666 -p 7667:7667 -p 7669:7669 -p 127.0.0.1:7668:7668 -v coverao-data:/app/data coverao
 #
 # Y a jugar en  http://localhost:7669/ .
 #
@@ -41,7 +41,10 @@ COPY --from=build /publicado/ ./
 # La data del juego y el cliente web NO se compilan: van tal cual desde el repo, con los mismos nombres de
 # carpeta que busca el ejecutable (FindDataDir y StaticFileServer los resuelven por AppContext.BaseDirectory).
 COPY gamedata/ ./gamedata/
-COPY client-web/index.html ./webclient/
+# El cliente con el mismo criterio que publish.ps1: TODAS las paginas (el login abre estado.html, y con
+# SoloEscritorio=1 la pagina es descargar.html), sin los tests de dist/ ni las notas .md de assets/, que el
+# .dockerignore deja afuera.
+COPY client-web/*.html ./webclient/
 COPY client-web/dist/ ./webclient/dist/
 COPY client-web/assets/ ./webclient/assets/
 COPY LICENSE docs/HOSTING.md CREDITOS.md ./
@@ -57,9 +60,14 @@ COPY LICENSE docs/HOSTING.md CREDITOS.md ./
 #
 # Lo encontre construyendo la imagen y corriendola. Leyendo el Dockerfile no se ve: las dos instrucciones
 # estan bien escritas, lo que estaba mal era el orden.
+#
+# DEL PROCESO ES SOLO /app/data (auditoria del 13/10): el resto queda de root, asi una falla del server no
+# puede reescribir el cliente que bajan los jugadores. Y data/ en 700: las cuentas y el token del panel no
+# los lee otra cuenta.
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin coverao \
  && mkdir -p /app/data \
- && chown -R coverao:coverao /app
+ && chown coverao:coverao /app/data \
+ && chmod 700 /app/data
 
 # Las cuentas y los personajes viven aca. Declarado como volumen para que sobrevivan a `docker rm`: sin esto,
 # actualizar la imagen borra el servidor entero. Al crearse, el volumen hereda el contenido y los permisos que
@@ -69,8 +77,10 @@ VOLUME /app/data
 USER coverao
 
 # 7666 juego (protocolo AO clasico) · 7667 WebSocket (cliente web) · 7669 cliente web.
-# El 7668 (panel de administracion) NO se expone a proposito: escucha en loopback y para llegar desde afuera
-# lo correcto es un tunel SSH, no publicarlo.
+# El 7668 (panel de administracion) NO se expone: adentro del contenedor escucha en todas sus interfaces
+# (AdminServer.cs, con esta variable) y se publica SOLO en el 127.0.0.1 del host (docker-compose.yml);
+# desde afuera, un tunel SSH. El token queda en /app/data/admin-token.txt.
+ENV DOTNET_RUNNING_IN_CONTAINER=true
 EXPOSE 7666 7667 7669
 
 # Sin `sh -c`: asi el ejecutable es PID 1 y recibe el SIGTERM de `docker stop` derecho, que es lo que dispara

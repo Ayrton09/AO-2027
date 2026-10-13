@@ -251,7 +251,7 @@ Set-Content -Path (Join-Path $OutDir "Servidor.bat") -Value $bat -Encoding ASCII
 $act = @"
 @echo off
 cd /d "%~dp0"
-echo Actualizar CoverAO: con el server APAGADO. Tus personajes, tu Server.ini y lo que modificaste no se tocan.
+echo Actualizar CoverAO: con el server APAGADO. Hace un backup antes, tus personajes no se tocan y tu Server.ini queda con tus valores.
 if "%~1"=="" (CoverAO.Server.exe actualizar) else (CoverAO.Server.exe actualizar --desde "%~1")
 pause
 "@
@@ -266,6 +266,8 @@ cd "`$(dirname "`$0")" || exit 1
 [ -x ./CoverAO.Server ] || chmod +x ./CoverAO.Server 2>/dev/null
 # bash servidor.sh actualizar [paquete .tar.gz]: con el server apagado (ver HOSTING.md, "Actualizar a una version nueva").
 if [ "`$1" = "actualizar" ]; then shift; if [ -n "`$1" ]; then exec ./CoverAO.Server actualizar --desde "`$@"; else exec ./CoverAO.Server actualizar; fi; fi
+# Lo que crea el servidor (la base, los backups, data/bots.txt, el token del panel) lo lee solo esta cuenta.
+umask 077
 echo 'Iniciando CoverAO... (Ctrl+C para apagar el servidor)'
 echo 'Cuando diga "Cliente web: http://localhost:7669/", abri esa URL en el navegador.'
 exec ./CoverAO.Server "`$@"
@@ -304,7 +306,10 @@ ACTUALIZAR A UNA VERSION NUEVA (con el server APAGADO):
   Hace un backup, verifica que el paquete sea del autor, reemplaza solo los
   archivos oficiales que no tocaste (lo que modificaste queda, y lo nuevo va a
   actualizacion/sin-aplicar) y deja tu Server.ini con tus valores mas las claves
-  nuevas. Lo de antes queda en  actualizacion/anterior.
+  nuevas. Lo de antes queda en  actualizacion/anterior. El cliente web y el
+  ejecutable se reemplazan siempre, y una instalacion de antes de las
+  actualizaciones (sin archivos.json) reemplaza todo, mapas incluidos. Cada
+  actualizacion borra lo que dejo la anterior en esas dos carpetas.
 
 JUGAR CON AMIGOS:
   Al arrancar, el servidor imprime un bloque "== Como entrar ==" con las tres
@@ -401,11 +406,6 @@ En Linux, ademas,  systemctl stop  hace lo mismo (manda SIGTERM y el servidor gu
 
 SI TE MUDAS DE MAQUINA, o queres tu propio respaldo, copiate la carpeta  data\
 entera: ahi esta TODO tu servidor, y es lo unico que no se puede volver a generar.
-
-ACTUALIZAR A UNA VERSION NUEVA: rearma la distribucion sobre ESTA MISMA carpeta.
-El armador reemplaza el ejecutable, el mundo y el cliente, y CONSERVA tu  data\  y
-tu  Server.ini . Aun asi, antes de actualizar hace una copia de  data\ : es tu
-servidor, y una copia de mas nunca sobro.
 
 VARIOS SERVIDORES EN LA MISMA MAQUINA: una copia COMPLETA de esta carpeta por cada
 uno. No es desperdicio: es lo que hace que cada servidor tenga SUS mapas, SU data del

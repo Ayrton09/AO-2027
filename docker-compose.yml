@@ -17,9 +17,12 @@ services:
       - "7666:7666"   # juego (protocolo AO clasico, para el cliente de Windows)
       - "7667:7667"   # WebSocket — por aca JUEGA el cliente web. Sin este puerto la pagina carga y no conecta.
       - "7669:7669"   # cliente web (la URL que abren los jugadores)
-      # El 7668 (panel de administracion) NO se publica a proposito: llegale con un tunel SSH
+      # El 7668 (panel de administracion) se publica SOLO en el 127.0.0.1 de esta maquina: desde afuera no se
+      # llega. Desde la tuya, con un tunel SSH
       #   ssh -L 7668:localhost:7668 usuario@servidor
-      # y despues abri http://localhost:7668/ en tu maquina.
+      # y despues abri http://localhost:7668/ en tu maquina. El token:
+      #   docker compose exec coverao cat /app/data/admin-token.txt
+      - "127.0.0.1:7668:7668"
 
     volumes:
       # Las cuentas y los personajes. Es LO UNICO que no se puede volver a generar: sin este volumen,

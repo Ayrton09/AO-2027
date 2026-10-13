@@ -7,8 +7,13 @@ pwsh hosting/publish.ps1                 # -> dist/CoverAO-win-x64
 pwsh hosting/publish.ps1 -Rid linux-x64  # -> dist/CoverAO-linux-x64
 ```
 
-Queda una carpeta autocontenida: no hace falta .NET instalado en la máquina destino. Al volver a correrlo
-sobre la misma carpeta se conservan `data/` y `Server.ini`.
+Queda una carpeta autocontenida: no hace falta .NET instalado en la máquina destino.
+
+Arma un paquete, **no actualiza una instalación**. Al volver a correrlo sobre la misma carpeta se conservan `data/` y
+el `Server.ini`, y se borra todo lo demás sin copia, también `gamedata/` (con los mapas que hayas tocado) y
+`actualizacion/`. En `dist/CoverAO-<plataforma>` o con `-Comprimir`, además, el `Server.ini` se repone del ejemplo y el
+anterior queda en la carpeta de arriba, como `Server.ini.anterior-...`. Una instalación se actualiza con `actualizar`
+(ver "Actualizar a una version nueva").
 
 Con `-Comprimir` deja además el archivo para publicar, con el formato que corresponde a cada plataforma:
 `.zip` para Windows y `.tar.gz` para Linux. No hay que armarlo a mano.
@@ -61,7 +66,8 @@ hace falta abrirlo**: ver más abajo por qué el cliente clásico de Windows no 
 > Del lado del servidor no quedaba ni un renglón, porque esa conexión no llegaba nunca.
 
 **El panel de administración no se abre nunca**: desde ahí se puede apagar el servidor, expulsar a todos y
-bajar un backup. Para llegar de afuera, un túnel SSH: `ssh -L 7668:localhost:7668 usuario@servidor`.
+bajar un backup. Para llegar de afuera, un túnel SSH: `ssh -L 7668:localhost:7668 usuario@servidor`. El token va
+a la consola; si la salida está redirigida (systemd, Docker, `nohup`), queda en `data/admin-token.txt`.
 
 En **Windows sin permisos de administrador** los puertos HTTP quedan sólo en `localhost`. El servidor lo avisa
 al arrancar y da las dos salidas: abrirlo como Administrador, o reservar la URL una sola vez, en una consola de
@@ -224,22 +230,30 @@ Linux:     bash servidor.sh actualizar CoverAO-servidor-linux-x64.tar.gz
 
 Sin el paquete (`Actualizar.bat` solo, o `bash servidor.sh actualizar`), lo baja de las releases del juego. Con
 `BuscarActualizaciones=1` (así viene) el server avisa en la consola cuando hay una versión nueva; no instala
-nada solo. `coverao.ps1 actualizar` además lo apaga si estaba prendido y lo vuelve a arrancar.
+nada solo. `coverao.ps1 actualizar` además lo apaga si estaba prendido y lo vuelve a arrancar. Si el server corre
+con otra cuenta (el `arranque` de Windows corre como `LOCAL SERVICE`), desde una consola sin Administrador no se
+puede saber de qué carpeta es: `actualizar` no sigue y pide abrirla como Administrador (o `--forzar`).
 
 Qué hace, en orden, y cualquier problema antes de reemplazar algo deja todo como estaba:
 
 1. **Verifica el paquete:** que esté firmado por el autor (la misma firma que el cliente), que sea para tu
    sistema, que sea más nuevo que lo instalado y que cada archivo sea el firmado. Un paquete cambiado no se instala.
-2. **Backup** completo de la base y de `data/`, el mismo de siempre. Si no sale, no actualiza.
+2. **Backup** completo de la base y de `data/`, el mismo de siempre. Si no sale, o le falta un archivo que otro
+   programa tiene abierto, no actualiza (salvo con `--forzar`).
 3. **Reemplaza solo lo oficial que no tocaste.** Cada versión trae la huella de sus archivos (`archivos.json`):
    si modificaste un mapa o un archivo de la data, queda el tuyo y el nuevo va a `actualizacion/sin-aplicar`.
    El cliente y el ejecutable se reemplazan siempre. Tus personajes, tu base, tus logs y tu `Server.ini` no
-   figuran en la lista y no se tocan. Todo lo reemplazado queda en `actualizacion/anterior`.
+   figuran en la lista y no se tocan. Todo lo reemplazado queda en `actualizacion/anterior`. **Una instalación de
+   antes de las actualizaciones** (sin `archivos.json`) no sabe qué tocaste: la primera vez se reemplaza todo, mapas
+   incluidos, y lo tuyo queda en `actualizacion/anterior`. **Cada actualización borra lo que dejó la anterior** en
+   `actualizacion/sin-aplicar` y `actualizacion/anterior`: lo que quieras guardar, copialo antes.
 4. **Tu `Server.ini`, al día con tus valores:** se rearma sobre el ejemplo nuevo, con sus explicaciones y las
    claves nuevas, y con tus valores donde los tenías. Una clave que prendería algo que hoy no corre (una sección
    que no tenías) va comentada. Una que el server no reconoce queda al final, bajo un aviso. Antes de escribirlo,
    el server lo lee como si arrancara y lo compara con el tuyo, opción por opción: **si cambiara con qué corre
    tu server, no lo toca** y lo dice. El de antes queda en `actualizacion/anterior`.
+5. **Anota la versión instalada**, lo último. Si algo falla después de reemplazar archivos, lo dice, con lo que
+   quedó hecho y lo que falta, y volver a correr `actualizar` termina el trabajo.
 
 El resumen queda en `actualizacion/ultima.txt`.
 
@@ -469,7 +483,9 @@ docker compose logs -f
 ```
 
 El volumen `coverao-data:/app/data` es lo único que no se regenera. El `stop_grace_period: 60s` está puesto
-para que el guardado del apagado llegue a terminar.
+para que el guardado del apagado llegue a terminar. El panel de administración se publica sólo en el `127.0.0.1`
+del servidor (el túnel SSH de "Puertos" llega igual), y el token se lee con
+`docker compose exec coverao cat /app/data/admin-token.txt`.
 
 **Con Postgres**, la base va en su propio contenedor. Se pone la clave en un archivo `.env` al lado del compose (una
 línea `COVERAO_PG_CLAVE=` con una clave larga) y se levantan los dos:

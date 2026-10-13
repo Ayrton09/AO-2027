@@ -175,10 +175,14 @@ public class ActualizadorTests : IDisposable
         return zip;
     }
 
-    private (int Codigo, string Salida) Actualizar(string paquete, string clave)
+    /// <summary>Sin otros servers a la vista: los procesos de la máquina donde corren los tests no son asunto de estos tests.</summary>
+    private static readonly Func<string?>[] NingunOtro = Array.Empty<Func<string?>>();
+
+    private (int Codigo, string Salida) Actualizar(string paquete, string clave, params string[] mas)
     {
         var salida = new StringWriter();
-        int codigo = Actualizador.Correr(new[] { "actualizar", "--desde", paquete }, Base, Data, new ServerIni(), clave, salida);
+        int codigo = Actualizador.Correr(new[] { "actualizar", "--desde", paquete }.Concat(mas).ToArray(), Base, Data, new ServerIni(), clave,
+            salida, NingunOtro);
         return (codigo, salida.ToString());
     }
 
@@ -258,6 +262,99 @@ public class ActualizadorTests : IDisposable
 
         var forzada = new StringWriter();
         Assert.Equal(0, Actualizador.Correr(new[] { "actualizar", "--desde", zip, "--forzar" }, Base, Data, new ServerIni(), f.Clave, forzada));
+        Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
+    }
+
+    /// <summary>UN SERVER QUE NO SE DEJA VER CUENTA COMO PRENDIDO: desde una consola sin Administrador, Windows no da la ruta de
+    /// un proceso de otra cuenta (el arranque automático corre como LOCAL SERVICE). Actualizar no sigue, salvo con --forzar.</summary>
+    [Fact]
+    public void Un_server_que_no_se_deja_ver_cuenta_como_prendido()
+    {
+        string yo = Path.Combine(Base, Actualizacion.Ejecutable);
+        Func<string?> sinRuta = () => null, sinPermiso = () => throw new System.ComponentModel.Win32Exception(5),
+            termino = () => throw new InvalidOperationException(), otro = () => Path.Combine(_raiz, "otro", Actualizacion.Ejecutable);
+        Assert.Equal(Actualizador.OtroServer.SinSaberDonde, Actualizador.OtroServerCorriendo(yo, new[] { sinRuta }));
+        Assert.Equal(Actualizador.OtroServer.SinSaberDonde, Actualizador.OtroServerCorriendo(yo, new[] { otro, sinPermiso }));
+        Assert.Equal(Actualizador.OtroServer.Ninguno, Actualizador.OtroServerCorriendo(yo, new[] { termino, otro }));
+        Assert.Equal(Actualizador.OtroServer.EnEstaCarpeta, Actualizador.OtroServerCorriendo(yo, new Func<string?>[] { sinRuta, () => yo }));
+
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        var salida = new StringWriter();
+        Assert.Equal(1, Actualizador.Correr(new[] { "actualizar", "--desde", zip }, Base, Data, new ServerIni(), f.Clave, salida, new[] { sinRuta }));
+        Assert.Contains("no se puede ver de qué carpeta es", salida.ToString());
+        Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
+        Assert.False(Directory.Exists(Path.Combine(Data, "backups")));
+
+        var forzada = new StringWriter();
+        Assert.Equal(0, Actualizador.Correr(new[] { "actualizar", "--desde", zip, "--forzar" }, Base, Data, new ServerIni(), f.Clave, forzada, new[] { sinRuta }));
+        Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
+    }
+
+    /// <summary>UN FALLO DESPUÉS DE REEMPLAZAR ARCHIVOS DICE QUÉ QUEDÓ HECHO, y como la versión se anota lo último, volver a correr
+    /// termina el trabajo: el Server.ini se rearma y lo que el host modificó sigue siendo suyo.</summary>
+    [Fact]
+    public void Un_fallo_a_medias_lo_dice_y_otra_corrida_lo_termina()
+    {
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        string trabado = Path.Combine(Base, "Server.ini.tmp");             // el Server.ini no se puede escribir
+        Directory.CreateDirectory(trabado);
+
+        var (codigo, salida) = Actualizar(zip, f.Clave);
+        Assert.Equal(1, codigo);
+        Assert.Contains("QUEDÓ A MEDIAS: ya están puestos los archivos de la versión del 2026-10-13T00:00:00.000Z", salida);
+        Assert.Contains("falta rearmar el Server.ini", salida);
+        Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
+        Assert.DoesNotContain("ClaveMinima", Leer("Server.ini"));
+        Assert.Equal("2026-10-01T00:00:00.000Z", Actualizador.IdInstalado(Base));     // la versión anotada, la de antes
+
+        Directory.Delete(trabado);
+        var (otra, salidaOtra) = Actualizar(zip, f.Clave);
+        Assert.True(otra == 0, salidaOtra);
+        Assert.Contains("ClaveMinima", Leer("Server.ini"));
+        Assert.Contains("StartPort=7700", Leer("Server.ini"));
+        Assert.Equal("mapa2 DEL HOST", Leer("gamedata/mapa2.json"));
+        Assert.Equal("mapa2 v2", File.ReadAllText(Path.Combine(Base, "actualizacion", "sin-aplicar", "gamedata", "mapa2.json")));
+        Assert.Equal("2026-10-13T00:00:00.000Z", Actualizador.IdInstalado(Base));
+    }
+
+    /// <summary>LA VERSIÓN INSTALADA ES LA DEL MANIFIESTO FIRMADO: el compilacion.json del paquete no va firmado, y uno con una
+    /// fecha futura dejaba todas las versiones siguientes como "ya tenés una más nueva".</summary>
+    [Fact]
+    public void La_version_instalada_sale_del_manifiesto_firmado()
+    {
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z",
+            carpeta => File.WriteAllText(Path.Combine(carpeta, Actualizacion.Compilacion), "{\"id\":\"2099-01-01T00:00:00.000Z\"}"));
+        var (codigo, salida) = Actualizar(zip, f.Clave);
+        Assert.True(codigo == 0, salida);
+        Assert.Equal("2026-10-13T00:00:00.000Z", Actualizador.IdInstalado(Base));
+    }
+
+    /// <summary>CON EL BACKUP INCOMPLETO NO SE ACTUALIZA: un archivo de data/ que otro programa tiene abierto (un antivirus) no
+    /// entra en la copia; actualizar lo dice y no sigue, salvo con --forzar.</summary>
+    [Fact]
+    public void Con_el_backup_incompleto_no_se_actualiza_salvo_que_se_fuerce()
+    {
+        if (!OperatingSystem.IsWindows()) return;   // en Linux un archivo abierto se copia igual
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        using (new FileStream(Path.Combine(Data, "personaje.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var (codigo, salida) = Actualizar(zip, f.Clave);
+            Assert.Equal(1, codigo);
+            Assert.Contains("El backup salió incompleto: no se pudo copiar personaje.txt", salida);
+            Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
+
+            var (forzada, salidaForzada) = Actualizar(zip, f.Clave, "--forzar");
+            Assert.True(forzada == 0, salidaForzada);
+            Assert.Contains("el backup salió sin personaje.txt", salidaForzada);
+        }
         Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
     }
 

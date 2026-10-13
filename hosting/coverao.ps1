@@ -78,10 +78,23 @@ function PuertoDe($n) {
 
 # El proceso se reconoce por SU RUTA, no por el nombre del ejecutable: con varios servidores hay N procesos
 # llamados CoverAO.Server.exe y hay que saber cual es cual.
+# UNO CUYA RUTA NO SE PUEDE LEER CUENTA COMO ESTE (auditoria del 13/10), marcado con SinRuta: desde una consola sin
+# Administrador Windows no muestra la ruta de un proceso de otra cuenta, y el arranque automatico corre como LOCAL
+# SERVICE. Tomarlo como apagado dejaba actualizar encima del server prendido e iniciar una segunda copia.
 function ProcesoDe($n) {
   $exe = ExeDe $n
-  Get-CimInstance Win32_Process -Filter "Name='CoverAO.Server.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.ExecutablePath -eq $exe } | Select-Object -First 1
+  $todos = @(Get-CimInstance Win32_Process -Filter "Name='CoverAO.Server.exe'" -ErrorAction SilentlyContinue)
+  $suyo = $todos | Where-Object { $_.ExecutablePath -eq $exe } | Select-Object -First 1
+  if ($suyo) { return $suyo }
+  $todos | Where-Object { -not $_.ExecutablePath } | Select-Object -First 1 |
+    Add-Member -NotePropertyName SinRuta -NotePropertyValue $true -PassThru
+}
+
+function SinRuta($proc) {
+  if ($proc -and $proc.SinRuta) {
+    throw ("Hay un CoverAO.Server.exe prendido con otra cuenta (el arranque automatico corre como LOCAL SERVICE) y desde esta " +
+           "consola no se ve de que carpeta es. Abri PowerShell como Administrador y corre de nuevo:  .\coverao.ps1 $Accion $Nombre")
+  }
 }
 
 function Existe($n) {
@@ -180,7 +193,9 @@ switch ($Accion.ToLowerInvariant()) {
 
   "iniciar" {
     Existe $Nombre
-    if (ProcesoDe $Nombre) { Write-Host "'$Nombre' ya esta corriendo." -ForegroundColor Yellow; break }
+    $ya = ProcesoDe $Nombre
+    SinRuta $ya
+    if ($ya) { Write-Host "'$Nombre' ya esta corriendo." -ForegroundColor Yellow; break }
     $d = CarpetaDe $Nombre
     # Un `detener` que haya quedado de un apagado anterior lo apagaria apenas arranque, y desde afuera se ve
     # como "arranca y se cae solo".
@@ -198,6 +213,7 @@ switch ($Accion.ToLowerInvariant()) {
   "detener" {
     Existe $Nombre
     $proc = ProcesoDe $Nombre
+    SinRuta $proc
     if (-not $proc) { Write-Host "'$Nombre' no esta corriendo." -ForegroundColor Yellow; break }
     New-Item -ItemType File (Join-Path (CarpetaDe $Nombre) "detener") -Force | Out-Null
     Write-Host "Apagando '$Nombre' (guardando a los conectados)..." -NoNewline
@@ -218,7 +234,7 @@ switch ($Accion.ToLowerInvariant()) {
       $p = PuertoDe $dir.Name
       [pscustomobject]@{
         Servidor = $dir.Name
-        Estado   = if ($proc) { "corriendo" } else { "detenido" }
+        Estado   = if ($proc.SinRuta) { "sin saber (abri como Administrador)" } elseif ($proc) { "corriendo" } else { "detenido" }
         PID      = if ($proc) { $proc.ProcessId } else { "" }
         RAM_MB   = if ($proc) { [int]((Get-Process -Id $proc.ProcessId -ErrorAction SilentlyContinue).WorkingSet64 / 1MB) } else { "" }
         Puertos  = "$p..$($p+3)"
@@ -232,7 +248,9 @@ switch ($Accion.ToLowerInvariant()) {
   "actualizar" {
     Existe $Nombre
     # CON EL SERVER APAGADO (Data/Actualizador.cs): si estaba prendido se lo apaga limpio, y al final se lo vuelve a prender.
-    $estaba = [bool](ProcesoDe $Nombre)
+    $proc = ProcesoDe $Nombre
+    SinRuta $proc
+    $estaba = [bool]$proc
     if ($estaba) {
       & $PSCommandPath detener $Nombre -Raiz $Raiz
       if (ProcesoDe $Nombre) { throw "'$Nombre' no se apago: no se actualiza con el server prendido." }
@@ -240,7 +258,7 @@ switch ($Accion.ToLowerInvariant()) {
     $argsAct = @("actualizar")
     if ($Paquete) { $argsAct += @("--desde", (Resolve-Path $Paquete).Path) }
     & (ExeDe $Nombre) @argsAct
-    if ($LASTEXITCODE -ne 0) { Write-Host "La actualizacion no se hizo: '$Nombre' quedo como estaba." -ForegroundColor Red }
+    if ($LASTEXITCODE -ne 0) { Write-Host "La actualizacion de '$Nombre' no termino: arriba dice que quedo hecho y que falta." -ForegroundColor Red }
     if ($estaba) { & $PSCommandPath iniciar $Nombre -Raiz $Raiz }
   }
 

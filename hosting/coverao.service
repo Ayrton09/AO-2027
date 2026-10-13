@@ -3,7 +3,7 @@
 ;   sudo mkdir -p /opt/coverao
 ;   # --strip-components=1: el .tar.gz trae una carpeta raiz (CoverAO-linux-x64/) y sin esto los archivos
 ;   # quedan un nivel mas abajo de donde ExecStart los busca, y el servicio muere sin arrancar.
-;   sudo tar xzf CoverAO-1.0.0-linux-x64.tar.gz --strip-components=1 -C /opt/coverao
+;   sudo tar xzf CoverAO-servidor-linux-x64.tar.gz --strip-components=1 -C /opt/coverao
 ;   # El comprimido NO conserva el permiso de ejecucion. `servidor.sh` se lo da solo, pero systemd llama al
 ;   # binario DIRECTO, asi que sin este chmod el servicio muere con 203/EXEC.
 ;   sudo chmod +x /opt/coverao/CoverAO.Server
@@ -53,6 +53,10 @@ TimeoutStopSec=120
 
 Restart=on-failure
 RestartSec=5
+
+# Lo que crea el servidor (la base con los hashes de las cuentas, los backups, data/bots.txt, el token del
+# panel) sale legible SOLO para coverao: con el umask de siempre lo leia cualquier cuenta de la maquina.
+UMask=0077
 
 # La configuración puede ir por acá en vez de por el Server.ini — es lo mismo que usan los contenedores.
 # Environment=COVERAO_INIT_MAXUSERS=200

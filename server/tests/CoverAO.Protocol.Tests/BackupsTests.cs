@@ -28,6 +28,7 @@ public class BackupsTests : IDisposable
         foreach (var apartada in new[] { "coverao.db.importado", "coverao.db.antes-de-importar-20260929-010203", "coverao.db.importado-wal" })
             File.WriteAllText(Path.Combine(data, apartada), "una base vieja");
         File.WriteAllText(Path.Combine(data, "banned-ips.txt"), "10.0.0.1");
+        File.WriteAllText(Path.Combine(data, "admin-token.txt"), "http://localhost:7668/?token=x");   // el del panel, tampoco
 
         string ruta = Backups.Crear(almacen, Path.Combine(_dir, "backups"), new DateTime(2026, 9, 29, 1, 0, 0), data);
 
