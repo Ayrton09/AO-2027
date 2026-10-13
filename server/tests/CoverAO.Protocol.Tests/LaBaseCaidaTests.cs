@@ -529,6 +529,91 @@ public sealed class LaBaseCaidaTests : IDisposable
         db.Dispose();
     }
 
+    /// <summary>Los archivos de rescate de la carpeta de la prueba.</summary>
+    private string[] Volcados() => Directory.Exists(_raiz) ? Directory.GetFiles(_raiz, "rescate-*.json") : Array.Empty<string>();
+
+    /// <summary>El texto de un archivo que la cola puede estar reescribiendo: si justo se está renombrando, vacío.</summary>
+    private static string LeerSiSePuede(string archivo)
+    {
+        try { return File.ReadAllText(archivo); }
+        catch (IOException) { return ""; }
+        catch (UnauthorizedAccessException) { return ""; }
+    }
+
+    /// <summary>
+    /// CON LA BASE CAÍDA, LO QUE ESPERA SE VUELCA AL RESCATE mientras tanto: si el servidor muere sin apagarse —un corte de luz,
+    /// un taskkill—, el próximo arranque lo aplica. Antes sólo el apagado escribía el rescate, y lo de toda la caída moría con
+    /// el proceso.
+    /// </summary>
+    [Fact]
+    public void Con_la_base_caida_lo_que_espera_queda_en_el_rescate_aunque_el_servidor_muera()
+    {
+        ConPersonajes("Uno");
+        var (almacen, _) = AlmacenQueFalla.Crear(_real, _ => Trabada());
+        var cola = new ColaDeLaBase(almacen, Rapido, carpetaDelRescate: _raiz, cadaVolcado: TimeSpan.FromMilliseconds(20));
+        var ficha = FichasDePrueba.Llena("Uno", semilla: 3);
+
+        cola.Escribir("guardar a Uno", a => a.GuardarPersonaje(ficha), new RescateDePersonaje(ficha));
+        cola.Escribir("guardar el récord", a => a.GuardarRecord(7), new RescateDelRecord(7));
+        Assert.True(SpinWait.SpinUntil(() => Volcados() is [var v] && LeerSiSePuede(v).Contains("\"record\""), TimeSpan.FromSeconds(5)));
+        cola.Dispose();   // el proceso muere: cerrar la cola no escribe rescate (eso lo hace Persistence.Cerrar)
+
+        Assert.Equal(2, Rescates.AplicarLosPendientes(_raiz, _real));
+        FichasDePrueba.AssertIgual(ficha, _real.LeerPersonaje("Uno")!);
+        Assert.Equal(7, _real.LeerRecord());
+    }
+
+    /// <summary>
+    /// CUANDO LA BASE VUELVE, EL VOLCADO SE BORRA y la cola sigue como siempre. Se borra ANTES de que entre la suma que tenía:
+    /// con el volcado todavía en el disco, un proceso que muere justo ahí la volvía a sumar en el próximo arranque.
+    /// </summary>
+    [Fact]
+    public async Task Cuando_la_base_vuelve_el_volcado_se_borra_antes_de_seguir()
+    {
+        ConPersonajes("Uno");
+        long antes = _real.LeerPersonaje("Uno")!.OroEnBanco;
+        var (almacen, control) = AlmacenQueFalla.Crear(_real, _ => null);
+        var db = new Persistence(almacen, Niveles(), _raiz);
+        control.Falla(_ => Trabada());
+
+        var credito = db.AcreditarBovedaAsync("Uno", 300);
+        Assert.True(SpinWait.SpinUntil(() => Volcados().Length == 1, TimeSpan.FromSeconds(5)));
+        bool? habiaVolcadoAlSumar = null;
+        control.FallaDespues((m, args) =>
+        {
+            if (m == nameof(IAlmacen.AcreditarBoveda) && (long)args[1]! != 0) habiaVolcadoAlSumar = Volcados().Length > 0;
+            return null;
+        });
+        control.Falla(_ => null);   // vuelve
+
+        Assert.Equal(antes + 300, await credito);
+        Assert.False(habiaVolcadoAlSumar, "la suma entró con el volcado todavía en el disco");
+        Assert.Empty(Volcados());
+        Assert.Equal(0, Rescates.AplicarLosPendientes(_raiz, _real));
+        db.Dispose();
+    }
+
+    /// <summary>AL APAGAR CON LA BASE CAÍDA, EL RESCATE VA ENCIMA DEL VOLCADO: un archivo solo. Con los dos, el arranque aplicaba
+    /// dos veces la misma suma.</summary>
+    [Fact]
+    public void Al_apagar_con_la_base_caida_el_rescate_va_encima_del_volcado()
+    {
+        ConPersonajes("Uno");
+        long antes = _real.LeerPersonaje("Uno")!.OroEnBanco;
+        var (almacen, control) = AlmacenQueFalla.Crear(_real, _ => null);
+        var db = new Persistence(almacen, Niveles(), _raiz);
+        control.Falla(_ => Trabada());
+
+        db.AcreditarBovedaAsync("Uno", 300);
+        Assert.True(SpinWait.SpinUntil(() => Volcados().Length == 1, TimeSpan.FromSeconds(5)));
+        Thread.Sleep(1100);   // el nombre del archivo lleva el segundo: el del apagado, por su cuenta, saldría con otro
+        db.Cerrar(_raiz, TimeSpan.FromMilliseconds(300));
+
+        Assert.Single(Volcados());
+        Assert.Equal(1, Rescates.AplicarLosPendientes(_raiz, _real));
+        Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
+    }
+
     [Fact]
     public void Una_conexion_que_no_se_pudo_volver_a_abrir_es_que_la_base_no_responde()
     {

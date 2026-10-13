@@ -7,8 +7,8 @@ namespace CoverAO.Server.Data;
 
 /// <summary>
 /// UNA ESCRITURA QUE SOBREVIVE A UNA BASE CAÍDA (fase5/postgres/DISENO.md, 3.5). Si al apagar la base no responde y la cola no
-/// se vació, lo que quedaba se escribe en <c>data/rescate-AAAAMMDD-HHMMSS.json</c>, y el próximo arranque lo aplica ANTES de
-/// cargar el mundo y de abrir los puertos. Cada uno guarda un estado entero —el personaje, la cuenta, los clanes—: aplicarlo
+/// se vació —y, mientras no responde, cada tanto: el volcado de <see cref="ColaDeLaBase"/>—, lo que quedaba se escribe en
+/// <c>data/rescate-AAAAMMDD-HHMMSS.json</c>, y el próximo arranque lo aplica ANTES de cargar el mundo y de abrir los puertos. Cada uno guarda un estado entero —el personaje, la cuenta, los clanes—: aplicarlo
 /// dos veces da lo mismo. Menos la suma a una bóveda, que se cuida aparte (<see cref="RescateDeAcreditacion"/>).
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "tipo")]
@@ -138,15 +138,16 @@ public static class Rescates
 
     /// <summary>Lo que quedó sin aplicar al apagar, en orden, a <c>data/rescate-AAAAMMDD-HHMMSS.json</c>. Lo que no tiene
     /// rescate —un cambio a un desconectado, el último ingreso de una cuenta— va anotado, para que se sepa qué se perdió.
-    /// Devuelve la ruta, o null si no había nada.</summary>
-    public static string? Escribir(string dataRoot, IReadOnlyList<(string Que, Rescate? Rescate)> pendientes)
+    /// Con <paramref name="ruta"/>, en ese archivo, encima de lo que tenía: el volcado de una caída
+    /// (<see cref="ColaDeLaBase.EscribirElRescate"/>). Devuelve la ruta, o null si no había nada.</summary>
+    public static string? Escribir(string dataRoot, IReadOnlyList<(string Que, Rescate? Rescate)> pendientes, string? ruta = null)
     {
         if (pendientes.Count == 0) return null;
         var archivo = new Archivo(DateTime.UtcNow,
             pendientes.Where(p => p.Rescate is not null).Select(p => p.Rescate!).ToList(),
             pendientes.Where(p => p.Rescate is null).Select(p => p.Que).ToList());
         Directory.CreateDirectory(dataRoot);
-        string ruta = Path.Combine(dataRoot, $"{Prefijo}{DateTime.Now:yyyyMMdd-HHmmss}.json");
+        ruta ??= Path.Combine(dataRoot, $"{Prefijo}{DateTime.Now:yyyyMMdd-HHmmss}.json");
         EscrituraAtomica.Escribir(ruta, JsonSerializer.Serialize(archivo, Opciones), new UTF8Encoding(false));
         return ruta;
     }

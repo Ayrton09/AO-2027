@@ -24,6 +24,10 @@ namespace CoverAO.Server.Data;
 /// vez cuando se cae y otra cuando vuelve (DISENO.md, 3.5). Un pedido que falla por OTRA cosa se anota y la cola sigue: un
 /// personaje que no se pudo guardar no puede frenar a los demás.</para>
 ///
+/// <para><b>Mientras no responde, lo que espera se vuelca al archivo de rescate</b> (<see cref="Volcar"/>): un corte de luz o
+/// un proceso matado en medio de una caída larga se llevaba todo lo de la caída, que estaba sólo en memoria. Cuando vuelve,
+/// el volcado se borra y la cola sigue como siempre.</para>
+///
 /// <para><b>La lectura que se puede abandonar</b> (como la cuenta del ingreso, que deja de esperar a los 10 s) no se hace si el
 /// que la pidió ya se fue: sale de la cola sin tocar la base. Y las que esperan tienen tope: pasado, la lectura falla en el acto
 /// con <see cref="LaBaseNoResponde"/>. Las escrituras no tienen tope: se guardan siempre.</para>
@@ -35,15 +39,15 @@ public sealed class ColaDeLaBase : IDisposable
 {
     /// <summary>Un pedido: qué es (para el log), cómo se hace, qué hacer si falla o si la cola se rinde, y —si es una
     /// escritura que se puede guardar para el próximo arranque— su rescate.</summary>
-    private sealed class Pedido(string que, Action<IAlmacen> hacer, Action<Exception> fallo, Func<Rescate?>? rescate,
+    private sealed class Pedido(string que, Action<IAlmacen> hacer, Action<Exception> fallo, Func<bool, Rescate?>? rescate,
         CancellationToken abandono = default)
     {
         public readonly string Que = que;
         public readonly Action<IAlmacen> Hacer = hacer;
         public readonly Action<Exception> Fallo = fallo;
-        /// <summary>Arma el rescate en el momento de apartarlo: el de una suma necesita saber hasta dónde llegó
-        /// (<see cref="Persistence.AcreditarBovedaAsync"/>).</summary>
-        public readonly Func<Rescate?>? Rescate = rescate;
+        /// <summary>Arma el rescate en el momento de apartarlo (con true) o de volcarlo (con false, sin apartarlo): el de una
+        /// suma necesita saber hasta dónde llegó (<see cref="Persistence.AcreditarBovedaAsync"/>).</summary>
+        public readonly Func<bool, Rescate?>? Rescate = rescate;
         /// <summary>El rescate con el que quedó apartado, o null.</summary>
         public Rescate? Rescatado;
         /// <summary>Se cancela cuando el que lo pidió deja de esperarlo. Sólo lo traen las lecturas que se pueden abandonar.</summary>
@@ -81,15 +85,37 @@ public sealed class ColaDeLaBase : IDisposable
     private bool _rendida;
     private DateTime? _caidaDesde;
 
+    /// <summary>Cada cuánto se vuelve a volcar lo que espera mientras la base no responde, si llegó algo nuevo. El primero va
+    /// apenas se cae.</summary>
+    internal static readonly TimeSpan CadaVolcado = TimeSpan.FromSeconds(30);
+
+    private readonly string? _carpetaDelRescate;
+    private readonly TimeSpan _cadaVolcado;
+    private readonly object _volcando = new();
+    /// <summary>El archivo del volcado de esta caída, o null.</summary>
+    private string? _volcado;
+    /// <summary>Lo del volcado todavía no se aplicó. False: la base volvió y el archivo no se pudo borrar; el próximo volcado o el
+    /// rescate del apagado lo pisan.</summary>
+    private bool _volcadoVigente;
+    private long _proximoVolcado;
+    /// <summary>El último lugar de la cola que había cuando se volcó: si no llegó nada, no se vuelve a escribir lo mismo.</summary>
+    private long _volcadoHasta;
+
     public ColaDeLaBase(IAlmacen almacen) : this(almacen, Esperas) { }
 
     /// <param name="esperas">Las esperas entre reintentos. Las pruebas las acortan.</param>
     /// <param name="topeDeLecturas">El tope de las lecturas que se pueden abandonar. Las pruebas lo achican.</param>
-    internal ColaDeLaBase(IAlmacen almacen, TimeSpan[] esperas, int topeDeLecturas = TopeDeLecturasAbandonables)
+    /// <param name="carpetaDelRescate">Dónde va el volcado mientras la base no responde (<see cref="Volcar"/>). Sin ella, no se
+    /// vuelca.</param>
+    /// <param name="cadaVolcado">Cada cuánto se vuelve a volcar. Las pruebas lo acortan.</param>
+    internal ColaDeLaBase(IAlmacen almacen, TimeSpan[] esperas, int topeDeLecturas = TopeDeLecturasAbandonables,
+        string? carpetaDelRescate = null, TimeSpan? cadaVolcado = null)
     {
         _almacen = almacen;
         _esperas = esperas;
         _topeDeAbandonables = topeDeLecturas;
+        _carpetaDelRescate = carpetaDelRescate;
+        _cadaVolcado = cadaVolcado ?? CadaVolcado;
         _escritor = new Thread(Correr) { IsBackground = true, Name = "cola-de-la-base" };
         _escritor.Start();
     }
@@ -110,7 +136,7 @@ public sealed class ColaDeLaBase : IDisposable
     /// <paramref name="rescate"/>, si al apagar la base no respondía, va al archivo de rescate en vez de perderse.</summary>
     public void Escribir(string que, Action<IAlmacen> escritura, Rescate? rescate = null)
         => Encolar(new Pedido(que, escritura, ex => Console.Error.WriteLine($"[base] {que}: {ex.Message}"),
-                              rescate is null ? null : () => rescate));
+                              rescate is null ? null : _ => rescate));
 
     /// <summary>
     /// Pide algo al almacén y devuelve una tarea con la respuesta. La continuación NO corre en el escritor
@@ -122,11 +148,12 @@ public sealed class ColaDeLaBase : IDisposable
     /// <see cref="LaBaseNoResponde"/>.</para>
     ///
     /// <para>Con <paramref name="rescate"/>, si al apagar la base no respondía, va al archivo de rescate con lo que devuelva
-    /// <paramref name="rescate"/> en ese momento, y la tarea queda sin terminar: lo suyo se aplica en el próximo arranque, y
-    /// avisarle que falló lo haría deshacer algo que igual se va a hacer.</para>
+    /// <paramref name="rescate"/>(true) en ese momento, y la tarea queda sin terminar: lo suyo se aplica en el próximo arranque, y
+    /// avisarle que falló lo haría deshacer algo que igual se va a hacer. Con false es el volcado de una caída, que no lo
+    /// aparta: el pedido se sigue haciendo cuando la base vuelva.</para>
     /// </summary>
     public Task<T> PedirAsync<T>(string que, Func<IAlmacen, T> pedido, CancellationToken abandono = default,
-        Func<Rescate?>? rescate = null)
+        Func<bool, Rescate?>? rescate = null)
     {
         if (abandono.CanBeCanceled && Interlocked.Increment(ref _abandonables) > _topeDeAbandonables)
         {
@@ -230,6 +257,7 @@ public sealed class ColaDeLaBase : IDisposable
             catch (Exception ex) when (reintentar && EsQueLaBaseNoResponde(ex))
             {
                 Cayo(ex, pedido.Que);
+                Volcar(pedido);
                 if (EsperarParaReintentar(intento)) continue;
                 lock (_estado) Apartar(pedido);
                 return;
@@ -257,7 +285,7 @@ public sealed class ColaDeLaBase : IDisposable
     {
         if (pedido.Apartado || pedido.Abandono.IsCancellationRequested) return;
         pedido.Apartado = true;
-        pedido.Rescatado = pedido.Rescate?.Invoke();
+        pedido.Rescatado = pedido.Rescate?.Invoke(true);
         _sinAplicar.Add(pedido);
         if (pedido.Rescatado is null) pedido.Fallo(new InvalidOperationException("la base no respondía y el servidor se apagó"));
     }
@@ -284,6 +312,95 @@ public sealed class ColaDeLaBase : IDisposable
         }
         Console.Error.WriteLine($"[base] la base volvió después de {(DateTime.UtcNow - desde).TotalSeconds:0} s; sigue la cola " +
                                 $"({Pendientes} pedido(s)).");
+        lock (_volcando)
+        {
+            _volcadoVigente = false;
+            BorrarElVolcado();
+        }
+    }
+
+    /// <summary>Desde adentro de un pedido: la base ya contestó. El volcado de la caída se borra en el acto, antes de lo que el
+    /// pedido haga después: una suma que entra con el volcado todavía en el disco se volvería a sumar en el próximo arranque si
+    /// el proceso muere justo ahí (<see cref="Persistence.AcreditarBovedaAsync"/>).</summary>
+    internal void LaBaseResponde() => Volvio();
+
+    /// <summary>
+    /// EL VOLCADO DE UNA CAÍDA: lo que espera —el pedido que se reintenta y lo que está detrás, en orden— va al archivo de
+    /// rescate de <c>data/</c> (<see cref="Rescates"/>), el mismo que escribe el apagado. Si el proceso muere con la base caída,
+    /// el próximo arranque lo aplica como a cualquier rescate. Va apenas se cae y después cada <see cref="CadaVolcado"/>, si
+    /// llegó algo nuevo, siempre al MISMO archivo: dos volcados de la misma caída aplicarían dos veces la misma suma. Cuando la
+    /// base vuelve se borra (<see cref="Volvio"/>), antes de que la cola aplique lo siguiente: un volcado que queda con lo que
+    /// ya se aplicó pisaría, en el próximo arranque, lo que se guardó después. Corre en el escritor, entre un reintento y otro.
+    /// </summary>
+    private void Volcar(Pedido enCurso)
+    {
+        if (_carpetaDelRescate is null) return;
+        lock (_volcando)
+        {
+            long hasta = Interlocked.Read(ref _siguiente);
+            if (_volcadoVigente && (Environment.TickCount64 < _proximoVolcado || hasta == _volcadoHasta)) return;
+            List<(string, Rescate?)> pendientes;
+            lock (_estado)
+            {
+                if (_rendida) return;   // el apagado escribe el suyo
+                pendientes = _pedidos.ToArray().Prepend(enCurso)
+                    .Where(p => !p.Apartado && !p.Abandono.IsCancellationRequested)
+                    .OrderBy(p => p.Orden)
+                    .Select(p => (p.Que, p.Rescate?.Invoke(false)))
+                    .ToList();
+            }
+            // Un volcado que falla —el disco lleno es una de las caídas— no puede frenar a la cola.
+            try
+            {
+                _volcado = Rescates.Escribir(_carpetaDelRescate, pendientes, _volcado) ?? _volcado;
+                _volcadoVigente = _volcado is not null;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[base] no se pudo volcar lo que espera a la base: {ex.Message}");
+            }
+            _volcadoHasta = hasta;
+            _proximoVolcado = Environment.TickCount64 + (long)_cadaVolcado.TotalMilliseconds;
+        }
+    }
+
+    /// <summary>Borra el volcado que ya no vale. Si no se puede, queda anotado: lo pisa el próximo volcado o el rescate del
+    /// apagado, y si no, el apagado lo vuelve a intentar.</summary>
+    private void BorrarElVolcado()
+    {
+        if (_volcado is not { } ruta || _volcadoVigente) return;
+        try
+        {
+            File.Delete(ruta);
+            _volcado = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"[base] OJO: no se pudo borrar {ruta} ({ex.Message}), que ya se aplicó. Si el servidor se " +
+                                    "corta antes de volver a intentarlo, borralo a mano antes de arrancar: aplicado de nuevo, " +
+                                    "pisaría lo que se guardó después.");
+        }
+    }
+
+    /// <summary>
+    /// EL RESCATE DEL APAGADO: lo que <see cref="Cerrar"/> devolvió sin aplicar, a <paramref name="carpeta"/>. Va ENCIMA del
+    /// volcado de la caída, si hay uno —los dos aplicarían dos veces lo mismo—, y sin nada que escribir, el volcado que ya no
+    /// vale se borra. Devuelve la ruta, o null si no había nada.
+    /// </summary>
+    public string? EscribirElRescate(string carpeta, IReadOnlyList<(string Que, Rescate? Rescate)> sinAplicar)
+    {
+        lock (_volcando)
+        {
+            if (sinAplicar.Count == 0)
+            {
+                BorrarElVolcado();
+                return null;
+            }
+            string? ruta = Rescates.Escribir(carpeta, sinAplicar, _volcado);
+            _volcado = null;
+            _volcadoVigente = false;
+            return ruta;
+        }
     }
 
     /// <summary>

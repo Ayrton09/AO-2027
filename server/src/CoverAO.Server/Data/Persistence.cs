@@ -32,13 +32,15 @@ public sealed class Persistence : IDisposable
     private readonly ConcurrentDictionary<string, byte> _cuentas = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte> _lecturasAvisadas = new();
 
-    public Persistence(IAlmacen almacen, Leveling leveling)
+    /// <param name="carpetaDelRescate">La de <c>data/</c>: ahí va lo que espera mientras la base no responde (ver
+    /// <see cref="ColaDeLaBase"/>). Sin ella no se vuelca, y sólo el apagado escribe el rescate.</param>
+    public Persistence(IAlmacen almacen, Leveling leveling, string? carpetaDelRescate = null)
     {
         _almacen = almacen;
         _leveling = leveling;
         foreach (var nombre in almacen.NombresDePersonajes()) _personajes[nombre] = 0;
         foreach (var nombre in almacen.NombresDeCuentas()) _cuentas[nombre] = 0;
-        _cola = new ColaDeLaBase(almacen);
+        _cola = new ColaDeLaBase(almacen, ColaDeLaBase.Esperas, carpetaDelRescate: carpetaDelRescate);
     }
 
     /// <summary>Sobre un almacén de TEXTO (los archivos o el SQLite viejo), con el adaptador de siempre.</summary>
@@ -50,14 +52,15 @@ public sealed class Persistence : IDisposable
     /// <summary>
     /// EL APAGADO: cierra la cola esperando lo que quedaba, hasta 30 s —nada, si la base no responde—. Si algo quedó sin
     /// aplicar, va al archivo de rescate de <paramref name="dataRoot"/> (<see cref="Rescates"/>), que el próximo arranque aplica
-    /// antes de cargar el mundo. Lo que no tiene rescate queda anotado ahí y en el log.
+    /// antes de cargar el mundo. Lo que no tiene rescate queda anotado ahí y en el log. Va encima del volcado de la caída, si
+    /// había uno.
     /// </summary>
     public void Cerrar(string dataRoot, TimeSpan? plazo = null)
     {
         var sinAplicar = _cola.Cerrar(plazo ?? TimeSpan.FromSeconds(30));
+        string? ruta = _cola.EscribirElRescate(dataRoot, sinAplicar);
         if (sinAplicar.Count > 0)
         {
-            string? ruta = Rescates.Escribir(dataRoot, sinAplicar);
             int rescatadas = sinAplicar.Count(p => p.Rescate is not null);
             Console.Error.WriteLine($"[base] LA BASE NO RESPONDIÓ AL APAGAR: {rescatadas} escritura(s) quedaron en {ruta}, y el próximo " +
                                     "arranque las aplica antes de abrir." +
@@ -420,12 +423,13 @@ public sealed class Persistence : IDisposable
                 if (apartada) throw new InvalidOperationException("quedó para el rescate");
                 sumando = true;
             }
+            _cola.LaBaseResponde();   // el volcado de la caída, que la tiene sin el saldo de antes, se borra antes de sumar
             return a.AcreditarBoveda(nombre, monto);
-        }, rescate: () =>
+        }, rescate: apartar =>
         {
             lock (candado)
             {
-                apartada = true;
+                if (apartar) apartada = true;
                 return new RescateDeAcreditacion(nombre, monto, sumando ? antes : null);
             }
         });

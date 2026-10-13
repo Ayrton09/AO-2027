@@ -211,7 +211,7 @@ catch (Exception ex) when (BaseDaniada.Es(ex))
 var (almacen, dondeSeGuarda) = abierta;
 // Lo que quedó sin guardar la última vez porque la base no respondía al apagar (Data.Rescates): antes de leer nada.
 Rescates.AplicarLosPendientes(dataRoot, almacen);
-var db = new Persistence(almacen, leveling);
+var db = new Persistence(almacen, leveling, dataRoot);
 if (fixtureMode) db.SeedDemoIfEmpty();   // sin fixture no hay cuenta demo (cuenta_test/Rugura/…): como un server real
 else if (db.CerrarLaCuentaDemo())
     Console.WriteLine("OJO: la base tenía la cuenta demo de --fixture (cuenta_test) con su clave de prueba: se le puso una " +
