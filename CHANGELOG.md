@@ -71,6 +71,13 @@ Lo nuevo desde el paquete del 6 de octubre.
   su menú, con las del último server en el que jugaste.
 - **La página para bajar el juego de escritorio manda a la descarga oficial** si el que hostea no puso otra en
   `DescargaEscritorio`.
+- **El server se actualiza con un comando**, con el server apagado: arrastrar el paquete nuevo sobre `Actualizar.bat`,
+  `bash servidor.sh actualizar <paquete>` o `coverao.ps1 actualizar`. Verifica que el paquete sea del autor, hace un backup,
+  reemplaza solo los archivos oficiales que no tocaste y deja tu `Server.ini` al día: tus valores, las claves nuevas con su
+  explicación, y si algo fuera a cambiar cómo corre tu server, no lo toca.
+- **El server avisa cuando hay una versión nueva** (`BuscarActualizaciones`, prendida) y **avisa las claves del `Server.ini`
+  que no existen**: una mal escrita se ignoraba sin que nadie se enterara.
+- **El que estaba jugando cuando el server se actualizó carga solo el cliente nuevo** al reconectar.
 - **Desinstalar el juego de escritorio no deja nada**: ni sus datos ni una copia del instalador.
 - **El juego de escritorio se abre una sola vez**: abrirlo de nuevo trae al frente el que ya está, y un acceso directo a un
   server entra ahí. Con dos abiertos se pisaban la lista de servers, las opciones y las cuentas recordadas.
