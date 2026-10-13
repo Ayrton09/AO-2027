@@ -3,6 +3,50 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.0 (2026-10-13)
+Lo nuevo desde el paquete del 13 de octubre.
+
+### Cuentas y personajes
+
+- **El código de recuperación de las cuentas que vienen del server viejo vuelve a andar** después de entrar con ellas: se
+  rompía al primer ingreso.
+- **Cinco códigos de recuperación equivocados cierran la recuperación de esa cuenta por una hora.** Entrar con la contraseña
+  sigue andando.
+- **La lista de personajes te espera diez minutos**: a los treinta segundos te sacaba y el juego volvía a entrar solo,
+  mandando la contraseña otra vez.
+- **Un personaje baneado no se puede borrar, ni uno con algo en el Centro de Subastas**, y al borrar uno se va su correo: el
+  que se creaba después con el mismo nombre se quedaba con todo eso.
+
+### Juego
+
+- **Un clan nuevo con el nombre de uno que se cerró ya no hereda sus guerras.**
+- **El centinela ya no interroga a los bots**, no le repite la clave al que contesta mal, y a la tercera clave equivocada
+  manda preso.
+- **Transferir oro, robar y retirar el adjunto de una carta se guardan en el acto.**
+
+### Para los GMs
+
+- **/ACC, /RACC y /RELOADSINI ya no los usan los Consejeros ni los SemiDioses**, como en el original. Un SemiDios tampoco ve a
+  los Dioses ni a los Admins con /INFO, /NICK2IP e /IP2NICK.
+- **/INFO muestra el bando y los ciudadanos y renegados matados**: iban siempre en cero.
+- **El /LLUVIA dura hasta el próximo cambio del clima**: después el clima vuelve a cambiar solo.
+
+### La app
+
+- **La app sólo carga el juego de un server con el cliente firmado**, también si se entra desde el Top de la lista, y no baja
+  archivos de ningún server.
+
+### Para el que hostea
+
+- **`actualizar` no sigue si hay un server prendido que no puede ver**, ni si el backup previo salió incompleto (salvo con
+  `--forzar`). Si algo falla a mitad de camino, dice qué quedó hecho, y otra corrida lo termina.
+- **El token del panel queda en `data/admin-token.txt`**, y el panel se alcanza también con Docker (publicado sólo en
+  `127.0.0.1`) y con `coverao.service`.
+- **El panel ya no tiene "Apagar sin guardar"**: apagar siempre guarda a los conectados, y lo hacía igual.
+- **En Linux, los archivos del server se crean sólo para su usuario**, y la imagen de Docker trae la página de estado y la de
+  descarga.
+
+
 ## 1.0.0 (2026-10-09)
 Lo nuevo desde el paquete del 6 de octubre.
 
