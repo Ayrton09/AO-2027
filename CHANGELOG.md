@@ -45,6 +45,9 @@ Lo nuevo desde el paquete del 13 de octubre.
 - **El panel ya no tiene "Apagar sin guardar"**: apagar siempre guarda a los conectados, y lo hacía igual.
 - **En Linux, los archivos del server se crean sólo para su usuario**, y la imagen de Docker trae la página de estado y la de
   descarga.
+- **Con la base caída, lo que espera para guardarse se vuelca a `data/` cada 30 segundos**: un corte de luz ya no se lleva todo
+  lo que pasó mientras la base no respondía.
+- **Los bots vuelven solos después de un mantenimiento**, y si un jugador se queda con el nombre de uno, entra otro en su lugar.
 
 
 ## 1.0.0 (2026-10-09)
