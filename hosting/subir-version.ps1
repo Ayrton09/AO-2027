@@ -8,13 +8,14 @@
     powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinApp        solo el server
     powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinServidor   solo la app
     powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinSubir      arma y firma; los deja en dist\
+    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SoloSubir     sube lo que ya esta armado
 
   Los paquetes del server se arman en dist\paquete-<plataforma>, NO en dist\CoverAO-win-x64 (la instalacion con la que
   prueba el autor): armar un paquete repone el Server.ini del ejemplo, y ese es el suyo. Quedan en dist\ como
   CoverAO-servidor-win-x64.zip y CoverAO-servidor-linux-x64.tar.gz, con el aviso servidor.json. La version no cambia
   (1.0.0 hasta que el juego sea publico): lo que distingue una de otra es la fecha de la compilacion.
 #>
-param([switch]$SinApp, [switch]$SinServidor, [switch]$SinSubir)
+param([switch]$SinApp, [switch]$SinServidor, [switch]$SinSubir, [switch]$SoloSubir)
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $repo = "Ayrton09/CoverAO"
@@ -25,7 +26,19 @@ $id = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'")
 $subir = @()
 $avisos = @()
 
-if (-not $SinServidor) {
+if ($SoloSubir) {
+  if (-not $SinServidor) {
+    $subir += (Join-Path $dist "CoverAO-servidor-win-x64.zip"), (Join-Path $dist "CoverAO-servidor-linux-x64.tar.gz")
+    $avisos += (Join-Path $dist "servidor.json")
+  }
+  if (-not $SinApp) {
+    $subir += (Join-Path $Root "desktop\release\CoverAO-Setup.exe")
+    $avisos += (Join-Path $Root "desktop\release\actualizacion.json")
+  }
+  foreach ($f in ($subir + $avisos)) { if (-not (Test-Path $f)) { throw "no esta armado: $f" } }
+}
+
+if (-not $SinServidor -and -not $SoloSubir) {
   foreach ($rid in "win-x64", "linux-x64") {
     $carpeta = Join-Path $dist "paquete-$rid"
     # Desde cero cada vez: un archivo que quedo de una version anterior viajaria en el paquete. Es una carpeta propia, sin
@@ -45,7 +58,7 @@ if (-not $SinServidor) {
   $avisos += $aviso
 }
 
-if (-not $SinApp) {
+if (-not $SinApp -and -not $SoloSubir) {
   & $node (Join-Path $Root "desktop\armar.js")
   if ($LASTEXITCODE -ne 0) { throw "no se pudo armar el juego de escritorio" }
   $subir += (Join-Path $Root "desktop\release\CoverAO-Setup.exe")
@@ -58,7 +71,10 @@ if ($SinSubir) {
   return
 }
 
-gh release view $etiqueta -R $repo *> $null
+# gh escribe por la salida de errores ("release not found"), y con ErrorActionPreference=Stop Windows PowerShell 5.1 corta el
+# script ahi mismo: para gh se mira solo el codigo de salida.
+$ErrorActionPreference = "Continue"
+gh release view $etiqueta -R $repo 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
   $notas = "El juego de escritorio (CoverAO-Setup.exe) y el server para Windows y Linux. La app y el server se actualizan " +
            "desde aca: la app sola, el server con Actualizar.bat o 'bash servidor.sh actualizar'. Windows puede avisar que " +
