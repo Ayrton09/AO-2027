@@ -220,8 +220,12 @@ function interceptar(esquema) {
       if (error) { if (yaVerificado) clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
     }
     const archivos = firmados.get(origen);
-    // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y lo que no
-    // es un GET, pasa derecho.
+    // A UN SERVER VERIFICADO SÓLO SE LE PIDE CON GET (o HEAD): el juego no manda otra cosa y su server contesta 405 a todo lo
+    // demás. Un formulario POST con target=_top desde el Top de otro server pasaba por acá sin firma y la ventana mostraba lo
+    // que contestara (auditoría del 13/10).
+    if (archivos && pedido.method !== 'GET' && pedido.method !== 'HEAD') return new Response(null, { status: 405 });
+    // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y el HEAD,
+    // pasa derecho.
     if (!archivos || firma.SINTETICAS.has(rel) || pedido.method !== 'GET') {
       return net.fetch(pedido, { bypassCustomProtocolHandlers: true });
     }
