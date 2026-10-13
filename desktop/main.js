@@ -18,6 +18,10 @@ const DEPURACION = ['--remote-debugging-port', '--remote-debugging-pipe', '--rem
   '--inspect-port', '--js-flags'];
 if (app.isPackaged && process.argv.some((a) => DEPURACION.some((d) => a === d || a.startsWith(d + '=')))) app.exit(1);
 
+// SIN EMPAQUETAR, OTRA CARPETA DE DATOS (12/10): la de la app instalada lleva el mismo nombre, y una prueba con `npm start` le
+// cambiaba la lista de servers, las opciones y la pantalla completa al juego que el autor usa. Va antes que nada que la lea.
+if (!app.isPackaged) app.setPath('userData', path.join(app.getPath('appData'), 'coverao-escritorio-pruebas'));
+
 // UNA SOLA VENTANA DEL JUEGO (auditoría del 12/10): con dos abiertas, cada una guardaba su copia del config.json encima de la
 // otra y se perdían servers agregados, ajustes y cuentas recordadas. Abrir la app otra vez trae al frente la que ya está, y un
 // acceso directo con `--servidor=` entra a ese server en ella (ver 'second-instance', abajo).
@@ -48,7 +52,7 @@ function guardarConfig(config) {
     const temporal = archivoDeConfig() + '.tmp';
     fs.writeFileSync(temporal, JSON.stringify(config, null, 2), { flush: true });
     fs.renameSync(temporal, archivoDeConfig());
-  } catch { /* sin config guardada, la próxima vez pregunta de nuevo */ }
+  } catch (e) { console.error(`[config] no se pudo guardar: ${e?.message ?? e}`); }   // la próxima vez pregunta de nuevo
 }
 
 /** Lo que escribió el jugador, como dirección: sin protocolo se toma http; cualquier otro protocolo no vale. */
