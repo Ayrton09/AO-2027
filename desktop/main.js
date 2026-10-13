@@ -412,6 +412,9 @@ function esElFirmado(ruta, sha256) {
 function instalar(reabrir) {
   if (!lista || instalando) return false;
   instalando = true;
+  // Sin empaquetar (`npm start`, `COVERAO_ACTUALIZAR=1`) se baja y se verifica, pero no se instala: sería pisar el juego
+  // instalado en esta PC con una prueba.
+  if (!app.isPackaged) { console.log(`[actualizacion] sin empaquetar: no se instala ${lista.ruta}`); return true; }
   spawn(lista.ruta, ['/S', '--updated', ...(reabrir ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' }).unref();
   return true;
 }
