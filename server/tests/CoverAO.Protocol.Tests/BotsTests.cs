@@ -127,6 +127,30 @@ public class BotsTests
         Assert.False(PobladoDeBots.NombreAjeno("Ciro", db));
     }
 
+    /// <summary>
+    /// EL NOMBRE TOMADO DESPUÉS DEL ARRANQUE: el bot lo mira antes de cada vida y deja el lugar sin intentar entrar (auditoría
+    /// del 13/10: gastaba sus tres intentos contra "ya existe" y faltaba hasta reiniciar), y lo releva el primer nombre libre en
+    /// el orden del arranque: con los de la lista tomados, el primero de reserva.
+    /// </summary>
+    [Fact]
+    public async Task El_nombre_tomado_despues_del_arranque_lo_deja_y_lo_releva_el_siguiente()
+    {
+        using var db = new Persistence(AlmacenSqlite.EnMemoria(), new CoverAO.Server.Game.Leveling(new Dictionary<int, long> { [1] = 300 }));
+        var credenciales = new CredencialesDeBots(Path.Combine(Path.GetTempPath(), "coverao_relevo_" + Guid.NewGuid().ToString("N")));
+        var entorno = new EntornoDeBots(null!, null!, 0, 0, null!, null!, credenciales, db);
+        var persona = db.CreateAccount("Persona", "clave");
+        db.CreateCharacter(persona, "Milo", 1, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+
+        var vida = new Bot("Milo", null, entorno, semilla: 1).VivirAsync(CancellationToken.None);
+        Assert.True(await vida.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        var poblado = new PobladoDeBots(entorno, credenciales, PobladoDeBots.Nombres);
+        var relevo = poblado.Relevo();
+        Assert.Equal(PobladoDeBots.Suplentes[0], relevo?.Nombre);
+        Assert.Contains(relevo, poblado.Bots);
+        Assert.Equal(PobladoDeBots.Suplentes[1], poblado.Relevo()?.Nombre);
+    }
+
     /// <summary>LA CLAVE QUE NO LLEGÓ A <c>bots.txt</c> SE ESCRIBE EN EL PRÓXIMO LLAMADO, aunque sea con la misma clave: es
     /// el que hace el bot al entrar. Sin eso, en el próximo arranque nadie conocía la clave de su cuenta.</summary>
     [Fact]
@@ -257,6 +281,21 @@ public class BotsTests
         Assert.Equal(ComoEntrar.SoloPersonaje, Bot.DespuesDeUnFracaso(ComoEntrar.Entrar, yaEntro: false));
         Assert.Equal(ComoEntrar.Alta, Bot.DespuesDeUnFracaso(ComoEntrar.SoloPersonaje, yaEntro: false));
         Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Alta, yaEntro: false));
+    }
+
+    /// <summary>LOS CARTELES DEL SERVIDOR CERRADO POR UN RATO mandan a volver más tarde y no cuentan para rendirse: el
+    /// mantenimiento, el modo sólo GMs, la creación cerrada y la base que no contesta, con el texto que manda el servidor. Los
+    /// de la cuenta —la clave, el baneo, el nombre que ya existe— sí cuentan.</summary>
+    [Fact]
+    public void Los_carteles_del_servidor_cerrado_mandan_a_volver_mas_tarde()
+    {
+        static string Cartel(string campo) => (string)typeof(PacketDispatcher)
+            .GetField(campo, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetRawConstantValue()!;
+
+        foreach (var campo in new[] { "MensajeDeMantenimiento", "MensajeSoloGms", "MensajeCreacionCerrada", "CartelLaBaseNoResponde" })
+            Assert.True(Bot.EsCartelDeVolverMasTarde(Cartel(campo)), campo);
+        foreach (var campo in new[] { "CartelClaveIncorrecta", "CartelCuentaBaneada", "CartelYaExisteLaCuenta", "CartelYaExisteElPersonaje", "MensajeIpRepetida" })
+            Assert.False(Bot.EsCartelDeVolverMasTarde(Cartel(campo)), campo);
     }
 
     /// <summary>LA ZONA NEWBIE CIERRA A PARTIR DEL NIVEL 16, con la misma cuenta que el servidor; las demás zonas, nunca.</summary>

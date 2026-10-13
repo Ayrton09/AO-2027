@@ -17,9 +17,12 @@ public sealed class EntornoDeBots
     /// después no se toca.</summary>
     public Navegante Mapas { get; }
     private readonly CredencialesDeBots _credenciales;
+    private readonly Persistence? _db;
 
+    /// <param name="db">Para mirar, antes de cada vida, si el nombre ya es de otro (<see cref="NombreAjenoAsync"/>). Sin ella
+    /// no se mira.</param>
     public EntornoDeBots(PacketDispatcher dispatcher, ServerIni ini, long authTimeoutMs, int maxInboundBytes,
-        GameData datos, Navegante mapas, CredencialesDeBots credenciales)
+        GameData datos, Navegante mapas, CredencialesDeBots credenciales, Persistence? db = null)
     {
         Dispatcher = dispatcher;
         Ini = ini;
@@ -28,9 +31,16 @@ public sealed class EntornoDeBots
         Datos = datos;
         Mapas = mapas;
         _credenciales = credenciales;
+        _db = db;
     }
 
     public void GuardarClave(string nombre, string clave) => _credenciales.Guardar(nombre, clave);
+
+    /// <summary>¿El nombre ya es de otro? (<see cref="PobladoDeBots.NombreAjeno"/>) Null si no se supo: la base no contestó en el
+    /// plazo con que la espera el ingreso, o no hay base.</summary>
+    internal Task<bool?> NombreAjenoAsync(string nombre, CancellationToken ct) => _db is null
+        ? Task.FromResult<bool?>(null)
+        : PobladoDeBots.NombreAjenoAsync(nombre, _db, Dispatcher?.PlazoDeLaLecturaDeEntrada ?? TimeSpan.FromSeconds(10), ct);
 }
 
 /// <summary>
@@ -56,6 +66,10 @@ public sealed class CredencialesDeBots
     /// <summary>Hay una clave en memoria que no llegó al archivo.</summary>
     private bool _sinGuardar;
 
+    /// <summary>El archivo está y no se pudo leer: un permiso que no lo deja, otro programa que lo tiene tomado. Sin sus claves, las
+    /// cuentas que ya tienen los bots no se abren, y la primera clave nueva que se guardara lo pisaría con ésa sola.</summary>
+    public bool NoSePudoLeer { get; }
+
     public CredencialesDeBots(string dataRoot)
     {
         _ruta = Path.Combine(dataRoot, "bots.txt");
@@ -70,7 +84,11 @@ public sealed class CredencialesDeBots
                 _claves[linea[..i].Trim()] = linea[(i + 1)..].Trim();
             }
         }
-        catch (IOException ex) { Console.Error.WriteLine($"[bots] no pude leer {_ruta}: {ex.Message}"); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            NoSePudoLeer = true;
+            Console.Error.WriteLine($"[bots] no pude leer {_ruta}: {ex.Message}");
+        }
     }
 
     public string? Clave(string nombre)
@@ -165,8 +183,11 @@ public sealed class PobladoDeBots
     /// que el servidor no aceptaría como nombre (las mismas reglas que para un jugador) y el que ya es de otro.</summary>
     internal static List<string> NombresParaArrancar(int cantidad, Func<string, bool> esAjeno) =>
         Nombres.Concat(Suplentes)
-            .Where(n => Naming.IsValidCharName(n) && Naming.IsValidName(n + "_bot") && !esAjeno(n))
+            .Where(n => EsNombreDeBot(n) && !esAjeno(n))
             .Take(Math.Max(0, cantidad)).ToList();
+
+    /// <summary>¿El servidor lo aceptaría como nombre de personaje, y el de su cuenta?</summary>
+    private static bool EsNombreDeBot(string nombre) => Naming.IsValidCharName(nombre) && Naming.IsValidName(nombre + "_bot");
 
     /// <summary>Cuánto se espera entre el arranque de un bot y el del siguiente. Entran de a poco por dos
     /// motivos: cada alta de cuenta es un PBKDF2, y una tanda de gente que aparece toda junta en el mismo
@@ -188,9 +209,19 @@ public sealed class PobladoDeBots
                 : orden * EntreUnoYOtroMs;
 
     private readonly List<Bot> _bots = new();
-    public IReadOnlyList<Bot> Bots => _bots;
+    public IReadOnlyList<Bot> Bots { get { lock (_bots) return _bots.ToList(); } }
 
-    private PobladoDeBots() { }
+    /// <summary>Los nombres que ya tuvo un bot en esta vuelta del servidor, y los que ya eran de otro al arrancar.</summary>
+    private readonly HashSet<string> _usados = new(StringComparer.OrdinalIgnoreCase);
+    private readonly EntornoDeBots _entorno;
+    private readonly CredencialesDeBots _credenciales;
+
+    internal PobladoDeBots(EntornoDeBots entorno, CredencialesDeBots credenciales, IEnumerable<string> usados)
+    {
+        _entorno = entorno;
+        _credenciales = credenciales;
+        _usados.UnionWith(usados);
+    }
 
     /// <summary>
     /// ¿El nombre ya es de otro? Un personaje con ese nombre en una cuenta que no es la del bot, o la cuenta
@@ -198,13 +229,66 @@ public sealed class PobladoDeBots
     /// personaje o la cuenta ya existen, y en cada arranque gastaba sus tres intentos y se quedaba afuera.
     /// </summary>
     internal static bool NombreAjeno(string nombre, Persistence db)
+        => AjenoSegunSuCuenta(nombre, db, db.AccountExists(nombre + "_bot") ? db.LoadAccount(nombre + "_bot") : null);
+
+    /// <summary>Lo mismo, desde un bot que va a entrar, sin esperar a la base más de <paramref name="plazo"/>: null si no
+    /// contestó.</summary>
+    internal static async Task<bool?> NombreAjenoAsync(string nombre, Persistence db, TimeSpan plazo, CancellationToken ct)
     {
         string cuenta = nombre + "_bot";
-        if (!db.AccountExists(cuenta)) return db.CharacterExists(nombre);
-        var suya = db.LoadAccount(cuenta);
+        Account? suya = null;
+        if (db.AccountExists(cuenta))
+        {
+            using var abandono = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            abandono.CancelAfter(plazo);
+            try { suya = await db.LeerCuentaAsync(cuenta, abandono.Token); }
+            catch (Exception) { return null; }
+        }
+        return AjenoSegunSuCuenta(nombre, db, suya);
+    }
+
+    /// <summary>La pregunta de <see cref="NombreAjeno"/>, con <paramref name="suya"/> la cuenta <c>_bot</c> del nombre, o null si
+    /// no existe.</summary>
+    private static bool AjenoSegunSuCuenta(string nombre, Persistence db, Account? suya)
+    {
         if (suya is null) return db.CharacterExists(nombre);
         if (!suya.EsBot) return true;
         return db.CharacterExists(nombre) && !suya.Characters.Contains(nombre, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// EL QUE RELEVA AL BOT CUYO NOMBRE PASÓ A SER DE OTRO —un jugador lo tomó después del arranque (auditoría del 13/10: hasta
+    /// ahí el bot faltaba hasta reiniciar)—: el primer nombre libre en el orden del arranque, los de la lista y después los de
+    /// reserva, que es el que tomaría el próximo arranque (<see cref="NombresParaArrancar"/>). Si también es de otro, el bot
+    /// nuevo lo ve antes de entrar y lo releva el siguiente. Null si no queda ninguno.
+    /// </summary>
+    internal Bot? Relevo()
+    {
+        string? nombre;
+        lock (_usados)
+        {
+            nombre = Nombres.Concat(Suplentes).FirstOrDefault(n => EsNombreDeBot(n) && !_usados.Contains(n));
+            if (nombre is null) return null;
+            _usados.Add(nombre);
+        }
+        var bot = new Bot(nombre, _credenciales.Clave(nombre), _entorno, semilla: Environment.TickCount + LugarEnElPoblado(nombre) * 7919);
+        lock (_bots) _bots.Add(bot);
+        return bot;
+    }
+
+    /// <summary>La vida de un bot y la de los que lo relevan, si deja el nombre porque ya es de otro (<see cref="Bot.VivirAsync"/>).</summary>
+    internal async Task VivirConRelevosAsync(Bot bot, CancellationToken ct)
+    {
+        while (await bot.VivirAsync(ct))
+        {
+            if (Relevo() is not { } otro)
+            {
+                Console.WriteLine($"[bot {bot.Nombre}] no queda un nombre libre que lo releve.");
+                return;
+            }
+            Console.WriteLine($"[bot {bot.Nombre}] lo releva {otro.Nombre}.");
+            bot = otro;
+        }
     }
 
     /// <summary>Enciende <paramref name="cantidad"/> bots. Devuelve null si no hay ninguno que encender.</summary>
@@ -213,15 +297,21 @@ public sealed class PobladoDeBots
     {
         if (cantidad <= 0) return null;
         var credenciales = new CredencialesDeBots(dataRoot);
+        if (credenciales.NoSePudoLeer)
+        {
+            Console.WriteLine($"BOTS: {cantidad} pedidos, pero data/bots.txt no se pudo leer y no arrancan: sin sus claves no entran " +
+                              "a sus cuentas, y la primera clave nueva lo pisaría. Arreglá el permiso del archivo y reiniciá.");
+            return null;
+        }
         var entorno = new EntornoDeBots(dispatcher, ini, authTimeoutMs, maxInboundBytes, datos,
-                                        new Navegante(datos), credenciales);
-        var poblado = new PobladoDeBots();
+                                        new Navegante(datos), credenciales, db);
 
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.
         // Y se saltea el nombre que ya es de otro (NombreAjeno): su lugar lo toma el siguiente, y al final los de reserva.
         var ajenos = Nombres.Concat(Suplentes).Where(n => NombreAjeno(n, db)).ToList();
         var elegidos = NombresParaArrancar(cantidad, ajenos.Contains);
+        var poblado = new PobladoDeBots(entorno, credenciales, ajenos.Concat(elegidos));
         int cuantos = elegidos.Count;
         int nuevos = 0, conPersonaje = 0;
 
@@ -230,16 +320,16 @@ public sealed class PobladoDeBots
             string nombre = elegidos[i];
             string? clave = credenciales.Clave(nombre);
             var bot = new Bot(nombre, clave, entorno, semilla: Environment.TickCount + i * 7919);
-            poblado._bots.Add(bot);
+            lock (poblado._bots) poblado._bots.Add(bot);   // el primero ya puede estar llamando a un relevo
             int retardo = clave is null ? RetardoDeEntrada(true, nuevos++) : RetardoDeEntrada(false, conPersonaje++);
             _ = Task.Run(async () =>
             {
                 try { await Task.Delay(retardo, ct); } catch (OperationCanceledException) { return; }
-                await bot.VivirAsync(ct);
+                await poblado.VivirConRelevosAsync(bot, ct);
             }, CancellationToken.None);
         }
 
-        Console.WriteLine($"BOTS: {cuantos} ({string.Join(", ", poblado._bots.Select(b => b.Nombre))})");
+        Console.WriteLine($"BOTS: {cuantos} ({string.Join(", ", elegidos)})");
         if (ajenos.Count > 0)
             Console.WriteLine($"   no entran como bots, porque el nombre (o su cuenta _bot) ya es de un jugador: {string.Join(", ", ajenos)}.");
         if (nuevos > NuevosPorTanda)

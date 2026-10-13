@@ -72,10 +72,19 @@ public sealed partial class Bot
 
     /// <summary>Intentos seguidos de entrar sin lograrlo antes de que el bot se dé por vencido y lo diga. No
     /// se reintenta para siempre: si el nombre lo tiene un jugador de verdad, o el mundo está lleno, insistir
-    /// cada quince segundos hasta que alguien apague el servidor no arregla nada y ensucia el log.</summary>
+    /// cada quince segundos hasta que alguien apague el servidor no arregla nada y ensucia el log. El servidor que
+    /// manda a volver más tarde no cuenta (<see cref="EsCartelDeVolverMasTarde"/>), y el nombre que ya es de otro lo
+    /// deja antes de intentar (<see cref="VivirAsync"/>).</summary>
     private const int IntentosAntesDeRendirse = 3;
 
     private const int ReconectaMinS = 5, ReconectaMaxS = 20;
+
+    /// <summary>Cuánto espera para volver a probar el que el servidor mandó a volver más tarde: de 2 a 5 minutos, lo que
+    /// propone la auditoría del 13/10. Insistir cada pocos segundos no lo abre antes.</summary>
+    private const int VolverMasTardeMinS = 120, VolverMasTardeMaxS = 300;
+
+    /// <summary>Cómo terminó una vida: adentro del mundo, rechazado, o con el servidor cerrado por un rato.</summary>
+    internal enum FinDeLaVida { Entro, NoEntro, VolverMasTarde }
 
     // ── La caza ───────────────────────────────────────────────────────────────────────────────────────
     /// <summary>Vida (de 0 a 1) a la que toma una poción roja, a la que corta la pelea y se aleja, y a la que
@@ -400,6 +409,8 @@ public sealed partial class Bot
     private bool _yaEntro;
     /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
     private bool _seFueSolo;
+    /// <summary>El último cartel de volver más tarde, mientras lo siga recibiendo: para no repetirlo en el log.</summary>
+    private string? _cartelDeVolver;
 
     /// <summary>Su bando y su nivel, leídos de los sentidos al empezar cada vuelta: con ellos sabe qué guardia va por él.</summary>
     private byte _miBando;
@@ -447,23 +458,33 @@ public sealed partial class Bot
     }
 
     /// <summary>La vida del bot: entrar, vivir, y volver a entrar cuando se cae. Termina cuando se apaga el
-    /// servidor o cuando se da por vencido.</summary>
-    public async Task VivirAsync(CancellationToken ct)
+    /// servidor, cuando se da por vencido o cuando su nombre ya es de otro: ahí devuelve true, y lo releva otro
+    /// (<see cref="PobladoDeBots.VivirConRelevosAsync"/>).</summary>
+    public async Task<bool> VivirAsync(CancellationToken ct)
     {
         int fracasos = 0;
         while (!ct.IsCancellationRequested && fracasos < IntentosAntesDeRendirse)
         {
-            bool entro;
-            try { entro = await UnaVidaAsync(ct); }
+            // EL NOMBRE SE MIRA ANTES DE CADA VIDA, no sólo al arrancar: un jugador que crea el personaje con su nombre
+            // —o registra su cuenta _bot— después del arranque lo dejaba afuera hasta reiniciar (auditoría del 13/10).
+            if (await _entorno.NombreAjenoAsync(Nombre, ct) == true)
+            {
+                Console.WriteLine($"[bot {Nombre}] el nombre (o la cuenta {_cuenta}) ya es de un jugador: deja el lugar.");
+                return true;
+            }
+            FinDeLaVida fin;
+            try { fin = await UnaVidaAsync(ct); }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) { Console.Error.WriteLine($"[bot {Nombre}] error: {ex.Message}"); entro = false; }
+            catch (Exception ex) { Console.Error.WriteLine($"[bot {Nombre}] error: {ex.Message}"); fin = FinDeLaVida.NoEntro; }
 
-            if (entro) fracasos = 0;
-            else { fracasos++; _como = DespuesDeUnFracaso(_como, _yaEntro); }
+            if (fin == FinDeLaVida.Entro) fracasos = 0;
+            else if (fin == FinDeLaVida.NoEntro) { fracasos++; _como = DespuesDeUnFracaso(_como, _yaEntro); }
             if (ct.IsCancellationRequested) break;
             // El que se fue a dormir vuelve dentro de un rato LARGO; al que se le cortó, enseguida. Es la
             // diferencia entre una lista de conectados que respira y una donde están siempre los mismos.
-            var espera = _seFueSolo
+            var espera = fin == FinDeLaVida.VolverMasTarde
+                ? TimeSpan.FromSeconds(_rng.Next(VolverMasTardeMinS, VolverMasTardeMaxS + 1))
+                : _seFueSolo
                 ? TimeSpan.FromMinutes(_rng.Next(AfueraMinM, AfueraMaxM + 1))
                 : TimeSpan.FromSeconds(_rng.Next(ReconectaMinS, ReconectaMaxS + 1));
             _seFueSolo = false;
@@ -472,7 +493,17 @@ public sealed partial class Bot
         }
         if (fracasos >= IntentosAntesDeRendirse)
             Console.WriteLine($"[bot {Nombre}] no pudo entrar {fracasos} veces seguidas; se queda afuera.");
+        return false;
     }
+
+    /// <summary>
+    /// ¿EL CARTEL MANDA A VOLVER MÁS TARDE? Es lo que lee una persona que no puede entrar y vuelve después: el servidor en
+    /// mantenimiento o sólo para GMs, la creación de personajes cerrada por un rato, la base que no contesta (los carteles de
+    /// <see cref="PacketDispatcher"/> dicen "intente más tarde" o "probá de nuevo en un rato"). Nada de eso dice algo de su
+    /// cuenta ni se arregla insistiendo: pasa con el tiempo o con un <c>/HABILITAR</c>, así que no cuenta para rendirse.
+    /// </summary>
+    internal static bool EsCartelDeVolverMasTarde(string cartel) =>
+        cartel.Contains("más tarde", StringComparison.OrdinalIgnoreCase) || cartel.Contains("en un rato", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Con qué forma intenta la próxima vida, después de una que no llegó a estar adentro del mundo.
@@ -490,14 +521,15 @@ public sealed partial class Bot
         yaEntro || como == ComoEntrar.Alta ? ComoEntrar.Entrar : como + 1;
 
     /// <summary>Una conexión, de punta a punta. Devuelve si llegó a estar adentro del mundo, para distinguir
-    /// "se cayó jugando" —que se reintenta sin castigo— de "no pudo entrar", que cuenta como fracaso.</summary>
-    private async Task<bool> UnaVidaAsync(CancellationToken ct)
+    /// "se cayó jugando" —que se reintenta sin castigo— de "no pudo entrar", que cuenta como fracaso, y de "volvé más
+    /// tarde", que no.</summary>
+    internal async Task<FinDeLaVida> UnaVidaAsync(CancellationToken ct)
     {
         var transporte = new TransporteDeBot(Nombre);
         var enElMundo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tieneCuenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cerrada = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        string aviso = "";
+        string aviso = "", cartel = "";
         // Los sentidos son de ESTA vida: al reconectar el mundo se vuelve a armar desde cero con los paquetes
         // del login. Reusarlos arrastraría criaturas que ya no están y una posición vieja.
         var sentidos = new SentidosDelBot();
@@ -511,6 +543,7 @@ public sealed partial class Bot
                 case ServerPacketId.Logged: enElMundo.TrySetResult(); break;
                 case ServerPacketId.AbrirFormularios: tieneCuenta.TrySetResult(); break;
                 case ServerPacketId.ConsoleMsg: aviso = TextoDeConsola(p); break;
+                case ServerPacketId.ShowMessageBox: cartel = TextoDeConsola(p); break;   // el texto va igual que en la consola
             }
         };
         transporte.Cerrado += motivo =>
@@ -535,16 +568,24 @@ public sealed partial class Bot
         {
             if (!await EntrarAlMundoAsync(transporte, enElMundo, tieneCuenta, ct))
             {
-                Console.WriteLine($"[bot {Nombre}] no entró{(aviso.Length > 0 ? ": " + aviso : "")}");
-                return false;
+                string porQue = cartel.Length > 0 ? cartel : aviso;
+                bool volver = EsCartelDeVolverMasTarde(cartel);
+                // El mismo "volvé más tarde" no se repite en el log: con el servidor cerrado un rato, serían todos los bots
+                // cada pocos minutos.
+                if (!volver || cartel != _cartelDeVolver)
+                    Console.WriteLine($"[bot {Nombre}] no entró{(porQue.Length > 0 ? ": " + porQue : "")}" +
+                                      (volver ? " Vuelve a probar en unos minutos." : ""));
+                _cartelDeVolver = volver ? cartel : null;
+                return volver ? FinDeLaVida.VolverMasTarde : FinDeLaVida.NoEntro;
             }
+            _cartelDeVolver = null;
             _como = ComoEntrar.Entrar;   // ya existen la cuenta y el personaje: de acá en más entra como cualquiera
             _yaEntro = true;
             // La clave que no llegó a data/bots.txt al crear la cuenta (el archivo tomado por otro programa) se vuelve a
             // escribir ahora: sin eso, en el próximo arranque nadie conoce la clave de esta cuenta. Si ya está, no escribe.
             if (_clave is not null) _entorno.GuardarClave(Nombre, _clave);
             await ComportarseAsync(transporte, sentidos, cerrada.Task, ct);
-            return true;
+            return FinDeLaVida.Entro;
         }
         finally
         {

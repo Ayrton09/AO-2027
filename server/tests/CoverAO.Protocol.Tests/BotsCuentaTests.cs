@@ -117,6 +117,23 @@ public class BotsCuentaTests : IDisposable
         Assert.False(_db.LoadAccount(CuentaDePersona)!.EsBot);
     }
 
+    /// <summary>
+    /// EL SERVIDOR CERRADO POR UN RATO NO ES UN FRACASO: con el modo sólo GMs, el bot que entra recibe el cartel de volver más
+    /// tarde y la vida termina así, sin sumar para rendirse (auditoría del 13/10: al tercero se quedaba afuera hasta reiniciar).
+    /// El control: una clave que no abre la cuenta sí es un fracaso.
+    /// </summary>
+    [Fact]
+    public async Task Con_el_servidor_solo_para_GMs_el_bot_vuelve_mas_tarde_y_no_es_un_fracaso()
+    {
+        var datos = GameData.Load();
+        var dispatcher = new PacketDispatcher(new World(), _loop, _db, datos, new Leveling(new Dictionary<int, long>()),
+            admin: new AdminConfig { OnlyGms = true });
+        var entorno = new EntornoDeBots(dispatcher, new ServerIni(), 30_000, 64 * 1024, datos, null!, new CredencialesDeBots(_root));
+
+        Assert.Equal(Bot.FinDeLaVida.VolverMasTarde, await new Bot("Aldo", null, entorno, semilla: 1).UnaVidaAsync(_cts.Token));
+        Assert.Equal(Bot.FinDeLaVida.NoEntro, await new Bot("Bruma", "no-es-su-clave", entorno, semilla: 1).UnaVidaAsync(_cts.Token));
+    }
+
     // ── Ayudas ────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Manda un <c>ConnectAccount</c>, que es el paquete que pide la lista de personajes: alcanza para
