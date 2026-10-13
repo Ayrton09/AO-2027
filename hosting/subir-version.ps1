@@ -87,4 +87,16 @@ foreach ($f in ($subir + $avisos)) {
   gh release upload $etiqueta $f --clobber -R $repo
   if ($LASTEXITCODE -ne 0) { throw "no se pudo subir $f" }
 }
+# EL CODIGO FUENTE DEL RELEASE (los "Source code" que arma GitHub) sale de la etiqueta, no de lo que se sube: se la mueve al
+# commit publicado, para que coincida con lo que corre (la AGPL pide ofrecer ese codigo). Sin ese commit en origin, no se toca.
+$commit = (git -C $Root rev-parse HEAD).Trim()
+git -C $Root fetch -q origin
+git -C $Root merge-base --is-ancestor $commit origin/main
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning "El commit $commit no esta en origin/main: la etiqueta $etiqueta (el codigo fuente del release) no se movio."
+} else {
+  git -C $Root tag -f $etiqueta $commit | Out-Null
+  git -C $Root push -f -q origin "refs/tags/$etiqueta"
+  if ($LASTEXITCODE -ne 0) { Write-Warning "No se pudo mover la etiqueta $etiqueta a $commit en origin." }
+}
 Write-Host ("`nSubido a https://github.com/$repo/releases/tag/$etiqueta" + $(if ($SoloSubir) { "" } else { " (compilacion $id)" })) -ForegroundColor Green
