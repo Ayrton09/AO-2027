@@ -87,4 +87,4 @@ foreach ($f in ($subir + $avisos)) {
   gh release upload $etiqueta $f --clobber -R $repo
   if ($LASTEXITCODE -ne 0) { throw "no se pudo subir $f" }
 }
-Write-Host "`nSubido a https://github.com/$repo/releases/tag/$etiqueta (compilacion $id)" -ForegroundColor Green
+Write-Host ("`nSubido a https://github.com/$repo/releases/tag/$etiqueta" + $(if ($SoloSubir) { "" } else { " (compilacion $id)" })) -ForegroundColor Green
