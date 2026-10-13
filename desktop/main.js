@@ -33,6 +33,15 @@ const SERVIDOR_POR_DEFECTO = 'http://localhost:7669/';
 const MENU = path.join(__dirname, 'menu.html');
 // Cuánto se espera la respuesta de un server de la lista antes de darlo por apagado.
 const ESPERA_DE_LA_CONSULTA_MS = 4000;
+// Y cuánto se junta de lo que contesta: `api/publico.json` son los conectados y un top de 25 (EstadoPublico.cs), y
+// `coverao-config.json` trae las novedades, que hosting/publish.ps1 saca de la última sección del CHANGELOG.md: el CHANGELOG
+// entero pesa 63 KB (13/10).
+const TOPE_DE_LA_CONSULTA = 1024 * 1024;
+/** El JSON de una respuesta, o null si pasa del tope de la consulta. */
+const jsonConTope = async (r) => {
+  const cuerpo = await firma.juntar(r.body, TOPE_DE_LA_CONSULTA);
+  return cuerpo ? JSON.parse(new TextDecoder().decode(cuerpo)) : null;
+};
 
 const BARRA_DEL_TOP = `html { color-scheme: dark; scrollbar-color: #5c3f15 #120c06; }
   ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: #120c06; }
@@ -40,9 +49,15 @@ const BARRA_DEL_TOP = `html { color-scheme: dark; scrollbar-color: #5c3f15 #120c
   ::-webkit-scrollbar-thumb:hover { background: #9a7326; }`;
 
 const archivoDeConfig = () => path.join(app.getPath('userData'), 'config.json');
+const respaldoDeConfig = () => archivoDeConfig() + '.bak';
 
 function leerConfig() {
-  try { return JSON.parse(fs.readFileSync(archivoDeConfig(), 'utf8')); } catch { return {}; }
+  try { return JSON.parse(fs.readFileSync(archivoDeConfig(), 'utf8')); }
+  catch (e) {
+    if (e?.code === 'ENOENT') return {};
+    // Si quedó cortado: la copia entera que guardarConfig escribe antes de pisarlo directo.
+    try { return JSON.parse(fs.readFileSync(respaldoDeConfig(), 'utf8')); } catch { return {}; }
+  }
 }
 
 function guardarConfig(config) {
@@ -56,10 +71,16 @@ function guardarConfig(config) {
     // tiene abierto un momento y el cambio de nombre falla. La primera apertura del instalado (12/10) no guardó nada: ni los
     // ajustes ni la pantalla completa que se le tocó.
     for (let intento = 1; ; intento++) {
-      try { fs.renameSync(temporal, archivoDeConfig()); return; }
+      try {
+        fs.renameSync(temporal, archivoDeConfig());
+        try { fs.rmSync(respaldoDeConfig(), { force: true }); } catch { }
+        return;
+      }
       catch (e) {
         if (intento >= 5) {
           console.error(`[config] no se pudo cambiar el nombre (${e?.code ?? e}): se escribe directo`);
+          // Antes, una copia entera aparte: un corte en medio de la escritura directa deja ésa para leerConfig.
+          fs.writeFileSync(respaldoDeConfig(), texto, { flush: true });
           fs.writeFileSync(archivoDeConfig(), texto, { flush: true });
           try { fs.rmSync(temporal, { force: true }); } catch { }
           return;
@@ -105,7 +126,9 @@ delete config.opciones;
 
 // `--servidor=<dirección>` entra directo a ese server sin pasar por el menú ni tocar el guardado: un acceso directo por server.
 const servidorDelAcceso = normalizar(process.argv.find((a) => a.startsWith('--servidor='))?.slice('--servidor='.length));
-let servidor = servidorDelAcceso ?? config.servidor;
+// EL SERVER EN EL QUE SE JUEGA: la ventana sólo navega adentro de su origen (ver 'will-navigate'). Vale recién cuando su cliente
+// pasó la firma en esta sesión (cargarServidor, 'entrar'): el último de la lista o el de un acceso directo todavía no.
+let servidor = null;
 
 function abrirMenu(error) {
   ventana.loadFile(MENU, { query: { error: error ?? '' } });
@@ -129,33 +152,26 @@ const sinCaptura = (url, init = {}) => {
 };
 const nombreDe = (direccion) => direccion.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-// LO QUE SE ESPERA AL VERIFICAR: si pasa ESPERA_SIN_DATOS_MS sin que llegue nada, el pedido se corta, y un archivo más grande
-// que TOPE_DEL_ARCHIVO no se junta en memoria. El más grande del cliente es `assets/music/8.mp3`, de 10,5 MB (12/10).
+// LO QUE SE ESPERA AL VERIFICAR: si pasa ESPERA_SIN_DATOS_MS sin que llegue nada, o ESPERA_TOTAL_MS desde que se pidió, el pedido
+// se corta, y un archivo más grande que TOPE_DEL_ARCHIVO no se junta en memoria. El más grande del cliente es
+// `assets/music/8.mp3`, de 10,5 MB (12/10): en los dos minutos pide unos 90 KB/s.
 const ESPERA_SIN_DATOS_MS = 15000;
+const ESPERA_TOTAL_MS = 120000;
 const TOPE_DEL_ARCHIVO = 64 * 1024 * 1024;
 
 /**
- * Un archivo del server para verificarlo, SIN SEGUIR REDIRECCIONES y con la espera y el tope de arriba. Devuelve la respuesta y
- * su cuerpo entero, que es null si la respuesta no es 2xx. Tira si el server redirige, deja de mandar o pasa del tope.
+ * Un archivo del server para verificarlo, SIN SEGUIR REDIRECCIONES y con las esperas y el tope de arriba. Devuelve la respuesta y
+ * su cuerpo entero, que es null si la respuesta no es 2xx. Tira si el server redirige, deja de mandar, tarda o pasa del tope.
  */
 async function bajar(url, init = {}) {
   const corte = new AbortController();
-  const aTiempo = (promesa) => {
-    let reloj;
-    const vencida = new Promise((_, mal) => { reloj = setTimeout(() => mal(new Error('el server dejó de mandar')), ESPERA_SIN_DATOS_MS); });
-    return Promise.race([promesa, vencida]).finally(() => clearTimeout(reloj));
-  };
+  const aTiempo = firma.conPlazos(ESPERA_SIN_DATOS_MS, ESPERA_TOTAL_MS);
   try {
     const r = await aTiempo(sinCaptura(url, { ...init, redirect: 'error', signal: corte.signal }));
     if (!r.ok || !r.body) { corte.abort(); return { r, cuerpo: r.ok ? Buffer.alloc(0) : null }; }
-    const lector = r.body.getReader();
-    const partes = [];
-    for (let total = 0; ;) {
-      const { done, value } = await aTiempo(lector.read());
-      if (done) return { r, cuerpo: Buffer.concat(partes) };
-      if ((total += value.byteLength) > TOPE_DEL_ARCHIVO) throw new Error('el archivo pasa del tope');
-      partes.push(Buffer.from(value));
-    }
+    const cuerpo = await firma.juntar(r.body, TOPE_DEL_ARCHIVO, aTiempo);
+    if (!cuerpo) throw new Error('el archivo pasa del tope');
+    return { r, cuerpo };
   } catch (e) { corte.abort(); throw e; }
 }
 
@@ -196,10 +212,12 @@ function interceptar(esquema) {
     if (bloqueados.has(origen)) return new Response(null, { status: 403 });
     const rel = firma.rutaDe(pedido.url);
     // LA PÁGINA DEL JUEGO VUELVE A LEER LA FIRMA: si el server se actualizó con el juego abierto, el cliente recarga y trae
-    // archivos nuevos, que con el manifiesto de antes parecerían cambiados. Cada carga de la página toma el del server.
-    if (rel === 'index.html' && pedido.method === 'GET' && firmados.has(origen)) {
+    // archivos nuevos, que con el manifiesto de antes parecerían cambiados. Cada carga de la página toma el del server. La de un
+    // server que todavía no se verificó (un enlace del Top) también pasa por la firma: sin ella, no carga.
+    if (rel === 'index.html' && pedido.method === 'GET') {
+      const yaVerificado = firmados.has(origen);
       const error = await prepararFirma(origen + '/');
-      if (error) { clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
+      if (error) { if (yaVerificado) clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
     }
     const archivos = firmados.get(origen);
     // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y lo que no
@@ -227,6 +245,7 @@ function interceptar(esquema) {
 async function cargarServidor(direccion) {
   const error = await prepararFirma(direccion);
   if (error) { console.error(`[firma] ${error}`); abrirMenu(error); return error; }
+  servidor = direccion;
   ventana.loadURL(direccion);
   return null;
 }
@@ -306,14 +325,16 @@ function crearVentana() {
   });
 
   // Los enlaces a otros sitios (el código fuente, la página de un clan) se abren en el navegador, no en la ventana del juego.
-  // Adentro sólo se navega al MISMO ORIGEN del server, no a uno que empiece igual, y a una página local sólo desde el menú.
+  // Adentro sólo se navega al MISMO ORIGEN del server, no a uno que empiece igual, y a una página local sólo desde el menú. Con
+  // la firma, además, a un origen verificado: el server al que se le encontró el cliente cambiado ya no lo está.
   const mismoServidor = (url) => { try { return !!servidor && new URL(url).origin === new URL(servidor).origin; } catch { return false; } };
+  const verificado = (url) => !VERIFICAR || firmados.has(new URL(url).origin);
   ventana.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   ventana.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file:') ? ventana.webContents.getURL().startsWith('file:') : mismoServidor(url)) return;
+    if (url.startsWith('file:') ? ventana.webContents.getURL().startsWith('file:') : mismoServidor(url) && verificado(url)) return;
     e.preventDefault();
     if (/^https?:/i.test(url)) shell.openExternal(url);
   });
@@ -343,7 +364,7 @@ async function consultar(direccion) {
     });
     const ping = Math.round(performance.now() - inicio);
     if (!r.ok) return { enLinea: true, ping, jugadores: null, version: null };
-    const estado = await r.json();
+    const estado = await jsonConTope(r);
     return {
       enLinea: true, ping,
       jugadores: Number.isFinite(estado?.servidor?.online) ? estado.servidor.online : null,
@@ -373,7 +394,7 @@ async function novedadesDe(direccion) {
       cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
     });
     if (!r.ok) return null;
-    const c = await r.json();
+    const c = await jsonConTope(r);
     if (!Array.isArray(c?.novedades)) return null;
     return {
       lineas: c.novedades.filter((l) => typeof l === 'string').slice(0, 400).map((l) => l.slice(0, 2000)),
@@ -413,14 +434,24 @@ async function buscarActualizacion() {
       const temporal = ruta + '.bajando';
       const hash = crypto.createHash('sha256');
       const salida = fs.createWriteStream(temporal);
+      // UN ERROR DEL DISCO (lleno, un antivirus que traba el archivo) corta la bajada y borra lo bajado. Sin escuchador era una
+      // excepción suelta, y la espera del 'drain' no volvía nunca.
+      const roto = new Promise((_, mal) => salida.on('error', mal));
+      roto.catch(() => {});
       let total = 0;
-      for await (const pedazo of ri.body) {
-        total += pedazo.byteLength;
-        if (total > aviso.tamano) { salida.destroy(); fs.rmSync(temporal, { force: true }); return; }
-        hash.update(pedazo);
-        if (!salida.write(pedazo)) await new Promise((listo) => salida.once('drain', listo));
+      try {
+        for await (const pedazo of ri.body) {
+          total += pedazo.byteLength;
+          if (total > aviso.tamano) { salida.destroy(); fs.rmSync(temporal, { force: true }); return; }
+          hash.update(pedazo);
+          if (!salida.write(pedazo)) await Promise.race([new Promise((listo) => salida.once('drain', listo)), roto]);
+        }
+        await Promise.race([new Promise((listo, mal) => salida.end((e) => (e ? mal(e) : listo()))), roto]);
+      } catch (e) {
+        salida.destroy();
+        try { fs.rmSync(temporal, { force: true }); } catch { }
+        throw e;
       }
-      await new Promise((listo, mal) => salida.end((e) => (e ? mal(e) : listo())));
       if (total !== aviso.tamano || hash.digest('hex') !== aviso.sha256) {
         fs.rmSync(temporal, { force: true });
         console.error('[actualizacion] el instalador bajado no es el firmado');
@@ -450,7 +481,10 @@ function instalar(reabrir) {
   // Sin empaquetar (`npm start`, `COVERAO_ACTUALIZAR=1`) se baja y se verifica, pero no se instala: sería pisar el juego
   // instalado en esta PC con una prueba.
   if (!app.isPackaged) { console.log(`[actualizacion] sin empaquetar: no se instala ${lista.ruta}`); return true; }
-  spawn(lista.ruta, ['/S', '--updated', ...(reabrir ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' }).unref();
+  const instalador = spawn(lista.ruta, ['/S', '--updated', ...(reabrir ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' });
+  // Si no arranca (un antivirus lo sacó), queda en el registro: sin escuchador era una excepción suelta al cerrar.
+  instalador.on('error', (e) => console.error(`[actualizacion] no arrancó el instalador: ${e?.message ?? e}`));
+  instalador.unref();
   return true;
 }
 
@@ -460,7 +494,8 @@ app.on('quit', () => instalar(false));
 // novedades"): la primera vez que abre una compilación distinta de la última que se abrió, el menú muestra solo las novedades
 // que trae. La primera instalación no cuenta: no hay una anterior.
 let recienActualizada = !!COMPILACION.id && !!config.compilacionVista && config.compilacionVista !== COMPILACION.id;
-if (COMPILACION.id && config.compilacionVista !== COMPILACION.id) { config.compilacionVista = COMPILACION.id; guardarConfig(config); }
+// Sólo la primera instancia: la segunda sale por el lock (arriba) y no guarda su copia del config encima.
+if (unica && COMPILACION.id && config.compilacionVista !== COMPILACION.id) { config.compilacionVista = COMPILACION.id; guardarConfig(config); }
 
 ipcMain.handle('recien-actualizada', () => { const si = recienActualizada; recienActualizada = false; return si; });
 
@@ -594,7 +629,7 @@ app.on('second-instance', (_e, argv) => {
   ventana.show();
   ventana.focus();
   const otro = normalizar(argv.find((a) => a.startsWith('--servidor='))?.slice('--servidor='.length));
-  if (otro) { servidor = otro; cargarServidor(otro); }
+  if (otro) cargarServidor(otro);
 });
 
 app.whenReady().then(() => {
@@ -610,6 +645,10 @@ app.whenReady().then(() => {
   // Electron se los da a cualquier página que los pida.
   session.defaultSession.setPermissionRequestHandler((_contenido, _permiso, responder) => responder(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
+  // NINGUNA DESCARGA DEL NAVEGADOR: ni el menú ni el juego bajan archivos (la actualización de la app baja el suyo por su cuenta,
+  // ver buscarActualizacion), y un enlace del Top de cualquier server de la lista bajaba lo que quisiera a Descargas, sin
+  // preguntar y sin tope.
+  session.defaultSession.on('will-download', (e) => e.preventDefault());
   if (VERIFICAR) { interceptar('http'); interceptar('https'); }
   crearVentana();
   buscarActualizacion();

@@ -94,5 +94,38 @@ const cifrarPrivada = (clave, contrasena) => clave.export({ type: 'pkcs8', forma
 /** La clave pública (PEM) de una privada: para comparar dos claves sin mirar la privada. */
 const publicaDe = (clave) => crypto.createPublicKey(clave).export({ type: 'spki', format: 'pem' });
 
+// LO QUE LA APP BAJA DE UN SERVER, CON PLAZOS Y TOPE (auditorías del 12/10 y del 13/10): la firma, cada archivo del cliente y las
+// consultas de la lista. Un server no puede colgar la app mandando de a un byte, ni llenarle la memoria con una respuesta enorme.
+
+/**
+ * Un reloj para una bajada de a pedazos: cada espera se corta a los `sinDatosMs`, y todas juntas a los `totalMs` desde que se
+ * armó el reloj. Devuelve la función que envuelve cada espera (una promesa) y tira si vence.
+ */
+function conPlazos(sinDatosMs, totalMs) {
+  const limite = Date.now() + totalMs;
+  return (promesa) => {
+    const queda = limite - Date.now();
+    let reloj;
+    const vencida = new Promise((_, mal) => {
+      reloj = setTimeout(() => mal(new Error(queda < sinDatosMs ? 'el archivo tarda demasiado' : 'el server dejó de mandar')),
+        Math.max(0, Math.min(sinDatosMs, queda)));
+    });
+    return Promise.race([promesa, vencida]).finally(() => clearTimeout(reloj));
+  };
+}
+
+/** El cuerpo entero de una respuesta (su `body`), o null si pasa de `tope` bytes: ahí deja de leerlo. `aTiempo`: ver conPlazos. */
+async function juntar(cuerpo, tope, aTiempo = (promesa) => promesa) {
+  if (!cuerpo) return Buffer.alloc(0);
+  const lector = cuerpo.getReader();
+  const partes = [];
+  for (let total = 0; ;) {
+    const { done, value } = await aTiempo(lector.read());
+    if (done) return Buffer.concat(partes);
+    if ((total += value.byteLength) > tope) { lector.cancel().catch(() => {}); return null; }
+    partes.push(Buffer.from(value));
+  }
+}
+
 module.exports = { ARCHIVO, SINTETICAS, hashDe, firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, estaCifrada, cargarPrivada,
-  cifrarPrivada, publicaDe };
+  cifrarPrivada, publicaDe, conPlazos, juntar };

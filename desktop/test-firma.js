@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, SINTETICAS, estaCifrada, cargarPrivada, cifrarPrivada,
-  publicaDe } = require('./firma');
+  publicaDe, conPlazos, juntar } = require('./firma');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coverao-firma-'));
 try {
@@ -90,3 +90,23 @@ try {
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }
+
+// LO QUE SE BAJA DEL SERVER: el tope y los plazos (conPlazos y juntar).
+(async () => {
+  const flujo = (pedazos, cadaMs = 0) => new ReadableStream({
+    async pull(c) {
+      if (cadaMs) await new Promise((listo) => setTimeout(listo, cadaMs));
+      if (pedazos.length) c.enqueue(pedazos.shift()); else c.close();
+    },
+  });
+  const b = (t) => Buffer.from(t);
+  assert.deepStrictEqual(await juntar(flujo([b('ab'), b('cd')]), 4), b('abcd'), 'justo en el tope pasa');
+  assert.strictEqual(await juntar(flujo([b('ab'), b('cde')]), 4), null, 'pasado el tope, null');
+  assert.deepStrictEqual(await juntar(null, 4), Buffer.alloc(0), 'sin cuerpo, vacío');
+  assert.deepStrictEqual(await juntar(flujo([b('x'), b('y')], 20), 100, conPlazos(1000, 10000)), b('xy'), 'a tiempo pasa');
+  await assert.rejects(juntar(flujo([b('x')], 300), 100, conPlazos(100, 10000)), /dejó de mandar/, 'el plazo sin datos');
+  // Un server que gotea: cada pedazo llega mucho antes del plazo sin datos, pero el total vence.
+  const goteo = flujo(Array.from({ length: 100 }, () => b('x')), 20);
+  await assert.rejects(juntar(goteo, 1000, conPlazos(1000, 200)), /tarda demasiado/, 'el plazo total');
+  console.log('test-firma (bajadas): OK');
+})().catch((e) => { console.error(e); process.exit(1); });
