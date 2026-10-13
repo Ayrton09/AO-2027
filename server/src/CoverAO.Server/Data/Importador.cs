@@ -18,8 +18,10 @@ namespace CoverAO.Server.Data;
 public static class Importador
 {
     /// <summary>Importa <paramref name="origen"/> a la base <paramref name="archivoDeLaBase"/>. Con una base que ya existe no
-    /// hace nada, salvo con <paramref name="reemplazar"/>: ahí la de antes queda al lado, renombrada.</summary>
-    public static InformeDeCopia Importar(string origen, string archivoDeLaBase, bool reemplazar = false)
+    /// hace nada, salvo con <paramref name="reemplazar"/>: ahí la de antes queda al lado, renombrada. Con
+    /// <paramref name="ipsDeMas"/>, esas IPs baneadas se suman a las del origen (salvo de una base de ahora, que pasa entera).</summary>
+    public static InformeDeCopia Importar(string origen, string archivoDeLaBase, bool reemplazar = false,
+        IReadOnlyList<string>? ipsDeMas = null)
     {
         if (File.Exists(archivoDeLaBase) && !reemplazar)
             throw new InvalidOperationException($"{archivoDeLaBase} ya existe: para pisarla, --reemplazar (la de antes queda al lado).");
@@ -28,7 +30,7 @@ public static class Importador
         string temporal = archivoDeLaBase + ".importando";
         BorrarBase(temporal);
         InformeDeCopia informe;
-        var (almacen, correoAparte, ipsAparte, liberar) = AbrirOrigen(origen);
+        var (almacen, correoAparte, ipsAparte, cortados, liberar) = AbrirOrigen(origen);
         try
         {
             if (almacen is AlmacenSqlite deAhora)
@@ -45,7 +47,8 @@ public static class Importador
             else
             {
                 using var destino = new AlmacenSqlite(temporal, paraImportar: true);
-                informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+                informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, [.. ipsAparte, .. ipsDeMas ?? []]);
+                informe.Avisos.AddRange(cortados);
             }
         }
         catch
@@ -94,16 +97,17 @@ public static class Importador
             string backup = destino.Backup(carpetaDeBackups, $"{Backups.PrefijoDeLosApartados}importar-{DateTime.Now:yyyyMMdd-HHmmss}");
             Console.WriteLine($"Lo que había en la base quedó en {backup}.");
         }
-        var (almacen, correoAparte, ipsAparte, liberar) = AbrirOrigen(origen);
+        var (almacen, correoAparte, ipsAparte, cortados, liberar) = AbrirOrigen(origen);
         try
         {
             return destino.EnUnaSolaTransaccion(() =>
             {
                 if (!vacia) destino.Vaciar();
                 // Una base de SQLite de ahora es la misma base en otro motor: va entera, tabla por tabla.
-                return almacen is AlmacenSqlite deAhora
-                    ? destino.CopiarTablasDe(deAhora)
-                    : CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+                if (almacen is AlmacenSqlite deAhora) return destino.CopiarTablasDe(deAhora);
+                var informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+                informe.Avisos.AddRange(cortados);
+                return informe;
             }, informe => informe.SalioBien);
         }
         finally { liberar?.Dispose(); }
@@ -175,6 +179,7 @@ public static class Importador
     {
         string origen;
         bool eraElSqliteViejo = false, encimaDeLaVacia = false;
+        (IReadOnlyList<string> Ips, List<string> Avisos) deLaVacia = ([], []);
         if (File.Exists(archivoDeLaBase))
         {
             if (EsDelSqliteViejo(archivoDeLaBase))
@@ -191,6 +196,7 @@ public static class Importador
             {
                 origen = dataRoot;
                 encimaDeLaVacia = true;
+                deLaVacia = LoQueGuardabaLaVacia(archivoDeLaBase);
             }
             else
             {
@@ -204,12 +210,13 @@ public static class Importador
 
         Console.WriteLine($"[base] primer arranque con base: importando {origen}");
         InformeDeCopia informe;
-        try { informe = Importar(origen, archivoDeLaBase, reemplazar: encimaDeLaVacia); }
+        try { informe = Importar(origen, archivoDeLaBase, reemplazar: encimaDeLaVacia, ipsDeMas: deLaVacia.Ips); }
         catch
         {
             if (eraElSqliteViejo) Restituir(origen, archivoDeLaBase);
             throw;
         }
+        informe.Avisos.AddRange(deLaVacia.Avisos);
         string ruta = Path.Combine(dataRoot, $"importacion-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
         EscrituraAtomica.Escribir(ruta, informe.Texto(), System.Text.Encoding.UTF8);
         if (!informe.SalioBien)
@@ -221,6 +228,40 @@ public static class Importador
         Console.WriteLine($"[base] importado: {informe.Personajes} personajes de {informe.Cuentas} cuentas, " +
                           $"{informe.Avisos.Count} aviso(s). El informe está en {ruta}.");
         return informe;
+    }
+
+    /// <summary>
+    /// LO QUE GUARDA UNA BASE SIN NADIE. Sin cuentas ni personajes puede tener las IPs baneadas desde el panel y, de personajes
+    /// que ya no están, el suelo, las llaves vendidas, las subastas, los clanes, el correo o el récord. Importar encima arma la
+    /// base nueva con los archivos: las IPs se suman a las que traen, y de lo demás se avisa en el informe (sigue en la base de
+    /// antes, que queda al lado).
+    /// </summary>
+    private static (IReadOnlyList<string> Ips, List<string> Avisos) LoQueGuardabaLaVacia(string archivo)
+    {
+        const string Sigue = "no se importa, sigue en ella (apartada al lado)";
+        var avisos = new List<string>();
+        try
+        {
+            using var vieja = new AlmacenSqlite(archivo);
+            void Si(int cuantos, string que)
+            {
+                if (cuantos > 0) avisos.Add($"la base de antes, sin cuentas ni personajes, tenía {que} ({cuantos}): {Sigue}");
+            }
+            Si(vieja.LeerSuelo().Count, "objetos en el suelo");
+            Si(vieja.LeerLlavesVendidas().Count, "llaves vendidas");
+            var subastas = vieja.LeerSubastas();
+            Si(subastas.Abiertas.Count + subastas.Pendientes.Count, "subastas o entregas de subasta");
+            Si(vieja.LeerClanes().Count, "clanes");
+            Si(vieja.LeerCorreo().Values.Sum(c => c.Count), "cartas");
+            Si(vieja.LeerRecord(), "un récord de conectados");
+            return (vieja.LeerIpsBaneadas(), avisos);
+        }
+        catch (Exception ex)
+        {
+            avisos.Add($"la base de antes, sin cuentas ni personajes, no se pudo leer ({ex.Message}): lo que tuviera, como las IPs " +
+                       $"baneadas, {Sigue}");
+            return ([], avisos);
+        }
     }
 
     /// <summary>Las carpetas de los archivos ya importadas, renombradas a <c>*.importado</c>: quedan de respaldo y no se
@@ -252,9 +293,10 @@ public static class Importador
             || (Directory.Exists(cuentas) && Directory.EnumerateFiles(cuentas, "*.cnt").Any());
     }
 
-    /// <summary>El almacén de origen, el correo que trae aparte y lo que hay que cerrar al terminar.</summary>
+    /// <summary>El almacén de origen, el correo que trae aparte, el aviso de los <c>.chr</c> cortados y lo que hay que cerrar al
+    /// terminar.</summary>
     private static (IAlmacen Almacen, IReadOnlyDictionary<string, IReadOnlyList<MailEntry>> CorreoAparte, IReadOnlyList<string> IpsAparte,
-        IDisposable? Liberar) AbrirOrigen(string origen)
+        IReadOnlyList<string> Cortados, IDisposable? Liberar) AbrirOrigen(string origen)
     {
         var sinCorreo = new Dictionary<string, IReadOnlyList<MailEntry>>();
         var sinIps = Array.Empty<string>();
@@ -263,7 +305,7 @@ public static class Importador
             if (EsDelSqliteViejo(origen))
             {
                 var viejo = new SqliteStore(origen);
-                return (new AlmacenDeTexto(viejo), sinCorreo, sinIps, viejo);
+                return (new AlmacenDeTexto(viejo), sinCorreo, sinIps, [], viejo);
             }
             // Una base de ahora: la de un servidor que pasa a Postgres, o un backup. Se lee de una COPIA al lado: abrirla le
             // aplicaría las versiones del esquema que le falten, y el origen —un backup, sobre todo— no se toca. Con su
@@ -277,7 +319,7 @@ public static class Importador
                 if (File.Exists(origen + "-wal")) File.Copy(origen + "-wal", copia + "-wal");
             }
             var deAhora = new AlmacenSqlite(copia);
-            return (deAhora, sinCorreo, sinIps, new AlCerrar(() =>
+            return (deAhora, sinCorreo, sinIps, [], new AlCerrar(() =>
             {
                 deAhora.Dispose();
                 BorrarBase(copia);
@@ -285,7 +327,8 @@ public static class Importador
         }
         if (!Directory.Exists(origen)) throw new InvalidOperationException($"no existe: {origen}");
         var store = new FileStore(origen, crearCarpetas: false);
-        return (new AlmacenDeTexto(store), CorreoDeLosChr(store), IpsDeLaCarpeta(origen), null);
+        var (correo, cortados) = LoQueTraenLosChr(store);
+        return (new AlmacenDeTexto(store), correo, IpsDeLaCarpeta(origen), cortados, null);
     }
 
     /// <summary>Las IPs baneadas de una carpeta de datos, que van en un archivo suelto: <c>banned-ips.txt</c> en una nuestra,
@@ -305,19 +348,26 @@ public static class Importador
         public void Dispose() => cerrar();
     }
 
-    /// <summary>El correo del ORIGINAL, que va adentro del <c>.chr</c> de cada destinatario (ver
-    /// <see cref="CharacterFile.CorreoDelOriginal"/>). En una carpeta nuestra no hay, y esto no encuentra nada.</summary>
-    private static Dictionary<string, IReadOnlyList<MailEntry>> CorreoDeLosChr(FileStore store)
+    /// <summary>De los <c>.chr</c> de una carpeta: el correo del ORIGINAL, que va adentro del de cada destinatario (ver
+    /// <see cref="CharacterFile.CorreoDelOriginal"/>; en una carpeta nuestra no hay), y el aviso de los que están CORTADOS
+    /// (<see cref="CharacterFile.SeccionesQueFaltan"/>): se importan con lo que les falta vacío o en cero, y la verificación no
+    /// lo ve, porque relee lo mismo.</summary>
+    private static (Dictionary<string, IReadOnlyList<MailEntry>> Correo, List<string> Cortados) LoQueTraenLosChr(FileStore store)
     {
         var correo = new Dictionary<string, IReadOnlyList<MailEntry>>(StringComparer.OrdinalIgnoreCase);
+        var cortados = new List<string>();
         foreach (var nombre in store.AllCharacterNames())
         {
             var texto = store.ReadCharacter(nombre);
             if (texto is null) continue;
-            var cartas = CharacterFile.CorreoDelOriginal(IniFile.Parse(texto));
+            var ini = IniFile.Parse(texto);
+            var cartas = CharacterFile.CorreoDelOriginal(ini);
             if (cartas.Count > 0) correo[nombre] = cartas;
+            if (CharacterFile.SeccionesQueFaltan(ini) is { Count: > 0 } faltan)
+                cortados.Add($"{nombre}: a su .chr le faltan {string.Join(", ", faltan.Select(s => $"[{s}]"))}, está cortado o roto; " +
+                             "se importa con eso vacío o en cero");
         }
-        return correo;
+        return (correo, cortados);
     }
 
     private static bool EsDelSqliteViejo(string archivo)

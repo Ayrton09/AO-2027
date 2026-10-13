@@ -391,6 +391,47 @@ public class ImportadorTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(Datos, "Charfile.importado")));
     }
 
+    /// <summary>LA BASE SIN NADIE PUEDE TENER MUNDO: las IPs baneadas desde el panel se suman a la base importada, y lo demás
+    /// que tenía —acá, una llave vendida— queda en el informe. Antes se iban las dos cosas sin aviso.</summary>
+    [Fact]
+    public void Importar_sobre_la_base_sin_nadie_suma_sus_ips_y_avisa_lo_demas()
+    {
+        Directory.CreateDirectory(Datos);
+        var (vacia, _) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        vacia.GuardarIpsBaneadas(new[] { "10.4.4.4" });
+        vacia.GuardarLlavesVendidas(new[] { new LlaveVendida(41, 2, 53) });
+        (vacia as IDisposable)?.Dispose();
+        CarpetaNuestra();
+
+        var (almacen, dondeSeGuarda) = Almacenes.Abrir(ServerIni.Desde(IniFile.Parse("")), Datos);
+        try
+        {
+            Assert.Contains("importada", dondeSeGuarda);
+            Assert.Equal(new[] { "10.4.4.4" }, almacen.LeerIpsBaneadas());
+        }
+        finally { (almacen as IDisposable)?.Dispose(); }
+        Assert.Contains("llaves vendidas (1)", File.ReadAllText(Assert.Single(Directory.GetFiles(Datos, "importacion-*.txt"))));
+    }
+
+    /// <summary>UN <c>.chr</c> CORTADO —el original lo reescribe entero, sin temporal, y un corte en el medio lo deja a medias— se
+    /// importa con lo que le falta vacío o en cero, y la verificación no lo ve porque relee lo mismo: queda en el informe.</summary>
+    [Fact]
+    public void Un_chr_cortado_queda_en_el_informe()
+    {
+        CarpetaNuestra();
+        string ciro = Directory.GetFiles(Path.Combine(Datos, "Charfile"), "*.chr")
+            .Single(f => Path.GetFileNameWithoutExtension(f).Equals("Ciro", StringComparison.OrdinalIgnoreCase));
+        string texto = File.ReadAllText(ciro, CoverAO.Protocol.Codec.Ansi);
+        File.WriteAllText(ciro, texto[..texto.IndexOf("[Inventory]", StringComparison.Ordinal)], CoverAO.Protocol.Codec.Ansi);
+
+        var informe = Importador.Importar(Datos, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        var aviso = Assert.Single(informe.Avisos, a => a.StartsWith("Ciro", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("[Inventory]", aviso);
+        Assert.Contains("[HECHIZOS]", aviso);
+    }
+
     /// <summary>Con cuentas en la base, los archivos de al lado no se importan encima: se avisa y quedan donde están.</summary>
     [Fact]
     public void Con_cuentas_en_la_base_los_archivos_de_al_lado_no_se_importan()

@@ -249,6 +249,20 @@ public static class CharacterFile
         return cartas;
     }
 
+    /// <summary>LAS SECCIONES QUE TIENE TODO <c>.chr</c> ENTERO, el nuestro (<see cref="ToIni(FichaDePersonaje)"/>) y el del
+    /// original (SaveUser las escribe siempre, FileIO.bas:1588-1862; las traen las 12.281 fichas de
+    /// <c>CoverAO-2021/Servidor/Charfile</c>), en el orden del original.</summary>
+    private static readonly string[] SeccionesDeUnoEntero =
+        { "FLAGS", "FACCIONES", "ATRIBUTOS", "SKILLS", "INIT", "STATS", "BancoInventory", "Inventory", "HECHIZOS", "AMIGOS" };
+
+    /// <summary>
+    /// ¿Qué secciones le faltan a este <c>.chr</c>? Uno al que le falta alguna quedó CORTADO —el original lo borra y lo vuelve a
+    /// escribir entero, sin temporal (FileIO.bas:1615-1619), y un corte en el medio lo deja a medias— o roto: lo que falta se
+    /// lee con los valores por defecto (<see cref="FichaDesdeIni"/>), como un personaje que empieza, y la verificación de una
+    /// copia relee lo mismo. Vacía si está entero.
+    /// </summary>
+    public static IReadOnlyList<string> SeccionesQueFaltan(IniFile ini) => SeccionesDeUnoEntero.Where(s => !ini.HasSection(s)).ToList();
+
     /// <summary>
     /// La ficha de un <c>.chr</c>, con los valores tal cual y los DEFAULTS del formato para las claves que falten —un
     /// archivo viejo, de antes de que existiera una sección, se lee igual—. El saneo (bandos que no existen, rangos de
