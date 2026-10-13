@@ -67,6 +67,8 @@ Lo nuevo desde el paquete del 6 de octubre.
   una cantidad de cero o menos ya no mueve nada.
 - **`/banip` y `/darpun` andan desde el cliente web**: `/banip <IP o nombre> <motivo>` y `/darpun <nombre>@<puntos>`.
 - **El juego de escritorio instalado no abre las herramientas de desarrollo.**
+- **El juego de escritorio se actualiza solo** y, al actualizarse, muestra las novedades. También hay un botón Novedades en
+  su menú, con las del último server en el que jugaste.
 - **El juego de escritorio se abre una sola vez**: abrirlo de nuevo trae al frente el que ya está, y un acceso directo a un
   server entra ahí. Con dos abiertos se pisaban la lista de servers, las opciones y las cuentas recordadas.
 - **En la lista de servers, uno por `http://` que no está en tu PC sale marcado "sin cifrar"**: la contraseña viaja legible.
