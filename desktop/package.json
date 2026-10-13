@@ -49,7 +49,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "CoverAO",
-      "artifactName": "CoverAO-Setup.${ext}"
+      "artifactName": "CoverAO-Setup.${ext}",
+      "deleteAppDataOnUninstall": true,
+      "include": "build/instalador.nsh"
     },
     "linux": {
       "target": [

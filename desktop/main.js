@@ -391,7 +391,12 @@ async function buscarActualizacion() {
     const r = await net.fetch(DESCARGAS + 'actualizacion.json', { cache: 'no-store', bypassCustomProtocolHandlers: true });
     if (!r.ok) return;
     const aviso = actualizacion.verificarActualizacion(await r.json(), CLAVE_PUBLICA, COMPILACION.id);
-    if (!aviso) { console.log('[actualizacion] ya es la última'); return; }
+    if (!aviso) {
+      // Ya es la última: lo bajado antes (la que se acaba de instalar) sobra, que son 100 MB.
+      fs.rmSync(path.join(app.getPath('userData'), 'actualizacion'), { recursive: true, force: true });
+      console.log('[actualizacion] ya es la última');
+      return;
+    }
     const dir = path.join(app.getPath('userData'), 'actualizacion');
     fs.mkdirSync(dir, { recursive: true });
     const ruta = path.join(dir, aviso.archivo);
