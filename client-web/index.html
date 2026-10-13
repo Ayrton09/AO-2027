@@ -3263,7 +3263,27 @@
       return `${wsProto}//${location.hostname || 'localhost'}:${wsPort}/`;
     }
     let reconexionTimer = null;   // la reconexión que deja programada un cierre
+    // EL SERVER SE ACTUALIZÓ CON EL CLIENTE ABIERTO: al reconectar se mira la fecha de su compilación, y si cambió se recarga la
+    // página para traer el cliente nuevo (en la app, la firma se vuelve a verificar al cargar). Sin esto, el que reconectaba
+    // seguía con el cliente viejo en memoria contra el server nuevo. Sólo al REconectar: la primera vez la fecha es la de recién.
+    let compilacionDelServer = '';
+    let yaHuboConexion = false, verificandoVersion = false, versionVerificada = false;
     function connect() {
+      if (compilacionDelServer && yaHuboConexion && !versionVerificada && !(ws && ws.readyState <= 1)) {
+        if (verificandoVersion) return;
+        verificandoVersion = true;
+        fetch('./coverao-config.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((cfg) => {
+          verificandoVersion = false;
+          if (cfg && typeof cfg.compilacion === 'string' && cfg.compilacion && cfg.compilacion !== compilacionDelServer) {
+            statusEl.textContent = 'el server se actualizó — cargando el cliente nuevo…';
+            location.reload();
+            return;
+          }
+          versionVerificada = true;
+          try { connect(); } finally { versionVerificada = false; }
+        });
+        return;
+      }
       // UN SOLO SOCKET. La reconexión que programa un cierre y el ingreso mandado en ese segundo y medio abrían dos, y el
       // que sobraba, al cerrarse, le borraba el estado al que estaba en uso y programaba otra reconexión.
       clearTimeout(reconexionTimer);
@@ -3271,6 +3291,7 @@
       const sock = ws = new WebSocket(urlDelSocket());
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
+        yaHuboConexion = true;
         statusEl.textContent = loginBytes ? 'conectado — logueando…' : 'conectado';
         if (loginBytes) ws.send(xorBuffer(loginBytes, DEFAULT_XOR_KEY));   // (re)login con el último paquete
       };
@@ -3352,6 +3373,7 @@
                        if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false;
                        if (cfg && cfg.destinoPortales === false) destinoPortales = false;
                        if (cfg && cfg.lluviaBajoTecho === true) ocultarLluviaBajoTecho = false;
+                       if (cfg && typeof cfg.compilacion === 'string') compilacionDelServer = cfg.compilacion;
                        if (cfg && Array.isArray(cfg.novedades)) pintarNovedadesLogin(cfg.novedades, cfg.version); })
       .catch(() => {})
       .finally(() => {

@@ -1,7 +1,7 @@
 // ARMA EL INSTALADOR DE WINDOWS Y SU AVISO DE ACTUALIZACIÓN (ver actualizacion.js). Sólo cuando lo pide el autor.
 //
 //   node desktop/armar.js            arma release/CoverAO-Setup.exe y release/actualizacion.json
-//   node desktop/armar.js --subir    y los sube al release v1.0.0 de CoverAO-Descargas, reemplazando los de antes
+//   node desktop/armar.js --subir    y los sube al release v1.0.0 del repo del juego, reemplazando los de antes
 //   --clave <ruta>                   otra clave privada que la de ~/.coverao-firma/clave-privada.pem
 //
 // La versión NO cambia (1.0.0 hasta que el juego sea público): lo que distingue un instalador del anterior es la fecha que se
@@ -14,7 +14,7 @@ const { spawnSync } = require('child_process');
 const { cargarPrivada, estaCifrada } = require('./firma');
 const { firmarActualizacion, verificarActualizacion, novedadesDelChangelog } = require('./actualizacion');
 
-const REPO = 'Ayrton09/CoverAO-Descargas';
+const REPO = 'Ayrton09/CoverAO';
 const ETIQUETA = 'v1.0.0';
 const INSTALADOR = 'CoverAO-Setup.exe';
 const COMPILACION = path.join(__dirname, 'compilacion.json');

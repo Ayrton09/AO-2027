@@ -194,8 +194,14 @@ function interceptar(esquema) {
   protocol.handle(esquema, async (pedido) => {
     const origen = new URL(pedido.url).origin;
     if (bloqueados.has(origen)) return new Response(null, { status: 403 });
-    const archivos = firmados.get(origen);
     const rel = firma.rutaDe(pedido.url);
+    // LA PÁGINA DEL JUEGO VUELVE A LEER LA FIRMA: si el server se actualizó con el juego abierto, el cliente recarga y trae
+    // archivos nuevos, que con el manifiesto de antes parecerían cambiados. Cada carga de la página toma el del server.
+    if (rel === 'index.html' && pedido.method === 'GET' && firmados.has(origen)) {
+      const error = await prepararFirma(origen + '/');
+      if (error) { clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
+    }
+    const archivos = firmados.get(origen);
     // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y lo que no
     // es un GET, pasa derecho.
     if (!archivos || firma.SINTETICAS.has(rel) || pedido.method !== 'GET') {
@@ -379,7 +385,7 @@ async function novedadesDe(direccion) {
 // LA ACTUALIZACIÓN (ver actualizacion.js): al abrir se baja el aviso del release; si es del autor y más nuevo que esta compilación,
 // se baja el instalador y, si es el firmado, el menú ofrece instalarlo. Si no se toca, se instala al cerrar. Sin empaquetar no
 // se busca: `COVERAO_ACTUALIZAR=1` lo prueba igual.
-const DESCARGAS = 'https://github.com/Ayrton09/CoverAO-Descargas/releases/latest/download/';
+const DESCARGAS = 'https://github.com/Ayrton09/CoverAO/releases/latest/download/';
 const BUSCAR_ACTUALIZACION = app.isPackaged || process.env.COVERAO_ACTUALIZAR === '1';
 const TOPE_DEL_INSTALADOR = 512 * 1024 * 1024;
 let lista = null;        // { ruta, id } del instalador ya bajado y verificado
