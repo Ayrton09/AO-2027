@@ -234,7 +234,12 @@ function crearVentana() {
   });
   if (lugar.maximizada) ventana.maximize();
   if (config.pantallaCompleta !== false) ventana.setFullScreen(true);
-  ventana.once('ready-to-show', () => ventana.show());
+  // Y otra vez al mostrarla, si no quedó: la primera apertura del instalado (la que lanza el instalador al terminar, 12/10) salió
+  // en ventana aunque no había ninguna preferencia guardada.
+  ventana.once('ready-to-show', () => {
+    ventana.show();
+    if (config.pantallaCompleta !== false && !ventana.isFullScreen()) ventana.setFullScreen(true);
+  });
 
   // F11 alterna la pantalla completa, como en el navegador pero sin la cruz arriba; Ctrl+Shift+S vuelve al menú. F1 a F10 son
   // macros del juego: no se tocan.
