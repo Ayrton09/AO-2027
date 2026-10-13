@@ -125,14 +125,14 @@ public sealed class WebSocketGameServer
             // El Origin lo escribe el cliente: al log va recortado, que si no un pedido con una cabecera enorme era una línea enorme
             // en el disco por cada intento (auditoría del 12/10).
             string ajeno = ctx.Request.Headers["Origin"] ?? "";
-            Console.WriteLine($"[ws:{remote}] rechazado (Origin ajeno: {(ajeno.Length > 100 ? ajeno[..100] + "…" : ajeno)})");
+            LogDeRed.Linea($"[ws:{remote}] rechazado (Origin ajeno: {(ajeno.Length > 100 ? ajeno[..100] + "…" : ajeno)})");
             return;
         }
         // SÓLO LA APP DE ESCRITORIO, si el server es para ella (ver Escritorio). También antes del cupo.
         if (_soloEscritorio && !Escritorio.EsLaApp(ctx.Request.Headers[Escritorio.Cabecera]))
         {
             ctx.Response.StatusCode = 403; ctx.Response.Close();
-            Console.WriteLine($"[ws:{remote}] rechazado (no es el juego de escritorio)");
+            LogDeRed.Linea($"[ws:{remote}] rechazado (no es el juego de escritorio)");
             return;
         }
         // LOS RECHAZOS AL ACEPTAR, en el orden del original (wskapiAO.bas:501-552): el servidor lleno y la IP bloqueada
@@ -140,28 +140,28 @@ public sealed class WebSocketGameServer
         var reserva = _guard?.Reservar(ip) ?? ConnectionGuard.Reserva.Hecha;
         if (reserva == ConnectionGuard.Reserva.ServidorLleno)
         {
-            Console.WriteLine($"[ws:{remote}] rechazado (servidor lleno)");
+            LogDeRed.Linea($"[ws:{remote}] rechazado (servidor lleno)");
             await AvisarYCortar(ctx, remote, ConnectionGuard.AvisoServidorLleno);
             return;
         }
         if (_admin?.IsIpBanned(ip) == true)   // IP baneada desde el panel
         {
             if (reserva == ConnectionGuard.Reserva.Hecha) _guard!.Release(ip);
-            Console.WriteLine($"[ws:{remote}] rechazado (IP baneada)");
+            LogDeRed.Linea($"[ws:{remote}] rechazado (IP baneada)");
             await AvisarYCortar(ctx, remote, ConnectionGuard.AvisoIpBloqueada);
             return;
         }
         if (reserva == ConnectionGuard.Reserva.TopeDeLaIp)   // cap por-IP
         {
             ctx.Response.StatusCode = 503; ctx.Response.Close();
-            Console.WriteLine($"[ws:{remote}] rechazado (cap de conexiones)");
+            LogDeRed.Linea($"[ws:{remote}] rechazado (cap de conexiones)");
             return;
         }
         bool acquired = _guard is not null;
         try
         {
             var wsCtx = await ctx.AcceptWebSocketAsync(subProtocol: null);
-            Console.WriteLine($"[ws:{remote}] conectado");
+            LogDeRed.Linea($"[ws:{remote}] conectado");
             var session = new ClientSession(new WebSocketTransport(wsCtx.WebSocket, remote), _dispatcher,
                 _authTimeoutMs, _maxInboundBytes, onClose: acquired ? () => _guard!.Release(ip) : null,
                 paquetesPorSegundo: _paquetesPorSegundo, rafagaDePaquetes: _rafagaDePaquetes,
@@ -172,7 +172,7 @@ public sealed class WebSocketGameServer
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ws:{remote}] error: {ex.Message}");
+            LogDeRed.Linea($"[ws:{remote}] error: {ex.Message}", error: true);
         }
         finally
         {

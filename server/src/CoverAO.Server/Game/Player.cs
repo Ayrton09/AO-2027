@@ -564,6 +564,8 @@ public sealed class Player
     // Anti-cheat de cadencia (VB6 IntervaloParaCaminar / IntervaloParaGolpe): último desplazamiento/golpe en ms
     // de reloj monótono (Environment.TickCount64). El dispatcher rechaza el que llega antes del intervalo.
     public long LastWalkMs { get; set; }
+    /// <summary>Cuándo pidió por última vez la lista del Centro de Subastas (ver <c>HandleSubastasPedir</c>).</summary>
+    public long UltimaListaDeSubastasMs { get; set; }
     public long LastAttackMs { get; set; }
     /// <summary>La criatura de la que este jugador se apropió, por charIndex (VB6 <c>flags.OwnedNpc</c>). Es
     /// UNA sola: apropiarse de otra suelta la anterior.</summary>

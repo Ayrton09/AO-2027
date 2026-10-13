@@ -504,15 +504,20 @@ loop.OnTickHandler = tick =>
         lastPeriod = period;
         world.Broadcast(ServerMessages.ConsoleMsg(DayNight.Announce(period), 0)); // announce the transition
     }
-    // El reloj de clima NO corre si un GM lo forzó con /LLUVIA: en el original no hay reloj, el clima es una
-    // global que sólo mueve ese comando (Weather.Forzar), y un tick que la pisara haría que el /LLUVIA se
-    // deshiciera solo a los pocos segundos.
+    // Un /LLUVIA de un GM manda HASTA EL PRÓXIMO CAMBIO DEL RELOJ: en el original no hay reloj, el clima es una global que
+    // sólo mueve ese comando (Weather.Forzar), y un tick que la pisara enseguida haría que el /LLUVIA se deshiciera solo a
+    // los pocos segundos. En ese cambio el reloj vuelve a mandar, y se avisa sólo si el clima de verdad cambia.
     var weather = Weather.At(tick);
-    if (weather != lastWeather && !Weather.Forzado)
+    if (weather != lastWeather)
     {
         lastWeather = weather;
-        world.Broadcast(ServerMessages.RainToggle(Weather.Clima(weather)));           // client shows/hides rain
-        world.Broadcast(ServerMessages.ConsoleMsg(Weather.Announce(weather), 0));
+        bool cambia = !Weather.Forzado || Weather.Efectivo(tick) != Weather.Clima(weather);
+        Weather.Soltar();
+        if (cambia)
+        {
+            world.Broadcast(ServerMessages.RainToggle(Weather.Clima(weather)));       // client shows/hides rain
+            world.Broadcast(ServerMessages.ConsoleMsg(Weather.Announce(weather), 0));
+        }
     }
     // LA PAUSA DEL SERVIDOR (VB6 EnPausa) frena sólo el TIMER_AI (mMainLoop.bas:77): la IA de las criaturas. El resto
     // del mundo —la vida, el hambre, el veneno, la cuenta de salida, el clima— es de otros timers y sigue corriendo.
@@ -984,7 +989,10 @@ if (!sinAdmin)
 {
     // adminPort ya está resuelto arriba, junto con los otros tres: es el MISMO valor que se imprimió.
     int atIdx = Array.FindIndex(args, a => string.Equals(a, "--admin-token", StringComparison.OrdinalIgnoreCase));
-    string adminToken = (atIdx >= 0 && atIdx + 1 < args.Length) ? args[atIdx + 1]
+    // VACÍO ES COMO NO DARLO: un lanzador que pasaba el token desde una variable vacía dejaba el panel sin token, porque dos
+    // cadenas vacías son iguales (auditoría del 13/10).
+    string? tokenDado = (atIdx >= 0 && atIdx + 1 < args.Length) ? args[atIdx + 1].Trim() : null;
+    string adminToken = !string.IsNullOrEmpty(tokenDado) ? tokenDado
         : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
     var serverInfo = new CoverAO.Server.Net.ServerInfo(spawnedMaps, spawnedNpcs, spawnedObjs, CoverAO.Server.Build.Version, fixtureMode, dondeSeGuarda);
     var adminServer = new CoverAO.Server.Net.AdminServer(adminPort, adminToken, world, loop, db, serverInfo, _ => PedirApagadoOrdenado(), logRing, admin, HacerBackup, serverIni);

@@ -112,6 +112,20 @@ public sealed class ClientSession : IConnection
     /// SpawnIntoWorld al bindear el Player.</summary>
     public void MarkAuthed() => _authed = true;
 
+    /// <summary>
+    /// LA CUENTA ENTRÓ Y EL PERSONAJE TODAVÍA NO: el plazo de autenticación pasa a ser el de la lista de personajes. Con los 30
+    /// segundos de antes, el que se quedaba mirando la lista quedaba afuera, y el cliente volvía a entrar solo mandando la
+    /// contraseña otra vez cada medio minuto (auditoría del 13/10). Diez minutos alcanzan para elegir o crear un personaje.
+    /// </summary>
+    public void EntroLaCuenta()
+    {
+        if (_authed || _closed || _cuentaAdentro || _authTimeoutMs <= 0) return;
+        _cuentaAdentro = true;
+        _ = Task.Delay(PlazoEnLaListaMs).ContinueWith(_ => { if (!_authed && !_closed) Close("auth timeout"); }, TaskScheduler.Default);
+    }
+    private volatile bool _cuentaAdentro;
+    private const int PlazoEnLaListaMs = 10 * 60_000;
+
     /// <summary><c>Environment.TickCount64</c> del último byte RECIBIDO. El VB6 lleva lo mismo como un contador
     /// de minutos (<c>Counters.IdleCount</c>, reseteado en cada paquete del usuario) para el <c>IdleLimit</c>
     /// del Server.ini. Acá se guarda el instante y el loop hace la resta — más barato y sin deriva.</summary>
@@ -126,7 +140,7 @@ public sealed class ClientSession : IConnection
         if (_authTimeoutMs > 0)
             _ = Task.Delay((int)_authTimeoutMs, token).ContinueWith(t =>
             {
-                if (!t.IsCanceled && !_authed && !_closed) Close("auth timeout");
+                if (!t.IsCanceled && !_authed && !_cuentaAdentro && !_closed) Close("auth timeout");
             }, TaskScheduler.Default);
         try
         {
@@ -345,8 +359,8 @@ public sealed class ClientSession : IConnection
         // mirar servidores reales, no de estimarlo. Con el límite apagado se sigue midiendo igual.
         string pico = $" pico={_cadencia.Pico} pkt/s";
         if (charIndex is short ci)
-            Console.WriteLine($"[{RemoteEndpoint}] closed ({reason}) char={ci}{pico}");
+            LogDeRed.Linea($"[{RemoteEndpoint}] closed ({reason}) char={ci}{pico}");
         else
-            Console.WriteLine($"[{RemoteEndpoint}] closed ({reason}){pico}");
+            LogDeRed.Linea($"[{RemoteEndpoint}] closed ({reason}){pico}");
     }
 }

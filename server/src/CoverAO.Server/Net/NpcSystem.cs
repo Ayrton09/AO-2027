@@ -71,10 +71,15 @@ public sealed class NpcSystem
     /// Se MARCA el spawn en vez de sacarlo de la lista a propósito: este método lo llama el hilo de la conexión
     /// mientras Update() itera <c>_spawns</c> en el hilo del loop, y mutar la colección sería una carrera; escribir
     /// los dos campos es seguro en cualquier intercalado.</summary>
+    ///
+    /// <para>SÓLO EL VIVO: un spawn muerto conserva el CharIndex de la criatura que murió, y ese número se recicla. Sin mirar
+    /// <c>Alive</c>, retirar al centinela le cancelaba para siempre la reaparición a una criatura muerta que había tenido su
+    /// mismo número (auditoría del 13/10). Y el spawn dado de baja se saca de la lista en la próxima vuelta de
+    /// <see cref="Update"/>: cada plantada del centinela dejaba uno para siempre.</para></summary>
     public void CancelRespawn(short charIndex)
     {
         foreach (var s in _spawns)
-            if (s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = long.MaxValue; }
+            if (s.Alive && s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = long.MaxValue; }
     }
 
     /// <summary>Reaparece en la próxima vuelta, sin esperar el tiempo de respawn (VB6 <c>ReSpawnNpc</c> después de
@@ -82,7 +87,7 @@ public sealed class NpcSystem
     public void ReaparecerYa(short charIndex)
     {
         foreach (var s in _spawns)
-            if (s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = 0; }
+            if (s.Alive && s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = 0; }
     }
 
     public NpcSystem(World world, GameData data, bool gmsPerseguibles = false, ServerIni? ini = null)
@@ -302,6 +307,8 @@ public sealed class NpcSystem
             _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
 
+        // Los dados de baja (CancelRespawn) no vuelven nunca: afuera de la lista.
+        _spawns.RemoveAll(s => !s.Alive && s.RespawnAtTick == long.MaxValue);
         // Respawn management: notice kills (handler removed the NPC) and respawn after the delay.
         foreach (var s in _spawns)
         {

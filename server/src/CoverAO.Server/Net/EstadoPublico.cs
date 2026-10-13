@@ -44,6 +44,8 @@ public sealed class EstadoPublico
     /// <summary>Lo que dura la tabla de posiciones. Es la parte cara —abre un archivo por personaje— y la que
     /// menos cambia: nadie sube de nivel dos veces por minuto.</summary>
     private const long MsDeRanking = 120_000;
+    /// <summary>Si la tabla no se pudo armar, cuánto se espera para volver a probar.</summary>
+    private const long MsDeReintento = 30_000;
 
     private readonly object _puerta = new();
     private string _foto = "";
@@ -90,10 +92,17 @@ public sealed class EstadoPublico
             })
             .ToArray();
 
-        if (_ranking.Length == 0 || ahora >= _rankingHasta)
+        if (ahora >= _rankingHasta)
         {
-            _ranking = ArmarRanking();
-            _rankingHasta = ahora + MsDeRanking;
+            // CON LA BASE CAÍDA, LA TABLA DE ANTES (o ninguna) y se vuelve a probar en un rato, no en cada pedido: cada GET
+            // reintentaba la consulta bajo el candado y escribía una línea de error (auditoría del 13/10).
+            // Vacía (un server nuevo), se vuelve a mirar antes: el primer personaje no espera dos minutos para aparecer.
+            try { _ranking = ArmarRanking(); _rankingHasta = ahora + (_ranking.Length == 0 ? MsDeReintento : MsDeRanking); }
+            catch (Exception e)
+            {
+                _rankingHasta = ahora + MsDeReintento;
+                LogDeRed.Linea($"[estado] no se pudo armar la tabla de posiciones: {e.Message}", error: true);
+            }
         }
 
         var doc = new

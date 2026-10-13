@@ -81,6 +81,16 @@ public sealed class StaticFileServer
     private const int MinimoParaComprimir = 1024;
 
     private readonly ConcurrentDictionary<string, (long Len, long Mtime, byte[] Gz)> _cacheGz = new();
+
+    /// <summary>
+    /// LOS PEDIDOS EN VUELO POR BLOQUE DE IP, con un tope. Cada respuesta se escribía en un hilo del pool, de forma
+    /// sincrónica y sin límite: unas pocas conexiones que pedían archivos grandes y no los leían dejaban al pool sin hilos, y
+    /// con él al game loop (auditoría del 13/10). Ahora la escritura es asíncrona (no retiene un hilo) y una dirección no
+    /// tiene más de <see cref="PedidosPorIp"/> a la vez. Un proxy en la misma máquina no cuenta: junta a todos los jugadores
+    /// y es él el que absorbe al lento.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, int> _enVuelo = new();
+    private const int PedidosPorIp = 32;
     private long _bytesEnCache;
     private const long TopeCacheBytes = 64L * 1024 * 1024;
 
@@ -177,13 +187,32 @@ public sealed class StaticFileServer
                     _ = Task.Run(() => _juegoPorWebSocket(pedido, token), token);
                     continue;
                 }
-                _ = Task.Run(() => Serve(ctx), token);
+                _ = Task.Run(() => AtenderAsync(ctx, token), token);
             }
         }
         finally { try { listener.Stop(); } catch { } }
     }
 
-    private void Serve(HttpListenerContext ctx)
+    private async Task AtenderAsync(HttpListenerContext ctx, CancellationToken token)
+    {
+        var dir = ctx.Request.RemoteEndPoint?.Address;
+        string? bloque = dir is null || IPAddress.IsLoopback(dir) ? null : ConnectionGuard.Bloque(dir.ToString());
+        if (bloque is not null && _enVuelo.AddOrUpdate(bloque, 1, (_, n) => n + 1) > PedidosPorIp)
+        {
+            Soltar(bloque);
+            try { ctx.Response.StatusCode = 503; ctx.Response.Close(); } catch { }
+            return;
+        }
+        try { await ServeAsync(ctx, token); }
+        finally { if (bloque is not null) Soltar(bloque); }
+    }
+
+    private void Soltar(string bloque)
+    {
+        if (_enVuelo.AddOrUpdate(bloque, 0, (_, n) => n - 1) <= 0) _enVuelo.TryRemove(new KeyValuePair<string, int>(bloque, 0));
+    }
+
+    private async Task ServeAsync(HttpListenerContext ctx, CancellationToken token)
     {
         try
         {
@@ -202,7 +231,7 @@ public sealed class StaticFileServer
                 res.ContentType = "application/json; charset=utf-8";
                 res.Headers["Cache-Control"] = "no-store";   // el puerto cambia entre arranques: nunca cachear
                 res.ContentLength64 = _config.Length;
-                if (req.HttpMethod == "GET") res.OutputStream.Write(_config);
+                if (req.HttpMethod == "GET") await res.OutputStream.WriteAsync(_config, token);
                 res.OutputStream.Close();
                 return;
             }
@@ -216,7 +245,7 @@ public sealed class StaticFileServer
                 res.ContentType = "application/json; charset=utf-8";
                 res.Headers["Cache-Control"] = "no-store";
                 res.ContentLength64 = cuerpo.Length;
-                if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
+                if (req.HttpMethod == "GET") await res.OutputStream.WriteAsync(cuerpo, token);
                 res.OutputStream.Close();
                 return;
             }
@@ -240,6 +269,13 @@ public sealed class StaticFileServer
 
             string ext = Path.GetExtension(full);
             res.ContentType = Mime.TryGetValue(ext, out var m) ? m : "application/octet-stream";
+            // LA PÁGINA DEL JUEGO NO SE DEJA METER EN UN MARCO AJENO: un sitio la mostraba adentro y guiaba los clics del
+            // jugador (auditoría del 13/10). Sólo la del juego: estado.html sí va en un marco, el de la app y el del juego.
+            if (string.Equals(Path.GetFileName(full), "index.html", StringComparison.OrdinalIgnoreCase))
+            {
+                res.Headers["Content-Security-Policy"] = "frame-ancestors 'self'";
+                res.Headers["X-Frame-Options"] = "SAMEORIGIN";
+            }
 
             bool aceptaGzip = (req.Headers["Accept-Encoding"] ?? "").Contains("gzip", StringComparison.OrdinalIgnoreCase);
             if (aceptaGzip && info.Length >= MinimoParaComprimir && Comprimibles.Contains(ext))
@@ -248,7 +284,7 @@ public sealed class StaticFileServer
                 res.Headers["Content-Encoding"] = "gzip";
                 res.Headers["Vary"] = variante ? $"Accept-Encoding, {Escritorio.Cabecera}" : "Accept-Encoding";   // el proxy de por medio no puede servirle esto a un cliente sin gzip
                 res.ContentLength64 = cuerpo.Length;
-                if (req.HttpMethod == "GET") res.OutputStream.Write(cuerpo);
+                if (req.HttpMethod == "GET") await res.OutputStream.WriteAsync(cuerpo, token);
             }
             else
             {
@@ -260,13 +296,13 @@ public sealed class StaticFileServer
                 res.ContentLength64 = info.Length;
                 if (req.HttpMethod == "GET")
                 {
-                    using var fs = File.OpenRead(full);
-                    fs.CopyTo(res.OutputStream);
+                    await using var fs = File.OpenRead(full);
+                    await fs.CopyToAsync(res.OutputStream, token);
                 }
             }
             res.OutputStream.Close();
         }
-        catch (Exception ex) { Console.Error.WriteLine($"[web] error: {ex.Message}"); try { ctx.Response.Abort(); } catch { } }
+        catch (Exception ex) { LogDeRed.Linea($"[web] error: {ex.Message}", error: true); try { ctx.Response.Abort(); } catch { } }
     }
 
     /// <summary>El archivo comprimido, cacheado por (tamaño, fecha). Si el archivo cambió, se recomprime.</summary>

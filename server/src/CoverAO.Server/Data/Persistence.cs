@@ -381,8 +381,7 @@ public sealed class Persistence : IDisposable
         var migrar = CambioDeCuenta(acc.Name, c =>
         {
             if (PasswordHasher.IsModern(c.PasswordHash)) return;
-            c.PasswordHash = hash;
-            c.Salt = "";
+            c.PonerClave(hash);
         });
         _cola.Escribir($"migrar la clave de {acc.Name}", a => migrar(a));
     }
@@ -823,7 +822,7 @@ public sealed class Persistence : IDisposable
     {
         if (!AccountExists(CuentaDemo) || LoadAccount(CuentaDemo)?.VerifyPassword(ClaveDemo) != true) return false;
         string hash = PasswordHasher.HashModern(Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
-        return CambiarCuenta(CuentaDemo, c => { c.PasswordHash = hash; c.Salt = ""; }) is not null;
+        return CambiarCuenta(CuentaDemo, c => c.PonerClave(hash)) is not null;
     }
 
     /// <summary>Seeds a demo account + characters on first run so the flows work out of the box. Si la cuenta ya estaba y un
@@ -837,7 +836,7 @@ public sealed class Persistence : IDisposable
             if (LoadAccount(account)?.VerifyPassword(password) == false)
             {
                 string demo = PasswordHasher.HashModern(password);
-                CambiarCuenta(account, c => { c.PasswordHash = demo; c.Salt = ""; });
+                CambiarCuenta(account, c => c.PonerClave(demo));
             }
             return;
         }

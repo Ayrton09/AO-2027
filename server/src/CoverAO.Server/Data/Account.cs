@@ -82,11 +82,24 @@ public sealed class Account
             Encoding.ASCII.GetBytes(PasswordHash));
         if (ok)
         {
-            PasswordHash = PasswordHasher.HashModern(password);   // rehash to the slow KDF
-            Salt = "";                                            // salt now lives inside the modern hash
+            PonerClave(PasswordHasher.HashModern(password));   // rehash to the slow KDF
             upgraded = true;
         }
         return ok;
+    }
+
+    /// <summary>¿El código de recuperación sigue en el formato del VB6, SHA-256(código + sal)?</summary>
+    public bool CodigoLegado => !string.IsNullOrEmpty(UserCodeHash) && !PasswordHasher.IsModern(UserCodeHash);
+
+    /// <summary>
+    /// LA CLAVE NUEVA, ya hasheada en el formato moderno, que lleva su sal adentro. La sal vieja se borra SÓLO si el código de
+    /// recuperación ya no la necesita: el del VB6 está hecho con la misma sal que la clave (Cuentas.bas:83), y borrarla al migrar
+    /// la clave dejaba el código sin poder verificarse nunca más (auditoría del 13/10).
+    /// </summary>
+    public void PonerClave(string hashModerno)
+    {
+        PasswordHash = hashModerno;
+        if (!CodigoLegado) Salt = "";
     }
 }
 

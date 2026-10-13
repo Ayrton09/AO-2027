@@ -170,7 +170,6 @@
         <button id="btn-kickall" class="danger">🚪 Echar a todos (no-GM)</button>
         <div class="hspacer" style="flex:1"></div>
         <button id="btn-shut-b" class="danger">⏻ Apagar guardando</button>
-        <button id="btn-shut" class="danger">⏻ Apagar sin guardar</button>
       </div>
     </div>
 
@@ -411,7 +410,6 @@ function boot() {
   $('btn-backup').onclick = () => cmd('backup');
   $('btn-kickall').onclick = () => { if (confirm('¿Echar a TODOS los jugadores no-GM?')) cmd('kickAll'); };
   $('btn-shut-b').onclick = () => { if (confirm('¿Apagar el servidor guardando a los conectados?')) cmd('shutdown', { backup: true }); };
-  $('btn-shut').onclick = () => { if (confirm('¿Apagar el servidor SIN guardar? Se pierden los cambios de los que están jugando.')) cmd('shutdown', { backup: false }); };
   // eventos: botones rápidos de multiplicador por evento
   ['exp', 'gold', 'drop'].forEach(ev => {
     const host = document.querySelector(`.evbtns[data-ev="${ev}"]`);

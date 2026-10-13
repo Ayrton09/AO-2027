@@ -59,6 +59,14 @@ public sealed partial class PacketDispatcher
     private int _centinelaClave;
     private int _centinelaMinutosRestantes;
     private short _centinelaNpcCharIndex;
+    /// <summary>Claves equivocadas del que se está revisando. A las <see cref="CentinelaErroresParaPreso"/> va preso.</summary>
+    private int _centinelaErrores;
+    /// <summary>
+    /// EL QUE PRUEBA CLAVES VA PRESO A LA TERCERA. Sin tope, un macro que no lee el chat probaba claves a la velocidad del
+    /// tope de cadencia y en los dos minutos cubría más de la mitad de las 32.000 (auditoría del 13/10). Es una regla de la
+    /// casa: el centinela del original nunca corre (sus llamadas están comentadas), así que no hay conducta que preservar.
+    /// </summary>
+    private const int CentinelaErroresParaPreso = 3;
     private long _centinelaSpawnMs;
 
     /// <summary>Los que YA contestaron en esta ronda. El original lleva un flag por usuario
@@ -152,8 +160,10 @@ public sealed partial class PacketDispatcher
         }
         if (clave != _centinelaClave)
         {
-            CentinelaHabla(p, $"¡La clave que te he dicho es /CENTINELA {_centinelaClave}, escríbelo rápido!");
+            // La respuesta equivocada ya NO repite la clave: se la devolvía al macro que mandaba cualquier número.
             Console.WriteLine($"[centinela] {p.Name} respondió una clave incorrecta: {clave} - se esperaba {_centinelaClave}");
+            if (++_centinelaErrores >= CentinelaErroresParaPreso) { CentinelaVeredicto(); CentinelaSiguienteTrabajador(); return; }
+            CentinelaHabla(p, "Esa no es la clave que te he dicho.");
             return;
         }
         _centinelaRespondieron.Add(p.Name);
@@ -166,8 +176,11 @@ public sealed partial class PacketDispatcher
     /// nadie trabajando, el NPC se retira.</summary>
     private void CentinelaSiguienteTrabajador()
     {
+        // Los bots NO: trabajan como cualquiera pero no pueden contestar, y el centinela los metía presos uno tras otro
+        // (auditoría del 13/10).
         var candidato = _world.Players.FirstOrDefault(
-            pl => !pl.IsGm && pl.Trabajando > 0 && !_centinelaRespondieron.Contains(pl.Name));
+            pl => !pl.IsGm && pl.Connection is not ClientSession { EsBot: true }
+                  && pl.Trabajando > 0 && !_centinelaRespondieron.Contains(pl.Name));
         if (candidato is null) { CentinelaRetirar(); return; }
 
         _centinelaRevisando = candidato;
@@ -221,6 +234,7 @@ public sealed partial class PacketDispatcher
         _centinelaRevisando = null;
         _centinelaClave = 0;
         _centinelaMinutosRestantes = 0;
+        _centinelaErrores = 0;
         CentinelaQuitarNpc();
     }
 

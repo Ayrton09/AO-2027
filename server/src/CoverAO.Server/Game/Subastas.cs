@@ -71,6 +71,12 @@ public sealed class CentroDeSubastas
     public IReadOnlyList<Subasta> Abiertas => _subastas;
     public IReadOnlyList<EntregaDeSubasta> Pendientes => _pendientes;
 
+    /// <summary>¿El Centro tiene algo atado a este nombre? Una subasta suya, una oferta suya que va ganando, o algo para
+    /// entregarle. Con algo de eso el personaje no se puede borrar: el Centro reconoce al dueño por el nombre.</summary>
+    public bool TieneAlgo(string personaje) =>
+        _subastas.Any(s => Mismo(s.Vendedor, personaje) || (s.Comprador is not null && Mismo(s.Comprador, personaje)))
+        || _pendientes.Any(e => Mismo(e.Personaje, personaje));
+
     /// <summary>Lo que se cobra al publicar. El 1 % redondea al par, como todo porcentaje del juego (el cliente hace la misma
     /// cuenta para mostrarlo antes de publicar).</summary>
     public static long Deposito(int horas, long precioInicial, long precioFinal) =>

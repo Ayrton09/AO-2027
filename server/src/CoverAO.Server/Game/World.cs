@@ -284,7 +284,25 @@ public sealed class World
     private readonly Dictionary<string, Guild> _guilds = new(StringComparer.OrdinalIgnoreCase);
 
     public Guild? GuildByName(string name) => _guilds.GetValueOrDefault(name);
-    public void RemoveGuild(string name) => _guilds.Remove(name);
+    /// <summary>
+    /// Saca un clan del registro Y DE LAS RELACIONES DE LOS DEMÁS: las guerras, las alianzas y las propuestas se guardan por
+    /// nombre, y un clan nuevo con el nombre de uno cerrado heredaba la guerra que le habían declarado al viejo (auditoría del
+    /// 13/10). En el original van por índice y el clan nuevo toma uno nuevo (modGuilds.bas:496), así que arranca en paz.
+    /// </summary>
+    public void RemoveGuild(string name)
+    {
+        if (!_guilds.Remove(name)) return;
+        foreach (var g in _guilds.Values) OlvidarClan(g, name);
+    }
+
+    private static void OlvidarClan(Guild g, string nombre)
+    {
+        g.Enemies.Remove(nombre);
+        g.Allies.Remove(nombre);
+        g.AllianceOffers.Remove(nombre);
+        g.PeaceOffers.Remove(nombre);
+    }
+
     /// <summary>Cuántos clanes hay fundados.</summary>
     public int GuildCount => _guilds.Count;
     /// <summary>¿El registro de clanes está lleno? (VB6 <c>MAX_GUILDS = 1000</c>, modGuilds.bas:12, con su
@@ -298,6 +316,11 @@ public sealed class World
     {
         _guilds.Clear();
         foreach (var g in guilds) _guilds[g.Name] = g;
+        // Las relaciones con clanes que ya no existen, que quedaron guardadas antes de que cerrar un clan las limpiara.
+        foreach (var g in _guilds.Values)
+            foreach (var nombre in g.Enemies.Concat(g.Allies).Concat(g.AllianceOffers.Keys).Concat(g.PeaceOffers.Keys)
+                                    .Where(n => !_guilds.ContainsKey(n)).ToList())
+                OlvidarClan(g, nombre);
     }
 
     /// <summary>Creates a guild led by the founder if the name is free; returns null if it exists.</summary>

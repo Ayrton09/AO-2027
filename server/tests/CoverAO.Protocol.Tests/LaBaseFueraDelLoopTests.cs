@@ -434,6 +434,52 @@ public class LaBaseFueraDelLoopTests : IDisposable
         Assert.Contains("Aldo", (await _db.LeerCuentaAsync("cuenta"))!.Characters);
     }
 
+    /// <summary>UN BANEADO NO SE BORRA: el baneo vive en su ficha, y borrarlo dejaba el nombre libre para crearlo de nuevo sin
+    /// el baneo (auditoría del 13/10).</summary>
+    [Fact]
+    public async Task Un_personaje_baneado_no_se_borra()
+    {
+        CuentaConAldo();
+        var aldo = _db.LoadCharacter("Aldo", 0, "cuenta")!;
+        aldo.Banned = true;
+        _db.SaveCharacter(aldo);
+        _db.EsperarEscriturasPendientes();
+
+        var t = Borrar("Aldo", "tcp:10.0.0.5:2222");
+
+        Assert.True(await Esperar(() => t.Avisos().Any(a => a.Contains("baneado"))), "el borrado no lo frenó");
+        Assert.True(_db.CharacterExists("Aldo"));
+        Assert.Contains("Aldo", (await _db.LeerCuentaAsync("cuenta"))!.Characters);
+    }
+
+    /// <summary>EL CENTRO DE SUBASTAS RECONOCE AL DUEÑO POR EL NOMBRE: con algo para entregarle, el personaje no se borra, y
+    /// uno nuevo con el mismo nombre no lo cobra (auditoría del 13/10).</summary>
+    [Fact]
+    public async Task Con_algo_en_el_centro_de_subastas_no_se_borra()
+    {
+        CuentaConAldo();
+        await EnElLoop(() => { _world.Subastas.Cargar(Array.Empty<Subasta>(), new[] { new EntregaDeSubasta("Aldo", 0, 0, 500) }); return 0; });
+
+        var t = Borrar("Aldo", "tcp:10.0.0.5:2222");
+
+        Assert.True(await Esperar(() => t.Avisos().Any(a => a.Contains("Centro de Subastas"))), "el borrado no lo frenó");
+        Assert.True(_db.CharacterExists("Aldo"));
+    }
+
+    /// <summary>EL CORREO SE VA CON EL PERSONAJE, como en el original (vivía en su .chr): uno nuevo con el mismo nombre se
+    /// quedaba con las cartas y los adjuntos del borrado (auditoría del 13/10).</summary>
+    [Fact]
+    public async Task Al_borrar_un_personaje_se_va_su_correo()
+    {
+        CuentaConAldo();
+        await EnElLoop(() => { _world.DeliverMail("Aldo", new MailEntry("Beto", "para vos", 1, 1)); return 0; });
+
+        var t = Borrar("Aldo", "tcp:10.0.0.5:2222");
+
+        Assert.True(await Esperar(() => t.Avisos().Any(a => a.EndsWith("fue borrado."))), "no se borró");
+        Assert.Equal(0, await EnElLoop(() => _world.PeekMail("Aldo").Count));
+    }
+
     /// <summary>
     /// UN BANEO DEL PANEL MIENTRAS SE VERIFICA LA CLAVE: la cuenta se leyó antes del hash, sin el baneo. La lectura del
     /// personaje trae en el mismo pedido si la cuenta está baneada —la cola va en orden, así que ve el baneo— y no entra.

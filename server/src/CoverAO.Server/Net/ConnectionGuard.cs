@@ -29,6 +29,7 @@ public sealed class ConnectionGuard
     /// frenó. El global se mira primero, como el <c>NextOpenUser</c> del original (wskapiAO.bas:502).</summary>
     public Reserva Reservar(string ip)
     {
+        ip = Bloque(ip);   // el tope es por bloque: una IPv6 cuenta su /64
         lock (_gate)
         {
             if (_maxTotal > 0 && _total >= _maxTotal) return Reserva.ServidorLleno;
@@ -45,6 +46,7 @@ public sealed class ConnectionGuard
 
     public void Release(string ip)
     {
+        ip = Bloque(ip);
         lock (_gate)
         {
             if (_total > 0) _total--;
@@ -90,6 +92,23 @@ public sealed class ConnectionGuard
         if (colons == 1) return s[..s.IndexOf(':')];
         return s;
     }
+
+    /// <summary>
+    /// EL BLOQUE DE UNA DIRECCIÓN, para los cupos y los frenos: una IPv4 es ella misma, y una IPv6 es su /64. Un proveedor le
+    /// da a cada casa un /64 entero (miles de millones de direcciones), así que contar la IPv6 completa dejaba esquivar el
+    /// freno de ingresos, el tope de conexiones y el de cuentas nuevas con una dirección distinta por intento (auditoría del
+    /// 13/10). Una IPv4 escrita como IPv6 (<c>::ffff:1.2.3.4</c>) cuenta como la IPv4. Lo que no es una dirección (el
+    /// nombre de un bot) queda como está. Los baneos siguen siendo por dirección exacta.
+    /// </summary>
+    public static string Bloque(string ip)
+    {
+        string normal = NormalizeIp(ip);
+        if (!System.Net.IPAddress.TryParse(normal, out var dir)) return normal;
+        if (dir.IsIPv4MappedToIPv6) return dir.MapToIPv4().ToString();
+        if (dir.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return normal;
+        byte[] b = dir.GetAddressBytes();
+        return $"{b[0]:x2}{b[1]:x2}:{b[2]:x2}{b[3]:x2}:{b[4]:x2}{b[5]:x2}:{b[6]:x2}{b[7]:x2}::/64";
+    }
 }
 
 /// <summary>Rate-limit de intentos de login por IP (SEC-3). Frena la fuerza bruta de contraseñas y la
@@ -119,6 +138,20 @@ public sealed class LoginThrottle
         long now = Environment.TickCount64;
         lock (_gate)
             return _map.TryGetValue(ip, out var e) && e.BlockedUntilMs > now;
+    }
+
+    /// <summary>¿Llegaría al tope con <paramref name="enCurso"/> más? Para el cupo de cuentas nuevas, que cuenta también las
+    /// altas que todavía se están haciendo: las de una ráfaga en paralelo pasaban todas antes de que se anotara la primera.</summary>
+    public bool LlegariaAlTope(string ip, int enCurso)
+    {
+        long now = Environment.TickCount64;
+        lock (_gate)
+        {
+            if (!_map.TryGetValue(ip, out var e)) return enCurso >= _maxFails;
+            if (e.BlockedUntilMs > now) return true;
+            int fallos = e.WindowStartMs == 0 || now - e.WindowStartMs > _windowMs ? 0 : e.Fails;
+            return fallos + enCurso >= _maxFails;
+        }
     }
 
     /// <summary>Cuántas IPs tiene anotadas. Para el test de la purga.</summary>

@@ -82,6 +82,11 @@ public sealed partial class PacketDispatcher
         _intervaloRobar = Cadencia("IntervaloTrabajo", _ini.IntervaloTrabajo);
         _maxPersonajesPorIp = fixtureMode && !_ini.InitEscrita("MaxPersonajesPorIp") ? 0 : _ini.MaxPersonajesPorIp;
         _throttle = throttle;
+        if (throttle is not null)
+        {
+            _codigosPorCuenta = new LoginThrottle(maxFails: 5, windowMs: 3_600_000, blockMs: 3_600_000);
+            if (!fixtureMode) _verificaciones = new LoginThrottle(maxFails: 60, windowMs: 60_000, blockMs: 60_000);
+        }
         _admin = admin;
         _content = content ?? ServerContent.Default;
         _npcs = npcs;
@@ -136,10 +141,13 @@ public sealed partial class PacketDispatcher
     /// SALE se anota como un "fallo" del cupo; a la cuarta en diez minutos la IP queda bloqueada para crear
     /// (no para entrar: es otro contador). Tres cuentas cada diez minutos alcanza para cualquier persona.</summary>
     private readonly LoginThrottle? _creaciones;
+    /// <summary>Las altas que se están haciendo fuera del loop, por bloque de IP: cuentan para el cupo antes de terminar.</summary>
+    private readonly Dictionary<string, int> _altasEnCurso = new();
     private bool CreacionBloqueada(ClientSession session)
     {
         if (_creaciones is null) return false;
-        if (!_creaciones.IsBlocked(ConnectionGuard.NormalizeIp(session.RemoteEndpoint))) return false;
+        string bloque = ConnectionGuard.Bloque(session.RemoteEndpoint);
+        if (!_creaciones.LlegariaAlTope(bloque, _altasEnCurso.GetValueOrDefault(bloque))) return false;
         Reject(session, "Demasiadas cuentas creadas desde esta dirección. Esperá unos minutos.");
         return true;
     }
@@ -148,14 +156,42 @@ public sealed partial class PacketDispatcher
     private bool LoginBlocked(ClientSession session)
     {
         if (_throttle is null) return false;
-        // La IP SIN el prefijo del transporte (`NormalizeIp`): con `IpOf` quedaba "tcp:1.2.3.4" y "ws:1.2.3.4", dos frenos para
-        // la misma dirección.
-        string ip = ConnectionGuard.NormalizeIp(session.RemoteEndpoint);
+        // La IP SIN el prefijo del transporte: con `IpOf` quedaba "tcp:1.2.3.4" y "ws:1.2.3.4", dos frenos para la misma
+        // dirección. Y por BLOQUE (`ConnectionGuard.Bloque`): una IPv6 cuenta su /64 entero.
+        string ip = ConnectionGuard.Bloque(session.RemoteEndpoint);
         if (_throttle.IsBlocked(ip)) { Reject(session, "Demasiados intentos fallidos. Esperá unos minutos."); return true; }
         return false;
     }
-    private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.NormalizeIp(session.RemoteEndpoint));
-    private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.NormalizeIp(session.RemoteEndpoint));
+    private void LoginFail(ClientSession session) => _throttle?.RecordFailure(ConnectionGuard.Bloque(session.RemoteEndpoint));
+    private void LoginOk(ClientSession session) => _throttle?.RecordSuccess(ConnectionGuard.Bloque(session.RemoteEndpoint));
+
+    /// <summary>LAS VERIFICACIONES POR BLOQUE DE IP, salgan bien o mal. El freno de arriba cuenta fallos, y con una cuenta propia
+    /// y diez conexiones se sostenía un PBKDF2 tras otro sin fallar nunca: el CPU del server, para el que entraba una y otra vez
+    /// (auditoría del 13/10). Sesenta por minuto alcanzan para una casa o un ciber entero; null en los tests y con --fixture,
+    /// donde los flows entran de a muchos desde la misma máquina.</summary>
+    private readonly LoginThrottle? _verificaciones;
+    private bool VerificacionesDeMas(ClientSession session)
+    {
+        if (_verificaciones is null) return false;
+        string bloque = ConnectionGuard.Bloque(session.RemoteEndpoint);
+        if (_verificaciones.IsBlocked(bloque)) { Reject(session, "Demasiados ingresos seguidos desde tu conexión. Esperá un minuto."); return true; }
+        _verificaciones.RecordFailure(bloque);   // "fallo" acá es "una más": el contador no distingue
+        return false;
+    }
+
+    /// <summary>EL CÓDIGO DE RECUPERACIÓN, CON TOPE POR CUENTA. Son 11.110 combinaciones (de uno a cuatro dígitos) y el único
+    /// freno era el de la IP, que se esquiva repartiendo los intentos entre direcciones (auditoría del 13/10). Cinco códigos
+    /// equivocados en una hora cierran la recuperación de ESA cuenta por una hora; entrar con la contraseña sigue andando,
+    /// así que nadie le bloquea la cuenta al dueño.</summary>
+    private readonly LoginThrottle? _codigosPorCuenta;
+    private bool CodigoBloqueado(ClientSession session, string cuenta, byte tipo)
+    {
+        if (_codigosPorCuenta is null || tipo != TipoRecuperarCuenta) return false;
+        if (!_codigosPorCuenta.IsBlocked(cuenta.ToLowerInvariant())) return false;
+        session.Send(ServerMessages.SendMsgBox("Demasiados códigos equivocados para esta cuenta. Probá de nuevo en una hora.", 0));
+        session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0"));
+        return true;
+    }
 
     /// <summary>
     /// EL TURNO DE UNA VERIFICACIÓN, el PBKDF2 que corre fuera del loop. Va una por conexión (<see cref="ClientSession.TomarVerificacion"/>);
@@ -175,7 +211,7 @@ public sealed partial class PacketDispatcher
             _loop.Enqueue(() => { session.EsperasDeVerificacion--; reintentar(); });
             return false;
         }
-        if (frenado()) { SoltarYReanudar(session); return false; }
+        if (frenado() || VerificacionesDeMas(session)) { SoltarYReanudar(session); return false; }
         return true;
     }
 
@@ -186,6 +222,7 @@ public sealed partial class PacketDispatcher
     private void EntroALaCuenta(ClientSession session, Data.Account acc)
     {
         LoginOk(session);
+        session.EntroLaCuenta();
         _db.AnotarIngreso(acc.Name, ConnectionGuard.NormalizeIp(session.RemoteEndpoint));   // la misma forma que un baneo por IP
     }
 
@@ -799,6 +836,8 @@ public sealed partial class PacketDispatcher
         if (session.Cerrada) return;
         if (!TurnoDeVerificar(session, () => CrearCuentaFueraDelLoop(session, account, password, userCode),
                               () => CreacionBloqueada(session) || LoginBlocked(session))) return;
+        string bloque = ConnectionGuard.Bloque(session.RemoteEndpoint);
+        _altasEnCurso[bloque] = _altasEnCurso.GetValueOrDefault(bloque) + 1;
         Task.Run(() =>
         {
             bool existia = false, creada = false;
@@ -822,6 +861,8 @@ public sealed partial class PacketDispatcher
             catch (Exception ex) { Console.Error.WriteLine($"[{session.RemoteEndpoint}] crear cuenta: {ex.Message}"); }
             _loop.Enqueue(() =>
             {
+                if (_altasEnCurso[bloque] <= 1) _altasEnCurso.Remove(bloque); else _altasEnCurso[bloque]--;
+                if (creada) _creaciones?.RecordFailure(bloque);   // una creación que salió consume cupo, aunque el cliente ya no esté
                 session.SoltarVerificacion();
                 // El cliente se pudo haber ido mientras se hasheaba (o lo cerró el timeout de autenticación).
                 if (session.Cerrada) return;
@@ -834,7 +875,7 @@ public sealed partial class PacketDispatcher
                     if (existia) { LoginFail(session); Cartel(session, CartelYaExisteLaCuenta); return; }
                     if (!creada) { AvisoNumeradoYCerrar(session, 36, "no se pudo crear la cuenta"); return; }   // el aviso genérico de error
                     LoginOk(session);
-                    _creaciones?.RecordFailure(ConnectionGuard.NormalizeIp(session.RemoteEndpoint));   // una creación que salió consume cupo
+                    session.EntroLaCuenta();
                     Console.WriteLine($"[{session.RemoteEndpoint}] CUENTA CREADA account={account}");
                     // Lista de personajes vacía, para que el cliente siga a crear el primero.
                     session.Send(ServerMessages.AddPj(account, Array.Empty<CharacterSummary>()));
@@ -895,11 +936,10 @@ public sealed partial class PacketDispatcher
         {
             if (LoginBlocked(session)) return;
             // El nombre arma la ruta del archivo: se valida ANTES de tocar el disco (path traversal).
+            // Lo mismo que la clave equivocada, y si está conectado se mira DESPUÉS de la clave: antes del hash, el cartel decía
+            // qué cuentas existen y quién estaba jugando a cualquiera que mandara nombres (auditoría del 13/10).
             if (!Naming.IsValidName(cuenta) || !Naming.IsValidName(personaje))
-            { LoginFail(session); session.Send(ServerMessages.SendMsgBox(ErrCuentaNoExiste, 1)); return; }
-            // Conectado: no se borra. Se mira en el mundo, que es la autoridad de quién está adentro.
-            if (_world.PlayerByName(personaje) is not null)
-            { session.Send(ServerMessages.SendMsgBox("Ese personaje está conectado. Salí del juego y volvé a intentarlo.", 1)); return; }
+            { LoginFail(session); session.Send(ServerMessages.SendMsgBox(ErrClaveIncorrecta, 1)); return; }
             BorrarPersonajeFueraDelLoop(session, cuenta, clave, personaje);
         });
     }
@@ -950,7 +990,7 @@ public sealed partial class PacketDispatcher
                 {
                     SoltarYReanudar(session);
                     LoginFail(session);
-                    session.Send(ServerMessages.SendMsgBox(acc is null ? ErrCuentaNoExiste : ErrClaveIncorrecta, 1));
+                    session.Send(ServerMessages.SendMsgBox(ErrClaveIncorrecta, 1));
                     return;
                 }
                 LoginOk(session);
@@ -982,20 +1022,34 @@ public sealed partial class PacketDispatcher
             return;
         }
         if (!Decidible(personaje, () => ApartarSiNoEstaAdentro(session, cuenta, personaje))) return;   // un cambio de GM en curso
+        // LO QUE VA ATADO AL NOMBRE NO SE BORRA CON ÉL: el Centro de Subastas reconoce al dueño por el nombre, y uno que se
+        // creara después con el mismo cobraba la subasta, el objeto o el oro que se le debía al borrado (auditoría del 13/10).
+        if (_world.Subastas.TieneAlgo(personaje))
+        {
+            SoltarYReanudar(session);
+            session.Send(ServerMessages.SendMsgBox("Ese personaje tiene subastas abiertas o algo para retirar en el Centro de Subastas: no se puede borrar todavía.", 1));
+            return;
+        }
         _world.ReservarEntrada(personaje);
         Task.Run(() =>
         {
-            bool borrado = false;
+            bool borrado = false, baneado = false;
             var roster = new List<CharacterSummary>();
             try
             {
-                borrado = _db.ArchivarCharacter(personaje);
-                // Se lo saca de la cuenta GUARDADA: la leída antes del hash, guardada entera, pisaría lo que cambió en el
-                // medio (Persistence.CambiarCuenta).
-                var acc = _db.CambiarCuenta(cuenta, c => c.Characters.RemoveAll(
-                    n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase)));
-                foreach (var n in acc?.Characters ?? new List<string>())
-                    if (_db.LoadSummary(n) is { } s) roster.Add(s);
+                // UN BANEADO NO SE BORRA: el baneo vive en su ficha, y borrarlo dejaba el nombre libre para crearlo de nuevo sin
+                // el baneo (auditoría del 13/10).
+                baneado = _db.LoadCharacter(personaje, 0, cuenta)?.Banned == true;
+                if (!baneado)
+                {
+                    borrado = _db.ArchivarCharacter(personaje);
+                    // Se lo saca de la cuenta GUARDADA: la leída antes del hash, guardada entera, pisaría lo que cambió en el
+                    // medio (Persistence.CambiarCuenta).
+                    var acc = _db.CambiarCuenta(cuenta, c => c.Characters.RemoveAll(
+                        n => string.Equals(n, personaje, StringComparison.OrdinalIgnoreCase)));
+                    foreach (var n in acc?.Characters ?? new List<string>())
+                        if (_db.LoadSummary(n) is { } s) roster.Add(s);
+                }
             }
             catch (Exception ex)
             {
@@ -1004,8 +1058,21 @@ public sealed partial class PacketDispatcher
             _loop.Enqueue(() =>
             {
                 _world.SoltarEntrada(personaje);
+                // EL CORREO SE VA CON EL PERSONAJE, como en el original, donde vivía adentro de su .chr y se borraba con él
+                // (FileIO.bas:1836): uno nuevo con el mismo nombre se quedaba con las cartas y los adjuntos del borrado.
+                if (borrado && _world.PeekMail(personaje).Count > 0)
+                {
+                    _world.PeekMail(personaje).Clear();
+                    PersistMail(personaje);
+                    _world.DropMailboxIfEmpty(personaje);
+                }
                 SoltarYReanudar(session);
                 if (session.Cerrada) return;
+                if (baneado)
+                {
+                    session.Send(ServerMessages.SendMsgBox("Ese personaje está baneado: no se puede borrar.", 1));
+                    return;
+                }
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
                 session.Send(ServerMessages.AddPj(cuenta, roster));   // la pantalla de seleccion, ya sin el
                 session.Send(ServerMessages.SendMsgBox($"{personaje} fue borrado.", 1));
@@ -1046,7 +1113,8 @@ public sealed partial class PacketDispatcher
     {
         bool corta = nuevaClave.Length < _ini.ClaveMinima;   // ClaveMinima del Server.ini; se contesta después del pin
         if (session.Cerrada) return;
-        if (!TurnoDeVerificar(session, () => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo), () => LoginBlocked(session)))
+        if (!TurnoDeVerificar(session, () => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo),
+                              () => LoginBlocked(session) || CodigoBloqueado(session, account, tipo)))
             return;
         Task.Run(() =>
         {
@@ -1068,7 +1136,13 @@ public sealed partial class PacketDispatcher
                     if (pinOk && !corta)
                     {
                         string hash = PasswordHasher.HashModern(nuevaClave);
-                        _db.CambiarCuenta(account, c => { c.PasswordHash = hash; c.Salt = ""; });
+                        // Un código del VB6 que acaba de verificar se pasa al formato moderno: sólo ahora se lo conoce.
+                        string? codigo = tipo == TipoRecuperarCuenta && acc.CodigoLegado ? PasswordHasher.HashModern(pin) : null;
+                        _db.CambiarCuenta(account, c =>
+                        {
+                            if (codigo is not null && c.CodigoLegado) c.UserCodeHash = codigo;
+                            c.PonerClave(hash);
+                        });
                     }
                 }
             }
@@ -1106,6 +1180,7 @@ public sealed partial class PacketDispatcher
                     else
                     {
                         LoginFail(session);
+                        if (tipo == TipoRecuperarCuenta) _codigosPorCuenta?.RecordFailure(account.ToLowerInvariant());
                         session.Send(ServerMessages.SendMsgBox(
                             tipo == TipoCambiarClave ? ErrClaveIncorrecta : ErrCodigoIncorrecto, 1));
                     }
@@ -1531,9 +1606,9 @@ public sealed partial class PacketDispatcher
     private bool TopeDePersonajesPorIp(ClientSession session)
     {
         if (_maxPersonajesPorIp <= 0) return false;
-        string ipNueva = ConnectionGuard.NormalizeIp(session.RemoteEndpoint);
+        string ipNueva = ConnectionGuard.Bloque(session.RemoteEndpoint);   // una IPv6 cuenta su /64
         int desdeEstaIp = _world.Players.Count(pl => pl.Connection is not null
-            && ConnectionGuard.NormalizeIp(pl.Connection.RemoteEndpoint) == ipNueva);
+            && ConnectionGuard.Bloque(pl.Connection.RemoteEndpoint) == ipNueva);
         if (desdeEstaIp < _maxPersonajesPorIp) return false;
         session.Send(ServerMessages.ShowMessageBox(
             $"Ya hay {desdeEstaIp} personaje(s) jugando desde tu conexión; el máximo es {_maxPersonajesPorIp}."));
@@ -4841,9 +4916,11 @@ public sealed partial class PacketDispatcher
         var p = session.Player;
         if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8794: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         // /INFO también sobre un personaje OFFLINE (VB6 HandleRequestCharInfo lee su .chr): sólo lectura.
-        ConElPersonaje(name, (t, _) =>
+        ConElPersonaje(name, (t, vivo) =>
         {
             if (t is null) { session.Send(ServerMessages.ConsoleMsg($"Usuario inexistente: {name}", FuenteInfo)); return; }
+            // De un Dios o un Admin CONECTADO no se da la ficha: "don't allow to retrieve administrator's info" (Protocol.bas:8043).
+            if (vivo is not null && (vivo.Privileges & (PrivUser | PrivConsejero | PrivSemiDios)) == 0) return;
             session.Send(ServerMessages.CharacterInfo(t)); // structured sheet for the client's /INFO window
             session.Send(ServerMessages.ConsoleMsg($"Info de {t.Name}: clase {t.Class}, nivel {t.Level}, oro {t.Gold}, clan '{t.GuildName}'.", FuenteInfo));
         });
@@ -5383,7 +5460,8 @@ public sealed partial class PacketDispatcher
     private void GmRecargarIni(ClientSession session)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        // Como el resto de los /RELOAD: ni el Consejero, ni el SemiDios, ni el RoleMaster (Protocol.bas:10222).
+        if (p is null || (p.Privileges & (PrivUser | PrivConsejero | PrivSemiDios | PrivRoleMaster)) != 0) return;
         if (!_ini.Recargar())
         {
             session.Send(ServerMessages.ConsoleMsg("No hay Server.ini de dónde releer (el server anda con los valores por defecto).", FuenteInfo));
@@ -5717,9 +5795,16 @@ public sealed partial class PacketDispatcher
         Console.WriteLine($"[{session.RemoteEndpoint}] /SHOWCMSG {p.Name} -> <{g.Name}>");
     }
 
-    /// <summary>Nombres de los jugadores conectados desde esa IP (VB6: el loop <c>For loopc = 1 To LastUser</c>).</summary>
-    private string PlayersFromIp(string ip) =>
-        string.Join(", ", _world.Players.Where(pl => IpOfPlayer(pl) == ip).Select(pl => pl.Name));
+    /// <summary>Nombres de los jugadores conectados desde esa IP (VB6: el loop <c>For loopc = 1 To LastUser</c>), sólo los de
+    /// los rangos que el GM puede ver (<see cref="RangosVisibles"/>).</summary>
+    private string PlayersFromIp(string ip, int rangos) =>
+        string.Join(", ", _world.Players.Where(pl => IpOfPlayer(pl) == ip && (pl.Privileges & rangos) != 0).Select(pl => pl.Name));
+
+    /// <summary>LOS RANGOS QUE UN GM VE en /NICK2IP e /IP2NICK: un Dios o un Admin, todos; los demás, sólo a los usuarios
+    /// (el <c>priv</c> de HandleNickToIP y HandleIPToNick, Protocol.bas:8933 y 9032).</summary>
+    private static int RangosVisibles(Player gm) => (gm.Privileges & (PrivDios | PrivAdmin)) != 0
+        ? PrivUser | PrivConsejero | PrivSemiDios | PrivDios | PrivAdmin
+        : PrivUser;
 
     /// <summary>
     /// /EJECUTAR (VB6 HandleExecute, Protocol.bas:8557): mata al instante a un jugador ONLINE. Si el objetivo
@@ -5754,9 +5839,11 @@ public sealed partial class PacketDispatcher
         if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:8899: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
         var t = _world.PlayerByName(nick.Replace('+', ' ').Trim());
         if (t is null) { session.Send(ServerMessages.LocaleMsg(80)); return; }
+        int rangos = RangosVisibles(p!);
+        if ((t.Privileges & rangos) == 0) return;   // un rango que no ve: el original calla
         string ip = IpOfPlayer(t);
         session.Send(ServerMessages.ConsoleMsg($"El ip de {t.Name} es {ip}", 3));
-        session.Send(ServerMessages.ConsoleMsg($"Los personajes con ip {ip} son: {PlayersFromIp(ip)}", 3));
+        session.Send(ServerMessages.ConsoleMsg($"Los personajes con ip {ip} son: {PlayersFromIp(ip, rangos)}", 3));
         Console.WriteLine($"[{session.RemoteEndpoint}] /NICK2IP {p!.Name} -> {t.Name} ({ip})");
     }
 
@@ -5766,7 +5853,7 @@ public sealed partial class PacketDispatcher
     {
         var p = session.Player;
         if (!IsSemiDiosOrHigher(p)) return;   // VB6 Protocol.bas:9001: Admin/Dios/SemiDios, NO Consejero ni RoleMaster
-        session.Send(ServerMessages.ConsoleMsg($"Los personajes con ip {ip} son: {PlayersFromIp(ip)}", 3));
+        session.Send(ServerMessages.ConsoleMsg($"Los personajes con ip {ip} son: {PlayersFromIp(ip, RangosVisibles(p!))}", 3));
         Console.WriteLine($"[{session.RemoteEndpoint}] /IP2NICK {p!.Name} -> {ip}");
     }
 
@@ -5781,14 +5868,14 @@ public sealed partial class PacketDispatcher
     /// le contesta nada al GM —ni con la criatura, ni sin lugar, ni con un número que no existe—: sólo lo anota en
     /// el log de GMs.</para>
     ///
-    /// Sobre el gate: el original usa una máscara distinta a la de /INV (bloquea SemiDios, permite RoleMaster),
-    /// pero esa asimetría es inalcanzable en este install —sólo el tier Dios existe, y Dios pasa TODAS las
-    /// máscaras (ver fase5/GAPS-CODIGO-MUERTO.md)—, así que se usa el mismo RequireGm que el resto del toolset.
+    /// El gate es el del original: ni el Consejero ni el SemiDios (Protocol.bas:10985 y 11024); el RoleMaster sí. Acá había
+    /// un RequireGm, con el argumento de que sólo existía el tier Dios, pero el Server.ini trae las cinco listas y un host que
+    /// llenara Consejeros le daba a ese rango criaturas con reaparición donde quisiera (auditoría del 13/10).
     /// </summary>
     private void GmCreateNpc(ClientSession session, short npcIndex)
     {
         var p = session.Player;
-        if (!RequireGm(session, p)) return;
+        if (p is null || (p.Privileges & (PrivUser | PrivConsejero | PrivSemiDios)) != 0) return;
         var template = _data.Npc(npcIndex);
         if (npcIndex < 1 || template is null || _npcs is null) return;
         if (_npcs.GmSpawn(template, p!.Pos) != 0)
@@ -7497,7 +7584,7 @@ public sealed partial class PacketDispatcher
             // VB6 DoRobar: la mitad de las veces, y SÓLO si es Ladrón, se roba un ÍTEM en vez de oro.
             if (_rng.Next(1, 51) < 25 && p.Class == 5)
             {
-                if (TieneObjetosRobables(victima)) RobarObjeto(session, p, victima);
+                if (TieneObjetosRobables(victima)) { RobarObjeto(session, p, victima); GuardarElRobo(p, victima); }
                 else session.Send(ServerMessages.ConsoleMsg($"{victima.Name} no tiene objetos.", FuenteInfo));
                 RaiseSkill(session, p, GameLimits.SkillRobar);
                 return;
@@ -7513,6 +7600,7 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.ConsoleMsg($"Le has robado {n} monedas de oro a {victima.Name}", FuenteInfo));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
                 victima.Connection?.Send(ServerMessages.UpdateGold(victima.Gold));
+                GuardarElRobo(p, victima);
             }
             else
             {
@@ -7525,6 +7613,14 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.ConsoleMsg("¡No has logrado robar nada!", FuenteInfo));
             victima.Connection?.Send(ServerMessages.ConsoleMsg($"¡{p.Name} ha intentado robarte!", FuenteInfo));
         }
+    }
+
+    /// <summary>UN ROBO SE GUARDA EN EL ACTO, la víctima primero: si el ladrón se desconectaba (y se guardaba) antes del autosave
+    /// de la víctima, una caída dejaba lo robado en las dos fichas (auditoría del 13/10). La cola escribe en orden.</summary>
+    private void GuardarElRobo(Player ladron, Player victima)
+    {
+        _db.SaveCharacter(victima);
+        _db.SaveCharacter(ladron);
     }
 
     /// <summary>VB6 <c>ObjEsRobable</c> (Trabajo.bas:1638): qué ítem se puede hurtar. No se roban llaves,
@@ -7827,6 +7923,9 @@ public sealed partial class PacketDispatcher
         }
         _economia?.Anotar($"correo {p.Name} retira {m.Amount} x obj {m.ObjIndex} (de {m.Sender})");
         box[i] = m with { ObjIndex = 0, Amount = 0 };   // la carta se queda, sin adjunto
+        // EL INVENTARIO SE GUARDA ANTES QUE EL BUZÓN, como el remitente al mandar: el buzón salía en medio segundo y el
+        // inventario recién en el autosave, y una caída en el medio perdía el objeto (auditoría del 13/10).
+        _db.SaveCharacter(p);
         PersistMail(p.Name);
     }
 
@@ -9388,7 +9487,9 @@ public sealed partial class PacketDispatcher
     /// </summary>
     private void HandleTrain(ClientSession session, byte petIndex)
     {
-        if (petIndex is not (1 or 2) && Imposible(session, $"entrenó la criatura {petIndex}")) return;
+        // Sólo el 0 es imposible: el cliente del original lista TODAS las criaturas del entrenador (hay uno con cinco), y el 3, el
+        // 4 o el 5 se anotaban como trampa (auditoría del 13/10). Fuera de la lista de este entrenador es silencio, más abajo.
+        if (petIndex == 0 && Imposible(session, "entrenó la criatura 0")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10076,6 +10177,10 @@ public sealed partial class PacketDispatcher
                 // DESCONECTADO (VB6: GetVar + WriteVar sobre el .chr): se descuenta ya y se acredita en la cola; si la
                 // acreditación no llega, el oro vuelve. Ver el comentario del método.
                 p.Bank -= amount;
+                // EL QUE PIERDE SE GUARDA PRIMERO: la acreditación sale por la cola en el acto, y la ficha del que manda esperaba
+                // al autosave. Una caída en el medio dejaba el oro en las dos (auditoría del 13/10). Ante una caída, mejor perder
+                // que duplicar: la cola escribe en orden.
+                _db.SaveCharacter(p);
                 string quien = p.Name;
                 CambiarDesconectado(targetName, _db.AcreditarBovedaAsync(targetName, amount), saldo =>
                 {
@@ -10088,6 +10193,8 @@ public sealed partial class PacketDispatcher
             {
                 p.Bank -= amount;
                 target.Bank += amount;
+                _db.SaveCharacter(p);        // el que pierde primero, como con un desconectado
+                _db.SaveCharacter(target);
                 target.Connection?.Send(ServerMessages.UpdateGold(target.Gold));
                 // El espacio que falta entre el nombre y el "ha" es del original (`"¡" & .Name & "ha transferido "`,
                 // Protocol.bas:15847). Va tal cual: no es un typo nuestro.

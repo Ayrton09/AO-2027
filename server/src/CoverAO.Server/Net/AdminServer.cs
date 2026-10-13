@@ -259,7 +259,7 @@ public sealed class AdminServer
             // la lee y de ahí en más manda `X-Admin-Token`.
             // En tiempo constante: el panel es loopback, pero un `!=` de strings corta en el primer byte distinto y
             // no cuesta nada no dejar ese reloj.
-            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            if (_token.Length == 0 || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(req.Headers["X-Admin-Token"] ?? ""), Encoding.UTF8.GetBytes(_token)))
             {
                 res.StatusCode = 401; await WriteText(res, "{\"error\":\"token invalido\"}", "application/json");
@@ -378,7 +378,6 @@ public sealed class AdminServer
         string action = cmd.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
         int charIndex = cmd.TryGetProperty("charIndex", out var ci) && ci.TryGetInt32(out var civ) ? civ : 0;
         string message = cmd.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
-        bool backup = cmd.TryGetProperty("backup", out var b) && b.ValueKind == JsonValueKind.True;
         string name = cmd.TryGetProperty("name", out var nm) ? nm.GetString()?.Trim() ?? "" : "";
         int GetInt(string prop, int def) => cmd.TryGetProperty(prop, out var v) && v.TryGetInt32(out var iv) ? iv : def;
         string GetStr(string prop) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()?.Trim() ?? "" : "";
@@ -419,15 +418,19 @@ public sealed class AdminServer
                 if (_backup is null) return Fail("backup no disponible");
                 _loop.Enqueue(() => _backup("manual (panel)"));
                 return Ok("haciendo backup del mundo");
+            // EL APAGADO SIEMPRE GUARDA: el apagado ordenado guarda a todos los conectados de todas formas, y el "Apagar sin
+            // guardar" que había en el panel prometía descartar los cambios sin hacerlo (auditoría del 13/10). Para deshacer
+            // algo, lo que sirve es restaurar un backup.
             case "shutdown":
                 _loop.Enqueue(() =>
                 {
-                    if (backup) { foreach (var p in _world.Players.ToArray()) _db.SaveCharacter(p); Console.WriteLine("[admin] guardando a los conectados antes de apagar"); }
+                    foreach (var p in _world.Players.ToArray()) _db.SaveCharacter(p);
+                    Console.WriteLine("[admin] guardando a los conectados antes de apagar");
                     _world.Broadcast(ServerMessages.ConsoleMsg("El servidor se está apagando. ¡Hasta la próxima!", 0));
-                    Console.WriteLine($"[admin] APAGANDO el servidor ({(backup ? "guardando" : "sin guardar")})");
+                    Console.WriteLine("[admin] APAGANDO el servidor (guardando)");
                 });
-                _ = Task.Run(async () => { await Task.Delay(800); _shutdown(backup); });
-                return Ok($"apagando ({(backup ? "guardando" : "sin guardar")})");
+                _ = Task.Run(async () => { await Task.Delay(800); _shutdown(true); });
+                return Ok("apagando (guardando)");
 
             // --- Eventos y mantenimiento (frmMain/frmServidor del VB6) ---
             case "setEvent":

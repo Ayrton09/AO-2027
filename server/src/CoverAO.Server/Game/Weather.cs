@@ -71,6 +71,10 @@ public static class Weather
     /// <summary>¿Hay un override de GM en curso? Lo mira el tick del reloj para no pisarlo.</summary>
     public static bool Forzado => _forzado is not null;
 
+    /// <summary>El reloj vuelve a mandar. Lo llama el tick del reloj en su PRÓXIMO cambio: un /LLUVIA dura hasta ahí. Antes
+    /// duraba para siempre, aunque el GM lo apagara, y el reloj no volvía a regir hasta reiniciar (auditoría del 13/10).</summary>
+    public static void Soltar() => _forzado = null;
+
     /// <summary>The RainToggle "clima" byte the client reads: 1 = raining, 0 = clear.</summary>
     public static byte Clima(WeatherState s) => (byte)(s == WeatherState.Lluvia ? 1 : 0);
 

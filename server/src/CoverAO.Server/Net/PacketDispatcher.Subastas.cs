@@ -22,12 +22,19 @@ public sealed partial class PacketDispatcher
     /// <summary>El doble clic al Subastador: abre la ventana.</summary>
     private void AbrirSubastas(ClientSession session) => session.Send(ListaDeSubastas(abrir: true));
 
+    /// <summary>La última lista armada: con el Centro lleno son unas 2000 filas, y se arma de nuevo sólo si cambió algo o pasó
+    /// un segundo (el tiempo que queda de cada subasta va en segundos).</summary>
+    private (bool abrir, long cambios, long ahora, byte[] lista)? _ultimaLista;
+
     private byte[] ListaDeSubastas(bool abrir)
     {
         long ahora = RelojDeSubastas();
+        if (_ultimaLista is { } u && u.abrir == abrir && u.cambios == _world.Subastas.Cambios && u.ahora == ahora) return u.lista;
         var filas = _world.Subastas.Abiertas.Select(s => new ServerMessages.FilaDeSubasta(s.Id, s.Objeto, s.Cantidad,
             s.PrecioActual, s.PrecioFinal, s.Vendedor, s.Termina - ahora, s.Comprador ?? "")).ToList();
-        return ServerMessages.SubastasLista(abrir, filas);
+        var lista = ServerMessages.SubastasLista(abrir, filas);
+        _ultimaLista = (abrir, _world.Subastas.Cambios, ahora, lista);
+        return lista;
     }
 
     /// <summary>El Subastador clickeado, si está a tiro; si no, avisa y devuelve null.</summary>
@@ -40,9 +47,16 @@ public sealed partial class PacketDispatcher
         return n;
     }
 
+    /// <summary>UNA LISTA POR SEGUNDO POR PERSONAJE: con el Centro lleno cada pedido son decenas de KB, y diez conexiones
+    /// pidiéndola sin parar trababan el loop y la salida de todos (auditoría del 13/10). Lo que llega antes se descarta.</summary>
     private void HandleSubastasPedir(ClientSession session) => _loop.Enqueue(() =>
     {
-        if (session.Player is { } p && SubastadorAMano(session, p) is not null) session.Send(ListaDeSubastas(abrir: false));
+        if (session.Player is not { } p) return;
+        long ahoraMs = Environment.TickCount64;
+        if (ahoraMs - p.UltimaListaDeSubastasMs < 1000) return;
+        if (SubastadorAMano(session, p) is null) return;
+        p.UltimaListaDeSubastasMs = ahoraMs;
+        session.Send(ListaDeSubastas(abrir: false));
     });
 
     private void HandleSubastaPublicar(ClientSession session, ByteQueueReader r)

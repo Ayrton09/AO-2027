@@ -545,8 +545,10 @@ public static class ServerMessages
 
     /// <summary>A character's full info sheet (id 73 = CharacterInfo), for the GM /INFO command. Layout from WriteCharacterInfo
     /// (Protocol.bas:13843): name, race/class/gender/level, gold, bank, 3×ASCIIString (petitions/current/prev
-    /// guild), 2×Boolean (RoyalArmy/CaosLegion), 2×Long (citizens/criminals killed). Petitions/army/faction-kill
-    /// data isn't modeled in the slice → empty/0 (byte-accurate layout regardless).</summary>
+    /// guild), 2×Boolean (RoyalArmy/CaosLegion), 2×Long (citizens/criminals killed). Los bandos y los dos contadores salen
+    /// del personaje, como en el original (<c>EjercitoReal</c>, <c>EjercitoCaos</c>, <c>CiudMatados</c> y <c>ReneMatados</c>
+    /// de su .chr, modGuilds.bas:2071): iban cableados en 0 aunque el personaje los lleva. Los pedidos y el clan anterior
+    /// no se modelan: van vacíos.</summary>
     public static byte[] CharacterInfo(Player p) =>
         new ByteQueueWriter()
             .WritePacketId(ServerPacketId.CharacterInfo)
@@ -555,8 +557,8 @@ public static class ServerMessages
             .WriteByte(p.Level)
             .WriteLong(p.Gold).WriteLong(Tope32(p.Bank))
             .WriteAsciiString("").WriteAsciiString(p.GuildName).WriteAsciiString("")
-            .WriteBoolean(false).WriteBoolean(false)
-            .WriteLong(0).WriteLong(0)
+            .WriteBoolean(p.IsArmada).WriteBoolean(p.IsCaos)
+            .WriteLong(p.CiudadanosMatados).WriteLong(p.RenegadosMatados)
             .ToArray();
 
     /// <summary>Ficha de estadísticas (id 61) — VB6 <c>WriteMiniStats</c> (Protocol.bas:13373). Layout, en

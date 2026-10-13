@@ -58,7 +58,16 @@ public sealed class TcpGameServer
         {
             while (!token.IsCancellationRequested)
             {
-                var client = await listener.AcceptTcpClientAsync(token);
+                // UN ACCEPT QUE FALLA NO APAGA EL PUERTO: un error del sistema (sin descriptores libres, una conexión que se
+                // cortó en el saludo) salía del bucle y el puerto clásico dejaba de aceptar hasta reiniciar (auditoría del 13/10).
+                TcpClient client;
+                try { client = await listener.AcceptTcpClientAsync(token); }
+                catch (SocketException e)
+                {
+                    LogDeRed.Linea($"[tcp] accept: {e.Message}", error: true);
+                    await Task.Delay(200, token);
+                    continue;
+                }
                 client.NoDelay = true;
                 _ = Task.Run(() => HandleClientAsync(client, token), token);
             }
@@ -80,20 +89,20 @@ public sealed class TcpGameServer
         var reserva = _guard?.Reservar(ip) ?? ConnectionGuard.Reserva.Hecha;
         if (reserva == ConnectionGuard.Reserva.ServidorLleno)
         {
-            Console.WriteLine($"[tcp:{remote}] rechazado (servidor lleno)");
+            LogDeRed.Linea($"[tcp:{remote}] rechazado (servidor lleno)");
             await AvisarYCortar(client, ConnectionGuard.AvisoServidorLleno);
             return;
         }
         if (_admin?.IsIpBanned(ip) == true)   // IP baneada desde el panel
         {
             if (reserva == ConnectionGuard.Reserva.Hecha) _guard!.Release(ip);
-            Console.WriteLine($"[tcp:{remote}] rechazado (IP baneada)");
+            LogDeRed.Linea($"[tcp:{remote}] rechazado (IP baneada)");
             await AvisarYCortar(client, ConnectionGuard.AvisoIpBloqueada);
             return;
         }
         if (reserva == ConnectionGuard.Reserva.TopeDeLaIp)   // cap por-IP: rechaza el flood
         {
-            Console.WriteLine($"[tcp:{remote}] rechazado (cap de conexiones)");
+            LogDeRed.Linea($"[tcp:{remote}] rechazado (cap de conexiones)");
             try { client.Close(); } catch { }
             return;
         }
@@ -124,12 +133,15 @@ public sealed class TcpGameServer
                 msPorConsulta: _msPorConsulta, rafagaConsultas: _rafagaConsultas);
             acquired = false;   // el slot lo libera el onClose de la sesión
             lock (_sessions) _sessions.Add(session);
-            Console.WriteLine($"[{session.RemoteEndpoint}] conectado{(_tlsCert is not null ? " (TLS)" : "")}");
+            LogDeRed.Linea($"[{session.RemoteEndpoint}] conectado{(_tlsCert is not null ? " (TLS)" : "")}");
             await session.ReceiveLoopAsync(token);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[tcp:{remote}] error: {ex.Message}");
+            LogDeRed.Linea($"[tcp:{remote}] error: {ex.Message}", error: true);
+            // Con la sesión ya armada, el lugar del cupo lo suelta su cierre (el onClose): si falló antes de que su bucle
+            // arrancara, nadie la cerraba y el lugar quedaba tomado para siempre (auditoría del 13/10).
+            try { session?.Close("error al conectar"); } catch { }
             try { client.Close(); } catch { }
         }
         finally
