@@ -191,6 +191,13 @@ public sealed class ServerIni
     /// archivo. Sin este aviso, una versión puede agregar una regla que cambia el juego y el que hostea no se
     /// entera de que existe ni de con qué valor está corriendo.</para>
     /// </summary>
+    /// <summary>
+    /// LAS CLAVES QUE CAMBIARON DE NOMBRE: (sección, nombre viejo) → nombre nuevo. Al rearmar el Server.ini de un host
+    /// (<see cref="RearmadoDelIni"/>), el valor que tenía con el nombre viejo pasa al nuevo. Vacía hasta que se renombre una.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<(string Seccion, string Vieja), string> ClavesRenombradas =
+        new Dictionary<(string, string), string>();
+
     public static readonly string[] ClavesConocidas =
     {
         "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
@@ -204,11 +211,21 @@ public sealed class ServerIni
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
         "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
-        "SoloEscritorio", "DescargaEscritorio",
+        "SoloEscritorio", "DescargaEscritorio", "BuscarActualizaciones",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
     };
+
+    /// <summary>¿El server lee esta clave de <c>[INIT]</c>? Las de <see cref="ClavesConocidas"/> y los contadores del staff
+    /// (<c>Dioses=</c>, <c>Admines=</c>…), que no están en esa lista porque no tienen un valor por defecto que avisar.</summary>
+    public static bool EsClaveConocida(string clave) =>
+        ClavesConocidas.Contains(clave, StringComparer.OrdinalIgnoreCase)
+        || Rangos.Any(r => string.Equals(r.Contador, clave, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Las claves de <c>[INIT]</c> del <c>Server.ini</c> que el server NO lee: mal escritas, o de una versión vieja.
+    /// Se ignoran; el arranque lo avisa para que el host se entere de que no estaban haciendo nada.</summary>
+    public IReadOnlyList<string> ClavesDesconocidas { get; private set; } = Array.Empty<string>();
 
     /// <summary>Las opciones que el servidor sabe leer y que el <c>Server.ini</c> del host NO menciona: están
     /// corriendo con su valor por defecto. Vacía si no se leyó ningún archivo (ahí TODO es default y decirlo
@@ -657,12 +674,16 @@ public sealed class ServerIni
     /// </summary>
     public bool SoloEscritorio { get; private set; }
 
+    /// <summary><c>BuscarActualizaciones</c>: 1 (por defecto) = cada tanto mira si el autor publicó una versión nueva del server y
+    /// lo avisa en la consola. No baja ni instala nada (eso es <c>actualizar</c>, cuando el host quiera). 0 = no consulta.</summary>
+    public bool BuscarActualizaciones { get; private set; } = true;
+
     /// <summary>A dónde manda la página de descarga para bajar la app. Vacía = la descarga oficial
-    /// (<see cref="DescargaOficial"/>, el release del repo público de instaladores, 12/10).</summary>
+    /// (<see cref="DescargaOficial"/>, las releases del repo del juego, 12/10).</summary>
     public string DescargaEscritorio { get; private set; } = DescargaOficial;
 
     /// <summary>La página de la última versión del juego de escritorio, la que publica el autor.</summary>
-    public const string DescargaOficial = "https://github.com/Ayrton09/CoverAO-Descargas/releases/latest";
+    public const string DescargaOficial = "https://github.com/Ayrton09/CoverAO/releases/latest";
 
     /// <summary>
     /// <c>OrigenesPermitidos</c> — dominios EXTRA desde los que se acepta abrir el WebSocket del juego,
@@ -1152,6 +1173,7 @@ public sealed class ServerIni
         {
             var traidas = new HashSet<string>(ini.Claves("INIT"), StringComparer.OrdinalIgnoreCase);
             cfg.ClavesAusentes = ClavesConocidas.Where(k => !traidas.Contains(k)).ToArray();
+            cfg.ClavesDesconocidas = ini.Claves("INIT").Where(k => !EsClaveConocida(k)).ToArray();
         }
         // El PUERTO se acota: el server abre `StartPort` y `StartPort + 1` (el WebSocket del cliente web), así
         // que el techo real es 65534. Sin esto un `StartPort=70000` —o un 65535, que empuja el WS a 65536—
@@ -1300,6 +1322,7 @@ public sealed class ServerIni
         cfg.NavegacionParaCruzar = Math.Clamp(ini.GetInt("INIT", "NavegacionParaCruzar", 80), 0, SkillProgression.MaxSkillPoints);
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
         cfg.SoloEscritorio = ini.GetInt("INIT", "SoloEscritorio", 0) != 0;
+        cfg.BuscarActualizaciones = ini.GetInt("INIT", "BuscarActualizaciones", 1) != 0;
         string descarga = ini.GetString("INIT", "DescargaEscritorio").Trim();
         cfg.DescargaEscritorio = descarga.Length > 0 ? descarga : DescargaOficial;
         cfg.ProxyDeConfianza = ini.GetString("INIT", "ProxyDeConfianza")

@@ -18,6 +18,7 @@
 #   .\coverao.ps1 estado                  todos, con RAM y puertos
 #   .\coverao.ps1 detener rojo            APAGADO LIMPIO (guarda a los conectados)
 #   .\coverao.ps1 arranque rojo           que arranque solo al prender la maquina
+#   .\coverao.ps1 actualizar rojo [-Paquete CoverAO-servidor-win-x64.zip]   version nueva (sin -Paquete, la baja)
 #
 # POR QUE `detener` NO ES UN taskkill. Un servidor de fondo en Windows no tiene ventana de consola, asi que
 # no hay a quien mandarle la senal de cierre. Medido el 2026-08-02 con el mundo real cargado:
@@ -38,6 +39,8 @@ param(
   [Parameter(Position = 1)][string]$Nombre,
   [int]$Puerto = 0,
   [string]$Desde = "plantilla",
+  # El paquete de la version nueva para `actualizar` (un .zip). Sin el, lo baja de las releases del juego.
+  [string]$Paquete,
   # OJO: el default NO puede ser `$PSScriptRoot`. Adentro de un `param()` esa variable esta VACIA cuando el
   # script se lanza con `powershell -File coverao.ps1 ...` —que es como lo llama un acceso directo, otro
   # script o una tarea programada— y solo tiene valor si se lo invoca como `.\coverao.ps1`. Con el default
@@ -120,6 +123,7 @@ function Ayuda {
   Write-Host "    detener <nombre>                                lo apaga LIMPIO (guarda a los conectados)"
   Write-Host "    estado [nombre]                                 que hay corriendo, con RAM y puertos"
   Write-Host "    arranque <nombre> / sin-arranque <nombre>       que arranque solo al prender la maquina"
+  Write-Host "    actualizar <nombre> [-Paquete <zip>]            version nueva: backup, y no pisa lo tuyo"
   Write-Host ""
   Write-Host "  Carpeta de servidores: $Raiz"
   Write-Host ""
@@ -223,6 +227,21 @@ switch ($Accion.ToLowerInvariant()) {
     }
     if ($filas) { $filas | Format-Table -AutoSize }
     else { Write-Host "No hay servidores en $Raiz. Crea uno con:  .\coverao.ps1 nueva rojo" }
+  }
+
+  "actualizar" {
+    Existe $Nombre
+    # CON EL SERVER APAGADO (Data/Actualizador.cs): si estaba prendido se lo apaga limpio, y al final se lo vuelve a prender.
+    $estaba = [bool](ProcesoDe $Nombre)
+    if ($estaba) {
+      & $PSCommandPath detener $Nombre -Raiz $Raiz
+      if (ProcesoDe $Nombre) { throw "'$Nombre' no se apago: no se actualiza con el server prendido." }
+    }
+    $argsAct = @("actualizar")
+    if ($Paquete) { $argsAct += @("--desde", (Resolve-Path $Paquete).Path) }
+    & (ExeDe $Nombre) @argsAct
+    if ($LASTEXITCODE -ne 0) { Write-Host "La actualizacion no se hizo: '$Nombre' quedo como estaba." -ForegroundColor Red }
+    if ($estaba) { & $PSCommandPath iniciar $Nombre -Raiz $Raiz }
   }
 
   "arranque" {

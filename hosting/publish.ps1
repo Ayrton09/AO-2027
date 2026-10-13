@@ -17,7 +17,8 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.0"      # solo para el nombre del comprimido
+  [string]$Version = "1.0.0",     # solo para el nombre del comprimido
+  [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
@@ -246,6 +247,15 @@ CoverAO.Server.exe %*
 pause
 "@
 Set-Content -Path (Join-Path $OutDir "Servidor.bat") -Value $bat -Encoding ASCII
+# ACTUALIZAR (Data/Actualizador.cs): se le arrastra encima el paquete nuevo, o se corre solo para bajarlo de las releases.
+$act = @"
+@echo off
+cd /d "%~dp0"
+echo Actualizar CoverAO: con el server APAGADO. Tus personajes, tu Server.ini y lo que modificaste no se tocan.
+if "%~1"=="" (CoverAO.Server.exe actualizar) else (CoverAO.Server.exe actualizar --desde "%~1")
+pause
+"@
+Set-Content -Path (Join-Path $OutDir "Actualizar.bat") -Value $act -Encoding ASCII
 # Lanzador de Linux. Se escribe SIEMPRE (no sólo con -Rid linux-*) porque la distribución se arma casi
 # siempre desde Windows y el que hostea puede estar armando la de Linux para subirla a un VPS.
 # LF obligatorio: con CRLF, bash falla con "bad interpreter: /bin/bash^M".
@@ -254,6 +264,8 @@ $sh = @"
 # CoverAO - arranque en Linux. Si da "Permission denied":  chmod +x servidor.sh CoverAO.Server
 cd "`$(dirname "`$0")" || exit 1
 [ -x ./CoverAO.Server ] || chmod +x ./CoverAO.Server 2>/dev/null
+# bash servidor.sh actualizar [paquete .tar.gz]: con el server apagado (ver HOSTING.md, "Actualizar a una version nueva").
+if [ "`$1" = "actualizar" ]; then shift; if [ -n "`$1" ]; then exec ./CoverAO.Server actualizar --desde "`$@"; else exec ./CoverAO.Server actualizar; fi; fi
 echo 'Iniciando CoverAO... (Ctrl+C para apagar el servidor)'
 echo 'Cuando diga "Cliente web: http://localhost:7669/", abri esa URL en el navegador.'
 exec ./CoverAO.Server "`$@"
@@ -284,6 +296,15 @@ EN LINUX (distribucion armada con  -Rid linux-x64 ):
 
   Tampoco necesita .NET instalado. El nombre del Server.ini no importa en
   mayusculas/minusculas: el servidor lo encuentra igual.
+
+ACTUALIZAR A UNA VERSION NUEVA (con el server APAGADO):
+  Windows:  arrastra el .zip nuevo encima de  Actualizar.bat
+  Linux:    bash servidor.sh actualizar CoverAO-servidor-linux-x64.tar.gz
+  Sin el paquete, lo baja solo de las releases del juego (cuando sean publicas).
+  Hace un backup, verifica que el paquete sea del autor, reemplaza solo los
+  archivos oficiales que no tocaste (lo que modificaste queda, y lo nuevo va a
+  actualizacion/sin-aplicar) y deja tu Server.ini con tus valores mas las claves
+  nuevas. Lo de antes queda en  actualizacion/anterior.
 
 JUGAR CON AMIGOS:
   Al arrancar, el servidor imprime un bloque "== Como entrar ==" con las tres
@@ -424,6 +445,18 @@ Write-Host "`nLISTO -> $OutDir  ($size MB)" -ForegroundColor Green
 # `.\CoverAO.Server.exe`, incluso armando la de Linux, donde ese archivo no existe.
 if ($Rid -like "linux*") { Write-Host "Probalo (en la maquina Linux):  cd '$OutDir'; bash servidor.sh" -ForegroundColor Green }
 else                     { Write-Host "Probalo:  cd `"$OutDir`"; .\CoverAO.Server.exe" -ForegroundColor Green }
+
+# --- La firma del paquete del server ---------------------------------------------------------------
+# hosting/firmar-servidor.js escribe compilacion.json (la fecha de esta compilacion) y archivos.json (la huella de cada
+# archivo oficial, firmada con la clave del autor). Con eso `CoverAO.Server actualizar` sabe que el paquete es del autor y
+# que archivos de una instalacion son los oficiales: los que el host modifico no se pisan. Va al final, cuando ya esta todo.
+if (-not $Compilacion) { $Compilacion = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'") }
+if ((Test-Path $clave) -and $node) {
+  & $node.Source (Join-Path $Root "hosting\firmar-servidor.js") $OutDir $Rid --id $Compilacion
+  if ($LASTEXITCODE -ne 0) { throw "la firma del paquete del server fallo" }
+} else {
+  Write-Host "   paquete del server SIN FIRMAR: no se va a poder instalar con  actualizar" -ForegroundColor Yellow
+}
 
 # --- El comprimido para publicar (-Comprimir) --------------------------------------------------------
 # ESTE PASO VIVE ACA A PROPOSITO. El 2026-08-04 se publico un release cuyo "CoverAO-1.0.0-win-x64.zip" no

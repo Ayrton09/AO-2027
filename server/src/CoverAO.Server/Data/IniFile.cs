@@ -110,6 +110,9 @@ public sealed class IniFile
 
     public bool HasSection(string section) => _data.ContainsKey(section);
 
+    /// <summary>Las secciones, en el orden del archivo (las vacías también).</summary>
+    public IReadOnlyList<string> Secciones => _sectionOrder;
+
     /// <summary>¿La sección trae esta clave? Distingue "no está" de "está vacía", que <see cref="GetString"/> no puede.</summary>
     public bool HasKey(string section, string key) => _data.TryGetValue(section, out var s) && s.ContainsKey(key);
 

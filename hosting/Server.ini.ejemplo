@@ -28,8 +28,11 @@ ProxyDeConfianza=
 ; bajarla y el puerto del protocolo clasico no se abre. Prenderlo cuando los
 ; jugadores tengan la app; antes deja afuera a todos.
 SoloEscritorio=0
+; 1 = cada tanto mira si hay una version nueva del server y lo avisa en la
+; consola. No baja ni instala nada: eso es  actualizar  (ver HOSTING.md).
+BuscarActualizaciones=1
 ; El enlace de esa pagina para bajar la app. Vacio = la descarga oficial
-; (github.com/Ayrton09/CoverAO-Descargas/releases/latest).
+; (github.com/Ayrton09/CoverAO/releases/latest).
 DescargaEscritorio=
 
 ; --- Cupos y limites ---------------------------------------------------------

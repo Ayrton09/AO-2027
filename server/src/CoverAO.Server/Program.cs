@@ -21,6 +21,11 @@ Console.SetError(logRing.EspejoDeError(Console.Error));   // los errores tambié
 string iniPath = Path.Combine(AppContext.BaseDirectory, "Server.ini");
 var serverIni = CoverAO.Server.Data.ServerIni.Cargar(iniPath);
 
+// `actualizar [--desde <paquete>]`: instala una versión nueva del server con el server apagado (ver Actualizador). Hace lo suyo
+// y sale: el servidor no arranca.
+if (args.Length > 0 && Actualizador.EsElComando(args[0]))
+    return Actualizador.Correr(args, AppContext.BaseDirectory, Path.Combine(AppContext.BaseDirectory, "data"), serverIni);
+
 // LA BASE DESDE LA LÍNEA DE COMANDOS: `importar <carpeta o coverao.db vieja> [--reemplazar]` y `exportar <carpeta>`, contra
 // la base que diga el Server.ini (fase5/postgres/DISENO.md, sección 6). Hacen lo suyo y salen: el servidor no arranca.
 if (args.Length > 0 && ComandosDeLaBase.EsUno(args[0]))
@@ -150,6 +155,11 @@ if (serverIni.ClavesAusentes.Count > 0)
                       "defecto. Copialas de Server.ini.ejemplo si querés cambiarlas:");
     Console.WriteLine("            " + string.Join(", ", serverIni.ClavesAusentes));
 }
+// Y LAS QUE NO LEE: una clave mal escrita (`ExpRat=5`) se ignora y el server corre con el valor por defecto. Sin esta línea el
+// host cree que la cambió.
+if (serverIni.ClavesDesconocidas.Count > 0)
+    Console.WriteLine("            OJO: estas claves del Server.ini no existen y se ignoran (revisá cómo están escritas): " +
+                      string.Join(", ", serverIni.ClavesDesconocidas));
 // Una facción mal escrita en las listas de los guardias o del comercio deja a esa gente afuera sin que nadie se entere.
 if (serverIni.FaccionesDesconocidas.Count > 0)
     Console.WriteLine("            OJO: estas facciones de los guardias o del comercio no existen y se ignoran: " +
@@ -1007,7 +1017,8 @@ if (habraWeb)
         estadoPublico, wsServer.AceptarAsync, serverIni.AlcanceDelHechizo, serverIni.DestinoDeLosPortales,
         novedades: serverContent.Updates, version: CoverAO.Server.Build.Version,
         lluviaBajoTecho: serverIni.LluviaBajoTecho,
-        soloEscritorio: soloEscritorio, descargaEscritorio: serverIni.DescargaEscritorio).RunAsync(cts.Token);
+        soloEscritorio: soloEscritorio, descargaEscritorio: serverIni.DescargaEscritorio,
+        compilacion: Actualizador.IdInstalado(AppContext.BaseDirectory) ?? "").RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se
@@ -1020,6 +1031,11 @@ if (habraWeb)
 // segundos- y todavia no hay nadie conectado, asi que no congela a nadie. `HacerBackup` ya se protege de
 // correr dos veces a la vez.
 if (serverIni.BackupMinutos > 0) _ = Task.Run(() => HacerBackup(motivo: "al arrancar"));
+// EL AVISO DE VERSIÓN NUEVA (ver Actualizador.VigilarAsync): no en las pruebas, ni corriendo desde el código (sin
+// compilacion.json), ni en Docker, donde la versión es la de la imagen.
+if (!fixtureMode && serverIni.BuscarActualizaciones && Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") != "true"
+    && Actualizador.IdInstalado(AppContext.BaseDirectory) is { } idInstalado)
+    _ = Task.Run(() => Actualizador.VigilarAsync(idInstalado, Console.WriteLine, cts.Token));
 
 var loopTask = loop.RunAsync(cts.Token);
 

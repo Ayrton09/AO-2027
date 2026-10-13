@@ -188,8 +188,9 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `PuertoWebSocketPublico` | sólo si el hosting remapea puertos: el que se le anuncia al cliente |
 | `Version` | la versión de cliente que este servidor acepta. Los cinco paquetes de ingreso traen la del cliente y el servidor la compara **como texto**: si no coincide, cartel de *juego desactualizado* y se corta la conexión. **Vacía (el default) = sin control**, que es lo que hacía el servidor hasta ahora. El cliente web que viene con esta versión manda `1.0.0`. Encendela sólo si sabés qué cliente repartiste: la comparación es exacta, así que un valor que no sea el del cliente desplegado deja a **todos** afuera. Sirve para dos cosas: que no se conecte un cliente ajeno al puerto del juego, y forzar a que actualicen cuando publiques una versión nueva. **Se reparte VACÍA por decisión del autor (2026-09-08)**: con el cliente cacheado en el navegador de cada jugador, el cartel de *juego desactualizado* le sale a quien sólo necesita recargar |
 | `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa**: no cambia ninguna mecánica, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
+| `BuscarActualizaciones` | 1 (así viene) = al minuto de arrancar y cada 6 horas mira si el autor publicó una versión nueva del server y lo avisa en la consola. No baja ni instala nada: eso lo hace el host cuando quiere, con `actualizar` (ver "Actualizar a una version nueva"). 0 = no consulta |
 | `SoloEscritorio` | 1 = sólo se juega con la app de escritorio: la app agrega su cabecera a cada pedido y sin ella el WebSocket se rechaza, la página del juego se cambia por una para bajar la app y el puerto del protocolo clásico no se abre. La página pública de estado sigue abierta. No frena al que escribe su propio programa (para eso está lo que el server no acepta): saca del medio la consola del navegador, las extensiones y los scripts. **Viene APAGADA**: prenderla cuando los jugadores tengan la app, antes deja afuera a todos |
-| `DescargaEscritorio` | el enlace que muestra esa página para bajar la app. Vacío = la descarga oficial, `https://github.com/Ayrton09/CoverAO-Descargas/releases/latest` |
+| `DescargaEscritorio` | el enlace que muestra esa página para bajar la app. Vacío = la descarga oficial, `https://github.com/Ayrton09/CoverAO/releases/latest` |
 | `ProxyDeConfianza` | las direcciones del reverse-proxy que está delante del cliente web, separadas por coma (`127.0.0.1,::1` si corre en la misma máquina). De una conexión que viene de ahí, la IP del jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy; sin esto, detrás del proxy todos los jugadores tienen la misma IP y los topes por IP los frenan a todos juntos. Vacío = no se le cree a ninguna cabecera |
 | `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina**: gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
 
@@ -212,33 +213,42 @@ COVERAO_INIT_MAXUSERS=200 COVERAO_INIT_DIOSES=1 COVERAO_DIOSES_DIOS1=TuPersonaje
 
 ## Actualizar a una version nueva
 
-**Actualizar no es reinstalar.** El paquete nuevo reemplaza el programa y la data del juego, pero
-`data/` (las cuentas y los personajes) y tu `Server.ini` se conservan.
+**Con un comando, con el server apagado.** Hace el backup, verifica que el paquete sea del autor del juego,
+reemplaza solo los archivos oficiales que no tocaste y deja tu `Server.ini` al día con tus valores:
 
-```bash
-# 1. Parar el servidor. Con el server escribiendo, un update copia archivos a medio guardar.
-# 2. Descomprimir el paquete nuevo SOBRE la carpeta de la instalacion.
-# 3. Arrancar.
+```
+Windows:   arrastrá el .zip nuevo encima de Actualizar.bat
+           (o:  .\coverao.ps1 actualizar <nombre> -Paquete CoverAO-servidor-win-x64.zip)
+Linux:     bash servidor.sh actualizar CoverAO-servidor-linux-x64.tar.gz
 ```
 
-Eso es todo. Tres cosas que conviene saber:
+Sin el paquete (`Actualizar.bat` solo, o `bash servidor.sh actualizar`), lo baja de las releases del juego. Con
+`BuscarActualizaciones=1` (así viene) el server avisa en la consola cuando hay una versión nueva; no instala
+nada solo. `coverao.ps1 actualizar` además lo apaga si estaba prendido y lo vuelve a arrancar.
 
-**El jugador no hace nada.** El cliente web lo sirve este mismo servidor, asi que no hay nada que
-instalar ni actualizar del lado de quien juega: con recargar la pagina ya tiene la version nueva. El
-navegador revalida cada archivo contra su ETag, o sea que baja solo lo que cambio y no hace falta que
-nadie limpie el cache. El que estaba jugando con la pestaña abierta se reconecta y listo.
+Qué hace, en orden, y cualquier problema antes de reemplazar algo deja todo como estaba:
 
-**Los personajes viejos abren en la version nueva.** Los guardados son texto y lo que una version agrega
-toma su valor por defecto al leerse. Al arrancar, el servidor deja un sello en `data/version.txt` y avisa
-por consola si el mundo venia de otra version. **Si el aviso dice que venis de una version MAS NUEVA,
-pará y restaurá un backup**: un servidor viejo ignora en silencio lo que no entiende.
+1. **Verifica el paquete:** que esté firmado por el autor (la misma firma que el cliente), que sea para tu
+   sistema, que sea más nuevo que lo instalado y que cada archivo sea el firmado. Un paquete cambiado no se instala.
+2. **Backup** completo de la base y de `data/`, el mismo de siempre. Si no sale, no actualiza.
+3. **Reemplaza solo lo oficial que no tocaste.** Cada versión trae la huella de sus archivos (`archivos.json`):
+   si modificaste un mapa o un archivo de la data, queda el tuyo y el nuevo va a `actualizacion/sin-aplicar`.
+   El cliente y el ejecutable se reemplazan siempre. Tus personajes, tu base, tus logs y tu `Server.ini` no
+   figuran en la lista y no se tocan. Todo lo reemplazado queda en `actualizacion/anterior`.
+4. **Tu `Server.ini`, al día con tus valores:** se rearma sobre el ejemplo nuevo, con sus explicaciones y las
+   claves nuevas, y con tus valores donde los tenías. Una clave que prendería algo que hoy no corre (una sección
+   que no tenías) va comentada. Una que el server no reconoce queda al final, bajo un aviso. Antes de escribirlo,
+   el server lo lee como si arrancara y lo compara con el tuyo, opción por opción: **si cambiara con qué corre
+   tu server, no lo toca** y lo dice. El de antes queda en `actualizacion/anterior`.
 
-**Las opciones nuevas no aparecen solas en tu `Server.ini`.** Como el archivo es tuyo y no se pisa, una
-version que agrega una opcion no te la escribe. El servidor las lista al arrancar, bajo
-`NUEVAS EN ESTA VERSION`, con el aviso de que estan corriendo con su valor por defecto; si querés
-cambiarlas, copiá esas lineas de `Server.ini.ejemplo`.
+El resumen queda en `actualizacion/ultima.txt`.
 
-Antes de actualizar, mirá que haya un backup reciente en `data/backups/`: es el unico "deshacer" que hay.
+**El jugador no hace nada.** El cliente lo sirve este mismo servidor: el que estaba jugando, al reconectar,
+recarga solo el cliente nuevo, en el navegador y en el juego de escritorio.
+
+**Los personajes viejos abren en la version nueva.** Al arrancar, el servidor deja un sello en
+`data/version.txt` y avisa por consola si el mundo venia de otra version. **Si el aviso dice que venis de una
+version MAS NUEVA, pará y restaurá un backup**: un servidor viejo ignora en silencio lo que no entiende.
 
 ## Dónde se guardan los personajes
 

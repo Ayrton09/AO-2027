@@ -122,7 +122,7 @@ public sealed class StaticFileServer
                             Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
                             bool alcanceDelHechizo = true, bool destinoDeLosPortales = true,
                             IReadOnlyList<string>? novedades = null, string version = "", bool lluviaBajoTecho = false,
-                            bool soloEscritorio = false, string descargaEscritorio = "")
+                            bool soloEscritorio = false, string descargaEscritorio = "", string compilacion = "")
     {
         _soloEscritorio = soloEscritorio;
         _port = port;
@@ -143,6 +143,8 @@ public sealed class StaticFileServer
             $"\"lluviaBajoTecho\":{(lluviaBajoTecho ? "true" : "false")}," +
             $"\"version\":{System.Text.Json.JsonSerializer.Serialize(version)}," +
             $"\"descarga\":{System.Text.Json.JsonSerializer.Serialize(descargaEscritorio)}," +
+            // La fecha de la compilación del server (Data/Actualizador.cs): el cliente que reconecta y la ve cambiada se recarga.
+            $"\"compilacion\":{System.Text.Json.JsonSerializer.Serialize(compilacion)}," +
             $"\"novedades\":{System.Text.Json.JsonSerializer.Serialize(novedades ?? Array.Empty<string>())}}}");
     }
 
