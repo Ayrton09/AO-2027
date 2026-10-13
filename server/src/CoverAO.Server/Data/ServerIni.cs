@@ -657,9 +657,12 @@ public sealed class ServerIni
     /// </summary>
     public bool SoloEscritorio { get; private set; }
 
-    /// <summary>A dónde manda la página de descarga para bajar la app (la página de las versiones del repo de
-    /// descargas). Vacía = la página dice que se lo pidan al que hostea.</summary>
-    public string DescargaEscritorio { get; private set; } = "";
+    /// <summary>A dónde manda la página de descarga para bajar la app. Vacía = la descarga oficial
+    /// (<see cref="DescargaOficial"/>, el release del repo público de instaladores, 12/10).</summary>
+    public string DescargaEscritorio { get; private set; } = DescargaOficial;
+
+    /// <summary>La página de la última versión del juego de escritorio, la que publica el autor.</summary>
+    public const string DescargaOficial = "https://github.com/Ayrton09/CoverAO-Descargas/releases/latest";
 
     /// <summary>
     /// <c>OrigenesPermitidos</c> — dominios EXTRA desde los que se acepta abrir el WebSocket del juego,
@@ -1297,7 +1300,8 @@ public sealed class ServerIni
         cfg.NavegacionParaCruzar = Math.Clamp(ini.GetInt("INIT", "NavegacionParaCruzar", 80), 0, SkillProgression.MaxSkillPoints);
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;
         cfg.SoloEscritorio = ini.GetInt("INIT", "SoloEscritorio", 0) != 0;
-        cfg.DescargaEscritorio = ini.GetString("INIT", "DescargaEscritorio").Trim();
+        string descarga = ini.GetString("INIT", "DescargaEscritorio").Trim();
+        cfg.DescargaEscritorio = descarga.Length > 0 ? descarga : DescargaOficial;
         cfg.ProxyDeConfianza = ini.GetString("INIT", "ProxyDeConfianza")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(Net.ConnectionGuard.NormalizeIp).ToArray();

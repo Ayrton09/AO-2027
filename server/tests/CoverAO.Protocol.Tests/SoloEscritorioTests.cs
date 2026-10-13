@@ -17,7 +17,7 @@ public class SoloEscritorioTests
     {
         var sin = new ServerIni();
         Assert.False(sin.SoloEscritorio);
-        Assert.Equal("", sin.DescargaEscritorio);
+        Assert.Equal(ServerIni.DescargaOficial, sin.DescargaEscritorio);
 
         string ruta = Path.Combine(Path.GetTempPath(), "coverao_ini_" + Guid.NewGuid().ToString("N") + ".ini");
         File.WriteAllText(ruta, "[INIT]\nStartPort=7666\nSoloEscritorio=1\nDescargaEscritorio= https://ejemplo.org/descargas \n");
@@ -30,6 +30,15 @@ public class SoloEscritorioTests
             Assert.Contains("SoloEscritorio", ServerIni.ClavesConocidas);
             Assert.Contains("DescargaEscritorio", ServerIni.ClavesConocidas);
         }
+        finally { File.Delete(ruta); }
+    }
+
+    [Fact]
+    public void Sin_enlace_propio_la_pagina_manda_a_la_descarga_oficial()
+    {
+        string ruta = Path.Combine(Path.GetTempPath(), "coverao_ini_" + Guid.NewGuid().ToString("N") + ".ini");
+        File.WriteAllText(ruta, "[INIT]\nStartPort=7666\nDescargaEscritorio=\n");
+        try { Assert.Equal(ServerIni.DescargaOficial, ServerIni.Cargar(ruta).DescargaEscritorio); }
         finally { File.Delete(ruta); }
     }
 

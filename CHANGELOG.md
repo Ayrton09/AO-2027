@@ -69,6 +69,8 @@ Lo nuevo desde el paquete del 6 de octubre.
 - **El juego de escritorio instalado no abre las herramientas de desarrollo.**
 - **El juego de escritorio se actualiza solo** y, al actualizarse, muestra las novedades. También hay un botón Novedades en
   su menú, con las del último server en el que jugaste.
+- **La página para bajar el juego de escritorio manda a la descarga oficial** si el que hostea no puso otra en
+  `DescargaEscritorio`.
 - **El juego de escritorio se abre una sola vez**: abrirlo de nuevo trae al frente el que ya está, y un acceso directo a un
   server entra ahí. Con dos abiertos se pisaban la lista de servers, las opciones y las cuentas recordadas.
 - **En la lista de servers, uno por `http://` que no está en tu PC sale marcado "sin cifrar"**: la contraseña viaja legible.
