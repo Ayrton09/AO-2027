@@ -71,6 +71,7 @@ Lo nuevo desde el paquete del 6 de octubre.
   su menú, con las del último server en el que jugaste.
 - **La página para bajar el juego de escritorio manda a la descarga oficial** si el que hostea no puso otra en
   `DescargaEscritorio`.
+- **Desinstalar el juego de escritorio no deja nada**: ni sus datos ni una copia del instalador.
 - **El juego de escritorio se abre una sola vez**: abrirlo de nuevo trae al frente el que ya está, y un acceso directo a un
   server entra ahí. Con dos abiertos se pisaban la lista de servers, las opciones y las cuentas recordadas.
 - **En la lista de servers, uno por `http://` que no está en tu PC sale marcado "sin cifrar"**: la contraseña viaja legible.
