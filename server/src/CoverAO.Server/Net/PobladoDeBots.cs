@@ -16,14 +16,20 @@ public sealed class EntornoDeBots
     /// <summary>Los mapas: cómo ir de un lado a otro. Uno solo para todos los bots — se arma una vez y
     /// después no se toca.</summary>
     public Navegante Mapas { get; }
+    /// <summary>El hogar de un personaje conectado, por su nombre (<see cref="PacketDispatcher.HogarDe"/>): lo que su dueño sabe
+    /// porque lo eligió, y el bot no recibe por el protocolo. Null si no se sabe.</summary>
+    public Func<string, byte?> HogarDe { get; }
     private readonly CredencialesDeBots _credenciales;
     private readonly Persistence? _db;
 
     /// <param name="db">Para mirar, antes de cada vida, si el nombre ya es de otro (<see cref="NombreAjenoAsync"/>). Sin ella
     /// no se mira.</param>
+    /// <param name="hogarDe">El hogar por el nombre; sin él, el del <paramref name="dispatcher"/>.</param>
     public EntornoDeBots(PacketDispatcher dispatcher, ServerIni ini, long authTimeoutMs, int maxInboundBytes,
-        GameData datos, Navegante mapas, CredencialesDeBots credenciales, Persistence? db = null)
+        GameData datos, Navegante mapas, CredencialesDeBots credenciales, Persistence? db = null,
+        Func<string, byte?>? hogarDe = null)
     {
+        HogarDe = hogarDe ?? (nombre => dispatcher?.HogarDe(nombre));
         Dispatcher = dispatcher;
         Ini = ini;
         AuthTimeoutMs = authTimeoutMs;

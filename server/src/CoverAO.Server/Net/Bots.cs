@@ -3780,6 +3780,22 @@ public sealed partial class Bot
             porLoQueRinde = _entorno.Mapas.LoQueSuma(lejos.Mapa, (lejos.X, lejos.Y), rinde)?.Rinde ?? 0;
             cruzandoPeligro = true;
         }
+        // Y SI DESDE DONDE LO DEJA LA RUNA HAY UNO QUE SUMA UNA VEZ Y MEDIA, A CASA CON LA RUNA: ver `ValeSaltarConLaRuna`.
+        if (hallado is not null && paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel) && ahora >= _proximoSaltoConLaRuna)
+        {
+            _proximoSaltoConLaRuna = ahora + EntreSaltosConLaRunaMs;
+            int aPie = cruzandoPeligro
+                ? _entorno.Mapas.LoQueSuma(hallado.Value.Mapa, (hallado.Value.X, hallado.Value.Y), rinde)?.Suma ?? 0
+                : Math.Max(seCazaAhi(sentidos.Mapa) ? _entorno.Mapas.LoQueSuma(sentidos.Mapa, sentidos.Posicion, rinde)?.Suma ?? 0 : 0,
+                           _entorno.Mapas.CotoQueMasSuma(sentidos.Mapa, sentidos.Posicion, rinde, SaltosHastaElCotoQueSuma, cruza,
+                                                         seCazaAhi)?.Suma ?? 0);
+            if (DondeLoDejaLaRuna(sentidos, nivel) is { } casa && casa.Map != sentidos.Mapa
+                && ValeSaltarConLaRuna(aPie, Math.Max(
+                    seCazaAhi(casa.Map) ? _entorno.Mapas.LoQueSuma(casa.Map, (casa.X, casa.Y), rinde)?.Suma ?? 0 : 0,
+                    _entorno.Mapas.CotoQueMasSuma(casa.Map, (casa.X, casa.Y), rinde, SaltosHastaElCotoQueSuma, cruza, seCazaAhi)?.Suma ?? 0))
+                && await SaltarConLaRunaAsync(transporte, sentidos, cerrada, ct))
+                return true;
+        }
         // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
         _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, sentidos.Experiencia, sentidos.Nivel, ahora);
         // Menos donde la runa lo deja: ahí usarla no lo saca.
@@ -4095,6 +4111,68 @@ public sealed partial class Bot
     }
 
     private int _cotosFallidos;
+
+    /// <summary>
+    /// ¿SALTA CON LA RUNA PARA CAZAR? Si el mejor coto desde donde lo deja la runa (<paramref name="desdeLaCasa"/>, a
+    /// <see cref="SaltosHastaElCotoQueSuma"/> mapas o menos sin peligro) suma una vez y media lo mejor que tiene a pie
+    /// (<paramref name="aPie"/>), como cualquier mudanza (<see cref="LoMinimoParaMudarsePorLaSuma"/>): la runa no cruza peligro.
+    /// Sin nada a pie, eso lo resuelve <see cref="SiEstaEncerradoAsync"/>.
+    ///
+    /// <para>Medido en la ronda 68 (14/10, `ctrl2` a `ctrl6`, mid y late): del lado de Orac (el 746 y del 760 al 850, entrando por el
+    /// teleporte de Rinkel al 457, de una sola mano) no se sale a pie, y la elección del coto sólo miraba los mapas a los que se llega
+    /// caminando. Bruma, Milo, Hilda e Ivo, republicanos que llegan ahí a comprar a la Avanzada (815), cazaban en el 823 y el 824
+    /// (suman 2604 y 2376; lo mejor de la región, el 746, 2708) el 21 a 24 % del tiempo de los bots, a 7 u 8 mil de experiencia por
+    /// minuto contra 15 a 20 mil del 13, el 18 o el 24. Desde Rinkel, el hogar de Milo y de Bruma en `mid131`, el 18 suma 4920 a tres
+    /// mapas; desde Suramei, el 262 suma 6460. Desde Illiandor, el de Hilda, lo mejor es el 195 (1495): se queda.</para>
+    /// </summary>
+    public static bool ValeSaltarConLaRuna(int aPie, int desdeLaCasa) => aPie > 0 && desdeLaCasa >= LoMinimoParaMudarsePorLaSuma(aPie);
+
+    /// <summary>
+    /// DÓNDE LO DEJA LA RUNA: la baldosa de su hogar, que sabe porque lo eligió él (el sacerdote, ver <see cref="PonerElHogarAsync"/>)
+    /// o se lo puso el juego al dejar de ser novato. Null si no tiene runa o si ahí no le conviene caer: en la zona de novatos ya
+    /// graduado (de la cuna no se sale graduado, ver <see cref="NoSeGraduaAhi"/>), o donde hay guardias que van por él.
+    /// </summary>
+    private WorldPos? DondeLoDejaLaRuna(SentidosDelBot sentidos, int nivel)
+    {
+        if (sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) == 0) return null;
+        if (_entorno.HogarDe(Nombre) is not { } hogar) return null;
+        var casa = Cities.SpawnTile(hogar);
+        if (nivel >= GameLimits.NewbieMaxLevel
+            && string.Equals(_entorno.Datos.MapZone(casa.Map)?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase)) return null;
+        return HayGuardiaQueLoAtaca(casa.Map) ? null : casa;
+    }
+
+    /// <summary>
+    /// A CASA CON LA RUNA, PARA CAZAR DESDE AHÍ (<see cref="ValeSaltarConLaRuna"/>): en un mapa inseguro, donde la runa no anda, primero
+    /// camina al mapa seguro más cercano, como el que vuelve a comprar (<see cref="VolverACasaAsync"/>). Si no llegó, se vuelve a probar
+    /// en <see cref="ReintentoDelSaltoMs"/>. Devuelve si hizo algo.
+    /// </summary>
+    private async Task<bool> SaltarConLaRunaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (_entorno.Datos.IsPkMap(sentidos.Mapa))
+        {
+            if (!await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct)) return false;
+            if (_entorno.Datos.IsPkMap(sentidos.Mapa))
+            {
+                _proximoSaltoConLaRuna = Environment.TickCount64 + ReintentoDelSaltoMs;
+                return true;
+            }
+        }
+        int antes = sentidos.Mapa;
+        var dondeEstaba = sentidos.Posicion;
+        if (!Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna)) return false;
+        for (int i = 0; i < 12 && sentidos.Mapa == antes && sentidos.Posicion == dondeEstaba; i++) await Task.Delay(250, ct);
+        return true;
+    }
+
+    private long _proximoSaltoConLaRuna;
+
+    /// <summary>Cada cuánto, como mucho, mira si le conviene saltar con la runa (<see cref="ValeSaltarConLaRuna"/>): es un viaje, y la
+    /// cuenta mira los cotos a cuatro mapas de dos lugares.</summary>
+    private const int EntreSaltosConLaRunaMs = 5 * 60_000;
+
+    /// <summary>Si no llegó al mapa seguro para usar la runa, cuándo lo vuelve a probar.</summary>
+    private const int ReintentoDelSaltoMs = 30_000;
 
     /// <summary>Si el último viaje al coto lo cortó lo del hueco que le pegaba (ver <see cref="LoDelHuecoCortaElViaje"/>) o lo que lo
     /// mata, a tiro (<see cref="LoPeligrosoEstaATiro"/>).</summary>

@@ -12625,6 +12625,10 @@ public sealed partial class PacketDispatcher
         return true;
     }
 
+    /// <summary>El hogar del personaje conectado con ese nombre, o null si no está: lo que su dueño sabe porque lo eligió. Para el bot,
+    /// que no lo recibe por el protocolo (ver <c>Bot.DondeLoDejaLaRuna</c>). Se lee fuera del loop: es un byte.</summary>
+    internal byte? HogarDe(string nombre) => _world.PlayerByName(nombre)?.HomeCity;
+
     internal static void LogIntentoDeTrampa(ClientSession session, Player? p, string motivo)
         => Console.WriteLine($"[TRAMPA] {p?.Name ?? "(sin personaje)"} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} - {ParaElLog(motivo)}");
 
