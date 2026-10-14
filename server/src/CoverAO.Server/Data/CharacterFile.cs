@@ -264,6 +264,32 @@ public static class CharacterFile
     public static IReadOnlyList<string> SeccionesQueFaltan(IniFile ini) => SeccionesDeUnoEntero.Where(s => !ini.HasSection(s)).ToList();
 
     /// <summary>
+    /// ¿Qué claves que se leen le faltan a este <c>.chr</c>? Un corte ADENTRO de la última sección no se ve en
+    /// <see cref="SeccionesQueFaltan"/>: la sección está, con la mitad. Se miran las que pueden quedar cortadas así —los
+    /// amigos y las cartas que dice el archivo (en el original, [AMIGOS] y [CORREO] van últimas) y las habilidades, últimas en
+    /// los nuestros— y sólo lo que <see cref="FichaDesdeIni"/> y <see cref="CorreoDelOriginal"/> leen: un corte que se lleva
+    /// casillas vacías no pierde nada. Como "[SECCION] Clave"; vacía si no falta nada.
+    /// </summary>
+    public static IReadOnlyList<string> ClavesQueFaltan(IniFile ini)
+    {
+        var faltan = new List<string>();
+        void Pedir(string seccion, string clave)
+        {
+            if (ini.HasSection(seccion) && !ini.HasKey(seccion, clave)) faltan.Add($"[{seccion}] {clave}");
+        }
+        bool amigosDelOriginal = !ini.HasKey("AMIGOS", "Cantidad") && ini.HasKey("FLAGS", "CantidadAmigos");
+        if (!amigosDelOriginal && ini.HasSection("AMIGOS")) Pedir("AMIGOS", "Cantidad");
+        int amigos = amigosDelOriginal ? ini.GetInt("FLAGS", "CantidadAmigos") : ini.GetInt("AMIGOS", "Cantidad");
+        for (int i = 1; i <= Math.Min(amigos, 1000); i++) Pedir("AMIGOS", (amigosDelOriginal ? "Nombre" : "Amigo") + i);
+        int cartas = ini.GetInt("FLAGS", "Correos");
+        if (cartas > 0 && !ini.HasSection("CORREO")) faltan.Add("[CORREO]");
+        for (int i = 1; i <= Math.Min(cartas, 1000); i++)
+            foreach (var clave in new[] { "Emisor", "Carta", "Leida" }) Pedir("CORREO", clave + i);
+        for (int i = 1; i <= GameLimits.NumSkills; i++) Pedir("SKILLS", "SK" + i);
+        return faltan;
+    }
+
+    /// <summary>
     /// La ficha de un <c>.chr</c>, con los valores tal cual y los DEFAULTS del formato para las claves que falten —un
     /// archivo viejo, de antes de que existiera una sección, se lee igual—. El saneo (bandos que no existen, rangos de
     /// más) no va acá sino en <see cref="FichaDePersonaje.CrearPlayer"/>, por donde pasa lo de cualquier almacén.

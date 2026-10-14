@@ -305,11 +305,32 @@ public sealed class StaticFileServer
         catch (Exception ex) { LogDeRed.Linea($"[web] error: {ex.Message}", error: true); try { ctx.Response.Abort(); } catch { } }
     }
 
-    /// <summary>El archivo comprimido, cacheado por (tamaño, fecha). Si el archivo cambió, se recomprime.</summary>
-    private byte[] GzipDe(string full, long len, long mtime)
+    /// <summary>
+    /// El archivo comprimido, cacheado por (tamaño, fecha). Si el archivo cambió, se recomprime. UNA SOLA VEZ: los pedidos
+    /// del mismo archivo que llegan juntos —un arranque, varios jugadores que entran a la vez— esperan la compresión del
+    /// primero en vez de hacer cada uno la suya (auditoría del 13/10).
+    /// </summary>
+    internal byte[] GzipDe(string full, long len, long mtime)
     {
         if (_cacheGz.TryGetValue(full, out var e) && e.Len == len && e.Mtime == mtime) return e.Gz;
+        var clave = (full, len, mtime);
+        // Adentro, otra mirada al caché: el que llegó tarde, con la del primero ya terminada y fuera de la lista, no la repite.
+        var compresion = _comprimiendo.GetOrAdd(clave, _ => new Lazy<byte[]>(() =>
+            _cacheGz.TryGetValue(full, out var c) && c.Len == len && c.Mtime == mtime ? c.Gz : Comprimir(full, len, mtime)));
+        try { return compresion.Value; }
+        finally { _comprimiendo.TryRemove(new KeyValuePair<(string, long, long), Lazy<byte[]>>(clave, compresion)); }
+    }
 
+    /// <summary>Las compresiones en curso, por (ruta, tamaño, fecha): ver <see cref="GzipDe"/>.</summary>
+    private readonly ConcurrentDictionary<(string, long, long), Lazy<byte[]>> _comprimiendo = new();
+
+    /// <summary>Cuántas veces se comprimió un archivo: para las pruebas.</summary>
+    internal int Compresiones => _compresiones;
+    private int _compresiones;
+
+    private byte[] Comprimir(string full, long len, long mtime)
+    {
+        Interlocked.Increment(ref _compresiones);
         var crudo = File.ReadAllBytes(full);
         using var ms = new MemoryStream(crudo.Length / 3);
         using (var gz = new GZipStream(ms, CompressionLevel.Optimal, leaveOpen: true)) gz.Write(crudo);

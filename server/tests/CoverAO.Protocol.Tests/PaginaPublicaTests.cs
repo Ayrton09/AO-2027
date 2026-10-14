@@ -24,6 +24,30 @@ public class PaginaPublicaTests : IDisposable
 
     public PaginaPublicaTests() => Directory.CreateDirectory(_root);
 
+    /// <summary>LOS PEDIDOS DEL MISMO ARCHIVO QUE LLEGAN JUNTOS lo comprimen UNA vez: los demás esperan la del primero
+    /// (auditoría del 13/10). Antes, cada uno hacía la suya.</summary>
+    [Fact]
+    public async System.Threading.Tasks.Task Los_pedidos_juntos_comprimen_una_sola_vez()
+    {
+        string archivo = Path.Combine(_root, "grande.json");
+        File.WriteAllText(archivo, string.Concat(Enumerable.Range(0, 400_000).Select(i => $"{i % 977},")));
+        var info = new FileInfo(archivo);
+        var server = new StaticFileServer(0, _root, 7667);
+        using var juntos = new System.Threading.Barrier(16);
+
+        var gz = Enumerable.Range(0, 16).Select(_ => System.Threading.Tasks.Task.Factory.StartNew(() =>
+        {
+            juntos.SignalAndWait();
+            return server.GzipDe(archivo, info.Length, info.LastWriteTimeUtc.Ticks);
+        }, System.Threading.Tasks.TaskCreationOptions.LongRunning)).ToArray();
+        var comprimidos = await System.Threading.Tasks.Task.WhenAll(gz);
+
+        Assert.Equal(1, server.Compresiones);
+        Assert.All(comprimidos, c => Assert.Same(comprimidos[0], c));
+        Assert.Same(comprimidos[0], server.GzipDe(archivo, info.Length, info.LastWriteTimeUtc.Ticks));
+        Assert.Equal(1, server.Compresiones);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); } catch { }

@@ -307,6 +307,37 @@ public sealed class AlmacenPostgresTests : IDisposable
         Assert.Single(Directory.GetFiles(backups, "antes-de-importar-*.zip"));
     }
 
+    /// <summary>UNA BASE SIN NADIE PUEDE TENER IPs BANEADAS desde el panel: importar encima las suma a las del origen, venga
+    /// de una base de SQLite (tabla por tabla) o de una carpeta de archivos. Antes las pisaba.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Importar_a_una_base_vacia_suma_sus_ips_baneadas(bool desdeArchivos)
+    {
+        string origen = Path.Combine(_raiz, "origen.db");
+        using (var sqlite = new AlmacenSqlite(origen))
+        {
+            var cuenta = Cuenta("Nueva");
+            sqlite.GuardarCuenta(cuenta);
+            Assert.True(sqlite.CrearPersonaje(cuenta, FichasDePrueba.Llena("Importado")));
+            sqlite.GuardarIpsBaneadas(new[] { "10.1.1.1" });
+            if (desdeArchivos)
+            {
+                Assert.True(Importador.Exportar(sqlite, Path.Combine(_raiz, "carpeta")).SalioBien);
+                origen = Path.Combine(_raiz, "carpeta");
+            }
+        }
+        using var almacen = new AlmacenPostgres(_base.Cadena);
+        almacen.GuardarIpsBaneadas(new[] { "10.9.9.9" });
+
+        var informe = Importador.ImportarAPostgres(origen, almacen, reemplazar: false, Path.Combine(_raiz, "backups"));
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        Assert.Equal(new[] { "10.1.1.1", "10.9.9.9" }, almacen.LeerIpsBaneadas().Order());
+        Assert.Equal(2, informe.IpsBaneadas);
+        Assert.True(almacen.ExistePersonaje("Importado"));
+    }
+
     /// <summary>EL PASO DE SQLITE A POSTGRES CAMBIANDO EL TIPO: la base de Postgres está vacía y en <c>data/</c> está la
     /// <c>coverao.db</c> de cuando el servidor andaba con SQLite. Se importa sola, y el archivo queda renombrado.</summary>
     [Fact]

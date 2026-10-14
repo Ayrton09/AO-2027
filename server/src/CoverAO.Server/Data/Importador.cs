@@ -97,6 +97,9 @@ public static class Importador
             string backup = destino.Backup(carpetaDeBackups, $"{Backups.PrefijoDeLosApartados}importar-{DateTime.Now:yyyyMMdd-HHmmss}");
             Console.WriteLine($"Lo que había en la base quedó en {backup}.");
         }
+        // UNA BASE SIN NADIE PUEDE TENER IPs BANEADAS desde el panel: se suman a las que trae el origen, como en SQLite (ver
+        // LoQueGuardabaLaVacia). Con --reemplazar sobre una con cuentas, lo de antes queda en el backup.
+        var ipsDeLaVacia = vacia ? destino.LeerIpsBaneadas() : [];
         var (almacen, correoAparte, ipsAparte, cortados, liberar) = AbrirOrigen(origen);
         try
         {
@@ -104,8 +107,18 @@ public static class Importador
             {
                 if (!vacia) destino.Vaciar();
                 // Una base de SQLite de ahora es la misma base en otro motor: va entera, tabla por tabla.
-                if (almacen is AlmacenSqlite deAhora) return destino.CopiarTablasDe(deAhora);
-                var informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, ipsAparte);
+                if (almacen is AlmacenSqlite deAhora)
+                {
+                    var copia = destino.CopiarTablasDe(deAhora);
+                    if (ipsDeLaVacia.Count > 0)
+                    {
+                        var todas = destino.LeerIpsBaneadas().Concat(ipsDeLaVacia).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                        destino.GuardarIpsBaneadas(todas);
+                        copia.IpsBaneadas = todas.Count;
+                    }
+                    return copia;
+                }
+                var informe = CopiaDeAlmacen.Copiar(almacen, destino, correoAparte, [.. ipsAparte, .. ipsDeLaVacia]);
                 informe.Avisos.AddRange(cortados);
                 return informe;
             }, informe => informe.SalioBien);
@@ -350,8 +363,8 @@ public static class Importador
 
     /// <summary>De los <c>.chr</c> de una carpeta: el correo del ORIGINAL, que va adentro del de cada destinatario (ver
     /// <see cref="CharacterFile.CorreoDelOriginal"/>; en una carpeta nuestra no hay), y el aviso de los que están CORTADOS
-    /// (<see cref="CharacterFile.SeccionesQueFaltan"/>): se importan con lo que les falta vacío o en cero, y la verificación no
-    /// lo ve, porque relee lo mismo.</summary>
+    /// (<see cref="CharacterFile.SeccionesQueFaltan"/> y <see cref="CharacterFile.ClavesQueFaltan"/>): se importan con lo que
+    /// les falta vacío o en cero, y la verificación no lo ve, porque relee lo mismo.</summary>
     private static (Dictionary<string, IReadOnlyList<MailEntry>> Correo, List<string> Cortados) LoQueTraenLosChr(FileStore store)
     {
         var correo = new Dictionary<string, IReadOnlyList<MailEntry>>(StringComparer.OrdinalIgnoreCase);
@@ -363,8 +376,9 @@ public static class Importador
             var ini = IniFile.Parse(texto);
             var cartas = CharacterFile.CorreoDelOriginal(ini);
             if (cartas.Count > 0) correo[nombre] = cartas;
-            if (CharacterFile.SeccionesQueFaltan(ini) is { Count: > 0 } faltan)
-                cortados.Add($"{nombre}: a su .chr le faltan {string.Join(", ", faltan.Select(s => $"[{s}]"))}, está cortado o roto; " +
+            var faltan = CharacterFile.SeccionesQueFaltan(ini).Select(s => $"[{s}]").Concat(CharacterFile.ClavesQueFaltan(ini)).ToList();
+            if (faltan.Count > 0)
+                cortados.Add($"{nombre}: a su .chr le faltan {string.Join(", ", faltan)}, está cortado o roto; " +
                              "se importa con eso vacío o en cero");
         }
         return (correo, cortados);

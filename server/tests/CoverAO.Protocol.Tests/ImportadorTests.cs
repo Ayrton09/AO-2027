@@ -432,6 +432,46 @@ public class ImportadorTests : IDisposable
         Assert.Contains("[HECHIZOS]", aviso);
     }
 
+    /// <summary>UN CORTE ADENTRO DE LA ÚLTIMA SECCIÓN —las habilidades, en los nuestros— deja todas las secciones: lo dicen las
+    /// claves que faltan.</summary>
+    [Fact]
+    public void Un_chr_cortado_adentro_de_la_ultima_seccion_queda_en_el_informe()
+    {
+        CarpetaNuestra();
+        string ciro = Directory.GetFiles(Path.Combine(Datos, "Charfile"), "*.chr")
+            .Single(f => Path.GetFileNameWithoutExtension(f).Equals("Ciro", StringComparison.OrdinalIgnoreCase));
+        string texto = File.ReadAllText(ciro, CoverAO.Protocol.Codec.Ansi);
+        int skills = texto.IndexOf("[SKILLS]", StringComparison.Ordinal);
+        Assert.DoesNotContain("[", texto[(skills + 1)..]);
+        File.WriteAllText(ciro, texto[..texto.IndexOf("SK20=", skills, StringComparison.Ordinal)], CoverAO.Protocol.Codec.Ansi);
+
+        var informe = Importador.Importar(Datos, Base);
+
+        Assert.True(informe.SalioBien, informe.Texto());
+        var aviso = Assert.Single(informe.Avisos, a => a.StartsWith("Ciro", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("[SKILLS] SK20", aviso);
+        Assert.Contains("[SKILLS] SK27", aviso);
+        Assert.DoesNotContain("SK19", aviso);
+    }
+
+    /// <summary>EN EL DEL ORIGINAL, [AMIGOS] y [CORREO] van últimas: falta lo que el archivo dice que hay y no está. Las
+    /// casillas vacías que se lleva el corte no cuentan: no se leen.</summary>
+    [Fact]
+    public void En_el_del_original_faltan_los_amigos_y_las_cartas_que_dice_y_no_estan()
+    {
+        string skills = "[SKILLS]\n" + string.Concat(Enumerable.Range(1, 27).Select(i => $"SK{i}=0\n"));
+        string entero = "[FLAGS]\nCorreos=1\nCantidadAmigos=2\n" + skills +
+                        "[AMIGOS]\nNOMBRE1=Ana\nNOMBRE2=Beto\nNOMBRE3=Vacío\n[CORREO]\nCarta1=hola\nEmisor1=Ana\nLeida1=0\nObjeto1=0-0\n";
+        Assert.Empty(CharacterFile.ClavesQueFaltan(IniFile.Parse(entero)));
+        Assert.Empty(CharacterFile.ClavesQueFaltan(IniFile.Parse(entero[..entero.IndexOf("Objeto1", StringComparison.Ordinal)])));
+        Assert.Equal(new[] { "[CORREO] Emisor1", "[CORREO] Leida1" },
+            CharacterFile.ClavesQueFaltan(IniFile.Parse(entero[..entero.IndexOf("Emisor1", StringComparison.Ordinal)])));
+        Assert.Equal(new[] { "[CORREO]" },
+            CharacterFile.ClavesQueFaltan(IniFile.Parse(entero[..entero.IndexOf("[CORREO]", StringComparison.Ordinal)])));
+        Assert.Equal(new[] { "[AMIGOS] Nombre2", "[CORREO]" },
+            CharacterFile.ClavesQueFaltan(IniFile.Parse(entero[..entero.IndexOf("NOMBRE2", StringComparison.Ordinal)])));
+    }
+
     /// <summary>Con cuentas en la base, los archivos de al lado no se importan encima: se avisa y quedan donde están.</summary>
     [Fact]
     public void Con_cuentas_en_la_base_los_archivos_de_al_lado_no_se_importan()
