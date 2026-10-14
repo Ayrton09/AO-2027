@@ -3,6 +3,22 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.0 (2026-10-14)
+Lo nuevo desde el paquete del 13 de octubre.
+
+### Juego
+
+- **Los bots que cazan del lado de Orac vuelven a casa con la runa** cuando desde su hogar tienen un lugar que rinde bastante más:
+  ese lado no tiene salida a pie, y se quedaban cazando arañas.
+
+### Para el que hostea
+
+- **Importar avisa también el personaje cortado a mitad de los amigos, las cartas o las habilidades**, no sólo el que perdió
+  secciones enteras.
+- **Importar a una base de Postgres sin cuentas ya no borra las IPs baneadas desde el panel**: se suman a las que se importan.
+- **Cuando muchos jugadores entran a la vez, el server comprime cada archivo del juego una sola vez.**
+
+
 ## 1.0.0 (2026-10-13)
 Lo nuevo desde el paquete del 13 de octubre.
 
