@@ -1007,11 +1007,13 @@ public sealed partial class Bot
                                             VeUnaPresaQueIriaABuscar(presa?.Pasos, alcance),
                                             cerrada, ct)) continue;
 
-            if (!await PasearAsync(transporte, sentidos, cerrada, ct, presa?.Quien)) return;
             // BUSCANDO: nada al alcance en un mapa donde nace lo que caza. En un pueblo, el ritmo de siempre.
             bool buscando = EstaBuscandoPresa(presa?.Pasos, alcance,
                 _entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var nacenAca) ? nacenAca.Select(sp => sp.NpcIndex) : null,
                 f => EsPresa((short)f, vidaMaxima, nivelAhora, conPociones, curaVeneno));
+            // Y BUSCANDO, AL SPAWN QUE SIGUE EN VEZ DE PASEAR AL AZAR: ver `ElSpawnQueSigue`.
+            if (!(buscando && await AlSpawnQueSigueAsync(transporte, sentidos, vidaMaxima, nivelAhora, conPociones, curaVeneno, cerrada, ct))
+                && !await PasearAsync(transporte, sentidos, cerrada, ct, presa?.Quien)) return;
             var (pausaMin, pausaMax) = LaPausaDespuesDelPaseo(++pausas, buscando);
             await QuedarseAsync(sentidos, _rng.Next(pausaMin, pausaMax), ct);
         }
@@ -3888,6 +3890,68 @@ public sealed partial class Bot
         _casa = sentidos.Posicion;
         return true;
     }
+
+    /// <summary>
+    /// EL SPAWN QUE SIGUE, BUSCANDO PRESA EN EL MAPA: el más cercano de los de <paramref name="presas"/> que no se ve desde
+    /// <paramref name="aca"/> y que no se vio vacío hace poco (<paramref name="vistoVacio"/>); null si no queda ninguno.
+    ///
+    /// <para>Medido en las rondas 68 y 69 (14/10): sin presa a la vista, el bot paseaba al azar alrededor de donde había peleado y
+    /// recién a los treinta segundos (<see cref="PacienciaSinNingunaMs"/>) elegía al azar otro spawn del mapa. Las presas que pagan no
+    /// caminan y reaparecen en su spawn: Quim pasaba un 57 % del tiempo en esa espera, y los que más rinden (Gonzo, Ivo, Fabia) eran
+    /// los que más esperaban. Una persona que caza va a donde sabe que nacen.</para>
+    /// </summary>
+    public static (byte X, byte Y)? ElSpawnQueSigue((byte X, byte Y) aca, IEnumerable<(byte X, byte Y)> presas,
+                                                    Func<(byte X, byte Y), bool> vistoVacio) =>
+        presas.Where(t => !AlAlcanceDeSuVista(aca, t) && !vistoVacio(t))
+              .OrderBy(t => Math.Abs(t.X - aca.X) + Math.Abs(t.Y - aca.Y))
+              .Select(t => ((byte X, byte Y)?)t)
+              .FirstOrDefault();
+
+    /// <summary>
+    /// AL SPAWN QUE SIGUE (<see cref="ElSpawnQueSigue"/>), pasados <see cref="PacienciaEnElMapaMs"/> sin presa a la vista. Los spawns de
+    /// presa que ve desde donde está y no tienen nada quedan vistos vacíos por <see cref="SpawnVacioMs"/>, lo que tarda en reaparecer
+    /// una criatura. Sin los que nacen a la vista de algo peligroso (<see cref="LejosDelPeligro"/>), y cortando el camino por lo que
+    /// aparezca, como el viaje al coto. Devuelve si caminó.
+    /// </summary>
+    private async Task<bool> AlSpawnQueSigueAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int vidaMaxima, int nivel,
+                                                  bool conPociones, bool curaVeneno, Task cerrada, CancellationToken ct)
+    {
+        long ahora = Environment.TickCount64;
+        if (ahora - _ultimaPresaQuePaga < PacienciaEnElMapaMs || !_entorno.Datos.MapSpawns.TryGetValue(sentidos.Mapa, out var spawns))
+            return false;
+        int mapa = sentidos.Mapa;
+        var aca = sentidos.Posicion;
+        var peligros = spawns.Where(sp => EsPeligroso((short)sp.NpcIndex, vidaMaxima, nivel, conPociones, curaVeneno)
+                                          || NoLaLastima((short)sp.NpcIndex))
+                             .Select(sp => ((byte)sp.X, (byte)sp.Y)).ToList();
+        var presas = LejosDelPeligro(spawns.Where(sp => EsPresa((short)sp.NpcIndex, vidaMaxima, nivel, conPociones, curaVeneno))
+                                           .Select(sp => ((byte)sp.X, (byte)sp.Y)).Distinct().ToList(), peligros);
+        if (_spawnVacio.Count > 2_000) _spawnVacio.Clear();
+        foreach (var t in presas.Where(t => AlAlcanceDeSuVista(aca, t))) _spawnVacio[(mapa, t.X, t.Y)] = ahora;
+        bool VistoVacio((byte X, byte Y) t) => _spawnVacio.TryGetValue((mapa, t.X, t.Y), out long cuando) && ahora - cuando < SpawnVacioMs;
+        // El que no tiene camino también queda como visto: el que sigue es otro.
+        (byte X, byte Y)? destino;
+        while ((destino = ElSpawnQueSigue(aca, presas, VistoVacio)) is { } t
+               && _entorno.Mapas.HayComoLlegar(mapa, aca, (t.X, t.Y), ToleranciaDelCoto) is null)
+            _spawnVacio[(mapa, t.X, t.Y)] = ahora;
+        if (destino is not { } adonde) return false;
+        _spawnVacio[(mapa, adonde.X, adonde.Y)] = ahora;
+        _cortoElViaje = false;
+        await IrHastaAsync(transporte, sentidos, mapa, adonde.X, adonde.Y, cerrada, ct, ToleranciaDelCoto,
+                           cortaSi: () => HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno));
+        if (_cortoElViaje) { _cortoElViaje = false; _frenoParaCazar = true; }
+        _casa = sentidos.Posicion;
+        return true;
+    }
+
+    /// <summary>Los spawns de presa vistos vacíos (o sin camino), por mapa y baldosa, con cuándo: ver <see cref="AlSpawnQueSigueAsync"/>.</summary>
+    private readonly Dictionary<(int Mapa, byte X, byte Y), long> _spawnVacio = new();
+
+    /// <summary>Sin presa a la vista, cuánto pasea antes de ir al spawn que sigue: ver <see cref="AlSpawnQueSigueAsync"/>.</summary>
+    private const int PacienciaEnElMapaMs = 8_000;
+
+    /// <summary>Lo que tarda en reaparecer una criatura: un spawn visto vacío no se vuelve a buscar antes.</summary>
+    private const int SpawnVacioMs = 30_000;
 
     /// <summary>Cuándo cazó por última vez algo que SUELTA ORO. Es contra esto que se mide la paciencia para
     /// mudarse: cazar criaturas que no pagan no cuenta, porque con eso un bot se queda para siempre donde sólo
