@@ -283,6 +283,18 @@ public class BotsTests
         Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Alta, yaEntro: false));
     }
 
+    /// <summary>SIN RESPUESTA, LA MISMA FORMA; CON "YA EXISTE", A ENTRAR. Kael en `arma2` (ronda 71): el primer intento se cortó sin
+    /// cartel, y probó crear el personaje y la cuenta que ya tenía hasta quedarse afuera. Un cartel de la cuenta pasa a la siguiente,
+    /// como antes.</summary>
+    [Fact]
+    public void Sin_respuesta_repite_la_forma_y_con_ya_existe_vuelve_a_entrar()
+    {
+        Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Entrar, yaEntro: false, porQue: ""));
+        Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.SoloPersonaje, yaEntro: false, porQue: "Ya existe el personaje."));
+        Assert.Equal(ComoEntrar.Entrar, Bot.DespuesDeUnFracaso(ComoEntrar.Alta, yaEntro: false, porQue: "Ya existe la cuenta."));
+        Assert.Equal(ComoEntrar.SoloPersonaje, Bot.DespuesDeUnFracaso(ComoEntrar.Entrar, yaEntro: false, porQue: "El personaje no existe."));
+    }
+
     /// <summary>LOS CARTELES DEL SERVIDOR CERRADO POR UN RATO mandan a volver más tarde y no cuentan para rendirse: el
     /// mantenimiento, el modo sólo GMs, la creación cerrada y la base que no contesta, con el texto que manda el servidor. Los
     /// de la cuenta —la clave, el baneo, el nombre que ya existe— sí cuentan.</summary>

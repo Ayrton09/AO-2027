@@ -478,7 +478,7 @@ public sealed partial class Bot
             catch (Exception ex) { Console.Error.WriteLine($"[bot {Nombre}] error: {ex.Message}"); fin = FinDeLaVida.NoEntro; }
 
             if (fin == FinDeLaVida.Entro) fracasos = 0;
-            else if (fin == FinDeLaVida.NoEntro) { fracasos++; _como = DespuesDeUnFracaso(_como, _yaEntro); }
+            else if (fin == FinDeLaVida.NoEntro) { fracasos++; _como = DespuesDeUnFracaso(_como, _yaEntro, _porQueNoEntro); }
             if (ct.IsCancellationRequested) break;
             // El que se fue a dormir vuelve dentro de un rato LARGO; al que se le cortó, enseguida. Es la
             // diferencia entre una lista de conectados que respira y una donde están siempre los mismos.
@@ -516,9 +516,20 @@ public sealed partial class Bot
     /// después —un plazo de respuesta vencido, una excepción de su conducta— no cambia eso. Pasar de forma
     /// ahí gastaba los dos intentos que le quedaban en crear un personaje con un nombre ya en uso y una cuenta
     /// que ya existe, y el bot se quedaba afuera hasta el próximo arranque del servidor.</para>
+    ///
+    /// <para>Y SIN RESPUESTA, LA MISMA FORMA; CON "YA EXISTE", A ENTRAR. Un intento que se corta sin ningún cartel (<paramref name="porQue"/>
+    /// vacío: un plazo vencido, la conexión que se cae) no dice nada de la cuenta, y el "ya existe" del alta dice que la cuenta y el
+    /// personaje están. Medido en la ronda 71 (16/10, `arma2`): Kael, con la cuenta y el personaje en el estado, no entró al primer
+    /// intento y sin cartel, mientras entraban los otros; probó crear el personaje ("Ya existe el personaje"), después la cuenta
+    /// ("Ya existe la cuenta"), y se quedó afuera la corrida entera.</para>
     /// </summary>
-    public static ComoEntrar DespuesDeUnFracaso(ComoEntrar como, bool yaEntro) =>
-        yaEntro || como == ComoEntrar.Alta ? ComoEntrar.Entrar : como + 1;
+    public static ComoEntrar DespuesDeUnFracaso(ComoEntrar como, bool yaEntro, string? porQue = null) =>
+        yaEntro || como == ComoEntrar.Alta || porQue?.Contains("ya existe", StringComparison.OrdinalIgnoreCase) == true ? ComoEntrar.Entrar
+        : porQue is { Length: 0 } ? como
+        : como + 1;
+
+    /// <summary>El cartel o el aviso del último intento que no entró: ver <see cref="DespuesDeUnFracaso"/>.</summary>
+    private string? _porQueNoEntro;
 
     /// <summary>Una conexión, de punta a punta. Devuelve si llegó a estar adentro del mundo, para distinguir
     /// "se cayó jugando" —que se reintenta sin castigo— de "no pudo entrar", que cuenta como fracaso, y de "volvé más
@@ -569,6 +580,7 @@ public sealed partial class Bot
             if (!await EntrarAlMundoAsync(transporte, enElMundo, tieneCuenta, ct))
             {
                 string porQue = cartel.Length > 0 ? cartel : aviso;
+                _porQueNoEntro = porQue;
                 bool volver = EsCartelDeVolverMasTarde(cartel);
                 // El mismo "volvé más tarde" no se repite en el log: con el servidor cerrado un rato, serían todos los bots
                 // cada pocos minutos.
