@@ -2069,6 +2069,10 @@ public sealed partial class Bot
         // venenosas hay 709 repartidas en 93 mapas. Ver `CuraElVeneno`.
         compro |= await ReponerAsync(transporte, sentidos, AntidotoPropio, AntidotosQueQuiere, ct,
                                      ReservaPara(sentidos, comida: true, bebida: true));
+        // Y EL QUE USA MANÁ, LAS AZULES: ver `TomarPocionesDeManaAsync`. Las vende el mismo Alquimista, y no se viaja por ellas.
+        if (sentidos.UsaMana)
+            compro |= await ReponerAsync(transporte, sentidos, PocionDeManaPropia, PocionesDeManaQueQuiere, ct,
+                                         ReservaPara(sentidos, comida: true, bebida: true));
         // EL ARMA DEL CAMINO, ANTES QUE LOS GUSTOS: ver `LeFaltaElArmaDelCamino`.
         if (LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma)))
             compro |= await ComprarElArmaDelCaminoAsync(transporte, sentidos, ct);
@@ -2480,6 +2484,35 @@ public sealed partial class Bot
     private int _tiendasSinCamino;
 
     private bool EsPocionDeVida(short obj) => _entorno.Datos.Obj(obj) is { IsPotion: true, SubType: 3 };
+
+    /// <summary>La poción azul: maná (SubTipo 4).</summary>
+    private bool EsPocionDeMana(short obj) => _entorno.Datos.Obj(obj) is { IsPotion: true, SubType: 4 };
+
+    private int PocionDeManaPropia(short obj) => CuentaComoPropio(obj) && EsPocionDeMana(obj) ? 1 : 0;
+
+    /// <summary>
+    /// LAS POCIONES AZULES EN VEZ DE MEDITAR: con el maná bajo, se toman de a una (al ritmo de las de vida) hasta llegar a
+    /// <see cref="MeditaHasta"/> o hasta <see cref="PocionesDeManaSeguidas"/>, en vez de sentarse. Devuelve si tomó alguna.
+    ///
+    /// <para>Medido en las rondas 68 y 69 (14/10): los bots no compraban ni tomaban pociones de maná, y los que pelean con hechizos
+    /// porque el arma les saca menos (Bruma, Rufo, Hilda, Nadia) se sentaban a meditar de 50 a 75 segundos por cada Zombi: el servidor
+    /// devuelve unos 4 a 8 de maná por segundo meditando, y cada azul unos 36 a nivel 24 (Potions.cs). Cuestan 25 monedas, y un Zombi
+    /// da 1750 de oro.</para>
+    /// </summary>
+    private async Task<bool> TomarPocionesDeManaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
+    {
+        int tomadas = 0;
+        while (tomadas < PocionesDeManaSeguidas && sentidos.Mana < MeditaHasta && sentidos.Vivo && !sentidos.AlgoPegado()
+               && sentidos.CuantoTiene(EsPocionDeMana) > 0 && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 4 }))
+        {
+            tomadas++;
+            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+        }
+        return tomadas > 0;
+    }
+
+    /// <summary>Cuántas azules quiere llevar el que usa maná, y cuántas toma seguidas como mucho.</summary>
+    private const int PocionesDeManaQueQuiere = 100, PocionesDeManaSeguidas = 20;
     private bool EsComida(short obj) => _entorno.Datos.Obj(obj) is { IsFood: true };
     private bool EsBebida(short obj) => _entorno.Datos.Obj(obj) is { IsDrink: true };
     private int PuntosDeComida(short obj) => _entorno.Datos.Obj(obj) is { IsFood: true } o ? o.MinHam : 0;
@@ -3143,6 +3176,8 @@ public sealed partial class Bot
         // CON ALGO PEGADO NO SE SIENTA: el primer golpe corta la meditación, y sentarse otra vez en cada vuelta era comer
         // golpes sin recuperar maná.
         if (!sentidos.UsaMana || sentidos.Mana >= MeditaBajo || sentidos.AlgoPegado()) return false;
+        // CON POCIONES AZULES, NO SE SIENTA: ver `TomarPocionesDeManaAsync`.
+        if (await TomarPocionesDeManaAsync(transporte, sentidos, ct)) return true;
 
         // EL PAQUETE ES UN INTERRUPTOR, así que se manda según lo que dice el servidor y no a ciegas: si el servidor ya
         // había cortado la meditación por un golpe o un paso, el pedido de levantarse la volvía a prender.
