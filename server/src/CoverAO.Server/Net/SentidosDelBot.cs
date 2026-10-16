@@ -603,6 +603,29 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>La criatura que cumple <paramref name="sirve"/> a <paramref name="alcance"/> pasos o menos con el mayor
+    /// <paramref name="puntaje"/> (de su ficha y los pasos), y a cuántos pasos; o null. Como <see cref="MasCercano"/>, sin las de
+    /// <paramref name="salvo"/>; entre puntajes iguales, la más cercana.</summary>
+    public (Visible Quien, int Pasos)? LaQueMasRinde(Func<short, bool> sirve, Func<short, int, double> puntaje, int alcance,
+                                                     IReadOnlySet<short>? salvo = null)
+    {
+        lock (_candado)
+        {
+            if (!_tengoPosicion) return null;
+            (Visible, int)? mejor = null;
+            double suPuntaje = double.MinValue;
+            foreach (var v in _visibles.Values)
+            {
+                if (!v.EsNpc || v.CharIndex == _miCharIndex || salvo?.Contains(v.CharIndex) == true || !sirve(v.FichaNpc)) continue;
+                int pasos = Math.Abs(v.X - _x) + Math.Abs(v.Y - _y);
+                if (pasos > alcance) continue;
+                double p = puntaje(v.FichaNpc, pasos);
+                if (mejor is null || p > suPuntaje || (p == suPuntaje && pasos < mejor.Value.Item2)) { mejor = (v, pasos); suPuntaje = p; }
+            }
+            return mejor;
+        }
+    }
+
     /// <summary>Las criaturas pegadas (a un paso, en cruz) que cumplen <paramref name="sirve"/>: las que le pueden estar pegando.</summary>
     public List<Visible> CriaturasPegadas(Func<short, bool> sirve)
     {

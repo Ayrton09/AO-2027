@@ -497,6 +497,49 @@ public sealed partial class Bot
     }
 
     /// <summary>
+    /// ¿SE VA AHÍ MISMO, EN UN MAPA PK? Con la vida alta (<see cref="VidaParaIrseAca"/>), nada pegado y nada hostil a
+    /// <see cref="RadioDeSusto"/> pasos: el servidor lo deja en el mundo los segundos de la salida (<c>IntervaloCerrarConexion</c>), y
+    /// en ese rato no tiene que llegarle nada. Si algo llega, la cancela y sigue (<see cref="SalirAcaAsync"/>).
+    ///
+    /// <para>Medido en las rondas 68 y 69 (14/10): al vencer la sesión caminaba al mapa seguro más cercano para salir sin la cuenta, y al
+    /// volver aparecía ahí y caminaba de vuelta al coto: unos seis minutos por sesión de unos cincuenta y cinco (Ciro, del 24 a Rinkel,
+    /// tres minutos de ida).</para>
+    /// </summary>
+    public static bool SeVaAca(double salud, bool algoPegado, bool hostilCerca) => salud >= VidaParaIrseAca && !algoPegado && !hostilCerca;
+
+    private const double VidaParaIrseAca = 0.8;
+
+    /// <summary>
+    /// LA SALIDA AHÍ MISMO: pide salir y espera quieto la cuenta del servidor (más un margen). Si algo se le pega, le baja la vida o
+    /// aparece algo hostil cerca, vuelve a pedirla —el segundo pedido la cancela (VB6 Cerrar_Usuario)— y sigue jugando. Devuelve si
+    /// el servidor lo sacó.
+    /// </summary>
+    private async Task<bool> SalirAcaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        double vida = sentidos.Salud;
+        if (!transporte.Mandar(Paquete(ClientPacketId.Quit, _ => { }))) return false;
+        long hasta = Environment.TickCount64 + (_entorno.Ini?.IntervaloCerrarConexion ?? 10) * 1_000L + 3_000;
+        while (Environment.TickCount64 < hasta)
+        {
+            await Task.Delay(RebanadaDePausaMs, ct);
+            if (cerrada.IsCompleted) return true;
+            if (!sentidos.Vivo || sentidos.AlgoPegado() || sentidos.Salud < vida || HostilCerca(sentidos))
+            {
+                transporte.Mandar(Paquete(ClientPacketId.Quit, _ => { }));
+                return false;
+            }
+        }
+        transporte.Mandar(Paquete(ClientPacketId.Quit, _ => { }));
+        return false;
+    }
+
+    private long _proximaSalidaAca;
+
+    /// <summary>Cada cuánto vuelve a probar irse ahí mismo, y cuánto después del fin de la sesión deja de probar y camina al
+    /// mapa seguro como antes.</summary>
+    private const int EntreSalidasAcaMs = 20_000, CaminaAlRefugioDespuesMs = 5 * 60_000;
+
+    /// <summary>
     /// ¿EL CARTEL MANDA A VOLVER MÁS TARDE? Es lo que lee una persona que no puede entrar y vuelve después: el servidor en
     /// mantenimiento o sólo para GMs, la creación de personajes cerrada por un rato, la base que no contesta (los carteles de
     /// <see cref="PacketDispatcher"/> dicen "intente más tarde" o "probá de nuevo en un rato"). Nada de eso dice algo de su
@@ -687,7 +730,18 @@ public sealed partial class Bot
             // la cuna, 176 son pk, y en tres de cada cuatro el mapa seguro más cercano queda a dos saltos o más:
             // esperando, la sesión de un bot que caza lejos se estiraba hasta el próximo viaje de compras. Si el viaje
             // se corta —una criatura, una traba— sigue jugando y lo vuelve a probar al rato.
-            if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo && Environment.TickCount64 >= _proximoRefugio)
+            // SALVO QUE PUEDA IRSE AHÍ MISMO: ver `SeVaAca`. Si en `CaminaAlRefugioDespuesMs` no pudo, camina como antes.
+            if (Environment.TickCount64 >= finDeSesion && sentidos.Vivo && Environment.TickCount64 >= _proximaSalidaAca
+                && Environment.TickCount64 < finDeSesion + CaminaAlRefugioDespuesMs)
+            {
+                _proximaSalidaAca = Environment.TickCount64 + EntreSalidasAcaMs;
+                if (SeVaAca(sentidos.Salud, sentidos.AlgoPegado(), HostilCerca(sentidos)) && await SalirAcaAsync(transporte, sentidos, cerrada, ct))
+                {
+                    _seFueSolo = true;
+                    return;
+                }
+            }
+            if (Environment.TickCount64 >= finDeSesion + CaminaAlRefugioDespuesMs && sentidos.Vivo && Environment.TickCount64 >= _proximoRefugio)
             {
                 _proximoRefugio = Environment.TickCount64 + ReintentoDeRefugioMs;
                 if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaSeguro, Pisable(sentidos)) is { } refugio)
@@ -963,7 +1017,10 @@ public sealed partial class Bot
             // vale lo más cercano, como siempre.
             // Y LA QUE NO SE ALCANZA NO SE ELIGE DE NUEVO POR UN RATO (ver `NoSeLlegaA`).
             var salvo = SiguenSinCamino(_sinCamino, Environment.TickCount64);
-            var presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha), salvo);
+            // Y DE LO QUE PAGA, LA QUE MÁS RINDE POR EL TIEMPO QUE CUESTA: ver `RindeLaPresa`. Sin ninguna al alcance, la más cercana.
+            var presa = sentidos.LaQueMasRinde(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha),
+                                               (ficha, pasos) => RindeEstaPresa(sentidos, ficha, pasos), RadioDeCaza, salvo)
+                        ?? sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha), salvo);
             // LO QUE PAGA SE VA A BUSCAR MÁS LEJOS. El radio del temperamento decide si vale la pena moverse por
             // cualquier cosa; por lo que da plata, cualquiera camina unas baldosas más. Medido con la sonda: una
             // Clériga tranquila —radio 6— con un escorpión a la vista a nueve pasos, pegándole al murciélago de al
@@ -6258,6 +6315,31 @@ public sealed partial class Bot
         _sinMagia && _entorno.Datos.Npc(ficha) is { Hostile: true, Attackable: true, MaxHit: > 0 } n
         && SeLaSacaDeEncima(_golpe.GolpesParaMatar(_conQuePelea.Arma, n.Def, n.MaxHp), conPociones,
                             EsPeligroso(ficha, vida, nivel, conPociones, curaVeneno));
+
+    /// <summary>
+    /// LO QUE RINDE UNA PRESA POR EL TIEMPO QUE CUESTA: su experiencia (<paramref name="experiencia"/>) sobre los pasos hasta ella más
+    /// los golpes para matarla (<paramref name="golpes"/>, contando los que erra), cada golpe como <see cref="PasosPorGolpe"/> pasos, y
+    /// <see cref="PasosDeMas"/> por levantar el botín y volver a mirar.
+    ///
+    /// <para>Medido en las rondas 68 y 69 (14/10): el bot elegía lo que paga más cercano, y en el 13 hay doce Zombis (295 de
+    /// experiencia, 320 de vida) y doce Esqueletos (66): por la experiencia de cada muerte, Quim mataba un tercio de Esqueletos, y Elmo
+    /// casi dos tercios. Un golpe dura lo que cuatro o cinco pasos (de 1,1 a 1,7 s contra unos 0,3).</para>
+    /// </summary>
+    public static double RindeLaPresa(int experiencia, int pasos, int golpes) =>
+        experiencia / (double)(pasos + golpes * PasosPorGolpe + PasosDeMas);
+
+    private const int PasosPorGolpe = 4, PasosDeMas = 6;
+
+    /// <summary><see cref="RindeLaPresa"/> para este bot: los golpes, con lo medido de su arma (<see cref="GolpeMedido.GolpesParaMatar"/>);
+    /// mientras no se sabe, como si sacara <see cref="GolpeSinMedir"/> por golpe.</summary>
+    private double RindeEstaPresa(SentidosDelBot sentidos, short ficha, int pasos)
+    {
+        if (_entorno.Datos.Npc(ficha) is not { } n) return 0;
+        int golpes = _golpe.GolpesParaMatar(ArmaEnLaMano(sentidos), n.Def, n.MaxHp) ?? Math.Max(1, n.MaxHp / GolpeSinMedir);
+        return RindeLaPresa((int)n.GiveExp, pasos, Math.Min(golpes, 100));
+    }
+
+    private const int GolpeSinMedir = 30;
 
     /// <summary>Cuántos golpes recuerda <see cref="GolpeMedido"/>: los de unas pocas peleas.</summary>
     public const int GolpesQueRecuerda = 40;
