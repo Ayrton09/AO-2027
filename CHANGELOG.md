@@ -3,6 +3,20 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.0 (2026-10-16)
+Lo nuevo desde el paquete del 14 de octubre.
+
+### Los bots
+
+- **Cazan bastante más rápido**: de un cuarto más de experiencia por minuto en todos los niveles.
+- **Los que pegan fuerte con el arma pelean con el arma** aunque sepan magia: el hechizo queda para cuando saca más.
+- **Los que pelean con magia toman pociones azules** en vez de sentarse a meditar después de cada criatura.
+- **Sin nada a la vista van a donde nace lo que cazan**, en vez de dar vueltas al azar.
+- **Eligen la presa que más rinde**: el Zombi antes que el Esqueleto que tienen al lado.
+- **Al irse a dormir en el campo, si no hay nada cerca, se van ahí mismo** en vez de caminar hasta la ciudad.
+- **Un bot que no pudo entrar una vez no se queda afuera**: antes probaba crear la cuenta que ya tenía y se rendía.
+
+
 ## 1.0.0 (2026-10-14)
 Lo nuevo desde el paquete del 13 de octubre.
 
