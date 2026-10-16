@@ -6073,7 +6073,56 @@ public sealed partial class Bot
             long dano = _crudo - (long)_entraron * defensa;
             return dano <= 0 ? int.MaxValue : (int)Math.Min(int.MaxValue, ((long)vida * _golpes + dano - 1) / dano);
         }
+
+        /// <summary>Lo que saca un golpe con esa arma a algo de esa defensa, en promedio y contando los que erra; null si no se sabe
+        /// (otra arma o menos de <see cref="GolpesParaJuzgar"/> golpes).</summary>
+        public double? DanoPorGolpe(short arma, int defensa) =>
+            arma != _arma || _golpes < GolpesParaJuzgar ? null : (_crudo - (double)_entraron * defensa) / _golpes;
     }
+
+    /// <summary>
+    /// LO QUE SABE DE SUS HECHIZOS DE DAÑO: de los últimos <see cref="LanzamientosQueRecuerda"/> lanzamientos de cada uno que le costaron
+    /// maná, lo que sacaron. Es el mismo número sobre la cabeza que el del golpe (el modo 2 de <c>ChatOverHeadLocale</c>), así que se
+    /// toma apenas se lanza: si no, se sumaba al golpe siguiente.
+    /// </summary>
+    public sealed class HechizoMedido
+    {
+        private readonly Dictionary<short, Queue<int>> _ultimos = new();
+
+        public void Anotar(short hechizo, int dano)
+        {
+            if (!_ultimos.TryGetValue(hechizo, out var cola)) _ultimos[hechizo] = cola = new Queue<int>();
+            cola.Enqueue(dano);
+            while (cola.Count > LanzamientosQueRecuerda) cola.Dequeue();
+        }
+
+        /// <summary>Lo que saca un lanzamiento de ese hechizo, en promedio; null con menos de <see cref="LanzamientosParaJuzgar"/>.</summary>
+        public double? DanoPorLanzamiento(short hechizo) =>
+            _ultimos.TryGetValue(hechizo, out var cola) && cola.Count >= LanzamientosParaJuzgar ? cola.Average() : null;
+    }
+
+    private const int LanzamientosQueRecuerda = 20, LanzamientosParaJuzgar = 3;
+
+    /// <summary>Lo que sabe de sus hechizos: ver <see cref="HechizoMedido"/>.</summary>
+    private readonly HechizoMedido _hechizosMedidos = new();
+
+    /// <summary>
+    /// ¿PEGA CON EL ARMA EN VEZ DE LANZAR? Si su golpe (<paramref name="golpe"/>, ver <see cref="GolpeMedido.DanoPorGolpe"/>) saca al
+    /// menos <see cref="ProporcionDelArma"/> de lo que saca el hechizo que lanzaría (<paramref name="hechizo"/>, lo medido, o
+    /// <paramref name="hechizoSegunLaFicha"/>, el promedio de su ficha, mientras no se sabe): el golpe no gasta maná, y el hechizo
+    /// se paga sentándose a meditar. Sin saber su golpe con el arma que tiene, la prueba: así se sabe.
+    ///
+    /// <para>Medido en las rondas 68 y 69 (14/10): el que sabía magia peleaba siempre con magia, y los que pegan fuerte se vaciaban
+    /// y meditaban. Milo, Paladín de nivel 24 con el Martillo de Guerra, saca unos 97 por golpe contra un Zombi (114 al 85 %) y lanzaba
+    /// el Misil Mágico, que le saca 40 por 40 de maná: 1,2 muertes por minuto contra 2,2 de Osmar y 1,8 de Quim, de vida y nivel
+    /// parecidos, en el mismo 13. Lo mismo Elmo, Kael y Juana. A los magos (Bruma, Rufo), Hilda y Nadia el arma les saca menos que el
+    /// hechizo: siguen lanzando.</para>
+    /// </summary>
+    public static bool PegaConElArma(double? golpe, double? hechizo, int hechizoSegunLaFicha) =>
+        golpe is not { } g || g >= (hechizo ?? hechizoSegunLaFicha) * ProporcionDelArma;
+
+    /// <summary>Cuánto de lo que saca el hechizo le alcanza al golpe para preferir el arma: ver <see cref="PegaConElArma"/>.</summary>
+    public const double ProporcionDelArma = 0.8;
 
     /// <summary>
     /// ¿SE LA SACA DE ENCIMA AUNQUE NO SEA PRESA? Si con sus golpes la mata en <see cref="GolpesParaSacarselaDeEncima"/> o menos
@@ -6172,11 +6221,17 @@ public sealed partial class Bot
             // EL QUE SABE MAGIA PELEA CON MAGIA, y de lejos. Es lo que hace distinto a un mago de un guerrero
             // visto desde afuera, y sin esto todas las clases peleaban igual: acercarse y pegar.
             int manaAntes = sentidos.ManaEnPuntos;
+            // SALVO QUE SU ARMA SAQUE CASI LO MISMO: ver `PegaConElArma`. Con la gente, como siempre.
             if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY && !DejaDeLanzarle(lanzadosEnVano)
-                && LanzarAlgo(transporte, sentidos, quien))
+                && LanzarAlgo(transporte, sentidos, quien, aGente ? null : _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0))
             {
+                short? lanzado = _ultimoCasteo?.Hechizo;
                 await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                 lanzadosEnVano = sentidos.ManaEnPuntos < manaAntes ? 0 : lanzadosEnVano + 1;
+                // LO QUE SACÓ EL HECHIZO, aparte del golpe: ver `HechizoMedido`.
+                var (_, _, sacoElHechizo) = sentidos.TomarLoQuePego();
+                if (!aGente && lanzado is { } hechizoLanzado && sentidos.ManaEnPuntos < manaAntes)
+                    _hechizosMedidos.Anotar(hechizoLanzado, sacoElHechizo);
                 continue;
             }
 
@@ -6472,7 +6527,9 @@ public sealed partial class Bot
 
     private (short Hechizo, long Cuando)? _ultimoCasteo;
 
-    private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
+    /// <param name="defensaParaElArma">La defensa de la criatura a la que le lanza, para ver si le conviene el arma
+    /// (<see cref="PegaConElArma"/>); null, como siempre: lanza.</param>
+    private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a, int? defensaParaElArma = null)
     {
         if (!sentidos.UsaMana || !ElClicLoElige(a.Y)) return false;
         RevisarElUltimoCasteo(sentidos);
@@ -6488,6 +6545,10 @@ public sealed partial class Bot
 
         // Lo pedido se recuerda DESPUÉS de que los dos paquetes salieron: ver `CurarseConMagia`.
         short hechizo = sentidos.HechizoEn(ranuraElegida);
+        if (defensaParaElArma is { } defensa && _entorno.Datos.Spell(hechizo) is { } elegido
+            && PegaConElArma(_golpe.DanoPorGolpe(ArmaEnLaMano(sentidos), defensa), _hechizosMedidos.DanoPorLanzamiento(hechizo),
+                             (elegido.MinHp + elegido.MaxHp) / 2))
+            return false;
         if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranuraElegida)))
             || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
                    w => w.WriteByte(a.X).WriteByte(ClicEnLaCabeza(a.Y)).WriteByte((byte)GameLimits.SkillMagia)))) return false;
