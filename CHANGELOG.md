@@ -3,7 +3,7 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
-## 1.0.0 (2026-10-16)
+## 1.0.0 (2026-10-17)
 Lo nuevo desde el paquete del 14 de octubre.
 
 ### Los bots
@@ -15,6 +15,9 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Eligen la presa que más rinde**: el Zombi antes que el Esqueleto que tienen al lado.
 - **Al irse a dormir en el campo, si no hay nada cerca, se van ahí mismo** en vez de caminar hasta la ciudad.
 - **Un bot que no pudo entrar una vez no se queda afuera**: antes probaba crear la cuenta que ya tenía y se rendía.
+- **Si la runa los deja en un pueblo con tienda, compran ahí** en vez de volver caminando un rato después.
+- **El que revive sin oro encima va al banquero a mirar lo que guardó** y compra con eso, en vez de quedarse parado en la ciudad.
+- **Al morir ya no esperan para volver a comprar** lo que se les cayó.
 
 
 ## 1.0.0 (2026-10-14)
