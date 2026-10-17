@@ -756,6 +756,11 @@ public sealed partial class Bot
             // que puede hacer es caminar buscando uno e insistir cada tanto. Es lo mismo que hace una persona.
             if (!sentidos.Vivo)
             {
+                // Y LO QUE ESPERABA PARA COMPRAR SE CORTA: muerto en un mapa inseguro se le cae todo, y lo que hay que reponer no espera
+                // un descanso de antes. Medido en `runa2` (17/10): Osmar murió en el 13 con 774 segundos de descanso largo por un viaje
+                // de gustos, revivió en Rinkel sin oro ni pociones y esperó doce minutos antes de ir a la bóveda.
+                _descansoLargo = false;
+                _proximaCompra = 0;
                 if (Environment.TickCount64 >= proximaResurreccion)
                 {
                     proximaResurreccion = Environment.TickCount64 + PruebaRevivirMs;
