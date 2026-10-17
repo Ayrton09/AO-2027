@@ -72,6 +72,20 @@ public class ElBancoDelBotTests
         Assert.Equal(necesita, Bot.NecesitaElBanco(banco, oro, bolsillo, soloGustos));
     }
 
+    /// <summary>EL QUE REVIVE SIN NADA MIRA LA BÓVEDA (<see cref="Bot.MiraLaBoveda"/>): Osmar en `confm1`, nivel 23, en Rinkel con 0
+    /// encima y 40.328 guardados que no sabía.</summary>
+    [Theory]
+    [InlineData(23, 0, -1, true, true)]        // Osmar
+    [InlineData(23, 0, 40_328, true, false)]   // ya lo sabe: la compra retira
+    [InlineData(23, 0, 0, true, false)]        // ya sabe que no hay
+    [InlineData(23, 500, -1, true, false)]     // tiene con qué comprar
+    [InlineData(23, 0, -1, false, false)]      // sin banquero en el mapa
+    [InlineData(10, 0, -1, true, false)]       // novato
+    public void Sin_plata_encima_mira_lo_que_guardo(int nivel, int oro, int banco, bool hayBanquero, bool mira)
+    {
+        Assert.Equal(mira, Bot.MiraLaBoveda(nivel, oro, banco, hayBanquero));
+    }
+
     /// <summary>EL BOLSILLO, con los precios de la data: lo de dos viajes de compras del mid. Tiene que quedar MUY por debajo de lo que
     /// el mid lleva encima (25 mil de mediana en las corridas del 01/10 al 06/10), si no depositar no le saca nada del riesgo.</summary>
     [Fact]

@@ -1544,6 +1544,10 @@ public sealed partial class Bot
         // Y SÓLO SI LE ALCANZA PARA LA MÁS BARATA: ver `LaRopaMasBarata`.
         bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar
                        && LoPuedePagar(LaRopaMasBarata(sentidos), sobraParaLaRopa);
+        // Y SIN PLATA ENCIMA, A MIRAR LA BÓVEDA: ver `MiraLaBoveda`. Con el saldo a la vista, la vuelta que viene compra con todo.
+        if (MiraLaBoveda(sentidos.Nivel, sentidos.Oro, sentidos.Banco, TieneBanquero(sentidos.Mapa))
+            && await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct))
+            return true;
         if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 

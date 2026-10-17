@@ -74,6 +74,18 @@ public sealed partial class Bot
     public static bool NecesitaElBanco(int banco, int oro, int bolsillo, bool soloGustos) =>
         banco > 0 && (oro < bolsillo || (soloGustos && banco > oro - bolsillo));
 
+    /// <summary>
+    /// ¿VA A MIRAR LO QUE TIENE EN LA BÓVEDA? Pasado el novato, sin plata encima para comprar nada (<see cref="MonedasDeApuro"/>),
+    /// sin saber lo que guardó (<paramref name="banco"/> en -1: el servidor no lo manda al entrar) y con un banquero en el mapa.
+    /// Sabiéndolo, la compra lo cuenta (<see cref="PlataDe"/>) y retira antes del mostrador (<see cref="NecesitaElBanco"/>).
+    ///
+    /// <para>Decisión del autor (17/10): el que revive sin nada, retira de la bóveda. Medido en `confm1` y `confm5` (16/10): Osmar,
+    /// nivel 23, murió en el 13 y revivió en Rinkel con 0 encima, sin pociones ni ropa, y pasó 1065 y 1052 segundos parado ahí, "nada
+    /// que comprar", con 40.328 en la bóveda. En las corridas guardadas, 328 de esas líneas son en Rinkel, que tiene dos banqueros.</para>
+    /// </summary>
+    public static bool MiraLaBoveda(int nivel, int oro, int banco, bool hayBanquero) =>
+        nivel > GameLimits.NewbieMaxLevel && oro < MonedasDeApuro && banco < 0 && hayBanquero;
+
     private bool EsBanquero(short ficha) => _entorno.Datos.Npc(ficha) is { NpcType: NpcTypeBanquero };
 
     /// <summary>Dónde nace el banquero de ese mapa, o null si no tiene.</summary>
