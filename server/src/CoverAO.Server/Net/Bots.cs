@@ -1588,7 +1588,7 @@ public sealed partial class Bot
         bool MapaDondeCompra(int mapa) => MapaAtiende(mapa) && (!conLaDelBanco || TieneBanquero(mapa));
         // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
         void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)
-                                                 == DescansoDeCompras.Largo);
+                                                 == DescansoDeCompras.Largo, porFracaso: true);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaElEquipo(sentidos);
 
@@ -1953,9 +1953,10 @@ public sealed partial class Bot
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres
     /// segundos se comía el cupo de toda la sesión, y la corrida terminaba con cero compras sin que el bot
     /// hubiera llegado a intentarlo más de una vez.</summary>
-    private void PostergarCompra(bool exito = false)
+    private void PostergarCompra(bool exito = false, bool porFracaso = false)
     {
         _descansoLargo = exito;
+        _descansoPorFracaso = porFracaso;
         _proximaCompra = Environment.TickCount64 + (exito
             ? _rng.Next(EnfriamientoCompraMinM, EnfriamientoCompraMaxM + 1) * 60_000L
             : _rng.Next(EnfriamientoFalloMinS, EnfriamientoFalloMaxS + 1) * 1_000L);
@@ -1967,6 +1968,9 @@ public sealed partial class Bot
         descansoLargo && oro >= MonedasDeApuro && (puntosDeComida < ComidaMinima || puntosDeBebida < BebidaMinima);
 
     private bool _descansoLargo;
+
+    /// <summary>Si el descanso que corre viene de un viaje que no consiguió nada (ver <see cref="ComprarAlCaerConLaRuna"/>).</summary>
+    private bool _descansoPorFracaso;
 
     /// <summary>
     /// LO QUE SE GUARDA PARA LO OTRO ESENCIAL. Comprando una cosa se gastaba todo menos una moneda, y si la otra también faltaba
@@ -4330,8 +4334,19 @@ public sealed partial class Bot
         var dondeEstaba = sentidos.Posicion;
         if (!Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna)) return false;
         for (int i = 0; i < 12 && sentidos.Mapa == antes && sentidos.Posicion == dondeEstaba; i++) await Task.Delay(250, ct);
+        if (ComprarAlCaerConLaRuna(_descansoPorFracaso, sentidos.Mapa != antes && LeVendenAca(sentidos.Mapa))) _proximaCompra = 0;
         return true;
     }
+
+    /// <summary>
+    /// ¿COMPRA APENAS LA RUNA LO DEJA EN UN PUEBLO? Sí, si el descanso que corre es el de un viaje que no consiguió nada (la tienda que
+    /// no había donde cazaba) y donde cae le venden. El descanso de una compra hecha se respeta: ya compró.
+    ///
+    /// <para>Medido en `confm1`, `confm3` y `confm5` (16/10): Bruma, con hogar Rinkel, probaba comprar en el 824, "sin tienda", y tomaba
+    /// el descanso largo de los gustos; un minuto después la runa la dejaba en Rinkel con la tienda a la vista, caminaba al coto y doce
+    /// minutos más tarde volvía a pie a Rinkel a comprar, de 485 a 554 segundos de viaje. En doce saltos, ninguno compró al caer.</para>
+    /// </summary>
+    public static bool ComprarAlCaerConLaRuna(bool descansoPorFracaso, bool cayoDondeLeVenden) => descansoPorFracaso && cayoDondeLeVenden;
 
     private long _proximoSaltoConLaRuna;
 

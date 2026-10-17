@@ -36,6 +36,16 @@ public class ElSaltoConLaRunaTests
     public void Salta_si_desde_la_casa_suma_una_vez_y_media(int aPie, int desdeLaCasa, bool salta) =>
         Assert.Equal(salta, Bot.ValeSaltarConLaRuna(aPie, desdeLaCasa));
 
+    /// <summary>Al caer con la runa en un pueblo que le vende, el descanso de la compra que no encontró tienda se corta; el de una
+    /// compra hecha, no (<c>Bot.ComprarAlCaerConLaRuna</c>).</summary>
+    [Theory]
+    [InlineData(true, true, true)]     // probó en el 824, sin tienda; cae en Rinkel
+    [InlineData(false, true, false)]   // ya compró: el descanso se respeta
+    [InlineData(true, false, false)]   // cae donde no le venden
+    [InlineData(false, false, false)]
+    public void Compra_al_caer_si_venia_de_no_encontrar_tienda(bool porFracaso, bool cayoDondeLeVenden, bool compra) =>
+        Assert.Equal(compra, Bot.ComprarAlCaerConLaRuna(porFracaso, cayoDondeLeVenden));
+
     [Fact]
     public async Task Con_el_hogar_en_Rinkel_usa_la_runa_antes_de_ir_a_cazar_en_la_region()
         => Assert.Equal<ClientPacketId?>(ClientPacketId.UseItem, await PrimeraDecision(Cities.Rinkel));
