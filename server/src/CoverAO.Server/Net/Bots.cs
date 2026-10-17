@@ -1455,6 +1455,14 @@ public sealed partial class Bot
         // bebida en cero. El descanso corto de un viaje fallido sí se respeta: sin él reintentaría en cada vuelta.
         if (SaltaElDescanso(_descansoLargo, PlataDe(sentidos), sentidos.Suma(PuntosDeComida), sentidos.Suma(PuntosDeBebida)))
             _proximaCompra = 0;
+        // Y RECIÉN CAÍDO CON LA RUNA DONDE LE VENDEN, COMPRA: ver `ComprarAlCaerConLaRuna`.
+        if (_salto.Desde != 0 && sentidos.Mapa != _salto.Desde)
+        {
+            if (Environment.TickCount64 - _salto.Cuando < RecienCaidoMs
+                && ComprarAlCaerConLaRuna(_descansoPorFracaso, LeVendenAca(sentidos.Mapa)))
+                _proximaCompra = 0;
+            _salto = default;
+        }
         if (Environment.TickCount64 < _proximaCompra) return false;
 
         bool faltanPociones = FaltanPociones(sentidos.Suma(PocionPropia));
@@ -4338,9 +4346,16 @@ public sealed partial class Bot
         var dondeEstaba = sentidos.Posicion;
         if (!Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna)) return false;
         for (int i = 0; i < 12 && sentidos.Mapa == antes && sentidos.Posicion == dondeEstaba; i++) await Task.Delay(250, ct);
-        if (ComprarAlCaerConLaRuna(_descansoPorFracaso, sentidos.Mapa != antes && LeVendenAca(sentidos.Mapa))) _proximaCompra = 0;
+        _salto = (antes, Environment.TickCount64);
         return true;
     }
+
+    /// <summary>De qué mapa saltó con la runa para cazar y cuándo: la compra que sigue mira dónde cayó (<see cref="ComprarAlCaerConLaRuna"/>).
+    /// No se mira al terminar el salto: peleando en una puerta, la runa tarda más que la espera (Milo en `runa1`, 17/10).</summary>
+    private (int Desde, long Cuando) _salto;
+
+    /// <summary>Hasta cuánto después del salto cuenta como recién caído.</summary>
+    private const int RecienCaidoMs = 30_000;
 
     /// <summary>
     /// ¿COMPRA APENAS LA RUNA LO DEJA EN UN PUEBLO? Sí, si el descanso que corre es el de un viaje que no consiguió nada (la tienda que
