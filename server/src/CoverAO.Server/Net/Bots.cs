@@ -757,8 +757,8 @@ public sealed partial class Bot
             if (!sentidos.Vivo)
             {
                 // Y LO QUE ESPERABA PARA COMPRAR SE CORTA: muerto en un mapa inseguro se le cae todo, y lo que hay que reponer no espera
-                // un descanso de antes. Medido en `runa2` (17/10): Osmar murió en el 13 con 774 segundos de descanso largo por un viaje
-                // de gustos, revivió en Rinkel sin oro ni pociones y esperó doce minutos antes de ir a la bóveda.
+                // un descanso de antes. Medido en `runa2` (17/10): Osmar murió en el 13 con unos diez minutos de descanso largo pendientes
+                // por un viaje de gustos, revivió en Rinkel sin oro ni pociones y esperó doce minutos antes de ir a la bóveda.
                 _descansoLargo = false;
                 _proximaCompra = 0;
                 if (Environment.TickCount64 >= proximaResurreccion)
@@ -4364,7 +4364,8 @@ public sealed partial class Bot
 
     /// <summary>
     /// ¿COMPRA APENAS LA RUNA LO DEJA EN UN PUEBLO? Sí, si el descanso que corre es el de un viaje que no consiguió nada (la tienda que
-    /// no había donde cazaba) y donde cae le venden. El descanso de una compra hecha se respeta: ya compró.
+    /// no había donde cazaba) y donde cae le venden. El de una compra hecha se respeta, salvo que después probara
+    /// de nuevo y no encontrara tienda: entonces mira una vez al caer, y si no le falta nada no viaja.
     ///
     /// <para>Medido en `confm1`, `confm3` y `confm5` (16/10): Bruma, con hogar Rinkel, probaba comprar en el 824, "sin tienda", y tomaba
     /// el descanso largo de los gustos; un minuto después la runa la dejaba en Rinkel con la tienda a la vista, caminaba al coto y doce

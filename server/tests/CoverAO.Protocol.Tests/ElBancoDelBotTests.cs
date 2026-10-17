@@ -1,4 +1,7 @@
+using System.Reflection;
+using CoverAO.Protocol;
 using CoverAO.Server.Data;
+using CoverAO.Server.Game;
 using CoverAO.Server.Net;
 using Xunit;
 
@@ -84,6 +87,73 @@ public class ElBancoDelBotTests
     public void Sin_plata_encima_mira_lo_que_guardo(int nivel, int oro, int banco, bool hayBanquero, bool mira)
     {
         Assert.Equal(mira, Bot.MiraLaBoveda(nivel, oro, banco, hayBanquero));
+    }
+
+    /// <summary>
+    /// Y LO HACE: Osmar, nivel 23, revive en Rinkel (75,55) sin oro, sin pociones y sin saber lo que guardó, y la compra lo manda
+    /// caminando a los banqueros (73,35 y 79,35). Un novato igual de pobre no sale: no tiene a qué.
+    /// </summary>
+    [Fact]
+    public async Task El_que_revive_sin_nada_en_Rinkel_camina_al_banquero()
+    {
+        var d = GameData.Load();
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (d.MapExits.Count == 0 || !File.Exists(ruta)) return;
+        var ini = ServerIni.Cargar(ruta);
+        Assert.Equal(ClientPacketId.Walk, await PrimerPasoDeLaCompra(d, ini, 23));
+        Assert.Null(await PrimerPasoDeLaCompra(d, ini, 10));
+    }
+
+    private static readonly MethodInfo IrDeComprasAsync =
+        typeof(Bot).GetMethod("IrDeComprasAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    /// <summary>Corre la compra de un bot de ese nivel en Rinkel con cero encima y devuelve el primer paquete de caminar o de doble
+    /// clic (null si no mandó ninguno en cinco segundos).</summary>
+    private static async Task<ClientPacketId?> PrimerPasoDeLaCompra(GameData d, ServerIni ini, int nivel)
+    {
+        const short MiIndice = 500;
+        const int Rinkel = 20;
+        var s = new SentidosDelBot();
+        var p = new Player
+        {
+            CharIndex = MiIndice, Name = "Osmar", Account = "osmar_test", Pos = new WorldPos(Rinkel, 75, 55), Level = (byte)nivel,
+            MaxHp = 200, Hp = 200, MaxMana = 0, Mana = 0, MaxStamina = 300, Stamina = 300, FactionStatus = Player.StatusCiudadano,
+        };
+        s.Recibir(ServerMessages.UserIndexInServer(MiIndice));
+        s.Recibir(ServerMessages.ChangeMap(Rinkel));
+        s.Recibir(ServerMessages.CharacterCreate(p));
+        s.Recibir(ServerMessages.UpdateUserStats(p));
+        s.Recibir(ServerMessages.UpdateGold(0));
+        Assert.Equal(-1, s.Banco);
+        var bot = new Bot("Osmar", null, new EntornoDeBots(null!, ini, 0, 0, d, new Navegante(d), null!,
+                                                           hogarDe: _ => Cities.Rinkel), 1);
+        var t = new TransporteDeBot("Osmar");
+        var fin = new TaskCompletionSource();
+        var compra = (Task)IrDeComprasAsync.Invoke(bot, new object[] { t, s, fin.Task, CancellationToken.None })!;
+        ClientPacketId? primero = null;
+        var limite = DateTime.UtcNow.AddSeconds(5);
+        while (primero is null && DateTime.UtcNow < limite && !compra.IsCompleted)
+            if (await Proximo(t, 200) is { } paquete && paquete[0] is (byte)ClientPacketId.Walk or (byte)ClientPacketId.DoubleClick)
+                primero = (ClientPacketId)paquete[0];
+        fin.TrySetResult();
+        try { await compra.WaitAsync(TimeSpan.FromSeconds(10)); } catch (Exception) { }
+        return primero;
+    }
+
+    /// <summary>El próximo paquete que mandó el bot, o null si no mandó ninguno en <paramref name="ms"/> milisegundos.</summary>
+    private static async Task<byte[]?> Proximo(TransporteDeBot t, int ms)
+    {
+        using var cts = new CancellationTokenSource(ms);
+        var buffer = new byte[4096];
+        try
+        {
+            int n = await t.ReceiveAsync(buffer, cts.Token);
+            if (n == 0) return null;
+            var paquete = new byte[n];
+            for (int i = 0; i < n; i++) paquete[i] = (byte)(buffer[i] ^ t.Clave);
+            return paquete;
+        }
+        catch (OperationCanceledException) { return null; }
     }
 
     /// <summary>EL BOLSILLO, con los precios de la data: lo de dos viajes de compras del mid. Tiene que quedar MUY por debajo de lo que
