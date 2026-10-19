@@ -3,7 +3,7 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
-## 1.0.0 (2026-10-17)
+## 1.0.0 (2026-10-19)
 Lo nuevo desde el paquete del 14 de octubre.
 
 ### Los bots
@@ -18,6 +18,7 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Si la runa los deja en un pueblo con tienda, compran ahí** en vez de volver caminando un rato después.
 - **El que revive sin oro encima va al banquero a mirar lo que guardó** y compra con eso, en vez de quedarse parado en la ciudad.
 - **Al morir ya no esperan para volver a comprar** lo que se les cayó.
+- **Cuando van a algún lado caminan como alguien con la tecla apretada**: viajando y persiguiendo ya no van a su paso de paseo.
 
 
 ## 1.0.0 (2026-10-14)
