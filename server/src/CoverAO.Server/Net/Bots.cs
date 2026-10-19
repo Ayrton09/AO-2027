@@ -1631,6 +1631,8 @@ public sealed partial class Bot
         bool Sirve(int ficha)
         {
             if (_entorno.Datos.Npc(ficha) is not { StockItems: { Count: > 0 } stock } mercader) return false;
+            // DESNUDO, AL QUE VENDE ROPA ANTES QUE A NADIE: ver `ElDesnudoVaPorLaRopa`.
+            if (ElDesnudoVaPorLaRopa(desnudo, hayRopaAlAlcance)) return VendeRopa(ficha);
             if (primeroLasPociones) return stock.Any(s => EsPocionDeVida((short)s.ObjIndex));
             if (quiero != 0) return stock.Any(s => s.ObjIndex == quiero);
             if (soloLaRopa) return VendeRopa(ficha);
@@ -1949,6 +1951,17 @@ public sealed partial class Bot
     /// (<see cref="LoQueAlcanzaParaVestirse"/>): con la comida primero, el que revivía desnudo con 49 se los gastaba en comida.
     /// </summary>
     public static bool LaRopaVaPrimero(int nivel, bool tieneRopaPropia) => LaRopaEsEsencial(nivel, tieneRopaPropia);
+
+    /// <summary>
+    /// ¿EL VIAJE DEL DESNUDO VA SÓLO AL QUE VENDE ROPA? Sí, si le alcanza para la más barata (<paramref name="desnudo"/>) y hay quien se
+    /// la venda a su alcance (<paramref name="hayRopaAlAlcance"/>): antes que las pociones y la comida, que desnudo no le sirven, porque
+    /// no recupera energía y sin energía no pega. Sin quien se la venda, el viaje elige como siempre.
+    ///
+    /// <para>Medido en la ronda 87 (`desnudo1` a `desnudo4`, 19/10, seis bots desnudos en Rinkel con 0 encima y 60 en la bóveda):
+    /// Osmar, Dalia e Ivo fueron primero al Alquimista o al Tabernero, gastaron ahí la plata y no se vistieron en toda la corrida, en
+    /// las cuatro corridas; Elmo, Milo y Ciro, que fueron primero al sastre, sí.</para>
+    /// </summary>
+    public static bool ElDesnudoVaPorLaRopa(bool desnudo, bool hayRopaAlAlcance) => desnudo && hayRopaAlAlcance;
 
     /// <summary>
     /// LO ESENCIAL QUE BUSCA EN UN VIAJE LARGO: a casa con la runa (<see cref="VolverACasaAsync"/>) o a pie cruzando peligro

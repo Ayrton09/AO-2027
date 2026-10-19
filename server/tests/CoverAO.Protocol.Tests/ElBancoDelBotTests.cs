@@ -151,6 +151,15 @@ public class ElBancoDelBotTests
         Assert.True(Bot.LoPuedePagar(ropa, Llamar("PlataParaLaRopa")), $"con {reserva} no paga una ropa de {ropa}");
     }
 
+    /// <summary>EL DESNUDO VA PRIMERO AL QUE VENDE ROPA (<see cref="Bot.ElDesnudoVaPorLaRopa"/>): Osmar, Dalia e Ivo en la ronda 87 fueron
+    /// al Alquimista o al Tabernero y no se vistieron. Sin quien le venda, el viaje elige como siempre.</summary>
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void El_desnudo_va_primero_por_la_ropa(bool desnudo, bool hayRopa, bool vaPorLaRopa) =>
+        Assert.Equal(vaPorLaRopa, Bot.ElDesnudoVaPorLaRopa(desnudo, hayRopa));
+
     /// <summary>
     /// Y LO HACE: Osmar, nivel 23, revive en Rinkel (75,55) sin oro, sin pociones y sin saber lo que guardó, y la compra lo manda
     /// caminando a los banqueros (73,35 y 79,35). Un novato igual de pobre no sale: no tiene a qué.
