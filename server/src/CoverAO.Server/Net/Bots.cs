@@ -761,6 +761,7 @@ public sealed partial class Bot
                 // por un viaje de gustos, revivió en Rinkel sin oro ni pociones y esperó doce minutos antes de ir a la bóveda.
                 _descansoLargo = false;
                 _proximaCompra = 0;
+                _plataQueNoAlcanzo = -1;
                 if (Environment.TickCount64 >= proximaResurreccion)
                 {
                     proximaResurreccion = Environment.TickCount64 + PruebaRevivirMs;
@@ -1826,7 +1827,9 @@ public sealed partial class Bot
         if (!sentidos.Comerciando) { Fracaso(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
-        _plataQueNoAlcanzo = compro ? -1 : PlataDe(sentidos);
+        // EL UMBRAL DEL MOSTRADOR, sólo del viaje por pociones o antídoto que volvió sin nada y vivo: ver `VuelveAlMostrador`.
+        if (compro) _plataQueNoAlcanzo = -1;
+        else if ((vaPorPociones || vaPorAntidoto) && sentidos.Vivo && sentidos.Salud >= TomaPocion) _plataQueNoAlcanzo = PlataDe(sentidos);
         // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
@@ -1961,9 +1964,9 @@ public sealed partial class Bot
     /// la venda a su alcance (<paramref name="hayRopaAlAlcance"/>): antes que las pociones y la comida, que desnudo no le sirven, porque
     /// no recupera energía y sin energía no pega. Sin quien se la venda, el viaje elige como siempre.
     ///
-    /// <para>Medido en la ronda 87 (`desnudo1` a `desnudo4`, 19/10, seis bots desnudos en Rinkel con 0 encima y 60 en la bóveda):
-    /// Osmar, Dalia e Ivo fueron primero al Alquimista o al Tabernero, gastaron ahí la plata y no se vistieron en toda la corrida, en
-    /// las cuatro corridas; Elmo, Milo y Ciro, que fueron primero al sastre, sí.</para>
+    /// <para>Medido en la ronda 89 (`desnudc1` a `desnudc4`, 19/10, bots desnudos en Rinkel con 0 encima y lo de su ropa en la bóveda):
+    /// Ivo, con 110, fue primero al Alquimista y no se vistió en toda la corrida con el código de antes (`desnudc2` y `desnudc4`); con
+    /// esto fue primero al Sastre, se vistió y volvió a cazar (`desnudc1` y `desnudc3`).</para>
     /// </summary>
     public static bool ElDesnudoVaPorLaRopa(bool desnudo, bool hayRopaAlAlcance) => desnudo && hayRopaAlAlcance;
 

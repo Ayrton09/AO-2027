@@ -161,8 +161,8 @@ public class ElBancoDelBotTests
     public void No_vuelve_al_mostrador_con_la_plata_que_no_alcanzo(int plata, int laQueNoAlcanzo, bool vuelve) =>
         Assert.Equal(vuelve, Bot.VuelveAlMostrador(plata, laQueNoAlcanzo));
 
-    /// <summary>EL DESNUDO VA PRIMERO AL QUE VENDE ROPA (<see cref="Bot.ElDesnudoVaPorLaRopa"/>): Osmar, Dalia e Ivo en la ronda 87 fueron
-    /// al Alquimista o al Tabernero y no se vistieron. Sin quien le venda, el viaje elige como siempre.</summary>
+    /// <summary>EL DESNUDO VA PRIMERO AL QUE VENDE ROPA (<see cref="Bot.ElDesnudoVaPorLaRopa"/>): Ivo en la ronda 89 iba al Alquimista y no se
+    /// vestía. Sin quien le venda, el viaje elige como siempre.</summary>
     [Theory]
     [InlineData(true, true, true)]
     [InlineData(true, false, false)]
