@@ -1943,6 +1943,14 @@ public sealed partial class Bot
     public static bool LaRopaEsEsencial(int nivel, bool tieneRopaPropia) => nivel > GameLimits.NewbieMaxLevel && !tieneRopaPropia;
 
     /// <summary>
+    /// ¿EN EL MOSTRADOR, LA ROPA ANTES QUE LA COMIDA Y LA BEBIDA? Desnudo (<see cref="LaRopaEsEsencial"/>), sí: la comida se compra con
+    /// todo lo que no es de la bebida, y la ropa venía después con lo que quedara. La compra de la ropa ya aparta lo de comer y tomar
+    /// (<see cref="PlataParaLaRopa"/>), así que yendo primero no deja a nadie sin comer. Es lo que hace servir la reserva del banco
+    /// (<see cref="LoQueAlcanzaParaVestirse"/>): con la comida primero, el que revivía desnudo con 49 se los gastaba en comida.
+    /// </summary>
+    public static bool LaRopaVaPrimero(int nivel, bool tieneRopaPropia) => LaRopaEsEsencial(nivel, tieneRopaPropia);
+
+    /// <summary>
     /// LO ESENCIAL QUE BUSCA EN UN VIAJE LARGO: a casa con la runa (<see cref="VolverACasaAsync"/>) o a pie cruzando peligro
     /// (<see cref="RescatarseAsync"/>) se va por la comida, la bebida o las pociones que faltan para pelear, no por equipo ni por
     /// vender; con el <c>Sirve</c> de la compra, el que tenía hambre y plata para equipo podía terminar en Rinkel, donde de lo
@@ -2127,6 +2135,9 @@ public sealed partial class Bot
             compro |= sentidos.CuantoTiene(obj => obj == herramienta) > 0;
         }
 
+        // DESNUDO, LA ROPA ANTES QUE LA COMIDA: ver `LaRopaVaPrimero`.
+        if (LaRopaVaPrimero(sentidos.Nivel, TieneRopaPropia(sentidos)))
+            compro |= await ComprarLaRopaDelCaminoAsync(transporte, sentidos, ct);
         // Lo esencial primero: sin comer ni tomar no se recupera la energía, y sin energía no se pelea. Las pociones
         // sobran —el kit de novato trae más de mil—, así que van al final con lo que quede.
         // Sin una gota encima, con la sed en cero y el hambre aguantando, la plata es para el agua: la comida no
