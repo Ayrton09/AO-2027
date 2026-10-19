@@ -1601,7 +1601,7 @@ public sealed partial class Bot
         // `battleMode` es 2 o 3). Y sin guardias que vayan por él: la ciudad del otro bando atiende, pero ahí lo matan.
         bool MapaAtiende(int mapa) => ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
         // Y SI LA COMPRA NECESITA LO DE LA BÓVEDA, SÓLO DONDE HAY BANQUERO: ver `NecesitaElBanco`.
-        bool conLaDelBanco = NecesitaElBanco(sentidos.Banco, sentidos.Oro, Bolsillo(sentidos), soloGustos);
+        bool conLaDelBanco = NecesitaElBanco(LoQueSePuedeRetirar(sentidos), sentidos.Oro, Bolsillo(sentidos), soloGustos);
         bool MapaDondeCompra(int mapa) => MapaAtiende(mapa) && (!conLaDelBanco || TieneBanquero(mapa));
         // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
         void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)

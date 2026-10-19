@@ -89,6 +89,19 @@ public class ElBancoDelBotTests
         Assert.Equal(mira, Bot.MiraLaBoveda(nivel, oro, banco, hayBanquero));
     }
 
+    /// <summary>LA RESERVA PARA VESTIRSE (<see cref="Bot.LoQueRetira"/>): retira todo menos lo que cuesta la ropa más barata; desnudo, todo.
+    /// Elmo en `medio1`: retiró 12.728, los gastó y la segunda muerte lo dejó desnudo, sin plata y sin energía.</summary>
+    [Theory]
+    [InlineData(12_728, false, 300, 12_428)]
+    [InlineData(12_728, true, 300, 12_728)]    // desnudo: la reserva es para esto
+    [InlineData(200, false, 300, 0)]           // menos que la reserva: no la toca
+    [InlineData(0, true, 300, 0)]
+    [InlineData(-1, false, 300, 0)]            // no sabe
+    public void Retira_todo_menos_lo_de_la_ropa(int banco, bool desnudo, int ropa, int retira)
+    {
+        Assert.Equal(retira, Bot.LoQueRetira(banco, desnudo, ropa));
+    }
+
     /// <summary>
     /// Y LO HACE: Osmar, nivel 23, revive en Rinkel (75,55) sin oro, sin pociones y sin saber lo que guardó, y la compra lo manda
     /// caminando a los banqueros (73,35 y 79,35). Un novato igual de pobre no sale: no tiene a qué.

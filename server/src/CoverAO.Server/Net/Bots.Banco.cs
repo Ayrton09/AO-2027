@@ -35,7 +35,16 @@ public sealed partial class Bot
     private bool _enElMostrador;
 
     /// <summary>La plata con la que decide: la de encima más la de la bóveda; en el mostrador, sólo la de encima.</summary>
-    private int PlataDe(SentidosDelBot sentidos) => _enElMostrador ? sentidos.Oro : sentidos.Plata;
+    private int PlataDe(SentidosDelBot sentidos) => _enElMostrador ? sentidos.Oro : sentidos.Oro + LoQueSePuedeRetirar(sentidos);
+
+    /// <summary>Lo de la bóveda con lo que se puede comprar: todo menos la reserva para vestirse (<see cref="LoQueRetira"/>); 0 si no lo
+    /// sabe.</summary>
+    private int LoQueSePuedeRetirar(SentidosDelBot sentidos)
+    {
+        if (sentidos.Banco <= 0) return 0;
+        int ropa = LaRopaMasBarata(sentidos);
+        return LoQueRetira(sentidos.Banco, LaRopaEsEsencial(sentidos.Nivel, TieneRopaPropia(sentidos)), ropa == int.MaxValue ? 0 : ropa);
+    }
 
     /// <summary>
     /// LO DE LAS COMPRAS, lo que se lleva encima: el doble de lo que cuesta llenar de cero las pociones, la comida, la bebida y los
@@ -158,11 +167,24 @@ public sealed partial class Bot
             await MoverAlBancoAsync(transporte, sentidos, sentidos.Oro - Bolsillo(sentidos), ct);
     }
 
-    /// <summary>Antes del mostrador, cuando la compra necesita lo guardado: retira todo (lo que sobre vuelve a la bóveda al
-    /// terminar, con <see cref="DepositarLoQueSobraAsync"/>).</summary>
+    /// <summary>Antes del mostrador, cuando la compra necesita lo guardado: retira todo menos la reserva para vestirse
+    /// (<see cref="LoQueRetira"/>); lo que sobre vuelve a la bóveda al terminar, con <see cref="DepositarLoQueSobraAsync"/>.</summary>
     private async Task RetirarParaComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct) || sentidos.Banco <= 0) return;
-        await MoverAlBancoAsync(transporte, sentidos, -sentidos.Banco, ct);
+        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct)) return;
+        if (LoQueSePuedeRetirar(sentidos) is > 0 and var retira) await MoverAlBancoAsync(transporte, sentidos, -retira, ct);
     }
+
+    /// <summary>
+    /// CUÁNTO RETIRA PARA COMPRAR: todo, menos lo que cuesta <paramref name="laRopaMasBarata"/>, que queda en la bóveda para la próxima
+    /// vez que muera en un lugar inseguro; desnudo, todo, que es para eso. Muerto ahí se le cae la ropa, y desnudo no recupera energía
+    /// (`Survival.RecuperaEnergia`, VB6 <c>RecStamina</c>): sin energía no pega, así que sin plata para vestirse no puede ni cazar algo
+    /// flojo para juntarla.
+    ///
+    /// <para>Decisión del autor (17/10): el que revive sin nada retira de la bóveda; si no tiene, caza algo flojo. Medido en `medio1`
+    /// (17/10): Elmo, nivel 24, retiró los 12.728 que tenía, los gastó en pociones, ropa, arma y comida, volvió a morir en el 13 y pasó
+    /// los últimos quince minutos desnudo en el 794, con 0 encima y 0 en la bóveda, entre Murciélagos a los que no podía pegar.</para>
+    /// </summary>
+    public static int LoQueRetira(int banco, bool desnudo, int laRopaMasBarata) =>
+        desnudo ? Math.Max(0, banco) : Math.Max(0, banco - laRopaMasBarata);
 }
