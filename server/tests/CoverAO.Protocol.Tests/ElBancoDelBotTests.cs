@@ -151,6 +151,16 @@ public class ElBancoDelBotTests
         Assert.True(Bot.LoPuedePagar(ropa, Llamar("PlataParaLaRopa")), $"con {reserva} no paga una ropa de {ropa}");
     }
 
+    /// <summary>NO VUELVE AL MOSTRADOR CON LA MISMA PLATA CON LA QUE NO LE ALCANZÓ (<see cref="Bot.VuelveAlMostrador"/>): Elmo en la ronda
+    /// 88, con 22, iba al Alquimista cada minuto y medio sin llevarse nada.</summary>
+    [Theory]
+    [InlineData(22, 22, false)]
+    [InlineData(20, 22, false)]
+    [InlineData(30, 22, true)]    // juntó algo
+    [InlineData(22, -1, true)]    // la última vez compró
+    public void No_vuelve_al_mostrador_con_la_plata_que_no_alcanzo(int plata, int laQueNoAlcanzo, bool vuelve) =>
+        Assert.Equal(vuelve, Bot.VuelveAlMostrador(plata, laQueNoAlcanzo));
+
     /// <summary>EL DESNUDO VA PRIMERO AL QUE VENDE ROPA (<see cref="Bot.ElDesnudoVaPorLaRopa"/>): Osmar, Dalia e Ivo en la ronda 87 fueron
     /// al Alquimista o al Tabernero y no se vistieron. Sin quien le venda, el viaje elige como siempre.</summary>
     [Theory]

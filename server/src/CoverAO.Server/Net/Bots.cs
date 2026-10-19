@@ -1525,8 +1525,10 @@ public sealed partial class Bot
         // sin llevarse nada.
         bool enApuro = PlataDe(sentidos) < MonedasDeApuro;
         // Y POR LAS POCIONES, SÓLO SI LE ALCANZA PARA UNA, como el antídoto (ver `LeAlcanzaParaUna`).
+        // Y NO VUELVE CON LA MISMA PLATA CON LA QUE NO LE ALCANZÓ: ver `VuelveAlMostrador`.
         bool vaPorPociones = faltanPociones && !enApuro
-                             && LeAlcanzaParaUna(PlataDe(sentidos), ReservaDeLasPociones(sentidos), CuestaLaPocion);
+                             && LeAlcanzaParaUna(PlataDe(sentidos), ReservaDeLasPociones(sentidos), CuestaLaPocion)
+                             && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
         // CON LA MOCHILA LLENA NO ENTRA NADA NUEVO, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
@@ -1823,6 +1825,7 @@ public sealed partial class Bot
         if (!sentidos.Comerciando) { Fracaso(); return true; }   // no atendió (facción, distancia, o no era mercader)
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
+        _plataQueNoAlcanzo = compro ? -1 : PlataDe(sentidos);
         // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
@@ -1986,6 +1989,19 @@ public sealed partial class Bot
     /// </summary>
     public static bool LeAlcanzaParaUna(int oro, int reserva, int precio) =>
         precio > 0 && Math.Max(oro * 0.8, oro - 1) - reserva >= precio;
+
+    /// <summary>
+    /// ¿VUELVE POR POCIONES? No con la misma plata (o menos) con la que llegó a un mostrador y no se llevó nada
+    /// (<paramref name="laQueNoAlcanzo"/>, -1 si la última vez compró): <see cref="LeAlcanzaParaUna"/> mira el precio más barato del
+    /// mundo, y en el mostrador que le toca sale más. Con más plata, sí.
+    ///
+    /// <para>Medido en la ronda 88 (`desnudb1`, 19/10): Elmo, nivel 24, se vistió, compró una poción y quedó con 22; de ahí fue al
+    /// Alquimista de Rinkel cada minuto y medio sin llevarse nada ("compro=False"), hasta el final.</para>
+    /// </summary>
+    public static bool VuelveAlMostrador(int plata, int laQueNoAlcanzo) => laQueNoAlcanzo < 0 || plata > laQueNoAlcanzo;
+
+    /// <summary>La plata con la que salió del último mostrador sin comprar nada; -1 si compró (ver <see cref="VuelveAlMostrador"/>).</summary>
+    private int _plataQueNoAlcanzo = -1;
 
     /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero
     /// un FRACASO no puede costar lo mismo: con el mismo castigo en las seis salidas, un tropiezo de tres
