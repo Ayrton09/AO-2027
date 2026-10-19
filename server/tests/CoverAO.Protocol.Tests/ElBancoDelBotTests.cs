@@ -89,17 +89,66 @@ public class ElBancoDelBotTests
         Assert.Equal(mira, Bot.MiraLaBoveda(nivel, oro, banco, hayBanquero));
     }
 
-    /// <summary>LA RESERVA PARA VESTIRSE (<see cref="Bot.LoQueRetira"/>): retira todo menos lo que cuesta la ropa más barata; desnudo, todo.
-    /// Elmo en `medio1`: retiró 12.728, los gastó y la segunda muerte lo dejó desnudo, sin plata y sin energía.</summary>
+    /// <summary>LA RESERVA PARA VESTIRSE (<see cref="Bot.LoQueRetira"/>): retira lo que pasa de la reserva; desnudo, todo si lo que pasa
+    /// no le alcanza para vestirse. Elmo en `medio1` retiró sus 12.728 desnudo, los gastó, y la muerte siguiente lo dejó sin nada.</summary>
     [Theory]
     [InlineData(12_728, false, 300, 12_428)]
-    [InlineData(12_728, true, 300, 12_728)]    // desnudo: la reserva es para esto
-    [InlineData(200, false, 300, 0)]           // menos que la reserva: no la toca
+    [InlineData(12_728, true, 300, 12_428)]    // desnudo y rico: la reserva se queda
+    [InlineData(500, true, 300, 500)]          // desnudo y con poco más: todo, que con 200 no se viste
+    [InlineData(300, true, 300, 300)]          // desnudo con la reserva sola: para eso está
+    [InlineData(200, false, 300, 0)]           // vestido, menos que la reserva: no la toca
     [InlineData(0, true, 300, 0)]
     [InlineData(-1, false, 300, 0)]            // no sabe
-    public void Retira_todo_menos_lo_de_la_ropa(int banco, bool desnudo, int ropa, int retira)
+    public void Retira_lo_que_pasa_de_la_reserva(int banco, bool desnudo, int reserva, int retira)
     {
-        Assert.Equal(retira, Bot.LoQueRetira(banco, desnudo, ropa));
+        Assert.Equal(retira, Bot.LoQueRetira(banco, desnudo, reserva));
+    }
+
+    /// <summary>
+    /// Y LA RESERVA ALCANZA PARA LA ROPA con la regla del desnudo: lo que le sobra después de la comida y la bebida desde cero, la
+    /// herramienta y las monedas de apuro (<see cref="Bot.PlataQueSobra"/>) paga la ropa más barata. Con la ropa sola (25, la de Elmo) no:
+    /// así salió el 19/10 y el verificador lo cazó.
+    /// </summary>
+    [Theory]
+    [InlineData(25, 70, 0)]
+    [InlineData(25, 70, 200)]
+    [InlineData(400, 0, 0)]
+    public void La_reserva_alcanza_para_la_ropa_con_la_regla_del_desnudo(int ropa, int panza, int herramienta)
+    {
+        int reserva = Bot.LoQueAlcanzaParaVestirse(ropa, panza, herramienta);
+        Assert.True(Bot.LoPuedePagar(ropa, Bot.PlataQueSobra(reserva, panza, herramienta, Bot.LoQueAlcanzaParaVestirse(0, 0, 0))));
+        Assert.False(Bot.LoPuedePagar(ropa, Bot.PlataQueSobra(ropa, panza, herramienta, Bot.LoQueAlcanzaParaVestirse(0, 0, 0))) && panza > 0);
+    }
+
+    /// <summary>
+    /// CON LA DATA DEL JUEGO: un nivel 24 desnudo y con la mochila vacía, con su reserva encima, tiene para la ropa más barata según la
+    /// misma cuenta que usa la compra del desnudo (`PlataParaLaRopa`).
+    /// </summary>
+    [Fact]
+    public void Con_su_reserva_el_desnudo_paga_la_ropa_mas_barata()
+    {
+        var d = GameData.Load();
+        var ruta = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "hosting", "Server.ini.ejemplo");
+        if (d.MapExits.Count == 0 || !File.Exists(ruta)) return;
+        var s = new SentidosDelBot();
+        var p = new Player
+        {
+            CharIndex = 500, Name = "Elmo", Account = "elmo_test", Pos = new WorldPos(20, 75, 55), Level = 24,
+            MaxHp = 200, Hp = 200, MaxStamina = 300, Stamina = 0, FactionStatus = Player.StatusCiudadano,
+        };
+        s.Recibir(ServerMessages.UserIndexInServer(500));
+        s.Recibir(ServerMessages.ChangeMap(20));
+        s.Recibir(ServerMessages.CharacterCreate(p));
+        s.Recibir(ServerMessages.UpdateUserStats(p));
+        var bot = new Bot("Elmo", null, new EntornoDeBots(null!, ServerIni.Cargar(ruta), 0, 0, d, new Navegante(d), null!,
+                                                          hogarDe: _ => Cities.Rinkel), 1);
+        int Llamar(string metodo) => (int)typeof(Bot).GetMethod(metodo, BindingFlags.NonPublic | BindingFlags.Instance)!
+                                                     .Invoke(bot, new object[] { s })!;
+        int ropa = Llamar("LaRopaMasBarata"), reserva = Llamar("ReservaParaVestirse");
+        Assert.True(ropa is > 0 and < int.MaxValue, "premisa: hay ropa a la venta para un nivel 24 (NPCs.json)");
+        Assert.True(reserva > ropa, $"la reserva ({reserva}) tiene que pasar de la ropa ({ropa}): la compra aparta la comida y la bebida");
+        s.Recibir(ServerMessages.UpdateGold(reserva));
+        Assert.True(Bot.LoPuedePagar(ropa, Llamar("PlataParaLaRopa")), $"con {reserva} no paga una ropa de {ropa}");
     }
 
     /// <summary>

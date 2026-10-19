@@ -39,12 +39,27 @@ public sealed partial class Bot
 
     /// <summary>Lo de la bóveda con lo que se puede comprar: todo menos la reserva para vestirse (<see cref="LoQueRetira"/>); 0 si no lo
     /// sabe.</summary>
-    private int LoQueSePuedeRetirar(SentidosDelBot sentidos)
+    private int LoQueSePuedeRetirar(SentidosDelBot sentidos) =>
+        sentidos.Banco <= 0 ? 0
+        : LoQueRetira(sentidos.Banco, LaRopaEsEsencial(sentidos.Nivel, TieneRopaPropia(sentidos)), ReservaParaVestirse(sentidos));
+
+    /// <summary>La reserva para vestirse de este bot (<see cref="LoQueAlcanzaParaVestirse"/>); 0 si no hay ropa a la venta que le sirva.</summary>
+    private int ReservaParaVestirse(SentidosDelBot sentidos)
     {
-        if (sentidos.Banco <= 0) return 0;
         int ropa = LaRopaMasBarata(sentidos);
-        return LoQueRetira(sentidos.Banco, LaRopaEsEsencial(sentidos.Nivel, TieneRopaPropia(sentidos)), ropa == int.MaxValue ? 0 : ropa);
+        return ropa == int.MaxValue ? 0
+            : LoQueAlcanzaParaVestirse(ropa, ReservaParaLoQueFalta(CostoPorPunto(esBebida: false), 0, ComidaMinima)
+                                             + ReservaParaLoQueFalta(CostoPorPunto(esBebida: true), 0, BebidaMinima),
+                                       CuestaLaHerramienta(sentidos));
     }
+
+    /// <summary>
+    /// LO QUE TIENE QUE QUEDAR EN LA BÓVEDA PARA VESTIRSE: la ropa más barata más lo que la compra del desnudo aparta antes de la ropa
+    /// (<see cref="PlataQueSobra"/>, con la panza vacía: muerto en un lugar inseguro se le cae también la comida y la bebida), la
+    /// herramienta si le falta y <see cref="MonedasDeApuro"/>. Con menos, la regla del desnudo no le da para la ropa y retira para comer.
+    /// </summary>
+    public static int LoQueAlcanzaParaVestirse(int laRopaMasBarata, int laPanzaDesdeCero, int laHerramienta) =>
+        laRopaMasBarata + laPanzaDesdeCero + laHerramienta + MonedasDeApuro;
 
     /// <summary>
     /// LO DE LAS COMPRAS, lo que se lleva encima: el doble de lo que cuesta llenar de cero las pociones, la comida, la bebida y los
@@ -176,15 +191,17 @@ public sealed partial class Bot
     }
 
     /// <summary>
-    /// CUÁNTO RETIRA PARA COMPRAR: todo, menos lo que cuesta <paramref name="laRopaMasBarata"/>, que queda en la bóveda para la próxima
-    /// vez que muera en un lugar inseguro; desnudo, todo, que es para eso. Muerto ahí se le cae la ropa, y desnudo no recupera energía
-    /// (`Survival.RecuperaEnergia`, VB6 <c>RecStamina</c>): sin energía no pega, así que sin plata para vestirse no puede ni cazar algo
-    /// flojo para juntarla.
+    /// CUÁNTO RETIRA PARA COMPRAR: lo que pasa de <paramref name="reserva"/> (<see cref="LoQueAlcanzaParaVestirse"/>), que queda en la
+    /// bóveda para la próxima vez que muera en un lugar inseguro, desnudo o no. Y DESNUDO, si lo que pasa no le alcanza para vestirse
+    /// (menos que otra reserva), todo: es para eso.
+    /// Muerto ahí se le cae la ropa, y desnudo no recupera energía (`Survival.RecuperaEnergia`, VB6 <c>RecStamina</c>): sin energía no
+    /// pega, así que sin plata para vestirse no puede ni cazar algo flojo para juntarla.
     ///
     /// <para>Decisión del autor (17/10): el que revive sin nada retira de la bóveda; si no tiene, caza algo flojo. Medido en `medio1`
-    /// (17/10): Elmo, nivel 24, retiró los 12.728 que tenía, los gastó en pociones, ropa, arma y comida, volvió a morir en el 13 y pasó
-    /// los últimos quince minutos desnudo en el 794, con 0 encima y 0 en la bóveda, entre Murciélagos a los que no podía pegar.</para>
+    /// (17/10): Elmo, nivel 24, murió en el 13, revivió desnudo, retiró los 12.728 que tenía y los gastó en pociones, ropa, arma y
+    /// comida; volvió a morir y pasó los últimos quince minutos desnudo en el 794, con 0 encima y 0 en la bóveda, entre Murciélagos a
+    /// los que no podía pegar.</para>
     /// </summary>
-    public static int LoQueRetira(int banco, bool desnudo, int laRopaMasBarata) =>
-        desnudo ? Math.Max(0, banco) : Math.Max(0, banco - laRopaMasBarata);
+    public static int LoQueRetira(int banco, bool desnudo, int reserva) =>
+        banco <= 0 ? 0 : desnudo ? (banco - reserva >= reserva ? banco - reserva : banco) : Math.Max(0, banco - reserva);
 }
