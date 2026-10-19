@@ -7258,7 +7258,8 @@ public sealed partial class Bot
         var antes = sentidos.Posicion;
         if (!transporte.Mandar(Paquete(ClientPacketId.Walk, w => w.WriteByte(rumbo)))) return Paso.SinConexion;
         sentidos.PredecirPaso(rumbo);
-        await Task.Delay(UnPaso(), ct);
+        // CON DESTINO, EL PASO DE LA TECLA APRETADA: ver `UnPasoCorriendo`. El ritmo propio queda para el paseo.
+        await Task.Delay(UnPasoCorriendo(), ct);
         // El servidor corrige con un PosUpdate cuando el paso se rechaza, así que quedar donde estábamos
         // significa que hay algo adelante.
         _pasoTrabado = sentidos.Posicion == antes;
@@ -7413,8 +7414,13 @@ public sealed partial class Bot
     private int UnPaso() => (int)(_rng.Next(PasoMinMs, PasoMaxMs) * _ritmo);
 
     /// <summary>
-    /// UN PASO CORRIENDO, el que da huyendo (<see cref="AlejarseAsync"/>): el de quien deja apretada la tecla, igual para todos, y no el
-    /// propio.
+    /// UN PASO CORRIENDO, el que da huyendo (<see cref="AlejarseAsync"/>) y el que da yendo a algún lado (<see cref="UnPasoHaciaAsync"/>: el
+    /// viaje, perseguir la presa, el mercader, el botín): el de quien deja apretada la tecla, igual para todos, y no el propio, que queda
+    /// para el paseo.
+    ///
+    /// <para>Decisión del autor (19/10): viajando y persiguiendo, paso de jugador. Medido en la ronda 83 (`medio1` a `medio7`, con la sonda
+    /// del tiempo): el bot pasaba el 48 % del tiempo caminando con destino, a 315 ms el paso en promedio (de 240 a 390 según su ritmo),
+    /// unos 48 pasos por cada criatura que mataba.</para>
     ///
     /// <para>El paso propio es el de referencia (<see cref="PasoMinMs"/> a <see cref="PasoMaxMs"/>) por el ritmo de cada uno, de 0,8 a
     /// 1,3, y una criatura da un paso cada 400 ms (<see cref="NpcSystem.MoveEveryTicks"/>): Aldo, con 1,3, camina a 2,6 baldosas por

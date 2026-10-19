@@ -50,4 +50,23 @@ public class HuirEsCorrerTests
         Assert.False(Bot.LoMataDeDosGolpesAhora(goblin, 60));
         Assert.True(Bot.LoMataDeDosGolpesAhora(goblin, 35), "con 35 de vida, el Goblin sí");
     }
+
+    /// <summary>
+    /// EL PASO CON DESTINO NO LO ECHA EL DETECTOR DE SPEEDHACK: desde el 19/10 el bot camina corriendo también al viajar y al perseguir,
+    /// que es casi todo lo que camina. Ni treinta y cuatro pasos seguidos al más rápido (<see cref="Bot.CorriendoMinMs"/>) caben en la
+    /// ventana del original. Es una guarda de la constante (<see cref="Bot.CorriendoMinMs"/>): que el paso con destino la use lo dice
+    /// `UnPasoHaciaAsync`, y lo mide la ronda 85.
+    /// </summary>
+    [Fact]
+    public void Caminando_corriendo_sin_parar_el_detector_no_sospecha()
+    {
+        Assert.True((long)Bot.CorriendoMinMs * DetectorDeSpeedHack.PasosPorVentana >= DetectorDeSpeedHack.VentanaMs);
+        var detector = new DetectorDeSpeedHack();
+        long ahora = 1_000;
+        for (int i = 0; i < 10 * DetectorDeSpeedHack.PasosPorVentana; i++)
+        {
+            ahora += Bot.CorriendoMinMs;
+            Assert.Equal(DetectorDeSpeedHack.Veredicto.Nada, detector.Paso(ahora));
+        }
+    }
 }
