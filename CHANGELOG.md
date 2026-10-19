@@ -19,6 +19,8 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **El que revive sin oro encima va al banquero a mirar lo que guardó** y compra con eso, en vez de quedarse parado en la ciudad.
 - **Al morir ya no esperan para volver a comprar** lo que se les cayó.
 - **Cuando van a algún lado caminan como alguien con la tecla apretada**: viajando y persiguiendo ya no van a su paso de paseo.
+- **El que muere y queda desnudo va primero a comprarse ropa**, y en el banco dejan guardado lo justo para eso.
+- **Un bot que no pudo pagar en el mostrador no vuelve con la misma plata** a probar de nuevo.
 
 
 ## 1.0.0 (2026-10-14)
