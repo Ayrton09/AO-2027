@@ -1538,7 +1538,8 @@ public sealed partial class Bot
         bool vaPorHechizo = !enApuro && hayLugar && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
         // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
-        bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto);
+        bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
+                             && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
         // Y EL ARMA, SI HAY QUIEN LE VENDA UNA QUE SIRVA: ver `PrimeroElArma`. Alcanza con el MAPA, como con el pergamino
@@ -1991,7 +1992,7 @@ public sealed partial class Bot
         precio > 0 && Math.Max(oro * 0.8, oro - 1) - reserva >= precio;
 
     /// <summary>
-    /// ¿VUELVE POR POCIONES? No con la misma plata (o menos) con la que llegó a un mostrador y no se llevó nada
+    /// ¿VUELVE POR POCIONES O POR EL ANTÍDOTO? No con la misma plata (o menos) con la que llegó a un mostrador y no se llevó nada
     /// (<paramref name="laQueNoAlcanzo"/>, -1 si la última vez compró): <see cref="LeAlcanzaParaUna"/> mira el precio más barato del
     /// mundo, y en el mostrador que le toca sale más. Con más plata, sí.
     ///
