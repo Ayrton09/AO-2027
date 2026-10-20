@@ -372,4 +372,109 @@ public sealed partial class Bot
         PedirLaFicha(transporte, ya: true);
         return true;
     }
+
+    /// <summary>¿Pelea con gente a esta altura? Desde <see cref="NivelParaPelearConGente"/> sale a buscarla: es lo que decide si
+    /// compra los pergaminos de esa pelea (<see cref="ValeLaPenaElPergamino"/>).</summary>
+    public static bool PeleaConGente(int nivel) => nivel >= NivelParaPelearConGente;
+
+    /// <summary>Cuánto la da por quieta después de quietarla: la parálisis de una persona dura <c>IntervaloParalizado</c>, 500 vueltas
+    /// de 40 ms en el Server.ini del original (20 s). Un poco menos, para no pegarle de lejos a la que ya se puede mover.</summary>
+    public const int QuietaMs = 18_000;
+
+    /// <summary>Si el hechizo de quietar no le cobró maná (ya estaba quieta, o el servidor no lo dejó), no lo vuelve a probar por este
+    /// rato.</summary>
+    public const int ReintentoDeQuietarMs = 3_000;
+
+    /// <summary>Entre un Remover parálisis y el siguiente, para no mandar el hechizo de nuevo antes de que llegue la respuesta.</summary>
+    public const int EntreRemocionesMs = 1_500;
+
+    private (short Quien, long Hasta, byte X, byte Y)? _quieta;
+    private long _proximaRemocion;
+
+    /// <summary>
+    /// ¿SIGUE QUIETA LA PERSONA QUE QUIETÓ? Es la misma, no pasó <see cref="QuietaMs"/> y está en la baldosa donde la quietó: si se
+    /// movió, el hechizo no la agarró o ya se lo sacó. El bot no ve la parálisis de otro (el servidor sólo se la avisa al paralizado,
+    /// con <c>ParalizeOK</c>), así que la cuenta él.
+    /// </summary>
+    public static bool SigueQuieta((short Quien, long Hasta, byte X, byte Y)? quieta, short quien, byte x, byte y, long ahora) =>
+        quieta is { } q && q.Quien == quien && ahora < q.Hasta && q.X == x && q.Y == y;
+
+    /// <summary>Hasta cuándo la da por quieta después de lanzarle: <see cref="QuietaMs"/> si el hechizo le cobró maná, y si no
+    /// (ya estaba quieta, o el servidor no lo dejó) <see cref="ReintentoDeQuietarMs"/>, para no volver a probar enseguida.</summary>
+    public static long QuietaHasta(long ahora, bool cobro) => ahora + (cobro ? QuietaMs : ReintentoDeQuietarMs);
+
+    /// <summary>
+    /// EL MÁS BARATO DE LOS QUE SABE Y CUMPLEN <paramref name="cual"/>, entre los que puede pagar ahora de maná y energía
+    /// (<see cref="LoPuedeLanzarAhora"/>) y salteando los que el servidor ya le rechazó (<see cref="SeLoRechazoPorMagia"/>). Para
+    /// quietar y para sacarse la parálisis el efecto es el mismo con cualquiera, así que se elige por el maná que deja.
+    /// <paramref name="reserva"/>: el maná que tiene que quedarle después (ver <see cref="QuietarA"/>).
+    /// </summary>
+    public static byte? ElMasBarato(IEnumerable<(byte Ranura, SpellInfo? Hechizo)> sabe, Func<SpellInfo, bool> cual,
+                                    int mana, int energia, IReadOnlySet<short> anotados, int reserva = 0)
+    {
+        byte? mejor = null;
+        int costo = int.MaxValue;
+        foreach (var (ranura, h) in sabe)
+        {
+            if (h is null || anotados.Contains(h.Index) || !cual(h) || !LoPuedeLanzarAhora(h, mana - reserva, energia)) continue;
+            if (h.ManaCost < costo) { costo = h.ManaCost; mejor = ranura; }
+        }
+        return mejor;
+    }
+
+    private byte? ElMasBaratoQueSabe(SentidosDelBot sentidos, Func<SpellInfo, bool> cual, int reserva = 0) =>
+        ElMasBarato(sentidos.Hechizos().Select(x => (x.Ranura, _entorno.Datos.Spell(x.Hechizo))), cual,
+                    sentidos.ManaEnPuntos, sentidos.EnergiaEnPuntos, _noLoPuedeLanzar, reserva);
+
+    /// <summary>El maná de la cura más barata que sabe (<see cref="CurarseConMagia"/>), o cero si no sabe ninguna.</summary>
+    private int ManaDeSuCura(SentidosDelBot sentidos) =>
+        sentidos.Hechizos().Select(x => _entorno.Datos.Spell(x.Hechizo))
+            .Where(h => h is { IsHeal: true, MaxHp: > 0 } && !_noLoPuedeLanzar.Contains(h.Index))
+            .Select(h => h!.ManaCost).DefaultIfEmpty(0).Min();
+
+    /// <summary>Los dos paquetes del casteo sobre la baldosa (x, y), con el clic en la cabeza (<see cref="ClicEnLaCabeza"/>), y lo
+    /// pedido se recuerda después de que salieron (ver <see cref="CurarseConMagia"/>).</summary>
+    private bool LanzarSobre(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura, byte x, byte y)
+    {
+        short hechizo = sentidos.HechizoEn(ranura);
+        if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranura)))
+            || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
+                   w => w.WriteByte(x).WriteByte(ClicEnLaCabeza(y)).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+        _ultimoCasteo = (hechizo, Environment.TickCount64);
+        return true;
+    }
+
+    /// <summary>
+    /// QUIETAR A LA PERSONA CON LA QUE PELEA: Paralizar o Inmovilizar (<see cref="EsDeQuietar"/>), lo primero que hace cualquiera que
+    /// pelea con magia contra gente. Al que pega de cerca no lo deja llegar, y al que se va corriendo no lo deja irse. Lo llama
+    /// <see cref="CazarAsync"/> con gente y la persona a más de un paso. Devuelve si mandó el hechizo.
+    ///
+    /// <para>SIN GASTAR EL MANÁ DE LA CURA: Inmovilizar sale 250 y Paralizar 350, y al Asesino o al Paladín de nivel 20 eso le
+    /// puede llevar más de la mitad del maná. Le tiene que quedar para su cura más barata (<see cref="ManaDeSuCura"/>).</para>
+    /// </summary>
+    private bool QuietarA(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
+    {
+        if (!sentidos.UsaMana || !ElClicLoElige(a.Y)) return false;
+        RevisarElUltimoCasteo(sentidos);
+        return ElMasBaratoQueSabe(sentidos, EsDeQuietar, ManaDeSuCura(sentidos)) is { } ranura
+               && LanzarSobre(transporte, sentidos, ranura, a.X, a.Y);
+    }
+
+    /// <summary>
+    /// SACARSE LA PARÁLISIS: paralizado (<see cref="SentidosDelBot.Paralizado"/>) y con un hechizo que la remueve, se lo lanza sobre
+    /// sí mismo, como cualquiera. Quieto no puede huir ni llegar a lo que pelea, y la parálisis de una persona dura veinte segundos.
+    /// Paralizan también las criaturas: los Clérigos, las Medusas, los Elementales de tierra y el Chamán Ártico, entre otras. Devuelve
+    /// si mandó el hechizo.
+    /// </summary>
+    private bool RemoverseLaParalisis(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (!sentidos.Paralizado || !sentidos.UsaMana || Environment.TickCount64 < _proximaRemocion) return false;
+        var (x, y) = sentidos.Posicion;
+        if (!ElClicLoElige(y)) return false;
+        RevisarElUltimoCasteo(sentidos);
+        if (ElMasBaratoQueSabe(sentidos, h => h.IsRemoveParalysis) is not { } ranura || !LanzarSobre(transporte, sentidos, ranura, x, y))
+            return false;
+        _proximaRemocion = Environment.TickCount64 + EntreRemocionesMs;
+        return true;
+    }
 }

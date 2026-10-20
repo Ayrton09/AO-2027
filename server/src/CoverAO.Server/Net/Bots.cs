@@ -778,6 +778,8 @@ public sealed partial class Bot
             // hacer nada más en toda la sesión. Se cura y SIGUE decidiendo.
             await CuidarseAsync(transporte, sentidos, ct);
             if (!sentidos.Vivo) continue;
+            // Y PARALIZADO, LO PRIMERO ES SACÁRSELA: quieto no huye ni caza. Ver `RemoverseLaParalisis`.
+            if (RemoverseLaParalisis(transporte, sentidos)) { await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct); continue; }
 
             // EN EL MAPA DE UN GUARDIA DEL OTRO BANDO NO SE QUEDA: se va apenas llega, antes de elegir coto y antes de que lo vean.
             // Medido en `tienda6`: un Guerrero que arrancó la sesión en la Cordillera del Norte (806) eligió cazar ahí mismo, caminó
@@ -5322,7 +5324,7 @@ public sealed partial class Bot
     {
         double plata = PlataParaElEquipo(sentidos);
         if (plata <= 0 || !sentidos.UsaMana || !sentidos.Comerciando) return false;
-        int Pega(short obj) => LeSirveElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? Math.Max(1, h.MaxHp) : 0;
+        int Pega(short obj) => LeSirveElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? ValorDelPergamino(h) : 0;
         if (sentidos.LoMejorDeLaVitrina(Pega, plata) is not { } oferta) return false;
         int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
         transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
@@ -6498,6 +6500,14 @@ public sealed partial class Bot
             // EL QUE SABE MAGIA PELEA CON MAGIA, y de lejos. Es lo que hace distinto a un mago de un guerrero
             // visto desde afuera, y sin esto todas las clases peleaban igual: acercarse y pegar.
             int manaAntes = sentidos.ManaEnPuntos;
+            // CON GENTE, PRIMERO LA DEJA QUIETA si está a más de un paso: ver `QuietarA`. Lo que la cuenta quieta es `SigueQuieta`.
+            if (aGente && pasos > 1 && Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
+                && !SigueQuieta(_quieta, presa, quien.X, quien.Y, Environment.TickCount64) && QuietarA(transporte, sentidos, quien))
+            {
+                await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                _quieta = (presa, QuietaHasta(Environment.TickCount64, cobro: sentidos.ManaEnPuntos < manaAntes), quien.X, quien.Y);
+                continue;
+            }
             // SALVO QUE SU ARMA SAQUE CASI LO MISMO: ver `PegaConElArma`. Con la gente, como siempre.
             if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY && !DejaDeLanzarle(lanzadosEnVano)
                 && LanzarAlgo(transporte, sentidos, quien, aGente ? null : _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0))
@@ -6552,6 +6562,8 @@ public sealed partial class Bot
                 continue;
             }
 
+            // PARALIZADO NO LLEGA: se saca la parálisis antes de caminar. Ver `RemoverseLaParalisis`.
+            if (RemoverseLaParalisis(transporte, sentidos)) { await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct); continue; }
             if (pasos > RadioDeCaza || ++pasosGastados > PacienciaPersiguiendo) return true;   // se aleja o no se llega
 
             if (PasoDeCaza(_entorno.Mapas, sentidos.Mapa, (x, y), (quien.X, quien.Y), _pasoTrabado, rodeando,
@@ -6640,18 +6652,40 @@ public sealed partial class Bot
     /// <para>LA CURA TAMBIÉN: sólo se miraban los de daño, así que el bot mago no aprendía nunca a curarse —lo
     /// primero que compra cualquiera que juega un caster— y se le iban las pociones. Curar Heridas Leves sale 500.
     /// Ver <see cref="CurarseConMagia"/>, que es lo que las usa.</para>
+    ///
+    /// <para>Y EL QUE PELEA CON GENTE (<paramref name="peleaConGente"/>, ver <c>Bots.Armadas.cs</c>), los de la pelea entre
+    /// personas: Remover parálisis, y uno solo de los que dejan quieto (Paralizar o Inmovilizar, <see cref="EsDeQuietar"/>). Los
+    /// venden los Hechiceros, de diez mil a setenta y cinco mil monedas: Paralizar e Inmovilizar en los pueblos 20, 59, 184 y 475, y
+    /// Remover parálisis en el 20, el 59 y el 184. Ver
+    /// <see cref="QuietarA"/> y <see cref="RemoverseLaParalisis"/>, que es lo que los usa.</para>
     /// </summary>
-    public static bool ValeLaPenaElPergamino(SpellInfo? hechizo, IReadOnlyList<(byte Ranura, short Hechizo)> yaSabe) =>
-        hechizo is { SubeHp: 1 or 2 } && !yaSabe.Any(x => x.Hechizo == hechizo.Index);
+    public static bool ValeLaPenaElPergamino(SpellInfo? hechizo, IReadOnlyList<(byte Ranura, short Hechizo)> yaSabe,
+                                             bool peleaConGente = false, bool yaSabeQuietar = false) =>
+        hechizo is not null && !yaSabe.Any(x => x.Hechizo == hechizo.Index)
+        && (hechizo.SubeHp is 1 or 2
+            || (peleaConGente && (hechizo.IsRemoveParalysis || (EsDeQuietar(hechizo) && !yaSabeQuietar))));
+
+    /// <summary>¿Deja quieto al que lo recibe? Paralizar o Inmovilizar: los dos frenan el paso por el mismo rato.</summary>
+    public static bool EsDeQuietar(SpellInfo h) => h.IsParalyze || h.IsImmobilize;
+
+    /// <summary>Lo que vale un pergamino en la vitrina para <see cref="ComprarPergaminoAsync"/>: lo que pega o cura y, para los de
+    /// la pelea con gente, que no pegan, primero Remover parálisis y después el de quietar.</summary>
+    public static int ValorDelPergamino(SpellInfo h) => h.MaxHp > 0 ? h.MaxHp : h.IsRemoveParalysis ? 2 : 1;
 
     /// <summary>El hechizo que enseña ese objeto si es un pergamino, o null.</summary>
     private SpellInfo? QueEnsena(short obj) =>
         _entorno.Datos.Obj(obj) is { IsPergamino: true } o ? _entorno.Datos.Spell((short)o.HechizoIndex) : null;
 
-    /// <summary>¿Ese pergamino de la vitrina le sirve a este bot? Y si lo puede lanzar: ver <see cref="LoPuedeLanzar"/>.</summary>
+    /// <summary>¿Ese pergamino de la vitrina le sirve a este bot? Y si lo puede lanzar: ver <see cref="LoPuedeLanzar"/>. La clase no
+    /// se mira: el <c>ClasesProhibidas</c> de un pergamino no frena el aprenderlo, ni en el original (InvUsuario.bas:1819-1826, sólo
+    /// pide maná) ni acá.</summary>
     private bool LeSirveElPergamino(SentidosDelBot sentidos, short obj) =>
-        sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos())
+        sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos(), PeleaConGente(sentidos.Nivel), SabeQuietar(sentidos))
         && LoPuedeLanzar(QueEnsena(obj)!, sentidos.EnergiaMaxima, sentidos.ManaMaximo, sentidos.Skill(GameLimits.SkillMagia));
+
+    /// <summary>¿Ya sabe Paralizar o Inmovilizar? Con uno alcanza.</summary>
+    private bool SabeQuietar(SentidosDelBot sentidos) =>
+        sentidos.Hechizos().Any(x => _entorno.Datos.Spell(x.Hechizo) is { } h && EsDeQuietar(h));
 
     /// <summary>
     /// ¿ESE HECHIZO LO PUEDE LANZAR ALGUNA VEZ? Con la energía y el maná máximos que tiene, sin un anillo que no lleva y con la magia
