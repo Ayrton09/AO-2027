@@ -31,7 +31,7 @@ public sealed class SentidosDelBot
     ///
     /// <para><see cref="Estado"/> es el byte que sigue al nombre en el <c>CharacterCreate</c>: el bando de una persona y el
     /// <c>Status</c> de la ficha de una criatura.</para></summary>
-    public readonly record struct Visible(short CharIndex, byte X, byte Y, short FichaNpc, byte Estado = 0)
+    public readonly record struct Visible(short CharIndex, byte X, byte Y, short FichaNpc, byte Estado = 0, string Nombre = "")
     {
         public bool EsNpc => FichaNpc > 0;
     }
@@ -158,6 +158,87 @@ public sealed class SentidosDelBot
 
     /// <summary>¿Está paralizado? El servidor lo prende y lo apaga con el mismo <c>ParalizeOK</c>.</summary>
     public bool Paralizado { get { lock (_candado) return _paralizado; } }
+
+    /// <summary>Cómo le llegó lo que oyó: los tres modos del chat (VB6 HandleTalk, Protocol.bas:1394-1412) y el susurro.</summary>
+    public enum ComoLoDijo : byte { Charla = 1, Grito = 2, Global = 3, Susurro = 4 }
+
+    /// <summary>Algo que una persona dijo y el bot oyó: quién (el nombre, sin el clan), qué y cómo.</summary>
+    public readonly record struct LoOido(string Quien, string Texto, ComoLoDijo Como, long Cuando);
+
+    /// <summary>
+    /// LO QUE OYÓ desde la última vez, y se lo lleva. Llega como le llega al cliente de una persona:
+    /// <list type="bullet">
+    /// <item>la CHARLA, el globo sobre la cabeza del que habla (<c>ChatOverHead</c> modo 1, al área), con el nombre que trajo su
+    /// <c>CharacterCreate</c>;</item>
+    /// <item>el GRITO, el GLOBAL y el SUSURRO, la línea "[Nombre] texto" de la consola con su fuente (25, 23 y 22). El grito, el
+    /// global y el susurro de cerca traen además un globo, que no se cuenta: la línea ya trae el nombre, y el globo del global le
+    /// llega aunque no lo vea.</item>
+    /// </list>
+    /// Lo que dice él mismo no se oye, ni lo que dicen las criaturas. Guarda hasta <see cref="OidoMax"/>; lo más viejo se pierde.
+    /// </summary>
+    public IReadOnlyList<LoOido> TomarLoOido()
+    {
+        lock (_candado)
+        {
+            if (_oido.Count == 0) return Array.Empty<LoOido>();
+            var oido = new List<LoOido>(_oido);
+            _oido.Clear();
+            return oido;
+        }
+    }
+
+    /// <summary>Cuántas cosas oyó desde que se conectó, de cada modo (el índice es <see cref="ComoLoDijo"/>).</summary>
+    public int OidoEnTotal(ComoLoDijo como) { lock (_candado) return _oidoEnTotal[(int)como]; }
+
+    public const int OidoMax = 32;
+
+    private readonly Queue<LoOido> _oido = new();
+    private readonly int[] _oidoEnTotal = new int[5];
+
+    /// <summary>El nombre de una persona a la vista, sin el clan, o null.</summary>
+    public string? NombreDe(short charIndex)
+    {
+        lock (_candado) return _visibles.TryGetValue(charIndex, out var v) && !v.EsNpc && v.Nombre.Length > 0 ? v.Nombre : null;
+    }
+
+    /// <summary>Su propio nombre, para no oírse en la consola. Lo pone el bot al conectarse.</summary>
+    public string MiNombre { get; init; } = "";
+
+    /// <summary>El nombre sin el clan: el <c>CharacterCreate</c> de una persona con clan trae "Nombre &lt;Clan&gt;".</summary>
+    public static string SinElClan(string tag) => tag.IndexOf(" <", StringComparison.Ordinal) is int i and >= 0 ? tag[..i] : tag;
+
+    /// <summary>
+    /// "[Nombre] texto", la línea de consola del grito, el global y el susurro (<see cref="ServerMessages.LineaDeChat"/>). El nombre
+    /// puede llevar espacios ("Juan Perez", ver <c>Naming</c>) pero no corchetes, así que el primer ']' es el que lo cierra; lo que no
+    /// tiene esa forma no es una línea de chat.
+    /// </summary>
+    public static (string Quien, string Texto)? LineaDeChat(string linea)
+    {
+        if (linea.Length < 3 || linea[0] != '[') return null;
+        int cierre = linea.IndexOf(']');
+        if (cierre < 2 || cierre + 2 >= linea.Length || linea[cierre + 1] != ' ') return null;
+        string quien = linea[1..cierre];
+        if (quien.Contains('[') || quien != quien.Trim()) return null;
+        return (quien, linea[(cierre + 2)..]);
+    }
+
+    /// <summary>El modo de la línea de consola por su fuente, o null si no es de chat.</summary>
+    public static ComoLoDijo? ModoDeLaFuente(byte fuente) => fuente switch
+    {
+        PacketDispatcher.FuenteGrito => ComoLoDijo.Grito,
+        PacketDispatcher.FuenteGlobal => ComoLoDijo.Global,
+        PacketDispatcher.FuenteSusurro => ComoLoDijo.Susurro,
+        _ => null,
+    };
+
+    /// <summary>Lo anota. Se llama con el candado tomado.</summary>
+    private void Oir(string quien, string texto, ComoLoDijo como)
+    {
+        if (quien.Length == 0 || string.Equals(quien, MiNombre, StringComparison.OrdinalIgnoreCase)) return;
+        if (_oido.Count >= OidoMax) _oido.Dequeue();
+        _oido.Enqueue(new LoOido(quien, texto, como, Environment.TickCount64));
+        _oidoEnTotal[(int)como]++;
+    }
 
     /// <summary>¿Está envenenado? No hay un paquete de estado para esto: el servidor avisa con el <c>LocaleMsg 47</c>
     /// cada vez que el veneno le saca vida, que es cada veinte segundos (VB6 EfectoVeneno), y el veneno no se pasa
@@ -814,7 +895,8 @@ public sealed class SentidosDelBot
                         // El número de ficha si es criatura; 0 si es una persona. Un nombre vacío es el GM que
                         // se escondió con /SHOWNAME: tampoco es un NPC.
                         short ficha = short.TryParse(nombre, out var f) && f > 0 ? f : (short)0;
-                        _visibles[ci] = new Visible(ci, x, y, ficha, estado);
+                        // Y EL NOMBRE DE LA PERSONA, para saber quién le habla (`NombreDe`).
+                        _visibles[ci] = new Visible(ci, x, y, ficha, estado, ficha > 0 ? "" : SinElClan(nombre));
                         if (ci == _miCharIndex) { _x = x; _y = y; _tengoPosicion = true; _miEstado = estado; }
                     }
                     break;
@@ -825,12 +907,14 @@ public sealed class SentidosDelBot
                 case ServerPacketId.UpdateTagAndStatus:
                 {
                     short ci = l.Entero();
-                    l.Cadena();
+                    string tag = l.Cadena();
                     byte estado = l.Byte();
                     if (estado == 0) break;
                     lock (_candado)
                     {
-                        if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { Estado = estado };
+                        // Y EL NOMBRE, que cambia con el clan o con el /SHOWNAME de un GM.
+                        if (_visibles.TryGetValue(ci, out var v))
+                            _visibles[ci] = v with { Estado = estado, Nombre = v.EsNpc ? "" : SinElClan(tag) };
                         if (ci == _miCharIndex) _miEstado = estado;
                     }
                     break;
@@ -1156,9 +1240,28 @@ public sealed class SentidosDelBot
                 }
 
                 // Y LA PUÑALADA, que va como texto y sin número (VB6 Trabajo.bas:1800).
+                // Y EL GRITO, EL GLOBAL Y EL SUSURRO: ver `TomarLoOido`. La fuente va después del texto y se mira antes de leerlo.
                 case ServerPacketId.ConsoleMsg:
-                    if (DanoDeLaPunalada(p) is { } punalada) lock (_candado) _danoDado += punalada;
+                {
+                    if (DanoDeLaPunalada(p) is { } punalada) { lock (_candado) _danoDado += punalada; break; }
+                    // [id][largo, 2 bytes][texto][fuente]
+                    int largo = (short)(p[1] | (p[2] << 8));
+                    if (largo <= 0 || 3 + largo >= p.Length || ModoDeLaFuente(p[3 + largo]) is not { } modo) break;
+                    if (LineaDeChat(l.Cadena()) is { } chat) lock (_candado) Oir(chat.Quien, chat.Texto, modo);
                     break;
+                }
+
+                // LA CHARLA: el globo sobre la cabeza de una persona a la vista. Los otros modos llegan también por la consola.
+                case ServerPacketId.ChatOverHead:
+                {
+                    string texto = l.Cadena();
+                    short ci = l.Entero();
+                    if (l.Byte() != (byte)ComoLoDijo.Charla) break;
+                    lock (_candado)
+                        if (ci != _miCharIndex && _visibles.TryGetValue(ci, out var quien) && !quien.EsNpc)
+                            Oir(quien.Nombre, texto, ComoLoDijo.Charla);
+                    break;
+                }
             }
         }
         // Un paquete más corto de lo que dice su layout no puede tumbar al bot: se descarta y se sigue. Pasa

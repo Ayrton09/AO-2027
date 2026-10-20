@@ -403,13 +403,13 @@ public sealed partial class PacketDispatcher
 
     /// <summary>`FONTTYPE_INFOBOLD2`: el SUSURRO, en sus dos líneas —la del que lo manda y la del que lo
     /// recibe—, que en el original llevan el mismo texto y la misma fuente (Protocol.bas:1495).</summary>
-    private const byte FuenteSusurro = 22;
+    internal const byte FuenteSusurro = 22;
 
     /// <summary>`FONTTYPE_PALABRASMAGICAS`: el GRITO, el `-texto` del chat (HandleTalk modo 2, Protocol.bas:1405).</summary>
-    private const byte FuenteGrito = 25;
+    internal const byte FuenteGrito = 25;
 
     /// <summary>`FONTTYPE_INFOBOLD3`: el GLOBAL, el `;texto` del chat (HandleTalk modo 3, Protocol.bas:1410).</summary>
-    private const byte FuenteGlobal = 23;
+    internal const byte FuenteGlobal = 23;
 
     // LO QUE SE QUEDA EN 0 A PROPÓSITO, para que no lo "arregle" el que pase después:
     //
@@ -12632,7 +12632,7 @@ public sealed partial class PacketDispatcher
     internal static void LogIntentoDeTrampa(ClientSession session, Player? p, string motivo)
         => Console.WriteLine($"[TRAMPA] {p?.Name ?? "(sin personaje)"} ip:{ConnectionGuard.IpOf(session.RemoteEndpoint)} - {ParaElLog(motivo)}");
 
-    private static string ParaElLog(string s)
+    internal static string ParaElLog(string s)
     {
         if (!s.Any(c => c < ' ' || c == '')) return s;
         var a = s.ToCharArray();
@@ -12681,14 +12681,14 @@ public sealed partial class PacketDispatcher
                     if (DeadCheck(session, p)) return;
                     string grito = chat.Length > 0 ? chat[1..] : "";
                     _world.BroadcastToMap(p.Pos.Map, ServerMessages.ChatOverHead(grito, p.CharIndex, 2));
-                    _world.BroadcastToMap(p.Pos.Map, ServerMessages.ConsoleMsg($"[{p.Name}] {grito}", FuenteGrito));
+                    _world.BroadcastToMap(p.Pos.Map, ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat(p.Name, grito), FuenteGrito));
                     break;
                 }
                 case 3:
                 {
                     if (DeadCheck(session, p)) return;
                     string global = chat.Length > 0 ? chat[1..] : "";
-                    var linea = ServerMessages.ConsoleMsg($"[{p.Name}] {global}", FuenteGlobal);
+                    var linea = ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat(p.Name, global), FuenteGlobal);
                     foreach (var otro in _world.Players) otro.Connection?.Send(linea);
                     var globo = ServerMessages.ChatOverHead(global, p.CharIndex, 3);
                     foreach (var otro in _world.Players) otro.Connection?.Send(globo);
@@ -12718,7 +12718,7 @@ public sealed partial class PacketDispatcher
             if (target.CharIndex == p.CharIndex) return;
             // La MISMA línea para los dos, con FONTTYPE_INFOBOLD2. Acá salían dos frases inventadas ("te
             // susurra" / "le susurras") y con la fuente de info, o sea otro color.
-            var linea = ServerMessages.ConsoleMsg($"[{p.Name}] {chat}", FuenteSusurro);
+            var linea = ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat(p.Name, chat), FuenteSusurro);
             if (World.InView(p.Pos, target.Pos))   // VB6 EstaPCarea
             {
                 // El `If LenB(chat) <> 0` del original cubre SÓLO esta rama: un susurro vacío a alguien que está

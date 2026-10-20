@@ -586,7 +586,7 @@ public sealed partial class Bot
         string aviso = "", cartel = "";
         // Los sentidos son de ESTA vida: al reconectar el mundo se vuelve a armar desde cero con los paquetes
         // del login. Reusarlos arrastraría criaturas que ya no están y una posición vieja.
-        var sentidos = new SentidosDelBot();
+        var sentidos = new SentidosDelBot { MiNombre = Nombre };
 
         transporte.Recibido += p =>
         {
@@ -710,6 +710,9 @@ public sealed partial class Bot
             if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
             _miBando = sentidos.MiEstado;
             _miNivel = sentidos.Nivel;
+            // LO QUE LE DICEN: por ahora sólo lo oye, y lo que es para él queda en el log del servidor. Ver `LeHablanAEl`.
+            foreach (var oido in sentidos.TomarLoOido())
+                if (LeHablanAEl(oido, Nombre)) Console.WriteLine(LineaDelLog(Nombre, oido));
 
             // SE VA A DORMIR. Se cierra con `Quit`, el mismo camino del jugador que se va: el servidor le
             // guarda el personaje y lo saca del mundo como corresponde.

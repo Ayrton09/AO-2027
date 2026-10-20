@@ -581,6 +581,10 @@ public static class ServerMessages
             .WriteLong(p.ArmadaMatados).WriteLong(p.MilicianosMatados)
             .ToArray();
 
+    /// <summary>"[Nombre] texto": la línea de consola del grito, el global y el susurro (VB6 HandleTalk y HandleWhisper). Está acá
+    /// porque los bots la leen para oír el chat (<see cref="SentidosDelBot.LineaDeChat"/>).</summary>
+    public static string LineaDeChat(string nombre, string texto) => $"[{nombre}] {texto}";
+
     public static byte[] ConsoleMsg(string text, byte fontIndex = 0) =>
         new ByteQueueWriter().WritePacketId(ServerPacketId.ConsoleMsg).WriteAsciiString(text).WriteByte(fontIndex).ToArray();
 
