@@ -3,7 +3,7 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
-## 1.0.0 (2026-10-19)
+## 1.0.0 (2026-10-20)
 Lo nuevo desde el paquete del 14 de octubre.
 
 ### Los bots
@@ -21,6 +21,7 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Cuando van a algún lado caminan como alguien con la tecla apretada**: viajando y persiguiendo ya no van a su paso de paseo.
 - **El que muere y queda desnudo, si le alcanza, va primero a comprarse ropa**, y en el banco dejan guardado lo justo para eso.
 - **Si no pudieron pagar pociones o antídoto, no vuelven al mostrador con la misma plata.**
+- **Los que pelean con gente usan Inmovilizar y Remover parálisis**: quietan al rival antes de pegarle y se sacan la parálisis.
 
 
 ## 1.0.0 (2026-10-14)
