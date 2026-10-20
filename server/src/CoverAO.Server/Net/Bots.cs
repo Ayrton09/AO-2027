@@ -587,6 +587,8 @@ public sealed partial class Bot
         // Los sentidos son de ESTA vida: al reconectar el mundo se vuelve a armar desde cero con los paquetes
         // del login. Reusarlos arrastraría criaturas que ya no están y una posición vieja.
         var sentidos = new SentidosDelBot { MiNombre = Nombre };
+        _transporte = transporte;
+        OlvidarLaCharla();
 
         transporte.Recibido += p =>
         {
@@ -710,9 +712,8 @@ public sealed partial class Bot
             if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
             _miBando = sentidos.MiEstado;
             _miNivel = sentidos.Nivel;
-            // LO QUE LE DICEN: por ahora sólo lo oye, y lo que es para él queda en el log del servidor. Ver `LeHablanAEl`.
-            foreach (var oido in sentidos.TomarLoOido())
-                if (LeHablanAEl(oido, Nombre)) Console.WriteLine(LineaDelLog(Nombre, oido));
+            // LO QUE LE DICEN, Y LO QUE CONTESTA: ver `Charlar`.
+            Charlar(transporte, sentidos);
 
             // SE VA A DORMIR. Se cierra con `Quit`, el mismo camino del jugador que se va: el servidor le
             // guarda el personaje y lo saca del mundo como corresponde.
@@ -3312,6 +3313,7 @@ public sealed partial class Bot
         for (int pasado = 0; pasado < MeditaTopeMs; pasado += RebanadaDePausaMs)
         {
             await Task.Delay(RebanadaDePausaMs, ct);
+            Charlar(transporte, sentidos);
             // Meditar se corta solo al caminar o al pelear, así que cualquier urgencia levanta al bot igual.
             if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()) break;
             if (sentidos.Mana >= MeditaHasta) break;
@@ -4795,6 +4797,7 @@ public sealed partial class Bot
         for (int pasado = 0; pasado < ms; pasado += RebanadaDePausaMs)
         {
             await Task.Delay(Math.Min(RebanadaDePausaMs, ms - pasado), ct);
+            if (_transporte is { } t) Charlar(t, sentidos);
             if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()
                 || LoPeligrosoEstaATiro(sentidos.Posicion, PeligrosALaVista(sentidos))) return;
         }
@@ -6476,6 +6479,8 @@ public sealed partial class Bot
         {
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
             if (sentidos.Donde(presa) is not { } quien) return true;
+            // Y PELEANDO TAMBIÉN CONTESTA: ver `Charlar`.
+            Charlar(transporte, sentidos);
             // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
@@ -7318,6 +7323,8 @@ public sealed partial class Bot
     private async Task<Paso> UnPasoHaciaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int dx, int dy,
                                               CancellationToken ct, bool deMuerto = false, bool puedeSalir = false)
     {
+        // Y CAMINANDO TAMBIÉN CONTESTA: ver `Charlar`.
+        Charlar(transporte, sentidos);
         byte porElOtroEje = dx != 0 && dy != 0
             ? SentidosDelBot.RumboHacia(Math.Abs(dx) > Math.Abs(dy) ? 0 : dx, Math.Abs(dx) > Math.Abs(dy) ? dy : 0)
             : (byte)0;
