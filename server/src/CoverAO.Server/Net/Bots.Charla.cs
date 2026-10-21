@@ -16,8 +16,9 @@ namespace CoverAO.Server.Net;
 /// y no más de <see cref="RespuestasPorMinuto"/> por minuto. No contesta los insultos, y a "sos bot?" le contesta con evasivas: no dice
 /// que es una persona.</para>
 ///
-/// <para><b>Sin ida y vuelta entre bots</b>: un bot nunca habla primero, y lo que contesta no nombra a nadie, así que la respuesta
-/// de uno no le habla a otro.</para>
+/// <para><b>Sin ida y vuelta entre bots</b>: un bot nunca habla primero (lo único que dice sin que le hablen es la despedida a la
+/// persona que lo invitó a cazar, ver <see cref="DejarDeAcompanar"/>), y lo que contesta no nombra a nadie, así que la respuesta de
+/// uno no le habla a otro.</para>
 /// </summary>
 public sealed partial class Bot
 {
@@ -90,9 +91,17 @@ public sealed partial class Bot
     {
         string t = Normalizar(texto);
         foreach (var (tema, palabras) in Temas)
-            if (palabras.Any(p => t.Contains(' ' + p + ' ', StringComparison.Ordinal))) return tema;
+            if (Toca(t, palabras)) return tema;
         return DeQueHabla.Otro;
     }
+
+    /// <summary>¿Se despide? Aunque el texto toque antes otro tema: "chau, gracias" es un agradecimiento para contestar, pero
+    /// también una despedida para dejar de acompañar (<see cref="SeDespidio"/>).</summary>
+    public static bool SeDespide(string texto) =>
+        Toca(Normalizar(texto), Temas.First(t => t.Tema == DeQueHabla.Despedida).Palabras);
+
+    private static bool Toca(string normalizado, string[] palabras) =>
+        palabras.Any(p => normalizado.Contains(' ' + p + ' ', StringComparison.Ordinal));
 
     /// <summary>La frase que contesta, o null si a eso no se contesta (el insulto). <paramref name="sorteo"/> elige entre las del
     /// tema (cualquier número no negativo).</summary>
@@ -176,9 +185,14 @@ public sealed partial class Bot
             Console.WriteLine(LineaDelLog(Nombre, oido));
             while (_respuestasRecientes.Count > 0 && ahora - _respuestasRecientes.Peek() > 60_000) _respuestasRecientes.Dequeue();
             var tema = DeQueLeHablan(oido.Texto);
+            // LA QUE ACOMPAÑA Y SE DESPIDE: ver `SeDespidio`.
+            if (SeDespide(oido.Texto)) SeDespidio(oido.Quien);
             if (!LeContesta(oido.Como, tema, _rng.Next(100), ahora,
-                            _ultimaRespuestaA.TryGetValue(oido.Quien, out long antes) ? antes : null, _respuestasRecientes.Count)
-                || QueLeContesta(tema, sentidos.Nivel, _rng.Next(1_000)) is not { } frase) continue;
+                            _ultimaRespuestaA.TryGetValue(oido.Quien, out long antes) ? antes : null, _respuestasRecientes.Count)) continue;
+            // Y LA INVITACIÓN A CAZAR JUNTOS: ver `ContestarLaInvitacion` (Bots.Acompanar.cs).
+            string? frase = tema == DeQueHabla.Grupo ? ContestarLaInvitacion(sentidos, oido.Quien, ahora)
+                                                     : QueLeContesta(tema, sentidos.Nivel, _rng.Next(1_000));
+            if (frase is null) continue;
             _ultimaRespuestaA[oido.Quien] = ahora;
             _respuestasRecientes.Enqueue(ahora);
             _porContestar.Add(new Respuesta(ahora + DemoraMs(frase, _rng.Next(1_000)), oido.Como, oido.Quien, frase));
@@ -199,5 +213,10 @@ public sealed partial class Bot
     private TransporteDeBot? _transporte;
 
     /// <summary>Al conectarse de nuevo: lo que iba a contestar en la conexión anterior ya no se contesta.</summary>
-    private void OlvidarLaCharla() => _porContestar.Clear();
+    private void OlvidarLaCharla()
+    {
+        _porContestar.Clear();
+        // Y LA PERSONA QUE ACOMPAÑABA: la vida nueva (dormir, reconectar) arranca sola, sin despedirse fuera de tiempo.
+        _acompana = null;
+    }
 }

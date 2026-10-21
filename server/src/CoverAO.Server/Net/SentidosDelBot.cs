@@ -684,6 +684,38 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>La criatura que cumple <paramref name="sirve"/> más cerca de <paramref name="punto"/>, a <paramref name="radio"/> pasos
+    /// o menos de él, y a cuántos pasos está del bot; o null. Es la que pelea, o tiene al lado, la persona que está en ese punto.</summary>
+    public (Visible Quien, int Pasos)? MasCercanoA((byte X, byte Y) punto, Func<short, bool> sirve, int radio,
+                                                  IReadOnlySet<short>? salvo = null)
+    {
+        lock (_candado)
+        {
+            if (!_tengoPosicion) return null;
+            (Visible, int)? mejor = null;
+            int mejorAlPunto = int.MaxValue;
+            foreach (var v in _visibles.Values)
+            {
+                if (!v.EsNpc || salvo?.Contains(v.CharIndex) == true || !sirve(v.FichaNpc)) continue;
+                int alPunto = Math.Abs(v.X - punto.X) + Math.Abs(v.Y - punto.Y);
+                if (alPunto > radio || alPunto >= mejorAlPunto) continue;
+                mejorAlPunto = alPunto;
+                mejor = (v, Math.Abs(v.X - _x) + Math.Abs(v.Y - _y));
+            }
+            return mejor;
+        }
+    }
+
+    /// <summary>La persona a la vista con ese nombre (sin importar mayúsculas), o null.</summary>
+    public Visible? PersonaLlamada(string nombre)
+    {
+        lock (_candado)
+            foreach (var v in _visibles.Values)
+                if (!v.EsNpc && v.CharIndex != _miCharIndex && string.Equals(v.Nombre, nombre, StringComparison.OrdinalIgnoreCase))
+                    return v;
+        return null;
+    }
+
     /// <summary>La criatura que cumple <paramref name="sirve"/> a <paramref name="alcance"/> pasos o menos con el mayor
     /// <paramref name="puntaje"/> (de su ficha y los pasos), y a cuántos pasos; o null. Como <see cref="MasCercano"/>, sin las de
     /// <paramref name="salvo"/>; entre puntajes iguales, la más cercana.</summary>

@@ -1015,8 +1015,9 @@ public sealed partial class Bot
             if (await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
-            if (await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
-            if (await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
+            // ACOMPAÑANDO A ALGUIEN NO SE PONE A TRABAJAR: ver `AcompanarAsync`.
+            if (_acompana is null && await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (_acompana is null && await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
@@ -1048,6 +1049,14 @@ public sealed partial class Bot
             // NI A LA VISTA DE ALGO PELIGROSO, que viene. Medido en `rojo1`: un Minero de nivel 1 recién escapado de un Lobo se puso a
             // pegarle a un Murciélago con el Lobo a dos y tres baldosas, dos veces seguidas, y el Lobo lo mató las dos.
             bool peligroALaVista = peligro is { } temible && AlAlcanceDeSuVista(sentidos.Posicion, (temible.Quien.X, temible.Quien.Y));
+            // ACOMPAÑANDO A LA PERSONA QUE LO INVITÓ, caza con ella en vez de elegir presa y coto: ver `AcompanarAsync`.
+            if (await AcompanarAsync(transporte, sentidos, f => EsPresa(f, vidaMaxima, nivelAhora, conPociones, curaVeneno),
+                                     SeEmpiezaUnaPelea(sentidos.Salud, conFuelle, peligroALaVista), cerrada, ct) is var acompano
+                && acompano != false)
+            {
+                if (acompano is null) return;
+                continue;
+            }
             // Y EL QUE FRENÓ EL VIAJE PARA CAZAR, CAZA: ver `FrenaConGanas`.
             bool frenoParaCazar = _frenoParaCazar;
             _frenoParaCazar = false;
