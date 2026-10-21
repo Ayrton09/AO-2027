@@ -23,6 +23,7 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Si no pudieron pagar pociones o antídoto, no vuelven al mostrador con la misma plata.**
 - **Los que pelean con gente usan Inmovilizar y Remover parálisis**: quietan al rival antes de pegarle y se sacan la parálisis.
 - **Contestan cuando les hablan**: un susurro, o la charla que los nombra. No contestan todo ni enseguida, y a un insulto no le contestan.
+- **Cazan con vos si los invitás**: decile a un bot que tengas a la vista "vamos?" o "cazamos?" y te acompaña un rato, pegándole a lo que peleás.
 
 
 ## 1.0.0 (2026-10-14)
