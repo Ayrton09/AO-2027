@@ -100,8 +100,9 @@ public sealed class QuietarEnLaPeleaTests
     public void Los_pergaminos_de_la_pelea_con_gente_están_en_la_data()
     {
         var d = GameData.Load();
-        if (d.Spell(9) is not { } paralizar || d.Spell(10) is not { } remover || d.Spell(24) is not { } inmovilizar) return;
-        Assert.True(Bot.EsDeQuietar(paralizar) && Bot.EsDeQuietar(inmovilizar) && remover.IsRemoveParalysis);
+        var paralizar = d.Spell(9); var remover = d.Spell(10); var inmovilizar = d.Spell(24);
+        Assert.True(paralizar is not null && remover is not null && inmovilizar is not null, "premisa: los hechizos 9, 10 y 24 están en la data");
+        Assert.True(Bot.EsDeQuietar(paralizar!) && Bot.EsDeQuietar(inmovilizar!) && remover!.IsRemoveParalysis);
         var vendidos = d.Npcs.Values.Where(n => n.StockItems is not null).SelectMany(n => n.StockItems!.Select(s => s.ObjIndex)).ToHashSet();
         foreach (int obj in new[] { 206, 207, 530 })
         {
