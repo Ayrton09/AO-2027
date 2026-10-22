@@ -25,6 +25,28 @@ public sealed class ElBotAcompanaTests
         Assert.Equal(que, Bot.QueHaceConLaInvitacion(vivo, laVe, acompana, quien));
     }
 
+    /// <summary>Lo que no es una invitación, o la de alguien a quien le sale a pegar, se contesta que no.</summary>
+    [Fact]
+    public void No_acepta_lo_que_no_es_invitacion_ni_a_quien_le_pega()
+    {
+        Assert.Equal(Inv.NoPuede, Bot.QueHaceConLaInvitacion(true, true, null, "Ana", laInvita: false));
+        Assert.Equal(Inv.NoPuede, Bot.QueHaceConLaInvitacion(true, true, null, "Ana", esBlanco: true));
+    }
+
+    [Theory]
+    [InlineData("vamos?", true)]
+    [InlineData("cazamos juntos?", true)]
+    [InlineData("vamos a cazar al 13", true)]
+    [InlineData("hace party?", true)]
+    [InlineData("no quiero grupo", false)]
+    [InlineData("ayuda con mi pj?", false)]
+    [InlineData("venis seguido?", false)]
+    public void Invitacion_es_la_que_invita(string texto, bool invita)
+    {
+        Assert.Equal(Bot.DeQueHabla.Grupo, Bot.DeQueLeHablan(texto));
+        Assert.Equal(invita, Bot.EsInvitacion(texto));
+    }
+
     [Theory]
     [InlineData(1_000, 2_000, 1_000, false)]
     [InlineData(2_000, 2_000, 1_900, true)]                          // se cumplió el rato
@@ -120,9 +142,9 @@ public sealed class ElBotAcompanaTests
     public void La_misma_que_vuelve_a_invitar_no_alarga_el_rato()
     {
         var (bot, s, _) = Armar();
-        InvitacionM.Invoke(bot, new object[] { s, "Ana", 1_000L });
+        InvitacionM.Invoke(bot, new object[] { s, "Ana", "vamos?", 1_000L });
         var antes = AcompanaF.GetValue(bot);
-        InvitacionM.Invoke(bot, new object[] { s, "ana", 900_000L });
+        InvitacionM.Invoke(bot, new object[] { s, "ana", "vamos?", 900_000L });
         Assert.Equal(antes, AcompanaF.GetValue(bot));
         Assert.Equal("Ana", bot.AcompanaA);
     }

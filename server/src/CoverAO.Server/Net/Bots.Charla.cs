@@ -38,8 +38,10 @@ public sealed partial class Bot
     /// </summary>
     public static readonly (DeQueHabla Tema, string[] Palabras)[] Temas =
     {
-        (DeQueHabla.Insulto, new[] { "puto", "puta", "forro", "pelotudo", "hdp", "conchudo", "mogolico", "manco", "noob", "basura" }),
-        (DeQueHabla.EsBot, new[] { "bot", "bots", "macro", "macreando", "automatico", "sos real", "sos humano", "sos una persona" }),
+        (DeQueHabla.Insulto, new[] { "puto", "puta", "forro", "pelotudo", "hdp", "conchudo", "mogolico", "manco", "noob", "basura",
+                                     "idiota", "imbecil", "estupido", "mierda", "sorete", "pajero", "tarado" }),
+        (DeQueHabla.EsBot, new[] { "bot", "bots", "macro", "macreando", "automatico", "sos real", "sos humano", "sos una persona",
+                                   "sos persona", "robot", "sos ia", "una ia" }),
         (DeQueHabla.Pide, new[] { "dame", "regala", "regalame", "regalas", "prestame", "presta", "prestas", "tirame", "pasame",
                                   "dona", "donas", "donar", "limosna" }),
         (DeQueHabla.Comercio, new[] { "vendo", "vendes", "vende", "venta", "compro", "compras", "compra", "cambio", "cambias",
@@ -102,6 +104,26 @@ public sealed partial class Bot
 
     private static bool Toca(string normalizado, string[] palabras) =>
         palabras.Any(p => normalizado.Contains(' ' + p + ' ', StringComparison.Ordinal));
+
+    /// <summary>Lo que hace de un mensaje del tema <see cref="DeQueHabla.Grupo"/> una invitación a cazar juntos.</summary>
+    private static readonly string[] Invitan =
+        { "vamos", "cazamos", "cazar", "cazemos", "party", "grupo", "acompaname", "acompanas", "sumate", "juntos" };
+
+    /// <summary>
+    /// ¿LO INVITA A CAZAR? No todo lo del tema <see cref="DeQueHabla.Grupo"/> es una invitación: "ayuda con mi pj?" o "venis seguido?"
+    /// se contestan que no, y con un "no" adentro ("no quiero grupo") tampoco. Sin esto aceptaba cualquiera de esos y se iba detrás.
+    /// </summary>
+    public static bool EsInvitacion(string texto)
+    {
+        string t = Normalizar(texto);
+        return Toca(t, Invitan) && !t.Contains(" no ", StringComparison.Ordinal);
+    }
+
+    /// <summary>Lo oído hace más que esto no se contesta: entre dos vueltas largas (un viaje, una tienda) se juntaban mensajes de
+    /// minutos atrás y el bot saludaba a destiempo.</summary>
+    public const int OidoViejoMs = 30_000;
+
+    public static bool EsViejo(long ahora, long cuando) => ahora - cuando > OidoViejoMs;
 
     /// <summary>La frase que contesta, o null si a eso no se contesta (el insulto). <paramref name="sorteo"/> elige entre las del
     /// tema (cualquier número no negativo).</summary>
@@ -187,10 +209,11 @@ public sealed partial class Bot
             var tema = DeQueLeHablan(oido.Texto);
             // LA QUE ACOMPAÑA Y SE DESPIDE: ver `SeDespidio`.
             if (SeDespide(oido.Texto)) SeDespidio(oido.Quien);
+            if (EsViejo(ahora, oido.Cuando)) continue;
             if (!LeContesta(oido.Como, tema, _rng.Next(100), ahora,
                             _ultimaRespuestaA.TryGetValue(oido.Quien, out long antes) ? antes : null, _respuestasRecientes.Count)) continue;
             // Y LA INVITACIÓN A CAZAR JUNTOS: ver `ContestarLaInvitacion` (Bots.Acompanar.cs).
-            string? frase = tema == DeQueHabla.Grupo ? ContestarLaInvitacion(sentidos, oido.Quien, ahora)
+            string? frase = tema == DeQueHabla.Grupo ? ContestarLaInvitacion(sentidos, oido.Quien, oido.Texto, ahora)
                                                      : QueLeContesta(tema, sentidos.Nivel, _rng.Next(1_000));
             if (frase is null) continue;
             _ultimaRespuestaA[oido.Quien] = ahora;

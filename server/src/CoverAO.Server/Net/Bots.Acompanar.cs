@@ -47,8 +47,10 @@ public sealed partial class Bot
     /// ¿LA ACEPTA? Vivo y con quien lo invita a la vista, sí; si ya acompaña a otra persona, o está muerto, no; si no la ve (le
     /// susurró desde otro lado), que está lejos. La misma persona que vuelve a invitar alarga el rato.
     /// </summary>
-    public static Invitacion QueHaceConLaInvitacion(bool vivo, bool laVe, string? acompanaA, string quien) =>
-        !vivo || (acompanaA is not null && !string.Equals(acompanaA, quien, StringComparison.OrdinalIgnoreCase)) ? Invitacion.NoPuede
+    public static Invitacion QueHaceConLaInvitacion(bool vivo, bool laVe, string? acompanaA, string quien, bool laInvita = true,
+                                                    bool esBlanco = false) =>
+        !vivo || !laInvita || esBlanco
+        || (acompanaA is not null && !string.Equals(acompanaA, quien, StringComparison.OrdinalIgnoreCase)) ? Invitacion.NoPuede
         : !laVe ? Invitacion.Lejos
         : Invitacion.Acepta;
 
@@ -65,10 +67,14 @@ public sealed partial class Bot
     /// <summary>A quién acompaña ahora, o null.</summary>
     public string? AcompanaA => _acompana?.Quien;
 
-    /// <summary>La frase con la que contesta una invitación, y si la acepta empieza a acompañar. Lo llama <see cref="Charlar"/>.</summary>
-    private string ContestarLaInvitacion(SentidosDelBot sentidos, string quien, long ahora)
+    /// <summary>La frase con la que contesta una invitación, y si la acepta empieza a acompañar. Lo llama <see cref="Charlar"/>. Lo que
+    /// no es una invitación (<see cref="EsInvitacion"/>) se contesta que no, y a la persona a la que le sale a pegar
+    /// (<see cref="EsBlancoParaMi"/>) también: si no, la acompañaba y en la vuelta siguiente le pegaba.</summary>
+    private string ContestarLaInvitacion(SentidosDelBot sentidos, string quien, string texto, long ahora)
     {
-        switch (QueHaceConLaInvitacion(sentidos.Vivo, sentidos.PersonaLlamada(quien) is not null, _acompana?.Quien, quien))
+        var persona = sentidos.PersonaLlamada(quien);
+        switch (QueHaceConLaInvitacion(sentidos.Vivo, persona is not null, _acompana?.Quien, quien, EsInvitacion(texto),
+                                       persona is { } v && EsBlancoParaMi()(v)))
         {
             case Invitacion.Acepta:
                 // LA MISMA QUE VUELVE A INVITAR no alarga el rato: ver la nota de la clase.

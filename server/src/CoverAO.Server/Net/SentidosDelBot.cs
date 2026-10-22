@@ -236,11 +236,16 @@ public sealed class SentidosDelBot
         _ => null,
     };
 
+    /// <summary>Hasta cuánto de cada mensaje se guarda.</summary>
+    public const int TextoOidoMax = 200;
+
     /// <summary>Lo anota. Se llama con el candado tomado.</summary>
     private void Oir(string quien, string texto, ComoLoDijo como)
     {
         if (quien.Length == 0 || string.Equals(quien, MiNombre, StringComparison.OrdinalIgnoreCase)) return;
         if (_oido.Count >= OidoMax) _oido.Dequeue();
+        // EL SUSURRO NO TIENE TOPE DE LARGO en el server (la charla sí, 80): se guarda lo que alcanza para entenderlo.
+        if (texto.Length > TextoOidoMax) texto = texto[..TextoOidoMax];
         _oido.Enqueue(new LoOido(quien, texto, como, Environment.TickCount64));
         _oidoEnTotal[(int)como]++;
     }

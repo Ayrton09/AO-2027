@@ -12,6 +12,24 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public sealed class ElBotOyeTests
 {
+    /// <summary>El susurro no tiene tope de largo en el server: se guarda hasta <see cref="SentidosDelBot.TextoOidoMax"/>.</summary>
+    [Fact]
+    public void Del_susurro_largo_guarda_lo_que_alcanza()
+    {
+        var s = new SentidosDelBot { MiNombre = "Bruma" };
+        s.Recibir(ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat("Juan", new string('a', 5_000)), PacketDispatcher.FuenteSusurro));
+        Assert.Equal(SentidosDelBot.TextoOidoMax, s.TomarLoOido().Single().Texto.Length);
+    }
+
+    /// <summary>Lo oído hace rato no se contesta (entre dos vueltas largas se juntaba).</summary>
+    [Theory]
+    [InlineData(Bot.OidoViejoMs, false)]
+    [InlineData(Bot.OidoViejoMs + 1, true)]
+    public void Lo_oido_hace_rato_es_viejo(long hace, bool viejo)
+    {
+        Assert.Equal(viejo, Bot.EsViejo(1_000_000, 1_000_000 - hace));
+    }
+
     private const short Yo = 500, Juan = 501, Lobo = 600;
 
     private static SentidosDelBot Sentidos()
