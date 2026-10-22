@@ -1849,8 +1849,8 @@ public sealed partial class Bot
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(600, 1_500), ct);
-        // LO QUE NO LE VENDIÓ AL MERCADER PORQUE VALE MÁS, A LA SUBASTA: ver `PublicarEnLaSubastaAsync`.
-        await PublicarEnLaSubastaAsync(transporte, sentidos, cerrada, ct);
+        // Y AL SUBASTADOR, A PUBLICAR LO QUE NO LE VENDIÓ AL MERCADER Y A MIRAR QUÉ LE CONVIENE: ver `PasarPorLaSubastaAsync`.
+        await PasarPorLaSubastaAsync(transporte, sentidos, cerrada, ct);
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
         // de la tienda con lo que fue a buscar se le da el descanso largo; al que sólo pasó a cambiar el
         // botín, el corto — si no, un Pescador que vive de vender pescado se pasaría la sesión esperando.
@@ -2155,7 +2155,10 @@ public sealed partial class Bot
             // La vida primero, también acá dentro: negociar son varios segundos y una criatura no espera a
             // que el bot termine de vender.
             if (!sentidos.Vivo || sentidos.Salud < TomaPocion) return compro;
-            if (sentidos.EnLaMochila(obj => LeVendeA(sentidos, TipoDeMercader(fichaDelMercader), obj)) is not { } item) break;
+            // LO QUE VALE MÁS QUE ESTO SE GUARDA PARA LA SUBASTA, acá en el mostrador y no al elegir adónde ir: decidido desde el
+            // coto, el pueblo con Subastador quedaba sin mercader al llegar y el bot iba y volvía sin vender (ver `GuardaParaLaSubasta`).
+            if (sentidos.EnLaMochila(obj => LeVendeA(sentidos, TipoDeMercader(fichaDelMercader), obj) && !GuardaParaLaSubasta(sentidos, obj))
+                is not { } item) break;
             short queOfrezco = sentidos.QueHayEn(item.Ranura);
             short cuantas = CuantoVender(sentidos, queOfrezco, item.Cantidad);
             int teniaAntes = sentidos.CuantoTiene(obj => obj == queOfrezco);
@@ -2594,10 +2597,9 @@ public sealed partial class Bot
     }
 
     /// <summary>¿ESE mercader se lo compra? Tiene que ser botín, el gremio tiene que aceptar ese tipo de
-    /// objeto —o comprar de todo— y no puede estar anotado como ya rechazado por ese mismo gremio. Y no lo guarda para la
-    /// subasta (<see cref="GuardaParaLaSubasta"/>).</summary>
+    /// objeto —o comprar de todo— y no puede estar anotado como ya rechazado por ese mismo gremio.</summary>
     private bool LeVendeA(SentidosDelBot sentidos, int tipoDeMercader, short obj) =>
-        EsBotin(sentidos, obj) && !GuardaParaLaSubasta(sentidos, obj)
+        EsBotin(sentidos, obj)
         && _entorno.Datos.Obj(obj) is { } o
         && (tipoDeMercader == o.ObjType || tipoDeMercader == TipoItemsCualquiera)
         && !_noLoCompran.Contains((tipoDeMercader, obj));

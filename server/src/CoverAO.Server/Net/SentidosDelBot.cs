@@ -67,6 +67,9 @@ public sealed class SentidosDelBot
     private int _banco = -1, _vecesQueVioElBanco;
     private IReadOnlyList<ServerMessages.FilaDeSubasta> _subastas = Array.Empty<ServerMessages.FilaDeSubasta>();
     private int _vecesQueVioLasSubastas;
+    private readonly Dictionary<byte, (short Obj, short Cantidad)> _boveda = new();
+    private int _vecesQueVioLaBoveda;
+    private readonly List<string> _loQueDejoLaSubasta = new();
     private short _nivel, _mapa;
     private byte _hambre, _sed;
     private long _ultimoAvisoDeVeneno;
@@ -309,6 +312,18 @@ public sealed class SentidosDelBot
     /// <summary>Cuántas listas del Centro de Subastas le llegaron: sirve para esperar la respuesta al pedido.</summary>
     public int VecesQueVioLasSubastas { get { lock (_candado) return _vecesQueVioLasSubastas; } }
 
+    /// <summary>La ranura de la bóveda de ítems donde hay de eso, la última vez que la abrió; null si no hay.</summary>
+    public (byte Ranura, short Cantidad)? EnLaBoveda(short obj)
+    {
+        lock (_candado)
+            foreach (var (ranura, item) in _boveda)
+                if (item.Obj == obj && item.Cantidad > 0) return (ranura, item.Cantidad);
+        return null;
+    }
+
+    /// <summary>Cuántas veces se abrió la bóveda de ítems (el <c>BankStart</c>): sirve para esperar las ranuras.</summary>
+    public int VecesQueVioLaBoveda { get { lock (_candado) return _vecesQueVioLaBoveda; } }
+
     /// <summary>Cuántas veces se abrió el panel del oro: sirve para esperar la respuesta del doble clic al banquero.</summary>
     public int VecesQueVioElBanco { get { lock (_candado) return _vecesQueVioElBanco; } }
 
@@ -320,6 +335,30 @@ public sealed class SentidosDelBot
         var numero = linea[..linea.IndexOf(Monedas, StringComparison.Ordinal)];
         int desde = numero.LastIndexOf(' ') + 1;
         return int.TryParse(numero[desde..], out int oro) && oro > 0 ? oro : null;
+    }
+
+    /// <summary>El nombre del objeto de "El Centro de Subastas dejó en tu bóveda: N Nombre." (lo comprado, o lo propio que volvió);
+    /// null si es otra cosa.</summary>
+    public static string? ObjetoQueDejoLaSubasta(string linea)
+    {
+        const string Aviso = "El Centro de Subastas dej";
+        int dosPuntos = linea.IndexOf(": ", StringComparison.Ordinal);
+        if (!linea.StartsWith(Aviso, StringComparison.Ordinal) || dosPuntos < 0 || !linea.EndsWith('.')) return null;
+        var resto = linea[(dosPuntos + 2)..^1];
+        int espacio = resto.IndexOf(' ');
+        return espacio > 0 && int.TryParse(resto[..espacio], out _) ? resto[(espacio + 1)..] : null;
+    }
+
+    /// <summary>Los objetos que el Centro de Subastas le dejó en la bóveda desde la última vez que preguntó (por nombre).</summary>
+    public IReadOnlyList<string> TomarLoQueDejoLaSubasta()
+    {
+        lock (_candado)
+        {
+            if (_loQueDejoLaSubasta.Count == 0) return Array.Empty<string>();
+            var todo = _loQueDejoLaSubasta.ToArray();
+            _loQueDejoLaSubasta.Clear();
+            return todo;
+        }
     }
 
     /// <summary>Anota lo que se acaba de depositar (positivo) o retirar (negativo), ya confirmado por el oro de encima.</summary>
@@ -1142,6 +1181,17 @@ public sealed class SentidosDelBot
                     bool panelDelOro = l.Byte() != 0;
                     int enLaBoveda = l.Largo();
                     if (panelDelOro) lock (_candado) { _banco = enLaBoveda; _vecesQueVioElBanco++; }
+                    else lock (_candado) _vecesQueVioLaBoveda++;   // la bóveda de ítems: las ranuras llegaron antes
+                    break;
+                }
+
+                // UNA RANURA DE LA BÓVEDA DE ÍTEMS: llegan las cuarenta al abrirla, y la que cambia al retirar.
+                case ServerPacketId.ChangeBankSlot:
+                {
+                    byte ranura = l.Byte();
+                    short obj = l.Entero(), cant = l.Entero();
+                    lock (_candado)
+                        if (obj > 0 && cant > 0) _boveda[ranura] = (obj, cant); else _boveda.Remove(ranura);
                     break;
                 }
 
@@ -1319,7 +1369,9 @@ public sealed class SentidosDelBot
                     if (ModoDeLaFuente(p[3 + largo]) is not { } modo)
                     {
                         // LO QUE EL CENTRO DE SUBASTAS DEJA EN LA BÓVEDA: el oro de una venta suma a lo que sabe que guardó.
-                        if (OroQueDejoLaSubasta(l.Cadena()) is { } oro) MovioAlBanco(oro);
+                        string aviso = l.Cadena();
+                        if (OroQueDejoLaSubasta(aviso) is { } oro) MovioAlBanco(oro);
+                        else if (ObjetoQueDejoLaSubasta(aviso) is { } cual) lock (_candado) if (_loQueDejoLaSubasta.Count < OidoMax) _loQueDejoLaSubasta.Add(cual);
                         break;
                     }
                     if (LineaDeChat(l.Cadena()) is { } chat) lock (_candado) Oir(chat.Quien, chat.Texto, modo);
