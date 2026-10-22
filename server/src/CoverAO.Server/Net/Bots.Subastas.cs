@@ -192,8 +192,10 @@ public sealed partial class Bot
         if (elegida is not { } f) return false;
         int antes = sentidos.Oro;
         transporte.Mandar(Paquete(ClientPacketId.SubastaComprar, w => w.WriteLong(f.Id)));
-        for (int espera = 0; espera < 12 && sentidos.Oro == antes; espera++) await Task.Delay(250, ct);
-        if (sentidos.Oro != antes - f.PrecioFinal) return false;   // se la ganaron, o venció
+        for (int espera = 0; espera < 20 && sentidos.Oro >= antes; espera++) await Task.Delay(250, ct);
+        // QUE EL ORO BAJÓ ALCANZA: pedir la cuenta exacta dejaba sin anotar la compra que el server ya cobró si entretanto cambiaba
+        // el oro por otra cosa, y el objeto quedaba en la bóveda sin retirar.
+        if (sentidos.Oro >= antes) return false;   // se la ganaron, o venció
         _porRetirar.Add(f.Objeto);
         _comprados.Add(f.Objeto);
         Console.WriteLine($"[bot {Nombre}] compra en la subasta {f.Id}: obj {f.Objeto} de {f.Vendedor} por {f.PrecioFinal}");
@@ -231,7 +233,8 @@ public sealed partial class Bot
     private async Task RetirarLoDeLaSubastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         if (_porRetirar.Count == 0 || !TieneBanquero(sentidos.Mapa)) return;
-        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct)) return;
+        // Sin anotar el mapa como "sin banquero" si no atiende: un tropiezo acá le cortaba el banco del pueblo para el resto de la vida.
+        if (!sentidos.Vivo || !await AbrirElBancoAsync(transporte, sentidos, cerrada, ct)) return;
         int vistas = sentidos.VecesQueVioLaBoveda;
         transporte.Mandar(Paquete(ClientPacketId.BankStart, _ => { }));
         for (int espera = 0; espera < 12 && sentidos.VecesQueVioLaBoveda == vistas; espera++) await Task.Delay(250, ct);
@@ -241,7 +244,7 @@ public sealed partial class Bot
                 _porRetirar.Remove(obj);
                 if (sentidos.EnLaBoveda(obj) is not { } b) continue;
                 int antes = sentidos.CuantoTiene(o => o == obj);
-                transporte.Mandar(Paquete(ClientPacketId.BankExtractItem, w => w.WriteByte(b.Ranura).WriteInteger(1)));
+                transporte.Mandar(Paquete(ClientPacketId.BankExtractItem, w => w.WriteByte(b.Ranura).WriteInteger(b.Cantidad)));
                 for (int espera = 0; espera < 12 && sentidos.CuantoTiene(o => o == obj) == antes; espera++) await Task.Delay(250, ct);
                 Console.WriteLine($"[bot {Nombre}] retira de la bóveda obj {obj}" + (sentidos.CuantoTiene(o => o == obj) > antes ? "" : ": no entró"));
                 await Task.Delay(_rng.Next(400, 900), ct);

@@ -260,7 +260,7 @@ public class ElBotSubastaTests
         }));
         var compra = await Siguiente(t, ClientPacketId.SubastaComprar);
         Assert.Equal(5, BitConverter.ToInt32(compra, 1));
-        s.Recibir(ServerMessages.UpdateGold(50_000 - precio));
+        s.Recibir(ServerMessages.UpdateGold(50_000 - precio + 7));   // y en el medio levantó unas monedas: la compra igual se anota
         Assert.True(await publicar.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Contains(mejora, (HashSet<short>)PorRetirarF.GetValue(bot)!);
     }
@@ -276,15 +276,30 @@ public class ElBotSubastaTests
         s.Recibir(ServerMessages.BankInit(true, 0));
         await Siguiente(t, ClientPacketId.BankStart);
         s.Recibir(ServerMessages.ChangeBankSlot(1, 33, 4, 1));
-        s.Recibir(ServerMessages.ChangeBankSlot(5, Joya.Index, 1, Joya.Value));
+        s.Recibir(ServerMessages.ChangeBankSlot(5, Joya.Index, 3, Joya.Value));
         s.Recibir(ServerMessages.BankInit(false));
         var retira = await Siguiente(t, ClientPacketId.BankExtractItem);
         Assert.Equal(5, retira[1]);
-        Assert.Equal(1, BitConverter.ToInt16(retira, 2));
-        s.Recibir(ServerMessages.ChangeInventorySlot(2, Joya.Index, 1, false, 0, 1));
+        Assert.Equal(3, BitConverter.ToInt16(retira, 2));   // el lote entero, como volvió
+        s.Recibir(ServerMessages.ChangeInventorySlot(2, Joya.Index, 3, false, 0, 1));
         await Siguiente(t, ClientPacketId.BankEnd);
         await retirar.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Empty((HashSet<short>)PorRetirarF.GetValue(bot)!);
+    }
+
+    private static readonly FieldInfo SinCaminoF = typeof(Bot).GetField("_bancoSinCamino", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    /// <summary>Si el banquero no atiende al ir a retirar, el pueblo no queda anotado como "sin banquero" para el resto de la vida.</summary>
+    [Fact]
+    public async Task Si_el_banquero_no_atiende_no_lo_anota_sin_camino()
+    {
+        var banquero = Datos.MapSpawns[Rinkel].First(n => Datos.Npc(n.NpcIndex)?.NpcType == 4);
+        var (bot, s, t) = Armar(Rinkel, (byte)banquero.X, (byte)banquero.Y, oro: 1_000, ficha: (short)banquero.NpcIndex);
+        ((HashSet<short>)PorRetirarF.GetValue(bot)!).Add(Joya.Index);
+        var retirar = (Task)RetirarM.Invoke(bot, new object[] { t, s, new TaskCompletionSource().Task, CancellationToken.None })!;
+        await Siguiente(t, ClientPacketId.DoubleClick);   // y el panel del oro no llega nunca
+        await retirar.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.DoesNotContain(Rinkel, (HashSet<int>)SinCaminoF.GetValue(bot)!);
     }
 
     private const short Yo = 500, ElSubastador = 600;
