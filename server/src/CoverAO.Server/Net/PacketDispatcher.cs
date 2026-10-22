@@ -377,7 +377,7 @@ public sealed partial class PacketDispatcher
 
     /// <summary>`FONTTYPE_INFO`: las respuestas informativas del servidor (la ficha del /EST, /ONLINE,
     /// /UPTIME, descansar, el correo, los amigos).</summary>
-    private const byte FuenteInfo = 3;
+    internal const byte FuenteInfo = 3;
 
     /// <summary>`FONTTYPE_GUILD`: TODO lo que emite un handler de clan, incluida la rama de rechazo
     /// "no perteneces a ningún clan".</summary>

@@ -65,6 +65,8 @@ public sealed class SentidosDelBot
     private int _vida, _vidaMax = 1, _energia, _energiaMax = 1;
     private int _mana, _manaMax = 1, _oro, _puntosLibres, _experiencia;
     private int _banco = -1, _vecesQueVioElBanco;
+    private IReadOnlyList<ServerMessages.FilaDeSubasta> _subastas = Array.Empty<ServerMessages.FilaDeSubasta>();
+    private int _vecesQueVioLasSubastas;
     private short _nivel, _mapa;
     private byte _hambre, _sed;
     private long _ultimoAvisoDeVeneno;
@@ -301,8 +303,24 @@ public sealed class SentidosDelBot
     /// <summary>Toda su plata: la que lleva encima más la de la bóveda (si no la sabe, sólo la de encima).</summary>
     public int Plata { get { lock (_candado) return _oro + Math.Max(0, _banco); } }
 
+    /// <summary>La última lista del Centro de Subastas que le llegó (vacía si nunca la pidió).</summary>
+    public IReadOnlyList<ServerMessages.FilaDeSubasta> Subastas { get { lock (_candado) return _subastas; } }
+
+    /// <summary>Cuántas listas del Centro de Subastas le llegaron: sirve para esperar la respuesta al pedido.</summary>
+    public int VecesQueVioLasSubastas { get { lock (_candado) return _vecesQueVioLasSubastas; } }
+
     /// <summary>Cuántas veces se abrió el panel del oro: sirve para esperar la respuesta del doble clic al banquero.</summary>
     public int VecesQueVioElBanco { get { lock (_candado) return _vecesQueVioElBanco; } }
+
+    /// <summary>El oro de "El Centro de Subastas dejó en tu bóveda N monedas de oro." (PacketDispatcher.Subastas); null si es otra cosa.</summary>
+    public static int? OroQueDejoLaSubasta(string linea)
+    {
+        const string Aviso = "El Centro de Subastas dej", Monedas = " monedas de oro";
+        if (!linea.StartsWith(Aviso, StringComparison.Ordinal) || !linea.Contains(Monedas, StringComparison.Ordinal)) return null;
+        var numero = linea[..linea.IndexOf(Monedas, StringComparison.Ordinal)];
+        int desde = numero.LastIndexOf(' ') + 1;
+        return int.TryParse(numero[desde..], out int oro) && oro > 0 ? oro : null;
+    }
 
     /// <summary>Anota lo que se acaba de depositar (positivo) o retirar (negativo), ya confirmado por el oro de encima.</summary>
     public void MovioAlBanco(int monto)
@@ -1131,6 +1149,25 @@ public sealed class SentidosDelBot
                     lock (_candado) { _comerciando = false; _tienda.Clear(); }
                     break;
 
+                // EL CENTRO DE SUBASTAS (nuestro): el layout está en `ServerMessages.SubastasLista`.
+                case ServerPacketId.SubastasLista:
+                {
+                    l.Byte();
+                    int cuantas = l.Entero();
+                    var filas = new List<ServerMessages.FilaDeSubasta>(Math.Max(0, cuantas));
+                    for (int i = 0; i < cuantas; i++)
+                    {
+                        int id = l.Largo();
+                        short obj = l.Entero(), cant = l.Entero();
+                        int actual = l.Largo(), final = l.Largo();
+                        string vendedor = l.Cadena();
+                        int segundos = l.Largo();
+                        filas.Add(new(id, obj, cant, actual, final, vendedor, segundos, l.Cadena()));
+                    }
+                    lock (_candado) { _subastas = filas; _vecesQueVioLasSubastas++; }
+                    break;
+                }
+
                 case ServerPacketId.ChangeNPCInventorySlot:
                 {
                     byte slot = l.Byte();
@@ -1278,7 +1315,13 @@ public sealed class SentidosDelBot
                     if (DanoDeLaPunalada(p) is { } punalada) { lock (_candado) _danoDado += punalada; break; }
                     // [id][largo, 2 bytes][texto][fuente]
                     int largo = (short)(p[1] | (p[2] << 8));
-                    if (largo <= 0 || 3 + largo >= p.Length || ModoDeLaFuente(p[3 + largo]) is not { } modo) break;
+                    if (largo <= 0 || 3 + largo >= p.Length) break;
+                    if (ModoDeLaFuente(p[3 + largo]) is not { } modo)
+                    {
+                        // LO QUE EL CENTRO DE SUBASTAS DEJA EN LA BÓVEDA: el oro de una venta suma a lo que sabe que guardó.
+                        if (OroQueDejoLaSubasta(l.Cadena()) is { } oro) MovioAlBanco(oro);
+                        break;
+                    }
                     if (LineaDeChat(l.Cadena()) is { } chat) lock (_candado) Oir(chat.Quien, chat.Texto, modo);
                     break;
                 }
