@@ -62,6 +62,7 @@ public class ElBotSubastaTests
         long neto = inicial - CentroDeSubastas.Deposito(Bot.HorasDeSubasta, inicial, final);
         Assert.True(valor / 3 < neto && inicial < final && final < valor, $"{inicial} / {final}, neto {neto}");
         Assert.False(Bot.VaALaSubasta(Datos.Objects.Values.First(o => o.Value is > 0 and < Bot.ValorParaSubastar)));
+        Assert.False(Bot.VaALaSubasta(Datos.Obj(207)));   // Remover parálisis, 10.000: lo compró para aprenderlo
     }
 
     [Theory]

@@ -54,8 +54,12 @@ public sealed partial class Bot
     /// <summary>Lo que publicó y lo que compró en esta vida: el aviso del Centro dice el nombre, y hay nombres repetidos.</summary>
     private readonly HashSet<short> _publicadas = new(), _comprados = new();
 
-    /// <summary>¿Se subasta? Lo que vale, salvo lo que no se puede publicar (lo que no se tira y lo de novato).</summary>
-    public static bool VaALaSubasta(ObjInfo? o) => o is { Value: >= ValorParaSubastar, NoSeTira: false, IsNewbie: false };
+    /// <summary>
+    /// ¿Se subasta? Lo que vale, salvo lo que no se puede publicar (lo que no se tira y lo de novato) y LOS PERGAMINOS: el que le
+    /// sirve lo compró para aprenderlo y todavía no lo leyó al salir del mostrador. Medido en la ronda 97: Elmo compraba Remover
+    /// parálisis a 8.334, lo publicaba a 6.500 y volvía a comprarlo, 51 publicaciones del mismo pergamino en tres corridas.
+    /// </summary>
+    public static bool VaALaSubasta(ObjInfo? o) => o is { Value: >= ValorParaSubastar, NoSeTira: false, IsNewbie: false, IsPergamino: false };
 
     /// <summary>
     /// EL PRECIO: compra directa al 65 % del valor y ofertas desde el 50 %. El mercader lo vende a casi el valor y lo compra a un
