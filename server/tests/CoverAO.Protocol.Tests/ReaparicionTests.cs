@@ -69,7 +69,7 @@ public class ReaparicionTests
     }
 
     /// <summary>LA QUE CREA UN GM REAPARECE AL AZAR aunque su ficha traiga PosOrig: <c>SpawnNpc</c> no le guarda <c>Orig</c>,
-    /// que sólo lo guarda la carga del mapa.</summary>
+    /// que sólo lo guarda la carga del mapa. Al azar puede caer justo en su baldosa: se mira en varias reapariciones.</summary>
     [Fact]
     public void La_que_crea_un_gm_reaparece_al_azar_aunque_traiga_posorig()
     {
@@ -77,7 +77,7 @@ public class ReaparicionTests
         var dondeLaCreo = new WorldPos(1, 30, 30);
         sys.GmSpawn(Bicho(posOrig: true), dondeLaCreo);
         long tick = 0;
-        var npc = Reaparecida(world, sys, ref tick);
-        Assert.NotEqual(dondeLaCreo, npc.Pos);
+        var donde = Enumerable.Range(0, 5).Select(_ => Reaparecida(world, sys, ref tick).Pos).ToList();
+        Assert.Contains(donde, p => p != dondeLaCreo);
     }
 }
