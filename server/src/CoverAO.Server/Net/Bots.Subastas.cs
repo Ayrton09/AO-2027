@@ -51,6 +51,9 @@ public sealed partial class Bot
     /// <summary>Lo suyo que venció sin ofertas: no se vuelve a publicar, se le vende al mercader.</summary>
     private readonly HashSet<short> _noSeVendio = new();
 
+    /// <summary>Lo que publicó y lo que compró en esta vida: el aviso del Centro dice el nombre, y hay nombres repetidos.</summary>
+    private readonly HashSet<short> _publicadas = new(), _comprados = new();
+
     /// <summary>¿Se subasta? Lo que vale, salvo lo que no se puede publicar (lo que no se tira y lo de novato).</summary>
     public static bool VaALaSubasta(ObjInfo? o) => o is { Value: >= ValorParaSubastar, NoSeTira: false, IsNewbie: false };
 
@@ -117,16 +120,23 @@ public sealed partial class Bot
     }
 
     /// <summary>
-    /// LO QUE EL CENTRO LE DEJÓ EN LA BÓVEDA, por el aviso (que dice el nombre): todo se retira, y lo que no compró es suyo que venció
-    /// sin ofertas, que no se vuelve a publicar.
+    /// LO QUE EL CENTRO LE DEJÓ EN LA BÓVEDA, por el aviso (que dice el nombre): lo comprado ya está para retirar desde la compra; lo
+    /// demás es suyo que venció sin ofertas, que se retira y no se vuelve a publicar. El nombre se resuelve primero entre lo que
+    /// publicó o compró, porque hay objetos distintos con el mismo nombre (los gorros de mago); entre los de afuera, sólo si es uno.
     /// </summary>
     private void AnotarLoQueDejoLaSubasta(SentidosDelBot sentidos)
     {
         foreach (string nombre in sentidos.TomarLoQueDejoLaSubasta())
         {
-            if (_entorno.Datos.Objects.Values.FirstOrDefault(o => VaALaSubasta(o)
-                    && string.Equals(o.Name, nombre, StringComparison.OrdinalIgnoreCase)) is not { } o) continue;
-            if (_porRetirar.Add(o.Index)) _noSeVendio.Add(o.Index);
+            var conEseNombre = _entorno.Datos.Objects.Values
+                .Where(o => VaALaSubasta(o) && string.Equals(o.Name, nombre, StringComparison.OrdinalIgnoreCase)).Select(o => o.Index).ToList();
+            if (conEseNombre.FirstOrDefault(_comprados.Contains) is var comprado and > 0) { _comprados.Remove(comprado); continue; }
+            short suyo = conEseNombre.FirstOrDefault(_publicadas.Contains);
+            if (suyo == 0 && conEseNombre.Count == 1) suyo = conEseNombre[0];
+            if (suyo == 0) continue;
+            _publicadas.Remove(suyo);
+            _porRetirar.Add(suyo);
+            _noSeVendio.Add(suyo);
         }
     }
 
@@ -181,6 +191,7 @@ public sealed partial class Bot
         for (int espera = 0; espera < 12 && sentidos.Oro == antes; espera++) await Task.Delay(250, ct);
         if (sentidos.Oro != antes - f.PrecioFinal) return false;   // se la ganaron, o venció
         _porRetirar.Add(f.Objeto);
+        _comprados.Add(f.Objeto);
         Console.WriteLine($"[bot {Nombre}] compra en la subasta {f.Id}: obj {f.Objeto} de {f.Vendedor} por {f.PrecioFinal}");
         await Task.Delay(_rng.Next(800, 2_000), ct);
         return true;
@@ -202,6 +213,7 @@ public sealed partial class Bot
             await EsperarLaListaAsync(sentidos, vistas, ct);
             if (sentidos.CuantoTiene(o => o == obj) >= antes) break;   // no se la tomó (el depósito, el Centro lleno)
             publico = true;
+            _publicadas.Add(obj);
             Console.WriteLine($"[bot {Nombre}] subasta: {item.Cantidad} x obj {obj}, desde {inicial} (final {final})");
             await Task.Delay(_rng.Next(800, 2_000), ct);
         }

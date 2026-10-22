@@ -121,6 +121,67 @@ public class ElBotSubastaTests
         Assert.False((bool)GuardaM.Invoke(bot, new object[] { s, Joya.Index })!);
     }
 
+    private static readonly FieldInfo CompradosF = typeof(Bot).GetField("_comprados", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    private static readonly FieldInfo PublicadasF = typeof(Bot).GetField("_publicadas", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    /// <summary>El aviso de lo que compró llega también: no es suyo que venció, y ya se retiró.</summary>
+    [Fact]
+    public void El_aviso_de_lo_comprado_no_lo_toma_por_vencido()
+    {
+        var (bot, s, _) = Armar(Rinkel);
+        ((HashSet<short>)CompradosF.GetValue(bot)!).Add(Joya.Index);
+        s.Recibir(ServerMessages.ConsoleMsg($"El Centro de Subastas dejó en tu bóveda: 1 {Joya.Name}.", PacketDispatcher.FuenteInfo));
+        AnotarM.Invoke(bot, new object[] { s });
+        Assert.Empty((HashSet<short>)PorRetirarF.GetValue(bot)!);
+        Assert.True((bool)GuardaM.Invoke(bot, new object[] { s, Joya.Index })!);
+    }
+
+    /// <summary>Con el nombre repetido, el que publicó; si no publicó ninguno de esos, ninguno.</summary>
+    [Fact]
+    public void Con_el_nombre_repetido_retira_el_que_publico()
+    {
+        var repetidos = Datos.Objects.Values.Where(Bot.VaALaSubasta).GroupBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
+                                            .First(g => g.Count() > 1).Select(o => o.Index).ToList();
+        string nombre = Datos.Obj(repetidos[1])!.Name;
+        var (bot, s, _) = Armar(Rinkel);
+        s.Recibir(ServerMessages.ConsoleMsg($"El Centro de Subastas dejó en tu bóveda: 1 {nombre}.", PacketDispatcher.FuenteInfo));
+        AnotarM.Invoke(bot, new object[] { s });
+        Assert.Empty((HashSet<short>)PorRetirarF.GetValue(bot)!);
+
+        ((HashSet<short>)PublicadasF.GetValue(bot)!).Add(repetidos[1]);
+        s.Recibir(ServerMessages.ConsoleMsg($"El Centro de Subastas dejó en tu bóveda: 1 {nombre}.", PacketDispatcher.FuenteInfo));
+        AnotarM.Invoke(bot, new object[] { s });
+        Assert.Equal(new[] { repetidos[1] }, ((HashSet<short>)PorRetirarF.GetValue(bot)!).ToArray());
+    }
+
+    private static readonly MethodInfo MostradorM =
+        typeof(Bot).GetMethod("VenderYComprarEnElMostradorAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    /// <summary>
+    /// EN EL MOSTRADOR DE UN PUEBLO CON SUBASTADOR, LO QUE SE GUARDA NO SE VENDE y lo demás sí. Es lo que sostiene el arreglo del viaje
+    /// en bucle: el mercader se elige por todo el botín, y acá se aparta lo de la subasta.
+    /// </summary>
+    [Fact]
+    public async Task En_el_mostrador_vende_el_resto_y_no_lo_que_guarda()
+    {
+        var (bot, s, t) = Armar(Rinkel);
+        var otro = Datos.Objects.Values.First(o => o.Value is > 0 and < Bot.ValorParaSubastar && !o.IsNewbie && !o.IsWeapon && !o.IsArmor
+            && !o.IsShield && !o.IsHelmet && !o.IsFood && !o.IsDrink && !o.IsPotion && !o.IsGold);   // el mercader compra de todo
+        short mercader = (short)Datos.Npcs.Values.First(n => n.TipoItems == 1000).Index;
+        s.Recibir(ServerMessages.ChangeInventorySlot(3, Joya.Index, 1, false, 0, 1));
+        s.Recibir(ServerMessages.ChangeInventorySlot(4, otro.Index, 1, false, 0, 1));
+        s.Recibir(ServerMessages.CommerceInit());
+        using var cts = new CancellationTokenSource();
+        var mostrador = (Task<bool>)MostradorM.Invoke(bot, new object[] { t, s, mercader, cts.Token })!;
+        var vende = await Siguiente(t, ClientPacketId.CommerceSell);
+        Assert.Equal(4, vende[1]);
+        s.Recibir(ServerMessages.ChangeInventorySlot(4, 0, 0, false, 0, 0));
+        await Assert.ThrowsAsync<Xunit.Sdk.XunitException>(() => Siguiente(t, ClientPacketId.CommerceSell, segundos: 3));
+        cts.Cancel();
+        try { await mostrador.WaitAsync(TimeSpan.FromSeconds(10)); } catch (OperationCanceledException) { }
+        Assert.Equal(1, s.CuantoTiene(o => o == Joya.Index));
+    }
+
     [Fact]
     public async Task Al_lado_del_subastador_lo_clickea_pide_la_lista_y_publica()
     {
@@ -253,9 +314,9 @@ public class ElBotSubastaTests
     }
 
     /// <summary>El próximo paquete de ese tipo que manda el bot (los demás se saltean).</summary>
-    private static async Task<byte[]> Siguiente(TransporteDeBot t, ClientPacketId id)
+    private static async Task<byte[]> Siguiente(TransporteDeBot t, ClientPacketId id, int segundos = 10)
     {
-        var limite = DateTime.UtcNow.AddSeconds(10);
+        var limite = DateTime.UtcNow.AddSeconds(segundos);
         var buffer = new byte[4096];
         while (DateTime.UtcNow < limite)
         {
