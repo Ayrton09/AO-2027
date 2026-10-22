@@ -24,6 +24,7 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Los que pelean con gente usan Inmovilizar y Remover parálisis**: quietan al rival antes de pegarle y se sacan la parálisis.
 - **Contestan cuando les hablan**: un susurro, o la charla que los nombra. No contestan todo ni enseguida, y a un insulto no le contestan.
 - **Cazan con vos si los invitás**: decile a un bot que tengas a la vista "vamos?" o "cazamos?" y te acompaña un rato, pegándole a lo que peleás.
+- **Comercian en el Centro de Subastas**: publican el equipo que ya no usan más barato que el mercader, y compran lo que les sirve si alguien lo pone a buen precio.
 
 
 ## 1.0.0 (2026-10-14)
