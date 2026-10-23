@@ -12867,6 +12867,7 @@ public sealed partial class PacketDispatcher
                 // IGUAL aunque no haya caído una moneda (TirarOro se guarda sus propios gates adentro).
                 if (amount > 100_000) return;   // "Don't drop too much gold"
                 TirarOro(session, p, amount);
+                if (_ini.PersistirSuelo) _db.SaveCharacter(p);   // ver el guardado al tirar, abajo
                 if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"tira {p.Name}: {amount} oro en ({p.Pos.Map},{p.Pos.X},{p.Pos.Y})");
                 _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
@@ -12912,6 +12913,10 @@ public sealed partial class PacketDispatcher
             inv.Amount -= drop;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
+            // CON EL SUELO PERSISTIDO, EL PERSONAJE SE GUARDA YA: el suelo se vuelca a los 500 ms y el personaje recién en el
+            // autoguardado, así que una caída en el medio dejaba lo tirado en el piso y en la mochila (auditoría del 22/10). Así,
+            // lo peor es perderlo.
+            if (_ini.PersistirSuelo) _db.SaveCharacter(p);
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} tira {drop} en ({p.Pos.X},{p.Pos.Y})");
         });

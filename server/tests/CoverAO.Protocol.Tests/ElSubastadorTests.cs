@@ -20,6 +20,7 @@ public class ElSubastadorTests : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _corriendo;
     private readonly PacketDispatcher _dispatcher;
+    private readonly Persistence _db;
     private readonly Npc _subastador;
     private long _ahora = 1_800_000_000;
 
@@ -39,8 +40,8 @@ public class ElSubastadorTests : IDisposable
     public ElSubastadorTests()
     {
         var leveling = new Leveling(_datos.LevelExp);
-        var db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
-        _dispatcher = new PacketDispatcher(_world, _loop, db, _datos, leveling) { RelojDeSubastas = () => _ahora };
+        _db = new Persistence(AlmacenSqlite.EnMemoria(), leveling);
+        _dispatcher = new PacketDispatcher(_world, _loop, _db, _datos, leveling) { RelojDeSubastas = () => _ahora };
         _subastador = new Npc
         {
             CharIndex = _world.AllocateCharIndex(), Template = _datos.Npc(164)!, Pos = new WorldPos(Mapa, 45, 76), IsSubastador = true,
@@ -157,6 +158,33 @@ public class ElSubastadorTests : IDisposable
         Assert.Equal(5, EnLaBoveda(ciro, Pocion));
         Assert.Equal(1000, aldo.Bank);
         Assert.Equal(200, bruma.Bank);
+    }
+
+    /// <summary>
+    /// OFERTAR Y COMPRAR GUARDAN YA al que paga y a los que reciben (auditoría del 22/10): el Centro se volcaba a los 500 ms y el
+    /// personaje recién en el autoguardado, y una caída en el medio le devolvía el oro al que ya había pagado.
+    /// </summary>
+    [Fact]
+    public async Task Ofertar_y_comprar_guardan_ya_a_los_personajes()
+    {
+        foreach (string n in new[] { "Aldo", "Bruma", "Ciro" })
+            _db.CreateCharacter(_db.CreateAccount(n.ToLowerInvariant(), "clave_test")!, n, 1, race: 1, gender: 1, @class: 1, homeland: 1, head: 1);
+        var (aldo, sa, _) = Conectado("Aldo");
+        var (bruma, sb, _) = Conectado("Bruma", 46, 77);
+        var (ciro, sc, _) = Conectado("Ciro", 44, 77);
+        aldo.Inventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 5 };
+        await Publicar(sa, 1, 5, 100, 1000, 3);
+        int id = _world.Subastas.Abiertas[0].Id;
+
+        await Ofertar(sb, id, 200);
+        Assert.Equal(10_000 - 200, _db.LoadCharacter("Bruma", 0, "bruma")!.Gold);
+
+        await Comprar(sc, id);
+        var ciroGuardado = _db.LoadCharacter("Ciro", 0, "ciro")!;
+        Assert.Equal(10_000 - 1000, ciroGuardado.Gold);
+        Assert.Equal(5, EnLaBoveda(ciroGuardado, Pocion));
+        Assert.Equal(200, _db.LoadCharacter("Bruma", 0, "bruma")!.Bank);   // al superado, lo devuelto también
+        Assert.Equal(1000, _db.LoadCharacter("Aldo", 0, "aldo")!.Bank);
     }
 
     [Fact]

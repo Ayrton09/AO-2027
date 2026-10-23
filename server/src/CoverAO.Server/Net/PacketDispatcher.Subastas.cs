@@ -137,6 +137,7 @@ public sealed partial class PacketDispatcher
                 _world.PlayerByName(superado)?.Connection?.Send(ServerMessages.ConsoleMsg(
                     "Superaron tu oferta en el Centro de Subastas. Tu oro vuelve a tu bóveda.", FuenteInfo));
             EntregarLoDeLasSubastasAlQueEsta();
+            GuardarAlQuePagoYLasSubastas(p);
             session.Send(ListaDeSubastas(abrir: false));
         });
     }
@@ -162,6 +163,7 @@ public sealed partial class PacketDispatcher
                 _world.PlayerByName(superado)?.Connection?.Send(ServerMessages.ConsoleMsg(
                     "Alguien compró directo la subasta en la que ofertaste. Tu oro vuelve a tu bóveda.", FuenteInfo));
             EntregarLoDeLasSubastasAlQueEsta();
+            GuardarAlQuePagoYLasSubastas(p);
             session.Send(ListaDeSubastas(abrir: false));
         });
     }
@@ -178,8 +180,21 @@ public sealed partial class PacketDispatcher
             _economia?.Anotar($"subasta {id}: {p.Name} la cancela");
             session.Send(ServerMessages.ConsoleMsg("Cancelaste la subasta. El objeto vuelve a tu bóveda.", FuenteInfo));
             EntregarLoDeLasSubastasAlQueEsta();
+            GuardarAlQuePagoYLasSubastas(p);
             session.Send(ListaDeSubastas(abrir: false));
         });
+    }
+
+    /// <summary>
+    /// EL PERSONAJE Y LAS SUBASTAS SE GUARDAN YA, en ese orden, como al publicar: ofertar, comprar y cancelar movían oro y objetos
+    /// sólo en memoria, el Centro se volcaba a los 500 ms y el personaje recién en el autoguardado, así que una caída en el medio
+    /// devolvía el oro pagado con la oferta todavía en pie (auditoría del 22/10). Lo entregado a los demás lo guarda
+    /// <see cref="EntregarLoDeLasSubastas"/>.
+    /// </summary>
+    private void GuardarAlQuePagoYLasSubastas(Player p)
+    {
+        _db.SaveCharacter(p);
+        GuardarLasSubastas();
     }
 
     /// <summary>El aviso de un pedido que no se pudo. false si no se pudo.</summary>
@@ -204,8 +219,10 @@ public sealed partial class PacketDispatcher
     /// queda para la próxima.</summary>
     internal void EntregarLoDeLasSubastas(Player p)
     {
+        bool entrego = false;
         _world.Subastas.Entregar(p.Name, e =>
         {
+            entrego = true;
             if (e.Objeto != 0)
             {
                 int bslot = FindBankSlotFor(p, e.Objeto, e.Cantidad);
@@ -225,6 +242,8 @@ public sealed partial class PacketDispatcher
             }
             return true;
         });
+        // LO ENTREGADO SE GUARDA YA, el personaje y el Centro: si no, una caída antes del autoguardado lo perdía de los dos lados.
+        if (entrego) { _db.SaveCharacter(p); GuardarLasSubastas(); }
     }
 
     /// <summary>A cada uno de los que el Centro les debe algo y están conectados.</summary>
