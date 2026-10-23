@@ -1234,6 +1234,9 @@ public sealed partial class PacketDispatcher
             {
                 if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
                 if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }   // un baneado tampoco crea personajes nuevos
+                // UN PERSONAJE POR CUENTA EN EL MUNDO, también al crear: el nuevo entra al mundo, y el alta no miraba si la
+                // cuenta ya tenía a otro adentro (auditoría externa del 23/10). Se vuelve a mirar antes de entrar, abajo.
+                if (CuentaOIpOcupadas(session, account)) return;
                 EntroALaCuenta(session, acc);
                 if (upgraded) _db.GuardarClaveMigrada(acc);   // legacy SHA-256 hash migrated to PBKDF2 → persist it
                 // LOS CHEQUEOS DE ConnectNewUser (TCP.bas:363), en su orden y con sus carteles. Los del NOMBRE —y el de
@@ -1275,6 +1278,11 @@ public sealed partial class PacketDispatcher
                     _world.SoltarEntrada(charName);
                     if (session.Cerrada) return;
                     if (!entro) { RechazarConCartel(session, CartelLimiteDePersonajes, "la base no tomó el alta (límite de personajes)"); return; }
+                    // Lo que pudo cambiar mientras se guardaba el alta, como en TerminarDeEntrar: otro de la cuenta, o desde la
+                    // misma IP, que entró en el medio. El personaje ya existe y queda para la próxima.
+                    if (!_ini.AllowMultiLogins && MismaIpYaConectada(session))
+                    { RechazarConCartel(session, MensajeIpRepetida, "ip repetida"); return; }
+                    if (CuentaOIpOcupadas(session, account)) return;
                     SpawnIntoWorld(session, player, version, personajeNuevo: true);
                 }, alFallar: () =>
                 {

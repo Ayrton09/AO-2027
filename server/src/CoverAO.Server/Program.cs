@@ -75,19 +75,15 @@ bool fixtureMode = args.Any(a => string.Equals(a, "--fixture", StringComparison.
 // TLS opt-in (SEC-4): `--tls <cert.pfx> [password]` envuelve el transporte TCP en SslStream. Default plaintext
 // (el protocolo AO clásico no tiene TLS; los flows/oráculo y el cliente VB6 corren en claro). Para el cliente
 // WEB, lo estándar es terminar TLS en un reverse-proxy HTTPS y que el cliente use wss:// (auto en origen https).
-System.Security.Cryptography.X509Certificates.X509Certificate2? tlsCert = null;
-int tlsIdx = Array.FindIndex(args, a => string.Equals(a, "--tls", StringComparison.OrdinalIgnoreCase));
-if (tlsIdx >= 0 && tlsIdx + 1 < args.Length)
+// Pedido y sin certificado que cargue, NO arranca (ver CertificadoTls): seguir en claro era abrir en texto plano a quien
+// pidió cifrar.
+var tlsCert = CertificadoTls.Cargar(args, out string? errorTls);
+if (errorTls is not null)
 {
-    string pfx = args[tlsIdx + 1];
-    string? pw = (tlsIdx + 2 < args.Length && !args[tlsIdx + 2].StartsWith("--")) ? args[tlsIdx + 2] : null;
-    try
-    {
-        tlsCert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(pfx, pw);
-        Console.WriteLine($"TLS habilitado en el transporte TCP (cert: {pfx}).");
-    }
-    catch (Exception ex) { Console.Error.WriteLine($"TLS: no se pudo cargar el cert '{pfx}': {ex.Message}. Sigo en plaintext."); }
+    Console.Error.WriteLine($"No se puede arrancar: pediste TLS (--tls) y {errorTls} Corregilo o sacá --tls para jugar sin cifrar.");
+    return 1;
 }
+if (tlsCert is not null) Console.WriteLine($"TLS habilitado en el transporte TCP (cert: {tlsCert.Subject}).");
 
 // EL LOG A DISCO SE ABRE ACÁ, ANTES DEL BANNER, y no después de cargar el mundo como estaba.
 //
@@ -611,170 +607,7 @@ loop.OnTickHandler = tick =>
     // fase5/unidades-del-loop.md.
     {
         foreach (var pl in world.Players)
-        {
-            if (!pl.IsAlive) continue;
-            // Avisos GRANULARES, como el original: un paquete de 3-5 bytes por stat que cambió, en vez del
-            // UpdateUserStats de ~26. Éste es el bucle más caliente que hay (corre por jugador cada 40 ms).
-            bool cambioHp = false, cambioMana = false, cambioSta = false;
-            if (pl.ExpireEffects(tick))   // se venció un boost temporal de poción
-            {
-                // VB6 DuracionPociones (General.bas:1166): manda los DOS atributos aunque haya cambiado uno
-                // solo — el propio autor lo comenta ("No me gusta que ambos... pero bueno"). Es paridad.
-                pl.Connection?.Send(ServerMessages.UpdateDexterity(pl.Agility));
-                pl.Connection?.Send(ServerMessages.UpdateStrenght(pl.Strength));
-            }
-            if (!pl.IsParalyzed(tick) && pl.ClientParalyzed) // paralysis wore off → toggle the client flag back
-            {
-                pl.ClientParalyzed = false;
-                pl.ParalyzedByCharIndex = 0;
-                pl.Connection?.Send(ServerMessages.ParalizeOK());
-            }
-            if (!pl.IsBlinded(tick) && pl.ClientBlind) // blindness wore off → tell the client
-            {
-                pl.ClientBlind = false;
-                pl.Connection?.Send(ServerMessages.BlindNoMore());
-            }
-            // Invisibilidad por hechizo vencida → volver visible (el /INVISIBLE de GM deja InvisibleUntilTick=0,
-            // así que no la toca: su invisibilidad es permanente hasta re-togglear).
-            dispatcher?.VencerInvisibilidad(pl, tick);
-            // Metamorfosis vencida → vuelve a su forma (regla de la casa MetamorfosisDelDruida; con la regla
-            // apagada nadie se transforma nunca y este chequeo es un `!= 0` que siempre da falso, y con la
-            // regla en permanente —el default— el tick de vencimiento no lo alcanza ninguna vuelta).
-            dispatcher?.VencerMetamorfosis(pl, tick);
-            // DoPermanecerOculto (VB6 Trabajo.bas:37): el ocultamiento vencido revela al jugador (LocaleMsg 307).
-            // No pisa la invisibilidad por hechizo/GM: si Invisible sigue activo, no se emite SetInvisible.
-            if (pl.OcultoUntilTick != 0 && tick >= pl.OcultoUntilTick)
-            {
-                pl.OcultoUntilTick = 0;
-                if (pl.Oculto)
-                {
-                    pl.Oculto = false;
-                    if (!pl.Invisible)
-                    {
-                        world.BroadcastToObservers(pl.Pos, ServerMessages.SetInvisible(pl.CharIndex, false), pl.CharIndex);
-                        pl.Connection?.Send(ServerMessages.SetInvisible(pl.CharIndex, false));
-                        pl.Connection?.Send(ServerMessages.LocaleMsg(307));
-                    }
-                }
-            }
-            // EfectoFrio (VB6 General.bas:854, llamado desde mMainLoop.bas:164). Gate del original: estar
-            // DESNUDO —sin armadura equipada— y ser usuario común, no GM. Cada IntervaloFrio (50 vueltas = 2 s)
-            // saca el 5% del máximo: en un mapa de NIEVE se lo saca a la VIDA y PUEDE MATAR; en cualquier otro
-            // terreno se lo saca a la ENERGÍA. Los 95 mapas nevados del install no gateaban nada hasta ahora
-            // porque el transcode se salteaba el campo `terrain` del header de cada .csm.
-            if (!pl.IsGm && Equipment.EquippedOfCategory(pl, gameData, 2) is null
-                && Survival.Cumplio(ref pl.ColdCounter, Survival.ColdIntervalTicks))
-            {
-                if (gameData.IsSnowMap(pl.Pos.Map))
-                {
-                    pl.Connection?.Send(ServerMessages.LocaleMsg(46));
-                    pl.Hp -= Survival.ColdBite(pl.MaxHp);
-                    if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el frio"); }
-                    cambioHp = true;
-                }
-                else
-                {
-                    pl.Stamina = Math.Max(0, pl.Stamina - Survival.ColdBite(pl.MaxStamina));
-                    cambioSta = true;
-                }
-            }
-            // EL RELOJ DEL PORTAL DE LUM (VB6 PasarSegundotelep, General.bas:1855). En el original cuelga de
-            // un timer de UN SEGUNDO aparte del loop; acá se cuenta en vueltas como todo lo demás.
-            if (pl.CreoTeleport && ++pl.PortalTickCounter >= Survival.TicksPorSegundo)
-            {
-                pl.PortalTickCounter = 0;
-                PacketDispatcher.PasoDelPortalDeLum(world, gameData, pl);
-            }
-            if (PacketDispatcher.EfectoVeneno(world, gameData, pl, tick, regenRng)) cambioHp = true;   // y el UpdateHP
-            // EfectoIncinerado (VB6 FileIO.bas:2010, llamado desde mMainLoop.bas:170). NO es veneno: pega
-            // RandomNumber(45, 65) por golpe de fuego —contra el 1 a 5 del veneno— y avisa con LocaleMsg 48.
-            // El original excluye a los GMs (`Privilegios And PlayerType.User`).
-            //
-            // SON DOS RELOJES DISTINTOS Y ESA ES LA GRACIA. El contador `Counters.Incinerado` mide la DURACIÓN
-            // y avanza `DeltaTick` —que es (ms transcurridos / 40), o sea ~1 por vuelta— en CADA vuelta, se
-            // pegue o no; a las 50 vueltas (2 s) el fuego se apaga con el LocaleMsg 389. El DAÑO, en cambio,
-            // sale cuando lo deja la cadencia de GOLPE, y se la CONSUME: mientras te quemás no podés pegar.
-            //
-            // Acá el fuego duraba CINCUENTA GOLPES de uno cada 20 s: dieciséis minutos y ~2.700 de daño, contra
-            // los ~110 de dos golpes del original. El 50 estaba leído como "golpes" cuando es "vueltas".
-            //
-            // Y AL APAGARSE EL CONTADOR QUEDA EN UN NÚMERO AL AZAR entre -100 y 100 ("Invi variable :D", dice
-            // la fuente). Como el hechizo NO lo resetea al prender el fuego (modHechizos.bas:1150 sólo toca el
-            // flag), la quemadura SIGUIENTE dura `50 - ese número`: entre 0 y 6 s, y una de cada cuatro se
-            // apaga en el acto sin hacer daño. Es del original y se porta igual.
-            if (pl.Incinerado && !pl.IsGm)
-            {
-                if (pl.IncineradoCounter < 50)
-                {
-                    pl.IncineradoCounter++;
-                    // La cadencia sale del ini y NO del 0 del fixture: ese apagado existe para que los flows
-                    // manden PAQUETES en ráfaga, y esto no lo manda un cliente. Con 0 el fuego pegaría en cada
-                    // vuelta y mataría a cualquiera en dos segundos.
-                    if (CombatTiming.PermiteAtacar(pl, Environment.TickCount64, serverIni.IntervaloAtacar))
-                    {
-                        pl.Connection?.Send(ServerMessages.LocaleMsg(48));
-                        world.BroadcastToObservers(pl.Pos, ServerMessages.PlayWave(78, pl.Pos.X, pl.Pos.Y));
-                        pl.Hp -= regenRng.Next(45, 66);                   // RandomNumber(45, 65), inclusivo
-                        if (pl.Hp < 1) { pl.Hp = 0; PacketDispatcher.KillPlayer(world, gameData, pl, "el fuego"); }
-                        cambioHp = true;
-                    }
-                }
-                else
-                {
-                    pl.IncineradoCounter = regenRng.Next(-100, 101);      // RandomNumber(-100, 100), inclusivo
-                    pl.Incinerado = false;
-                    pl.Connection?.Send(ServerMessages.LocaleMsg(389));   // se apagó
-                }
-            }
-            // Sanar (VB6 General.bas + mMainLoop.bas:186-206): la curación natural es LENTA de pie (64 s) y
-            // rápida descansando (4 s), y devuelve RandomNumber(2, 5% de la energía máxima) avisando con
-            // LocaleMsg 389. Sólo si no hay hambre ni sed (mMainLoop.bas:184 envuelve Sanar+RecStamina).
-            if (pl.Hunger > 0 && pl.Thirst > 0 && pl.Hp < pl.MaxHp
-                && Survival.Cumplio(ref pl.HpCounter, pl.Resting ? Survival.HealRestingIntervalTicks : Survival.HealIntervalTicks))
-            {
-                pl.Hp = Math.Min(pl.MaxHp, pl.Hp + Survival.HealAmount(pl.MaxStamina, (lo, hi) => regenRng.Next(lo, hi + 1)));
-                pl.Connection?.Send(ServerMessages.LocaleMsg(389));
-                cambioHp = true;   // VB6 Sanar: WriteUpdateHP
-            }
-            // Maná: en el VB6 NO hay regen pasiva — sólo vuelve MEDITANDO (Sanar no toca el maná). Antes acá se
-            // regalaban 5/tick caminando/peleando, debilitando la gestión de recurso del mago. La cadencia de
-            // meditar se mantiene en 3 s: es la que verificaron los flujos, y DoMeditar tiene su propia lógica
-            // de suerte por skill que no es parte de esta corrección de unidades.
-            // Y cuánto vuelve NO es una constante: el original tira los dados CADA VUELTA con una suerte que
-            // sale de la skill Meditar (1 de 35 con la skill en 0, 1 de 5 con la skill en 100) y devuelve un
-            // porcentaje del maná MÁXIMO (Trabajo.bas:2094-2103). Acá había un +20 fijo cada 3 s: le regalaba
-            // maná al que recién empieza, se lo escatimaba al mago grande, y dejaba a la skill Meditar sin
-            // ningún efecto — o sea que entrenarla no servía para nada.
-            if (pl.Meditating && pl.Mana < pl.MaxMana
-                && regenRng.Next(1, Survival.SuerteAlMeditar(pl.Skills[GameLimits.SkillMeditar]) + 1) == 1)
-            {
-                pl.Mana = Math.Min(pl.MaxMana, pl.Mana + Survival.ManaAlMeditar(pl.MaxMana, gameData.PorcentajeRecuperoMana));
-                cambioMana = true;   // VB6: WriteUpdateMana
-                dispatcher?.MeditarSubeSkill(pl);   // Trabajo.bas:2113, adentro del mismo `If res = 1`
-            }
-            // RecStamina (VB6 General.bas:1093): cada 50 vueltas (2 s), descanses o no —el original le pasa ese
-            // 50 literal en las dos ramas—, y con un corte que el port no tenía: no recupera NADA mientras
-            // estás trabajando.
-            if (pl.Hunger > 0 && pl.Thirst > 0 && pl.Stamina < pl.MaxStamina && !pl.Laborando
-                && Survival.RecuperaEnergia(Equipment.EstaDesnudo(pl, gameData), pl.Mounted)
-                && Survival.Cumplio(ref pl.StaCounter, Survival.StaminaIntervalTicks))
-            {
-                pl.Stamina = Math.Min(pl.MaxStamina, pl.Stamina + Survival.StaminaAmount(
-                    pl.MaxStamina, pl.Skills[GameLimits.SkillSupervivencia], (lo, hi) => regenRng.Next(lo, hi + 1)));
-                cambioSta = true;   // VB6 RecStamina: WriteUpdateSta
-            }
-            // El descanso TERMINA SOLO cuando la vida y la energía están llenas (VB6 mMainLoop.bas:220): apaga
-            // el flag, manda RestOK y avisa. El port dejaba al jugador descansando para siempre.
-            if (pl.Resting && pl.Hp == pl.MaxHp && pl.Stamina == pl.MaxStamina)
-            {
-                pl.Resting = false;
-                pl.Connection?.Send(ServerMessages.RestOK());
-                pl.Connection?.Send(ServerMessages.ConsoleMsg("Has terminado de descansar.", 0));
-            }
-            if (cambioHp) pl.Connection?.Send(ServerMessages.UpdateHP((short)pl.Hp));
-            if (cambioMana) pl.Connection?.Send(ServerMessages.UpdateMana((short)pl.Mana));
-            if (cambioSta) pl.Connection?.Send(ServerMessages.UpdateSta((short)pl.Stamina));
-        }
+            if (pl.IsAlive) EfectosDeLaVuelta.Aplicar(pl, tick, world, gameData, serverIni, dispatcher, regenRng);
     }
 };
 
@@ -1043,10 +876,11 @@ if (habraWeb)
 // prometiendole "una cada media hora". Esta es la barata y la que de verdad salva: guarda el estado con el
 // que ARRANCA esta sesion, antes de que pase nada.
 //
-// Va en segundo plano para no demorar el arranque -en el Charfile del servidor original la copia son unos
-// segundos- y todavia no hay nadie conectado, asi que no congela a nadie. `HacerBackup` ya se protege de
-// correr dos veces a la vez.
-if (serverIni.BackupMinutos > 0) _ = Task.Run(() => HacerBackup(motivo: "al arrancar"));
+// Va por el LOOP, como el automático: `HacerBackup` arma las fichas de los conectados y vuelca lo diferido, y eso lee el
+// mundo, que sólo se toca desde el hilo del loop. Desde un Task.Run corría a la par de la primera vuelta, con los bots
+// entrando (auditoría externa del 23/10). Lo pesado, la copia, ya va en segundo plano adentro de `HacerBackup`, que
+// además se protege de correr dos veces a la vez.
+if (serverIni.BackupMinutos > 0) loop.Enqueue(() => HacerBackup(motivo: "al arrancar"));
 // EL AVISO DE VERSIÓN NUEVA (ver Actualizador.VigilarAsync): no en las pruebas, ni corriendo desde el código (sin
 // compilacion.json), ni en Docker, donde la versión es la de la imagen.
 if (!fixtureMode && serverIni.BuscarActualizaciones && Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") != "true"
@@ -1067,18 +901,21 @@ if (serverIni.Bots > 0)
             authTimeoutMs, maxInboundBytes, gameData, cts.Token);
 }
 
-try
+// El puerto clásico no se abre con SoloEscritorio: por ahí entra cualquier programa que hable el protocolo.
+if (soloEscritorio) Console.WriteLine($"Puerto {port} (protocolo clasico) CERRADO: SoloEscritorio=1, se juega con la app de escritorio.");
+// UN LISTENER QUE SE CAE APAGA EL SERVIDOR, y se dice cuál. Con un Task.WhenAll, el que fallaba —un segundo servidor con el
+// mismo StartPort muere con SocketException al abrir el puerto— quedaba esperando a que terminaran los otros, que no
+// terminan nunca: el servidor seguía "andando" con un puerto muerto y sin decir nada (auditoría externa del 23/10). Y se
+// atrapa CUALQUIER excepción, no sólo la cancelación: antes, una sin atrapar terminaba el proceso SALTEÁNDOSE el guardado de
+// abajo, que con jugadores conectados es lo que no se puede omitir.
+var listenerQueFallo = await Escuchas.HastaQueTermineOFalleAlguna(new (string, Task)[]
 {
-    // El puerto clásico no se abre con SoloEscritorio: por ahí entra cualquier programa que hable el protocolo.
-    if (soloEscritorio) Console.WriteLine($"Puerto {port} (protocolo clasico) CERRADO: SoloEscritorio=1, se juega con la app de escritorio.");
-    await Task.WhenAll(soloEscritorio ? Task.CompletedTask : server.RunAsync(cts.Token), wsServer.RunAsync(cts.Token), adminTask, webTask);
-}
-// Se atrapa CUALQUIER excepción, no sólo la cancelación: si un listener se cae por otra cosa —el caso
-// concreto es arrancar un segundo servidor con el mismo StartPort, que muere con SocketException porque
-// `listener.Start()` está fuera del try de TcpGameServer— el proceso terminaba con un stack trace crudo
-// SALTEÁNDOSE el guardado de abajo. Justo cuando hay jugadores conectados es cuando no se puede omitir.
-catch (OperationCanceledException) { }
-catch (Exception ex) { Console.Error.WriteLine($"[apagado] un listener falló: {ex.Message}"); }
+    ($"el puerto {port} (protocolo clásico)", soloEscritorio ? Task.CompletedTask : server.RunAsync(cts.Token)),
+    ($"el WebSocket ({port + 1})", wsServer.RunAsync(cts.Token)),
+    ("el panel de admin", adminTask),
+    ("el cliente web", webTask),
+}, cts);
+int exitCode = listenerQueFallo is null ? 0 : 1;   // un listener caído termina con error: el que lo supervisa se entera
 
 // LO QUE LA BASE TODAVÍA TENÍA QUE CONTESTAR, con el loop andando: un /BAN o un /BANCLAN a desconectados, la transferencia
 // a la bóveda de un ausente, la devolución de una que falló —todo lo que lee de la base y vuelve al loop a terminar—. Con
@@ -1128,4 +965,4 @@ Console.WriteLine("Servidor detenido. Hasta la proxima.");
 // Recién ACÁ se libera el handler de señal: hasta este punto el sistema tiene que esperarnos, o nos mata a
 // mitad de escribir los .chr y el guardado de arriba no sirve de nada.
 apagadoListo.Set();
-return 0;
+return exitCode;

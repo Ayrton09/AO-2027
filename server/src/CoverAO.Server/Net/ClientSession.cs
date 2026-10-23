@@ -41,6 +41,11 @@ public sealed class ClientSession : IConnection
     /// no en el dispatcher porque el límite es por conexión, no por jugador: el que inunda puede no haberse
     /// autenticado nunca.</summary>
     private readonly LimiteDeCadencia _cadencia;
+    /// <summary>Los intentos de despachar un paquete que todavía no llegó entero. No gastan del techo de arriba (se
+    /// devuelve la ficha), pero tienen el suyo, cuatro veces más holgado y con piso (100 por segundo, 256 de ráfaga): un paquete
+    /// partido en muchos segmentos TCP pasa, y uno mandado de a un byte por vez sin terminar nunca, que hace parsear el mismo
+    /// comienzo una y otra vez, corta igual.</summary>
+    private readonly LimiteDeCadencia _fragmentos;
     /// <summary>Los dos techos del SPAM en el juego (hablar y consultar), distintos del techo de paquetes:
     /// ver <see cref="CadenciaDeAcciones"/>. Lo consulta el dispatcher según el paquete.</summary>
     public CadenciaDeAcciones Acciones { get; }
@@ -97,6 +102,8 @@ public sealed class ClientSession : IConnection
         _maxInboundBytes = maxInboundBytes;
         _onClose = onClose;
         _cadencia = new LimiteDeCadencia(paquetesPorSegundo, rafagaDePaquetes, Environment.TickCount64);
+        _fragmentos = new LimiteDeCadencia(paquetesPorSegundo > 0 ? Math.Max(paquetesPorSegundo * 4.0, 100) : 0,
+            Math.Max(rafagaDePaquetes * 4, 256), Environment.TickCount64);
         Acciones = new CadenciaDeAcciones(msPorMensaje, rafagaMensajes, msPorConsulta, rafagaConsultas, Environment.TickCount64);
         _ = Task.Run(BucleDeSalidaAsync);   // el escritor arranca con la sesión y muere con ella
     }
@@ -217,6 +224,17 @@ public sealed class ClientSession : IConnection
                 }
                 catch (NotEnoughDataException)
                 {
+                    // TODAVÍA NO LLEGÓ ENTERO: la ficha vuelve, y se cobra cuando llegue el resto. Antes cada segmento cobraba
+                    // otra por el mismo paquete, y uno partido en muchos podía cortar a un jugador que no se pasó de nada
+                    // (auditoría externa del 23/10).
+                    _cadencia.Devolver();
+                    if (!_fragmentos.Permite(Environment.TickCount64))
+                    {
+                        Console.Error.WriteLine($"[{RemoteEndpoint}] flood: un paquete que no termina de llegar, de a pedacitos");
+                        if (offset > 0) _inbound.RemoveRange(0, offset);
+                        Close("flood: paquete de a pedacitos");
+                        return;
+                    }
                     break; // incomplete packet; wait for more bytes
                 }
                 catch (StringTooLongException ex)

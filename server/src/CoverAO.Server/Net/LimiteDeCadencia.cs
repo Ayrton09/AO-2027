@@ -30,14 +30,23 @@ public sealed class LimiteDeCadencia
     private int _enElSegundo;
     private long _segundoActual;
 
-    /// <summary><paramref name="porSegundo"/> 0 = sin límite (el cubo nunca se vacía).</summary>
-    public LimiteDeCadencia(int porSegundo, int rafaga, long ahoraMs)
+    /// <summary><paramref name="porSegundo"/> 0 = sin límite (el cubo nunca se vacía). Con decimales: un mensaje cada 1500 ms
+    /// son 0,67 por segundo.</summary>
+    public LimiteDeCadencia(double porSegundo, int rafaga, long ahoraMs)
     {
         _porSegundo = porSegundo;
         _rafaga = Math.Max(1, rafaga);
         _fichas = _rafaga;
         _ultimoMs = ahoraMs;
         _segundoActual = ahoraMs / 1000;
+    }
+
+    /// <summary>Devuelve la ficha del último <see cref="Permite"/> que dijo que sí: el paquete no llegó entero y no se
+    /// despachó.</summary>
+    public void Devolver()
+    {
+        if (_enElSegundo > 0) _enElSegundo--;
+        if (_porSegundo > 0) _fichas = Math.Min(_rafaga, _fichas + 1);
     }
 
     /// <summary>Consume una ficha por el paquete que se va a despachar. false = se pasó del ritmo.</summary>
@@ -89,10 +98,14 @@ public sealed class CadenciaDeAcciones
     public CadenciaDeAcciones(int msPorMensaje, int rafagaMensajes, int msPorConsulta, int rafagaConsultas, long ahoraMs)
     {
         // El ini habla en MILISEGUNDOS ENTRE ACCIONES, que es como lo piensa el que hostea ("un mensaje por
-        // segundo"); el cubo trabaja en acciones por segundo. La conversión va acá y no en el ini.
-        _ruidosas = new LimiteDeCadencia(msPorMensaje > 0 ? Math.Max(1, 1000 / msPorMensaje) : 0, rafagaMensajes, ahoraMs);
-        _consultas = new LimiteDeCadencia(msPorConsulta > 0 ? Math.Max(1, 1000 / msPorConsulta) : 0, rafagaConsultas, ahoraMs);
+        // segundo"); el cubo trabaja en acciones por segundo. La conversión va acá y no en el ini, y con decimales: con la
+        // división entera y un piso de 1, 750 ms daban uno por segundo y 1500 o 5000 ms también (auditoría externa del 23/10).
+        _ruidosas = new LimiteDeCadencia(PorSegundo(msPorMensaje), rafagaMensajes, ahoraMs);
+        _consultas = new LimiteDeCadencia(PorSegundo(msPorConsulta), rafagaConsultas, ahoraMs);
     }
+
+    /// <summary>Acciones por segundo de un intervalo en milisegundos; 0 (o menos) es sin límite.</summary>
+    internal static double PorSegundo(int msEntreAcciones) => msEntreAcciones > 0 ? 1000.0 / msEntreAcciones : 0;
 
     public bool PermiteRuidosa(long ahoraMs) => _ruidosas.Permite(ahoraMs);
     public bool PermiteConsulta(long ahoraMs) => _consultas.Permite(ahoraMs);
