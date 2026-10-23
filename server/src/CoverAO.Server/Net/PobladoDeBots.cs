@@ -331,7 +331,10 @@ public sealed class PobladoDeBots
             _ = Task.Run(async () =>
             {
                 try { await Task.Delay(retardo, ct); } catch (OperationCanceledException) { return; }
-                await poblado.VivirConRelevosAsync(bot, ct);
+                // Nadie espera esta tarea: un error suelto acá se perdía sin dejar rastro.
+                try { await poblado.VivirConRelevosAsync(bot, ct); }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { Console.Error.WriteLine($"[bot {bot.Nombre}] se cayó su vida entera: {ex}"); }
             }, CancellationToken.None);
         }
 

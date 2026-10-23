@@ -407,6 +407,8 @@ public sealed partial class Bot
     private ComoEntrar _como;
     /// <summary>Ya estuvo adentro del mundo desde que arrancó el servidor: la cuenta y el personaje existen.</summary>
     private bool _yaEntro;
+    /// <summary>En la vida de ahora llegó a entrar al mundo (ver el error en <see cref="VivirAsync"/>).</summary>
+    private bool _entroEstaVida;
     /// <summary>La sesión anterior la cerró él (se fue a dormir), no un corte.</summary>
     private bool _seFueSolo;
     /// <summary>El último cartel de volver más tarde, mientras lo siga recibiendo: para no repetirlo en el log.</summary>
@@ -467,7 +469,12 @@ public sealed partial class Bot
         {
             // EL NOMBRE SE MIRA ANTES DE CADA VIDA, no sólo al arrancar: un jugador que crea el personaje con su nombre
             // —o registra su cuenta _bot— después del arranque lo dejaba afuera hasta reiniciar (auditoría del 13/10).
-            if (await _entorno.NombreAjenoAsync(Nombre, ct) == true)
+            // Si la base no contesta, "no se supo" (null): un error ahí mataba la tarea del bot sin dejar rastro.
+            bool? ajeno;
+            try { ajeno = await _entorno.NombreAjenoAsync(Nombre, ct); }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { Console.Error.WriteLine($"[bot {Nombre}] no se pudo mirar el nombre: {ex.Message}"); ajeno = null; }
+            if (ajeno == true)
             {
                 Console.WriteLine($"[bot {Nombre}] el nombre (o la cuenta {_cuenta}) ya es de un jugador: deja el lugar.");
                 return true;
@@ -475,7 +482,13 @@ public sealed partial class Bot
             FinDeLaVida fin;
             try { fin = await UnaVidaAsync(ct); }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) { Console.Error.WriteLine($"[bot {Nombre}] error: {ex.Message}"); fin = FinDeLaVida.NoEntro; }
+            // UN ERROR YA ADENTRO NO ES "NO PUDO ENTRAR": contado como fracaso, tres seguidas lo dejaban afuera hasta reiniciar el
+            // server con un mensaje que decía que no entraba. Va la traza entera, que el mensaje solo no dice dónde.
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[bot {Nombre}] error: {ex}");
+                fin = _entroEstaVida ? FinDeLaVida.Entro : FinDeLaVida.NoEntro;
+            }
 
             if (fin == FinDeLaVida.Entro) fracasos = 0;
             else if (fin == FinDeLaVida.NoEntro) { fracasos++; _como = DespuesDeUnFracaso(_como, _yaEntro, _porQueNoEntro); }
@@ -579,6 +592,7 @@ public sealed partial class Bot
     /// tarde", que no.</summary>
     internal async Task<FinDeLaVida> UnaVidaAsync(CancellationToken ct)
     {
+        _entroEstaVida = false;
         var transporte = new TransporteDeBot(Nombre);
         var enElMundo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tieneCuenta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -637,7 +651,7 @@ public sealed partial class Bot
             }
             _cartelDeVolver = null;
             _como = ComoEntrar.Entrar;   // ya existen la cuenta y el personaje: de acá en más entra como cualquiera
-            _yaEntro = true;
+            _yaEntro = _entroEstaVida = true;
             // La clave que no llegó a data/bots.txt al crear la cuenta (el archivo tomado por otro programa) se vuelve a
             // escribir ahora: sin eso, en el próximo arranque nadie conoce la clave de esta cuenta. Si ya está, no escribe.
             if (_clave is not null) _entorno.GuardarClave(Nombre, _clave);
@@ -647,9 +661,9 @@ public sealed partial class Bot
         finally
         {
             transporte.Terminar();
+            // Cualquier error del lector acá ya no importa (la vida terminó): relanzado, pisaba el resultado de la vida.
             try { await lector.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None); }
-            catch (TimeoutException) { }
-            catch (OperationCanceledException) { }
+            catch (Exception) { }
         }
     }
 
