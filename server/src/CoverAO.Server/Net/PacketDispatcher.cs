@@ -1098,6 +1098,11 @@ public sealed partial class PacketDispatcher
             if (LoginBlocked(session)) return;
             if (tipo == TipoBorrarCuenta)
             { session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0")); return; }
+            // UN TIPO QUE NO ES NINGUNO SE RECHAZA. El original trata 3-255 como recuperar (su Else), pero acá el bloqueo por
+            // cuenta de los códigos equivocados mira sólo el 0: con un 3 se probaban códigos sin tope por cuenta (auditoría
+            // externa del 23/10). El cliente nunca manda otro que 0, 1 o 2.
+            if (tipo != TipoRecuperarCuenta && tipo != TipoCambiarClave)
+            { LoginFail(session); session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0")); return; }
             // El nombre se valida antes de tocar el disco: es el que arma la ruta del .cnt (path traversal).
             if (!Naming.IsValidName(account)) { LoginFail(session); Falla(ErrCuentaNoExiste); return; }
             if (string.IsNullOrEmpty(nuevaClave)) { Falla(ErrClaveVacia); return; }
