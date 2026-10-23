@@ -574,7 +574,7 @@ public sealed class GameData
     private static void LoadModRaza(GameData data, string path)
     {
         if (!File.Exists(path)) return;
-        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        using var doc = LeerJson(path);
         // El transcode envuelve Balance.dat con las secciones adentro; MODRAZA puede estar a cualquier nivel.
         var modraza = BuscarPropiedad(doc.RootElement, "MODRAZA");
         if (modraza is null) return;
@@ -809,7 +809,7 @@ public sealed class GameData
     private static void LoadMapInfo(GameData data, string path)
     {
         if (!File.Exists(path)) return;   // sin el archivo, todo mapa es Pk (el default del original)
-        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        using var doc = LeerJson(path);
         foreach (var m in doc.RootElement.EnumerateObject())
         {
             if (!int.TryParse(m.Name, out int map)) continue;
@@ -1148,6 +1148,14 @@ public sealed class GameData
         ("DropGlobal.json", "la tabla del drop global (sólo la usa la regla de la casa DropGlobal)"),
     };
 
+    /// <summary>Lee un .json de la data. Uno dañado (truncado, editado a mano) tiraba el arranque con una traza que no decía cuál
+    /// era: ahora el error nombra el archivo (auditoría del 22/10).</summary>
+    private static JsonDocument LeerJson(string path)
+    {
+        try { return JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException ex) { throw new InvalidDataException($"{Path.GetFileName(path)} está dañado: {ex.Message}", ex); }
+    }
+
     public static GameData Load()
     {
         var data = new GameData();
@@ -1209,7 +1217,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, ObjInfo>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("OBJ", out var arr) || arr.ValueKind != JsonValueKind.Array) return map;
         foreach (var el in arr.EnumerateArray())
         {
@@ -1317,7 +1325,7 @@ public sealed class GameData
     {
         var set = new HashSet<int>();
         if (!File.Exists(file)) return set;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty(section, out var arr) || arr.ValueKind != JsonValueKind.Array) return set;
         foreach (var el in arr.EnumerateArray())
         {
@@ -1353,7 +1361,7 @@ public sealed class GameData
     {
         var lista = new List<DropGlobalItem>();
         if (!File.Exists(file)) return lista;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("DROP", out var arr) || arr.ValueKind != JsonValueKind.Array) return lista;
         foreach (var el in arr.EnumerateArray())
         {
@@ -1367,7 +1375,7 @@ public sealed class GameData
     {
         var set = new HashSet<int>();
         if (!File.Exists(file)) return set;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("OBJ", out var arr) || arr.ValueKind != JsonValueKind.Array) return set;
         foreach (var el in arr.EnumerateArray())
             if (el.TryGetProperty("Index", out var v) && v.ValueKind == JsonValueKind.String
@@ -1422,7 +1430,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, NpcInfo>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("NPC", out var arr) || arr.ValueKind != JsonValueKind.Array) return map;
         foreach (var el in arr.EnumerateArray())
         {
@@ -1476,7 +1484,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, (byte[], byte[])>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         foreach (var m in doc.RootElement.EnumerateObject())
         {
             if (!int.TryParse(m.Name, out var num)) continue;
@@ -1492,7 +1500,7 @@ public sealed class GameData
     private static void LoadTriggers(GameData data, string file)
     {
         if (!File.Exists(file)) return;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
             if (!int.TryParse(prop.Name, out var mapNum) || prop.Value.ValueKind != JsonValueKind.Array) continue;
@@ -1513,7 +1521,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, IReadOnlyList<MapNpcSpawn>>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
             if (!int.TryParse(prop.Name, out var mapNum) || prop.Value.ValueKind != JsonValueKind.Array) continue;
@@ -1535,7 +1543,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, IReadOnlyList<MapObjectPlacement>>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
             if (!int.TryParse(prop.Name, out var mapNum) || prop.Value.ValueKind != JsonValueKind.Array) continue;
@@ -1555,7 +1563,7 @@ public sealed class GameData
     {
         var map = new Dictionary<(int, int, int), (int, int, int)>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
             if (!int.TryParse(prop.Name, out var mapNum) || prop.Value.ValueKind != JsonValueKind.Array) continue;
@@ -1572,7 +1580,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, SpellInfo>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("HECHIZO", out var arr) || arr.ValueKind != JsonValueKind.Array) return map;
         foreach (var el in arr.EnumerateArray())
         {
@@ -1612,7 +1620,7 @@ public sealed class GameData
         // Niveles.json shape: { "meta": { "INIT": { "Nivel1": "300", "Nivel2": "450", ... } } }
         var map = new Dictionary<int, long>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("meta", out var meta) ||
             !meta.TryGetProperty("INIT", out var init)) return map;
         foreach (var prop in init.EnumerateObject())
@@ -1646,7 +1654,7 @@ public sealed class GameData
     {
         var result = new Dictionary<string, Dictionary<int, double>>();
         if (!File.Exists(file)) return result;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("meta", out var meta)) return result;
         foreach (var section in meta.EnumerateObject())
         {
@@ -1773,7 +1781,7 @@ public sealed class GameData
     {
         var map = new Dictionary<int, IReadOnlyList<NewbieItem>>();
         if (!File.Exists(file)) return map;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        using var doc = LeerJson(file);
         if (!doc.RootElement.TryGetProperty("meta", out var meta) || meta.ValueKind != JsonValueKind.Object) return map;
         foreach (var section in meta.EnumerateObject())
         {

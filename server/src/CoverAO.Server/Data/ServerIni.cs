@@ -47,6 +47,9 @@ public sealed class ServerIni
     private volatile Dictionary<string, byte> _staff = new(StringComparer.OrdinalIgnoreCase);
 
     public int StartPort { get; private set; } = 7666;
+
+    /// <summary>El techo de <see cref="StartPort"/>: se abren cuatro puertos seguidos desde ahí.</summary>
+    public const int PuertoMaximo = 65532;
     public int MaxUsers { get; private set; }              // 0 = sin tope
     public bool AllowMultiLogins { get; private set; } = true;
     public int LimiteConexionesPorIp { get; private set; } // 0 = sin tope
@@ -1175,13 +1178,13 @@ public sealed class ServerIni
             cfg.ClavesAusentes = ClavesConocidas.Where(k => !traidas.Contains(k)).ToArray();
             cfg.ClavesDesconocidas = ini.Claves("INIT").Where(k => !EsClaveConocida(k)).ToArray();
         }
-        // El PUERTO se acota: el server abre `StartPort` y `StartPort + 1` (el WebSocket del cliente web), así
-        // que el techo real es 65534. Sin esto un `StartPort=70000` —o un 65535, que empuja el WS a 65536—
+        // El PUERTO se acota: el server abre de `StartPort` a `StartPort + 3` (el WebSocket, el panel y el cliente web), así
+        // que el techo real es 65532 (era 65534, pensando sólo en el WebSocket: auditoría del 22/10). Sin esto un `StartPort=70000` —o un 65535, que empuja el WS a 65536—
         // hacía que `TcpListener` tirara ArgumentOutOfRangeException y el proceso muriera; y un 0 abría un
         // puerto efímero al azar al que nadie se podía conectar. Es la clase de typo que comete cualquiera que
         // edite el ini a mano.
         int puerto = ini.GetInt("INIT", "StartPort", cfg.StartPort);
-        cfg.StartPort = puerto is >= 1 and <= 65534 ? puerto : cfg.StartPort;
+        cfg.StartPort = puerto is >= 1 and <= PuertoMaximo ? puerto : cfg.StartPort;
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();

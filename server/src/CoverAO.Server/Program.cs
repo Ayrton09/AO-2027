@@ -32,7 +32,8 @@ if (args.Length > 0 && ComandosDeLaBase.EsUno(args[0]))
     return ComandosDeLaBase.Correr(args, Path.Combine(AppContext.BaseDirectory, "data"), serverIni);
 
 int port = serverIni.StartPort;
-if (args.Length > 0 && int.TryParse(args[0], out var p)) port = p;
+// El del argumento, con el mismo techo que el del ini: un 0 o un 70000 tiraban el server al abrir el panel o el cliente web.
+if (args.Length > 0 && int.TryParse(args[0], out var p) && p is >= 1 and <= ServerIni.PuertoMaximo) port = p;
 
 // LOS CUATRO PUERTOS, resueltos UNA sola vez y acá arriba.
 //
@@ -177,7 +178,14 @@ static string NombreDeRango(byte priv) => priv switch
     16 => "Admin", 8 => "Dios", 4 => "SemiDios", 2 => "Consejero", 32 => "RoleMaster", _ => "?",
 };
 
-var gameData = GameData.Load();
+GameData gameData;
+try { gameData = GameData.Load(); }
+catch (InvalidDataException ex)
+{
+    // Un .json de la data dañado: se dice cuál y se sale, en vez de una traza que no lo nombra.
+    Console.Error.WriteLine($"No se puede arrancar: {ex.Message}");
+    return 1;
+}
 // El mapa de la PRISIÓN arranca con la resurrección deshabilitada (VB6 General.bas:298, dentro de la carga
 // inicial), así que a un preso no lo pueden sacar resucitándolo desde afuera. Es el único ResuSinEfecto que
 // el original clava por código; los demás sólo los mueve /MODMAPINFO RESUSINEFECTO.

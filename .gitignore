@@ -5,8 +5,11 @@
 node_modules/
 desktop/release/
 desktop/compilacion.json
-# La clave privada de la firma del cliente (desktop/firmar.js) vive fuera del repo.
+# La clave privada de la firma del cliente (desktop/firmar.js) vive fuera del repo. Y ninguna otra .pem, por si una copia
+# queda con otro nombre adentro del repo: la única que se versiona es la pública.
 clave-privada.pem
+*.pem
+!desktop/clave-publica.pem
 __pycache__/
 *.pyc
 *.log
