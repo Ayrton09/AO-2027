@@ -5,8 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, SINTETICAS, estaCifrada, cargarPrivada, cifrarPrivada,
-  publicaDe, conPlazos, juntar } = require('./firma');
+const { firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, esPaginaFirmada, cabecerasSinteticas, cabecerasDeLoFirmado,
+  SINTETICAS, estaCifrada, cargarPrivada, cifrarPrivada, publicaDe, conPlazos, juntar } = require('./firma');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coverao-firma-'));
 try {
@@ -56,6 +56,31 @@ try {
   assert.strictEqual(rutaDe('http://srv:7669/dist/src/codec/bytequeue.js?v=32'), 'dist/src/codec/bytequeue.js');
   assert.strictEqual(rutaDe('http://srv:7669/assets/mapas%20viejos/a.json'), 'assets/mapas viejos/a.json');
   assert.ok(SINTETICAS.has('coverao-config.json') && SINTETICAS.has('api/publico.json'));
+
+  // LA VENTANA SÓLO NAVEGA A UNA PÁGINA FIRMADA: ni a una ruta sintética, que el server escribe sin firma, ni a un archivo que no es
+  // .html, ni a lo que no está en el manifiesto.
+  assert.ok(esPaginaFirmada(archivos, 'http://srv:7669/'), 'la raíz es el index firmado');
+  assert.ok(esPaginaFirmada(archivos, 'http://srv:7669/index.html?mute#x'), 'con consulta y ancla también');
+  for (const url of ['http://srv:7669/coverao-config.json', 'http://srv:7669/api/publico.json', 'http://srv:7669/firma.json',
+    'http://srv:7669/dist/codec.js', 'http://srv:7669/otra.html', 'http://srv:7669/constructor', 'no es una dirección']) {
+    assert.ok(!esPaginaFirmada(archivos, url), `${url} no es una página firmada`);
+  }
+  assert.ok(!esPaginaFirmada(null, 'http://srv:7669/'), 'sin manifiesto verificado, ninguna');
+  // Y lo sintético sale como JSON que no corre, diga lo que diga el server; lo firmado, sin el Refresh del server.
+  const delServer = new Headers({ 'content-type': 'text/html', 'refresh': '0; url=/coverao-config.json', 'cache-control': 'no-store',
+    'content-encoding': 'gzip', 'content-length': '10', 'set-cookie': 'a=b' });
+  const sint = cabecerasSinteticas(delServer);
+  assert.strictEqual(sint.get('content-type'), 'application/json; charset=utf-8');
+  assert.strictEqual(sint.get('x-content-type-options'), 'nosniff');
+  assert.match(sint.get('content-security-policy'), /sandbox/);
+  assert.strictEqual(sint.get('cache-control'), 'no-store', 'el caché del server se respeta');
+  assert.strictEqual(sint.get('refresh'), null);
+  assert.strictEqual(sint.get('set-cookie'), null, 'nada más del server');
+  const firmadas = cabecerasDeLoFirmado(delServer);
+  assert.strictEqual(firmadas.get('refresh'), null, 'el Refresh del server no llega a la página firmada');
+  assert.strictEqual(firmadas.get('content-encoding'), null);
+  assert.strictEqual(firmadas.get('content-length'), null);
+  assert.strictEqual(firmadas.get('content-type'), 'text/html', 'el resto, como lo manda el server');
 
   // LA CLAVE CON CONTRASEÑA.
   const cifrada = cifrarPrivada(privateKey, 'una contraseña larga');

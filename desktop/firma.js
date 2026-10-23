@@ -75,6 +75,38 @@ function rutaDe(url) {
 /** ¿Lo que llegó para esa ruta es lo firmado? Una ruta que no está en el manifiesto no pasa: no se agregan archivos. */
 const esLoFirmado = (archivos, rel, bytes) => Object.prototype.hasOwnProperty.call(archivos, rel) && archivos[rel] === hashDe(bytes);
 
+// LAS RUTAS SINTÉTICAS LAS ESCRIBE EL SERVER, no el autor (auditoría del 23/10): pasan sin firma, así que no pueden llegar a ser una
+// página. Con la ventana parada en `coverao-config.json` y el server contestando text/html, corría un cliente sin firmar con el
+// puente de la app; bastaba un `Refresh` en las cabeceras del index firmado. Ahora la ventana sólo navega a un .html del
+// manifiesto, una ruta sintética sale siempre como JSON que no se ejecuta, y lo firmado llega sin el `Refresh` del server.
+
+/** ¿Esa dirección es una página firmada del cliente (un .html del manifiesto)? Adentro del juego la ventana sólo navega a ésas. */
+function esPaginaFirmada(archivos, url) {
+  if (!archivos) return false;
+  let rel;
+  try { rel = rutaDe(url); } catch { return false; }
+  return /\.html$/i.test(rel) && Object.prototype.hasOwnProperty.call(archivos, rel);
+}
+
+/** Las cabeceras de una ruta sintética: JSON siempre, sin que se adivine otro tipo, y aunque se abra sola no corre nada. */
+function cabecerasSinteticas(delServer) {
+  const salida = new Headers({
+    'content-type': 'application/json; charset=utf-8',
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; sandbox",
+  });
+  const cache = delServer && delServer.get('cache-control');
+  if (cache) salida.set('cache-control', cache);
+  return salida;
+}
+
+/** Las cabeceras del server para un archivo firmado: sin las del cuerpo comprimido (ya viene entero) ni el `Refresh`. */
+function cabecerasDeLoFirmado(delServer) {
+  const salida = new Headers(delServer);
+  for (const h of ['content-encoding', 'content-length', 'refresh']) salida.delete(h);
+  return salida;
+}
+
 // LA CLAVE PRIVADA CON CONTRASEÑA (auditoría del 12/10): en el disco va cifrada, así una copia del archivo (un backup, la carpeta
 // sincronizada, otro usuario de la PC) no alcanza para firmar un cliente con trampas.
 /** ¿El PEM de la clave privada está cifrado? */
@@ -127,5 +159,5 @@ async function juntar(cuerpo, tope, aTiempo = (promesa) => promesa) {
   }
 }
 
-module.exports = { ARCHIVO, SINTETICAS, hashDe, firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, estaCifrada, cargarPrivada,
-  cifrarPrivada, publicaDe, conPlazos, juntar };
+module.exports = { ARCHIVO, SINTETICAS, hashDe, firmarCarpeta, verificarManifiesto, rutaDe, esLoFirmado, esPaginaFirmada,
+  cabecerasSinteticas, cabecerasDeLoFirmado, estaCifrada, cargarPrivada, cifrarPrivada, publicaDe, conPlazos, juntar };

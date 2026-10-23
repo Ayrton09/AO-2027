@@ -224,9 +224,15 @@ function interceptar(esquema) {
     // demás. Un formulario POST con target=_top desde el Top de otro server pasaba por acá sin firma y la ventana mostraba lo
     // que contestara (auditoría del 13/10).
     if (archivos && pedido.method !== 'GET' && pedido.method !== 'HEAD') return new Response(null, { status: 405 });
-    // Lo que no es de un server verificado (la consulta de la lista, un enlace), lo que arma el server en el momento y el HEAD,
-    // pasa derecho.
-    if (!archivos || firma.SINTETICAS.has(rel) || pedido.method !== 'GET') {
+    // Lo que arma el server en el momento pasa sin firma, pero como JSON que no se ejecuta (ver firma.cabecerasSinteticas).
+    if (firma.SINTETICAS.has(rel)) {
+      try {
+        const r = await net.fetch(pedido, { bypassCustomProtocolHandlers: true });
+        return new Response(r.body, { status: r.status, headers: firma.cabecerasSinteticas(r.headers) });
+      } catch { return new Response(null, { status: 502 }); }
+    }
+    // Lo que no es de un server verificado (la consulta de la lista, un enlace) y el HEAD pasan derecho.
+    if (!archivos || pedido.method !== 'GET') {
       return net.fetch(pedido, { bypassCustomProtocolHandlers: true });
     }
     // Sin las preguntas de caché ni de pedazos de la página: para mirarlo hace falta el archivo entero (el caché de la red sigue
@@ -239,9 +245,7 @@ function interceptar(esquema) {
     // LO QUE NO ES 2xx (un 404, un error del server) llega a la página sin el cuerpo ni las cabeceras del server: sólo el código.
     if (!r.ok) return new Response(null, { status: r.status });
     if (!firma.esLoFirmado(archivos, rel, cuerpo)) { clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
-    const salida = new Headers(r.headers);
-    salida.delete('content-encoding'); salida.delete('content-length');   // el cuerpo ya viene descomprimido
-    return new Response(cuerpo, { status: r.status, headers: salida });
+    return new Response(cuerpo, { status: r.status, headers: firma.cabecerasDeLoFirmado(r.headers) });
   });
 }
 
@@ -330,9 +334,10 @@ function crearVentana() {
 
   // Los enlaces a otros sitios (el código fuente, la página de un clan) se abren en el navegador, no en la ventana del juego.
   // Adentro sólo se navega al MISMO ORIGEN del server, no a uno que empiece igual, y a una página local sólo desde el menú. Con
-  // la firma, además, a un origen verificado: el server al que se le encontró el cliente cambiado ya no lo está.
+  // la firma, además, a una PÁGINA FIRMADA de un origen verificado: el server al que se le encontró el cliente cambiado ya no lo
+  // está, y una ruta que el server escribe sin firma (coverao-config.json) no es una página (ver firma.esPaginaFirmada).
   const mismoServidor = (url) => { try { return !!servidor && new URL(url).origin === new URL(servidor).origin; } catch { return false; } };
-  const verificado = (url) => !VERIFICAR || firmados.has(new URL(url).origin);
+  const verificado = (url) => !VERIFICAR || firma.esPaginaFirmada(firmados.get(new URL(url).origin), url);
   ventana.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
