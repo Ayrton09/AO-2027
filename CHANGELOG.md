@@ -26,6 +26,17 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Cazan con vos si los invitás**: decile a un bot que tengas a la vista "vamos?" o "cazamos?" y te acompaña un rato, pegándole a lo que peleás.
 - **Comercian en el Centro de Subastas**: publican el equipo que ya no usan más barato que el mercader, y compran lo que les sirve si alguien lo pone a buen precio.
 
+### Juego
+
+- **Navegando o montado, el barco y la montura te defienden también de las criaturas**, como en el original: antes sólo contaban contra otros jugadores.
+- **Al fundir salen los lingotes por tanda que corresponden a tu nivel**: en algunos niveles salía uno menos.
+- **Morir te saca la invisibilidad**: el que moría invisible seguía así como fantasma.
+- **Ofertar, comprar en el Centro de Subastas o tirar algo al piso queda guardado enseguida**, así una caída del server no lo deshace.
+
+### Para el que hostea
+
+- **Un archivo de la data dañado dice cuál es** al arrancar, y el puerto del Server.ini se acota a lo que el server puede abrir.
+
 
 ## 1.0.0 (2026-10-14)
 Lo nuevo desde el paquete del 13 de octubre.
