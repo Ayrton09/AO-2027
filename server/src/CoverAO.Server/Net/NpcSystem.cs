@@ -1790,13 +1790,21 @@ public sealed class NpcSystem
                 : npc.Template.MinHit;
             // The player's equipment absorbs the blow (NpcDaño, SistemaCombate.bas:548-586): head→helmet,
             // body→armour(+shield). NpcDaño clamps damage below 1 up to 1 (even an exactly-absorbed hit).
+            int Tirada(int lo, int hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo;
+            // EL BARCO Y LA MONTURA DEFIENDEN SIEMPRE, caiga donde caiga (NpcDaño :537-545 y :580: `absorbido + defbarco +
+            // defmontura` FUERA del Select de la zona, a diferencia del PvP). Acá no se sumaban: navegando o montado, la
+            // criatura pegaba como a uno de a pie (auditoría del 22/10).
+            int defBarco = player.Navigating && player.BoatSlot > 0 && _data.Obj(player.Inventory[player.BoatSlot].ObjIndex) is { } barco
+                ? Tirada(barco.MinDef, barco.MaxDef) : 0;
+            int defMontura = player.Mounted && Equipment.MonturaEquipada(player, _data) is { } montura
+                ? Tirada(montura.MinDef, montura.MaxDef) : 0;
             int zona = _rng.Next(1, 7); // RandomNumber(bCabeza=1, bTorso=6)
             long afterDef = Combat.AplicarDefensa(rawDmg, zona,
                 Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 3)),
                 Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 2)),
                 Equipment.DefRange(Equipment.EquippedOfCategory(player, _data, 4)),
-                (lo, hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo,
-                player.MetamorfosisExtraDef);   // ExtraDEF de la forma (regla de la casa; 0 si no está transformado)
+                Tirada,
+                player.MetamorfosisExtraDef + defBarco + defMontura);   // ExtraDEF de la forma: regla de la casa, 0 sin transformar
             int dmg = (int)Math.Max(1, afterDef);
             player.Hp = Math.Max(0, player.Hp - dmg);
             // CON LA PARTE DEL CUERPO, como el original: la `zona` que acaba de decidir qué armadura absorbe

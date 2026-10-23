@@ -1794,6 +1794,7 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.LevelUp(player.FreeSkillPoints));
         }
         if (player.Navigating) session.Send(ServerMessages.NavigateToggle());   // TCP.bas:320 — relogueó en el barco
+        player.ResurrectionSafe = !player.IsAlive;   // TCP.bas:326-334: vivo entra con el seguro apagado, muerto prendido
         SendGuildNewsAlEntrar(session, player);                                 // TCP.bas:346 — modGuilds.SendGuildNews
         if (_world.MotivosDeRechazo.Remove(player.Name, out var motivo))          // TCP.bas:348 — a_ObtenerRechazoDeChar
         {
@@ -3201,7 +3202,7 @@ public sealed partial class PacketDispatcher
     private long ConEventoYDonador(Player p, long exp)
     {
         long dar = exp * (_admin?.ExpMult ?? 1);
-        if (p.Donador) dar += dar / 2;   // VB6 :2029
+        if (p.Donador) dar = Matematicas.AEntero(dar + dar / 2.0);   // VB6 :2029, la barra de punto flotante redondea al par
         return dar;
     }
 
@@ -7751,7 +7752,9 @@ public sealed partial class PacketDispatcher
         { session.Send(ServerMessages.LocaleMsg(194)); return false; }   // "No tenés conocimientos de minería suficientes"
 
         int perLingote = MineralesParaLingote(mineral.Index);
-        int cantidad = Math.Max(1, (p.Level - 4) / 5);             // VB6 CantidadItems = MaximoInt(1, (ELV-4)/5)
+        // VB6 CantidadItems = MaximoInt(1, CInt((ELV-4)/5)): la barra es de punto flotante y el CInt redondea al par, no trunca
+        // (auditoría del 22/10: en los niveles 12-13 salían 1 lingote por tanda en vez de 2).
+        int cantidad = (int)Math.Max(1, Matematicas.Dividir(p.Level - 4, 5));
         var slotInv = p.Inventory[slot];
         while (cantidad > 0 && slotInv.Amount < perLingote * cantidad) cantidad--;
         if (cantidad <= 0 || slotInv.Amount < perLingote) { session.Send(ServerMessages.LocaleMsg(206)); return false; }   // "No tenés suficientes materiales"
@@ -14751,6 +14754,16 @@ public sealed partial class PacketDispatcher
         }
         p.ParalyzedUntilTick = 0; p.ParalyzedByCharIndex = 0; p.PoisonedUntilTick = 0; p.BlindedUntilTick = 0; p.Meditating = false; p.Resting = false;  // VB6 UserDie limpia estados (parálisis/veneno/ceguera/meditación/descanso)
         p.PoisonCounter = 0;    // `.Counters.Veneno = 0` (Modulo_UsUaRiOs.bas:1253), junto con el flag
+        // MORIR SACA LA INVISIBILIDAD Y EL OCULTAMIENTO, y el área lo vuelve a ver (UserDie, Modulo_UsUaRiOs.bas:1316-1325). Faltaba:
+        // el que moría invisible quedaba como fantasma invisible y revivía así hasta que se le venciera (auditoría del 22/10).
+        if (p.Invisible || p.Oculto)
+        {
+            p.Invisible = false; p.Oculto = false;
+            p.InvisibleUntilTick = 0; p.OcultoUntilTick = 0;
+            world.BroadcastToObservers(p.Pos, ServerMessages.SetInvisible(p.CharIndex, false));
+        }
+        // Y EL SEGURO DE RESURRECCIÓN SE PRENDE, salvo en la arena (UserDie :1209-1216).
+        p.ResurrectionSafe = !data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y);
         LiberarAlQueLoPersigue(world, p);   // VB6 UserDie (Modulo_UsUaRiOs.bas:1272-1292)
         p.Incinerado = false;   // VB6 UserDie (Modulo_UsUaRiOs.bas:1256): morir apaga el fuego, y no toca el contador
         // Morir deshace la metamorfosis (regla de la casa). El cadáver ya pisa cuerpo y cabeza acá arriba;
