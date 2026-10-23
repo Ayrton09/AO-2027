@@ -24,9 +24,15 @@ namespace CoverAO.Server.Data;
 [JsonDerivedType(typeof(RescateDelRecord), "record")]
 [JsonDerivedType(typeof(RescateDeIpsBaneadas), "ips-baneadas")]
 [JsonDerivedType(typeof(RescateDeAcreditacion), "acreditacion")]
+[JsonDerivedType(typeof(RescateDeBaldosas), "baldosas")]
+[JsonDerivedType(typeof(RescateJunto), "junto")]
 public abstract record Rescate
 {
     public abstract void Aplicar(IAlmacen almacen);
+
+    /// <summary>El mismo, con el saldo de antes anotado en cada suma que no lo tiene (<see cref="RescateDeAcreditacion"/>), o
+    /// null si no hay ninguna así: el arranque lo escribe en el archivo antes de aplicarlo.</summary>
+    internal virtual Rescate? ConLosSaldosDe(IAlmacen almacen) => null;
 
     /// <summary>Qué es, para el log: un método y no una propiedad, que iría al JSON.</summary>
     public virtual string Describir() => GetType().Name;
@@ -82,6 +88,33 @@ public sealed record RescateDeLlaves(IReadOnlyList<LlaveVendida> Llaves) : Resca
     public override void Aplicar(IAlmacen almacen) => almacen.GuardarLlavesVendidas(Llaves);
 }
 
+/// <summary>Las baldosas que tocó el que levantó, tiró o murió (<see cref="IAlmacen.GuardarBaldosas"/>).</summary>
+public sealed record RescateDeBaldosas(IReadOnlyList<ObjetoEnElSuelo> Baldosas) : Rescate
+{
+    public override void Aplicar(IAlmacen almacen) => almacen.GuardarBaldosas(Baldosas);
+}
+
+/// <summary>
+/// VARIAS ESCRITURAS QUE VAN JUNTAS, en una sola transacción (<see cref="Persistence.GuardarJuntos"/>): las dos puntas de lo
+/// que mueve oro u objetos. Aplicada a medias duplicaría o perdería lo movido, así que entra entera o no entra.
+/// </summary>
+public sealed record RescateJunto(IReadOnlyList<Rescate> Partes) : Rescate
+{
+    public override void Aplicar(IAlmacen almacen) => almacen.EnUnaTransaccion(() =>
+    {
+        foreach (var parte in Partes) parte.Aplicar(almacen);
+    });
+
+    internal override Rescate? ConLosSaldosDe(IAlmacen almacen)
+    {
+        var partes = Partes.Select(p => p.ConLosSaldosDe(almacen)).ToList();
+        if (partes.All(p => p is null)) return null;
+        return new RescateJunto(Partes.Select((p, i) => partes[i] ?? p).ToList());
+    }
+
+    public override string Describir() => string.Join(" + ", Partes.Select(p => p.Describir()));
+}
+
 public sealed record RescateDeSubastas(SubastasGuardadas Subastas) : Rescate
 {
     public override void Aplicar(IAlmacen almacen) => almacen.GuardarSubastas(Subastas);
@@ -119,6 +152,8 @@ public sealed record RescateDeAcreditacion(string Nombre, long Monto, long? Ante
 
     /// <summary>La misma, con el saldo de ahora como el de antes (si el personaje existe).</summary>
     public RescateDeAcreditacion ConElSaldoDe(IAlmacen almacen) => this with { Antes = almacen.AcreditarBoveda(Nombre, 0) };
+
+    internal override Rescate? ConLosSaldosDe(IAlmacen almacen) => Antes is null ? ConElSaldoDe(almacen) : null;
 
     public override string Describir() => $"acreditar {Monto} a la bóveda de {Nombre}";
 }
@@ -175,9 +210,9 @@ public static class Rescates
                 {
                     // UNA SUMA ANOTA EL SALDO DE ANTES EN EL ARCHIVO, ANTES DE SUMAR: si la base se cae en el medio y el archivo
                     // se vuelve a aplicar en el próximo arranque, la que ya entró no se suma otra vez.
-                    if (rescate is RescateDeAcreditacion { Antes: null } suma)
+                    if (rescate.ConLosSaldosDe(almacen) is { } conSaldos)
                     {
-                        archivo.Rescates[i] = rescate = suma.ConElSaldoDe(almacen);
+                        archivo.Rescates[i] = rescate = conSaldos;
                         EscrituraAtomica.Escribir(ruta, JsonSerializer.Serialize(archivo, Opciones), new UTF8Encoding(false));
                     }
                     rescate.Aplicar(almacen);

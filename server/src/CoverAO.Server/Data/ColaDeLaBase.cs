@@ -26,7 +26,12 @@ namespace CoverAO.Server.Data;
 ///
 /// <para><b>Mientras no responde, lo que espera se vuelca al archivo de rescate</b> (<see cref="Volcar"/>): un corte de luz o
 /// un proceso matado en medio de una caída larga se llevaba todo lo de la caída, que estaba sólo en memoria. Cuando vuelve,
-/// el volcado se borra y la cola sigue como siempre.</para>
+/// el volcado se borra recién cuando se aplicó lo último que cubre, y la cola sigue como siempre.</para>
+///
+/// <para><b>Un guardado que otro más nuevo ya cubre no espera</b> (<see cref="Escribir"/> con clave): con la base caída, cada
+/// autoguardado sumaba una ficha por conectado y la cola crecía sin tope. El viejo de una misma cosa (el personaje, el
+/// suelo, las subastas) se descarta al llegar el nuevo, que guarda el estado entero, y la cola queda en una ficha por
+/// personaje.</para>
 ///
 /// <para><b>La lectura que se puede abandonar</b> (como la cuenta del ingreso, que deja de esperar a los 10 s) no se hace si el
 /// que la pidió ya se fue: sale de la cola sin tocar la base. Y las que esperan tienen tope: pasado, la lectura falla en el acto
@@ -40,14 +45,24 @@ public sealed class ColaDeLaBase : IDisposable
     /// <summary>Un pedido: qué es (para el log), cómo se hace, qué hacer si falla o si la cola se rinde, y —si es una
     /// escritura que se puede guardar para el próximo arranque— su rescate.</summary>
     private sealed class Pedido(string que, Action<IAlmacen> hacer, Action<Exception> fallo, Func<bool, Rescate?>? rescate,
-        CancellationToken abandono = default)
+        CancellationToken abandono = default, IReadOnlyList<string>? claves = null, bool superable = false)
     {
         public readonly string Que = que;
-        public readonly Action<IAlmacen> Hacer = hacer;
+        // No son readonly: el que queda superado suelta lo que guardaba (ver Superar).
+        public Action<IAlmacen> Hacer = hacer;
         public readonly Action<Exception> Fallo = fallo;
         /// <summary>Arma el rescate en el momento de apartarlo (con true) o de volcarlo (con false, sin apartarlo): el de una
         /// suma necesita saber hasta dónde llegó (<see cref="Persistence.AcreditarBovedaAsync"/>).</summary>
-        public readonly Func<bool, Rescate?>? Rescate = rescate;
+        public Func<bool, Rescate?>? Rescate = rescate;
+        /// <summary>Lo que guarda entero (<c>personaje:NOMBRE</c>, <c>suelo</c>...): un guardado anterior de lo mismo que todavía
+        /// espera queda superado por éste.</summary>
+        public readonly IReadOnlyList<string> Claves = claves ?? Array.Empty<string>();
+        /// <summary>Un guardado de una sola cosa, que uno más nuevo puede superar. Los que van juntos no: descartar una parte
+        /// dejaría la otra sola.</summary>
+        public readonly bool Superable = superable;
+        /// <summary>0 esperando, 1 tomado por el escritor, 2 superado. Se cambia con <see cref="Interlocked"/>: el que encola y
+        /// el escritor se lo disputan.</summary>
+        public int Estado;
         /// <summary>El rescate con el que quedó apartado, o null.</summary>
         public Rescate? Rescatado;
         /// <summary>Se cancela cuando el que lo pidió deja de esperarlo. Sólo lo traen las lecturas que se pueden abandonar.</summary>
@@ -78,6 +93,13 @@ public sealed class ColaDeLaBase : IDisposable
     private readonly TimeSpan[] _esperas;
     private readonly object _orden = new();
     private long _siguiente;
+    /// <summary>El último guardado de cada clave que todavía espera (ver <see cref="Pedido.Claves"/>). Bajo <see cref="_orden"/>.</summary>
+    private readonly Dictionary<string, Pedido> _esperaPorClave = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>El lugar del último pedido con respuesta (una lectura, una marca de vaciado): un guardado anterior a él no se
+    /// supera, porque la lectura tiene que verlo.</summary>
+    private long _ultimaRespuesta;
+    private long _superados;
+    private int _avisoDeCola;
     private int _pendientes;
     private int _abandonables;
     private readonly int _topeDeAbandonables;
@@ -94,8 +116,8 @@ public sealed class ColaDeLaBase : IDisposable
     private readonly object _volcando = new();
     /// <summary>El archivo del volcado de esta caída, o null.</summary>
     private string? _volcado;
-    /// <summary>Lo del volcado todavía no se aplicó. False: la base volvió y el archivo no se pudo borrar; el próximo volcado o el
-    /// rescate del apagado lo pisan.</summary>
+    /// <summary>Lo del volcado todavía no se aplicó entero. False: ya se aplicó todo lo que cubre y el archivo no se pudo
+    /// borrar; el próximo volcado o el rescate del apagado lo pisan.</summary>
     private bool _volcadoVigente;
     private long _proximoVolcado;
     /// <summary>El último lugar de la cola que había cuando se volcó: si no llegó nada, no se vuelve a escribir lo mismo.</summary>
@@ -123,6 +145,12 @@ public sealed class ColaDeLaBase : IDisposable
     /// <summary>Cuántos pedidos esperan o están corriendo.</summary>
     public int Pendientes => Volatile.Read(ref _pendientes);
 
+    /// <summary>Cuántos guardados se descartaron porque uno más nuevo de lo mismo ya esperaba.</summary>
+    public long Superados => Interlocked.Read(ref _superados);
+
+    /// <summary>El volcado de la caída, si hay uno en el disco. Para las pruebas.</summary>
+    internal string? Volcado { get { lock (_volcando) return _volcado; } }
+
     /// <summary>¿Es el hilo del escritor el que llama? Para los que no pueden esperar a la cola desde adentro de ella.</summary>
     public bool EsElEscritor => Thread.CurrentThread == _escritor;
 
@@ -133,10 +161,16 @@ public sealed class ColaDeLaBase : IDisposable
     public DateTime? EsperandoDesde { get { lock (_estado) return _enCurso?.Encolado; } }
 
     /// <summary>Encola una escritura y sigue: no espera nada. Si falla, se anota con <paramref name="que"/>. Con
-    /// <paramref name="rescate"/>, si al apagar la base no respondía, va al archivo de rescate en vez de perderse.</summary>
-    public void Escribir(string que, Action<IAlmacen> escritura, Rescate? rescate = null)
+    /// <paramref name="rescate"/>, si al apagar la base no respondía, va al archivo de rescate en vez de perderse.
+    ///
+    /// <para>Con <paramref name="clave"/>, guarda el estado ENTERO de esa cosa: el guardado anterior de la misma clave que
+    /// todavía espera se descarta (<see cref="Superar"/>). Con <paramref name="cubre"/>, es una escritura de varias cosas juntas
+    /// que descarta los guardados anteriores de cada una, pero a la que nadie descarta.</para></summary>
+    public void Escribir(string que, Action<IAlmacen> escritura, Rescate? rescate = null, string? clave = null,
+        IReadOnlyList<string>? cubre = null)
         => Encolar(new Pedido(que, escritura, ex => Console.Error.WriteLine($"[base] {que}: {ex.Message}"),
-                              rescate is null ? null : _ => rescate));
+                              rescate is null ? null : _ => rescate,
+                              claves: clave is not null ? new[] { clave } : cubre, superable: clave is not null));
 
     /// <summary>
     /// Pide algo al almacén y devuelve una tarea con la respuesta. La continuación NO corre en el escritor
@@ -162,7 +196,7 @@ public sealed class ColaDeLaBase : IDisposable
         }
         var respuesta = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         // TrySet: si la cola se rindió al apagar, el que esperaba ya se enteró, y lo que estaba corriendo puede terminar igual.
-        Encolar(new Pedido(que, a => respuesta.TrySetResult(pedido(a)), ex =>
+        Encolar(conRespuesta: true, pedido: new Pedido(que, a => respuesta.TrySetResult(pedido(a)), ex =>
         {
             // La abandonada no se anota: el que la pidió ya se fue.
             if (ex is OperationCanceledException cancelada && abandono.CanBeCanceled && cancelada.CancellationToken == abandono)
@@ -179,14 +213,20 @@ public sealed class ColaDeLaBase : IDisposable
     /// <summary>A la cola, o —si ya se cerró, al final del apagado— en el acto: lo que llega tarde se guarda igual. En el
     /// acto pero DE A UNO: el escritor puede estar todavía vaciando lo que quedaba, y el almacén no se toca desde dos hilos
     /// (una conexión de SQLite, por ejemplo, no lo aguanta). Para el escritor, el candado nunca tiene a nadie esperando.</summary>
-    private void Encolar(Pedido pedido)
+    private void Encolar(Pedido pedido, bool conRespuesta = false)
     {
-        Interlocked.Increment(ref _pendientes);
+        int pendientes = Interlocked.Increment(ref _pendientes);
         try
         {
             lock (_orden)
             {
                 pedido.Orden = ++_siguiente;
+                if (conRespuesta) _ultimaRespuesta = pedido.Orden;
+                foreach (var clave in pedido.Claves)
+                {
+                    if (_esperaPorClave.Remove(clave, out var anterior) && anterior.Orden > _ultimaRespuesta) Superar(anterior);
+                    if (pedido.Superable) _esperaPorClave[clave] = pedido;
+                }
                 _pedidos.Add(pedido);
             }
         }
@@ -194,14 +234,44 @@ public sealed class ColaDeLaBase : IDisposable
         {
             try { lock (_deAUno) Aplicar(pedido, reintentar: false); }
             finally { Salio(pedido); }
+            return;
         }
+        if (CaidaDesde is not null) AvisarSiCrece(pendientes);
     }
 
-    /// <summary>El pedido ya no está en la cola: aplicado, abandonado o apartado.</summary>
+    /// <summary>
+    /// UN GUARDADO QUE OTRO MÁS NUEVO DE LO MISMO YA CUBRE, todavía sin tomar: no se va a hacer, y suelta lo que tenía (la ficha,
+    /// la foto del suelo) para que la memoria no crezca con la caída. Que el nuevo lo cubra es seguro porque los dos guardan el
+    /// estado entero de la misma cosa, y entre los dos no hay ninguna lectura que tuviera que ver el viejo
+    /// (<see cref="_ultimaRespuesta"/>). Las escrituras de varias cosas juntas no se superan nunca.
+    /// </summary>
+    private void Superar(Pedido anterior)
+    {
+        if (Interlocked.CompareExchange(ref anterior.Estado, 2, 0) != 0) return;   // el escritor ya lo tomó
+        anterior.Hacer = _ => { };
+        anterior.Rescate = null;
+        Interlocked.Increment(ref _superados);
+    }
+
+    /// <summary>El pedido ya no está en la cola: aplicado, abandonado, apartado o superado.</summary>
     private void Salio(Pedido pedido)
     {
+        if (pedido.Superable)
+            lock (_orden)
+                foreach (var clave in pedido.Claves)
+                    if (_esperaPorClave.TryGetValue(clave, out var esperando) && esperando == pedido) _esperaPorClave.Remove(clave);
         Interlocked.Decrement(ref _pendientes);
         if (pedido.Abandono.CanBeCanceled) Interlocked.Decrement(ref _abandonables);
+    }
+
+    /// <summary>Con la base caída, avisa cuando la cola pasa de mil, diez mil y cien mil pedidos esperando.</summary>
+    private void AvisarSiCrece(int pendientes)
+    {
+        int nivel = pendientes >= 100_000 ? 3 : pendientes >= 10_000 ? 2 : pendientes >= 1_000 ? 1 : 0;
+        if (nivel == 0 || nivel <= Volatile.Read(ref _avisoDeCola)) return;
+        if (Interlocked.Exchange(ref _avisoDeCola, nivel) >= nivel) return;
+        Console.Error.WriteLine($"[base] OJO: {pendientes} pedidos esperan a la base ({Superados} guardados viejos ya descartados " +
+                                "porque había uno más nuevo de lo mismo).");
     }
 
     /// <summary>
@@ -221,6 +291,7 @@ public sealed class ColaDeLaBase : IDisposable
         {
             try
             {
+                if (Interlocked.CompareExchange(ref pedido.Estado, 1, 0) != 0) continue;   // superado: otro más nuevo lo cubre
                 lock (_estado)
                 {
                     if (_rendida) { Apartar(pedido); continue; }
@@ -232,6 +303,7 @@ public sealed class ColaDeLaBase : IDisposable
             {
                 lock (_estado) _enCurso = null;
                 Salio(pedido);
+                SiSeAplicoTodoElVolcado(pedido);
             }
         }
     }
@@ -283,7 +355,7 @@ public sealed class ColaDeLaBase : IDisposable
     /// abandonada no: no la espera nadie.</summary>
     private void Apartar(Pedido pedido)
     {
-        if (pedido.Apartado || pedido.Abandono.IsCancellationRequested) return;
+        if (pedido.Apartado || pedido.Estado == 2 || pedido.Abandono.IsCancellationRequested) return;
         pedido.Apartado = true;
         pedido.Rescatado = pedido.Rescate?.Invoke(true);
         _sinAplicar.Add(pedido);
@@ -312,48 +384,82 @@ public sealed class ColaDeLaBase : IDisposable
         }
         Console.Error.WriteLine($"[base] la base volvió después de {(DateTime.UtcNow - desde).TotalSeconds:0} s; sigue la cola " +
                                 $"({Pendientes} pedido(s)).");
+        Interlocked.Exchange(ref _avisoDeCola, 0);
+        // EL VOLCADO SE QUEDA hasta que se aplique lo último que cubre (SiSeAplicoTodoElVolcado): borrado acá, con el primer
+        // pedido que entró, un corte en el medio perdía todo lo que seguía esperando en memoria (auditoría externa del 23/10).
+        // Si se vuelve a caer antes, el próximo volcado va enseguida.
+        lock (_volcando) _proximoVolcado = 0;
+    }
+
+    /// <summary>
+    /// ¿El pedido que terminó era el último que cubría el volcado? Entonces ya no hace falta, y se borra. Hasta ahí se queda: lo
+    /// que cubre es la cabeza de la cola (que va en orden), y aplicarlo de nuevo en el próximo arranque, si el proceso muere
+    /// en el medio, deja lo mismo, porque cada escritura guarda un estado entero y lo que vino después todavía no se aplicó.
+    /// La suma a una bóveda, que no es así, anota su saldo en el volcado antes de sumar (<see cref="LaBaseResponde"/>).
+    /// </summary>
+    private void SiSeAplicoTodoElVolcado(Pedido terminado)
+    {
         lock (_volcando)
         {
+            if (_volcado is null || !_volcadoVigente || terminado.Orden < _volcadoHasta) return;
+            lock (_estado) if (_caidaDesde is not null || _rendida) return;   // sigue caída o se rindió: el apagado escribe el suyo
             _volcadoVigente = false;
             BorrarElVolcado();
         }
     }
 
-    /// <summary>Desde adentro de un pedido: la base ya contestó. El volcado de la caída se borra en el acto, antes de lo que el
-    /// pedido haga después: una suma que entra con el volcado todavía en el disco se volvería a sumar en el próximo arranque si
-    /// el proceso muere justo ahí (<see cref="Persistence.AcreditarBovedaAsync"/>).</summary>
-    internal void LaBaseResponde() => Volvio();
+    /// <summary>Desde adentro de un pedido: la base ya contestó, y lo que sigue NO se puede aplicar dos veces (una suma a una
+    /// bóveda). Si hay un volcado vigente, se reescribe ya, con el saldo de antes que el pedido acaba de anotar, antes de que
+    /// sume: sin eso, un corte justo después la sumaba otra vez en el próximo arranque
+    /// (<see cref="Persistence.AcreditarBovedaAsync"/>). Si no se puede reescribir, se borra, como antes.</summary>
+    internal void LaBaseResponde()
+    {
+        Volvio();
+        lock (_volcando)
+        {
+            if (_volcado is null || !_volcadoVigente) return;
+            Pedido? enCurso;
+            lock (_estado) enCurso = _enCurso;
+            if (enCurso is not null && Volcar(enCurso, forzar: true)) return;
+            _volcadoVigente = false;
+            BorrarElVolcado();
+        }
+    }
 
     /// <summary>
     /// EL VOLCADO DE UNA CAÍDA: lo que espera —el pedido que se reintenta y lo que está detrás, en orden— va al archivo de
     /// rescate de <c>data/</c> (<see cref="Rescates"/>), el mismo que escribe el apagado. Si el proceso muere con la base caída,
     /// el próximo arranque lo aplica como a cualquier rescate. Va apenas se cae y después cada <see cref="CadaVolcado"/>, si
     /// llegó algo nuevo, siempre al MISMO archivo: dos volcados de la misma caída aplicarían dos veces la misma suma. Cuando la
-    /// base vuelve se borra (<see cref="Volvio"/>), antes de que la cola aplique lo siguiente: un volcado que queda con lo que
-    /// ya se aplicó pisaría, en el próximo arranque, lo que se guardó después. Corre en el escritor, entre un reintento y otro.
+    /// base vuelve se queda hasta que se aplica lo último que cubre (<see cref="SiSeAplicoTodoElVolcado"/>): borrado antes, se
+    /// perdía lo que seguía esperando; y no se queda más, porque en el próximo arranque pisaría lo que se guardó después. Corre en
+    /// el escritor, entre un reintento y otro.
     /// </summary>
-    private void Volcar(Pedido enCurso)
+    /// <returns>true si quedó escrito.</returns>
+    private bool Volcar(Pedido enCurso, bool forzar = false)
     {
-        if (_carpetaDelRescate is null) return;
+        if (_carpetaDelRescate is null) return false;
         lock (_volcando)
         {
             long hasta = Interlocked.Read(ref _siguiente);
-            if (_volcadoVigente && (Environment.TickCount64 < _proximoVolcado || hasta == _volcadoHasta)) return;
+            if (!forzar && _volcadoVigente && (Environment.TickCount64 < _proximoVolcado || hasta == _volcadoHasta)) return false;
             List<(string, Rescate?)> pendientes;
             lock (_estado)
             {
-                if (_rendida) return;   // el apagado escribe el suyo
+                if (_rendida) return false;   // el apagado escribe el suyo
                 pendientes = _pedidos.ToArray().Prepend(enCurso)
-                    .Where(p => !p.Apartado && !p.Abandono.IsCancellationRequested)
+                    .Where(p => !p.Apartado && p.Estado != 2 && !p.Abandono.IsCancellationRequested)
                     .OrderBy(p => p.Orden)
                     .Select(p => (p.Que, p.Rescate?.Invoke(false)))
                     .ToList();
             }
             // Un volcado que falla —el disco lleno es una de las caídas— no puede frenar a la cola.
+            bool escrito = false;
             try
             {
                 _volcado = Rescates.Escribir(_carpetaDelRescate, pendientes, _volcado) ?? _volcado;
                 _volcadoVigente = _volcado is not null;
+                escrito = _volcadoVigente;
             }
             catch (Exception ex)
             {
@@ -361,6 +467,7 @@ public sealed class ColaDeLaBase : IDisposable
             }
             _volcadoHasta = hasta;
             _proximoVolcado = Environment.TickCount64 + (long)_cadaVolcado.TotalMilliseconds;
+            return escrito;
         }
     }
 

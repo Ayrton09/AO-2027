@@ -101,11 +101,9 @@ public sealed partial class PacketDispatcher
             p.Gold -= (int)deposito;
             session.Send(ServerMessages.UpdateGold(p.Gold));
             var s = _world.Subastas.Publicar(p.Name, objeto, cantidad, inicial, final, horas, RelojDeSubastas());
-            // EL PERSONAJE Y LAS SUBASTAS SE GUARDAN YA, y en ese orden (la cola de la base los escribe en orden): el objeto salía
-            // de la mochila en memoria y entraba a la subasta, cada uno con su guardado a su tiempo, y una caída entre los dos lo
-            // duplicaba. Así, lo peor de una caída en el medio es perderlo (auditoría del 12/10).
-            _db.SaveCharacter(p);
-            GuardarLasSubastas();
+            // EL PERSONAJE Y LAS SUBASTAS SE GUARDAN YA, juntos: el objeto salía de la mochila en memoria y entraba a la subasta,
+            // cada uno con su guardado a su tiempo, y una caída entre los dos lo duplicaba (auditoría del 12/10).
+            GuardarAlQuePagoYLasSubastas(p);
             _economia?.Anotar($"subasta {s.Id} de {p.Name}: {cantidad} x obj {objeto}, desde {inicial} (final {final}), {horas} h, deposito {deposito}");
             session.Send(ServerMessages.ConsoleMsg($"Publicaste la subasta. Pagaste {deposito} monedas de depósito.", FuenteInfo));
             session.Send(ListaDeSubastas(abrir: false));
@@ -136,8 +134,9 @@ public sealed partial class PacketDispatcher
             if (superado is not null && !superado.Equals(p.Name, StringComparison.OrdinalIgnoreCase))
                 _world.PlayerByName(superado)?.Connection?.Send(ServerMessages.ConsoleMsg(
                     "Superaron tu oferta en el Centro de Subastas. Tu oro vuelve a tu bóveda.", FuenteInfo));
-            EntregarLoDeLasSubastasAlQueEsta();
+            // Él va en el primer guardado: la foto del Centro de las entregas que siguen ya tiene lo que acaba de hacer.
             GuardarAlQuePagoYLasSubastas(p);
+            EntregarLoDeLasSubastasAlQueEsta();
             session.Send(ListaDeSubastas(abrir: false));
         });
     }
@@ -162,8 +161,9 @@ public sealed partial class PacketDispatcher
             if (superado is not null && !superado.Equals(p.Name, StringComparison.OrdinalIgnoreCase))
                 _world.PlayerByName(superado)?.Connection?.Send(ServerMessages.ConsoleMsg(
                     "Alguien compró directo la subasta en la que ofertaste. Tu oro vuelve a tu bóveda.", FuenteInfo));
-            EntregarLoDeLasSubastasAlQueEsta();
+            // Él va en el primer guardado: la foto del Centro de las entregas que siguen ya tiene lo que acaba de hacer.
             GuardarAlQuePagoYLasSubastas(p);
+            EntregarLoDeLasSubastasAlQueEsta();
             session.Send(ListaDeSubastas(abrir: false));
         });
     }
@@ -179,22 +179,29 @@ public sealed partial class PacketDispatcher
             if (!Responder(session, _world.Subastas.Cancelar(id, p.Name))) return;
             _economia?.Anotar($"subasta {id}: {p.Name} la cancela");
             session.Send(ServerMessages.ConsoleMsg("Cancelaste la subasta. El objeto vuelve a tu bóveda.", FuenteInfo));
-            EntregarLoDeLasSubastasAlQueEsta();
+            // Él va en el primer guardado: la foto del Centro de las entregas que siguen ya tiene lo que acaba de hacer.
             GuardarAlQuePagoYLasSubastas(p);
+            EntregarLoDeLasSubastasAlQueEsta();
             session.Send(ListaDeSubastas(abrir: false));
         });
     }
 
     /// <summary>
-    /// EL PERSONAJE Y LAS SUBASTAS SE GUARDAN YA, en ese orden, como al publicar: ofertar, comprar y cancelar movían oro y objetos
-    /// sólo en memoria, el Centro se volcaba a los 500 ms y el personaje recién en el autoguardado, así que una caída en el medio
-    /// devolvía el oro pagado con la oferta todavía en pie (auditoría del 22/10). Lo entregado a los demás lo guarda
-    /// <see cref="EntregarLoDeLasSubastas"/>.
+    /// EL PERSONAJE Y LAS SUBASTAS SE GUARDAN YA, en una sola transacción (<see cref="Persistence.GuardarJuntos"/>): ofertar,
+    /// comprar y cancelar movían oro y objetos sólo en memoria, el Centro se volcaba a los 500 ms y el personaje recién en el
+    /// autoguardado, así que una caída en el medio devolvía el oro pagado con la oferta todavía en pie (auditoría del 22/10).
+    /// Guardados de a uno, en orden, una caída entre los dos perdía lo pagado (auditoría externa del 23/10). Lo entregado a
+    /// los demás lo guarda <see cref="EntregarLoDeLasSubastas"/>, igual.
     /// </summary>
     private void GuardarAlQuePagoYLasSubastas(Player p)
     {
-        _db.SaveCharacter(p);
-        GuardarLasSubastas();
+        long enEsteVolcado = _world.Subastas.Cambios;
+        try
+        {
+            _db.GuardarJuntos($"guardar a {p.Name} y las subastas", Data.Persistence.Ficha(p), Data.Persistence.FotoDeSubastas(_world.Subastas));
+            _subastasGuardadas = enEsteVolcado;
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[persistencia] {p.Name} y las subastas: {ex.Message}"); }
     }
 
     /// <summary>El aviso de un pedido que no se pudo. false si no se pudo.</summary>
@@ -242,8 +249,9 @@ public sealed partial class PacketDispatcher
             }
             return true;
         });
-        // LO ENTREGADO SE GUARDA YA, el personaje y el Centro: si no, una caída antes del autoguardado lo perdía de los dos lados.
-        if (entrego) { _db.SaveCharacter(p); GuardarLasSubastas(); }
+        // LO ENTREGADO SE GUARDA YA, el personaje y el Centro juntos: si no, una caída antes del autoguardado lo perdía de los dos
+        // lados.
+        if (entrego) GuardarAlQuePagoYLasSubastas(p);
     }
 
     /// <summary>A cada uno de los que el Centro les debe algo y están conectados.</summary>

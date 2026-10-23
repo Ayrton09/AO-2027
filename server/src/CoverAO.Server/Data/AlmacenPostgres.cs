@@ -123,8 +123,9 @@ public sealed class AlmacenPostgres : AlmacenRelacional
     protected override void Preparar()
     {
         if (_con.State == ConnectionState.Open) return;
-        // Adentro de la transacción grande, lo que siguiera en una conexión nueva quedaría fuera de ella.
-        if (EnUnaTransaccionGrande) throw new InvalidOperationException("se cortó la conexión con Postgres en medio de la transacción");
+        // Adentro de la transacción grande, lo que siguiera en una conexión nueva quedaría fuera de ella. Es la base que no
+        // responde: la transacción se deshace entera y la cola la reintenta desde el principio (Persistence.GuardarJuntos).
+        if (EnUnaTransaccionGrande) throw new LaBaseNoResponde("se cortó la conexión con Postgres en medio de la transacción");
         _con.Close();
         try { _con.Open(); }
         catch (Exception ex) when (ex is NpgsqlException or TimeoutException)

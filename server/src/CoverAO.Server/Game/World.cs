@@ -48,7 +48,13 @@ public sealed class World
     /// sucio en cada uno es la forma segura de que el próximo call site que se agregue no lo marque.</summary>
     public long SueloCambios { get; private set; }
 
+    /// <summary>Lo que se le cayó a cada muerto en esta vuelta, baldosa por baldosa: el despachador lo guarda junto con su ficha
+    /// (<c>PacketDispatcher.GuardarLoQueCayoAlMorir</c>) y lo vacía. La muerte corre por caminos estáticos que no tienen la base.</summary>
+    public List<(Player Muerto, WorldPos Baldosa)> CaidoAlMorir { get; } = new();
+
     public bool TryGetGround(WorldPos pos, out (short ObjIndex, short Amount) item) => _ground.TryGetValue(pos, out item);
+    /// <summary>¿Lo de esa baldosa es decorado fijo del .csm? Ése no se guarda con el suelo de los jugadores.</summary>
+    public bool EsSueloFijo(WorldPos pos) => _groundFijo.Contains(pos);
     /// <summary>Pone un objeto en el suelo. <paramref name="esFijo"/> = decorado del .csm (VB6 ObjEsFijo).</summary>
     public void SetGround(WorldPos pos, short objIndex, short amount, bool esFijo = false)
     {

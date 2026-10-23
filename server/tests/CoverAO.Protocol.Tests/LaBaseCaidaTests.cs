@@ -564,11 +564,13 @@ public sealed class LaBaseCaidaTests : IDisposable
     }
 
     /// <summary>
-    /// CUANDO LA BASE VUELVE, EL VOLCADO SE BORRA y la cola sigue como siempre. Se borra ANTES de que entre la suma que tenía:
-    /// con el volcado todavía en el disco, un proceso que muere justo ahí la volvía a sumar en el próximo arranque.
+    /// CUANDO LA BASE VUELVE, LA SUMA NO PUEDE ENTRAR DOS VECES: si el proceso muere justo después de sumar, el volcado que
+    /// queda en el disco no la vuelve a sumar en el próximo arranque. Antes se lograba borrando el volcado al volver, y eso
+    /// perdía lo demás que esperaba (<see cref="LaColaNoPierdeNiCreceTests"/>); ahora el volcado se reescribe con el saldo de
+    /// antes ANTES de sumar, y se borra cuando se aplicó todo lo que cubre.
     /// </summary>
     [Fact]
-    public async Task Cuando_la_base_vuelve_el_volcado_se_borra_antes_de_seguir()
+    public async Task Cuando_la_base_vuelve_la_suma_no_entra_dos_veces()
     {
         ConPersonajes("Uno");
         long antes = _real.LeerPersonaje("Uno")!.OroEnBanco;
@@ -578,18 +580,27 @@ public sealed class LaBaseCaidaTests : IDisposable
 
         var credito = db.AcreditarBovedaAsync("Uno", 300);
         Assert.True(SpinWait.SpinUntil(() => Volcados().Length == 1, TimeSpan.FromSeconds(5)));
-        bool? habiaVolcadoAlSumar = null;
+        string? volcadoAlSumar = null;
         control.FallaDespues((m, args) =>
         {
-            if (m == nameof(IAlmacen.AcreditarBoveda) && (long)args[1]! != 0) habiaVolcadoAlSumar = Volcados().Length > 0;
+            if (m == nameof(IAlmacen.AcreditarBoveda) && (long)args[1]! != 0)
+                volcadoAlSumar = Volcados() is [var v] ? LeerSiSePuede(v) : "";
             return null;
         });
         control.Falla(_ => null);   // vuelve
 
         Assert.Equal(antes + 300, await credito);
-        Assert.False(habiaVolcadoAlSumar, "la suma entró con el volcado todavía en el disco");
-        Assert.Empty(Volcados());
-        Assert.Equal(0, Rescates.AplicarLosPendientes(_raiz, _real));
+        Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
+        // El proceso muere justo después de sumar: el próximo arranque aplica el volcado que había en ese momento.
+        if (!string.IsNullOrEmpty(volcadoAlSumar))
+        {
+            string otra = Path.Combine(_raiz, "muerte");
+            Directory.CreateDirectory(otra);
+            File.WriteAllText(Path.Combine(otra, "rescate-20261023-000000.json"), volcadoAlSumar);
+            Rescates.AplicarLosPendientes(otra, _real);
+            Assert.Equal(antes + 300, _real.LeerPersonaje("Uno")!.OroEnBanco);
+        }
+        Assert.True(SpinWait.SpinUntil(() => Volcados().Length == 0, TimeSpan.FromSeconds(5)), "el volcado quedó después de aplicarse todo");
         db.Dispose();
     }
 

@@ -565,6 +565,30 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
 
     public void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo) => EnTransaccion(tx => EscribirSuelo(suelo, tx));
 
+    public void GuardarBaldosas(IReadOnlyList<ObjetoEnElSuelo> baldosas) => EnTransaccion(tx =>
+    {
+        using var borrar = Comando("DELETE FROM suelo WHERE mapa = @m AND x = @x AND y = @y", tx);
+        using var poner = Comando("INSERT INTO suelo (mapa, x, y, objeto, cantidad) VALUES (@m, @x, @y, @o, @c)", tx);
+        foreach (var b in baldosas)
+        {
+            Valores(borrar, ("@m", b.Posicion.Map), ("@x", b.Posicion.X), ("@y", b.Posicion.Y)).ExecuteNonQuery();
+            if (b.Objeto > 0 && b.Cantidad > 0)
+                Valores(poner, ("@m", b.Posicion.Map), ("@x", b.Posicion.X), ("@y", b.Posicion.Y), ("@o", b.Objeto), ("@c", b.Cantidad))
+                    .ExecuteNonQuery();
+        }
+    });
+
+    /// <summary>Todo o nada (<see cref="IAlmacen.EnUnaTransaccion"/>): <paramref name="cuerpo"/> en una sola transacción, y cada
+    /// operación de adentro, un punto de guardado de ella. Si ya hay una grande en curso, va adentro de ésa.</summary>
+    public void EnUnaTransaccion(Action cuerpo)
+    {
+        lock (DeAUno)
+        {
+            if (_grande is not null) { cuerpo(); return; }
+            EnUnaSolaTransaccion(() => { cuerpo(); return true; }, _ => true);
+        }
+    }
+
     private void EscribirSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo, DbTransaction tx)
     {
         using (var c = Comando("DELETE FROM suelo", tx)) c.ExecuteNonQuery();

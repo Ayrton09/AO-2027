@@ -7592,7 +7592,7 @@ public sealed partial class PacketDispatcher
             // VB6 DoRobar: la mitad de las veces, y SÓLO si es Ladrón, se roba un ÍTEM en vez de oro.
             if (_rng.Next(1, 51) < 25 && p.Class == 5)
             {
-                if (TieneObjetosRobables(victima)) { RobarObjeto(session, p, victima); GuardarElRobo(p, victima); }
+                if (TieneObjetosRobables(victima)) { var alPiso = RobarObjeto(session, p, victima); GuardarElRobo(p, victima, alPiso); }
                 else session.Send(ServerMessages.ConsoleMsg($"{victima.Name} no tiene objetos.", FuenteInfo));
                 RaiseSkill(session, p, GameLimits.SkillRobar);
                 return;
@@ -7623,12 +7623,14 @@ public sealed partial class PacketDispatcher
         }
     }
 
-    /// <summary>UN ROBO SE GUARDA EN EL ACTO, la víctima primero: si el ladrón se desconectaba (y se guardaba) antes del autosave
-    /// de la víctima, una caída dejaba lo robado en las dos fichas (auditoría del 13/10). La cola escribe en orden.</summary>
-    private void GuardarElRobo(Player ladron, Player victima)
+    /// <summary>UN ROBO SE GUARDA EN EL ACTO, las dos fichas en una sola transacción: si el ladrón se desconectaba (y se guardaba)
+    /// antes del autosave de la víctima, una caída dejaba lo robado en las dos fichas (auditoría del 13/10); guardadas de a
+    /// una, la víctima primero, la caída entre las dos lo perdía (auditoría externa del 23/10).</summary>
+    private void GuardarElRobo(Player ladron, Player victima, WorldPos? alPiso = null)
     {
-        _db.SaveCharacter(victima);
-        _db.SaveCharacter(ladron);
+        var partes = new List<Rescate> { Persistence.Ficha(victima), Persistence.Ficha(ladron) };
+        if (alPiso is { } b && BaldosasParaGuardar(b) is { } suelo) partes.Add(suelo);   // lo que no le entró al ladrón
+        _db.GuardarJuntos($"el robo de {ladron.Name} a {victima.Name}", partes.ToArray());
     }
 
     /// <summary>VB6 <c>ObjEsRobable</c> (Trabajo.bas:1638): qué ítem se puede hurtar. No se roban llaves,
@@ -7666,7 +7668,8 @@ public sealed partial class PacketDispatcher
     /// verdadero, así que sale antes de mover el ítem. Todo el algoritmo está escrito —selección de slot,
     /// cantidades, mensajes— y lo desactiva ese único bug de precedencia, así que se porta salteando esa línea:
     /// es gameplay que el original perdió, no protocolo inventado.</summary>
-    private void RobarObjeto(ClientSession session, Player p, Player victima)
+    /// <returns>La baldosa donde cayó lo robado, si no le entró al ladrón.</returns>
+    private WorldPos? RobarObjeto(ClientSession session, Player p, Player victima)
     {
         var orden = _rng.Next(1, 13) < 6
             ? Enumerable.Range(1, GameLimits.MaxInventorySlots)
@@ -7674,7 +7677,7 @@ public sealed partial class PacketDispatcher
         int slot = 0;
         foreach (int i in orden)
             if (ObjEsRobable(victima, i) && _rng.Next(1, 11) < 4) { slot = i; break; }
-        if (slot == 0) return;   // ninguna tirada salió: el original tampoco avisa
+        if (slot == 0) return null;   // ninguna tirada salió: el original tampoco avisa
 
         var vinv = victima.Inventory[slot];
         int amount = vinv.Amount;
@@ -7693,6 +7696,7 @@ public sealed partial class PacketDispatcher
             vinv.Equipped, 0f, vinv.IsEmpty ? (byte)0 : (byte)1));
 
         int destino = FindSlotFor(p, objIndex, num);   // dárselo al ladrón; si no entra, al piso
+        WorldPos? alPiso = null;
         if (destino == 0)
         {
             // Buscar un tile LIBRE (VB6 TirarItemAlPiso → Tilelibre): escribir directo en p.Pos pisaría lo que ya
@@ -7702,6 +7706,7 @@ public sealed partial class PacketDispatcher
             {
                 _world.SetGround(spot, objIndex, (short)num);
                 _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, objIndex, (short)num));
+                alPiso = spot;
             }
             // Sin ningún tile libre el ítem se pierde, igual que el `NuevaPos = 0` del original.
         }
@@ -7716,6 +7721,7 @@ public sealed partial class PacketDispatcher
         }
         string nombre = _data.Obj(objIndex)?.Name ?? "objeto";
         session.Send(ServerMessages.ConsoleMsg($"{(p.Class == 5 ? "Has robado" : "Has hurtado")} {num} {nombre}", 3));
+        return alPiso;
     }
 
     /// <summary>Minerales crudos que hacen falta por lingote (VB6 MineralesParaLingote, Trabajo.bas:800):
@@ -7910,6 +7916,7 @@ public sealed partial class PacketDispatcher
         var m = box[i];
         if (m.ObjIndex <= 0 || m.Amount <= 0) return;
         int slot = FindSlotFor(p, m.ObjIndex, m.Amount);
+        WorldPos? alPiso = null;
         if (slot == 0)
         {
             session.Send(ServerMessages.LocaleMsg(25));   // inventario lleno
@@ -7918,6 +7925,7 @@ public sealed partial class PacketDispatcher
             // cerrar). Sin ningún tile libre el ítem se pierde, igual que el `NuevaPos = 0` del original.
             if (FreeGroundNear(_world, p.Pos) is { } spot)
             {
+                alPiso = spot;
                 _world.SetGround(spot, m.ObjIndex, m.Amount);
                 _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, m.ObjIndex, m.Amount));
             }
@@ -7933,10 +7941,49 @@ public sealed partial class PacketDispatcher
         }
         _economia?.Anotar($"correo {p.Name} retira {m.Amount} x obj {m.ObjIndex} (de {m.Sender})");
         box[i] = m with { ObjIndex = 0, Amount = 0 };   // la carta se queda, sin adjunto
-        // EL INVENTARIO SE GUARDA ANTES QUE EL BUZÓN, como el remitente al mandar: el buzón salía en medio segundo y el
-        // inventario recién en el autosave, y una caída en el medio perdía el objeto (auditoría del 13/10).
-        _db.SaveCharacter(p);
-        PersistMail(p.Name);
+        // EL INVENTARIO Y EL BUZÓN SE GUARDAN JUNTOS: el buzón salía en medio segundo y el inventario recién en el autosave, y una
+        // caída en el medio perdía el objeto (auditoría del 13/10); guardados de a uno, el inventario primero, la caída entre los
+        // dos lo duplicaba (auditoría externa del 23/10). Si fue al piso, va también la baldosa.
+        GuardarConSuCasilla(p, p.Name, alPiso);
+    }
+
+    /// <summary>EL PERSONAJE Y UNA CASILLA DE CORREO, en una sola transacción (<see cref="Persistence.GuardarJuntos"/>): lo que
+    /// pasa de la mochila al buzón o del buzón a la mochila, y la baldosa si el adjunto fue al piso. La casilla sale del volcado
+    /// diferido, que ya no tiene nada que escribir de ella.</summary>
+    private void GuardarConSuCasilla(Player p, string casilla, WorldPos? baldosa = null)
+    {
+        _casillasSucias.Remove(casilla);
+        var partes = new List<Data.Rescate>
+        {
+            Persistence.Ficha(p),
+            new Data.RescateDeCorreo(new Dictionary<string, IReadOnlyList<MailEntry>>(StringComparer.OrdinalIgnoreCase)
+            {
+                [casilla] = _world.PeekMail(casilla).ToArray(),
+            }),
+        };
+        if (baldosa is { } b && BaldosasParaGuardar(b) is { } suelo) partes.Add(suelo);
+        _db.GuardarJuntos($"guardar a {p.Name} y la casilla de {casilla}", partes.ToArray());
+    }
+
+    /// <summary>
+    /// LAS BALDOSAS QUE CAMBIARON, con lo que tienen ahora, para guardarlas junto con el personaje que levantó, tiró o murió
+    /// (<see cref="Persistence.GuardarJuntos"/>), o null si el suelo no se guarda (<c>PersistirSuelo</c>) o no hay ninguna. Las
+    /// puertas y el decorado fijo no van, como en el volcado del suelo entero (<see cref="VolcarPersistenciaDiferida"/>).
+    /// </summary>
+    private Data.RescateDeBaldosas? BaldosasParaGuardar(params WorldPos[] posiciones)
+    {
+        if (!_ini.PersistirSuelo || posiciones.Length == 0) return null;
+        var baldosas = new List<Data.ObjetoEnElSuelo>();
+        foreach (var pos in posiciones.Distinct())
+        {
+            if (_world.TryGetGround(pos, out var item))
+            {
+                if (_world.EsSueloFijo(pos) || _data.Obj(item.ObjIndex)?.IsDoor == true) continue;
+                baldosas.Add(new Data.ObjetoEnElSuelo(pos, item.ObjIndex, item.Amount));
+            }
+            else baldosas.Add(new Data.ObjetoEnElSuelo(pos, 0, 0));
+        }
+        return baldosas.Count == 0 ? null : new Data.RescateDeBaldosas(baldosas);
     }
 
     /// <summary>GuildAllianceDetails / GuildPeaceDetails → <c>r_VerPropuesta</c> (modGuilds.bas:1773): el LÍDER
@@ -9142,6 +9189,7 @@ public sealed partial class PacketDispatcher
     /// Con <paramref name="forzar"/> escribe sin esperar (apagado, backup).</summary>
     public void VolcarPersistenciaDiferida(bool forzar = false)
     {
+        if (_world.CaidoAlMorir.Count > 0) GuardarLoQueCayoAlMorir();
         bool sueloSucio = _ini.PersistirSuelo && _world.SueloCambios != _sueloGuardado;
         if (!_clanesSucios && _casillasSucias.Count == 0 && !sueloSucio && !_llavesSucias && !SubastasSucias
             && _world.RecordUsuarios == _recordGuardado) return;
@@ -9198,6 +9246,19 @@ public sealed partial class PacketDispatcher
         }
     }
 
+    /// <summary>
+    /// LO QUE SE LE CAYÓ A CADA MUERTO, junto con su ficha ya sin eso (<see cref="GuardarConElSuelo"/>). La muerte la deciden el
+    /// frío, el veneno, las criaturas y los demás, por caminos estáticos que no guardan nada; anotan las baldosas en el mundo y
+    /// acá, en la misma vuelta, se guardan. Antes la ficha esperaba al autoguardado y el suelo salía a los 500 ms: una caída en
+    /// el medio dejaba lo caído en el piso y en la mochila (auditoría externa del 23/10).
+    /// </summary>
+    private void GuardarLoQueCayoAlMorir()
+    {
+        foreach (var muerto in _world.CaidoAlMorir.GroupBy(c => c.Muerto))
+            GuardarConElSuelo(muerto.Key, muerto.Select(c => c.Baldosa).ToArray());
+        _world.CaidoAlMorir.Clear();
+    }
+
     /// <summary>Lo último que se persistió del record, para no reescribirlo en cada vuelta.</summary>
     private int _recordGuardado = -1;
 
@@ -9252,12 +9313,12 @@ public sealed partial class PacketDispatcher
             }
             p.Gold -= CostoDelCorreo;                       // VB6 mod_Correos.bas:47
             session.Send(ServerMessages.UpdateGold(p.Gold)); // …y su WriteUpdateGold (:48)
-            // EL REMITENTE SE GUARDA YA, antes que el buzón (la cola de la base los escribe en orden): el adjunto salía de su
-            // mochila en memoria y entraba al buzón, que se guarda enseguida, mientras la ficha esperaba al próximo guardado, y una
-            // caída en el medio duplicaba el objeto. Así, lo peor de una caída es perderlo (auditoría del 12/10).
-            if (attachObj != 0) _db.SaveCharacter(p);
+            // EL REMITENTE Y EL BUZÓN SE GUARDAN YA, JUNTOS: el adjunto salía de su mochila en memoria y entraba al buzón, que se
+            // guardaba enseguida, mientras la ficha esperaba al próximo guardado, y una caída en el medio duplicaba el objeto
+            // (auditoría del 12/10); guardados de a uno, la caída entre los dos lo perdía (auditoría externa del 23/10). Sin
+            // adjunto también: el correo cuesta oro.
             _world.DeliverMail(dest, new MailEntry(p.Name, message, attachObj, attachAmt));
-            PersistMail(dest);
+            GuardarConSuCasilla(p, dest);
             // Si está conectado se le prende el INDICADOR de carta y se le avisa (mod_Correos.bas:68-75); la
             // carta se lee en un buzón.
             var online = _world.PlayerByName(dest);
@@ -10187,12 +10248,11 @@ public sealed partial class PacketDispatcher
                 // DESCONECTADO (VB6: GetVar + WriteVar sobre el .chr): se descuenta ya y se acredita en la cola; si la
                 // acreditación no llega, el oro vuelve. Ver el comentario del método.
                 p.Bank -= amount;
-                // EL QUE PIERDE SE GUARDA PRIMERO: la acreditación sale por la cola en el acto, y la ficha del que manda esperaba
-                // al autosave. Una caída en el medio dejaba el oro en las dos (auditoría del 13/10). Ante una caída, mejor perder
-                // que duplicar: la cola escribe en orden.
-                _db.SaveCharacter(p);
+                // EL QUE PIERDE Y LA SUMA, EN UNA SOLA TRANSACCIÓN: la acreditación salía por la cola en el acto y la ficha del
+                // que manda esperaba al autosave, y una caída en el medio dejaba el oro en las dos (auditoría del 13/10); guardados
+                // de a uno, el que pierde primero, la caída entre los dos se llevaba el oro (auditoría externa del 23/10).
                 string quien = p.Name;
-                CambiarDesconectado(targetName, _db.AcreditarBovedaAsync(targetName, amount), saldo =>
+                CambiarDesconectado(targetName, _db.TransferirABovedaAsync(p, targetName, amount), saldo =>
                 {
                     if (saldo is null) { DevolverTransferencia(quien, targetName, amount, "El personaje no existe."); return; }
                     TerminarTransferencia(session, p, targetName, amount);
@@ -10203,8 +10263,8 @@ public sealed partial class PacketDispatcher
             {
                 p.Bank -= amount;
                 target.Bank += amount;
-                _db.SaveCharacter(p);        // el que pierde primero, como con un desconectado
-                _db.SaveCharacter(target);
+                // Los dos juntos, en una sola transacción, como con un desconectado.
+                _db.GuardarJuntos($"transferencia de {p.Name} a {target.Name}", Persistence.Ficha(p), Persistence.Ficha(target));
                 target.Connection?.Send(ServerMessages.UpdateGold(target.Gold));
                 // El espacio que falta entre el nombre y el "ha" es del original (`"¡" & .Name & "ha transferido "`,
                 // Protocol.bas:15847). Va tal cual: no es un typo nuestro.
@@ -12834,18 +12894,34 @@ public sealed partial class PacketDispatcher
     /// <para>Acá se tiraba UN solo montón, en la baldosa del jugador: de 50.000 caían 10.000 y el resto seguía en la bolsa. Lo
     /// reportó el tester, 2026-09-27.</para>
     /// </summary>
-    private void TirarOro(ClientSession session, Player p, long cantidad)
+    /// <returns>Las baldosas donde cayó algo.</returns>
+    private List<WorldPos> TirarOro(ClientSession session, Player p, long cantidad)
     {
-        if (cantidad <= 0 || cantidad > p.Gold) return;       // VB6: `If (Cantidad > 0) And (Cantidad <= .Stats.GLD)`
+        var donde = new List<WorldPos>();
+        if (cantidad <= 0 || cantidad > p.Gold) return donde;  // VB6: `If (Cantidad > 0) And (Cantidad <= .Stats.GLD)`
         int tope = _ini.OroPorMonton;
         for (int vueltas = 0; cantidad > 0 && vueltas <= 100; vueltas++)
         {
             short monton = (short)Math.Min(cantidad, tope);
             cantidad -= monton;
-            if (FindFreeGround(p.Pos, (short)GameLimits.ObjOro, monton, tope) is not { } donde) continue;
+            if (FindFreeGround(p.Pos, (short)GameLimits.ObjOro, monton, tope) is not { } baldosa) continue;
             p.Gold -= monton;
-            DejarEnElPiso(donde, (short)GameLimits.ObjOro, monton, tope);
+            DejarEnElPiso(baldosa, (short)GameLimits.ObjOro, monton, tope);
+            donde.Add(baldosa);
         }
+        return donde;
+    }
+
+    /// <summary>
+    /// EL PERSONAJE Y LAS BALDOSAS QUE TOCÓ, en una sola transacción (<see cref="Persistence.GuardarJuntos"/>), cuando el suelo se
+    /// guarda (<c>PersistirSuelo</c>). Lo que pasa de la mochila al piso o del piso a la mochila se guardaba en dos tiempos: el
+    /// suelo a los 500 ms y el personaje en el autoguardado (o al revés), y una caída en el medio lo perdía o lo duplicaba
+    /// (auditoría externa del 23/10). Con el suelo sin guardar no hace nada: al reiniciar el piso vuelve vacío igual.
+    /// </summary>
+    private void GuardarConElSuelo(Player p, params WorldPos[] baldosas)
+    {
+        if (BaldosasParaGuardar(baldosas) is { } suelo)
+            _db.GuardarJuntos($"guardar a {p.Name} y el suelo", Persistence.Ficha(p), suelo);
     }
 
     private void HandleDrop(ClientSession session, ByteQueueReader r)
@@ -12876,8 +12952,7 @@ public sealed partial class PacketDispatcher
                 // por el tope de 100.000, después tira, y el SONIDO al área y el UpdateGold al que tiró salen
                 // IGUAL aunque no haya caído una moneda (TirarOro se guarda sus propios gates adentro).
                 if (amount > 100_000) return;   // "Don't drop too much gold"
-                TirarOro(session, p, amount);
-                if (_ini.PersistirSuelo) _db.SaveCharacter(p);   // ver el guardado al tirar, abajo
+                GuardarConElSuelo(p, TirarOro(session, p, amount).ToArray());   // ver el guardado al tirar, abajo
                 if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"tira {p.Name}: {amount} oro en ({p.Pos.Map},{p.Pos.X},{p.Pos.Y})");
                 _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
@@ -12923,10 +12998,10 @@ public sealed partial class PacketDispatcher
             inv.Amount -= drop;
             if (inv.Amount <= 0) inv = default;
             p.Inventory[slot] = inv;
-            // CON EL SUELO PERSISTIDO, EL PERSONAJE SE GUARDA YA: el suelo se vuelca a los 500 ms y el personaje recién en el
-            // autoguardado, así que una caída en el medio dejaba lo tirado en el piso y en la mochila (auditoría del 22/10). Así,
-            // lo peor es perderlo.
-            if (_ini.PersistirSuelo) _db.SaveCharacter(p);
+            // CON EL SUELO PERSISTIDO, EL PERSONAJE Y LA BALDOSA SE GUARDAN YA, JUNTOS: el suelo se volcaba a los 500 ms y el
+            // personaje recién en el autoguardado, así que una caída en el medio dejaba lo tirado en el piso y en la mochila
+            // (auditoría del 22/10).
+            GuardarConElSuelo(p, p.Pos);
             session.Send(ServerMessages.ChangeInventorySlot(slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, (byte)(inv.IsEmpty ? 0 : 1)));
             if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} tira {drop} en ({p.Pos.X},{p.Pos.Y})");
         });
@@ -12961,6 +13036,7 @@ public sealed partial class PacketDispatcher
                 _world.RemoveGround(p.Pos);
                 _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectDelete(p.Pos.X, p.Pos.Y));
                 session.Send(ServerMessages.UpdateGold(p.Gold));
+                GuardarConElSuelo(p, p.Pos);
                 return;
             }
             int slot = FindSlotFor(p, ground.ObjIndex, ground.Amount);
@@ -12976,6 +13052,8 @@ public sealed partial class PacketDispatcher
             _world.RemoveGround(p.Pos);
             _world.BroadcastToObservers(p.Pos, ServerMessages.ObjectDelete(p.Pos.X, p.Pos.Y));
             session.Send(ServerMessages.ChangeInventorySlot((byte)slot, inv.ObjIndex, inv.Amount, inv.Equipped, 0f, 1));
+            // Levantar también: el piso salía a los 500 ms sin el objeto y la mochila recién en el autoguardado.
+            GuardarConElSuelo(p, p.Pos);
             if (session.PermiteLog()) Console.WriteLine($"[{session.RemoteEndpoint}] {p.Name} agarra obj {ground.ObjIndex} en slot {slot}");
         });
     }
@@ -14591,6 +14669,7 @@ public sealed partial class PacketDispatcher
             if (inv.Equipped) AplicarBonusDeEquipo(p, info, poniendose: false);
 
             world.SetGround(drop, inv.ObjIndex, cae);
+            world.CaidoAlMorir.Add((p, drop));
             world.BroadcastToObservers(drop, ServerMessages.ObjectCreate(drop.X, drop.Y, inv.ObjIndex, cae));
             inv.Amount -= cae;
             p.Inventory[slot] = inv.Amount > 0 ? inv : default;
@@ -14612,6 +14691,7 @@ public sealed partial class PacketDispatcher
             if (FreeGroundNear(world, p.Pos) is not { } donde) break;   // sin baldosa libre, lo que queda se queda encima
             short monton = (short)Math.Min(p.Gold, world.OroPorMonton);
             world.SetGround(donde, (short)GameLimits.ObjOro, monton);
+            world.CaidoAlMorir.Add((p, donde));
             world.BroadcastToObservers(donde, ServerMessages.ObjectCreate(donde.X, donde.Y, (short)GameLimits.ObjOro, monton));
             p.Gold -= monton;
         }

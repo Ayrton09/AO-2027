@@ -115,7 +115,7 @@ public sealed class Persistence : IDisposable
     public void SaveGuilds(IEnumerable<Game.Guild> guilds)
     {
         var clanes = guilds.Select(ClanGuardado.Desde).ToList();
-        _cola.Escribir("guardar los clanes", a => a.GuardarClanes(clanes), new RescateDeClanes(clanes));
+        _cola.Escribir("guardar los clanes", a => a.GuardarClanes(clanes), new RescateDeClanes(clanes), clave: "clanes");
     }
 
     public List<Game.Guild> LoadGuilds()
@@ -125,7 +125,8 @@ public sealed class Persistence : IDisposable
     public void SaveMotivosDeRechazo(IReadOnlyDictionary<string, string> motivos)
     {
         var rechazos = motivos.ToList();
-        _cola.Escribir("guardar los rechazos de clan", a => a.GuardarRechazosDeClan(rechazos), new RescateDeRechazos(rechazos));
+        _cola.Escribir("guardar los rechazos de clan", a => a.GuardarRechazosDeClan(rechazos), new RescateDeRechazos(rechazos),
+                       clave: "rechazos");
     }
 
     public Dictionary<string, string> LoadMotivosDeRechazo()
@@ -153,7 +154,7 @@ public sealed class Persistence : IDisposable
     public void SaveSuelo(IEnumerable<(Game.WorldPos Pos, short ObjIndex, short Amount)> suelo)
     {
         var foto = suelo.Select(o => new ObjetoEnElSuelo(o.Pos, o.ObjIndex, o.Amount)).ToList();
-        _cola.Escribir("guardar el suelo", a => a.GuardarSuelo(foto), new RescateDelSuelo(foto));
+        _cola.Escribir("guardar el suelo", a => a.GuardarSuelo(foto), new RescateDelSuelo(foto), clave: "suelo");
     }
 
     public List<(Game.WorldPos Pos, short ObjIndex, short Amount)> LoadSuelo()
@@ -163,7 +164,7 @@ public sealed class Persistence : IDisposable
     public void SaveLlavesVendidas(IReadOnlyDictionary<int, Dictionary<int, short>> vendidas)
     {
         var llaves = vendidas.SelectMany(m => m.Value.Select(r => new LlaveVendida(m.Key, r.Key, r.Value))).ToList();
-        _cola.Escribir("guardar las llaves vendidas", a => a.GuardarLlavesVendidas(llaves), new RescateDeLlaves(llaves));
+        _cola.Escribir("guardar las llaves vendidas", a => a.GuardarLlavesVendidas(llaves), new RescateDeLlaves(llaves), clave: "llaves");
     }
 
     public Dictionary<int, Dictionary<int, short>> LoadLlavesVendidas()
@@ -180,16 +181,20 @@ public sealed class Persistence : IDisposable
     /// <summary>El Centro de Subastas entero: la foto se arma acá, en el hilo del mundo.</summary>
     public void SaveSubastas(Game.CentroDeSubastas centro)
     {
-        var foto = new SubastasGuardadas(centro.Abiertas.ToArray(), centro.Pendientes.ToArray());
-        _cola.Escribir("guardar las subastas", a => a.GuardarSubastas(foto), new RescateDeSubastas(foto));
+        var foto = FotoDeSubastas(centro);
+        _cola.Escribir("guardar las subastas", a => a.GuardarSubastas(foto.Subastas), foto, clave: ClaveDeSubastas);
     }
+
+    /// <summary>La foto del Centro, armada en el hilo del mundo: para guardarla sola o junto con un personaje.</summary>
+    public static RescateDeSubastas FotoDeSubastas(Game.CentroDeSubastas centro)
+        => new(new SubastasGuardadas(centro.Abiertas.ToArray(), centro.Pendientes.ToArray()));
 
     public SubastasGuardadas LoadSubastas() => Esperar("leer las subastas", null, a => a.LeerSubastas());
 
     /// <summary>El pico histórico de conectados (VB6 <c>recordusuarios</c>). El original lo guarda en su ini; acá va con el
     /// resto del mundo, así entra en el backup.</summary>
     public void SaveRecordUsuarios(int record)
-        => _cola.Escribir("guardar el récord", a => a.GuardarRecord(record), new RescateDelRecord(record));
+        => _cola.Escribir("guardar el récord", a => a.GuardarRecord(record), new RescateDelRecord(record), clave: "record");
 
     public int LoadRecordUsuarios() => Esperar("leer el récord", null, a => a.LeerRecord());
 
@@ -236,7 +241,7 @@ public sealed class Persistence : IDisposable
     public void SaveIpsBaneadas(IEnumerable<string> ips)
     {
         var foto = ips.ToList();
-        _cola.Escribir("guardar las IPs baneadas", a => a.GuardarIpsBaneadas(foto), new RescateDeIpsBaneadas(foto));
+        _cola.Escribir("guardar las IPs baneadas", a => a.GuardarIpsBaneadas(foto), new RescateDeIpsBaneadas(foto), clave: "ips-baneadas");
     }
 
     /// <summary>
@@ -292,7 +297,39 @@ public sealed class Persistence : IDisposable
     public void GuardarFicha(FichaDePersonaje ficha)
     {
         _personajes[ficha.Nombre] = 0;
-        _cola.Escribir($"guardar a {ficha.Nombre}", a => a.GuardarPersonaje(ficha), new RescateDePersonaje(ficha));
+        _cola.Escribir($"guardar a {ficha.Nombre}", a => a.GuardarPersonaje(ficha), new RescateDePersonaje(ficha),
+                       clave: ClaveDe(ficha.Nombre));
+    }
+
+    private const string ClaveDeSubastas = "subastas";
+    private static string ClaveDe(string personaje) => "personaje:" + personaje;
+
+    /// <summary>La ficha del personaje vivo, armada en el hilo del mundo: una parte de <see cref="GuardarJuntos"/>.</summary>
+    public static RescateDePersonaje Ficha(Player p) => new(FichaDePersonaje.Desde(p));
+
+    /// <summary>
+    /// LO QUE MUEVE ORO U OBJETOS, GUARDADO EN UNA SOLA TRANSACCIÓN: las dos puntas (dos personajes, el personaje y el Centro de
+    /// Subastas, el personaje y su casilla de correo, el personaje y las baldosas del suelo) entran juntas o no entra
+    /// ninguna. Guardadas de a una, en orden, una caída en el medio perdía o duplicaba lo movido según cuál saliera primero
+    /// (auditoría externa del 23/10). Con la base caída espera en la cola como cualquier escritura, y al apagar va entera al
+    /// rescate (<see cref="RescateJunto"/>). Cada parte guarda un estado entero, así que reintentarla da lo mismo.
+    /// </summary>
+    public void GuardarJuntos(string que, params Rescate[] partes)
+    {
+        var claves = new List<string>();
+        foreach (var parte in partes)
+            switch (parte)
+            {
+                case RescateDePersonaje ficha:
+                    _personajes[ficha.Ficha.Nombre] = 0;
+                    claves.Add(ClaveDe(ficha.Ficha.Nombre));
+                    break;
+                case RescateDeSubastas:
+                    claves.Add(ClaveDeSubastas);
+                    break;
+            }
+        var junto = new RescateJunto(partes);
+        _cola.Escribir(que, junto.Aplicar, junto, cubre: claves);
     }
 
     /// <summary>Espera a que la cola aplique todo lo encolado. La llaman el APAGADO —sin esto, el que se desconectó un
@@ -431,6 +468,53 @@ public sealed class Persistence : IDisposable
             {
                 if (apartar) apartada = true;
                 return new RescateDeAcreditacion(nombre, monto, sumando ? antes : null);
+            }
+        });
+    }
+
+    /// <summary>
+    /// LA TRANSFERENCIA A UN DESCONECTADO, ENTERA: la ficha del que manda (ya sin el oro) y la suma a la bóveda del otro, en una
+    /// sola transacción (<see cref="IAlmacen.EnUnaTransaccion"/>). Eran dos pedidos, el que pierde primero, y una caída entre los
+    /// dos se llevaba el oro (auditoría externa del 23/10). La suma no guarda un estado entero, así que se cuida como en
+    /// <see cref="AcreditarBovedaAsync"/>: el primer intento mira el saldo de antes, y un reintento que lo encuentra ya sumado
+    /// sabe que la transacción entró. Si el destinatario no existe no se escribe nada y devuelve null.
+    /// </summary>
+    public Task<long?> TransferirABovedaAsync(Player emisor, string destino, long monto)
+    {
+        var ficha = FichaDePersonaje.Desde(emisor);
+        _personajes[ficha.Nombre] = 0;
+        long? antes = null;
+        bool sumando = false, apartada = false;
+        var candado = new object();
+        return _cola.PedirAsync($"transferir de {ficha.Nombre} a la bóveda de {destino}", a =>
+        {
+            long? saldo = null;
+            a.EnUnaTransaccion(() =>
+            {
+                if (antes is { } previo)
+                {
+                    if (a.AcreditarBoveda(destino, 0) is { } ahora && ahora == previo + monto) { saldo = ahora; return; }
+                }
+                else if ((antes = a.AcreditarBoveda(destino, 0)) is null) return;
+                lock (candado)
+                {
+                    if (apartada) throw new InvalidOperationException("quedó para el rescate");
+                    sumando = true;
+                }
+                _cola.LaBaseResponde();   // el volcado de la caída se reescribe con el saldo de antes, antes de sumar
+                a.GuardarPersonaje(ficha);
+                saldo = a.AcreditarBoveda(destino, monto);
+            });
+            return saldo;
+        }, rescate: apartar =>
+        {
+            lock (candado)
+            {
+                if (apartar) apartada = true;
+                return new RescateJunto(new Rescate[]
+                {
+                    new RescateDePersonaje(ficha), new RescateDeAcreditacion(destino, monto, sumando ? antes : null),
+                });
             }
         });
     }

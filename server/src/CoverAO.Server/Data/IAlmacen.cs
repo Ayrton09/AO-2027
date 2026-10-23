@@ -60,6 +60,26 @@ public interface IAlmacen
     /// <summary>Reemplaza todo el suelo guardado.</summary>
     void GuardarSuelo(IReadOnlyList<ObjetoEnElSuelo> suelo);
 
+    /// <summary>SÓLO ESAS BALDOSAS, cada una con lo que tiene ahora: una sin objeto (<c>Objeto</c> o <c>Cantidad</c> en 0) queda
+    /// vacía. Es lo que va junto con la ficha del que levantó, tiró o murió (<see cref="Persistence.GuardarJuntos"/>): el
+    /// suelo entero en cada objeto levantado era reescribir miles de filas. Cada baldosa lleva su estado entero, así que
+    /// aplicarla dos veces da lo mismo. La de acá lee y reescribe todo; las bases con tablas tocan sólo esas filas.</summary>
+    void GuardarBaldosas(IReadOnlyList<ObjetoEnElSuelo> baldosas)
+    {
+        var suelo = LeerSuelo().ToDictionary(o => o.Posicion);
+        foreach (var b in baldosas)
+            if (b.Objeto > 0 && b.Cantidad > 0) suelo[b.Posicion] = b;
+            else suelo.Remove(b.Posicion);
+        GuardarSuelo(suelo.Values.ToList());
+    }
+
+    /// <summary>TODO O NADA: lo que escriba <paramref name="cuerpo"/> entra entero o no entra nada. Es lo que necesita una
+    /// operación que mueve oro u objetos entre dos lugares —dos personajes, un personaje y el Centro de Subastas, un
+    /// personaje y el suelo—: guardadas por separado, una caída en el medio duplicaba o perdía lo que se movía. Las bases con
+    /// tablas lo hacen en una transacción; la de archivos, que ya no es un lugar donde guardar (ver <see cref="Almacenes"/>),
+    /// lo corre de a uno.</summary>
+    void EnUnaTransaccion(Action cuerpo) => cuerpo();
+
     IReadOnlyList<LlaveVendida> LeerLlavesVendidas();
     /// <summary>Reemplaza todas las llaves vendidas.</summary>
     void GuardarLlavesVendidas(IReadOnlyList<LlaveVendida> llaves);
