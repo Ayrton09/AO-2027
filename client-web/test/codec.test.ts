@@ -3,7 +3,7 @@
  * three agree byte-for-byte with the VB6 peer.  Run:  npm test
  */
 import {
-  ByteQueueWriter, ByteQueueReader, xorBuffer, DEFAULT_XOR_KEY, NotEnoughData, MAX_CADENA,
+  ByteQueueWriter, ByteQueueReader, xorBuffer, DEFAULT_XOR_KEY, NotEnoughData, MAX_CADENA, byteCp1252, caracterCp1252,
 } from '../src/codec/bytequeue.js';
 import { textoDelFlotante } from '../src/protocol/localeSmg.js';
 
@@ -43,7 +43,40 @@ check('bool false', new ByteQueueWriter().writeBoolean(false).toBytes(), bytes(0
 check('ascii AB', new ByteQueueWriter().writeAsciiString('AB').toBytes(), bytes(0x02, 0x00, 0x41, 0x42));
 check('ascii empty', new ByteQueueWriter().writeAsciiString('').toBytes(), bytes(0x00, 0x00));
 check('ascii a-acute', new ByteQueueWriter().writeAsciiString('á').toBytes(), bytes(0x01, 0x00, 0xe1));
-check('ascii fuera de Latin-1 sale como ?', new ByteQueueWriter().writeAsciiString('aču').toBytes(), bytes(0x03, 0x00, 0x61, 0x3f, 0x75));
+check('ascii fuera del 1252 se aproxima como el server', new ByteQueueWriter().writeAsciiString('aču').toBytes(), bytes(0x03, 0x00, 0x61, 0x63, 0x75));
+
+// Windows-1252 como el ByteQueueWriter/Reader del server (Codec.Ansi = Encoding.GetEncoding(1252) de .NET).
+// Los bytes esperados salen de pasar los mismos textos por el codec del server.
+check('cp1252 euro', new ByteQueueWriter().writeAsciiString('€5').toBytes(), bytes(0x02, 0x00, 0x80, 0x35));
+check('cp1252 comillas tipográficas',
+  new ByteQueueWriter().writeAsciiString('“hola” ‘y’').toBytes(),
+  bytes(0x0a, 0x00, 0x93, 0x68, 0x6f, 0x6c, 0x61, 0x94, 0x20, 0x91, 0x79, 0x92));
+check('cp1252 puntos, guiones y Œ', new ByteQueueWriter().writeAsciiString('…–—Œ™').toBytes(),
+  bytes(0x05, 0x00, 0x85, 0x96, 0x97, 0x8c, 0x99));
+check('cp1252 huecos como el control del mismo número',
+  new ByteQueueWriter().writeAsciiString('\u0081\u008d\u008f\u0090\u009d').toBytes(),
+  bytes(0x05, 0x00, 0x81, 0x8d, 0x8f, 0x90, 0x9d));
+check('cp1252 controles C1 que no son huecos: ?', new ByteQueueWriter().writeAsciiString('\u0080\u0093').toBytes(),
+  bytes(0x02, 0x00, 0x3f, 0x3f));
+check('cp1252 aproximados', new ByteQueueWriter().writeAsciiString('Łő─Ａ∞').toBytes(),
+  bytes(0x05, 0x00, 0x4c, 0x6f, 0x2d, 0x41, 0x38));
+check('cp1252 no representable: ? por unidad, el largo no cambia',
+  new ByteQueueWriter().writeAsciiString('a中\u{1F600}b').toBytes(),
+  bytes(0x05, 0x00, 0x61, 0x3f, 0x3f, 0x3f, 0x62));
+{
+  const r = new ByteQueueReader(bytes(0x06, 0x00, 0x80, 0x93, 0x94, 0x81, 0x9d, 0x9f));
+  assert('cp1252 lectura de 0x80-0x9F', r.readAsciiString() === '€“”\u0081\u009dŸ');
+  const altos = [
+    0x20ac, 0x0081, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008d, 0x017d, 0x008f,
+    0x0090, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x009d, 0x017e, 0x0178,
+  ];
+  let todos = true;
+  for (let b = 0; b < 256; b++) {
+    const quiere = b >= 0x80 && b <= 0x9f ? altos[b - 0x80] : b;
+    if (caracterCp1252(b) !== quiere || byteCp1252(caracterCp1252(b)) !== b) todos = false;
+  }
+  assert('cp1252 los 256 bytes se leen como el server y vuelven al mismo byte', todos);
+}
 {
   const largo = new ByteQueueWriter().writeAsciiString('x'.repeat(70000)).toBytes();
   check('ascii recortado al tope del server', largo.slice(0, 2), bytes(MAX_CADENA & 0xff, MAX_CADENA >> 8));
