@@ -4,6 +4,7 @@
   "private": true,
   "description": "CoverAO para escritorio: una ventana propia que carga el cliente del server, verificado con la firma del autor.",
   "main": "main.js",
+  "desktopName": "coverao.desktop",
   "scripts": {
     "start": "electron .",
     "windows": "electron-builder --win",
@@ -58,7 +59,11 @@
         "AppImage"
       ],
       "category": "Game",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "CoverAO-x86_64.${ext}",
+      "executableName": "coverao",
+      "synopsis": "Argentum Online: CoverAO",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [

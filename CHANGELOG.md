@@ -42,6 +42,7 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **El juego arranca aunque el navegador no deje guardar preferencias**, y si el server no contesta la configuración, a los 5 segundos sigue con la de siempre.
 - **El €, las comillas tipográficas y los acentos de otros idiomas se mandan y se ven como en el server.**
 - **La app de escritorio sólo abre páginas firmadas del juego.**
+- **La app de escritorio también para Linux**: un solo archivo (CoverAO-x86_64.AppImage) que se abre sin instalar nada y se actualiza solo, como la de Windows.
 
 ### Para el que hostea
 

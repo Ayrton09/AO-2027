@@ -1,7 +1,10 @@
-// ARMA EL INSTALADOR DE WINDOWS Y SU AVISO DE ACTUALIZACIÓN (ver actualizacion.js). Sólo cuando lo pide el autor.
+// ARMA EL JUEGO DE ESCRITORIO Y SU AVISO DE ACTUALIZACIÓN (ver actualizacion.js). Sólo cuando lo pide el autor.
 //
-//   node desktop/armar.js            arma release/CoverAO-Setup.exe y release/actualizacion.json
-//   node desktop/armar.js --subir    y los sube al release v1.0.0 del repo del juego, reemplazando los de antes
+//   node desktop/armar.js            arma release/CoverAO-Setup.exe y release/actualizacion.json (Windows)
+//   node desktop/armar.js --linux    arma release/CoverAO-x86_64.AppImage y release/actualizacion-linux.json. Corre EN LINUX:
+//                                    el AppImage lleva enlaces simbólicos y permisos que Windows no arma (ver
+//                                    hosting/armar-app-linux.sh, que lo hace en WSL)
+//   --subir                          y los sube al release v1.0.0 del repo del juego, reemplazando los de antes
 //   --clave <ruta>                   otra clave privada que la de ~/.coverao-firma/clave-privada.pem
 //
 // La versión NO cambia (1.0.0 hasta que el juego sea público): lo que distingue un instalador del anterior es la fecha que se
@@ -12,15 +15,17 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { cargarPrivada, estaCifrada } = require('./firma');
-const { firmarActualizacion, verificarActualizacion, novedadesDelChangelog } = require('./actualizacion');
+const { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog } = require('./actualizacion');
 
+const args = process.argv.slice(2);
+const LINUX = args.includes('--linux');
 const REPO = 'Ayrton09/CoverAO';
 const ETIQUETA = 'v1.0.0';
-const INSTALADOR = 'CoverAO-Setup.exe';
+const INSTALADOR = LINUX ? 'CoverAO-x86_64.AppImage' : 'CoverAO-Setup.exe';   // los artifactName de package.json
+const PLATAFORMA = LINUX ? PLATAFORMAS.linux : PLATAFORMAS.win32;
 const COMPILACION = path.join(__dirname, 'compilacion.json');
 const SALIDA = path.join(__dirname, 'release');
 
-const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
 const salir = (codigo, mensaje) => { console.error(mensaje); process.exit(codigo); };
 
@@ -40,7 +45,8 @@ fs.writeFileSync(COMPILACION, JSON.stringify({ id, novedades }));
 console.log(`compilación ${id}, ${novedades.length} líneas de novedades`);
 
 try {
-  const r = spawnSync(process.execPath, [require.resolve('electron-builder/cli.js'), '--win', 'nsis', '--publish', 'never'],
+  const objetivo = LINUX ? ['--linux', 'AppImage'] : ['--win', 'nsis'];
+  const r = spawnSync(process.execPath, [require.resolve('electron-builder/cli.js'), ...objetivo, '--publish', 'never'],
     { cwd: __dirname, stdio: 'inherit' });
   if (r.status !== 0) salir(4, 'electron-builder falló.');
 } finally {
@@ -54,8 +60,8 @@ const bytes = fs.readFileSync(exe);
 const aviso = firmarActualizacion({ id, archivo: INSTALADOR, sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
   tamano: bytes.length }, clave);
 // Como en firmar.js: firmado con una clave que la app no conoce es lo mismo que sin firmar.
-if (!verificarActualizacion(aviso, publica, '')) salir(5, `La clave ${rutaClave} no es la de la app: no la aceptaría.`);
-const rutaAviso = path.join(SALIDA, 'actualizacion.json');
+if (!verificarActualizacion(aviso, publica, '', PLATAFORMA.extension)) salir(5, `La clave ${rutaClave} no es la de la app: no la aceptaría.`);
+const rutaAviso = path.join(SALIDA, PLATAFORMA.aviso);
 fs.writeFileSync(rutaAviso, JSON.stringify(aviso));
 console.log(`${INSTALADOR}: ${(bytes.length / 1048576).toFixed(1)} MB, sha256 ${aviso.sha256.slice(0, 12)}…`);
 

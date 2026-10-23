@@ -416,7 +416,9 @@ async function novedadesDe(direccion) {
 // se baja el instalador y, si es el firmado, el menú ofrece instalarlo. Si no se toca, se instala al cerrar. Sin empaquetar no
 // se busca: `COVERAO_ACTUALIZAR=1` lo prueba igual.
 const DESCARGAS = 'https://github.com/Ayrton09/CoverAO/releases/latest/download/';
-const BUSCAR_ACTUALIZACION = app.isPackaged || process.env.COVERAO_ACTUALIZAR === '1';
+// El aviso y el tipo de archivo de ESTA plataforma (ver actualizacion.PLATAFORMAS). Una que no está (macOS) no se actualiza sola.
+const PLATAFORMA = actualizacion.PLATAFORMAS[process.platform] ?? null;
+const BUSCAR_ACTUALIZACION = !!PLATAFORMA && (app.isPackaged || process.env.COVERAO_ACTUALIZAR === '1');
 const TOPE_DEL_INSTALADOR = 512 * 1024 * 1024;
 let lista = null;        // { ruta, id } del instalador ya bajado y verificado
 let instalando = false;
@@ -424,9 +426,9 @@ let instalando = false;
 async function buscarActualizacion() {
   if (!BUSCAR_ACTUALIZACION || !CLAVE_PUBLICA) return;
   try {
-    const r = await net.fetch(DESCARGAS + 'actualizacion.json', { cache: 'no-store', bypassCustomProtocolHandlers: true });
+    const r = await net.fetch(DESCARGAS + PLATAFORMA.aviso, { cache: 'no-store', bypassCustomProtocolHandlers: true });
     if (!r.ok) return;
-    const aviso = actualizacion.verificarActualizacion(await r.json(), CLAVE_PUBLICA, COMPILACION.id);
+    const aviso = actualizacion.verificarActualizacion(await r.json(), CLAVE_PUBLICA, COMPILACION.id, PLATAFORMA.extension);
     if (!aviso) {
       // Ya es la última: lo bajado antes (la que se acaba de instalar) sobra, que son 100 MB.
       fs.rmSync(path.join(app.getPath('userData'), 'actualizacion'), { recursive: true, force: true });
@@ -490,10 +492,32 @@ function instalar(reabrir) {
   // Sin empaquetar (`npm start`, `COVERAO_ACTUALIZAR=1`) se baja y se verifica, pero no se instala: sería pisar el juego
   // instalado en esta PC con una prueba.
   if (!app.isPackaged) { console.log(`[actualizacion] sin empaquetar: no se instala ${lista.ruta}`); return true; }
+  if (process.platform === 'linux') return instalarAppImage(reabrir);
   const instalador = spawn(lista.ruta, ['/S', '--updated', ...(reabrir ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' });
   // Si no arranca (un antivirus lo sacó), queda en el registro: sin escuchador era una excepción suelta al cerrar.
   instalador.on('error', (e) => console.error(`[actualizacion] no arrancó el instalador: ${e?.message ?? e}`));
   instalador.unref();
+  return true;
+}
+
+/**
+ * EN LINUX, EL APPIMAGE NUEVO VA EN EL LUGAR DEL QUE CORRE (actualizacion.reemplazarAppImage). Dónde está lo dice el propio
+ * AppImage en `APPIMAGE`; sin esa variable (la app descomprimida a mano, un paquete de la distribución) no hay un archivo que
+ * reemplazar, y no se toca nada. Si la carpeta no se puede escribir, queda en el registro y la app sigue como estaba.
+ */
+function instalarAppImage(reabrir) {
+  const destino = process.env.APPIMAGE;
+  if (!destino) { console.log('[actualizacion] no corre como AppImage: no hay archivo que reemplazar'); return true; }
+  try {
+    actualizacion.reemplazarAppImage(lista.ruta, destino);
+    console.log(`[actualizacion] ${destino} reemplazado por la del ${lista.id}`);
+  } catch (e) {
+    console.error(`[actualizacion] no se pudo reemplazar ${destino}: ${e?.message ?? e}`);
+    return true;
+  }
+  // La nueva arranca cuando ESTA termina de salir (app.relaunch): lanzada ya, chocaba con el candado de instancia única de la
+  // vieja, que todavía no se fue, y se cerraba sola.
+  if (reabrir) app.relaunch({ execPath: destino, args: [] });
   return true;
 }
 
