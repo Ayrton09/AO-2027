@@ -1,5 +1,8 @@
 # CoverAO con docker compose.
 #
+# La imagen sale del PAQUETE OFICIAL de Linux, firmado (ver el Dockerfile): en el repo, el .tar.gz va en dist/; en la
+# carpeta del paquete, ya está todo. Sin la firma la app de escritorio no entra, así que sin ella no se arma.
+#
 #   docker compose up -d          # levanta el servidor
 #   docker compose logs -f        # ver el log
 #   docker compose down           # apagarlo (limpio: manda SIGTERM y el server guarda a todos)

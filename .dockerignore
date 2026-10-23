@@ -1,43 +1,7 @@
-# Lo que NO se le manda al demonio de Docker al construir la imagen.
+# Lo que NO se le manda al demonio de Docker al construir la imagen: TODO, menos el paquete oficial de Linux.
 #
-# Sin este archivo el contexto de build son varios GIGABYTES: el arbol VB6 (`CoverAO-2021/`, ~2 GB) y las
-# distribuciones ya armadas (`dist/`, ~800 MB por plataforma) estan en el repo aunque esten gitignoreados, y
-# `docker build` no mira el .gitignore. Se copian enteros al demonio ANTES de ejecutar la primera linea del
-# Dockerfile, asi que el build parece colgado y despues tarda una eternidad, sin que nada explique por que.
-#
-# Se descubrio construyendo la imagen de verdad. Leyendo el Dockerfile no se ve.
-
-# Arboles fuente de referencia (el VB6 original y el otro build de AO)
-CoverAO-2021/
-IAO-Clon-1.4.5/
-src/CoverAO-2021/
-
-# Distribuciones ya armadas
-dist/
-
-# Las carpetas de trabajo (herramientas, notas, el Postgres portable de las pruebas, worktrees): gitignoreadas,
-# pero en la copia del que desarrolla suman gigas.
-fase*/
-
-# Artefactos de compilacion: la imagen compila de cero adentro
-**/bin/
-**/obj/
-**/node_modules/
-
-# Cosas del entorno de desarrollo que no hacen a la imagen
-.git/
-.vs/
-.idea/
-*.user
-
-# Datos de servidores locales: cuentas y personajes de pruebas no van a una imagen
-**/data/Charfile/
-**/data/Cuentas/
-**/data/Misc/
-**/data/backups/
-**/data/logs/
-
-# Del cliente, lo mismo que deja afuera publish.ps1: sus tests (tsc los compila al mismo dist/) y las notas internas
-# en .md de assets/, que el server publicaria por HTTP.
-client-web/dist/test/
-client-web/assets/**/*.md
+# La imagen sale de ese paquete y no del código (ver el Dockerfile), así que es lo único que hace falta. Sin este archivo el
+# contexto de build son varios GIGABYTES: el árbol VB6, las distribuciones de dist/, las carpetas de trabajo. `docker build`
+# no mira el .gitignore, y los copia enteros al demonio antes de la primera línea: el build parece colgado.
+*
+!dist/CoverAO-servidor-linux-x64.tar.gz

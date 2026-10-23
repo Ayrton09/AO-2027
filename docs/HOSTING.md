@@ -475,12 +475,19 @@ journalctl -u coverao@rojo -f
 
 Para un solo servidor está [`hosting/coverao.service`](../hosting/coverao.service), sin el `@nombre`.
 
-**Docker**: un contenedor por servidor:
+**Docker**: un contenedor por servidor. La imagen se arma desde el **paquete oficial de Linux**, no desde el código: es
+la única forma de que lleve el cliente firmado por el autor, sin el cual la app de escritorio no entra al server (con el
+navegador se juega igual). Desde la carpeta del paquete (`CoverAO-servidor-linux-x64.tar.gz` descomprimido), que ya trae
+su `Dockerfile` y su `docker-compose.yml`:
 
 ```bash
 docker compose up -d
 docker compose logs -f
 ```
+
+Desde el repo es lo mismo con el `.tar.gz` en `dist/` (lo deja ahí `hosting/subir-version.ps1 -SinSubir`). Si el paquete no
+trae la firma, la imagen no se arma y lo dice. La imagen no lleva `Server.ini`: se configura con variables de entorno
+(ver el compose).
 
 El volumen `coverao-data:/app/data` es lo único que no se regenera. El `stop_grace_period: 60s` está puesto
 para que el guardado del apagado llegue a terminar. El panel de administración se publica sólo en el `127.0.0.1`

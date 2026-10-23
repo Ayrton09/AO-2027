@@ -50,6 +50,7 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Si un puerto no se puede abrir, el server se apaga y dice cuál**, en vez de seguir andando sin él.
 - **Con la base caída, el archivo de rescate se queda hasta que entra todo lo que guarda**, y los guardados repetidos de un mismo personaje no se acumulan.
 - **El cambio de clave rechaza los pedidos que no son cambiar ni recuperar**: por ahí se probaban códigos de recuperación sin el tope por cuenta.
+- **Con Docker entra también la app de escritorio**: la imagen se arma desde el paquete de Linux, que ahora trae su Dockerfile y su docker-compose.yml, con el cliente firmado.
 
 
 ## 1.0.0 (2026-10-14)

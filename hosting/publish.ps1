@@ -163,6 +163,19 @@ foreach ($u in @("coverao.service", "coverao@.service")) {
   }
 }
 
+# DOCKER, DESDE EL PAQUETE (sólo el de Linux): su Dockerfile arma la imagen con lo que trae el paquete, firmado. Desde el
+# código la imagen salía sin webclient/firma.json y la app de escritorio no entraba (auditoría externa del 23/10). En LF,
+# como las units: una línea `RUN` con \r arrastra el retorno al comando. Va antes de la firma del paquete, que la cubre.
+if ($Rid -like "linux*") {
+  foreach ($par in @(@("hosting\Dockerfile.paquete", "Dockerfile"), @("hosting\dockerignore.paquete", ".dockerignore"),
+                     @("docker-compose.yml", "docker-compose.yml"), @("docker-compose.postgres.yml", "docker-compose.postgres.yml"))) {
+    $desde = Join-Path $Root $par[0]
+    if (-not (Test-Path $desde)) { throw "falta $($par[0]) para el Docker del paquete" }
+    $txt = (Get-Content -Raw -Encoding UTF8 $desde) -replace "`r`n", "`n"
+    [IO.File]::WriteAllText((Join-Path $OutDir $par[1]), $txt, (New-Object Text.UTF8Encoding $false))
+  }
+}
+
 # El gestor de Windows: va un nivel arriba de los servidores, pero viaja adentro del zip.
 $gestor = Join-Path $PSScriptRoot "coverao.ps1"
 if (Test-Path $gestor) { Copy-Item -Force $gestor (Join-Path $OutDir "coverao.ps1") }

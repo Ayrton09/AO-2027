@@ -1,0 +1,67 @@
+# CoverAO - imagen del servidor, desde ESTE paquete (el oficial de Linux, firmado por el autor).
+#
+#   docker compose up -d                 (en esta carpeta, con el docker-compose.yml de al lado)
+#   docker build -t coverao .            (o la imagen sola)
+#
+# Y a jugar en  http://localhost:7669/ , con el navegador o con la app de escritorio.
+#
+# POR QUE DEL PAQUETE Y NO DEL CODIGO: la app de escritorio sólo entra a un server cuyo cliente web trae la firma del
+# autor (webclient/firma.json), y esa firma no se puede generar sin su clave. El paquete la trae; una imagen compilada
+# desde el repo, no (auditoría externa del 23/10). La clave nunca entra a ninguna imagen.
+#
+# CONFIGURACION: la imagen no lleva Server.ini. Cualquier clave se pisa con una variable de entorno
+# `COVERAO_<SECCION>_<CLAVE>`; ver docker-compose.yml y HOSTING.md.
+#
+# Lo mismo que el Dockerfile del repo, que arma la imagen desde el .tar.gz de este paquete: si cambia uno, cambia el otro.
+
+# ---------- el paquete ----------
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS paquete
+# El .dockerignore de al lado deja afuera data/ y el Server.ini: los personajes de un server que ya corrió en esta
+# carpeta no viajan a la imagen.
+COPY . /app/
+# SIN LA FIRMA NO HAY IMAGEN: un cliente sin firma.json deja afuera a la app de escritorio, y que eso se descubra al
+# armar es mejor que al primer jugador que no puede entrar. Después se saca lo que no es para un contenedor: los
+# arranques de Windows y systemd, el Server.ini (la configuración va por entorno) y las novedades de data/, que caerían
+# en el volumen y quedarían viejas al actualizar la imagen (el server usa entonces las del juego).
+RUN set -e; cd /app; \
+    if [ ! -f webclient/firma.json ] || [ ! -f archivos.json ]; then \
+      echo "Este paquete no trae la firma del autor (webclient/firma.json): la app de escritorio no entraria. Usa el paquete oficial."; \
+      exit 1; \
+    fi; \
+    rm -rf Dockerfile .dockerignore docker-compose.yml docker-compose.postgres.yml Server.ini Servidor.bat Actualizar.bat \
+           coverao.ps1 servidor.sh coverao.service coverao@.service data; \
+    chmod 755 CoverAO.Server
+
+# ---------- runtime ----------
+# `runtime-deps` y no `runtime`: el paquete es self-contained, trae su propio .NET y sólo necesita las librerías del sistema.
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
+WORKDIR /app
+COPY --from=paquete /app/ ./
+
+# Sin privilegios, y del proceso es SOLO /app/data: el resto queda de root, así una falla del server no puede reescribir el
+# cliente que bajan los jugadores. data/ en 700: las cuentas y el token del panel no los lee otra cuenta.
+#
+# EL ORDEN IMPORTA: Docker descarta lo que un `RUN` toque dentro de un directorio ya declarado con `VOLUME`, así que el
+# chown va ANTES del VOLUME. Al revés, el volumen nuevo nacía de root y el server moría al crear su base.
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin coverao \
+ && mkdir -p /app/data \
+ && chown coverao:coverao /app/data \
+ && chmod 700 /app/data
+
+# Las cuentas y los personajes viven acá: un volumen, para que sobrevivan a `docker rm` y a una imagen nueva.
+VOLUME /app/data
+
+USER coverao
+
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+# EL EJECUTABLE DEL PAQUETE ES DE UN SOLO ARCHIVO (publish.ps1, PublishSingleFile): al arrancar extrae sus librerías
+# nativas, y sin un home escribible muere con "DOTNET_BUNDLE_EXTRACT_BASE_DIR is not set". Van a /tmp: se vuelven a
+# extraer cuando se recrea el contenedor, que es un instante.
+ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp/coverao-net
+
+# 7666 juego (protocolo AO clásico) · 7667 WebSocket · 7669 cliente web. El 7668 (panel) no se expone: el compose lo
+# publica sólo en el 127.0.0.1 del host. El token queda en /app/data/admin-token.txt.
+EXPOSE 7666 7667 7669
+
+# Sin `sh -c`: el ejecutable es PID 1 y recibe el SIGTERM de `docker stop`, que dispara el guardado de los conectados.
+ENTRYPOINT ["/app/CoverAO.Server"]

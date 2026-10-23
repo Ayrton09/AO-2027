@@ -70,7 +70,8 @@ Lo esencial:
 - **Varios servidores**: una instalación completa por servidor, cada una con sus mapas y su configuración.
   En Windows, [`hosting/coverao.ps1`](hosting/coverao.ps1) los administra; en Linux,
   [`hosting/coverao@.service`](hosting/coverao@.service) es una unit plantilla de systemd.
-- **Docker**: `docker compose up -d`.
+- **Docker**: `docker compose up -d`, desde la carpeta del paquete oficial de Linux (o con su `.tar.gz` en `dist/`): la
+  imagen sale del paquete firmado para que la app de escritorio pueda entrar.
 - **Apagar sin perder progreso**: al apagarse bien, el servidor guarda a todos los conectados. Sirve cerrar
   la ventana, `Ctrl+C`, el botón del panel, `systemctl stop`, o crear un archivo vacío llamado `detener` al
   lado del ejecutable, que es lo único que funciona con un servidor de fondo en Windows, donde no hay
