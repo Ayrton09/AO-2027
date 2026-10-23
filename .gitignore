@@ -10,6 +10,30 @@ desktop/compilacion.json
 clave-privada.pem
 *.pem
 !desktop/clave-publica.pem
+# LO QUE NUNCA SE PUBLICA, aunque el repo se haga público (revisión del 23/10): claves y certificados con otro formato, la
+# clave de la base del compose de Postgres (.env), y lo que escribe un server que corre fuera de bin/ (sus bases, el token del
+# panel, los bots con sus contraseñas, el Server.ini con el staff, los rescates y los snapshots de mapas). Por nombre y no
+# con un `**/data/`: en Windows git no distingue mayúsculas, y esa regla tapaba también la carpeta de código Data/.
+*.pfx
+*.p12
+*.key
+*.ppk
+id_rsa*
+id_ed25519*
+.env
+.env.*
+!.env.ejemplo
+Server.ini
+admin-token.txt
+bots.txt
+rescate-*.json
+worldbackup/
+*.sqlite
+*.sqlite3
+# Las sesiones, worktrees y herramientas locales de los asistentes y los editores.
+.claude/
+.vs/
+.idea/
 __pycache__/
 *.pyc
 *.log
