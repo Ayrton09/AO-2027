@@ -1270,7 +1270,7 @@ public sealed partial class PacketDispatcher
                     _world.SoltarEntrada(charName);
                     if (session.Cerrada) return;
                     if (!entro) { RechazarConCartel(session, CartelLimiteDePersonajes, "la base no tomó el alta (límite de personajes)"); return; }
-                    SpawnIntoWorld(session, player, version);
+                    SpawnIntoWorld(session, player, version, personajeNuevo: true);
                 }, alFallar: () =>
                 {
                     _world.SoltarEntrada(charName);
@@ -1681,7 +1681,7 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>Binds a loaded/created character to the session and runs the full world-entry sequence.</summary>
-    private void SpawnIntoWorld(ClientSession session, Player player, string version)
+    private void SpawnIntoWorld(ClientSession session, Player player, string version, bool personajeNuevo = false)
     {
         // SEGUNDO CANDADO, y va acá adentro a propósito: el de `HandleOne` corre en el hilo que lee el socket
         // y ésta es la línea que pisa `session.Player`, en el game loop, donde todo está serializado. Dos
@@ -1794,7 +1794,9 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.LevelUp(player.FreeSkillPoints));
         }
         if (player.Navigating) session.Send(ServerMessages.NavigateToggle());   // TCP.bas:320 — relogueó en el barco
-        player.ResurrectionSafe = !player.IsAlive;   // TCP.bas:326-334: vivo entra con el seguro apagado, muerto prendido
+        // EL SEGURO DE RESURRECCIÓN AL ENTRAR: el recién creado lo trae prendido (ConnectNewUserOnline, TCP.bas:934) y el que ya
+        // existía, apagado si está vivo y prendido si está muerto (ConnectUser, TCP.bas:1143-1147).
+        player.ResurrectionSafe = personajeNuevo || !player.IsAlive;
         SendGuildNewsAlEntrar(session, player);                                 // TCP.bas:346 — modGuilds.SendGuildNews
         if (_world.MotivosDeRechazo.Remove(player.Name, out var motivo))          // TCP.bas:348 — a_ObtenerRechazoDeChar
         {
