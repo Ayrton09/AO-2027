@@ -32,10 +32,24 @@ Lo nuevo desde el paquete del 14 de octubre.
 - **Al fundir salen los lingotes por tanda que corresponden a tu nivel**: en algunos niveles salía uno menos.
 - **Morir te saca la invisibilidad**: el que moría invisible seguía así como fantasma.
 - **Ofertar, comprar en el Centro de Subastas o tirar algo al piso queda guardado enseguida**, así una caída del server no lo deshace.
+- **Lo que pasa de mano se guarda entero o no se guarda**: una transferencia, una carta con adjunto, un robo, una subasta, lo que levantás o tirás y lo que se te cae al morir. Una caída del server en el medio ya no duplica ni pierde nada.
+- **El que muere de frío, veneno o fuego queda muerto**: la curación de esa misma vuelta le devolvía vida sin resucitar.
+- **Crear un personaje con la cuenta ya jugando se rechaza**, como entrar con otro.
+- **El límite de mensajes del chat respeta lo que dice el Server.ini**: antes cualquier valor entre uno y cinco segundos daba un mensaje por segundo.
+
+### Cliente
+
+- **El juego arranca aunque el navegador no deje guardar preferencias**, y si el server no contesta la configuración, a los 5 segundos sigue con la de siempre.
+- **El €, las comillas tipográficas y los acentos de otros idiomas se mandan y se ven como en el server.**
+- **La app de escritorio sólo abre páginas firmadas del juego.**
 
 ### Para el que hostea
 
 - **Un archivo de la data dañado dice cuál es** al arrancar, y el puerto del Server.ini se acota a lo que el server puede abrir.
+- **Con --tls y un certificado que no carga, el server no arranca**: antes seguía sin cifrar.
+- **Si un puerto no se puede abrir, el server se apaga y dice cuál**, en vez de seguir andando sin él.
+- **Con la base caída, el archivo de rescate se queda hasta que entra todo lo que guarda**, y los guardados repetidos de un mismo personaje no se acumulan.
+- **El cambio de clave rechaza los pedidos que no son cambiar ni recuperar**: por ahí se probaban códigos de recuperación sin el tope por cuenta.
 
 
 ## 1.0.0 (2026-10-14)

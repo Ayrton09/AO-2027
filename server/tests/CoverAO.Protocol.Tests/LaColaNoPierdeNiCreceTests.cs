@@ -113,6 +113,8 @@ public sealed class LaColaNoPierdeNiCreceTests : IDisposable
         using var db = new Persistence(QueSeCae(), Niveles());   // el arranque lee la base: se cae después
         _caida = true;
         db.GuardarFicha(FichasDePrueba.Llena("Uno", semilla: 1));   // el que se queda reintentando
+        // Ya tomado por el escritor: si no, el v2 lo supera (y está bien), y el conteo de abajo mediría eso.
+        Assert.True(SpinWait.SpinUntil(() => db.Cola.CaidaDesde is not null, TimeSpan.FromSeconds(5)));
         var v2 = FichasDePrueba.Llena("Uno", semilla: 2);
         db.GuardarFicha(v2);
         var leida = db.LeerPersonajeAsync("Uno");
@@ -134,6 +136,7 @@ public sealed class LaColaNoPierdeNiCreceTests : IDisposable
         using var db = new Persistence(QueSeCae(), Niveles());   // el arranque lee la base: se cae después
         _caida = true;
         db.GuardarFicha(FichasDePrueba.Llena("Dos", semilla: 9));   // el que se queda reintentando
+        Assert.True(SpinWait.SpinUntil(() => db.Cola.CaidaDesde is not null, TimeSpan.FromSeconds(5)));
         var unoJunto = FichasDePrueba.Llena("Uno", semilla: 4);
         var dosJunto = FichasDePrueba.Llena("Dos", semilla: 4);
         db.GuardarJuntos("los dos", new RescateDePersonaje(unoJunto), new RescateDePersonaje(dosJunto));
