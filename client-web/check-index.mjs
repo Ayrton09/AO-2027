@@ -25,4 +25,29 @@ try {
   console.error('  (un error de sintaxis acá deja el cliente entero sin ejecutar, no sólo la parte tocada)');
   process.exit(1);
 }
-console.log('check-index: el script de index.html parsea OK');
+
+// EL ALMACENAMIENTO PUEDE ESTAR DENEGADO. Con las cookies bloqueadas el solo acceso a `localStorage` tira
+// SecurityError, y uno suelto en el arranque deja el cliente sin ejecutar igual que un error de sintaxis. Todo
+// acceso va por `leerPref`/`guardarPref`/`borrarPref` o adentro de un `try` en la misma línea.
+const sueltos = [];
+const lineaDelScript = html.slice(0, m.index).split('\n').length;
+m[1].split('\n').forEach((linea, i) => {
+  const t = linea.trim();
+  if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+  if (/\b(?:localStorage|sessionStorage)\s*[.[]/.test(linea) && !/\btry\s*\{/.test(linea)) sueltos.push(`${lineaDelScript + i}: ${t}`);
+});
+if (sueltos.length) {
+  console.error('check-index: acceso a localStorage fuera de un try (con el almacenamiento denegado corta el arranque):');
+  for (const l of sueltos) console.error(`  index.html:${l}`);
+  process.exit(1);
+}
+
+// EL coverao-config.json NO PUEDE TRABAR LA CONEXIÓN. Los dos pedidos (el del arranque, que decide el puerto, y
+// el de la reconexión) llevan un plazo: sin él, un pedido que no contesta deja al cliente sin conectar nunca.
+const pedidos = cuerpo.match(/fetch\(\s*'\.\/coverao-config\.json'[^)]*\)/g) || [];
+const sinPlazo = pedidos.filter((p) => !/signal\s*:/.test(p));
+if (pedidos.length === 0 || sinPlazo.length) {
+  console.error(`check-index: fetch de coverao-config.json sin plazo (signal): ${sinPlazo.join(' | ') || 'no encontré ninguno'}`);
+  process.exit(1);
+}
+console.log(`check-index: el script de index.html parsea OK, sin localStorage suelto, ${pedidos.length} pedidos de configuración con plazo`);

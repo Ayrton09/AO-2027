@@ -1147,7 +1147,15 @@
     // El mute PERSISTE en localStorage además del `?mute` de la URL. Sin esto, recargar (o que el panel de
     // desarrollo reabra el archivo, que lo hace en cada edición) volvía a arrancar la música desde cero: la
     // única forma de callarlo era acordarse de poner el parámetro cada vez. Ahora se apaga una vez y queda.
-    let muted = new URLSearchParams(location.search).has('mute') || localStorage.getItem('ao_mute') === '1';
+    // LAS PREFERENCIAS SE LEEN Y SE GUARDAN SIEMPRE POR ACÁ. Con el almacenamiento denegado (cookies bloqueadas,
+    // modo privado estricto, una política del navegador) el solo hecho de nombrar `localStorage` tira
+    // SecurityError, y una lectura suelta en el arranque cortaba el script entero: sin login, sin juego. Una
+    // preferencia que no se puede leer vale lo que vale sin guardar (null), y una que no se puede guardar se
+    // pierde al recargar. check-index.mjs falla si aparece un `localStorage.` fuera de un `try`.
+    const leerPref = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+    const guardarPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+    const borrarPref = (k) => { try { localStorage.removeItem(k); } catch (e) {} };
+    let muted = new URLSearchParams(location.search).has('mute') || leerPref('ao_mute') === '1';
     // MÚSICA aparte de los EFECTOS, como las dos casillas de frmOpciones del original: hay quien quiere el
     // ruido del mundo pero no la melodía en loop. `?mute` sigue apagando las dos, que es lo que quieren las
     // pruebas.
@@ -1157,23 +1165,21 @@
     // Un loop que empieza solo cada vez que abrís o recargás la página cansa rápido, y la fidelidad no paga
     // ese precio: la música sigue estando entera —13 pistas— a un clic del botón ♪, y la elección se guarda.
     // Prender algo que suena es decisión del jugador; apagarlo no debería ser su primer acto en el juego.
-    let musicaOff = localStorage.getItem('ao_musica') !== '1';
+    let musicaOff = leerPref('ao_musica') !== '1';
     // LA MÚSICA DEL INGRESO es aparte y SÍ arranca prendida: el original suena al abrirse, y el pedido del tester
     // (01/10) fue ése, con el volumen a mano para que no entre fuerte. La de los mapas sigue como se decidió
     // arriba. El volumen es el mismo para las dos (`ao_volmusica`).
-    let musicaLoginOff = localStorage.getItem('ao_musicalogin') === '0';
+    let musicaLoginOff = leerPref('ao_musicalogin') === '0';
     let musicaLogin = null, esperandoGesto = false;
     // AL 20 % POR DEFECTO, la música y los efectos (el autor, 05/10: "por defecto todos los sonidos, incluida la música, en 20 %").
     // Antes eran 30 y 50. Arranca sonando (como el original), así que el default tiene que poder dejarse puesto sin molestar.
-    let volMusica = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volmusica') ?? 0.20)));
+    let volMusica = Math.min(1, Math.max(0, Number(leerPref('ao_volmusica') ?? 0.20)));
     // Y LOS EFECTOS. El 50% era una constante escrita en `playWave` y no había forma de moverla: el jugador
     // sólo podía apagarlos del todo. Un golpe, un hechizo y el ruido del oficio suenan todo el tiempo, así
     // que el que quiere bajarlos sin quedarse en silencio necesitaba este deslizador. Al 20 %, como la música.
-    let volEfectos = Math.min(1, Math.max(0, Number(localStorage.getItem('ao_volefectos') ?? 0.20)));
-    // localStorage tira en modo privado con las cookies bloqueadas: una preferencia que no se puede guardar
-    // no puede tumbar el juego. Se declaran acá arriba porque los usan tanto los botones del encabezado como
-    // el panel de Opciones, y se asignan más abajo, cuando ya existe el DOM.
-    const guardarPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+    let volEfectos = Math.min(1, Math.max(0, Number(leerPref('ao_volefectos') ?? 0.20)));
+    // Los botones del encabezado y el panel de Opciones comparten estos dos; se declaran acá arriba y se
+    // asignan más abajo, cuando ya existe el DOM.
     let toggleMusica = () => {}, toggleSonido = () => {};
     // Las novedades que el server manda al entrar (SendUpdate). Se acumulan y se leen desde Menú → Novedades,
     // como el frmHlp del original; el chat queda para lo que pasa en el juego. Se vacían al reconectar para
@@ -1221,7 +1227,7 @@
     const MARGEN_TILES = 8;
     // FOV vertical en tiles (estilo AO); ajustable por zoom (M5) y desde Opciones. Persiste: antes el zoom
     // se perdia en cada recarga y habia que volver a acomodarlo a mano.
-    let VTILES_H = Math.min(22, Math.max(9, Number(localStorage.getItem('ao_zoom') ?? 13)));
+    let VTILES_H = Math.min(22, Math.max(9, Number(leerPref('ao_zoom') ?? 13)));
     // TECHO DEL SUPERSAMPLING. El render va a una escala ENTERA (ver `resize`), y esa escala sale de la altura
     // de la ventana: al pasar a pantalla completa el alto crece, la escala cruza un escalón y sube de golpe un
     // número entero. Medido acá: de una ventana de 420 px de alto a una de 560, los píxeles a dibujar pasan de
@@ -1230,7 +1236,7 @@
     //
     // El techo NO se toca solo: es una perilla, porque el que la baja cambia nitidez por velocidad y ésa es una
     // decisión de quien juega, no del cliente.
-    let ssMax = Math.min(4, Math.max(1, Number(localStorage.getItem('ao_ssmax') ?? 4)));
+    let ssMax = Math.min(4, Math.max(1, Number(leerPref('ao_ssmax') ?? 4)));
     const canvas = document.getElementById('view');
     const ctx = canvas.getContext('2d');
     const stage = document.getElementById('stage');
@@ -1322,7 +1328,7 @@
     // Tecla N: apagar los NOMBRES sobre los personajes (VB6 `mKeyToggleNames` -> `Nombres = Not Nombres`,
     // frmMain.frm). Es lo ultimo que faltaba del censo de teclas del original. El chat sobre la cabeza NO se
     // apaga con esto: son dos cosas distintas en el cliente clasico.
-    let mostrarNombres = localStorage.getItem('ao_nombres') !== '0';   // persiste (tecla N u Opciones)
+    let mostrarNombres = leerPref('ao_nombres') !== '0';   // persiste (tecla N u Opciones)
     // LA LLUVIA BAJO TECHO Y EN CUEVAS. Que llueva adentro es FIEL: el original dibuja la partícula sin ninguna condición
     // (TileEngine.bas:2295). Fue una opción de cada jugador, apagada; el autor la pasó al Server.ini y prendida (05/10): por
     // defecto no llueve adentro, y el server que quiera lo del original pone `LluviaBajoTecho=1` (llega en coverao-config.json).
@@ -1357,7 +1363,7 @@
     const MACRO_MS_USAR = 1000;      // INT_MACRO_TRABAJO (:319)
     // El `!== '0'` y no `=== '1'`: con la clave AUSENTE —el jugador que nunca la tocó— tiene que dar
     // PRENDIDO. Es la misma forma que usa `ao_nombres` acá arriba.
-    let macroOn = localStorage.getItem('ao_macro') !== '0';   // persiste; default PRENDIDO
+    let macroOn = leerPref('ao_macro') !== '0';   // persiste; default PRENDIDO
     // Desvanecido de los techos al entrar a un interior. El original va de 255 a 0 de 5 en 5 cada 18 ms
     // (RoofAlphaCalculate, TileEngine.bas:3845), o sea 51 pasos = ~918 ms para el barrido completo.
     const TECHO_FADE_MS = 918;
@@ -2434,13 +2440,13 @@
     // vsync cae cada 6,94 ms y un tope de 60 (16,67 ms) deja pasar frames a 20,8 · 20,8 · 13,9 · 20,8 ms —
     // el batido entre las dos cadencias. Eso no se percibe como "menos FPS" sino como TIRONES, y era el
     // default. Reportado jugando en un monitor de alto refresco, 2026-08-01.
-    let fpsCap = Math.max(0, Number(localStorage.getItem('ao_fpscap') ?? 0));
+    let fpsCap = Math.max(0, Number(leerPref('ao_fpscap') ?? 0));
     let lastDrawT = 0;
     const tope = { proximo: 0 };
     window.__setFpsCap = (n) => {                       // lo usa el selector de Opciones
       fpsCap = Math.max(0, Number(n) || 0);
       tope.proximo = 0;
-      localStorage.setItem('ao_fpscap', String(fpsCap));
+      guardarPref('ao_fpscap', String(fpsCap));
       log('Límite de FPS: ' + (fpsCap ? fpsCap : 'sin límite (vsync)'), '#c9a24b');
     };
     // EL TOPE CUENTA DESDE EL CUADRO QUE TOCABA, no desde el último que se dibujó. Con "pasaron 1000/N ms desde
@@ -3386,7 +3392,13 @@
     // ?char= —el atajo con el que se prueba el cliente— se iba al 7667 cableado y quedaba "desconectado —
     // reintentando" contra un server que estaba escuchando en otro puerto. El bug del puerto cableado se
     // había arreglado en una sola de las dos puertas.
-    fetch('./coverao-config.json').then((r) => (r.ok ? r.json() : null))
+    //
+    // CON PLAZO, como el de la reconexión: la conexión sale del `finally`, así que un pedido que no contestaba
+    // dejaba al cliente sin conectar nunca. A los 5 s se corta y se sigue igual que si hubiera fallado: con el
+    // puerto y las opciones por defecto.
+    const corteConfig = new AbortController();
+    const plazoConfig = setTimeout(() => corteConfig.abort(), 5000);
+    fetch('./coverao-config.json', { signal: corteConfig.signal }).then((r) => (r.ok ? r.json() : null))
       .then((cfg) => { if (cfg && cfg.wsPort > 0) wsPort = cfg.wsPort;
                        if (cfg && cfg.wsPath) wsPath = String(cfg.wsPath);
                        if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente);
@@ -3397,6 +3409,7 @@
                        if (cfg && Array.isArray(cfg.novedades)) pintarNovedadesLogin(cfg.novedades, cfg.version); })
       .catch(() => {})
       .finally(() => {
+        clearTimeout(plazoConfig);
         // El auto-login sólo vale DESDE LA MISMA MÁQUINA (dev y capturas). Cablea las credenciales del
         // fixture (cuenta_test/hash_password), así que servido desde un host público era una puerta: abrir
         // http://tu-server/?auto entraba directo. Gateado a loopback: un server hosteado (dominio o IP) tiene
@@ -5197,7 +5210,7 @@
     // El panel lateral (barras, nivel, oro, inventario, hechizos, atributos, minimapa) y los overlays
     // (coords, fps, chat, hotbar) son DOM sincronizados desde el estado — nítidos a cualquier resolución.
     // true = bajada backing→CSS suave (nitido); false = pixelada dura. Tecla P u Opciones; persiste.
-    let smoothWorld = localStorage.getItem('ao_escalado') !== '0';
+    let smoothWorld = leerPref('ao_escalado') !== '0';
     let myFood = { cur: 100, max: 100 }, myThirst = { cur: 100, max: 100 }, myAttrs = null;
     const fillEl = { hp: $('f-hp'), mana: $('f-mana'), ener: $('f-ener'), food: $('f-food'), thirst: $('f-thirst') };
     const valEl = { hp: $('v-hp'), mana: $('v-mana'), ener: $('v-ener'), food: $('v-food'), thirst: $('v-thirst') };
@@ -7955,7 +7968,7 @@
           const r = await escritorio.leer();
           if (r && r.cuenta) { f.acc.value = r.cuenta; f.pw.value = r.clave || ''; casillaRecordar.checked = true; }
         } else {
-          const cuenta = localStorage.getItem('ao_cuenta_recordada');
+          const cuenta = leerPref('ao_cuenta_recordada');
           if (cuenta) { f.acc.value = cuenta; casillaRecordar.checked = true; }
         }
       } catch (e) { /* sin guardado: el ingreso viene vacío */ }
@@ -7964,8 +7977,8 @@
       if (!accName) return;
       try {
         if (casillaRecordar.checked) {
-          if (escritorio) escritorio.guardar(accName, accPass || ''); else localStorage.setItem('ao_cuenta_recordada', accName);
-        } else if (escritorio) escritorio.olvidar(); else localStorage.removeItem('ao_cuenta_recordada');
+          if (escritorio) escritorio.guardar(accName, accPass || ''); else guardarPref('ao_cuenta_recordada', accName);
+        } else if (escritorio) escritorio.olvidar(); else borrarPref('ao_cuenta_recordada');
       } catch (e) { /* modo privado: no se recuerda */ }
     }
 
