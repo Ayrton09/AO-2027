@@ -3316,7 +3316,12 @@
         // interpolación de caminata necesitan frames aunque no llegue un solo paquete. Por eso mismo un flag
         // tipo `dirty` sería peor que este borrado: congelaría todo lo que anima solo.
         if (ws !== sock) return;                           // un socket viejo no toca el estado del que está en uso
-        for (const e of decodeServerStream(new Uint8Array(ev.data))) apply(e);
+        // UN PAQUETE QUE FALLA NO SE LLEVA LOS DEMÁS DEL MENSAJE: sin esto una excepción en uno perdía el resto del frame (el
+        // inventario o el mapa que venían atrás) y el estado quedaba a medias hasta reconectar.
+        for (const e of decodeServerStream(new Uint8Array(ev.data))) {
+          try { apply(e); }
+          catch (err) { window.__errs.push('apply ' + (e && e.name) + ': ' + (err && err.message || err)); console.error(err); }
+        }
       };
       ws.onclose = (ev) => {
         if (ws !== sock) return;
