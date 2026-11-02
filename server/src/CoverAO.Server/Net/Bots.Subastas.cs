@@ -133,7 +133,8 @@ public sealed partial class Bot
         foreach (string nombre in sentidos.TomarLoQueDejoLaSubasta())
         {
             var conEseNombre = _entorno.Datos.Objects.Values
-                .Where(o => VaALaSubasta(o) && string.Equals(o.Name, nombre, StringComparison.OrdinalIgnoreCase)).Select(o => o.Index).ToList();
+                .Where(o => (VaALaSubasta(o) || _comprados.Contains(o.Index))
+                    && string.Equals(o.Name, nombre, StringComparison.OrdinalIgnoreCase)).Select(o => o.Index).ToList();
             if (conEseNombre.FirstOrDefault(_comprados.Contains) is var comprado and > 0) { _comprados.Remove(comprado); continue; }
             short suyo = conEseNombre.FirstOrDefault(_publicadas.Contains);
             if (suyo == 0 && conEseNombre.Count == 1) suyo = conEseNombre[0];
@@ -228,28 +229,48 @@ public sealed partial class Bot
 
     /// <summary>
     /// LO QUE DEJÓ EL CENTRO, DE LA BÓVEDA A LA MOCHILA: el banquero del pueblo, la bóveda de ítems (<c>BankStart</c>), retirar y cerrar. Lo que
-    /// no está en la bóveda o no entra en la mochila se da por perdido para esta vida: no vuelve a intentarlo en cada visita.
+    /// no entra en la mochila o no recibe respuesta sigue pendiente para otra visita. Sólo olvida el objeto cuando una bóveda
+    /// recién recibida confirma que ya no está y no queda una compra sin aviso de entrega, o cuando el retiro lo agregó a la
+    /// mochila y no quedó más en la bóveda. Con la bóveda llena el Centro puede seguir debiéndolo aunque todavía no aparezca ahí.
     /// </summary>
     private async Task RetirarLoDeLaSubastaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (_porRetirar.Count == 0 || !TieneBanquero(sentidos.Mapa)) return;
+        if (_porRetirar.Count == 0 || !TieneBanquero(sentidos.Mapa)
+            || !sentidos.Vivo || cerrada.IsCompleted || ct.IsCancellationRequested) return;
+        int mapa = sentidos.Mapa;
+        bool SigueEnElBanco() => sentidos.Vivo && !cerrada.IsCompleted && !ct.IsCancellationRequested && sentidos.Mapa == mapa;
         // Sin anotar el mapa como "sin banquero" si no atiende: un tropiezo acá le cortaba el banco del pueblo para el resto de la vida.
-        if (!sentidos.Vivo || !await AbrirElBancoAsync(transporte, sentidos, cerrada, ct)) return;
-        int vistas = sentidos.VecesQueVioLaBoveda;
-        transporte.Mandar(Paquete(ClientPacketId.BankStart, _ => { }));
-        for (int espera = 0; espera < 12 && sentidos.VecesQueVioLaBoveda == vistas; espera++) await Task.Delay(250, ct);
-        if (sentidos.VecesQueVioLaBoveda != vistas)
+        if (!await AbrirElBancoAsync(transporte, sentidos, cerrada, ct) || !SigueEnElBanco()) return;
+        bool pidioAbrir = false;
+        try
+        {
+            int vistas = sentidos.VecesQueVioLaBoveda;
+            if (!(pidioAbrir = transporte.Mandar(Paquete(ClientPacketId.BankStart, _ => { })))) return;
+            for (int espera = 0; espera < 12 && sentidos.VecesQueVioLaBoveda == vistas && SigueEnElBanco(); espera++) await Task.Delay(250, ct);
+            if (!SigueEnElBanco() || sentidos.VecesQueVioLaBoveda == vistas) return;
             foreach (short obj in _porRetirar.ToList())
             {
-                _porRetirar.Remove(obj);
-                if (sentidos.EnLaBoveda(obj) is not { } b) continue;
+                if (!SigueEnElBanco()) return;
+                if (sentidos.EnLaBoveda(obj) is not { } b)
+                {
+                    // El Centro conserva la entrega si la bóveda estaba llena: la ausencia todavía no cancela esa compra.
+                    if (!_comprados.Contains(obj)) _porRetirar.Remove(obj);
+                    continue;
+                }
                 int antes = sentidos.CuantoTiene(o => o == obj);
-                transporte.Mandar(Paquete(ClientPacketId.BankExtractItem, w => w.WriteByte(b.Ranura).WriteInteger(b.Cantidad)));
-                for (int espera = 0; espera < 12 && sentidos.CuantoTiene(o => o == obj) == antes; espera++) await Task.Delay(250, ct);
-                Console.WriteLine($"[bot {Nombre}] retira de la bóveda obj {obj}" + (sentidos.CuantoTiene(o => o == obj) > antes ? "" : ": no entró"));
+                if (!transporte.Mandar(Paquete(ClientPacketId.BankExtractItem, w => w.WriteByte(b.Ranura).WriteInteger(b.Cantidad)))) return;
+                for (int espera = 0; espera < 12 && sentidos.CuantoTiene(o => o == obj) == antes && SigueEnElBanco(); espera++) await Task.Delay(250, ct);
+                if (!SigueEnElBanco()) return;
+                bool retiro = sentidos.CuantoTiene(o => o == obj) > antes;
+                if (retiro && sentidos.EnLaBoveda(obj) is null) _porRetirar.Remove(obj);
+                Console.WriteLine($"[bot {Nombre}] retira de la bóveda obj {obj}" + (retiro ? "" : ": sigue pendiente"));
                 await Task.Delay(_rng.Next(400, 900), ct);
             }
-        transporte.Mandar(Paquete(ClientPacketId.BankEnd, _ => { }));
+        }
+        finally
+        {
+            if (pidioAbrir && !cerrada.IsCompleted) transporte.Mandar(Paquete(ClientPacketId.BankEnd, _ => { }));
+        }
         await Task.Delay(_rng.Next(400, 900), ct);
     }
 }

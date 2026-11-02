@@ -281,7 +281,9 @@ public class ElBotSubastaTests
         var retira = await Siguiente(t, ClientPacketId.BankExtractItem);
         Assert.Equal(5, retira[1]);
         Assert.Equal(3, BitConverter.ToInt16(retira, 2));   // el lote entero, como volvió
+        s.Recibir(ServerMessages.ChangeBankSlot(5, 0, 0, 0));
         s.Recibir(ServerMessages.ChangeInventorySlot(2, Joya.Index, 3, false, 0, 1));
+        s.Recibir(ServerMessages.BankOk());
         await Siguiente(t, ClientPacketId.BankEnd);
         await retirar.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Empty((HashSet<short>)PorRetirarF.GetValue(bot)!);
@@ -299,7 +301,7 @@ public class ElBotSubastaTests
         var retirar = (Task)RetirarM.Invoke(bot, new object[] { t, s, new TaskCompletionSource().Task, CancellationToken.None })!;
         await Siguiente(t, ClientPacketId.DoubleClick);   // y el panel del oro no llega nunca
         await retirar.WaitAsync(TimeSpan.FromSeconds(15));
-        Assert.DoesNotContain(Rinkel, (HashSet<int>)SinCaminoF.GetValue(bot)!);
+        Assert.DoesNotContain(Rinkel, ((Dictionary<int, long>)SinCaminoF.GetValue(bot)!).Keys);
     }
 
     private const short Yo = 500, ElSubastador = 600;

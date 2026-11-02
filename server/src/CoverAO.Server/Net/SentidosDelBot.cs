@@ -34,19 +34,37 @@ public sealed class SentidosDelBot
     public readonly record struct Visible(short CharIndex, byte X, byte Y, short FichaNpc, byte Estado = 0, string Nombre = "")
     {
         public bool EsNpc => FichaNpc > 0;
+        /// <summary>La apariencia que ve cualquier cliente; permite reconocer un cadáver o una fragata fantasmal.</summary>
+        public short Cuerpo { get; init; }
+        public bool Muerto => !EsNpc && Cuerpo is PacketDispatcher.CorpseBody or PacketDispatcher.GhostShipBody;
     }
 
     /// <summary>Las bajas de personas por el bando de la víctima, como las cuenta el servidor (la ficha de estadísticas, MiniStats).
     /// Es lo que piden el enlistador y la recompensa (ver <c>Bot.BajasParaSuBando</c>).</summary>
     public readonly record struct Bajas(int Ciudadanos, int Renegados, int Republicanos, int Caos, int Armada, int Milicianos);
 
+    /// <summary>Un efecto con autor identificado por el servidor. Hechizo 0 es el daño explícito del mensaje 34;
+    /// con número, el bot debe consultar qué hace ese hechizo antes de tomarlo como una agresión.</summary>
+    public readonly record struct EfectoDeOtro(string Quien, short Hechizo, long Cuando);
+
+    /// <summary>El último movimiento público de la compañera antes de su CharacterRemove, sin inferir dónde quedó.</summary>
+    internal readonly record struct MovimientoPerdido(long Numero, short CharIndex, short Mapa, byte X, byte Y, long Cuando);
+
     private readonly object _candado = new();
     private byte _miEstado;
     private Bajas? _bajas;
     private long _ultimaBajaDeVida;
+    private readonly Queue<EfectoDeOtro> _efectosRecibidos = new();
+    private const int EfectosRecibidosMax = 8;
     private readonly Dictionary<short, Visible> _visibles = new();
+    // Sólo se observa a la persona de la salida actual. No hay historial del resto de los jugadores.
+    private string? _companeraObservada;
+    private (short CharIndex, short Mapa, byte X, byte Y, long Cuando)? _ultimoMovimientoDeLaCompanera;
+    private MovimientoPerdido? _movimientoAlPerderLaCompanera;
+    private long _numeroDeMovimientoPerdido;
     private readonly (short Obj, short Cantidad, bool Puesto)[] _inventario =
         new (short, short, bool)[GameLimits.MaxInventorySlots + 1];
+    private readonly (short Obj, long Veces)[] _equipoObservado = new (short, long)[GameLimits.MaxInventorySlots + 1];
 
     private readonly short[] _hechizos = new short[GameLimits.MaxUserSpells + 1];
 
@@ -79,6 +97,23 @@ public sealed class SentidosDelBot
     // ── Lo que el que decide le pregunta ──────────────────────────────────────────────────────────────
 
     public short MiCharIndex { get { lock (_candado) return _miCharIndex; } }
+
+    internal void ObservarSalidaDe(string? nombre)
+    {
+        lock (_candado)
+        {
+            _companeraObservada = nombre;
+            _ultimoMovimientoDeLaCompanera = null;
+            _movimientoAlPerderLaCompanera = null;
+        }
+    }
+
+    internal MovimientoPerdido? UltimoMovimientoPerdidoDe(string nombre)
+    {
+        lock (_candado)
+            return string.Equals(_companeraObservada, nombre, StringComparison.OrdinalIgnoreCase)
+                ? _movimientoAlPerderLaCompanera : null;
+    }
     /// <summary>Su bando, el que dice su propio <c>CharacterCreate</c> (o un <c>UpdateTagAndStatus</c> después). 0 mientras no
     /// lo sabe.</summary>
     public byte MiEstado { get { lock (_candado) return _miEstado; } }
@@ -104,6 +139,18 @@ public sealed class SentidosDelBot
     /// está pegando aunque no se vea una criatura encima.</summary>
     public long HaceCuantoLeBajoLaVida
     { get { lock (_candado) return _ultimaBajaDeVida == 0 ? long.MaxValue : Environment.TickCount64 - _ultimaBajaDeVida; } }
+
+    /// <summary>Los efectos recientes, del más nuevo al más viejo. Acotados: los buffs posteriores no borran
+    /// inmediatamente la identidad de un agresor, y el historial no crece con la duración de la sesión.</summary>
+    public IReadOnlyList<EfectoDeOtro> EfectosRecibidos(long vigenciaMs)
+    {
+        lock (_candado)
+        {
+            long desde = Environment.TickCount64 - vigenciaMs;
+            while (_efectosRecibidos.TryPeek(out var viejo) && viejo.Cuando < desde) _efectosRecibidos.Dequeue();
+            return _efectosRecibidos.Reverse().ToArray();
+        }
+    }
     public bool Ubicado { get { lock (_candado) return _tengoPosicion; } }
     public (byte X, byte Y) Posicion { get { lock (_candado) return (_x, _y); } }
     public short Nivel { get { lock (_candado) return _nivel; } }
@@ -564,6 +611,32 @@ public sealed class SentidosDelBot
         }
     }
 
+    /// <summary>Empieza a observar la confirmación de este objeto en esta ranura, antes de pedir equiparlo.
+    /// Sólo mantiene un objeto por ranura: una confirmación de otro objeto no le pertenece a este pedido.</summary>
+    public long ObservarConfirmacionDeEquipo(byte ranura, short obj)
+    {
+        lock (_candado)
+        {
+            if (ranura <= 0 || ranura >= _equipoObservado.Length) return 0;
+            if (_equipoObservado[ranura].Obj != obj) _equipoObservado[ranura] = (obj, 0);
+            return _equipoObservado[ranura].Veces;
+        }
+    }
+
+    public long ConfirmacionesDeEquipo(byte ranura, short obj)
+    {
+        lock (_candado)
+            return ranura > 0 && ranura < _equipoObservado.Length && _equipoObservado[ranura].Obj == obj
+                ? _equipoObservado[ranura].Veces : 0;
+    }
+
+    // Se llama bajo _candado, sólo con una ranura válida y un objeto presente.
+    private void AnotarEquipoPuesto(byte ranura, short obj)
+    {
+        var observado = _equipoObservado[ranura];
+        if (observado.Obj == obj) _equipoObservado[ranura] = (obj, observado.Veces + 1);
+    }
+
     /// <summary>¿Lo de esa ranura está puesto?</summary>
     public bool EstaPuesto(byte ranura)
     {
@@ -978,7 +1051,8 @@ public sealed class SentidosDelBot
                 case ServerPacketId.CharacterCreate:
                 {
                     short ci = l.Entero();
-                    l.Entero(); l.Entero();          // body, head
+                    short cuerpo = l.Entero();
+                    l.Entero();                      // head
                     l.Byte();                        // heading
                     byte x = l.Byte(), y = l.Byte();
                     l.Entero(); l.Entero(); l.Entero(); l.Entero(); l.Entero();   // arma, escudo, casco, FX, FXLoops
@@ -990,9 +1064,36 @@ public sealed class SentidosDelBot
                         // se escondió con /SHOWNAME: tampoco es un NPC.
                         short ficha = short.TryParse(nombre, out var f) && f > 0 ? f : (short)0;
                         // Y EL NOMBRE DE LA PERSONA, para saber quién le habla (`NombreDe`).
-                        _visibles[ci] = new Visible(ci, x, y, ficha, estado, ficha > 0 ? "" : SinElClan(nombre));
+                        var creado = new Visible(ci, x, y, ficha, estado, ficha > 0 ? "" : SinElClan(nombre)) { Cuerpo = cuerpo };
+                        _visibles[ci] = creado;
+                        if ((!creado.EsNpc && string.Equals(_companeraObservada, creado.Nombre, StringComparison.OrdinalIgnoreCase))
+                            || _ultimoMovimientoDeLaCompanera?.CharIndex == ci || _movimientoAlPerderLaCompanera?.CharIndex == ci)
+                        {
+                            _ultimoMovimientoDeLaCompanera = null;
+                            _movimientoAlPerderLaCompanera = null;
+                        }
                         if (ci == _miCharIndex) { _x = x; _y = y; _tengoPosicion = true; _miEstado = estado; }
                     }
+                    break;
+                }
+
+                case ServerPacketId.CharacterChange:
+                {
+                    short ci = l.Entero(), cuerpo = l.Entero();
+                    l.Entero(); l.Byte(); // cabeza, rumbo
+                    l.Entero(); l.Entero(); l.Entero(); l.Entero(); l.Entero(); // equipo, FX, FXLoops
+                    lock (_candado)
+                        if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { Cuerpo = cuerpo };
+                    break;
+                }
+
+                case ServerPacketId.CharacterChangeSlot:
+                {
+                    short ci = l.Entero(), valor = l.Entero();
+                    byte ranura = l.Byte();
+                    if (ranura == 1)
+                        lock (_candado)
+                            if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { Cuerpo = valor };
                     break;
                 }
 
@@ -1056,7 +1157,15 @@ public sealed class SentidosDelBot
                     byte x = l.Byte(), y = l.Byte();
                     lock (_candado)
                     {
-                        if (_visibles.TryGetValue(ci, out var v)) _visibles[ci] = v with { X = x, Y = y };
+                        if (_visibles.TryGetValue(ci, out var v))
+                        {
+                            _visibles[ci] = v with { X = x, Y = y };
+                            if (!v.EsNpc && string.Equals(_companeraObservada, v.Nombre, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _ultimoMovimientoDeLaCompanera = (ci, _mapa, x, y, Environment.TickCount64);
+                                _movimientoAlPerderLaCompanera = null;
+                            }
+                        }
                         if (ci == _miCharIndex) { _x = x; _y = y; _tengoPosicion = true; }
                     }
                     break;
@@ -1065,7 +1174,16 @@ public sealed class SentidosDelBot
                 case ServerPacketId.CharacterRemove:
                 {
                     short ci = l.Entero();
-                    lock (_candado) _visibles.Remove(ci);
+                    lock (_candado)
+                    {
+                        if (_ultimoMovimientoDeLaCompanera is { } m && m.CharIndex == ci && m.Mapa == _mapa
+                            && _visibles.TryGetValue(ci, out var v) && !v.EsNpc
+                            && string.Equals(_companeraObservada, v.Nombre, StringComparison.OrdinalIgnoreCase))
+                            _movimientoAlPerderLaCompanera = new MovimientoPerdido(++_numeroDeMovimientoPerdido, ci, m.Mapa, m.X, m.Y, m.Cuando);
+                        if (_ultimoMovimientoDeLaCompanera?.CharIndex == ci) _ultimoMovimientoDeLaCompanera = null;
+                        _visibles.Remove(ci);
+                        _nivelDe.Remove(ci); // El índice puede reutilizarse para otra persona.
+                    }
                     break;
                 }
 
@@ -1074,8 +1192,32 @@ public sealed class SentidosDelBot
                     byte x = l.Byte(), y = l.Byte();
                     lock (_candado)
                     {
+                        if (_tengoPosicion && Math.Abs(x - _x) + Math.Abs(y - _y) > 1)
+                        {
+                            // Un warp propio en el mismo mapa tampoco habilita volver hacia una huella anterior.
+                            _ultimoMovimientoDeLaCompanera = null;
+                            _movimientoAlPerderLaCompanera = null;
+                        }
                         _x = x; _y = y; _tengoPosicion = true;
                         OlvidarElPisoLejano();
+                    }
+                    break;
+                }
+
+                case ServerPacketId.ForceCharMove:
+                {
+                    byte rumbo = l.Byte();
+                    if (rumbo is < 1 or > 4) break;
+                    lock (_candado)
+                    {
+                        // El servidor ya lo corrió (casper), aun paralizado: no es una predicción de caminar.
+                        if (_tengoPosicion)
+                        {
+                            var (dx, dy) = Paso(rumbo);
+                            _x = (byte)Math.Clamp(_x + dx, 0, 255);
+                            _y = (byte)Math.Clamp(_y + dy, 0, 255);
+                            OlvidarElPisoLejano();
+                        }
                     }
                     break;
                 }
@@ -1089,6 +1231,10 @@ public sealed class SentidosDelBot
                     lock (_candado)
                     {
                         _visibles.Clear();
+                        _ultimoMovimientoDeLaCompanera = null;
+                        _movimientoAlPerderLaCompanera = null;
+                        _nivelDe.Clear();
+                        _efectosRecibidos.Clear();
                         _enElPiso.Clear();   // lo tirado era del mapa anterior
                         _mapa = mapa;
                         _mapaNuevo = true;
@@ -1298,8 +1444,22 @@ public sealed class SentidosDelBot
                     // UNA SKILL SUBIÓ POR USARLA: el servidor no vuelve a mandar las 27, sólo este aviso. Es un paquete
                     // DELTA, y sin leerlo el bot seguiría creyendo que su skill de fabricar está donde la dejó el reparto.
                     else if (aviso == AvisoDeSkillQueSube && SkillQueSubio(l.Cadena()) is { } subio)
+                    {
                         lock (_candado)
                             if (subio.Skill >= 1 && subio.Skill < _skills.Length) _skills[subio.Skill] = (byte)Math.Clamp(subio.Valor, 0, 255);
+                    }
+                    else if (aviso is 34 or 498)
+                    {
+                        string args = l.Cadena();
+                        l.Byte(); // modo
+                        byte fuente = l.Byte();
+                        if (AutorDelEfecto(aviso, args, fuente) is { } efecto)
+                            lock (_candado)
+                            {
+                                while (_efectosRecibidos.Count >= EfectosRecibidosMax) _efectosRecibidos.Dequeue();
+                                _efectosRecibidos.Enqueue(new EfectoDeOtro(efecto.Quien, efecto.Hechizo, Environment.TickCount64));
+                            }
+                    }
                     break;
                 }
 
@@ -1317,7 +1477,11 @@ public sealed class SentidosDelBot
                     short obj = l.Entero(), cantidad = l.Entero();
                     bool puesto = l.Byte() != 0;
                     lock (_candado)
-                        if (slot > 0 && slot < _inventario.Length) _inventario[slot] = (obj, cantidad, puesto);
+                        if (slot > 0 && slot < _inventario.Length)
+                        {
+                            _inventario[slot] = (obj, cantidad, puesto);
+                            if (puesto && obj > 0 && cantidad > 0) AnotarEquipoPuesto(slot, obj);
+                        }
                     break;
                 }
 
@@ -1343,6 +1507,7 @@ public sealed class SentidosDelBot
                                 3 => (obj, valor, puesto),
                                 _ => (obj, cantidad, puesto),
                             };
+                            if (accion == 1 && cantidad > 0) AnotarEquipoPuesto(slot, obj);
                         }
                     break;
                 }
@@ -1400,6 +1565,20 @@ public sealed class SentidosDelBot
         // con los de layout variable que acá no se leen, si alguna vez cambiara un id.
         catch (IndexOutOfRangeException) { }
         catch (ArgumentOutOfRangeException) { }
+    }
+
+    private static (string Quien, short Hechizo)? AutorDelEfecto(short aviso, string args, byte fuente)
+    {
+        var partes = args.Split('%');
+        if (partes.Length < 2 || string.IsNullOrWhiteSpace(partes[0])) return null;
+        if (aviso == 34)
+            return partes.Length == 2 && int.TryParse(partes[1], out int dano) && dano > 0 ? (partes[0], (short)0) : null;
+        // El 498 también describe curas y buffs. Se descarta la fuente de curación y se conserva el número
+        // para que la decisión compruebe en la data que realmente hace daño, en vez de inferirlo del color.
+        if (fuente != 2 || partes.Length != 3 || !partes[1].StartsWith('^')
+            || !short.TryParse(partes[1].AsSpan(1), out short hechizo) || hechizo <= 0
+            || !int.TryParse(partes[2], out int valor) || valor <= 0) return null;
+        return (partes[0], hechizo);
     }
 
     /// <summary>Cursor sobre un paquete ya frameado. Los enteros son de 16 bits con signo y los largos de 32,

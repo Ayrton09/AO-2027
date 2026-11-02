@@ -222,26 +222,6 @@ public class MagiaDelBotTests
         StaRequerido: sta);
 
     /// <summary>
-    /// EL HECHIZO QUE NO CURÓ NO SE VUELVE A ELEGIR. El bot miraba sólo el maná y el servidor pide además la skill
-    /// de Magia; el rechazo NO cobra maná, así que el hechizo se podía repetir para siempre. Y como
-    /// <c>CurarseConMagia</c> devolvía true por haber mandado los paquetes, la POCIÓN no se tomaba nunca: el bot se
-    /// quedaba casteando mientras lo mataban, con la mochila llena de pociones.
-    ///
-    /// <para>De los 84 pergaminos del juego, 9 son curativos comprables y sus <c>MinSkill</c> van de 10 a 45 — muy
-    /// por encima de lo que el bot tiene cuando los compra, porque para comprar sólo mira la plata.</para>
-    /// </summary>
-    [Theory]
-    // vida antes | vida después | ¿lo rechazó el servidor?
-    [InlineData(0.30, 0.90, false)]   // curó: el hechizo sirve
-    [InlineData(0.30, 0.31, false)]   // subió apenas, pero subió
-    [InlineData(0.30, 0.30, true)]    // no se movió: lo rechazó
-    [InlineData(0.30, 0.20, true)]    // bajó porque le siguen pegando: tampoco curó
-    public void El_hechizo_que_no_curo_no_se_vuelve_a_elegir(double antes, double ahora, bool rechazado)
-    {
-        Assert.Equal(rechazado, Bot.ElServidorNoSeLoDejo(antes, ahora));
-    }
-
-    /// <summary>
     /// LO QUE LE RECHAZARON SE VUELVE A PROBAR AL SUBIR MAGIA. Anotar un hechizo para siempre lo dejaría muerto
     /// aunque el bot suba la skill que le faltaba — y la sube: <c>RepartirPuntos</c> le mete ahí la mitad de los
     /// puntos libres cuando el personaje castea. Cualquier otra skill no cambia nada, así que no borra la lista.

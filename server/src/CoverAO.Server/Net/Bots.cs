@@ -601,6 +601,10 @@ public sealed partial class Bot
         // Los sentidos son de ESTA vida: al reconectar el mundo se vuelve a armar desde cero con los paquetes
         // del login. Reusarlos arrastraría criaturas que ya no están y una posición vieja.
         var sentidos = new SentidosDelBot { MiNombre = Nombre };
+        _manaAntesDeLaCura = null;
+        _probarPocionDeVida = false;
+        _equipoPedido = null;
+        _proximoEquipo = 0;
         _transporte = transporte;
         OlvidarLaCharla();
 
@@ -2658,7 +2662,7 @@ public sealed partial class Bot
     private async Task<bool> TomarPocionesDeManaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
         int tomadas = 0;
-        while (tomadas < PocionesDeManaSeguidas && sentidos.Mana < MeditaHasta && sentidos.Vivo && !sentidos.AlgoPegado()
+        while (tomadas < PocionesDeManaSeguidas && sentidos.Mana < MeditaHasta && sentidos.Vivo && !HayAmenazaAlRecuperarMana(sentidos)
                && sentidos.CuantoTiene(EsPocionDeMana) > 0 && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 4 }))
         {
             tomadas++;
@@ -3329,9 +3333,9 @@ public sealed partial class Bot
     /// sentarse a meditar con la barra llena es de las cosas que no hace nadie.</summary>
     private async Task<bool> MeditarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        // CON ALGO PEGADO NO SE SIENTA: el primer golpe corta la meditación, y sentarse otra vez en cada vuelta era comer
+        // CON UNA AMENAZA PEGADA NO SE SIENTA: el primer golpe corta la meditación, y sentarse otra vez en cada vuelta era comer
         // golpes sin recuperar maná.
-        if (!sentidos.UsaMana || sentidos.Mana >= MeditaBajo || sentidos.AlgoPegado()) return false;
+        if (!sentidos.UsaMana || sentidos.Mana >= MeditaBajo || HayAmenazaAlRecuperarMana(sentidos)) return false;
         // CON POCIONES AZULES, NO SE SIENTA: ver `TomarPocionesDeManaAsync`.
         if (await TomarPocionesDeManaAsync(transporte, sentidos, ct)) return true;
 
@@ -3343,12 +3347,30 @@ public sealed partial class Bot
             await Task.Delay(RebanadaDePausaMs, ct);
             Charlar(transporte, sentidos);
             // Meditar se corta solo al caminar o al pelear, así que cualquier urgencia levanta al bot igual.
-            if (!sentidos.Vivo || sentidos.Salud < TomaPocion || sentidos.AlgoPegado()) break;
+            if (!sentidos.Vivo || sentidos.Salud < TomaPocion || HayAmenazaAlRecuperarMana(sentidos)) break;
             if (sentidos.Mana >= MeditaHasta) break;
             if (!sentidos.Meditando) break;   // la cortó el servidor
         }
         if (sentidos.Meditando) transporte.Mandar(Paquete(ClientPacketId.Meditate, _ => { }));   // el mismo paquete la apaga
         return true;
+    }
+
+    /// <summary>Para recuperar maná no confunde un servicio seguro con una amenaza. La ficha no informa si una
+    /// criatura pacífica fue provocada: salvo los servicios no atacables y los guardias que no van por su bando,
+    /// conserva la precaución con todo NPC adyacente.</summary>
+    private bool HayAmenazaAlRecuperarMana(SentidosDelBot sentidos)
+    {
+        byte bando = sentidos.MiEstado;
+        int nivel = sentidos.Nivel;
+        bool EsSeguro(short ficha)
+        {
+            var n = _entorno.Datos.Npc(ficha);
+            if (n is null || n.Hostile) return false;
+            if (n.NpcType == 2 && n.Status is ServerIni.GuardiaImperial or ServerIni.GuardiaRepublicano or ServerIni.GuardiaDelCaos)
+                return !NpcSystem.GuardiaVaPor(n, bando, nivel, _entorno.Datos, _entorno.Ini);
+            return !n.Attackable && (n.NpcType is 1 or 4 || n.StockItems is { Count: > 0 });
+        }
+        return sentidos.MasCercano(ficha => !EsSeguro(ficha)) is { Pasos: <= 1 };
     }
 
     /// <summary>
@@ -3370,29 +3392,40 @@ public sealed partial class Bot
         // servidor: con Manhattan, un cadáver a siete baldosas en Y se quedaba quieto pidiendo algo que nunca
         // iba a llegar.
         // Salvo en la ciudad del otro bando: ahí revive entre los guardias que lo mataron.
-        if (!HayGuardiaQueLoAtaca(sentidos.Mapa) && sentidos.MasCercano(EsSacerdote) is { } c && AlAlcanceDelAltar(sentidos, c.Quien))
+        if (!HayGuardiaQueLoAtaca(sentidos.Mapa) && sentidos.MasCercano(EsSacerdote) is { } c)
         {
+            if (AlAlcanceDelAltar(sentidos, c.Quien)) _viajesAlTemploFallidos = 0;
+            else if (!await IrHastaAsync(transporte, sentidos, sentidos.Mapa, c.Quien.X, c.Quien.Y, cerrada, ct,
+                                         RadioDelAltar, deMuerto: true) && !sentidos.Vivo)
+                SiNoSePuedeLlegar(transporte);
             await Task.Delay(RebanadaDePausaMs, ct);
-            return true;
+            return !cerrada.IsCompleted;
         }
 
-        // Y SI LO VE PERO LEJOS, TAMPOCO SE VA DERECHO. Acá se daba un paso codicioso hacia él, y el paso
-        // codicioso se traba con cualquier pared en el medio: medido, un cadáver a ocho baldosas del sacerdote
-        // en el mapa de la cuna se pasó cuatro minutos oscilando entre dos baldosas. Peor todavía, esa rama
-        // devolvía "hice algo", así que nunca se llegaba a la salida de volver al hogar. Se va por el
-        // navegante, igual que al mercader, que aprendió lo mismo.
+        // Si lo ve, usa su posición actual y el navegante para rodear paredes. El spawn sólo orienta cuando
+        // todavía no hay un sacerdote visible; llegar a su radio no confirma que haya alguien que lo atienda.
 
         if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsSacerdote((short)f), m => !HayGuardiaQueLoAtaca(m),
                                     Pisable(sentidos)) is { } templo)
         {
             if (await IrHastaAsync(transporte, sentidos, templo.Mapa, templo.X, templo.Y, cerrada, ct,
-                                   RadioDelAltar, deMuerto: true)) return true;
+                                   RadioDelAltar, deMuerto: true))
+            {
+                // Cerca del spawn IrHasta puede terminar sin caminar ni esperar. Ceder evita girar en vacío,
+                // y da tiempo a que lleguen los paquetes del área o la confirmación de la resurrección.
+                await Task.Delay(RebanadaDePausaMs, ct);
+                if (sentidos.Vivo || (!HayGuardiaQueLoAtaca(sentidos.Mapa)
+                    && sentidos.MasCercano(EsSacerdote) is { } visible && AlAlcanceDelAltar(sentidos, visible.Quien)))
+                    _viajesAlTemploFallidos = 0;
+                else SiNoSePuedeLlegar(transporte);
+                return !cerrada.IsCompleted;
+            }
             // NO LLEGÓ. Se sigue intentando —está muerto, no tiene otra cosa que hacer— pero CON UNA PAUSA:
             // sin ella este camino vuelve enseguida sin haber esperado nada y el ciclo de decisión gira sobre
             // sí mismo a toda velocidad. Medido con el perfilador: un bot muerto en un mapa desde el que no se
             // llega a ningún templo dio DOSCIENTAS SESENTA MIL vueltas en un minuto, un hilo entero quemado.
             await Task.Delay(RebanadaDePausaMs, ct);
-            SiNoSePuedeLlegar(transporte);
+            if (!sentidos.Vivo) SiNoSePuedeLlegar(transporte);
             // Y EL CICLO SIGUE: `false` quiere decir "se cayó la conexión", y el que llama corta la sesión entera. Acá
             // se devolvía `!sentidos.Vivo`, así que el bot que revivía justo después de un viaje fallido al templo —por
             // la vuelta al hogar, o porque el sacerdote lo alcanzó igual— terminaba su propia sesión. Medido: una
@@ -3402,7 +3435,7 @@ public sealed partial class Bot
         }
 
         await Task.Delay(RebanadaDePausaMs, ct);   // idem: PasearAsync también puede volver sin esperar
-        SiNoSePuedeLlegar(transporte);
+        if (!sentidos.Vivo) SiNoSePuedeLlegar(transporte);
         return await PasearAsync(transporte, sentidos, cerrada, ct);
     }
 
@@ -4831,30 +4864,6 @@ public sealed partial class Bot
         }
     }
 
-    /// <summary>Lo urgente: la poción, la comida y el agua. Devuelve si hizo algo — si lo hizo, se vuelve a
-    /// decidir desde arriba, porque tomar una poción cambia el cuadro.
-    ///
-    /// <para>El hambre y la sed no son decorado: con cualquiera de las dos en cero el servidor DEJA DE CURAR
-    /// (el tick envuelve Sanar en <c>Hunger &gt; 0 &amp;&amp; Thirst &gt; 0</c>), así que un bot que no come se
-    /// queda sin la única curación gratis que tiene.</para></summary>
-    /// <summary>
-    /// LA CURA MÁS FUERTE QUE PUEDE PAGAR con el maná que tiene, o null si no le alcanza para ninguna. Entre varias,
-    /// la que más levanta: el que sabe Curar Heridas Leves y Graves tira la Grave mientras le dé el maná.
-    /// </summary>
-    /// <summary>
-    /// ¿EL SERVIDOR NO SE LO DEJÓ? Se pide un casteo y en la vuelta siguiente se mira la vida: si NO subió, el
-    /// servidor lo rechazó y ese hechizo no se vuelve a elegir.
-    ///
-    /// <para>Hace falta porque el bot sólo miraba el maná y el servidor pide además la skill de Magia — y el
-    /// rechazo <b>no cobra el maná</b>, así que el hechizo se podía repetir para siempre. Peor: como
-    /// <c>CurarseConMagia</c> devolvía true por haber MANDADO los paquetes, <c>CuidarseAsync</c> cortaba ahí y la
-    /// poción no se tomaba nunca. El bot se quedaba casteando mientras lo mataban, con la mochila llena.</para>
-    ///
-    /// <para>Se mira el EFECTO y no el requisito, que es el mismo camino que <c>_noSeLoPone</c> usa para el equipo:
-    /// así cubre cualquier motivo de rechazo y no hace falta que el bot lleve la cuenta de sus skills.</para>
-    /// </summary>
-    public static bool ElServidorNoSeLoDejo(double vidaAntes, double vidaAhora) => vidaAntes >= vidaAhora;
-
     /// <summary>¿Vuelve a probar los hechizos que le rechazaron? Sí cuando lo que subió es Magia, que es
     /// justamente el requisito que se lo estaba impidiendo: <c>RepartirPuntos</c> le mete ahí la mitad de los
     /// puntos libres si el personaje castea, así que el rechazo de ayer deja de valer.</summary>
@@ -4870,6 +4879,7 @@ public sealed partial class Bot
     /// <summary>La Magia que pide ese hechizo, de la data.</summary>
     private int MagiaDelHechizoDeNacimiento => _entorno.Datos.Spell(HechizoDeNacimiento)?.MinSkill ?? 0;
 
+    /// <summary>La cura más fuerte entre las opciones válidas que puede pagar con su maná.</summary>
     public static (byte Ranura, int Cura)? MejorCuraQuePuedePagar(IReadOnlyList<(byte Ranura, int Cura, int Mana)> curas, int mana)
     {
         (byte Ranura, int Cura)? mejor = null;
@@ -4888,7 +4898,8 @@ public sealed partial class Bot
     /// <para>Se clickea SU PROPIA CABEZA, la baldosa de arriba de sus pies, como un jugador que se hace clic encima:
     /// el servidor elige el blanco como el original, mirando PRIMERO la baldosa de abajo del clic (LookatTile,
     /// GameLogic.bas:733), y así lo encuentra a él. Clickear los pies elegiría al que esté parado justo al sur. Son
-    /// los mismos dos paquetes que manda el cliente.</para>
+    /// los mismos dos paquetes que manda el cliente. En la primera fila, donde la cabeza queda afuera, se usan
+    /// sus pies sólo si la baldosa de abajo está vacía (<see cref="ElegirClicDeHechizo"/>).</para>
     /// </summary>
     /// <summary>La baldosa de la CABEZA de un personaje parado en <paramref name="y"/>: la de arriba de sus pies. Es la
     /// que se clickea para elegirlo, porque el servidor mira primero la baldosa de abajo del clic (ver
@@ -4902,48 +4913,68 @@ public sealed partial class Bot
     /// </summary>
     public static bool ElClicLoElige(byte y) => ClicEnLaCabeza(y) >= GameLimits.MinYBorder;
 
+    /// <summary>La cabeza habitual, o los pies en la primera fila si el tile de abajo no elegiría a otro.
+    /// Se valida antes de pedir el casteo, con la misma área y el mismo rango de LookatTile.</summary>
+    private static byte? ElegirClicDeHechizo(SentidosDelBot sentidos, byte x, byte y)
+    {
+        if (x < GameLimits.MinXBorder || x > GameLimits.MaxXBorder || y < GameLimits.MinYBorder || y > GameLimits.MaxYBorder)
+            return null;
+        var propia = sentidos.Posicion;
+        byte clic = ClicEnLaCabeza(y);
+        if (!ElClicLoElige(y))
+        {
+            var abajo = (X: x, Y: (byte)(y + 1));
+            // BaldosasOcupadas excluye al propio bot, pero LookatTile también puede elegirlo a él.
+            if (propia == abajo || sentidos.BaldosasOcupadas().Contains(abajo)) return null;
+            clic = y;
+        }
+        return Math.Abs(x - propia.X) <= NpcSystem.RangoVisionX && Math.Abs(clic - propia.Y) <= NpcSystem.RangoVisionY
+            ? clic : null;
+    }
+
     private bool CurarseConMagia(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
-        // Parado en la primera fila su cabeza queda afuera (`ElClicLoElige`): la cura no sale y, por no subirle la vida, el
-        // hechizo quedaría anotado como rechazado. Ahí, la poción.
-        if (!sentidos.UsaMana || !ElClicLoElige(sentidos.Posicion.Y)) return false;
+        var (x, y) = sentidos.Posicion;
+        if (!sentidos.UsaMana || ElegirClicDeHechizo(sentidos, x, y) is not { } clic) return false;
         RevisarElUltimoCasteo(sentidos);
         var curas = new List<(byte Ranura, int Cura, int Mana)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
             if (!_noLoPuedeLanzar.Contains(numero)
-                && _entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h) curas.Add((ranura, h.MaxHp, h.ManaCost));
+                && _entorno.Datos.Spell(numero) is { IsHeal: true, MaxHp: > 0 } h
+                && AfectaAlBlanco(h, esNpc: false) && LoPuedeLanzarAhora(h, sentidos.ManaEnPuntos, sentidos.EnergiaEnPuntos))
+                curas.Add((ranura, h.MaxHp, h.ManaCost));
         if (MejorCuraQuePuedePagar(curas, sentidos.ManaEnPuntos) is not { } cura) return false;
 
-        // LA VIDA SE LEE ANTES DE PEDIR, y lo pedido se recuerda DESPUÉS de que los dos paquetes salieron: si el
+        // EL MANÁ SE LEE ANTES DE PEDIR, y lo pedido se recuerda DESPUÉS de que los dos paquetes salieron: si el
         // envío falla no hubo casteo, y anotarlo igual marcaría como rechazado un hechizo que el servidor ni vio.
         short hechizo = sentidos.HechizoEn(cura.Ranura);
-        double vidaAntes = sentidos.Salud;
-        var (x, y) = sentidos.Posicion;
-        byte cabeza = ClicEnLaCabeza(y);
+        int manaAntes = sentidos.ManaEnPuntos;
         if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(cura.Ranura)))
             || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(x).WriteByte(cabeza).WriteByte((byte)GameLimits.SkillMagia)))) return false;
-        _curaPedida = (hechizo, vidaAntes);
+                   w => w.WriteByte(x).WriteByte(clic).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+        _manaAntesDeLaCura = manaAntes;
         _ultimoCasteo = (hechizo, Environment.TickCount64);
         return true;
     }
 
     private async Task<bool> CuidarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        if (HoraDeTomarPocion(sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida))
-            && (CurarseConMagia(transporte, sentidos)
+        int pociones = sentidos.CuantoTiene(EsPocionDeVida);
+        bool probarPocion = _probarPocionDeVida && pociones > 0;
+        _probarPocionDeVida = false;
+        if (HoraDeTomarPocion(sentidos.Salud, pociones)
+            && ((!probarPocion && CurarseConMagia(transporte, sentidos))
                 || Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 3 })))
         {
             await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
 
-            // ¿EL SERVIDOR LE DEJÓ EL HECHIZO? Se mira ACÁ y no en la vuelta siguiente porque acá la medición es
-            // inmediata: pasó el delay del casteo y nada más. Dejarla para después abre una ventana entre esta baja
-            // de vida y la próxima, y en el medio un hechizo que curó bien quedaría anotado por lo que le pegaron.
-            // Ver `ElServidorNoSeLoDejo`.
-            if (_curaPedida is { } pedida)
+            // Sólo el rechazo explícito por Magia veta el hechizo: una cura puede entrar y recibir un golpe
+            // después. Sin gasto de maná observado se permite UNA próxima poción, sin condenar la cura.
+            RevisarElUltimoCasteo(sentidos, preservarPedidoSinRechazo: true);
+            if (_manaAntesDeLaCura is { } mana)
             {
-                if (ElServidorNoSeLoDejo(pedida.Vida, sentidos.Salud)) _noLoPuedeLanzar.Add(pedida.Hechizo);
-                _curaPedida = null;
+                _probarPocionDeVida = sentidos.ManaEnPuntos >= mana;
+                _manaAntesDeLaCura = null;
             }
             return true;
         }
@@ -4972,13 +5003,8 @@ public sealed partial class Bot
     /// </summary>
     private bool Equiparse(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
+        RevisarElEquipoPedido(sentidos);
         if (Environment.TickCount64 < _proximoEquipo) return false;
-        // SI EL SERVIDOR NO LO DEJÓ PONER (la clase, el nivel), no se insiste con eso.
-        if (_equipoPedido is { } pedido)
-        {
-            if (!sentidos.EstaPuesto(pedido.Ranura) && sentidos.QueHayEn(pedido.Ranura) == pedido.Obj) _noSeLoPone.Add(pedido.Obj);
-            _equipoPedido = null;
-        }
 
         // EL QUE TIRA CON ARCO SE PONE EL ARCO Y LAS FLECHAS, y no un arma de mano, que le sacaría el arco: ver `TiraConArco`.
         // Sin flechas, lo de siempre.
@@ -5149,9 +5175,26 @@ public sealed partial class Bot
 
     private bool PedirQueSePonga(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura)
     {
-        _equipoPedido = (ranura, sentidos.QueHayEn(ranura));
+        short obj = sentidos.QueHayEn(ranura);
+        long confirmaciones = sentidos.ObservarConfirmacionDeEquipo(ranura, obj);
+        if (!transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)))) return false;
+        _equipoPedido = (ranura, obj, confirmaciones);
         _proximoEquipo = Environment.TickCount64 + EsperaEquipoMs;
-        return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)));
+        return true;
+    }
+
+    private void RevisarElEquipoPedido(SentidosDelBot sentidos)
+    {
+        if (_equipoPedido is not { } pedido) return;
+        if (sentidos.QueHayEn(pedido.Ranura) != pedido.Obj || sentidos.EstaPuesto(pedido.Ranura)
+            || sentidos.ConfirmacionesDeEquipo(pedido.Ranura, pedido.Obj) > pedido.Confirmaciones)
+        {
+            _equipoPedido = null; // Se aceptó, aunque después lo hayan desarmado, o el objeto ya no está ahí.
+            return;
+        }
+        if (Environment.TickCount64 < _proximoEquipo) return;
+        _noSeLoPone.Add(pedido.Obj);
+        _equipoPedido = null;
     }
 
     /// <summary>
@@ -5358,7 +5401,7 @@ public sealed partial class Bot
     {
         double plata = PlataParaElEquipo(sentidos);
         if (plata <= 0 || !sentidos.UsaMana || !sentidos.Comerciando) return false;
-        int Pega(short obj) => LeSirveElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? ValorDelPergamino(h) : 0;
+        int Pega(short obj) => LeFaltaElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? ValorDelPergamino(h) : 0;
         if (sentidos.LoMejorDeLaVitrina(Pega, plata) is not { } oferta) return false;
         int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
         transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
@@ -5770,7 +5813,7 @@ public sealed partial class Bot
 
     private const int EsperaEquipoMs = 1_500;
     private long _proximoEquipo;
-    private (byte Ranura, short Obj)? _equipoPedido;
+    private (byte Ranura, short Obj, long Confirmaciones)? _equipoPedido;
     private readonly HashSet<short> _noSeLoPone = new();
 
     /// <summary>
@@ -6481,10 +6524,13 @@ public sealed partial class Bot
     /// una pelea con un Esqueleto guerrero con la Spatha en la mochila, y Rufo una con un Gallo Salvaje con la Daga +1 guardada. El
     /// que tira con arco se arregla con lo suyo. Devuelve si lo pidió.
     /// </summary>
-    private bool PonerseElArmaParaPelear(TransporteDeBot transporte, SentidosDelBot sentidos) =>
-        SuArcoYSusFlechas(sentidos) is null && ArmaEnLaMano(sentidos) == 0
-        && (MejorParaPoner(sentidos, EsArma) ?? MejorParaPoner(sentidos, o => o.IsKnuckles)) is { } ranura
-        && PedirQueSePonga(transporte, sentidos, ranura);
+    private bool PonerseElArmaParaPelear(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        RevisarElEquipoPedido(sentidos);
+        return Environment.TickCount64 >= _proximoEquipo && SuArcoYSusFlechas(sentidos) is null && ArmaEnLaMano(sentidos) == 0
+               && (MejorParaPoner(sentidos, EsArma) ?? MejorParaPoner(sentidos, o => o.IsKnuckles)) is { } ranura
+               && PedirQueSePonga(transporte, sentidos, ranura);
+    }
 
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
     /// false sólo si se cayó la conexión. Con <paramref name="aGente"/> la presa es una persona (ver <c>Bots.Armadas.cs</c>): no se
@@ -6492,12 +6538,15 @@ public sealed partial class Bot
     private async Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
                                         Task cerrada, CancellationToken ct, bool aGente = false)
     {
+        if (sentidos.Donde(presa) is not { } original) return true;
+        bool SigueSiendoLaPresa(SentidosDelBot.Visible v) => v.EsNpc == original.EsNpc
+            && (v.EsNpc ? v.FichaNpc == original.FichaNpc : string.Equals(v.Nombre, original.Nombre, StringComparison.OrdinalIgnoreCase))
+            && (!aGente || (!v.EsNpc && !v.Muerto && EsBlanco(sentidos.MiEstado, v.Estado, Agresivo, _entorno.Ini.AtacarAliadoVuelveCriminal)));
+        int mapaDeLaPelea = sentidos.Mapa;
         long hasta = aGente ? Environment.TickCount64 + PeleaConGenteMaxMs : long.MaxValue;
         int sinRespuesta = 0;
         int pasosGastados = 0;
         bool rodeando = false;
-        // EL ARMA EN LA MANO: ver `PonerseElArmaParaPelear`.
-        if (PonerseElArmaParaPelear(transporte, sentidos)) await Task.Delay(_rng.Next(400, 900), ct);
         // LO QUE LE VA SACANDO, para no quedarse peleando con lo que no puede matar (`NoLaVaAMatar`). Lo de antes no cuenta.
         sentidos.TomarLoQuePego();
         int golpes = 0, entraron = 0, sacado = 0;
@@ -6505,8 +6554,9 @@ public sealed partial class Bot
         int lanzadosEnVano = 0;
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
+            if (sentidos.Mapa != mapaDeLaPelea) return true;
             // Se murió, se fue de la vista, o alguien más se la llevó: no hay a quién pegarle.
-            if (sentidos.Donde(presa) is not { } quien) return true;
+            if (sentidos.Donde(presa) is not { } quien || !SigueSiendoLaPresa(quien)) return true;
             // Y PELEANDO TAMBIÉN CONTESTA: ver `Charlar`.
             Charlar(transporte, sentidos);
             // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
@@ -6519,7 +6569,17 @@ public sealed partial class Bot
             // LA POCIÓN SE TOMA PELEANDO. Es lo que hace cualquiera —se toma y se sigue— y no salir del ciclo
             // para curarse es la diferencia entre aguantar la pelea y llegar al 35 % con la criatura encima:
             // medido, sacar esto de acá dejaba un muerto cada ocho bots en diez minutos.
-            if (sentidos.Salud < TomaPocion && await CuidarseAsync(transporte, sentidos, ct)) continue;
+            bool seCuido = false;
+            if (sentidos.Salud < TomaPocion)
+            {
+                // Como en el ciclo principal, curarse no consume toda la decisión: si el daño mantiene la vida
+                // baja, todavía debe devolver el golpe o retirarse. Todo pudo cambiar durante la espera.
+                seCuido = await CuidarseAsync(transporte, sentidos, ct);
+                if (ct.IsCancellationRequested || cerrada.IsCompleted || !sentidos.Vivo) break;
+                if (sentidos.Mapa != mapaDeLaPelea || sentidos.Donde(presa) is not { } actual || !SigueSiendoLaPresa(actual)) return true;
+                quien = actual;
+                if (LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos))) return true;
+            }
             // Con la vida o la energía abajo igual se corta: si no hay pociones, o no alcanzan, hay que irse.
             // SALVO QUE ESPERAR NO DEVUELVA LA ENERGÍA: con el hambre o la sed en cero el servidor no la recupera, así
             // que alejarse por tenerla baja dejaba al bot sin pelear para siempre, y sin pelear no hay botín con qué
@@ -6528,6 +6588,42 @@ public sealed partial class Bot
             bool noVaARegenerar = sentidos.ConHambre || sentidos.ConSed;
             if (sentidos.Salud < SeRetira || (sentidos.Fuelle < FuelleMinimo && !noVaARegenerar) || sentidos.Fuelle <= 0)
                 return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
+
+            // El arma también se repone si lo desarmaron en medio de la pelea. Primero se atendieron la vida
+            // y la huida; sin confirmación no se queda equipando sin devolver un golpe.
+            if (PonerseElArmaParaPelear(transporte, sentidos))
+            {
+                await Task.Delay(_rng.Next(400, 900), ct);
+                if (ct.IsCancellationRequested || cerrada.IsCompleted || !sentidos.Vivo) break;
+                if (sentidos.Mapa != mapaDeLaPelea || sentidos.Donde(presa) is not { } trasElEquipo || !SigueSiendoLaPresa(trasElEquipo)) return true;
+                quien = trasElEquipo;
+                if (LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos))) return true;
+                if (sentidos.Salud < TomaPocion) continue;
+                bool noRegeneraTrasEquiparse = sentidos.ConHambre || sentidos.ConSed;
+                if ((sentidos.Fuelle < FuelleMinimo && !noRegeneraTrasEquiparse) || sentidos.Fuelle <= 0)
+                    return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
+            }
+
+            int? defensaParaElArma = aGente ? null : _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0;
+            var antesDeReponer = sentidos.Posicion;
+            // UNA azul para volver a castear, sin reemplazar una cura ni la retirada y sin sentarse a meditar.
+            // Después sigue decidiendo: si el servidor no la confirmó, todavía puede devolver el golpe.
+            if (!seCuido && sentidos.Salud >= TomaPocion
+                && Math.Abs(quien.X - antesDeReponer.X) <= AlcanceHechizoX && Math.Abs(quien.Y - antesDeReponer.Y) <= AlcanceHechizoY
+                && !DejaDeLanzarle(lanzadosEnVano) && sentidos.CuantoTiene(EsPocionDeMana) > 0
+                && LeFaltaManaParaHacerDano(sentidos, quien, defensaParaElArma)
+                && Usar(transporte, sentidos, o => o is { IsPotion: true, SubType: 4 }))
+            {
+                await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                if (ct.IsCancellationRequested || cerrada.IsCompleted || !sentidos.Vivo) break;
+                if (sentidos.Mapa != mapaDeLaPelea || sentidos.Donde(presa) is not { } trasLaAzul || !SigueSiendoLaPresa(trasLaAzul)) return true;
+                quien = trasLaAzul;
+                if (LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos))) return true;
+                if (sentidos.Salud < TomaPocion) continue; // La siguiente decisión atiende la vida antes que el ataque.
+                bool noRegeneraAhora = sentidos.ConHambre || sentidos.ConSed;
+                if ((sentidos.Fuelle < FuelleMinimo && !noRegeneraAhora) || sentidos.Fuelle <= 0)
+                    return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
+            }
 
             var (x, y) = sentidos.Posicion;
             int dx = quien.X - x, dy = quien.Y - y;
@@ -6546,7 +6642,7 @@ public sealed partial class Bot
             }
             // SALVO QUE SU ARMA SAQUE CASI LO MISMO: ver `PegaConElArma`. Con la gente, como siempre.
             if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY && !DejaDeLanzarle(lanzadosEnVano)
-                && LanzarAlgo(transporte, sentidos, quien, aGente ? null : _entorno.Datos.Npc(quien.FichaNpc)?.Def ?? 0))
+                && LanzarAlgo(transporte, sentidos, quien, defensaParaElArma))
             {
                 short? lanzado = _ultimoCasteo?.Hechizo;
                 await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
@@ -6719,6 +6815,11 @@ public sealed partial class Bot
         sentidos.UsaMana && ValeLaPenaElPergamino(QueEnsena(obj), sentidos.Hechizos(), PeleaConGente(sentidos.Nivel), SabeQuietar(sentidos))
         && LoPuedeLanzar(QueEnsena(obj)!, sentidos.EnergiaMaxima, sentidos.ManaMaximo, sentidos.Skill(GameLimits.SkillMagia));
 
+    /// <summary>Para ir a comprar también hace falta espacio en el libro y no llevar ya un pergamino de ese hechizo.</summary>
+    private bool LeFaltaElPergamino(SentidosDelBot sentidos, short obj) =>
+        sentidos.Hechizos().Count < GameLimits.MaxUserSpells && LeSirveElPergamino(sentidos, obj)
+        && QueEnsena(obj) is { } h && sentidos.CuantoTiene(o => QueEnsena(o)?.Index == h.Index) == 0;
+
     /// <summary>¿Ya sabe Paralizar o Inmovilizar? Con uno alcanza.</summary>
     private bool SabeQuietar(SentidosDelBot sentidos) =>
         sentidos.Hechizos().Any(x => _entorno.Datos.Spell(x.Hechizo) is { } h && EsDeQuietar(h));
@@ -6737,36 +6838,56 @@ public sealed partial class Bot
 
     /// <inheritdoc cref="ValeElViajePorEso"/>
     private bool ValeElViajePorElPergamino(SentidosDelBot sentidos, short obj, double plata) =>
-        LeSirveElPergamino(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata);
+        LeFaltaElPergamino(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata);
 
     /// <summary>
     /// APRENDER LO QUE COMPRÓ: usar el pergamino que tenga en la mochila. Devuelve si mandó algo.
     ///
-    /// <para>Si el servidor no se lo deja aprender —sin maná, sin lugar en el libro— no se insiste con ese: se anota
-    /// y se prueba con otro, igual que con el equipo que no se puede poner.</para>
+    /// <para>Un intento sin confirmación espera antes de repetirse. La muerte, un cierre o una respuesta tardía no
+    /// significan que el pergamino sea imposible; con el libro lleno espera a que llegue una ranura libre.</para>
     /// </summary>
     private async Task<bool> AprenderHechizosAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        if (!sentidos.UsaMana) return false;
+        if (!ReferenceEquals(_transporteDelAprendizaje, transporte))
+        {
+            _noLoAprende.Clear();
+            _transporteDelAprendizaje = transporte;
+        }
+        if (!sentidos.Vivo || ct.IsCancellationRequested || !sentidos.UsaMana
+            || sentidos.Hechizos().Count >= GameLimits.MaxUserSpells) return false;
         foreach (byte ranura in sentidos.RanurasOcupadas())
         {
             short obj = sentidos.QueHayEn(ranura);
-            if (_noLoAprende.Contains(obj) || !LeSirveElPergamino(sentidos, obj)) continue;
-            int sabiaAntes = sentidos.Hechizos().Count;
-            if (!transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)))) return false;
-            await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
-            if (sentidos.Hechizos().Count == sabiaAntes) _noLoAprende.Add(obj);
-            return true;
+            if (!LeSirveElPergamino(sentidos, obj)) continue;
+            if (_noLoAprende.TryGetValue(obj, out long hasta) && RelojDelAprendizaje() < hasta) continue;
+            _noLoAprende.Remove(obj);
+            short hechizo = QueEnsena(obj)!.Index;
+            int cerrada = 0;
+            void AlCerrar(string _) => Interlocked.Exchange(ref cerrada, 1);
+            transporte.Cerrado += AlCerrar;
+            try
+            {
+                if (!transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)))) return false;
+                await Task.Delay(_rng.Next(PocionMinMs, PocionMaxMs), ct);
+                if (sentidos.Hechizos().Any(h => h.Hechizo == hechizo)) _noLoAprende.Remove(obj);
+                else if (sentidos.Vivo && Volatile.Read(ref cerrada) == 0 && !ct.IsCancellationRequested)
+                    _noLoAprende[obj] = RelojDelAprendizaje() + EsperaDelAprendizajeMs;
+                return true;
+            }
+            finally { transporte.Cerrado -= AlCerrar; }
         }
         return false;
     }
 
-    private readonly HashSet<short> _noLoAprende = new();
+    private const int EsperaDelAprendizajeMs = 30_000;
+    private readonly Dictionary<short, long> _noLoAprende = new();
+    private TransporteDeBot? _transporteDelAprendizaje;
+    internal Func<long> RelojDelAprendizaje { get; set; } = () => Environment.TickCount64;
 
-    /// <summary>Los hechizos que el servidor no le dejó lanzar: se anotan mirando si la vida subió, y no se
-    /// vuelven a elegir. El mismo camino que <c>_noSeLoPone</c> para el equipo.</summary>
+    /// <summary>Los hechizos rechazados explícitamente por falta de Magia. Se vuelven a probar cuando sube esa skill.</summary>
     private readonly HashSet<short> _noLoPuedeLanzar = new();
-    private (short Hechizo, double Vida)? _curaPedida;
+    private int? _manaAntesDeLaCura;
+    private bool _probarPocionDeVida;
 
     /// <summary>Desde acá vale la pena pasar por el mercader a mirar pergaminos: el más barato de la data vale 200.</summary>
     /// <summary>
@@ -6816,6 +6937,15 @@ public sealed partial class Bot
     public static bool LoPuedeLanzarAhora(SpellInfo? h, int mana, int energia) =>
         h is not null && mana >= h.ManaCost && energia >= h.StaRequerido;
 
+    /// <summary>El Target del protocolo: 1 jugadores, 2 criaturas, 3 ambos, 4 terreno (admite el clic sobre ambos).</summary>
+    private static bool AfectaAlBlanco(SpellInfo h, bool esNpc) => h.Target switch
+    {
+        1 => !esNpc,
+        2 => esNpc,
+        3 or 4 => true,
+        _ => false,
+    };
+
     /// <summary>
     /// ¿SE LO RECHAZÓ POR FALTA DE MAGIA? El servidor pide la skill de Magia antes que nada
     /// (<c>Skills[SkillMagia] &lt; spell.MinSkill</c> → <c>LocaleMsg 221</c>, PacketDispatcher.cs:10298) y ese
@@ -6864,41 +6994,61 @@ public sealed partial class Bot
     }
 
     /// <summary>¿El servidor rechazó el último casteo por falta de Magia? Entonces ese hechizo se anota y no se
-    /// vuelve a elegir, ni para pegar ni para curarse. Ver <see cref="SeLoRechazoPorMagia"/>.</summary>
-    private void RevisarElUltimoCasteo(SentidosDelBot sentidos)
+    /// vuelve a elegir, ni para pegar ni para curarse. Al esperar una cura conserva el pedido hasta recibir
+    /// un rechazo tardío o hasta decidir un nuevo casteo. Ver <see cref="SeLoRechazoPorMagia"/>.</summary>
+    private void RevisarElUltimoCasteo(SentidosDelBot sentidos, bool preservarPedidoSinRechazo = false)
     {
         if (_ultimoCasteo is not { } pedido) return;
         if (SeLoRechazoPorMagia(pedido.Cuando, sentidos.UltimoRechazoDeMagia)) _noLoPuedeLanzar.Add(pedido.Hechizo);
+        else if (preservarPedidoSinRechazo) return;
         _ultimoCasteo = null;
     }
 
     private (short Hechizo, long Cuando)? _ultimoCasteo;
 
-    /// <param name="defensaParaElArma">La defensa de la criatura a la que le lanza, para ver si le conviene el arma
-    /// (<see cref="PegaConElArma"/>); null, como siempre: lanza.</param>
-    private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a, int? defensaParaElArma = null)
+    private List<(byte Ranura, short Numero, int Dano, int Mana, int Sta)> CandidatosDeDano(SentidosDelBot sentidos, SentidosDelBot.Visible a)
     {
-        if (!sentidos.UsaMana || !ElClicLoElige(a.Y)) return false;
-        RevisarElUltimoCasteo(sentidos);
         var candidatos = new List<(byte Ranura, short Numero, int Dano, int Mana, int Sta)>();
         foreach (var (ranura, numero) in sentidos.Hechizos())
         {
             var h = _entorno.Datos.Spell(numero);
-            if (h is null || h.SubeHp != 2) continue;            // SubeHp 2 = hace daño; 1 = cura
+            if (h is null || h.SubeHp != 2 || !AfectaAlBlanco(h, a.EsNpc)) continue;
             candidatos.Add((ranura, numero, h.MaxHp, h.ManaCost, h.StaRequerido));
         }
+        return candidatos;
+    }
+
+    private bool ConvieneElArma(SentidosDelBot sentidos, short hechizo, int? defensaParaElArma) =>
+        defensaParaElArma is { } defensa && _entorno.Datos.Spell(hechizo) is { } elegido
+        && PegaConElArma(_golpe.DanoPorGolpe(ArmaEnLaMano(sentidos), defensa), _hechizosMedidos.DanoPorLanzamiento(hechizo),
+                         (elegido.MinHp + elegido.MaxHp) / 2);
+
+    private bool LeFaltaManaParaHacerDano(SentidosDelBot sentidos, SentidosDelBot.Visible a, int? defensaParaElArma)
+    {
+        if (!sentidos.UsaMana || ElegirClicDeHechizo(sentidos, a.X, a.Y) is null) return false;
+        RevisarElUltimoCasteo(sentidos, preservarPedidoSinRechazo: true);
+        var candidatos = CandidatosDeDano(sentidos, a);
+        if (MejorHechizoDeDano(candidatos, sentidos.ManaEnPuntos, sentidos.EnergiaEnPuntos, _noLoPuedeLanzar) is not null) return false;
+        return MejorHechizoDeDano(candidatos, sentidos.ManaMaximo, sentidos.EnergiaEnPuntos, _noLoPuedeLanzar) is { } ranura
+               && !ConvieneElArma(sentidos, sentidos.HechizoEn(ranura), defensaParaElArma);
+    }
+
+    /// <param name="defensaParaElArma">La defensa de la criatura a la que le lanza, para ver si le conviene el arma
+    /// (<see cref="PegaConElArma"/>); null, como siempre: lanza.</param>
+    private bool LanzarAlgo(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a, int? defensaParaElArma = null)
+    {
+        if (!sentidos.UsaMana || ElegirClicDeHechizo(sentidos, a.X, a.Y) is not { } clic) return false;
+        RevisarElUltimoCasteo(sentidos);
+        var candidatos = CandidatosDeDano(sentidos, a);
         if (MejorHechizoDeDano(candidatos, sentidos.ManaEnPuntos, sentidos.EnergiaEnPuntos, _noLoPuedeLanzar)
                 is not { } ranuraElegida) return false;
 
         // Lo pedido se recuerda DESPUÉS de que los dos paquetes salieron: ver `CurarseConMagia`.
         short hechizo = sentidos.HechizoEn(ranuraElegida);
-        if (defensaParaElArma is { } defensa && _entorno.Datos.Spell(hechizo) is { } elegido
-            && PegaConElArma(_golpe.DanoPorGolpe(ArmaEnLaMano(sentidos), defensa), _hechizosMedidos.DanoPorLanzamiento(hechizo),
-                             (elegido.MinHp + elegido.MaxHp) / 2))
-            return false;
+        if (ConvieneElArma(sentidos, hechizo, defensaParaElArma)) return false;
         if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranuraElegida)))
             || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(a.X).WriteByte(ClicEnLaCabeza(a.Y)).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+                   w => w.WriteByte(a.X).WriteByte(clic).WriteByte((byte)GameLimits.SkillMagia)))) return false;
         _ultimoCasteo = (hechizo, Environment.TickCount64);
         return true;
     }
@@ -7165,7 +7315,7 @@ public sealed partial class Bot
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
                                           int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false,
                                           bool porCualquierCamino = false, IReadOnlyCollection<(byte X, byte Y)>? empiezaTrabado = null,
-                                          bool soloALaMeta = false)
+                                          bool soloALaMeta = false, Func<bool>? cortaAntesDePaso = null)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -7186,6 +7336,7 @@ public sealed partial class Bot
         _agotadoPorPeligro = false;
         for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
+            if (cortaAntesDePaso?.Invoke() == true) return false;
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
             if (!sentidos.Ubicado || (!deMuerto && !sentidos.Vivo)) return false;
             int mapa = sentidos.Mapa;
@@ -7237,7 +7388,7 @@ public sealed partial class Bot
                 byte rumbo = RumboParaUsarLaPuerta(_entorno.Datos.MapExits, mapa, desde, (x, y) => _entorno.Datos.IsBlockedTile(mapa, x, y));
                 if (rumbo == 0) return false;
                 var (px, py) = SentidosDelBot.Paso(rumbo);
-                if (await UnPasoHaciaAsync(transporte, sentidos, px, py, ct, deMuerto, puedeSalir: true) != Paso.Dado) return false;
+                if (await UnPasoHaciaAsync(transporte, sentidos, px, py, ct, deMuerto, puedeSalir: true, cortaSi: cortaAntesDePaso) != Paso.Dado) return false;
                 continue;
             }
 
@@ -7279,7 +7430,7 @@ public sealed partial class Bot
                 // NI EL VIAJE SE ARRIMA A LO QUE LO MATA (ver `LoArrimaAlPeligro`): esa baldosa pasa a ser una traba y el camino se
                 // recalcula rodeándola. De muerto da igual, que al fantasma no lo atacan.
                 if (!deMuerto && LoArrimaAlPeligro((x, y), baldosa, PeligrosALaVista(sentidos))) { trabas.Add(baldosa); cortesPorPeligro++; break; }
-                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto, puedeSalir: true);
+                var como = await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, deMuerto, puedeSalir: true, cortaSi: cortaAntesDePaso);
                 // CURARSE EN EL CAMINO EN VEZ DE VOLVERSE. Un golpe que bajaba la vida del umbral de la poción
                 // abortaba el viaje entero aunque el bot tuviera mil pociones encima, y el intento siguiente
                 // arrancaba otra vez desde donde estuviera. Mientras no esté en peligro de verdad se toma la poción y
@@ -7349,10 +7500,11 @@ public sealed partial class Bot
     /// Poner el chequeo en cada bucle sería ponerlo cuatro veces y olvidarlo en el quinto.</para>
     /// </summary>
     private async Task<Paso> UnPasoHaciaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int dx, int dy,
-                                              CancellationToken ct, bool deMuerto = false, bool puedeSalir = false)
+                                              CancellationToken ct, bool deMuerto = false, bool puedeSalir = false, Func<bool>? cortaSi = null)
     {
         // Y CAMINANDO TAMBIÉN CONTESTA: ver `Charlar`.
         Charlar(transporte, sentidos);
+        if (cortaSi?.Invoke() == true) return Paso.SinConexion;
         byte porElOtroEje = dx != 0 && dy != 0
             ? SentidosDelBot.RumboHacia(Math.Abs(dx) > Math.Abs(dy) ? 0 : dx, Math.Abs(dx) > Math.Abs(dy) ? dy : 0)
             : (byte)0;

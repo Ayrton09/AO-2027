@@ -27,9 +27,11 @@ public sealed partial class Bot
     /// el mercader.</summary>
     private const int RadioDelBanquero = 3;
 
-    /// <summary>Los mapas donde no se pudo abrir el banco (el banquero detrás de una puerta, o sin camino): no se reintenta en cada
-    /// viaje, y una compra que necesita lo guardado no va ahí.</summary>
-    private readonly HashSet<int> _bancoSinCamino = new();
+    /// <summary>Hasta cuándo se evita el banco de cada mapa después de un intento fallido. Una persona tapando el camino o un
+    /// mostrador que no respondió no vuelven inaccesible ese pueblo para todas las vidas siguientes del bot.</summary>
+    private readonly Dictionary<int, long> _bancoSinCamino = new();
+    private const int EsperaDelBancoMs = 90_000;
+    internal Func<long> RelojDelBanco { get; set; } = () => Environment.TickCount64;
 
     /// <summary>Mientras compra en el mostrador, la plata es sólo la de encima.</summary>
     private bool _enElMostrador;
@@ -119,7 +121,14 @@ public sealed partial class Bot
         && nacen.FirstOrDefault(q => EsBanquero((short)q.NpcIndex)) is { NpcIndex: > 0 } b
             ? ((byte)b.X, (byte)b.Y) : null;
 
-    private bool TieneBanquero(int mapa) => BanqueroDelMapa(mapa) is not null && !_bancoSinCamino.Contains(mapa);
+    private bool TieneBanquero(int mapa)
+    {
+        if (BanqueroDelMapa(mapa) is null) return false;
+        if (!_bancoSinCamino.TryGetValue(mapa, out long hasta)) return true;
+        if (RelojDelBanco() < hasta) return false;
+        _bancoSinCamino.Remove(mapa);
+        return true;
+    }
 
     /// <summary>Va hasta el banquero del mapa y le abre el panel del oro (que dice lo que hay en la bóveda). False si no llegó o no
     /// atendió.</summary>
@@ -147,10 +156,18 @@ public sealed partial class Bot
 
     private async Task<bool> AbrirElBancoOAnotarloAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (!sentidos.Vivo) return false;
-        if (await AbrirElBancoAsync(transporte, sentidos, cerrada, ct)) return true;
-        if (sentidos.Vivo) _bancoSinCamino.Add(sentidos.Mapa);
-        Console.WriteLine($"[bot {Nombre}] no llega al banquero de m{sentidos.Mapa}");
+        if (!sentidos.Vivo || cerrada.IsCompleted || ct.IsCancellationRequested) return false;
+        int mapaDelIntento = sentidos.Mapa;
+        bool abierto = await AbrirElBancoAsync(transporte, sentidos, cerrada, ct);
+        // La desconexión, una muerte o un cambio de mapa no son evidencia de que ese banco no tenga camino.
+        if (!sentidos.Vivo || cerrada.IsCompleted || ct.IsCancellationRequested || sentidos.Mapa != mapaDelIntento) return false;
+        if (abierto)
+        {
+            _bancoSinCamino.Remove(mapaDelIntento);
+            return true;
+        }
+        _bancoSinCamino[mapaDelIntento] = RelojDelBanco() + EsperaDelBancoMs;
+        Console.WriteLine($"[bot {Nombre}] no llega al banquero de m{mapaDelIntento}; vuelve a probar en {EsperaDelBancoMs / 1000}s");
         return false;
     }
 

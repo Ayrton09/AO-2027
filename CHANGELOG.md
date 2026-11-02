@@ -3,6 +3,25 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.2 (2026-11-02)
+Mejoras de comportamiento y recuperación de los bots.
+
+### Los bots
+
+- **Se curan y siguen decidiendo cómo pelear**: pueden devolver el golpe o retirarse con la vida crítica, y usar una poción azul para volver a lanzar magia.
+- **Eligen hechizos adecuados para cada blanco y sus recursos**, conservan las curas que funcionaron aunque después reciban daño y pueden apuntar con seguridad en el borde del mapa.
+- **Se rearman si los desarman durante una pelea** y dejan de perseguir a un rival que murió, cambió de bando o salió del mapa.
+- **Priorizan al agresor identificado en los avisos de combate**, aunque haya otro enemigo más cerca.
+- **Reintentan el aprendizaje de pergaminos ante fallos temporales** y evitan comprar otra copia de un hechizo cuyo pergamino ya llevan.
+- **Conservan los retiros de subastas que no entraron en la mochila** y las compras que todavía debe entregar el Centro, incluidos los pergaminos.
+- **Las despedidas y reinvitaciones cancelan las respuestas y los recorridos anteriores** para acompañar a la persona que corresponde. También pueden seguirte entre mapas por una salida que acaban de verte cruzar, si la ruta es segura.
+- **La recuperación tras morir espera y busca al sacerdote visible**, con una salida de regreso si no logra encontrarlo; se corrigió un bloqueo que repetía decisiones sin avanzar.
+
+### Juego
+
+- **Los empujones de criaturas refrescan la zona visible del personaje desplazado**, para que reciba a quienes entran en su vista, incluido el sacerdote al buscar resucitar.
+
+
 ## 1.0.1 (2026-11-02)
 Lo nuevo desde el paquete del 23 de octubre.
 

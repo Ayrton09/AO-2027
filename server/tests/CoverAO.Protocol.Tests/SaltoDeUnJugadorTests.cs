@@ -178,11 +178,11 @@ public class SaltoDeUnJugadorTests : IDisposable
     }
 
     /// <summary>
-    /// Y QUE NO VUELVA A HABER UNA CUARTA COPIA. Un salto que mueve la posición y refresca el área por su cuenta es
+    /// Y QUE NO SE DUPLIQUE EL SALTO. Un salto que mueve la posición y refresca el área por su cuenta es
     /// exactamente como nacieron las tres de antes, y cada una se olvidó de algo distinto. El refresco de área
-    /// tiene tres usos legítimos: el paso (que sale además como CharacterMove), el del "casper" al que se corre de
-    /// su baldosa —que es un paso forzado, y el original también le actualiza el área (Modulo_UsUaRiOs.bas:765)— y
-    /// el salto.
+    /// tiene cuatro usos legítimos: el paso, el "casper" empujado por otro jugador, el "casper" empujado por un NPC
+    /// y el salto. Los empujones son pasos forzados: ambos deben actualizar lo que el desplazado ve al cruzar un área
+    /// (Modulo_UsUaRiOs.bas:765), incluido el sacerdote que necesita un cadáver.
     /// </summary>
     [Fact]
     public void Los_saltos_pasan_todos_por_el_mismo_lugar()
@@ -198,8 +198,10 @@ public class SaltoDeUnJugadorTests : IDisposable
             .SelectMany(f => File.ReadAllLines(f).Select((linea, i) => (archivo: Path.GetFileName(f), i, linea)))
             .Where(t => Regex.IsMatch(t.linea, @"\bRefreshAreaVisibility\(") && !t.linea.Contains("static void RefreshAreaVisibility"))
             .ToList();
-        Assert.True(usos.Count == 3,
-            "el refresco de área se llama desde " + usos.Count + " lugares (se esperaban el paso, el casper y "
+        Assert.True(usos.Count == 4,
+            "el refresco de área se llama desde " + usos.Count + " lugares (se esperaban el paso, el casper de jugador, el casper de NPC y "
             + "WarpUserChar): " + string.Join("; ", usos.Select(u => $"{u.archivo}:{u.i + 1}")));
+        Assert.Equal(3, usos.Count(u => u.archivo == "PacketDispatcher.cs"));
+        Assert.Single(usos, u => u.archivo == "NpcSystem.cs");
     }
 }

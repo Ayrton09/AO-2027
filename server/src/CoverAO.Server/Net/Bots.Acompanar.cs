@@ -23,6 +23,9 @@ public sealed partial class Bot
     /// <summary>Sin verla este rato, la da por perdida.</summary>
     public const int PerdidaMs = 40_000;
 
+    /// <summary>Hasta cuándo sirve un movimiento visto sobre una salida pública antes de perderla de vista.</summary>
+    public const int MovimientoParaSeguirSalidaMs = 5_000;
+
     /// <summary>Le pega a lo que esté a esta distancia de ella o menos: lo que pelea, o lo que tiene cerca.</summary>
     public const int RadioDeAyuda = 6;
 
@@ -45,7 +48,7 @@ public sealed partial class Bot
 
     /// <summary>
     /// ¿LA ACEPTA? Vivo y con quien lo invita a la vista, sí; si ya acompaña a otra persona, o está muerto, no; si no la ve (le
-    /// susurró desde otro lado), que está lejos. La misma persona que vuelve a invitar alarga el rato.
+    /// susurró desde otro lado), que está lejos. La misma persona que vuelve a invitar no alarga el rato.
     /// </summary>
     public static Invitacion QueHaceConLaInvitacion(bool vivo, bool laVe, string? acompanaA, string quien, bool laInvita = true,
                                                     bool esBlanco = false) =>
@@ -63,6 +66,8 @@ public sealed partial class Bot
         ahora - ultimaPelea > AburreMs || sinLlegar >= IntentosSinLlegar;
 
     private (string Quien, long Hasta, long VistaEn, long UltimaPelea, int SinLlegar)? _acompana;
+    private long _numeroDeAcompanamiento;
+    private (long Grupo, long Huella)? _salidaIntentada;
 
     /// <summary>A quién acompaña ahora, o null.</summary>
     public string? AcompanaA => _acompana?.Quien;
@@ -71,6 +76,10 @@ public sealed partial class Bot
     /// no es una invitación (<see cref="EsInvitacion"/>) se contesta que no, y a la persona a la que le sale a pegar
     /// (<see cref="EsBlancoParaMi"/>) también: si no, la acompañaba y en la vuelta siguiente le pegaba.</summary>
     private string ContestarLaInvitacion(SentidosDelBot sentidos, string quien, string texto, long ahora)
+        => ResolverLaInvitacion(sentidos, quien, texto, ahora).Frase;
+
+    // El sí demorado se asocia a esta salida, no sólo al nombre: volver a invitar después de un chau crea otra.
+    private (string Frase, long? Acompanamiento) ResolverLaInvitacion(SentidosDelBot sentidos, string quien, string texto, long ahora)
     {
         var persona = sentidos.PersonaLlamada(quien);
         switch (QueHaceConLaInvitacion(sentidos.Vivo, persona is not null, _acompana?.Quien, quien, EsInvitacion(texto),
@@ -80,15 +89,18 @@ public sealed partial class Bot
                 // LA MISMA QUE VUELVE A INVITAR no alarga el rato: ver la nota de la clase.
                 if (_acompana is null)
                 {
+                    _numeroDeAcompanamiento++;
+                    _salidaIntentada = null;
+                    sentidos.ObservarSalidaDe(quien);
                     _acompana = (quien, ahora + _rng.Next(AcompanaMinMin, AcompanaMaxMin + 1) * 60_000L, ahora, ahora, 0);
                     Console.WriteLine($"[bot {Nombre}] acompaña a {PacketDispatcher.ParaElLog(quien)}");
                 }
-                return FrasesAcepta[_rng.Next(FrasesAcepta.Length)];
+                return (FrasesAcepta[_rng.Next(FrasesAcepta.Length)], _numeroDeAcompanamiento);
             case Invitacion.Lejos:
-                return FrasesLejos[_rng.Next(FrasesLejos.Length)];
+                return (FrasesLejos[_rng.Next(FrasesLejos.Length)], null);
             default:
                 var no = Frases[DeQueHabla.Grupo];
-                return no[_rng.Next(no.Length)];
+                return (no[_rng.Next(no.Length)], null);
         }
     }
 
@@ -123,18 +135,21 @@ public sealed partial class Bot
     private async Task<bool?> AcompanarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<short, bool> esPresa,
                                              bool empiezaUnaPelea, Task cerrada, CancellationToken ct)
     {
-        if (_acompana is not { } a) return false;
+        if (_acompana is not { } a) { sentidos.ObservarSalidaDe(null); return false; }
         long ahora = Environment.TickCount64;
         var ella = sentidos.PersonaLlamada(a.Quien);
         if (ella is not null) _acompana = a = a with { VistaEn = ahora };
         if (DejaDeAcompanar(ahora, a.Hasta, a.VistaEn) || (ella is not null && SeAburre(ahora, a.UltimaPelea, a.SinLlegar)))
         {
+            sentidos.ObservarSalidaDe(null);
             DejarDeAcompanar(transporte, a.Quien, ella is not null);
             return false;
         }
         // SIN VERLA UN MOMENTO, LA ESPERA: suele volver a la vista.
         if (ella is not { } p)
         {
+            if (await SeguirLaSalidaQueVioAsync(transporte, sentidos, a.Quien, cerrada, ct))
+                return cerrada.IsCompleted ? null : true;
             await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);
             return cerrada.IsCompleted ? null : true;
         }
@@ -153,7 +168,12 @@ public sealed partial class Bot
         if (Math.Abs(p.X - x) + Math.Abs(p.Y - y) > CercaDeElla)
         {
             // Y SI NO LLEGA, ESPERA, y a la quinta seguida se va (`SeAburre`).
-            bool llego = await IrHastaAsync(transporte, sentidos, sentidos.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla - 1);
+            // El viaje pertenece a esta salida. La charla de cada paso puede terminarla o aceptar otra invitación.
+            long salida = _numeroDeAcompanamiento;
+            bool SigueLaSalida() => _acompana is not null && _numeroDeAcompanamiento == salida;
+            bool llego = await IrHastaAsync(transporte, sentidos, sentidos.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla - 1,
+                                           cortaSi: () => !SigueLaSalida());
+            if (!SigueLaSalida()) return cerrada.IsCompleted ? null : true;
             if (_acompana is { } b) _acompana = b with { SinLlegar = llego ? 0 : b.SinLlegar + 1 };
             if (!llego) await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);
             return cerrada.IsCompleted ? null : true;
@@ -161,5 +181,35 @@ public sealed partial class Bot
         if (_acompana is { } c) _acompana = c with { SinLlegar = 0 };
         await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);
         return cerrada.IsCompleted ? null : true;
+    }
+
+    /// <summary>Busca una sola vez por el último Move+Remove visto, usando el exit del mapa público. No renueva VistaEn.</summary>
+    private async Task<bool> SeguirLaSalidaQueVioAsync(TransporteDeBot transporte, SentidosDelBot sentidos, string quien,
+                                                      Task cerrada, CancellationToken ct)
+    {
+        if (sentidos.UltimoMovimientoPerdidoDe(quien) is not { } huella || huella.Mapa != sentidos.Mapa
+            || Environment.TickCount64 - huella.Cuando > MovimientoParaSeguirSalidaMs
+            || !_entorno.Datos.MapExits.TryGetValue((huella.Mapa, huella.X, huella.Y), out var salida) || salida.DestMap <= 0) return false;
+        long grupo = _numeroDeAcompanamiento;
+        if (_salidaIntentada == (grupo, huella.Numero)) return false;
+        bool SigueElIntento() => _acompana is { } a && _numeroDeAcompanamiento == grupo
+            && string.Equals(a.Quien, quien, StringComparison.OrdinalIgnoreCase) && !cerrada.IsCompleted && !ct.IsCancellationRequested
+            && sentidos.Mapa == huella.Mapa && !Urge(sentidos) && sentidos.PersonaLlamada(quien) is null
+            && sentidos.UltimoMovimientoPerdidoDe(quien)?.Numero == huella.Numero
+            && Environment.TickCount64 - huella.Cuando <= MovimientoParaSeguirSalidaMs
+            && _entorno.Datos.MapExits.TryGetValue((huella.Mapa, huella.X, huella.Y), out var vigente) && vigente == salida
+            && CruzaSinPeligro(sentidos)(salida.DestMap) && _entorno.Ini.DejaEntrarAlMapa(salida.DestMap, sentidos.Nivel, esGm: false)
+            && !LoPeligrosoEstaATiro(sentidos.Posicion, PeligrosALaVista(sentidos));
+        if (!SigueElIntento()) return false;
+        _salidaIntentada = (grupo, huella.Numero); // También consume el intento si el camino se corta o alguien tapa el exit.
+        // Se acerca al exit sin pisarlo. IrHasta con tolerancia 0 podría cruzarlo y después intentar volver al mapa anterior.
+        if (!await IrHastaAsync(transporte, sentidos, huella.Mapa, huella.X, huella.Y, cerrada, ct, tolerancia: 1,
+                               cortaSi: () => !SigueElIntento(), cortaAntesDePaso: () => !SigueElIntento()) || !SigueElIntento()) return true;
+        var (x, y) = sentidos.Posicion;
+        int dx = huella.X - x, dy = huella.Y - y;
+        if (Math.Abs(dx) + Math.Abs(dy) != 1) return true;
+        // Un solo paso final: cualquier warp termina la búsqueda; sólo un nuevo paquete visible vuelve a ubicar a la compañera.
+        await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, puedeSalir: true, cortaSi: () => !SigueElIntento());
+        return true;
     }
 }

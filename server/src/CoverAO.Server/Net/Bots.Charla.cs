@@ -186,7 +186,9 @@ public sealed partial class Bot
         return sorteo < prob;
     }
 
-    private readonly record struct Respuesta(long Cuando, Como Por, string A, string Texto);
+    // La confirmación pertenece a UNA salida a cazar: si terminó antes de enviarla, no promete seguir a nadie.
+    // Las respuestas normales no tienen acompañamiento y conservan su entrega y sus cupos.
+    private readonly record struct Respuesta(long Cuando, Como Por, string A, string Texto, long? Acompanamiento = null);
 
     private readonly List<Respuesta> _porContestar = new();
     private readonly Dictionary<string, long> _ultimaRespuestaA = new(StringComparer.OrdinalIgnoreCase);
@@ -204,27 +206,34 @@ public sealed partial class Bot
         foreach (var oido in sentidos.TomarLoOido())
         {
             if (!LeHablanAEl(oido, Nombre)) continue;
+            if (EsViejo(ahora, oido.Cuando)) continue;
             Console.WriteLine(LineaDelLog(Nombre, oido));
             while (_respuestasRecientes.Count > 0 && ahora - _respuestasRecientes.Peek() > 60_000) _respuestasRecientes.Dequeue();
             var tema = DeQueLeHablan(oido.Texto);
             // LA QUE ACOMPAÑA Y SE DESPIDE: ver `SeDespidio`.
-            if (SeDespide(oido.Texto)) SeDespidio(oido.Quien);
-            if (EsViejo(ahora, oido.Cuando)) continue;
+            if (SeDespide(oido.Texto))
+            {
+                SeDespidio(oido.Quien);
+                if (_acompana is null) sentidos.ObservarSalidaDe(null);
+            }
             if (!LeContesta(oido.Como, tema, _rng.Next(100), ahora,
                             _ultimaRespuestaA.TryGetValue(oido.Quien, out long antes) ? antes : null, _respuestasRecientes.Count)) continue;
             // Y LA INVITACIÓN A CAZAR JUNTOS: ver `ContestarLaInvitacion` (Bots.Acompanar.cs).
-            string? frase = tema == DeQueHabla.Grupo ? ContestarLaInvitacion(sentidos, oido.Quien, oido.Texto, ahora)
-                                                     : QueLeContesta(tema, sentidos.Nivel, _rng.Next(1_000));
+            var (frase, acompanamiento) = tema == DeQueHabla.Grupo
+                ? ResolverLaInvitacion(sentidos, oido.Quien, oido.Texto, ahora)
+                : (QueLeContesta(tema, sentidos.Nivel, _rng.Next(1_000)), (long?)null);
             if (frase is null) continue;
             _ultimaRespuestaA[oido.Quien] = ahora;
             _respuestasRecientes.Enqueue(ahora);
-            _porContestar.Add(new Respuesta(ahora + DemoraMs(frase, _rng.Next(1_000)), oido.Como, oido.Quien, frase));
+            _porContestar.Add(new Respuesta(ahora + DemoraMs(frase, _rng.Next(1_000)), oido.Como, oido.Quien, frase, acompanamiento));
         }
         for (int i = _porContestar.Count - 1; i >= 0; i--)
         {
             var r = _porContestar[i];
             if (r.Cuando > ahora) continue;
             _porContestar.RemoveAt(i);
+            if (r.Acompanamiento is { } salida && (_acompana is not { } actual || salida != _numeroDeAcompanamiento
+                || !string.Equals(actual.Quien, r.A, StringComparison.OrdinalIgnoreCase))) continue;
             bool salio = r.Por == Como.Susurro
                 ? transporte.Mandar(Paquete(ClientPacketId.Whisper, w => w.WriteAsciiString(r.A).WriteAsciiString(r.Texto)))
                 : transporte.Mandar(Paquete(ClientPacketId.Talk, w => w.WriteAsciiString(r.Texto).WriteByte((byte)Como.Charla)));

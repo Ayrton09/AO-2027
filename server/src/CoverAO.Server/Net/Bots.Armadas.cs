@@ -239,7 +239,7 @@ public sealed partial class Bot
     {
         byte yo = _miBando;
         bool agresivo = Agresivo, regla = _entorno.Ini.AtacarAliadoVuelveCriminal;
-        return v => EsBlanco(yo, v.Estado, agresivo, regla);
+        return v => !v.Muerto && EsBlanco(yo, v.Estado, agresivo, regla);
     }
 
     /// <summary>
@@ -251,8 +251,17 @@ public sealed partial class Bot
     {
         if (!_entorno.Datos.IsPkMap(sentidos.Mapa) || sentidos.HaceCuantoLeBajoLaVida > LePeganHaceMs) return null;
         if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira) return null;
+        var esBlanco = EsBlancoParaMi();
+        // La magia identifica al autor en el mensaje que recibe la víctima. No se culpa a otro enemigo
+        // sólo por estar más cerca, y una cura o un buff no se interpreta como daño.
+        var posicion = sentidos.Posicion;
+        foreach (var efecto in sentidos.EfectosRecibidos(LePeganHaceMs))
+            if ((efecto.Hechizo == 0 || _entorno.Datos.Spell(efecto.Hechizo) is { SubeHp: 2 })
+                && sentidos.PersonaLlamada(efecto.Quien) is { } agresor && esBlanco(agresor)
+                && Math.Abs(agresor.X - posicion.X) + Math.Abs(agresor.Y - posicion.Y) <= RadioDeDefensa)
+                return agresor.CharIndex;
         if (sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 }) return null;
-        return sentidos.PersonaMasCercana(EsBlancoParaMi()) is { Pasos: <= RadioDeDefensa } quien
+        return sentidos.PersonaMasCercana(esBlanco) is { Pasos: <= RadioDeDefensa } quien
             ? quien.Quien.CharIndex : null;
     }
 
@@ -432,14 +441,14 @@ public sealed partial class Bot
             .Where(h => h is { IsHeal: true, MaxHp: > 0 } && !_noLoPuedeLanzar.Contains(h.Index))
             .Select(h => h!.ManaCost).DefaultIfEmpty(0).Min();
 
-    /// <summary>Los dos paquetes del casteo sobre la baldosa (x, y), con el clic en la cabeza (<see cref="ClicEnLaCabeza"/>), y lo
+    /// <summary>Los dos paquetes del casteo sobre el clic ya validado por <see cref="ElegirClicDeHechizo"/>, y lo
     /// pedido se recuerda después de que salieron (ver <see cref="CurarseConMagia"/>).</summary>
-    private bool LanzarSobre(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura, byte x, byte y)
+    private bool LanzarSobre(TransporteDeBot transporte, SentidosDelBot sentidos, byte ranura, byte x, byte yDelClic)
     {
         short hechizo = sentidos.HechizoEn(ranura);
         if (!transporte.Mandar(Paquete(ClientPacketId.CastSpell, w => w.WriteByte(ranura)))
             || !transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
-                   w => w.WriteByte(x).WriteByte(ClicEnLaCabeza(y)).WriteByte((byte)GameLimits.SkillMagia)))) return false;
+                   w => w.WriteByte(x).WriteByte(yDelClic).WriteByte((byte)GameLimits.SkillMagia)))) return false;
         _ultimoCasteo = (hechizo, Environment.TickCount64);
         return true;
     }
@@ -454,10 +463,10 @@ public sealed partial class Bot
     /// </summary>
     private bool QuietarA(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible a)
     {
-        if (!sentidos.UsaMana || !ElClicLoElige(a.Y)) return false;
+        if (!sentidos.UsaMana || ElegirClicDeHechizo(sentidos, a.X, a.Y) is not { } clic) return false;
         RevisarElUltimoCasteo(sentidos);
-        return ElMasBaratoQueSabe(sentidos, EsDeQuietar, ManaDeSuCura(sentidos)) is { } ranura
-               && LanzarSobre(transporte, sentidos, ranura, a.X, a.Y);
+        return ElMasBaratoQueSabe(sentidos, h => EsDeQuietar(h) && AfectaAlBlanco(h, a.EsNpc), ManaDeSuCura(sentidos)) is { } ranura
+               && LanzarSobre(transporte, sentidos, ranura, a.X, clic);
     }
 
     /// <summary>
@@ -470,9 +479,9 @@ public sealed partial class Bot
     {
         if (!sentidos.Paralizado || !sentidos.UsaMana || Environment.TickCount64 < _proximaRemocion) return false;
         var (x, y) = sentidos.Posicion;
-        if (!ElClicLoElige(y)) return false;
+        if (ElegirClicDeHechizo(sentidos, x, y) is not { } clic) return false;
         RevisarElUltimoCasteo(sentidos);
-        if (ElMasBaratoQueSabe(sentidos, h => h.IsRemoveParalysis) is not { } ranura || !LanzarSobre(transporte, sentidos, ranura, x, y))
+        if (ElMasBaratoQueSabe(sentidos, h => h.IsRemoveParalysis) is not { } ranura || !LanzarSobre(transporte, sentidos, ranura, x, clic))
             return false;
         _proximaRemocion = Environment.TickCount64 + EntreRemocionesMs;
         return true;

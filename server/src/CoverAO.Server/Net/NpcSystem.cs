@@ -447,6 +447,9 @@ public sealed class NpcSystem
             _world.BroadcastToObservers(from, ServerMessages.CharacterMove(enElDestino.CharIndex, from.X, from.Y),
                                         enElDestino.CharIndex);
             enElDestino.Connection?.Send(ServerMessages.ForceCharMove(InvertirHeading(heading)));
+            // Como CorrerAlCasper entre jugadores: el empujón puede cruzar un área y debe avisar lo que entra o sale
+            // de vista. Sin este refresco podía faltar el sacerdote aunque los pasos siguientes ya estuvieran en su área.
+            PacketDispatcher.RefreshAreaVisibility(_world, _data, enElDestino, dest, from);
         }
         npc.OldPos = from;      // VB6 oldPos: FindDirection lo usa para no volver por donde vino
         _world.MoveNpc(npc, dest);   // por el World, no `npc.Pos = dest`: mantiene el índice por tile
