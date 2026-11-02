@@ -57,6 +57,33 @@ public sealed class ElViajePerteneceAlGrupoDelBotTests
     }
 
     [Fact]
+    public async Task El_chau_recibido_mientras_espera_un_paso_cancela_el_siguiente_sin_atender_la_charla_desde_el_test()
+    {
+        var (bot, s, t) = Crear();
+        using var fin = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Invitar.Invoke(bot, new object[] { s, "Ana", "vamos?", Environment.TickCount64 });
+        var tarea = Vuelta(bot, s, t, fin.Token);
+        try
+        {
+            Assert.Equal((byte)ClientPacketId.Walk, (await Leer(t, fin.Token))[0]);
+            var ultimoPasoVigente = s.Posicion;
+            // Llega durante la espera del primer paso. La propia caminata debe leerlo y detenerse.
+            s.Recibir(ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat("Ana", "chau, gracias"), PacketDispatcher.FuenteSusurro));
+
+            Assert.True(await tarea.WaitAsync(TimeSpan.FromSeconds(6)));
+            t.Terminar();
+            Assert.Null(bot.AcompanaA);
+            Assert.DoesNotContain(await Restantes(t, fin.Token), p => p[0] == (byte)ClientPacketId.Walk);
+            Assert.Equal(ultimoPasoVigente, s.Posicion);
+        }
+        finally
+        {
+            fin.Cancel(); t.Terminar();
+            try { await tarea; } catch (OperationCanceledException) { }
+        }
+    }
+
+    [Fact]
     public async Task Sin_cambiar_de_grupo_sigue_hasta_la_persona_que_lo_invito()
     {
         var (bot, s, t) = Crear();

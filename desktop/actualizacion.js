@@ -7,6 +7,7 @@
 //
 // Sin Electron adentro, para probarlo con `node test-actualizacion.js`. También lo usa armar.js (las novedades y la firma).
 const crypto = require('crypto');
+const path = require('path');
 
 const FECHA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const NOMBRE = /^[A-Za-z0-9._-]{1,100}$/;
@@ -92,4 +93,32 @@ function reemplazarAppImage(nueva, destino, fsx = require('fs')) {
   }
 }
 
-module.exports = { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog, reemplazarAppImage };
+// Los datos viajan como argumentos, nunca como código de shell. Esperar tiene un límite: si la app no sale,
+// no se abre otra instancia ni queda un ayudante esperando para siempre. No se manda ninguna señal al PID.
+const REABRIR_APPIMAGE = `intentos=0
+while kill -0 "$1" 2>/dev/null; do
+  [ "$intentos" -lt 300 ] || exit 1
+  /bin/sleep 0.1
+  intentos=$((intentos + 1))
+done
+exec "$2"`;
+
+/**
+ * Reabre el AppImage cuando termina esta instancia. El ayudante se separa de la app y conserva sus permisos:
+ * app.relaunch en Electron 44 pone NoNewPrivs en su ayudante, y FUSE ya no puede montar el AppImage nuevo.
+ * El cwd estable es la carpeta del archivo, no el montaje temporal de la versión que se está cerrando.
+ */
+function programarReaperturaAppImage(destino, pid = process.pid, spawnx = require('child_process').spawn) {
+  if (!Number.isSafeInteger(pid) || pid <= 0 || pid > 0x7fffffff) throw new RangeError('PID inválido para reabrir el AppImage');
+  if (typeof destino !== 'string' || !path.isAbsolute(destino) || destino.includes('\0'))
+    throw new TypeError('El AppImage debe tener una ruta absoluta válida');
+  const ayudante = spawnx('/bin/sh', ['-c', REABRIR_APPIMAGE, '--', String(pid), destino], {
+    detached: true, stdio: 'ignore', cwd: path.dirname(destino),
+  });
+  ayudante.on('error', (e) => console.error(`[actualizacion] no se pudo programar la reapertura: ${e?.message ?? e}`));
+  ayudante.unref();
+  return ayudante;
+}
+
+module.exports = { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog, reemplazarAppImage,
+  programarReaperturaAppImage };

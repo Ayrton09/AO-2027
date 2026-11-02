@@ -515,9 +515,9 @@ function instalarAppImage(reabrir) {
     console.error(`[actualizacion] no se pudo reemplazar ${destino}: ${e?.message ?? e}`);
     return true;
   }
-  // La nueva arranca cuando ESTA termina de salir (app.relaunch): lanzada ya, chocaba con el candado de instancia única de la
-  // vieja, que todavía no se fue, y se cerraba sola.
-  if (reabrir) app.relaunch({ execPath: destino, args: [] });
+  // La nueva espera a que ESTA salga para no chocar con el candado de instancia única. El helper de Electron 44
+  // hereda NoNewPrivs y no puede volver a montar el AppImage: se espera desde un proceso independiente.
+  if (reabrir) actualizacion.programarReaperturaAppImage(destino);
   return true;
 }
 

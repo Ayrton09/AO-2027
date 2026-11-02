@@ -3,6 +3,19 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.3 (2026-11-02)
+Correcciones del acompañamiento y de la actualización de la app.
+
+### Los bots
+
+- **La despedida detiene el acompañamiento sin un paso adicional** hacia el destino anterior.
+
+### App de Linux
+
+- **Al elegir «Actualizar ahora», la app vuelve a abrirse después de instalar la actualización**, conservando la configuración.
+- **Si venís de la versión 1.0.2 o anterior y la app no vuelve a abrirse al actualizar**, abrí el AppImage manualmente una vez. Las próximas actualizaciones ya usarán esta corrección.
+
+
 ## 1.0.2 (2026-11-02)
 Mejoras de comportamiento y recuperación de los bots.
 

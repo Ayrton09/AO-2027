@@ -172,7 +172,7 @@ public sealed partial class Bot
             long salida = _numeroDeAcompanamiento;
             bool SigueLaSalida() => _acompana is not null && _numeroDeAcompanamiento == salida;
             bool llego = await IrHastaAsync(transporte, sentidos, sentidos.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla - 1,
-                                           cortaSi: () => !SigueLaSalida());
+                                           cortaSi: () => !SigueLaSalida(), cortaAntesDePaso: () => !SigueLaSalida());
             if (!SigueLaSalida()) return cerrada.IsCompleted ? null : true;
             if (_acompana is { } b) _acompana = b with { SinLlegar = llego ? 0 : b.SinLlegar + 1 };
             if (!llego) await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);

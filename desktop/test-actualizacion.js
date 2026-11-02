@@ -1,7 +1,8 @@
 // Los tests del aviso de actualización y de las novedades (actualizacion.js), sin Electron: `node desktop/test-actualizacion.js`.
 const assert = require('assert');
 const crypto = require('crypto');
-const { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog, reemplazarAppImage } = require('./actualizacion');
+const { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog, reemplazarAppImage,
+  programarReaperturaAppImage } = require('./actualizacion');
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
 const pub = publicKey.export({ type: 'spki', format: 'pem' });
@@ -96,4 +97,77 @@ try {
   assert.ok(!fs.existsSync(`${viejo}.nueva`), 'y el temporal no quedó');
 } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 
-console.log('test-actualizacion: OK');
+// El contrato del ayudante también se comprueba en Windows, sin necesitar /bin/sh ni arrancar procesos Linux.
+const { EventEmitter, once } = require('events');
+const { spawn } = require('child_process');
+const destinoConEspacios = path.resolve(os.tmpdir(), 'Cover AO; $(touch INYECTADO).AppImage');
+let pedido, separado = false;
+const ayudanteSimulado = new EventEmitter();
+ayudanteSimulado.unref = () => { separado = true; };
+const simularSpawn = (...args) => { pedido = args; return ayudanteSimulado; };
+assert.strictEqual(programarReaperturaAppImage(destinoConEspacios, 123, simularSpawn), ayudanteSimulado);
+assert.strictEqual(pedido[0], '/bin/sh');
+assert.deepStrictEqual(pedido[1].slice(2), ['--', '123', destinoConEspacios], 'el PID y la ruta son datos posicionales');
+assert.ok(!pedido[1][1].includes(destinoConEspacios), 'la ruta no se interpola en código');
+assert.deepStrictEqual(pedido[2], { detached: true, stdio: 'ignore', cwd: path.dirname(destinoConEspacios) });
+assert.ok(separado, 'el ayudante no retiene al proceso que debe salir');
+assert.strictEqual(ayudanteSimulado.listenerCount('error'), 1, 'un fallo al arrancar no queda sin manejar');
+const noDebeArrancar = () => { assert.fail('una entrada inválida no puede crear procesos'); };
+for (const pid of [0, -1, 1.5, NaN, Infinity, '123', 0x80000000])
+  assert.throws(() => programarReaperturaAppImage(destinoConEspacios, pid, noDebeArrancar), /PID inválido/);
+for (const destino of ['', 'relativo.AppImage', null, `${destinoConEspacios}\0`])
+  assert.throws(() => programarReaperturaAppImage(destino, 123, noDebeArrancar), /ruta absoluta válida/);
+
+async function probarReaperturaLinux() {
+  if (process.platform !== 'linux') return;
+  const temporal = fs.mkdtempSync(path.join(os.tmpdir(), 'coverao-reapertura-'));
+  const app = path.join(temporal, "Cover AO 'doble'; $(touch INYECTADO); `touch OTRO`.AppImage");
+  let vieja, ayudante;
+  const esperar = ms => new Promise(r => setTimeout(r, ms));
+  const conPlazo = (promesa, ms) => {
+    let timer;
+    return Promise.race([promesa, new Promise((_, mal) => { timer = setTimeout(() => mal(new Error('timeout del ayudante QA')), ms); })])
+      .finally(() => clearTimeout(timer));
+  };
+  try {
+    fs.writeFileSync(app, `#!/bin/sh
+printf 'una apertura\\n' >> "$0.aperturas"
+printf '%s\\n' "$#" > "$0.argumentos"
+pwd > "$0.cwd"
+while IFS= read -r linea; do
+  case "$linea" in NoNewPrivs:*) printf '%s\\n' "$linea" > "$0.nnp" ;; esac
+done < /proc/self/status
+`, { mode: 0o755 });
+    vieja = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    await once(vieja, 'spawn');
+    const viejaTerminada = once(vieja, 'exit');
+    ayudante = programarReaperturaAppImage(app, vieja.pid);
+    const ayudanteTerminado = once(ayudante, 'exit');
+    await esperar(250);
+    assert.ok(!fs.existsSync(`${app}.aperturas`), 'no abre la nueva mientras el PID viejo sigue vivo');
+    assert.strictEqual(vieja.exitCode, null);
+    vieja.kill('SIGTERM');
+    await conPlazo(viejaTerminada, 5000);
+    assert.deepStrictEqual(await conPlazo(ayudanteTerminado, 5000), [0, null], 'el ayudante ejecuta la nueva después de salir la vieja');
+    await esperar(150);
+    assert.strictEqual(fs.readFileSync(`${app}.aperturas`, 'utf8'), 'una apertura\n', 'abre exactamente una instancia');
+    assert.strictEqual(fs.readFileSync(`${app}.argumentos`, 'utf8').trim(), '0');
+    assert.strictEqual(fs.readFileSync(`${app}.cwd`, 'utf8').trim(), fs.realpathSync(temporal), 'usa un cwd estable');
+    assert.ok(!fs.existsSync(path.join(temporal, 'INYECTADO')) && !fs.existsSync(path.join(temporal, 'OTRO')), 'los metacaracteres no ejecutan código');
+    const nnp = texto => texto.match(/^NoNewPrivs:\s*(\d+)/m)?.[1];
+    assert.strictEqual(nnp(fs.readFileSync(`${app}.nnp`, 'utf8')), nnp(fs.readFileSync('/proc/self/status', 'utf8')),
+      'reabrir conserva NoNewPrivs, sin agregar restricciones que impidan a FUSE montar el AppImage');
+    console.log('test-actualizacion: reapertura Linux real OK');
+  } finally {
+    for (const hijo of [ayudante, vieja]) {
+      if (hijo?.pid && hijo.exitCode === null && hijo.signalCode === null) {
+        const termino = once(hijo, 'exit');
+        hijo.kill('SIGTERM');
+        await conPlazo(termino, 5000);
+      }
+    }
+    fs.rmSync(temporal, { recursive: true, force: true });
+  }
+}
+
+probarReaperturaLinux().then(() => console.log('test-actualizacion: OK')).catch(e => { console.error(e); process.exitCode = 1; });
