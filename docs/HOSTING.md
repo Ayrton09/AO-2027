@@ -224,6 +224,22 @@ COVERAO_INIT_MAXUSERS=200 COVERAO_INIT_DIOSES=1 COVERAO_DIOSES_DIOS1=TuPersonaje
 
 ## Actualizar a una version nueva
 
+El código se mantiene en `Ayrton09/CoverAO-privado`; `Ayrton09/CoverAO` contiene las descargas públicas.
+La app ya instalada sigue usando la misma dirección de actualización y la misma firma del autor.
+
+Para publicar, con la versión de `VERSION` confirmada y enviada a `origin/main`, ejecutar desde la raíz:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File hosting/subir-version.ps1 -SinSubir
+powershell -ExecutionPolicy Bypass -File hosting/subir-version.ps1 -SoloSubir
+```
+
+El primer paso arma y firma los paquetes de Windows y Linux. El segundo comprueba que correspondan
+al mismo commit, etiqueta esa fuente en el privado y publica los paquetes y avisos en el público.
+La release se prepara como borrador y pasa a ser la última versión cuando ya están todos sus archivos.
+La app del tester busca el aviso al abrir; las actualizaciones del servidor siguen requiriendo ejecutar
+`actualizar`. Un commit de desarrollo por sí solo no publica una nueva versión.
+
 **Con un comando, con el server apagado.** Hace el backup, verifica que el paquete sea del autor del juego,
 reemplaza solo los archivos oficiales que no tocaste y deja tu `Server.ini` al día con tus valores:
 

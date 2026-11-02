@@ -1,9 +1,9 @@
 <Project>
-  <!-- Versión ÚNICA de todos los proyectos .NET del server. Se mantiene fija en 1.0.0:
-       NO bumpear hasta hacer un release real con cambios (ver /VERSION en la raíz). -->
+  <!-- Versión de todos los proyectos .NET del server. Debe coincidir con /VERSION en la raíz
+       y Build.Version al publicar un release. Es independiente de la versión del protocolo de ingreso. -->
   <PropertyGroup>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
   </PropertyGroup>
 </Project>

@@ -198,7 +198,7 @@ RolesMasters=0
 
 ; --- Publicacion -------------------------------------------------------------
 ; Donde esta el codigo, para el aviso de licencia del cliente.
-CodigoFuente=https://github.com/Ayrton09/CoverAO
+CodigoFuente=https://github.com/Ayrton09/CoverAO-privado
 ; Version que se le exige al cliente. VACIO = entra cualquiera, y se queda asi:
 ; el control es una comparacion literal, y prenderlo con un numero que no sea
 ; EXACTO al del cliente que repartiste deja a todos afuera.

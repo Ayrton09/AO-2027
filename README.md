@@ -99,8 +99,8 @@ formulario ni los paquetes para participar), así que portarlo sería inventarlo
 ## Reportar errores y proponer cambios
 
 Todo pasa por GitHub: los errores y las sugerencias van a
-[Issues](https://github.com/Ayrton09/CoverAO/issues) y los cambios de código, como
-[Pull Requests](https://github.com/Ayrton09/CoverAO/pulls). Al reportar, contá qué hiciste, qué esperabas y
+[Issues](https://github.com/Ayrton09/CoverAO-privado/issues) y los cambios de código, como
+[Pull Requests](https://github.com/Ayrton09/CoverAO-privado/pulls). Al reportar, contá qué hiciste, qué esperabas y
 qué pasó; si es del cliente web, con qué navegador. El mismo enlace se lo muestra el juego al jugador en
 Menú → Licencia cuando el `Server.ini` trae `CodigoFuente`.
 

@@ -3,6 +3,22 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.1 (2026-11-02)
+Lo nuevo desde el paquete del 23 de octubre.
+
+### Juego
+
+- **Los nombres configurados para el staff quedan reservados**: no se pueden elegir al crear un personaje ni liberar borrando al que todavía tiene rango.
+- **Lo que se cae al morir se guarda antes de que otro jugador pueda recogerlo**, en los servidores que conservan los objetos del suelo al reiniciar.
+- **Corregidas las devoluciones de transferencias fallidas al apagar el servidor**, también si el emisor se desconectó o la devolución esperaba otra transferencia pendiente.
+
+### Para el que hostea
+
+- **Si una escucha del servidor falla o termina antes de tiempo, se detecta y se inicia el apagado ordenado**, con el motivo en la consola.
+- **El rescate de la base conserva los pedidos pendientes hasta terminar de aplicarlos** y espera si un archivo bloqueado impide actualizarlo o retirarlo.
+- **Los guardados viejos reemplazados salen de la cola**. Si se acumulan demasiados pedidos, el servidor deja de aceptar acciones nuevas y se apaga guardando lo pendiente para recuperarlo al arrancar.
+
+
 ## 1.0.0 (2026-10-20)
 Lo nuevo desde el paquete del 14 de octubre.
 

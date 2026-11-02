@@ -1,123 +1,198 @@
-<#
-  subir-version.ps1 - PUBLICA UNA VERSION NUEVA: el juego de escritorio y el server de Windows y de Linux, firmados con la
-  clave del autor, en el release v1.0.0 del repo del juego (privado hasta que el autor lo haga publico; mientras tanto, los
-  paquetes se le pasan al tester a mano). SOLO cuando lo pide el autor. Se corre desde la raiz del repo (no desde un
-  worktree): el instalador de la app necesita desktop\node_modules.
+﻿<#
+  Arma y publica paquetes firmados. VERSION fija el número; la fecha firmada distingue compilaciones.
+  La fuente vive en CoverAO-privado y las descargas en CoverAO: nunca se empuja código al repo de distribución.
 
-    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1                todo
-    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinApp        solo el server
-    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinServidor   solo la app
-    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinAppLinux   sin la app de Linux
-    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinSubir      arma y firma; los deja en dist\
-    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SoloSubir     sube lo que ya esta armado
+    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinSubir
+    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SoloSubir -Borrador
+    powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SoloSubir
 
-  Los paquetes del server se arman en dist\paquete-<plataforma>, NO en dist\CoverAO-win-x64 (la instalacion con la que
-  prueba el autor): armar un paquete repone el Server.ini del ejemplo, y ese es el suyo. Quedan en dist\ como
-  CoverAO-servidor-win-x64.zip y CoverAO-servidor-linux-x64.tar.gz, con el aviso servidor.json. La version no cambia
-  (1.0.0 hasta que el juego sea publico): lo que distingue una de otra es la fecha de la compilacion.
-
-  LA APP DE LINUX (CoverAO-x86_64.AppImage y su aviso actualizacion-linux.json) se arma en Linux, adentro de WSL
-  (hosting/armar-app-linux.sh): Windows no arma un AppImage. -DistroLinux elige la distro (con node, ver el script).
+  -SinApp / -SinServidor / -SinAppLinux permiten preparar un subconjunto. Al subir deben coincidir con lo armado.
+  La subida comprueba el recibo local y los hashes; los avisos se suben después de los paquetes.
 #>
 param([switch]$SinApp, [switch]$SinServidor, [switch]$SinSubir, [switch]$SoloSubir, [switch]$SinAppLinux,
-      [string]$DistroLinux = "CoverAO-Verif")
+      [switch]$Borrador, [string]$DistroLinux = "CoverAO-Verif", [string]$Version = "",
+      [string]$RepoDistribucion = "Ayrton09/CoverAO", [string]$RepoFuente = "Ayrton09/CoverAO-privado",
+      [string]$RefDistribucion = "main")
 $ErrorActionPreference = "Stop"
-$Root = Split-Path $PSScriptRoot -Parent
-$repo = "Ayrton09/CoverAO"
-$etiqueta = "v1.0.0"
+$Root = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
+$versionFuente = (Get-Content -LiteralPath (Join-Path $Root "VERSION") -Raw).Trim()
+if (-not $Version) { $Version = $versionFuente }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION debe tener formato X.Y.Z." }
+if ($Version -ne $versionFuente) { throw "-Version debe coincidir con VERSION; cambiá primero la versión de la fuente." }
+if ($RepoDistribucion -eq $RepoFuente) { throw "La fuente y la distribución deben ser repositorios distintos." }
+foreach ($r in @($RepoDistribucion, $RepoFuente)) {
+  if ($r -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Repositorio inválido: $r" }
+}
+if ($SoloSubir -and $SinSubir) { throw "Elegí -SoloSubir o -SinSubir." }
+if ($SinApp -and $SinServidor) { throw "No se eligió ningún paquete." }
+$etiqueta = "v$Version"
 $dist = Join-Path $Root "dist"
-$node = (Get-Command node -ErrorAction Stop).Source
+$recibo = Join-Path $dist "release-preparada.json"
 $id = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'")
 $subir = @()
 $avisos = @()
 
-if ($SoloSubir) {
-  if (-not $SinServidor) {
-    $subir += (Join-Path $dist "CoverAO-servidor-win-x64.zip"), (Join-Path $dist "CoverAO-servidor-linux-x64.tar.gz")
-    $avisos += (Join-Path $dist "servidor.json")
+function Git-Fuente {
+  param([string[]]$Argumentos)
+  $salida = & git -C $Root @Argumentos
+  if ($LASTEXITCODE -ne 0) { throw "git falló: $($Argumentos -join ' ')" }
+  return $salida
+}
+function Github {
+  param([string[]]$Argumentos)
+  $salida = & gh @Argumentos
+  if ($LASTEXITCODE -ne 0) { throw "gh falló: $($Argumentos -join ' ')" }
+  return $salida
+}
+function Quitar-Staging([string]$Rid) {
+  if ($Rid -notin @("win-x64", "linux-x64")) { throw "Plataforma de staging inválida." }
+  $base = [IO.Path]::GetFullPath($dist).TrimEnd([IO.Path]::DirectorySeparatorChar)
+  $carpeta = [IO.Path]::GetFullPath((Join-Path $base "paquete-$Rid"))
+  if (-not $carpeta.StartsWith($base + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+      (Split-Path $carpeta -Leaf) -ne "paquete-$Rid") { throw "Staging fuera del destino permitido." }
+  foreach ($p in @($base, $carpeta)) {
+    if ((Test-Path -LiteralPath $p) -and ((Get-Item -LiteralPath $p -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+      throw "No se limpia un staging que contiene enlaces: $p"
+    }
   }
-  if (-not $SinApp) {
-    $subir += (Join-Path $Root "desktop\release\CoverAO-Setup.exe")
-    $avisos += (Join-Path $Root "desktop\release\actualizacion.json")
+  if (Test-Path -LiteralPath $carpeta) {
+    $directorios = New-Object 'System.Collections.Generic.Stack[string]'
+    $directorios.Push($carpeta)
+    while ($directorios.Count -gt 0) {
+      foreach ($hijo in Get-ChildItem -LiteralPath ($directorios.Pop()) -Force) {
+        if ($hijo.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Enlace dentro del staging: $($hijo.FullName)" }
+        if ($hijo.PSIsContainer) { $directorios.Push($hijo.FullName) }
+      }
+    }
+    Remove-Item -LiteralPath $carpeta -Recurse -Force
   }
-  if (-not $SinApp -and -not $SinAppLinux) {
+  return $carpeta
+}
+
+$commit = (Git-Fuente -Argumentos @("rev-parse", "HEAD")).Trim()
+if (Git-Fuente -Argumentos @("status", "--porcelain")) { throw "Hay cambios sin confirmar: el paquete debe corresponder a un commit exacto." }
+if (-not $SinServidor) {
+  $subir += (Join-Path $dist "CoverAO-servidor-win-x64.zip"), (Join-Path $dist "CoverAO-servidor-linux-x64.tar.gz")
+  $avisos += (Join-Path $dist "servidor.json")
+}
+if (-not $SinApp) {
+  $subir += (Join-Path $Root "desktop\release\CoverAO-Setup.exe")
+  $avisos += (Join-Path $Root "desktop\release\actualizacion.json")
+  if (-not $SinAppLinux) {
     $subir += (Join-Path $Root "desktop\release\CoverAO-x86_64.AppImage")
     $avisos += (Join-Path $Root "desktop\release\actualizacion-linux.json")
   }
-  foreach ($f in ($subir + $avisos)) { if (-not (Test-Path $f)) { throw "no esta armado: $f" } }
 }
 
-if (-not $SinServidor -and -not $SoloSubir) {
-  foreach ($rid in "win-x64", "linux-x64") {
-    $carpeta = Join-Path $dist "paquete-$rid"
-    # Desde cero cada vez: un archivo que quedo de una version anterior viajaria en el paquete. Es una carpeta propia, sin
-    # enlaces adentro.
-    if (Test-Path $carpeta) { cmd /c rmdir /s /q "$carpeta" | Out-Null }
-    $out = Join-Path $carpeta "CoverAO-$rid"
-    & (Join-Path $PSScriptRoot "publish.ps1") -Rid $rid -OutDir $out -Comprimir -Compilacion $id
-    if (-not (Test-Path (Join-Path $out "archivos.json"))) { throw "el paquete de $rid salio SIN FIRMA: falta la clave en ~\.coverao-firma" }
-    $ext = if ($rid -like "linux*") { "tar.gz" } else { "zip" }
-    $final = Join-Path $dist "CoverAO-servidor-$rid.$ext"
-    Copy-Item -Force (Join-Path $carpeta "CoverAO-1.0.0-$rid.$ext") $final
-    $subir += $final
+if (-not $SoloSubir) {
+  $node = (Get-Command node -ErrorAction Stop).Source
+  if (-not $SinServidor) {
+    foreach ($rid in @("win-x64", "linux-x64")) {
+      $carpeta = Quitar-Staging $rid
+      $out = Join-Path $carpeta "CoverAO-$rid"
+      & (Join-Path $PSScriptRoot "publish.ps1") -Rid $rid -OutDir $out -Comprimir -Compilacion $id -Version $Version
+      if (-not (Test-Path -LiteralPath (Join-Path $out "archivos.json"))) { throw "El paquete de $rid salió sin firma." }
+      $ext = if ($rid -eq "linux-x64") { "tar.gz" } else { "zip" }
+      Copy-Item -LiteralPath (Join-Path $carpeta "CoverAO-$Version-$rid.$ext") -Destination (Join-Path $dist "CoverAO-servidor-$rid.$ext") -Force
+    }
+    & $node (Join-Path $PSScriptRoot "firmar-servidor.js") --aviso $id (Join-Path $dist "servidor.json")
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo firmar el aviso del servidor." }
   }
-  $aviso = Join-Path $dist "servidor.json"
-  & $node (Join-Path $PSScriptRoot "firmar-servidor.js") --aviso $id $aviso
-  if ($LASTEXITCODE -ne 0) { throw "no se pudo firmar el aviso del server" }
-  $avisos += $aviso
+  if (-not $SinApp) {
+    & $node (Join-Path $Root "desktop\armar.js")
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo armar la app de Windows." }
+    if (-not $SinAppLinux) {
+      $comoLinux = { param($ruta) "/mnt/" + $ruta.Substring(0, 1).ToLower() + ($ruta.Substring(2) -replace '\\', '/') }
+      $clave = Join-Path $HOME ".coverao-firma\clave-privada.pem"
+      $env:WSL_UTF8 = "1"
+      $wslEnvAnterior = $env:WSLENV
+      try {
+        # WSL no hereda variables arbitrarias. Se transfiere la contraseña existente sin imprimirla ni ponerla en argumentos.
+        $reenviadas = @($env:WSLENV -split ':' | Where-Object { $_ })
+        if ((Test-Path Env:COVERAO_FIRMA_CLAVE) -and
+            -not @($reenviadas | Where-Object { ($_ -split '/')[0] -eq 'COVERAO_FIRMA_CLAVE' }).Count) {
+          $env:WSLENV = (@($reenviadas) + 'COVERAO_FIRMA_CLAVE') -join ':'
+        }
+        & wsl -d $DistroLinux -- bash (& $comoLinux (Join-Path $PSScriptRoot "armar-app-linux.sh")) (& $comoLinux $Root) (& $comoLinux $clave)
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo armar la app de Linux en $DistroLinux." }
+      }
+      finally { $env:WSLENV = $wslEnvAnterior }
+    }
+  }
+  New-Item -ItemType Directory -Path $dist -Force | Out-Null
+  if ((Git-Fuente -Argumentos @("rev-parse", "HEAD")).Trim() -ne $commit -or (Git-Fuente -Argumentos @("status", "--porcelain"))) {
+    throw "La fuente cambió durante el armado: no se certificará este resultado."
+  }
+  $archivos = @($subir + $avisos | ForEach-Object {
+    if (-not (Test-Path -LiteralPath $_)) { throw "No está armado: $_" }
+    [ordered]@{ ruta = $_.Substring($Root.Length + 1).Replace([char]92, '/'); sha256 = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash }
+  })
+  [ordered]@{ version = $Version; commit = $commit; archivos = $archivos } | ConvertTo-Json -Depth 5 |
+    Set-Content -LiteralPath $recibo -Encoding UTF8
 }
 
-if (-not $SinApp -and -not $SoloSubir) {
-  & $node (Join-Path $Root "desktop\armar.js")
-  if ($LASTEXITCODE -ne 0) { throw "no se pudo armar el juego de escritorio" }
-  $subir += (Join-Path $Root "desktop\release\CoverAO-Setup.exe")
-  $avisos += (Join-Path $Root "desktop\release\actualizacion.json")
+# También -SoloSubir valida que los archivos no sean restos de otra compilación o de otro commit.
+if (-not (Test-Path -LiteralPath $recibo)) { throw "Falta el recibo de armado. Corré primero con -SinSubir." }
+$preparada = Get-Content -LiteralPath $recibo -Raw | ConvertFrom-Json
+if ($preparada.version -ne $Version -or $preparada.commit -ne $commit) { throw "El armado no corresponde a VERSION y HEAD actuales." }
+foreach ($f in ($subir + $avisos)) {
+  if (-not (Test-Path -LiteralPath $f)) { throw "No está armado: $f" }
+  $rel = $f.Substring($Root.Length + 1).Replace([char]92, '/')
+  $registro = @($preparada.archivos | Where-Object { $_.ruta -eq $rel })
+  if ($registro.Count -ne 1 -or $registro[0].sha256 -ne (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash) {
+    throw "El archivo no coincide con el armado confirmado: $rel"
+  }
 }
-
-if (-not $SinApp -and -not $SinAppLinux -and -not $SoloSubir) {
-  # LA APP DE LINUX, EN WSL: el repo y la clave se le pasan como los ve Linux (/mnt/c/...). La clave no se copia a ningun lado.
-  $comoLinux = { param($ruta) "/mnt/" + $ruta.Substring(0, 1).ToLower() + ($ruta.Substring(2) -replace '\\', '/') }
-  $clave = Join-Path $HOME ".coverao-firma\clave-privada.pem"
-  $env:WSL_UTF8 = "1"
-  & wsl -d $DistroLinux -- bash (& $comoLinux (Join-Path $PSScriptRoot "armar-app-linux.sh")) (& $comoLinux $Root) (& $comoLinux $clave)
-  if ($LASTEXITCODE -ne 0) { throw "no se pudo armar la app de Linux en WSL ($DistroLinux). Para seguir sin ella: -SinAppLinux" }
-  $subir += (Join-Path $Root "desktop\release\CoverAO-x86_64.AppImage")
-  $avisos += (Join-Path $Root "desktop\release\actualizacion-linux.json")
-}
-
 if ($SinSubir) {
-  Write-Host "`nArmado, sin subir:" -ForegroundColor Green
-  ($subir + $avisos) | ForEach-Object { Write-Host "  $_" }
+  if ((Git-Fuente -Argumentos @("rev-parse", "HEAD")).Trim() -ne $commit -or (Git-Fuente -Argumentos @("status", "--porcelain"))) {
+    throw "La fuente cambió durante el armado: no se publicará este resultado."
+  }
+  Write-Host "Armado y verificado $etiqueta, sin subir:" -ForegroundColor Green
+  $subir + $avisos | ForEach-Object { Write-Host "  $_" }
   return
 }
 
-# gh escribe por la salida de errores ("release not found"), y con ErrorActionPreference=Stop Windows PowerShell 5.1 corta el
-# script ahi mismo: para gh se mira solo el codigo de salida.
-$ErrorActionPreference = "Continue"
-gh release view $etiqueta -R $repo 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  $notas = "El juego de escritorio (CoverAO-Setup.exe para Windows, CoverAO-x86_64.AppImage para Linux) y el server para " +
-           "Windows y Linux. La app y el server se actualizan " +
-           "desde aca: la app sola, el server con Actualizar.bat o 'bash servidor.sh actualizar'. Windows puede avisar que " +
-           "no reconoce al editor del instalador: Mas informacion y despues Ejecutar de todas formas."
-  gh release create $etiqueta -R $repo --title "CoverAO 1.0.0" --notes $notas
-  if ($LASTEXITCODE -ne 0) { throw "no se pudo crear el release $etiqueta en $repo" }
+# El remoto del source nunca se usa como destino de releases ni se fuerza una etiqueta existente.
+if ((Git-Fuente -Argumentos @("rev-parse", "HEAD")).Trim() -ne $commit -or (Git-Fuente -Argumentos @("status", "--porcelain"))) {
+  throw "La fuente cambió durante la preparación: no se publicará este resultado."
 }
-# Los paquetes ANTES que los avisos: el que lee un aviso nuevo tiene que encontrar ya el paquete nuevo.
-foreach ($f in ($subir + $avisos)) {
-  gh release upload $etiqueta $f --clobber -R $repo
-  if ($LASTEXITCODE -ne 0) { throw "no se pudo subir $f" }
+$origen = (Git-Fuente -Argumentos @("remote", "get-url", "origin")).Trim()
+$repoOrigen = if ($origen -match '^git@github\.com:(.+?)(?:\.git)?$') { $Matches[1] }
+              elseif ($origen -match '^https://github\.com/(.+?)(?:\.git)?/?$') { $Matches[1] } else { "" }
+if ($repoOrigen -ne $RepoFuente) { throw "origin debe apuntar al repositorio fuente $RepoFuente; no se publicará código en la distribución." }
+Git-Fuente -Argumentos @("fetch", "--quiet", "origin", "main") | Out-Null
+Git-Fuente -Argumentos @("merge-base", "--is-ancestor", $commit, "origin/main") | Out-Null
+$tagLocal = & git -C $Root rev-parse --verify --quiet "refs/tags/$etiqueta^{commit}"
+if ($LASTEXITCODE -eq 0 -and $tagLocal.Trim() -ne $commit) { throw "La etiqueta fuente $etiqueta ya apunta a otro commit; no se mueve." }
+$remotas = @(Git-Fuente -Argumentos @("ls-remote", "origin", "refs/tags/$etiqueta", "refs/tags/$etiqueta^{}"))
+if ($remotas.Count -gt 0) {
+  $resuelta = @($remotas | Where-Object { $_ -match '\^\{\}$' })
+  $tagRemoto = if ($resuelta.Count) { ($resuelta[0] -split '\s+')[0] } else { ($remotas[0] -split '\s+')[0] }
+  if ($tagRemoto -ne $commit) { throw "La etiqueta remota fuente $etiqueta ya apunta a otro commit; no se mueve." }
 }
-# EL CODIGO FUENTE DEL RELEASE (los "Source code" que arma GitHub) sale de la etiqueta, no de lo que se sube: se la mueve al
-# commit publicado, para que coincida con lo que corre (la AGPL pide ofrecer ese codigo). Sin ese commit en origin, no se toca.
-$commit = (git -C $Root rev-parse HEAD).Trim()
-git -C $Root fetch -q origin
-git -C $Root merge-base --is-ancestor $commit origin/main
-if ($LASTEXITCODE -ne 0) {
-  Write-Warning "El commit $commit no esta en origin/main: la etiqueta $etiqueta (el codigo fuente del release) no se movio."
-} else {
-  git -C $Root tag -f $etiqueta $commit | Out-Null
-  git -C $Root push -f -q origin "refs/tags/$etiqueta"
-  if ($LASTEXITCODE -ne 0) { Write-Warning "No se pudo mover la etiqueta $etiqueta a $commit en origin." }
+if (-not $tagLocal) { Git-Fuente -Argumentos @("tag", $etiqueta, $commit) | Out-Null }
+if ($remotas.Count -eq 0) { Git-Fuente -Argumentos @("push", "origin", "refs/tags/$etiqueta") | Out-Null }
+
+$destino = (Github -Argumentos @("api", "repos/$RepoDistribucion/commits/$RefDistribucion", "--jq", ".sha")).Trim()
+if ($destino -eq $commit) { throw "El commit de distribución coincide con el source: se requiere el repo de descargas separado." }
+# Sin literales entrecomillados en --jq: Windows PowerShell 5.1 los pierde al invocar gh como programa nativo.
+$paginas = Github -Argumentos @("api", "repos/$RepoDistribucion/releases", "--paginate", "--slurp") | Out-String | ConvertFrom-Json
+$existente = @(foreach ($pagina in $paginas) { foreach ($release in $pagina) { if ($release.tag_name -eq $etiqueta) { $release } } })
+if ($existente.Count -gt 0 -and -not $existente[0].draft) { throw "$etiqueta ya está publicada: no se reemplazan sus archivos." }
+# Una etiqueta pública existente sólo se reutiliza si apunta al commit esperado del repo de distribución.
+$tags = Github -Argumentos @("api", "repos/$RepoDistribucion/git/matching-refs/tags/$etiqueta") | Out-String | ConvertFrom-Json
+$tagPublico = @($tags | Where-Object { $_.ref -eq "refs/tags/$etiqueta" })
+if ($tagPublico.Count) {
+  $objeto = $tagPublico[0].object
+  while ($objeto.type -eq "tag") {
+    $objeto = (Github -Argumentos @("api", "repos/$RepoDistribucion/git/tags/$($objeto.sha)") | Out-String | ConvertFrom-Json).object
+  }
+  if ($objeto.type -ne "commit" -or $objeto.sha -ne $destino) { throw "La etiqueta pública $etiqueta no corresponde al destino de distribución; no se mueve." }
 }
-Write-Host ("`nSubido a https://github.com/$repo/releases/tag/$etiqueta" + $(if ($SoloSubir) { "" } else { " (compilacion $id)" })) -ForegroundColor Green
+if ($existente.Count -eq 0) {
+  $notas = "CoverAO $Version. App de Windows y Linux, y servidor para ambas plataformas. Los paquetes y avisos de actualización están firmados."
+  Github -Argumentos @("release", "create", $etiqueta, "-R", $RepoDistribucion, "--target", $destino, "--title", "CoverAO $Version", "--notes", $notas, "--draft") | Out-Null
+}
+foreach ($f in ($subir + $avisos)) { Github -Argumentos @("release", "upload", $etiqueta, $f, "--clobber", "-R", $RepoDistribucion) | Out-Null }
+if (-not $Borrador) { Github -Argumentos @("release", "edit", $etiqueta, "--draft=false", "--latest", "-R", $RepoDistribucion) | Out-Null }
+Write-Host "Preparado $etiqueta en $RepoDistribucion$(if ($Borrador) { ' (borrador)' } else { ' (publicado, latest)' })." -ForegroundColor Green

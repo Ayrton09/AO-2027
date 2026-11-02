@@ -17,7 +17,7 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.0",     # solo para el nombre del comprimido
+  [string]$Version = "1.0.1",     # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
   [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
@@ -444,7 +444,7 @@ aunque nunca les des un archivo: alcanza con que se conecten a jugar.
   Poné tu enlace en  Server.ini  ->  [INIT] CodigoFuente=https://...
   El juego se lo muestra al jugador en  Menu -> Licencia . Con eso cumplis.
 
-ERRORES Y PROPUESTAS: https://github.com/Ayrton09/CoverAO/issues  (los cambios de codigo, como
+ERRORES Y PROPUESTAS: https://github.com/Ayrton09/CoverAO-privado/issues  (los cambios de codigo, como
 Pull Request en el mismo repositorio). El juego muestra ese enlace en  Menu -> Licencia .
 
 Si no completas esa clave, el jugador ve el aviso de licencia sin enlace. Los graficos,

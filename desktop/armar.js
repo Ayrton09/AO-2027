@@ -4,11 +4,10 @@
 //   node desktop/armar.js --linux    arma release/CoverAO-x86_64.AppImage y release/actualizacion-linux.json. Corre EN LINUX:
 //                                    el AppImage lleva enlaces simbólicos y permisos que Windows no arma (ver
 //                                    hosting/armar-app-linux.sh, que lo hace en WSL)
-//   --subir                          y los sube al release v1.0.0 del repo del juego, reemplazando los de antes
+//   --subir                          sube la app al borrador de la versión de VERSION en el repo de distribución
 //   --clave <ruta>                   otra clave privada que la de ~/.coverao-firma/clave-privada.pem
 //
-// La versión NO cambia (1.0.0 hasta que el juego sea público): lo que distingue un instalador del anterior es la fecha que se
-// le pone acá, en compilacion.json, junto con las novedades del CHANGELOG que muestra el menú.
+// VERSION fija la versión del release. La fecha de compilacion.json decide si hay una actualización más nueva.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -20,7 +19,10 @@ const { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelCh
 const args = process.argv.slice(2);
 const LINUX = args.includes('--linux');
 const REPO = 'Ayrton09/CoverAO';
-const ETIQUETA = 'v1.0.0';
+const VERSION = fs.readFileSync(path.join(__dirname, '..', 'VERSION'), 'utf8').trim();
+if (!/^\d+\.\d+\.\d+$/.test(VERSION)) throw new Error('VERSION debe tener formato X.Y.Z.');
+if (require('./package.json').version !== VERSION) throw new Error('desktop/package.json no coincide con VERSION.');
+const ETIQUETA = `v${VERSION}`;
 const INSTALADOR = LINUX ? 'CoverAO-x86_64.AppImage' : 'CoverAO-Setup.exe';   // los artifactName de package.json
 const PLATAFORMA = LINUX ? PLATAFORMAS.linux : PLATAFORMAS.win32;
 const COMPILACION = path.join(__dirname, 'compilacion.json');
@@ -66,6 +68,10 @@ fs.writeFileSync(rutaAviso, JSON.stringify(aviso));
 console.log(`${INSTALADOR}: ${(bytes.length / 1048576).toFixed(1)} MB, sha256 ${aviso.sha256.slice(0, 12)}…`);
 
 if (args.includes('--subir')) {
+  // La publicación completa comprueba el commit fuente privado y publica los avisos al final, en subir-version.ps1.
+  const consulta = spawnSync('gh', ['release', 'view', ETIQUETA, '--json', 'isDraft', '-R', REPO], { encoding: 'utf8' });
+  if (consulta.status !== 0 || !JSON.parse(consulta.stdout).isDraft)
+    salir(6, `Hace falta un borrador ${ETIQUETA} en ${REPO}. Usá hosting/subir-version.ps1 para preparar/publicar la release.`);
   // El instalador ANTES que el aviso: una app que lee el aviso nuevo tiene que encontrar ya el instalador nuevo.
   for (const archivo of [exe, rutaAviso]) {
     const r = spawnSync('gh', ['release', 'upload', ETIQUETA, archivo, '--clobber', '-R', REPO], { stdio: 'inherit' });

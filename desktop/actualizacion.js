@@ -1,5 +1,5 @@
-// LA APP SE ACTUALIZA SOLA, SIN CAMBIAR DE VERSIÓN (el autor, 12/10: "siempre estaremos en la 1.0.0" hasta que el juego sea
-// público). Las herramientas de siempre actualizan sólo si el número sube; acá cada instalador lleva la FECHA en que se armó
+// LA APP SE ACTUALIZA SOLA POR LA FECHA DE COMPILACIÓN, además de llevar su número de versión del producto.
+// Cada instalador lleva la FECHA en que se armó
 // (`compilacion.json`, la escribe armar.js) y el release publica `actualizacion.json`: esa fecha, el nombre del instalador, su
 // SHA-256 y su tamaño, firmados con la clave del autor (la misma que firma el cliente, ver firma.js). La app baja el aviso, mira la
 // firma y que la fecha sea MÁS NUEVA que la suya (así no se le puede volver a servir un instalador viejo firmado), baja el
