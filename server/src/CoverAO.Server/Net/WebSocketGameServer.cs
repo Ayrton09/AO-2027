@@ -67,8 +67,8 @@ public sealed class WebSocketGameServer
         // por donde se juega, no aceptaba a nadie de afuera. El que hosteaba veía a sus amigos entrar a la
         // pantalla de login y quedarse en "error de conexión", sin ninguna pista de por qué.
         var bind = HttpBind.Abrir(_port, "WebSocket", token);
-        if (bind is null) return;
-        var (listener, publico) = (bind.Value.Listener, bind.Value.Publico);
+        using var listener = bind.Listener;
+        bool publico = bind.Publico;
         Console.WriteLine($"WebSocket escuchando en ws://{(publico ? "0.0.0.0" : "localhost")}:{_port}/ (cliente web)");
         // OPCIONAL cuando el juego ya entra por el puerto del cliente web: este puerto queda de compatibilidad
         // para un cliente que no conozca `/ws`, así que si cae a loopback no hay nada que avisar ni reservar.
@@ -88,15 +88,15 @@ public sealed class WebSocketGameServer
                 _ = Task.Run(() => AceptarAsync(ctx, token), token);
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         // Las DOS formas en que `GetContextAsync()` se entera de que pararon el listener, y hacen falta las
         // dos: en Windows tira `HttpListenerException` y en Linux `ObjectDisposedException` ("Cannot access a
         // disposed object: 'listener'"). Faltando la segunda, apagar el servidor en Linux moria con excepcion
         // no manejada JUSTO DESPUES de "Apagando servidor (SIGTERM)...", asi que el `Task.WhenAll` de
         // Program.cs no volvia y el guardado de los conectados —que corre despues— nunca llegaba a correr.
         // Medido: el proceso salia en 1,4 s sin imprimir "Servidor detenido" y sin guardar a nadie.
-        catch (HttpListenerException) { }
-        catch (ObjectDisposedException) { }
+        catch (HttpListenerException) when (token.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { }
         finally { try { listener.Stop(); } catch { } }
     }
 

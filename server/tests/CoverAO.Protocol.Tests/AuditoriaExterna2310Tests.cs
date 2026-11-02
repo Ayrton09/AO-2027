@@ -148,9 +148,9 @@ public class AuditoriaExterna2310Tests
     {
         using var cts = new CancellationTokenSource();
         var a = Task.Delay(Timeout.Infinite, cts.Token);
-        var b = Task.CompletedTask;   // el cliente web apagado
+        // El cliente web apagado no se registra entre las escuchas habilitadas.
         cts.CancelAfter(100);
-        Assert.Null(await Escuchas.HastaQueTermineOFalleAlguna(new (string, Task)[] { ("a", a), ("b", b) }, cts)
+        Assert.Null(await Escuchas.HastaQueTermineOFalleAlguna(new (string, Task)[] { ("a", a) }, cts)
             .WaitAsync(TimeSpan.FromSeconds(10)));
     }
 

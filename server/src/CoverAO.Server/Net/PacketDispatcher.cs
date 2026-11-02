@@ -90,6 +90,9 @@ public sealed partial class PacketDispatcher
         _admin = admin;
         _content = content ?? ServerContent.Default;
         _npcs = npcs;
+        // La ficha del muerto y sus drops deben entrar a la cola ANTES de que otra acción pueda recogerlos.
+        // PlayerDied se publica sincrónicamente al terminar KillPlayer, con todo el inventario ya actualizado.
+        _world.Events.Subscribe<PlayerDied>(_ => GuardarLoQueCayoAlMorir());
         // El rechazo con escudo contra una CRIATURA entrena Defensa, y la tirada de entrenamiento vive acá.
         // Se cablea al revés (el sistema de NPCs pide, el dispatcher provee) para no atarlos entre sí.
         if (_npcs is not null)
@@ -229,11 +232,7 @@ public sealed partial class PacketDispatcher
     /// <summary>Vuelve al hilo del mundo con la respuesta de la cola de la base (<see cref="Data.ColaDeLaBase"/>). Si el
     /// pedido falló, el error ya quedó en el log y corre <paramref name="alFallar"/>, si hay.</summary>
     private void Responder<T>(Task<T> pedido, Action<T> alVolver, Action? alFallar = null)
-        => pedido.ContinueWith(t =>
-        {
-            if (t.IsCompletedSuccessfully) _loop.Enqueue(() => alVolver(t.Result));
-            else if (alFallar is not null) _loop.Enqueue(alFallar);
-        }, TaskScheduler.Default);
+        => SeguirRespuestaDeLaBase(pedido, alVolver, alFallar);
 
     // ── LOS PERSONAJES DESCONECTADOS ────────────────────────────────────────────────────────────────────────────
     //
@@ -255,7 +254,7 @@ public sealed partial class PacketDispatcher
     /// <paramref name="reintentar"/> corre cuando se aclare, y se devuelve false.</summary>
     private bool Decidible(string nombre, Action reintentar)
     {
-        if (_world.EstaEntrando(nombre)) { _loop.Enqueue(reintentar); return false; }
+        if (_world.EstaEntrando(nombre)) { ReintentarEntradaParaElCierre(reintentar); return false; }
         if (_cambiosEnCurso.TryGetValue(nombre, out var enEspera)) { enEspera.Enqueue(reintentar); return false; }
         return true;
     }
@@ -1015,6 +1014,7 @@ public sealed partial class PacketDispatcher
     private void ApartarSiNoEstaAdentro(ClientSession session, string cuenta, string personaje)
     {
         if (session.Cerrada) { SoltarYReanudar(session); return; }
+        if (BorradoDeStaffReservado(session, personaje)) { SoltarYReanudar(session); return; }
         if (_world.PlayerByName(personaje) is not null || _world.EstaEntrando(personaje))
         {
             SoltarYReanudar(session);
@@ -1031,7 +1031,7 @@ public sealed partial class PacketDispatcher
             return;
         }
         _world.ReservarEntrada(personaje);
-        Task.Run(() =>
+        SeguirTrabajoDeFondo(() =>
         {
             bool borrado = false, baneado = false;
             var roster = new List<CharacterSummary>();
@@ -1055,7 +1055,7 @@ public sealed partial class PacketDispatcher
             {
                 Console.Error.WriteLine($"[{session.RemoteEndpoint}] borrar personaje: {ex.Message}");
             }
-            _loop.Enqueue(() =>
+            return () =>
             {
                 _world.SoltarEntrada(personaje);
                 // EL CORREO SE VA CON EL PERSONAJE, como en el original, donde vivía adentro de su .chr y se borraba con él
@@ -1076,7 +1076,11 @@ public sealed partial class PacketDispatcher
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
                 session.Send(ServerMessages.AddPj(cuenta, roster));   // la pantalla de seleccion, ya sin el
                 session.Send(ServerMessages.SendMsgBox($"{personaje} fue borrado.", 1));
-            });
+            };
+        }, alFallar: () =>
+        {
+            _world.SoltarEntrada(personaje);
+            SoltarYReanudar(session);
         });
     }
 
@@ -1247,6 +1251,7 @@ public sealed partial class PacketDispatcher
                 // letras y espacio). Ver el porqué en Naming.IsValidCharName: un nombre numérico haría que el
                 // cliente confundiera al personaje con una criatura.
                 if (CartelDeNombreNuevo(charName) is { } malNombre) { Cartel(session, malNombre); return; }
+                if (AltaDeStaffReservado(session, charName)) return;
                 if (_db.CharacterExists(charName)) { Cartel(session, CartelYaExisteElPersonaje); return; }
                 // VB6 TCP.bas:383-453: los rangos de raza, género, clase y tierra natal, cada uno con su cartel. La TIERRA
                 // NATAL admite dos, no doce: el original corta en 2 con el comentario "porque al nacimiento solo hay Nix
@@ -9257,8 +9262,8 @@ public sealed partial class PacketDispatcher
     /// <summary>
     /// LO QUE SE LE CAYÓ A CADA MUERTO, junto con su ficha ya sin eso (<see cref="GuardarConElSuelo"/>). La muerte la deciden el
     /// frío, el veneno, las criaturas y los demás, por caminos estáticos que no guardan nada; anotan las baldosas en el mundo y
-    /// acá, en la misma vuelta, se guardan. Antes la ficha esperaba al autoguardado y el suelo salía a los 500 ms: una caída en
-    /// el medio dejaba lo caído en el piso y en la mochila (auditoría externa del 23/10).
+    /// acá se guardan al terminar la muerte, antes de la siguiente acción del mundo. Esperar al próximo tick permitía que
+    /// otra acción recogiera el drop y guardara al recolector antes de guardar al muerto.
     /// </summary>
     private void GuardarLoQueCayoAlMorir()
     {
@@ -10300,19 +10305,13 @@ public sealed partial class PacketDispatcher
     /// <summary>
     /// LA ACREDITACIÓN A UN DESCONECTADO NO LLEGÓ: el oro vuelve a la bóveda del que lo mandó. Se lo busca por NOMBRE y no
     /// por el personaje que mandó: si se desconectó en el medio, su guardado de salida ya salió sin ese oro, y el personaje
-    /// de la transferencia es un objeto que nadie va a volver a guardar. Conectado o no —o entrando de nuevo—, lo resuelve
-    /// <see cref="ConElPersonaje"/>.
+    /// de la transferencia es un objeto que nadie va a volver a guardar. La devolución se conserva como obligación hasta
+    /// guardar al vivo o encolar una acreditación durable para el desconectado, incluso al rendir la cola.
     /// </summary>
     private void DevolverTransferencia(string quien, string targetName, int amount, string motivo)
     {
         _economia?.Anotar($"transferencia {quien} -> {targetName}: {amount} oro DEVUELTO ({motivo})");
-        ConElPersonaje(quien, (emisor, conectado) =>
-        {
-            if (emisor is null) { Console.Error.WriteLine($"[transferencia] no se pudieron devolver {amount} de oro a {quien}"); return; }
-            emisor.Bank += amount;
-            if (conectado is null) { _db.SaveCharacter(emisor); return; }
-            conectado.Connection?.Send(ServerMessages.ConsoleMsg(motivo, FuenteInfo));
-        });
+        RegistrarDevolucion(quien, amount, motivo);
     }
 
     /// <summary>ModifySkills (id 32): 27 bytes of per-skill increments. Spends free skill points.</summary>

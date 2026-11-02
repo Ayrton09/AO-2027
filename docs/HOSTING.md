@@ -200,7 +200,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `ProxyDeConfianza` | las direcciones del reverse-proxy que está delante del cliente web, separadas por coma (`127.0.0.1,::1` si corre en la misma máquina). De una conexión que viene de ahí, la IP del jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy; sin esto, detrás del proxy todos los jugadores tienen la misma IP y los topes por IP los frenan a todos juntos. Vacío = no se le cree a ninguna cabecera |
 | `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina**: gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
 
-**Ser GM**: en `[INIT]` poner `Dioses=1` y agregar la sección:
+**Ser GM**: primero creá el personaje en tu cuenta. Después, en `[INIT]` poné `Dioses=1` y agregá la sección:
 
 ```ini
 [Dioses]
@@ -209,6 +209,11 @@ Dios1=NombreDeTuPersonaje
 
 Se resuelve en cada login, así que no hay que tocar el personaje. Rangos, de más a menos autoridad: `Admines`,
 `Dioses`, `SemiDioses`, `Consejeros`, `RolesMasters`.
+
+Los nombres configurados como staff quedan reservados: no se pueden crear desde el cliente, aunque todavía no exista el
+personaje, ni borrar mientras tengan rango. Para borrar uno, primero quitale el rango desde el panel o el `Server.ini`.
+Si configuraste un nombre antes de crear el personaje, sacalo temporalmente de la lista, crealo en tu cuenta y volvé a
+darle el rango. Esto evita que otra cuenta tome un nombre libre y herede permisos de GM.
 
 **Sin editar archivos**: cualquier clave se pisa con una variable de entorno `COVERAO_<SECCION>_<CLAVE>`, útil
 en contenedores y en systemd.
@@ -363,6 +368,16 @@ apaga el servidor con la base todavía caída, no se la espera: lo que no se pud
 `data/rescate-AAAAMMDD-HHMMSS.json` (cerrar la ventana da unos pocos segundos) y el próximo arranque lo aplica antes de
 abrir. Si en vez de eso se restaura un backup o se importa, lo rescatado es de la base de antes y no se aplica encima:
 queda al lado, como `*.sin-aplicar`.
+
+Los autoguardados repetidos de una misma cosa se reemplazan mientras esperan. Si aun así se alcanzan
+10.000 pedidos pendientes, el servidor frena las acciones nuevas y se apaga ordenadamente para guardar
+el rescate. Termina las operaciones ya admitidas y conserva también los guardados del cierre; no descarta
+una escritura después de haber movido oro u objetos. El proceso devuelve error para que el supervisor
+del host detecte el cierre. Revisá la base y los mensajes de la consola antes de volver a iniciarlo.
+
+Si una transferencia falla durante el cierre, su devolución también se guarda o queda en el rescate,
+aunque el emisor ya se haya desconectado. Las devoluciones que esperan otro cambio se despachan después
+de los guardados finales; reproducir el rescate no vuelve a sumar el mismo crédito.
 
 ### Importar y exportar
 

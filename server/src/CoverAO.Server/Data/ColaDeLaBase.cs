@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
 using Microsoft.Data.Sqlite;
@@ -35,7 +34,8 @@ namespace CoverAO.Server.Data;
 ///
 /// <para><b>La lectura que se puede abandonar</b> (como la cuenta del ingreso, que deja de esperar a los 10 s) no se hace si el
 /// que la pidió ya se fue: sale de la cola sin tocar la base. Y las que esperan tienen tope: pasado, la lectura falla en el acto
-/// con <see cref="LaBaseNoResponde"/>. Las escrituras no tienen tope: se guardan siempre.</para>
+/// con <see cref="LaBaseNoResponde"/>. Al alcanzar el límite de pedidos se pide el apagado ordenado del servidor, antes de
+/// aceptar más acciones del mundo. Las escrituras de las acciones que ya cambiaron el mundo se conservan.</para>
 ///
 /// <para><b>Al apagar</b> se espera a que se vacíe; si la base sigue sin responder, la cola se rinde y devuelve lo que no se
 /// aplicó, para el archivo de rescate (<see cref="Rescates"/>).</para>
@@ -60,8 +60,8 @@ public sealed class ColaDeLaBase : IDisposable
         /// <summary>Un guardado de una sola cosa, que uno más nuevo puede superar. Los que van juntos no: descartar una parte
         /// dejaría la otra sola.</summary>
         public readonly bool Superable = superable;
-        /// <summary>0 esperando, 1 tomado por el escritor, 2 superado. Se cambia con <see cref="Interlocked"/>: el que encola y
-        /// el escritor se lo disputan.</summary>
+        /// <summary>0 esperando, 1 tomado por el escritor, 2 superado. La extracción y la consolidación se excluyen con
+        /// el candado de la lista.</summary>
         public int Estado;
         /// <summary>El rescate con el que quedó apartado, o null.</summary>
         public Rescate? Rescatado;
@@ -73,6 +73,7 @@ public sealed class ColaDeLaBase : IDisposable
         public long Orden;
         /// <summary>Ya quedó entre lo que no se aplicó: que no entre dos veces.</summary>
         public bool Apartado;
+        public LinkedListNode<Pedido>? Nodo;
     }
 
     /// <summary>Las esperas entre reintentos mientras la base no responde; la última se repite.</summary>
@@ -82,9 +83,14 @@ public sealed class ColaDeLaBase : IDisposable
     /// conexión (<c>ClientSession.TomarVerificacion</c>), y 4000 es el tope de conexiones por defecto (Program.cs,
     /// <c>ConnectionGuard</c>).</summary>
     internal const int TopeDeLecturasAbandonables = 4000;
+    internal const int TopeDePedidos = 10_000;
 
     private readonly IAlmacen _almacen;
-    private readonly BlockingCollection<Pedido> _pedidos = new();
+    // Bajo _orden. La lista permite sacar de verdad un guardado superado: dejar una marca en una cola concurrente seguía
+    // acumulando un objeto Pedido por autosave mientras el escritor estaba trabado.
+    private readonly LinkedList<Pedido> _pedidos = new();
+    private readonly AutoResetEvent _hayPedidos = new(false);
+    private bool _cerrada;
     private readonly Thread _escritor;
     private readonly object _deAUno = new();
     private readonly object _estado = new();
@@ -103,6 +109,8 @@ public sealed class ColaDeLaBase : IDisposable
     private int _pendientes;
     private int _abandonables;
     private readonly int _topeDeAbandonables;
+    private readonly int _topeDePedidos;
+    private int _saturada;
     private Pedido? _enCurso;
     private bool _rendida;
     private DateTime? _caidaDesde;
@@ -130,12 +138,16 @@ public sealed class ColaDeLaBase : IDisposable
     /// <param name="carpetaDelRescate">Dónde va el volcado mientras la base no responde (<see cref="Volcar"/>). Sin ella, no se
     /// vuelca.</param>
     /// <param name="cadaVolcado">Cada cuánto se vuelve a volcar. Las pruebas lo acortan.</param>
+    /// <param name="topeDePedidos">Umbral que pide el apagado ordenado. El host detiene nuevas acciones antes de reservar
+    /// espacio para los guardados de la acción en curso y del cierre.</param>
     internal ColaDeLaBase(IAlmacen almacen, TimeSpan[] esperas, int topeDeLecturas = TopeDeLecturasAbandonables,
-        string? carpetaDelRescate = null, TimeSpan? cadaVolcado = null)
+        string? carpetaDelRescate = null, TimeSpan? cadaVolcado = null, int topeDePedidos = TopeDePedidos)
     {
         _almacen = almacen;
         _esperas = esperas;
         _topeDeAbandonables = topeDeLecturas;
+        ArgumentOutOfRangeException.ThrowIfLessThan(topeDePedidos, 1);
+        _topeDePedidos = topeDePedidos;
         _carpetaDelRescate = carpetaDelRescate;
         _cadaVolcado = cadaVolcado ?? CadaVolcado;
         _escritor = new Thread(Correr) { IsBackground = true, Name = "cola-de-la-base" };
@@ -144,6 +156,14 @@ public sealed class ColaDeLaBase : IDisposable
 
     /// <summary>Cuántos pedidos esperan o están corriendo.</summary>
     public int Pendientes => Volatile.Read(ref _pendientes);
+
+    /// <summary>Se alcanzó el límite: no se admiten nuevas acciones del mundo y el servidor inicia su apagado ordenado.
+    /// No vuelve a false: reanudar en medio del apagado permitiría productores nuevos sobre un rescate en curso.</summary>
+    public bool Saturada => Volatile.Read(ref _saturada) != 0;
+
+    /// <summary>Una sola vez y fuera de los candados de la cola. El host debe detener los productores y guardar el mundo.
+    /// No se rechaza la escritura que lo disparó: el llamador puede haber descontado ya oro u objetos.</summary>
+    public event Action? LimiteAlcanzado;
 
     /// <summary>Cuántos guardados se descartaron porque uno más nuevo de lo mismo ya esperaba.</summary>
     public long Superados => Interlocked.Read(ref _superados);
@@ -215,26 +235,47 @@ public sealed class ColaDeLaBase : IDisposable
     /// (una conexión de SQLite, por ejemplo, no lo aguanta). Para el escritor, el candado nunca tiene a nadie esperando.</summary>
     private void Encolar(Pedido pedido, bool conRespuesta = false)
     {
-        int pendientes = Interlocked.Increment(ref _pendientes);
-        try
+        Interlocked.Increment(ref _pendientes);
+        bool cerrada;
+        lock (_orden)
         {
-            lock (_orden)
+            pedido.Orden = ++_siguiente;
+            cerrada = _cerrada;
+            if (!cerrada)
             {
-                pedido.Orden = ++_siguiente;
                 if (conRespuesta) _ultimaRespuesta = pedido.Orden;
                 foreach (var clave in pedido.Claves)
                 {
                     if (_esperaPorClave.Remove(clave, out var anterior) && anterior.Orden > _ultimaRespuesta) Superar(anterior);
                     if (pedido.Superable) _esperaPorClave[clave] = pedido;
                 }
-                _pedidos.Add(pedido);
+                pedido.Nodo = _pedidos.AddLast(pedido);
             }
         }
-        catch (InvalidOperationException)
+        if (cerrada)
         {
-            try { lock (_deAUno) Aplicar(pedido, reintentar: false); }
+            try
+            {
+                // El host puede rendir la cola antes de tomar las últimas fichas del mundo. Esas fichas tienen que ir al
+                // mismo rescate, sin volver a tocar una base que sigue caída ni bloquear detrás del escritor trabado.
+                lock (_estado)
+                    if (_rendida) { Apartar(pedido); return; }
+                lock (_deAUno)
+                {
+                    lock (_estado)
+                        if (_rendida) { Apartar(pedido); return; }
+                    Aplicar(pedido, reintentar: false);
+                }
+            }
             finally { Salio(pedido); }
             return;
+        }
+        _hayPedidos.Set();
+        int pendientes = Pendientes;
+        if (pendientes >= _topeDePedidos && Interlocked.Exchange(ref _saturada, 1) == 0)
+        {
+            Console.Error.WriteLine($"[base] se alcanzó el límite de {_topeDePedidos} pedidos: se inicia el apagado ordenado para conservar lo pendiente.");
+            LimiteAlcanzado?.Invoke();
         }
         if (CaidaDesde is not null) AvisarSiCrece(pendientes);
     }
@@ -247,10 +288,14 @@ public sealed class ColaDeLaBase : IDisposable
     /// </summary>
     private void Superar(Pedido anterior)
     {
-        if (Interlocked.CompareExchange(ref anterior.Estado, 2, 0) != 0) return;   // el escritor ya lo tomó
+        if (anterior.Estado != 0 || anterior.Nodo is null) return;   // el escritor ya lo tomó; todo bajo _orden
+        anterior.Estado = 2;
+        _pedidos.Remove(anterior.Nodo);
+        anterior.Nodo = null;
         anterior.Hacer = _ => { };
         anterior.Rescate = null;
         Interlocked.Increment(ref _superados);
+        Salio(anterior);
     }
 
     /// <summary>El pedido ya no está en la cola: aplicado, abandonado, apartado o superado.</summary>
@@ -287,15 +332,34 @@ public sealed class ColaDeLaBase : IDisposable
 
     private void Correr()
     {
-        foreach (var pedido in _pedidos.GetConsumingEnumerable())
+        while (true)
         {
+            Pedido? pedido = null;
+            bool cerrada;
+            lock (_estado)
+                lock (_orden)
+                {
+                    cerrada = _cerrada;
+                    if (_pedidos.First is { } primero)
+                    {
+                        pedido = primero.Value;
+                        _pedidos.RemoveFirst();
+                        pedido.Nodo = null;
+                        pedido.Estado = 1;
+                        _enCurso = pedido;
+                    }
+                }
+            if (pedido is null)
+            {
+                if (cerrada) return;
+                _hayPedidos.WaitOne();
+                continue;
+            }
             try
             {
-                if (Interlocked.CompareExchange(ref pedido.Estado, 1, 0) != 0) continue;   // superado: otro más nuevo lo cubre
                 lock (_estado)
                 {
                     if (_rendida) { Apartar(pedido); continue; }
-                    _enCurso = pedido;
                 }
                 lock (_deAUno) Aplicar(pedido, reintentar: true);
             }
@@ -404,14 +468,25 @@ public sealed class ColaDeLaBase : IDisposable
             if (_volcado is null || !_volcadoVigente || terminado.Orden < _volcadoHasta) return;
             lock (_estado) if (_caidaDesde is not null || _rendida) return;   // sigue caída o se rindió: el apagado escribe el suyo
             _volcadoVigente = false;
-            BorrarElVolcado();
+        }
+        // No puede pasar el próximo pedido hasta retirar el archivo viejo: si entrara un estado más nuevo y el proceso
+        // muriera, el siguiente arranque lo pisaría con este rescate ya aplicado. Se espera solamente en el escritor; el
+        // mundo puede pedir el apagado y dejar un rescate con los pedidos todavía pendientes.
+        for (int intento = 0; ; intento++)
+        {
+            bool retirado;
+            lock (_volcando) retirado = BorrarElVolcado();
+            if (retirado) { Volvio(); return; }
+            Cayo(new IOException("no se pudo retirar el rescate ya aplicado"), "retirar el rescate");
+            if (!EsperarParaReintentar(intento)) return;
         }
     }
 
     /// <summary>Desde adentro de un pedido: la base ya contestó, y lo que sigue NO se puede aplicar dos veces (una suma a una
     /// bóveda). Si hay un volcado vigente, se reescribe ya, con el saldo de antes que el pedido acaba de anotar, antes de que
     /// sume: sin eso, un corte justo después la sumaba otra vez en el próximo arranque
-    /// (<see cref="Persistence.AcreditarBovedaAsync"/>). Si no se puede reescribir, se borra, como antes.</summary>
+    /// (<see cref="Persistence.AcreditarBovedaAsync"/>). Si no se puede reescribir, se conserva el archivo y se reintenta antes
+    /// de sumar: borrarlo perdería también los otros pedidos que todavía esperan.</summary>
     internal void LaBaseResponde()
     {
         Volvio();
@@ -421,8 +496,7 @@ public sealed class ColaDeLaBase : IDisposable
             Pedido? enCurso;
             lock (_estado) enCurso = _enCurso;
             if (enCurso is not null && Volcar(enCurso, forzar: true)) return;
-            _volcadoVigente = false;
-            BorrarElVolcado();
+            throw new LaBaseNoResponde("no se pudo actualizar el rescate antes de acreditar; se conserva y se reintenta");
         }
     }
 
@@ -441,17 +515,25 @@ public sealed class ColaDeLaBase : IDisposable
         if (_carpetaDelRescate is null) return false;
         lock (_volcando)
         {
-            long hasta = Interlocked.Read(ref _siguiente);
-            if (!forzar && _volcadoVigente && (Environment.TickCount64 < _proximoVolcado || hasta == _volcadoHasta)) return false;
+            long hasta;
             List<(string, Rescate?)> pendientes;
             lock (_estado)
             {
                 if (_rendida) return false;   // el apagado escribe el suyo
-                pendientes = _pedidos.ToArray().Prepend(enCurso)
-                    .Where(p => !p.Apartado && p.Estado != 2 && !p.Abandono.IsCancellationRequested)
-                    .OrderBy(p => p.Orden)
-                    .Select(p => (p.Que, p.Rescate?.Invoke(false)))
-                    .ToList();
+                // La foto y su último número pertenecen al mismo instante. Encolar usa este mismo candado: un pedido que
+                // entra después no puede terminar en el archivo con una marca anterior a él.
+                lock (_orden)
+                {
+                    var foto = _pedidos.Prepend(enCurso)
+                        .Where(p => !p.Apartado && p.Estado != 2 && !p.Abandono.IsCancellationRequested)
+                        .OrderBy(p => p.Orden).ToArray();
+                    if (foto.Length == 0) return false;
+                    hasta = foto[^1].Orden;
+                    if (!forzar && _volcadoVigente && (Environment.TickCount64 < _proximoVolcado || hasta == _volcadoHasta)) return false;
+                    pendientes = foto
+                        .Select(p => (p.Que, p.Rescate?.Invoke(false)))
+                        .ToList();
+                }
             }
             // Un volcado que falla —el disco lleno es una de las caídas— no puede frenar a la cola.
             bool escrito = false;
@@ -460,32 +542,33 @@ public sealed class ColaDeLaBase : IDisposable
                 _volcado = Rescates.Escribir(_carpetaDelRescate, pendientes, _volcado) ?? _volcado;
                 _volcadoVigente = _volcado is not null;
                 escrito = _volcadoVigente;
+                if (escrito) _volcadoHasta = hasta;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[base] no se pudo volcar lo que espera a la base: {ex.Message}");
             }
-            _volcadoHasta = hasta;
             _proximoVolcado = Environment.TickCount64 + (long)_cadaVolcado.TotalMilliseconds;
             return escrito;
         }
     }
 
-    /// <summary>Borra el volcado que ya no vale. Si no se puede, queda anotado: lo pisa el próximo volcado o el rescate del
-    /// apagado, y si no, el apagado lo vuelve a intentar.</summary>
-    private void BorrarElVolcado()
+    /// <summary>Borra el volcado que ya no vale. Si no se puede, el escritor espera antes de aplicar otro pedido; el apagado
+    /// puede reemplazarlo por el rescate de lo que todavía falta.</summary>
+    private bool BorrarElVolcado()
     {
-        if (_volcado is not { } ruta || _volcadoVigente) return;
+        if (_volcado is not { } ruta) return true;
+        if (_volcadoVigente) return false;
         try
         {
             File.Delete(ruta);
             _volcado = null;
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"[base] OJO: no se pudo borrar {ruta} ({ex.Message}), que ya se aplicó. Si el servidor se " +
-                                    "corta antes de volver a intentarlo, borralo a mano antes de arrancar: aplicado de nuevo, " +
-                                    "pisaría lo que se guardó después.");
+            Console.Error.WriteLine($"[base] no se pudo borrar {ruta} ({ex.Message}); el escritor espera para no dejar estados más nuevos detrás de un rescate viejo.");
+            return false;
         }
     }
 
@@ -503,7 +586,17 @@ public sealed class ColaDeLaBase : IDisposable
                 BorrarElVolcado();
                 return null;
             }
-            string? ruta = Rescates.Escribir(carpeta, sinAplicar, _volcado);
+            string? ruta;
+            try { ruta = Rescates.Escribir(carpeta, sinAplicar, _volcado); }
+            catch (Exception ex) when (!_volcadoVigente && _volcado is not null && ex is IOException or UnauthorizedAccessException)
+            {
+                // El archivo viejo YA entró entero y no se pudo retirar (por ejemplo, un antivirus lo tiene abierto).
+                // Se puede escribir sólo lo pendiente aparte, después de él en el orden de arranque. No es seguro hacer
+                // esto con uno vigente: contendría operaciones todavía pendientes y una suma podría aplicarse dos veces.
+                string posterior = _volcado + ".posterior-" + Guid.NewGuid().ToString("N") + ".json";
+                ruta = Rescates.Escribir(carpeta, sinAplicar, posterior);
+                Console.Error.WriteLine($"[base] el rescate ya aplicado sigue abierto; lo pendiente quedó en {Path.GetFileName(posterior)}, que se aplica después.");
+            }
             _volcado = null;
             _volcadoVigente = false;
             return ruta;
@@ -544,7 +637,8 @@ public sealed class ColaDeLaBase : IDisposable
     /// </summary>
     public IReadOnlyList<(string Que, Rescate? Rescate)> Cerrar(TimeSpan plazo)
     {
-        _pedidos.CompleteAdding();
+        lock (_orden) _cerrada = true;
+        _hayPedidos.Set();
         if (EsElEscritor) return Resultado();
         var reloj = Stopwatch.StartNew();
         while (!_escritor.Join(Vistazo))
@@ -554,8 +648,12 @@ public sealed class ColaDeLaBase : IDisposable
             {
                 _rendida = true;
                 if (_enCurso is { } corriendo) Apartar(corriendo);
-                while (_pedidos.TryTake(out var resto))
+                lock (_orden)
+                while (_pedidos.First is { } primero)
                 {
+                    var resto = primero.Value;
+                    _pedidos.RemoveFirst();
+                    resto.Nodo = null;
                     Apartar(resto);
                     Salio(resto);
                 }

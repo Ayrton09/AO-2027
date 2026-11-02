@@ -679,6 +679,19 @@ void PedirApagadoOrdenado()
     cts.Cancel();
 }
 
+// No se rechaza un guardado después de haber movido oro u objetos. Al llegar al umbral de pedidos se deja
+// terminar la acción actual y se apaga con rescate, sin seguir acumulando acciones durante una caída larga.
+// Las escrituras de esa acción y del cierre siguen admitidas; la reserva depende del mundo conectado,
+// no de cuánto tiempo permanezca caída la base.
+loop.PuedeProcesar = () => !db.Cola.Saturada && !cts.IsCancellationRequested;
+void ApagarPorSaturacion()
+{
+    Console.Error.WriteLine("[base] Se alcanzó el límite de pedidos pendientes. Se apaga el servidor y se guarda el rescate.");
+    _ = Task.Run(PedirApagadoOrdenado);
+}
+db.Cola.LimiteAlcanzado += ApagarPorSaturacion;
+if (db.Cola.Saturada) ApagarPorSaturacion();
+
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
@@ -887,7 +900,8 @@ if (!fixtureMode && serverIni.BuscarActualizaciones && Environment.GetEnvironmen
     && Actualizador.IdInstalado(AppContext.BaseDirectory) is { } idInstalado)
     _ = Task.Run(() => Actualizador.VigilarAsync(idInstalado, Console.WriteLine, cts.Token));
 
-var loopTask = loop.RunAsync(cts.Token);
+// Los listeners se cortan primero; el mundo termina las respuestas de base ya admitidas antes de Stop abajo.
+var loopTask = loop.RunAsync(CancellationToken.None);
 
 // LOS BOTS. Apagados salvo que el host los pida (clave `Bots` del Server.ini), y NUNCA con --fixture: un bot
 // caminando cerca le mete a un flow de paridad apariciones, movimientos y desapariciones que el flow no pidió,
@@ -908,24 +922,30 @@ if (soloEscritorio) Console.WriteLine($"Puerto {port} (protocolo clasico) CERRAD
 // terminan nunca: el servidor seguía "andando" con un puerto muerto y sin decir nada (auditoría externa del 23/10). Y se
 // atrapa CUALQUIER excepción, no sólo la cancelación: antes, una sin atrapar terminaba el proceso SALTEÁNDOSE el guardado de
 // abajo, que con jugadores conectados es lo que no se puede omitir.
-var listenerQueFallo = await Escuchas.HastaQueTermineOFalleAlguna(new (string, Task)[]
+// Los deshabilitados no son escuchas: una tarea completada de un listener habilitado sí es un fallo.
+var escuchasHabilitadas = new List<(string, Task)>
 {
-    ($"el puerto {port} (protocolo clásico)", soloEscritorio ? Task.CompletedTask : server.RunAsync(cts.Token)),
     ($"el WebSocket ({port + 1})", wsServer.RunAsync(cts.Token)),
-    ("el panel de admin", adminTask),
-    ("el cliente web", webTask),
-}, cts);
-int exitCode = listenerQueFallo is null ? 0 : 1;   // un listener caído termina con error: el que lo supervisa se entera
+};
+if (!soloEscritorio) escuchasHabilitadas.Add(($"el puerto {port} (protocolo clásico)", server.RunAsync(cts.Token)));
+if (!sinAdmin) escuchasHabilitadas.Add(("el panel de admin", adminTask));
+if (habraWeb) escuchasHabilitadas.Add(("el cliente web", webTask));
+var listenerQueFallo = await Escuchas.HastaQueTermineOFalleAlguna(escuchasHabilitadas, cts);
+int exitCode = listenerQueFallo is null && !db.Cola.Saturada ? 0 : 1;   // las caídas se reflejan en el código de salida
 
 // LO QUE LA BASE TODAVÍA TENÍA QUE CONTESTAR, con el loop andando: un /BAN o un /BANCLAN a desconectados, la transferencia
 // a la bóveda de un ausente, la devolución de una que falló —todo lo que lee de la base y vuelve al loop a terminar—. Con
 // el loop ya parado, esas vueltas no corrían: el cambio avisado quedaba sin guardar. Con la base caída no se la espera: no
 // va a contestar, y lo suyo va al rescate.
-if (db.Cola.CaidaDesde is null)
-{
-    db.EsperarEscriturasPendientes(TimeSpan.FromSeconds(2));
-    await Task.Delay(GameLoop.TickMs * 3);   // las vueltas de lo que volvió
-}
+// Un atraso largo se rescata antes de detener el loop: ninguna operación sin terminar puede devolver
+// un fallo recién después de la foto final y dejar al emisor sin el oro. Lo apartado se completa al arrancar.
+bool baseApartadaParaRescate = db.Cola.CaidaDesde is not null || !db.Cola.Vaciar(TimeSpan.FromSeconds(2));
+if (baseApartadaParaRescate)
+    db.Cola.Cerrar(TimeSpan.Zero);
+if (dispatcher is not null)
+    baseApartadaParaRescate |= await dispatcher.CompletarRespuestasDeLaBaseAsync();
+else
+    await loop.SincronizarContinuacionesAsync();
 loop.Stop();
 try { await loopTask; } catch (OperationCanceledException) { } catch (Exception ex) { Console.Error.WriteLine($"[apagado] game loop: {ex.Message}"); }
 
@@ -939,7 +959,7 @@ try { await loopTask; } catch (OperationCanceledException) { } catch (Exception 
 // Antes, el backup que pueda estar sacando su foto en segundo plano: cortarlo a la mitad no deja nada que sirva. Con la
 // base caída no puede terminar —espera a que se escriba lo encolado— y esperarlo sería perder el rescate: cerrar la
 // ventana le da al proceso unos 5 s.
-if (db.Cola.CaidaDesde is null)
+if (!baseApartadaParaRescate && db.Cola.CaidaDesde is null && !db.Cola.Saturada)
 {
     try { await tareaBackup; }
     catch (Exception ex) { Console.Error.WriteLine($"[apagado] backup en segundo plano: {ex.Message}"); }
@@ -959,6 +979,9 @@ dispatcher?.VolcarPersistenciaDiferida(forzar: true);
 // el hilo de la cola es de fondo: si el proceso termina sin esperarla, esos guardados mueren con él. Se cierra la cola
 // y se espera a que escriba todo; si la base no responde, lo que quedó va al archivo de rescate.
 db.MarcarConectados(Array.Empty<string>());
+// Una devolución puede esperar detrás de una transferencia apartada para rescate cuyo Task no termina.
+// Con el loop detenido, va al final: ninguna ficha anterior puede pisar el crédito que se rescata.
+dispatcher?.DespacharDevolucionesPendientesAlApagar();
 db.Cerrar(dataRoot);
 (almacen as IDisposable)?.Dispose();   // la base: cierra la conexión y deja el archivo entero, sin el diario al lado
 Console.WriteLine("Servidor detenido. Hasta la proxima.");

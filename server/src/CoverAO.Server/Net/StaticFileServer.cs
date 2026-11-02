@@ -165,8 +165,8 @@ public sealed class StaticFileServer
     public async Task RunAsync(CancellationToken token)
     {
         var bind = HttpBind.Abrir(_port, "Cliente web", token);   // toda interfaz, con caída a loopback (ver HttpBind)
-        if (bind is null) return;
-        var (listener, publico) = (bind.Value.Listener, bind.Value.Publico);
+        using var listener = bind.Listener;
+        bool publico = bind.Publico;
         Console.WriteLine($"== Cliente web: http://localhost:{_port}/ (raíz: {_root}) ==");
         HttpBind.AvisarSiSoloLocal(publico, _port);
         HttpBind.ImprimirComoEntrar(_port, _wsPort, publico);
@@ -176,8 +176,8 @@ public sealed class StaticFileServer
             {
                 HttpListenerContext ctx;
                 try { ctx = await listener.GetContextAsync(); }
-                catch (HttpListenerException) { break; }
-                catch (ObjectDisposedException) { break; }
+                catch (HttpListenerException) when (token.IsCancellationRequested) { break; }
+                catch (ObjectDisposedException) when (token.IsCancellationRequested) { break; }
                 // EL JUEGO, POR ESTE MISMO PUERTO. Va antes que el disco: `/ws` no es un archivo, y sin este
                 // desvío el upgrade termina como un 404 — el cliente vería "no conecta" con el servidor sano.
                 if (_juegoPorWebSocket is not null && ctx.Request.IsWebSocketRequest

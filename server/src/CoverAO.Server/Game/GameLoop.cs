@@ -13,7 +13,7 @@ public sealed class GameLoop
 {
     public const int TickMs = 40; // 25 ticks/second, as in the original server
 
-    private readonly Queue<Action> _pending = new();
+    private readonly Queue<(Action Accion, bool Continuacion)> _pending = new();
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
 
@@ -47,10 +47,30 @@ public sealed class GameLoop
     /// <summary>Invoked every tick with the current tick number (e.g. NPC AI). Runs on the loop thread.</summary>
     public Action<long>? OnTickHandler { get; set; }
 
+    /// <summary>Admisión del mundo. Si la persistencia se satura, termina la acción actual y deja de mutar el mundo
+    /// mientras el servidor prepara el apagado y el rescate de todo lo ya admitido.</summary>
+    public Func<bool>? PuedeProcesar { get; set; }
+
     /// <summary>Queue work to run on the next tick (thread-safe entry point from I/O threads).</summary>
     public void Enqueue(Action action)
     {
-        lock (_gate) _pending.Enqueue(action);
+        lock (_gate) _pending.Enqueue((action, false));
+    }
+
+    /// <summary>Termina una operación de persistencia ya admitida, incluso si la presión de la base cerró la admisión
+    /// del mundo. Un fallo puede necesitar devolver oro antes del guardado final del apagado.</summary>
+    public void EnqueueContinuacion(Action action)
+    {
+        lock (_gate) _pending.Enqueue((action, true));
+    }
+
+    /// <summary>Una barrera detrás de las continuaciones ya encoladas, incluso con la admisión cerrada. El loop debe seguir
+    /// andando: el apagado la espera antes de Stop y de la foto final de los personajes.</summary>
+    public Task SincronizarContinuacionesAsync()
+    {
+        var lista = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EnqueueContinuacion(() => lista.TrySetResult());
+        return lista.Task;
     }
 
     public Task RunAsync(CancellationToken outerToken)
@@ -79,7 +99,7 @@ public sealed class GameLoop
             try
             {
                 Drain();
-                OnTick();
+                if (PuedeProcesar?.Invoke() != false) OnTick();
             }
             finally { _enUnaVuelta = false; }
             _muestras[_muestraIdx] = Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
@@ -120,10 +140,18 @@ public sealed class GameLoop
         lock (_gate) cuantas = _pending.Count;
         for (int i = 0; i < cuantas; i++)
         {
-            Action? action;
-            lock (_gate) action = _pending.Count > 0 ? _pending.Dequeue() : null;
-            if (action is null) break;
-            try { action(); }
+            (Action Accion, bool Continuacion) trabajo;
+            lock (_gate)
+            {
+                if (_pending.Count == 0) break;
+                trabajo = _pending.Dequeue();
+                if (!trabajo.Continuacion && PuedeProcesar?.Invoke() == false)
+                {
+                    _pending.Enqueue(trabajo);
+                    continue;
+                }
+            }
+            try { trabajo.Accion(); }
             catch (Exception ex) { Console.Error.WriteLine($"[loop] action error: {ex.Message}"); }
         }
     }

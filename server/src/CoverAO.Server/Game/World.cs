@@ -49,7 +49,8 @@ public sealed class World
     public long SueloCambios { get; private set; }
 
     /// <summary>Lo que se le cayó a cada muerto en esta vuelta, baldosa por baldosa: el despachador lo guarda junto con su ficha
-    /// (<c>PacketDispatcher.GuardarLoQueCayoAlMorir</c>) y lo vacía. La muerte corre por caminos estáticos que no tienen la base.</summary>
+    /// (<c>PacketDispatcher.GuardarLoQueCayoAlMorir</c>) al terminar PlayerDied y lo vacía antes de otra acción.
+    /// La muerte corre por caminos estáticos que no tienen la base.</summary>
     public List<(Player Muerto, WorldPos Baldosa)> CaidoAlMorir { get; } = new();
 
     public bool TryGetGround(WorldPos pos, out (short ObjIndex, short Amount) item) => _ground.TryGetValue(pos, out item);

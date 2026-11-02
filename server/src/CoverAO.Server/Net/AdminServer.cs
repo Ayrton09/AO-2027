@@ -177,8 +177,7 @@ public sealed class AdminServer
         // Va por HttpBind igual que los otros dos por el CORTE AL APAGAR: sin él, `GetContextAsync()` deja el
         // proceso colgado para siempre en el apagado (ver el comentario largo en HttpBind.Abrir).
         var bind = HttpBind.Abrir(_port, "Panel admin", token, soloLocal: !EnContenedor);
-        if (bind is null) return;
-        var listener = bind.Value.Listener;
+        using var listener = bind.Listener;
         // La URL con el token va DIRECTO a la consola real, no por Console.Out — que desde que existe el log a
         // disco está redirigido al LogRing y termina en `data/logs/server-AAAA-MM-DD.log`. Quien lea ese
         // archivo tiene control total del panel (shutdown, kickAll, ban, banIp, backup), y es justo el archivo
@@ -232,8 +231,8 @@ public sealed class AdminServer
             {
                 HttpListenerContext ctx;
                 try { ctx = await listener.GetContextAsync(); }
-                catch (HttpListenerException) { break; }
-                catch (ObjectDisposedException) { break; }
+                catch (HttpListenerException) when (token.IsCancellationRequested) { break; }
+                catch (ObjectDisposedException) when (token.IsCancellationRequested) { break; }
                 _ = Task.Run(() => HandleAsync(ctx), token);
             }
         }

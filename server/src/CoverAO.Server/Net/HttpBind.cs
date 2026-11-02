@@ -25,11 +25,11 @@ internal static class HttpBind
     /// <param name="queEs">Cómo nombrar este puerto en los mensajes ("Cliente web", "WebSocket").</param>
     /// <param name="token">Se usa para CORTAR el listener al apagar. No es opcional: ver abajo.</param>
     /// <param name="soloLocal">Para el panel de administración, que no se publica nunca.</param>
-    /// <returns><c>null</c> si no se pudo abrir ni siquiera en loopback (puerto ocupado, típicamente).</returns>
-    public static Resultado? Abrir(int puerto, string queEs, CancellationToken token, bool soloLocal = false)
+    /// <exception cref="InvalidOperationException">No se pudo abrir ni siquiera en loopback.</exception>
+    public static Resultado Abrir(int puerto, string queEs, CancellationToken token, bool soloLocal = false)
     {
+        token.ThrowIfCancellationRequested();
         var l = Intentar(puerto, queEs, soloLocal);
-        if (l is null) return null;
         // EL LISTENER SE PARA DESDE EL TOKEN, y esto es lo que hace que el servidor pueda apagarse.
         //
         // `HttpListener.GetContextAsync()` NO mira el CancellationToken: se queda esperando un pedido que
@@ -50,14 +50,14 @@ internal static class HttpBind
 
     private static bool EstaEnTodaInterfaz(HttpListener l) => l.Prefixes.Any(p => p.StartsWith("http://+:"));
 
-    private static HttpListener? Intentar(int puerto, string queEs, bool soloLocal)
+    private static HttpListener Intentar(int puerto, string queEs, bool soloLocal)
     {
         if (!soloLocal)
         {
             var todo = new HttpListener();
             todo.Prefixes.Add($"http://+:{puerto}/");
             try { todo.Start(); return todo; }
-            catch (HttpListenerException) { /* sin permisos para toda interfaz: probamos loopback */ }
+            catch (HttpListenerException) { todo.Close(); /* sin permisos para toda interfaz: probamos loopback */ }
         }
 
         var local = new HttpListener();
@@ -66,9 +66,11 @@ internal static class HttpBind
         try { local.Start(); return local; }
         catch (HttpListenerException ex)
         {
-            Console.Error.WriteLine($"{queEs} no disponible en :{puerto} ({ex.Message}). " +
-                                    "Suele ser que el puerto ya está en uso.");
-            return null;
+            local.Close();
+            // El listener está habilitado: no abrirlo es un fallo de arranque, no una terminación exitosa.
+            // Escuchas lo propaga al apagado ordenado y al código de salida del proceso.
+            throw new InvalidOperationException($"{queEs} no disponible en :{puerto} ({ex.Message}). " +
+                                                "Suele ser que el puerto ya está en uso.", ex);
         }
     }
 

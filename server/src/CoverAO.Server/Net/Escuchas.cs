@@ -9,7 +9,8 @@ public static class Escuchas
 {
     /// <summary>Espera hasta que terminen todos o falle uno. Si falla uno, lo dice, cancela <paramref name="apagar"/> (los
     /// demás terminan con eso) y espera a que terminen, hasta <paramref name="plazo"/>. Devuelve el nombre del que falló, o
-    /// null si terminaron todos bien (el apagado de siempre).</summary>
+    /// null si terminaron todos durante el apagado. La lista contiene solamente listeners habilitados: una tarea que
+    /// termina, incluso sin excepción, antes de pedir el apagado significa que dejó de escuchar.</summary>
     public static async Task<string?> HastaQueTermineOFalleAlguna(IReadOnlyList<(string Nombre, Task Tarea)> escuchas,
         CancellationTokenSource apagar, TimeSpan? plazo = null)
     {
@@ -20,9 +21,13 @@ public static class Escuchas
             var termino = await Task.WhenAny(quedan.Select(e => e.Tarea));
             var cual = quedan.First(e => e.Tarea == termino);
             quedan.Remove(cual);
-            if (!termino.IsFaulted || termino.Exception?.InnerException is OperationCanceledException) continue;
+            if (apagar.IsCancellationRequested && (!termino.IsFaulted ||
+                termino.Exception!.InnerExceptions.All(e => e is OperationCanceledException))) continue;
             fallo = cual.Nombre;
-            Console.Error.WriteLine($"[apagado] se cayó {cual.Nombre}: {termino.Exception!.InnerException?.Message}. El servidor se apaga.");
+            string motivo = termino.IsFaulted ? termino.Exception!.InnerException!.Message
+                : termino.IsCanceled ? "se canceló sin que se pidiera apagar"
+                : "dejó de escuchar sin que se pidiera apagar";
+            Console.Error.WriteLine($"[apagado] se cayó {cual.Nombre}: {motivo}. El servidor se apaga.");
             break;
         }
         if (fallo is null) return null;
