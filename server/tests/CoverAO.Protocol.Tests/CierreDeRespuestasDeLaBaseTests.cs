@@ -191,6 +191,8 @@ public sealed class CierreDeRespuestasDeLaBaseTests : IDisposable
         await _entregas.EntregarHasta(_dispatcher.CompletarRespuestasDeLaBaseAsync());
 
         Assert.Equal(5_000, p.Bank);
+        // El callback ya encoló el guardado; esperar al escritor antes de leer el almacén directamente.
+        Assert.True(_db.Cola.Vaciar(TimeSpan.FromSeconds(10)));
         Assert.Equal(5_000, _real.LeerPersonaje("Emisor")!.OroEnBanco);
         Assert.Equal(0, _real.LeerPersonaje("Ausente")!.OroEnBanco);
     }

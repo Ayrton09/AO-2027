@@ -187,10 +187,26 @@ public sealed class PobladoDeBots
 
     /// <summary>Los nombres de <paramref name="cantidad"/> bots: los de la lista en orden y después los de reserva, salteando el
     /// que el servidor no aceptaría como nombre (las mismas reglas que para un jugador) y el que ya es de otro.</summary>
-    internal static List<string> NombresParaArrancar(int cantidad, Func<string, bool> esAjeno) =>
-        Nombres.Concat(Suplentes)
+    internal static List<string> NombresParaArrancar(int cantidad, Func<string, bool> esAjeno,
+        Func<string, byte?>? claseGuardada = null)
+    {
+        var disponibles = Nombres.Concat(Suplentes)
             .Where(n => EsNombreDeBot(n) && !esAjeno(n))
-            .Take(Math.Max(0, cantidad)).ToList();
+            .ToList();
+        var elegidos = disponibles.Take(Math.Max(0, cantidad)).ToList();
+        if (claseGuardada is null || cantidad < Bot.Reparto.Count) return elegidos;
+        byte Clase(string nombre) => claseGuardada(nombre) ?? Bot.ClaseQueLeToca(LugarEnElPoblado(nombre));
+        // Los personajes anteriores al reparto metalúrgico conservan su clase. Dos suplentes cubren los oficios
+        // que falten sin modificar personajes guardados ni superar la cantidad configurada.
+        foreach (byte oficio in new byte[] { 14, 12 })
+        {
+            if (elegidos.Any(n => Clase(n) == oficio)) continue;
+            string? relevo = disponibles.FirstOrDefault(n => !elegidos.Contains(n) && Clase(n) == oficio);
+            int lugar = elegidos.FindLastIndex(n => Clase(n) is not (14 or 12));
+            if (relevo is not null && lugar >= 0) elegidos[lugar] = relevo;
+        }
+        return elegidos;
+    }
 
     /// <summary>¿El servidor lo aceptaría como nombre de personaje, y el de su cuenta?</summary>
     private static bool EsNombreDeBot(string nombre) => Naming.IsValidCharName(nombre) && Naming.IsValidName(nombre + "_bot");
@@ -316,7 +332,14 @@ public sealed class PobladoDeBots
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.
         // Y se saltea el nombre que ya es de otro (NombreAjeno): su lugar lo toma el siguiente, y al final los de reserva.
         var ajenos = Nombres.Concat(Suplentes).Where(n => NombreAjeno(n, db)).ToList();
-        var elegidos = NombresParaArrancar(cantidad, ajenos.Contains);
+        var clases = new Dictionary<string, byte?>();
+        byte? ClaseGuardada(string nombre)
+        {
+            if (!clases.TryGetValue(nombre, out var clase))
+                clases[nombre] = clase = db.CharacterExists(nombre) ? db.LoadCharacter(nombre, 0, nombre + "_bot")?.Class : null;
+            return clase;
+        }
+        var elegidos = NombresParaArrancar(cantidad, ajenos.Contains, ClaseGuardada);
         var poblado = new PobladoDeBots(entorno, credenciales, ajenos.Concat(elegidos));
         int cuantos = elegidos.Count;
         int nuevos = 0, conPersonaje = 0;

@@ -13,25 +13,37 @@ public class RepartoDeClasesTests
 {
     private const byte Herrero = 12, Minero = 14;
 
-    /// <summary>Están todas menos el Minero y el Herrero, una sola vez cada una: si falta alguna, esa clase no aparece
+    /// <summary>Están todas, una sola vez cada una: si falta alguna, esa clase no aparece
     /// nunca.</summary>
     [Fact]
-    public void El_reparto_tiene_todas_las_clases_menos_el_minero_y_el_herrero_una_vez()
+    public void El_reparto_tiene_todas_las_clases_una_vez()
     {
-        Assert.Equal(GameLimits.NombresDeClase.Length - 2, Bot.Reparto.Count);
+        Assert.Equal(GameLimits.NombresDeClase.Length, Bot.Reparto.Count);
         Assert.Equal(Bot.Reparto.Count, Bot.Reparto.Distinct().Count());
         for (byte clase = 1; clase <= GameLimits.NombresDeClase.Length; clase++)
-            if (clase is Herrero or Minero) Assert.DoesNotContain(clase, Bot.Reparto);
-            else Assert.Contains(clase, Bot.Reparto);
+            Assert.Contains(clase, Bot.Reparto);
     }
 
-    /// <summary>Ningún bot del poblado es Minero ni Herrero.</summary>
+    /// <summary>El poblado incluye los dos eslabones de la metalurgia.</summary>
     [Fact]
-    public void Ningun_bot_del_poblado_es_minero_ni_herrero()
+    public void El_poblado_incluye_mineros_y_herreros()
     {
         var clases = Enumerable.Range(0, PobladoDeBots.Nombres.Count).Select(Bot.ClaseQueLeToca).ToList();
-        Assert.DoesNotContain(Minero, clases);
-        Assert.DoesNotContain(Herrero, clases);
+        Assert.Contains(Minero, clases);
+        Assert.Contains(Herrero, clases);
+    }
+
+    [Fact]
+    public void Los_poblados_guardados_suman_los_oficios_con_suplentes_sin_cambiar_personajes()
+    {
+        var anteriores = PobladoDeBots.Nombres.ToDictionary(n => n,
+            n => Bot.Reparto[PobladoDeBots.LugarEnElPoblado(n) % 16]);
+        var elegidos = PobladoDeBots.NombresParaArrancar(96,_=>false,n=>anteriores.TryGetValue(n,out var c)?c:null);
+        byte Clase(string n) => anteriores.TryGetValue(n,out var c)?c:Bot.ClaseQueLeToca(PobladoDeBots.LugarEnElPoblado(n));
+        Assert.Equal(96,elegidos.Count);Assert.Equal(96,elegidos.Distinct().Count());
+        Assert.Contains(elegidos,n=>Clase(n)==Minero);Assert.Contains(elegidos,n=>Clase(n)==Herrero);
+        Assert.Equal(2,elegidos.Count(n=>!anteriores.ContainsKey(n)));
+        Assert.DoesNotContain(Minero,anteriores.Values);Assert.DoesNotContain(Herrero,anteriores.Values);
     }
 
     /// <summary>
@@ -48,16 +60,16 @@ public class RepartoDeClasesTests
         Assert.Contains((byte)7, losOcho);    // Druida
     }
 
-    /// <summary>Y con dieciséis hay uno de cada clase; con treinta y dos, dos. El reparto da la vuelta.</summary>
+    /// <summary>Con dieciocho hay uno de cada clase; con treinta y seis, dos.</summary>
     [Fact]
-    public void Con_dieciseis_hay_uno_de_cada_clase()
+    public void Con_dieciocho_hay_uno_de_cada_clase()
     {
-        var deCada = Enumerable.Range(0, 16).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
-        Assert.Equal(16, deCada.Count);
+        var deCada = Enumerable.Range(0, 18).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
+        Assert.Equal(18, deCada.Count);
         Assert.All(deCada, g => Assert.Single(g));
 
-        var elDoble = Enumerable.Range(0, 32).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
-        Assert.Equal(16, elDoble.Count);
+        var elDoble = Enumerable.Range(0, 36).Select(Bot.ClaseQueLeToca).GroupBy(c => c).ToList();
+        Assert.Equal(18, elDoble.Count);
         Assert.All(elDoble, g => Assert.Equal(2, g.Count()));
     }
 

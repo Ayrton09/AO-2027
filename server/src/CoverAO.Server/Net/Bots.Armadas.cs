@@ -27,7 +27,7 @@ public sealed partial class Bot
     public const int NivelParaPelearConGente = 20;
 
     /// <summary>Los requisitos del enlistador, los de <c>PacketDispatcher.Enlistar</c> (VB6 ModFacciones.bas).</summary>
-    public const int NivelParaElEjercito = 25, BajasParaElEjercito = 15, NivelParaElCaos = 40, BajasParaElCaos = 30;
+    public const int NivelParaElEjercito = 25, NivelParaElCaos = 40;
 
     /// <summary>Con menos vida que esto no empieza una pelea con gente (defenderse sí, con lo que tenga).</summary>
     private const double SaludParaPelearConGente = 0.75;
@@ -110,23 +110,18 @@ public sealed partial class Bot
     /// agresivo), y el renegado agresivo al Caos, cada uno con el nivel y las bajas que pide el enlistador.</summary>
     public static byte EjercitoQueBusca(byte bando, bool agresivo, int nivel, int bajas) => bando switch
     {
-        Player.StatusCiudadano when !agresivo && nivel >= NivelParaElEjercito && bajas >= BajasParaElEjercito => Player.StatusArmada,
-        Player.StatusRepublicano when !agresivo && nivel >= NivelParaElEjercito && bajas >= BajasParaElEjercito => Player.StatusMilicia,
-        Player.StatusCriminal when agresivo && nivel >= NivelParaElCaos && bajas >= BajasParaElCaos => Player.StatusCaos,
+        Player.StatusCiudadano when !agresivo && nivel >= NivelParaElEjercito && bajas >= RangosDeFaccion.ParaRango(Player.StatusArmada, 1) => Player.StatusArmada,
+        Player.StatusRepublicano when !agresivo && nivel >= NivelParaElEjercito && bajas >= RangosDeFaccion.ParaRango(Player.StatusMilicia, 1) => Player.StatusMilicia,
+        Player.StatusCriminal when agresivo && nivel >= NivelParaElCaos && bajas >= RangosDeFaccion.ParaRango(Player.StatusCaos, 1) => Player.StatusCaos,
         _ => 0,
     };
 
     /// <summary>
-    /// ¿VA A COBRAR LA RECOMPENSA? Cada rango pide 20 bajas más 5 por rango en la Armada y la Milicia, y 10 en el Caos
-    /// (<c>PacketDispatcher.MatadosParaRango</c>): va cada vez que cruza uno de esos escalones desde la última visita. Sin saber el
-    /// rango, alguna visita sobra (el enlistador contesta "mata N más"), y ninguna falta.
+    /// Va cuando cruza un umbral de ascenso desde la última visita. La tabla es la misma que usa el enlistador.
     /// </summary>
     public static bool TocaRecompensa(byte bando, int bajas, int bajasEnLaUltima)
     {
-        if (bando is not (Player.StatusArmada or Player.StatusMilicia or Player.StatusCaos)) return false;
-        int paso = bando == Player.StatusCaos ? 10 : 5;
-        int Escalon(int k) => k < 20 ? -1 : (k - 20) / paso;
-        return Escalon(bajas) >= 0 && Escalon(bajas) > Escalon(bajasEnLaUltima);
+        return RangosDeFaccion.CruzoUnAscenso(bando, bajas, bajasEnLaUltima);
     }
 
     /// <summary>Hasta cuántos mapas se busca el camino al enlistador: los de la Armada y la Milicia quedan en Banderbill y en Suramei,
@@ -374,10 +369,17 @@ public sealed partial class Bot
                 || !await AbrirLaPuertaQueAsync(transporte, sentidos, d => d == puertas[0], cerrada, ct)) return true;
         }
         if (sentidos.MasCercano(f => Sirve(f)) is not { Pasos: <= RadioDelMostrador } enlistador) return true;
-        transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(enlistador.Quien.X).WriteByte(enlistador.Quien.Y)));
+        // Puede haber acumulado varios ascensos antes de llegar. Cada petición es idempotente al alcanzar el tope;
+        // no se marca la visita resuelta después de cobrar sólo uno de los rangos disponibles.
+        int pedidos = RangosDeFaccion.Bajas(ejercito).ToArray().Count(n => n <= cuantas);
+        int completados = 0;
+        for (; completados < pedidos && !cerrada.IsCompleted && !Urge(sentidos); completados++)
+        {
+            transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(enlistador.Quien.X).WriteByte(enlistador.Quien.Y)));
+            await Task.Delay(_rng.Next(800, 1_600), ct);
+        }
         _cortesAlEjercito = 0;
-        if (recompensa) _bajasEnLaUltimaRecompensa = cuantas;
-        await Task.Delay(_rng.Next(800, 1_600), ct);
+        if (completados == pedidos) _bajasEnLaUltimaRecompensa = cuantas;
         PedirLaFicha(transporte, ya: true);
         return true;
     }

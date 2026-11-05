@@ -421,6 +421,10 @@ public sealed class SentidosDelBot
 
     /// <summary>La experiencia acumulada en el nivel. Sube con cada golpe que da experiencia (<c>CalcularDarExp</c>), no sólo al matar.</summary>
     public int Experiencia { get { lock (_candado) return _experiencia; } }
+    private int _criaturasMatadas;
+    public int CriaturasMatadas { get { lock (_candado) return _criaturasMatadas; } }
+    private (byte Clase, byte Raza, byte Genero)? _identidad;
+    public (byte Clase, byte Raza, byte Genero)? Identidad { get { lock (_candado) return _identidad; } }
 
     /// <summary>Puntos de skill sin repartir. El servidor los anuncia al subir de nivel, y un jugador los
     /// gasta: dejarlos juntándose es de las cosas que más delatan que del otro lado no hay nadie.</summary>
@@ -1143,11 +1147,16 @@ public sealed class SentidosDelBot
                 case ServerPacketId.MiniStats:
                 {
                     int ciudadanos = l.Largo(), renegados = l.Largo();
-                    l.Largo(); l.Entero();                    // usuarios matados, criaturas
-                    l.Byte(); l.Byte(); l.Byte(); l.Largo();  // clase, raza, género, muertes
+                    l.Largo(); int criaturas = (ushort)l.Entero();
+                    byte clase = l.Byte(), raza = l.Byte(), genero = l.Byte(); l.Largo();
                     l.Byte();                                 // estado
                     int republicanos = l.Largo(), caos = l.Largo(), armada = l.Largo(), milicianos = l.Largo();
-                    lock (_candado) _bajas = new Bajas(ciudadanos, renegados, republicanos, caos, armada, milicianos);
+                    lock (_candado)
+                    {
+                        _bajas = new Bajas(ciudadanos, renegados, republicanos, caos, armada, milicianos);
+                        _criaturasMatadas = criaturas;
+                        _identidad = (clase, raza, genero);
+                    }
                     break;
                 }
 

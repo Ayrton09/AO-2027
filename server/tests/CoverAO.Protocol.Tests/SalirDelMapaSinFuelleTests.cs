@@ -67,13 +67,14 @@ public class SalirDelMapaSinFuelleTests
         var s = new SentidosDelBot();
         var p = new Player
         {
-            CharIndex = MiIndice, Name = "Gonzo", Account = "gonzo_test", Pos = new WorldPos(Mapa, 51, 11), Level = 17,
+            CharIndex = MiIndice, Name = "Gonzo", Account = "gonzo_test", Pos = new WorldPos(Mapa, 51, 11), Level = 17, Class = 10, Race = 1, Gender = 1,
             MaxHp = 183, Hp = 183, MaxMana = 0, Mana = 0, MaxStamina = 280, Stamina = 0, FactionStatus = Player.StatusRepublicano,
         };
         s.Recibir(ServerMessages.UserIndexInServer(MiIndice));
         s.Recibir(ServerMessages.ChangeMap(Mapa));
         s.Recibir(ServerMessages.CharacterCreate(p));
         s.Recibir(ServerMessages.UpdateUserStats(p));
+        s.Recibir(ServerMessages.MiniStats(p));
         s.Recibir(ServerMessages.CharacterCreate(new Npc { CharIndex = LaDeEnfrente, Template = d.Npc(Serpiente)!, Pos = new WorldPos(Mapa, 50, 13) }));
         var bot = new Bot("Gonzo", null, new EntornoDeBots(null!, null!, 0, 0, d, Mundo.Value.Mapas, null!), 1);
         return (bot, s, new TransporteDeBot("Gonzo"));

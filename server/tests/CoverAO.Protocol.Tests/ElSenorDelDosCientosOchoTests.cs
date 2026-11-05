@@ -229,12 +229,13 @@ public class ElSenorDelDosCientosOchoTests
         var s = new SentidosDelBot();
         var p = new Player
         {
-            CharIndex = MiIndice, Name = "Elmo", Account = "elmo_test", Pos = new WorldPos(Mapa, x, y), Level = 12,
+            CharIndex = MiIndice, Name = "Elmo", Account = "elmo_test", Pos = new WorldPos(Mapa, x, y), Level = 12, Class = 1, Race = 1, Gender = 1,
             MaxHp = vidaMax, Hp = vida, MaxMana = 0, Mana = 0, MaxStamina = 80, Stamina = 80,
         };
         s.Recibir(ServerMessages.UserIndexInServer(MiIndice));
         s.Recibir(ServerMessages.CharacterCreate(p));
         s.Recibir(ServerMessages.UpdateUserStats(p));
+        s.Recibir(ServerMessages.MiniStats(p));
         return s;
     }
 

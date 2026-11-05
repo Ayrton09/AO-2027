@@ -65,27 +65,30 @@ public class ArmadasDeLosBotsTests
     [Fact]
     public void Se_enlista_con_el_nivel_y_las_bajas_del_enlistador_y_al_Caos_sólo_el_agresivo()
     {
-        Assert.Equal(Arm, Bot.EjercitoQueBusca(Ciu, agresivo: false, nivel: 25, bajas: 15));
-        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, false, 24, 15));
-        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, false, 25, 14));
+        Assert.Equal(Arm, Bot.EjercitoQueBusca(Ciu, agresivo: false, nivel: 25, bajas: 250));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, false, 24, 250));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, false, 25, 249));
         Assert.Equal(0, Bot.EjercitoQueBusca(Ciu, agresivo: true, 30, 30));
-        Assert.Equal(Mil, Bot.EjercitoQueBusca(Rep, false, 25, 15));
-        Assert.Equal(Cao, Bot.EjercitoQueBusca(Ren, agresivo: true, 40, 30));
-        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, true, 39, 30));
-        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, agresivo: false, 40, 30));
+        Assert.Equal(Mil, Bot.EjercitoQueBusca(Rep, false, 25, 200));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Rep, false, 25, 199));
+        Assert.Equal(Cao, Bot.EjercitoQueBusca(Ren, agresivo: true, 40, 400));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, true, 40, 399));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, true, 39, 400));
+        Assert.Equal(0, Bot.EjercitoQueBusca(Ren, agresivo: false, 40, 400));
         Assert.Equal(0, Bot.EjercitoQueBusca(Arm, false, 40, 100));   // ya está adentro
     }
 
     [Fact]
     public void Va_a_cobrar_la_recompensa_cada_vez_que_cruza_un_escalón()
     {
-        Assert.False(Bot.TocaRecompensa(Arm, 19, -1));
-        Assert.True(Bot.TocaRecompensa(Arm, 20, -1));
-        Assert.False(Bot.TocaRecompensa(Arm, 24, 20));
-        Assert.True(Bot.TocaRecompensa(Arm, 25, 20));
-        Assert.True(Bot.TocaRecompensa(Mil, 25, 22));
-        Assert.False(Bot.TocaRecompensa(Cao, 29, 20));
-        Assert.True(Bot.TocaRecompensa(Cao, 30, 20));
+        Assert.False(Bot.TocaRecompensa(Arm, 349, -1));
+        Assert.True(Bot.TocaRecompensa(Arm, 350, -1));
+        Assert.False(Bot.TocaRecompensa(Arm, 449, 350));
+        Assert.True(Bot.TocaRecompensa(Arm, 450, 350));
+        Assert.True(Bot.TocaRecompensa(Mil, 400, 399));
+        Assert.False(Bot.TocaRecompensa(Cao, 599, 500));
+        Assert.True(Bot.TocaRecompensa(Cao, 600, 500));
+        Assert.False(Bot.TocaRecompensa(Cao, 1400, 1300));
         Assert.False(Bot.TocaRecompensa(Ciu, 100, -1));   // sin ejército no hay recompensa
     }
 

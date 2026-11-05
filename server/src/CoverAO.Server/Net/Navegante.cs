@@ -319,7 +319,7 @@ public sealed class Navegante
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos)? DondeHay(int mapaActual, (byte X, byte Y) desde,
                                                            Func<int, bool> sirve, Func<int, bool>? mapaSirve = null,
-                                                           Func<int, bool>? pisable = null)
+                                                           Func<int, bool>? pisable = null, int topeDeSaltos = TopeDeMapas)
     {
         // EL MAPA TAMBIÉN TIENE QUE SERVIR. No alcanza con que el NPC sea el que se busca: un mercader no le
         // vende a un ciudadano en un mapa cuyo `battleMode` no es 2 ni 3 (VB6 Protocol.bas:5205, portado igual
@@ -350,7 +350,7 @@ public sealed class Navegante
         // mapa 62 se la mandaba al sacerdote del 64, que se alcanza desde alguna muestra pero no desde (10,36), la
         // baldosa de llegada; entraba, no había camino, y lo volvía a intentar cada uno o dos minutos con el veneno
         // encima. Un mapa puede tener entradas a zonas que no se tocan, así que de cada uno se prueban hasta dos.
-        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable))
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos))
             if ((mapaSirve is null || mapaSirve(mapa)) && EnElMapa(mapa, entrada, sirve) is { } ahi)
                 return (mapa, ahi.X, ahi.Y, saltos);
         return null;
@@ -574,7 +574,7 @@ public sealed class Navegante
     /// sin esto un bot no tendría forma de saber dónde pescar.</para>
     /// </summary>
     public ((byte X, byte Y) Donde, int Pasos)? DondeTrabajar(int mapa, (byte X, byte Y) desde, int radio,
-                                                              bool agua, Func<int, bool>? esRecurso = null)
+                                                              bool agua, Func<int, bool>? esRecurso = null, int puertas = 0)
     {
         ((byte, byte), int)? mejor = null;
         void Probar(int x, int y)
@@ -595,8 +595,13 @@ public sealed class Navegante
         // pararse al lado. Lo mismo vale para un árbol o un yacimiento, que también ocupan su baldosa.
         else if (esRecurso is not null && _datos.MapObjects.TryGetValue(mapa, out var objetos))
         {
-            foreach (var o in objetos)
-                if (esRecurso(o.ObjIndex)) Probar(o.X, o.Y);
+            // Una pared delante del recurso más cercano no descarta los demás yacimientos o fraguas del mapa.
+            foreach (var o in objetos.Where(o => esRecurso(o.ObjIndex))
+                .Select(o => (Donde: ((byte X, byte Y))((byte)o.X, (byte)o.Y), Pasos: Math.Abs(o.X - desde.X) + Math.Abs(o.Y - desde.Y)))
+                .Where(o => o.Pasos <= radio).OrderBy(o => o.Pasos))
+                if (HayComoLlegar(mapa, desde, o.Donde, 2) is not null
+                    || (puertas > 0 && PuertasDelCamino(mapa, desde, [o.Donde], 2) is { } porAbrir && porAbrir.Count <= puertas)) return o;
+            return null;
         }
         // Y que se pueda LLEGAR: sin esto el bot caminaba hacia un río del otro lado de una pared y gastaba
         // los doce clics contra el aire.
@@ -610,7 +615,8 @@ public sealed class Navegante
                                                                   Func<int, bool>? esRecurso = null,
                                                                   (byte X, byte Y)? desde = null,
                                                                   Func<int, bool>? mapaSirve = null,
-                                                                  Func<int, bool>? pisable = null)
+                                                                  Func<int, bool>? pisable = null,
+                                                                  int topeDeSaltos = TopeDeMapas, int puertas = 0)
     {
         // DESDE DÓNDE SE BUSCA: desde donde está parado y, en cada mapa al que se viaja, desde la baldosa por la que se
         // entra. Antes se buscaba desde el centro de cada mapa, (50,50), y en los mapas con minas el centro es pared:
@@ -618,11 +624,11 @@ public sealed class Navegante
         // se pisa, así que ninguno aparecía y el Minero no encontraba nunca dónde trabajar, aunque desde la entrada del
         // 33 se llega a 56 de sus 59 yacimientos. Es el mismo recorrido que usa `DondeHay`.
         var inicio = desde ?? ((byte)50, (byte)50);
-        if ((mapaSirve is null || mapaSirve(mapaActual)) && DondeTrabajar(mapaActual, inicio, 90, agua, esRecurso) is { } aca)
+        if ((mapaSirve is null || mapaSirve(mapaActual)) && DondeTrabajar(mapaActual, inicio, 90, agua, esRecurso, puertas) is { } aca)
             return (mapaActual, aca.Donde.X, aca.Donde.Y, 0);
 
-        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, inicio, pisable))
-            if ((mapaSirve is null || mapaSirve(mapa)) && DondeTrabajar(mapa, entrada, 90, agua, esRecurso) is { } ahi)
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, inicio, pisable, topeDeSaltos))
+            if ((mapaSirve is null || mapaSirve(mapa)) && DondeTrabajar(mapa, entrada, 90, agua, esRecurso, puertas) is { } ahi)
                 return (mapa, ahi.Donde.X, ahi.Donde.Y, saltos);
         return null;
     }

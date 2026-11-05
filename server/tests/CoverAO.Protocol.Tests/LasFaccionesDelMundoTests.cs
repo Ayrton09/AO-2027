@@ -86,6 +86,41 @@ public class LasFaccionesDelMundoTests : IDisposable
 
     private bool Dijo(Transporte t, Npc npc, string texto) => t.Recibio(ServerMessages.ChatOverHead(texto, npc.CharIndex));
 
+    public static IEnumerable<object[]> Progresiones => new[]
+    {
+        new object[] { Player.StatusArmada, Jerek, new[] {250,350,450,550,650,700,800,900,1000,1100}, 6 },
+        new object[] { Player.StatusCaos, Demonio, new[] {400,500,600,700,800,900,1000,1100,1200,1300}, 8 },
+        new object[] { Player.StatusMilicia, BarinkeFauster, new[] {200,300,400,500,600,700,800}, 4 },
+    };
+
+    [Theory]
+    [MemberData(nameof(Progresiones))]
+    public async Task Cada_rango_exige_sus_bajas_y_la_armadura_llega_en_su_jerarquia(byte faccion, short ficha, int[] bajas, int jerarquia)
+    {
+        var npc = Nacido(ficha, 50, 50);
+        byte civil = faccion == Player.StatusCaos ? Player.StatusCriminal : faccion == Player.StatusMilicia ? Player.StatusRepublicano : Player.StatusCiudadano;
+        var (p, s, t) = Conectado(51, 50, civil, 50);
+        p.Class = 3; p.Race = 1;
+        for (int i = 0; i < bajas.Length; i++)
+        {
+            void Kills(int n) { if (faccion == Player.StatusCaos) p.CiudadanosMatados = n; else p.RenegadosMatados = n; }
+            Kills(bajas[i] - 1);
+            await DobleClic(s, npc);
+            Assert.Equal(i, p.FactionRank);
+            Kills(bajas[i]);
+            await DobleClic(s, npc);
+            Assert.Equal(i + 1, p.FactionRank);
+            Assert.Equal(faccion, p.FactionStatus);
+            short armadura = PacketDispatcher.ArmaduraDeSegundaJerarquia(p);
+            Assert.Equal(i + 1 >= jerarquia, p.Inventory.Any(x => x.ObjIndex == armadura));
+            if (faccion == Player.StatusArmada && i >= 8)
+                Assert.True(Dijo(t,npc,$"¡Felicidades! Has ascendido a {(i == 8 ? "Guardia Imperial" : "Justiciero")}."));
+        }
+        await DobleClic(s, npc);
+        Assert.Equal(bajas.Length, p.FactionRank);
+        Assert.Equal(1, p.Inventory.Where(i => i.ObjIndex == PacketDispatcher.ArmaduraDeSegundaJerarquia(p)).Sum(i => i.Amount));
+    }
+
     [Fact]
     public void Los_enlistadores_y_los_convertidores_salen_de_su_ficha()
     {
@@ -105,7 +140,7 @@ public class LasFaccionesDelMundoTests : IDisposable
     {
         var jerek = Nacido(Jerek, 50, 50);
         var (p, s, t) = Conectado(51, 50, Player.StatusCiudadano);
-        p.RenegadosMatados = 20;
+        p.RenegadosMatados = 250;
 
         await DobleClic(s, jerek);
 
@@ -159,7 +194,7 @@ public class LasFaccionesDelMundoTests : IDisposable
     {
         var barinke = Nacido(BarinkeFauster, 50, 50);
         var (p, s, t) = Conectado(51, 50, Player.StatusRepublicano);
-        p.CiudadanosMatados = 20;
+        p.CiudadanosMatados = 200;
         _dispatcher.HandleOne(s, new ByteQueueReader(new ByteQueueWriter().WriteByte((byte)ClientPacketId.LeftClick)
             .WriteByte(barinke.Pos.X).WriteByte(barinke.Pos.Y).ToArray()));
 

@@ -68,4 +68,16 @@ public static class Oficios
             (GameLimits.SkinBrownBearObj, o.SkinBrownBear),
             (GameLimits.SkinPolarBearObj, o.SkinPolarBear),
         }, Herramienta: 886, Energia: 50);
+
+    public static readonly Fabricacion Herreria = new(GameLimits.SkillHerreria, o => o.SkillBlacksmith,
+        o => new[] { (GameLimits.IngotIronObj, o.IngotIron), (GameLimits.IngotSilverObj, o.IngotSilver),
+                     (GameLimits.IngotGoldObj, o.IngotGold) }, Herramienta: 0, Energia: 50);
+
+    public static int MineralesPorLingote(int mineral) => mineral switch
+    {
+        GameLimits.OreIronObj => 14,
+        GameLimits.OreSilverObj => 20,
+        GameLimits.OreGoldObj => 35,
+        _ => 10000,
+    };
 }

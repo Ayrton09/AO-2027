@@ -7510,9 +7510,7 @@ public sealed partial class PacketDispatcher
         int req = MatadosParaRango(p);   // VB6 matadosArmada/Caos: kills acumulados para el próximo rango
         if (killsEnemigos < req) { Say($"Mata {req - killsEnemigos} enemigos más para recibir tu próxima recompensa."); return; }
         p.FactionRank++;
-        // VB6 RecompensaArmadaReal:427 / RecompensaCaos:548 / RecompensaMilicia:497: al entrar en la jerarquía
-        // superior de tu facción el líder entrega además su armadura (rango >= 6 en Armada/Caos, >= 4 en Milicia).
-        if (p.FactionRank >= (p.IsMilicia ? MiliciaArmorRank : SecondHierarchyRank)) GrantFactionArmor(session, p);
+        if (p.FactionRank >= RangosDeFaccion.SegundaJerarquia(p.FactionStatus)) GrantFactionArmor(session, p);
         session.Send(ServerMessages.UpdateUserStats(p));
         Say($"¡Felicidades! Has ascendido a {FactionTitle(p)}.");
     }
@@ -7739,13 +7737,7 @@ public sealed partial class PacketDispatcher
 
     /// <summary>Minerales crudos que hacen falta por lingote (VB6 MineralesParaLingote, Trabajo.bas:800):
     /// Hierro 14, Plata 20, Oro 35. Cualquier otro no es fundible (10000 = inalcanzable).</summary>
-    private int MineralesParaLingote(int oreObjIndex) => oreObjIndex switch
-    {
-        GameLimits.OreIronObj => 14,
-        GameLimits.OreSilverObj => 20,
-        GameLimits.OreGoldObj => 35,
-        _ => 10000,
-    };
+    private int MineralesParaLingote(int oreObjIndex) => Oficios.MineralesPorLingote(oreObjIndex);
 
     /// <summary>DoFundir (VB6 FundirMineral + DoLingotes, Trabajo.bas:211/825): funde mineral crudo en lingotes.
     /// Gate de skill: el MinSkill del mineral debe ser ≤ Minería / factor de clase (Minero ÷1, Herrero ÷1,5,
@@ -8361,7 +8353,8 @@ public sealed partial class PacketDispatcher
             if (p.IsArmada) { Say("Ya perteneces a las tropas reales, ve a combatir enemigos."); return; }
             if (!p.IsCitizen) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
             int kills = p.KillsEnemigosArmada;
-            if (kills < 15) { Say($"Para unirte a nuestras fuerzas debes matar al menos 15 enemigos, sólo has matado {kills}."); return; }
+            int requisito = RangosDeFaccion.ParaRango(Player.StatusArmada, 1);
+            if (kills < requisito) { Say($"Para unirte a nuestras fuerzas debes matar al menos {requisito} enemigos, sólo has matado {kills}."); return; }
             if (p.Level < 25) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 25."); return; }
             p.CambiarFaccion(Player.StatusArmada);
         }
@@ -8370,7 +8363,8 @@ public sealed partial class PacketDispatcher
             if (p.IsMilicia) { Say("Ya perteneces a las tropas milicianas, ve a combatir enemigos."); return; }
             if (!p.IsRepublicano) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
             int kills = p.KillsEnemigosMilicia;
-            if (kills < 15) { Say($"Para unirte a nuestras fuerzas debes matar al menos 15 enemigos, sólo has matado {kills}."); return; }
+            int requisito = RangosDeFaccion.ParaRango(Player.StatusMilicia, 1);
+            if (kills < requisito) { Say($"Para unirte a nuestras fuerzas debes matar al menos {requisito} enemigos, sólo has matado {kills}."); return; }
             if (p.Level < 25) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 25."); return; }
             p.CambiarFaccion(Player.StatusMilicia);
         }
@@ -8379,7 +8373,8 @@ public sealed partial class PacketDispatcher
             if (p.IsCaos) { Say("Ya perteneces a la horda del caos, tráeme más almas."); return; }
             if (!(p.FactionStatus == Player.StatusCriminal)) { Say("No aceptamos seguidores de facciones enemigas, ¡largo de aquí!"); return; }
             int kills = p.KillsEnemigosCaos;
-            if (kills < 30) { Say($"Para unirte a nuestras fuerzas debes matar al menos 30 enemigos, sólo has matado {kills}."); return; }
+            int requisito = RangosDeFaccion.ParaRango(Player.StatusCaos, 1);
+            if (kills < requisito) { Say($"Para unirte a nuestras fuerzas debes matar al menos {requisito} enemigos, sólo has matado {kills}."); return; }
             if (p.Level < 40) { Say("Para unirte a nuestras fuerzas debes ser al menos nivel 40."); return; }
             p.CambiarFaccion(Player.StatusCaos);
         }
@@ -8478,14 +8473,14 @@ public sealed partial class PacketDispatcher
     // Reward, y su propio comentario ya admitía que el original usa `flags.TargetNPC`; HandleTrain, que el
     // comentario nombraba como parte del patrón, hacía rato que leía el target de verdad. Sin usuarios, se fue.)
 
-    /// <summary>Título por rango, textual del VB6 (TituloReal :719, TituloCaos :692, TituloMilicia :745).</summary>
+    /// <summary>Títulos por rango según las tablas de cada facción.</summary>
     private static string FactionTitle(Player p)
     {
         if (p.IsArmada) return p.FactionRank switch
         {
             <= 1 => "Legionario", 2 => "Soldado Real", 3 => "Teniente Real", 4 => "Comandante Real",
-            5 => "General Real", 6 => "Elite Real", 7 => "Guardian del Bien", 8 => "Caballero Imperial",
-            9 => "Justiciero", _ => "Guardia Imperial",
+            5 => "General Real", 6 => "Elite Real", 7 => "Guardián del Bien", 8 => "Caballero Imperial",
+            9 => "Guardia Imperial", _ => "Justiciero",
         };
         if (p.IsCaos) return p.FactionRank switch
         {
@@ -8503,25 +8498,16 @@ public sealed partial class PacketDispatcher
         return "";
     }
 
-    /// <summary>Kills enemigos ACUMULADOS necesarios para pasar del rango dado al siguiente. El VB6 usa DOS tablas
-    /// distintas: matadosArmada (ModFacciones.bas:767) sube de a 5 → 20,25,30,…,60; matadosCaos (:791) sube de a
-    /// 10 → 20,30,40,…,100. Ambos ejércitos topan en rango 10 (RecompensaArmadaReal:409 / RecompensaCaos:532).</summary>
-    private static int MatadosParaRango(Player p) => p.IsCaos
-        ? 20 + Math.Max(0, p.FactionRank - 1) * 10   // matadosCaos: +10 por rango
-        : 20 + Math.Max(0, p.FactionRank - 1) * 5;   // matadosArmada: +5 por rango (lo usa también la Milicia)
+    /// <summary>Bajas enemigas acumuladas necesarias para el siguiente rango.</summary>
+    private static int MatadosParaRango(Player p) => RangosDeFaccion.ParaRango(p.FactionStatus, p.FactionRank + 1);
 
     /// <summary>Rango máximo por facción: la Armada y el Caos topan en 10 (RecompensaArmadaReal:409 /
     /// RecompensaCaos:532); la Milicia, en 7 (RecompensaMilicia:480).</summary>
-    private static int MaxFactionRank(Player p) => p.IsMilicia ? 7 : 10;
+    private static int MaxFactionRank(Player p) => RangosDeFaccion.Bajas(p.FactionStatus).Length;
 
     /// <summary>Enemigos que le cuentan a la facción del jugador para enlistar/ascender.</summary>
     private static int KillsForFaction(Player p) =>
         p.IsArmada ? p.KillsEnemigosArmada : p.IsMilicia ? p.KillsEnemigosMilicia : p.KillsEnemigosCaos;
-
-    /// <summary>Rango a partir del cual el VB6 considera "segunda jerarquía" y entrega la armadura faccionaria
-    /// (Armada/Caos). La Milicia la entrega antes, desde el rango 4 (RecompensaMilicia:497).</summary>
-    private const int SecondHierarchyRank = 6;
-    private const int MiliciaArmorRank = 4;
 
     /// <summary>Desplazamiento del ítem por clase para la armadura faccionaria de 2ª jerarquía (VB6
     /// RecompensaArmadaReal:427 / RecompensaCaos:548): base 1566 (Armada) / 1522 (Caos), +2 por clase en el orden
@@ -9042,13 +9028,9 @@ public sealed partial class PacketDispatcher
     {
         short item = r.ReadInteger(); short cant = r.ReadInteger();
         if (FabricarImposible(session, item, cant)) return;
+        var f = Oficios.Herreria;
         _loop.Enqueue(() => DoCraft(session, item, cant, "forjar", "Forjaste", _data.BlacksmithRecipes,
-            GameLimits.SkillHerreria, o => o.SkillBlacksmith, o => new[]
-            {
-                (GameLimits.IngotIronObj, o.IngotIron),
-                (GameLimits.IngotSilverObj, o.IngotSilver),
-                (GameLimits.IngotGoldObj, o.IngotGold),
-            }, staminaCost: 50, craftSound: MartilloHerrero,
+            f.Skill, f.Pide, f.Materiales, staminaCost: f.Energia, craftSound: MartilloHerrero,
             topeCantidad: 0));   // VB6 HerreroConstruirItem (Trabajo.bas:669): 50 de energía, LocaleMsg 206, y SIN tope de cantidad
     }
 
@@ -10822,21 +10804,18 @@ public sealed partial class PacketDispatcher
             if (DistanciaVB6(p.Pos, npc.Pos) > 4) { session.Send(ServerMessages.LocaleMsg(8)); return; }
             void Dice(string texto) => session.Send(ServerMessages.ChatOverHead(texto, npc.CharIndex, 0));
 
-            // (¿el jugador es de ese bando?, misión, cachetada si no es de los suyos)
-            var (esDelBando, mision, rechazo) = npc.FactionEnlist switch
+            var (esDelBando, rechazo) = npc.FactionEnlist switch
             {
-                Player.StatusArmada  => (p.IsArmada, "¡¡Tu deber es combatir criminales, cada 5 criminales te daré una recompensa!!",
-                                         "¡¡No perteneces a las tropas reales!!"),
-                Player.StatusMilicia => (p.IsMilicia, "¡¡Tu deber es combatir criminales, cada 5 criminales te daré una recompensa!!",
-                                         "¡¡No perteneces a la Milicia Real!!"),
-                Player.StatusCaos    => (p.IsCaos, "¡¡Tu deber es eliminar a todo tipo de personas, cada 10 personas muertas te daré una recompensa!!",
-                                         "¡¡No perteneces a las Fuerzas del Caos, largo de aquí!!"),
-                _ => (false, "", ""),
+                Player.StatusArmada  => (p.IsArmada, "¡¡No perteneces a las tropas reales!!"),
+                Player.StatusMilicia => (p.IsMilicia, "¡¡No perteneces a la Milicia Real!!"),
+                Player.StatusCaos    => (p.IsCaos, "¡¡No perteneces a las Fuerzas del Caos, largo de aquí!!"),
+                _ => (false, ""),
             };
             int tope = TopeDeRango(npc.FactionEnlist);
             if (tope == 0) return;                        // enlistador de un bando que el original no contempla
             if (!esDelBando) { Dice(rechazo); return; }
-            Dice(p.FactionRank >= tope ? "Ya no tengo trabajo para darte, has alcanzado el rango más alto aquí." : mision);
+            Dice(p.FactionRank >= tope ? "Ya no tengo trabajo para darte, has alcanzado el rango más alto aquí."
+                : $"Para tu próximo ascenso necesitas {MatadosParaRango(p)} bajas enemigas acumuladas. Te faltan {Math.Max(0, MatadosParaRango(p) - KillsForFaction(p))}.");
         });
     }
 
@@ -14463,13 +14442,7 @@ public sealed partial class PacketDispatcher
     /// <para>La Milicia corta en <b>7</b> y los otros dos en <b>10</b> — no es el mismo número, aunque las dos
     /// facciones legales compartan la misión. El 0 del default reproduce que el <c>Select Case</c> del original
     /// no tiene rama <c>Else</c>: ante un enlistador de otro bando el juego CALLA, no improvisa.</para></summary>
-    public static int TopeDeRango(byte bando) => bando switch
-    {
-        Player.StatusArmada => 10,
-        Player.StatusMilicia => 7,
-        Player.StatusCaos => 10,
-        _ => 0,
-    };
+    public static int TopeDeRango(byte bando) => RangosDeFaccion.Bajas(bando).Length;
 
     /// <summary>Traba de las salidas de mapa tras un ataque PvP (VB6 <c>TiempoDeMapeo = 7</c>).
     ///

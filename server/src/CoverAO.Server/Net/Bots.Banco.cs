@@ -134,7 +134,11 @@ public sealed partial class Bot
     /// atendió.</summary>
     private async Task<bool> AbrirElBancoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        if (BanqueroDelMapa(sentidos.Mapa) is not { } nace) return false;
+        // Una ciudad puede tener varias ventanillas. En Nix la primera está encerrada y la segunda es accesible.
+        var accesible = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsBanquero((short)f),
+            m => m == sentidos.Mapa, topeDeSaltos: 0);
+        var destino = accesible is { } a ? ((byte X, byte Y)?)(a.X,a.Y) : BanqueroDelMapa(sentidos.Mapa);
+        if (destino is not { } nace) return false;
         // Primero adonde nace (desde el mostrador casi nunca está a la vista); de cerca, adonde está. Y SI NO HAY CAMINO, LA
         // PUERTA, como con el mercader (`AbrirUnaPuertaAsync`): los dos banqueros de Rinkel están adentro del banco, y en la
         // ronda 42 Elmo salía "sin camino" desde el herrero.

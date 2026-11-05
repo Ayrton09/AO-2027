@@ -3,6 +3,25 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.5 (2026-11-04)
+Minería, herrería, comercio entre bots y correcciones de los rangos de facción.
+
+### Los bots
+
+- **Los mineros buscan yacimientos, extraen mineral, lo llevan a la fragua y venden lingotes en subastas**. Abren las puertas necesarias y priorizan entregar la carga antes de buscar mejoras de equipo.
+- **Los herreros compran los materiales de una receta, los retiran del banco, fabrican y publican el equipo sobrante**. Conservan su equipo personal y limitan la producción pendiente de venta.
+- **Los bots pueden comprar lingotes y equipo de herrería a otros bots**, con precios ligados al costo de los materiales.
+- **Al nivel 50 siguen valorando las bajas y el oro de la caza**. Se equipan la armadura al entrar y reconocen las mejoras de nudillos.
+- **Se corrigió el acceso al subastador y al banco de Nix**. Los transportistas también rodean mejor a las criaturas peligrosas.
+- **Los personajes de bots existentes conservan su clase**, y la población incorpora los oficios que falten sin reemplazar sus personajes guardados.
+
+### Facciones
+
+- **Corregidos los requisitos y títulos de los rangos de Armada Imperial, Fuerzas del Caos y Milicia Republicana**.
+- **Las armaduras de segunda jerarquía se entregan desde Elite Real (700 bajas), Caballero Negro (1.100) y Soldado de la República (500)**. Se conservan sus defensas actuales.
+- **Los bots cobran los ascensos acumulados al visitar al líder**, y las misiones indican las bajas que faltan para el siguiente rango.
+
+
 ## 1.0.4 (2026-11-04)
 Mejoras del acompañamiento, los primeros pasos y los controles del juego.
 
