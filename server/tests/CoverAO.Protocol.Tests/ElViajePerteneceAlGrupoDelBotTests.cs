@@ -107,6 +107,36 @@ public sealed class ElViajePerteneceAlGrupoDelBotTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Deja_el_destino_viejo_si_la_persona_se_mueve_o_sale_de_vista(bool desaparece)
+    {
+        var (bot, s, t) = Crear();
+        using var fin = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Invitar.Invoke(bot, new object[] { s, "Ana", "vamos?", Environment.TickCount64 });
+        var tarea = Vuelta(bot, s, t, fin.Token);
+        try
+        {
+            Assert.Equal((byte)ClientPacketId.Walk, (await Leer(t, fin.Token))[0]);
+            var ultimoPaso = s.Posicion;
+            // La compañera vuelve hacia el bot, o cruza fuera de vista mientras él espera el paso.
+            s.Recibir(desaparece ? ServerMessages.CharacterRemove(501, false)
+                                : ServerMessages.CharacterMove(501, 76, 55));
+            Assert.True(await tarea.WaitAsync(TimeSpan.FromSeconds(6)));
+            t.Terminar();
+            Assert.DoesNotContain(await Restantes(t, fin.Token), p => p[0] == (byte)ClientPacketId.Walk);
+            Assert.Equal(ultimoPaso, s.Posicion);
+            Assert.Equal("Ana", bot.AcompanaA);
+            Assert.Equal(0, ((ValueTuple<string, long, long, long, int>)Estado.GetValue(bot)!).Item5);
+        }
+        finally
+        {
+            fin.Cancel(); t.Terminar();
+            try { await tarea; } catch (OperationCanceledException) { }
+        }
+    }
+
     private static Task<bool?> Vuelta(Bot bot, SentidosDelBot s, TransporteDeBot t, CancellationToken ct) =>
         (Task<bool?>)Acompanar.Invoke(bot, new object[] { t, s, (Func<short, bool>)(_ => false), true, new TaskCompletionSource().Task, ct })!;
 

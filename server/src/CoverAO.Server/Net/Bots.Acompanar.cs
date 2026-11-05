@@ -171,9 +171,14 @@ public sealed partial class Bot
             // El viaje pertenece a esta salida. La charla de cada paso puede terminarla o aceptar otra invitación.
             long salida = _numeroDeAcompanamiento;
             bool SigueLaSalida() => _acompana is not null && _numeroDeAcompanamiento == salida;
-            bool llego = await IrHastaAsync(transporte, sentidos, sentidos.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla - 1,
-                                           cortaSi: () => !SigueLaSalida(), cortaAntesDePaso: () => !SigueLaSalida());
+            int mapaDelViaje = sentidos.Mapa;
+            bool SigueElDestino() => SigueLaSalida() && sentidos.Mapa == mapaDelViaje
+                && sentidos.PersonaLlamada(a.Quien) is { } actual && actual.X == p.X && actual.Y == p.Y;
+            bool llego = await IrHastaAsync(transporte, sentidos, mapaDelViaje, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla - 1,
+                                           cortaSi: () => !SigueElDestino(), cortaAntesDePaso: () => !SigueElDestino());
             if (!SigueLaSalida()) return cerrada.IsCompleted ? null : true;
+            // Recalcular con la posición recién vista no es un camino fallido ni merece una espera.
+            if (!SigueElDestino()) return cerrada.IsCompleted ? null : true;
             if (_acompana is { } b) _acompana = b with { SinLlegar = llego ? 0 : b.SinLlegar + 1 };
             if (!llego) await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);
             return cerrada.IsCompleted ? null : true;

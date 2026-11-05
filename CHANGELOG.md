@@ -3,6 +3,22 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.4 (2026-11-04)
+Mejoras del acompañamiento, los primeros pasos y los controles del juego.
+
+### Los bots
+
+- **Recalculan el seguimiento cuando cambiás de posición o salís de su vista**, sin seguir caminando hacia el lugar anterior ni contar ese cambio como un camino fallido.
+
+### Juego
+
+- **El libro de conjuros selecciona un hechizo disponible al entrar**. Lanzar, F y los atajos de la barra mantienen la misma selección visible.
+- **Escape cancela el apuntado** de magia, arco o trabajo. Morir o desconectarse también lo cancela.
+- **Al morir aparece una indicación para resucitar** y, al volver a la vida, un recordatorio para equipar la ropa y recuperar energía.
+- **La tienda muestra cuánto oro llevás y los motivos de rechazo dentro de su ventana**, para que no queden escondidos detrás.
+- **La ficha del inventario se actualiza al equipar, desequipar, consumir o quitar objetos**, sin tener que volver a pasar el mouse.
+
+
 ## 1.0.3 (2026-11-02)
 Correcciones del acompañamiento y de la actualización de la app.
 

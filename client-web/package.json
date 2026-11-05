@@ -1,12 +1,12 @@
 {
   "name": "coverao-web-client",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "description": "Fase 3 — cliente web de CoverAO (TypeScript). Arranca por el codec del protocolo.",
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node dist/test/codec.test.js && node check-index.mjs && node check-comandos-gm.mjs && node check-emisores.mjs && node check-assets.mjs && node check-graficos.mjs && node check-cadencia.mjs && node check-particulas.mjs && node check-portales.mjs && node check-fuentes.mjs && node check-pistas.mjs && node check-mapa.mjs",
+    "test": "tsc && node dist/test/codec.test.js && node check-index.mjs && node check-interacciones.mjs && node check-comandos-gm.mjs && node check-emisores.mjs && node check-assets.mjs && node check-graficos.mjs && node check-cadencia.mjs && node check-particulas.mjs && node check-portales.mjs && node check-fuentes.mjs && node check-pistas.mjs && node check-mapa.mjs",
     "smoke": "node ws-smoke.mjs",
     "smoke:cierre": "node ws-close-reason.mjs"
   },

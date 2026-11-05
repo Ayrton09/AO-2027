@@ -763,6 +763,10 @@
     .nsitem { padding:3px 8px; cursor:pointer; } .nsitem:hover { background:#20170c; } .nsitem.on { background:#3a2a10; }
     .nsdep { font-size:calc(var(--u)*1.0); color:var(--gold-hi); }
     @media (max-width:720px) { .nsub { grid-template-columns:1fr; } }
+    #ayuda-muerte { position:absolute; top:44px; left:12px; right:12px; z-index:8;
+      width:fit-content; max-width:calc(100% - 24px); padding:8px 12px;
+      color:#f0dba4; background:rgba(24,17,12,.92); border:1px solid var(--gold-deep);
+      font-size:14px; line-height:1.4; pointer-events:none; }
   </style>
 </head>
 <body>
@@ -776,6 +780,7 @@
         <span class="tb" id="perf">— FPS</span>
       </div>
       <!-- Cartel del lugar: aparece unos segundos al entrar a un mapa con nombre. -->
+      <div id="ayuda-muerte" role="status" hidden>Estás muerto. Acercate a un sacerdote y hacé doble clic sobre él para resucitar.</div>
       <div id="cartelmapa"><div class="cm-n"></div><div class="cm-z"></div></div>
       <!-- La vida del jefe más cercano (ver `pintarBarraDelJefe`). -->
       <div id="barra-jefe"><div class="bj-nombre"></div><div class="bj-marco"><div class="bj-vida"></div><div class="bj-numero"></div></div></div>
@@ -1414,7 +1419,7 @@
     // así que el grupo de la fuente queda suelto y nadie lo vuelve a dibujar.
     const emisoresApagados = new Set();
     const spells = {};             // slot -> spellId  (from ChangeSpellSlot)
-    let selectedSpell = 8;         // spell slot cast by 'f' (default: self-heal in slot 8)
+    let selectedSpell = 0;         // se elige el primer conjuro que llegue del personaje
 
     // --- Hotbar F1-F10 (los "macros" del cliente clásico): ata ítems/hechizos a las teclas de función.
     // Es 100% UI del cliente — al disparar manda los MISMOS paquetes que usar/lanzar a mano (UseItem/CastSpell),
@@ -1674,7 +1679,6 @@
     function fireHotbar(i) {
       const b = hotbar[i]; if (!b || ws.readyState !== 1) return;
       if (b.kind === 'cmd') { sendChat(b.text); return; }             // macro de comando/texto (/resucitar, etc.)
-      const w = new ByteQueueWriter();
       if (b.kind === 'item') {
         const slot = Object.keys(inventory).map(Number).find((s) => inventory[s] && inventory[s].objIndex === b.obj);
         if (!slot) return;                                          // el ítem ya no está en el inventario
@@ -1683,9 +1687,8 @@
       } else {
         const slot = Object.keys(spells).map(Number).find((s) => spells[s] === b.id);
         if (!slot) return;                                          // el hechizo ya no está en el libro
-        selectedSpell = slot; w.writeByte(CLIENT.CastSpell).writeByte(slot);
+        lanzarHechizo(slot);
       }
-      ws.send(xorBuffer(w.toBytes(), myKey));
     }
     // Las hojas de arte están remasterizadas a ×HD (Scale2x): un sprite lógico de w×h vive en la hoja
     // como (x·HD, y·HD, w·HD, h·HD). Mantenemos grh.json en unidades lógicas y multiplicamos SOLO el
@@ -3156,8 +3159,8 @@
       // El 206 es tramposo y es del original: la misma línea sale por dos motivos distintos.
       206: 'Ojo con este mensaje: sale tanto cuando faltan materiales como cuando falta ENERGÍA. Si venís '
          + 'trabajando hace rato, probá comer y tomar algo antes de buscar más material.',
-      93: 'La energía baja al trabajar y al pelear. Se recupera comiendo y bebiendo; llevá siempre algo '
-        + 'encima antes de salir a laburar.',
+      93: 'Para recuperar energía necesitás comida, bebida y ropa equipada (salvo que estés montado). '
+        + 'Después de resucitar, volvé a equiparte desde el inventario con doble clic o E. Dejá de trabajar para recuperarte.',
       25: 'Tenés el inventario lleno. Tirá algo con Ctrl+clic, o vendéselo al mercader. El oro no ocupa '
         + 'ranura: va directo a la bolsa.',
     };
@@ -3344,6 +3347,9 @@
         // pociones ajenas. `ground` además sobrevivía porque loadMap corta temprano si el mapa es el mismo.
         for (const k of Object.keys(inventory)) delete inventory[k];
         for (const k of Object.keys(spells)) delete spells[k];
+        selectedSpell = 0;
+        salirDePunteria();
+        $('ayuda-muerte').hidden = true;
         ground.clear();
         if (lastReject && !wasLogged) {                    // el server rechazó ESTE intento (cuenta/pass/nombre)
           statusEl.textContent = 'desconectado';
@@ -3723,6 +3729,8 @@
       if (!loggedIn) return;
       const yo = chars.get(myCharIndex);
       const chips = [];
+      if (estoyMuerto()) chips.push('muerto');
+      $('ayuda-muerte').hidden = !estoyMuerto();
       if (descansando) chips.push('descansando');
       if (paralizado) chips.push('paralizado');
       if (montando) chips.push('montado');
@@ -3784,13 +3792,20 @@
     // Vuelve a 1 con cada tienda que se abre (`nueva`): en el original la ventana se descarga al cerrarla y la caja
     // arranca otra vez en 1. Acá quedaba lo de la tienda anterior (el tester, 06/10).
     let comercioQty = 1;
+    let comercioAviso = '';
+    function avisarEnComercio(texto) {
+      if (modalKind !== 'commerce') return;
+      comercioAviso = texto;
+      const aviso = modalCard.querySelector('#comercio-aviso');
+      if (aviso) { aviso.textContent = texto; aviso.hidden = !texto; }
+    }
     const leerComercioQty = () => {
       const i = modalCard.querySelector('.comq');
       const n = i ? parseInt(i.value, 10) : comercioQty;
       return Math.max(1, Math.min(10000, Number.isFinite(n) ? n : 1));
     };
     function renderCommerce(nueva) {
-      if (nueva) comercioQty = 1;
+      if (nueva) { comercioQty = 1; comercioAviso = ''; }
       else if (modalKind === 'commerce') comercioQty = leerComercioQty();
       modalKind = 'commerce';
       const slots = Object.keys(commerceItems).map(Number).sort((a, b) => a - b).filter((s) => commerceItems[s].amount > 0);
@@ -3803,8 +3818,9 @@
         .filter((s) => inventory[s])
         .map((s) => { const it = inventory[s]; return shopCell(it.objIndex, `x${it.amount}`, `<span class="buy" data-sellslot="${s}">vender</span>`); });
       // El MERCADER a la izquierda y VOS a la derecha, que es como las pone el original.
-      modalCard.innerHTML = `<div class="cardT">Comercio<span class="cx" title="cerrar">✕</span></div>`
+      modalCard.innerHTML = `<div class="cardT">Comercio · llevás ${(myStats && myStats.gold) || 0} oro<span class="cx" title="cerrar">✕</span></div>`
         + `<div class="frow" style="padding:8px 12px">Cantidad por vez <input class="comq cantbox" type="number" min="1" max="10000" value="${comercioQty}"></div>`
+        + `<div id="comercio-aviso" role="status" class="fhint" style="padding:8px 12px;color:#ffc67a"${comercioAviso ? '' : ' hidden'}>${esc(comercioAviso)}</div>`
         + `<div class="shop2">`
         +   `<div class="col"><div class="shopsec">El mercader — clic para comprar</div>`
         +     `${cells.length ? cells.join('') : '<div class="fhint" style="grid-column:1/-1">(sin stock)</div>'}</div>`
@@ -4095,7 +4111,8 @@
         return;
       }
       const w = new ByteQueueWriter();
-      if (b.dataset.spell) { selectedSpell = +b.dataset.spell; w.writeByte(CLIENT.CastSpell).writeByte(selectedSpell); }
+      if (modalKind === 'commerce' && (b.dataset.sellslot || b.dataset.slot)) avisarEnComercio('');
+      if (b.dataset.spell) { lanzarHechizo(+b.dataset.spell); return; }
       else if (b.dataset.craft) w.writeByte(+b.dataset.craft).writeInteger(+b.dataset.obj).writeInteger(craftQty());
       else if (b.dataset.sellslot) w.writeByte(CLIENT.CommerceSell).writeByte(+b.dataset.sellslot).writeInteger(leerComercioQty());
       // Retirar y depositar respetan la CAJA DE CANTIDAD (antes iban de a 1, cableado). El server igual acota
@@ -4256,9 +4273,9 @@
     function modoPunteria(skill) {
       workSkill = skill;
       canvas.style.cursor = 'crosshair';
-      log(skill === SKILL_MAGIA_CLIENTE ? 'Apuntá el hechizo: hacé clic en el objetivo.'
+      log((skill === SKILL_MAGIA_CLIENTE ? 'Apuntá el hechizo: hacé clic en el objetivo.'
         : skill === SKILL_PROYECTILES ? 'Apuntá con el arco: hacé clic en el objetivo.'
-        : 'Elegí el objetivo del trabajo.', '#c9a24b');
+        : 'Elegí el objetivo del trabajo.') + ' Escape cancela.', '#c9a24b');
     }
     function salirDePunteria() { workSkill = 0; canvas.style.cursor = ''; }
     /**
@@ -4656,7 +4673,8 @@
           // contra una pared disparaba un paso por cada rebote: medí 27 sonidos para 6 tiles caminados.
           sonarPaso(c, f.x, f.y);
         } break; }
-        case 'CharacterChange': { const c = chars.get(f.charIndex); if (c) {   // equip/appearance change
+        case 'CharacterChange': { const c = chars.get(f.charIndex); const estabaMuerto = c && c.body === CUERPO_MUERTO;
+          if (c) {   // equip/appearance change
           c.body = f.body; c.head = f.head; c.heading = f.heading; c.weapon = f.weapon; c.shield = f.shield; c.helmet = f.helmet;
         }
           // MORIRSE CIERRA LA VENTANA QUE ESTÉ ARRIBA. Con un modal abierto las teclas de juego están apagadas
@@ -4672,6 +4690,12 @@
             // y el original tampoco: los otros cortes se derivan del texto ("Dejas de trabajar") y morir no
             // manda ninguno, así que el símbolo quedaba pegado en la cabeza hasta el próximo trabajo.
             laborando = false;
+            salirDePunteria();
+          }
+          if (f.charIndex === myCharIndex) {
+            pintarEstados();
+            if (estabaMuerto && f.body !== CUERPO_MUERTO)
+              log('Volvé a equipar tu ropa para recuperar energía: doble clic sobre ella en el inventario, o seleccionala y apretá E.', '#c9a24b');
           }
           break; }
         // Equipar/desequipar NO manda el CharacterChange entero: el server manda un CharacterChangeSlot por
@@ -4885,7 +4909,8 @@
                          myStats.level = f.level; myStats.elu = f.elu; myStats.exp = f.exp; }
           break;
         case 'UpdateGold': if (myStats) myStats.gold = f.gold; else myStats = { gold: f.gold };
-          if (bankOpen) renderBank(); else if (modalKind === 'bankgold') renderPanelDelOro(); break; // el oro encima, en el banco
+          if (bankOpen) renderBank(); else if (modalKind === 'bankgold') renderPanelDelOro();
+          else if (modalKind === 'commerce') renderCommerce(); break;
         case 'ChangeInventorySlotUser': {              // compact delta update of one slot (equip/amount)
           const it = inventory[f.slot]; if (!it) break;
           if (f.accion === 1) it.equipped = true;
@@ -5075,6 +5100,8 @@
           if (/te (golpea|pega|prod)/i.test(t)) myHitAt = Date.now();
           if (f.msgId === 391) laborando = false;   // "Dejas de trabajar" al cortar la faena con otra accion
           log(t, FUENTES[f.font]);
+          // El fondo de la tienda tapa el chat: estos rechazos deben poder leerse junto a la compra.
+          if (f.mode === 0 && [8, 25, 26, 77, 148, 388].includes(f.msgId)) avisarEnComercio(t);
           // La pista va DESPUÉS del mensaje del server, nunca en su lugar: la línea del original se lee igual
           // que siempre y esto es un renglón más abajo.
           const p = PISTAS_DE_RECHAZO[f.msgId];
@@ -5293,6 +5320,7 @@
 
     // --- grilla de inventario (DOM): icono por <canvas>, cantidad, marca de equipado -------------
     const invgridEl = $('invgrid');
+    let slotDescripcion = 0;
     function buildInv() {
       invgridEl.innerHTML = '';
       const used = Object.keys(inventory).map(Number).filter((s) => inventory[s]);
@@ -5311,6 +5339,7 @@
         }
         invgridEl.appendChild(d);
       }
+      pintarDescripcionItem();
     }
     let iconRefreshT = 0;
     function scheduleIconRefresh() { clearTimeout(iconRefreshT); iconRefreshT = setTimeout(refreshIcons, 120); }
@@ -5398,13 +5427,17 @@
     }
     const rangoTexto = (r) => (r[0] === r[1] || !r[1] ? String(r[0] || r[1]) : `${r[0]}-${r[1]}`);
 
-    invgridEl.addEventListener('mouseover', (ev) => {
-      const d = ev.target.closest('.islot'); if (!d) return; const it = inventory[+d.dataset.slot];
+    function pintarDescripcionItem(slot = slotDescripcion) {
+      slotDescripcion = slot;
+      const it = inventory[slot];
       if (!it) { $('itemdesc').textContent = '—'; return; }
       const cabecera = itemName(it.objIndex) + (it.amount > 1 ? ` (x${it.amount})` : '')
                      + (it.equipped ? ' · equipado' : '');
       const ficha = fichaDeObjeto(it.objIndex);
       $('itemdesc').textContent = ficha ? `${cabecera} — ${ficha}` : cabecera;
+    }
+    invgridEl.addEventListener('mouseover', (ev) => {
+      const d = ev.target.closest('.islot'); if (d) pintarDescripcionItem(+d.dataset.slot);
     });
     // Arrastrar y soltar para reordenar el inventario → SwapObjects(origen, destino).
     let dragSlot = 0;
@@ -5419,6 +5452,8 @@
     const spellListEl = $('spelllist');
     function buildSpellList() {
       const slots = Object.keys(spells).map(Number).sort((a, b) => a - b).filter((s) => spells[s]);
+      if (!spells[selectedSpell]) selectedSpell = slots[0] || 0;
+      $('btn-cast').disabled = !slots.length;
       if (!slots.length) { spellListEl.innerHTML = '<li style="opacity:.6">(sin hechizos)</li>'; return; }
       spellListEl.innerHTML = '';
       for (const s of slots) {
@@ -5436,9 +5471,14 @@
       const li = ev.target.closest('li'); if (!li || !li.dataset.slot) return;
       selectedSpell = +li.dataset.slot; buildSpellList();   // elegir (LANZAR lo lanza)
     });
-    $('btn-cast').addEventListener('click', () => {
-      if (ws.readyState === 1) ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CastSpell).writeByte(selectedSpell).toBytes(), myKey));
-    });
+    function lanzarHechizo(slot = selectedSpell) {
+      if (!ws || ws.readyState !== 1) return;
+      if (!spells[slot]) { log('No tenés un hechizo seleccionado. Elegí uno en Conjuros.', '#c9a6ff'); return; }
+      selectedSpell = slot;
+      buildSpellList();
+      send(W().writeByte(CLIENT.CastSpell).writeByte(slot));
+    }
+    $('btn-cast').addEventListener('click', () => lanzarHechizo());
     // EL "?" DEL LIBRO DE CONJUROS. Antes repetía el nombre del hechizo, que es justo lo que el jugador ya
     // está leyendo en la lista. Ahora dice lo que cuesta y lo que hace, que es lo que pidió el tester:
     // daño o cura, maná, energía y skill de Magia requerida (`spells-info.json`, de Hechizos.dat).
@@ -7397,6 +7437,9 @@
       if (escribiendo) ae.blur();                                     // campo oculto con el foco pegado: soltarlo
       if (!loggedIn) return;                                          // aún en la pantalla de login: sin teclas de juego
       if (modalEl.classList.contains('on')) { if (ev.key === 'Escape') closeModal(); return; }   // modal abierto: teclas de juego OFF (los clics ya los tapa el overlay)
+      if (ev.key === 'Escape' && workSkill) {
+        salirDePunteria(); ev.preventDefault(); return;
+      }
       if (ev.key === 'Enter') { abrirChat(true); ev.preventDefault(); return; }   // Enter abre la línea de chat
       const acc = accionDe(ev.key);                                  // qué ACCIÓN tiene atada esta tecla
       const fm = /^F([1-9]|10)$/.exec(ev.key);                       // F1-F10 → disparar el atajo atado
@@ -7441,7 +7484,7 @@
         // LANZAR sólo ELIGE el hechizo: el server contesta `WorkRequestTarget(magia)` y el hechizo sale con el
         // clic siguiente (modoPunteria). Es el casteo en dos pasos del original — antes esta tecla lo tiraba al
         // toque contra la baldosa encarada, y como casi nunca había nadie ahí contestaba "Sólo afecta usuarios".
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CastSpell).writeByte(selectedSpell).toBytes(), myKey));
+        lanzarHechizo();
         ev.preventDefault();
       // LAS TECLAS POR DEFECTO DEL ORIGINAL están en `Cliente/Init/Controls.bin`: 128 enteros indexados por
       // el enum `eKeyType` (clsCustomKeys.cls:55). Decodificado, el juego original usa A=agarrar, T=tirar,
