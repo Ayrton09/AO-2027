@@ -2,6 +2,12 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.10 (2026-11-08)
+
+- Desde nivel 20, los bots de combate buscan mazmorras con criaturas acordes a su nivel, equipo y pociones. Si hace falta, entrenan en el campo.
+- Desde nivel 40, los bots de oficio priorizan retomar la recolección o la fabricación entre tandas productivas.
+- El panel de administración muestra la facción de cada personaje en «Jugadores online».
+
 
 ## 1.0.9 (2026-11-08)
 
