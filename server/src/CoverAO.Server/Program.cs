@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;   // PosixSignalRegistration — apagado ordenado ante SIGTERM
+using System.Runtime.InteropServices;   // PosixSignalRegistration — apagado ordenado ante SIGTERM
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using CoverAO.Server.Net;
@@ -103,7 +103,7 @@ if (serverIni.LogDias > 0)
     Console.WriteLine($"Log en {logsDir} (uno por día, se conservan {serverIni.LogDias}).");
 }
 
-Console.WriteLine($"== CoverAO Server (moderno / .NET 10) — Fase 1 {(fixtureMode ? "[FIXTURE de test]" : "[mundo real]")} ==");
+Console.WriteLine($"== {CoverAO.Server.Build.Nombre} — servidor .NET 10 {(fixtureMode ? "[FIXTURE de test]" : "[mundo real]")} ==");
 Console.WriteLine($"Instalado en: {AppContext.BaseDirectory}");
 // Separadores ASCII a propósito. El resto del banner tiene acentos, pero ESTA es la línea que un host lee
 // con `type` en una consola de Windows —codepage 850, no UTF-8— y ahí un `·` sale como un rombo negro.

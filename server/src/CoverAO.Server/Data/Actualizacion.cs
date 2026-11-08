@@ -27,7 +27,7 @@ public static class Actualizacion
     public const string ClavePublicaDelAutor = "MCowBQYDK2VwAyEAOYEO9fGkAlDIxsQ8zpoeyWwdoqQmlrFufPD3QnKRIgg=";
 
     /// <summary>Donde se publican los paquetes: las releases del repo del juego (privado hasta que el autor lo haga público).</summary>
-    public const string Descargas = "https://github.com/Ayrton09/CoverAO/releases/latest/download/";
+    public const string Descargas = ServerIni.DescargaOficial + "/download/";
 
     public const string Manifiesto = "archivos.json";
     public const string Compilacion = "compilacion.json";

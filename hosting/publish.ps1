@@ -17,7 +17,7 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.8",     # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
+  [string]$Version = "1.0.9",     # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
   [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
@@ -254,8 +254,8 @@ Write-Host "== 4/4  scripts + LEEME ==" -ForegroundColor Cyan
 $bat = @"
 @echo off
 cd /d "%~dp0"
-echo Iniciando CoverAO... (cerra esta ventana para apagar el servidor)
-echo Agrega la URL que imprime el servidor a la app de escritorio de CoverAO.
+echo Iniciando AO 2027... (cerra esta ventana para apagar el servidor)
+echo Agrega la URL que imprime el servidor a la app de escritorio de AO 2027.
 CoverAO.Server.exe %*
 pause
 "@
@@ -281,13 +281,13 @@ cd "`$(dirname "`$0")" || exit 1
 if [ "`$1" = "actualizar" ]; then shift; if [ -n "`$1" ]; then exec ./CoverAO.Server actualizar --desde "`$@"; else exec ./CoverAO.Server actualizar; fi; fi
 # Lo que crea el servidor (la base, los backups, data/bots.txt, el token del panel) lo lee solo esta cuenta.
 umask 077
-echo 'Iniciando CoverAO... (Ctrl+C para apagar el servidor)'
-echo 'Agrega la URL que imprime el servidor a la app de escritorio de CoverAO.'
+echo 'Iniciando AO 2027... (Ctrl+C para apagar el servidor)'
+echo 'Agrega la URL que imprime el servidor a la app de escritorio de AO 2027.'
 exec ./CoverAO.Server "`$@"
 "@ -replace "`r`n", "`n"
 [IO.File]::WriteAllText((Join-Path $OutDir "servidor.sh"), $sh, (New-Object Text.UTF8Encoding $false))
 $leeme = @"
-CoverAO — servidor para el cliente de escritorio (distribucion portable, self-contained)
+AO 2027 — servidor para el cliente de escritorio (distribucion portable, self-contained)
 ========================================================================
 
 QUE ES: un servidor de Argentum Online moderno (.NET 10) que NO necesita tener .NET
@@ -296,7 +296,7 @@ instalado. Trae su propio mundo, el panel de administracion y el cliente web.
 COMO JUGAR (Windows):
   1) Ejecuta  Servidor.bat  (o  CoverAO.Server.exe  directamente).
   2) Espera a que cargue el mundo (~10s) y muestre las URLs.
-  3) Agrega http://localhost:7669/ a la app de escritorio de CoverAO.
+  3) Agrega http://localhost:7669/ a la app de escritorio de AO 2027.
   4) Crea una cuenta y un personaje, y a jugar.
 
 EN LINUX (distribucion armada con  -Rid linux-x64 ):
@@ -441,7 +441,7 @@ aunque nunca les des un archivo: alcanza con que se conecten a jugar.
   Poné tu enlace en  Server.ini  ->  [INIT] CodigoFuente=https://...
   El juego se lo muestra al jugador en  Menu -> Licencia . Con eso cumplis.
 
-DESCARGAS, ERRORES Y PROPUESTAS: https://github.com/Ayrton09/CoverAO
+DESCARGAS, ERRORES Y PROPUESTAS: https://github.com/Ayrton09/AO-2027
 
 Si no completas esa clave, el jugador ve el aviso de licencia sin enlace. Los graficos,
 sonidos y mapas heredados de Argentum Online no son parte de esta licencia: ver CREDITOS.

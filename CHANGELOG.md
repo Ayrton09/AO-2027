@@ -1,7 +1,12 @@
-# Novedades de CoverAO
+# Novedades de AO 2027
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+
+## 1.0.9 (2026-11-08)
+
+- El juego se llama AO 2027. El menú, el ingreso y el cliente tienen el nuevo logo y escudo.
+- El código y las descargas oficiales se reúnen en el mismo repositorio. Si venís de CoverAO, descargá AO 2027 una vez desde el nuevo repo para recibir las próximas actualizaciones.
 
 ## 1.0.8 (2026-11-08)
 Acceso desde la app de escritorio y correcciones de seguridad y guardado.

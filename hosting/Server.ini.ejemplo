@@ -1,5 +1,5 @@
 ; ============================================================================
-;  CoverAO - Server.ini
+;  AO 2027 - Server.ini
 ;
 ;  TODAS las claves tienen un valor por defecto sensato: el servidor arranca
 ;  sin este archivo. Lo que pongas aca PISA el valor por defecto.
@@ -31,7 +31,7 @@ SoloEscritorio=0
 ; consola. No baja ni instala nada: eso es  actualizar  (ver HOSTING.md).
 BuscarActualizaciones=1
 ; El enlace de esa pagina para bajar la app. Vacio = la descarga oficial
-; (github.com/Ayrton09/CoverAO/releases/latest).
+; (github.com/Ayrton09/AO-2027/releases/latest).
 DescargaEscritorio=
 
 ; --- Cupos y limites ---------------------------------------------------------

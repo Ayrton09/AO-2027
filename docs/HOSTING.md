@@ -189,7 +189,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa**: no cambia ninguna mecánica, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
 | `BuscarActualizaciones` | 1 (así viene) = al minuto de arrancar y cada 6 horas mira si el autor publicó una versión nueva del server y lo avisa en la consola. No baja ni instala nada: eso lo hace el host cuando quiere, con `actualizar` (ver "Actualizar a una version nueva"). 0 = no consulta |
 | `SoloEscritorio` | Sólo cambia el comportamiento de `--fixture`. En el mundo real la app de escritorio siempre es obligatoria, incluso si el INI antiguo dice `0`. El navegador ve la página de descarga, el WebSocket exige la cabecera de la app y el TCP clásico queda cerrado. La cabecera distingue el acceso del navegador convencional y es reproducible por un programa personalizado |
-| `DescargaEscritorio` | el enlace que muestra esa página para bajar la app. Vacío = la descarga oficial, `https://github.com/Ayrton09/CoverAO/releases/latest` |
+| `DescargaEscritorio` | el enlace que muestra esa página para bajar la app. Vacío = la descarga oficial, `https://github.com/Ayrton09/AO-2027/releases/latest` |
 | `ProxyDeConfianza` | las direcciones del reverse-proxy que está delante del cliente web, separadas por coma (`127.0.0.1,::1` si corre en la misma máquina). De una conexión que viene de ahí, la IP del jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy; sin esto, detrás del proxy todos los jugadores tienen la misma IP y los topes por IP los frenan a todos juntos. Vacío = no se le cree a ninguna cabecera |
 | `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina**: gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
 
@@ -231,8 +231,8 @@ COVERAO_INIT_MAXUSERS=200 COVERAO_INIT_DIOSES=1 COVERAO_DIOSES_DIOS1=TuPersonaje
 
 ## Actualizar a una version nueva
 
-El código se mantiene en `Ayrton09/CoverAO-privado`; `Ayrton09/CoverAO` contiene las descargas públicas.
-La app ya instalada sigue usando la misma dirección de actualización y la misma firma del autor.
+El código y las descargas oficiales se publican en [`Ayrton09/AO-2027`](https://github.com/Ayrton09/AO-2027).
+Si venís de CoverAO 1.0.8 o anterior, descargá AO 2027 una vez. La app conserva su identidad de instalación y usa la misma firma del autor. A partir de AO 2027, los avisos se buscan en el nuevo repositorio.
 
 Para publicar, con la versión de `VERSION` confirmada y enviada a `origin/main`, ejecutar desde la raíz:
 
@@ -242,7 +242,7 @@ powershell -ExecutionPolicy Bypass -File hosting/subir-version.ps1 -SoloSubir
 ```
 
 El primer paso arma y firma los paquetes de Windows y Linux. El segundo comprueba que correspondan
-al mismo commit, etiqueta esa fuente en el privado y publica los paquetes y avisos en el público.
+al mismo commit de `main`, crea su etiqueta y publica los paquetes y avisos en el mismo repositorio.
 La release se prepara como borrador y pasa a ser la última versión cuando ya están todos sus archivos.
 La app del tester busca el aviso al abrir; las actualizaciones del servidor siguen requiriendo ejecutar
 `actualizar`. Un commit de desarrollo por sí solo no publica una nueva versión.
@@ -256,7 +256,7 @@ Windows:   arrastrá el .zip nuevo encima de Actualizar.bat
 Linux:     bash servidor.sh actualizar CoverAO-servidor-linux-x64.tar.gz
 ```
 
-Sin el paquete (`Actualizar.bat` solo, o `bash servidor.sh actualizar`), lo baja de las releases del juego. Con
+Para migrar un servidor 1.0.8 desde el repo anterior, descargá el paquete nuevo desde este repositorio y pasáselo al actualizador. Desde AO 2027, si ejecutás `Actualizar.bat` o `bash servidor.sh actualizar` sin paquete, el servidor lo baja del nuevo repositorio. Con
 `BuscarActualizaciones=1` (así viene) el server avisa en la consola cuando hay una versión nueva; no instala
 nada solo. `coverao.ps1 actualizar` además lo apaga si estaba prendido y lo vuelve a arrancar. Si el server corre
 con otra cuenta (el `arranque` de Windows corre como `LOCAL SERVICE`), desde una consola sin Administrador no se
@@ -621,13 +621,11 @@ nunca, porque el cliente de entonces no pedía ninguna ruta: abría el socket co
 
 ## Licencia
 
-CoverAO es AGPL-3.0 y su cláusula de red obliga a ofrecerle el código de la versión que corrés a quien se
+AO 2027 es AGPL-3.0 y su cláusula de red obliga a ofrecerle el código de la versión que corrés a quien se
 conecte a jugar. Se cumple poniendo la URL en `Server.ini`:
 
 ```ini
 CodigoFuente=https://github.com/tu-usuario/tu-fork
 ```
 
-El enlace aparece en Menú → Licencia y en la página de descarga. Puede apuntar a un archivo del código de esa
-versión. En una prueba cerrada, todos los testers deben poder descargarlo con su propio acceso. Si una instalación
-anterior conserva el enlace al repositorio privado de CoverAO, configurá la dirección del código de esa versión.
+El enlace aparece en Menú → Licencia y en la página de descarga. Usá el enlace al commit o la etiqueta que corresponde a tu compilación. Las versiones oficiales de AO 2027 se etiquetan en `Ayrton09/AO-2027`.

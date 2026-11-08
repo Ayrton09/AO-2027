@@ -6,10 +6,11 @@ $arbol = [Management.Automation.Language.Parser]::ParseFile($publicador, [ref]$t
 if ($errores.Count) { throw ($errores | Out-String) }
 $temporal = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ("coverao-release-test-" + [Guid]::NewGuid().ToString("N"))))
 $shaFuente = 'a' * 40
-$shaPublico = 'b' * 40
 $llamadas = New-Object 'System.Collections.Generic.List[object]'
-$origenPublico = $false
+$origenCorrecto = $true
 $tagEnConflicto = $false
+$tagRemotoEnConflicto = $false
+$enMain = $true
 $yaPublicada = $false
 
 function Exigir($condicion, [string]$mensaje) { if (-not $condicion) { throw $mensaje } }
@@ -23,7 +24,11 @@ function git {
       if ($tagEnConflicto) { return ('c' * 40) }
       $global:LASTEXITCODE = 1; return
     }
-    'remote' { if ($origenPublico) { return 'https://github.com/Ayrton09/CoverAO.git' }; return 'https://github.com/Ayrton09/CoverAO-privado.git' }
+    'remote' { if ($origenCorrecto) { return 'https://github.com/Ayrton09/AO-2027.git' }; return 'https://github.com/Ayrton09/CoverAO.git' }
+    'merge-base' { if (-not $enMain) { $global:LASTEXITCODE = 1 } }
+    'ls-remote' {
+      if ($tagRemotoEnConflicto) { return (('b' * 40) + " refs/tags/v1.0.1") }
+    }
   }
 }
 function gh {
@@ -31,8 +36,6 @@ function gh {
   $llamadas.Add([pscustomobject]@{ programa = 'gh'; argumentos = $a })
   $global:LASTEXITCODE = 0
   if ($a[0] -eq 'api') {
-    if ($a[1] -like '*/commits/main') { return $shaPublico }
-    if ($a[1] -like '*/git/matching-refs/*') { return '[]' }
     if ($a[1] -like '*/releases') {
       if ($yaPublicada) { return '[[{"tag_name":"v1.0.1","draft":false}]]' }
       return '[[]]'
@@ -74,23 +77,31 @@ try {
   for ($i = 0; $i -lt 4; $i++) { Exigir (-not $subidas[$i].argumentos[3].EndsWith('.json')) 'Se subió un aviso antes de todos los paquetes.' }
   Exigir (-not @($llamadas | Where-Object { $_.argumentos -contains '--force' -or $_.argumentos -contains '-f' }).Count) 'Se intentó forzar una etiqueta.'
   $creacion = @($llamadas | Where-Object { $_.programa -eq 'gh' -and $_.argumentos[1] -eq 'create' })[0]
-  Exigir ($creacion.argumentos -contains $shaPublico) 'El release público no apunta al commit de distribución.'
-  Exigir (-not ($creacion.argumentos -contains $shaFuente)) 'Se intentó publicar el commit fuente.'
+  $etiquetado = @($llamadas | Where-Object { $_.programa -eq 'git' -and $_.argumentos[2] -eq 'tag' })[0]
+  Exigir ($etiquetado.argumentos -contains $shaFuente) 'La etiqueta no apunta al commit de los archivos armados.'
+  Exigir ($creacion.argumentos -contains '--verify-tag') 'La release podría crear una etiqueta en otro commit.'
+  Exigir ($creacion.argumentos -contains 'Ayrton09/AO-2027') 'La release no se creó en el repositorio principal.'
   Exigir (-not @($llamadas | Where-Object { $_.programa -eq 'gh' -and $_.argumentos[1] -eq 'edit' }).Count) 'Un borrador se publicó sin pedirlo.'
 
   $llamadas.Clear()
   & $script -SoloSubir
   Exigir ($llamadas[$llamadas.Count - 1].argumentos -contains '--latest') 'Latest no se publicó al terminar las subidas.'
 
-  foreach ($caso in @('tag', 'origen', 'publicada', 'hash')) {
-    $llamadas.Clear(); $tagEnConflicto = $caso -eq 'tag'; $origenPublico = $caso -eq 'origen'; $yaPublicada = $caso -eq 'publicada'
+  foreach ($caso in @('tag', 'tag-remoto', 'origen', 'commit-fuera-de-main', 'publicada', 'hash')) {
+    $llamadas.Clear()
+    $tagEnConflicto = $caso -eq 'tag'
+    $tagRemotoEnConflicto = $caso -eq 'tag-remoto'
+    $origenCorrecto = $caso -ne 'origen'
+    $enMain = $caso -ne 'commit-fuera-de-main'
+    $yaPublicada = $caso -eq 'publicada'
     if ($caso -eq 'hash') { Add-Content -LiteralPath (Join-Path $temporal $rutas[0]) -Value 'alterado' }
     $rechazada = $false
     try { & $script -SoloSubir } catch { $rechazada = $true }
     Exigir $rechazada "No se rechazó el caso inseguro: $caso"
     Exigir (-not @($llamadas | Where-Object { $_.programa -eq 'gh' -and $_.argumentos[1] -eq 'upload' }).Count) "Se subieron archivos en el caso $caso."
+    Exigir (-not @($llamadas | Where-Object { $_.programa -eq 'git' -and $_.argumentos[2] -in @('tag', 'push') }).Count) "Se modificó una etiqueta en el caso $caso."
   }
-  Write-Host 'OK: borrador/latest, siete artefactos ordenados, fuente separada, tags sin force y rechazos por conflicto/origen/hash.'
+  Write-Host 'OK: borrador/latest, siete artefactos ordenados, etiqueta en el commit armado y rechazo de publicaciones inseguras.'
 }
 finally {
   $baseTemporal = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)

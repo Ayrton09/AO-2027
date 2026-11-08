@@ -1808,7 +1808,7 @@ public sealed partial class PacketDispatcher
         session.Send(ServerMessages.UpdateUserStats(player));
         // SendMOTD + SendUpdate (VB6 ConnectUser, TCP.bas:296-298): el mensaje del día como líneas ConsoleMsg
         // (FontIndex 8) y las novedades como EjecutarAccion(4). Reemplaza el ConsoleMsg único genérico; el
-        // contenido viene de ServerContent (data/motd.txt + data/updates.txt, o el default de CoverAO).
+        // contenido viene de ServerContent (data/motd.txt + data/updates.txt, o el texto predeterminado).
         // La ficha del familiar, para que el panel del cliente arranque poblado. SÓLO si el personaje lleva
         // uno, y esa condición es lo importante: el paquete es una extensión nuestra, así que mandarlo siempre
         // le agregaría un paquete AL BOOTSTRAP DE TODOS LOS LOGINS — y el bootstrap es lo primero que compara
@@ -5420,7 +5420,7 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>La respuesta de un GM que va por correo: <c>EnviarCorreo</c> con <c>EnvioDirecto = 1</c>
-    /// (mod_Correos.bas), sin cobrar ni adjuntar, firmada por "CoverAO Staff". Si la casilla está llena no se
+    /// (mod_Correos.bas), sin cobrar ni adjuntar, firmada por el staff del juego. Si la casilla está llena no se
     /// manda (<c>CantSendCorreo</c>) y el GM recibe el aviso del original. Si el destinatario está conectado se le
     /// prende el indicador de carta y se le avisa; al GM, como a cualquiera que manda una carta, "El mensaje fue
     /// enviado correctamente.".</summary>
@@ -5432,11 +5432,12 @@ public sealed partial class PacketDispatcher
                 "El usuario tiene su casilla de correos llena, por favor comunicate con el usuario a la brevedad.", FuenteInfo));
             return false;
         }
-        _world.DeliverMail(dest, new MailEntry("CoverAO Staff", $"{gm.Name}:{mensaje}", 0, 0));
+        const string remitente = Build.Nombre + " Staff";
+        _world.DeliverMail(dest, new MailEntry(remitente, $"{gm.Name}:{mensaje}", 0, 0));
         PersistMail(dest);
         conectado?.Connection?.Send(ServerMessages.MensajeSigno(true));
         conectado?.Connection?.Send(ServerMessages.ConsoleMsg(
-            "Has recibido una respuesta de [CoverAO Staff], ve a un correo local para leerlo.", FuenteInfo));
+            $"Has recibido una respuesta de [{remitente}], ve a un correo local para leerlo.", FuenteInfo));
         session.Send(ServerMessages.ConsoleMsg("El mensaje fue enviado correctamente.", FuenteInfo));
         return true;
     }

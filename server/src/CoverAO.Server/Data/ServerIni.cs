@@ -689,8 +689,9 @@ public sealed class ServerIni
     public string DescargaEscritorio { get; private set; } = DescargaOficial;
 
     /// <summary>La página de la última versión del juego de escritorio, la que publica el autor.</summary>
-    internal const string RepositorioPublico = "github.com/Ayrton09/CoverAO";
-    internal const string RepositorioPrivadoAnterior = RepositorioPublico + "-privado";
+    internal const string RepositorioPublico = "github.com/Ayrton09/AO-2027";
+    internal const string RepositorioDescargasAnterior = "github.com/Ayrton09/CoverAO";
+    internal const string RepositorioFuenteAnterior = "github.com/Ayrton09/CoverAO-privado";
     public const string DescargaOficial = "https://" + RepositorioPublico + "/releases/latest";
 
     /// <summary>
@@ -1192,8 +1193,6 @@ public sealed class ServerIni
         cfg.StartPort = puerto is >= 1 and <= PuertoMaximo ? puerto : cfg.StartPort;
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
-        if (cfg.CodigoFuente.TrimEnd('/').Equals("https://" + RepositorioPrivadoAnterior, StringComparison.OrdinalIgnoreCase))
-            cfg.CodigoFuente = "";   // era el valor de la plantilla anterior, no un enlace de descarga del código
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
         // El tope de un día es por si alguien escribe un número absurdo: una criatura que no vuelve nunca
@@ -1334,7 +1333,11 @@ public sealed class ServerIni
         cfg.SoloEscritorio = ini.GetInt("INIT", "SoloEscritorio", 0) != 0;
         cfg.BuscarActualizaciones = ini.GetInt("INIT", "BuscarActualizaciones", 1) != 0;
         string descarga = ini.GetString("INIT", "DescargaEscritorio").Trim();
-        cfg.DescargaEscritorio = descarga.Length > 0 ? descarga : DescargaOficial;
+        string descargaSinBarra = descarga.TrimEnd('/');
+        cfg.DescargaEscritorio = descarga.Length == 0
+            || descargaSinBarra.Equals("https://" + RepositorioDescargasAnterior + "/releases/latest", StringComparison.OrdinalIgnoreCase)
+            || descargaSinBarra.Equals("https://" + RepositorioFuenteAnterior + "/releases/latest", StringComparison.OrdinalIgnoreCase)
+            ? DescargaOficial : descarga;
         cfg.ProxyDeConfianza = ini.GetString("INIT", "ProxyDeConfianza")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(Net.ConnectionGuard.NormalizeIp).ToArray();

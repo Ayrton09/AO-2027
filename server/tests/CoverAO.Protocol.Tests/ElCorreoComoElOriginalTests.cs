@@ -11,7 +11,7 @@ namespace CoverAO.Protocol.Tests;
 /// EL CORREO, COMO EL ORIGINAL (HandleEnviarCorreo, Protocol.bas:16020, y mod_Correos.bas). El adjunto viaja
 /// como RANURA del inventario (el cliente de stock manda <c>lstInv.ListIndex + 1</c>), los avisos son los del
 /// original, uno se puede mandar una carta a sí mismo, y retirar o borrar no vuelve a mandar la bandeja. La
-/// respuesta de un GM por correo la firma "CoverAO Staff".
+/// respuesta de un GM por correo la firma "AO 2027 Staff".
 /// </summary>
 public class ElCorreoComoElOriginalTests : IDisposable
 {
@@ -215,7 +215,7 @@ public class ElCorreoComoElOriginalTests : IDisposable
         await Asentar(t);
 
         var carta = Assert.Single(_world.PeekMail("Bruma"));
-        Assert.Equal(("CoverAO Staff", "Rugura:ya te ayudo"), (carta.Sender, carta.Message));
+        Assert.Equal(("AO 2027 Staff", "Rugura:ya te ayudo"), (carta.Sender, carta.Message));
         Assert.Contains("El mensaje fue enviado correctamente.", t.Textos());
         Assert.Contains("Se le ha enviado por correo la respuesta enviada.", t.Textos());
     }

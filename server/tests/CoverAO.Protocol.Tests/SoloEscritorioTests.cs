@@ -73,7 +73,7 @@ public class SoloEscritorioTests
     }
 
     [Fact]
-    public void La_bienvenida_reemplaza_el_enlace_privado_sin_cambiar_otros_repositorios()
+    public void La_bienvenida_reemplaza_los_enlaces_anteriores_sin_cambiar_otros_repositorios()
     {
         var directorio = Directory.CreateTempSubdirectory("coverao-motd-");
         string ruta = Path.Combine(directorio.FullName, "motd.txt");
@@ -81,13 +81,38 @@ public class SoloEscritorioTests
         {
             File.WriteAllLines(ruta, new[]
             {
-                "Reportes: https://github.com/Ayrton09/CoverAO-privado/issues",
+                "Reportes: https://github.com/Ayrton09/CoverAO/issues",
+                "Descargas: https://github.com/Ayrton09/CoverAO-privado/releases/latest.",
                 "Copia: https://github.com/Ayrton09/CoverAO-privado-backup",
             });
             var motd = ServerContent.Load(directorio.FullName).Motd;
-            Assert.Equal("Reportes: https://github.com/Ayrton09/CoverAO/issues", motd[0]);
-            Assert.Equal("Copia: https://github.com/Ayrton09/CoverAO-privado-backup", motd[1]);
+            Assert.Equal("Reportes: https://github.com/Ayrton09/AO-2027/issues", motd[0]);
+            Assert.Equal("Descargas: https://github.com/Ayrton09/AO-2027/releases/latest.", motd[1]);
+            Assert.Equal("Copia: https://github.com/Ayrton09/CoverAO-privado-backup", motd[2]);
         }
         finally { File.Delete(ruta); directorio.Delete(); }
+    }
+
+    [Theory]
+    [InlineData("", "https://github.com/Ayrton09/AO-2027/releases/latest")]
+    [InlineData("https://github.com/Ayrton09/CoverAO/releases/latest/", "https://github.com/Ayrton09/AO-2027/releases/latest")]
+    [InlineData("https://github.com/Ayrton09/CoverAO-privado/releases/latest", "https://github.com/Ayrton09/AO-2027/releases/latest")]
+    [InlineData("https://ejemplo.org/descargas", "https://ejemplo.org/descargas")]
+    public void La_descarga_oficial_migra_y_la_del_host_se_conserva(string configurada, string esperada)
+    {
+        var directorio = Directory.CreateTempSubdirectory("coverao-descarga-");
+        try
+        {
+            string ruta = Path.Combine(directorio.FullName, "Server.ini");
+            File.WriteAllText(ruta, $"""
+                [INIT]
+                DescargaEscritorio={configurada}
+                CodigoFuente=https://github.com/Ayrton09/AO-2027
+                """);
+            var config = ServerIni.Cargar(ruta);
+            Assert.Equal(esperada, config.DescargaEscritorio);
+            Assert.Equal("https://github.com/Ayrton09/AO-2027", config.CodigoFuente);
+        }
+        finally { directorio.Delete(recursive: true); }
     }
 }

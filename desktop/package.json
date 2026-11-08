@@ -1,8 +1,8 @@
 {
   "name": "coverao-escritorio",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
-  "description": "CoverAO para escritorio: una ventana propia que carga el cliente del server, verificado con la firma del autor.",
+  "description": "AO 2027 para escritorio. El cliente de cada servidor se verifica con la firma del autor.",
   "main": "main.js",
   "desktopName": "coverao.desktop",
   "scripts": {
@@ -16,7 +16,7 @@
   },
   "build": {
     "appId": "ar.coverao.escritorio",
-    "productName": "CoverAO",
+    "productName": "AO 2027",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -44,12 +44,13 @@
       "target": [
         "nsis"
       ],
+      "executableName": "CoverAO",
       "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "CoverAO",
+      "shortcutName": "AO 2027",
       "artifactName": "CoverAO-Setup.${ext}",
       "deleteAppDataOnUninstall": true,
       "include": "build/instalador.nsh"
@@ -62,7 +63,7 @@
       "icon": "build/icon.png",
       "artifactName": "CoverAO-x86_64.${ext}",
       "executableName": "coverao",
-      "synopsis": "Argentum Online: CoverAO",
+      "synopsis": "AO 2027 — Argentum Online",
       "syncDesktopName": true
     },
     "mac": {

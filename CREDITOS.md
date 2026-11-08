@@ -1,6 +1,6 @@
 # Créditos y procedencia
 
-CoverAO no es una obra original: es un **port** de un juego que ya existía, y una parte grande de lo que se
+AO 2027 es un **port** de un juego que ya existía, y una parte grande de lo que se
 distribuye (gráficos, sonidos, música, mapas, la tabla de objetos y de hechizos) **no la hizo este proyecto**.
 Este archivo dice qué viene de dónde, para que quien reciba una copia lo sepa sin tener que deducirlo.
 

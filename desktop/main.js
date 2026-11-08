@@ -266,7 +266,7 @@ function crearVentana() {
   ventana = new BrowserWindow({
     width: lugar.width ?? 1280, height: lugar.height ?? 800, x: lugar.x, y: lugar.y,
     minWidth: 800, minHeight: 600,
-    title: 'CoverAO', icon: path.join(__dirname, 'build', 'icon.png'),
+    title: 'AO 2027', icon: path.join(__dirname, 'build', 'icon.png'),
     backgroundColor: '#000000', autoHideMenuBar: true, show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -414,7 +414,7 @@ async function novedadesDe(direccion) {
 // LA ACTUALIZACIÓN (ver actualizacion.js): al abrir se baja el aviso del release; si es del autor y más nuevo que esta compilación,
 // se baja el instalador y, si es el firmado, el menú ofrece instalarlo. Si no se toca, se instala al cerrar. Sin empaquetar no
 // se busca: `COVERAO_ACTUALIZAR=1` lo prueba igual.
-const DESCARGAS = 'https://github.com/Ayrton09/CoverAO/releases/latest/download/';
+const DESCARGAS = 'https://github.com/Ayrton09/AO-2027/releases/latest/download/';
 // El aviso y el tipo de archivo de ESTA plataforma (ver actualizacion.PLATAFORMAS). Una que no está (macOS) no se actualiza sola.
 const PLATAFORMA = actualizacion.PLATAFORMAS[process.platform] ?? null;
 const BUSCAR_ACTUALIZACION = !!PLATAFORMA && (app.isPackaged || process.env.COVERAO_ACTUALIZAR === '1');

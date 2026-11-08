@@ -1,6 +1,6 @@
 ﻿<#
   Arma y publica paquetes firmados. VERSION fija el número; la fecha firmada distingue compilaciones.
-  La fuente vive en CoverAO-privado y las descargas en CoverAO: nunca se empuja código al repo de distribución.
+  El código y las descargas se publican en el mismo repositorio. Cada etiqueta nueva apunta al commit armado.
 
     powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SinSubir
     powershell -ExecutionPolicy Bypass -File hosting\subir-version.ps1 -SoloSubir -Borrador
@@ -11,18 +11,14 @@
 #>
 param([switch]$SinApp, [switch]$SinServidor, [switch]$SinSubir, [switch]$SoloSubir, [switch]$SinAppLinux,
       [switch]$Borrador, [string]$DistroLinux = "CoverAO-Verif", [string]$Version = "",
-      [string]$RepoDistribucion = "Ayrton09/CoverAO", [string]$RepoFuente = "Ayrton09/CoverAO-privado",
-      [string]$RefDistribucion = "main")
+      [string]$Repo = "Ayrton09/AO-2027")
 $ErrorActionPreference = "Stop"
 $Root = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
 $versionFuente = (Get-Content -LiteralPath (Join-Path $Root "VERSION") -Raw).Trim()
 if (-not $Version) { $Version = $versionFuente }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION debe tener formato X.Y.Z." }
 if ($Version -ne $versionFuente) { throw "-Version debe coincidir con VERSION; cambiá primero la versión de la fuente." }
-if ($RepoDistribucion -eq $RepoFuente) { throw "La fuente y la distribución deben ser repositorios distintos." }
-foreach ($r in @($RepoDistribucion, $RepoFuente)) {
-  if ($r -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Repositorio inválido: $r" }
-}
+if ($Repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Repositorio inválido: $Repo" }
 if ($SoloSubir -and $SinSubir) { throw "Elegí -SoloSubir o -SinSubir." }
 if ($SinApp -and $SinServidor) { throw "No se eligió ningún paquete." }
 $etiqueta = "v$Version"
@@ -152,47 +148,34 @@ if ($SinSubir) {
   return
 }
 
-# El remoto del source nunca se usa como destino de releases ni se fuerza una etiqueta existente.
+# Sólo se publica un commit del repositorio principal y nunca se mueve una etiqueta existente.
 if ((Git-Fuente -Argumentos @("rev-parse", "HEAD")).Trim() -ne $commit -or (Git-Fuente -Argumentos @("status", "--porcelain"))) {
   throw "La fuente cambió durante la preparación: no se publicará este resultado."
 }
 $origen = (Git-Fuente -Argumentos @("remote", "get-url", "origin")).Trim()
 $repoOrigen = if ($origen -match '^git@github\.com:(.+?)(?:\.git)?$') { $Matches[1] }
               elseif ($origen -match '^https://github\.com/(.+?)(?:\.git)?/?$') { $Matches[1] } else { "" }
-if ($repoOrigen -ne $RepoFuente) { throw "origin debe apuntar al repositorio fuente $RepoFuente; no se publicará código en la distribución." }
+if ($repoOrigen -ne $Repo) { throw "origin debe apuntar al repositorio principal $Repo." }
 Git-Fuente -Argumentos @("fetch", "--quiet", "origin", "main") | Out-Null
 Git-Fuente -Argumentos @("merge-base", "--is-ancestor", $commit, "origin/main") | Out-Null
+$paginas = Github -Argumentos @("api", "repos/$Repo/releases", "--paginate", "--slurp") | Out-String | ConvertFrom-Json
+$existente = @(foreach ($pagina in $paginas) { foreach ($release in $pagina) { if ($release.tag_name -eq $etiqueta) { $release } } })
+if ($existente.Count -gt 0 -and -not $existente[0].draft) { throw "$etiqueta ya está publicada: no se reemplazan sus archivos." }
 $tagLocal = & git -C $Root rev-parse --verify --quiet "refs/tags/$etiqueta^{commit}"
-if ($LASTEXITCODE -eq 0 -and $tagLocal.Trim() -ne $commit) { throw "La etiqueta fuente $etiqueta ya apunta a otro commit; no se mueve." }
+if ($LASTEXITCODE -eq 0 -and $tagLocal.Trim() -ne $commit) { throw "La etiqueta local $etiqueta ya apunta a otro commit; no se mueve." }
 $remotas = @(Git-Fuente -Argumentos @("ls-remote", "origin", "refs/tags/$etiqueta", "refs/tags/$etiqueta^{}"))
 if ($remotas.Count -gt 0) {
   $resuelta = @($remotas | Where-Object { $_ -match '\^\{\}$' })
   $tagRemoto = if ($resuelta.Count) { ($resuelta[0] -split '\s+')[0] } else { ($remotas[0] -split '\s+')[0] }
-  if ($tagRemoto -ne $commit) { throw "La etiqueta remota fuente $etiqueta ya apunta a otro commit; no se mueve." }
+  if ($tagRemoto -ne $commit) { throw "La etiqueta remota $etiqueta ya apunta a otro commit; no se mueve." }
 }
 if (-not $tagLocal) { Git-Fuente -Argumentos @("tag", $etiqueta, $commit) | Out-Null }
 if ($remotas.Count -eq 0) { Git-Fuente -Argumentos @("push", "origin", "refs/tags/$etiqueta") | Out-Null }
 
-$destino = (Github -Argumentos @("api", "repos/$RepoDistribucion/commits/$RefDistribucion", "--jq", ".sha")).Trim()
-if ($destino -eq $commit) { throw "El commit de distribución coincide con el source: se requiere el repo de descargas separado." }
-# Sin literales entrecomillados en --jq: Windows PowerShell 5.1 los pierde al invocar gh como programa nativo.
-$paginas = Github -Argumentos @("api", "repos/$RepoDistribucion/releases", "--paginate", "--slurp") | Out-String | ConvertFrom-Json
-$existente = @(foreach ($pagina in $paginas) { foreach ($release in $pagina) { if ($release.tag_name -eq $etiqueta) { $release } } })
-if ($existente.Count -gt 0 -and -not $existente[0].draft) { throw "$etiqueta ya está publicada: no se reemplazan sus archivos." }
-# Una etiqueta pública existente sólo se reutiliza si apunta al commit esperado del repo de distribución.
-$tags = Github -Argumentos @("api", "repos/$RepoDistribucion/git/matching-refs/tags/$etiqueta") | Out-String | ConvertFrom-Json
-$tagPublico = @($tags | Where-Object { $_.ref -eq "refs/tags/$etiqueta" })
-if ($tagPublico.Count) {
-  $objeto = $tagPublico[0].object
-  while ($objeto.type -eq "tag") {
-    $objeto = (Github -Argumentos @("api", "repos/$RepoDistribucion/git/tags/$($objeto.sha)") | Out-String | ConvertFrom-Json).object
-  }
-  if ($objeto.type -ne "commit" -or $objeto.sha -ne $destino) { throw "La etiqueta pública $etiqueta no corresponde al destino de distribución; no se mueve." }
-}
 if ($existente.Count -eq 0) {
-  $notas = "CoverAO $Version. App de Windows y Linux, y servidor para ambas plataformas. Los paquetes y avisos de actualización están firmados."
-  Github -Argumentos @("release", "create", $etiqueta, "-R", $RepoDistribucion, "--target", $destino, "--title", "CoverAO $Version", "--notes", $notas, "--draft") | Out-Null
+  $notas = "AO 2027 $Version. App de Windows y Linux, y servidor para ambas plataformas. Los paquetes y avisos de actualización están firmados."
+  Github -Argumentos @("release", "create", $etiqueta, "-R", $Repo, "--verify-tag", "--title", "AO 2027 $Version", "--notes", $notas, "--draft") | Out-Null
 }
-foreach ($f in ($subir + $avisos)) { Github -Argumentos @("release", "upload", $etiqueta, $f, "--clobber", "-R", $RepoDistribucion) | Out-Null }
-if (-not $Borrador) { Github -Argumentos @("release", "edit", $etiqueta, "--draft=false", "--latest", "-R", $RepoDistribucion) | Out-Null }
-Write-Host "Preparado $etiqueta en $RepoDistribucion$(if ($Borrador) { ' (borrador)' } else { ' (publicado, latest)' })." -ForegroundColor Green
+foreach ($f in ($subir + $avisos)) { Github -Argumentos @("release", "upload", $etiqueta, $f, "--clobber", "-R", $Repo) | Out-Null }
+if (-not $Borrador) { Github -Argumentos @("release", "edit", $etiqueta, "--draft=false", "--latest", "-R", $Repo) | Out-Null }
+Write-Host "Preparado $etiqueta en $Repo$(if ($Borrador) { ' (borrador)' } else { ' (publicado, latest)' })." -ForegroundColor Green

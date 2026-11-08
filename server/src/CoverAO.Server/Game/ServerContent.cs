@@ -15,8 +15,9 @@ namespace CoverAO.Server.Game;
 public sealed class ServerContent
 {
     public const byte MotdFont = 8;   // FontIndex del MOTD en el oráculo VB6 (ConnectUser)
-    private static readonly Regex RepoAnterior = new(@"(?<![\w.-])" + Regex.Escape(ServerIni.RepositorioPrivadoAnterior)
-        + @"(?=\.(?:\s|$)|[^\w.-]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex RepoAnterior = new(@"(?<![\w.-])(?:" + Regex.Escape(ServerIni.RepositorioFuenteAnterior)
+        + "|" + Regex.Escape(ServerIni.RepositorioDescargasAnterior) + @")(?=\.(?:\s|$)|[^\w.-]|$)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>Líneas de bienvenida (se emiten como ConsoleMsg con FontIndex 8).</summary>
     public IReadOnlyList<string> Motd { get; }
@@ -28,8 +29,8 @@ public sealed class ServerContent
 
     private static readonly string[] DefaultMotd =
     {
-        "CoverAO — servidor moderno (.NET 10). ¡Conexión aceptada!",
-        "¡Bienvenido a CoverAO! El mundo de Argentum te espera.",
+        $"{Build.Nombre} — servidor .NET 10. ¡Conexión aceptada!",
+        $"¡Bienvenido a {Build.Nombre}! El mundo de Argentum te espera.",
         "Escribí /AYUDA para ver los comandos, o /GM para hablar con un administrador.",
         "Descargas y avisos: https://" + ServerIni.RepositorioPublico,
     };
