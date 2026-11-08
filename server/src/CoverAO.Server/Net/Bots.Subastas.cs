@@ -116,6 +116,8 @@ public sealed partial class Bot
     /// <summary>Lo que puede pagar en la subasta: lo de encima (el Centro no cobra de la bóveda), sin tocar lo de las compras.</summary>
     private int PlataParaLaSubasta(SentidosDelBot sentidos) => Math.Min(sentidos.Oro, PlataParaElEquipo(sentidos));
 
+    private bool BuscaMejorasEnSubasta => !GuardaParaSuMeta && _acompana is null;
+
     /// <summary>¿Eso lo mejora? El equipo, como en la vitrina (<see cref="MejoraLoQueTiene"/>); el pergamino, si le sirve.</summary>
     private bool LoMejora(SentidosDelBot sentidos, short obj) =>
         !_porRetirar.Contains(obj) && (MejoraLoQueTiene(sentidos, obj) || (sentidos.UsaMana && LeSirveElPergamino(sentidos, obj)));
@@ -159,7 +161,8 @@ public sealed partial class Bot
     private async Task<bool> IrAlSubastadorAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         bool vende = sentidos.EnLaMochila(obj => ParaPublicar(sentidos, obj)) is not null;
-        bool mira = Environment.TickCount64 >= _proximaMiradaALaSubasta && PlataParaLaSubasta(sentidos) >= PlataParaMirarLaSubasta;
+        bool mira = (_clase == ClaseHerrero || BuscaMejorasEnSubasta)
+            && Environment.TickCount64 >= _proximaMiradaALaSubasta && PlataParaLaSubasta(sentidos) >= PlataParaMirarLaSubasta;
         if ((!vende && !mira) || SubastadorDe(sentidos.Mapa) is not { } nace) return false;
         if (mira) _proximaMiradaALaSubasta = Environment.TickCount64 + MirarLaSubastaMs;
         bool publico = false, compro = false;
@@ -177,7 +180,11 @@ public sealed partial class Bot
             if (!await EsperarLaListaAsync(sentidos, vistas, ct)) return false;   // no atendió: lejos, o no era el Subastador
             _listaVistaEn = Environment.TickCount64;
 
-            if (mira) compro = await ComprarEnLaSubastaAsync(transporte, sentidos, ct);
+            if (mira)
+            {
+                AnotarMaterialEnElMercado(sentidos, PlataParaLaSubasta(sentidos));
+                compro = await ComprarEnLaSubastaAsync(transporte, sentidos, ct);
+            }
             if (vende) publico = await PublicarEnLaSubastaAsync(transporte, sentidos, ct);
         }
         finally
@@ -200,7 +207,7 @@ public sealed partial class Bot
         int plata = PlataParaLaSubasta(sentidos);
         var elegida = sentidos.Subastas
             .Where(f => LeSirveElLote(sentidos, f, plata) ||
-                (_entorno.Datos.Obj(f.Objeto) is { } && LeConvieneLaSubasta(f, ValorDeMercado(_entorno.Datos, f.Objeto), Nombre, plata,
+                (BuscaMejorasEnSubasta && _entorno.Datos.Obj(f.Objeto) is { } && LeConvieneLaSubasta(f, ValorDeMercado(_entorno.Datos, f.Objeto), Nombre, plata,
                     permiteProductor: _entorno.Datos.BlacksmithRecipes.Contains(f.Objeto)) && LoMejora(sentidos, f.Objeto)))
             .OrderByDescending(f => LeSirveElLote(sentidos, f, plata))
             .ThenBy(f => f.PrecioFinal).Select(f => (ServerMessages.FilaDeSubasta?)f).FirstOrDefault();
@@ -233,12 +240,16 @@ public sealed partial class Bot
             if (CentroDeSubastas.Deposito(HorasDeSubasta, inicial, final) > sentidos.Oro) break;
             int antes = sentidos.CuantoTiene(o => o == obj);
             int vistas = sentidos.VecesQueVioLasSubastas;
+            var anteriores = sentidos.Subastas.Select(f => f.Id).ToHashSet();
             transporte.Mandar(Paquete(ClientPacketId.SubastaPublicar, w => w.WriteByte(item.Ranura).WriteInteger(cantidad)
                 .WriteLong(inicial).WriteLong(final).WriteByte(HorasDeSubasta)));
-            await EsperarLaListaAsync(sentidos, vistas, ct);
+            bool lista = await EsperarLaListaAsync(sentidos, vistas, ct);
             if (sentidos.CuantoTiene(o => o == obj) >= antes) break;   // no se la tomó (el depósito, el Centro lleno)
             publico = true;
             _publicadas.Add(obj);
+            if (lista && EsProduccionMetalurgica(obj) && sentidos.Subastas.Any(f => f.Objeto == obj && f.Cantidad == cantidad
+                && string.Equals(f.Vendedor, Nombre, StringComparison.OrdinalIgnoreCase) && !anteriores.Contains(f.Id)))
+                AnotarLotePublicado(sentidos);
             Console.WriteLine($"[bot {Nombre}] subasta: {cantidad} x obj {obj}, desde {inicial} (final {final})");
             await Task.Delay(_rng.Next(800, 2_000), ct);
         }

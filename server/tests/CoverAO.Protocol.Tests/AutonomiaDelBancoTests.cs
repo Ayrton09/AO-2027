@@ -51,7 +51,7 @@ public sealed class AutonomiaDelBancoTests
         public bool PuedeIrAlBanco => (bool)TieneBanco.Invoke(Bot, new object[] { Rinkel })!;
         public bool PuedeIrAlBancoDe(int mapa) => (bool)TieneBanco.Invoke(Bot, new object[] { mapa })!;
         public Task<bool> Abrir(CancellationToken ct = default) => (Task<bool>)AbrirBanco.Invoke(Bot,
-            new object[] { Transporte, Sentidos, Cerrada.Task, ct })!;
+            [Transporte, Sentidos, Cerrada.Task, ct, null])!;
 
         public async Task RecibirPedido()
         {

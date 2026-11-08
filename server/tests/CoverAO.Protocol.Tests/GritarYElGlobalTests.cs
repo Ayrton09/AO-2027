@@ -96,6 +96,39 @@ public class GritarYElGlobalTests : IDisposable
     }
 
     [Fact]
+    public async Task La_charla_de_un_bot_llega_al_jugador_y_no_a_otro_bot()
+    {
+        var (humano, sesionHumana, receptorHumano) = Conectado("Merlin", En(50, 50));
+        var (bruma, emisorBot, _) = ConectarBot("Bruma", En(51, 50));
+        var (_, _, receptorBot) = ConectarBot("Quim", En(52, 50));
+
+        await Hablar(emisorBot, "Quim, hola", Charla);
+        var globoDelBot = ServerMessages.ChatOverHead("Quim, hola", bruma.CharIndex, Charla);
+        Assert.True(receptorHumano.Recibio(globoDelBot));
+        Assert.Empty(receptorBot);
+
+        await Hablar(sesionHumana, "Quim, hola", Charla);
+        var globoHumano = ServerMessages.ChatOverHead("Quim, hola", humano.CharIndex, Charla);
+        Assert.Contains(receptorBot, p => p.SequenceEqual(globoHumano));
+    }
+
+    private (Player, ClientSession, ConcurrentQueue<byte[]>) ConectarBot(string nombre, WorldPos pos)
+    {
+        var jugador = new Player
+        {
+            CharIndex = _world.AllocateCharIndex(), Name = nombre, Account = nombre.ToLowerInvariant() + "_bot",
+            Pos = pos, Hp = 100, MaxHp = 100, Level = 30,
+        };
+        var transporte = new TransporteDeBot(nombre);
+        var recibidos = new ConcurrentQueue<byte[]>();
+        transporte.Recibido += recibidos.Enqueue;
+        var sesion = new ClientSession(transporte, _dispatcher) { Player = jugador };
+        jugador.Connection = sesion;
+        _world.Add(jugador);
+        return (jugador, sesion, recibidos);
+    }
+
+    [Fact]
     public async Task El_grito_llega_a_todo_el_mapa_sin_la_marca()
     {
         var (yo, sesion, mio) = Conectado("Merlin", En(50, 50));

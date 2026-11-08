@@ -46,6 +46,11 @@ public sealed class TransporteDeBot : ITransport
 
     /// <summary>Cada paquete que el servidor le manda a este bot, ya frameado y completo.</summary>
     public event Action<byte[]>? Recibido;
+    internal event Action<short, short, long>? VioAtaqueACriatura;
+    internal event Action<short, long>? RecibioAtaqueDeJugador;
+
+    internal void AvisarAtaqueACriatura(short atacante, short criatura, long cuando) => VioAtaqueACriatura?.Invoke(atacante, criatura, cuando);
+    internal void AvisarAtaqueDeJugador(short atacante, long cuando) => RecibioAtaqueDeJugador?.Invoke(atacante, cuando);
 
     /// <summary>La sesión se cerró, con el motivo que dio el servidor.</summary>
     public event Action<string>? Cerrado;

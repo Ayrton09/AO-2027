@@ -152,6 +152,8 @@ public sealed partial class Bot
     /// <summary>Una receta concreta por vez: termina de abastecerla antes de comprar materiales para otra.</summary>
     private short? _recetaDeHerreria;
     private readonly HashSet<short> _recetasFabricadas = new();
+    private int _mercadosSinMaterial;
+    private const int MercadosAntesDeImprovisar = 3;
 
     private short? RecetaDeHerreria(SentidosDelBot s)
     {
@@ -164,13 +166,35 @@ public sealed partial class Bot
             .ThenBy(o => s.CuantoTiene(i => i == o.Index) + s.Subastas.Count(f => f.Objeto == o.Index))
             .ThenBy(o => Oficios.Herreria.Materiales(o).Sum(m => (long)Math.Max(0, m.PorUnidad - s.CuantoTiene(i => i == m.Obj)) * (_entorno.Datos.Obj(m.Obj)?.Value ?? 0)))
             .ThenBy(o => o.Index).FirstOrDefault();
+        _mercadosSinMaterial = 0;
         return _recetaDeHerreria = receta?.Index;
     }
 
     private short? ElegirFabricacion(SentidosDelBot s, IReadOnlySet<int> recetas, Oficios.Fabricacion regla, int skill, Func<int, int> tiene)
     {
         if (_clase != ClaseHerrero) return QueFabricar(_entorno.Datos, recetas, regla, skill, tiene);
-        return HayLugarParaProducir(s) && RecetaDeHerreria(s) is { } r && CuantasAlcanzan(_entorno.Datos, r, regla, tiene) > 0 ? r : null;
+        if (!HayLugarParaProducir(s) || RecetaDeHerreria(s) is not { } r) return null;
+        if (CuantasAlcanzan(_entorno.Datos, r, regla, tiene) > 0) return r;
+        if (_mercadosSinMaterial < MercadosAntesDeImprovisar || _entorno.Datos.Obj(r) is not { } encargo) return null;
+
+        // Una tanda alternativa sólo usa excedentes. El encargo sigue siendo lo que busca en la subasta.
+        var reservado = regla.Materiales(encargo).GroupBy(m => m.Obj).ToDictionary(g => g.Key, g => g.Sum(m => m.PorUnidad));
+        int Libre(int obj) => Math.Max(0, tiene(obj) - reservado.GetValueOrDefault(obj));
+        return recetas.Select(i => _entorno.Datos.Obj(i))
+            .Where(o => o is not null && o.Index != r && o.SkillBlacksmith <= skill && !_noSeVendio.Contains(o.Index)
+                && ValorDeMercado(_entorno.Datos, o.Index) > 0 && CuantasAlcanzan(_entorno.Datos, o.Index, regla, Libre) > 0)
+            .OrderBy(o => _recetasFabricadas.Contains(o!.Index)).ThenBy(o => o!.Index).FirstOrDefault()?.Index;
+    }
+
+    private void AnotarMaterialEnElMercado(SentidosDelBot s, int plata)
+    {
+        if (_clase != ClaseHerrero || !HayLugarParaProducir(s) || RecetaDeHerreria(s) is not { } receta
+            || _entorno.Datos.Obj(receta) is not { } o) return;
+        var faltan = Oficios.Herreria.Materiales(o).Where(m => s.CuantoTiene(i => i == m.Obj) < m.PorUnidad).ToArray();
+        if (faltan.Length == 0 || faltan.Any(m => _porRetirar.Contains((short)m.Obj)) || s.Subastas.Any(f => LeSirveElLote(s, f, plata)))
+            _mercadosSinMaterial = 0;
+        else
+            _mercadosSinMaterial = Math.Min(_mercadosSinMaterial + 1, MercadosAntesDeImprovisar);
     }
 
     private bool FabricaParaVender(SentidosDelBot s) => _clase == ClaseHerrero && HayLugarParaProducir(s);
@@ -196,7 +220,7 @@ public sealed partial class Bot
             && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && !_noSeVendio.Contains(o));
         bool compra = PlataParaElEquipo(s) >= PlataParaMirarLaSubasta && (_clase == ClaseHerrero
             ? HayLugarParaProducir(s) && RecetaDeHerreria(s) is { } receta && CuantasAlcanzan(_entorno.Datos, receta, Oficios.Herreria, o => s.CuantoTiene(i => i == o)) == 0
-            : !EsFabricanteMetalurgico);
+            : !EsFabricanteMetalurgico && BuscaMejorasEnSubasta);
         if (!vende && !compra && _porRetirar.Count == 0) return false;
         _proximoMercadoDelOficio = Environment.TickCount64 + (EsFabricanteMetalurgico ? 120_000 : MirarLaSubastaMs);
         var lugar = _entorno.Mapas.DondeHay(s.Mapa, s.Posicion, f => EsSubastador((short)f),

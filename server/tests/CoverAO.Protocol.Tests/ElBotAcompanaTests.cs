@@ -37,7 +37,17 @@ public sealed class ElBotAcompanaTests
     [InlineData("vamos?", true)]
     [InlineData("cazamos juntos?", true)]
     [InlineData("vamos a cazar al 13", true)]
+    [InlineData("vamo a cazar", true)]
+    [InlineData("veni a cazar", true)]
+    [InlineData("venis a cazar", true)]
     [InlineData("hace party?", true)]
+    [InlineData("party?", true)]
+    [InlineData("estás en grupo?", false)]
+    [InlineData("tas en party", false)]
+    [InlineData("tnes grupo", false)]
+    [InlineData("a dónde vamos?", false)]
+    [InlineData("dnd vamo", false)]
+    [InlineData("qué es un grupo?", false)]
     [InlineData("no quiero grupo", false)]
     [InlineData("ayuda con mi pj?", false)]
     [InlineData("venis seguido?", false)]
@@ -72,8 +82,6 @@ public sealed class ElBotAcompanaTests
     }
 
     private static readonly MethodInfo CharlarM = typeof(Bot).GetMethod("Charlar", BindingFlags.Instance | BindingFlags.NonPublic)!;
-    private static readonly FieldInfo UltimaRespuestaA =
-        typeof(Bot).GetField("_ultimaRespuestaA", BindingFlags.Instance | BindingFlags.NonPublic)!;
     private static readonly MethodInfo AcompanarM = typeof(Bot).GetMethod("AcompanarAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     /// <summary>
@@ -88,9 +96,8 @@ public sealed class ElBotAcompanaTests
         byte[]? si = null;
         for (int i = 0; i < 3 && si is null; i++)
         {
-            s.Recibir(ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat("Ana", "vamos a cazar?"), PacketDispatcher.FuenteSusurro));
+            s.Recibir(ServerMessages.ConsoleMsg(ServerMessages.LineaDeChat("Ana", "vamo a cazar"), PacketDispatcher.FuenteSusurro));
             si = await Respuesta(bot, s, t);
-            if (si is null) ((System.Collections.IDictionary)UltimaRespuestaA.GetValue(bot)!).Clear();
         }
         Assert.NotNull(si);
         Assert.Equal((byte)ClientPacketId.Whisper, si![0]);

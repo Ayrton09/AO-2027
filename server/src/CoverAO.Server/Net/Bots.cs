@@ -604,9 +604,13 @@ public sealed partial class Bot
         _probarPocionDeVida = false;
         _equipoPedido = null;
         _proximoEquipo = 0;
+        _repliegueHasta = 0;
+        _proximoRepliegue = 0;
         _transporte = transporte;
         OlvidarLaCharla();
 
+        transporte.VioAtaqueACriatura += sentidos.ObservarAtaqueACriatura;
+        transporte.RecibioAtaqueDeJugador += sentidos.ObservarAgresionDeJugador;
         transporte.Recibido += p =>
         {
             if (p.Length == 0) return;
@@ -738,6 +742,7 @@ public sealed partial class Bot
             if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
             _miBando = sentidos.MiEstado;
             _miNivel = sentidos.Nivel;
+            ActualizarMetaDeNivel50(sentidos);
             // LO QUE LE DICEN, Y LO QUE CONTESTA: ver `Charlar`.
             Charlar(transporte, sentidos);
 
@@ -1006,7 +1011,9 @@ public sealed partial class Bot
             // nivel 1 con 16 de vida se tomó 67 pociones seguidas en la llegada de la cuna sin cazar ni huir, y terminó la media hora
             // sin matar nada.
             // Y LO QUE NO ES PRESA PERO SE MATA RÁPIDO, TAMBIÉN: ver `SeLaSacaDeEncima`.
-            if (TieneFuelleParaPelear(sentidos)
+            if (sentidos.AgresorReciente(LePeganHaceMs) is null
+                && (_acompana is null || (sentidos.Salud < TomaPocion && sentidos.HaceCuantoLeBajoLaVida <= LePeganHaceMs))
+                && TieneFuelleParaPelear(sentidos)
                 && sentidos.MasCercano(f => (EsPresa(f, vidaTope, nivelAhora, conPociones, curaVeneno)
                                              || LaMataRapido(f, vidaTope, nivelAhora, conPociones, curaVeneno))
                                             && LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 } picando)
@@ -1020,6 +1027,7 @@ public sealed partial class Bot
                 if (!await PelearConGenteAsync(transporte, sentidos, agresor, cerrada, ct)) return;
                 continue;
             }
+            if (await ReplegarseDelAtaqueAsync(transporte, sentidos, cerrada, ct)) continue;
 
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1041,9 +1049,12 @@ public sealed partial class Bot
                 if (!await PelearConGenteAsync(transporte, sentidos, blanco.Quien, cerrada, ct)) return;
                 continue;
             }
-            if (_acompana is null && sentidos.Suma(ComidaPropia) >= ComidaMinima
-                && sentidos.Suma(BebidaPropia) >= BebidaMinima && sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear)
+            bool abastecido = sentidos.Suma(ComidaPropia) >= ComidaMinima
+                && sentidos.Suma(BebidaPropia) >= BebidaMinima && sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+            if (_acompana is null && abastecido)
             {
+                if (_metaDeNivel50 is { Rumbo: RumboDeBot.Faccion } && await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct))
+                    continue;
                 // Entrega la carga antes de salir a buscar mejoras de equipo a otra ciudad.
                 if (await FundirAsync(transporte, sentidos, cerrada, ct)) continue;
                 if (EsFabricanteMetalurgico && await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1052,8 +1063,8 @@ public sealed partial class Bot
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;
             // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
-            if (await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
-            if (await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (_acompana is null && await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (_acompana is null && await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
             // ACOMPAÑANDO A ALGUIEN NO SE PONE A TRABAJAR: ver `AcompanarAsync`.
             if (_acompana is null && await FundirAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1545,7 +1556,8 @@ public sealed partial class Bot
         // Y SÓLO A VENDER SE SALE POR UN BOTÍN QUE VALE EL VIAJE, y por eso solo un mercader no sirve de destino (`Sirve`): ver
         // `ValeElViajeParaVender`. En el pueblo vende igual. Al rico `vaPorEquipo` le da siempre, y sin mejora en ninguna vitrina
         // `Sirve` lo mandaba al que le compra la leña: llegaba, no compraba nada y a los dos minutos volvía (ronda 40, 05/10).
-        bool vaAVender = hayQueVender
+        bool viajaPorGustos = _acompana is null;
+        bool vaAVender = hayQueVender && (viajaPorGustos || PlataDe(sentidos) < MonedasDeApuro)
                          && ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
                                                                      (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
                                                   PlataDe(sentidos));
@@ -1575,7 +1587,7 @@ public sealed partial class Bot
         // tiradas, y se cae al morir. Medido: un Minero compró el piquete dos veces y los dos se le cayeron muriendo en el
         // camino a una mina; todas las minas del mundo están en mapas pk.
         // La de FABRICAR no pide lugar: se fabrica parado donde sea (el servidor no mira el mapa).
-        bool vaPorLaHerramienta = faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
+        bool vaPorLaHerramienta = viajaPorGustos && faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
                                   && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos));
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
@@ -1590,9 +1602,9 @@ public sealed partial class Bot
         // sobrante y sólo cuando hay bastante como para que el viaje valga la pena.
         // CON LA MOCHILA LLENA NO ENTRA NADA NUEVO, y el viaje es al pedo: ver `HacerLugarAsync`, que corre antes.
         bool hayLugar = sentidos.RanurasOcupadas().Count < GameLimits.MaxInventorySlots;
-        bool vaPorEquipo = !enApuro && hayLugar && PlataParaElEquipo(sentidos) >= OroParaMirarEquipo;
+        bool vaPorEquipo = viajaPorGustos && !enApuro && hayLugar && PlataParaGustos(sentidos) >= OroParaMirarEquipo;
         // Y EL QUE CASTEA APRENDE HECHIZOS NUEVOS, que es su forma de mejorar: el arma no le sirve de mucho.
-        bool vaPorHechizo = !enApuro && hayLugar && sentidos.UsaMana && PlataParaElEquipo(sentidos) >= OroParaMirarHechizos;
+        bool vaPorHechizo = viajaPorGustos && !enApuro && hayLugar && sentidos.UsaMana && PlataParaGustos(sentidos) >= OroParaMirarHechizos;
         // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
         bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
@@ -1605,22 +1617,28 @@ public sealed partial class Bot
         bool VendeElArma(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => ArmaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaElArma));
-        bool vaPorElArma = faltaArma && !enApuro;
+        bool vaPorElArma = (viajaPorGustos || ArmaEnLaMano(sentidos) == 0) && faltaArma && !enApuro;
         bool hayArmaAlAlcance = vaPorElArma && hayLugar && ArmaAlAlcance(sentidos, VendeElArma, MapaAtiende);
         // LA ROPA, CON LA PLATA DE LAS POCIONES SI HACE FALTA: ver `PlataParaLaRopa`.
         double sobraParaLaRopa = PlataParaLaRopa(sentidos);
         bool VendeRopa(int ficha) =>
             _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
             && suStock.Any(s => RopaQueLeSirve(sentidos, (short)s.ObjIndex, sobraParaLaRopa));
-        bool hayRopaAlAlcance = faltaRopa && !enApuro && hayLugar && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
+        bool hayRopaAlAlcance = (viajaPorGustos || !TieneRopaPropia(sentidos))
+            && faltaRopa && !enApuro && hayLugar && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
         // Y DESNUDO, LA ROPA ES LO ESENCIAL: ver `LaRopaEsEsencial`.
         // Y SÓLO SI LE ALCANZA PARA LA MÁS BARATA: ver `LaRopaMasBarata`.
         bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar
                        && LoPuedePagar(LaRopaMasBarata(sentidos), sobraParaLaRopa);
         // Y SIN PLATA ENCIMA, A MIRAR LA BÓVEDA: ver `MiraLaBoveda`. Con el saldo a la vista, la vuelta que viene compra con todo.
-        if (MiraLaBoveda(sentidos.Nivel, sentidos.Oro, sentidos.Banco, TieneBanquero(sentidos.Mapa))
-            && await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct))
-            return true;
+        // Una invitación cambia qué encargos tienen prioridad. La vuelta siguiente elige un destino con las nuevas prioridades.
+        bool CortaParaAcompanar() => viajaPorGustos && _acompana is not null;
+        if ((viajaPorGustos || faltaComida || faltaBebida || faltanPociones || !TieneRopaPropia(sentidos))
+            && MiraLaBoveda(sentidos.Nivel, sentidos.Oro, sentidos.Banco, TieneBanquero(sentidos.Mapa)))
+        {
+            if (await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct, CortaParaAcompanar)
+                || CortaParaAcompanar()) return true;
+        }
         if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 
@@ -1667,7 +1685,7 @@ public sealed partial class Bot
         void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)
                                                  == DescansoDeCompras.Largo, porFracaso: true);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
-        double sobraParaEquipo = PlataParaElEquipo(sentidos);
+        double sobraParaEquipo = PlataParaGustos(sentidos);
 
         // EL QUE CASTEA VA PRIMERO POR EL PERGAMINO. `Sirve` aceptaba al mercader que atendiera CUALQUIERA de los dos
         // gustos, y gana siempre el más cercano —el herrero—, así que a los siete que venden pergaminos no se llegaba
@@ -1765,6 +1783,7 @@ public sealed partial class Bot
         bool abrioUnaPuerta = false, llegoAlPueblo = false;
         for (int intento = 0; intento < 3 && (tienda is null || tienda.Value.Pasos > RadioDeCompras); intento++)
         {
+            if (CortaParaAcompanar()) return true;
             if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, Sirve, MapaDondeCompra, pisableParaComprar) is not { } lugar)
             {
                 // SIN TIENDA A LA QUE SE LLEGUE CAMINANDO, LA RUNA. Hay mapas a los que se entra y de los que no se
@@ -1782,7 +1801,9 @@ public sealed partial class Bot
                                           && paraLaPuerta.Any(q => Sirve(q.NpcIndex));
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo)
                     && ValeBuscarLaPuertaAca(MapaDondeCompra(sentidos.Mapa), hayQuienLeVendaAca)
-                    && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) { abrioUnaPuerta = true; continue; }
+                    && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct, CortaParaAcompanar))
+                { abrioUnaPuerta = true; continue; }
+                if (CortaParaAcompanar()) return true;
 
                 // Y SI YA ESTÁ EN EL MAPA DEL MERCADER, SE CAMINA HACIA ÉL AUNQUE NO SE LLEGUE: el servidor sólo
                 // manda los objetos del suelo que entran en la vista, así que la puerta del edificio recién aparece
@@ -1792,8 +1813,9 @@ public sealed partial class Bot
                     && losDeAca.FirstOrDefault(q => Sirve(q.NpcIndex)) is { NpcIndex: > 0 } elMercader
                     && ValeAcercarseAunqueNoLlegue(MapaDondeCompra(sentidos.Mapa), false)
                     && await IrHastaAsync(transporte, sentidos, sentidos.Mapa, (byte)elMercader.X, (byte)elMercader.Y,
-                                          cerrada, ct, ParaQueLaPuertaEntreEnVista)
-                    && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct)) continue;
+                                          cerrada, ct, ParaQueLaPuertaEntreEnVista, cortaAntesDePaso: CortaParaAcompanar)
+                    && await AbrirUnaPuertaAsync(transporte, sentidos, Sirve, cerrada, ct, CortaParaAcompanar)) continue;
+                if (CortaParaAcompanar()) return true;
 
                 // Y SI LA PUERTA NO ESTÁ ACÁ, SE VIAJA AL PUEBLO IGUAL. Buscar la puerta donde el bot está parado
                 // sólo sirve si ya llegó: en el bosque no hay ninguna. Con el mercader adentro de un edificio,
@@ -1805,8 +1827,9 @@ public sealed partial class Bot
                 if (TocaProbarLosCaminosCaros(intento, abrioUnaPuerta, llegoAlPueblo) && conMercader is { } pueblo
                     && ValeViajarAlPueblo(false, pueblo.Mapa != sentidos.Mapa)
                     && await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, ToleranciaDelCoto,
-                                          topeDeMapas: Math.Max(Navegante.TopeDeMapas, pueblo.Saltos)))
+                                          topeDeMapas: Math.Max(Navegante.TopeDeMapas, pueblo.Saltos), cortaAntesDePaso: CortaParaAcompanar))
                 { llegoAlPueblo = true; continue; }
+                if (CortaParaAcompanar()) return true;
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
                                                     vaPorAntidoto,
                                                     vaPorEquipo || hayArmaAlAlcance || desnudo, vaPorHechizo);
@@ -1820,7 +1843,8 @@ public sealed partial class Bot
                 {
                     _tiendasSinCamino = 0;
                     if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, LoEsencial, cerrada, ct)
-                                          : !_entorno.Datos.IsPkMap(sentidos.Mapa) && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
+                                          : _acompana is null && !_entorno.Datos.IsPkMap(sentidos.Mapa)
+                                            && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
                     {
                         // Y SI LA RUNA LO DEJÓ DONDE LE VENDEN, COMPRA AHÍ MISMO, como el rescate. Con el descanso de la compra
                         // (`Fracaso`) salía a cazar recién llegado y el descanso vencía a mitad del viaje, ya afuera. Medido en
@@ -1838,9 +1862,11 @@ public sealed partial class Bot
                 { llegoAlPueblo = true; continue; }
                 Fracaso(); return intento > 0;
             }
-            if (!await IrAbriendoAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador, Sirve)
+            if (!await IrAbriendoAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador,
+                                       Sirve, CortaParaAcompanar)
                 && sentidos.Mapa != lugar.Mapa)
             {
+                if (CortaParaAcompanar()) return true;
                 // Y SI SE AGOTÓ ESQUIVANDO PELIGROS CON LO ESENCIAL FALTANDO, EL RESCATE: ver `AgotadoPorPeligro`.
                 if (_agotadoPorPeligro && LeFaltaLoEsencial() && sentidos.Vivo
                     && await RescatarseAsync(transporte, sentidos, LoEsencial, cerrada, ct))
@@ -1849,6 +1875,7 @@ public sealed partial class Bot
             }
             tienda = MapaDondeCompra(sentidos.Mapa) ? sentidos.MasCercano(ficha => Sirve(ficha)) : null;
         }
+        if (CortaParaAcompanar()) return true;
         if (tienda is null || tienda.Value.Pasos > RadioDeCompras) { Fracaso(); return true; }
         _tiendasSinCamino = 0;
         var t = tienda.Value;
@@ -1856,9 +1883,11 @@ public sealed partial class Bot
         // LO GUARDADO, ANTES DEL MOSTRADOR (ver `NecesitaElBanco`), y del banquero se vuelve adonde estaba el mercader.
         if (conLaDelBanco && sentidos.Donde(t.Quien.CharIndex) is { } antesDelBanco)
         {
-            await RetirarParaComprarAsync(transporte, sentidos, cerrada, ct);
+            await RetirarParaComprarAsync(transporte, sentidos, cerrada, ct, CortaParaAcompanar);
+            if (CortaParaAcompanar()) return true;
             if (sentidos.Donde(t.Quien.CharIndex) is null)
-                await IrHastaAsync(transporte, sentidos, sentidos.Mapa, antesDelBanco.X, antesDelBanco.Y, cerrada, ct, RadioDelMostrador);
+                await IrHastaAsync(transporte, sentidos, sentidos.Mapa, antesDelBanco.X, antesDelBanco.Y, cerrada, ct,
+                                   RadioDelMostrador, cortaAntesDePaso: CortaParaAcompanar);
         }
 
         // Acercarse al mostrador. Va por el navegante y no a los tumbos: el mercader atiende hasta tres
@@ -1866,10 +1895,15 @@ public sealed partial class Bot
         // adentro de una tienda es lo normal.
         if (sentidos.Donde(t.Quien.CharIndex) is { } donde
             && Math.Abs(donde.X - sentidos.Posicion.X) + Math.Abs(donde.Y - sentidos.Posicion.Y) > RadioDelMostrador
-            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, donde.X, donde.Y, cerrada, ct, RadioDelMostrador))
-        { Fracaso(); return true; }
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, donde.X, donde.Y, cerrada, ct, RadioDelMostrador,
+                                   cortaAntesDePaso: CortaParaAcompanar))
+        {
+            if (!CortaParaAcompanar()) Fracaso();
+            return true;
+        }
 
-        if (sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
+        Charlar(transporte, sentidos);
+        if (CortaParaAcompanar() || sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
         // SE ABRE CON DOBLE CLIC, no con clic + CommerceStart.
         //
         // El `LeftClick` del servidor sondea PRIMERO la baldosa de ABAJO del punto clickeado, y `PlayerAt` no
@@ -1881,17 +1915,26 @@ public sealed partial class Bot
 
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
         if (!sentidos.Comerciando) { Fracaso(); return true; }   // no atendió (facción, distancia, o no era mercader)
+        Charlar(transporte, sentidos);
+        if (CortaParaAcompanar())
+        {
+            transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
+            return true;
+        }
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
-        // EL UMBRAL DEL MOSTRADOR, sólo del viaje por pociones o antídoto que volvió sin nada y vivo: ver `VuelveAlMostrador`.
         if (compro) _plataQueNoAlcanzo = -1;
-        else if ((vaPorPociones || vaPorAntidoto) && sentidos.Vivo && sentidos.Salud >= TomaPocion) _plataQueNoAlcanzo = PlataDe(sentidos);
         // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
+        Charlar(transporte, sentidos);
+        if (CortaParaAcompanar()) return true;
+        // EL UMBRAL DEL MOSTRADOR, sólo del viaje por pociones o antídoto que volvió sin nada y vivo: ver `VuelveAlMostrador`.
+        if (!compro && (vaPorPociones || vaPorAntidoto) && sentidos.Vivo && sentidos.Salud >= TomaPocion)
+            _plataQueNoAlcanzo = PlataDe(sentidos);
         await Task.Delay(_rng.Next(600, 1_500), ct);
         // Y AL SUBASTADOR, A PUBLICAR LO QUE NO LE VENDIÓ AL MERCADER Y A MIRAR QUÉ LE CONVIENE: ver `PasarPorLaSubastaAsync`.
-        await PasarPorLaSubastaAsync(transporte, sentidos, cerrada, ct);
+        if (_acompana is null) await PasarPorLaSubastaAsync(transporte, sentidos, cerrada, ct);
         // Comprar es lo que se hace de vez en cuando; vender, cada vez que la mochila se llena. Al que sale
         // de la tienda con lo que fue a buscar se le da el descanso largo; al que sólo pasó a cambiar el
         // botín, el corto — si no, un Pescador que vive de vender pescado se pasaría la sesión esperando.
@@ -1911,7 +1954,8 @@ public sealed partial class Bot
         var descanso = DescansoTrasElViaje(compro, sigueFaltando);
         // Y LO QUE NO ES DE LAS COMPRAS, A LA BÓVEDA (Bots.Banco.cs), cuando ya no compra más acá: depositando al salir de cada
         // mostrador, con más para comprar en el pueblo lo retiraba en el viaje siguiente (Elmo en la ronda 42, en un minuto).
-        if (descanso != DescansoDeCompras.Ninguno) await DepositarLoQueSobraAsync(transporte, sentidos, cerrada, ct);
+        if (_acompana is null && descanso != DescansoDeCompras.Ninguno)
+            await DepositarLoQueSobraAsync(transporte, sentidos, cerrada, ct);
         switch (descanso)
         {
             case DescansoDeCompras.Ninguno: _descansoLargo = false; _proximaCompra = 0; break;
@@ -2190,9 +2234,17 @@ public sealed partial class Bot
     private async Task<bool> VenderYComprarEnElMostradorAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                               short fichaDelMercader, CancellationToken ct)
     {
+        bool entroSolo = _acompana is null;
+        bool SeSumoAUnaSalida()
+        {
+            Charlar(transporte, sentidos);
+            return entroSolo && _acompana is not null;
+        }
+
         bool compro = false;
         for (int i = 0; i < VentasPorVisita && sentidos.Comerciando; i++)
         {
+            if (SeSumoAUnaSalida()) return compro;
             // La vida primero, también acá dentro: negociar son varios segundos y una criatura no espera a
             // que el bot termine de vender.
             if (!sentidos.Vivo || sentidos.Salud < TomaPocion) return compro;
@@ -2220,8 +2272,9 @@ public sealed partial class Bot
 
         // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás. Las dos, la
         // de juntar y la de fabricar, si las vende el mismo mostrador: el Alquimista tiene las Tijeras y la Olla.
-        foreach (short herramienta in new[] { HerramientaDeSuOficio, HerramientaDeFabricar })
+        foreach (short herramienta in _acompana is null ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar } : Array.Empty<short>())
         {
+            if (SeSumoAUnaSalida()) return compro;
             if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) > 0
                 || sentidos.EnLaTienda(obj => obj == herramienta) is not { } h) continue;
             transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(h.Ranura).WriteInteger(1)));
@@ -2261,15 +2314,16 @@ public sealed partial class Bot
             compro |= await ComprarElArmaDelCaminoAsync(transporte, sentidos, ct);
         // EL QUE CASTEA GASTA PRIMERO EN EL PERGAMINO: ver <see cref="ElHechizoAntesQueElArma"/>. Las dos compras
         // salen de la MISMA bolsa, así que el orden decide cuál se queda sin plata.
+        if (SeSumoAUnaSalida()) return compro;
         if (ElHechizoAntesQueElArma(sentidos.UsaMana))
         {
             compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
-            compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
+            if (!SeSumoAUnaSalida()) compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
         }
         else
         {
             compro |= await MejorarElEquipoAsync(transporte, sentidos, ct);
-            compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
+            if (!SeSumoAUnaSalida()) compro |= await ComprarPergaminoAsync(transporte, sentidos, ct);
         }
         return compro;
     }
@@ -3171,7 +3225,12 @@ public sealed partial class Bot
             await Task.Delay(_rng.Next(FabricarMinMs, FabricarMaxMs), ct);
             if (tiene(receta) <= antes) break;   // no salió, y el servidor no dice por qué
             if (_clase == ClaseHerrero) {
-                _recetasFabricadas.Add(receta); _recetaDeHerreria = null;
+                _recetasFabricadas.Add(receta);
+                if (_recetaDeHerreria == receta)
+                {
+                    _recetaDeHerreria = null;
+                    _mercadosSinMaterial = 0;
+                }
                 _proximoMercadoDelOficio = 0; // la producción nueva se entrega antes de otra salida
             }
         }
@@ -5409,10 +5468,13 @@ public sealed partial class Bot
     /// </summary>
     private async Task<bool> MejorarElEquipoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        double plata = PlataParaElEquipo(sentidos);
+        if (_acompana is not null) return false;
+        double plata = PlataParaGustos(sentidos);
         if (plata <= 0 || !sentidos.Comerciando) return false;
         foreach (var esDeEso in QueSePone)
         {
+            Charlar(transporte, sentidos);
+            if (_acompana is not null) return false;
             int tengo = LoMejorQueTiene(sentidos, esDeEso);
             int Vale(short obj) =>
                 _entorno.Datos.Obj(obj) is { } o && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel) && ValorDeCombate(o) > tengo
@@ -5446,7 +5508,8 @@ public sealed partial class Bot
     /// </summary>
     private async Task<bool> ComprarPergaminoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        double plata = PlataParaElEquipo(sentidos);
+        if (_acompana is not null) return false;
+        double plata = PlataParaGustos(sentidos);
         if (plata <= 0 || !sentidos.UsaMana || !sentidos.Comerciando) return false;
         int Pega(short obj) => LeFaltaElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? ValorDelPergamino(h) : 0;
         if (sentidos.LoMejorDeLaVitrina(Pega, plata) is not { } oferta) return false;
@@ -5633,11 +5696,12 @@ public sealed partial class Bot
     /// Sastre y 474 al Sacerdote (52,47), los dos con una puerta que los destraba.
     /// </summary>
     private async Task<bool> IrAbriendoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int mapa, byte x, byte y,
-                                             Task cerrada, CancellationToken ct, int tolerancia, Func<int, bool> sirve)
+                                             Task cerrada, CancellationToken ct, int tolerancia, Func<int, bool> sirve,
+                                             Func<bool>? cortaAntesDePaso = null)
     {
-        if (await IrHastaAsync(transporte, sentidos, mapa, x, y, cerrada, ct, tolerancia)) return true;
-        return sentidos.Mapa == mapa && await AbrirUnaPuertaAsync(transporte, sentidos, sirve, cerrada, ct)
-               && await IrHastaAsync(transporte, sentidos, mapa, x, y, cerrada, ct, tolerancia);
+        if (await IrHastaAsync(transporte, sentidos, mapa, x, y, cerrada, ct, tolerancia, cortaAntesDePaso: cortaAntesDePaso)) return true;
+        return sentidos.Mapa == mapa && await AbrirUnaPuertaAsync(transporte, sentidos, sirve, cerrada, ct, cortaAntesDePaso)
+               && await IrHastaAsync(transporte, sentidos, mapa, x, y, cerrada, ct, tolerancia, cortaAntesDePaso: cortaAntesDePaso);
     }
 
     /// <summary>
@@ -5648,15 +5712,18 @@ public sealed partial class Bot
     /// objeto por su versión abierta, así que si la baldosa sigue con el mismo objeto no pasó nada.</para>
     /// </summary>
     private Task<bool> AbrirUnaPuertaAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
-                                           Func<int, bool> sirve, Task cerrada, CancellationToken ct) =>
+                                           Func<int, bool> sirve, Task cerrada, CancellationToken ct,
+                                           Func<bool>? cortaAntesDePaso = null) =>
         AbrirLaPuertaQueAsync(transporte, sentidos,
-            donde => _entorno.Mapas.AbrirlaDaCamino(sentidos.Mapa, sentidos.Posicion, donde, sirve), cerrada, ct);
+            donde => _entorno.Mapas.AbrirlaDaCamino(sentidos.Mapa, sentidos.Posicion, donde, sirve), cerrada, ct, cortaAntesDePaso);
 
     /// <summary>Abre la puerta más cercana de este mapa para la que <paramref name="daCamino"/> (dónde está) dice que sí. Devuelve si
     /// la abrió (o ya estaba abierta).</summary>
     private async Task<bool> AbrirLaPuertaQueAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
-                                                   Func<(byte X, byte Y), bool> daCamino, Task cerrada, CancellationToken ct)
+                                                   Func<(byte X, byte Y), bool> daCamino, Task cerrada, CancellationToken ct,
+                                                   Func<bool>? cortaAntesDePaso = null)
     {
+        if (cortaAntesDePaso?.Invoke() == true) return false;
         var candidatas = PuertasQueElMapaTiene(_entorno.Datos.MapObjects.GetValueOrDefault(sentidos.Mapa),
                                                sentidos.Posicion,
                                                obj => PuertaQueSeAbre(_entorno.Datos.Obj(obj)));
@@ -5664,8 +5731,14 @@ public sealed partial class Bot
 
         var (x, y) = sentidos.Posicion;
         if (!AlAlcanceDeLaPuerta(x - puerta.Donde.X, y - puerta.Donde.Y)
-            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, puerta.Donde.X, puerta.Donde.Y, cerrada, ct, 1))
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, puerta.Donde.X, puerta.Donde.Y, cerrada, ct, 1,
+                                   cortaAntesDePaso: cortaAntesDePaso))
             return false;
+        if (cortaAntesDePaso is not null)
+        {
+            Charlar(transporte, sentidos);
+            if (cortaAntesDePaso()) return false;
+        }
 
         // Y SI OTRO YA LA ABRIÓ, no se toca: ver `YaEstaAbierta`. Devuelve que sí porque para el que llama lo que
         // importa es que el camino quedó abierto, y con eso vuelve a buscar al mercader.
@@ -6587,8 +6660,12 @@ public sealed partial class Bot
     /// <summary>Ir hasta la presa y pegarle hasta que muera, se pierda de vista, o convenga irse. Devuelve
     /// false sólo si se cayó la conexión. Con <paramref name="aGente"/> la presa es una persona (ver <c>Bots.Armadas.cs</c>): no se
     /// aprende nada de su ficha, y la pelea tiene un tope de tiempo y de golpes sin respuesta.</summary>
-    private async Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
-                                        Task cerrada, CancellationToken ct, bool aGente = false)
+    private Task<bool> CazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
+                                  Task cerrada, CancellationToken ct, bool aGente = false) =>
+        PelearAsync(transporte, sentidos, presa, cerrada, ct, aGente);
+
+    private async Task<bool> PelearAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
+                                         Task cerrada, CancellationToken ct, bool aGente, Func<bool>? cortaSi = null)
     {
         if (sentidos.Donde(presa) is not { } original) return true;
         bool SigueSiendoLaPresa(SentidosDelBot.Visible v) => v.EsNpc == original.EsNpc
@@ -6615,6 +6692,8 @@ public sealed partial class Bot
             }
             // Y PELEANDO TAMBIÉN CONTESTA: ver `Charlar`.
             Charlar(transporte, sentidos);
+            if (cortaSi?.Invoke() == true) return true;
+            if (!aGente && sentidos.AgresorReciente(LePeganHaceMs) is not null) return true;
             // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
@@ -6682,6 +6761,12 @@ public sealed partial class Bot
             }
 
             var (x, y) = sentidos.Posicion;
+            if (!aGente && sentidos.AgresorReciente(LePeganHaceMs) is not null) return true;
+            if (cortaSi is not null)
+            {
+                Charlar(transporte, sentidos);
+                if (cortaSi()) return true;
+            }
             int dx = quien.X - x, dy = quien.Y - y;
             int pasos = Math.Abs(dx) + Math.Abs(dy);
 
@@ -6761,8 +6846,8 @@ public sealed partial class Bot
             // NI PERSIGUIENDO SE METE A LA VISTA DE LO PELIGROSO: ver `EntraALaVistaDelPeligro`. Esa presa se deja un rato, como la
             // que no se alcanza, para no volver a elegirla en la vuelta siguiente.
             if (EntraALaVistaDelPeligro((x, y), acercarse.Paso, PeligrosALaVista(sentidos))) { NoSeLlegaA(presa); return true; }
-            if (await UnPasoHaciaAsync(transporte, sentidos, acercarse.Paso.X - x, acercarse.Paso.Y - y, ct) is var r && r != Paso.Dado)
-                return r != Paso.SinConexion;
+            if (await UnPasoHaciaAsync(transporte, sentidos, acercarse.Paso.X - x, acercarse.Paso.Y - y, ct, cortaSi: cortaSi) is var r && r != Paso.Dado)
+                return r != Paso.SinConexion || (cortaSi?.Invoke() == true && !cerrada.IsCompleted && !ct.IsCancellationRequested);
         }
         return !cerrada.IsCompleted;
     }
@@ -7393,6 +7478,7 @@ public sealed partial class Bot
         _agotadoPorPeligro = false;
         for (int tramos = 0; tramos < tramosDelViaje && !ct.IsCancellationRequested && !cerrada.IsCompleted; tramos++)
         {
+            if (CortaElViajePorAgresion(sentidos, escapando, deMuerto)) return false;
             if (cortaAntesDePaso?.Invoke() == true) return false;
             // De muerto se viaja igual: es la única forma de llegar al sacerdote.
             if (!sentidos.Ubicado || (!deMuerto && !sentidos.Vivo)) return false;
@@ -7431,7 +7517,7 @@ public sealed partial class Bot
                      && await AbrirLaPuertaQueAsync(transporte, sentidos,
                             donde => _entorno.Mapas.AbrirlaDaSalidaHacia(mapa, desde, donde, mapaDestino, (destinoX, destinoY),
                                          m => PuedeEntrar(sentidos.Nivel, _entorno.Datos.MapZone(m)) && sinHuidas(m), topeDeMapas),
-                            cerrada, ct))
+                            cerrada, ct, cortaAntesDePaso))
             {
                 abrioUnaPuerta = true;
                 tramos--;
@@ -7524,7 +7610,7 @@ public sealed partial class Bot
                 // Y LO QUE LO MATA, A TIRO, TAMBIÉN: la vuelta del ciclo huye (ver `LoPeligrosoEstaATiro`).
                 if (!escapando && !deMuerto && LoPeligrosoEstaATiro(sentidos.Posicion, LoQueLoMataALaVista(sentidos)))
                 { _cortoPorElHueco = true; return false; }
-                if (cortaSi?.Invoke() == true) return false;   // apareció algo que vale más que seguir viajando
+                if (CortaElViajePorAgresion(sentidos, escapando, deMuerto) || cortaSi?.Invoke() == true) return false;
                 if (_pasoTrabado)   // algo se paró en el camino: rodearlo
                 {
                     // CON LA VIDA ENTRE LA POCIÓN Y LA PELEA, LA POCIÓN: ver `SeCuraParaPelearLoQueTapa`.
@@ -7532,7 +7618,8 @@ public sealed partial class Bot
                                                   sentidos.Salud, sentidos.CuantoTiene(EsPocionDeVida)))
                         await CuidarseAsync(transporte, sentidos, ct);
                     // Y SI LE PEGA Y SE MATA, SE MATA: ver `PeleasPorViaje`.
-                    if (PeleaConLoQueTapa(escapando, deMuerto, peleasDelViaje, sentidos.Nivel) && PresaQueTapa(sentidos, baldosa) is { } tapa)
+                    if (_acompana is null && PeleaConLoQueTapa(escapando, deMuerto, peleasDelViaje, sentidos.Nivel)
+                        && PresaQueTapa(sentidos, baldosa) is { } tapa)
                     {
                         peleasDelViaje++;
                         if (!await CazarAsync(transporte, sentidos, tapa, cerrada, ct)) return false;

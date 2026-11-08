@@ -238,26 +238,41 @@ public sealed partial class Bot
     }
 
     /// <summary>
-    /// ¿A QUIÉN LE DEVUELVE EL GOLPE? Si le bajó la vida recién, no tiene una criatura que lo esté atacando encima y hay a la vista
-    /// alguien a quien le puede pegar: el que le pega a un legal se vuelve renegado, así que el agresor casi siempre es un blanco.
-    /// También al que dejó hace poco (<see cref="GenteDejadaMs"/>): eso es para no ir a buscarlo, no para dejarse pegar.
+    /// ¿A quién le devuelve el golpe? Sólo al atacante confirmado de la última pérdida de vida, si puede verlo y defenderse.
     /// </summary>
     private short? AQuienSeDefiende(SentidosDelBot sentidos)
     {
-        if (!_entorno.Datos.IsPkMap(sentidos.Mapa) || sentidos.HaceCuantoLeBajoLaVida > LePeganHaceMs) return null;
+        if (!_entorno.Datos.IsPkMap(sentidos.Mapa) || sentidos.HaceCuantoLeBajoLaVida > LePeganHaceMs
+            || Environment.TickCount64 < _repliegueHasta) return null;
         if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira) return null;
-        var esBlanco = EsBlancoParaMi();
-        // La magia identifica al autor en el mensaje que recibe la víctima. No se culpa a otro enemigo
-        // sólo por estar más cerca, y una cura o un buff no se interpreta como daño.
-        var posicion = sentidos.Posicion;
-        foreach (var efecto in sentidos.EfectosRecibidos(LePeganHaceMs))
-            if ((efecto.Hechizo == 0 || _entorno.Datos.Spell(efecto.Hechizo) is { SubeHp: 2 })
-                && sentidos.PersonaLlamada(efecto.Quien) is { } agresor && esBlanco(agresor)
-                && Math.Abs(agresor.X - posicion.X) + Math.Abs(agresor.Y - posicion.Y) <= RadioDeDefensa)
-                return agresor.CharIndex;
-        if (sentidos.MasCercano(f => LoEstaAtacando(_entorno.Datos.Npc(f), 1)) is { Pasos: <= 1 }) return null;
-        return sentidos.PersonaMasCercana(esBlanco) is { Pasos: <= RadioDeDefensa } quien
-            ? quien.Quien.CharIndex : null;
+        if (sentidos.AgresorReciente(LePeganHaceMs) is not { } id || id <= 0
+            || sentidos.Donde(id) is not { } agresor || !EsBlancoParaMi()(agresor)) return null;
+        var (x, y) = sentidos.Posicion;
+        return Math.Abs(agresor.X - x) + Math.Abs(agresor.Y - y) <= RadioDeDefensa ? id : null;
+    }
+
+    private long _proximoRepliegue;
+    private long _repliegueHasta;
+
+    private bool CortaElViajePorAgresion(SentidosDelBot s, bool escapando, bool deMuerto) =>
+        !escapando && !deMuerto && Environment.TickCount64 >= _repliegueHasta && s.AgresorReciente(LePeganHaceMs) is not null;
+
+    private async Task<bool> ReplegarseDelAtaqueAsync(TransporteDeBot t, SentidosDelBot s, Task cerrada, CancellationToken ct)
+    {
+        if (!_entorno.Datos.IsPkMap(s.Mapa)) { _repliegueHasta = 0; return false; }
+        long ahora = Environment.TickCount64;
+        if (s.HaceCuantoLeBajoLaVida <= LePeganHaceMs
+            && (s.AgresorReciente(LePeganHaceMs) is not null || s.Salud < TomaPocion))
+            _repliegueHasta = ahora + 12_000;
+        if (ahora >= _repliegueHasta) return false;
+        // Puede tener bloqueado el paso al otro mapa por el combate reciente. Reintenta sin dar la retirada por hecha.
+        if (!s.Paralizado && ahora >= _proximoRepliegue)
+        {
+            _proximoRepliegue = ahora + 1_500;
+            await IrAlMapaSeguroAsync(t, s, cerrada, ct);
+        }
+        else await QuedarseAsync(s, 600, ct);
+        return true;
     }
 
     /// <summary>
@@ -276,7 +291,8 @@ public sealed partial class Bot
     /// <c>Mirarlo</c>: antes de ir, mirarlo (<see cref="MirarA"/>), si no se sabe su nivel y no lo miró hace poco.</summary>
     private (short Quien, bool Mirarlo)? AQuienSaleAPegarle(SentidosDelBot sentidos)
     {
-        if (sentidos.Nivel < NivelParaPelearConGente || !_entorno.Datos.IsPkMap(sentidos.Mapa)) return null;
+        if (_acompana is not null || sentidos.Nivel < NivelParaPelearConGente || !_entorno.Datos.IsPkMap(sentidos.Mapa)
+            || sentidos.HaceCuantoLeBajoLaVida <= LePeganHaceMs) return null;
         if (sentidos.Salud < SaludParaPelearConGente || !TieneFuelleParaPelear(sentidos)) return null;
         if (sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear) return null;
         var esBlanco = EsBlancoParaMi();

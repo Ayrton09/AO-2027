@@ -19,11 +19,20 @@ public sealed class ElBotContestaTests
     [InlineData("hola", Tema.Saludo)]
     [InlineData("Buenos días!", Tema.Saludo)]
     [InlineData("¿Qué hacés?", Tema.QueHace)]
+    [InlineData("bruma q haces", Tema.QueHace)]
+    [InlineData("en q andas", Tema.QueHace)]
     [InlineData("que nivel sos", Tema.Nivel)]
+    [InlineData("buenas, en qué mapa estás?", Tema.Ubicacion)]
+    [InlineData("bruma dnd tas", Tema.Ubicacion)]
+    [InlineData("qué oficio tenés?", Tema.Clase)]
+    [InlineData("q clase sos", Tema.Clase)]
+    [InlineData("qué andás haciendo?", Tema.QueHace)]
     [InlineData("hola, dame oro", Tema.Pide)]
     [InlineData("vendes pociones?", Tema.Comercio)]
     [InlineData("vendo botas", Tema.Comercio)]      // "botas" no es "bot"
     [InlineData("vamos a cazar?", Tema.Grupo)]
+    [InlineData("me acompañás a subir de nivel?", Tema.Grupo)]
+    [InlineData("gracias por el grupo, chau", Tema.Gracias)]
     [InlineData("sos bot?", Tema.EsBot)]
     [InlineData("sos un bot forro", Tema.Insulto)]   // el insulto gana: no se contesta
     [InlineData("gracias!!", Tema.Gracias)]
@@ -64,6 +73,7 @@ public sealed class ElBotContestaTests
     [InlineData(Como.Charla, Tema.Saludo, 70, 0L, null, 0, false)]
     [InlineData(Como.Susurro, Tema.Otro, 39, 0L, null, 0, true)]
     [InlineData(Como.Susurro, Tema.Otro, 40, 0L, null, 0, false)]
+    [InlineData(Como.Charla, Tema.Nivel, 99, 0L, null, 0, true)]
     [InlineData(Como.Susurro, Tema.Insulto, 0, 0L, null, 0, false)]
     [InlineData(Como.Susurro, Tema.Saludo, 0, 19_999L, 0L, 0, false)]   // al mismo, cada tanto
     [InlineData(Como.Susurro, Tema.Saludo, 0, 20_000L, 0L, 0, true)]
@@ -122,10 +132,13 @@ public sealed class ElBotContestaTests
     {
         var s = new SentidosDelBot { MiNombre = "Bruma" };
         s.Recibir(ServerMessages.UserCharIndexInServer(500));
-        s.Recibir(ServerMessages.CharacterCreate(new Player
+        var yo = new Player
         {
-            CharIndex = 500, Name = "Bruma", Account = "bruma_test", Pos = new WorldPos(1, 50, 50), Level = 20,
-        }));
+            CharIndex = 500, Name = "Bruma", Account = "bruma_test", Pos = new WorldPos(1, 50, 50),
+            Level = 20, Hp = 100, MaxHp = 100,
+        };
+        s.Recibir(ServerMessages.CharacterCreate(yo));
+        s.Recibir(ServerMessages.UpdateUserStats(yo));
         var d = GameData.Load();
         var bot = new Bot("Bruma", null, new EntornoDeBots(null!, new ServerIni(), 0, 0, d, new Navegante(d), null!), 1);
         return (bot, s, new TransporteDeBot("Bruma"));

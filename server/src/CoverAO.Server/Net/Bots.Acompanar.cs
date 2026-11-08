@@ -6,7 +6,7 @@ namespace CoverAO.Server.Net;
 /// CAZAR CON UNA PERSONA QUE LO INVITA (decisión del autor, 21/10: los grupos son con jugadores reales, no entre bots). Si una
 /// persona le dice "vamos?" o "cazamos?" (el tema <see cref="DeQueHabla.Grupo"/> de <see cref="Charlar"/>) y la tiene a la vista, el
 /// bot contesta que sí (<see cref="FrasesAcepta"/>) y la acompaña un rato (<see cref="AcompanaMinMin"/> a <see cref="AcompanaMaxMin"/>
-/// minutos): le pega a lo que ella pelea o tiene al lado, y si no hay nada, la sigue. Es como en el original, sin party: cada uno se
+/// minutos): ayuda contra la criatura que vio atacar y si no tiene un blanco observado, la sigue. Es como en el original, sin party: cada uno se
 /// lleva la experiencia de su daño, y el oro el que remata.
 ///
 /// <para>Las reglas de peligro no cambian: el ciclo huye, se cura y compra antes de llegar acá, y sólo le pega a lo que para él es
@@ -26,7 +26,7 @@ public sealed partial class Bot
     /// <summary>Hasta cuándo sirve un movimiento visto sobre una salida pública antes de perderla de vista.</summary>
     public const int MovimientoParaSeguirSalidaMs = 5_000;
 
-    /// <summary>Le pega a lo que esté a esta distancia de ella o menos: lo que pelea, o lo que tiene cerca.</summary>
+    /// <summary>El blanco observado debe seguir a esta distancia de la persona o menos.</summary>
     public const int RadioDeAyuda = 6;
 
     /// <summary>Hasta esta distancia de ella no camina para acercarse.</summary>
@@ -68,6 +68,8 @@ public sealed partial class Bot
     private (string Quien, long Hasta, long VistaEn, long UltimaPelea, int SinLlegar)? _acompana;
     private long _numeroDeAcompanamiento;
     private (long Grupo, long Huella)? _salidaIntentada;
+    private bool _esperaAcompanando;
+    private const int AtaqueObservadoMs = 8_000;
 
     /// <summary>A quién acompaña ahora, o null.</summary>
     public string? AcompanaA => _acompana?.Quien;
@@ -81,8 +83,11 @@ public sealed partial class Bot
     // El sí demorado se asocia a esta salida, no sólo al nombre: volver a invitar después de un chau crea otra.
     private (string Frase, long? Acompanamiento) ResolverLaInvitacion(SentidosDelBot sentidos, string quien, string texto, long ahora)
     {
+        if (Toca(Normalizar(texto), PreguntanPorElGrupo))
+            return (_acompana is null ? "por ahora ando por mi cuenta" : "si, ando acompanando a alguien", null);
+
         var persona = sentidos.PersonaLlamada(quien);
-        switch (QueHaceConLaInvitacion(sentidos.Vivo, persona is not null, _acompana?.Quien, quien, EsInvitacion(texto),
+        switch (QueHaceConLaInvitacion(sentidos.Vivo, persona is not null, _acompana?.Quien, quien, EsInvitacion(texto, Nombre),
                                        persona is { } v && EsBlancoParaMi()(v)))
         {
             case Invitacion.Acepta:
@@ -90,6 +95,7 @@ public sealed partial class Bot
                 if (_acompana is null)
                 {
                     _numeroDeAcompanamiento++;
+                    _esperaAcompanando = false;
                     _salidaIntentada = null;
                     sentidos.ObservarSalidaDe(quien);
                     _acompana = (quien, ahora + _rng.Next(AcompanaMinMin, AcompanaMaxMin + 1) * 60_000L, ahora, ahora, 0);
@@ -127,8 +133,33 @@ public sealed partial class Bot
         }
     }
 
+    // En la charla local, sólo el compañero puede dar una orden corta sin nombrarlo.
+    private bool AtenderOrdenDeCompania(SentidosDelBot.LoOido oido, bool dirigido)
+    {
+        if (_acompana is not { } a || !string.Equals(a.Quien, oido.Quien, StringComparison.OrdinalIgnoreCase)
+            || oido.Como is not (SentidosDelBot.ComoLoDijo.Charla or SentidosDelBot.ComoLoDijo.Susurro)) return false;
+        string orden = Normalizar(oido.Texto).Trim();
+        if (dirigido)
+        {
+            string nombre = Normalizar(Nombre).Trim();
+            if (orden.StartsWith(nombre + " ", StringComparison.Ordinal)) orden = orden[(nombre.Length + 1)..];
+            else if (orden.EndsWith(" " + nombre, StringComparison.Ordinal)) orden = orden[..^(nombre.Length + 1)];
+        }
+        switch (orden)
+        {
+            case "espera" or "esperame" or "banca" or "para":
+                _esperaAcompanando = true;
+                return true;
+            case "segui" or "seguime" or "continua":
+                _esperaAcompanando = false;
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /// <summary>
-    /// ACOMPAÑAR, una vuelta: le pega a lo que ella pelea o tiene cerca (<see cref="RadioDeAyuda"/>), y si no hay nada camina hasta
+    /// ACOMPAÑAR, una vuelta: le pega al blanco que la vio atacar (<see cref="RadioDeAyuda"/>), y si no hay nada camina hasta
     /// <see cref="CercaDeElla"/> o la espera. Devuelve null si se cayó la conexión, true si hizo algo y false si no acompaña a nadie
     /// (el ciclo sigue como siempre).
     /// </summary>
@@ -145,6 +176,11 @@ public sealed partial class Bot
             DejarDeAcompanar(transporte, a.Quien, ella is not null);
             return false;
         }
+        if (_esperaAcompanando)
+        {
+            await QuedarseAsync(sentidos, 1_000, ct);
+            return cerrada.IsCompleted ? null : true;
+        }
         // SIN VERLA UN MOMENTO, LA ESPERA: suele volver a la vista.
         if (ella is not { } p)
         {
@@ -153,14 +189,19 @@ public sealed partial class Bot
             await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);
             return cerrada.IsCompleted ? null : true;
         }
-        // LO QUE ELLA PELEA O TIENE CERCA, si para él es presa, si está al alcance de su caza y si no es la que ya no alcanzó
-        // (`NoSeLlegaA`, como en la caza de siempre). Si la pelea vuelve enseguida (se murió, otro se la llevó), un paso de espera:
-        // nunca da vueltas sin esperar.
+        // Ayuda contra la criatura que vio atacar. La defensa propia se atiende antes de llegar acá.
+        long grupo = _numeroDeAcompanamiento;
+        bool SigueElGrupo() => _acompana is not null && _numeroDeAcompanamiento == grupo && !_esperaAcompanando;
         if (empiezaUnaPelea
-            && sentidos.MasCercanoA((p.X, p.Y), esPresa, RadioDeAyuda, SiguenSinCamino(_sinCamino, ahora)) is { Pasos: <= RadioDeCaza } presa)
+            && sentidos.ObjetivoDeLaCompanera(AtaqueObservadoMs) is { } id
+            && sentidos.Donde(id) is { EsNpc: true } presa && esPresa(presa.FichaNpc)
+            && Math.Abs(presa.X - p.X) + Math.Abs(presa.Y - p.Y) <= RadioDeAyuda
+            && Math.Abs(presa.X - sentidos.Posicion.X) + Math.Abs(presa.Y - sentidos.Posicion.Y) <= RadioDeCaza
+            && !SiguenSinCamino(_sinCamino, ahora).Contains(id))
         {
             _acompana = a with { UltimaPelea = ahora };
-            if (!await CazarAsync(transporte, sentidos, presa.Quien.CharIndex, cerrada, ct)) return null;
+            if (!await PelearAsync(transporte, sentidos, id, cerrada, ct, aGente: false,
+                cortaSi: () => !SigueElGrupo() || sentidos.ObjetivoDeLaCompanera(AtaqueObservadoMs) != id)) return null;
             if (Environment.TickCount64 - ahora < PasoMinMs) await Task.Delay(UnPaso(), ct);
             return cerrada.IsCompleted ? null : true;
         }
@@ -169,14 +210,12 @@ public sealed partial class Bot
         {
             // Y SI NO LLEGA, ESPERA, y a la quinta seguida se va (`SeAburre`).
             // El viaje pertenece a esta salida. La charla de cada paso puede terminarla o aceptar otra invitación.
-            long salida = _numeroDeAcompanamiento;
-            bool SigueLaSalida() => _acompana is not null && _numeroDeAcompanamiento == salida;
             int mapaDelViaje = sentidos.Mapa;
-            bool SigueElDestino() => SigueLaSalida() && sentidos.Mapa == mapaDelViaje
+            bool SigueElDestino() => SigueElGrupo() && sentidos.Mapa == mapaDelViaje
                 && sentidos.PersonaLlamada(a.Quien) is { } actual && actual.X == p.X && actual.Y == p.Y;
             bool llego = await IrHastaAsync(transporte, sentidos, mapaDelViaje, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla - 1,
                                            cortaSi: () => !SigueElDestino(), cortaAntesDePaso: () => !SigueElDestino());
-            if (!SigueLaSalida()) return cerrada.IsCompleted ? null : true;
+            if (!SigueElGrupo()) return cerrada.IsCompleted ? null : true;
             // Recalcular con la posición recién vista no es un camino fallido ni merece una espera.
             if (!SigueElDestino()) return cerrada.IsCompleted ? null : true;
             if (_acompana is { } b) _acompana = b with { SinLlegar = llego ? 0 : b.SinLlegar + 1 };
@@ -197,7 +236,7 @@ public sealed partial class Bot
             || !_entorno.Datos.MapExits.TryGetValue((huella.Mapa, huella.X, huella.Y), out var salida) || salida.DestMap <= 0) return false;
         long grupo = _numeroDeAcompanamiento;
         if (_salidaIntentada == (grupo, huella.Numero)) return false;
-        bool SigueElIntento() => _acompana is { } a && _numeroDeAcompanamiento == grupo
+        bool SigueElIntento() => _acompana is { } a && _numeroDeAcompanamiento == grupo && !_esperaAcompanando
             && string.Equals(a.Quien, quien, StringComparison.OrdinalIgnoreCase) && !cerrada.IsCompleted && !ct.IsCancellationRequested
             && sentidos.Mapa == huella.Mapa && !Urge(sentidos) && sentidos.PersonaLlamada(quien) is null
             && sentidos.UltimoMovimientoPerdidoDe(quien)?.Numero == huella.Numero
@@ -207,14 +246,24 @@ public sealed partial class Bot
             && !LoPeligrosoEstaATiro(sentidos.Posicion, PeligrosALaVista(sentidos));
         if (!SigueElIntento()) return false;
         _salidaIntentada = (grupo, huella.Numero); // También consume el intento si el camino se corta o alguien tapa el exit.
+        void LiberarLaHuellaSiPidioEsperar()
+        {
+            if (_esperaAcompanando && _numeroDeAcompanamiento == grupo && sentidos.Mapa == huella.Mapa)
+                _salidaIntentada = null;
+        }
         // Se acerca al exit sin pisarlo. IrHasta con tolerancia 0 podría cruzarlo y después intentar volver al mapa anterior.
         if (!await IrHastaAsync(transporte, sentidos, huella.Mapa, huella.X, huella.Y, cerrada, ct, tolerancia: 1,
-                               cortaSi: () => !SigueElIntento(), cortaAntesDePaso: () => !SigueElIntento()) || !SigueElIntento()) return true;
+                               cortaSi: () => !SigueElIntento(), cortaAntesDePaso: () => !SigueElIntento()) || !SigueElIntento())
+        {
+            LiberarLaHuellaSiPidioEsperar();
+            return true;
+        }
         var (x, y) = sentidos.Posicion;
         int dx = huella.X - x, dy = huella.Y - y;
         if (Math.Abs(dx) + Math.Abs(dy) != 1) return true;
         // Un solo paso final: cualquier warp termina la búsqueda; sólo un nuevo paquete visible vuelve a ubicar a la compañera.
         await UnPasoHaciaAsync(transporte, sentidos, dx, dy, ct, puedeSalir: true, cortaSi: () => !SigueElIntento());
+        LiberarLaHuellaSiPidioEsperar();
         return true;
     }
 }

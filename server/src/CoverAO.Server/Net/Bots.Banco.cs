@@ -132,7 +132,8 @@ public sealed partial class Bot
 
     /// <summary>Va hasta el banquero del mapa y le abre el panel del oro (que dice lo que hay en la bóveda). False si no llegó o no
     /// atendió.</summary>
-    private async Task<bool> AbrirElBancoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    private async Task<bool> AbrirElBancoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                               CancellationToken ct, Func<bool>? cortaAntesDePaso = null)
     {
         // Una ciudad puede tener varias ventanillas. En Nix la primera está encerrada y la segunda es accesible.
         var accesible = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => EsBanquero((short)f),
@@ -144,13 +145,21 @@ public sealed partial class Bot
         // ronda 42 Elmo salía "sin camino" desde el herrero.
         for (int intento = 0; intento < 2 && sentidos.MasCercano(EsBanquero) is not { Pasos: <= RadioDelBanquero }; intento++)
         {
-            if (await IrHastaAsync(transporte, sentidos, sentidos.Mapa, nace.X, nace.Y, cerrada, ct, RadioDelBanquero)) break;
-            if (!await AbrirUnaPuertaAsync(transporte, sentidos, ficha => EsBanquero((short)ficha), cerrada, ct)) break;
+            if (await IrHastaAsync(transporte, sentidos, sentidos.Mapa, nace.X, nace.Y, cerrada, ct, RadioDelBanquero,
+                                   cortaAntesDePaso: cortaAntesDePaso)) break;
+            if (!await AbrirUnaPuertaAsync(transporte, sentidos, ficha => EsBanquero((short)ficha),
+                                          cerrada, ct, cortaAntesDePaso)) break;
         }
         if (sentidos.MasCercano(EsBanquero) is not { } banquero) return false;
         if (banquero.Pasos > RadioDelBanquero
-            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, banquero.Quien.X, banquero.Quien.Y, cerrada, ct, RadioDelBanquero))
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, banquero.Quien.X, banquero.Quien.Y,
+                                   cerrada, ct, RadioDelBanquero, cortaAntesDePaso: cortaAntesDePaso))
             return false;
+        if (cortaAntesDePaso is not null)
+        {
+            Charlar(transporte, sentidos);
+            if (cortaAntesDePaso()) return false;
+        }
         if (sentidos.Donde(banquero.Quien.CharIndex) is not { } donde) return false;
         int antes = sentidos.VecesQueVioElBanco;
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(donde.X).WriteByte(donde.Y)));
@@ -158,12 +167,14 @@ public sealed partial class Bot
         return sentidos.VecesQueVioElBanco != antes;
     }
 
-    private async Task<bool> AbrirElBancoOAnotarloAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    private async Task<bool> AbrirElBancoOAnotarloAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                                        CancellationToken ct, Func<bool>? cortaAntesDePaso = null)
     {
         if (!sentidos.Vivo || cerrada.IsCompleted || ct.IsCancellationRequested) return false;
         int mapaDelIntento = sentidos.Mapa;
-        bool abierto = await AbrirElBancoAsync(transporte, sentidos, cerrada, ct);
-        // La desconexión, una muerte o un cambio de mapa no son evidencia de que ese banco no tenga camino.
+        bool abierto = await AbrirElBancoAsync(transporte, sentidos, cerrada, ct, cortaAntesDePaso);
+        // Un viaje interrumpido no es evidencia de que ese banco no tenga camino.
+        if (cortaAntesDePaso?.Invoke() == true) return false;
         if (!sentidos.Vivo || cerrada.IsCompleted || ct.IsCancellationRequested || sentidos.Mapa != mapaDelIntento) return false;
         if (abierto)
         {
@@ -197,7 +208,9 @@ public sealed partial class Bot
     {
         int tope = _entorno.Ini.OroQueSeCaeAlMorir;
         if (!ValeDepositar(sentidos.Nivel, sentidos.Oro, sentidos.Banco, Bolsillo(sentidos), tope) || !TieneBanquero(sentidos.Mapa)) return;
-        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct)) return;
+        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct, () => _acompana is not null)) return;
+        Charlar(transporte, sentidos);
+        if (_acompana is not null) return;
         // Ya con el saldo a la vista (si era la visita para mirarlo): la misma cuenta, ahora sabiendo el banco.
         if (ValeDepositar(sentidos.Nivel, sentidos.Oro, Math.Max(0, sentidos.Banco), Bolsillo(sentidos), tope))
             await MoverAlBancoAsync(transporte, sentidos, sentidos.Oro - Bolsillo(sentidos), ct);
@@ -205,9 +218,15 @@ public sealed partial class Bot
 
     /// <summary>Antes del mostrador, cuando la compra necesita lo guardado: retira todo menos la reserva para vestirse
     /// (<see cref="LoQueRetira"/>); lo que sobre vuelve a la bóveda al terminar, con <see cref="DepositarLoQueSobraAsync"/>.</summary>
-    private async Task RetirarParaComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    private async Task RetirarParaComprarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada,
+                                                CancellationToken ct, Func<bool>? cortaAntesDePaso = null)
     {
-        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct)) return;
+        if (!await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct, cortaAntesDePaso)) return;
+        if (cortaAntesDePaso is not null)
+        {
+            Charlar(transporte, sentidos);
+            if (cortaAntesDePaso()) return;
+        }
         if (LoQueSePuedeRetirar(sentidos) is > 0 and var retira) await MoverAlBancoAsync(transporte, sentidos, -retira, ct);
     }
 

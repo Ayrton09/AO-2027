@@ -16,6 +16,7 @@ public sealed class EntornoDeBots
     /// <summary>Los mapas: cómo ir de un lado a otro. Uno solo para todos los bots — se arma una vez y
     /// después no se toca.</summary>
     public Navegante Mapas { get; }
+    internal MetasDeBots? Metas { get; init; }
     /// <summary>El hogar de un personaje conectado, por su nombre (<see cref="PacketDispatcher.HogarDe"/>): lo que su dueño sabe
     /// porque lo eligió, y el bot no recibe por el protocolo. Null si no se sabe.</summary>
     public Func<string, byte?> HogarDe { get; }
@@ -326,7 +327,7 @@ public sealed class PobladoDeBots
             return null;
         }
         var entorno = new EntornoDeBots(dispatcher, ini, authTimeoutMs, maxInboundBytes, datos,
-                                        new Navegante(datos), credenciales, db);
+                                        new Navegante(datos), credenciales, db) { Metas = new MetasDeBots(dataRoot) };
 
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.

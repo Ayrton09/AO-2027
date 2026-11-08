@@ -502,7 +502,7 @@ $noViajan = @('data/Cuentas', 'data/Charfile', 'data/Misc', 'data/logs/', 'data/
               'data/version.txt',
               # Las CONTRASENAS de las cuentas de los bots de esta instalacion: las crea el servidor al arrancar
               # con la clave Bots y no salen de la maquina donde se crearon. Se colaba en el zip de Windows.
-              'data/bots.txt',
+              'data/bots.txt', 'data/bots-metas.json',
               # LA BASE: desde que los personajes y las cuentas viven en `data/coverao.db`, ESA es la cuenta y el
               # personaje del que publica. El patron agarra tambien su diario, su candado y las copias que deja
               # importar (`.importado`, `.antes-de-importar-...`). Y lo que la base deja al lado: el rescate de un

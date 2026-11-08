@@ -2465,6 +2465,7 @@ public sealed partial class PacketDispatcher
     /// </summary>
     private void DanoAUnJugador(ClientSession session, Player p, Player target, int dano)
     {
+        int vidaAntes = target.Hp;
         int Tirada(int lo, int hi) => hi > lo ? _rng.Next(lo, hi + 1) : lo;
         if (p.Navigating && p.BoatSlot > 0 && _data.Obj(p.Inventory[p.BoatSlot].ObjIndex) is { } barco)
             dano += Tirada(barco.MinHit, barco.MaxHit);
@@ -2492,6 +2493,7 @@ public sealed partial class PacketDispatcher
             if (PuedeApunalar(p)) DoApunalar(session, p, null, target, dano);
         }
         target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));   // VB6 SistemaCombate.bas:749
+        if (target.Hp < vidaAntes) AvisarAtaqueAlBot(p, target);
         if (target.Hp == 0) OnKill(session, p, target);
     }
 
@@ -2749,6 +2751,7 @@ public sealed partial class PacketDispatcher
     {
         RevealOnAttack(p);   // disparar a un NPC revela ocultamiento e invisibilidad por hechizo (VB6 UsuarioAtacaNpc)
         npc.AttackedBy = p.Name; npc.Hostile = true;   // provocar (igual que el melee), aun si falla
+        AvisarAtaqueACriatura(p, npc);
         // EL RUIDO DE LA FLECHA. El original no tiene un camino propio para el disparo: el `Case Proyectiles`
         // (Protocol.bas:2860) llama al MISMO `UsuarioAtacaNpc` que el melee, y ahí adentro están las dos
         // ramas de sonido del arco (SistemaCombate.bas:916-919 al acertar, :938 al errar). Acá el disparo
@@ -2946,6 +2949,7 @@ public sealed partial class PacketDispatcher
         // nadie adyacente. Para un NPC pacífico esto es lo único que lo hace pegar.
         npc.AttackedBy = p.Name;
         npc.Hostile = true;
+        AvisarAtaqueACriatura(p, npc);
         double attackMod = _data.AttackMod.TryGetValue(p.Class, out var am) ? am : 1.0;
         int atkSkill = AttackSkillOf(p);
         long pa = Combat.PoderDeAtaque(p.Skills[atkSkill], p.Agility, p.Level, attackMod);
@@ -3973,6 +3977,7 @@ public sealed partial class PacketDispatcher
             RaiseSkill(target.Connection as ClientSession, target, GameLimits.SkillResistencia);
             target.Hp = (int)Math.Max(0, target.Hp - dano);
             target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
+            if (dano > 0) AvisarAtaqueAlBot(p, target);
             session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, (int)dano, 2));
             if (target.Hp == 0) OnKill(session, p, target);
         }
@@ -4129,6 +4134,7 @@ public sealed partial class PacketDispatcher
         if (!PuedeAtacarNpc(session, p, npc)) return;   // VB6 PuedeAtacarNPC:1752 — va después del 298
         npc.AttackedBy = p.Name;   // VB6 NPCAtacado: lo provoca y lo vuelve hostil para defenderse
         npc.Hostile = true;
+        AvisarAtaqueACriatura(p, npc);
         int damage = DanoMagicoANpc(p, npc, amount);
         SpellCasted(session, p, spell);
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
@@ -12060,6 +12066,7 @@ public sealed partial class PacketDispatcher
         FlagCriminalIfLegalTarget(session, p, target);    // VB6 UsuarioAtacadoPorUsuario
         target.Hp = Math.Max(0, target.Hp - damage);
         target.Connection?.Send(ServerMessages.UpdateHP((short)target.Hp));
+        if (damage > 0) AvisarAtaqueAlBot(p, target);
         session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, damage, 2));          // el número, al lanzador
         target.Connection?.Send(ServerMessages.LocaleMsg(34, $"{p.Name}%{damage}"));      // "#1 te ha quitado..."
         if (target.Hp == 0) OnKill(session, p, target);
@@ -12098,6 +12105,7 @@ public sealed partial class PacketDispatcher
         if (!PuedeAtacarNpc(session, p, npc)) return false;
         npc.AttackedBy = p.Name;   // NPCAtacado
         npc.Hostile = true;
+        AvisarAtaqueACriatura(p, npc);
         int damage = DanoMagicoANpc(p, npc, _rng.Next(spell.MinHp, spell.MaxHp + 1));
         npc.Hp = Math.Clamp(npc.Hp - damage, 0, npc.Template.MaxHp);
         session.Send(ServerMessages.ChatOverHeadLocale(p.CharIndex, damage, 2));
@@ -12730,8 +12738,16 @@ public sealed partial class PacketDispatcher
             switch (talkMode)
             {
                 case 1:
-                    _world.BroadcastToObservers(p.Pos, ServerMessages.ChatOverHead(chat, p.CharIndex, 1));
+                {
+                    var globo = ServerMessages.ChatOverHead(chat, p.CharIndex, 1);
+                    if (!session.EsBot)
+                        _world.BroadcastToObservers(p.Pos, globo);
+                    else
+                        foreach (var otro in _world.Observers(p.Pos))
+                            if (otro.Connection is not ClientSession { EsBot: true })
+                                otro.Connection?.Send(globo);
                     break;
+                }
                 case 2:
                 {
                     if (DeadCheck(session, p)) return;
@@ -12770,6 +12786,7 @@ public sealed partial class PacketDispatcher
             // El único rechazo del original es que no esté conectado. El gate de VIVO era invención nuestra: a
             // un muerto se le susurra sin problema.
             if (target is null) { session.Send(ServerMessages.LocaleMsg(75)); return; }
+            if (session.EsBot && target.Connection is ClientSession { EsBot: true }) return;
             // `If UserIndex <> targetUserIndex`: susurrarse a uno mismo no hace absolutamente nada, en silencio.
             if (target.CharIndex == p.CharIndex) return;
             // La MISMA línea para los dos, con FONTTYPE_INFOBOLD2. Acá salían dos frases inventadas ("te

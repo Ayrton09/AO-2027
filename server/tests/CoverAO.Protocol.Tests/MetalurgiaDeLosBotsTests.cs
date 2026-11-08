@@ -24,6 +24,29 @@ public class MetalurgiaDeLosBotsTests
         Assert.False(Bot.LeConvieneLaSubasta(f, Bot.ValorDeMercado(Datos, o.Index), "rufo", 40000, permiteProductor: true));
     }
 
+    [Fact]
+    public void Tras_tres_listas_sin_oro_usa_el_excedente_y_reanuda_el_encargo_al_recibir_oro()
+    {
+        var (bot, sentidos, _) = Preparar("Rufo", 12);
+        typeof(Bot).GetField("_clase", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(bot, (byte)12);
+        typeof(Bot).GetField("_recetaDeHerreria", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(bot, (short)1333);
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(1, 386, 100, false, 0, 1));
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(2, 387, 60, false, 0, 1));
+        int Tiene(int obj) => sentidos.CuantoTiene(i => i == obj);
+        short? Elegir() => (short?)Metodo("ElegirFabricacion").Invoke(bot,
+            [sentidos, Datos.BlacksmithRecipes, Oficios.Herreria, 100, (Func<int, int>)Tiene]);
+        Assert.Null(Elegir());
+        for (int visita = 0; visita < 2; visita++) Metodo("AnotarMaterialEnElMercado").Invoke(bot, [sentidos, 50_000]);
+        Assert.Null(Elegir());
+        Metodo("AnotarMaterialEnElMercado").Invoke(bot, [sentidos, 50_000]);
+        Assert.Equal((short)1007, Elegir()); // Usa 80 de hierro y 20 de plata, por encima de la reserva.
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(1, 386, 20, false, 0, 1));
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(2, 387, 40, false, 0, 1));
+        Assert.Null(Elegir());
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(3, 388, 60, false, 0, 1));
+        Assert.Equal((short)1333, Elegir());
+    }
+
     [Theory]
     [InlineData(100, 13000, 20000, 80, true)]
     [InlineData(100, 16001, 20000, 80, false)]
@@ -164,11 +187,46 @@ public class MetalurgiaDeLosBotsTests
     }
 
     [Theory]
+    [InlineData(25_000, false)]
+    [InlineData(50_000, true)]
+    public async Task La_meta_de_ahorro_pospone_el_viaje_por_mejoras_hasta_juntar_el_oro(int oro, bool sale)
+    {
+        string ruta = Directory.CreateTempSubdirectory("coverao-meta-viaje-").FullName;
+        string archivo = Path.Combine(ruta, "bots-metas.json");
+        try
+        {
+            var metas = new MetasDeBots(ruta);
+            metas.Guardar("Ciro", new MetaDeBot(RumboDeBot.Equipo, 50_000, 0));
+            var (bot, sentidos, p) = Preparar("Ciro", GameLimits.ClaseGuerrero, metas: metas);
+            typeof(Bot).GetField("_clase", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, GameLimits.ClaseGuerrero);
+            typeof(Bot).GetField("_miBando", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, Player.StatusCiudadano);
+            var subastador = Datos.MapSpawns[20].First(n => Datos.Npc(n.NpcIndex)?.NpcType == 16);
+            p.Pos = new WorldPos(20, (byte)(subastador.X + 2), (byte)subastador.Y);
+            sentidos.Recibir(ServerMessages.CharacterCreate(p));
+            sentidos.Recibir(ServerMessages.UpdateGold(oro - 10_000));
+            sentidos.Recibir(ServerMessages.BankInit(goliath: true, bankGold: 10_000));
+            bot.ActualizarMetaDeNivel50(sentidos);
+
+            // Una conexión cerrada detiene la marcha una vez que el planificador tomó la decisión.
+            var viaje = (Task<bool>)Metodo("MercadoDelOficioAsync").Invoke(bot,
+                [new TransporteDeBot("Ciro"), sentidos, Task.CompletedTask, CancellationToken.None])!;
+            Assert.Equal(sale, await viaje);
+        }
+        finally
+        {
+            File.Delete(archivo);
+            Directory.Delete(ruta);
+        }
+    }
+
+    [Theory]
     [InlineData(20)]
     [InlineData(34)]
     public async Task El_minero_funde_vende_los_tres_metales_y_el_herrero_fabrica_y_vende_por_el_servidor(short mercado)
     {
         var datos = GameData.Load();
+        string rutaMetas = Directory.CreateTempSubdirectory("coverao-meta-oficio-").FullName;
+        var metas = new MetasDeBots(rutaMetas);
         using var almacen = AlmacenSqlite.EnMemoria();
         using var db = new Persistence(almacen, new Leveling(Datos.LevelExp));
         var mundo = new World(); var loop = new GameLoop();
@@ -188,7 +246,7 @@ public class MetalurgiaDeLosBotsTests
             PonerNpc(sp,true);
         WorldPopulator.PlaceObjects(mundo,datos); // también bloquea las puertas, como en el servidor real
         (Bot b, SentidosDelBot s, Player p, TransporteDeBot t) Conectar(string nombre, byte clase) {
-            var (b,s,p)=Preparar(nombre,clase,mundo.AllocateCharIndex(),datos);
+            var (b,s,p)=Preparar(nombre,clase,mundo.AllocateCharIndex(),datos,metas);
             p.Gold=200000;p.FactionStatus=Player.StatusCiudadano;
             var cuenta=db.CreateAccount(p.Account,"clave_larga_de_prueba",esBot:true);
             db.CreateCharacter(cuenta,p.Name,p.CharIndex,p.Race,p.Gender,p.Class,1,1);
@@ -220,8 +278,10 @@ public class MetalurgiaDeLosBotsTests
         var equipoPublicado=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         loop.OnTickHandler = _ => {
             foreach(var p in mundo.Players)if(p.Laborando)dispatcher.TickTrabajo((ClientSession?)p.Connection,p,Environment.TickCount64);
-            if(mundo.Subastas.Abiertas.Count()==3)primerasVentas.TrySetResult(minero.p.Pos.Map);
-            if(mundo.Subastas.Abiertas.Any(f=>f.Vendedor=="Rufo" && f.Objeto==1333))equipoPublicado.TrySetResult();
+            if(mundo.Subastas.Abiertas.Count()==3 && metas.Leer("Quim")?.Progreso==3)
+                primerasVentas.TrySetResult(minero.p.Pos.Map);
+            if(mundo.Subastas.Abiertas.Any(f=>f.Vendedor=="Rufo" && f.Objeto==1333) && metas.Leer("Rufo")?.Progreso==1)
+                equipoPublicado.TrySetResult();
         };
         tareas.Add(loop.RunAsync(fin.Token));
         try {
@@ -270,7 +330,8 @@ public class MetalurgiaDeLosBotsTests
             Assert.Equal(3,mundo.Subastas.Abiertas.Count());
             if(mercado==34) {
                 Situar(minero,new WorldPos(34,64,37));
-                await Llamar("AbrirElBancoAsync",minero);
+                Assert.True(await (Task<bool>)Metodo("AbrirElBancoAsync").Invoke(minero.b,
+                    [minero.t,minero.s,cerrado,fin.Token,null])!);
                 Assert.Equal(29,mundo.NpcByIndex(minero.p.TargetNpc)!.Pos.X);
                 Assert.Equal(0,minero.s.Banco);
             }
@@ -309,10 +370,15 @@ public class MetalurgiaDeLosBotsTests
             Assert.NotNull(guardado);
             Assert.Contains(guardado.BankInventory,v=>v.ObjIndex==1333&&v.Amount==1);
             Assert.Equal(comprador.p.Gold,guardado.Gold);
+            var reabiertas = new MetasDeBots(rutaMetas);
+            Assert.Equal(new MetaDeBot(RumboDeBot.Abastecer, 6, 3), reabiertas.Leer("Quim"));
+            Assert.Equal(new MetaDeBot(RumboDeBot.Abastecer, 6, 1), reabiertas.Leer("Rufo"));
         }
         finally {
             fin.Cancel();foreach(var t in transportes)t.Terminar();loop.Stop();
             try{await Task.WhenAll(tareas);}catch(OperationCanceledException){}
+            File.Delete(Path.Combine(rutaMetas, "bots-metas.json"));
+            Directory.Delete(rutaMetas);
         }
     }
 
@@ -353,7 +419,8 @@ public class MetalurgiaDeLosBotsTests
         }
     }
 
-    private static (Bot, SentidosDelBot, Player) Preparar(string nombre, byte clase, short indice = 500, GameData? datos = null)
+    private static (Bot, SentidosDelBot, Player) Preparar(string nombre, byte clase, short indice = 500,
+        GameData? datos = null, MetasDeBots? metas = null)
     {
         var p = new Player { CharIndex=indice, Name=nombre, Account=nombre+"_qa", Class=clase,Race=1,Gender=1,
             Pos=new WorldPos(20,50,50),Level=50,Hp=500,MaxHp=500,Stamina=1000,MaxStamina=1000,Gold=50000,Hunger=100,Thirst=100 };
@@ -364,7 +431,8 @@ public class MetalurgiaDeLosBotsTests
         s.Recibir(ServerMessages.SendSkills(p.Skills));
         s.Recibir(ServerMessages.UpdateHungerAndThirst(100,100));
         datos ??= Datos;
-        var b = new Bot(nombre,null,new EntornoDeBots(null!,new ServerIni(),0,0,datos,new Navegante(datos),null!),42);
+        var b = new Bot(nombre,null,new EntornoDeBots(null!,new ServerIni(),0,0,datos,new Navegante(datos),null!)
+            { Metas = metas },42);
         return (b,s,p);
     }
 }

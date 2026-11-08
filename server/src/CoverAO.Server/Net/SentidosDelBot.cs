@@ -45,7 +45,6 @@ public sealed class SentidosDelBot
 
     /// <summary>Un efecto con autor identificado por el servidor. Hechizo 0 es el daño explícito del mensaje 34;
     /// con número, el bot debe consultar qué hace ese hechizo antes de tomarlo como una agresión.</summary>
-    public readonly record struct EfectoDeOtro(string Quien, short Hechizo, long Cuando);
 
     /// <summary>El último movimiento público de la compañera antes de su CharacterRemove, sin inferir dónde quedó.</summary>
     internal readonly record struct MovimientoPerdido(long Numero, short CharIndex, short Mapa, byte X, byte Y, long Cuando);
@@ -54,8 +53,6 @@ public sealed class SentidosDelBot
     private byte _miEstado;
     private Bajas? _bajas;
     private long _ultimaBajaDeVida;
-    private readonly Queue<EfectoDeOtro> _efectosRecibidos = new();
-    private const int EfectosRecibidosMax = 8;
     private readonly Dictionary<short, Visible> _visibles = new();
     // Sólo se observa a la persona de la salida actual. No hay historial del resto de los jugadores.
     private string? _companeraObservada;
@@ -105,6 +102,7 @@ public sealed class SentidosDelBot
             _companeraObservada = nombre;
             _ultimoMovimientoDeLaCompanera = null;
             _movimientoAlPerderLaCompanera = null;
+            _ataqueDeLaCompanera = null;
         }
     }
 
@@ -140,17 +138,45 @@ public sealed class SentidosDelBot
     public long HaceCuantoLeBajoLaVida
     { get { lock (_candado) return _ultimaBajaDeVida == 0 ? long.MaxValue : Environment.TickCount64 - _ultimaBajaDeVida; } }
 
-    /// <summary>Los efectos recientes, del más nuevo al más viejo. Acotados: los buffs posteriores no borran
-    /// inmediatamente la identidad de un agresor, y el historial no crece con la duración de la sesión.</summary>
-    public IReadOnlyList<EfectoDeOtro> EfectosRecibidos(long vigenciaMs)
+    private (short Atacante, long Cuando)? _agresionDeJugador;
+    private (short Atacante, short Criatura, long Cuando)? _ataqueDeLaCompanera;
+
+    internal void ObservarAgresionDeJugador(short atacante, long cuando)
+    {
+        lock (_candado)
+            if (_vida > 0) _agresionDeJugador = (atacante, cuando);
+    }
+
+    // Cero significa que hubo un ataque pero no puede identificar al agresor.
+    internal short? AgresorReciente(long vigenciaMs)
     {
         lock (_candado)
         {
-            long desde = Environment.TickCount64 - vigenciaMs;
-            while (_efectosRecibidos.TryPeek(out var viejo) && viejo.Cuando < desde) _efectosRecibidos.Dequeue();
-            return _efectosRecibidos.Reverse().ToArray();
+            if (_agresionDeJugador is not { } a || Environment.TickCount64 - a.Cuando > vigenciaMs) return null;
+            return _visibles.TryGetValue(a.Atacante, out var v) && !v.EsNpc && !v.Muerto ? a.Atacante : (short)0;
         }
     }
+
+    internal void ObservarAtaqueACriatura(short atacante, short criatura, long cuando)
+    {
+        lock (_candado)
+            if (_companeraObservada is not null && _visibles.TryGetValue(atacante, out var p) && !p.EsNpc
+                && string.Equals(p.Nombre, _companeraObservada, StringComparison.OrdinalIgnoreCase)
+                && _visibles.TryGetValue(criatura, out var n) && n.EsNpc)
+                _ataqueDeLaCompanera = (atacante, criatura, cuando);
+    }
+
+    internal short? ObjetivoDeLaCompanera(long vigenciaMs)
+    {
+        lock (_candado)
+        {
+            if (_ataqueDeLaCompanera is not { } a || Environment.TickCount64 - a.Cuando > vigenciaMs
+                || !_visibles.TryGetValue(a.Atacante, out var p) || p.Muerto
+                || !string.Equals(p.Nombre, _companeraObservada, StringComparison.OrdinalIgnoreCase)) return null;
+            return a.Criatura;
+        }
+    }
+
     public bool Ubicado { get { lock (_candado) return _tengoPosicion; } }
     public (byte X, byte Y) Posicion { get { lock (_candado) return (_x, _y); } }
     public short Nivel { get { lock (_candado) return _nivel; } }
@@ -215,7 +241,10 @@ public sealed class SentidosDelBot
     public enum ComoLoDijo : byte { Charla = 1, Grito = 2, Global = 3, Susurro = 4 }
 
     /// <summary>Algo que una persona dijo y el bot oyó: quién (el nombre, sin el clan), qué y cómo.</summary>
-    public readonly record struct LoOido(string Quien, string Texto, ComoLoDijo Como, long Cuando);
+    public readonly record struct LoOido(string Quien, string Texto, ComoLoDijo Como, long Cuando, int CambioDeMapa = 0);
+
+    private int _numeroDeCambiosDeMapa;
+    internal int NumeroDeCambiosDeMapa { get { lock (_candado) return _numeroDeCambiosDeMapa; } }
 
     /// <summary>
     /// LO QUE OYÓ desde la última vez, y se lo lleva. Llega como le llega al cliente de una persona:
@@ -293,7 +322,7 @@ public sealed class SentidosDelBot
         if (_oido.Count >= OidoMax) _oido.Dequeue();
         // EL SUSURRO NO TIENE TOPE DE LARGO en el server (la charla sí, 80): se guarda lo que alcanza para entenderlo.
         if (texto.Length > TextoOidoMax) texto = texto[..TextoOidoMax];
-        _oido.Enqueue(new LoOido(quien, texto, como, Environment.TickCount64));
+        _oido.Enqueue(new LoOido(quien, texto, como, Environment.TickCount64, _numeroDeCambiosDeMapa));
         _oidoEnTotal[(int)como]++;
     }
 
@@ -752,6 +781,7 @@ public sealed class SentidosDelBot
     private void AlMorir()
     {
         _meditando = false;
+        _agresionDeJugador = null;
         for (int s = 1; s < _inventario.Length; s++)
             if (_inventario[s].Puesto) _inventario[s] = (_inventario[s].Obj, _inventario[s].Cantidad, false);
     }
@@ -1190,6 +1220,8 @@ public sealed class SentidosDelBot
                             && string.Equals(_companeraObservada, v.Nombre, StringComparison.OrdinalIgnoreCase))
                             _movimientoAlPerderLaCompanera = new MovimientoPerdido(++_numeroDeMovimientoPerdido, ci, m.Mapa, m.X, m.Y, m.Cuando);
                         if (_ultimoMovimientoDeLaCompanera?.CharIndex == ci) _ultimoMovimientoDeLaCompanera = null;
+                        if (_ataqueDeLaCompanera is { } a && (a.Atacante == ci || a.Criatura == ci)) _ataqueDeLaCompanera = null;
+                        if (_agresionDeJugador is { } golpe && golpe.Atacante == ci) _agresionDeJugador = (0, golpe.Cuando);
                         _visibles.Remove(ci);
                         _nivelDe.Remove(ci); // El índice puede reutilizarse para otra persona.
                     }
@@ -1242,11 +1274,14 @@ public sealed class SentidosDelBot
                         _visibles.Clear();
                         _ultimoMovimientoDeLaCompanera = null;
                         _movimientoAlPerderLaCompanera = null;
+                        _ataqueDeLaCompanera = null;
+                        _agresionDeJugador = null;
+                        _ultimaBajaDeVida = 0;
                         _nivelDe.Clear();
-                        _efectosRecibidos.Clear();
                         _enElPiso.Clear();   // lo tirado era del mapa anterior
                         _mapa = mapa;
                         _mapaNuevo = true;
+                        _numeroDeCambiosDeMapa++;
                     }
                     break;
                 }
@@ -1457,18 +1492,6 @@ public sealed class SentidosDelBot
                         lock (_candado)
                             if (subio.Skill >= 1 && subio.Skill < _skills.Length) _skills[subio.Skill] = (byte)Math.Clamp(subio.Valor, 0, 255);
                     }
-                    else if (aviso is 34 or 498)
-                    {
-                        string args = l.Cadena();
-                        l.Byte(); // modo
-                        byte fuente = l.Byte();
-                        if (AutorDelEfecto(aviso, args, fuente) is { } efecto)
-                            lock (_candado)
-                            {
-                                while (_efectosRecibidos.Count >= EfectosRecibidosMax) _efectosRecibidos.Dequeue();
-                                _efectosRecibidos.Enqueue(new EfectoDeOtro(efecto.Quien, efecto.Hechizo, Environment.TickCount64));
-                            }
-                    }
                     break;
                 }
 
@@ -1574,20 +1597,6 @@ public sealed class SentidosDelBot
         // con los de layout variable que acá no se leen, si alguna vez cambiara un id.
         catch (IndexOutOfRangeException) { }
         catch (ArgumentOutOfRangeException) { }
-    }
-
-    private static (string Quien, short Hechizo)? AutorDelEfecto(short aviso, string args, byte fuente)
-    {
-        var partes = args.Split('%');
-        if (partes.Length < 2 || string.IsNullOrWhiteSpace(partes[0])) return null;
-        if (aviso == 34)
-            return partes.Length == 2 && int.TryParse(partes[1], out int dano) && dano > 0 ? (partes[0], (short)0) : null;
-        // El 498 también describe curas y buffs. Se descarta la fuente de curación y se conserva el número
-        // para que la decisión compruebe en la data que realmente hace daño, en vez de inferirlo del color.
-        if (fuente != 2 || partes.Length != 3 || !partes[1].StartsWith('^')
-            || !short.TryParse(partes[1].AsSpan(1), out short hechizo) || hechizo <= 0
-            || !int.TryParse(partes[2], out int valor) || valor <= 0) return null;
-        return (partes[0], hechizo);
     }
 
     /// <summary>Cursor sobre un paquete ya frameado. Los enteros son de 16 bits con signo y los largos de 32,

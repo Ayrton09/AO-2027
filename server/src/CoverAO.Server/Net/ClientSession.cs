@@ -299,15 +299,23 @@ public sealed class ClientSession : IConnection
     // El orden se conserva: la cola es FIFO y hay un solo lector. Si el cliente se atrasa tanto que llena la
     // cola, se lo desconecta: descartar paquetes sueltos no es una opción, porque el protocolo AO no tiene
     // reenvío y un hueco deja al cliente con un estado que no existe.
-    private readonly Channel<byte[]> _salida = Channel.CreateBounded<byte[]>(
+    private readonly record struct Salida(byte[]? Paquete, short Atacante = 0, short Criatura = 0, long ObservadoEn = 0);
+    private readonly Channel<Salida> _salida = Channel.CreateBounded<Salida>(
         new BoundedChannelOptions(4096) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait });
     private volatile string _motivoDeCierre = "";
 
-    public void Send(byte[] packet)
+    public void Send(byte[] packet) => EncolarSalida(new Salida(packet));
+
+    internal void AvisarCombateAlBot(short atacante, short criatura = 0)
+    {
+        if (EsBot) EncolarSalida(new Salida(null, atacante, criatura, Environment.TickCount64));
+    }
+
+    private void EncolarSalida(Salida salida)
     {
         if (_closed) return;
         // TryWrite NO espera: con la cola llena devuelve false en vez de bloquear al que llama.
-        if (!_salida.Writer.TryWrite(packet)) Cortar("cola de salida saturada (cliente lento)");
+        if (!_salida.Writer.TryWrite(salida)) Cortar("cola de salida saturada (cliente lento)");
     }
 
     /// <summary>El único que escribe al socket. Corre en su propia tarea, fuera del game loop.</summary>
@@ -317,9 +325,17 @@ public sealed class ClientSession : IConnection
         {
             while (await _salida.Reader.WaitToReadAsync().ConfigureAwait(false))
             {
-                while (_salida.Reader.TryRead(out var paquete))
+                while (_salida.Reader.TryRead(out var salida))
                 {
-                    try { _transport.Send(paquete); }
+                    try
+                    {
+                        if (salida.Paquete is { } paquete) _transport.Send(paquete);
+                        else if (_transport is TransporteDeBot bot)
+                        {
+                            if (salida.Criatura == 0) bot.AvisarAtaqueDeJugador(salida.Atacante, salida.ObservadoEn);
+                            else bot.AvisarAtaqueACriatura(salida.Atacante, salida.Criatura, salida.ObservadoEn);
+                        }
+                    }
                     catch (Exception ex)
                     {
                         Console.Error.WriteLine($"[{RemoteEndpoint}] send error: {ex.Message}");
