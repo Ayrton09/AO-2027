@@ -16,9 +16,14 @@ public sealed partial class PacketDispatcher
     // Las animaciones normales no siempre identifican el blanco. Sólo se avisa al bot que podía ver a los dos.
     private void AvisarAtaqueACriatura(Player atacante, Npc criatura)
     {
-        if (_ini.Bots <= 0 || atacante.Connection is ClientSession { EsBot: true } || !AtacanteVisible(atacante)) return;
-        foreach (var observador in _world.Observers(criatura.Pos))
-            if (observador.Connection is ClientSession { EsBot: true } bot && World.InView(atacante.Pos, observador.Pos))
-                bot.AvisarCombateAlBot(atacante.CharIndex, criatura.CharIndex);
+        if (_ini.Bots > 0) AvisarCombateConCriatura(_world, atacante, criatura, persigue: false);
+    }
+
+    internal static void AvisarCombateConCriatura(World mundo, Player persona, Npc criatura, bool persigue)
+    {
+        if (persona.Connection is ClientSession { EsBot: true } || !AtacanteVisible(persona)) return;
+        foreach (var observador in mundo.Observers(criatura.Pos))
+            if (observador.Connection is ClientSession { EsBot: true } bot && World.InView(persona.Pos, observador.Pos))
+                bot.AvisarCombateAlBot(persona.CharIndex, criatura.CharIndex, persigue);
     }
 }

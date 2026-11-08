@@ -178,6 +178,7 @@ public sealed class Npc
     /// (<c>HostilBuenoAI</c>, AI_NPC.bas:451) sólo devuelve el golpe al agresor y a nadie más. Se limpia
     /// cuando el agresor deja de estar adyacente (VB6 <c>RestoreOldMovement</c>).</summary>
     public string? AttackedBy { get; set; }
+    internal (short Persona, long Tick) UltimoAvisoDePersecucion { get; set; }
 
     /// <summary>CharIndex of the player who summoned this NPC (0 = none). Summons don't attack their owner.</summary>
     public short OwnerCharIndex { get; set; }

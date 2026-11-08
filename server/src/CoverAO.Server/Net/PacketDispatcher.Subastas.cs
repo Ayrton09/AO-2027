@@ -15,6 +15,7 @@ public sealed partial class PacketDispatcher
 {
     /// <summary>El reloj de las subastas, en segundos Unix. Los tests lo cambian para vencerlas sin esperar.</summary>
     internal Func<long> RelojDeSubastas { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    internal int DemandaDeSubasta(short objeto) => _world.Subastas.DemandaReciente(objeto, RelojDeSubastas());
 
     private long _subastasGuardadas;
     private long _ultimaRondaDeSubastasMs;
@@ -126,7 +127,7 @@ public sealed partial class PacketDispatcher
             string? superado = _world.Subastas.Buscar(id)!.Comprador;
             p.Gold -= (int)costo;
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            bool cerrada = _world.Subastas.Ofertar(id, p.Name, monto);
+            bool cerrada = _world.Subastas.Ofertar(id, p.Name, monto, ahora);
             _economia?.Anotar($"subasta {id}: {p.Name} oferta {costo}{(cerrada ? " y la gana" : "")}");
             session.Send(ServerMessages.ConsoleMsg(cerrada
                 ? "¡Ganaste la subasta! El objeto va a tu bóveda."
@@ -149,13 +150,14 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null || SubastadorAMano(session, p) is null) return;
-            if (!Responder(session, _world.Subastas.PuedeComprar(id, p.Name, RelojDeSubastas()))) return;
+            long ahora = RelojDeSubastas();
+            if (!Responder(session, _world.Subastas.PuedeComprar(id, p.Name, ahora))) return;
             var s = _world.Subastas.Buscar(id)!;
             if (p.Gold < s.PrecioFinal) { session.Send(ServerMessages.LocaleMsg(26)); return; }
             string? superado = s.Comprador;
             p.Gold -= (int)s.PrecioFinal;
             session.Send(ServerMessages.UpdateGold(p.Gold));
-            _world.Subastas.Comprar(id, p.Name);
+            _world.Subastas.Comprar(id, p.Name, ahora);
             _economia?.Anotar($"subasta {id}: {p.Name} compra directo por {s.PrecioFinal}");
             session.Send(ServerMessages.ConsoleMsg("Compraste la subasta. El objeto va a tu bóveda.", FuenteInfo));
             if (superado is not null && !superado.Equals(p.Name, StringComparison.OrdinalIgnoreCase))

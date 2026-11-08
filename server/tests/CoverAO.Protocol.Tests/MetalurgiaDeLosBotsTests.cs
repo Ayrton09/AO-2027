@@ -186,6 +186,43 @@ public class MetalurgiaDeLosBotsTests
         Assert.DoesNotContain(camino, zonas.Contains);
     }
 
+    [Fact]
+    public void La_mineria_y_la_herreria_consultan_los_cierres_reales_del_mercado()
+    {
+        var mercado = new CentroDeSubastas();
+        const long ahora = 10_000;
+        short hierro = GameLimits.IngotIronObj, oro = GameLimits.IngotGoldObj;
+        var vencida = mercado.Publicar("Quim", hierro, 20, 10, 20, 3, ahora);
+        var vendida = mercado.Publicar("Quim", oro, 20, 10, 20, 3, ahora);
+        var retirada = mercado.Publicar("Quim", GameLimits.IngotSilverObj, 20, 10, 20, 3, ahora);
+        mercado.Comprar(vendida.Id, "Comprador", ahora + 1);
+        Assert.Equal(ResultadoDeSubasta.Ok, mercado.Cancelar(retirada.Id, "Quim"));
+        mercado.Vencer(vencida.Termina);
+        Assert.Equal(0, mercado.DemandaReciente(GameLimits.IngotSilverObj, vencida.Termina));
+
+        var (_, sentidos, _) = Preparar("Quim", 14);
+        var entorno = new EntornoDeBots(null!, new ServerIni(), 0, 0, Datos, new Navegante(Datos), null!)
+            { DemandaDeSubasta = objeto => mercado.DemandaReciente(objeto, vencida.Termina) };
+        var minero = new Bot("Quim", null, entorno, 42);
+        typeof(Bot).GetField("_clase", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(minero, (byte)14);
+        Assert.Equal(GameLimits.OreGoldObj, minero.MineralQueBusca(sentidos));
+
+        var herrero = new Bot("Rufo", null, entorno, 42);
+        var receta = Assert.IsType<short>(herrero.RecetaDeHerreria(sentidos));
+        mercado.Publicar("Rufo", receta, 1, 10, 20, 3, ahora);
+        mercado.Vencer(vencida.Termina);
+        var siguiente = new Bot("Rufo", null, entorno, 42).RecetaDeHerreria(sentidos);
+        Assert.NotNull(siguiente);
+        Assert.NotEqual(receta, siguiente);
+        Assert.Equal(0, mercado.DemandaReciente(receta, vencida.Termina + 48 * 3600));
+
+        var conPuja = mercado.Publicar("Quim", GameLimits.IngotSilverObj, 20, 10, 20, 3, vencida.Termina);
+        Assert.False(mercado.Ofertar(conPuja.Id, "Comprador", 10, vencida.Termina));
+        Assert.Equal(0, mercado.DemandaReciente(conPuja.Objeto, conPuja.Termina - 1));
+        mercado.Vencer(conPuja.Termina);
+        Assert.Equal(1, mercado.DemandaReciente(conPuja.Objeto, conPuja.Termina));
+    }
+
     [Theory]
     [InlineData(25_000, false)]
     [InlineData(50_000, true)]

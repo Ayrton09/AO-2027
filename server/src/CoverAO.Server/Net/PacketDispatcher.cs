@@ -5295,14 +5295,16 @@ public sealed partial class PacketDispatcher
     /// República y la Milicia sólo entre sí. El Caos y los GMs caen al permitir-por-defecto — un agujero del
     /// original (pueden curar hasta a un enemigo de facción) que se preserva a propósito.
     /// </summary>
-    private static bool PuedeAyudar(Player caster, Player target)
+    private static bool PuedeAyudar(Player caster, Player target) => PuedeAyudar(caster.FactionStatus, target.FactionStatus);
+
+    internal static bool PuedeAyudar(byte caster, byte target)
     {
-        if (caster.FactionStatus == Player.StatusCriminal) return true;   // esRene → siempre
-        bool casterImperio = caster.IsArmada || caster.IsCitizen;
-        if (casterImperio && !(target.IsArmada || target.IsCitizen)) return false;
-        bool casterRepublica = caster.IsRepublicano || caster.IsMilicia;
-        if (casterRepublica && !(target.IsRepublicano || target.IsMilicia)) return false;
-        return true;   // Caos, GMs y cualquier status fuera de las facciones conocidas
+        return caster switch
+        {
+            Player.StatusArmada or Player.StatusCiudadano => target is Player.StatusArmada or Player.StatusCiudadano,
+            Player.StatusRepublicano or Player.StatusMilicia => target is Player.StatusRepublicano or Player.StatusMilicia,
+            _ => true,
+        };
     }
 
     /// <summary>IP de un jugador conectado, normalizada (VB6 <c>UserList(i).ip</c>). "" si no está conectado.</summary>
@@ -7518,6 +7520,7 @@ public sealed partial class PacketDispatcher
         p.FactionRank++;
         if (p.FactionRank >= RangosDeFaccion.SegundaJerarquia(p.FactionStatus)) GrantFactionArmor(session, p);
         session.Send(ServerMessages.UpdateUserStats(p));
+        if (session.EsBot) session.Send(ServerMessages.CharMsgStatus(p, p, _loop.Tick));
         Say($"¡Felicidades! Has ascendido a {FactionTitle(p)}.");
     }
 
@@ -8294,6 +8297,7 @@ public sealed partial class PacketDispatcher
             // VB6 HandleRequestMiniStats (Protocol.bas:1927) replies with WriteMiniStats and nothing else:
             // class/race/level/kills already ride in that packet, so the ConsoleMsg echo is spurious.
             session.Send(ServerMessages.MiniStats(p));
+            if (session.EsBot) session.Send(ServerMessages.CharMsgStatus(p, p, _loop.Tick));
         });
     }
 
@@ -8398,6 +8402,7 @@ public sealed partial class PacketDispatcher
         // status), no re-mandando el CharacterChange entero — que además ni siquiera lleva el status.
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
         session.Send(ServerMessages.UpdateUserStats(p));
+        if (session.EsBot) session.Send(ServerMessages.CharMsgStatus(p, p, _loop.Tick));
         // Y MEDITANDO, EL AURA DEL BANDO NUEVO: la nueva prendida y la vieja apagada, al área.
         if (p.Meditating && (short)ParticleToLevel(p) is var auraNueva && auraNueva != auraAntes)
         {
@@ -8480,22 +8485,24 @@ public sealed partial class PacketDispatcher
     // comentario nombraba como parte del patrón, hacía rato que leía el target de verdad. Sin usuarios, se fue.)
 
     /// <summary>Títulos por rango según las tablas de cada facción.</summary>
-    private static string FactionTitle(Player p)
+    private static string FactionTitle(Player p) => NombreDeRango(p.FactionStatus, p.FactionRank);
+
+    internal static string NombreDeRango(byte bando, int rango)
     {
-        if (p.IsArmada) return p.FactionRank switch
+        if (bando == Player.StatusArmada) return rango switch
         {
             <= 1 => "Legionario", 2 => "Soldado Real", 3 => "Teniente Real", 4 => "Comandante Real",
             5 => "General Real", 6 => "Elite Real", 7 => "Guardián del Bien", 8 => "Caballero Imperial",
             9 => "Guardia Imperial", _ => "Justiciero",
         };
-        if (p.IsCaos) return p.FactionRank switch
+        if (bando == Player.StatusCaos) return rango switch
         {
             <= 1 => "Miembro de las Hordas", 2 => "Guerrero del Caos", 3 => "Teniente del Caos",
             4 => "Comandante del Caos", 5 => "General del Caos", 6 => "Elite del Caos",
             7 => "Asolador de las Sombras", 8 => "Caballero Negro", 9 => "Emisario de las Sombras",
             _ => "Avatar del Apocalipsis",
         };
-        if (p.IsMilicia) return p.FactionRank switch    // la Milicia topa en rango 7
+        if (bando == Player.StatusMilicia) return rango switch    // la Milicia topa en rango 7
         {
             <= 1 => "Milicia de Reserva", 2 => "Miliciano", 3 => "Miliciano Elite",
             4 => "Soldado de la República", 5 => "Soldado Raso", 6 => "Soldado Elite",

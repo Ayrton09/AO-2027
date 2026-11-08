@@ -609,7 +609,7 @@ public sealed partial class Bot
         _transporte = transporte;
         OlvidarLaCharla();
 
-        transporte.VioAtaqueACriatura += sentidos.ObservarAtaqueACriatura;
+        transporte.VioCombateConCriatura += sentidos.ObservarAtaqueACriatura;
         transporte.RecibioAtaqueDeJugador += sentidos.ObservarAgresionDeJugador;
         transporte.Recibido += p =>
         {
@@ -1604,7 +1604,8 @@ public sealed partial class Bot
         bool hayLugar = sentidos.RanurasOcupadas().Count < GameLimits.MaxInventorySlots;
         bool vaPorEquipo = viajaPorGustos && !enApuro && hayLugar && PlataParaGustos(sentidos) >= OroParaMirarEquipo;
         // Y EL QUE CASTEA APRENDE HECHIZOS NUEVOS, que es su forma de mejorar: el arma no le sirve de mucho.
-        bool vaPorHechizo = viajaPorGustos && !enApuro && hayLugar && sentidos.UsaMana && PlataParaGustos(sentidos) >= OroParaMirarHechizos;
+        bool vaPorHechizo = viajaPorGustos && PiezaDeLaMeta is null && !enApuro && hayLugar && sentidos.UsaMana
+            && PlataParaGustos(sentidos) >= OroParaMirarHechizos;
         // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
         bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
@@ -1680,6 +1681,9 @@ public sealed partial class Bot
         bool MapaAtiende(int mapa) => ElMercaderLeVende(_entorno.Ini, _entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa);
         // Y SI LA COMPRA NECESITA LO DE LA BÓVEDA, SÓLO DONDE HAY BANQUERO: ver `NecesitaElBanco`.
         bool conLaDelBanco = NecesitaElBanco(LoQueSePuedeRetirar(sentidos), sentidos.Oro, Bolsillo(sentidos), soloGustos);
+        if (vaPorEquipo && PiezaDeLaMeta is { } pieza && _entorno.Datos.Obj(pieza) is { } o
+            && LoQueSePuedeRetirar(sentidos) is > 0 and var guardado)
+            conLaDelBanco |= o.Value <= PlataParaElEquipo(sentidos) && o.Value > PlataParaElEquipo(sentidos) - guardado;
         bool MapaDondeCompra(int mapa) => MapaAtiende(mapa) && (!conLaDelBanco || TieneBanquero(mapa));
         // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
         void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)
@@ -5381,8 +5385,9 @@ public sealed partial class Bot
     /// mientras viaja no caza, la plata no le crecía nunca. Medido en `seguir1`: Ciro, nivel 13 con 2445 monedas, doce
     /// minutos entre la cuna y el Herrero Rinkel —Armadura de Cuero a 3000— sin matar una criatura.</summary>
     private bool ValeElViajePorEso(SentidosDelBot sentidos, short obj, double plata) =>
-        MejoraLoQueTiene(sentidos, obj) && LoPuedePagar(_entorno.Datos.Obj(obj)?.Value ?? int.MaxValue, plata)
-        && _entorno.Datos.Obj(obj) is { } o && CuestaComoParaElViaje(o.Value, EsArma(o));
+        (PiezaDeLaMeta is null || PiezaDeLaMeta == obj) && MejoraLoQueTiene(sentidos, obj)
+        && _entorno.Datos.Obj(obj) is { } o && LoPuedePagar(o.Value, plata)
+        && (PiezaDeLaMeta == obj || CuestaComoParaElViaje(o.Value, EsArma(o)));
 
     /// <summary>
     /// ¿CUESTA COMO PARA VIAJAR A COMPRARLO? Desde <see cref="PrecioQueValeElViaje"/>. Lo más barato se compra si pasa por el mercader
@@ -5477,7 +5482,8 @@ public sealed partial class Bot
             if (_acompana is not null) return false;
             int tengo = LoMejorQueTiene(sentidos, esDeEso);
             int Vale(short obj) =>
-                _entorno.Datos.Obj(obj) is { } o && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel) && ValorDeCombate(o) > tengo
+                (PiezaDeLaMeta is null || PiezaDeLaMeta == obj) && _entorno.Datos.Obj(obj) is { } o
+                    && esDeEso(o) && LoPuedeUsar(o, sentidos.Nivel) && ValorDeCombate(o) > tengo
                     ? ValorDeCombate(o) : 0;
             if (sentidos.LoMejorDeLaVitrina(Vale, plata) is not { } oferta) continue;
             int teniaAntes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
@@ -5508,7 +5514,7 @@ public sealed partial class Bot
     /// </summary>
     private async Task<bool> ComprarPergaminoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
-        if (_acompana is not null) return false;
+        if (_acompana is not null || PiezaDeLaMeta is not null) return false;
         double plata = PlataParaGustos(sentidos);
         if (plata <= 0 || !sentidos.UsaMana || !sentidos.Comerciando) return false;
         int Pega(short obj) => LeFaltaElPergamino(sentidos, obj) && QueEnsena(obj) is { } h ? ValorDelPergamino(h) : 0;
@@ -6766,6 +6772,12 @@ public sealed partial class Bot
             {
                 Charlar(transporte, sentidos);
                 if (cortaSi()) return true;
+                if (_acompana is { } grupo && sentidos.PersonaLlamada(grupo.Quien) is { } companera
+                    && CurarACompanero(transporte, sentidos, companera))
+                {
+                    await Task.Delay(UnPaso(), ct);
+                    continue;
+                }
             }
             int dx = quien.X - x, dy = quien.Y - y;
             int pasos = Math.Abs(dx) + Math.Abs(dy);
@@ -6797,6 +6809,11 @@ public sealed partial class Bot
 
             // EL QUE TIRA CON ARCO, DE LEJOS: ver `TiraConArco`.
             bool tira = Math.Abs(dx) <= AlcanceArcoX && Math.Abs(dy) <= AlcanceArcoY && ConElArcoListo(sentidos);
+            if (tira && cortaSi is not null)
+            {
+                if (await TomarDistanciaConArcoAsync(transporte, sentidos, quien, ct, cortaSi)) continue;
+                if (cortaSi()) return true;
+            }
             // Y CON EL ARCO PUESTO SIN PODER TIRAR, TAMPOCO PEGA: el servidor no deja pegar con el arco (ver `EsArma`). Se aleja hasta
             // que vuelva la energía del tiro.
             if (!tira && pasos == 1 && ArmaQueNoPegaPuesta(sentidos, _entorno.Datos) is not null)
@@ -7207,6 +7224,7 @@ public sealed partial class Bot
     private async Task<bool> AlejarseAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                            SentidosDelBot.Visible de, Task cerrada, CancellationToken ct)
     {
+        AvisarACompanero(transporte, "me alejo un toque", ref _proximoAvisoDeRetirada);
         var donde = sentidos.Posicion;
         var camino = _entorno.Mapas.LejosDe(sentidos.Mapa, donde, (de.X, de.Y), PasosDeHuida, sentidos.BaldosasOcupadas());
         // ACORRALADO DE VERDAD: ninguna baldosa a la que se llegue queda más lejos. Se espera un paso y la vuelta que viene lo vuelve

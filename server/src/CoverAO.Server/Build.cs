@@ -26,7 +26,7 @@ public enum SelloDelMundo
 /// </summary>
 public static class Build
 {
-    public const string Version = "1.0.6";
+    public const string Version = "1.0.7";
 
     /// <summary>El archivo del sello, adentro de <c>data/</c> para que viaje con el mundo y no con el programa.</summary>
     public const string ArchivoDelSello = "version.txt";

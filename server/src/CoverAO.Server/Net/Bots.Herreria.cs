@@ -56,22 +56,28 @@ public sealed partial class Bot
         return zonas;
     }
 
-    private bool HayLugarParaProducir(SentidosDelBot s) =>
-        SusSubastasConocidas(s) < SubastasPropias && ProduccionPendiente(s) <
-        (_clase == ClaseMinero ? LingotesPorLote * SubastasPropias : SubastasPropias);
+    private bool HayLugarParaProducir(SentidosDelBot s)
+    {
+        int limite = _clase == ClaseMinero ? LingotesPorLote * SubastasPropias : SubastasPropias;
+        return SusSubastasConocidas(s) < SubastasPropias && s.RanurasOcupadas().Count < GameLimits.MaxInventorySlots
+            && ProduccionPendiente(s, listaParaVender: true) < limite && ProduccionPendiente(s) < limite * 2;
+    }
 
-    private int ProduccionPendiente(SentidosDelBot s) => s.RanurasOcupadas().Select(s.QueHayEn).Distinct()
-        .Where(EsProduccionMetalurgica).Sum(o => _clase == ClaseMinero ? s.CuantoTiene(i => i == o)
+    private int ProduccionPendiente(SentidosDelBot s, bool listaParaVender = false) => s.RanurasOcupadas().Select(s.QueHayEn).Distinct()
+        .Where(o => EsProduccionMetalurgica(o) && (!listaParaVender || SePuedeRepublicar(o))).Sum(o => _clase == ClaseMinero ? s.CuantoTiene(i => i == o)
             : Math.Max(0, s.CuantoTiene(i => i == o) - (ReservaEquipoPropio(s, o) ? 1 : 0)));
 
-    private short MineralQueBusca(SentidosDelBot s)
+    internal short MineralQueBusca(SentidosDelBot s) => MineralesPorPrioridad(s).FirstOrDefault()?.Index ?? 0;
+
+    private IEnumerable<ObjInfo> MineralesPorPrioridad(SentidosDelBot s)
     {
-        // Se reparten las reservas entre hierro, plata y oro: el herrero necesita los tres.
+        // La demanda mueve la prioridad como máximo medio lote; el herrero sigue necesitando los tres metales.
         return _entorno.Datos.Objects.Values.Where(o => o.IsMineral && Oficios.PuedeFundir(o.MinSkill, s.Skill(GameLimits.SkillMineria), _clase))
             .OrderBy(o => s.CuantoTiene(i => i == o.LingoteIndex) +
                           s.CuantoTiene(i => i == o.Index) / Oficios.MineralesPorLingote(o.Index) +
-                          s.Subastas.Where(f => f.Vendedor.Equals(Nombre, StringComparison.OrdinalIgnoreCase) && f.Objeto == o.LingoteIndex).Sum(f => (int)f.Cantidad))
-            .ThenBy(o => o.MinSkill).Select(o => o.Index).FirstOrDefault();
+                          s.Subastas.Where(f => f.Vendedor.Equals(Nombre, StringComparison.OrdinalIgnoreCase) && f.Objeto == o.LingoteIndex).Sum(f => (int)f.Cantidad)
+                          - Math.Clamp(_entorno.DemandaDeSubasta((short)o.LingoteIndex), -5, 5) * (LingotesPorLote / 10))
+            .ThenBy(o => o.MinSkill);
     }
 
     /// <summary>Mientras aprende Minería puede picar hierro aunque todavía no sepa fundirlo.</summary>
@@ -86,9 +92,8 @@ public sealed partial class Bot
             short preferido = mineral;
             var faena = MapaParaSuFaena(s);
             var cruza = CruzaSinPeligro(s);
-            var opciones = _entorno.Datos.Objects.Values.Where(o => o.IsMineral &&
-                (o.Index == GameLimits.OreIronObj || Oficios.PuedeFundir(o.MinSkill, s.Skill(GameLimits.SkillMineria), _clase)))
-                .OrderBy(o => o.Index != preferido).ThenBy(o => o.MinSkill);
+            var opciones = MineralesPorPrioridad(s).Concat(_entorno.Datos.Obj(GameLimits.OreIronObj) is { } hierro ? [hierro] : [])
+                .DistinctBy(o => o.Index);
             foreach (var o in opciones)
             {
                 if (_entorno.Mapas.DondeSeTrabaja(s.Mapa, false, i => _entorno.Datos.Obj(i)?.MineralIndex == o.Index,
@@ -155,15 +160,17 @@ public sealed partial class Bot
     private int _mercadosSinMaterial;
     private const int MercadosAntesDeImprovisar = 3;
 
-    private short? RecetaDeHerreria(SentidosDelBot s)
+    internal short? RecetaDeHerreria(SentidosDelBot s)
     {
         int skill = s.Skill(GameLimits.SkillHerreria);
         var posibles = _entorno.Datos.BlacksmithRecipes.Select(i => _entorno.Datos.Obj(i)!)
-            .Where(o => o.SkillBlacksmith <= skill && ValorDeMercado(_entorno.Datos, o.Index) > 0 && !_noSeVendio.Contains(o.Index));
+            .Where(o => o.SkillBlacksmith <= skill && ValorDeMercado(_entorno.Datos, o.Index) > 0 && SePuedeRepublicar(o.Index));
         if (_recetaDeHerreria is { } elegida && posibles.Any(o => o.Index == elegida)) return elegida;
         // Prioriza una receta que pueda completar con lo que tiene. Al terminar rota entre las menos abastecidas.
-        var receta = posibles.OrderBy(o => _recetasFabricadas.Contains(o.Index))
+        var receta = posibles.OrderBy(o => _entorno.DemandaDeSubasta(o.Index) < 0)
+            .ThenBy(o => _recetasFabricadas.Contains(o.Index))
             .ThenBy(o => s.CuantoTiene(i => i == o.Index) + s.Subastas.Count(f => f.Objeto == o.Index))
+            .ThenByDescending(o => _entorno.DemandaDeSubasta(o.Index))
             .ThenBy(o => Oficios.Herreria.Materiales(o).Sum(m => (long)Math.Max(0, m.PorUnidad - s.CuantoTiene(i => i == m.Obj)) * (_entorno.Datos.Obj(m.Obj)?.Value ?? 0)))
             .ThenBy(o => o.Index).FirstOrDefault();
         _mercadosSinMaterial = 0;
@@ -181,9 +188,10 @@ public sealed partial class Bot
         var reservado = regla.Materiales(encargo).GroupBy(m => m.Obj).ToDictionary(g => g.Key, g => g.Sum(m => m.PorUnidad));
         int Libre(int obj) => Math.Max(0, tiene(obj) - reservado.GetValueOrDefault(obj));
         return recetas.Select(i => _entorno.Datos.Obj(i))
-            .Where(o => o is not null && o.Index != r && o.SkillBlacksmith <= skill && !_noSeVendio.Contains(o.Index)
+            .Where(o => o is not null && o.Index != r && o.SkillBlacksmith <= skill && SePuedeRepublicar(o.Index)
                 && ValorDeMercado(_entorno.Datos, o.Index) > 0 && CuantasAlcanzan(_entorno.Datos, o.Index, regla, Libre) > 0)
-            .OrderBy(o => _recetasFabricadas.Contains(o!.Index)).ThenBy(o => o!.Index).FirstOrDefault()?.Index;
+            .OrderBy(o => _entorno.DemandaDeSubasta(o!.Index) < 0)
+            .ThenBy(o => _recetasFabricadas.Contains(o!.Index)).ThenBy(o => o!.Index).FirstOrDefault()?.Index;
     }
 
     private void AnotarMaterialEnElMercado(SentidosDelBot s, int plata)
@@ -216,8 +224,9 @@ public sealed partial class Bot
     private async Task<bool> MercadoDelOficioAsync(TransporteDeBot t, SentidosDelBot s, Task cerrada, CancellationToken ct)
     {
         if ((!EsFabricanteMetalurgico && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
+        AnotarLoQueDejoLaSubasta(s);
         bool vende = s.RanurasOcupadas().Select(s.QueHayEn).Distinct().Any(o => EsProduccionMetalurgica(o)
-            && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && !_noSeVendio.Contains(o));
+            && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && SePuedeRepublicar(o));
         bool compra = PlataParaElEquipo(s) >= PlataParaMirarLaSubasta && (_clase == ClaseHerrero
             ? HayLugarParaProducir(s) && RecetaDeHerreria(s) is { } receta && CuantasAlcanzan(_entorno.Datos, receta, Oficios.Herreria, o => s.CuantoTiene(i => i == o)) == 0
             : !EsFabricanteMetalurgico && BuscaMejorasEnSubasta);
@@ -237,7 +246,7 @@ public sealed partial class Bot
     }
 
     private long DepositoDeLaProduccion(SentidosDelBot s) => s.RanurasOcupadas().Select(s.QueHayEn).Distinct()
-        .Where(o => EsProduccionMetalurgica(o) && !_noSeVendio.Contains(o)).Take(SubastasPropias).Sum(o => {
+        .Where(o => EsProduccionMetalurgica(o) && SePuedeRepublicar(o)).Take(SubastasPropias).Sum(o => {
             int cantidad = CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o));
             int valor = (int)Math.Min(int.MaxValue, (long)ValorDeMercado(_entorno.Datos, o) * cantidad);
             var (inicial, final) = PrecioDeSubasta(valor);

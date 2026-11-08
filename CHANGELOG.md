@@ -3,6 +3,15 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.7 (2026-11-08)
+Compañeros con roles de combate, oficios que siguen la demanda y metas que se completan en partida.
+
+- El clérigo consulta tu ficha y puede curarte si tiene maná de sobra. El cazador con arco toma distancia para disparar y el guerrero puede interceptar una criatura que te persigue.
+- Los compañeros avisan por susurro cuando les falta maná para curarte o cuando deciden retirarse.
+- Los mineros y herreros ajustan sus decisiones según las ventas y los vencimientos recientes en subastas.
+- Al nivel 50, la meta de equipo se completa al ponerse la pieza elegida. La de facción se completa cuando el servidor confirma el ascenso.
+
+
 ## 1.0.6 (2026-11-07)
 Mejoras en la charla, el acompañamiento y la progresión de los bots.
 

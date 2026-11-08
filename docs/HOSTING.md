@@ -202,9 +202,17 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 
 **Acompañantes**. Una vez que el bot te está siguiendo, podés decirle `espera` y `segui` por susurro o en la charla local.
 Ayuda contra la criatura que te vio atacar, si puede llegar y las reglas del juego se lo permiten.
+El clérigo mira tu ficha y puede curarte si tiene un hechizo y maná de sobra. El cazador que lleva arco y flechas
+busca distancia sin alejarse del grupo. El guerrero puede interceptar una criatura que te persigue. El bot avisa
+por susurro cuando le falta maná para curarte o decide retirarse.
 
 **Metas al nivel 50**. Preguntales `tu meta` para ver qué persiguen y su avance. El servidor guarda el objetivo y los hitos
-en `data/bots-metas.json`. El archivo forma parte de los datos de la partida.
+en `data/bots-metas.json`. El archivo forma parte de los datos de la partida. La meta de equipo termina al equipar
+la pieza elegida. La de facción termina cuando el enlistador confirma el ascenso.
+
+**Mercado de los oficios**. Los mineros ajustan la prioridad del mineral y los herreros la de sus recetas según
+ventas y vencimientos recientes. El servidor conserva en memoria hasta ocho cierres por producto y toma en cuenta
+los de las últimas 48 horas. Tras reiniciar, la muestra vuelve a llenarse a medida que cierran las subastas.
 
 **Ser GM**: primero creá el personaje en tu cuenta. Después, en `[INIT]` poné `Dioses=1` y agregá la sección:
 

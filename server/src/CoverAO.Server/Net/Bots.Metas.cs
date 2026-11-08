@@ -6,7 +6,8 @@ namespace CoverAO.Server.Net;
 
 internal enum RumboDeBot { Equipo, Faccion, Abastecer }
 
-internal readonly record struct MetaDeBot(RumboDeBot Rumbo, int Objetivo, int Progreso, byte Faccion = 0)
+internal readonly record struct MetaDeBot(RumboDeBot Rumbo, int Objetivo, int Progreso, byte Faccion = 0,
+                                           short Pieza = 0, bool Confirmada = false)
 {
     public bool Cumplida => Progreso >= Objetivo;
 }
@@ -106,6 +107,10 @@ public sealed partial class Bot
 {
     private MetaDeBot? _metaDeNivel50;
     private int _lotesPendientesDeLaMeta;
+    private long _proximaBusquedaDePieza;
+
+    private short? PiezaDeLaMeta => _metaDeNivel50 is { Rumbo: RumboDeBot.Equipo, Confirmada: false, Pieza: > 0 } meta
+        ? meta.Pieza : null;
 
     private byte FaccionDeLaMeta() => _miBando switch
     {
@@ -124,8 +129,10 @@ public sealed partial class Bot
         {
             if (s.MisBajas is not { } b) return null;
             int bajas = BajasParaSuBando(_miBando, b);
-            foreach (int siguiente in RangosDeFaccion.Bajas(faccion))
-                if (siguiente > bajas) return new(RumboDeBot.Faccion, siguiente, bajas, faccion);
+            byte? rango = _miBando == faccion ? s.RangoEn(faccion) : (byte)0;
+            if (rango is null) return null;
+            int siguiente = RangosDeFaccion.ParaRango(faccion, rango.Value + 1);
+            if (siguiente != int.MaxValue) return new(RumboDeBot.Faccion, siguiente, Math.Min(siguiente, bajas), faccion);
         }
         return new(RumboDeBot.Equipo, 50_000, 0);
     }
@@ -146,14 +153,49 @@ public sealed partial class Bot
             if (ElegirMetaDeNivel50(s) is { } nueva) GuardarAvance(nueva);
             return;
         }
-        if (_metaDeNivel50 is not { Cumplida: false } meta) return;
+        if (_metaDeNivel50 is not { } meta) return;
         int progreso = meta.Rumbo switch
         {
             RumboDeBot.Equipo => (int)Math.Min(meta.Objetivo, ((long)s.Oro + Math.Max(0, s.Banco)) / 5_000 * 5_000),
             RumboDeBot.Faccion when s.MisBajas is { } b => Math.Min(meta.Objetivo, BajasParaSuBando(_miBando, b)),
             _ => meta.Progreso,
         };
-        if (progreso > meta.Progreso) GuardarAvance(meta with { Progreso = progreso });
+        var actual = meta with { Progreso = Math.Max(progreso, meta.Progreso) };
+        if (actual.Rumbo == RumboDeBot.Equipo && !actual.Confirmada)
+            actual = ActualizarPiezaDeLaMeta(s, actual);
+        if (actual.Rumbo == RumboDeBot.Faccion && s.RangoEn(actual.Faccion) is { } rango)
+        {
+            int objetivo = RangosDeFaccion.Bajas(actual.Faccion).IndexOf(actual.Objetivo) + 1;
+            actual = actual with { Confirmada = rango >= objetivo };
+        }
+        if (actual != meta) GuardarAvance(actual);
+    }
+
+    private MetaDeBot ActualizarPiezaDeLaMeta(SentidosDelBot s, MetaDeBot meta)
+    {
+        if (meta.Pieza > 0 && s.RanurasOcupadas().Any(r => s.QueHayEn(r) == meta.Pieza && s.EstaPuesto(r)))
+            return meta with { Confirmada = true };
+        var categorias = SuArcoYSusFlechas(s) is null ? QueSePone : QueSePoneConElArco;
+        if (_entorno.Datos.Obj(meta.Pieza) is { } pieza && categorias.FirstOrDefault(f => f(pieza)) is { } categoria
+            && LoPuedeUsar(pieza, s.Nivel) && !_noSeLoPone.Contains(meta.Pieza)
+            && (MejoraLoQueTiene(s, meta.Pieza) || (MejorParaPoner(s, categoria) is { } r && s.QueHayEn(r) == meta.Pieza))) return meta;
+        if (!s.Ubicado || !s.Vivo || _acompana is not null) return meta;
+        if (Environment.TickCount64 < _proximaBusquedaDePieza) return meta with { Pieza = 0 };
+        _proximaBusquedaDePieza = Environment.TickCount64 + 60_000;
+
+        int presupuesto = Math.Max(meta.Objetivo, PlataParaElEquipo(s));
+        bool Sirve(ObjInfo o) => !o.IsNewbie && o.Value > 0 && o.Value <= presupuesto && !_noSeLoPone.Contains(o.Index)
+            && categorias.Any(f => f(o)) && MejoraLoQueTiene(s, o.Index);
+        IEnumerable<ObjInfo> Piezas(int ficha) => _entorno.Datos.Npc(ficha)?.StockItems
+            ?.Select(i => _entorno.Datos.Obj(i.ObjIndex)).OfType<ObjInfo>().Where(Sirve) ?? [];
+
+        short Elegir(int ficha) => Piezas(ficha).OrderByDescending(ValorDeCombate).ThenBy(o => o.Value).FirstOrDefault()?.Index ?? 0;
+        if (LeVendenAca(s.Mapa) && s.MasCercano(f => Piezas(f).Any()) is { } cerca)
+            return meta with { Pieza = Elegir(cerca.Quien.FichaNpc) };
+        if (_entorno.Mapas.DondeHay(s.Mapa, s.Posicion, f => Piezas(f).Any(), LeVendenAca, Pisable(s)) is { } lugar
+            && _entorno.Datos.MapSpawns.TryGetValue(lugar.Mapa, out var nacen))
+            return meta with { Pieza = Elegir(nacen.FirstOrDefault(n => n.X == lugar.X && n.Y == lugar.Y && Piezas(n.NpcIndex).Any()).NpcIndex) };
+        return meta with { Pieza = 0 };
     }
 
     private void GuardarAvance(MetaDeBot meta)
@@ -178,16 +220,24 @@ public sealed partial class Bot
             GuardarAvance(meta with { Progreso = (int)Math.Min(meta.Objetivo, (long)meta.Progreso + lotes) });
     }
 
-    private bool GuardaParaSuMeta => _metaDeNivel50 is { Rumbo: RumboDeBot.Equipo or RumboDeBot.Abastecer, Cumplida: false };
+    private bool GuardaParaSuMeta => _metaDeNivel50 is { Rumbo: RumboDeBot.Equipo or RumboDeBot.Abastecer, Cumplida: false, Confirmada: false };
     private int PlataParaGustos(SentidosDelBot s) => GuardaParaSuMeta ? 0 : PlataParaElEquipo(s);
 
-    private string? ContarSuMeta() => _metaDeNivel50 switch
+    private string? ContarSuMeta(SentidosDelBot s) => _metaDeNivel50 switch
     {
+        { Rumbo: RumboDeBot.Equipo, Confirmada: true } m => $"ya me equipe: {NombreDeLaPieza(m.Pieza)}",
+        { Rumbo: RumboDeBot.Equipo, Cumplida: true, Pieza: > 0 } m => $"ya junte el oro, voy por {NombreDeLaPieza(m.Pieza)}",
         { Rumbo: RumboDeBot.Equipo, Cumplida: true } => "ya junte el oro, ahora busco una mejora de equipo",
+        { Rumbo: RumboDeBot.Equipo, Pieza: > 0 } m => $"junto oro para {NombreDeLaPieza(m.Pieza)}, llevo {m.Progreso} de {m.Objetivo}",
         { Rumbo: RumboDeBot.Equipo } m => $"junto oro para equipo, lleve {m.Progreso} de {m.Objetivo}",
-        { Rumbo: RumboDeBot.Faccion, Cumplida: true } => "ya alcance la meta de bajas para mi rango",
+        { Rumbo: RumboDeBot.Faccion, Confirmada: true } m =>
+            $"ya me ascendieron a {PacketDispatcher.NombreDeRango(m.Faccion, s.RangoEn(m.Faccion)
+                ?? (byte)(RangosDeFaccion.Bajas(m.Faccion).IndexOf(m.Objetivo) + 1))}",
+        { Rumbo: RumboDeBot.Faccion, Cumplida: true } => "ya tengo las bajas, me falta reclamar el rango",
         { Rumbo: RumboDeBot.Faccion } m => $"busco mi proximo rango, llevo {m.Progreso} de {m.Objetivo} bajas",
         { Rumbo: RumboDeBot.Abastecer } m => $"llevo {m.Progreso} de {m.Objetivo} lotes publicados en subastas",
         _ => null,
     };
+
+    private string NombreDeLaPieza(short pieza) => _entorno.Datos.Obj(pieza)?.Name ?? "mi equipo";
 }

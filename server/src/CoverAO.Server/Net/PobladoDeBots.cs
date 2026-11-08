@@ -17,6 +17,7 @@ public sealed class EntornoDeBots
     /// después no se toca.</summary>
     public Navegante Mapas { get; }
     internal MetasDeBots? Metas { get; init; }
+    internal Func<short, int> DemandaDeSubasta { get; init; }
     /// <summary>El hogar de un personaje conectado, por su nombre (<see cref="PacketDispatcher.HogarDe"/>): lo que su dueño sabe
     /// porque lo eligió, y el bot no recibe por el protocolo. Null si no se sabe.</summary>
     public Func<string, byte?> HogarDe { get; }
@@ -31,6 +32,7 @@ public sealed class EntornoDeBots
         Func<string, byte?>? hogarDe = null)
     {
         HogarDe = hogarDe ?? (nombre => dispatcher?.HogarDe(nombre));
+        DemandaDeSubasta = objeto => dispatcher?.DemandaDeSubasta(objeto) ?? 0;
         Dispatcher = dispatcher;
         Ini = ini;
         AuthTimeoutMs = authTimeoutMs;

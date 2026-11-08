@@ -233,7 +233,7 @@ public sealed partial class Bot
             case DeQueHabla.Clase:
                 return $"soy de clase {GameLimits.NombreDeClase(_clase).ToLowerInvariant()}";
             case DeQueHabla.Meta:
-                return ContarSuMeta() ?? "por ahora sigo mejorando el personaje";
+                return ContarSuMeta(sentidos) ?? "por ahora sigo mejorando el personaje";
             case DeQueHabla.QueHace:
                 if (!sentidos.Vivo) return "estoy buscando donde revivir";
                 if (sentidos.Meditando) return "estoy meditando un toque";

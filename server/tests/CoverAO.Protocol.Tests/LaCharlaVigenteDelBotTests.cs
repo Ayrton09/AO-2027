@@ -361,6 +361,184 @@ public sealed class LaCharlaVigenteDelBotTests
         Assert.Empty(await RecibirTodo(transporte));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ElClerigoMiraLaFichaYUsaLaCuraNormalConManaDeReserva(bool tieneMana)
+    {
+        var (bot, sentidos, transporte) = Armar();
+        Campo("_clase").SetValue(bot, GameLimits.ClaseClerigo);
+        Invitar(bot, sentidos, transporte, "Ana");
+        var clerigo = new Player
+        {
+            CharIndex = 500, Name = "Bruma", Account = "bruma_qa", Level = 20,
+            Hp = 200, MaxHp = 200, Stamina = 300, MaxStamina = 300, Mana = tieneMana ? 500 : 0, MaxMana = 500,
+        };
+        var herida = new Player
+        {
+            CharIndex = 501, Name = "Ana", Account = "ana_qa", Level = 20, Hp = 40, MaxHp = 100,
+            Pos = new WorldPos(20, 75, 56),
+        };
+        sentidos.Recibir(ServerMessages.UpdateUserStats(clerigo));
+        sentidos.Recibir(ServerMessages.CharStatus(501, Player.StatusCiudadano));
+        var hechizo = Datos.Value.Spells.Values.First(h => h.IsHeal && h.Target is 1 or 3 && h.ManaCost is > 0 and <= 250);
+        sentidos.Recibir(ServerMessages.ChangeSpellSlot(1, hechizo.Index));
+        bool IntentaCurar() => (bool)Metodo("CurarACompanero").Invoke(bot,
+            [transporte, sentidos, sentidos.PersonaLlamada("Ana")!.Value])!;
+
+        Assert.False(IntentaCurar());
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var buf = new byte[4096];
+        async Task<ClientPacketId> Siguiente() => await transporte.ReceiveAsync(buf, tiempo.Token) > 0
+            ? (ClientPacketId)(buf[0] ^ transporte.Clave) : throw new InvalidOperationException("El bot no mandó el paquete.");
+        Assert.Equal(ClientPacketId.LeftClick, await Siguiente());
+        Assert.Equal(55, buf[2] ^ transporte.Clave);
+
+        sentidos.Recibir(ServerMessages.CharMsgStatus(herida, clerigo, 0));
+        Assert.Equal(tieneMana, IntentaCurar());
+        if (tieneMana)
+        {
+            Assert.Equal(ClientPacketId.CastSpell, await Siguiente());
+            Assert.Equal(ClientPacketId.WorkLeftClick, await Siguiente());
+            Assert.Equal(75, buf[1] ^ transporte.Clave);
+            Assert.Equal(55, buf[2] ^ transporte.Clave);
+        }
+        else Assert.Equal(ClientPacketId.Whisper, await Siguiente());
+        Assert.False(IntentaCurar());
+        Assert.Empty(await RecibirTodo(transporte));
+    }
+
+    [Fact]
+    public async Task ElGuerreroInterceptaALaCriaturaQuePersigueASuCompanera()
+    {
+        var (bot, sentidos, transporte) = Armar();
+        Campo("_clase").SetValue(bot, GameLimits.ClaseGuerrero);
+        Invitar(bot, sentidos, transporte, "Ana");
+        var ficha = new NpcInfo(32_000, "Criatura", 1, 1, 3, 100, 0, 0, 0, 0, 0, 0, 0);
+        foreach (var (id, x) in new[] { ((short)510, (byte)74), ((short)511, (byte)76) })
+            sentidos.Recibir(ServerMessages.CharacterCreate(new Npc
+                { CharIndex = id, Template = ficha, Pos = new WorldPos(20, x, 55) }));
+        sentidos.ObservarAtaqueACriatura(501, 511, Environment.TickCount64);
+        sentidos.ObservarAtaqueACriatura(501, 510, Environment.TickCount64, persigue: true);
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var pelea = (Task<bool?>)Metodo("AcompanarAsync").Invoke(bot,
+            [transporte, sentidos, (Func<short, bool>)(_ => true), true, new TaskCompletionSource().Task, tiempo.Token])!;
+        try
+        {
+            var buf = new byte[4096];
+            Assert.Equal(2, await transporte.ReceiveAsync(buf, tiempo.Token));
+            Assert.Equal((byte)ClientPacketId.ChangeHeading, (byte)(buf[0] ^ transporte.Clave));
+            Assert.Equal(SentidosDelBot.RumboHacia(-1, 0), (byte)(buf[1] ^ transporte.Clave));
+            Assert.Equal(1, await transporte.ReceiveAsync(buf, tiempo.Token));
+            Assert.Equal((byte)ClientPacketId.attack, (byte)(buf[0] ^ transporte.Clave));
+            sentidos.Recibir(ServerMessages.ChatOverHead("espera", 501, (byte)Como.Charla));
+            Assert.True(await pelea.WaitAsync(tiempo.Token));
+        }
+        finally
+        {
+            tiempo.Cancel();
+            try { await pelea; } catch (OperationCanceledException) { }
+        }
+    }
+
+    [Fact]
+    public async Task LaPersecucionRealDelNpcLlegaAlBotPorLaColaDeLaSesion()
+    {
+        var (bot, sentidos, transporte) = Armar();
+        Invitar(bot, sentidos, transporte, "Ana");
+        var datos = Datos.Value;
+        var mundo = new World();
+        var ini = new ServerIni();
+        typeof(ServerIni).GetProperty(nameof(ServerIni.Bots))!.SetValue(ini, 1);
+        var leveling = new Leveling(datos.LevelExp);
+        using var almacen = AlmacenSqlite.EnMemoria();
+        using var db = new Persistence(almacen, leveling);
+        var dispatcher = new PacketDispatcher(mundo, new GameLoop(), db, datos, leveling);
+        var observador = new Player
+        {
+            CharIndex = 500, Name = "Bruma", Account = "bruma_qa", Hp = 100, MaxHp = 100,
+            // Ve el área, pero queda fuera del rectángulo más chico que el NPC usa para elegir a quién seguir.
+            Pos = new WorldPos(20, 75, 48),
+        };
+        var persona = new Player
+        {
+            CharIndex = 501, Name = "Ana", Account = "ana_qa", Hp = 100, MaxHp = 100,
+            Pos = new WorldPos(20, 75, 56),
+        };
+        var sesion = new ClientSession(transporte, dispatcher) { Player = observador };
+        observador.Connection = sesion;
+        mundo.Add(persona);
+        mundo.Add(observador);
+        var npc = new Npc
+        {
+            CharIndex = 510, Pos = new WorldPos(20, 74, 56), Hostile = true,
+            Template = datos.Npcs.Values.First(n => n.Hostile && n.Attackable && n.Spells is not { Count: > 0 }),
+        };
+        mundo.AddNpc(npc);
+        sentidos.Recibir(ServerMessages.CharacterCreate(observador));
+        sentidos.Recibir(ServerMessages.CharacterCreate(npc));
+        var vista = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        transporte.VioCombateConCriatura += (quien, criatura, cuando, persigue) =>
+        {
+            sentidos.ObservarAtaqueACriatura(quien, criatura, cuando, persigue);
+            if (persigue) vista.TrySetResult();
+        };
+        try
+        {
+            var sistema = new NpcSystem(mundo, datos, ini: ini);
+            typeof(NpcSystem).GetMethod("NpcIrUsuarioCercano", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(sistema, [npc]);
+            await vista.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(npc.CharIndex, sentidos.ObjetivoDeLaCompanera(8_000, amenaza: true));
+            Assert.Null(sentidos.ObjetivoDeLaCompanera(8_000));
+        }
+        finally
+        {
+            sesion.Player = null;
+            sesion.Close("fin");
+        }
+    }
+
+    [Fact]
+    public async Task ElArqueroTomaDistanciaAntesDeDispararSinAbandonarALaCompanera()
+    {
+        var (bot, sentidos, transporte) = Armar();
+        Campo("_clase").SetValue(bot, GameLimits.ClaseCazador);
+        Invitar(bot, sentidos, transporte, "Ana");
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(1, 478, 1, true, 0, 1));
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(2, 480, 20, true, 0, 1));
+        var ficha = new NpcInfo(32_000, "Criatura", 1, 1, 3, 100, 0, 0, 0, 0, 0, 0, 0);
+        sentidos.Recibir(ServerMessages.CharacterCreate(new Npc
+            { CharIndex = 510, Template = ficha, Pos = new WorldPos(20, 74, 55) }));
+        sentidos.ObservarAtaqueACriatura(501, 510, Environment.TickCount64);
+        using var tiempo = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+        var pelea = (Task<bool?>)Metodo("AcompanarAsync").Invoke(bot,
+            [transporte, sentidos, (Func<short, bool>)(_ => true), true, new TaskCompletionSource().Task, tiempo.Token])!;
+        try
+        {
+            var buf = new byte[4096];
+            Assert.Equal(2, await transporte.ReceiveAsync(buf, tiempo.Token));
+            Assert.Equal((byte)ClientPacketId.Walk, (byte)(buf[0] ^ transporte.Clave));
+            var (dx, dy) = SentidosDelBot.Paso((byte)(buf[1] ^ transporte.Clave));
+            Assert.True(Math.Abs(75 + dx - 74) + Math.Abs(dy) > 1);
+            Assert.True(Math.Abs(dx) + Math.Abs(55 + dy - 56) <= Bot.RadioDeAyuda);
+            int n;
+            do { n = await transporte.ReceiveAsync(buf, tiempo.Token); }
+            while (n == 2 && (byte)(buf[0] ^ transporte.Clave) == (byte)ClientPacketId.Walk);
+            Assert.Equal(4, n);
+            Assert.Equal((byte)ClientPacketId.WorkLeftClick, (byte)(buf[0] ^ transporte.Clave));
+            Assert.Equal(74, buf[1] ^ transporte.Clave);
+            Assert.Equal(GameLimits.SkillProyectiles, buf[3] ^ transporte.Clave);
+            sentidos.Recibir(ServerMessages.ChatOverHead("espera", 501, (byte)Como.Charla));
+            Assert.True(await pelea.WaitAsync(tiempo.Token));
+        }
+        finally
+        {
+            tiempo.Cancel();
+            try { await pelea; } catch (OperationCanceledException) { }
+        }
+    }
+
     private static void Invitar(Bot bot, SentidosDelBot sentidos, TransporteDeBot transporte, string quien)
     {
         Hablar(bot, sentidos, transporte, quien, "vamos a cazar?");

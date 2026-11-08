@@ -1,4 +1,5 @@
 using CoverAO.Protocol;
+using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;
 
@@ -97,6 +98,7 @@ public sealed partial class Bot
                     _numeroDeAcompanamiento++;
                     _esperaAcompanando = false;
                     _salidaIntentada = null;
+                    _proximaFichaDeCompania = _proximoAvisoDeMana = _proximoAvisoDeRetirada = 0;
                     sentidos.ObservarSalidaDe(quien);
                     _acompana = (quien, ahora + _rng.Next(AcompanaMinMin, AcompanaMaxMin + 1) * 60_000L, ahora, ahora, 0);
                     Console.WriteLine($"[bot {Nombre}] acompaña a {PacketDispatcher.ParaElLog(quien)}");
@@ -192,16 +194,28 @@ public sealed partial class Bot
         // Ayuda contra la criatura que vio atacar. La defensa propia se atiende antes de llegar acá.
         long grupo = _numeroDeAcompanamiento;
         bool SigueElGrupo() => _acompana is not null && _numeroDeAcompanamiento == grupo && !_esperaAcompanando;
-        if (empiezaUnaPelea
-            && sentidos.ObjetivoDeLaCompanera(AtaqueObservadoMs) is { } id
-            && sentidos.Donde(id) is { EsNpc: true } presa && esPresa(presa.FichaNpc)
-            && Math.Abs(presa.X - p.X) + Math.Abs(presa.Y - p.Y) <= RadioDeAyuda
+        if (CurarACompanero(transporte, sentidos, p))
+        {
+            await Task.Delay(UnPaso(), ct);
+            return cerrada.IsCompleted ? null : true;
+        }
+        bool PuedePelear(short id, SentidosDelBot.Visible companera) =>
+            sentidos.Donde(id) is { EsNpc: true } presa && esPresa(presa.FichaNpc)
+            && Math.Abs(presa.X - companera.X) + Math.Abs(presa.Y - companera.Y) <= RadioDeAyuda
             && Math.Abs(presa.X - sentidos.Posicion.X) + Math.Abs(presa.Y - sentidos.Posicion.Y) <= RadioDeCaza
-            && !SiguenSinCamino(_sinCamino, ahora).Contains(id))
+            && !SiguenSinCamino(_sinCamino, Environment.TickCount64).Contains(id);
+        short? Blanco(SentidosDelBot.Visible companera)
+        {
+            if (_clase == GameLimits.ClaseGuerrero && sentidos.ObjetivoDeLaCompanera(AtaqueObservadoMs, amenaza: true) is { } amenaza
+                && PuedePelear(amenaza, companera)) return amenaza;
+            return sentidos.ObjetivoDeLaCompanera(AtaqueObservadoMs) is { } ataque && PuedePelear(ataque, companera) ? ataque : null;
+        }
+        if (empiezaUnaPelea && !p.Muerto && Blanco(p) is { } id)
         {
             _acompana = a with { UltimaPelea = ahora };
             if (!await PelearAsync(transporte, sentidos, id, cerrada, ct, aGente: false,
-                cortaSi: () => !SigueElGrupo() || sentidos.ObjetivoDeLaCompanera(AtaqueObservadoMs) != id)) return null;
+                cortaSi: () => !SigueElGrupo() || sentidos.PersonaLlamada(a.Quien) is not { Muerto: false } companera
+                    || Blanco(companera) != id)) return null;
             if (Environment.TickCount64 - ahora < PasoMinMs) await Task.Delay(UnPaso(), ct);
             return cerrada.IsCompleted ? null : true;
         }

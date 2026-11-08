@@ -103,6 +103,8 @@ public sealed class SentidosDelBot
             _ultimoMovimientoDeLaCompanera = null;
             _movimientoAlPerderLaCompanera = null;
             _ataqueDeLaCompanera = null;
+            _amenazaDeLaCompanera = null;
+            _vidaDeCompanera = null;
         }
     }
 
@@ -140,6 +142,14 @@ public sealed class SentidosDelBot
 
     private (short Atacante, long Cuando)? _agresionDeJugador;
     private (short Atacante, short Criatura, long Cuando)? _ataqueDeLaCompanera;
+    private (short Atacante, short Criatura, long Cuando)? _amenazaDeLaCompanera;
+    private (short Persona, int Vida, long Cuando)? _vidaDeCompanera;
+    private (byte Bando, byte Rango)? _rangoPropio;
+
+    internal byte? RangoEn(byte bando)
+    {
+        lock (_candado) return _rangoPropio is { } r && r.Bando == bando ? r.Rango : null;
+    }
 
     internal void ObservarAgresionDeJugador(short atacante, long cuando)
     {
@@ -157,24 +167,39 @@ public sealed class SentidosDelBot
         }
     }
 
-    internal void ObservarAtaqueACriatura(short atacante, short criatura, long cuando)
+    internal void ObservarAtaqueACriatura(short atacante, short criatura, long cuando, bool persigue = false)
     {
         lock (_candado)
             if (_companeraObservada is not null && _visibles.TryGetValue(atacante, out var p) && !p.EsNpc
                 && string.Equals(p.Nombre, _companeraObservada, StringComparison.OrdinalIgnoreCase)
                 && _visibles.TryGetValue(criatura, out var n) && n.EsNpc)
-                _ataqueDeLaCompanera = (atacante, criatura, cuando);
+            {
+                if (persigue) _amenazaDeLaCompanera = (atacante, criatura, cuando);
+                else _ataqueDeLaCompanera = (atacante, criatura, cuando);
+            }
     }
 
-    internal short? ObjetivoDeLaCompanera(long vigenciaMs)
+    internal short? ObjetivoDeLaCompanera(long vigenciaMs, bool amenaza = false)
     {
         lock (_candado)
         {
-            if (_ataqueDeLaCompanera is not { } a || Environment.TickCount64 - a.Cuando > vigenciaMs
+            if ((amenaza ? _amenazaDeLaCompanera : _ataqueDeLaCompanera) is not { } a || Environment.TickCount64 - a.Cuando > vigenciaMs
                 || !_visibles.TryGetValue(a.Atacante, out var p) || p.Muerto
                 || !string.Equals(p.Nombre, _companeraObservada, StringComparison.OrdinalIgnoreCase)) return null;
             return a.Criatura;
         }
+    }
+
+    internal int? VidaDeLaCompanera(short persona, long vigenciaMs)
+    {
+        lock (_candado)
+            return _vidaDeCompanera is { } v && v.Persona == persona && Environment.TickCount64 - v.Cuando <= vigenciaMs
+                ? v.Vida : null;
+    }
+
+    internal void OlvidarVidaDeLaCompanera()
+    {
+        lock (_candado) _vidaDeCompanera = null;
     }
 
     public bool Ubicado { get { lock (_candado) return _tengoPosicion; } }
@@ -1144,7 +1169,11 @@ public sealed class SentidosDelBot
                         // Y EL NOMBRE, que cambia con el clan o con el /SHOWNAME de un GM.
                         if (_visibles.TryGetValue(ci, out var v))
                             _visibles[ci] = v with { Estado = estado, Nombre = v.EsNpc ? "" : SinElClan(tag) };
-                        if (ci == _miCharIndex) _miEstado = estado;
+                        if (ci == _miCharIndex)
+                        {
+                            if (_miEstado != estado) _rangoPropio = null;
+                            _miEstado = estado;
+                        }
                     }
                     break;
                 }
@@ -1162,14 +1191,35 @@ public sealed class SentidosDelBot
                     break;
                 }
 
-                // LA FICHA DE UNA PERSONA, la respuesta al clic (VB6 WriteCharMsgStatus): de acá sólo el nivel, que viene escondido
-                // (255) si está más de 5 por encima.
+                // La ficha pública que devuelve el clic sobre una persona. La vida sólo interesa para la compañía actual.
                 case ServerPacketId.CharMsgStatus:
                 {
                     short ci = l.Entero();
-                    l.Byte(); l.Largo(); l.Entero(); l.Byte(); l.Byte();   // estado, vida en %, estados, estados extra, clase
+                    byte bando = l.Byte();
+                    int vida = l.Largo();
+                    l.Entero(); l.Byte(); l.Byte();   // estados, estados extra, clase
                     short nivel = l.Entero();
-                    lock (_candado) _nivelDe[ci] = (nivel, Environment.TickCount64);
+                    l.Byte(); l.Byte();   // raza y donador
+                    byte rango = l.Byte();
+                    lock (_candado)
+                    {
+                        long ahora = Environment.TickCount64;
+                        _nivelDe[ci] = (nivel, ahora);
+                        if (ci == _miCharIndex)
+                        {
+                            byte faccion = bando switch
+                            {
+                                5 => Player.StatusCaos,
+                                6 => Player.StatusArmada,
+                                7 => Player.StatusMilicia,
+                                _ => 0,
+                            };
+                            _rangoPropio = faccion == 0 ? null : (faccion, rango);
+                        }
+                        else if (_visibles.TryGetValue(ci, out var v) && !v.EsNpc && !v.Muerto && _companeraObservada is not null
+                                 && string.Equals(v.Nombre, _companeraObservada, StringComparison.OrdinalIgnoreCase))
+                            _vidaDeCompanera = (ci, vida, ahora);
+                    }
                     break;
                 }
 
@@ -1221,6 +1271,8 @@ public sealed class SentidosDelBot
                             _movimientoAlPerderLaCompanera = new MovimientoPerdido(++_numeroDeMovimientoPerdido, ci, m.Mapa, m.X, m.Y, m.Cuando);
                         if (_ultimoMovimientoDeLaCompanera?.CharIndex == ci) _ultimoMovimientoDeLaCompanera = null;
                         if (_ataqueDeLaCompanera is { } a && (a.Atacante == ci || a.Criatura == ci)) _ataqueDeLaCompanera = null;
+                        if (_amenazaDeLaCompanera is { } peligro && (peligro.Atacante == ci || peligro.Criatura == ci)) _amenazaDeLaCompanera = null;
+                        if (_vidaDeCompanera?.Persona == ci) _vidaDeCompanera = null;
                         if (_agresionDeJugador is { } golpe && golpe.Atacante == ci) _agresionDeJugador = (0, golpe.Cuando);
                         _visibles.Remove(ci);
                         _nivelDe.Remove(ci); // El índice puede reutilizarse para otra persona.
@@ -1275,6 +1327,8 @@ public sealed class SentidosDelBot
                         _ultimoMovimientoDeLaCompanera = null;
                         _movimientoAlPerderLaCompanera = null;
                         _ataqueDeLaCompanera = null;
+                        _amenazaDeLaCompanera = null;
+                        _vidaDeCompanera = null;
                         _agresionDeJugador = null;
                         _ultimaBajaDeVida = 0;
                         _nivelDe.Clear();

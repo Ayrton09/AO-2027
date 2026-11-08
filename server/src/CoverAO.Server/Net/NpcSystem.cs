@@ -616,6 +616,7 @@ public sealed class NpcSystem
             // criatura maga que te hubiera marcado dejaba de castear justo contra vos, que es a quien el
             // original le apunta primero. Lanza Y ADEMÁS se mueve — no sale del bloque como en la fase de
             // ataque, donde castear reemplaza al golpe.
+            AvisarPersecucion(npc, duenio);
             if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, duenio);
             byte hd = FindDirection(npc, duenio.Pos);
             if (hd != 0)
@@ -638,6 +639,7 @@ public sealed class NpcSystem
             // que todavía no te había marcado te casteaba recién cuando quedaba pegada: el único casteo que le quedaba era el
             // de la fase de ataque, que barre las cuatro baldosas de al lado. El original te alcanza desde toda su ventana de
             // visión —ocho en X, seis en Y— y encima sigue caminando hacia vos. La rama del usuario apropiado ya lo hacía.
+            AvisarPersecucion(npc, p);
             if (npc.Template.Spells is { Count: > 0 }) NpcLanzaUnHechizo(npc, p);
             byte h = FindDirection(npc, p.Pos);        // decide el paso — y esquiva; ver FindDirection
             if (h != 0)
@@ -649,6 +651,16 @@ public sealed class NpcSystem
         }
         // "Si llega aca es que no habia ningun usuario cercano vivo. A bailar." (AI_NPC.bas:360-363)
         if (_rng.Next(0, 11) == 0) StepRandom(npc);
+    }
+
+    private void AvisarPersecucion(Npc npc, Player persona)
+    {
+        if (_ini?.Bots is not > 0 || !npc.Hostile || !npc.Template.Attackable || npc.OwnerCharIndex != 0
+            || persona.Connection is ClientSession { EsBot: true } || !PuedeSerAtacado(persona)) return;
+        var anterior = npc.UltimoAvisoDePersecucion;
+        if (anterior.Persona == persona.CharIndex && _tick - anterior.Tick < 1500 / GameLoop.TickMs) return;
+        npc.UltimoAvisoDePersecucion = (persona.CharIndex, _tick);
+        PacketDispatcher.AvisarCombateConCriatura(_world, persona, npc, persigue: true);
     }
 
     // ── LOS GUARDIAS QUE ATACAN ──────────────────────────────────────────────────────────────────────────
@@ -1735,6 +1747,7 @@ public sealed class NpcSystem
             // QUIÉN LO PERSIGUE (VB6 SistemaCombate.bas:719-721): la primera criatura que lo ataca queda anotada en el
             // jugador hasta que sale del mapa, muere o se desconecta.
             if (player.AtacadoPorNpc == 0) player.AtacadoPorNpc = npc.CharIndex;
+            AvisarPersecucion(npc, player);
             // EL RUGIDO AL ATACAR (VB6 SistemaCombate.bas:730). Suena ANTES de la tirada de acierto, así que
             // la criatura ruge igual cuando erra — que es lo que hace el original y lo que se escucha en el
             // juego.

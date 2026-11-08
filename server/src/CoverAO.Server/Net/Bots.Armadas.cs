@@ -269,6 +269,7 @@ public sealed partial class Bot
         if (!s.Paralizado && ahora >= _proximoRepliegue)
         {
             _proximoRepliegue = ahora + 1_500;
+            AvisarACompanero(t, "me voy a un mapa seguro", ref _proximoAvisoDeRetirada);
             await IrAlMapaSeguroAsync(t, s, cerrada, ct);
         }
         else await QuedarseAsync(s, 600, ct);
@@ -345,7 +346,10 @@ public sealed partial class Bot
         byte bando = _miBando;
         int cuantas = BajasParaSuBando(bando, bajas);
         byte ejercito = EjercitoQueBusca(bando, Agresivo, sentidos.Nivel, cuantas);
-        bool recompensa = ejercito == 0 && TocaRecompensa(bando, cuantas, _bajasEnLaUltimaRecompensa);
+        byte? rango = sentidos.RangoEn(bando);
+        bool recompensa = ejercito == 0 && (rango is { } conocido
+            ? RangosDeFaccion.ParaRango(bando, conocido + 1) <= cuantas
+            : TocaRecompensa(bando, cuantas, _bajasEnLaUltimaRecompensa));
         if (recompensa) ejercito = bando;
         if (ejercito == 0) return false;
         _proximoViajeAlEjercito = ahora + EntreViajesAlEjercitoMs;
@@ -387,7 +391,7 @@ public sealed partial class Bot
         if (sentidos.MasCercano(f => Sirve(f)) is not { Pasos: <= RadioDelMostrador } enlistador) return true;
         // Puede haber acumulado varios ascensos antes de llegar. Cada petición es idempotente al alcanzar el tope;
         // no se marca la visita resuelta después de cobrar sólo uno de los rangos disponibles.
-        int pedidos = RangosDeFaccion.Bajas(ejercito).ToArray().Count(n => n <= cuantas);
+        int pedidos = RangosDeFaccion.Bajas(ejercito).ToArray().Count(n => n <= cuantas) - (recompensa ? rango ?? 0 : 0);
         int completados = 0;
         for (; completados < pedidos && !cerrada.IsCompleted && !Urge(sentidos); completados++)
         {

@@ -63,6 +63,9 @@ public sealed class CentroDeSubastas
 
     private readonly List<Subasta> _subastas = new();
     private readonly List<EntregaDeSubasta> _pendientes = new();
+    private readonly Dictionary<short, Queue<(long Cuando, bool Vendida)>> _cierresRecientes = new();
+    private const long VigenciaDeDemanda = 48 * 3600;
+    private const int CierresPorProducto = 8;
     private int _ultimoId;
 
     /// <summary>Cambia con cada modificación: el volcado diferido compara contra lo último que guardó.</summary>
@@ -136,14 +139,14 @@ public sealed class CentroDeSubastas
     /// <summary>Oferta (ya validada con <see cref="PuedeOfertar"/> y ya cobrada por <see cref="CostoDeLaOferta"/>). Al
     /// superado se le devuelve lo suyo; si la oferta llega al precio final, la subasta se cierra ahí. Devuelve true si se
     /// cerró.</summary>
-    public bool Ofertar(int id, string quien, long monto)
+    public bool Ofertar(int id, string quien, long monto, long? ahora = null)
     {
         var s = Buscar(id)!;
         long costo = CostoDeLaOferta(id, monto);
         if (s.Comprador is not null) Deber(s.Comprador, 0, 0, s.Oferta);
         var nueva = s with { Oferta = costo, Comprador = quien };
         Cambios++;
-        if (s.PrecioFinal > 0 && costo >= s.PrecioFinal) { Cerrar(nueva); return true; }
+        if (s.PrecioFinal > 0 && costo >= s.PrecioFinal) { Cerrar(nueva, ahora ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()); return true; }
         _subastas[_subastas.IndexOf(s)] = nueva;
         return false;
     }
@@ -160,7 +163,7 @@ public sealed class CentroDeSubastas
     }
 
     /// <summary>La compra directa, ya cobrada: es una oferta por el precio final.</summary>
-    public void Comprar(int id, string quien) => Ofertar(id, quien, Buscar(id)!.PrecioFinal);
+    public void Comprar(int id, string quien, long? ahora = null) => Ofertar(id, quien, Buscar(id)!.PrecioFinal, ahora);
 
     /// <summary>El vendedor la retira, sólo si nadie ofertó todavía. El objeto vuelve a su bóveda; el depósito no.</summary>
     public ResultadoDeSubasta Cancelar(int id, string quien)
@@ -179,7 +182,8 @@ public sealed class CentroDeSubastas
     public int Vencer(long ahora)
     {
         var vencidas = _subastas.Where(s => s.Termina <= ahora).ToList();
-        foreach (var s in vencidas) Cerrar(s);
+        foreach (var s in vencidas)
+            Cerrar(s, ahora - s.Termina < VigenciaDeDemanda ? s.Termina : null);
         if (vencidas.Count > 0) Cambios++;
         return vencidas.Count;
     }
@@ -200,10 +204,29 @@ public sealed class CentroDeSubastas
         return hechas;
     }
 
-    private void Cerrar(Subasta s)
+    // Los bots leen sólo una muestra agregada y acotada, sin tocar el libro del game loop.
+    internal int DemandaReciente(short objeto, long ahora)
+    {
+        lock (_cierresRecientes)
+            return _cierresRecientes.TryGetValue(objeto, out var cierres)
+                ? cierres.Where(c => c.Cuando <= ahora && ahora - c.Cuando < VigenciaDeDemanda).Sum(c => c.Vendida ? 1 : -1)
+                : 0;
+    }
+
+    private void Cerrar(Subasta s, long? cuando)
     {
         int i = _subastas.FindIndex(x => x.Id == s.Id);
         if (i >= 0) _subastas.RemoveAt(i);
+        if (cuando is { } ahora)
+        {
+            lock (_cierresRecientes)
+            {
+                if (!_cierresRecientes.TryGetValue(s.Objeto, out var cierres))
+                    _cierresRecientes[s.Objeto] = cierres = new();
+                if (cierres.Count == CierresPorProducto) cierres.Dequeue();
+                cierres.Enqueue((ahora, s.Comprador is not null));
+            }
+        }
         if (s.Comprador is null) { Deber(s.Vendedor, s.Objeto, s.Cantidad, 0); return; }
         Deber(s.Comprador, s.Objeto, s.Cantidad, 0);
         Deber(s.Vendedor, 0, 0, s.Oferta);

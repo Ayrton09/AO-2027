@@ -52,6 +52,11 @@ public sealed partial class Bot
 
     /// <summary>Lo suyo que venció sin ofertas: no se vuelve a publicar, se le vende al mercader.</summary>
     private readonly HashSet<short> _noSeVendio = new();
+    private readonly Dictionary<short, long> _republicarMetalurgiaDesde = new();
+    private const long EsperaParaRepublicarMetalurgiaMs = 2 * 60 * 60_000;
+
+    private bool SePuedeRepublicar(short objeto) => !_noSeVendio.Contains(objeto)
+        && Environment.TickCount64 >= _republicarMetalurgiaDesde.GetValueOrDefault(objeto);
 
     /// <summary>Lo que publicó y lo que compró en esta vida: el aviso del Centro dice el nombre, y hay nombres repetidos.</summary>
     private readonly HashSet<short> _publicadas = new(), _comprados = new();
@@ -109,7 +114,7 @@ public sealed partial class Bot
     /// <summary>¿Lo guarda para la subasta en vez de vendérselo al mercader? Si se subasta, no venció ya una vez, hay Subastador en el
     /// pueblo, no le falló hace poco y no tiene ya todas las que se permite.</summary>
     private bool GuardaParaLaSubasta(SentidosDelBot sentidos, short obj) =>
-        VaALaSubastaDelBot(obj) && !_noSeVendio.Contains(obj) && Environment.TickCount64 >= _sinSubastaHasta
+        VaALaSubastaDelBot(obj) && SePuedeRepublicar(obj) && Environment.TickCount64 >= _sinSubastaHasta
         && SubastadorDe(sentidos.Mapa) is not null && SusSubastasConocidas(sentidos) < SubastasPropias
         && !(_clase == ClaseMinero && EsLingote(obj) && sentidos.Subastas.Any(f => f.Objeto == obj && f.Vendedor.Equals(Nombre, StringComparison.OrdinalIgnoreCase)));
 
@@ -120,7 +125,8 @@ public sealed partial class Bot
 
     /// <summary>¿Eso lo mejora? El equipo, como en la vitrina (<see cref="MejoraLoQueTiene"/>); el pergamino, si le sirve.</summary>
     private bool LoMejora(SentidosDelBot sentidos, short obj) =>
-        !_porRetirar.Contains(obj) && (MejoraLoQueTiene(sentidos, obj) || (sentidos.UsaMana && LeSirveElPergamino(sentidos, obj)));
+        (PiezaDeLaMeta is null || PiezaDeLaMeta == obj) && !_porRetirar.Contains(obj)
+        && (MejoraLoQueTiene(sentidos, obj) || (sentidos.UsaMana && LeSirveElPergamino(sentidos, obj)));
 
     /// <summary>
     /// AL SALIR DEL MOSTRADOR, EL SUBASTADOR: si guardó algo para publicar, o si toca mirar qué hay. Camina hasta él, lo clickea (no
@@ -154,7 +160,10 @@ public sealed partial class Bot
             if (suyo == 0) continue;
             _publicadas.Remove(suyo);
             _porRetirar.Add(suyo);
-            _noSeVendio.Add(suyo);
+            if (EsProduccionMetalurgica(suyo))
+                _republicarMetalurgiaDesde[suyo] = Environment.TickCount64 + EsperaParaRepublicarMetalurgiaMs;
+            else
+                _noSeVendio.Add(suyo);
         }
     }
 
