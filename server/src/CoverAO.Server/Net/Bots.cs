@@ -838,6 +838,7 @@ public sealed partial class Bot
             int nivelAhora = sentidos.Nivel;
             _conQuePelea = (ArmaEnLaMano(sentidos), nivelAhora);
             _sinMagia = !sentidos.UsaMana;
+            _defensaMinima = nivelAhora >= NivelParaEntrenar ? DefensaMinimaEquipada(sentidos) : 0;
             // Con qué se cura, leído ANTES de buscar por lo mismo que la vida: la búsqueda tiene el modelo bajo su candado.
             bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
             bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
@@ -1070,6 +1071,15 @@ public sealed partial class Bot
             if (_acompana is null && await FundirAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await TrabajarAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (_acompana is null && abastecido && _pausaDeOficio.Mapa == sentidos.Mapa
+                && Environment.TickCount64 < _pausaDeOficio.Hasta
+                && HerramientaQueLeFalta(sentidos) == 0 && PlataDe(sentidos) > ReservaPara(sentidos, comida: true, bebida: true)
+                && !HostilCerca(sentidos) && LoQueSaleACazarParaSuOficio(sentidos).Count == 0)
+            {
+                // Ya puede completar sus habilidades con el oficio. Deja pasar la pausa entre tandas cerca del trabajo.
+                await QuedarseAsync(sentidos, _rng.Next(1_500, 3_500), ct);
+                continue;
+            }
 
             // La vida máxima se lee ANTES de buscar: adentro de la búsqueda el modelo está bajo su candado, y
             // preguntarle otra cosa desde ahí ata dos lecturas que no tienen por qué ir juntas.
@@ -1083,16 +1093,23 @@ public sealed partial class Bot
             // Y LA QUE NO SE ALCANZA NO SE ELIGE DE NUEVO POR UN RATO (ver `NoSeLlegaA`).
             var salvo = SiguenSinCamino(_sinCamino, Environment.TickCount64);
             // Y DE LO QUE PAGA, LA QUE MÁS RINDE POR EL TIEMPO QUE CUESTA: ver `RindeLaPresa`. Sin ninguna al alcance, la más cercana.
-            var presa = sentidos.LaQueMasRinde(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha),
+            bool PuedeCazar(short ficha) => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno);
+            var presaDeEntrenamiento = SaleAEntrenar(nivelAhora)
+                ? sentidos.LaQueMasRinde(ficha => PuedeCazar(ficha) && RindeParaEntrenar(_entorno.Datos.Npc(ficha), nivelAhora) > 0,
+                                         (ficha, pasos) => RindeEstaPresa(sentidos, ficha, pasos, paraEntrenar: true), RadioDeCaza, salvo)
+                : null;
+            var presa = presaDeEntrenamiento
+                        ?? sentidos.LaQueMasRinde(ficha => PuedeCazar(ficha) && PagaOro(ficha),
                                                (ficha, pasos) => RindeEstaPresa(sentidos, ficha, pasos), RadioDeCaza, salvo)
-                        ?? sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno) && PagaOro(ficha), salvo);
+                        ?? sentidos.MasCercano(ficha => PuedeCazar(ficha) && PagaOro(ficha), salvo);
             // LO QUE PAGA SE VA A BUSCAR MÁS LEJOS. El radio del temperamento decide si vale la pena moverse por
             // cualquier cosa; por lo que da plata, cualquiera camina unas baldosas más. Medido con la sonda: una
             // Clériga tranquila —radio 6— con un escorpión a la vista a nueve pasos, pegándole al murciélago de al
             // lado, que no suelta nada.
             if (presa is not { } rica || rica.Pasos > RadioDeCaza)
-                presa = sentidos.MasCercano(ficha => EsPresa(ficha, vidaMaxima, nivelAhora, conPociones, curaVeneno), salvo);
-            int alcance = presa is { } elegida && PagaOro(elegida.Quien.FichaNpc) ? RadioDeCaza : RadioDeCazaSuyo;
+                presa = sentidos.MasCercano(PuedeCazar, salvo);
+            int alcance = presaDeEntrenamiento is not null || (presa is { } elegida && PagaOro(elegida.Quien.FichaNpc))
+                ? RadioDeCaza : RadioDeCazaSuyo;
             // SIN ENERGÍA PARA PELEAR NO SE EMPIEZA UNA PELEA. `CazarAsync` se aleja apenas arranca si no la tiene, así
             // que empezar igual era ir y volver. Medido con la sonda: un bot con la energía en cero eligiendo presa y
             // alejándose cada pocos segundos, sin hacer otra cosa. Con la regeneración cortada alcanza con que le quede
@@ -1112,6 +1129,10 @@ public sealed partial class Bot
             // Y EL QUE FRENÓ EL VIAJE PARA CAZAR, CAZA: ver `FrenaConGanas`.
             bool frenoParaCazar = _frenoParaCazar;
             _frenoParaCazar = false;
+            if (!frenoParaCazar && SaleAEntrenar(nivelAhora) && Environment.TickCount64 >= _proximoEntrenamiento
+                && SeEmpiezaUnaPelea(sentidos.Salud, conFuelle, peligroALaVista)
+                && await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, presa is not null, cerrada, ct,
+                                               soloEntrenamiento: true)) continue;
             if (presa is { } p && p.Pasos <= alcance && SeEmpiezaUnaPelea(sentidos.Salud, conFuelle, peligroALaVista)
                 && (frenoParaCazar || LeDanGanas()))
             {
@@ -1132,7 +1153,7 @@ public sealed partial class Bot
                     _ultimaPresaQuePaga = 0;
                     if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, true, cerrada, ct)) continue;
                 }
-                if (PagaOro(p.Quien.FichaNpc)) _ultimaPresaQuePaga = Environment.TickCount64;
+                if (presaDeEntrenamiento is not null || PagaOro(p.Quien.FichaNpc)) _ultimaPresaQuePaga = Environment.TickCount64;
                 else if (await BuscarDondeCazarAsync(transporte, sentidos, vidaMaxima, nivelAhora, true, cerrada, ct)) continue;
                 if (!await CazarAsync(transporte, sentidos, p.Quien.CharIndex, cerrada, ct)) return;
                 continue;
@@ -1203,7 +1224,7 @@ public sealed partial class Bot
     /// o no.</summary>
     private bool EsPeligroso(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
         EsPeligrosoParaElBot(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno, _miBando,
-                             _entorno.Datos, _entorno.Ini);
+                             _entorno.Datos, _entorno.Ini, _defensaMinima);
 
     /// <summary>
     /// <see cref="EsPeligrosoPara"/> y, además, EL GUARDIA DEL OTRO BANDO (regla de la casa `GuardiasAtacan`): no es hostil,
@@ -1212,8 +1233,8 @@ public sealed partial class Bot
     /// mismo con el refugio, el mercado y el templo).
     /// </summary>
     public static bool EsPeligrosoParaElBot(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno,
-                                            byte bando, GameData datos, ServerIni? ini) =>
-        EsPeligrosoPara(n, vidaMaxima, nivel, conPociones, curaVeneno) || NpcSystem.GuardiaVaPor(n, bando, nivel, datos, ini);
+                                            byte bando, GameData datos, ServerIni? ini, int defensaMinima = 0) =>
+        EsPeligrosoPara(n, vidaMaxima, nivel, conPociones, curaVeneno, defensaMinima) || NpcSystem.GuardiaVaPor(n, bando, nivel, datos, ini);
 
     private bool EsGuardiaQueVaPorEl(short ficha, int nivel) =>
         NpcSystem.GuardiaVaPor(_entorno.Datos.Npc(ficha), _miBando, nivel, _entorno.Datos, _entorno.Ini);
@@ -1277,12 +1298,13 @@ public sealed partial class Bot
         m => pisable(m) && sinHuidas(m) && (deMuerto || m == mapaDestino || !NaceLoQueLoMataDeDos(datos, m, vidaMaxima));
 
     /// <summary>La regla de <see cref="EsPeligroso"/> sobre la ficha sola.</summary>
-    public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
+    public static bool EsPeligrosoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno, int defensaMinima = 0)
     {
         if (n is null || !n.Hostile) return false;
         // Por lo que pega, o por lo que ES: el que reparte mucha experiencia es un bicho grande aunque su
         // golpe a mano diga 0 porque pelea con magia.
-        if (n.MaxHit * GolpesQueAguanta >= Math.Max(1, vidaMaxima) || n.GiveExp > ExperienciaQueSeAnima(nivel) * 3)
+        if (GolpeQueRecibe(n, conPociones, defensaMinima) * GolpesQueAguanta >= Math.Max(1, vidaMaxima)
+            || n.GiveExp > ExperienciaQueSeAnima(nivel) * 3)
             return true;
         // SIN POCIONES, LO QUE NO ES PRESA SE ESQUIVA. Entre la presa y lo peligroso quedaba un hueco —lo que ni se pelea ni se
         // esquiva— y el que no tiene con qué curarse se moría adentro: medido en `sano1`, 21 muertes en media hora, todas de los
@@ -1317,13 +1339,13 @@ public sealed partial class Bot
     /// los de `ropa1` no eligieron el 13 para cazar, lo cruzaban de viaje a Ullathorpe y no tenían otro camino; y para un bot de
     /// 55 a 89 de vida el Lobo también es del hueco, así que esquivarlo de antemano le cerraba los mapas de Lobos y la cuna.</para>
     /// </summary>
-    public static bool EsDelHuecoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
-        n is { Hostile: true, MaxHit: > 0 } && !EsPresaPara(n, vidaMaxima, nivel, conPociones, curaVeneno)
-        && !EsPeligrosoPara(n, vidaMaxima, nivel, conPociones, curaVeneno);
+    public static bool EsDelHuecoPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno, int defensaMinima = 0) =>
+        n is { Hostile: true, MaxHit: > 0 } && !EsPresaPara(n, vidaMaxima, nivel, conPociones, curaVeneno, defensaMinima)
+        && !EsPeligrosoPara(n, vidaMaxima, nivel, conPociones, curaVeneno, defensaMinima);
 
     /// <summary>La regla de <see cref="EsDelHuecoPara"/> para este bot.</summary>
     private bool EsDelHueco(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
-        EsDelHuecoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno);
+        EsDelHuecoPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno, _defensaMinima);
 
     /// <summary>Lo del hueco que lo hace huir, cazando o de viaje: todo lo del hueco menos lo que se mata rápido, que se lo saca de
     /// encima (<see cref="SeLaSacaDeEncima"/>).</summary>
@@ -2524,7 +2546,8 @@ public sealed partial class Bot
     /// </summary>
     private Func<int, bool> CruzaSinPeligro(SentidosDelBot sentidos) =>
         SeCruzaBuscando(_entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel, sentidos.VidaMaxima,
-                        sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear, sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0);
+                        sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear, sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0,
+                        _defensaMinima);
 
     /// <summary>
     /// ¿SE CRUZA ESE MAPA BUSCANDO DÓNDE CAZAR O TRABAJAR? Si deja entrar, no nacen ahí guardias que vayan por él y ahí cazaría
@@ -2544,9 +2567,9 @@ public sealed partial class Bot
     /// cuna pega 18 y un nivel 1 nace con 16 a 19 de vida, así que el que la deja no vuelve hasta el nivel 2.</para>
     /// </summary>
     public static Func<int, bool> SeCruzaBuscando(GameData datos, ServerIni? ini, byte bando, int nivel, int vida, bool conPociones,
-                                                  bool curaVeneno)
+                                                  bool curaVeneno, int defensaMinima = 0)
     {
-        Func<int, bool> esPeligroso = f => EsPeligrosoParaElBot(datos.Npc((short)f), vida, nivel, conPociones, curaVeneno, bando, datos, ini);
+        Func<int, bool> esPeligroso = f => EsPeligrosoParaElBot(datos.Npc((short)f), vida, nivel, conPociones, curaVeneno, bando, datos, ini, defensaMinima);
         return m =>
         {
             var nacen = datos.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
@@ -3137,6 +3160,10 @@ public sealed partial class Bot
             : Math.Abs(punto.Value.Donde.X - fx) + Math.Abs(punto.Value.Donde.Y - fy) <= DistanciaParaFaenar;
         if (!llego) { PostergarFaena(); return true; }
 
+        bool priorizaOficio = PriorizaTandasDeOficio(sentidos.Nivel);
+        short producto = InsumoDeSuOficio != 0 ? InsumoDeSuOficio : ProductoDeSuOficio;
+        bool EsLoQueJunta(short obj) => obj == producto || (_clase == ClaseMinero && EsInsumoMetalurgico(obj));
+        int cargaAntes = priorizaOficio ? sentidos.CuantoTiene(EsLoQueJunta) : 0;
         for (int golpe = 0; golpe < FaenasDeLaSentada(viajo || _clase == ClaseMinero) && !cerrada.IsCompleted; golpe++)
         {
             if (Urge(sentidos) || HostilCerca(sentidos) || MineroTieneReserva(sentidos)) break;
@@ -3146,6 +3173,7 @@ public sealed partial class Bot
             await Task.Delay(_rng.Next(FaenaMinMs, FaenaMaxMs), ct);
         }
         PostergarFaena(viajo);
+        if (priorizaOficio && sentidos.CuantoTiene(EsLoQueJunta) > cargaAntes) AnotarPausaDeOficio(sentidos.Mapa, ref _proximaFaena);
         return true;
     }
 
@@ -3211,6 +3239,7 @@ public sealed partial class Bot
             await Task.Delay(_rng.Next(400, 900), ct);
         }
 
+        bool fabrico = false;
         for (int vez = 0; vez < FabricacionesPorTanda; vez++)
         {
             if (Urge(sentidos)) break;
@@ -3228,6 +3257,7 @@ public sealed partial class Bot
             if (!transporte.Mandar(Paquete(fab.Paquete, w => w.WriteInteger(receta).WriteInteger((short)1)))) return false;
             await Task.Delay(_rng.Next(FabricarMinMs, FabricarMaxMs), ct);
             if (tiene(receta) <= antes) break;   // no salió, y el servidor no dice por qué
+            fabrico = true;
             if (_clase == ClaseHerrero) {
                 _recetasFabricadas.Add(receta);
                 if (_recetaDeHerreria == receta)
@@ -3239,6 +3269,7 @@ public sealed partial class Bot
             }
         }
         PostergarFabricacion();
+        if (fabrico && PriorizaTandasDeOficio(sentidos.Nivel)) AnotarPausaDeOficio(sentidos.Mapa, ref _proximaFabricacion);
         return true;
     }
 
@@ -3388,6 +3419,17 @@ public sealed partial class Bot
     private const int InsumoQueGuarda = 100;
 
     private long _proximaFaena;
+
+    private (int Mapa, long Hasta) _pausaDeOficio;
+
+    private bool PriorizaTandasDeOficio(int nivel) => TieneOficioPrincipal(_clase)
+        && SkillProgression.CapForLevel(nivel) == SkillProgression.MaxSkillPoints;
+
+    private void AnotarPausaDeOficio(int mapa, ref long proximaTanda)
+    {
+        proximaTanda = Environment.TickCount64 + _rng.Next(20_000, 45_000);
+        _pausaDeOficio = (mapa, proximaTanda);
+    }
 
     /// <summary>La skill del oficio de esta clase.</summary>
     private byte SkillDeSuOficio => _clase switch
@@ -3995,6 +4037,40 @@ public sealed partial class Bot
 
     private const int SaltosHastaElCoto = 2, SaltosHastaElCotoQueSuma = 4, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
 
+    private const int NivelParaEntrenar = 20, SaltosHastaLaMazmorra = 8;
+    private long _proximoEntrenamiento;
+
+    private bool SaleAEntrenar(int nivel) => SaleAEntrenar(_clase, nivel);
+
+    internal static bool SaleAEntrenar(byte clase, int nivel) => nivel >= NivelParaEntrenar && !TieneOficioPrincipal(clase);
+
+    private static bool TieneOficioPrincipal(byte clase) =>
+        clase is ClasePescador or ClaseHerrero or ClaseLenador or ClaseMinero or ClaseCarpintero or ClaseSastre;
+
+    // Conservar una mazmorra que todavía tiene presas útiles. Para salir a explorar, mirar más lejos que en una cacería común.
+    internal static (int Mapa, byte X, byte Y, int Saltos)? CotoDeEntrenamiento(GameData datos, Navegante mapas, int mapa,
+        (byte X, byte Y) desde, Func<int, int> rinde, Func<int, bool> cruza, Func<int, bool> sirve, bool explorar,
+        Func<int, int>? desempate = null)
+    {
+        bool Mazmorra(int m) => string.Equals(datos.MapZone(m), "DUNGEON", StringComparison.OrdinalIgnoreCase);
+        bool enMazmorra = Mazmorra(mapa);
+        if (!explorar && !enMazmorra) return null;
+        var aca = mapas.LoQueSuma(mapa, desde, rinde);
+        if (aca is { } local && enMazmorra && sirve(mapa)) return (mapa, local.X, local.Y, 0);
+        if (!explorar) return null;
+
+        var pasos = new Dictionary<int, bool>();
+        bool Pasa(int m) => pasos.TryGetValue(m, out bool puede) ? puede : pasos[m] = cruza(m);
+        bool TienePresas(int m) => datos.MapSpawns.TryGetValue(m, out var spawns) && spawns.Any(sp => rinde(sp.NpcIndex) > 0);
+        var destino = mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaLaMazmorra, Pasa,
+                                          m => Mazmorra(m) && TienePresas(m) && sirve(m), desempate, soloMasCercanos: true);
+        // Si no hay mazmorra adecuada, buscar presas acordes en el campo cuando acá no tenga ninguna.
+        if (destino is null && (aca is null || !sirve(mapa)))
+            destino = mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, Pasa,
+                                          m => TienePresas(m) && sirve(m), desempate);
+        return destino is { } coto ? (coto.Mapa, coto.X, coto.Y, coto.Saltos) : null;
+    }
+
     /// <summary>
     /// EL COTO AL QUE SÓLO SE LLEGA CRUZANDO PELIGRO, si suma el doble de lo mejor que tiene sin cruzarlo (acá o a
     /// <see cref="SaltosHastaElCotoQueSuma"/> mapas o menos por donde <paramref name="cruzaSinPeligro"/>); null si no hay. El coto en sí
@@ -4040,7 +4116,7 @@ public sealed partial class Bot
     /// </summary>
     private async Task<bool> BuscarDondeCazarAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                    int vidaMaxima, int nivel, bool veAlgunaPresa,
-                                                   Task cerrada, CancellationToken ct)
+                                                   Task cerrada, CancellationToken ct, bool soloEntrenamiento = false)
     {
         // SIN ENERGÍA PARA PELEAR TAMPOCO SE SALE A BUSCAR DÓNDE CAZAR: se llega y no se puede pegar. Medido: con
         // GolpeTolerable en 3, las diez muertes de una corrida de quince minutos fueron de los dos bots con la energía en
@@ -4048,15 +4124,21 @@ public sealed partial class Bot
         // pasa a ser presa, y el lobo paga cincuenta: los cotos que se elegían eran de lobos.
         if (!TieneFuelleParaPelear(sentidos)) return false;
         // Y LA PACIENCIA NO CORRE DONDE NO NACE NADA: ver <see cref="AcaPuedeAparecerAlgo"/>.
-        if (AcaPuedeAparecerAlgo(sentidos.Mapa)
-            && EsperaParaBuscarCoto(veAlgunaPresa, Environment.TickCount64 - _ultimaPresaQuePaga)) return false;
-        _ultimaPresaQuePaga = Environment.TickCount64;   // se haya podido o no: no se reintenta en el paso siguiente
+        long ahora = Environment.TickCount64;
+        if (soloEntrenamiento)
+            _proximoEntrenamiento = ahora + _rng.Next(120_000, 180_000);
+        else
+        {
+            if (AcaPuedeAparecerAlgo(sentidos.Mapa) && EsperaParaBuscarCoto(veAlgunaPresa, ahora - _ultimaPresaQuePaga)) return false;
+            _ultimaPresaQuePaga = ahora;   // se haya podido o no: no se reintenta en el paso siguiente
+        }
 
         // PRIMERO UN COTO QUE PAGUE, y recién si no hay ninguno al alcance, cualquiera. El coto se elegía por
         // "hay al menos una presa", sin mirar si soltaba oro — y así la única serpiente del mapa 1 alcanzaba para
         // mandar ahí a cinco bots, que se la repartieron durante media hora sin ganar una moneda. Pero no a cualquier
         // precio: ver `ElegirCoto`.
         bool conPociones = sentidos.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
+        if (soloEntrenamiento && !conPociones) return false;
         bool curaVeneno = sentidos.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
         Func<int, bool> esPresa = f => EsPresa((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
         Func<int, bool> esPeligroso = f => EsPeligroso((short)f, vidaMaxima, nivel, conPociones, curaVeneno);
@@ -4073,17 +4155,20 @@ public sealed partial class Bot
                                      || !TieneComoVolverDesde(m, sentidos) || _huidasDelNivel.NoVuelve(m, nivel);
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
-        long ahora = Environment.TickCount64;
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, false);
         // Y EL QUE NO LE DA NADA, POR MÁS RATO: ver `OtraBusquedaSinGanar` y `LoDejaHasta`.
-        _busquedasSinGanar = OtraBusquedaSinGanar(_busquedasSinGanar, sentidos.Mapa, AvanceDeCaza(sentidos), sentidos.Nivel);
-        if (_busquedasSinGanar.Seguidas >= BusquedasSinGanar)
+        if (!soloEntrenamiento)
         {
-            _llenoHasta[sentidos.Mapa] = _noDaNadaHasta[sentidos.Mapa] = LoDejaHasta(ahora, true);
-            _busquedasSinGanar = default;
+            _busquedasSinGanar = OtraBusquedaSinGanar(_busquedasSinGanar, sentidos.Mapa, AvanceDeCaza(sentidos), sentidos.Nivel);
+            if (_busquedasSinGanar.Seguidas >= BusquedasSinGanar)
+            {
+                _llenoHasta[sentidos.Mapa] = _noDaNadaHasta[sentidos.Mapa] = LoDejaHasta(ahora, true);
+                _busquedasSinGanar = default;
+            }
         }
         // EL SASTRE VA A DONDE ESTÁN LOS LOBOS cuando le faltan pieles: ver `LoQueSaleACazarParaSuOficio`.
         var paraSuOficio = LoQueSaleACazarParaSuOficio(sentidos);
+        if (soloEntrenamiento && paraSuOficio.Count > 0) return false;
         // Y SIN CONTAR COMO CAMINO LO QUE EL VIAJE NO VA A CRUZAR: ver `CruzaSinHuidas`.
         var cruza = CruzaSinHuidas(CruzaSinPeligro(sentidos), _huyoDe, ahora);
         Func<int, bool> esPresaDelOficio = f => esPresa(f) && SueltaAlgoDe(_entorno.Datos.Npc(f), paraSuOficio);
@@ -4094,6 +4179,20 @@ public sealed partial class Bot
         int porLoQueRinde = 0;
         Func<int, bool> sirve = esPresaDelOficio;
         Func<int, int> rinde = f => esPresa(f) ? RecompensaDePresa(_entorno.Datos.Npc(f), nivel) : 0;
+        int Entrenamiento(int f) => esPresa(f) ? RindeParaEntrenar(_entorno.Datos.Npc(f), nivel) : 0;
+        bool entrenar = false;
+        if (hallado is null && SaleAEntrenar(nivel) && conPociones && paraSuOficio.Count == 0
+            && CotoDeEntrenamiento(_entorno.Datos, _entorno.Mapas, sentidos.Mapa, sentidos.Posicion, Entrenamiento, cruza,
+                m => cruza(m) && !SigueLleno(_llenoHasta, m, ahora) && seCazaAhi(m), soloEntrenamiento,
+                m => CuantoLeGusta(_propio, m)) is { } destinoDeEntrenamiento)
+        {
+            // Si ya está en una mazmorra adecuada y ve presa, el ciclo de pelea la atiende.
+            if (soloEntrenamiento && destinoDeEntrenamiento.Mapa == sentidos.Mapa) return false;
+            hallado = destinoDeEntrenamiento;
+            sirve = f => Entrenamiento(f) > 0;
+            entrenar = true;
+        }
+        if (soloEntrenamiento && !entrenar) return false;
         (int Mapa, byte X, byte Y, int Saltos)? CotoComoSiempre(Func<int, bool> noVa, out bool oro, out int porLoQueRindeMas) =>
             CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
                                  cruza, m => seCazaAhi(m) && !noVa(m), m => SigueLleno(_llenoHasta, m, ahora),
@@ -4108,7 +4207,7 @@ public sealed partial class Bot
         }
         // Y SI CRUZANDO PELIGRO HAY UNO QUE SUMA EL DOBLE, VA: ver `CotoCruzandoPeligro`.
         bool cruzandoPeligro = false;
-        if (paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel)
+        if (!entrenar && paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel)
             && CotoCruzandoPeligro(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, rinde, cruza,
                                    PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
                                    m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora), m => CuantoLeGusta(_propio, m)) is { } lejos)
@@ -4120,7 +4219,7 @@ public sealed partial class Bot
             cruzandoPeligro = true;
         }
         // Y SI DESDE DONDE LO DEJA LA RUNA HAY UNO QUE SUMA UNA VEZ Y MEDIA, A CASA CON LA RUNA: ver `ValeSaltarConLaRuna`.
-        if (hallado is not null && paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel) && ahora >= _proximoSaltoConLaRuna)
+        if (!entrenar && hallado is not null && paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel) && ahora >= _proximoSaltoConLaRuna)
         {
             _proximoSaltoConLaRuna = ahora + EntreSaltosConLaRunaMs;
             int aPie = cruzandoPeligro
@@ -4138,7 +4237,7 @@ public sealed partial class Bot
         // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
         _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, AvanceDeCaza(sentidos), sentidos.Nivel, ahora);
         // Menos donde la runa lo deja: ahí usarla no lo saca.
-        if (hallado?.Mapa == sentidos.Mapa && !_entorno.Datos.IsPkMap(sentidos.Mapa) && sentidos.Mapa != _runaDejoEn
+        if (!entrenar && hallado?.Mapa == sentidos.Mapa && !_entorno.Datos.IsPkMap(sentidos.Mapa) && sentidos.Mapa != _runaDejoEn
             && SaleDelPozo(_comproEn.Mapa == sentidos.Mapa && ahora - _comproEn.Cuando < RecienCompradoMs, ahora - _ganancia.Desde)
             && CotoComoSiempre(m => m == sentidos.Mapa, out _, out _) is null)
         {
@@ -4207,19 +4306,25 @@ public sealed partial class Bot
         _cortoPorElHueco = false;
         bool conGanas = LeDanGanas();
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
-                                cortaSi: () => FrenaConGanas(conGanas, FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa,
+                                cortaSi: entrenar ? null : () => FrenaConGanas(conGanas, FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa,
                                                                                       Environment.TickCount64, nunca))
                                                && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde),
-                                topeDeMapas: cruzandoPeligro ? Math.Max(Navegante.TopeDeMapas, coto.Saltos) : Navegante.TopeDeMapas,
-                                porCualquierCamino: cruzandoPeligro))
+                                topeDeMapas: cruzandoPeligro || entrenar ? Math.Max(Navegante.TopeDeMapas, coto.Saltos) : Navegante.TopeDeMapas,
+                                porCualquierCamino: cruzandoPeligro, soloALaMeta: entrenar, evitaLoDelHueco: entrenar,
+                                cortaAntesDePaso: soloEntrenamiento
+                                    ? () => _acompana is not null || sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear
+                                    : null))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
             if (_cortoElViaje) { _cortoElViaje = false; _frenoParaCazar = true; return true; }
             // Ni el que cortó porque lo del hueco le pega: la vuelta siguiente huye (ver `LoDelHuecoCortaElViaje`).
             if (_cortoPorElHueco) { _cortoPorElHueco = false; return true; }
+            // Una interrupción puede cambiar las prioridades aunque no haya llegado a dar un paso.
+            if (soloEntrenamiento) return true;
             return await SiEstaEncerradoAsync(transporte, sentidos, cerrada, ct);
         }
         _cotosFallidos = 0;
+        if (entrenar) _ultimaPresaQuePaga = Environment.TickCount64;
 
         // Y EL COTO PASA A SER SU ZONA. Sin esto el arreglo se anula solo cuando el viaje es adentro del mismo
         // mapa: `PasearAsync` sólo re-elige la zona al CAMBIAR de mapa, así que el bot llegaba hasta las
@@ -6626,11 +6731,12 @@ public sealed partial class Bot
 
     /// <summary><see cref="RindeLaPresa"/> para este bot: los golpes, con lo medido de su arma (<see cref="GolpeMedido.GolpesParaMatar"/>);
     /// mientras no se sabe, como si sacara <see cref="GolpeSinMedir"/> por golpe.</summary>
-    private double RindeEstaPresa(SentidosDelBot sentidos, short ficha, int pasos)
+    private double RindeEstaPresa(SentidosDelBot sentidos, short ficha, int pasos, bool paraEntrenar = false)
     {
         if (_entorno.Datos.Npc(ficha) is not { } n) return 0;
         int golpes = _golpe.GolpesParaMatar(ArmaEnLaMano(sentidos), n.Def, n.MaxHp) ?? Math.Max(1, n.MaxHp / GolpeSinMedir);
-        return RindeLaPresa(RecompensaDePresa(n, sentidos.Nivel), pasos, Math.Min(golpes, 100));
+        int recompensa = paraEntrenar ? (int)n.GiveExp : RecompensaDePresa(n, sentidos.Nivel);
+        return RindeLaPresa(recompensa, pasos, Math.Min(golpes, 100));
     }
 
     private const int GolpeSinMedir = 30;
@@ -7474,7 +7580,7 @@ public sealed partial class Bot
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
                                           int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false,
                                           bool porCualquierCamino = false, IReadOnlyCollection<(byte X, byte Y)>? empiezaTrabado = null,
-                                          bool soloALaMeta = false, Func<bool>? cortaAntesDePaso = null)
+                                          bool soloALaMeta = false, Func<bool>? cortaAntesDePaso = null, bool evitaLoDelHueco = false)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -7593,7 +7699,7 @@ public sealed partial class Bot
                 if (Math.Abs(dx) + Math.Abs(dy) != 1) break;
                 // NI EL VIAJE SE ARRIMA A LO QUE LO MATA (ver `LoArrimaAlPeligro`): esa baldosa pasa a ser una traba y el camino se
                 // recalcula rodeándola. De muerto da igual, que al fantasma no lo atacan.
-                var peligrosDelPaso = PeligrosDelViaje(sentidos);
+                var peligrosDelPaso = PeligrosDelViaje(sentidos, evitaLoDelHueco);
                 if (!deMuerto && EsFabricanteMetalurgico && !escapando && EntraALaVistaDelPeligro((x, y), baldosa, peligrosDelPaso))
                 {
                     trabas.UnionWith(ZonasQueEvitaElTransportista((x, y), peligrosDelPaso));
@@ -8028,10 +8134,10 @@ public sealed partial class Bot
     /// mete con un ciudadano ni con un guardia, que lo dejarían criminal— y sólo si el golpe del bicho es
     /// chico contra su vida.</summary>
     private bool EsPresa(short ficha, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno) =>
-        EsPresaPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno) && !NoLaLastima(ficha);
+        EsPresaPara(_entorno.Datos.Npc(ficha), vidaMaxima, nivel, conPociones, curaVeneno, _defensaMinima) && !NoLaLastima(ficha);
 
     /// <summary>La regla de <see cref="EsPresa"/> sobre la ficha sola.</summary>
-    public static bool EsPresaPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno)
+    public static bool EsPresaPara(NpcInfo? n, int vidaMaxima, int nivel, bool conPociones, bool curaVeneno, int defensaMinima = 0)
     {
         if (n is null || !n.Hostile || !n.Attackable) return false;
         // LA EXPERIENCIA QUE DA ES LA MEDIDA DE LO QUE ES, y el golpe a mano solo NO ALCANZA: un Espectro
@@ -8045,8 +8151,27 @@ public sealed partial class Bot
         if (!conPociones && n.Veneno > 0 && !curaVeneno) return false;
         // Y SIN NADA QUE TOMAR, LA PELEA SE GANA CON LA VIDA QUE SE TIENE: el golpe del bicho tiene que entrar el doble de veces.
         int tolerable = conPociones ? GolpeTolerable : GolpeTolerableSinPociones;
-        return n.MaxHit * tolerable <= Math.Max(1, vidaMaxima);
+        return GolpeQueRecibe(n, conPociones, defensaMinima) * tolerable <= Math.Max(1, vidaMaxima);
     }
+
+    private int _defensaMinima;
+
+    // Un golpe puede caer en cualquier parte del cuerpo. El escudo suma solo cuando hay armadura.
+    private int DefensaMinimaEquipada(SentidosDelBot sentidos)
+    {
+        int? casco = null, armadura = null, escudo = null;
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+        {
+            if (!sentidos.EstaPuesto(ranura) || _entorno.Datos.Obj(sentidos.QueHayEn(ranura)) is not { } objeto) continue;
+            if (objeto.IsHelmet) casco ??= objeto.MinDef;
+            else if (objeto.IsArmor) armadura ??= objeto.MinDef;
+            else if (objeto.IsShield) escudo ??= objeto.MinDef;
+        }
+        return Math.Max(0, Math.Min(casco ?? 0, armadura is { } cuerpo ? cuerpo + (escudo ?? 0) : 0));
+    }
+
+    private static int GolpeQueRecibe(NpcInfo n, bool conPociones, int defensaMinima) =>
+        n.MaxHit > 0 && conPociones ? Math.Max(1, n.MaxHit - defensaMinima) : n.MaxHit;
 
     /// <summary>Cuántos golpes máximos tiene que aguantar con su vida para animarse a una criatura sin pociones que tomar: el
     /// doble que con pociones.</summary>
@@ -8074,6 +8199,10 @@ public sealed partial class Bot
     /// <summary>La experiencia de la criatura más grande a la que se anima, según su nivel. Es la forma de
     /// medir "qué tan brava es" que el dato del juego da directo.</summary>
     private static int ExperienciaQueSeAnima(int nivel) => 30 + nivel * 40;
+
+    // La experiencia de la ficha sigue midiendo el desafío al nivel máximo, aunque ya no se cobre.
+    internal static int RindeParaEntrenar(NpcInfo? n, int nivel) =>
+        n is not null && n.GiveExp >= ExperienciaQueSeAnima(nivel) / 5 ? (int)n.GiveExp : 0;
 
     /// <summary>¿Suelta oro al morir? Es el <c>GiveGLD</c> de su ficha, que el servidor le paga directo al que
     /// la mata (VB6 MODULO_NPCs.bas:910).</summary>

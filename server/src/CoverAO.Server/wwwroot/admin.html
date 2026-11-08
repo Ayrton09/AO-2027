@@ -145,7 +145,7 @@
         <h2>👥 Jugadores online <span class="count" id="pcount"></span></h2>
         <div class="tblwrap">
           <table>
-            <thead><tr><th>Personaje</th><th>Nivel</th><th>Clase</th><th>Mapa</th><th>Pos</th><th>Vida</th><th title="trampas acumuladas en la cuenta (anticheat)">Trampas</th><th></th></tr></thead>
+            <thead><tr><th>Personaje</th><th>Nivel</th><th>Clase</th><th>Facción</th><th>Mapa</th><th>Pos</th><th>Vida</th><th title="trampas acumuladas en la cuenta (anticheat)">Trampas</th><th></th></tr></thead>
             <tbody id="players"></tbody>
           </table>
           <div class="empty" id="noplayers" style="display:none">No hay jugadores conectados.</div>
@@ -295,6 +295,8 @@ async function cmd(action, extra) {
   catch (e) { toast('error: ' + e.message, false); }
 }
 const esc = s => String(s ?? '').replace(/[<>&"']/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;', "'":'&#39;' }[c]));
+// Player.FactionStatus se envía como número en el estado del panel.
+const facciones = ['', 'Renegado', 'Imperial', 'Republicano', 'Legión del Caos', 'Armada Imperial', 'Milicia Republicana'];
 const fmtDur = s => { s = Math.floor(s); const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
   return (d ? d+'d ' : '') + String(h).padStart(2,'0') + 'h ' + String(m).padStart(2,'0') + 'm'; };
 // Refleja el valor del server en un input de comando SIN pisar una edición no aplicada del usuario:
@@ -350,6 +352,7 @@ function render(st) {
         <div class="pacc">${esc(p.account)}${p.guild ? ' · &lt;' + esc(p.guild) + '&gt;' : ''}</div></td>
       <td class="num">${p.level}</td>
       <td>${esc(p.clase)}</td>
+      <td>${esc(facciones[p.faction] || '—')}</td>
       <td class="num">${p.map}</td>
       <td class="num">${p.x},${p.y}</td>
       <td><span class="hpbar"><i style="width:${hp}%"></i></span> <span class="num">${p.hp}/${p.maxHp}</span></td>

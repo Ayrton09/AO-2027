@@ -35,9 +35,9 @@ public sealed partial class Bot
 
     // El transporte rodea a las criaturas que no puede combatir antes de atraerlas. No se excluye el mapa:
     // las minas requieren cruzarlo, y prohibirlo dejaría al minero sin ningún camino al pueblo.
-    private List<(byte X, byte Y)> PeligrosDelViaje(SentidosDelBot s)
+    private List<(byte X, byte Y)> PeligrosDelViaje(SentidosDelBot s, bool evitaLoDelHueco = false)
     {
-        if (!EsFabricanteMetalurgico) return PeligrosALaVista(s);
+        if (!EsFabricanteMetalurgico && !evitaLoDelHueco) return PeligrosALaVista(s);
         int vida = s.VidaMaxima, nivel = s.Nivel;
         bool pociones = s.CuantoTiene(EsPocionDeVida) >= PocionesParaPelear;
         bool antidoto = s.CuantoTiene(EsPocionQueCuraElVeneno) > 0;

@@ -78,7 +78,7 @@ public class ElSaltoConLaRunaTests
         var t = new TransporteDeBot("Bruma");
 
         var fin = new TaskCompletionSource();
-        var busqueda = (Task)BuscarDondeCazarAsync.Invoke(bot, new object[] { t, s, 185, 25, false, fin.Task, CancellationToken.None })!;
+        var busqueda = (Task)BuscarDondeCazarAsync.Invoke(bot, new object[] { t, s, 185, 25, false, fin.Task, CancellationToken.None, false })!;
         ClientPacketId? primera = null;
         var limite = DateTime.UtcNow.AddSeconds(10);
         while (primera is null && DateTime.UtcNow < limite && !busqueda.IsCompleted)

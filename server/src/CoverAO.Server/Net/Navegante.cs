@@ -921,14 +921,14 @@ public sealed class Navegante
     /// EL COTO QUE MÁS SUMA a <paramref name="saltosMax"/> mapas o menos, contando el propio (<see cref="LoQueSuma"/>), entre los que
     /// suman al menos <paramref name="minimo"/>. Entre los que suman tres cuartos del mejor o más, el que prefiere
     /// <paramref name="desempate"/>: sin eso, todos los que salen del mismo lugar van al mismo mapa. Sin desempate, el que más suma, y
-    /// entre iguales el más cercano.
+    /// entre iguales el más cercano. Con <paramref name="soloMasCercanos"/> sólo compiten los de la primera distancia que da presas.
     /// </summary>
     public (int Mapa, byte X, byte Y, int Saltos, int Rinde, int Suma)? CotoQueMasSuma(int mapaActual, (byte X, byte Y) desde,
                                                                                          Func<int, int> rinde, int saltosMax,
                                                                                          Func<int, bool>? pisable = null,
                                                                                          Func<int, bool>? cotoSirve = null,
                                                                                          Func<int, int>? desempate = null,
-                                                                                         int minimo = 1)
+                                                                                         int minimo = 1, bool soloMasCercanos = false)
     {
         var cotos = new List<(int Mapa, byte X, byte Y, int Saltos, int Rinde, int Suma)>();
         void Probar(int mapa, (byte X, byte Y) entrada, int saltos)
@@ -939,7 +939,10 @@ public sealed class Navegante
         }
         Probar(mapaActual, desde, 0);
         foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, saltosMax))
+        {
+            if (soloMasCercanos && cotos.Count > 0 && saltos > cotos[0].Saltos) break;
             Probar(mapa, entrada, saltos);
+        }
         if (cotos.Count == 0) return null;
         int mejor = cotos.Max(c => c.Suma);
         var parejos = cotos.Where(c => (long)c.Suma * 4 >= (long)mejor * 3);
