@@ -30,7 +30,7 @@
 # autosave (hasta 15 minutos). Por eso el servidor mira un archivo `detener` en su propia carpeta, y ese es
 # el camino que usa este script. Medido igual: 841 ms, con "Servidor detenido" en el log.
 #
-# PUERTOS: cada servidor usa StartPort..StartPort+3 (juego, WebSocket, panel de admin, cliente web). Hay que
+# PUERTOS: cada servidor reserva StartPort..StartPort+3 (el TCP clasico queda cerrado en el mundo real). Hay que
 # separarlos de a 4 como minimo; `nueva` los asigna de a 10 mirando los que ya estan usados.
 
 [CmdletBinding()]
@@ -74,6 +74,11 @@ function PuertoDe($n) {
     if ($m) { return [int]$m.Matches[0].Groups[1].Value }
   }
   return 7666
+}
+
+function RespondeElJuego($url) {
+  try { return (Invoke-RestMethod -Uri ($url + 'coverao-config.json') -TimeoutSec 1 -UseBasicParsing).wsPath -eq '/ws' }
+  catch { return $false }
 }
 
 # El proceso se reconoce por SU RUTA, no por el nombre del ejecutable: con varios servidores hay N procesos
@@ -200,14 +205,20 @@ switch ($Accion.ToLowerInvariant()) {
     # Un `detener` que haya quedado de un apagado anterior lo apagaria apenas arranque, y desde afuera se ve
     # como "arranca y se cae solo".
     Remove-Item (Join-Path $d "detener") -Force -ErrorAction SilentlyContinue
-    Start-Process -FilePath (ExeDe $Nombre) -WorkingDirectory $d -WindowStyle Hidden | Out-Null
     $p = PuertoDe $Nombre
+    $url = "http://localhost:$($p+3)/"
+    if (RespondeElJuego $url) { throw "Ya hay un servidor de CoverAO respondiendo en $url." }
+    $proc = Start-Process -FilePath (ExeDe $Nombre) -WorkingDirectory $d -WindowStyle Hidden -PassThru
     Write-Host "Arrancando '$Nombre' (puertos $p..$($p+3))..." -NoNewline
     for ($i = 0; $i -lt 120; $i++) {
       Start-Sleep -Milliseconds 500
-      try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1', $p); $c.Close()
-            Write-Host " listo. Cliente web: http://localhost:$($p+3)/" -ForegroundColor Green; break } catch {}
+      if ($proc.HasExited) { throw "'$Nombre' se detuvo durante el arranque. Revisa su log." }
+      if (RespondeElJuego $url) {
+        Write-Host " listo. Cliente de escritorio: $url" -ForegroundColor Green
+        return
+      }
     }
+    throw "'$Nombre' no respondio en $url. Revisa su log y el puerto web efectivo."
   }
 
   "detener" {
@@ -257,8 +268,14 @@ switch ($Accion.ToLowerInvariant()) {
     }
     $argsAct = @("actualizar")
     if ($Paquete) { $argsAct += @("--desde", (Resolve-Path $Paquete).Path) }
+    # Tambien en PowerShell 7: queremos capturar el codigo nativo antes de decidir si se reinicia.
+    $PSNativeCommandUseErrorActionPreference = $false
     & (ExeDe $Nombre) @argsAct
-    if ($LASTEXITCODE -ne 0) { Write-Host "La actualizacion de '$Nombre' no termino: arriba dice que quedo hecho y que falta." -ForegroundColor Red }
+    $resultado = $LASTEXITCODE
+    if ($resultado -ne 0) {
+      Write-Host "La actualizacion de '$Nombre' no termino. El servidor queda detenido. Revisa la salida y completa la actualizacion antes de arrancarlo." -ForegroundColor Red
+      exit $resultado
+    }
     if ($estaba) { & $PSCommandPath iniciar $Nombre -Raiz $Raiz }
   }
 

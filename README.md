@@ -1,21 +1,19 @@
-# CoverAO: servidor moderno + cliente web
+# CoverAO: servidor moderno y cliente de escritorio
 
 Port del servidor de Argentum Online **CoverAO-2021** (Visual Basic 6) a **C#/.NET 10**, hablando el
-**protocolo AO clásico byte a byte**, con un **cliente web** (TypeScript/canvas) que se conecta por
-WebSocket. El objetivo no es un juego nuevo: es una réplica fiel de esa variante.
+**protocolo AO clásico byte a byte**, con un **cliente de escritorio** que usa TypeScript, canvas y
+WebSocket. El objetivo es una réplica fiel de esa variante.
 
 - **Autosuficiente**: corre sólo con lo que hay acá. Los datos del juego ya vienen decodificados a JSON en
   [`gamedata/`](gamedata/), y los gráficos, sonidos y música están en
   [`client-web/assets/`](client-web/assets/).
-- **Cliente web**: se juega desde el navegador, sin instalar nada. El puerto de juego habla el protocolo AO
-  clásico byte a byte (es contra lo que se compara este port), pero el **cliente clásico de Windows no llega
-  a entrar**: manda la contraseña ofuscada con `SEncriptar` (un corrimiento distinto en cada envío) y este
-  servidor no la deshace. Medido; ver [`docs/HOSTING.md`](docs/HOSTING.md).
+- **Cliente de escritorio**: es el que se usa para jugar. Al abrir la dirección del servidor en el navegador
+  aparece el enlace de descarga. La compatibilidad con el protocolo clásico se usa en las pruebas.
 
 ## Requisitos
 
 - **.NET 10 SDK**
-- Un navegador, para el cliente web.
+- La app de escritorio de CoverAO para jugar en un servidor con el cliente firmado.
 
 ## Correr el servidor
 
@@ -24,8 +22,7 @@ dotnet build CoverAO.slnx -c Release
 dotnet server/src/CoverAO.Server/bin/Release/net10.0/CoverAO.Server.dll --web-root client-web
 ```
 
-El `--web-root` no es opcional si querés jugar: sin él el servidor levanta igual, pero el puerto del cliente
-web no sirve nada y el navegador se encuentra con la nada. Apunta a la carpeta del cliente.
+`--web-root` apunta a la carpeta del cliente. La distribución firmada ya incluye esa carpeta como `webclient/`.
 
 Arranca como **mundo real**: los 863 mapas con su fauna auténtica (5404 NPCs) y sin cuenta demo. Un jugador
 crea cuenta y personaje con el flujo normal. Con `--fixture` levanta en su lugar el escenario de pruebas.
@@ -33,7 +30,7 @@ crea cuenta y personaje con el flujo normal. Con `--fixture` levanta en su lugar
 Al arrancar imprime sus cuatro puertos, dónde está instalado y qué configuración leyó:
 
 ```
-Puertos: 7666 juego (cliente clasico)  |  7667 WebSocket (cliente web)  |  7668 panel de admin (solo local)  |  7669 cliente web
+Puertos: TCP clasico cerrado  |  7667 WebSocket (compatibilidad)  |  7668 panel de admin (solo local)  |  7669 cliente web
 ```
 
 Todos salen de `StartPort` en el `Server.ini`. El **panel de administración escucha sólo en loopback** a
@@ -41,15 +38,13 @@ propósito: desde afuera se llega por un túnel SSH, nunca abriéndolo en el rou
 
 ## Jugar
 
-Con el servidor andando, el cliente web se sirve solo en `StartPort+3`:
+Agregá la dirección del servidor en la app de CoverAO. Si corre en tu PC con el puerto predeterminado, usá:
 
 ```
 http://localhost:7669/
 ```
 
-Se le pasa esa dirección a quien quiera entrar (cambiando `localhost` por la IP o el dominio del servidor) y
-juega desde el navegador. El cliente descubre el puerto del WebSocket preguntándoselo al servidor, así que
-funciona con cualquier configuración de puertos.
+Para jugar por internet, compartí la dirección HTTPS del servidor. Si alguien la abre en el navegador, ve la página de descarga.
 
 Renderiza el mundo completo (terreno, capas, personajes con equipo, ítems en el suelo, clima, día/noche y
 FX), y permite moverse, atacar, lanzar hechizos, comerciar y banquear con NPCs, fabricar, equipar y lootear:

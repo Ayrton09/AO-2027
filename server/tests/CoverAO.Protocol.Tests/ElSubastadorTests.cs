@@ -222,15 +222,26 @@ public class ElSubastadorTests : IDisposable
     [Fact]
     public async Task Con_la_boveda_llena_el_objeto_espera()
     {
+        _db.CreateCharacter(_db.CreateAccount("aldo", "clave_test")!, "Aldo", 1, 1, 1, 1, 1, 1);
         var (aldo, s, _) = Conectado("Aldo");
         aldo.Inventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 5 };
         await Publicar(s, 1, 5, 100, 0, 3);
         for (int i = 1; i <= GameLimits.MaxBankSlots; i++) aldo.BankInventory[i] = new InventorySlot { ObjIndex = 1, Amount = 1 };
+        int oroGuardado = _db.LoadCharacter("Aldo", 0, "aldo")!.Gold;
+        aldo.Gold += 17;
 
         _ahora += 3 * 3600;
         await EnElLoop(_dispatcher.SubastasAlDia);
 
         Assert.Single(_world.Subastas.Pendientes);
         Assert.Equal(0, EnLaBoveda(aldo, Pocion));
+        Assert.Equal(oroGuardado, _db.LoadCharacter("Aldo", 0, "aldo")!.Gold);
+
+        aldo.BankInventory[1] = default;
+        await EnElLoop(() => _dispatcher.EntregarLoDeLasSubastas(aldo));
+        Assert.Empty(_world.Subastas.Pendientes);
+        var ficha = _db.LoadCharacter("Aldo", 0, "aldo")!;
+        Assert.Equal(aldo.Gold, ficha.Gold);
+        Assert.Equal(5, EnLaBoveda(ficha, Pocion));
     }
 }

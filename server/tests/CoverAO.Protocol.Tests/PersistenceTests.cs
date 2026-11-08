@@ -63,6 +63,27 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task La_espera_para_el_backup_falla_si_hay_guardados_sin_aplicar()
+    {
+        using var liberar = new ManualResetEventSlim();
+        var entro = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var guardado = _db.Cola.PedirAsync("retener el escritor", _ =>
+        {
+            entro.SetResult();
+            return liberar.Wait(TimeSpan.FromSeconds(10));
+        });
+        try
+        {
+            await entro.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Throws<TimeoutException>(() => _db.EsperarEscriturasPendientes(TimeSpan.FromMilliseconds(50)));
+        }
+        finally { liberar.Set(); }
+
+        Assert.True(await guardado.WaitAsync(TimeSpan.FromSeconds(5)));
+        _db.EsperarEscriturasPendientes();
+    }
+
+    [Fact]
     public void AccountPasswordVerifies()
     {
         var acc = _db.CreateAccount("cuenta_test", "secreto123");

@@ -275,8 +275,7 @@ function crearVentana() {
       autoplayPolicy: 'no-user-gesture-required',
       // Minimizado sigue andando igual que en primer plano: el navegador frena los timers de una pestaña escondida.
       backgroundThrottling: false,
-      // LAS HERRAMIENTAS DE DESARROLLO, SÓLO SIN EMPAQUETAR (`npm start`): en el juego instalado no se abren. No es una barrera
-      // (el mismo juego se abre en el navegador, que las tiene); es que el juego de escritorio no las ofrezca.
+      // Las herramientas de desarrollo sólo se habilitan para la app sin empaquetar (`npm start`).
       devTools: !app.isPackaged,
     },
   });
@@ -668,8 +667,7 @@ app.on('second-instance', (_e, argv) => {
 app.whenReady().then(() => {
   if (!unica) return;
   Menu.setApplicationMenu(null);
-  // LA CABECERA DE LA APP en cada pedido, la página y el WebSocket del juego incluidos (ver `Escritorio.cs` en el server): con
-  // `SoloEscritorio=1` el server sólo deja jugar a quien la manda, y un navegador no puede ponérsela.
+  // El mundo real exige esta cabecera en la página y en el WebSocket del juego (ver Escritorio.cs).
   session.defaultSession.webRequest.onBeforeSendHeaders((detalles, listo) => {
     detalles.requestHeaders['X-CoverAO-Escritorio'] = app.getVersion();
     listo({ requestHeaders: detalles.requestHeaders });

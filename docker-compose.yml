@@ -7,7 +7,7 @@
 #   docker compose logs -f        # ver el log
 #   docker compose down           # apagarlo (limpio: manda SIGTERM y el server guarda a todos)
 #
-# Despues, a jugar en  http://localhost:7669/ .
+# Despues, agrega http://localhost:7669/ en el cliente de escritorio.
 
 services:
   coverao:
@@ -17,9 +17,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "7666:7666"   # juego (protocolo AO clasico, para el cliente de Windows)
-      - "7667:7667"   # WebSocket — por aca JUEGA el cliente web. Sin este puerto la pagina carga y no conecta.
-      - "7669:7669"   # cliente web (la URL que abren los jugadores)
+      - "7669:7669"   # cliente de escritorio y su WebSocket en /ws
       # El 7668 (panel de administracion) se publica SOLO en el 127.0.0.1 de esta maquina: desde afuera no se
       # llega. Desde la tuya, con un tunel SSH
       #   ssh -L 7668:localhost:7668 usuario@servidor

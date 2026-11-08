@@ -71,6 +71,7 @@ bool habraWeb = !sinWeb && webRoot is not null && Directory.Exists(webRoot);
 // Ver Game/TestFixture.cs.
 bool fixtureMode = args.Any(a => string.Equals(a, "--fixture", StringComparison.OrdinalIgnoreCase))
     || string.Equals(Environment.GetEnvironmentVariable("COVERAO_FIXTURE"), "1", StringComparison.Ordinal);
+bool soloEscritorio = serverIni.ExigirClienteDeEscritorio(fixtureMode);
 
 // TLS opt-in (SEC-4): `--tls <cert.pfx> [password]` envuelve el transporte TCP en SslStream. Default plaintext
 // (el protocolo AO clásico no tiene TLS; los flows/oráculo y el cliente VB6 corren en claro). Para el cliente
@@ -107,7 +108,7 @@ Console.WriteLine($"Instalado en: {AppContext.BaseDirectory}");
 // Separadores ASCII a propósito. El resto del banner tiene acentos, pero ESTA es la línea que un host lee
 // con `type` en una consola de Windows —codepage 850, no UTF-8— y ahí un `·` sale como un rombo negro.
 // El archivo está bien (los bytes son \xc2\xb7); lo que se rompe es la lectura, que es lo único que importa.
-Console.WriteLine($"Puertos: {port} juego (protocolo clasico)  |  {port + 1} WebSocket (cliente web)  |  " +
+Console.WriteLine($"Puertos: {(soloEscritorio ? "TCP clasico cerrado" : port + " juego (protocolo clasico)")}  |  {port + 1} WebSocket (compatibilidad)  |  " +
                   $"{(sinAdmin ? "sin panel de admin" : adminPort + " panel de admin (solo local)")}  |  " +
                   $"{(habraWeb ? webPort + " cliente web" : "sin cliente web (esta instalacion no lo trae)")}");
 // SIN MENTIR SOBRE DE DONDE SALIO EL NUMERO. Si el puerto vino por linea de comandos, el Server.ini dice
@@ -805,9 +806,6 @@ dispatcher = new PacketDispatcher(world, loop, db, gameData, leveling, walkInter
 // Las fogatas que quedaron prendidas del arranque anterior arrancan su plazo acá: el suelo se restaura mucho
 // más arriba y la lista de vencimientos es del dispatcher, que recién existe ahora.
 dispatcher.AnotarFogatasDelSueloRestaurado();
-// SÓLO LA APP DE ESCRITORIO (Server.ini SoloEscritorio, ver Net.Escritorio). Con --fixture vale 0 salvo que el ini del flow lo
-// escriba: los flows hablan por el puerto clásico y las pruebas del cliente entran por el navegador.
-bool soloEscritorio = serverIni.SoloEscritorio && (!fixtureMode || serverIni.InitEscrita("SoloEscritorio"));
 var server = new TcpGameServer(port, dispatcher, connGuard, authTimeoutMs, maxInboundBytes, tlsCert, admin,
     paquetesPorSegundo: serverIni.MaxPaquetesPorSegundo, rafagaDePaquetes: serverIni.RafagaDePaquetes,
     msPorMensaje: serverIni.MsEntreMensajes, rafagaMensajes: serverIni.RafagaDeMensajes,
@@ -915,8 +913,7 @@ if (serverIni.Bots > 0)
             authTimeoutMs, maxInboundBytes, gameData, cts.Token);
 }
 
-// El puerto clásico no se abre con SoloEscritorio: por ahí entra cualquier programa que hable el protocolo.
-if (soloEscritorio) Console.WriteLine($"Puerto {port} (protocolo clasico) CERRADO: SoloEscritorio=1, se juega con la app de escritorio.");
+// El puerto clásico queda para las pruebas de protocolo. El mundo real exige el cliente de escritorio.
 // UN LISTENER QUE SE CAE APAGA EL SERVIDOR, y se dice cuál. Con un Task.WhenAll, el que fallaba —un segundo servidor con el
 // mismo StartPort muere con SocketException al abrir el puerto— quedaba esperando a que terminaran los otros, que no
 // terminan nunca: el servidor seguía "andando" con un puerto muerto y sin decir nada (auditoría externa del 23/10). Y se

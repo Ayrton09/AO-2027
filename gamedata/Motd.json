@@ -6,7 +6,7 @@
     "Motd": {
       "Line1": "CoverAO Server V1.0 Beta ©CoverGames 2011-2021. Conexión aceptada.",
       "Fuente1": "8",
-      "Line2": "¡Bienvenido a CoverAO! El juego está en beta y puede tener errores: reportalos, junto con tus sugerencias, en github.com/Ayrton09/CoverAO/issues",
+      "Line2": "¡Bienvenido a CoverAO! Descargas y avisos en https://github.com/Ayrton09/CoverAO. Para reportar errores o sugerencias, usá la sección Issues.",
       "Fuente2": "8",
       "Line3": "Si tenés una duda sobre este servidor, escribí /GM o /AYUDA.",
       "Fuente3": "8"

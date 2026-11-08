@@ -677,6 +677,9 @@ public sealed class ServerIni
     /// </summary>
     public bool SoloEscritorio { get; private set; }
 
+    // En el mundo real los INI anteriores con SoloEscritorio=0 tampoco reabren el navegador.
+    internal bool ExigirClienteDeEscritorio(bool fixture) => !fixture || SoloEscritorio;
+
     /// <summary><c>BuscarActualizaciones</c>: 1 (por defecto) = cada tanto mira si el autor publicó una versión nueva del server y
     /// lo avisa en la consola. No baja ni instala nada (eso es <c>actualizar</c>, cuando el host quiera). 0 = no consulta.</summary>
     public bool BuscarActualizaciones { get; private set; } = true;
@@ -686,7 +689,9 @@ public sealed class ServerIni
     public string DescargaEscritorio { get; private set; } = DescargaOficial;
 
     /// <summary>La página de la última versión del juego de escritorio, la que publica el autor.</summary>
-    public const string DescargaOficial = "https://github.com/Ayrton09/CoverAO/releases/latest";
+    internal const string RepositorioPublico = "github.com/Ayrton09/CoverAO";
+    internal const string RepositorioPrivadoAnterior = RepositorioPublico + "-privado";
+    public const string DescargaOficial = "https://" + RepositorioPublico + "/releases/latest";
 
     /// <summary>
     /// <c>OrigenesPermitidos</c> — dominios EXTRA desde los que se acepta abrir el WebSocket del juego,
@@ -1187,6 +1192,8 @@ public sealed class ServerIni
         cfg.StartPort = puerto is >= 1 and <= PuertoMaximo ? puerto : cfg.StartPort;
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
+        if (cfg.CodigoFuente.TrimEnd('/').Equals("https://" + RepositorioPrivadoAnterior, StringComparison.OrdinalIgnoreCase))
+            cfg.CodigoFuente = "";   // era el valor de la plantilla anterior, no un enlace de descarga del código
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
         // El tope de un día es por si alguien escribe un número absurdo: una criatura que no vuelve nunca

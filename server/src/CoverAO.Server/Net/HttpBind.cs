@@ -174,10 +174,10 @@ internal static class HttpBind
     /// Los tres puertos van EXPLICITOS y no derivados uno del otro: el web es configurable con
     /// <c>--web-port</c>, asi que cualquier cuenta del tipo "web menos dos" miente en cuanto alguien lo
     /// mueve al 80.</summary>
-    public static void ImprimirComoEntrar(int puertoWeb, int puertoWs, bool publico)
+    public static void ImprimirComoEntrar(int puertoWeb, int puertoWs, bool publico, bool soloEscritorio)
     {
         Console.WriteLine();
-        Console.WriteLine("== Como entrar ==");
+        Console.WriteLine(soloEscritorio ? "== Como entrar desde la app de escritorio ==" : "== Como entrar ==");
         Console.WriteLine($"   Vos, en esta maquina : http://localhost:{puertoWeb}/");
         var ip = IpDeRedLocal();
         // Alcanza con que UNO de los dos puertos HTTP haya quedado en loopback para que desde otra maquina
@@ -190,7 +190,9 @@ internal static class HttpBind
             Console.WriteLine("   Desde tu red (WiFi)  : (no disponible, ver el aviso de arriba)");
         // UN SOLO PUERTO desde que el juego entra por /ws en el mismo del cliente web. La linea de antes
         // nombraba dos, y el que abria uno solo veia la pagina y no podia conectarse nunca.
-        Console.WriteLine(ElJuegoEntraPorElPuertoWeb
+        Console.WriteLine(soloEscritorio && ElJuegoEntraPorElPuertoWeb
+            ? $"   Desde internet       : publica con un proxy HTTPS hacia el puerto {puertoWeb} (ver HOSTING.md)"
+            : ElJuegoEntraPorElPuertoWeb
             ? $"   Desde internet       : abri en tu router el puerto {puertoWeb} hacia esta maquina"
             : $"   Desde internet       : abri en tu router los puertos {puertoWeb} y {puertoWs} hacia esta maquina");
         // El puerto de juego NO se nombra acá a propósito: abrirlo no le sirve a nadie. Habla el protocolo

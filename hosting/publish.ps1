@@ -255,7 +255,7 @@ $bat = @"
 @echo off
 cd /d "%~dp0"
 echo Iniciando CoverAO... (cerra esta ventana para apagar el servidor)
-echo Cuando diga "Cliente web: http://localhost:7669/", abri esa URL en el navegador.
+echo Agrega la URL que imprime el servidor a la app de escritorio de CoverAO.
 CoverAO.Server.exe %*
 pause
 "@
@@ -282,12 +282,12 @@ if [ "`$1" = "actualizar" ]; then shift; if [ -n "`$1" ]; then exec ./CoverAO.Se
 # Lo que crea el servidor (la base, los backups, data/bots.txt, el token del panel) lo lee solo esta cuenta.
 umask 077
 echo 'Iniciando CoverAO... (Ctrl+C para apagar el servidor)'
-echo 'Cuando diga "Cliente web: http://localhost:7669/", abri esa URL en el navegador.'
+echo 'Agrega la URL que imprime el servidor a la app de escritorio de CoverAO.'
 exec ./CoverAO.Server "`$@"
 "@ -replace "`r`n", "`n"
 [IO.File]::WriteAllText((Join-Path $OutDir "servidor.sh"), $sh, (New-Object Text.UTF8Encoding $false))
 $leeme = @"
-CoverAO — servidor + cliente web (distribucion portable, self-contained)
+CoverAO — servidor para el cliente de escritorio (distribucion portable, self-contained)
 ========================================================================
 
 QUE ES: un servidor de Argentum Online moderno (.NET 10) que NO necesita tener .NET
@@ -296,7 +296,7 @@ instalado. Trae su propio mundo, el panel de administracion y el cliente web.
 COMO JUGAR (Windows):
   1) Ejecuta  Servidor.bat  (o  CoverAO.Server.exe  directamente).
   2) Espera a que cargue el mundo (~10s) y muestre las URLs.
-  3) Abri en el navegador:   http://localhost:7669/     (cliente web para jugar)
+  3) Agrega http://localhost:7669/ a la app de escritorio de CoverAO.
   4) Crea una cuenta y un personaje, y a jugar.
 
 EN LINUX (distribucion armada con  -Rid linux-x64 ):
@@ -325,8 +325,7 @@ ACTUALIZAR A UNA VERSION NUEVA (con el server APAGADO):
   actualizacion borra lo que dejo la anterior en esas dos carpetas.
 
 JUGAR CON AMIGOS:
-  Al arrancar, el servidor imprime un bloque "== Como entrar ==" con las tres
-  direcciones que existen. No hace falta averiguar nada por afuera:
+  Al arrancar, el servidor imprime las direcciones para la app de escritorio:
 
     Vos, en esta maquina : http://localhost:7669/
     Desde tu red (WiFi)  : http://TU-IP:7669/    <- esta es la que les pasas
@@ -340,12 +339,9 @@ JUGAR CON AMIGOS:
     - Si el servidor avisa "los puertos HTTP quedaron accesibles SOLO DESDE ESTA
       MAQUINA", segui las instrucciones que imprime ahi mismo.
 
-  POR INTERNET hay que reenviar en el router hacia esta maquina UN puerto: el
-  7669, que sirve la pagina Y el juego. El 7666 no hace falta abrirlo (habla el
-  protocolo clasico, pero el cliente de Windows no pasa del login: ver
-  HOSTING.md). Y ojo que tu IP de internet suele cambiar sola;
-  para algo estable, un dominio y un reverse-proxy con HTTPS (esta explicado en
-  HOSTING.md, y con un solo puerto es una sola regla).
+  POR INTERNET publica una direccion HTTPS con un reverse-proxy hacia el
+  puerto 7669. La app juega por /ws en esa misma direccion y el navegador
+  muestra la descarga. HOSTING.md explica la configuracion.
 
 CONFIGURACION — Server.ini (esta al lado del ejecutable):
   Ahi se ajusta el puerto, el tope de jugadores, los rates de experiencia y oro,
@@ -361,7 +357,7 @@ CONFIGURACION — Server.ini (esta al lado del ejecutable):
   rango NO queda guardado en el personaje, lo decide el Server.ini en cada login.
 
 PUERTOS (base 7666, configurable con el primer argumento, ej: CoverAO.Server.exe 8000):
-  7666  juego (protocolo AO clasico, TCP) - no hace falta abrirlo
+  7666  TCP clasico cerrado en el mundo real
   7667  WebSocket suelto (compatibilidad; ya no hace falta abrirlo)
   7668  panel de administracion (imprime la URL con token al arrancar)
   7669  cliente web: la pagina Y el juego (en /ws)  <- el unico que se abre
@@ -444,8 +440,7 @@ aunque nunca les des un archivo: alcanza con que se conecten a jugar.
   Poné tu enlace en  Server.ini  ->  [INIT] CodigoFuente=https://...
   El juego se lo muestra al jugador en  Menu -> Licencia . Con eso cumplis.
 
-ERRORES Y PROPUESTAS: https://github.com/Ayrton09/CoverAO-privado/issues  (los cambios de codigo, como
-Pull Request en el mismo repositorio). El juego muestra ese enlace en  Menu -> Licencia .
+DESCARGAS, ERRORES Y PROPUESTAS: https://github.com/Ayrton09/CoverAO
 
 Si no completas esa clave, el jugador ve el aviso de licencia sin enlace. Los graficos,
 sonidos y mapas heredados de Argentum Online no son parte de esta licencia: ver CREDITOS.

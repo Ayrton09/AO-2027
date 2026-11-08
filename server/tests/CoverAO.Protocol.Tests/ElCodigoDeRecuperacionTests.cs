@@ -24,10 +24,10 @@ public class ElCodigoDeRecuperacionTests : IDisposable
 
     private const string Clave = "clave_larga_de_prueba", Codigo = "1234", Nueva = "otra_clave_larga";
 
-    private sealed class Transporte : ITransport
+    private sealed class Transporte(string ip = "10.0.0.9") : ITransport
     {
         public readonly ConcurrentQueue<byte[]> Recibidos = new();
-        public string RemoteEndpoint => "tcp:10.0.0.9:2222";
+        public string RemoteEndpoint => $"tcp:{ip}:2222";
         public ValueTask<int> ReceiveAsync(byte[] buffer, CancellationToken ct) => new(0);
         public void Send(byte[] data) => Recibidos.Enqueue(data);
         public void Close(string reason) { }
@@ -49,15 +49,21 @@ public class ElCodigoDeRecuperacionTests : IDisposable
     {
         _cts.Cancel();
         try { _corriendo.Wait(TimeSpan.FromSeconds(5)); } catch { /* cancelado */ }
+        _db.Dispose();
+    }
+
+    private void Enviar(ClientSession sesion, string pin, byte tipo, string cuenta)
+    {
+        _dispatcher.HandleOne(sesion, new ByteQueueReader(new ByteQueueWriter()
+            .WriteByte((byte)ClientPacketId.ProcesosLogin).WriteAsciiString(cuenta).WriteAsciiString(pin).WriteAsciiString(Nueva)
+            .WriteByte(1).WriteByte(4).WriteByte(5).WriteByte(tipo).ToArray()));
     }
 
     /// <summary>Manda un ProcesosLogin y espera el EjecutarAccion(5) que cierra cada respuesta; devuelve su "1" o "0".</summary>
-    private async Task<string> Procesar(string pin, byte tipo)
+    private async Task<string> Procesar(string pin, byte tipo, string cuenta = "cuenta", string ip = "10.0.0.9")
     {
-        var t = new Transporte();
-        _dispatcher.HandleOne(new ClientSession(t, _dispatcher), new ByteQueueReader(new ByteQueueWriter()
-            .WriteByte((byte)ClientPacketId.ProcesosLogin).WriteAsciiString("cuenta").WriteAsciiString(pin).WriteAsciiString(Nueva)
-            .WriteByte(1).WriteByte(4).WriteByte(5).WriteByte(tipo).ToArray()));
+        var t = new Transporte(ip);
+        Enviar(new ClientSession(t, _dispatcher), pin, tipo, cuenta);
         long fin = Environment.TickCount64 + 15_000;
         while (Environment.TickCount64 < fin)
         {
@@ -100,6 +106,41 @@ public class ElCodigoDeRecuperacionTests : IDisposable
         Assert.Equal("0", await Procesar(Codigo, 0));   // el tope de la cuenta: ni con el bueno
         Assert.Equal("0", await Procesar(Codigo, 3));
         Assert.Equal("0", await Procesar(Codigo, 200));
+        Assert.True(ClaveEs(Clave));
+    }
+
+    [Fact]
+    public async Task Desconectarse_durante_la_verificacion_no_borra_los_fallos()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            using var liberar = new ManualResetEventSlim();
+            var entro = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var bloqueo = _db.Cola.PedirAsync("retener la lectura", _ =>
+            {
+                entro.SetResult();
+                return liberar.Wait(TimeSpan.FromSeconds(20));
+            });
+            var sesion = new ClientSession(new Transporte(), _dispatcher);
+            try
+            {
+                await entro.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Enviar(sesion, "9999", 0, "cuenta");
+                await _loop.SincronizarContinuacionesAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.False(sesion.TomarVerificacion());
+                if (i == 0)
+                    Assert.Equal("0", await Procesar(Codigo, 0, "CUENTA", "10.0.0.10"));
+                sesion.Cortar("cliente desconectado");
+            }
+            finally { liberar.Set(); }
+            Assert.True(await bloqueo.WaitAsync(TimeSpan.FromSeconds(5)));
+
+            using var plazo = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            while (!sesion.TomarVerificacion()) await Task.Delay(20, plazo.Token);
+            sesion.SoltarVerificacion();
+            await _loop.SincronizarContinuacionesAsync().WaitAsync(plazo.Token);
+        }
+        Assert.Equal("0", await Procesar(Codigo, 0, "CUENTA", "10.0.0.11"));
         Assert.True(ClaveEs(Clave));
     }
 }

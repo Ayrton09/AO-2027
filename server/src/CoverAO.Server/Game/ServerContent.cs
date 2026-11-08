@@ -1,5 +1,8 @@
 ﻿using System.Linq;
 
+using System.Text.RegularExpressions;
+using CoverAO.Server.Data;
+
 namespace CoverAO.Server.Game;
 
 /// <summary>
@@ -12,6 +15,8 @@ namespace CoverAO.Server.Game;
 public sealed class ServerContent
 {
     public const byte MotdFont = 8;   // FontIndex del MOTD en el oráculo VB6 (ConnectUser)
+    private static readonly Regex RepoAnterior = new(@"(?<![\w.-])" + Regex.Escape(ServerIni.RepositorioPrivadoAnterior)
+        + @"(?=\.(?:\s|$)|[^\w.-]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>Líneas de bienvenida (se emiten como ConsoleMsg con FontIndex 8).</summary>
     public IReadOnlyList<string> Motd { get; }
@@ -26,6 +31,7 @@ public sealed class ServerContent
         "CoverAO — servidor moderno (.NET 10). ¡Conexión aceptada!",
         "¡Bienvenido a CoverAO! El mundo de Argentum te espera.",
         "Escribí /AYUDA para ver los comandos, o /GM para hablar con un administrador.",
+        "Descargas y avisos: https://" + ServerIni.RepositorioPublico,
     };
     private static readonly string[] DefaultUpdates =
     {
@@ -45,7 +51,8 @@ public sealed class ServerContent
     /// </summary>
     public static ServerContent Load(string dataDir, string? gameDataDir = null) => new(
         ReadLinesOr(Path.Combine(dataDir, "motd.txt"),
-                    ReadIniLines(gameDataDir, "Motd.json", "Motd", DefaultMotd)),
+                    ReadIniLines(gameDataDir, "Motd.json", "Motd", DefaultMotd))
+            .Select(l => RepoAnterior.Replace(l, ServerIni.RepositorioPublico)).ToArray(),
         ReadLinesOr(Path.Combine(dataDir, "updates.txt"),
                     ReadIniLines(gameDataDir, "ACTUALIZACIONES.json", "UPDATE", DefaultUpdates)));
 

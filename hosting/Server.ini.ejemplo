@@ -24,9 +24,8 @@ OrigenesPermitidos=
 ; (127.0.0.1,::1 si corre en esta maquina). Sin esto, detras del proxy todos los
 ; jugadores tienen la misma IP y los topes por IP los frenan a todos juntos.
 ProxyDeConfianza=
-; 1 = solo se juega con la app de escritorio: el navegador ve una pagina para
-; bajarla y el puerto del protocolo clasico no se abre. Prenderlo cuando los
-; jugadores tengan la app; antes deja afuera a todos.
+; El mundo real siempre exige la app de escritorio. Esta clave solo sirve
+; en --fixture: 0 permite las pruebas por TCP y navegador, 1 exige la app.
 SoloEscritorio=0
 ; 1 = cada tanto mira si hay una version nueva del server y lo avisa en la
 ; consola. No baja ni instala nada: eso es  actualizar  (ver HOSTING.md).
@@ -197,8 +196,8 @@ Consejeros=0
 RolesMasters=0
 
 ; --- Publicacion -------------------------------------------------------------
-; Donde esta el codigo, para el aviso de licencia del cliente.
-CodigoFuente=https://github.com/Ayrton09/CoverAO-privado
+; URL del codigo de ESTA version, accesible a todos los jugadores de este servidor.
+CodigoFuente=
 ; Version que se le exige al cliente. VACIO = entra cualquiera, y se queda asi:
 ; el control es una comparacion literal, y prenderlo con un numero que no sea
 ; EXACTO al del cliente que repartiste deja a todos afuera.

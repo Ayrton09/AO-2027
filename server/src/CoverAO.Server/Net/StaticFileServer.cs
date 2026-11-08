@@ -125,7 +125,7 @@ public sealed class StaticFileServer
     /// ingreso las muestre ANTES de entrar, como las Noticias del frmConnect del original. Viajan en el mismo JSON: son las
     /// mismas para todos y se cargan al arrancar.</param>
     /// <param name="version">La versión del server, que el panel de novedades muestra en su cabecera.</param>
-    /// <param name="soloEscritorio">Server.ini <c>SoloEscritorio</c>: el que no viene de la app ve la página de descarga.</param>
+    /// <param name="soloEscritorio">En el mundo real, el que no viene de la app ve la página de descarga.</param>
     /// <param name="descargaEscritorio">Server.ini <c>DescargaEscritorio</c>: el enlace de esa página, por el mismo JSON.</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
                             Func<string>? estadoPublico = null,
@@ -139,7 +139,7 @@ public sealed class StaticFileServer
         _wsPort = wsPort;
         _estadoPublico = estadoPublico;
         _juegoPorWebSocket = juegoPorWebSocket;
-        _root = Path.GetFullPath(root);
+        _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         int anunciado = wsPortPublico > 0 ? wsPortPublico : wsPort;
         // `wsPath` es lo que hace que el cliente entre por ESTA misma dirección. `wsPort` se sigue publicando
         // —y sigue siendo el real— para el cliente que no conozca la ruta: un index.html viejo, o una página
@@ -169,7 +169,7 @@ public sealed class StaticFileServer
         bool publico = bind.Publico;
         Console.WriteLine($"== Cliente web: http://localhost:{_port}/ (raíz: {_root}) ==");
         HttpBind.AvisarSiSoloLocal(publico, _port);
-        HttpBind.ImprimirComoEntrar(_port, _wsPort, publico);
+        HttpBind.ImprimirComoEntrar(_port, _wsPort, publico, _soloEscritorio);
         try
         {
             while (!token.IsCancellationRequested)
@@ -220,10 +220,6 @@ public sealed class StaticFileServer
             if (req.HttpMethod != "GET" && req.HttpMethod != "HEAD") { res.StatusCode = 405; res.Close(); return; }
             string rel = Uri.UnescapeDataString(req.Url?.AbsolutePath ?? "/").TrimStart('/');
             if (rel.Length == 0) rel = "index.html";
-            // LA PÁGINA DEL JUEGO, SÓLO PARA LA APP (ver Escritorio): al navegador se le sirve la de descarga en la misma
-            // dirección. Lo que sale depende de la cabecera, así que `variante` la suma al Vary de la respuesta.
-            bool variante = _soloEscritorio && string.Equals(rel, "index.html", StringComparison.OrdinalIgnoreCase);
-            if (variante) rel = Escritorio.RutaAServir(rel, true, Escritorio.EsLaApp(req.Headers[Escritorio.Cabecera]));
             // La config es SINTÉTICA y gana sobre el disco: si quedara un archivo viejo con ese nombre en la
             // carpeta del cliente, publicaría un puerto que no es el que este proceso abrió.
             if (string.Equals(rel, RutaConfig, StringComparison.OrdinalIgnoreCase))
@@ -254,6 +250,9 @@ public sealed class StaticFileServer
             if (full != _root && !full.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             { res.StatusCode = 403; res.Close(); return; }
             if (Directory.Exists(full)) full = Path.Combine(full, "index.html");
+            // Se decide sobre la ruta resuelta para que un alias de index.html también muestre la descarga.
+            bool variante = _soloEscritorio && string.Equals(full, Path.Combine(_root, "index.html"), StringComparison.OrdinalIgnoreCase);
+            if (variante) full = Path.Combine(_root, Escritorio.RutaAServir("index.html", true, Escritorio.EsLaApp(req.Headers[Escritorio.Cabecera])));
             var info = new FileInfo(full);
             if (!info.Exists) { res.StatusCode = 404; res.Close(); return; }
 
@@ -262,7 +261,8 @@ public sealed class StaticFileServer
             long mtime = info.LastWriteTimeUtc.Ticks;
             string etag = $"\"{info.Length:x}-{mtime:x}\"";
             res.Headers["ETag"] = etag;
-            res.Headers["Cache-Control"] = "no-cache";      // revalidar siempre; el 304 hace que salga barato
+            res.Headers["Cache-Control"] = variante ? "private, no-cache" : "no-cache";
+            if (variante) res.Headers["Vary"] = Escritorio.Cabecera;
             res.Headers["Last-Modified"] = info.LastWriteTimeUtc.ToString("R");
             if (string.Equals(req.Headers["If-None-Match"], etag, StringComparison.Ordinal))
             { res.StatusCode = 304; res.Close(); return; }
@@ -292,7 +292,6 @@ public sealed class StaticFileServer
                 // hasta 8 MB no se comprimen) y cargarlos enteros por request era amplificación de memoria —
                 // N descargas paralelas eran N archivos completos en el heap. Así viajan de a bloques y la
                 // contrapresión del socket manda.
-                if (variante) res.Headers["Vary"] = Escritorio.Cabecera;
                 res.ContentLength64 = info.Length;
                 if (req.HttpMethod == "GET")
                 {

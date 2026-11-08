@@ -228,10 +228,8 @@ public sealed partial class PacketDispatcher
     /// queda para la próxima.</summary>
     internal void EntregarLoDeLasSubastas(Player p)
     {
-        bool entrego = false;
-        _world.Subastas.Entregar(p.Name, e =>
+        int entregadas = _world.Subastas.Entregar(p.Name, e =>
         {
-            entrego = true;
             if (e.Objeto != 0)
             {
                 int bslot = FindBankSlotFor(p, e.Objeto, e.Cantidad);
@@ -253,7 +251,7 @@ public sealed partial class PacketDispatcher
         });
         // LO ENTREGADO SE GUARDA YA, el personaje y el Centro juntos: si no, una caída antes del autoguardado lo perdía de los dos
         // lados.
-        if (entrego) GuardarAlQuePagoYLasSubastas(p);
+        if (entregadas > 0) GuardarAlQuePagoYLasSubastas(p);
     }
 
     /// <summary>A cada uno de los que el Centro les debe algo y están conectados.</summary>

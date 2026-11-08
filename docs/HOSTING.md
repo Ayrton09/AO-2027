@@ -50,16 +50,16 @@ Se configura uno solo, `StartPort`, y de ahí salen los otros tres:
 
 | puerto | servicio |
 |---|---|
-| `StartPort` | juego (protocolo AO clásico): no hace falta abrirlo, ver más abajo |
+| `StartPort` | protocolo AO clásico, cerrado en el mundo real |
 | `StartPort + 1` | WebSocket suelto: **compatibilidad**, ya no hace falta abrirlo |
 | `StartPort + 2` | panel de administración: **sólo loopback** |
-| `StartPort + 3` | cliente web: la página **y el juego**, en `/ws` |
+| `StartPort + 3` | página de descarga para el navegador y juego de escritorio en `/ws` |
 
 El servidor los imprime al arrancar y quedan en el log del día.
 
-**En el router se abre UNO: el del cliente web** (`StartPort + 3`). El juego entra por `/ws` en ese mismo
-puerto, así que el jugador baja la página y juega por la misma dirección. **El del juego (`StartPort`) no
-hace falta abrirlo**: ver más abajo por qué el cliente clásico de Windows no puede entrar.
+La app usa una sola dirección y se conecta por `/ws`. Para internet publicá esa dirección mediante HTTPS
+en el proxy. En el backend, la página y el WebSocket comparten `StartPort + 3`. El navegador abre la página
+de descarga. El puerto de administración y el WebSocket de compatibilidad quedan fuera de la ruta pública.
 
 > Antes hacían falta **dos** (el de la página y el del WebSocket) y ésa era la trampa más cara del hosteo:
 > abriendo uno solo, el amigo veía la página, veía el login, y el socket se moría contra un puerto cerrado.
@@ -80,24 +80,17 @@ netsh http add urlacl url=http://+:7669/ user=%USERNAME%
 En **PowerShell** `%USERNAME%` no se expande: usá `$env:USERNAME` o escribí tu usuario. El servidor imprime al
 arrancar la línea exacta, con tu usuario ya resuelto. En Linux no hace falta nada.
 
-### Qué está verificado desde OTRA máquina
+### Prueba de apertura desde otra red
 
-Medido el 2026-08-09 con el servidor Linux corriendo en una máquina y el navegador en otra:
-
-| lo que hace un jugador | resultado |
-|---|---|
-| abrir `http://<ip-del-server>:StartPort+3/` | la página carga entera (330 KB, con el canvas) |
-| el cliente abre su WebSocket | conecta (por `/ws` en el mismo puerto; el server lo publica en `/coverao-config.json`) |
-| poner cuenta y contraseña | el server contesta con la lista de personajes |
-| elegir personaje | entra al mundo, con los personajes de alrededor dibujados |
-
-Lo único que NO se puede probar sin salir a internet es el **NAT del router**: que el reenvío de puertos
-esté bien hecho. Todo lo demás del camino "un amigo abre la URL y juega" está ejercido.
+1. Abrí el dominio HTTPS en un navegador y comprobá que aparezca la descarga del cliente.
+2. Agregá la misma dirección en la app de escritorio. Creá una cuenta, elegí un personaje y entrá al mundo.
+3. Revisá que el servidor registre las IP de los jugadores cuando haya un proxy. Verificá el apagado limpio
+   y una restauración de backup en una instalación separada.
 
 ### El cliente clásico de Windows NO puede entrar
 
-El puerto de juego (`StartPort`) habla el **protocolo AO clásico byte a byte** (es lo que se compara contra el
-servidor VB6 original) y el cliente clásico conecta y sus paquetes se entienden. Pero **no pasa del login**, y
+En `--fixture`, `StartPort` habla el **protocolo AO clásico byte a byte** para las pruebas de paridad con el
+servidor VB6. El cliente clásico conecta ahí, pero **no pasa del login**, y
 la causa es la contraseña: el cliente VB6 la manda ofuscada con `SEncriptar`
 (`Cliente/Codigo/Protocol.bas:4454`), que le suma a cada carácter **un número al azar entre 10 y 98** y pega
 dos caracteres diciendo cuál fue. El servidor VB6 lo deshace con `SDesencriptar` antes de validar
@@ -195,7 +188,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `Version` | la versión de cliente que este servidor acepta. Los cinco paquetes de ingreso traen la del cliente y el servidor la compara **como texto**: si no coincide, cartel de *juego desactualizado* y se corta la conexión. **Vacía (el default) = sin control**, que es lo que hacía el servidor hasta ahora. El cliente web que viene con esta versión manda `1.0.0`. Encendela sólo si sabés qué cliente repartiste: la comparación es exacta, así que un valor que no sea el del cliente desplegado deja a **todos** afuera. Sirve para dos cosas: que no se conecte un cliente ajeno al puerto del juego, y forzar a que actualicen cuando publiques una versión nueva. **Se reparte VACÍA por decisión del autor (2026-09-08)**: con el cliente cacheado en el navegador de cada jugador, el cartel de *juego desactualizado* le sale a quien sólo necesita recargar |
 | `PaginaPublica` | 1 = publica `estado.html` en el mismo puerto del cliente web: quiénes están conectados y la tabla de posiciones, con su enlace en la pantalla de ingreso. **No es una regla de la casa**: no cambia ninguna mecánica, es una ventana a lo que ya pasa: con pocos jugadores, lo que decide si alguien entra es saber si hay alguien adentro, y el `/ONLINE` del juego sólo se lee estando ya conectado. Sale nombre, nivel, clase y clan; **no** sale el mapa ni la posición de nadie, ni cuentas ni IPs, y los administradores no entran en la tabla. `0` la apaga entera y la dirección deja de existir (404). **Viene PRENDIDA** |
 | `BuscarActualizaciones` | 1 (así viene) = al minuto de arrancar y cada 6 horas mira si el autor publicó una versión nueva del server y lo avisa en la consola. No baja ni instala nada: eso lo hace el host cuando quiere, con `actualizar` (ver "Actualizar a una version nueva"). 0 = no consulta |
-| `SoloEscritorio` | 1 = sólo se juega con la app de escritorio: la app agrega su cabecera a cada pedido y sin ella el WebSocket se rechaza, la página del juego se cambia por una para bajar la app y el puerto del protocolo clásico no se abre. La página pública de estado sigue abierta. No frena al que escribe su propio programa (para eso está lo que el server no acepta): saca del medio la consola del navegador, las extensiones y los scripts. **Viene APAGADA**: prenderla cuando los jugadores tengan la app, antes deja afuera a todos |
+| `SoloEscritorio` | Sólo cambia el comportamiento de `--fixture`. En el mundo real la app de escritorio siempre es obligatoria, incluso si el INI antiguo dice `0`. El navegador ve la página de descarga, el WebSocket exige la cabecera de la app y el TCP clásico queda cerrado. La cabecera distingue el acceso del navegador convencional y es reproducible por un programa personalizado |
 | `DescargaEscritorio` | el enlace que muestra esa página para bajar la app. Vacío = la descarga oficial, `https://github.com/Ayrton09/CoverAO/releases/latest` |
 | `ProxyDeConfianza` | las direcciones del reverse-proxy que está delante del cliente web, separadas por coma (`127.0.0.1,::1` si corre en la misma máquina). De una conexión que viene de ahí, la IP del jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy; sin esto, detrás del proxy todos los jugadores tienen la misma IP y los topes por IP los frenan a todos juntos. Vacío = no se le cree a ninguna cabecera |
 | `OrigenesPermitidos` | dominios EXTRA desde los que se acepta abrir el WebSocket del juego, separados por coma. Vacío (el default) = sólo el del propio servidor. El navegador declara en `Origin` qué página abrió el socket; sin ese chequeo, **cualquier página que un jugador visite puede abrirle sockets a tu servidor desde su máquina**: gastarle el cupo de conexiones y hacerle bloquear su propia IP con intentos de login fallidos. Un cliente que no es una página (una herramienta) no manda `Origin` y entra igual. Sólo hace falta si servís el cliente desde otro dominio que el servidor |
@@ -293,7 +286,7 @@ Qué hace, en orden, y cualquier problema antes de reemplazar algo deja todo com
 El resumen queda en `actualizacion/ultima.txt`.
 
 **El jugador no hace nada.** El cliente lo sirve este mismo servidor: el que estaba jugando, al reconectar,
-recarga solo el cliente nuevo, en el navegador y en el juego de escritorio.
+recarga solo el cliente nuevo en la app de escritorio.
 
 **Los personajes viejos abren en la version nueva.** Al arrancar, el servidor deja un sello en
 `data/version.txt` y avisa por consola si el mundo venia de otra version. **Si el aviso dice que venis de una
@@ -499,6 +492,8 @@ configuración y hasta su versión. Lo único que hay que cuidar es no repetir p
 .\coverao.ps1 arranque rojo     # OPCIONAL: que arranque al prender la máquina
 ```
 
+Si ya tenés una copia del gestor en esa carpeta, reemplazala por la de la versión nueva antes de actualizar.
+
 > **El servidor lo abrís vos cuando querés.** Ni `arranque` (Windows) ni `systemctl enable` (Linux) están en
 > el camino recomendado: el juego se levanta a mano y se apaga a mano. Los dos existen para quien tenga un
 > servidor dedicado y los quiera, pero no se registran solos ni hacen falta para jugar con amigos.
@@ -520,9 +515,8 @@ journalctl -u coverao@rojo -f
 
 Para un solo servidor está [`hosting/coverao.service`](../hosting/coverao.service), sin el `@nombre`.
 
-**Docker**: un contenedor por servidor. La imagen se arma desde el **paquete oficial de Linux**, no desde el código: es
-la única forma de que lleve el cliente firmado por el autor, sin el cual la app de escritorio no entra al server (con el
-navegador se juega igual). Desde la carpeta del paquete (`CoverAO-servidor-linux-x64.tar.gz` descomprimido), que ya trae
+**Docker**: un contenedor por servidor. La imagen se arma desde el **paquete oficial de Linux**, que incluye el cliente
+firmado para la app de escritorio. Desde la carpeta del paquete (`CoverAO-servidor-linux-x64.tar.gz` descomprimido), que ya trae
 su `Dockerfile` y su `docker-compose.yml`:
 
 ```bash
@@ -595,9 +589,13 @@ conexiones por IP pasa a ser un tope para toda la web, y el freno de intentos de
 IP de cada jugador sale de la cabecera `X-Forwarded-For` que agrega el proxy (Caddy la pone solo; en nginx va
 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` junto a las otras).
 
-Con el proxy puesto, en el router se abre **el 443 y nada más**: ni el 7669 ni el 7667 tienen que llegar desde
-afuera. El **7666** (el del protocolo clásico) es aparte y no pasa por el proxy: ése va en claro salvo que
-arranques con `--tls cert.pfx`, y hoy no hace falta abrirlo, porque el cliente clásico no puede entrar.
+Con Pulsar en Windows, usá `CoverAO.Server.exe` desde la carpeta de instalación. El proxy debe preservar `Host`,
+reenviar el upgrade de `/ws` y pasar la cabecera `X-CoverAO-Escritorio` que manda la app. Si Windows sólo reservó
+el puerto web para `localhost`, reservá el prefijo para la cuenta de Windows que ejecuta CoverAO y limitá el backend
+con el firewall. Para detener el proceso de forma ordenada, usá el archivo `detener` y esperá la salida del servidor.
+
+Con el proxy puesto, en el router se abre **el 443**. Los puertos 7667, 7668 y 7669 quedan internos y
+el 7666 del protocolo clásico permanece cerrado en el mundo real.
 
 **Verificado ejecutándolo** (2026-09-01), y no sólo leído: con un proxy TLS delante del servidor, la página se
 sirve por `https://`, el cliente abre `wss://<mismo host>/ws` y se juega: login, caminata, clic sobre una
@@ -614,4 +612,6 @@ conecte a jugar. Se cumple poniendo la URL en `Server.ini`:
 CodigoFuente=https://github.com/tu-usuario/tu-fork
 ```
 
-El juego se la muestra al jugador en Menú → Licencia. Si no se completa, el jugador ve el aviso sin enlace.
+El enlace aparece en Menú → Licencia y en la página de descarga. Puede apuntar a un archivo del código de esa
+versión. En una prueba cerrada, todos los testers deben poder descargarlo con su propio acceso. Si una instalación
+anterior conserva el enlace al repositorio privado de CoverAO, configurá la dirección del código de esa versión.

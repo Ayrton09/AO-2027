@@ -187,6 +187,9 @@ public sealed partial class PacketDispatcher
     /// equivocados en una hora cierran la recuperación de ESA cuenta por una hora; entrar con la contraseña sigue andando,
     /// así que nadie le bloquea la cuenta al dueño.</summary>
     private readonly LoginThrottle? _codigosPorCuenta;
+    // El loop admite una recuperación por cuenta a la vez para que las conexiones paralelas no
+    // puedan verificar varios PIN antes de que se registre el quinto fallo.
+    private readonly HashSet<string> _recuperacionesEnCurso = new(StringComparer.OrdinalIgnoreCase);
     private bool CodigoBloqueado(ClientSession session, string cuenta, byte tipo)
     {
         if (_codigosPorCuenta is null || tipo != TipoRecuperarCuenta) return false;
@@ -1125,6 +1128,15 @@ public sealed partial class PacketDispatcher
         if (!TurnoDeVerificar(session, () => CambiarClaveFueraDelLoop(session, account, pin, nuevaClave, tipo),
                               () => LoginBlocked(session) || CodigoBloqueado(session, account, tipo)))
             return;
+        string? recuperacion = tipo == TipoRecuperarCuenta && _codigosPorCuenta is not null
+            ? account.ToLowerInvariant() : null;
+        if (recuperacion is not null && !_recuperacionesEnCurso.Add(recuperacion))
+        {
+            session.Send(ServerMessages.SendMsgBox("Ya hay una recuperación en curso para esta cuenta. Volvé a intentar en unos segundos.", 0));
+            session.Send(ServerMessages.EjecutarAccion(AccionResultadoLogin, "0"));
+            SoltarYReanudar(session);
+            return;
+        }
         Task.Run(() =>
         {
             Data.Account? acc = null;
@@ -1147,21 +1159,29 @@ public sealed partial class PacketDispatcher
                         string hash = PasswordHasher.HashModern(nuevaClave);
                         // Un código del VB6 que acaba de verificar se pasa al formato moderno: sólo ahora se lo conoce.
                         string? codigo = tipo == TipoRecuperarCuenta && acc.CodigoLegado ? PasswordHasher.HashModern(pin) : null;
-                        _db.CambiarCuenta(account, c =>
+                        respondio = _db.CambiarCuenta(account, c =>
                         {
                             if (codigo is not null && c.CodigoLegado) c.UserCodeHash = codigo;
                             c.PonerClave(hash);
-                        });
+                        }) is not null;
                     }
                 }
             }
             catch (Exception ex)
             {
+                respondio = false;
                 Console.Error.WriteLine($"[{session.RemoteEndpoint}] procesos de login: {ex.Message}");
             }
             _loop.Enqueue(() =>
             {
                 session.SoltarVerificacion();
+                if (recuperacion is not null) _recuperacionesEnCurso.Remove(recuperacion);
+                // La verificación ya ocurrió. El resultado cuenta aunque el cliente se haya ido.
+                if (respondio && (acc is null || !pinOk))
+                {
+                    LoginFail(session);
+                    if (acc is not null && recuperacion is not null) _codigosPorCuenta?.RecordFailure(recuperacion);
+                }
                 if (session.Cerrada) return;
                 try
                 {
@@ -1173,7 +1193,6 @@ public sealed partial class PacketDispatcher
                     }
                     if (acc is null)
                     {
-                        LoginFail(session);
                         session.Send(ServerMessages.SendMsgBox(ErrCuentaNoExiste, 1));
                     }
                     else if (pinOk && corta)
@@ -1188,8 +1207,6 @@ public sealed partial class PacketDispatcher
                     }
                     else
                     {
-                        LoginFail(session);
-                        if (tipo == TipoRecuperarCuenta) _codigosPorCuenta?.RecordFailure(account.ToLowerInvariant());
                         session.Send(ServerMessages.SendMsgBox(
                             tipo == TipoCambiarClave ? ErrClaveIncorrecta : ErrCodigoIncorrecto, 1));
                     }

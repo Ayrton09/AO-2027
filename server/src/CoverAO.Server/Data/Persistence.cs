@@ -338,7 +338,7 @@ public sealed class Persistence : IDisposable
     public void EsperarEscriturasPendientes(TimeSpan? plazo = null)
     {
         if (!_cola.Vaciar(plazo ?? TimeSpan.FromSeconds(30)))
-            Console.Error.WriteLine($"[save] quedaron {_cola.Pendientes} escrituras sin terminar");
+            throw new TimeoutException($"La base no terminó de aplicar los guardados pendientes ({_cola.Pendientes} pedidos en cola).");
     }
 
     // ── LO QUE PIDE EL HILO DEL MUNDO: con respuesta, sin esperar ──────────────────────────────────────────────

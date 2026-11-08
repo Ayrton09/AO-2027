@@ -3407,7 +3407,7 @@
     fetch('./coverao-config.json', { signal: corteConfig.signal }).then((r) => (r.ok ? r.json() : null))
       .then((cfg) => { if (cfg && cfg.wsPort > 0) wsPort = cfg.wsPort;
                        if (cfg && cfg.wsPath) wsPath = String(cfg.wsPath);
-                       if (cfg && cfg.codigoFuente) codigoFuente = String(cfg.codigoFuente);
+                       if (typeof cfg?.codigoFuente === 'string' && /^https?:\/\//i.test(cfg.codigoFuente)) codigoFuente = cfg.codigoFuente;
                        if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false;
                        if (cfg && cfg.destinoPortales === false) destinoPortales = false;
                        if (cfg && cfg.lluviaBajoTecho === true) ocultarLluviaBajoTecho = false;
@@ -5574,11 +5574,11 @@
         'Podés usarlo, estudiarlo, modificarlo y repartirlo.',
         '',
         codigoFuente
-          ? 'Código fuente de este servidor: ' + esc(codigoFuente)
+          ? `<a href="${esc(codigoFuente)}" target="_blank" rel="noopener noreferrer">Descargar el código fuente de este servidor</a>`
           : 'Quien hostea este servidor todavía no publicó de dónde bajar su código. Puede hacerlo poniendo la URL en Server.ini → [INIT] CodigoFuente.',
         // Si el código vive en una forja con issues (GitHub/GitLab), el mismo enlace sirve para reportar
         // errores y proponer cambios: es a donde el autor quiere que vayan, y no al chat del GM.
-        ...(/github\.com|gitlab\.com/.test(codigoFuente)
+        ...(/^https?:\/\/(github\.com|gitlab\.com)\/[^/?#]+\/[^/?#]+\/?$/i.test(codigoFuente)
           ? ['Errores y propuestas de cambio: ' + esc(codigoFuente.replace(/\/+$/, '')) + '/issues']
           : []),
         '',

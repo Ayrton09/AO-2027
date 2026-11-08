@@ -1,8 +1,8 @@
 namespace CoverAO.Server.Net;
 
 /// <summary>
-/// EL JUEGO SE JUEGA CON LA APP DE ESCRITORIO (decisión del autor, 12/10). Con <c>SoloEscritorio=1</c> en el Server.ini el
-/// server sólo deja jugar a la app: ella agrega <see cref="Cabecera"/> a cada pedido (el HTTP de la página y el WebSocket del
+/// El mundo real sólo deja jugar desde la app de escritorio. La app agrega <see cref="Cabecera"/> a cada pedido
+/// (el HTTP de la página y el WebSocket del
 /// juego), y un navegador no puede ponerle una cabecera propia ni a la navegación ni al WebSocket. Sin la cabecera el
 /// WebSocket se rechaza, la página del juego se reemplaza por la de descarga y el puerto clásico (TCP) no se abre.
 ///

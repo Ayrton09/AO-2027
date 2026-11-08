@@ -3,7 +3,7 @@
 #   docker compose up -d                 (en esta carpeta, con el docker-compose.yml de al lado)
 #   docker build -t coverao .            (o la imagen sola)
 #
-# Y a jugar en  http://localhost:7669/ , con el navegador o con la app de escritorio.
+# Agrega http://localhost:7669/ en la app de escritorio.
 #
 # POR QUE DEL PAQUETE Y NO DEL CODIGO: la app de escritorio sólo entra a un server cuyo cliente web trae la firma del
 # autor (webclient/firma.json), y esa firma no se puede generar sin su clave. El paquete la trae; una imagen compilada
@@ -59,9 +59,9 @@ ENV DOTNET_RUNNING_IN_CONTAINER=true
 # extraer cuando se recrea el contenedor, que es un instante.
 ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp/coverao-net
 
-# 7666 juego (protocolo AO clásico) · 7667 WebSocket · 7669 cliente web. El 7668 (panel) no se expone: el compose lo
+# 7669 sirve el cliente de escritorio y el juego en /ws. El 7668 (panel) no se expone: el compose lo
 # publica sólo en el 127.0.0.1 del host. El token queda en /app/data/admin-token.txt.
-EXPOSE 7666 7667 7669
+EXPOSE 7669
 
 # Sin `sh -c`: el ejecutable es PID 1 y recibe el SIGTERM de `docker stop`, que dispara el guardado de los conectados.
 ENTRYPOINT ["/app/CoverAO.Server"]
