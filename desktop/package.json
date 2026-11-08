@@ -1,6 +1,6 @@
 {
   "name": "coverao-escritorio",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "CoverAO para escritorio: una ventana propia que carga el cliente del server, verificado con la firma del autor.",
   "main": "main.js",

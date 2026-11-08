@@ -3,6 +3,16 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.6 (2026-11-07)
+Mejoras en la charla, el acompañamiento y la progresión de los bots.
+
+- Los bots entienden mensajes como `dnd tas` y `veni a cazar`. Pueden contar su nivel, clase, oficio y mapa por susurro o en la charla local.
+- Al acompañarte, ayudan contra la criatura que te vieron atacar. Podés decirles `espera` o `segui`. Postergan las compras opcionales durante la salida.
+- En PvP recuerdan al agresor reciente aunque también reciban daño de una criatura o del veneno. Si no pueden defenderse, intentan ponerse a salvo.
+- Los herreros pueden usar sus materiales sobrantes para fabricar mientras esperan los insumos de un encargo.
+- Al nivel 50 pueden ahorrar para equipo, buscar un rango de facción o abastecer las subastas. Su progreso se guarda y podés consultarlo con `tu meta`.
+
+
 ## 1.0.5 (2026-11-04)
 Minería, herrería, comercio entre bots y correcciones de los rangos de facción.
 
