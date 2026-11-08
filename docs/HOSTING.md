@@ -262,6 +262,22 @@ nada solo. `coverao.ps1 actualizar` además lo apaga si estaba prendido y lo vue
 con otra cuenta (el `arranque` de Windows corre como `LOCAL SERVICE`), desde una consola sin Administrador no se
 puede saber de qué carpeta es: `actualizar` no sigue y pide abrirla como Administrador (o `--forzar`).
 
+### Pasar de 1.0.7 a 1.0.8 en Windows
+
+Apagá el servidor y descomprimí el ZIP oficial 1.0.8 en una carpeta aparte. Desde PowerShell, en la carpeta
+del servidor instalado, copiá el ejecutable nuevo con un nombre auxiliar y ejecutá la actualización desde ahí.
+Así el proceso que actualiza conserva su propio ejecutable mientras reemplaza el del servidor.
+
+```powershell
+Copy-Item 'C:\Descargas\CoverAO-win-x64\CoverAO.Server.exe' '.\CoverAO.Actualizar.exe'
+.\CoverAO.Actualizar.exe actualizar --desde 'C:\Descargas\CoverAO-servidor-win-x64.zip'
+```
+
+Adaptá las rutas a tu descarga. Cuando termine con código 0, podés borrar `CoverAO.Actualizar.exe` y arrancar
+el servidor desde `CoverAO.Server.exe`.
+
+### Qué hace el actualizador
+
 Qué hace, en orden, y cualquier problema antes de reemplazar algo deja todo como estaba:
 
 1. **Verifica el paquete:** que esté firmado por el autor (la misma firma que el cliente), que sea para tu

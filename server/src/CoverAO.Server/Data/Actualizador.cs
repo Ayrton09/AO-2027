@@ -57,9 +57,11 @@ public static class Actualizador
         string dir = Path.Combine(baseDir, "actualizacion");
         string preparado = Path.Combine(dir, "paquete");
         string? aMedias = null;   // qué quedó hecho y qué falta, desde que se reemplazó el primer archivo
+        FileStream? exclusividad = null;
         try
         {
-            var otro = otrosServers is null ? OtroServerCorriendo() : OtroServerCorriendo(Environment.ProcessPath, otrosServers);
+            string ejecutableInstalado = Path.Combine(baseDir, Actualizacion.Ejecutable);
+            var otro = otrosServers is null ? OtroServerCorriendo(ejecutableInstalado) : OtroServerCorriendo(ejecutableInstalado, otrosServers);
             if (otro == OtroServer.EnEstaCarpeta)
                 throw new Problema("El server está prendido en esta carpeta: apagalo primero (coverao.ps1 detener, " +
                                    "Ctrl+C en su ventana o systemctl stop) y volvé a correr esto.");
@@ -68,8 +70,18 @@ public static class Actualizador
                                    "automático de coverao.ps1 corre como LOCAL SERVICE). Si es éste, apagalo primero (coverao.ps1 detener " +
                                    "desde una consola de Administrador, o systemctl stop) y volvé a correr esto. Si es el de otra carpeta, " +
                                    "corré esto como Administrador (o con sudo) para que se vea, o con --forzar.");
-            string? idLocal = IdInstalado(baseDir);
             Directory.CreateDirectory(dir);
+            // Los ejecutables auxiliares también comparten las carpetas paquete y anterior.
+            try
+            {
+                exclusividad = new FileStream(Path.Combine(dir, "en-curso.lock"), FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException ex)
+            {
+                throw new Problema($"No se pudo reservar la actualización. Comprobá si ya hay otra en curso ({ex.Message}).");
+            }
+            string? idLocal = IdInstalado(baseDir);
 
             // 1. EL PAQUETE, APARTE Y VERIFICADO.
             string paquete = desde ?? Bajar(dir, salida);
@@ -95,6 +107,9 @@ public static class Actualizador
                     throw new Problema($"El paquete está dañado: {rel} no es el firmado. No se instala.");
             }
             salida.WriteLine($"Versión del {nuevo.Id}, firmada por el autor ({nuevo.Archivos.Count} archivos).");
+            // En Windows, serializar por primera vez después de mover el ejecutable autocontenido
+            // puede intentar cargar dependencias diferidas desde el binario que ya lo reemplazó.
+            string nuevaCompilacion = JsonSerializer.Serialize(new { id = nuevo.Id });
 
             // 2. EL BACKUP, antes de tocar nada.
             salida.WriteLine("Backup de los personajes y la base...");
@@ -178,7 +193,7 @@ public static class Actualizador
             // La fecha, del manifiesto que se verificó: el compilacion.json del paquete no va firmado.
             string compilacion = Path.Combine(baseDir, Actualizacion.Compilacion);
             if (File.Exists(compilacion)) File.Copy(compilacion, Path.Combine(anterior, Actualizacion.Compilacion), overwrite: true);
-            EscrituraAtomica.Escribir(compilacion, JsonSerializer.Serialize(new { id = nuevo.Id }), new UTF8Encoding(false));
+            EscrituraAtomica.Escribir(compilacion, nuevaCompilacion, new UTF8Encoding(false));
             aMedias = null;
 
             salida.Write(resumen.ToString());
@@ -190,9 +205,11 @@ public static class Actualizador
             salida.WriteLine(e is Problema ? e.Message : $"No se pudo actualizar: {e.Message}");
             if (aMedias is not null)
                 salida.WriteLine($"OJO, QUEDÓ A MEDIAS: {aMedias}. Volvé a correr actualizar, que rehace lo que falta.");
-            try { BorrarCarpeta(preparado); } catch (Exception) { }
+            if (exclusividad is not null)
+                try { BorrarCarpeta(preparado); } catch (Exception) { }
             return 1;
         }
+        finally { exclusividad?.Dispose(); }
     }
 
     private static string? Opcion(string[] args, string nombre)
@@ -236,12 +253,12 @@ public static class Actualizador
         return r;
     }
 
-    private static OtroServer OtroServerCorriendo()
+    private static OtroServer OtroServerCorriendo(string ejecutableInstalado)
     {
         var procesos = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(Actualizacion.Ejecutable));
         try
         {
-            return OtroServerCorriendo(Environment.ProcessPath, procesos.Where(p => p.Id != Environment.ProcessId)
+            return OtroServerCorriendo(ejecutableInstalado, procesos.Where(p => p.Id != Environment.ProcessId)
                 .Select(p => (Func<string?>)(() => p.MainModule?.FileName)));
         }
         finally { foreach (var p in procesos) p.Dispose(); }

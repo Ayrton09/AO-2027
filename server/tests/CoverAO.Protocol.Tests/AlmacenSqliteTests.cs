@@ -29,6 +29,16 @@ public class AlmacenSqliteTests : IDisposable
     }
 
     [Fact]
+    public void El_proveedor_carga_el_motor_nativo_actualizado()
+    {
+        using var con = new SqliteConnection("Data Source=:memory:");
+        con.Open();
+        using var comando = con.CreateCommand();
+        comando.CommandText = "SELECT sqlite_version()";
+        Assert.Equal("3.54.1", comando.ExecuteScalar());
+    }
+
+    [Fact]
     public void Lo_guardado_sobrevive_a_cerrar_y_volver_a_abrir()
     {
         var ficha = FichasDePrueba.Llena("Duradero");

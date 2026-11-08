@@ -292,6 +292,42 @@ public class ActualizadorTests : IDisposable
         Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
     }
 
+    [Fact]
+    public void Detecta_el_servidor_de_la_instalacion_desde_un_ejecutable_auxiliar()
+    {
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        var salida = new StringWriter();
+        var servidor = new Func<string?>[] { () => Path.Combine(Base, Actualizacion.Ejecutable) };
+
+        Assert.Equal(1, Actualizador.Correr(new[] { "actualizar", "--desde", zip, "--forzar" }, Base, Data, new ServerIni(), f.Clave, salida, servidor));
+        Assert.Contains("El server está prendido en esta carpeta", salida.ToString());
+        Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
+        Assert.False(Directory.Exists(Path.Combine(Data, "backups")));
+    }
+
+    [Fact]
+    public void Una_segunda_actualizacion_no_toca_el_paquete_que_otra_esta_aplicando()
+    {
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        string dir = Path.Combine(Base, "actualizacion");
+        string preparado = Path.Combine(dir, "paquete");
+        Directory.CreateDirectory(preparado);
+        string parcial = Path.Combine(preparado, "en-uso.txt");
+        File.WriteAllText(parcial, "archivo de otra actualización");
+        using var bloqueo = new FileStream(Path.Combine(dir, "en-curso.lock"), FileMode.OpenOrCreate,
+            FileAccess.ReadWrite, FileShare.None);
+
+        var (codigo, salida) = Actualizar(zip, f.Clave);
+        Assert.Equal(1, codigo);
+        Assert.Contains("otra en curso", salida);
+        Assert.True(File.Exists(parcial));
+        Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
+    }
+
     /// <summary>UN FALLO DESPUÉS DE REEMPLAZAR ARCHIVOS DICE QUÉ QUEDÓ HECHO, y como la versión se anota lo último, volver a correr
     /// termina el trabajo: el Server.ini se rearma y lo que el host modificó sigue siendo suyo.</summary>
     [Fact]

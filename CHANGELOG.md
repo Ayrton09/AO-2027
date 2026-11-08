@@ -3,6 +3,15 @@
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
 
+## 1.0.8 (2026-11-08)
+Acceso desde la app de escritorio y correcciones de seguridad y guardado.
+
+- Para jugar, agregá el servidor en la app de CoverAO. En el navegador vas a ver la descarga y la dirección para copiar.
+- La recuperación de cuentas conserva el límite de intentos aunque se corte la conexión durante la verificación.
+- La app y el motor de base de datos incluyen actualizaciones de seguridad. El servidor informa si un backup no pudo esperar los guardados pendientes.
+- Una entrega de subasta queda pendiente si la bóveda está llena y se guarda cuando el objeto entra. El mensaje de bienvenida enlaza al repositorio público de descargas.
+
+
 ## 1.0.7 (2026-11-08)
 Compañeros con roles de combate, oficios que siguen la demanda y metas que se completan en partida.
 

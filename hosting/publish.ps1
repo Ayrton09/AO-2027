@@ -17,7 +17,7 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.7",     # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
+  [string]$Version = "1.0.8",     # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
   [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
@@ -315,6 +315,7 @@ EN LINUX (distribucion armada con  -Rid linux-x64 ):
 ACTUALIZAR A UNA VERSION NUEVA (con el server APAGADO):
   Windows:  arrastra el .zip nuevo encima de  Actualizar.bat
   Linux:    bash servidor.sh actualizar CoverAO-servidor-linux-x64.tar.gz
+  Para pasar de 1.0.7 a 1.0.8 en Windows, segui el paso especial en HOSTING.md.
   Sin el paquete, lo baja solo de las releases del juego (cuando sean publicas).
   Hace un backup, verifica que el paquete sea del autor, reemplaza solo los
   archivos oficiales que no tocaste (lo que modificaste queda, y lo nuevo va a

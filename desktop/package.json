@@ -1,6 +1,6 @@
 {
   "name": "coverao-escritorio",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "description": "CoverAO para escritorio: una ventana propia que carga el cliente del server, verificado con la firma del autor.",
   "main": "main.js",
@@ -76,5 +76,11 @@
   "devDependencies": {
     "electron": "^44.10.2",
     "electron-builder": "^26.15.3"
+  },
+  "overrides": {
+    "fast-uri@^3": "3.1.9",
+    "minimatch@^9 || ^10": "11.0.5",
+    "undici@^6": "6.29.1",
+    "undici@^7": "7.30.2"
   }
 }
