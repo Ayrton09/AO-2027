@@ -17,7 +17,7 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.10",    # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
+  [string]$Version = "1.0.11",    # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
   [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
