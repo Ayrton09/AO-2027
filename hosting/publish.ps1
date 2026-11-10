@@ -180,7 +180,7 @@ if ($Rid -like "linux*") {
 $gestor = Join-Path $PSScriptRoot "coverao.ps1"
 if (Test-Path $gestor) { Copy-Item -Force $gestor (Join-Path $OutDir "coverao.ps1") }
 
-# La MUSICA ya viene en el repo (63 pistas), asi que esto deberia dar siempre 63 y el aviso no deberia
+# La MUSICA ya viene en el repo (44 pistas), asi que esto deberia dar siempre 44 y el aviso no deberia
 # saltar nunca. Se deja igual: hasta el 2026-08-03 la carpeta estaba gitignoreada y cualquiera que clonara
 # armaba un paquete MUDO de musica sin enterarse -- el mismo agujero que el septimo eje, donde el juego
 # sonaba a 3 efectos de 164 y ningun test lo veia. Un contador que confirma lo que ya deberia estar cuesta

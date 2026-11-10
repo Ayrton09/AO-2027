@@ -4,9 +4,9 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.0.11 (sin publicar)
 
-- Música nueva en los mapas, de libre uso: 31 temas acordes a cada lugar, para ciudades, puertos, bosques, costas, el océano, la nieve, el desierto, los fuertes, el cementerio y las mazmorras.
-- Vuelve la música del Argentum Online original: cada ciudad y mazmorra con su tema de siempre (Ullathorpe, Nix, Banderbill, Lindos, Nueva Esperanza, Newbie, Veriil, Dragon, Marabel, minas y catacumbas), y 26 temas originales en total.
-- En cada lugar se turnan varios temas, así la música no se repite tanto.
+- Vuelve la música del Argentum Online original: cada ciudad, mazmorra, bosque y mar con su tema de siempre (Ullathorpe, Nix, Banderbill, Lindos, Arghâl, Nueva Esperanza, Newbie, Veriil, Dragon, Marabel, el Infierno, el cementerio, los bosques élficos y los mares).
+- Sale la música de bandas sonoras comerciales; en las tierras heladas y con los orcos suenan temas de libre uso.
+- Donde hay varios temas, se turnan.
 - Toda la música suena con el mismo volumen.
 
 
