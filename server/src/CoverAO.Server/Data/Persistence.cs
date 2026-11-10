@@ -984,29 +984,31 @@ public sealed class Persistence : IDisposable
         marino.Inventory[1] = new InventorySlot { ObjIndex = 474, Amount = 1 };          // Barca
         marino.Inventory[2] = new InventorySlot { ObjIndex = 475, Amount = 1 };          // Galera (MinSkill 55: no alcanza)
         SaveCharacter(marino);
-        // "Soldado": char de test de FACCIONES. Ciudadano nivel 25 con 15 criminales matados — cumple justo los
-        // requisitos para enlistarse en la Armada Real. Junto a los enlistadores de (48,52)/(52,54) del fixture.
+        // "Soldado": char de test de FACCIONES. Ciudadano nivel 25 con las bajas JUSTAS del primer rango de la Armada
+        // (`RangosDeFaccion`, hoy 250): cumple los requisitos para enlistarse. Junto a los enlistadores de (48,52)/(52,54)
+        // del fixture. Las bajas salen de la tabla y no de un número suelto: cuando la tabla subió de 15 a 250, los
+        // flows de facciones quedaron con un personaje que ya no alcanzaba y dieron rojo por la premisa, no por el juego.
         var soldado = CreateCharacter(acc, "Soldado", charIndex: 4, race: 1, gender: 1, @class: 3, homeland: 1, head: 1);
         soldado.Pos = demoPos;
         soldado.Level = 25;
-        soldado.RenegadosMatados = 15;   // renegados matados: es lo que le cuenta a la Armada
+        soldado.RenegadosMatados = RangosDeFaccion.ParaRango(Player.StatusArmada, 1);   // renegados: le cuentan a la Armada
         SaveCharacter(soldado);
-        // "Capitan": char de test del ASCENSO de facción. Guerrero (clase 3) humano nivel 25 con 40 criminales
-        // matados — el acumulado que pide matadosArmada para escalar del rango 1 al 6 (20/25/30/35/40). Al llegar
-        // a rango 6 (2ª jerarquía) el líder le entrega su armadura faccionaria (obj 1570, Guerrero Imperial).
+        // "Capitan": char de test del ASCENSO de facción. Guerrero (clase 3) humano nivel 25 con las bajas que pide
+        // la Armada para llegar a la 2ª jerarquía (`RangosDeFaccion`, hoy rango 6 con 700). Ahí el líder le entrega su
+        // armadura faccionaria (obj 1570, Guerrero Imperial).
         var capitan = CreateCharacter(acc, "Capitan", charIndex: 5, race: 1, gender: 1, @class: 3, homeland: 1, head: 1);
         capitan.Pos = demoPos;
         capitan.Level = 25;
-        capitan.RenegadosMatados = 40;   // el acumulado que pide matadosArmada para llegar al rango 6
+        capitan.RenegadosMatados = RangosDeFaccion.ParaRango(Player.StatusArmada, RangosDeFaccion.SegundaJerarquia(Player.StatusArmada));
         SaveCharacter(capitan);
-        // "Rebelde": char de test de la rama REPUBLICANA. Renegado (criminal) nivel 25 con 15 ciudadanos matados —
-        // le cuentan a la Milicia. Se hace Republicano con el convertidor y recién ahí puede enlistarse en la
+        // "Rebelde": char de test de la rama REPUBLICANA. Renegado (criminal) nivel 25 con los ciudadanos matados del
+        // primer rango de la Milicia (`RangosDeFaccion`, hoy 200): le cuentan a la Milicia. Se hace Republicano con el convertidor y recién ahí puede enlistarse en la
         // Milicia (el VB6 exige Status=3). Renegado es también el único status desde el que se da la ciudadanía.
         var rebelde = CreateCharacter(acc, "Rebelde", charIndex: 6, race: 1, gender: 1, @class: 3, homeland: 1, head: 1);
         rebelde.Pos = demoPos;
         rebelde.Level = 25;
         rebelde.FactionStatus = Player.StatusCriminal;
-        rebelde.CiudadanosMatados = 15;
+        rebelde.CiudadanosMatados = RangosDeFaccion.ParaRango(Player.StatusMilicia, 1);
         // ORO PARA PAGAR LA CIUDADANÍA. Desde que el Convertidor cobra las 100.000 del original, los 5.000 con
         // los que nace un char del fixture ya no alcanzan, y sin esto la rama republicana entera —convertirse,
         // enlistarse en la Milicia, ascender— quedaba inalcanzable para `faction_milicia_flow`. Es carga
