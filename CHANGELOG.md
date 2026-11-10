@@ -2,6 +2,14 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.11 (sin publicar)
+
+- Música nueva en los mapas, de libre uso: 31 temas acordes a cada lugar, para ciudades, puertos, bosques, costas, el océano, la nieve, el desierto, los fuertes, el cementerio y las mazmorras.
+- Vuelve la música del Argentum Online original: cada ciudad y mazmorra con su tema de siempre (Ullathorpe, Nix, Banderbill, Lindos, Nueva Esperanza, Newbie, Veriil, Dragon, Marabel, minas y catacumbas), y 26 temas originales en total.
+- En cada lugar se turnan varios temas, así la música no se repite tanto.
+- Toda la música suena con el mismo volumen.
+
+
 ## 1.0.10 (2026-11-08)
 
 - Desde nivel 20, los bots de combate buscan mazmorras con criaturas acordes a su nivel, equipo y pociones. Si hace falta, entrenan en el campo.

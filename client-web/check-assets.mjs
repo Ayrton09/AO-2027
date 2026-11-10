@@ -165,12 +165,21 @@ function seUsaElGrh(id) {
     if (!pedidas.has(mu)) pedidas.set(mu, []);
     pedidas.get(mu).push(Number(f.match(/\d+/)[0]));
   }
-  const presentes = numerosDe('music', '.mp3');
+  // Por NOMBRE, no por número: los temas del AO original van como `aoN` (el MIDI N), al lado de los libres numerados.
+  const presentes = new Set(readdirSync(join(A, 'music')).filter((x) => x.endsWith('.mp3')).map((x) => x.slice(0, -4)));
   linea(`musica   : ${pedidas.size} pistas pedidas por los mapas, ${presentes.size} archivos`);
   for (const [pista, mapas] of pedidas) {
-    if (!/^\d+$/.test(pista)) { avisos.push(`música "${pista}" no es un número (${mapas.length} mapas) — el original tampoco tiene ese archivo`); continue; }
-    if (!presentes.has(Number(pista))) fallas.push(`música ${pista}.mp3 no está y la piden los mapas ${mapas.slice(0, 5).join(', ')}`);
+    if (presentes.has(pista)) continue;
+    if (!/^(ao)?\d+$/.test(pista)) { avisos.push(`música "${pista}" no es un número (${mapas.length} mapas) — el original tampoco tiene ese archivo`); continue; }
+    fallas.push(`música ${pista}.mp3 no está y la piden los mapas ${mapas.slice(0, 5).join(', ')}`);
   }
+  // Las listas que se turnan bajo una pista (assets/music/listas.json): un tema que falta corta la lista en silencio.
+  const listas = existsSync(join(A, 'music', 'listas.json')) ? leer(join(A, 'music', 'listas.json')) : {};
+  for (const [pista, temas] of Object.entries(listas)) {
+    if (!pedidas.has(pista)) avisos.push(`la lista de música "${pista}" no la pide ningún mapa`);
+    for (const t of temas) if (!presentes.has(String(t))) fallas.push(`música ${t}.mp3 no está y es parte de la lista "${pista}"`);
+  }
+  linea(`listas   : ${Object.keys(listas).length} pistas con temas que se turnan`);
 }
 
 // ── 4. MAPAS ────────────────────────────────────────────────────────────────────────────────────────

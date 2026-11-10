@@ -1913,7 +1913,7 @@
      * Ojo con el detalle: `PlayMIDI` (clsAudio.cls:836) hace `File = Trim(File) & ".mid"`, o sea que el
      * valor es un NOMBRE y no un número. Por eso "3-1" se pide tal cual y no es un 3 mal parseado.
      */
-    let musicaActual = null, musicaAudio = null;
+    let musicaActual = null, musicaAudio = null, listasDeMusica = {};
     const enElIngreso = () => { const b = $('login'); return !!b && !b.classList.contains('hidden'); };
     // DESDE EL JUEGO DE ESCRITORIO, EL INGRESO SUENA CON LA MÚSICA DEL MAPA. Allá la del inicio ya sonó en su menú, y al entrar al
     // server se corta y suena la del mapa de fondo (el autor, 05/10: "cuando entrabas al server debería escucharse ése y apagarse
@@ -1929,14 +1929,24 @@
       // la vez (el autor, 05/10, en el juego de escritorio, donde nada espera el primer clic). La del mapa arranca al entrar
       // (`hideLogin`) y se corta al volver al ingreso (`showLogin`).
       if (!pista || muted || musicaOff || (enElIngreso() && !ingresoConLaDelMapa)) return;
-      const a = new Audio(`./assets/music/${pista}.mp3`);
-      a.loop = true; a.volume = volMusica;
-      // SE ANOTA YA, NO CUANDO ARRANCA. Anotándola al resolver el `play()`, dos pedidos seguidos —el mapa de fondo del ingreso y el
-      // mapa al entrar— dejaban sonando la primera sin nadie que la parara: el ♪ y Opciones apagaban sólo la segunda (el autor,
-      // 05/10: "tocando esos botones no se me apaga"). Sin archivo (404) o sin gesto del usuario: silencio, y se suelta.
-      musicaAudio = a;
-      a.play().catch(() => { if (musicaAudio === a) musicaAudio = null; });
+      // UNA LISTA POR PISTA (el autor, 09/11: "que no se repitan tanto el mismo tema"). `assets/music/listas.json` dice qué
+      // temas se turnan bajo cada pista de mapa; arranca por uno al azar y al terminar pasa al siguiente. Sin lista, el tema
+      // solo en loop, como antes.
+      const lista = Array.isArray(listasDeMusica[pista]) && listasDeMusica[pista].length ? listasDeMusica[pista] : [pista];
+      let i = Math.floor(Math.random() * lista.length);
+      const tocar = () => {
+        const a = new Audio(`./assets/music/${lista[i]}.mp3`);
+        a.loop = lista.length === 1; a.volume = volMusica;
+        if (lista.length > 1) a.addEventListener('ended', () => { if (musicaAudio !== a) return; i = (i + 1) % lista.length; tocar(); });
+        // SE ANOTA YA, NO CUANDO ARRANCA. Anotándola al resolver el `play()`, dos pedidos seguidos —el mapa de fondo del ingreso
+        // y el mapa al entrar— dejaban sonando la primera sin nadie que la parara: el ♪ y Opciones apagaban sólo la segunda (el
+        // autor, 05/10: "tocando esos botones no se me apaga"). Sin archivo (404) o sin gesto del usuario: silencio, y se suelta.
+        musicaAudio = a;
+        a.play().catch(() => { if (musicaAudio === a) musicaAudio = null; });
+      };
+      tocar();
     }
+    fetch('./assets/music/listas.json').then((r) => (r.ok ? r.json() : {})).then((j) => { listasDeMusica = j || {}; }).catch(() => {});
     window.__musica = () => ({ pista: musicaActual, suena: !!musicaAudio, volumen: musicaAudio ? musicaAudio.volume : null });
 
     /**
@@ -5558,6 +5568,11 @@
       else if (m === 'creditos') showModal('✦ Créditos', [
         '<b>Agradecimiento especial</b>',
         '<b>Francotirador</b>, que tuvo la idea de este proyecto y lo banca para que siga adelante. ¡Gracias!',
+        '',
+        '<b>Música</b>',
+        'Music by <b>Jonathan Shaw</b> (www.jshaw.co.uk), RPG Orchestral Essentials.',
+        'También <b>Leonardo Paz</b>, <b>Matthew Pablo</b> (www.matthewpablo.com), <b>HitCtrl</b>, <b>syncopika</b>, <b>Otto Halmén</b>, <b>tcarisland</b>, <b>Wolfgang_</b>, <b>Bobjt</b> y <b>tridentkeep</b>, y <b>Kistol</b>. Licencias CC-BY 3.0, CC-BY 4.0 y CC0; temas y enlaces en CREDITOS.md.',
+        'La música del <b>Argentum Online</b> original y «Argentum Online Intro», de Ricardo Amil.',
         '',
         'AO 2027 es un port de CoverAO-2021, una variante de Argentum Online. Lo que viene de cada lado y a quiénes se les debe está en CREDITOS.md.',
       ], true, 'creditos');
