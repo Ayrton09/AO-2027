@@ -1949,14 +1949,17 @@ public sealed partial class Bot
         }
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
+        bool habiaLoQueBuscaba = !compro
+            && ((vaPorPociones && sentidos.EnLaTienda(obj => PocionPropia(obj) > 0) is not null)
+                || (vaPorAntidoto && sentidos.EnLaTienda(obj => AntidotoPropio(obj) > 0) is not null));
         if (compro) _plataQueNoAlcanzo = -1;
         // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         Charlar(transporte, sentidos);
         if (CortaParaAcompanar()) return true;
-        // EL UMBRAL DEL MOSTRADOR, sólo del viaje por pociones o antídoto que volvió sin nada y vivo: ver `VuelveAlMostrador`.
-        if (!compro && (vaPorPociones || vaPorAntidoto) && sentidos.Vivo && sentidos.Salud >= TomaPocion)
+        // EL UMBRAL DEL MOSTRADOR, sólo si ofrecía lo que buscaba. Una visita también puede ser para vender o buscar equipo.
+        if (habiaLoQueBuscaba && sentidos.Vivo && sentidos.Salud >= TomaPocion)
             _plataQueNoAlcanzo = PlataDe(sentidos);
         await Task.Delay(_rng.Next(600, 1_500), ct);
         // Y AL SUBASTADOR, A PUBLICAR LO QUE NO LE VENDIÓ AL MERCADER Y A MIRAR QUÉ LE CONVIENE: ver `PasarPorLaSubastaAsync`.
