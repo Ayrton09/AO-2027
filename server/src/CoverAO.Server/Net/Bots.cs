@@ -1949,9 +1949,7 @@ public sealed partial class Bot
         }
 
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
-        bool habiaLoQueBuscaba = !compro
-            && ((vaPorPociones && sentidos.EnLaTienda(obj => PocionPropia(obj) > 0) is not null)
-                || (vaPorAntidoto && sentidos.EnLaTienda(obj => AntidotoPropio(obj) > 0) is not null));
+        bool habiaLoQueBuscaba = !compro && MostradorOfreceReposicion(sentidos, vaPorPociones, vaPorAntidoto);
         if (compro) _plataQueNoAlcanzo = -1;
         // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
@@ -2135,7 +2133,12 @@ public sealed partial class Bot
     /// </summary>
     public static bool VuelveAlMostrador(int plata, int laQueNoAlcanzo) => laQueNoAlcanzo < 0 || plata > laQueNoAlcanzo;
 
-    /// <summary>La plata con la que salió del último mostrador sin comprar nada; -1 si compró (ver <see cref="VuelveAlMostrador"/>).</summary>
+    internal bool MostradorOfreceReposicion(SentidosDelBot sentidos, bool vaPorPociones, bool vaPorAntidoto) =>
+        (vaPorPociones && sentidos.EnLaTienda(obj => PocionPropia(obj) > 0) is not null)
+        || (vaPorAntidoto && sentidos.EnLaTienda(obj => AntidotoPropio(obj) > 0) is not null);
+
+    /// <summary>La plata con la que salió del último mostrador que ofrecía la reposición y del que no se llevó nada.
+    /// -1 si compró (ver <see cref="VuelveAlMostrador"/>).</summary>
     private int _plataQueNoAlcanzo = -1;
 
     /// <summary>Cuándo puede volver a intentar una compra. El ÉXITO descansa quince minutos —ya compró— pero

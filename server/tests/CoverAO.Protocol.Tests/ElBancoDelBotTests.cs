@@ -161,6 +161,33 @@ public class ElBancoDelBotTests
     public void No_vuelve_al_mostrador_con_la_plata_que_no_alcanzo(int plata, int laQueNoAlcanzo, bool vuelve) =>
         Assert.Equal(vuelve, Bot.VuelveAlMostrador(plata, laQueNoAlcanzo));
 
+    [Fact]
+    public void Solo_cuenta_la_reposicion_que_el_mostrador_tiene_disponible()
+    {
+        const short espada = 2, pocionDeVida = 38, antidoto = 166;
+        var datos = GameData.Load();
+        Assert.NotNull(datos.Obj(espada));
+        Assert.True(datos.Obj(pocionDeVida) is { IsPotion: true, SubType: 3 });
+        var violeta = Assert.IsType<ObjInfo>(datos.Obj(antidoto));
+        Assert.True(Bot.CuraElVeneno(violeta, datos.Spell((short)violeta.LanzaHechizo)));
+
+        var bot = new Bot("Bruma", null, new EntornoDeBots(null!, new ServerIni(), 0, 0, datos, new Navegante(datos), null!), 1);
+        var s = new SentidosDelBot();
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(1, 10, 100, espada));
+        s.Recibir(ServerMessages.CommerceInit());
+        Assert.False(bot.MostradorOfreceReposicion(s, vaPorPociones: true, vaPorAntidoto: true));
+
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(2, 0, 20, pocionDeVida));
+        Assert.False(bot.MostradorOfreceReposicion(s, vaPorPociones: true, vaPorAntidoto: false));
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(2, 10, 20, pocionDeVida));
+        Assert.True(bot.MostradorOfreceReposicion(s, vaPorPociones: true, vaPorAntidoto: false));
+        Assert.False(bot.MostradorOfreceReposicion(s, vaPorPociones: false, vaPorAntidoto: true));
+
+        s.Recibir(ServerMessages.ChangeNpcInventorySlot(3, 10, 10, antidoto));
+        Assert.True(bot.MostradorOfreceReposicion(s, vaPorPociones: false, vaPorAntidoto: true));
+        Assert.False(bot.MostradorOfreceReposicion(s, vaPorPociones: false, vaPorAntidoto: false));
+    }
+
     /// <summary>EL DESNUDO VA PRIMERO AL QUE VENDE ROPA (<see cref="Bot.ElDesnudoVaPorLaRopa"/>): Ivo en la ronda 89 iba al Alquimista y no se
     /// vestía. Sin quien le venda, el viaje elige como siempre.</summary>
     [Theory]
