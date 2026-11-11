@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.12 (2026-11-11)
+
+- Los bots siguen buscando pociones de vida o antídotos cuando pasan por un mercader que no tiene lo que necesitan.
+
 ## 1.0.11 (2026-11-10)
 
 - Vuelve la música del Argentum Online original: cada ciudad, mazmorra, bosque y mar con su tema de siempre (Ullathorpe, Nix, Banderbill, Lindos, Arghâl, Nueva Esperanza, Newbie, Veriil, Dragon, Marabel, el Infierno, el cementerio, los bosques élficos y los mares).
