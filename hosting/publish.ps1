@@ -17,7 +17,7 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.12",    # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
+  [string]$Version = "1.0.13",    # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
   [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
@@ -40,9 +40,9 @@ Write-Host "== 2/4  ensamblando $OutDir ==" -ForegroundColor Cyan
 # distribucion sobre una carpeta en uso le borraba a un host TODOS sus jugadores y su configuracion. Para el
 # que hostea eso no es un detalle: es perder el servidor.
 #
-# Ahora se limpia todo MENOS eso: se borra el .exe viejo, gamedata, webclient y los scripts -que es lo que
-# hay que reemplazar- y se dejan en pie los dos que son del host y no nuestros.
-$preservar = @('data', 'Server.ini')
+# Se reemplazan el .exe viejo, gamedata, webclient y los scripts. Quedan la data y la configuración del host,
+# incluido el .env que usa Docker Compose cuando se conecta a Postgres.
+$preservar = @('data', 'Server.ini', '.env')
 if (Test-Path $OutDir) {
   $enPie = Get-ChildItem -Force $OutDir | Where-Object { $preservar -contains $_.Name }
   if ($enPie) { Write-Host ("   actualizando: se CONSERVAN {0}" -f (($enPie | ForEach-Object { $_.Name }) -join ', ')) -ForegroundColor Yellow }
@@ -505,6 +505,7 @@ $noViajan = @('data/Cuentas', 'data/Charfile', 'data/Misc', 'data/logs/', 'data/
               # apagado con la base caida, el informe de la importacion y las IPs baneadas de antes.
               'data/coverao.db', 'data/rescate-', 'data/importacion-', 'data/banned-ips.txt')
 function Viaja($rel) {
+  if ($rel -eq "$nombre/.env") { return $false }
   foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }
   return $true
 }
@@ -526,7 +527,10 @@ if ($Comprimir) {
     if (-not (Test-Path $tarExe)) { $tarExe = "tar" }
     # Las mismas exclusiones que el zip: el paquete que se reparte no lleva la cuenta, el personaje, los
     # logs ni los backups del que publica.
-    $excl = @()
+    # Compose también encuentra variantes de mayúsculas de .env en un host Windows.
+    # El nombre de la carpeta puede contener un corchete literal si se usa -OutDir.
+    $raizTar = $nombre.Replace('[', '[[]')
+    $excl = @('--exclude', "$raizTar/.[eE][nN][vV]")
     foreach ($p in $noViajan) { $excl += "--exclude"; $excl += ($p.TrimEnd('/') + "*") }
     & $tarExe -czf $arch @excl -C $padre $nombre
     if ($LASTEXITCODE -ne 0) { throw "tar fallo con $LASTEXITCODE (con $tarExe)" }

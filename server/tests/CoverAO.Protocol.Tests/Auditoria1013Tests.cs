@@ -13,11 +13,25 @@ public class Auditoria1013Tests
     [Theory]
     [InlineData("tcp:2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:0db8:0001:0002::/64")]
     [InlineData("ws:[2001:db8:1:2::9]:5555", "2001:0db8:0001:0002::/64")]
+    [InlineData("fd00:1:2:3:1111::1", "fd00:0001:0002:0003::/64")]
     [InlineData("tcp:1.2.3.4:7666", "1.2.3.4")]
     [InlineData("::ffff:1.2.3.4", "1.2.3.4")]
     [InlineData("bot:Milo:0", "Milo")]
     public void Una_ipv6_cuenta_su_bloque_64_y_una_ipv4_ella_misma(string endpoint, string bloque)
         => Assert.Equal(bloque, ConnectionGuard.Bloque(endpoint));
+
+    [Fact]
+    public void El_tope_agrupa_ipv6_con_primer_hexteto_alfabetico_aunque_ya_esten_normalizadas()
+    {
+        var guard = new ConnectionGuard(maxTotal: 100, maxPerIp: 1);
+        string primera = ConnectionGuard.NormalizeIp("[fd00:1:2:3:1111::1]:1234");
+        string segunda = ConnectionGuard.NormalizeIp("[fd00:1:2:3:2222::1]:4321");
+        Assert.True(guard.TryAcquire(primera));
+        Assert.False(guard.TryAcquire(segunda));
+        Assert.True(guard.TryAcquire("fd00:1:2:4::1"));
+        guard.Release(primera);
+        Assert.True(guard.TryAcquire(segunda));
+    }
 
     [Fact]
     public void El_tope_de_conexiones_es_por_bloque()

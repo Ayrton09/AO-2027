@@ -75,12 +75,11 @@ public sealed class ConnectionGuard
     {
         if (string.IsNullOrWhiteSpace(s)) return "";
         s = s.Trim();
-        // Prefijo de transporte "tcp:"/"ws:" (empieza con letra y tiene ':'): descartar hasta el primer ':'.
-        if (char.IsLetter(s[0]))
-        {
-            int p = s.IndexOf(':');
-            if (p > 0 && p + 1 < s.Length) s = s[(p + 1)..];
-        }
+        // Sólo los prefijos conocidos: el primer grupo de una IPv6 también puede empezar con una letra.
+        if (s.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("ws:", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("bot:", StringComparison.OrdinalIgnoreCase))
+            s = s[(s.IndexOf(':') + 1)..];
         // "[IPv6]:port" o "[IPv6]".
         if (s.StartsWith('['))
         {

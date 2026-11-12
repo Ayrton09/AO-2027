@@ -1,5 +1,6 @@
 # Lo que NO viaja a la imagen al armarla desde el paquete (va al paquete de Linux como .dockerignore, al lado del
-# Dockerfile): lo que el server escribe al correr en esta carpeta. Los personajes y la base no van a una imagen.
+# Dockerfile): la configuración local y lo que el server escribe al correr en esta carpeta.
+.[eE][nN][vV]
 data/
 Server.ini
 admin-token.txt

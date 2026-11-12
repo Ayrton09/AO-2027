@@ -980,7 +980,7 @@ public sealed class ServerIni
         Rangos.Select(r => (r.Clave, r.Priv));
 
     /// <summary>
-    /// DAR O SACAR STAFF, escribiendo el <c>Server.ini</c> — que es la ÚNICA autoridad de rango. Se reescribe
+    /// DAR O SACAR STAFF, escribiendo el <c>Server.ini</c>. Se reescribe
     /// la sección entera del rango (contador + <c>Dios1..DiosN</c>) y se recarga, así que el cambio vale para
     /// el próximo login de ese personaje, igual que si alguien hubiera editado el archivo a mano.
     ///
@@ -989,7 +989,8 @@ public sealed class ServerIni
     /// cerró — un <c>data/</c> movido a otra máquina llevándose los privilegios adentro.
     ///
     /// <paramref name="priv"/> = 1 (User) SACA el nombre de todas las listas. Devuelve false si no hay archivo
-    /// (un server sin ini corre con defaults y no hay dónde escribir) o si el disco no deja.
+    /// (un server sin ini corre con defaults y no hay dónde escribir), si el disco no deja, si cambiaría el rango
+    /// efectivo de otro personaje o si el rango efectivo después de recargar difiere del solicitado.
     /// </summary>
     public bool GuardarStaff(string nombre, byte priv)
     {
@@ -1002,12 +1003,18 @@ public sealed class ServerIni
             try
             {
                 var ini = File.Exists(Ruta) ? IniFile.Load(Ruta) : new IniFile();
+                var entorno = Environment.GetEnvironmentVariables();
+                var vigente = IniFile.Parse(ini.ToText());
+                AplicarEntorno(vigente, entorno, informar: false);
+                var staffVigente = LeerStaff(vigente);
+
                 // El nombre sale de TODAS las listas antes de entrar en la suya: sin esto, subir a un Consejero a
                 // Dios lo dejaría en las dos y el desempate por autoridad taparía el rastro.
                 foreach (var (_, seccion, clave, _) in Rangos)
                 {
                     var quedan = LeerLista(ini, seccion, clave)
-                        .Where(n => !string.Equals(n, nombre, StringComparison.OrdinalIgnoreCase)).ToList();
+                        .Where(n => !string.Equals(NormalizarNombreStaff(n), nombre, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
                     EscribirLista(ini, seccion, clave, quedan);
                 }
                 if (priv != 1)
@@ -1018,6 +1025,18 @@ public sealed class ServerIni
                     lista.Add(nombre);
                     EscribirLista(ini, rango.Seccion, rango.Clave, lista);
                 }
+
+                // Una variable de entorno puede fijar una posición. Compactar la lista puede destapar un
+                // nombre oculto o tapar a otro. Comparamos los rangos que se leerían del archivo antes de guardarlo.
+                var ansi = CoverAO.Protocol.Codec.Ansi;
+                var propuesta = IniFile.Parse(ansi.GetString(ansi.GetBytes(ini.ToText())));
+                AplicarEntorno(propuesta, entorno, informar: false);
+                var staffPropuesto = LeerStaff(propuesta);
+                staffVigente.Remove(nombre);
+                staffPropuesto.Remove(nombre);
+                if (staffVigente.Count != staffPropuesto.Count || staffVigente.Any(p =>
+                    !staffPropuesto.TryGetValue(p.Key, out byte rangoEfectivo) || rangoEfectivo != p.Value)) return false;
+
                 ini.Save(Ruta);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -1025,7 +1044,7 @@ public sealed class ServerIni
                 Console.Error.WriteLine($"[ini] no se pudo escribir '{Ruta}' ({ex.GetType().Name}: {ex.Message}).");
                 return false;
             }
-            return Recargar();
+            return Recargar() && PrivilegioDe(nombre) == priv;
         }
     }
 
@@ -1063,6 +1082,12 @@ public sealed class ServerIni
             ini.Set(seccion, clave + i, i <= nombres.Count ? nombres[i - 1] : "");
         // El contador va a [INIT], que es de donde lo lee el arranque (ver la nota de LeerLista).
         ini.Set("INIT", seccion, nombres.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static string NormalizarNombreStaff(string nombre)
+    {
+        nombre = nombre.Trim();
+        return nombre.Length > 0 && nombre[0] is '*' or '+' ? nombre[1..].Trim() : nombre;
     }
 
     /// <summary>
@@ -1110,7 +1135,7 @@ public sealed class ServerIni
         {
             string? real = File.Exists(ruta) ? ruta : BuscarIgnorandoMayusculas(ruta);
             var ini = real is null ? new IniFile() : IniFile.Load(real);
-            AplicarEntorno(ini);          // las variables de entorno PISAN al archivo (ver el método)
+            AplicarEntorno(ini, Environment.GetEnvironmentVariables());
             return Desde(ini, real);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -1136,22 +1161,22 @@ public sealed class ServerIni
     /// Las variables de una sola palabra (<c>COVERAO_DB</c>, <c>COVERAO_FIXTURE</c>) NO son claves del ini y
     /// se ignoran acá: no tienen sección.
     /// </summary>
-    private static void AplicarEntorno(IniFile ini)
+    private static void AplicarEntorno(IniFile ini, System.Collections.IDictionary entorno, bool informar = true)
     {
         const string Prefijo = "COVERAO_";
-        var pisadas = new List<string>();
-        foreach (System.Collections.DictionaryEntry e in Environment.GetEnvironmentVariables())
+        var pisadas = informar ? new List<string>() : null;
+        foreach (System.Collections.DictionaryEntry e in entorno)
         {
             if (e.Key is not string nombre || !nombre.StartsWith(Prefijo, StringComparison.OrdinalIgnoreCase)) continue;
             string resto = nombre[Prefijo.Length..];
             int corte = resto.IndexOf('_');
             if (corte <= 0 || corte >= resto.Length - 1) continue;   // sin sección: no es una clave del ini
             ini.Set(resto[..corte], resto[(corte + 1)..], e.Value as string ?? "");
-            pisadas.Add(resto);
+            pisadas?.Add(resto);
         }
         // Se dice EN VOZ ALTA. Un valor que viene del entorno y no del archivo es justo el que hace perder una
         // tarde: el host mira el .ini, ve una cosa, y el servidor hace otra.
-        if (pisadas.Count > 0)
+        if (pisadas is { Count: > 0 })
         {
             pisadas.Sort(StringComparer.OrdinalIgnoreCase);
             Console.WriteLine($"[ini] pisado por el entorno: {string.Join(", ", pisadas)}");
@@ -1376,7 +1401,13 @@ public sealed class ServerIni
         };
         cfg.FaccionesDesconocidas = desconocidas;
         cfg.Bots = Math.Clamp(ini.GetInt("INIT", "Bots", 0), 0, MaxBots);
+        cfg._staff = LeerStaff(ini);
+        return cfg;
+    }
 
+    private static Dictionary<string, byte> LeerStaff(IniFile ini)
+    {
+        var staff = new Dictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
         foreach (var (contador, seccion, clave, priv) in Rangos)
         {
             // El contador viene del archivo y se usa como tope de un for: sin techo, un `Dioses=2000000000`
@@ -1386,16 +1417,15 @@ public sealed class ServerIni
             int n = Math.Clamp(ini.GetInt("INIT", contador, 0), 0, TopeDeLaLista);
             for (int i = 1; i <= n; i++)
             {
-                string nombre = (ini.GetString(seccion, clave + i, "") ?? "").Trim();
-                if (nombre.Length > 0 && (nombre[0] == '*' || nombre[0] == '+')) nombre = nombre[1..].Trim();
+                string nombre = NormalizarNombreStaff(ini.GetString(seccion, clave + i, "") ?? "");
                 if (nombre.Length == 0) continue;
                 // GANA EL PRIMERO: `Rangos` está en orden de autoridad DESCENDENTE, igual que la cadena de
                 // ElseIf del original. No se puede desempatar comparando el bit de PlayerType — el de
                 // RoleMaster es 32, más grande que el 16 del Admin, y no por eso manda más.
-                cfg._staff.TryAdd(nombre, priv);
+                staff.TryAdd(nombre, priv);
             }
         }
-        return cfg;
+        return staff;
     }
 
     /// <summary>Pasa los minutos del ini a vueltas del game-loop y arma los dos relojes del mundo.

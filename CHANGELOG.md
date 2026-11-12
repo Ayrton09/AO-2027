@@ -2,6 +2,13 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.13 (2026-11-11)
+
+- El panel aplica las bajas y degradaciones de staff aunque el nombre figure con un prefijo heredado.
+- El límite de conexiones IPv6 agrupa correctamente las direcciones de una misma red `/64`.
+- El actualizador del servidor rechaza rutas inválidas en el manifiesto firmado y conserva la compatibilidad con la 1.0.12.
+- El `.env` local de Docker Compose queda fuera de las imágenes y los paquetes portables.
+
 ## 1.0.12 (2026-11-11)
 
 - Los bots siguen buscando pociones de vida o antídotos cuando pasan por un mercader que no tiene lo que necesitan.

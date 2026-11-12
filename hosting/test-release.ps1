@@ -14,6 +14,68 @@ $enMain = $true
 $yaPublicada = $false
 
 function Exigir($condicion, [string]$mensaje) { if (-not $condicion) { throw $mensaje } }
+function Probar-PaquetePortable {
+  $rutaPublish = Join-Path $PSScriptRoot 'publish.ps1'
+  $erroresPublish = $null
+  $publish = [Management.Automation.Language.Parser]::ParseFile($rutaPublish, [ref]$null, [ref]$erroresPublish)
+  if ($erroresPublish.Count) { throw ($erroresPublish | Out-String) }
+  # Ejecuta el empaquetado real con datos sintéticos, sin compilar ni usar la clave de firma.
+  $preservarYLimpiar = $publish.EndBlock.Statements | Where-Object {
+    $_.Extent.Text.StartsWith('$preservar = ') -or $_.Extent.Text.StartsWith('if (Test-Path $OutDir)')
+  }
+  $empaquetado = $publish.EndBlock.Statements | Where-Object {
+    $_.Extent.Text.StartsWith('$noViajan = ') -or $_.Extent.Text.StartsWith('function Viaja(') -or
+    $_.Extent.Text.StartsWith('if ($Comprimir)')
+  }
+  $docker = @($publish.EndBlock.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.IfStatementAst] -and $_.Extent.Text.Contains('".dockerignore"')
+  })
+  Exigir (@($preservarYLimpiar).Count -eq 2 -and @($empaquetado).Count -eq 3) 'No se encontró el empaquetado portable.'
+  Exigir ($docker.Count -eq 1) 'No se encontró la preparación del Docker portable.'
+  $limpiar = [scriptblock]::Create(($preservarYLimpiar.Extent.Text -join "`n"))
+  $comprimirPaquete = [scriptblock]::Create(($empaquetado.Extent.Text -join "`n"))
+  $copiarDocker = [scriptblock]::Create($docker[0].Extent.Text)
+
+  $Root = Split-Path $PSScriptRoot -Parent
+  $Comprimir = $true
+  $Version = '0.0.0'
+  $casos = @(
+    @{ Rid = 'win-x64'; Nombre = 'CoverAO-win-x64'; Env = '.env' }
+    @{ Rid = 'win-x64'; Nombre = 'CoverAO-win-x64-mixto'; Env = '.EnV' }
+    @{ Rid = 'linux-x64'; Nombre = 'CoverAO-linux-x64'; Env = '.env' }
+    @{ Rid = 'linux-x64'; Nombre = 'CoverAO-linux-x64-mixto'; Env = '.EnV' }
+  )
+  foreach ($caso in $casos) {
+    $Rid = $caso.Rid
+    $nombre = $caso.Nombre
+    $OutDir = Join-Path $temporal $nombre
+    New-Item -ItemType Directory -Path $OutDir | Out-Null
+    $entorno = Join-Path $OutDir $caso.Env
+    Set-Content -LiteralPath $entorno -Value 'COVERAO_PG_CLAVE=prueba-sintetica'
+    & $limpiar
+    Exigir ((Get-Content -LiteralPath $entorno) -ceq 'COVERAO_PG_CLAVE=prueba-sintetica') 'Se perdió el .env local al actualizar.'
+
+    Set-Content -LiteralPath (Join-Path $OutDir 'oficial.txt') -Value 'contenido portable'
+    & $copiarDocker
+    & $comprimirPaquete
+    if ($Rid -eq 'linux-x64') {
+      $archivo = Join-Path $temporal "CoverAO-$Version-$Rid.tar.gz"
+      $archivos = @(tar -tf $archivo)
+      Exigir ($LASTEXITCODE -eq 0) 'No se pudo leer el tar.gz.'
+      Exigir ($archivos -ccontains "$nombre/.dockerignore") 'Falta el .dockerignore en el tar.gz.'
+      $ignore = Get-Content -LiteralPath (Join-Path $OutDir '.dockerignore')
+      Exigir ($ignore -ccontains '.[eE][nN][vV]') 'Falta la exclusión de .env del contexto Docker portable.'
+    } else {
+      $archivo = Join-Path $temporal "CoverAO-$Version-$Rid.zip"
+      $zip = [IO.Compression.ZipFile]::OpenRead($archivo)
+      try { $archivos = @($zip.Entries | ForEach-Object { $_.FullName }) }
+      finally { $zip.Dispose() }
+    }
+    Exigir ($archivos -ccontains "$nombre/oficial.txt") "Falta el archivo oficial en $nombre."
+    Exigir ($archivos -notcontains "$nombre/.env") "El archivo $nombre contiene el .env del host."
+  }
+  Write-Host 'OK: el .env local se conserva y queda fuera del contexto Docker y de ambos comprimidos.'
+}
 function git {
   $a = @($args | ForEach-Object { [string]$_ })
   $llamadas.Add([pscustomobject]@{ programa = 'git'; argumentos = $a })
@@ -45,6 +107,7 @@ function gh {
 
 try {
   New-Item -ItemType Directory -Path (Join-Path $temporal 'hosting'), (Join-Path $temporal 'dist'), (Join-Path $temporal 'desktop/release') -Force | Out-Null
+  Probar-PaquetePortable
   # La limpieza real sólo puede tocar el staging esperado; las pruebas usan su propia carpeta temporal.
   $dist = Join-Path $temporal 'dist'
   $limpieza = $arbol.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Quitar-Staging'}, $true)[0]

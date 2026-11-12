@@ -66,9 +66,11 @@ public static class Actualizacion
         catch (Exception e) when (e is FormatException or InvalidCastException or ArgumentException) { return false; }
     }
 
-    /// <summary>Una ruta de archivo oficial: relativa, con '/', sin '..', y de <c>data/</c> sólo las novedades.</summary>
+    /// <summary>Una ruta de archivo oficial: relativa, con '/', sin '..', y de <c>data/</c> sólo las novedades.
+    /// Los caracteres de control se rechazan para que cada línea firmada del manifiesto v1 identifique un solo archivo.</summary>
     public static bool RutaOficialValida(string rel) =>
         rel.Length is > 0 and < 300 && !rel.StartsWith('/') && !rel.Contains('\\') && !rel.Contains(':')
+        && !rel.Any(char.IsControl)
         && !rel.Split('/').Any(p => p is "" or "." or "..")
         && (!rel.StartsWith("data/", StringComparison.OrdinalIgnoreCase) || rel.Equals("data/updates.txt", StringComparison.OrdinalIgnoreCase))
         && !rel.Equals("Server.ini", StringComparison.OrdinalIgnoreCase);

@@ -495,7 +495,8 @@ public sealed class AdminServer
                 if (string.IsNullOrWhiteSpace(name)) return Fail("falta el nombre del personaje");
                 byte priv = (byte)Math.Clamp(GetInt("priv", 0), 0, 255);
                 if (priv != 1 && Data.ServerIni.NombreDelRango(priv).Length == 0) return Fail($"rango desconocido: {priv}");
-                if (!_ini.GuardarStaff(name, priv)) return Fail("no se pudo escribir el Server.ini");
+                if (!_ini.GuardarStaff(name, priv))
+                    return Fail("el rango solicitado no quedó aplicado. Revisá el Server.ini y las variables de entorno.");
                 string comoQueda = priv == 1 ? "jugador común" : Data.ServerIni.NombreDelRango(priv);
                 return Ok($"{name} queda como {comoQueda}. Toma efecto en su próximo login.");
             }

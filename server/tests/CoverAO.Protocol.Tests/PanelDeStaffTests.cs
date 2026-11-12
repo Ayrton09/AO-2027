@@ -2,6 +2,9 @@
 
 namespace CoverAO.Protocol.Tests;
 
+[CollectionDefinition(nameof(EntornoDelPanelDeStaff), DisableParallelization = true)]
+public class EntornoDelPanelDeStaff { }
+
 /// <summary>
 /// DAR UN RANGO DESDE EL PANEL TIENE QUE SERVIR DE VERDAD.
 ///
@@ -17,6 +20,7 @@ namespace CoverAO.Protocol.Tests;
 /// ejecutándolo: ascender a Merlin desde la API y después entrar con él, que seguía sin poder usar
 /// <c>/GRABAR</c>.</para>
 /// </summary>
+[Collection(nameof(EntornoDelPanelDeStaff))]
 public class PanelDeStaffTests
 {
     private static string IniNuevo(params string[] lineas)
@@ -75,6 +79,89 @@ public class PanelDeStaffTests
             Assert.Equal(8, despues.PrivilegioDe("Rugura"));   // al otro no se lo lleva puesto
         }
         finally { Limpiar(ruta); }
+    }
+
+    [Theory]
+    [InlineData("*Merlin", (byte)1)]
+    [InlineData("+Merlin", (byte)1)]
+    [InlineData("* Merlin", (byte)2)]
+    [InlineData("+ Merlin", (byte)2)]
+    public void Cambiar_el_rango_quita_las_entradas_con_prefijos_heredados(string entrada, byte nuevoRango)
+    {
+        string ruta = IniNuevo("[INIT]", "Admines=2", "Dioses=1", "[Admines]", $"Admin1={entrada}",
+                              "Admin2=*Rugura", "[Dioses]", "Dios1=+MERLIN");
+        try
+        {
+            var ini = ServerIni.Cargar(ruta);
+            Assert.Equal(16, ini.PrivilegioDe("Merlin"));
+
+            Assert.True(ini.GuardarStaff("merlin", nuevoRango));
+            Assert.Equal(nuevoRango, ini.PrivilegioDe("Merlin"));
+            var despues = ServerIni.Cargar(ruta);
+            Assert.Equal(nuevoRango, despues.PrivilegioDe("Merlin"));
+            Assert.Equal(16, despues.PrivilegioDe("Rugura"));
+            var guardado = IniFile.Load(ruta);
+            Assert.Equal("*Rugura", guardado.GetString("Admines", "Admin1", ""));
+            Assert.Equal(0, guardado.GetInt("INIT", "Dioses", -1));
+        }
+        finally { Limpiar(ruta); }
+    }
+
+    [Fact]
+    public void La_baja_falla_si_el_entorno_sigue_otorgando_el_rango()
+    {
+        const string contador = "COVERAO_INIT_ADMINES";
+        const string entrada = "COVERAO_ADMINES_ADMIN1";
+        string? contadorAnterior = Environment.GetEnvironmentVariable(contador);
+        string? entradaAnterior = Environment.GetEnvironmentVariable(entrada);
+        string ruta = IniNuevo("[INIT]", "Admines=1", "[Admines]", "Admin1=*Merlin");
+        try
+        {
+            Environment.SetEnvironmentVariable(contador, "1");
+            Environment.SetEnvironmentVariable(entrada, "*Merlin");
+            var ini = ServerIni.Cargar(ruta);
+
+            Assert.False(ini.GuardarStaff("Merlin", 1));
+            Assert.Equal(16, ini.PrivilegioDe("Merlin"));
+            Assert.Equal(0, IniFile.Load(ruta).GetInt("INIT", "Admines", -1));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(contador, contadorAnterior);
+            Environment.SetEnvironmentVariable(entrada, entradaAnterior);
+            Limpiar(ruta);
+        }
+    }
+
+    [Fact]
+    public void La_baja_no_cambia_los_rangos_de_otros_si_el_entorno_pisa_una_posicion()
+    {
+        const string entrada = "COVERAO_ADMINES_ADMIN2";
+        string? entradaAnterior = Environment.GetEnvironmentVariable(entrada);
+        string ruta = IniNuevo("[INIT]", "Admines=3", "[Admines]", "Admin1=*Merlin", "Admin2=Pedro", "Admin3=Ana");
+        try
+        {
+            Environment.SetEnvironmentVariable(entrada, "Otro");
+            string original = File.ReadAllText(ruta);
+            var ini = ServerIni.Cargar(ruta);
+            Assert.Equal(16, ini.PrivilegioDe("Merlin"));
+            Assert.Equal(16, ini.PrivilegioDe("Otro"));
+            Assert.Equal(16, ini.PrivilegioDe("Ana"));
+            Assert.Equal(1, ini.PrivilegioDe("Pedro"));
+
+            Assert.False(ini.GuardarStaff("Merlin", 1));
+
+            Assert.Equal(original, File.ReadAllText(ruta));
+            Assert.Equal(16, ini.PrivilegioDe("Merlin"));
+            Assert.Equal(16, ini.PrivilegioDe("Otro"));
+            Assert.Equal(16, ini.PrivilegioDe("Ana"));
+            Assert.Equal(1, ini.PrivilegioDe("Pedro"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(entrada, entradaAnterior);
+            Limpiar(ruta);
+        }
     }
 
     /// <summary>Cambiar de rango no puede dejarlo en las dos listas: el desempate por autoridad taparía el

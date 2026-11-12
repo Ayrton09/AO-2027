@@ -16,8 +16,7 @@
 
 # ---------- el paquete ----------
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS paquete
-# El .dockerignore de al lado deja afuera data/ y el Server.ini: los personajes de un server que ya corrió en esta
-# carpeta no viajan a la imagen.
+# El .dockerignore de al lado deja afuera data/, Server.ini y el .env que Compose lee en el host.
 COPY . /app/
 # SIN LA FIRMA NO HAY IMAGEN: un cliente sin firma.json deja afuera a la app de escritorio, y que eso se descubra al
 # armar es mejor que al primer jugador que no puede entrar. Después se saca lo que no es para un contenedor: los

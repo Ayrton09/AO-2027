@@ -97,6 +97,22 @@ public class ActualizadorTests : IDisposable
         Assert.Null(Actualizacion.LeerManifiesto(f.Manifiesto("2026-10-13T00:00:00.000Z", "mac", archivos), exigirFirma: true, f.Clave));
     }
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r")]
+    [InlineData("\t")]
+    [InlineData("\0")]
+    [InlineData("\u007f")]
+    [InlineData("\u0085")]
+    public void El_manifiesto_rechaza_caracteres_de_control_en_las_rutas(string control)
+    {
+        var firmante = new Firmante();
+        var archivos = new Dictionary<string, string> { [$"gamedata/mapa{control}1.json"] = new string('c', 64) };
+        string json = firmante.Manifiesto("2026-10-13T00:00:00.000Z", Actualizacion.Plataforma, archivos);
+
+        Assert.Null(Actualizacion.LeerManifiesto(json, exigirFirma: true, firmante.Clave));
+    }
+
     [Fact]
     public void El_plan_reemplaza_lo_oficial_y_conserva_lo_del_host()
     {
@@ -233,6 +249,35 @@ public class ActualizadorTests : IDisposable
         Assert.Contains("NO está firmado por el autor", salida);
         Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
         Assert.Equal("2026-10-01T00:00:00.000Z", Actualizador.IdInstalado(Base));
+    }
+
+    [Fact]
+    public void Una_ruta_multilinea_no_puede_reusar_la_firma_de_dos_archivos()
+    {
+        ArmarInstalacion();
+        const string id = "2026-10-13T00:00:00.000Z";
+        const string primero = "gamedata/mapa1.json";
+        const string segundo = "gamedata/mapa2.json";
+        string rid = Actualizacion.Plataforma;
+        var oficiales = new Dictionary<string, string> { [primero] = Sha("mapa1 v2"), [segundo] = Sha("mapa2 v2") };
+        var archivos = new Dictionary<string, string> { [$"{primero} {oficiales[primero]}\n{segundo}"] = oficiales[segundo] };
+        var firmante = new Firmante();
+        string textoFirmado = Actualizacion.TextoDelManifiesto(id, rid, oficiales);
+        Assert.Equal(textoFirmado, Actualizacion.TextoDelManifiesto(id, rid, archivos));
+        string manifiesto = JsonSerializer.Serialize(new { version = 1, id, rid, archivos, firma = firmante.Firmar(textoFirmado) });
+        string zip = Path.Combine(_raiz, "alternativo.zip");
+        using (var archivo = ZipFile.Open(zip, ZipArchiveMode.Create))
+        using (var destino = new StreamWriter(archivo.CreateEntry(Actualizacion.Manifiesto).Open()))
+            destino.Write(manifiesto);
+
+        var (codigo, salida) = Actualizar(zip, firmante.Clave);
+
+        Assert.Equal(1, codigo);
+        // El rechazo tiene que ser en el manifiesto, antes de intentar buscar archivos con esas rutas.
+        Assert.Contains("NO está firmado", salida);
+        Assert.Equal("mapa1 v1", Leer(primero));
+        Assert.Equal("2026-10-01T00:00:00.000Z", Actualizador.IdInstalado(Base));
+        Assert.False(Directory.Exists(Path.Combine(Data, "backups")));
     }
 
     [Fact]

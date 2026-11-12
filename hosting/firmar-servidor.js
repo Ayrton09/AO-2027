@@ -43,7 +43,7 @@ if (!carpeta || !fs.existsSync(carpeta) || !['win-x64', 'linux-x64'].includes(ri
 }
 
 // Lo de la raíz que NO es del paquete: la config del host y lo que el server escribe al lado suyo.
-const NO_SON_DEL_PAQUETE = new Set(['server.ini', 'archivos.json', 'compilacion.json', 'admin-token.txt', 'detener', 'detener.txt']);
+const NO_SON_DEL_PAQUETE = new Set(['server.ini', '.env', 'archivos.json', 'compilacion.json', 'admin-token.txt', 'detener', 'detener.txt']);
 const CARPETAS = ['gamedata', 'webclient', 'wwwroot'];
 
 function recorrer(dir, rel, salida) {
@@ -63,6 +63,8 @@ if (fs.existsSync(path.join(carpeta, 'data', 'updates.txt'))) oficiales.push('da
 
 const archivos = {};
 for (const rel of oficiales.sort()) {
+  // El manifiesto v1 firma una línea por archivo. El verificador también rechaza estos caracteres.
+  if (/\p{Cc}/u.test(rel)) salir(2, 'El paquete contiene una ruta con caracteres de control. Corregí el nombre antes de firmar.');
   archivos[rel] = crypto.createHash('sha256').update(fs.readFileSync(path.join(carpeta, ...rel.split('/')))).digest('hex');
 }
 const texto = `servidor 1\nid ${id}\nrid ${rid}\n` + Object.keys(archivos).sort().map((r) => `${r} ${archivos[r]}\n`).join('');
