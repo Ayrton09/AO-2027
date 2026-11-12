@@ -50,9 +50,11 @@ public class ElSaltoConLaRunaTests
     public async Task Con_el_hogar_en_Rinkel_usa_la_runa_antes_de_ir_a_cazar_en_la_region()
         => Assert.Equal<ClientPacketId?>(ClientPacketId.UseItem, await PrimeraDecision(Cities.Rinkel));
 
+    /// <summary>Desde Illiandor, cruzando, el 191 suma 3415 contra los 2708 del 746: antes se quedaba (pedía una vez y media); desde el
+    /// 12/11 el encerrado salta con una vez y un quinto (decisión del autor).</summary>
     [Fact]
-    public async Task Con_el_hogar_en_Illiandor_se_queda_a_cazar_en_la_region()
-        => Assert.Equal<ClientPacketId?>(ClientPacketId.Walk, await PrimeraDecision(Cities.Illiandor));
+    public async Task Con_el_hogar_en_Illiandor_encerrada_en_la_region_tambien_usa_la_runa()
+        => Assert.Equal<ClientPacketId?>(ClientPacketId.UseItem, await PrimeraDecision(Cities.Illiandor));
 
     /// <summary>Corre la búsqueda de coto con el hogar <paramref name="hogar"/> y devuelve el primer paquete de usar o caminar (null si
     /// no mandó ninguno en diez segundos).</summary>

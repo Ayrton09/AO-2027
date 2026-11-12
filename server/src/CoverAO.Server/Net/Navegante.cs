@@ -526,6 +526,10 @@ public sealed class Navegante
     /// cada mapa se prueban hasta <see cref="ZonasPorMapa"/> entradas a zonas que no se tocan, sin contar las que entran en una
     /// pantalla (<see cref="BaldosasDeUnaPantalla"/>).
     /// </summary>
+    /// <summary>¿Se llega caminando a <paramref name="destino"/>, pisando sólo mapas que cumplan <paramref name="pisable"/>?</summary>
+    public bool SeLlegaA(int mapaActual, (byte X, byte Y) desde, int destino, Func<int, bool>? pisable = null) =>
+        mapaActual == destino || MapasPorSuEntrada(mapaActual, desde, pisable).Any(m => m.Mapa == destino);
+
     private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
         MapasPorSuEntrada(int mapaActual, (byte X, byte Y) desde, Func<int, bool>? pisable = null,
                           int topeDeSaltos = TopeDeMapas, IReadOnlySet<int>? libresAca = null)

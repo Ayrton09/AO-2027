@@ -94,6 +94,20 @@ public class EntrenamientoDeBotsTests
         Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, acaSeCaza: true));
     }
 
+    /// <summary>EL ENCERRADO SALTA CON MENOS (decisión del autor, 12/11): del 823 no se vuelve a pie a Illiandor, y el 191 (3415) contra
+    /// el 746 (2708) alcanza para él, no para el que puede volver caminando.</summary>
+    [Fact]
+    public void Del_823_no_se_vuelve_a_pie_y_el_encerrado_salta_con_una_vez_y_un_quinto()
+    {
+        var datos = Mundo.Value;
+        var mapas = new Navegante(datos);
+        var cruza = Bot.SeCruzaBuscando(datos, new ServerIni(), Player.StatusRepublicano, 26, 267, true, true, 20);
+        Assert.False(mapas.SeLlegaA(823, Bot.DesdeDondeSeCaza(datos, 823)[0], 194, cruza));
+        Assert.True(mapas.SeLlegaA(195, Bot.DesdeDondeSeCaza(datos, 195)[0], 194, cruza));   // control
+        Assert.True(Bot.ValeSaltarConLaRuna(2708, 3415, encerrado: true));
+        Assert.False(Bot.ValeSaltarConLaRuna(2708, 3415));
+    }
+
     [Fact]
     public async Task Una_agresion_antes_del_primer_paso_devuelve_el_control_al_ciclo()
     {

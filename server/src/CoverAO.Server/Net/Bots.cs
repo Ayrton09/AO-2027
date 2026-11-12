@@ -4238,12 +4238,20 @@ public sealed partial class Bot
                 : Math.Max(seCazaAhi(sentidos.Mapa) ? _entorno.Mapas.LoQueSuma(sentidos.Mapa, sentidos.Posicion, rinde)?.Suma ?? 0 : 0,
                            _entorno.Mapas.CotoQueMasSuma(sentidos.Mapa, sentidos.Posicion, rinde, SaltosHastaElCotoQueSuma, cruza,
                                                          seCazaAhi)?.Suma ?? 0);
-            if (DondeLoDejaLaRuna(sentidos, nivel) is { } casa && casa.Map != sentidos.Mapa
-                && ValeSaltarConLaRuna(aPie, Math.Max(
+            if (DondeLoDejaLaRuna(sentidos, nivel) is { } casa && casa.Map != sentidos.Mapa)
+            {
+                int desdeLaCasa = Math.Max(
                     seCazaAhi(casa.Map) ? _entorno.Mapas.LoQueSuma(casa.Map, (casa.X, casa.Y), rinde)?.Suma ?? 0 : 0,
-                    _entorno.Mapas.CotoQueMasSuma(casa.Map, (casa.X, casa.Y), rinde, SaltosHastaElCotoQueSuma, cruza, seCazaAhi)?.Suma ?? 0))
-                && await SaltarConLaRunaAsync(transporte, sentidos, cerrada, ct))
-                return true;
+                    _entorno.Mapas.CotoQueMasSuma(casa.Map, (casa.X, casa.Y), rinde, SaltosHastaElCotoQueSuma, cruza, seCazaAhi)?.Suma ?? 0);
+                bool encerrado = !_entorno.Mapas.SeLlegaA(sentidos.Mapa, sentidos.Posicion, casa.Map, cruza);
+                if (encerrado
+                    && CotoCruzandoPeligro(_entorno.Mapas, casa.Map, (casa.X, casa.Y), rinde, cruza,
+                                           PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
+                                           m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora)) is { } cruzando)
+                    desdeLaCasa = Math.Max(desdeLaCasa, _entorno.Mapas.LoQueSuma(cruzando.Mapa, (cruzando.X, cruzando.Y), rinde)?.Suma ?? 0);
+                if (ValeSaltarConLaRuna(aPie, desdeLaCasa, encerrado) && await SaltarConLaRunaAsync(transporte, sentidos, cerrada, ct))
+                    return true;
+            }
         }
         // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
         _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, AvanceDeCaza(sentidos), sentidos.Nivel, ahora);
@@ -4642,7 +4650,13 @@ public sealed partial class Bot
     /// minuto contra 15 a 20 mil del 13, el 18 o el 24. Desde Rinkel, el hogar de Milo y de Bruma en `mid131`, el 18 suma 4920 a tres
     /// mapas; desde Suramei, el 262 suma 6460. Desde Illiandor, el de Hilda, lo mejor es el 195 (1495): se queda.</para>
     /// </summary>
-    public static bool ValeSaltarConLaRuna(int aPie, int desdeLaCasa) => aPie > 0 && desdeLaCasa >= LoMinimoParaMudarsePorLaSuma(aPie);
+    ///
+    /// <para>EL ENCERRADO SALTA CON MENOS (decisión del autor, 12/11): si de donde está no vuelve caminando a su casa sin cruzar
+    /// peligro, basta una vez y un quinto, y desde la casa cuenta también el coto que vale cruzando peligro (<see cref="CotoCruzandoPeligro"/>).
+    /// Medido en la ronda 100 (`late1`-`late7`): Lira, Hilda y Bruma, con hogar en Illiandor, pasaban las siete corridas en el 823 y
+    /// el 824 a 9,5 y 12,7 mil de experiencia por minuto; desde la casa, cruzando, el 191 suma 3415 contra los 2708 del 746.</para>
+    public static bool ValeSaltarConLaRuna(int aPie, int desdeLaCasa, bool encerrado = false) =>
+        aPie > 0 && desdeLaCasa >= (encerrado ? aPie * 6 / 5 : LoMinimoParaMudarsePorLaSuma(aPie));
 
     /// <summary>
     /// DÓNDE LO DEJA LA RUNA: la baldosa de su hogar, que sabe porque lo eligió él (el sacerdote, ver <see cref="PonerElHogarAsync"/>)
