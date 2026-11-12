@@ -73,6 +73,27 @@ public class EntrenamientoDeBotsTests
                                           m => m != 45 && Sirve(m), explorar: false));
     }
 
+    /// <summary>EL ENTRENAMIENTO NO LO SACA DE DONDE YA CAZA (ronda 100, 12/11): Gonzo, de nivel 26, dejaba el 746 por el 823
+    /// en el primer segundo porque ahí nada pasa el umbral del entrenamiento.</summary>
+    [Fact]
+    public void Del_746_no_se_va_al_823_si_ahi_ya_caza()
+    {
+        var datos = Mundo.Value;
+        var mapas = new Navegante(datos);
+        var ini = new ServerIni();
+        const int nivel = 26, vida = 267, defensa = 20;
+        const byte bando = Player.StatusRepublicano;
+        var cruza = Bot.SeCruzaBuscando(datos, ini, bando, nivel, vida, true, true, defensa);
+        var vuelta = Bot.FiltrosDeLaVuelta(datos, ini, bando, nivel, vida);
+        bool Sirve(int mapa) => cruza(mapa) && Bot.TieneComoVolver(mapas, mapa, Bot.DesdeDondeSeCaza(datos, mapa),
+            vuelta.Pasa, vuelta.MapaSeguro, vuelta.TieneTienda, conRuna: true);
+        int Rinde(int ficha) => Bot.EsPresaPara(datos.Npc(ficha), vida, nivel, true, true, defensa)
+            ? Bot.RindeParaEntrenar(datos.Npc(ficha), nivel) : 0;
+
+        Assert.Equal(823, Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true)?.Mapa);  // control
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, acaSeCaza: true));
+    }
+
     [Fact]
     public async Task Una_agresion_antes_del_primer_paso_devuelve_el_control_al_ciclo()
     {

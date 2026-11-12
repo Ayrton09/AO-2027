@@ -4056,7 +4056,7 @@ public sealed partial class Bot
     // Conservar una mazmorra que todavía tiene presas útiles. Para salir a explorar, mirar más lejos que en una cacería común.
     internal static (int Mapa, byte X, byte Y, int Saltos)? CotoDeEntrenamiento(GameData datos, Navegante mapas, int mapa,
         (byte X, byte Y) desde, Func<int, int> rinde, Func<int, bool> cruza, Func<int, bool> sirve, bool explorar,
-        Func<int, int>? desempate = null)
+        Func<int, int>? desempate = null, bool acaSeCaza = false)
     {
         bool Mazmorra(int m) => string.Equals(datos.MapZone(m), "DUNGEON", StringComparison.OrdinalIgnoreCase);
         bool enMazmorra = Mazmorra(mapa);
@@ -4070,8 +4070,11 @@ public sealed partial class Bot
         bool TienePresas(int m) => datos.MapSpawns.TryGetValue(m, out var spawns) && spawns.Any(sp => rinde(sp.NpcIndex) > 0);
         var destino = mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaLaMazmorra, Pasa,
                                           m => Mazmorra(m) && TienePresas(m) && sirve(m), desempate, soloMasCercanos: true);
-        // Si no hay mazmorra adecuada, buscar presas acordes en el campo cuando acá no tenga ninguna.
-        if (destino is null && (aca is null || !sirve(mapa)))
+        // Si no hay mazmorra adecuada, buscar presas acordes en el campo cuando acá no tenga ninguna. PERO NO SI ACÁ SE CAZA como
+        // siempre (<paramref name="acaSeCaza"/>): medido en la ronda 100 (`late1`-`late7`, 12/11), Gonzo, de nivel 26, dejaba en
+        // el primer segundo el 746 —Manos Peludas, Sierpes y Crías, que suman sin pasar el umbral del entrenamiento— por el 823, y
+        // ganaba 269 mil por corrida contra 789 en octubre, cuando cazaba el 746 y de ahí saltaba con la runa al 191.
+        if (destino is null && !acaSeCaza && (aca is null || !sirve(mapa)))
             destino = mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, Pasa,
                                           m => TienePresas(m) && sirve(m), desempate);
         return destino is { } coto ? (coto.Mapa, coto.X, coto.Y, coto.Saltos) : null;
@@ -4190,7 +4193,9 @@ public sealed partial class Bot
         if (hallado is null && SaleAEntrenar(nivel) && conPociones && paraSuOficio.Count == 0
             && CotoDeEntrenamiento(_entorno.Datos, _entorno.Mapas, sentidos.Mapa, sentidos.Posicion, Entrenamiento, cruza,
                 m => cruza(m) && !SigueLleno(_llenoHasta, m, ahora) && seCazaAhi(m), soloEntrenamiento,
-                m => CuantoLeGusta(_propio, m)) is { } destinoDeEntrenamiento)
+                m => CuantoLeGusta(_propio, m),
+                seCazaAhi(sentidos.Mapa) && !SigueLleno(_llenoHasta, sentidos.Mapa, ahora)
+                && _entorno.Mapas.LoQueSuma(sentidos.Mapa, sentidos.Posicion, rinde) is { Suma: > 0 }) is { } destinoDeEntrenamiento)
         {
             // Si ya está en una mazmorra adecuada y ve presa, el ciclo de pelea la atiende.
             if (soloEntrenamiento && destinoDeEntrenamiento.Mapa == sentidos.Mapa) return false;
