@@ -173,7 +173,17 @@ if (-not $tagLocal) { Git-Fuente -Argumentos @("tag", $etiqueta, $commit) | Out-
 if ($remotas.Count -eq 0) { Git-Fuente -Argumentos @("push", "origin", "refs/tags/$etiqueta") | Out-Null }
 
 if ($existente.Count -eq 0) {
+  # Las notas son la sección de esta versión del CHANGELOG.md, más la línea de siempre sobre los paquetes.
   $notas = "AO 2027 $Version. App de Windows y Linux, y servidor para ambas plataformas. Los paquetes y avisos de actualización están firmados."
+  $cambios = @()
+  $enLaSeccion = $false
+  $changelog = Join-Path $Root "CHANGELOG.md"
+  foreach ($linea in $(if (Test-Path -LiteralPath $changelog) { Get-Content -LiteralPath $changelog -Encoding UTF8 } else { @() })) {
+    if ($linea -match '^## ') { if ($enLaSeccion) { break }; $enLaSeccion = $linea -match ('^## ' + [regex]::Escape($Version) + '(\s|$)'); continue }
+    if ($enLaSeccion) { $cambios += $linea }
+  }
+  $texto = ($cambios -join "`n").Trim()
+  if ($texto) { $notas = "## Novedades`n`n$texto`n`n$notas" }
   Github -Argumentos @("release", "create", $etiqueta, "-R", $Repo, "--verify-tag", "--title", "AO 2027 $Version", "--notes", $notas, "--draft") | Out-Null
 }
 foreach ($f in ($subir + $avisos)) { Github -Argumentos @("release", "upload", $etiqueta, $f, "--clobber", "-R", $Repo) | Out-Null }
