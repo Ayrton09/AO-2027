@@ -503,7 +503,10 @@ $noViajan = @('data/Cuentas', 'data/Charfile', 'data/Misc', 'data/logs/', 'data/
               # personaje del que publica. El patron agarra tambien su diario, su candado y las copias que deja
               # importar (`.importado`, `.antes-de-importar-...`). Y lo que la base deja al lado: el rescate de un
               # apagado con la base caida, el informe de la importacion y las IPs baneadas de antes.
-              'data/coverao.db', 'data/rescate-', 'data/importacion-', 'data/banned-ips.txt')
+              'data/coverao.db', 'data/rescate-', 'data/importacion-', 'data/banned-ips.txt',
+              # Y una base con OTRO nombre (`Archivo=` de [BASEDEDATOS]), con su diario: rearmar sobre una instalacion
+              # usada la dejaba viajar (auditoria de la 1.0.13).
+              'data/*.db', 'data/*.sqlite')
 function Viaja($rel) {
   if ($rel -eq "$nombre/.env") { return $false }
   foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }

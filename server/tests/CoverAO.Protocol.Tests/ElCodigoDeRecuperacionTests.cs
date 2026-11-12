@@ -143,4 +143,17 @@ public class ElCodigoDeRecuperacionTests : IDisposable
         Assert.Equal("0", await Procesar(Codigo, 0, "CUENTA", "10.0.0.11"));
         Assert.True(ClaveEs(Clave));
     }
+
+    /// <summary>LA CONTRASEÑA CON TOPE POR CUENTA (auditoría de la 1.0.13): diez equivocadas desde IPs distintas frenan la
+    /// cuenta, la buena desde otra conexión tampoco pasa, y el dueño desde la de su último ingreso sí.</summary>
+    [Fact]
+    public async Task Diez_claves_equivocadas_frenan_la_cuenta_salvo_desde_la_conexion_del_dueno()
+    {
+        _db.CambiarCuenta("cuenta", c => c.UltimaIp = "10.0.0.9");
+        for (int i = 0; i < 10; i++) Assert.Equal("0", await Procesar("equivocada", 1, ip: $"10.1.{i}.1"));
+        Assert.Equal("0", await Procesar(Clave, 1, ip: "10.2.0.1"));
+        Assert.True(ClaveEs(Clave));
+        Assert.Equal("1", await Procesar(Clave, 1, ip: "10.0.0.9"));
+        Assert.True(ClaveEs(Nueva));
+    }
 }

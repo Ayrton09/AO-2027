@@ -358,7 +358,7 @@ function render(st) {
       <td><span class="hpbar"><i style="width:${hp}%"></i></span> <span class="num">${p.hp}/${p.maxHp}</span></td>
       <td class="num" title="trampas acumuladas en la cuenta">${p.trampas ? `<span class="badge dead">${p.trampas}</span>` : "0"}</td>
       <td style="text-align:right; white-space:nowrap"><button class="mini danger" onclick="cmd('kick',{charIndex:${p.charIndex}})" ${p.gm ? 'disabled title="no se echa a un GM"' : ''}>Echar</button>
-        <button class="mini act" onclick="if(confirm('¿Banear la cuenta ${esc(p.account)}? Se la echa del servidor.'))cmd('ban',{name:'${esc(p.account)}'})" ${p.gm ? 'disabled title="no se banea a un GM"' : ''}>Ban</button>
+        <button class="mini act" onclick="if(confirm('¿Banear la cuenta ${esc(p.account)}? Se la echa del servidor.'))cmd('ban',{name:${esc(JSON.stringify(p.account))}})" ${p.gm ? 'disabled title="no se banea a un GM"' : ''}>Ban</button>
         <button class="mini act" onclick="if(confirm('¿Banear la IP de ${esc(p.name)}? Nadie desde esa IP podrá conectarse.'))cmd('banPlayerIp',{charIndex:${p.charIndex}})" ${p.gm ? 'disabled title="no se banea la IP de un GM"' : ''}>Ban IP</button></td>
     </tr>`;
   }).join('');
@@ -391,11 +391,11 @@ function render(st) {
   pintarStaff(st);
   const bans = st.banned || [];
   $('bancount').textContent = bans.length ? bans.length + (bans.length === 1 ? ' cuenta' : ' cuentas') : '';
-  $('banlist').innerHTML = bans.map(n => `<div class="banitem"><span class="bn">${esc(n)}</span><button class="mini" onclick="cmd('unban',{name:'${esc(n)}'})">Desbanear</button></div>`).join('');
+  $('banlist').innerHTML = bans.map(n => `<div class="banitem"><span class="bn">${esc(n)}</span><button class="mini" onclick="cmd('unban',{name:${esc(JSON.stringify(n))}})">Desbanear</button></div>`).join('');
   // bans por IP
   const banips = st.bannedIps || [];
   $('banipcount').textContent = banips.length ? '· ' + banips.length : '';
-  $('baniplist').innerHTML = banips.map(ip => `<div class="banitem"><span class="bn">${esc(ip)}</span><button class="mini" onclick="cmd('unbanIp',{ip:'${esc(ip)}'})">Desbanear</button></div>`).join('');
+  $('baniplist').innerHTML = banips.map(ip => `<div class="banitem"><span class="bn">${esc(ip)}</span><button class="mini" onclick="cmd('unbanIp',{ip:${esc(JSON.stringify(ip))}})">Desbanear</button></div>`).join('');
   // reloj
   $('clock').textContent = new Date().toLocaleTimeString('es');
 }

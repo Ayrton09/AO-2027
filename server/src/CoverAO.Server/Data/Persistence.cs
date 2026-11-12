@@ -80,7 +80,7 @@ public sealed class Persistence : IDisposable
 
     /// <summary>Aparta el personaje sin destruirlo (borrado de personaje, 1b). Ver <see cref="IAlmacen.ApartarPersonaje"/>.
     /// Sincrónico: lo llama el borrado de personaje, que corre en el pool.</summary>
-    public bool ArchivarCharacter(string name)
+    public bool ArchivarCharacter(string name, string? cuenta = null)
     {
         bool intentado = false;
         bool apartado = Esperar("apartar un personaje", name, a =>
@@ -88,6 +88,10 @@ public sealed class Persistence : IDisposable
             // Un reintento después de un apartado que entró sin que llegara la respuesta (ver CambioDeCuenta).
             if (intentado && !a.ExistePersonaje(name)) return true;
             intentado = true;
+            // Con cuenta, sólo si la cuenta GUARDADA todavía lo lista: la del borrado se leyó antes del hash, y en el medio el
+            // nombre pudo pasar a otra cuenta (auditoría de la 1.0.13).
+            if (cuenta is not null && a.LeerCuenta(cuenta)?.Characters.Any(
+                    n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) != true) return false;
             return a.ApartarPersonaje(name);
         });
         if (apartado) _personajes.TryRemove(name, out _);
@@ -349,7 +353,14 @@ public sealed class Persistence : IDisposable
     /// uno que llega después encuentra al personaje ya adentro y lo echa.
     /// </summary>
     public Task<(FichaDePersonaje? Ficha, bool CuentaBaneada)> LeerParaEntrarAsync(string nombre, string cuenta)
-        => _cola.PedirAsync($"leer a {nombre} para entrar", a => (a.LeerPersonaje(nombre), a.LeerCuenta(cuenta)?.Banned == true));
+        => _cola.PedirAsync($"leer a {nombre} para entrar", a =>
+        {
+            // EL PERSONAJE TIENE QUE SEGUIR SIENDO DE LA CUENTA: la pertenencia se miró con la cuenta leída antes del hash, y en
+            // el medio pudo borrarse y crearse otro con el mismo nombre en otra cuenta (auditoría de la 1.0.13).
+            var c = a.LeerCuenta(cuenta);
+            bool suyo = c?.Characters.Any(n => string.Equals(n, nombre, StringComparison.OrdinalIgnoreCase)) == true;
+            return (suyo ? a.LeerPersonaje(nombre) : null, c?.Banned == true);
+        });
 
     /// <summary>¿El personaje está en la base? Por la cola, así que detrás de lo que se encoló antes —el alta, por ejemplo—:
     /// es la confirmación de que el alta entró.</summary>

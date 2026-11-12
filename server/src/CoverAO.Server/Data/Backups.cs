@@ -65,7 +65,9 @@ public static class Backups
                 // medio escribir, del doble de tamaño, que encima parece un backup.
                 if (EsDeLaBase(f)) continue;
                 // EL TOKEN DEL PANEL TAMPOCO: vale mientras dure la sesión, y un backup se baja, se manda y se muda.
-                if (Path.GetFileName(f).Equals(Net.AdminServer.NombreDelArchivoDelToken, StringComparison.OrdinalIgnoreCase)) continue;
+                // Ni su temporal, que queda si falló el renombrado (auditoría de la 1.0.13).
+                if (Path.GetFileName(f).Equals(Net.AdminServer.NombreDelArchivoDelToken, StringComparison.OrdinalIgnoreCase)
+                    || Path.GetFileName(f).Equals(Net.AdminServer.NombreDelArchivoDelToken + ".tmp", StringComparison.OrdinalIgnoreCase)) continue;
                 try { File.Copy(f, Path.Combine(destino, Path.GetFileName(f)), overwrite: true); }
                 catch (IOException ex)
                 {

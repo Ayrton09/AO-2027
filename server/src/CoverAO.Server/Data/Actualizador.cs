@@ -298,6 +298,11 @@ public static class Actualizador
                 TarFile.ExtractToDirectory(gz, destino, overwriteFiles: true);
             }
             else throw new Problema("El paquete tiene que ser un .zip (Windows) o un .tar.gz (Linux).");
+            // NINGÚN ENLACE: el hash se toma siguiendo la ruta, y lo que se mueve a la instalación es el enlace, que ahí puede
+            // apuntar a otra cosa (auditoría de la 1.0.13). Los paquetes del autor no traen ninguno.
+            foreach (var e in new DirectoryInfo(destino).EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+                if (e.LinkTarget is not null || e.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    throw new Problema($"El paquete trae un enlace ({Path.GetRelativePath(destino, e.FullName)}): no se instala.");
         }
         catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException)
         {

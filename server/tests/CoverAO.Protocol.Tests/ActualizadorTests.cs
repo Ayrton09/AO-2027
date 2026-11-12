@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -447,5 +448,38 @@ public class ActualizadorTests : IDisposable
             if (File.Exists(cand)) return cand;
         }
         throw new FileNotFoundException($"no encontré '{relativo}' subiendo desde {AppContext.BaseDirectory}");
+    }
+
+    /// <summary>UN ENLACE EN EL PAQUETE NO SE INSTALA (auditoría de la 1.0.13): el hash se toma siguiendo la ruta, y lo que se
+    /// mueve es el enlace.</summary>
+    [Fact]
+    public void Un_paquete_con_un_enlace_no_se_instala()
+    {
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        string tgz = Path.Combine(_raiz, "paquete-enlace.tar.gz");
+        using (var origen = ZipFile.OpenRead(zip))
+        using (var fs = File.Create(tgz))
+        using (var gz = new GZipStream(fs, CompressionLevel.Fastest))
+        using (var tw = new TarWriter(gz, TarEntryFormat.Pax))
+        {
+            string raiz = origen.Entries[0].FullName.Split('/')[0];
+            foreach (var e in origen.Entries)
+            {
+                if (e.FullName.EndsWith('/')) continue;
+                var ms = new MemoryStream();
+                using (var s = e.Open()) s.CopyTo(ms);
+                ms.Position = 0;
+                tw.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, e.FullName) { DataStream = ms });
+            }
+            tw.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, raiz + "/gamedata/enlace.json") { LinkName = "mapa1.json" });
+        }
+        var (codigo, salida) = Actualizar(tgz, f.Clave);
+        Assert.True(codigo == 1, salida);
+        // En Windows, sin el privilegio de crear enlaces, ya lo frena la extracción; en Linux lo frena el chequeo.
+        if (!OperatingSystem.IsWindows()) Assert.Contains("trae un enlace", salida);
+        Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
+        Assert.Equal("2026-10-01T00:00:00.000Z", Actualizador.IdInstalado(Base));
     }
 }

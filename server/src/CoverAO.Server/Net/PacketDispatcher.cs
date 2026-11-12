@@ -85,6 +85,7 @@ public sealed partial class PacketDispatcher
         if (throttle is not null)
         {
             _codigosPorCuenta = new LoginThrottle(maxFails: 5, windowMs: 3_600_000, blockMs: 3_600_000);
+            _clavesPorCuenta = new LoginThrottle(maxFails: 10, windowMs: 900_000, blockMs: 900_000);
             if (!fixtureMode) _verificaciones = new LoginThrottle(maxFails: 60, windowMs: 60_000, blockMs: 60_000);
         }
         _admin = admin;
@@ -187,6 +188,20 @@ public sealed partial class PacketDispatcher
     /// equivocados en una hora cierran la recuperación de ESA cuenta por una hora; entrar con la contraseña sigue andando,
     /// así que nadie le bloquea la cuenta al dueño.</summary>
     private readonly LoginThrottle? _codigosPorCuenta;
+
+    /// <summary>LA CONTRASEÑA, CON TOPE POR CUENTA. El freno de arriba es por IP, y repartiendo los intentos entre muchas
+    /// direcciones no había límite (auditoría de la 1.0.13). Diez claves equivocadas en quince minutos frenan esa cuenta quince
+    /// minutos, pero SÓLO desde otra conexión que la del último ingreso bueno: el dueño, desde su casa, sigue entrando, así que
+    /// nadie le bloquea la cuenta a otro probando claves.</summary>
+    private readonly LoginThrottle? _clavesPorCuenta;
+    private const string CartelCuentaFrenada = "Demasiadas contraseñas equivocadas para esta cuenta. Esperá unos minutos.";
+    private bool CuentaFrenada(ClientSession session, Data.Account acc) =>
+        _clavesPorCuenta is not null && !acc.EsBot && _clavesPorCuenta.IsBlocked(acc.Name.ToLowerInvariant())
+        && ConnectionGuard.Bloque(session.RemoteEndpoint) != ConnectionGuard.Bloque(acc.UltimaIp);
+    private void AnotarClaveEquivocada(Data.Account? acc)
+    {
+        if (acc is not null && !acc.EsBot) _clavesPorCuenta?.RecordFailure(acc.Name.ToLowerInvariant());
+    }
     // El loop admite una recuperación por cuenta a la vez para que las conexiones paralelas no
     // puedan verificar varios PIN antes de que se registre el quinto fallo.
     private readonly HashSet<string> _recuperacionesEnCurso = new(StringComparer.OrdinalIgnoreCase);
@@ -325,11 +340,12 @@ public sealed partial class PacketDispatcher
         Task.Run(() =>
         {
             Data.Account? acc = null;
-            bool ok = false, migrado = false, respondio = true;
+            bool ok = false, migrado = false, respondio = true, frenada = false;
             try
             {
                 (respondio, acc) = LeerCuentaConPlazo(account);
-                if (acc is not null) ok = acc.VerifyPassword(password, out migrado);
+                if (acc is not null && CuentaFrenada(session, acc)) { frenada = true; PasswordHasher.DummyVerify(password); }
+                else if (acc is not null) ok = acc.VerifyPassword(password, out migrado);
                 else if (respondio) PasswordHasher.DummyVerify(password);   // sin base no hay nada que disimular
                 // LA CUENTA DE UN BOT SÓLO SE ABRE DESDE UN BOT, y una de persona sólo desde afuera. Va acá,
                 // que es el único cuello por donde pasan las tres rutas de login, y no repetido al lado de
@@ -360,6 +376,8 @@ public sealed partial class PacketDispatcher
                 try
                 {
                     if (!respondio) { session.Send(ServerMessages.ShowMessageBox(CartelLaBaseNoResponde)); return; }
+                    if (frenada) { LoginFail(session); Reject(session, CartelCuentaFrenada); return; }
+                    if (!ok) AnotarClaveEquivocada(acc);
                     alTerminar(acc, ok, migrado);
                 }
                 // Lo que el cliente haya mandado DETRÁS del login quedó retenido en el buffer esperando esta
@@ -961,7 +979,7 @@ public sealed partial class PacketDispatcher
         Task.Run(() =>
         {
             Data.Account? acc = null;
-            bool claveOk = false, eraSuyo = false, respondio = true;
+            bool claveOk = false, eraSuyo = false, respondio = true, frenada = false;
             try
             {
                 (respondio, acc) = LeerCuentaConPlazo(cuenta);
@@ -969,6 +987,7 @@ public sealed partial class PacketDispatcher
                 // sus personajes desde una conexión de persona.
                 if (acc is not null && acc.EsBot != session.EsBot) acc = null;
                 if (acc is null) { if (respondio) PasswordHasher.DummyVerify(clave); }
+                else if (CuentaFrenada(session, acc)) { frenada = true; PasswordHasher.DummyVerify(clave); }
                 else
                 {
                     claveOk = acc.VerifyPassword(clave);
@@ -988,10 +1007,18 @@ public sealed partial class PacketDispatcher
                     session.Send(ServerMessages.SendMsgBox(CartelLaBaseNoResponde, 1));
                     return;
                 }
+                if (frenada)
+                {
+                    SoltarYReanudar(session);
+                    LoginFail(session);
+                    session.Send(ServerMessages.SendMsgBox(CartelCuentaFrenada, 1));
+                    return;
+                }
                 if (acc is null || !claveOk)
                 {
                     SoltarYReanudar(session);
                     LoginFail(session);
+                    AnotarClaveEquivocada(acc);
                     session.Send(ServerMessages.SendMsgBox(ErrClaveIncorrecta, 1));
                     return;
                 }
@@ -1045,7 +1072,7 @@ public sealed partial class PacketDispatcher
                 baneado = _db.LoadCharacter(personaje, 0, cuenta)?.Banned == true;
                 if (!baneado)
                 {
-                    borrado = _db.ArchivarCharacter(personaje);
+                    borrado = _db.ArchivarCharacter(personaje, cuenta);
                     // Se lo saca de la cuenta GUARDADA: la leída antes del hash, guardada entera, pisaría lo que cambió en el
                     // medio (Persistence.CambiarCuenta).
                     var acc = _db.CambiarCuenta(cuenta, c => c.Characters.RemoveAll(
@@ -1140,7 +1167,7 @@ public sealed partial class PacketDispatcher
         Task.Run(() =>
         {
             Data.Account? acc = null;
-            bool pinOk = false, respondio = true;
+            bool pinOk = false, respondio = true, frenada = false;
             try
             {
                 (respondio, acc) = LeerCuentaConPlazo(account);
@@ -1149,6 +1176,7 @@ public sealed partial class PacketDispatcher
                 if (acc is not null && acc.EsBot != session.EsBot) acc = null;
                 // Sin cuenta se quema el mismo tiempo igual, como en el login (PasswordHasher.DummyVerify).
                 if (acc is null) { if (respondio) PasswordHasher.DummyVerify(pin); }
+                else if (tipo == TipoCambiarClave && CuentaFrenada(session, acc)) { frenada = true; PasswordHasher.DummyVerify(pin); }
                 else
                 {
                     pinOk = tipo == TipoCambiarClave ? acc.VerifyPassword(pin) : acc.VerifyUserCode(pin);
@@ -1181,6 +1209,7 @@ public sealed partial class PacketDispatcher
                 {
                     LoginFail(session);
                     if (acc is not null && recuperacion is not null) _codigosPorCuenta?.RecordFailure(recuperacion);
+                    if (tipo == TipoCambiarClave && !frenada) AnotarClaveEquivocada(acc);
                 }
                 if (session.Cerrada) return;
                 try
@@ -1195,6 +1224,10 @@ public sealed partial class PacketDispatcher
                     {
                         session.Send(ServerMessages.SendMsgBox(ErrCuentaNoExiste, 1));
                     }
+                    else if (frenada)
+                    {
+                        session.Send(ServerMessages.SendMsgBox(CartelCuentaFrenada, 1));
+                    }
                     else if (pinOk && corta)
                     {
                         session.Send(ServerMessages.SendMsgBox($"La contraseña nueva debe tener al menos {_ini.ClaveMinima} caracteres.", 0));
@@ -1203,6 +1236,11 @@ public sealed partial class PacketDispatcher
                     {
                         LoginOk(session);
                         Console.WriteLine($"[{session.RemoteEndpoint}] CLAVE CAMBIADA account={account} tipo={tipo}");
+                        // CON LA CLAVE NUEVA, AFUERA EL QUE ENTRÓ CON LA VIEJA: si se la robaron, el intruso seguía jugando hasta
+                        // salir (auditoría de la 1.0.13).
+                        foreach (var pl in _world.Players.ToArray())
+                            if (string.Equals(pl.Account, account, StringComparison.OrdinalIgnoreCase) && pl.Connection != session)
+                                pl.Connection?.Close("contraseña cambiada");
                         session.Send(ServerMessages.SendMsgBox(ErrClaveRestablecida, 1));
                     }
                     else
@@ -5545,8 +5583,15 @@ public sealed partial class PacketDispatcher
         try
         {
             // Bajo el candado de las escrituras: el panel le cambia el rango a alguien desde otro hilo (ver IniFile.PuertaDeEscritura).
+            // Y EL RANGO SE VUELVE A MIRAR ADENTRO: el panel lo pudo haber bajado mientras éste esperaba el candado (auditoría
+            // de la 1.0.13).
             lock (Data.IniFile.PuertaDeEscritura)
             {
+                if (_ini.PrivilegioDe(p.Name) != 16)
+                {
+                    session.Send(ServerMessages.ConsoleMsg("Sólo un Admin puede escribir el Server.ini.", FuenteInfo));
+                    return;
+                }
                 var ini = Data.IniFile.Load(_ini.Ruta);
                 ini.Set(seccion, clave, valor);
                 ini.Save(_ini.Ruta);
@@ -6991,6 +7036,9 @@ public sealed partial class PacketDispatcher
 
     private void TerminarDeAceptar(ClientSession session, Guild guild, string applicant, byte status, bool enOtroClan)
     {
+        // El clan pudo cerrarse mientras se leía la ficha, y otro fundarse con el mismo nombre: el aceptado quedaba anotado en
+        // ese otro, sin ser miembro (auditoría de la 1.0.13).
+        if (!ReferenceEquals(_world.GuildByName(guild.Name), guild)) return;
         var clave = ClaveDeAspirante(guild, applicant);
         if (clave is null || session.Player is null) return;   // la cola cambió mientras se leía la ficha
         if (!PuedeEntrarAlClan(guild, applicant, status))

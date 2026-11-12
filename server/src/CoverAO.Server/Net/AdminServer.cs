@@ -488,7 +488,8 @@ public sealed class AdminServer
             // Toma efecto en el PRÓXIMO login del personaje. Al que está conectado no se le cambia el rango en
             // caliente a propósito: la mitad del estado de staff (el status de facción pisado, el override que
             // guarda lo civil debajo) se arma al entrar al mundo, y pisarlo a mitad de sesión es justo lo que
-            // dejaba la facción congelada. Si hace falta ya, se lo kickea y vuelve a entrar.
+            // dejaba la facción congelada. Por eso al que BAJA de rango se lo echa: con los poderes de antes
+            // seguía hasta salir (auditoría de la 1.0.13). Al que sube no hace falta.
             case "setStaff":
             {
                 if (_ini is null) return Fail("este server no tiene Server.ini: el rango no se puede escribir");
@@ -498,7 +499,13 @@ public sealed class AdminServer
                 if (!_ini.GuardarStaff(name, priv))
                     return Fail("el rango solicitado no quedó aplicado. Revisá el Server.ini y las variables de entorno.");
                 string comoQueda = priv == 1 ? "jugador común" : Data.ServerIni.NombreDelRango(priv);
-                return Ok($"{name} queda como {comoQueda}. Toma efecto en su próximo login.");
+                string nombre = name, cambio = comoQueda;
+                _loop.Enqueue(() =>
+                {
+                    if (_world.PlayerByName(nombre) is { } p && (_ini?.PrivilegioDe(nombre) ?? p.Privileges) < p.Privileges)
+                    { Console.WriteLine($"[admin] echando a {p.Name}: queda como {cambio}"); p.Connection?.Close("rango de staff quitado"); }
+                });
+                return Ok($"{name} queda como {comoQueda}. Si bajó de rango y estaba conectado, se lo echa; si no, toma efecto en su próximo login.");
             }
 
             // --- Bans (frmServidor: Unban All; + baneo individual) ---
