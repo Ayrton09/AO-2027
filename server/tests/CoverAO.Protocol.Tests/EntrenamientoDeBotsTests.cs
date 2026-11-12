@@ -91,7 +91,10 @@ public class EntrenamientoDeBotsTests
             ? Bot.RindeParaEntrenar(datos.Npc(ficha), nivel) : 0;
 
         Assert.Equal(823, Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true)?.Mapa);  // control
-        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, acaSeCaza: true));
+        int Comun(int ficha) => Bot.EsPresaPara(datos.Npc(ficha), vida, nivel, true, true, defensa) ? Bot.RecompensaDePresa(datos.Npc(ficha), nivel) : 0;
+        int Suma(int m, (byte X, byte Y) p) => mapas.LoQueSuma(m, p, Comun)?.Suma ?? 0;
+        Assert.True(Suma(823, (48, 12)) < Suma(746, (54, 70)), "premisa: contado como siempre, el 823 suma menos que el 746");
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, sumaComun: Suma));
     }
 
     /// <summary>EL ENCERRADO SALTA CON MENOS (decisión del autor, 12/11): del 823 no se vuelve a pie a Illiandor, y el 191 (3415) contra
