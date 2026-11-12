@@ -2,6 +2,16 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.14 (2026-11-12)
+
+- Una cuenta con diez contraseñas equivocadas en quince minutos queda frenada quince minutos, salvo desde la conexión de su último ingreso.
+- Al cambiar la contraseña se cierran las otras sesiones de la cuenta.
+- Al quitarle el rango a un miembro del staff conectado, el panel lo desconecta.
+- Al entrar o borrar un personaje se confirma que siga siendo de la cuenta.
+- El actualizador del servidor rechaza paquetes con enlaces.
+- Los backups no incluyen el temporal del token del panel, y los paquetes no llevan bases de datos locales.
+- Correcciones menores en el panel, `/SETINIVAR` y la aceptación de aspirantes a un clan.
+
 ## 1.0.13 (2026-11-11)
 
 - El panel aplica las bajas y degradaciones de staff aunque el nombre figure con un prefijo heredado.
