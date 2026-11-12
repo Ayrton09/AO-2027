@@ -4078,8 +4078,10 @@ public sealed partial class Bot
         // (`late1`-`late7`, 12/11), Gonzo, de nivel 26, dejaba en el primer segundo el 746 —Manos Peludas, Sierpes y Crías, 2708,
         // que no pasan el umbral del entrenamiento— por el 823 (2604), y ganaba 269 mil por corrida contra 789 en octubre, cuando
         // cazaba el 746 y de ahí saltaba con la runa al 191. Sin mirar lo de acá (ronda 101, `lateb1`-`lateb7`) Gonzo volvía a
-        // 633 mil, pero los otros catorce perdían: la vuelta al campo es la que mueve al resto a presas más gordas.
-        if (destino is { } campo && !Mazmorra(campo.Mapa) && sumaComun is not null
+        // 633 mil, pero los otros catorce perdían: la vuelta al campo es la que mueve al resto a presas más gordas. Y frenándola de
+        // campo a campo (ronda 103, `lated1`-`lated7`), los diez que no eran del bolsón seguían perdiendo un 12 %: sólo al salir de
+        // una mazmorra.
+        if (enMazmorra && destino is { } campo && !Mazmorra(campo.Mapa) && sumaComun is not null
             && sumaComun(campo.Mapa, (campo.X, campo.Y)) < sumaComun(mapa, desde))
             destino = null;
         return destino is { } coto ? (coto.Mapa, coto.X, coto.Y, coto.Saltos) : null;
