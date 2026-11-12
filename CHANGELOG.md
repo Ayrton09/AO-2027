@@ -2,6 +2,11 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.15 (2026-11-12)
+
+- Los bots de nivel alto ya no dejan una mazmorra donde cazan bien para ir a un campo que rinde menos.
+- Los bots que quedan en una región de la que no se vuelve a pie usan la runa para ir a cazar a un lugar mejor desde su hogar.
+
 ## 1.0.14 (2026-11-12)
 
 - Una cuenta con diez contraseñas equivocadas en quince minutos queda frenada quince minutos, salvo desde la conexión de su último ingreso.
