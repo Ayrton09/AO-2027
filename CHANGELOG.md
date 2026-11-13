@@ -2,6 +2,11 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.17 (2026-11-13)
+
+- La aplicación de escritorio pregunta antes de abrir un enlace que viene de un servidor.
+- Los bots que quedan en una región sin salida a pie también miran la runa mientras cazan.
+
 ## 1.0.16 (2026-11-12)
 
 - El servidor usa .NET 10.0.15, con las correcciones de seguridad de noviembre.
