@@ -3,7 +3,7 @@
 // pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
 // 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
 // con la música del inicio sonando hasta que se entra a un server.
-const { app, BrowserWindow, Menu, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -337,14 +337,26 @@ function crearVentana() {
   // está, y una ruta que el server escribe sin firma (coverao-config.json) no es una página (ver firma.esPaginaFirmada).
   const mismoServidor = (url) => { try { return !!servidor && new URL(url).origin === new URL(servidor).origin; } catch { return false; } };
   const verificado = (url) => !VERIFICAR || firma.esPaginaFirmada(firmados.get(new URL(url).origin), url);
+  // Un enlace del menú se abre directo; uno de la página de un server, sólo si el jugador confirma adónde lleva.
+  const abrirAfuera = async (url) => {
+    if (!/^https?:/i.test(url)) return;
+    if (!ventana.webContents.getURL().startsWith('file:')) {
+      const { response } = await dialog.showMessageBox(ventana, {
+        type: 'question', buttons: ['Abrir', 'Cancelar'], defaultId: 1, cancelId: 1, noLink: true,
+        title: 'Abrir enlace', message: 'El server quiere abrir este enlace en el navegador:', detail: url,
+      });
+      if (response !== 0) return;
+    }
+    shell.openExternal(url);
+  };
   ventana.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    abrirAfuera(url).catch(() => {});
     return { action: 'deny' };
   });
   ventana.webContents.on('will-navigate', (e, url) => {
     if (url.startsWith('file:') ? ventana.webContents.getURL().startsWith('file:') : mismoServidor(url) && verificado(url)) return;
     e.preventDefault();
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    abrirAfuera(url).catch(() => {});
   });
 
   ventana.on('close', () => {
