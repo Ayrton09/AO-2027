@@ -1331,6 +1331,9 @@
     // frmMain.frm). Es lo ultimo que faltaba del censo de teclas del original. El chat sobre la cabeza NO se
     // apaga con esto: son dos cosas distintas en el cliente clasico.
     let mostrarNombres = leerPref('ao_nombres') !== '0';   // persiste (tecla N u Opciones)
+    // VER EL ALCANCE DEL HECHIZO al apuntar: opción del jugador, apagada salvo un "1" (el autor, 13/11). Si el server lo apaga
+    // (`alcanceHechizo`), no se ve aunque esté prendida.
+    let verAlcanceHechizo = leerPref('ao_alcance') === '1';
     // LA LLUVIA BAJO TECHO Y EN CUEVAS. Que llueva adentro es FIEL: el original dibuja la partícula sin ninguna condición
     // (TileEngine.bas:2295). Fue una opción de cada jugador, apagada; el autor la pasó al Server.ini y prendida (05/10): por
     // defecto no llueve adentro, y el server que quiera lo del original pone `LluviaBajoTecho=1` (llega en coverao-config.json).
@@ -4056,6 +4059,8 @@
           case 'sonido':   toggleSonido(); abrirOpciones(); return;
           case 'nombres':  mostrarNombres = !mostrarNombres; guardarPref('ao_nombres', mostrarNombres ? '1' : '0');
                            draw(); abrirOpciones(); return;
+          case 'alcance':  verAlcanceHechizo = !verAlcanceHechizo; guardarPref('ao_alcance', verAlcanceHechizo ? '1' : '0');
+                           draw(); abrirOpciones(); return;
           // Apagarlo suelta lo que estuviera repitiendo: si no, una tecla que quedó apretada seguía
           // disparando después de apagar la opción, y sólo paraba al soltarla.
           case 'macro':    macroOn = !macroOn; guardarPref('ao_macro', macroOn ? '1' : '0');
@@ -4304,7 +4309,7 @@
       ctx.strokeStyle = 'rgba(150,190,255,0.95)'; ctx.lineWidth = 1.5;
       ctx.strokeRect(x0 + 0.75, y0 + 0.75, x1 - x0 - 1.5, y1 - y0 - 1.5);
     }
-    window.__alcanceHechizo = () => ({ prendido: alcanceHechizo, apuntando: workSkill === SKILL_MAGIA_CLIENTE });
+    window.__alcanceHechizo = () => ({ prendido: alcanceHechizo && verAlcanceHechizo, apuntando: workSkill === SKILL_MAGIA_CLIENTE });
     const WORK_SKILLS = [[20, 'Talar'], [19, 'Minería'], [18, 'Pesca'], [12, 'Domar'], [14, 'Robar'], [88, 'Fundir metal']];
     // eSkill.Ocultarse (Declares.bas:412). Las seis de arriba piden un tile y van por WorkLeftClick; esta es
     // una self-action y viaja por Work (21), que es el handler que este cliente no usaba.
@@ -4408,6 +4413,7 @@
                 <option value="1"${ssMax <= 1 ? ' selected' : ''}>Mínima (más rápida)</option></select>`))}
         ${seccion('juego',
           fila('Ver nombres de los jugadores', 'También con la tecla N.', llave('nombres', mostrarNombres))
+          + (alcanceHechizo ? fila('Ver el alcance de los hechizos', 'Al apuntar un hechizo, marca hasta dónde llega.', llave('alcance', verAlcanceHechizo)) : '')
           + fila('Macro (repetir con la tecla apretada)', 'Mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue usando lo que tenga atado, a la cadencia del cliente original (1,2 s el golpe, 1,4 s un hechizo, 1 s un ítem). Apagalo si preferís una acción por cada vez que apretás, que es como el original. Los oficios se repiten solos siempre.',
               llave('macro', macroOn)))}
         ${seccion('controles',
@@ -4422,7 +4428,7 @@
       if (completa) window.coveraoEscritorio.estaEnPantallaCompleta().then((si) => completa.setAttribute('aria-checked', String(si))).catch(() => {});
     }
     window.__abrirOpciones = abrirOpciones;
-    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, macroOn, ocultarLluviaBajoTecho });
+    window.__opciones = () => ({ musicaOff, muted, volMusica, volEfectos, fpsCap, smoothWorld, zoom: VTILES_H, mostrarNombres, verAlcanceHechizo, macroOn, ocultarLluviaBajoTecho });
     const SKILL_ROBAR = 14;        // la tecla R del original (mKeySteal); tambien pide objetivo
     // ÍTEM SELECCIONADO del inventario. El original lo tiene (`Inventario.SelectedItem`) y sus teclas de
     // inventario —T tirar, U usar, E equipar— actúan SOBRE ÉL. Acá no existía: el clic actuaba directo, y por
@@ -6644,7 +6650,7 @@
       }
 
       // EL ALCANCE DEL HECHIZO mientras se apunta (ver `dibujarAlcanceDelHechizo`). Antes de la ceguera: el ciego no lo ve.
-      if (alcanceHechizo && workSkill === SKILL_MAGIA_CLIENTE && me) dibujarAlcanceDelHechizo(me, camX, camY);
+      if (alcanceHechizo && verAlcanceHechizo && workSkill === SKILL_MAGIA_CLIENTE && me) dibujarAlcanceDelHechizo(me, camX, camY);
 
       // CEGUERA (Blind 57 / BlindNoMore 65): todo negro MENOS vos y lo que tenés pegado al lado.
       //

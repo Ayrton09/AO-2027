@@ -81,7 +81,8 @@ EventoAlRematar=0
 ; Cuanto oro entra en cada monton que se tira al piso (1 a 32767). Tirar mas se reparte
 ; en varios montones alrededor. El original: 10000.
 OroPorMonton=10000
-; Al tocar Lanzar, el cliente web marca hasta donde llega el hechizo (1) o no (0).
+; Al tocar Lanzar, el cliente web puede marcar hasta donde llega el hechizo (1) o nunca (0).
+; Con 1, cada jugador lo prende en Opciones > Juego (viene apagado).
 AlcanceDelHechizo=1
 ; Cada portal dice a donde lleva: un cartel arriba y el texto al clickearlo (1) o no (0).
 DestinoDeLosPortales=1
