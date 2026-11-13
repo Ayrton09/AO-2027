@@ -529,10 +529,23 @@ let recienActualizada = !!COMPILACION.id && !!config.compilacionVista && config.
 // Sólo la primera instancia: la segunda sale por el lock (arriba) y no guarda su copia del config encima.
 if (unica && COMPILACION.id && config.compilacionVista !== COMPILACION.id) { config.compilacionVista = COMPILACION.id; guardarConfig(config); }
 
-ipcMain.handle('recien-actualizada', () => { const si = recienActualizada; recienActualizada = false; return si; });
+// El menú es la única pantalla que habla con este proceso (ver preload.js). Y LO VERIFICA ACÁ TAMBIÉN, por el marco que llama: el
+// preload sólo expone estas funciones al menú, pero la lista de seguridad de Electron (punto 17) pide validar el que llama en el
+// proceso principal, por si una página de afuera llegara a ejecutar código propio en su proceso.
+// Se compara como ruta y no como texto de la dirección: espacios, tildes y la mayúscula de la unidad se escriben distinto en cada lado.
+const mismaRuta = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+const esDelMenu = (e) => {
+  const marco = e.senderFrame;
+  if (!marco || marco.parent || !marco.url.startsWith('file:')) return false;
+  try { return mismaRuta(path.resolve(require('url').fileURLToPath(marco.url.split(/[?#]/)[0])), path.resolve(MENU)); } catch { return false; }
+};
+const delMenu = (canal, hacer) => ipcMain.handle(canal, (e, ...args) => {
+  if (!esDelMenu(e)) throw new Error(`${canal}: sólo desde el menú`);
+  return hacer(e, ...args);
+});
 
-// El menú es la única pantalla que habla con este proceso (ver preload.js).
-ipcMain.handle('novedades', async (_e, direccion) => {
+delMenu('recien-actualizada', () => { const si = recienActualizada; recienActualizada = false; return si; });
+delMenu('novedades', async (_e, direccion) => {
   if (direccion === null) return { lineas: COMPILACION.novedades, version: null, de: null, propias: true };
   const d = normalizar(direccion);
   const delServer = d ? await novedadesDe(d) : null;
@@ -540,13 +553,13 @@ ipcMain.handle('novedades', async (_e, direccion) => {
   return { lineas: COMPILACION.novedades, version: null, de: null, sinRespuesta: d ? nombreDe(d) : null };
 });
 
-ipcMain.handle('actualizacion', () => !!lista);
+delMenu('actualizacion', () => !!lista);
 
-ipcMain.handle('actualizar-ahora', () => { if (instalar(true)) app.quit(); });
+delMenu('actualizar-ahora', () => { if (instalar(true)) app.quit(); });
 
-ipcMain.handle('listar', () => ({ servidores: config.servidores, ultimo: config.servidor ?? null, porDefecto: SERVIDOR_POR_DEFECTO }));
+delMenu('listar', () => ({ servidores: config.servidores, ultimo: config.servidor ?? null, porDefecto: SERVIDOR_POR_DEFECTO }));
 
-ipcMain.handle('agregar', (_e, texto, nombre) => {
+delMenu('agregar', (_e, texto, nombre) => {
   const direccion = normalizar(texto);
   if (!direccion) return { error: 'Esa dirección no es válida. Probá con algo como localhost:7669 o https://mi-server.com.' };
   const ya = config.servidores.find((s) => s.direccion === direccion);
@@ -556,13 +569,13 @@ ipcMain.handle('agregar', (_e, texto, nombre) => {
   return { direccion };
 });
 
-ipcMain.handle('quitar', (_e, direccion) => {
+delMenu('quitar', (_e, direccion) => {
   config.servidores = config.servidores.filter((s) => s.direccion !== direccion);
   if (config.servidor === direccion) delete config.servidor;
   guardarConfig(config);
 });
 
-ipcMain.handle('consultar', (_e, direccion) => (normalizar(direccion) ? consultar(normalizar(direccion)) : null));
+delMenu('consultar', (_e, direccion) => (normalizar(direccion) ? consultar(normalizar(direccion)) : null));
 
 /** El "atrás": del juego al menú; en el menú, a la pantalla principal (el mismo Esc que entiende menu.html). */
 function atras() {
@@ -570,7 +583,7 @@ function atras() {
   ventana.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))").catch(() => {});
 }
 
-ipcMain.handle('entrar', async (_e, direccion) => {
+delMenu('entrar', async (_e, direccion) => {
   const elegido = normalizar(direccion);
   if (!elegido) return 'Esa dirección no es válida.';
   // SI NO RESPONDE, NO SE SALE DEL MENÚ: el aviso va en la lista y la música sigue. Antes se intentaba cargar, fallaba y el menú se
@@ -586,9 +599,9 @@ ipcMain.handle('entrar', async (_e, direccion) => {
   return null;
 });
 
-ipcMain.handle('leer-ajustes', () => ({ ...config.ajustes }));
+delMenu('leer-ajustes', () => ({ ...config.ajustes }));
 
-ipcMain.handle('guardar-ajustes', (_e, cambios) => {
+delMenu('guardar-ajustes', (_e, cambios) => {
   config.ajustes = { ...config.ajustes, ...soloAjustes(cambios) };
   guardarConfig(config);
 });
