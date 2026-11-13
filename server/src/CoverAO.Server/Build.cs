@@ -27,7 +27,7 @@ public enum SelloDelMundo
 public static class Build
 {
     public const string Nombre = "AO 2027";
-    public const string Version = "1.0.17";
+    public const string Version = "1.0.18";
 
     /// <summary>El archivo del sello, adentro de <c>data/</c> para que viaje con el mundo y no con el programa.</summary>
     public const string ArchivoDelSello = "version.txt";

@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.18 (2026-11-13)
+
+- Nueva opción en Opciones → Juego para ver el alcance de los hechizos al apuntar. Viene apagada.
+
 ## 1.0.17 (2026-11-13)
 
 - La aplicación de escritorio pregunta antes de abrir un enlace que viene de un servidor.
