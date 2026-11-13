@@ -219,10 +219,10 @@ public static class Equipment
         1 => race switch                       // Hombre
         {
             1 => ((short)1, (short)30),        // Humano
-            2 => ((short)101, (short)121),     // Elfo
+            2 => ((short)101, (short)120),     // Elfo (el original dice 121: ver CabezaSinGrafico)
             3 => ((short)202, (short)212),     // Drow
             4 => ((short)401, (short)409),     // gnomo
-            5 => ((short)301, (short)315),     // enano
+            5 => ((short)301, (short)313),     // enano (el original dice 315: ver CabezaSinGrafico)
             6 => ((short)501, (short)514),     // Orco
             _ => null,
         },
@@ -244,7 +244,8 @@ public static class Equipment
     ///
     /// <para>Existe aparte de <see cref="HeadRange"/> porque los dos bloques del original NO dicen lo mismo: en
     /// las cuatro razas masculinas que no son humano ni orco discrepan —elfo 101‑121 al crear contra 101‑120 en
-    /// la poción, drow 202‑212 contra 201‑213, gnomo 401‑409 contra 401‑410, enano 301‑315 contra 301‑313—. O
+    /// la poción, drow 202‑212 contra 201‑213, gnomo 401‑409 contra 401‑410, enano 301‑315 contra 301‑313—. Las
+    /// del elfo y el enano al crear se acortaron a las de la poción (ver <see cref="CabezaSinGrafico"/>). O
     /// sea que la poción puede dar una cabeza que el creador de personajes rechazaría, y al revés. Es una
     /// inconsistencia de la fuente, no un error de transcripción, y por eso NO se unifican: unificarlas sería
     /// elegir una de las dos y cambiarle el juego a alguien.</para></summary>
@@ -267,6 +268,11 @@ public static class Equipment
             6 => ((short)501, (short)514),     // Orco
             _ => ((short)1, (short)30),        // Humano
         };
+
+    /// <summary>LAS CABEZAS QUE EL CREADOR DEL ORIGINAL ACEPTA Y LA DATA NO TIENE: 121 (elfo) y 314-315 (enano). No
+    /// están en las cabezas del install (`heads.json`), así que el personaje se dibujaba sin cabeza
+    /// (Ciro, un bot del servidor público, 13/11). Ya no se crean, y el que la tiene la cambia al entrar.</summary>
+    public static bool CabezaSinGrafico(int head) => head is 121 or 314 or 315;
 
     /// <summary>¿La cabeza es válida para esa raza/género? (VB6 <c>ValidarCabeza</c>). El port sólo exigía
     /// <c>head >= 1</c>, así que se podía crear un humano con cabeza de orco — y el cliente lo dibujaba mal o

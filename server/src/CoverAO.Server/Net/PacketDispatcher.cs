@@ -1764,6 +1764,8 @@ public sealed partial class PacketDispatcher
         session.Player = player;
         session.MarkAuthed();   // entró al mundo → desarma el timeout de autenticación (SEC-3)
         AplicarPrivilegiosDeStaff(player);
+        // EL QUE NACIÓ CON UNA CABEZA QUE NO EXISTE la cambia por una de su raza: ver Equipment.CabezaSinGrafico.
+        if (Equipment.CabezaSinGrafico(player.Head)) player.Head = CabezaAlAzar(player.Race, player.Gender);
         player.OrigHead = player.Head;   // cabeza viva, para restaurarla al revivir (VB6 OrigChar.Head)
         // Y la MISMA gracia contra las criaturas que da el teletransporte, porque el original la arma también
         // al conectar (`ConnectUser`, TCP.bas:1199). Entrar al mundo parado entre hostiles no puede costarte el

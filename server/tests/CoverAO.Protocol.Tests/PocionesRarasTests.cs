@@ -108,6 +108,7 @@ public class PocionesRarasTests
         var creacion = Equipment.HeadRange(raza, genero);
         Assert.NotNull(creacion);
         bool discrepa = creacion!.Value.Min != pocion.Min || creacion.Value.Max != pocion.Max;
-        Assert.Equal(genero == 1 && raza is 2 or 3 or 4 or 5, discrepa);
+        // El elfo y el enano ya no: al crear se acortaron a lo que tiene gráfico (Equipment.CabezaSinGrafico).
+        Assert.Equal(genero == 1 && raza is 3 or 4, discrepa);
     }
 }

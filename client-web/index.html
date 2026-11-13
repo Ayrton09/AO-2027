@@ -7963,10 +7963,10 @@
     // el cliente no sabía dibujar. El server ahora la rechaza (Equipment.IsValidHead).
     const RANGO_CARA = { // [raza][genero] -> [min, max]
       1: { 1: [1, 30],    2: [70, 80] },    // Humano
-      2: { 1: [101, 121], 2: [170, 189] },  // Elfo
+      2: { 1: [101, 120], 2: [170, 189] },  // Elfo (el 121 del original no tiene gráfico)
       3: { 1: [202, 212], 2: [270, 278] },  // Elfo Oscuro (Drow)
       4: { 1: [401, 409], 2: [470, 481] },  // Gnomo
-      5: { 1: [301, 315], 2: [370, 373] },  // Enano
+      5: { 1: [301, 313], 2: [370, 373] },  // Enano (el 314 y el 315 del original no tienen gráfico)
       6: { 1: [501, 514], 2: [570, 573] },  // Orco
     };
     // Cuerpo desnudo por raza/género (VB6 DarCuerpoDesnudo, General.bas:37 — mismo que Equipment.NakedBody).
