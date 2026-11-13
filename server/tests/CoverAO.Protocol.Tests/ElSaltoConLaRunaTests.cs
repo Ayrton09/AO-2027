@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using CoverAO.Protocol;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
@@ -56,9 +56,20 @@ public class ElSaltoConLaRunaTests
     public async Task Con_el_hogar_en_Illiandor_encerrada_en_la_region_tambien_usa_la_runa()
         => Assert.Equal<ClientPacketId?>(ClientPacketId.UseItem, await PrimeraDecision(Cities.Illiandor));
 
+    /// <summary>Bruma en la ronda 104: cazando en el 824 con presa que entrena a la vista, el ciclo sólo la llamaba para entrenar, y esa
+    /// llamada salía antes de mirar la runa. Las siete corridas terminaron en el 824. El encerrado la mira también ahí; el que vuelve a
+    /// pie a su casa, no.</summary>
+    [Fact]
+    public async Task Cazando_en_el_824_el_encerrado_mira_la_runa_aunque_solo_busque_donde_entrenar()
+    {
+        Assert.Equal<ClientPacketId?>(ClientPacketId.Walk, await PrimeraDecision(Cities.Illiandor, new WorldPos(824, 75, 30), soloEntrenamiento: true));
+        Assert.Null(await PrimeraDecision(Cities.Illiandor, new WorldPos(195, Bot.DesdeDondeSeCaza(Mundo.Value.Datos, 195)[0].X,
+                                                                         Bot.DesdeDondeSeCaza(Mundo.Value.Datos, 195)[0].Y), soloEntrenamiento: true));
+    }
+
     /// <summary>Corre la búsqueda de coto con el hogar <paramref name="hogar"/> y devuelve el primer paquete de usar o caminar (null si
     /// no mandó ninguno en diez segundos).</summary>
-    private static async Task<ClientPacketId?> PrimeraDecision(byte hogar)
+    private static async Task<ClientPacketId?> PrimeraDecision(byte hogar, WorldPos? desde = null, bool soloEntrenamiento = false)
     {
         var d = Mundo.Value.Datos;
         Assert.True(!d.IsPkMap(Avanzada) && d.IsPkMap(823) && d.IsPkMap(824), "premisa: la Avanzada es segura y el 823 y el 824 no (MapInfo.json)");
@@ -66,11 +77,11 @@ public class ElSaltoConLaRunaTests
         var s = new SentidosDelBot();
         var p = new Player
         {
-            CharIndex = MiIndice, Name = "Bruma", Account = "bruma_test", Pos = new WorldPos(Avanzada, 50, 50), Level = 25,
+            CharIndex = MiIndice, Name = "Bruma", Account = "bruma_test", Pos = desde ?? new WorldPos(Avanzada, 50, 50), Level = 25,
             MaxHp = 185, Hp = 185, MaxMana = 0, Mana = 0, MaxStamina = 300, Stamina = 300, FactionStatus = Player.StatusRepublicano,
         };
         s.Recibir(ServerMessages.UserIndexInServer(MiIndice));
-        s.Recibir(ServerMessages.ChangeMap(Avanzada));
+        s.Recibir(ServerMessages.ChangeMap(p.Pos.Map));
         s.Recibir(ServerMessages.CharacterCreate(p));
         s.Recibir(ServerMessages.UpdateUserStats(p));
         s.Recibir(ServerMessages.ChangeInventorySlot(1, Runa, 1, false, 0f, 1));
@@ -80,7 +91,7 @@ public class ElSaltoConLaRunaTests
         var t = new TransporteDeBot("Bruma");
 
         var fin = new TaskCompletionSource();
-        var busqueda = (Task)BuscarDondeCazarAsync.Invoke(bot, new object[] { t, s, 185, 25, false, fin.Task, CancellationToken.None, false })!;
+        var busqueda = (Task)BuscarDondeCazarAsync.Invoke(bot, new object[] { t, s, 185, 25, soloEntrenamiento, fin.Task, CancellationToken.None, soloEntrenamiento })!;
         ClientPacketId? primera = null;
         var limite = DateTime.UtcNow.AddSeconds(10);
         while (primera is null && DateTime.UtcNow < limite && !busqueda.IsCompleted)

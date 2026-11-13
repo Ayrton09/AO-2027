@@ -4210,7 +4210,11 @@ public sealed partial class Bot
             sirve = f => Entrenamiento(f) > 0;
             entrenar = true;
         }
-        if (soloEntrenamiento && !entrenar) return false;
+        // Y EL ENCERRADO QUE CAZA A MANO TAMBIÉN MIRA LA RUNA: ver `SaltaSiRindeMasDesdeLaCasaAsync`. Con presa que entrena a la vista
+        // el ciclo no busca coto, y esta llamada era la única que le llegaba: en la ronda 104 Bruma pasó las siete corridas en el 824.
+        if (soloEntrenamiento && !entrenar)
+            return EligePorLoQueSuma(nivel) && ahora >= _proximoSaltoConLaRuna
+                   && await SaltaSiRindeMasDesdeLaCasaAsync(LoQueSumaAPie(), soloEncerrado: true);
         (int Mapa, byte X, byte Y, int Saltos)? CotoComoSiempre(Func<int, bool> noVa, out bool oro, out int porLoQueRindeMas) =>
             CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
                                  cruza, m => seCazaAhi(m) && !noVa(m), m => SigueLleno(_llenoHasta, m, ahora),
@@ -4242,23 +4246,32 @@ public sealed partial class Bot
             _proximoSaltoConLaRuna = ahora + EntreSaltosConLaRunaMs;
             int aPie = cruzandoPeligro
                 ? _entorno.Mapas.LoQueSuma(hallado.Value.Mapa, (hallado.Value.X, hallado.Value.Y), rinde)?.Suma ?? 0
-                : Math.Max(seCazaAhi(sentidos.Mapa) ? _entorno.Mapas.LoQueSuma(sentidos.Mapa, sentidos.Posicion, rinde)?.Suma ?? 0 : 0,
-                           _entorno.Mapas.CotoQueMasSuma(sentidos.Mapa, sentidos.Posicion, rinde, SaltosHastaElCotoQueSuma, cruza,
-                                                         seCazaAhi)?.Suma ?? 0);
-            if (DondeLoDejaLaRuna(sentidos, nivel) is { } casa && casa.Map != sentidos.Mapa)
+                : LoQueSumaAPie();
+            if (await SaltaSiRindeMasDesdeLaCasaAsync(aPie, soloEncerrado: false)) return true;
+        }
+        int LoQueSumaAPie() =>
+            Math.Max(seCazaAhi(sentidos.Mapa) ? _entorno.Mapas.LoQueSuma(sentidos.Mapa, sentidos.Posicion, rinde)?.Suma ?? 0 : 0,
+                     _entorno.Mapas.CotoQueMasSuma(sentidos.Mapa, sentidos.Posicion, rinde, SaltosHastaElCotoQueSuma, cruza,
+                                                   seCazaAhi)?.Suma ?? 0);
+        async Task<bool> SaltaSiRindeMasDesdeLaCasaAsync(int aPie, bool soloEncerrado)
+        {
+            if (DondeLoDejaLaRuna(sentidos, nivel) is not { } casa || casa.Map == sentidos.Mapa) return false;
+            bool encerrado = !_entorno.Mapas.SeLlegaA(sentidos.Mapa, sentidos.Posicion, casa.Map, cruza);
+            if (soloEncerrado)
             {
-                int desdeLaCasa = Math.Max(
-                    seCazaAhi(casa.Map) ? _entorno.Mapas.LoQueSuma(casa.Map, (casa.X, casa.Y), rinde)?.Suma ?? 0 : 0,
-                    _entorno.Mapas.CotoQueMasSuma(casa.Map, (casa.X, casa.Y), rinde, SaltosHastaElCotoQueSuma, cruza, seCazaAhi)?.Suma ?? 0);
-                bool encerrado = !_entorno.Mapas.SeLlegaA(sentidos.Mapa, sentidos.Posicion, casa.Map, cruza);
-                if (encerrado
-                    && CotoCruzandoPeligro(_entorno.Mapas, casa.Map, (casa.X, casa.Y), rinde, cruza,
-                                           PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
-                                           m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora)) is { } cruzando)
-                    desdeLaCasa = Math.Max(desdeLaCasa, _entorno.Mapas.LoQueSuma(cruzando.Mapa, (cruzando.X, cruzando.Y), rinde)?.Suma ?? 0);
-                if (ValeSaltarConLaRuna(aPie, desdeLaCasa, encerrado) && await SaltarConLaRunaAsync(transporte, sentidos, cerrada, ct))
-                    return true;
+                if (!encerrado) return false;
+                _proximoSaltoConLaRuna = ahora + EntreSaltosConLaRunaMs;
+                if (aPie == 0) return false;
             }
+            int desdeLaCasa = Math.Max(
+                seCazaAhi(casa.Map) ? _entorno.Mapas.LoQueSuma(casa.Map, (casa.X, casa.Y), rinde)?.Suma ?? 0 : 0,
+                _entorno.Mapas.CotoQueMasSuma(casa.Map, (casa.X, casa.Y), rinde, SaltosHastaElCotoQueSuma, cruza, seCazaAhi)?.Suma ?? 0);
+            if (encerrado
+                && CotoCruzandoPeligro(_entorno.Mapas, casa.Map, (casa.X, casa.Y), rinde, cruza,
+                                       PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
+                                       m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora)) is { } cruzando)
+                desdeLaCasa = Math.Max(desdeLaCasa, _entorno.Mapas.LoQueSuma(cruzando.Mapa, (cruzando.X, cruzando.Y), rinde)?.Suma ?? 0);
+            return ValeSaltarConLaRuna(aPie, desdeLaCasa, encerrado) && await SaltarConLaRunaAsync(transporte, sentidos, cerrada, ct);
         }
         // Y DE UN POZO, CON LA RUNA RECIÉN COMPRADO O EN CUANTO NO LE DA NADA: ver `SaleDelPozo`.
         _ganancia = LaUltimaGanancia(_ganancia, sentidos.Mapa, AvanceDeCaza(sentidos), sentidos.Nivel, ahora);
