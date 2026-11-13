@@ -1,6 +1,6 @@
 {
   "name": "coverao-escritorio",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": true,
   "description": "AO 2027 para escritorio. El cliente de cada servidor se verifica con la firma del autor.",
   "main": "main.js",

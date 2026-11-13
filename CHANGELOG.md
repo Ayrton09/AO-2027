@@ -2,6 +2,12 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.16 (2026-11-12)
+
+- El servidor usa .NET 10.0.15, con las correcciones de seguridad de noviembre.
+- La aplicación de escritorio usa Electron 44.11.3.
+- La aplicación de escritorio solo acepta pedidos del menú desde el propio menú.
+
 ## 1.0.15 (2026-11-12)
 
 - Los bots de nivel alto ya no dejan una mazmorra donde cazan bien para ir a un campo que rinde menos.
