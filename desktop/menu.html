@@ -221,6 +221,8 @@
               </select></div></div>
           </div>
           <div class="seccion" data-seccion="juego">
+            <div class="opcion"><div class="que">Interfaz<small>Moderna: las barras y los atajos sobre el juego, y el inventario y los conjuros en una ventana (B y H). Clásica: el panel de la derecha.</small></div>
+              <div class="control"><select data-ajuste="ao_interfaz"><option value="moderna">moderna</option><option value="clasica">clásica</option></select></div></div>
             <div class="opcion"><div class="que">Ver nombres de los jugadores</div>
               <div class="control"><div class="interruptor" role="switch" tabindex="0" data-ajuste="ao_nombres"></div></div></div>
             <div class="opcion"><div class="que">Ver el alcance de los hechizos<small>Al apuntar un hechizo, marca hasta dónde llega.</small></div>
@@ -320,7 +322,7 @@
     // del juego, que acá viene prendida (el autor, 05/10). Son los mismos que pone main.js.
     const POR_DEFECTO = {
       ao_musicalogin: '1', ao_musica: '1', ao_volmusica: '0.2', ao_mute: '0', ao_volefectos: '0.2',
-      ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_alcance: '0', ao_macro: '1',
+      ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_alcance: '0', ao_macro: '1', ao_interfaz: 'moderna',
     };
     let ajustes = {};
     const valor = (k) => ajustes[k] ?? POR_DEFECTO[k];

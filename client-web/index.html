@@ -764,6 +764,59 @@
       width:fit-content; max-width:calc(100% - 24px); padding:8px 12px;
       color:#f0dba4; background:rgba(24,17,12,.92); border:1px solid var(--gold-deep);
       font-size:14px; line-height:1.4; pointer-events:none; }
+
+    /* ============================ INTERFAZ MODERNA ============================================= */
+    /* Opciones → Juego → Interfaz. Las piezas del panel son LAS MISMAS (mismos ids y listeners): `aplicarInterfaz`
+       las muda a estos contenedores sobre el juego y las devuelve a su lugar al volver a la clásica. */
+    #m-abajo, #m-mapa, #m-botones, #m-ventana { display:none; }
+    body.ui-moderna #panel { display:none; }
+    body.ui-moderna #m-abajo { display:flex; position:absolute; left:50%; transform:translateX(-50%); bottom:8px;
+      z-index:5; gap:6px; align-items:flex-end; }
+    body.ui-moderna #hotbar { position:static; transform:none; }
+    .m-caja { background:rgba(10,7,4,.6); border:1px solid #c9a46a59; border-radius:6px; padding:5px 7px;
+      display:flex; flex-direction:column; gap:4px; }
+    body.ui-moderna #m-abajo .stat { flex-direction:row; align-items:center; gap:5px; }
+    body.ui-moderna #m-abajo .cap { display:none; }
+    body.ui-moderna #m-abajo .stat::before { content:''; flex:0 0 auto; width:14px; height:14px;
+      background:center / contain no-repeat; }
+    body.ui-moderna #m-abajo .track { width:calc(var(--u)*11); height:11px; border-color:#5a4424; }
+    body.ui-moderna #m-abajo .track .val { font-size:9px; line-height:11px; }
+    body.ui-moderna #m-fila .track { width:calc(var(--u)*3.4); }
+    body.ui-moderna #m-fila { display:flex; align-items:center; gap:8px; }
+    body.ui-moderna #m-abajo .stat:has(#f-hp)::before { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 14 2 8a3.4 3.4 0 0 1 6-4 3.4 3.4 0 0 1 6 4z' fill='%23e0453c'/%3E%3C/svg%3E"); }
+    body.ui-moderna #m-abajo .stat:has(#f-mana)::before { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1l2 5 5 .5-4 3.5 1.3 5L8 12.5 3.7 15 5 10 1 6.5 6 6z' fill='%234c8fe6'/%3E%3C/svg%3E"); }
+    body.ui-moderna #m-abajo .stat:has(#f-ener)::before { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M9 1 3 9h4l-1 6 6-8H8z' fill='%23e3b938'/%3E%3C/svg%3E"); }
+    body.ui-moderna #m-abajo .stat:has(#f-food)::before { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 4c3-2 6 0 6 4s-3 7-6 6c-3 1-6-2-6-6s3-6 6-4z' fill='%235fb84f'/%3E%3Cpath d='M8 4c0-2 1-3 3-3' stroke='%237a5a2a' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); }
+    body.ui-moderna #m-abajo .stat:has(#f-thirst)::before { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1c3 5 5 7 5 10a5 5 0 0 1-10 0c0-3 2-5 5-10z' fill='%233fb6d6'/%3E%3C/svg%3E"); }
+    body.ui-moderna #m-abajo .goldrow { margin:0; padding:0; border:0; }
+    body.ui-moderna #m-abajo .goldrow .cap { display:none; }
+    body.ui-moderna #m-abajo .p-gold { font-size:12px; }
+    body.ui-moderna #m-abajo .p-xp { padding:0; gap:5px; background:none; border:0; box-shadow:none; }
+    body.ui-moderna #m-abajo .p-xp .lbl { display:none; }
+    body.ui-moderna #m-abajo .p-xp .xptrack { width:calc(var(--u)*11); height:11px; flex:none; border-color:#5a4424; }
+    body.ui-moderna #m-abajo #xptxt { font-size:9px; }
+    body.ui-moderna #m-abajo .p-xp .lvl { order:-1; min-width:14px; font-size:13px; line-height:14px; }
+    body.ui-moderna #m-mapa { display:block; position:absolute; right:10px; top:calc(var(--u)*2.4 + 8px); z-index:5; }
+    body.ui-moderna #m-mapa .p-foot { flex-direction:column; gap:4px; padding:6px; background:rgba(10,7,4,.6);
+      border:1px solid #c9a46a59; border-radius:6px; box-shadow:none; }
+    body.ui-moderna #m-mapa .fl { width:calc(var(--u)*7); }
+    body.ui-moderna #m-mapa #mapname { font-size:calc(var(--u)*0.9); }
+    body.ui-moderna #m-botones { display:flex; position:absolute; right:10px; bottom:8px; z-index:5; gap:6px; }
+    .m-btn { background:rgba(14,10,6,.78); border:1px solid #c9a46a99; border-radius:6px; color:var(--gold-hi);
+      padding:6px 10px; font-family:var(--serif); font-size:calc(var(--u)*0.85); cursor:pointer; user-select:none; }
+    .m-btn:hover, .m-btn.on { background:rgba(40,28,14,.9); box-shadow:inset 0 0 8px #e8c87644; }
+    .m-btn b { font:calc(var(--u)*0.68) ui-monospace,monospace; color:#fff; opacity:.65; margin-left:5px; }
+    body.ui-moderna #m-ventana.abierta { display:flex; }
+    #m-ventana { position:absolute; z-index:7; right:calc(var(--u)*9); top:calc(var(--u)*5); flex-direction:column; gap:6px;
+      width:clamp(280px, 24vw, 380px); height:min(480px, calc(100% - var(--u)*10)); padding:6px 8px 8px; color:var(--ink);
+      background:rgba(22,15,9,.93); border:1px solid var(--gold-lo); border-radius:8px; box-shadow:0 8px 28px #000c; }
+    #m-ventana .mv-cab { display:flex; align-items:center; gap:6px; cursor:move; }
+    #m-ventana .mv-cab > div { flex:1; min-width:0; }
+    #m-ventana .p-head { padding:3px 4px; font-size:calc(var(--u)*1.05); }
+    #m-ventana .p-body { flex:1 1 auto; }
+    #m-ventana .attrs { text-align:left; padding:0 4px; }
+    #mv-cerrar { color:var(--gold); cursor:pointer; padding:0 4px; font-size:calc(var(--u)*1.1); }
+    #mv-cerrar:hover { color:var(--gold-hi); }
   </style>
 </head>
 <body>
@@ -792,6 +845,11 @@
       <input id="chatbox" type="text" autocomplete="off" spellcheck="false"
              placeholder="Enter para hablar · / para comandos (/ayuda)" />
       <div id="hotbar"></div>
+      <!-- Interfaz moderna (ver `aplicarInterfaz`): contenedores vacíos hasta que se le mudan las piezas del panel. -->
+      <div id="m-abajo"><div id="m-izq" class="m-caja"></div><div id="m-centro"></div><div id="m-der" class="m-caja"><div id="m-fila"></div></div></div>
+      <div id="m-mapa"></div>
+      <div id="m-botones"><span class="m-btn" data-ventana="inv">Inventario<b data-tecla-de="inventario"></b></span><span class="m-btn" data-ventana="spells">Conjuros<b data-tecla-de="hechizos"></b></span><span class="m-btn" data-ventana="menu">Menú</span></div>
+      <div id="m-ventana"><div class="mv-cab"><div id="mv-titulo"></div><span id="mv-cerrar" title="cerrar">✕</span></div></div>
     </section>
 
     <!-- DERECHA: panel ornamentado AO ----------------------------------------------------------- -->
@@ -4065,7 +4123,10 @@
     const spellName = (id) => (spellNames && spellNames[id]) || ('hechizo ' + id);
     const spellSelfText = (id) => (spellSelf && spellSelf[id]) || undefined;
     // 's' ya no abre un popup: enfoca la pestaña Conjuros del panel (lista + LANZAR).
-    function showSpells() { const t = document.querySelector('.p-tabs .tab[data-tab="spells"]'); if (t) t.click(); }
+    function showSpells() {
+      if (interfaz === 'moderna') { abrirVentana('spells'); return; }
+      const t = document.querySelector('.p-tabs .tab[data-tab="spells"]'); if (t) t.click();
+    }
     const craftBtn = (obj, craftId) => `<span class="buy" data-obj="${obj}" data-craft="${craftId}">fabricar</span>`;
     const mats = (pairs) => pairs.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`).join(', ') || 'sin materiales';
     // Acciones de los tags .buy dentro del modal (comprar/fabricar/depositar/retirar).
@@ -4373,6 +4434,7 @@
       combate: 'c', agarrar: 'a', tirar: 't', usar: 'u', equipar: 'e', domar: 'd', robar: 'r',
       seguroRes: 's', ocultarse: 'o', nombres: 'n', actualizar: 'l',
       hechizos: 'h', info: 'i', clan: 'j', meditar: 'm', habilidades: 'k', lanzar: 'f', escalado: 'p',
+      inventario: 'b',
     };
     const TECLAS_NOMBRE = {
       combate: 'modo combate', agarrar: 'agarrar del piso', tirar: 'tirar el elegido',
@@ -4380,7 +4442,7 @@
       seguroRes: 'seguro de resurrección', ocultarse: 'ocultarse', nombres: 'nombres on/off',
       actualizar: 'actualizar posición', hechizos: 'libro de hechizos', info: 'estadísticas',
       clan: 'panel de clan', meditar: 'meditar', habilidades: 'habilidades', lanzar: 'lanzar hechizo',
-      escalado: 'escalado del mundo',
+      escalado: 'escalado del mundo', inventario: 'inventario (interfaz moderna)',
     };
     let teclas = { ...TECLAS_DEF };
     try { Object.assign(teclas, JSON.parse(localStorage.getItem('ao_teclas') || '{}')); } catch (e) {}
@@ -4399,6 +4461,7 @@
     let capturandoTecla = null;
     function guardarTeclas() {
       try { localStorage.setItem('ao_teclas', JSON.stringify(teclas)); } catch (e) {}
+      ponerTeclasDeLaInterfaz();
     }
     // LAS TECLAS VIVEN EN LA PESTAÑA CONTROLES DE OPCIONES: abrirlas es abrir Opciones ahí (el que reasigna una tecla vuelve a dibujar
     // el panel por acá y queda en la misma pestaña).
@@ -4462,7 +4525,9 @@
                 <option value="2"${ssMax === 2 ? ' selected' : ''}>Baja</option>
                 <option value="1"${ssMax <= 1 ? ' selected' : ''}>Mínima (más rápida)</option></select>`))}
         ${seccion('juego',
-          fila('Ver nombres de los jugadores', 'También con la tecla N.', llave('nombres', mostrarNombres))
+          fila('Interfaz', 'Moderna: las barras y los atajos sobre el juego, y el inventario y los conjuros en una ventana (B y H). Clásica: el panel de la derecha.',
+              `<select data-op="interfaz">${sel('moderna', interfaz, 'moderna')}${sel('clasica', interfaz, 'clásica')}</select>`)
+          + fila('Ver nombres de los jugadores', 'También con la tecla N.', llave('nombres', mostrarNombres))
           + (alcanceHechizo ? fila('Ver el alcance de los hechizos', 'Al apuntar un hechizo, marca hasta dónde llega.', llave('alcance', verAlcanceHechizo)) : '')
           + fila('Macro (repetir con la tecla apretada)', 'Mantener <b>Ctrl</b> sigue golpeando y mantener una <b>F1–F10</b> sigue usando lo que tenga atado, a la cadencia del cliente original (1,2 s el golpe, 1,4 s un hechizo, 1 s un ítem). Apagalo si preferís una acción por cada vez que apretás, que es como el original. Los oficios se repiten solos siempre.',
               llave('macro', macroOn)))}
@@ -5594,6 +5659,74 @@
       document.querySelectorAll('.tabpane').forEach((p) => p.classList.toggle('on', p.id === 'tab-' + id));
       if (id === 'spells') buildSpellList();
     }));
+
+    // --- INTERFAZ: moderna (por defecto) o clásica (el panel de la derecha) ----------------------
+    // La moderna no crea otras barras ni otro inventario: muda LOS MISMOS nodos del panel (con sus ids y listeners)
+    // a los contenedores de `#stage`, y deja un comentario en el lugar de cada uno para devolverlo a la clásica.
+    let interfaz = leerPref('ao_interfaz') === 'clasica' ? 'clasica' : 'moderna';
+    const lugaresDelPanel = new Map();
+    function mudar(nodo, destino) {
+      if (!nodo) return;
+      if (!lugaresDelPanel.has(nodo)) { const c = document.createComment('panel'); nodo.before(c); lugaresDelPanel.set(nodo, c); }
+      destino.appendChild(nodo);
+    }
+    function aplicarInterfaz() {
+      for (const [nodo, c] of lugaresDelPanel) c.replaceWith(nodo);
+      lugaresDelPanel.clear();
+      const moderna = interfaz === 'moderna';
+      document.body.classList.toggle('ui-moderna', moderna);
+      $('m-ventana').classList.remove('abierta');
+      document.querySelectorAll('.m-btn').forEach((b) => b.classList.remove('on'));
+      if (moderna) {
+        const stat = (id) => $(id).closest('.stat');
+        for (const id of ['f-hp', 'f-mana', 'f-ener']) mudar(stat(id), $('m-izq'));
+        mudar(document.querySelector('#panel .p-xp'), $('m-der'));
+        $('m-der').appendChild($('m-fila'));
+        mudar(stat('f-food'), $('m-fila')); mudar(stat('f-thirst'), $('m-fila')); mudar($('goldrow'), $('m-fila'));
+        mudar($('hotbar'), $('m-centro'));
+        mudar(document.querySelector('#panel .p-foot'), $('m-mapa'));
+        mudar(document.querySelector('#panel .p-head'), $('mv-titulo'));
+        for (const sel of ['.p-tabs', '.p-body']) mudar(document.querySelector('#panel ' + sel), $('m-ventana'));
+        mudar(stat('a-str'), $('m-ventana'));
+        try { const p = JSON.parse(localStorage.getItem('ao_ventana') || 'null'); if (p) ponerVentana(p.x, p.y); } catch (e) {}
+      }
+      ponerTeclasDeLaInterfaz();
+      resize();
+    }
+    function ponerTeclasDeLaInterfaz() {
+      document.querySelectorAll('[data-tecla-de]').forEach((b) => { b.textContent = (teclas[b.dataset.teclaDe] || '').toUpperCase(); });
+    }
+    // Abre la ventana en esa pestaña; si ya estaba abierta en ésa, la cierra.
+    function abrirVentana(tab) {
+      const v = $('m-ventana'), t = document.querySelector(`.p-tabs .tab[data-tab="${tab}"]`);
+      const cerrar = v.classList.contains('abierta') && t && t.classList.contains('on');
+      if (!cerrar && t) t.click();
+      v.classList.toggle('abierta', !cerrar);
+      document.querySelectorAll('.m-btn').forEach((b) => b.classList.toggle('on', !cerrar && b.dataset.ventana === tab));
+    }
+    function ponerVentana(x, y) {
+      const v = $('m-ventana'), s = stage.getBoundingClientRect();
+      v.style.left = Math.max(0, Math.min(s.width - 120, x)) + 'px';
+      v.style.top = Math.max(0, Math.min(s.height - 60, y)) + 'px';
+      v.style.right = 'auto';
+    }
+    document.querySelectorAll('.m-btn').forEach((b) => b.addEventListener('click', () => abrirVentana(b.dataset.ventana)));
+    $('mv-cerrar').addEventListener('click', () => abrirVentana(document.querySelector('.p-tabs .tab.on')?.dataset.tab));
+    // Se arrastra de la cabecera (no de sus botones), y queda donde se la dejó.
+    $('m-ventana').querySelector('.mv-cab').addEventListener('pointerdown', (ev) => {
+      if (ev.target.closest('.x, #mv-cerrar')) return;
+      const v = $('m-ventana'), r = v.getBoundingClientRect(), s = stage.getBoundingClientRect();
+      const dx = ev.clientX - r.left, dy = ev.clientY - r.top;
+      const mover = (e) => ponerVentana(e.clientX - s.left - dx, e.clientY - s.top - dy);
+      const soltar = () => {
+        window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar);
+        try { localStorage.setItem('ao_ventana', JSON.stringify({ x: parseFloat(v.style.left), y: parseFloat(v.style.top) })); } catch (e) {}
+      };
+      window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar);
+      ev.preventDefault();
+    });
+    window.__interfaz = () => ({ interfaz, ventana: $('m-ventana').classList.contains('abierta'), VIEW_W, VIEW_H });
+    aplicarInterfaz();
     // --- pestañas de chat ----------------------------------------------------------------------
     document.querySelectorAll('#chattabs .ct').forEach((t) => t.addEventListener('click', () => {
       document.querySelectorAll('#chattabs .ct').forEach((x) => x.classList.toggle('on', x === t));
@@ -7415,6 +7548,11 @@
           guardarPref('ao_zoom', String(VTILES_H)); resize();
           rot(VTILES_H + ' tiles'); break;
         }
+        case 'interfaz':
+          interfaz = el.value === 'clasica' ? 'clasica' : 'moderna';
+          guardarPref('ao_interfaz', interfaz);
+          aplicarInterfaz();
+          break;
         case 'escalado': {
           smoothWorld = el.value === '1';
           canvas.style.imageRendering = smoothWorld ? 'auto' : 'pixelated';
@@ -7625,6 +7763,9 @@
         // E = equipar el objeto ELEGIDO (mKeyEquipObject). Las estadísticas se mudaron a I.
         if (!inventory[slotSel]) log('Elegí primero un objeto del inventario.', '#b94');
         else send(W().writeByte(CLIENT.EquipItem).writeByte(slotSel));
+        ev.preventDefault();
+      } else if (acc === 'inventario' && interfaz === 'moderna') {
+        abrirVentana('inv');
         ev.preventDefault();
       } else if (acc === 'hechizos' && ws.readyState === 1) {
         showSpells();                                  // hechizos: se mudó de S (mnemónico, y S es del original)
