@@ -311,8 +311,9 @@ public class ActualizadorTests : IDisposable
         Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
     }
 
-    /// <summary>UN SERVER QUE NO SE DEJA VER CUENTA COMO PRENDIDO: desde una consola sin Administrador, Windows no da la ruta de
-    /// un proceso de otra cuenta (el arranque automático corre como LOCAL SERVICE). Actualizar no sigue, salvo con --forzar.</summary>
+    /// <summary>UN SERVER QUE NO SE DEJA VER CUENTA COMO PRENDIDO SI LA BASE DE ESTA CARPETA ESTÁ EN USO: desde una consola sin
+    /// Administrador, Windows no da la ruta de un proceso de otra cuenta (el arranque automático corre como LOCAL SERVICE). Con la
+    /// base tomada actualizar no sigue, salvo con --forzar; con la base libre es el de otra carpeta, y sigue.</summary>
     [Fact]
     public void Un_server_que_no_se_deja_ver_cuenta_como_prendido()
     {
@@ -328,13 +329,30 @@ public class ActualizadorTests : IDisposable
         var f = new Firmante();
         string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
         var salida = new StringWriter();
-        Assert.Equal(1, Actualizador.Correr(new[] { "actualizar", "--desde", zip }, Base, Data, new ServerIni(), f.Clave, salida, new[] { sinRuta }));
-        Assert.Contains("no se puede ver de qué carpeta es", salida.ToString());
+        Directory.CreateDirectory(Data);
+        using (AlmacenSqlite.Candado(Path.Combine(Data, new ServerIni().ArchivoDeBase)))   // el server de esta carpeta, prendido
+        {
+            Assert.Equal(1, Actualizador.Correr(new[] { "actualizar", "--desde", zip }, Base, Data, new ServerIni(), f.Clave, salida, new[] { sinRuta }));
+        }
+        Assert.Contains("la base de esta carpeta está en uso", salida.ToString());
         Assert.Equal("mapa1 v1", Leer("gamedata/mapa1.json"));
         Assert.False(Directory.Exists(Path.Combine(Data, "backups")));
 
-        var forzada = new StringWriter();
-        Assert.Equal(0, Actualizador.Correr(new[] { "actualizar", "--desde", zip, "--forzar" }, Base, Data, new ServerIni(), f.Clave, forzada, new[] { sinRuta }));
+        var libre = new StringWriter();
+        Assert.Equal(0, Actualizador.Correr(new[] { "actualizar", "--desde", zip }, Base, Data, new ServerIni(), f.Clave, libre, new[] { sinRuta }));
+        Assert.Contains("el de esta carpeta está apagado", libre.ToString());
+        Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
+    }
+
+    /// <summary>CON --forzar SIGUE AUNQUE LA BASE ESTÉ EN USO, como antes: el que lo pide sabe que es el de otra carpeta.</summary>
+    [Fact]
+    public void Con_forzar_un_server_que_no_se_deja_ver_no_frena()
+    {
+        ArmarInstalacion();
+        var f = new Firmante();
+        string zip = ArmarPaquete(f, "2026-10-13T00:00:00.000Z");
+        Func<string?> sinRuta = () => null;
+        Assert.Equal(0, Actualizador.Correr(new[] { "actualizar", "--desde", zip, "--forzar" }, Base, Data, new ServerIni(), f.Clave, new StringWriter(), new[] { sinRuta }));
         Assert.Equal("mapa1 v2", Leer("gamedata/mapa1.json"));
     }
 

@@ -267,7 +267,10 @@ Para migrar un servidor 1.0.8 desde el repo anterior, descargá el paquete nuevo
 `BuscarActualizaciones=1` (así viene) el server avisa en la consola cuando hay una versión nueva; no instala
 nada solo. `coverao.ps1 actualizar` además lo apaga si estaba prendido y lo vuelve a arrancar. Si el server corre
 con otra cuenta (el `arranque` de Windows corre como `LOCAL SERVICE`), desde una consola sin Administrador no se
-puede saber de qué carpeta es: `actualizar` no sigue y pide abrirla como Administrador (o `--forzar`).
+puede saber de qué carpeta es: `actualizar` prueba abrir la base de esta carpeta, que el server tiene tomada mientras
+corre. Si está en uso, no sigue y pide apagarlo primero (o `--forzar`); si está libre, el prendido es el de otra
+carpeta y sigue. Así se actualiza un server mientras otro de la misma máquina corre con su propia cuenta (un panel
+que le da una a cada server).
 
 ### Pasar de 1.0.7 a 1.0.8 en Windows
 

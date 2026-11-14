@@ -65,11 +65,17 @@ public static class Actualizador
             if (otro == OtroServer.EnEstaCarpeta)
                 throw new Problema("El server está prendido en esta carpeta: apagalo primero (coverao.ps1 detener, " +
                                    "Ctrl+C en su ventana o systemctl stop) y volvé a correr esto.");
+            // UNO QUE NO SE DEJA VER NO FRENA SI LA BASE DE ESTA CARPETA ESTÁ LIBRE: el server la tiene tomada mientras corre (el
+            // candado de AlmacenSqlite, el de Postgres). Así se actualiza un server cuando otro de la misma máquina corre con su
+            // propia cuenta (un panel que le da una a cada uno, 13/11), sin --forzar, que saltea mucho más.
             if (otro == OtroServer.SinSaberDonde && !forzar)
-                throw new Problema("Hay un server de CoverAO prendido con otra cuenta y no se puede ver de qué carpeta es (el arranque " +
-                                   "automático de coverao.ps1 corre como LOCAL SERVICE). Si es éste, apagalo primero (coverao.ps1 detener " +
-                                   "desde una consola de Administrador, o systemctl stop) y volvé a correr esto. Si es el de otra carpeta, " +
-                                   "corré esto como Administrador (o con sudo) para que se vea, o con --forzar.");
+            {
+                if (!BaseLibre(ini, dataRoot))
+                    throw new Problema("Hay un server de CoverAO prendido con otra cuenta y la base de esta carpeta está en uso (el arranque " +
+                                       "automático de coverao.ps1 corre como LOCAL SERVICE). Si es éste, apagalo primero (coverao.ps1 detener " +
+                                       "desde una consola de Administrador, o systemctl stop) y volvé a correr esto.");
+                salida.WriteLine("Hay otro server de CoverAO prendido con otra cuenta; el de esta carpeta está apagado (su base está libre).");
+            }
             Directory.CreateDirectory(dir);
             // Los ejecutables auxiliares también comparten las carpetas paquete y anterior.
             try
@@ -210,6 +216,19 @@ public static class Actualizador
             return 1;
         }
         finally { exclusividad?.Dispose(); }
+    }
+
+    /// <summary>¿Se puede abrir la base de esta carpeta? No mientras su server corre: la tiene tomada (ver
+    /// <see cref="AlmacenSqlite.Candado"/>). Una base que no se puede abrir por otra cosa (Postgres caído) cuenta como en uso.</summary>
+    internal static bool BaseLibre(ServerIni ini, string dataRoot)
+    {
+        try
+        {
+            var (almacen, _) = Almacenes.Abrir(ini, dataRoot);
+            (almacen as IDisposable)?.Dispose();
+            return true;
+        }
+        catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException) { return false; }
     }
 
     private static string? Opcion(string[] args, string nombre)
