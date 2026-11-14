@@ -3119,6 +3119,51 @@
       chatEl.scrollTop = chatEl.scrollHeight;
     }
     window.__log = log;   // sonda de verificación
+    // EL /EST EN COLORES (el autor, 13/11: "que salgan en distintos colores para distinguir bien que dice todo"). El server
+    // manda las doce líneas del original, todas con FONTTYPE_INFO, y eso no se toca (es lo que compara el oráculo): acá se
+    // pinta cada etiqueta en dorado y cada valor con el color de lo que es. Sólo dentro de la ficha: de "Estadísticas de:"
+    // a "Dados:", y a lo sumo tres segundos, para que un "Oro:" suelto de otro mensaje no se pinte.
+    const EST_ETIQUETA = '#e8c876';
+    const EST_VALOR = [
+      [/^Estad[ií]sticas de$/, '#ffffff'], [/^Nivel$/, '#9fd0ff'], [/^EXP$/, '#c8a2ff'],
+      [/^Salud$/, '#ff6b6b'], [/^Man[aá]$/, '#5fa8ff'], [/^Energ[ií]a$/, '#f2d14b'],
+      [/^Menor Golpe\/Mayor Golpe$/, '#ffa64d'], [/^\((CUERPO|CABEZA)\) M[ií]n Def\/M[aá]x Def$/, '#9ccf8f'],
+      [/^(Clan|Status)$/, '#7fd6c2'], [/^Logeado hace$/, '#c0c0c0'], [/^Oro$/, '#ffd34d'],
+      [/^Posici[oó]n$/, '#a8c7ff'], [/^Dados$/, '#ffffff'],
+    ];
+    const EST_PARTES = /(Estad[ií]sticas de|Nivel|EXP|Salud|Man[aá]|Energ[ií]a|Menor Golpe\/Mayor Golpe|\((?:CUERPO|CABEZA)\) M[ií]n Def\/M[aá]x Def|Clan|Status|Logeado hace|Oro|Posici[oó]n|Dados): /g;
+    const EST_DADOS = ['Fuerza', 'Agilidad', 'Inteligencia', 'Carisma', 'Constitución'];
+    let estHasta = 0;
+    function lineaDeEst(texto) {
+      if (/^Estad[ií]sticas de: /.test(texto)) estHasta = Date.now() + 3000;
+      if (Date.now() > estHasta) return null;
+      const partes = [];
+      let m, previo = null, desde = 0;
+      EST_PARTES.lastIndex = 0;
+      const valor = (hasta) => {
+        if (previo === null) return;
+        const crudo = texto.slice(desde, hasta).trimEnd();
+        const color = (EST_VALOR.find(([re]) => re.test(previo)) || [null, '#ffffff'])[1];
+        if (previo === 'Dados') {
+          // Los cinco dados, con el nombre de cada atributo: el original los tira sin decir cuál es cuál.
+          crudo.split(/,\s*/).forEach((n, i) => {
+            if (i) partes.push([' · ', '#8a7a5a']);
+            partes.push([(EST_DADOS[i] || '?') + ' ', EST_ETIQUETA], [n, color]);
+          });
+        } else partes.push([crudo, color]);
+        partes.push(['  ', null]);
+      };
+      while ((m = EST_PARTES.exec(texto))) {
+        if (previo === null && m.index > 0) return null;   // la línea tiene que EMPEZAR con una etiqueta de la ficha
+        valor(m.index);
+        partes.push([m[1] + ': ', EST_ETIQUETA]);
+        previo = m[1]; desde = m.index + m[0].length;
+      }
+      if (previo === null) return null;
+      valor(texto.length);
+      if (previo === 'Dados') estHasta = 0;
+      return partes;
+    }
 
     // ---- PISTAS: explicar los rechazos que SON FIELES ------------------------------------------
     //
@@ -5236,7 +5281,7 @@
           { const m = /Tienes (\d+) monedas de oro en tu cuenta/.exec(f.chat); if (m) bankGold = +m[1]; }
           // Got hit (an NPC/player struck us) → brief red flash on our tile.
           if (/te (golpea|pega|prod)/i.test(f.chat)) myHitAt = Date.now();
-          log(f.chat, FUENTES[f.font]);
+          log(lineaDeEst(f.chat) || f.chat, FUENTES[f.font]);
           // LA PARÁLISIS DE UNA CRIATURA sale por ACÁ, no por un id de locale. La primera versión de esta
           // pista colgaba del `LocaleMsg 136` ("¡Tu ataque paralizó a la criatura!") porque ese es el texto que
           // está en el catálogo — pero el servidor NO manda ese id en este camino: manda este ConsoleMsg. La
