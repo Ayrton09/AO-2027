@@ -2,6 +2,13 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.19 (2026-11-13)
+
+- Al morir, una pregunta ofrece volver como fantasma a tu hogar, la última ciudad que elegiste con el sacerdote. Si decís que no, te quedás donde caíste y la runa sigue andando como siempre.
+- El /EST se ve en colores, y cada dado dice de qué atributo es.
+- Apuntar un hechizo, el arco o un oficio a una baldosa fuera de alcance avisa que el objetivo está muy lejos, y ya no se registra como trampa.
+- Los personajes que se veían sin cabeza la recuperan al entrar, y al crear un personaje ya no se ofrecen esas caras.
+
 ## 1.0.18 (2026-11-13)
 
 - Nueva opción en Opciones → Juego para ver el alcance de los hechizos al apuntar. Viene apagada.
