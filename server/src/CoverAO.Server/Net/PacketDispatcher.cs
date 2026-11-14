@@ -11086,12 +11086,10 @@ public sealed partial class PacketDispatcher
             // Fuera del rango de visión el original rechaza con snap-back y NO ejecuta la acción (:2646).
             if (Math.Abs(tx - p.Pos.X) > RangoVisionX || Math.Abs(ty - p.Pos.Y) > RangoVisionY)
             {
-                // El original loguea este caso en la rama de MAGIA (`Ataque fuera de rango de …`,
-                // Protocol.bas:2931): tirarle a una baldosa que no ves no lo puede pedir un cliente normal.
-                if (skill == GameLimits.SkillMagia)
-                    // Al log y no al contador: el clic se manda con la baldosa en pantalla, y si el jugador camina
-                    // entre elegir el hechizo y clickear, un tile del borde queda a nueve. No es un cliente modificado.
-                    LogIntentoDeTrampa(session, p, $"ataque fuera de rango a ({p.Pos.Map}/{tx}/{ty}) desde ({p.Pos.X},{p.Pos.Y})");
+                // El original lo loguea como trampa en la rama de MAGIA (`Ataque fuera de rango de …`, Protocol.bas:2931),
+                // porque su pantalla mostraba justo el alcance. Ésta muestra más, y un jugador que camina entre apuntar y
+                // clickear también llega acá: NO es trampa (el log decía "[TRAMPA]" por un hechizo normal, 13/11). El aviso lo
+                // da el cliente, que ya no lo manda; acá queda el snap-back del original y nada más.
                 session.Send(ServerMessages.PosUpdate(p.Pos.X, p.Pos.Y)); return;
             }
             // CancelExit (:2651): trabajar también cancela la cuenta regresiva del /SALIR.

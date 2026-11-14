@@ -7625,6 +7625,11 @@
       if (ws.readyState !== 1 || myCharIndex == null) return;
       const t = tileDelEvento(ev); if (!t) return;
       const wx = t.x, wy = t.y;
+      // NADA DE LA PUNTERÍA (hechizo, arco, oficios) LLEGA MÁS ALLÁ DE 8 A LOS COSTADOS Y 6 ARRIBA Y ABAJO (ver
+      // `dibujarAlcanceDelHechizo`), y esta pantalla muestra más que eso: se avisa y se sigue apuntando, en vez de mandar un clic
+      // que el server rechaza en silencio.
+      const yo = workSkill ? chars.get(myCharIndex) : null;
+      if (yo && (Math.abs(wx - yo.x) > ALCANCE_X || Math.abs(wy - yo.y) > ALCANCE_Y)) { log('El objetivo está muy lejos.', '#c9a46a'); return; }
       if (workSkill) { send(W().writeByte(CLIENT.WorkLeftClick).writeByte(wx).writeByte(wy).writeByte(workSkill)); salirDePunteria(); return; }  // modo puntería
       // LeftClick ANTES del DoubleClick: además de describir lo que hay en el tile, es lo que deja anotado el
       // TARGET en el servidor (VB6 LookatTile), y sin eso los comandos GM que operan sobre lo clickeado
