@@ -2,6 +2,12 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.20 (2026-11-14)
+
+- Nueva interfaz moderna, que viene por defecto: las barras, los atajos y el mapa van sobre el juego, y el inventario y los conjuros se abren en una ventana con la B y la H. La de antes, con el panel a la derecha, se elige en Opciones → Juego → Interfaz.
+- Ya se le puede tirar un hechizo al que está parado justo arriba tuyo: antes el clic te elegía a vos.
+- Actualizar el servidor anda también desde un panel que corre cada servidor con su propia cuenta.
+
 ## 1.0.19 (2026-11-13)
 
 - Al morir, una pregunta ofrece volver como fantasma a tu hogar, la última ciudad que elegiste con el sacerdote. Si decís que no, te quedás donde caíste y la runa sigue andando como siempre.
