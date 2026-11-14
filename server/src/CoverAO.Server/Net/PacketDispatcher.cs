@@ -9730,6 +9730,10 @@ public sealed partial class PacketDispatcher
                 var abajo = new WorldPos(pos.Map, x, (byte)(y + 1));
                 user = _world.PlayerAt(abajo);
                 npc = _world.NpcAt(abajo);
+                // Diferencia con el original: si el de abajo es uno mismo y en el tile clickeado hay alguien,
+                // se elige a ese. Si no, al que está parado justo al norte no se lo puede apuntar nunca.
+                if (npc is null && user == p && (_world.PlayerAt(pos) is not null || _world.NpcAt(pos) is not null))
+                    user = null;
             }
             if (user is null && npc is null)
             {

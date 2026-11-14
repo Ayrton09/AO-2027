@@ -184,6 +184,19 @@ public class ElBlancoDelHechizoTests : IDisposable
         Assert.Equal(50, vecino.Hp);
     }
 
+    /// <summary>Diferencia con el original: al que está parado justo al norte se lo elige clickeándole los pies,
+    /// aunque la baldosa de abajo del clic sea la de uno mismo.</summary>
+    [Fact]
+    public async Task Al_que_esta_justo_al_norte_se_lo_elige()
+    {
+        var (mago, sesion) = Mago(CurarHeridasLeves);
+        mago.Hp = 50;
+        var vecino = Jugador("Bruno", X, Y - 1);
+        await Castear(sesion, X, Y - 1);
+        Assert.True(vecino.Hp > 50, "el de arriba tenía que curarse");
+        Assert.Equal(50, mago.Hp);
+    }
+
     /// <summary>La premisa del bot que ataca: la cabeza de una criatura la elige a ella aunque haya otra al sur.</summary>
     [Fact]
     public async Task La_cabeza_de_una_criatura_la_elige_aunque_haya_otra_al_sur()

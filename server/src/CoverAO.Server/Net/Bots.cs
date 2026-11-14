@@ -5178,6 +5178,13 @@ public sealed partial class Bot
             if (propia == abajo || sentidos.BaldosasOcupadas().Contains(abajo)) return null;
             clic = y;
         }
+        else if (propia == (x, y) && sentidos.BaldosasOcupadas().Contains((x, clic)))
+        {
+            // Con alguien parado en la baldosa de su cabeza, LookatTile elige a ése: se clickean los pies, que lo
+            // eligen a él sólo si al sur no hay nadie.
+            if (sentidos.BaldosasOcupadas().Contains((x, (byte)(y + 1)))) return null;
+            clic = y;
+        }
         return Math.Abs(x - propia.X) <= NpcSystem.RangoVisionX && Math.Abs(clic - propia.Y) <= NpcSystem.RangoVisionY
             ? clic : null;
     }

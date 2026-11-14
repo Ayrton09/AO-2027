@@ -129,14 +129,15 @@ public sealed class CastearEnElBordeTests
         Assert.True(juego.Mago.Mana < 1_000);
     }
 
+    /// <summary>Diferencia con el original, que elegía al propio mago: con el mago justo debajo, clickear los pies
+    /// de la criatura la elige a ella.</summary>
     [Fact]
-    public async Task El_dispatcher_real_elige_al_propio_mago_si_esta_justo_debajo_del_npc()
+    public async Task El_dispatcher_real_elige_al_npc_aunque_el_mago_este_justo_debajo()
     {
         await using var juego = new PruebaDelDispatcher(botDebajo: true);
         await juego.CastearEnLosPies();
-        Assert.Equal(100, juego.Npc.Hp);
-        Assert.Equal(1_000, juego.Mago.Mana);
-        Assert.Equal(juego.Mago.CharIndex, juego.Mago.TargetUser);
+        Assert.True(juego.Npc.Hp < 100);
+        Assert.True(juego.Mago.Mana < 1_000);
     }
 
     private sealed record Fixture(Bot Bot, SentidosDelBot Sentidos, TransporteDeBot Transporte, SentidosDelBot.Visible Blanco);
