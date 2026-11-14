@@ -3317,6 +3317,10 @@
     let alcanceHechizo = true;
     // A DÓNDE LLEVA CADA PORTAL (Server.ini `DestinoDeLosPortales`, viene prendido). Ver `destinoDelPortal`.
     let destinoPortales = true;
+    // VOLVER AL HOGAR AL MORIR (Server.ini `VolverAlHogarAlMorir`, apagado salvo que el server diga que sí): el aviso de muerte
+    // PREGUNTA, apenas se muere, si quiere volver como fantasma a su hogar: el sí manda el SeleccionarHogar(2) (ver
+    // `DondeVuelveElMuerto` en el server); el no lo deja donde cayó, y la runa sigue andando como siempre (el tester, 13/11).
+    let volverAlHogar = false;
     // LOS PORTALES DE CADA MAPA (assets/portales.json; lo arma `check-portales.mjs` desde la data). El cliente no los recibe
     // nunca: el server marca fijo todo objeto del mapa menos las puertas, y casi ninguno tiene gráfico —lo que se ve es su
     // partícula—, así que sin esta lista no sabría dónde hay uno.
@@ -3465,6 +3469,7 @@
                        if (typeof cfg?.codigoFuente === 'string' && /^https?:\/\//i.test(cfg.codigoFuente)) codigoFuente = cfg.codigoFuente;
                        if (cfg && cfg.alcanceHechizo === false) alcanceHechizo = false;
                        if (cfg && cfg.destinoPortales === false) destinoPortales = false;
+                       if (cfg && cfg.volverAlHogar === true) volverAlHogar = true;
                        if (cfg && cfg.lluviaBajoTecho === true) ocultarLluviaBajoTecho = false;
                        if (cfg && typeof cfg.compilacion === 'string') compilacionDelServer = cfg.compilacion;
                        if (cfg && Array.isArray(cfg.novedades)) pintarNovedadesLogin(cfg.novedades, cfg.version); })
@@ -4751,6 +4756,7 @@
             salirDePunteria();
           }
           if (f.charIndex === myCharIndex) {
+            if (!estabaMuerto && f.body === CUERPO_MUERTO && volverAlHogar) preguntarVolverAlHogar();
             pintarEstados();
             if (estabaMuerto && f.body !== CUERPO_MUERTO)
               log('Volvé a equipar tu ropa para recuperar energía: doble clic sobre ella en el inventario, o seleccionala y apretá E.', '#c9a24b');
@@ -6957,6 +6963,25 @@
     // aparece nada y vuelve vacío, así que en el .exe no se podía borrar un personaje (pide escribir el nombre) ni atar un
     // texto a una F1-F10 (el tester, 06/10). Devuelve una promesa con lo escrito, o null si se cancela. El teclado no se le
     // pasa al juego mientras se escribe.
+    // LA PREGUNTA DE VOLVER AL HOGAR AL MORIR: una ventana del juego con Sí y No, sin campo. No frena nada: el fantasma puede
+    // seguir caminando mientras decide, y si revive antes de contestar, el sí ya no hace nada (el server mira que siga muerto).
+    function preguntarVolverAlHogar() {
+      if (document.querySelector('.preg-fondo.al-morir')) return;
+      soltarTeclas();
+      const fondo = document.createElement('div');
+      fondo.className = 'preg-fondo al-morir';
+      fondo.innerHTML = '<div class="preg ornate"><div class="preg-t">Moriste. ¿Querés volver como fantasma a tu hogar, la última ciudad '
+        + 'que elegiste con el sacerdote? Si no, podés buscar un sacerdote cerca o usar la runa más tarde.</div>'
+        + '<div class="preg-b"><button type="button" class="sbtn" data-preg="si">Volver a mi hogar</button>'
+        + '<button type="button" class="sbtn ghost" data-preg="no">Quedarme acá</button></div></div>';
+      fondo.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-preg]');
+        if (!b && ev.target !== fondo) return;
+        fondo.remove();
+        if (b && b.dataset.preg === 'si' && estoyMuerto()) send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(2));
+      });
+      document.body.appendChild(fondo);
+    }
     const preguntar = (texto) => new Promise((resolver) => {
       soltarTeclas();
       const fondo = document.createElement('div');

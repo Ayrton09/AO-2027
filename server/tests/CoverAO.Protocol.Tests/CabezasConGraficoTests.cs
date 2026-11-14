@@ -40,7 +40,7 @@ public class CabezasConGraficoTests
     public void Las_que_se_cambian_al_entrar_son_justo_las_del_original_sin_grafico()
     {
         var hay = ConGrafico();
-        Assert.All(new[] { 121, 314, 315 }, h => { Assert.False(hay.Contains(h)); Assert.True(Equipment.CabezaSinGrafico(h)); });
+        Assert.All(new[] { 121, 314, 315 }, h => { Assert.DoesNotContain(h, hay); Assert.True(Equipment.CabezaSinGrafico(h)); });
         Assert.False(Equipment.CabezaSinGrafico(120));
         Assert.False(Equipment.CabezaSinGrafico(313));
     }

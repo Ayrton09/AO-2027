@@ -10473,6 +10473,8 @@ public sealed partial class PacketDispatcher
     /// <item><b>0</b> (el <c>/HOGAR</c>): con el sacerdote clickeado a cinco baldosas o menos, le pregunta si quiere
     /// que esta ciudad sea su hogar (ShowMessageBox pregunta 5, que el cliente arma con el nombre del mapa).</item>
     /// <item><b>1</b> (aceptar la pregunta): fija como hogar la ciudad del mapa donde está parado.</item>
+    /// <item><b>2</b> (regla de la casa <c>VolverAlHogarAlMorir</c>, no está en el original): muerto, vuelve como fantasma a su
+    /// hogar, como con la runa. Ver <see cref="DondeVuelveElMuerto"/>.</item>
     /// </list>
     ///
     /// <para>Sin los bugs del original, por decisión del autor (2026-09-23). Allá <c>esArmada Or esCiuda = 1</c> y
@@ -10484,7 +10486,7 @@ public sealed partial class PacketDispatcher
     private void HandleSelectHome(ClientSession session, ByteQueueReader r)
     {
         byte modo = r.ReadByte();
-        if (modo > 1 && Imposible(session, $"eligió el hogar en el modo {modo}")) return;
+        if (modo > 2 && Imposible(session, $"eligió el hogar en el modo {modo}")) return;
         _loop.Enqueue(() =>
         {
             var p = session.Player;
@@ -10500,6 +10502,14 @@ public sealed partial class PacketDispatcher
                 session.Send(ServerMessages.ShowMessageBox("0", esPregunta: true, accion: 5));
                 return;
             }
+            if (modo == 2)
+            {
+                if (!_ini.VolverAlHogarAlMorir) return;
+                if (DondeVuelveElMuerto(p, _data) is { } destino) WarpUserChar(p, destino, fx: true);
+                else if (!p.IsAlive)
+                    session.Send(ServerMessages.ConsoleMsg("No tenés un hogar al que volver: elegí uno con el sacerdote de una ciudad (/HOGAR).", FuenteInfo));
+                return;
+            }
             if (modo != 1) return;
             string ciudad = _data.MapName(p.Pos.Map).Trim();
             if (!HogarDelMapa.TryGetValue(p.Pos.Map, out var hogar))
@@ -10511,6 +10521,18 @@ public sealed partial class PacketDispatcher
             p.HomeCity = hogar.Ciudad;
             session.Send(ServerMessages.ConsoleMsg($"Tu nuevo hogar ahora es {ciudad}.", FuenteInfo));
         });
+    }
+
+    /// <summary>A DÓNDE VUELVE EL MUERTO QUE LO PIDE (regla de la casa <c>VolverAlHogarAlMorir</c>): a la baldosa de los muertos de su
+    /// hogar, la misma que la runa (`Cities.DeadTile`). Null si está vivo, si está preso, o si el hogar es el dungeon de novatos y ya no
+    /// es novato: de la cuna no se sale graduado.</summary>
+    public static WorldPos? DondeVuelveElMuerto(Player p, GameData data)
+    {
+        if (p.IsAlive || p.JailMinutesLeft > 0) return null;
+        var destino = Cities.DeadTile(p.HomeCity);
+        if (p.Level > GameLimits.NewbieMaxLevel
+            && string.Equals(data.MapZone(destino.Map)?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase)) return null;
+        return destino;
     }
 
     /// <summary>¿Puede ese mapa ser el hogar de alguien de esa facción? El de una ciudad, y el de la ciudad de un bando sólo para

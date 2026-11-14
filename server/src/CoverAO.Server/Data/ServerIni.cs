@@ -149,6 +149,13 @@ public sealed class ServerIni
     public bool DestinoDeLosPortales { get; private set; } = true;
 
     /// <summary>
+    /// REGLA DE LA CASA — <c>VolverAlHogarAlMorir</c> (default <b>0</b> = como el original; el ejemplo la trae en 1): al morir, el
+    /// aviso de muerte del cliente ofrece volver como fantasma al hogar, la última ciudad elegida con el sacerdote (el /HOGAR). Es lo
+    /// mismo que usar la runa estando muerto, sin la runa. Pedido del autor, 2026-11-13. Le llega al cliente en <c>coverao-config.json</c>.
+    /// </summary>
+    public bool VolverAlHogarAlMorir { get; private set; }
+
+    /// <summary>
     /// REGLA DE LA CASA — <c>LluviaBajoTecho</c> (default <b>0</b>): con 0 no llueve bajo techo ni en las cuevas —la lluvia se
     /// corta en las cuevas y se desvanece al entrar bajo techo—; con 1 llueve en todos lados, como el original, que dibuja la
     /// partícula sin ninguna condición (TileEngine.bas:2295). Era una opción de cada jugador y apagada; el autor la pasó al
@@ -212,7 +219,7 @@ public sealed class ServerIni
         "GuardiasPersiguen", "GuardiasRepublicanosAtacanA",
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
-        "MinutosGuardarUsuarios", "MsEntreConsultas", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
+        "MinutosGuardarUsuarios", "MsEntreConsultas", "VolverAlHogarAlMorir", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
         "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
         "SoloEscritorio", "DescargaEscritorio", "BuscarActualizaciones",
         "LluviaBajoTecho", "PorcentajeLluvia",
@@ -1380,6 +1387,7 @@ public sealed class ServerIni
         cfg.OroPorMonton = Math.Clamp(ini.GetInt("INIT", "OroPorMonton", 10_000), 1, short.MaxValue);
         cfg.AlcanceDelHechizo = ini.GetInt("INIT", "AlcanceDelHechizo", 1) != 0;
         cfg.DestinoDeLosPortales = ini.GetInt("INIT", "DestinoDeLosPortales", 1) != 0;
+        cfg.VolverAlHogarAlMorir = ini.GetInt("INIT", "VolverAlHogarAlMorir", 0) != 0;
         cfg.LluviaBajoTecho = ini.GetInt("INIT", "LluviaBajoTecho", 0) != 0;
         // 0 apaga; un negativo también (no hay jefes "de menos vida que ninguna").
         cfg.VidaMinimaDeJefe = Math.Max(0, ini.GetInt("INIT", "VidaMinimaDeJefe", 50_000));

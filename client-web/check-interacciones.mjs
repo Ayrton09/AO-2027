@@ -52,7 +52,7 @@ const ctx = vm.createContext({
   tileDelEvento: () => ({ x: 30, y: 40 }), describirObjetoDelPiso() {},
   chars: new Map([[1, { name: 'Aprendiz', body: 1 }], [2, { name: 'Otra', body: 1 }]]), myCharIndex: 1,
   recentPackets: [], statusEl: $('status'), descansando: false, paralizado: false, montando: false,
-  navegando: false, estupido: false, laborando: false, enCombate: false, correoPendiente: false,
+  navegando: false, estupido: false, laborando: false, enCombate: false, correoPendiente: false, volverAlHogar: false,
 });
 const run = code => vm.runInContext(code, ctx);
 run(`const CLIENT = ${declaration('CLIENT')}; let selectedSpell = ${declaration('selectedSpell')};

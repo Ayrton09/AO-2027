@@ -423,7 +423,7 @@ public class ReglasSueltasDelOriginalTests : IDisposable
         { "apuntar con el skill 7", P(ClientPacketId.WorkLeftClick, w => w.WriteByte(50).WriteByte(50).WriteByte(7)) },
         { "trabajar con el skill 2", P(ClientPacketId.Work, w => w.WriteByte(2)) },
         { "el formulario 2", P(ClientPacketId.AbrirForms, w => w.WriteByte(2)) },
-        { "el hogar en el modo 2", P(ClientPacketId.SeleccionarHogar, w => w.WriteByte(2)) },
+        { "el hogar en el modo 3", P(ClientPacketId.SeleccionarHogar, w => w.WriteByte(3)) },   // el 2 es volver al hogar al morir
         { "la amistad en el caso 3", P(ClientPacketId.AddAmigos, w => w.WriteAsciiString("Nadie").WriteByte(3)) },
         { "el premio 0", P(ClientPacketId.RPremios, w => w.WriteInteger(0)) },
         { "subastar por 5 horas", P(ClientPacketId.SubastaPublicar, w => w.WriteByte(1).WriteInteger(1).WriteLong(10).WriteLong(20).WriteByte(5)) },

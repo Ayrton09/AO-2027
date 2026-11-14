@@ -86,6 +86,9 @@ OroPorMonton=10000
 AlcanceDelHechizo=1
 ; Cada portal dice a donde lleva: un cartel arriba y el texto al clickearlo (1) o no (0).
 DestinoDeLosPortales=1
+; Al morir, el aviso ofrece volver como fantasma al hogar (la ultima ciudad elegida con el sacerdote),
+; como la runa estando muerto (1), o no (0, como el original).
+VolverAlHogarAlMorir=1
 ; Si llueve tambien bajo techo y en las cuevas (1, como el original) o no (0).
 LluviaBajoTecho=0
 ; Desde cuanta vida maxima una criatura hostil es un JEFE y muestra su vida en una barra

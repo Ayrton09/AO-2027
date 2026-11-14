@@ -878,7 +878,8 @@ if (habraWeb)
         novedades: serverContent.Updates, version: CoverAO.Server.Build.Version,
         lluviaBajoTecho: serverIni.LluviaBajoTecho,
         soloEscritorio: soloEscritorio, descargaEscritorio: serverIni.DescargaEscritorio,
-        compilacion: Actualizador.IdInstalado(AppContext.BaseDirectory) ?? "").RunAsync(cts.Token);
+        compilacion: Actualizador.IdInstalado(AppContext.BaseDirectory) ?? "",
+        volverAlHogar: serverIni.VolverAlHogarAlMorir).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se
