@@ -228,7 +228,9 @@ public static class Actualizador
             (almacen as IDisposable)?.Dispose();
             return true;
         }
-        catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException) { return false; }
+        // Una base que no abre (SqliteException, la de Npgsql) también es DbException: cuenta como en uso y no voltea al actualizador.
+        catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException
+                                  or System.Data.Common.DbException) { return false; }
     }
 
     private static string? Opcion(string[] args, string nombre)

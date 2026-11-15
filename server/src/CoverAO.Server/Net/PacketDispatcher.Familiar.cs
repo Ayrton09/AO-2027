@@ -112,6 +112,7 @@ public sealed partial class PacketDispatcher
         var fam = p.Familiar;
         if (!fam.Existe)
         { session.Send(ServerMessages.ConsoleMsg("No tenes ningun familiar.", FuenteInfo)); return; }
+        fam.EsperaAfuera = false;   // llamarlo o guardarlo a mano manda sobre la vuelta sola
 
         // Retirar SIEMPRE se puede, aunque estés en ciudad: si no, al que entra a una zona segura con el
         // familiar afuera no le quedaría forma de guardarlo.
@@ -169,7 +170,7 @@ public sealed partial class PacketDispatcher
         };
         _world.AddNpc(criatura);
         _world.BroadcastToObservers(criatura.Pos, ServerMessages.CharacterCreate(criatura));
-        fam.CharIndexEnElMundo = criatura.CharIndex;
+        fam.PonerEnElMundo(criatura);
         return true;
     }
 
@@ -202,15 +203,19 @@ public sealed partial class PacketDispatcher
     private void WarpFamiliar(Player amo)
     {
         var fam = amo.Familiar;
-        if (!fam.Existe || !fam.Invocado) return;
+        if (!fam.Existe || (!fam.Invocado && !fam.EsperaAfuera)) return;
         RetirarFamiliar(amo, porGusto: false);
         if (!_data.IsPkMap(amo.Pos.Map))
         {
-            amo.Connection?.Send(ServerMessages.ConsoleMsg(
-                $"No se permiten familiares en zona segura. {fam.Nombre} te espera afuera.", FuenteInfo));
+            if (!fam.EsperaAfuera)
+                amo.Connection?.Send(ServerMessages.ConsoleMsg(
+                    $"No se permiten familiares en zona segura. {fam.Nombre} te espera afuera.", FuenteInfo));
+            fam.EsperaAfuera = true;
             EnviarFichaDelFamiliar(amo);
             return;
         }
+        fam.EsperaAfuera = false;
+        if (fam.Muerto) return;
         TraerFamiliar(amo);
         EnviarFichaDelFamiliar(amo);
     }

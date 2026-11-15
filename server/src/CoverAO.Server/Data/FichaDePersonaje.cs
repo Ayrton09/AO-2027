@@ -167,8 +167,8 @@ public sealed record FichaDePersonaje
             Descripcion = p.Description,
             Rumbo = p.Heading,
             // VB6 FileIO.bas:1719: el original guarda la cabeza ACTUAL y cae en la viva sólo cuando la actual no vale. Acá
-            // la que no vale es la de CADÁVER, así que el reemplazo se limita a estar muerto.
-            Cabeza = !p.IsAlive && p.OrigHead > 0 ? p.OrigHead : p.Head,
+            // no vale la cero (navegando o transformado) y, acá, también la de CADÁVER.
+            Cabeza = (p.Head == 0 || !p.IsAlive) && p.OrigHead > 0 ? p.OrigHead : p.Head,
             Cuerpo = p.Body,
             AnimArma = p.WeaponAnim,
             AnimEscudo = p.ShieldAnim,

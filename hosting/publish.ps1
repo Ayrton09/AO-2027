@@ -507,8 +507,11 @@ $noViajan = @('data/Cuentas', 'data/Charfile', 'data/Misc', 'data/logs/', 'data/
               # Y una base con OTRO nombre (`Archivo=` de [BASEDEDATOS]), con su diario: rearmar sobre una instalacion
               # usada la dejaba viajar (auditoria de la 1.0.13).
               'data/*.db', 'data/*.sqlite')
+# Y DE `data/` VIAJA SOLO `updates.txt`, que lo escribe este armador: los patrones de arriba no alcanzan para una base con
+# un nombre cualquiera (`Archivo=mundo.dat`) ni para lo que el server escriba ahi manana (auditoria de la 1.0.20).
 function Viaja($rel) {
   if ($rel -eq "$nombre/.env") { return $false }
+  if ($rel -like "$nombre/data/*" -and $rel -ne "$nombre/data/updates.txt") { return $false }
   foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }
   return $true
 }
@@ -535,6 +538,12 @@ if ($Comprimir) {
     $raizTar = $nombre.Replace('[', '[[]')
     $excl = @('--exclude', "$raizTar/.[eE][nN][vV]")
     foreach ($p in $noViajan) { $excl += "--exclude"; $excl += ($p.TrimEnd('/') + "*") }
+    $dataOut = Join-Path $OutDir "data"
+    if (Test-Path $dataOut) {
+      foreach ($e in Get-ChildItem $dataOut -Force) {
+        if ($e.Name -ne 'updates.txt') { $excl += "--exclude"; $excl += ("$raizTar/data/" + $e.Name.Replace('[', '[[]')) }
+      }
+    }
     & $tarExe -czf $arch @excl -C $padre $nombre
     if ($LASTEXITCODE -ne 0) { throw "tar fallo con $LASTEXITCODE (con $tarExe)" }
   } else {

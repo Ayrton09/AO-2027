@@ -356,14 +356,18 @@ public static class TestFixture
             }
             System.Console.WriteLine($"Spawn: 4 bancos de trabajo (herrero/carpintero/sastre/alquimista) en (40|42|44|46,{SvcRow}).");
 
-            // A trainer NPC (stable): double-clicking it lists the creatures it can train.
+            // A trainer NPC (stable): double-clicking it lists the creatures it can train. Las fichas de las criaturas van en la
+            // plantilla, como en el entrenador de NPCs.dat: sin ellas Train no tenía qué crear.
+            var entrenables = new List<string> { "Lobo", "Oso Pardo", "Oso Polar", "Murciélago" };
+            var fichas = entrenables.Select(n => (int)(gameData.Npcs.Values.Where(x => x.Name == n).Select(x => x.Index).DefaultIfEmpty((short)0).Min())).ToList();
+            var plantillaDelEntrenador = merchantTemplate with { TrainerCreatureIndexes = fichas };
             world.AddNpc(new Npc
             {
                 CharIndex = world.AllocateCharIndex(), Movement = Estatico,
-                Template = merchantTemplate,
-                Hp = merchantTemplate.MaxHp,
+                Template = plantillaDelEntrenador,
+                Hp = plantillaDelEntrenador.MaxHp,
                 Pos = new WorldPos(FixtureMap, 62, SvcRow),
-                TrainerCreatures = new List<string> { "Lobo", "Oso Pardo", "Oso Polar", "Murciélago" },
+                TrainerCreatures = entrenables,
             });
             System.Console.WriteLine($"Spawn: entrenador en (62,{SvcRow}).");
         }

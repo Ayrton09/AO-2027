@@ -602,7 +602,10 @@
     $('b-actualizar').addEventListener('click', () => {
       $('b-actualizar').disabled = true;
       $('b-actualizar').textContent = 'Actualizando…';
-      window.escritorio.actualizarAhora();
+      // Si no se pudo instalar (en Linux, un AppImage que no se puede reemplazar), la app sigue abierta: se avisa.
+      window.escritorio.actualizarAhora().then((ok) => {
+        if (ok === false) { $('b-actualizar').disabled = false; $('b-actualizar').textContent = 'No se pudo instalar: reintentar'; }
+      }).catch(() => {});
     });
 
     // ---- Arranque. ----

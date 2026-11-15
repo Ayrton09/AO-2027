@@ -2,6 +2,23 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.21 (sin publicar)
+
+- La runa de teletransportación anda también estando muerto, como en el original.
+- Comandos nuevos en el chat: /centinela con el código para contestarle al centinela, y /gm con tu mensaje para pedir ayuda.
+- Las teclas que reasignás se mantienen igual al volver a abrir el juego.
+- La ventana del inventario y los conjuros vuelve a quedar adentro de la pantalla si la achicás.
+- El familiar vuelve solo cuando salís de una ciudad, y su vida se muestra al día mientras pelea.
+- Trabajar se corta si te ponés a meditar o a descansar, y el descanso junto a la fogata se corta al viajar.
+- Lo que se cae al piso ya no queda en paredes ni en lugares a los que no se llega.
+- Divorciarse también le quita la pareja al otro aunque no esté conectado.
+- Si el líder de un clan se enlista en una facción, el clan abre elecciones para elegir uno nuevo.
+- Un personaje que está en un clan o casado no se puede borrar hasta que salga del clan o se divorcie.
+- Ni la runa ni volver al hogar sacan a un preso de la cárcel.
+- Al cambiar la contraseña se echa a quien estuviera usando la cuenta con la anterior, aunque esté entrando en ese momento.
+- El doble clic sobre una puerta ya no activa un pozo o unas ramitas que estén al lado.
+- Arreglos en el panel de administración, los backups y la actualización del servidor y de la app en Linux.
+
 ## 1.0.20 (2026-11-14)
 
 - Nueva interfaz moderna, que viene por defecto: las barras, los atajos y el mapa van sobre el juego, y el inventario y los conjuros se abren en una ventana con la B y la H. La de antes, con el panel a la derecha, se elige en Opciones → Juego → Interfaz.

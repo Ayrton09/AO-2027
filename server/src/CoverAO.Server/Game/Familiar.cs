@@ -26,7 +26,14 @@ public sealed class Familiar
     /// <summary>Experiencia que le falta para el próximo nivel (VB6 <c>ELU</c>).</summary>
     public long Elu { get; set; }
 
-    public long Vida { get; set; }
+    /// <summary>Con el familiar en el mundo, la vida es la de su criatura (la que recibe los golpes); guardado, la propia.</summary>
+    public long Vida
+    {
+        get => _criatura is { } c ? System.Math.Max(0, c.Hp) : _vida;
+        set { _vida = value; if (_criatura is { } c) c.Hp = (int)value; }
+    }
+    private long _vida;
+    private Npc? _criatura;
     public long VidaMaxima { get; set; }
     public long GolpeMinimo { get; set; }
     public long GolpeMaximo { get; set; }
@@ -41,7 +48,18 @@ public sealed class Familiar
     public bool Muerto { get; set; }
 
     /// <summary>El <c>CharIndex</c> de la criatura mientras está puesta en el mundo; 0 si no está llamada.</summary>
-    public short CharIndexEnElMundo { get; set; }
+    public short CharIndexEnElMundo
+    {
+        get => _charIndexEnElMundo;
+        set { _charIndexEnElMundo = value; if (value == 0) _criatura = null; }
+    }
+    private short _charIndexEnElMundo;
+
+    /// <summary>Lo pone en el mundo como esa criatura. Desde ahí la vida se lee de ella.</summary>
+    public void PonerEnElMundo(Npc criatura) { _charIndexEnElMundo = criatura.CharIndex; _criatura = criatura; }
+
+    /// <summary>Lo sacaron de una zona segura: vuelve solo cuando el dueño pisa una que no lo es. No se guarda.</summary>
+    public bool EsperaAfuera { get; set; }
 
     public bool Existe => Tipo != 0;
     public bool Invocado => CharIndexEnElMundo != 0;

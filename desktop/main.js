@@ -518,13 +518,15 @@ function instalar(reabrir) {
  */
 function instalarAppImage(reabrir) {
   const destino = process.env.APPIMAGE;
-  if (!destino) { console.log('[actualizacion] no corre como AppImage: no hay archivo que reemplazar'); return true; }
+  // Sin instalar, false: "Actualizar ahora" no cierra la app como si se hubiera instalado.
+  if (!destino) { console.log('[actualizacion] no corre como AppImage: no hay archivo que reemplazar'); instalando = false; return false; }
   try {
     actualizacion.reemplazarAppImage(lista.ruta, destino);
     console.log(`[actualizacion] ${destino} reemplazado por la del ${lista.id}`);
   } catch (e) {
     console.error(`[actualizacion] no se pudo reemplazar ${destino}: ${e?.message ?? e}`);
-    return true;
+    instalando = false;
+    return false;
   }
   // La nueva espera a que ESTA salga para no chocar con el candado de instancia única. El helper de Electron 44
   // hereda NoNewPrivs y no puede volver a montar el AppImage: se espera desde un proceso independiente.
@@ -567,7 +569,7 @@ delMenu('novedades', async (_e, direccion) => {
 
 delMenu('actualizacion', () => !!lista);
 
-delMenu('actualizar-ahora', () => { if (instalar(true)) app.quit(); });
+delMenu('actualizar-ahora', () => { if (!instalar(true)) return false; app.quit(); return true; });
 
 delMenu('listar', () => ({ servidores: config.servidores, ultimo: config.servidor ?? null, porDefecto: SERVIDOR_POR_DEFECTO }));
 

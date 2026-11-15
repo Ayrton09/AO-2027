@@ -950,6 +950,9 @@ public sealed class NpcSystem
             if (otro.OwnerCharIndex != 0) continue;                 // mascotas ajenas y la propia, afuera
             if (!otro.Hostile || !otro.Attackable) continue;         // sólo lo que de verdad es una amenaza
             if (otro.IsMerchant || otro.IsBanker || otro.IsReviver) continue;
+            // Lo que el dueño no puede atacar, el familiar tampoco lo elige: al Armada no lo dejan con la criatura salvaje
+            // (el 272 de PuedeAtacarNpc), salvo el guardia que va por él.
+            if (!amo.IsRenegado && amo.IsArmada && !GuardiaQueVaPor(otro, amo, _data, _ini)) continue;
             int dx = Math.Abs(otro.Pos.X - amo.Pos.X), dy = Math.Abs(otro.Pos.Y - amo.Pos.Y);
             if (dx > RangoVisionX || dy > RangoVisionY) continue;
             // Y QUE EL FAMILIAR LO VEA PARA PELEAR: la pelea entre criaturas suelta al blanco que está fuera de su caja

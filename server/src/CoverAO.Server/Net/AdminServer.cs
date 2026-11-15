@@ -200,7 +200,7 @@ public sealed class AdminServer
         if (!Console.IsOutputRedirected)
         {
             var consolaReal = new StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true };
-            consolaReal.WriteLine($"== Panel de administración: http://localhost:{_port}/?token={_token} ==");
+            consolaReal.WriteLine($"== Panel de administración: http://localhost:{_port}/?token={Uri.EscapeDataString(_token)} ==");
             Console.WriteLine($"== Panel de administración: http://localhost:{_port}/ (el token va sólo a la consola, no al log) ==");
         }
         else
@@ -213,7 +213,7 @@ public sealed class AdminServer
                 // sobreviva al proceso se escriba truncando (lo fija `GuardadoConLectorAjenoTests`, que me
                 // puso rojo el build en cuanto lo intenté). Un token a medio escribir deja al host sin panel.
                 Data.EscrituraAtomica.Escribir(dondeQuedo,
-                    $"http://localhost:{_port}/?token={_token}{Environment.NewLine}", Encoding.UTF8);
+                    $"http://localhost:{_port}/?token={Uri.EscapeDataString(_token)}{Environment.NewLine}", Encoding.UTF8);
                 aviso = $"la salida está redirigida, así que el token quedó en {dondeQuedo}";
             }
             catch (Exception ex)
@@ -383,14 +383,16 @@ public sealed class AdminServer
         // que no es un objeto tira InvalidOperationException — que ya no la agarra nadie acá, sube al handler
         // y le ABORTA la respuesta al panel en vez de contestarle el error que promete.
         if (cmd.ValueKind != JsonValueKind.Object) return Fail("body invalido");
-        string action = cmd.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
-        int charIndex = cmd.TryGetProperty("charIndex", out var ci) && ci.TryGetInt32(out var civ) ? civ : 0;
-        string message = cmd.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
-        string name = cmd.TryGetProperty("name", out var nm) ? nm.GetString()?.Trim() ?? "" : "";
-        int GetInt(string prop, int def) => cmd.TryGetProperty(prop, out var v) && v.TryGetInt32(out var iv) ? iv : def;
-        string GetStr(string prop) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()?.Trim() ?? "" : "";
+        // Cada campo con su tipo: un número donde va un texto hacía saltar GetString con una excepción en vez de un error.
+        string Texto(string prop) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        string action = Texto("action");
+        int GetInt(string prop, int def) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var iv) ? iv : def;
+        int charIndex = GetInt("charIndex", 0);
+        string message = Texto("message");
+        string name = Texto("name").Trim();
+        string GetStr(string prop) => Texto(prop).Trim();
         string[] GetStrArray(string prop) => cmd.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Array
-            ? v.EnumerateArray().Select(x => x.GetString() ?? "").Select(s => s.Trim()).Where(s => s.Length > 0).ToArray()
+            ? v.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() ?? "" : "").Select(s => s.Trim()).Where(s => s.Length > 0).ToArray()
             : Array.Empty<string>();
 
         switch (action)
@@ -502,7 +504,9 @@ public sealed class AdminServer
                 string nombre = name, cambio = comoQueda;
                 _loop.Enqueue(() =>
                 {
-                    if (_world.PlayerByName(nombre) is { } p && (_ini?.PrivilegioDe(nombre) ?? p.Privileges) < p.Privileges)
+                    // Se compara por BITS y no por número: el RoleMaster (32) vale más que el Admin (16) y no es más que él, y bajarlo
+                    // de uno al otro le dejaba los permisos viejos puestos. Se lo echa si pierde cualquiera de los que tenía.
+                    if (_world.PlayerByName(nombre) is { } p && (p.Privileges & ~(_ini?.PrivilegioDe(nombre) ?? p.Privileges)) != 0)
                     { Console.WriteLine($"[admin] echando a {p.Name}: queda como {cambio}"); p.Connection?.Close("rango de staff quitado"); }
                 });
                 return Ok($"{name} queda como {comoQueda}. Si bajó de rango y estaba conectado, se lo echa; si no, toma efecto en su próximo login.");

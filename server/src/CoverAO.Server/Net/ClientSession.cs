@@ -89,6 +89,9 @@ public sealed class ClientSession : IConnection
     /// tocar el mundo: entre que arrancó y que terminó, el cliente se pudo haber ido.</summary>
     public bool Cerrada => _closed;
     public Player? Player { get; set; }
+    /// <summary>La generación de la clave de la cuenta con la que esta conexión verificó la contraseña (ver
+    /// PacketDispatcher.GeneracionDeClave).</summary>
+    public int GeneracionDeClave { get; set; }
 
     public ClientSession(ITransport transport, PacketDispatcher dispatcher,
         long authTimeoutMs = 0, int maxInboundBytes = 0, Action? onClose = null,

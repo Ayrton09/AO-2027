@@ -337,6 +337,7 @@ public sealed partial class PacketDispatcher
         // Con otra verificación en vuelo para esta conexión (ConnectAccount y LoginExistingChar seguidos, que arrancan desde el
         // loop) se reintenta en la vuelta siguiente, ~40 ms contra los 25 del hash: descartarla dejaba al cliente esperando.
         if (!TurnoDeVerificar(session, () => VerificarCuenta(session, account, password, alTerminar), () => LoginBlocked(session))) return;
+        int generacion = GeneracionDeClave(account);
         Task.Run(() =>
         {
             Data.Account? acc = null;
@@ -377,7 +378,10 @@ public sealed partial class PacketDispatcher
                 {
                     if (!respondio) { session.Send(ServerMessages.ShowMessageBox(CartelLaBaseNoResponde)); return; }
                     if (frenada) { LoginFail(session); Reject(session, CartelCuentaFrenada); return; }
+                    // La clave cambió mientras se verificaba: la que se probó ya no es la de la cuenta.
+                    if (ok && GeneracionDeClave(account) != generacion) { Reject(session, CartelClaveCambiada); return; }
                     if (!ok) AnotarClaveEquivocada(acc);
+                    session.GeneracionDeClave = generacion;
                     alTerminar(acc, ok, migrado);
                 }
                 // Lo que el cliente haya mandado DETRÁS del login quedó retenido en el buffer esperando esta
@@ -387,6 +391,12 @@ public sealed partial class PacketDispatcher
             });
         });
     }
+
+    /// <summary>Cuántas veces se cambió la clave de cada cuenta desde que arrancó el server. Un ingreso que verificó la clave
+    /// vieja lo compara al terminar: si cambió en el medio, no entra.</summary>
+    private readonly Dictionary<string, int> _cambiosDeClave = new(StringComparer.OrdinalIgnoreCase);
+    private const string CartelClaveCambiada = "La contraseña de la cuenta acaba de cambiar. Volvé a ingresar con la nueva.";
+    private int GeneracionDeClave(string cuenta) => _cambiosDeClave.TryGetValue(cuenta, out var n) ? n : 0;
 
     // LAS FUENTES DEL `ConsoleMsg`, tal como salen por el cable: son los ordinales del enum
     // `FontTypeNames` del original (Servidor/Codigo/Protocol.bas:281), que arranca en 0.
@@ -1060,17 +1070,26 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.SendMsgBox("Ese personaje tiene subastas abiertas o algo para retirar en el Centro de Subastas: no se puede borrar todavía.", 1));
             return;
         }
+        // Y EL CLAN: miembro o líder, el nombre queda en el clan y uno nuevo con ese nombre lo heredaría. Primero se sale del clan.
+        if (_world.AllGuilds.Any(g => g.Members.Contains(personaje) || string.Equals(g.LeaderName, personaje, StringComparison.OrdinalIgnoreCase)))
+        {
+            SoltarYReanudar(session);
+            session.Send(ServerMessages.SendMsgBox("Ese personaje es de un clan: tiene que salir del clan antes de borrarlo.", 1));
+            return;
+        }
         _world.ReservarEntrada(personaje);
         SeguirTrabajoDeFondo(() =>
         {
-            bool borrado = false, baneado = false;
+            bool borrado = false, baneado = false, casado = false;
             var roster = new List<CharacterSummary>();
             try
             {
                 // UN BANEADO NO SE BORRA: el baneo vive en su ficha, y borrarlo dejaba el nombre libre para crearlo de nuevo sin
-                // el baneo (auditoría del 13/10).
-                baneado = _db.LoadCharacter(personaje, 0, cuenta)?.Banned == true;
-                if (!baneado)
+                // el baneo (auditoría del 13/10). Ni un casado: la pareja seguiría casada con el nombre, y con quien lo tome.
+                var ficha = _db.LoadCharacter(personaje, 0, cuenta);
+                baneado = ficha?.Banned == true;
+                casado = !string.IsNullOrEmpty(ficha?.SpouseName);
+                if (!baneado && !casado)
                 {
                     borrado = _db.ArchivarCharacter(personaje, cuenta);
                     // Se lo saca de la cuenta GUARDADA: la leída antes del hash, guardada entera, pisaría lo que cambió en el
@@ -1096,11 +1115,18 @@ public sealed partial class PacketDispatcher
                     PersistMail(personaje);
                     _world.DropMailboxIfEmpty(personaje);
                 }
+                // Lo mismo con las solicitudes de ingreso a un clan: el líder que aceptara la vieja metía al nuevo.
+                if (borrado && _world.AllGuilds.Count(g => g.JoinRequests.Remove(personaje)) > 0) PersistGuilds();
                 SoltarYReanudar(session);
                 if (session.Cerrada) return;
                 if (baneado)
                 {
                     session.Send(ServerMessages.SendMsgBox("Ese personaje está baneado: no se puede borrar.", 1));
+                    return;
+                }
+                if (casado)
+                {
+                    session.Send(ServerMessages.SendMsgBox("Ese personaje está casado: tiene que divorciarse antes de borrarlo.", 1));
                     return;
                 }
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
@@ -1211,6 +1237,15 @@ public sealed partial class PacketDispatcher
                     if (acc is not null && recuperacion is not null) _codigosPorCuenta?.RecordFailure(recuperacion);
                     if (tipo == TipoCambiarClave && !frenada) AnotarClaveEquivocada(acc);
                 }
+                // CON LA CLAVE NUEVA, AFUERA EL QUE ENTRÓ CON LA VIEJA, aunque el que la cambió ya se haya ido: si se la robaron, el
+                // intruso seguía jugando hasta salir (auditoría de la 1.0.13). Y el ingreso que está verificando la vieja no entra.
+                if (respondio && acc is not null && pinOk && !corta)
+                {
+                    _cambiosDeClave[account] = GeneracionDeClave(account) + 1;
+                    foreach (var pl in _world.Players.ToArray())
+                        if (string.Equals(pl.Account, account, StringComparison.OrdinalIgnoreCase) && pl.Connection != session)
+                            pl.Connection?.Close("contraseña cambiada");
+                }
                 if (session.Cerrada) return;
                 try
                 {
@@ -1236,11 +1271,6 @@ public sealed partial class PacketDispatcher
                     {
                         LoginOk(session);
                         Console.WriteLine($"[{session.RemoteEndpoint}] CLAVE CAMBIADA account={account} tipo={tipo}");
-                        // CON LA CLAVE NUEVA, AFUERA EL QUE ENTRÓ CON LA VIEJA: si se la robaron, el intruso seguía jugando hasta
-                        // salir (auditoría de la 1.0.13).
-                        foreach (var pl in _world.Players.ToArray())
-                            if (string.Equals(pl.Account, account, StringComparison.OrdinalIgnoreCase) && pl.Connection != session)
-                                pl.Connection?.Close("contraseña cambiada");
                         session.Send(ServerMessages.SendMsgBox(ErrClaveRestablecida, 1));
                     }
                     else
@@ -1568,6 +1598,7 @@ public sealed partial class PacketDispatcher
             if (abandonada || session.Cerrada) return;
             // Un baneo del panel que llegó mientras se verificaba la clave (ver Persistence.LeerParaEntrarAsync).
             if (cuentaBaneada) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada mientras entraba"); return; }
+            if (GeneracionDeClave(account) != session.GeneracionDeClave) { RechazarConCartel(session, CartelClaveCambiada, "clave cambiada mientras entraba"); return; }
             if (ficha is null) { RechazarConCartel(session, CartelPersonajeNoExiste, "sin archivo de personaje"); return; }
             TerminarDeEntrar(session, acc, account, ficha.CrearPlayer(_world.AllocateCharIndex(), account), version);
         }, alFallar: () =>
@@ -2257,6 +2288,13 @@ public sealed partial class PacketDispatcher
         // EL SALTO CORTA LA FAENA, como caminar (HandleWalk, con el mismo aviso): el oficio no vuelve a mirar el terreno, y con
         // un pergamino o la runa se seguía pescando o talando en medio de la ciudad (auditoría del 12/10).
         if (t.Laborando) { t.Laborando = false; t.Connection?.Send(ServerMessages.LocaleMsg(391, "", 1)); }
+        // Y EL DESCANSO, como al caminar: si no, el que se sentó junto a una fogata seguía curando rápido en el destino.
+        if (t.Resting)
+        {
+            t.Resting = false;
+            t.Connection?.Send(ServerMessages.RestOK());
+            t.Connection?.Send(ServerMessages.ConsoleMsg("Has dejado de descansar.", FuenteInfo));
+        }
         DisembarkIfStranded(t);                           // no dejar a un navegante varado en tierra tras el salto
         alCaer?.Invoke();
         if (dest.Map != from.Map)
@@ -2271,7 +2309,8 @@ public sealed partial class PacketDispatcher
             {
                 t.Invisible = false;
                 t.InvisibleUntilTick = 0;
-                var visible = ServerMessages.SetInvisible(t.CharIndex, false);
+                // El oculto lo sigue estando: se lo dibuja como tal, igual que lo ven los del área de llegada.
+                var visible = ServerMessages.SetInvisible(t.CharIndex, t.Oculto);
                 t.Connection?.Send(visible);
                 _world.BroadcastToObservers(from, visible, t.CharIndex);
                 t.Connection?.Send(ServerMessages.LocaleMsg(447));
@@ -5495,14 +5534,16 @@ public sealed partial class PacketDispatcher
     /// <c>If CentinelaNPCIndex = 0 Then Exit Sub</c> de CentinelaSendClave). El toggle y su aviso son todo lo
     /// que el comando hace de verdad. Ver fase5/GAPS-CODIGO-MUERTO.md §4l.
     ///
-    /// El original además resetea el estado del centinela y le quita el NPC: sin subsistema vivo, esas dos
-    /// líneas no tienen nada que limpiar.</summary>
+    /// El original además resetea el estado del centinela y le quita el NPC, y acá también (ReiniciarCentinela).</summary>
     private void GmCentinelToggle(ClientSession session)
     {
         var p = session.Player;
         if (p is null || (p.Privileges & (PrivUser | PrivConsejero | PrivSemiDios)) != 0) return;
         if (_admin is null) return;
         _admin.CentinelActive = !_admin.CentinelActive;
+        // Y como el original, se reinicia la ronda: apagado y prendido rápido, entre dos vueltas, se conservaban la clave, el
+        // plazo y los errores del que se estaba revisando.
+        ReiniciarCentinela();
         BroadcastToAdmins(ServerMessages.ConsoleMsg(
             _admin.CentinelActive ? "El centinela ha sido activado." : "El centinela ha sido desactivado.", 8));
         Console.WriteLine($"[{session.RemoteEndpoint}] /CENTINELAACTIVADO {p.Name}: {(_admin.CentinelActive ? "ON" : "OFF")}");
@@ -6040,7 +6081,8 @@ public sealed partial class PacketDispatcher
                 bool bank = kind == GmInspectKind.Bank;
                 int count = 0;
                 var lines = new List<string>();
-                for (int slot = 1; slot <= GameLimits.MaxInventorySlots; slot++)
+                // La bóveda tiene 40 ranuras (MAX_BANCOINVENTORY_SLOTS en SendUserBovedaTxt), no las 25 del inventario.
+                for (int slot = 1; slot <= (bank ? GameLimits.MaxBankSlots : GameLimits.MaxInventorySlots); slot++)
                 {
                     var inv = bank ? t.BankInventory[slot] : t.Inventory[slot];
                     if (inv.ObjIndex <= 0 || inv.Amount <= 0) continue;
@@ -7137,6 +7179,15 @@ public sealed partial class PacketDispatcher
         if (miembro is null) return null;
         g.Members.Remove(miembro);
         AnotarElClanEnElPersonaje(miembro, "");
+        // Diferencia con el original: si el que se va es el líder y quedan miembros, se abren elecciones. Si no, el clan quedaba
+        // sin nadie que pudiera aceptar, abrir elecciones o cerrarlo.
+        if (string.Equals(miembro, g.LeaderName, StringComparison.OrdinalIgnoreCase) && g.Members.Count > 0 && !g.ElectionsOpen)
+        {
+            g.ElectionsOpen = true;
+            g.Votes.Clear();
+            foreach (var m in g.Members)
+                _world.PlayerByName(m)?.Connection?.Send(ServerMessages.ConsoleMsg($"{miembro} dejó el liderazgo del clan: hay elecciones abiertas (/voto <nombre>).", FuenteClan));
+        }
         PersistGuilds();
         return g;
     }
@@ -7790,7 +7841,7 @@ public sealed partial class PacketDispatcher
             // Buscar un tile LIBRE (VB6 TirarItemAlPiso → Tilelibre): escribir directo en p.Pos pisaría lo que ya
             // hubiera en el suelo — destruyendo el stack ajeno y, si el ladrón está en el vano de una puerta
             // abierta, la propia puerta (queda imposible de cerrar y el cliente la sigue dibujando).
-            if (FreeGroundNear(_world, p.Pos) is { } spot)
+            if (FreeGroundNear(_world, _data, p.Pos) is { } spot)
             {
                 _world.SetGround(spot, objIndex, (short)num);
                 _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, objIndex, (short)num));
@@ -7857,7 +7908,7 @@ public sealed partial class PacketDispatcher
         // Sin lugar en el inventario el original avisa (LocaleMsg 25, MeterItemEnInventario) y TIRA los lingotes
         // al piso. Si tampoco hay piso libre allá se pierden; acá no se funde, así no se pierde el mineral.
         int lingSlot = FindSlotFor(p, (short)mineral.LingoteIndex, cantidad);
-        WorldPos? alPiso = lingSlot == 0 ? FreeGroundNear(_world, p.Pos) : null;
+        WorldPos? alPiso = lingSlot == 0 ? FreeGroundNear(_world, _data, p.Pos) : null;
         if (lingSlot == 0 && alPiso is null) { session.Send(ServerMessages.LocaleMsg(25)); return false; }
 
         slotInv.Amount -= (short)(perLingote * cantidad);          // consumir minerales
@@ -8005,7 +8056,7 @@ public sealed partial class PacketDispatcher
             // VB6 TirarItemAlPiso → Tilelibre: hay que buscar un tile LIBRE, no escribir sobre p.Pos, que
             // pisaría lo que ya hubiera en el suelo (incluida una puerta abierta, que quedaría imposible de
             // cerrar). Sin ningún tile libre el ítem se pierde, igual que el `NuevaPos = 0` del original.
-            if (FreeGroundNear(_world, p.Pos) is { } spot)
+            if (FreeGroundNear(_world, _data, p.Pos) is { } spot)
             {
                 alPiso = spot;
                 _world.SetGround(spot, m.ObjIndex, m.Amount);
@@ -8471,7 +8522,13 @@ public sealed partial class PacketDispatcher
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
         session.Send(ServerMessages.UpdateUserStats(p));
         if (session.EsBot) session.Send(ServerMessages.CharMsgStatus(p, p, _loop.Tick));
-        // Y MEDITANDO, EL AURA DEL BANDO NUEVO: la nueva prendida y la vieja apagada, al área.
+        CambiarAuraDeMeditar(p, auraAntes);
+    }
+
+    /// <summary>Meditando, el aura del bando nuevo: la nueva prendida y la vieja apagada, al área (VB6 HandleRetirarFaccion,
+    /// Protocol.bas:15572, y Enlistar).</summary>
+    private void CambiarAuraDeMeditar(Player p, short auraAntes)
+    {
         if (p.Meditating && (short)ParticleToLevel(p) is var auraNueva && auraNueva != auraAntes)
         {
             _world.BroadcastToObservers(p.Pos, ServerMessages.EfectoCharParticula(p.CharIndex, auraNueva, -1f, false));
@@ -8532,6 +8589,7 @@ public sealed partial class PacketDispatcher
         if (p.Gold <= PrecioDelPerdon)
         { session.Send(ServerMessages.LocaleMsg(383, PrecioDelPerdon.ToString())); return; }
         p.Gold -= PrecioDelPerdon;
+        short auraAntes = p.Meditating ? (short)ParticleToLevel(p) : (short)0;
         p.CambiarFaccion(npc.FactionConvert);
         // Y el hogar pasa a ser NIX en las dos ramas. No es un descuido de este porte: el original escribe
         // `.Hogar = cNix` también en EntrarRepublica (:42), así que el republicano recién convertido vuelve a
@@ -8542,6 +8600,7 @@ public sealed partial class PacketDispatcher
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
         session.Send(ServerMessages.UpdateGold(p.Gold));   // VB6 WriteUpdateGold — el oro que acaba de pagar
         session.Send(ServerMessages.UpdateUserStats(p));
+        CambiarAuraDeMeditar(p, auraAntes);
         Say(imperial ? "Bienvenido al Imperio." : "Bienvenido a la República.");
     }
 
@@ -8848,12 +8907,14 @@ public sealed partial class PacketDispatcher
             if (!string.IsNullOrEmpty(p.SpouseName)) { session.Send(ServerMessages.LocaleMsg(116)); return; }  // :18
             if (!string.IsNullOrEmpty(target.SpouseName)) { session.Send(ServerMessages.LocaleMsg(120)); return; }  // :23
 
-            if (string.Equals(target.CandidatoCasamiento, p.Name, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(target.CandidatoCasamiento, p.Name, StringComparison.OrdinalIgnoreCase)
+                && ReferenceEquals(target.CandidatoCasamientoJugador, p))
             {
                 // El otro ya había propuesto: se cierra. El anuncio va a TODO el servidor con
                 // "mapa%novio%novia", y suenan dos cosas distintas — la marcha a todo el mapa y el sanar al área.
                 p.SpouseName = target.Name; target.SpouseName = p.Name;
                 p.CandidatoCasamiento = target.CandidatoCasamiento = "";
+                p.CandidatoCasamientoJugador = target.CandidatoCasamientoJugador = null;
                 string donde = _data.MapName(p.Pos.Map);
                 _world.Broadcast(ServerMessages.LocaleMsg(236, $"{donde}%{p.Name}%{target.Name}"));
                 _world.BroadcastToMap(p.Pos.Map, ServerMessages.PlayWave(SndCasamiento, p.Pos.X, p.Pos.Y));
@@ -8869,6 +8930,7 @@ public sealed partial class PacketDispatcher
             session.Send(ServerMessages.LocaleMsg(495, target.Name));                                      // :46
             target.Connection?.Send(ServerMessages.EjecutarAccion(3, p.Name));                             // :47
             p.CandidatoCasamiento = target.Name;
+            p.CandidatoCasamientoJugador = target;
         });
     }
 
@@ -8884,13 +8946,15 @@ public sealed partial class PacketDispatcher
             if (!p.IsAlive) { session.Send(ServerMessages.LocaleMsg(77)); return; }
             if (string.IsNullOrEmpty(p.SpouseName))
             { session.Send(ServerMessages.ConsoleMsg("No puedes divorciarte porque no estás casado.", FuenteInfo)); return; }
-            string pareja = p.SpouseName;
-            var spouse = _world.PlayerByName(pareja);
-            if (spouse is not null && string.Equals(spouse.SpouseName, p.Name, StringComparison.OrdinalIgnoreCase))
+            string pareja = p.SpouseName, yo = p.Name;
+            // La otra punta, conectada o no: desconectada se quedaba casada y lo volvía a estar al entrar.
+            ConElPersonaje(pareja, (spouse, vivo) =>
             {
+                if (spouse is null || !string.Equals(spouse.SpouseName, yo, StringComparison.OrdinalIgnoreCase)) return;
                 spouse.SpouseName = "";
-                spouse.Connection?.Send(ServerMessages.ConsoleMsg($"{p.Name} ha decidido divorciarse de ti.", FuenteInfo));
-            }
+                if (vivo is null) { _db.SaveCharacter(spouse); return; }
+                spouse.Connection?.Send(ServerMessages.ConsoleMsg($"{yo} ha decidido divorciarse de ti.", FuenteInfo));
+            });
             p.SpouseName = "";
             session.Send(ServerMessages.ConsoleMsg($"{pareja} ya no es más tu pareja.", FuenteInfo));
         });
@@ -9858,6 +9922,8 @@ public sealed partial class PacketDispatcher
             var info = _data.Obj(obj.ObjIndex);
             if (info is null) return;                       // el VB6 entra al Select igual y no matchea ningún Case
             if (info.IsDoor) { AccionParaPuerta(session, p, pos, info); return; }
+            // Las tres sondas extra sólo aceptan otPuertas (Acciones.bas:357-390): un pozo o unas ramitas al lado no se activan.
+            if (soloPuertas) return;
             if (info.ObjType == ObjTipoPozo) { AccionParaPozo(session, p, pos, info); return; }
             // ENCENDER UNA FOGATA APAGADA (VB6 AccionParaRamita, Acciones.bas:514, llamada desde :348 cuando el
             // tile tiene FOGATA_APAG = 136 "Ramitas"). Faltaba, y con ella faltaba DESCANSAR: `HandleRest` exige
@@ -9913,7 +9979,6 @@ public sealed partial class PacketDispatcher
                     "Para fundir: usá el mineral en tu inventario y después hacé clic en la fragua.", FuenteInfo));
                 return;
             }
-            if (soloPuertas) return;                        // las 3 sondas extra sólo aceptan otPuertas
             return;                                         // objeto sin acción modelada: el VB6 tampoco hace nada
         }
     }
@@ -10247,6 +10312,7 @@ public sealed partial class PacketDispatcher
             // VB6 Select Status: Milicia(6)→republicano(3); Armada(5)→ciudadano(2); Caos(4)→renegado(1);
             // Case Else (civil puro: ciudadano/republicano)→renegado(1) + Hogar=cRinkel.
             bool eraCivilPuro = real is Player.StatusCiudadano or Player.StatusRepublicano;
+            short auraAntes = p.Meditating ? (short)ParticleToLevel(p) : (short)0;
             p.CambiarFaccion(real == Player.StatusMilicia ? Player.StatusRepublicano
                              : real == Player.StatusArmada ? Player.StatusCiudadano
                              : Player.StatusCriminal);
@@ -10270,6 +10336,7 @@ public sealed partial class PacketDispatcher
             _world.BroadcastToObservers(p.Pos, charStatus);
             // Acá había un `UpdateUserStats` que el original NO manda por este camino (el handler termina en
             // el CharStatus y el bloque de la meditación). Eran ~26 bytes de más en el cable.
+            CambiarAuraDeMeditar(p, auraAntes);
         });
     }
 
@@ -10534,10 +10601,13 @@ public sealed partial class PacketDispatcher
     {
         if (p.IsAlive || p.JailMinutesLeft > 0) return null;
         var destino = Cities.DeadTile(p.HomeCity);
-        if (p.Level > GameLimits.NewbieMaxLevel
-            && string.Equals(data.MapZone(destino.Map)?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase)) return null;
-        return destino;
+        return EsCunaVedada(p, destino, data) ? null : destino;
     }
+
+    /// <summary>¿Ese destino es la zona de novatos y él ya no lo es? De la cuna no se sale graduado para volver.</summary>
+    public static bool EsCunaVedada(Player p, WorldPos destino, GameData data) =>
+        p.Level > GameLimits.NewbieMaxLevel
+        && string.Equals(data.MapZone(destino.Map)?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>¿Puede ese mapa ser el hogar de alguien de esa facción? El de una ciudad, y el de la ciudad de un bando sólo para
     /// los suyos (<see cref="HandleSelectHome"/>). Los bots la miran para no pedir un hogar que se les va a negar.</summary>
@@ -10643,8 +10713,9 @@ public sealed partial class PacketDispatcher
         {
             var p = session.Player;
             if (p is null || p.IsAlive) return;  // VB6 HandleRegresarHogar: solo con Muerto=1
-            // Al tile Dead de la ciudad-hogar elegida (SeleccionarHogar -> p.HomeCity); Ullathorpe por defecto.
-            WarpUserChar(p, Cities.DeadTile(p.HomeCity), fx: true);   // sin mensaje de llegada, como el VB6
+            // Al tile Dead de la ciudad-hogar elegida (SeleccionarHogar -> p.HomeCity); Ullathorpe por defecto. Diferencia con
+            // el original: al preso no lo saca de la cárcel, ni lleva a la cuna al graduado (ver DondeVuelveElMuerto).
+            if (DondeVuelveElMuerto(p, _data) is { } destino) WarpUserChar(p, destino, fx: true);   // sin mensaje de llegada, como el VB6
         });
     }
 
@@ -10854,7 +10925,10 @@ public sealed partial class PacketDispatcher
             for (int i = 0; i < p.Friends.Count; i++)
             {
                 bool ultimo = i == p.Friends.Count - 1;
+                // Diferencia con el original (que busca por nombre): sólo el amigo de a dos, el que también lo tiene a él, figura
+                // conectado y con su mapa. Si no, uno nuevo con el nombre de un amigo borrado mostraba dónde estaba sin aceptar nada.
                 var amigo = _world.PlayerByName(p.Friends[i]);
+                if (amigo is not null && !amigo.Friends.Any(x => string.Equals(x, p.Name, StringComparison.OrdinalIgnoreCase))) amigo = null;
                 if (amigo is null) sb.Append(p.Friends[i]).Append("(Offline)").Append(ultimo ? "." : ",");
                 else sb.Append(p.Friends[i]).Append("(Online)(").Append(_data.MapName(amigo.Pos.Map))
                        .Append(')').Append(ultimo ? "." : ", ");
@@ -11353,6 +11427,14 @@ public sealed partial class PacketDispatcher
     public void TickTrabajo(ClientSession? session, Player p, long nowMs)
     {
         if (session is null || !p.Laborando) return;
+        // Meditando o descansando no se trabaja: el clic de trabajo ya lo rechaza (HandleWorkLeftClick), y esto corta la
+        // faena que arrancó por otro lado (el doble clic, o meditar con la faena andando).
+        if (p.Meditating || p.Resting)
+        {
+            p.Laborando = false; p.Lingoteando = 0;
+            session.Send(ServerMessages.LocaleMsg(391, "", 1));
+            return;
+        }
         if (nowMs - p.LastWorkMs < IntervaloTrabajoMs) return;
         p.LastWorkMs = nowMs;
         if (p.Stamina < 2)
@@ -11601,7 +11683,7 @@ public sealed partial class PacketDispatcher
             // Mochila llena: el original NO corta el trabajo ni avisa, tira el montón al piso y sigue
             // (`If Not MeterItemEnInventario(...) Then Call TirarItemAlPiso(...)`). Cortar acá hacía que una
             // faena continua se apagara sola en cuanto se llenaba la mochila.
-            if (FreeGroundNear(_world, p.Pos) is { } spot)
+            if (FreeGroundNear(_world, _data, p.Pos) is { } spot)
             {
                 _world.SetGround(spot, (short)resource, (short)amount);
                 _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, (short)resource, (short)amount));
@@ -13178,6 +13260,31 @@ public sealed partial class PacketDispatcher
             // El BARCO es la única excepción al gate de muerte: el VB6 (DoNavega) contempla embarcar/desembarcar
             // estando muerto — el cadáver navega como fragata fantasmal (body 87).
             if (obj is not null && obj.IsBoat) { DoNavega(session, p, slot, obj); return; }
+            if (inv.IsEmpty) return;
+            // RUNA (otRuna = 38, VB6 InvUsuario.bas:1356-1372). La data trae UNA: la "Runa de teletransportación".
+            // Te devuelve a la ciudad-hogar, y las tres ramas del original son distintas entre sí:
+            //   * muerto → al tile DEAD de la ciudad, el mismo donde te deja RegresarHogar
+            //   * vivo, y estás parado en un tile de ARENA (Trigger 6) o en un mapa NO Pk → al tile normal
+            //   * vivo en cualquier otro lado → NO viaja y avisa con el 468
+            // OJO que el trigger 6 no es "zona segura" (esa es la 4): es el de las arenas. La condición se lee
+            // tal cual está escrita en el VB6 (`Trigger = 6 Or MapInfo(...).Pk = False`), sin interpretarla.
+            //
+            // Acá la Runa no hacía NADA: caía al "No puedes usar ese objeto" del final.
+            // Va antes del DeadCheck: el original no lo pide para la runa, y muerto es cuando más sirve.
+            if (obj is not null && obj.ObjType == Runa)
+            {
+                // Diferencias con el original: el preso no sale de la cárcel con la runa, y el que ya no es novato no vuelve a
+                // la zona de novatos aunque siga siendo su hogar (las dos cosas ya las frenan el regreso del muerto y Walk).
+                if (p.JailMinutesLeft > 0) { session.Send(ServerMessages.LocaleMsg(146, p.JailMinutesLeft.ToString())); return; }
+                var destino = p.IsAlive ? Cities.SpawnTile(p.HomeCity) : Cities.DeadTile(p.HomeCity);
+                if (EsCunaVedada(p, destino, _data)) { session.Send(ServerMessages.LocaleMsg(468)); return; }
+                if (!p.IsAlive) { WarpUserChar(p, destino, fx: true); return; }
+                bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
+                if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }
+                WarpUserChar(p, destino, fx: true);
+                return;
+            }
+
             if (DeadCheck(session, p)) return;   // VB6 UseInvItem: DeadCheck bloquea comida/pociones/etc. estando muerto
             if (inv.IsEmpty) return;
             if (obj is null) { session.Send(ServerMessages.ConsoleMsg("No puedes usar ese objeto.", FuenteInfo)); return; }
@@ -13251,6 +13358,11 @@ public sealed partial class PacketDispatcher
             //     (pasa a IndexCerradaLlave). Es un toggle de cerradura, no de puerta.
             if (obj.IsKey)
             {
+                // Diferencia con el original: la puerta se lee de la baldosa y no del objetivo guardado. Si otro la abrió desde el
+                // clic, la llave trababa la puerta abierta sin moverle el bloqueo.
+                if (p.TargetObjMap != 0)
+                    p.TargetObj = _world.TryGetGround(new WorldPos(p.TargetObjMap, p.TargetObjX, p.TargetObjY), out var enLaBaldosa)
+                        ? enLaBaldosa.ObjIndex : (short)0;
                 if (p.TargetObj <= 0) return;                       // sin objeto clickeado el VB6 no hace nada
                 var puerta = _data.Obj(p.TargetObj);
                 if (puerta is null || puerta.ObjType != 6) return;   // otPuertas
@@ -13270,24 +13382,6 @@ public sealed partial class PacketDispatcher
                     if (!CambiarPuerta(p, puerta.IndexCerradaLlave)) return;
                     session.Send(ServerMessages.LocaleMsg(474));                                    // "¡Has cerrado con llave la puerta!"
                 }
-                return;
-            }
-
-            // RUNA (otRuna = 38, VB6 InvUsuario.bas:1356-1372). La data trae UNA: la "Runa de teletransportación".
-            // Te devuelve a la ciudad-hogar, y las tres ramas del original son distintas entre sí:
-            //   * muerto → al tile DEAD de la ciudad, el mismo donde te deja RegresarHogar
-            //   * vivo, y estás parado en un tile de ARENA (Trigger 6) o en un mapa NO Pk → al tile normal
-            //   * vivo en cualquier otro lado → NO viaja y avisa con el 468
-            // OJO que el trigger 6 no es "zona segura" (esa es la 4): es el de las arenas. La condición se lee
-            // tal cual está escrita en el VB6 (`Trigger = 6 Or MapInfo(...).Pk = False`), sin interpretarla.
-            //
-            // Acá la Runa no hacía NADA: caía al "No puedes usar ese objeto" del final.
-            if (obj.ObjType == Runa)
-            {
-                if (!p.IsAlive) { WarpUserChar(p, Cities.DeadTile(p.HomeCity), fx: true); return; }
-                bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
-                if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }
-                WarpUserChar(p, Cities.SpawnTile(p.HomeCity), fx: true);
                 return;
             }
 
@@ -13485,7 +13579,7 @@ public sealed partial class PacketDispatcher
                 int donde = FindSlotFor(p, otra);
                 if (donde == 0)
                 {
-                    if (FreeGroundNear(_world, p.Pos) is { } spot)
+                    if (FreeGroundNear(_world, _data, p.Pos) is { } spot)
                     {
                         _world.SetGround(spot, otra, 1);
                         _world.BroadcastToObservers(spot, ServerMessages.ObjectCreate(spot.X, spot.Y, otra, 1));
@@ -14757,7 +14851,7 @@ public sealed partial class PacketDispatcher
                 if (cae <= 0) continue;   // pila tan chica que el 30% redondea a cero: se salva entera
             }
 
-            var spot = FreeGroundNear(world, p.Pos);
+            var spot = FreeGroundNear(world, data, p.Pos);
             if (spot is not { } drop) continue;   // no hay tile libre alrededor: el ítem se queda (VB6 NuevaPos = 0)
 
             // Si estaba PUESTO, devolvé su bonus antes de que el ítem se vaya: el slot se limpia acá abajo y
@@ -14772,19 +14866,19 @@ public sealed partial class PacketDispatcher
             p.Connection?.Send(ServerMessages.ChangeInventorySlot((byte)slot, p.Inventory[slot].ObjIndex,
                 p.Inventory[slot].Amount, p.Inventory[slot].Equipped, 0f, p.Inventory[slot].IsEmpty ? (byte)0 : (byte)1));
         }
-        TirarOroAlMorir(world, p);
+        TirarOroAlMorir(world, data, p);
     }
 
     /// <summary>EL ORO QUE SE CAE AL MORIR (regla de la casa <c>OroQueSeCaeAlMorir</c>, ver <see cref="ServerIni.OroQueSeCaeAlMorir"/>):
     /// con el tope o menos encima, todo al piso en montones de <see cref="World.OroPorMonton"/>; con más, nada. Corre con las
     /// mismas compuertas que el inventario (mapa inseguro, fuera de zona segura, sin el Pendiente del Sacrificio).</summary>
-    internal static void TirarOroAlMorir(World world, Player p)
+    internal static void TirarOroAlMorir(World world, GameData data, Player p)
     {
         if (world.OroQueSeCaeAlMorir <= 0 || p.Gold <= 0 || p.Gold > world.OroQueSeCaeAlMorir) return;
         int antes = p.Gold;
         for (int vueltas = 0; p.Gold > 0 && vueltas <= 100; vueltas++)
         {
-            if (FreeGroundNear(world, p.Pos) is not { } donde) break;   // sin baldosa libre, lo que queda se queda encima
+            if (FreeGroundNear(world, data, p.Pos) is not { } donde) break;   // sin baldosa libre, lo que queda se queda encima
             short monton = (short)Math.Min(p.Gold, world.OroPorMonton);
             world.SetGround(donde, (short)GameLimits.ObjOro, monton);
             world.CaidoAlMorir.Add((p, donde));
@@ -14891,8 +14985,12 @@ public sealed partial class PacketDispatcher
     /// El radio importa: al morir se sueltan hasta 20 ítems de una y con un vecindario chico los últimos
     /// no encuentran dónde caer y se pierden — con el radio 1 que tenía esto antes sólo caían 5.
     /// </summary>
-    private static WorldPos? FreeGroundNear(World world, WorldPos at)
+    private static WorldPos? FreeGroundNear(World world, GameData data, WorldPos at)
     {
+        // Como en Tilelibre, no cae en una baldosa bloqueada, en una salida ni fuera del borde jugable: ahí no se la levanta.
+        bool sirve(WorldPos n) =>
+            n.X is >= GameLimits.MinXBorder and <= GameLimits.MaxXBorder && n.Y is >= GameLimits.MinYBorder and <= GameLimits.MaxYBorder
+            && !data.IsBlockedTile(n.Map, n.X, n.Y) && !data.MapExits.ContainsKey((n.Map, n.X, n.Y)) && !world.TryGetGround(n, out _);
         if (!world.TryGetGround(at, out _)) return at;
         for (int radius = 1; radius <= 15; radius++)
             for (int dx = -radius; dx <= radius; dx++)
@@ -14902,7 +15000,7 @@ public sealed partial class PacketDispatcher
                     int x = at.X + dx, y = at.Y + dy;
                     if (x is < 1 or > 100 || y is < 1 or > 100) continue;
                     var n = new WorldPos(at.Map, (byte)x, (byte)y);
-                    if (!world.TryGetGround(n, out _)) return n;
+                    if (sirve(n)) return n;
                 }
         return null;
     }

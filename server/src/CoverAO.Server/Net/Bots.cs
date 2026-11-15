@@ -5174,8 +5174,9 @@ public sealed partial class Bot
         if (!ElClicLoElige(y))
         {
             var abajo = (X: x, Y: (byte)(y + 1));
-            // BaldosasOcupadas excluye al propio bot, pero LookatTile también puede elegirlo a él.
-            if (propia == abajo || sentidos.BaldosasOcupadas().Contains(abajo)) return null;
+            // Con otro parado abajo, LookatTile elige a ése. Con el propio bot abajo no: el servidor elige al de la baldosa
+            // clickeada (la diferencia con el original de LookatTile).
+            if (propia != abajo && sentidos.BaldosasOcupadas().Contains(abajo)) return null;
             clic = y;
         }
         else if (propia == (x, y) && sentidos.BaldosasOcupadas().Contains((x, clic)))

@@ -151,7 +151,8 @@ public static class Equipment
             // Los mismos cinco slots del original: defensa (armadura/casco/escudo), montura y anillo. El ARMA
             // queda afuera a propósito — el VB6 no le resta resistencia al arma, sólo le SUMA daño si es un
             // báculo de DañoMagico.
-            if (o is not null && (o.IsArmor || o.IsHelmet || o.IsShield || o.IsMount || o.IsRing))
+            // La montura cuenta sólo montado: embarcar o cambiar de montura deja la de antes marcada como puesta.
+            if (o is not null && (o.IsArmor || o.IsHelmet || o.IsShield || (o.IsMount && p.Mounted) || o.IsRing))
                 total += o.ResistenciaMagica;
         }
         return total;

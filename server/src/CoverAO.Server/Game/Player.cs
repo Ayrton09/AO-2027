@@ -186,6 +186,9 @@ public sealed class Player
     /// TRANSIENT: el original lo guarda en el UserList y no lo persiste, así que una propuesta no sobrevive
     /// a la desconexión.</summary>
     public string CandidatoCasamiento { get; set; } = "";
+    /// <summary>Y a QUIÉN, el personaje conectado y no sólo el nombre: si el candidato sale y otro entra con ese nombre (uno
+    /// borrado y creado de nuevo), la propuesta vieja no le sirve al nuevo.</summary>
+    public Player? CandidatoCasamientoJugador { get; set; }
 
     // Home city id (SeleccionarHogar) — where RegresarHogar sends you. Default Ullathorpe (Cities.Ullathorpe=3),
     // consistente con el fallback de Cities; siempre lo sobreescribe CreateCharacter/FromIni.

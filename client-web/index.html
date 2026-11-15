@@ -1178,7 +1178,7 @@
       ClanCodexUpdate: 40, GuildAcceptPeace: 41, GuildRejectAlliance: 42, GuildRejectPeace: 43, GuildAcceptAlliance: 44,
       GuildAllianceDetails: 47, GuildPeaceDetails: 48, GuildRequestJoinerInfo: 49, GuildAlliancePropList: 50, GuildPeacePropList: 51,
       GuildNewWebsite: 53, GuildMemberInfo: 58, GuildRequestDetails: 61, ShowGuildNews: 94, GuildFundate: 89, GuildFundation: 90, CloseGuild: 107,
-      Casamiento: 104, Divorciar: 105, PidePremios: 87, RPremios: 88, HayEventos: 106, GMRequest: 80,
+      Casamiento: 104, Divorciar: 105, PidePremios: 87, RPremios: 88, HayEventos: 106, GMRequest: 80, CentinelReport: 78,
       // Sexto eje (docs/eje-cliente-compuerta.md): los que el server atiende, el cliente ORIGINAL manda y
       // este no tenia. Cinco de ellos son comandos '/' — en el VB6 los parsea clsClientTCP.cls.
       RequestPositionUpdate: 5, EquiparSkin: 30, Ping: 91, AbrirForms: 112, DesconectarCuenta: 113,
@@ -4151,7 +4151,8 @@
                                       'pageup', 'pagedown', 'tab', ' ', 'backspace']);
           const valida = (k.length === 1 && /[a-z0-9]/.test(k)) || CON_NOMBRE.has(k);
           if (!valida) { log('Esa tecla no se puede asignar.', '#b94'); abrirTeclas(); return; }
-          for (const a in teclas) if (teclas[a] === k && a !== accion) delete teclas[a];
+          // Queda vacía, no borrada: borrada, al recargar volvía la de fábrica y chocaba con la nueva.
+          for (const a in teclas) if (teclas[a] === k && a !== accion) teclas[a] = '';
           teclas[accion] = k;
           guardarTeclas();
           abrirTeclas();
@@ -4446,6 +4447,13 @@
     };
     let teclas = { ...TECLAS_DEF };
     try { Object.assign(teclas, JSON.parse(localStorage.getItem('ao_teclas') || '{}')); } catch (e) {}
+    // Una de fábrica que no está guardada (una acción nueva, o una guardada sin el vacío) no le pisa la tecla a una
+    // reasignada: queda sin tecla.
+    try {
+      const guardadas = JSON.parse(leerPref('ao_teclas') || '{}');
+      for (const a in TECLAS_DEF)
+        if (!(a in guardadas) && Object.keys(guardadas).some((o) => o !== a && guardadas[o] === teclas[a])) teclas[a] = '';
+    } catch (e) {}
     // Devuelve la ACCIÓN atada a una tecla, o null. Se compara en minúsculas para que Shift no la cambie.
     const accionDe = (k) => {
       // El `k.length !== 1` que había acá dejaba MUERTA cualquier tecla con nombre: se podía asignar Shift y
@@ -5702,6 +5710,8 @@
       const cerrar = v.classList.contains('abierta') && t && t.classList.contains('on');
       if (!cerrar && t) t.click();
       v.classList.toggle('abierta', !cerrar);
+      // Con la pantalla achicada después de moverla, se la vuelve a traer adentro.
+      if (!cerrar && v.style.left) ponerVentana(parseFloat(v.style.left), parseFloat(v.style.top));
       document.querySelectorAll('.m-btn').forEach((b) => b.classList.toggle('on', !cerrar && b.dataset.ventana === tab));
     }
     function ponerVentana(x, y) {
@@ -5725,6 +5735,7 @@
       window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar);
       ev.preventDefault();
     });
+    window.addEventListener('resize', () => { const v = $('m-ventana'); if (v.style.left) ponerVentana(parseFloat(v.style.left), parseFloat(v.style.top)); });
     window.__interfaz = () => ({ interfaz, ventana: $('m-ventana').classList.contains('abierta'), VIEW_W, VIEW_H });
     aplicarInterfaz();
     // --- pestañas de chat ----------------------------------------------------------------------
@@ -7451,6 +7462,14 @@
         // sacerdote clickeado; el server contesta con la pregunta. Acá mandaba el RegresarHogar, que en el original
         // sale del cartel de "Has muerto" y no tiene comando.
         if (cmd === '/hogar') { send(W().writeByte(CLIENT.SeleccionarHogar).writeByte(0)); return; }
+        // /CENTINELA <clave> contesta al centinela anti-macro (VB6 clsClientTCP: WriteCentinelReport(CInt(arg))).
+        if (cmd === '/centinela') {
+          const n = Number(arg);
+          if (!arg || !Number.isInteger(n) || n < -32768 || n > 32767) { log('uso: /centinela <código>', '#b94'); return; }
+          send(W().writeByte(CLIENT.CentinelReport).writeInteger(n)); return;
+        }
+        // /GM pide ayuda: el original abre el formulario de soporte; acá el mensaje va en el mismo comando.
+        if (cmd === '/gm') { send(W().writeByte(CLIENT.GMRequest).writeByte(0).writeAsciiString(arg || 'Solicito ayuda de un GM.')); return; }
         if (CHAT_NOARG[cmd] !== undefined) w.writeByte(CHAT_NOARG[cmd]);
         else if (CHAT_ARGSTR[cmd] !== undefined) { if (!arg) { log('uso: ' + cmd + ' <texto>', '#b94'); return; } w.writeByte(CHAT_ARGSTR[cmd]).writeAsciiString(arg); }
         else if (cmd === '/apostar') {

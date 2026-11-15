@@ -242,6 +242,14 @@ public sealed partial class PacketDispatcher
     /// encarga el reloj de <see cref="CentinelaMinutosDeRonda"/>.</summary>
     private void CentinelaRetirar() => CentinelaSoltar();
 
+    /// <summary>El /CENTINELAACTIVADO: ronda nueva, sin nadie revisado ni nadie que ya haya contestado.</summary>
+    private void ReiniciarCentinela()
+    {
+        CentinelaSoltar();
+        _centinelaRespondieron.Clear();
+        _centinelaMinutosDeRondaCorridos = 0;
+    }
+
     private void CentinelaQuitarNpc()
     {
         if (_centinelaNpcCharIndex == 0) return;

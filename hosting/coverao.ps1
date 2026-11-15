@@ -260,8 +260,9 @@ switch ($Accion.ToLowerInvariant()) {
     Existe $Nombre
     # CON EL SERVER APAGADO (Data/Actualizador.cs): si estaba prendido se lo apaga limpio, y al final se lo vuelve a prender.
     $proc = ProcesoDe $Nombre
-    SinRuta $proc
-    $estaba = [bool]$proc
+    # Uno de otra cuenta que no deja ver su carpeta no frena aca: el actualizador mira si la base de esta carpeta esta libre
+    # (Actualizador.BaseLibre) y frena solo si esta en uso.
+    $estaba = [bool]$proc -and -not $proc.SinRuta
     if ($estaba) {
       & $PSCommandPath detener $Nombre -Raiz $Raiz
       if (ProcesoDe $Nombre) { throw "'$Nombre' no se apago: no se actualiza con el server prendido." }

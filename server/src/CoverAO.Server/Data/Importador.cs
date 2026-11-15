@@ -418,9 +418,21 @@ public static class Importador
     {
         SqliteConnection.ClearAllPools();
         string nuevo = NombreLibre(archivo + sufijo);
-        File.Move(archivo, nuevo);
-        foreach (var lado in new[] { "-wal", "-shm", "-journal" })
-            if (File.Exists(archivo + lado)) File.Move(archivo + lado, nuevo + lado);
+        // Todo o nada: si un archivo de al lado no se mueve, lo ya movido vuelve a su nombre. Si no, la base quedaba apartada sin
+        // su diario, y lo que tenía el diario se perdía.
+        var movidos = new List<(string De, string A)>();
+        try
+        {
+            File.Move(archivo, nuevo); movidos.Add((archivo, nuevo));
+            foreach (var lado in new[] { "-wal", "-shm", "-journal" })
+                if (File.Exists(archivo + lado)) { File.Move(archivo + lado, nuevo + lado); movidos.Add((archivo + lado, nuevo + lado)); }
+        }
+        catch
+        {
+            for (int i = movidos.Count - 1; i >= 0; i--)
+                try { File.Move(movidos[i].A, movidos[i].De); } catch (Exception) { }
+            throw;
+        }
         return nuevo;
     }
 
