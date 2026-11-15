@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.21 (sin publicar)
+## 1.0.21 (2026-11-15)
 
 - La runa de teletransportación anda también estando muerto, como en el original.
 - Comandos nuevos en el chat: /centinela con el código para contestarle al centinela, y /gm con tu mensaje para pedir ayuda.
