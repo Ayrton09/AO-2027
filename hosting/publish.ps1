@@ -507,10 +507,10 @@ $noViajan = @('data/Cuentas', 'data/Charfile', 'data/Misc', 'data/logs/', 'data/
               # Y una base con OTRO nombre (`Archivo=` de [BASEDEDATOS]), con su diario: rearmar sobre una instalacion
               # usada la dejaba viajar (auditoria de la 1.0.13).
               'data/*.db', 'data/*.sqlite')
-# Y DE `data/` VIAJA SOLO `updates.txt`, que lo escribe este armador: los patrones de arriba no alcanzan para una base con
-# un nombre cualquiera (`Archivo=mundo.dat`) ni para lo que el server escriba ahi manana (auditoria de la 1.0.20).
 function Viaja($rel) {
   if ($rel -eq "$nombre/.env") { return $false }
+  # Y DE `data/` VIAJA SOLO `updates.txt`, que lo escribe este armador: los patrones de arriba no alcanzan para una base con
+  # un nombre cualquiera (`Archivo=mundo.dat`) ni para lo que el server escriba ahi manana (auditoria de la 1.0.20).
   if ($rel -like "$nombre/data/*" -and $rel -ne "$nombre/data/updates.txt") { return $false }
   foreach ($p in $noViajan) { if ($rel -like "*/$p*" -or $rel -like "*/$p") { return $false } }
   return $true

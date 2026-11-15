@@ -100,8 +100,12 @@ public class ToolSlotTests
         p.Inventory[1] = new InventorySlot { ObjIndex = 993, Amount = 1, Equipped = true };
         Assert.Equal(20, Equipment.MagicResistance(p, data));
 
-        // Y la montura SUMA a la defensa: 20 + 10 del Unicornio. Ésta es la parte que faltaba.
+        // La montura marcada como puesta pero sin estar montado (quedó así al embarcar o al cambiar de montura) no suma.
         p.Inventory[2] = new InventorySlot { ObjIndex = 1351, Amount = 1, Equipped = true };
+        Assert.Equal(20, Equipment.MagicResistance(p, data));
+
+        // Montado, SUMA a la defensa: 20 + 10 del Unicornio.
+        p.Mounted = true;
         Assert.Equal(30, Equipment.MagicResistance(p, data));
 
         // El báculo de DañoMagico (1147) equipado NO resta nada: el arma le suma daño al que lanza, no

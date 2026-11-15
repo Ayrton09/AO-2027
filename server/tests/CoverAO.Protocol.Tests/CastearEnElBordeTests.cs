@@ -32,13 +32,24 @@ public sealed class CastearEnElBordeTests
     [InlineData("persona")]
     [InlineData("criatura")]
     [InlineData("cadaver")]
-    [InlineData("propio bot")]
     public void No_clickea_los_pies_si_la_baldosa_de_abajo_elegiria_a_otro(string ocupante)
     {
-        var f = Armar(botX: ocupante == "propio bot" ? (byte)48 : (byte)49);
+        var f = Armar();
         f.Sentidos.Recibir(ServerMessages.ChangeSpellSlot(1, 2));
-        if (ocupante != "propio bot") AgregarOcupante(f, ocupante);
+        AgregarOcupante(f, ocupante);
         Assert.False(Lanzar(f));
+    }
+
+    /// <summary>Con el propio bot abajo sí: el servidor elige al de la baldosa clickeada cuando el de abajo es el que lanza
+    /// (ver El_dispatcher_real_elige_al_npc_aunque_el_mago_este_justo_debajo).</summary>
+    [Fact]
+    public async Task Clickea_los_pies_si_el_de_abajo_es_el_propio_bot()
+    {
+        var f = Armar(botX: 48);
+        f.Sentidos.Recibir(ServerMessages.ChangeSpellSlot(1, 2));
+        Assert.True(Lanzar(f));
+        Assert.Equal((byte)ClientPacketId.CastSpell, (await Proximo(f))[0]);
+        Assert.Equal(new byte[] { (byte)ClientPacketId.WorkLeftClick, 48, PrimeraFila, (byte)GameLimits.SkillMagia }, await Proximo(f));
     }
 
     [Theory]
@@ -114,8 +125,8 @@ public sealed class CastearEnElBordeTests
         Assert.True(Invocar<bool>(f, "CurarseConMagia", f.Transporte, f.Sentidos));
         Assert.Equal((byte)ClientPacketId.CastSpell, (await Proximo(f))[0]);
         Assert.Equal((byte)ClientPacketId.WorkLeftClick, (await Proximo(f))[0]);
-        f.Sentidos.Recibir(ServerMessages.PosUpdate(48, (byte)(PrimeraFila + 1)));
-        Assert.False(Lanzar(f)); // Ahora el propio bot ocupa la baldosa que desviaría el clic.
+        AgregarOcupante(f, "persona");
+        Assert.False(Lanzar(f)); // Ahora otro ocupa la baldosa que desviaría el clic.
         f.Sentidos.Recibir(ServerMessages.LocaleMsg(221));
         Assert.False(Invocar<bool>(f, "CurarseConMagia", f.Transporte, f.Sentidos));
     }
