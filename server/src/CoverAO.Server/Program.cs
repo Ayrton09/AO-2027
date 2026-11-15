@@ -866,7 +866,8 @@ if (habraWeb)
     // toca el juego —ni un paquete nuevo— y se apaga entera con PaginaPublica=0, que deja la ruta en 404.
     // `EsStaff` sale del ini VIVO y no del personaje: el rango se deriva en cada login y el .chr no manda.
     Func<string>? estadoPublico = serverIni.PaginaPublica
-        ? new CoverAO.Server.Net.EstadoPublico(world, almacen, loop, serverIni.EsStaff, CoverAO.Server.Build.Version).Json
+        ? new CoverAO.Server.Net.EstadoPublico(world, almacen, loop, serverIni.EsStaff, CoverAO.Server.Build.Version,
+            nombre: serverIni.NombreDelServidor).Json
         : null;
     // Y el JUEGO entra por este mismo puerto, en /ws. El WebSocket sigue teniendo el suyo (port+1) y los dos
     // caminos terminan en el mismo aceptador; lo que cambia es que el cliente ya no necesita el otro, así que
@@ -879,7 +880,7 @@ if (habraWeb)
         lluviaBajoTecho: serverIni.LluviaBajoTecho,
         soloEscritorio: soloEscritorio, descargaEscritorio: serverIni.DescargaEscritorio,
         compilacion: Actualizador.IdInstalado(AppContext.BaseDirectory) ?? "",
-        volverAlHogar: serverIni.VolverAlHogarAlMorir).RunAsync(cts.Token);
+        volverAlHogar: serverIni.VolverAlHogarAlMorir, nombre: serverIni.NombreDelServidor).RunAsync(cts.Token);
 }
 
 // UNA COPIA AL ARRANCAR. El backup periodico sale recien a los MinutosBackup exactos y su contador se

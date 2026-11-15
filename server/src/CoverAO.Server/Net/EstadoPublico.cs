@@ -56,11 +56,13 @@ public sealed class EstadoPublico
     /// <param name="esStaff">Quién NO entra en la tabla. Sale del <c>Server.ini</c> vivo y no del personaje,
     /// por lo mismo de siempre: el rango se deriva en cada login y el <c>.chr</c> no manda.</param>
     /// <param name="tope">Cuántos puestos publica la tabla.</param>
+    /// <param name="nombre">El nombre del servidor (Server.ini <c>[INIT] Nombre</c>), ya limpio; vacío si no tiene.</param>
     public EstadoPublico(World world, IAlmacen almacen, GameLoop loop, Func<string, bool> esStaff,
-                         string version, int tope = 25)
+                         string version, int tope = 25, string nombre = "")
     {
-        _world = world; _almacen = almacen; _loop = loop; _esStaff = esStaff; _version = version; _tope = tope;
+        _world = world; _almacen = almacen; _loop = loop; _esStaff = esStaff; _version = version; _tope = tope; _nombre = nombre;
     }
+    private readonly string _nombre;
 
     /// <summary>El JSON que se sirve, cacheado. Se puede llamar desde cualquier hilo MENOS el del game loop:
     /// lee el disco.</summary>
@@ -109,6 +111,7 @@ public sealed class EstadoPublico
         {
             servidor = new
             {
+                nombre = _nombre,
                 version = _version,
                 uptimeSec = _loop.Tick * GameLoop.TickMs / 1000,
                 online = conectados.Length,

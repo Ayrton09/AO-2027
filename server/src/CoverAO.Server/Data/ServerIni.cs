@@ -210,7 +210,7 @@ public sealed class ServerIni
 
     public static readonly string[] ClavesConocidas =
     {
-        "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "EconomiaUmbralOro",
+        "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "Nombre", "EconomiaUmbralOro",
         "ComercioEnCiudadesViejas", "ComercioEnElResto", "ComercioEnLindos", "ComercioEnRinkel",
         "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca", "OroPorMonton",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
@@ -250,6 +250,20 @@ public sealed class ServerIni
     /// levanta el ejecutable no tiene forma de cumplir eso salvo que el juego lo muestre, y no se le puede
     /// pedir que arme una página aparte. Poniendo una URL acá queda cumplido.</summary>
     public string CodigoFuente { get; private set; } = "";
+
+    /// <summary>El nombre de ESTE servidor (<c>[INIT] Nombre</c>), el que ve el jugador en la lista de la app al agregar la
+    /// dirección: lo pone quien hostea, no el que juega. Vacío, la lista muestra la dirección. Sin caracteres de control y con
+    /// un tope de <see cref="LargoMaximoDelNombre"/>.</summary>
+    public string NombreDelServidor { get; private set; } = "";
+    public const int LargoMaximoDelNombre = 40;
+
+    /// <summary>El nombre tal como se publica: sin caracteres de control ni espacios de más, y cortado al tope.</summary>
+    public static string LimpiarNombre(string? crudo)
+    {
+        var limpio = new string((crudo ?? "").Where(c => !char.IsControl(c)).ToArray());
+        limpio = System.Text.RegularExpressions.Regex.Replace(limpio, @"\s+", " ").Trim();
+        return limpio.Length > LargoMaximoDelNombre ? limpio[..LargoMaximoDelNombre].TrimEnd() : limpio;
+    }
 
     /// <summary>La versión de cliente que este servidor acepta (<c>[INIT] Version</c>, VB6 <c>ULTIMAVERSION</c>,
     /// FileIO.bas:1467). El cliente manda la suya en tres bytes al entrar y el original la compara como texto:
@@ -1225,6 +1239,7 @@ public sealed class ServerIni
         cfg.StartPort = puerto is >= 1 and <= PuertoMaximo ? puerto : cfg.StartPort;
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
+        cfg.NombreDelServidor = LimpiarNombre(ini.GetString("INIT", "Nombre", ""));
         cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
         // El tope de un día es por si alguien escribe un número absurdo: una criatura que no vuelve nunca

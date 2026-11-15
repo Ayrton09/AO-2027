@@ -6,6 +6,7 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 - Nuevo estilo para toda la interfaz, la moderna y la clásica: hierro oscuro con un solo color de acento, letras nuevas y sin brillos ni degradés. El ingreso, el comercio, el banco y las opciones lo toman también.
 - El menú de la app de escritorio tiene el mismo estilo que el juego.
+- Cada server tiene su propio nombre, que pone quien lo hostea (Server.ini, Nombre=): en la lista de la app aparece solo al agregar la dirección, también en los que ya tenías guardados.
 
 ## 1.0.21 (2026-11-15)
 

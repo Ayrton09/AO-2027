@@ -115,6 +115,25 @@ public class PaginaPublicaTests : IDisposable
         Assert.Equal(0, sinNovedades.RootElement.GetProperty("novedades").GetArrayLength());
     }
 
+    /// <summary>EL NOMBRE DEL SERVER lo pone quien hostea (<c>[INIT] Nombre</c>) y la app lo muestra en su lista: sale limpio
+    /// de caracteres de control, cortado a 40, y en los dos lugares donde la app lo busca, la página pública y la config.</summary>
+    [Fact]
+    public void El_nombre_del_server_sale_del_ini_y_viaja_en_los_dos_json()
+    {
+        Assert.Contains("Nombre", ServerIni.ClavesConocidas);
+        Assert.Equal("", new ServerIni().NombreDelServidor);
+        File.WriteAllText(_ini, "[INIT]\r\nStartPort=7666\r\nNombre=  Tierras   del Sur \t \r\n");
+        Assert.Equal("Tierras del Sur", ServerIni.Cargar(_ini).NombreDelServidor);
+        Assert.Equal(new string('x', ServerIni.LargoMaximoDelNombre), ServerIni.LimpiarNombre(new string('x', 90)));
+        Assert.Equal("ab", ServerIni.LimpiarNombre("a\u0001b"));
+
+        var estado = new EstadoPublico(new World(), new AlmacenDeTexto(new FileStore(_root)), new GameLoop(), _ => false, "1.0.0",
+            nombre: "Tierras del Sur");
+        Assert.Equal("Tierras del Sur", JsonDocument.Parse(estado.Json()).RootElement.GetProperty("servidor").GetProperty("nombre").GetString());
+        using var config = JsonDocument.Parse(new StaticFileServer(0, _root, 7667, nombre: "Tierras del Sur").ConfigJson);
+        Assert.Equal("Tierras del Sur", config.RootElement.GetProperty("nombre").GetString());
+    }
+
     /// <summary>Apagada, la ruta NO EXISTE. El servidor de estáticos la sirve sólo si le dieron de dónde
     /// sacarla; sin eso es un 404 como cualquier ruta inventada, que es lo que tiene que ver alguien de
     /// afuera: ni un JSON vacío ni un 403, que confirmarían que el servidor está y sólo no quiere contestar.</summary>

@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 if (location.protocol === 'file:') {
   contextBridge.exposeInMainWorld('escritorio', {
     listar: () => ipcRenderer.invoke('listar'),
-    agregar: (texto, nombre) => ipcRenderer.invoke('agregar', texto, nombre),
+    agregar: (texto) => ipcRenderer.invoke('agregar', texto),
     quitar: (direccion) => ipcRenderer.invoke('quitar', direccion),
     consultar: (direccion) => ipcRenderer.invoke('consultar', direccion),
     entrar: (direccion) => ipcRenderer.invoke('entrar', direccion),

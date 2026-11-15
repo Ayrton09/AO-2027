@@ -184,6 +184,7 @@ inservibles. Los cambios se aplican al reiniciar. Plantilla comentada:
 | `MinutosBackup` | copia del mundo. 0 = desactivado |
 | `BackupsAConservar` | cuántas copias guardar. 0 = todas |
 | `LogDias` | días de log a conservar. 0 = sólo consola |
+| `Nombre` | el nombre del servidor, el que ven los jugadores en la lista de la app al agregar tu dirección. Lo ponés vos, no cada jugador. Hasta 40 letras. Vacío, la lista muestra la dirección |
 | `CodigoFuente` | URL del código de este servidor |
 | `PuertoWebSocketPublico` | sólo si el hosting remapea puertos: el que se le anuncia al cliente |
 | `Version` | la versión de cliente que este servidor acepta. Los cinco paquetes de ingreso traen la del cliente y el servidor la compara **como texto**: si no coincide, cartel de *juego desactualizado* y se corta la conexión. **Vacía (el default) = sin control**, que es lo que hacía el servidor hasta ahora. El cliente web que viene con esta versión manda `1.0.0`. Encendela sólo si sabés qué cliente repartiste: la comparación es exacta, así que un valor que no sea el del cliente desplegado deja a **todos** afuera. Sirve para dos cosas: que no se conecte un cliente ajeno al puerto del juego, y forzar a que actualicen cuando publiques una versión nueva. **Se reparte VACÍA por decisión del autor (2026-09-08)**: con el cliente cacheado en el navegador de cada jugador, el cartel de *juego desactualizado* le sale a quien sólo necesita recargar |

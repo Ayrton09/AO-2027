@@ -43,10 +43,10 @@ const jsonConTope = async (r) => {
   return cuerpo ? JSON.parse(new TextDecoder().decode(cuerpo)) : null;
 };
 
-const BARRA_DEL_TOP = `html { color-scheme: dark; scrollbar-color: #5c3f15 #120c06; }
-  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: #120c06; }
-  ::-webkit-scrollbar-thumb { background: #5c3f15; border-radius: 5px; border: 2px solid #120c06; }
-  ::-webkit-scrollbar-thumb:hover { background: #9a7326; }`;
+const BARRA_DEL_TOP = `html { color-scheme: dark; scrollbar-color: #2c3036 #0b0c0e; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: #0b0c0e; }
+  ::-webkit-scrollbar-thumb { background: #2c3036; border-radius: 0; border: 2px solid #0b0c0e; }
+  ::-webkit-scrollbar-thumb:hover { background: #9b9b95; }`;
 
 const archivoDeConfig = () => path.join(app.getPath('userData'), 'config.json');
 const respaldoDeConfig = () => archivoDeConfig() + '.bak';
@@ -106,9 +106,14 @@ function normalizar(texto) {
 let config = leerConfig();
 // LA LISTA DE SERVERS (el autor, 03/10: "si alguien me pasa una IP yo pueda entrar y fue"). Se agregan por dirección y quedan
 // guardados; no hay un central que los liste. El server elegido antes de la lista entra como el primero.
-config.servidores = Array.isArray(config.servidores) ? config.servidores.filter((s) => normalizar(s?.direccion)) : [];
+// De cada server se guarda la dirección y el nombre que mandó él; el que le ponía el jugador (`nombre`, de antes) se descarta.
+config.servidores = Array.isArray(config.servidores)
+  ? config.servidores.filter((s) => normalizar(s?.direccion)).map((s) => ({
+    direccion: s.direccion, ...(nombreValido(s.nombreDelServer) ? { nombreDelServer: nombreValido(s.nombreDelServer) } : {}),
+  }))
+  : [];
 if (config.servidor && !config.servidores.some((s) => s.direccion === config.servidor))
-  config.servidores.unshift({ direccion: config.servidor, nombre: '' });
+  config.servidores.unshift({ direccion: config.servidor });
 let ventana = null;
 
 // LAS OPCIONES DEL JUEGO, guardadas acá y puestas en cada server al entrar (el autor, 05/10: "las opciones deberían tener todas
@@ -383,16 +388,34 @@ async function consultar(direccion) {
       cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
     });
     const ping = Math.round(performance.now() - inicio);
-    if (!r.ok) return { enLinea: true, ping, jugadores: null, version: null };
+    if (!r.ok) return { enLinea: true, ping, jugadores: null, version: null, nombre: await nombreDeLaConfig(direccion) };
     const estado = await jsonConTope(r);
     return {
       enLinea: true, ping,
       jugadores: Number.isFinite(estado?.servidor?.online) ? estado.servidor.online : null,
       version: typeof estado?.servidor?.version === 'string' ? estado.servidor.version : null,
+      nombre: nombreValido(estado?.servidor?.nombre),
     };
   } catch {
-    return { enLinea: false, ping: null, jugadores: null, version: null };
+    return { enLinea: false, ping: null, jugadores: null, version: null, nombre: null };
   }
+}
+
+/** EL NOMBRE DEL SERVER lo pone quien lo hostea (Server.ini [INIT] Nombre), no el jugador: llega en `api/publico.json` y, con la
+ * página pública apagada, en `coverao-config.json`. Texto de hasta 40 letras, como lo corta el server; si no, no hay nombre. */
+function nombreValido(n) {
+  if (typeof n !== 'string') return null;
+  const limpio = n.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return limpio || null;
+}
+
+async function nombreDeLaConfig(direccion) {
+  try {
+    const r = await fetch(new URL('coverao-config.json', direccion), {
+      cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
+    });
+    return r.ok ? nombreValido((await jsonConTope(r))?.nombre) : null;
+  } catch { return null; }
 }
 
 // LA COMPILACIÓN DE ESTA APP (la escribe armar.js al armar el instalador): su fecha, que decide si un instalador del release es
@@ -573,12 +596,11 @@ delMenu('actualizar-ahora', () => { if (!instalar(true)) return false; app.quit(
 
 delMenu('listar', () => ({ servidores: config.servidores, ultimo: config.servidor ?? null, porDefecto: SERVIDOR_POR_DEFECTO }));
 
-delMenu('agregar', (_e, texto, nombre) => {
+// Se agrega sólo la dirección: el nombre lo manda el server (ver nombreValido) y se guarda al consultarlo.
+delMenu('agregar', (_e, texto) => {
   const direccion = normalizar(texto);
   if (!direccion) return { error: 'Esa dirección no es válida. Probá con algo como localhost:7669 o https://mi-server.com.' };
-  const ya = config.servidores.find((s) => s.direccion === direccion);
-  if (ya) { if (nombre?.trim()) ya.nombre = nombre.trim(); }
-  else config.servidores.push({ direccion, nombre: String(nombre ?? '').trim() });
+  if (!config.servidores.some((s) => s.direccion === direccion)) config.servidores.push({ direccion });
   guardarConfig(config);
   return { direccion };
 });
@@ -589,7 +611,18 @@ delMenu('quitar', (_e, direccion) => {
   guardarConfig(config);
 });
 
-delMenu('consultar', (_e, direccion) => (normalizar(direccion) ? consultar(normalizar(direccion)) : null));
+// Y el nombre que contestó queda guardado en la lista, para mostrarlo aunque después el server esté apagado.
+delMenu('consultar', async (_e, direccion) => {
+  const dir = normalizar(direccion);
+  if (!dir) return null;
+  const estado = await consultar(dir);
+  const s = config.servidores.find((x) => x.direccion === dir);
+  if (s && estado.enLinea && estado.nombre !== (s.nombreDelServer ?? null)) {
+    if (estado.nombre) s.nombreDelServer = estado.nombre; else delete s.nombreDelServer;
+    guardarConfig(config);
+  }
+  return estado;
+});
 
 /** El "atrás": del juego al menú; en el menú, a la pantalla principal (el mismo Esc que entiende menu.html). */
 function atras() {
@@ -607,7 +640,7 @@ delMenu('entrar', async (_e, direccion) => {
   const sinFirma = await prepararFirma(elegido);
   if (sinFirma) return sinFirma;
   servidor = config.servidor = elegido;
-  if (!config.servidores.some((s) => s.direccion === elegido)) config.servidores.push({ direccion: elegido, nombre: '' });
+  if (!config.servidores.some((s) => s.direccion === elegido)) config.servidores.push({ direccion: elegido });
   guardarConfig(config);
   ventana.loadURL(servidor);
   return null;

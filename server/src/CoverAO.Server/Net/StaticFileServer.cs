@@ -127,13 +127,15 @@ public sealed class StaticFileServer
     /// <param name="version">La versión del server, que el panel de novedades muestra en su cabecera.</param>
     /// <param name="soloEscritorio">En el mundo real, el que no viene de la app ve la página de descarga.</param>
     /// <param name="descargaEscritorio">Server.ini <c>DescargaEscritorio</c>: el enlace de esa página, por el mismo JSON.</param>
+    /// <param name="nombre">El nombre del servidor (Server.ini <c>[INIT] Nombre</c>): la app lo muestra en su lista. Va acá
+    /// también y no sólo en <c>api/publico.json</c>, que no existe con la página pública apagada.</param>
     public StaticFileServer(int port, string root, int wsPort, string codigoFuente = "", int wsPortPublico = 0,
                             Func<string>? estadoPublico = null,
                             Func<HttpListenerContext, CancellationToken, Task>? juegoPorWebSocket = null,
                             bool alcanceDelHechizo = true, bool destinoDeLosPortales = true,
                             IReadOnlyList<string>? novedades = null, string version = "", bool lluviaBajoTecho = false,
                             bool soloEscritorio = false, string descargaEscritorio = "", string compilacion = "",
-                            bool volverAlHogar = false)
+                            bool volverAlHogar = false, string nombre = "")
     {
         _soloEscritorio = soloEscritorio;
         _port = port;
@@ -153,6 +155,7 @@ public sealed class StaticFileServer
             $"\"destinoPortales\":{(destinoDeLosPortales ? "true" : "false")}," +
             $"\"lluviaBajoTecho\":{(lluviaBajoTecho ? "true" : "false")}," +
             $"\"volverAlHogar\":{(volverAlHogar ? "true" : "false")}," +
+            $"\"nombre\":{System.Text.Json.JsonSerializer.Serialize(nombre)}," +
             $"\"version\":{System.Text.Json.JsonSerializer.Serialize(version)}," +
             $"\"descarga\":{System.Text.Json.JsonSerializer.Serialize(descargaEscritorio)}," +
             // La fecha de la compilación del server (Data/Actualizador.cs): el cliente que reconecta y la ve cambiada se recarga.

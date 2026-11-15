@@ -200,6 +200,9 @@ Consejeros=0
 RolesMasters=0
 
 ; --- Publicacion -------------------------------------------------------------
+; Nombre del servidor: el que ven los jugadores en la lista de la app al agregar
+; tu direccion (hasta 40 letras). VACIO = la lista muestra la direccion.
+Nombre=
 ; URL del codigo de ESTA version, accesible a todos los jugadores de este servidor.
 CodigoFuente=
 ; Version que se le exige al cliente. VACIO = entra cualquiera, y se queda asi:
