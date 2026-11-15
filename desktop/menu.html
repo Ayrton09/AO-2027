@@ -3,19 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src file:; media-src file:; frame-src http: https:" />
+        content="default-src 'none'; style-src 'unsafe-inline'; font-src file:; script-src 'unsafe-inline'; img-src file:; media-src file:; frame-src http: https:" />
   <title>AO 2027</title>
   <style>
-    :root { --oro: #e8c876; --oro-claro: #f3d98f; --oro-hondo: #5a4223; --tinta: #e8dcc0; --tenue: #b8a888; --apagado: #8a7a5c;
-            --panel: #1c130ae6; --fondo: #0b0906; }
+    /* ESTILO "HIERRO Y BRASA", el mismo del juego (el autor, 15/11): hierro oscuro, una tinta y UN acento naranja de fragua
+       (los nombres de las variables quedan de cuando era oro). Sin degradés de adorno, brillos ni mayúsculas espaciadas. */
+    @font-face { font-family:'Barlow Semi Condensed'; font-weight:400; font-display:swap; src:url('menu/fuentes/barlow-semi-condensed-400.woff2') format('woff2'); }
+    @font-face { font-family:'Barlow Semi Condensed'; font-weight:500; font-display:swap; src:url('menu/fuentes/barlow-semi-condensed-500.woff2') format('woff2'); }
+    @font-face { font-family:'Barlow Semi Condensed'; font-weight:600; font-display:swap; src:url('menu/fuentes/barlow-semi-condensed-600.woff2') format('woff2'); }
+    @font-face { font-family:'Barlow Condensed'; font-weight:600; font-display:swap; src:url('menu/fuentes/barlow-condensed-600.woff2') format('woff2'); }
+    :root { --oro: #e0662a; --oro-claro: #f08a52; --oro-hondo: #2c3036; --tinta: #ecebe6; --tenue: #9b9b95; --apagado: #707270;
+            --panel: rgba(22,24,27,.94); --fondo: #0f1113; --hueco: #0b0c0e; --sobre-acento: #170802; --encima: #1d2024;
+            --titulo: 'Barlow Condensed', 'Barlow Semi Condensed', sans-serif; }
     /* LAS BARRAS DE DESPLAZAMIENTO, oscuras y doradas: las de Chrome por defecto son blancas y se veían "feas" abiertas encima
        del juego (el autor, 05/10). */
-    html { color-scheme: dark; scrollbar-color: #5c3f15 #120c06; }
+    html { color-scheme: dark; scrollbar-color: var(--oro-hondo) var(--hueco); }
     ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-track { background: #120c06; }
-    ::-webkit-scrollbar-thumb { background: #5c3f15; border-radius: 5px; border: 2px solid #120c06; }
-    ::-webkit-scrollbar-thumb:hover { background: #9a7326; }
-    html, body { margin: 0; height: 100%; color: var(--tinta); font: 15px/1.4 Georgia, serif; background: var(--fondo); overflow: hidden; }
+    ::-webkit-scrollbar-track { background: var(--hueco); }
+    ::-webkit-scrollbar-thumb { background: var(--oro-hondo); border-radius: 0; border: 2px solid var(--hueco); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--tenue); }
+    html, body { margin: 0; height: 100%; color: var(--tinta); font: 16px/1.4 'Barlow Semi Condensed', system-ui, sans-serif; font-variant-numeric: tabular-nums; background: var(--fondo); overflow: hidden; }
     body { background: var(--fondo) url('menu/fondo.jpg') center 40% / cover no-repeat; }
     body::after { content: ''; position: fixed; inset: 0; pointer-events: none;
                   background: radial-gradient(100% 95% at 50% 40%, transparent 55%, #000000a0 100%),
@@ -27,19 +34,18 @@
     .escena.chica .logo { width: min(380px, 60vw); margin-bottom: 1.2vh; }
     .vista { display: none; width: min(600px, 92vw); min-height: 0; }
     .vista.on { display: flex; flex-direction: column; }
-    .panel { padding: 20px 26px; background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 8px;
-             box-shadow: 0 10px 40px #000000a0; min-height: 0; display: flex; flex-direction: column; }
-    h2 { margin: 0 0 12px; font-size: 20px; color: var(--oro); font-weight: normal; display: flex; align-items: baseline;
+    .panel { padding: 20px 26px; background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 0; min-height: 0; display: flex; flex-direction: column; }
+    h2 { margin: 0 0 12px; font-size: 22px; color: var(--tinta); font-family: var(--titulo); font-weight: 600; display: flex; align-items: baseline;
          justify-content: space-between; gap: 12px; flex: none; }
 
     /* El menú principal: botones grandes, uno abajo del otro. */
     .menu { display: flex; flex-direction: column; gap: 10px; width: min(340px, 86vw); margin: 0 auto; }
-    .menu button { padding: 12px 16px; font: inherit; font-size: 18px; letter-spacing: .04em; color: var(--tinta); text-align: center;
-                   background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 6px; cursor: pointer;
-                   box-shadow: 0 6px 20px #00000080; transition: border-color .12s, color .12s, background .12s; }
-    .menu button:hover, .menu button:focus-visible { outline: none; color: var(--oro-claro); border-color: var(--oro); background: #2a1c0ee6; }
-    .menu button.principal { color: #1c130a; background: var(--oro); border-color: var(--oro); font-weight: bold; }
-    .menu button.principal:hover, .menu button.principal:focus-visible { color: #1c130a; background: var(--oro-claro); }
+    .menu button { padding: 12px 16px; font: inherit; font-size: 19px; font-weight: 500; color: var(--tinta); text-align: center;
+                   background: var(--panel); border: 1px solid var(--oro-hondo); border-radius: 0; cursor: pointer;
+                   transition: border-color .12s, color .12s, background .12s; }
+    .menu button:hover, .menu button:focus-visible { outline: none; color: var(--oro-claro); border-color: var(--oro); background: var(--encima); }
+    .menu button.principal { color: var(--sobre-acento); background: var(--oro); border-color: var(--oro); font-weight: bold; }
+    .menu button.principal:hover, .menu button.principal:focus-visible { color: var(--sobre-acento); background: var(--oro-claro); }
 
     .volver { background: none; border: 0; padding: 0; color: var(--tenue); font: inherit; font-size: 13px; cursor: pointer; }
     .volver:hover { color: var(--oro); }
@@ -48,13 +54,13 @@
     .enlace:hover { color: var(--oro); }
 
     /* Servidores. */
-    ul { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow-y: auto; border-top: 1px solid #3a2a16; }
-    li { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid #3a2a16; cursor: pointer; }
-    li:hover, li:focus-visible { background: #261a0d; outline: none; }
-    li.ultimo { background: #2a1c0e; }
+    ul { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow-y: auto; border-top: 1px solid var(--oro-hondo); }
+    li { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--oro-hondo); cursor: pointer; }
+    li:hover, li:focus-visible { background: var(--encima); outline: none; }
+    li.ultimo { background: var(--encima); box-shadow: inset 3px 0 0 var(--oro); }
     li.ultimo .nombre::after { content: "  · el último"; color: var(--apagado); font-size: 12px; font-weight: normal; }
-    .luz { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a4a34; }
-    .luz.si { background: #7bc46a; box-shadow: 0 0 6px #7bc46a88; }
+    .luz { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #4a4d52; }
+    .luz.si { background: #7bc46a; }
     .luz.no { background: #c4584a; }
     .datos { flex: 1; min-width: 0; }
     .nombre { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -63,45 +69,45 @@
     .estado { flex: none; text-align: right; font-size: 12px; color: var(--tenue); font-variant-numeric: tabular-nums; }
     .estado b { color: var(--tinta); font-weight: normal; }
     .boton-chico { flex: none; background: none; border: 1px solid var(--oro-hondo); color: var(--tenue); font: inherit; font-size: 12px;
-                   cursor: pointer; padding: 2px 8px; border-radius: 4px; }
+                   cursor: pointer; padding: 2px 8px; border-radius: 0; }
     .boton-chico:hover { color: var(--oro); border-color: var(--oro); }
-    .entrar { flex: none; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: bold; color: #1c130a; background: var(--oro);
-              border: 0; border-radius: 4px; cursor: pointer; }
+    .entrar { flex: none; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: bold; color: var(--sobre-acento); background: var(--oro);
+              border: 0; border-radius: 0; cursor: pointer; }
     .entrar:hover { background: var(--oro-claro); }
     .quitar { flex: none; background: none; border: 0; color: var(--apagado); font-size: 18px; line-height: 1; cursor: pointer;
-              padding: 2px 6px; border-radius: 4px; }
-    .quitar:hover { color: #e88a6e; background: #2e1c10; }
+              padding: 2px 6px; border-radius: 0; }
+    .quitar:hover { color: #e88a6e; background: var(--encima); }
     .vacia { padding: 14px 6px; color: var(--apagado); font-size: 13px; cursor: default; }
     .vacia:hover { background: none; }
     form { margin-top: 16px; }
-    h3 { margin: 0 0 8px; font-size: 15px; color: var(--oro); font-weight: normal; }
+    h3 { margin: 0 0 8px; font-size: 17px; color: var(--tinta); font-family: var(--titulo); font-weight: 600; }
     .fila { display: flex; gap: 8px; }
     input[type=text], input[type=number], select { box-sizing: border-box; min-width: 0; padding: 7px 10px; font: inherit; color: inherit;
-            background: #0d0904; border: 1px solid var(--oro-hondo); border-radius: 4px; }
+            background: var(--hueco); border: 1px solid var(--oro-hondo); border-radius: 0; }
     input[type=text]:focus, input[type=number]:focus, select:focus { outline: none; border-color: var(--oro); }
     #direccion { flex: 3; }
     #nombre { flex: 2; }
-    .boton { flex: none; padding: 8px 14px; font: inherit; font-weight: bold; color: #1c130a; background: var(--oro);
-             border: 0; border-radius: 4px; cursor: pointer; }
+    .boton { flex: none; padding: 8px 14px; font: inherit; font-weight: bold; color: var(--sobre-acento); background: var(--oro);
+             border: 0; border-radius: 0; cursor: pointer; }
     .boton:hover { background: var(--oro-claro); }
     .error { margin-top: 10px; color: #e88a6e; font-size: 13px; min-height: 1em; }
     .ayuda { margin-top: 4px; color: var(--apagado); font-size: 12px; }
     .creditos p { margin: 0 0 10px; line-height: 1.5; }
 
     /* Opciones: las mismas del juego (Opciones adentro), con pestañas. */
-    .pestanas { display: flex; gap: 4px; border-bottom: 1px solid #3a2a16; margin-bottom: 4px; flex: none; }
+    .pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--oro-hondo); margin-bottom: 4px; flex: none; }
     .pestanas button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--tenue); font: inherit;
                        padding: 6px 12px; cursor: pointer; }
-    .pestanas button.on { color: var(--oro); border-bottom-color: var(--oro); }
-    .pestanas button:hover { color: var(--oro-claro); }
+    .pestanas button.on { color: var(--tinta); border-bottom-color: var(--oro); }
+    .pestanas button:hover { color: var(--tinta); }
     .secciones { overflow-y: auto; min-height: 0; max-height: 52vh; padding-right: 4px; }
     .seccion { display: none; }
     .seccion.on { display: block; }
-    .opcion { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #3a2a16; }
+    .opcion { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--oro-hondo); }
     .opcion:last-child { border-bottom: 0; }
     .opcion .que small { display: block; color: var(--apagado); font-size: 12px; max-width: 30em; }
     .control { display: flex; align-items: center; gap: 8px; flex: none; }
-    .interruptor { width: 44px; height: 24px; flex: none; border-radius: 12px; border: 1px solid var(--oro-hondo); background: #0d0904;
+    .interruptor { width: 44px; height: 24px; flex: none; border-radius: 12px; border: 1px solid var(--oro-hondo); background: var(--hueco);
                    position: relative; cursor: pointer; }
     .interruptor::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
                           background: var(--apagado); transition: left .12s, background .12s; }
@@ -109,8 +115,8 @@
     .interruptor[aria-checked=true]::after { left: 23px; background: var(--oro); }
     input[type=range] { width: 170px; accent-color: var(--oro); }
     .valor { min-width: 3.4em; text-align: right; color: var(--tenue); font-variant-numeric: tabular-nums; }
-    .tecla { min-width: 5em; padding: 4px 10px; font: inherit; color: var(--oro-claro); background: #0d0904; border: 1px solid var(--oro-hondo);
-             border-radius: 4px; cursor: pointer; text-transform: uppercase; }
+    .tecla { min-width: 5em; padding: 4px 10px; font: inherit; color: var(--tinta); background: var(--hueco); border: 1px solid var(--oro-hondo);
+             border-radius: 0; cursor: pointer; text-transform: uppercase; }
     .tecla:hover, .tecla.esperando { border-color: var(--oro); }
     .aviso { color: var(--apagado); font-size: 12px; margin: 8px 0 0; }
 
@@ -118,23 +124,23 @@
     #top { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; background: #000000b8; }
     #top.on { display: flex; }
     #top .marco { position: relative; width: min(1000px, 94vw); height: min(820px, 90vh); border: 1px solid var(--oro-hondo);
-                  border-radius: 8px; overflow: hidden; background: #0d0904; box-shadow: 0 10px 40px #000; }
+                  border-radius: 0; overflow: hidden; background: var(--hueco); box-shadow: 0 10px 30px #000; }
     #top iframe { width: 100%; height: 100%; border: 0; display: block; }
-    #top .cerrar { position: absolute; top: 8px; right: 10px; z-index: 1; background: #1c130acc; border: 1px solid var(--oro-hondo);
-                   border-radius: 4px; color: var(--oro-claro); font-size: 20px; line-height: 1; padding: 3px 9px; cursor: pointer; }
+    #top .cerrar { position: absolute; top: 8px; right: 10px; z-index: 1; background: var(--panel); border: 1px solid var(--oro-hondo);
+                   border-radius: 0; color: var(--tinta); font-size: 20px; line-height: 1; padding: 3px 9px; cursor: pointer; }
 
     .pie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
            padding: 8px 16px; font-size: 12px; color: var(--apagado); background: linear-gradient(0deg, #000000b0, transparent); }
     .firma { font-style: italic; }
-    .pie button { background: none; border: 1px solid var(--oro-hondo); border-radius: 4px; color: var(--oro-claro); cursor: pointer;
+    .pie button { background: none; border: 1px solid var(--oro-hondo); border-radius: 0; color: var(--tinta); cursor: pointer;
                   font-size: 13px; padding: 1px 7px; }
     .pie button.off { opacity: .4; }
-    #aviso-act { color: var(--oro-claro); }
-    #aviso-act button { margin-left: 6px; color: #1c130a; background: var(--oro); border-color: var(--oro); }
+    #aviso-act { color: var(--tinta); }
+    #aviso-act button { margin-left: 6px; color: var(--sobre-acento); background: var(--oro); border-color: var(--oro); }
 
     /* Novedades: las mismas que muestra el juego al entrar, en una lista que se desplaza. */
     #nov-lista { overflow-y: auto; max-height: 52vh; padding-right: 6px; }
-    #nov-lista h4 { margin: 12px 0 6px; font-size: 15px; color: var(--oro); font-weight: normal; }
+    #nov-lista h4 { margin: 12px 0 6px; font-size: 17px; color: var(--tinta); font-family: var(--titulo); font-weight: 600; }
     #nov-lista h4:first-child { margin-top: 0; }
     #nov-lista p { margin: 0 0 7px; line-height: 1.45; }
     #nov-de { font-size: 12px; color: var(--apagado); }
