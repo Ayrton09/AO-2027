@@ -105,6 +105,13 @@ Los temas de Jonathan Shaw son de la colección
 `12.mp3` a `15.mp3` y `62.mp3` vienen del CoverAO original. La música del menú y del ingreso (`login.mp3`) es
 "Argentum Online Intro", de **Ricardo Amil** (2001), la del juego original.
 
+## Las letras
+
+La interfaz del juego usa **Barlow Semi Condensed** y **Barlow Condensed**, de The Barlow Project Authors
+([github.com/jpt/barlow](https://github.com/jpt/barlow)), con la
+[SIL Open Font License 1.1](https://openfontlicense.org). Van con el juego en `client-web/assets/fuentes/`, junto
+con el texto de su licencia (`OFL.txt`).
+
 ## La licencia del material heredado
 
 El repositorio de CoverAO-2021 en GitHub **no declara ninguna licencia**: no hay archivo `LICENSE` ni mención

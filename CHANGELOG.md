@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.22 (sin publicar)
+
+- Nuevo estilo para toda la interfaz, la moderna y la clásica: hierro oscuro con un solo color de acento, letras nuevas y sin brillos ni degradés. El ingreso, el comercio, el banco y las opciones lo toman también.
+
 ## 1.0.21 (2026-11-15)
 
 - La runa de teletransportación anda también estando muerto, como en el original.

@@ -817,6 +817,126 @@
     #m-ventana .attrs { text-align:left; padding:0 4px; }
     #mv-cerrar { color:var(--gold); cursor:pointer; padding:0 4px; font-size:calc(var(--u)*1.1); }
     #mv-cerrar:hover { color:var(--gold-hi); }
+    /* ==== ESTILO "HIERRO Y BRASA" (el autor, 15/11) ============================================================
+       Va al final y manda sobre lo de arriba: un fondo de hierro, una tinta y UN acento (la brasa, sólo en lo elegido o
+       activo). Sin degradés, brillos, vidrio ni mayúsculas espaciadas. Las variables viejas (--gold, --ink, --serif) apuntan
+       a las de acá, así que lo que no tiene regla propia también toma el estilo. Vale para la interfaz moderna y la clásica.
+       Las letras van con el juego (assets/fuentes, licencia OFL en el OFL.txt de al lado): no se piden a ningún servidor. */
+    @font-face { font-family:'Barlow Semi Condensed'; font-weight:400; font-style:normal; font-display:swap; src:url('./assets/fuentes/barlow-semi-condensed-400.woff2') format('woff2'); }
+    @font-face { font-family:'Barlow Semi Condensed'; font-weight:500; font-style:normal; font-display:swap; src:url('./assets/fuentes/barlow-semi-condensed-500.woff2') format('woff2'); }
+    @font-face { font-family:'Barlow Semi Condensed'; font-weight:600; font-style:normal; font-display:swap; src:url('./assets/fuentes/barlow-semi-condensed-600.woff2') format('woff2'); }
+    @font-face { font-family:'Barlow Condensed'; font-weight:600; font-style:normal; font-display:swap; src:url('./assets/fuentes/barlow-condensed-600.woff2') format('woff2'); }
+    :root {
+      --t-fondo:#0f1113;
+      --t-sup:#16181b;
+      --t-hud:rgba(16,18,21,.88);
+      --t-hueco:#0b0c0e;
+      --t-linea:#2c3036;
+      --t-tinta:#ecebe6;
+      --t-tinta2:#9b9b95;
+      --t-acento:#e0662a;
+      --t-sobre-acento:#170802;
+      --t-letra:'Barlow Semi Condensed', system-ui, sans-serif;
+      --t-titulo:'Barlow Condensed', sans-serif;
+      --t-radio:0px;
+    }
+    /* La estructura de cualquier tema: todo sale de ocho variables. Cada dirección sólo cambia los valores. */
+    body *:not(canvas) { background-image:none !important; box-shadow:none !important; text-shadow:none !important;
+      backdrop-filter:none !important; text-transform:none !important; letter-spacing:normal !important; }
+    body { background:var(--t-fondo) !important; }
+    #m-ventana, #modal > *, .modal-card { box-shadow:0 10px 30px #000b !important; }
+    #chat, #chat *, #topbar .tb, #topbar .tb *, #cartelmapa, #cartelmapa *, .track .val, #xptxt, .hbslot .k, .islot .amt, .p-xp .lvl {
+      text-shadow:0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000 !important; }
+
+    /* Tipografía: una familia para la interfaz y, si el tema la tiene, otra sólo para los nombres propios (título de la ventana,
+       cartel del mapa). */
+    body, button, input, select, .m-btn, .menubtn, .sbtn, .goldbtn, .p-tabs .tab, .subtabs .st, #chattabs .ct, .fsec, .cap, .lbl,
+    .m-btn b, #m-ventana, #modal { font-family:var(--t-letra) !important; }
+    #m-ventana .p-head, #m-ventana .p-head *, #cartelmapa .cm-n, #mapname, .modal-card h2, #modal h2, #modal h3 {
+      font-family:var(--t-titulo) !important; }
+
+    /* Radios: uno solo, del tema. */
+    .m-caja, .m-btn, #m-ventana, #hotbar, .hbslot, .islot, .track, .xptrack, .fill, #xpfill, .p-tabs .tab, .sbtn, .goldbtn,
+    .menubtn, .buy, .subtabs .st, #chattabs .ct, #m-mapa .p-foot, #spelllist li, .opc-tecla, #modal > *, input, select,
+    .track *, .xptrack * { border-radius:var(--t-radio) !important; }
+
+    /* Superficies. */
+    .m-caja, #m-mapa .p-foot, #hotbar { background-color:var(--t-hud) !important; border-color:var(--t-linea) !important; }
+    #m-ventana, #modal > * { background-color:var(--t-sup) !important; border-color:var(--t-linea) !important; color:var(--t-tinta) !important; }
+    #m-ventana .p-head { background-color:transparent !important; border-color:transparent !important; color:var(--t-tinta) !important; }
+    .p-body, .tabpane, .ornate { background-color:transparent !important; border-color:var(--t-linea) !important; }
+    .hbslot, .islot { background-color:var(--t-hueco) !important; border-color:var(--t-linea) !important; }
+    .hbslot:hover, .islot:hover { border-color:var(--t-tinta2) !important; }
+    .islot.sel { border-color:var(--t-acento) !important; outline:2px solid var(--t-acento); outline-offset:-2px; }
+    .islot.eq { border-color:#6ad06a !important; }
+
+    /* Pestañas: subrayado del acento, sin cajas. */
+    .p-tabs, .subtabs { border-color:var(--t-linea) !important; }
+    .p-tabs .tab, .subtabs .st, #chattabs .ct {
+      background-color:transparent !important; border:0 !important; border-bottom:2px solid transparent !important;
+      color:var(--t-tinta2) !important; }
+    .p-tabs .tab.on, .subtabs .st.on, #chattabs .ct.on {
+      color:var(--t-tinta) !important; border-bottom-color:var(--t-acento) !important; }
+    #spelllist li { border-color:transparent !important; color:var(--t-tinta) !important; }
+    #spelllist li.sel { background-color:var(--t-hueco) !important; border-left:3px solid var(--t-acento) !important; }
+
+    /* Botones: la acción lleva el acento; el resto es tinta sobre superficie. */
+    .sbtn, .goldbtn, .buy { background-color:var(--t-acento) !important; color:var(--t-sobre-acento) !important; border-color:var(--t-acento) !important; }
+    .sbtn:hover, .goldbtn:hover, .buy:hover { filter:brightness(1.12); }
+    .sbtn.ghost, .menubtn, .m-btn, .opc-tecla { background-color:var(--t-hueco) !important; color:var(--t-tinta) !important; border-color:var(--t-linea) !important; }
+    .sbtn.ghost:hover, .menubtn:hover, .m-btn:hover, .m-btn.on { border-color:var(--t-acento) !important; color:var(--t-tinta) !important; }
+    .m-btn.on { box-shadow:inset 0 -2px 0 var(--t-acento) !important; }
+    .m-btn b { color:var(--t-tinta2) !important; opacity:1 !important; }
+    .sbtn.danger { background-color:#9b3424 !important; color:#fff !important; border-color:#9b3424 !important; }
+
+    /* Texto. */
+    #m-ventana, #m-ventana *, .attrs, #modal, #modal * { color:inherit; }
+    .attrs, .fsec, .cap, .lbl { color:var(--t-tinta2) !important; }
+    .attrs b { color:var(--t-tinta) !important; }
+    #mapname, #m-mapa .p-foot { color:var(--t-tinta) !important; }
+    #mv-cerrar { color:var(--t-tinta2) !important; } #mv-cerrar:hover { color:var(--t-tinta) !important; }
+    .menubtn::first-letter, .sbtn::first-letter, .goldbtn::first-letter, .p-tabs .tab::first-letter, .subtabs .st::first-letter,
+    .fsec::first-letter, .cap::first-letter, .lbl::first-letter { text-transform:uppercase; }
+
+    /* Barras: el color del recurso, plano. */
+    .track, .xptrack { background-color:#00000099 !important; border-color:var(--t-linea) !important; }
+    .track::after, .track::before { display:none !important; }
+    .fill.hp { background-color:var(--hp) !important; } .fill.mana { background-color:var(--mana) !important; }
+    .fill.ener { background-color:var(--ener) !important; } .fill.food { background-color:var(--food) !important; }
+    .fill.thirst { background-color:var(--thirst) !important; }
+    #xpfill { background-color:var(--t-acento) !important; }
+    .p-xp .lvl { border-color:var(--t-acento) !important; color:var(--t-tinta) !important; background-color:var(--t-hueco) !important; }
+
+    #modal { background-color:#000000b8 !important; }
+    ::-webkit-scrollbar-thumb { background-color:var(--t-linea) !important; }
+    ::-webkit-scrollbar-track { background-color:transparent !important; }
+
+    /* Las variables del tema viejo apuntan a las del nuevo: así lo que no tiene regla propia también cambia. */
+    :root { --gold:var(--t-acento); --gold-hi:var(--t-tinta); --gold-lo:var(--t-linea); --gold-deep:var(--t-linea);
+      --ink:var(--t-tinta); --ink-dim:var(--t-tinta2); --wood:var(--t-sup); --wood-hi:var(--t-sup); --wood-lo:var(--t-hueco);
+      --frame:var(--t-hueco); --serif:var(--t-titulo); }
+    #topbar .tb { background-color:var(--t-hud) !important; border-color:var(--t-linea) !important; color:var(--t-tinta2) !important;
+      font-family:var(--t-letra) !important; }
+    #m-mapa .p-foot, #m-mapa canvas, #minimap, .minimap { border-color:var(--t-linea) !important; }
+    .p-body, .tabpane, .invgrid, #inv, .p-body > * { border-color:var(--t-linea) !important; }
+    #modal *, #m-ventana * { border-color:var(--t-linea); }
+    #modal .opc-fila, #modal .fila, #modal tr, #modal li { border-color:var(--t-linea) !important; }
+    #modal h2, #modal h3, .modal-card h2 { color:var(--t-tinta) !important; }
+
+    /* Una sola letra para la interfaz, con cifras tabulares para que los números alineen sin la monoespaciada. Los nombres
+       propios (más abajo) llevan la de títulos; el código y las teclas, la suya. */
+    body *:not(canvas):not(code):not(pre):not(kbd) { font-family:var(--t-letra) !important; font-variant-numeric:tabular-nums; }
+    #m-ventana .p-head, #m-ventana .p-head *, #panel .p-head, #panel .p-head *, #cartelmapa .cm-n, #mapname, .card h2, .card h3,
+    .nov-titulo, .login-card h2, .cardT { font-family:var(--t-titulo) !important; }
+    /* Los paneles del ingreso van sobre la ilustración: llevan el hierro casi opaco. */
+    .login-centro > .login-card, .login-card, .login-nov { background-color:rgba(22,24,27,.94) !important; border-color:var(--t-linea) !important; }
+    /* Las imágenes de verdad no se tocan: arriba se sacan los degradés, y el fondo del ingreso es una ilustración. */
+    #login { background-image:url('./assets/login/fondo.jpg') !important; }
+    .login-modes .lm { background-color:transparent !important; border:0 !important; border-bottom:2px solid transparent !important;
+      color:var(--t-tinta2) !important; }
+    .login-modes .lm.on { color:var(--t-tinta) !important; border-bottom-color:var(--t-acento) !important; }
+    .opc-pestanas button { border-bottom-color:transparent !important; }
+    .opc-pestanas button.on { color:var(--t-tinta) !important; border-bottom-color:var(--t-acento) !important; }
   </style>
 </head>
 <body>
