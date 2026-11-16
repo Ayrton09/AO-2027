@@ -285,6 +285,8 @@ public class InmovilizarUnaCriaturaTests : IDisposable
         var (world, amo) = Escena(30, 30);
         var mascota = Bicho(world, 10, 10, hostil: false, movimiento: 1);
         mascota.OwnerCharIndex = amo.CharIndex;
+        // QUIETA AL LADO: si no, a veces se iba hacia su amo antes del golpe y el test daba rojo (48 de 2.000, puerta del 16/11).
+        mascota.InmovilizadaHastaTick = Siempre;
         Bicho(world, 11, 10, hostil: true, movimiento: 1);
         Correr(new NpcSystem(world, new GameData()));
         Assert.True(mascota.Hp < 1000, "la hostil le tenía que pegar a la mascota de al lado");
