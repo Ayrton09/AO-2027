@@ -91,6 +91,7 @@ public sealed partial class Bot
         // UN PEDIDO CADA TANTO: si el servidor no lo deja (una baldosa que no se ve como techo, la raza), sin esto lo pediría en cada
         // vuelta.
         _proximoMontar = Environment.TickCount64 + EsperaParaMontarMs;
+        Console.WriteLine($"[bot {Nombre}] se sube a la montura en m{sentidos.Mapa} ({x},{y})");
         return transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)));
     }
 

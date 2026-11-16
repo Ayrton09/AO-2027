@@ -2729,6 +2729,9 @@ public sealed partial class Bot
         bool enElPozo = EnElPozo(PlataDe(sentidos), SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
         if (EsInsumoMetalurgico(obj) || EsProduccionMetalurgica(obj)) return false; // el mercado del oficio administra su reserva
         if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo) || EsHerramientaDeSuOficio(obj)) return false;
+        // NI LA MONTURA: se compra a mitad de sesión, así que no está en lo que trajo de casa, y vale 280.000. Medido en la ronda 110:
+        // los cuatro que volvieron de Tiama con la suya la pusieron en subasta al minuto. Ver `IrPorLaMonturaAsync`.
+        if (EsMontura(obj)) return false;
         // NI LO QUE JUNTA PARA FABRICAR: la leña del Carpintero o la piel del Sastre aparecen durante la sesión como
         // cualquier botín, y vendiéndolas no fabricaría nunca.
         if (obj == InsumoDeSuOficio && obj != 0) return false;
