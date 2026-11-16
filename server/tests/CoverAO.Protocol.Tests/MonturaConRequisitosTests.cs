@@ -67,16 +67,31 @@ public class MonturaConRequisitosTests
     }
 
     /// <summary>
-    /// LO QUE MONTA EL ORCO: los dos huargos, más la Montura de Nigromante (Altos) y el Unicornio, que la data deja para él. Las
-    /// dos últimas se quedan así por decisión del autor (2026-11-16: el Unicornio es para todos; la del Nigromante, por las dudas).
+    /// LO QUE MONTA EL ORCO: los dos huargos y el Unicornio, que es para todos (decisión del autor, 2026-11-16). Las del Nigromante
+    /// no: son sólo para esa clase, la de Altos para humanos, elfos y drows y la de Bajos para enanos y gnomos (el tester, 16/11; la
+    /// data dejaba la de Altos también al orco).
     /// </summary>
     [Fact]
-    public void El_orco_monta_los_huargos_la_del_nigromante_y_el_unicornio()
+    public void El_orco_monta_los_huargos_y_el_unicornio()
     {
         var datos = Datos();
         const byte orco = 6;
         var lasDelOrco = datos.Objects.Values.Where(o => o.IsMount && !o.RaceForbidden(orco)).Select(o => (int)o.Index).OrderBy(i => i);
-        Assert.Equal(new[] { Huargo, HuargoReforzado, 1350, 1351 }, lasDelOrco);
+        Assert.Equal(new[] { Huargo, HuargoReforzado, 1351 }, lasDelOrco);
+    }
+
+    [Fact]
+    public void Las_del_nigromante_son_de_su_clase_altos_y_bajos()
+    {
+        var datos = Datos();
+        const byte humano = 1, elfo = 2, drow = 3, gnomo = 4, enano = 5, orco = 6;
+        var altos = datos.Obj(1350)!;
+        var bajos = datos.Obj(1359)!;
+        Assert.Equal(new byte[] { humano, elfo, drow }, Enumerable.Range(1, 6).Select(r => (byte)r).Where(r => !altos.RaceForbidden(r)));
+        Assert.Equal(new byte[] { gnomo, enano }, Enumerable.Range(1, 6).Select(r => (byte)r).Where(r => !bajos.RaceForbidden(r)));
+        Assert.True(bajos.RaceForbidden(orco));
+        foreach (var m in new[] { altos, bajos })
+            Assert.Equal(new[] { (int)GameLimits.ClaseNigromante }, Enumerable.Range(1, 18).Where(c => !m.ClassForbidden((byte)c)));
     }
 
     /// <summary>

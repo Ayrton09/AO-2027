@@ -17407,7 +17407,7 @@
       "Crucial": "1",
       "Permanente": "3",
       "LocaleID": "1256",
-      "RazasProhibidas": "2,5",
+      "RazasProhibidas": "2,5,6",
       "ClasesProhibidas": "2,7,6,17,1,10,3,9,8,16,5,11,14,15,4,13,12",
       "Texto": ""
     },
