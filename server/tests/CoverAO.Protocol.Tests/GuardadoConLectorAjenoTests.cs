@@ -144,14 +144,14 @@ public class GuardadoConLectorAjenoTests
                 Assert.Equal(File.ReadAllBytes(viejo), File.ReadAllBytes(nuevo));
             }
         }
-        finally { if (Directory.Exists(raiz)) Directory.Delete(raiz, recursive: true); }
+        finally { Borrar(raiz); }
     }
 
     /// <summary><see cref="EscrituraAtomica"/> es interno del server; el test lo alcanza por el almacén, que es
     /// su único usuario público. Se escribe un personaje y se leen los bytes del <c>.chr</c> que quedó.</summary>
     private static void EscrituraAtomicaDePrueba(string destino, string texto, System.Text.Encoding enc)
     {
-        var raiz = Path.Combine(Path.GetDirectoryName(destino)!, "almacen");
+        var raiz = Path.Combine(Path.GetDirectoryName(destino)!, "almacen-" + Guid.NewGuid().ToString("N"));
         var store = new FileStore(raiz);
         if (ReferenceEquals(enc, Codec.Ansi))
         {
@@ -163,7 +163,16 @@ public class GuardadoConLectorAjenoTests
             store.WriteMisc("bytes", texto);
             File.Copy(Path.Combine(raiz, "Misc", "BYTES.json"), destino, overwrite: true);
         }
-        Directory.Delete(raiz, recursive: true);
+        Borrar(raiz);
+    }
+
+    /// <summary>Borra la carpeta temporal si se puede. Recién escrita, el antivirus la puede tener abierta un momento: el borrado
+    /// tiraba IOException por el temporal y el test daba rojo sin que fallara la escritura (5 a 14 de 800 repetido, 16/11).</summary>
+    private static void Borrar(string carpeta)
+    {
+        try { if (Directory.Exists(carpeta)) Directory.Delete(carpeta, recursive: true); }
+        catch (IOException) { /* queda en el temp */ }
+        catch (UnauthorizedAccessException) { /* idem */ }
     }
 
     /// <summary>EL BARRIDO, que es el guardia que de verdad hacía falta.
