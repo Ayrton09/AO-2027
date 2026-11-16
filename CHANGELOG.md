@@ -5,6 +5,9 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 ## 1.0.24
 
 - Los bots ya no eligen para entrenar una cueva que todavía no los deja entrar por su nivel.
+- La tecla Escape abre las Opciones (y cierra la ventana de inventario o conjuros si está abierta).
+- El nivel, al lado de la barra de experiencia, se lee bien: una chapa cuadrada con el número centrado.
+- En el juego de escritorio el VSync viene apagado, y se puede prender en Opciones, Video (vale la próxima vez que abras el juego).
 
 ## 1.0.23 (2026-11-16)
 
