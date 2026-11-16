@@ -175,10 +175,15 @@ public sealed partial class Bot
                                             Func<short, bool> queCompra, Task cerrada, CancellationToken ct, Func<int, bool>? mapaSirve = null)
     {
         bool Sirve(short f) => esElVendedor(f);
+        // SÓLO DONDE LE VENDEN: por la regla del comercio del Server.ini, en las ciudades viejas no se le vende a nadie, piratas
+        // incluidos. En la ronda 107 los tres que llegaron al pirata de Nix se comieron el "¡Largo de aquí!"; en el continente vende
+        // el del puerto de Rinkel. Ver `LeVendenAca`.
+        var dondeSirve = mapaSirve;
+        Func<int, bool> mapaQueVende = m => LeVendenAca(m) && (dondeSirve is null || dondeSirve(m));
         bool Corta(string porque) { Console.WriteLine($"[bot {Nombre}] no le compra en m{sentidos.Mapa} {sentidos.Posicion}: {porque}"); return false; }
-        if (sentidos.MasCercano(Sirve) is null)
+        if (sentidos.MasCercano(Sirve) is null || !mapaQueVende(sentidos.Mapa))
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaSirve, Pisable(sentidos),
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaQueVende, Pisable(sentidos),
                                         SaltosHastaElVendedor) is not { } lugar)
                 return Corta("no hay vendedor a mano");
             if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador,
