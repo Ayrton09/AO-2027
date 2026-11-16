@@ -321,6 +321,20 @@ public class BotsTests
         Assert.Equal(entra, Bot.PuedeEntrar(nivel, zona));
     }
 
+    /// <summary>EL NIVEL MÍNIMO DEL MAPA del Server.ini también cierra: el bot no elige una cueva que no lo deja entrar.</summary>
+    [Theory]
+    [InlineData(39, 230, false)]   // Dungeon Cristal: 40
+    [InlineData(40, 230, true)]
+    [InlineData(19, 753, false)]   // Cueva orca: 20
+    [InlineData(20, 753, true)]
+    [InlineData(5, 15, true)]      // sin mínimo
+    public void El_nivel_minimo_del_mapa_tambien_cierra(int nivel, int mapa, bool entra)
+    {
+        var ini = ServerIni.Desde(IniFile.Parse("[INIT]\nStartPort=7666\n[NIVELMINIMO]\n230=40\n753=20\n"));
+        Assert.Equal(entra, Bot.PuedeEntrar(nivel, mapa, CoverAO.Server.Data.GameData.Load(), ini));
+        Assert.True(Bot.PuedeEntrar(nivel, mapa, CoverAO.Server.Data.GameData.Load(), ini: null));   // sin ini, como antes
+    }
+
     // ── Salir del pozo sin pociones ───────────────────────────────────────────────────────────────────────
 
     /// <summary>

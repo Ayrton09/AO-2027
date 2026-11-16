@@ -67,6 +67,19 @@ public class MonturaConRequisitosTests
     }
 
     /// <summary>
+    /// LO QUE MONTA EL ORCO: los dos huargos, más la Montura de Nigromante (Altos) y el Unicornio, que la data deja para él. Las
+    /// dos últimas se quedan así por decisión del autor (2026-11-16: el Unicornio es para todos; la del Nigromante, por las dudas).
+    /// </summary>
+    [Fact]
+    public void El_orco_monta_los_huargos_la_del_nigromante_y_el_unicornio()
+    {
+        var datos = Datos();
+        const byte orco = 6;
+        var lasDelOrco = datos.Objects.Values.Where(o => o.IsMount && !o.RaceForbidden(orco)).Select(o => (int)o.Index).OrderBy(i => i);
+        Assert.Equal(new[] { Huargo, HuargoReforzado, 1350, 1351 }, lasDelOrco);
+    }
+
+    /// <summary>
     /// Y EL NIVEL SIGUE VALIENDO para lo que lo pide, con su propio mensaje.
     /// </summary>
     [Fact]

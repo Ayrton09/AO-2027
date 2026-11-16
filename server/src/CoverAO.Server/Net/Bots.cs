@@ -2528,7 +2528,7 @@ public sealed partial class Bot
     private Func<int, bool> Pisable(SentidosDelBot sentidos)
     {
         int nivel = sentidos.Nivel;
-        return mapa => PuedeEntrar(nivel, _entorno.Datos.MapZone(mapa));
+        return mapa => PuedeEntrar(nivel, mapa, _entorno.Datos, _entorno.Ini);
     }
 
     /// <summary>
@@ -2579,7 +2579,7 @@ public sealed partial class Bot
         return m =>
         {
             var nacen = datos.MapSpawns.TryGetValue(m, out var sp) ? sp.Select(s => s.NpcIndex) : Enumerable.Empty<int>();
-            return PuedeEntrar(nivel, datos.MapZone(m)) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini)
+            return PuedeEntrar(nivel, m, datos, ini) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini)
                    && SeCazaAhi(datos.IsPkMap(m), nacen, esPeligroso)
                    && !nacen.Any(f => datos.Npc((short)f) is { Hostile: true } n && UnGolpeLoMata(n, vida));
         };
@@ -2608,6 +2608,12 @@ public sealed partial class Bot
     /// <summary>¿Deja el servidor entrar con ese nivel a un mapa de esa zona? La misma cuenta que hace al pisar la puerta.</summary>
     public static bool PuedeEntrar(int nivel, string? zona) =>
         nivel <= GameLimits.NewbieMaxLevel || !string.Equals(zona?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Lo mismo con el NIVEL MÍNIMO DEL MAPA del Server.ini (<c>[NIVELMINIMO]</c>, <see cref="ServerIni.DejaEntrarAlMapa"/>),
+    /// que el servidor también mira al pisar la puerta. Sin esto el bot elegía una cueva que no lo deja entrar (el Dungeon Cristal
+    /// pide 40) y se quedaba rebotando en la salida.</summary>
+    public static bool PuedeEntrar(int nivel, int mapa, GameData datos, ServerIni? ini) =>
+        PuedeEntrar(nivel, datos.MapZone(mapa)) && (ini is null || ini.DejaEntrarAlMapa(mapa, nivel, esGm: false));
 
     /// <summary>¿Hay un lugar a salvo donde ejercer su oficio? Se recalcula al cambiar de mapa o cada cinco minutos:
     /// buscarlo es recorrer varios mapas, y esto se pregunta en cada vuelta.</summary>
@@ -3853,7 +3859,7 @@ public sealed partial class Bot
         GameData datos, ServerIni? ini, byte bando, int nivel, int vida)
     {
         Func<int, bool> guardias = m => HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
-        Func<int, bool> pasa = m => PuedeEntrar(nivel, datos.MapZone(m)) && !guardias(m) && !NaceLoQueLoMataDeDos(datos, m, vida);
+        Func<int, bool> pasa = m => PuedeEntrar(nivel, m, datos, ini) && !guardias(m) && !NaceLoQueLoMataDeDos(datos, m, vida);
         Func<int, bool> seguro = m => MapaSeguroPara(m, bando, nivel, datos, ini);
         Func<int, bool> tienda = m => ElMercaderLeVende(ini, datos.MapBattleMode(m), bando) && !guardias(m)
             && datos.MapSpawns.TryGetValue(m, out var nacen)
@@ -4980,7 +4986,7 @@ public sealed partial class Bot
     /// <see cref="LoQueLoMataALaVista"/>). Sin Illiandor, el mismo 544 queda a trece mapas en vez de once.</para>
     /// </summary>
     public static Func<int, bool> PisableDelRescate(GameData datos, ServerIni? ini, byte bando, int nivel) =>
-        m => PuedeEntrar(nivel, datos.MapZone(m)) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
+        m => PuedeEntrar(nivel, m, datos, ini) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
 
     /// <summary>Por dónde se busca el pueblo del rescate: lo mismo por donde va el viaje (<see cref="PorElCaminoDeSiempre"/>,
     /// sin los mapas de los que recién se fue huyendo), así no se elige un pueblo al que el viaje no llega.</summary>
@@ -7567,7 +7573,7 @@ public sealed partial class Bot
                                                                       Func<int, bool>? sinLoDelHueco = null, bool soloALaMeta = false)
     {
         Func<int, bool> pisable = porCualquierCamino ? PisableDelRescate(datos, ini, bando, nivel)
-                                                     : m => PuedeEntrar(nivel, datos.MapZone(m));
+                                                     : m => PuedeEntrar(nivel, m, datos, ini);
         // EL DESEMPATE DEL HUECO, en los tres escalones; el rescate no lo usa.
         var desempate = porCualquierCamino ? null : sinLoDelHueco;
         ((byte X, byte Y) Puerta, int Saltos)? Por(Func<int, bool> filtro) =>
@@ -7693,7 +7699,7 @@ public sealed partial class Bot
             else if (!abrioUnaPuerta && !deMuerto && !escapando
                      && await AbrirLaPuertaQueAsync(transporte, sentidos,
                             donde => _entorno.Mapas.AbrirlaDaSalidaHacia(mapa, desde, donde, mapaDestino, (destinoX, destinoY),
-                                         m => PuedeEntrar(sentidos.Nivel, _entorno.Datos.MapZone(m)) && sinHuidas(m), topeDeMapas),
+                                         m => PuedeEntrar(sentidos.Nivel, m, _entorno.Datos, _entorno.Ini) && sinHuidas(m), topeDeMapas),
                             cerrada, ct, cortaAntesDePaso))
             {
                 abrioUnaPuerta = true;

@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.24
+
+- Los bots ya no eligen para entrenar una cueva que todavía no los deja entrar por su nivel.
+
 ## 1.0.23 (2026-11-16)
 
 - A los de tu mismo bando se los puede atacar, y el que ataca se vuelve renegado: un imperial que le pega a otro imperial, o un republicano a otro republicano. Pelear contra el otro bando ya no te cambia la facción.
