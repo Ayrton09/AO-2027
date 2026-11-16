@@ -182,6 +182,7 @@ public class LasFaccionesDelMundoTests : IDisposable
         var halinte = Nacido(HalinteGanre, 50, 50);
         var (p, s, t) = Conectado(51, 50, Player.StatusCriminal);
         p.Gold = 200_000;
+        p.NivelDelUltimoPerdon = 1;   // ya pidió uno: éste se cobra (el primero es gratis)
 
         await DobleClic(s, halinte);
 

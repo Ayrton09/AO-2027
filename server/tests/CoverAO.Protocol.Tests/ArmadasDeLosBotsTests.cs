@@ -17,31 +17,37 @@ public class ArmadasDeLosBotsTests
                        Cao = Player.StatusCaos, Arm = Player.StatusArmada, Mil = Player.StatusMilicia;
 
     [Fact]
-    public void El_que_no_es_agresivo_sólo_le_pega_a_quien_no_lo_vuelve_criminal()
+    public void El_que_no_es_agresivo_le_pega_a_todo_el_que_no_es_de_su_bando()
     {
         Assert.True(Bot.EsBlanco(Ciu, Ren, agresivo: false, atacarAliadoVuelveCriminal: true));
         Assert.True(Bot.EsBlanco(Ciu, Cao, false, true));
-        Assert.False(Bot.EsBlanco(Ciu, Rep, false, true));    // lo volvería criminal
-        Assert.False(Bot.EsBlanco(Ciu, Ciu, false, true));    // el servidor no los deja
+        Assert.True(Bot.EsBlanco(Ciu, Rep, false, true));     // el otro bando: sin castigo
+        Assert.True(Bot.EsBlanco(Ciu, Mil, false, true));
+        Assert.False(Bot.EsBlanco(Ciu, Ciu, false, true));    // su bando: lo volvería criminal
         Assert.False(Bot.EsBlanco(Ciu, Arm, false, true));
-        Assert.True(Bot.EsBlanco(Arm, Mil, false, true));     // ejércitos enemigos
-        Assert.False(Bot.EsBlanco(Arm, Rep, false, true));
+        Assert.True(Bot.EsBlanco(Arm, Mil, false, true));
+        Assert.True(Bot.EsBlanco(Arm, Rep, false, true));
         Assert.True(Bot.EsBlanco(Mil, Arm, false, true));
         Assert.False(Bot.EsBlanco(Rep, Mil, false, true));
+        Assert.False(Bot.EsBlanco(Mil, Rep, false, true));
         Assert.True(Bot.EsBlanco(Rep, Ren, false, true));
-        // Con la regla de la casa apagada, el civil del otro bando también.
+        // Con la regla de la casa apagada, a los de su bando el servidor no lo deja.
         Assert.True(Bot.EsBlanco(Ciu, Rep, false, atacarAliadoVuelveCriminal: false));
+        Assert.False(Bot.EsBlanco(Ciu, Ciu, false, atacarAliadoVuelveCriminal: false));
         // A un GM (7 a 9) nunca, ni a quien no se le ve el bando.
         Assert.False(Bot.EsBlanco(Ciu, 7, false, true));
         Assert.False(Bot.EsBlanco(Ren, 0, true, true));
     }
 
     [Fact]
-    public void El_agresivo_le_pega_al_civil_del_otro_bando_y_ya_renegado_a_cualquiera_menos_al_Caos_si_es_del_Caos()
+    public void El_agresivo_le_pega_a_los_de_su_bando_y_ya_renegado_a_cualquiera_menos_al_Caos_si_es_del_Caos()
     {
-        Assert.True(Bot.EsBlanco(Ciu, Rep, agresivo: true, atacarAliadoVuelveCriminal: true));
+        Assert.True(Bot.EsBlanco(Ciu, Ciu, agresivo: true, atacarAliadoVuelveCriminal: true));
+        Assert.True(Bot.EsBlanco(Ciu, Arm, true, true));
+        Assert.True(Bot.EsBlanco(Rep, Mil, true, true));
         Assert.True(Bot.EsBlanco(Rep, Ciu, true, true));
-        Assert.False(Bot.EsBlanco(Ciu, Arm, true, true));     // el servidor no lo deja
+        Assert.False(Bot.EsBlanco(Arm, Ciu, true, true));     // el soldado no busca volverse criminal
+        Assert.False(Bot.EsBlanco(Ciu, Ciu, true, atacarAliadoVuelveCriminal: false));   // el servidor no lo deja
         foreach (byte el in new[] { Ren, Ciu, Rep, Cao, Arm, Mil }) Assert.True(Bot.EsBlanco(Ren, el, true, true));
         Assert.False(Bot.EsBlanco(Cao, Cao, true, true));
         Assert.True(Bot.EsBlanco(Cao, Ciu, true, true));

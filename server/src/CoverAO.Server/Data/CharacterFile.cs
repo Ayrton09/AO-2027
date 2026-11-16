@@ -30,6 +30,7 @@ public static class CharacterFile
         ini.Set("FACCIONES", "Rango", F(f.Rango));                 // rango en el ejército (VB6 Faccion.Rango)
         // Un contador por bando de la víctima (VB6 Faccion.*Matados): cada ejército suma un subconjunto distinto.
         ini.Set("FACCIONES", "CrimMatados", F(f.RenegadosMatados));
+        ini.Set("FACCIONES", "NivelDelPerdon", F(f.NivelDelUltimoPerdon));   // nuestro: el original no limita el perdón
         ini.Set("FACCIONES", "CiudadanosMatados", F(f.CiudadanosMatados));
         ini.Set("FACCIONES", "RepublicanosMatados", F(f.RepublicanosMatados));
         ini.Set("FACCIONES", "ArmadaMatados", F(f.ArmadaMatados));
@@ -352,6 +353,7 @@ public static class CharacterFile
             // Los contadores de facción, con las claves del ORIGINAL como alternativa (TCP.bas:1896-1902): un .chr suyo no
             // trae las nuestras, y sin esto se leían en cero.
             RenegadosMatados = ini.GetInt("FACCIONES", "CrimMatados", ini.GetInt("FACCIONES", "ReneMatados")),
+            NivelDelUltimoPerdon = ini.GetInt("FACCIONES", "NivelDelPerdon"),
             CiudadanosMatados = ini.GetInt("FACCIONES", "CiudadanosMatados", ini.GetInt("FACCIONES", "CiudMatados")),
             RepublicanosMatados = ini.GetInt("FACCIONES", "RepublicanosMatados", ini.GetInt("FACCIONES", "RepuMatados")),
             ArmadaMatados = ini.GetInt("FACCIONES", "ArmadaMatados", ini.GetInt("FACCIONES", "ArmiMatados")),

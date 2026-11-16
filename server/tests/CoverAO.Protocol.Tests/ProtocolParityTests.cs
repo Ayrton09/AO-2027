@@ -83,6 +83,8 @@ public class ProtocolParityTests
         [118] = "SubastaOfertar",
         [119] = "SubastaComprar",
         [120] = "SubastaCancelar",
+        // El /PERDÓN con el sacerdote (pedido del autor, 16/11). El cliente del original tiene el comando y sólo abre un MsgBox.
+        [121] = "Perdon",
     };
 
     /// <summary>Lo mismo, del lado del SERVIDOR. Va aparte porque el techo del VB6 no es el mismo en las dos
@@ -216,6 +218,7 @@ public class ProtocolParityTests
         Assert.Equal(115, (int)ClientPacketId.ElegirFamiliar);
         Assert.Equal(116, (int)ClientPacketId.SubastasPedir);
         Assert.Equal(120, (int)ClientPacketId.SubastaCancelar);
+        Assert.Equal(121, (int)ClientPacketId.Perdon);
         Assert.Equal(0, (int)ClientPacketId.Walk);
         Assert.Equal(17, (int)ClientPacketId.DropDestroy);
         Assert.Equal(20, (int)ClientPacketId.DoubleClick);

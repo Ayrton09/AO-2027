@@ -91,17 +91,12 @@ public sealed class Player
         || (victima == StatusCiudadano && atacante == StatusCiudadano)     || (victima == StatusCiudadano && atacante == StatusArmada)
         || (victima == StatusArmada && atacante == StatusCiudadano)        || (victima == StatusArmada && atacante == StatusArmada);
 
-    /// <summary>¿Atacarlo es atacar a un aliado (la regla de la casa <c>AtacarAliadoVuelveCriminal</c>)? Un legal (ciudadano,
-    /// republicano o de un ejército) que no es enemigo sancionado (Caos contra los ejércitos, Armada contra Milicia), atacado por
-    /// alguien que no es renegado ni del Caos. La guerra de clanes y la arena, el servidor las mira aparte.</summary>
-    public static bool AtacarloEsAtacarAUnAliado(byte atacante, byte victima)
-    {
-        bool aEjercito = atacante is StatusArmada or StatusMilicia, vEjercito = victima is StatusArmada or StatusMilicia;
-        bool enemigos = (aEjercito && victima == StatusCaos) || (atacante == StatusCaos && vEjercito)
-                     || (atacante == StatusArmada && victima == StatusMilicia) || (atacante == StatusMilicia && victima == StatusArmada);
-        bool legal = victima is StatusCiudadano or StatusRepublicano || vEjercito;
-        return !enemigos && atacante != StatusCaos && atacante != StatusCriminal && legal;
-    }
+    /// <summary>¿Atacarlo es atacar a un aliado (la regla de la casa <c>AtacarAliadoVuelveCriminal</c>)? Es pegarle a uno de
+    /// tu mismo bando: un imperial (ciudadano o Armada) a otro imperial, o un republicano (civil o Milicia) a otro republicano.
+    /// Son los mismos ocho pares que el original no deja pelear (<see cref="BandosQueNoSePelean"/>): con la regla prendida se
+    /// puede, y el que pega se vuelve renegado. Contra el otro bando se pelea sin castigo (decisión del autor, 2026-11-16).
+    /// La guerra de clanes y la arena, el servidor las mira aparte.</summary>
+    public static bool AtacarloEsAtacarAUnAliado(byte atacante, byte victima) => BandosQueNoSePelean(atacante, victima);
 
     public bool IsCitizen => FactionStatus == StatusCiudadano;        // ciudadano imperial (VB6 esCiuda)
     public bool IsRepublicano => FactionStatus == StatusRepublicano;  // VB6 esRepu
@@ -145,6 +140,9 @@ public sealed class Player
     // Cada ejército suma un subconjunto distinto, así que hay que llevarlos separados: el Imperio y la República
     // se cuentan mutuamente como enemigos, y el Caos cuenta a todos menos a los suyos.
     public int RenegadosMatados { get; set; }
+    /// <summary>En qué nivel pidió el último perdón (el /PERDÓN del sacerdote o el Convertidor de Rinkel); 0 = nunca. Con
+    /// <c>UnPerdonPorNivel</c> no se puede pedir otro en el mismo nivel.</summary>
+    public int NivelDelUltimoPerdon { get; set; }
     public int CiudadanosMatados { get; set; }
     public int RepublicanosMatados { get; set; }
     public int ArmadaMatados { get; set; }

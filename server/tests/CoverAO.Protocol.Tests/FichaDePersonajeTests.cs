@@ -51,14 +51,14 @@ public class FichaDePersonajeTests
 
     private static IEnumerable<Player> Jugadores() => new[] { Completo(), Muerto(), new Player { CharIndex = 3, Account = "cuenta", Name = "Vacio" } };
 
-    /// <summary>Salvo Paralizado e Incinerado, que el código de antes no guardaba y el original sí (FileIO.bas:1635-1636): con los
-    /// dos en 0 son lo único nuevo, y se sacan antes de comparar.</summary>
+    /// <summary>Salvo Paralizado e Incinerado, que el código de antes no guardaba y el original sí (FileIO.bas:1635-1636), y el
+    /// nivel del último perdón, que es nuestro: en 0 son lo único nuevo, y se sacan antes de comparar.</summary>
     [Fact]
     public void El_chr_sale_identico_al_de_antes()
     {
         foreach (var p in Jugadores())
             Assert.Equal(CharacterFileViejo.ToIni(p).ToText(),
-                System.Text.RegularExpressions.Regex.Replace(CharacterFile.ToIni(p).ToText(), @"^(Paralizado|Incinerado)=0\r?\n", "",
+                System.Text.RegularExpressions.Regex.Replace(CharacterFile.ToIni(p).ToText(), @"^(Paralizado|Incinerado|NivelDelPerdon)=0\r?\n", "",
                     System.Text.RegularExpressions.RegexOptions.Multiline));
     }
 
@@ -77,6 +77,15 @@ public class FichaDePersonajeTests
         Assert.False(FichaDePersonaje.Desde(vencido).Paralizado);
         Assert.True(FichaDePersonaje.Desde(pendiente).Paralizado);
         Assert.True(FichaDePersonaje.Desde(FichaDePersonaje.Desde(paralizado).CrearPlayer(1, "cuenta")).Paralizado);
+    }
+
+    [Fact]
+    public void El_nivel_del_ultimo_perdon_va_y_vuelve_por_el_chr_y_la_ficha()
+    {
+        var ficha = FichasDePrueba.Llena("Perdonado") with { NivelDelUltimoPerdon = 23 };
+        var leida = CharacterFile.FichaDesdeIni(IniFile.Parse(CharacterFile.ToIni(ficha).ToText()), "Perdonado");
+        Assert.Equal(23, leida.NivelDelUltimoPerdon);
+        Assert.Equal(23, FichaDePersonaje.Desde(leida.CrearPlayer(1, "cuenta")).NivelDelUltimoPerdon);
     }
 
     [Fact]

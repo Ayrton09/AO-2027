@@ -557,6 +557,7 @@ public sealed partial class PacketDispatcher
             case ClientPacketId.SubastaOfertar: HandleSubastaOfertar(session, reader); break;
             case ClientPacketId.SubastaComprar: HandleSubastaComprar(session, reader); break;
             case ClientPacketId.SubastaCancelar: HandleSubastaCancelar(session, reader); break;
+            case ClientPacketId.Perdon: _loop.Enqueue(() => { if (session.Player is { } p) PedirPerdon(session, p); }); break;
             case ClientPacketId.Walk: HandleWalk(session, reader); break;
             case ClientPacketId.ChangeHeading: HandleChangeHeading(session, reader); break;
             case ClientPacketId.attack: HandleAttack(session); break;
@@ -8557,15 +8558,42 @@ public sealed partial class PacketDispatcher
 
     /// <summary>Convertidor (VB6 EntrarImperial :64 / EntrarRepublica :11, vía Acciones.bas:225): le da la
     /// ciudadanía —imperial o republicana— a un RENEGADO. Exige: no ser ya de ese bando, venir de renegado (no se
-    /// admite a nadie de una facción enemiga) y no pertenecer a ningún clan. Todo se avisa por ChatOverHead del NPC.</summary>
-    private void DoConvertir(ClientSession session, Player p, Npc npc)
+    /// admite a nadie de una facción enemiga) y no pertenecer a ningún clan. Todo se avisa por ChatOverHead del NPC.
+    /// El hogar pasa a ser NIX en las dos ramas: el original escribe `.Hogar = cNix` también en EntrarRepublica (:42).</summary>
+    private void DoConvertir(ClientSession session, Player p, Npc npc) =>
+        Perdonar(session, p, npc, npc.FactionConvert, Cities.Nix);
+
+    /// <summary>EL /PERDÓN (pedido del autor, 2026-11-16): el renegado que clickea al sacerdote de una ciudad imperial y escribe
+    /// /PERDÓN vuelve a ser ciudadano imperial, y con el de una ciudad republicana, republicano. Las mismas condiciones y el mismo
+    /// precio que el Convertidor de Rinkel (<see cref="Perdonar"/>), y la ciudad del sacerdote pasa a ser su hogar. El bando de la
+    /// ciudad es el de <see cref="HogarDelMapa"/>, el que ya decide quién la puede elegir de hogar: las neutrales no perdonan.</summary>
+    private void PedirPerdon(ClientSession session, Player p)
+    {
+        if (DeadCheck(session, p)) return;
+        var npc = TargetNpcDe(p);
+        if (npc is null || !npc.IsReviver)
+        { session.Send(ServerMessages.ConsoleMsg("Para pedir el perdón hacé clic sobre el sacerdote de una ciudad imperial o republicana.", FuenteInfo)); return; }
+        if (DistanciaVB6(p.Pos, npc.Pos) > 5)
+        { session.Send(ServerMessages.ConsoleMsg("Estás muy lejos del sacerdote.", FuenteInfo)); return; }
+        if (!HogarDelMapa.TryGetValue(npc.Pos.Map, out var ciudad) || ciudad.Bando == BandoDelHogar.Neutral)
+        {
+            session.Send(ServerMessages.ChatOverHead("Aquí no puedo perdonarte. Busca al sacerdote de una ciudad imperial o republicana.", npc.CharIndex));
+            return;
+        }
+        Perdonar(session, p, npc,
+                 ciudad.Bando == BandoDelHogar.Imperio ? Player.StatusCiudadano : Player.StatusRepublicano, ciudad.Ciudad);
+    }
+
+    /// <summary>Lo que tienen en común el Convertidor y el /PERDÓN: el renegado sin clan, con el oro y sin otro perdón en este
+    /// nivel (<c>UnPerdonPorNivel</c>), pasa a <paramref name="bando"/> y a <paramref name="hogar"/>.</summary>
+    private void Perdonar(ClientSession session, Player p, Npc npc, byte bando, byte hogar)
     {
         // Al socket del jugador y no al área: las 32 frases de ModFacciones.bas salen por
         // `WriteChatOverHead(UserIndex, ...)`. Ese archivo no tiene ni un solo ChatOverHead de área.
         void Say(string t) => session.Send(ServerMessages.ChatOverHead(t, npc.CharIndex));
-        bool imperial = npc.FactionConvert == Player.StatusCiudadano;
+        bool imperial = bando == Player.StatusCiudadano;
 
-        if (p.FactionStatus == npc.FactionConvert)
+        if (p.FactionStatus == bando)
         {
             Say(imperial ? "¡No puedo hacerte un ciudadano imperial porque ya lo eres!."
                          : "¡No puedo hacerte republicano porque ya lo eres!.");
@@ -8581,20 +8609,24 @@ public sealed partial class PacketDispatcher
             Say("¡Para realizar esta acción no debes pertenecer a ningún clan!.");
             return;
         }
+        // UN PERDÓN POR NIVEL (regla de la casa `UnPerdonPorNivel`): el texto es el LocaleMsg 325 del original, que no lo usa.
+        if (_ini.UnPerdonPorNivel && p.NivelDelUltimoPerdon == p.Level)
+        { session.Send(ServerMessages.LocaleMsg(325)); return; }
         // LA CIUDADANÍA CUESTA (VB6 ModFacciones.bas:37-41 y :88-92, `Private Const PERDON As Long = 100000`).
         // Acá se daba GRATIS, que es un agujero de economía: entrar a una facción es lo que abre el ejército,
         // su armadura y su tabla de rangos, y el precio es justamente lo que hace que volverse renegado tenga
         // consecuencia. El gate del original es `Not .Stats.GLD > PERDON`: con exactamente 100.000 NO alcanza,
         // hacen falta 100.001. Se replica tal cual, rareza incluida.
-        if (p.Gold <= PrecioDelPerdon)
+        // EL PRIMER PERDÓN ES GRATIS (decisión del autor, 2026-11-16): cobra a partir del segundo, en el sacerdote o en Rinkel.
+        // `NivelDelUltimoPerdon` en 0 es que nunca pidió uno (el nivel mínimo es 1).
+        bool cobra = p.NivelDelUltimoPerdon > 0;
+        if (cobra && p.Gold <= PrecioDelPerdon)
         { session.Send(ServerMessages.LocaleMsg(383, PrecioDelPerdon.ToString())); return; }
-        p.Gold -= PrecioDelPerdon;
+        if (cobra) p.Gold -= PrecioDelPerdon;
         short auraAntes = p.Meditating ? (short)ParticleToLevel(p) : (short)0;
-        p.CambiarFaccion(npc.FactionConvert);
-        // Y el hogar pasa a ser NIX en las dos ramas. No es un descuido de este porte: el original escribe
-        // `.Hogar = cNix` también en EntrarRepublica (:42), así que el republicano recién convertido vuelve a
-        // la capital imperial. Es raro, pero es lo que hace el juego que estamos copiando.
-        p.HomeCity = Cities.Nix;
+        p.CambiarFaccion(bando);
+        p.NivelDelUltimoPerdon = p.Level;
+        p.HomeCity = hogar;
         // El comentario de acá ya decía "VB6 CharStatus" y se mandaba UpdateTagAndStatus: ahora va el paquete
         // que el original manda de verdad (ModFacciones.bas:44/98).
         _world.BroadcastToObservers(p.Pos, ServerMessages.CharStatus(p.CharIndex, (byte)p.FactionStatus));
@@ -8766,10 +8798,11 @@ public sealed partial class PacketDispatcher
         // Compañeros de clan: el original sale MUDO acá (su WriteMensajes está comentado).
         if (!string.IsNullOrEmpty(victima.GuildName)
             && string.Equals(victima.GuildName, p.GuildName, StringComparison.OrdinalIgnoreCase)) return false;
-        // Los ocho pares de facción que el original prohíbe (LocaleMsg 97). Ciudadano+Ciudadano está entre
-        // ellos: en esta variante dos civiles NO se pueden pelear, hay que hacerse criminal o enlistarse en
-        // bandos opuestos. Es el gate que más cambia el juego y es el que la fuente dice, textual.
-        if (Player.BandosQueNoSePelean(p.FactionStatus, victima.FactionStatus)) { session.Send(ServerMessages.LocaleMsg(97)); return false; }
+        // Los ocho pares de facción que el original prohíbe (LocaleMsg 97): los del mismo bando. Con la regla de
+        // la casa `AtacarAliadoVuelveCriminal` prendida SE PUEDE, y el que pega se vuelve renegado
+        // (FlagCriminalIfLegalTarget); con 0 es el corte del original, textual.
+        if (Player.BandosQueNoSePelean(p.FactionStatus, victima.FactionStatus) && !_ini.AtacarAliadoVuelveCriminal)
+        { session.Send(ServerMessages.LocaleMsg(97)); return false; }
         // Arena (TriggerZonaPelea): los dos adentro habilita; uno solo adentro prohíbe; ninguno de los dos
         // deja pasar al último gate, que es el que protege a los GMs fuera de la arena.
         bool yoEnArena = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y);
@@ -8785,10 +8818,10 @@ public sealed partial class PacketDispatcher
         return true;
     }
 
-    /// <summary>Atacar a un objetivo LEGAL (ciudadano/Armada) sin provocación te vuelve criminal y te expulsa del
-    /// ejército — el "seguro" del AO clásico. Exceptúa a los enemigos de facción sancionados (Armada↔Caos), a los
-    /// ya-criminales/Caos y a los clanes en guerra. Se aplica IDÉNTICO en melee y en hechizos de daño: antes vivía
-    /// sólo en el melee, así que matar aliados con magia no penaba (canilla de PK "limpio").
+    /// <summary>Atacar a uno de tu mismo bando (imperial a imperial, republicano a republicano) te vuelve criminal y te
+    /// expulsa del ejército. Contra el otro bando, los renegados y el Caos no cambia nada, y tampoco entre clanes en
+    /// guerra. Se aplica IDÉNTICO en melee y en hechizos de daño: antes vivía sólo en el melee, así que matar aliados
+    /// con magia no penaba (canilla de PK "limpio").
     ///
     /// <para>Esa parte NO está en el fuente del original: es la regla de la casa
     /// <see cref="Data.ServerIni.AtacarAliadoVuelveCriminal"/>, prendida por decisión del autor. Con 0 el Sub hace
@@ -8833,10 +8866,9 @@ public sealed partial class PacketDispatcher
         MascotasAtacanAlUsuario(victima: target, amo: p);
         MascotasAtacanAlUsuario(victima: p, amo: target);
         CancelarSalida(target);   // :1477 — al agredido se le cancela el /SALIR en curso (es anti-escape)
-        // Bandos enfrentados del VB6: Caos ↔ (Armada|Milicia), e Imperio ↔ República (Armada ↔ Milicia). Entre
-        // ellos el combate está sancionado y no penaliza. "Legales" son los civiles con ciudadanía y sus ejércitos
-        // (imperiales y republicanos). El que ya es renegado no se vuelve "más" criminal: sin esto, cada golpe le
-        // repetía el aviso y le volvía a difundir el estado. Ver `Player.AtacarloEsAtacarAUnAliado`.
+        // Sólo pegarle a uno de tu mismo bando vuelve criminal: imperiales (ciudadano, Armada) entre ellos y
+        // republicanos (civil, Milicia) entre ellos. El que ya es renegado no se vuelve "más" criminal: sin esto,
+        // cada golpe le repetía el aviso y le volvía a difundir el estado. Ver `Player.AtacarloEsAtacarAUnAliado`.
         if (!Player.AtacarloEsAtacarAUnAliado(p.FactionStatus, target.FactionStatus) || AtWar(p, target)) return;
         if (!_ini.AtacarAliadoVuelveCriminal) return;   // regla de la casa: con 0, como el fuente del original
         p.CambiarFaccion(Player.StatusCriminal);

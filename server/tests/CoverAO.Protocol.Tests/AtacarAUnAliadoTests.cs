@@ -8,11 +8,11 @@ using Xunit;
 namespace CoverAO.Protocol.Tests;
 
 /// <summary>
-/// ATACAR A UN LEGAL TE VUELVE CRIMINAL — regla de la casa <c>AtacarAliadoVuelveCriminal</c>, prendida por decisión
-/// del autor (2026-09-25). Con 0 es como el fuente del original: <c>UsuarioAtacadoPorUsuario</c> no toca el estado de
-/// nadie. Se mide con un golpe cuerpo a cuerpo de un ciudadano a un republicano en un mapa con PvP: dos ciudadanos no
-/// se pueden pelear (<c>PuedeAtacar</c>, LocaleMsg 97), así que el caso que llega a la regla es entre bandos. El golpe
-/// puede errar, pero la marca se decide antes de la tirada.
+/// ATACAR A UNO DE TU BANDO TE VUELVE CRIMINAL: regla de la casa <c>AtacarAliadoVuelveCriminal</c>, prendida por decisión
+/// del autor (2026-09-25; el 2026-11-16, sólo dentro del propio bando). Imperial a imperial o republicano a republicano se
+/// puede y el que pega pasa a renegado; contra el otro bando no cambia nada. Con 0 es como el fuente del original: a los de
+/// tu bando no se los puede atacar (<c>PuedeAtacar</c>, LocaleMsg 97) y atacar no toca el estado de nadie. Se mide con un
+/// golpe cuerpo a cuerpo en un mapa con PvP. El golpe puede errar, pero la marca se decide antes de la tirada.
 /// </summary>
 public class AtacarAUnAliadoTests : IDisposable
 {
@@ -95,31 +95,66 @@ public class AtacarAUnAliadoTests : IDisposable
         return (aldo, t);
     }
 
-    [Fact]
-    public async Task Por_defecto_un_ciudadano_que_ataca_a_un_republicano_se_vuelve_criminal()
+    [Theory]
+    [InlineData(Player.StatusCiudadano, Player.StatusCiudadano)]
+    [InlineData(Player.StatusCiudadano, Player.StatusArmada)]
+    [InlineData(Player.StatusArmada, Player.StatusCiudadano)]
+    [InlineData(Player.StatusRepublicano, Player.StatusRepublicano)]
+    [InlineData(Player.StatusMilicia, Player.StatusRepublicano)]
+    public async Task Por_defecto_atacar_a_uno_de_tu_bando_te_vuelve_criminal(byte atacante, byte victima)
     {
-        var (aldo, t) = await Golpear(ini: null, Player.StatusCiudadano, Player.StatusRepublicano);
+        var (aldo, t) = await Golpear(ini: null, atacante, victima);
 
         Assert.Equal(Player.StatusCriminal, aldo.FactionStatus);
+        Assert.Equal(0, aldo.FactionRank);
         Assert.Contains(Aviso, t.Textos());
     }
 
-    [Fact]
-    public async Task Con_la_clave_en_cero_atacar_no_cambia_el_estado()
+    [Theory]
+    [InlineData(Player.StatusCiudadano, Player.StatusRepublicano)]
+    [InlineData(Player.StatusRepublicano, Player.StatusCiudadano)]
+    [InlineData(Player.StatusArmada, Player.StatusRepublicano)]
+    [InlineData(Player.StatusMilicia, Player.StatusArmada)]
+    public async Task Por_defecto_atacar_al_otro_bando_no_cambia_el_estado(byte atacante, byte victima)
     {
-        var (aldo, t) = await Golpear("AtacarAliadoVuelveCriminal=0\r\n", Player.StatusCiudadano, Player.StatusRepublicano);
+        var (aldo, t) = await Golpear(ini: null, atacante, victima);
 
-        Assert.Equal(Player.StatusCiudadano, aldo.FactionStatus);
+        Assert.Equal(atacante, aldo.FactionStatus);
         Assert.DoesNotContain(Aviso, t.Textos());
         Assert.NotEmpty(t.Recibidos);     // el golpe se procesó: no es un verde por no haber hecho nada
     }
 
     [Fact]
-    public async Task Un_renegado_que_ataca_a_un_ciudadano_no_recibe_el_aviso()
+    public async Task Con_la_clave_en_cero_a_uno_de_tu_bando_no_se_lo_puede_atacar()
     {
-        var (aldo, t) = await Golpear(ini: null, Player.StatusCriminal, Player.StatusCiudadano);
+        var (aldo, t) = await Golpear("AtacarAliadoVuelveCriminal=0\r\n", Player.StatusCiudadano, Player.StatusCiudadano);
 
-        Assert.Equal(Player.StatusCriminal, aldo.FactionStatus);
+        Assert.Equal(Player.StatusCiudadano, aldo.FactionStatus);
+        Assert.DoesNotContain(Aviso, t.Textos());
+        Assert.Contains(t.Recibidos, x => x.Length > 2 && x[0] == (byte)ServerPacketId.LocaleMsg && x[1] == 97 && x[2] == 0);
+    }
+
+    [Fact]
+    public async Task Con_la_clave_en_cero_atacar_al_otro_bando_tampoco_cambia_el_estado()
+    {
+        var (aldo, t) = await Golpear("AtacarAliadoVuelveCriminal=0\r\n", Player.StatusCiudadano, Player.StatusRepublicano);
+
+        Assert.Equal(Player.StatusCiudadano, aldo.FactionStatus);
+        Assert.DoesNotContain(Aviso, t.Textos());
+        Assert.NotEmpty(t.Recibidos);
+    }
+
+    [Theory]
+    [InlineData(Player.StatusCriminal, Player.StatusCiudadano)]
+    [InlineData(Player.StatusCriminal, Player.StatusCriminal)]
+    [InlineData(Player.StatusCaos, Player.StatusCiudadano)]
+    [InlineData(Player.StatusCaos, Player.StatusMilicia)]
+    [InlineData(Player.StatusCaos, Player.StatusCriminal)]
+    public async Task El_renegado_y_el_del_Caos_quedan_como_estan(byte atacante, byte victima)
+    {
+        var (aldo, t) = await Golpear(ini: null, atacante, victima);
+
+        Assert.Equal(atacante, aldo.FactionStatus);
         Assert.DoesNotContain(Aviso, t.Textos());
         Assert.NotEmpty(t.Recibidos);
     }

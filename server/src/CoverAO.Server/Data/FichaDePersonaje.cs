@@ -106,6 +106,8 @@ public sealed record FichaDePersonaje
     public byte Bando { get; init; } = Player.StatusCiudadano;
     public byte Rango { get; init; }
     public int RenegadosMatados { get; init; }
+    /// <summary>En qué nivel pidió el último perdón; 0 = nunca.</summary>
+    public int NivelDelUltimoPerdon { get; init; }
     public int CiudadanosMatados { get; init; }
     public int RepublicanosMatados { get; init; }
     public int ArmadaMatados { get; init; }
@@ -209,6 +211,7 @@ public sealed record FichaDePersonaje
             Bando = p.FactionStatusPersistido,
             Rango = p.FactionRank,
             RenegadosMatados = p.RenegadosMatados,
+            NivelDelUltimoPerdon = p.NivelDelUltimoPerdon,
             CiudadanosMatados = p.CiudadanosMatados,
             RepublicanosMatados = p.RepublicanosMatados,
             ArmadaMatados = p.ArmadaMatados,
@@ -247,6 +250,7 @@ public sealed record FichaDePersonaje
             or Player.StatusCaos or Player.StatusArmada or Player.StatusMilicia ? Bando : Player.StatusCiudadano;
         p.FactionRank = Math.Min((byte)10, Rango);
         p.RenegadosMatados = Math.Max(0, RenegadosMatados);
+        p.NivelDelUltimoPerdon = Math.Max(0, NivelDelUltimoPerdon);
         p.CiudadanosMatados = Math.Max(0, CiudadanosMatados);
         p.RepublicanosMatados = Math.Max(0, RepublicanosMatados);
         p.ArmadaMatados = Math.Max(0, ArmadaMatados);

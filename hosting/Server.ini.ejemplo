@@ -146,9 +146,14 @@ DropGlobal=10000
 ; Metamorfosis del druida: -1 = permanente (como el AO clasico), 0 = apagada, o los segundos que dura.
 MetamorfosisDelDruida=-1
 
-; Atacar a un ciudadano o a un soldado (sin guerra de clanes ni faccion enemiga)
-; te vuelve criminal y te echa del ejercito. 0 = atacar no cambia el estado.
+; 1 = se puede atacar a los de tu mismo bando (imperial a imperial, republicano a
+; republicano) y el que pega se vuelve criminal y lo echan del ejercito. Contra el
+; otro bando se pelea sin castigo. 0 = a los de tu bando no se los puede atacar.
 AtacarAliadoVuelveCriminal=1
+
+; El renegado pide el perdon con el sacerdote de una ciudad imperial o republicana
+; (/PERDON) o con el Convertidor de Rinkel. 1 = uno solo por nivel, 0 = sin limite.
+UnPerdonPorNivel=1
 
 ; --- Guardias de las ciudades ------------------------------------------------
 ; En el original NO atacan (su IA esta apagada): 0 = como el original.

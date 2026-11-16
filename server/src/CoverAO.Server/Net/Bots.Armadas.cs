@@ -10,12 +10,12 @@ namespace CoverAO.Server.Net;
 /// (<c>PacketDispatcher.Enlistar</c>): Armada Real y Milicia Republicana, nivel 25 y 15 bajas enemigas; Legión del Caos, nivel 40, 30
 /// bajas y ser renegado.
 ///
-/// <para><b>A quién le pega</b> (<see cref="EsBlanco"/>): sólo a quien el servidor deja pelear (<see cref="Player.BandosQueNoSePelean"/>),
-/// en un mapa inseguro, y que no lo vuelve criminal (<see cref="Player.AtacarloEsAtacarAUnAliado"/>): un ciudadano o un republicano
-/// le pega a los renegados y a los del Caos; un soldado, además, al ejército enemigo. A un GM (estado 7 a 9) no.</para>
+/// <para><b>A quién le pega</b> (<see cref="EsBlanco"/>): en un mapa inseguro, a cualquiera que no sea de su bando
+/// (<see cref="Player.AtacarloEsAtacarAUnAliado"/>): el imperial al republicano y al revés, civiles o soldados, y todos a los
+/// renegados y a los del Caos. A un GM (estado 7 a 9) no.</para>
 ///
 /// <para><b>El agresivo</b> (<see cref="EsAgresivo"/>): uno de cada nueve bots, todos cazadores, es el único que va al Caos (decisión
-/// del autor). No se enlista en la Armada ni en la Milicia, y le pega también a los civiles del otro bando: con la regla de la casa
+/// del autor). No se enlista en la Armada ni en la Milicia, y le pega también a los de su propio bando: con la regla de la casa
 /// <c>AtacarAliadoVuelveCriminal</c> prendida, el primer golpe lo vuelve renegado, y de ahí en más pelea con cualquiera. Con la
 /// regla apagada no hay cómo volverse renegado peleando, y el agresivo no llega al Caos.</para>
 ///
@@ -88,12 +88,12 @@ public sealed partial class Bot
     public static bool EsBlanco(byte yo, byte el, bool agresivo, bool atacarAliadoVuelveCriminal)
     {
         if (yo is < Player.StatusCriminal or > Player.StatusMilicia || el is < Player.StatusCriminal or > Player.StatusMilicia) return false;
-        if (Player.BandosQueNoSePelean(yo, el)) return false;
         // Los de la Legión no se pelean entre ellos.
         if (yo == Player.StatusCaos && el == Player.StatusCaos) return false;
-        if (!atacarAliadoVuelveCriminal || !Player.AtacarloEsAtacarAUnAliado(yo, el)) return true;
-        // Lo vuelve criminal: sólo el agresivo que todavía es civil, que va al Caos.
-        return agresivo && yo is Player.StatusCiudadano or Player.StatusRepublicano;
+        if (!Player.AtacarloEsAtacarAUnAliado(yo, el)) return true;
+        // Uno de su bando: con la regla apagada el servidor no lo deja; prendida lo vuelve criminal, y eso sólo lo busca el
+        // agresivo que todavía es civil, que va al Caos.
+        return atacarAliadoVuelveCriminal && agresivo && yo is Player.StatusCiudadano or Player.StatusRepublicano;
     }
 
     /// <summary>Las bajas que le cuentan a su bando, como <c>Player.KillsEnemigosArmada</c>, <c>KillsEnemigosMilicia</c> y

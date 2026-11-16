@@ -151,4 +151,9 @@ public enum ClientPacketId : byte
 
     /// <summary>Retirar una subasta propia sin ofertas: Long(id de la subasta).</summary>
     SubastaCancelar = 120,
+
+    /// <summary>EL /PERDÓN (pedido del autor, 2026-11-16). Sin datos: el renegado, con el sacerdote de una ciudad imperial o
+    /// republicana clickeado, pide volver a ese bando. El cliente del original tiene el comando (clsClientTCP, <c>/PERDON</c>)
+    /// pero sólo abre un MsgBox, y el IAO-Clon lo nombra en el texto del Convertidor sin implementarlo.</summary>
+    Perdon = 121,
 }

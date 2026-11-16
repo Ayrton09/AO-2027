@@ -1305,7 +1305,7 @@
       BorrarPersonaje: 114,   // NO existe en el original: el 114 es nuestro (ver ClientPacketId.cs)
       ElegirFamiliar: 115,    // tampoco existe en el original: el subsistema de familiares es un agregado
       // El Centro de Subastas: agregado nuestro (pedido del tester, 06/10). Ver ClientPacketId.cs.
-      SubastasPedir: 116, SubastaPublicar: 117, SubastaOfertar: 118, SubastaComprar: 119, SubastaCancelar: 120,
+      SubastasPedir: 116, SubastaPublicar: 117, SubastaOfertar: 118, SubastaComprar: 119, SubastaCancelar: 120, Perdon: 121,
       // El servidor lo atiende entero (difunde la particula al area del objetivo) y el cliente no tenia
       // como pedirlo. Va como /particula, fuera de la tabla de GM porque es paquete propio, no subcomando.
       ParticulaUsuario: 100 };
@@ -7554,7 +7554,7 @@
           return;
         }
         if (cmd === '/ayuda') {
-          log('comandos: /online /salir /meditar /descansar /resucitar /est /enlistar /informacion /recompensa /uptime /hogar /salirclan /onlineclan /boveda /comerciar /skin /ping /flist /eventos /cmsg <msg> /gmsg <msg> /desc <txt> /voto <nombre> /denunciar <msg> /apostar <n> /susurrar <nombre> <msg> /ignorar <nombre> /desconectar <nombre> /depositar <n> /retirar <n> /fadd <nombre> /fdel <nombre> /fmsg <msg> /proponer <nombre>', '#8a9');
+          log('comandos: /online /salir /meditar /descansar /resucitar /est /enlistar /informacion /recompensa /uptime /hogar /perdón /salirclan /onlineclan /boveda /comerciar /skin /ping /flist /eventos /cmsg <msg> /gmsg <msg> /desc <txt> /voto <nombre> /denunciar <msg> /apostar <n> /susurrar <nombre> <msg> /ignorar <nombre> /desconectar <nombre> /depositar <n> /retirar <n> /fadd <nombre> /fdel <nombre> /fmsg <msg> /proponer <nombre>', '#8a9');
           // OJO: este texto decía "c descansar" y es falso — `c` abre el panel de CLAN, y descansar no tiene
           // tecla (va por /descansar o por el panel de acciones). Una ayuda que miente es peor que no tenerla.
           // EL TECLADO ES EL DEL ORIGINAL (Cliente/Init/Controls.bin). Lo nuestro que chocaba se mudó:
@@ -7589,6 +7589,9 @@
           send(W().writeByte(CLIENT.CentinelReport).writeInteger(n)); return;
         }
         // /GM pide ayuda: el original abre el formulario de soporte; acá el mensaje va en el mismo comando.
+        // /PERDÓN: el renegado, con el sacerdote de una ciudad imperial o republicana clickeado, vuelve a ese bando. El
+        // server decide todo (el sacerdote, la ciudad, el oro y el límite por nivel).
+        if (cmd === '/perdon' || cmd === '/perdón') { send(W().writeByte(CLIENT.Perdon)); return; }
         if (cmd === '/gm') { send(W().writeByte(CLIENT.GMRequest).writeByte(0).writeAsciiString(arg || 'Solicito ayuda de un GM.')); return; }
         if (CHAT_NOARG[cmd] !== undefined) w.writeByte(CHAT_NOARG[cmd]);
         else if (CHAT_ARGSTR[cmd] !== undefined) { if (!arg) { log('uso: ' + cmd + ' <texto>', '#b94'); return; } w.writeByte(CHAT_ARGSTR[cmd]).writeAsciiString(arg); }

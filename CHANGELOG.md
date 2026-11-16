@@ -2,6 +2,11 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.23
+
+- A los de tu mismo bando se los puede atacar, y el que ataca se vuelve renegado: un imperial que le pega a otro imperial, o un republicano a otro republicano. Pelear contra el otro bando ya no te cambia la facción.
+- El renegado que quiere volver pide el perdón con el sacerdote: clic sobre el de una ciudad imperial y /perdón para ser ciudadano imperial, o sobre el de una republicana para ser republicano. El primer perdón es gratis y los siguientes cuestan 100.001 de oro, también en Rinkel. Esa ciudad pasa a ser tu hogar, y se puede uno solo por nivel.
+
 ## 1.0.22 (2026-11-15)
 
 - Nuevo estilo para toda la interfaz, la moderna y la clásica: hierro oscuro con un solo color de acento, letras nuevas y sin brillos ni degradés. El ingreso, el comercio, el banco y las opciones lo toman también.

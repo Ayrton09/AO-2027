@@ -210,7 +210,7 @@ public sealed class ServerIni
 
     public static readonly string[] ClavesConocidas =
     {
-        "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "Nombre", "EconomiaUmbralOro",
+        "AlcanceDelHechizo", "AllowMultiLogins", "AtacarAliadoVuelveCriminal", "UnPerdonPorNivel", "BackupsAConservar", "Bots", "Centinela", "ClaveMinima", "CodigoFuente", "Nombre", "EconomiaUmbralOro",
         "ComercioEnCiudadesViejas", "ComercioEnElResto", "ComercioEnLindos", "ComercioEnRinkel",
         "CuraAlSubirNivel", "DropGlobal", "EventoAlRematar", "Exp", "FamiliarBusca", "OroPorMonton",
         "GolpeParalizanteDado", "GolpeParalizanteDadoGladiadorBardo",
@@ -839,15 +839,23 @@ public sealed class ServerIni
     public bool GuardiasAtacan { get; private set; } = true;
 
     /// <summary>
-    /// REGLA DE LA CASA — <c>AtacarAliadoVuelveCriminal</c> (default <b>1</b>, PRENDIDA). Atacar a un ciudadano o a
-    /// un soldado sin guerra de clanes ni facción enemiga de por medio te vuelve criminal y te echa del ejército,
-    /// con el aviso "Has atacado a un aliado. Ahora eres CRIMINAL.".
+    /// REGLA DE LA CASA — <c>AtacarAliadoVuelveCriminal</c> (default <b>1</b>, PRENDIDA). Se puede atacar a uno de tu
+    /// mismo bando (imperial a imperial, republicano a republicano), y el que pega se vuelve criminal y lo echan del
+    /// ejército, con el aviso "Has atacado a un aliado. Ahora eres CRIMINAL.". Contra el otro bando se pelea sin castigo.
     ///
-    /// <para>En el fuente del original no está: <c>UsuarioAtacadoPorUsuario</c> (SistemaCombate.bas:1442) no toca
-    /// el estado de nadie, y renegado sólo se vuelve el que deja una facción. <b>Sale PRENDIDA por decisión del
-    /// autor</b> (2026-09-25), que la recuerda del juego. Con 0 atacar no cambia el estado.</para>
+    /// <para>En el fuente del original no está: ahí a los de tu bando no se los puede atacar (<c>PuedeAtacar</c>,
+    /// LocaleMsg 97), <c>UsuarioAtacadoPorUsuario</c> (SistemaCombate.bas:1442) no toca el estado de nadie, y renegado
+    /// sólo se vuelve el que deja una facción. <b>Sale PRENDIDA por decisión del autor</b> (2026-09-25, y el 2026-11-16
+    /// que valga sólo dentro del propio bando). Con 0 es el original.</para>
     /// </summary>
     public bool AtacarAliadoVuelveCriminal { get; private set; } = true;
+
+    /// <summary>
+    /// REGLA DE LA CASA — <c>UnPerdonPorNivel</c> (default <b>1</b>, PRENDIDA). El renegado que pide el perdón (el /PERDÓN del
+    /// sacerdote o el Convertidor de Rinkel) no puede pedir otro hasta subir de nivel, con el LocaleMsg 325 del original. Con 0
+    /// no hay límite. Decisión del autor (2026-11-16).
+    /// </summary>
+    public bool UnPerdonPorNivel { get; private set; } = true;
 
     /// <summary><c>GuardiasPersiguen</c> (default <b>1</b>): el guardia que ve a un enemigo sale de su puesto a
     /// buscarlo y no lo suelta mientras siga en su ciudad; cuando se va (o muere, o se hace invisible) vuelve a su
@@ -1398,6 +1406,7 @@ public sealed class ServerIni
         cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
         cfg.GuardiasAtacan = ini.GetInt("INIT", "GuardiasAtacan", 1) != 0;
         cfg.AtacarAliadoVuelveCriminal = ini.GetInt("INIT", "AtacarAliadoVuelveCriminal", 1) != 0;
+        cfg.UnPerdonPorNivel = ini.GetInt("INIT", "UnPerdonPorNivel", 1) != 0;
         cfg.EventoAlRematar = ini.GetInt("INIT", "EventoAlRematar", 0) != 0;
         cfg.OroPorMonton = Math.Clamp(ini.GetInt("INIT", "OroPorMonton", 10_000), 1, short.MaxValue);
         cfg.AlcanceDelHechizo = ini.GetInt("INIT", "AlcanceDelHechizo", 1) != 0;
