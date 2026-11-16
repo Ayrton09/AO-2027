@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.25
+## 1.0.25 (2026-11-16)
 
 - Los bots de nivel 20 en adelante ponen primero sus puntos de habilidad en Navegación y Equitación, también los que usan magia o tienen oficio, así llegan a comprarse la montura.
 - La Montura de Nigromante es sólo para esa clase y ya no la monta el orco: la de razas altas, humanos, elfos y drows; la de bajas, enanos y gnomos.
