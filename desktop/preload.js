@@ -18,6 +18,7 @@ if (location.protocol === 'file:') {
     recienActualizada: () => ipcRenderer.invoke('recien-actualizada'),
     hayActualizacion: () => ipcRenderer.invoke('actualizacion'),
     actualizarAhora: () => ipcRenderer.invoke('actualizar-ahora'),
+    hzDelMonitor: () => ipcRenderer.invoke('hz-del-monitor'),
     alHaberActualizacion: (hacer) => ipcRenderer.on('actualizacion-lista', () => hacer()),
   });
 } else if (/^https?:$/.test(location.protocol)) {

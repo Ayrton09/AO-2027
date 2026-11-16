@@ -206,9 +206,10 @@
           <div class="seccion" data-seccion="video">
             <div class="opcion"><div class="que">Pantalla completa<small>También con F11.</small></div>
               <div class="control"><div class="interruptor" role="switch" tabindex="0" id="o-completa"></div></div></div>
-            <div class="opcion"><div class="que">Tope de FPS<small>Sin límite sigue el refresco de tu monitor, que es lo más parejo.</small></div>
+            <div class="opcion"><div class="que">Tope de FPS<small>Monitor dibuja al refresco de tu pantalla, que es lo más parejo. Sin límite dibuja todo lo que da la PC.</small></div>
               <div class="control">
                 <select data-ajuste="ao_fpscap" id="o-fps">
+                  <option value="-1" id="o-fps-monitor">monitor</option>
                   <option value="0">sin límite</option><option value="30">30 FPS</option><option value="60">60 FPS</option>
                   <option value="120">120 FPS</option><option value="144">144 FPS</option><option value="240">240 FPS</option>
                   <option value="otro">otro…</option>
@@ -326,7 +327,7 @@
     // del juego, que acá viene prendida (el autor, 05/10). Son los mismos que pone main.js.
     const POR_DEFECTO = {
       ao_musicalogin: '1', ao_musica: '1', ao_volmusica: '0.2', ao_mute: '0', ao_volefectos: '0.2',
-      ao_fpscap: '0', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_alcance: '0', ao_macro: '1', ao_interfaz: 'moderna',
+      ao_fpscap: '-1', ao_escalado: '1', ao_zoom: '13', ao_ssmax: '4', ao_nombres: '1', ao_alcance: '0', ao_macro: '1', ao_interfaz: 'moderna',
     };
     let ajustes = {};
     const valor = (k) => ajustes[k] ?? POR_DEFECTO[k];
@@ -378,6 +379,8 @@
         cambiar(el.dataset.ajuste, el.value);
       });
     }
+    // "Monitor" con los Hz de la pantalla donde está la ventana, como en las Opciones del juego.
+    window.escritorio.hzDelMonitor?.().then((hz) => { if (Number(hz) >= 24) $('o-fps-monitor').textContent = `monitor (${hz} Hz)`; }).catch(() => {});
     $('o-fps-otro').addEventListener('change', () => {
       const n = Math.round(Number($('o-fps-otro').value));
       if (n >= 10 && n <= 1000) cambiar('ao_fpscap', String(n));
