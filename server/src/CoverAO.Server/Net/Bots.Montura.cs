@@ -1,0 +1,196 @@
+using CoverAO.Protocol;
+using CoverAO.Server.Data;
+using CoverAO.Server.Game;
+
+namespace CoverAO.Server.Net;
+
+/// <summary>
+/// LA MONTURA (pedido del autor, 2026-11-16). La montura suma golpe y defensa y se anda más rápido, y la vende un solo NPC en todo el
+/// mundo: el Vendedor de Caballos de Tiama, que es otra tierra. Así que el bot que tiene con qué —Equitación para la que le sirve, la
+/// Navegación que piden los pasajes que cruzan el agua (<c>NavegacionParaCruzar</c>) y el oro— va al pirata del puerto más cercano que
+/// vende un pase a Tiama, cruza, la compra y se vuelve con la runa. Los puntos los junta <see cref="PuntosParaViajar"/>.
+///
+/// <para>En una cueva o bajo techo no se monta (el servidor lo baja del animal, VB6 <c>Modulo_UsUaRiOs.bas:718</c>): la montura es para
+/// viajar y cazar afuera, y <see cref="Montarse"/> lo vuelve a subir al salir.</para>
+/// </summary>
+public sealed partial class Bot
+{
+    /// <summary>Desde este nivel piensa en la montura: antes la plata va al equipo y a las pociones.</summary>
+    public const int NivelParaLaMontura = 20;
+
+    /// <summary>Lo que se aparta para el pase, además del precio de la montura: el más caro de los que llegan a Tiama sale 15.000.</summary>
+    public const int PlataDelPase = 15_000;
+
+    /// <summary>Cada cuánto vuelve a pensar en el viaje si no salió, para no intentarlo en cada vuelta.</summary>
+    private const int EsperaDeLaMonturaMs = 10 * 60_000;
+
+    private const int TipoPirata = 7;   // eNPCType.transportadores
+
+    private long _proximaMontura;
+
+    /// <summary>¿Es una montura? (otMonturas, 44.)</summary>
+    private bool EsMontura(short obj) => _entorno.Datos.Obj(obj) is { IsMount: true };
+
+    /// <summary>¿La lleva puesta, o sea va montado? El servidor avisa la ranura al subir y al bajar.</summary>
+    private bool VaMontado(SentidosDelBot sentidos) => sentidos.LlevaPuesto(EsMontura);
+
+    /// <summary>
+    /// ¿QUÉ MONTURA LE SIRVE? De las que vende <paramref name="vendedor"/>, la más cara que puede montar —la Equitación que pide, y el
+    /// nivel, la clase y la raza, como el servidor (<see cref="Equipment.QueLeFaltaParaMontar"/>)— y que puede pagar. Null si ninguna.
+    /// </summary>
+    public static ObjInfo? MonturaQueLeSirve(GameData datos, NpcInfo? vendedor, int nivel, byte clase, byte raza, int equitacion, double plata)
+    {
+        if (vendedor?.StockItems is not { } stock) return null;
+        return stock.Select(s => datos.Obj(s.ObjIndex))
+            .Where(o => o is { IsMount: true } && o.MinSkill <= equitacion && o.Value <= plata
+                        && Equipment.QueLeFaltaParaUsarlo(o, nivel, clase, raza) == 0)
+            .OrderByDescending(o => o!.Value)
+            .FirstOrDefault();
+    }
+
+    /// <summary>El que vende monturas y en qué mapa nace (el primero de la data: hoy es uno solo, el de Tiama).</summary>
+    public static (int Mapa, NpcInfo Ficha)? VendedorDeMonturas(GameData datos)
+    {
+        foreach (var (mapa, spawns) in datos.MapSpawns.OrderBy(kv => kv.Key))
+            foreach (var s in spawns)
+                if (datos.Npc(s.NpcIndex) is { StockItems: { } stock } n
+                    && stock.Any(it => datos.Obj(it.ObjIndex) is { IsMount: true }))
+                    return (mapa, n);
+        return null;
+    }
+
+    /// <summary>¿Es un pase que sale de <paramref name="desde"/> y llega a la tierra de <paramref name="mapaDestino"/>?</summary>
+    public static bool EsPaseA(GameData datos, short obj, int desde, int mapaDestino) =>
+        datos.Obj(obj) is { ObjType: 36 } o && o.PasajeDesdeMap == desde && o.PasajeHastaMap > 0
+        && datos.MismaTierra(o.PasajeHastaMap, mapaDestino);
+
+    /// <summary>¿Es un pirata que vende, para salir del mapa donde nace, un pase a la tierra de <paramref name="mapaDestino"/>?</summary>
+    public static bool EsPirataHacia(GameData datos, int ficha, int mapaDeLaFicha, int mapaDestino) =>
+        datos.Npc(ficha) is { NpcType: TipoPirata, StockItems: { } stock }
+        && stock.Any(it => EsPaseA(datos, (short)it.ObjIndex, mapaDeLaFicha, mapaDestino));
+
+    /// <summary>
+    /// SUBIRSE AL ANIMAL: si tiene una montura que puede usar, no va montado, está vivo y afuera (en una cueva o bajo techo el servidor
+    /// no deja). Devuelve si mandó el pedido.
+    /// </summary>
+    private bool Montarse(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (!sentidos.Vivo || VaMontado(sentidos) || sentidos.Comerciando || sentidos.Meditando
+            || Environment.TickCount64 < _proximoMontar) return false;
+        var (x, y) = sentidos.Posicion;
+        if (_entorno.Datos.NoSeMontaAca(sentidos.Mapa, x, y)) return false;
+        int equitacion = sentidos.Skill(GameLimits.SkillEquitacion);
+        byte ranura = sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { IsMount: true } o && o.MinSkill <= equitacion
+                                             && !_noSeLoPone.Contains(obj));
+        if (ranura == 0) return false;
+        // UN PEDIDO CADA TANTO: si el servidor no lo deja (una baldosa que no se ve como techo, la raza), sin esto lo pediría en cada
+        // vuelta.
+        _proximoMontar = Environment.TickCount64 + EsperaParaMontarMs;
+        return transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)));
+    }
+
+    private const int EsperaParaMontarMs = 20_000;
+    private long _proximoMontar;
+
+    /// <summary>
+    /// IR POR LA MONTURA. Devuelve si se ocupó de esto (aunque no la haya conseguido).
+    /// </summary>
+    private async Task<bool> IrPorLaMonturaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (_acompana is not null || Environment.TickCount64 < _proximaMontura || sentidos.Nivel < NivelParaLaMontura) return false;
+        if (sentidos.CuantoTiene(EsMontura) > 0 || sentidos.Identidad is not { } yo) return false;
+        if (VendedorDeMonturas(_entorno.Datos) is not { } vendedor) return false;
+        bool enSuTierra = _entorno.Datos.MismaTierra(sentidos.Mapa, vendedor.Mapa);
+        double plata = PlataParaGustos(sentidos) - (enSuTierra ? 0 : PlataDelPase);
+        if (MonturaQueLeSirve(_entorno.Datos, vendedor.Ficha, sentidos.Nivel, yo.Clase, yo.Raza,
+                              sentidos.Skill(GameLimits.SkillEquitacion), plata) is not { } montura) return false;
+        int paraCruzar = _entorno.Ini.NavegacionParaCruzar;
+        if (!enSuTierra && sentidos.Skill(GameLimits.SkillNavegacion) < paraCruzar) return false;
+        _proximaMontura = Environment.TickCount64 + EsperaDeLaMonturaMs;
+
+        // LA PLATA, ENCIMA: el mostrador y el pirata cobran de lo que lleva. Si está en la bóveda, se retira donde haya banquero.
+        int hace = montura.Value + (enSuTierra ? 0 : PlataDelPase);
+        if (sentidos.Oro < hace)
+        {
+            if (!TieneBanquero(sentidos.Mapa)) return false;   // ya pasará por un pueblo con banquero
+            await RetirarParaComprarAsync(transporte, sentidos, cerrada, ct);
+            if (sentidos.Oro < hace) return false;
+        }
+        Console.WriteLine($"[bot {Nombre}] va por la montura {montura.Name} ({montura.Value}) desde m{sentidos.Mapa}");
+
+        if (!enSuTierra && !await CruzarConUnPaseAsync(transporte, sentidos, vendedor.Mapa, cerrada, ct)) return true;
+        if (!_entorno.Datos.MismaTierra(sentidos.Mapa, vendedor.Mapa)) return true;
+
+        bool compro = await ComprarleAsync(transporte, sentidos, f => f == vendedor.Ficha.Index, obj => obj == montura.Index,
+                                           cerrada, ct);
+        Console.WriteLine($"[bot {Nombre}] {(compro ? "compró" : "no pudo comprar")} la montura {montura.Name} en m{sentidos.Mapa}");
+        // DE VUELTA, CON LA RUNA: lo deja en su hogar, del lado donde caza.
+        if (compro) Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna);
+        return true;
+    }
+
+    /// <summary>
+    /// CRUZAR EL AGUA CON UN PASE: al pirata más cercano que vende uno a la tierra de <paramref name="mapaDestino"/>, comprárselo,
+    /// clickearlo y usar el pase. Devuelve si cambió de tierra.
+    /// </summary>
+    private async Task<bool> CruzarConUnPaseAsync(TransporteDeBot transporte, SentidosDelBot sentidos, int mapaDestino, Task cerrada,
+                                                  CancellationToken ct)
+    {
+        var datos = _entorno.Datos;
+        int mapaAntes = sentidos.Mapa;
+        // El pirata se reconoce por la ficha; que su pase salga del mapa donde está parado lo dice `mapaSirve`, y lo que se compra se
+        // elige al llegar, con el mapa de ese momento.
+        bool compro = await ComprarleAsync(transporte, sentidos,
+            f => datos.Npc(f) is { NpcType: TipoPirata }, obj => EsPaseA(datos, obj, sentidos.Mapa, mapaDestino), cerrada, ct,
+            mapaSirve: m => datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(s => EsPirataHacia(datos, s.NpcIndex, m, mapaDestino)));
+        if (!compro) return false;
+        if (sentidos.MasCercano(f => datos.Npc(f) is { NpcType: TipoPirata }) is not { } pirata) return false;
+        // EL CLIC MIRA LA BALDOSA DE ABAJO PRIMERO: parado justo debajo del pirata, el bot se clickea a sí mismo (ver
+        // `IrAlSubastadorAsync`).
+        if (sentidos.Posicion == (pirata.Quien.X, (byte)(pirata.Quien.Y + 1))
+            && await UnPasoHaciaAsync(transporte, sentidos, 1, 0, ct) != Paso.Dado) return false;
+        if (!transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(pirata.Quien.X).WriteByte(pirata.Quien.Y)))) return false;
+        await Task.Delay(_rng.Next(500, 1_200), ct);
+        byte pase = sentidos.Ranura(obj => EsPaseA(datos, obj, sentidos.Mapa, mapaDestino));
+        if (pase == 0 || !transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(pase)))) return false;
+        for (int espera = 0; espera < 20 && sentidos.Mapa == mapaAntes; espera++) await Task.Delay(250, ct);
+        bool cruzo = datos.MismaTierra(sentidos.Mapa, mapaDestino);
+        Console.WriteLine($"[bot {Nombre}] {(cruzo ? "cruzó" : "no pudo cruzar")} con el pase de m{mapaAntes} (ahora m{sentidos.Mapa})");
+        return cruzo;
+    }
+
+    /// <summary>
+    /// COMPRARLE A UN NPC UNA COSA: ir hasta él (caminando, con <see cref="IrAbriendoAsync"/>), abrirle la tienda con doble clic,
+    /// comprar una de lo que <paramref name="queCompra"/> acepta y cerrar. Devuelve si la tiene.
+    /// </summary>
+    private async Task<bool> ComprarleAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<int, bool> esElVendedor,
+                                            Func<short, bool> queCompra, Task cerrada, CancellationToken ct, Func<int, bool>? mapaSirve = null)
+    {
+        bool Sirve(short f) => esElVendedor(f);
+        if (sentidos.MasCercano(Sirve) is null)
+        {
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaSirve, Pisable(sentidos)) is not { } lugar)
+                return false;
+            if (!await IrAbriendoAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador, f => esElVendedor(f))
+                && sentidos.Mapa != lugar.Mapa) return false;
+        }
+        if (sentidos.MasCercano(Sirve) is not { } v) return false;
+        if (v.Pasos > RadioDelMostrador
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, v.Quien.X, v.Quien.Y, cerrada, ct, RadioDelMostrador)) return false;
+        if (sentidos.Donde(v.Quien.CharIndex) is not { } mostrador) return false;
+        transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
+        for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
+        if (!sentidos.Comerciando) return false;
+        bool la = false;
+        if (sentidos.EnLaTienda(queCompra) is { } oferta)
+        {
+            int antes = sentidos.CuantoTiene(queCompra);
+            transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
+            for (int espera = 0; espera < 12 && sentidos.CuantoTiene(queCompra) <= antes; espera++) await Task.Delay(250, ct);
+            la = sentidos.CuantoTiene(queCompra) > antes;
+        }
+        transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
+        await Task.Delay(_rng.Next(400, 900), ct);
+        return la;
+    }
+}

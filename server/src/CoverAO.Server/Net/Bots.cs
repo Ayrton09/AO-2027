@@ -1031,6 +1031,8 @@ public sealed partial class Bot
             if (await ReplegarseDelAtaqueAsync(transporte, sentidos, cerrada, ct)) continue;
 
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
+            // A CABALLO, AFUERA: ver `Montarse`.
+            if (Montarse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             if (await CurarVenenoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await SanarseAsync(transporte, sentidos, cerrada, ct)) continue;
             // AL LLEGAR AL ÚLTIMO NIVEL DE NOVATO SE SALE DE COMPRAS YA: ver `EmpiezaAAbastecerse`.
@@ -1062,6 +1064,8 @@ public sealed partial class Bot
                 if (EsFabricanteMetalurgico && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;
             }
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
+            // Y LA MONTURA, EN TIAMA: ver `IrPorLaMonturaAsync`.
+            if (await IrPorLaMonturaAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;
             // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
             if (_acompana is null && await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1449,6 +1453,28 @@ public sealed partial class Bot
         _ => _rng.Next(100) < 15,
     };
 
+    /// <summary>Lo que pide la montura común para subirse: 30 los Bajos y el Huargo, 25 los Altos (obj.dat <c>MinSkill</c>).</summary>
+    public const int EquitacionParaMontar = 30;
+
+    /// <summary>
+    /// CUÁNTOS DE LOS PUNTOS QUE SOBRAN VAN A VIAJAR: primero a Navegación hasta <paramref name="navegacionParaCruzar"/> y después a
+    /// Equitación hasta <see cref="EquitacionParaMontar"/>, contando lo que ya tiene y lo que ya va en el reparto. La skill propia
+    /// no entra acá (ya tiene su parte), y con la regla del cruce apagada (0) no pone en Navegación.
+    /// </summary>
+    public static IEnumerable<(int Skill, int Dar)> PuntosParaViajar(int sobran, int propia, byte[] reparto,
+                                                                    int navegacionParaCruzar, int navegacion, int equitacion)
+    {
+        foreach (var (skill, meta, tiene) in new[] { (GameLimits.SkillNavegacion, navegacionParaCruzar, navegacion),
+                                                     (GameLimits.SkillEquitacion, EquitacionParaMontar, equitacion) })
+        {
+            if (skill == propia || sobran <= 0) continue;
+            int dar = Math.Clamp(meta - tiene - reparto[skill], 0, sobran);
+            if (dar == 0) continue;
+            sobran -= dar;
+            yield return (skill, dar);
+        }
+    }
+
     /// <summary>Reparte los puntos que dio el nivel. Devuelve si mandó algo.
     ///
     /// <para>Se reparten de a uno y en una skill al azar de las que el personaje puede subir. Pedir más de los
@@ -1500,6 +1526,16 @@ public sealed partial class Bot
             byte suyos = (byte)Math.Min(100, Math.Min(libres, Math.Max(1, libres / 2)));
             reparto[propia] = suyos;
             gastados = suyos;
+        }
+        // LO QUE PIDE VIAJAR, ANTES QUE EL AZAR: Navegación hasta lo que piden los pasajes que cruzan el agua (`NavegacionParaCruzar`,
+        // 80 por defecto) y después Equitación hasta lo que pide la montura común. Sin eso no llegaba nunca a Tiama, donde se venden
+        // las monturas, ni a las cuevas de las islas (pedido del autor, 2026-11-16). Sale de la parte al azar, que repartida entre
+        // las veintisiete casi no le servía. Ver `PuntosParaViajar`.
+        foreach (var (skill, dar) in PuntosParaViajar(libres - gastados, propia, reparto,
+                     _entorno.Ini.NavegacionParaCruzar, sentidos.Skill(GameLimits.SkillNavegacion), sentidos.Skill(GameLimits.SkillEquitacion)))
+        {
+            reparto[skill] += (byte)dar;
+            gastados += dar;
         }
         for (int i = gastados; i < libres; i++)
         {
