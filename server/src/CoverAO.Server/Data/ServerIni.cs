@@ -614,7 +614,7 @@ public sealed class ServerIni
     public int MinutosDeFogata { get; private set; }
 
     /// <summary>
-    /// REGLA DE LA CASA — <c>PasesDeRinkel</c> (default 0 = como el install). Hace usables los dos pases que
+    /// REGLA DE LA CASA — <c>PasesDeRinkel</c> (default <b>1</b>, PRENDIDA; 0 = como el install). Hace usables los dos pases que
     /// vende el pirata de Rinkel.
     ///
     /// <para>En la data del install esos dos pases (595 "a Nueva Esperanza" y 1053 "a Tiama") traen
@@ -624,13 +624,15 @@ public sealed class ServerIni
     /// los honra. Es así también en el VB6: es un bug de la data, no del port. Los otros nueve
     /// transportadores sí coinciden con el <c>Desde</c> de sus pases.</para>
     ///
-    /// <para>Va como regla de la casa y apagada por defecto por la misma razón que las otras: prendido es
+    /// <para><b>Viene prendida desde el 2026-11-16, por decisión del autor</b>: con la regla de comercio del Server.ini los
+    /// piratas de las ciudades viejas no le venden a nadie, así que apagada no había cómo comprar un pase a Tiama desde el
+    /// continente, donde están las monturas. Va como regla de la casa por la misma razón que las otras: prendido es
     /// una decisión nuestra, apagado es el install. El proyecto ya deja a propósito otros bugs de la data
     /// sin tocar (las pistas 3-1 de los mapas Arena, el 896.png huérfano), y arreglar éste cableado dejaba
     /// dos bugs iguales con políticas opuestas. Prendida, el server también diverge del oráculo VB6 para
     /// esa acción — que es exactamente lo que una regla de la casa declara.</para>
     /// </summary>
-    public bool PasesDeRinkel { get; private set; }
+    public bool PasesDeRinkel { get; private set; } = true;
 
     /// <summary>
     /// REGLA DE LA CASA — <c>HipocamposEnMarAbierto</c> (default 0 = como el install). Con la RED de pesca en
@@ -1381,7 +1383,7 @@ public sealed class ServerIni
         cfg.MinutosDeFogata = Math.Max(0, ini.GetInt("INIT", "MinutosDeFogata", 0));
         cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
-        cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 0) != 0;
+        cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 1) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
         cfg.NavegacionParaCruzar = Math.Clamp(ini.GetInt("INIT", "NavegacionParaCruzar", 80), 0, SkillProgression.MaxSkillPoints);
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;

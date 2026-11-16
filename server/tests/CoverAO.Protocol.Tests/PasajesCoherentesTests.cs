@@ -14,7 +14,7 @@ namespace CoverAO.Protocol.Tests;
 /// pases (595 y 1053) traen <c>Desde=20</c>, la ciudad. Es el ÚNICO desparejo de los diez transportadores, y
 /// está roto también en el VB6 — es un bug de la data del install.
 ///
-/// Por eso el arreglo es una REGLA DE LA CASA (<c>PasesDeRinkel</c> del Server.ini), apagada por defecto:
+/// Por eso el arreglo es una REGLA DE LA CASA (<c>PasesDeRinkel</c> del Server.ini), prendida por defecto desde el 2026-11-16:
 /// apagada el server se comporta como el install y como el oráculo; prendida, los dos pases sirven. Este
 /// archivo fija los DOS estados y el invariante general que habría cantado el desparejo solo.
 /// </summary>
