@@ -159,12 +159,30 @@ public sealed partial class Bot
         if (!transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(pirata.Quien.X).WriteByte(pirata.Quien.Y)))) return false;
         await Task.Delay(_rng.Next(500, 1_200), ct);
         byte pase = sentidos.Ranura(obj => EsPaseA(datos, obj, sentidos.Mapa, mapaDestino));
+        mapaAntes = sentidos.Mapa;   // el del pirata: el viaje hasta él ya cambió de mapa
         if (pase == 0 || !transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(pase))))
         { Console.WriteLine($"[bot {Nombre}] no pudo usar el pase en m{sentidos.Mapa} (ranura {pase})"); return false; }
         for (int espera = 0; espera < 20 && sentidos.Mapa == mapaAntes; espera++) await Task.Delay(250, ct);
         bool cruzo = datos.MismaTierra(sentidos.Mapa, mapaDestino);
         Console.WriteLine($"[bot {Nombre}] {(cruzo ? "cruzó" : "no pudo cruzar")} con el pase de m{mapaAntes} (ahora m{sentidos.Mapa})");
         return cruzo;
+    }
+
+    /// <summary>Dónde nace un vendedor así, en un mapa donde le venden: el de este mapa si hay, y si no el del mapa más cercano por
+    /// donde se pasa. Sirve para el que está detrás de una puerta, al que la búsqueda caminando no encuentra.</summary>
+    private (int Mapa, byte X, byte Y)? DondeNaceElVendedor(SentidosDelBot sentidos, Func<int, bool> esElVendedor, Func<int, bool> mapaQueVende)
+    {
+        (int Mapa, byte X, byte Y)? mejor = null;
+        int saltos = int.MaxValue;
+        foreach (var (mapa, spawns) in _entorno.Datos.MapSpawns)
+        {
+            if (!mapaQueVende(mapa) || spawns.FirstOrDefault(s => esElVendedor(s.NpcIndex)) is not { NpcIndex: > 0 } s) continue;
+            int cuantos = mapa == sentidos.Mapa ? 0
+                : _entorno.Mapas.PuertaHacia(sentidos.Mapa, mapa, sentidos.Posicion, pisable: Pisable(sentidos),
+                                             topeDeSaltos: SaltosHastaElVendedor) is { } p ? p.Saltos : int.MaxValue;
+            if (cuantos < saltos) { saltos = cuantos; mejor = (mapa, (byte)s.X, (byte)s.Y); }
+        }
+        return mejor;
     }
 
     /// <summary>
@@ -183,9 +201,21 @@ public sealed partial class Bot
         bool Corta(string porque) { Console.WriteLine($"[bot {Nombre}] no le compra en m{sentidos.Mapa} {sentidos.Posicion}: {porque}"); return false; }
         if (sentidos.MasCercano(Sirve) is null || !mapaQueVende(sentidos.Mapa))
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaQueVende, Pisable(sentidos),
-                                        SaltosHastaElVendedor) is not { } lugar)
-                return Corta("no hay vendedor a mano");
+            var lugarCaminando = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaQueVende,
+                                                         Pisable(sentidos), SaltosHastaElVendedor);
+            // DETRÁS DE UNA PUERTA: el Vendedor de Caballos de Tiama está adentro de un edificio cerrado, y la búsqueda sólo encuentra
+            // a quien se llega caminando (ronda 109: Elmo parado en el 218 y "no hay vendedor a mano"). Se va a su mapa y se abre la
+            // puerta, como en las compras de siempre (`AbrirUnaPuertaAsync`).
+            if (lugarCaminando is null && DondeNaceElVendedor(sentidos, esElVendedor, mapaQueVende) is { } nace)
+            {
+                if (sentidos.Mapa != nace.Mapa)
+                    await IrHastaAsync(transporte, sentidos, nace.Mapa, nace.X, nace.Y, cerrada, ct, RadioDelMostrador,
+                                       topeDeMapas: SaltosHastaElVendedor);
+                if (sentidos.Mapa == nace.Mapa && await AbrirUnaPuertaAsync(transporte, sentidos, f => esElVendedor(f), cerrada, ct))
+                    lugarCaminando = _entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaQueVende,
+                                                             Pisable(sentidos), SaltosHastaElVendedor);
+            }
+            if (lugarCaminando is not { } lugar) return Corta("no hay vendedor a mano");
             if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador,
                                     topeDeMapas: Math.Max(Navegante.TopeDeMapas, lugar.Saltos))
                 && !(sentidos.Mapa == lugar.Mapa && await AbrirUnaPuertaAsync(transporte, sentidos, f => esElVendedor(f), cerrada, ct)
