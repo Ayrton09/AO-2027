@@ -1476,6 +1476,13 @@ public sealed partial class Bot
         }
     }
 
+    /// <summary>
+    /// ¿LOS PUNTOS VAN PRIMERO A VIAJAR? Desde <see cref="NivelParaLaMontura"/> sí, también en el que castea o tiene oficio. Con la
+    /// mitad para lo propio, ése juntaba Navegación 80 y Equitación 30 recién a nivel 36, y el que ya pasaba el 20 con los puntos
+    /// gastados al azar, nunca antes del tope de 50 (medido sobre los 18 bots de campo, 16/11). Decisión del autor, 2026-11-16.
+    /// </summary>
+    public static bool ViajaPrimero(int nivel) => nivel >= NivelParaLaMontura;
+
     /// <summary>Reparte los puntos que dio el nivel. Devuelve si mandó algo.
     ///
     /// <para>Se reparten de a uno y en una skill al azar de las que el personaje puede subir. Pedir más de los
@@ -1522,22 +1529,30 @@ public sealed partial class Bot
             propia = (byte)GameLimits.SkillMagia;
         // HASTA 100 POR SKILL, como el cliente: un skill no pasa de 100, y el server cuenta como trampa el pedido de más
         // (PacketDispatcher.HandleModifySkills). Con más de 200 puntos libres, la mitad para la suya pasaba de 100.
-        if (propia > 0 && libres > 0)
-        {
-            byte suyos = (byte)Math.Min(100, Math.Min(libres, Math.Max(1, libres / 2)));
-            reparto[propia] = suyos;
-            gastados = suyos;
-        }
         // LO QUE PIDE VIAJAR, ANTES QUE EL AZAR: Navegación hasta lo que piden los pasajes que cruzan el agua (`NavegacionParaCruzar`,
         // 80 por defecto) y después Equitación hasta lo que pide la montura común. Sin eso no llegaba nunca a Tiama, donde se venden
-        // las monturas, ni a las cuevas de las islas (pedido del autor, 2026-11-16). Sale de la parte al azar, que repartida entre
-        // las veintisiete casi no le servía. Ver `PuntosParaViajar`.
-        foreach (var (skill, dar) in PuntosParaViajar(libres - gastados, propia, reparto,
-                     _entorno.Ini.NavegacionParaCruzar, sentidos.Skill(GameLimits.SkillNavegacion), sentidos.Skill(GameLimits.SkillEquitacion)))
+        // las monturas (pedido del autor, 2026-11-16). Sale de la parte al azar, que repartida entre las veintisiete casi no le
+        // servía. Ver `PuntosParaViajar`.
+        void ParaViajar()
         {
-            reparto[skill] += (byte)dar;
-            gastados += dar;
+            foreach (var (skill, dar) in PuntosParaViajar(libres - gastados, propia, reparto,
+                         _entorno.Ini.NavegacionParaCruzar, sentidos.Skill(GameLimits.SkillNavegacion), sentidos.Skill(GameLimits.SkillEquitacion)))
+            {
+                reparto[skill] += (byte)dar;
+                gastados += dar;
+            }
         }
+        // Y DESDE EL NIVEL DE LA MONTURA, VIAJAR VA ANTES QUE LO PROPIO: ver `ViajaPrimero`.
+        bool viajaPrimero = ViajaPrimero(sentidos.Nivel);
+        if (viajaPrimero) ParaViajar();
+        int quedan = libres - gastados;
+        if (propia > 0 && quedan > 0)
+        {
+            byte suyos = (byte)Math.Min(100, Math.Min(quedan, Math.Max(1, quedan / 2)));
+            reparto[propia] += suyos;
+            gastados += suyos;
+        }
+        if (!viajaPrimero) ParaViajar();
         for (int i = gastados; i < libres; i++)
         {
             int skill = _rng.Next(1, GameLimits.NumSkills + 1);

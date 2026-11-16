@@ -6,7 +6,7 @@ namespace CoverAO.Protocol.Tests;
 
 /// <summary>
 /// LOS BOTS SE PREPARAN PARA VIAJAR (pedido del autor, 2026-11-16): los puntos que no van a su skill propia van primero a Navegación,
-/// hasta lo que piden los pasajes que cruzan el agua, y después a Equitación, hasta lo que pide la montura común.
+/// hasta lo que piden los pasajes que cruzan el agua, y después a Equitación, hasta lo que pide la montura común. Desde el nivel 20 van ahí antes que a la propia.
 /// </summary>
 public class LosBotsViajanTests
 {
@@ -44,6 +44,14 @@ public class LosBotsViajanTests
         Assert.Equal(new[] { (Nav, 1), (Equ, 4) }, Puntos(5, reparto: reparto));
         Assert.Equal(new[] { (Equ, 5) }, Puntos(5, propia: Nav));
         Assert.Empty(Puntos(0));
+    }
+
+    [Fact]
+    public void Desde_el_nivel_de_la_montura_viajar_va_antes_que_lo_propio()
+    {
+        Assert.False(Bot.ViajaPrimero(Bot.NivelParaLaMontura - 1));
+        Assert.True(Bot.ViajaPrimero(Bot.NivelParaLaMontura));
+        Assert.True(Bot.ViajaPrimero(50));
     }
 }
 

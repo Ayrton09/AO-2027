@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.25
+
+- Los bots de nivel 20 en adelante ponen primero sus puntos de habilidad en Navegación y Equitación, también los que usan magia o tienen oficio, así llegan a comprarse la montura.
+
 ## 1.0.24 (2026-11-16)
 
 - Los bots ya no eligen para entrenar una cueva que todavía no los deja entrar por su nivel.
