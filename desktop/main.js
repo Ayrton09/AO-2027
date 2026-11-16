@@ -3,7 +3,7 @@
 // pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
 // 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
 // con la música del inicio sonando hasta que se entra a un server.
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -680,6 +680,15 @@ ipcMain.on('ajustes-del-juego', (_e, ajustes) => {
   if (Object.entries(nuevos).every(([k, v]) => config.ajustes[k] === v)) return;
   config.ajustes = { ...config.ajustes, ...nuevos };
   guardarConfig(config);
+});
+
+// EL REFRESCO DEL MONITOR donde está la ventana, para el tope de FPS "monitor" del juego: con el VSync apagado `requestAnimationFrame`
+// no lo sigue, así que el juego no tiene cómo medirlo (el autor, 16/11: "una opción que se adapte a los cuadros del monitor").
+ipcMain.handle('hz-del-monitor', () => {
+  try {
+    const pantalla = ventana && !ventana.isDestroyed() ? screen.getDisplayMatching(ventana.getBounds()) : screen.getPrimaryDisplay();
+    return Math.round(pantalla.displayFrequency) || 0;
+  } catch { return 0; }
 });
 
 ipcMain.handle('salir', () => app.quit());

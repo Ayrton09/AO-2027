@@ -52,5 +52,6 @@ if (location.protocol === 'file:') {
     salir: () => ipcRenderer.invoke('salir'),
     estaEnPantallaCompleta: () => ipcRenderer.invoke('esta-en-pantalla-completa'),
     pantallaCompleta: (si) => ipcRenderer.invoke('pantalla-completa', !!si),
+    hzDelMonitor: () => ipcRenderer.invoke('hz-del-monitor'),
   });
 }

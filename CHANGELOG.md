@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.26
+
+- Nuevo tope de FPS "monitor", que viene por defecto: el juego dibuja al refresco de tu pantalla. "Sin límite" sigue tirando todo lo que da la PC, hasta 360.
+
 ## 1.0.25 (2026-11-16)
 
 - Los bots de nivel 20 en adelante ponen primero sus puntos de habilidad en Navegación y Equitación, también los que usan magia o tienen oficio, así llegan a comprarse la montura.
