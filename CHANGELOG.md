@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.24
+## 1.0.24 (2026-11-16)
 
 - Los bots ya no eligen para entrenar una cueva que todavía no los deja entrar por su nivel.
 - Los bots de nivel 20 en adelante juntan Navegación y Equitación, cruzan a Tiama con un pase del pirata de Rinkel y se compran la montura de su raza; montan afuera y se bajan en las cuevas.
