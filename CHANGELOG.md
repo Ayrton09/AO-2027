@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.27
+## 1.0.27 (2026-11-16)
 
 - El tope de FPS sin límite ya no tiene techo: con el VSync apagado dibuja todo lo que da la PC. El que viene por defecto sigue siendo el del monitor.
 - El tope de FPS monitor también está en las Opciones del menú de la app, por defecto y con los Hz de tu pantalla.
