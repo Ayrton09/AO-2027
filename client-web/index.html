@@ -906,6 +906,12 @@
     .fill.thirst { background-color:var(--thirst) !important; }
     #xpfill { background-color:var(--t-acento) !important; }
     .p-xp .lvl { border-color:var(--t-acento) !important; color:var(--t-tinta) !important; background-color:var(--t-hueco) !important; }
+    /* El nivel, una chapa cuadrada del acento con el número centrado. Era el medallón redondo del estilo viejo, y en la barra de
+       abajo el renglón de 14px dejaba el número pegado arriba del círculo. */
+    .p-xp .lvl { border-radius:var(--t-radio) !important; box-shadow:none !important; display:inline-flex; align-items:center;
+      justify-content:center; box-sizing:border-box; font-family:var(--t-titulo) !important; font-weight:600; line-height:1 !important; }
+    body.ui-moderna #m-abajo .p-xp .lvl { width:auto; min-width:24px; height:20px; padding:0 4px; font-size:14px;
+      border-width:1px; border-style:solid; }
 
     #modal { background-color:#000000b8 !important; }
     ::-webkit-scrollbar-thumb { background-color:var(--t-linea) !important; }
@@ -2632,13 +2638,16 @@
     // el batido entre las dos cadencias. Eso no se percibe como "menos FPS" sino como TIRONES, y era el
     // default. Reportado jugando en un monitor de alto refresco, 2026-08-01.
     let fpsCap = Math.max(0, Number(leerPref('ao_fpscap') ?? 0));
+    // "SIN LÍMITE" TIENE TECHO (el autor, 16/11): 360, el refresco del monitor más rápido que vale la pena. Con el VSync apagado del
+    // juego de escritorio, sin esto se dibujaba todo lo que daba la PC (medido: 4327 cuadros por segundo) para nada.
+    const TOPE_SIN_LIMITE = 360;
     let lastDrawT = 0;
     const tope = { proximo: 0 };
     window.__setFpsCap = (n) => {                       // lo usa el selector de Opciones
       fpsCap = Math.max(0, Number(n) || 0);
       tope.proximo = 0;
       guardarPref('ao_fpscap', String(fpsCap));
-      log('Límite de FPS: ' + (fpsCap ? fpsCap : 'sin límite (vsync)'), '#c9a24b');
+      log('Límite de FPS: ' + (fpsCap ? fpsCap : 'sin límite (hasta ' + TOPE_SIN_LIMITE + ')'), '#c9a24b');
     };
     // EL TOPE CUENTA DESDE EL CUADRO QUE TOCABA, no desde el último que se dibujó. Con "pasaron 1000/N ms desde
     // el último" el tope sólo deja pasar múltiplos enteros del vsync: en un monitor de 360 Hz (un cuadro cada
@@ -2657,7 +2666,7 @@
     function frame(ts) {
       requestAnimationFrame(frame);
       if (paused || !renderReady) return;
-      if (!tocaDibujar(ts, fpsCap, tope)) return;
+      if (!tocaDibujar(ts, fpsCap || TOPE_SIN_LIMITE, tope)) return;
       if (lastDrawT) { const dt = ts - lastDrawT; if (dt > 0) fpsAvg = fpsAvg ? fpsAvg * 0.9 + (1000 / dt) * 0.1 : 1000 / dt; }
       lastDrawT = ts;
       draw();
@@ -4309,6 +4318,9 @@
               .then((si) => { op.setAttribute('aria-checked', String(si)); }).catch(() => {});
             return;
           }
+          // EL VSYNC, SÓLO EN EL JUEGO DE ESCRITORIO: lo decide Chromium al arrancar (main.js, `disable-gpu-vsync`), así que se guarda
+          // acá y se aplica la próxima vez que se abra. En una página no se puede apagar.
+          case 'vsync':    vsyncOn = !vsyncOn; guardarPref('ao_vsync', vsyncOn ? '1' : '0'); abrirOpciones(); return;
           case 'volvermenu': if (window.coveraoEscritorio) window.coveraoEscritorio.volverAlMenu(); return;
           case 'salirjuego': if (window.coveraoEscritorio) window.coveraoEscritorio.salir(); return;
         }
@@ -4614,6 +4626,8 @@
     // prende o se apaga, y la ayuda en letra chica debajo de cada una. Son las MISMAS opciones de antes, con los mismos `data-op`, y
     // las teclas viven en la pestaña Controles. La pestaña elegida sobrevive al redibujo de cada toque.
     let pestanaOpciones = 'audio';
+    // El VSync del juego de escritorio: apagado salvo que se lo haya prendido (ver el caso 'vsync').
+    let vsyncOn = (() => { try { return localStorage.getItem('ao_vsync') === '1'; } catch (e) { return false; } })();
     function abrirOpciones() {
       const sel = (v, cur, txt) => `<option value="${v}"${v === cur ? ' selected' : ''}>${txt}</option>`;
       const fila = (que, ayuda, control) => `<div class="opc-fila"><div class="opc-que">${que}${ayuda ? `<small>${ayuda}</small>` : ''}</div>
@@ -4635,8 +4649,11 @@
           + fila('Volumen de los efectos', '', `<input type="range" min="0" max="100" step="5" value="${Math.round(volEfectos * 100)}" data-op="volefectos">
               <span class="opc-valor" data-op-val="volefectos">${Math.round(volEfectos * 100)}%</span>`))}
         ${seccion('video',
-          (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false)) : '')
-          + fila('Tope de FPS', 'Sin límite sigue el refresco de tu monitor, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
+          (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false))
+            + fila('VSync', 'Apagado (como viene), el juego dibuja todos los cuadros que da la PC; prendido, los ata al refresco del monitor. Se aplica la próxima vez que abras el juego.', llave('vsync', vsyncOn)) : '')
+          + fila('Tope de FPS', window.coveraoEscritorio && !vsyncOn
+              ? 'Sin límite, con el VSync apagado, dibuja hasta 360 cuadros por segundo. Un tope más bajo baja el consumo.'
+              : 'Sin límite sigue el refresco de tu monitor, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
               `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'sin límite')).join('')}
                 ${FPS_OPCIONES.includes(fpsCap) ? '<option value="custom">otro…</option>'
                                                 : `<option value="custom" selected>otro (${fpsCap})</option>`}</select>
@@ -7807,6 +7824,16 @@
       if (modalEl.classList.contains('on')) { if (ev.key === 'Escape') closeModal(); return; }   // modal abierto: teclas de juego OFF (los clics ya los tapa el overlay)
       if (ev.key === 'Escape' && workSkill) {
         salirDePunteria(); ev.preventDefault(); return;
+      }
+      // ESCAPE, COMO EN CUALQUIER JUEGO (pedido del autor, 2026-11-16): cierra la ventana de la interfaz moderna si está abierta y,
+      // si no, abre las Opciones, que es donde están "Volver al menú" y "Salir del juego". Con las Opciones abiertas la cierra el
+      // renglón del modal de arriba.
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        const v = $('m-ventana');
+        if (v && v.classList.contains('abierta')) abrirVentana(document.querySelector('.p-tabs .tab.on')?.dataset.tab);
+        else abrirOpciones();
+        return;
       }
       if (ev.key === 'Enter') { abrirChat(true); ev.preventDefault(); return; }   // Enter abre la línea de chat
       const acc = accionDe(ev.key);                                  // qué ACCIÓN tiene atada esta tecla
