@@ -26,7 +26,12 @@ public sealed partial class Bot
 
     private const int TipoPirata = 7;   // eNPCType.transportadores
 
+    /// <summary>Hasta cuántos mapas se busca al vendedor. En la ronda 106 Fabia, en el 18, no encontraba ningún pirata a los cinco
+    /// del viaje común y no salía nunca.</summary>
+    private const int SaltosHastaElVendedor = 12;
+
     private long _proximaMontura;
+    private (int Mapa, NpcInfo Ficha)? _vendedorDeMonturas;   // se busca una vez: recorre todos los mapas
 
     /// <summary>¿Es una montura? (otMonturas, 44.)</summary>
     private bool EsMontura(short obj) => _entorno.Datos.Obj(obj) is { IsMount: true };
@@ -99,7 +104,8 @@ public sealed partial class Bot
     {
         if (_acompana is not null || Environment.TickCount64 < _proximaMontura || sentidos.Nivel < NivelParaLaMontura) return false;
         if (sentidos.CuantoTiene(EsMontura) > 0 || sentidos.Identidad is not { } yo) return false;
-        if (VendedorDeMonturas(_entorno.Datos) is not { } vendedor) return false;
+        _vendedorDeMonturas ??= VendedorDeMonturas(_entorno.Datos) ?? (0, null!);
+        if (_vendedorDeMonturas is not { Mapa: > 0 } vendedor) return false;
         bool enSuTierra = _entorno.Datos.MismaTierra(sentidos.Mapa, vendedor.Mapa);
         double plata = PlataParaGustos(sentidos) - (enSuTierra ? 0 : PlataDelPase);
         if (MonturaQueLeSirve(_entorno.Datos, vendedor.Ficha, sentidos.Nivel, yo.Clase, yo.Raza,
@@ -112,7 +118,7 @@ public sealed partial class Bot
         int hace = montura.Value + (enSuTierra ? 0 : PlataDelPase);
         if (sentidos.Oro < hace)
         {
-            if (!TieneBanquero(sentidos.Mapa)) return false;   // ya pasará por un pueblo con banquero
+            if (!TieneBanquero(sentidos.Mapa)) { _proximaMontura = 0; return false; }   // ya pasará por un pueblo con banquero
             await RetirarParaComprarAsync(transporte, sentidos, cerrada, ct);
             if (sentidos.Oro < hace) return false;
         }
@@ -144,7 +150,8 @@ public sealed partial class Bot
             f => datos.Npc(f) is { NpcType: TipoPirata }, obj => EsPaseA(datos, obj, sentidos.Mapa, mapaDestino), cerrada, ct,
             mapaSirve: m => datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(s => EsPirataHacia(datos, s.NpcIndex, m, mapaDestino)));
         if (!compro) return false;
-        if (sentidos.MasCercano(f => datos.Npc(f) is { NpcType: TipoPirata }) is not { } pirata) return false;
+        if (sentidos.MasCercano(f => datos.Npc(f) is { NpcType: TipoPirata }) is not { } pirata)
+        { Console.WriteLine($"[bot {Nombre}] compró el pase y no ve al pirata en m{sentidos.Mapa}"); return false; }
         // EL CLIC MIRA LA BALDOSA DE ABAJO PRIMERO: parado justo debajo del pirata, el bot se clickea a sí mismo (ver
         // `IrAlSubastadorAsync`).
         if (sentidos.Posicion == (pirata.Quien.X, (byte)(pirata.Quien.Y + 1))
@@ -152,7 +159,8 @@ public sealed partial class Bot
         if (!transporte.Mandar(Paquete(ClientPacketId.LeftClick, w => w.WriteByte(pirata.Quien.X).WriteByte(pirata.Quien.Y)))) return false;
         await Task.Delay(_rng.Next(500, 1_200), ct);
         byte pase = sentidos.Ranura(obj => EsPaseA(datos, obj, sentidos.Mapa, mapaDestino));
-        if (pase == 0 || !transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(pase)))) return false;
+        if (pase == 0 || !transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(pase))))
+        { Console.WriteLine($"[bot {Nombre}] no pudo usar el pase en m{sentidos.Mapa} (ranura {pase})"); return false; }
         for (int espera = 0; espera < 20 && sentidos.Mapa == mapaAntes; espera++) await Task.Delay(250, ct);
         bool cruzo = datos.MismaTierra(sentidos.Mapa, mapaDestino);
         Console.WriteLine($"[bot {Nombre}] {(cruzo ? "cruzó" : "no pudo cruzar")} con el pase de m{mapaAntes} (ahora m{sentidos.Mapa})");
@@ -167,27 +175,35 @@ public sealed partial class Bot
                                             Func<short, bool> queCompra, Task cerrada, CancellationToken ct, Func<int, bool>? mapaSirve = null)
     {
         bool Sirve(short f) => esElVendedor(f);
+        bool Corta(string porque) { Console.WriteLine($"[bot {Nombre}] no le compra en m{sentidos.Mapa} {sentidos.Posicion}: {porque}"); return false; }
         if (sentidos.MasCercano(Sirve) is null)
         {
-            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaSirve, Pisable(sentidos)) is not { } lugar)
-                return false;
-            if (!await IrAbriendoAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador, f => esElVendedor(f))
-                && sentidos.Mapa != lugar.Mapa) return false;
+            if (_entorno.Mapas.DondeHay(sentidos.Mapa, sentidos.Posicion, f => esElVendedor(f), mapaSirve, Pisable(sentidos),
+                                        SaltosHastaElVendedor) is not { } lugar)
+                return Corta("no hay vendedor a mano");
+            if (!await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador,
+                                    topeDeMapas: Math.Max(Navegante.TopeDeMapas, lugar.Saltos))
+                && !(sentidos.Mapa == lugar.Mapa && await AbrirUnaPuertaAsync(transporte, sentidos, f => esElVendedor(f), cerrada, ct)
+                     && await IrHastaAsync(transporte, sentidos, lugar.Mapa, lugar.X, lugar.Y, cerrada, ct, RadioDelMostrador))
+                && sentidos.Mapa != lugar.Mapa) return Corta($"no llegó a m{lugar.Mapa} ({lugar.X},{lugar.Y})");
         }
-        if (sentidos.MasCercano(Sirve) is not { } v) return false;
+        if (sentidos.MasCercano(Sirve) is not { } v) return Corta("no ve al vendedor");
         if (v.Pasos > RadioDelMostrador
-            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, v.Quien.X, v.Quien.Y, cerrada, ct, RadioDelMostrador)) return false;
-        if (sentidos.Donde(v.Quien.CharIndex) is not { } mostrador) return false;
+            && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, v.Quien.X, v.Quien.Y, cerrada, ct, RadioDelMostrador))
+            return Corta($"no llega al mostrador ({v.Pasos} pasos)");
+        if (sentidos.Donde(v.Quien.CharIndex) is not { } mostrador) return Corta("lo perdió de vista");
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
-        if (!sentidos.Comerciando) return false;
+        if (!sentidos.Comerciando) return Corta($"no le abrió la tienda (ficha {v.Quien.FichaNpc})");
         bool la = false;
-        if (sentidos.EnLaTienda(queCompra) is { } oferta)
+        if (sentidos.EnLaTienda(queCompra) is not { } oferta) Corta("no tiene lo que busca en la vitrina");
+        else
         {
             int antes = sentidos.CuantoTiene(queCompra);
             transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
             for (int espera = 0; espera < 12 && sentidos.CuantoTiene(queCompra) <= antes; espera++) await Task.Delay(250, ct);
             la = sentidos.CuantoTiene(queCompra) > antes;
+            if (!la) Corta($"no le vendió (ranura {oferta.Ranura}, precio {oferta.Precio}, oro {sentidos.Oro})");
         }
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
         await Task.Delay(_rng.Next(400, 900), ct);

@@ -1063,9 +1063,10 @@ public sealed partial class Bot
                 if (EsFabricanteMetalurgico && await FabricarAsync(transporte, sentidos, cerrada, ct)) continue;
                 if (EsFabricanteMetalurgico && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;
             }
-            if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
-            // Y LA MONTURA, EN TIAMA: ver `IrPorLaMonturaAsync`.
+            // LA MONTURA ANTES QUE LAS COMPRAS: con el oro juntado, la compra de gustos se lo llevaba primero. Medido en la ronda 106:
+            // Elmo tenía 317.400 y dejó 230.000 en el Hechicero de Rinkel. Ver `IrPorLaMonturaAsync`.
             if (await IrPorLaMonturaAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;
             // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
             if (_acompana is null && await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
