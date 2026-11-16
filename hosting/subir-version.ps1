@@ -184,7 +184,12 @@ if ($existente.Count -eq 0) {
   }
   $texto = ($cambios -join "`n").Trim()
   if ($texto) { $notas = "## Novedades`n`n$texto`n`n$notas" }
-  Github -Argumentos @("release", "create", $etiqueta, "-R", $Repo, "--verify-tag", "--title", "AO 2027 $Version", "--notes", $notas, "--draft") | Out-Null
+  # Las notas van por archivo: pasadas como argumento, PowerShell 5.1 parte las comillas dobles que traiga el CHANGELOG y gh
+  # recibe pedazos sueltos (falló así la 1.0.26).
+  $archivoDeNotas = Join-Path ([IO.Path]::GetTempPath()) "notas-$etiqueta.md"
+  [IO.File]::WriteAllText($archivoDeNotas, $notas, (New-Object Text.UTF8Encoding $false))
+  try { Github -Argumentos @("release", "create", $etiqueta, "-R", $Repo, "--verify-tag", "--title", "AO 2027 $Version", "--notes-file", $archivoDeNotas, "--draft") | Out-Null }
+  finally { Remove-Item -LiteralPath $archivoDeNotas -ErrorAction SilentlyContinue }
 }
 foreach ($f in ($subir + $avisos)) { Github -Argumentos @("release", "upload", $etiqueta, $f, "--clobber", "-R", $Repo) | Out-Null }
 if (-not $Borrador) { Github -Argumentos @("release", "edit", $etiqueta, "--draft=false", "--latest", "-R", $Repo) | Out-Null }

@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.27
+
+- El tope de FPS sin límite ya no tiene techo: con el VSync apagado dibuja todo lo que da la PC. El que viene por defecto sigue siendo el del monitor.
+
 ## 1.0.26 (2026-11-16)
 
 - Nuevo tope de FPS "monitor", que viene por defecto: el juego dibuja al refresco de tu pantalla. "Sin límite" sigue tirando todo lo que da la PC, hasta 360.

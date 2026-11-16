@@ -2654,11 +2654,10 @@
     };
     function topeEfectivo() {
       if (fpsCap === FPS_MONITOR) return window.coveraoEscritorio && !vsyncAlArrancar ? (hzMonitor || 60) : 0;
-      return fpsCap || TOPE_SIN_LIMITE;
+      // "SIN LÍMITE" ES SIN LÍMITE: con el VSync apagado dibuja todo lo que da la PC. Tuvo un techo de 360 mientras era el default;
+      // desde que el default es "monitor" el autor lo quiso sin techo (16/11).
+      return fpsCap;
     }
-    // "SIN LÍMITE" TIENE TECHO (el autor, 16/11): 360, el refresco del monitor más rápido que vale la pena. Con el VSync apagado del
-    // juego de escritorio, sin esto se dibujaba todo lo que daba la PC (medido: 4327 cuadros por segundo) para nada.
-    const TOPE_SIN_LIMITE = 360;
     let lastDrawT = 0;
     const tope = { proximo: 0 };
     window.__setFpsCap = (n) => {                       // lo usa el selector de Opciones
@@ -2666,7 +2665,7 @@
       tope.proximo = 0;
       guardarPref('ao_fpscap', String(fpsCap));
       log('Límite de FPS: ' + (fpsCap === FPS_MONITOR ? 'el refresco del monitor' + (hzMonitor ? ' (' + hzMonitor + ' Hz)' : '')
-                               : fpsCap ? fpsCap : 'sin límite (hasta ' + TOPE_SIN_LIMITE + ')'), '#c9a24b');
+                               : fpsCap ? fpsCap : 'sin límite'), '#c9a24b');
     };
     // EL TOPE CUENTA DESDE EL CUADRO QUE TOCABA, no desde el último que se dibujó. Con "pasaron 1000/N ms desde
     // el último" el tope sólo deja pasar múltiplos enteros del vsync: en un monitor de 360 Hz (un cuadro cada
@@ -4643,7 +4642,7 @@
      */
     // Los topes que pidió el usuario, más "custom" para el que tenga un refresco raro (165, 180, 360…).
     // "Monitor" va PRIMERO y es el default: el refresco del monitor, que es lo más parejo que hay. "Sin límite" tira todo lo que da
-    // la PC (hasta 360) con el VSync apagado.
+    // la PC con el VSync apagado.
     const FPS_OPCIONES = [FPS_MONITOR, 0, 30, 60, 120, 144, 240];
     // OPCIONES CON PESTAÑAS, como las del menú del juego de escritorio (el autor, 06/10: "que el menú de opciones del menú principal
     // sea el mismo dentro del juego, lo hiciste más organizado"): Audio, Video, Juego y Controles, un interruptor por cosa que se
@@ -4676,7 +4675,7 @@
           (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false))
             + fila('VSync', 'Apagado (como viene), el juego dibuja todos los cuadros que da la PC; prendido, los ata al refresco del monitor. Se aplica la próxima vez que abras el juego.', llave('vsync', vsyncOn)) : '')
           + fila('Tope de FPS', window.coveraoEscritorio && !vsyncAlArrancar
-              ? 'Monitor dibuja al refresco de tu pantalla, que es lo más parejo. Sin límite, con el VSync apagado, dibuja todo lo que da la PC, hasta 360 cuadros por segundo.'
+              ? 'Monitor dibuja al refresco de tu pantalla, que es lo más parejo. Sin límite, con el VSync apagado, dibuja todo lo que da la PC.'
               : 'Monitor y sin límite siguen el refresco de tu pantalla, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
               `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v === FPS_MONITOR ? 'monitor' + (hzMonitor ? ` (${hzMonitor} Hz)` : '')
                                                                    : v ? v + ' FPS' : 'sin límite')).join('')}
