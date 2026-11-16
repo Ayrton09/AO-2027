@@ -89,24 +89,30 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
         return (p, sesion, t);
     }
 
-    private async Task Usar(ClientSession sesion)
-    {
+    private void Usar(ClientSession sesion) =>
         _dispatcher!.HandleOne(sesion, new ByteQueueReader(new[] { (byte)ClientPacketId.UseItem, Slot }));
-        await Task.Delay(300);
+
+    /// <summary>Espera el aviso con el que el server resuelve el pasaje (el del viaje o el del rechazo), con tope. Con una espera
+    /// fija de 300 ms fallaba de vez en cuando con la suite entera corriendo (puerta del 16/11): el aviso no había llegado.</summary>
+    private static async Task<bool> Llega(Transporte t, byte[] aviso)
+    {
+        var hasta = DateTime.UtcNow.AddSeconds(15);
+        while (!t.Recibio(aviso) && DateTime.UtcNow < hasta) await Task.Delay(20);
+        return t.Recibio(aviso);
     }
 
-    private static void Viajo(Player p, Transporte t, short destino)
+    private static async Task Viajo(Player p, Transporte t, short destino)
     {
+        Assert.True(await Llega(t, ServerMessages.LocaleMsg(LocaleExhausto)), "no llegó el aviso del viaje");
         Assert.Equal(destino, p.Pos.Map);
-        Assert.True(t.Recibio(ServerMessages.LocaleMsg(LocaleExhausto)), "no llegó el aviso del viaje");
         Assert.True(p.Inventory[Slot].IsEmpty, "el pasaje no se gastó");
     }
 
-    private static void NoViajo(Player p, Transporte t, int pide)
+    private static async Task NoViajo(Player p, Transporte t, int pide)
     {
-        Assert.Equal(PuertoDeOrac, p.Pos.Map);   // los que no viajan salen todos de Orac
-        Assert.True(t.Recibio(ServerMessages.LocaleMsg(477, $"{pide}%*{GameLimits.SkillNavegacion}")),
+        Assert.True(await Llega(t, ServerMessages.LocaleMsg(477, $"{pide}%*{GameLimits.SkillNavegacion}")),
                     $"no avisó que pide {pide} de Navegación");
+        Assert.Equal(PuertoDeOrac, p.Pos.Map);   // los que no viajan salen todos de Orac
         Assert.False(t.Recibio(ServerMessages.LocaleMsg(LocaleExhausto)));
         Assert.Equal(1, p.Inventory[Slot].Amount);
     }
@@ -155,9 +161,9 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(new ServerIni(), OracATiama, navegacion: 79);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        NoViajo(p, t, pide: 80);
+        await NoViajo(p, t, pide: 80);
     }
 
     [Fact]
@@ -165,9 +171,9 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(new ServerIni(), OracATiama, navegacion: 80);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        Viajo(p, t, Tiama);
+        await Viajo(p, t, Tiama);
     }
 
     [Fact]
@@ -175,9 +181,9 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(new ServerIni(), IlliandorASuramei, navegacion: 0);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        Viajo(p, t, PuertoDeSuramei);
+        await Viajo(p, t, PuertoDeSuramei);
     }
 
     /// <summary>Orac es isla: su pasaje a Rinkel cruza el agua aunque la data no lo marque.</summary>
@@ -188,10 +194,10 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(new ServerIni(), OracARinkel, navegacion);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        if (cruza) Viajo(p, t, Rinkel);
-        else NoViajo(p, t, pide: 80);
+        if (cruza) await Viajo(p, t, Rinkel);
+        else await NoViajo(p, t, pide: 80);
     }
 
     /// <summary>Al staff no lo gatea, como al barco: el original compara sólo con el bit de User prendido.</summary>
@@ -200,9 +206,9 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(new ServerIni(), OracATiama, navegacion: 0, privilegios: 2);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        Viajo(p, t, Tiama);
+        await Viajo(p, t, Tiama);
     }
 
     [Fact]
@@ -210,9 +216,9 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(Cargar("NavegacionParaCruzar=0\r\n"), OracATiama, navegacion: 0);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        Viajo(p, t, Tiama);
+        await Viajo(p, t, Tiama);
     }
 
     [Theory]
@@ -222,10 +228,10 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     {
         var (p, sesion, t) = EnElPuerto(Cargar("NavegacionParaCruzar=50\r\n"), OracATiama, navegacion);
 
-        await Usar(sesion);
+        Usar(sesion);
 
-        if (cruza) Viajo(p, t, Tiama);
-        else NoViajo(p, t, pide: 50);
+        if (cruza) await Viajo(p, t, Tiama);
+        else await NoViajo(p, t, pide: 50);
     }
 
     // ── EL SERVER.INI ────────────────────────────────────────────────────────────────────────────────────
