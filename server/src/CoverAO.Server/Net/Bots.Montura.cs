@@ -74,6 +74,10 @@ public sealed partial class Bot
         datos.Npc(ficha) is { NpcType: TipoPirata, StockItems: { } stock }
         && stock.Any(it => EsPaseA(datos, (short)it.ObjIndex, mapaDeLaFicha, mapaDestino));
 
+    internal static bool PuedeComprarlePasaje(GameData datos, ServerIni ini, int ficha, int desde, int destino, byte faccion) =>
+        EsPirataHacia(datos, ficha, desde, destino)
+        && (datos.PirataAtiendePorFaccion(desde, ficha, faccion) || ElMercaderLeVende(ini, datos.MapBattleMode(desde), faccion));
+
     /// <summary>
     /// SUBIRSE AL ANIMAL: si tiene una montura que puede usar, no va montado, está vivo y afuera (en una cueva o bajo techo el servidor
     /// no deja). Devuelve si mandó el pedido.
@@ -145,11 +149,12 @@ public sealed partial class Bot
     {
         var datos = _entorno.Datos;
         int mapaAntes = sentidos.Mapa;
-        // El pirata se reconoce por la ficha; que su pase salga del mapa donde está parado lo dice `mapaSirve`, y lo que se compra se
+        // El pirata se reconoce por la ficha; que venda desde el mapa donde está parado lo dice `mapaQueVende`, y lo que se compra se
         // elige al llegar, con el mapa de ese momento.
         bool compro = await ComprarleAsync(transporte, sentidos,
             f => datos.Npc(f) is { NpcType: TipoPirata }, obj => EsPaseA(datos, obj, sentidos.Mapa, mapaDestino), cerrada, ct,
-            mapaSirve: m => datos.MapSpawns.TryGetValue(m, out var sp) && sp.Any(s => EsPirataHacia(datos, s.NpcIndex, m, mapaDestino)));
+            mapaQueVende: m => !HayGuardiaQueLoAtaca(m) && datos.MapSpawns.TryGetValue(m, out var sp)
+                && sp.Any(s => PuedeComprarlePasaje(datos, _entorno.Ini, s.NpcIndex, m, mapaDestino, _miBando)));
         if (!compro) return false;
         if (sentidos.MasCercano(f => datos.Npc(f) is { NpcType: TipoPirata }) is not { } pirata)
         { Console.WriteLine($"[bot {Nombre}] compró el pase y no ve al pirata en m{sentidos.Mapa}"); return false; }
@@ -191,14 +196,11 @@ public sealed partial class Bot
     /// comprar una de lo que <paramref name="queCompra"/> acepta y cerrar. Devuelve si la tiene.
     /// </summary>
     private async Task<bool> ComprarleAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Func<int, bool> esElVendedor,
-                                            Func<short, bool> queCompra, Task cerrada, CancellationToken ct, Func<int, bool>? mapaSirve = null)
+                                            Func<short, bool> queCompra, Task cerrada, CancellationToken ct, Func<int, bool>? mapaQueVende = null)
     {
         bool Sirve(short f) => esElVendedor(f);
-        // SÓLO DONDE LE VENDEN: por la regla del comercio del Server.ini, en las ciudades viejas no se le vende a nadie, piratas
-        // incluidos. En la ronda 107 los tres que llegaron al pirata de Nix se comieron el "¡Largo de aquí!"; en el continente vende
-        // el del puerto de Rinkel. Ver `LeVendenAca`.
-        var dondeSirve = mapaSirve;
-        Func<int, bool> mapaQueVende = m => LeVendenAca(m) && (dondeSirve is null || dondeSirve(m));
+        // Las compras comunes siguen la regla de comercio por zona. Al buscar un pasaje se usa la del transportador.
+        mapaQueVende ??= LeVendenAca;
         bool Corta(string porque) { Console.WriteLine($"[bot {Nombre}] no le compra en m{sentidos.Mapa} {sentidos.Posicion}: {porque}"); return false; }
         if (sentidos.MasCercano(Sirve) is null || !mapaQueVende(sentidos.Mapa))
         {

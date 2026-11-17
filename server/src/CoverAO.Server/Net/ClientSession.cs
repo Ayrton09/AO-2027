@@ -89,6 +89,14 @@ public sealed class ClientSession : IConnection
     /// tocar el mundo: entre que arrancó y que terminó, el cliente se pudo haber ido.</summary>
     public bool Cerrada => _closed;
     public Player? Player { get; set; }
+    // Sólo el loop escribe el permiso que surgió del login de cuenta y consume su revisión.
+    internal CuentaParaEspectar? CuentaParaEspectar { get; set; }
+    internal int RevisionDeLista { get; set; }
+    internal int RevisionDeEspectador { get; set; }
+    internal bool ComprobandoEspectador { get; set; }
+    private volatile bool _espectaSinPersonaje;
+    internal bool EspectaSinPersonaje => _espectaSinPersonaje;
+    private long _revisionPlazoLista;
     /// <summary>La generación de la clave de la cuenta con la que esta conexión verificó la contraseña (ver
     /// PacketDispatcher.GeneracionDeClave).</summary>
     public int GeneracionDeClave { get; set; }
@@ -131,7 +139,24 @@ public sealed class ClientSession : IConnection
     {
         if (_authed || _closed || _cuentaAdentro || _authTimeoutMs <= 0) return;
         _cuentaAdentro = true;
-        _ = Task.Delay(PlazoEnLaListaMs).ContinueWith(_ => { if (!_authed && !_closed) Close("auth timeout"); }, TaskScheduler.Default);
+        DarPlazoEnLaLista();
+    }
+
+    internal void CambiarEspectadorSinPersonaje(bool activo)
+    {
+        _espectaSinPersonaje = activo;
+        if (activo) Interlocked.Increment(ref _revisionPlazoLista);
+        else if (_cuentaAdentro && !_authed && !_closed) DarPlazoEnLaLista();
+    }
+
+    private void DarPlazoEnLaLista()
+    {
+        long revision = Interlocked.Increment(ref _revisionPlazoLista);
+        _ = Task.Delay(PlazoEnLaListaMs).ContinueWith(_ =>
+        {
+            if (!_authed && !_closed && !_espectaSinPersonaje && Volatile.Read(ref _revisionPlazoLista) == revision)
+                Close("auth timeout");
+        }, TaskScheduler.Default);
     }
     private volatile bool _cuentaAdentro;
     private const int PlazoEnLaListaMs = 10 * 60_000;

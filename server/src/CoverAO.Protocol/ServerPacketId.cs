@@ -128,4 +128,7 @@ public enum ServerPacketId : byte
     /// <summary>EL CENTRO DE SUBASTAS. <b>No existe en el original</b> (ver <c>Game/Subastas.cs</c>): la lista entera, que
     /// abre la ventana o la refresca si ya está abierta. Layout en <c>ServerMessages.SubastasLista</c>.</summary>
     SubastasLista = 109,
+
+    /// <summary>Vista de solo lectura de un GM.</summary>
+    EscenaEspectador = 110,
 }

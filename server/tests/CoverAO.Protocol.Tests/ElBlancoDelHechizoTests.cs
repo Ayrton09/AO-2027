@@ -209,6 +209,67 @@ public class ElBlancoDelHechizoTests : IDisposable
         Assert.Equal(500, otra.Hp);
     }
 
+    [Theory]
+    [InlineData(0)] // La criatura reapareció en la misma baldosa que la mascota.
+    [InlineData(1)] // La selección para clickear la cabeza mira primero la baldosa de abajo.
+    public async Task El_proyectil_ignora_a_la_mascota_y_alcanza_al_bicho(int distancia)
+    {
+        var (mago, sesion) = Mago(ProyectilMagico);
+        var mascota = Criatura(X + 2, (byte)(Y + distancia), hostil: false);
+        mascota.OwnerCharIndex = mago.CharIndex;
+        var bicho = Criatura(X + 2, Y, hostil: true);
+
+        await Castear(sesion, X + 2, Y);
+
+        Assert.Equal(500, mascota.Hp);
+        Assert.False(mascota.Hostile);
+        Assert.True(bicho.Hp < 500);
+        Assert.True(mago.Mana < 5000);
+    }
+
+    [Fact]
+    public async Task Si_solo_esta_la_mascota_el_proyectil_no_sale()
+    {
+        var (mago, sesion) = Mago(ProyectilMagico);
+        var mascota = Criatura(X + 2, Y, hostil: false);
+        mascota.OwnerCharIndex = mago.CharIndex;
+        mascota.Hp = 1;
+
+        await Castear(sesion, X + 2, Y);
+
+        Assert.True(_world.HasNpc(mascota.CharIndex));
+        Assert.Equal(1, mascota.Hp);
+        Assert.Equal(5000, mago.Mana);
+    }
+
+    [Fact]
+    public async Task Un_hechizo_que_deja_quieta_a_una_criatura_tambien_ignora_a_la_mascota()
+    {
+        const short Paralizar = 9;
+        var (mago, sesion) = Mago(Paralizar);
+        var mascota = Criatura(X + 2, Y + 1, hostil: false);
+        mascota.OwnerCharIndex = mago.CharIndex;
+        var bicho = Criatura(X + 2, Y, hostil: true);
+
+        await Castear(sesion, X + 2, Y);
+
+        Assert.False(mascota.EstaQuieta(_loop.Tick));
+        Assert.True(bicho.EstaQuieta(_loop.Tick));
+    }
+
+    [Fact]
+    public async Task El_proyectil_sigue_pudiendo_pegarle_a_una_mascota_ajena_si_el_combate_lo_permite()
+    {
+        var (_, sesion) = Mago(ProyectilMagico);
+        var otro = Jugador("Bruno", X + 4, Y);
+        var mascota = Criatura(X + 2, Y, hostil: false);
+        mascota.OwnerCharIndex = otro.CharIndex;
+
+        await Castear(sesion, X + 2, Y);
+
+        Assert.True(mascota.Hp < 500);
+    }
+
     /// <summary>Clickearse la cabeza con Paralizar se elige a uno mismo, y un estado ofensivo sobre uno mismo no se
     /// lanza: el 298, sin cobrar (modHechizos.bas:150-154).</summary>
     [Fact]
@@ -229,6 +290,7 @@ public class ElBlancoDelHechizoTests : IDisposable
         var (mago, sesion) = Mago(CurarHeridasLeves);
         mago.Hp = 50;
         var mansa = Criatura(X + 2, Y, hostil: false);
+        mansa.OwnerCharIndex = mago.CharIndex;
         await Castear(sesion, X + 2, Y - 1);
         Assert.True(mansa.Hp > 500, "la criatura mansa tenía que curarse");
         Assert.Equal(50, mago.Hp);

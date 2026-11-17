@@ -156,4 +156,7 @@ public enum ClientPacketId : byte
     /// republicana clickeado, pide volver a ese bando. El cliente del original tiene el comando (clsClientTCP, <c>/PERDON</c>)
     /// pero sólo abre un MsgBox, y el IAO-Clon lo nombra en el texto del Convertidor sin implementarlo.</summary>
     Perdon = 121,
+
+    /// <summary>Recorre los personajes que puede ver el espectador. Byte(0 anterior, 1 siguiente).</summary>
+    NavegarEspectador = 122,
 }

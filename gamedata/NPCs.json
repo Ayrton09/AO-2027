@@ -1,7 +1,7 @@
 {
   "meta": {
     "INIT": {
-      "NumNPCs": "624"
+      "NumNPCs": "629"
     }
   },
   "NPC": [
@@ -8090,6 +8090,25 @@
       "MinHP": "10000",
       "MaxHP": "10000",
       "LocaleID": "145"
+    },
+    {
+      "_index": 628,
+      "Name": "Viajero de Ullathorpe",
+      "Name2": "Viajero de Ullathorpe",
+      "PosOrig": "1",
+      "NpcType": "7",
+      "Head": "301",
+      "Body": "133",
+      "Heading": "3",
+      "Movement": "1",
+      "Comercia": "1",
+      "TipoItems": "36",
+      "NROITEMS": "0",
+      "RespawnTime": "1",
+      "MinHP": "10000",
+      "MaxHP": "10000",
+      "Hostile": "0",
+      "Desc": "Vendo pasajes con salida desde la puerta sur de Ullathorpe."
     }
   ]
 }

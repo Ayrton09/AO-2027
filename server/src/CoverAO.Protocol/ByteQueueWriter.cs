@@ -94,4 +94,10 @@ public sealed class ByteQueueWriter
     }
 
     public byte[] ToArray() => _buf.ToArray();
+
+    public ByteQueueWriter WriteBytes(ReadOnlySpan<byte> bytes)
+    {
+        foreach (byte value in bytes) _buf.Add(value);
+        return this;
+    }
 }

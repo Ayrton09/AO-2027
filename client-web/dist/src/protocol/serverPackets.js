@@ -113,6 +113,7 @@ export var ServerPacketId;
     ServerPacketId[ServerPacketId["VidaDelJefe"] = 108] = "VidaDelJefe";
     // EL CENTRO DE SUBASTAS. AGREGADO NUESTRO (pedido del tester, 06/10): la lista entera, que abre la ventana o la refresca.
     ServerPacketId[ServerPacketId["SubastasLista"] = 109] = "SubastasLista";
+    ServerPacketId[ServerPacketId["EscenaEspectador"] = 110] = "EscenaEspectador";
     // El cuadro de dialogo del server. Es EL paquete de los rechazos de login (personaje ya conectado, otra
     // sesion de la misma cuenta): sin decodificarlo, el cliente quedaba en "logueando..." para siempre y ademas
     // se le desincronizaba el stream, porque no sabia cuantos bytes comerse.
@@ -137,6 +138,15 @@ export var ServerPacketId;
     ServerPacketId[ServerPacketId["BankOK"] = 80] = "BankOK";
 })(ServerPacketId || (ServerPacketId = {}));
 const NAMES = Object.fromEntries(Object.entries(ServerPacketId).filter(([, v]) => typeof v === 'number').map(([k, v]) => [v, k]));
+function leerPersonaje(r, charIndex) {
+    return {
+        charIndex, body: r.readInteger(), head: r.readInteger(), heading: r.readByte(),
+        x: r.readByte(), y: r.readByte(), weapon: r.readInteger(), shield: r.readInteger(),
+        helmet: r.readInteger(), fx: r.readInteger(), fxLoops: r.readInteger(), name: r.readAsciiString(),
+        status: r.readByte(), donador: r.readByte(), particula: r.readByte(),
+        auras: [r.readByte(), r.readByte(), r.readByte(), r.readByte(), r.readByte(), r.readByte()],
+    };
+}
 /** Reads one packet's fields; returns null for an unmodelled id (caller stops). */
 function readOne(r, id) {
     switch (id) {
@@ -398,20 +408,18 @@ function readOne(r, id) {
         case ServerPacketId.ChangeInventorySlot:
             return { slot: r.readByte(), objIndex: r.readInteger(), amount: r.readInteger(),
                 equipped: r.readBoolean(), price: r.readSingle(), usable: r.readByte() };
-        case ServerPacketId.CharacterCreate: {
-            const f = {
-                charIndex: r.readInteger(), body: r.readInteger(), head: r.readInteger(), heading: r.readByte(),
-                x: r.readByte(), y: r.readByte(), weapon: r.readInteger(), shield: r.readInteger(),
-                helmet: r.readInteger(), fx: r.readInteger(), fxLoops: r.readInteger(), name: r.readAsciiString(),
-            };
-            // Los 9 bytes finales: [0]=privileges (== Faccion.Status, color de nick), [1]=donador, [2]=particula, 6 auras.
-            f.status = r.readByte(); // status de facción (0 criminal, 1 ciudadano, 3+ ejército) — decide el color
-            f.donador = r.readByte(); // insignia donador
-            f.particula = r.readByte(); // su partícula propia: MakeChar → SetCharacterParticle(..., -1)
-            // Los seis auras en el orden de HandleCharacterCreate: arma, cuerpo, escudo, casco, otra, anillo = los tipos
-            // 1..6 de AuraToChar.
-            f.auras = [r.readByte(), r.readByte(), r.readByte(), r.readByte(), r.readByte(), r.readByte()];
-            return f;
+        case ServerPacketId.CharacterCreate: return leerPersonaje(r, r.readInteger());
+        case ServerPacketId.EscenaEspectador: {
+            const objetivo = r.readInteger();
+            if (!objetivo)
+                return { objetivo };
+            const mapa = r.readInteger(), nombre = r.readAsciiString();
+            const personajes = [], suelo = [];
+            for (let id = r.readInteger(); id; id = r.readInteger())
+                personajes.push(leerPersonaje(r, id));
+            for (let objIndex = r.readInteger(); objIndex; objIndex = r.readInteger())
+                suelo.push({ objIndex, x: r.readByte(), y: r.readByte(), amount: r.readInteger() });
+            return { objetivo, mapa, nombre, personajes, suelo };
         }
         // La bandeja de correo entera. OJO el orden de los dos ultimos campos: va la CANTIDAD y despues el
         // INDICE del objeto, al reves que en el resto de los paquetes de item del protocolo.

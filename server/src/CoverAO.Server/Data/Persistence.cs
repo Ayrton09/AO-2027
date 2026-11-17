@@ -366,6 +366,18 @@ public sealed class Persistence : IDisposable
     /// es la confirmación de que el alta entró.</summary>
     public Task<bool> ExistePersonajeAsync(string nombre) => _cola.PedirAsync($"confirmar a {nombre}", a => a.ExistePersonaje(nombre));
 
+    /// <summary>El primer personaje candidato que sigue perteneciendo a una cuenta habilitada y puede entrar.</summary>
+    internal Task<string?> LeerStaffParaEspectarAsync(string cuenta, IReadOnlyList<string> candidatos)
+        => _cola.PedirAsync<string?>($"leer permiso de espectador ({cuenta})", a =>
+        {
+            var acc = a.LeerCuenta(cuenta);
+            if (acc is null || acc.Banned || acc.EsBot) return null;
+            foreach (string nombre in candidatos)
+                if (acc.Characters.Contains(nombre, StringComparer.OrdinalIgnoreCase) &&
+                    a.LeerPersonaje(nombre) is { Baneado: false }) return nombre;
+            return null;
+        });
+
     /// <summary>Lee un personaje por la cola.</summary>
     public Task<FichaDePersonaje?> LeerPersonajeAsync(string nombre)
         => _cola.PedirAsync($"leer a {nombre}", a => a.LeerPersonaje(nombre));

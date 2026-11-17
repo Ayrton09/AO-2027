@@ -36,7 +36,7 @@ public class ComercioTipoItemsTests
         new(1, "mercader de prueba", 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, TipoItems: tipoItems);
 
     [Fact]
-    public void La_data_trae_TipoItems_en_82_mercaderes_y_5_compran_de_todo()
+    public void La_data_trae_TipoItems_en_83_mercaderes_y_5_compran_de_todo()
     {
         var d = LoadOrSkip();
         int con = 0, cualquiera = 0;
@@ -46,8 +46,8 @@ public class ComercioTipoItemsTests
             con++;
             if (n.TipoItems == GameLimits.TipoItemsCualquiera) cualquiera++;
         }
-        // Contado sobre el NPCs.dat CRUDO del install: 82 apariciones de la clave, 5 con el valor 1000.
-        Assert.Equal(82, con);
+        // Los 82 del install y el viajero de Ullathorpe. Cinco compran de todo.
+        Assert.Equal(83, con);
         Assert.Equal(5, cualquiera);
     }
 

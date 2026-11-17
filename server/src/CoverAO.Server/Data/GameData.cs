@@ -400,6 +400,8 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
     public bool IsInvisibility => Invisibilidad > 0;
     public bool IsImmobilize => Inmoviliza > 0;
     public bool IsIncinerate => Incinera > 0;
+    public bool EsOfensivo => IsDamage || IsParalyze || IsImmobilize || IsPoison || IsIncinerate
+        || Ceguera > 0 || SubeFuerza == 2 || SubeAgilidad == 2;
 }
 
 /// <summary>Un ítem del botín de un NPC (VB6 <c>npc.Invent.Object(i)</c>, cargado del campo RandomDrop).
@@ -546,7 +548,7 @@ public readonly record struct MapObjectPlacement(int X, int Y, int ObjIndex, int
 /// "reuse the data, rewrite the code" principle: tuned balance (items, spells, NPCs) is read from
 /// JSON, not reimplemented. Items are indexed for lookup by handlers (e.g. UseItem reads potion power).
 /// </summary>
-public sealed class GameData
+public sealed partial class GameData
 {
     public IReadOnlyDictionary<int, ObjInfo> Objects { get; private set; } = new Dictionary<int, ObjInfo>();
     public IReadOnlyDictionary<int, SpellInfo> Spells { get; private set; } = new Dictionary<int, SpellInfo>();
@@ -1085,6 +1087,7 @@ public sealed class GameData
     {
         if (SourceDir is null) return -1;
         Npcs = LoadNpcs(Path.Combine(SourceDir, "NPCs.json"));
+        if (_pasajesPorFaccion) ArmarMostradoresDePasajes();
         return Npcs.Count;
     }
 
@@ -1101,6 +1104,8 @@ public sealed class GameData
     {
         if (SourceDir is null) return -1;
         Objects = LoadObjects(Path.Combine(SourceDir, "obj.json"));
+        if (_pasesDeRinkel) ArreglarPasesDeRinkel();
+        if (_pasajesPorFaccion) CorregirPaseABanderbill();
         return Objects.Count;
     }
 

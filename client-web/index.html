@@ -57,6 +57,20 @@
     /* El FPS era verde brillante: el único elemento del juego fuera de la paleta, y encima competía con el
        mundo. Es un dato de diagnóstico, va apagado y en el dorado de la casa. */
     #perf { color:var(--ink-dim); margin-left:auto; opacity:.75; }
+    #aviso-espectador { position:absolute; top:40px; left:50%; transform:translateX(-50%); z-index:9;
+      display:flex; align-items:center; flex-wrap:wrap; justify-content:center; gap:8px; width:max-content;
+      max-width:calc(100% - 24px); padding:6px 10px; background:#100c08f2; color:var(--gold);
+      border:1px solid var(--gold-deep); border-radius:4px; box-shadow:0 2px 8px #0009; }
+    #aviso-espectador[hidden] { display:none; }
+    #selector-espectador { display:flex; align-items:center; gap:8px; min-width:0; }
+    #selector-espectador button { flex:none; min-width:30px; font-size:1.1em; }
+    #nombre-espectado { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #stage.espectando #ayuda-muerte, #stage.espectando #cartelmapa, #stage.espectando #barra-jefe { display:none; }
+    body.espectador-solo #hotbar, body.espectador-solo #m-abajo, body.espectador-solo #m-botones,
+    body.espectador-solo #status { visibility:hidden; }
+    #cs-elegir-espectador { margin-top:10px; }
+    #cs-elegir-espectador label { display:block; }
+    #cs-elegir-espectador input { width:100%; margin:4px 0 8px; }
 
     /* ---- CHAT overlay (abajo-izquierda del mundo) con pestañas --------------------------------- */
     /* bottom atado a la altura del hotbar (slot --u*2.9 + padding/margen) para que el chat quede SIEMPRE por
@@ -415,7 +429,7 @@
     .login-form.on { display:flex; }
     .login-form label { display:flex; flex-direction:column; gap:3px; font-size:calc(var(--u)*0.78); color:var(--ink-dim);
       letter-spacing:.03em; text-transform:uppercase; }
-    .login-form input, .login-form select { background:#0a0705; border:1px solid var(--gold-deep); color:var(--ink);
+    .login-form input, .login-form select, #cs-objetivo-espectador { background:#0a0705; border:1px solid var(--gold-deep); color:var(--ink);
       padding:8px 9px; border-radius:4px; font-family:system-ui,sans-serif; font-size:calc(var(--u)*1); }
     .login-form label.recordarme { flex-direction:row; align-items:center; gap:7px; text-transform:none; letter-spacing:0;
       cursor:pointer; user-select:none; }
@@ -437,10 +451,10 @@
     .cscard .cd { color:var(--ink-dim); font-size:calc(var(--u)*0.82); margin-top:2px; }
     .cscard .play { color:var(--gold-hi); font-size:calc(var(--u)*1.3); opacity:.55; }
     .cscard:hover .play { opacity:1; }
-    .cs-actions { display:flex; gap:8px; }
+    .cs-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .cs-actions .goldbtn { flex:1; }
     .goldbtn.ghost { background:transparent; box-shadow:none; }
-    .login-form input:focus, .login-form select:focus { outline:none; border-color:var(--gold); box-shadow:0 0 8px #e8c87655; }
+    .login-form input:focus, .login-form select:focus, #cs-objetivo-espectador:focus { outline:none; border-color:var(--gold); box-shadow:0 0 8px #e8c87655; }
     .login-row { display:flex; gap:9px; } .login-row label { flex:1; }
 
     /* ====================== Pantallas de antes de entrar, version rica =========================
@@ -955,6 +969,14 @@
         <span class="tb" id="status">conectando…</span>
         <span class="tb" id="perf">— FPS</span>
       </div>
+      <div id="aviso-espectador" hidden>
+        <div id="selector-espectador">
+          <button type="button" id="espectador-anterior" class="sbtn ghost" aria-label="Personaje anterior" title="Personaje anterior">←</button>
+          <span role="status" id="nombre-espectado"></span>
+          <button type="button" id="espectador-siguiente" class="sbtn ghost" aria-label="Personaje siguiente" title="Personaje siguiente">→</button>
+        </div>
+        <button type="button" id="salir-espectador" class="sbtn ghost">Dejar de observar</button>
+      </div>
       <!-- Cartel del lugar: aparece unos segundos al entrar a un mapa con nombre. -->
       <div id="ayuda-muerte" role="status" hidden>Estás muerto. Acercate a un sacerdote y hacé doble clic sobre él para resucitar.</div>
       <div id="cartelmapa"><div class="cm-n"></div><div class="cm-z"></div></div>
@@ -1222,8 +1244,14 @@
         <div class="cs-fade" id="cs-fade"><div id="charlist"></div></div>
         <div class="cs-actions">
           <button class="goldbtn" id="cs-new" type="button">＋ Crear personaje</button>
+          <button class="goldbtn ghost" id="cs-modo-espectador" type="button" hidden aria-controls="cs-elegir-espectador" aria-expanded="false">Modo espectador</button>
           <button class="goldbtn ghost" id="cs-back" type="button">← Otra cuenta</button>
         </div>
+        <form id="cs-elegir-espectador" hidden>
+          <label for="cs-objetivo-espectador">Nombre del jugador o bot</label>
+          <input id="cs-objetivo-espectador" required maxlength="32" autocomplete="off">
+          <button class="goldbtn" type="submit">Empezar a observar</button>
+        </form>
       </div>
 
       <div id="login-err"></div>
@@ -1267,7 +1295,7 @@
     // eso no existía y el `?v=` era el único mecanismo; hoy es un cinturón de más, útil sólo si alguien mete
     // un proxy o un CDN adelante que no respete el no-cache. Bumpearlo no hace falta para actualizar.
     import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js?v=32';
-    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=35';
+    import { decodeServerStream } from './dist/src/protocol/serverPackets.js?v=36';
     import { parseLocaleMsg, textoDelFlotante } from './dist/src/protocol/localeSmg.js?v=32';
     window.__errs = [];
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
@@ -1298,7 +1326,7 @@
       RequestAtributes: 11, RequestMiniStats: 13,
       // El paquete de los comandos de GM (eGMCommands va adentro, como primer byte del payload).
       // Faltaba, y por eso el cliente no podia mandar NINGUNO de los 86 que el servidor implementa.
-      GMCommands: 92,
+      GMCommands: 92, NavegarEspectador: 122,
       ClanCodexUpdate: 40, GuildAcceptPeace: 41, GuildRejectAlliance: 42, GuildRejectPeace: 43, GuildAcceptAlliance: 44,
       GuildAllianceDetails: 47, GuildPeaceDetails: 48, GuildRequestJoinerInfo: 49, GuildAlliancePropList: 50, GuildPeacePropList: 51,
       GuildNewWebsite: 53, GuildMemberInfo: 58, GuildRequestDetails: 61, ShowGuildNews: 94, GuildFundate: 89, GuildFundation: 90, CloseGuild: 107,
@@ -1450,7 +1478,14 @@
 
     const $ = (id) => document.getElementById(id);
     const W = () => new ByteQueueWriter();                          // atajo: nuevo writer
-    const send = (w) => { if (ws && ws.readyState === 1) ws.send(xorBuffer(w.toBytes(), myKey)); };  // manda un paquete ya armado
+    let espectador = null;
+    function enviarAlJuego(bytes) {
+      const id = bytes[0];
+      if (espectador && id !== CLIENT.Ping && id !== CLIENT.Quit && id !== CLIENT.NavegarEspectador &&
+          !(id === CLIENT.GMCommands && (bytes[1] === 241 || bytes[1] === 242))) return;
+      if (ws && ws.readyState === 1) ws.send(xorBuffer(bytes, myKey));
+    }
+    const send = (w) => enviarAlJuego(w.toBytes());
     // LO QUE ENTRA EN UN Integer Y EN UN Long DEL PROTOCOLO. `writeInteger` y `writeLong` se quedan con los 16 y 32 bits de
     // abajo (un 65537 viajaba como 1), así que los montos que escribe el jugador se acotan a esto antes de mandarse.
     const MAX_INTEGER = 32767, MAX_LONG = 2147483647;
@@ -1712,7 +1747,7 @@
       }
       const w = new ByteQueueWriter();
       w.writeByte(equipar ? CLIENT.EquipItem : CLIENT.UseItem).writeByte(slot);
-      ws.send(xorBuffer(w.toBytes(), myKey));
+      enviarAlJuego(w.toBytes());
     }
     // ── EL MAPA DEL MUNDO ────────────────────────────────────────────────────────────────────────────────────
     // El ítem mapa es de tipo ESCUDO en el .dat, así que el ruteo de arriba lo mandaba a equipar y no pasaba nada.
@@ -1998,6 +2033,85 @@
     fetch('./assets/shields.json').then((r) => r.json()).then((s) => { shieldsIdx = s.anims; draw(); });
     fetch('./assets/helmets.json').then((r) => r.json()).then((h) => { helmetsIdx = h.anims; draw(); });
     let map = null, currentMap = 1;
+    function pedirFinDeEspectador() {
+      send(W().writeByte(CLIENT.GMCommands).writeByte(242));
+    }
+    $('salir-espectador').addEventListener('click', pedirFinDeEspectador);
+
+    function navegarEspectador(siguiente) {
+      if (espectador) send(W().writeByte(CLIENT.NavegarEspectador).writeByte(siguiente ? 1 : 0));
+    }
+    $('espectador-anterior').addEventListener('click', () => navegarEspectador(false));
+    $('espectador-siguiente').addEventListener('click', () => navegarEspectador(true));
+
+    function mostrarControlesEspectador(activo) {
+      $('stage').classList.toggle('espectando', activo);
+      $('aviso-espectador').hidden = !activo;
+      for (const id of ['view', 'panel', 'hotbar', 'm-ventana', 'm-botones']) $(id).inert = activo;
+    }
+
+    function cerrarVistaEspectador(volverALaLista = true) {
+      if (!espectador) return;
+      const sinPersonaje = espectador.sinPersonaje;
+      espectador = null;
+      mostrarControlesEspectador(false);
+      if (sinPersonaje) {
+        document.body.classList.remove('espectador-solo');
+        if (volverALaLista && ultimoRoster) {
+          showLogin();
+          showCharList(ultimoRoster.account, ultimoRoster.list);
+        }
+      }
+    }
+
+    function aplicarEscenaEspectador(f) {
+      if (!f.objetivo) { cerrarVistaEspectador(); return; }
+      const sinPersonaje = espectador?.sinPersonaje ?? !loggedIn;
+      if (!espectador) {
+        soltarTeclas();
+        salirDePunteria();
+        abrirChat(false);
+        closeModal();
+        mostrarControlesEspectador(true);
+        if (sinPersonaje) {
+          document.body.classList.add('espectador-solo');
+          loginErr('');
+          hideLogin();
+        }
+      }
+
+      if (!espectador || espectador.mapa !== f.mapa) {
+        const vista = { mapa: f.mapa, sinPersonaje, terreno: null, personajes: new Map(), suelo: new Map() };
+        espectador = vista;
+        if (f.mapa === currentMap && map) vista.terreno = map;
+        else fetch(`./assets/map${f.mapa}.json`).then((r) => r.ok ? r.json() : null)
+          .then((m) => { if (espectador === vista) vista.terreno = m; }).catch(() => {});
+      }
+
+      const vista = espectador;
+      if (vista.objetivo !== f.objetivo || vista.nombre !== f.nombre)
+        $('nombre-espectado').textContent = `Observando a ${f.nombre} · Mapa ${f.mapa}`;
+      vista.objetivo = f.objetivo;
+      vista.nombre = f.nombre;
+      const personajes = new Map();
+      for (const datos of f.personajes) {
+        const anterior = vista.personajes.get(datos.charIndex);
+        const c = aparienciaPersonaje(datos);
+        (datos.auras || []).forEach((a, i) => { if (a) (c.auras = c.auras || {})[i + 1] = a; });
+        if (anterior) {
+          const dx = Math.abs(anterior.x - c.x), dy = Math.abs(anterior.y - c.y);
+          for (const campo of ['moveT0', 'animT0', 'movedAt', 'rx0', 'ry0']) c[campo] = anterior[campo];
+          if (dx + dy === 1) {
+            c.x = anterior.x; c.y = anterior.y;
+            moverA(c, datos.x, datos.y);
+          } else if (dx || dy) saltarA(c, datos.x, datos.y);
+        }
+        personajes.set(datos.charIndex, c);
+      }
+      vista.personajes = personajes;
+      vista.suelo = new Map(f.suelo.map((it) => [it.x + ',' + it.y, it]));
+    }
+
     // Load a map by number (assets/map<N>.json). Called on login/teleport via the ChangeMap packet;
     // clears the old map's entities and dropped items (they live on the map we just left) and keeps
     // only our own character. Están los 863, y se piden de a uno (~65 KB) recién al pisarlos: son 59 MB
@@ -2862,6 +2976,12 @@
       const v = [c[1], c[1], c[2], c[0]];
       return [0, 1, 2].map((i) => Math.round((v[0][i] + v[1][i] + v[2][i] + v[3][i]) / 4));
     };
+    function aparienciaPersonaje(f) {
+      return Object.assign(
+        { x: f.x, y: f.y, donador: f.donador, body: f.body, head: f.head, heading: f.heading, weapon: f.weapon, shield: f.shield, helmet: f.helmet },
+        resolverPersonaje(f.name, f.status));
+    }
+
     /** Un `CharacterCreate` no dice si el personaje es un usuario o un NPC: se deduce de que el NOMBRE sea
      *  NUMÉRICO (`IsNumeric(Name)`, Protocol.bas:1733), porque de un NPC el server manda su número de ficha y
      *  el cliente lo resuelve contra la tabla de locale. Un nombre de jugador nunca tiene dígitos
@@ -3237,7 +3357,7 @@
       nombre: barraJefe && barraJefe.querySelector('.bj-nombre').textContent,
       numero: barraJefe && barraJefe.querySelector('.bj-numero').textContent });
     const minimapCv = document.getElementById('minimap');
-    function drawMinimap() {
+    function drawMinimap(map, me) {
       const mx = minimapCv.getContext('2d');
       if (!map || !miniColor) { mx.clearRect(0, 0, minimapCv.width, minimapCv.height); return; }
       if (minimapCv.width !== map.w || minimapCv.height !== map.h) { minimapCv.width = map.w; minimapCv.height = map.h; }
@@ -3265,7 +3385,6 @@
       }
       mx.imageSmoothingEnabled = false;
       mx.drawImage(map._mini, 0, 0);
-      const me = chars.get(myCharIndex);
       if (me) { mx.fillStyle = '#ff0000'; mx.fillRect(me.x - map.xmin - 1, me.y - map.ymin - 1, 3, 3); }
     }
 
@@ -3599,6 +3718,8 @@
       };
       ws.onclose = (ev) => {
         if (ws !== sock) return;
+        const observabaSinPersonaje = espectador?.sinPersonaje;
+        cerrarVistaEspectador(false);
         const wasLogged = loggedIn; loggedIn = false;      // reset por conexión: 'Logged' lo vuelve a poner true
         myKey = DEFAULT_XOR_KEY; entrandoDesde = 0;         // la clave es de la conexión: la siguiente arranca en 13
         enCombate = false;                                 // el original también la apaga al caerse (frmMain.frm:2966)
@@ -3621,6 +3742,11 @@
           showLogin(); loginErr(lastReject);
           loginBytes = null;                               // no reintentar el login fallido…
           return;                                          // …y NO auto-reconectar (evita el doble socket; sendLogin reconecta al reintentar)
+        }
+        if (observabaSinPersonaje && !ev.reason) {
+          loginBytes = null; cuentaAceptada = false;
+          showLogin(); loginErr('Se cortó la conexión. Volvé a ingresar para observar.');
+          return;
         }
         // CIERRE DELIBERADO DEL SERVER: si viene con motivo en el frame de cierre (Transports.cs) NO se reconecta.
         // Reconectar siempre tenía dos consecuencias feas: (1) dos pestañas con el mismo personaje se echaban
@@ -3738,12 +3864,12 @@
       personajes: [...chars.entries()].filter(([, c]) => c.particulas && c.particulas.length)
         .map(([ci, c]) => ({ ci, grupos: c.particulas.map((g) => ({ id: g.id, vida: g.vida, visibles: g.ps.filter((p) => p.grh).length })) })),
     });
-    window.__foundGuild = (name) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CreateNewGuild).writeAsciiString('clan del cliente web').writeAsciiString(name).writeAsciiString('').writeAsciiString('').toBytes(), myKey)); // debug
-    window.__use = (slot) => ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.UseItem).writeByte(slot).toBytes(), myKey)); // debug: usar un ítem (p.ej. la barca para navegar)
+    window.__foundGuild = (name) => enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.CreateNewGuild).writeAsciiString('clan del cliente web').writeAsciiString(name).writeAsciiString('').writeAsciiString('').toBytes()); // debug
+    window.__use = (slot) => enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.UseItem).writeByte(slot).toBytes()); // debug: usar un ítem (p.ej. la barca para navegar)
     // debug: interactuar con un tile por coordenada del MUNDO, sin tener que calcular el píxel del canvas
     // (mismo par LeftClick+DoubleClick que manda el doble clic real: puertas, NPCs, objetos del suelo).
     window.__dclick = (x, y) => { send(W().writeByte(CLIENT.LeftClick).writeByte(x).writeByte(y));
-      ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.DoubleClick).writeByte(x).writeByte(y).toBytes(), myKey)); };
+      enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.DoubleClick).writeByte(x).writeByte(y).toBytes()); };
     window.__hb = () => hotbar; window.__hbBind = (b) => bindHotbar(b); window.__hbFire = (i) => fireHotbar(i);  // debug: estado/atar/disparar la hotbar
     // Los personajes que el cliente tiene EN PANTALLA, con lo que le llegó de cada uno: la sonda para
     // contestar "¿esto que el servidor manda, llega y se dibuja?" sin mirar una captura. `chat` es el cartel
@@ -4396,7 +4522,7 @@
       else if (b.dataset.extgold) w.writeByte(CLIENT.BankExtractGold).writeLong(leerOroQty());                        // retirar oro
       else if (b.dataset.prize) w.writeByte(CLIENT.RPremios).writeInteger(+b.dataset.prize);                          // canjear premio de donador (1-based)
       else w.writeByte(CLIENT.CommerceBuy).writeByte(+b.dataset.slot).writeInteger(leerComercioQty());
-      ws.send(xorBuffer(w.toBytes(), myKey));
+      enviarAlJuego(w.toBytes());
     });
 
     // ============================ Paneles Social (T3) y Acciones (T4) ============================
@@ -4850,7 +4976,8 @@
     // 10`), aunque alla esta gateado por FPSFLAG —o sea que solo mide latencia si tenes el contador a la
     // vista—; aca el cartel de perf esta siempre, asi que se mide siempre. El Pong devuelve el timestamp.
     setInterval(() => {
-      if (loggedIn && !pausaDelServer && ws && ws.readyState === 1) send(W().writeByte(CLIENT.Ping).writeLong(Math.round(performance.now()) & 0x7FFFFFFF));
+      if ((loggedIn || espectador) && !pausaDelServer && ws && ws.readyState === 1)
+        send(W().writeByte(CLIENT.Ping).writeLong(Math.round(performance.now()) & 0x7FFFFFFF));
     }, 10000);
 
     const recentPackets = [];   // ultimos 60 nombres de paquete decodificados (debug: window.__pkts())
@@ -4867,8 +4994,8 @@
           // vivo, y el próximo personaje que entrara de la misma clase y sin familiar se quedaba con él.
           if (familiarPendiente) {
             if (loginBytes && loginBytes[0] === CLIENT.LoginNewChar)
-              ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ElegirFamiliar)
-                .writeByte(familiarPendiente.tipo).writeAsciiString(familiarPendiente.nombre).toBytes(), myKey));
+              enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.ElegirFamiliar)
+                .writeByte(familiarPendiente.tipo).writeAsciiString(familiarPendiente.nombre).toBytes());
             familiarPendiente = null;
           }
           altaHecha(CLIENT.LoginNewChar);
@@ -4926,10 +5053,9 @@
         // banea solo. El LevelUp del login viene DESPUÉS de este paquete, así que el reinicio no lo pisa.
         case 'LoggedSuccessful': puntosLibres = 0; refrescarPuntosLibres(); break;
         case 'UserCharIndexInServer': myCharIndex = f.charIndex; break;
+        case 'EscenaEspectador': aplicarEscenaEspectador(f); break;
         case 'CharacterCreate': {
-          const c = Object.assign(
-            { x: f.x, y: f.y, donador: f.donador, body: f.body, head: f.head, heading: f.heading, weapon: f.weapon, shield: f.shield, helmet: f.helmet },
-            resolverPersonaje(f.name, f.status));
+          const c = aparienciaPersonaje(f);
           // LO QUE EL PERSONAJE YA TRAÍA PUESTO al entrar en pantalla (HandleCharacterCreate, Protocol.bas): su FX
           // (`SetCharacterFx`), su partícula propia (`MakeChar` → `SetCharacterParticle(ParticulaFx, charindex, -1)`,
           // TileEngine.bas:1081) y sus seis auras. Acá se leían y se tiraban: uno con un arma de aura que aparecía
@@ -5592,9 +5718,12 @@
       // El NOMBRE del lugar, no su número. Los `map<N>.json` lo traen desde el header del .csm
       // (add_map_names.py), así que decir "Mapa 1" parado en Ullathorpe era tirar el dato que ya estaba.
       // Los mapas sin nombre —dungeons, relleno— caen al número, que es mejor que un renglón vacío.
-      const nomMapa = (map && (map.name || '').trim()) || '';
-      esc_(hudEl.mapa, 't', nomMapa || ('Mapa ' + currentMap));
-      const coords = me ? `${currentMap} · ${me.x}, ${me.y}` : '—';
+      const terrenoVisible = espectador ? espectador.terreno : map;
+      const numeroVisible = espectador ? espectador.mapa : currentMap;
+      const centroVisible = espectador ? espectador.personajes.get(espectador.objetivo) : me;
+      const nomMapa = (terrenoVisible?.name || '').trim();
+      esc_(hudEl.mapa, 't', nomMapa || ('Mapa ' + numeroVisible));
+      const coords = centroVisible ? `${numeroVisible} · ${centroVisible.x}, ${centroVisible.y}` : '—';
       if (_coordsCache !== coords) { _coordsCache = coords; coordsEl.textContent = coords; }
       // El FPS lo mide el BUCLE DE RENDER, no este sync del HUD: midiéndolo acá el cartel mostraba el
       // refresco del HUD —un número lindo y estable— mientras el mundo podía estar congelado.
@@ -5669,7 +5798,7 @@
       if (!ev.shiftKey) return;
       const w = new ByteQueueWriter();
       w.writeByte(CLIENT.EquipItem).writeByte(slot);
-      ws.send(xorBuffer(w.toBytes(), myKey));
+      enviarAlJuego(w.toBytes());
     });
     // DOBLE CLIC = usar. La otra vía es U sobre el slot seleccionado; las dos van al mismo ruteo por tipo.
     invgridEl.addEventListener('dblclick', (ev) => {
@@ -6317,7 +6446,7 @@
       if (alcance >= 1) lightCx.fillRect(px - alcance + 1, py - alcance + 1, alcance * 2 - 1, alcance * 2 - 1);
     }
 
-    function drawLighting(camX, camY, me) {
+    function drawLighting(camX, camY, map, chars, ground, muerto) {
       _luzDbg.vueltas++;
       if (luzApagada) return;                     // window.__sinLuces(): A/B del costo del frame
       // El ciclo día/noche NO se aplica a todos los mapas. Si el `.csm` trae `Base_Light` distinto de 0, ese
@@ -6342,7 +6471,6 @@
       //
       // Acá no existía: morirse no cambiaba nada de la escena salvo tu propio dibujo. Se aplica en el
       // ambiente, que es el único punto por el que pasa todo el mundo en este motor.
-      const muerto = estoyMuerto();
       if (muerto) amb = [67, 67, 67];
       _luzDbg.amb = amb; _luzDbg.muerto = muerto; _luzDbg.base = fija;
       const t = Date.now();
@@ -6441,6 +6569,12 @@
 
     function draw() {
       if (!renderReady || paused) return;   // evita draws en TDZ durante la carga; paused congela para screenshot
+      const vista = espectador;
+      dibujarEscena(vista ? vista.terreno : map, vista ? vista.personajes : chars, vista ? vista.suelo : ground, vista);
+      syncStats();
+    }
+
+    function dibujarEscena(map, chars, ground, vista) {
       // Transform global: dibujamos TODO en tile-space (px de arte). scale(dpr*Z) lo lleva al display:
       // dpr = nitidez nativa, Z = zoom (FOV vertical fijo). El mundo es lo único que va al canvas.
       ctx.setTransform(SS, 0, 0, SS, 0, 0);      // escala ENTERA → dibujo en tile-space
@@ -6448,7 +6582,8 @@
       // suavizar. A SS=4 el ratio es 1:1 (sin resample, nítido); a SS<4 el filtrado evita el aliasing del downscale.
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.fillStyle = '#0a0d0a'; ctx.fillRect(0, 0, VW, VH);
-      const me = chars.get(myCharIndex);
+      const me = chars.get(vista ? vista.objetivo : myCharIndex);
+      const muerto = !vista && estoyMuerto();
       // La cámara sigue la posición VISUAL (float), no el tile lógico: así se desplaza junto con el
       // personaje durante el paso en vez de saltar de golpe cuando llega el paquete.
       const [meRx, meRy] = me ? posRender(me) : [0, 0];
@@ -6575,7 +6710,7 @@
       // justamente lo que un comparador no puede hacer.
       const aDibujar = [];
       for (const par of chars) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: false, rx: p[0], ry: p[1] }); }
-      for (const par of dying) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: true, rx: p[0], ry: p[1] }); }
+      if (!vista) for (const par of dying) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: true, rx: p[0], ry: p[1] }); }
       aDibujar.sort((a, b) => a.ry - b.ry || a.rx - b.rx);
       // CAPA 3 INTERCALADA con los personajes (TileEngine.bas:2116-2197). Dentro de cada tile el original
       // dibuja la capa 3 (:2136) y DESPUÉS el personaje (:2195), y recorre las filas de arriba hacia abajo:
@@ -6610,7 +6745,7 @@
       let iSuelo = 0;
       // Los carteles de los portales del mapa van en SU fila, como un objeto más: así los tapa lo que está delante.
       // El portal que sí vino como objeto (el de un hechizo) lo nombra `pintarObjetoDelSuelo`.
-      const portalesVista = destinoPortales ? portalesDelMapa() : [];
+      const portalesVista = destinoPortales ? portalesDelMapa(map, vista ? vista.mapa : currentMap) : [];
       let iPortal = 0;
       const pintarCartelDePortal = (px, py) => {
         const it = ground.get(px + ',' + py);
@@ -6786,7 +6921,7 @@
         // Acá se dibujaba un ARCO BLANCO delante del atacante. También era nuestro: el original no traza
         // nada al golpear (ver la nota del salto, arriba).
         // Hit flash: a red wash over our own tile the moment something strikes us.
-        if (ci === myCharIndex && myHitAt && Date.now() - myHitAt < 260) {
+        if (!vista && ci === myCharIndex && myHitAt && Date.now() - myHitAt < 260) {
           ctx.fillStyle = `rgba(210,60,45,${(1 - (Date.now() - myHitAt) / 260) * 0.5})`;
           ctx.fillRect(sx, sy - 6, TILE, TILE + 6);
         }
@@ -6823,12 +6958,12 @@
         techoT = ahora;
         // AL MORIR EL TECHO SE ABRE DE GOLPE, sin fundido: `If CurrentUser.Muerto And AlphaY <> 0 Then
         // AlphaY = 0 : Exit Sub` (TileEngine.bas:3840). Si te matan bajo techo, el muerto ve a través.
-        if (estoyMuerto() && adentro) techoAlpha = 0;
+        if (muerto && adentro) techoAlpha = 0;
         else techoAlpha = Math.max(0, Math.min(1, techoAlpha + (adentro ? -1 : 1) * dtTecho / TECHO_FADE_MS));
       }
       // Iluminación dinámica: el ambiente del ciclo día/noche y las luces del mapa, en un light-map que
       // MULTIPLICA la escena.
-      drawLighting(camX, camY, me);
+      drawLighting(camX, camY, map, chars, ground, muerto);
       // LAS PARTÍCULAS Y LOS TEXTOS TAMPOCO LOS TOCA EL AMBIENTE, y por eso van después de la luz.
       //
       // En el original el ambiente sólo entra donde el color de vértice es CERO
@@ -6837,7 +6972,7 @@
       // personaje, así que ninguno de los dos cae nunca en esa rama: la llama de una antorcha se ve igual de
       // noche que de día, y un nick azul sigue azul. Acá los dos se dibujaban ANTES del multiply, así que de
       // noche las partículas se apagaban y viraban, y el nick de un ciudadano (#2051FB) salía (18,45,90).
-      dibujarParticulas(camX, camY, offX, offY, dtParticulas(), conParticulas);
+      if (!vista) dibujarParticulas(camX, camY, offX, offY, dtParticulas(), conParticulas);
       // LOS TECHOS VAN DESPUÉS DE LA LUZ, y con el ambiente solamente.
       //
       // El original dibuja la capa 4 con el array `Techos`, que lleva ÚNICAMENTE el color de ambiente
@@ -6863,7 +6998,7 @@
         const fijaT = map.baseLight;
         let ambT = fijaT ? (fijaT === 0xFFFFFF ? null : [fijaT >> 16, (fijaT >> 8) & 255, fijaT & 255])
                          : AMBIENTE[period];
-        if (estoyMuerto()) ambT = [67, 67, 67];
+        if (muerto) ambT = [67, 67, 67];
         if (ambT) {
           // EL TINTE NECESITA UNA MASCARA. `multiply` sobre un lienzo TRANSPARENTE no deja el píxel
           // transparente: lo pinta con el color de origen, así que un fillRect de pantalla completa
@@ -6964,7 +7099,7 @@
       {
         const now = Date.now();
         const FRAME_MS = FX_MS_POR_CUADRO;
-        for (let i = groundFx.length - 1; i >= 0; i--) {
+        for (let i = vista ? -1 : groundFx.length - 1; i >= 0; i--) {
           const g = groundFx[i];
           const dt = now - g.at;
           const cx = (g.x - camX) * TILE, cy = (g.y - camY) * TILE;
@@ -6994,7 +7129,7 @@
       }
 
       // EL ALCANCE DEL HECHIZO mientras se apunta (ver `dibujarAlcanceDelHechizo`). Antes de la ceguera: el ciego no lo ve.
-      if (alcanceHechizo && verAlcanceHechizo && workSkill === SKILL_MAGIA_CLIENTE && me) dibujarAlcanceDelHechizo(me, camX, camY);
+      if (!vista && alcanceHechizo && verAlcanceHechizo && workSkill === SKILL_MAGIA_CLIENTE && me) dibujarAlcanceDelHechizo(me, camX, camY);
 
       // CEGUERA (Blind 57 / BlindNoMore 65): todo negro MENOS vos y lo que tenés pegado al lado.
       //
@@ -7011,7 +7146,7 @@
       // su versión sería hacer fiel un hechizo que no hace nada.
       //
       // Se hace con un degradado radial y no con un círculo duro para que el borde no se vea como un recorte.
-      if (blind) {
+      if (!vista && blind) {
         const me2 = chars.get(myCharIndex);
         const p = me2 ? posRender(me2) : null;
         const cx = p ? (p[0] - camX) * TILE + TILE / 2 : VW / 2;
@@ -7024,10 +7159,9 @@
         ctx.fillRect(0, 0, VW, VH);
       }
 
-      drawMinimap();   // minimapa (canvas del DOM); las entidades/viewport se actualizan cada frame
-      pintarBarraDelJefe(me);
+      drawMinimap(map, me);
+      if (!vista) pintarBarraDelJefe(me);
       ctx.setTransform(1, 0, 0, 1, 0, 0);   // restaura el transform (por si alguien dibuja fuera)
-      syncStats();     // barras/nivel/oro/coords del panel DOM
     }
 
     const HEADINGS = { ArrowUp: 1, ArrowRight: 2, ArrowDown: 3, ArrowLeft: 4 };
@@ -7107,14 +7241,14 @@
       if (paralizado) {
         if (me.heading !== h) {
           me.heading = h;
-          ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ChangeHeading).writeByte(h).toBytes(), myKey));
+          enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.ChangeHeading).writeByte(h).toBytes());
         }
         return;
       }
       me.heading = h;
       const nx = me.x + (h === 2 ? 1 : h === 4 ? -1 : 0);
       const ny = me.y + (h === 3 ? 1 : h === 1 ? -1 : 0);
-      ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.Walk).writeByte(h).toBytes(), myKey));
+      enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.Walk).writeByte(h).toBytes());
       // Sin sonido de paso: el propio NO se escucha (ya verificado — el server lo difunde con
       // ToPCAreaButIndex, o sea a todos MENOS a vos). Predecir el movimiento no cambia eso.
       if (posLegal(nx, ny)) {
@@ -7164,7 +7298,7 @@
     /** Un golpe: exactamente lo que manda la tecla, extraído para que el macro y la pulsación usen el mismo. */
     function mandarGolpe() {
       if (ws.readyState !== 1) return;
-      ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.attack).toBytes(), myKey));
+      enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.attack).toBytes());
       const me = chars.get(myCharIndex); if (me) me.attackAt = Date.now();   // la embestida local
       draw();
     }
@@ -7456,6 +7590,8 @@
       // lo podía tipear. Va con el resto porque está vivo y ya pasa por el mismo chequeo de privilegio que
       // los demás; el mapa de los mudos es para los que NO HACEN NADA.
       '/armar': [240, 'bi'],
+      '/espectar': [241, 's'],
+      '/dejardever': [242, ''],
     };
     // Los argumentos se toman de izquierda a derecha; el ÚLTIMO, si es texto, se lleva el resto de la línea
     // (así `/rmsg se cae el server en 5` manda la frase entera). Los tres comandos que llevan un texto EN EL
@@ -7477,9 +7613,10 @@
       return GM_COMANDOS[cmd] ? { clave: cmd, resto: arg } : null;
     }
     // ESCRIBE EN EL WRITER COMPARTIDO y devuelve si hay algo que mandar. No manda por su cuenta: al final del
-    // bloque de comandos hay UN `ws.send(w)` para todos, y un envío propio dejaba salir además ese buffer
+    // bloque de comandos se manda un solo paquete, y un envío propio dejaba salir además ese buffer
     // vacío — que del otro lado se lee como fin de stream y le cierra la conexión al GM.
     function armarComandoGm(w, clave, arg) {
+      if (clave === '/espectar' && !arg) { log('Uso: /espectar <nombre>', '#b94'); return false; }
       const [id, layout] = GM_COMANDOS[clave];
       w.writeByte(CLIENT.GMCommands).writeByte(id);
       let piezas;
@@ -7666,7 +7803,7 @@
       } else {
         w.writeByte(CLIENT.Talk).writeAsciiString(text).writeByte(1);   // texto plano → ChatOverHead
       }
-      ws.send(xorBuffer(w.toBytes(), myKey));
+      enviarAlJuego(w.toBytes());
     }
     // El chat se ABRE y se CIERRA con Enter, y sólo entonces se ve el recuadro. En reposo quedan las
     // líneas de eventos flotando sobre el mundo, sin panel ni borde.
@@ -7820,6 +7957,13 @@
     });
 
     addEventListener('keydown', (ev) => {
+      if (espectador) {
+        const sobreBoton = ev.target?.closest?.('#aviso-espectador button');
+        if (ev.key === 'Escape' && !ev.repeat) pedirFinDeEspectador();
+        if (ev.key === 'Enter' && !sobreBoton && ev.target !== chatbox) abrirChat(true);
+        if (ev.key !== 'Tab' && !sobreBoton) ev.preventDefault();
+        return;
+      }
       // Escribiendo en un campo (chat/login/paneles): teclas del juego OFF. Pero sólo si el campo está VISIBLE:
       // un input dentro de un contenedor que se ocultó conserva el foco, y sin este chequeo se quedaba comiéndose
       // las teclas del juego para siempre. Se mide con getClientRects() (vacío sólo si el elemento no se renderiza)
@@ -7903,13 +8047,13 @@
       // estadísticas y descansar— quedan sin tocar hasta decidirlo: cambiarlas es cambiarle los dedos al
       // jugador. Ver docs/eje-censo-cliente.md.
       } else if (acc === 'agarrar' && ws.readyState === 1) {
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.PickUp).toBytes(), myKey));   // A = agarrar, la del original
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.PickUp).toBytes());   // A = agarrar, la del original
         ev.preventDefault();
       } else if (acc === 'domar' && ws.readyState === 1) {
         modoPunteria(SKILL_DOMAR);
         ev.preventDefault();
       } else if (acc === 'actualizar' && ws.readyState === 1) {
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestPositionUpdate).toBytes(), myKey));
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.RequestPositionUpdate).toBytes());
         ev.preventDefault();
       // U y T actúan sobre el ÍTEM SELECCIONADO, que es el modelo del original. Sin selección no hacen nada
       // y lo dicen, en vez de fallar en silencio.
@@ -7921,24 +8065,24 @@
         tirarDelSlot(slotSel);   // abre "Cantidad a dejar", o tira directo si hay una sola unidad
         ev.preventDefault();
       } else if ((ev.key === 'g' || ev.key === 'G') && ws.readyState === 1) {
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.PickUp).toBytes(), myKey)); // pick up item under us
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.PickUp).toBytes()); // pick up item under us
         ev.preventDefault();
       // MODO COMBATE en C, que es la del original (Controls.bin → mKeyToggleCombatMode). X se deja como alias
       // porque era la nuestra de siempre y no le estorba a nadie: ninguna acción del original usa X.
       } else if ((acc === 'combate' || ev.key === 'x' || ev.key === 'X') && ws.readyState === 1) {
         // Combat mode. The server gates Attack on it (VB6 SeguroCheck): without it you get LocaleMsg 102.
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.CombatModeToggle).toBytes(), myKey));
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.CombatModeToggle).toBytes());
         enCombate = !enCombate; pintarEstados();   // el original la lleva local y la MUESTRA (IScombate)
         ev.preventDefault();
       } else if (acc === 'clan' && ws.readyState === 1) {
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestGuildLeaderInfo).toBytes(), myKey)); // clan: se mudó de C
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.RequestGuildLeaderInfo).toBytes()); // clan: se mudó de C
         ev.preventDefault();
       } else if (acc === 'robar' && ws.readyState === 1) {
         modoPunteria(SKILL_ROBAR);   // R = robar, la del original
         ev.preventDefault();
       } else if (acc === 'seguroRes' && ws.readyState === 1) {
         // S = seguro de resurrección (mKeyToggleResuscitationSafe). Los hechizos se mudaron a H.
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.ResuscitationSafeToggle).toBytes(), myKey));
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.ResuscitationSafeToggle).toBytes());
         ev.preventDefault();
       } else if (acc === 'equipar' && ws.readyState === 1) {
         // E = equipar el objeto ELEGIDO (mKeyEquipObject). Las estadísticas se mudaron a I.
@@ -7952,16 +8096,16 @@
         showSpells();                                  // hechizos: se mudó de S (mnemónico, y S es del original)
         ev.preventDefault();
       } else if (acc === 'info' && ws.readyState === 1 && !pausaDelServer) {   // en pausa no (frmMain.frm:2032)
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestMiniStats).toBytes(), myKey)); // info: se mudó de E
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.RequestMiniStats).toBytes()); // info: se mudó de E
         ev.preventDefault();
       } else if (acc === 'meditar' && ws.readyState === 1) {
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.Meditate).toBytes(), myKey)); // aura via EfectoCharParticula
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.Meditate).toBytes()); // aura via EfectoCharParticula
         ev.preventDefault();
       } else if (acc === 'habilidades' && ws.readyState === 1) {
         // Panel de habilidades: hay que PEDIRLO (RequestSkills 12) — el server responde SendSkills(67).
         // El flag distingue esta respuesta de la que el server manda solo al entrar (ver showSkills).
         pedidoDeSkills = true;
-        ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.RequestSkills).toBytes(), myKey));
+        enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.RequestSkills).toBytes());
         ev.preventDefault();
       } else if (acc === 'ocultarse' && ws.readyState === 1) {
         // OCULTARSE. Es el gap más caro que encontró el sexto eje: la skill estaba entera en el server —el
@@ -8028,14 +8172,14 @@
       // —/MATA, /SEGUIR, /RESETINV, /TALKAS, /DT— no tendrían nunca sobre qué actuar. El cliente original manda
       // los dos en un doble clic, por eso van juntos y no en handlers separados.
       send(W().writeByte(CLIENT.LeftClick).writeByte(wx).writeByte(wy));
-      ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.DoubleClick).writeByte(wx).writeByte(wy).toBytes(), myKey));
+      enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.DoubleClick).writeByte(wx).writeByte(wy).toBytes());
       describirObjetoDelPiso(wx, wy);
       // EL SHIFT+CLIC DEL GM (VB6 frmMain.frm:2556): después del clic, `/TELEP YO` a esa baldosa del mapa donde está.
       // El original lo manda sólo si es GM, que lo sabe por su lista de personajes; acá lo decide el server, que a un
       // jugador común no le contesta nada.
       if (ev.shiftKey) {
         const w = new ByteQueueWriter();
-        if (armarComandoGm(w, '/telep', `YO ${currentMap} ${wx} ${wy}`)) ws.send(xorBuffer(w.toBytes(), myKey));
+        if (armarComandoGm(w, '/telep', `YO ${currentMap} ${wx} ${wy}`)) enviarAlJuego(w.toBytes());
       }
     });
     // Los personajes los describe el SERVER (CharMsgStatus, que llega por LookatTile), pero el objeto del piso
@@ -8058,16 +8202,16 @@
       return z && z.n ? z.n.trim() : null;
     }
     const COLOR_PORTAL = '#9fd8ff';
-    function portalesDelMapa() {
+    function portalesDelMapa(map, numero) {
       if (!map) return [];
       if (!map._portales || map._portalesDe !== portalesDelMundo) {
         map._portalesDe = portalesDelMundo;
-        map._portales = portalesDelMundo[currentMap] || [];
+        map._portales = portalesDelMundo[numero] || [];
         map._esPortal = new Set(map._portales.map(([x, y]) => x + ',' + y));
       }
       return map._portales;
     }
-    const esPortalDelMapa = (x, y) => (portalesDelMapa(), !!(map && map._esPortal && map._esPortal.has(x + ',' + y)));
+    const esPortalDelMapa = (x, y) => (portalesDelMapa(map, currentMap), !!(map && map._esPortal && map._esPortal.has(x + ',' + y)));
     // El cartel va arriba del brillo: la partícula del teleport sube hasta unos 50 px sobre su baldosa.
     const ALTO_CARTEL_PORTAL = 44;
     let porGrh = null;             // índice inverso grh → objIndex, para nombrar los objetos FIJOS del mapa
@@ -8582,6 +8726,9 @@
     function showCharList(account, list) {
       anotarRecordarme();
       ultimoRoster = { account, list };
+      $('cs-modo-espectador').hidden = !(list || []).some(c => c.gm);
+      $('cs-modo-espectador').setAttribute('aria-expanded', 'false');
+      $('cs-elegir-espectador').hidden = true;
       csAccEl.textContent = account; charlistEl.innerHTML = '';
       const pending = [];
       for (const c of (list || [])) {
@@ -8603,8 +8750,8 @@
           if (!confirmar(`¿Borrar a ${c.name}? Se pierde el personaje, su inventario y su banco.`)) return;
           const escrito = await preguntar(`Escribí el nombre para confirmar: ${c.name}`);
           if (!escrito || escrito.trim().toLowerCase() !== c.name.toLowerCase()) return;
-          ws.send(xorBuffer(new ByteQueueWriter().writeByte(CLIENT.BorrarPersonaje)
-            .writeAsciiString(accName).writeAsciiString(accPass).writeAsciiString(c.name).toBytes(), myKey));
+          enviarAlJuego(new ByteQueueWriter().writeByte(CLIENT.BorrarPersonaje)
+            .writeAsciiString(accName).writeAsciiString(accPass).writeAsciiString(c.name).toBytes());
         });
         card.append(cv, info, del, play);
         card.addEventListener('click', () => playChar(c.name));
@@ -8631,7 +8778,26 @@
       charlistEl.onscroll = revisarFade;
       setTimeout(revisarFade, 0);
     }
-    $('cs-back').addEventListener('click', () => selectLoginMode('in'));
+    $('cs-modo-espectador').addEventListener('click', () => {
+      const form = $('cs-elegir-espectador');
+      form.hidden = !form.hidden;
+      $('cs-modo-espectador').setAttribute('aria-expanded', String(!form.hidden));
+      if (!form.hidden) $('cs-objetivo-espectador').focus();
+      else pedirFinDeEspectador();
+    });
+    $('cs-elegir-espectador').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      if (!cuentaAceptada || $('cs-modo-espectador').hidden) return;
+      const objetivo = $('cs-objetivo-espectador').value.trim();
+      if (!objetivo) { loginErr('Escribí el nombre de quien querés observar.'); return; }
+      if (ws?.readyState !== 1) { loginErr('La conexión se cortó. Volvé a ingresar.'); return; }
+      loginErr('Buscando a ' + objetivo + '…');
+      send(W().writeByte(CLIENT.GMCommands).writeByte(241).writeAsciiString(objetivo));
+    });
+    $('cs-back').addEventListener('click', () => {
+      if (!$('cs-elegir-espectador').hidden) pedirFinDeEspectador();
+      selectLoginMode('in');
+    });
     // Crear personaje DESDE la lista: las credenciales ya las tenemos de la sesión, así que se precargan y se
     // ESCONDEN. El paquete las sigue llevando; lo que se saca es volver a pedírselas a alguien que ya entró.
     $('cs-volver').addEventListener('click', () => {
@@ -8652,7 +8818,6 @@
     buildInv(); buildHotbar();
     renderReady = true; resize();
     if (atajoDeLoginPermitido) hideLogin();   // auto-login: saltar la pantalla (sólo desde esta máquina)
-    log('Conectando al servidor…', '#8a9');
   </script>
   <!-- EL TOP ENCIMA DEL INGRESO. El enlace llevaba a `estado.html` y con el cambio de página se cortaba la música del ingreso
        (el autor, 05/10: "la música del menú no debe pararse por ver el top, sólo al entrar a un server"). Ahora la página se

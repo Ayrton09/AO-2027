@@ -6,6 +6,7 @@ import {
   ByteQueueWriter, ByteQueueReader, xorBuffer, DEFAULT_XOR_KEY, NotEnoughData, MAX_CADENA, byteCp1252, caracterCp1252,
 } from '../src/codec/bytequeue.js';
 import { textoDelFlotante } from '../src/protocol/localeSmg.js';
+import { decodeServerStream, ServerPacketId } from '../src/protocol/serverPackets.js';
 
 // Minimal Node global (avoids a @types/node dependency for this standalone test).
 declare const process: { exit(code: number): never };
@@ -135,6 +136,25 @@ check('composite frame',
   assert('fallo propio', textoDelFlotante(0, true) === '*Fallas*');
   assert('fallo ajeno', textoDelFlotante(0, false) === '*Falla*');
   assert('fallo con negativo', textoDelFlotante(-3, false) === '*Falla*');
+}
+
+{
+  const w = new ByteQueueWriter().writeByte(ServerPacketId.EscenaEspectador)
+    .writeInteger(4).writeInteger(513).writeAsciiString('Lía')
+    .writeInteger(4).writeInteger(1).writeInteger(2).writeByte(3).writeByte(54).writeByte(60)
+    .writeInteger(5).writeInteger(6).writeInteger(7).writeInteger(0).writeInteger(999).writeAsciiString('Lía');
+  for (const b of [1, 0, 0, 0, 0, 0, 0, 0, 9]) w.writeByte(b);
+  w.writeInteger(0).writeInteger(30).writeByte(54).writeByte(61).writeInteger(2).writeInteger(0)
+    .writeByte(ServerPacketId.EscenaEspectador).writeInteger(0)
+    .writeByte(ServerPacketId.Pong).writeLong(458);
+  const eventos = decodeServerStream(w.toBytes());
+  const f = eventos[0]?.fields;
+  assert('escena decodifica mapa, objetivo, personaje y suelo',
+    f?.mapa === 513 && f.objetivo === 4 && f.nombre === 'Lía'
+    && (f.personajes as { auras: number[] }[])[0].auras[5] === 9
+    && (f.suelo as { amount: number }[])[0].amount === 2);
+  assert('fin de escena y Pong mantienen el encuadre',
+    eventos[1]?.fields.objetivo === 0 && eventos[2]?.id === ServerPacketId.Pong && eventos.length === 3);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

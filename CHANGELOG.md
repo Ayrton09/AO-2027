@@ -2,6 +2,30 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.33 (2026-11-17)
+
+### Modo espectador para GM
+
+- Ingresá con tu cuenta y elegí **Modo espectador** en la lista de personajes. Escribí el nombre de un jugador o bot conectado. Tu personaje queda fuera del mundo y la cámara sigue al observado al caminar o cambiar de mapa.
+- Usá las flechas del cartel para pasar al personaje anterior o siguiente en orden alfabético. Con **Dejar de observar** o Escape volvés a la selección. Si ya estás jugando con tu GM, también podés usar `/espectar <nombre>`.
+- El servidor comprueba los permisos del GM. Las cuentas de jugadores comunes siguen entrando por la selección de personajes.
+
+### Hechizos y mascotas
+
+- Tus hechizos ofensivos saltan a tu propia mascota al elegir el blanco. Si se cruza delante de la criatura a la que apuntás o comparte su baldosa, podés atacar a la criatura sin lastimarla. Tu mascota tampoco recibe daño de tus hechizos de área y sigue pudiendo recibir tus curas.
+
+### Pasajes entre ciudades
+
+- Hay **92 rutas entre 11 ciudades**. Los vendedores imperiales ofrecen destinos imperiales y neutrales. Los republicanos ofrecen destinos republicanos y neutrales. Los neutrales atienden a todos y venden pasajes a las demás ciudades de los tres grupos.
+- En **Ullathorpe** podés comprar pasajes junto a la puerta sur, donde está el viajero. También podés viajar hacia Ullathorpe. El pasaje de **Arghâl a Banderbill** ahora llega a Banderbill.
+- Los cruces de agua siguen pidiendo **80 puntos de Navegación** por defecto. Los viajes dentro de la misma tierra se pueden hacer sin puntos de Navegación. Los bots también buscan pasajes en los mostradores que los atienden.
+- Se conservan los precios base de los pasajes que ya existían. Los nuevos toman el precio del recorrido de vuelta si existe. Para los demás, el precio base es de 1.500 de oro por tierra o 12.000 al cruzar agua.
+
+### Cómo actualizar
+
+- Si usás el cliente de escritorio, aceptá la actualización a **1.0.33** y cerrá la app cuando te lo pida. También podés descargar el instalador de esta release.
+- Si hosteás, actualizá el **servidor a 1.0.33** y conservá tu `Server.ini` y la carpeta `data`. La app no instala el servidor. Para entrar, el cliente y el servidor tienen que estar en la misma versión.
+
 ## 1.0.32 (2026-11-17)
 
 ### Estado y nombre del servidor

@@ -27,7 +27,10 @@ function element() {
   let children = [];
   return {
     dataset: {}, style: {}, disabled: false, hidden: true, textContent: '',
-    classList: { values: new Set(), add(c) { this.values.add(c); }, contains(c) { return this.values.has(c); } },
+    classList: {
+      values: new Set(), add(c) { this.values.add(c); }, contains(c) { return this.values.has(c); },
+      toggle(c, activo) { if (activo) this.values.add(c); else this.values.delete(c); },
+    },
     set innerHTML(v) { children = []; }, get children() { return children; },
     appendChild(c) { children.push(c); },
   };
@@ -38,7 +41,7 @@ const sent = [], messages = [];
 const ctx = vm.createContext({
   $, document: { createElement: element, activeElement: null }, ByteQueueWriter, xorBuffer,
   ws: { readyState: 1, send: bytes => sent.push([...bytes]) }, myKey: 0,
-  send: writer => sent.push([...writer.toBytes()]), W: () => new ByteQueueWriter(),
+  send: writer => ctx.enviarAlJuego(writer.toBytes()), W: () => new ByteQueueWriter(),
   spells: {}, inventory: {}, hotbar: [], spellListEl: $('spelllist'), invgridEl: $('invgrid'),
   dpr: 1, items: null, slotSel: 0, bankOpen: false, fichaDeObjeto: () => '',
   esc: s => s, spellName: id => `Conjuro ${id}`,
@@ -53,16 +56,22 @@ const ctx = vm.createContext({
   chars: new Map([[1, { name: 'Aprendiz', body: 1 }], [2, { name: 'Otra', body: 1 }]]), myCharIndex: 1,
   recentPackets: [], statusEl: $('status'), descansando: false, paralizado: false, montando: false,
   navegando: false, estupido: false, laborando: false, enCombate: false, correoPendiente: false, volverAlHogar: false,
+  espectador: null, currentMap: 1, map: { name: 'Ullathorpe' },
+  soltarTeclas() {}, abrirChat() {}, resolverPersonaje: (name, status) => ({ name, status }),
 });
 const run = code => vm.runInContext(code, ctx);
 run(`const CLIENT = ${declaration('CLIENT')}; let selectedSpell = ${declaration('selectedSpell')};
   let workSkill = 0, comercioAviso = '', slotDescripcion = 0; const SKILL_MAGIA_CLIENTE = 8, SKILL_PROYECTILES = 6;
   const CUERPO_MUERTO = ${declaration('CUERPO_MUERTO')};`);
-for (const name of ['buildSpellList', 'lanzarHechizo', 'fireHotbar', 'modoPunteria', 'salirDePunteria', 'apply', 'pintarEstados', 'estoyMuerto', 'avisarEnComercio', 'buildInv', 'pintarDescripcionItem'])
+for (const name of ['buildSpellList', 'lanzarHechizo', 'fireHotbar', 'modoPunteria', 'salirDePunteria', 'apply', 'pintarEstados', 'estoyMuerto', 'avisarEnComercio', 'buildInv', 'pintarDescripcionItem',
+  'enviarAlJuego', 'aplicarEscenaEspectador', 'cerrarVistaEspectador', 'aparienciaPersonaje', 'pedirFinDeEspectador', 'mostrarControlesEspectador',
+  'navegarEspectador'])
   if (functions.has(name)) run(functions.get(name));
 run(`const keydown = ${listener('addEventListener', 'keydown')};
   const worldClick = ${listener('canvas.addEventListener', 'click')};
   const castClick = ${listener("$('btn-cast').addEventListener", 'click')};
+  const anteriorEspectador = ${listener("$('espectador-anterior').addEventListener", 'click')};
+  const siguienteEspectador = ${listener("$('espectador-siguiente').addEventListener", 'click')};
   const inventoryHover = ${listener('invgridEl.addEventListener', 'mouseover')};`);
 const selected = () => $('spelllist').children.filter(n => n.classList.contains('sel')).map(n => n.dataset.slot);
 const packet = (slot, spell) => run(`apply({name:'ChangeSpellSlot',fields:{slot:${slot},spell:${spell}}})`);
@@ -144,4 +153,27 @@ run("apply({name:'ChangeInventorySlotUser',fields:{slot:4,accion:3,valor:1}})");
 assert.equal($('itemdesc').textContent, 'Objeto 461');
 run("apply({name:'ChangeInventorySlotUser',fields:{slot:4,accion:3,valor:0}})");
 assert.equal($('itemdesc').textContent, '—', 'Consumir o quitar el último objeto no deja una ficha vieja');
-console.log('check-interacciones: OK — libro inicial/vacío, hotbar, Escape, clic posterior, muerte, resurrección, rechazos de comercio y ficha del inventario');
+run(`apply({name:'EscenaEspectador',fields:{
+  objetivo:2,mapa:1,nombre:'Otra',personajes:[{charIndex:2,x:50,y:50,body:1}],suelo:[]
+}})`);
+assert.equal($('aviso-espectador').hidden, false);
+assert.equal($('nombre-espectado').textContent, 'Observando a Otra · Mapa 1');
+assert.equal($('view').inert, true);
+assert.equal(run('espectador.personajes.get(2).x'), 50);
+assert.equal(run('chars.get(2).x'), undefined, 'La cámara y el mundo propio tienen estados separados');
+const antesDeEspectar = sent.length;
+key('f'); run('worldClick({})');
+assert.equal(sent.length, antesDeEspectar, 'La observación bloquea las acciones de teclado y de ratón');
+run('anteriorEspectador(); siguienteEspectador();');
+assert.deepEqual(sent.slice(-2), [[run('CLIENT.NavegarEspectador'), 0], [run('CLIENT.NavegarEspectador'), 1]]);
+key('Escape');
+assert.deepEqual(sent.at(-1), [run('CLIENT.GMCommands'), 242]);
+run("apply({name:'EscenaEspectador',fields:{objetivo:0}})");
+assert.equal($('aviso-espectador').hidden, true);
+assert.equal($('view').inert, false);
+const fueraDeLaVista = sent.length;
+run('siguienteEspectador()');
+assert.equal(sent.length, fueraDeLaVista);
+run('worldClick({})');
+assert.equal(sent.at(-1)[0], run('CLIENT.DoubleClick'));
+console.log('check-interacciones: OK — libro, atajos, muerte, comercio, inventario y observación');

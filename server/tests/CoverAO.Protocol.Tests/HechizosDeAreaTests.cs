@@ -98,6 +98,23 @@ public class HechizosDeAreaTests : IDisposable
     }
 
     [Fact]
+    public async Task La_bomba_ignora_a_sus_mascotas_incluso_si_una_esta_sobre_el_bicho()
+    {
+        var (mago, sesion) = Mago(BombaMagica);
+        var mascota = Criatura(X + 3, Y, hostil: false);
+        var otraMascota = Criatura(X + 4, Y, hostil: false);
+        mascota.OwnerCharIndex = otraMascota.OwnerCharIndex = mago.CharIndex;
+        var bicho = Criatura(X + 3, Y);
+
+        await CastearEn(sesion, X + 3, Y);
+
+        Assert.Equal(500, mascota.Hp);
+        Assert.Equal(500, otraMascota.Hp);
+        Assert.True(bicho.Hp < 500);
+        Assert.True(mago.Mana < 5000);
+    }
+
+    [Fact]
     public async Task El_armada_no_le_pega_con_un_area_a_una_criatura_sin_duenio_ni_cobra()
     {
         var (mago, sesion) = Mago(BombaMagica, Player.StatusArmada);

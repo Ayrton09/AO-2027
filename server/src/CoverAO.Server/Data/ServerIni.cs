@@ -220,7 +220,7 @@ public sealed class ServerIni
         "IdleLimit", "LimiteConexionesPorIp", "LogDias", "MaxPaquetesPorSegundo", "TrampasParaBanear", "TrampasParaEchar",
 "CuentasNuevasPorIp", "DestinoDeLosPortales", "MaxPersonajesPorIp", "MaxUsers", "MetamorfosisDelDruida", "MinutosBackup", "MinutosDeClima", "MinutosDelDia",
         "MinutosGuardarUsuarios", "MsEntreConsultas", "VolverAlHogarAlMorir", "MsEntreMensajes", "NavegacionParaCruzar", "Oro",
-        "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PersistirSuelo",
+        "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PasajesPorFaccion", "PersistirSuelo",
         "SoloEscritorio", "DescargaEscritorio", "BuscarActualizaciones",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
@@ -622,6 +622,9 @@ public sealed class ServerIni
     /// esa acción — que es exactamente lo que una regla de la casa declara.</para>
     /// </summary>
     public bool PasesDeRinkel { get; private set; } = true;
+
+    /// <summary>Mostradores de pasajes por ciudad y facción. En 0 quedan los mostradores del install.</summary>
+    public bool PasajesPorFaccion { get; private set; } = true;
 
     /// <summary>
     /// REGLA DE LA CASA — <c>HipocamposEnMarAbierto</c> (default 0 = como el install). Con la RED de pesca en
@@ -1372,6 +1375,7 @@ public sealed class ServerIni
         cfg.Centinela = ini.GetInt("INIT", "Centinela", 0) != 0;
         cfg.FamiliarBusca = ini.GetInt("INIT", "FamiliarBusca", 0) != 0;
         cfg.PasesDeRinkel = ini.GetInt("INIT", "PasesDeRinkel", 1) != 0;
+        cfg.PasajesPorFaccion = ini.GetInt("INIT", "PasajesPorFaccion", 1) != 0;
         cfg.HipocamposEnMarAbierto = ini.GetInt("INIT", "HipocamposEnMarAbierto", 1) != 0;
         cfg.NavegacionParaCruzar = Math.Clamp(ini.GetInt("INIT", "NavegacionParaCruzar", 80), 0, SkillProgression.MaxSkillPoints);
         cfg.PaginaPublica = ini.GetInt("INIT", "PaginaPublica", 1) != 0;

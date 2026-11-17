@@ -146,7 +146,7 @@ public class LosPasajesQueCruzanPidenNavegacionTests : IDisposable
     [Fact]
     public void Los_pasajes_que_no_cruzan_son_los_del_mismo_continente()
     {
-        var pasajes = _datos.Objects.Values.Where(o => o.ObjType == 36).ToList();
+        var pasajes = _datos.Objects.Values.Where(o => o.ObjType == 36 && o.Index < 1700).ToList(); // Pasajes del install
         var sinCruzar = pasajes.Where(o => _datos.MismaTierra(o.PasajeDesdeMap, o.PasajeHastaMap)).Select(o => o.Index).OrderBy(i => i);
 
         Assert.Equal(37, pasajes.Count);

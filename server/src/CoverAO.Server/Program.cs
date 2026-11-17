@@ -276,11 +276,10 @@ npcSystem.FamiliarBuscaEnemigo = serverIni.FamiliarBusca;
 npcSystem.ParalisisDeNpcTicks = serverIni.IntervaloParalizado;   // [INTERVALOS] IntervaloParalizado
 npcSystem.IntervaloNpcApropiado = serverIni.IntervaloNpcApropiado;   // [TIMERS] IntervaloOwnedNpc
 
-// Regla de la casa: ¿los pases del pirata de Rinkel se pueden usar? Apagada = como el install, donde el
-// pirata te los cobra y después no te los acepta porque su `Desde` apunta a un mapa sin transportador.
+// Los pasajes necesitan sus catálogos y puntos de salida antes de poblar el mundo.
+gameData.ConfigurarPasajes(serverIni);
 if (serverIni.PasesDeRinkel)
 {
-    gameData.ArreglarPasesDeRinkel();
     Console.WriteLine("Regla de la casa: los pases del pirata de Rinkel salen de su puerto (PasesDeRinkel=1).");
 }
 
@@ -429,6 +428,7 @@ loop.OnTickHandler = tick =>
     dispatcher?.SubastasAlDia();
     // Las fogatas que cumplieron su plazo (regla de la casa `MinutosDeFogata`; apagada, no hace nada).
     dispatcher?.ApagarFogatasVencidas(tick);
+    dispatcher?.ActualizarEspectadores(tick);
     // Autosave periódico (config del panel, "MinutosGuardarUsuarios" del VB6). Corre aunque esté pausado.
     if (admin.AutosaveMinutes > 0 && (tick - admin.LastAutosaveTick) * GameLoop.TickMs >= (long)admin.AutosaveMinutes * 60_000)
     {

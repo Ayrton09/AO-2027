@@ -518,8 +518,15 @@ public sealed class World
     /// <c>FirstOrDefault</c> sobre los 5404 era recorrer el mundo para leer una clave.</summary>
     public Npc? NpcByIndex(short charIndex) => _npcs.GetValueOrDefault(charIndex);
 
-    public Npc? NpcAt(WorldPos pos) =>
-        _npcsByPos.TryGetValue(pos, out var enElTile) && enElTile.Count > 0 ? enElTile[0] : null;
+    public Npc? NpcAt(WorldPos pos, short ignorarMascotasDe = 0)
+    {
+        if (!_npcsByPos.TryGetValue(pos, out var enElTile) || enElTile.Count == 0) return null;
+        if (ignorarMascotasDe == 0) return enElTile[0];
+        // Un hechizo ofensivo puede ver a la criatura que reapareció en la baldosa de la mascota.
+        foreach (var npc in enElTile)
+            if (npc.IsAlive && npc.OwnerCharIndex != ignorarMascotasDe) return npc;
+        return null;
+    }
 
     /// <summary>Send a prebuilt packet to every connected player (naive broadcast for the slice).</summary>
     public void Broadcast(byte[] packet)

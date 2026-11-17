@@ -136,6 +136,10 @@ GolpeParalizanteDadoGladiadorBardo=300
 
 ; --- Mundo -------------------------------------------------------------------
 PasesDeRinkel=1
+; Destinos imperiales/republicanos y neutrales desde el mismo bando. Desde neutrales, todos los destinos.
+; El vendedor neutral atiende a todos; los demas atienden tambien a los de su bando.
+; Agrega un viajero junto a la puerta sur de Ullathorpe. Cambiar este valor requiere reiniciar.
+PasajesPorFaccion=1
 HipocamposEnMarAbierto=1
 ; Puntos de Navegacion que piden los pasajes que cruzan el agua a otra tierra
 ; (entre puertos del mismo continente no piden nada). En el original no piden

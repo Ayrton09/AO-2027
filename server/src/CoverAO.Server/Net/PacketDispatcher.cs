@@ -506,6 +506,11 @@ public sealed partial class PacketDispatcher
     public void HandleOne(ClientSession session, ByteQueueReader reader)
     {
         var id = (ClientPacketId)reader.ReadByte();
+        if (session.EspectaSinPersonaje && id is not (ClientPacketId.GMCommands or ClientPacketId.Ping or ClientPacketId.NavegarEspectador))
+        {
+            session.Close("el espectador no está jugando");
+            return;
+        }
         // UN PAQUETE DE LOGIN DESDE ADENTRO CIERRA LA CONEXIÓN (Protocol.bas:148-156: `If UserLogged Then
         // CloseSocket`). Acá no había preámbulo de ninguna clase y el agujero era grave: `HandleLoginNewChar`
         // nunca miraba `session.Player`, así que un LoginNewChar mandado con un personaje ya adentro creaba
@@ -572,6 +577,12 @@ public sealed partial class PacketDispatcher
             case ClientPacketId.BankDepositGold: HandleBankDepositGold(session, reader); break;
             case ClientPacketId.BankExtractGold: HandleBankExtractGold(session, reader); break;
             case ClientPacketId.GMCommands: HandleGMCommands(session, reader); break;
+            case ClientPacketId.NavegarEspectador:
+            {
+                byte direccion = reader.ReadByte();
+                if (direccion <= 1) _loop.Enqueue(() => NavegarEspectador(session, siguiente: direccion == 1));
+                break;
+            }
             case ClientPacketId.CreateNewGuild: HandleCreateNewGuild(session, reader); break;
             case ClientPacketId.GuildMessage: HandleGuildMessage(session, reader); break;
             case ClientPacketId.GuildLeave: HandleGuildLeave(session); break;
@@ -748,6 +759,8 @@ public sealed partial class PacketDispatcher
 
     private void SendAccountCharList(ClientSession session, string account, string password)
     {
+        int revision = ++session.RevisionDeLista;
+        session.CuentaParaEspectar = null;
         if (LoginBlocked(session)) return;   // rate-limit por IP (anti brute-force)
         // Valida antes de tocar el store (path traversal), con el aviso de CheckDataLoginAccount.
         if (!Naming.IsValidName(account)) { AvisoNumeradoYCerrar(session, AvisoDeNombreDeCuenta(account), "nombre de cuenta invalido"); return; }
@@ -757,6 +770,7 @@ public sealed partial class PacketDispatcher
         // sin conocer la contraseña).
         VerificarCuenta(session, account, password, (acc, ok, upgraded) =>
         {
+            if (revision != session.RevisionDeLista || session.Player is not null) return;
             if (acc is null || !ok) { LoginFail(session); RechazarConCartel(session, CartelClaveIncorrecta, "clave incorrecta"); return; }
             if (acc.Banned) { RechazarConCartel(session, CartelCuentaBaneada, "cuenta baneada"); return; }
             EntroALaCuenta(session, acc);
@@ -773,6 +787,7 @@ public sealed partial class PacketDispatcher
             // El guardado del hash migrado se va al mismo hilo por la misma razón: es una escritura.
             var nombres = acc.Characters.ToArray();
             var cuenta = acc;
+            int generacion = GeneracionDeClave(acc.Name);
             Task.Run(() =>
             {
                 var roster = new List<CharacterSummary>(nombres.Length);
@@ -790,8 +805,12 @@ public sealed partial class PacketDispatcher
                 }
                 _loop.Enqueue(() =>
                 {
-                    if (session.Cerrada) return;
-                    session.Send(ServerMessages.AddPj(account, roster));       // char list from the account's .cnt
+                    if (session.Cerrada || session.Player is not null || revision != session.RevisionDeLista) return;
+                    if (generacion != GeneracionDeClave(cuenta.Name)) { Reject(session, CartelClaveCambiada); return; }
+                    var lista = RosterConStaffActual(roster);
+                    if (!cuenta.EsBot && lista.Any(p => p.GameMaster))
+                        session.CuentaParaEspectar = new CuentaParaEspectar(cuenta.Name, lista.Select(p => p.Name).ToArray(), generacion);
+                    session.Send(ServerMessages.AddPj(account, lista));       // char list from the account's .cnt
                     session.Send(ServerMessages.AbrirFormularios(1));          // 1 = account/char-selection form
                     Console.WriteLine($"[{session.RemoteEndpoint}] ACCOUNT account={account} chars={roster.Count}");
                 });
@@ -1120,7 +1139,7 @@ public sealed partial class PacketDispatcher
                     return;
                 }
                 Console.WriteLine($"[{session.RemoteEndpoint}] PERSONAJE BORRADO account={cuenta} pj={personaje} archivado={borrado}");
-                session.Send(ServerMessages.AddPj(cuenta, roster));   // la pantalla de seleccion, ya sin el
+                session.Send(ServerMessages.AddPj(cuenta, RosterConStaffActual(roster)));   // la pantalla de seleccion, ya sin el
                 session.Send(ServerMessages.SendMsgBox($"{personaje} fue borrado.", 1));
             };
         }, alFallar: () =>
@@ -1781,6 +1800,8 @@ public sealed partial class PacketDispatcher
         // y ésta es la línea que pisa `session.Player`, en el game loop, donde todo está serializado. Dos
         // paquetes de login en la misma lectura pasarían los dos por aquel gate; por éste no pasa el segundo.
         if (session.Player is not null) { session.Close("segunda entrada al mundo en la misma sesión"); return; }
+        DejarDeEspectar(session);
+        session.CuentaParaEspectar = null;
         player.Connection = session;
         session.Player = player;
         session.MarkAuthed();   // entró al mundo → desarma el timeout de autenticación (SEC-3)
@@ -4387,6 +4408,11 @@ public sealed partial class PacketDispatcher
     private void HandleGMCommands(ClientSession session, ByteQueueReader r)
     {
         byte cmd = r.ReadByte(); // eGMCommands selector (Declares.bas)
+        if (session.EspectaSinPersonaje && cmd is not (241 or 242))
+        {
+            session.Close("comando fuera del modo espectador");
+            return;
+        }
         switch (cmd)
         {
             case 5: // ServerTime — /HORA
@@ -4415,6 +4441,15 @@ public sealed partial class PacketDispatcher
             // contra algo repetible.
             //
             // Gateado como cualquier comando de GM: quien no lo es, no llega hasta acá.
+            case 241: // /ESPECTAR <nombre>
+            {
+                string nombre = r.ReadAsciiString();
+                _loop.Enqueue(() => EmpezarAEspectar(session, nombre.Trim()));
+                break;
+            }
+            case 242: // /DEJARDEVER
+                _loop.Enqueue(() => DejarDeEspectar(session));
+                break;
             case 240: // Armar — /ARMAR <clase> <nivel>
             {
                 byte clase = r.ReadByte();
@@ -9790,7 +9825,7 @@ public sealed partial class PacketDispatcher
     /// <c>Case eSkill.magia</c> del <c>WorkLeftClick</c> (Protocol.bas:2927), robar (:2961), domar, el arco… — todo
     /// lo que "apunta a un tile" pasa por acá y después lee <c>flags.TargetUser/TargetNPC</c>. Vivía inline en el
     /// clic, así que el casteo no podía usarlo.</summary>
-    private void LookatTile(ClientSession session, Player p, byte x, byte y)
+    private void LookatTile(ClientSession session, Player p, byte x, byte y, bool ignorarMascotaPropia = false)
     {
         // Gate de rango: el RECTÁNGULO 8×6 de RANGO_VISION, no el bloque de área de World.InView (que llega a
         // ~17 tiles y convertiría el click en un scanner de nombres al doble del alcance del original — y en
@@ -9798,6 +9833,7 @@ public sealed partial class PacketDispatcher
         if (Math.Abs(p.Pos.X - x) > RangoVisionX || Math.Abs(p.Pos.Y - y) > RangoVisionY) return;
 
         var pos = new WorldPos(p.Pos.Map, x, y);
+        Npc? CriaturaEn(WorldPos tile) => _world.NpcAt(tile, ignorarMascotaPropia ? p.CharIndex : (short)0);
         bool foundSomething = false;
         // OJO: `InMapBounds` (GameLogic.bas:225) NO son los límites del mapa sino los del área jugable —
         // MinXBorder..MaxXBorder = 9..92 y MinYBorder..MaxYBorder = 7..94 (General.bas:1781). Un click fuera
@@ -9814,16 +9850,16 @@ public sealed partial class PacketDispatcher
             {
                 var abajo = new WorldPos(pos.Map, x, (byte)(y + 1));
                 user = _world.PlayerAt(abajo);
-                npc = _world.NpcAt(abajo);
+                npc = CriaturaEn(abajo);
                 // Diferencia con el original: si el de abajo es uno mismo y en el tile clickeado hay alguien,
                 // se elige a ese. Si no, al que está parado justo al norte no se lo puede apuntar nunca.
-                if (npc is null && user == p && (_world.PlayerAt(pos) is not null || _world.NpcAt(pos) is not null))
+                if (npc is null && user == p && (_world.PlayerAt(pos) is not null || CriaturaEn(pos) is not null))
                     user = null;
             }
             if (user is null && npc is null)
             {
                 user = _world.PlayerAt(pos);
-                npc = _world.NpcAt(pos);
+                npc = CriaturaEn(pos);
             }
 
             if (npc is not null)
@@ -12194,7 +12230,7 @@ public sealed partial class PacketDispatcher
 
                 // El NPC del tile se resuelve APARTE del jugador y en el mismo paso, no en un `else`: un tile con
                 // criatura pisando a un jugador recibe las dos cosas (VB6 :431, fuera del `If TargetUser > 0`).
-                var npc = _world.NpcAt(tile);
+                var npc = _world.NpcAt(tile, spell.IsDamage ? p.CharIndex : (short)0);
                 if (npc is { IsAlive: true })
                 {
                     // La criatura pasa por HechizoPropNPC con `b` por referencia (:430): el resultado de CADA criatura
@@ -12402,7 +12438,8 @@ public sealed partial class PacketDispatcher
             // Protocol.bas:2138) y lanza. Pasarlo por LookatTile con la baldosa propia elegiría al que esté parado
             // justo al SUR, porque LookatTile mira primero la baldosa de abajo.
             if (autolanzado) p.TargetUser = p.CharIndex;
-            else LookatTile(session, p, clickX, clickY);
+            // El blanco ofensivo se elige con la misma prioridad de baldosas, saltando a las mascotas propias.
+            else LookatTile(session, p, clickX, clickY, ignorarMascotaPropia: spell.EsOfensivo);
             // Fuera del rango de visión: `LogCheating` y salir, sin avisar (:2930).
             if (Math.Abs(p.Pos.X - clickX) > RangoVisionX || Math.Abs(p.Pos.Y - clickY) > RangoVisionY) return;
             // CADENCIA DE CASTEO (:2936-2945). El port no tenía NINGUNA: un mago tiraba hechizos a velocidad de
@@ -12462,7 +12499,7 @@ public sealed partial class PacketDispatcher
             {
                 var tu = p.TargetUser != 0 ? _world.PlayerByCharIndex(p.TargetUser) : null;
                 var tn = p.TargetNpc != 0 ? _world.NpcByIndex(p.TargetNpc) : null;
-                if (tn is { IsAlive: false }) tn = null;
+                if (tn is { IsAlive: false } || (spell.EsOfensivo && tn?.OwnerCharIndex == p.CharIndex)) tn = null;
                 bool Lejos(WorldPos pos) => Math.Abs(pos.Y - p.Pos.Y) > RangoVisionY;
                 switch (spell.Target)
                 {
@@ -13893,6 +13930,7 @@ public sealed partial class PacketDispatcher
     private bool MercaderAtiende(ClientSession session, Player p, Npc npc)
     {
         if ((p.Privileges & PrivUser) == 0) return true;              // GM: el original ni entra al bloque
+        if (npc.IsTransportador && _data.PirataAtiendePorFaccion(npc.Pos.Map, npc.Template.Index, p.FactionStatus)) return true;
         if (p.MercaderMeAtiende(_data.MapBattleMode(p.Pos.Map), _ini)) return true;
         session.Send(ServerMessages.ChatOverHeadLocale(npc.CharIndex, 592, 4));
         return false;
@@ -14051,8 +14089,9 @@ public sealed partial class PacketDispatcher
             var mercader = _world.NpcByIndex(p.TradingWith);
             if (mercader is null || DistanciaVB6(p.Pos, mercader.Pos) > DistanciaDeOperar) return;
             var aVender = _data.Obj(inv.ObjIndex);
-            if (mercader is not null && aVender is not null
-                && !mercader.Template.CompraObjeto(aVender.ObjType, inv.ObjIndex))
+            if (aVender is not null && (!mercader.Template.CompraObjeto(aVender.ObjType, inv.ObjIndex)
+                || (aVender.ObjType == Pasaje && _data.EsPirataDeLaRed(mercader)
+                    && mercader.Template.StockItems?.Any(s => s.ObjIndex == inv.ObjIndex) != true)))
             {
                 session.Send(ServerMessages.LocaleMsg(148));
                 return;
