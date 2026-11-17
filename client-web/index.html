@@ -2644,7 +2644,7 @@
       fpsCap = Math.max(0, Number(n) || 0);
       tope.proximo = 0;
       guardarPref('ao_fpscap', String(fpsCap));
-      log('Límite de FPS: ' + (fpsCap ? fpsCap : 'sin límite (vsync)'), '#c9a24b');
+      log('Límite de FPS: ' + (fpsCap ? fpsCap : 'según el monitor' + (hzMonitor ? ' (' + hzMonitor + ' Hz)' : '')), '#c9a24b');
     };
     // EL TOPE CUENTA DESDE EL CUADRO QUE TOCABA, no desde el último que se dibujó. Con "pasaron 1000/N ms desde
     // el último" el tope sólo deja pasar múltiplos enteros del vsync: en un monitor de 360 Hz (un cuadro cada
@@ -2676,6 +2676,22 @@
       draw();
     }
     window.__dibujados = () => cuadrosDibujados;   // para medir cuántos cuadros salen de verdad
+    // LOS HZ DEL MONITOR, para que el tope de fábrica diga "según el monitor (240 Hz)" (el autor, 17/11). La app los pregunta a la
+    // pantalla; en el navegador se miden con el requestAnimationFrame, que con el VSync va a ese ritmo (la mediana de 60 cuadros).
+    let hzMonitor = 0;
+    if (window.coveraoEscritorio?.hzDelMonitor) {
+      window.coveraoEscritorio.hzDelMonitor().then((hz) => { if (Number(hz) >= 24) hzMonitor = Number(hz); }).catch(() => {});
+    } else {
+      const marcas = [];
+      const medir = (t) => {
+        marcas.push(t);
+        if (marcas.length < 61) { requestAnimationFrame(medir); return; }
+        const pasos = marcas.slice(1).map((m, i) => m - marcas[i]).sort((a, b) => a - b);
+        const hz = Math.round(1000 / pasos[30]);
+        if (hz >= 24 && hz <= 500) hzMonitor = hz;
+      };
+      requestAnimationFrame(medir);
+    }
     requestAnimationFrame(frame);
     // Helper de verificación: `requestAnimationFrame` NO dispara en una pestaña oculta —es el navegador,
     // no el juego—, así que desde una pestaña en segundo plano no hay forma de comprobar que el render
@@ -4651,8 +4667,8 @@
               <span class="opc-valor" data-op-val="volefectos">${Math.round(volEfectos * 100)}%</span>`))}
         ${seccion('video',
           (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false)) : '')
-          + fila('Tope de FPS', 'Sin límite sigue el refresco de tu monitor, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
-              `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'sin límite')).join('')}
+          + fila('Tope de FPS', 'Según el monitor dibuja al refresco de tu pantalla, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
+              `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'según el monitor' + (hzMonitor ? ` (${hzMonitor} Hz)` : ''))).join('')}
                 ${FPS_OPCIONES.includes(fpsCap) ? '<option value="custom">otro…</option>'
                                                 : `<option value="custom" selected>otro (${fpsCap})</option>`}</select>
               <input type="number" min="10" max="1000" step="1" value="${fpsCap || ''}" data-op="fpscustom"

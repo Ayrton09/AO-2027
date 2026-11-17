@@ -2,6 +2,10 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.30
+
+- El tope de FPS que viene de fábrica se llama según el monitor y muestra los Hz de tu pantalla: el juego dibuja a ese ritmo.
+
 ## 1.0.29 (2026-11-17)
 
 - Vuelve el VSync en el juego de escritorio, como antes de la 1.0.24: sin límite va al refresco de tu monitor y los topes de FPS dan exacto. Sale la opción monitor, que ya no hace falta.
