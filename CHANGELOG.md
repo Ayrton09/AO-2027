@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.28
+## 1.0.28 (2026-11-16)
 
 - El familiar dice cuánta experiencia le falta para subir de nivel: al hacerle clic, en el panel de estadísticas y en /est, que ahora también muestra su nivel, su vida y su golpe.
 
