@@ -347,6 +347,8 @@ public sealed class EspectadorTests : IAsyncDisposable
             else objetivo.Close("se fue");
             _dispatcher.ActualizarEspectadores(6);
         });
-        Assert.Equal(0, Escena(Assert.Single(await Entregas(sesion, salida))).ReadInteger());
+        // La desconexión también puede emitir el aviso habitual para GM en este tick.
+        var cierre = Assert.Single(await Entregas(sesion, salida), p => p[0] == (byte)ServerPacketId.EscenaEspectador);
+        Assert.Equal(0, Escena(cierre).ReadInteger());
     }
 }
