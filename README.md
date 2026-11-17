@@ -5,6 +5,11 @@
 <h1 align="center">AO 2027</h1>
 
 <p align="center">
+  <a href="https://github.com/Ayrton09/AO-2027/releases/latest"><img src="https://img.shields.io/github/v/release/Ayrton09/AO-2027?display_name=tag&amp;color=007ec6" alt="Última release"></a>
+  <a href="https://github.com/Ayrton09/AO-2027/releases"><img src="https://img.shields.io/github/downloads/Ayrton09/AO-2027/total?color=4c1" alt="Descargas totales"></a>
+</p>
+
+<p align="center">
   Argentum Online de escritorio. Explorá el mundo, armá tu clan y elegí tu facción.
 </p>
 
@@ -23,28 +28,32 @@
 
 Abrí **Servidores** en el menú, agregá la dirección que te pasó quien hostea y entrá. Si el servidor corre en tu propia PC con la configuración de fábrica, usá `http://localhost:7669/`. Al abrir la dirección desde el navegador vas a ver la página de descarga.
 
-Si venís de CoverAO 1.0.8 o anterior, descargá AO 2027 una vez desde esta página. En Windows, instalalo sobre tu instalación anterior. En Linux, podés reemplazar el AppImage. A partir de ahí la app busca **actualizaciones firmadas** en este repositorio al abrirse.
+La app busca **actualizaciones firmadas** en este repositorio cada vez que la abrís.
 
-## Qué hay en el mundo
+## Qué podés hacer
 
-- **Facciones y clanes.** Combatí por la Armada Imperial, el Caos o la Milicia Republicana y progresá en sus rangos.
-- **Oficios y comercio.** Recolectá materiales, fabricá equipo y vendé en subastas.
-- **Aventuras.** Explorá pueblos y mazmorras, peleá contra criaturas o jugadores y cruzate con bots que entrenan, hacen oficios y comercian.
-- **Cliente de escritorio.** Gráficos HD, iluminación, clima y música por mapa.
+- **Combate y personajes.** Elegí tu raza y clase, subí de nivel y repartí puntos de habilidad. Peleá contra criaturas y otros jugadores con armas, hechizos y familiares.
+- **Facciones y clanes.** Armá un clan con tus amigos o subí de rango en la Armada Imperial, la Milicia Republicana o la Legión del Caos.
+- **Exploración y viajes.** Recorré ciudades y mazmorras a pie, en barco o con montura. Hay 92 rutas de pasajes entre 11 ciudades, con destinos según la facción de cada lugar.
+- **Oficios y economía.** Miná, talá o pescá. Fabricá objetos con herrería, sastrería o alquimia. Podés comerciar con otros jugadores, guardar oro y objetos en el banco o vender en el Centro de Subastas.
+- **Bots opcionales.** Quien hostea puede poblar el mundo con personajes que entrenan, se enlistan, hacen oficios, viajan y comercian.
+- **Cliente de escritorio.** Jugá en Windows o Linux con gráficos HD, iluminación, clima, música por mapa y opciones de FPS.
 
 ## Hostear un servidor
 
 Descargá el paquete autocontenido para [Windows](https://github.com/Ayrton09/AO-2027/releases/latest/download/CoverAO-servidor-win-x64.zip) o [Linux](https://github.com/Ayrton09/AO-2027/releases/latest/download/CoverAO-servidor-linux-x64.tar.gz), descomprimilo y arrancá con `Servidor.bat` o `bash servidor.sh`, respectivamente. El servidor incluido trae su propio runtime .NET.
 
-La [guía de hosting](docs/HOSTING.md) cubre `Server.ini`, puertos, HTTPS, Docker, copias de seguridad y actualización del servidor. Podés conservar la configuración y el mundo en `data/` al actualizar. Para ofrecer a tus jugadores el código exacto de tu servidor, configurá `[INIT] CodigoFuente` con el enlace a la versión que estás ejecutando.
+El servidor tiene un **panel de administración** para gestionar el staff y ver los jugadores conectados. Los GM también pueden abrir el **modo espectador** desde la selección de personajes y seguir a un jugador o bot sin entrar con su propio personaje.
 
-Cliente y servidor deben ser de la misma versión. El control es automático: no hay una versión que mantener en el `Server.ini`.
+La [guía de hosting](docs/HOSTING.md) cubre puertos, HTTPS, Docker, SQLite, PostgreSQL, copias de seguridad y actualizaciones. Al actualizar, podés conservar tu `Server.ini` y el mundo en `data/`. Para ofrecer a tus jugadores el código exacto de tu servidor, configurá `[INIT] CodigoFuente` con el enlace a la versión que estás ejecutando.
+
+Cliente y servidor deben tener la misma versión. El juego la comprueba automáticamente al entrar.
 
 ## Trabajar con el código
 
 AO 2027 continúa el servidor **CoverAO-2021**, una variante de Argentum Online escrita en Visual Basic 6. El servidor actual usa C# y .NET 10. El cliente de escritorio usa Electron, TypeScript, Canvas y WebSocket.
 
-Con el SDK de .NET 10 y Node.js instalados. Primero compilá el cliente, que genera también su versión de ingreso desde `VERSION`:
+Con el SDK de .NET 10 y Node.js instalados, compilá primero el cliente para generar la versión de ingreso desde `VERSION`.
 
 ```sh
 npm --prefix client-web ci
