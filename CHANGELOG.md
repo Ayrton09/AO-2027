@@ -2,6 +2,25 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.32 (2026-11-17)
+
+### Estado y nombre del servidor
+
+- Cuando un servidor se apaga o deja de responder, la lista lo muestra con el punto rojo y el texto no disponible. El botón Entrar queda deshabilitado hasta que vuelva a estar disponible.
+- Se conserva el último nombre que anunció el servidor, incluso al cerrar y volver a abrir el menú. Ya no se reemplaza por la dirección IP al recibir una respuesta de error.
+- Antes, cualquier respuesta HTTP se interpretaba como un servidor encendido: una página de error del intermediario podía dejarlo verde y borrar el nombre. Ahora se comprueban los datos del juego antes de marcarlo disponible. También funciona con la página pública de jugadores deshabilitada.
+- Al volver a responder, el servidor pasa a verde y permite ingresar. Si quien hostea cambió su nombre, la lista muestra el nuevo. Una consulta anterior que llegue tarde no puede sobrescribir el estado más reciente.
+
+### Avisos de conexión y firma
+
+- Si el servidor cae al intentar entrar o mientras se comprueba su cliente, la app avisa que está apagado o no disponible. Ya no presenta esa caída como una firma inválida o un cliente modificado.
+- La verificación de la firma sigue activa: un cliente modificado o sin una firma válida continúa bloqueado.
+
+### Cómo actualizar
+
+- Jugadores y tester: aceptá la actualización de la app y cerrala para instalarla, o usá Actualizar ahora. También podés instalar el cliente de esta release manualmente.
+- Quien hostea: actualizá también el paquete del servidor a la 1.0.32, conservando tu configuración y el mundo en data. Aunque esta corrección es del cliente, el control de versiones exige que ambos tengan la misma versión. La actualización de la app no actualiza el servidor.
+
 ## 1.0.31 (2026-11-17)
 
 ### Cliente y servidor de la misma versión

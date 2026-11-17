@@ -73,6 +73,7 @@
     .boton-chico:hover { color: var(--oro); border-color: var(--oro); }
     .entrar { flex: none; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: bold; color: var(--sobre-acento); background: var(--oro);
               border: 0; border-radius: 0; cursor: pointer; }
+    .entrar:disabled { opacity: 0.45; cursor: not-allowed; }
     .entrar:hover { background: var(--oro-claro); }
     .quitar { flex: none; background: none; border: 0; color: var(--apagado); font-size: 18px; line-height: 1; cursor: pointer;
               padding: 2px 6px; border-radius: 0; }
@@ -461,14 +462,23 @@
     const lista = $('lista'), error = $('error'), campo = $('direccion');
     let datos = { servidores: [], ultimo: null, porDefecto: 'http://localhost:7669/' };
     let estados = new Map();
+    let rondaDeConsulta = 0;
 
     async function entrar(direccion) {
-      error.textContent = (await window.escritorio.entrar(direccion)) || '';
+      const ronda = ++rondaDeConsulta;
+      const motivo = await window.escritorio.entrar(direccion);
+      error.textContent = motivo || '';
+      if (motivo) {
+        const estado = await window.escritorio.consultar(direccion);
+        if (ronda !== rondaDeConsulta) return;
+        estados.set(direccion, estado);
+        await dibujar();
+      }
     }
 
     function textoDelEstado(e) {
       if (!e) return 'buscando…';
-      if (!e.enLinea) return 'no responde';
+      if (!e.enLinea) return 'no disponible';
       const partes = [];
       if (e.jugadores !== null) partes.push(`<b>${e.jugadores}</b> ${e.jugadores === 1 ? 'jugador' : 'jugadores'}`);
       partes.push(`<b>${e.ping}</b> ms`);
@@ -497,6 +507,7 @@
         const e = estados.get(s.direccion);
         const luz = document.createElement('span');
         luz.className = 'luz' + (e ? (e.enLinea ? ' si' : ' no') : '');
+        luz.title = e ? (e.enLinea ? 'Servidor disponible' : 'Servidor apagado o no disponible') : 'Consultando estado';
         const d = document.createElement('div');
         d.className = 'datos';
         // El nombre es el que manda el server (Server.ini [INIT] Nombre); sin nombre, la dirección.
@@ -520,6 +531,8 @@
         ir.className = 'entrar';
         ir.type = 'button';
         ir.textContent = 'Entrar';
+        ir.disabled = e?.enLinea === false;
+        if (ir.disabled) ir.title = 'El servidor está apagado o no disponible';
         ir.addEventListener('click', (ev) => { ev.stopPropagation(); entrar(s.direccion); });
         const quitar = document.createElement('button');
         quitar.className = 'quitar';
@@ -543,9 +556,12 @@
     }
 
     async function consultarTodos() {
+      const ronda = ++rondaDeConsulta;
       const { servidores } = await window.escritorio.listar();
       await Promise.all(servidores.map(async (s) => {
-        estados.set(s.direccion, await window.escritorio.consultar(s.direccion));
+        const estado = await window.escritorio.consultar(s.direccion);
+        if (ronda !== rondaDeConsulta) return;
+        estados.set(s.direccion, estado);
         if ($('v-jugar').classList.contains('on')) dibujar();
       }));
     }

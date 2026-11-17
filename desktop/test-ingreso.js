@@ -3,17 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const actualizacion = require('./actualizacion');
+const estadoServidor = require('./estado-servidor');
 const fuente = fs.readFileSync(require.resolve('./main.js'), 'utf8');
 const funciones = fuente.slice(fuente.indexOf('async function prepararIngreso('), fuente.indexOf('function crearVentana()'));
 const menu = fuente.slice(fuente.indexOf("delMenu('entrar',"), fuente.indexOf("delMenu('leer-ajustes',"));
 
-async function probar(desdeMenu, version, fallaConsulta = false, errorFirma = null) {
+async function probar(desdeMenu, version, fallaConsulta = false, errorFirma = null, configAjena = false) {
   let firmas = 0, cargas = 0, entrar;
   const contexto = vm.createContext({
-    URL, AbortSignal, actualizacion, console: { error() {} },
+    URL, AbortSignal, actualizacion, estadoServidor, console: { error() {} },
     app: { getVersion: () => '1.0.31' }, ESPERA_DE_LA_CONSULTA_MS: 100,
     sinCaptura: async () => { if (fallaConsulta) throw new Error('sin respuesta'); return { ok: true }; },
-    jsonConTope: async () => ({ versionClienteRequerida: version }),
+    jsonConTope: async () => configAjena ? { ok: true } : ({ versionClienteRequerida: version, version: '1.0.31', wsPort: 7667 }),
     prepararFirma: async () => { firmas++; return errorFirma; },
     abrirMenu() {}, ventana: { loadURL() { cargas++; } },
     normalizar: x => x, consultar: async () => ({ enLinea: true }),
@@ -22,7 +23,7 @@ async function probar(desdeMenu, version, fallaConsulta = false, errorFirma = nu
   });
   vm.runInContext(funciones + '\n' + menu, contexto);
   const error = await (desdeMenu ? entrar(null, 'http://ejemplo.test/') : contexto.cargarServidor('http://ejemplo.test/'));
-  const compatible = version === '1.0.31' && !fallaConsulta;
+  const compatible = version === '1.0.31' && !fallaConsulta && !configAjena;
   assert.equal(firmas, compatible ? 1 : 0, 'una versión incompatible se frena antes de verificar la firma');
   assert.equal(cargas, compatible && !errorFirma ? 1 : 0, 'no se carga el juego sin versión y firma aceptadas');
   if (!compatible) assert.equal(typeof error, 'string');
@@ -34,6 +35,7 @@ async function probar(desdeMenu, version, fallaConsulta = false, errorFirma = nu
     for (const version of ['1.0.31', '1.0.30', '1.0.32', null, '']) await probar(desdeMenu, version);
     await probar(desdeMenu, '1.0.31', true);
     await probar(desdeMenu, '1.0.31', false, 'firma inválida');
+    await probar(desdeMenu, '1.0.31', false, null, true);
   }
   console.log('test-ingreso: menú y acceso directo exigen versión y firma antes de cargar');
 })().catch(e => { console.error(e); process.exitCode = 1; });

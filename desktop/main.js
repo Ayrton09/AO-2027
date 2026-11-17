@@ -10,6 +10,8 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const firma = require('./firma');
 const actualizacion = require('./actualizacion');
+const estadoServidor = require('./estado-servidor');
+const { nombreValido } = estadoServidor;
 
 // LA APP NO ARRANCA EN MODO DEPURACIÓN. Con estos interruptores cualquiera se cuelga del juego desde afuera (el puerto de
 // depuración de Chromium deja leer y cambiar la página entera); los fuses del paquete (package.json, `electronFuses`) cierran los de
@@ -186,8 +188,13 @@ async function bajar(url, init = {}) {
 async function prepararFirma(direccion) {
   if (!VERIFICAR) return null;
   if (!CLAVE_PUBLICA) return 'Esta versión del juego no trae la clave para verificar el cliente: bajate la última.';
+  let respuesta;
   try {
-    const { cuerpo } = await bajar(new URL(firma.ARCHIVO, direccion).href, { cache: 'no-store' });
+    respuesta = await bajar(new URL(firma.ARCHIVO, direccion).href, { cache: 'no-store' });
+  } catch { return estadoServidor.NO_DISPONIBLE; }
+  if (!respuesta.r.ok && ![404, 410].includes(respuesta.r.status)) return estadoServidor.NO_DISPONIBLE;
+  try {
+    const { cuerpo } = respuesta;
     const manifiesto = cuerpo ? JSON.parse(cuerpo.toString('utf8')) : null;
     const archivos = firma.verificarManifiesto(manifiesto, CLAVE_PUBLICA, FIRMADO_DESDE);
     if (!archivos) {
@@ -200,7 +207,7 @@ async function prepararFirma(direccion) {
     console.log(`[firma] ${nombreDe(direccion)}: cliente firmado, ${Object.keys(archivos).length} archivos`);
     return null;
   } catch {
-    return `No se pudo verificar el cliente de ${nombreDe(direccion)}.`;
+    return `${nombreDe(direccion)} tiene una firma del cliente inválida: no se puede entrar.`;
   }
 }
 
@@ -224,6 +231,10 @@ function interceptar(esquema) {
     if (rel === 'index.html' && pedido.method === 'GET') {
       const yaVerificado = firmados.has(origen);
       const error = await prepararFirma(origen + '/');
+      if (error === estadoServidor.NO_DISPONIBLE) {
+        abrirMenu(error);
+        return new Response(null, { status: 502 });
+      }
       if (error) { if (yaVerificado) clienteModificado(origen, rel); return new Response(null, { status: 403 }); }
     }
     const archivos = firmados.get(origen);
@@ -264,11 +275,11 @@ async function prepararIngreso(direccion) {
     });
     if (!r.ok) throw new Error('no se pudo consultar la versión');
     const configDelServidor = await jsonConTope(r);
-    if (!configDelServidor) throw new Error('la configuración no es válida');
+    if (!estadoServidor.esConfigDelJuego(configDelServidor)) throw new Error('la configuración no es del juego');
     const errorDeVersion = actualizacion.errorDeVersion(configDelServidor, app.getVersion());
     if (errorDeVersion) return errorDeVersion;
   } catch {
-    return 'No se pudo comprobar la versión del servidor. Intentá entrar de nuevo.';
+    return estadoServidor.NO_DISPONIBLE;
   }
   return prepararFirma(direccion);
 }
@@ -394,47 +405,11 @@ function crearVentana() {
   if (servidorDelAcceso) cargarServidor(servidorDelAcceso); else abrirMenu();
 }
 
-/**
- * CÓMO ESTÁ UN SERVER DE LA LISTA: si contesta, cuántos hay conectados, qué versión corre y cuánto tarda en contestar. Se pregunta
- * desde acá y no desde la página porque la página es local (file://) y el server no tiene por qué dejarla leer. Lo que se pide
- * es `api/publico.json`, lo mismo que muestra su página de estado; si el host la apagó (`PaginaPublica=0`) contesta 404 y el
- * server igual figura en línea, sin jugadores. Una redirección no se sigue: el server figura en línea, sin datos.
- */
+/** El estado requiere una respuesta válida del juego, incluida la configuración si el host apagó su página pública. */
 async function consultar(direccion) {
-  const inicio = performance.now();
-  try {
-    const r = await fetch(new URL('api/publico.json', direccion), {
-      cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
-    });
-    const ping = Math.round(performance.now() - inicio);
-    if (!r.ok) return { enLinea: true, ping, jugadores: null, version: null, nombre: await nombreDeLaConfig(direccion) };
-    const estado = await jsonConTope(r);
-    return {
-      enLinea: true, ping,
-      jugadores: Number.isFinite(estado?.servidor?.online) ? estado.servidor.online : null,
-      version: typeof estado?.servidor?.version === 'string' ? estado.servidor.version : null,
-      nombre: nombreValido(estado?.servidor?.nombre),
-    };
-  } catch {
-    return { enLinea: false, ping: null, jugadores: null, version: null, nombre: null };
-  }
-}
-
-/** EL NOMBRE DEL SERVER lo pone quien lo hostea (Server.ini [INIT] Nombre), no el jugador: llega en `api/publico.json` y, con la
- * página pública apagada, en `coverao-config.json`. Texto de hasta 40 letras, como lo corta el server; si no, no hay nombre. */
-function nombreValido(n) {
-  if (typeof n !== 'string') return null;
-  const limpio = n.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
-  return limpio || null;
-}
-
-async function nombreDeLaConfig(direccion) {
-  try {
-    const r = await fetch(new URL('coverao-config.json', direccion), {
-      cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
-    });
-    return r.ok ? nombreValido((await jsonConTope(r))?.nombre) : null;
-  } catch { return null; }
+  return estadoServidor.consultarEstado(direccion, {
+    pedir: fetch, leerJson: jsonConTope, esperaMs: ESPERA_DE_LA_CONSULTA_MS,
+  });
 }
 
 // LA COMPILACIÓN DE ESTA APP (la escribe armar.js al armar el instalador): su fecha, que decide si un instalador del release es
@@ -636,10 +611,7 @@ delMenu('consultar', async (_e, direccion) => {
   if (!dir) return null;
   const estado = await consultar(dir);
   const s = config.servidores.find((x) => x.direccion === dir);
-  if (s && estado.enLinea && estado.nombre !== (s.nombreDelServer ?? null)) {
-    if (estado.nombre) s.nombreDelServer = estado.nombre; else delete s.nombreDelServer;
-    guardarConfig(config);
-  }
+  if (estadoServidor.recordarNombre(s, estado)) guardarConfig(config);
   return estado;
 });
 
@@ -654,7 +626,7 @@ delMenu('entrar', async (_e, direccion) => {
   if (!elegido) return 'Esa dirección no es válida.';
   // SI NO RESPONDE, NO SE SALE DEL MENÚ: el aviso va en la lista y la música sigue. Antes se intentaba cargar, fallaba y el menú se
   // volvía a abrir entero con el error, con la música desde el principio y la página fallida en el historial.
-  if (!(await consultar(elegido)).enLinea) return `${elegido.replace(/^https?:\/\//, '').replace(/\/$/, '')} no responde: ¿está prendido?`;
+  if (!(await consultar(elegido)).enLinea) return estadoServidor.NO_DISPONIBLE;
   // SIN LA FIRMA, TAMPOCO SE SALE DEL MENÚ: el motivo va en la lista, como el del server apagado.
   const sinIngreso = await prepararIngreso(elegido);
   if (sinIngreso) return sinIngreso;
