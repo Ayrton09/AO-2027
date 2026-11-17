@@ -63,8 +63,9 @@ public class VeredictosQueDescansanEnLaDataTests
     public void El_transcode_sigue_copiando_las_claves_que_el_port_no_modela()
     {
         var objs = Objetos();
-        Assert.True(objs.Length == 1520,
-            $"el obj.json trae {objs.Length} objetos y el obj.dat del install tiene 1520: el que cambió es el "
+        const int esperados = 1520 + 57; // el install y los pasajes agregados
+        Assert.True(objs.Length == esperados,
+            $"el obj.json trae {objs.Length} objetos y se esperan {esperados}: el que cambió es el "
             + "transcode o la data, y hasta saber cuál los veredictos de abajo no valen");
 
         // EL CANARIO. `Snd3` no lo modela `ObjInfo` —el port no lo usa— y aun así el transcode lo copia crudo:
@@ -164,7 +165,8 @@ public class VeredictosQueDescansanEnLaDataTests
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir!.FullName, "gamedata", "NPCs.json")));
         var npcs = doc.RootElement.GetProperty("NPC").EnumerateArray()
             .Where(e => e.ValueKind == JsonValueKind.Object).Select(e => e.Clone()).ToArray();
-        Assert.True(npcs.Length == 291, $"eran 291 NPCs y hay {npcs.Length}: el barrido no está leyendo la data");
+        const int esperados = 291 + 1; // el install y el viajero de Ullathorpe
+        Assert.True(npcs.Length == esperados, $"se esperan {esperados} NPCs y hay {npcs.Length}: revisar la data del barrido");
 
         var uno = npcs.FirstOrDefault(e => Entero(e, "_index") == 1);
         Assert.True(uno.ValueKind == JsonValueKind.Object, "no está el NPC 1");

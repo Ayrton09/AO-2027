@@ -85,6 +85,8 @@ public class ProtocolParityTests
         [120] = "SubastaCancelar",
         // El /PERDÓN con el sacerdote (pedido del autor, 16/11). El cliente del original tiene el comando y sólo abre un MsgBox.
         [121] = "Perdon",
+        // Las flechas del modo espectador eligen al siguiente o anterior personaje observable.
+        [122] = "NavegarEspectador",
     };
 
     /// <summary>Lo mismo, del lado del SERVIDOR. Va aparte porque el techo del VB6 no es el mismo en las dos
@@ -100,6 +102,8 @@ public class ProtocolParityTests
         [108] = "VidaDelJefe",
         // La lista del Centro de Subastas (pedido del tester, 06/10).
         [109] = "SubastasLista",
+        // La escena que sigue la cámara del GM, incluso desde la selección de personajes.
+        [110] = "EscenaEspectador",
     };
 
     /// <summary>El último id que usa el protocolo del VB6 en cada dirección. Todo lo nuestro va por encima.</summary>
@@ -194,6 +198,7 @@ public class ProtocolParityTests
         Assert.Equal(107, (int)ServerPacketId.FamiliarInfo);   // el primero que es nuestro
         Assert.Equal(108, (int)ServerPacketId.VidaDelJefe);
         Assert.Equal(109, (int)ServerPacketId.SubastasLista);
+        Assert.Equal(110, (int)ServerPacketId.EscenaEspectador);
         Assert.Equal(0, (int)ServerPacketId.LoggedSuccessful);
         Assert.Equal(9, (int)ServerPacketId.CommerceInit);
         Assert.Equal(10, (int)ServerPacketId.BankInit);
@@ -219,6 +224,7 @@ public class ProtocolParityTests
         Assert.Equal(116, (int)ClientPacketId.SubastasPedir);
         Assert.Equal(120, (int)ClientPacketId.SubastaCancelar);
         Assert.Equal(121, (int)ClientPacketId.Perdon);
+        Assert.Equal(122, (int)ClientPacketId.NavegarEspectador);
         Assert.Equal(0, (int)ClientPacketId.Walk);
         Assert.Equal(17, (int)ClientPacketId.DropDestroy);
         Assert.Equal(20, (int)ClientPacketId.DoubleClick);
