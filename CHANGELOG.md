@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.30
+## 1.0.30 (2026-11-17)
 
 - El tope de FPS que viene de fábrica se llama según el monitor y muestra los Hz de tu pantalla: el juego dibuja a ese ritmo.
 
