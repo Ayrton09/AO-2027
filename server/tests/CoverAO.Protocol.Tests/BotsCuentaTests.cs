@@ -143,7 +143,7 @@ public class BotsCuentaTests : IDisposable
         var paquete = new ByteQueueWriter()
             .WriteByte((byte)ClientPacketId.ConnectAccount)
             .WriteAsciiString(cuenta).WriteAsciiString(clave)
-            .WriteByte(1).WriteByte(0).WriteByte(0)
+            .WriteVersionDelJuego()
             .WriteAsciiString("00-00-00-00-00-00").WriteLong(0)
             .ToArray();
         _dispatcher.HandleOne(sesion, new ByteQueueReader(paquete));

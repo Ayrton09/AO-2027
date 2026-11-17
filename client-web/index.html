@@ -1273,11 +1273,9 @@
     window.addEventListener('error', (e) => { window.__errs.push((e.message || '') + ' @ :' + (e.lineno || '') + ':' + (e.colno || '')); });
     window.addEventListener('unhandledrejection', (e) => { window.__errs.push('reject: ' + (e.reason && e.reason.message || e.reason)); });
 
-    // LA VERSION DEL CLIENTE, en los tres bytes que llevan los cinco paquetes de login. El server la compara
-    // como texto contra el `[INIT] Version` de su Server.ini y, si no coincide, manda el cartel de "juego
-    // desactualizado" y corta (VB6 VersionOK, Admin.bas:92). Si el host no escribio esa clave no hay control.
-    // Iba cableada en 1.4.5 con un comentario que decia "el server no los valida"; ahora si.
-    const VERSION_CLIENTE = [1, 0, 0];
+    // LA VERSIÓN PUBLICADA, fijada al compilar el cliente desde /VERSION. No se toma de la respuesta del servidor:
+    // un cliente cacheado debe seguir anunciando la versión con la que se armó.
+    import { VERSION_CLIENTE } from './dist/src/version.js?v=1';
     const CLIENT = { LoginExistingChar: 1, LoginNewChar: 2, ConnectAccount: 66, CreateNewAccount: 67, Walk: 0, Talk: 3, attack: 6, CastSpell: 18, DoubleClick: 20, CommerceBuy: 34, UseItem: 22, CommerceSell: 36,
       CraftBlacksmith: 23, CraftCarpenter: 24, Craftalquimia: 25, CraftSastre: 26, BankExtractItem: 35, BankDeposit: 37,
       BankExtractGold: 84, BankDepositGold: 85, EquipItem: 29, PickUp: 7, Drop: 16, RequestGuildLeaderInfo: 10, CreateNewGuild: 28,

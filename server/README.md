@@ -1,6 +1,6 @@
 # CoverAO Server (.NET 10)
 
-Habla el protocolo AO clásico byte a byte, de modo que un cliente VB6 sin modificar se conecta.
+Conserva el formato de paquetes del protocolo AO clásico. El mundo real exige la app de escritorio y la misma versión publicada del servidor; un cliente VB6 sin modificar no puede ingresar.
 
 ## Estructura
 
@@ -30,6 +30,8 @@ server/
   al socket desde adentro de la lógica.
 
 ## Correr
+
+Prepará primero el cliente con `npm --prefix ../client-web ci` y `npm --prefix ../client-web run build` desde esta carpeta. El armado genera su versión de ingreso desde `VERSION`.
 
 ```bash
 dotnet run --project src/CoverAO.Server -c Release

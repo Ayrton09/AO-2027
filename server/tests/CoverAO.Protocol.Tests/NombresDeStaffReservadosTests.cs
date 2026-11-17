@@ -66,7 +66,7 @@ public sealed class NombresDeStaffReservadosTests : IDisposable
 
     private Transporte Crear(string cuenta, string nombre) => Mandar(new ByteQueueWriter()
         .WriteByte((byte)ClientPacketId.LoginNewChar).WriteAsciiString(cuenta).WriteAsciiString(Clave)
-        .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString(nombre)
+        .WriteVersionDelJuego().WriteAsciiString(nombre)
         .WriteByte(1).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(1).WriteAsciiString("mac").WriteLong(1));
 
     private Transporte Borrar(string cuenta, string nombre) => Mandar(new ByteQueueWriter()
@@ -132,7 +132,7 @@ public sealed class NombresDeStaffReservadosTests : IDisposable
         PersonajeDelHost();
         Assert.True(_ini.GuardarStaff("Merlin", 8));
         Mandar(new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginExistingChar)
-            .WriteAsciiString("host").WriteAsciiString(Clave).WriteByte(1).WriteByte(4).WriteByte(5)
+            .WriteAsciiString("host").WriteAsciiString(Clave).WriteVersionDelJuego()
             .WriteAsciiString("Merlin").WriteAsciiString("mac").WriteLong(1));
 
         var p = await EsperarIngreso("Merlin");

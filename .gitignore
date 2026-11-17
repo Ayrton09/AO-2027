@@ -3,6 +3,7 @@
 *.user
 *.tsbuildinfo
 node_modules/
+/client-web/dist/src/version.js
 desktop/release/
 desktop/compilacion.json
 # La clave privada de la firma del cliente (desktop/firmar.js) vive fuera del repo. Y ninguna otra .pem, por si una copia

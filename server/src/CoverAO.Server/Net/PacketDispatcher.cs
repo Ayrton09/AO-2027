@@ -489,23 +489,12 @@ public sealed partial class PacketDispatcher
         or ClientPacketId.LoginNewChar or ClientPacketId.ConnectAccount or ClientPacketId.CreateNewAccount
         or ClientPacketId.ProcesosLogin or ClientPacketId.BorrarPersonaje;
 
-    /// <summary>El cliente desactualizado no entra (VB6 <c>VersionOK</c>, Admin.bas:92, y sus CINCO llamadores:
-    /// Protocol.bas:1125, :1287, :15197, :15268 y :15722 — o sea los cinco paquetes que traen la versión). El
-    /// original arma <c>"M.m.r"</c> con los tres bytes y lo compara como TEXTO contra el
-    /// <c>[INIT] Version</c> del <c>Server.ini</c>; si no da, manda el cartel de "juego desactualizado" y
-    /// cierra el socket. Acá los tres bytes se leían y se imprimían, nada más.
-    ///
-    /// <para><b>Sin la clave en el ini no hay control</b>, que es la única diferencia con el original —allá el
-    /// archivo siempre la trae—. La comparación es literal: encenderla con un valor que no sea exactamente el
-    /// del cliente que se repartió deja a todos afuera, así que la enciende quien sabe qué versión desplegó.</para>
-    ///
-    /// <para>Corre en el hilo que lee el socket y no adentro del game loop, a diferencia del resto de los
-    /// rechazos de login. Es a propósito: los tres caminos de login derivan la clave con PBKDF2 fuera del loop,
-    /// y no tiene sentido gastar 25 ms de CPU por una conexión que ya está rechazada.</para></summary>
+    /// <summary>Los cinco paquetes de ingreso exigen la versión de este servidor antes de autenticar o
+    /// encolar cambios. No depende del INI ni de una consulta a otro servidor.</summary>
     private bool VersionRechazada(ClientSession session, byte mayor, byte menor, byte rev)
     {
-        string exigida = _ini.VersionRequerida;
-        if (exigida.Length == 0 || $"{mayor}.{menor}.{rev}" == exigida) return false;
+        string exigida = Build.Version;
+        if ($"{mayor}.{menor}.{rev}" == exigida) return false;
         // `WriteShowMessageBox(UserIndex, 0, True, 7)`: el texto es el literal "0" —el VB6 convierte el número
         // al pasarlo a un parámetro String— y el cliente arma el cartel a partir de la ACCIÓN, que es la 7.
         session.Send(ServerMessages.ShowMessageBox("0", esPregunta: true, accion: 7));

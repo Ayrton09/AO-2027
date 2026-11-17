@@ -224,7 +224,7 @@ public sealed class ServerIni
         "SoloEscritorio", "DescargaEscritorio", "BuscarActualizaciones",
         "LluviaBajoTecho", "PorcentajeLluvia",
         "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
-        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "Version", "VidaMinimaDeJefe",
+        "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "VidaMinimaDeJefe",
     };
 
     /// <summary>¿El server lee esta clave de <c>[INIT]</c>? Las de <see cref="ClavesConocidas"/> y los contadores del staff
@@ -264,17 +264,6 @@ public sealed class ServerIni
         limpio = System.Text.RegularExpressions.Regex.Replace(limpio, @"\s+", " ").Trim();
         return limpio.Length > LargoMaximoDelNombre ? limpio[..LargoMaximoDelNombre].TrimEnd() : limpio;
     }
-
-    /// <summary>La versión de cliente que este servidor acepta (<c>[INIT] Version</c>, VB6 <c>ULTIMAVERSION</c>,
-    /// FileIO.bas:1467). El cliente manda la suya en tres bytes al entrar y el original la compara como texto:
-    /// <c>VersionOK = (Ver = ULTIMAVERSION)</c> (Admin.bas:99). Si no coincide, cartel de "juego desactualizado"
-    /// y a la calle.
-    ///
-    /// <para><b>Vacía = sin control</b>, que es lo que pasa si el host no escribe la clave. El original no
-    /// tiene esa salida —allá el ini SIEMPRE la trae—, y acá hace falta: el gate es una comparación literal, así
-    /// que prenderlo con un valor que no sea exactamente el del cliente desplegado deja a TODO el mundo afuera.
-    /// Que lo encienda quien sabe qué versión repartió.</para></summary>
-    public string VersionRequerida { get; private set; } = "";
 
     /// <summary>Puerto del WebSocket que se le ANUNCIA al cliente web, cuando no es el mismo que el servidor
     /// abrió de verdad. 0 = anunciar el real, que es lo normal.
@@ -1250,7 +1239,6 @@ public sealed class ServerIni
         cfg.MaxUsers = ini.GetInt("INIT", "MaxUsers", 0);
         cfg.CodigoFuente = (ini.GetString("INIT", "CodigoFuente", "") ?? "").Trim();
         cfg.NombreDelServidor = LimpiarNombre(ini.GetString("INIT", "Nombre", ""));
-        cfg.VersionRequerida = (ini.GetString("INIT", "Version", "") ?? "").Trim();
         cfg.IntervaloNpcApropiado = ini.GetInt("TIMERS", "IntervaloOwnedNpc", cfg.IntervaloNpcApropiado);
         // El tope de un día es por si alguien escribe un número absurdo: una criatura que no vuelve nunca
         // se pide con el 0 de la otra punta, no con un millón de segundos.

@@ -1,85 +1,104 @@
-using System;
-using System.IO;
+using CoverAO.Protocol;
+using CoverAO.Server;
 using CoverAO.Server.Data;
-using Xunit;
+using CoverAO.Server.Game;
+using CoverAO.Server.Net;
 
 namespace CoverAO.Protocol.Tests;
 
-/// <summary>
-/// LA VERSIÓN QUE EL SERVIDOR EXIGE (<c>[INIT] Version</c>, VB6 <c>ULTIMAVERSION</c> / <c>VersionOK</c>).
-///
-/// <para>La clave ya venía en el <c>Server.ini</c> del install y no la leía nadie: el host la escribía
-/// creyendo que servía. Lo que se fija acá es la lectura y —sobre todo— <b>que ausente signifique apagado</b>,
-/// que es la única diferencia con el original y la que evita que encenderlo por accidente deje a todos afuera.
-/// La comparación en sí es un <c>==</c> de texto contra <c>"M.m.r"</c>, igual que allá.</para>
-/// </summary>
-public class VersionDelClienteTests : IDisposable
+public class VersionDelClienteTests
 {
-    private readonly string _ini = Path.Combine(Path.GetTempPath(), "coverao_ver_" + Guid.NewGuid().ToString("N") + ".ini");
-
-    public void Dispose() { try { File.Delete(_ini); } catch { } }
-
-    private ServerIni Cargar(string cuerpo)
+    [Theory]
+    [InlineData("")]
+    [InlineData("Version=")]
+    [InlineData("Version=1.0.0")]
+    [InlineData("Version=99.99.99")]
+    public void El_ini_viejo_o_vacio_no_desactiva_ni_cambia_la_version(string clave)
     {
-        File.WriteAllText(_ini, "[INIT]\r\nStartPort=7666\r\n" + cuerpo);
-        return ServerIni.Cargar(_ini);
+        Assert.DoesNotContain("Version", ServerIni.ClavesConocidas);
+        var datos = new GameData();
+        var leveling = new Leveling(datos.LevelExp);
+        using var almacen = AlmacenSqlite.EnMemoria();
+        var ini = ServerIni.Desde(IniFile.Parse("[INIT]\n" + clave), "test.ini");
+        var d = new PacketDispatcher(new World(), new GameLoop(), new Persistence(almacen, leveling), datos, leveling, serverIni: ini);
+        var session = new ClientSession(new Transporte(), d);
+        d.HandleOne(session, new ByteQueueReader(Paquete(ClientPacketId.ConnectAccount, actual: false)));
+        Assert.True(session.Cerrada);
+        var actual = new ClientSession(new Transporte(), d);
+        try
+        {
+            d.HandleOne(actual, new ByteQueueReader(Paquete(ClientPacketId.ConnectAccount, actual: true)));
+            Assert.False(actual.Cerrada);
+        }
+        finally { actual.Close("fin de prueba"); }
     }
 
-    [Fact]
-    public void Sin_la_clave_no_hay_version_exigida()
+    private sealed class Transporte : ITransport
     {
-        // EL CASO QUE IMPORTA. Es el de los 194 flows y el de cualquier host que no sepa que la clave existe:
-        // vacía = sin control, o sea exactamente lo que hacía el servidor hasta ahora.
-        Assert.Equal("", Cargar("").VersionRequerida);
+        public string RemoteEndpoint => "test";
+        public readonly System.Collections.Concurrent.ConcurrentQueue<byte[]> Recibidos = new();
+        public readonly TaskCompletionSource<byte[]> Primero = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ValueTask<int> ReceiveAsync(byte[] buffer, CancellationToken ct) => new(0);
+        public void Send(byte[] data) { Recibidos.Enqueue(data); Primero.TrySetResult(data); }
+        public void Close(string reason) { }
     }
 
-    [Fact]
-    public void Con_la_clave_se_lee_tal_cual()
+    private static byte[] Paquete(ClientPacketId id, bool actual)
     {
-        Assert.Equal("1.0.0", Cargar("Version=1.0.0\r\n").VersionRequerida);
-    }
-
-    [Fact]
-    public void Se_le_sacan_los_espacios_de_los_bordes()
-    {
-        // El ini se edita a mano: un espacio de más no puede ser la diferencia entre entrar y no entrar.
-        Assert.Equal("0.13.7", Cargar("Version=  0.13.7  \r\n").VersionRequerida);
-    }
-
-    [Fact]
-    public void Un_valor_vacio_es_lo_mismo_que_no_estar()
-    {
-        // `Version=` a secas: el host la dejó en blanco. No puede quedar exigiendo la cadena vacía, que no
-        // coincide con ningún cliente.
-        Assert.Equal("", Cargar("Version=\r\n").VersionRequerida);
-    }
-
-    [Fact]
-    public void Es_una_clave_conocida()
-    {
-        // Si no está en la lista, el arranque la reporta como "el host escribió una opción que no entiendo" —
-        // justo lo contrario de lo que pasaba antes, que era entenderla y no usarla.
-        Assert.Contains("Version", ServerIni.ClavesConocidas);
-    }
-
-    [Fact]
-    public void Deja_de_figurar_como_ausente_cuando_el_host_la_escribio()
-    {
-        // El arranque lista las opciones que corren en su valor por defecto. Sin la clave, `Version` es una
-        // de ellas; con la clave escrita, no.
-        Assert.Contains("Version", Cargar("").ClavesAusentes);
-        Assert.DoesNotContain("Version", Cargar("Version=1.0.0\r\n").ClavesAusentes);
+        var w = new ByteQueueWriter().WriteByte((byte)id).WriteAsciiString("cuenta").WriteAsciiString("clave");
+        if (id is ClientPacketId.CreateNewAccount or ClientPacketId.ProcesosLogin) w.WriteAsciiString("1234");
+        if (actual) w.WriteVersionDelJuego();
+        else w.WriteByte(0).WriteByte(0).WriteByte(0);
+        if (id == ClientPacketId.ProcesosLogin) return w.WriteByte(1).ToArray();
+        if (id is ClientPacketId.LoginExistingChar or ClientPacketId.LoginNewChar) w.WriteAsciiString("Aldo");
+        if (id == ClientPacketId.LoginNewChar) w.WriteByte(1).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(1);
+        if (id != ClientPacketId.CreateNewAccount) w.WriteAsciiString("mac").WriteLong(1);
+        return w.ToArray();
     }
 
     [Theory]
-    // La comparación del original es de TEXTO, no numérica: `VersionOK = (Ver = ULTIMAVERSION)`. Estas filas
-    // fijan qué cadena arma el servidor con los tres bytes, que es lo que se compara.
-    [InlineData(1, 0, 0, "1.0.0")]
-    [InlineData(1, 4, 5, "1.4.5")]
-    [InlineData(0, 13, 7, "0.13.7")]
-    [InlineData(255, 255, 255, "255.255.255")]
-    public void Los_tres_bytes_arman_la_cadena_con_puntos(byte mayor, byte menor, byte rev, string esperado)
+    [InlineData(ClientPacketId.LoginExistingChar)]
+    [InlineData(ClientPacketId.LoginNewChar)]
+    [InlineData(ClientPacketId.ConnectAccount)]
+    [InlineData(ClientPacketId.CreateNewAccount)]
+    [InlineData(ClientPacketId.ProcesosLogin)]
+    public async Task Los_cinco_ingresos_rechazan_otro_cliente_antes_de_operar(ClientPacketId id)
     {
-        Assert.Equal(esperado, $"{mayor}.{menor}.{rev}");
+        var world = new World();
+        var loop = new GameLoop();
+        var datos = new GameData();
+        var leveling = new Leveling(datos.LevelExp);
+        using var almacen = AlmacenSqlite.EnMemoria();
+        var db = new Persistence(almacen, leveling);
+        var d = new PacketDispatcher(world, loop, db, datos, leveling);
+        var transporte = new Transporte();
+        var session = new ClientSession(transporte, d);
+        d.HandleOne(session, new ByteQueueReader(Paquete(id, actual: false)));
+        Assert.True(session.Cerrada);
+        var aviso = await transporte.Primero.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal((byte)ServerPacketId.ShowMessageBox, aviso[0]);
+        Assert.Single(transporte.Recibidos);
+        Assert.Empty(world.Players);
+        Assert.Null(db.LoadAccount("cuenta"));
+    }
+
+    [Theory]
+    [InlineData(ClientPacketId.LoginExistingChar)]
+    [InlineData(ClientPacketId.LoginNewChar)]
+    [InlineData(ClientPacketId.ConnectAccount)]
+    [InlineData(ClientPacketId.CreateNewAccount)]
+    [InlineData(ClientPacketId.ProcesosLogin)]
+    public void Los_cinco_ingresos_aceptan_la_version_de_esta_compilacion(ClientPacketId id)
+    {
+        var datos = new GameData();
+        var leveling = new Leveling(datos.LevelExp);
+        using var almacen = AlmacenSqlite.EnMemoria();
+        var d = new PacketDispatcher(new World(), new GameLoop(), new Persistence(almacen, leveling), datos, leveling);
+        var transporte = new Transporte();
+        var session = new ClientSession(transporte, d);
+        d.HandleOne(session, new ByteQueueReader(Paquete(id, actual: true)));
+        Assert.False(session.Cerrada);
+        Assert.Empty(transporte.Recibidos);
+        session.Close("fin de prueba");
     }
 }

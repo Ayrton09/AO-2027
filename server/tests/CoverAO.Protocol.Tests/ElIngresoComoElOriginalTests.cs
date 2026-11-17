@@ -85,20 +85,20 @@ public class ElIngresoComoElOriginalTests : IDisposable
 
     private static ByteQueueWriter Entrar(string cuenta, string clave, string personaje) => new ByteQueueWriter()
         .WriteByte((byte)ClientPacketId.LoginExistingChar).WriteAsciiString(cuenta).WriteAsciiString(clave)
-        .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString(personaje).WriteAsciiString("mac").WriteLong(1);
+        .WriteVersionDelJuego().WriteAsciiString(personaje).WriteAsciiString("mac").WriteLong(1);
 
     private static ByteQueueWriter Crear(string cuenta, string personaje, byte raza = 1, short cabeza = 1) => new ByteQueueWriter()
         .WriteByte((byte)ClientPacketId.LoginNewChar).WriteAsciiString(cuenta).WriteAsciiString(Clave)
-        .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString(personaje)
+        .WriteVersionDelJuego().WriteAsciiString(personaje)
         .WriteByte(raza).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(cabeza).WriteAsciiString("mac").WriteLong(1);
 
     private static ByteQueueWriter AbrirCuenta(string cuenta) => new ByteQueueWriter()
         .WriteByte((byte)ClientPacketId.ConnectAccount).WriteAsciiString(cuenta).WriteAsciiString(Clave)
-        .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString("mac").WriteLong(1);
+        .WriteVersionDelJuego().WriteAsciiString("mac").WriteLong(1);
 
     private static ByteQueueWriter CrearCuenta(string cuenta, string codigo) => new ByteQueueWriter()
         .WriteByte((byte)ClientPacketId.CreateNewAccount).WriteAsciiString(cuenta).WriteAsciiString(Clave)
-        .WriteAsciiString(codigo).WriteByte(1).WriteByte(4).WriteByte(5);
+        .WriteAsciiString(codigo).WriteVersionDelJuego();
 
     private Account CuentaCon(string nombre, params string[] personajes)
     {

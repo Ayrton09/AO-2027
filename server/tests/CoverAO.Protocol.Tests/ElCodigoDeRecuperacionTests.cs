@@ -56,7 +56,7 @@ public class ElCodigoDeRecuperacionTests : IDisposable
     {
         _dispatcher.HandleOne(sesion, new ByteQueueReader(new ByteQueueWriter()
             .WriteByte((byte)ClientPacketId.ProcesosLogin).WriteAsciiString(cuenta).WriteAsciiString(pin).WriteAsciiString(Nueva)
-            .WriteByte(1).WriteByte(4).WriteByte(5).WriteByte(tipo).ToArray()));
+            .WriteVersionDelJuego().WriteByte(tipo).ToArray()));
     }
 
     /// <summary>Manda un ProcesosLogin y espera el EjecutarAccion(5) que cierra cada respuesta; devuelve su "1" o "0".</summary>

@@ -2,6 +2,25 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.31 (2026-11-17)
+
+### Cliente y servidor de la misma versión
+
+- Desde esta versión, el servidor exige que la app de escritorio y el juego que carga correspondan a su misma versión publicada. Un cliente anterior no puede ingresar a un servidor actualizado; tampoco puede ingresar uno más nuevo a este servidor sin que coincidan las versiones.
+- Antes, el juego seguía anunciando 1.0.0 y el control dependía de una opción del Server.ini que venía vacía. Por eso podían ingresar clientes de versiones diferentes. Ahora ambos lados usan la versión de la release y el servidor la comprueba antes de procesar el ingreso.
+- Se eliminó la opción Version del Server.ini: quien hostea ya no tiene que cambiar ese número en cada actualización. Un valor que haya quedado en un INI viejo no cambia ni desactiva el control.
+
+### Aviso antes de entrar
+
+- La app comprueba la versión antes de cargar el juego y muestra cuál necesita el servidor y cuál tenés instalada. Esto funciona desde la lista de servidores y desde los accesos directos.
+- Una diferencia de versión se avisa como tal, en lugar de confundirse con un problema de firma del cliente.
+
+### Cómo recibir la actualización
+
+- Jugadores y tester: aceptá la actualización de la app y cerrala para completar la instalación, o usá Actualizar ahora. Si actualizás a mano, descargá el instalador de esta release y volvé a abrir el juego.
+- Quien hostea: actualizá también el paquete del servidor a la 1.0.31, conservando tu Server.ini y el mundo en data. Actualizar la app no actualiza el servidor. Para entrar a un servidor 1.0.31 hace falta la app 1.0.31.
+- El nuevo control lo aplica un servidor que ya tenga esta corrección; instalar la app nueva no cambia las reglas de un servidor que siga ejecutando una versión anterior.
+
 ## 1.0.30 (2026-11-17)
 
 - El tope de FPS que viene de fábrica se llama según el monitor y muestra los Hz de tu pantalla: el juego dibuja a ese ritmo.

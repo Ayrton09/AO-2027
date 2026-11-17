@@ -276,7 +276,7 @@ public class CrearConLaCuentaAdentroTests : IDisposable
         var t = new Transporte();
         _dispatcher.HandleOne(new ClientSession(t, _dispatcher), new ByteQueueReader(new ByteQueueWriter()
             .WriteByte((byte)ClientPacketId.LoginNewChar).WriteAsciiString("cuenta").WriteAsciiString(Clave)
-            .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString("Segundo")
+            .WriteVersionDelJuego().WriteAsciiString("Segundo")
             .WriteByte(1).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(1).WriteAsciiString("mac").WriteLong(1).ToArray()));
 
         long fin = Environment.TickCount64 + 15_000;

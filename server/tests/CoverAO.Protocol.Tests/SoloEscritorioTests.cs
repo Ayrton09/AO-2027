@@ -62,7 +62,10 @@ public class SoloEscritorioTests
         Assert.False(Escritorio.EsLaApp(null));
         Assert.False(Escritorio.EsLaApp(""));
         Assert.False(Escritorio.EsLaApp("  "));
-        Assert.True(Escritorio.EsLaApp("1.0.0"));
+        Assert.True(Escritorio.EsLaApp(CoverAO.Server.Build.Version));
+        Assert.False(Escritorio.EsLaApp("0.0.0"));
+        Assert.False(Escritorio.EsLaApp("255.255.255"));
+        Assert.False(Escritorio.EsLaApp("cualquier texto"));
     }
 
     [Fact]
@@ -70,6 +73,8 @@ public class SoloEscritorioTests
     {
         var web = new StaticFileServer(0, Path.GetTempPath(), 7667, soloEscritorio: true, descargaEscritorio: "https://ejemplo.org/d");
         Assert.Contains("\"descarga\":\"https://ejemplo.org/d\"", web.ConfigJson);
+        using var json = System.Text.Json.JsonDocument.Parse(web.ConfigJson);
+        Assert.Equal(CoverAO.Server.Build.Version, json.RootElement.GetProperty("versionClienteRequerida").GetString());
     }
 
     [Fact]

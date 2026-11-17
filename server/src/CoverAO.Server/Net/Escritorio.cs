@@ -18,8 +18,8 @@ public static class Escritorio
     /// <summary>La página que ve el navegador en lugar del juego, en la carpeta del cliente.</summary>
     public const string PaginaDeDescarga = "descargar.html";
 
-    /// <summary>¿El pedido viene de la app? Basta con que traiga la cabecera con algún valor.</summary>
-    public static bool EsLaApp(string? valorDeLaCabecera) => !string.IsNullOrWhiteSpace(valorDeLaCabecera);
+    /// <summary>La app y el servidor deben pertenecer a la misma versión publicada.</summary>
+    public static bool EsLaApp(string? valorDeLaCabecera) => valorDeLaCabecera == Build.Version;
 
     /// <summary>Qué archivo se sirve para <paramref name="ruta"/>: la del juego (<c>index.html</c>) se cambia por la de
     /// descarga cuando el server es sólo para la app y el pedido no viene de ella. El resto se sirve igual: los gráficos,

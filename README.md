@@ -38,13 +38,17 @@ Descargá el paquete autocontenido para [Windows](https://github.com/Ayrton09/AO
 
 La [guía de hosting](docs/HOSTING.md) cubre `Server.ini`, puertos, HTTPS, Docker, copias de seguridad y actualización del servidor. Podés conservar la configuración y el mundo en `data/` al actualizar. Para ofrecer a tus jugadores el código exacto de tu servidor, configurá `[INIT] CodigoFuente` con el enlace a la versión que estás ejecutando.
 
+Cliente y servidor deben ser de la misma versión. El control es automático: no hay una versión que mantener en el `Server.ini`.
+
 ## Trabajar con el código
 
 AO 2027 continúa el servidor **CoverAO-2021**, una variante de Argentum Online escrita en Visual Basic 6. El servidor actual usa C# y .NET 10. El cliente de escritorio usa Electron, TypeScript, Canvas y WebSocket.
 
-Con el SDK de .NET 10 instalado:
+Con el SDK de .NET 10 y Node.js instalados. Primero compilá el cliente, que genera también su versión de ingreso desde `VERSION`:
 
 ```sh
+npm --prefix client-web ci
+npm --prefix client-web run build
 dotnet build CoverAO.slnx -c Release
 dotnet server/src/CoverAO.Server/bin/Release/net10.0/CoverAO.Server.dll --web-root client-web
 ```

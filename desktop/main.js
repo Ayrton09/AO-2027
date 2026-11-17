@@ -256,10 +256,27 @@ function interceptar(esquema) {
   });
 }
 
-/** Entra al server: primero su firma, después la página. */
+/** Los dos ingresos (menú y acceso directo) comprueban la versión antes de bajar el cliente firmado. */
+async function prepararIngreso(direccion) {
+  try {
+    const r = await sinCaptura(new URL('coverao-config.json', direccion), {
+      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(ESPERA_DE_LA_CONSULTA_MS),
+    });
+    if (!r.ok) throw new Error('no se pudo consultar la versión');
+    const configDelServidor = await jsonConTope(r);
+    if (!configDelServidor) throw new Error('la configuración no es válida');
+    const errorDeVersion = actualizacion.errorDeVersion(configDelServidor, app.getVersion());
+    if (errorDeVersion) return errorDeVersion;
+  } catch {
+    return 'No se pudo comprobar la versión del servidor. Intentá entrar de nuevo.';
+  }
+  return prepararFirma(direccion);
+}
+
+/** Entra desde un acceso directo o desde otra instancia de la app. */
 async function cargarServidor(direccion) {
-  const error = await prepararFirma(direccion);
-  if (error) { console.error(`[firma] ${error}`); abrirMenu(error); return error; }
+  const error = await prepararIngreso(direccion);
+  if (error) { console.error(`[ingreso] ${error}`); abrirMenu(error); return error; }
   servidor = direccion;
   ventana.loadURL(direccion);
   return null;
@@ -639,8 +656,8 @@ delMenu('entrar', async (_e, direccion) => {
   // volvía a abrir entero con el error, con la música desde el principio y la página fallida en el historial.
   if (!(await consultar(elegido)).enLinea) return `${elegido.replace(/^https?:\/\//, '').replace(/\/$/, '')} no responde: ¿está prendido?`;
   // SIN LA FIRMA, TAMPOCO SE SALE DEL MENÚ: el motivo va en la lista, como el del server apagado.
-  const sinFirma = await prepararFirma(elegido);
-  if (sinFirma) return sinFirma;
+  const sinIngreso = await prepararIngreso(elegido);
+  if (sinIngreso) return sinIngreso;
   servidor = config.servidor = elegido;
   if (!config.servidores.some((s) => s.direccion === elegido)) config.servidores.push({ direccion: elegido });
   guardarConfig(config);

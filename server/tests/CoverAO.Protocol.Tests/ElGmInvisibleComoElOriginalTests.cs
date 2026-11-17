@@ -212,7 +212,7 @@ public class ElGmInvisibleComoElOriginalTests : IDisposable
         var t = new Transporte();
         var sesion = new ClientSession(t, _dispatcher);
         _dispatcher.HandleOne(sesion, new ByteQueueReader(new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginExistingChar)
-            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteByte(1).WriteByte(4).WriteByte(5)
+            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteVersionDelJuego()
             .WriteAsciiString("Aldo").WriteAsciiString("mac").WriteLong(1).ToArray()));
         for (int i = 0; i < 40 && !t.Recibidos.Any(x => x[0] == (byte)ServerPacketId.Logged); i++)
             await Task.Delay(100);                                                 // el login verifica la clave afuera del loop

@@ -8,6 +8,15 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
 const pub = publicKey.export({ type: 'spki', format: 'pem' });
 const otra = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' });
 
+const { errorDeVersion } = require('./actualizacion');
+assert.strictEqual(errorDeVersion({ versionClienteRequerida: '1.0.31' }, '1.0.31'), null);
+assert.match(errorDeVersion({ versionClienteRequerida: '1.0.31' }, '1.0.30'), /requiere AO 2027 1\.0\.31/);
+assert.match(errorDeVersion({ versionClienteRequerida: '1.0.30' }, '1.0.31'), /misma versión/);
+assert.strictEqual(errorDeVersion({}, '1.0.30'), null);
+assert.match(errorDeVersion({ version: '1.0.29' }, '1.0.30'), /misma versión/);
+assert.ok(errorDeVersion({ versionClienteRequerida: null }, '1.0.30'));
+assert.ok(errorDeVersion({ versionClienteRequerida: '' }, '1.0.30'));
+
 const base = { id: '2026-10-12T20:00:00.000Z', archivo: 'CoverAO-Setup.exe', sha256: 'a'.repeat(64), tamano: 123456 };
 const aviso = firmarActualizacion(base, privateKey);
 

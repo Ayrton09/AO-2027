@@ -12,6 +12,16 @@ const path = require('path');
 const FECHA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const NOMBRE = /^[A-Za-z0-9._-]{1,100}$/;
 
+// El INI no decide la versión: la anuncia el ejecutable que está atendiendo ese servidor.
+function errorDeVersion(config, versionLocal) {
+  const requerida = config?.versionClienteRequerida === undefined ? config?.version : config.versionClienteRequerida;
+  if (requerida === undefined || (requerida === '' && config?.versionClienteRequerida === undefined)) return null;
+  if (typeof requerida !== 'string' || !/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(requerida))
+    return 'El servidor anunció una versión de cliente inválida.';
+  if (requerida === versionLocal) return null;
+  return `Este servidor requiere AO 2027 ${requerida} y tu app es ${versionLocal}. Usá la misma versión del cliente y del servidor. Si tu app es anterior, actualizala desde el menú.`;
+}
+
 // CADA PLATAFORMA, SU AVISO Y SU ARCHIVO: Windows se actualiza con el instalador (`actualizacion.json`, un .exe) y Linux
 // reemplazando el AppImage (`actualizacion-linux.json`, un .AppImage). La extensión se exige al verificar: el aviso de una no le
 // sirve a la otra, y a Linux no se le puede hacer bajar un .exe ni a Windows algo que no sea su instalador.
@@ -121,4 +131,4 @@ function programarReaperturaAppImage(destino, pid = process.pid, spawnx = requir
 }
 
 module.exports = { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog, reemplazarAppImage,
-  programarReaperturaAppImage };
+  programarReaperturaAppImage, errorDeVersion };

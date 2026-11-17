@@ -81,7 +81,7 @@ public class LaPausaDelServidorTests : IDisposable
     {
         _admin.Paused = true;
         var t = await Mandar(new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginExistingChar)
-            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteByte(1).WriteByte(4).WriteByte(5)
+            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteVersionDelJuego()
             .WriteAsciiString("Aldo").WriteAsciiString("mac").WriteLong(1).ToArray());
         Assert.Equal(new[] { Mantenimiento }, Carteles(t));
         Assert.False(t.Cerrado, "el original deja la conexión abierta (CierraConexion = False)");
@@ -93,7 +93,7 @@ public class LaPausaDelServidorTests : IDisposable
     {
         _admin.Paused = true;
         var t = await Mandar(new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginNewChar)
-            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteByte(1).WriteByte(4).WriteByte(5)
+            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteVersionDelJuego()
             .WriteAsciiString("Aldo").WriteByte(1).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(1)
             .WriteAsciiString("mac").WriteLong(1).ToArray());
         Assert.Equal(new[] { Mantenimiento }, Carteles(t));
@@ -104,7 +104,7 @@ public class LaPausaDelServidorTests : IDisposable
     public async Task Sin_pausa_el_login_no_avisa_el_mantenimiento()
     {
         var t = await Mandar(new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginExistingChar)
-            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteByte(1).WriteByte(4).WriteByte(5)
+            .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteVersionDelJuego()
             .WriteAsciiString("Aldo").WriteAsciiString("mac").WriteLong(1).ToArray());
         Assert.DoesNotContain(Mantenimiento, Carteles(t));
     }

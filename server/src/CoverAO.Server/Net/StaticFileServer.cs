@@ -157,6 +157,7 @@ public sealed class StaticFileServer
             $"\"volverAlHogar\":{(volverAlHogar ? "true" : "false")}," +
             $"\"nombre\":{System.Text.Json.JsonSerializer.Serialize(nombre)}," +
             $"\"version\":{System.Text.Json.JsonSerializer.Serialize(version)}," +
+            $"\"versionClienteRequerida\":{System.Text.Json.JsonSerializer.Serialize(Build.Version)}," +
             $"\"descarga\":{System.Text.Json.JsonSerializer.Serialize(descargaEscritorio)}," +
             // La fecha de la compilación del server (Data/Actualizador.cs): el cliente que reconecta y la ve cambiada se recarga.
             $"\"compilacion\":{System.Text.Json.JsonSerializer.Serialize(compilacion)}," +

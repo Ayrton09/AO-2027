@@ -8,6 +8,7 @@
 //
 // Correr (server arriba en el WS 7667):  node ws-close-reason.mjs [url] [personaje]
 import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js';
+import { VERSION_CLIENTE } from './dist/src/version.js';
 
 const URL = process.argv[2] || 'ws://localhost:7667/';
 const CHAR = process.argv[3] || 'Cazador';
@@ -16,7 +17,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function loginBytes(name) {
   return new ByteQueueWriter().writeByte(1)               // LoginExistingChar
     .writeAsciiString('cuenta_test').writeAsciiString('hash_password')
-    .writeByte(1).writeByte(4).writeByte(5)
+    .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2])
     .writeAsciiString(name).writeAsciiString('mac').writeLong(1)
     .toBytes();
 }

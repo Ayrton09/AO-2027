@@ -209,7 +209,7 @@ public class LaBaseFueraDelLoopTests : IDisposable
         var t = new Transporte(origen);
         var paquete = new ByteQueueWriter()
             .WriteByte((byte)ClientPacketId.LoginExistingChar).WriteAsciiString("cuenta").WriteAsciiString(Clave)
-            .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString(personaje).WriteAsciiString("mac").WriteLong(1);
+            .WriteVersionDelJuego().WriteAsciiString(personaje).WriteAsciiString("mac").WriteLong(1);
         _dispatcher.HandleOne(new ClientSession(t, _dispatcher), new ByteQueueReader(paquete.ToArray()));
         return t;
     }
@@ -223,7 +223,7 @@ public class LaBaseFueraDelLoopTests : IDisposable
         var t = new Transporte(origen);
         var paquete = new ByteQueueWriter()
             .WriteByte((byte)ClientPacketId.LoginNewChar).WriteAsciiString("cuenta").WriteAsciiString(Clave)
-            .WriteByte(1).WriteByte(4).WriteByte(5).WriteAsciiString(personaje)
+            .WriteVersionDelJuego().WriteAsciiString(personaje)
             .WriteByte(1).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(1).WriteAsciiString("mac").WriteLong(1);
         _dispatcher.HandleOne(new ClientSession(t, _dispatcher), new ByteQueueReader(paquete.ToArray()));
         return t;

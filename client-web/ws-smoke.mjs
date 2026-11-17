@@ -4,6 +4,7 @@
 //
 // Run (server up, `npm run build` done):  node ws-smoke.mjs
 import { ByteQueueWriter, xorBuffer, DEFAULT_XOR_KEY } from './dist/src/codec/bytequeue.js';
+import { VERSION_CLIENTE } from './dist/src/version.js';
 import { decodeServerStream } from './dist/src/protocol/serverPackets.js';
 
 const URL = process.argv[2] || 'ws://localhost:7667/';
@@ -28,7 +29,7 @@ function login() {
   return new ByteQueueWriter()
     .writeByte(CLIENT.LoginExistingChar)
     .writeAsciiString('cuenta_test').writeAsciiString('hash_password')
-    .writeByte(1).writeByte(4).writeByte(5)
+    .writeByte(VERSION_CLIENTE[0]).writeByte(VERSION_CLIENTE[1]).writeByte(VERSION_CLIENTE[2])
     .writeAsciiString('Rugura').writeAsciiString('mac').writeLong(1)
     .toBytes();
 }

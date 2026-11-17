@@ -210,10 +210,8 @@ RolesMasters=0
 Nombre=
 ; URL del codigo de ESTA version, accesible a todos los jugadores de este servidor.
 CodigoFuente=
-; Version que se le exige al cliente. VACIO = entra cualquiera, y se queda asi:
-; el control es una comparacion literal, y prenderlo con un numero que no sea
-; EXACTO al del cliente que repartiste deja a todos afuera.
-Version=
+; El ingreso exige automáticamente la versión del ejecutable, también en la app.
+; No hay una opción para cambiarla ni desactivar este control.
 
 ; --- Los nombres del staff ---------------------------------------------------
 ; Ejemplo, para un Dios llamado Rugura:  Dioses=1  arriba, y aca  Dios1=Rugura

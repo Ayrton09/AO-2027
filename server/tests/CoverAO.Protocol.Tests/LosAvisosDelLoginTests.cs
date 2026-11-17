@@ -65,11 +65,11 @@ public class LosAvisosDelLoginTests : IDisposable
         .Select(x => Encoding.Latin1.GetString(x, 3, BitConverter.ToInt16(x, 1))).ToList();
 
     private static byte[] Entrar(string personaje) => new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginExistingChar)
-        .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteByte(1).WriteByte(4).WriteByte(5)
+        .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteVersionDelJuego()
         .WriteAsciiString(personaje).WriteAsciiString("mac").WriteLong(1).ToArray();
 
     private static byte[] Crear(string personaje) => new ByteQueueWriter().WriteByte((byte)ClientPacketId.LoginNewChar)
-        .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteByte(1).WriteByte(4).WriteByte(5)
+        .WriteAsciiString("cuenta").WriteAsciiString("clave").WriteVersionDelJuego()
         .WriteAsciiString(personaje).WriteByte(1).WriteByte(1).WriteByte(1).WriteByte(1).WriteInteger(1)
         .WriteAsciiString("mac").WriteLong(1).ToArray();
 

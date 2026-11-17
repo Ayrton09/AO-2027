@@ -17,7 +17,7 @@ param(
   [string]$OutDir = "",
   [string]$Configuration = "Release",
   [switch]$Comprimir,             # ademas de la carpeta, deja el archivo para publicar
-  [string]$Version = "1.0.30",    # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
+  [string]$Version = "1.0.31",    # solo para el nombre del comprimido; subir-version.ps1 pasa VERSION explícitamente
   [string]$Compilacion = ""       # la fecha ISO de la compilacion (vacia = ahora); la de Windows y Linux tiene que ser la misma
 )
 $ErrorActionPreference = "Stop"
@@ -25,6 +25,10 @@ $Root = Split-Path $PSScriptRoot -Parent
 $Proj = Join-Path $Root "server\src\CoverAO.Server\CoverAO.Server.csproj"
 if ($OutDir -eq "") { $OutDir = Join-Path $Root "dist\CoverAO-$Rid" }
 $Pub = Join-Path $env:TEMP "coverao-publish-$Rid"
+
+# El cliente lleva la versión del release aun cuando se arma desde una copia con dist/ anterior.
+node (Join-Path $Root "client-web\generar-version.mjs")
+if ($LASTEXITCODE -ne 0) { throw "no se pudo fijar la versión del cliente" }
 
 Write-Host "== 1/4  dotnet publish self-contained ($Rid) ==" -ForegroundColor Cyan
 if (Test-Path $Pub) { Remove-Item -Recurse -Force $Pub }
