@@ -5177,7 +5177,7 @@ public sealed partial class PacketDispatcher
         if (opcion is 3 or 4 or 11 or 12 && t.CharIndex != 0)
             _world.BroadcastToObservers(t.Pos, ServerMessages.CharacterChange(t));
         _db.SaveCharacter(t);   // el VB6 escribe el .chr en el acto; acá persistimos para que sobreviva a un crash
-        session.Send(ServerMessages.ConsoleMsg($"Charfile alterado: {t.Name} — {cambio}.", FuenteInfo));
+        session.Send(ServerMessages.ConsoleMsg($"Charfile alterado: {t.Name}: {cambio}.", FuenteInfo));
         Console.WriteLine($"[{session.RemoteEndpoint}] /MOD {p!.Name} -> {t.Name}: {cambio}");
     }
 
@@ -8200,7 +8200,7 @@ public sealed partial class PacketDispatcher
             if (g is null) return;
             session.Send(ServerMessages.GuildDetails(g)); // structured clan info window
             session.Send(ServerMessages.ConsoleMsg(
-                $"Clan <{g.Name}> — líder: {g.LeaderName}, miembros: {g.Members.Count}, aliados: {g.Allies.Count}, enemigos: {g.Enemies.Count}.", FuenteClan));
+                $"Clan <{g.Name}>: líder {g.LeaderName}, miembros: {g.Members.Count}, aliados: {g.Allies.Count}, enemigos: {g.Enemies.Count}.", FuenteClan));
         });
     }
 

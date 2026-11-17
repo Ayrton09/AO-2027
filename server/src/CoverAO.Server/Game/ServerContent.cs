@@ -29,7 +29,7 @@ public sealed class ServerContent
 
     private static readonly string[] DefaultMotd =
     {
-        $"{Build.Nombre} — servidor .NET 10. ¡Conexión aceptada!",
+        $"{Build.Nombre}: servidor .NET 10. ¡Conexión aceptada!",
         $"¡Bienvenido a {Build.Nombre}! El mundo de Argentum te espera.",
         "Escribí /AYUDA para ver los comandos, o /GM para hablar con un administrador.",
         "Descargas y avisos: https://" + ServerIni.RepositorioPublico,
