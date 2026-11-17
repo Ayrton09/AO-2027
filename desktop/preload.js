@@ -18,7 +18,6 @@ if (location.protocol === 'file:') {
     recienActualizada: () => ipcRenderer.invoke('recien-actualizada'),
     hayActualizacion: () => ipcRenderer.invoke('actualizacion'),
     actualizarAhora: () => ipcRenderer.invoke('actualizar-ahora'),
-    hzDelMonitor: () => ipcRenderer.invoke('hz-del-monitor'),
     alHaberActualizacion: (hacer) => ipcRenderer.on('actualizacion-lista', () => hacer()),
   });
 } else if (/^https?:$/.test(location.protocol)) {
@@ -53,6 +52,5 @@ if (location.protocol === 'file:') {
     salir: () => ipcRenderer.invoke('salir'),
     estaEnPantallaCompleta: () => ipcRenderer.invoke('esta-en-pantalla-completa'),
     pantallaCompleta: (si) => ipcRenderer.invoke('pantalla-completa', !!si),
-    hzDelMonitor: () => ipcRenderer.invoke('hz-del-monitor'),
   });
 }

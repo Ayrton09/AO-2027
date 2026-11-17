@@ -3,7 +3,7 @@
 // pantalla completa sin la cruz de Chrome, la música del ingreso sin esperar el clic, ícono propio, y el MENÚ PRINCIPAL (el autor,
 // 05/10: "deberia abrirte el menu principal y deberia haber una opcion que diga servidores"): Jugar, Servidores, Opciones y Salir,
 // con la música del inicio sonando hasta que se entra a un server.
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol, screen } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, webFrameMain, safeStorage, session, net, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -121,19 +121,13 @@ let ventana = null;
 // y las cambia, el `preload` las copia a la página del server antes de que arranque el juego y le devuelve acá lo que se cambie
 // adentro. Así valen para todos los servers. Sólo pasan éstas: el resto del `localStorage` de cada server es suyo.
 const AJUSTES_DEL_JUEGO = new Set(['ao_musicalogin', 'ao_musica', 'ao_volmusica', 'ao_mute', 'ao_volefectos', 'ao_fpscap',
-  'ao_escalado', 'ao_zoom', 'ao_ssmax', 'ao_nombres', 'ao_alcance', 'ao_macro', 'ao_interfaz', 'ao_teclas', 'ao_vsync']);
+  'ao_escalado', 'ao_zoom', 'ao_ssmax', 'ao_nombres', 'ao_alcance', 'ao_macro', 'ao_interfaz', 'ao_teclas']);
 const soloAjustes = (o) => Object.fromEntries(Object.entries(o ?? {})
   .filter(([k, v]) => AJUSTES_DEL_JUEGO.has(k) && typeof v === 'string' && v.length < 4000));
 // La música y los efectos al 20 %, y la de adentro del juego prendida (el autor, 05/10); en el navegador la de los mapas viene
 // apagada.
 config.ajustes = { ao_volmusica: '0.2', ao_volefectos: '0.2', ao_musica: '1', ...soloAjustes(config.ajustes) };
 delete config.opciones;
-// EL VSYNC VIENE APAGADO (el autor, 16/11): sin esto Chromium dibuja al ritmo del monitor y el juego no pasa de su refresco. Va antes
-// de que arranque la app, que es cuando Chromium lee sus opciones; prenderlo desde las Opciones del juego vale al volver a abrirla.
-if (config.ajustes.ao_vsync !== '1') {
-  app.commandLine.appendSwitch('disable-gpu-vsync');
-  app.commandLine.appendSwitch('disable-frame-rate-limit');
-}
 
 // `--servidor=<dirección>` entra directo a ese server sin pasar por el menú ni tocar el guardado: un acceso directo por server.
 const servidorDelAcceso = normalizar(process.argv.find((a) => a.startsWith('--servidor='))?.slice('--servidor='.length));
@@ -680,15 +674,6 @@ ipcMain.on('ajustes-del-juego', (_e, ajustes) => {
   if (Object.entries(nuevos).every(([k, v]) => config.ajustes[k] === v)) return;
   config.ajustes = { ...config.ajustes, ...nuevos };
   guardarConfig(config);
-});
-
-// EL REFRESCO DEL MONITOR donde está la ventana, para el tope de FPS "monitor" del juego: con el VSync apagado `requestAnimationFrame`
-// no lo sigue, así que el juego no tiene cómo medirlo (el autor, 16/11: "una opción que se adapte a los cuadros del monitor").
-ipcMain.handle('hz-del-monitor', () => {
-  try {
-    const pantalla = ventana && !ventana.isDestroyed() ? screen.getDisplayMatching(ventana.getBounds()) : screen.getPrimaryDisplay();
-    return Math.round(pantalla.displayFrequency) || 0;
-  } catch { return 0; }
 });
 
 ipcMain.handle('salir', () => app.quit());

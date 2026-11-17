@@ -2,6 +2,11 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.29
+
+- Vuelve el VSync en el juego de escritorio, como antes de la 1.0.24: sin límite va al refresco de tu monitor y los topes de FPS dan exacto. Sale la opción monitor, que ya no hace falta.
+- El contador de FPS cuenta los cuadros reales del último segundo: con algunos topes marcaba de más.
+
 ## 1.0.28 (2026-11-16)
 
 - El familiar dice cuánta experiencia le falta para subir de nivel: al hacerle clic, en el panel de estadísticas y en /est, que ahora también muestra su nivel, su vida y su golpe.

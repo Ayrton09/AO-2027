@@ -2637,35 +2637,14 @@
     // vsync cae cada 6,94 ms y un tope de 60 (16,67 ms) deja pasar frames a 20,8 · 20,8 · 13,9 · 20,8 ms —
     // el batido entre las dos cadencias. Eso no se percibe como "menos FPS" sino como TIRONES, y era el
     // default. Reportado jugando en un monitor de alto refresco, 2026-08-01.
-    // "MONITOR" (-1) DIBUJA AL REFRESCO DEL MONITOR, y es el default (el autor, 16/11: "una opción que se adapte a los cuadros del
-    // monitor, porque sin límite es para que te tire full"). En el navegador y con el VSync prendido `requestAnimationFrame` ya lo
-    // sigue; con el VSync apagado del juego de escritorio no, así que el refresco lo cuenta la app (`hzDelMonitor`, el de la
-    // pantalla donde está la ventana) y se usa como tope. Mientras no contesta, 60.
-    const FPS_MONITOR = -1;
-    const leerTopeFps = (v) => Number(v) === FPS_MONITOR ? FPS_MONITOR : Math.max(0, Number(v) || 0);
-    let fpsCap = leerTopeFps(leerPref('ao_fpscap') ?? FPS_MONITOR);
-    const vsyncAlArrancar = (() => { try { return localStorage.getItem('ao_vsync') === '1'; } catch (e) { return false; } })();
-    let hzMonitor = 0;
-    const pedirHzDelMonitor = () => {
-      try {
-        const pedido = window.coveraoEscritorio?.hzDelMonitor?.();
-        if (pedido) pedido.then((hz) => { const n = Number(hz) >= 24 ? Number(hz) : 0; if (n !== hzMonitor) { hzMonitor = n; tope.proximo = 0; } }).catch(() => {});
-      } catch (e) { /* sin la app: el navegador ya sigue al monitor */ }
-    };
-    function topeEfectivo() {
-      if (fpsCap === FPS_MONITOR) return window.coveraoEscritorio && !vsyncAlArrancar ? (hzMonitor || 60) : 0;
-      // "SIN LÍMITE" ES SIN LÍMITE: con el VSync apagado dibuja todo lo que da la PC. Tuvo un techo de 360 mientras era el default;
-      // desde que el default es "monitor" el autor lo quiso sin techo (16/11).
-      return fpsCap;
-    }
+    let fpsCap = Math.max(0, Number(leerPref('ao_fpscap') ?? 0));
     let lastDrawT = 0;
     const tope = { proximo: 0 };
     window.__setFpsCap = (n) => {                       // lo usa el selector de Opciones
-      fpsCap = leerTopeFps(n);
+      fpsCap = Math.max(0, Number(n) || 0);
       tope.proximo = 0;
       guardarPref('ao_fpscap', String(fpsCap));
-      log('Límite de FPS: ' + (fpsCap === FPS_MONITOR ? 'el refresco del monitor' + (hzMonitor ? ' (' + hzMonitor + ' Hz)' : '')
-                               : fpsCap ? fpsCap : 'sin límite'), '#c9a24b');
+      log('Límite de FPS: ' + (fpsCap ? fpsCap : 'sin límite (vsync)'), '#c9a24b');
     };
     // EL TOPE CUENTA DESDE EL CUADRO QUE TOCABA, no desde el último que se dibujó. Con "pasaron 1000/N ms desde
     // el último" el tope sólo deja pasar múltiplos enteros del vsync: en un monitor de 360 Hz (un cuadro cada
@@ -2681,19 +2660,23 @@
       return true;
     }
     window.__tocaDibujar = tocaDibujar;   // para verificar el tope sin un monitor de 360 Hz
+    // EL CONTADOR DE FPS CUENTA LOS CUADROS DEL ÚLTIMO SEGUNDO. Era un promedio de 1000/dt, que con un tope que no divide al
+    // refresco (144 en un monitor de 240: cuadros a 4,2 y 8,3 ms) marcaba de más: 160 con 144 reales (el autor, 16/11).
+    const ultimosCuadros = [];
+    let cuadrosDibujados = 0;
     function frame(ts) {
       requestAnimationFrame(frame);
       if (paused || !renderReady) return;
-      if (!tocaDibujar(ts, topeEfectivo(), tope)) return;
-      if (lastDrawT) { const dt = ts - lastDrawT; if (dt > 0) fpsAvg = fpsAvg ? fpsAvg * 0.9 + (1000 / dt) * 0.1 : 1000 / dt; }
+      if (!tocaDibujar(ts, fpsCap, tope)) return;
+      ultimosCuadros.push(ts);
+      while (ultimosCuadros[0] <= ts - 1000) ultimosCuadros.shift();
+      fpsAvg = ultimosCuadros.length;
+      cuadrosDibujados++;
       lastDrawT = ts;
       draw();
     }
+    window.__dibujados = () => cuadrosDibujados;   // para medir cuántos cuadros salen de verdad
     requestAnimationFrame(frame);
-    pedirHzDelMonitor();
-    // Si la ventana pasa a otro monitor, el refresco puede cambiar.
-    window.addEventListener('resize', pedirHzDelMonitor);
-    window.__topeFps = () => ({ fpsCap, hzMonitor, efectivo: topeEfectivo() });
     // Helper de verificación: `requestAnimationFrame` NO dispara en una pestaña oculta —es el navegador,
     // no el juego—, así que desde una pestaña en segundo plano no hay forma de comprobar que el render
     // ande. Esto fuerza un frame y devuelve lo que tardó en ms.
@@ -4341,9 +4324,6 @@
               .then((si) => { op.setAttribute('aria-checked', String(si)); }).catch(() => {});
             return;
           }
-          // EL VSYNC, SÓLO EN EL JUEGO DE ESCRITORIO: lo decide Chromium al arrancar (main.js, `disable-gpu-vsync`), así que se guarda
-          // acá y se aplica la próxima vez que se abra. En una página no se puede apagar.
-          case 'vsync':    vsyncOn = !vsyncOn; guardarPref('ao_vsync', vsyncOn ? '1' : '0'); abrirOpciones(); return;
           case 'volvermenu': if (window.coveraoEscritorio) window.coveraoEscritorio.volverAlMenu(); return;
           case 'salirjuego': if (window.coveraoEscritorio) window.coveraoEscritorio.salir(); return;
         }
@@ -4642,16 +4622,13 @@
      * siguen funcionando como atajo de lo mismo.
      */
     // Los topes que pidió el usuario, más "custom" para el que tenga un refresco raro (165, 180, 360…).
-    // "Monitor" va PRIMERO y es el default: el refresco del monitor, que es lo más parejo que hay. "Sin límite" tira todo lo que da
-    // la PC con el VSync apagado.
-    const FPS_OPCIONES = [FPS_MONITOR, 0, 30, 60, 120, 144, 240];
+    // "Sin límite" va PRIMERO y es el default: sigue el vsync del monitor, que es lo más parejo que hay.
+    const FPS_OPCIONES = [0, 30, 60, 120, 144, 240];
     // OPCIONES CON PESTAÑAS, como las del menú del juego de escritorio (el autor, 06/10: "que el menú de opciones del menú principal
     // sea el mismo dentro del juego, lo hiciste más organizado"): Audio, Video, Juego y Controles, un interruptor por cosa que se
     // prende o se apaga, y la ayuda en letra chica debajo de cada una. Son las MISMAS opciones de antes, con los mismos `data-op`, y
     // las teclas viven en la pestaña Controles. La pestaña elegida sobrevive al redibujo de cada toque.
     let pestanaOpciones = 'audio';
-    // El VSync del juego de escritorio: apagado salvo que se lo haya prendido (ver el caso 'vsync').
-    let vsyncOn = (() => { try { return localStorage.getItem('ao_vsync') === '1'; } catch (e) { return false; } })();
     function abrirOpciones() {
       const sel = (v, cur, txt) => `<option value="${v}"${v === cur ? ' selected' : ''}>${txt}</option>`;
       const fila = (que, ayuda, control) => `<div class="opc-fila"><div class="opc-que">${que}${ayuda ? `<small>${ayuda}</small>` : ''}</div>
@@ -4673,16 +4650,12 @@
           + fila('Volumen de los efectos', '', `<input type="range" min="0" max="100" step="5" value="${Math.round(volEfectos * 100)}" data-op="volefectos">
               <span class="opc-valor" data-op-val="volefectos">${Math.round(volEfectos * 100)}%</span>`))}
         ${seccion('video',
-          (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false))
-            + fila('VSync', 'Apagado (como viene), el juego dibuja todos los cuadros que da la PC; prendido, los ata al refresco del monitor. Se aplica la próxima vez que abras el juego.', llave('vsync', vsyncOn)) : '')
-          + fila('Tope de FPS', window.coveraoEscritorio && !vsyncAlArrancar
-              ? 'Monitor dibuja al refresco de tu pantalla, que es lo más parejo. Sin límite, con el VSync apagado, dibuja todo lo que da la PC.'
-              : 'Monitor y sin límite siguen el refresco de tu pantalla, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
-              `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v === FPS_MONITOR ? 'monitor' + (hzMonitor ? ` (${hzMonitor} Hz)` : '')
-                                                                   : v ? v + ' FPS' : 'sin límite')).join('')}
+          (window.coveraoEscritorio ? fila('Pantalla completa', 'También con F11.', llave('completa', false)) : '')
+          + fila('Tope de FPS', 'Sin límite sigue el refresco de tu monitor, que es lo más parejo. Un tope que no sea divisor exacto de tu refresco reparte los cuadros desparejo y se siente a tirones.',
+              `<select data-op="fps">${FPS_OPCIONES.map((v) => sel(v, fpsCap, v ? v + ' FPS' : 'sin límite')).join('')}
                 ${FPS_OPCIONES.includes(fpsCap) ? '<option value="custom">otro…</option>'
                                                 : `<option value="custom" selected>otro (${fpsCap})</option>`}</select>
-              <input type="number" min="10" max="1000" step="1" value="${fpsCap > 0 ? fpsCap : ''}" data-op="fpscustom"
+              <input type="number" min="10" max="1000" step="1" value="${fpsCap || ''}" data-op="fpscustom"
                      placeholder="nro" style="width:5.5em${FPS_OPCIONES.includes(fpsCap) ? ';display:none' : ''}">`)
           + fila('Escalado del mundo', 'Nítido suaviza; pixelado deja el píxel tal cual. También con la tecla P.',
               `<select data-op="escalado">${sel(1, smoothWorld ? 1 : 0, 'nítido')}${sel(0, smoothWorld ? 1 : 0, 'pixelado')}</select>`)
