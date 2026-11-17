@@ -188,6 +188,15 @@ public sealed class Familiar
         _ => "Desconocida",
     };
 
+    /// <summary>La experiencia que le falta para el próximo nivel (null en el nivel máximo). <see cref="Elu"/> es lo que pide
+    /// el nivel entero; lo que muestran el clic, el /EST y el panel es la resta (pedido del tester, 16/11).</summary>
+    public long? LeFaltaParaSubir => Nivel >= NivelMaximo || Elu <= 0 ? null : System.Math.Max(0, Elu - Exp);
+
+    /// <summary>"nivel 12, experiencia 340/900 (le faltan 560)", o "nivel 50 (el máximo)".</summary>
+    public string NivelYExperiencia() => LeFaltaParaSubir is { } falta
+        ? $"nivel {Nivel}, experiencia {Exp}/{Elu} (le faltan {falta})"
+        : $"nivel {Nivel} (el máximo)";
+
     public bool Sabe(int habilidad) => System.Array.IndexOf(Habilidades, habilidad) >= 0;
 
     /// <summary>Las habilidades que el familiar TIRA COMO HECHIZO sobre su enemigo, por índice de hechizo.

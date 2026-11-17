@@ -223,4 +223,18 @@ public class FamiliarTests
         f.GanarExperiencia(1000);
         Assert.Equal(0, f.Exp);   // no deberia acumular nada: ya no hay nivel que comprar
     }
+
+    /// <summary>LO QUE LE FALTA PARA SUBIR (pedido del tester, 16/11): la resta contra lo que pide el nivel, y nada en el máximo.</summary>
+    [Fact]
+    public void Dice_cuanto_le_falta_para_subir()
+    {
+        var f = new Familiar();
+        f.Nacer(Familiar.Oso, "Bruno", 100, 5, 10);
+        f.GanarExperiencia(100);
+        Assert.Equal(Familiar.EluInicial - 100, f.LeFaltaParaSubir);
+        Assert.Equal($"nivel 1, experiencia 100/{Familiar.EluInicial} (le faltan {Familiar.EluInicial - 100})", f.NivelYExperiencia());
+        for (int i = 0; i < 5000 && f.Nivel < Familiar.NivelMaximo; i++) f.GanarExperiencia(1_000_000);
+        Assert.Null(f.LeFaltaParaSubir);
+        Assert.Equal($"nivel {Familiar.NivelMaximo} (el máximo)", f.NivelYExperiencia());
+    }
 }

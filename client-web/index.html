@@ -3971,7 +3971,8 @@
       const habs = (f.habilidades || []).filter(Boolean).map((h) => HAB_FAMILIAR[h] || ('#' + h));
       return ['—',
         `Familiar <b>${esc(f.nombre)}</b> · ${esc(TIPO_FAMILIAR[f.tipo] || f.tipo)} · ${estado}`,
-        `Nivel <b>${f.nivel}</b> · experiencia <b>${f.exp}</b> / ${f.elu}`,
+        f.nivel >= 50 || !(f.elu > 0) ? `Nivel <b>${f.nivel}</b> (el máximo)`
+          : `Nivel <b>${f.nivel}</b> · experiencia <b>${f.exp}</b> / ${f.elu} · le faltan <b>${Math.max(0, f.elu - f.exp)}</b>`,
         `Vida <b>${f.minHp}/${f.maxHp}</b> · golpe <b>${f.minHit}-${f.maxHit}</b>`,
         habs.length ? `Habilidades: <b>${esc(habs.join(', '))}</b>` : 'Todavia no aprendio ninguna habilidad',
       ];

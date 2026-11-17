@@ -9897,7 +9897,7 @@ public sealed partial class PacketDispatcher
         if (!fam.Existe || fam.CharIndexEnElMundo != npc.CharIndex) return;
         string nombre = string.IsNullOrWhiteSpace(fam.Nombre) ? npc.Name : fam.Nombre;
         session.Send(ServerMessages.ConsoleMsg(
-            $"{nombre} — nivel {fam.Nivel}, {fam.Vida}/{fam.VidaMaxima} de vida, golpe {fam.GolpeMinimo}-{fam.GolpeMaximo}.",
+            $"{nombre} — {fam.NivelYExperiencia()}, {fam.Vida}/{fam.VidaMaxima} de vida, golpe {fam.GolpeMinimo}-{fam.GolpeMaximo}.",
             FuenteInfo));
         var sabe = fam.Habilidades.Where(h => h != 0).Select(Familiar.NombreDeHabilidad).ToArray();
         session.Send(ServerMessages.ConsoleMsg(
@@ -11116,6 +11116,17 @@ public sealed partial class PacketDispatcher
             Linea($"Dados: {p.Attributes[GameLimits.AttrFuerza]}, {p.Attributes[GameLimits.AttrAgilidad]}, " +
                   $"{p.Attributes[GameLimits.AttrInteligencia]}, {p.Attributes[GameLimits.AttrCarisma]}, " +
                   $"{p.Attributes[GameLimits.AttrConstitucion]}");
+
+            // Y EL FAMILIAR, si lleva (pedido del tester, 16/11): no es del original, que no tiene familiares, así que el que no
+            // lleva ve la ficha de siempre, línea por línea.
+            var fam = p.Familiar;
+            if (fam.Existe)
+            {
+                string nombre = string.IsNullOrWhiteSpace(fam.Nombre) ? "Tu familiar" : fam.Nombre;
+                string estado = fam.Muerto ? "muerto" : fam.Invocado ? "con vos" : "guardado";
+                Linea($"Familiar: {nombre} ({estado}), {fam.NivelYExperiencia()}");
+                Linea($"Familiar: {fam.Vida}/{fam.VidaMaxima} de vida, golpe {fam.GolpeMinimo}-{fam.GolpeMaximo}");
+            }
         });
     }
 
