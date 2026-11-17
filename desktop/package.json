@@ -10,7 +10,7 @@
     "windows": "electron-builder --win",
     "linux": "electron-builder --linux",
     "mac": "electron-builder --mac",
-    "test": "node test-firma.js && node test-actualizacion.js && node test-ingreso.js && node test-estado-servidor.js",
+    "test": "node test-firma.js && node test-actualizacion.js && node test-ingreso.js && node test-estado-servidor.js && node test-armado.js",
     "firmar": "node firmar.js",
     "armar": "node armar.js"
   },

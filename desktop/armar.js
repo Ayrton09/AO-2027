@@ -13,6 +13,8 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { comprobarDependencias } = require('./dependencias-armado');
+comprobarDependencias(require('./package-lock.json'), (nombre) => require(`${nombre}/package.json`).version);
 const { cargarPrivada, estaCifrada } = require('./firma');
 const { PLATAFORMAS, firmarActualizacion, verificarActualizacion, novedadesDelChangelog } = require('./actualizacion');
 
