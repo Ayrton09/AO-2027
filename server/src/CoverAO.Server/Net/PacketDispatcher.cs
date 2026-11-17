@@ -9897,7 +9897,7 @@ public sealed partial class PacketDispatcher
         if (!fam.Existe || fam.CharIndexEnElMundo != npc.CharIndex) return;
         string nombre = string.IsNullOrWhiteSpace(fam.Nombre) ? npc.Name : fam.Nombre;
         session.Send(ServerMessages.ConsoleMsg(
-            $"{nombre} — {fam.NivelYExperiencia()}, {fam.Vida}/{fam.VidaMaxima} de vida, golpe {fam.GolpeMinimo}-{fam.GolpeMaximo}.",
+            $"{nombre}: {fam.NivelYExperiencia()},{fam.Vida}/{fam.VidaMaxima} de vida, golpe {fam.GolpeMinimo}-{fam.GolpeMaximo}.",
             FuenteInfo));
         var sabe = fam.Habilidades.Where(h => h != 0).Select(Familiar.NombreDeHabilidad).ToArray();
         session.Send(ServerMessages.ConsoleMsg(
