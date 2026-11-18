@@ -237,6 +237,33 @@ public sealed partial class Bot
         return v => !v.Muerto && EsBlanco(yo, v.Estado, agresivo, regla);
     }
 
+    // La prioridad por un rival usa el bando visible, igual que el PvP. Un aliado del agresivo sigue sin ser una amenaza.
+    internal SentidosDelBot.Visible? RivalQueInterrumpeCaza(SentidosDelBot sentidos)
+    {
+        if (!_entorno.Datos.IsPkMap(sentidos.Mapa)) return null;
+        byte yo = sentidos.MiEstado;
+        var (x, y) = sentidos.Posicion;
+        return sentidos.PersonaMasCercana(v => !v.Muerto && v.Estado != yo
+            && EsBlanco(yo, v.Estado, agresivo: false, atacarAliadoVuelveCriminal: false)
+            && Math.Abs(v.X - x) <= NpcSystem.RangoVisionX && Math.Abs(v.Y - y) <= NpcSystem.RangoVisionY)
+            is { Pasos: <= RadioDeCaza } cerca ? cerca.Quien : null;
+    }
+
+    internal async Task<bool> AtenderRivalAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
+                                               SentidosDelBot.Visible rival, Task cerrada, CancellationToken ct)
+    {
+        if (AQuienSaleAPegarle(sentidos, rival.CharIndex) is { } blanco)
+        {
+            if (!blanco.Mirarlo) return await PelearConGenteAsync(transporte, sentidos, blanco.Quien, cerrada, ct);
+            MirarA(transporte, sentidos, blanco.Quien);
+            await Task.Delay(_rng.Next(600, 1_200), ct);
+            return true;
+        }
+        if (!sentidos.Paralizado) return await AlejarseAsync(transporte, sentidos, rival, cerrada, ct);
+        await QuedarseAsync(sentidos, 600, ct);
+        return true;
+    }
+
     /// <summary>
     /// ¿A quién le devuelve el golpe? Sólo al atacante confirmado de la última pérdida de vida, si puede verlo y defenderse.
     /// </summary>
@@ -290,7 +317,7 @@ public sealed partial class Bot
     /// <summary>¿A QUIÉN SALE A PEGARLE? Desde <see cref="NivelParaPelearConGente"/>, en un mapa inseguro, con la vida arriba de
     /// <see cref="SaludParaPelearConGente"/>, energía y las pociones de pelear, al que se busca por su nivel (<see cref="SeLoBusca"/>).
     /// <c>Mirarlo</c>: antes de ir, mirarlo (<see cref="MirarA"/>), si no se sabe su nivel y no lo miró hace poco.</summary>
-    private (short Quien, bool Mirarlo)? AQuienSaleAPegarle(SentidosDelBot sentidos)
+    private (short Quien, bool Mirarlo)? AQuienSaleAPegarle(SentidosDelBot sentidos, short? soloRival = null)
     {
         if (_acompana is not null || sentidos.Nivel < NivelParaPelearConGente || !_entorno.Datos.IsPkMap(sentidos.Mapa)
             || sentidos.HaceCuantoLeBajoLaVida <= LePeganHaceMs) return null;
@@ -298,7 +325,8 @@ public sealed partial class Bot
         if (sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear) return null;
         var esBlanco = EsBlancoParaMi();
         var (x, y) = sentidos.Posicion;
-        if (sentidos.PersonaMasCercana(v => esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y),
+        if (sentidos.PersonaMasCercana(v => (soloRival is null || v.CharIndex == soloRival)
+                                           && esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y),
                                        GenteDejada()) is not { Pasos: <= RadioDeCaza } quien) return null;
         short ci = quien.Quien.CharIndex;
         bool mirarlo = sentidos.NivelDe(ci, NivelVistoMs) is null

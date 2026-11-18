@@ -1007,12 +1007,13 @@ public sealed partial class Bot
             }
             _huidas.SalioDelPeligro();
 
+            var rival = RivalQueInterrumpeCaza(sentidos);
             // LO QUE YA LE PEGA SE LO SACA DE ENCIMA, aunque haya algo peligroso a la vista, la vida no esté para empezar una pelea o
             // no le den ganas: esas reglas son para ELEGIR a quién atacar, no para dejarse picar. Medido en `normal1`: un Minero de
             // nivel 1 con 16 de vida se tomó 67 pociones seguidas en la llegada de la cuna sin cazar ni huir, y terminó la media hora
             // sin matar nada.
             // Y LO QUE NO ES PRESA PERO SE MATA RÁPIDO, TAMBIÉN: ver `SeLaSacaDeEncima`.
-            if (sentidos.AgresorReciente(LePeganHaceMs) is null
+            if (rival is null && sentidos.AgresorReciente(LePeganHaceMs) is null
                 && (_acompana is null || (sentidos.Salud < TomaPocion && sentidos.HaceCuantoLeBajoLaVida <= LePeganHaceMs))
                 && TieneFuelleParaPelear(sentidos)
                 && sentidos.MasCercano(f => (EsPresa(f, vidaTope, nivelAhora, conPociones, curaVeneno)
@@ -1029,6 +1030,13 @@ public sealed partial class Bot
                 continue;
             }
             if (await ReplegarseDelAtaqueAsync(transporte, sentidos, cerrada, ct)) continue;
+
+            // CON UN RIVAL A LA VISTA, PELEA O SE ALEJA antes de retomar la caza o el oficio.
+            if (rival is { } enfrente)
+            {
+                if (!await AtenderRivalAsync(transporte, sentidos, enfrente, cerrada, ct)) return;
+                continue;
+            }
 
             if (Equiparse(transporte, sentidos)) { await Task.Delay(_rng.Next(400, 900), ct); continue; }
             // A CABALLO, AFUERA: ver `Montarse`.
@@ -3233,7 +3241,7 @@ public sealed partial class Bot
         int cargaAntes = priorizaOficio ? sentidos.CuantoTiene(EsLoQueJunta) : 0;
         for (int golpe = 0; golpe < FaenasDeLaSentada(viajo || _clase == ClaseMinero) && !cerrada.IsCompleted; golpe++)
         {
-            if (Urge(sentidos) || HostilCerca(sentidos) || MineroTieneReserva(sentidos)) break;
+            if (Urge(sentidos) || HostilCerca(sentidos) || MineroTieneReserva(sentidos) || RivalQueInterrumpeCaza(sentidos) is not null) break;
             transporte.Mandar(Paquete(ClientPacketId.Work, w => w.WriteByte(skill)));
             transporte.Mandar(Paquete(ClientPacketId.WorkLeftClick,
                 w => w.WriteByte(punto.Value.Donde.X).WriteByte(punto.Value.Donde.Y).WriteByte(skill)));
@@ -4461,6 +4469,7 @@ public sealed partial class Bot
         _cortoElViaje = false;
         _cortoPorElHueco = false;
         bool conGanas = LeDanGanas();
+        bool cortoPorRival = false;
         if (!await IrHastaAsync(transporte, sentidos, coto.Mapa, destino.X, destino.Y, cerrada, ct, ToleranciaDelCoto,
                                 cortaSi: entrenar ? null : () => FrenaConGanas(conGanas, FrenaEnElCamino(_llenoHasta, sentidos.Mapa, coto.Mapa,
                                                                                       Environment.TickCount64, nunca))
@@ -4468,16 +4477,15 @@ public sealed partial class Bot
                                 topeDeMapas: cruzandoPeligro || entrenar ? Math.Max(Navegante.TopeDeMapas, coto.Saltos) : Navegante.TopeDeMapas,
                                 porCualquierCamino: cruzandoPeligro, soloALaMeta: entrenar, evitaLoDelHueco: entrenar,
                                 evitarEnLaMeta: evitarEnLaMeta,
-                                cortaAntesDePaso: soloEntrenamiento
-                                    ? () => _acompana is not null || sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear
-                                    : null))
+                                cortaAntesDePaso: () => (cortoPorRival = RivalQueInterrumpeCaza(sentidos) is not null)
+                                    || (soloEntrenamiento && (_acompana is not null || sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear))))
         {
             // El que frenó porque vio algo no está encerrado: se ocupó de esto, y la vuelta siguiente elige presa.
             if (_cortoElViaje) { _cortoElViaje = false; _frenoParaCazar = true; return true; }
             // Ni el que cortó porque lo del hueco le pega: la vuelta siguiente huye (ver `LoDelHuecoCortaElViaje`).
             if (_cortoPorElHueco) { _cortoPorElHueco = false; return true; }
             // Una interrupción puede cambiar las prioridades aunque no haya llegado a dar un paso.
-            if (soloEntrenamiento) return true;
+            if (soloEntrenamiento || cortoPorRival) return true;
             return await SiEstaEncerradoAsync(transporte, sentidos, cerrada, ct);
         }
         _cotosFallidos = 0;
@@ -6954,6 +6962,8 @@ public sealed partial class Bot
         bool SigueSiendoLaPresa(SentidosDelBot.Visible v) => v.EsNpc == original.EsNpc
             && (v.EsNpc ? v.FichaNpc == original.FichaNpc : string.Equals(v.Nombre, original.Nombre, StringComparison.OrdinalIgnoreCase))
             && (!aGente || (!v.EsNpc && !v.Muerto && EsBlanco(sentidos.MiEstado, v.Estado, Agresivo, _entorno.Ini.AtacarAliadoVuelveCriminal)));
+        bool InterrumpeLaCazaPorPvp() => !aGente
+            && (sentidos.AgresorReciente(LePeganHaceMs) is not null || RivalQueInterrumpeCaza(sentidos) is not null);
         int mapaDeLaPelea = sentidos.Mapa;
         long hasta = aGente ? Environment.TickCount64 + PeleaConGenteMaxMs : long.MaxValue;
         int sinRespuesta = 0;
@@ -6976,7 +6986,7 @@ public sealed partial class Bot
             // Y PELEANDO TAMBIÉN CONTESTA: ver `Charlar`.
             Charlar(transporte, sentidos);
             if (cortaSi?.Invoke() == true) return true;
-            if (!aGente && sentidos.AgresorReciente(LePeganHaceMs) is not null) return true;
+            if (InterrumpeLaCazaPorPvp()) return true;
             // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
@@ -7044,7 +7054,7 @@ public sealed partial class Bot
             }
 
             var (x, y) = sentidos.Posicion;
-            if (!aGente && sentidos.AgresorReciente(LePeganHaceMs) is not null) return true;
+            if (InterrumpeLaCazaPorPvp()) return true;
             if (cortaSi is not null)
             {
                 Charlar(transporte, sentidos);
