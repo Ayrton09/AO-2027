@@ -2,6 +2,22 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.34 (2026-11-18)
+
+### Entrenamiento en mazmorras
+
+- Los bots de combate de nivel 20 a 24 pueden elegir **Minas Thyr** para entrenar con los goblins. Antes de entrar comprueban que tienen pociones y que pueden llegar al sector de caza y volver por una ruta que bordea las zonas de las arañas gigantes.
+
+### Encuentros entre facciones
+
+- En zonas PvP, los bots interrumpen la caza o la recolección al ver a un rival cerca. Si pueden pelear, lo enfrentan. Si les faltan recursos o detectan que el rival los supera en más de cinco niveles, se alejan.
+- La reacción se basa en la facción visible del personaje y se aplica a bots y jugadores. Los aliados y los fantasmas quedan fuera de esta prioridad.
+
+### Cómo actualizar
+
+- Si jugás con el cliente de escritorio, aceptá la actualización a **1.0.34** cuando la app te avise, o descargá el instalador de esta release.
+- Si hosteás, actualizá también el **servidor a 1.0.34** y conservá tu `Server.ini` y la carpeta `data`. Para entrar al juego, la app y el servidor tienen que estar en la misma versión.
+
 ## 1.0.33 (2026-11-17)
 
 ### Modo espectador para GM
