@@ -4105,6 +4105,8 @@ public sealed partial class Bot
     private const int SaltosHastaElCoto = 2, SaltosHastaElCotoQueSuma = 4, PresasPorCadaUnaQuePaga = 4, VecesQueTieneQueRendir = 2;
 
     private const int NivelParaEntrenar = 20, SaltosHastaLaMazmorra = 8;
+    // En Minas Thyr hay que bordear las arañas. El goblin que parece a 26 pasos de la puerta queda a 68 por piso transitable.
+    private const int UltimoNivelDeEntrada = 24, PasosEnLaEntradaDeMazmorra = 75, ExperienciaDeUnGoblin = 160;
     private long _proximoEntrenamiento;
 
     private bool SaleAEntrenar(int nivel) => SaleAEntrenar(_clase, nivel);
@@ -4114,12 +4116,55 @@ public sealed partial class Bot
     private static bool TieneOficioPrincipal(byte clase) =>
         clase is ClasePescador or ClaseHerrero or ClaseLenador or ClaseMinero or ClaseCarpintero or ClaseSastre;
 
+    private static bool EsMazmorra(GameData datos, int mapa) =>
+        string.Equals(datos.MapZone(mapa), "DUNGEON", StringComparison.OrdinalIgnoreCase);
+
+    // En las mazmorras de nivel 20 se puede entrenar cerca de la entrada, aunque más adentro nazcan presas peligrosas.
+    internal static (int Mapa, byte X, byte Y, int Saltos, IReadOnlySet<(byte X, byte Y)> Evitar)? EntradaParaEntrenar(
+        GameData datos, Navegante mapas, ServerIni ini, int mapa, (byte X, byte Y) desde, int nivel, int vidaMaxima,
+        Func<int, bool> esPresa, Func<int, bool> esPeligroso, Func<int, bool> cruza, Func<int, bool> nunca, bool explorar)
+    {
+        if (nivel is < NivelParaEntrenar or > UltimoNivelDeEntrada || ini.NivelMinimoPorMapa.Count == 0) return null;
+        bool EsEntrada(int m) => ini.NivelMinimoPorMapa.GetValueOrDefault(m) == NivelParaEntrenar
+            && EsMazmorra(datos, m) && !nunca(m);
+
+        (int Mapa, byte X, byte Y, int Saltos, IReadOnlySet<(byte X, byte Y)> Evitar)? Probar(
+            int m, (byte X, byte Y) entrada, int saltos)
+        {
+            if (!EsEntrada(m) || !datos.MapSpawns.TryGetValue(m, out var nacen)) return null;
+            if (nacen.Any(s => datos.Npc(s.NpcIndex) is { Hostile: true } n && UnGolpeLoMata(n, vidaMaxima))) return null;
+            var amenazas = nacen.Where(s => esPeligroso(s.NpcIndex)).Select(s => ((byte)s.X, (byte)s.Y)).ToArray();
+            if (amenazas.Any(a => AlAlcanceDeSuVista(entrada, a))) return null;
+            var evitar = ZonasQueEvitaElTransportista(entrada, amenazas);
+            foreach (var s in nacen.OrderBy(s => Math.Abs(s.X - entrada.X) + Math.Abs(s.Y - entrada.Y)))
+            {
+                var presa = ((byte)s.X, (byte)s.Y);
+                if (Math.Abs(s.X - entrada.X) + Math.Abs(s.Y - entrada.Y) > PasosEnLaEntradaDeMazmorra
+                    || evitar.Contains(presa) || !esPresa(s.NpcIndex)
+                    || datos.Npc(s.NpcIndex) is not { GiveExp: >= ExperienciaDeUnGoblin }) continue;
+                if (mapas.HayComoLlegar(m, entrada, presa, ToleranciaDelCoto, evitar) is { Count: var pasos }
+                    && pasos <= PasosEnLaEntradaDeMazmorra
+                    && mapas.TieneSalidaCerca(m, presa, evitar, cruza, PasosEnLaEntradaDeMazmorra))
+                    return (m, presa.Item1, presa.Item2, saltos, evitar);
+            }
+            return null;
+        }
+
+        if (Probar(mapa, desde, 0) is { } local) return local;
+        if (!explorar) return null;
+        // A una entrada que sólo sirve por el sector inicial se llega por mapas seguros. No se usa para atravesar la cueva.
+        foreach (var (m, saltos, entrada, _) in mapas.MapasAlcanzables(mapa, desde, SaltosHastaLaMazmorra,
+            m => cruza(m) || EsEntrada(m), soloDestino: m => !cruza(m)))
+            if (Probar(m, entrada, saltos) is { } coto) return coto;
+        return null;
+    }
+
     // Conservar una mazmorra que todavía tiene presas útiles. Para salir a explorar, mirar más lejos que en una cacería común.
     internal static (int Mapa, byte X, byte Y, int Saltos)? CotoDeEntrenamiento(GameData datos, Navegante mapas, int mapa,
         (byte X, byte Y) desde, Func<int, int> rinde, Func<int, bool> cruza, Func<int, bool> sirve, bool explorar,
         Func<int, int>? desempate = null, Func<int, (byte X, byte Y), int>? sumaComun = null)
     {
-        bool Mazmorra(int m) => string.Equals(datos.MapZone(m), "DUNGEON", StringComparison.OrdinalIgnoreCase);
+        bool Mazmorra(int m) => EsMazmorra(datos, m);
         bool enMazmorra = Mazmorra(mapa);
         if (!explorar && !enMazmorra) return null;
         var aca = mapas.LoQueSuma(mapa, desde, rinde);
@@ -4258,18 +4303,29 @@ public sealed partial class Bot
         Func<int, int> rinde = f => esPresa(f) ? RecompensaDePresa(_entorno.Datos.Npc(f), nivel) : 0;
         int Entrenamiento(int f) => esPresa(f) ? RindeParaEntrenar(_entorno.Datos.Npc(f), nivel) : 0;
         bool entrenar = false;
-        if (hallado is null && SaleAEntrenar(nivel) && conPociones && paraSuOficio.Count == 0
-            && CotoDeEntrenamiento(_entorno.Datos, _entorno.Mapas, sentidos.Mapa, sentidos.Posicion, Entrenamiento, cruza,
+        IReadOnlySet<(byte X, byte Y)>? evitarEnLaMeta = null;
+        if (hallado is null && SaleAEntrenar(nivel) && conPociones && paraSuOficio.Count == 0)
+        {
+            var destinoDeEntrenamiento = CotoDeEntrenamiento(_entorno.Datos, _entorno.Mapas, sentidos.Mapa, sentidos.Posicion, Entrenamiento, cruza,
                 m => cruza(m) && !SigueLleno(_llenoHasta, m, ahora) && seCazaAhi(m), soloEntrenamiento,
                 m => CuantoLeGusta(_propio, m),
-                (m, p) => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora) ? _entorno.Mapas.LoQueSuma(m, p, rinde)?.Suma ?? 0 : 0)
-            is { } destinoDeEntrenamiento)
-        {
-            // Si ya está en una mazmorra adecuada y ve presa, el ciclo de pelea la atiende.
-            if (soloEntrenamiento && destinoDeEntrenamiento.Mapa == sentidos.Mapa) return false;
-            hallado = destinoDeEntrenamiento;
-            sirve = f => Entrenamiento(f) > 0;
-            entrenar = true;
+                (m, p) => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora) ? _entorno.Mapas.LoQueSuma(m, p, rinde)?.Suma ?? 0 : 0);
+            if ((destinoDeEntrenamiento is null || !EsMazmorra(_entorno.Datos, destinoDeEntrenamiento.Value.Mapa))
+                && EntradaParaEntrenar(_entorno.Datos, _entorno.Mapas, _entorno.Ini, sentidos.Mapa, sentidos.Posicion, nivel, vidaMaxima,
+                    f => esPresa(f) && !NoLaLastima((short)f), f => esPeligroso(f) || NoLaLastima((short)f), cruza,
+                    m => nunca(m) || SigueLleno(_llenoHasta, m, ahora), soloEntrenamiento) is { } entrada)
+            {
+                destinoDeEntrenamiento = (entrada.Mapa, entrada.X, entrada.Y, entrada.Saltos);
+                evitarEnLaMeta = entrada.Evitar;
+            }
+            if (destinoDeEntrenamiento is { } expedicion)
+            {
+                // Si ya está en una mazmorra adecuada y ve presa, el ciclo de pelea la atiende.
+                if (soloEntrenamiento && expedicion.Mapa == sentidos.Mapa && (evitarEnLaMeta is null || veAlgunaPresa)) return false;
+                hallado = expedicion;
+                sirve = f => Entrenamiento(f) > 0;
+                entrenar = true;
+            }
         }
         // Y EL ENCERRADO QUE CAZA A MANO TAMBIÉN MIRA LA RUNA: ver `SaltaSiRindeMasDesdeLaCasaAsync`. Con presa que entrena a la vista
         // el ciclo no busca coto, y esta llamada era la única que le llegaba: en la ronda 104 Bruma pasó las siete corridas en el 824.
@@ -4366,7 +4422,7 @@ public sealed partial class Bot
         // tiene su propio azar, así que se reparten solos. Para otro mapa vale el que eligió el navegante, que
         // ya verificó que se llega: al entrar, la próxima búsqueda reparte.
         var destino = (X: coto.X, Y: coto.Y);
-        if (_entorno.Datos.MapSpawns.TryGetValue(coto.Mapa, out var spawns))
+        if (evitarEnLaMeta is null && _entorno.Datos.MapSpawns.TryGetValue(coto.Mapa, out var spawns))
         {
             // NI A LA VISTA DE DONDE NACE ALGO PELIGROSO, que ahí vuelve a aparecer y camina hacia el que ve. Medido en `normal3`: de
             // las siete muertes de bots de nivel 1, dos fueron a la vista de donde nace el Lobo del medio de la cuna.
@@ -4411,6 +4467,7 @@ public sealed partial class Bot
                                                && HayAlgoQueCazarCerca(sentidos, vidaMaxima, nivel, conPociones, curaVeneno, porLoQueRinde),
                                 topeDeMapas: cruzandoPeligro || entrenar ? Math.Max(Navegante.TopeDeMapas, coto.Saltos) : Navegante.TopeDeMapas,
                                 porCualquierCamino: cruzandoPeligro, soloALaMeta: entrenar, evitaLoDelHueco: entrenar,
+                                evitarEnLaMeta: evitarEnLaMeta,
                                 cortaAntesDePaso: soloEntrenamiento
                                     ? () => _acompana is not null || sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear
                                     : null))
@@ -7694,7 +7751,8 @@ public sealed partial class Bot
                                           bool deMuerto = false, Func<bool>? cortaSi = null,
                                           int topeDeMapas = Navegante.TopeDeMapas, bool escapando = false,
                                           bool porCualquierCamino = false, IReadOnlyCollection<(byte X, byte Y)>? empiezaTrabado = null,
-                                          bool soloALaMeta = false, Func<bool>? cortaAntesDePaso = null, bool evitaLoDelHueco = false)
+                                          bool soloALaMeta = false, Func<bool>? cortaAntesDePaso = null, bool evitaLoDelHueco = false,
+                                          IReadOnlySet<(byte X, byte Y)>? evitarEnLaMeta = null)
     {
         // LO QUE TAPÓ UN PASO SE RODEA. El mapa sólo sabe de paredes y agua: una criatura quieta o un personaje
         // parado en un pasillo no están ahí, así que recalcular devolvía el mismo camino y el bot chocaba contra lo
@@ -7776,10 +7834,12 @@ public sealed partial class Bot
 
             // Ya llegó: al lado alcanza, porque encima del destino no se puede parar si hay alguien ahí —y
             // el destino típico es justamente la baldosa donde está parado un mercader.
+            if (esLaMeta && evitarEnLaMeta?.Contains(desde) == true) return false;
             if (esLaMeta && Math.Abs(desde.X - destinoX) + Math.Abs(desde.Y - destinoY) <= tolerancia) return true;
 
             if (EsFabricanteMetalurgico && !deMuerto && !escapando)
                 trabas.UnionWith(ZonasQueEvitaElTransportista(desde, PeligrosDelViaje(sentidos)));
+            if (esLaMeta && evitarEnLaMeta is not null) trabas.UnionWith(evitarEnLaMeta);
             var camino = esLaMeta ? _entorno.Mapas.HayComoLlegar(mapa, desde, meta, tolerancia, trabas)
                                    : porLaMasCercana is { Count: > 0 } ? porLaMasCercana
                                    : _entorno.Mapas.Camino(mapa, desde, meta, trabas);

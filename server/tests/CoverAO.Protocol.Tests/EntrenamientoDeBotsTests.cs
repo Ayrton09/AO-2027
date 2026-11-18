@@ -13,6 +13,7 @@ public class EntrenamientoDeBotsTests
 
     [Theory]
     [InlineData(3, 19, false)] // guerrero novato
+    [InlineData(3, 20, true)]
     [InlineData(3, 30, true)]
     [InlineData(7, 30, true)] // druida, con combate y alquimia
     [InlineData(11, 30, false)] // pescador
@@ -32,6 +33,46 @@ public class EntrenamientoDeBotsTests
         var datos = Mundo.Value;
         Assert.Equal(0, Bot.RindeParaEntrenar(datos.Npc(501), nivel));
         Assert.Equal(505, Bot.RindeParaEntrenar(datos.Npc(523), nivel));
+    }
+
+    [Fact]
+    public void A_nivel_20_entra_a_Minas_Thyr_y_busca_goblins_lejos_de_las_aranas()
+    {
+        var datos = Mundo.Value;
+        var mapas = new Navegante(datos);
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        const string ejemplo = "hosting/Server.ini.ejemplo";
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, ejemplo))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        var ini = ServerIni.Cargar(Path.Combine(dir.FullName, ejemplo));
+        const int nivel = 20, vida = 210, origen = 22, destino = 33;
+        (byte X, byte Y) desde = (52, 64), llegada = (55, 93);
+        const byte bando = Player.StatusCiudadano;
+        var cruza = Bot.SeCruzaBuscando(datos, ini, bando, nivel, vida, true, true);
+        var vuelta = Bot.FiltrosDeLaVuelta(datos, ini, bando, nivel, vida);
+        bool Presa(int f) => Bot.EsPresaPara(datos.Npc(f), vida, nivel, true, true);
+        bool Peligroso(int f) => Bot.EsPeligrosoPara(datos.Npc(f), vida, nivel, true, true);
+        bool Nunca(int m) => m != destino || !Bot.TieneComoVolver(mapas, m, Bot.DesdeDondeSeCaza(datos, m),
+            vuelta.Pasa, vuelta.MapaSeguro, vuelta.TieneTienda, conRuna: true);
+
+        Assert.False(datos.IsBlockedTile(origen, desde.X, desde.Y));
+        Assert.False(cruza(destino)); // el filtro que mira toda la mazmorra la descarta
+        Assert.False(Nunca(destino));
+        int Rinde(int f) => Presa(f) ? Bot.RindeParaEntrenar(datos.Npc(f), nivel) : 0;
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, origen, desde, Rinde, cruza, m => cruza(m) && !Nunca(m), explorar: true));
+        var coto = Bot.EntradaParaEntrenar(datos, mapas, ini, origen, desde, nivel, vida,
+            Presa, Peligroso, cruza, Nunca, explorar: true);
+        Assert.NotNull(coto);
+        Assert.Equal(destino, coto.Value.Mapa);
+        Assert.Equal(1, coto.Value.Saltos);
+        Assert.NotEmpty(coto.Value.Evitar);
+        Assert.NotNull(mapas.HayComoLlegar(destino, llegada, (coto.Value.X, coto.Value.Y), 2, coto.Value.Evitar));
+        Assert.Null(Bot.EntradaParaEntrenar(datos, mapas, ini, origen, desde, 19, vida,
+            Presa, Peligroso, cruza, Nunca, explorar: true));
+        Assert.Null(Bot.EntradaParaEntrenar(datos, mapas, ini, origen, desde, 30, vida,
+            Presa, Peligroso, cruza, Nunca, explorar: true));
+        Assert.Null(Bot.EntradaParaEntrenar(datos, mapas, ini, origen, desde, nivel, vida,
+            Presa, Peligroso, cruza, _ => true, explorar: true));
     }
 
     [Fact]

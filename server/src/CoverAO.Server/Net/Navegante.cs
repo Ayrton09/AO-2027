@@ -532,7 +532,7 @@ public sealed class Navegante
 
     private IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
         MapasPorSuEntrada(int mapaActual, (byte X, byte Y) desde, Func<int, bool>? pisable = null,
-                          int topeDeSaltos = TopeDeMapas, IReadOnlySet<int>? libresAca = null)
+                          int topeDeSaltos = TopeDeMapas, IReadOnlySet<int>? libresAca = null, Func<int, bool>? soloDestino = null)
     {
         var alcanzables = Alcanzables(mapaActual, desde, libresAca);
         var zonas = new Dictionary<int, List<HashSet<int>>>();
@@ -562,7 +562,7 @@ public sealed class Navegante
             // el trabajo de los mapas que se descartan, y cada mapa enumerado cuesta un `Alcanzables` —una
             // búsqueda en anchura de hasta 7392 baldosas—. Medido sobre los 322 mapas con criaturas: a dos
             // saltos se llega a 12 mapas y a cinco, a 74, o sea 7,5 veces más de los que se usaban.
-            if (saltos >= topeDeSaltos) continue;
+            if (saltos >= topeDeSaltos || soloDestino?.Invoke(mapa) == true) continue;
             foreach (var (_, x, y) in Salidas(mapa))
                 if (zona.Contains(Clave(x, y))) Entrar(mapa, x, y, saltos + 1, primera);
         }
@@ -816,8 +816,19 @@ public sealed class Navegante
     /// corte sea de verdad y no un filtro puesto después de hacer el trabajo.</summary>
     public IEnumerable<(int Mapa, int Saltos, (byte X, byte Y) Entrada, (byte X, byte Y) PrimeraPuerta)>
         MapasAlcanzables(int mapaActual, (byte X, byte Y) desde, int topeDeSaltos,
-                         Func<int, bool>? pisable = null) =>
-        MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos);
+                         Func<int, bool>? pisable = null, Func<int, bool>? soloDestino = null) =>
+        MapasPorSuEntrada(mapaActual, desde, pisable, topeDeSaltos, soloDestino: soloDestino);
+
+    internal bool TieneSalidaCerca(int mapa, (byte X, byte Y) desde, IReadOnlySet<(byte X, byte Y)> evitar,
+                                   Func<int, bool> cruza, int pasos)
+    {
+        foreach (var (destino, x, y) in Salidas(mapa))
+        {
+            if (Math.Abs(x - desde.X) + Math.Abs(y - desde.Y) > pasos || !cruza(destino)) continue;
+            if (Camino(mapa, desde, (x, y), evitar) is { Count: var n } && n <= pasos) return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// EL COTO MÁS POBLADO a <paramref name="saltosMax"/> mapas o menos, contando el propio: el mapa con más criaturas que sirven
