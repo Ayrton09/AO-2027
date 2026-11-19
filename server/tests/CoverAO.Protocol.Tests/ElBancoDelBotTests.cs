@@ -78,15 +78,21 @@ public class ElBancoDelBotTests
     /// <summary>EL QUE REVIVE SIN NADA MIRA LA BÓVEDA (<see cref="Bot.MiraLaBoveda"/>): Osmar en `confm1`, nivel 23, en Rinkel con 0
     /// encima y 40.328 guardados que no sabía.</summary>
     [Theory]
-    [InlineData(23, 0, -1, true, true)]        // Osmar
-    [InlineData(23, 0, 40_328, true, false)]   // ya lo sabe: la compra retira
-    [InlineData(23, 0, 0, true, false)]        // ya sabe que no hay
-    [InlineData(23, 500, -1, true, false)]     // tiene con qué comprar
-    [InlineData(23, 0, -1, false, false)]      // sin banquero en el mapa
-    [InlineData(10, 0, -1, true, false)]       // novato
-    public void Sin_plata_encima_mira_lo_que_guardo(int nivel, int oro, int banco, bool hayBanquero, bool mira)
+    [InlineData(23, 0, -1, true, false, true)]        // Osmar
+    [InlineData(23, 0, 40_328, true, false, false)]   // ya lo sabe: la compra retira
+    [InlineData(23, 0, 0, true, false, false)]        // ya sabe que no hay
+    [InlineData(23, 500, -1, true, false, false)]     // tiene con qué comprar
+    [InlineData(23, 0, -1, false, false, false)]      // sin banquero en el mapa
+    [InlineData(10, 0, -1, true, false, false)]       // novato
+    [InlineData(24, 12, -1, true, true, true)]        // tiene unas monedas, pero no le alcanzan para vestirse
+    [InlineData(24, 12, -1, true, false, false)]      // con ropa, no va al banco por este motivo
+    [InlineData(24, 12, 0, true, true, false)]        // ya leyó que no hay ahorros
+    [InlineData(24, 12, 2_000, true, true, false)]    // ya conoce el saldo y puede planear el retiro
+    [InlineData(24, 12, -1, false, true, false)]      // no hay banco donde está
+    public void Mira_lo_que_guardo_si_no_puede_comprar_lo_esencial(int nivel, int oro, int banco, bool hayBanquero,
+        bool faltaRopaQueNoPuedePagar, bool mira)
     {
-        Assert.Equal(mira, Bot.MiraLaBoveda(nivel, oro, banco, hayBanquero));
+        Assert.Equal(mira, Bot.MiraLaBoveda(nivel, oro, banco, hayBanquero, faltaRopaQueNoPuedePagar));
     }
 
     /// <summary>LA RESERVA PARA VESTIRSE (<see cref="Bot.LoQueRetira"/>): retira lo que pasa de la reserva; desnudo, todo si lo que pasa

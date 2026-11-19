@@ -48,20 +48,50 @@ public class BotsTests
     [Fact]
     public void Hay_un_nombre_por_cada_bot_que_el_ini_permite()
     {
-        Assert.True(PobladoDeBots.Nombres.Count >= ServerIni.MaxBots,
-            $"el ini permite {ServerIni.MaxBots} bots y hay {PobladoDeBots.Nombres.Count} nombres");
+        Assert.Equal(256, ServerIni.Desde(IniFile.Parse("[INIT]\r\nBots=256\r\n")).Bots);
+        var poblado = PobladoDeBots.NombresParaArrancar(ServerIni.MaxBots, _ => false);
+        Assert.Equal(ServerIni.MaxBots, poblado.Count);
+        Assert.Equal(PobladoDeBots.Nombres, poblado.Take(PobladoDeBots.Nombres.Count));
+        Assert.Equal(PobladoDeBots.Suplentes, poblado.Skip(PobladoDeBots.Nombres.Count).Take(PobladoDeBots.Suplentes.Count));
     }
 
-    /// <summary>Los nuevos entran de a seis cada cinco minutos (no se amontonan en la cuna); los que ya tienen personaje, todos al
-    /// arrancar, como siempre.</summary>
     [Fact]
-    public void Los_bots_nuevos_entran_por_tandas_y_los_viejos_de_una()
+    public void El_poblado_ampliado_completa_el_tope_con_sesenta_y_cuatro_nombres_ocupados()
+    {
+        var ocupados = PobladoDeBots.NombresEnOrden.Take(64).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var seleccion = PobladoDeBots.NombresParaArrancar(ServerIni.MaxBots, ocupados.Contains, _ => null);
+
+        Assert.Equal(256, seleccion.Count);
+        Assert.Equal(256, seleccion.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.DoesNotContain(seleccion, ocupados.Contains);
+        Assert.Equal(PobladoDeBots.NombresEnOrden.Skip(64), seleccion);
+    }
+
+    [Fact]
+    public void Un_poblado_chico_solo_consulta_los_nombres_que_necesita()
+    {
+        var consultados = new List<string>();
+        var elegidos = PobladoDeBots.NombresParaArrancar(3, nombre =>
+        {
+            consultados.Add(nombre);
+            return nombre == "Aldo";
+        }, _ => null);
+
+        Assert.Equal(new[] { "Aldo", "Bruma", "Ciro", "Dalia" }, consultados);
+        Assert.Equal(new[] { "Bruma", "Ciro", "Dalia" }, elegidos);
+    }
+
+    /// <summary>Los nuevos entran por tandas y los que ya tienen personaje se escalonan entre sí.</summary>
+    [Fact]
+    public void Los_bots_nuevos_entran_por_tandas_y_los_viejos_en_forma_escalonada()
     {
         Assert.Equal(0, PobladoDeBots.RetardoDeEntrada(esNuevo: true, 0));
         Assert.True(PobladoDeBots.RetardoDeEntrada(true, PobladoDeBots.NuevosPorTanda - 1) < 60_000);
         Assert.Equal(PobladoDeBots.EntreTandasMs, PobladoDeBots.RetardoDeEntrada(true, PobladoDeBots.NuevosPorTanda));
         Assert.Equal(2 * PobladoDeBots.EntreTandasMs, PobladoDeBots.RetardoDeEntrada(true, 2 * PobladoDeBots.NuevosPorTanda));
-        Assert.True(PobladoDeBots.RetardoDeEntrada(esNuevo: false, 95) < 3 * 60_000);
+        Assert.Equal(255 * 1_500, PobladoDeBots.RetardoDeEntrada(esNuevo: false, ServerIni.MaxBots - 1));
+        Assert.InRange(PobladoDeBots.RetardoDeEntrada(esNuevo: true, ServerIni.MaxBots - 1),
+            42 * PobladoDeBots.EntreTandasMs, 43 * PobladoDeBots.EntreTandasMs - 1);
     }
 
     /// <summary>Los nombres pasan por las MISMAS reglas que las de un jugador: la del personaje (sólo letras y
@@ -70,7 +100,8 @@ public class BotsTests
     [Fact]
     public void Los_nombres_los_aceptaria_el_servidor()
     {
-        foreach (var n in PobladoDeBots.Nombres.Concat(PobladoDeBots.Suplentes))
+        Assert.NotNull(GameData.Load().SourceDir);
+        foreach (var n in PobladoDeBots.NombresEnOrden)
         {
             Assert.True(Naming.IsValidCharName(n), $"'{n}' no es un nombre de personaje válido");
             Assert.True(Naming.IsValidName(n + "_bot"), $"la cuenta de '{n}' no sería válida");
@@ -82,7 +113,7 @@ public class BotsTests
     [Fact]
     public void Los_nombres_no_se_repiten()
     {
-        var todos = PobladoDeBots.Nombres.Concat(PobladoDeBots.Suplentes).ToList();
+        var todos = PobladoDeBots.NombresEnOrden;
         Assert.Equal(todos.Count, todos.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
@@ -92,8 +123,8 @@ public class BotsTests
     public void Un_nombre_tomado_lo_reemplaza_uno_de_reserva()
     {
         var tomados = new HashSet<string> { "Ciro", "Lira" };
-        var todos = PobladoDeBots.NombresParaArrancar(ServerIni.MaxBots, tomados.Contains);
-        Assert.Equal(ServerIni.MaxBots, todos.Count);
+        var todos = PobladoDeBots.NombresParaArrancar(PobladoDeBots.Nombres.Count, tomados.Contains);
+        Assert.Equal(PobladoDeBots.Nombres.Count, todos.Count);
         Assert.DoesNotContain("Ciro", todos);
         Assert.DoesNotContain("Lira", todos);
         Assert.Equal(new[] { PobladoDeBots.Suplentes[0], PobladoDeBots.Suplentes[1] }, todos.TakeLast(2));

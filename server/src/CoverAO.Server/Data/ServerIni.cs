@@ -973,15 +973,13 @@ public sealed class ServerIni
     /// que hay de verdad: si trajera gente de fábrica, el que hostea no podría distinguir a sus jugadores de
     /// los que le puso el programa. Prenderlos es del que hostea, y cuántos también.</para>
     ///
-    /// <para>Cuestan lo que cuesta un jugador: ocupan lugar en <c>MaxUsers</c>, salen en el <c>/ONLINE</c> y
-    /// en la página pública, y lo que hacen entra en los logs igual que lo de cualquiera. El tope son los
-    /// nombres que hay para repartir (<see cref="MaxBots"/>).</para>
+    /// <para>Usan recursos del mundo, salen en el <c>/ONLINE</c> y en la página pública. Entran por un transporte
+    /// interno, fuera del límite de conexiones de red de <c>MaxUsers</c>.</para>
     /// </summary>
     public int Bots { get; private set; }
 
-    /// <summary>El techo de <see cref="Bots"/>: son los nombres que trae la lista de
-    /// <see cref="Net.PobladoDeBots.Nombres"/>. Un test cuida que los dos números no se separen.</summary>
-    public const int MaxBots = 96;
+    /// <summary>El techo de <see cref="Bots"/>. El catálogo tiene nombres adicionales para reemplazar los ocupados.</summary>
+    public const int MaxBots = 256;
 
     /// <summary>Privilegio del personaje según las listas del ini, o 1 (<c>PlayerType.User</c>) si no es staff.
     /// VB6 <c>UserDarPrivilegioLevel</c> (Admin.bas:418).</summary>

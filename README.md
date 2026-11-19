@@ -36,6 +36,7 @@ La app busca **actualizaciones firmadas** en este repositorio cada vez que la ab
 - **Facciones y clanes.** Armá un clan con tus amigos o subí de rango en la Armada Imperial, la Milicia Republicana o la Legión del Caos.
 - **Exploración y viajes.** Recorré ciudades y mazmorras a pie, en barco o con montura. Hay 92 rutas de pasajes entre 11 ciudades, con destinos según la facción de cada lugar.
 - **Oficios y economía.** Miná, talá o pescá. Fabricá objetos con herrería, sastrería o alquimia. Podés comerciar con otros jugadores, guardar oro y objetos en el banco o vender en el Centro de Subastas.
+- **Mandado de recuperación.** Si ya dejaste de ser novato y te quedaste sin ropa, energía y oro suficiente, hacé doble clic en el banquero de un pueblo con sastre. Entregá el encargo al sastre para cobrar y reponer ropa y provisiones.
 - **Bots opcionales.** Quien hostea puede poblar el mundo con personajes que entrenan, se enlistan, hacen oficios, viajan y comercian.
 - **Cliente de escritorio.** Jugá en Windows o Linux con gráficos HD, iluminación, clima, música por mapa y opciones de FPS.
 

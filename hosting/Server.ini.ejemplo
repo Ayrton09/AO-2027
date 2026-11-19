@@ -176,12 +176,13 @@ GuardiasDelCaosAtacanA=Ciudadano, Republicano, Armada, Milicia
 
 ; --- Bots --------------------------------------------------------------------
 ; Personajes que juegan solos, para que el mundo no se vea vacio. VIENEN
-; APAGADOS: 0 = ninguno, y el maximo son 96 (los nombres que hay para repartir).
-; Cada bot entra por el mismo login que un jugador: ocupa un lugar de MaxUsers,
-; sale en el /ONLINE y en la pagina publica, y no puede hacer nada que un
-; jugador no pueda. Cazan, huyen de lo que les queda grande, levantan el botin,
+; APAGADOS: 0 = ninguno. Podes configurar hasta 256 bots.
+; Entran por tandas de 6 cada 5 minutos cuando hay que crear sus personajes.
+; Usan el mismo login y reglas que un jugador, con transporte interno por fuera
+; del cupo de conexiones de red MaxUsers. Salen en /ONLINE y en la pagina publica.
+; Cazan, huyen de lo que les queda grande, levantan el botin,
 ; toman pociones, comen, meditan, comercian, suben de nivel y se desconectan
-; cada tanto para volver mas tarde. Lo unico que no hacen es hablar.
+; cada tanto para volver mas tarde. Responden a mensajes y preguntas del juego.
 ; Sus cuentas llevan el sufijo _bot y quedan anotadas en data\bots.txt, para
 ; que puedas distinguirlos de la gente de verdad.
 ; Esa contrasena no sirve desde afuera: la cuenta de un bot solo se abre

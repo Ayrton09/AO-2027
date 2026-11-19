@@ -31,6 +31,7 @@ public static class CharacterFile
         // Un contador por bando de la víctima (VB6 Faccion.*Matados): cada ejército suma un subconjunto distinto.
         ini.Set("FACCIONES", "CrimMatados", F(f.RenegadosMatados));
         ini.Set("FACCIONES", "NivelDelPerdon", F(f.NivelDelUltimoPerdon));   // nuestro: el original no limita el perdón
+        ini.Set("FLAGS", "UltimoMandado", f.UltimoMandado.ToString(CultureInfo.InvariantCulture));
         ini.Set("FACCIONES", "CiudadanosMatados", F(f.CiudadanosMatados));
         ini.Set("FACCIONES", "RepublicanosMatados", F(f.RepublicanosMatados));
         ini.Set("FACCIONES", "ArmadaMatados", F(f.ArmadaMatados));
@@ -354,6 +355,7 @@ public static class CharacterFile
             // trae las nuestras, y sin esto se leían en cero.
             RenegadosMatados = ini.GetInt("FACCIONES", "CrimMatados", ini.GetInt("FACCIONES", "ReneMatados")),
             NivelDelUltimoPerdon = ini.GetInt("FACCIONES", "NivelDelPerdon"),
+            UltimoMandado = Math.Max(0, ini.GetLong("FLAGS", "UltimoMandado")),
             CiudadanosMatados = ini.GetInt("FACCIONES", "CiudadanosMatados", ini.GetInt("FACCIONES", "CiudMatados")),
             RepublicanosMatados = ini.GetInt("FACCIONES", "RepublicanosMatados", ini.GetInt("FACCIONES", "RepuMatados")),
             ArmadaMatados = ini.GetInt("FACCIONES", "ArmadaMatados", ini.GetInt("FACCIONES", "ArmiMatados")),

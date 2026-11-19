@@ -92,6 +92,7 @@ public sealed class ClientSession : IConnection
     // Sólo el loop escribe el permiso que surgió del login de cuenta y consume su revisión.
     internal CuentaParaEspectar? CuentaParaEspectar { get; set; }
     internal int RevisionDeLista { get; set; }
+    internal (short Mapa, long Vence)? MandadoPendiente { get; set; }
     internal int RevisionDeEspectador { get; set; }
     internal bool ComprobandoEspectador { get; set; }
     private volatile bool _espectaSinPersonaje;

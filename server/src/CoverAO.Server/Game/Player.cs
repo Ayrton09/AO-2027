@@ -143,6 +143,7 @@ public sealed class Player
     /// <summary>En qué nivel pidió el último perdón (el /PERDÓN del sacerdote o el Convertidor de Rinkel); 0 = nunca. Con
     /// <c>UnPerdonPorNivel</c> no se puede pedir otro en el mismo nivel.</summary>
     public int NivelDelUltimoPerdon { get; set; }
+    public long UltimoMandado { get; set; }
     public int CiudadanosMatados { get; set; }
     public int RepublicanosMatados { get; set; }
     public int ArmadaMatados { get; set; }

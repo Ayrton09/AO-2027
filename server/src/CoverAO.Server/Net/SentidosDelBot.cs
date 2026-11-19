@@ -80,6 +80,7 @@ public sealed class SentidosDelBot
     private int _vida, _vidaMax = 1, _energia, _energiaMax = 1;
     private int _mana, _manaMax = 1, _oro, _puntosLibres, _experiencia;
     private int _banco = -1, _vecesQueVioElBanco;
+    private int _mandadosRecibidos;
     private IReadOnlyList<ServerMessages.FilaDeSubasta> _subastas = Array.Empty<ServerMessages.FilaDeSubasta>();
     private int _vecesQueVioLasSubastas;
     private readonly Dictionary<byte, (short Obj, short Cantidad)> _boveda = new();
@@ -432,6 +433,7 @@ public sealed class SentidosDelBot
 
     /// <summary>Cuántas veces se abrió el panel del oro: sirve para esperar la respuesta del doble clic al banquero.</summary>
     public int VecesQueVioElBanco { get { lock (_candado) return _vecesQueVioElBanco; } }
+    internal int MandadosRecibidos { get { lock (_candado) return _mandadosRecibidos; } }
 
     /// <summary>El oro de "El Centro de Subastas dejó en tu bóveda N monedas de oro." (PacketDispatcher.Subastas); null si es otra cosa.</summary>
     public static int? OroQueDejoLaSubasta(string linea)
@@ -1642,7 +1644,8 @@ public sealed class SentidosDelBot
                     {
                         // LO QUE EL CENTRO DE SUBASTAS DEJA EN LA BÓVEDA: el oro de una venta suma a lo que sabe que guardó.
                         string aviso = l.Cadena();
-                        if (OroQueDejoLaSubasta(aviso) is { } oro) MovioAlBanco(oro);
+                        if (aviso == MandadoParaVestirse.Encargo) { lock (_candado) _mandadosRecibidos++; }
+                        else if (OroQueDejoLaSubasta(aviso) is { } oro) MovioAlBanco(oro);
                         else if (ObjetoQueDejoLaSubasta(aviso) is { } cual) lock (_candado) if (_loQueDejoLaSubasta.Count < OidoMax) _loQueDejoLaSubasta.Add(cual);
                         break;
                     }

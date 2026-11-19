@@ -10258,9 +10258,22 @@ public sealed partial class PacketDispatcher
             if (npc.WorkbenchTrade is not null) { SendCraftList(session, npc.WorkbenchTrade); return; }
             // Doble clic a un mercader → la tienda, salvo que no te atienda por tu facción (Acciones.bas:180-197,
             // el mismo bloque que el `CommerceStart`). Es el camino por el que el cliente web abre el comercio.
-            if (npc.IsMerchant) { if (MercaderAtiende(session, p, npc)) OpenCommerce(session, p, npc); return; }
+            if (npc.IsMerchant)
+            {
+                if (MercaderAtiende(session, p, npc))
+                {
+                    RecibirMandado(session, p, npc);
+                    OpenCommerce(session, p, npc);
+                }
+                return;
+            }
             // Doble clic al banquero → el PANEL DEL ORO (IniciarDeposito con goliath, Acciones.bas:301), no la bóveda.
-            if (npc.IsBanker) { AbrirPanelDelOro(session, p, npc); return; }
+            if (npc.IsBanker)
+            {
+                EncargarMandado(session, p);
+                AbrirPanelDelOro(session, p, npc);
+                return;
+            }
             // Sólo la lista: la rama Entrenador del original (Acciones.bas:271) manda `WriteTrainerCreatureList`
             // y nada más. Acá iba además un ConsoleMsg ("estas son las criaturas que puedo entrenar") que el VB6
             // no emite — el mismo patrón de mensaje espurio que el barrido del oráculo cerró 16 veces.

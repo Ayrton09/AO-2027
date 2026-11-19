@@ -797,6 +797,7 @@ public sealed partial class Bot
                 _descansoLargo = false;
                 _proximaCompra = 0;
                 _plataQueNoAlcanzo = -1;
+                _pagaPrimeroProvisiones = false;
                 if (Environment.TickCount64 >= proximaResurreccion)
                 {
                     proximaResurreccion = Environment.TickCount64 + PruebaRevivirMs;
@@ -813,6 +814,7 @@ public sealed partial class Bot
             // hacer nada más en toda la sesión. Se cura y SIGUE decidiendo.
             await CuidarseAsync(transporte, sentidos, ct);
             if (!sentidos.Vivo) continue;
+            if (_pagaPrimeroProvisiones && !sentidos.ConHambre && !sentidos.ConSed) _pagaPrimeroProvisiones = false;
             // Y PARALIZADO, LO PRIMERO ES SACÁRSELA: quieto no huye ni caza. Ver `RemoverseLaParalisis`.
             if (RemoverseLaParalisis(transporte, sentidos)) { await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct); continue; }
 
@@ -1074,6 +1076,7 @@ public sealed partial class Bot
             // LA MONTURA ANTES QUE LAS COMPRAS: con el oro juntado, la compra de gustos se lo llevaba primero. Medido en la ronda 106:
             // Elmo tenía 317.400 y dejó 230.000 en el Hechicero de Rinkel. Ver `IrPorLaMonturaAsync`.
             if (await IrPorLaMonturaAsync(transporte, sentidos, cerrada, ct)) continue;
+            if (await HacerElMandadoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;
             // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
@@ -1669,7 +1672,7 @@ public sealed partial class Bot
         // tiradas, y se cae al morir. Medido: un Minero compró el piquete dos veces y los dos se le cayeron muriendo en el
         // camino a una mina; todas las minas del mundo están en mapas pk.
         // La de FABRICAR no pide lugar: se fabrica parado donde sea (el servidor no mira el mapa).
-        bool vaPorLaHerramienta = viajaPorGustos && faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
+        bool vaPorLaHerramienta = !_pagaPrimeroProvisiones && viajaPorGustos && faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
                                   && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos));
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
@@ -1677,7 +1680,7 @@ public sealed partial class Bot
         bool enApuro = PlataDe(sentidos) < MonedasDeApuro;
         // Y POR LAS POCIONES, SÓLO SI LE ALCANZA PARA UNA, como el antídoto (ver `LeAlcanzaParaUna`).
         // Y NO VUELVE CON LA MISMA PLATA CON LA QUE NO LE ALCANZÓ: ver `VuelveAlMostrador`.
-        bool vaPorPociones = faltanPociones && !enApuro
+        bool vaPorPociones = !_pagaPrimeroProvisiones && faltanPociones && !enApuro
                              && LeAlcanzaParaUna(PlataDe(sentidos), ReservaDeLasPociones(sentidos), CuestaLaPocion)
                              && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
         // Y CON LO QUE SOBRA, EQUIPO MEJOR. Es el único gasto que no es de supervivencia, así que va con el
@@ -1690,7 +1693,7 @@ public sealed partial class Bot
             && PlataParaGustos(sentidos) >= OroParaMirarHechizos;
         // No manda al bot lejos: replicando `DondeHay` contra los mapas, el Alquimista es el mercader
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
-        bool vaPorAntidoto = !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
+        bool vaPorAntidoto = !_pagaPrimeroProvisiones && !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
                              && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
@@ -1711,16 +1714,21 @@ public sealed partial class Bot
             && faltaRopa && !enApuro && hayLugar && RopaAlAlcance(sentidos, VendeRopa, MapaAtiende);
         // Y DESNUDO, LA ROPA ES LO ESENCIAL: ver `LaRopaEsEsencial`.
         // Y SÓLO SI LE ALCANZA PARA LA MÁS BARATA: ver `LaRopaMasBarata`.
-        bool desnudo = LaRopaEsEsencial(sentidos.Nivel, !faltaRopa) && !enApuro && hayLugar
-                       && LoPuedePagar(LaRopaMasBarata(sentidos), sobraParaLaRopa);
-        // Y SIN PLATA ENCIMA, A MIRAR LA BÓVEDA: ver `MiraLaBoveda`. Con el saldo a la vista, la vuelta que viene compra con todo.
+        bool necesitaVestirse = hayLugar && LaRopaEsEsencial(sentidos.Nivel, !faltaRopa);
+        bool desnudo = necesitaVestirse && !enApuro && LoPuedePagar(LaRopaMasBarata(sentidos), sobraParaLaRopa);
+        // SI NO LE ALCANZA PARA VESTIRSE, A MIRAR LA BÓVEDA: unas monedas encima no cubren la ropa esencial.
         // Una invitación cambia qué encargos tienen prioridad. La vuelta siguiente elige un destino con las nuevas prioridades.
         bool CortaParaAcompanar() => viajaPorGustos && _acompana is not null;
         if ((viajaPorGustos || faltaComida || faltaBebida || faltanPociones || !TieneRopaPropia(sentidos))
-            && MiraLaBoveda(sentidos.Nivel, sentidos.Oro, sentidos.Banco, TieneBanquero(sentidos.Mapa)))
+            && MiraLaBoveda(sentidos.Nivel, sentidos.Oro, sentidos.Banco, TieneBanquero(sentidos.Mapa), necesitaVestirse && !desnudo))
         {
-            if (await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct, CortaParaAcompanar)
-                || CortaParaAcompanar()) return true;
+            if (await AbrirElBancoOAnotarloAsync(transporte, sentidos, cerrada, ct, CortaParaAcompanar))
+            {
+                // El saldo recién leído puede hacer pagable la ropa que se descartó antes de ir al banco.
+                if (necesitaVestirse && sentidos.Banco > 0) _ropaAlAlcanceHasta = 0;
+                return true;
+            }
+            if (CortaParaAcompanar()) return true;
         }
         if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
@@ -2364,7 +2372,8 @@ public sealed partial class Bot
 
         // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás. Las dos, la
         // de juntar y la de fabricar, si las vende el mismo mostrador: el Alquimista tiene las Tijeras y la Olla.
-        foreach (short herramienta in _acompana is null ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar } : Array.Empty<short>())
+        foreach (short herramienta in _acompana is null && !_pagaPrimeroProvisiones
+                     ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar } : Array.Empty<short>())
         {
             if (SeSumoAUnaSalida()) return compro;
             if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) > 0
@@ -2387,6 +2396,8 @@ public sealed partial class Bot
         if (!(SinNadaQueComer(sentidos) && !sentidos.ConSed))
             compro |= await ReponerAsync(transporte, sentidos, BebidaPropia, BebidaQueSeLleva(sentidos.Nivel), ct,
                                          ReservaPara(sentidos, comida: true, bebida: false));
+        // La paga del mandado repone primero lo que permite volver a recuperar energía.
+        if (_pagaPrimeroProvisiones) return compro;
         // LA ROPA DEL CAMINO, ANTES QUE LAS POCIONES: ver `LeFaltaLaRopaDelCamino` y `PlataParaLaRopa`.
         if (LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos)))
             compro |= await ComprarLaRopaDelCaminoAsync(transporte, sentidos, ct);

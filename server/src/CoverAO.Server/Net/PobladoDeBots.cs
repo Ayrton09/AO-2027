@@ -148,7 +148,7 @@ public sealed class CredencialesDeBots
 /// </summary>
 public sealed class PobladoDeBots
 {
-    /// <summary>Los nombres que puede tomar un bot, y por lo tanto el techo de cuántos puede haber. Se ven
+    /// <summary>Los nombres del poblado original. Se ven
     /// como nombres de jugador porque de eso se trata; el que hostea los reconoce por la cuenta, que lleva el
     /// sufijo <c>_bot</c>, y por el aviso del arranque.</summary>
     public static readonly IReadOnlyList<string> Nombres = new[]
@@ -167,9 +167,7 @@ public sealed class PobladoDeBots
         "Santino", "Tere", "Ulises", "Vilma", "Yanina", "Zulema", "Alma", "Cosme",
     };
 
-    /// <summary>LOS DE RESERVA: el nombre de <see cref="Nombres"/> que ya es de un jugador (<see cref="NombreAjeno"/>) deja su
-    /// lugar al primero de éstos que esté libre, así un <c>Bots=96</c> son 96 aunque alguien se haya quedado con uno (auditoría
-    /// del 12/10: hasta ahí era un bot menos). En <see cref="LugarEnElPoblado"/> van después de los de la lista.</summary>
+    /// <summary>Los suplentes originales. Conservan su orden después de <see cref="Nombres"/>.</summary>
     public static readonly IReadOnlyList<string> Suplentes = new[]
     {
         "Aurelio", "Brenda", "Camilo", "Diana", "Ernesto", "Fermin", "Gisela", "Hernan",
@@ -177,25 +175,50 @@ public sealed class PobladoDeBots
         "Sabino", "Telma", "Valeria", "Anselmo", "Berta", "Cirilo", "Dora", "Eladio",
     };
 
-    /// <summary>En qué lugar del poblado está ese nombre (los de reserva, después de los de la lista), o -1. Es lo que decide
-    /// qué clase le toca: ver <see cref="Bot.Reparto"/>.</summary>
-    public static int LugarEnElPoblado(string nombre)
+    // Se agregan después de los suplentes históricos. El lugar en la lista decide la clase de los personajes nuevos.
+    private static readonly string[] NombresNuevos =
     {
-        for (int i = 0; i < Nombres.Count; i++)
-            if (string.Equals(Nombres[i], nombre, StringComparison.OrdinalIgnoreCase)) return i;
-        for (int i = 0; i < Suplentes.Count; i++)
-            if (string.Equals(Suplentes[i], nombre, StringComparison.OrdinalIgnoreCase)) return Nombres.Count + i;
-        return -1;
-    }
+        "Aina", "Belmar", "Calder", "Duna", "Eloy", "Fara", "Grisel", "Hector",
+        "Iria", "Jacinto", "Lauro", "Mabel", "Nereo", "Oria", "Pablo", "Rina",
+        "Senda", "Tania", "Urian", "Vidal", "Waldo", "Yara", "Zoriel", "Adela",
+        "Braulio", "Cora", "Druso", "Eneko", "Fiona", "Gema", "Helio", "Irina",
+        "Jarel", "Leda", "Mael", "Numa", "Olmo", "Pilar", "Queralt", "Rafael",
+        "Sira", "Tamar", "Uxia", "Vera", "Wenda", "Yuna", "Zenda", "Aitor",
+        "Basilio", "Calia", "Dimas", "Elara", "Fabian", "Gael", "Hera", "Iara",
+        "Jara", "Lando", "Mara", "Nerina", "Oren", "Pampa", "Raisa", "Silvan",
+        "Tala", "Ulder", "Varda", "Wara", "Yelmo", "Zairael", "Alar", "Brenor",
+        "Corina", "Danel", "Elian", "Fina", "Gualdo", "Halim", "Ilan", "Juna",
+        "Laia", "Miren", "Nela", "Ornel", "Paz", "Rolda", "Siro", "Tilo",
+        "Ulda", "Vania", "Wilan", "Ylenia", "Zarek", "Adrian", "Beren", "Casia",
+        "Dariel", "Einar", "Fabel", "Galina", "Hadir", "Idara", "Jalil", "Lenna",
+        "Maura", "Nabor", "Ondina", "Peral", "Radel", "Salma", "Tasiel", "Ursia",
+        "Viggo", "Wira", "Yolin", "Zahir", "Amalia", "Baran", "Canel", "Dorel",
+        "Eriel", "Fenia", "Gavin", "Hanan", "Imina", "Joren", "Laris", "Malva",
+        "Nival", "Odel", "Peren", "Riad", "Sarel", "Tirma", "Vorel", "Wenia",
+        "Yamira", "Zolan", "Aldara", "Belen", "Cavan", "Damar", "Evelin", "Faron",
+        "Garet", "Henna", "Ibera", "Jerin", "Laina", "Marek", "Nerel", "Otilia",
+        "Pasio", "Rinel", "Sorel", "Tavia", "Umina", "Varo", "Warin", "Yavin",
+        "Zenia", "Abramo", "Bardoan", "Ceren", "Davin", "Elda", "Frida", "Garlan",
+        "Hania", "Ivar", "Jovian", "Lariel", "Milen", "Naris", "Olan", "Paria",
+        "Rivel", "Saira", "Talor", "Uvero", "Velia", "Welen", "Yanes", "Ziria",
+        "Armin", "Batia", "Carena", "Dalen", "Erenia", "Fioren", "Goro", "Helma",
+        "Isaro", "Jalin", "Leira", "Manel", "Nelva", "Oriel", "Pavel", "Rudra",
+    };
+
+    internal static readonly IReadOnlyList<string> NombresEnOrden = [.. Nombres, .. Suplentes, .. NombresNuevos];
+    private static readonly Dictionary<string, int> OrdenPorNombre = NombresEnOrden
+        .Select((nombre, orden) => (nombre, orden))
+        .ToDictionary(p => p.nombre, p => p.orden, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>El lugar histórico del nombre en el poblado, o -1. De ahí sale la clase de un personaje nuevo.</summary>
+    public static int LugarEnElPoblado(string nombre) => nombre is null ? -1 : OrdenPorNombre.GetValueOrDefault(nombre, -1);
 
     /// <summary>Los nombres de <paramref name="cantidad"/> bots: los de la lista en orden y después los de reserva, salteando el
     /// que el servidor no aceptaría como nombre (las mismas reglas que para un jugador) y el que ya es de otro.</summary>
     internal static List<string> NombresParaArrancar(int cantidad, Func<string, bool> esAjeno,
         Func<string, byte?>? claseGuardada = null)
     {
-        var disponibles = Nombres.Concat(Suplentes)
-            .Where(n => EsNombreDeBot(n) && !esAjeno(n))
-            .ToList();
+        var disponibles = NombresEnOrden.Where(n => EsNombreDeBot(n) && !esAjeno(n));
         var elegidos = disponibles.Take(Math.Max(0, cantidad)).ToList();
         if (claseGuardada is null || cantidad < Bot.Reparto.Count) return elegidos;
         byte Clase(string nombre) => claseGuardada(nombre) ?? Bot.ClaseQueLeToca(LugarEnElPoblado(nombre));
@@ -292,7 +315,7 @@ public sealed class PobladoDeBots
         string? nombre;
         lock (_usados)
         {
-            nombre = Nombres.Concat(Suplentes).FirstOrDefault(n => EsNombreDeBot(n) && !_usados.Contains(n));
+            nombre = NombresEnOrden.FirstOrDefault(n => EsNombreDeBot(n) && !_usados.Contains(n));
             if (nombre is null) return null;
             _usados.Add(nombre);
         }
@@ -334,7 +357,13 @@ public sealed class PobladoDeBots
         // Se filtran por las mismas reglas de nombre que el servidor le aplica a un jugador: si alguna vez la
         // lista de nombres prohibidos veta uno de estos, el bot no arranca en vez de intentar y ser rechazado.
         // Y se saltea el nombre que ya es de otro (NombreAjeno): su lugar lo toma el siguiente, y al final los de reserva.
-        var ajenos = Nombres.Concat(Suplentes).Where(n => NombreAjeno(n, db)).ToList();
+        var nombresConsultados = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        bool EsAjeno(string nombre)
+        {
+            if (!nombresConsultados.TryGetValue(nombre, out bool ajeno))
+                nombresConsultados[nombre] = ajeno = NombreAjeno(nombre, db);
+            return ajeno;
+        }
         var clases = new Dictionary<string, byte?>();
         byte? ClaseGuardada(string nombre)
         {
@@ -342,7 +371,8 @@ public sealed class PobladoDeBots
                 clases[nombre] = clase = db.CharacterExists(nombre) ? db.LoadCharacter(nombre, 0, nombre + "_bot")?.Class : null;
             return clase;
         }
-        var elegidos = NombresParaArrancar(cantidad, ajenos.Contains, ClaseGuardada);
+        var elegidos = NombresParaArrancar(cantidad, EsAjeno, ClaseGuardada);
+        var ajenos = nombresConsultados.Where(p => p.Value).Select(p => p.Key).ToArray();
         var poblado = new PobladoDeBots(entorno, credenciales, ajenos.Concat(elegidos));
         int cuantos = elegidos.Count;
         int nuevos = 0, conPersonaje = 0;
@@ -353,7 +383,8 @@ public sealed class PobladoDeBots
             string? clave = credenciales.Clave(nombre);
             var bot = new Bot(nombre, clave, entorno, semilla: Environment.TickCount + i * 7919);
             lock (poblado._bots) poblado._bots.Add(bot);   // el primero ya puede estar llamando a un relevo
-            int retardo = clave is null ? RetardoDeEntrada(true, nuevos++) : RetardoDeEntrada(false, conPersonaje++);
+            bool tienePersonaje = clave is not null && db.CharacterExists(nombre);
+            int retardo = tienePersonaje ? RetardoDeEntrada(false, conPersonaje++) : RetardoDeEntrada(true, nuevos++);
             _ = Task.Run(async () =>
             {
                 try { await Task.Delay(retardo, ct); } catch (OperationCanceledException) { return; }
@@ -365,7 +396,7 @@ public sealed class PobladoDeBots
         }
 
         Console.WriteLine($"BOTS: {cuantos} ({string.Join(", ", elegidos)})");
-        if (ajenos.Count > 0)
+        if (ajenos.Length > 0)
             Console.WriteLine($"   no entran como bots, porque el nombre (o su cuenta _bot) ya es de un jugador: {string.Join(", ", ajenos)}.");
         if (nuevos > NuevosPorTanda)
             Console.WriteLine($"   {nuevos} son nuevos: entran de a {NuevosPorTanda} cada {EntreTandasMs / 60_000} minutos.");
