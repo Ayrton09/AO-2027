@@ -131,4 +131,7 @@ public enum ServerPacketId : byte
 
     /// <summary>Vista de solo lectura de un GM.</summary>
     EscenaEspectador = 110,
+
+    /// <summary>Estadísticas, mochila y conjuros visibles en el panel de observación.</summary>
+    PanelEspectador = 111,
 }

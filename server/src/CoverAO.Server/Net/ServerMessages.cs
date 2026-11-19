@@ -920,8 +920,10 @@ public static class ServerMessages
     /// (modHechizos.bas:1015 → UpdateMana + UpdateSta + UpdateHungerAndThirst), no el sacerdote.
     /// </summary>
     public static byte[] UpdateUserStats(Player p) =>
-        new ByteQueueWriter()
-            .WritePacketId(ServerPacketId.UpdateUserStats)
+        EscribirEstadisticas(new ByteQueueWriter().WritePacketId(ServerPacketId.UpdateUserStats), p).ToArray();
+
+    private static ByteQueueWriter EscribirEstadisticas(ByteQueueWriter w, Player p) =>
+        w
             .WriteInteger((short)p.MaxHp).WriteInteger((short)p.Hp)
             .WriteInteger((short)p.MaxMana).WriteInteger((short)p.Mana)
             .WriteInteger((short)p.MaxStamina).WriteInteger((short)p.Stamina)
@@ -930,8 +932,24 @@ public static class ServerMessages
             .WriteLong((int)p.Elu).WriteLong((int)p.Exp)
             .WriteByte(p.Agility).WriteByte(p.Strength)
             .WriteByte(p.Hunger).WriteByte(p.MaxHunger)
-            .WriteByte(p.Thirst).WriteByte(p.MaxThirst)
-            .ToArray();
+            .WriteByte(p.Thirst).WriteByte(p.MaxThirst);
+
+    public static byte[] PanelEspectador(Player p)
+    {
+        // Sólo se incluyen los datos de juego que dibuja el panel, sin reenviar mensajes de la conexión observada.
+        var panel = new ByteQueueWriter().WritePacketId(ServerPacketId.PanelEspectador).WriteInteger(p.CharIndex);
+        EscribirEstadisticas(panel, p);
+        for (byte slot = 1; slot < p.Inventory.Length; slot++)
+        {
+            var item = p.Inventory[slot];
+            if (!item.IsEmpty)
+                panel.WriteByte(slot).WriteInteger(item.ObjIndex).WriteInteger(item.Amount).WriteBoolean(item.Equipped);
+        }
+        panel.WriteByte(0);
+        for (byte slot = 1; slot < p.Spells.Length; slot++)
+            if (p.Spells[slot] > 0) panel.WriteByte(slot).WriteInteger(p.Spells[slot]);
+        return panel.WriteByte(0).ToArray();
+    }
 
     /// <summary>The 21-field character spawn packet. Field order &amp; the FXLoops=999 spawn constant
     /// verified byte-identical to VB6 PrepareMessageCharacterCreate (Protocol.bas:14887) and the

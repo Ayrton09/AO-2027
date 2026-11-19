@@ -438,6 +438,27 @@ public class NaveganteTests
                     "por esa entrada se llega al pueblo");
     }
 
+    [Fact]
+    public void Desde_los_mercaderes_del_puerto_el_mandado_entra_por_el_lado_del_banco_de_Rinkel()
+    {
+        var datos = GameData.Load();
+        Assert.True(datos.MapSpawns.ContainsKey(99), "Se necesitan los mapas del juego");
+        var mapas = new Navegante(datos);
+        bool EsBanquero(int id) => datos.Npc(id)?.NpcType == 4;
+        (byte X, byte Y) desde = (79, 18);
+
+        var pueblo = mapas.PuebloMasCercano(99, desde, mapa => mapa == 20, EsBanquero);
+        Assert.NotNull(pueblo);
+        Assert.False(mapas.SeLlegaAbriendoUnaPuerta(20, (10, 93), EsBanquero));
+        Assert.True(mapas.SeLlegaAbriendoUnaPuerta(20, (pueblo.Value.X, pueblo.Value.Y), EsBanquero));
+
+        var salida = mapas.PuertaHacia(99, 20, desde, (pueblo.Value.X, pueblo.Value.Y), topeDeSaltos: 1, soloALaMeta: true);
+        Assert.NotNull(salida);
+        var llegada = datos.MapExits[(99, salida.Value.Puerta.X, salida.Value.Puerta.Y)];
+        Assert.Equal(20, llegada.DestMap);
+        Assert.True(mapas.SeLlegaAbriendoUnaPuerta(20, ((byte)llegada.DestX, (byte)llegada.DestY), EsBanquero));
+    }
+
     /// <summary>
     /// LA ENTRADA OESTE DE RINKEL SON CUATRO BALDOSAS (ver <see cref="Navegante.CaminoAUnaPuertaHermana"/>): con (9,69) tapada, desde
     /// (10,69) hay otra salida al 98 que llega a la misma zona. Medido en `mid56` y `tardeN21` (03/10): los que salían esperaban a

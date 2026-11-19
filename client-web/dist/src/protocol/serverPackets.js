@@ -114,6 +114,7 @@ export var ServerPacketId;
     // EL CENTRO DE SUBASTAS. AGREGADO NUESTRO (pedido del tester, 06/10): la lista entera, que abre la ventana o la refresca.
     ServerPacketId[ServerPacketId["SubastasLista"] = 109] = "SubastasLista";
     ServerPacketId[ServerPacketId["EscenaEspectador"] = 110] = "EscenaEspectador";
+    ServerPacketId[ServerPacketId["PanelEspectador"] = 111] = "PanelEspectador";
     // El cuadro de dialogo del server. Es EL paquete de los rechazos de login (personaje ya conectado, otra
     // sesion de la misma cuenta): sin decodificarlo, el cliente quedaba en "logueando..." para siempre y ademas
     // se le desincronizaba el stream, porque no sabia cuantos bytes comerse.
@@ -421,6 +422,18 @@ function readOne(r, id) {
                 suelo.push({ objIndex, x: r.readByte(), y: r.readByte(), amount: r.readInteger() });
             return { objetivo, mapa, nombre, personajes, suelo };
         }
+        case ServerPacketId.PanelEspectador: {
+            const objetivo = r.readInteger(), stats = leerEstadisticas(r);
+            const attrs = { agilidad: r.readByte(), fuerza: r.readByte() };
+            const food = { cur: r.readByte(), max: r.readByte() }, thirst = { cur: r.readByte(), max: r.readByte() };
+            const inventory = {};
+            const spells = {};
+            for (let slot = r.readByte(); slot; slot = r.readByte())
+                inventory[slot] = { objIndex: r.readInteger(), amount: r.readInteger(), equipped: r.readBoolean() };
+            for (let slot = r.readByte(); slot; slot = r.readByte())
+                spells[slot] = r.readInteger();
+            return { objetivo, stats, attrs, food, thirst, inventory, spells };
+        }
         // La bandeja de correo entera. OJO el orden de los dos ultimos campos: va la CANTIDAD y despues el
         // INDICE del objeto, al reves que en el resto de los paquetes de item del protocolo.
         case ServerPacketId.CorreoList: {
@@ -447,17 +460,20 @@ function readOne(r, id) {
             level: r.readInteger(), elu: r.readLong(), exp: r.readLong(),
         };
         case ServerPacketId.UpdateUserStats: {
-            const f = {
-                maxHp: r.readInteger(), minHp: r.readInteger(), maxMan: r.readInteger(), minMan: r.readInteger(),
-                maxSta: r.readInteger(), minSta: r.readInteger(), gold: r.readLong(), level: r.readInteger(),
-                elu: r.readLong(), exp: r.readLong(),
-            };
+            const f = leerEstadisticas(r);
             for (let i = 0; i < 6; i++)
                 r.readByte(); // agi/str/ham/agu bytes
             return f;
         }
         default: return null; // unmodelled — stop parsing here
     }
+}
+function leerEstadisticas(r) {
+    return {
+        maxHp: r.readInteger(), minHp: r.readInteger(), maxMan: r.readInteger(), minMan: r.readInteger(),
+        maxSta: r.readInteger(), minSta: r.readInteger(), gold: r.readLong(), level: r.readInteger(),
+        elu: r.readLong(), exp: r.readLong(),
+    };
 }
 export function decodeServerStream(data) {
     const events = [];

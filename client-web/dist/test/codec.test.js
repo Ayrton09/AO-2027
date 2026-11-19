@@ -134,6 +134,13 @@ check('composite frame', new ByteQueueWriter().writeByte(3).writeAsciiString('Ho
     for (const b of [1, 0, 0, 0, 0, 0, 0, 0, 9])
         w.writeByte(b);
     w.writeInteger(0).writeInteger(30).writeByte(54).writeByte(61).writeInteger(2).writeInteger(0)
+        .writeByte(ServerPacketId.PanelEspectador).writeInteger(4)
+        .writeInteger(150).writeInteger(87).writeInteger(60).writeInteger(30)
+        .writeInteger(100).writeInteger(80).writeLong(400).writeInteger(25).writeLong(2200).writeLong(100);
+    for (const b of [17, 22, 65, 100, 70, 90])
+        w.writeByte(b);
+    w.writeByte(10).writeInteger(35).writeInteger(5).writeBoolean(true).writeByte(0)
+        .writeByte(4).writeInteger(15).writeByte(0)
         .writeByte(ServerPacketId.EscenaEspectador).writeInteger(0)
         .writeByte(ServerPacketId.Pong).writeLong(458);
     const eventos = decodeServerStream(w.toBytes());
@@ -141,7 +148,12 @@ check('composite frame', new ByteQueueWriter().writeByte(3).writeAsciiString('Ho
     assert('escena decodifica mapa, objetivo, personaje y suelo', f?.mapa === 513 && f.objetivo === 4 && f.nombre === 'Lía'
         && f.personajes[0].auras[5] === 9
         && f.suelo[0].amount === 2);
-    assert('fin de escena y Pong mantienen el encuadre', eventos[1]?.fields.objetivo === 0 && eventos[2]?.id === ServerPacketId.Pong && eventos.length === 3);
+    const panel = eventos[1]?.fields;
+    assert('panel separado con estadísticas, mochila y conjuros del objetivo', panel?.objetivo === 4 && panel.stats.minHp === 87
+        && panel.attrs.fuerza === 22 && panel.thirst.max === 90
+        && panel.inventory[10].equipped
+        && panel.spells[4] === 15);
+    assert('panel, fin de escena y Pong mantienen el encuadre', eventos[2]?.fields.objetivo === 0 && eventos[3]?.id === ServerPacketId.Pong && eventos.length === 4);
 }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

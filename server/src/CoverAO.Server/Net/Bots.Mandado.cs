@@ -24,9 +24,13 @@ public sealed partial class Bot
 
         if (!MapaConMandado(sentidos.Mapa))
         {
-            if (_entorno.Mapas.MapaMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConMandado,
+            if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConMandado,
+                    id => EsBanquero((short)id),
                     PasaSinPeligro(sentidos, NingunMapa)) is not { } pueblo) return false;
-            if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct)) return false;
+            // La entrada identifica el lado del mapa que llega al banco. Aceptar una llegada a tres baldosas
+            // hace entrar por (10,93) de Rinkel, aislada de (12,93), que sí da al pueblo.
+            if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
+                return false;
         }
 
         int antes = sentidos.MandadosRecibidos;

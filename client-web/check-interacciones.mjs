@@ -39,7 +39,7 @@ const nodes = new Map();
 const $ = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
 const sent = [], messages = [];
 const ctx = vm.createContext({
-  $, document: { createElement: element, activeElement: null }, ByteQueueWriter, xorBuffer,
+  $, document: { createElement: element, activeElement: null, body: element(), querySelector: () => null }, ByteQueueWriter, xorBuffer,
   ws: { readyState: 1, send: bytes => sent.push([...bytes]) }, myKey: 0,
   send: writer => ctx.enviarAlJuego(writer.toBytes()), W: () => new ByteQueueWriter(),
   spells: {}, inventory: {}, hotbar: [], spellListEl: $('spelllist'), invgridEl: $('invgrid'),
@@ -57,14 +57,23 @@ const ctx = vm.createContext({
   recentPackets: [], statusEl: $('status'), descansando: false, paralizado: false, montando: false,
   navegando: false, estupido: false, laborando: false, enCombate: false, correoPendiente: false, volverAlHogar: false,
   espectador: null, currentMap: 1, map: { name: 'Ullathorpe' },
+  fetch: async () => ({ ok: false }), myStats: null, myAttrs: null, myFood: { cur: 100, max: 100 }, myThirst: { cur: 100, max: 100 },
+  coordsEl: $('coords'), perfEl: $('perf'), latenciaMs: null, fpsAvg: 0, style: {},
+  fillEl: Object.fromEntries(['hp', 'mana', 'ener', 'food', 'thirst'].map(k => [k, $('f-' + k)])),
+  valEl: Object.fromEntries(['hp', 'mana', 'ener', 'food', 'thirst'].map(k => [k, $('v-' + k)])),
+  esc_: (el, k, val) => { if (k === 't') el.textContent = String(val); else if (k === 'w') el.style.width = val; },
   soltarTeclas() {}, abrirChat() {}, resolverPersonaje: (name, status) => ({ name, status }),
 });
 const run = code => vm.runInContext(code, ctx);
 run(`const CLIENT = ${declaration('CLIENT')}; let selectedSpell = ${declaration('selectedSpell')};
-  let workSkill = 0, comercioAviso = '', slotDescripcion = 0; const SKILL_MAGIA_CLIENTE = 8, SKILL_PROYECTILES = 6;
-  const CUERPO_MUERTO = ${declaration('CUERPO_MUERTO')};`);
-for (const name of ['buildSpellList', 'lanzarHechizo', 'fireHotbar', 'modoPunteria', 'salirDePunteria', 'apply', 'pintarEstados', 'estoyMuerto', 'avisarEnComercio', 'buildInv', 'pintarDescripcionItem',
-  'enviarAlJuego', 'aplicarEscenaEspectador', 'cerrarVistaEspectador', 'aparienciaPersonaje', 'pedirFinDeEspectador', 'mostrarControlesEspectador',
+  let workSkill = 0, comercioAviso = '', slotDescripcion = 0, _goldCache = null, _coordsCache = null, _perfCache = null;
+  const SKILL_MAGIA_CLIENTE = 8, SKILL_PROYECTILES = 6;
+  const CUERPO_MUERTO = ${declaration('CUERPO_MUERTO')};
+  const ATRIB_TOPE = ${declaration('ATRIB_TOPE')}, hudEl = ${declaration('hudEl')},
+        _expCache = ${declaration('_expCache')}, valoresDeBarra = ${declaration('valoresDeBarra')},
+        ranurasVacias = ${declaration('ranurasVacias')};`);
+for (const name of ['buildSpellList', 'lanzarHechizo', 'fireHotbar', 'modoPunteria', 'salirDePunteria', 'apply', 'pintarEstados', 'estoyMuerto', 'avisarEnComercio', 'buildInv', 'pintarDescripcionItem', 'inventarioVisible', 'syncStats', 'setBar',
+  'enviarAlJuego', 'aplicarEscenaEspectador', 'aplicarPanelEspectador', 'cerrarVistaEspectador', 'aparienciaPersonaje', 'pedirFinDeEspectador', 'mostrarControlesEspectador',
   'navegarEspectador'])
   if (functions.has(name)) run(functions.get(name));
 run(`const keydown = ${listener('addEventListener', 'keydown')};
@@ -153,6 +162,11 @@ run("apply({name:'ChangeInventorySlotUser',fields:{slot:4,accion:3,valor:1}})");
 assert.equal($('itemdesc').textContent, 'Objeto 461');
 run("apply({name:'ChangeInventorySlotUser',fields:{slot:4,accion:3,valor:0}})");
 assert.equal($('itemdesc').textContent, '—', 'Consumir o quitar el último objeto no deja una ficha vieja');
+run(`apply({name:'UpdateUserStats',fields:{minHp:49,maxHp:50,gold:99,level:10}});
+  apply({name:'ChangeInventorySlot',fields:{slot:4,objIndex:461,amount:2,equipped:false}});
+  apply({name:'ChangeSpellSlot',fields:{slot:1,spell:6}});
+  syncStats();`);
+assert.equal($('v-hp').textContent, '49/50');
 run(`apply({name:'EscenaEspectador',fields:{
   objetivo:2,mapa:1,nombre:'Otra',personajes:[{charIndex:2,x:50,y:50,body:1}],suelo:[]
 }})`);
@@ -161,19 +175,60 @@ assert.equal($('nombre-espectado').textContent, 'Observando a Otra · Mapa 1');
 assert.equal($('view').inert, true);
 assert.equal(run('espectador.personajes.get(2).x'), 50);
 assert.equal(run('chars.get(2).x'), undefined, 'La cámara y el mundo propio tienen estados separados');
+run('syncStats()');
+assert.equal($('v-hp').textContent, '—', 'Durante el cambio de vista no deben verse los datos del GM');
+assert.equal($('invgrid').children[3].dataset.obj, undefined);
+run(`const panelOtra = {objetivo:2,stats:{minHp:35,maxHp:80,level:22,gold:500},
+  attrs:{fuerza:20,agilidad:18},food:{cur:12,max:100},thirst:{cur:30,max:90},
+  inventory:{4:{objIndex:563,amount:1,equipped:true}},spells:{3:18}};
+  apply({name:'PanelEspectador',fields:panelOtra}); syncStats();`);
+assert.equal($('v-hp').textContent, '35/80');
+assert.equal($('levelnum').textContent, '22');
+assert.equal($('v-thirst').textContent, '30/90');
+assert.equal($('invgrid').children[3].dataset.obj, 563);
+assert.equal($('invgrid').children[3].draggable, false);
+assert.equal($('spelllist').children[0].textContent, 'Conjuro 18');
+assert.equal($('btn-cast').disabled, true);
+run(`apply({name:'UpdateHP',fields:{minHp:27}});
+  apply({name:'ChangeInventorySlot',fields:{slot:4,objIndex:777,amount:1,equipped:false}});
+  apply({name:'EscenaEspectador',fields:{objetivo:2,mapa:2,nombre:'Otra',personajes:[],suelo:[]}});
+  syncStats();`);
+assert.equal($('v-hp').textContent, '35/80', 'El viaje del mismo objetivo conserva su ficha');
+assert.equal($('invgrid').children[3].dataset.obj, 563, 'Cambiar la mochila del GM no cambia la observada');
 const antesDeEspectar = sent.length;
-key('f'); run('worldClick({})');
+key('f'); run('worldClick({}); castClick()');
 assert.equal(sent.length, antesDeEspectar, 'La observación bloquea las acciones de teclado y de ratón');
 run('anteriorEspectador(); siguienteEspectador();');
 assert.deepEqual(sent.slice(-2), [[run('CLIENT.NavegarEspectador'), 0], [run('CLIENT.NavegarEspectador'), 1]]);
 key('Escape');
 assert.deepEqual(sent.at(-1), [run('CLIENT.GMCommands'), 242]);
+run(`apply({name:'EscenaEspectador',fields:{objetivo:3,mapa:1,nombre:'Tropero',personajes:[],suelo:[]}});
+  apply({name:'PanelEspectador',fields:panelOtra}); syncStats();`);
+assert.equal($('v-hp').textContent, '—', 'Un panel de otro objetivo no debe aparecer al navegar');
+assert.equal($('invgrid').children[3].dataset.obj, undefined);
 run("apply({name:'EscenaEspectador',fields:{objetivo:0}})");
 assert.equal($('aviso-espectador').hidden, true);
 assert.equal($('view').inert, false);
+run('syncStats()');
+assert.equal($('v-hp').textContent, '27/50');
+assert.equal($('invgrid').children[3].dataset.obj, 777);
+assert.deepEqual(selected(), [1]);
 const fueraDeLaVista = sent.length;
 run('siguienteEspectador()');
 assert.equal(sent.length, fueraDeLaVista);
 run('worldClick({})');
 assert.equal(sent.at(-1)[0], run('CLIENT.DoubleClick'));
+
+// En el perfil que se despegaba, el cuerpo tiene el cuello tres píxeles más abajo que de frente.
+const sprite = (h, desde) => ({ w: 8, h, pixeles: Uint8Array.from({ length: 8 * h }, (_, i) => Number(i >= 8 * desde)) });
+Object.assign(ctx, { TILE: 32, staticGrh: g => g, silueta: g => g.pixeles, personaje: { body: 248, head: 507 },
+  bodies: { 248: { walk: [sprite(46, 8), sprite(46, 11), sprite(46, 8), sprite(46, 8)], head: [0, -38] } },
+  headsIdx: { 507: { head: Array.from({ length: 4 }, () => sprite(16, 0)) } },
+});
+run(`const TOPE_FRONTAL_DEL_CUELLO = ${declaration('TOPE_FRONTAL_DEL_CUELLO')},
+  TOPE_DEL_CUELLO = ${declaration('TOPE_DEL_CUELLO')}, cuellos = ${declaration('cuellos')};`);
+for (const name of ['medirCuello', 'bajadaDelCuello']) run(functions.get(name));
+assert.equal(run('bajadaDelCuello(personaje, bodies[248], 2)'), 3);
+assert.equal(run('bajadaDelCuello(personaje, bodies[248], 3)'), 0);
+assert.equal(run('bajadaDelCuello(personaje, bodies[248], 4)'), 0);
 console.log('check-interacciones: OK — libro, atajos, muerte, comercio, inventario y observación');

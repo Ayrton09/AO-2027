@@ -267,7 +267,9 @@ public sealed class EspectadorTests : IAsyncDisposable
         await HacerEnMundo(() => dios.AdminInvisible = true);
         Comando(consejero, 241, "Usuario");
         await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(6));
-        Assert.Equal((byte)ServerPacketId.EscenaEspectador, Assert.Single(await Entregas(consejero, salConsejero))[0]);
+        Assert.Collection(await Entregas(consejero, salConsejero),
+            escena => Assert.Equal((byte)ServerPacketId.EscenaEspectador, escena[0]),
+            panel => Assert.Equal((byte)ServerPacketId.PanelEspectador, panel[0]));
     }
 
     [Fact]
@@ -282,7 +284,10 @@ public sealed class EspectadorTests : IAsyncDisposable
         Comando(sesion, 241, "lía+del+valle");
         await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(3));
 
-        var r = Escena(Assert.Single(await Entregas(sesion, salida)));
+        var entregas = await Entregas(sesion, salida);
+        Assert.Equal(2, entregas.Length);
+        var r = Escena(entregas[0]);
+        Assert.Equal((byte)ServerPacketId.PanelEspectador, entregas[1][0]);
         Assert.Equal(objetivo.CharIndex, r.ReadInteger());
         Assert.Equal(inicio.Map, r.ReadInteger());
         Assert.Equal(objetivo.Name, r.ReadAsciiString());
@@ -303,6 +308,66 @@ public sealed class EspectadorTests : IAsyncDisposable
         Comando(sesion, 242);
         await HacerEnMundo(() => { objetivo.Pos = inicio; _dispatcher.ActualizarEspectadores(9); });
         Assert.Equal(0, Escena(Assert.Single(await Entregas(sesion, salida))).ReadInteger());
+    }
+
+    [Fact]
+    public async Task Actualiza_el_panel_del_objetivo_aunque_no_se_mueva()
+    {
+        var (gm, sesion, salida) = Crear("Moderador", 4, new(1, 41, 50));
+        var (observado, _, _) = Crear("Aprendiz", 1, new(2, 50, 50));
+        var (otro, _, _) = Crear("Tropero", 1, new(2, 53, 50));
+        gm.Gold = 9_999;
+        observado.Gold = 151;
+        observado.Hp = 40;
+        observado.Inventory[4] = new InventorySlot { ObjIndex = 35, Amount = 2, Equipped = true };
+        observado.Spells[3] = 18;
+        Comando(sesion, 241, observado.Name);
+        await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(3));
+
+        ByteQueueReader Panel(byte[] mensaje, Player objetivo)
+        {
+            var r = new ByteQueueReader(mensaje);
+            Assert.Equal((byte)ServerPacketId.PanelEspectador, r.ReadByte());
+            Assert.Equal(objetivo.CharIndex, r.ReadInteger());
+            var stats = ServerMessages.UpdateUserStats(objetivo)[1..];
+            Assert.Equal(stats, r.ReadBytes(stats.Length));
+            return r;
+        }
+
+        var mensajes = await Entregas(sesion, salida);
+        Assert.Equal(2, mensajes.Length);
+        Assert.Equal(observado.CharIndex, Escena(mensajes[0]).ReadInteger());
+        var panel = Panel(mensajes[1], observado);
+        Assert.Equal(4, panel.ReadByte());
+        Assert.Equal(35, panel.ReadInteger());
+        Assert.Equal(2, panel.ReadInteger());
+        Assert.Equal(1, panel.ReadByte()); // equipado
+        Assert.Equal(0, panel.ReadByte());
+        Assert.Equal(3, panel.ReadByte());
+        Assert.Equal(18, panel.ReadInteger());
+        Assert.Equal(0, panel.ReadByte());
+        Assert.True(panel.AtEnd);
+
+        await HacerEnMundo(() =>
+        {
+            observado.Hp = 20;
+            observado.Inventory[4] = default;
+            observado.Spells[3] = 0;
+            _dispatcher.ActualizarEspectadores(6);
+        });
+        panel = Panel(Assert.Single(await Entregas(sesion, salida)), observado);
+        Assert.Equal(new byte[] { 0, 0 }, panel.ReadBytes(2));
+        Assert.True(panel.AtEnd);
+
+        await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(9));
+        Assert.Empty(await Entregas(sesion, salida));
+
+        Flecha(sesion, 1);
+        await HacerEnMundo(() => { });
+        mensajes = await Entregas(sesion, salida);
+        Assert.Equal(2, mensajes.Length);
+        Assert.Equal(otro.CharIndex, Escena(mensajes[0]).ReadInteger());
+        Panel(mensajes[1], otro);
     }
 
     [Fact]
@@ -340,7 +405,8 @@ public sealed class EspectadorTests : IAsyncDisposable
         var (_, objetivo, _) = Crear("Observado", 1, new(2, 50, 50));
         Comando(sesion, 241, "Observado");
         await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(3));
-        Assert.NotEqual(0, Escena(Assert.Single(await Entregas(sesion, salida))).ReadInteger());
+        Assert.NotEqual(0, Escena(Assert.Single(await Entregas(sesion, salida),
+            p => p[0] == (byte)ServerPacketId.EscenaEspectador)).ReadInteger());
         await HacerEnMundo(() =>
         {
             if (bajaDeRango) gm.Privileges = 1;

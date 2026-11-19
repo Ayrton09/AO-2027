@@ -44,7 +44,7 @@ export enum ServerPacketId {
   // LA VIDA DE UN JEFE. AGREGADO NUESTRO, el segundo después de FamiliarInfo: alimenta la barra de arriba de la pantalla.
   VidaDelJefe = 108,
   // EL CENTRO DE SUBASTAS. AGREGADO NUESTRO (pedido del tester, 06/10): la lista entera, que abre la ventana o la refresca.
-  SubastasLista = 109, EscenaEspectador = 110,
+  SubastasLista = 109, EscenaEspectador = 110, PanelEspectador = 111,
   // El cuadro de dialogo del server. Es EL paquete de los rechazos de login (personaje ya conectado, otra
   // sesion de la misma cuenta): sin decodificarlo, el cliente quedaba en "logueando..." para siempre y ademas
   // se le desincronizaba el stream, porque no sabia cuantos bytes comerse.
@@ -334,6 +334,17 @@ function readOne(r: ByteQueueReader, id: number): Record<string, unknown> | null
         suelo.push({ objIndex, x: r.readByte(), y: r.readByte(), amount: r.readInteger() });
       return { objetivo, mapa, nombre, personajes, suelo };
     }
+    case ServerPacketId.PanelEspectador: {
+      const objetivo = r.readInteger(), stats = leerEstadisticas(r);
+      const attrs = { agilidad: r.readByte(), fuerza: r.readByte() };
+      const food = { cur: r.readByte(), max: r.readByte() }, thirst = { cur: r.readByte(), max: r.readByte() };
+      const inventory: Record<number, { objIndex: number; amount: number; equipped: boolean }> = {};
+      const spells: Record<number, number> = {};
+      for (let slot = r.readByte(); slot; slot = r.readByte())
+        inventory[slot] = { objIndex: r.readInteger(), amount: r.readInteger(), equipped: r.readBoolean() };
+      for (let slot = r.readByte(); slot; slot = r.readByte()) spells[slot] = r.readInteger();
+      return { objetivo, stats, attrs, food, thirst, inventory, spells };
+    }
     // La bandeja de correo entera. OJO el orden de los dos ultimos campos: va la CANTIDAD y despues el
     // INDICE del objeto, al reves que en el resto de los paquetes de item del protocolo.
     case ServerPacketId.CorreoList: {
@@ -360,16 +371,20 @@ function readOne(r: ByteQueueReader, id: number): Record<string, unknown> | null
       level: r.readInteger(), elu: r.readLong(), exp: r.readLong(),
     };
     case ServerPacketId.UpdateUserStats: {
-      const f: Record<string, unknown> = {
-        maxHp: r.readInteger(), minHp: r.readInteger(), maxMan: r.readInteger(), minMan: r.readInteger(),
-        maxSta: r.readInteger(), minSta: r.readInteger(), gold: r.readLong(), level: r.readInteger(),
-        elu: r.readLong(), exp: r.readLong(),
-      };
+      const f = leerEstadisticas(r);
       for (let i = 0; i < 6; i++) r.readByte(); // agi/str/ham/agu bytes
       return f;
     }
     default: return null; // unmodelled — stop parsing here
   }
+}
+
+function leerEstadisticas(r: ByteQueueReader) {
+  return {
+    maxHp: r.readInteger(), minHp: r.readInteger(), maxMan: r.readInteger(), minMan: r.readInteger(),
+    maxSta: r.readInteger(), minSta: r.readInteger(), gold: r.readLong(), level: r.readInteger(),
+    elu: r.readLong(), exp: r.readLong(),
+  };
 }
 
 export function decodeServerStream(data: Uint8Array): ServerEvent[] {

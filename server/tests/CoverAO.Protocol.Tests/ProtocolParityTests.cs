@@ -104,6 +104,7 @@ public class ProtocolParityTests
         [109] = "SubastasLista",
         // La escena que sigue la cámara del GM, incluso desde la selección de personajes.
         [110] = "EscenaEspectador",
+        [111] = "PanelEspectador",
     };
 
     /// <summary>El último id que usa el protocolo del VB6 en cada dirección. Todo lo nuestro va por encima.</summary>

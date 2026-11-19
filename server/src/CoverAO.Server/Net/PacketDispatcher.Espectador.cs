@@ -18,6 +18,7 @@ public sealed partial class PacketDispatcher
         public long PermisoHasta { get; set; }
         public bool Renovando { get; set; }
         public byte[]? UltimaEscena { get; set; }
+        public byte[]? UltimoPanel { get; set; }
     }
 
     private readonly Dictionary<ClientSession, VistaEspectador> _espectadores = new();
@@ -192,8 +193,16 @@ public sealed partial class PacketDispatcher
             escena.WriteInteger(objeto).WriteByte(donde.X).WriteByte(donde.Y).WriteInteger(cantidad);
         }
         byte[] paquete = escena.WriteInteger(0).ToArray();
-        if (paquete.AsSpan().SequenceEqual(vista.UltimaEscena)) return;
-        vista.UltimaEscena = paquete;
-        sesion.Send(paquete);
+        if (!paquete.AsSpan().SequenceEqual(vista.UltimaEscena))
+        {
+            vista.UltimaEscena = paquete;
+            sesion.Send(paquete);
+        }
+
+        // Se actualiza aunque el personaje y la cámara estén quietos, y no viaja con cada paso.
+        byte[] panel = ServerMessages.PanelEspectador(objetivo);
+        if (panel.AsSpan().SequenceEqual(vista.UltimoPanel)) return;
+        vista.UltimoPanel = panel;
+        sesion.Send(panel);
     }
 }

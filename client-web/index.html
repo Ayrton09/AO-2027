@@ -66,8 +66,9 @@
     #selector-espectador button { flex:none; min-width:30px; font-size:1.1em; }
     #nombre-espectado { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     #stage.espectando #ayuda-muerte, #stage.espectando #cartelmapa, #stage.espectando #barra-jefe { display:none; }
-    body.espectador-solo #hotbar, body.espectador-solo #m-abajo, body.espectador-solo #m-botones,
-    body.espectador-solo #status { visibility:hidden; }
+    body.observando #hotbar, body.observando #status { visibility:hidden; }
+    body.observando .p-cast, body.observando [data-tab="menu"],
+    body.observando [data-ventana="menu"], body.observando .m-btn [data-tecla-de] { display:none; }
     #cs-elegir-espectador { margin-top:10px; }
     #cs-elegir-espectador label { display:block; }
     #cs-elegir-espectador input { width:100%; margin:4px 0 8px; }
@@ -2048,8 +2049,11 @@
 
     function mostrarControlesEspectador(activo) {
       $('stage').classList.toggle('espectando', activo);
+      document.body.classList.toggle('observando', activo);
       $('aviso-espectador').hidden = !activo;
-      for (const id of ['view', 'panel', 'hotbar', 'm-ventana', 'm-botones']) $(id).inert = activo;
+      for (const id of ['view', 'hotbar']) $(id).inert = activo;
+      if (activo && document.querySelector('.tab.on[data-tab="menu"]'))
+        document.querySelector('.tab[data-tab="inv"]').click();
     }
 
     function cerrarVistaEspectador(volverALaLista = true) {
@@ -2057,6 +2061,8 @@
       const sinPersonaje = espectador.sinPersonaje;
       espectador = null;
       mostrarControlesEspectador(false);
+      buildInv();
+      buildSpellList();
       if (sinPersonaje) {
         document.body.classList.remove('espectador-solo');
         if (volverALaLista && ultimoRoster) {
@@ -2083,7 +2089,8 @@
       }
 
       if (!espectador || espectador.mapa !== f.mapa) {
-        const vista = { mapa: f.mapa, sinPersonaje, terreno: null, personajes: new Map(), suelo: new Map() };
+        const vista = { mapa: f.mapa, sinPersonaje, terreno: null, personajes: new Map(), suelo: new Map(),
+                        objetivo: espectador?.objetivo, panel: espectador?.panel };
         espectador = vista;
         if (f.mapa === currentMap && map) vista.terreno = map;
         else fetch(`./assets/map${f.mapa}.json`).then((r) => r.ok ? r.json() : null)
@@ -2091,6 +2098,7 @@
       }
 
       const vista = espectador;
+      const cambioObjetivo = vista.objetivo !== f.objetivo;
       if (vista.objetivo !== f.objetivo || vista.nombre !== f.nombre)
         $('nombre-espectado').textContent = `Observando a ${f.nombre} · Mapa ${f.mapa}`;
       vista.objetivo = f.objetivo;
@@ -2112,6 +2120,19 @@
       }
       vista.personajes = personajes;
       vista.suelo = new Map(f.suelo.map((it) => [it.x + ',' + it.y, it]));
+      if (cambioObjetivo) {
+        vista.panel = null;
+        buildInv();
+        buildSpellList();
+      }
+    }
+
+    function aplicarPanelEspectador(f) {
+      if (espectador?.objetivo !== f.objetivo) return;
+      const anterior = espectador.panel;
+      espectador.panel = f;
+      if (!anterior || JSON.stringify(anterior.inventory) !== JSON.stringify(f.inventory)) buildInv();
+      if (!anterior || JSON.stringify(anterior.spells) !== JSON.stringify(f.spells)) buildSpellList();
     }
 
     // Load a map by number (assets/map<N>.json). Called on login/teleport via the ChangeMap packet;
@@ -3213,16 +3234,15 @@
      * `ValidarCabeza`) deja al menos una fila de fondo en el centro del cuello, y el Scale2x del HD lo agranda al
      * redondear el mentón y los hombros (53%).
      *
-     * La cabeza baja lo justo para que el cuello toque la ropa: en las cuatro columnas del medio de la cabeza se cuentan
-     * las filas de fondo entre lo último de la cabeza y lo primero del cuerpo, y se toma la peor, con tope de 2 píxeles
-     * (más ya la hunde en los hombros: son escotes y armaduras de otro cuello). Se mide DE FRENTE y ese valor vale para
-     * las cuatro direcciones; midiendo cada una, la cabeza saltaría al girar. El casco baja con ella, porque en el
-     * original va en el mismo punto (:2447). El arma y el escudo no: cuelgan del cuerpo.
+     * El ajuste frontal de hasta dos píxeles se comparte al girar. Si en una orientación queda aire en las cuatro
+     * columnas centrales, se corrige sólo hasta el primer contacto con el cuerpo. El desnudo del orco de perfil,
+     * por ejemplo, tiene el cuello más bajo que de frente. Se usa el cuadro base de cada orientación para que el
+     * ajuste no cambie con los pasos. El casco acompaña a la cabeza; el arma y el escudo cuelgan del cuerpo.
      *
      * Se mide en píxeles del original, sobre el HD: cada píxel es un bloque de 4x4 y cuenta como lleno si lo está la
      * mitad. Así sale la misma silueta que el BMP en 2127 de 2173 sprites (los otros difieren en algún píxel suelto).
      */
-    const TOPE_DEL_CUELLO = 2;
+    const TOPE_FRONTAL_DEL_CUELLO = 2, TOPE_DEL_CUELLO = 5;
     const siluetas = new Map(), cuellos = new Map();
     let lienzoSilueta = null, pincelSilueta = null;
     function silueta(g) {
@@ -3252,16 +3272,12 @@
       siluetas.set(clave, s);
       return s;
     }
-    function bajadaDelCuello(c, b) {
-      const clave = c.body + '|' + c.head;
-      const hecho = cuellos.get(clave);
-      if (hecho !== undefined) return hecho;
-      const h = headsIdx && headsIdx[c.head];
-      const bg = b && b.head && staticGrh(b.walk[2]), hg = h && staticGrh(h.head[2]);   // de frente: el sur
-      if (!bg || !hg) return 0;
+    function medirCuello(b, h, rumbo) {
+      const bg = staticGrh(b.walk[rumbo - 1]), hg = staticGrh(h.head[rumbo - 1]);
+      if (!bg || !hg) return { minimo: 0, maximo: 0 };
       const sb = silueta(bg), sh = silueta(hg);
-      if (sb === null || sh === null) return 0;            // la hoja todavía no bajó: se mide en el próximo cuadro
-      let peor = -Infinity;
+      if (sb === null || sh === null) return null;          // la hoja todavía no bajó: se mide en el próximo cuadro
+      let minimo = Infinity, maximo = -Infinity;
       if (sb && sh) {
         const bx = Math.round((TILE - bg.w) / 2), by = TILE - bg.h;
         const hx = Math.round((TILE - hg.w) / 2 + b.head[0]), hy = TILE + b.head[1] - hg.h;
@@ -3272,19 +3288,36 @@
           const xc = hx + x - bx;
           if (abajo === null || xc < 0 || xc >= bg.w) continue;
           for (let y = Math.max(0, abajo - 7 - by); y < bg.h; y++) {
-            if (sb[y * bg.w + xc]) { peor = Math.max(peor, by + y - abajo - 1); break; }
+            if (sb[y * bg.w + xc]) {
+              const hueco = by + y - abajo - 1;
+              minimo = Math.min(minimo, hueco); maximo = Math.max(maximo, hueco);
+              break;
+            }
           }
         }
       }
-      const bajada = peor === -Infinity ? 0 : Math.max(0, Math.min(TOPE_DEL_CUELLO, peor));
+      return { minimo: minimo === Infinity ? 0 : minimo, maximo: maximo === -Infinity ? 0 : maximo };
+    }
+    function bajadaDelCuello(c, b, rumbo = 3) {
+      const clave = c.body + '|' + c.head + '|' + rumbo;
+      const hecho = cuellos.get(clave);
+      if (hecho !== undefined) return hecho;
+      const h = headsIdx && headsIdx[c.head];
+      if (!b?.head || !h) return 0;
+      const frente = medirCuello(b, h, 3);
+      if (!frente) return 0;
+      const comun = Math.max(0, Math.min(TOPE_FRONTAL_DEL_CUELLO, frente.maximo));
+      const actual = rumbo === 3 ? frente : medirCuello(b, h, rumbo);
+      if (!actual) return comun;
+      const bajada = Math.min(TOPE_DEL_CUELLO, Math.max(comun, actual.minimo));
       cuellos.set(clave, bajada);
       return bajada;
     }
     /** Sonda: cuántos píxeles baja la cabeza con ese cuerpo (undefined mientras falten las hojas). */
-    window.__cuello = (cuerpo, cabeza) => {
+    window.__cuello = (cuerpo, cabeza, rumbo = 3) => {
       const b = bodies && bodies[cuerpo];
-      const v = b ? bajadaDelCuello({ body: cuerpo, head: cabeza }, b) : undefined;
-      return cuellos.has(cuerpo + '|' + cabeza) ? v : undefined;
+      const v = b ? bajadaDelCuello({ body: cuerpo, head: cabeza }, b, rumbo) : undefined;
+      return cuellos.has(cuerpo + '|' + cabeza + '|' + rumbo) ? v : undefined;
     };
     // Las tres partes propias del personaje. Cada una corre el tope (`c._top`) hacia arriba con su alto.
     function dibujarCuerpo(c, dx, dy, bg, bsheet) {
@@ -3297,14 +3330,14 @@
       const hg = staticGrh(h.head[heading - 1]); if (!hg) return;
       if (!sheets[hg.file]) { loadSheet(hg.file); return; }
       // AO aplica el HeadOffset a la base y LUEGO ancla la cabeza abajo (Grh_Render: y = base+TILE-alto).
-      const hy = dy + TILE + b.head[1] + bajadaDelCuello(c, b) - hg.h; if (hy < c._top) c._top = hy;
+      const hy = dy + TILE + b.head[1] + bajadaDelCuello(c, b, heading) - hg.h; if (hy < c._top) c._top = hy;
       dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
     }
     function dibujarCasco(c, dx, dy, heading, b) {
       const ht = helmetsIdx && c.helmet && helmetsIdx[c.helmet]; if (!ht || !b.head) return;
       const hg = staticGrh(ht[heading - 1]); if (!hg) return;
       if (!sheets[hg.file]) { loadSheet(hg.file); return; }
-      const hy = dy + TILE + b.head[1] + bajadaDelCuello(c, b) - hg.h; if (hy < c._top) c._top = hy;
+      const hy = dy + TILE + b.head[1] + bajadaDelCuello(c, b, heading) - hg.h; if (hy < c._top) c._top = hy;
       dGrh(ctx, sheets[hg.file], hg, dx + (TILE - hg.w) / 2 + b.head[0], hy, hg.w, hg.h);
     }
 
@@ -5070,6 +5103,7 @@
         case 'LoggedSuccessful': puntosLibres = 0; refrescarPuntosLibres(); break;
         case 'UserCharIndexInServer': myCharIndex = f.charIndex; break;
         case 'EscenaEspectador': aplicarEscenaEspectador(f); break;
+        case 'PanelEspectador': aplicarPanelEspectador(f); break;
         case 'CharacterCreate': {
           const c = aparienciaPersonaje(f);
           // LO QUE EL PERSONAJE YA TRAÍA PUESTO al entrar en pantalla (HandleCharacterCreate, Protocol.bas): su FX
@@ -5349,15 +5383,20 @@
           if (f.accion === 1) it.equipped = true;
           else if (f.accion === 2) it.equipped = false;
           else if (f.accion === 3) { if (f.valor === 0) inventory[f.slot] = null; else it.amount = f.valor; }
-          buildInv(); buildHotbar(); break;
+          if (!espectador) buildInv();
+          buildHotbar(); break;
         }
         case 'ChangeInventorySlot':                    // one inventory slot (real .chr contents)
           inventory[f.slot] = f.objIndex ? { objIndex: f.objIndex, amount: f.amount, equipped: f.equipped } : null;
-          buildInv(); buildHotbar();
+          if (!espectador) buildInv();
+          buildHotbar();
           if (bankOpen) renderBank();                  // vault window shows live inventory (deposit/withdraw)
           else if (modalKind === 'commerce') renderCommerce();   // la tienda también lista el inventario (vender)
           break;
-        case 'ChangeSpellSlot': spells[f.slot] = f.spell; buildSpellList(); buildHotbar(); break;   // one spellbook slot
+        case 'ChangeSpellSlot':
+          spells[f.slot] = f.spell;
+          if (!espectador) buildSpellList();
+          buildHotbar(); break;
         case 'UpdateHambre': myFood.cur = f.minHam; break;   // barra de hambre (0–100)
         case 'UpdateSed': myThirst.cur = f.minAgu; break;    // barra de sed (0–100)
         // El server emite este paquete combinado periódicamente al bajar hambre/sed (Program.cs:163). Sin este
@@ -5689,57 +5728,51 @@
       if (prop === 'w') el.style.width = v; else el.textContent = v;
     }
     const ATRIB_TOPE = 35;                // MAXATRIBUTOS del server: de ahí para arriba la cifra cambia de color
-    document.getElementById('goldrow').addEventListener('click', () => tirarOro());
+    document.getElementById('goldrow').addEventListener('click', () => { if (!espectador) tirarOro(); });
     const hudEl = {
       level: $('levelnum'), xpfill: $('xpfill'), xptxt: $('xptxt'), gold: $('v-gold'),
       str: $('a-str'), agi: $('a-agi'), name: $('charname'), mapa: $('mapname'),
     };
     const valoresDeBarra = {};
     function setBar(k, cur, max) {
-      const c = Math.max(0, cur | 0), m = Math.max(1, max | 0);
+      const c = cur == null ? null : Math.max(0, cur | 0), m = Math.max(1, max | 0);
       const anterior = valoresDeBarra[k];
       if (anterior?.cur === c && anterior.max === m) return;
       valoresDeBarra[k] = { cur: c, max: m };
       esc_(fillEl[k], 'w', Math.max(0, Math.min(100, c / m * 100)) + '%');
-      esc_(valEl[k], 't', c + '/' + m);
+      esc_(valEl[k], 't', c == null ? '—' : c + '/' + m);
     }
     let fpsAvg = 0;
     const _expCache = { e: null, l: null };   // para no reformatear la experiencia en cada frame
     let _goldCache = null, _coordsCache = null, _perfCache = null;
     function syncStats() {
-      const s = myStats;
-      if (s) {
-        if (s.maxHp != null) setBar('hp', s.minHp, s.maxHp);
-        if (s.maxMan != null) setBar('mana', s.minMan, s.maxMan);
-        if (s.maxSta != null) setBar('ener', s.minSta, s.maxSta);
-        if (s.level != null) esc_(hudEl.level, 't', s.level);
-        // La barra sola no dice nada: a nivel 1 con 0 de experiencia es un rectángulo negro y el jugador no
-        // tiene forma de saber cuánto le falta. Va el número adentro, como en las barras de vida/maná.
-        if (s.exp != null && s.elu) {
-          // El toLocaleString sólo se paga cuando exp o elu cambiaron de verdad, no en cada frame.
-          if (_expCache.e !== s.exp || _expCache.l !== s.elu) {
-            _expCache.e = s.exp; _expCache.l = s.elu;
-            esc_(hudEl.xpfill, 'w', Math.max(0, Math.min(100, s.exp / s.elu * 100)) + '%');
-            esc_(hudEl.xptxt, 't', `${(+s.exp).toLocaleString('es-AR')} / ${(+s.elu).toLocaleString('es-AR')}`);
-          }
-        }
-        if (s.gold != null && _goldCache !== s.gold) {
-          _goldCache = s.gold;
-          esc_(hudEl.gold, 't', (+s.gold).toLocaleString('es-AR'));
-        }
+      const panel = espectador?.panel;
+      const s = espectador ? panel?.stats : myStats;
+      const food = espectador ? panel?.food : myFood;
+      const thirst = espectador ? panel?.thirst : myThirst;
+      const attrs = espectador ? panel?.attrs : myAttrs;
+      setBar('hp', s?.minHp, s?.maxHp);
+      setBar('mana', s?.minMan, s?.maxMan);
+      setBar('ener', s?.minSta, s?.maxSta);
+      setBar('food', food?.cur, food?.max);
+      setBar('thirst', thirst?.cur, thirst?.max);
+      esc_(hudEl.level, 't', s?.level ?? '—');
+      const exp = s?.exp ?? null, elu = s?.elu ?? null, gold = s?.gold ?? null;
+      // El toLocaleString sólo se paga cuando cambian los valores visibles.
+      if (_expCache.e !== exp || _expCache.l !== elu) {
+        _expCache.e = exp; _expCache.l = elu;
+        esc_(hudEl.xpfill, 'w', (exp != null && elu ? Math.max(0, Math.min(100, exp / elu * 100)) : 0) + '%');
+        esc_(hudEl.xptxt, 't', exp != null && elu ? `${exp.toLocaleString('es-AR')} / ${elu.toLocaleString('es-AR')}` : '—');
       }
-      setBar('food', myFood.cur, myFood.max);
-      setBar('thirst', myThirst.cur, myThirst.max);
-      if (myAttrs) {
-        esc_(hudEl.str, 't', myAttrs.fuerza); esc_(hudEl.agi, 't', myAttrs.agilidad);
-        // Al llegar al tope el original cambia el color de la cifra (ActualizarEst: `IIf(Fuerza < 35,
-        // blanco, &H40C0&)`): es la señal de que la poción ya no sube más. ATRIB_TOPE es el MAXATRIBUTOS del
-        // server (Declares.bas:349).
-        hudEl.str.classList.toggle('tope', myAttrs.fuerza >= ATRIB_TOPE);
-        hudEl.agi.classList.toggle('tope', myAttrs.agilidad >= ATRIB_TOPE);
+      if (_goldCache !== gold) {
+        _goldCache = gold;
+        esc_(hudEl.gold, 't', gold == null ? '—' : gold.toLocaleString('es-AR'));
       }
+      esc_(hudEl.str, 't', attrs?.fuerza ?? '—'); esc_(hudEl.agi, 't', attrs?.agilidad ?? '—');
+      hudEl.str.classList.toggle('tope', attrs?.fuerza >= ATRIB_TOPE);
+      hudEl.agi.classList.toggle('tope', attrs?.agilidad >= ATRIB_TOPE);
       const me = chars.get(myCharIndex);
-      if (me && me.name) esc_(hudEl.name, 't', me.name);
+      esc_(hudEl.name, 't', (espectador ? espectador.nombre : me?.name) || '—');
       // El NOMBRE del lugar, no su número. Los `map<N>.json` lo traen desde el header del .csm
       // (add_map_names.py), así que decir "Mapa 1" parado en Ullathorpe era tirar el dato que ya estaba.
       // Los mapas sin nombre —dungeons, relleno— caen al número, que es mejor que un renglón vacío.
@@ -5761,14 +5794,17 @@
     // --- grilla de inventario (DOM): icono por <canvas>, cantidad, marca de equipado -------------
     const invgridEl = $('invgrid');
     let slotDescripcion = 0;
+    const ranurasVacias = {};
+    function inventarioVisible() { return espectador ? espectador.panel?.inventory ?? ranurasVacias : inventory; }
     function buildInv() {
       invgridEl.innerHTML = '';
-      const used = Object.keys(inventory).map(Number).filter((s) => inventory[s]);
+      const visibles = inventarioVisible();
+      const used = Object.keys(visibles).map(Number).filter((s) => visibles[s]);
       const maxSlot = Math.max(20, used.length ? Math.max(...used) : 0);
       for (let slot = 1; slot <= maxSlot; slot++) {
-        const it = inventory[slot];
-        const d = document.createElement('div'); d.className = 'islot'; d.dataset.slot = slot; d.draggable = !!it;
-        if (slot === slotSel) d.classList.add('sel');
+        const it = visibles[slot];
+        const d = document.createElement('div'); d.className = 'islot'; d.dataset.slot = slot; d.draggable = !espectador && !!it;
+        if (!espectador && slot === slotSel) d.classList.add('sel');
         if (it) {
           if (it.equipped) d.classList.add('eq');
           d.dataset.obj = it.objIndex;
@@ -5809,6 +5845,7 @@
     // Acá había además una rama de VENTA (`modalKind === 'commerce'`) que era inalcanzable: con la tienda
     // abierta el overlay del modal tapa el panel entero. La venta vive ahora en la propia ventana de comercio.
     invgridEl.addEventListener('click', (ev) => {
+      if (espectador) return;
       const d = ev.target.closest('.islot'); if (!d || ws.readyState !== 1) return;
       const slot = +d.dataset.slot, it = inventory[slot]; if (!it) return;
       if (slotSel !== slot) { slotSel = slot; buildInv(); }   // el clic también SELECCIONA, como en el original
@@ -5827,11 +5864,13 @@
     });
     // DOBLE CLIC = usar. La otra vía es U sobre el slot seleccionado; las dos van al mismo ruteo por tipo.
     invgridEl.addEventListener('dblclick', (ev) => {
+      if (espectador) return;
       const d = ev.target.closest('.islot'); if (!d || ws.readyState !== 1) return;
       const slot = +d.dataset.slot;
       if (inventory[slot]) usarItemDelSlot(slot);
     });
     invgridEl.addEventListener('contextmenu', (ev) => {   // clic-der → atar a la hotbar
+      if (espectador) return;
       ev.preventDefault(); const d = ev.target.closest('.islot'); if (!d) return;
       const it = inventory[+d.dataset.slot]; if (it) bindHotbar({ kind: 'item', obj: it.objIndex });
     });
@@ -5857,7 +5896,7 @@
       if (info.ham) partes.push(`+${info.ham} de hambre`);
       if (info.agu) partes.push(`+${info.agu} de sed`);
       if (info.lvl) {
-        const mio = myStats && myStats.level > 0 ? myStats.level : 0;
+        const mio = !espectador && myStats && myStats.level > 0 ? myStats.level : 0;
         partes.push(mio && mio < info.lvl ? `pide nivel ${info.lvl} (tenés ${mio})` : `pide nivel ${info.lvl}`);
       }
       if (info.raz) partes.push(`no la usan: ${info.raz.join(', ')}`);
@@ -5867,9 +5906,9 @@
     }
     const rangoTexto = (r) => (r[0] === r[1] || !r[1] ? String(r[0] || r[1]) : `${r[0]}-${r[1]}`);
 
-    function pintarDescripcionItem(slot = slotDescripcion) {
-      slotDescripcion = slot;
-      const it = inventory[slot];
+    function pintarDescripcionItem(slot = espectador ? 0 : slotDescripcion) {
+      if (!espectador) slotDescripcion = slot;
+      const it = inventarioVisible()[slot];
       if (!it) { $('itemdesc').textContent = '—'; return; }
       const cabecera = itemName(it.objIndex) + (it.amount > 1 ? ` (x${it.amount})` : '')
                      + (it.equipped ? ' · equipado' : '');
@@ -5881,7 +5920,7 @@
     });
     // Arrastrar y soltar para reordenar el inventario → SwapObjects(origen, destino).
     let dragSlot = 0;
-    invgridEl.addEventListener('dragstart', (ev) => { const d = ev.target.closest('.islot'); dragSlot = (d && inventory[+d.dataset.slot]) ? +d.dataset.slot : 0; if (dragSlot && ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'; });
+    invgridEl.addEventListener('dragstart', (ev) => { const d = ev.target.closest('.islot'); dragSlot = (!espectador && d && inventory[+d.dataset.slot]) ? +d.dataset.slot : 0; if (dragSlot && ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'; });
     invgridEl.addEventListener('dragover', (ev) => { if (dragSlot) ev.preventDefault(); });
     invgridEl.addEventListener('drop', (ev) => { ev.preventDefault(); const d = ev.target.closest('.islot'); const to = d ? +d.dataset.slot : 0; if (dragSlot && to && to !== dragSlot) send(W().writeByte(CLIENT.SwapObjects).writeByte(dragSlot).writeByte(to)); dragSlot = 0; });
     // Arrastrar un ítem del inventario a un macro F1-F10 lo ata (gesto intuitivo, complementa el clic-derecho).
@@ -5891,19 +5930,24 @@
     // --- lista de hechizos (Conjuros) ------------------------------------------------------------
     const spellListEl = $('spelllist');
     function buildSpellList() {
-      const slots = Object.keys(spells).map(Number).sort((a, b) => a - b).filter((s) => spells[s]);
-      if (!spells[selectedSpell]) selectedSpell = slots[0] || 0;
-      $('btn-cast').disabled = !slots.length;
+      const visibles = espectador ? espectador.panel?.spells ?? ranurasVacias : spells;
+      const slots = Object.keys(visibles).map(Number).sort((a, b) => a - b).filter((s) => visibles[s]);
+      if (!espectador && !spells[selectedSpell]) selectedSpell = slots[0] || 0;
+      $('btn-cast').disabled = !!espectador || !slots.length;
       if (!slots.length) { spellListEl.innerHTML = '<li style="opacity:.6">(sin hechizos)</li>'; return; }
       spellListEl.innerHTML = '';
       for (const s of slots) {
         const li = document.createElement('li'); li.dataset.slot = s;
-        if (s === selectedSpell) li.classList.add('sel');
-        li.innerHTML = `${esc(spellName(spells[s]))}<span style="float:right;white-space:nowrap"><span class="mv" data-mvup="${s}" title="subir">▲</span> <span class="mv" data-mvdn="${s}" title="bajar">▼</span> <span class="bind" data-bind="${spells[s]}" title="atar a F1–F10">⌨</span></span>`;
+        if (espectador) li.textContent = spellName(visibles[s]);
+        else {
+          if (s === selectedSpell) li.classList.add('sel');
+          li.innerHTML = `${esc(spellName(visibles[s]))}<span style="float:right;white-space:nowrap"><span class="mv" data-mvup="${s}" title="subir">▲</span> <span class="mv" data-mvdn="${s}" title="bajar">▼</span> <span class="bind" data-bind="${visibles[s]}" title="atar a F1–F10">⌨</span></span>`;
+        }
         spellListEl.appendChild(li);
       }
     }
     spellListEl.addEventListener('click', (ev) => {
+      if (espectador) return;
       const bind = ev.target.closest('.bind');
       if (bind) { bindHotbar({ kind: 'spell', id: +bind.dataset.bind }); return; }
       const mv = ev.target.closest('.mv');   // ▲/▼ → MoveSpell(upwards, slot)
@@ -5912,7 +5956,7 @@
       selectedSpell = +li.dataset.slot; buildSpellList();   // elegir (LANZAR lo lanza)
     });
     function lanzarHechizo(slot = selectedSpell) {
-      if (!ws || ws.readyState !== 1) return;
+      if (espectador || !ws || ws.readyState !== 1) return;
       if (!spells[slot]) { log('No tenés un hechizo seleccionado. Elegí uno en Conjuros.', '#c9a6ff'); return; }
       selectedSpell = slot;
       buildSpellList();

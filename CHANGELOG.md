@@ -2,6 +2,27 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.38 (2026-11-19)
+
+### Apariencia de los personajes
+
+- La cabeza del orco podía quedar despegada del cuerpo al mirarlo de perfil. El cliente ajusta el encaje según el cuerpo, la cabeza y la orientación. El casco acompaña el ajuste y los pasos de la animación conservan la misma altura.
+- La corrección se aplica a las seis razas, tanto con el cuerpo base como con armadura. También sirve para las combinaciones que dejaban una separación entre la cabeza y la ropa.
+
+### Panel del modo espectador
+
+- Al observar, el panel muestra el nombre, nivel, experiencia, vida, maná, energía, hambre, sed, atributos, oro, inventario y conjuros del personaje seguido. Los datos se actualizan aunque se quede quieto.
+- El panel es de solo lectura y sigue al objetivo cuando usás las flechas. Funciona en las interfaces clásica y moderna, también al entrar como espectador desde la selección de personajes. Si observás desde tu GM, al salir recuperás su panel.
+
+### Ruta al banco de Rinkel
+
+- Cuando un bot sale del Puerto de Rinkel (mapa 99) para hacer el mandado de ropa, busca una entrada al mapa 20 desde la que pueda llegar al banquero. Antes podía cruzar por una salida vecina que lo dejaba del lado aislado de la muralla.
+- El viaje al mandado conserva la entrada que da acceso al banco. El encargo y el pago de 150 monedas se hacen en el juego, con el banquero y el sastre.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.0.38**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
+
 ## 1.0.37 (2026-11-19)
 
 ### Recuperación de personajes varados
