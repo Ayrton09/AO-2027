@@ -95,16 +95,39 @@ public class ReaparicionTests
         var regreso = new WorldPos(1, 40, 40);
         short a = sys.AddSpawn(Bicho(posOrig: true), retiro);
         short b = sys.AddSpawn(Bicho(posOrig: true), regreso);
-        sys.CancelRespawn(a);
-        world.RemoveNpc(a);
-        sys.ReaparecerYa(b);
-        world.RemoveNpc(b);
+        world.RemoveNpc(a, ReaparicionNpc.Ninguna);
+        world.RemoveNpc(b, ReaparicionNpc.Inmediata);
 
         Assert.Empty(world.Npcs);
         sys.Update(10);
         Assert.Equal(regreso, Assert.Single(world.Npcs).Pos);
         sys.Update(10 + RespawnTicks);
         Assert.Equal(regreso, Assert.Single(world.Npcs).Pos);
+    }
+
+    [Fact]
+    public void Retirar_al_centinela_con_un_indice_reciclado_no_cancela_la_reaparicion_pendiente()
+    {
+        var (world, sys, _) = Escena();
+        var origen = new WorldPos(1, 30, 30);
+        var posicionCentinela = new WorldPos(1, 40, 40);
+        short indice = sys.AddSpawn(Bicho(posOrig: true), origen);
+        world.RemoveNpc(indice);
+        sys.Update(1);
+
+        // El asignador da la vuelta mientras la criatura original sigue esperando.
+        for (int siguiente = indice + 1; siguiente <= short.MaxValue; siguiente++)
+            world.AllocateCharIndex();
+        short centinela = sys.AddSpawn(Bicho(posOrig: true) with { Name = "Centinela" }, posicionCentinela);
+        Assert.Equal(indice, centinela);
+        world.RemoveNpc(centinela, ReaparicionNpc.Ninguna);
+
+        sys.Update(RespawnTicks);
+        Assert.Empty(world.Npcs);
+        sys.Update(1 + RespawnTicks);
+        Assert.Equal(origen, Assert.Single(world.Npcs).Pos);
+        sys.Update(1 + 2 * RespawnTicks);
+        Assert.Equal(origen, Assert.Single(world.Npcs).Pos);
     }
 
     /// <summary>LA QUE CREA UN GM REAPARECE AL AZAR aunque su ficha traiga PosOrig: <c>SpawnNpc</c> no le guarda <c>Orig</c>,

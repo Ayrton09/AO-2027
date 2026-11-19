@@ -2,6 +2,8 @@
 
 namespace CoverAO.Server.Game;
 
+internal enum ReaparicionNpc { Normal, Ninguna, Inmediata }
+
 /// <summary>
 /// The authoritative registry of connected players. Replaces the VB6 <c>UserList()</c> global
 /// (which Protocol.bas referenced 1,040 times). Access is through methods, not a shared array,
@@ -418,24 +420,26 @@ public sealed class World
         if (npc.ExpireAtTick > 0) _npcsConVencimiento.Add(npc);
     }
 
-    /// <summary>Saca una criatura del mundo.
+    /// <summary>Se dispara cuando el estado del familiar de alguien cambia por lo que pasó en el mundo.
+    /// Lo engancha el despachador para mandarle la ficha al dueño.</summary>
+    public System.Action<Player>? CambioElFamiliar;
+    internal event Action<short, ReaparicionNpc>? NpcRetirado;
+
+    /// <summary>Saca una criatura del mundo con la reaparición habitual de su ficha.
     ///
     /// <para>Si tenía dueño le libera el lugar de mascota, y va acá a propósito y no en cada uno de los siete
     /// lugares que sacan criaturas: el original hace lo mismo —<c>ResetNpcMainInfo</c> (MODULO_NPCs.bas:289)
     /// llama a <c>QuitarMascota</c>, y por ahí pasan tanto <c>QuitarNPC</c> como <c>MuereNpc</c>—, así que la
     /// muerte, el vencimiento de una invocación y el despawn liberan el cupo por la MISMA línea. Repartir la
     /// limpieza entre los call sites es la forma segura de olvidarse de uno.</para></summary>
-    /// <summary>Se dispara cuando el estado del familiar de alguien cambio por algo que paso en el mundo (hoy:
-    /// su criatura salio de el). Lo engancha el despachador para mandarle la ficha al dueño.</summary>
-    public System.Action<Player>? CambioElFamiliar;
-    internal event Action<short>? NpcRetirado;
+    public void RemoveNpc(short charIndex) => RemoveNpc(charIndex, ReaparicionNpc.Normal);
 
-    public void RemoveNpc(short charIndex)
+    internal void RemoveNpc(short charIndex, ReaparicionNpc reaparicion)
     {
         if (!_npcs.Remove(charIndex, out var npc)) return;
         DesindexarNpc(npc);
         if (npc.ExpireAtTick > 0) _npcsConVencimiento.Remove(npc);
-        NpcRetirado?.Invoke(charIndex);
+        NpcRetirado?.Invoke(charIndex, reaparicion);
         // Si alguien la tenía APROPIADA, se le suelta (VB6 MODULO_NPCs.bas:340, `Owner = 0` al morir). Acá se
         // limpia además el lado del jugador, que allá queda con el índice viejo: nuestro charIndex se reutiliza
         // y una marca colgada podría terminar apuntando a otra criatura.

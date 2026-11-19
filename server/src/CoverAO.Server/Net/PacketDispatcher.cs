@@ -6229,8 +6229,7 @@ public sealed partial class PacketDispatcher
         var npc = p!.TargetNpc > 0 ? _world.NpcByIndex(p.TargetNpc) : null;
         if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
         session.Send(ServerMessages.ConsoleMsg($"RMatas (con posible respawn) a: {npc.Name}", FuenteInfo));
-        _npcs?.ReaparecerYa(npc.CharIndex);
-        _world.RemoveNpc(npc.CharIndex);
+        _world.RemoveNpc(npc.CharIndex, ReaparicionNpc.Inmediata);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         p.TargetNpc = 0;
     }
@@ -6335,8 +6334,7 @@ public sealed partial class PacketDispatcher
                              .ToList();   // ToList: abajo se remueven, y NpcsOnMap devuelve la lista VIVA del índice
         foreach (var npc in victimas)
         {
-            _npcs?.CancelRespawn(npc.CharIndex);   // VB6 QuitarNPC: tampoco respawnean las de /MASSKILL
-            _world.RemoveNpc(npc.CharIndex);
+            _world.RemoveNpc(npc.CharIndex, ReaparicionNpc.Ninguna);   // VB6 QuitarNPC
             _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
         Console.WriteLine($"[{session.RemoteEndpoint}] /MASSKILL {p!.Name}: {victimas.Count} criaturas");
@@ -6385,8 +6383,7 @@ public sealed partial class PacketDispatcher
         if (!IsAltoGm(p)) return;   // gate silencioso
         var npc = TargetNpcDe(p!);
         if (npc is null) return;   // el VB6 sale en silencio si no hay target
-        _npcs?.CancelRespawn(npc.CharIndex);   // "sin respawn" de verdad: si no, reaparecía a los 5 s
-        _world.RemoveNpc(npc.CharIndex);
+        _world.RemoveNpc(npc.CharIndex, ReaparicionNpc.Ninguna);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         Console.WriteLine($"[{session.RemoteEndpoint}] /MATA {p!.Name} -> {npc.Name}");
     }

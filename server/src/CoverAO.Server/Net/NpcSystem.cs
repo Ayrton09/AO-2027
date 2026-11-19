@@ -68,26 +68,14 @@ public sealed class NpcSystem
         public bool PosOrig;
     }
 
-    /// <summary>Da de baja el respawn de una criatura (VB6 <c>QuitarNPC</c>, MODULO_NPCs.bas:328): la saca del
-    /// ciclo para siempre, que es lo que distingue a /MATA y /MASSKILL de una muerte normal —en el original el
-    /// respawn vive sólo en <c>MuereNpc</c>, no en QuitarNPC. Se llama antes de retirar al NPC del mundo.
-    /// El índice sólo contiene vivos, así que un CharIndex reciclado no afecta una reaparición pendiente.</summary>
-    public void CancelRespawn(short charIndex) => _spawnsVivos.Remove(charIndex);
-
-    /// <summary>Reaparece en la próxima vuelta, sin esperar el tiempo de respawn (VB6 <c>ReSpawnNpc</c> después de
-    /// <c>QuitarNPC</c>, el /RMATA): la criatura vuelve a su lugar de origen.</summary>
-    public void ReaparecerYa(short charIndex)
+    /// <summary>El retiro ya trae la decisión de reaparición. El índice sólo contiene criaturas vivas,
+    /// así que reciclar un CharIndex deja intactas las reapariciones pendientes.</summary>
+    private void AnotarBaja(short charIndex, ReaparicionNpc reaparicion)
     {
         if (!_spawnsVivos.Remove(charIndex, out var spawn)) return;
         spawn.CharIndex = 0;
-        _respawns.Enqueue(spawn, 0);
-    }
-
-    private void AnotarBaja(short charIndex)
-    {
-        if (!_spawnsVivos.Remove(charIndex, out var spawn)) return;
-        spawn.CharIndex = 0;
-        _bajas.Add(spawn);
+        if (reaparicion == ReaparicionNpc.Normal) _bajas.Add(spawn);
+        else if (reaparicion == ReaparicionNpc.Inmediata) _respawns.Enqueue(spawn, 0);
     }
 
     public NpcSystem(World world, GameData data, bool gmsPerseguibles = false, ServerIni? ini = null)

@@ -254,8 +254,7 @@ public sealed partial class PacketDispatcher
     {
         if (_centinelaNpcCharIndex == 0) return;
         var npc = _world.NpcByIndex(_centinelaNpcCharIndex);
-        _npcs?.CancelRespawn(_centinelaNpcCharIndex);
-        _world.RemoveNpc(_centinelaNpcCharIndex);
+        _world.RemoveNpc(_centinelaNpcCharIndex, ReaparicionNpc.Ninguna);
         if (npc is not null)
             _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(_centinelaNpcCharIndex, faded: true));
         _centinelaNpcCharIndex = 0;
