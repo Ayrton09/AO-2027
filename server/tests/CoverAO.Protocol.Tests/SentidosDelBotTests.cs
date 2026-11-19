@@ -284,6 +284,25 @@ public class SentidosDelBotTests
     }
 
     [Fact]
+    public void El_radio_descarta_montones_antes_de_evaluar_si_entran_en_la_mochila()
+    {
+        var s = Ubicado(50, 50);
+        s.Recibir(ServerMessages.ObjectCreate(59, 50, 26, 1));
+        s.Recibir(ServerMessages.ObjectCreate(58, 50, 461, 3));
+        s.Recibir(ServerMessages.ObjectCreate(50, 58, 462, 3));
+        var evaluados = new List<short>();
+
+        var botin = s.BotinMasCercano(_ => true, esOro: obj =>
+        {
+            evaluados.Add(obj);
+            return false;
+        }, radio: 8);
+
+        Assert.Equal(((byte)58, (byte)50), botin?.Donde);
+        Assert.Equal(new short[] { 461 }, evaluados);
+    }
+
+    [Fact]
     public void Con_mochila_llena_busca_el_monton_que_entra_o_el_oro()
     {
         var s = Ubicado(50, 50);

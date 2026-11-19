@@ -916,13 +916,15 @@ public sealed class Navegante
     public (byte X, byte Y, int Rinde, int Suma)? LoQueSuma(int mapa, (byte X, byte Y) desde, Func<int, int> rinde)
     {
         if (!_datos.MapSpawns.TryGetValue(mapa, out var lista)) return null;
-        var alcanzables = Alcanzables(mapa, desde);
+        HashSet<int>? alcanzables = null;
         (byte X, byte Y, int Rinde)? mejor = null;
         int mejorPasos = int.MaxValue, suma = 0;
         foreach (var s in lista)
         {
             int da = rinde(s.NpcIndex);
-            if (da <= 0 || !alcanzables.Contains(Clave((byte)s.X, (byte)s.Y))) continue;
+            if (da <= 0) continue;
+            alcanzables ??= Alcanzables(mapa, desde);
+            if (!alcanzables.Contains(Clave((byte)s.X, (byte)s.Y))) continue;
             suma += da;
             int pasos = Math.Abs(s.X - desde.X) + Math.Abs(s.Y - desde.Y);
             if (mejor is { } ya && (da < ya.Rinde || (da == ya.Rinde && pasos >= mejorPasos))) continue;

@@ -763,19 +763,20 @@ public sealed class SentidosDelBot
     /// morir. <paramref name="sirveLaBaldosa"/> deja afuera baldosas aunque lo tirado sirva: el botín que queda al lado de lo
     /// peligroso no se elige (ver <c>Bot.ArrimaAlPeligroAlBotin</c>).</summary>
     public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano(Func<short, bool> vale, Func<(byte X, byte Y), bool>? sirveLaBaldosa = null,
-        Func<short, bool>? esOro = null)
+        Func<short, bool>? esOro = null, int radio = int.MaxValue)
     {
         lock (_candado)
         {
             if (!_tengoPosicion) return null;
-            ((byte, byte), int)? mejor = null;
+            ((byte X, byte Y) Donde, int Pasos)? mejor = null;
             foreach (var (baldosa, (obj, cantidad)) in _enElPiso)
             {
+                int pasos = Math.Abs(baldosa.X - _x) + Math.Abs(baldosa.Y - _y);
+                if (pasos > radio || (mejor is { } elegido && pasos >= elegido.Pasos)) continue;
                 if (!vale(obj) || sirveLaBaldosa?.Invoke(baldosa) == false) continue;
                 // PickUp levanta el montón entero en una sola ranura. El oro va directo a la billetera.
                 if (esOro is not null && !esOro(obj) && !CabeEnLaMochila(obj, cantidad)) continue;
-                int pasos = Math.Abs(baldosa.X - _x) + Math.Abs(baldosa.Y - _y);
-                if (mejor is null || pasos < mejor.Value.Item2) mejor = (baldosa, pasos);
+                mejor = (baldosa, pasos);
             }
             return mejor;
         }

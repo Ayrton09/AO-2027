@@ -127,7 +127,7 @@ public sealed class EstadoPublico
         });
     }
 
-    /// <summary>La tabla, ordenada por nivel y experiencia. La lee el almacén (<see cref="IAlmacen.FilasDeRanking"/>), que
+    /// <summary>La tabla, ordenada por nivel y experiencia. La lee el almacén (<see cref="IAlmacen.PrimerasFilasDeRanking"/>), que
     /// también sabe cómo se escribe cada nombre; acá se deja afuera al staff.
     ///
     /// <para>Un personaje ilegible NO voltea la tabla. Es la diferencia entre "a alguien se le cortó un guardado" y "la
@@ -135,11 +135,7 @@ public sealed class EstadoPublico
     /// </summary>
     private object[] ArmarRanking()
     {
-        var filas = _almacen.FilasDeRanking().Where(f => !_esStaff(f.Nombre));
-        return filas
-            .OrderByDescending(f => f.Nivel).ThenByDescending(f => f.Exp)
-            .ThenBy(f => f.Nombre, StringComparer.OrdinalIgnoreCase)
-            .Take(_tope)
+        return _almacen.PrimerasFilasDeRanking(_tope, _esStaff)
             .Select((f, i) => (object)new
             {
                 puesto = i + 1,

@@ -421,11 +421,49 @@ public abstract class AlmacenRelacional : IAlmacen, IDisposable
                         "FROM personajes WHERE borrado_en IS NULL";
         using var r = c.ExecuteReader();
         var filas = new List<CharacterFile.FilaDeRanking>();
-        while (r.Read())
-            filas.Add(new CharacterFile.FilaDeRanking(r.GetString(0), (int)Entero(r, 1), r.GetDouble(2), (byte)Entero(r, 3),
-                r.GetString(4), Math.Max(0, (int)Entero(r, 5)), Math.Max(0, (int)Entero(r, 6)), Math.Max(0, (int)Entero(r, 7))));
+        while (r.Read()) filas.Add(LeerFilaDeRanking(r));
         return filas;
     }
+
+    public IReadOnlyList<CharacterFile.FilaDeRanking> PrimerasFilasDeRanking(int tope, Func<string, bool> esStaff)
+    {
+        if (tope <= 0) return Array.Empty<CharacterFile.FilaDeRanking>();
+        using var con = OtraConexion();
+        using var c = con.CreateCommand();
+        // El índice de ranking alcanza para localizar el corte. Se incluyen todos los empates del último
+        // puesto para usar el mismo orden ordinal para nombres en SQLite, PostgreSQL y archivos.
+        c.CommandText = """
+            WITH primeros AS (
+                SELECT nivel, exp FROM personajes WHERE borrado_en IS NULL
+                ORDER BY nivel DESC, exp DESC LIMIT @cantidad
+            ), corte AS (
+                SELECT nivel, exp FROM primeros ORDER BY nivel, exp LIMIT 1
+            )
+            SELECT nombre, nivel, exp, clase, clan, usuarios_matados, criaturas_matadas, veces_muerto
+            FROM personajes
+            WHERE borrado_en IS NULL AND (nivel, exp) >= (SELECT nivel, exp FROM corte)
+            """;
+        var cantidad = Param(c, "@cantidad");
+        var elegibles = new List<CharacterFile.FilaDeRanking>();
+        for (long ventana = tope; ; ventana *= 2)
+        {
+            cantidad.Value = ventana;
+            elegibles.Clear();
+            long leidas = 0;
+            using var r = c.ExecuteReader();
+            while (r.Read())
+            {
+                leidas++;
+                if (!esStaff(r.GetString(0))) elegibles.Add(LeerFilaDeRanking(r));
+            }
+            if (elegibles.Count >= tope || leidas < ventana)
+                return IAlmacen.OrdenarRanking(elegibles, tope);
+        }
+    }
+
+    private static CharacterFile.FilaDeRanking LeerFilaDeRanking(DbDataReader r) =>
+        new(r.GetString(0), (int)Entero(r, 1), r.GetDouble(2), (byte)Entero(r, 3), r.GetString(4),
+            Math.Max(0, (int)Entero(r, 5)), Math.Max(0, (int)Entero(r, 6)), Math.Max(0, (int)Entero(r, 7)));
 
     // ── Lo que guarda el mundo ──────────────────────────────────────────────────────────────────────────────────
 

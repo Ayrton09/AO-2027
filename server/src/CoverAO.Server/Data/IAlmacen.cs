@@ -40,6 +40,14 @@ public interface IAlmacen
     /// Un personaje ilegible se saltea: no puede voltear la tabla.</summary>
     IReadOnlyList<CharacterFile.FilaDeRanking> FilasDeRanking();
 
+    IReadOnlyList<CharacterFile.FilaDeRanking> PrimerasFilasDeRanking(int tope, Func<string, bool> esStaff) =>
+        OrdenarRanking(FilasDeRanking().Where(f => !esStaff(f.Nombre)), tope);
+
+    internal static IReadOnlyList<CharacterFile.FilaDeRanking> OrdenarRanking(
+        IEnumerable<CharacterFile.FilaDeRanking> filas, int tope) =>
+        filas.OrderByDescending(f => f.Nivel).ThenByDescending(f => f.Exp)
+            .ThenBy(f => f.Nombre, StringComparer.OrdinalIgnoreCase).Take(tope).ToArray();
+
     // ── Lo que guarda el mundo. Se lee al arrancar y se escribe desde el volcado diferido del juego. ─────────────────
 
     IReadOnlyList<ClanGuardado> LeerClanes();

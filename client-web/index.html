@@ -1625,6 +1625,8 @@
       }).join('');
     }
     const ground = new Map();      // "x,y" -> {objIndex, amount}  (dropped items, from ObjectCreate/Delete)
+    const sueloOrdenado = new WeakMap();
+    function limpiarSuelo() { ground.clear(); sueloOrdenado.delete(ground); }
     // El grupo de partículas de cada BALDOSA: "x,y" -> grupo (ver `crearGrupo`). Es el `MapData(X, Y).particle_group`
     // del original, y por eso lo comparten los emisores que trae el mapa y los hechizos de área: uno pisa al otro.
     // Se declara ACÁ, con el resto del estado que se tira al cambiar de mapa, y no junto al código que la usa unas
@@ -2125,7 +2127,7 @@
       // `emisores` también: su clave es "x,y" SIN el mapa, así que sin vaciarlo la antorcha de una baldosa se
       // encuentra con las partículas a medio vivir de lo que hubiera en esa misma baldosa del mapa anterior. Y
       // como nunca se vaciaba, el Map se iba llenando de emisores de mapas que ya no se ven.
-      dying.clear(); ground.clear(); emisores.clear(); emisoresApagados.clear(); cambiosDeBloqueo.clear(); map = null;
+      dying.clear(); limpiarSuelo(); emisores.clear(); emisoresApagados.clear(); cambiosDeBloqueo.clear(); map = null;
       fetch(`./assets/map${n}.json`).then((r) => (r.ok ? r.json() : null))
         .then((m) => { if (currentMap === n) { map = m; armarBloqueos(m); mostrarCartelDeMapa(m); ponerMusica(m); draw(); } }).catch(() => {});
       draw();
@@ -3357,10 +3359,21 @@
       nombre: barraJefe && barraJefe.querySelector('.bj-nombre').textContent,
       numero: barraJefe && barraJefe.querySelector('.bj-numero').textContent });
     const minimapCv = document.getElementById('minimap');
+    const mx = minimapCv.getContext('2d');
+    let miniDibujado = null, miniX = null, miniY = null;
     function drawMinimap(map, me) {
-      const mx = minimapCv.getContext('2d');
-      if (!map || !miniColor) { mx.clearRect(0, 0, minimapCv.width, minimapCv.height); return; }
-      if (minimapCv.width !== map.w || minimapCv.height !== map.h) { minimapCv.width = map.w; minimapCv.height = map.h; }
+      if (!map || !miniColor) {
+        if (miniDibujado) mx.clearRect(0, 0, minimapCv.width, minimapCv.height);
+        miniDibujado = null;
+        return;
+      }
+      if (minimapCv.width !== map.w || minimapCv.height !== map.h) {
+        minimapCv.width = map.w;
+        minimapCv.height = map.h;
+        miniDibujado = null;
+      }
+      const x = me?.x ?? null, y = me?.y ?? null;
+      if (miniDibujado && miniDibujado === map._mini && miniX === x && miniY === y) return;
       if (!map._mini) {
         const mc = document.createElement('canvas'); mc.width = map.w; mc.height = map.h;
         const bx = mc.getContext('2d');
@@ -3386,6 +3399,9 @@
       mx.imageSmoothingEnabled = false;
       mx.drawImage(map._mini, 0, 0);
       if (me) { mx.fillStyle = '#ff0000'; mx.fillRect(me.x - map.xmin - 1, me.y - map.ymin - 1, 3, 3); }
+      miniDibujado = map._mini;
+      miniX = x;
+      miniY = y;
     }
 
     // Chat con pestañas (Todo / Combate / Global). Cada línea guarda su texto; al cambiar de pestaña se
@@ -3736,7 +3752,7 @@
         selectedSpell = 0;
         salirDePunteria();
         $('ayuda-muerte').hidden = true;
-        ground.clear();
+        limpiarSuelo();
         if (lastReject && !wasLogged) {                    // el server rechazó ESTE intento (cuenta/pass/nombre)
           statusEl.textContent = 'desconectado';
           showLogin(); loginErr(lastReject);
@@ -5243,8 +5259,13 @@
         // x/y van TAMBIÉN adentro del valor. La clave del Map es la cadena "x,y" y el render la partía con
         // `key.split(',').map(Number)` en cada cuadro y en dos bucles distintos: cuatro arrays por ítem tirado
         // por cuadro para volver a los dos números que ya teníamos acá.
-        case 'ObjectCreate': ground.set(f.x + ',' + f.y, { objIndex: f.objIndex, amount: f.amount, x: f.x, y: f.y }); break; // dropped item on the ground
-        case 'ObjectDelete': ground.delete(f.x + ',' + f.y); break;
+        case 'ObjectCreate':
+          ground.set(f.x + ',' + f.y, { objIndex: f.objIndex, amount: f.amount, x: f.x, y: f.y });
+          sueloOrdenado.delete(ground);
+          break;
+        case 'ObjectDelete':
+          if (ground.delete(f.x + ',' + f.y)) sueloOrdenado.delete(ground);
+          break;
         // El teleport reubica sin pasar por la cola: lo que venga después no es confirmación de nada.
         // Teleporte a otro mapa. Además de cambiar el mapa hay que CORTAR el deslizamiento en curso: si no,
         // el paso que estaba a mitad de camino en el mapa viejo se sigue interpolando sobre el nuevo, con
@@ -5673,8 +5694,12 @@
       level: $('levelnum'), xpfill: $('xpfill'), xptxt: $('xptxt'), gold: $('v-gold'),
       str: $('a-str'), agi: $('a-agi'), name: $('charname'), mapa: $('mapname'),
     };
+    const valoresDeBarra = {};
     function setBar(k, cur, max) {
       const c = Math.max(0, cur | 0), m = Math.max(1, max | 0);
+      const anterior = valoresDeBarra[k];
+      if (anterior?.cur === c && anterior.max === m) return;
+      valoresDeBarra[k] = { cur: c, max: m };
       esc_(fillEl[k], 'w', Math.max(0, Math.min(100, c / m * 100)) + '%');
       esc_(valEl[k], 't', c + '/' + m);
     }
@@ -5691,10 +5716,10 @@
         // La barra sola no dice nada: a nivel 1 con 0 de experiencia es un rectángulo negro y el jugador no
         // tiene forma de saber cuánto le falta. Va el número adentro, como en las barras de vida/maná.
         if (s.exp != null && s.elu) {
-          esc_(hudEl.xpfill, 'w', Math.max(0, Math.min(100, s.exp / s.elu * 100)) + '%');
           // El toLocaleString sólo se paga cuando exp o elu cambiaron de verdad, no en cada frame.
           if (_expCache.e !== s.exp || _expCache.l !== s.elu) {
             _expCache.e = s.exp; _expCache.l = s.elu;
+            esc_(hudEl.xpfill, 'w', Math.max(0, Math.min(100, s.exp / s.elu * 100)) + '%');
             esc_(hudEl.xptxt, 't', `${(+s.exp).toLocaleString('es-AR')} / ${(+s.elu).toLocaleString('es-AR')}`);
           }
         }
@@ -6736,12 +6761,14 @@
         const m = (iDeco + decoHi) >> 1;
         if (deco[m][1] < decoY0) iDeco = m + 1; else decoHi = m;
       }
-      // La capa 2 (objetos del mundo) y los objetos TIRADOS, mezclados y ordenados por (y, x). Los del
-      // suelo se rearman en cada cuadro a propósito: son pocos y cambian solos (los tira y los junta la
-      // gente), así que cachearlos costaría más de lo que ahorra.
+      // La capa 2 y los objetos tirados se mezclan por (y, x). El orden del suelo se actualiza al cambiar el contenido.
       const objsMapa = (map && map.objs) || [];
       let iObj = 0;
-      const delSuelo = [...ground.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+      let delSuelo = sueloOrdenado.get(ground);
+      if (!delSuelo) {
+        delSuelo = [...ground.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+        sueloOrdenado.set(ground, delSuelo);
+      }
       let iSuelo = 0;
       // Los carteles de los portales del mapa van en SU fila, como un objeto más: así los tapa lo que está delante.
       // El portal que sí vino como objeto (el de un hechizo) lo nombra `pintarObjetoDelSuelo`.

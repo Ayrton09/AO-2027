@@ -1,5 +1,6 @@
 ﻿using CoverAO.Protocol;
 using CoverAO.Server.Game;
+using System.Buffers.Binary;
 
 namespace CoverAO.Server.Net;
 
@@ -420,12 +421,18 @@ public static class ServerMessages
         new ByteQueueWriter().WritePacketId(ServerPacketId.UserCharIndexInServer).WriteInteger(charIndex).ToArray();
 
     public static byte[] PosUpdate(byte x, byte y) =>
-        new ByteQueueWriter().WritePacketId(ServerPacketId.PosUpdate).WriteByte(x).WriteByte(y).ToArray();
+        [(byte)ServerPacketId.PosUpdate, x, y];
 
     /// <summary>Another character moved (broadcast to observers). Layout: CharIndex, X, Y.</summary>
-    public static byte[] CharacterMove(short charIndex, byte x, byte y) =>
-        new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterMove)
-            .WriteInteger(charIndex).WriteByte(x).WriteByte(y).ToArray();
+    public static byte[] CharacterMove(short charIndex, byte x, byte y)
+    {
+        var paquete = new byte[5];
+        paquete[0] = (byte)ServerPacketId.CharacterMove;
+        BinaryPrimitives.WriteInt16LittleEndian(paquete.AsSpan(1), charIndex);
+        paquete[3] = x;
+        paquete[4] = y;
+        return paquete;
+    }
 
     /// <summary>Se saca un personaje de la pantalla. Layout: CharIndex, Desvanecido(bool).
     ///
@@ -443,9 +450,14 @@ public static class ServerMessages
     /// <para>Los avisos de que algo salió de VISTA son nuestros: el original no los manda desde su sistema
     /// de áreas (no hay un solo <c>PrepareMessageCharacterRemove</c> en ModAreas.bas). Van en <c>true</c>,
     /// que es lo que el cliente ya venía dibujando.</para></summary>
-    public static byte[] CharacterRemove(short charIndex, bool faded) =>
-        new ByteQueueWriter().WritePacketId(ServerPacketId.CharacterRemove)
-            .WriteInteger(charIndex).WriteBoolean(faded).ToArray();
+    public static byte[] CharacterRemove(short charIndex, bool faded)
+    {
+        var paquete = new byte[4];
+        paquete[0] = (byte)ServerPacketId.CharacterRemove;
+        BinaryPrimitives.WriteInt16LittleEndian(paquete.AsSpan(1), charIndex);
+        paquete[3] = faded ? (byte)1 : (byte)0;
+        return paquete;
+    }
 
     /// <summary>A character's nick tag / faction status changed (nick colour + donor flag). Layout id 82.</summary>
     /// <summary>VB6 <c>RefreshCharStatus</c> (Modulo_UsUaRiOs.bas:222-227): con <c>showName</c> en false NO manda

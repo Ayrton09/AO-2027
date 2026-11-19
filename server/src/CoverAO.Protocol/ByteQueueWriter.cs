@@ -97,7 +97,7 @@ public sealed class ByteQueueWriter
 
     public ByteQueueWriter WriteBytes(ReadOnlySpan<byte> bytes)
     {
-        foreach (byte value in bytes) _buf.Add(value);
+        _buf.AddRange(bytes);
         return this;
     }
 }

@@ -49,6 +49,19 @@ public class ByteQueueTests
     }
 
     [Fact]
+    public void RawBytesAppendAcrossCapacityWithoutChangingAnEarlierSnapshot()
+    {
+        byte[] cuerpo = Enumerable.Range(0, 256).Select(i => (byte)i).ToArray();
+        var writer = new ByteQueueWriter().WriteByte(0x7F);
+        byte[] antes = writer.ToArray();
+        byte[] despues = writer.WriteBytes(cuerpo).ToArray();
+
+        Assert.Equal(new byte[] { 0x7F }, antes);
+        Assert.Equal(257, writer.Length);
+        Assert.Equal(cuerpo, despues[1..]);
+    }
+
+    [Fact]
     public void CompositeFrameMatchesExpectedBytes()
     {
         // e.g. a Talk-like frame: [id=3][ascii "Hola AO"]

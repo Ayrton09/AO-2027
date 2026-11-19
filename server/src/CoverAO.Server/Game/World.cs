@@ -198,16 +198,9 @@ public sealed class World
         get { foreach (var kv in _players) yield return kv.Value; }
     }
 
-    /// <summary>El jugador conectado con ese charIndex, o null. El original indexa <c>UserList()</c> directo;
-    /// acá se recorre, que para los pocos usos que tiene —resolver el dueño de una criatura apropiada— da lo
-    /// mismo y no obliga a mantener un índice más en sincronía.</summary>
-    public Player? PlayerByCharIndex(short charIndex)
-    {
-        if (charIndex == 0) return null;
-        foreach (var kv in _players)
-            if (kv.Value.CharIndex == charIndex) return kv.Value;
-        return null;
-    }
+    /// <summary>El jugador conectado con ese charIndex, o null.</summary>
+    public Player? PlayerByCharIndex(short charIndex) =>
+        charIndex != 0 && _players.TryGetValue(charIndex, out var jugador) ? jugador : null;
 
     /// <summary>Busca un jugador ONLINE por nombre, sin distinguir mayúsculas (VB6 <c>NameIndex</c>,
     /// GameLogic.bas:340).
@@ -435,12 +428,14 @@ public sealed class World
     /// <summary>Se dispara cuando el estado del familiar de alguien cambio por algo que paso en el mundo (hoy:
     /// su criatura salio de el). Lo engancha el despachador para mandarle la ficha al dueño.</summary>
     public System.Action<Player>? CambioElFamiliar;
+    internal event Action<short>? NpcRetirado;
 
     public void RemoveNpc(short charIndex)
     {
         if (!_npcs.Remove(charIndex, out var npc)) return;
         DesindexarNpc(npc);
         if (npc.ExpireAtTick > 0) _npcsConVencimiento.Remove(npc);
+        NpcRetirado?.Invoke(charIndex);
         // Si alguien la tenía APROPIADA, se le suelta (VB6 MODULO_NPCs.bas:340, `Owner = 0` al morir). Acá se
         // limpia además el lado del jugador, que allá queda con el índice viejo: nuestro charIndex se reutiliza
         // y una marca colgada podría terminar apuntando a otra criatura.

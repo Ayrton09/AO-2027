@@ -3014,8 +3014,8 @@ public sealed partial class Bot
         long ahora = Environment.TickCount64;
         if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !SigueSinServir(_nadaQueHacerAca, (mapa, baldosa.X, baldosa.Y), ahora)
                                                                   && !ArrimaAlPeligroAlBotin(yo, baldosa, peligros),
-                                    esOro: obj => _entorno.Datos.Obj(obj)?.IsGold == true) is not { } botin
-            || botin.Pasos > RadioDeBotin) return false;
+                                    esOro: obj => _entorno.Datos.Obj(obj)?.IsGold == true,
+                                    radio: RadioDeBotin) is not { } botin) return false;
 
         bool llego = false;
         short queHabia = 0, hayAhora = 0;
@@ -8066,8 +8066,12 @@ public sealed partial class Bot
     public static bool LoArrimaAlPeligro((byte X, byte Y) desde, (byte X, byte Y) hasta, IReadOnlyCollection<(byte X, byte Y)> peligros)
     {
         if (peligros.Count == 0) return false;
-        int despues = peligros.Min(p => Math.Abs(p.X - hasta.X) + Math.Abs(p.Y - hasta.Y));
-        int antes = peligros.Min(p => Math.Abs(p.X - desde.X) + Math.Abs(p.Y - desde.Y));
+        int antes = int.MaxValue, despues = int.MaxValue;
+        foreach (var (x, y) in peligros)
+        {
+            antes = Math.Min(antes, Math.Abs(x - desde.X) + Math.Abs(y - desde.Y));
+            despues = Math.Min(despues, Math.Abs(x - hasta.X) + Math.Abs(y - hasta.Y));
+        }
         return despues <= RadioDeSusto && despues <= antes;
     }
 

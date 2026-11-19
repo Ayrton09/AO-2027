@@ -30,6 +30,48 @@ public class NpcAiTests
         new(Index: 1, Name: name, Body: 1, Head: 1, Heading: 3, MaxHp: 1000, MinHit: 1, MaxHit: 1,
             Def: 0, GiveExp: 0, GiveGld: 0, PoderEvasion: 0, PoderAtaque: 10_000);
 
+    private sealed class Observador : IConnection
+    {
+        public string RemoteEndpoint => "local";
+        public long UltimaActividadMs => 0;
+        public List<byte[]> Paquetes { get; } = new();
+        public void Send(byte[] paquete) => Paquetes.Add(paquete);
+        public void Close(string motivo) { }
+    }
+
+    [Fact]
+    public void Al_cruzar_de_area_reusa_el_movimiento_y_avisa_altas_y_bajas()
+    {
+        var mundo = new World();
+        var sistema = new NpcSystem(mundo, new GameData());
+        var desde = new WorldPos(1, 17, 25);
+        var hasta = new WorldPos(1, 18, 25);
+        var npc = new Npc { CharIndex = 0x1234, Template = Template("Murciélago"), Hp = 1000, Pos = hasta };
+        Observador Observar(byte x, short mapa = 1)
+        {
+            var p = PlayerAt(mundo, $"Observador{mapa}x{x}", x, 25);
+            var observador = new Observador();
+            p.Pos = new WorldPos(mapa, x, 25);
+            p.Connection = observador;
+            return observador;
+        }
+        var sale = Observar(8);
+        var a = Observar(12);
+        var b = Observar(22);
+        var entra = Observar(28);
+        var lejos = Observar(12, mapa: 2);
+        var emitir = typeof(NpcSystem).GetMethod("BroadcastNpcMove",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        emitir.Invoke(sistema, new object[] { npc, desde, hasta });
+
+        var mov = Assert.Single(a.Paquetes);
+        Assert.Same(mov, Assert.Single(b.Paquetes));
+        Assert.Equal(new byte[] { (byte)CoverAO.Protocol.ServerPacketId.CharacterMove, 0x34, 0x12, 18, 25 }, mov);
+        Assert.Equal(ServerMessages.CharacterCreate(npc), Assert.Single(entra.Paquetes));
+        Assert.Equal(new byte[] { (byte)CoverAO.Protocol.ServerPacketId.CharacterRemove, 0x34, 0x12, 1 }, Assert.Single(sale.Paquetes));
+        Assert.Empty(lejos.Paquetes);
+    }
+
     private static Player PlayerAt(World world, string name, byte x, byte y)
     {
         var p = new Player { CharIndex = world.AllocateCharIndex(), Name = name, Account = "cuenta_test" }; // sin Connection: los Send son no-op

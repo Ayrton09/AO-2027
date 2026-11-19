@@ -153,7 +153,7 @@ async function juntar(cuerpo, tope, aTiempo = (promesa) => promesa) {
   const partes = [];
   for (let total = 0; ;) {
     const { done, value } = await aTiempo(lector.read());
-    if (done) return Buffer.concat(partes);
+    if (done) return partes.length === 1 ? partes[0] : Buffer.concat(partes, total);
     if ((total += value.byteLength) > tope) { lector.cancel().catch(() => {}); return null; }
     partes.push(Buffer.from(value));
   }

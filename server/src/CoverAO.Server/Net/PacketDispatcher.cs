@@ -6229,9 +6229,9 @@ public sealed partial class PacketDispatcher
         var npc = p!.TargetNpc > 0 ? _world.NpcByIndex(p.TargetNpc) : null;
         if (npc is null) { session.Send(ServerMessages.LocaleMsg(22)); return; }
         session.Send(ServerMessages.ConsoleMsg($"RMatas (con posible respawn) a: {npc.Name}", FuenteInfo));
+        _npcs?.ReaparecerYa(npc.CharIndex);
         _world.RemoveNpc(npc.CharIndex);
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
-        _npcs?.ReaparecerYa(npc.CharIndex);
         p.TargetNpc = 0;
     }
 

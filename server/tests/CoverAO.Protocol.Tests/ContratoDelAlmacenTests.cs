@@ -250,6 +250,23 @@ public abstract class ContratoDelAlmacen : IDisposable
     }
 
     [Fact]
+    public void El_top_saltea_staff_y_conserva_todos_los_empates_del_corte()
+    {
+        var cuenta = CuentaGuardada("Duena");
+        foreach (var (nombre, nivel, exp) in new (string, byte, double)[]
+        {
+            ("Admin", 50, 500), ("Guia", 49, 500), ("Zeta", 40, 800),
+            ("alfa", 40, 800), ("Beta", 40, 800), ("Bajo", 39, 999)
+        })
+            Assert.True(Almacen.CrearPersonaje(cuenta, FichasDePrueba.Llena(nombre) with { Nivel = nivel, Exp = exp }));
+
+        bool EsStaff(string nombre) => nombre is "Admin" or "Guia";
+        Assert.Equal(new[] { "alfa", "Beta" }, Almacen.PrimerasFilasDeRanking(2, EsStaff).Select(f => f.Nombre));
+        Assert.Equal(new[] { "alfa", "Beta", "Zeta", "Bajo" }, Almacen.PrimerasFilasDeRanking(25, EsStaff).Select(f => f.Nombre));
+        Assert.Empty(Almacen.PrimerasFilasDeRanking(2, _ => true));
+    }
+
+    [Fact]
     public void El_resumen_de_la_lista_de_personajes()
     {
         var cuenta = CuentaGuardada("Duena");

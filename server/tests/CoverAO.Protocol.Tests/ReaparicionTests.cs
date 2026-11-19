@@ -68,6 +68,45 @@ public class ReaparicionTests
         Assert.Equal(suBaldosa, npc.Pos);
     }
 
+    [Fact]
+    public void Las_bajas_que_vencen_juntas_respetan_la_espera_y_el_orden_de_alta()
+    {
+        var (world, sys, _) = Escena();
+        var primero = new WorldPos(1, 30, 30);
+        var segundo = new WorldPos(1, 40, 40);
+        short a = sys.AddSpawn(Bicho(posOrig: true), primero);
+        short b = sys.AddSpawn(Bicho(posOrig: true), segundo);
+        world.RemoveNpc(b);
+        world.RemoveNpc(a);
+
+        sys.Update(10);
+        sys.Update(10 + RespawnTicks - 1);
+        Assert.Empty(world.Npcs);
+
+        sys.Update(10 + RespawnTicks);
+        Assert.Equal(new[] { primero, segundo }, world.Npcs.OrderBy(npc => npc.CharIndex).Select(npc => npc.Pos));
+    }
+
+    [Fact]
+    public void El_retiro_sin_respawn_y_la_reaparicion_inmediata_siguen_caminos_distintos()
+    {
+        var (world, sys, _) = Escena();
+        var retiro = new WorldPos(1, 30, 30);
+        var regreso = new WorldPos(1, 40, 40);
+        short a = sys.AddSpawn(Bicho(posOrig: true), retiro);
+        short b = sys.AddSpawn(Bicho(posOrig: true), regreso);
+        sys.CancelRespawn(a);
+        world.RemoveNpc(a);
+        sys.ReaparecerYa(b);
+        world.RemoveNpc(b);
+
+        Assert.Empty(world.Npcs);
+        sys.Update(10);
+        Assert.Equal(regreso, Assert.Single(world.Npcs).Pos);
+        sys.Update(10 + RespawnTicks);
+        Assert.Equal(regreso, Assert.Single(world.Npcs).Pos);
+    }
+
     /// <summary>LA QUE CREA UN GM REAPARECE AL AZAR aunque su ficha traiga PosOrig: <c>SpawnNpc</c> no le guarda <c>Orig</c>,
     /// que sólo lo guarda la carga del mapa. Al azar puede caer justo en su baldosa: se mira en varias reapariciones.</summary>
     [Fact]

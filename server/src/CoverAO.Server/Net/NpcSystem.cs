@@ -50,7 +50,11 @@ public sealed class NpcSystem
     private readonly World _world;
     private readonly GameData _data;
     private readonly Random _rng = new();
-    private readonly List<Spawn> _spawns = new();
+    private readonly Dictionary<short, Spawn> _spawnsVivos = new();
+    private readonly List<Spawn> _bajas = new();
+    private readonly PriorityQueue<Spawn, long> _respawns = new();
+    private readonly List<Spawn> _respawnsVencidos = new();
+    private long _ordenDeSpawn;
     private readonly ServerIni? _ini;
 
     private sealed class Spawn
@@ -59,35 +63,31 @@ public sealed class NpcSystem
         public required WorldPos Pos;
         public int Movement;
         public bool Hostile;
+        public long Orden;
         public short CharIndex;
-        public bool Alive;
-        public long RespawnAtTick;
         public bool PosOrig;
     }
 
     /// <summary>Da de baja el respawn de una criatura (VB6 <c>QuitarNPC</c>, MODULO_NPCs.bas:328): la saca del
     /// ciclo para siempre, que es lo que distingue a /MATA y /MASSKILL de una muerte normal —en el original el
-    /// respawn vive sólo en <c>MuereNpc</c>, no en QuitarNPC. Sin esto, "matar sin respawn" reaparecía a los 5 s.
-    /// Se MARCA el spawn en vez de sacarlo de la lista a propósito: este método lo llama el hilo de la conexión
-    /// mientras Update() itera <c>_spawns</c> en el hilo del loop, y mutar la colección sería una carrera; escribir
-    /// los dos campos es seguro en cualquier intercalado.</summary>
-    ///
-    /// <para>SÓLO EL VIVO: un spawn muerto conserva el CharIndex de la criatura que murió, y ese número se recicla. Sin mirar
-    /// <c>Alive</c>, retirar al centinela le cancelaba para siempre la reaparición a una criatura muerta que había tenido su
-    /// mismo número (auditoría del 13/10). Y el spawn dado de baja se saca de la lista en la próxima vuelta de
-    /// <see cref="Update"/>: cada plantada del centinela dejaba uno para siempre.</para></summary>
-    public void CancelRespawn(short charIndex)
-    {
-        foreach (var s in _spawns)
-            if (s.Alive && s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = long.MaxValue; }
-    }
+    /// respawn vive sólo en <c>MuereNpc</c>, no en QuitarNPC. Se llama antes de retirar al NPC del mundo.
+    /// El índice sólo contiene vivos, así que un CharIndex reciclado no afecta una reaparición pendiente.</summary>
+    public void CancelRespawn(short charIndex) => _spawnsVivos.Remove(charIndex);
 
     /// <summary>Reaparece en la próxima vuelta, sin esperar el tiempo de respawn (VB6 <c>ReSpawnNpc</c> después de
     /// <c>QuitarNPC</c>, el /RMATA): la criatura vuelve a su lugar de origen.</summary>
     public void ReaparecerYa(short charIndex)
     {
-        foreach (var s in _spawns)
-            if (s.Alive && s.CharIndex == charIndex) { s.Alive = false; s.RespawnAtTick = 0; }
+        if (!_spawnsVivos.Remove(charIndex, out var spawn)) return;
+        spawn.CharIndex = 0;
+        _respawns.Enqueue(spawn, 0);
+    }
+
+    private void AnotarBaja(short charIndex)
+    {
+        if (!_spawnsVivos.Remove(charIndex, out var spawn)) return;
+        spawn.CharIndex = 0;
+        _bajas.Add(spawn);
     }
 
     public NpcSystem(World world, GameData data, bool gmsPerseguibles = false, ServerIni? ini = null)
@@ -96,6 +96,7 @@ public sealed class NpcSystem
         _data = data;
         _gmsPerseguibles = gmsPerseguibles;
         _ini = ini;
+        _world.NpcRetirado += AnotarBaja;
     }
 
     /// <summary>Los ticks que tarda en volver esta criatura. Queda en el escalón común si no hay config.</summary>
@@ -146,18 +147,18 @@ public sealed class NpcSystem
     /// plantillas genéricas (Aldeano/Murciélago/Lobo) cuyo Movement es 0 — o sea que, con la IA fiel, un
     /// "banquero" de test se pondría a caminar hacia el jugador. En la data real los servicios SON Movement=1,
     /// así que fijarlo no es hacer trampa: es corregir la infidelidad de reusar una plantilla cualquiera.</summary>
-    public void AddSpawn(NpcInfo template, WorldPos pos, bool hostile = false, int? movement = null, bool? posOrig = null)
+    public short AddSpawn(NpcInfo template, WorldPos pos, bool hostile = false, int? movement = null, bool? posOrig = null)
     {
         var spawn = new Spawn
         {
             Template = template, Pos = pos, Hostile = hostile,
             Movement = movement ?? template.Movement,
+            Orden = _ordenDeSpawn++,
             // Y DÓNDE REAPARECE (ver `Reaparecer`): null = lo que diga su ficha. El fixture lo fija por lo mismo que el
             // Movement: sus criaturas salen de plantillas de campo y tienen que volver a su baldosa de prueba.
             PosOrig = posOrig ?? template.PosOrig,
         };
-        SpawnNow(spawn);
-        _spawns.Add(spawn);
+        return SpawnNow(spawn);
     }
 
     /// <summary>
@@ -182,11 +183,10 @@ public sealed class NpcSystem
              ?? ClosestLegalPos(pos, template.AguaValida)) is not { } donde) return 0;
         // `SpawnNpc` no le guarda `Orig` (eso lo hace sólo la carga del mapa): al morir reaparece al azar aunque su ficha
         // traiga PosOrig.
-        AddSpawn(template, donde, posOrig: false);
-        var spawn = _spawns[^1];
+        short charIndex = AddSpawn(template, donde, posOrig: false);
         _world.BroadcastToObservers(donde, ServerMessages.PlayWave(SndWarp, donde.X, donde.Y));
-        _world.BroadcastToObservers(donde, ServerMessages.CreateFX(spawn.CharIndex, FxWarp, 0));
-        return spawn.CharIndex;
+        _world.BroadcastToObservers(donde, ServerMessages.CreateFX(charIndex, FxWarp, 0));
+        return charIndex;
     }
 
     private const short SndWarp = 3;  // Declares.bas:538
@@ -307,19 +307,29 @@ public sealed class NpcSystem
             _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
 
-        // Los dados de baja (CancelRespawn) no vuelven nunca: afuera de la lista.
-        _spawns.RemoveAll(s => !s.Alive && s.RespawnAtTick == long.MaxValue);
-        // Respawn management: notice kills (handler removed the NPC) and respawn after the delay.
-        foreach (var s in _spawns)
+        // La espera empieza en la vuelta que detecta la baja, como antes. Con espera cero vuelve en la siguiente.
+        foreach (var spawn in _bajas)
+            _respawns.Enqueue(spawn, tick + Math.Max(1, TicksDeRespawn(spawn.Template)));
+        _bajas.Clear();
+        while (_respawns.TryPeek(out _, out long vence) && vence <= tick)
+            _respawnsVencidos.Add(_respawns.Dequeue());
+        if (_respawnsVencidos.Count > 0)
         {
-            if (s.Alive && !_world.HasNpc(s.CharIndex))
+            // Si varias vencen juntas, prueban sus posiciones en el mismo orden de alta que el barrido anterior.
+            _respawnsVencidos.Sort(static (a, b) => a.Orden.CompareTo(b.Orden));
+            int procesados = 0;
+            try
             {
-                s.Alive = false;
-                s.RespawnAtTick = tick + TicksDeRespawn(s.Template);
+                for (; procesados < _respawnsVencidos.Count; procesados++)
+                {
+                    var spawn = _respawnsVencidos[procesados];
+                    if (spawn.CharIndex == 0) Reaparecer(spawn);
+                }
             }
-            else if (!s.Alive && tick >= s.RespawnAtTick)
+            finally
             {
-                Reaparecer(s);
+                // Si el mundo no pudo asignar un índice, sólo se reintentan las reapariciones que faltan.
+                _respawnsVencidos.RemoveRange(0, procesados);
             }
         }
 
@@ -1074,12 +1084,15 @@ public sealed class NpcSystem
     /// walked into view of get a CharacterCreate; players it left get a CharacterRemove.</summary>
     private void BroadcastNpcMove(Npc npc, WorldPos from, WorldPos dest)
     {
+        byte[]? movimiento = null, aparece = null, sale = null;
         foreach (var pl in _world.Players)
         {
-            bool was = World.InView(pl.Pos, from), now = World.InView(pl.Pos, dest);
-            if (was && now) pl.Connection?.Send(ServerMessages.CharacterMove(npc.CharIndex, dest.X, dest.Y));
-            else if (now) pl.Connection?.Send(ServerMessages.CharacterCreate(npc));
-            else if (was) pl.Connection?.Send(ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
+            if (pl.Connection is not { } conexion) continue;
+            var pos = pl.Pos;
+            bool was = World.InView(pos, from), now = World.InView(pos, dest);
+            if (was && now) conexion.Send(movimiento ??= ServerMessages.CharacterMove(npc.CharIndex, dest.X, dest.Y));
+            else if (now) conexion.Send(aparece ??= ServerMessages.CharacterCreate(npc));
+            else if (was) conexion.Send(sale ??= ServerMessages.CharacterRemove(npc.CharIndex, faded: true));
         }
     }
 
@@ -1174,7 +1187,6 @@ public sealed class NpcSystem
     {
         if (s.PosOrig) { SpawnNow(s); return; }
         if (PosicionDeReaparicion(s) is { } donde) { SpawnNow(s, donde); return; }
-        s.RespawnAtTick = long.MaxValue;
         Console.WriteLine($"[npc] {MaxSpawnAttemps} iteraciones en CrearNpc Mapa:{s.Pos.Map} NroNpc:{s.Template.Index}");
     }
 
@@ -1276,7 +1288,7 @@ public sealed class NpcSystem
     public static byte EjercitoDelEnlistador(int npcType, int status) => npcType != 5 ? (byte)0 : status switch
     { 1 => Player.StatusArmada, 2 => Player.StatusMilicia, 4 => Player.StatusCaos, _ => (byte)0 };
 
-    private void SpawnNow(Spawn s, WorldPos? donde = null)
+    private short SpawnNow(Spawn s, WorldPos? donde = null)
     {
         var npc = new Npc
         {
@@ -1320,9 +1332,10 @@ public sealed class NpcSystem
                 s.Template.NroItems);
         }
         _world.AddNpc(npc);
+        _spawnsVivos.Add(npc.CharIndex, s);
         s.CharIndex = npc.CharIndex;
-        s.Alive = true;
         _world.BroadcastToObservers(npc.Pos, ServerMessages.CharacterCreate(npc)); // only players who can see the tile
+        return npc.CharIndex;
     }
 
     private void NpcTryAttack(Npc npc)
