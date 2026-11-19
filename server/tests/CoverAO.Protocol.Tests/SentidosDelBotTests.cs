@@ -283,6 +283,28 @@ public class SentidosDelBotTests
         Assert.Null(s.BotinMasCercano(_ => true));
     }
 
+    [Fact]
+    public void Con_mochila_llena_busca_el_monton_que_entra_o_el_oro()
+    {
+        var s = Ubicado(50, 50);
+        for (byte i = 1; i <= GameLimits.MaxInventorySlots; i++)
+            s.Recibir(ServerMessages.ChangeInventorySlot(i, 461, GameLimits.MaxInventoryObjs, false, 0f, 1));
+        s.Recibir(ServerMessages.ChangeInventorySlot(3, 461, GameLimits.MaxInventoryObjs - 3, true, 0f, 1));
+        s.Recibir(ServerMessages.ObjectCreate(51, 50, 26, 1));
+        s.Recibir(ServerMessages.ObjectCreate(52, 50, 461, 4));
+        s.Recibir(ServerMessages.ObjectCreate(53, 50, 461, 3));
+        s.Recibir(ServerMessages.ObjectCreate(54, 50, GameLimits.ObjOro, 9));
+
+        (byte, byte)? Elegido() => s.BotinMasCercano(_ => true, esOro: obj => obj == GameLimits.ObjOro)?.Donde;
+        Assert.Equal(((byte)53, (byte)50), Elegido());
+        s.Recibir(ServerMessages.ObjectDelete(53, 50));
+        Assert.Equal(((byte)54, (byte)50), Elegido());
+        s.Recibir(ServerMessages.ObjectDelete(54, 50));
+        Assert.Null(Elegido());
+        s.Recibir(ServerMessages.ChangeInventorySlot(2, 0, 0, false, 0f, 0));
+        Assert.Equal(((byte)51, (byte)50), Elegido());
+    }
+
     /// <summary>El servidor manda como objeto del piso lo tirado Y LAS PUERTAS, así que el bot filtra: sin
     /// eso caminaba hasta cada puerta del pueblo a agacharse, y no llegaba nunca a un botín de verdad.</summary>
     [Fact]

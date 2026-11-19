@@ -151,7 +151,7 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // el campo llegaba en el JSON del transcode y ObjInfo ni lo tenia, asi que pelear no cansaba y el combate
     // no tenia techo. El default de 10 es del cargador del original (FileIO.bas:999): al objeto que no trae la
     // clave le pone 10, no 0.
-    int StaRequerido = 10)
+    int StaRequerido = 10, bool UsaPorcentajeDeDrop = false)
 {
     /// <summary>
     /// ÍTEM DE NOVATO. El original lo decide por la clave <c>Newbie</c> del <c>obj.dat</c> (FileIO.bas:819) y con
@@ -407,7 +407,16 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
 /// <summary>Un ítem del botín de un NPC (VB6 <c>npc.Invent.Object(i)</c>, cargado del campo RandomDrop).
 /// <paramref name="ProbTirar"/> es el tercer campo del .dat: el VB6 sólo trata especial el valor 100
 /// (dropea SIEMPRE); con cualquier otro valor tira una moneda al 50% (<c>NPC_TIRAR_ITEMS</c>).</summary>
-public sealed record NpcDrop(int ObjIndex, int Amount, double ProbTirar);
+public sealed record NpcDrop(int ObjIndex, int Amount, double ProbTirar)
+{
+    // Los anillos de combate y la Sortija de la Verdad usan el porcentaje de su criatura.
+    // Comercio, Carisma y el resto del botín mantienen la tirada común del original.
+    public double ProbabilidadDeCaer(ObjInfo? objeto)
+    {
+        if (ProbTirar >= 100) return 1;
+        return objeto?.UsaPorcentajeDeDrop == true ? Math.Clamp(ProbTirar / 100, 0, 1) : 0.5;
+    }
+}
 
 /// <summary>
 /// Una entrada de la TABLA DE DROP GLOBAL (<c>DropGlobal.dat</c>): un ítem que cualquier criatura puede
@@ -1281,7 +1290,8 @@ public sealed partial class GameData
                 // El pasaje: las claves del .dat son `Desde`/`Map`/`X`/`Y`, no los nombres del campo.
                 Int(el, "Desde", "desde"), Int(el, "Map", "map", "MAP"), Int(el, "X", "x"), Int(el, "Y", "y"),
                 Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
-                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
+                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")),
+                Int(el, "UsaPorcentajeDeDrop") == 1);
         }
 
         return map;

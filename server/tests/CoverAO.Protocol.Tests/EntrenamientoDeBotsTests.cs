@@ -12,6 +12,32 @@ public class EntrenamientoDeBotsTests
     private static readonly Lazy<GameData> Mundo = new(() => GameData.Load());
 
     [Theory]
+    [InlineData(76, 25, false)] // superficie de Marabel
+    [InlineData(115, 25, true)]
+    [InlineData(753, 20, true)]
+    [InlineData(45, 30, true)]
+    [InlineData(140, 30, true)]
+    [InlineData(205, 40, true)]
+    [InlineData(230, 40, true)]
+    [InlineData(227, 45, false)] // superficie de Cristal
+    public void La_guia_distingue_las_entradas_y_admite_las_dos_franjas_en_la_transicion(int mapa, int nivel, bool esperado) =>
+        Assert.Equal(esperado, Bot.EsDestinoDeLaGuia(mapa, nivel));
+
+    [Fact]
+    public void En_los_arrecifes_con_presa_al_alcance_permanece_solo_si_el_coto_es_apto()
+    {
+        var datos = Mundo.Value;
+        var mapas = new Navegante(datos);
+        const int mapa = 113;
+        var presa = datos.MapSpawns[mapa].First(s => datos.Npc(s.NpcIndex) is { Hostile: true, GiveExp: > 0 });
+        (byte X, byte Y) desde = ((byte)presa.X, (byte)presa.Y);
+        int Rinde(int f) => f == presa.NpcIndex ? 100 : 0;
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, mapa, desde, Rinde, _ => true, _ => true, explorar: false, nivel: 29));
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, mapa, desde, Rinde, _ => true, _ => false, explorar: false, nivel: 30));
+        Assert.Equal(mapa, Bot.CotoDeEntrenamiento(datos, mapas, mapa, desde, Rinde, _ => true, _ => true, explorar: false, nivel: 30)?.Mapa);
+    }
+
+    [Theory]
     [InlineData(3, 19, false)] // guerrero novato
     [InlineData(3, 20, true)]
     [InlineData(3, 30, true)]
@@ -59,7 +85,7 @@ public class EntrenamientoDeBotsTests
         Assert.False(cruza(destino)); // el filtro que mira toda la mazmorra la descarta
         Assert.False(Nunca(destino));
         int Rinde(int f) => Presa(f) ? Bot.RindeParaEntrenar(datos.Npc(f), nivel) : 0;
-        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, origen, desde, Rinde, cruza, m => cruza(m) && !Nunca(m), explorar: true));
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, origen, desde, Rinde, cruza, m => cruza(m) && !Nunca(m), explorar: true, nivel: nivel));
         var coto = Bot.EntradaParaEntrenar(datos, mapas, ini, origen, desde, nivel, vida,
             Presa, Peligroso, cruza, Nunca, explorar: true);
         Assert.NotNull(coto);
@@ -101,17 +127,17 @@ public class EntrenamientoDeBotsTests
         int Rinde(int ficha) => Bot.EsPresaPara(datos.Npc(ficha), vida, nivel, true, true, defensa)
             ? Bot.RindeParaEntrenar(datos.Npc(ficha), nivel) : 0;
 
-        var elegido = Bot.CotoDeEntrenamiento(datos, mapas, 34, (12, 86), Rinde, cruza, Sirve, explorar: true);
+        var elegido = Bot.CotoDeEntrenamiento(datos, mapas, 34, (12, 86), Rinde, cruza, Sirve, explorar: true, nivel: nivel);
         Assert.NotNull(elegido);
         Assert.Equal(45, elegido.Value.Mapa);
         Assert.Equal(1, elegido.Value.Saltos);
 
-        var queda = Bot.CotoDeEntrenamiento(datos, mapas, 45, (elegido.Value.X, elegido.Value.Y), Rinde, cruza, Sirve, explorar: false);
+        var queda = Bot.CotoDeEntrenamiento(datos, mapas, 45, (elegido.Value.X, elegido.Value.Y), Rinde, cruza, Sirve, explorar: false, nivel: nivel);
         Assert.Equal(45, queda?.Mapa);
         Assert.Equal(0, queda?.Saltos);
 
         Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 45, (elegido.Value.X, elegido.Value.Y), Rinde, cruza,
-                                          m => m != 45 && Sirve(m), explorar: false));
+                                          m => m != 45 && Sirve(m), explorar: false, nivel: nivel));
     }
 
     /// <summary>EL ENTRENAMIENTO NO LO SACA DE DONDE YA CAZA (ronda 100, 12/11): Gonzo, de nivel 26, dejaba el 746 por el 823
@@ -131,11 +157,11 @@ public class EntrenamientoDeBotsTests
         int Rinde(int ficha) => Bot.EsPresaPara(datos.Npc(ficha), vida, nivel, true, true, defensa)
             ? Bot.RindeParaEntrenar(datos.Npc(ficha), nivel) : 0;
 
-        Assert.Equal(823, Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true)?.Mapa);  // control
+        Assert.Equal(823, Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, nivel: nivel)?.Mapa);  // control
         int Comun(int ficha) => Bot.EsPresaPara(datos.Npc(ficha), vida, nivel, true, true, defensa) ? Bot.RecompensaDePresa(datos.Npc(ficha), nivel) : 0;
         int Suma(int m, (byte X, byte Y) p) => mapas.LoQueSuma(m, p, Comun)?.Suma ?? 0;
         Assert.True(Suma(823, (48, 12)) < Suma(746, (54, 70)), "premisa: contado como siempre, el 823 suma menos que el 746");
-        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, sumaComun: Suma));
+        Assert.Null(Bot.CotoDeEntrenamiento(datos, mapas, 746, (54, 70), Rinde, cruza, Sirve, explorar: true, nivel: nivel, sumaComun: Suma));
     }
 
     /// <summary>EL ENCERRADO SALTA CON MENOS (decisión del autor, 12/11): del 823 no se vuelve a pie a Illiandor, y el 191 (3415) contra

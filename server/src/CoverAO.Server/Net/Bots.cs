@@ -3013,7 +3013,8 @@ public sealed partial class Bot
         short mapa = sentidos.Mapa;
         long ahora = Environment.TickCount64;
         if (sentidos.BotinMasCercano(SePuedeLevantar, baldosa => !SigueSinServir(_nadaQueHacerAca, (mapa, baldosa.X, baldosa.Y), ahora)
-                                                                  && !ArrimaAlPeligroAlBotin(yo, baldosa, peligros)) is not { } botin
+                                                                  && !ArrimaAlPeligroAlBotin(yo, baldosa, peligros),
+                                    esOro: obj => _entorno.Datos.Obj(obj)?.IsGold == true) is not { } botin
             || botin.Pasos > RadioDeBotin) return false;
 
         bool llego = false;
@@ -4127,6 +4128,13 @@ public sealed partial class Bot
     private static bool EsMazmorra(GameData datos, int mapa) =>
         string.Equals(datos.MapZone(mapa), "DUNGEON", StringComparison.OrdinalIgnoreCase);
 
+    // Son los pisos donde se entrena, no los mapas de superficie donde están las entradas.
+    // Los niveles de transición sirven para las dos franjas; el acceso real lo decide el servidor.
+    internal static bool EsDestinoDeLaGuia(int mapa, int nivel) =>
+        (nivel is >= 20 and <= 30 && mapa is (>= 40 and <= 45) or 115 or 116 or 753)
+        || (nivel is >= 30 and <= 40 && mapa is 48 or 113 or 117 or (>= 140 and <= 145) or 205 or 207)
+        || (nivel >= 40 && mapa is (>= 209 and <= 211) or (>= 230 and <= 232));
+
     // En las mazmorras de nivel 20 se puede entrenar cerca de la entrada, aunque más adentro nazcan presas peligrosas.
     internal static (int Mapa, byte X, byte Y, int Saltos, IReadOnlySet<(byte X, byte Y)> Evitar)? EntradaParaEntrenar(
         GameData datos, Navegante mapas, ServerIni ini, int mapa, (byte X, byte Y) desde, int nivel, int vidaMaxima,
@@ -4169,10 +4177,10 @@ public sealed partial class Bot
 
     // Conservar una mazmorra que todavía tiene presas útiles. Para salir a explorar, mirar más lejos que en una cacería común.
     internal static (int Mapa, byte X, byte Y, int Saltos)? CotoDeEntrenamiento(GameData datos, Navegante mapas, int mapa,
-        (byte X, byte Y) desde, Func<int, int> rinde, Func<int, bool> cruza, Func<int, bool> sirve, bool explorar,
+        (byte X, byte Y) desde, Func<int, int> rinde, Func<int, bool> cruza, Func<int, bool> sirve, bool explorar, int nivel,
         Func<int, int>? desempate = null, Func<int, (byte X, byte Y), int>? sumaComun = null)
     {
-        bool Mazmorra(int m) => EsMazmorra(datos, m);
+        bool Mazmorra(int m) => EsMazmorra(datos, m) || EsDestinoDeLaGuia(m, nivel);
         bool enMazmorra = Mazmorra(mapa);
         if (!explorar && !enMazmorra) return null;
         var aca = mapas.LoQueSuma(mapa, desde, rinde);
@@ -4182,8 +4190,10 @@ public sealed partial class Bot
         var pasos = new Dictionary<int, bool>();
         bool Pasa(int m) => pasos.TryGetValue(m, out bool puede) ? puede : pasos[m] = cruza(m);
         bool TienePresas(int m) => datos.MapSpawns.TryGetValue(m, out var spawns) && spawns.Any(sp => rinde(sp.NpcIndex) > 0);
+        // Entre cotos cercanos con rendimiento comparable, primero la guía del nivel y después el gusto de cada bot.
+        int Preferencia(int m) => (EsDestinoDeLaGuia(m, nivel) ? 1 << 30 : 0) + ((desempate?.Invoke(m) ?? 0) >>> 1);
         var destino = mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaLaMazmorra, Pasa,
-                                          m => Mazmorra(m) && TienePresas(m) && sirve(m), desempate, soloMasCercanos: true);
+                                          m => Mazmorra(m) && TienePresas(m) && sirve(m), Preferencia, soloMasCercanos: true);
         // Si no hay mazmorra adecuada, buscar presas acordes en el campo cuando acá no tenga ninguna.
         if (destino is null && (aca is null || !sirve(mapa)))
             destino = mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, Pasa,
@@ -4315,7 +4325,7 @@ public sealed partial class Bot
         if (hallado is null && SaleAEntrenar(nivel) && conPociones && paraSuOficio.Count == 0)
         {
             var destinoDeEntrenamiento = CotoDeEntrenamiento(_entorno.Datos, _entorno.Mapas, sentidos.Mapa, sentidos.Posicion, Entrenamiento, cruza,
-                m => cruza(m) && !SigueLleno(_llenoHasta, m, ahora) && seCazaAhi(m), soloEntrenamiento,
+                m => cruza(m) && !SigueLleno(_llenoHasta, m, ahora) && seCazaAhi(m), soloEntrenamiento, nivel,
                 m => CuantoLeGusta(_propio, m),
                 (m, p) => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora) ? _entorno.Mapas.LoQueSuma(m, p, rinde)?.Suma ?? 0 : 0);
             if ((destinoDeEntrenamiento is null || !EsMazmorra(_entorno.Datos, destinoDeEntrenamiento.Value.Mapa))

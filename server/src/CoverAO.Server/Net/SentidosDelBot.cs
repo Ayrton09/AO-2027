@@ -68,7 +68,7 @@ public sealed class SentidosDelBot
     /// <summary>Lo que hay tirado en el piso, por baldosa. Es lo que deja una criatura al morir, y es de donde
     /// el bot sabe que hay algo para levantar. Ojo que el servidor NO manda el decorado fijo —árboles,
     /// carteles, yacimientos—: eso el cliente lo dibuja de su propio mapa, así que acá sólo hay cosas sueltas.</summary>
-    private readonly Dictionary<(byte X, byte Y), short> _enElPiso = new();
+    private readonly Dictionary<(byte X, byte Y), (short Obj, short Cantidad)> _enElPiso = new();
 
     /// <summary>El mostrador del mercader con el que está comerciando: ranura → qué vende, cuánto hay y a qué
     /// precio. Se vacía al cerrar la ventana.</summary>
@@ -762,20 +762,35 @@ public sealed class SentidosDelBot
     /// <summary>La baldosa con algo tirado más cercana, y a cuántos pasos. Es lo que deja una criatura al
     /// morir. <paramref name="sirveLaBaldosa"/> deja afuera baldosas aunque lo tirado sirva: el botín que queda al lado de lo
     /// peligroso no se elige (ver <c>Bot.ArrimaAlPeligroAlBotin</c>).</summary>
-    public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano(Func<short, bool> vale, Func<(byte X, byte Y), bool>? sirveLaBaldosa = null)
+    public ((byte X, byte Y) Donde, int Pasos)? BotinMasCercano(Func<short, bool> vale, Func<(byte X, byte Y), bool>? sirveLaBaldosa = null,
+        Func<short, bool>? esOro = null)
     {
         lock (_candado)
         {
             if (!_tengoPosicion) return null;
             ((byte, byte), int)? mejor = null;
-            foreach (var (baldosa, obj) in _enElPiso)
+            foreach (var (baldosa, (obj, cantidad)) in _enElPiso)
             {
                 if (!vale(obj) || sirveLaBaldosa?.Invoke(baldosa) == false) continue;
+                // PickUp levanta el montón entero en una sola ranura. El oro va directo a la billetera.
+                if (esOro is not null && !esOro(obj) && !CabeEnLaMochila(obj, cantidad)) continue;
                 int pasos = Math.Abs(baldosa.X - _x) + Math.Abs(baldosa.Y - _y);
                 if (mejor is null || pasos < mejor.Value.Item2) mejor = (baldosa, pasos);
             }
             return mejor;
         }
+    }
+
+    // Bajo el candado: la decisión usa las cantidades que llegaron por ObjectCreate y ChangeInventorySlot.
+    private bool CabeEnLaMochila(short obj, short cantidad)
+    {
+        for (int i = 1; i < _inventario.Length; i++)
+        {
+            var pila = _inventario[i];
+            if (pila.Obj == 0 || (pila.Obj == obj && pila.Cantidad + cantidad <= GameLimits.MaxInventoryObjs))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -822,7 +837,7 @@ public sealed class SentidosDelBot
         {
             if (!_tengoPosicion) return null;
             ((byte X, byte Y) Donde, short Obj, int Pasos)? mejor = null;
-            foreach (var (donde, obj) in _enElPiso)
+            foreach (var (donde, (obj, _)) in _enElPiso)
             {
                 if (obj <= 0 || !sirve(obj)) continue;
                 int pasos = Math.Abs(donde.X - _x) + Math.Abs(donde.Y - _y);
@@ -842,7 +857,7 @@ public sealed class SentidosDelBot
         {
             if (!_tengoPosicion) return Array.Empty<((byte X, byte Y), short, int)>();
             var todo = new List<((byte X, byte Y) Donde, short Obj, int Pasos)>();
-            foreach (var (donde, obj) in _enElPiso)
+            foreach (var (donde, (obj, _)) in _enElPiso)
                 if (obj > 0 && sirve(obj))
                     todo.Add((donde, obj, Math.Abs(donde.X - _x) + Math.Abs(donde.Y - _y)));
             todo.Sort((a, b) => a.Pasos.CompareTo(b.Pasos));
@@ -853,7 +868,7 @@ public sealed class SentidosDelBot
     /// <summary>Qué hay tirado en esa baldosa, o 0.</summary>
     public short EnElPiso((byte X, byte Y) baldosa)
     {
-        lock (_candado) return _enElPiso.TryGetValue(baldosa, out var o) ? o : (short)0;
+        lock (_candado) return _enElPiso.TryGetValue(baldosa, out var o) ? o.Obj : (short)0;
     }
 
     /// <summary>La criatura más cercana que cumpla <paramref name="sirve"/>, o null. Devuelve también a qué
@@ -1406,8 +1421,8 @@ public sealed class SentidosDelBot
                 case ServerPacketId.ObjectCreate:
                 {
                     byte x = l.Byte(), y = l.Byte();
-                    short obj = l.Entero();
-                    lock (_candado) _enElPiso[(x, y)] = obj;
+                    short obj = l.Entero(), cantidad = l.Entero();
+                    lock (_candado) _enElPiso[(x, y)] = (obj, cantidad);
                     break;
                 }
 

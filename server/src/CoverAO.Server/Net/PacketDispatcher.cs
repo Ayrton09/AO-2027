@@ -4284,17 +4284,17 @@ public sealed partial class PacketDispatcher
         }
         // Botín: el VB6 (NPC_TIRAR_ITEMS, Modulo_InventANDobj.bas:72) recorre TODOS los ítems del inventario
         // del NPC y evalúa cada uno por separado — los NPCs multidrop (Lobo, Dragón Legendario…) sueltan varias
-        // cosas. La regla de probabilidad es la del original, y es rara a propósito: sólo ProbTirar == 100 es
-        // especial (dropea siempre); con cualquier otro valor tira una moneda al 50% e ignora el número.
+        // cosas. Cada entrada tiene su propia tirada, también durante el evento de drop.
         foreach (var d in t.Drops ?? (IReadOnlyList<Data.NpcDrop>)Array.Empty<Data.NpcDrop>())
         {
             if (d.ObjIndex <= 0 || d.Amount <= 0) continue;
-            bool cae = d.ProbTirar >= 100 || _rng.NextDouble() < Math.Min(1.0, 0.5 * (_admin?.DropMult ?? 1));  // "Evento Drop" del panel
+            var objeto = _data.Obj(d.ObjIndex);
+            bool cae = d.ProbTirar >= 100 || _rng.NextDouble() < Math.Min(1.0, d.ProbabilidadDeCaer(objeto) * (_admin?.DropMult ?? 1));  // "Evento Drop" del panel
             if (!cae) continue;
             var pos = FindFreeGround(npc.Pos, (short)d.ObjIndex, (short)d.Amount);
             if (pos is not { } drop) continue;
             DejarEnElPiso(drop, (short)d.ObjIndex, (short)d.Amount);
-            var name = _data.Obj(d.ObjIndex)?.Name ?? $"obj {d.ObjIndex}";
+            var name = objeto?.Name ?? $"obj {d.ObjIndex}";
             session.Send(ServerMessages.ConsoleMsg($"{npc.Name} dejó caer {d.Amount}x {name}.", 0));
         }
         SortearDropGlobal(session, npc);

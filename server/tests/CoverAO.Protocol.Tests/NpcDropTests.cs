@@ -50,6 +50,20 @@ public class NpcDropTests
         Assert.All(dragon.Drops, d => Assert.True(d.ObjIndex > 0 && d.Amount > 0));
     }
 
+    [Theory]
+    [InlineData("Oso Pardo", 415, 1.0)]
+    [InlineData("Tortuga Gigante", 404, 1.0)]
+    [InlineData("Lobo", 414, 1.0)]
+    [InlineData("Lobo", 976, 0.5)]
+    [InlineData("Lobo", 578, 0.5)]
+    [InlineData("Murciélago", 737, 0.005)]
+    public void Cada_criatura_conserva_la_frecuencia_de_su_botin(string criatura, int objeto, double chance)
+    {
+        var datos = LoadOrSkip();
+        var npc = ByNameWithLoot(datos, criatura);
+        Assert.Equal(chance, npc.Drops!.Single(d => d.ObjIndex == objeto).ProbabilidadDeCaer(datos.Obj(objeto)));
+    }
+
     [Fact]
     public void Single_drop_npc_still_parses()
     {
