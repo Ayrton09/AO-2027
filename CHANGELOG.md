@@ -2,6 +2,24 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.37 (2026-11-19)
+
+### Recuperación de personajes varados
+
+- Si un bot perdió la ropa y la plata que lleva no alcanza, consulta su saldo en la bóveda. Con los ahorros disponibles vuelve a buscar ropa antes de gastar en pociones.
+- Si ya dejaste de ser novato y te quedaste sin ropa, casi sin energía y con menos de 60 monedas entre el bolsillo y la bóveda, hacé doble clic en el banquero de un pueblo seguro con sastre. Entregá el encargo al sastre de ese mismo mapa para cobrar **150 monedas** y abrir la tienda. Cada personaje puede cobrar un mandado cada 30 minutos.
+- Los bots también hacen el mandado. Usan la paga para vestirse y, si llegaron con hambre o sed, reponen comida y bebida antes de las pociones. En la prueba de Avanzada republicana, los tres que estaban varados volvieron a equiparse, recuperaron energía y salieron a cazar.
+
+### Cupo de bots para hosts
+
+- Podés configurar hasta **256 bots** con `Bots` en `Server.ini`. El catálogo suma 200 nombres y conserva el orden de los nombres anteriores. Los bots usan conexiones internas y `MaxUsers` limita las conexiones de red.
+- Los personajes nuevos entran de a seis cada cinco minutos. Los que ya tienen ficha vuelven de a uno cada 1,5 segundos para repartir la carga inicial.
+
+### Cómo actualizar
+
+- Si jugás desde la app de escritorio, aceptá el aviso de actualización a **1.0.37** o bajá el instalador de esta release.
+- Si hosteás, actualizá también el **servidor a 1.0.37** y conservá tu `Server.ini` y tu carpeta `data`. El servidor aplica la migración de la base al iniciar. El cliente y el servidor tienen que usar la misma versión.
+
 ## 1.0.36 (2026-11-19)
 
 ### Rendimiento del servidor
