@@ -510,12 +510,12 @@
        `display` propio pisa. */
     #top-capa { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center; background:#000000b8; }
     #top-capa.on { display:flex; }
-    #top-capa .top-marco { position:relative; width:min(1000px, 94vw); height:min(820px, 90vh); border:1px solid var(--gold-deep);
-      border-radius:8px; overflow:hidden; background:#0d0904; box-shadow:0 10px 40px #000; }
+    #top-capa .top-marco { position:relative; width:min(1000px, 94vw); height:min(820px, 90vh); border:1px solid var(--t-linea);
+      overflow:hidden; background:var(--t-fondo); }
     #top-capa iframe { width:100%; height:100%; border:0; display:block; }
-    #top-capa .top-cerrar { position:absolute; top:8px; right:10px; z-index:1; background:#1c130acc; border:1px solid var(--gold-deep);
-      border-radius:4px; color:var(--gold-hi); font-size:20px; line-height:1; padding:3px 9px; cursor:pointer; }
-    #top-capa .top-cerrar:hover { background:#2e1c10; }
+    #top-capa .top-cerrar { position:absolute; top:8px; right:10px; z-index:1; background:var(--t-hueco);
+      border:1px solid var(--t-linea); color:var(--t-tinta); font-size:20px; line-height:1; padding:3px 9px; cursor:pointer; }
+    #top-capa .top-cerrar:hover { border-color:var(--t-acento); }
     #login > .login-barra { position:fixed; left:0; right:0; bottom:0; z-index:2; display:flex; align-items:center;
       justify-content:space-between; gap:12px; padding:9px 16px; font-size:calc(var(--u)*0.78); color:var(--ink-dim);
       background:linear-gradient(0deg, #000000c8, #00000000); }

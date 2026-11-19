@@ -1,0 +1,46 @@
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fuentes/barlow-semi-condensed-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fuentes/barlow-semi-condensed-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fuentes/barlow-condensed-600.woff2') format('woff2');
+}
+
+:root {
+  --t-fondo: #0f1113;
+  --t-sup: #16181b;
+  --t-hueco: #0b0c0e;
+  --t-linea: #2c3036;
+  --t-tinta: #ecebe6;
+  --t-tinta2: #9b9b95;
+  --t-acento: #e0662a;
+  --t-sobre-acento: #170802;
+  --t-letra: 'Barlow Semi Condensed', system-ui, sans-serif;
+  --t-titulo: 'Barlow Condensed', system-ui, sans-serif;
+  color-scheme: dark;
+  scrollbar-color: var(--t-linea) var(--t-hueco);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--t-fondo);
+  color: var(--t-tinta);
+  font: 400 16px/1.5 var(--t-letra);
+}
+h1, h2 { font-family: var(--t-titulo); font-weight: 600; line-height: 1.15; }
+a { color: var(--t-acento); }
+:focus-visible { outline: 2px solid var(--t-acento); outline-offset: 3px; }
+button { font: inherit; }

@@ -5,31 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AO 2027 — bajá el juego</title>
   <link rel="icon" href="./assets/login/icon.png" type="image/png" />
+  <link rel="stylesheet" href="./assets/tema-publico.css" />
   <style>
-    /* La página que ve el navegador en la dirección del juego. */
-    :root {
-      --ink:#e8dcc0; --ink-dim:#b6a882; --gold:#e8c876; --gold-lo:#9a7326; --gold-deep:#5c3f15;
-      --wood:#2a1c0e; --wood-lo:#1a1108; --serif:'Trajan Pro','Cinzel','Georgia',serif;
+    body {
+      background:var(--t-fondo) url('./assets/login/fondo.jpg') center 40% / cover no-repeat;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 16px;
     }
-    html { color-scheme: dark; }
-    * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; color:var(--ink); font-family:system-ui, sans-serif; font-size:16px; line-height:1.55;
-      background:#0b0906 url('./assets/login/fondo.jpg') center 40% / cover no-repeat;
-      display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 16px; }
     .logo { width:min(560px, 84vw); height:auto; margin-bottom:2.5vh; }
-    .tarjeta { width:min(560px, 100%); background:linear-gradient(#2a1c0ef2, #1a1108f2); border:1px solid var(--gold-deep);
-      border-radius:10px; padding:22px 24px; box-shadow:0 10px 40px #000a; text-align:center; }
-    h1 { font-family:var(--serif); color:var(--gold); font-size:1.35rem; font-weight:normal; margin:0 0 10px; letter-spacing:.04em; }
-    p { margin:8px 0; color:var(--ink-dim); }
-    .boton { display:inline-block; margin:14px 0 6px; padding:11px 26px; border-radius:6px; text-decoration:none;
-      background:linear-gradient(#e8c876, #9a7326); color:#1a1108; font-weight:600; border:1px solid #5c3f15; }
-    .boton:hover { filter:brightness(1.08); }
-    .direccion { display:inline-flex; gap:8px; align-items:center; max-width:100%; overflow-wrap:anywhere; margin-top:6px; padding:6px 10px; border-radius:6px;
-      background:#0008; border:1px solid var(--gold-deep); font-family:ui-monospace, monospace; color:var(--ink); }
-    .direccion button { background:none; border:1px solid var(--gold-lo); color:var(--gold); border-radius:4px; cursor:pointer;
-      padding:2px 8px; font:inherit; font-size:.85em; }
-    .pie { margin-top:14px; font-size:.9em; }
-    .pie a { color:var(--gold); }
+    .tarjeta { width:min(560px, 100%); background:var(--t-sup); border:1px solid var(--t-linea);
+      padding:22px 24px; text-align:center; }
+    h1 { font-size:26px; margin:0 0 10px; }
+    p { margin:8px 0; color:var(--t-tinta2); }
+    .boton { display:inline-block; margin:14px 0 6px; padding:9px 22px; text-decoration:none;
+      background:var(--t-acento); color:var(--t-sobre-acento); font-weight:600; border:1px solid var(--t-acento); }
+    .boton:hover { filter:brightness(1.12); }
+    .direccion { display:inline-flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:8px;
+      max-width:100%; overflow-wrap:anywhere; margin-top:6px; padding:6px 10px; background:var(--t-hueco);
+      border:1px solid var(--t-linea); color:var(--t-tinta); }
+    .direccion button { background:var(--t-hueco); border:1px solid var(--t-linea); color:var(--t-tinta);
+      cursor:pointer; padding:3px 8px; }
+    .direccion button:hover { border-color:var(--t-acento); }
+    .pie { margin-top:14px; font-size:14px; }
     [hidden] { display:none !important; }
   </style>
 </head>
