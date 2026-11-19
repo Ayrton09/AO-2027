@@ -31,13 +31,14 @@ public static class CharacterFile
         // Un contador por bando de la víctima (VB6 Faccion.*Matados): cada ejército suma un subconjunto distinto.
         ini.Set("FACCIONES", "CrimMatados", F(f.RenegadosMatados));
         ini.Set("FACCIONES", "NivelDelPerdon", F(f.NivelDelUltimoPerdon));   // nuestro: el original no limita el perdón
-        ini.Set("FLAGS", "UltimoMandado", f.UltimoMandado.ToString(CultureInfo.InvariantCulture));
         ini.Set("FACCIONES", "CiudadanosMatados", F(f.CiudadanosMatados));
         ini.Set("FACCIONES", "RepublicanosMatados", F(f.RepublicanosMatados));
         ini.Set("FACCIONES", "ArmadaMatados", F(f.ArmadaMatados));
         ini.Set("FACCIONES", "MilicianosMatados", F(f.MilicianosMatados));
         ini.Set("FACCIONES", "CaosMatados", F(f.CaosMatados));
         ini.Set("FLAGS", "Privilegios", F(f.Privilegios));   // el civil, no el que puso el Server.ini
+        if (f.UltimoMandado > 0)
+            ini.Set("FLAGS", "UltimoMandado", f.UltimoMandado.ToString(CultureInfo.InvariantCulture));
         ini.Set("FLAGS", "Ban", F(f.Baneado ? 1 : 0));       // VB6 flags.Ban — baneo por personaje (/BAN)
         ini.Set("FLAGS", "Muerto", F(f.Muerto ? 1 : 0));     // VB6 FileIO.bas:1626 — la muerte persiste entre sesiones
         // VB6 FileIO.bas:1632 lo GUARDA y TCP.bas:1866 lo RELEE: quien desloguea navegando vuelve navegando.
