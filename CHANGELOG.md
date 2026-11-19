@@ -2,6 +2,28 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.35 (2026-11-18)
+
+### Botín de criaturas
+
+- Once anillos y sortijas usan la probabilidad indicada para cada criatura. Por ejemplo, el anillo del Bardo que deja el murciélago pasa del 50 % al 0,5 %. Los anillos de Comercio y Carisma y el colmillo de lobo conservan su frecuencia.
+- El oso pardo deja siempre su piel y la tortuga gigante deja siempre su escudo, si hay lugar en el piso. La piel de lobo y el pollo ya eran drops garantizados.
+- Los bots comprueban si pueden guardar un montón antes de caminar a buscarlo. Con la mochila llena todavía pueden levantar oro o completar una pila compatible.
+
+### Entrenamiento de bots
+
+- Los bots de combate tienen en cuenta la franja recomendada para zonas como Catacumbas y Marabel desde el nivel 20, Veriil desde el 30 y Zero y Cristal desde el 40. La preferencia se aplica entre destinos cercanos con rendimiento comparable. Para elegirlos, los bots siguen considerando el peligro, los requisitos de entrada y la posibilidad de regresar a reponer suministros.
+- Si ya están en una mazmorra con presas adecuadas, pueden seguir entrenando ahí. En la comparación de campo se redujo el botín visible, pero todavía queda por comprobar si los bots llegan con más frecuencia a las zonas recomendadas.
+
+### Top del servidor y descargas
+
+- La tabla de posiciones, la lista de conectados y la página de descargas adoptan el estilo Hierro y brasa del juego. En pantallas chicas, la tabla de posiciones se desplaza de costado dentro de su recuadro.
+
+### Cómo actualizar
+
+- Si jugás desde la app de escritorio, aceptá el aviso de actualización o bajá el instalador de esta release.
+- Si hosteás, actualizá el servidor a **1.0.35** y conservá tu `Server.ini` y tu carpeta `data`. El cliente y el servidor tienen que usar la misma versión.
+
 ## 1.0.34 (2026-11-18)
 
 ### Entrenamiento en mazmorras
