@@ -2,6 +2,31 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.36 (2026-11-19)
+
+### Rendimiento del servidor
+
+- El servidor procesa las reapariciones cuando vence su espera, sin recorrer todos los puntos de aparición en cada vuelta. Cuando varias criaturas deben volver juntas, se conserva su orden de aparición.
+- Cuando una criatura se mueve, el servidor prepara una sola vez cada aviso de movimiento, aparición o salida de vista y lo reutiliza para los jugadores que reciben ese mismo aviso. También reduce el trabajo al buscar jugadores conectados y al escribir paquetes de movimiento. El protocolo y los destinatarios se mantienen.
+- Los bots descartan antes el botín lejano y calculan en una sola pasada si acercarse al objeto los expone a una amenaza. Al buscar zonas para entrenar, evitan recorrer el terreno cuando el mapa carece de presas aptas. Se conservan los criterios de botín y de entrenamiento.
+- SQLite y PostgreSQL leen del almacén los candidatos al Top hasta completar los puestos publicados. Se siguen excluyendo los personajes del staff y se incluyen los empates necesarios para ordenar el último puesto.
+- En cuatro pasadas locales con 18 bots, el tiempo típico de una vuelta del servidor bajó de 0,149 a 0,099 ms. La CPU total del proceso varió entre pasadas.
+
+### Reaparición de criaturas
+
+- Retirar una criatura y decidir su reaparición ahora forman una sola operación. `/RMATA` programa el regreso para la próxima vuelta del servidor. `/MATA`, `/MASSKILL` y el retiro del centinela sacan a la criatura del ciclo de reaparición.
+- Si el centinela recibe el identificador que usaba una criatura muerta, su retiro deja intacta la reaparición que ya estaba programada para esa criatura.
+
+### Cliente de escritorio
+
+- El minimapa se redibuja cuando cambia el mapa o el marcador. El cliente reutiliza el orden de los objetos del suelo y los cálculos de las barras del HUD mientras sus datos siguen iguales. Esto reduce el trabajo repetido al dibujar el juego, también en modo espectador.
+- La descarga de un archivo del juego en un solo bloque evita una copia extra en memoria. La verificación de firma se mantiene activa.
+
+### Cómo actualizar
+
+- Si jugás con el cliente de escritorio, aceptá el aviso para instalar **1.0.36** o bajá el instalador de esta release.
+- Si hosteás, actualizá también el **servidor a 1.0.36** y conservá tu `Server.ini` y tu carpeta `data`. La app y el servidor deben usar la misma versión.
+
 ## 1.0.35 (2026-11-18)
 
 ### Botín de criaturas
