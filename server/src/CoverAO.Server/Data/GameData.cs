@@ -151,7 +151,7 @@ public sealed record ObjInfo(short Index, string Name, int ObjType, int MaxModif
     // el campo llegaba en el JSON del transcode y ObjInfo ni lo tenia, asi que pelear no cansaba y el combate
     // no tenia techo. El default de 10 es del cargador del original (FileIO.bas:999): al objeto que no trae la
     // clave le pone 10, no 0.
-    int StaRequerido = 10, bool UsaPorcentajeDeDrop = false)
+    int StaRequerido = 10)
 {
     /// <summary>
     /// ÍTEM DE NOVATO. El original lo decide por la clave <c>Newbie</c> del <c>obj.dat</c> (FileIO.bas:819) y con
@@ -404,18 +404,12 @@ public sealed record SpellInfo(short Index, string Name, int SubeHp, int MinHp, 
         || Ceguera > 0 || SubeFuerza == 2 || SubeAgilidad == 2;
 }
 
-/// <summary>Un ítem del botín de un NPC (VB6 <c>npc.Invent.Object(i)</c>, cargado del campo RandomDrop).
-/// <paramref name="ProbTirar"/> es el tercer campo del .dat: el VB6 sólo trata especial el valor 100
-/// (dropea SIEMPRE); con cualquier otro valor tira una moneda al 50% (<c>NPC_TIRAR_ITEMS</c>).</summary>
+/// <summary>Una tirada del botín de un NPC. <paramref name="ProbTirar"/> es el porcentaje de
+/// <c>RandomDrop</c> o el ajuste de <c>[DROPSNPC]</c> en <c>Server.ini</c>.</summary>
 public sealed record NpcDrop(int ObjIndex, int Amount, double ProbTirar)
 {
-    // Los anillos de combate y la Sortija de la Verdad usan el porcentaje de su criatura.
-    // Comercio, Carisma y el resto del botín mantienen la tirada común del original.
-    public double ProbabilidadDeCaer(ObjInfo? objeto)
-    {
-        if (ProbTirar >= 100) return 1;
-        return objeto?.UsaPorcentajeDeDrop == true ? Math.Clamp(ProbTirar / 100, 0, 1) : 0.5;
-    }
+    public bool Cae(Random azar, int multiplicador)
+        => ProbTirar >= 100 || (ProbTirar > 0 && azar.NextDouble() < ProbTirar / 100 * multiplicador);
 }
 
 /// <summary>
@@ -1170,7 +1164,9 @@ public sealed partial class GameData
         catch (JsonException ex) { throw new InvalidDataException($"{Path.GetFileName(path)} está dañado: {ex.Message}", ex); }
     }
 
-    public static GameData Load()
+    public static GameData Load() => Load(null);
+
+    internal static GameData Load(ServerIni? ini)
     {
         var data = new GameData();
         var dir = FindDataDir();
@@ -1199,7 +1195,9 @@ public sealed partial class GameData
         data.ShieldMod = mods.GetValueOrDefault("modescudo", new());
         data.LifeMod = mods.GetValueOrDefault("modvida", new());   // MODVIDA: HP que gana por nivel cada clase
         data.Spells = LoadSpells(Path.Combine(dir, "Hechizos.json"));
-        data.Npcs = LoadNpcs(Path.Combine(dir, "NPCs.json"));
+        var npcs = LoadNpcs(Path.Combine(dir, "NPCs.json"));
+        if (ini?.DropsNpc is { Count: > 0 } cambios) AplicarDropsNpc(npcs, cambios);
+        data.Npcs = npcs;
         data.BlacksmithWeapons = LoadCraftIndices(Path.Combine(dir, "ArmasHerrero.json"), "Arma");
         data.BlacksmithArmors = LoadCraftIndices(Path.Combine(dir, "ArmadurasHerrero.json"), "Armadura");
         data.BlacksmithHelmets = LoadCraftIndices(Path.Combine(dir, "CascosHerrero.json"), "Casco");
@@ -1290,8 +1288,7 @@ public sealed partial class GameData
                 // El pasaje: las claves del .dat son `Desde`/`Map`/`X`/`Y`, no los nombres del campo.
                 Int(el, "Desde", "desde"), Int(el, "Map", "map", "MAP"), Int(el, "X", "x"), Int(el, "Y", "y"),
                 Int(el, "Destruir", "DESTRUIR", "destruir") == 1,          // no se puede tirar al piso
-                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")),
-                Int(el, "UsaPorcentajeDeDrop") == 1);
+                StaDeGolpe(Int(el, "StaRequerido", "STAREQUERIDO", "starequerido")));
         }
 
         return map;
@@ -1439,6 +1436,42 @@ public sealed partial class GameData
             if (idx > 0) lista.Add(idx);
         }
         return lista.Count > 0 ? lista : null;
+    }
+
+    private static void AplicarDropsNpc(Dictionary<int, NpcInfo> npcs,
+        IReadOnlyDictionary<(int Npc, int Objeto, int Ocurrencia), double> cambios)
+    {
+        var pendientes = cambios.Keys.ToHashSet();
+        foreach (int index in cambios.Keys.Select(k => k.Npc).Distinct())
+        {
+            if (!npcs.TryGetValue(index, out var npc) || npc.Drops is not { Count: > 0 } drops) continue;
+            var ocurrencias = new Dictionary<int, int>();
+            var ajustados = new NpcDrop[drops.Count];
+            for (int i = 0; i < drops.Count; i++)
+            {
+                var drop = drops[i];
+                int ocurrencia = ocurrencias[drop.ObjIndex] = ocurrencias.GetValueOrDefault(drop.ObjIndex) + 1;
+                var general = (index, drop.ObjIndex, 0);
+                if (cambios.TryGetValue(general, out double porcentaje))
+                {
+                    drop = drop with { ProbTirar = porcentaje };
+                    pendientes.Remove(general);
+                }
+                var particular = (index, drop.ObjIndex, ocurrencia);
+                if (cambios.TryGetValue(particular, out porcentaje))
+                {
+                    drop = drop with { ProbTirar = porcentaje };
+                    pendientes.Remove(particular);
+                }
+                ajustados[i] = drop;
+            }
+            npcs[index] = npc with { Drops = ajustados };
+        }
+        foreach (var (npc, objeto, ocurrencia) in pendientes)
+        {
+            string clave = ocurrencia == 0 ? $"{npc}.{objeto}" : $"{npc}.{objeto}.{ocurrencia}";
+            Console.Error.WriteLine($"[ini] [DROPSNPC] '{clave}' no coincide con un drop de la tabla de criaturas.");
+        }
     }
 
     private static Dictionary<int, NpcInfo> LoadNpcs(string file)

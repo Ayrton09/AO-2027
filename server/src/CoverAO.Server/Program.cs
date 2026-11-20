@@ -176,7 +176,7 @@ static string NombreDeRango(byte priv) => priv switch
 };
 
 GameData gameData;
-try { gameData = GameData.Load(); }
+try { gameData = GameData.Load(serverIni); }
 catch (InvalidDataException ex)
 {
     // Un .json de la data dañado: se dice cuál y se sale, en vez de una traza que no lo nombra.

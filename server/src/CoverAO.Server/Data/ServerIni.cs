@@ -1,4 +1,5 @@
 ﻿using CoverAO.Server.Game;
+using System.Globalization;
 
 namespace CoverAO.Server.Data;
 
@@ -763,6 +764,10 @@ public sealed class ServerIni
     /// </summary>
     public int DropGlobal { get; private set; } = 10000;
 
+    // Ocurrencia 0 ajusta todas las entradas del objeto en esa criatura.
+    internal IReadOnlyDictionary<(int Npc, int Objeto, int Ocurrencia), double> DropsNpc { get; private set; }
+        = new Dictionary<(int, int, int), double>();
+
     /// <summary>
     /// REGLA DE LA CASA — <c>MetamorfosisDelDruida</c> (default <b>-1</b>, o sea PRENDIDA y PERMANENTE).
     /// <b>-1</b> = no vence nunca, <b>0</b> = apagada, <b>N</b> = dura N segundos (hasta 3600).
@@ -1123,7 +1128,7 @@ public sealed class ServerIni
     /// </summary>
     public static readonly string[] PidenReiniciar =
         { "StartPort", "PuertoWebSocketPublico", "MaxUsers", "LimiteConexionesPorIp",
-          "MaxPaquetesPorSegundo", "RafagaDePaquetes", "LogDias" };
+          "MaxPaquetesPorSegundo", "RafagaDePaquetes", "LogDias", "[DROPSNPC]" };
 
     /// <summary>Relee el archivo y actualiza ESTA instancia, para que la vea todo el que guarda la referencia
     /// (el despachador consulta <c>_ini</c> en caliente en cada login y en cada gate de cadencia).
@@ -1393,6 +1398,7 @@ public sealed class ServerIni
         // 0 apaga; si no, "uno cada N" con N >= 1. El tope alto es sólo para que un número absurdo no
         // desborde: a un millón de criaturas por ítem ya no cae nunca, que es igual que apagarlo.
         cfg.DropGlobal = Math.Clamp(ini.GetInt("INIT", "DropGlobal", 10000), 0, 1_000_000);
+        cfg.DropsNpc = LeerDropsNpc(ini);
         // -1 es permanente y 0 apaga; de ahí para arriba son segundos. Cualquier negativo cae en el -1: pedir
         // "menos que permanente" no significa nada, y el tope de una hora sigue siendo para el reloj.
         cfg.MetamorfosisDelDruida = Math.Clamp(ini.GetInt("INIT", "MetamorfosisDelDruida", -1), -1, 3600);
@@ -1427,6 +1433,38 @@ public sealed class ServerIni
         cfg.Bots = Math.Clamp(ini.GetInt("INIT", "Bots", 0), 0, MaxBots);
         cfg._staff = LeerStaff(ini);
         return cfg;
+    }
+
+    private static Dictionary<(int Npc, int Objeto, int Ocurrencia), double> LeerDropsNpc(IniFile ini)
+    {
+        const string seccion = "DROPSNPC";
+        var cambios = new Dictionary<(int, int, int), double>();
+        foreach (string clave in ini.Claves(seccion))
+        {
+            string[] ids = clave.Split('.');
+            int ocurrencia = 0;
+            if (ids.Length is not (2 or 3)
+                || !int.TryParse(ids[0], NumberStyles.None, CultureInfo.InvariantCulture, out int npc) || npc <= 0
+                || !int.TryParse(ids[1], NumberStyles.None, CultureInfo.InvariantCulture, out int objeto) || objeto <= 0
+                || (ids.Length == 3 && (!int.TryParse(ids[2], NumberStyles.None, CultureInfo.InvariantCulture, out ocurrencia)
+                                        || ocurrencia <= 0)))
+            {
+                Console.Error.WriteLine($"[ini] [{seccion}] clave '{clave}' inválida. Usá NPC.OBJETO o NPC.OBJETO.N.");
+                continue;
+            }
+
+            string valor = ini.GetString(seccion, clave);
+            int comentario = valor.IndexOfAny([';', '\'', '#']);
+            if (comentario >= 0) valor = valor[..comentario];
+            if (!double.TryParse(valor.Trim().Replace(',', '.'), NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture, out double porcentaje) || porcentaje is not (>= 0 and <= 100))
+            {
+                Console.Error.WriteLine($"[ini] [{seccion}] '{clave}' necesita un porcentaje entre 0 y 100. Se ignora.");
+                continue;
+            }
+            cambios[(npc, objeto, ocurrencia)] = porcentaje;
+        }
+        return cambios;
     }
 
     private static Dictionary<string, byte> LeerStaff(IniFile ini)

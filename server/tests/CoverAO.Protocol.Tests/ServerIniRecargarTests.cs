@@ -60,5 +60,6 @@ public class ServerIniRecargarTests : IDisposable
         // está escuchando. Que exista y nombre al puerto es lo que evita que alguien la vacíe sin pensarlo.
         Assert.NotEmpty(ServerIni.PidenReiniciar);
         Assert.Contains("StartPort", ServerIni.PidenReiniciar);
+        Assert.Contains("[DROPSNPC]", ServerIni.PidenReiniciar);
     }
 }

@@ -379,6 +379,318 @@ CodigoFuente=
 ;ExpGordo=100000      ; desde que experiencia cuenta como gordo
 ;ExpJefe=1000000      ; desde que experiencia cuenta como jefe
 
+; Botin propio de las criaturas. NPC.OBJETO=porcentaje, entre 0 y 100. Acepta punto o coma decimal.
+; Los IDs figuran como _index en gamedata/NPCs.json y gamedata/obj.json.
+; 0 desactiva el drop. 100 lo garantiza si hay lugar en el piso.
+; Descomentar para personalizar. Sin ajuste se usa RandomDrop de la criatura. Requiere reiniciar.
+; Si el mismo objeto figura varias veces, NPC.OBJETO.N ajusta solo su aparicion N, contando desde 1.
+; Cada linea muestra el porcentaje por defecto del drop.
+[DROPSNPC]
+
+; Murciélago (NPC 500)
+;500.737=0.5            ; Anillo del Bardo (+30)
+
+; Lobo (NPC 501)
+;501.414=100            ; Piel de Lobo
+;501.976=0.8            ; Anillo del Carisma (+10)
+;501.578=1.5            ; Colmillo de Lobo
+
+; Zombie (NPC 502)
+;502.652=0.5            ; Nudillos (+10)
+
+; Esqueleto (NPC 503)
+;503.737=0.5            ; Anillo del Bardo (+30)
+
+; Serpiente (NPC 504)
+;504.737=0.5            ; Anillo del Bardo (+30)
+
+; Goblin (NPC 505)
+;505.652=0.6            ; Nudillos (+10)
+
+; Gallo Salvaje (NPC 506)
+;506.26=100             ; Pollo
+;506.737=0.5            ; Anillo del Bardo (+30)
+
+; Lord Zombie (NPC 507)
+;507.652=1              ; Nudillos (+10)
+
+; Esqueleto Guerrero (NPC 508)
+;508.858=0.6            ; Anillo del Guerrero (+10)
+
+; Ogro Líder (NPC 509)
+;509.707=5              ; Brazalete del Ogro (+30)
+
+; Araña Gigante (NPC 510)
+;510.57=0.5             ; Orbe de la Ponzoña
+
+; Dragón Legendario (NPC 511)
+;511.406=100            ; Gema Lunar
+;511.1081.1=10          ; Pendiente del Sacrificio (3/3)
+;511.1081.2=5           ; Pendiente del Sacrificio (3/3)
+;511.1180=5             ; Escudo de Reflexión (RM +30)
+;511.993=5              ; Gorro Mágico (RM +20)
+;511.1147=5             ; Báculo de Hechicero (DM +20)
+;511.402=5              ; Espada Mata Dragones
+
+; Hechicero de Tierra (NPC 518)
+;518.1147=1             ; Báculo de Hechicero (DM +20)
+;518.1090=1             ; Túnica de Absorción Mágica (RM +15)
+;518.1092=1             ; Túnica de Absorción Mágica (RM +15) (Bajos)
+;518.993=1              ; Gorro Mágico (RM +20)
+;518.1081=0.5           ; Pendiente del Sacrificio (3/3)
+
+; Yeti trucho (NPC 520)
+;520.1497=100           ; Lentes de Ruthnar
+
+; Orco (NPC 523)
+;523.858=1              ; Anillo del Guerrero (+10)
+
+; Jefe Orco (NPC 524)
+;524.734=5              ; Anillo del Guerrero (+20)
+
+; Escorpión (NPC 529)
+;529.737=0.5            ; Anillo del Bardo (+30)
+
+; Bandido (NPC 530)
+;530.735=1              ; Anillo de Ocultismo (+20)
+;530.736=1              ; Anillo de Comercio (+30)
+;530.974=2              ; Anillo del Ladrón (+20)
+
+; Asesino (NPC 531)
+;531.735=1.5            ; Anillo de Ocultismo (+20)
+;531.739=0.5            ; Pendiente del Asesino (+20)
+;531.654=1              ; Anillo de Agilidad (+5)
+
+; Águila (NPC 532)
+;532.976=0.6            ; Anillo del Carisma (+10)
+;532.542=4              ; Pluma de Águila
+
+; Cuervo (NPC 533)
+;533.654=0.5            ; Anillo de Agilidad (+5)
+
+; Señor de las sombras (NPC 534)
+;534.1006=1             ; Anillo de las Sombras
+;534.755=3              ; Amuleto del Silencio
+
+; Hormiga (NPC 535)
+;535.976=0.25           ; Anillo del Carisma (+10)
+
+; Rata (NPC 536)
+;536.976=0.6            ; Anillo del Carisma (+10)
+
+; Beholder (NPC 537)
+;537.752=1              ; Botas de Celeridad (+10)
+
+; Oso Pardo (NPC 538)
+;538.415=100            ; Piel de Oso Pardo
+;538.738=0.6            ; Pendiente del Arquero (+30)
+;538.976=2.24           ; Anillo del Carisma (+10)
+;538.585=6              ; Pelaje de Oso
+
+; Tortuga Gigante (NPC 539)
+;539.404=100            ; Escudo de Tortuga
+;539.738=0.3            ; Pendiente del Arquero (+30)
+;539.976=1              ; Anillo del Carisma (+10)
+;539.579=2              ; Caparazón de Tortuga
+
+; Duende (NPC 540)
+;540.654=0.5            ; Anillo de Agilidad (+5)
+
+; Ogro (NPC 541)
+;541.707=0.5            ; Brazalete del Ogro (+30)
+;541.858=1              ; Anillo del Guerrero (+10)
+
+; Gran Dragón Negro (NPC 542)
+;542.406=30             ; Gema Lunar
+;542.1180=8             ; Escudo de Reflexión (RM +30)
+;542.993=8              ; Gorro Mágico (RM +20)
+;542.1147=8             ; Báculo de Hechicero (DM +20)
+;542.1081=10            ; Pendiente del Sacrificio (3/3)
+;542.586=40             ; Escamas de Dragón
+
+; Demonio (NPC 543)
+;543.1149=0.5           ; Pendiente del Experto
+;543.868=0.5            ; Orbe Ígnea
+
+; Orco brujo (NPC 549)
+;549.653=0.5            ; Vara Mágica (+20)
+;549.651=0.5            ; Orbe de Inhibición
+;549.706=1              ; Anillo de la Quinta Esencia
+
+; Bruja (NPC 550)
+;550.706=2              ; Anillo de la Quinta Esencia
+;550.653=1              ; Vara Mágica (+20)
+;550.651=1              ; Orbe de Inhibición
+;550.992=1              ; Gorro Mágico (RM +10)
+
+; Mago protector (NPC 551)
+;551.653=0.5            ; Vara Mágica (+20)
+;551.651=0.5            ; Orbe de Inhibición
+;551.706=1              ; Anillo de la Quinta Esencia
+;551.1143=1             ; Sortija de la Verdad
+
+; Golem de piedra (NPC 552)
+;552.708=15             ; Anillo de Defensa Mágica (+40)
+;552.649=5              ; Roca Escarlata
+
+; Medusa (NPC 553)
+;553.993=0.2            ; Gorro Mágico (RM +20)
+;553.1147=0.15          ; Báculo de Hechicero (DM +20)
+;553.992=0.5            ; Gorro Mágico (RM +10)
+
+; Liche (NPC 554)
+;554.1139=0.6           ; Armadura de Cuero Endurecido (RM +10)
+
+; Lord Orco (NPC 555)
+;555.858=1.25           ; Anillo del Guerrero (+10)
+
+; Jabalí Salvaje (NPC 557)
+;557.976=3              ; Anillo del Carisma (+10)
+
+; Saqueador de minas (NPC 561)
+;561.974=4              ; Anillo del Ladrón (+20)
+
+; Arquero Pirata (NPC 567)
+;567.479=100            ; Arco Compuesto
+;567.480=100            ; Flecha
+;567.738=1              ; Pendiente del Arquero (+30)
+
+; Guerrero Pirata (NPC 568)
+;568.858=1.8            ; Anillo del Guerrero (+10)
+;568.652=1.5            ; Nudillos (+10)
+
+; Gran Dragón Verde (NPC 570)
+;570.406=4              ; Gema Lunar
+;570.1180=1             ; Escudo de Reflexión (RM +30)
+;570.586=2              ; Escamas de Dragón
+
+; Fango (NPC 571)
+;571.736=1.5            ; Anillo de Comercio (+30)
+
+; Demonio Abisal (NPC 572)
+;572.868=2              ; Orbe Ígnea
+
+; Basilisco (NPC 573)
+;573.736=1              ; Anillo de Comercio (+30)
+
+; Ogro Guerrero (NPC 574)
+;574.707=0.75           ; Brazalete del Ogro (+30)
+;574.734=4              ; Anillo del Guerrero (+20)
+
+; Golem de oro (NPC 575)
+;575.708=30             ; Anillo de Defensa Mágica (+40)
+;575.1081=10            ; Pendiente del Sacrificio (3/3)
+;575.410=5              ; Gema Dorada
+
+; Momia (NPC 576)
+;576.1139=1             ; Armadura de Cuero Endurecido (RM +10)
+
+; Golem de bronce (NPC 577)
+;577.708=20             ; Anillo de Defensa Mágica (+40)
+
+; Medusa Matriarch (NPC 578)
+;578.993=0.35           ; Gorro Mágico (RM +20)
+;578.1147=0.3           ; Báculo de Hechicero (DM +20)
+;578.992=0.75           ; Gorro Mágico (RM +10)
+
+; Golem de plata (NPC 579)
+;579.708=25             ; Anillo de Defensa Mágica (+40)
+;579.409=5              ; Gema Gris
+
+; Lobo Invernal (NPC 580)
+;580.1145=100           ; Piel de Lobo Invernal
+;580.976=1              ; Anillo del Carisma (+10)
+
+; Golem infernal (NPC 581)
+;581.868=20             ; Orbe Ígnea
+;581.408=5              ; Gema Naranja
+
+; Gran Dragón Azul (NPC 582)
+;582.406=20             ; Gema Lunar
+;582.1180=5             ; Escudo de Reflexión (RM +30)
+;582.993=8              ; Gorro Mágico (RM +20)
+;582.1147=10            ; Báculo de Hechicero (DM +20)
+;582.586=20             ; Escamas de Dragón
+
+; Cíclope (NPC 584)
+;584.1139=0.5           ; Armadura de Cuero Endurecido (RM +10)
+
+; Yeti (NPC 585)
+;585.1180=0.25          ; Escudo de Reflexión (RM +30)
+;585.869=0.75           ; Orbe Acuática
+
+; Aparición (NPC 586)
+;586.755=0.5            ; Amuleto del Silencio
+;586.1006=0.5           ; Anillo de las Sombras
+
+; Golem de hielo (NPC 587)
+;587.869=8              ; Orbe Acuática
+
+; Crako (NPC 588)
+;588.752=1.2            ; Botas de Celeridad (+10)
+
+; Protector (NPC 589)
+;589.708=5              ; Anillo de Defensa Mágica (+40)
+
+; Rey Dragón (NPC 590)
+;590.406=95             ; Gema Lunar
+;590.1180=20            ; Escudo de Reflexión (RM +30)
+;590.993=20             ; Gorro Mágico (RM +20)
+;590.1147=20            ; Báculo de Hechicero (DM +20)
+;590.869=20             ; Orbe Acuática
+;590.707=20             ; Brazalete del Ogro (+30)
+;590.868=20             ; Orbe Ígnea
+;590.1081=20            ; Pendiente del Sacrificio (3/3)
+;590.586=75             ; Escamas de Dragón
+
+; Ent (NPC 592)
+;592.57=1               ; Orbe de la Ponzoña
+;592.583=1              ; Corteza Onodrim
+
+; Gladiador (NPC 593)
+;593.975=4              ; Anillo del Combatiente (+20)
+;593.1149=0.5           ; Pendiente del Experto
+
+; Gallina Salvaje (NPC 594)
+;594.26=100             ; Pollo
+;594.737=0.5            ; Anillo del Bardo (+30)
+
+; Tigre (NPC 599)
+;599.976=1              ; Anillo del Carisma (+10)
+;599.584=6              ; Garra de Tigre
+
+; Chamán Ártico (NPC 603)
+;603.653=1              ; Vara Mágica (+20)
+;603.651=1              ; Orbe de Inhibición
+;603.1143=1             ; Sortija de la Verdad
+;603.706=1.5            ; Anillo de la Quinta Esencia
+
+; Yuan Ti (NPC 604)
+;604.1139=0.9           ; Armadura de Cuero Endurecido (RM +10)
+;604.57=1               ; Orbe de la Ponzoña
+
+; Huargo de Nieve (NPC 605)
+;605.975=2              ; Anillo del Combatiente (+20)
+
+; Hombre Lagarto (NPC 606)
+;606.1139=0.9           ; Armadura de Cuero Endurecido (RM +10)
+
+; El Abominable Grinch (NPC 607)
+;607.406=100            ; Gema Lunar
+;607.1081.1=100         ; Pendiente del Sacrificio (3/3)
+;607.1081.2=100         ; Pendiente del Sacrificio (3/3)
+;607.1180=100           ; Escudo de Reflexión (RM +30)
+;607.993=100            ; Gorro Mágico (RM +20)
+;607.1147=100           ; Báculo de Hechicero (DM +20)
+;607.402=100            ; Espada Mata Dragones
+;607.662.1=100          ; Regalo
+;607.669.1=100          ; Regalo
+;607.662.2=100          ; Regalo
+;607.669.2=100          ; Regalo
+
+; Esqueleto Guardián (NPC 612)
+;612.377=0.2            ; Llave de Calabozo
+
 [INTERVALOS]
 ;IntervaloLanzaHechizo=1000       ; entre un hechizo y el siguiente
 ;IntervaloUserPuedeAtacar=1000    ; entre un golpe y el siguiente

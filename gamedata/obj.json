@@ -8670,7 +8670,6 @@
     },
     {
       "_index": 654,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo de Agilidad (+5)",
       "efectomagico": "2",
       "cuantoaumento": "5",
@@ -9433,7 +9432,6 @@
     },
     {
       "_index": 706,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo de la Quinta Esencia",
       "efectomagico": "5",
       "GrhIndex": "1022",
@@ -9458,7 +9456,6 @@
     },
     {
       "_index": 708,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo de Defensa Mágica (+40)",
       "efectomagico": "7",
       "cuantoaumento": "40",
@@ -9750,7 +9747,6 @@
     },
     {
       "_index": 734,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo del Guerrero (+20)",
       "efectomagico": "3",
       "queskill": "5",
@@ -9765,7 +9761,6 @@
     },
     {
       "_index": 735,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo de Ocultismo (+20)",
       "efectomagico": "3",
       "queskill": "8",
@@ -9792,7 +9787,6 @@
     },
     {
       "_index": 737,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo del Bardo (+30)",
       "efectomagico": "3",
       "queskill": "1",
@@ -11550,7 +11544,6 @@
     },
     {
       "_index": 858,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo del Guerrero (+10)",
       "efectomagico": "3",
       "queskill": "5",
@@ -13001,7 +12994,6 @@
     },
     {
       "_index": 974,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo del Ladrón (+20)",
       "efectomagico": "3",
       "queskill": "3",
@@ -13015,7 +13007,6 @@
     },
     {
       "_index": 975,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo del Combatiente (+20)",
       "efectomagico": "3",
       "queskill": "20",
@@ -13509,7 +13500,6 @@
     },
     {
       "_index": 1006,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Anillo de las Sombras",
       "efectomagico": "13",
       "GrhIndex": "1028",
@@ -14917,7 +14907,6 @@
     },
     {
       "_index": 1143,
-      "UsaPorcentajeDeDrop": "1",
       "Name": "Sortija de la Verdad",
       "GrhIndex": "920",
       "valor": "0",

@@ -238,6 +238,29 @@ en contenedores y en systemd.
 COVERAO_INIT_MAXUSERS=200 COVERAO_INIT_DIOSES=1 COVERAO_DIOSES_DIOS1=TuPersonaje ./CoverAO.Server
 ```
 
+### Probabilidades de botín por criatura
+
+El servidor usa los porcentajes de `RandomDrop` de la ficha de CoverAO 2021. El escudo de la Tortuga Gigante
+y la piel del Oso Pardo vienen al 100 %. Cada entrada tiene su propia tirada y necesita espacio en el piso.
+
+Copiá la sección `[DROPSNPC]` del [Server.ini de ejemplo](../hosting/Server.ini.ejemplo) al `Server.ini` de tu
+servidor. Ahí están todas las tiradas, agrupadas por criatura. Quitá el `;` inicial de las que quieras ajustar
+y cambiá su valor en el formato `NPC.OBJETO=porcentaje`. `0` desactiva el drop y `100` lo garantiza.
+Se acepta punto o coma decimal.
+
+```ini
+[DROPSNPC]
+501.976=1,5       ; Anillo del Carisma del Lobo al 1,5 %
+539.738=0         ; Desactivar el Pendiente del Arquero de la Tortuga Gigante
+511.1081.2=2      ; Segunda tirada del Pendiente del Sacrificio del Dragón Legendario
+```
+
+Si el mismo objeto aparece más de una vez en una criatura, `NPC.OBJETO` ajusta todas las tiradas y
+`NPC.OBJETO.N` ajusta sólo la número `N` de ese objeto, contando desde 1. El ajuste específico prevalece
+sobre el general. El servidor avisa al arrancar si una clave es inválida o no coincide con una entrada.
+Reiniciá el servidor para aplicar cambios. El evento de drop del panel multiplica los porcentajes base
+hasta un máximo de 100 %. La frecuencia de la tabla de botín global se configura con `DropGlobal`.
+
 ## Actualizar a una version nueva
 
 El código y las descargas oficiales se publican en [`Ayrton09/AO-2027`](https://github.com/Ayrton09/AO-2027).

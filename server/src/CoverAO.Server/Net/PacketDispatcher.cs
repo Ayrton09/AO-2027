@@ -4288,13 +4288,11 @@ public sealed partial class PacketDispatcher
         foreach (var d in t.Drops ?? (IReadOnlyList<Data.NpcDrop>)Array.Empty<Data.NpcDrop>())
         {
             if (d.ObjIndex <= 0 || d.Amount <= 0) continue;
-            var objeto = _data.Obj(d.ObjIndex);
-            bool cae = d.ProbTirar >= 100 || _rng.NextDouble() < Math.Min(1.0, d.ProbabilidadDeCaer(objeto) * (_admin?.DropMult ?? 1));  // "Evento Drop" del panel
-            if (!cae) continue;
+            if (!d.Cae(_rng, _admin?.DropMult ?? 1)) continue;
             var pos = FindFreeGround(npc.Pos, (short)d.ObjIndex, (short)d.Amount);
             if (pos is not { } drop) continue;
             DejarEnElPiso(drop, (short)d.ObjIndex, (short)d.Amount);
-            var name = objeto?.Name ?? $"obj {d.ObjIndex}";
+            var name = _data.Obj(d.ObjIndex)?.Name ?? $"obj {d.ObjIndex}";
             session.Send(ServerMessages.ConsoleMsg($"{npc.Name} dejó caer {d.Amount}x {name}.", 0));
         }
         SortearDropGlobal(session, npc);
