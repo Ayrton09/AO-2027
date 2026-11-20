@@ -36,7 +36,9 @@ public sealed partial class Bot
         int antes = sentidos.MandadosRecibidos;
         if (!await AbrirElBancoAsync(transporte, sentidos, cerrada, ct) || sentidos.MandadosRecibidos == antes) return false;
 
+        // Entre el banquero y este punto pudo cambiar de mapa (una muerte, un portal): sin sastre suyo acá, no hay mandado.
         short mapaDelEncargo = sentidos.Mapa;
+        if (!MapaConMandado(mapaDelEncargo)) return false;
         var sastre = _entorno.Datos.MapSpawns[mapaDelEncargo].First(n => EsSuSastre(n.NpcIndex));
         if (!await IrAbriendoAsync(transporte, sentidos, mapaDelEncargo, (byte)sastre.X, (byte)sastre.Y,
                 cerrada, ct, RadioDelMostrador, EsSuSastre)
