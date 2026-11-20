@@ -285,8 +285,25 @@ public sealed class EspectadorTests : IAsyncDisposable
     [InlineData("ModoEspectador=Pepe,Admin\r\n", 16)]
     public void El_ini_dice_que_rangos_pueden_observar(string linea, int mascara)
     {
-        File.WriteAllText(_rutaIni, "[INIT]\r\n" + linea);
-        Assert.Equal(mascara, ServerIni.Cargar(_rutaIni).RangosDelEspectador);
+        // Un archivo propio, recién creado: reescribir el que acaba de escribir el constructor choca a veces con quien lo
+        // está leyendo (el antivirus, con la suite entera cargando la máquina).
+        string ruta = Path.Combine(Path.GetTempPath(), "espectador-rangos-" + Guid.NewGuid() + ".ini");
+        try
+        {
+            File.WriteAllText(ruta, "[INIT]\r\n" + linea);
+            Assert.Equal(mascara, ServerIni.Cargar(ruta).RangosDelEspectador);
+        }
+        finally { try { File.Delete(ruta); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
+
+    /// <summary>Reescribe el ini de la prueba, reintentando si alguien lo tiene abierto en ese instante.</summary>
+    private void ReescribirIni(string texto)
+    {
+        for (int intento = 1; ; intento++)
+        {
+            try { File.WriteAllText(_rutaIni, texto); return; }
+            catch (IOException) when (intento < 20) { Thread.Sleep(50); }
+        }
     }
 
     private static string? TextoDeConsola(byte[] paquete)
@@ -298,7 +315,7 @@ public sealed class EspectadorTests : IAsyncDisposable
     [Fact]
     public async Task Un_rango_que_el_ini_no_habilita_no_observa_y_se_le_dice_por_que()
     {
-        File.WriteAllText(_rutaIni, "[INIT]\r\nModoEspectador=Admin,Dios\r\n");
+        ReescribirIni("[INIT]\r\nModoEspectador=Admin,Dios\r\n");
         Assert.True(_ini.Recargar());
         Crear("Observado", 1, new(2, 50, 50));
         var (_, semidios, salSemidios) = Crear("Semidios", 4, new(1, 50, 50));
@@ -321,7 +338,7 @@ public sealed class EspectadorTests : IAsyncDisposable
         Comando(dios, 241, "Observado");
         Assert.NotEqual(0, Escena(await Recibir(salida, ServerPacketId.EscenaEspectador)).ReadInteger());
 
-        File.WriteAllText(_rutaIni, "[INIT]\r\nModoEspectador=Admin\r\n");
+        ReescribirIni("[INIT]\r\nModoEspectador=Admin\r\n");
         Assert.True(_ini.Recargar());
         await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(3));
         Assert.Equal(0, Escena(await Recibir(salida, ServerPacketId.EscenaEspectador)).ReadInteger());
@@ -332,7 +349,7 @@ public sealed class EspectadorTests : IAsyncDisposable
     {
         const string cuenta = "cuentaconsejo", staff = "Consejero";
         GuardarCuenta(cuenta, staff);
-        File.WriteAllText(_rutaIni, "[INIT]\r\nModoEspectador=Admin,Dios\r\n");
+        ReescribirIni("[INIT]\r\nModoEspectador=Admin,Dios\r\n");
         Assert.True(_ini.Recargar());
         Assert.True(_ini.GuardarStaff(staff, 2));
         Assert.Equal(16 | 8, _ini.RangosDelEspectador);
