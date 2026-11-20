@@ -2,6 +2,19 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.41 (2026-11-20)
+
+### Visor de mapas
+
+- El servidor ofrece la página `visor-mapas.html`, por ejemplo `https://tu-servidor/visor-mapas.html`. Arrastrá uno o varios archivos `.csm` y los ves dibujados con los gráficos del juego, sin entrar con un personaje.
+- Si el archivo se llama como el mapa del juego (por ejemplo `mapa12.csm`), se compara solo con el mapa 12 y las baldosas distintas quedan marcadas en naranja. El panel cuenta cuántas cambian y en qué capa: suelo, objetos, decorado, techos, objetos colocados, bloqueos, salidas o criaturas.
+- Pasá el mouse por una baldosa para ver qué tiene tu archivo y qué tiene el juego. Podés alternar entre tu archivo, el mapa del juego y las diferencias, mostrar u ocultar capas y cambiar el zoom.
+- También sirve para ver cualquier mapa del juego: escribí su número y tocá Ver.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.0.41**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
+
 ## 1.0.40 (2026-11-20)
 
 ### Modo espectador
