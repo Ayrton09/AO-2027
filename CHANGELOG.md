@@ -2,6 +2,26 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.40 (2026-11-20)
+
+### Modo espectador
+
+- Quien hostea elige qué rangos de staff pueden usar el modo espectador con `ModoEspectador` en el `Server.ini`. Por ejemplo, `ModoEspectador=Admin,Dios` lo deja para Admins y Dioses, y `ModoEspectador=Nadie` lo apaga. Sin la clave pueden todos los rangos, como hasta ahora.
+- Si tu rango no está habilitado, el servidor te avisa al intentar observar. Al recargar el `Server.ini`, se cierran las vistas de los rangos que se quitaron.
+- Mientras observás, el chat te avisa que sólo acepta `/espectar` y `/dejardever`, en lugar de descartar el mensaje sin decir nada.
+
+### Lista de servidores
+
+- Al entrar a un servidor que no responde, los demás de la lista conservan su estado. Antes podían quedar en "buscando…" hasta la consulta siguiente.
+
+### Bots
+
+- El bot que hace el mandado del banquero sólo va al sastre si el mapa donde está tiene ese mandado.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.0.40**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`. El actualizador agrega `ModoEspectador` con los cinco rangos.
+
 ## 1.0.39 (2026-11-20)
 
 ### Botín de criaturas
