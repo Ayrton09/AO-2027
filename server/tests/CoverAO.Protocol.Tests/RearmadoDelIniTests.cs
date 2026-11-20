@@ -25,9 +25,25 @@ public class RearmadoDelIniTests
         throw new FileNotFoundException($"no encontré '{relativo}' subiendo desde {AppContext.BaseDirectory}");
     }
 
-    private static readonly string Ejemplo = File.ReadAllText(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo")), Codec.Ansi);
+    private static readonly string Ejemplo = IniFile.LeerServidor(BuscarEnElRepo(Path.Combine("hosting", "Server.ini.ejemplo"))).Texto;
 
     private static string Huella(string texto) => RearmadoDelIni.Huella(ServerIni.Desde(IniFile.Parse(texto)));
+
+    [Fact]
+    public void Editar_el_ini_conserva_la_tabla_y_solo_cambia_la_clave_efectiva()
+    {
+        const string tabla = "; Murciélago\r\n;500.737=0.5 ; Anillo del Bardo\r\n";
+        string original = "[DROPSNPC]\r\n" + tabla + "501.976=2\r\n\r\n[INIT]\r\nExp=1\r\n"
+                          + "\r\n[dropsnpc]\r\n501.976=3\r\n";
+        var ini = IniFile.Parse(original);
+        ini.Set("DROPSNPC", "501.976", "1,5");
+        ini.Set("DROPSNPC", "539.404", "65");
+
+        string guardado = RearmadoDelIni.ConservarFormato(original, ini);
+
+        Assert.Equal(original.Replace("501.976=3\r\n", "501.976=1,5\r\n539.404=65\r\n"), guardado);
+        Assert.Equal(ini.ToText(), IniFile.Parse(guardado).ToText());
+    }
 
     [Fact]
     public void Los_valores_del_host_quedan_y_las_claves_nuevas_se_agregan_con_su_explicacion()

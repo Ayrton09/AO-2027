@@ -18,6 +18,23 @@ public sealed class IniFile
 
     public static IniFile Load(string path) => Parse(File.ReadAllText(path, Codec.Ansi));
 
+    private static readonly Encoding Utf8Estricto = new UTF8Encoding(false, true);
+
+    /// <summary>El Server.ini puede venir de la plantilla UTF-8 o de un editor que guarde en Windows-1252.</summary>
+    internal static (string Texto, Encoding Codificacion) LeerServidor(string ruta)
+    {
+        try
+        {
+            using var lector = new StreamReader(ruta, Utf8Estricto, detectEncodingFromByteOrderMarks: true);
+            string texto = lector.ReadToEnd();
+            return (texto, lector.CurrentEncoding);
+        }
+        catch (DecoderFallbackException)
+        {
+            return (File.ReadAllText(ruta, Codec.Ansi), Codec.Ansi);
+        }
+    }
+
     public static IniFile Parse(string text)
     {
         var ini = new IniFile();
@@ -140,8 +157,11 @@ public sealed class IniFile
     /// de la casa, y con <c>File.WriteAllText</c> derecho quedaba en CERO bytes mientras se reescribia — un
     /// corte ahi devolvia el servidor sin un solo GM. Esta medido en <see cref="EscrituraAtomica"/>.</summary>
     public void Save(string path)
+        => Guardar(path, ToText(), Codec.Ansi);
+
+    internal static void Guardar(string path, string texto, Encoding codificacion)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        lock (PuertaDeEscritura) EscrituraAtomica.Escribir(path, ToText(), Codec.Ansi);
+        lock (PuertaDeEscritura) EscrituraAtomica.Escribir(path, texto, codificacion);
     }
 }

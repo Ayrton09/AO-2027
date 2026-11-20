@@ -179,7 +179,8 @@ public class ActualizadorTests : IDisposable
         {
             ["gamedata/mapa1.json"] = "mapa1 v2", ["gamedata/mapa2.json"] = "mapa2 v2", ["gamedata/nuevo.json"] = "nuevo v2",
             ["webclient/index.html"] = "cliente v2", ["data/updates.txt"] = "novedades v2",
-            ["Server.ini.ejemplo"] = "[INIT]\n; El puerto\nStartPort=7666\n; La experiencia\nExp=1\n; Una nueva\nClaveMinima=6\n",
+            ["Server.ini.ejemplo"] = "[INIT]\n; El puerto\nStartPort=7666\n; La experiencia\nExp=1\n; Una nueva\nClaveMinima=6\n"
+                                   + "\n[DROPSNPC]\n; Murciélago (NPC 500)\n;500.737=0.5 ; Anillo del Bardo\n",
         };
         foreach (var (rel, t) in oficiales) Escribir(carpeta, rel, t);
         Escribir(carpeta, "Server.ini", "[INIT]\nStartPort=1\n");                       // el que trae el paquete: no se instala
@@ -239,6 +240,26 @@ public class ActualizadorTests : IDisposable
         Assert.Equal(0, otra);
         Assert.Contains("Ya tenés esta versión", salidaOtra);
         Assert.Equal("mapa1 tocado despues", Leer("gamedata/mapa1.json"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void La_actualizacion_conserva_las_tildes_de_la_tabla_y_del_host(bool hostEnAnsi)
+    {
+        ArmarInstalacion();
+        string ruta = Path.Combine(Base, "Server.ini");
+        var codificacion = hostEnAnsi ? Codec.Ansi : Encoding.UTF8;
+        File.WriteAllText(ruta, "[INIT]\nNombre=Cañada\n\n[DROPSNPC]\n500.737=1,25\n", codificacion);
+        var f = new Firmante();
+
+        var (codigo, salida) = Actualizar(ArmarPaquete(f, "2026-10-13T00:00:00.000Z"), f.Clave);
+
+        Assert.True(codigo == 0, salida);
+        string host = File.ReadAllText(ruta, codificacion);
+        Assert.Contains("; Murciélago (NPC 500)\n;500.737=0.5 ; Anillo del Bardo", host);
+        Assert.Equal("1,25", IniFile.Parse(host).GetString("DROPSNPC", "500.737"));
+        Assert.Equal("Cañada", ServerIni.Cargar(ruta).NombreDelServidor);
     }
 
     [Fact]

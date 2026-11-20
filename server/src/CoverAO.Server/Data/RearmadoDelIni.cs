@@ -41,6 +41,51 @@ public static class RearmadoDelIni
 
     private sealed record Linea(string Texto, string Seccion, string? Clave, string? Valor);
 
+    /// <summary>Escribe los ajustes del host en su lugar y conserva las líneas del documento original.</summary>
+    internal static string ConservarFormato(string original, IniFile ini)
+    {
+        var lineas = LeerLineas(original);
+        var ultimaLinea = new Dictionary<string, Linea>(StringComparer.OrdinalIgnoreCase);
+        var ultimaClave = new Dictionary<(string, string), Linea>(ClaveComparer.Instancia);
+        foreach (var linea in lineas)
+        {
+            ultimaLinea[linea.Seccion] = linea;
+            if (linea.Clave is not null) ultimaClave[(linea.Seccion, linea.Clave)] = linea;
+        }
+
+        var salida = new List<string>(lineas.Count);
+        void AgregarClavesNuevas(string seccion)
+        {
+            foreach (string clave in ini.Claves(seccion))
+                if (!ultimaClave.ContainsKey((seccion, clave)))
+                    salida.Add($"{clave}={ini.GetString(seccion, clave)}");
+        }
+
+        if (!ultimaLinea.ContainsKey("")) AgregarClavesNuevas("");
+        foreach (var linea in lineas)
+        {
+            string texto = linea.Texto;
+            // El lector acepta claves repetidas. Se cambia la última, que es la que está en uso.
+            if (linea.Clave is { } clave && ReferenceEquals(linea, ultimaClave[(linea.Seccion, clave)]))
+            {
+                string valor = ini.GetString(linea.Seccion, clave);
+                if (valor != linea.Valor) texto = $"{clave}={valor}";
+            }
+            salida.Add(texto);
+            if (ReferenceEquals(linea, ultimaLinea[linea.Seccion])) AgregarClavesNuevas(linea.Seccion);
+        }
+
+        foreach (string seccion in ini.Secciones)
+        {
+            if (seccion.Length == 0 || ultimaLinea.ContainsKey(seccion)) continue;
+            if (salida.Count > 0 && salida[^1].Length != 0) salida.Add("");
+            salida.Add($"[{seccion}]");
+            AgregarClavesNuevas(seccion);
+        }
+        string salto = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        return string.Join(salto, salida) + (original.Length == 0 || original.EndsWith('\n') ? salto : "");
+    }
+
     public static Resultado Rearmar(string textoDelHost, string textoDelEjemplo,
         IReadOnlyDictionary<(string Seccion, string Vieja), string>? renombres = null)
     {

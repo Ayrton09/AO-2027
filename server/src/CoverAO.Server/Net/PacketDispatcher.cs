@@ -5658,9 +5658,10 @@ public sealed partial class PacketDispatcher
                     session.Send(ServerMessages.ConsoleMsg("Sólo un Admin puede escribir el Server.ini.", FuenteInfo));
                     return;
                 }
-                var ini = Data.IniFile.Load(_ini.Ruta);
+                var (original, codificacion) = Data.IniFile.LeerServidor(_ini.Ruta);
+                var ini = Data.IniFile.Parse(original);
                 ini.Set(seccion, clave, valor);
-                ini.Save(_ini.Ruta);
+                Data.IniFile.Guardar(_ini.Ruta, Data.RearmadoDelIni.ConservarFormato(original, ini), codificacion);
                 _ini.Recargar();
             }
             session.Send(ServerMessages.ConsoleMsg($"Modificó {seccion} {clave} a {valor}.", FuenteInfo));

@@ -1,5 +1,8 @@
 ﻿using CoverAO.Server.Data;
 
+using System.Text;
+using CoverAO.Protocol;
+
 namespace CoverAO.Protocol.Tests;
 
 [CollectionDefinition(nameof(EntornoDelPanelDeStaff), DisableParallelization = true)]
@@ -77,6 +80,32 @@ public class PanelDeStaffTests
             var despues = ServerIni.Cargar(ruta);
             Assert.Equal(1, despues.PrivilegioDe("Merlin"));
             Assert.Equal(8, despues.PrivilegioDe("Rugura"));   // al otro no se lo lleva puesto
+        }
+        finally { Limpiar(ruta); }
+    }
+
+    [Theory]
+    [InlineData("utf8")]
+    [InlineData("utf8-bom")]
+    [InlineData("windows-1252")]
+    public void El_panel_conserva_la_tabla_de_drops_y_su_codificacion(string formato)
+    {
+        const string tabla = "[DROPSNPC]\n; Murciélago (NPC 500)\n;500.737=0.5 ; Anillo del Bardo\n"
+                            + ";518.1090=1 ; Túnica de Absorción Mágica\n501.976=1,5\n";
+        var codificacion = formato == "windows-1252" ? Codec.Ansi : new UTF8Encoding(formato == "utf8-bom");
+        string ruta = IniNuevo();
+        try
+        {
+            File.WriteAllText(ruta, "[INIT]\nNombre=Cañada\n\n" + tabla, codificacion);
+            var ini = ServerIni.Cargar(ruta);
+            Assert.Equal("Cañada", ini.NombreDelServidor);
+            Assert.True(ini.GuardarStaff("Merlin", 8));
+
+            Assert.Contains(tabla, File.ReadAllText(ruta, codificacion));
+            Assert.Equal(formato == "utf8-bom", File.ReadAllBytes(ruta).AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
+            var recargado = ServerIni.Cargar(ruta);
+            Assert.Equal("Cañada", recargado.NombreDelServidor);
+            Assert.Equal(8, recargado.PrivilegioDe("Merlin"));
         }
         finally { Limpiar(ruta); }
     }

@@ -1028,7 +1028,8 @@ public sealed class ServerIni
         {
             try
             {
-                var ini = File.Exists(Ruta) ? IniFile.Load(Ruta) : new IniFile();
+                var (original, codificacion) = File.Exists(Ruta) ? IniFile.LeerServidor(Ruta) : ("", CoverAO.Protocol.Codec.Ansi);
+                var ini = IniFile.Parse(original);
                 var entorno = Environment.GetEnvironmentVariables();
                 var vigente = IniFile.Parse(ini.ToText());
                 AplicarEntorno(vigente, entorno, informar: false);
@@ -1054,8 +1055,8 @@ public sealed class ServerIni
 
                 // Una variable de entorno puede fijar una posición. Compactar la lista puede destapar un
                 // nombre oculto o tapar a otro. Comparamos los rangos que se leerían del archivo antes de guardarlo.
-                var ansi = CoverAO.Protocol.Codec.Ansi;
-                var propuesta = IniFile.Parse(ansi.GetString(ansi.GetBytes(ini.ToText())));
+                string texto = RearmadoDelIni.ConservarFormato(original, ini);
+                var propuesta = IniFile.Parse(codificacion.GetString(codificacion.GetBytes(texto)));
                 AplicarEntorno(propuesta, entorno, informar: false);
                 var staffPropuesto = LeerStaff(propuesta);
                 staffVigente.Remove(nombre);
@@ -1063,7 +1064,7 @@ public sealed class ServerIni
                 if (staffVigente.Count != staffPropuesto.Count || staffVigente.Any(p =>
                     !staffPropuesto.TryGetValue(p.Key, out byte rangoEfectivo) || rangoEfectivo != p.Value)) return false;
 
-                ini.Save(Ruta);
+                IniFile.Guardar(Ruta, texto, codificacion);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
@@ -1160,7 +1161,7 @@ public sealed class ServerIni
         try
         {
             string? real = File.Exists(ruta) ? ruta : BuscarIgnorandoMayusculas(ruta);
-            var ini = real is null ? new IniFile() : IniFile.Load(real);
+            var ini = real is null ? new IniFile() : IniFile.Parse(IniFile.LeerServidor(real).Texto);
             AplicarEntorno(ini, Environment.GetEnvironmentVariables());
             return Desde(ini, real);
         }

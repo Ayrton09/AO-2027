@@ -380,8 +380,8 @@ public static class Actualizador
     {
         string ini = Path.Combine(baseDir, "Server.ini"), ejemplo = Path.Combine(baseDir, "Server.ini.ejemplo");
         if (!File.Exists(ini) || !File.Exists(ejemplo)) return;
-        string host = File.ReadAllText(ini, Codec.Ansi);
-        var r = RearmadoDelIni.Rearmar(host, File.ReadAllText(ejemplo, Codec.Ansi));
+        var (host, codificacion) = IniFile.LeerServidor(ini);
+        var r = RearmadoDelIni.Rearmar(host, IniFile.LeerServidor(ejemplo).Texto);
         if (r.Problema is not null)
         {
             resumen.AppendLine($"  Server.ini: NO se rearmó ({r.Problema}). Sigue el tuyo, sin tocar; las claves nuevas están en Server.ini.ejemplo.");
@@ -391,7 +391,7 @@ public static class Actualizador
         if (texto == host) { resumen.AppendLine("  Server.ini: ya estaba al día."); return; }
         Directory.CreateDirectory(anterior);
         File.Copy(ini, Path.Combine(anterior, "Server.ini"), overwrite: true);
-        EscrituraAtomica.Escribir(ini, texto, Codec.Ansi);
+        EscrituraAtomica.Escribir(ini, texto, codificacion);
         resumen.AppendLine($"  Server.ini: al día con tus valores (el de antes, en actualizacion/anterior). {r.Agregadas.Count} clave(s) nueva(s)" +
                            (r.Agregadas.Count > 0 ? ": " + string.Join(", ", r.Agregadas.Take(15)) + (r.Agregadas.Count > 15 ? "…" : "") : "") + ".");
         if (r.Comentadas.Count > 0)
