@@ -13,24 +13,27 @@
     h1 { font-size:22px; margin:0; }
     .grupo { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
     .grupo > span { color:var(--t-tinta2); font-size:14px; }
-    button, select, input[type=number] { background:var(--t-hueco); color:var(--t-tinta); border:1px solid var(--t-linea);
-      padding:4px 10px; font:inherit; font-size:15px; }
+    button, select, input[type=number], input[type=search] { background:var(--t-hueco); color:var(--t-tinta);
+      border:1px solid var(--t-linea); padding:4px 10px; font:inherit; font-size:15px; }
     input[type=number] { width:6em; }
+    input[type=search] { width:100%; margin:4px 0 8px; }
     button:hover { border-color:var(--t-acento); }
     button.on { background:var(--t-acento); color:var(--t-sobre-acento); border-color:var(--t-acento); }
     button:disabled { opacity:.45; cursor:not-allowed; border-color:var(--t-linea); }
     label.capa { display:inline-flex; align-items:center; gap:4px; font-size:14px; cursor:pointer; }
+    body.en-mundo .solo-mapa, body:not(.en-mundo) .solo-mundo { display:none !important; }
     main { flex:1; display:flex; min-height:0; }
     #lienzo { flex:1; position:relative; overflow:auto; background:#050607; cursor:grab; }
     #lienzo.arrastrando { cursor:grabbing; }
     #lienzo canvas { position:absolute; left:0; top:0; }
+    #mundo-entero, #mundo-marcas { image-rendering:pixelated; }
     #cursor { position:absolute; pointer-events:none; border:2px solid var(--t-acento); display:none; }
     #vacio { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
       gap:10px; padding:24px; text-align:center; color:var(--t-tinta2); }
     #vacio[hidden] { display:none; }
     #vacio strong { color:var(--t-tinta); font-size:20px; }
     #lienzo.soltando { outline:3px dashed var(--t-acento); outline-offset:-10px; }
-    aside { width:300px; flex:none; overflow:auto; padding:12px 14px; background:var(--t-sup);
+    aside { width:310px; flex:none; overflow:auto; padding:12px 14px; background:var(--t-sup);
       border-left:1px solid var(--t-linea); font-size:14px; }
     aside h2 { font-size:17px; margin:14px 0 6px; }
     aside #titulo { margin-top:0; }
@@ -41,6 +44,10 @@
     .difiere { color:#ff8a5c; }
     #estado { min-height:1.5em; }
     .error { color:#ff6b6b; }
+    #cuevas { list-style:none; padding:0; margin:0; }
+    #cuevas li { padding:4px 6px; border-bottom:1px solid var(--t-linea); cursor:pointer; }
+    #cuevas li:hover, #cuevas li:focus-visible { background:var(--t-hueco); }
+    #cuevas small { display:block; color:var(--t-tinta2); }
     @media (max-width: 760px) {
       main { flex-direction:column; }
       aside { width:auto; max-height:38vh; border-left:0; border-top:1px solid var(--t-linea); }
@@ -51,29 +58,39 @@
   <header>
     <h1>Visor de mapas</h1>
     <div class="grupo">
+      <button type="button" id="ver-mundo">Mundo</button>
       <button type="button" id="abrir">Abrir .csm</button>
+      <button type="button" id="abrir-carpeta" title="Abre todos los .csm de una carpeta">Abrir carpeta</button>
       <input type="file" id="archivo" accept=".csm" multiple hidden />
-      <select id="lista-archivos" hidden aria-label="Archivo abierto"></select>
+      <input type="file" id="carpeta" webkitdirectory multiple hidden />
+      <select id="lista-archivos" class="solo-mapa" hidden aria-label="Archivo abierto"></select>
     </div>
     <div class="grupo">
-      <span>Mapa del juego</span>
+      <span>Mapa</span>
       <input type="number" id="numero" min="1" max="2000" aria-label="Número de mapa del juego" />
       <button type="button" id="ver-juego">Ver</button>
     </div>
-    <div class="grupo" role="group" aria-label="Qué se muestra">
+    <div class="grupo solo-mapa" role="group" aria-label="Qué se muestra">
       <button type="button" id="ver-a" class="on">Tu archivo</button>
       <button type="button" id="ver-b">En el juego</button>
       <button type="button" id="ver-dif">Diferencias</button>
     </div>
     <div class="grupo">
       <span>Zoom</span>
-      <select id="zoom" aria-label="Zoom">
+      <select id="zoom" class="solo-mapa" aria-label="Zoom del mapa">
         <option value="0.25">25 %</option>
         <option value="0.5" selected>50 %</option>
         <option value="1">100 %</option>
       </select>
+      <select id="zoom-mundo" class="solo-mundo" aria-label="Zoom del mundo">
+        <option value="0">Todo el mundo</option>
+        <option value="1">x1</option>
+        <option value="2">x2</option>
+        <option value="4">x4</option>
+        <option value="8">x8</option>
+      </select>
     </div>
-    <div class="grupo" id="capas">
+    <div class="grupo solo-mapa" id="capas">
       <label class="capa"><input type="checkbox" data-capa="suelo" checked />Suelo</label>
       <label class="capa"><input type="checkbox" data-capa="objetos" checked />Objetos</label>
       <label class="capa"><input type="checkbox" data-capa="deco" checked />Decorado</label>
@@ -83,41 +100,56 @@
       <label class="capa"><input type="checkbox" data-capa="criaturas" checked />Criaturas</label>
       <label class="capa"><input type="checkbox" data-capa="grilla" />Grilla</label>
     </div>
+    <div class="grupo solo-mundo">
+      <label class="capa"><input type="checkbox" id="mundo-bordes" checked />Bordes de los mapas</label>
+      <label class="capa"><input type="checkbox" id="mundo-numeros" />Números</label>
+    </div>
   </header>
   <main>
     <div id="lienzo">
       <canvas id="mundo"></canvas>
       <canvas id="marcas"></canvas>
+      <canvas id="mundo-entero"></canvas>
+      <canvas id="mundo-marcas"></canvas>
       <div id="cursor"></div>
       <div id="vacio">
         <strong>Arrastrá acá uno o varios archivos .csm</strong>
-        <span>o tocá "Abrir .csm". También podés ver cualquier mapa del juego con su número.</span>
+        <span>o tocá "Abrir .csm" o "Abrir carpeta". También podés ver cualquier mapa del juego con su número.</span>
         <span>Si el archivo se llama mapa12.csm, se compara solo con el mapa 12 del juego.</span>
+        <span>"Mundo" arma toda la superficie, y las cuevas y subsuelos van en una lista aparte.</span>
       </div>
     </div>
     <aside>
       <h2 id="titulo">Sin mapa</h2>
       <div id="estado" class="tenue"></div>
       <div id="resumen"></div>
-      <h2>Baldosa</h2>
+      <h2 id="titulo-baldosa">Baldosa</h2>
       <div id="baldosa" class="tenue">Pasá el mouse por el mapa.</div>
+      <div class="solo-mundo">
+        <h2>Cuevas y subsuelos</h2>
+        <p class="tenue">No tienen lugar en la grilla del mundo. Tocá uno para abrirlo.</p>
+        <input type="search" id="buscar-cueva" placeholder="Buscar por nombre o número" aria-label="Buscar cueva o subsuelo" />
+        <ul id="cuevas"></ul>
+      </div>
     </aside>
   </main>
 
   <script>
   'use strict';
-  // VISOR DE MAPAS. Lee un .csm en el navegador, lo dibuja con los gráficos del juego y lo compara con el
-  // mapa que el juego usa hoy (assets/mapN.json). No necesita personaje ni pasa por el servidor del juego:
-  // sólo pide archivos estáticos del cliente.
+  // VISOR DE MAPAS. Lee .csm en el navegador, los dibuja con los gráficos del juego y los compara con los mapas que el
+  // juego usa hoy (assets/mapN.json). También arma el mundo entero con los colores del minimapa. No pide personaje ni pasa
+  // por el servidor del juego: sólo baja archivos estáticos del cliente.
   const $ = (id) => document.getElementById(id);
   const TILE = 32, HD = 4;   // grh.json va en píxeles lógicos y las hojas están a ×4 (ver index.html, dGrh)
+  const LADO = 100;          // baldosas por lado de un casillero del mundo
 
-  let atlas = null, items = {}, npcs = {};
+  let atlas = null, items = {}, npcs = {}, grilla = null, zonas = {}, miniColor = null;
   const hojas = new Map();        // número de hoja -> Image ya decodificada (o null si no existe)
-  const archivos = [];            // { nombre, numero, mapa }
-  let actual = null;              // el archivo elegido
-  let delJuego = null;            // { numero, mapa } o null
+  const archivos = [];            // { nombre, numero, buffer, titulo }
+  let actual = null;              // { nombre, numero, mapa, faltan, porBaldosa }
+  let delJuego = null;            // { numero, mapa, porBaldosa }
   let vista = 'a';                // 'a' tu archivo, 'b' el del juego, 'dif' diferencias sobre tu archivo
+  let enMundo = false;
   let difTiles = new Set(), difPorCapa = {};
 
   // ── LECTURA DEL .csm ──────────────────────────────────────────────────────────────────────────────
@@ -135,8 +167,7 @@
     const w = xmax - xmin + 1, h = ymax - ymin + 1;
     if (w < 1 || h < 1 || w > 1000 || h > 1000) throw new Error(`tamaño de mapa inválido (${w}x${h})`);
     falta(182, 'los datos del mapa');
-    const bytesNombre = new Uint8Array(buffer, p, 64);
-    const nombre = new TextDecoder('windows-1252').decode(bytesNombre).replace(/\0.*$/s, '').trim();
+    const nombre = new TextDecoder('windows-1252').decode(new Uint8Array(buffer, p, 64)).replace(/\0.*$/s, '').trim();
     p += 182;
     falta(w * h * 4, 'el suelo');
     const ground = [];
@@ -165,10 +196,12 @@
   // El mapN.json del juego trae `objs` con el gráfico y sin el índice del objeto. Para comparar alcanza con el
   // gráfico, que es lo que se ve.
   async function mapaDelJuego(n) {
-    const r = await fetch(`./assets/map${n}.json`, { cache: 'no-cache' });
+    const r = await fetch(`./assets/map${n}.json`);
     if (!r.ok) throw new Error(`el juego no tiene el mapa ${n}`);
     return r.json();
   }
+  const archivoDelMapa = (n) => archivos.find((a) => a.numero === n);
+  const nombreDelMapa = (n) => (zonas[n] && zonas[n].n) || '';
 
   // ── GRÁFICOS ───────────────────────────────────────────────────────────────────────────────────────
   function grhEstatico(i) {
@@ -204,7 +237,7 @@
     return faltan;
   }
 
-  // ── DIBUJO ─────────────────────────────────────────────────────────────────────────────────────────
+  // ── DIBUJO DE UN MAPA ──────────────────────────────────────────────────────────────────────────────
   const capaOn = (c) => document.querySelector(`[data-capa="${c}"]`).checked;
   const zoom = () => Number($('zoom').value);
   function mapaVisible() { return vista === 'b' ? delJuego?.mapa : actual?.mapa; }
@@ -218,9 +251,9 @@
   }
 
   function dibujar() {
-    const m = mapaVisible();
+    const m = enMundo ? null : mapaVisible();
     const mundo = $('mundo'), marcas = $('marcas');
-    $('vacio').hidden = !!m;
+    $('vacio').hidden = enMundo || !!m;
     if (!m) { mundo.width = marcas.width = 0; return; }
     const z = zoom(), W = m.w * TILE * z, H = m.h * TILE * z;
     for (const c of [mundo, marcas]) { c.width = Math.ceil(W); c.height = Math.ceil(H); }
@@ -265,8 +298,7 @@
     if (capaOn('criaturas')) {
       for (const [x, y, n] of m.npcs || []) {
         const [px, py] = caja(x, y);
-        const hostil = npcs[n] && npcs[n].h;
-        c.fillStyle = hostil ? '#ff5a3c' : '#f2d04b';
+        c.fillStyle = npcs[n] && npcs[n].h ? '#ff5a3c' : '#f2d04b';
         c.beginPath(); c.arc(px + t / 2, py + t / 2, Math.max(3, t * 0.28), 0, Math.PI * 2); c.fill();
         c.strokeStyle = '#000'; c.lineWidth = 1; c.stroke();
       }
@@ -305,7 +337,8 @@
   function comparar() {
     difTiles = new Set(); difPorCapa = {};
     if (!actual || !delJuego) return;
-    const a = porBaldosa(actual.mapa), b = porBaldosa(delJuego.mapa);
+    const a = actual.porBaldosa || (actual.porBaldosa = porBaldosa(actual.mapa));
+    const b = delJuego.porBaldosa || (delJuego.porBaldosa = porBaldosa(delJuego.mapa));
     for (const k of new Set([...a.keys(), ...b.keys()])) {
       const ea = a.get(k) || {}, eb = b.get(k) || {};
       for (const asp of Object.keys(ASPECTOS)) {
@@ -315,29 +348,173 @@
         }
       }
     }
-    actual.porBaldosa = a; delJuego.porBaldosa = b;
+  }
+
+  // ── EL MUNDO ───────────────────────────────────────────────────────────────────────────────────────
+  // La superficie se arma con la grilla del mapa del juego (assets/maptable.json: qué mapa ocupa cada casillero) y cada mapa
+  // se pinta a un píxel por baldosa con los colores del minimapa del original (assets/minimap.bin), como el minimapa del
+  // juego. Cada mapa se baja, se pinta y se suelta: los 690 juntos no entran cómodos en la memoria del navegador.
+  let generacionMundo = 0, mundoArmado = false;
+  const origenDeCelda = new Map();   // número de mapa -> 'tuyo' | 'juego' | 'falta'
+
+  function celdaDe(n) {
+    for (let f = 0; f < grilla.filas; f++) { const c = grilla.grilla[f].indexOf(n); if (c >= 0) return [c, f]; }
+    return null;
+  }
+  const enLaGrilla = (n) => !!grilla && grilla.grilla.some((fila) => fila.includes(n));
+
+  function pintarEnElMundo(ctx, m, col, fila) {
+    const img = ctx.createImageData(LADO, LADO), d = img.data;
+    const pinta = (x, y, g) => {
+      if (!g || g >= miniColor.length) return;
+      const px = x - m.xmin, py = y - m.ymin;
+      if (px < 0 || py < 0 || px >= LADO || py >= LADO) return;
+      const c = miniColor[g], i = (py * LADO + px) * 4;
+      d[i] = (c >> 16) & 255; d[i + 1] = (c >> 8) & 255; d[i + 2] = c & 255; d[i + 3] = 255;
+    };
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) pinta(x + m.xmin, y + m.ymin, m.ground[y][x]);
+    for (const [x, y, g] of m.objects || []) pinta(x, y, g);
+    for (const [x, y, g] of m.objs || []) pinta(x, y, g);
+    for (const [x, y, g] of m.roofs || []) pinta(x, y, g);
+    ctx.putImageData(img, col * LADO, fila * LADO);
+  }
+
+  async function armarMundo() {
+    const gen = ++generacionMundo;
+    const lienzo = $('mundo-entero');
+    lienzo.width = grilla.columnas * LADO; lienzo.height = grilla.filas * LADO;
+    $('mundo-marcas').width = lienzo.width; $('mundo-marcas').height = lienzo.height;
+    const ctx = lienzo.getContext('2d');
+    ctx.fillStyle = '#050607'; ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+    origenDeCelda.clear();
+    ajustarZoomMundo();
+    const celdas = [];
+    grilla.grilla.forEach((fila, f) => fila.forEach((n, c) => { if (n) celdas.push([n, c, f]); }));
+    let hechas = 0, siguiente = 0;
+    const trabajar = async () => {
+      while (siguiente < celdas.length && gen === generacionMundo) {
+        const [n, c, f] = celdas[siguiente++];
+        const propio = archivoDelMapa(n);
+        try {
+          const m = propio ? leerCsm(propio.buffer) : await mapaDelJuego(n);
+          if (gen !== generacionMundo) return;
+          pintarEnElMundo(ctx, m, c, f);
+          origenDeCelda.set(n, propio ? 'tuyo' : 'juego');
+        } catch { origenDeCelda.set(n, 'falta'); }
+        hechas++;
+        if (hechas % 20 === 0 || hechas === celdas.length) { estado(`Armando el mundo: ${hechas} de ${celdas.length} mapas…`); marcasDelMundo(); }
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, trabajar));
+    if (gen !== generacionMundo) return;
+    mundoArmado = true;
+    marcasDelMundo();
+    estado('');
+    pintarPanel();
+  }
+
+  function marcasDelMundo() {
+    const c = $('mundo-marcas').getContext('2d');
+    c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+    grilla.grilla.forEach((fila, f) => fila.forEach((n, col) => {
+      if (!n) return;
+      const x = col * LADO, y = f * LADO;
+      if ($('mundo-bordes').checked) { c.strokeStyle = 'rgba(0,0,0,.55)'; c.lineWidth = 1; c.strokeRect(x + .5, y + .5, LADO - 1, LADO - 1); }
+      if (origenDeCelda.get(n) === 'tuyo') { c.strokeStyle = '#ff8a5c'; c.lineWidth = 4; c.strokeRect(x + 2, y + 2, LADO - 4, LADO - 4); }
+      if ($('mundo-numeros').checked) {
+        c.font = '600 20px "Barlow Semi Condensed", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.lineWidth = 4; c.strokeStyle = '#000'; c.strokeText(String(n), x + LADO / 2, y + LADO / 2);
+        c.fillStyle = '#fff'; c.fillText(String(n), x + LADO / 2, y + LADO / 2);
+      }
+    }));
+  }
+
+  function escalaMundo() {
+    const v = Number($('zoom-mundo').value);
+    if (v) return v;
+    const l = $('lienzo');
+    return Math.min(l.clientWidth / (grilla.columnas * LADO), l.clientHeight / (grilla.filas * LADO));
+  }
+  function ajustarZoomMundo() {
+    const e = escalaMundo();
+    for (const id of ['mundo-entero', 'mundo-marcas']) {
+      const c = $(id);
+      c.style.width = (grilla.columnas * LADO * e) + 'px';
+      c.style.height = (grilla.filas * LADO * e) + 'px';
+    }
+  }
+
+  function listarCuevas() {
+    const filtro = $('buscar-cueva').value.trim().toLowerCase();
+    const entradas = new Map();   // cueva -> mapas desde los que se entra
+    for (const [n, z] of Object.entries(zonas)) for (const c of z.c || []) {
+      if (!entradas.has(c)) entradas.set(c, []);
+      entradas.get(c).push(Number(n));
+    }
+    const fuera = Object.keys(zonas).map(Number).filter((n) => !enLaGrilla(n));
+    for (const a of archivos) if (a.numero && !enLaGrilla(a.numero) && !fuera.includes(a.numero)) fuera.push(a.numero);
+    fuera.sort((a, b) => a - b);
+    const ul = $('cuevas');
+    ul.textContent = '';
+    for (const n of fuera) {
+      const nombre = nombreDelMapa(n) || archivoDelMapa(n)?.titulo || '';
+      if (filtro && !(`${n} ${nombre}`.toLowerCase().includes(filtro))) continue;
+      const li = document.createElement('li');
+      li.tabIndex = 0;
+      const tipo = zonas[n]?.z === 'DUNGEON' ? 'cueva o mazmorra' : 'subsuelo o mapa aparte';
+      const desde = (entradas.get(n) || []).map((m) => `${m}${nombreDelMapa(m) ? ' ' + nombreDelMapa(m) : ''}`).join(', ');
+      li.innerHTML = `<b></b><small></small>`;
+      li.querySelector('b').textContent = `${n}${nombre ? ' · ' + nombre : ''}${archivoDelMapa(n) ? ' (tuyo)' : ''}`;
+      li.querySelector('small').textContent = tipo + (desde ? ` · se entra desde ${desde}` : '');
+      const abrirla = () => abrirMapa(n);
+      li.addEventListener('click', abrirla);
+      li.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') abrirla(); });
+      ul.append(li);
+    }
+    if (!ul.children.length) ul.innerHTML = '<li class="tenue">No hay coincidencias.</li>';
+  }
+
+  function describirCelda(n) {
+    if (!n) { $('baldosa').className = 'tenue'; $('baldosa').textContent = 'Casillero vacío.'; return; }
+    const z = zonas[n] || {};
+    const origen = origenDeCelda.get(n);
+    const lineas = [`<div class="dato"><span>Mapa</span><b>${n}</b></div>`];
+    const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    if (z.n) lineas.push(`<div class="dato"><span>Nombre</span><b>${esc(z.n)}</b></div>`);
+    if (z.z) lineas.push(`<div class="dato"><span>Zona</span><b>${esc(z.z.toLowerCase())}</b></div>`);
+    lineas.push(`<p class="${origen === 'tuyo' ? 'difiere' : 'tenue'}">${origen === 'tuyo' ? 'Se ve tu archivo.' : origen === 'falta' ? 'No se pudo leer.' : 'Se ve el mapa del juego.'}</p>`);
+    if (z.c?.length) lineas.push(`<p>Cuevas desde acá: ${z.c.map((c) => `${c}${nombreDelMapa(c) ? ' ' + esc(nombreDelMapa(c)) : ''}`).join(', ')}</p>`);
+    lineas.push('<p class="tenue">Hacé clic para abrirlo.</p>');
+    $('baldosa').className = '';
+    $('baldosa').innerHTML = lineas.join('');
   }
 
   // ── PANEL ──────────────────────────────────────────────────────────────────────────────────────────
   function estado(t, esError = false) { $('estado').textContent = t; $('estado').className = esError ? 'error' : 'tenue'; }
   const nombreNpc = (n) => (npcs[n] && npcs[n].n) || `criatura ${n}`;
-  const contar = (m) => ({ npcs: (m.npcs || []).length, exits: (m.exits || []).length, objetos: (m.objects || []).length,
-                           bloqueos: (m.blocked || []).length });
 
   function pintarPanel() {
-    const m = mapaVisible();
-    const titulo = vista === 'b' ? (delJuego ? `Mapa ${delJuego.numero} del juego` : 'Sin mapa del juego')
-                                 : (actual ? actual.nombre : 'Sin archivo');
-    $('titulo').textContent = titulo;
     const r = $('resumen');
     r.textContent = '';
-    if (!m) return;
     const agregar = (html) => { const d = document.createElement('div'); d.innerHTML = html; r.append(d); };
     const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    if (enMundo) {
+      $('titulo').textContent = 'Mundo';
+      $('titulo-baldosa').textContent = 'Mapa';
+      const tuyos = [...origenDeCelda.values()].filter((o) => o === 'tuyo').length;
+      agregar(`<div class="dato"><span>Mapas de superficie</span><b>${grilla.grilla.flat().filter(Boolean).length}</b></div>`);
+      if (tuyos) agregar(`<p>Los <b class="difiere">${tuyos}</b> mapas con marco naranja son de tus archivos.</p>`);
+      else if (mundoArmado) agregar('<p class="tenue">Todos son los mapas del juego. Con "Abrir carpeta" se arma con los tuyos.</p>');
+      return;
+    }
+    $('titulo-baldosa').textContent = 'Baldosa';
+    const m = mapaVisible();
+    $('titulo').textContent = vista === 'b' ? (delJuego ? `Mapa ${delJuego.numero} del juego` : 'Sin mapa del juego')
+                                            : (actual ? actual.nombre : 'Sin archivo');
+    if (!m) return;
     if (m.name) agregar(`<div class="dato"><span>Nombre</span><b>${esc(m.name)}</b></div>`);
     agregar(`<div class="dato"><span>Tamaño</span><b>${m.w} x ${m.h}</b></div>`);
-    const n = contar(m);
-    agregar(`<div class="dato"><span>Criaturas</span><b>${n.npcs}</b></div><div class="dato"><span>Salidas</span><b>${n.exits}</b></div>`);
+    agregar(`<div class="dato"><span>Criaturas</span><b>${(m.npcs || []).length}</b></div><div class="dato"><span>Salidas</span><b>${(m.exits || []).length}</b></div>`);
     if (vista !== 'b' && actual?.faltan?.length)
       agregar(`<p class="difiere">Hay ${actual.faltan.length} gráficos que el juego no tiene: se ven vacíos.</p>`);
     if (actual && delJuego) {
@@ -373,13 +550,31 @@
       lineas.push('<b>Tu archivo</b>' + lado(actual.mapa, actual.porBaldosa));
       lineas.push(`<b>Mapa ${delJuego.numero} del juego</b>` + lado(delJuego.mapa, delJuego.porBaldosa));
     } else {
-      lineas.push(lado(m, vista === 'b' ? delJuego?.porBaldosa : actual?.porBaldosa));
+      const sobre = vista === 'b' ? delJuego : actual;
+      if (sobre && !sobre.porBaldosa) sobre.porBaldosa = porBaldosa(sobre.mapa);
+      lineas.push(lado(m, sobre?.porBaldosa));
     }
     $('baldosa').className = '';
     $('baldosa').innerHTML = lineas.join('');
   }
 
   // ── CARGA Y CONTROLES ──────────────────────────────────────────────────────────────────────────────
+  function irAlMundo(si) {
+    enMundo = si;
+    document.body.classList.toggle('en-mundo', si);
+    $('ver-mundo').classList.toggle('on', si);
+    $('cursor').style.display = 'none';
+    for (const id of ['mundo-entero', 'mundo-marcas']) $(id).hidden = !si;
+    for (const id of ['mundo', 'marcas']) $(id).hidden = si;
+    $('baldosa').className = 'tenue';
+    $('baldosa').textContent = si ? 'Pasá el mouse por el mundo.' : 'Pasá el mouse por el mapa.';
+    if (si) {
+      listarCuevas();
+      if (!mundoArmado) armarMundo(); else { ajustarZoomMundo(); marcasDelMundo(); }
+    }
+    dibujar(); pintarPanel();
+  }
+
   function elegirVista(v) {
     vista = v;
     for (const [id, cual] of [['ver-a', 'a'], ['ver-b', 'b'], ['ver-dif', 'dif']]) $(id).classList.toggle('on', vista === cual);
@@ -404,18 +599,18 @@
       $('numero').value = n;
       comparar();
       estado('');
-      if (!actual) vista = 'b';
+      if (!actual || actual.numero !== n) vista = 'b';
+      if (enMundo) irAlMundo(false);
       habilitarVistas();
     } catch (e) { estado(e.message, true); }
   }
 
   async function elegirArchivo(i) {
-    actual = archivos[i];
+    const a = archivos[i];
+    actual = { nombre: a.nombre, numero: a.numero, mapa: leerCsm(a.buffer) };
     $('lista-archivos').value = String(i);
-    try {
-      actual.faltan = await cargarHojas(actual.mapa);
-      estado('');
-    } catch (e) { estado(e.message, true); }
+    try { actual.faltan = await cargarHojas(actual.mapa); estado(''); } catch (e) { estado(e.message, true); }
+    if (enMundo) irAlMundo(false);
     if (actual.numero && (!delJuego || delJuego.numero !== actual.numero)) { vista = 'dif'; await verDelJuego(actual.numero); }
     else {
       comparar();
@@ -424,32 +619,53 @@
     }
   }
 
-  async function abrir(lista) {
-    const nuevos = [];
-    for (const f of lista) {
-      if (!/\.csm$/i.test(f.name)) { estado(`${f.name} no es un .csm`, true); continue; }
-      try {
-        const mapa = leerCsm(await f.arrayBuffer());
-        const numero = Number((f.name.match(/(\d+)\.csm$/i) || [])[1]) || null;
-        archivos.push({ nombre: f.name, numero, mapa });
-        nuevos.push(archivos.length - 1);
-      } catch (e) { estado(`${f.name}: ${e.message}`, true); }
-    }
-    const sel = $('lista-archivos');
-    sel.textContent = '';
-    archivos.forEach((a, i) => sel.append(new Option(a.nombre + (a.mapa.name ? ` - ${a.mapa.name}` : ''), String(i))));
-    sel.hidden = archivos.length < 2;
-    if (nuevos.length) await elegirArchivo(nuevos[0]);
+  // Abre un mapa del mundo o de la lista de cuevas: el tuyo si lo abriste (comparado con el del juego), si no el del juego.
+  function abrirMapa(n) {
+    const i = archivos.findIndex((a) => a.numero === n);
+    if (i >= 0) elegirArchivo(i); else verDelJuego(n);
   }
 
+  async function abrir(lista) {
+    const nuevos = [];
+    const csm = lista.filter((f) => /\.csm$/i.test(f.name));
+    if (lista.length && !csm.length) { estado('No hay archivos .csm en lo que elegiste.', true); return; }
+    let malos = 0, i = 0;
+    for (const f of csm) {
+      if (++i % 50 === 0) estado(`Leyendo ${i} de ${csm.length} archivos…`);
+      try {
+        const buffer = await f.arrayBuffer();
+        const m = leerCsm(buffer);   // se lee entero para avisar ya si está roto; después se suelta
+        const numero = Number((f.name.match(/(\d+)\.csm$/i) || [])[1]) || null;
+        const repetido = archivos.findIndex((a) => a.nombre === f.name);
+        const entrada = { nombre: f.name, numero, buffer, titulo: m.name };
+        if (repetido >= 0) archivos[repetido] = entrada; else archivos.push(entrada);
+        nuevos.push(repetido >= 0 ? repetido : archivos.length - 1);
+      } catch (e) { malos++; if (csm.length === 1) estado(`${f.name}: ${e.message}`, true); }
+    }
+    if (csm.length > 1) estado(`${nuevos.length} archivos abiertos` + (malos ? `, ${malos} no se pudieron leer.` : '.'), malos > 0);
+    const sel = $('lista-archivos');
+    sel.textContent = '';
+    archivos.forEach((a, k) => sel.append(new Option(a.nombre + (a.titulo ? ` - ${a.titulo}` : ''), String(k))));
+    sel.hidden = archivos.length < 2;
+    if (!nuevos.length) return;
+    // Con varios archivos el mundo es la mejor vista: se arma con los tuyos encima.
+    if (enMundo || nuevos.length > 1) { mundoArmado = false; irAlMundo(true); }
+    else await elegirArchivo(nuevos[0]);
+  }
+
+  $('ver-mundo').addEventListener('click', () => irAlMundo(!enMundo));
   $('abrir').addEventListener('click', () => $('archivo').click());
-  $('archivo').addEventListener('change', (ev) => { abrir([...ev.target.files]); ev.target.value = ''; });
+  $('abrir-carpeta').addEventListener('click', () => $('carpeta').click());
+  for (const id of ['archivo', 'carpeta'])
+    $(id).addEventListener('change', (ev) => { abrir([...ev.target.files]); ev.target.value = ''; });
   $('lista-archivos').addEventListener('change', (ev) => elegirArchivo(Number(ev.target.value)));
   $('ver-juego').addEventListener('click', () => verDelJuego(Number($('numero').value)));
   $('numero').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') verDelJuego(Number($('numero').value)); });
   $('ver-a').addEventListener('click', () => elegirVista('a'));
   $('ver-b').addEventListener('click', () => elegirVista('b'));
   $('ver-dif').addEventListener('click', () => elegirVista('dif'));
+  $('buscar-cueva').addEventListener('input', listarCuevas);
+  for (const id of ['mundo-bordes', 'mundo-numeros']) $(id).addEventListener('change', marcasDelMundo);
   $('zoom').addEventListener('change', () => {
     const l = $('lienzo'), z0 = Number($('zoom').dataset.antes || 0.5), z1 = zoom();
     const cx = (l.scrollLeft + l.clientWidth / 2) / z0, cy = (l.scrollTop + l.clientHeight / 2) / z0;
@@ -457,9 +673,18 @@
     dibujar();
     l.scrollLeft = cx * z1 - l.clientWidth / 2; l.scrollTop = cy * z1 - l.clientHeight / 2;
   });
+  $('zoom-mundo').addEventListener('change', () => {
+    const l = $('lienzo'), e0 = Number($('zoom-mundo').dataset.antes || escalaMundo());
+    const cx = (l.scrollLeft + l.clientWidth / 2) / e0, cy = (l.scrollTop + l.clientHeight / 2) / e0;
+    ajustarZoomMundo();
+    const e1 = escalaMundo();
+    $('zoom-mundo').dataset.antes = e1;
+    l.scrollLeft = cx * e1 - l.clientWidth / 2; l.scrollTop = cy * e1 - l.clientHeight / 2;
+  });
+  window.addEventListener('resize', () => { if (enMundo && $('zoom-mundo').value === '0') ajustarZoomMundo(); });
   $('capas').addEventListener('change', () => dibujar());
 
-  // Arrastrar archivos para abrirlos, y arrastrar el mapa para moverse.
+  // Arrastrar archivos para abrirlos, arrastrar la vista para moverse y clic en el mundo para abrir un mapa.
   const lienzo = $('lienzo');
   lienzo.addEventListener('dragover', (ev) => { ev.preventDefault(); lienzo.classList.add('soltando'); });
   lienzo.addEventListener('dragleave', () => lienzo.classList.remove('soltando'));
@@ -467,16 +692,42 @@
   let arrastre = null;
   lienzo.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
-    arrastre = { x: ev.clientX, y: ev.clientY, sl: lienzo.scrollLeft, st: lienzo.scrollTop };
+    arrastre = { x: ev.clientX, y: ev.clientY, sl: lienzo.scrollLeft, st: lienzo.scrollTop, movio: false };
     lienzo.classList.add('arrastrando');
   });
-  window.addEventListener('pointerup', () => { arrastre = null; lienzo.classList.remove('arrastrando'); });
+  window.addEventListener('pointerup', (ev) => {
+    const era = arrastre;
+    arrastre = null; lienzo.classList.remove('arrastrando');
+    if (era && !era.movio && enMundo && mundoArmado !== null) {
+      const n = celdaBajo(ev);
+      if (n) abrirMapa(n);
+    }
+  });
+  function celdaBajo(ev) {
+    if (!grilla) return 0;
+    const r = $('mundo-entero').getBoundingClientRect(), e = escalaMundo() * LADO;
+    const col = Math.floor((ev.clientX - r.left) / e), fila = Math.floor((ev.clientY - r.top) / e);
+    if (col < 0 || fila < 0 || col >= grilla.columnas || fila >= grilla.filas) return 0;
+    return grilla.grilla[fila][col] || 0;
+  }
   lienzo.addEventListener('pointermove', (ev) => {
-    if (arrastre) { lienzo.scrollLeft = arrastre.sl - (ev.clientX - arrastre.x); lienzo.scrollTop = arrastre.st - (ev.clientY - arrastre.y); }
+    if (arrastre) {
+      if (Math.abs(ev.clientX - arrastre.x) + Math.abs(ev.clientY - arrastre.y) > 4) arrastre.movio = true;
+      lienzo.scrollLeft = arrastre.sl - (ev.clientX - arrastre.x); lienzo.scrollTop = arrastre.st - (ev.clientY - arrastre.y);
+    }
+    const cur = $('cursor');
+    if (enMundo) {
+      if (!grilla) return;
+      const r = $('mundo-entero').getBoundingClientRect(), e = escalaMundo() * LADO;
+      const col = Math.floor((ev.clientX - r.left) / e), fila = Math.floor((ev.clientY - r.top) / e);
+      if (col < 0 || fila < 0 || col >= grilla.columnas || fila >= grilla.filas) { cur.style.display = 'none'; return; }
+      Object.assign(cur.style, { display: 'block', left: col * e + 'px', top: fila * e + 'px', width: e + 'px', height: e + 'px' });
+      describirCelda(grilla.grilla[fila][col]);
+      return;
+    }
     const m = mapaVisible(); if (!m) return;
     const r = $('mundo').getBoundingClientRect(), t = TILE * zoom();
     const tx = Math.floor((ev.clientX - r.left) / t), ty = Math.floor((ev.clientY - r.top) / t);
-    const cur = $('cursor');
     if (tx < 0 || ty < 0 || tx >= m.w || ty >= m.h) { cur.style.display = 'none'; return; }
     Object.assign(cur.style, { display: 'block', left: tx * t + 'px', top: ty * t + 'px', width: t + 'px', height: t + 'px' });
     describirBaldosa(tx + m.xmin, ty + m.ymin);
@@ -485,15 +736,22 @@
   (async () => {
     estado('Cargando los datos del juego…');
     try {
-      const [g, it, np] = await Promise.all(['grh', 'items', 'npcs'].map((n) => fetch(`./assets/${n}.json`).then((r) => {
+      const json = (n) => fetch(`./assets/${n}.json`).then((r) => {
         if (!r.ok) throw new Error(`no se pudo leer assets/${n}.json`);
         return r.json();
-      })));
-      atlas = g.grh; items = it; npcs = np;
+      });
+      const [g, it, np, mt, zn, mini] = await Promise.all([json('grh'), json('items'), json('npcs'), json('maptable'),
+        json('mapa-zonas'), fetch('./assets/minimap.bin').then((r) => (r.ok ? r.arrayBuffer() : null))]);
+      atlas = g.grh; items = it; npcs = np; grilla = mt; zonas = zn;
+      if (!mini) throw new Error('no se pudo leer assets/minimap.bin');
+      miniColor = new Uint32Array(mini);
       estado('');
+      irAlMundo(false);
       habilitarVistas();
-      const n = Number(new URLSearchParams(location.search).get('mapa'));
+      const params = new URLSearchParams(location.search);
+      const n = Number(params.get('mapa'));
       if (n) verDelJuego(n);
+      else if (params.has('mundo')) irAlMundo(true);
     } catch (e) { estado(e.message, true); }
   })();
   </script>
