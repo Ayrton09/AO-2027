@@ -462,18 +462,22 @@
     const lista = $('lista'), error = $('error'), campo = $('direccion');
     let datos = { servidores: [], ultimo: null, porDefecto: 'http://localhost:7669/' };
     let estados = new Map();
-    let rondaDeConsulta = 0;
+    // Cada server lleva su propio turno: una respuesta vieja no pisa a una más nueva del mismo server,
+    // y consultar uno no descarta lo que todavía está por llegar de los otros.
+    const turnoDeConsulta = new Map();
+    async function consultarUno(direccion) {
+      const turno = (turnoDeConsulta.get(direccion) || 0) + 1;
+      turnoDeConsulta.set(direccion, turno);
+      const estado = await window.escritorio.consultar(direccion);
+      if (turnoDeConsulta.get(direccion) !== turno) return false;
+      estados.set(direccion, estado);
+      return true;
+    }
 
     async function entrar(direccion) {
-      const ronda = ++rondaDeConsulta;
       const motivo = await window.escritorio.entrar(direccion);
       error.textContent = motivo || '';
-      if (motivo) {
-        const estado = await window.escritorio.consultar(direccion);
-        if (ronda !== rondaDeConsulta) return;
-        estados.set(direccion, estado);
-        await dibujar();
-      }
+      if (motivo && await consultarUno(direccion)) await dibujar();
     }
 
     function textoDelEstado(e) {
@@ -556,13 +560,9 @@
     }
 
     async function consultarTodos() {
-      const ronda = ++rondaDeConsulta;
       const { servidores } = await window.escritorio.listar();
       await Promise.all(servidores.map(async (s) => {
-        const estado = await window.escritorio.consultar(s.direccion);
-        if (ronda !== rondaDeConsulta) return;
-        estados.set(s.direccion, estado);
-        if ($('v-jugar').classList.contains('on')) dibujar();
+        if (await consultarUno(s.direccion) && $('v-jugar').classList.contains('on')) dibujar();
       }));
     }
 
@@ -574,8 +574,7 @@
       campo.value = '';
       estados.delete(r.direccion);
       await dibujar();
-      estados.set(r.direccion, await window.escritorio.consultar(r.direccion));
-      dibujar();
+      if (await consultarUno(r.direccion)) dibujar();
     });
     $('actualizar').addEventListener('click', () => { estados = new Map(); dibujar(); consultarTodos(); });
     // Mientras la lista está a la vista, el estado se refresca solo.
