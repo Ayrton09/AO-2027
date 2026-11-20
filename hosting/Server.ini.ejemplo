@@ -208,6 +208,10 @@ Dioses=0
 SemiDioses=0
 Consejeros=0
 RolesMasters=0
+; Que rangos pueden usar el Modo espectador, separados por coma: Admin, Dios,
+; SemiDios, Consejero, RM. Nadie = apagado. A un Dios o a un Admin solo lo
+; observa otro Dios o Admin. Se aplica al recargar el Server.ini.
+ModoEspectador=Admin,Dios,SemiDios,Consejero,RM
 
 ; --- Publicacion -------------------------------------------------------------
 ; Nombre del servidor: el que ven los jugadores en la lista de la app al agregar

@@ -26,8 +26,10 @@ public sealed partial class PacketDispatcher
     private const int VigenciaDelPermiso = 5000 / GameLoop.TickMs;
     private const int MargenParaRenovar = 1000 / GameLoop.TickMs;
 
-    private static bool PuedeEspectar(int rango, Player objetivo) =>
-        rango > PrivUser && !objetivo.SinConexion
+    // El rango tiene que estar habilitado en `[INIT] ModoEspectador`. Se vuelve a mirar en cada envío de la escena,
+    // así que un cambio del ini con el server andando corta las vistas que dejó de permitir.
+    private bool PuedeEspectar(int rango, Player objetivo) =>
+        rango > PrivUser && _ini.RangoPuedeEspectar(rango) && !objetivo.SinConexion
         && objetivo.Connection is ClientSession { Cerrada: false } && !objetivo.AdminInvisible
         && ((objetivo.Privileges & (PrivDios | PrivAdmin)) == 0 || (rango & (PrivDios | PrivAdmin)) != 0);
 
@@ -40,6 +42,7 @@ public sealed partial class PacketDispatcher
         if (sesion.Player is { } gm)
         {
             if (!gm.IsGm) return;
+            if (!_ini.RangoPuedeEspectar(gm.Privileges)) { AvisarQueSuRangoNoEspecta(sesion); return; }
             var observado = _world.PlayerByName(nombre);
             if (observado is null || ReferenceEquals(gm, observado) || !PuedeEspectar(gm.Privileges, observado))
             { AvisarQueNoPuedeEspectar(sesion); return; }
@@ -50,6 +53,8 @@ public sealed partial class PacketDispatcher
         }
         if (sesion.CuentaParaEspectar is not { } cuenta || sesion.ComprobandoEspectador) return;
         if (!CuentaDeEspectadorVigente(sesion, cuenta)) { AvisarQueNoPuedeEspectar(sesion); return; }
+        if (!cuenta.Personajes.Any(p => _ini.EsStaff(p) && _ini.RangoPuedeEspectar(_ini.PrivilegioDe(p))))
+        { AvisarQueSuRangoNoEspecta(sesion); return; }
 
         var objetivo = _world.PlayerByName(nombre);
         if (objetivo is null) { AvisarQueNoPuedeEspectar(sesion); return; }
@@ -80,9 +85,13 @@ public sealed partial class PacketDispatcher
         });
     }
 
-    private static void AvisarQueNoPuedeEspectar(ClientSession sesion)
+    private static void AvisarQueNoPuedeEspectar(ClientSession sesion) => Avisar(sesion, "No podés observar a ese personaje.");
+
+    private static void AvisarQueSuRangoNoEspecta(ClientSession sesion) =>
+        Avisar(sesion, "Tu rango no puede usar el modo espectador en este servidor.");
+
+    private static void Avisar(ClientSession sesion, string mensaje)
     {
-        const string mensaje = "No podés observar a ese personaje.";
         sesion.Send(sesion.Player is null && !sesion.EspectaSinPersonaje
             ? ServerMessages.ShowMessageBox(mensaje)
             : ServerMessages.ConsoleMsg(mensaje, FuenteInfo));

@@ -272,6 +272,81 @@ public sealed class EspectadorTests : IAsyncDisposable
             panel => Assert.Equal((byte)ServerPacketId.PanelEspectador, panel[0]));
     }
 
+    // ── [INIT] ModoEspectador: qué rangos pueden observar ───────────────────────────────────────────────
+    [Theory]
+    [InlineData("", 16 | 8 | 4 | 2 | 32)]
+    [InlineData("ModoEspectador=\r\n", 16 | 8 | 4 | 2 | 32)]
+    [InlineData("ModoEspectador=Admin,Dios\r\n", 16 | 8)]
+    [InlineData("ModoEspectador= dioses ; RoleMaster \r\n", 8 | 32)]
+    [InlineData("ModoEspectador=SemiDios,Consejero,RM\r\n", 4 | 2 | 32)]
+    [InlineData("ModoEspectador=Nadie\r\n", 0)]
+    [InlineData("ModoEspectador=0\r\n", 0)]
+    [InlineData("ModoEspectador=Pepe\r\n", 0)]
+    [InlineData("ModoEspectador=Pepe,Admin\r\n", 16)]
+    public void El_ini_dice_que_rangos_pueden_observar(string linea, int mascara)
+    {
+        File.WriteAllText(_rutaIni, "[INIT]\r\n" + linea);
+        Assert.Equal(mascara, ServerIni.Cargar(_rutaIni).RangosDelEspectador);
+    }
+
+    private static string? TextoDeConsola(byte[] paquete)
+    {
+        var r = new ByteQueueReader(paquete);
+        return r.ReadByte() == (byte)ServerPacketId.ConsoleMsg ? r.ReadAsciiString() : null;
+    }
+
+    [Fact]
+    public async Task Un_rango_que_el_ini_no_habilita_no_observa_y_se_le_dice_por_que()
+    {
+        File.WriteAllText(_rutaIni, "[INIT]\r\nModoEspectador=Admin,Dios\r\n");
+        Assert.True(_ini.Recargar());
+        Crear("Observado", 1, new(2, 50, 50));
+        var (_, semidios, salSemidios) = Crear("Semidios", 4, new(1, 50, 50));
+        var (_, dios, salDios) = Crear("Director", 8, new(1, 52, 50));
+
+        Comando(semidios, 241, "Observado");
+        Comando(dios, 241, "Observado");
+        await HacerEnMundo(() => { });
+
+        var aviso = Assert.Single(await Entregas(semidios, salSemidios));
+        Assert.Equal("Tu rango no puede usar el modo espectador en este servidor.", TextoDeConsola(aviso));
+        Assert.Contains(await Entregas(dios, salDios), p => p[0] == (byte)ServerPacketId.EscenaEspectador);
+    }
+
+    [Fact]
+    public async Task Sacar_el_rango_del_ini_con_el_server_andando_corta_la_vista()
+    {
+        var (_, dios, salida) = Crear("Director", 8, new(1, 52, 50));
+        Crear("Observado", 1, new(2, 50, 50));
+        Comando(dios, 241, "Observado");
+        Assert.NotEqual(0, Escena(await Recibir(salida, ServerPacketId.EscenaEspectador)).ReadInteger());
+
+        File.WriteAllText(_rutaIni, "[INIT]\r\nModoEspectador=Admin\r\n");
+        Assert.True(_ini.Recargar());
+        await HacerEnMundo(() => _dispatcher.ActualizarEspectadores(3));
+        Assert.Equal(0, Escena(await Recibir(salida, ServerPacketId.EscenaEspectador)).ReadInteger());
+    }
+
+    [Fact]
+    public async Task La_cuenta_cuyo_rango_no_esta_habilitado_recibe_el_cartel()
+    {
+        const string cuenta = "cuentaconsejo", staff = "Consejero";
+        GuardarCuenta(cuenta, staff);
+        File.WriteAllText(_rutaIni, "[INIT]\r\nModoEspectador=Admin,Dios\r\n");
+        Assert.True(_ini.Recargar());
+        Assert.True(_ini.GuardarStaff(staff, 2));
+        Assert.Equal(16 | 8, _ini.RangosDelEspectador);
+        Crear("Observado", 1, new(2, 50, 50));
+        var (sesion, salida) = ConexionNueva();
+        AbrirCuenta(sesion, cuenta);
+        await Recibir(salida, ServerPacketId.AbrirFormularios);
+
+        Comando(sesion, 241, "Observado");
+        await HacerEnMundo(() => { });
+        Assert.Equal((byte)ServerPacketId.ShowMessageBox, Assert.Single(await Entregas(sesion, salida))[0]);
+        Assert.False(sesion.EspectaSinPersonaje);
+    }
+
     [Fact]
     public async Task Sigue_al_personaje_entre_mapas_sin_mover_ni_anunciar_al_gm()
     {

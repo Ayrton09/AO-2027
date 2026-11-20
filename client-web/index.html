@@ -7755,6 +7755,11 @@
       const text = (fromBox ? chatbox.value : rawText).trim();
       if (fromBox) chatbox.value = '';   // el cierre (blur + quitar el recuadro) lo hace abrirChat
       if (!text || ws.readyState !== 1) return;
+      // La vista del espectador es de sólo lectura: `enviarAlJuego` descarta la charla, así que se avisa en vez de perderla.
+      if (espectador && !/^\/(dejardever|espectar|ping|ayuda|ayudagm)(\s|$)/i.test(text)) {
+        log('Mientras observás sólo podés usar /espectar <nombre> y /dejardever.', '#b94');
+        return;
+      }
       const w = new ByteQueueWriter();
       // EL PRIVADO CON BARRA INVERTIDA: `\Nombre mensaje`. Es la sintaxis del original —la que escribe el
       // doble clic derecho sobre un jugador (frmMain.frm:2263)— y acá sólo existía `/susurrar`, o sea que

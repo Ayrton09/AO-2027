@@ -224,7 +224,7 @@ public sealed class ServerIni
         "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PasajesPorFaccion", "PersistirSuelo",
         "SoloEscritorio", "DescargaEscritorio", "BuscarActualizaciones",
         "LluviaBajoTecho", "PorcentajeLluvia",
-        "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
+        "ModoEspectador", "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "VidaMinimaDeJefe",
     };
 
@@ -994,6 +994,38 @@ public sealed class ServerIni
     public bool EsStaff(string? nombre) => PrivilegioDe(nombre) != 1;
     public int CantidadStaff => _staff.Count;
 
+    /// <summary>
+    /// REGLA DE LA CASA <c>ModoEspectador</c> (el modo espectador no existe en el original): qué rangos de staff pueden
+    /// observar a otro personaje. Va en <c>[INIT]</c> como lista de rangos separados por coma (<c>Admin, Dios, SemiDios,
+    /// Consejero, RM</c>); vacía o ausente son todos, <c>Nadie</c> o <c>0</c> lo apaga. Guarda la máscara de bits de
+    /// <c>PlayerType</c>. A un Dios o a un Admin sólo lo observa otro Dios o Admin, con cualquier valor de la lista.
+    /// </summary>
+    public byte RangosDelEspectador { get; private set; } = TodosLosRangos;
+
+    private const byte TodosLosRangos = 16 | 8 | 4 | 2 | 32;
+
+    public bool RangoPuedeEspectar(int rango) => (rango & RangosDelEspectador) != 0;
+
+    private static byte LeerRangosDelEspectador(IniFile ini)
+    {
+        string valor = (ini.GetString("INIT", "ModoEspectador", "") ?? "").Trim();
+        if (valor.Length == 0) return TodosLosRangos;
+        if (valor == "0" || valor.Equals("Nadie", StringComparison.OrdinalIgnoreCase)) return 0;
+        byte mascara = 0;
+        foreach (string parte in valor.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var rango = Array.Find(Rangos, r => parte.Equals(r.Clave, StringComparison.OrdinalIgnoreCase)
+                || parte.Equals(r.Seccion, StringComparison.OrdinalIgnoreCase)
+                || (r.Priv == 32 && parte.Equals("RoleMaster", StringComparison.OrdinalIgnoreCase)));
+            if (rango.Clave is null)
+                Console.Error.WriteLine($"[ini] ModoEspectador: '{parte}' no es un rango. Usá Admin, Dios, SemiDios, Consejero o RM.");
+            else mascara |= rango.Priv;
+        }
+        if (mascara == 0)
+            Console.Error.WriteLine("[ini] ModoEspectador no nombra ningún rango válido: nadie puede usar el modo espectador.");
+        return mascara;
+    }
+
     /// <summary>Nombres de staff por rango, para poder mostrarlos (panel de admin / arranque).</summary>
     public IEnumerable<(string Nombre, byte Priv)> Staff => _staff.Select(kv => (kv.Key, kv.Value));
 
@@ -1276,6 +1308,7 @@ public sealed class ServerIni
         cfg.RafagaDeConsultas = Math.Max(1, ini.GetInt("INIT", "RafagaDeConsultas", 10));
         cfg.PuedeCrearPersonajes = ini.GetInt("INIT", "PuedeCrearPersonajes", 1) != 0;
         cfg.ServerSoloGms = ini.GetInt("INIT", "ServerSoloGMs", 0) != 0;
+        cfg.RangosDelEspectador = LeerRangosDelEspectador(ini);
         cfg.IdleLimitMinutos = ini.GetInt("INIT", "IdleLimit", 0);
         // Un multiplicador directo, como en el original (ver Exp). Se leía como porcentaje, con un `/ 100`
         // que el VB6 no tiene: el `Exp=200` del install daba ×2 donde allá da ×200.

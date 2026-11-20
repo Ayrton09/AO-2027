@@ -4430,15 +4430,8 @@ public sealed partial class PacketDispatcher
                 _loop.Enqueue(() => GmWarp(session, name, map, x, y));
                 break;
             }
-            // ── 200: ARMAR — comando NUESTRO, no del original ────────────────────────────────────────────
-            // El original llega hasta el 91, así que de ahí para arriba es espacio libre y ningún cliente
-            // clásico lo manda. Va en 240 y NO en 200 a propósito: el 200 lo usa el guardia que comprueba que
-            // un selector desconocido cierre la conexión (GmCommandTests), y ocuparlo lo dejaría sin número. Es una herramienta del ARNÉS: deja pedir "un Guerrero de nivel 45 equipado"
-            // en un solo paquete, en vez de mandarle diez `/CI` y después subirlo a mano. Los flows de combate
-            // hoy dependen de criaturas del mundo, que se mueven y aparecen cuando quieren; con esto miden
-            // contra algo repetible.
-            //
-            // Gateado como cualquier comando de GM: quien no lo es, no llega hasta acá.
+            // ── 241 y 242: EL MODO ESPECTADOR, comandos NUESTROS ──────────────────────────────────────────
+            // Los permisos los decide `EmpezarAEspectar` (rango del staff y `[INIT] ModoEspectador`).
             case 241: // /ESPECTAR <nombre>
             {
                 string nombre = r.ReadAsciiString();
@@ -4448,6 +4441,15 @@ public sealed partial class PacketDispatcher
             case 242: // /DEJARDEVER
                 _loop.Enqueue(() => DejarDeEspectar(session));
                 break;
+            // ── 240: ARMAR, comando NUESTRO, no del original ─────────────────────────────────────────────
+            // El original llega hasta el 91, así que de ahí para arriba es espacio libre y ningún cliente
+            // clásico lo manda. Va en 240 y NO en 200 a propósito: el 200 lo usa el guardia que comprueba que
+            // un selector desconocido cierre la conexión (GmCommandTests), y ocuparlo lo dejaría sin número. Es una herramienta del ARNÉS: deja pedir "un Guerrero de nivel 45 equipado"
+            // en un solo paquete, en vez de mandarle diez `/CI` y después subirlo a mano. Los flows de combate
+            // hoy dependen de criaturas del mundo, que se mueven y aparecen cuando quieren; con esto miden
+            // contra algo repetible.
+            //
+            // Gateado como cualquier comando de GM: quien no lo es, no llega hasta acá.
             case 240: // Armar — /ARMAR <clase> <nivel>
             {
                 byte clase = r.ReadByte();
