@@ -2373,7 +2373,7 @@ public sealed partial class Bot
         // LA HERRAMIENTA PRIMERO: es lo que habilita el oficio, y sin oficio no hay con qué comprar lo demás. Las dos, la
         // de juntar y la de fabricar, si las vende el mismo mostrador: el Alquimista tiene las Tijeras y la Olla.
         foreach (short herramienta in _acompana is null && !_pagaPrimeroProvisiones
-                     ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar } : Array.Empty<short>())
+                     ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar, CarroQueLeSirve(sentidos.Nivel) } : Array.Empty<short>())
         {
             if (SeSumoAUnaSalida()) return compro;
             if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) > 0
@@ -2532,14 +2532,27 @@ public sealed partial class Bot
     /// </summary>
     private short HerramientaQueLeFalta(SentidosDelBot sentidos)
     {
-        short juntar = HerramientaDeSuOficio, fabricar = HerramientaDeFabricar;
+        short juntar = HerramientaDeSuOficio, fabricar = HerramientaDeFabricar, carro = CarroQueLeSirve(sentidos.Nivel);
         if (juntar > 0 && sentidos.CuantoTiene(obj => obj == juntar) == 0) return juntar;
         if (fabricar > 0 && sentidos.CuantoTiene(obj => obj == fabricar) == 0) return fabricar;
+        if (carro > 0 && sentidos.CuantoTiene(obj => obj == carro) == 0) return carro;
         return 0;
     }
 
+    /// <summary>
+    /// EL CARRO DE MINERÍA (objeto 880): con él en la mochila, al morir se salva el 70 % de los minerales
+    /// (<c>PacketDispatcher.CarroMinero</c>). Lo vende el mismo NPC Minero que el piquete y pide el nivel de su ficha (12). Para el
+    /// Minero cuenta como una herramienta más desde ese nivel: se junta la plata, se va a comprar y no se vende. Lo pidió el
+    /// tester el 20/11, porque las minas están en mapas inseguros.
+    /// </summary>
+    private const short CarroDeMineria = 880;
+
+    private short CarroQueLeSirve(int nivel) =>
+        _clase == ClaseMinero && _entorno.Datos.Obj(CarroDeMineria) is { } carro && nivel >= carro.MinLevel ? CarroDeMineria : (short)0;
+
     /// <summary>¿Es una de las herramientas de su oficio? Ésas no se venden aunque las haya comprado en la sesión.</summary>
-    private bool EsHerramientaDeSuOficio(short obj) => obj != 0 && (obj == HerramientaDeSuOficio || obj == HerramientaDeFabricar);
+    private bool EsHerramientaDeSuOficio(short obj) => obj != 0
+        && (obj == HerramientaDeSuOficio || obj == HerramientaDeFabricar || (obj == CarroDeMineria && _clase == ClaseMinero));
 
     /// <summary>Qué cuenta como lugar de trabajo para su oficio: null para el agua (la pesca mira el terreno), o qué
     /// objetos del mapa sirven (los árboles para el Leñador, los yacimientos para el Minero).</summary>
@@ -8493,16 +8506,41 @@ public sealed partial class Bot
     /// <summary>Qué clase le toca al bot número <paramref name="indice"/> del poblado.</summary>
     public static byte ClaseQueLeToca(int indice) => Reparto[indice % Reparto.Count];
 
+    /// <summary>
+    /// LA RAZA QUE LE CONVIENE A LA CLASE, entre las dos que recomienda el tester (20/11). Antes salía al azar entre las
+    /// seis y había Magos orcos y Guerreros gnomos. Las clases de oficio van con Enano u Orco, salvo el Druida, que pelea con
+    /// magia. Los números son los de <c>eRaza</c>: Humano 1, Elfo 2, Drow 3, Gnomo 4, Enano 5, Orco 6.
+    /// <para>Sólo decide al CREAR el personaje: el que ya existe conserva la suya, que el bot lee de <c>MiniStats</c> al entrar.</para>
+    /// </summary>
+    internal static byte RazaParaLaClase(byte clase, int dado)
+    {
+        const byte Humano = 1, Elfo = 2, Drow = 3, Gnomo = 4, Enano = 5, Orco = 6;
+        var (una, otra) = clase switch
+        {
+            GameLimits.ClaseMago or GameLimits.ClaseDruida => (Gnomo, Elfo),
+            GameLimits.ClaseClerigo or GameLimits.ClaseBardo => (Drow, Humano),
+            GameLimits.ClaseAsesino or GameLimits.ClasePaladin or GameLimits.ClaseNigromante => (Humano, Drow),
+            GameLimits.ClaseGuerrero or GameLimits.ClaseLadron or GameLimits.ClaseGladiador => (Orco, Enano),
+            GameLimits.ClaseCazador => (Elfo, Humano),
+            ClaseMercenario => (Drow, Enano),
+            _ => (Enano, Orco),   // Pescador, Herrero, Leñador, Minero, Carpintero y Sastre
+        };
+        return dado == 0 ? una : otra;
+    }
+
+    private const byte ClaseMercenario = 17;
+
     private (byte Raza, byte Genero, byte Clase, byte Hogar, short Cabeza) Aspecto()
     {
         int semilla = 17;
         foreach (char c in Nombre) semilla = unchecked(semilla * 31 + c);
         var r = new Random(semilla);
         byte genero = (byte)r.Next(1, 3);
-        byte raza = (byte)r.Next(1, 7);            // 1..6: las que tienen tabla de cabezas (Equipment.HeadRange)
+        int dadoDeLaRaza = r.Next(2);
         // LA CLASE SALE DEL REPARTO, no del dado. Un nombre que no está en el poblado —no pasa hoy— sortea entre las del reparto.
         int suLugar = PobladoDeBots.LugarEnElPoblado(Nombre);
         byte clase = suLugar >= 0 ? ClaseQueLeToca(suLugar) : Reparto[r.Next(Reparto.Count)];
+        byte raza = RazaParaLaClase(clase, dadoDeLaRaza);
         byte hogar = (byte)r.Next(1, Cities.MaxTierraNatal + 1);
         var rango = Equipment.HeadRange(raza, genero);
         short cabeza = rango is null ? (short)1 : (short)r.Next(rango.Value.Min, rango.Value.Max + 1);
