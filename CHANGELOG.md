@@ -2,6 +2,22 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.39 (2026-11-20)
+
+### Botín de criaturas
+
+- Cada criatura usa las probabilidades de su ficha de CoverAO 2021. El anillo de Carisma del lobo cae al **0,8 %**, el colmillo al **1,5 %** y el Pendiente del Arquero de la Tortuga Gigante al **0,3 %**. Antes los tres caían al 50 %.
+- La Tortuga Gigante deja su escudo y el Oso Pardo deja su piel al **100 %**, si hay lugar en el suelo.
+
+### Configuración del servidor
+
+- La sección `[DROPSNPC]` del `Server.ini.ejemplo` lista las **160 tiradas** agrupadas por criatura. Podés ajustar cada porcentaje, desactivar una caída con `0` o garantizarla con `100`. Los cambios se aplican al reiniciar.
+- Al cambiar rangos desde el panel o editar un ajuste con `/SETINIVAR`, el servidor conserva los comentarios y la tabla de botín. El actualizador conserva los valores personalizados y los nombres con tildes en archivos UTF-8 y Windows-1252.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.0.39**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
+
 ## 1.0.38 (2026-11-19)
 
 ### Apariencia de los personajes
