@@ -2,6 +2,19 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.42 (2026-11-20)
+
+### Visor de mapas: el mundo entero
+
+- El botón **Mundo** arma toda la superficie con la grilla del mapa del juego, cada mapa con los colores del minimapa. Elegí el zoom (todo el mundo, x1, x2, x4 o x8) y arrastrá para moverte. Pasá el mouse para ver qué mapa es y hacé clic para abrirlo en detalle.
+- Las **cuevas y subsuelos** no tienen lugar en la grilla y van en una lista aparte, con buscador por nombre o número y el mapa desde el que se entra a cada uno.
+- **Abrir carpeta** carga todos los `.csm` de una carpeta de una vez. El mundo se arma con tus mapas encima de los del juego y los tuyos quedan con marco naranja. En la lista de cuevas, los tuyos dicen "(tuyo)".
+- Al abrir uno de tus mapas desde el mundo o la lista, se compara solo con el del juego, igual que antes.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.0.42**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
+
 ## 1.0.41 (2026-11-20)
 
 ### Visor de mapas
