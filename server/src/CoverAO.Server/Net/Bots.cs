@@ -7008,6 +7008,8 @@ public sealed partial class Bot
         int golpes = 0, entraron = 0, sacado = 0;
         // Y LOS HECHIZOS QUE NO SALEN, para pasar al arma (`DejaDeLanzarle`).
         int lanzadosEnVano = 0;
+        _alcancesDelMago = 0;
+        _magoSeAlejo = false;
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             if (sentidos.Mapa != mapaDeLaPelea) return true;
@@ -7106,6 +7108,8 @@ public sealed partial class Bot
             // EL QUE SABE MAGIA PELEA CON MAGIA, y de lejos. Es lo que hace distinto a un mago de un guerrero
             // visto desde afuera, y sin esto todas las clases peleaban igual: acercarse y pegar.
             int manaAntes = sentidos.ManaEnPuntos;
+            // EL MAGO NO SE DEJA ALCANZAR: se aleja o inmoviliza a la que lo alcanza. Ver `MagoTomaDistanciaAsync`.
+            if (await MagoTomaDistanciaAsync(transporte, sentidos, presa, quien, pasos, ct, cortaSi)) continue;
             // CON GENTE, PRIMERO LA DEJA QUIETA si está a más de un paso: ver `QuietarA`. Lo que la cuenta quieta es `SigueQuieta`.
             if (aGente && pasos > 1 && Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
                 && !SigueQuieta(_quieta, presa, quien.X, quien.Y, Environment.TickCount64) && QuietarA(transporte, sentidos, quien))

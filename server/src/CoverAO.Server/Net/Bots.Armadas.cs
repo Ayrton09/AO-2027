@@ -458,9 +458,11 @@ public sealed partial class Bot
     public static bool SigueQuieta((short Quien, long Hasta, byte X, byte Y)? quieta, short quien, byte x, byte y, long ahora) =>
         quieta is { } q && q.Quien == quien && ahora < q.Hasta && q.X == x && q.Y == y;
 
-    /// <summary>Hasta cuándo la da por quieta después de lanzarle: <see cref="QuietaMs"/> si el hechizo le cobró maná, y si no
-    /// (ya estaba quieta, o el servidor no lo dejó) <see cref="ReintentoDeQuietarMs"/>, para no volver a probar enseguida.</summary>
-    public static long QuietaHasta(long ahora, bool cobro) => ahora + (cobro ? QuietaMs : ReintentoDeQuietarMs);
+    /// <summary>Hasta cuándo la da por quieta después de lanzarle: <see cref="QuietaMs"/> si el hechizo le cobró maná (a una criatura,
+    /// <see cref="QuietaNpcMs"/>), y si no (ya estaba quieta, o el servidor no lo dejó) <see cref="ReintentoDeQuietarMs"/>, para no
+    /// volver a probar enseguida.</summary>
+    public static long QuietaHasta(long ahora, bool cobro, bool esNpc = false) =>
+        ahora + (!cobro ? ReintentoDeQuietarMs : esNpc ? QuietaNpcMs : QuietaMs);
 
     /// <summary>
     /// EL MÁS BARATO DE LOS QUE SABE Y CUMPLEN <paramref name="cual"/>, entre los que puede pagar ahora de maná y energía
