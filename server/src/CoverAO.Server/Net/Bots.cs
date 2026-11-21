@@ -1053,6 +1053,9 @@ public sealed partial class Bot
             if (await HacerLugarAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await RetomarElRescateAsync(transporte, sentidos, cerrada, ct)) continue;
+            // EL LADRÓN SE HACE RENEGADO Y ROBA, antes de salir a pelear: ver `RobarAsync`.
+            if (HacerseRenegado(transporte, sentidos)) { await Task.Delay(_rng.Next(600, 1_200), ct); continue; }
+            if (await RobarAsync(transporte, sentidos, cerrada, ct)) continue;
             // GENTE DEL BANDO ENEMIGO A LA VISTA, antes de irse de compras o a cazar criaturas: ver `AQuienSaleAPegarle`. Sin las
             // pociones de pelear no sale, así que la compra que hace falta no se pierde.
             if (AQuienSaleAPegarle(sentidos) is { } blanco)
