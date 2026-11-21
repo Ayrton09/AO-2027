@@ -1,3 +1,6 @@
+using System.Reflection;
+using CoverAO.Protocol;
+using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using CoverAO.Server.Net;
 using Xunit;
@@ -31,4 +34,27 @@ public sealed class EscoltaDelMineroTests
     /// <summary>El que lo escucha la toma por una invitación, como la de una persona.</summary>
     [Fact]
     public void La_frase_es_una_invitacion() => Assert.True(Bot.EsInvitacion(Bot.FraseDeLaEscolta, "Ciro"));
+
+    /// <summary>
+    /// Medido el 22/11: sin escolta un Minero no encuentra ninguna mina desde el 20 (todas están en mapas inseguros donde nace algo
+    /// que le queda grande), así que no compraba el piquete y no minaba nunca. Acompañado, sí hay a dónde ir.
+    /// </summary>
+    [Fact]
+    public void Sin_escolta_no_hay_mina_y_acompanado_si()
+    {
+        var datos = GameData.Load();
+        var s = new SentidosDelBot { MiNombre = "Quim" };
+        var yo = new Player { CharIndex = 500, Name = "Quim", Account = "quim_test", Pos = new WorldPos(20, 10, 9), Level = 18,
+                              MaxHp = 200, Hp = 200, MaxStamina = 300, Stamina = 300, Class = Minero };
+        s.Recibir(ServerMessages.UserIndexInServer(500));
+        s.Recibir(ServerMessages.ChangeMap(20));
+        s.Recibir(ServerMessages.CharacterCreate(yo));
+        s.Recibir(ServerMessages.UpdateUserStats(yo));
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, 38, 200, false, 0, 1));
+        var bot = new Bot("Quim", null, new EntornoDeBots(null!, new ServerIni(), 0, 0, datos, new Navegante(datos), null!), 1);
+        typeof(Bot).GetField("_clase", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, Minero);
+        bool Llamar(string metodo) => (bool)typeof(Bot).GetMethod(metodo, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(bot, new object[] { s })!;
+        Assert.False(Llamar("HayDondeTrabajarSeguro"));
+        Assert.True(Llamar("HayMinaConEscolta"));
+    }
 }

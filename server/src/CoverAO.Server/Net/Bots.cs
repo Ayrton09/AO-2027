@@ -1676,7 +1676,7 @@ public sealed partial class Bot
         // camino a una mina; todas las minas del mundo están en mapas pk.
         // La de FABRICAR no pide lugar: se fabrica parado donde sea (el servidor no mira el mapa).
         bool vaPorLaHerramienta = !_pagaPrimeroProvisiones && viajaPorGustos && faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
-                                  && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos));
+                                  && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos) || HayMinaConEscolta(sentidos));
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
         // sin llevarse nada.
@@ -3249,10 +3249,19 @@ public sealed partial class Bot
         bool viajo = false;
         if (punto is null)
         {
-            if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, CruzaSinPeligro(sentidos),
-                _clase == ClaseMinero ? SaltosDelOficio : Navegante.TopeDeMapas) is not { } lejos) { PostergarFaena(); return false; }
+            var segura = _entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, CruzaSinPeligro(sentidos),
+                _clase == ClaseMinero ? SaltosDelOficio : Navegante.TopeDeMapas);
+            // SIN MINA SEGURA, LA DE CUALQUIER MAPA INSEGURO, PERO ACOMPAÑADO: ver `MinaConEscolta` y `EscoltaCerca`.
+            var acompanado = segura is null && EscoltaCerca(sentidos) ? MinaConEscolta(sentidos) : null;
+            if ((segura ?? acompanado) is not { } lejos)
+            {
+                // Y SI LA HAY CON ESCOLTA, LA PIDE: la vuelta que sigue sale, si el que aceptó ya está al lado.
+                if (segura is null && MinaConEscolta(sentidos) is { } conEscolta && PedirEscolta(transporte, sentidos, conEscolta.Mapa))
+                { await Task.Delay(_rng.Next(1_500, 3_000), ct); return true; }
+                PostergarFaena(); return false;
+            }
             // A LA MINA, ACOMPAÑADO: ver `PedirEscolta`. La vuelta que sigue sale, y el que aceptó ya lo sigue.
-            if (PedirEscolta(transporte, sentidos, lejos.Mapa)) { await Task.Delay(_rng.Next(1_500, 3_000), ct); return true; }
+            if (acompanado is null && PedirEscolta(transporte, sentidos, lejos.Mapa)) { await Task.Delay(_rng.Next(1_500, 3_000), ct); return true; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct,
                 topeDeMapas: Math.Max(Navegante.TopeDeMapas, lejos.Saltos))) { PostergarFaena(); return true; }
             viajo = lejos.Saltos > 0;

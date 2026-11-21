@@ -19,6 +19,42 @@ public sealed partial class Bot
 
     private long _proximoPedidoDeEscolta;
 
+    /// <summary>A quién le pidió que lo acompañe, y hasta cuándo cuenta (lo que dura una compañía, <see cref="AcompanaMaxMin"/>).</summary>
+    private (string Quien, long Hasta)? _escolta;
+
+    /// <summary>A esta distancia o menos, la escolta está con él.</summary>
+    public const int DistanciaDeLaEscolta = 8;
+
+    /// <summary>¿Tiene la escolta al lado? La que le pidió, a la vista y a <see cref="DistanciaDeLaEscolta"/> o menos.</summary>
+    private bool EscoltaCerca(SentidosDelBot s) =>
+        _escolta is { } e && Environment.TickCount64 < e.Hasta && s.PersonaLlamada(e.Quien) is { Muerto: false } v
+        && Math.Abs(v.X - s.Posicion.X) + Math.Abs(v.Y - s.Posicion.Y) <= DistanciaDeLaEscolta;
+
+    /// <summary>
+    /// LA MINA A LA QUE VA ACOMPAÑADO: cualquiera de un mapa inseguro, aunque nazca algo que le queda grande, y por cualquier mapa
+    /// en el que pueda entrar (con la escolta no hace falta el camino sin peligro, que tampoco encontraba ninguna). Sin escolta las
+    /// descarta todas (<see cref="MapaParaSuFaena"/>), y medido el 22/11 un Minero de nivel 18 o 30 no encontraba ninguna desde el
+    /// 20 ni desde el 1: no compraba el piquete y no minaba nunca.
+    /// </summary>
+    private (int Mapa, byte X, byte Y, int Saltos)? MinaConEscolta(SentidosDelBot s) =>
+        _clase != ClaseMinero ? null
+        : _entorno.Mapas.DondeSeTrabaja(s.Mapa, false, RecursoDeSuOficio(s), s.Posicion, m => _entorno.Datos.IsPkMap(m), Pisable(s),
+                                        SaltosDelOficio);
+
+    private int _minaConEscoltaMapa = -1;
+    private long _minaConEscoltaHasta;
+    private bool _hayMinaConEscolta;
+
+    /// <summary>¿Hay una mina a la que ir acompañado? Para comprar el piquete; se recuerda cinco minutos por mapa.</summary>
+    private bool HayMinaConEscolta(SentidosDelBot s)
+    {
+        if (s.Mapa == _minaConEscoltaMapa && Environment.TickCount64 < _minaConEscoltaHasta) return _hayMinaConEscolta;
+        _hayMinaConEscolta = MinaConEscolta(s) is not null;
+        _minaConEscoltaMapa = s.Mapa;
+        _minaConEscoltaHasta = Environment.TickCount64 + 5 * 60_000;
+        return _hayMinaConEscolta;
+    }
+
     /// <summary>¿Pide escolta? Un Minero que va a una mina en un mapa inseguro, si no la pidió hace poco.</summary>
     public static bool PideEscolta(byte clase, bool minaInsegura, long ahora, long proximo) =>
         clase == ClaseMinero && minaInsegura && ahora >= proximo;
@@ -38,6 +74,7 @@ public sealed partial class Bot
                 && SirveDeEscolta(sentidos.FichaDe(v.CharIndex, NivelVistoMs), sentidos.NivelDe(v.CharIndex, NivelVistoMs))) is { } escolta)
         {
             _proximoPedidoDeEscolta = ahora + EntrePedidosDeEscoltaMs;
+            _escolta = (escolta.Quien.Nombre, ahora + AcompanaMaxMin * 60_000L);
             return transporte.Mandar(Paquete(ClientPacketId.Whisper,
                 w => w.WriteAsciiString(escolta.Quien.Nombre).WriteAsciiString(FraseDeLaEscolta)));
         }
