@@ -119,6 +119,27 @@ public sealed class MagoPeleaDeLejosTests
         Assert.True(await pelea.WaitAsync(TimeSpan.FromSeconds(3)));   // la deja enseguida
     }
 
+    /// <summary>Ronda 128: Fabia le sacó a Rufo más de la mitad de la vida de un golpe y lo alcanzó mientras se iba. Antes de irse,
+    /// la quieta.</summary>
+    [Fact]
+    public async Task Antes_de_irse_del_mapa_quieta_al_que_no_le_conviene()
+    {
+        var f = Armar(GameLimits.ClaseMago, sabeInmovilizar: true);
+        var gladiadora = new Player { CharIndex = 501, Name = "Kael", Account = "kael_test", Level = 33, Class = GameLimits.ClaseGladiador, MaxHp = 400, Hp = 400,
+                                      Pos = new WorldPos(18, f.X, (byte)(f.Y - 1)) };
+        f.Sentidos.Recibir(ServerMessages.CharMsgStatus(gladiadora, new Player { CharIndex = 502, Name = "Mira", Account = "mira_test", Level = 30 }, 0));
+        Assert.True(Mundo.Value.Datos.IsPkMap(18));
+        var rival = f.Sentidos.Donde(501)!.Value;
+        using var corte = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var atender = f.Bot.AtenderRivalAsync(f.Transporte, f.Sentidos, rival, f.Cerrada.Task, corte.Token);
+        try
+        {
+            Assert.Equal(new byte[] { (byte)ClientPacketId.CastSpell, 2 }, await Proximo(f));
+            Assert.Equal((byte)ClientPacketId.WorkLeftClick, (await Proximo(f))[0]);
+        }
+        finally { corte.Cancel(); try { await atender; } catch (OperationCanceledException) { } }
+    }
+
     [Fact]
     public void A_una_criatura_la_da_por_quieta_menos_que_a_una_persona()
     {

@@ -122,6 +122,22 @@ public sealed partial class Bot
     {
         if (VidaParaSeguirPeleandoDe(_clase) is not { } umbral || sentidos.Paralizado || !_entorno.Datos.IsPkMap(sentidos.Mapa)
             || !MagoSeVaDelMapa(ConvieneSegunLaFicha(sentidos, rival.CharIndex), sentidos.Salud, umbral)) return false;
+        // ANTES DE IRSE, LO QUIETA, si lo tiene a tiro de hechizo: caminando, el que pega de cerca lo alcanza. Medido en la ronda 128
+        // (22/11, sonda del botín): Fabia (Gladiadora 27) le bajó a Rufo (Mago 21) del 96 al 41 % de un golpe y lo mató con el
+        // siguiente mientras se iba. La vuelta que sigue, ya quieta, se va.
+        var (x, y) = sentidos.Posicion;
+        long ahora = Environment.TickCount64;
+        if (Math.Abs(rival.X - x) <= AlcanceHechizoX && Math.Abs(rival.Y - y) <= AlcanceHechizoY
+            && !SigueQuieta(_quieta, rival.CharIndex, rival.X, rival.Y, ahora))
+        {
+            int manaAntes = sentidos.ManaEnPuntos;
+            if (QuietarA(transporte, sentidos, rival))
+            {
+                await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                _quieta = (rival.CharIndex, QuietaHasta(Environment.TickCount64, cobro: sentidos.ManaEnPuntos < manaAntes), rival.X, rival.Y);
+                return true;
+            }
+        }
         AvisarACompanero(transporte, "me voy a un mapa seguro", ref _proximoAvisoDeRetirada);
         await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct);
         return true;
