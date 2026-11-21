@@ -1698,6 +1698,13 @@ public sealed partial class Bot
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
         bool vaPorAntidoto = !_pagaPrimeroProvisiones && !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
                              && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
+        // Y EL ARCO DEL CAZADOR, que vende el Carpintero: ver `LeFaltaElArco`.
+        double plataParaElArco = PlataParaElEquipo(sentidos);
+        bool faltaElArco = LeFaltaElArco(sentidos);
+        bool faltanFlechas = TiraConArco(_clase) && !faltaElArco && FlechasQueTiene(sentidos) < FlechasParaComprarEnLaTienda;
+        bool vaPorElArco = !_pagaPrimeroProvisiones && !enApuro && hayLugar && (faltaElArco || faltanFlechas);
+        bool VendeElArco(int ficha) => _entorno.Datos.Npc(ficha) is { StockItems: { Count: > 0 } suStock }
+            && suStock.Any(s => faltaElArco ? ArcoQueLeSirve(sentidos, (short)s.ObjIndex, plataParaElArco) : FlechaPropia((short)s.ObjIndex) > 0);
         // Y LA VERDE Y LA AMARILLA DEL GUERRERO, que vende el mismo Alquimista: ver `LeFaltanLasDeAtributo`.
         bool vaPorAtributo = !_pagaPrimeroProvisiones && !enApuro && hayLugar && LeFaltanLasDeAtributo(sentidos)
                              && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
@@ -1737,7 +1744,7 @@ public sealed partial class Bot
             if (CortaParaAcompanar()) return true;
         }
         if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
-            && !vaPorHechizo && !vaPorAntidoto && !vaPorAtributo && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
+            && !vaPorHechizo && !vaPorAntidoto && !vaPorAtributo && !vaPorElArco && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -1821,6 +1828,7 @@ public sealed partial class Bot
             // LAS DE ATRIBUTO DEL GUERRERO, PRIMERO: ver `LeFaltanLasDeAtributo`. Con plata, `vaPorEquipo` le da siempre, y el
             // mostrador de equipo más cercano no las vende.
             if (soloGustos && vaPorAtributo) return stock.Any(s => EsDeAtributo((short)s.ObjIndex));
+            if (soloGustos && vaPorElArco && VendeElArco(ficha)) return true;
             if (soloGustos)
                 return (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex)))
                     || (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex)))
@@ -1837,6 +1845,7 @@ public sealed partial class Bot
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
             if (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex))) return true;
             if (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex))) return true;
+            if (vaPorElArco && VendeElArco(ficha)) return true;
             if ((hayRopaAlAlcance || desnudo) && VendeRopa(ficha)) return true;
             if (hayArmaAlAlcance && VendeElArma(ficha)) return true;
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
@@ -1936,7 +1945,7 @@ public sealed partial class Bot
                 { llegoAlPueblo = true; continue; }
                 if (CortaParaAcompanar()) return true;
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
-                                                    vaPorAntidoto || vaPorAtributo,
+                                                    vaPorAntidoto || vaPorAtributo || vaPorElArco,
                                                     vaPorEquipo || hayArmaAlAlcance || desnudo, vaPorHechizo);
                 // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
@@ -2421,6 +2430,8 @@ public sealed partial class Bot
                                      ReservaPara(sentidos, comida: true, bebida: true));
         // LA VERDE Y LA AMARILLA DEL GUERRERO, en el mismo Alquimista: ver `TomarLasDeAtributoAsync`.
         compro |= await ReponerLasDeAtributoAsync(transporte, sentidos, ct);
+        // Y EL ARCO DEL CAZADOR, en el Carpintero: ver `ComprarElArcoAsync`.
+        compro |= await ComprarElArcoAsync(transporte, sentidos, ct);
         // Y EL QUE USA MANÁ, LAS AZULES: ver `TomarPocionesDeManaAsync`. Las vende el mismo Alquimista, y no se viaja por ellas.
         if (sentidos.UsaMana)
             compro |= await ReponerAsync(transporte, sentidos, PocionDeManaPropia, PocionesDeManaQueQuiere, ct,
@@ -2836,6 +2847,8 @@ public sealed partial class Bot
             && QueSePone.Any(esDeEso => esDeEso(o)
                              && EsLoMejorQueTieneDeEsaClase(ValorDeCombate(o), LoMejorQueTiene(sentidos, esDeEso))))
             return false;
+        // Y EL ARCO DEL QUE TIRA CON ARCO: ver `LeFaltaElArco`. No es de los `QueSePone`, así que nada lo protegía.
+        if (o is { IsBow: true } && TiraConArco(_clase)) return false;
         return o is not null && !o.IsPotion && !o.IsGold && !o.IsNewbie && o.Value > 0;
     }
 
@@ -3381,7 +3394,8 @@ public sealed partial class Bot
             bool leSirve = FabricaParaVender(sentidos) || (EsPocionQueCuraElVeneno(receta) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere);
             if (!ValeFabricar(ahora, SkillProgression.CapForLevel(sentidos.Nivel), leSirve)) break;
             int antes = tiene(receta);
-            if (!transporte.Mandar(Paquete(fab.Paquete, w => w.WriteInteger(receta).WriteInteger((short)1)))) return false;
+            short cantidad = CantidadPorPaquete(sentidos, receta, fab.Regla, tiene);
+            if (!transporte.Mandar(Paquete(fab.Paquete, w => w.WriteInteger(receta).WriteInteger(cantidad)))) return false;
             await Task.Delay(_rng.Next(FabricarMinMs, FabricarMaxMs), ct);
             if (tiene(receta) <= antes) break;   // no salió, y el servidor no dice por qué
             fabrico = true;

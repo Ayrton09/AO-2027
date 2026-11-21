@@ -89,7 +89,8 @@ public sealed partial class Bot
 
     private bool VaALaSubastaDelBot(short obj) => VaALaSubasta(_entorno.Datos.Obj(obj)) ||
         (_entorno.Datos.Obj(obj) is { NoSeTira: false, IsNewbie: false } &&
-         ((_clase == ClaseMinero && EsLingote(obj)) || (_entorno.Datos.BlacksmithRecipes.Contains(obj) && ValorDeMercado(_entorno.Datos, obj) > 0)));
+         ((_clase == ClaseMinero && EsLingote(obj)) || EsFlechaParaVender(obj)
+          || (_entorno.Datos.BlacksmithRecipes.Contains(obj) && ValorDeMercado(_entorno.Datos, obj) > 0)));
 
     private bool ParaPublicar(SentidosDelBot s, short obj) => (EsBotin(s, obj) || EsProduccionMetalurgica(obj)) &&
         CantidadParaSubastar(s, obj, s.CuantoTiene(i => i == obj)) > 0 && GuardaParaLaSubasta(s, obj);
@@ -215,7 +216,7 @@ public sealed partial class Bot
     {
         int plata = PlataParaLaSubasta(sentidos);
         var elegida = sentidos.Subastas
-            .Where(f => LeSirveElLote(sentidos, f, plata) ||
+            .Where(f => LeSirveElLote(sentidos, f, plata) || LeSirvenLasFlechas(sentidos, f, plata) ||
                 (BuscaMejorasEnSubasta && _entorno.Datos.Obj(f.Objeto) is { } && LeConvieneLaSubasta(f, ValorDeMercado(_entorno.Datos, f.Objeto), Nombre, plata,
                     permiteProductor: _entorno.Datos.BlacksmithRecipes.Contains(f.Objeto)) && LoMejora(sentidos, f.Objeto)))
             .OrderByDescending(f => LeSirveElLote(sentidos, f, plata))
