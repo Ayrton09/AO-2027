@@ -126,7 +126,7 @@ public sealed class SentidosDelBot
     /// por encima del que mira: el original lo esconde (Protocol.bas:17082).</summary>
     public const short NivelEscondido = 255;
 
-    private readonly Dictionary<short, (short Nivel, long Cuando)> _nivelDe = new();
+    private readonly Dictionary<short, (short Nivel, byte Clase, int Vida, long Cuando)> _nivelDe = new();
 
     /// <summary>El nivel de esa persona según la última ficha que llegó de ella, si llegó hace menos de <paramref name="vigenciaMs"/>;
     /// <see cref="NivelEscondido"/> si está más de 5 niveles por encima; null si no se sabe.</summary>
@@ -134,6 +134,14 @@ public sealed class SentidosDelBot
     {
         lock (_candado)
             return _nivelDe.TryGetValue(charIndex, out var n) && Environment.TickCount64 - n.Cuando < vigenciaMs ? n.Nivel : null;
+    }
+
+    /// <summary>La clase y la vida (en porcentaje) de esa persona según la misma ficha que <see cref="NivelDe"/>: lo que ve
+    /// cualquiera que la clickea. Null si no se sabe.</summary>
+    public (byte Clase, int Vida)? FichaDe(short charIndex, long vigenciaMs)
+    {
+        lock (_candado)
+            return _nivelDe.TryGetValue(charIndex, out var n) && Environment.TickCount64 - n.Cuando < vigenciaMs ? (n.Clase, n.Vida) : null;
     }
 
     /// <summary>Hace cuánto (ms) le bajó la vida por última vez; <see cref="long.MaxValue"/> si nunca. Es lo que dice que alguien le
@@ -1214,15 +1222,16 @@ public sealed class SentidosDelBot
                 {
                     short ci = l.Entero();
                     byte bando = l.Byte();
-                    int vida = l.Largo();
-                    l.Entero(); l.Byte(); l.Byte();   // estados, estados extra, clase
+                    int vida = l.Largo();   // en porcentaje (ServerMessages.PorcentajeVida)
+                    l.Entero(); l.Byte();   // estados y estados extra
+                    byte clase = l.Byte();
                     short nivel = l.Entero();
                     l.Byte(); l.Byte();   // raza y donador
                     byte rango = l.Byte();
                     lock (_candado)
                     {
                         long ahora = Environment.TickCount64;
-                        _nivelDe[ci] = (nivel, ahora);
+                        _nivelDe[ci] = (nivel, clase, vida, ahora);
                         if (ci == _miCharIndex)
                         {
                             byte faccion = bando switch

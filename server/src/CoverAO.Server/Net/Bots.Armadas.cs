@@ -274,6 +274,8 @@ public sealed partial class Bot
         if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira) return null;
         if (sentidos.AgresorReciente(LePeganHaceMs) is not { } id || id <= 0
             || sentidos.Donde(id) is not { } agresor || !EsBlancoParaMi()(agresor)) return null;
+        // AL QUE NO LE CONVIENE, NO LE DEVUELVE EL GOLPE: se va (`ReplegarseDelAtaqueAsync`). Ver `MagoLeConvienePelear`.
+        if (!LeConvienePelearCon(sentidos, id)) return null;
         var (x, y) = sentidos.Posicion;
         return Math.Abs(agresor.X - x) + Math.Abs(agresor.Y - y) <= RadioDeDefensa ? id : null;
     }
@@ -326,7 +328,8 @@ public sealed partial class Bot
         var esBlanco = EsBlancoParaMi();
         var (x, y) = sentidos.Posicion;
         if (sentidos.PersonaMasCercana(v => (soloRival is null || v.CharIndex == soloRival)
-                                           && esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y),
+                                           && esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y)
+                                           && LeConvienePelearCon(sentidos, v.CharIndex),
                                        GenteDejada()) is not { Pasos: <= RadioDeCaza } quien) return null;
         short ci = quien.Quien.CharIndex;
         bool mirarlo = sentidos.NivelDe(ci, NivelVistoMs) is null

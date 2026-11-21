@@ -7010,6 +7010,9 @@ public sealed partial class Bot
         int lanzadosEnVano = 0;
         _alcancesDelMago = 0;
         _magoSeAlejo = false;
+        // EL MAGO MIRA CON QUIÉN SE METIÓ, si no lo sabe: la ficha llega enseguida y la vuelta que sigue decide si sigue (ver
+        // `MagoLeConvienePelear`).
+        if (aGente && _clase == GameLimits.ClaseMago && sentidos.FichaDe(presa, NivelVistoMs) is null) MirarA(transporte, sentidos, presa);
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             if (sentidos.Mapa != mapaDeLaPelea) return true;
@@ -7025,6 +7028,8 @@ public sealed partial class Bot
             if (InterrumpeLaCazaPorPvp()) return true;
             // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
+            // Y LA DEJA SI RESULTA QUE NO LE CONVIENE: se repliega en la vuelta del ciclo. Ver `MagoLeConvienePelear`.
+            if (aGente && !LeConvienePelearCon(sentidos, presa)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
             // que curarse peleando, que con eso pegándole se repite sin llegar nunca acá: medido en `alto23` (02/10), Elmo, nivel 14,
             // peleando en el 208 con el Señor de las sombras ya encima, se curó con magia tres veces seguidas, del 29 al 34 %, y murió

@@ -49,6 +49,50 @@ public sealed class MagoPeleaDeLejosTests
     public void Contra_criaturas_se_aleja_solo_de_las_que_lo_lastiman(short ficha, int vida, bool seAleja) =>
         Assert.Equal(seAleja, Bot.SeAlejaDeLaCriatura(Mundo.Value.Datos.Npc(ficha), vida));
 
+    /// <summary>Rondas 117 y 118: de 14 muertes de los Magos, 7 contra un Gladiador de 3 a 5 niveles más y 2 contra un Guerrero
+    /// de 1 a 3 más; sus bajas, clases de oficio y pares.</summary>
+    [Theory]
+    [InlineData(21, (short)26, GameLimits.ClaseGladiador, 100, false)]   // Fabia contra Rufo
+    [InlineData(22, (short)24, GameLimits.ClaseGuerrero, 100, false)]    // Ciro contra Bruma
+    [InlineData(22, (short)22, GameLimits.ClaseGuerrero, 100, false)]    // ni de su nivel
+    [InlineData(22, (short)21, GameLimits.ClaseGuerrero, 100, true)]     // de menos nivel, sí
+    [InlineData(22, (short)26, GameLimits.ClaseGladiador, 25, true)]     // casi muerto, lo remata
+    [InlineData(22, (short)24, GameLimits.ClasePaladin, 100, true)]      // otras clases, hasta 2 por encima
+    [InlineData(22, (short)25, GameLimits.ClasePaladin, 100, false)]
+    [InlineData(22, (short)27, 14, 100, true)]                           // un Minero, hasta 5 por encima
+    [InlineData(22, SentidosDelBot.NivelEscondido, 14, 10, false)]        // escondido, nunca
+    public void Con_quien_pelea_el_mago(int miNivel, short nivel, byte clase, int vida, bool pelea) =>
+        Assert.Equal(pelea, Bot.MagoLeConvienePelear(miNivel, nivel, (clase, vida)));
+
+    [Fact]
+    public void Sin_la_ficha_hace_lo_de_siempre() =>
+        Assert.True(Bot.MagoLeConvienePelear(22, null, null));
+
+    [Fact]
+    public void La_ficha_guarda_la_clase_y_la_vida()
+    {
+        var s = new SentidosDelBot { MiNombre = "Rufo" };
+        var yo = new Player { CharIndex = 500, Name = "Rufo", Account = "rufo_test", Level = 22, Pos = new WorldPos(18, 50, 50) };
+        var ella = new Player { CharIndex = 501, Name = "Fabia", Account = "fabia_test", Level = 26, Class = GameLimits.ClaseGladiador, MaxHp = 400, Hp = 100,
+                                Pos = new WorldPos(18, 51, 50) };
+        s.Recibir(ServerMessages.UserIndexInServer(500));
+        s.Recibir(ServerMessages.CharMsgStatus(ella, yo, 0));
+        Assert.Equal((short)26, s.NivelDe(501, 60_000));
+        Assert.Equal(((byte)GameLimits.ClaseGladiador, 25), s.FichaDe(501, 60_000));
+    }
+
+    [Fact]
+    public async Task El_mago_deja_la_pelea_con_un_gladiador_mas_fuerte()
+    {
+        var f = Armar(GameLimits.ClaseMago, sabeInmovilizar: true);
+        var gladiadora = new Player { CharIndex = 501, Name = "Kael", Account = "kael_test", Level = 33, Class = GameLimits.ClaseGladiador, MaxHp = 400, Hp = 400,
+                                      Pos = new WorldPos(18, f.X, (byte)(f.Y - 1)) };
+        f.Sentidos.Recibir(ServerMessages.CharMsgStatus(gladiadora, new Player { CharIndex = 502, Name = "Mira", Account = "mira_test", Level = 30 }, 0));
+        using var corte = new CancellationTokenSource();
+        var pelea = Empezar(f, corte.Token);
+        Assert.True(await pelea.WaitAsync(TimeSpan.FromSeconds(3)));   // la deja enseguida
+    }
+
     [Fact]
     public void A_una_criatura_la_da_por_quieta_menos_que_a_una_persona()
     {
@@ -66,6 +110,7 @@ public sealed class MagoPeleaDeLejosTests
         var pelea = Empezar(f, corte.Token);
         try
         {
+            Assert.Equal((byte)ClientPacketId.LeftClick, (await Proximo(f))[0]);   // primero lo mira
             Assert.Equal(new byte[] { (byte)ClientPacketId.CastSpell, 2 }, await Proximo(f));
             Assert.Equal((byte)ClientPacketId.WorkLeftClick, (await Proximo(f))[0]);
             f.Sentidos.Recibir(ServerMessages.UpdateMana(2_000 - 250));   // el servidor le cobró: quedó inmovilizada
@@ -85,6 +130,7 @@ public sealed class MagoPeleaDeLejosTests
         var pelea = Empezar(f, corte.Token);
         try
         {
+            Assert.Equal((byte)ClientPacketId.LeftClick, (await Proximo(f))[0]);   // primero lo mira
             Assert.Equal((byte)ClientPacketId.Walk, (await Proximo(f))[0]);
             Assert.Equal(new byte[] { (byte)ClientPacketId.CastSpell, 1 }, await HastaQueNoCamine(f));
         }

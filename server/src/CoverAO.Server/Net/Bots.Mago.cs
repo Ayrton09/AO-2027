@@ -51,6 +51,37 @@ public sealed partial class Bot
     public static bool SeAlejaDeLaCriatura(NpcInfo? n, int vidaMaxima) =>
         n is { MaxHit: > 0 } && n.MaxHit * GolpesQueLoMatanParaAlejarse >= vidaMaxima;
 
+    /// <summary>
+    /// CON QUIÉN PELEA EL MAGO (pedido del autor, 20/11: "cuándo pelear y cuándo no"). Las rondas 117 y 118 (x50, facciones):
+    /// de las 14 muertes de los dos Magos, 7 fueron contra un Gladiador de 3 a 5 niveles más y 2 contra un Guerrero de 1 a 3 más,
+    /// y casi todas sus bajas fueron clases de oficio y pares de nivel parecido. Ya salía a buscar a cualquiera hasta 5 niveles por
+    /// encima (<see cref="SeLoBusca"/>) y le devolvía el golpe a todos.
+    /// <list type="bullet">
+    /// <item>A nadie con más de <see cref="NivelesQueBuscaElMago"/> niveles por encima.</item>
+    /// <item>A un Guerrero o un Gladiador, sólo si es de menos nivel: pegan de cerca, aguantan mucho más, y dos pasos para atrás no
+    /// alcanzan.</item>
+    /// <item>A las clases de oficio, hasta <see cref="NivelesQueBuscaDeUnOficio"/> por encima, como antes.</item>
+    /// <item>Al que tiene <see cref="VidaParaRematar"/> % de vida o menos, sea quien sea, lo va a rematar.</item>
+    /// </list>
+    /// Sin la ficha de la persona (no la miró, o hace mucho) vale lo de siempre: primero la mira. Lo que dice la ficha es lo mismo que
+    /// ve cualquier jugador al clickearla: la clase, la vida en porcentaje y el nivel (escondido si está más de 5 por encima).
+    /// </summary>
+    public const int NivelesQueBuscaElMago = 2, NivelesQueBuscaDeUnOficio = 5, VidaParaRematar = 30;
+
+    public static bool MagoLeConvienePelear(int miNivel, short? nivelRival, (byte Clase, int Vida)? ficha)
+    {
+        if (nivelRival is not { } nivel || ficha is not { } f) return true;
+        if (nivel == SentidosDelBot.NivelEscondido) return false;
+        if (f.Vida <= VidaParaRematar) return true;
+        if (f.Clase is >= 11 and <= 16) return nivel <= miNivel + NivelesQueBuscaDeUnOficio;   // Pescador a Sastre
+        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador) return nivel < miNivel;
+        return nivel <= miNivel + NivelesQueBuscaElMago;
+    }
+
+    /// <summary>¿Le conviene pelear con esa persona? Las otras clases, como siempre (<see cref="SeLoBusca"/>).</summary>
+    private bool LeConvienePelearCon(SentidosDelBot s, short quien) =>
+        _clase != GameLimits.ClaseMago || MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs));
+
     /// <summary>¿Gasta el maná en inmovilizarla? Pegada a él, que no sea inmune, y si es criatura, que ya lo haya alcanzado
     /// <see cref="AlcancesAntesDeQuietar"/> veces aunque se alejó.</summary>
     public static bool MagoInmoviliza(bool esNpc, int pasos, int alcances, bool inmune) =>
