@@ -254,6 +254,10 @@ public sealed partial class Bot
     {
         // EL MAGO QUE NO LE CONVIENE SE VA DEL MAPA: ver `MagoSeVaAsync`.
         if (await MagoSeVaAsync(transporte, sentidos, rival, cerrada, ct)) return true;
+        // EL LADRÓN RENEGADO, PRIMERO ROBA: ver `RobarAsync`. Para el Renegado todo el que no lo es es un rival, y el robo, que va
+        // después en la vuelta, no llegaba nunca. Medido en la ronda 135 (22/11): Lira se hizo Renegada en los dos mundos y no
+        // probó robar una sola vez en ochenta minutos.
+        if (await RobarAsync(transporte, sentidos, cerrada, ct)) return true;
         if (AQuienSaleAPegarle(sentidos, rival.CharIndex) is { } blanco)
         {
             if (!blanco.Mirarlo) return await PelearConGenteAsync(transporte, sentidos, blanco.Quien, cerrada, ct);

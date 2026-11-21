@@ -18,6 +18,7 @@ public sealed class LadronRobaTests
         return (datos, new Navegante(datos));
     });
     private static readonly MethodInfo Robar = typeof(Bot).GetMethod("RobarAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo Atender = typeof(Bot).GetMethod("AtenderRivalAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     [Theory]
     [InlineData(GameLimits.ClaseLadron, 26, Player.StatusRepublicano, true)]
@@ -41,8 +42,11 @@ public sealed class LadronRobaTests
     public void Renegado_se_va_con_la_mitad_de_la_vida() =>
         Assert.Equal(Bot.VidaParaSeguirPeleando, Bot.VidaParaSeguirPeleandoDe(GameLimits.ClaseLadron));
 
-    [Fact]
-    public async Task Se_arrima_y_le_roba()
+    /// <summary>Ronda 135: para la Renegada el ciudadano es un rival, y atenderlo iba antes que robar.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Se_arrima_y_le_roba(bool comoRival)
     {
         var (datos, mapas) = Mundo.Value;
         const short mapa = 18;
@@ -76,7 +80,10 @@ public sealed class LadronRobaTests
         typeof(Bot).GetField("_clase", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, GameLimits.ClaseLadron);
         var t = new TransporteDeBot("Lira");
         using var corte = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var robo = (Task<bool>)Robar.Invoke(bot, new object[] { t, s, new TaskCompletionSource().Task, corte.Token })!;
+        var robo = comoRival
+            ? (Task<bool>)Atender.Invoke(bot, new object[] { t, s, s.Donde(501)!, new TaskCompletionSource().Task, corte.Token })!
+            : (Task<bool>)Robar.Invoke(bot, new object[] { t, s, new TaskCompletionSource().Task, corte.Token })!;
+        if (comoRival) Assert.Equal((short)501, bot.RivalQueInterrumpeCaza(s)?.CharIndex);
         try
         {
             byte[] p;

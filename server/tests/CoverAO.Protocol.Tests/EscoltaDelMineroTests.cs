@@ -39,15 +39,20 @@ public sealed class EscoltaDelMineroTests
     /// Medido el 22/11: sin escolta un Minero no encuentra ninguna mina desde el 20 (todas están en mapas inseguros donde nace algo
     /// que le queda grande), así que no compraba el piquete y no minaba nunca. Acompañado, sí hay a dónde ir.
     /// </summary>
-    [Fact]
-    public void Sin_escolta_no_hay_mina_y_acompanado_si()
+    [Theory]
+    [InlineData(20, 10, 9)]
+    [InlineData(13, 58, 32)]
+    [InlineData(13, 34, 70)]
+    [InlineData(13, 79, 35)]
+    [InlineData(24, 75, 29)]
+    public void Sin_escolta_no_hay_mina_y_acompanado_si(short mapa, byte x, byte y)
     {
         var datos = GameData.Load();
         var s = new SentidosDelBot { MiNombre = "Quim" };
-        var yo = new Player { CharIndex = 500, Name = "Quim", Account = "quim_test", Pos = new WorldPos(20, 10, 9), Level = 18,
+        var yo = new Player { CharIndex = 500, Name = "Quim", Account = "quim_test", Pos = new WorldPos(mapa, x, y), Level = 18,
                               MaxHp = 200, Hp = 200, MaxStamina = 300, Stamina = 300, Class = Minero };
         s.Recibir(ServerMessages.UserIndexInServer(500));
-        s.Recibir(ServerMessages.ChangeMap(20));
+        s.Recibir(ServerMessages.ChangeMap(mapa));
         s.Recibir(ServerMessages.CharacterCreate(yo));
         s.Recibir(ServerMessages.UpdateUserStats(yo));
         s.Recibir(ServerMessages.ChangeInventorySlot(1, 38, 200, false, 0, 1));
