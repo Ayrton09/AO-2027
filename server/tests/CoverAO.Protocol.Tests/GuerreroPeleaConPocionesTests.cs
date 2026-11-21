@@ -38,6 +38,15 @@ public sealed class GuerreroPeleaConPocionesTests
                     && datos.Spell((short)o.LanzaHechizo) is { IsRemoveParalysis: true });
     }
 
+    /// <summary>Ronda 122: lo que le llenaba la mochila a Ciro y su clase no puede usar, que ahora vende.</summary>
+    [Theory]
+    [InlineData(1210, true)]    // Túnica de Druida (Bajos)
+    [InlineData(1237, true)]    // Gorro de Aprendiz de Mago
+    [InlineData(243, false)]    // Armadura de Placas Completa (Bajos), la suya
+    [InlineData(1144, false)]   // Martillo de Guerra
+    public void Lo_que_el_guerrero_no_puede_usar(short obj, bool prohibido) =>
+        Assert.Equal(prohibido, Mundo.Value.Datos.Obj(obj)!.ClassForbidden(GameLimits.ClaseGuerrero));
+
     [Theory]
     [InlineData(true, 1_000, 0, true)]
     [InlineData(false, 1_000, 0, false)]      // sin la poción

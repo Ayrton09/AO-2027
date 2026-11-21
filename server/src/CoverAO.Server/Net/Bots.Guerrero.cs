@@ -19,7 +19,7 @@ namespace CoverAO.Server.Net;
 /// </summary>
 public sealed partial class Bot
 {
-    public const int PocionesDeAtributoQueLleva = 2;
+    public const int PocionesDeAtributoQueLleva = 5;
 
     /// <summary>Cuánto da por activo el efecto de una poción de atributo: un poco menos de los 33 minutos que dura.</summary>
     public const int EfectoDeAtributoMs = 30 * 60_000;
@@ -71,6 +71,27 @@ public sealed partial class Bot
         }
         return tomo;
     }
+
+    private bool EsDeAtributo(short obj) => _entorno.Datos.Obj(obj) is var o && (EsPocionDeFuerza(o) || EsPocionDeAgilidad(o));
+
+    /// <summary>Lo más barato que cuesta llevarse una de cada, para no salir a comprarlas sin la plata.</summary>
+    private const int CuestanLasDeAtributo = 150 + 250;
+
+    /// <summary>
+    /// ¿SALE A COMPRARLAS? El que las usa y pelea con gente, sin ninguna de alguna de las dos y con la plata, como el antídoto
+    /// (<see cref="ValeSalirPorElAntidoto"/>). Medido en la ronda 122 (21/11): Ciro, con 399 rojas, no fue nunca al Alquimista
+    /// en 20 minutos, y comprarlas sólo cuando iba por otra cosa no alcanzaba.
+    /// </summary>
+    private bool LeFaltanLasDeAtributo(SentidosDelBot sentidos) =>
+        UsaPocionesDeAtributo(_clase) && PeleaConGente(sentidos.Nivel) && PlataDe(sentidos) >= CuestanLasDeAtributo
+        && (sentidos.Suma(FuerzaPropia) == 0 || sentidos.Suma(AgilidadPropia) == 0);
+
+    /// <summary>
+    /// LO QUE SU CLASE NO PUEDE USAR (<c>ClasesProhibidas</c> del obj.dat) no se guarda como "traído de casa". Medido en la ronda 122:
+    /// Ciro, Guerrero, entró con 24 de las 25 ranuras ocupadas, entre ellas una Túnica de Druida y un Gorro de Aprendiz de Mago que
+    /// levantó en otra sesión; con la mochila llena el servidor no le vende nada que no se apile.
+    /// </summary>
+    private bool SuClaseNoLoUsa(short obj) => _entorno.Datos.Obj(obj) is { } o && o.ClassForbidden(_clase);
 
     /// <summary>¿Es la poción que le saca la parálisis al que la toma?</summary>
     private bool EsPocionDeRemoverParalisis(ObjInfo? o) =>

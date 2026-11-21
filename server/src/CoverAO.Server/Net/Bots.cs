@@ -1695,6 +1695,9 @@ public sealed partial class Bot
         // alcanzable MÁS CERCANO desde la cuna (un salto) y desde el mapa 1 y el 208 (dos).
         bool vaPorAntidoto = !_pagaPrimeroProvisiones && !enApuro && ValeSalirPorElAntidoto(faltaAntidoto, PlataDe(sentidos), CuestaElAntidoto)
                              && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
+        // Y LA VERDE Y LA AMARILLA DEL GUERRERO, que vende el mismo Alquimista: ver `LeFaltanLasDeAtributo`.
+        bool vaPorAtributo = !_pagaPrimeroProvisiones && !enApuro && hayLugar && LeFaltanLasDeAtributo(sentidos)
+                             && VuelveAlMostrador(PlataDe(sentidos), _plataQueNoAlcanzo);
         bool vaPorComida = faltaComida && !enApuro;
         bool vaPorBebida = faltaBebida && !enApuro;
         // Y EL ARMA, SI HAY QUIEN LE VENDA UNA QUE SIRVA: ver `PrimeroElArma`. Alcanza con el MAPA, como con el pergamino
@@ -1731,7 +1734,7 @@ public sealed partial class Bot
             if (CortaParaAcompanar()) return true;
         }
         if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
-            && !vaPorHechizo && !vaPorAntidoto && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
+            && !vaPorHechizo && !vaPorAntidoto && !vaPorAtributo && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco
@@ -1776,7 +1779,7 @@ public sealed partial class Bot
             conLaDelBanco |= o.Value <= PlataParaElEquipo(sentidos) && o.Value > PlataParaElEquipo(sentidos) - guardado;
         bool MapaDondeCompra(int mapa) => MapaAtiende(mapa) && (!conLaDelBanco || TieneBanquero(mapa));
         // EL VIAJE QUE NO CONSIGUIÓ NADA: ver `DescansoTrasElFracaso`.
-        void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto, vaPorElArma: hayArmaAlAlcance)
+        void Fracaso() => PostergarCompra(exito: DescansoTrasElFracaso(soloGustos, vaPorAntidoto || vaPorAtributo, vaPorElArma: hayArmaAlAlcance)
                                                  == DescansoDeCompras.Largo, porFracaso: true);
         // Una sola vez: `Sirve` corre por cada mercader del mapa y esto recorre la mochila entera.
         double sobraParaEquipo = PlataParaGustos(sentidos);
@@ -1814,6 +1817,7 @@ public sealed partial class Bot
             // aceptaba, así que nunca se compraba y cada fracaso tomaba el descanso corto del antídoto (`DescansoTrasElFracaso`).
             if (soloGustos)
                 return (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex)))
+                    || (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex)))
                     || (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (vaPorHechizo && stock.Any(s => ValeElViajePorElPergamino(sentidos, (short)s.ObjIndex, sobraParaEquipo)))
                     || (vaAVender && sentidos.EnLaMochila(obj => LeVendeA(sentidos, mercader.TipoItems, obj)) is not null);
@@ -1826,6 +1830,7 @@ public sealed partial class Bot
             if (vaPorBebida && stock.Any(s => EsBebida((short)s.ObjIndex))) return true;
             if (vaPorPociones && stock.Any(s => EsPocionDeVida((short)s.ObjIndex))) return true;
             if (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex))) return true;
+            if (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex))) return true;
             if ((hayRopaAlAlcance || desnudo) && VendeRopa(ficha)) return true;
             if (hayArmaAlAlcance && VendeElArma(ficha)) return true;
             if (vaPorEquipo && stock.Any(s => ValeElViajePorEso(sentidos, (short)s.ObjIndex, sobraParaEquipo))) return true;
@@ -1925,7 +1930,7 @@ public sealed partial class Bot
                 { llegoAlPueblo = true; continue; }
                 if (CortaParaAcompanar()) return true;
                 bool vaAComprar = HayAlgoQueComprar(vaPorLaHerramienta, vaPorComida, vaPorBebida, vaPorPociones,
-                                                    vaPorAntidoto,
+                                                    vaPorAntidoto || vaPorAtributo,
                                                     vaPorEquipo || hayArmaAlAlcance || desnudo, vaPorHechizo);
                 // Y POR LO ESENCIAL, DESDE UN MAPA INSEGURO TAMBIÉN: ver `VolverACasaAsync`. Si donde la deja la runa tampoco hay
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
@@ -2777,7 +2782,9 @@ public sealed partial class Bot
         // que no vale nada siguen afuera (abajo), y lo puesto ya lo descarta la mochila.
         bool enElPozo = EnElPozo(PlataDe(sentidos), SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
         if (EsInsumoMetalurgico(obj) || EsProduccionMetalurgica(obj)) return false; // el mercado del oficio administra su reserva
-        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo) || EsHerramientaDeSuOficio(obj)) return false;
+        // SALVO LO QUE SU CLASE NO PUEDE USAR: botín de otra sesión que quedó "de casa" y le llena la mochila. Ver `SuClaseNoLoUsa`.
+        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo && !SuClaseNoLoUsa(obj)) || EsHerramientaDeSuOficio(obj))
+            return false;
         // NI LA MONTURA: se compra a mitad de sesión, así que no está en lo que trajo de casa, y vale 280.000. Medido en la ronda 110:
         // los cuatro que volvieron de Tiama con la suya la pusieron en subasta al minuto. Ver `IrPorLaMonturaAsync`.
         if (EsMontura(obj)) return false;
