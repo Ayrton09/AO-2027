@@ -43,7 +43,8 @@ public sealed class EspectadorTests : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _fin.Cancel();
-        await _corriendo;
+        // El ciclo cancelado puede terminar con la cancelación, según en qué espera lo agarre.
+        try { await _corriendo; } catch (OperationCanceledException) { }
         foreach (var sesion in _sesiones) sesion.Close("fin de prueba");
         _db.Dispose();
         _fin.Dispose();
