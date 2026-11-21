@@ -7030,6 +7030,8 @@ public sealed partial class Bot
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
             // Y LA DEJA SI RESULTA QUE NO LE CONVIENE: se repliega en la vuelta del ciclo. Ver `MagoLeConvienePelear`.
             if (aGente && !LeConvienePelearCon(sentidos, presa)) return true;
+            if (aGente && _clase == GameLimits.ClaseMago && MagoDejaLaPelea(sentidos.Salud, sentidos.FichaDe(presa, NivelVistoMs)?.Vida))
+                return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
             // que curarse peleando, que con eso pegándole se repite sin llegar nunca acá: medido en `alto23` (02/10), Elmo, nivel 14,
             // peleando en el 208 con el Señor de las sombras ya encima, se curó con magia tres veces seguidas, del 29 al 34 %, y murió

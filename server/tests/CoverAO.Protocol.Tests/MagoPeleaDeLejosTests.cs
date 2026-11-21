@@ -64,6 +64,32 @@ public sealed class MagoPeleaDeLejosTests
     public void Con_quien_pelea_el_mago(int miNivel, short nivel, byte clase, int vida, bool pelea) =>
         Assert.Equal(pelea, Bot.MagoLeConvienePelear(miNivel, nivel, (clase, vida)));
 
+    /// <summary>Ronda 120: Kael, Nigromante 20, mató a Rufo, Mago 21.</summary>
+    [Theory]
+    [InlineData(21, (short)20, true)]
+    [InlineData(21, (short)21, false)]
+    [InlineData(21, (short)22, false)]
+    public void Al_nigromante_solo_si_es_de_menos_nivel(int miNivel, short nivel, bool pelea) =>
+        Assert.Equal(pelea, Bot.MagoLeConvienePelear(miNivel, nivel, (GameLimits.ClaseNigromante, 100)));
+
+    /// <summary>Ronda 120: alejarse unos pasos no alcanzó contra Fabia, que lo siguió; con poca vida, igual.</summary>
+    [Theory]
+    [InlineData(false, 1.0, true)]    // un rival que no le conviene: se va del mapa
+    [InlineData(true, 0.45, true)]    // con menos de la mitad de la vida, también
+    [InlineData(true, 0.8, false)]    // le conviene y está bien: pelea
+    [InlineData(null, 0.8, false)]    // sin la ficha, primero lo mira
+    [InlineData(null, 0.3, true)]
+    public void Cuando_se_va_del_mapa(bool? leConviene, double salud, bool seVa) =>
+        Assert.Equal(seVa, Bot.MagoSeVaDelMapa(leConviene, salud));
+
+    [Theory]
+    [InlineData(0.45, 80, true)]      // va perdiendo: la deja
+    [InlineData(0.45, 25, false)]     // el otro está para rematar: sigue
+    [InlineData(0.45, null, true)]
+    [InlineData(0.7, 90, false)]
+    public void Cuando_deja_la_pelea(double salud, int? vidaDelRival, bool laDeja) =>
+        Assert.Equal(laDeja, Bot.MagoDejaLaPelea(salud, vidaDelRival));
+
     [Fact]
     public void Sin_la_ficha_hace_lo_de_siempre() =>
         Assert.True(Bot.MagoLeConvienePelear(22, null, null));

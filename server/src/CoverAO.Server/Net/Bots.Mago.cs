@@ -58,8 +58,9 @@ public sealed partial class Bot
     /// encima (<see cref="SeLoBusca"/>) y le devolvía el golpe a todos.
     /// <list type="bullet">
     /// <item>A nadie con más de <see cref="NivelesQueBuscaElMago"/> niveles por encima.</item>
-    /// <item>A un Guerrero o un Gladiador, sólo si es de menos nivel: pegan de cerca, aguantan mucho más, y dos pasos para atrás no
-    /// alcanzan.</item>
+    /// <item>A un Guerrero, un Gladiador o un Nigromante, sólo si es de menos nivel: los dos primeros pegan de cerca y aguantan mucho
+    /// más, y el Nigromante es un mago más fuerte (en la ronda 120 Kael, Nigromante 20, mató a Rufo, Mago 21, después de siete pociones
+    /// rojas).</item>
     /// <item>A las clases de oficio, hasta <see cref="NivelesQueBuscaDeUnOficio"/> por encima, como antes.</item>
     /// <item>Al que tiene <see cref="VidaParaRematar"/> % de vida o menos, sea quien sea, lo va a rematar.</item>
     /// </list>
@@ -74,8 +75,40 @@ public sealed partial class Bot
         if (nivel == SentidosDelBot.NivelEscondido) return false;
         if (f.Vida <= VidaParaRematar) return true;
         if (f.Clase is >= 11 and <= 16) return nivel <= miNivel + NivelesQueBuscaDeUnOficio;   // Pescador a Sastre
-        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador) return nivel < miNivel;
+        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador or GameLimits.ClaseNigromante) return nivel < miNivel;
         return nivel <= miNivel + NivelesQueBuscaElMago;
+    }
+
+    /// <summary>
+    /// SE VA DEL MAPA, NO UNOS PASOS. En la ronda 120 (diagnóstico, 20/11) Rufo vio a Fabia (Gladiador 27) a 12 baldosas, la miró,
+    /// decidió no pelear y se alejó unos pasos (<see cref="AlejarseAsync"/>): a las pocas vueltas la tenía a una baldosa y lo mató. Y
+    /// Bruma, al 22 % de vida después de cazar, se cruzó con Petra y murió igual. En un mapa inseguro, con un rival que no le conviene
+    /// (según su ficha) o con menos de <see cref="VidaParaSeguirPeleando"/> de vida, el Mago se va a un mapa seguro.
+    /// <paramref name="leConviene"/> es null si no conoce la ficha del rival: entonces lo mira, como siempre.
+    /// </summary>
+    public const double VidaParaSeguirPeleando = 0.5;
+
+    public static bool MagoSeVaDelMapa(bool? leConviene, double salud) => leConviene == false || salud < VidaParaSeguirPeleando;
+
+    /// <summary>
+    /// DEJA LA PELEA QUE VA PERDIENDO: con menos de <see cref="VidaParaSeguirPeleando"/> de vida, salvo que el otro esté para
+    /// rematar (<see cref="VidaParaRematar"/>). En la ronda 120 Rufo peleó con Kael hasta morir, tomando pociones de 96 a 38 de vida.
+    /// </summary>
+    public static bool MagoDejaLaPelea(double salud, int? vidaDelRival) =>
+        salud < VidaParaSeguirPeleando && !(vidaDelRival <= VidaParaRematar);
+
+    private bool? ConvieneSegunLaFicha(SentidosDelBot s, short quien) =>
+        s.FichaDe(quien, NivelVistoMs) is null ? null : LeConvienePelearCon(s, quien);
+
+    /// <summary>El Mago que ve a un rival que no le conviene, o que tiene poca vida, se va a un mapa seguro. Devuelve si se fue.</summary>
+    private async Task<bool> MagoSeVaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible rival,
+                                           Task cerrada, CancellationToken ct)
+    {
+        if (_clase != GameLimits.ClaseMago || sentidos.Paralizado || !_entorno.Datos.IsPkMap(sentidos.Mapa)
+            || !MagoSeVaDelMapa(ConvieneSegunLaFicha(sentidos, rival.CharIndex), sentidos.Salud)) return false;
+        AvisarACompanero(transporte, "me voy a un mapa seguro", ref _proximoAvisoDeRetirada);
+        await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct);
+        return true;
     }
 
     /// <summary>¿Le conviene pelear con esa persona? Las otras clases, como siempre (<see cref="SeLoBusca"/>).</summary>

@@ -252,6 +252,8 @@ public sealed partial class Bot
     internal async Task<bool> AtenderRivalAsync(TransporteDeBot transporte, SentidosDelBot sentidos,
                                                SentidosDelBot.Visible rival, Task cerrada, CancellationToken ct)
     {
+        // EL MAGO QUE NO LE CONVIENE SE VA DEL MAPA: ver `MagoSeVaAsync`.
+        if (await MagoSeVaAsync(transporte, sentidos, rival, cerrada, ct)) return true;
         if (AQuienSaleAPegarle(sentidos, rival.CharIndex) is { } blanco)
         {
             if (!blanco.Mirarlo) return await PelearConGenteAsync(transporte, sentidos, blanco.Quien, cerrada, ct);
