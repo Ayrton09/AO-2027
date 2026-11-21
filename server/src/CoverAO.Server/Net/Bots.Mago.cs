@@ -104,7 +104,7 @@ public sealed partial class Bot
     {
         GameLimits.ClaseMago => VidaParaSeguirPeleando,
         GameLimits.ClaseClerigo => VidaParaSeguirPeleandoElClerigo,
-        GameLimits.ClaseAsesino => VidaParaSeguirPeleando,
+        GameLimits.ClaseAsesino or GameLimits.ClasePaladin or GameLimits.ClaseLadron => VidaParaSeguirPeleando,
         _ => null,
     };
 
@@ -150,6 +150,9 @@ public sealed partial class Bot
         GameLimits.ClaseMago => MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         GameLimits.ClaseClerigo => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         GameLimits.ClaseAsesino => AsesinoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
+        GameLimits.ClasePaladin => PaladinLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
+        // EL LADRÓN, RENEGADO, LO BUSCAN LOS DOS BANDOS: en la ronda 130 Lira murió contra Fabia y Ciro, que antes no la buscaban.
+        GameLimits.ClaseLadron => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         _ => true,
     };
 

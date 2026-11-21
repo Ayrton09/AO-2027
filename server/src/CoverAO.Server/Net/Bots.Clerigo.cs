@@ -21,9 +21,9 @@ public sealed partial class Bot
     /// (<c>IntervaloGolpeMagia</c>); un poco más, como cualquiera.</summary>
     public const int ComboMinMs = 450, ComboMaxMs = 650;
 
-    /// <summary>¿Pelea de cerca con esta persona? Un Clérigo o un Asesino con un arma que pega, y la persona al lado o quieta.</summary>
+    /// <summary>¿Pelea de cerca con esta persona? Un Clérigo, un Asesino o un Paladín con un arma que pega, y la persona al lado o quieta.</summary>
     public static bool SeArrimaConElCombo(byte clase, bool conArmaQuePega, int pasos, bool quieta) =>
-        (clase is GameLimits.ClaseClerigo or GameLimits.ClaseAsesino) && conArmaQuePega && (pasos <= 1 || quieta);
+        (clase is GameLimits.ClaseClerigo or GameLimits.ClaseAsesino or GameLimits.ClasePaladin) && conArmaQuePega && (pasos <= 1 || quieta);
 
     private bool ConArmaQuePega(SentidosDelBot s) => ArmaEnLaMano(s) != 0 && ArmaQueNoPegaPuesta(s, _entorno.Datos) is null;
 

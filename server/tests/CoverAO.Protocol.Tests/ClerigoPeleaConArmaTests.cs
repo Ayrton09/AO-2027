@@ -37,6 +37,7 @@ public sealed class ClerigoPeleaConArmaTests
     [InlineData(GameLimits.ClaseClerigo, true, 4, false, false)]   // la que se mueve, de lejos
     [InlineData(GameLimits.ClaseClerigo, false, 1, true, false)]   // sin arma, lanza
     [InlineData(GameLimits.ClaseAsesino, true, 4, true, true)]     // el Asesino, igual
+    [InlineData(GameLimits.ClasePaladin, true, 1, false, true)]    // y el Paladín
     [InlineData(GameLimits.ClaseMago, true, 1, true, false)]       // las otras clases, como siempre
     public void Cuando_se_arrima(byte clase, bool conArma, int pasos, bool quieta, bool seArrima) =>
         Assert.Equal(seArrima, Bot.SeArrimaConElCombo(clase, conArma, pasos, quieta));

@@ -38,6 +38,10 @@ public sealed class LadronRobaTests
         Assert.Equal(sale, Bot.LadronSaleARobar(GameLimits.ClaseLadron, bando, inseguro, salud, energia));
 
     [Fact]
+    public void Renegado_se_va_con_la_mitad_de_la_vida() =>
+        Assert.Equal(Bot.VidaParaSeguirPeleando, Bot.VidaParaSeguirPeleandoDe(GameLimits.ClaseLadron));
+
+    [Fact]
     public async Task Se_arrima_y_le_roba()
     {
         var (datos, mapas) = Mundo.Value;
