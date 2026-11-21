@@ -38,6 +38,17 @@ public sealed class MagoPeleaDeLejosTests
     public void Cuando_gasta_el_mana_en_inmovilizar(bool esNpc, int pasos, int alcances, bool inmune, bool inmoviliza) =>
         Assert.Equal(inmoviliza, Bot.MagoInmoviliza(esNpc, pasos, alcances, inmune));
 
+    /// <summary>Ronda 115: alejarse de todo le costó a Bruma (Mago 20, 166 de vida) un 30 y un 48 % de la experiencia. Contra lo
+    /// que cazaba —lobos, ratas, murciélagos— lanza donde está; se aleja de lo que lo mata en cinco golpes.</summary>
+    [Theory]
+    [InlineData(501, 166, false)]   // Lobo, pega 18
+    [InlineData(559, 166, false)]   // Rata Gigante, pega 22
+    [InlineData(500, 166, false)]   // Murciélago, pega 1
+    [InlineData(592, 166, true)]    // Ent, pega 90
+    [InlineData(559, 100, true)]    // la misma Rata con un Mago de 100 de vida: 5 x 22 la alcanza
+    public void Contra_criaturas_se_aleja_solo_de_las_que_lo_lastiman(short ficha, int vida, bool seAleja) =>
+        Assert.Equal(seAleja, Bot.SeAlejaDeLaCriatura(Mundo.Value.Datos.Npc(ficha), vida));
+
     [Fact]
     public void A_una_criatura_la_da_por_quieta_menos_que_a_una_persona()
     {

@@ -1,3 +1,4 @@
+using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 
 namespace CoverAO.Server.Net;
@@ -12,6 +13,9 @@ namespace CoverAO.Server.Net;
 /// en cada bicho débil lo deja sin maná para pegar, así que a una criatura la inmoviliza recién cuando lo vuelve a alcanzar aunque
 /// se aleje (<see cref="AlcancesAntesDeQuietar"/>): es la que camina tan rápido como él. A una persona, apenas la tiene al lado.
 /// Inmovilizada no camina pero pega al que tiene al lado (<c>Npc.EstaInmovilizada</c>), por eso igual se aleja.</para>
+///
+/// <para>Contra personas, siempre. Contra criaturas, sólo con las que lo lastiman de verdad (<see cref="SeAlejaDeLaCriatura"/>): con
+/// el resto lanza donde está, como antes, porque alejarse le costaba hechizos (ronda 115).</para>
 ///
 /// <para>Acorralado, o sin un paso que lo aleje sin acercarlo a otro peligro, sigue lanzando donde está, como antes. Las criaturas
 /// inmunes (los jefes, <c>Inmunidad</c> en su ficha) no se intentan inmovilizar: el servidor no cobra pero tampoco las frena.</para>
@@ -35,6 +39,18 @@ public sealed partial class Bot
     /// vueltas no pega nunca, y el Mago que todavía no sabe Inmovilizar quedaba caminando delante de la que es tan rápida como él.</summary>
     private bool _magoSeAlejo;
 
+    /// <summary>
+    /// CONTRA CRIATURAS, SÓLO LAS QUE LO LASTIMAN DE VERDAD: las que lo matan con <see cref="GolpesQueLoMatanParaAlejarse"/> golpes o
+    /// menos. Medido en la ronda 115 (20/11, dos partidas de 30 min a x1): alejándose de todo, Bruma (Mago 20, 166 de vida) juntó un
+    /// 30 % y un 48 % menos de experiencia que el control, sin morir en ninguna de las dos versiones. Contra lobos, ratas y
+    /// murciélagos, que mueren en pocos hechizos, cada paso para atrás era un hechizo menos. Lo que el tester describía es la pelea
+    /// con personas, y contra ellas vale siempre.
+    /// </summary>
+    public const int GolpesQueLoMatanParaAlejarse = 5;
+
+    public static bool SeAlejaDeLaCriatura(NpcInfo? n, int vidaMaxima) =>
+        n is { MaxHit: > 0 } && n.MaxHit * GolpesQueLoMatanParaAlejarse >= vidaMaxima;
+
     /// <summary>¿Gasta el maná en inmovilizarla? Pegada a él, que no sea inmune, y si es criatura, que ya lo haya alcanzado
     /// <see cref="AlcancesAntesDeQuietar"/> veces aunque se alejó.</summary>
     public static bool MagoInmoviliza(bool esNpc, int pasos, int alcances, bool inmune) =>
@@ -47,7 +63,9 @@ public sealed partial class Bot
     private async Task<bool> MagoTomaDistanciaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, short presa,
                                                     SentidosDelBot.Visible quien, int pasos, CancellationToken ct, Func<bool>? cortaSi)
     {
-        if (_clase != GameLimits.ClaseMago || !sentidos.UsaMana || pasos >= DistanciaDelMago) { _magoSeAlejo = false; return false; }
+        if (_clase != GameLimits.ClaseMago || !sentidos.UsaMana || pasos >= DistanciaDelMago
+            || (quien.EsNpc && !SeAlejaDeLaCriatura(_entorno.Datos.Npc(quien.FichaNpc), sentidos.VidaMaxima)))
+        { _magoSeAlejo = false; return false; }
         long ahora = Environment.TickCount64;
         if (!SigueQuieta(_quieta, presa, quien.X, quien.Y, ahora))
         {
