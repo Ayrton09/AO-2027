@@ -3634,11 +3634,6 @@ public sealed partial class Bot
                 return !NpcSystem.GuardiaVaPor(n, bando, nivel, _entorno.Datos, _entorno.Ini);
             return !n.Attackable && (n.NpcType is 1 or 4 || n.StockItems is { Count: > 0 });
         }
-        // Y UNA PERSONA DEL OTRO BANDO A LA VISTA, en un mapa inseguro: la vuelta del ciclo pelea o se va. Medido en la ronda 126
-        // (21/11): Juana, Asesina 21, mató a Aldo en el 98 y se tomó nueve azules seguidas, una por segundo, hasta que Fabia
-        // (Gladiadora 27) llegó y la mató.
-        if (sentidos.PersonaMasCercana() is not null && _entorno.Datos.IsPkMap(sentidos.Mapa)
-            && sentidos.PersonaMasCercana(EsBlancoParaMi()) is not null) return true;
         return sentidos.MasCercano(ficha => !EsSeguro(ficha)) is { Pasos: <= 1 };
     }
 
