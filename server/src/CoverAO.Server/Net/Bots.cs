@@ -3238,6 +3238,8 @@ public sealed partial class Bot
         {
             if (_entorno.Mapas.DondeSeTrabaja(sentidos.Mapa, agua, recurso, sentidos.Posicion, sirve, CruzaSinPeligro(sentidos),
                 _clase == ClaseMinero ? SaltosDelOficio : Navegante.TopeDeMapas) is not { } lejos) { PostergarFaena(); return false; }
+            // A LA MINA, ACOMPAÑADO: ver `PedirEscolta`. La vuelta que sigue sale, y el que aceptó ya lo sigue.
+            if (PedirEscolta(transporte, sentidos, lejos.Mapa)) { await Task.Delay(_rng.Next(1_500, 3_000), ct); return true; }
             if (!await IrHastaAsync(transporte, sentidos, lejos.Mapa, lejos.X, lejos.Y, cerrada, ct,
                 topeDeMapas: Math.Max(Navegante.TopeDeMapas, lejos.Saltos))) { PostergarFaena(); return true; }
             viajo = lejos.Saltos > 0;
