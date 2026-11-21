@@ -71,16 +71,23 @@ public sealed partial class Bot
     private async Task<bool> ComprarElArcoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, CancellationToken ct)
     {
         if (!sentidos.Comerciando || !TiraConArco(_clase)) return false;
-        if (!LeFaltaElArco(sentidos))
-            return FlechasQueTiene(sentidos) < FlechasParaComprarEnLaTienda
-                && await ReponerAsync(transporte, sentidos, FlechaPropia, FlechasQueQuiereElCazador, ct, ReservaPara(sentidos, comida: true, bebida: true));
-        double plata = PlataParaElEquipo(sentidos);
-        if (sentidos.LoMejorDeLaVitrina(obj => ArcoQueLeSirve(sentidos, obj, plata) ? _entorno.Datos.Obj(obj)!.MaxHit : 0, plata)
-            is not { } oferta) return false;
-        int antes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
-        transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
-        await Task.Delay(_rng.Next(600, 1_400), ct);
-        return sentidos.CuantoTiene(obj => obj == oferta.Obj) > antes;
+        bool compro = false;
+        if (LeFaltaElArco(sentidos))
+        {
+            double plata = PlataParaElEquipo(sentidos);
+            if (sentidos.LoMejorDeLaVitrina(obj => ArcoQueLeSirve(sentidos, obj, plata) ? _entorno.Datos.Obj(obj)!.MaxHit : 0, plata)
+                is not { } oferta) return false;
+            int antes = sentidos.CuantoTiene(obj => obj == oferta.Obj);
+            transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(oferta.Ranura).WriteInteger(1)));
+            await Task.Delay(_rng.Next(600, 1_400), ct);
+            if (sentidos.CuantoTiene(obj => obj == oferta.Obj) <= antes) return false;
+            compro = true;
+        }
+        // Y LAS FLECHAS EN LA MISMA VISITA: medido en la ronda 132 (22/11), Gonzo compró el Arco Compuesto y terminó las dos
+        // corridas con la Spatha, sin una flecha.
+        if (FlechasQueTiene(sentidos) < FlechasParaComprarEnLaTienda)
+            compro |= await ReponerAsync(transporte, sentidos, FlechaPropia, FlechasQueQuiereElCazador, ct, ReservaPara(sentidos, comida: true, bebida: true));
+        return compro;
     }
 
     /// <summary>¿Le sirve ese lote de flechas? Al que tira con arco y tiene pocas, de otro, y barato.</summary>
