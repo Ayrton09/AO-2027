@@ -96,6 +96,14 @@ public sealed partial class Bot
         && (long)f.PrecioFinal * 100 <= (long)valorUnitario * f.Cantidad * PorcentajeQuePaga
         && !string.Equals(f.Vendedor, yo, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// ¿EL CAZADOR VA A LA SUBASTA POR FLECHAS? Con el arco y menos de <see cref="FlechasQueQuiereElCazador"/>, aunque esté juntando
+    /// para su meta o no busque mejoras: medido en la ronda 135 (22/11), Osmar publicó un lote de 200 en cada mundo y Gonzo, con el
+    /// arco y una flecha o ninguna, no pasó nunca por el Subastador. Sólo lo miraba buscando mejoras de equipo.
+    /// </summary>
+    private bool CazadorBuscaFlechas(SentidosDelBot s) =>
+        TiraConArco(_clase) && !LeFaltaElArco(s) && FlechasQueTiene(s) < FlechasQueQuiereElCazador && _acompana is null;
+
     private bool LeSirvenLasFlechas(SentidosDelBot s, ServerMessages.FilaDeSubasta f, int plata) =>
         TiraConArco(_clase) && EsFlechaDeCarpintero(_entorno.Datos, f.Objeto) && !_porRetirar.Contains(f.Objeto)
         && LeConvienenLasFlechas(f, ValorDeLaFlecha(_entorno.Datos, f.Objeto), Nombre, plata, FlechasQueTiene(s));

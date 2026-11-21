@@ -87,4 +87,28 @@ public sealed class FlechasDelCarpinteroTests
         int n = await t.ReceiveAsync(buffer, corte.Token);
         Assert.Equal(new byte[] { (byte)ClientPacketId.EquipItem, 1 }, buffer.Take(n).Select(b => (byte)(b ^ t.Clave)).ToArray());
     }
+
+    /// <summary>Ronda 135: Gonzo, con el arco y una flecha o ninguna, no pasaba por la subasta, donde estaba el lote de Osmar.</summary>
+    [Theory]
+    [InlineData(GameLimits.ClaseCazador, true, 1, true)]
+    [InlineData(GameLimits.ClaseCazador, true, 300, false)]    // ya tiene las que quiere
+    [InlineData(GameLimits.ClaseCazador, false, 0, false)]     // sin arco, primero el arco en la tienda
+    [InlineData(GameLimits.ClaseGuerrero, true, 0, false)]
+    public void El_cazador_va_a_la_subasta_por_flechas(byte clase, bool conArco, int flechas, bool va)
+    {
+        var d = Datos.Value;
+        var s = new SentidosDelBot { MiNombre = "Gonzo" };
+        var yo = new Player { CharIndex = 500, Name = "Gonzo", Account = "gonzo_test", Pos = new WorldPos(1, 50, 50), Level = 23,
+                              MaxHp = 220, Hp = 220, MaxStamina = 300, Stamina = 300, Class = clase };
+        s.Recibir(ServerMessages.UserIndexInServer(500));
+        s.Recibir(ServerMessages.ChangeMap(1));
+        s.Recibir(ServerMessages.CharacterCreate(yo));
+        s.Recibir(ServerMessages.UpdateUserStats(yo));
+        if (conArco) s.Recibir(ServerMessages.ChangeInventorySlot(1, ArcoCompuesto, 1, true, 0, 1));
+        if (flechas > 0) s.Recibir(ServerMessages.ChangeInventorySlot(2, FlechaSimple, (short)flechas, true, 0, 1));
+        var bot = new Bot("Gonzo", null, new EntornoDeBots(null!, new ServerIni(), 0, 0, d, new Navegante(d), null!), 1);
+        typeof(Bot).GetField("_clase", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, clase);
+        var busca = typeof(Bot).GetMethod("CazadorBuscaFlechas", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.Equal(va, (bool)busca.Invoke(bot, new object[] { s })!);
+    }
 }

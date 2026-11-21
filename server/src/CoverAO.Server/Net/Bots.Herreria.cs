@@ -230,13 +230,14 @@ public sealed partial class Bot
     /// <summary>El oficio tiene su propia visita al mercado aunque el equipo y los consumibles estén completos.</summary>
     private async Task<bool> MercadoDelOficioAsync(TransporteDeBot t, SentidosDelBot s, Task cerrada, CancellationToken ct)
     {
-        if ((!EsFabricanteMetalurgico && _clase != ClaseCarpintero && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
+        bool porFlechas = CazadorBuscaFlechas(s);
+        if ((!EsFabricanteMetalurgico && _clase != ClaseCarpintero && !porFlechas && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
         AnotarLoQueDejoLaSubasta(s);
         bool vende = s.RanurasOcupadas().Select(s.QueHayEn).Distinct().Any(o => EsProduccionMetalurgica(o)
             && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && SePuedeRepublicar(o));
         bool compra = PlataParaElEquipo(s) >= PlataParaMirarLaSubasta && (_clase == ClaseHerrero
             ? HayLugarParaProducir(s) && RecetaDeHerreria(s) is { } receta && CuantasAlcanzan(_entorno.Datos, receta, Oficios.Herreria, o => s.CuantoTiene(i => i == o)) == 0
-            : !EsFabricanteMetalurgico && BuscaMejorasEnSubasta);
+            : porFlechas || (!EsFabricanteMetalurgico && BuscaMejorasEnSubasta));
         if (!vende && !compra && _porRetirar.Count == 0) return false;
         _proximoMercadoDelOficio = Environment.TickCount64 + (EsFabricanteMetalurgico ? 120_000 : MirarLaSubastaMs);
         var lugar = _entorno.Mapas.DondeHay(s.Mapa, s.Posicion, f => EsSubastador((short)f),

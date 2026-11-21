@@ -171,7 +171,7 @@ public sealed partial class Bot
     private async Task<bool> IrAlSubastadorAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         bool vende = sentidos.EnLaMochila(obj => ParaPublicar(sentidos, obj)) is not null;
-        bool mira = (_clase == ClaseHerrero || BuscaMejorasEnSubasta)
+        bool mira = (_clase == ClaseHerrero || BuscaMejorasEnSubasta || CazadorBuscaFlechas(sentidos))
             && Environment.TickCount64 >= _proximaMiradaALaSubasta && PlataParaLaSubasta(sentidos) >= PlataParaMirarLaSubasta;
         if ((!vende && !mira) || SubastadorDe(sentidos.Mapa) is not { } nace) return false;
         if (mira) _proximaMiradaALaSubasta = Environment.TickCount64 + MirarLaSubastaMs;
