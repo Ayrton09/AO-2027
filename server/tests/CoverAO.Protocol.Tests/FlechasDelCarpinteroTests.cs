@@ -1,3 +1,5 @@
+using System.Reflection;
+using CoverAO.Protocol;
 using CoverAO.Server.Data;
 using CoverAO.Server.Game;
 using CoverAO.Server.Net;
@@ -55,5 +57,34 @@ public sealed class FlechasDelCarpinteroTests
         var d = Datos.Value;
         Assert.Contains(d.Npc(Carpintero)!.StockItems!, s => s.ObjIndex == ArcoCompuesto);
         Assert.True(d.Obj(ArcoCompuesto) is { IsBow: true, Value: > 0 } arco && !arco.ClassForbidden(GameLimits.ClaseCazador));
+    }
+
+    /// <summary>Ronda 134: el Arco Compuesto es de dos manos y el servidor no lo deja poner con escudo (263). Primero se saca el
+    /// escudo, después se pone el arco.</summary>
+    [Fact]
+    public async Task Con_el_arco_de_dos_manos_primero_se_saca_el_escudo()
+    {
+        var d = Datos.Value;
+        const short Escudo = 404;   // Escudo de Tortuga
+        Assert.True(d.Obj(ArcoCompuesto) is { TwoHanded: 1 } && d.Obj(Escudo) is { IsShield: true });
+        var s = new SentidosDelBot { MiNombre = "Gonzo" };
+        var yo = new Player { CharIndex = 500, Name = "Gonzo", Account = "gonzo_test", Pos = new WorldPos(1, 50, 50), Level = 23,
+                              MaxHp = 220, Hp = 220, MaxStamina = 300, Stamina = 300, Class = GameLimits.ClaseCazador };
+        s.Recibir(ServerMessages.UserIndexInServer(500));
+        s.Recibir(ServerMessages.ChangeMap(1));
+        s.Recibir(ServerMessages.CharacterCreate(yo));
+        s.Recibir(ServerMessages.UpdateUserStats(yo));
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, Escudo, 1, true, 0, 1));
+        s.Recibir(ServerMessages.ChangeInventorySlot(2, ArcoCompuesto, 1, false, 0, 1));
+        s.Recibir(ServerMessages.ChangeInventorySlot(3, FlechaSimple, 54, false, 0, 1));
+        var bot = new Bot("Gonzo", null, new EntornoDeBots(null!, new ServerIni(), 0, 0, d, new Navegante(d), null!), 1);
+        typeof(Bot).GetField("_clase", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, GameLimits.ClaseCazador);
+        var t = new TransporteDeBot("Gonzo");
+        var equiparse = typeof(Bot).GetMethod("Equiparse", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.True((bool)equiparse.Invoke(bot, new object[] { t, s })!);
+        using var corte = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var buffer = new byte[64];
+        int n = await t.ReceiveAsync(buffer, corte.Token);
+        Assert.Equal(new byte[] { (byte)ClientPacketId.EquipItem, 1 }, buffer.Take(n).Select(b => (byte)(b ^ t.Clave)).ToArray());
     }
 }

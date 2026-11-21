@@ -5477,15 +5477,25 @@ public sealed partial class Bot
         // EL QUE TIRA CON ARCO SE PONE EL ARCO Y LAS FLECHAS, y no un arma de mano, que le sacaría el arco: ver `TiraConArco`.
         // Sin flechas, lo de siempre.
         var arqueria = SuArcoYSusFlechas(sentidos);
+        // EL ARCO DE DOS MANOS NO VA CON ESCUDO: el servidor lo rechaza con el 263 y el bot lo anotaba como que no se lo puede poner.
+        // Medido en la ronda 134 (22/11): Gonzo compró el Arco Compuesto, tenía 54 flechas y terminó peleando con la Spatha.
+        bool arcoDeDosManos = arqueria is { } a && _entorno.Datos.Obj(sentidos.QueHayEn(a.Arco)) is { TwoHanded: 1 };
         if (arqueria is { } conArco)
         {
+            if (!conArco.ArcoPuesto && arcoDeDosManos
+                && sentidos.RanurasOcupadas().FirstOrDefault(r => sentidos.EstaPuesto(r) && _entorno.Datos.Obj(sentidos.QueHayEn(r)) is { IsShield: true })
+                   is var escudo and > 0)
+                return PedirQueSeSaque(transporte, escudo);
             if (!conArco.ArcoPuesto) return PedirQueSePonga(transporte, sentidos, conArco.Arco);
             if (!conArco.FlechasPuestas) return PedirQueSePonga(transporte, sentidos, conArco.Flechas);
         }
         // PRIMERO, SACARSE EL ARMA CON LA QUE NO SE PEGA: con el arco puesto el servidor contesta 127 a cada golpe.
         else if (ArmaQueNoPegaPuesta(sentidos, _entorno.Datos) is { } arco) return PedirQueSeSaque(transporte, arco);
         foreach (var esDeEso in arqueria is null ? QueSePone : QueSePoneConElArco)
+        {
+            if (arcoDeDosManos && esDeEso == QueSePone[2]) continue;   // el escudo, con el arco de dos manos, no
             if (MejorParaPoner(sentidos, esDeEso) is { } ranura) return PedirQueSePonga(transporte, sentidos, ranura);
+        }
 
         // LOS NUDILLOS, SÓLO PARA EL QUE NO TIENE ARMA. El servidor saca uno al ponerse el otro (VB6
         // InvUsuario.bas:991-997 y :1051-1058), así que con los dos en la mochila el bot se pasaría la vida cambiando.
