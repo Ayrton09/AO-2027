@@ -7010,9 +7010,12 @@ public sealed partial class Bot
         int lanzadosEnVano = 0;
         _alcancesDelMago = 0;
         _magoSeAlejo = false;
-        // EL MAGO MIRA CON QUIÉN SE METIÓ, si no lo sabe: la ficha llega enseguida y la vuelta que sigue decide si sigue (ver
-        // `MagoLeConvienePelear`).
-        if (aGente && _clase == GameLimits.ClaseMago && sentidos.FichaDe(presa, NivelVistoMs) is null) MirarA(transporte, sentidos, presa);
+        // EL GOLPE DEL COMBO DEL CLÉRIGO: la vuelta que sigue lanza, y el próximo golpe espera lo de siempre. Ver `ClerigoSeArrima`.
+        long? golpeDelCombo = null;
+        // EL MAGO Y EL CLÉRIGO MIRAN CON QUIÉN SE METIERON, si no lo saben: la ficha llega enseguida y la vuelta que sigue decide si
+        // siguen (ver `MagoLeConvienePelear`).
+        if (aGente && VidaParaSeguirPeleandoDe(_clase) is not null && sentidos.FichaDe(presa, NivelVistoMs) is null)
+            MirarA(transporte, sentidos, presa);
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             if (sentidos.Mapa != mapaDeLaPelea) return true;
@@ -7030,8 +7033,7 @@ public sealed partial class Bot
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
             // Y LA DEJA SI RESULTA QUE NO LE CONVIENE: se repliega en la vuelta del ciclo. Ver `MagoLeConvienePelear`.
             if (aGente && !LeConvienePelearCon(sentidos, presa)) return true;
-            if (aGente && _clase == GameLimits.ClaseMago && MagoDejaLaPelea(sentidos.Salud, sentidos.FichaDe(presa, NivelVistoMs)?.Vida))
-                return true;
+            if (aGente && DejaLaPelea(sentidos, presa)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes
             // que curarse peleando, que con eso pegándole se repite sin llegar nunca acá: medido en `alto23` (02/10), Elmo, nivel 14,
             // peleando en el 208 con el Señor de las sombras ya encima, se curó con magia tres veces seguidas, del 29 al 34 %, y murió
@@ -7125,12 +7127,20 @@ public sealed partial class Bot
                 _quieta = (presa, QuietaHasta(Environment.TickCount64, cobro: sentidos.ManaEnPuntos < manaAntes), quien.X, quien.Y);
                 continue;
             }
+            // EL CLÉRIGO SE ARRIMA A LA QUE QUIETÓ Y PEGA: lanza sólo después de pegar, en el combo. Ver `ClerigoSeArrima`.
+            bool seArrima = aGente && ClerigoSeArrima(_clase, ConArmaQuePega(sentidos), pasos,
+                                                       SigueQuieta(_quieta, presa, quien.X, quien.Y, Environment.TickCount64));
+            bool tocaElHechizo = golpeDelCombo is not null;
             // SALVO QUE SU ARMA SAQUE CASI LO MISMO: ver `PegaConElArma`. Con la gente, como siempre.
-            if (Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY && !DejaDeLanzarle(lanzadosEnVano)
-                && LanzarAlgo(transporte, sentidos, quien, defensaParaElArma))
+            if ((!seArrima || tocaElHechizo) && Math.Abs(dx) <= AlcanceHechizoX && Math.Abs(dy) <= AlcanceHechizoY
+                && !DejaDeLanzarle(lanzadosEnVano) && LanzarAlgo(transporte, sentidos, quien, defensaParaElArma))
             {
                 short? lanzado = _ultimoCasteo?.Hechizo;
-                await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                // En el combo, la vuelta entera (golpe y hechizo) dura lo de un golpe: ver `ComboMinMs`.
+                int espera = _rng.Next(GolpeMinMs, GolpeMaxMs);
+                if (golpeDelCombo is { } golpe) espera = Math.Max(0, espera - (int)(Environment.TickCount64 - golpe));
+                golpeDelCombo = null;
+                await Task.Delay(espera, ct);
                 lanzadosEnVano = sentidos.ManaEnPuntos < manaAntes ? 0 : lanzadosEnVano + 1;
                 // LO QUE SACÓ EL HECHIZO, aparte del golpe: ver `HechizoMedido`.
                 var (_, _, sacoElHechizo) = sentidos.TomarLoQuePego();
@@ -7152,6 +7162,13 @@ public sealed partial class Bot
                 return await AlejarseAsync(transporte, sentidos, quien, cerrada, ct);
             if (tira || pasos == 1)
             {
+                // SIN HECHIZO PARA EL COMBO, el golpe espera lo de siempre.
+                if (golpeDelCombo is { } anterior)
+                {
+                    golpeDelCombo = null;
+                    int falta = GolpeMinMs - (int)(Environment.TickCount64 - anterior);
+                    if (falta > 0) { await Task.Delay(falta, ct); continue; }
+                }
                 if (tira)
                 {
                     if (!Disparar(transporte, quien.X, quien.Y)) return false;
@@ -7164,11 +7181,14 @@ public sealed partial class Bot
                     if (!transporte.Mandar(Paquete(ClientPacketId.ChangeHeading, w => w.WriteByte(rumbo)))) return false;
                     if (!transporte.Mandar(Paquete(ClientPacketId.attack, _ => { }))) return false;
                 }
-                await Task.Delay(tira ? _rng.Next(TiroMinMs, TiroMaxMs) : _rng.Next(GolpeMinMs, GolpeMaxMs), ct);
+                bool combo = !tira && seArrima && sentidos.UsaMana;
+                long pego = Environment.TickCount64;
+                await Task.Delay(tira ? _rng.Next(TiroMinMs, TiroMaxMs) : combo ? _rng.Next(ComboMinMs, ComboMaxMs) : _rng.Next(GolpeMinMs, GolpeMaxMs), ct);
                 var (g, e, d) = sentidos.TomarLoQuePego();
                 golpes += g;
                 entraron += e;
                 sacado += d;
+                if (combo) golpeDelCombo = pego;
                 if (aGente) { sinRespuesta = g > 0 ? 0 : sinRespuesta + 1; continue; }
                 // Y LO QUE APRENDE DE SU GOLPE: ver `GolpeMedido`.
                 var ficha = _entorno.Datos.Npc(quien.FichaNpc);

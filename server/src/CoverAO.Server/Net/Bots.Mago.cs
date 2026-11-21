@@ -88,32 +88,52 @@ public sealed partial class Bot
     /// </summary>
     public const double VidaParaSeguirPeleando = 0.5;
 
-    public static bool MagoSeVaDelMapa(bool? leConviene, double salud) => leConviene == false || salud < VidaParaSeguirPeleando;
+    public static bool MagoSeVaDelMapa(bool? leConviene, double salud, double vidaParaSeguir = VidaParaSeguirPeleando) =>
+        leConviene == false || salud < vidaParaSeguir;
 
     /// <summary>
     /// DEJA LA PELEA QUE VA PERDIENDO: con menos de <see cref="VidaParaSeguirPeleando"/> de vida, salvo que el otro esté para
     /// rematar (<see cref="VidaParaRematar"/>). En la ronda 120 Rufo peleó con Kael hasta morir, tomando pociones de 96 a 38 de vida.
     /// </summary>
-    public static bool MagoDejaLaPelea(double salud, int? vidaDelRival) =>
-        salud < VidaParaSeguirPeleando && !(vidaDelRival <= VidaParaRematar);
+    public static bool MagoDejaLaPelea(double salud, int? vidaDelRival, double vidaParaSeguir = VidaParaSeguirPeleando) =>
+        salud < vidaParaSeguir && !(vidaDelRival <= VidaParaRematar);
+
+    /// <summary>La vida con la que deja la pelea y se va del mapa, para las clases que eligen con quién pelear (el Mago y el
+    /// Clérigo); null, las otras, que pelean como siempre.</summary>
+    public static double? VidaParaSeguirPeleandoDe(byte clase) => clase switch
+    {
+        GameLimits.ClaseMago => VidaParaSeguirPeleando,
+        GameLimits.ClaseClerigo => VidaParaSeguirPeleandoElClerigo,
+        _ => null,
+    };
+
+    /// <summary>¿Deja esta pelea con gente? Ver <see cref="MagoDejaLaPelea"/>.</summary>
+    private bool DejaLaPelea(SentidosDelBot s, short presa) =>
+        VidaParaSeguirPeleandoDe(_clase) is { } umbral && MagoDejaLaPelea(s.Salud, s.FichaDe(presa, NivelVistoMs)?.Vida, umbral);
 
     private bool? ConvieneSegunLaFicha(SentidosDelBot s, short quien) =>
         s.FichaDe(quien, NivelVistoMs) is null ? null : LeConvienePelearCon(s, quien);
 
-    /// <summary>El Mago que ve a un rival que no le conviene, o que tiene poca vida, se va a un mapa seguro. Devuelve si se fue.</summary>
+    /// <summary>El Mago o el Clérigo que ve a un rival que no le conviene, o que tiene poca vida, se va a un mapa seguro. Devuelve
+    /// si se fue.</summary>
     private async Task<bool> MagoSeVaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible rival,
                                            Task cerrada, CancellationToken ct)
     {
-        if (_clase != GameLimits.ClaseMago || sentidos.Paralizado || !_entorno.Datos.IsPkMap(sentidos.Mapa)
-            || !MagoSeVaDelMapa(ConvieneSegunLaFicha(sentidos, rival.CharIndex), sentidos.Salud)) return false;
+        if (VidaParaSeguirPeleandoDe(_clase) is not { } umbral || sentidos.Paralizado || !_entorno.Datos.IsPkMap(sentidos.Mapa)
+            || !MagoSeVaDelMapa(ConvieneSegunLaFicha(sentidos, rival.CharIndex), sentidos.Salud, umbral)) return false;
         AvisarACompanero(transporte, "me voy a un mapa seguro", ref _proximoAvisoDeRetirada);
         await IrAlMapaSeguroAsync(transporte, sentidos, cerrada, ct);
         return true;
     }
 
-    /// <summary>¿Le conviene pelear con esa persona? Las otras clases, como siempre (<see cref="SeLoBusca"/>).</summary>
-    private bool LeConvienePelearCon(SentidosDelBot s, short quien) =>
-        _clase != GameLimits.ClaseMago || MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs));
+    /// <summary>¿Le conviene pelear con esa persona? El Mago y el Clérigo, por su regla; las otras clases, como siempre
+    /// (<see cref="SeLoBusca"/>).</summary>
+    private bool LeConvienePelearCon(SentidosDelBot s, short quien) => _clase switch
+    {
+        GameLimits.ClaseMago => MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
+        GameLimits.ClaseClerigo => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
+        _ => true,
+    };
 
     /// <summary>¿Gasta el maná en inmovilizarla? Pegada a él, que no sea inmune, y si es criatura, que ya lo haya alcanzado
     /// <see cref="AlcancesAntesDeQuietar"/> veces aunque se alejó.</summary>

@@ -166,7 +166,7 @@ public sealed class MagoPeleaDeLejosTests
     [Fact]
     public async Task Las_otras_clases_lanzan_donde_estan()
     {
-        var f = Armar(GameLimits.ClaseClerigo, sabeInmovilizar: true);
+        var f = Armar(GameLimits.ClaseDruida, sabeInmovilizar: true);
         using var corte = new CancellationTokenSource();
         var pelea = Empezar(f, corte.Token);
         try
