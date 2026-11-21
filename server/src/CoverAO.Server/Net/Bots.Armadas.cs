@@ -534,12 +534,14 @@ public sealed partial class Bot
     /// </summary>
     private bool RemoverseLaParalisis(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
-        if (!sentidos.Paralizado || !sentidos.UsaMana || Environment.TickCount64 < _proximaRemocion) return false;
+        if (!sentidos.Paralizado || Environment.TickCount64 < _proximaRemocion) return false;
+        // SIN EL HECHIZO, LA POCIÓN: ver `TomarLaDeRemoverParalisis`.
+        if (!sentidos.UsaMana) return TomarLaDeRemoverParalisis(transporte, sentidos);
         var (x, y) = sentidos.Posicion;
-        if (ElegirClicDeHechizo(sentidos, x, y) is not { } clic) return false;
+        if (ElegirClicDeHechizo(sentidos, x, y) is not { } clic) return TomarLaDeRemoverParalisis(transporte, sentidos);
         RevisarElUltimoCasteo(sentidos);
         if (ElMasBaratoQueSabe(sentidos, h => h.IsRemoveParalysis) is not { } ranura || !LanzarSobre(transporte, sentidos, ranura, x, clic))
-            return false;
+            return TomarLaDeRemoverParalisis(transporte, sentidos);
         _proximaRemocion = Environment.TickCount64 + EntreRemocionesMs;
         return true;
     }

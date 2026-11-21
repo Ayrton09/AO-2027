@@ -2408,6 +2408,8 @@ public sealed partial class Bot
         // venenosas hay 709 repartidas en 93 mapas. Ver `CuraElVeneno`.
         compro |= await ReponerAsync(transporte, sentidos, AntidotoPropio, AntidotosQueQuiere, ct,
                                      ReservaPara(sentidos, comida: true, bebida: true));
+        // LA VERDE Y LA AMARILLA DEL GUERRERO, en el mismo Alquimista: ver `TomarLasDeAtributoAsync`.
+        compro |= await ReponerLasDeAtributoAsync(transporte, sentidos, ct);
         // Y EL QUE USA MANÁ, LAS AZULES: ver `TomarPocionesDeManaAsync`. Las vende el mismo Alquimista, y no se viaja por ellas.
         if (sentidos.UsaMana)
             compro |= await ReponerAsync(transporte, sentidos, PocionDeManaPropia, PocionesDeManaQueQuiere, ct,
@@ -7016,6 +7018,8 @@ public sealed partial class Bot
         // siguen (ver `MagoLeConvienePelear`).
         if (aGente && VidaParaSeguirPeleandoDe(_clase) is not null && sentidos.FichaDe(presa, NivelVistoMs) is null)
             MirarA(transporte, sentidos, presa);
+        // EL GUERRERO SE TOMA LA VERDE Y LA AMARILLA antes de pelear con gente: ver `TomarLasDeAtributoAsync`.
+        if (aGente) await TomarLasDeAtributoAsync(transporte, sentidos, ct);
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted && sentidos.Vivo)
         {
             if (sentidos.Mapa != mapaDeLaPelea) return true;
