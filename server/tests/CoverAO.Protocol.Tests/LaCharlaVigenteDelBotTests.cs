@@ -276,10 +276,10 @@ public sealed class LaCharlaVigenteDelBotTests
         Campo("_genero").SetValue(bot, (byte)1);
         int oroEnMano = usaElBanco ? 500 : 100_000;
         sentidos.Recibir(ServerMessages.UpdateGold(oroEnMano));
-        // Pan, agua, pociones, antídoto, ropa y un arma básica. Sólo sale para mejorar el equipo.
+        // Pan, agua, pociones, antídoto, la Verde y la Amarilla del Guerrero, ropa y un arma básica. Sólo sale para mejorar el equipo.
         foreach (var (ranura, obj, cantidad) in new (byte, short, short)[]
-                 { (1, 24, 200), (2, 43, 200), (3, 38, 200), (4, 166, 20), (5, 31, 1), (6, 15, 1) })
-            sentidos.Recibir(ServerMessages.ChangeInventorySlot(ranura, obj, cantidad, ranura >= 5, 0, 1));
+                 { (1, 24, 200), (2, 43, 200), (3, 38, 200), (4, 166, 20), (5, 31, 1), (6, 15, 1), (7, 39, 5), (8, 36, 5) })
+            sentidos.Recibir(ServerMessages.ChangeInventorySlot(ranura, obj, cantidad, ranura is 5 or 6, 0, 1));
         sentidos.Recibir(ServerMessages.CharacterCreate(new Npc
         {
             CharIndex = 510, Template = Datos.Value.Npc(20)!, Pos = new WorldPos(20, usaElBanco ? (byte)77 : (byte)80, 55),

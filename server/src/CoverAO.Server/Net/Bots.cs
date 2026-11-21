@@ -1815,6 +1815,9 @@ public sealed partial class Bot
             if (soloElPergamino) return VendePergamino(ficha);
             // EL ANTÍDOTO TAMBIÉN ELIGE EL DESTINO: con el antídoto como única falta el viaje es "sólo gustos", y acá no se lo
             // aceptaba, así que nunca se compraba y cada fracaso tomaba el descanso corto del antídoto (`DescansoTrasElFracaso`).
+            // LAS DE ATRIBUTO DEL GUERRERO, PRIMERO: ver `LeFaltanLasDeAtributo`. Con plata, `vaPorEquipo` le da siempre, y el
+            // mostrador de equipo más cercano no las vende.
+            if (soloGustos && vaPorAtributo) return stock.Any(s => EsDeAtributo((short)s.ObjIndex));
             if (soloGustos)
                 return (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex)))
                     || (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex)))
@@ -3130,6 +3133,16 @@ public sealed partial class Bot
             await Task.Delay(_rng.Next(400, 900), ct);
             // Si no se fue (el piso no lo dejó), no se insiste en cada vuelta.
             _proximoLugar = Environment.TickCount64 + (sentidos.QueHayEn(ranura) == obj ? EsperaSiNoTiraMs : 0);
+            return true;
+        }
+        // Y SI LE FALTAN LAS DE ATRIBUTO, EL BOTÍN QUE MENOS VALE: ver `BotinParaHacerLugar`.
+        if (LeFaltanLasDeAtributo(sentidos) && BotinParaHacerLugar(sentidos) is { } tirar)
+        {
+            short obj = sentidos.QueHayEn(tirar);
+            _loQueTiro.Add(obj);
+            transporte.Mandar(Paquete(ClientPacketId.Drop, w => w.WriteByte(tirar).WriteLong(short.MaxValue)));
+            await Task.Delay(_rng.Next(400, 900), ct);
+            _proximoLugar = Environment.TickCount64 + (sentidos.QueHayEn(tirar) == obj ? EsperaSiNoTiraMs : 0);
             return true;
         }
         _proximoLugar = Environment.TickCount64 + EsperaSiNoTiraMs;

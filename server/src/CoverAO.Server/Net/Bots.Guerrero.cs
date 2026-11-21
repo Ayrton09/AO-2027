@@ -93,6 +93,26 @@ public sealed partial class Bot
     /// </summary>
     private bool SuClaseNoLoUsa(short obj) => _entorno.Datos.Obj(obj) is { } o && o.ClassForbidden(_clase);
 
+    /// <summary>
+    /// LA RANURA DEL BOTÍN QUE MENOS VALE, para hacerle lugar a la Verde y la Amarilla con la mochila llena. Medido en la ronda 124
+    /// (21/11): Ciro, con 365 mil monedas, volvía a llenar la mochila levantando botín, y rico no sale a venderlo
+    /// (<see cref="ValeElViajeParaVender"/>): con las 25 ranuras ocupadas no salía a comprarlas. Lo puesto, lo de novato y lo que no
+    /// se tira, nunca. null si no lleva botín.
+    /// </summary>
+    private byte? BotinParaHacerLugar(SentidosDelBot sentidos)
+    {
+        byte? mejor = null;
+        int valor = int.MaxValue;
+        foreach (byte ranura in sentidos.RanurasOcupadas())
+        {
+            short obj = sentidos.QueHayEn(ranura);
+            if (sentidos.EstaPuesto(ranura) || _entorno.Datos.Obj(obj) is not { } o || o.IsNewbie || o.NoSeTira || o.IsPotion
+                || !EsBotin(sentidos, obj)) continue;
+            if (o.Value < valor) { valor = o.Value; mejor = ranura; }
+        }
+        return mejor;
+    }
+
     /// <summary>¿Es la poción que le saca la parálisis al que la toma?</summary>
     private bool EsPocionDeRemoverParalisis(ObjInfo? o) =>
         o is { IsPotion: true, SubType: 5, LanzaHechizo: > 0 } && _entorno.Datos.Spell((short)o.LanzaHechizo) is { IsRemoveParalysis: true };
