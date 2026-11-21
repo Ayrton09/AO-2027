@@ -104,6 +104,7 @@ public sealed partial class Bot
     {
         GameLimits.ClaseMago => VidaParaSeguirPeleando,
         GameLimits.ClaseClerigo => VidaParaSeguirPeleandoElClerigo,
+        GameLimits.ClaseAsesino => VidaParaSeguirPeleando,
         _ => null,
     };
 
@@ -132,6 +133,7 @@ public sealed partial class Bot
     {
         GameLimits.ClaseMago => MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         GameLimits.ClaseClerigo => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
+        GameLimits.ClaseAsesino => AsesinoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         _ => true,
     };
 

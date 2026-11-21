@@ -7032,7 +7032,7 @@ public sealed partial class Bot
         int lanzadosEnVano = 0;
         _alcancesDelMago = 0;
         _magoSeAlejo = false;
-        // EL GOLPE DEL COMBO DEL CLÉRIGO: la vuelta que sigue lanza, y el próximo golpe espera lo de siempre. Ver `ClerigoSeArrima`.
+        // EL GOLPE DEL COMBO DEL CLÉRIGO: la vuelta que sigue lanza, y el próximo golpe espera lo de siempre. Ver `SeArrimaConElCombo`.
         long? golpeDelCombo = null;
         // EL MAGO Y EL CLÉRIGO MIRAN CON QUIÉN SE METIERON, si no lo saben: la ficha llega enseguida y la vuelta que sigue decide si
         // siguen (ver `MagoLeConvienePelear`).
@@ -7151,8 +7151,8 @@ public sealed partial class Bot
                 _quieta = (presa, QuietaHasta(Environment.TickCount64, cobro: sentidos.ManaEnPuntos < manaAntes), quien.X, quien.Y);
                 continue;
             }
-            // EL CLÉRIGO SE ARRIMA A LA QUE QUIETÓ Y PEGA: lanza sólo después de pegar, en el combo. Ver `ClerigoSeArrima`.
-            bool seArrima = aGente && ClerigoSeArrima(_clase, ConArmaQuePega(sentidos), pasos,
+            // EL CLÉRIGO SE ARRIMA A LA QUE QUIETÓ Y PEGA: lanza sólo después de pegar, en el combo. Ver `SeArrimaConElCombo`.
+            bool seArrima = aGente && SeArrimaConElCombo(_clase, ConArmaQuePega(sentidos), pasos,
                                                        SigueQuieta(_quieta, presa, quien.X, quien.Y, Environment.TickCount64));
             bool tocaElHechizo = golpeDelCombo is not null;
             // SALVO QUE SU ARMA SAQUE CASI LO MISMO: ver `PegaConElArma`. Con la gente, como siempre.
