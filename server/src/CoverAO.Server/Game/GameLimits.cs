@@ -56,7 +56,7 @@ public static class GameLimits
     // el subsistema de familiares necesita las tres que llevan uno, asi que viven aca.
     public const byte ClaseClerigo = 1, ClaseMago = 2, ClaseGuerrero = 3, ClaseAsesino = 4, ClaseLadron = 5,
                       ClaseBardo = 6, ClaseDruida = 7, ClaseGladiador = 8, ClasePaladin = 9, ClaseCazador = 10,
-                      ClaseNigromante = 18;
+                      ClaseMercenario = 17, ClaseNigromante = 18;
 
     /// <summary>El nombre de cada clase, EN EL ORDEN de <c>eClass</c> (Declares.bas:117) y no en el del AO
     /// clásico: Clérigo es 1 y Mago es 2. Vive acá, junto a los números que nombra, porque hay dos lugares

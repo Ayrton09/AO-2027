@@ -105,6 +105,7 @@ public sealed partial class Bot
         GameLimits.ClaseMago => VidaParaSeguirPeleando,
         GameLimits.ClaseClerigo => VidaParaSeguirPeleandoElClerigo,
         GameLimits.ClaseAsesino or GameLimits.ClasePaladin or GameLimits.ClaseLadron => VidaParaSeguirPeleando,
+        GameLimits.ClaseBardo or GameLimits.ClaseDruida or GameLimits.ClaseNigromante => VidaParaSeguirPeleando,
         _ => null,
     };
 
@@ -147,7 +148,10 @@ public sealed partial class Bot
     /// (<see cref="SeLoBusca"/>).</summary>
     private bool LeConvienePelearCon(SentidosDelBot s, short quien) => _clase switch
     {
-        GameLimits.ClaseMago => MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
+        // EL BARDO, EL DRUIDA Y EL NIGROMANTE, como el Mago: pelean con magia y tienen poca vida (Nadia, Bardo 22, 221; Hilda,
+        // Druida 26, 148; Kael, Nigromante 21, 168).
+        GameLimits.ClaseMago or GameLimits.ClaseBardo or GameLimits.ClaseDruida or GameLimits.ClaseNigromante =>
+            MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         GameLimits.ClaseClerigo => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         GameLimits.ClaseAsesino => AsesinoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
         GameLimits.ClasePaladin => PaladinLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),

@@ -8586,7 +8586,7 @@ public sealed partial class Bot
         return dado == 0 ? una : otra;
     }
 
-    private const byte ClaseMercenario = 17;
+    private const byte ClaseMercenario = GameLimits.ClaseMercenario;
 
     private (byte Raza, byte Genero, byte Clase, byte Hogar, short Cabeza) Aspecto()
     {

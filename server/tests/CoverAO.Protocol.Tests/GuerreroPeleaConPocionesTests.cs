@@ -55,10 +55,12 @@ public sealed class GuerreroPeleaConPocionesTests
         Assert.Equal(toma, Bot.TomaLaPocionDeAtributo(tiene, ahora, hasta));
 
     [Fact]
-    public void Por_ahora_solo_el_guerrero()
+    public void Las_usan_las_clases_que_pelean_sin_magia()
     {
-        Assert.True(Bot.UsaPocionesDeAtributo(GameLimits.ClaseGuerrero));
+        foreach (byte clase in new[] { GameLimits.ClaseGuerrero, GameLimits.ClaseGladiador, GameLimits.ClaseCazador, GameLimits.ClaseMercenario })
+            Assert.True(Bot.UsaPocionesDeAtributo(clase));
         Assert.False(Bot.UsaPocionesDeAtributo(GameLimits.ClaseMago));
+        Assert.False(Bot.UsaPocionesDeAtributo(GameLimits.ClasePaladin));
     }
 
     [Fact]
@@ -86,7 +88,7 @@ public sealed class GuerreroPeleaConPocionesTests
     [Fact]
     public async Task Las_otras_clases_no_se_las_toman()
     {
-        var f = Armar(GameLimits.ClaseGladiador);
+        var f = Armar(12);   // un Herrero
         using var corte = new CancellationTokenSource();
         var pelea = Empezar(f, corte.Token);
         try { Assert.Equal((byte)ClientPacketId.ChangeHeading, (await Proximo(f))[0]); }

@@ -26,8 +26,10 @@ public sealed partial class Bot
 
     private long _fuerzaHasta, _agilidadHasta;
 
-    /// <summary>¿Usa las pociones de atributo? Por ahora el Guerrero: las otras clases, cuando les toque.</summary>
-    public static bool UsaPocionesDeAtributo(byte clase) => clase == GameLimits.ClaseGuerrero;
+    /// <summary>¿Usa las pociones de atributo? Las clases que pelean sin magia: el Guerrero, el Gladiador, el Mercenario y el
+    /// Cazador (el tester, 20/11: "no tiene magia, necesita pociones").</summary>
+    public static bool UsaPocionesDeAtributo(byte clase) =>
+        clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador or GameLimits.ClaseCazador or GameLimits.ClaseMercenario;
 
     public static bool EsPocionDeAgilidad(ObjInfo? o) => o is { IsPotion: true, SubType: 1 };
     public static bool EsPocionDeFuerza(ObjInfo? o) => o is { IsPotion: true, SubType: 2 };
