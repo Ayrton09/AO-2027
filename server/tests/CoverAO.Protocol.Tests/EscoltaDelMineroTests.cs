@@ -38,6 +38,29 @@ public sealed class EscoltaDelMineroTests
     public void De_novato_compra_el_piquete(byte clase, int nivel, bool compra) =>
         Assert.Equal(compra, Bot.ElMineroLoCompraDeNovato(clase, nivel));
 
+    [Theory]
+    [InlineData(14, 12, 187, true)]
+    [InlineData(14, 12, 880, false)]   // el carro no: no es lo que le falta primero
+    [InlineData(14, 12, 0, false)]     // no va por ninguna herramienta
+    [InlineData(14, 16, 187, false)]   // ya no llega al vendedor
+    [InlineData(13, 12, 127, false)]   // un Leñador por su hacha, no
+    public void De_novato_vuelve_a_casa_por_el_piquete(byte clase, int nivel, short quiere, bool vuelve) =>
+        Assert.Equal(vuelve, Bot.ElMineroVuelveACasaPorElPiquete(clase, nivel, quiere, clase == 14 ? (short)187 : (short)127));
+
+    /// <summary>Ronda 138: desde el 801, donde cazaba Quim, no se llega caminando a ningún vendedor; desde el 20, su pueblo, sí.</summary>
+    [Fact]
+    public void Desde_el_801_el_piquete_solo_con_la_runa()
+    {
+        var datos = GameData.Load();
+        var mapas = new Navegante(datos);
+        bool Vende(int ficha) => datos.Npc(ficha)?.StockItems?.Any(s => s.ObjIndex == 187) == true;
+        bool Atiende(int m) => Bot.ElMercaderLeVende(null, datos.MapBattleMode(m), Player.StatusCiudadano);
+        Func<int, bool> entra = m => Bot.PuedeEntrar(10, m, datos, new ServerIni());
+        Assert.True(datos.IsPkMap(801));
+        Assert.Null(mapas.DondeHay(801, (45, 10), Vende, Atiende, entra, 30));
+        Assert.NotNull(mapas.DondeHay(20, (69, 70), Vende, Atiende, entra));
+    }
+
     /// <summary>La premisa: el vendedor que le vende a un ciudadano se alcanza sólo por la cuna (el 37).</summary>
     [Fact]
     public void El_piquete_se_vende_pasando_por_la_cuna()

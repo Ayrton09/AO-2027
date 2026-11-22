@@ -63,6 +63,15 @@ public sealed partial class Bot
     /// </summary>
     public static bool ElMineroLoCompraDeNovato(byte clase, int nivel) => clase == ClaseMinero && nivel <= GameLimits.NewbieMaxLevel;
 
+    /// <summary>
+    /// ¿VUELVE A CASA CON LA RUNA POR EL PIQUETE, como por lo esencial, aunque esté en un mapa inseguro? El Minero novato que va por él
+    /// (<see cref="ElMineroLoCompraDeNovato"/>): la runa no anda en un mapa inseguro y, para lo que no es esencial, el bot no caminaba
+    /// hasta uno seguro para usarla. Medido en la ronda 138 (22/11): Quim cazaba en el 801 (el Bosque de la desolación), desde donde no se
+    /// llega caminando a ningún vendedor que se lo venda, y pasó el nivel 16 sin piquete; desde el 20, su pueblo, el del 194 queda a dos.
+    /// </summary>
+    public static bool ElMineroVuelveACasaPorElPiquete(byte clase, int nivel, short quiere, short herramientaDelOficio) =>
+        ElMineroLoCompraDeNovato(clase, nivel) && quiere != 0 && quiere == herramientaDelOficio;
+
     /// <summary>¿Pide escolta? Un Minero que va a una mina en un mapa inseguro, si no la pidió hace poco.</summary>
     public static bool PideEscolta(byte clase, bool minaInsegura, long ahora, long proximo) =>
         clase == ClaseMinero && minaInsegura && ahora >= proximo;

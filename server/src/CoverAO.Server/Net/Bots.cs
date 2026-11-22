@@ -1952,12 +1952,15 @@ public sealed partial class Bot
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
                 // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
                 bool leFaltaLoEsencial = LeFaltaLoEsencial();
+                // Y EL PIQUETE DEL MINERO NOVATO, COMO LO ESENCIAL: ver `ElMineroVuelveACasaPorElPiquete`.
+                bool porElPiquete = ElMineroVuelveACasaPorElPiquete(_clase, sentidos.Nivel, quiero, HerramientaDeSuOficio);
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
                 if (intento == 0 && vaAComprar
-                    && ++_tiendasSinCamino >= FracasosAntesDeLaRuna(leFaltaLoEsencial, hayPueblo: conMercader is not null))
+                    && ++_tiendasSinCamino >= FracasosAntesDeLaRuna(leFaltaLoEsencial || porElPiquete, hayPueblo: conMercader is not null))
                 {
                     _tiendasSinCamino = 0;
-                    if (leFaltaLoEsencial ? await VolverACasaAsync(transporte, sentidos, LoEsencial, cerrada, ct)
+                    if (leFaltaLoEsencial || porElPiquete
+                            ? await VolverACasaAsync(transporte, sentidos, leFaltaLoEsencial ? LoEsencial : Sirve, cerrada, ct)
                                           : _acompana is null && !_entorno.Datos.IsPkMap(sentidos.Mapa)
                                             && Usar(transporte, sentidos, o => o.ObjType == ObjTypeRuna))
                     {
@@ -1965,7 +1968,7 @@ public sealed partial class Bot
                         // (`Fracaso`) salía a cazar recién llegado y el descanso vencía a mitad del viaje, ya afuera. Medido en
                         // `tardeN7` y `tardeN9` (03/10): Milo volvía con la runa a Illiandor con 3 pociones y el hambre en cero, y
                         // se iba al 275 sin comprarle a nadie, cinco a siete veces por corrida.
-                        if (leFaltaLoEsencial && LeVendenAca(sentidos.Mapa)) { llegoAlPueblo = true; continue; }
+                        if ((leFaltaLoEsencial || porElPiquete) && LeVendenAca(sentidos.Mapa)) { llegoAlPueblo = true; continue; }
                         Fracaso(); return true;
                     }
                 }
