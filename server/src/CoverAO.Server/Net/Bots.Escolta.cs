@@ -6,10 +6,14 @@ namespace CoverAO.Server.Net;
 /// <summary>
 /// EL MINERO VA A LA MINA ACOMPAÑADO (pedido del tester, 20/11: "hacer team para ir a minar ya que minar es peligroso"; decisión del
 /// autor del 22/11, la única excepción a la del 21/10 de no agrupar bots entre ellos). Todas las minas están en mapas inseguros. Antes
-/// de viajar a una, el Minero le susurra a un aliado de una clase de pelea que tenga a la vista que lo acompañe
-/// (<see cref="FraseDeLaEscolta"/>), como lo invitaría una persona: el otro la acepta y lo sigue con la compañía de siempre
-/// (<see cref="ContestarLaInvitacion"/>), que lo ayuda contra lo que lo ataca. Si no tiene la ficha de nadie, mira al más cercano.
-/// Como mucho cada <see cref="EntrePedidosDeEscoltaMs"/>.
+/// de viajar a una, el Minero le pide a un bot aliado de una clase de pelea que esté libre, donde esté, que lo acompañe
+/// (<see cref="PedirEscolta"/>), y lo espera <see cref="EsperaDeLaEscoltaMs"/>; el otro viaja hasta donde está y, al verlo, lo sigue
+/// con la compañía de siempre (<see cref="AtenderPedidoDeEscoltaAsync"/>), que lo ayuda contra lo que lo ataca. A una persona a la
+/// vista se lo susurra (<see cref="FraseDeLaEscolta"/>), como lo invitaría cualquiera. Como mucho cada
+/// <see cref="EntrePedidosDeEscoltaMs"/>.
+///
+/// <para>Entre bots el pedido no va por el protocolo: el servidor no pasa los susurros de un bot a otro (la regla del 21/10), y
+/// medido en la ronda 139 (23/11), Quim cazaba solo en el 13, con la mina del 33 a mano y nadie a la vista a quien pedírselo.</para>
 /// </summary>
 public sealed partial class Bot
 {
@@ -80,27 +84,108 @@ public sealed partial class Bot
     public static bool SirveDeEscolta((byte Clase, int Vida)? ficha, short? nivel) =>
         ficha is { Clase: < 11 or > 16 } && nivel is { } n && n != SentidosDelBot.NivelEscondido;
 
-    /// <summary>Le pide a un aliado que lo acompañe. Devuelve si se lo pidió (o si miró a alguien para pedírselo).</summary>
+    /// <summary>Cuánto lo espera el Minero, y cuánto vale el pedido para el que va.</summary>
+    public const int EsperaDeLaEscoltaMs = 4 * 60_000;
+
+    private long _esperaLaEscoltaHasta;
+
+    /// <summary>¿Está esperando a la escolta? La pidió hace poco y todavía no la tiene al lado.</summary>
+    private bool EsperaLaEscolta(SentidosDelBot s) =>
+        _escolta is not null && Environment.TickCount64 < _esperaLaEscoltaHasta && !EscoltaCerca(s);
+
+    /// <summary>Lo que los demás bots saben de éste para pedirle escolta: lo que se ve de afuera y si está libre.</summary>
+    internal sealed record FichaPublica(byte Clase, byte Bando, int Nivel, bool Vivo, bool Libre, int Mapa);
+
+    private volatile FichaPublica? _fichaPublica;
+
+    private void PublicarFicha(SentidosDelBot s) =>
+        _fichaPublica = new(_clase, s.MiEstado, s.Nivel, s.Vivo, _acompana is null && _pedidoDeEscolta is null, s.Mapa);
+
+    /// <summary>¿Ese bot le sirve de escolta? Vivo, libre, de una clase de pelea, de su nivel o hasta dos menos, y aliado de los dos
+    /// lados.</summary>
+    internal static bool EsEscoltaPosible(FichaPublica f, byte miBando, int miNivel, bool agresivo, bool atacarAliadoVuelveCriminal) =>
+        f.Vivo && f.Libre && f.Clase is < 11 or > 16 && f.Nivel >= miNivel - 2
+        && !EsBlanco(miBando, f.Bando, agresivo, atacarAliadoVuelveCriminal) && !EsBlanco(f.Bando, miBando, false, atacarAliadoVuelveCriminal);
+
+    /// <summary>El bot al que le pide escolta: de los posibles, el de su mapa, y si no el de más nivel.</summary>
+    private Bot? BotParaLaEscolta(SentidosDelBot s)
+    {
+        bool agresivo = Agresivo, regla = _entorno.Ini.AtacarAliadoVuelveCriminal;
+        return _entorno.EnElMundo.Values
+            .Where(b => b != this && b._fichaPublica is { } f && EsEscoltaPosible(f, s.MiEstado, s.Nivel, agresivo, regla))
+            .OrderByDescending(b => b._fichaPublica!.Mapa == s.Mapa).ThenByDescending(b => b._fichaPublica!.Nivel)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// LE PIDE A UN ALIADO QUE LO ACOMPAÑE: a un bot libre, donde esté (<see cref="BotParaLaEscolta"/>), diciéndole dónde lo espera; y si
+    /// no hay ninguno, a una persona a la vista, por susurro (si no tiene la ficha de nadie, mira al más cercano). Devuelve si se lo
+    /// pidió (o si miró a alguien para pedírselo).
+    /// </summary>
     private bool PedirEscolta(TransporteDeBot transporte, SentidosDelBot sentidos, int mapaDeLaMina)
     {
         long ahora = Environment.TickCount64;
-        if (!PideEscolta(_clase, _entorno.Datos.IsPkMap(mapaDeLaMina), ahora, _proximoPedidoDeEscolta) || sentidos.PersonaMasCercana() is null)
-            return false;
+        if (!PideEscolta(_clase, _entorno.Datos.IsPkMap(mapaDeLaMina), ahora, _proximoPedidoDeEscolta)) return false;
+        if (BotParaLaEscolta(sentidos) is { } otro)
+        {
+            var (x, y) = sentidos.Posicion;
+            _proximoPedidoDeEscolta = ahora + EntrePedidosDeEscoltaMs;
+            _escolta = (otro.Nombre, ahora + AcompanaMaxMin * 60_000L);
+            _esperaLaEscoltaHasta = ahora + EsperaDeLaEscoltaMs;
+            otro._pedidosDeEscolta.Enqueue((Nombre, sentidos.Mapa, x, y, ahora + EsperaDeLaEscoltaMs));
+            Console.WriteLine($"[bot {Nombre}] le pide escolta a {otro.Nombre}, para la mina del {mapaDeLaMina}");
+            return true;
+        }
+        if (sentidos.PersonaMasCercana() is null) return false;
         var aliado = EsBlancoParaMi();
-        if (sentidos.PersonaMasCercana(v => !v.Muerto && !aliado(v)
+        bool EsPersona(SentidosDelBot.Visible v) => !_entorno.EnElMundo.ContainsKey(v.Nombre);
+        if (sentidos.PersonaMasCercana(v => !v.Muerto && !aliado(v) && EsPersona(v)
                 && SirveDeEscolta(sentidos.FichaDe(v.CharIndex, NivelVistoMs), sentidos.NivelDe(v.CharIndex, NivelVistoMs))) is { } escolta)
         {
             _proximoPedidoDeEscolta = ahora + EntrePedidosDeEscoltaMs;
             _escolta = (escolta.Quien.Nombre, ahora + AcompanaMaxMin * 60_000L);
+            _esperaLaEscoltaHasta = ahora + EsperaDeLaEscoltaMs;
             return transporte.Mandar(Paquete(ClientPacketId.Whisper,
                 w => w.WriteAsciiString(escolta.Quien.Nombre).WriteAsciiString(FraseDeLaEscolta)));
         }
-        if (sentidos.PersonaMasCercana(v => !v.Muerto && !aliado(v) && sentidos.FichaDe(v.CharIndex, NivelVistoMs) is null
+        if (sentidos.PersonaMasCercana(v => !v.Muerto && !aliado(v) && EsPersona(v) && sentidos.FichaDe(v.CharIndex, NivelVistoMs) is null
                 && !(_miradoEn.TryGetValue(v.CharIndex, out long mirada) && ahora - mirada <= MirarDeNuevoMs)) is { } sinFicha)
         {
             MirarA(transporte, sentidos, sinFicha.Quien.CharIndex);
             return true;
         }
         return false;
+    }
+
+    /// <summary>Los pedidos de escolta que le llegaron de otros bots: quién, dónde lo espera y hasta cuándo.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(string Quien, int Mapa, byte X, byte Y, long Hasta)> _pedidosDeEscolta = new();
+
+    private (string Quien, int Mapa, byte X, byte Y, long Hasta)? _pedidoDeEscolta;
+
+    /// <summary>
+    /// EL QUE LE PIDIERON ESCOLTA, VA: viaja hasta donde lo espera el Minero y, al verlo, lo acompaña (<see cref="EmpezarAAcompanar"/>).
+    /// Lo deja si ya acompaña a alguien, si se venció la espera, si urge otra cosa o si no llega. Devuelve si se ocupó de esto.
+    /// </summary>
+    private async Task<bool> AtenderPedidoDeEscoltaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        while (_pedidosDeEscolta.TryDequeue(out var nuevo)) _pedidoDeEscolta = nuevo;
+        if (_pedidoDeEscolta is not { } p) return false;
+        long ahora = Environment.TickCount64;
+        if (_acompana is not null || !sentidos.Vivo || ahora >= p.Hasta || Urge(sentidos)) { _pedidoDeEscolta = null; return false; }
+        if (sentidos.PersonaLlamada(p.Quien) is { Muerto: false } el)
+        {
+            _pedidoDeEscolta = null;
+            if (EsBlancoParaMi()(el)) return false;
+            EmpezarAAcompanar(sentidos, p.Quien, ahora);
+            transporte.Mandar(Paquete(ClientPacketId.Talk,
+                w => w.WriteAsciiString(FrasesAcepta[_rng.Next(FrasesAcepta.Length)]).WriteByte((byte)SentidosDelBot.ComoLoDijo.Charla)));
+            return true;
+        }
+        bool SigueElPedido() => _pedidoDeEscolta == p && Environment.TickCount64 < p.Hasta && sentidos.PersonaLlamada(p.Quien) is null;
+        if (!await IrHastaAsync(transporte, sentidos, p.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla,
+                                cortaSi: () => !SigueElPedido(), topeDeMapas: SaltosDelOficio)
+            && SigueElPedido())
+            _pedidoDeEscolta = null;   // no llega: lo deja
+        return true;
     }
 }

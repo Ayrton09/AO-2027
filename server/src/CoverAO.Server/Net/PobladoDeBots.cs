@@ -16,6 +16,9 @@ public sealed class EntornoDeBots
     /// <summary>Los mapas: cómo ir de un lado a otro. Uno solo para todos los bots — se arma una vez y
     /// después no se toca.</summary>
     public Navegante Mapas { get; }
+    /// <summary>Los bots que están en el mundo, por su nombre: el Minero le pide escolta a uno de ellos (<see cref="Bot.PedirEscolta"/>).
+    /// El servidor no pasa los susurros de un bot a otro, y el que lo acompaña puede estar en otro mapa.</summary>
+    internal System.Collections.Concurrent.ConcurrentDictionary<string, Bot> EnElMundo { get; } = new(StringComparer.OrdinalIgnoreCase);
     internal MetasDeBots? Metas { get; init; }
     internal Func<short, int> DemandaDeSubasta { get; init; }
     /// <summary>El hogar de un personaje conectado, por su nombre (<see cref="PacketDispatcher.HogarDe"/>): lo que su dueño sabe

@@ -659,6 +659,7 @@ public sealed partial class Bot
             _cartelDeVolver = null;
             _como = ComoEntrar.Entrar;   // ya existen la cuenta y el personaje: de acá en más entra como cualquiera
             _yaEntro = _entroEstaVida = true;
+            _entorno.EnElMundo[Nombre] = this;
             // La clave que no llegó a data/bots.txt al crear la cuenta (el archivo tomado por otro programa) se vuelve a
             // escribir ahora: sin eso, en el próximo arranque nadie conoce la clave de esta cuenta. Si ya está, no escribe.
             if (_clave is not null) _entorno.GuardarClave(Nombre, _clave);
@@ -667,6 +668,8 @@ public sealed partial class Bot
         }
         finally
         {
+            _entorno.EnElMundo.TryRemove(new KeyValuePair<string, Bot>(Nombre, this));
+            _fichaPublica = null;
             transporte.Terminar();
             // Cualquier error del lector acá ya no importa (la vida terminó): relanzado, pisaba el resultado de la vida.
             try { await lector.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None); }
@@ -742,6 +745,7 @@ public sealed partial class Bot
             if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
             _miBando = sentidos.MiEstado;
             _miNivel = sentidos.Nivel;
+            PublicarFicha(sentidos);
             ActualizarMetaDeNivel50(sentidos);
             // LO QUE LE DICEN, Y LO QUE CONTESTA: ver `Charlar`.
             Charlar(transporte, sentidos);
@@ -1053,6 +1057,8 @@ public sealed partial class Bot
             if (await HacerLugarAsync(transporte, sentidos, ct)) continue;
             if (await LevantarBotinAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await RetomarElRescateAsync(transporte, sentidos, cerrada, ct)) continue;
+            // EL QUE LE PIDIERON ESCOLTA, VA: ver `AtenderPedidoDeEscoltaAsync`.
+            if (await AtenderPedidoDeEscoltaAsync(transporte, sentidos, cerrada, ct)) continue;
             // EL LADRÓN SE HACE RENEGADO Y ROBA, antes de salir a pelear: ver `RobarAsync`.
             if (HacerseRenegado(transporte, sentidos)) { await Task.Delay(_rng.Next(600, 1_200), ct); continue; }
             if (await RobarAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -3259,6 +3265,8 @@ public sealed partial class Bot
             var acompanado = segura is null && EscoltaCerca(sentidos) ? MinaConEscolta(sentidos) : null;
             if ((segura ?? acompanado) is not { } lejos)
             {
+                // Y SI YA LA PIDIÓ, LA ESPERA donde está: ver `EsperaLaEscolta`.
+                if (segura is null && EsperaLaEscolta(sentidos)) { await QuedarseAsync(sentidos, _rng.Next(1_500, 3_000), ct); return true; }
                 // Y SI LA HAY CON ESCOLTA, LA PIDE: la vuelta que sigue sale, si el que aceptó ya está al lado.
                 if (segura is null && MinaConEscolta(sentidos) is { } conEscolta && PedirEscolta(transporte, sentidos, conEscolta.Mapa))
                 { await Task.Delay(_rng.Next(1_500, 3_000), ct); return true; }

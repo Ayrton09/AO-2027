@@ -93,16 +93,7 @@ public sealed partial class Bot
         {
             case Invitacion.Acepta:
                 // LA MISMA QUE VUELVE A INVITAR no alarga el rato: ver la nota de la clase.
-                if (_acompana is null)
-                {
-                    _numeroDeAcompanamiento++;
-                    _esperaAcompanando = false;
-                    _salidaIntentada = null;
-                    _proximaFichaDeCompania = _proximoAvisoDeMana = _proximoAvisoDeRetirada = 0;
-                    sentidos.ObservarSalidaDe(quien);
-                    _acompana = (quien, ahora + _rng.Next(AcompanaMinMin, AcompanaMaxMin + 1) * 60_000L, ahora, ahora, 0);
-                    Console.WriteLine($"[bot {Nombre}] acompaña a {PacketDispatcher.ParaElLog(quien)}");
-                }
+                if (_acompana is null) EmpezarAAcompanar(sentidos, quien, ahora);
                 return (FrasesAcepta[_rng.Next(FrasesAcepta.Length)], _numeroDeAcompanamiento);
             case Invitacion.Lejos:
                 return (FrasesLejos[_rng.Next(FrasesLejos.Length)], null);
@@ -110,6 +101,18 @@ public sealed partial class Bot
                 var no = Frases[DeQueHabla.Grupo];
                 return (no[_rng.Next(no.Length)], null);
         }
+    }
+
+    /// <summary>Empieza a acompañar a <paramref name="quien"/> un rato sorteado.</summary>
+    private void EmpezarAAcompanar(SentidosDelBot sentidos, string quien, long ahora)
+    {
+        _numeroDeAcompanamiento++;
+        _esperaAcompanando = false;
+        _salidaIntentada = null;
+        _proximaFichaDeCompania = _proximoAvisoDeMana = _proximoAvisoDeRetirada = 0;
+        sentidos.ObservarSalidaDe(quien);
+        _acompana = (quien, ahora + _rng.Next(AcompanaMinMin, AcompanaMaxMin + 1) * 60_000L, ahora, ahora, 0);
+        Console.WriteLine($"[bot {Nombre}] acompaña a {PacketDispatcher.ParaElLog(quien)}");
     }
 
     /// <summary>Deja de acompañar, y lo dice: en la charla si la ve, por susurro si la perdió.</summary>
