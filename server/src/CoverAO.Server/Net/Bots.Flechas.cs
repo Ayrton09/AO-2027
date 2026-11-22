@@ -90,6 +90,14 @@ public sealed partial class Bot
         return compro;
     }
 
+    /// <summary>
+    /// ¿VUELVE A CASA CON LA RUNA POR EL ARCO, como por lo esencial, aunque esté en un mapa inseguro? El que tira con arco y no tiene
+    /// ninguno: es su arma. Medido en las rondas 140 y 141 (23/11): Gonzo cazaba en el 191 (el Sendero del Este) y el único camino a
+    /// Illiandor (el 194, con Carpintero) cruza el 193, donde nace algo que le queda grande; fracasó cuarenta veces y siguió con la Spatha.
+    /// </summary>
+    public static bool ElCazadorVuelveACasaPorElArco(bool tiraConArco, bool faltaElArco, bool vaPorElArco) =>
+        tiraConArco && faltaElArco && vaPorElArco;
+
     /// <summary>¿Le sirve ese lote de flechas? Al que tira con arco y tiene pocas, de otro, y barato.</summary>
     public static bool LeConvienenLasFlechas(ServerMessages.FilaDeSubasta f, int valorUnitario, string yo, int plata, int tiene) =>
         tiene < FlechasQueQuiereElCazador && f.Cantidad > 0 && f.PrecioFinal > 0 && f.PrecioFinal <= plata && valorUnitario > 0

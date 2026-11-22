@@ -85,7 +85,7 @@ public sealed partial class Bot
         ficha is { Clase: < 11 or > 16 } && nivel is { } n && n != SentidosDelBot.NivelEscondido;
 
     /// <summary>Cuánto lo espera el Minero, y cuánto vale el pedido para el que va.</summary>
-    public const int EsperaDeLaEscoltaMs = 4 * 60_000;
+    public const int EsperaDeLaEscoltaMs = 8 * 60_000;
 
     private long _esperaLaEscoltaHasta;
 
@@ -94,12 +94,12 @@ public sealed partial class Bot
         _escolta is not null && Environment.TickCount64 < _esperaLaEscoltaHasta && !EscoltaCerca(s);
 
     /// <summary>Lo que los demás bots saben de éste para pedirle escolta: lo que se ve de afuera y si está libre.</summary>
-    internal sealed record FichaPublica(byte Clase, byte Bando, int Nivel, bool Vivo, bool Libre, int Mapa);
+    internal sealed record FichaPublica(byte Clase, byte Bando, int Nivel, bool Vivo, bool Libre, int Mapa, byte X = 0, byte Y = 0);
 
     private volatile FichaPublica? _fichaPublica;
 
     private void PublicarFicha(SentidosDelBot s) =>
-        _fichaPublica = new(_clase, s.MiEstado, s.Nivel, s.Vivo, _acompana is null && _pedidoDeEscolta is null, s.Mapa);
+        _fichaPublica = new(_clase, s.MiEstado, s.Nivel, s.Vivo, _acompana is null && _pedidoDeEscolta is null, s.Mapa, s.Posicion.X, s.Posicion.Y);
 
     /// <summary>¿Ese bot le sirve de escolta? Vivo, libre, de una clase de pelea, de su nivel o hasta dos menos, y aliado de los dos
     /// lados.</summary>
@@ -192,12 +192,18 @@ public sealed partial class Bot
                 w => w.WriteAsciiString(FrasesAcepta[_rng.Next(FrasesAcepta.Length)]).WriteByte((byte)SentidosDelBot.ComoLoDijo.Charla)));
             return true;
         }
+        // VA A DONDE ESTÁ AHORA, no a donde lo pidió: el que espera puede haberse movido (lo que hace antes de la faena).
+        var (mapa, x, y) = _entorno.EnElMundo.TryGetValue(p.Quien, out var elOtro) && elOtro._fichaPublica is { Mapa: > 0 } f
+            ? (f.Mapa, f.X, f.Y) : (p.Mapa, p.X, p.Y);
+        p = p with { Mapa = mapa, X = x, Y = y };
+        _pedidoDeEscolta = p;
         bool SigueElPedido() => _pedidoDeEscolta == p && Environment.TickCount64 < p.Hasta && sentidos.PersonaLlamada(p.Quien) is null;
-        if (!await IrHastaAsync(transporte, sentidos, p.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla,
-                                cortaSi: () => !SigueElPedido(), topeDeMapas: SaltosDelOficio)
-            && SigueElPedido())
+        bool llego = await IrHastaAsync(transporte, sentidos, p.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla,
+                                        cortaSi: () => !SigueElPedido(), topeDeMapas: SaltosDelOficio);
+        // SI NO LLEGA, O LLEGA Y NO ESTÁ, lo deja: el que espera no se movió de ahí (`EsperaLaEscolta`).
+        if (SigueElPedido() && (!llego || sentidos.Mapa == p.Mapa))
         {
-            Console.WriteLine($"[bot {Nombre}] deja el pedido de escolta de {p.Quien}: no llega al mapa {p.Mapa}");
+            Console.WriteLine($"[bot {Nombre}] deja el pedido de escolta de {p.Quien}: {(llego ? "llegó y no estaba" : $"no llega al mapa {p.Mapa}")}");
             _pedidoDeEscolta = null;
         }
         return true;

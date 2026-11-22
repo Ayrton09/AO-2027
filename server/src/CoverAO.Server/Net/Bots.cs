@@ -1960,8 +1960,10 @@ public sealed partial class Bot
                 // tienda, no se la vuelve a usar para esto hasta cambiar de hogar. Las pociones son esenciales cuando no le quedan
                 // para pelear, no cuando le faltan para las que quiere: el viaje con la runa es largo, y por unas pocas no vale.
                 bool leFaltaLoEsencial = LeFaltaLoEsencial();
-                // Y EL PIQUETE DEL MINERO NOVATO, COMO LO ESENCIAL: ver `ElMineroVuelveACasaPorElPiquete`.
-                bool porElPiquete = ElMineroVuelveACasaPorElPiquete(_clase, sentidos.Nivel, quiero, HerramientaDeSuOficio);
+                // Y EL PIQUETE DEL MINERO NOVATO Y EL ARCO DEL CAZADOR, COMO LO ESENCIAL: ver `ElMineroVuelveACasaPorElPiquete` y
+                // `ElCazadorVuelveACasaPorElArco`.
+                bool porElPiquete = ElMineroVuelveACasaPorElPiquete(_clase, sentidos.Nivel, quiero, HerramientaDeSuOficio)
+                                    || ElCazadorVuelveACasaPorElArco(TiraConArco(_clase), faltaElArco, vaPorElArco);
                 if (leFaltaLoEsencial && sentidos.Mapa == _runaDejoEn) _runaNoSirveParaComprar = true;
                 if (intento == 0 && vaAComprar
                     && ++_tiendasSinCamino >= FracasosAntesDeLaRuna(leFaltaLoEsencial || porElPiquete, hayPueblo: conMercader is not null))
