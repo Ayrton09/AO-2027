@@ -31,6 +31,25 @@ public sealed class EscoltaDelMineroTests
     [Fact]
     public void Sin_ficha_no_sirve() => Assert.False(Bot.SirveDeEscolta(null, 25));
 
+    [Theory]
+    [InlineData(14, 15, true)]
+    [InlineData(14, 16, false)]   // ya no llega al vendedor: lo compra sólo si hay mina
+    [InlineData(13, 10, false)]   // un Leñador no
+    public void De_novato_compra_el_piquete(byte clase, int nivel, bool compra) =>
+        Assert.Equal(compra, Bot.ElMineroLoCompraDeNovato(clase, nivel));
+
+    /// <summary>La premisa: el vendedor que le vende a un ciudadano se alcanza sólo por la cuna (el 37).</summary>
+    [Fact]
+    public void El_piquete_se_vende_pasando_por_la_cuna()
+    {
+        var datos = GameData.Load();
+        var mapas = new Navegante(datos);
+        bool Vende(int ficha) => datos.Npc(ficha)?.StockItems?.Any(s => s.ObjIndex == 187) == true;
+        bool Atiende(int m) => Bot.ElMercaderLeVende(null, datos.MapBattleMode(m), Player.StatusCiudadano);
+        Assert.NotNull(mapas.DondeHay(13, (58, 32), Vende, Atiende, m => Bot.PuedeEntrar(GameLimits.NewbieMaxLevel, m, datos, new ServerIni()), 30));
+        Assert.Null(mapas.DondeHay(13, (58, 32), Vende, Atiende, m => Bot.PuedeEntrar(GameLimits.NewbieMaxLevel + 1, m, datos, new ServerIni()), 30));
+    }
+
     /// <summary>El que lo escucha la toma por una invitación, como la de una persona.</summary>
     [Fact]
     public void La_frase_es_una_invitacion() => Assert.True(Bot.EsInvitacion(Bot.FraseDeLaEscolta, "Ciro"));

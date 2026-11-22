@@ -55,6 +55,14 @@ public sealed partial class Bot
         return _hayMinaConEscolta;
     }
 
+    /// <summary>
+    /// ¿EL MINERO COMPRA EL PIQUETE SIENDO NOVATO, aunque no tenga mina a mano? Los únicos que le venden uno a un ciudadano (el NPC 48 en
+    /// el 184, el 194 y el 475) quedan pasando por la cuna, y desde el nivel 16 el servidor no lo deja entrar: después no lo consigue
+    /// nunca. Medido en la ronda 137 (22/11): Quim llegó al 14 con 13 mil monedas sin mina a la vista desde la cuna, y en la 136, ya
+    /// en el 20, con mina y sin camino al vendedor.
+    /// </summary>
+    public static bool ElMineroLoCompraDeNovato(byte clase, int nivel) => clase == ClaseMinero && nivel <= GameLimits.NewbieMaxLevel;
+
     /// <summary>¿Pide escolta? Un Minero que va a una mina en un mapa inseguro, si no la pidió hace poco.</summary>
     public static bool PideEscolta(byte clase, bool minaInsegura, long ahora, long proximo) =>
         clase == ClaseMinero && minaInsegura && ahora >= proximo;

@@ -1676,7 +1676,8 @@ public sealed partial class Bot
         // camino a una mina; todas las minas del mundo están en mapas pk.
         // La de FABRICAR no pide lugar: se fabrica parado donde sea (el servidor no mira el mapa).
         bool vaPorLaHerramienta = !_pagaPrimeroProvisiones && viajaPorGustos && faltaHerramienta && PlataDe(sentidos) >= cuestaLaHerramienta
-                                  && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos) || HayMinaConEscolta(sentidos));
+                                  && (laQueFalta != HerramientaDeSuOficio || HayDondeTrabajarSeguro(sentidos) || HayMinaConEscolta(sentidos)
+                                      || ElMineroLoCompraDeNovato(_clase, sentidos.Nivel));
         // CON MENOS DE LO QUE CUESTA UN AGUA EN CAJA NO SE SALE A COMPRAR, sólo a vender: el viaje es para volver
         // con las manos vacías. Medido: un bot con una y dos monedas, tres viajes seguidos al mostrador de comidas
         // sin llevarse nada.
