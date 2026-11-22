@@ -1834,8 +1834,10 @@ public sealed partial class Bot
             // aceptaba, así que nunca se compraba y cada fracaso tomaba el descanso corto del antídoto (`DescansoTrasElFracaso`).
             // LAS DE ATRIBUTO DEL GUERRERO, PRIMERO: ver `LeFaltanLasDeAtributo`. Con plata, `vaPorEquipo` le da siempre, y el
             // mostrador de equipo más cercano no las vende.
-            if (soloGustos && vaPorAtributo) return stock.Any(s => EsDeAtributo((short)s.ObjIndex));
-            if (soloGustos && vaPorElArco && VendeElArco(ficha)) return true;
+            // Y EL ARCO DEL CAZADOR, A LA PAR: medido en la ronda 140 (23/11), Gonzo con las de atributo por comprar y sin Alquimista al
+            // que llegar desde el 191 fracasó 28 veces seguidas, y el Carpintero que le vendía el arco no servía nunca.
+            if (soloGustos && (vaPorAtributo || vaPorElArco))
+                return (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex))) || (vaPorElArco && VendeElArco(ficha));
             if (soloGustos)
                 return (vaPorAntidoto && stock.Any(s => EsPocionQueCuraElVeneno((short)s.ObjIndex)))
                     || (vaPorAtributo && stock.Any(s => EsDeAtributo((short)s.ObjIndex)))

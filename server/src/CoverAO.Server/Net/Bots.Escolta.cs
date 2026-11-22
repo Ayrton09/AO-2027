@@ -168,10 +168,21 @@ public sealed partial class Bot
     /// </summary>
     private async Task<bool> AtenderPedidoDeEscoltaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
-        while (_pedidosDeEscolta.TryDequeue(out var nuevo)) _pedidoDeEscolta = nuevo;
+        while (_pedidosDeEscolta.TryDequeue(out var nuevo))
+        {
+            _pedidoDeEscolta = nuevo;
+            Console.WriteLine($"[bot {Nombre}] va a escoltar a {nuevo.Quien}, al mapa {nuevo.Mapa}");
+        }
         if (_pedidoDeEscolta is not { } p) return false;
         long ahora = Environment.TickCount64;
-        if (_acompana is not null || !sentidos.Vivo || ahora >= p.Hasta || Urge(sentidos)) { _pedidoDeEscolta = null; return false; }
+        string? porQue = _acompana is not null ? "ya acompaña a alguien" : !sentidos.Vivo ? "está muerto"
+                       : ahora >= p.Hasta ? "se venció la espera" : Urge(sentidos) ? "le urge otra cosa" : null;
+        if (porQue is not null)
+        {
+            Console.WriteLine($"[bot {Nombre}] deja el pedido de escolta de {p.Quien}: {porQue}");
+            _pedidoDeEscolta = null;
+            return false;
+        }
         if (sentidos.PersonaLlamada(p.Quien) is { Muerto: false } el)
         {
             _pedidoDeEscolta = null;
@@ -185,7 +196,10 @@ public sealed partial class Bot
         if (!await IrHastaAsync(transporte, sentidos, p.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla,
                                 cortaSi: () => !SigueElPedido(), topeDeMapas: SaltosDelOficio)
             && SigueElPedido())
-            _pedidoDeEscolta = null;   // no llega: lo deja
+        {
+            Console.WriteLine($"[bot {Nombre}] deja el pedido de escolta de {p.Quien}: no llega al mapa {p.Mapa}");
+            _pedidoDeEscolta = null;
+        }
         return true;
     }
 }
