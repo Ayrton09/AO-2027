@@ -33,7 +33,11 @@ public sealed partial class Bot
             // 146 (23/11), desde el Puerto de Rinkel no encontraba Rinkel, al lado, y Elmo seguía en la taberna con 5 monedas.
             var pasa = PasaSinPeligro(sentidos, NingunMapa);
             if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id),
-                    m => MapaConBanquero(m) || pasa(m)) is not { } pueblo) return false;
+                    m => MapaConBanquero(m) || pasa(m)) is not { } pueblo)
+            {
+                Console.WriteLine($"[bot {Nombre}] no encuentra banquero desde el {sentidos.Mapa} para pedir prestado");
+                return false;
+            }
             // SI EL VIAJE SE CORTA, VUELVE A PROBAR ENSEGUIDA: sin plata no tiene otra cosa que hacer.
             if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
             {
@@ -50,7 +54,12 @@ public sealed partial class Bot
             return false;
         }
         for (int i = 0; i < 8 && sentidos.Oro <= antes && !cerrada.IsCompleted; i++) await Task.Delay(250, ct);
-        if (sentidos.Oro <= antes) return true;
+        if (sentidos.Oro <= antes)
+        {
+            // Debe el anterior, o el banquero le dio un mandado: el bot no ve la deuda.
+            Console.WriteLine($"[bot {Nombre}] el banquero del {sentidos.Mapa} no le presta");
+            return true;
+        }
         Console.WriteLine($"[bot {Nombre}] pide prestado al banco: {sentidos.Oro - antes} monedas");
         _pagaPrimeroProvisiones = sentidos.ConHambre || sentidos.ConSed;
         _proximaCompra = 0;
