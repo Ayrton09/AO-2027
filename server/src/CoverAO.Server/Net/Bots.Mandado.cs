@@ -29,8 +29,11 @@ public sealed partial class Bot
             && _entorno.Datos.MapSpawns.TryGetValue(mapa, out var nacen) && nacen.Any(s => EsBanquero((short)s.NpcIndex));
         if (!MapaConBanquero(sentidos.Mapa))
         {
+            // EL PUEBLO MISMO SE PISA AUNQUE NAZCAN GUARDIAS QUE PEGAN FUERTE, si no van por él (`MapaConBanquero`): medido en la ronda
+            // 146 (23/11), desde el Puerto de Rinkel no encontraba Rinkel, al lado, y Elmo seguía en la taberna con 5 monedas.
+            var pasa = PasaSinPeligro(sentidos, NingunMapa);
             if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id),
-                    PasaSinPeligro(sentidos, NingunMapa)) is not { } pueblo) return false;
+                    m => MapaConBanquero(m) || pasa(m)) is not { } pueblo) return false;
             if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
                 return false;
         }
@@ -60,9 +63,10 @@ public sealed partial class Bot
 
         if (!MapaConMandado(sentidos.Mapa))
         {
+            var pasa = PasaSinPeligro(sentidos, NingunMapa);
             if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConMandado,
                     id => EsBanquero((short)id),
-                    PasaSinPeligro(sentidos, NingunMapa)) is not { } pueblo) return false;
+                    m => MapaConMandado(m) || pasa(m)) is not { } pueblo) return false;
             // La entrada identifica el lado del mapa que llega al banco. Aceptar una llegada a tres baldosas
             // hace entrar por (10,93) de Rinkel, aislada de (12,93), que sí da al pueblo.
             if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
