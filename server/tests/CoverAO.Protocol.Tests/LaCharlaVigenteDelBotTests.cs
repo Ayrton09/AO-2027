@@ -49,7 +49,7 @@ public sealed class LaCharlaVigenteDelBotTests
     {
         var (bot, sentidos, transporte) = Armar();
         Invitar(bot, sentidos, transporte, "Ana");
-        Metodo("DejarDeAcompanar").Invoke(bot, new object[] { transporte, "Ana", true });
+        Metodo("DejarDeAcompanar").Invoke(bot, new object[] { transporte, "Ana", true, "" });
         VencerLasRespuestas(bot);
         Charlar.Invoke(bot, new object[] { transporte, sentidos });
 

@@ -109,11 +109,19 @@ public sealed partial class Bot
         _numeroDeAcompanamiento++;
         _esperaAcompanando = false;
         _salidaIntentada = null;
+        _acompanaDeEscolta = false;
         _proximaFichaDeCompania = _proximoAvisoDeMana = _proximoAvisoDeRetirada = 0;
         sentidos.ObservarSalidaDe(quien);
         _acompana = (quien, ahora + _rng.Next(AcompanaMinMin, AcompanaMaxMin + 1) * 60_000L, ahora, ahora, 0);
         Console.WriteLine($"[bot {Nombre}] acompaña a {PacketDispatcher.ParaElLog(quien)}");
     }
+
+    /// <summary>¿Acompaña por un pedido de escolta (`AtenderPedidoDeEscoltaAsync`)? Entonces sabe dónde está el escoltado.</summary>
+    private bool _acompanaDeEscolta;
+
+    /// <summary>Dónde está el que escolta, por su ficha (<see cref="FichaPublica"/>), si acompaña por un pedido de escolta y sigue vivo.</summary>
+    private FichaPublica? DondeEstaElEscoltado(string quien) =>
+        _acompanaDeEscolta && _entorno.EnElMundo.TryGetValue(quien, out var el) && el._fichaPublica is { Mapa: > 0, Vivo: true } f ? f : null;
 
     /// <summary>Deja de acompañar, y lo dice: en la charla si la ve, por susurro si la perdió.</summary>
     private void DejarDeAcompanar(TransporteDeBot transporte, string quien, bool laVe, string porQue = "")
@@ -174,7 +182,9 @@ public sealed partial class Bot
         if (_acompana is not { } a) { sentidos.ObservarSalidaDe(null); return false; }
         long ahora = Environment.TickCount64;
         var ella = sentidos.PersonaLlamada(a.Quien);
-        if (ella is not null) _acompana = a = a with { VistaEn = ahora };
+        // LA ESCOLTA SABE DÓNDE ESTÁ EL QUE LE PIDIÓ IR, aunque no lo vea (`DondeEstaElEscoltado`): no lo da por perdido.
+        var escoltado = ella is null ? DondeEstaElEscoltado(a.Quien) : null;
+        if (ella is not null || escoltado is not null) _acompana = a = a with { VistaEn = ahora };
         if (DejaDeAcompanar(ahora, a.Hasta, a.VistaEn) || (ella is not null && SeAburre(ahora, a.UltimaPelea, a.SinLlegar)))
         {
             sentidos.ObservarSalidaDe(null);
@@ -191,6 +201,17 @@ public sealed partial class Bot
         // SIN VERLA UN MOMENTO, LA ESPERA: suele volver a la vista.
         if (ella is not { } p)
         {
+            // LA ESCOLTA LO SIGUE A OTRO MAPA aunque no se cruce sin peligro (`SeguirLaSalidaQueVioAsync` sólo cruza a uno así): medido
+            // en las rondas 146 a 150 (23/11), Quim entraba a la mina del 33 y Fabia lo perdía de vista y lo dejaba a los 40 segundos.
+            if (escoltado is { } f && f.Mapa != sentidos.Mapa)
+            {
+                long grupoDelViaje = _numeroDeAcompanamiento;
+                bool SigueElViaje() => _acompana is not null && _numeroDeAcompanamiento == grupoDelViaje
+                                       && sentidos.PersonaLlamada(a.Quien) is null && !Urge(sentidos);
+                await IrHastaAsync(transporte, sentidos, f.Mapa, f.X, f.Y, cerrada, ct, tolerancia: CercaDeElla,
+                                   cortaSi: () => !SigueElViaje(), topeDeMapas: SaltosDelOficio);
+                return cerrada.IsCompleted ? null : true;
+            }
             if (await SeguirLaSalidaQueVioAsync(transporte, sentidos, a.Quien, cerrada, ct))
                 return cerrada.IsCompleted ? null : true;
             await QuedarseAsync(sentidos, _rng.Next(800, 1_600), ct);

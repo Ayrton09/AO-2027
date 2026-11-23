@@ -192,6 +192,7 @@ public sealed partial class Bot
             _pedidoDeEscolta = null;
             if (EsBlancoParaMi()(el)) return false;
             EmpezarAAcompanar(sentidos, p.Quien, ahora);
+            _acompanaDeEscolta = true;
             transporte.Mandar(Paquete(ClientPacketId.Talk,
                 w => w.WriteAsciiString(FrasesAcepta[_rng.Next(FrasesAcepta.Length)]).WriteByte((byte)SentidosDelBot.ComoLoDijo.Charla)));
             return true;
