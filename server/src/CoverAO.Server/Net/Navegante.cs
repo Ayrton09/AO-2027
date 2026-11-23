@@ -421,6 +421,20 @@ public sealed class Navegante
     }
 
     /// <summary>
+    /// EL PUEBLO MÁS CERCANO SI SE ABRE ESA PUERTA DE ESTE MAPA (<see cref="PuebloMasCercano"/> con las baldosas que destraba libres). El
+    /// bot encerrado por una puerta cerrada (las puertas se cierran en el mundo, `GameData.SetTileBlocked`) no tenía salida: medido
+    /// en las rondas 146 a 151 (23/11), Elmo y Tulio, en la taberna del Puerto de Rinkel (99), sólo llegaban a la salida al 100.
+    /// </summary>
+    public (int Mapa, byte X, byte Y, int Saltos)? PuebloMasCercanoAbriendo(int mapaActual, (byte X, byte Y) desde, (byte X, byte Y) puerta,
+                                                                           Func<int, bool> mapaSirve, Func<int, bool> sirve,
+                                                                           Func<int, bool>? pisable = null)
+    {
+        foreach (var (mapa, saltos, entrada, _) in MapasPorSuEntrada(mapaActual, desde, pisable, libresAca: BaldosasQueDestraba(puerta)))
+            if (mapaSirve(mapa) && SeLlegaAbriendoUnaPuerta(mapa, entrada, sirve)) return (mapa, entrada.X, entrada.Y, saltos);
+        return null;
+    }
+
+    /// <summary>
     /// ¿SE LLEGA A UNO QUE SIRVE, a pie o abriendo UNA puerta? Es lo que hace el bot ya en el mapa: <c>AbrirUnaPuertaAsync</c> abre
     /// la que, sola, da camino (<see cref="AbrirlaDaCamino"/>), así que un mercader detrás de dos puertas seguidas no lo atiende
     /// nunca. Alcanza con quedar a <see cref="RadioDeMostrador"/> del mostrador, como en <see cref="EnElMapa"/>. Sólo se prueban las

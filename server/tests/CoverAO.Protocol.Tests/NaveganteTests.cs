@@ -460,6 +460,31 @@ public class NaveganteTests
     }
 
     /// <summary>
+    /// DESDE LA TABERNA DEL PUERTO, CON LA PUERTA CERRADA, SE LLEGA AL BANQUERO DE RINKEL ABRIÉNDOLA (ver
+    /// <see cref="Navegante.PuebloMasCercanoAbriendo"/>). Las puertas cerradas se bloquean al arrancar el mundo (`WorldPopulator`), como
+    /// acá. Medido en las rondas 146 a 151 (23/11): Elmo y Tulio, sin plata en la taberna del 99, sólo llegaban a la salida al 100.
+    /// </summary>
+    [Fact]
+    public void Desde_la_taberna_del_puerto_se_llega_al_banquero_abriendo_la_puerta()
+    {
+        var datos = GameData.Load();
+        Assert.True(datos.MapSpawns.ContainsKey(99), "Se necesitan los mapas del juego");
+        var puertas = datos.MapObjects[99].Where(o => Bot.PuertaQueSeAbre(datos.Obj(o.ObjIndex))).ToList();
+        foreach (var o in puertas)
+        {
+            datos.SetTileBlocked(99, o.X, o.Y, true);
+            if (o.X > 1) datos.SetTileBlocked(99, o.X - 1, o.Y, true);
+        }
+        var mapas = new Navegante(datos);
+        bool EsBanquero(int id) => datos.Npc(id)?.NpcType == 4;
+        (byte X, byte Y) elmo = (85, 20);
+
+        Assert.Null(mapas.PuebloMasCercano(99, elmo, mapa => mapa == 20, EsBanquero));
+        Assert.Contains(puertas, o => mapas.PuebloMasCercanoAbriendo(99, elmo, ((byte)o.X, (byte)o.Y), mapa => mapa == 20, EsBanquero)
+                                      is { Mapa: 20 });
+    }
+
+    /// <summary>
     /// LA ENTRADA OESTE DE RINKEL SON CUATRO BALDOSAS (ver <see cref="Navegante.CaminoAUnaPuertaHermana"/>): con (9,69) tapada, desde
     /// (10,69) hay otra salida al 98 que llega a la misma zona. Medido en `mid56` y `tardeN21` (03/10): los que salían esperaban a
     /// que se corriera el que estaba parado en (9,69), hasta cuatro minutos y medio.

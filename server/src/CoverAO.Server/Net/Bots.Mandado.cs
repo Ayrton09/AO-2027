@@ -32,17 +32,23 @@ public sealed partial class Bot
             // EL PUEBLO MISMO SE PISA AUNQUE NAZCAN GUARDIAS QUE PEGAN FUERTE, si no van por él (`MapaConBanquero`): medido en la ronda
             // 146 (23/11), desde el Puerto de Rinkel no encontraba Rinkel, al lado, y Elmo seguía en la taberna con 5 monedas.
             var pasa = PasaSinPeligro(sentidos, NingunMapa);
-            if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id),
-                    m => MapaConBanquero(m) || pasa(m)) is not { } pueblo)
+            bool Pisa(int m) => MapaConBanquero(m) || pasa(m);
+            var pueblo = _entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id), Pisa);
+            // ENCERRADO POR UNA PUERTA, LA ABRE: ver `Navegante.PuebloMasCercanoAbriendo`.
+            if (pueblo is null && await AbrirLaPuertaQueAsync(transporte, sentidos,
+                    donde => _entorno.Mapas.PuebloMasCercanoAbriendo(sentidos.Mapa, sentidos.Posicion, donde, MapaConBanquero,
+                                                                     id => EsBanquero((short)id), Pisa) is not null, cerrada, ct))
+                pueblo = _entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id), Pisa);
+            if (pueblo is not { } destino)
             {
                 Console.WriteLine($"[bot {Nombre}] no encuentra banquero desde el {sentidos.Mapa} para pedir prestado (bando {_miBando})");
                 _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                 return false;
             }
             // SI EL VIAJE SE CORTA, VUELVE A PROBAR ENSEGUIDA: sin plata no tiene otra cosa que hacer.
-            if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
+            if (!await IrHastaAsync(transporte, sentidos, destino.Mapa, destino.X, destino.Y, cerrada, ct, soloALaMeta: true))
             {
-                Console.WriteLine($"[bot {Nombre}] no llegó al banquero del {pueblo.Mapa} a pedir prestado (está en el {sentidos.Mapa})");
+                Console.WriteLine($"[bot {Nombre}] no llegó al banquero del {destino.Mapa} a pedir prestado (está en el {sentidos.Mapa})");
                 _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                 return false;
             }
