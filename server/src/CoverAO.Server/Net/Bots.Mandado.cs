@@ -99,8 +99,10 @@ public sealed partial class Bot
         _proximoMandado = Environment.TickCount64 + 90_000;
         bool EsSuSastre(int id) => MandadoParaVestirse.VendeRopaBasica(_entorno.Datos, _entorno.Datos.Npc(id),
             sentidos.Nivel, _clase, _raza, _genero);
+        // SIN GUARDIAS QUE VAYAN POR ÉL, como el préstamo (`MapaConBanquero`): medido en la ronda 155 (24/11), Aldo, ciudadano de nivel
+        // 17 y desnudo, iba al mandado a la Avanzada (815) y lo mataban sus guardias antes de llegar al banquero.
         bool MapaConMandado(int mapa) => MandadoParaVestirse.EsPueblo(_entorno.Datos, mapa)
-            && _entorno.Ini.MercaderLeVende(_entorno.Datos.MapBattleMode(mapa), _miBando)
+            && _entorno.Ini.MercaderLeVende(_entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa)
             && _entorno.Datos.MapSpawns.TryGetValue(mapa, out var nacen)
             && nacen.Any(s => EsBanquero((short)s.NpcIndex)) && nacen.Any(s => EsSuSastre(s.NpcIndex));
 
