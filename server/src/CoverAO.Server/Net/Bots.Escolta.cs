@@ -200,6 +200,8 @@ public sealed partial class Bot
         bool SigueElPedido() => _pedidoDeEscolta == p && Environment.TickCount64 < p.Hasta && sentidos.PersonaLlamada(p.Quien) is null;
         bool llego = await IrHastaAsync(transporte, sentidos, p.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla,
                                         cortaSi: () => !SigueElPedido(), topeDeMapas: SaltosDelOficio);
+        Console.WriteLine($"[bot {Nombre}] escoltando a {p.Quien}: {(llego ? "llegó" : "no llegó")} a ({p.Mapa},{p.X},{p.Y}), está en " +
+                          $"({sentidos.Mapa},{sentidos.Posicion.X},{sentidos.Posicion.Y}){(SigueElPedido() ? "" : ", lo ve o se venció")}");
         // SI NO LLEGA, O LLEGA Y NO ESTÁ, lo deja: el que espera no se movió de ahí (`EsperaLaEscolta`).
         if (SigueElPedido() && (!llego || sentidos.Mapa == p.Mapa))
         {
