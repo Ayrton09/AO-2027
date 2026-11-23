@@ -15,7 +15,8 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - Los Guerreros, Gladiadores, Cazadores y Mercenarios se toman la Verde y la Amarilla antes de pelear con gente.
 - El Ladrón se hace Renegado y roba.
 - El Cazador compra arco y flechas, y el Carpintero fabrica flechas y las vende en la subasta.
-- El Minero compra el piquete de novato y va a las minas acompañado de otro bot.
+- El Minero compra el piquete de novato y va a las minas acompañado de otro bot, que lo sigue hasta adentro de la mina.
+- El bot que se queda sin plata va al banquero a pedir el préstamo, y si está encerrado por una puerta la abre.
 
 ## 1.0.42 (2026-11-20)
 
