@@ -3479,7 +3479,7 @@ public sealed partial class PacketDispatcher
             if (session is not null && eraNewbie && p.Level > GameLimits.NewbieMaxLevel
                 && string.Equals(_data.MapZone(p.Pos.Map).Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase))
             {
-                p.HomeCity = p.IsCitizen ? Cities.Nix : p.IsRepublicano ? Cities.Illiandor : Cities.Rinkel;
+                p.HomeCity = HogarAlDejarLaCuna(p);
                 TeleportTo(session, p, Cities.SpawnTile(p.HomeCity), fx: true);
                 session.Send(ServerMessages.LocaleMsg(304));
             }
@@ -10675,6 +10675,10 @@ public sealed partial class PacketDispatcher
     }
 
     /// <summary>¿Ese destino es la zona de novatos y él ya no lo es? De la cuna no se sale graduado para volver.</summary>
+    /// <summary>El hogar al dejar la cuna (VB6 Modulo_UsUaRiOs.bas:580-595): ciudadano a Nix, republicano a Illiandor, cualquier otro a
+    /// Rinkel.</summary>
+    public static byte HogarAlDejarLaCuna(Player p) => p.IsCitizen ? Cities.Nix : p.IsRepublicano ? Cities.Illiandor : Cities.Rinkel;
+
     public static bool EsCunaVedada(Player p, WorldPos destino, GameData data) =>
         p.Level > GameLimits.NewbieMaxLevel
         && string.Equals(data.MapZone(destino.Map)?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);
@@ -13359,7 +13363,16 @@ public sealed partial class PacketDispatcher
                 // la zona de novatos aunque siga siendo su hogar (las dos cosas ya las frenan el regreso del muerto y Walk).
                 if (p.JailMinutesLeft > 0) { session.Send(ServerMessages.LocaleMsg(146, p.JailMinutesLeft.ToString())); return; }
                 var destino = p.IsAlive ? Cities.SpawnTile(p.HomeCity) : Cities.DeadTile(p.HomeCity);
-                if (EsCunaVedada(p, destino, _data)) { session.Send(ServerMessages.LocaleMsg(468)); return; }
+                // CON EL HOGAR EN LA CUNA PASADO EL NOVATO, LA MUDANZA DEL ORIGINAL (`HogarAlDejarLaCuna`, la de subir a 16 adentro del
+                // dungeon): el que subía afuera conservaba la cuna, y como acá la runa no vuelve a la zona de novatos quedaba sin salida.
+                // DECIDIDO POR EL AUTOR (24/11): medido con Aldo, ciudadano de nivel 17 varado en la zona de la Avanzada, que a pie no se
+                // conecta con el resto del mundo y donde nadie le vende a un ciudadano.
+                if (EsCunaVedada(p, destino, _data))
+                {
+                    p.HomeCity = HogarAlDejarLaCuna(p);
+                    destino = p.IsAlive ? Cities.SpawnTile(p.HomeCity) : Cities.DeadTile(p.HomeCity);
+                    session.Send(ServerMessages.LocaleMsg(304));
+                }
                 if (!p.IsAlive) { WarpUserChar(p, destino, fx: true); return; }
                 bool puedeVolver = _data.IsArena(p.Pos.Map, p.Pos.X, p.Pos.Y) || !_data.IsPkMap(p.Pos.Map);
                 if (!puedeVolver) { session.Send(ServerMessages.LocaleMsg(468)); return; }

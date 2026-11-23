@@ -77,6 +77,33 @@ public class AuditoriaDeLa1020Tests : IDisposable
         Assert.Equal(Cities.DeadTile(Cities.Ullathorpe), p.Pos);
     }
 
+    /// <summary>
+    /// CON EL HOGAR EN LA CUNA PASADO EL NOVATO, LA RUNA LO MUDA COMO EL ORIGINAL (`PacketDispatcher.HogarAlDejarLaCuna`, DECIDIDO
+    /// POR EL AUTOR, 24/11): el ciudadano a Nix, y lo lleva ahí. Antes contestaba el 468 y no lo movía: Aldo, ciudadano de nivel 17
+    /// con el hogar en el Dungeon Newbie, quedaba varado en la zona de la Avanzada, que a pie no se conecta con el resto del mundo.
+    /// </summary>
+    [Fact]
+    public async Task Con_el_hogar_en_la_cuna_pasado_el_novato_la_runa_lo_muda_a_Nix()
+    {
+        var p = new Player
+        {
+            CharIndex = _world.AllocateCharIndex(), Name = "Aldo", Account = "aldo",
+            Pos = new WorldPos(746, 67, 47), Heading = 2, Hp = 100, MaxHp = 100, Level = 17,
+            HomeCity = Cities.DungeonNewbie, FactionStatus = Player.StatusCiudadano,
+        };
+        Assert.False(_datos.IsPkMap(746), "premisa: el 746 no es pk, ahí la runa anda");
+        Assert.True(PacketDispatcher.EsCunaVedada(p, Cities.SpawnTile(Cities.DungeonNewbie), _datos), "premisa: la cuna le está vedada");
+        p.Inventory[1] = new InventorySlot { ObjIndex = Runa, Amount = 1 };
+        var sesion = new ClientSession(new Transporte(), _dispatcher) { Player = p };
+        p.Connection = sesion;
+        _world.Add(p);
+
+        await Mandar(sesion, (byte)ClientPacketId.UseItem, 1);
+
+        Assert.Equal(Cities.Nix, p.HomeCity);
+        Assert.Equal(Cities.SpawnTile(Cities.Nix), p.Pos);
+    }
+
     [Fact]
     public async Task Preso_y_muerto_la_runa_no_lo_saca()
     {

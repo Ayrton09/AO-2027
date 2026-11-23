@@ -9,6 +9,10 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - Si pasaste el nivel 15 y te quedaste sin nada (menos de 100 monedas entre lo que llevás y la bóveda), el banquero te presta 300 al hacerle doble clic: alcanza para 50 de comida, 50 de bebida, una ropa y un arma. Mientras debas no te presta otro, y lo próximo que deposites paga primero el préstamo.
 - Si hosteás, se cambia con `PrestamoDelBanco` en el `Server.ini` (0 lo apaga).
 
+### La runa y el hogar en la cuna
+
+- Si ya no sos novato y tu hogar sigue siendo el Dungeon Newbie, la runa te muda como cuando subís a 16 adentro del dungeon: el ciudadano a Nix, el republicano a Illiandor y el resto a Rinkel, y te lleva ahí. Antes no te movía.
+
 ### Los bots juegan según su clase
 
 - El Mago pelea de lejos y el Clérigo, el Asesino y el Paladín inmovilizan y pegan. Cada clase elige con quién pelear según el nivel y la clase del otro, y se va cuando le conviene.
