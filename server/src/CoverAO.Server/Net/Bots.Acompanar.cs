@@ -185,7 +185,10 @@ public sealed partial class Bot
         // LA ESCOLTA SABE DÓNDE ESTÁ EL QUE LE PIDIÓ IR, aunque no lo vea (`DondeEstaElEscoltado`): no lo da por perdido.
         var escoltado = ella is null ? DondeEstaElEscoltado(a.Quien) : null;
         if (ella is not null || escoltado is not null) _acompana = a = a with { VistaEn = ahora };
-        if (DejaDeAcompanar(ahora, a.Hasta, a.VistaEn) || (ella is not null && SeAburre(ahora, a.UltimaPelea, a.SinLlegar)))
+        // LA ESCOLTA NO SE ABURRE POR NO PELEAR: el Minero mina, y medido en la ronda 152 (23/11) Fabia lo dejaba a los cinco minutos
+        // mientras Quim minaba en el 33. El rato sorteado y el no poder llegar la cortan igual.
+        long ultimaPelea = _acompanaDeEscolta ? ahora : a.UltimaPelea;
+        if (DejaDeAcompanar(ahora, a.Hasta, a.VistaEn) || (ella is not null && SeAburre(ahora, ultimaPelea, a.SinLlegar)))
         {
             sentidos.ObservarSalidaDe(null);
             DejarDeAcompanar(transporte, a.Quien, ella is not null,
