@@ -166,4 +166,25 @@ public class RescateDelVaradoTests
         Assert.DoesNotContain(pisados!, m => Bot.HayGuardiaQueVaPor(m, Player.StatusCiudadano, 18, w.Datos, w.Ini));
         Assert.DoesNotContain(pisados!, m => m != 20 && Bot.NaceLoQueLoMataDeDos(w.Datos, m, 138));
     }
+
+    /// <summary>
+    /// ALDO, CIUDADANO DE NIVEL 17 EN EL 746, al lado de la Avanzada (815) cuyos guardias van por él: sin cruzarlos no tiene adónde ir
+    /// (ya está en un mapa seguro y no hay pueblo que le venda a veinte mapas), y cruzándolos sí (DECIDIDO POR EL AUTOR, 24/11; ver
+    /// <see cref="Bot.PisableDelRescateSinSalida"/>). El destino no es un mapa de guardias que van por él.
+    /// </summary>
+    [Fact]
+    public void Aldo_varado_al_lado_de_la_Avanzada_sale_cruzando_los_guardias()
+    {
+        if (ElMundo() is not { } w) return;
+        const int nivel = 17, vida = 250;
+        bool EsBanquero(int f) => w.Datos.Npc((short)f)?.NpcType == 4;
+        Assert.Null(Destino(w, 746, (67, 47), nivel, vida, EsBanquero));
+
+        var cruzando = Bot.PisableDelRescateSinSalida(w.Datos, w.Ini, nivel);
+        var sinHuidas = new Dictionary<int, long>();
+        var adonde = Bot.DestinoDelRescate(w.Mapas, 746, (67, 47), LeVenden(w, nivel), EsBanquero, Seguro(w, nivel),
+                                           Bot.PorDondeSeRescata(w.Datos, cruzando, sinHuidas, 0, vida), Bot.CruzaSinHuidas(cruzando, sinHuidas, 0));
+        Assert.NotNull(adonde);
+        Assert.False(Bot.HayGuardiaQueVaPor(adonde!.Value.Mapa, Player.StatusCiudadano, nivel, w.Datos, w.Ini));
+    }
 }

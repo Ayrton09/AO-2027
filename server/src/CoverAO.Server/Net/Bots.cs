@@ -5140,7 +5140,18 @@ public sealed partial class Bot
         var porElDeSiempre = PorDondeSeRescata(_entorno.Datos, pisable, _huyoDe, ahora, sentidos.VidaMaxima);
         var porDondeSea = CruzaSinHuidas(pisable, _huyoDe, ahora);
         if (DestinoDelRescate(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, MapaSeguro, porElDeSiempre,
-                              porDondeSea) is not { } adonde) return false;
+                              porDondeSea) is { } adonde)
+            _rescateCruzaGuardias = false;
+        // Y SI SIN CRUZAR GUARDIAS NO HAY SALIDA, CRUZÁNDOLOS (DECIDIDO POR EL AUTOR, 24/11): ver `PisableDelRescateSinSalida`.
+        else if (DestinoDelRescate(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, MapaSeguro, porElDeSiempre,
+                                   CruzaSinHuidas(PisableDelRescateSinSalida(_entorno.Datos, _entorno.Ini, sentidos.Nivel), _huyoDe, ahora))
+                 is { } cruzando)
+        {
+            adonde = cruzando;
+            _rescateCruzaGuardias = true;
+            Console.WriteLine($"[bot {Nombre}] sin otra salida, el rescate cruza guardias que van por él hasta el {adonde.Mapa}");
+        }
+        else return false;
         _rescateHacia = adonde;
         _rescateHasta = ahora + RescateDuraMs;
         await ViajeDelRescateAsync(transporte, sentidos, adonde, cerrada, ct);
@@ -5182,6 +5193,9 @@ public sealed partial class Bot
 
     /// <summary>Adónde va el rescate que está en curso (<see cref="RetomarElRescateAsync"/>), y hasta cuándo se lo retoma.</summary>
     private (int Mapa, byte X, byte Y, int Saltos)? _rescateHacia;
+
+    /// <summary>Si el rescate en curso sólo tiene salida cruzando mapas de guardias que van por él (<see cref="PisableDelRescateSinSalida"/>).</summary>
+    private bool _rescateCruzaGuardias;
     private long _rescateHasta;
 
     /// <summary>Cuánto se retoma, como mucho, un rescate que no llega: lo que tardó el más largo medido (unos diez minutos), y algo más.</summary>
@@ -5217,6 +5231,15 @@ public sealed partial class Bot
     /// </summary>
     public static Func<int, bool> PisableDelRescate(GameData datos, ServerIni? ini, byte bando, int nivel) =>
         m => PuedeEntrar(nivel, m, datos, ini) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
+
+    /// <summary>
+    /// EL RESCATE SIN OTRA SALIDA CRUZA LOS MAPAS DE GUARDIAS QUE VAN POR ÉL (DECIDIDO POR EL AUTOR, 24/11): sólo cuando por
+    /// <see cref="PisableDelRescate"/> no hay adónde ir. El destino sigue sin ser uno de ésos. Medido en las rondas 153 a 156 (23/11):
+    /// Aldo, ciudadano de nivel 17 con el hogar en el Dungeon Newbie (la runa se la niega el servidor pasado el 15), quedaba varado en
+    /// el 746 y el 839, al lado de la Avanzada (815), sin pueblo que le venda a veinte mapas sin cruzarla.
+    /// </summary>
+    public static Func<int, bool> PisableDelRescateSinSalida(GameData datos, ServerIni? ini, int nivel) =>
+        m => PuedeEntrar(nivel, m, datos, ini);
 
     /// <summary>Por dónde se busca el pueblo del rescate: lo mismo por donde va el viaje (<see cref="PorElCaminoDeSiempre"/>,
     /// sin los mapas de los que recién se fue huyendo), así no se elige un pueblo al que el viaje no llega.</summary>
@@ -7845,10 +7868,11 @@ public sealed partial class Bot
                                                                       int mapaDestino, (byte X, byte Y) destino, int topeDeMapas,
                                                                       bool deMuerto, bool porCualquierCamino, Func<int, bool> pasa,
                                                                       Func<int, bool> cruza, Func<int, bool> sinHuidas,
-                                                                      Func<int, bool>? sinLoDelHueco = null, bool soloALaMeta = false)
+                                                                      Func<int, bool>? sinLoDelHueco = null, bool soloALaMeta = false,
+                                                                      bool cruzaGuardias = false)
     {
-        Func<int, bool> pisable = porCualquierCamino ? PisableDelRescate(datos, ini, bando, nivel)
-                                                     : m => PuedeEntrar(nivel, m, datos, ini);
+        Func<int, bool> pisable = porCualquierCamino && !cruzaGuardias ? PisableDelRescate(datos, ini, bando, nivel)
+                                                                       : m => PuedeEntrar(nivel, m, datos, ini);
         // EL DESEMPATE DEL HUECO, en los tres escalones; el rescate no lo usa.
         var desempate = porCualquierCamino ? null : sinLoDelHueco;
         ((byte X, byte Y) Puerta, int Saltos)? Por(Func<int, bool> filtro) =>
@@ -7968,7 +7992,7 @@ public sealed partial class Bot
             // POR DÓNDE, Y EL RESCATE DEL VARADO: ver `PuertaDelViaje`.
             else if (PuertaDelViaje(_entorno.Mapas, _entorno.Datos, _entorno.Ini, _miBando, sentidos.Nivel, sentidos.VidaMaxima, mapa,
                                     desde, mapaDestino, (destinoX, destinoY), topeDeMapas, deMuerto, porCualquierCamino, pasa, cruza,
-                                    sinHuidas, sinLoDelHueco, soloALaMeta) is { } salida)
+                                    sinHuidas, sinLoDelHueco, soloALaMeta, porCualquierCamino && _rescateCruzaGuardias && _rescateHacia is not null) is { } salida)
                 meta = salida.Puerta;
             // Y SI DESDE ACÁ NO SE LLEGA, LA PUERTA QUE DA LA SALIDA: ver `Navegante.AbrirlaDaSalidaHacia`. Una por viaje, y no de muerto
             // ni escapando. Abierta, el navegante la ve abierta (es la misma data del servidor) y el tramo siguiente sale por ahí.
