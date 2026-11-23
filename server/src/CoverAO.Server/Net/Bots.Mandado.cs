@@ -41,6 +41,14 @@ public sealed partial class Bot
                 pueblo = _entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id), Pisa);
             if (pueblo is not { } destino)
             {
+                // SIN BANQUERO AL QUE LLEGUE, A CASA CON LA RUNA, como el que vuelve a comprar (`VolverACasaAsync`). Medido en la
+                // ronda 151 (23/11): Aldo, ciudadano de nivel 17 con 0 monedas, cazaba en el 839 y no encontraba banquero.
+                if (await VolverACasaAsync(transporte, sentidos, id => EsBanquero((short)id), cerrada, ct))
+                {
+                    Console.WriteLine($"[bot {Nombre}] vuelve a casa a pedir prestado (queda en el {sentidos.Mapa})");
+                    _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
+                    return true;
+                }
                 Console.WriteLine($"[bot {Nombre}] no encuentra banquero desde el {sentidos.Mapa} para pedir prestado (bando {_miBando})");
                 _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                 return false;
