@@ -5029,7 +5029,7 @@ public sealed partial class Bot
         bool loLlevo = sentidos.Mapa != antes || sentidos.Posicion != dondeEstaba;
         if (loLlevo && !LeVendenAca(sentidos.Mapa)) _runaNoSirveParaComprar = true;
         // Y SI NO LO MOVIÓ, EL SERVIDOR SE LA NEGÓ: el hogar en la cuna pasado el novato (`EsCunaVedada`, el 468). Medido en la ronda 154
-        // (24/11): Aldo, de nivel 17 con el hogar en el Dungeon Newbie, la usaba cada minuto y seguía en el 839.
+        // (23/11): Aldo, de nivel 17 con el hogar en el Dungeon Newbie, la usaba cada minuto y seguía en el 839.
         if (!loLlevo)
         {
             _runaNoSirveParaComprar = true;
@@ -5142,7 +5142,7 @@ public sealed partial class Bot
         if (DestinoDelRescate(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, MapaSeguro, porElDeSiempre,
                               porDondeSea) is { } adonde)
             _rescateCruzaGuardias = false;
-        // Y SI SIN CRUZAR GUARDIAS NO HAY SALIDA, CRUZÁNDOLOS (DECIDIDO POR EL AUTOR, 24/11): ver `PisableDelRescateSinSalida`.
+        // Y SI SIN CRUZAR GUARDIAS NO HAY SALIDA, CRUZÁNDOLOS (DECIDIDO POR EL AUTOR, 23/11): ver `PisableDelRescateSinSalida`.
         else if (DestinoDelRescate(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, LeVendenAca, sirve, MapaSeguro, porElDeSiempre,
                                    CruzaSinHuidas(PisableDelRescateSinSalida(_entorno.Datos, _entorno.Ini, sentidos.Nivel), _huyoDe, ahora))
                  is { } cruzando)
@@ -5233,7 +5233,7 @@ public sealed partial class Bot
         m => PuedeEntrar(nivel, m, datos, ini) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini);
 
     /// <summary>
-    /// EL RESCATE SIN OTRA SALIDA CRUZA LOS MAPAS DE GUARDIAS QUE VAN POR ÉL (DECIDIDO POR EL AUTOR, 24/11): sólo cuando por
+    /// EL RESCATE SIN OTRA SALIDA CRUZA LOS MAPAS DE GUARDIAS QUE VAN POR ÉL (DECIDIDO POR EL AUTOR, 23/11): sólo cuando por
     /// <see cref="PisableDelRescate"/> no hay adónde ir. El destino sigue sin ser uno de ésos. Medido en las rondas 153 a 156 (23/11):
     /// Aldo, ciudadano de nivel 17 con el hogar en el Dungeon Newbie (la runa se la niega el servidor pasado el 15), quedaba varado en
     /// el 746 y el 839, al lado de la Avanzada (815), sin pueblo que le venda a veinte mapas sin cruzarla.

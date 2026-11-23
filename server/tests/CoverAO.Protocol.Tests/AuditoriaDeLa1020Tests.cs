@@ -79,7 +79,7 @@ public class AuditoriaDeLa1020Tests : IDisposable
 
     /// <summary>
     /// CON EL HOGAR EN LA CUNA PASADO EL NOVATO, LA RUNA LO MUDA COMO EL ORIGINAL (`PacketDispatcher.HogarAlDejarLaCuna`, DECIDIDO
-    /// POR EL AUTOR, 24/11): el ciudadano a Nix, y lo lleva ahí. Antes contestaba el 468 y no lo movía: Aldo, ciudadano de nivel 17
+    /// POR EL AUTOR, 23/11): el ciudadano a Nix, y lo lleva ahí. Antes contestaba el 468 y no lo movía: Aldo, ciudadano de nivel 17
     /// con el hogar en el Dungeon Newbie, quedaba varado en la zona de la Avanzada, que a pie no se conecta con el resto del mundo.
     /// </summary>
     [Fact]

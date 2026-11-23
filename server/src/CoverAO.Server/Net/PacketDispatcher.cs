@@ -13365,7 +13365,7 @@ public sealed partial class PacketDispatcher
                 var destino = p.IsAlive ? Cities.SpawnTile(p.HomeCity) : Cities.DeadTile(p.HomeCity);
                 // CON EL HOGAR EN LA CUNA PASADO EL NOVATO, LA MUDANZA DEL ORIGINAL (`HogarAlDejarLaCuna`, la de subir a 16 adentro del
                 // dungeon): el que subía afuera conservaba la cuna, y como acá la runa no vuelve a la zona de novatos quedaba sin salida.
-                // DECIDIDO POR EL AUTOR (24/11): medido con Aldo, ciudadano de nivel 17 varado en la zona de la Avanzada, que a pie no se
+                // DECIDIDO POR EL AUTOR (23/11): medido con Aldo, ciudadano de nivel 17 varado en la zona de la Avanzada, que a pie no se
                 // conecta con el resto del mundo y donde nadie le vende a un ciudadano.
                 if (EsCunaVedada(p, destino, _data))
                 {

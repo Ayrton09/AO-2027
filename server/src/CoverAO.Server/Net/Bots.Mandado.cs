@@ -50,7 +50,7 @@ public sealed partial class Bot
                     return true;
                 }
                 // Y SI LA RUNA NO LO SACA (el hogar en la cuna, pasado el novato), EL RESCATE DEL VARADO (`RescatarseAsync`): hasta el pueblo
-                // más cercano que tenga banquero, por donde no hay guardias que vayan por él. Medido en la ronda 154 (24/11): Aldo seguía
+                // más cercano que tenga banquero, por donde no hay guardias que vayan por él. Medido en la ronda 154 (23/11): Aldo seguía
                 // en el 839, al lado de la Avanzada, cuyos guardias lo mataban.
                 if (await RescatarseAsync(transporte, sentidos, id => EsBanquero((short)id), cerrada, ct))
                 {
@@ -99,7 +99,7 @@ public sealed partial class Bot
         _proximoMandado = Environment.TickCount64 + 90_000;
         bool EsSuSastre(int id) => MandadoParaVestirse.VendeRopaBasica(_entorno.Datos, _entorno.Datos.Npc(id),
             sentidos.Nivel, _clase, _raza, _genero);
-        // SIN GUARDIAS QUE VAYAN POR ÉL, como el préstamo (`MapaConBanquero`): medido en la ronda 155 (24/11), Aldo, ciudadano de nivel
+        // SIN GUARDIAS QUE VAYAN POR ÉL, como el préstamo (`MapaConBanquero`): medido en la ronda 155 (23/11), Aldo, ciudadano de nivel
         // 17 y desnudo, iba al mandado a la Avanzada (815) y lo mataban sus guardias antes de llegar al banquero.
         bool MapaConMandado(int mapa) => MandadoParaVestirse.EsPueblo(_entorno.Datos, mapa)
             && _entorno.Ini.MercaderLeVende(_entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa)

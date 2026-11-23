@@ -169,7 +169,7 @@ public class RescateDelVaradoTests
 
     /// <summary>
     /// ALDO, CIUDADANO DE NIVEL 17 EN EL 746, al lado de la Avanzada (815) cuyos guardias van por él: sin cruzarlos no tiene adónde ir
-    /// (ya está en un mapa seguro y no hay pueblo que le venda a veinte mapas), y cruzándolos sí (DECIDIDO POR EL AUTOR, 24/11; ver
+    /// (ya está en un mapa seguro y no hay pueblo que le venda a veinte mapas), y cruzándolos sí (DECIDIDO POR EL AUTOR, 23/11; ver
     /// <see cref="Bot.PisableDelRescateSinSalida"/>). El destino no es un mapa de guardias que van por él.
     /// </summary>
     [Fact]
