@@ -11,7 +11,7 @@ public sealed partial class Bot
     private long _proximoPrestamo;
 
     /// <summary>Cada cuánto vuelve a pedir: el servidor no le presta otro mientras deba, y el bot no lleva la cuenta.</summary>
-    public const int EntrePedidosDePrestamoMs = 30 * 60_000;
+    public const int EntrePedidosDePrestamoMs = 30 * 60_000, EntreIntentosDelPrestamoMs = 60_000;
 
     /// <summary>
     /// SIN NADA, AL BANQUERO A PEDIR PRESTADO (<see cref="PrestamoDelBanco"/>): va al banquero de un pueblo donde le venden y, si le
@@ -34,11 +34,21 @@ public sealed partial class Bot
             var pasa = PasaSinPeligro(sentidos, NingunMapa);
             if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id),
                     m => MapaConBanquero(m) || pasa(m)) is not { } pueblo) return false;
+            // SI EL VIAJE SE CORTA, VUELVE A PROBAR ENSEGUIDA: sin plata no tiene otra cosa que hacer.
             if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
+            {
+                Console.WriteLine($"[bot {Nombre}] no llegó al banquero del {pueblo.Mapa} a pedir prestado (está en el {sentidos.Mapa})");
+                _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                 return false;
+            }
         }
         int antes = sentidos.Oro;
-        if (!await AbrirElBancoAsync(transporte, sentidos, cerrada, ct)) return false;
+        if (!await AbrirElBancoAsync(transporte, sentidos, cerrada, ct))
+        {
+            Console.WriteLine($"[bot {Nombre}] no pudo abrir el banco del {sentidos.Mapa} a pedir prestado");
+            _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
+            return false;
+        }
         for (int i = 0; i < 8 && sentidos.Oro <= antes && !cerrada.IsCompleted; i++) await Task.Delay(250, ct);
         if (sentidos.Oro <= antes) return true;
         Console.WriteLine($"[bot {Nombre}] pide prestado al banco: {sentidos.Oro - antes} monedas");
