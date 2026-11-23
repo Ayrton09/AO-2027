@@ -96,6 +96,35 @@ public class ElSubastadorTests : IDisposable
     private static short EnLaBoveda(Player p, short objeto) =>
         (short)p.BankInventory.Where(b => !b.IsEmpty && b.ObjIndex == objeto).Sum(b => b.Amount);
 
+    /// <summary>
+    /// LA LISTA SE REFRESCA SOLA para el que tiene la ventana abierta (`PacketDispatcher.AvisarALosQueMiranLasSubastas`): Elmo abre la
+    /// ventana, Aldo publica, y en la ronda siguiente a Elmo le llega la lista sin apretar Actualizar. Al que se fue del Subastador,
+    /// no. Pendiente del 06/10 ("la lista no se refresca sola para los demás que la tienen abierta").
+    /// </summary>
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    public async Task La_lista_se_refresca_sola_para_el_que_la_mira(bool seFue, int listas)
+    {
+        var (aldo, s, _) = Conectado("Aldo");
+        var (elmo, sElmo, tElmo) = Conectado("Elmo", 46, 77);
+        aldo.Inventory[1] = new InventorySlot { ObjIndex = Pocion, Amount = 8 };
+        await Mandar(sElmo, new ByteQueueWriter().WriteByte((byte)ClientPacketId.DoubleClick).WriteByte(45).WriteByte(76));
+        Assert.Single(tElmo.De(ServerPacketId.SubastasLista));
+        await EnElLoop(_dispatcher.SubastasAlDia);   // la ronda que ya estaba: nada nuevo que avisar
+        if (seFue) elmo.Pos = new WorldPos(Mapa, 60, 77);
+        await Task.Delay(300);   // lo que la sesión todavía estaba mandando
+        tElmo.Recibidos.Clear();
+
+        await Publicar(s, 1, 5, 100, 1000, 3);
+        Assert.Empty(tElmo.De(ServerPacketId.SubastasLista));
+        await Task.Delay(5_100);   // una ronda de `SubastasAlDia` cada cinco segundos
+        await EnElLoop(_dispatcher.SubastasAlDia);
+        await Task.Delay(300);
+
+        Assert.Equal(listas, tElmo.De(ServerPacketId.SubastasLista).Count);
+    }
+
     [Fact]
     public async Task Publicar_cobra_el_deposito_saca_de_la_mochila_y_manda_la_lista()
     {

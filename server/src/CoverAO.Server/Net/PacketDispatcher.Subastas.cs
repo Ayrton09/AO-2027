@@ -21,7 +21,41 @@ public sealed partial class PacketDispatcher
     private long _ultimaRondaDeSubastasMs;
 
     /// <summary>El doble clic al Subastador: abre la ventana.</summary>
-    private void AbrirSubastas(ClientSession session) => session.Send(ListaDeSubastas(abrir: true));
+    private void AbrirSubastas(ClientSession session, Player p, Npc subastador)
+    {
+        p.SubastadorQueMira = subastador.CharIndex;
+        p.MiraLasSubastasDesdeMs = Environment.TickCount64;
+        session.Send(ListaDeSubastas(abrir: true));
+    }
+
+    /// <summary>Cuánto se considera que alguien sigue mirando la lista después de abrirla o pedirla.</summary>
+    public const int MiraLasSubastasMs = 10 * 60_000;
+
+    private long _cambiosAvisados = -1;
+
+    /// <summary>
+    /// LA LISTA SE REFRESCA SOLA para el que la está mirando: el que abrió la ventana (o pidió la lista) hace menos de
+    /// <see cref="MiraLasSubastasMs"/> y sigue vivo y a tiro de ese Subastador. Se manda cuando cambió algo en el Centro (otro
+    /// publicó, ofertó, compró o canceló, o venció una), como mucho una vez por ronda de <see cref="SubastasAlDia"/>. La lista va
+    /// sin abrir la ventana: el cliente sólo la vuelve a dibujar si la tiene a la vista. Antes hacía falta el botón Actualizar
+    /// (pendiente del 06/10).
+    /// </summary>
+    private void AvisarALosQueMiranLasSubastas()
+    {
+        long cambios = _world.Subastas.Cambios;
+        if (cambios == _cambiosAvisados) return;
+        _cambiosAvisados = cambios;
+        long ahoraMs = Environment.TickCount64;
+        byte[]? lista = null;
+        foreach (var p in _world.Players)
+        {
+            if (p.Connection is not { } c || p.SubastadorQueMira == 0 || ahoraMs - p.MiraLasSubastasDesdeMs > MiraLasSubastasMs) continue;
+            if (!p.IsAlive || _world.NpcByIndex(p.SubastadorQueMira) is not { IsSubastador: true } n
+                || n.Pos.Map != p.Pos.Map || DistanciaVB6(p.Pos, n.Pos) > 3)
+            { p.SubastadorQueMira = 0; continue; }
+            c.Send(lista ??= ListaDeSubastas(abrir: false));
+        }
+    }
 
     /// <summary>La última lista armada: con el Centro lleno son unas 2000 filas, y se arma de nuevo sólo si cambió algo o pasó
     /// un segundo (el tiempo que queda de cada subasta va en segundos).</summary>
@@ -55,8 +89,10 @@ public sealed partial class PacketDispatcher
         if (session.Player is not { } p) return;
         long ahoraMs = Environment.TickCount64;
         if (ahoraMs - p.UltimaListaDeSubastasMs < 1000) return;
-        if (SubastadorAMano(session, p) is null) return;
+        if (SubastadorAMano(session, p) is not { } subastador) return;
         p.UltimaListaDeSubastasMs = ahoraMs;
+        p.SubastadorQueMira = subastador.CharIndex;
+        p.MiraLasSubastasDesdeMs = ahoraMs;
         session.Send(ListaDeSubastas(abrir: false));
     });
 
@@ -269,6 +305,7 @@ public sealed partial class PacketDispatcher
         _ultimaRondaDeSubastasMs = ahoraMs;
         _world.Subastas.Vencer(RelojDeSubastas());
         if (_world.Subastas.Pendientes.Count > 0) EntregarLoDeLasSubastasAlQueEsta();
+        AvisarALosQueMiranLasSubastas();
     }
 
     private bool SubastasSucias => _world.Subastas.Cambios != _subastasGuardadas;

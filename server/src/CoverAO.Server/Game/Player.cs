@@ -570,6 +570,9 @@ public sealed class Player
     public long LastWalkMs { get; set; }
     /// <summary>Cuándo pidió por última vez la lista del Centro de Subastas (ver <c>HandleSubastasPedir</c>).</summary>
     public long UltimaListaDeSubastasMs { get; set; }
+    /// <summary>El Subastador cuya ventana abrió, y cuándo la abrió o pidió la lista (ver <c>AvisarALosQueMiranLasSubastas</c>).</summary>
+    public short SubastadorQueMira { get; set; }
+    public long MiraLasSubastasDesdeMs { get; set; }
     public long LastAttackMs { get; set; }
     /// <summary>La criatura de la que este jugador se apropió, por charIndex (VB6 <c>flags.OwnedNpc</c>). Es
     /// UNA sola: apropiarse de otra suelta la anterior.</summary>

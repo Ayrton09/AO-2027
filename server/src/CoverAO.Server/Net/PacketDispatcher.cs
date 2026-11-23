@@ -10282,7 +10282,7 @@ public sealed partial class PacketDispatcher
             // no emite — el mismo patrón de mensaje espurio que el barrido del oráculo cerró 16 veces.
             if (npc.TrainerCreatures is not null) { session.Send(ServerMessages.TrainerCreatureList(npc.TrainerCreatures)); return; }
             // El Subastador: el Centro de Subastas (agregado nuestro, ver PacketDispatcher.Subastas).
-            if (npc.IsSubastador) { AbrirSubastas(session); return; }
+            if (npc.IsSubastador) { AbrirSubastas(session, p, npc); return; }
             // DESVIACIÓN DELIBERADA DEL SLICE (decidida, no olvidada). El original CALLA acá: su `Accion` rutea
             // por NPCtype y no tiene rama `Else`, así que un NPC sin rol no contesta nada al doble clic. Se
             // mantiene el diálogo porque sin él las criaturas quedan mudas.
