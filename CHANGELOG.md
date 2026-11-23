@@ -17,6 +17,7 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - El Cazador compra arco y flechas, y el Carpintero fabrica flechas y las vende en la subasta.
 - El Minero compra el piquete de novato y va a las minas acompañado de otro bot, que lo sigue hasta adentro de la mina.
 - El bot que se queda sin plata va al banquero a pedir el préstamo, y si está encerrado por una puerta la abre.
+- El bot desnudo ya no va a hacer el mandado a un pueblo cuyos guardias lo atacan.
 
 ## 1.0.42 (2026-11-20)
 
