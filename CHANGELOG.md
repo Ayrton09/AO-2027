@@ -2,6 +2,21 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.0.43 (en preparación)
+
+### Préstamo del banco
+
+- Si pasaste el nivel 15 y te quedaste sin nada (menos de 100 monedas entre lo que llevás y la bóveda), el banquero te presta 300 al hacerle doble clic: alcanza para 50 de comida, 50 de bebida, una ropa y un arma. Mientras debas no te presta otro, y lo próximo que deposites paga primero el préstamo.
+- Si hosteás, se cambia con `PrestamoDelBanco` en el `Server.ini` (0 lo apaga).
+
+### Los bots juegan según su clase
+
+- El Mago pelea de lejos y el Clérigo, el Asesino y el Paladín inmovilizan y pegan. Cada clase elige con quién pelear según el nivel y la clase del otro, y se va cuando le conviene.
+- Los Guerreros, Gladiadores, Cazadores y Mercenarios se toman la Verde y la Amarilla antes de pelear con gente.
+- El Ladrón se hace Renegado y roba.
+- El Cazador compra arco y flechas, y el Carpintero fabrica flechas y las vende en la subasta.
+- El Minero compra el piquete de novato y va a las minas acompañado de otro bot.
+
 ## 1.0.42 (2026-11-20)
 
 ### Visor de mapas: el mundo entero

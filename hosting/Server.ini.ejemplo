@@ -115,6 +115,9 @@ OroQueSeCaeAlMorir=100000
 VidaInicial=original
 CuraAlSubirNivel=1
 QuitarEquipoNovato=1
+; El banquero le presta estas monedas, para comer, al que pasó el novato y tiene menos de 100 entre el oro y la bóveda. Uno a la
+; vez: lo próximo que deposite paga primero la deuda. Con 0 no presta (el original no tiene préstamos).
+PrestamoDelBanco=300
 ; Que lo tirado al piso sobreviva al reinicio.
 PersistirSuelo=1
 ; Minutos que dura prendida una fogata antes de apagarse sola. En el original NO se apaga

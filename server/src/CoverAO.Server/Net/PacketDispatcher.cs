@@ -10271,7 +10271,9 @@ public sealed partial class PacketDispatcher
             // Doble clic al banquero → el PANEL DEL ORO (IniciarDeposito con goliath, Acciones.bas:301), no la bóveda.
             if (npc.IsBanker)
             {
+                // EL MANDADO PRIMERO, que paga por un trabajo; sin mandado, el préstamo (`Prestar`).
                 EncargarMandado(session, p);
+                if (session.MandadoPendiente is null) Prestar(session, p, npc);
                 AbrirPanelDelOro(session, p, npc);
                 return;
             }
@@ -14325,7 +14327,19 @@ public sealed partial class PacketDispatcher
             if (BanqueroParaElOro(session, p) is not { } banquero) return;
             if (amount <= 0 || amount > p.Gold)
             { session.Send(ServerMessages.ChatOverHead("No tenés esa cantidad.", banquero.CharIndex, 0)); return; }
-            p.Gold -= amount; p.Bank += amount;
+            p.Gold -= amount;
+            // LO QUE DEBE AL BANCO SE PAGA PRIMERO: ver `PrestamoDelBanco`.
+            var (paga, guarda) = Game.PrestamoDelBanco.Repartir(amount, p.DeudaConElBanco);
+            p.DeudaConElBanco -= paga;
+            p.Bank += guarda;
+            if (paga > 0)
+            {
+                _db.SaveCharacter(p);
+                session.Send(ServerMessages.ConsoleMsg(p.DeudaConElBanco > 0
+                    ? $"Banquero: Con {paga} monedas pagaste parte del préstamo. Todavía debés {p.DeudaConElBanco}."
+                    : $"Banquero: Con {paga} monedas pagaste el préstamo. Ya no debés nada.", FuenteInfo));
+                _economia?.Anotar($"prestamo {p.Name}: paga {paga} oro (debe {p.DeudaConElBanco})");
+            }
             if (amount >= _ini.EconomiaUmbralOro) _economia?.Anotar($"deposito {p.Name}: {amount} oro (boveda {p.Bank})");
             session.Send(ServerMessages.ChatOverHead($"Tenés {p.Bank} monedas de oro en tu cuenta.", banquero.CharIndex, 0));
             _world.BroadcastToObservers(p.Pos, ServerMessages.PlayWave(SndOro, p.Pos.X, p.Pos.Y));

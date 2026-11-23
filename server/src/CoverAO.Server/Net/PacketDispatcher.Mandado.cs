@@ -34,6 +34,22 @@ public sealed partial class PacketDispatcher
         _economia?.Anotar($"mandado {p.Name}: cobra {MandadoParaVestirse.Paga} oro en m{p.Pos.Map}");
     }
 
+    /// <summary>EL PRÉSTAMO DEL BANCO, al hacerle doble clic al banquero: ver <see cref="Game.PrestamoDelBanco"/>.</summary>
+    private void Prestar(ClientSession session, Player p, Npc banquero)
+    {
+        int monto = _ini.PrestamoDelBanco;
+        if (!p.IsAlive || !Game.PrestamoDelBanco.LePresta(monto, p.Level, p.Gold, p.Bank, p.DeudaConElBanco)
+            || p.Gold + (long)monto > MaxOro) return;
+        p.Gold += monto;
+        p.DeudaConElBanco = monto;
+        // El oro y la deuda viajan en la misma ficha y se guardan juntos.
+        _db.SaveCharacter(p);
+        session.Send(ServerMessages.UpdateGold(p.Gold));
+        session.Send(ServerMessages.ConsoleMsg($"{banquero.Name}: Te presto {monto} monedas para que comas. Lo próximo que deposites "
+                                               + "paga primero el préstamo.", FuenteInfo));
+        _economia?.Anotar($"prestamo {p.Name}: recibe {monto} oro en m{p.Pos.Map}");
+    }
+
     private bool PuedeHacerMandado(Player p, long ahora) =>
         MandadoParaVestirse.Necesita(p.Level, p.Stamina, p.Gold, p.Bank)
         && MandadoParaVestirse.EsPueblo(_data, p.Pos.Map)

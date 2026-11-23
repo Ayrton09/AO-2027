@@ -109,6 +109,8 @@ public sealed record FichaDePersonaje
     /// <summary>En qué nivel pidió el último perdón; 0 = nunca.</summary>
     public int NivelDelUltimoPerdon { get; init; }
     public long UltimoMandado { get; init; }
+    /// <summary>Lo que le debe al banco (<see cref="Game.PrestamoDelBanco"/>).</summary>
+    public long DeudaConElBanco { get; init; }
     public int CiudadanosMatados { get; init; }
     public int RepublicanosMatados { get; init; }
     public int ArmadaMatados { get; init; }
@@ -214,6 +216,7 @@ public sealed record FichaDePersonaje
             RenegadosMatados = p.RenegadosMatados,
             NivelDelUltimoPerdon = p.NivelDelUltimoPerdon,
             UltimoMandado = p.UltimoMandado,
+            DeudaConElBanco = p.DeudaConElBanco,
             CiudadanosMatados = p.CiudadanosMatados,
             RepublicanosMatados = p.RepublicanosMatados,
             ArmadaMatados = p.ArmadaMatados,
@@ -254,6 +257,7 @@ public sealed record FichaDePersonaje
         p.RenegadosMatados = Math.Max(0, RenegadosMatados);
         p.NivelDelUltimoPerdon = Math.Max(0, NivelDelUltimoPerdon);
         p.UltimoMandado = Math.Max(0, UltimoMandado);
+        p.DeudaConElBanco = Math.Max(0, DeudaConElBanco);
         p.CiudadanosMatados = Math.Max(0, CiudadanosMatados);
         p.RepublicanosMatados = Math.Max(0, RepublicanosMatados);
         p.ArmadaMatados = Math.Max(0, ArmadaMatados);

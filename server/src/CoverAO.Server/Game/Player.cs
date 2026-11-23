@@ -144,6 +144,8 @@ public sealed class Player
     /// <c>UnPerdonPorNivel</c> no se puede pedir otro en el mismo nivel.</summary>
     public int NivelDelUltimoPerdon { get; set; }
     public long UltimoMandado { get; set; }
+    /// <summary>Lo que le debe al banco (<see cref="PrestamoDelBanco"/>): cada depósito la paga primero.</summary>
+    public long DeudaConElBanco { get; set; }
     public int CiudadanosMatados { get; set; }
     public int RepublicanosMatados { get; set; }
     public int ArmadaMatados { get; set; }

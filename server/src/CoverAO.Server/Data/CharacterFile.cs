@@ -39,6 +39,8 @@ public static class CharacterFile
         ini.Set("FLAGS", "Privilegios", F(f.Privilegios));   // el civil, no el que puso el Server.ini
         if (f.UltimoMandado > 0)
             ini.Set("FLAGS", "UltimoMandado", f.UltimoMandado.ToString(CultureInfo.InvariantCulture));
+        if (f.DeudaConElBanco > 0)
+            ini.Set("FLAGS", "DeudaBanco", f.DeudaConElBanco.ToString(CultureInfo.InvariantCulture));
         ini.Set("FLAGS", "Ban", F(f.Baneado ? 1 : 0));       // VB6 flags.Ban — baneo por personaje (/BAN)
         ini.Set("FLAGS", "Muerto", F(f.Muerto ? 1 : 0));     // VB6 FileIO.bas:1626 — la muerte persiste entre sesiones
         // VB6 FileIO.bas:1632 lo GUARDA y TCP.bas:1866 lo RELEE: quien desloguea navegando vuelve navegando.
@@ -357,6 +359,7 @@ public static class CharacterFile
             RenegadosMatados = ini.GetInt("FACCIONES", "CrimMatados", ini.GetInt("FACCIONES", "ReneMatados")),
             NivelDelUltimoPerdon = ini.GetInt("FACCIONES", "NivelDelPerdon"),
             UltimoMandado = Math.Max(0, ini.GetLong("FLAGS", "UltimoMandado")),
+            DeudaConElBanco = Math.Max(0, ini.GetLong("FLAGS", "DeudaBanco")),
             CiudadanosMatados = ini.GetInt("FACCIONES", "CiudadanosMatados", ini.GetInt("FACCIONES", "CiudMatados")),
             RepublicanosMatados = ini.GetInt("FACCIONES", "RepublicanosMatados", ini.GetInt("FACCIONES", "RepuMatados")),
             ArmadaMatados = ini.GetInt("FACCIONES", "ArmadaMatados", ini.GetInt("FACCIONES", "ArmiMatados")),

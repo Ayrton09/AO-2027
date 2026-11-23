@@ -8,6 +8,42 @@ public sealed partial class Bot
     private long _proximoMandado;
     private bool _pagaPrimeroProvisiones;
 
+    private long _proximoPrestamo;
+
+    /// <summary>Cada cuánto vuelve a pedir: el servidor no le presta otro mientras deba, y el bot no lleva la cuenta.</summary>
+    public const int EntrePedidosDePrestamoMs = 30 * 60_000;
+
+    /// <summary>
+    /// SIN NADA, AL BANQUERO A PEDIR PRESTADO (<see cref="PrestamoDelBanco"/>): va al banquero de un pueblo donde le venden y, si le
+    /// presta, sale primero por la comida y la bebida. Medido en el server del tester (23/11): Elmo y Tulio, con 5 monedas y la bóveda
+    /// vacía, iban y venían del banco a la taberna del Puerto de Rinkel sin poder comprar nada.
+    /// </summary>
+    private async Task<bool> PedirPrestamoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        if (Environment.TickCount64 < _proximoPrestamo || _acompana is not null || !sentidos.Vivo
+            || !PrestamoDelBanco.LePresta(_entorno.Ini.PrestamoDelBanco, sentidos.Nivel, sentidos.Oro, Math.Max(0, sentidos.Banco), 0))
+            return false;
+        _proximoPrestamo = Environment.TickCount64 + EntrePedidosDePrestamoMs;
+        bool MapaConBanquero(int mapa) => MandadoParaVestirse.EsPueblo(_entorno.Datos, mapa)
+            && _entorno.Ini.MercaderLeVende(_entorno.Datos.MapBattleMode(mapa), _miBando) && !HayGuardiaQueLoAtaca(mapa)
+            && _entorno.Datos.MapSpawns.TryGetValue(mapa, out var nacen) && nacen.Any(s => EsBanquero((short)s.NpcIndex));
+        if (!MapaConBanquero(sentidos.Mapa))
+        {
+            if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id),
+                    PasaSinPeligro(sentidos, NingunMapa)) is not { } pueblo) return false;
+            if (!await IrHastaAsync(transporte, sentidos, pueblo.Mapa, pueblo.X, pueblo.Y, cerrada, ct, soloALaMeta: true))
+                return false;
+        }
+        int antes = sentidos.Oro;
+        if (!await AbrirElBancoAsync(transporte, sentidos, cerrada, ct)) return false;
+        for (int i = 0; i < 8 && sentidos.Oro <= antes && !cerrada.IsCompleted; i++) await Task.Delay(250, ct);
+        if (sentidos.Oro <= antes) return true;
+        Console.WriteLine($"[bot {Nombre}] pide prestado al banco: {sentidos.Oro - antes} monedas");
+        _pagaPrimeroProvisiones = sentidos.ConHambre || sentidos.ConSed;
+        _proximaCompra = 0;
+        return true;
+    }
+
     private async Task<bool> HacerElMandadoAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         if (Environment.TickCount64 < _proximoMandado || _acompana is not null

@@ -29,7 +29,9 @@ public sealed class MandadoParaVestirseTests : IAsyncDisposable
         var datos = Datos.Value;
         var niveles = new Leveling(datos.LevelExp);
         _db = new Persistence(AlmacenSqlite.EnMemoria(), niveles);
-        _dispatcher = new PacketDispatcher(_mundo, _loop, _db, datos, niveles);
+        // Sin el préstamo del banco, que también le daría oro al que no tiene nada: acá se mide sólo el mandado.
+        _dispatcher = new PacketDispatcher(_mundo, _loop, _db, datos, niveles,
+            serverIni: ServerIni.Desde(IniFile.Parse("[INIT]\nPrestamoDelBanco=0\n")));
         _corriendo = _loop.RunAsync(_fin.Token);
         _mundo.AddNpc(new Npc
         {

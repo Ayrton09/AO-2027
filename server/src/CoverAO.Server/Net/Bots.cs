@@ -1085,6 +1085,8 @@ public sealed partial class Bot
             // LA MONTURA ANTES QUE LAS COMPRAS: con el oro juntado, la compra de gustos se lo llevaba primero. Medido en la ronda 106:
             // Elmo tenía 317.400 y dejó 230.000 en el Hechicero de Rinkel. Ver `IrPorLaMonturaAsync`.
             if (await IrPorLaMonturaAsync(transporte, sentidos, cerrada, ct)) continue;
+            // SIN NADA, EL PRÉSTAMO DEL BANCO: ver `PedirPrestamoAsync`.
+            if (await PedirPrestamoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await HacerElMandadoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrDeComprasAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await MercadoDelOficioAsync(transporte, sentidos, cerrada, ct)) continue;

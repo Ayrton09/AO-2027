@@ -224,7 +224,7 @@ public sealed class ServerIni
         "MinutosDeFogata", "OrigenesPermitidos", "ProxyDeConfianza", "OroAlSubirNivel", "OroQueSeCaeAlMorir", "VidaInicial", "PaginaPublica", "PasesDeRinkel", "PasajesPorFaccion", "PersistirSuelo",
         "SoloEscritorio", "DescargaEscritorio", "BuscarActualizaciones",
         "LluviaBajoTecho", "PorcentajeLluvia",
-        "ModoEspectador", "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
+        "ModoEspectador", "PrestamoDelBanco", "PuedeCrearPersonajes", "PuertoWebSocketPublico", "QuitarEquipoNovato", "RafagaDeConsultas",
         "RafagaDeMensajes", "RafagaDePaquetes", "ServerSoloGMs", "StartPort", "VidaMinimaDeJefe",
     };
 
@@ -554,6 +554,10 @@ public sealed class ServerIni
     /// original no tiene ningún `QuitarNewbieObj`: los 25 objetos `(Newbies)` se quedan para siempre.
     /// false = como el original.</summary>
     public bool QuitarEquipoNovato { get; private set; }
+
+    /// <summary><c>PrestamoDelBanco</c> (default <see cref="Game.PrestamoDelBanco.PorDefecto"/>): lo que el banquero le presta al que
+    /// no tiene nada (<see cref="Game.PrestamoDelBanco"/>); 0 lo apaga. REGLA DE LA CASA: el original no presta.</summary>
+    public int PrestamoDelBanco { get; private set; } = Game.PrestamoDelBanco.PorDefecto;
 
     /// <summary>
     /// NIVEL MÍNIMO PARA ENTRAR A CADA MAPA, de la sección <c>[NIVELMINIMO]</c> del <c>Server.ini</c>: una
@@ -1389,6 +1393,7 @@ public sealed class ServerIni
         cfg.VidaInicial = vidaInicial is "fija" or "constitucion" or "clase" ? vidaInicial : "original";
         cfg.CuraAlSubirNivel = ini.GetInt("INIT", "CuraAlSubirNivel", 0) != 0;
         cfg.QuitarEquipoNovato = ini.GetInt("INIT", "QuitarEquipoNovato", 0) != 0;
+        cfg.PrestamoDelBanco = Math.Max(0, ini.GetInt("INIT", "PrestamoDelBanco", Game.PrestamoDelBanco.PorDefecto));
         // LA TABLA DE NIVELES MÍNIMOS: una línea `mapa=nivel` por mapa. Sin la sección queda vacía y la
         // regla no corre. Lo que no es un par de enteros se ignora en silencio, igual que el resto del ini:
         // un renglón mal tipeado no puede dejar al host sin arrancar.
