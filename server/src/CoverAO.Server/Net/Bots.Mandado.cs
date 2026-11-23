@@ -35,7 +35,8 @@ public sealed partial class Bot
             if (_entorno.Mapas.PuebloMasCercano(sentidos.Mapa, sentidos.Posicion, MapaConBanquero, id => EsBanquero((short)id),
                     m => MapaConBanquero(m) || pasa(m)) is not { } pueblo)
             {
-                Console.WriteLine($"[bot {Nombre}] no encuentra banquero desde el {sentidos.Mapa} para pedir prestado");
+                Console.WriteLine($"[bot {Nombre}] no encuentra banquero desde el {sentidos.Mapa} para pedir prestado (bando {_miBando})");
+                _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                 return false;
             }
             // SI EL VIAJE SE CORTA, VUELVE A PROBAR ENSEGUIDA: sin plata no tiene otra cosa que hacer.

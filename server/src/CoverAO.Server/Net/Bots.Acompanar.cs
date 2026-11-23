@@ -116,10 +116,10 @@ public sealed partial class Bot
     }
 
     /// <summary>Deja de acompañar, y lo dice: en la charla si la ve, por susurro si la perdió.</summary>
-    private void DejarDeAcompanar(TransporteDeBot transporte, string quien, bool laVe)
+    private void DejarDeAcompanar(TransporteDeBot transporte, string quien, bool laVe, string porQue = "")
     {
         _acompana = null;
-        Console.WriteLine($"[bot {Nombre}] deja de acompañar a {PacketDispatcher.ParaElLog(quien)}");
+        Console.WriteLine($"[bot {Nombre}] deja de acompañar a {PacketDispatcher.ParaElLog(quien)}{(porQue.Length > 0 ? ": " + porQue : "")}");
         if (laVe)
             transporte.Mandar(Paquete(ClientPacketId.Talk,
                 w => w.WriteAsciiString(FrasesSeVa[_rng.Next(FrasesSeVa.Length)]).WriteByte((byte)SentidosDelBot.ComoLoDijo.Charla)));
@@ -178,7 +178,9 @@ public sealed partial class Bot
         if (DejaDeAcompanar(ahora, a.Hasta, a.VistaEn) || (ella is not null && SeAburre(ahora, a.UltimaPelea, a.SinLlegar)))
         {
             sentidos.ObservarSalidaDe(null);
-            DejarDeAcompanar(transporte, a.Quien, ella is not null);
+            DejarDeAcompanar(transporte, a.Quien, ella is not null,
+                ahora >= a.Hasta ? "se cumplió el rato" : ahora - a.VistaEn > PerdidaMs ? "la perdió de vista"
+                : a.SinLlegar >= IntentosSinLlegar ? "no llega hasta ella" : "se aburrió sin pelear");
             return false;
         }
         if (_esperaAcompanando)
