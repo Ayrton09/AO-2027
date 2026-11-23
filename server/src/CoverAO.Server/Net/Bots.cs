@@ -5028,6 +5028,13 @@ public sealed partial class Bot
         // mapa.
         bool loLlevo = sentidos.Mapa != antes || sentidos.Posicion != dondeEstaba;
         if (loLlevo && !LeVendenAca(sentidos.Mapa)) _runaNoSirveParaComprar = true;
+        // Y SI NO LO MOVIÓ, EL SERVIDOR SE LA NEGÓ: el hogar en la cuna pasado el novato (`EsCunaVedada`, el 468). Medido en la ronda 154
+        // (24/11): Aldo, de nivel 17 con el hogar en el Dungeon Newbie, la usaba cada minuto y seguía en el 839.
+        if (!loLlevo)
+        {
+            _runaNoSirveParaComprar = true;
+            return false;
+        }
         return true;
     }
 

@@ -49,6 +49,15 @@ public sealed partial class Bot
                     _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                     return true;
                 }
+                // Y SI LA RUNA NO LO SACA (el hogar en la cuna, pasado el novato), EL RESCATE DEL VARADO (`RescatarseAsync`): hasta el pueblo
+                // más cercano que tenga banquero, por donde no hay guardias que vayan por él. Medido en la ronda 154 (24/11): Aldo seguía
+                // en el 839, al lado de la Avanzada, cuyos guardias lo mataban.
+                if (await RescatarseAsync(transporte, sentidos, id => EsBanquero((short)id), cerrada, ct))
+                {
+                    Console.WriteLine($"[bot {Nombre}] sale del {sentidos.Mapa} a buscar un banquero que le preste");
+                    _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
+                    return true;
+                }
                 Console.WriteLine($"[bot {Nombre}] no encuentra banquero desde el {sentidos.Mapa} para pedir prestado (bando {_miBando})");
                 _proximoPrestamo = Environment.TickCount64 + EntreIntentosDelPrestamoMs;
                 return false;
