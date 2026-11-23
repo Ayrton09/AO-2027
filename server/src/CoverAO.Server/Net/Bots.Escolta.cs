@@ -183,7 +183,11 @@ public sealed partial class Bot
             _pedidoDeEscolta = null;
             return false;
         }
-        if (sentidos.PersonaLlamada(p.Quien) is { Muerto: false } el)
+        bool AlLado(SentidosDelBot.Visible v) =>
+            Math.Abs(v.X - sentidos.Posicion.X) + Math.Abs(v.Y - sentidos.Posicion.Y) <= DistanciaDeLaEscolta;
+        // LO ACOMPAÑA AL TENERLO AL LADO, no apenas lo ve: medido en la ronda 143 (23/11), Fabia aceptó a 16 baldosas, Quim no la daba
+        // por cerca (`EscoltaCerca`) y no salía, y ella lo dejó al rato.
+        if (sentidos.PersonaLlamada(p.Quien) is { Muerto: false } el && AlLado(el))
         {
             _pedidoDeEscolta = null;
             if (EsBlancoParaMi()(el)) return false;
@@ -197,7 +201,8 @@ public sealed partial class Bot
             ? (f.Mapa, f.X, f.Y) : (p.Mapa, p.X, p.Y);
         p = p with { Mapa = mapa, X = x, Y = y };
         _pedidoDeEscolta = p;
-        bool SigueElPedido() => _pedidoDeEscolta == p && Environment.TickCount64 < p.Hasta && sentidos.PersonaLlamada(p.Quien) is null;
+        bool SigueElPedido() => _pedidoDeEscolta == p && Environment.TickCount64 < p.Hasta
+                                && !(sentidos.PersonaLlamada(p.Quien) is { } cerca && AlLado(cerca));
         bool llego = await IrHastaAsync(transporte, sentidos, p.Mapa, p.X, p.Y, cerrada, ct, tolerancia: CercaDeElla,
                                         cortaSi: () => !SigueElPedido(), topeDeMapas: SaltosDelOficio);
         Console.WriteLine($"[bot {Nombre}] escoltando a {p.Quien}: {(llego ? "llegó" : "no llegó")} a ({p.Mapa},{p.X},{p.Y}), está en " +

@@ -3239,7 +3239,8 @@ public sealed partial class Bot
         short herramienta = HerramientaDeSuOficio;
         // Para juntar alcanza con la herramienta de juntar: al Druida sin la Olla todavía le sirven las raíces.
         if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) == 0) return false;
-        if (Environment.TickCount64 < _proximaFaena) return false;
+        // CON LA ESCOLTA AL LADO SALE YA, aunque le toque esperar: ver `EscoltaCerca`.
+        if (Environment.TickCount64 < _proximaFaena && !EscoltaCerca(sentidos)) return false;
         if (MineroTieneReserva(sentidos)) return false;
         // EL QUE JUNTA PARA FABRICAR NO JUNTA DE MÁS: un acierto de tala da de diez a treinta leñas y la cuchara gasta dos, así
         // que sin tope el Carpintero se pasaría la vida talando. Con la reserva hecha, lo que falta es fabricar —o subir de
