@@ -2,31 +2,50 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.1.0 (en preparación)
+## 1.1.0 (2026-11-23)
+
+Esta versión trae un préstamo del banco para el que se quedó sin nada, una lista de subastas que se actualiza sola y, sobre todo, bots que juegan cada uno a la manera de su clase.
 
 ### Préstamo del banco
 
-- Si pasaste el nivel 15 y te quedaste sin nada (menos de 100 monedas entre lo que llevás y la bóveda), el banquero te presta 300 al hacerle doble clic: alcanza para 50 de comida, 50 de bebida, una ropa y un arma. Mientras debas no te presta otro, y lo próximo que deposites paga primero el préstamo.
-- Si hosteás, se cambia con `PrestamoDelBanco` en el `Server.ini` (0 lo apaga).
+- Si pasaste el nivel 15 y te quedaste sin nada (menos de 100 monedas sumando lo que llevás encima y lo que tenés en la bóveda), hacele doble clic al banquero y te presta 300 monedas. Alcanzan para 50 de comida, 50 de bebida, una ropa y un arma: lo justo para volver a salir a cazar.
+- Mientras debas, no te presta otra vez. El préstamo se devuelve depositando: lo próximo que dejes en el banco paga primero la deuda.
+- Si hosteás un servidor, el monto se cambia con `PrestamoDelBanco` en el `Server.ini`. Con 0 no hay préstamo.
 
 ### Subastas
 
-- Con la ventana del Centro de Subastas abierta, la lista se actualiza sola cuando alguien publica, oferta, compra o cancela, o cuando vence una subasta. Ya no hace falta apretar Actualizar.
+- Con la ventana del Centro de Subastas abierta, la lista se actualiza sola cada vez que alguien publica, oferta, compra o cancela, y cuando vence una subasta. Ya no hace falta apretar Actualizar para ver lo nuevo.
+- Se sigue actualizando mientras estés al lado del Subastador, hasta 10 minutos después de abrirla o de apretar Actualizar.
 
-### La runa y el hogar en la cuna
+### La runa y el hogar en el Dungeon Newbie
 
-- Si ya no sos novato y tu hogar sigue siendo el Dungeon Newbie, la runa te muda como cuando subís a 16 adentro del dungeon: el ciudadano a Nix, el republicano a Illiandor y el resto a Rinkel, y te lleva ahí. Antes no te movía.
+- Al subir a 16 adentro del Dungeon Newbie el juego te cambia el hogar. Pero si subías afuera, tu hogar seguía siendo el dungeon, y como ahí sólo entran los novatos, la runa no te llevaba a ningún lado.
+- Ahora la runa te muda igual que si hubieras subido adentro: el ciudadano a Nix, el republicano a Illiandor y los demás a Rinkel, y te lleva a tu hogar nuevo.
 
 ### Los bots juegan según su clase
 
-- El Mago pelea de lejos y el Clérigo, el Asesino y el Paladín inmovilizan y pegan. Cada clase elige con quién pelear según el nivel y la clase del otro, y se va cuando le conviene.
-- Los Guerreros, Gladiadores, Cazadores y Mercenarios se toman la Verde y la Amarilla antes de pelear con gente.
-- El Ladrón se hace Renegado y roba.
-- El Cazador compra arco y flechas, y el Carpintero fabrica flechas y las vende en la subasta.
-- El Minero compra el piquete de novato y va a las minas acompañado de otro bot, que lo sigue hasta adentro de la mina.
-- El bot que se queda sin plata va al banquero a pedir el préstamo, y si está encerrado por una puerta la abre.
-- El bot desnudo ya no va a hacer el mandado a un pueblo cuyos guardias lo atacan.
-- Los bots que tienen montura andan montados al aire libre: se bajan sólo bajo techo y en los dungeons, y al salir se vuelven a subir. Antes decían que se subían y seguían a pie.
+- **Elegir la pelea:** cada clase mira el nivel y la clase del otro antes de atacar. Si la pelea no le conviene no la busca, y si el otro lo persigue lo inmoviliza y se va del mapa.
+- **Mago:** pelea de lejos con hechizos y se aleja de las personas y criaturas que lo lastiman.
+- **Clérigo:** se arrima al rival y le pega con el arma.
+- **Asesino y Paladín:** inmovilizan al rival y después le pegan.
+- **Bardo, Druida y Nigromante:** también eligen con quién pelear según el nivel y la clase del otro.
+- **Guerrero, Gladiador, Cazador y Mercenario:** compran la poción Verde y la Amarilla en el Alquimista y se las toman antes de pelear con otra persona. Para hacerles lugar, venden lo que su clase no usa.
+- **Ladrón:** se hace Renegado y roba, aunque tenga un rival a la vista.
+- **Cazador:** compra arco y flechas. Si el arco es de dos manos se saca el escudo, y cuando le quedan pocas flechas pasa por la subasta a buscar más.
+- **Carpintero:** fabrica flechas y las publica en la subasta.
+- **Minero:** compra el piquete de novato y, desde el nivel 12, el Carro de Minería. Va a las minas acompañado por otro bot aliado, que lo espera, lo sigue hasta adentro de la mina y se queda con él mientras mina.
+- Los bots nuevos nacen con la raza que más le conviene a su clase.
+
+### Otras mejoras de los bots
+
+- Los que tienen montura andan montados al aire libre. Se bajan sólo bajo techo y en los dungeons, y al salir se vuelven a subir. Antes decían que se subían y seguían a pie.
+- El que se queda sin plata va al banquero a pedir el préstamo. Si está encerrado por una puerta la abre, y si no tiene un banquero cerca vuelve a su casa con la runa.
+- El que no tiene ropa ni arma ya no va a comprar a un pueblo cuyos guardias lo atacan.
+- El que queda varado lejos de todo pueblo que le venda busca la salida. Si la única es por un mapa con guardias que lo atacan, se arriesga a cruzarlo.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.1.0**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
 
 ## 1.0.42 (2026-11-20)
 
