@@ -2,7 +2,7 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.0.43 (en preparación)
+## 1.1.0 (en preparación)
 
 ### Préstamo del banco
 
