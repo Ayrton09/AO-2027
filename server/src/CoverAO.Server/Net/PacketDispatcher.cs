@@ -10674,11 +10674,11 @@ public sealed partial class PacketDispatcher
         return EsCunaVedada(p, destino, data) ? null : destino;
     }
 
-    /// <summary>¿Ese destino es la zona de novatos y él ya no lo es? De la cuna no se sale graduado para volver.</summary>
     /// <summary>El hogar al dejar la cuna (VB6 Modulo_UsUaRiOs.bas:580-595): ciudadano a Nix, republicano a Illiandor, cualquier otro a
     /// Rinkel.</summary>
     public static byte HogarAlDejarLaCuna(Player p) => p.IsCitizen ? Cities.Nix : p.IsRepublicano ? Cities.Illiandor : Cities.Rinkel;
 
+    /// <summary>¿Ese destino es la zona de novatos y él ya no lo es? De la cuna no se sale graduado para volver.</summary>
     public static bool EsCunaVedada(Player p, WorldPos destino, GameData data) =>
         p.Level > GameLimits.NewbieMaxLevel
         && string.Equals(data.MapZone(destino.Map)?.Trim(), "NEWBIE", StringComparison.OrdinalIgnoreCase);

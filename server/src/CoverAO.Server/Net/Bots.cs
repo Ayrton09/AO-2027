@@ -5028,13 +5028,10 @@ public sealed partial class Bot
         // mapa.
         bool loLlevo = sentidos.Mapa != antes || sentidos.Posicion != dondeEstaba;
         if (loLlevo && !LeVendenAca(sentidos.Mapa)) _runaNoSirveParaComprar = true;
-        // Y SI NO LO MOVIÓ, EL SERVIDOR SE LA NEGÓ: el hogar en la cuna pasado el novato (`EsCunaVedada`, el 468). Medido en la ronda 154
-        // (23/11): Aldo, de nivel 17 con el hogar en el Dungeon Newbie, la usaba cada minuto y seguía en el 839.
-        if (!loLlevo)
-        {
-            _runaNoSirveParaComprar = true;
-            return false;
-        }
+        // Y SI NO LO MOVIÓ, ESTA VEZ NO SIRVIÓ (preso, en un mapa inseguro o el servidor tardó): sigue como sin runa, y la compra que
+        // viene la vuelve a probar. No se la da por inútil: el hogar en la cuna, que era el caso de Aldo (ronda 154, 23/11), ya lo muda
+        // el servidor (`HogarAlDejarLaCuna`).
+        if (!loLlevo) return false;
         return true;
     }
 
