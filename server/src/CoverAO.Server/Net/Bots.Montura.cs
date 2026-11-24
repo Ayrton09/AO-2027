@@ -96,7 +96,9 @@ public sealed partial class Bot
         // vuelta.
         _proximoMontar = Environment.TickCount64 + EsperaParaMontarMs;
         Console.WriteLine($"[bot {Nombre}] se sube a la montura en m{sentidos.Mapa} ({x},{y})");
-        return transporte.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(ranura)));
+        // SE EQUIPA, NO SE USA: el servidor monta con el equipar (VB6 `EquiparInvItem`, `DoEquita`) y al usarla contesta "No puedes usar
+        // ese objeto". Reportado por el tester (23/11): el bot anotaba que se subía y seguía a pie, y lo pedía cada veinte segundos.
+        return transporte.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(ranura)));
     }
 
     private const int EsperaParaMontarMs = 20_000;
