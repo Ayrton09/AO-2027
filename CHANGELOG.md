@@ -2,16 +2,25 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.1.1 (en preparación)
+## 1.1.1 (2026-11-25)
+
+Esta versión arregla el modo espectador, que no mostraba casi nada de lo que pasaba alrededor del observado, y hace que los bots compren como un jugador y cuiden lo que llevan encima.
 
 ### Modo espectador
 
-- El que observa ahora ve y escucha lo que pasa alrededor del observado: los golpes, los hechizos, las pociones, los portales del mapa y el fantasma del que muere. Antes sólo veía a los personajes moverse.
+- El que observa ahora ve y escucha lo que pasa alrededor del jugador o bot que mira: los golpes, los hechizos, las pociones que toma, el daño sobre la cabeza y lo que dicen.
+- Se ven los portales y las partículas del mapa observado, como las fogatas y las fuentes.
+- Cuando alguien muere al lado del observado, se ve su fantasma desvaneciéndose.
 
 ### Bots
 
-- Al mercader o al banquero que atiende adentro de una casa, el bot le compra entrando. Antes le compraba desde afuera, parado contra la pared.
-- Pasado el nivel 15, al terminar las compras en un pueblo con banquero, el bot guarda en la bóveda lo que no usa y se le caería al morir: las armas, armaduras, cascos, escudos, anillos y pieles que no lleva puestos, la mitad de las pociones rojas si tiene más de 1.000 y la mitad de las azules si tiene más de 2.000. Lo que va a vender en la subasta y las herramientas de su oficio quedan en la mochila.
+- Los bots ya no compran desde afuera de las casas. Si el mercader o el banquero atiende adentro, el bot entra, y si la puerta está cerrada la abre. Antes le compraba parado del otro lado de la pared.
+- Pasado el nivel 15, cuando el bot termina sus compras en un pueblo con banquero, guarda en la bóveda lo que no usa y perdería al morir: las armas, armaduras, cascos, escudos, anillos y pieles que no lleva puestos. De las pociones guarda la mitad de las rojas si tiene más de 1.000, y la mitad de las azules si tiene más de 2.000.
+- En la mochila se queda lo que piensa vender en la subasta, las herramientas de su oficio, las pieles del Sastre y el arco del Cazador.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.1.1**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
 
 ## 1.1.0 (2026-11-23)
 
