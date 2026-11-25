@@ -161,6 +161,8 @@ public sealed partial class Bot
             Charlar(transporte, sentidos);
             if (cortaAntesDePaso()) return false;
         }
+        if (sentidos.Donde(banquero.Quien.CharIndex) is { } delBanquero
+            && !await EntrarAlMostradorAsync(transporte, sentidos, (delBanquero.X, delBanquero.Y), cerrada, ct)) return false;
         if (sentidos.Donde(banquero.Quien.CharIndex) is not { } donde) return false;
         int antes = sentidos.VecesQueVioElBanco;
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(donde.X).WriteByte(donde.Y)));

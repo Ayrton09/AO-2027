@@ -2032,6 +2032,14 @@ public sealed partial class Bot
             return true;
         }
 
+        // Y SI EL MERCADER ESTÁ ADENTRO DE UNA CASA, DESDE ADENTRO: ver `EntrarAlMostradorAsync`.
+        if (sentidos.Donde(t.Quien.CharIndex) is { } delMercader
+            && !await EntrarAlMostradorAsync(transporte, sentidos, (delMercader.X, delMercader.Y), cerrada, ct, CortaParaAcompanar))
+        {
+            if (!CortaParaAcompanar()) Fracaso();
+            return true;
+        }
+
         Charlar(transporte, sentidos);
         if (CortaParaAcompanar() || sentidos.Donde(t.Quien.CharIndex) is not { } mostrador) return true;
         // SE ABRE CON DOBLE CLIC, no con clic + CommerceStart.

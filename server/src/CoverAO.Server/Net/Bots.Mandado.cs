@@ -127,7 +127,8 @@ public sealed partial class Bot
         var sastre = _entorno.Datos.MapSpawns[mapaDelEncargo].First(n => EsSuSastre(n.NpcIndex));
         if (!await IrAbriendoAsync(transporte, sentidos, mapaDelEncargo, (byte)sastre.X, (byte)sastre.Y,
                 cerrada, ct, RadioDelMostrador, EsSuSastre)
-            || sentidos.MasCercano(f => EsSuSastre(f)) is not { Pasos: <= RadioDelMostrador } mostrador) return false;
+            || sentidos.MasCercano(f => EsSuSastre(f)) is not { Pasos: <= RadioDelMostrador } mostrador
+            || !await EntrarAlMostradorAsync(transporte, sentidos, (mostrador.Quien.X, mostrador.Quien.Y), cerrada, ct)) return false;
 
         int oroAntes = sentidos.Oro;
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(mostrador.Quien.X).WriteByte(mostrador.Quien.Y)));

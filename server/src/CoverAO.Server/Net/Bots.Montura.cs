@@ -231,6 +231,9 @@ public sealed partial class Bot
         if (v.Pasos > RadioDelMostrador
             && !await IrHastaAsync(transporte, sentidos, sentidos.Mapa, v.Quien.X, v.Quien.Y, cerrada, ct, RadioDelMostrador))
             return Corta($"no llega al mostrador ({v.Pasos} pasos)");
+        if (sentidos.Donde(v.Quien.CharIndex) is { } delVendedor
+            && !await EntrarAlMostradorAsync(transporte, sentidos, (delVendedor.X, delVendedor.Y), cerrada, ct))
+            return Corta("no entra al mostrador");
         if (sentidos.Donde(v.Quien.CharIndex) is not { } mostrador) return Corta("lo perdió de vista");
         transporte.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(mostrador.X).WriteByte(mostrador.Y)));
         for (int espera = 0; espera < 12 && !sentidos.Comerciando; espera++) await Task.Delay(250, ct);
