@@ -557,7 +557,12 @@ public sealed class World
         foreach (var (_, p) in _players)
             if (p.CharIndex != exceptCharIndex && InView(p.Pos, pos))
                 p.Connection?.Send(packet);
+        AlArea?.Invoke(pos, packet);
     }
+
+    /// <summary>Lo que se manda a los que ven una baldosa, para el que lo mira de afuera: el espectador (ver
+    /// <c>PacketDispatcher.ReenviarAlEspectador</c>).</summary>
+    public Action<WorldPos, byte[]>? AlArea { get; set; }
 
     /// <summary>Manda un paquete a TODOS los usuarios de un mapa, vean o no el tile (VB6
     /// <c>SendData(SendTarget.toMap, ...)</c> → <c>SendToMap</c>, modSendData.bas:515, que itera

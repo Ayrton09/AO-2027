@@ -55,6 +55,7 @@ public sealed partial class PacketDispatcher
         _fixtureMode = fixtureMode;
         _shutdown = shutdown;
         _world = world;
+        _world.AlArea = ReenviarAlEspectador;
         _loop = loop;
         _db = db;
         _data = data;

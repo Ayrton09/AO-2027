@@ -4,6 +4,10 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 
 ## 1.1.1 (en preparación)
 
+### Modo espectador
+
+- El que observa ahora ve y escucha lo que pasa alrededor del observado: los golpes, los hechizos, las pociones, los portales del mapa y el fantasma del que muere. Antes sólo veía a los personajes moverse.
+
 ### Bots
 
 - Al mercader o al banquero que atiende adentro de una casa, el bot le compra entrando. Antes le compraba desde afuera, parado contra la pared.

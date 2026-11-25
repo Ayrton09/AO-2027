@@ -2072,6 +2072,10 @@
       }
     }
 
+    /** El personaje de ese número, del mundo propio o del que se observa. El número es único en todo el servidor, así que los
+     *  avisos de un instante que el server le reenvía al espectador (golpes, hechizos, diálogos) encuentran a quien va. */
+    function personajeEn(ci) { return chars.get(ci) ?? espectador?.personajes.get(ci); }
+
     function aplicarEscenaEspectador(f) {
       if (!f.objetivo) { cerrarVistaEspectador(); return; }
       const sinPersonaje = espectador?.sinPersonaje ?? !loggedIn;
@@ -2110,7 +2114,10 @@
         (datos.auras || []).forEach((a, i) => { if (a) (c.auras = c.auras || {})[i + 1] = a; });
         if (anterior) {
           const dx = Math.abs(anterior.x - c.x), dy = Math.abs(anterior.y - c.y);
-          for (const campo of ['moveT0', 'animT0', 'movedAt', 'rx0', 'ry0']) c[campo] = anterior[campo];
+          // Y LO QUE ESTÁ PASANDO: el hechizo, las partículas y el diálogo llegan como avisos sueltos (`personajeEn`) y la foto
+          // siguiente rearma al personaje; sin pasarlos se cortaban a las tres vueltas.
+          for (const campo of ['moveT0', 'animT0', 'movedAt', 'rx0', 'ry0', 'fxAt', 'fxIndex', 'fxLoops', 'particulas', 'particula',
+                               'chat', 'chatAt', 'chatText', 'chatColor']) c[campo] = anterior[campo];
           if (dx + dy === 1) {
             c.x = anterior.x; c.y = anterior.y;
             moverA(c, datos.x, datos.y);
@@ -5166,7 +5173,7 @@
         // Cambio de bando: el server manda solo el status nuevo, no el tag entero.
         case 'CharStatus': { const c = chars.get(f.charIndex); if (c) c.status = f.status; break; }
         // Borrar el chat que quedo flotando sobre la cabeza (al morir, al warpear, al desconectarse).
-        case 'RemoveCharDialog': { const c = chars.get(f.charIndex); if (c) { c.chat = null; c.chatAt = 0; } break; }
+        case 'RemoveCharDialog': { const c = personajeEn(f.charIndex); if (c) { c.chat = null; c.chatAt = 0; } break; }
         // Borra TODOS los diálogos: llega al warpear, para no llevarse puestos los del área que dejamos.
         case 'RemoveDialogs': for (const c of chars.values()) { c.chat = null; c.chatAt = 0; } break;
         // Un amigo se desconectó: el server sólo lo emite en ese caso, con mapa/x/y en 0. No hay nada que
@@ -5286,7 +5293,7 @@
         } break; }
         // El brillo del equipo epico (armas legendarias, armaduras doradas, orbes). Tipo: 1 arma, 2 cuerpo,
         // 3 escudo, 4 casco, 6 anillo; aura 0 lo apaga. Se guarda por tipo y el render usa la mayor.
-        case 'AuraToChar': { const c = chars.get(f.charIndex); if (c) {
+        case 'AuraToChar': { const c = personajeEn(f.charIndex); if (c) {
           c.auras = c.auras || {};
           if (f.aura) c.auras[f.tipo] = f.aura; else delete c.auras[f.tipo];
         } break; }
@@ -5327,7 +5334,7 @@
           saltarA(c, f.x, f.y);   // el server manda: se OBEDECE de una, sin deslizar (ver `saltarA`)
           break;
         }
-        case 'CharacterRemove': { const c = chars.get(f.charIndex);
+        case 'CharacterRemove': { const propio = chars.get(f.charIndex), c = propio ?? espectador?.personajes.get(f.charIndex);
           // EL PAQUETE DICE SI HAY FANTASMA. Trae un booleano `Desvanecido` y `HandleCharacterRemove`
           // (Protocol.bas:1822) sólo llama a `CrearFantasma` cuando viene en True; con False el personaje
           // desaparece en el mismo cuadro. El original manda False en un solo caso —al desconectarse, después
@@ -5340,8 +5347,11 @@
           //
           // Acá seguía saliendo de `frameGrh` y de `posRender`, así que el que moría caminando seguía moviendo
           // las piernas y deslizándose mientras se apagaba.
-          if (c && f.faded) { podarLoViejo(); c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null; dying.set(f.charIndex, c); }
-          chars.delete(f.charIndex); break; }
+          // Y EL DEL QUE SE OBSERVA, TAMBIÉN (`ReenviarAlEspectador`), con el mapa en que se desvanece: el de la vista no es el propio.
+          if (c && f.faded) { podarLoViejo(); c.diedAt = Date.now(); c.attackAt = 0; c.movedAt = 0; c.moveT0 = null;
+            c.mapaDelFantasma = propio ? currentMap : espectador.mapa; dying.set(f.charIndex, c); }
+          // Al OBSERVADO no se lo saca: la cámara lo sigue, y sin él saltaba a la esquina hasta la foto siguiente.
+          chars.delete(f.charIndex); if (espectador && espectador.objetivo !== f.charIndex) espectador.personajes.delete(f.charIndex); break; }
         // EL TAG, EL COLOR Y EL DONADOR (VB6 HandleUpdateTagAndStatus + UpdateTagAndNameChar, TileEngine.bas:990).
         // Acá se aplicaba sólo el color, así que el nombre de un personaje no cambiaba nunca después de crearlo: el
         // /SHOWNAME y el /INVISIBLE de un GM, que lo mandan VACÍO, le dejaban el nombre flotando sobre la baldosa, y
@@ -5409,7 +5419,7 @@
         // otro emisor —el /LLUVIA de un GM— el original no dice nada por texto, sólo cambia el clima: callar acá
         // deja las dos rutas fieles.
         case 'RainToggle': raining = f.clima === 1; break;
-        case 'CreateFX': { const c = chars.get(f.charIndex); if (c) { c.fxAt = Date.now(); c.fxIndex = f.fx; c.fxLoops = f.fxLoops; } break; }  // spell visual FX (fx index → fx.json → grh anim)
+        case 'CreateFX': { const c = personajeEn(f.charIndex); if (c) { c.fxAt = Date.now(); c.fxIndex = f.fx; c.fxLoops = f.fxLoops; } break; }  // spell visual FX (fx index → fx.json → grh anim)
         // Station lists (from double-clicking a workbench / trainer / merchant): show a panel.
         case 'BlacksmithWeapons': showCraft('🔨 Herrería', f.items.map((it) => `${craftBtn(it.objIndex, CLIENT.CraftBlacksmith)} ${esc(itemName(it.objIndex))} · ${mats([[it.iron,'hierro'],[it.silver,'plata'],[it.gold,'oro']])}`), true); break;
         case 'BlacksmithArmors': showCraft('🔨 Herrería', f.items.map((it) => `${craftBtn(it.objIndex, CLIENT.CraftBlacksmith)} ${esc(itemName(it.objIndex))} · ${mats([[it.iron,'hierro'],[it.silver,'plata'],[it.gold,'oro']])}`), false); break;
@@ -5434,7 +5444,7 @@
         // depende de quién falló ("*Fallas*" si sos vos, "*Falla*" si es otro). Nada de esto salía: la cura no
         // mostraba el número, el fallo no se veía y el golpe fuerte no se distinguía del flojo.
         case 'ChatOverHeadLocale': {
-          const c = chars.get(f.charIndex);
+          const c = personajeEn(f.charIndex);
           if (!c) break;
           if (f.modo === 1) {
             const palabras = spellWords && spellWords[f.index];
@@ -5593,7 +5603,8 @@
         // nuestro y no tiene por qué moverse con el sprite.
         case 'EfectoTerrenoFX':
           podarLoViejo();
-          groundFx.push({ x: f.x, y: f.y, yArea: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx, loops: f.loops }); break;
+          groundFx.push({ x: f.x, y: f.y, yArea: f.y - 1, at: Date.now(), kind: 'fx', id: f.fx, loops: f.loops,
+                          mapa: espectador ? espectador.mapa : currentMap }); break;
         // LA PARTÍCULA DE UNA BALDOSA (HandleEfectoTerrenoParticula, Protocol.bas:8583). Acá se metía en la lista
         // de FX y se dibujaba buscando el número de PARTÍCULA en la tabla de FX: un hechizo de área mostraba un
         // efecto cualquiera. El tiempo viene en pasos del grupo: 1 es para siempre (el portal), 0 BORRA lo que
@@ -5614,7 +5625,7 @@
         // veían. Cada paquete agrega UN grupo más (el personaje puede llevar varios: meditar y recibir un
         // hechizo), y el de quitar apaga el primero vivo con ese número (Char_Particle_Group_Remove).
         case 'EfectoCharParticula': {
-          const c = chars.get(f.charIndex);
+          const c = personajeEn(f.charIndex);
           if (!c) break;
           c.particula = f.remove ? 0 : f.particle;          // el `.Particula` del original, que mira MakeChar
           if (f.remove) {
@@ -5630,7 +5641,7 @@
         case 'MeditateToggle': break;
         case 'ChatOverHead': {
           // El texto va sobre la cabeza del que habla (se desvanece) y, SEGUN EL MODO, además al log.
-          const c = chars.get(f.charIndex);
+          const c = personajeEn(f.charIndex);
           if (c && c.name && ignorados.has(c.name.toLowerCase())) break;   // /ignorar: filtro LOCAL, como el original
           // EL COLOR DEPENDE DEL MODO DE HABLA (VB6 HandleChatOverHead, Protocol.bas:1263): el original lee
           // `ModeChat` y elige la fuente — 7 al hablar, 25 al gritar, 23 en el global, 22 en el privado— y
@@ -6238,15 +6249,17 @@
      * el suelo de nuevo cada vuelta se nota.
      */
     let emisoresDeObjetos = [], emisoresDeObjetosSello = '';
-    function particulasDelSuelo() {
+    let emisoresDe = '';   // de qué mapa son los `emisores` vivos: ver `dibujarParticulas`
+    function particulasDelSuelo(suelo = ground) {
       // El sello lleva el tamaño de las DOS tablas que lee, no sólo el del suelo: `objParticulas` y `items`
       // llegan por `fetch` y pueden estar vacías las primeras vueltas. Sellando sólo con `ground.size`, la
       // lista quedaba cacheada en cero y la fogata no emitía hasta que el suelo cambiara de tamaño.
-      const sello = ground.size + '/' + Object.keys(objParticulas).length + '/' + (items ? 1 : 0);
-      if (emisoresDeObjetosSello === sello) return emisoresDeObjetos;
-      emisoresDeObjetosSello = sello;
+      // EL DEL ESPECTADOR no se cachea: llega entero en cada foto de la escena y son unos pocos objetos.
+      const sello = suelo === ground ? ground.size + '/' + Object.keys(objParticulas).length + '/' + (items ? 1 : 0) : null;
+      if (sello !== null && emisoresDeObjetosSello === sello) return emisoresDeObjetos;
+      emisoresDeObjetosSello = sello ?? '';
       emisoresDeObjetos = [];
-      for (const it of ground.values()) {
+      for (const it of suelo.values()) {
         // La FICHA manda, y el tipo 19 queda de respaldo: así el teleport sigue girando aunque su objeto no
         // declare partícula —once de los trece no la declaran y el original se la cablea igual— y la fogata
         // usa la suya, que es la que el install escribió.
@@ -6371,9 +6384,18 @@
       return !(g.destruir && visibles === 0);
     }
     /** Avanza y dibuja los grupos que están en pantalla: los de cada baldosa y los de cada personaje. */
-    function dibujarParticulas(camX, camY, offX, offY, dtMs, conParticulas) {
-      const lista = (map && map.particulas) || [];
-      const delSuelo = particulasDelSuelo();
+    function dibujarParticulas(camX, camY, offX, offY, dtMs, conParticulas, vista = null) {
+      // LOS EMISORES SON DEL MAPA QUE SE VE: el propio, o el del que se observa. Su clave es "x,y" sin el mapa, así que al pasar de uno
+      // a otro se sueltan todos y nacen de nuevo los del que se ve (como en `loadMap`). Antes el espectador no dibujaba ninguno: no veía
+      // los portales (reportado por el tester, 25/11).
+      const deDonde = vista ? 'e' + vista.mapa : 'm' + currentMap;
+      if (emisoresDe !== deDonde) {
+        for (const g of emisores.values()) quitarGrupo(g);
+        emisores.clear(); emisoresApagados.clear(); emisoresDe = deDonde;
+      }
+      const elMapa = vista ? vista.terreno : map;
+      const lista = (elMapa && elMapa.particulas) || [];
+      const delSuelo = particulasDelSuelo(vista ? vista.suelo : ground);
       const cx0 = Math.round(camX), cy0 = Math.round(camY);
       const enPantalla = (tx, ty) => { const sx = tx - cx0, sy = ty - cy0;
         return !(sx < -2 || sx >= VIEW_W + 2 || sy < -2 || sy >= VIEW_H + 2); };   // fuera: ni se simula
@@ -6779,7 +6801,7 @@
       // justamente lo que un comparador no puede hacer.
       const aDibujar = [];
       for (const par of chars) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: false, rx: p[0], ry: p[1] }); }
-      if (!vista) for (const par of dying) { const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: true, rx: p[0], ry: p[1] }); }
+      for (const par of dying) { if ((par[1].mapaDelFantasma ?? currentMap) !== (vista ? vista.mapa : currentMap)) continue; const p = posRender(par[1]); aDibujar.push({ ci: par[0], c: par[1], muriendo: true, rx: p[0], ry: p[1] }); }
       aDibujar.sort((a, b) => a.ry - b.ry || a.rx - b.rx);
       // CAPA 3 INTERCALADA con los personajes (TileEngine.bas:2116-2197). Dentro de cada tile el original
       // dibuja la capa 3 (:2136) y DESPUÉS el personaje (:2195), y recorre las filas de arriba hacia abajo:
@@ -7043,7 +7065,7 @@
       // personaje, así que ninguno de los dos cae nunca en esa rama: la llama de una antorcha se ve igual de
       // noche que de día, y un nick azul sigue azul. Acá los dos se dibujaban ANTES del multiply, así que de
       // noche las partículas se apagaban y viraban, y el nick de un ciudadano (#2051FB) salía (18,45,90).
-      if (!vista) dibujarParticulas(camX, camY, offX, offY, dtParticulas(), conParticulas);
+      dibujarParticulas(camX, camY, offX, offY, dtParticulas(), conParticulas, vista);
       // LOS TECHOS VAN DESPUÉS DE LA LUZ, y con el ambiente solamente.
       //
       // El original dibuja la capa 4 con el array `Techos`, que lleva ÚNICAMENTE el color de ambiente
@@ -7170,8 +7192,11 @@
       {
         const now = Date.now();
         const FRAME_MS = FX_MS_POR_CUADRO;
-        for (let i = vista ? -1 : groundFx.length - 1; i >= 0; i--) {
+        // Los del mapa que se ve: el propio, o el del que se observa (`ReenviarAlEspectador`).
+        const mapaVisto = vista ? vista.mapa : currentMap;
+        for (let i = groundFx.length - 1; i >= 0; i--) {
           const g = groundFx[i];
+          if ((g.mapa ?? currentMap) !== mapaVisto) { if (Date.now() - g.at > 10_000) groundFx.splice(i, 1); continue; }
           const dt = now - g.at;
           const cx = (g.x - camX) * TILE, cy = (g.y - camY) * TILE;
           const entry = fxIdx && g.id && fxIdx[g.id];

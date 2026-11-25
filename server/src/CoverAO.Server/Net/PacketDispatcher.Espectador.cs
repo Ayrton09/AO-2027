@@ -137,6 +137,34 @@ public sealed partial class PacketDispatcher
         EnviarEscena(sesion, vista);
     }
 
+    /// <summary>
+    /// LO QUE PASA AL LADO, TAMBIÉN AL QUE OBSERVA. La escena (<see cref="EnviarEscena"/>) es una foto cada tres vueltas: los
+    /// personajes, las criaturas y el suelo. Lo que dura un instante no entra en una foto, así que al espectador no le llegaban los
+    /// golpes, los hechizos, las pociones, el fantasma del que muere ni el portal. Reportado por el tester (25/11). Se le reenvía lo
+    /// que va a los que ven esa baldosa (<see cref="World.BroadcastToObservers"/>) si el que mira la ve, salvo al GM que con su
+    /// personaje ya lo recibió.
+    /// </summary>
+    private void ReenviarAlEspectador(WorldPos pos, byte[] paquete)
+    {
+        if (_espectadores.Count == 0 || paquete.Length == 0 || !AvisosParaElEspectador.Contains(paquete[0])) return;
+        foreach (var (sesion, vista) in _espectadores)
+        {
+            if (sesion.Cerrada || !World.InView(vista.Objetivo.Pos, pos)) continue;
+            if (vista.Gm is { } gm && World.InView(gm.Pos, pos)) continue;
+            sesion.Send(paquete);
+        }
+    }
+
+    /// <summary>Los avisos de un instante: los sonidos, los efectos y partículas, el diálogo y el daño sobre la cabeza, las auras y el
+    /// que se va (con su fantasma). Lo que queda, lo trae la escena.</summary>
+    private static readonly HashSet<byte> AvisosParaElEspectador =
+    [
+        (byte)ServerPacketId.PlayWave, (byte)ServerPacketId.CreateFX, (byte)ServerPacketId.EfectoCharParticula,
+        (byte)ServerPacketId.EfectoTerrenoParticula, (byte)ServerPacketId.EfectoTerrenoFX, (byte)ServerPacketId.CharacterRemove,
+        (byte)ServerPacketId.ChatOverHead, (byte)ServerPacketId.ChatOverHeadLocale, (byte)ServerPacketId.RemoveCharDialog,
+        (byte)ServerPacketId.AuraToChar,
+    ];
+
     private void DejarDeEspectar(ClientSession sesion)
     {
         sesion.RevisionDeEspectador++;

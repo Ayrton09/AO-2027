@@ -63,6 +63,7 @@ const ctx = vm.createContext({
   valEl: Object.fromEntries(['hp', 'mana', 'ener', 'food', 'thirst'].map(k => [k, $('v-' + k)])),
   esc_: (el, k, val) => { if (k === 't') el.textContent = String(val); else if (k === 'w') el.style.width = val; },
   soltarTeclas() {}, abrirChat() {}, resolverPersonaje: (name, status) => ({ name, status }),
+  dying: new Map(), podarLoViejo() {},
 });
 const run = code => vm.runInContext(code, ctx);
 run(`const CLIENT = ${declaration('CLIENT')}; let selectedSpell = ${declaration('selectedSpell')};
@@ -74,7 +75,7 @@ run(`const CLIENT = ${declaration('CLIENT')}; let selectedSpell = ${declaration(
         ranurasVacias = ${declaration('ranurasVacias')};`);
 for (const name of ['buildSpellList', 'lanzarHechizo', 'fireHotbar', 'modoPunteria', 'salirDePunteria', 'apply', 'pintarEstados', 'estoyMuerto', 'avisarEnComercio', 'buildInv', 'pintarDescripcionItem', 'inventarioVisible', 'syncStats', 'setBar',
   'enviarAlJuego', 'aplicarEscenaEspectador', 'aplicarPanelEspectador', 'cerrarVistaEspectador', 'aparienciaPersonaje', 'pedirFinDeEspectador', 'mostrarControlesEspectador',
-  'navegarEspectador'])
+  'navegarEspectador', 'personajeEn'])
   if (functions.has(name)) run(functions.get(name));
 run(`const keydown = ${listener('addEventListener', 'keydown')};
   const worldClick = ${listener('canvas.addEventListener', 'click')};
@@ -218,6 +219,17 @@ run('siguienteEspectador()');
 assert.equal(sent.length, fueraDeLaVista);
 run('worldClick({})');
 assert.equal(sent.at(-1)[0], run('CLIENT.DoubleClick'));
+
+// Lo de un instante que el server le reenvía al que observa: el hechizo y el fantasma del observado, no del mundo propio.
+run(`apply({name:'EscenaEspectador',fields:{objetivo:5,mapa:3,nombre:'Bot',personajes:[{charIndex:5,x:20,y:20,body:1},{charIndex:6,x:21,y:20,body:1}],suelo:[]}});
+  apply({name:'CreateFX',fields:{charIndex:5,fx:7,fxLoops:0}});`);
+assert.ok(run('espectador.personajes.get(5).fxAt') > 0, 'El hechizo sobre el observado se ve');
+run("apply({name:'EscenaEspectador',fields:{objetivo:5,mapa:3,nombre:'Bot',personajes:[{charIndex:5,x:20,y:20,body:1},{charIndex:6,x:21,y:20,body:1}],suelo:[]}})");
+assert.equal(run('espectador.personajes.get(5).fxIndex'), 7, 'La foto siguiente no corta el hechizo en curso');
+run("apply({name:'CharacterRemove',fields:{charIndex:6,faded:true}})");
+assert.equal(run('espectador.personajes.has(6)'), false);
+assert.equal(run('dying.get(6).mapaDelFantasma'), 3, 'El que muere al lado del observado deja su fantasma en ese mapa');
+run("apply({name:'EscenaEspectador',fields:{objetivo:0}})");
 
 // En el perfil que se despegaba, el cuerpo tiene el cuello tres píxeles más abajo que de frente.
 const sprite = (h, desde) => ({ w: 8, h, pixeles: Uint8Array.from({ length: 8 * h }, (_, i) => Number(i >= 8 * desde)) });

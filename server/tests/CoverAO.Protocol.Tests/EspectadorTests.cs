@@ -510,4 +510,29 @@ public sealed class EspectadorTests : IAsyncDisposable
         var cierre = Assert.Single(await Entregas(sesion, salida), p => p[0] == (byte)ServerPacketId.EscenaEspectador);
         Assert.Equal(0, Escena(cierre).ReadInteger());
     }
+    [Fact]
+    public async Task El_que_observa_recibe_los_sonidos_y_efectos_de_al_lado_del_observado()
+    {
+        const string cuenta = "cuentastaff", staff = "Moderador";
+        GuardarCuenta(cuenta, staff);
+        Assert.True(_ini.GuardarStaff(staff, 16));
+        var (observado, _, _) = Crear("Observado", 1, new(2, 50, 50));
+        var (sesion, salida) = ConexionNueva();
+        AbrirCuenta(sesion, cuenta);
+        await Recibir(salida, ServerPacketId.AbrirFormularios);
+        Comando(sesion, 241, "Observado");
+        await Recibir(salida, ServerPacketId.EscenaEspectador);
+
+        await HacerEnMundo(() =>
+        {
+            _mundo.BroadcastToObservers(new(2, 52, 50), ServerMessages.PlayWave(135, 52, 50));
+            _mundo.BroadcastToObservers(new(2, 51, 50), ServerMessages.CreateFX(observado.CharIndex, 7, 0));
+            _mundo.BroadcastToObservers(new(2, 90, 90), ServerMessages.PlayWave(136, 90, 90));
+            _mundo.BroadcastToObservers(new(3, 50, 50), ServerMessages.PlayWave(137, 50, 50));
+            _mundo.BroadcastToObservers(new(2, 52, 50), ServerMessages.CharStatus(observado.CharIndex, 1));
+        });
+        var llegaron = (await Entregas(sesion, salida)).Select(p => (ServerPacketId)p[0])
+            .Where(id => id is not (ServerPacketId.PanelEspectador or ServerPacketId.EscenaEspectador)).ToArray();
+        Assert.Equal([ServerPacketId.PlayWave, ServerPacketId.CreateFX], llegaron);
+    }
 }
