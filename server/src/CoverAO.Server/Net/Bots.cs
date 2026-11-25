@@ -2094,7 +2094,10 @@ public sealed partial class Bot
         // Y LO QUE NO ES DE LAS COMPRAS, A LA BÓVEDA (Bots.Banco.cs), cuando ya no compra más acá: depositando al salir de cada
         // mostrador, con más para comprar en el pueblo lo retiraba en el viaje siguiente (Elmo en la ronda 42, en un minuto).
         if (_acompana is null && descanso != DescansoDeCompras.Ninguno)
+        {
             await DepositarLoQueSobraAsync(transporte, sentidos, cerrada, ct);
+            await GuardarLoQueNoUsaAsync(transporte, sentidos, cerrada, ct);
+        }
         switch (descanso)
         {
             case DescansoDeCompras.Ninguno: _descansoLargo = false; _proximaCompra = 0; break;

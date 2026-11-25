@@ -7,6 +7,7 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 ### Bots
 
 - Al mercader o al banquero que atiende adentro de una casa, el bot le compra entrando. Antes le compraba desde afuera, parado contra la pared.
+- Pasado el nivel 15, al terminar las compras en un pueblo con banquero, el bot guarda en la bóveda lo que no usa y se le caería al morir: las armas, armaduras, cascos, escudos, anillos y pieles que no lleva puestos, la mitad de las pociones rojas si tiene más de 1.000 y la mitad de las azules si tiene más de 2.000. Lo que va a vender en la subasta y las herramientas de su oficio quedan en la mochila.
 
 ## 1.1.0 (2026-11-23)
 

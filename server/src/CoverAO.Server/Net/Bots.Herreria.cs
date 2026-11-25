@@ -250,6 +250,7 @@ public sealed partial class Bot
         _proximaMiradaALaSubasta = 0;
         await PasarPorLaSubastaAsync(t, s, cerrada, ct);
         await DepositarLoQueSobraAsync(t, s, cerrada, ct);
+        await GuardarLoQueNoUsaAsync(t, s, cerrada, ct);
         return true;
     }
 

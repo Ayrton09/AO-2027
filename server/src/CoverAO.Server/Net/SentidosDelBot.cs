@@ -711,6 +711,18 @@ public sealed class SentidosDelBot
         lock (_candado) return ranura > 0 && ranura < _inventario.Length && _inventario[ranura].Puesto;
     }
 
+    /// <summary>La mochila entera: cada ranura con algo adentro, con su cantidad y si está puesto.</summary>
+    public IReadOnlyList<(byte Ranura, short Obj, short Cantidad, bool Puesto)> Mochila()
+    {
+        lock (_candado)
+        {
+            var lista = new List<(byte, short, short, bool)>();
+            for (byte s = 1; s < _inventario.Length; s++)
+                if (_inventario[s].Obj > 0) lista.Add((s, _inventario[s].Obj, _inventario[s].Cantidad, _inventario[s].Puesto));
+            return lista;
+        }
+    }
+
     /// <summary>Las ranuras con algo adentro.</summary>
     public IReadOnlyList<byte> RanurasOcupadas()
     {
