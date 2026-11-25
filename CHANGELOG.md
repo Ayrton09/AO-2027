@@ -2,6 +2,12 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.1.1 (en preparación)
+
+### Bots
+
+- Al mercader o al banquero que atiende adentro de una casa, el bot le compra entrando. Antes le compraba desde afuera, parado contra la pared.
+
 ## 1.1.0 (2026-11-23)
 
 Esta versión trae un préstamo del banco para el que se quedó sin nada, una lista de subastas que se actualiza sola y, sobre todo, bots que juegan cada uno a la manera de su clase.

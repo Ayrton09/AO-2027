@@ -724,6 +724,29 @@ public sealed class Navegante
         _datos.MapSpawns.TryGetValue(mapa, out var lista)
         && AlgunoQueSirveAlAlcance(lista, Alcanzables(mapa, desde, BaldosasQueDestraba(puerta)), sirve);
 
+    /// <summary>
+    /// LA BALDOSA DE ADENTRO DEL MOSTRADOR: la que <paramref name="adentro"/> acepta (bajo techo), a <see cref="RadioDeMostrador"/> o
+    /// menos del mercader, a la que se llega desde <paramref name="desde"/>; con <paramref name="abriendo"/>, contando esa puerta abierta.
+    /// La más cercana al mercader, o null si no hay. Ver <c>Bot.EntrarAlMostradorAsync</c>.
+    /// </summary>
+    public (byte X, byte Y)? BaldosaDeAdentro(int mapa, (byte X, byte Y) desde, (byte X, byte Y) vendedor,
+                                             Func<int, int, bool> adentro, (byte X, byte Y)? abriendo = null)
+    {
+        var alcanzables = Alcanzables(mapa, desde, abriendo is { } puerta ? BaldosasQueDestraba(puerta) : null);
+        (byte X, byte Y)? mejor = null;
+        int cerca = int.MaxValue;
+        for (int dx = -RadioDeMostrador; dx <= RadioDeMostrador; dx++)
+            for (int resto = RadioDeMostrador - Math.Abs(dx), dy = -resto; dy <= resto; dy++)
+            {
+                int x = vendedor.X + dx, y = vendedor.Y + dy, distancia = Math.Abs(dx) + Math.Abs(dy);
+                if (distancia == 0 || x is < 1 or > 255 || y is < 1 or > 255 || distancia >= cerca) continue;
+                if (!adentro(x, y) || !alcanzables.Contains(Clave((byte)x, (byte)y))) continue;
+                mejor = ((byte)x, (byte)y);
+                cerca = distancia;
+            }
+        return mejor;
+    }
+
     /// <summary>¿Alguno de los que nacen en <paramref name="lista"/> y sirven queda a <see cref="RadioDeMostrador"/> o menos de
     /// alguna de esas baldosas? Es la distancia a la que atiende el mostrador, igual que en <see cref="EnElMapa"/>.</summary>
     private static bool AlgunoQueSirveAlAlcance(IReadOnlyList<MapNpcSpawn> lista, HashSet<int> alcanzables, Func<int, bool> sirve)
