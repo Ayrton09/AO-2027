@@ -44,7 +44,8 @@ public sealed partial class Bot
 
     /// <summary>
     /// EL LOTE QUE SIGUE: de lo que sabe hacer y no tiene ya un lote entero (encima o publicado). Si toca barco, el más grande que sabe;
-    /// si toca arco, el mejor; si no, la flecha de la que menos tiene, y entre las que tiene igual, la que pide más skill. Null si no
+    /// si toca arco, el mejor; si no, la flecha de la que menos tiene, y entre las que tiene igual, la que lleva menos leña (medido en la
+    /// ronda 175: la Incendiaria pide 10.000 por lote y en media hora salieron 50). Null si no
     /// hay ninguno. EL BARCO Y EL ARCO, SÓLO CON LA LEÑA YA ENCIMA: medido en las rondas 172 y 173 (26/11), Osmar eligió la Barca, que
     /// pide 10.000 leñas, juntó 1.734 en media hora y no fabricó nada más.
     /// </summary>
@@ -56,7 +57,7 @@ public sealed partial class Bot
             .ToList();
         if (tocaBarco && posibles.Where(o => o.IsBoat && o.Wood <= lena).OrderByDescending(o => o.SkillCarpentry).FirstOrDefault() is { } barco) return barco.Index;
         if (tocaArco && posibles.Where(o => o.IsBow && o.Wood <= lena).OrderByDescending(o => o.SkillCarpentry).FirstOrDefault() is { } arco) return arco.Index;
-        return posibles.Where(o => o.IsAmmo).OrderBy(o => enStock(o.Index)).ThenByDescending(o => o.SkillCarpentry)
+        return posibles.Where(o => o.IsAmmo).OrderBy(o => enStock(o.Index)).ThenBy(o => o.Wood).ThenByDescending(o => o.SkillCarpentry)
             .Select(o => (short?)o.Index).FirstOrDefault();
     }
 

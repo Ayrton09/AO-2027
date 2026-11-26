@@ -37,18 +37,20 @@ public sealed class LenadorYCarpinteroVendenTests
     }
 
     [Fact]
-    public void La_flecha_de_la_que_menos_tiene_y_entre_iguales_la_que_pide_mas()
+    public void La_flecha_de_la_que_menos_tiene_y_entre_iguales_la_mas_barata()
     {
         var d = Datos.Value;
         // Con Carpintería 65 sabe la Flecha, la +1, +2, +3, la Explosiva, la Incendiaria y la Envenenante.
-        Assert.Contains(Bot.ElegirLoteDeCarpinteria(d, 65, _ => 0, tocaBarco: false, tocaArco: false), new short?[] { Explosiva, Incendiaria });
+        Assert.Equal(Flecha, Bot.ElegirLoteDeCarpinteria(d, 65, _ => 0, tocaBarco: false, tocaArco: false));   // la que menos leña lleva
         var stock = new Dictionary<short, int> { [Explosiva] = 500, [Incendiaria] = 500, [FlechaMas3] = 20 };
         short? elegida = Bot.ElegirLoteDeCarpinteria(d, 65, o => stock.GetValueOrDefault(o), false, false);
         Assert.NotNull(elegida);
         Assert.NotEqual(Explosiva, elegida);           // ya tiene el lote entero
         Assert.NotEqual(Incendiaria, elegida);
         Assert.NotEqual(FlechaMas3, elegida);          // tiene algunas, hay otras de las que no tiene ninguna
-        Assert.Equal(0, stock.GetValueOrDefault(elegida!.Value));
+        Assert.Equal(Flecha, elegida);
+        stock[Flecha] = 500;
+        Assert.Equal(FlechaMas1, Bot.ElegirLoteDeCarpinteria(d, 65, o => stock.GetValueOrDefault(o), false, false));
         // La Eléctrica pide 90: con 65 no.
         Assert.NotEqual(Electrica, Bot.ElegirLoteDeCarpinteria(d, 65, _ => 0, false, false));
     }
