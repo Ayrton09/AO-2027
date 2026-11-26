@@ -16,6 +16,8 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - El Carpintero fabrica y subasta lotes de 500 flechas, rotando entre todos los tipos que sabe hacer. Cada tanto hace un arco y, de vez en cuando, una Barca o una Galera. El precio sale de la leña que lleva cada cosa.
 - El Carpintero que ya tiene plata no tala más en mapas inseguros: le compra la leña al Leñador y fabrica en zona segura, en sus jornadas de trabajo. Antes de salir a cazar guarda en el banco la leña y lo que tiene a medio hacer, y pone a la venta lo terminado, así no lo pierde si lo matan.
 - El Herrero fabrica como en el original: compra el Martillo de Herrero, va a la tienda de armas, se pone al lado del yunque con el martillo en la mano y ahí fabrica con los lingotes que le compra al Minero. Para no ir y venir, hace su mercado en un pueblo que tenga yunque.
+- El Minero compra de novato un segundo Piquete de Minero y lo guarda en el banco: si pierde el suyo al morir en una mina, retira el de repuesto, porque después del nivel 15 ya no puede llegar a las tiendas que lo venden.
+- El Herrero sin plata para comprar lingotes sale a cazar hasta juntarla, en vez de quedarse esperando sin poder trabajar.
 
 ## 1.1.1 (2026-11-25)
 

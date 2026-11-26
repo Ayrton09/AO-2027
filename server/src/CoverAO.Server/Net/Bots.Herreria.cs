@@ -202,6 +202,24 @@ public sealed partial class Bot
 
     public const short MartilloDeHerrero = 389;
 
+    /// <summary>
+    /// EL PIQUETE DE REPUESTO (el autor, 26/11): el piquete sólo se vende detrás de la cuna, así que desde el nivel 16 el Minero que lo
+    /// pierde al morir en una mina no lo vuelve a conseguir (en las rondas 180 y 181 Jonas, con 146.000 de oro, no minó nada). De novato
+    /// compra otro y lo deja en el banco; si se queda sin, lo retira.
+    /// </summary>
+    private bool FaltaElPiqueteDeRepuesto(SentidosDelBot s) => _clase == ClaseMinero && s.Nivel <= GameLimits.NewbieMaxLevel
+        && s.CuantoTiene(o => o == PiqueteDeMinero) == 1 && s.EnLaBoveda(PiqueteDeMinero) is null;
+
+    private bool GuardaElPiqueteDeRepuesto(SentidosDelBot s, short obj) =>
+        _clase == ClaseMinero && obj == PiqueteDeMinero && s.CuantoTiene(o => o == PiqueteDeMinero) >= 2;
+
+    /// <summary>Sin piquete, a retirar el del banco, salvo que la última vez que vio la bóveda no estaba.</summary>
+    private void BuscarElPiqueteDelBanco(SentidosDelBot s)
+    {
+        if (_clase != ClaseMinero || s.CuantoTiene(o => o == PiqueteDeMinero) > 0 || _porRetirar.Contains(PiqueteDeMinero)) return;
+        if (s.VecesQueVioLaBoveda == 0 || s.EnLaBoveda(PiqueteDeMinero) is not null) _porRetirar.Add(PiqueteDeMinero);
+    }
+
     /// <summary>Una receta concreta por vez: termina de abastecerla antes de comprar materiales para otra.</summary>
     private short? _recetaDeHerreria;
     private readonly HashSet<short> _recetasFabricadas = new();
@@ -280,6 +298,7 @@ public sealed partial class Bot
         bool porFlechas = CazadorBuscaFlechas(s);
         if ((!EsFabricanteMetalurgico && _clase is not (ClaseCarpintero or ClaseLenador) && !porFlechas && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
         AnotarLoQueDejoLaSubasta(s);
+        BuscarElPiqueteDelBanco(s);
         bool vende = s.RanurasOcupadas().Select(s.QueHayEn).Distinct().Any(o => EsProduccionMetalurgica(o)
             && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && SePuedeRepublicar(o));
         bool compra = PlataParaElEquipo(s) >= PlataParaMirarLaSubasta && (_clase == ClaseHerrero

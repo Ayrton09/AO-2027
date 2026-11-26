@@ -752,6 +752,12 @@ public sealed partial class Bot
             if (!sentidos.Ubicado) { await Task.Delay(500, ct); continue; }
             _miBando = sentidos.MiEstado;
             _miNivel = sentidos.Nivel;
+            // EL HERRERO SIN PLATA PARA LOS LINGOTES CAZA HASTA JUNTAR: ver `PlataParaLosLingotes`.
+            if (_jornadaDeOficio && _clase == ClaseHerrero && sentidos.Vivo && PlataDe(sentidos) < PlataParaLosLingotes)
+            {
+                _jornadaDeOficio = false;
+                Console.WriteLine($"[bot {Nombre}] sin plata para los lingotes: sale a cazar");
+            }
             PublicarFicha(sentidos);
             ActualizarMetaDeNivel50(sentidos);
             // LO QUE LE DICEN, Y LO QUE CONTESTA: ver `Charlar`.
@@ -2430,11 +2436,13 @@ public sealed partial class Bot
                      ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar, CarroQueLeSirve(sentidos.Nivel) } : Array.Empty<short>())
         {
             if (SeSumoAUnaSalida()) return compro;
-            if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) > 0
+            // Y EL PIQUETE DE REPUESTO: ver `FaltaElPiqueteDeRepuesto`.
+            int tiene = sentidos.CuantoTiene(obj => obj == herramienta);
+            if (herramienta == 0 || tiene > (herramienta == PiqueteDeMinero && FaltaElPiqueteDeRepuesto(sentidos) ? 1 : 0)
                 || sentidos.EnLaTienda(obj => obj == herramienta) is not { } h) continue;
             transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(h.Ranura).WriteInteger(1)));
             await Task.Delay(_rng.Next(600, 1_400), ct);
-            compro |= sentidos.CuantoTiene(obj => obj == herramienta) > 0;
+            compro |= sentidos.CuantoTiene(obj => obj == herramienta) > tiene;
         }
 
         // DESNUDO, LA ROPA ANTES QUE LA COMIDA: ver `LaRopaVaPrimero`.
@@ -2595,6 +2603,7 @@ public sealed partial class Bot
         if (juntar > 0 && sentidos.CuantoTiene(obj => obj == juntar) == 0) return juntar;
         if (fabricar > 0 && sentidos.CuantoTiene(obj => obj == fabricar) == 0) return fabricar;
         if (carro > 0 && sentidos.CuantoTiene(obj => obj == carro) == 0) return carro;
+        if (FaltaElPiqueteDeRepuesto(sentidos)) return PiqueteDeMinero;
         return 0;
     }
 
@@ -3628,6 +3637,10 @@ public sealed partial class Bot
     public const int JornadasDeOficio = 40;
 
     private bool _jornadaDeOficio;
+
+    /// <summary>Con menos que esto (encima y en el banco) el Herrero no hace jornada de oficio: no le alcanza para los lingotes, y sale
+    /// a cazar como cualquiera hasta juntar (el autor, 26/11; en las rondas 180 y 181 Karim terminó con 1 y 3 monedas).</summary>
+    public const int PlataParaLosLingotes = 5_000;
 
     private void AnotarPausaDeOficio(int mapa, ref long proximaTanda)
     {

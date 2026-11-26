@@ -104,4 +104,17 @@ public sealed class LenadorYCarpinteroVendenTests
         Assert.DoesNotContain(guarda, g => g.Obj == 38);
         Assert.DoesNotContain(Bot.LoQueGuarda(d, mochila, false, false, _ => false), g => g.Obj == Lena);
     }
+
+    /// <summary>El piquete de repuesto se apila sobre el que usa, que va puesto: al banco va uno y el otro queda en la mano.</summary>
+    [Fact]
+    public void Del_piquete_puesto_guarda_el_repuesto_y_deja_uno()
+    {
+        var d = Datos.Value;
+        const short Piquete = 187;
+        Assert.True(d.Obj(Piquete) is { DropsOnDeath: true });
+        var mochila = new List<(byte, short, short, bool)> { (1, Piquete, 2, true) };
+        var guarda = Bot.LoQueGuarda(d, mochila, false, false, _ => true, o => o == Piquete);
+        Assert.Equal((1, Piquete, 1), Assert.Single(guarda));
+        Assert.Empty(Bot.LoQueGuarda(d, new List<(byte, short, short, bool)> { (1, Piquete, 1, true) }, false, false, _ => true, o => o == Piquete));
+    }
 }

@@ -30,11 +30,19 @@ public sealed partial class Bot
         var guarda = new List<(byte, short, int)>();
         foreach (var (ranura, obj, cantidad, puesto) in mochila)
         {
+            // LO DEL OFICIO, aunque sea de lo que queda en la mochila; de lo puesto deja uno (el piquete de repuesto se apila sobre el
+            // que usa, y el servidor desequipa sólo si se va la ranura entera).
+            if (delOficio?.Invoke(obj) == true && cantidad - (puesto ? 1 : 0) is var deLasQueSobran and > 0
+                && datos.Obj(obj) is { DropsOnDeath: true, IsNewbie: false })
+            {
+                guarda.Add((ranura, obj, deLasQueSobran));
+                continue;
+            }
             if (puesto || cantidad <= 0 || datos.Obj(obj) is not { DropsOnDeath: true, IsNewbie: false } o || o.IsPotion || queda(obj)) continue;
             bool equipo = o.IsWeapon || o.ObjType == 3 || o.IsKnuckles || o.IsMagicItem || o.ObjType == 47;
             bool piel = o.ObjType == 30 && !trabajaPieles;
             if (o.IsWeapon && tiraConArco && o.Proyectil > 0) continue;
-            if (equipo || piel || delOficio?.Invoke(obj) == true) guarda.Add((ranura, obj, cantidad));
+            if (equipo || piel) guarda.Add((ranura, obj, cantidad));
         }
         MitadDe(3, RojasQueGuarda);
         MitadDe(4, AzulesQueGuarda);

@@ -88,6 +88,9 @@ public class RazaYCarroDelBotTests
         s.Recibir(ServerMessages.ChangeInventorySlot(1, Piquete, 1, false, 0, 1));
         Assert.Equal(Carro, LeFalta(b, s));
         s.Recibir(ServerMessages.ChangeInventorySlot(2, Carro, 1, false, 0, 1));
+        // Y DE NOVATO, EL PIQUETE DE REPUESTO para el banco (ver `FaltaElPiqueteDeRepuesto`).
+        Assert.Equal(Piquete, LeFalta(b, s));
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, Piquete, 2, false, 0, 1));
         Assert.Equal(0, LeFalta(b, s));
         Assert.True(NoLoVende(b, Carro));
     }
@@ -96,7 +99,7 @@ public class RazaYCarroDelBotTests
     public void Antes_del_12_no_lo_busca()
     {
         var (b, s) = Preparar(14, nivel: 11);
-        s.Recibir(ServerMessages.ChangeInventorySlot(1, Piquete, 1, false, 0, 1));
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, Piquete, 2, false, 0, 1));   // con el de repuesto
         Assert.Equal(0, LeFalta(b, s));
     }
 
