@@ -26,10 +26,19 @@ public sealed partial class Bot
 
     private long _fuerzaHasta, _agilidadHasta;
 
-    /// <summary>¿Usa las pociones de atributo? Las clases que pelean sin magia: el Guerrero, el Gladiador, el Mercenario y el
-    /// Cazador (el tester, 20/11: "no tiene magia, necesita pociones").</summary>
-    public static bool UsaPocionesDeAtributo(byte clase) =>
+    /// <summary>¿Usa alguna de las pociones de atributo? Ver <see cref="UsaLaVerde"/> y <see cref="UsaLaAmarilla"/>.</summary>
+    public static bool UsaPocionesDeAtributo(byte clase) => UsaLaVerde(clase) || UsaLaAmarilla(clase);
+
+    /// <summary>¿Usa la Verde (fuerza)? Las clases que pelean sin magia: el Guerrero, el Gladiador, el Mercenario y el Cazador (el
+    /// tester, 20/11: "no tiene magia, necesita pociones").</summary>
+    public static bool UsaLaVerde(byte clase) =>
         clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador or GameLimits.ClaseCazador or GameLimits.ClaseMercenario;
+
+    /// <summary>¿Usa la Amarilla (agilidad)? Las que pelean sin magia y TAMBIÉN las que pelean con magia: el tester, 25/11, "las clases
+    /// mágicas necesitan tener pociones amarillas para subirse la agilidad para bajar las posibilidades de recibir golpes".</summary>
+    public static bool UsaLaAmarilla(byte clase) =>
+        UsaLaVerde(clase) || clase is GameLimits.ClaseMago or GameLimits.ClaseClerigo or GameLimits.ClaseBardo or GameLimits.ClaseDruida
+            or GameLimits.ClasePaladin or GameLimits.ClaseAsesino or GameLimits.ClaseNigromante;
 
     public static bool EsPocionDeAgilidad(ObjInfo? o) => o is { IsPotion: true, SubType: 1 };
     public static bool EsPocionDeFuerza(ObjInfo? o) => o is { IsPotion: true, SubType: 2 };
@@ -45,8 +54,8 @@ public sealed partial class Bot
     {
         if (!UsaPocionesDeAtributo(_clase) || !PeleaConGente(sentidos.Nivel)) return false;
         int reserva = ReservaPara(sentidos, comida: true, bebida: true);
-        bool compro = await ReponerAsync(transporte, sentidos, FuerzaPropia, PocionesDeAtributoQueLleva, ct, reserva);
-        compro |= await ReponerAsync(transporte, sentidos, AgilidadPropia, PocionesDeAtributoQueLleva, ct, reserva);
+        bool compro = UsaLaVerde(_clase) && await ReponerAsync(transporte, sentidos, FuerzaPropia, PocionesDeAtributoQueLleva, ct, reserva);
+        compro |= UsaLaAmarilla(_clase) && await ReponerAsync(transporte, sentidos, AgilidadPropia, PocionesDeAtributoQueLleva, ct, reserva);
         return compro;
     }
 
@@ -56,7 +65,8 @@ public sealed partial class Bot
         if (!UsaPocionesDeAtributo(_clase)) return false;
         bool tomo = false;
         long ahora = Environment.TickCount64;
-        if (TomaLaPocionDeAtributo(sentidos.CuantoTiene(o => EsPocionDeFuerza(_entorno.Datos.Obj(o))) > 0, ahora, _fuerzaHasta)
+        if (UsaLaVerde(_clase)
+            && TomaLaPocionDeAtributo(sentidos.CuantoTiene(o => EsPocionDeFuerza(_entorno.Datos.Obj(o))) > 0, ahora, _fuerzaHasta)
             && Usar(transporte, sentidos, EsPocionDeFuerza))
         {
             _fuerzaHasta = ahora + EfectoDeAtributoMs;
@@ -74,10 +84,11 @@ public sealed partial class Bot
         return tomo;
     }
 
-    private bool EsDeAtributo(short obj) => _entorno.Datos.Obj(obj) is var o && (EsPocionDeFuerza(o) || EsPocionDeAgilidad(o));
+    private bool EsDeAtributo(short obj) => _entorno.Datos.Obj(obj) is var o
+        && ((UsaLaVerde(_clase) && EsPocionDeFuerza(o)) || (UsaLaAmarilla(_clase) && EsPocionDeAgilidad(o)));
 
-    /// <summary>Lo más barato que cuesta llevarse una de cada, para no salir a comprarlas sin la plata.</summary>
-    private const int CuestanLasDeAtributo = 150 + 250;
+    /// <summary>Lo más barato que cuesta llevarse las que usa, para no salir a comprarlas sin la plata: la Amarilla 150 y la Verde 250.</summary>
+    private int CuestanLasDeAtributo => (UsaLaAmarilla(_clase) ? 150 : 0) + (UsaLaVerde(_clase) ? 250 : 0);
 
     /// <summary>
     /// ¿SALE A COMPRARLAS? El que las usa y pelea con gente, sin ninguna de alguna de las dos y con la plata, como el antídoto
@@ -86,7 +97,7 @@ public sealed partial class Bot
     /// </summary>
     private bool LeFaltanLasDeAtributo(SentidosDelBot sentidos) =>
         UsaPocionesDeAtributo(_clase) && PeleaConGente(sentidos.Nivel) && PlataDe(sentidos) >= CuestanLasDeAtributo
-        && (sentidos.Suma(FuerzaPropia) == 0 || sentidos.Suma(AgilidadPropia) == 0);
+        && ((UsaLaVerde(_clase) && sentidos.Suma(FuerzaPropia) == 0) || (UsaLaAmarilla(_clase) && sentidos.Suma(AgilidadPropia) == 0));
 
     /// <summary>
     /// LO QUE SU CLASE NO PUEDE USAR (<c>ClasesProhibidas</c> del obj.dat) no se guarda como "traído de casa". Medido en la ronda 122:

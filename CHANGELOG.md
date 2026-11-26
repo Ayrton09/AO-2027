@@ -2,6 +2,12 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.1.2 (en preparación)
+
+### Bots
+
+- Las clases que pelean con magia (Mago, Clérigo, Bardo, Druida, Paladín, Asesino y Nigromante) también compran la poción Amarilla y se la toman antes de pelear con otra persona, para esquivar más golpes.
+
 ## 1.1.1 (2026-11-25)
 
 Esta versión arregla el modo espectador, que no mostraba casi nada de lo que pasaba alrededor del observado, y hace que los bots compren como un jugador y cuiden lo que llevan encima.

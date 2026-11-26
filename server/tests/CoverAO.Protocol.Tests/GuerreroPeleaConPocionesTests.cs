@@ -55,12 +55,37 @@ public sealed class GuerreroPeleaConPocionesTests
         Assert.Equal(toma, Bot.TomaLaPocionDeAtributo(tiene, ahora, hasta));
 
     [Fact]
-    public void Las_usan_las_clases_que_pelean_sin_magia()
+    public void La_verde_las_que_pelean_sin_magia_y_la_amarilla_tambien_las_magicas()
     {
         foreach (byte clase in new[] { GameLimits.ClaseGuerrero, GameLimits.ClaseGladiador, GameLimits.ClaseCazador, GameLimits.ClaseMercenario })
-            Assert.True(Bot.UsaPocionesDeAtributo(clase));
-        Assert.False(Bot.UsaPocionesDeAtributo(GameLimits.ClaseMago));
-        Assert.False(Bot.UsaPocionesDeAtributo(GameLimits.ClasePaladin));
+        {
+            Assert.True(Bot.UsaLaVerde(clase));
+            Assert.True(Bot.UsaLaAmarilla(clase));
+        }
+        foreach (byte clase in new[] { GameLimits.ClaseMago, GameLimits.ClaseClerigo, GameLimits.ClaseBardo, GameLimits.ClaseDruida,
+                                       GameLimits.ClasePaladin, GameLimits.ClaseAsesino, GameLimits.ClaseNigromante })
+        {
+            Assert.False(Bot.UsaLaVerde(clase));
+            Assert.True(Bot.UsaLaAmarilla(clase));
+        }
+        Assert.False(Bot.UsaPocionesDeAtributo(GameLimits.ClaseLadron));
+        Assert.False(Bot.UsaPocionesDeAtributo(12));   // el Herrero
+    }
+
+    [Fact]
+    public async Task El_mago_se_toma_la_amarilla_y_no_la_verde()
+    {
+        var f = Armar(GameLimits.ClaseMago);
+        using var corte = new CancellationTokenSource();
+        var pelea = Empezar(f, corte.Token);
+        try
+        {
+            var primeros = new List<byte[]>();
+            for (int i = 0; i < 3; i++) primeros.Add(await Proximo(f));
+            Assert.Contains(primeros, p => p.SequenceEqual(new byte[] { (byte)ClientPacketId.UseItem, RanuraAmarilla }));
+            Assert.DoesNotContain(primeros, p => p.SequenceEqual(new byte[] { (byte)ClientPacketId.UseItem, RanuraVerde }));
+        }
+        finally { await Cancelar(pelea, corte); }
     }
 
     [Fact]
