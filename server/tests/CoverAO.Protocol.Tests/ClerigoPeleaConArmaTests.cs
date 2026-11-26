@@ -42,18 +42,6 @@ public sealed class ClerigoPeleaConArmaTests
     public void Cuando_se_arrima(byte clase, bool conArma, int pasos, bool quieta, bool seArrima) =>
         Assert.Equal(seArrima, Bot.SeArrimaConElCombo(clase, conArma, pasos, quieta));
 
-    [Theory]
-    [InlineData(40, (short)40, GameLimits.ClaseGladiador, 100, true)]    // de su nivel, sí
-    [InlineData(30, (short)31, GameLimits.ClaseGladiador, 100, false)]   // uno más, no
-    [InlineData(30, (short)31, GameLimits.ClaseGuerrero, 100, false)]
-    [InlineData(30, (short)32, GameLimits.ClaseNigromante, 100, true)]   // los demás, hasta 2 por encima
-    [InlineData(30, (short)33, GameLimits.ClaseMago, 100, false)]
-    [InlineData(30, (short)35, 14, 100, true)]                           // un Minero, hasta 5 por encima
-    [InlineData(30, (short)36, GameLimits.ClaseGladiador, 20, true)]     // casi muerto, lo remata
-    [InlineData(30, SentidosDelBot.NivelEscondido, 14, 10, false)]        // escondido, nunca
-    public void Con_quien_pelea_el_clerigo(int miNivel, short nivel, byte clase, int vida, bool pelea) =>
-        Assert.Equal(pelea, Bot.ClerigoLeConvienePelear(miNivel, nivel, (clase, vida)));
-
     [Fact]
     public void El_clerigo_aguanta_mas_que_el_mago_antes_de_irse()
     {

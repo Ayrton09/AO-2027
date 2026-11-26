@@ -280,7 +280,7 @@ public sealed partial class Bot
         if (!TieneFuelleParaPelear(sentidos) || sentidos.Salud < SeRetira) return null;
         if (sentidos.AgresorReciente(LePeganHaceMs) is not { } id || id <= 0
             || sentidos.Donde(id) is not { } agresor || !EsBlancoParaMi()(agresor)) return null;
-        // AL QUE NO LE CONVIENE, NO LE DEVUELVE EL GOLPE: se va (`ReplegarseDelAtaqueAsync`). Ver `MagoLeConvienePelear`.
+        // AL QUE NO LE CONVIENE, NO LE DEVUELVE EL GOLPE: se va (`ReplegarseDelAtaqueAsync`). Ver `SeAnimaContra`.
         if (!LeConvienePelearCon(sentidos, id)) return null;
         var (x, y) = sentidos.Posicion;
         return Math.Abs(agresor.X - x) + Math.Abs(agresor.Y - y) <= RadioDeDefensa ? id : null;
@@ -318,8 +318,8 @@ public sealed partial class Bot
     /// <see cref="NpcSystem.RangoVisionY"/>), para mirarlo primero. Visto en la ronda 64: Dalia, ciudadana de nivel 21, salió a pegarle a
     /// Elmo, renegado de nivel 40, y murió.
     /// </summary>
-    public static bool SeLoBusca(short? nivelVisto, int dx, int dy) =>
-        nivelVisto != SentidosDelBot.NivelEscondido
+    public static bool SeLoBusca(short? nivelVisto, int dx, int dy, bool conEscondido = false) =>
+        (nivelVisto != SentidosDelBot.NivelEscondido || conEscondido)
         && (nivelVisto is not null || (Math.Abs(dx) <= NpcSystem.RangoVisionX && Math.Abs(dy) <= NpcSystem.RangoVisionY));
 
     /// <summary>¿A QUIÉN SALE A PEGARLE? Desde <see cref="NivelParaPelearConGente"/>, en un mapa inseguro, con la vida arriba de
@@ -334,7 +334,7 @@ public sealed partial class Bot
         var esBlanco = EsBlancoParaMi();
         var (x, y) = sentidos.Posicion;
         if (sentidos.PersonaMasCercana(v => (soloRival is null || v.CharIndex == soloRival)
-                                           && esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y)
+                                           && esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y, SeAnimaConElEscondido(sentidos, v.CharIndex))
                                            && LeConvienePelearCon(sentidos, v.CharIndex),
                                        GenteDejada()) is not { Pasos: <= RadioDeCaza } quien) return null;
         short ci = quien.Quien.CharIndex;

@@ -69,15 +69,7 @@ public sealed partial class Bot
     /// </summary>
     public const int NivelesQueBuscaElMago = 2, NivelesQueBuscaDeUnOficio = 5, VidaParaRematar = 30;
 
-    public static bool MagoLeConvienePelear(int miNivel, short? nivelRival, (byte Clase, int Vida)? ficha)
-    {
-        if (nivelRival is not { } nivel || ficha is not { } f) return true;
-        if (nivel == SentidosDelBot.NivelEscondido) return false;
-        if (f.Vida <= VidaParaRematar) return true;
-        if (f.Clase is >= 11 and <= 16) return nivel <= miNivel + NivelesQueBuscaDeUnOficio;   // Pescador a Sastre
-        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador or GameLimits.ClaseNigromante) return nivel < miNivel;
-        return nivel <= miNivel + NivelesQueBuscaElMago;
-    }
+
 
     /// <summary>
     /// SE VA DEL MAPA, NO UNOS PASOS. En la ronda 120 (diagnóstico, 20/11) Rufo vio a Fabia (Gladiador 27) a 12 baldosas, la miró,
@@ -111,7 +103,7 @@ public sealed partial class Bot
 
     /// <summary>¿Deja esta pelea con gente? Ver <see cref="MagoDejaLaPelea"/>.</summary>
     private bool DejaLaPelea(SentidosDelBot s, short presa) =>
-        VidaParaSeguirPeleandoDe(_clase) is { } umbral && MagoDejaLaPelea(s.Salud, s.FichaDe(presa, NivelVistoMs)?.Vida, umbral);
+        VidaParaSeguirConAnimo(_clase, Animo) is { } umbral && MagoDejaLaPelea(s.Salud, s.FichaDe(presa, NivelVistoMs)?.Vida, umbral);
 
     private bool? ConvieneSegunLaFicha(SentidosDelBot s, short quien) =>
         s.FichaDe(quien, NivelVistoMs) is null ? null : LeConvienePelearCon(s, quien);
@@ -121,7 +113,7 @@ public sealed partial class Bot
     private async Task<bool> MagoSeVaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, SentidosDelBot.Visible rival,
                                            Task cerrada, CancellationToken ct)
     {
-        if (VidaParaSeguirPeleandoDe(_clase) is not { } umbral || sentidos.Paralizado || !_entorno.Datos.IsPkMap(sentidos.Mapa)
+        if (VidaParaSeguirConAnimo(_clase, Animo) is not { } umbral || sentidos.Paralizado || !_entorno.Datos.IsPkMap(sentidos.Mapa)
             || !MagoSeVaDelMapa(ConvieneSegunLaFicha(sentidos, rival.CharIndex), sentidos.Salud, umbral)) return false;
         // ANTES DE IRSE, LO QUIETA, si lo tiene a tiro de hechizo: caminando, el que pega de cerca lo alcanza. Medido en la ronda 128
         // (22/11, sonda del botín): Fabia (Gladiadora 27) le bajó a Rufo (Mago 21) del 96 al 41 % de un golpe y lo mató con el
@@ -146,19 +138,7 @@ public sealed partial class Bot
 
     /// <summary>¿Le conviene pelear con esa persona? El Mago y el Clérigo, por su regla; las otras clases, como siempre
     /// (<see cref="SeLoBusca"/>).</summary>
-    private bool LeConvienePelearCon(SentidosDelBot s, short quien) => _clase switch
-    {
-        // EL BARDO, EL DRUIDA Y EL NIGROMANTE, como el Mago: pelean con magia y tienen poca vida (Nadia, Bardo 22, 221; Hilda,
-        // Druida 26, 148; Kael, Nigromante 21, 168).
-        GameLimits.ClaseMago or GameLimits.ClaseBardo or GameLimits.ClaseDruida or GameLimits.ClaseNigromante =>
-            MagoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
-        GameLimits.ClaseClerigo => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
-        GameLimits.ClaseAsesino => AsesinoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
-        GameLimits.ClasePaladin => PaladinLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
-        // EL LADRÓN, RENEGADO, LO BUSCAN LOS DOS BANDOS: en la ronda 130 Lira murió contra Fabia y Ciro, que antes no la buscaban.
-        GameLimits.ClaseLadron => ClerigoLeConvienePelear(s.Nivel, s.NivelDe(quien, NivelVistoMs), s.FichaDe(quien, NivelVistoMs)),
-        _ => true,
-    };
+    private bool LeConvienePelearCon(SentidosDelBot s, short quien) => SeAnimaConEsta(s, quien);
 
     /// <summary>¿Gasta el maná en inmovilizarla? Pegada a él, que no sea inmune, y si es criatura, que ya lo haya alcanzado
     /// <see cref="AlcancesAntesDeQuietar"/> veces aunque se alejó.</summary>

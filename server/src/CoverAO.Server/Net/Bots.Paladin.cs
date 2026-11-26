@@ -18,13 +18,5 @@ namespace CoverAO.Server.Net;
 /// </summary>
 public sealed partial class Bot
 {
-    public static bool PaladinLeConvienePelear(int miNivel, short? nivelRival, (byte Clase, int Vida)? ficha)
-    {
-        if (nivelRival is not { } nivel || ficha is not { } f) return true;
-        if (nivel == SentidosDelBot.NivelEscondido) return false;
-        if (f.Vida <= VidaParaRematar) return true;
-        if (f.Clase is >= 11 and <= 16) return nivel <= miNivel;
-        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador) return nivel < miNivel;
-        return nivel <= miNivel + NivelesQueBuscaElMago;
-    }
+
 }

@@ -11,7 +11,7 @@ namespace CoverAO.Server.Net;
 /// <para>Lo que hace un Ladrón: desde el nivel en que puede (<see cref="NivelParaHacerseRenegado"/>), renuncia a su facción
 /// (<c>RetirarFaccion</c>, el <c>/RETIRAR</c>: de la Armada o la Milicia pasa a civil y de civil a Renegado). En un mapa inseguro,
 /// con la vida y la energía para robar, se le arrima a una persona que le conviene (la regla de niveles del Clérigo,
-/// <see cref="ClerigoLeConvienePelear"/>) y prueba robarle <see cref="IntentosDeRobo"/> veces, a la cadencia del trabajo. Después
+/// <see cref="SeAnimaContra"/>) y prueba robarle <see cref="IntentosDeRobo"/> veces, a la cadencia del trabajo. Después
 /// la deja <see cref="DejaALaRobadaMs"/>. El robo lo resuelve el servidor: oro, y la mitad de las veces un objeto; con la habilidad
 /// baja sale uno de cada diecisiete intentos, y sube con el uso.</para>
 /// </summary>
@@ -62,9 +62,9 @@ public sealed partial class Bot
         var (x, y) = sentidos.Posicion;
         if (sentidos.PersonaMasCercana(v => !v.Muerto && !(_robadaHasta.TryGetValue(v.CharIndex, out long hasta) && ahora < hasta)
                                             && !_entorno.Datos.IsSafeZone(sentidos.Mapa, v.X, v.Y)
-                                            && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y)
-                                            && ClerigoLeConvienePelear(sentidos.Nivel, sentidos.NivelDe(v.CharIndex, NivelVistoMs),
-                                                                       sentidos.FichaDe(v.CharIndex, NivelVistoMs)),
+                                            && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y,
+                                                         SeAnimaConElEscondido(sentidos, v.CharIndex))
+                                            && SeAnimaConEsta(sentidos, v.CharIndex),
                                        GenteDejada()) is not { Pasos: <= RadioDeCaza } blanco) return false;
         short quien = blanco.Quien.CharIndex;
         // PRIMERO LA MIRA, como antes de pelear: la ficha dice si le conviene. Si ya la miró hace poco y no llegó, la deja.

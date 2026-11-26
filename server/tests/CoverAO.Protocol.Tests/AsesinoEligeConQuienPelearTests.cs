@@ -11,19 +11,6 @@ namespace CoverAO.Protocol.Tests;
 /// </summary>
 public sealed class AsesinoEligeConQuienPelearTests
 {
-    [Theory]
-    [InlineData(21, (short)25, GameLimits.ClaseGuerrero, 100, false)]    // Ciro
-    [InlineData(21, (short)20, GameLimits.ClaseGuerrero, 100, true)]     // de menos nivel, sí
-    [InlineData(21, (short)22, GameLimits.ClaseNigromante, 100, false)]  // Kael
-    [InlineData(22, (short)23, GameLimits.ClasePaladin, 100, false)]     // Milo
-    [InlineData(22, (short)22, GameLimits.ClasePaladin, 100, true)]      // de su nivel, sí
-    [InlineData(21, (short)24, 13, 100, false)]                          // Quim, Leñador
-    [InlineData(21, (short)23, 13, 100, true)]                           // a un oficio, hasta 2 por encima
-    [InlineData(21, (short)25, GameLimits.ClaseGuerrero, 25, true)]      // casi muerto, lo remata
-    [InlineData(21, SentidosDelBot.NivelEscondido, 13, 10, false)]
-    public void Con_quien_pelea_el_asesino(int miNivel, short nivel, byte clase, int vida, bool pelea) =>
-        Assert.Equal(pelea, Bot.AsesinoLeConvienePelear(miNivel, nivel, (clase, vida)));
-
     [Fact]
     public void Se_va_con_la_mitad_de_la_vida_como_el_mago() =>
         Assert.Equal(Bot.VidaParaSeguirPeleando, Bot.VidaParaSeguirPeleandoDe(GameLimits.ClaseAsesino));

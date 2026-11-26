@@ -7130,7 +7130,7 @@ public sealed partial class Bot
         // EL GOLPE DEL COMBO DEL CLÉRIGO: la vuelta que sigue lanza, y el próximo golpe espera lo de siempre. Ver `SeArrimaConElCombo`.
         long? golpeDelCombo = null;
         // EL MAGO Y EL CLÉRIGO MIRAN CON QUIÉN SE METIERON, si no lo saben: la ficha llega enseguida y la vuelta que sigue decide si
-        // siguen (ver `MagoLeConvienePelear`).
+        // siguen (ver `SeAnimaContra`).
         if (aGente && VidaParaSeguirPeleandoDe(_clase) is not null && sentidos.FichaDe(presa, NivelVistoMs) is null)
             MirarA(transporte, sentidos, presa);
         // EL GUERRERO SE TOMA LA VERDE Y LA AMARILLA antes de pelear con gente: ver `TomarLasDeAtributoAsync`.
@@ -7150,7 +7150,7 @@ public sealed partial class Bot
             if (InterrumpeLaCazaPorPvp()) return true;
             // CON GENTE, HASTA UN RATO Y MIENTRAS EL SERVIDOR CONTESTE: ver `PeleaConGenteMaxMs` y `GolpesSinRespuestaConGente`.
             if (aGente && (Environment.TickCount64 > hasta || sinRespuesta >= GolpesSinRespuestaConGente)) return true;
-            // Y LA DEJA SI RESULTA QUE NO LE CONVIENE: se repliega en la vuelta del ciclo. Ver `MagoLeConvienePelear`.
+            // Y LA DEJA SI RESULTA QUE NO LE CONVIENE: se repliega en la vuelta del ciclo. Ver `SeAnimaContra`.
             if (aGente && !LeConvienePelearCon(sentidos, presa)) return true;
             if (aGente && DejaLaPelea(sentidos, presa)) return true;
             // SI SE LE ARRIMA LO QUE LO MATA, DEJA LA PELEA: ver `LoPeligrosoEstaATiro`. La vuelta del ciclo se cura y huye. Va antes

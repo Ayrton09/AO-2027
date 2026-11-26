@@ -21,13 +21,5 @@ public sealed partial class Bot
 {
     public const int NivelesQueBuscaElAsesinoDeUnOficio = 2;
 
-    public static bool AsesinoLeConvienePelear(int miNivel, short? nivelRival, (byte Clase, int Vida)? ficha)
-    {
-        if (nivelRival is not { } nivel || ficha is not { } f) return true;
-        if (nivel == SentidosDelBot.NivelEscondido) return false;
-        if (f.Vida <= VidaParaRematar) return true;
-        if (f.Clase is >= 11 and <= 16) return nivel <= miNivel + NivelesQueBuscaElAsesinoDeUnOficio;
-        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador or GameLimits.ClaseNigromante) return nivel < miNivel;
-        return nivel <= miNivel;
-    }
+
 }

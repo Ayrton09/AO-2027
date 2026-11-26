@@ -32,15 +32,7 @@ public sealed partial class Bot
     /// Gladiador, hasta su nivel. Tiene más vida que el Mago (10 por nivel contra 8) y se cura, así que al resto hasta
     /// <see cref="NivelesQueBuscaElMago"/> por encima, y a los oficios y al que está para rematar, como el Mago.
     /// </summary>
-    public static bool ClerigoLeConvienePelear(int miNivel, short? nivelRival, (byte Clase, int Vida)? ficha)
-    {
-        if (nivelRival is not { } nivel || ficha is not { } f) return true;
-        if (nivel == SentidosDelBot.NivelEscondido) return false;
-        if (f.Vida <= VidaParaRematar) return true;
-        if (f.Clase is >= 11 and <= 16) return nivel <= miNivel + NivelesQueBuscaDeUnOficio;
-        if (f.Clase is GameLimits.ClaseGuerrero or GameLimits.ClaseGladiador) return nivel <= miNivel;
-        return nivel <= miNivel + NivelesQueBuscaElMago;
-    }
+
 
     /// <summary>El Clérigo se va del mapa y deja la pelea con menos vida que el Mago: se cura con magia mientras pelea.</summary>
     public const double VidaParaSeguirPeleandoElClerigo = SeRetira;
