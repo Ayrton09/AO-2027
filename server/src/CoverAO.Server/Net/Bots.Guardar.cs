@@ -58,9 +58,10 @@ public sealed partial class Bot
         }
     }
 
-    /// <summary>Lo que se queda en la mochila aunque sea de lo que se guarda: lo que va a la subasta y las herramientas del oficio.</summary>
+    /// <summary>Lo que se queda en la mochila aunque sea de lo que se guarda: lo que va a la subasta, lo que produce el oficio para venderlo
+    /// y las herramientas del oficio.</summary>
     private bool QuedaEnLaMochila(SentidosDelBot sentidos, short obj) =>
-        EsHerramientaDeSuOficio(obj) || ParaPublicar(sentidos, obj) || _comprados.Contains(obj);
+        EsHerramientaDeSuOficio(obj) || ParaPublicar(sentidos, obj) || EsProduccionMetalurgica(obj) || _comprados.Contains(obj);
 
     /// <summary>Al terminar las compras en un pueblo con banquero: abre la bóveda y deja <see cref="LoQueGuarda"/>.</summary>
     private async Task GuardarLoQueNoUsaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)

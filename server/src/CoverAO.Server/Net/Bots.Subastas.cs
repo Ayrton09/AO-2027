@@ -89,7 +89,7 @@ public sealed partial class Bot
 
     private bool VaALaSubastaDelBot(short obj) => VaALaSubasta(_entorno.Datos.Obj(obj)) ||
         (_entorno.Datos.Obj(obj) is { NoSeTira: false, IsNewbie: false } &&
-         ((_clase == ClaseMinero && EsLingote(obj)) || EsFlechaParaVender(obj)
+         ((_clase == ClaseMinero && EsLingote(obj)) || EsCarpinteriaParaVender(obj) || EsLenaParaVender(obj)
           || (_entorno.Datos.BlacksmithRecipes.Contains(obj) && ValorDeMercado(_entorno.Datos, obj) > 0)));
 
     private bool ParaPublicar(SentidosDelBot s, short obj) => (EsBotin(s, obj) || EsProduccionMetalurgica(obj)) &&
@@ -171,7 +171,7 @@ public sealed partial class Bot
     private async Task<bool> IrAlSubastadorAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
     {
         bool vende = sentidos.EnLaMochila(obj => ParaPublicar(sentidos, obj)) is not null;
-        bool mira = (_clase == ClaseHerrero || BuscaMejorasEnSubasta || CazadorBuscaFlechas(sentidos))
+        bool mira = (_clase == ClaseHerrero || BuscaMejorasEnSubasta || CazadorBuscaFlechas(sentidos) || CarpinteroBuscaLena(sentidos))
             && Environment.TickCount64 >= _proximaMiradaALaSubasta && PlataParaLaSubasta(sentidos) >= PlataParaMirarLaSubasta;
         if ((!vende && !mira) || SubastadorDe(sentidos.Mapa) is not { } nace) return false;
         if (mira) _proximaMiradaALaSubasta = Environment.TickCount64 + MirarLaSubastaMs;
@@ -216,10 +216,10 @@ public sealed partial class Bot
     {
         int plata = PlataParaLaSubasta(sentidos);
         var elegida = sentidos.Subastas
-            .Where(f => LeSirveElLote(sentidos, f, plata) || LeSirvenLasFlechas(sentidos, f, plata) ||
+            .Where(f => LeSirveElLote(sentidos, f, plata) || LeSirveLaLena(sentidos, f, plata) || LeSirvenLasFlechas(sentidos, f, plata) ||
                 (BuscaMejorasEnSubasta && _entorno.Datos.Obj(f.Objeto) is { } && LeConvieneLaSubasta(f, ValorDeMercado(_entorno.Datos, f.Objeto), Nombre, plata,
                     permiteProductor: _entorno.Datos.BlacksmithRecipes.Contains(f.Objeto)) && LoMejora(sentidos, f.Objeto)))
-            .OrderByDescending(f => LeSirveElLote(sentidos, f, plata))
+            .OrderByDescending(f => LeSirveElLote(sentidos, f, plata) || LeSirveLaLena(sentidos, f, plata))
             .ThenBy(f => f.PrecioFinal).Select(f => (ServerMessages.FilaDeSubasta?)f).FirstOrDefault();
         if (elegida is not { } f) return false;
         int antes = sentidos.Oro;

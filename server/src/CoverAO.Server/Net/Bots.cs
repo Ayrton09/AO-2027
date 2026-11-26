@@ -742,6 +742,9 @@ public sealed partial class Bot
         long proximaResurreccion = 0;
         // Cuánto va a jugar esta vez. Cada bot elige distinto y en cada sesión distinto, como cualquiera.
         long finDeSesion = Environment.TickCount64 + _rng.Next(SesionMinM, SesionMaxM + 1) * 60_000L;
+        // Y SI ESTA VEZ SE DEDICA AL OFICIO: ver `JornadasDeOficio`.
+        _jornadaDeOficio = TieneOficioPrincipal(_clase) && _rng.Next(100) < JornadasDeOficio;
+        if (_jornadaDeOficio) Console.WriteLine($"[bot {Nombre}] jornada de oficio");
 
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted)
         {
@@ -2828,7 +2831,9 @@ public sealed partial class Bot
         // cuando la comida y la bebida cuestan del orden de una moneda cada diez puntos. Lo de novato, las pociones y lo
         // que no vale nada siguen afuera (abajo), y lo puesto ya lo descarta la mochila.
         bool enElPozo = EnElPozo(PlataDe(sentidos), SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
-        if (EsInsumoMetalurgico(obj) || EsProduccionMetalurgica(obj)) return false; // el mercado del oficio administra su reserva
+        // EL MERCADO DEL OFICIO ADMINISTRA SU RESERVA, salvo la leña del Leñador que pasa de `LenaQueGuardaElLenador`: ésa va al mercader.
+        if (EsInsumoMetalurgico(obj) || (EsProduccionMetalurgica(obj)
+            && !(EsLenaParaVender(obj) && sentidos.CuantoTiene(i => i == obj) > LenaQueGuardaElLenador))) return false;
         // SALVO LO QUE SU CLASE NO PUEDE USAR: botín de otra sesión que quedó "de casa" y le llena la mochila. Ver `SuClaseNoLoUsa`.
         if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo && !SuClaseNoLoUsa(obj)) || EsHerramientaDeSuOficio(obj))
             return false;
@@ -3261,7 +3266,7 @@ public sealed partial class Bot
         // EL QUE JUNTA PARA FABRICAR NO JUNTA DE MÁS: un acierto de tala da de diez a treinta leñas y la cuchara gasta dos, así
         // que sin tope el Carpintero se pasaría la vida talando. Con la reserva hecha, lo que falta es fabricar —o subir de
         // nivel para destrabar la receta siguiente—, y mientras tanto sale a cazar como cualquiera.
-        if (InsumoDeSuOficio != 0 && sentidos.CuantoTiene(obj => obj == InsumoDeSuOficio) >= InsumoQueGuarda) return false;
+        if (InsumoDeSuOficio != 0 && sentidos.CuantoTiene(obj => obj == InsumoDeSuOficio) >= InsumoQueGuardaDe(sentidos)) return false;
         if (sentidos.Fuelle < FuelleMinimo) return false;   // trabajar cuesta energía
 
         byte skill = SkillDeSuOficio;
@@ -3606,7 +3611,16 @@ public sealed partial class Bot
     private (int Mapa, long Hasta) _pausaDeOficio;
 
     private bool PriorizaTandasDeOficio(int nivel) => TieneOficioPrincipal(_clase)
-        && SkillProgression.CapForLevel(nivel) == SkillProgression.MaxSkillPoints;
+        && (_jornadaDeOficio || SkillProgression.CapForLevel(nivel) == SkillProgression.MaxSkillPoints);
+
+    /// <summary>
+    /// LAS JORNADAS DE OFICIO (pedido del tester, 25/11: "que cada tanto farmeen para pasar de nivel y cada tanto se pongan a hacer sus
+    /// respectivos trabajos"): en este porcentaje de las sesiones, el de oficio trabaja con las pausas cortas del que ya llegó a 100
+    /// (<see cref="AnotarPausaDeOficio"/>) en vez de salir a cazar entre tanda y tanda. La skill igual no pasa del tope del nivel.
+    /// </summary>
+    public const int JornadasDeOficio = 40;
+
+    private bool _jornadaDeOficio;
 
     private void AnotarPausaDeOficio(int mapa, ref long proximaTanda)
     {

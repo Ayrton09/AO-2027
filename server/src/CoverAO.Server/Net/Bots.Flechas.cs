@@ -12,9 +12,9 @@ namespace CoverAO.Server.Net;
 /// con la Spatha: no compraba ni arco ni flechas.
 ///
 /// <list type="bullet">
-/// <item>EL CARPINTERO las fabrica para vender cuando tiene menos de <see cref="FlechasQueTieneParaVender"/>: la mejor que sabe, de a
-/// <see cref="FlechasPorPaquete"/> por paquete (el servidor cobra la energía por paquete), y las publica en lotes de
-/// <see cref="FlechasPorLote"/>. Valen 0 en el obj.dat, así que el precio sale de la leña (<see cref="ValorDeMercado"/>).</item>
+/// <item>EL CARPINTERO las fabrica para vender de a lotes (<see cref="ElegirLoteDeCarpinteria"/>), de a <see cref="FlechasPorPaquete"/>
+/// por paquete (el servidor cobra la energía por paquete), y las publica en lotes de <see cref="FlechasPorLote"/>. Valen 0 en el
+/// obj.dat, así que el precio sale de la leña (<see cref="ValorDeMercado"/>).</item>
 /// <item>EL CAZADOR compra un lote en la subasta cuando tiene menos de <see cref="FlechasQueQuiereElCazador"/>, a lo sumo
 /// <see cref="PorcentajeQuePaga"/> del valor, y un arco en la vitrina si no tiene ninguno (<see cref="LeFaltaElArco"/>). Con el arco
 /// y menos de <see cref="FlechasParaComprarEnLaTienda"/>, las de la tienda, para no quedarse sin tirar.</item>
@@ -22,7 +22,7 @@ namespace CoverAO.Server.Net;
 /// </summary>
 public sealed partial class Bot
 {
-    public const int FlechasQueTieneParaVender = 400, FlechasPorPaquete = 50, FlechasPorLote = 200, FlechasQueQuiereElCazador = 300,
+    public const int FlechasPorPaquete = 50, FlechasPorLote = 500, FlechasQueQuiereElCazador = 300,
                      FlechasParaComprarEnLaTienda = 50;
 
     /// <summary>¿Es una flecha que fabrica el Carpintero?</summary>
@@ -38,22 +38,12 @@ public sealed partial class Bot
 
     private int FlechasQueTiene(SentidosDelBot s) => s.Suma(obj => _entorno.Datos.Obj(obj) is { IsAmmo: true } ? 1 : 0);
 
-    /// <summary>¿El Carpintero fabrica flechas para vender? Con menos de <see cref="FlechasQueTieneParaVender"/> encima.</summary>
-    private bool CarpinteroHaceFlechas(SentidosDelBot s) => _clase == ClaseCarpintero && FlechasQueTiene(s) < FlechasQueTieneParaVender;
-
-    /// <summary>La mejor flecha que sabe hacer y para la que tiene leña, o null.</summary>
-    private short? FlechaParaFabricar(Oficios.Fabricacion regla, int skill, Func<int, int> tiene) =>
-        _entorno.Datos.CarpenterItems.Select(i => _entorno.Datos.Obj(i))
-            .Where(o => o is { IsAmmo: true } && regla.Pide(o) <= skill && CuantasAlcanzan(_entorno.Datos, o.Index, regla, tiene) > 0)
-            .OrderByDescending(o => regla.Pide(o!)).Select(o => (short?)o!.Index).FirstOrDefault();
-
-    /// <summary>Cuántas pide en un paquete: de a una para aprender, y las flechas para vender de a <see cref="FlechasPorPaquete"/>.</summary>
+    /// <summary>Cuántas pide en un paquete: de a una para aprender, y las flechas del lote de a <see cref="FlechasPorPaquete"/>, sin
+    /// pasarse del lote.</summary>
     private short CantidadPorPaquete(SentidosDelBot s, short receta, Oficios.Fabricacion regla, Func<int, int> tiene) =>
-        CarpinteroHaceFlechas(s) && EsFlechaDeCarpintero(_entorno.Datos, receta)
-            ? (short)Math.Clamp(CuantasAlcanzan(_entorno.Datos, receta, regla, tiene), 1, FlechasPorPaquete) : (short)1;
-
-    /// <summary>Lo que publica el Carpintero: sus flechas, de a lotes enteros.</summary>
-    private bool EsFlechaParaVender(short obj) => _clase == ClaseCarpintero && EsFlechaDeCarpintero(_entorno.Datos, obj);
+        CarpinteroFabricaParaVender(s) && receta == _loteDeCarpinteria && EsFlechaDeCarpintero(_entorno.Datos, receta)
+            ? (short)Math.Clamp(Math.Min(CuantasAlcanzan(_entorno.Datos, receta, regla, tiene), FlechasPorLote - tiene(receta)), 1, FlechasPorPaquete)
+            : (short)1;
 
     /// <summary>¿Le falta el arco? El que tira con arco (<see cref="TiraConArco"/>) y no tiene ninguno que se pueda poner.</summary>
     private bool LeFaltaElArco(SentidosDelBot s) =>

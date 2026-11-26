@@ -20,8 +20,8 @@ public sealed partial class Bot
     {
         if (datos.Obj(obj) is not { } o) return 0;
         if (o.Value > 0) return o.Value;
-        // LAS FLECHAS DEL CARPINTERO, por la leña: ver `ValorDeLaFlecha`.
-        if (EsFlechaDeCarpintero(datos, obj)) return ValorDeLaFlecha(datos, obj);
+        // LO DEL CARPINTERO, por la leña: ver `ValorDeCarpinteria`.
+        if (EsDeCarpinteriaParaVender(datos, obj)) return ValorDeCarpinteria(datos, obj);
         if (!datos.BlacksmithRecipes.Contains(obj)) return 0;
         long costo = Oficios.Herreria.Materiales(o).Sum(m => (long)Math.Max(0, m.PorUnidad) * Math.Max(0, datos.Obj(m.Obj)?.Value ?? 0));
         return (int)Math.Min(int.MaxValue, costo + costo / 2);
@@ -30,11 +30,11 @@ public sealed partial class Bot
     private bool EsInsumoMetalurgico(short obj) =>
         (_clase == ClaseMinero && _entorno.Datos.Obj(obj) is { IsMineral: true }) || (_clase == ClaseHerrero && EsLingote(obj));
 
-    /// <summary>Lo que el oficio produce para vender: los lingotes del Minero, el equipo del Herrero y las flechas del Carpintero
-    /// (<see cref="EsFlechaParaVender"/>).</summary>
+    /// <summary>Lo que el oficio produce para vender: los lingotes del Minero, el equipo del Herrero, lo del Carpintero
+    /// (<see cref="EsCarpinteriaParaVender"/>) y la leña del Leñador.</summary>
     private bool EsProduccionMetalurgica(short obj) =>
         (_clase == ClaseMinero && EsLingote(obj)) || (_clase == ClaseHerrero && _entorno.Datos.BlacksmithRecipes.Contains(obj))
-        || EsFlechaParaVender(obj);
+        || EsCarpinteriaParaVender(obj) || EsLenaParaVender(obj);
 
     private bool EsFabricanteMetalurgico => _clase is ClaseMinero or ClaseHerrero;
 
@@ -184,8 +184,12 @@ public sealed partial class Bot
 
     private short? ElegirFabricacion(SentidosDelBot s, IReadOnlySet<int> recetas, Oficios.Fabricacion regla, int skill, Func<int, int> tiene)
     {
-        // EL CARPINTERO, FLECHAS PARA VENDER: ver `CarpinteroHaceFlechas`.
-        if (CarpinteroHaceFlechas(s) && FlechaParaFabricar(regla, skill, tiene) is { } flecha) return flecha;
+        // EL CARPINTERO, SU LOTE: ver `LoteDeCarpinteria`. Sin la leña, la junta; para aprender fabrica sólo si la skill no está en el tope.
+        if (CarpinteroFabricaParaVender(s) && _loteDeCarpinteria is { } lote)
+        {
+            if (CuantasAlcanzan(_entorno.Datos, lote, regla, tiene) > 0) return lote;
+            if (skill >= SkillProgression.CapForLevel(s.Nivel)) return null;
+        }
         if (_clase != ClaseHerrero) return QueFabricar(_entorno.Datos, recetas, regla, skill, tiene);
         if (!HayLugarParaProducir(s) || RecetaDeHerreria(s) is not { } r) return null;
         if (CuantasAlcanzan(_entorno.Datos, r, regla, tiene) > 0) return r;
@@ -212,7 +216,7 @@ public sealed partial class Bot
             _mercadosSinMaterial = Math.Min(_mercadosSinMaterial + 1, MercadosAntesDeImprovisar);
     }
 
-    private bool FabricaParaVender(SentidosDelBot s) => (_clase == ClaseHerrero && HayLugarParaProducir(s)) || CarpinteroHaceFlechas(s);
+    private bool FabricaParaVender(SentidosDelBot s) => (_clase == ClaseHerrero && HayLugarParaProducir(s)) || CarpinteroFabricaParaVender(s);
 
     public static bool LeConvieneElLote(ServerMessages.FilaDeSubasta f, int valorUnitario, string yo, int plata, int faltan) =>
         f.Cantidad > 0 && f.Cantidad <= Math.Max(faltan, LingotesPorLote) && faltan > 0 && f.PrecioFinal > 0 &&
@@ -231,13 +235,13 @@ public sealed partial class Bot
     private async Task<bool> MercadoDelOficioAsync(TransporteDeBot t, SentidosDelBot s, Task cerrada, CancellationToken ct)
     {
         bool porFlechas = CazadorBuscaFlechas(s);
-        if ((!EsFabricanteMetalurgico && _clase != ClaseCarpintero && !porFlechas && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
+        if ((!EsFabricanteMetalurgico && _clase is not (ClaseCarpintero or ClaseLenador) && !porFlechas && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
         AnotarLoQueDejoLaSubasta(s);
         bool vende = s.RanurasOcupadas().Select(s.QueHayEn).Distinct().Any(o => EsProduccionMetalurgica(o)
             && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && SePuedeRepublicar(o));
         bool compra = PlataParaElEquipo(s) >= PlataParaMirarLaSubasta && (_clase == ClaseHerrero
             ? HayLugarParaProducir(s) && RecetaDeHerreria(s) is { } receta && CuantasAlcanzan(_entorno.Datos, receta, Oficios.Herreria, o => s.CuantoTiene(i => i == o)) == 0
-            : porFlechas || (!EsFabricanteMetalurgico && BuscaMejorasEnSubasta));
+            : porFlechas || CarpinteroBuscaLena(s) || (!EsFabricanteMetalurgico && BuscaMejorasEnSubasta));
         if (!vende && !compra && _porRetirar.Count == 0) return false;
         _proximoMercadoDelOficio = Environment.TickCount64 + (EsFabricanteMetalurgico ? 120_000 : MirarLaSubastaMs);
         var lugar = _entorno.Mapas.DondeHay(s.Mapa, s.Posicion, f => EsSubastador((short)f),
@@ -265,7 +269,9 @@ public sealed partial class Bot
     private int CantidadParaSubastar(SentidosDelBot s, short obj, int cantidad)
     {
         if (_clase == ClaseMinero && EsLingote(obj)) return cantidad < 10 ? 0 : Math.Min(LingotesPorLote, cantidad);
-        if (EsFlechaParaVender(obj)) return cantidad >= FlechasPorLote ? FlechasPorLote : 0;
+        if (EsCarpinteriaParaVender(obj) && _entorno.Datos.Obj(obj) is { } carpinteria)
+            return cantidad >= CuantasPorLote(carpinteria) ? CuantasPorLote(carpinteria) : 0;
+        if (EsLenaParaVender(obj)) return cantidad >= LenaPorLote ? LenaPorLote : 0;
         if (_entorno.Datos.BlacksmithRecipes.Contains(obj))
         {
             return cantidad > (ReservaEquipoPropio(s, obj) ? 1 : 0) ? 1 : 0;

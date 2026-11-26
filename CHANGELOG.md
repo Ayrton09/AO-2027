@@ -11,6 +11,9 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - Los bots persiguen a la persona con la que pelean hasta alcanzarla o hasta que se mete en una zona segura.
 - Para escaparse de una criatura que no pueden matar, primero la inmovilizan si pueden, o se ponen invisibles o se ocultan, y después se alejan.
 - Las clases que pelean con magia (Mago, Clérigo, Bardo, Druida, Paladín, Asesino y Nigromante) también compran la poción Amarilla y se la toman antes de pelear con otra persona, para esquivar más golpes.
+- Los bots de oficio (Leñador, Carpintero, Pescador, Minero, Herrero y Sastre) a veces dedican la sesión entera a su trabajo, en vez de salir a cazar entre tanda y tanda.
+- El Leñador vende la leña en la subasta, en lotes de 500, en vez de vendérsela barata al mercader. El Carpintero se la compra para fabricar.
+- El Carpintero fabrica y subasta lotes de 500 flechas, rotando entre todos los tipos que sabe hacer. Cada tanto hace un arco y, de vez en cuando, una Barca o una Galera. El precio sale de la leña que lleva cada cosa.
 
 ## 1.1.1 (2026-11-25)
 
