@@ -59,6 +59,9 @@ public sealed class LenadorYCarpinteroVendenTests
         var d = Datos.Value;
         Assert.Equal(Galera, Bot.ElegirLoteDeCarpinteria(d, 65, _ => 0, tocaBarco: true, tocaArco: false));
         Assert.Equal(Barca, Bot.ElegirLoteDeCarpinteria(d, 65, o => o == Galera ? 1 : 0, tocaBarco: true, tocaArco: false));
+        // Sin la leña encima, una flecha: la Barca pide 10.000 y la Galera 20.000.
+        Assert.Equal(Barca, Bot.ElegirLoteDeCarpinteria(d, 65, _ => 0, tocaBarco: true, tocaArco: false, lena: 15_000));
+        Assert.True(d.Obj(Bot.ElegirLoteDeCarpinteria(d, 65, _ => 0, tocaBarco: true, tocaArco: false, lena: 1_734)!.Value) is { IsAmmo: true });
         // Sin barco que sepa, o con los dos ya hechos, una flecha.
         Assert.True(d.Obj(Bot.ElegirLoteDeCarpinteria(d, 30, _ => 0, tocaBarco: true, tocaArco: false)!.Value) is { IsAmmo: true });
         // Sin arco que sepa (piden 90 o más), una flecha.

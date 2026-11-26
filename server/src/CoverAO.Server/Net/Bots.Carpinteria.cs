@@ -45,15 +45,17 @@ public sealed partial class Bot
     /// <summary>
     /// EL LOTE QUE SIGUE: de lo que sabe hacer y no tiene ya un lote entero (encima o publicado). Si toca barco, el más grande que sabe;
     /// si toca arco, el mejor; si no, la flecha de la que menos tiene, y entre las que tiene igual, la que pide más skill. Null si no
-    /// hay ninguno.
+    /// hay ninguno. EL BARCO Y EL ARCO, SÓLO CON LA LEÑA YA ENCIMA: medido en las rondas 172 y 173 (26/11), Osmar eligió la Barca, que
+    /// pide 10.000 leñas, juntó 1.734 en media hora y no fabricó nada más.
     /// </summary>
-    public static short? ElegirLoteDeCarpinteria(GameData datos, int skill, Func<short, int> enStock, bool tocaBarco, bool tocaArco)
+    public static short? ElegirLoteDeCarpinteria(GameData datos, int skill, Func<short, int> enStock, bool tocaBarco, bool tocaArco,
+                                                 int lena = int.MaxValue)
     {
         var posibles = datos.CarpenterItems.Select(i => datos.Obj(i)).OfType<ObjInfo>()
             .Where(o => EsDeCarpinteriaParaVender(datos, o.Index) && o.SkillCarpentry <= skill && enStock(o.Index) < CuantasPorLote(o))
             .ToList();
-        if (tocaBarco && posibles.Where(o => o.IsBoat).OrderByDescending(o => o.SkillCarpentry).FirstOrDefault() is { } barco) return barco.Index;
-        if (tocaArco && posibles.Where(o => o.IsBow).OrderByDescending(o => o.SkillCarpentry).FirstOrDefault() is { } arco) return arco.Index;
+        if (tocaBarco && posibles.Where(o => o.IsBoat && o.Wood <= lena).OrderByDescending(o => o.SkillCarpentry).FirstOrDefault() is { } barco) return barco.Index;
+        if (tocaArco && posibles.Where(o => o.IsBow && o.Wood <= lena).OrderByDescending(o => o.SkillCarpentry).FirstOrDefault() is { } arco) return arco.Index;
         return posibles.Where(o => o.IsAmmo).OrderBy(o => enStock(o.Index)).ThenByDescending(o => o.SkillCarpentry)
             .Select(o => (short?)o.Index).FirstOrDefault();
     }
@@ -80,7 +82,7 @@ public sealed partial class Bot
             && s.CuantoTiene(i => i == actual) < CuantasPorLote(o))
             return actual;
         _loteDeCarpinteria = ElegirLoteDeCarpinteria(_entorno.Datos, skill, obj => EnStock(s, obj),
-            tocaBarco: _rng.Next(BarcoCadaTantosLotes) == 0, tocaArco: _rng.Next(ArcoCadaTantosLotes) == 0);
+            tocaBarco: _rng.Next(BarcoCadaTantosLotes) == 0, tocaArco: _rng.Next(ArcoCadaTantosLotes) == 0, lena: s.CuantoTiene(i => i == Lena));
         if (_loteDeCarpinteria is { } nuevo)
             Console.WriteLine($"[bot {Nombre}] lote de carpinteria: obj {nuevo}");
         return _loteDeCarpinteria;
