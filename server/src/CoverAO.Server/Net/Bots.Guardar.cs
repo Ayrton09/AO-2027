@@ -25,7 +25,7 @@ public sealed partial class Bot
     /// </summary>
     public static List<(byte Ranura, short Obj, int Cantidad)> LoQueGuarda(GameData datos,
         IReadOnlyList<(byte Ranura, short Obj, short Cantidad, bool Puesto)> mochila, bool trabajaPieles, bool tiraConArco,
-        Func<short, bool> queda)
+        Func<short, bool> queda, Func<short, bool>? delOficio = null)
     {
         var guarda = new List<(byte, short, int)>();
         foreach (var (ranura, obj, cantidad, puesto) in mochila)
@@ -34,7 +34,7 @@ public sealed partial class Bot
             bool equipo = o.IsWeapon || o.ObjType == 3 || o.IsKnuckles || o.IsMagicItem || o.ObjType == 47;
             bool piel = o.ObjType == 30 && !trabajaPieles;
             if (o.IsWeapon && tiraConArco && o.Proyectil > 0) continue;
-            if (equipo || piel) guarda.Add((ranura, obj, cantidad));
+            if (equipo || piel || delOficio?.Invoke(obj) == true) guarda.Add((ranura, obj, cantidad));
         }
         MitadDe(3, RojasQueGuarda);
         MitadDe(4, AzulesQueGuarda);
@@ -61,7 +61,8 @@ public sealed partial class Bot
     /// <summary>Lo que se queda en la mochila aunque sea de lo que se guarda: lo que va a la subasta, lo que produce el oficio para venderlo
     /// y las herramientas del oficio.</summary>
     private bool QuedaEnLaMochila(SentidosDelBot sentidos, short obj) =>
-        EsHerramientaDeSuOficio(obj) || ParaPublicar(sentidos, obj) || EsProduccionMetalurgica(obj) || _comprados.Contains(obj);
+        EsHerramientaDeSuOficio(obj) || ParaPublicar(sentidos, obj) || (EsProduccionMetalurgica(obj) && !GuardaLoDelOficio(sentidos, obj))
+        || _comprados.Contains(obj);
 
     /// <summary>Al terminar las compras en un pueblo con banquero: abre la bóveda y deja <see cref="LoQueGuarda"/>.</summary>
     private async Task GuardarLoQueNoUsaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
@@ -69,7 +70,7 @@ public sealed partial class Bot
         if (sentidos.Nivel <= GameLimits.NewbieMaxLevel || !sentidos.Vivo || _acompana is not null || !TieneBanquero(sentidos.Mapa)
             || cerrada.IsCompleted || ct.IsCancellationRequested) return;
         List<(byte Ranura, short Obj, int Cantidad)> Que() => LoQueGuarda(_entorno.Datos, sentidos.Mochila(), _clase == ClaseSastre,
-            TiraConArco(_clase), obj => QuedaEnLaMochila(sentidos, obj));
+            TiraConArco(_clase), obj => QuedaEnLaMochila(sentidos, obj), obj => GuardaLoDelOficio(sentidos, obj));
         if (Que().Count == 0) return;
         int mapa = sentidos.Mapa;
         bool SigueEnElBanco() => sentidos.Vivo && !cerrada.IsCompleted && !ct.IsCancellationRequested && sentidos.Mapa == mapa;

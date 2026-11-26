@@ -13,6 +13,11 @@ namespace CoverAO.Server.Net;
 /// <item>EL CARPINTERO fabrica de a un lote por vez (<see cref="ElegirLoteDeCarpinteria"/>): flechas de a <see cref="FlechasPorLote"/>,
 /// rotando entre los tipos que sabe hacer; cada tanto un arco y, rara vez, un barco, que se compra una vez y nunca más. Junta la
 /// leña del lote talando y comprándole lotes al Leñador. El precio sale de la leña que lleva, más la mitad, como la herrería.</item>
+/// <item>EL CARPINTERO TRABAJA EN ZONA SEGURA (el tester, 26/11: "que se ponga a laburar en zona segura, después cuando esté por salir
+/// a seguir farmeando, que guarde la leña, que ponga a vender lo que hizo y listo"; en la ronda 174 Osmar murió dos veces con la leña y
+/// el lote encima). Con plata para comprar la leña (<see cref="PlataParaComprarLena"/>) no tala, que es sólo en mapas inseguros: se la
+/// compra al Leñador y fabrica sólo en sus jornadas de oficio, que arrancan retirando del banco lo del oficio. En las otras sesiones
+/// publica lo terminado y guarda en el banco la leña y lo que tenga a medio hacer (<see cref="GuardaLoDelOficio"/>).</item>
 /// </list>
 /// </summary>
 public sealed partial class Bot
@@ -24,6 +29,29 @@ public sealed partial class Bot
 
     /// <summary>Cuántos lotes terminados guarda sin publicar antes de dejar de fabricar.</summary>
     public const int LotesListosQueGuarda = 2;
+
+    /// <summary>Desde cuánta plata (encima y en el banco) el Carpintero compra la leña en vez de talarla.</summary>
+    public const int PlataParaComprarLena = 20_000;
+
+    /// <summary>¿Compra la leña en vez de talarla? El Carpintero con plata.</summary>
+    private bool CarpinteroCompraLaLena(SentidosDelBot s) => _clase == ClaseCarpintero && PlataDe(s) >= PlataParaComprarLena;
+
+    /// <summary>¿Lo guarda en el banco antes de salir a cazar? Lo del oficio del Carpintero que compra la leña, fuera de sus jornadas: la
+    /// leña y lo que tiene a medio hacer. Lo terminado ya lo publicó al pasar por la subasta.</summary>
+    private bool GuardaLoDelOficio(SentidosDelBot s, short obj) =>
+        !_jornadaDeOficio && CarpinteroCompraLaLena(s) && (obj == Lena || EsCarpinteriaParaVender(obj)) && !ParaPublicar(s, obj);
+
+    /// <summary>Al arrancar la jornada, lo del oficio que dejó en el banco pasa a retirarse en la primera visita; en otra sesión, no
+    /// (salvo lo comprado, que el Centro le debe).</summary>
+    private void RetirarLoDelOficioAlEmpezar()
+    {
+        if (_clase != ClaseCarpintero) return;
+        var delOficio = _entorno.Datos.CarpenterItems.Select(o => (short)o).Where(o => EsDeCarpinteriaParaVender(_entorno.Datos, o)).Append(Lena);
+        foreach (short obj in delOficio)
+            if (_jornadaDeOficio) _porRetirar.Add(obj);
+            else if (!_comprados.Contains(obj)) _porRetirar.Remove(obj);
+        if (_jornadaDeOficio) _proximoMercadoDelOficio = 0;
+    }
 
     private short? _loteDeCarpinteria;
 
@@ -91,7 +119,7 @@ public sealed partial class Bot
 
     /// <summary>¿El Carpintero fabrica para vender? Con un lote por hacer y sin demasiados listos.</summary>
     private bool CarpinteroFabricaParaVender(SentidosDelBot s) =>
-        _clase == ClaseCarpintero && LotesListos(s) < LotesListosQueGuarda && LoteDeCarpinteria(s) is not null;
+        _clase == ClaseCarpintero && (_jornadaDeOficio || !CarpinteroCompraLaLena(s)) && LotesListos(s) < LotesListosQueGuarda && LoteDeCarpinteria(s) is not null;
 
     /// <summary>La leña que le falta para terminar el lote, sin contar lo que tiene.</summary>
     private int LenaDelLote(SentidosDelBot s)

@@ -14,6 +14,7 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - Los bots de oficio (Leñador, Carpintero, Pescador, Minero, Herrero y Sastre) a veces dedican la sesión entera a su trabajo, en vez de salir a cazar entre tanda y tanda.
 - El Leñador vende la leña en la subasta, en lotes de 500, en vez de vendérsela barata al mercader. El Carpintero se la compra para fabricar.
 - El Carpintero fabrica y subasta lotes de 500 flechas, rotando entre todos los tipos que sabe hacer. Cada tanto hace un arco y, de vez en cuando, una Barca o una Galera. El precio sale de la leña que lleva cada cosa.
+- El Carpintero que ya tiene plata no tala más en mapas inseguros: le compra la leña al Leñador y fabrica en zona segura, en sus jornadas de trabajo. Antes de salir a cazar guarda en el banco la leña y lo que tiene a medio hacer, y pone a la venta lo terminado, así no lo pierde si lo matan.
 
 ## 1.1.1 (2026-11-25)
 

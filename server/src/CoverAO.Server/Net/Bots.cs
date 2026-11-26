@@ -745,6 +745,7 @@ public sealed partial class Bot
         // Y SI ESTA VEZ SE DEDICA AL OFICIO: ver `JornadasDeOficio`.
         _jornadaDeOficio = TieneOficioPrincipal(_clase) && _rng.Next(100) < JornadasDeOficio;
         if (_jornadaDeOficio) Console.WriteLine($"[bot {Nombre}] jornada de oficio");
+        RetirarLoDelOficioAlEmpezar();
 
         while (!ct.IsCancellationRequested && !cerrada.IsCompleted)
         {
@@ -3260,6 +3261,8 @@ public sealed partial class Bot
         short herramienta = HerramientaDeSuOficio;
         // Para juntar alcanza con la herramienta de juntar: al Druida sin la Olla todavía le sirven las raíces.
         if (herramienta == 0 || sentidos.CuantoTiene(obj => obj == herramienta) == 0) return false;
+        // EL CARPINTERO CON PLATA NO TALA: la compra (ver `CarpinteroCompraLaLena`).
+        if (CarpinteroCompraLaLena(sentidos)) return false;
         // CON LA ESCOLTA AL LADO SALE YA, aunque le toque esperar: ver `EscoltaCerca`.
         if (Environment.TickCount64 < _proximaFaena && !EscoltaCerca(sentidos)) return false;
         if (MineroTieneReserva(sentidos)) return false;

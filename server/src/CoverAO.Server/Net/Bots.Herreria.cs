@@ -243,7 +243,7 @@ public sealed partial class Bot
             ? HayLugarParaProducir(s) && RecetaDeHerreria(s) is { } receta && CuantasAlcanzan(_entorno.Datos, receta, Oficios.Herreria, o => s.CuantoTiene(i => i == o)) == 0
             : porFlechas || CarpinteroBuscaLena(s) || (!EsFabricanteMetalurgico && BuscaMejorasEnSubasta));
         if (!vende && !compra && _porRetirar.Count == 0) return false;
-        _proximoMercadoDelOficio = Environment.TickCount64 + (EsFabricanteMetalurgico ? 120_000 : MirarLaSubastaMs);
+        _proximoMercadoDelOficio = Environment.TickCount64 + (EsFabricanteMetalurgico || (_jornadaDeOficio && _clase == ClaseCarpintero) ? 120_000 : MirarLaSubastaMs);
         var lugar = _entorno.Mapas.DondeHay(s.Mapa, s.Posicion, f => EsSubastador((short)f),
             m => MapaSeguro(m) && TieneBanquero(m), CruzaSinPeligro(s), topeDeSaltos: SaltosDelOficio);
         if (lugar is not { } mercado) return false;

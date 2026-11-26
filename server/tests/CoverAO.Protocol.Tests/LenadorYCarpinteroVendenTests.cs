@@ -91,4 +91,17 @@ public sealed class LenadorYCarpinteroVendenTests
         Assert.True(Bot.LeConvieneElLote(lote, 10, "Osmar", 10_000, Bot.LenaPorLote));
         Assert.False(Bot.LeConvieneElLote(lote, 10, "Quim", 10_000, Bot.LenaPorLote));   // la suya
     }
+
+    /// <summary>Antes de salir a cazar, la leña y lo que tiene a medio hacer van al banco con el equipo de repuesto (el tester, 26/11).</summary>
+    [Fact]
+    public void Guarda_la_lena_y_el_lote_a_medio_hacer()
+    {
+        var d = Datos.Value;
+        var mochila = new List<(byte, short, short, bool)> { (1, Lena, 1_200, false), (2, FlechaMas1, 320, false), (3, 38, 200, false) };
+        var guarda = Bot.LoQueGuarda(d, mochila, false, false, _ => false, o => o == Lena || Bot.EsDeCarpinteriaParaVender(d, o));
+        Assert.Contains(guarda, g => g.Obj == Lena && g.Cantidad == 1_200);
+        Assert.Contains(guarda, g => g.Obj == FlechaMas1 && g.Cantidad == 320);
+        Assert.DoesNotContain(guarda, g => g.Obj == 38);
+        Assert.DoesNotContain(Bot.LoQueGuarda(d, mochila, false, false, _ => false), g => g.Obj == Lena);
+    }
 }
