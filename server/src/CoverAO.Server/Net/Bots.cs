@@ -122,6 +122,9 @@ public sealed partial class Bot
     /// empuja contra ella para siempre.</summary>
     private const int PacienciaPersiguiendo = 30;
 
+    /// <summary>Lo mismo contra una persona: la persigue mucho más (ver el corte en <see cref="CazarAsync"/>).</summary>
+    public const int PacienciaConGente = 200;
+
     /// <summary>Cuánto se le puede animar: el golpe máximo de la criatura no puede pasar de esta parte de su
     /// vida. Es el equivalente a que una persona mire al bicho y calcule.</summary>
     private const int GolpeTolerable = 5;
@@ -7325,7 +7328,11 @@ public sealed partial class Bot
 
             // PARALIZADO NO LLEGA: se saca la parálisis antes de caminar. Ver `RemoverseLaParalisis`.
             if (RemoverseLaParalisis(transporte, sentidos)) { await Task.Delay(_rng.Next(GolpeMinMs, GolpeMaxMs), ct); continue; }
-            if (pasos > RadioDeCaza || ++pasosGastados > PacienciaPersiguiendo) return true;   // se aleja o no se llega
+            // A UNA PERSONA LA PERSIGUE HASTA ALCANZARLA O HASTA QUE SE META EN UNA ZONA SEGURA (pedido del tester, 25/11): "que los bots
+            // que quieren pelear persigan a sus enemigos hasta alcanzarlos o lleguen a una zona segura ellos". Sin el radio de caza, y con
+            // un tope de pasos mucho más largo que el de una criatura (`PacienciaConGente`), sólo para no empujar una pared para siempre.
+            if (aGente && _entorno.Datos.IsSafeZone(sentidos.Mapa, quien.X, quien.Y)) return true;
+            if ((!aGente && pasos > RadioDeCaza) || ++pasosGastados > (aGente ? PacienciaConGente : PacienciaPersiguiendo)) return true;
 
             if (PasoDeCaza(_entorno.Mapas, sentidos.Mapa, (x, y), (quien.X, quien.Y), _pasoTrabado, rodeando,
                            sentidos.BaldosasOcupadas()) is not { } acercarse)
@@ -7696,6 +7703,8 @@ public sealed partial class Bot
                                            SentidosDelBot.Visible de, Task cerrada, CancellationToken ct)
     {
         AvisarACompanero(transporte, "me alejo un toque", ref _proximoAvisoDeRetirada);
+        // DE UNA CRIATURA, PRIMERO LA QUIETA, SE PONE INVISIBLE O SE OCULTA: ver `EscaparDeLaCriaturaAsync`. Después se aleja igual.
+        await EscaparDeLaCriaturaAsync(transporte, sentidos, de, ct);
         var donde = sentidos.Posicion;
         var camino = _entorno.Mapas.LejosDe(sentidos.Mapa, donde, (de.X, de.Y), PasosDeHuida, sentidos.BaldosasOcupadas());
         // ACORRALADO DE VERDAD: ninguna baldosa a la que se llegue queda más lejos. Se espera un paso y la vuelta que viene lo vuelve

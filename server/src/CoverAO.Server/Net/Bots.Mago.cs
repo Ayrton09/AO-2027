@@ -140,10 +140,11 @@ public sealed partial class Bot
     /// (<see cref="SeLoBusca"/>).</summary>
     private bool LeConvienePelearCon(SentidosDelBot s, short quien) => SeAnimaConEsta(s, quien);
 
-    /// <summary>¿Gasta el maná en inmovilizarla? Pegada a él, que no sea inmune, y si es criatura, que ya lo haya alcanzado
-    /// <see cref="AlcancesAntesDeQuietar"/> veces aunque se alejó.</summary>
+    /// <summary>¿Gasta el maná en inmovilizarla? A una PERSONA, de entrada, antes de alejarse (pedido del tester, 25/11: "lo primero que
+    /// deberían tratar de hacer es inmovilizar/paralizar al enemigo"). A una criatura que no sea inmune, pegada a él y que ya lo haya
+    /// alcanzado <see cref="AlcancesAntesDeQuietar"/> veces aunque se alejó.</summary>
     public static bool MagoInmoviliza(bool esNpc, int pasos, int alcances, bool inmune) =>
-        !inmune && pasos <= 1 && (!esNpc || alcances >= AlcancesAntesDeQuietar);
+        !inmune && (!esNpc || (pasos <= 1 && alcances >= AlcancesAntesDeQuietar));
 
     /// <summary>
     /// Lo del Mago dentro de la pelea, antes de lanzar: inmovilizar a la que lo alcanza o dar unos pasos para atrás. Devuelve si hizo

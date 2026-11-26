@@ -31,7 +31,7 @@ public sealed class MagoPeleaDeLejosTests
 
     [Theory]
     [InlineData(false, 1, 0, false, true)]    // a una persona pegada, enseguida
-    [InlineData(false, 2, 5, false, false)]   // a dos pasos todavía no: se aleja
+    [InlineData(false, 4, 0, false, true)]    // a una persona, también de lejos: primero la inmoviliza (el tester, 25/11)
     [InlineData(true, 1, 1, false, false)]    // a la criatura que lo alcanza la primera vez, no: se aleja
     [InlineData(true, 1, 2, false, true)]     // a la que lo vuelve a alcanzar aunque se alejó, sí
     [InlineData(true, 1, 9, true, false)]     // a una inmune, nunca

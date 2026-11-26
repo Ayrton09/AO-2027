@@ -7,6 +7,9 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 ### Bots
 
 - Los bots se animan más a pelear con gente. Cada uno tiene su carácter: unos son agresivos y pelean con quien les saca hasta 10 niveles, otros normales (hasta 7) y otros prudentes (hasta 4), y se animan con 3 niveles más si tienen un aliado cerca. También aguantan más antes de dejar una pelea: el agresivo se va con un cuarto de la vida.
+- El Mago inmoviliza a la persona con la que pelea de entrada, antes de alejarse.
+- Los bots persiguen a la persona con la que pelean hasta alcanzarla o hasta que se mete en una zona segura.
+- Para escaparse de una criatura que no pueden matar, primero la inmovilizan si pueden, o se ponen invisibles o se ocultan, y después se alejan.
 - Las clases que pelean con magia (Mago, Clérigo, Bardo, Druida, Paladín, Asesino y Nigromante) también compran la poción Amarilla y se la toman antes de pelear con otra persona, para esquivar más golpes.
 
 ## 1.1.1 (2026-11-25)

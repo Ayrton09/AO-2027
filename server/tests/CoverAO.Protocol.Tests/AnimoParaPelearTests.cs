@@ -65,4 +65,11 @@ public sealed class AnimoParaPelearTests
         Assert.False(Bot.SeLoBusca(SentidosDelBot.NivelEscondido, 1, 1));
         Assert.True(Bot.SeLoBusca(SentidosDelBot.NivelEscondido, 1, 1, conEscondido: true));
     }
+
+    [Theory]
+    [InlineData(40, false, true)]
+    [InlineData(10, false, false)]   // con poca habilidad casi nunca sale
+    [InlineData(40, true, false)]    // montado el servidor no deja
+    public void Cuando_prueba_ocultarse_de_una_criatura(int skill, bool montado, bool prueba) =>
+        Assert.Equal(prueba, Bot.PruebaOcultarse(skill, montado));
 }
