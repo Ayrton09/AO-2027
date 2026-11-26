@@ -122,29 +122,9 @@ public sealed partial class Bot
             && s.CuantoTiene(i => i == o.Index) >= Oficios.MineralesPorLingote(o.Index) * 10).OrderBy(o => o.Index).FirstOrDefault();
         if (mineral is null) return false;
         _proximaFundicion = Environment.TickCount64 + 60_000;
-        bool Fragua(int obj) => _entorno.Datos.Obj(obj)?.IsForge == true;
-        const int puertasDeFragua = 3;
-        var cruza = CruzaSinPeligro(s);
-        var lugar = _entorno.Mapas.DondeSeTrabaja(s.Mapa, false, Fragua, s.Posicion, MapaSeguro, cruza, SaltosDelOficio, puertasDeFragua);
-        if (lugar is not { } f) return false;
-        Console.WriteLine($"[bot {Nombre}] lleva mineral {mineral.Index} a la fragua de m{f.Mapa} desde m{s.Mapa}");
-        if (s.Mapa != f.Mapa)
-        {
-            // La fragua está dentro de un edificio: primero llega a la entrada que permite abrirlo.
-            var entrada = _entorno.Mapas.MapasAlcanzables(s.Mapa, s.Posicion, SaltosDelOficio, cruza)
-                .Where(e => e.Mapa == f.Mapa && _entorno.Mapas.PuertasDelCamino(e.Mapa, e.Entrada, [(f.X,f.Y)], DistanciaParaFaenar)
-                    is { } puertas && puertas.Count <= puertasDeFragua)
-                .Select(e => ((byte X,byte Y)?)e.Entrada).FirstOrDefault();
-            if (entrada is not { } llega || !await IrHastaAsync(t, s, f.Mapa, llega.X, llega.Y, cerrada, ct,
-                    topeDeMapas: SaltosDelOficio, soloALaMeta: true)) return true;
-        }
-        for (int abiertas = 0; ; abiertas++)
-        {
-            if (await IrHastaAsync(t, s, f.Mapa, f.X, f.Y, cerrada, ct, DistanciaParaFaenar)) break;
-            if (s.Mapa != f.Mapa || Urge(s) || HostilCerca(s) || abiertas == puertasDeFragua
-                || _entorno.Mapas.PuertasDelCamino(f.Mapa, s.Posicion, [(f.X,f.Y)], DistanciaParaFaenar) is not { Count: > 0 } puertas
-                || !await AbrirLaPuertaQueAsync(t, s, p => p == puertas[0], cerrada, ct)) return true;
-        }
+        if (!HayDondeTrabajarAlLado(s, EsFragua)) return false;
+        Console.WriteLine($"[bot {Nombre}] lleva mineral {mineral.Index} a la fragua desde m{s.Mapa}");
+        if (await IrAlLadoDeAsync(t, s, EsFragua, cerrada, ct) is not { } f) return true;
         if (s.EnLaMochila(o => o == mineral.Index) is not { } item || Urge(s)) return true;
         t.Mandar(Paquete(ClientPacketId.UseItem, w => w.WriteByte(item.Ranura)));
         t.Mandar(Paquete(ClientPacketId.WorkLeftClick, w => w.WriteByte(f.X).WriteByte(f.Y).WriteByte(GameLimits.SkillFundir)));
@@ -158,6 +138,69 @@ public sealed partial class Bot
         }
         return true;
     }
+
+    private bool EsFragua(int obj) => _entorno.Datos.Obj(obj)?.IsForge == true;
+    private bool EsYunque(int obj) => _entorno.Datos.Obj(obj)?.IsAnvil == true;
+    private const int PuertasHastaElTaller = 3;
+
+    /// <summary>¿Hay un yunque en ese mapa? El Herrero hace su mercado en un pueblo con yunque (casi todos tienen Subastador y banco),
+    /// para no ir y venir entre la subasta y el taller: desde el 20, por ejemplo, el yunque más cercano queda a varios mapas.</summary>
+    private bool TieneYunque(int mapa) =>
+        _entorno.Datos.MapObjects.TryGetValue(mapa, out var hay) && hay.Any(o => EsYunque(o.ObjIndex));
+
+    private bool HayDondeTrabajarAlLado(SentidosDelBot s, Func<int, bool> objeto) =>
+        _entorno.Mapas.DondeSeTrabaja(s.Mapa, false, objeto, s.Posicion, MapaSeguro, CruzaSinPeligro(s), SaltosDelOficio, PuertasHastaElTaller) is not null;
+
+    /// <summary>
+    /// HASTA EL LADO DE LA FRAGUA O DEL YUNQUE del mapa seguro más a mano (están en las tiendas de armas y armaduras, adentro): primero la
+    /// entrada desde la que se abre el edificio, después las puertas. Devuelve dónde está si llegó a <see cref="DistanciaParaFaenar"/>.
+    /// </summary>
+    private async Task<(int Mapa, byte X, byte Y)?> IrAlLadoDeAsync(TransporteDeBot t, SentidosDelBot s, Func<int, bool> objeto, Task cerrada,
+                                                                   CancellationToken ct)
+    {
+        var cruza = CruzaSinPeligro(s);
+        if (_entorno.Mapas.DondeSeTrabaja(s.Mapa, false, objeto, s.Posicion, MapaSeguro, cruza, SaltosDelOficio, PuertasHastaElTaller)
+            is not { } f) return null;
+        if (s.Mapa != f.Mapa)
+        {
+            // Está dentro de un edificio: primero llega a la entrada que permite abrirlo.
+            var entrada = _entorno.Mapas.MapasAlcanzables(s.Mapa, s.Posicion, SaltosDelOficio, cruza)
+                .Where(e => e.Mapa == f.Mapa && _entorno.Mapas.PuertasDelCamino(e.Mapa, e.Entrada, [(f.X,f.Y)], DistanciaParaFaenar)
+                    is { } puertas && puertas.Count <= PuertasHastaElTaller)
+                .Select(e => ((byte X,byte Y)?)e.Entrada).FirstOrDefault();
+            if (entrada is not { } llega || !await IrHastaAsync(t, s, f.Mapa, llega.X, llega.Y, cerrada, ct,
+                    topeDeMapas: SaltosDelOficio, soloALaMeta: true)) return null;
+        }
+        for (int abiertas = 0; ; abiertas++)
+        {
+            if (await IrHastaAsync(t, s, f.Mapa, f.X, f.Y, cerrada, ct, DistanciaParaFaenar)) return (f.Mapa, f.X, f.Y);
+            if (s.Mapa != f.Mapa || Urge(s) || HostilCerca(s) || abiertas == PuertasHastaElTaller
+                || _entorno.Mapas.PuertasDelCamino(f.Mapa, s.Posicion, [(f.X,f.Y)], DistanciaParaFaenar) is not { Count: > 0 } puertas
+                || !await AbrirLaPuertaQueAsync(t, s, p => p == puertas[0], cerrada, ct)) return null;
+        }
+    }
+
+    /// <summary>
+    /// EL HERRERO AL LADO DEL YUNQUE, CON EL MARTILLO PUESTO (el tester, 26/11: "el herrero con el martillo se pone al lado del yunque que
+    /// también está en todas las tiendas de armas y armaduras y se pone a craftear"): como en el original, la herrería se abre con el
+    /// martillo en la mano y doble clic sobre el yunque (VB6 <c>Accion</c>). Hasta ahora el bot fabricaba en cualquier mapa seguro, porque
+    /// el paquete de fabricar del servidor no lo pide. Devuelve si quedó listo para fabricar.
+    /// </summary>
+    private async Task<bool> PonerseAlYunqueAsync(TransporteDeBot t, SentidosDelBot s, Task cerrada, CancellationToken ct)
+    {
+        if (await IrAlLadoDeAsync(t, s, EsYunque, cerrada, ct) is not { } y || Urge(s)) return false;
+        if (s.EnLaMochila(o => o == MartilloDeHerrero) is { } martillo)
+        {
+            t.Mandar(Paquete(ClientPacketId.EquipItem, w => w.WriteByte(martillo.Ranura)));
+            await Task.Delay(_rng.Next(400, 900), ct);
+        }
+        t.Mandar(Paquete(ClientPacketId.DoubleClick, w => w.WriteByte(y.X).WriteByte(y.Y)));
+        Console.WriteLine($"[bot {Nombre}] al yunque de m{y.Mapa} ({y.X},{y.Y})");
+        await Task.Delay(_rng.Next(600, 1_200), ct);
+        return true;
+    }
+
+    public const short MartilloDeHerrero = 389;
 
     /// <summary>Una receta concreta por vez: termina de abastecerla antes de comprar materiales para otra.</summary>
     private short? _recetaDeHerreria;
@@ -245,7 +288,7 @@ public sealed partial class Bot
         if (!vende && !compra && _porRetirar.Count == 0) return false;
         _proximoMercadoDelOficio = Environment.TickCount64 + (EsFabricanteMetalurgico || (_jornadaDeOficio && _clase == ClaseCarpintero) ? 120_000 : MirarLaSubastaMs);
         var lugar = _entorno.Mapas.DondeHay(s.Mapa, s.Posicion, f => EsSubastador((short)f),
-            m => MapaSeguro(m) && TieneBanquero(m), CruzaSinPeligro(s), topeDeSaltos: SaltosDelOficio);
+            m => MapaSeguro(m) && TieneBanquero(m) && (_clase != ClaseHerrero || TieneYunque(m)), CruzaSinPeligro(s), topeDeSaltos: SaltosDelOficio);
         if (lugar is not { } mercado) return false;
         if (!await IrHastaAsync(t, s, mercado.Mapa, mercado.X, mercado.Y, cerrada, ct, RadioDelSubastador, topeDeMapas: SaltosDelOficio)) return true;
         // Vender no requiere retirar ahorros si ya puede pagar el depósito de sus lotes.

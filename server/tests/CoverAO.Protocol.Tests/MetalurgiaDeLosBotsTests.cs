@@ -256,8 +256,9 @@ public class MetalurgiaDeLosBotsTests
         }
     }
 
+    /// <summary>En pueblos con yunque, Subastador y banco: el Herrero hace ahí su mercado (ver `TieneYunque`).</summary>
     [Theory]
-    [InlineData(20)]
+    [InlineData(1)]
     [InlineData(34)]
     public async Task El_minero_funde_vende_los_tres_metales_y_el_herrero_fabrica_y_vende_por_el_servidor(short mercado)
     {
@@ -296,6 +297,9 @@ public class MetalurgiaDeLosBotsTests
         var minero=Conectar("Quim",14);var herrero=Conectar("Rufo",12);var comprador=Conectar("Ciro",3);
         herrero.p.Inventory[10]=new InventorySlot{ObjIndex=2,Amount=1};
         herrero.s.Recibir(ServerMessages.ChangeInventorySlot(10,2,1,false,0,1));
+        // EL MARTILLO, para la herrería en el yunque (ver `PonerseAlYunqueAsync`).
+        herrero.p.Inventory[11]=new InventorySlot{ObjIndex=Bot.MartilloDeHerrero,Amount=1};
+        herrero.s.Recibir(ServerMessages.ChangeInventorySlot(11,Bot.MartilloDeHerrero,1,false,0,1));
         void Situar((Bot b,SentidosDelBot s,Player p,TransporteDeBot t) a,WorldPos pos,Npc? n=null) {
             a.p.Pos=pos;a.p.TargetNpc=n?.CharIndex??0;
             a.s.Recibir(ServerMessages.ChangeMap(pos.Map));a.s.Recibir(ServerMessages.CharacterCreate(a.p));
@@ -427,7 +431,7 @@ public class MetalurgiaDeLosBotsTests
         using var db = new Persistence(almacen, new Leveling(Datos.LevelExp));
         var mundo = new World(); var loop = new GameLoop();
         var dispatcher = new PacketDispatcher(mundo, loop, db, Datos, new Leveling(Datos.LevelExp));
-        using var fin = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var fin = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var transporte = new TransporteDeBot("Rufo");
         transporte.Recibido += sentidos.Recibir;
         var sesion = new ClientSession(transporte, dispatcher) { Player = p };
@@ -439,15 +443,27 @@ public class MetalurgiaDeLosBotsTests
             p.Inventory[i+1] = new InventorySlot { ObjIndex=objetos[i], Amount=cantidades[i] };
             sentidos.Recibir(ServerMessages.ChangeInventorySlot((byte)(i+1),objetos[i],cantidades[i],false,0,1));
         }
+        p.Inventory[4] = new InventorySlot { ObjIndex=Bot.MartilloDeHerrero, Amount=1 };
+        sentidos.Recibir(ServerMessages.ChangeInventorySlot(4,Bot.MartilloDeHerrero,1,false,0,1));
+        // En Ullathorpe, a la entrada de la herrería: el yunque está adentro, en (81,75).
+        p.Pos = new WorldPos(1,75,82); p.FactionStatus = Player.StatusCiudadano;
+        WorldPopulator.PlaceObjects(mundo, Datos);   // las puertas de la herrería, como en el servidor real
+        sentidos.Recibir(ServerMessages.UserIndexInServer(p.CharIndex)); sentidos.Recibir(ServerMessages.UpdateUserStats(p));
+        sentidos.Recibir(ServerMessages.ChangeMap(1)); sentidos.Recibir(ServerMessages.CharacterCreate(p));
+        typeof(Bot).GetField("_miBando", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, Player.StatusCiudadano);
+        typeof(Bot).GetField("_miNivel", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(bot, (int)p.Level);
         var corriendo = loop.RunAsync(fin.Token); var recibiendo = sesion.ReceiveLoopAsync(fin.Token);
         try
         {
             var fabrica = (Task<bool>)Metodo("FabricarAsync").Invoke(bot, [transporte,sentidos,new TaskCompletionSource().Task,fin.Token])!;
-            Assert.True(await fabrica.WaitAsync(TimeSpan.FromSeconds(8)));
+            Assert.True(await fabrica.WaitAsync(TimeSpan.FromSeconds(25)));
             Assert.Equal(1,p.Inventory.Where(i=>i.ObjIndex==1333).Sum(i=>i.Amount));
             Assert.DoesNotContain(p.Inventory,i=>objetos.Contains(i.ObjIndex));
             Assert.Equal(950,p.Stamina);
             Assert.Equal(100,p.Skills[GameLimits.SkillHerreria]);
+            // AL LADO DEL YUNQUE Y CON EL MARTILLO PUESTO.
+            Assert.True(Math.Abs(p.Pos.X - 81) + Math.Abs(p.Pos.Y - 75) <= 2, $"quedó en {p.Pos.X},{p.Pos.Y}");
+            Assert.Contains(p.Inventory, i => i.ObjIndex == Bot.MartilloDeHerrero && i.Equipped);
         }
         finally
         {

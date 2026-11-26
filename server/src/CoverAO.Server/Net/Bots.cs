@@ -2580,8 +2580,9 @@ public sealed partial class Bot
         _ => null,
     };
 
-    /// <summary>La herramienta con la que fabrica, o 0 si no pide ninguna.</summary>
-    private short HerramientaDeFabricar => (short)(SuFabricacion?.Regla.Herramienta ?? 0);
+    /// <summary>La herramienta con la que fabrica, o 0 si no pide ninguna. El Herrero, el martillo: el servidor no lo pide para fabricar,
+    /// pero sin él no se abre la herrería en el yunque (ver <see cref="PonerseAlYunqueAsync"/>).</summary>
+    private short HerramientaDeFabricar => _clase == ClaseHerrero ? MartilloDeHerrero : (short)(SuFabricacion?.Regla.Herramienta ?? 0);
 
     /// <summary>
     /// LA HERRAMIENTA QUE LE FALTA, o 0: primero la de juntar y después la de fabricar. Ninguna clase nace con ellas —el
@@ -3403,7 +3404,7 @@ public sealed partial class Bot
         bool leFalta = FabricaParaVender(sentidos) || (EsPocionQueCuraElVeneno(primera) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere);
         if (!ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leFalta)) { PostergarFabricacion(); return false; }
 
-        short herramienta = (short)fab.Regla.Herramienta;
+        short herramienta = HerramientaDeFabricar;
         if (herramienta != 0 && tiene(herramienta) == 0) return false;
 
         // EN UN MAPA INSEGURO SE VA A FABRICAR A UNO SEGURO, como el que vuelve al pueblo a coser. Medido en `oficios3`: el
@@ -3420,6 +3421,9 @@ public sealed partial class Bot
                 PostergarFabricacion();
             return true;   // llegó: la vuelta que viene fabrica, ya en el mapa seguro
         }
+
+        // EL HERRERO, AL LADO DEL YUNQUE: ver `PonerseAlYunqueAsync`.
+        if (_clase == ClaseHerrero && !await PonerseAlYunqueAsync(transporte, sentidos, cerrada, ct)) { PostergarFabricacion(); return true; }
 
         // LA HERRAMIENTA VA PUESTA (el Costurero, la Olla): equiparla es un interruptor, así que sólo se manda si la
         // tiene guardada. El Druida la cambia por las Tijeras para juntar, y acá vuelve a ponerse la Olla.
