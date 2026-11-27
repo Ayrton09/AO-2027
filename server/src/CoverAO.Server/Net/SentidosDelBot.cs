@@ -436,6 +436,12 @@ public sealed class SentidosDelBot
         return null;
     }
 
+    /// <summary>Lo que había en la bóveda de ítems la última vez que la abrió (vacía si nunca la abrió).</summary>
+    public List<(byte Ranura, short Obj, short Cantidad)> Boveda()
+    {
+        lock (_candado) return _boveda.Select(b => (b.Key, b.Value.Obj, b.Value.Cantidad)).ToList();
+    }
+
     /// <summary>Cuántas veces se abrió la bóveda de ítems (el <c>BankStart</c>): sirve para esperar las ranuras.</summary>
     public int VecesQueVioLaBoveda { get { lock (_candado) return _vecesQueVioLaBoveda; } }
 

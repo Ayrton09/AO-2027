@@ -1097,6 +1097,8 @@ public sealed partial class Bot
             }
             // LA MONTURA ANTES QUE LAS COMPRAS: con el oro juntado, la compra de gustos se lo llevaba primero. Medido en la ronda 106:
             // Elmo tenía 317.400 y dejó 230.000 en el Hechicero de Rinkel. Ver `IrPorLaMonturaAsync`.
+            // EL EQUIPO QUE TIENE GUARDADO, ANTES QUE COMPRAR O PEDIR PRESTADO: ver `SacarElEquipoDeLaBovedaAsync`.
+            if (await SacarElEquipoDeLaBovedaAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await IrPorLaMonturaAsync(transporte, sentidos, cerrada, ct)) continue;
             // SIN NADA, EL PRÉSTAMO DEL BANCO: ver `PedirPrestamoAsync`.
             if (await PedirPrestamoAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -1670,11 +1672,13 @@ public sealed partial class Bot
                          && (ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
                                                                       (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
                                                    PlataDe(sentidos))
-                             || PescadorVaAVender(sentidos));
+                             || PescadorVaAVender(sentidos)
+                             // Y CON LA MOCHILA LLENA, AUNQUE SEA RICO: ver `ConLaMochilaLlena`.
+                             || ConLaMochilaLlena(sentidos.RanurasOcupadas().Count));
         short laQueFalta = HerramientaQueLeFalta(sentidos);
         bool faltaHerramienta = laQueFalta != 0;
         // EL ARMA PARA EL CAMINO: ver `LeFaltaElArmaDelCamino`.
-        bool faltaArma = LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma));
+        bool faltaArma = !TiraConArco(_clase) && LeFaltaElArmaDelCamino(sentidos.Nivel, LoMejorQueTiene(sentidos, EsArma));
         // Y LA ROPA DEL CAMINO: ver `LeFaltaLaRopaDelCamino`.
         bool faltaRopa = LeFaltaLaRopaDelCamino(sentidos.Nivel, TieneRopaPropia(sentidos));
 
@@ -5644,21 +5648,25 @@ public sealed partial class Bot
     public static bool TiraConArco(byte clase) => clase == GameLimits.ClaseCazador;
 
     /// <summary>
-    /// CON QUÉ TIRA: de lo que tiene —objeto, si está puesto, si se lo puede poner—, el arco —el puesto, o el que más pega— y las
-    /// flechas —las puestas, o las primeras—. null si le falta alguno de los dos.
+    /// CON QUÉ TIRA: de lo que tiene —objeto, si está puesto, si se lo puede poner—, el arco que más pega y las flechas que más pegan;
+    /// entre iguales, lo puesto. null si le falta alguno de los dos.
+    ///
+    /// <para>Antes se quedaba con lo puesto aunque tuviera algo mejor. El tester (27/11): que el Cazador use el mejor arco (el Compuesto,
+    /// el Reforzado y los que hace el Carpintero) y las mejores flechas (+1, +2, +3 y las del Carpintero).</para>
     /// </summary>
     public static (byte Arco, bool ArcoPuesto, byte Flechas, bool FlechasPuestas)? ArcoYFlechas(
         IEnumerable<(byte Ranura, ObjInfo Obj, bool Puesto, bool SeLoPuedePoner)> mochila)
     {
         (byte Ranura, bool Puesto, int Golpe)? arco = null;
-        (byte Ranura, bool Puesto)? flechas = null;
+        (byte Ranura, bool Puesto, int Golpe)? flechas = null;
+        static bool Mejor((byte Ranura, bool Puesto, int Golpe)? antes, bool puesto, int golpe) =>
+            antes is not { } a || golpe > a.Golpe || (golpe == a.Golpe && puesto && !a.Puesto);
         foreach (var (ranura, o, puesto, sePuede) in mochila)
         {
             if (!puesto && !sePuede) continue;
-            if (o.IsBow && (arco is not { } a || (puesto && !a.Puesto) || (puesto == a.Puesto && o.MaxHit > a.Golpe)))
-                arco = (ranura, puesto, o.MaxHit);
-            else if (o.IsAmmo && (flechas is not { } f || (puesto && !f.Puesto)))
-                flechas = (ranura, puesto);
+            int golpe = o.MinHit + o.MaxHit;
+            if (o.IsBow && Mejor(arco, puesto, golpe)) arco = (ranura, puesto, golpe);
+            else if (o.IsAmmo && Mejor(flechas, puesto, golpe)) flechas = (ranura, puesto, golpe);
         }
         return arco is { } conArco && flechas is { } conFlechas
             ? (conArco.Ranura, conArco.Puesto, conFlechas.Ranura, conFlechas.Puesto) : null;
@@ -5895,7 +5903,7 @@ public sealed partial class Bot
     /// <summary>¿Es un arma que se puede poner, que puede pagar y que el servidor no le rechazó? La del camino: ver
     /// <see cref="LeFaltaElArmaDelCamino"/>.</summary>
     private bool ArmaQueLeSirve(SentidosDelBot sentidos, short obj, double plata) =>
-        _entorno.Datos.Obj(obj) is { } o && EsArma(o) && LoPuedeUsar(o, sentidos.Nivel) && !_noSeLoPone.Contains(obj)
+        !TiraConArco(_clase) && _entorno.Datos.Obj(obj) is { } o && EsArma(o) && LoPuedeUsar(o, sentidos.Nivel) && !_noSeLoPone.Contains(obj)
         && LoPuedePagar(o.Value, plata);
 
     /// <summary>COMPRARSE LA ROPA DEL CAMINO: de las de la vitrina que le sirven y puede pagar, la que más defiende, y si ninguna
@@ -5943,7 +5951,9 @@ public sealed partial class Bot
         if (_entorno.Datos.Obj(obj) is not { } o || !LoPuedeUsar(o, sentidos.Nivel)) return false;
         if (o.IsKnuckles && !TiraConArco(_clase) && LoMejorQueTiene(sentidos, EsArma) == 0)
             return ElSaltoValeElViaje(ValorDeCombate(o), LoMejorQueTiene(sentidos, n => n.IsKnuckles));
-        foreach (var esDeEso in QueSePone)
+        // EL QUE TIRA CON ARCO MEJORA EL ARCO, NO EL ARMA DE MANO (`SuEquipo`). El tester (27/11): Gonzo, el Cazador, se compraba
+        // espadas, y en la bóveda tenía Spathas, Cimitarras y Mandobles; del arco sólo compraba uno si no tenía ninguno.
+        foreach (var esDeEso in SuEquipo)
             if (esDeEso(o) && ValorDeCombate(o) > LoMejorQueTiene(sentidos, esDeEso)
                 && ElSaltoValeElViaje(ValorDeCombate(o), LoMejorQueTiene(sentidos, esDeEso))) return true;
         return false;
@@ -5961,7 +5971,7 @@ public sealed partial class Bot
         if (_acompana is not null) return false;
         double plata = PlataParaGustos(sentidos);
         if (plata <= 0 || !sentidos.Comerciando) return false;
-        foreach (var esDeEso in QueSePone)
+        foreach (var esDeEso in SuEquipo)
         {
             Charlar(transporte, sentidos);
             if (_acompana is not null) return false;
@@ -6093,6 +6103,14 @@ public sealed partial class Bot
     public const int PescadoParaVender = 500;
 
     private static bool EsPescado(short obj) => obj is Pargo or 544 or 545 or 546;
+
+    /// <summary>
+    /// ¿LA MOCHILA ESTÁ LLENA? Entonces el viaje para vender vale aunque sea rico: en el pueblo vende el botín y guarda en la bóveda lo
+    /// que no usa. El tester (27/11): "hay otros que salen con todo el inventario lleno, no guardan nada". En su base, Ciro, Guerrero de
+    /// nivel 22 con 1,58 millones encima, tenía las 25 ranuras ocupadas (45 Cimitarras, 6343 pieles de lobo); para el rico el viaje sólo
+    /// para vender no valía (<see cref="ValeElViajeParaVender"/>) y con la mochila llena no compraba nada, así que no pasaba por el pueblo.
+    /// </summary>
+    public static bool ConLaMochilaLlena(int ranurasOcupadas) => ranurasOcupadas >= GameLimits.MaxInventorySlots;
 
     public static bool ValeElViajeParaVender(long loQueSacaria, int oro) => loQueSacaria > 0 && loQueSacaria * VecesElOroParaVender >= oro;
 

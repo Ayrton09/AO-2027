@@ -58,13 +58,21 @@ public class ElCazadorTiraConArcoTests
     }
 
     [Fact]
-    public void Se_queda_con_lo_puesto_y_si_no_con_el_arco_que_mas_pega()
+    public void El_arco_y_las_flechas_que_mas_pegan_y_entre_iguales_lo_puesto()
     {
         Assert.Equal(((byte)1, false, (byte)3, false),
                      Bot.ArcoYFlechas(new[] { ((byte)1, Arco, false, true), ((byte)2, Espada, false, true), ((byte)3, Flechas, false, true) }));
         Assert.Equal(((byte)2, false, (byte)3, true),
                      Bot.ArcoYFlechas(new[] { ((byte)1, Arco, false, true), ((byte)2, ArcoMejor, false, true), ((byte)3, Flechas, true, true) }));
-        Assert.Equal(((byte)1, true, (byte)3, true),
+        // Con el Arco puesto y uno mejor en la mochila, el mejor (el tester, 27/11).
+        Assert.Equal(((byte)2, false, (byte)3, true),
                      Bot.ArcoYFlechas(new[] { ((byte)1, Arco, true, true), ((byte)2, ArcoMejor, false, true), ((byte)3, Flechas, true, true) }));
+        Assert.Equal(((byte)1, true, (byte)3, true),
+                     Bot.ArcoYFlechas(new[] { ((byte)1, Arco, true, true), ((byte)2, Arco, false, true), ((byte)3, Flechas, true, true) }));
+        // Y las flechas que más pegan, aunque estén puestas otras.
+        Assert.Equal(((byte)1, true, (byte)4, false),
+                     Bot.ArcoYFlechas(new[] { ((byte)1, Arco, true, true), ((byte)3, Flechas, true, true), ((byte)4, FlechasMejores, false, true) }));
     }
+
+    private static readonly ObjInfo FlechasMejores = Obj(5, objType: 32, maxHit: 12);
 }
