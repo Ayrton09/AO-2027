@@ -10,6 +10,7 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - El bot que se queda sin nada después de morir saca de la bóveda lo mejor que tiene guardado para ponerse, antes de comprar o pedir prestado.
 - Con la mochila llena, el bot va al pueblo a vender y a guardar en el banco aunque tenga mucha plata. Antes el rico salía a cazar con las 25 ranuras ocupadas.
 - El bot que muere sin la runa en un lugar desde el que no llega a ningún pueblo que le venda (por ejemplo, un ciudadano o un renegado en las Ruinas del Destino) vuelve a su hogar en vez de revivir ahí. Antes revivía con el sacerdote de ese lugar y se quedaba quieto, desnudo, sin poder comprar.
+- Los bots entran a cada mapa por el lado desde el que se llega caminando adonde van. Antes, a veces entraban por una franja del borde separada por una pared y se volvían: así el Pescador que perdía la caña no llegaba nunca al que la vende en el Puerto de Rinkel.
 - El Cazador ya no compra armas de mano. Mejora el arco (el Compuesto, el Reforzado y los que hace el Carpintero) en las tiendas y en la subasta, y se pone siempre el mejor arco y las mejores flechas que tiene.
 
 ## 1.1.2 (2026-11-27)
