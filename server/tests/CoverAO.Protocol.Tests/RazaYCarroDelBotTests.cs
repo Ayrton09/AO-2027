@@ -113,4 +113,29 @@ public class RazaYCarroDelBotTests
         Assert.NotEqual(Carro, LeFalta(b, s));
         Assert.False(NoLoVende(b, Carro));
     }
+
+    /// <summary>Ronda 177 (27/11): Dalia, rica, pasó de 693 a 1.352 pargos sin vender uno. Con 500 de más va a vender igual.</summary>
+    [Theory]
+    [InlineData(1_352, true)]
+    [InlineData(300, false)]
+    public void El_pescador_va_a_vender_el_pescado_aunque_sea_rico(short pargos, bool va)
+    {
+        var (b, s) = Preparar(11, nivel: 25);
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, 139, pargos, false, 0, 1));
+        Assert.Equal(va, (bool)typeof(Bot).GetMethod("PescadorVaAVender", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(b, [s])!);
+    }
+
+    [Fact]
+    public void El_pescador_novato_compra_la_cana_de_repuesto()
+    {
+        const short Cana = 881;
+        var (b, s) = Preparar(11, nivel: 12);
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, Cana, 1, true, 0, 1));
+        Assert.Equal(Cana, LeFalta(b, s));
+        s.Recibir(ServerMessages.ChangeInventorySlot(1, Cana, 2, true, 0, 1));
+        Assert.Equal(0, LeFalta(b, s));
+        var (rico, sr) = Preparar(11, nivel: 25);   // pasado el 15 ya no la busca: no llega a la tienda
+        sr.Recibir(ServerMessages.ChangeInventorySlot(1, Cana, 1, true, 0, 1));
+        Assert.Equal(0, LeFalta(rico, sr));
+    }
 }
