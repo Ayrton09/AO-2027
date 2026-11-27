@@ -131,7 +131,8 @@ public sealed partial class Bot
     }
 
     /// <summary>Cuánta leña junta antes de dejar de talar: la del lote, o la reserva de siempre.</summary>
-    private int InsumoQueGuardaDe(SentidosDelBot s) => _clase == ClaseCarpintero ? Math.Max(InsumoQueGuarda, LenaDelLote(s)) : InsumoQueGuarda;
+    private int InsumoQueGuardaDe(SentidosDelBot s) => _clase == ClaseCarpintero ? Math.Max(InsumoQueGuarda, LenaDelLote(s))
+        : _clase == ClaseDruida && _jornadaDeOficio ? RaicesDeLaJornada : InsumoQueGuarda;
 
     private int LenaQueLeFalta(SentidosDelBot s) => Math.Max(0, LenaDelLote(s) - s.CuantoTiene(i => i == Lena));
 

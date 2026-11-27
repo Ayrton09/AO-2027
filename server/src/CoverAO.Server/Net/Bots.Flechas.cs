@@ -43,6 +43,7 @@ public sealed partial class Bot
     private short CantidadPorPaquete(SentidosDelBot s, short receta, Oficios.Fabricacion regla, Func<int, int> tiene) =>
         CarpinteroFabricaParaVender(s) && receta == _loteDeCarpinteria && EsFlechaDeCarpintero(_entorno.Datos, receta)
             ? (short)Math.Clamp(Math.Min(CuantasAlcanzan(_entorno.Datos, receta, regla, tiene), FlechasPorLote - tiene(receta)), 1, FlechasPorPaquete)
+            : DruidaSeLaHace(s, receta) ? (short)Math.Clamp(CuantasAlcanzan(_entorno.Datos, receta, regla, tiene), 1, PocionesPorPaquete)
             : (short)1;
 
     /// <summary>¿Le falta el arco? El que tira con arco (<see cref="TiraConArco"/>) y no tiene ninguno que se pueda poner.</summary>

@@ -743,7 +743,7 @@ public sealed partial class Bot
         // Cuánto va a jugar esta vez. Cada bot elige distinto y en cada sesión distinto, como cualquiera.
         long finDeSesion = Environment.TickCount64 + _rng.Next(SesionMinM, SesionMaxM + 1) * 60_000L;
         // Y SI ESTA VEZ SE DEDICA AL OFICIO: ver `JornadasDeOficio`.
-        _jornadaDeOficio = TieneOficioPrincipal(_clase) && _rng.Next(100) < JornadasDeOficio;
+        _jornadaDeOficio = _rng.Next(100) < (TieneOficioPrincipal(_clase) ? JornadasDeOficio : _clase == ClaseDruida ? JornadasDelDruida : 0);
         if (_jornadaDeOficio) Console.WriteLine($"[bot {Nombre}] jornada de oficio");
         RetirarLoDelOficioAlEmpezar();
 
@@ -3415,7 +3415,8 @@ public sealed partial class Bot
         if (ElegirFabricacion(sentidos, fab.Recetas, fab.Regla, skill, tiene) is not { } primera) { PostergarFabricacion(); return false; }
         // FABRICA PARA APRENDER, O PARA LO QUE LE FALTA. Con la skill en el tope de su nivel otra cuchara no le enseña nada
         // y le come la energía de pelear; el Druida igual se hace el antídoto que le falta.
-        bool leFalta = FabricaParaVender(sentidos) || (EsPocionQueCuraElVeneno(primera) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere);
+        bool leFalta = FabricaParaVender(sentidos) || DruidaSeLaHace(sentidos, primera)
+                       || (EsPocionQueCuraElVeneno(primera) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere);
         if (!ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leFalta)) { PostergarFabricacion(); return false; }
 
         short herramienta = HerramientaDeFabricar;
@@ -3459,7 +3460,8 @@ public sealed partial class Bot
             if (ElegirFabricacion(sentidos, fab.Recetas, fab.Regla, ahora, tiene) is not { } receta) break;
             // Y SE LEVANTA CUANDO YA NO APRENDE: medido en `oficios1`, la primera de la tanda llevó al Carpintero al tope del
             // nivel y las otras cinco se fabricaron igual, gastando leña y energía por nada.
-            bool leSirve = FabricaParaVender(sentidos) || (EsPocionQueCuraElVeneno(receta) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere);
+            bool leSirve = FabricaParaVender(sentidos) || DruidaSeLaHace(sentidos, receta)
+                           || (EsPocionQueCuraElVeneno(receta) && sentidos.Suma(AntidotoPropio) < AntidotosQueQuiere);
             if (!ValeFabricar(ahora, SkillProgression.CapForLevel(sentidos.Nivel), leSirve)) break;
             int antes = tiene(receta);
             short cantidad = CantidadPorPaquete(sentidos, receta, fab.Regla, tiene);
@@ -3637,8 +3639,8 @@ public sealed partial class Bot
 
     private (int Mapa, long Hasta) _pausaDeOficio;
 
-    private bool PriorizaTandasDeOficio(int nivel) => TieneOficioPrincipal(_clase)
-        && (_jornadaDeOficio || SkillProgression.CapForLevel(nivel) == SkillProgression.MaxSkillPoints);
+    private bool PriorizaTandasDeOficio(int nivel) => (TieneOficioPrincipal(_clase) || _clase == ClaseDruida)
+        && (_jornadaDeOficio || (TieneOficioPrincipal(_clase) && SkillProgression.CapForLevel(nivel) == SkillProgression.MaxSkillPoints));
 
     /// <summary>
     /// LAS JORNADAS DE OFICIO (pedido del tester, 25/11: "que cada tanto farmeen para pasar de nivel y cada tanto se pongan a hacer sus

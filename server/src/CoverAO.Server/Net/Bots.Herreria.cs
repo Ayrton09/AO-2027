@@ -261,6 +261,8 @@ public sealed partial class Bot
             if (CuantasAlcanzan(_entorno.Datos, lote, regla, tiene) > 0) return lote;
             if (skill >= SkillProgression.CapForLevel(s.Nivel)) return null;
         }
+        // EL DRUIDA, SUS ROJAS Y AZULES: ver `PocionQueSeHace`.
+        if (PocionQueSeHace(s, recetas, regla, skill, tiene) is { } pocion) return pocion;
         // EL SASTRE, SU PRENDA: ver `PrendaDeSastreria`. Sin las pieles, las busca; para aprender, sólo si la skill no está en el tope.
         if (SastreFabricaParaVender(s) && _prendaDeSastreria is { } prenda)
         {
