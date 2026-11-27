@@ -178,6 +178,12 @@ public sealed class Navegante
         // el navegante no tenía camino.
         var alcanzables = desde is { } d ? Alcanzables(mapaActual, d) : null;
 
+        // LA ENTRADA QUE LLEGA A LA META CAMINANDO, ANTES QUE LA QUE QUEDA A TRES BALDOSAS: el radio es el del mostrador, y entre la
+        // entrada y la meta puede haber una pared. Medido contra la data (27/11): el pueblo del Puerto de Rinkel (100) se elegía por
+        // la entrada (76,8), y desde el 101 el viaje entraba por (25,8), una franja del borde a tres baldosas de ahí pero del otro
+        // lado de la muralla. Dalia, la Pescadora sin caña, llegaba, no encontraba al Pescador y se volvía en cada ronda.
+        ((byte X, byte Y) Puerta, int Saltos)? deCerca = null;
+
         // Y SI EL DESTINO ES EL MAPA DE AL LADO Y SE SABE ADÓNDE SE VA, LA PUERTA SE ELIGE POR LO QUE HAY DEL OTRO
         // LADO: la primera que se alcanza puede dejar en una zona desde la que no se llega a la meta. Es la misma
         // cuenta que hace `DondeHay`; sin ella el viaje entraba por otra puerta que la que se había elegido.
@@ -190,8 +196,10 @@ public sealed class Navegante
                 if (!_datos.MapExits.TryGetValue((mapaActual, x, y), out var llegada)) continue;
                 (byte X, byte Y) entrada = ((byte)llegada.DestX, (byte)llegada.DestY);
                 if (probadas.Any(z => z.Contains(Clave(entrada.X, entrada.Y)))) continue;
-                probadas.Add(Alcanzables(destino, entrada));
-                if (HayComoLlegar(destino, entrada, objetivo, alcance) is not null) return ((x, y), 1);
+                var zona = Alcanzables(destino, entrada);
+                probadas.Add(zona);
+                if (zona.Contains(Clave(objetivo.X, objetivo.Y))) return ((x, y), 1);
+                if (deCerca is null && HayComoLlegar(destino, entrada, objetivo, alcance) is not null) deCerca = ((x, y), 1);
                 if (ZonasGrandes(probadas) >= ZonasPorMapa) break;
             }
         }
@@ -215,11 +223,13 @@ public sealed class Navegante
             foreach (var (mapa, saltos, entrada, primera) in MapasPorSuEntrada(mapaActual, origen, pisable, topeDeSaltos))
             {
                 if (mapa != mapaDestino) continue;
-                if (meta is not { } adonde || HayComoLlegar(mapa, entrada, adonde, alcance) is not null) return (primera, saltos);
+                if (meta is not { } adonde || entrada == adonde || Camino(mapa, entrada, adonde) is not null) return (primera, saltos);
+                if (deCerca is null && HayComoLlegar(mapa, entrada, adonde, alcance) is not null) deCerca = (primera, saltos);
                 cualquiera ??= (primera, saltos);
             }
-            return soloALaMeta && meta is not null ? null : cualquiera;
+            return deCerca ?? (soloALaMeta && meta is not null ? null : cualquiera);
         }
+        if (deCerca is { } alLado) return alLado;
 
         // SIN SABER DESDE DÓNDE no hay pies que valgan: queda el grafo de mapas pelado. Es lo que se responde a
         // un "¿se llega de acá a allá?" sin un personaje parado en ningún lado.
