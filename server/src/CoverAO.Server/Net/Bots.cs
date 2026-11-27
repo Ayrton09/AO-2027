@@ -2849,7 +2849,8 @@ public sealed partial class Bot
             && !(EsPielParaVender(obj) && sentidos.CuantoTiene(i => i == obj) > PielesQueGuarda))) return false;
         if (_clase == ClaseSastre && EsPielDeSastre(obj)) return false;
         // SALVO LO QUE SU CLASE NO PUEDE USAR: botín de otra sesión que quedó "de casa" y le llena la mochila. Ver `SuClaseNoLoUsa`.
-        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo && !SuClaseNoLoUsa(obj)) || EsHerramientaDeSuOficio(obj))
+        if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !EsCosturaParaElMercader(obj) && !enElPozo && !SuClaseNoLoUsa(obj))
+            || EsHerramientaDeSuOficio(obj))
             return false;
         // NI LA MONTURA: se compra a mitad de sesión, así que no está en lo que trajo de casa, y vale 280.000. Medido en la ronda 110:
         // los cuatro que volvieron de Tiama con la suya la pusieron en subasta al minuto. Ver `IrPorLaMonturaAsync`.

@@ -48,6 +48,11 @@ public sealed partial class Bot
             .Where(o => EsDeSastreriaParaVender(datos, o.Index) && o.SkillTailoring <= skill && enStock(o.Index) == 0)
             .OrderBy(o => o.SkinWolf + o.SkinBrownBear + o.SkinPolarBear).Select(o => (short?)o.Index).FirstOrDefault();
 
+    /// <summary>¿Es de lo que cose el Sastre para el mercader? Las Vestimentas (y lo que valga algo en el obj.dat): no se guardan en el
+    /// banco y se venden aunque sean de otra sesión. Medido en las rondas 182 y 183 (27/11): Petra guardaba en el banco las 14 que hizo.</summary>
+    private bool EsCosturaParaElMercader(short obj) =>
+        _clase == ClaseSastre && _entorno.Datos.TailorItems.Contains(obj) && !EsDeSastreriaParaVender(_entorno.Datos, obj);
+
     private bool EsPielParaVender(short obj) => _clase != ClaseSastre && EsPielDeSastre(obj);
 
     private bool EsSastreriaParaVender(short obj) => _clase == ClaseSastre && EsDeSastreriaParaVender(_entorno.Datos, obj);

@@ -71,7 +71,7 @@ public sealed partial class Bot
     /// y las herramientas del oficio.</summary>
     private bool QuedaEnLaMochila(SentidosDelBot sentidos, short obj) =>
         EsHerramientaDeSuOficio(obj) || ParaPublicar(sentidos, obj) || (EsProduccionMetalurgica(obj) && !GuardaLoDelOficio(sentidos, obj))
-        || _comprados.Contains(obj);
+        || EsCosturaParaElMercader(obj) || _comprados.Contains(obj);
 
     /// <summary>Al terminar las compras en un pueblo con banquero: abre la bóveda y deja <see cref="LoQueGuarda"/>.</summary>
     private async Task GuardarLoQueNoUsaAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
