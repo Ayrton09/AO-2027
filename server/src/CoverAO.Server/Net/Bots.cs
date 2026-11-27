@@ -4947,7 +4947,8 @@ public sealed partial class Bot
     private bool VuelveAlHogarDeMuerto(TransporteDeBot transporte, SentidosDelBot sentidos)
     {
         if (sentidos.Vivo) { _volvioAlHogarDeMuerto = false; return false; }
-        if (_volvioAlHogarDeMuerto || Environment.TickCount64 < _proximoRegresoAlHogar
+        // Sin el bando todavía (el `MiniStats` no llegó), nada: sin bando ningún mercader le vende.
+        if (_volvioAlHogarDeMuerto || _miBando == 0 || Environment.TickCount64 < _proximoRegresoAlHogar
             || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) != 0) return false;
         _volvioAlHogarDeMuerto = true;
         if (!_hayPuebloDesde.TryGetValue(sentidos.Mapa, out bool hay))
