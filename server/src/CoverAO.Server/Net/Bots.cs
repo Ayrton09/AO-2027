@@ -3767,6 +3767,12 @@ public sealed partial class Bot
         // el pedido, que es lo que hace el ciclo de arriba. El alcance se mide POR EJE, igual que lo mide el
         // servidor: con Manhattan, un cadáver a siete baldosas en Y se quedaba quieto pidiendo algo que nunca
         // iba a llegar.
+        // Y DONDE NADIE LE VENDE, NI EL SACERDOTE: vuelve a casa (ver `VuelveAlHogarDeMuerto`).
+        if (VuelveAlHogarDeMuerto(transporte, sentidos))
+        {
+            await Task.Delay(RebanadaDePausaMs, ct);
+            return !cerrada.IsCompleted;
+        }
         // Salvo en la ciudad del otro bando: ahí revive entre los guardias que lo mataron.
         if (!HayGuardiaQueLoAtaca(sentidos.Mapa) && sentidos.MasCercano(EsSacerdote) is { } c)
         {
@@ -4916,6 +4922,42 @@ public sealed partial class Bot
     }
 
     private int _viajesAlTemploFallidos;
+
+    /// <summary>
+    /// ¿DESDE ESE MAPA HAY UN PUEBLO QUE LE VENDA, por donde no hay guardias que vayan por él? El navegante, a
+    /// <see cref="SaltosDelRescate"/> mapas.
+    /// </summary>
+    public static bool HayPuebloQueLeVendaDesde(Navegante mapas, GameData datos, ServerIni? ini, byte bando, int nivel, int mapa, (byte X, byte Y) desde) =>
+        mapas.PuebloMasCercano(mapa, desde, m => ElMercaderLeVende(ini, datos.MapBattleMode(m), bando) && !HayGuardiaQueVaPor(m, bando, nivel, datos, ini),
+                               f => datos.Npc(f) is { StockItems.Count: > 0 }, PisableDelRescate(datos, ini, bando, nivel), SaltosDelRescate) is not null;
+
+    private readonly Dictionary<int, bool> _hayPuebloDesde = new();
+    private long _proximoRegresoAlHogar;
+    private bool _volvioAlHogarDeMuerto;
+
+    /// <summary>
+    /// EL MUERTO QUE REVIVIRÍA DONDE NADIE LE VENDE VUELVE A CASA (<c>RegresarHogar</c>, que el original le da al muerto). El tester
+    /// (27/11, sobre la 1.1.1): Amparo, renegada de nivel 20, desnuda y con 600 mil encima en las Ruinas del Destino (839), sin saber qué
+    /// hacer. Contra la data, con el Server.ini que se distribuye: para un ciudadano o un renegado pasado el novato, el 839, el 770 y el
+    /// 746 no tienen salida a pie a un pueblo que le venda (el único, la Avanzada republicana, tiene guardias que van por él, y el resto del
+    /// mundo queda detrás de la cuna). El que moría ahí revivía con el sacerdote del 839 sin la runa, que se le había caído, y no salía
+    /// más. Medido en la ronda 195 (27/11): Quim, ciudadano, desnudo y con 600 mil, veinte minutos en el 770 "sin tienda".
+    /// </summary>
+    /// <para>Una vez por muerte, y sólo sin la runa: con ella revive acá y la usa.</para>
+    private bool VuelveAlHogarDeMuerto(TransporteDeBot transporte, SentidosDelBot sentidos)
+    {
+        if (sentidos.Vivo) { _volvioAlHogarDeMuerto = false; return false; }
+        if (_volvioAlHogarDeMuerto || Environment.TickCount64 < _proximoRegresoAlHogar
+            || sentidos.Ranura(obj => _entorno.Datos.Obj(obj) is { ObjType: ObjTypeRuna }) != 0) return false;
+        _volvioAlHogarDeMuerto = true;
+        if (!_hayPuebloDesde.TryGetValue(sentidos.Mapa, out bool hay))
+            _hayPuebloDesde[sentidos.Mapa] = hay = HayPuebloQueLeVendaDesde(_entorno.Mapas, _entorno.Datos, _entorno.Ini, _miBando,
+                                                                            sentidos.Nivel, sentidos.Mapa, sentidos.Posicion);
+        if (hay) return false;
+        _proximoRegresoAlHogar = Environment.TickCount64 + EsperaDeLaBovedaMs;
+        Console.WriteLine($"[bot {Nombre}] muerto en el {sentidos.Mapa}, donde nadie le vende: vuelve al hogar");
+        return transporte.Mandar(Paquete(ClientPacketId.RegresarHogar, _ => { }));
+    }
 
     /// <summary>Cuántos viajes fallidos al templo antes de tirar la toalla y volver a casa.</summary>
     private const int ViajesAntesDeVolverAlHogar = 6;
