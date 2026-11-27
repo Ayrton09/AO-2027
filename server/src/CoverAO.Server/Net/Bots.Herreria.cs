@@ -206,21 +206,28 @@ public sealed partial class Bot
     public const short MartilloDeHerrero = 389;
 
     /// <summary>
-    /// EL PIQUETE DE REPUESTO (el autor, 26/11): el piquete sólo se vende detrás de la cuna, así que desde el nivel 16 el Minero que lo
-    /// pierde al morir en una mina no lo vuelve a conseguir (en las rondas 180 y 181 Jonas, con 146.000 de oro, no minó nada). De novato
-    /// compra otro y lo deja en el banco; si se queda sin, lo retira.
+    /// LA HERRAMIENTA DE REPUESTO (el autor, 26/11): el piquete y la caña sólo se venden en tiendas a las que, pasado el nivel 15, ya no se
+    /// llega (el camino corto cruza la cuna), así que el Minero o el Pescador que la pierde al morir no la vuelve a conseguir. En las
+    /// rondas 180 y 181 Jonas, con 146.000 de oro, no minó nada; en 13 de 14 rondas Dalia murió, perdió la caña y no pescó más, con
+    /// 477.000. De novato compra otra y la deja en el banco; si se queda sin, la retira. El hacha y las tijeras se siguen consiguiendo.
     /// </summary>
-    private bool FaltaElPiqueteDeRepuesto(SentidosDelBot s) => _clase == ClaseMinero && s.Nivel <= GameLimits.NewbieMaxLevel
-        && s.CuantoTiene(o => o == PiqueteDeMinero) == 1 && s.EnLaBoveda(PiqueteDeMinero) is null;
+    private short HerramientaConRepuesto => _clase switch { ClaseMinero => PiqueteDeMinero, ClasePescador => CanaDePesca, _ => 0 };
 
-    private bool GuardaElPiqueteDeRepuesto(SentidosDelBot s, short obj) =>
-        _clase == ClaseMinero && obj == PiqueteDeMinero && s.CuantoTiene(o => o == PiqueteDeMinero) >= 2;
+    private bool FaltaElRepuesto(SentidosDelBot s) => HerramientaConRepuesto is var h and not 0 && s.Nivel <= GameLimits.NewbieMaxLevel
+        && s.CuantoTiene(o => o == h) == 1 && s.EnLaBoveda(h) is null;
 
-    /// <summary>Sin piquete, a retirar el del banco, salvo que la última vez que vio la bóveda no estaba.</summary>
-    private void BuscarElPiqueteDelBanco(SentidosDelBot s)
+    private bool GuardaElRepuesto(SentidosDelBot s, short obj) =>
+        HerramientaConRepuesto is var h and not 0 && obj == h && s.CuantoTiene(o => o == h) >= 2;
+
+    /// <summary>Sin la herramienta, a retirar la del banco, salvo que la última vez que vio la bóveda no estaba.</summary>
+    private void BuscarElRepuestoDelBanco(SentidosDelBot s)
     {
-        if (_clase != ClaseMinero || s.CuantoTiene(o => o == PiqueteDeMinero) > 0 || _porRetirar.Contains(PiqueteDeMinero)) return;
-        if (s.VecesQueVioLaBoveda == 0 || s.EnLaBoveda(PiqueteDeMinero) is not null) _porRetirar.Add(PiqueteDeMinero);
+        if (HerramientaConRepuesto is not (var h and not 0) || s.CuantoTiene(o => o == h) > 0 || _porRetirar.Contains(h)) return;
+        if (s.VecesQueVioLaBoveda == 0 || s.EnLaBoveda(h) is not null)
+        {
+            _porRetirar.Add(h);
+            _proximoMercadoDelOficio = Math.Min(_proximoMercadoDelOficio, Environment.TickCount64);
+        }
     }
 
     /// <summary>Una receta concreta por vez: termina de abastecerla antes de comprar materiales para otra.</summary>
@@ -306,9 +313,10 @@ public sealed partial class Bot
     private async Task<bool> MercadoDelOficioAsync(TransporteDeBot t, SentidosDelBot s, Task cerrada, CancellationToken ct)
     {
         bool porFlechas = CazadorBuscaFlechas(s);
-        if ((!EsFabricanteMetalurgico && _clase is not (ClaseCarpintero or ClaseLenador or ClaseSastre) && !porFlechas && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
+        BuscarElRepuestoDelBanco(s);
+        bool porElRepuesto = HerramientaConRepuesto != 0 && _porRetirar.Contains(HerramientaConRepuesto);
+        if ((!EsFabricanteMetalurgico && _clase is not (ClaseCarpintero or ClaseLenador or ClaseSastre) && !porFlechas && !porElRepuesto && s.Nivel < Leveling.MaxLevel) || Environment.TickCount64 < _proximoMercadoDelOficio || Urge(s) || HostilCerca(s)) return false;
         AnotarLoQueDejoLaSubasta(s);
-        BuscarElPiqueteDelBanco(s);
         bool vende = s.RanurasOcupadas().Select(s.QueHayEn).Distinct().Any(o => EsProduccionMetalurgica(o)
             && CantidadParaSubastar(s, o, s.CuantoTiene(i => i == o)) > 0 && SePuedeRepublicar(o));
         bool compra = PlataParaElEquipo(s) >= PlataParaMirarLaSubasta && (_clase == ClaseHerrero

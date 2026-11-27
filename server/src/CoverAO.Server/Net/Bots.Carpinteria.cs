@@ -40,7 +40,7 @@ public sealed partial class Bot
     /// leña y lo que tiene a medio hacer. Lo terminado ya lo publicó al pasar por la subasta.</summary>
     private bool GuardaLoDelOficio(SentidosDelBot s, short obj) =>
         (!_jornadaDeOficio && CarpinteroCompraLaLena(s) && (obj == Lena || EsCarpinteriaParaVender(obj)) && !ParaPublicar(s, obj))
-        || GuardaElPiqueteDeRepuesto(s, obj);
+        || GuardaElRepuesto(s, obj);
 
     /// <summary>Al arrancar la jornada, lo del oficio que dejó en el banco pasa a retirarse en la primera visita; en otra sesión, no
     /// (salvo lo comprado, que el Centro le debe).</summary>

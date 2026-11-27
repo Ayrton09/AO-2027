@@ -88,7 +88,7 @@ public class RazaYCarroDelBotTests
         s.Recibir(ServerMessages.ChangeInventorySlot(1, Piquete, 1, false, 0, 1));
         Assert.Equal(Carro, LeFalta(b, s));
         s.Recibir(ServerMessages.ChangeInventorySlot(2, Carro, 1, false, 0, 1));
-        // Y DE NOVATO, EL PIQUETE DE REPUESTO para el banco (ver `FaltaElPiqueteDeRepuesto`).
+        // Y DE NOVATO, EL PIQUETE DE REPUESTO para el banco (ver `FaltaElRepuesto`).
         Assert.Equal(Piquete, LeFalta(b, s));
         s.Recibir(ServerMessages.ChangeInventorySlot(1, Piquete, 2, false, 0, 1));
         Assert.Equal(0, LeFalta(b, s));

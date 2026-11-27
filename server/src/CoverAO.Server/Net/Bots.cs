@@ -1667,9 +1667,10 @@ public sealed partial class Bot
         // `Sirve` lo mandaba al que le compra la leña: llegaba, no compraba nada y a los dos minutos volvía (ronda 40, 05/10).
         bool viajaPorGustos = _acompana is null;
         bool vaAVender = hayQueVender && (viajaPorGustos || PlataDe(sentidos) < MonedasDeApuro)
-                         && ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
-                                                                     (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
-                                                  PlataDe(sentidos));
+                         && (ValeElViajeParaVender(sentidos.LoQueVale(obj => EsBotin(sentidos, obj),
+                                                                      (obj, n) => Comercio.PrecioDeVenta(_entorno.Datos.Obj(obj), n)),
+                                                   PlataDe(sentidos))
+                             || PescadorVaAVender(sentidos));
         short laQueFalta = HerramientaQueLeFalta(sentidos);
         bool faltaHerramienta = laQueFalta != 0;
         // EL ARMA PARA EL CAMINO: ver `LeFaltaElArmaDelCamino`.
@@ -2436,9 +2437,9 @@ public sealed partial class Bot
                      ? new[] { HerramientaDeSuOficio, HerramientaDeFabricar, CarroQueLeSirve(sentidos.Nivel) } : Array.Empty<short>())
         {
             if (SeSumoAUnaSalida()) return compro;
-            // Y EL PIQUETE DE REPUESTO: ver `FaltaElPiqueteDeRepuesto`.
+            // Y LA DE REPUESTO: ver `FaltaElRepuesto`.
             int tiene = sentidos.CuantoTiene(obj => obj == herramienta);
-            if (herramienta == 0 || tiene > (herramienta == PiqueteDeMinero && FaltaElPiqueteDeRepuesto(sentidos) ? 1 : 0)
+            if (herramienta == 0 || tiene > (herramienta == HerramientaConRepuesto && FaltaElRepuesto(sentidos) ? 1 : 0)
                 || sentidos.EnLaTienda(obj => obj == herramienta) is not { } h) continue;
             transporte.Mandar(Paquete(ClientPacketId.CommerceBuy, w => w.WriteByte(h.Ranura).WriteInteger(1)));
             await Task.Delay(_rng.Next(600, 1_400), ct);
@@ -2603,7 +2604,7 @@ public sealed partial class Bot
         if (juntar > 0 && sentidos.CuantoTiene(obj => obj == juntar) == 0) return juntar;
         if (fabricar > 0 && sentidos.CuantoTiene(obj => obj == fabricar) == 0) return fabricar;
         if (carro > 0 && sentidos.CuantoTiene(obj => obj == carro) == 0) return carro;
-        if (FaltaElPiqueteDeRepuesto(sentidos)) return PiqueteDeMinero;
+        if (FaltaElRepuesto(sentidos)) return HerramientaConRepuesto;
         return 0;
     }
 
@@ -6079,6 +6080,18 @@ public sealed partial class Bot
     /// por 1.450 y 1.223, y dos veces por corrida iba al Vendedor General sin comprar nada; Aldo, con unas cien mil, cinco minutos
     /// por cada tanda de leña.
     /// </summary>
+    /// <summary>
+    /// ¿EL PESCADOR VA A VENDER EL PESCADO, aunque sea rico? Con <see cref="PescadoParaVender"/> o más de lo que guarda para comer: es su
+    /// oficio (el tester, 25/11: "venderle comida al vendedor de comida"). Medido en la ronda 177 (27/11): Dalia, con 477.000 monedas,
+    /// pasó de 693 a 1.352 pargos sin vender uno, porque para el rico el viaje sólo para vender no vale (<see cref="ValeElViajeParaVender"/>).
+    /// </summary>
+    private bool PescadorVaAVender(SentidosDelBot s) => _clase == ClasePescador
+        && s.Suma(obj => EsPescado(obj) && EsBotin(s, obj) ? 1 : 0) - ComidaQueSeLleva(s.Nivel) / Math.Max(1, PuntosDeComida(Pargo)) >= PescadoParaVender;
+
+    public const int PescadoParaVender = 500;
+
+    private static bool EsPescado(short obj) => obj is Pargo or 544 or 545 or 546;
+
     public static bool ValeElViajeParaVender(long loQueSacaria, int oro) => loQueSacaria > 0 && loQueSacaria * VecesElOroParaVender >= oro;
 
     private const int VecesElOroParaVender = 20;
