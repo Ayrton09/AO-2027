@@ -2,6 +2,16 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.1.3 (en preparación)
+
+### Bots
+
+- Los bots se ponen el equipo que compran. Antes lo guardaban en el banco antes de ponérselo y en el viaje siguiente lo volvían a comprar. Ahora en el banco guardan sólo lo repetido y lo que es peor que lo que usan.
+- El bot que se queda sin nada después de morir saca de la bóveda lo mejor que tiene guardado para ponerse, antes de comprar o pedir prestado.
+- Con la mochila llena, el bot va al pueblo a vender y a guardar en el banco aunque tenga mucha plata. Antes el rico salía a cazar con las 25 ranuras ocupadas.
+- El bot que muere sin la runa en un lugar desde el que no llega a ningún pueblo que le venda (por ejemplo, un ciudadano o un renegado en las Ruinas del Destino) vuelve a su hogar en vez de revivir ahí. Antes revivía con el sacerdote de ese lugar y se quedaba quieto, desnudo, sin poder comprar.
+- El Cazador ya no compra armas de mano. Mejora el arco (el Compuesto, el Reforzado y los que hace el Carpintero) en las tiendas y en la subasta, y se pone siempre el mejor arco y las mejores flechas que tiene.
+
 ## 1.1.2 (2026-11-27)
 
 Esta versión hace que los bots peleen más con la gente, cada uno con su carácter, y que los de oficio trabajen de verdad: juntan, fabrican y venden en la subasta lo que hacen, y se compran entre ellos los materiales.
