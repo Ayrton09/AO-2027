@@ -2,7 +2,9 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.1.3 (en preparación)
+## 1.1.3 (2026-11-27)
+
+Esta versión arregla lo que hacían los bots con su equipo y con el banco: se ponen lo que compran, recuperan lo que guardaron cuando se quedan sin nada, no salen a cazar con la mochila llena, y ya no quedan varados en lugares donde nadie les vende.
 
 ### Bots
 
@@ -12,6 +14,10 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - El bot que muere sin la runa en un lugar desde el que no llega a ningún pueblo que le venda (por ejemplo, un ciudadano o un renegado en las Ruinas del Destino) vuelve a su hogar en vez de revivir ahí. Antes revivía con el sacerdote de ese lugar y se quedaba quieto, desnudo, sin poder comprar.
 - Los bots entran a cada mapa por el lado desde el que se llega caminando adonde van. Antes, a veces entraban por una franja del borde separada por una pared y se volvían: así el Pescador que perdía la caña no llegaba nunca al que la vende en el Puerto de Rinkel.
 - El Cazador ya no compra armas de mano. Mejora el arco (el Compuesto, el Reforzado y los que hace el Carpintero) en las tiendas y en la subasta, y se pone siempre el mejor arco y las mejores flechas que tiene.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.1.3**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
 
 ## 1.1.2 (2026-11-27)
 
