@@ -40,7 +40,8 @@ public sealed partial class Bot
             }
             if (puesto || cantidad <= 0 || datos.Obj(obj) is not { DropsOnDeath: true, IsNewbie: false } o || o.IsPotion || queda(obj)) continue;
             bool equipo = o.IsWeapon || o.ObjType == 3 || o.IsKnuckles || o.IsMagicItem || o.ObjType == 47;
-            bool piel = o.ObjType == 30 && !trabajaPieles;
+            // LAS PIELES DEL SASTRE NO: se publican en lotes para él (ver `EsPielParaVender`).
+            bool piel = o.ObjType == 30 && !trabajaPieles && !EsPielDeSastre(obj);
             if (o.IsWeapon && tiraConArco && o.Proyectil > 0) continue;
             if (equipo || piel) guarda.Add((ranura, obj, cantidad));
         }

@@ -17,7 +17,7 @@ public sealed class LoQueGuardaElBotTests
     private static readonly Lazy<(short Arma, short Arco, short Armadura, short Casco, short Anillo, short Piel, short Roja, short Azul,
         short Herramienta, short Comida)> Objs = new(() => (
             Primero(o => o.IsWeapon && o.Proyectil == 0), Primero(o => o.IsWeapon && o.Proyectil > 0), Primero(o => o.IsArmor),
-            Primero(o => o.IsHelmet), Primero(o => o.IsMagicItem && o.Name.StartsWith("Anillo")), Primero(o => o.ObjType == 30),
+            Primero(o => o.IsHelmet), Primero(o => o.IsMagicItem && o.Name.StartsWith("Anillo")), Primero(o => o.ObjType == 30 && !Bot.EsPielDeSastre(o.Index)),
             Primero(o => o.IsPotion && o.SubType == 3), Primero(o => o.IsPotion && o.SubType == 4), Primero(o => o.ObjType == 18),
             Primero(o => o.ObjType == 1)));
 

@@ -2843,8 +2843,11 @@ public sealed partial class Bot
         // que no vale nada siguen afuera (abajo), y lo puesto ya lo descarta la mochila.
         bool enElPozo = EnElPozo(PlataDe(sentidos), SinNadaQueComer(sentidos), SinNadaQueTomar(sentidos));
         // EL MERCADO DEL OFICIO ADMINISTRA SU RESERVA, salvo la leña del Leñador que pasa de `LenaQueGuardaElLenador`: ésa va al mercader.
+        // Y LAS PIELES DE MÁS DE `PielesQueGuarda`, también al mercader. El Sastre no vende ninguna de las tres: cose con todas.
         if (EsInsumoMetalurgico(obj) || (EsProduccionMetalurgica(obj)
-            && !(EsLenaParaVender(obj) && sentidos.CuantoTiene(i => i == obj) > LenaQueGuardaElLenador))) return false;
+            && !(EsLenaParaVender(obj) && sentidos.CuantoTiene(i => i == obj) > LenaQueGuardaElLenador)
+            && !(EsPielParaVender(obj) && sentidos.CuantoTiene(i => i == obj) > PielesQueGuarda))) return false;
+        if (_clase == ClaseSastre && EsPielDeSastre(obj)) return false;
         // SALVO LO QUE SU CLASE NO PUEDE USAR: botín de otra sesión que quedó "de casa" y le llena la mochila. Ver `SuClaseNoLoUsa`.
         if ((_traidoDeCasa.Contains(obj) && obj != ProductoDeSuOficio && !enElPozo && !SuClaseNoLoUsa(obj)) || EsHerramientaDeSuOficio(obj))
             return false;
@@ -3588,7 +3591,13 @@ public sealed partial class Bot
         if (SuFabricacion is not { } fab) return NadaQueCazar;
         if (fab.Regla.Herramienta != 0 && sentidos.CuantoTiene(o => o == fab.Regla.Herramienta) == 0) return NadaQueCazar;
         int skill = sentidos.Skill(fab.Regla.Skill);
-        if (skill < 0 || !ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leHaceFalta: false)) return NadaQueCazar;
+        if (skill < 0) return NadaQueCazar;
+        // Y LAS PIELES DE LA PRENDA QUE FABRICA PARA VENDER: ver `PrendaDeSastreria`.
+        if (SastreFabricaParaVender(sentidos) && _prendaDeSastreria is { } prenda && _entorno.Datos.Obj(prenda) is { } o
+            && Oficios.Sastreria.Materiales(o).Where(m => m.PorUnidad > sentidos.CuantoTiene(i => i == m.Obj)).Select(m => m.Obj).ToHashSet()
+                is { Count: > 0 } pieles)
+            return pieles;
+        if (!ValeFabricar(skill, SkillProgression.CapForLevel(sentidos.Nivel), leHaceFalta: false)) return NadaQueCazar;
         return MaterialesQueLeFaltan(_entorno.Datos, fab.Recetas, fab.Regla, skill, obj => sentidos.CuantoTiene(o => o == obj));
     }
 

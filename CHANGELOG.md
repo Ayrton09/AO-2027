@@ -18,6 +18,8 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 - El Herrero fabrica como en el original: compra el Martillo de Herrero, va a la tienda de armas, se pone al lado del yunque con el martillo en la mano y ahí fabrica con los lingotes que le compra al Minero. Para no ir y venir, hace su mercado en un pueblo que tenga yunque.
 - El Minero compra de novato un segundo Piquete de Minero y lo guarda en el banco: si pierde el suyo al morir en una mina, retira el de repuesto, porque después del nivel 15 ya no puede llegar a las tiendas que lo venden.
 - El Herrero sin plata para comprar lingotes sale a cazar hasta juntarla, en vez de quedarse esperando sin poder trabajar.
+- Los bots ya no guardan en el banco las pieles de lobo y de oso: las juntan y las publican en la subasta en lotes de 100, y el Sastre se las compra cuando le faltan. Lo que pasa de 300 se lo venden al Vendedor General.
+- El Sastre que ya sabe hacer túnicas y gorros fabrica uno por vez y lo pone en la subasta, con el precio sacado de las pieles que lleva. Las Vestimentas comunes se las sigue vendiendo al Vendedor General.
 
 ## 1.1.1 (2026-11-25)
 
