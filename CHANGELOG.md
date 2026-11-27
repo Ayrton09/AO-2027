@@ -2,26 +2,33 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.1.2 (en preparación)
+## 1.1.2 (2026-11-27)
 
-### Bots
+Esta versión hace que los bots peleen más con la gente, cada uno con su carácter, y que los de oficio trabajen de verdad: juntan, fabrican y venden en la subasta lo que hacen, y se compran entre ellos los materiales.
+
+### Bots en la pelea
 
 - Los bots se animan más a pelear con gente. Cada uno tiene su carácter: unos son agresivos y pelean con quien les saca hasta 10 niveles, otros normales (hasta 7) y otros prudentes (hasta 4), y se animan con 3 niveles más si tienen un aliado cerca. También aguantan más antes de dejar una pelea: el agresivo se va con un cuarto de la vida.
 - El Mago inmoviliza a la persona con la que pelea de entrada, antes de alejarse.
 - Los bots persiguen a la persona con la que pelean hasta alcanzarla o hasta que se mete en una zona segura.
 - Para escaparse de una criatura que no pueden matar, primero la inmovilizan si pueden, o se ponen invisibles o se ocultan, y después se alejan.
 - Las clases que pelean con magia (Mago, Clérigo, Bardo, Druida, Paladín, Asesino y Nigromante) también compran la poción Amarilla y se la toman antes de pelear con otra persona, para esquivar más golpes.
-- Los bots de oficio (Leñador, Carpintero, Pescador, Minero, Herrero y Sastre) a veces dedican la sesión entera a su trabajo, en vez de salir a cazar entre tanda y tanda.
-- El Leñador vende la leña en la subasta, en lotes de 500, en vez de vendérsela barata al mercader. El Carpintero se la compra para fabricar.
-- El Carpintero fabrica y subasta lotes de 500 flechas, rotando entre todos los tipos que sabe hacer. Cada tanto hace un arco y, de vez en cuando, una Barca o una Galera. El precio sale de la leña que lleva cada cosa.
-- El Carpintero que ya tiene plata no tala más en mapas inseguros: le compra la leña al Leñador y fabrica en zona segura, en sus jornadas de trabajo. Antes de salir a cazar guarda en el banco la leña y lo que tiene a medio hacer, y pone a la venta lo terminado, así no lo pierde si lo matan.
-- El Herrero fabrica como en el original: compra el Martillo de Herrero, va a la tienda de armas, se pone al lado del yunque con el martillo en la mano y ahí fabrica con los lingotes que le compra al Minero. Para no ir y venir, hace su mercado en un pueblo que tenga yunque.
-- El Minero y el Pescador compran de novato un segundo Piquete o una segunda Caña y lo guardan en el banco: si pierden el suyo al morir, retiran el de repuesto, porque después del nivel 15 ya no pueden llegar a las tiendas que los venden.
-- El Pescador que junta mucho pescado va a vendérselo al vendedor de comida aunque tenga plata de sobra. Antes lo acumulaba sin vender.
-- El Druida, cada tanto, dedica una sesión a juntar raíces y hacer pociones. Se fabrica sus propias Pociones Rojas y Azules cuando le faltan y ya sabe la receta.
-- El Herrero sin plata para comprar lingotes sale a cazar hasta juntarla, en vez de quedarse esperando sin poder trabajar.
-- Los bots ya no guardan en el banco las pieles de lobo y de oso: las juntan y las publican en la subasta en lotes de 100, y el Sastre se las compra cuando le faltan. Lo que pasa de 300 se lo venden al Vendedor General.
-- El Sastre que ya sabe hacer túnicas y gorros fabrica uno por vez y lo pone en la subasta, con el precio sacado de las pieles que lleva. Las Vestimentas comunes se las sigue vendiendo al Vendedor General.
+
+### Bots de oficio
+
+- Los bots de oficio (Leñador, Carpintero, Pescador, Minero, Herrero y Sastre) a veces dedican la sesión entera a su trabajo, en vez de salir a cazar entre tanda y tanda. El Druida también, de vez en cuando.
+- **Leñador:** vende la leña en la subasta, en lotes de 500, en vez de vendérsela barata al mercader.
+- **Carpintero:** le compra la leña al Leñador y fabrica lotes de 500 flechas, rotando entre todos los tipos que sabe hacer. Cada tanto hace un arco y, de vez en cuando, una Barca o una Galera. El que ya tiene plata no tala en mapas inseguros: fabrica en zona segura y, antes de salir a cazar, guarda en el banco la leña y lo que tiene a medio hacer y pone a la venta lo terminado.
+- **Herrero:** fabrica como en el original: compra el Martillo de Herrero, va a la tienda de armas, se pone al lado del yunque con el martillo en la mano y ahí fabrica con los lingotes que le compra al Minero. Hace su mercado en un pueblo que tenga yunque, y si no tiene plata para los lingotes sale a cazar hasta juntarla.
+- **Minero y Pescador:** compran de novato un segundo Piquete o una segunda Caña y lo guardan en el banco. Si pierden el suyo al morir retiran el de repuesto, porque pasado el nivel 15 ya no llegan a las tiendas que los venden.
+- **Pescador:** cuando junta mucho pescado va a vendérselo al vendedor de comida, aunque tenga plata de sobra.
+- **Pieles y Sastre:** los bots ya no guardan en el banco las pieles de lobo y de oso. Las juntan y las publican en la subasta en lotes de 100, y el Sastre se las compra. Lo que pasa de 300 se lo venden al Vendedor General. El Sastre le vende las Vestimentas comunes al Vendedor General, y cuando ya sabe hacer túnicas y gorros los pone en la subasta.
+- **Druida:** se fabrica sus propias Pociones Rojas y Azules cuando le faltan y ya sabe la receta.
+- Lo que fabrican tiene el precio sacado de los materiales que lleva, más la mitad. Por ejemplo, 500 Flechas salen 4.875 con compra directa, y una Galera 195.000.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.1.2**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
 
 ## 1.1.1 (2026-11-25)
 
