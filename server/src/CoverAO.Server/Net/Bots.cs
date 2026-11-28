@@ -1774,6 +1774,11 @@ public sealed partial class Bot
         }
         if (!vaAVender && !vaPorLaHerramienta && !vaPorPociones && !vaPorComida && !vaPorBebida && !vaPorEquipo
             && !vaPorHechizo && !vaPorAntidoto && !vaPorAtributo && !vaPorElArco && !hayArmaAlAlcance && !hayRopaAlAlcance && !desnudo) return false;
+        // POR QUÉ SALE, en el log: para medir qué viajes pesan.
+        Console.WriteLine($"[bot {Nombre}] sale de compras desde m{sentidos.Mapa} por" + (vaAVender ? " vender" : "") + (vaPorPociones ? " pociones" : "")
+            + (vaPorComida ? " comida" : "") + (vaPorBebida ? " bebida" : "") + (vaPorEquipo ? " equipo" : "") + (vaPorHechizo ? " hechizo" : "")
+            + (vaPorAntidoto ? " antidoto" : "") + (vaPorAtributo ? " atributo" : "") + (vaPorElArco ? " arco" : "") + (hayArmaAlAlcance ? " arma" : "")
+            + (hayRopaAlAlcance ? " ropa" : "") + (desnudo ? " desnudo" : "") + (vaPorLaHerramienta ? " herramienta" : ""));
 
         // LO QUE ESTÁ EN CERO, PRIMERO. La comida se miraba antes que la bebida, así que con la sed en cero y el
         // hambre aguantando el bot igual iba al de comidas y gastaba ahí lo que era para el agua. Medido: cinco

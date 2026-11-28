@@ -331,10 +331,13 @@ public sealed partial class Bot
             || sentidos.HaceCuantoLeBajoLaVida <= LePeganHaceMs) return null;
         if (sentidos.Salud < SaludParaPelearConGente || !TieneFuelleParaPelear(sentidos)) return null;
         if (sentidos.CuantoTiene(EsPocionDeVida) < PocionesParaPelear) return null;
+        // NI EN LA PUERTA DE UN PUEBLO NI CARGADO: ver `CercaDeLaPuertaDeUnPueblo` y `VaCargado`.
+        if (VaCargado(sentidos.RanurasOcupadas().Count) || CercaDeLaPuertaDeUnPueblo(sentidos.Mapa, sentidos.Posicion)) return null;
         var esBlanco = EsBlancoParaMi();
         var (x, y) = sentidos.Posicion;
         if (sentidos.PersonaMasCercana(v => (soloRival is null || v.CharIndex == soloRival)
                                            && esBlanco(v) && SeLoBusca(sentidos.NivelDe(v.CharIndex, NivelVistoMs), v.X - x, v.Y - y, SeAnimaConElEscondido(sentidos, v.CharIndex))
+                                           && !EsDemasiadoDebil(sentidos.NivelDe(v.CharIndex, NivelVistoMs), sentidos.Nivel)
                                            && LeConvienePelearCon(sentidos, v.CharIndex),
                                        GenteDejada()) is not { Pasos: <= RadioDeCaza } quien) return null;
         short ci = quien.Quien.CharIndex;
@@ -342,6 +345,50 @@ public sealed partial class Bot
                        && (!_miradoEn.TryGetValue(ci, out long cuando) || Environment.TickCount64 - cuando > MirarDeNuevoMs);
         return (ci, mirarlo);
     }
+
+    /// <summary>
+    /// ¿ES DEMASIADO DÉBIL PARA SALIR A BUSCARLO? El que tiene <see cref="NivelesQueNoSeBuscan"/> niveles menos o más, no: si le pega, se
+    /// defiende igual (<see cref="AQuienSeDefiende"/>). El tester (27/11): los más fuertes se quedaban con las cosas de los más débiles,
+    /// que no podían progresar. Medido en las rondas 199 a 206 (28/11): de 155 muertes entre bots, 19 fueron de uno de nivel 15 o 16 a
+    /// manos de uno que le sacaba de 7 a 13 niveles.
+    /// </summary>
+    public static bool EsDemasiadoDebil(short? nivelVisto, int miNivel) =>
+        nivelVisto is { } n && n != SentidosDelBot.NivelEscondido && n <= miNivel - NivelesQueNoSeBuscan;
+
+    /// <summary>Los niveles de menos desde los que no sale a buscar a una persona (<see cref="EsDemasiadoDebil"/>).</summary>
+    public const int NivelesQueNoSeBuscan = 7;
+
+    /// <summary>
+    /// ¿VA CARGADO? Con <see cref="RanurasCargado"/> ranuras ocupadas o más no sale a buscar pelea: lleva lo que juntó para vender y
+    /// morir en un mapa inseguro se lo deja todo al que lo mata. Medido en la ronda 199: Milo le levantó a Lira trece cosas del piso.
+    /// </summary>
+    public static bool VaCargado(int ranurasOcupadas) => ranurasOcupadas >= RanurasCargado;
+
+    /// <summary>Desde cuántas ranuras ocupadas va cargado (<see cref="VaCargado"/>).</summary>
+    public const int RanurasCargado = 20;
+
+    /// <summary>
+    /// ¿ESTÁ EN LA PUERTA DE UN PUEBLO? A <see cref="RadioDeLaPuerta"/> pasos o menos de una salida a un mapa seguro no sale a buscar
+    /// pelea: por ahí pasan todos, los que salen con las pociones recién compradas y los que vuelven cargados. Medido en las rondas 199 a
+    /// 206 (28/11): de 155 muertes entre bots, 60 fueron en el Río Otoren (98), casi todas entre las baldosas (86,49) y (91,78), al lado de
+    /// la entrada a Rinkel.
+    /// </summary>
+    private bool CercaDeLaPuertaDeUnPueblo(int mapa, (byte X, byte Y) donde) =>
+        DistanciaALaPuertaDeUnPueblo(PuertasDePueblo(mapa), donde) <= RadioDeLaPuerta;
+
+    /// <summary>La distancia (en pasos sin diagonal) a la salida más cercana de <paramref name="puertas"/>; int.MaxValue si no hay.</summary>
+    public static int DistanciaALaPuertaDeUnPueblo(IReadOnlyList<(int X, int Y)> puertas, (byte X, byte Y) donde) =>
+        puertas.Count == 0 ? int.MaxValue : puertas.Min(p => Math.Abs(p.X - donde.X) + Math.Abs(p.Y - donde.Y));
+
+    /// <summary>Los pasos desde una salida a un mapa seguro hasta los que no sale a buscar pelea.</summary>
+    public const int RadioDeLaPuerta = 15;
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyList<(int X, int Y)>> _puertasDePueblo = new();
+
+    /// <summary>Las baldosas de ese mapa que salen a un mapa seguro.</summary>
+    private IReadOnlyList<(int X, int Y)> PuertasDePueblo(int mapa) => _puertasDePueblo.GetOrAdd(mapa, m =>
+        _entorno.Datos.MapExits.Where(e => e.Key.Map == m && !_entorno.Datos.IsPkMap(e.Value.DestMap))
+            .Select(e => (e.Key.X, e.Key.Y)).ToList());
 
     /// <summary>LO MIRA: el clic del cliente sobre esa persona, que contesta con su ficha (<see cref="SentidosDelBot.NivelDe"/>). El clic
     /// mira primero la baldosa de abajo (<c>LookatTile</c>), así que se clickea la de arriba de sus pies si cae en el rango del clic.</summary>
