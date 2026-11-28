@@ -66,9 +66,15 @@ public sealed partial class Bot
                         _entorno.Mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, CruzaSinPeligro(s), seCazaAhi)?.Suma ?? 0);
     }
 
-    /// <summary>¿Su hogar de ahora es una ciudad donde le venden? (El dungeon de novatos no cuenta: graduado no se vuelve.)</summary>
+    /// <summary>
+    /// ¿Su hogar de ahora es uno al que se mudó, en una ciudad donde le venden? Nix e Illiandor, adonde lo manda el servidor al
+    /// graduarse, no cuentan: ésos se siguen cambiando al pasar por Rinkel, como siempre. En la ronda 199 a 203 (28/11), contándolos,
+    /// Karim, Herrero republicano de nivel 15, se quedaba con el hogar en Illiandor, donde el banquero no le presta: 21 mil de
+    /// experiencia contra 191 a 278 mil.
+    /// </summary>
     private bool YaTieneElHogarDondeLeVenden() =>
-        _entorno.HogarDe(Nombre) is { } ciudad && CiudadesParaElHogar().Any(c => c.Ciudad == ciudad);
+        _entorno.HogarDe(Nombre) is { } ciudad && ciudad is not (Cities.Nix or Cities.Illiandor)
+        && CiudadesParaElHogar().Any(c => c.Ciudad == ciudad);
 
     /// <summary>Los otros bots conectados, por la ciudad de su hogar.</summary>
     private Dictionary<byte, int> HogaresDeLosOtros()
