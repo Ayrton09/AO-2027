@@ -10696,6 +10696,9 @@ public sealed partial class PacketDispatcher
 
     private enum BandoDelHogar { Neutral, Imperio, Republica }
 
+    /// <summary>Los mapas donde se puede elegir el hogar, con la ciudad de cada uno (<see cref="HogarDelMapa"/>).</summary>
+    public static IEnumerable<(int Mapa, byte Ciudad)> MapasDeHogar => HogarDelMapa.Select(h => ((int)h.Key, h.Value.Ciudad));
+
     /// <summary>La ciudad-hogar de cada mapa donde se la puede elegir (VB6 :16324-16340): las neutrales para todos,
     /// las del Imperio para ciudadanos y Armada, las de la República para republicanos y Milicia.</summary>
     private static readonly Dictionary<short, (byte Ciudad, BandoDelHogar Bando)> HogarDelMapa = new()

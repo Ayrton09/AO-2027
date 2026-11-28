@@ -1108,6 +1108,8 @@ public sealed partial class Bot
             // AL ENLISTADOR, a enlistarse o a cobrar la recompensa: ver `IrAlEjercitoAsync`.
             if (_acompana is null && await IrAlEjercitoAsync(transporte, sentidos, cerrada, ct)) continue;
             if (_acompana is null && await PonerElHogarAsync(transporte, sentidos, cerrada, ct)) continue;
+            // Y SI EN SU HOGAR HAY DEMASIADOS BOTS, SE MUDA AL QUE MENOS TIENE: ver `MudarseDeHogarAsync`.
+            if (await MudarseDeHogarAsync(transporte, sentidos, cerrada, ct)) continue;
             if (await MeditarAsync(transporte, sentidos, ct)) continue;
             // ACOMPAÑANDO A ALGUIEN NO SE PONE A TRABAJAR: ver `AcompanarAsync`.
             if (_acompana is null && await FundirAsync(transporte, sentidos, cerrada, ct)) continue;
@@ -3929,6 +3931,42 @@ public sealed partial class Bot
         !mapaInseguro || !loQueNace.Any(esPeligroso);
 
     /// <summary>
+    /// ¿CUÁNTOS BOTS CAZAN BIEN EN UN MAPA? Uno cada <see cref="PresasPorCazador"/> presas de las que nacen ahí, y al menos uno.
+    /// Pedido del tester (27/11, decidido por el autor): los bots se amontonaban en los mismos lugares, los fuertes se quedaban con
+    /// todo y los débiles no progresaban. En su base del 28/11 había 14 bots en el Puerto de Rinkel, 14 republicanos en la Avanzada,
+    /// 13 en Rinkel y 7 en el 18, con 62 de los 100 hogares en Rinkel. El lugar lleno de <see cref="EstaLleno"/> se reconoce sólo
+    /// por la gente a la vista, y en un mapa grande los que se reparten las presas no se ven.
+    /// </summary>
+    public static int CupoDeCazadores(int presasQueNacen) => Math.Max(1, presasQueNacen / PresasPorCazador);
+
+    /// <summary>Cuántas presas que nacen en un mapa le tocan a cada bot que caza ahí (<see cref="CupoDeCazadores"/>).</summary>
+    public const int PresasPorCazador = 6;
+
+    /// <summary>
+    /// ¿SOBRAN CAZADORES EN ESE MAPA PARA ÉL? En otro mapa, si los bots que ya están ahí llenan el <paramref name="cupo"/>. En el suyo,
+    /// si hay al menos <paramref name="cupo"/> que le ganan (más nivel, y entre iguales el nombre): se quedan los más fuertes y el
+    /// resto se reparte, sin que se vayan todos a la vez. <paramref name="otrosAhi"/> son los otros bots vivos en ese mapa.
+    /// </summary>
+    public static bool SobranCazadores(bool esElSuyo, int cupo, IEnumerable<(int Nivel, string Nombre)> otrosAhi, int miNivel,
+                                       string miNombre) =>
+        esElSuyo
+            ? otrosAhi.Count(o => o.Nivel > miNivel || (o.Nivel == miNivel && string.CompareOrdinal(o.Nombre, miNombre) < 0)) >= cupo
+            : otrosAhi.Count() >= cupo;
+
+    /// <summary>Los otros bots vivos, por el mapa donde están (de su ficha pública).</summary>
+    private Dictionary<int, List<(int Nivel, string Nombre)>> OtrosBotsPorMapa()
+    {
+        var porMapa = new Dictionary<int, List<(int Nivel, string Nombre)>>();
+        foreach (var (nombre, bot) in _entorno.EnElMundo)
+        {
+            if (ReferenceEquals(bot, this) || bot._fichaPublica is not { Vivo: true, Mapa: > 0 } f) continue;
+            if (!porMapa.TryGetValue(f.Mapa, out var lista)) porMapa[f.Mapa] = lista = new();
+            lista.Add((f.Nivel, nombre));
+        }
+        return porMapa;
+    }
+
+    /// <summary>
     /// ¿ESTÁ LLENO EL LUGAR? Cuando se le acabó la paciencia sin nada que cazar a la vista y ve a <see cref="PersonasQueLlenan"/> o más
     /// personas, el mapa donde está se deja por <see cref="LlenoMs"/>, como el que llega a donde cazan muchos y se va a otro lado: el
     /// coto sale de <see cref="CotoSinVolverAlLleno"/>.
@@ -4458,6 +4496,12 @@ public sealed partial class Bot
                                      || NoSeGraduaEntreGuardias(m, _miBando, nivel, _entorno.Datos, _entorno.Ini)
                                      || !TieneComoVolverDesde(m, sentidos) || _huidasDelNivel.NoVuelve(m, nivel);
         Func<int, bool> seCazaAhi = m => SeCazaAhi(_entorno.Datos.IsPkMap(m), loQueNace(m), esPeligroso) && !nunca(m);
+        // Y LLENO TAMBIÉN EL QUE YA TIENE TODOS LOS BOTS QUE LE CABEN: ver `CupoDeCazadores` y `SobranCazadores`.
+        var otrosBots = OtrosBotsPorMapa();
+        int miMapa = sentidos.Mapa;
+        bool lleno(int m) => SigueLleno(_llenoHasta, m, ahora)
+            || (otrosBots.TryGetValue(m, out var ahi)
+                && SobranCazadores(m == miMapa, CupoDeCazadores(loQueNace(m).Count(f => esPresa(f))), ahi, nivel, Nombre));
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, false);
         // Y EL QUE NO LE DA NADA, POR MÁS RATO: ver `OtraBusquedaSinGanar` y `LoDejaHasta`.
@@ -4489,13 +4533,13 @@ public sealed partial class Bot
         if (hallado is null && SaleAEntrenar(nivel) && conPociones && paraSuOficio.Count == 0)
         {
             var destinoDeEntrenamiento = CotoDeEntrenamiento(_entorno.Datos, _entorno.Mapas, sentidos.Mapa, sentidos.Posicion, Entrenamiento, cruza,
-                m => cruza(m) && !SigueLleno(_llenoHasta, m, ahora) && seCazaAhi(m), soloEntrenamiento, nivel,
+                m => cruza(m) && !lleno(m) && seCazaAhi(m), soloEntrenamiento, nivel,
                 m => CuantoLeGusta(_propio, m),
-                (m, p) => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora) ? _entorno.Mapas.LoQueSuma(m, p, rinde)?.Suma ?? 0 : 0);
+                (m, p) => seCazaAhi(m) && !lleno(m) ? _entorno.Mapas.LoQueSuma(m, p, rinde)?.Suma ?? 0 : 0);
             if ((destinoDeEntrenamiento is null || !EsMazmorra(_entorno.Datos, destinoDeEntrenamiento.Value.Mapa))
                 && EntradaParaEntrenar(_entorno.Datos, _entorno.Mapas, _entorno.Ini, sentidos.Mapa, sentidos.Posicion, nivel, vidaMaxima,
                     f => esPresa(f) && !NoLaLastima((short)f), f => esPeligroso(f) || NoLaLastima((short)f), cruza,
-                    m => nunca(m) || SigueLleno(_llenoHasta, m, ahora), soloEntrenamiento) is { } entrada)
+                    m => nunca(m) || lleno(m), soloEntrenamiento) is { } entrada)
             {
                 destinoDeEntrenamiento = (entrada.Mapa, entrada.X, entrada.Y, entrada.Saltos);
                 evitarEnLaMeta = entrada.Evitar;
@@ -4516,8 +4560,8 @@ public sealed partial class Bot
                    && await SaltaSiRindeMasDesdeLaCasaAsync(LoQueSumaAPie(), soloEncerrado: true);
         (int Mapa, byte X, byte Y, int Saltos)? CotoComoSiempre(Func<int, bool> noVa, out bool oro, out int porLoQueRindeMas) =>
             CotoSinVolverAlLleno(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, esPresa, f => PagaOro((short)f), rinde,
-                                 cruza, m => seCazaAhi(m) && !noVa(m), m => SigueLleno(_llenoHasta, m, ahora),
-                                 m => SirveParaIrseDelLleno(SigueLleno(_llenoHasta, m, ahora), loQueNace(m), esPeligroso)
+                                 cruza, m => seCazaAhi(m) && !noVa(m), m => lleno(m),
+                                 m => SirveParaIrseDelLleno(lleno(m), loQueNace(m), esPeligroso)
                                       && !nunca(m) && !noVa(m),
                                  m => CuantoLeGusta(_propio, m), out oro, out porLoQueRindeMas, m => nunca(m) || noVa(m),
                                  EligePorLoQueSuma(nivel));
@@ -4531,7 +4575,7 @@ public sealed partial class Bot
         if (!entrenar && paraSuOficio.Count == 0 && EligePorLoQueSuma(nivel)
             && CotoCruzandoPeligro(_entorno.Mapas, sentidos.Mapa, sentidos.Posicion, rinde, cruza,
                                    PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
-                                   m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora), m => CuantoLeGusta(_propio, m)) is { } lejos)
+                                   m => seCazaAhi(m) && !lleno(m), m => CuantoLeGusta(_propio, m)) is { } lejos)
         {
             hallado = lejos;
             sirve = esPresa;
@@ -4568,7 +4612,7 @@ public sealed partial class Bot
             if (encerrado
                 && CotoCruzandoPeligro(_entorno.Mapas, casa.Map, (casa.X, casa.Y), rinde, cruza,
                                        PisableDelRescate(_entorno.Datos, _entorno.Ini, _miBando, nivel),
-                                       m => seCazaAhi(m) && !SigueLleno(_llenoHasta, m, ahora)) is { } cruzando)
+                                       m => seCazaAhi(m) && !lleno(m)) is { } cruzando)
                 desdeLaCasa = Math.Max(desdeLaCasa, _entorno.Mapas.LoQueSuma(cruzando.Mapa, (cruzando.X, cruzando.Y), rinde)?.Suma ?? 0);
             return ValeSaltarConLaRuna(aPie, desdeLaCasa, encerrado) && await SaltarConLaRunaAsync(transporte, sentidos, cerrada, ct);
         }
@@ -5381,6 +5425,15 @@ public sealed partial class Bot
         // Mientras es novato el hogar no le hace falta: caza y compra alrededor de la cuna.
         if (!PorDejarDeSerNovato(nivel) || !VuelveAPonerElHogar(_nivelDelHogar, nivel) || Environment.TickCount64 < _proximoHogar) return false;
         if (!PacketDispatcher.PuedeSerHogarDe(mapa, _miBando) || !LeVendenAca(mapa)) return false;
+        // EL QUE YA TIENE EL HOGAR DONDE LE VENDEN NO LO CAMBIA: si se mudó (ver `MudarseDeHogarAsync`), pasar por Rinkel no lo devuelve.
+        if (_nivelDelHogar == 0 && YaTieneElHogarDondeLeVenden()) { _nivelDelHogar = nivel; return false; }
+        return await PedirElHogarAsync(transporte, sentidos, cerrada, ct);
+    }
+
+    /// <summary>Pedirle al sacerdote del mapa donde está que sea su hogar: el clic, el /HOGAR y el sí. Devuelve si hizo algo.</summary>
+    private async Task<bool> PedirElHogarAsync(TransporteDeBot transporte, SentidosDelBot sentidos, Task cerrada, CancellationToken ct)
+    {
+        int mapa = sentidos.Mapa, nivel = sentidos.Nivel;
         if (!_entorno.Datos.MapSpawns.TryGetValue(mapa, out var nacen)
             || nacen.FirstOrDefault(s => EsSacerdote((short)s.NpcIndex)) is not { NpcIndex: > 0 } templo) return false;
         _proximoHogar = Environment.TickCount64 + EsperaDelHogarMs;
