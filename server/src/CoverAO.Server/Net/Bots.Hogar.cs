@@ -47,6 +47,25 @@ public sealed partial class Bot
         PacketDispatcher.MapasDeHogar.Where(c => PacketDispatcher.PuedeSerHogarDe(c.Mapa, _miBando) && LeVendenAca(c.Mapa)
             && _entorno.Datos.MapSpawns.TryGetValue(c.Mapa, out var nacen) && nacen.Any(s => EsSacerdote((short)s.NpcIndex)));
 
+    /// <summary>
+    /// LO QUE SUMA LA CAZA DESDE UN LUGAR: lo mejor entre lo de ahí y el coto que más suma a <see cref="SaltosHastaElCotoQueSuma"/> mapas o
+    /// menos sin cruzar peligro, contado como en <see cref="BuscarDondeCazarAsync"/>. Para no mudarse adonde no tiene qué cazar: en la ronda
+    /// 199 (27/11) Ciro, Guerrero de nivel 29, se mudó a Nueva Esperanza y ganó 107 mil de experiencia contra 1,13 millones sin mudarse,
+    /// yendo y viniendo entre el 111, el 112 y el 114.
+    /// </summary>
+    private int LoQueSumaDesde(SentidosDelBot s, int mapa, (byte X, byte Y) desde)
+    {
+        int nivel = s.Nivel, vida = s.VidaMaxima;
+        bool curaVeneno = s.CuantoTiene(EsPocionQueCuraElVeneno) > 0;
+        var datos = _entorno.Datos;
+        Func<int, int> rinde = f => EsPresa((short)f, vida, nivel, true, curaVeneno) ? RecompensaDePresa(datos.Npc(f), nivel) : 0;
+        Func<int, bool> seCazaAhi = m => !HayGuardiaQueLoAtaca(m)
+            && SeCazaAhi(datos.IsPkMap(m), datos.MapSpawns.TryGetValue(m, out var nacen) ? nacen.Select(n => n.NpcIndex) : [],
+                         f => EsPeligroso((short)f, vida, nivel, true, curaVeneno));
+        return Math.Max(seCazaAhi(mapa) ? _entorno.Mapas.LoQueSuma(mapa, desde, rinde)?.Suma ?? 0 : 0,
+                        _entorno.Mapas.CotoQueMasSuma(mapa, desde, rinde, SaltosHastaElCotoQueSuma, CruzaSinPeligro(s), seCazaAhi)?.Suma ?? 0);
+    }
+
     /// <summary>¿Su hogar de ahora es una ciudad donde le venden? (El dungeon de novatos no cuenta: graduado no se vuelve.)</summary>
     private bool YaTieneElHogarDondeLeVenden() =>
         _entorno.HogarDe(Nombre) is { } ciudad && CiudadesParaElHogar().Any(c => c.Ciudad == ciudad);
@@ -76,7 +95,12 @@ public sealed partial class Bot
         int desde = sentidos.Mapa;
         bool puedeCruzar = sentidos.Skill(GameLimits.SkillNavegacion) >= _entorno.Ini.NavegacionParaCruzar
                            && PlataDe(sentidos) >= PlataDelPase;
-        var candidatas = CiudadesParaElHogar().Where(c => puedeCruzar || datos.MismaTierra(c.Mapa, desde)).ToList();
+        // Y SÓLO ADONDE DESDE EL SACERDOTE TIENE PARA CAZAR LO MISMO QUE DESDE DONDE ESTÁ: ver `LoQueSumaDesde`.
+        int aca = LoQueSumaDesde(sentidos, desde, sentidos.Posicion);
+        var candidatas = CiudadesParaElHogar().Where(c => puedeCruzar || datos.MismaTierra(c.Mapa, desde))
+            .Where(c => datos.MapSpawns[c.Mapa].First(s => EsSacerdote((short)s.NpcIndex)) is var cura
+                        && LoQueSumaDesde(sentidos, c.Mapa, ((byte)cura.X, (byte)cura.Y)) >= aca)
+            .ToList();
         if (CiudadParaMudarse(candidatas, miCiudad, HogaresDeLosOtros(), m => datos.MismaTierra(m, desde), Nombre) is not { } destino)
             return false;
         _intentosDeMudanza++;
