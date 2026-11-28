@@ -2,6 +2,13 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.1.5 (en preparación)
+
+### Bots
+
+- Los bots ya no salen a buscar pelea en la puerta de un pueblo, por donde pasan todos al entrar y salir, ni cuando van cargados con lo que juntaron. Antes casi cuatro de cada diez muertes entre bots eran al lado de la entrada a Rinkel.
+- Los bots ya no salen a cazar a uno que tiene siete niveles menos o más. Si el más débil le pega, se defiende igual. Así los más chicos pueden progresar sin que los fuertes les saquen todo.
+
 ## 1.1.4 (2026-11-28)
 
 Esta versión reparte a los bots: ya no se amontonan en los mismos lugares de caza ni en la misma ciudad, y los más débiles tienen dónde progresar. Además, Nueva Esperanza y Tiama tienen magos que venden hechizos de clase.
