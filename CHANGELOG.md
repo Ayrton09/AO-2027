@@ -2,7 +2,9 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
-## 1.1.4 (en preparación)
+## 1.1.4 (2026-11-28)
+
+Esta versión reparte a los bots: ya no se amontonan en los mismos lugares de caza ni en la misma ciudad, y los más débiles tienen dónde progresar. Además, Nueva Esperanza y Tiama tienen magos que venden hechizos de clase.
 
 ### Bots
 
@@ -12,6 +14,10 @@ Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en
 ### Mundo
 
 - El Druida de Nueva Esperanza y el Clérigo de Tiama venden los hechizos de su clase, como los de Rinkel, Banderbill y Suramei.
+
+### Cómo actualizar
+
+- Actualizá el cliente de escritorio y el servidor a **1.1.4**. Si hosteás, conservá tu `Server.ini` y la carpeta `data`.
 
 ## 1.1.3 (2026-11-27)
 
