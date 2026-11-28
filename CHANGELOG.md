@@ -2,6 +2,17 @@
 
 Lo que cambia en cada versión, escrito para el jugador. El juego las muestra en Menú → Novedades.
 
+## 1.1.4 (en preparación)
+
+### Bots
+
+- Los bots se reparten entre los lugares de caza. En cada mapa cazan los que caben según las criaturas que nacen ahí; si ya está lleno de bots, el que llega busca otro, y si sobran, se quedan los de más nivel y los demás se van. Antes se amontonaban en los mismos lugares, los más fuertes se quedaban con todo y los más débiles no progresaban.
+- El bot cuyo hogar está lleno de bots se muda a la ciudad con menos, de su bando o neutral, donde le vendan y desde donde tenga para cazar lo mismo que donde está. Si queda en otra tierra, cruza en pasaje.
+
+### Mundo
+
+- El Druida de Nueva Esperanza y el Clérigo de Tiama venden los hechizos de su clase, como los de Rinkel, Banderbill y Suramei.
+
 ## 1.1.3 (2026-11-27)
 
 Esta versión arregla lo que hacían los bots con su equipo y con el banco: se ponen lo que compran, recuperan lo que guardaron cuando se quedan sin nada, no salen a cazar con la mochila llena, y ya no quedan varados en lugares donde nadie les vende.
