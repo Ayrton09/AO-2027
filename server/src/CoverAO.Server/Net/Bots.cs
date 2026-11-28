@@ -2088,6 +2088,7 @@ public sealed partial class Bot
         bool compro = await VenderYComprarAsync(transporte, sentidos, t.Quien.FichaNpc, ct);
         bool habiaLoQueBuscaba = !compro && MostradorOfreceReposicion(sentidos, vaPorPociones, vaPorAntidoto);
         if (compro) _plataQueNoAlcanzo = -1;
+        Console.WriteLine($"[bot {Nombre}] en el mostrador {t.Quien.FichaNpc} de m{sentidos.Mapa}: {(compro ? "compró" : "no compró nada")}");
         // Sólo el que viajó a comprar: el que fue a cazar y compró de paso sigue cazando (ver `SaleDelPozo`).
         if (compro && sentidos.Mapa != mapaAlSalir) _comproEn = (sentidos.Mapa, Environment.TickCount64);
         transporte.Mandar(Paquete(ClientPacketId.CommerceEnd, _ => { }));
