@@ -4065,6 +4065,7 @@ public sealed partial class Bot
     }
 
     private readonly Dictionary<int, long> _llenoHasta = new();
+    private int _avisoDelCupo;
     private (int Mapa, int Experiencia, int Nivel, int Seguidas) _busquedasSinGanar;
     private readonly Dictionary<int, long> _noDaNadaHasta = new();
 
@@ -4502,6 +4503,12 @@ public sealed partial class Bot
         bool lleno(int m) => SigueLleno(_llenoHasta, m, ahora)
             || (otrosBots.TryGetValue(m, out var ahi)
                 && SobranCazadores(m == miMapa, CupoDeCazadores(loQueNace(m).Count(f => esPresa(f))), ahi, nivel, Nombre));
+        if (otrosBots.TryGetValue(miMapa, out var conmigo) && _avisoDelCupo != miMapa
+            && SobranCazadores(true, CupoDeCazadores(loQueNace(miMapa).Count(f => esPresa(f))), conmigo, nivel, Nombre))
+        {
+            _avisoDelCupo = miMapa;
+            Console.WriteLine($"[bot {Nombre}] sobran cazadores en m{miMapa}: {conmigo.Count} bots más, cupo {CupoDeCazadores(loQueNace(miMapa).Count(f => esPresa(f)))}");
+        }
         // EL LUGAR LLENO SE DEJA POR UN RATO: ver `EstaLleno`.
         if (!veAlgunaPresa && EstaLleno(sentidos.PersonasALaVista())) _llenoHasta[sentidos.Mapa] = LoDejaHasta(ahora, false);
         // Y EL QUE NO LE DA NADA, POR MÁS RATO: ver `OtraBusquedaSinGanar` y `LoDejaHasta`.
